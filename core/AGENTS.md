@@ -457,3 +457,16 @@ the corrected methodology.
   — `enable_avx512=true` with `enable_asm=false` issues a warning (no-op, not an error);
   — `enable_hipcc=true` with `enable_hip=false` issues a warning (no-op, not an error).
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
+
+- **CompileIQ ACF provenance — re-tune required on CUDA toolkit bump** (ADR-0739,
+  Research-0734, 2026-05-28):
+  `filter1d.acf` (if present under `-Denable_compileiq=true`) is tied to the exact
+  `nvcc`/`ptxas` version used to generate it. CompileIQ search spaces are per-toolkit-
+  version (current catalog: CUDA 13.3 only). Any CUDA toolkit upgrade in the
+  devcontainer invalidates the ACF and requires a re-run of the CompileIQ search
+  before the new ACF is persisted in-tree. Pre-run checklist:
+  (1) `python3 --version` must be ≥3.11 and <3.14;
+  (2) `nvcc --version | grep -E "13\.[3-9]"` must match the catalog;
+  (3) `nvcc --help | grep apply-controls` must produce output.
+  See Research-0734 for the full blocker history and objective function
+  scaffold plan.

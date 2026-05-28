@@ -39917,3 +39917,20 @@ Fork-local files:
 `docs/adr/0714-vmafx-operator-skeleton.md`,
 `docs/development/operator.md`,
 `changelog.d/added/vmafx-operator-skeleton.md`,
+
+---
+
+## CompileIQ pilot on `filter1d.cu` — research only (ADR-0739)
+
+**No rebase impact**: no code was changed. This PR adds only documentation
+artifacts (Research-0734, ADR-0739, changelog fragment, AGENTS.md note,
+state.md row). `core/src/feature/cuda/integer_vif/filter1d.cu` is
+unmodified.
+
+Fork-local files:
+`docs/research/0734-cuda-compileiq-filter1d-pilot.md` (new),
+`docs/adr/0739-cuda-compileiq-filter1d-pilot.md` (new),
+`changelog.d/added/cuda-compileiq-pilot-filter1d.md` (new),
+`docs/adr/README.md` (ADR-0739 row added),
+`docs/state.md` (CompileIQ row added),
+`docs/rebase-notes.md` (this entry).
