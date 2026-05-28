@@ -130,5 +130,5 @@ option('fuzz',
 
 option('enable_rust_features',
     type: 'boolean',
-    value: true,
-    description: 'Build Rust-implemented feature extractors (requires cargo in PATH). ADR-0707 cbindgen pilot: TAD (Temporal Absolute Difference). Default ON when cargo is found; silently skips if cargo is absent.')
+    value: false,
+    description: 'Build Rust-implemented feature extractors (requires cargo + cbindgen in PATH). ADR-0707 cbindgen pilot: TAD (Temporal Absolute Difference). Default OFF — CI defaults to false; enable_rust_features=true requires cargo + cbindgen.')
