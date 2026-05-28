@@ -39696,3 +39696,32 @@ Netflix/vmaf upstream cherry-picks and `port-upstream-commit` syncs are unaffect
 Touched files: `docs/research/0732-netflix-pipeline-backlog-audit.md`,
 `changelog.d/added/0732-netflix-pipeline-backlog-audit.md`, `docs/state.md`,
 `docs/rebase-notes.md` (this entry).
+
+---
+
+## refactor/cpp23-pilot-metadata-handler — no upstream Netflix conflict
+
+No rebase impact. `metadata_handler.c` is a fork-local refactor: Netflix/vmaf
+upstream also has a `libvmaf/src/metadata_handler.c` at the same path (pre-rename).
+The rename to `.cpp` is fork-local (upstream stays `.c`). If an upstream commit
+touches `libvmaf/src/metadata_handler.c`, the port must:
+
+1. Apply the upstream diff content to `core/src/metadata_handler.cpp` manually
+   (the C code is still valid C++ after the conversion).
+2. Verify the `extern "C"` guards in `metadata_handler.h` are not disturbed.
+3. Rebuild and re-run `make test-netflix-golden` to confirm scores unchanged.
+
+The `meson.build` change (replacing the `src_dir + 'metadata_handler.c'` entry with
+the `metadata_handler_cpp20_lib` static lib) is entirely fork-local and has no
+upstream equivalent.
+
+Touched files:
+`core/src/metadata_handler.cpp` (was `metadata_handler.c`),
+`core/src/metadata_handler.h` (added `extern "C"` guards),
+`core/src/meson.build` (isolated static lib for C++20),
+`core/test/meson.build` (updated `.c` -> `.cpp` references),
+`docs/adr/0708-vmafx-cpp23-internals-pilot.md`,
+`docs/research/0732-vmafx-cpp23-internals-migration-plan.md`,
+`changelog.d/changed/0708-cpp23-internals-pilot.md`,
+`docs/state.md` (this entry),
+`docs/rebase-notes.md` (this entry).

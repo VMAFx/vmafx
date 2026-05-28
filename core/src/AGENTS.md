@@ -104,3 +104,22 @@ temporary C numeric locale lifetime. Path-based `vmaf_write_output()` uses
 `fdopen()` and may otherwise leave the final flush to `fclose()` after the
 locale has been restored/freed; that is the macOS-only SIGSEGV shape for
 `test_output` and `test_public_api_score`.
+
+### 9. `metadata_handler.cpp` — C++20 pilot; extern "C" guard must not be removed (ADR-0708)
+
+`core/src/metadata_handler.cpp` (previously `metadata_handler.c`) is the first
+C++20 internal implementation TU. `metadata_handler.h` carries `extern "C"`
+guards that allow `feature_collector.c` (a plain C file) to include the header
+and call the three functions without a link-name-mangling mismatch.
+
+Do not:
+- Remove the `extern "C"` guards from `metadata_handler.h`.
+- Rename the three public symbols (`vmaf_metadata_init`, `vmaf_metadata_append`,
+  `vmaf_metadata_destroy`).
+- Move the file back to `.c` — `unique_ptr` and `CallbackListDeleter` require
+  a C++ compiler.
+
+When porting an upstream Netflix/vmaf commit that modifies the original
+`libvmaf/src/metadata_handler.c`, apply the diff content to
+`core/src/metadata_handler.cpp` (C code is valid C++; the `extern "C"` block
+in the header stays). Run `make test-netflix-golden` post-port.

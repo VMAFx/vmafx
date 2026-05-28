@@ -1469,6 +1469,20 @@ libsvm_static_lib = static_library(
     cpp_args : libsvm_cpp_args,
 )
 
+# ADR-0708: metadata_handler.cpp is the first C++20 pilot TU. Compiled as a
+# separate static lib so its cpp_std override (c++20) does not propagate to
+# any other C++ TU in libvmaf — same isolation pattern used by vma_impl_lib
+# in core/src/vulkan/meson.build. Linked into the final libvmaf via
+# link_with below.
+metadata_handler_cpp20_lib = static_library(
+    'metadata_handler_cpp20',
+    src_dir + 'metadata_handler.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++20'],
+    pic : true,
+    install : false,
+)
+
 libvmaf_sources = [
     src_dir + 'libvmaf.c',
     src_dir + 'predict.c',
@@ -1485,7 +1499,7 @@ libvmaf_sources = [
     src_dir + 'pdjson.c',
     src_dir + 'log.c',
     src_dir + 'framesync.c',
-    src_dir + 'metadata_handler.c',
+    # metadata_handler.cpp is compiled as metadata_handler_cpp20_lib (ADR-0708)
     src_dir + 'picture_pool.c',
     src_dir + 'thread_locale.c',
     src_dir + 'gpu_picture_pool.c',
@@ -1590,6 +1604,8 @@ libvmaf = library(
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
+        # ADR-0708: C++20 pilot TU compiled as isolated static lib.
+        metadata_handler_cpp20_lib.extract_all_objects(recursive: true),
     ],
     version : vmaf_soname_version,
     soversion : vmaf_soversion,
