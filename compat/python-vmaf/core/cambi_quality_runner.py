@@ -25,7 +25,7 @@ class CambiQualityRunner(QualityRunnerFromFeatureExtractor, ABC):
 class CambiFullReferenceQualityRunner(QualityRunnerFromFeatureExtractor, ABC):
 
     TYPE = "Cambi_FR"
-    VERSION = "F" + CambiFeatureExtractor.VERSION
+    VERSION = "F" + CambiFullReferenceFeatureExtractor.VERSION
 
     @override(QualityRunnerFromFeatureExtractor)
     def _get_feature_extractor_class(self):

@@ -39763,3 +39763,22 @@ Touched files:
 `docs/adr/0707-vmafx-rust-pilot-feature.md`,
 `docs/metrics/tad.md`,
 `changelog.d/added/tad-rust-pilot.md`,
+
+## CAMBI Python compat-layer sync v0.5 → v0.8 — 2026-05-28
+
+- **ADR**: no ADR required — 1:1 upstream port with no fork-local divergence.
+- **Upstream source**: Netflix/vmaf `CambiFeatureExtractor` version history
+  through v0.8 (Research-0732 item #4).
+- **Branch**: `chore/cambi-python-v0.8-sync`
+
+**Rebase notes**:
+The fork is now at parity with upstream Netflix/vmaf for the Python CAMBI
+wrappers as of 2026-05-28. Future Netflix syncs of `compat/python-vmaf/core/cambi_feature_extractor.py`,
+`compat/python-vmaf/core/cambi_quality_runner.py`, and
+`python/test/cambi_test.py` should merge cleanly. No fork-local divergence
+was introduced; this was a pure upstream port.
+
+`compat/python-vmaf/core/cambi_feature_extractor.py`,
+`compat/python-vmaf/core/cambi_quality_runner.py`,
+`python/test/cambi_test.py`,
+`changelog.d/changed/cambi-python-v0.8-sync.md`,
