@@ -39758,3 +39758,37 @@ Touched files:
 `docs/metrics/tad.md`,
 `changelog.d/added/tad-rust-pilot.md`,
 
+
+---
+
+## vmafx-node Go worker binary (ADR-0713)
+
+**no rebase impact: fork-only addition** — all new files under `cmd/vmafx-node/`,
+`pkg/gpu/`, `pkg/ai/`, `gen/go/controller/`, `docker/Dockerfile.node*`,
+`deploy/helm/vmafx/templates/node.yaml`. No C sources, no upstream-mirror files
+touched. `pkg/encoder/discover.go` and `pkg/encoder/hardware.go` are new fork-local
+files; `pkg/encoder/encoder.go` (already fork-local from ADR-0705) is not modified.
+
+Files added:
+`cmd/vmafx-node/main.go` (new),
+`cmd/vmafx-node/executor.go` (new),
+`cmd/vmafx-node/main_test.go` (new),
+`gen/go/controller/controller.pb.go` (new),
+`gen/go/controller/controller_grpc.pb.go` (new),
+`pkg/gpu/detect.go` (new),
+`pkg/gpu/detect_test.go` (new),
+`pkg/ai/infer.go` (new),
+`pkg/ai/infer_test.go` (new),
+`pkg/encoder/discover.go` (new),
+`pkg/encoder/hardware.go` (new),
+`docker/Dockerfile.node` (new),
+`docker/Dockerfile.node-cpu` (new),
+`docker/Dockerfile.node-cuda12` (new),
+`docker/Dockerfile.node-rocm6` (new),
+`docker/Dockerfile.node-sycl-oneapi2026` (new),
+`deploy/helm/vmafx/templates/node.yaml` (new),
+`deploy/helm/vmafx/templates/_helpers.tpl` (extended),
+`deploy/helm/vmafx/values.yaml` (extended — `.Values.node` section added),
+`docs/server/node.md` (new),
+`docs/adr/0713-vmafx-node-impl.md` (new),
+`changelog.d/added/vmafx-node.md` (new).

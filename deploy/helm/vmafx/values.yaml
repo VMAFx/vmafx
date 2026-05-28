@@ -270,6 +270,46 @@ pushgateway:
   enabled: false
 
 # ---------------------------------------------------------------------------
+# Node — vmafx-node worker pool (Deployment)
+# Enabled separately from the controller.
+# ---------------------------------------------------------------------------
+node:
+  # enabled controls whether the worker Deployment is created.
+  enabled: false
+
+  # replicaCount is the number of worker replicas.
+  replicaCount: 1
+
+  # image overrides for the node binary.
+  # Defaults to <image.repository>-node:<Chart.AppVersion>.
+  image:
+    repository: ""   # e.g. ghcr.io/vmafx/vmafx-node
+    tag: ""
+
+  # controllerAddr overrides the VMAFX_CONTROLLER_ADDR env var.
+  # Defaults to the in-cluster controller Service at <release>-controller:8080.
+  controllerAddr: ""
+
+  # resources overrides for the node pods.
+  # Falls back to .Values.resources when empty.
+  resources: {}
+
+  # nodeSelector pins node pods to GPU-labelled nodes.
+  # Example (NVIDIA):
+  #   nvidia.com/gpu.present: "true"
+  nodeSelector: {}
+
+  # tolerations for GPU taint (NVIDIA example):
+  #   - key: nvidia.com/gpu
+  #     operator: Exists
+  #     effect: NoSchedule
+  tolerations: []
+
+  # volumes / volumeMounts for corpus, output, model PVCs.
+  volumes: []
+  volumeMounts: []
+
+# ---------------------------------------------------------------------------
 # NOTES.txt / post-install
 # ---------------------------------------------------------------------------
 # No user-facing knobs here; see templates/NOTES.txt.
