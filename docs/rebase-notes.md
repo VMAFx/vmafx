@@ -39665,3 +39665,22 @@ and `port-upstream-commit` syncs are unaffected. The libvmaf C public headers
 consumed by `bindgen` remain at `core/include/libvmaf/` (ADR-0700 path); any
 future upstream header change that adds or removes a symbol is handled
 automatically by re-running `cargo build` (bindgen regenerates on every build).
+
+---
+
+## feat/vmafx-phase4b-distributed-platform-adr-0709 — fork-only architectural decision, no Netflix upstream impact
+
+**No upstream rebase impact**: ADR-0709 and the Phase 4b architecture diagram
+(`docs/architecture/phase4b-distributed-platform.md`) are wholly fork-local documents.
+Netflix/vmaf upstream has no controller/node/operator architecture, no Go or Rust
+binaries, and no rclone/eBPF integration. Upstream cherry-picks and
+`port-upstream-commit` syncs are unaffected.
+
+The C ABI break decision (Phase 4b.8) will require updating `ffmpeg-patches/` when the
+implementation PR lands; that PR's `docs/rebase-notes.md` entry will detail the specific
+patch files affected. This umbrella ADR does not touch any C source files.
+
+Touched files: `docs/adr/0709-vmafx-phase4b-distributed-platform.md`,
+`docs/architecture/phase4b-distributed-platform.md`,
+`changelog.d/added/vmafx-phase4b-umbrella-adr.md`, `docs/state.md`,
+`docs/rebase-notes.md` (this entry), `docs/adr/README.md`.
