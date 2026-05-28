@@ -8,6 +8,6 @@
 
 [workspace]
 members = [
-    # "bindings/rust/vmafx-sys",  # uncommented by the vmafx-rust-sys sweep PR
+    "bindings/rust/vmafx-sys",
 ]
 resolver = "2"

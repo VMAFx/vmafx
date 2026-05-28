@@ -1,6 +1,8 @@
 # Caches, build artifacts
 .DS_Store
 .cache/
+# Rust build artifacts
+target/
 # Editor / refactor scratch backups — never in tree (ADR-0546 audit cleanup
 # bundle surfaced a 142 KB `tools/vmaf-tune/src/vmaftune/cli.py.bak` that
 # had been polluting greps for weeks).

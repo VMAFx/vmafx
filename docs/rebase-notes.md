@@ -39601,3 +39601,13 @@ Touched files:
 `docs/research/0706-tiny-ai-netflix-training-prep-2026-05-22.md`,
 `changelog.d/added/0682-tiny-ai-netflix-training-scaffold-2026-05-22.md`,
 `docs/rebase-notes.md` (this entry).
+
+## feat/bindings-rust-vmafx-sys (ADR-0706) — fork-only Rust crate, no Netflix upstream impact
+
+**No upstream rebase impact**: `bindings/rust/vmafx-sys`, the root `Cargo.toml`,
+`.github/workflows/rust-ci.yml`, and `docs/development/rust.md` are wholly
+fork-local. Netflix/vmaf upstream has no Rust surface; upstream cherry-picks
+and `port-upstream-commit` syncs are unaffected. The libvmaf C public headers
+consumed by `bindgen` remain at `core/include/libvmaf/` (ADR-0700 path); any
+future upstream header change that adds or removes a symbol is handled
+automatically by re-running `cargo build` (bindgen regenerates on every build).
