@@ -39725,3 +39725,40 @@ Touched files:
 `changelog.d/changed/0708-cpp23-internals-pilot.md`,
 `docs/state.md` (this entry),
 `docs/rebase-notes.md` (this entry).
+
+---
+
+## ADR-0711 — vmafx-controller Phase 4b.1 (2026-05-28)
+
+No rebase impact: entirely fork-local, no upstream equivalent.
+
+`cmd/vmafx-server/` renamed to `cmd/vmafx-controller/`; new sub-packages
+`queue/`, `nodes/`, `scheduler/` and `gen/go/controller/` are fork-local.
+`pkg/observability/` changes (new Metrics fields) have no upstream equivalent.
+`go.mod` / `go.sum` changes (`modernc.org/sqlite`, `github.com/google/uuid`) are
+Go workspace changes with no C build impact.
+`docker/Dockerfile.controller`, `deploy/helm/vmafx/values.yaml` are fork-local.
+
+Touched files (Go):
+`cmd/vmafx-controller/` (renamed from `cmd/vmafx-server/`),
+`cmd/vmafx-controller/queue/queue.go`,
+`cmd/vmafx-controller/queue/queue_test.go`,
+`cmd/vmafx-controller/queue/schema.sql`,
+`cmd/vmafx-controller/nodes/registry.go`,
+`cmd/vmafx-controller/nodes/registry_test.go`,
+`cmd/vmafx-controller/scheduler/scheduler.go`,
+`cmd/vmafx-controller/scheduler/scheduler_test.go`,
+`cmd/vmafx-controller/proto/controller.proto`,
+`gen/go/controller/controller.pb.go`,
+`gen/go/controller/controller_grpc.pb.go`,
+`pkg/observability/observability.go`,
+`go.mod`, `go.sum`.
+
+Touched files (infrastructure):
+`docker/Dockerfile.controller`,
+`deploy/helm/vmafx/values.yaml`,
+`docs/adr/0711-vmafx-controller-impl.md`,
+`docs/server/controller.md`,
+`changelog.d/changed/vmafx-controller-impl.md`,
+`docs/state.md` (this entry),
+`docs/rebase-notes.md` (this entry).

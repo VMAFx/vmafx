@@ -1,22 +1,30 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 // Copyright 2026 Lusoris
 //
-// cmd/vmafx-server/main.go — vmafx-server entry point.
+// cmd/vmafx-controller/main.go — vmafx-controller entry point.
+//
+// The controller is the cluster brain for the VMAFX distributed platform
+// (ADR-0709, ADR-0711).  It exposes:
+//   - gRPC VmafxScoring service on VMAFX_GRPC_PORT (default :50051)  — direct scoring
+//   - gRPC VmafxController service on VMAFX_GRPC_PORT                — job queue + node API
+//   - HTTP /healthz /readyz /metrics /v1/score on VMAFX_PORT (default :8080)
 //
 // Starts both the HTTP and gRPC servers concurrently.  Signal handling and
 // graceful shutdown are wired through pkg/observability.
 //
 // 12-factor (§III) environment variables:
 //
-//	VMAFX_PORT           HTTP listen port (default "8080").
-//	VMAFX_GRPC_PORT      gRPC listen port (default "50051").
-//	VMAFX_LOG_LEVEL      slog level string (default "INFO").
-//	VMAFX_VMAF_BINARY    Path to the vmaf CLI binary.
-//	VMAFX_MODEL_DIR      Directory containing VMAF .json model files.
+//	VMAFX_PORT             HTTP listen port (default "8080").
+//	VMAFX_GRPC_PORT        gRPC listen port (default "50051").
+//	VMAFX_LOG_LEVEL        slog level string (default "INFO").
+//	VMAFX_VMAF_BINARY      Path to the vmaf CLI binary.
+//	VMAFX_MODEL_DIR        Directory containing VMAF .json model files.
+//	VMAFX_DB_PATH          Path to the SQLite database (default "vmafx-controller.db").
 //
 // CLI flags mirror and override the environment variables.
 //
-// ADR-0703: vmafx-server Go gRPC + HTTP service.
+// ADR-0703: vmafx-server Go gRPC + HTTP service (origin).
+// ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
 
 //go:build cgo
 
@@ -31,6 +39,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -52,6 +63,7 @@ func main() {
 	logLevel := flag.String("log-level", envOr("VMAFX_LOG_LEVEL", "INFO"), "log level (DEBUG|INFO|WARN|ERROR)")
 	vmafBinary := flag.String("vmaf-binary", envOr("VMAFX_VMAF_BINARY", ""), "path to vmaf CLI binary (default: PATH lookup)")
 	modelDir := flag.String("model-dir", envOr("VMAFX_MODEL_DIR", ""), "directory containing VMAF .json model files")
+	dbPath := flag.String("db", envOr("VMAFX_DB_PATH", "vmafx-controller.db"), "path to the SQLite database for job + node persistence")
 	flag.Parse()
 
 	// ---------------------------------------------------------------------------
@@ -60,12 +72,13 @@ func main() {
 	log := observability.NewLogger(*logLevel)
 	slog.SetDefault(log)
 
-	log.Info("vmafx-server starting",
+	log.Info("vmafx-controller starting",
 		"version", version(),
 		"http_port", *port,
 		"grpc_port", *grpcPort,
 		"vmaf_binary", *vmafBinary,
 		"model_dir", *modelDir,
+		"db_path", *dbPath,
 	)
 
 	// ---------------------------------------------------------------------------
@@ -82,10 +95,23 @@ func main() {
 	// Prometheus registry + metrics.
 	// ---------------------------------------------------------------------------
 	registry := prometheus.NewRegistry()
-	// Register Go runtime collectors.
 	registry.MustRegister(prometheus.NewGoCollector())
 	registry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
 	metrics := observability.NewMetrics(registry)
+
+	// ---------------------------------------------------------------------------
+	// Controller subsystems: job queue, node registry, scheduler.
+	// ---------------------------------------------------------------------------
+	jobQueue, err := queue.New(*dbPath, log)
+	if err != nil {
+		log.Error("failed to open job queue", "error", err)
+		os.Exit(1)
+	}
+	defer jobQueue.Close()
+
+	nodeRegistry := nodes.NewRegistry(log)
+	sched := scheduler.New(jobQueue, nodeRegistry, log)
+	metrics.SetControllerSources(jobQueue, nodeRegistry)
 
 	// ---------------------------------------------------------------------------
 	// Shutdown context — cancelled on SIGTERM / SIGINT.
@@ -104,17 +130,17 @@ func main() {
 		return runHTTP(grpCtx, fmt.Sprintf(":%s", *port), hs, log)
 	})
 
-	// gRPC server.
+	// gRPC server — registers both VmafxScoring and VmafxController services.
 	grp.Go(func() error {
-		return runGRPC(grpCtx, fmt.Sprintf(":%s", *grpcPort), scorer, metrics, log)
+		return runGRPC(grpCtx, fmt.Sprintf(":%s", *grpcPort), scorer, jobQueue, nodeRegistry, sched, metrics, log)
 	})
 
 	if err := grp.Wait(); err != nil {
-		log.Error("server error", "error", err)
+		log.Error("controller error", "error", err)
 		os.Exit(1)
 	}
 
-	log.Info("vmafx-server stopped")
+	log.Info("vmafx-controller stopped")
 }
 
 // version returns a build-time version string, falling back to "dev".

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 // Copyright 2026 Lusoris
 //
-// cmd/vmafx-server/main_test.go — integration tests for vmafx-server HTTP endpoints.
+// cmd/vmafx-controller/main_test.go — integration tests for vmafx-controller HTTP endpoints.
 //
 // All tests boot a real httpServer against a mock libvmaf.Scorer and use
 // net/http/httptest to avoid opening real ports.
 //
-// ADR-0703: vmafx-server Go gRPC + HTTP service.
+// ADR-0703: vmafx-server Go gRPC + HTTP service (origin).
+// ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
 
 //go:build cgo
 

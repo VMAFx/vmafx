@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 // Copyright 2026 Lusoris
 //
-// cmd/vmafx-server/http_server.go — HTTP handlers for vmafx-server.
+// cmd/vmafx-controller/http_server.go — HTTP handlers for vmafx-controller.
 //
 // Endpoints:
 //   GET  /healthz      — liveness probe; always 200 while the process is live.
 //   GET  /readyz       — readiness probe; 200 once vmaf binary is reachable.
 //   GET  /metrics      — Prometheus exposition format.
-//   POST /v1/score     — JSON scoring endpoint (parity with Python implementation).
+//   POST /v1/score     — JSON scoring endpoint (direct scoring, Phase 4a compat).
 //
-// ADR-0703: vmafx-server Go gRPC + HTTP service.
+// ADR-0703: vmafx-server Go gRPC + HTTP service (origin).
+// ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
 
 //go:build cgo
 
