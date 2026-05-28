@@ -11,7 +11,10 @@
 # Image
 # ---------------------------------------------------------------------------
 image:
-  repository: ghcr.io/vmafx/vmafx
+  # vmafx-server is the production Go gRPC + HTTP scoring service (ADR-0703).
+  # The Python vmaf-mcp server image (ghcr.io/vmafx/vmafx) remains available
+  # for MCP/stdio IDE deployments; see docs/server/grpc.md for the migration guide.
+  repository: ghcr.io/vmafx/vmafx-server
   tag: ""           # Defaults to .Chart.AppVersion when empty.
   pullPolicy: IfNotPresent
 

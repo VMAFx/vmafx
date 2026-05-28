@@ -3,6 +3,44 @@
 Single ledger of fork-local changes that need attention when this fork
 syncs from `upstream/master` (Netflix/vmaf). Required by
 [ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local
+
+---
+
+## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
+
+**no rebase impact** on upstream C/Python code: the Go server is entirely
+fork-local (`cmd/`, `pkg/`, `gen/`, `proto/`, `go.mod`, `go.sum`,
+`Dockerfile.go-server`, `buf.gen.yaml`). None of these paths overlap with
+Netflix/vmaf upstream.
+
+If a future upstream sync touches `model/` (model JSON schema changes) or
+`core/include/libvmaf/libvmaf.h` (public ABI), review:
+- `pkg/libvmaf/libvmaf.go` — the cgo `#include` and JSON parsing in `parseOutput`.
+- The `ScoreResponse.features` map keys (derived from `pooled_metrics` keys in
+  the vmaf CLI JSON output; key names are stable but new keys may appear).
+
+Touched files:
+`cmd/vmafx-server/main.go`,
+`cmd/vmafx-server/grpc_server.go`,
+`cmd/vmafx-server/http_server.go`,
+`cmd/vmafx-server/main_test.go`,
+`pkg/libvmaf/libvmaf.go`,
+`pkg/libvmaf/libvmaf_test.go`,
+`pkg/observability/observability.go`,
+`proto/vmafx.proto`,
+`proto/buf.yaml`,
+`buf.gen.yaml`,
+`gen/go/vmafx.pb.go`,
+`gen/go/vmafx_grpc.pb.go`,
+`go.mod`, `go.sum`,
+`Dockerfile.go-server`,
+`docs/server/grpc.md`,
+`docs/adr/0703-vmafx-server-go-grpc.md`,
+`changelog.d/added/vmafx-server-go.md`,
+`docs/state.md`,
+`deploy/helm/vmafx/values.yaml` (image repository update).
+
+---
 PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
@@ -13,6 +51,33 @@ rebase impact" in the PR description and skip the entry.
 (`docs/research/0733-hardware-backend-audit-2026-05-28.md`), a changelog fragment,
 and a `docs/state.md` update. No C source, build system, or upstream-shared path is
 touched. Netflix/vmaf upstream syncs are unaffected.
+## feat/vmafx-phase4-language-modernization-foundation (ADR-0702) — fork-only, no Netflix conflict
+
+**No upstream rebase impact.** The files added in this PR (`go.mod`, `Cargo.toml`,
+`pkg/`, `cmd/`, `bindings/`, `.github/workflows/go-ci.yml`,
+`.github/workflows/rust-ci.yml`) are entirely fork-local. Netflix/vmaf upstream
+does not have a Go or Rust surface; cherry-picks from upstream are unaffected.
+
+The `docs/principles.md`, `docs/development/languages.md`, `.gitignore`, and
+`Makefile` additions are additive; the Makefile targets are named distinctly
+(`go-build`, `go-test`, `rust-build`, `rust-test`) and do not conflict with any
+upstream Makefile target.
+
+## feat/vmafx-tune-go-stage1 (ADR-0705) — fork-only, no Netflix conflict
+
+**No upstream rebase impact**: the Go port lives entirely under `cmd/vmafx-tune/`,
+`pkg/encoder/`, `pkg/bisect/`, and `pkg/report/`. These directories do not exist in
+upstream Netflix/vmaf. The Python `tools/vmaf-tune/` is unchanged. `go.mod` and
+`go.sum` are fork-local additions that upstream does not carry. Cherry-picks from
+upstream that touch `tools/vmaf-tune/` Python source files are unaffected by this PR.
+
+## feat/vmafx-mcp-go-port (ADR-0704) — fork-only, no Netflix conflict
+
+**No upstream rebase impact**: this PR adds `cmd/vmafx-mcp/`, `pkg/libvmaf/`,
+`go.mod`, and `go.sum` — all entirely fork-local. The Python MCP server at
+`mcp-server/vmaf-mcp/` is unchanged. Netflix/vmaf upstream does not contain
+any Go code or an MCP server. Cherry-picks from upstream are unaffected.
+
 
 ## chore/post-cutover-url-sweep — fork-only URL change, no Netflix conflict
 
@@ -39596,3 +39661,105 @@ Touched files:
 `docs/research/0706-tiny-ai-netflix-training-prep-2026-05-22.md`,
 `changelog.d/added/0682-tiny-ai-netflix-training-scaffold-2026-05-22.md`,
 `docs/rebase-notes.md` (this entry).
+
+## feat/bindings-rust-vmafx-sys (ADR-0706) — fork-only Rust crate, no Netflix upstream impact
+
+**No upstream rebase impact**: `bindings/rust/vmafx-sys`, the root `Cargo.toml`,
+`.github/workflows/rust-ci.yml`, and `docs/development/rust.md` are wholly
+fork-local. Netflix/vmaf upstream has no Rust surface; upstream cherry-picks
+and `port-upstream-commit` syncs are unaffected. The libvmaf C public headers
+consumed by `bindgen` remain at `core/include/libvmaf/` (ADR-0700 path); any
+future upstream header change that adds or removes a symbol is handled
+automatically by re-running `cargo build` (bindgen regenerates on every build).
+
+---
+
+## feat/vmafx-phase4b-distributed-platform-adr-0709 — fork-only architectural decision, no Netflix upstream impact
+
+**No upstream rebase impact**: ADR-0709 and the Phase 4b architecture diagram
+(`docs/architecture/phase4b-distributed-platform.md`) are wholly fork-local documents.
+Netflix/vmaf upstream has no controller/node/operator architecture, no Go or Rust
+binaries, and no rclone/eBPF integration. Upstream cherry-picks and
+`port-upstream-commit` syncs are unaffected.
+
+The C ABI break decision (Phase 4b.8) will require updating `ffmpeg-patches/` when the
+implementation PR lands; that PR's `docs/rebase-notes.md` entry will detail the specific
+patch files affected. This umbrella ADR does not touch any C source files.
+
+Touched files: `docs/adr/0709-vmafx-phase4b-distributed-platform.md`,
+`docs/architecture/phase4b-distributed-platform.md`,
+`changelog.d/added/vmafx-phase4b-umbrella-adr.md`, `docs/state.md`,
+`docs/rebase-notes.md` (this entry), `docs/adr/README.md`.
+
+---
+
+## docs/research-netflix-pipeline-backlog-audit (Research-0732) — research digest only, no Netflix upstream impact
+
+**no rebase impact**: this PR adds only `docs/research/0732-netflix-pipeline-backlog-audit.md`
+and a changelog fragment. No C sources, headers, build files, or test fixtures are touched.
+Netflix/vmaf upstream cherry-picks and `port-upstream-commit` syncs are unaffected.
+
+Touched files: `docs/research/0732-netflix-pipeline-backlog-audit.md`,
+`changelog.d/added/0732-netflix-pipeline-backlog-audit.md`, `docs/state.md`,
+`docs/rebase-notes.md` (this entry).
+
+---
+
+## refactor/cpp23-pilot-metadata-handler — no upstream Netflix conflict
+
+No rebase impact. `metadata_handler.c` is a fork-local refactor: Netflix/vmaf
+upstream also has a `libvmaf/src/metadata_handler.c` at the same path (pre-rename).
+The rename to `.cpp` is fork-local (upstream stays `.c`). If an upstream commit
+touches `libvmaf/src/metadata_handler.c`, the port must:
+
+1. Apply the upstream diff content to `core/src/metadata_handler.cpp` manually
+   (the C code is still valid C++ after the conversion).
+2. Verify the `extern "C"` guards in `metadata_handler.h` are not disturbed.
+3. Rebuild and re-run `make test-netflix-golden` to confirm scores unchanged.
+
+The `meson.build` change (replacing the `src_dir + 'metadata_handler.c'` entry with
+the `metadata_handler_cpp20_lib` static lib) is entirely fork-local and has no
+upstream equivalent.
+
+Touched files:
+`core/src/metadata_handler.cpp` (was `metadata_handler.c`),
+`core/src/metadata_handler.h` (added `extern "C"` guards),
+`core/src/meson.build` (isolated static lib for C++20),
+`core/test/meson.build` (updated `.c` -> `.cpp` references),
+`docs/adr/0708-vmafx-cpp23-internals-pilot.md`,
+`docs/research/0732-vmafx-cpp23-internals-migration-plan.md`,
+`changelog.d/changed/0708-cpp23-internals-pilot.md`,
+`docs/state.md` (this entry),
+`docs/rebase-notes.md` (this entry).
+## ADR-0707 — TAD Rust pilot (cbindgen integration) — 2026-05-28
+- **ADR**: [ADR-0707](adr/0707-vmafx-rust-pilot-feature.md).
+- **Upstream source**: fork-local. Netflix/vmaf has no Rust feature extractors.
+- **Branch**: `feat/tad-rust-pilot`
+
+**Key rebase invariants**:
+1. `core/src/feature/feature_extractor.c` gains `#if HAVE_RUST_TAD` guards around
+   the `vmaf_fex_tad` extern and list entry. On upstream sync, ensure these guards
+   are preserved; do not merge the upstream version of this file without re-applying
+   the guards.
+2. `core/src/meson.build` has a `cargo build --release` custom_target and a
+   `declare_dependency` for the Rust archive. These are entirely fork-local additions;
+   upstream's meson.build will not have them. The additions appear after the
+   `libvmaf_feature_sources` list and before the `libvmaf = library()` call.
+3. `tad_rust.c` is compiled as a DIRECT source of the `libvmaf` library target
+   (not into `libvmaf_feature.a`). This is an intentional architectural choice;
+   do not move it into `libvmaf_feature_sources` on rebase.
+4. `Cargo.toml` at the repo root is the workspace manifest. Upstream will never
+   have this file; no merge conflict expected.
+5. The `enable_rust_features` meson option in `core/meson_options.txt` is
+   fork-local; preserve on upstream merges.
+`Cargo.toml` (repo root, new),
+`core/meson_options.txt`,
+`core/src/meson.build`,
+`core/src/feature/feature_extractor.c`,
+`core/src/feature/tad_rust.c` (new),
+`core/src/feature/rust/tad/` (new crate directory),
+`core/test/meson.build`,
+`core/test/test_tad_rust.c` (new),
+`docs/adr/0707-vmafx-rust-pilot-feature.md`,
+`docs/metrics/tad.md`,
+`changelog.d/added/tad-rust-pilot.md`,

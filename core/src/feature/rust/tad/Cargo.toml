@@ -1,0 +1,16 @@
+[package]
+name = "vmafx-tad"
+version = "0.1.0"
+edition = "2021"
+description = "Temporal Absolute Difference (TAD) feature extractor for VMAFX — cbindgen pilot (ADR-0707)"
+license = "BSD-3-Clause-Plus-Patent"
+authors = ["Lusoris <lusoris@pm.me>"]
+
+[lib]
+name = "vmafx_tad"
+# staticlib: consumed by Meson as a link_with archive.
+# rlib: consumed by Rust unit tests and future intra-workspace dependencies.
+crate-type = ["staticlib", "rlib"]
+
+[build-dependencies]
+cbindgen = "0.27"
