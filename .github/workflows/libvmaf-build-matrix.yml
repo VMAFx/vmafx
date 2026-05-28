@@ -586,7 +586,7 @@ jobs:
           if [ "${{ matrix.sycl }}" = "true" ]; then
             source /opt/intel/oneapi/setvars.sh
           fi
-          meson setup libvmaf core/build --buildtype release \
+          meson setup core core/build --buildtype release \
             --prefix $PWD/install \
             -Denable_float=true \
             ${{ matrix.meson_extra }}
@@ -830,7 +830,7 @@ jobs:
 
       - name: Configure vmaf
         run: |
-          meson setup libvmaf core/build --buildtype release \
+          meson setup core core/build --buildtype release \
             --default-library static --prefix "$MINGW_PREFIX" \
             -Denable_cuda=false -Denable_sycl=false -Denable_float=true
 
@@ -1055,7 +1055,7 @@ jobs:
           CFLAGS: /experimental:c11atomics
           CXXFLAGS: /experimental:c11atomics
         run: |
-          meson setup libvmaf libvmaf\build --buildtype release ^
+          meson setup core core\build --buildtype release ^
             --prefix %CD%\install ^
             -Denable_float=true ^
             ${{ matrix.meson_extra }}
@@ -1095,7 +1095,7 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           set CC=icx-cl
           set CXX=icx-cl
-          meson setup libvmaf libvmaf\build --buildtype release ^
+          meson setup core core\build --buildtype release ^
             --prefix %CD%\install ^
             -Denable_float=true ^
             -Dcpp_std=c++14 ^

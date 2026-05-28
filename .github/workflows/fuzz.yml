@@ -82,7 +82,7 @@ jobs:
 
       - name: Configure (clang + ASan + libFuzzer)
         run: |
-          meson setup build-fuzz libvmaf \
+          meson setup build-fuzz core \
               --buildtype=debug \
               -Db_sanitize=address \
               -Db_lundef=false \

@@ -73,7 +73,7 @@ jobs:
             /usr/bin/clang-tidy-18 100
       - name: Generate compile_commands.json
         run: |
-          meson setup build libvmaf -Denable_cuda=false -Denable_sycl=false
+          meson setup build core -Denable_cuda=false -Denable_sycl=false
           # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
           # exist on disk before clang-tidy parses the translation units.
           meson compile -C build
@@ -361,7 +361,7 @@ jobs:
           # shellcheck disable=SC1091
           source /opt/intel/oneapi/setvars.sh --force
           set -u
-          CC=icx CXX=icpx meson setup build-sycl libvmaf \
+          CC=icx CXX=icpx meson setup build-sycl core \
             -Denable_sycl=true -Denable_cuda=false
           # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
           # exist before clang-tidy parses TUs.
@@ -409,7 +409,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cppcheck meson ninja-build nasm
       - name: Generate compile_commands
         run: |
-          meson setup build libvmaf -Denable_cuda=false -Denable_sycl=false
+          meson setup build core -Denable_cuda=false -Denable_sycl=false
           # Build first so codegen outputs (model JSONs → .c) exist on disk.
           # cppcheck parses compile_commands.json literally and errors on
           # any missing translation-unit file.

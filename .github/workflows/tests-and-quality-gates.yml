@@ -68,7 +68,7 @@ jobs:
         # external vmaf binary is configured via vmaf_path() / vmafexec_path().
         working-directory: core
         run: |
-          meson setup build -Denable_cuda=false -Denable_sycl=false \
+          meson setup build core -Denable_cuda=false -Denable_sycl=false \
             -Denable_float=true -Denable_avx512=true --buildtype=release
           meson compile -C build
 
@@ -134,7 +134,7 @@ jobs:
       - name: Build CPU
         working-directory: core
         run: |
-          meson setup build -Denable_cuda=false -Denable_sycl=false --buildtype=release
+          meson setup build core -Denable_cuda=false -Denable_sycl=false --buildtype=release
           meson compile -C build
       - name: Compute CPU scores against snapshot
         run: |
@@ -169,7 +169,7 @@ jobs:
       - name: Build CPU + Vulkan
         working-directory: core
         run: |
-          meson setup build -Denable_cuda=false -Denable_sycl=false \
+          meson setup build core -Denable_cuda=false -Denable_sycl=false \
                             -Denable_vulkan=enabled -Denable_float=true \
                             --buildtype=release
           meson compile -C build
@@ -364,7 +364,7 @@ jobs:
       - name: Build CPU + Vulkan
         working-directory: core
         run: |
-          meson setup build -Denable_cuda=false -Denable_sycl=false \
+          meson setup build core -Denable_cuda=false -Denable_sycl=false \
                             -Denable_vulkan=enabled -Denable_float=true \
                             --buildtype=release
           meson compile -C build
@@ -437,7 +437,7 @@ jobs:
       - name: Build CPU + Vulkan
         working-directory: core
         run: |
-          meson setup build -Denable_cuda=false -Denable_sycl=false \
+          meson setup build core -Denable_cuda=false -Denable_sycl=false \
                             -Denable_vulkan=enabled -Denable_float=true \
                             --buildtype=release --reconfigure
           meson compile -C build
@@ -513,7 +513,7 @@ jobs:
           else
             EXTRA_ARGS=()
           fi
-          meson setup build -Db_sanitize=${{ matrix.sanitizer }} \
+          meson setup build core -Db_sanitize=${{ matrix.sanitizer }} \
             -Denable_cuda=false -Denable_sycl=false --buildtype=debug \
             -Db_lto=false -Db_lundef=false "${EXTRA_ARGS[@]}"
           meson compile -C build
@@ -644,7 +644,7 @@ jobs:
       - name: Build libvmaf (dnn enabled)
         working-directory: core
         run: |
-          meson setup build -Denable_cuda=false -Denable_sycl=false \
+          meson setup build core -Denable_cuda=false -Denable_sycl=false \
             -Denable_dnn=enabled --buildtype=release
           meson compile -C build
       - name: Run meson dnn suite
@@ -681,7 +681,7 @@ jobs:
   # binary were never invoked in CI. This job closes that gap.
   #
   # Local repro:
-  #   cd libvmaf && meson setup build-mcp \
+  #   cd libvmaf && meson setup build-mcp core \
   #     -Denable_cuda=false -Denable_sycl=false \
   #     -Denable_mcp=true -Denable_mcp_sse=true \
   #     -Denable_mcp_uds=true -Denable_mcp_stdio=true && \
@@ -720,7 +720,7 @@ jobs:
         # ubuntu-hosted-runner-only — no GPU toolchain required.
         working-directory: core
         run: |
-          meson setup build-mcp \
+          meson setup build-mcp core \
             -Denable_cuda=false -Denable_sycl=false \
             -Denable_mcp=true -Denable_mcp_sse=enabled \
             -Denable_mcp_uds=true -Denable_mcp_stdio=true \
@@ -863,7 +863,7 @@ jobs:
           # concurrently merge their counters into the same .gcda files for
           # the shared libvmaf.so. atomic is per-thread, not per-process —
           # the two fixes are complementary.
-          meson setup build-coverage --buildtype=debug \
+          meson setup build-coverage core --buildtype=debug \
             -Db_coverage=true -Denable_cuda=false -Denable_sycl=false \
             -Denable_float=true -Denable_avx512=true \
             -Denable_dnn=enabled \
@@ -1000,7 +1000,7 @@ jobs:
           # uses --buildtype=debug which already disables LTO, but make it
           # explicit to avoid a future buildtype change re-introducing the
           # icx + -flto=auto incompatibility.
-          meson setup build-coverage-gpu --buildtype=debug \
+          meson setup build-coverage-gpu core --buildtype=debug \
             -Db_coverage=true -Db_lto=false \
             -Denable_cuda=true -Denable_sycl=true \
             -Denable_float=true -Denable_avx512=true \

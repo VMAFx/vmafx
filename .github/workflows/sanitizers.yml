@@ -73,7 +73,7 @@ jobs:
           CXX: clang++-18
           LDFLAGS: -fuse-ld=lld-18
         run: |
-          meson setup build \
+          meson setup build core \
             -Db_sanitize=address \
             -Dc_args="-fsanitize=undefined -fno-sanitize=function" \
             -Dcpp_args="-fsanitize=undefined -fno-sanitize=function" \
@@ -127,7 +127,7 @@ jobs:
           CXX: clang++-18
           LDFLAGS: -fuse-ld=lld-18
         run: |
-          meson setup build \
+          meson setup build core \
             -Db_sanitize=thread \
             -Denable_cuda=false -Denable_sycl=false \
             --buildtype=debug \

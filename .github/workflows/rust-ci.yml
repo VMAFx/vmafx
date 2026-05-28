@@ -32,7 +32,7 @@ jobs:
 
       - name: Build and install libvmaf (CPU only)
         run: |
-          meson setup build-ci \
+          meson setup build-ci core \
             -Denable_cuda=false \
             -Denable_sycl=false \
             -Denable_hip=false \
