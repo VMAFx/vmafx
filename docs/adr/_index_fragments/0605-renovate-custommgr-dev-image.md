@@ -1,0 +1,1 @@
+| [ADR-0605](0605-renovate-custommgr-dev-image.md) | Renovate customManagers for all dev/Containerfile pinned dependencies | Accepted | build, container, supply-chain, renovate, cuda, sycl, hip, intel, onnx |

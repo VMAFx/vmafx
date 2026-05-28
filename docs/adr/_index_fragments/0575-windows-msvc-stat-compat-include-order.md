@@ -1,0 +1,1 @@
+| [ADR-0575](0575-windows-msvc-stat-compat-include-order.md) | Fix yuv_input.c stat compat — include-order and _MSC_VER guard | Accepted | ci, build, windows, msvc, mingw, tools, portability, bugfix, fork-local |

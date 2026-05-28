@@ -1,0 +1,1 @@
+| [ADR-0577](0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md) | vmaf-tune bisect decode concurrency cap and aggressive workdir cleanup | Accepted | vmaf-tune, compare, bisect, disk-space, concurrency, fork-local |

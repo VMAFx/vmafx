@@ -1,0 +1,1 @@
+| [ADR-0534](0534-compare-rate-quality-chart-from-bisect-samples.md) | vmaf-tune compare emits + renders rate-quality curve from per-iteration bisect samples | Accepted | vmaf-tune, compare, report, chart, ux |

@@ -1,0 +1,1 @@
+| [ADR-0548](0548-vmaf-tune-full-file-and-no-bisect.md) | vmaf-tune tune-per-shot accepts container sources directly; compare gains --no-bisect mode | Accepted | vmaf-tune, cli, ergonomics, compare, per-shot |
