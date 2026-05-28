@@ -39917,3 +39917,13 @@ Fork-local files:
 `docs/adr/0714-vmafx-operator-skeleton.md`,
 `docs/development/operator.md`,
 `changelog.d/added/vmafx-operator-skeleton.md`,
+
+---
+
+## ADR-0742 — CompileIQ kernel auto-tuning pilot v2 (2026-05-28)
+
+No rebase impact: this PR adds only documentation and ADR files (research
+digest, ADR, changelog fragment). No C/CUDA source files were modified.
+`core/src/feature/cuda/integer_vif/filter1d.cu` is unchanged. No
+`-Denable_compileiq` build option was added. Upstream syncs have no
+interaction with these doc-only files.

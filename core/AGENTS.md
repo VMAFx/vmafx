@@ -457,3 +457,12 @@ the corrected methodology.
   — `enable_avx512=true` with `enable_asm=false` issues a warning (no-op, not an error);
   — `enable_hipcc=true` with `enable_hip=false` issues a warning (no-op, not an error).
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
+
+- **No ACF file for `filter1d.cu`** (ADR-0742): The CompileIQ auto-tuning
+  pilots (PR #66, v2 2026-05-28) were abandoned because the `compileiq`
+  package on PyPI (v0.0.0a0) is an empty placeholder. No
+  `core/src/feature/cuda/integer_vif/filter1d.acf` file exists. If a future
+  CUDA toolkit bump is paired with a real CompileIQ release, the ACF must be
+  re-tuned on the new toolkit before committing — ACF files encode
+  CUDA-version-specific register/occupancy decisions. Use
+  `/profile-hotpath cuda vif` with `ncu` for immediate kernel-tuning guidance.
