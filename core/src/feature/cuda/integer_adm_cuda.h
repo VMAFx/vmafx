@@ -87,6 +87,7 @@ typedef struct AdmBufferCuda {
 
     int64_t *adm_cm[4];
     uint64_t *adm_csf_den[4];
+    int64_t *adm_aim_cm[4]; /* AIM CM accumulator slots — ADR-0746 */
     void *results_host;
 } AdmBufferCuda;
 

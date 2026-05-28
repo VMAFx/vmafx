@@ -218,24 +218,17 @@ __device__ __forceinline__ void filter1d_8_vertical_kernel(VifBufferCuda buf, ui
 }
 
 /* -------------------------------------------------------------------------
-<<<<<<< HEAD
  * 8-bit HORIZONTAL KERNEL (win #1 + ncu-driven perf ADR-0743)
-=======
- * 8-bit HORIZONTAL KERNEL (win #1)
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
  * Stages all 7 tmp channels into shared memory before the filter loop.
  * Block size: BLOCKX=128, BLOCKY=1, val_per_thread=2.
  * Tile: HORI_TILE_W elements per channel × 7 channels × 4 B.
  * For fwidth_0=17 (half_fw=8): (256+16+1)=273 × 7 × 4 = 7644 B per block.
-<<<<<<< HEAD
  * __launch_bounds__(128, 10) caps registers 56→48 on sm_89 (RTX 4090),
  * lifting theoretical occupancy 75%→83.3% (ADR-0743 perf-audit win #2).
  * Global loads in the smem-fill phase use __ldg() to route through the
  * read-only L1 cache (ADR-0743 win #3): beneficial at ≥1080p where the 7
  * tmp channels exceed L2 capacity across a frame's blocks; neutral at 576p
  * where the workload is wave-limited (0.76 waves across 128 SMs).
-=======
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
  * Both interior and border paths use smem (boundary mirror handled in load).
  * ------------------------------------------------------------------------- */
 template <int val_per_thread = 1, int fwidth_0 = 17, int fwidth_1 = 9>
@@ -289,7 +282,6 @@ filter1d_8_horizontal_kernel(VifBufferCuda buf, int w, int h, filter_table_stuct
                 img_col = 0;
             if (img_col >= w)
                 img_col = w - 1;
-<<<<<<< HEAD
             /*
              * __ldg() routes these loads through the read-only / texture L1
              * cache.  The 7 tmp channels are written exclusively by the
@@ -304,15 +296,6 @@ filter1d_8_horizontal_kernel(VifBufferCuda buf, int w, int h, filter_table_stuct
             smem_ref_dis[si] = __ldg(&buf.tmp.ref_dis[buf_row + img_col]);
             smem_ref_convol[si] = __ldg(&buf.tmp.ref_convol[buf_row + img_col]);
             smem_dis_convol[si] = __ldg(&buf.tmp.dis_convol[buf_row + img_col]);
-=======
-            smem_mu1[si] = buf.tmp.mu1[buf_row + img_col];
-            smem_mu2[si] = buf.tmp.mu2[buf_row + img_col];
-            smem_ref[si] = buf.tmp.ref[buf_row + img_col];
-            smem_dis[si] = buf.tmp.dis[buf_row + img_col];
-            smem_ref_dis[si] = buf.tmp.ref_dis[buf_row + img_col];
-            smem_ref_convol[si] = buf.tmp.ref_convol[buf_row + img_col];
-            smem_dis_convol[si] = buf.tmp.dis_convol[buf_row + img_col];
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
         }
     }
     __syncthreads();
@@ -828,7 +811,6 @@ filter1d_16_horizontal_kernel(VifBufferCuda buf, int w, int h, int32_t add_shift
                                                                        vif_filt_s0);               \
     }
 
-<<<<<<< HEAD
 /*
  * __launch_bounds__(128, 10) hint: BLOCKX=128 threads, min 10 blocks/SM.
  * On sm_89 (RTX 4090, 65536 regs/SM): floor(65536/128/10)=51-reg budget ->
@@ -841,10 +823,6 @@ filter1d_16_horizontal_kernel(VifBufferCuda buf, int w, int h, int32_t add_shift
 #define FILTER1D_8_HORI(val_per_thread, fwidth_0, fwidth_1)                                        \
     __global__ __launch_bounds__(128, 10) void                                                     \
     filter1d_8_horizontal_kernel_##val_per_thread##_##fwidth_0##_##fwidth_1(                       \
-=======
-#define FILTER1D_8_HORI(val_per_thread, fwidth_0, fwidth_1)                                        \
-    __global__ void filter1d_8_horizontal_kernel_##val_per_thread##_##fwidth_0##_##fwidth_1(       \
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
         VifBufferCuda buf, int w, int h, filter_table_stuct vif_filt_s0,                           \
         double vif_enhn_gain_limit, vif_accums *accum)                                             \
     {                                                                                              \
@@ -876,16 +854,12 @@ filter1d_16_horizontal_kernel(VifBufferCuda buf, int w, int h, int32_t add_shift
 
 extern "C" {
 // constexpr int fwidth[4] = {17, 9, 5, 3};
-<<<<<<< HEAD
 FILTER1D_8_VERT(uint32_t, 17, 9); // filter1d_8_vertical_kernel_uint32_t_17_9
 /*
  * val_per_thread=4 was evaluated (ADR-0743): smem grows 7644->14812 B/block,
  * making the 17-tap kernel smem-limited at 37.5% occupancy on sm_89 vs 83.3%
  * for vpt=2 with __launch_bounds__.  vpt=4 reverted.
  */
-=======
-FILTER1D_8_VERT(uint32_t, 17, 9);  // filter1d_8_vertical_kernel_uint32_t_17_9
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 FILTER1D_8_HORI(2, 17, 9);         // filter1d_8_horizontal_kernel_2_17_9
 FILTER1D_16_VERT(uint2, 17, 9, 0); // filter1d_16_vertical_kernel_uint2_17_9_0
 FILTER1D_16_VERT(uint2, 9, 5, 1);  // filter1d_16_vertical_kernel_uint2_9_5_1
