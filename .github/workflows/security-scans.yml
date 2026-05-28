@@ -112,7 +112,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y meson ninja-build nasm
-          meson setup build core -Denable_cuda=false -Denable_sycl=false
+          meson setup build -Denable_cuda=false -Denable_sycl=false
           meson compile -C build
       - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
         with:
