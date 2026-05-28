@@ -36,6 +36,17 @@ type EncodeParams struct {
 	// ExtraArgs are passed verbatim to ffmpeg after the encoder -c:v flag.
 	// Use sparingly; Stage-1 does not expose these to the CLI.
 	ExtraArgs []string
+
+	// ScaleWidth and ScaleHeight request resolution-aware downscaling of the
+	// source before encoding.  When both are > 0, a scale= filter is injected
+	// into the ffmpeg filter chain before any encoder-specific filters.
+	// The scaler uses the Lanczos algorithm (flags=lanczos) which produces the
+	// best perceptual quality for down-sampling, matching the Python ladder.py
+	// pre-scale behaviour (ADR-0734).
+	// When either value is 0, no scaling is applied and the source is encoded
+	// at its native resolution.
+	ScaleWidth  int
+	ScaleHeight int
 }
 
 // EncodeResult holds the outcome of a single encode.
@@ -161,10 +172,23 @@ func runEncode(src string, params EncodeParams, codec string, crfFlag string) (E
 		"-loglevel", "warning",
 		"-y",
 		"-i", src,
-		"-an",           // drop audio
+		"-an", // drop audio
+	}
+
+	// Resolution-aware downscaling (ADR-0734 Stage-3).
+	// Inject scale= filter when target resolution is specified.
+	// The scale filter uses Lanczos (flags=lanczos) for best perceptual
+	// quality on downscale, mirroring Python ladder.py pre-scale behaviour.
+	if params.ScaleWidth > 0 && params.ScaleHeight > 0 {
+		scaleFilter := fmt.Sprintf("scale=%d:%d:flags=lanczos",
+			params.ScaleWidth, params.ScaleHeight)
+		argv = append(argv, "-vf", scaleFilter)
+	}
+
+	argv = append(argv,
 		"-c:v", codec,
 		crfFlag, strconv.Itoa(params.CRF),
-	}
+	)
 	argv = append(argv, params.ExtraArgs...)
 	argv = append(argv, outPath)
 

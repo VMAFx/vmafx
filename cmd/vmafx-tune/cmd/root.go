@@ -49,13 +49,15 @@ func Execute(version string) {
 
 	root := &cobra.Command{
 		Use:   "vmafx-tune-go",
-		Short: "vmafx-tune-go — Go port of vmaf-tune (Stage 2: compare + ladder subcommands)",
-		Long: `vmafx-tune-go is the Stage-2 Go port of the vmaf-tune rate-quality
+		Short: "vmafx-tune-go — Go port of vmaf-tune (Stage 3: compare + ladder + bisect)",
+		Long: `vmafx-tune-go is the Stage-3 Go port of the vmaf-tune rate-quality
 tuning CLI. It runs alongside the Python vmaf-tune binary during the migration.
 
 Fully ported subcommands:
   compare     Rate-quality sweep: compare codecs at VMAF targets
   ladder      Per-title ABR bitrate-ladder generation from a VMAF-target sweep
+              (Stage-3: resolution-aware downscaling + --workers concurrency)
+  bisect      Binary-search a bitrate range to hit a target VMAF score
 
 Not yet ported (use 'vmaf-tune <subcommand>' for these):
   tune-per-shot, fast, corpus, report, benchmark, auto, sidecar`,
@@ -70,7 +72,10 @@ Not yet ported (use 'vmaf-tune <subcommand>' for these):
 	// Stage-2 ported subcommand.
 	root.AddCommand(newLadderCmd())
 
-	// Stage-3+ stubs: print redirect rather than silently failing.
+	// Stage-3 ported subcommands.
+	root.AddCommand(newBisectCmd())
+
+	// Stage-4+ stubs: print redirect rather than silently failing.
 	for _, stub := range []struct{ name, desc string }{
 		{"tune-per-shot", "Per-shot VMAF tuning"},
 		{"fast", "Fast NR-proxy accelerated tune"},

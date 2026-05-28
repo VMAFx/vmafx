@@ -6,6 +6,50 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## `cmd/vmafx-tune/` — vmafx-tune Go Stage 3: downscale + workers + bisect (ADR-0734)
+
+**No upstream rebase impact.** All new code lives in fork-local paths
+(`pkg/bitratesearch/`, `pkg/conformal/`, `cmd/vmafx-tune/cmd/bisect.go`)
+that have no counterpart in Netflix/vmaf.
+
+When syncing from upstream:
+
+- If Netflix/vmaf changes `tools/vmaf-tune/src/vmaftune/bisect.py` (bitrate
+  bisect logic), evaluate whether `pkg/bitratesearch/` should be updated.
+  Key divergence: Python uses a CRF bisect; Go Stage-3 adds a VBR-mode
+  bitrate-domain bisect as a complementary subcommand.
+- `pkg/encoder/EncodeParams.ScaleWidth/ScaleHeight` adds the Lanczos scale
+  filter. If a future upstream ffmpeg version changes scale filter syntax
+  (`scale=W:H:flags=lanczos`), update `runEncode` in `pkg/encoder/encoder.go`.
+- `pkg/encoder/hardware.go` `injectQSVInitChain` merges the scale filter with
+  the QSV hw-upload chain. If QSV ffmpeg flags change, this merged filter
+  string must be updated.
+- `pkg/conformal` has no upstream counterpart; stable across rebases.
+- The `pkg/ladder.Params.Workers` field and `DefaultWorkers()` function are
+  fork-local. No upstream conflicts expected.
+
+Touched files:
+`pkg/encoder/encoder.go`,
+`pkg/encoder/hardware.go`,
+`pkg/bisect/bisect.go`,
+`pkg/ladder/ladder.go`,
+`pkg/bitratesearch/bitratesearch.go`,
+`pkg/bitratesearch/bitratesearch_test.go`,
+`pkg/conformal/conformal.go`,
+`pkg/conformal/conformal_test.go`,
+`cmd/vmafx-tune/cmd/ladder.go`,
+`cmd/vmafx-tune/cmd/bisect.go`,
+`cmd/vmafx-tune/cmd/bisect_test.go`,
+`cmd/vmafx-tune/cmd/root.go`,
+`cmd/vmafx-tune/AGENTS.md`,
+`docs/adr/0734-vmafx-tune-go-stage3.md`,
+`docs/adr/README.md`,
+`docs/usage/vmafx-tune-go.md`,
+`changelog.d/added/vmafx-tune-go-stage3.md`,
+`docs/rebase-notes.md` (this entry).
+
+---
+
 ## `cmd/vmafx-tune/` — vmafx-tune Go Stage 2: `ladder` subcommand (ADR-0730)
 
 **No upstream rebase impact.** All new code lives in fork-local paths

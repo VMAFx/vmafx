@@ -110,6 +110,13 @@ type Params struct {
 	// WorkDir is the directory for temporary encode outputs. Defaults to
 	// os.TempDir().
 	WorkDir string
+
+	// ScaleWidth and ScaleHeight request resolution-aware downscaling of the
+	// source before each encode iteration (Stage-3, ADR-0734).  Passed
+	// through to encoder.EncodeParams.ScaleWidth/ScaleHeight.
+	// When either is 0, no scaling is applied.
+	ScaleWidth  int
+	ScaleHeight int
 }
 
 func (p *Params) applyDefaults(enc encoder.Encoder) {
@@ -230,9 +237,11 @@ func Run(
 		iterations++
 
 		ep := encoder.EncodeParams{
-			CRF:       mid,
-			FFmpegBin: params.FFmpegBin,
-			OutputDir: params.WorkDir,
+			CRF:         mid,
+			FFmpegBin:   params.FFmpegBin,
+			OutputDir:   params.WorkDir,
+			ScaleWidth:  params.ScaleWidth,
+			ScaleHeight: params.ScaleHeight,
 		}
 		encResult, encErr := enc.Encode(src, ep)
 		if encErr != nil {

@@ -37,6 +37,7 @@ type ladderFlags struct {
 	maxIter           int
 	maxRungs          int
 	minBitrateGapKbps float64
+	workers           int // Stage-3: concurrent grid sampling semaphore size
 }
 
 // defaultResolutions is the canonical multi-resolution ladder grid used by
@@ -63,19 +64,22 @@ frontier), and a small set of "knee" renditions is selected from the hull.
 The JSON output is a superset of the Python vmaf-tune ladder schema and is
 compatible with the existing HLS/DASH manifest renderer.
 
-Stage-2 scope (ADR-0730):
-  - Software encoders: libx264, libx265 (and hardware encoders when present).
-  - Default resolution grid: 320x240 through 1920x1080.
-  - JSON and Markdown output formats.
+Stage-3 additions (ADR-0734):
+  - Resolution-aware downscaling: the source is scaled to each rendition
+    resolution before encoding using a Lanczos filter, so VMAF is measured
+    at the correct playback resolution.
+  - Concurrent grid sampling: --workers N runs up to N encoder/scorer pairs
+    in parallel (default: NumCPU/2, clamped to [1,8]).
 
-Hardware encoders (h264_nvenc, h264_qsv, h264_amf, etc.) from Stage-2 are
-supported when available; pass the codec name via --codec.
+Hardware encoders (h264_nvenc, h264_qsv, h264_amf, etc.) are supported
+when available; pass the codec name via --codec.
 
 Example:
   vmafx-tune-go ladder \
     --reference src.mp4 \
     --codec libx264 \
     --targets 75,85,95 \
+    --workers 4 \
     --output ladder.json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLadder(flags)
@@ -110,6 +114,8 @@ Example:
 		"Maximum renditions to select from the convex hull")
 	cmd.Flags().Float64Var(&flags.minBitrateGapKbps, "min-bitrate-gap", ladder.DefaultMinBitrateGapKbps,
 		"Minimum bitrate gap between adjacent renditions (kbps)")
+	cmd.Flags().IntVar(&flags.workers, "workers", 0,
+		"Concurrent grid-sampling goroutines (0 = NumCPU/2 clamped to [1,8])")
 
 	_ = cmd.MarkFlagRequired("reference")
 
@@ -181,22 +187,27 @@ func runLadder(flags *ladderFlags) error {
 
 	// Build the sampler: wires bisect.Run for each (resolution, target) cell.
 	// The closure captures enc, scoreFunc, and bisect params.
+	//
+	// Stage-3 (ADR-0734): the sampler injects ScaleWidth/ScaleHeight into
+	// EncodeParams so the source is downscaled to each rendition resolution
+	// before encoding.  VMAF is therefore measured at the actual playback
+	// resolution rather than at the native source resolution (Stage-2
+	// behaviour).  The scale filter uses Lanczos (flags=lanczos) via
+	// pkg/encoder.EncodeParams.ScaleWidth/ScaleHeight.
 	sampler := func(src, codecName string, width, height int, targetVMAF float64) (ladder.Point, error) {
 		bisectParams := bisect.Params{
-			TargetVMAF: targetVMAF,
-			MaxIter:    flags.maxIter,
-			FFmpegBin:  flags.ffmpegBin,
-			WorkDir:    flags.workDir,
+			TargetVMAF:  targetVMAF,
+			MaxIter:     flags.maxIter,
+			FFmpegBin:   flags.ffmpegBin,
+			WorkDir:     flags.workDir,
+			ScaleWidth:  width,
+			ScaleHeight: height,
 		}
 		if flags.crfLo > 0 || flags.crfHi > 0 {
 			bisectParams.CRFLo = flags.crfLo
 			bisectParams.CRFHi = flags.crfHi
 		}
 
-		// The bisect operates on the source as supplied. Resolution-aware
-		// scaling (e.g. downscale + encode) is Stage-3 scope; Stage-2
-		// bisects at the native source resolution and tags the point with
-		// the requested rendition resolution for hull/rendition tracking.
 		bisectResult, bisectErr := bisect.Run(src, enc, scoreFunc, bisectParams)
 		if bisectErr != nil {
 			return ladder.Point{}, bisectErr
@@ -224,6 +235,7 @@ func runLadder(flags *ladderFlags) error {
 		Sampler:           sampler,
 		MaxRungs:          flags.maxRungs,
 		MinBitrateGapKbps: flags.minBitrateGapKbps,
+		Workers:           flags.workers,
 	})
 	wallTimeMS := float64(time.Since(t0).Milliseconds())
 	if buildErr != nil {

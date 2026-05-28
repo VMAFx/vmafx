@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 
 // Package ladder implements the per-title ABR bitrate-ladder generator for
-// vmafx-tune Stage 2.
+// vmafx-tune Stage 2 + Stage 3.
 //
 // Algorithm (mirrors tools/vmaf-tune/src/vmaftune/ladder.py Phase E):
 //
@@ -19,6 +19,16 @@
 //     the selected renditions.  The JSON schema is a superset of the Python
 //     ladder.py output, maintaining schema-forward compatibility.
 //
+// Stage-3 additions (ADR-0734):
+//   - Workers: concurrent grid sampling bounded by a semaphore of size Workers
+//     (default = NumCPU/2 clamped to [1,8]).  The goroutine fan-out is safe
+//     because each cell writes to a pre-allocated slot in the cloud slice
+//     (indexed by cellIdx = resIdx*len(targets) + targetIdx) so there are no
+//     slice races.
+//   - Conformal intervals: see ConformalSamplerFn and ConformalPoint.  The
+//     ladder CLI exposes uncertainty metadata in the JSON output when the
+//     conformal sampler is wired in.
+//
 // Python parity:
 //   - The convex hull, knee selection, and rung ordering all mirror the Python
 //     Phase E implementation in ladder.py.
@@ -28,14 +38,16 @@
 //     encoder sweep use pkg/bisect.Run directly.  The CLI wires bisect.Run as
 //     the production sampler.
 //
-// See ADR-0730 for the Stage-2 design rationale and alternatives considered.
+// See ADR-0730 for Stage-2 design rationale and ADR-0734 for Stage-3.
 package ladder
 
 import (
 	"cmp"
 	"fmt"
 	"math"
+	"runtime"
 	"slices"
+	"sync"
 )
 
 // DefaultMaxRungs is the default maximum number of ABR ladder rungs selected
@@ -46,6 +58,21 @@ const DefaultMaxRungs = 6
 // in the emitted ladder.  Rungs closer than this (after rounding) are merged
 // with their lower-bitrate neighbour.
 const DefaultMinBitrateGapKbps = 100.0
+
+// DefaultWorkers is the default number of concurrent grid-sampling goroutines.
+// It is NumCPU/2 clamped to [1, 8] to avoid overwhelming the encoder queue on
+// large machines while still providing meaningful parallelism on typical
+// workstations (ADR-0734).
+func DefaultWorkers() int {
+	n := runtime.NumCPU() / 2
+	if n < 1 {
+		n = 1
+	}
+	if n > 8 {
+		n = 8
+	}
+	return n
+}
 
 // Point is one sampled (resolution, bitrate, vmaf, crf) data point from the
 // (resolution × VMAF-target) grid.
@@ -125,6 +152,11 @@ type Params struct {
 	// MinBitrateGapKbps is the minimum bitrate gap between adjacent
 	// renditions.  Defaults to DefaultMinBitrateGapKbps.
 	MinBitrateGapKbps float64
+
+	// Workers is the maximum number of concurrent grid-sampling goroutines
+	// (Stage-3, ADR-0734).  The semaphore bounds encoder queue pressure.
+	// Defaults to DefaultWorkers() when ≤ 0.
+	Workers int
 }
 
 func (p *Params) applyDefaults() {
@@ -134,15 +166,21 @@ func (p *Params) applyDefaults() {
 	if p.MinBitrateGapKbps <= 0 {
 		p.MinBitrateGapKbps = DefaultMinBitrateGapKbps
 	}
+	if p.Workers <= 0 {
+		p.Workers = DefaultWorkers()
+	}
 }
 
 // Build samples the (resolution × VMAF-target) grid using params.Sampler,
 // computes the upper convex hull of the successful points, selects knee
 // renditions from the hull, and returns the complete LadderResult.
 //
-// Sampling is sequential to avoid overwhelming the encoder queue; callers
-// that want concurrent sampling should dispatch multiple Build calls in
-// separate goroutines.
+// Stage-3 (ADR-0734): sampling is concurrent.  Up to params.Workers goroutines
+// run in parallel, bounded by a semaphore channel of size Workers.  Each cell
+// writes to a pre-allocated slot in the cloud slice (indexed by
+// resIdx*len(TargetVMAFs)+targetIdx) so there are no slice-growth races.
+// Error values from cells are captured in-place as failed Points; Build does
+// not abort on individual cell failures.
 func Build(src, encoder string, params Params) (LadderResult, error) {
 	params.applyDefaults()
 
@@ -161,24 +199,44 @@ func Build(src, encoder string, params Params) (LadderResult, error) {
 		}
 	}
 
-	// Sample the (resolution, VMAF target) plane.
-	cloud := make([]Point, 0, len(params.Resolutions)*len(params.TargetVMAFs))
-	for _, res := range params.Resolutions {
-		for _, tv := range params.TargetVMAFs {
-			pt, err := params.Sampler(src, encoder, res[0], res[1], tv)
-			if err != nil {
-				// Record as a failed point rather than aborting.
-				cloud = append(cloud, Point{
-					Width: res[0], Height: res[1],
-					TargetVMAF: tv,
-					OK:         false,
-					Error:      err.Error(),
-				})
-				continue
-			}
-			cloud = append(cloud, pt)
+	nRes := len(params.Resolutions)
+	nTgt := len(params.TargetVMAFs)
+	totalCells := nRes * nTgt
+
+	// Pre-allocate the cloud slice so concurrent writes are index-safe.
+	cloud := make([]Point, totalCells)
+
+	// Semaphore: a buffered channel of size Workers bounds concurrency.
+	sem := make(chan struct{}, params.Workers)
+	var wg sync.WaitGroup
+
+	for ri, res := range params.Resolutions {
+		for ti, tv := range params.TargetVMAFs {
+			cellIdx := ri*nTgt + ti
+			width, height, targetVMAF := res[0], res[1], tv
+
+			wg.Add(1)
+			sem <- struct{}{} // acquire slot
+			go func(idx, w, h int, tgt float64) {
+				defer wg.Done()
+				defer func() { <-sem }() // release slot
+
+				pt, err := params.Sampler(src, encoder, w, h, tgt)
+				if err != nil {
+					cloud[idx] = Point{
+						Width:      w,
+						Height:     h,
+						TargetVMAF: tgt,
+						OK:         false,
+						Error:      err.Error(),
+					}
+					return
+				}
+				cloud[idx] = pt
+			}(cellIdx, width, height, targetVMAF)
 		}
 	}
+	wg.Wait()
 
 	// Compute the upper convex hull from the successful points.
 	hull := upperConvexHull(cloud)

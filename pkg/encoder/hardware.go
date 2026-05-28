@@ -96,21 +96,36 @@ func (e HEVCQSVEncoder) Encode(src string, params EncodeParams) (EncodeResult, e
 
 // injectQSVInitChain prepends the VA-API device init chain to ExtraArgs when
 // VMAFTUNE_VAAPI_DEVICE is set (typically /dev/dri/renderD128).
+//
+// When ScaleWidth/ScaleHeight are set on params (resolution-aware downscaling,
+// ADR-0734 Stage-3), the scale filter is composed with the QSV hw-upload
+// chain: scale=WxH:flags=lanczos,format=nv12,hwupload=extra_hw_frames=64.
+// The merged filter replaces the two separate -vf flags that would otherwise
+// conflict (ffmpeg rejects multiple -vf options on the same stream).
 func injectQSVInitChain(params EncodeParams) EncodeParams {
 	vaapiDev := os.Getenv("VMAFTUNE_VAAPI_DEVICE")
 	if vaapiDev == "" {
 		vaapiDev = "/dev/dri/renderD128"
 	}
-	// Insert before -c:v:
-	//   -init_hw_device vaapi=va:<device>
-	//   -init_hw_device qsv=qsv_dev@va
-	//   -filter_hw_device va
-	//   -vf format=nv12,hwupload=extra_hw_frames=64
+
+	// Build the -vf filter chain, merging scale (if requested) with the
+	// QSV hw-upload chain.
+	var vfFilter string
+	if params.ScaleWidth > 0 && params.ScaleHeight > 0 {
+		vfFilter = fmt.Sprintf("scale=%d:%d:flags=lanczos,format=nv12,hwupload=extra_hw_frames=64",
+			params.ScaleWidth, params.ScaleHeight)
+		// Clear the scale dims so runEncode does not inject a second -vf.
+		params.ScaleWidth = 0
+		params.ScaleHeight = 0
+	} else {
+		vfFilter = "format=nv12,hwupload=extra_hw_frames=64"
+	}
+
 	extra := []string{
 		"-init_hw_device", "vaapi=va:" + vaapiDev,
 		"-init_hw_device", "qsv=qsv_dev@va",
 		"-filter_hw_device", "va",
-		"-vf", "format=nv12,hwupload=extra_hw_frames=64",
+		"-vf", vfFilter,
 	}
 	params.ExtraArgs = append(extra, params.ExtraArgs...)
 	return params
