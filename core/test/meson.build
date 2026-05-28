@@ -2,6 +2,11 @@ if not get_option('enable_tests')
     subdir_done()
 endif
 
+# ADR-0707: rust_tad_dep is available here (defined in src/meson.build via
+# subdir('src') before subdir('test')). Only test_tad_rust uses it directly —
+# other tests link against libvmaf.so (shared) which already carries the Rust
+# archive, so no further propagation is needed.
+
 test_inc = include_directories('.')
 
 # Aggregate of all GPU/compute backend dependency objects so test
@@ -1153,3 +1158,13 @@ test('test_locale_handling', test_locale_handling, suite : ['fast'])
 
 subdir('dnn')
 subdir('fuzz')
+
+# Only wired in when enable_rust_features=true (same gate as the extractor).
+if is_rust_enabled
+    test_tad_rust = executable('test_tad_rust',
+        ['test.c', 'test_tad_rust.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    )
+    test('test_tad_rust', test_tad_rust, suite : ['fast'])
+endif

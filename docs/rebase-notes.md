@@ -39725,3 +39725,36 @@ Touched files:
 `changelog.d/changed/0708-cpp23-internals-pilot.md`,
 `docs/state.md` (this entry),
 `docs/rebase-notes.md` (this entry).
+## ADR-0707 — TAD Rust pilot (cbindgen integration) — 2026-05-28
+- **ADR**: [ADR-0707](adr/0707-vmafx-rust-pilot-feature.md).
+- **Upstream source**: fork-local. Netflix/vmaf has no Rust feature extractors.
+- **Branch**: `feat/tad-rust-pilot`
+
+**Key rebase invariants**:
+1. `core/src/feature/feature_extractor.c` gains `#if HAVE_RUST_TAD` guards around
+   the `vmaf_fex_tad` extern and list entry. On upstream sync, ensure these guards
+   are preserved; do not merge the upstream version of this file without re-applying
+   the guards.
+2. `core/src/meson.build` has a `cargo build --release` custom_target and a
+   `declare_dependency` for the Rust archive. These are entirely fork-local additions;
+   upstream's meson.build will not have them. The additions appear after the
+   `libvmaf_feature_sources` list and before the `libvmaf = library()` call.
+3. `tad_rust.c` is compiled as a DIRECT source of the `libvmaf` library target
+   (not into `libvmaf_feature.a`). This is an intentional architectural choice;
+   do not move it into `libvmaf_feature_sources` on rebase.
+4. `Cargo.toml` at the repo root is the workspace manifest. Upstream will never
+   have this file; no merge conflict expected.
+5. The `enable_rust_features` meson option in `core/meson_options.txt` is
+   fork-local; preserve on upstream merges.
+`Cargo.toml` (repo root, new),
+`core/meson_options.txt`,
+`core/src/meson.build`,
+`core/src/feature/feature_extractor.c`,
+`core/src/feature/tad_rust.c` (new),
+`core/src/feature/rust/tad/` (new crate directory),
+`core/test/meson.build`,
+`core/test/test_tad_rust.c` (new),
+`docs/adr/0707-vmafx-rust-pilot-feature.md`,
+`docs/metrics/tad.md`,
+`changelog.d/added/tad-rust-pilot.md`,
+
