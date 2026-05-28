@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// Copyright 2026 Lusoris
+//
+// proto/vmafx.proto — VMAFX gRPC service definition.
+//
+// Generated Go stubs live under gen/go/vmafx/ and are vendored in-tree.
+// Regenerate with:  buf generate   (requires buf ≥ v1.30)
+//
+// ADR-0703: vmafx-server Go gRPC + HTTP service.
+
+syntax = "proto3";
+
+package vmafx.v1;
+
+option go_package = "github.com/vmafx/vmafx/gen/go/vmafx/v1;vmafxv1";
+
+// VmafxScoring is the primary scoring service.
+service VmafxScoring {
+  // Score computes VMAF and per-feature scores for a reference/distorted pair.
+  rpc Score(ScoreRequest) returns (ScoreResponse);
+  // Health returns server liveness status.
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// ScoreRequest carries the paths to the reference and distorted video files.
+message ScoreRequest {
+  // Absolute path to the reference YUV / Y4M / video file.
+  string reference = 1;
+  // Absolute path to the distorted YUV / Y4M / video file.
+  string distorted = 2;
+  // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
+  string model = 3;
+}
+
+// ScoreResponse carries the aggregate VMAF score and per-feature values.
+message ScoreResponse {
+  // Aggregate VMAF score (e.g. 76.6683).
+  double score = 1;
+  // Per-feature scores keyed by feature name.
+  map<string, double> features = 2;
+}
+
+// HealthRequest is intentionally empty — reserved for future extensions.
+message HealthRequest {}
+
+// HealthResponse indicates liveness and readiness.
+message HealthResponse {
+  // ok is true when the service is live and ready to accept requests.
+  bool ok = 1;
+  // message provides a human-readable status note.
+  string message = 2;
+}

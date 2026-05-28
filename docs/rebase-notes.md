@@ -3,6 +3,44 @@
 Single ledger of fork-local changes that need attention when this fork
 syncs from `upstream/master` (Netflix/vmaf). Required by
 [ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local
+
+---
+
+## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
+
+**no rebase impact** on upstream C/Python code: the Go server is entirely
+fork-local (`cmd/`, `pkg/`, `gen/`, `proto/`, `go.mod`, `go.sum`,
+`Dockerfile.go-server`, `buf.gen.yaml`). None of these paths overlap with
+Netflix/vmaf upstream.
+
+If a future upstream sync touches `model/` (model JSON schema changes) or
+`core/include/libvmaf/libvmaf.h` (public ABI), review:
+- `pkg/libvmaf/libvmaf.go` — the cgo `#include` and JSON parsing in `parseOutput`.
+- The `ScoreResponse.features` map keys (derived from `pooled_metrics` keys in
+  the vmaf CLI JSON output; key names are stable but new keys may appear).
+
+Touched files:
+`cmd/vmafx-server/main.go`,
+`cmd/vmafx-server/grpc_server.go`,
+`cmd/vmafx-server/http_server.go`,
+`cmd/vmafx-server/main_test.go`,
+`pkg/libvmaf/libvmaf.go`,
+`pkg/libvmaf/libvmaf_test.go`,
+`pkg/observability/observability.go`,
+`proto/vmafx.proto`,
+`proto/buf.yaml`,
+`buf.gen.yaml`,
+`gen/go/vmafx.pb.go`,
+`gen/go/vmafx_grpc.pb.go`,
+`go.mod`, `go.sum`,
+`Dockerfile.go-server`,
+`docs/server/grpc.md`,
+`docs/adr/0703-vmafx-server-go-grpc.md`,
+`changelog.d/added/vmafx-server-go.md`,
+`docs/state.md`,
+`deploy/helm/vmafx/values.yaml` (image repository update).
+
+---
 PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
