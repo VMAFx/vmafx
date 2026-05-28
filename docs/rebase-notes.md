@@ -7,6 +7,14 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## chore/post-cutover-url-sweep — fork-only URL change, no Netflix conflict
+
+**No upstream rebase impact**: this change replaces all occurrences of the
+`lusoris/vmaf` GitHub repository slug with `VMAFx/vmafx` following the GitHub
+org cutover. All affected strings are fork-local (CI workflow URLs, GHCR image
+paths, ADR cross-references, doc URLs). Netflix/vmaf upstream does not contain
+any of these references. Cherry-picks from upstream are unaffected.
+
 ## refactor/vmafx-repo-layout (ADR-0700) — IMPORTANT: breaks all in-flight PRs
 
 **Upstream sync strategy**: upstream Netflix/vmaf patches arrive with
@@ -4653,7 +4661,7 @@ inline.*
   Coverage Gate / etc.). Required-status-check contexts in `master`
   branch protection are bound to job-level names — when renaming any
   job, re-pin via
-  `gh api --method PUT repos/lusoris/vmaf/branches/master/protection`.
+  `gh api --method PUT repos/VMAFx/vmafx/branches/master/protection`.
   The 19 required gates' *semantics* are unchanged from
   [ADR-0037](adr/0037-master-branch-protection.md); only their display
   strings move.
@@ -4716,7 +4724,7 @@ inline.*
   because Homebrew ORT floats. Re-pin command:
 
   ```bash
-  gh api --method PUT repos/lusoris/vmaf/branches/master/protection \
+  gh api --method PUT repos/VMAFx/vmafx/branches/master/protection \
       --input /tmp/protection-update.json
   ```
 
@@ -5266,7 +5274,7 @@ inline.*
   21 → 23. Re-pin via:
 
   ```bash
-  gh api --method PUT repos/lusoris/vmaf/branches/master/protection \
+  gh api --method PUT repos/VMAFx/vmafx/branches/master/protection \
       --input /tmp/protection-update.json
   ```
 
@@ -9570,7 +9578,7 @@ inline.*
         .github/workflows/scorecard.yml | head -1 | cut -d@ -f2)
   gh api "/repos/github/codeql-action/commits/$pin" --jq '.sha'
   # Then watch the next master push for a green Scorecard run:
-  gh run list --workflow scorecard --repo lusoris/vmaf --limit 1
+  gh run list --workflow scorecard --repo VMAFx/vmafx --limit 1
 ### 0228 — U-2-Net `u2netp` saliency replacement deferred (ADR-0265)
 
 - **Touches**: docs-only.
@@ -11140,7 +11148,7 @@ inline.*
   from the original ADR-0313 body which had the wrong verb):
   ```bash
   echo '{"strict": false, "contexts": ["Required Checks Aggregator"]}' | \
-    gh api -X PATCH "repos/lusoris/vmaf/branches/master/protection/required_status_checks" --input -
+    gh api -X PATCH "repos/VMAFx/vmafx/branches/master/protection/required_status_checks" --input -
   ```
 - **Re-test on rebase**:
   ```bash
@@ -15123,7 +15131,7 @@ inline.*
   Coverage Gate / etc.). Required-status-check contexts in `master`
   branch protection are bound to job-level names — when renaming any
   job, re-pin via
-  `gh api --method PUT repos/lusoris/vmaf/branches/master/protection`.
+  `gh api --method PUT repos/VMAFx/vmafx/branches/master/protection`.
   The 19 required gates' *semantics* are unchanged from
   [ADR-0037](adr/0037-master-branch-protection.md); only their display
   strings move.
@@ -15186,7 +15194,7 @@ inline.*
   because Homebrew ORT floats. Re-pin command:
 
   ```bash
-  gh api --method PUT repos/lusoris/vmaf/branches/master/protection \
+  gh api --method PUT repos/VMAFx/vmafx/branches/master/protection \
       --input /tmp/protection-update.json
   ```
 
@@ -15735,7 +15743,7 @@ inline.*
   21 → 23. Re-pin via:
 
   ```bash
-  gh api --method PUT repos/lusoris/vmaf/branches/master/protection \
+  gh api --method PUT repos/VMAFx/vmafx/branches/master/protection \
       --input /tmp/protection-update.json
   ```
 
@@ -20054,7 +20062,7 @@ inline.*
         .github/workflows/scorecard.yml | head -1 | cut -d@ -f2)
   gh api "/repos/github/codeql-action/commits/$pin" --jq '.sha'
   # Then watch the next master push for a green Scorecard run:
-  gh run list --workflow scorecard --repo lusoris/vmaf --limit 1
+  gh run list --workflow scorecard --repo VMAFx/vmafx --limit 1
 ### 0228 — U-2-Net `u2netp` saliency replacement deferred (ADR-0265)
 
 - **Touches**: docs-only.
@@ -21641,7 +21649,7 @@ inline.*
 
   ```bash
   echo '{"strict": false, "contexts": ["Required Checks Aggregator"]}' | \
-    gh api -X PATCH "repos/lusoris/vmaf/branches/master/protection/required_status_checks" --input -
+    gh api -X PATCH "repos/VMAFx/vmafx/branches/master/protection/required_status_checks" --input -
   ```
 
 - **Re-test on rebase**:
@@ -25483,7 +25491,7 @@ inline.*
   Coverage Gate / etc.). Required-status-check contexts in `master`
   branch protection are bound to job-level names — when renaming any
   job, re-pin via
-  `gh api --method PUT repos/lusoris/vmaf/branches/master/protection`.
+  `gh api --method PUT repos/VMAFx/vmafx/branches/master/protection`.
   The 19 required gates' *semantics* are unchanged from
   [ADR-0037](adr/0037-master-branch-protection.md); only their display
   strings move.
@@ -25546,7 +25554,7 @@ inline.*
   because Homebrew ORT floats. Re-pin command:
 
   ```bash
-  gh api --method PUT repos/lusoris/vmaf/branches/master/protection \
+  gh api --method PUT repos/VMAFx/vmafx/branches/master/protection \
       --input /tmp/protection-update.json
   ```
 
@@ -26095,7 +26103,7 @@ inline.*
   21 → 23. Re-pin via:
 
   ```bash
-  gh api --method PUT repos/lusoris/vmaf/branches/master/protection \
+  gh api --method PUT repos/VMAFx/vmafx/branches/master/protection \
       --input /tmp/protection-update.json
   ```
 
@@ -28069,7 +28077,7 @@ inline.*
 - **Upstream source**: fork-local. Netflix/vmaf has no tiny-AI training
   harness or MCP server.
 - **Touches**:
-  - [`ai/`](https://github.com/lusoris/vmaf/tree/master/ai) — training harness; `NflxLocalDataset` loader reads
+  - [`ai/`](https://github.com/VMAFx/vmafx/tree/master/ai) — training harness; `NflxLocalDataset` loader reads
     from `--data-root` (never from a hardcoded path).
   - [`docs/ai/training-data.md`](ai/training-data.md) — corpus path
     convention and loader API docs; purely additive.
@@ -29018,13 +29026,13 @@ inline.*
 - **Upstream source**: fork-local. Netflix/vmaf has no equivalent
   training surface.
 - **Touches**:
-  - [`ai/data/`](https://github.com/lusoris/vmaf/tree/master/ai/data) — Netflix loader, libvmaf-CLI feature
+  - [`ai/data/`](https://github.com/VMAFx/vmafx/tree/master/ai/data) — Netflix loader, libvmaf-CLI feature
     extractor, distillation scoring.
-  - [`ai/train/`](https://github.com/lusoris/vmaf/tree/master/ai/train) — PyTorch dataset, eval harness,
+  - [`ai/train/`](https://github.com/VMAFx/vmafx/tree/master/ai/train) — PyTorch dataset, eval harness,
     Lightning-style training entry point.
-  - [`ai/scripts/run_training.sh`](https://github.com/lusoris/vmaf/blob/master/ai/scripts/run_training.sh) —
+  - [`ai/scripts/run_training.sh`](https://github.com/VMAFx/vmafx/blob/master/ai/scripts/run_training.sh) —
     convenience wrapper.
-  - [`ai/tests/`](https://github.com/lusoris/vmaf/tree/master/ai/tests) — five new pytest modules
+  - [`ai/tests/`](https://github.com/VMAFx/vmafx/tree/master/ai/tests) — five new pytest modules
     (`test_netflix_loader.py`, `test_dataset.py`, `test_eval.py`,
     `test_train_smoke.py`, plus `conftest.py`).
   - [`docs/ai/training.md`](ai/training.md) — new "C1 (Netflix
@@ -30374,7 +30382,7 @@ inline.*
         .github/workflows/scorecard.yml | head -1 | cut -d@ -f2)
   gh api "/repos/github/codeql-action/commits/$pin" --jq '.sha'
   # Then watch the next master push for a green Scorecard run:
-  gh run list --workflow scorecard --repo lusoris/vmaf --limit 1
+  gh run list --workflow scorecard --repo VMAFx/vmafx --limit 1
 ### 0228 — U-2-Net `u2netp` saliency replacement deferred (ADR-0265)
 
 - **Touches**: docs-only.
@@ -31986,7 +31994,7 @@ inline.*
 
   ```bash
   echo '{"strict": false, "contexts": ["Required Checks Aggregator"]}' | \
-    gh api -X PATCH "repos/lusoris/vmaf/branches/master/protection/required_status_checks" --input -
+    gh api -X PATCH "repos/VMAFx/vmafx/branches/master/protection/required_status_checks" --input -
   ```
 
 - **Re-test on rebase**:

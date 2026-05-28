@@ -339,7 +339,7 @@ int  vmaf_sycl_import_d3d11_surface (VmafSyclState *state, void *d3d11_device,
   definitions). The Doxygen block describes an intended host-roundtrip
   design — staging texture → CPU map → H2D memcpy — but no translation
   unit provides the symbol today. Tracked as
-  [issue #27](https://github.com/lusoris/vmaf/issues/27). On Windows,
+  [issue #27](https://github.com/VMAFx/vmafx/issues/27). On Windows,
   use `vmaf_sycl_upload_plane` for a host → USM fallback.
 
 See [ADR-0016](../adr/0016-sycl-to-master-merge-conflict-policy.md) for how
@@ -381,7 +381,7 @@ the enable/disable pair to gate which frame ranges get timed.
   their own backend via `sycl::queue::get_backend()` up front and fall
   back to `vmaf_sycl_upload_plane` without relying on the log text.
 - `vmaf_sycl_import_d3d11_surface` is **declared but unimplemented**
-  (ghost symbol — see [issue #27](https://github.com/lusoris/vmaf/issues/27)).
+  (ghost symbol — see [issue #27](https://github.com/VMAFx/vmafx/issues/27)).
   Windows callers must use `vmaf_sycl_upload_plane` today.
 - `vmaf_sycl_init_frame_buffers` is single-resolution. Changing `w`/`h`/`bpc`
   mid-stream requires `vmaf_close` + re-init.

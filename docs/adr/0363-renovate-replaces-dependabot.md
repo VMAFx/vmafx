@@ -75,4 +75,4 @@ per the fork's SHA-pin invariant (ADR-0263 / `.github/AGENTS.md`).
 - ADR-0263: OSSF Scorecard policy (SHA-pin requirement)
 - `.github/AGENTS.md`: SHA-pin invariant + resolution recipe
 - Operator playbook: [`docs/development/dependency-bot.md`](../../docs/development/dependency-bot.md)
-- req: "Add Mend Renovate (self-hosted via GitHub Actions) to lusoris/vmaf as the dependency-update bot, replacing Dependabot."
+- req: "Add Mend Renovate (self-hosted via GitHub Actions) to VMAFx/vmafx as the dependency-update bot, replacing Dependabot."

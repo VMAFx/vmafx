@@ -165,4 +165,4 @@ existing `compare` / `recommend-saliency` / `predict` / `tune-per-shot`
   search; complementary, not a replacement.
 - [Research-0090 — Phase B bisect feasibility](../research/0090-vmaf-tune-phase-b-bisect-feasibility.md).
 - Source: `req` (direct user instruction in this session: "Implement
-  vmaf-tune Phase B (target-VMAF bisect) in the lusoris/vmaf fork").
+  vmaf-tune Phase B (target-VMAF bisect) in the VMAFx/vmafx fork").

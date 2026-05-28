@@ -11,11 +11,11 @@
 #   vulkan     — adds Vulkan runtime ICD loader (libvulkan.so + lavapipe ICD JSON)
 #
 # Tag matrix (built by CI):
-#   ghcr.io/lusoris/vmafx:<tag>          (cpu default, same as Dockerfile.production)
-#   ghcr.io/lusoris/vmafx:<tag>-cuda12
-#   ghcr.io/lusoris/vmafx:<tag>-rocm6
-#   ghcr.io/lusoris/vmafx:<tag>-oneapi2026
-#   ghcr.io/lusoris/vmafx:<tag>-vulkan
+#   ghcr.io/vmafx/vmafx:<tag>          (cpu default, same as Dockerfile.production)
+#   ghcr.io/vmafx/vmafx:<tag>-cuda12
+#   ghcr.io/vmafx/vmafx:<tag>-rocm6
+#   ghcr.io/vmafx/vmafx:<tag>-oneapi2026
+#   ghcr.io/vmafx/vmafx:<tag>-vulkan
 #
 # ADR-0698: vmafx-production-dockerfile
 
@@ -164,7 +164,7 @@ FROM gcr.io/distroless/cc-debian12@sha256:aa0b7af67fa8211751ea6e00baa8373ba56cc1
 
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production GPU runtime"
-LABEL org.opencontainers.image.source="https://github.com/lusoris/vmaf"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 

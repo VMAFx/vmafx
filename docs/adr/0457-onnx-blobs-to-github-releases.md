@@ -103,7 +103,7 @@ two timelines never collide; tooling that filters by tag prefix
 
 ## References
 
-- [PR #846](https://github.com/lusoris/vmaf/pull/846) — preceding
+- [PR #846](https://github.com/VMAFx/vmafx/pull/846) — preceding
   LFS revert that motivated the blob-storage retry.
 - [`scripts/ai/fetch-tiny-blobs.sh`](../../scripts/ai/fetch-tiny-blobs.sh)
   — the fetcher implementation.

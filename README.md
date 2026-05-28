@@ -1,13 +1,13 @@
 # VMAF — Lusoris Fork
 
-[![Tests & Quality Gates](https://github.com/lusoris/vmaf/actions/workflows/tests-and-quality-gates.yml/badge.svg)](https://github.com/lusoris/vmaf/actions/workflows/tests-and-quality-gates.yml)
-[![Lint & Format](https://github.com/lusoris/vmaf/actions/workflows/lint-and-format.yml/badge.svg)](https://github.com/lusoris/vmaf/actions/workflows/lint-and-format.yml)
-[![Security Scans](https://github.com/lusoris/vmaf/actions/workflows/security-scans.yml/badge.svg)](https://github.com/lusoris/vmaf/actions/workflows/security-scans.yml)
-[![libvmaf Build Matrix](https://github.com/lusoris/vmaf/actions/workflows/libvmaf-build-matrix.yml/badge.svg)](https://github.com/lusoris/vmaf/actions/workflows/libvmaf-build-matrix.yml)
-[![FFmpeg Integration](https://github.com/lusoris/vmaf/actions/workflows/ffmpeg-integration.yml/badge.svg)](https://github.com/lusoris/vmaf/actions/workflows/ffmpeg-integration.yml)
+[![Tests & Quality Gates](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
+[![Lint & Format](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
+[![Security Scans](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
+[![libvmaf Build Matrix](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
+[![FFmpeg Integration](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
 [![License: BSD-3-Clause+Patent](https://img.shields.io/badge/License-BSD--3--Clause--Plus--Patent-blue.svg)](LICENSE)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/lusoris/vmaf/badge)](https://securityscorecards.dev/viewer/?uri=github.com/lusoris/vmaf)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/VMAFx/vmafx/badge)](https://securityscorecards.dev/viewer/?uri=github.com/VMAFx/vmafx)
 [![ko-fi](https://img.shields.io/badge/ko--fi-support%20lusoris-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/lusoris)
 
 **A GPU-accelerated, full-precision, signed-release fork of

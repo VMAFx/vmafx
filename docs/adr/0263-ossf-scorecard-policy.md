@@ -10,7 +10,7 @@
 The fork ships `.github/workflows/scorecard.yml` (OpenSSF Scorecard
 v2.4.3, scorecard CLI v5.3.0), which scans the repository on every
 push to `master` and on a weekly cron. Results are published to the
-public dashboard at `scorecard.dev/viewer/?uri=github.com/lusoris/vmaf`
+public dashboard at `scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx`
 and uploaded as SARIF to the GitHub Security tab.
 
 For an extended period the workflow has been red on every run.
@@ -116,7 +116,7 @@ The fork adopts the following OSSF Scorecard policy:
     seconds instead of restarting the investigation.
   - The follow-up queue is concrete and prioritised; nothing falls
     through the cracks because of "we'll get to it eventually".
-  - The dashboard at `scorecard.dev/viewer/?uri=github.com/lusoris/vmaf`
+  - The dashboard at `scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx`
     starts publishing fresh results again (the 400-error path was
     skipping publish on every recent run, so the live page was
     stale).
@@ -145,4 +145,4 @@ The fork adopts the following OSSF Scorecard policy:
 - Scorecard action workflow restrictions (imposter-commit detection):
   <https://github.com/ossf/scorecard-action#workflow-restrictions>
 - Public dashboard:
-  <https://scorecard.dev/viewer/?uri=github.com/lusoris/vmaf>
+  <https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx>

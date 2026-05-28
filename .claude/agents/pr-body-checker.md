@@ -41,8 +41,8 @@ the legacy single `CHANGELOG.md`); same for "Rebase note" →
 ## How to invoke
 
 ```bash
-gh pr view <num> --repo lusoris/vmaf --json body -q .body \
-  | PR_BODY="$(gh pr view <num> --repo lusoris/vmaf --json body -q .body)" \
+gh pr view <num> --repo VMAFx/vmafx --json body -q .body \
+  | PR_BODY="$(gh pr view <num> --repo VMAFx/vmafx --json body -q .body)" \
     bash scripts/ci/validate-pr-body.sh
 ```
 

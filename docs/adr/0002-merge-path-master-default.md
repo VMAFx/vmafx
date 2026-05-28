@@ -11,7 +11,7 @@ The fork carried multiple long-lived branches (`gpu-opt`, `sycl`, `master`) with
 
 ## Decision
 
-We will integrate via `gpu-opt → sycl → master`, make `master` the fork default on `origin` (`gh api -X PATCH repos/lusoris/vmaf -f default_branch=master`), and keep `upstream/master` fetchable via `git fetch upstream` for periodic syncs.
+We will integrate via `gpu-opt → sycl → master`, make `master` the fork default on `origin` (`gh api -X PATCH repos/VMAFx/vmafx -f default_branch=master`), and keep `upstream/master` fetchable via `git fetch upstream` for periodic syncs.
 
 ## Alternatives considered
 

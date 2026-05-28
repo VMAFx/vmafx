@@ -156,21 +156,21 @@ version:
   --output model/u2netp_mirror.onnx \
   --manifest-out model/u2netp_mirror.manifest.json
 
-gh release download <tag> --repo lusoris/vmaf \
+gh release download <tag> --repo VMAFx/vmafx \
   --pattern 'u2netp_mirror_v*.onnx' \
   --pattern 'u2netp_mirror_v*.onnx.bundle' \
   --pattern 'Apache-2.0-u2netp.txt'
 
 cosign verify-blob \
   --bundle u2netp_mirror_v1.onnx.bundle \
-  --certificate-identity-regexp '^https://github\.com/lusoris/vmaf' \
+  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   u2netp_mirror_v1.onnx
 ```
 
 The verify-blob step is mandatory before the binary is loaded by
 any production pipeline — it gates on Sigstore's keyless OIDC
-identity (`lusoris/vmaf` workflow + GitHub OIDC issuer), so a
+identity (`VMAFx/vmafx` workflow + GitHub OIDC issuer), so a
 tampered or wrong-origin binary fails verification.
 
 ## 8. Release / promotion follow-ups

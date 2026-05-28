@@ -29,7 +29,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 LABEL org.opencontainers.image.title="vmafx-builder"
 LABEL org.opencontainers.image.description="Build stage: libvmaf + vmaf CLI (release/stripped)"
-LABEL org.opencontainers.image.source="https://github.com/lusoris/vmaf"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 
 # Install only build-time deps; nothing carried into the runtime stage
@@ -102,7 +102,7 @@ FROM gcr.io/distroless/cc-debian12@sha256:aa0b7af67fa8211751ea6e00baa8373ba56cc1
 # placeholders here so local builds still produce labelled images.
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production runtime — libvmaf + vmaf CLI / MCP server"
-LABEL org.opencontainers.image.source="https://github.com/lusoris/vmaf"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 

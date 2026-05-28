@@ -129,7 +129,7 @@ on conflict.
   [ADR-0100](0100-project-wide-doc-substance-rule.md) — per-PR
   doc-substance rule (same shape: every PR ships its cleanup
   alongside the code).
-- Trigger: PR [#77](https://github.com/lusoris/vmaf/pull/77)
+- Trigger: PR [#77](https://github.com/VMAFx/vmafx/pull/77)
   surfaced 18 `readability-function-size` warnings plus
   14 `cert-err33-c` warnings on `mu_run_test` in the `test.h`
   macro. The `fprintf`-return-discard warnings were fixed at

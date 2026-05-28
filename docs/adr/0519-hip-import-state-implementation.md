@@ -108,5 +108,5 @@ covers the `vmaf_init` → `vmaf_hip_import_state` → `vmaf_close` →
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — `places=4` (1e-4)
   cross-backend numeric gate that HIP now joins.
 - Source: `req` — user request 2026-05-18: "Fix the HIP library-side
-  `vmaf_hip_import_state` ENOSYS in lusoris/vmaf so HIP becomes a
+  `vmaf_hip_import_state` ENOSYS in VMAFx/vmafx so HIP becomes a
   fully working backend on AMD GPUs (gfx1036)."

@@ -1262,7 +1262,7 @@ density is predictable across codecs.
 
 ## Saliency-aware encoding (`recommend-saliency --saliency-aware`)
 
-Bucket #2 of the [PR #354](https://github.com/lusoris/vmaf/pull/354)
+Bucket #2 of the [PR #354](https://github.com/VMAFx/vmafx/pull/354)
 audit (see [ADR-0293](../adr/0293-vmaf-tune-saliency-aware.md)) wires
 the fork-trained `saliency_student_v1` ONNX model
 ([ADR-0286](../adr/0286-saliency-student-fork-trained-on-duts.md)) into

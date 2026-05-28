@@ -139,6 +139,6 @@ backlog now tracks it as `T4-3-standalone`.
   [ADR-0132](../adr/0132-port-netflix-1406-feature-collector-model-list.md),
   [ADR-0134](../adr/0134-port-netflix-1451-meson-declare-dependency.md),
   [ADR-0135](../adr/0135-port-netflix-1424-expose-builtin-model-versions.md)
-- PRs: lusoris/vmaf#TBD (this Batch-A PR)
+- PRs: VMAFx/vmafx#TBD (this Batch-A PR)
 - Upstream issues: Netflix/vmaf#1381
 - Upstream PRs: Netflix/vmaf#1382, #1406, #1451, #1424

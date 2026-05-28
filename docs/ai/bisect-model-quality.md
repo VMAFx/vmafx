@@ -7,7 +7,7 @@ below a PLCC / SROCC / RMSE gate. Two surfaces:
   training-run timeline).
 - **Nightly CI** — `.github/workflows/nightly-bisect.yml` runs the CLI
   against the committed fixture cache every night and posts the result
-  to sticky tracker [issue #40](https://github.com/lusoris/vmaf/issues/40).
+  to sticky tracker [issue #40](https://github.com/VMAFx/vmafx/issues/40).
 
 ## CLI
 
@@ -124,7 +124,7 @@ committed.
 
 ## Sticky tracker issue (#40)
 
-Issue [#40](https://github.com/lusoris/vmaf/issues/40) is owned by the
+Issue [#40](https://github.com/VMAFx/vmafx/issues/40) is owned by the
 workflow. Do not close it while the workflow is enabled. The single
 comment authored by `github-actions[bot]` whose body starts with
 `<!-- bisect-tracker -->` is the sticky comment; everything else (label
@@ -137,5 +137,5 @@ edits, manual notes) is fine to add and won't confuse the helper
   choices.
 - [Research-0001](../research/0001-bisect-model-quality-cache.md) —
   cache-shape investigation.
-- Issue [#4](https://github.com/lusoris/vmaf/issues/4) — original
+- Issue [#4](https://github.com/VMAFx/vmafx/issues/4) — original
   request, closed by this surface.

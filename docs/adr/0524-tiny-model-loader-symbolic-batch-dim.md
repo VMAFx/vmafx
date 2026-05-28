@@ -117,7 +117,7 @@ ORT-side change is needed — the policy lives in the libvmaf bridge.
 ## References
 
 - `req`: user briefing in agent dispatch "Fix `vmaf_ctx_dnn_attach`
-  in lusoris/vmaf which rejects ONNX models with a symbolic batch
+  in VMAFx/vmafx which rejects ONNX models with a symbolic batch
   dimension — surfaced by the `--no-reference` wiring agent
   (PR #1280) as the next blocker." (2026-05-18).
 - ADR-0518 — predecessor; accepted rank-2 + external-data ONNX.

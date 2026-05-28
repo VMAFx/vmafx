@@ -194,7 +194,7 @@
   [`docs/research/0006-tinyai-ptq-accuracy-targets.md`](docs/research/0006-tinyai-ptq-accuracy-targets.md)
   §4 now references the actual shipped `vmaf_tiny_v1_medium.onnx`
   checkpoint (landed by [PR
-  #158](https://github.com/lusoris/vmaf/pull/158)) instead of the
+  #158](https://github.com/VMAFx/vmafx/pull/158)) instead of the
   fictional `tiny-vmaf-v2` prototype name; the digest's QAT
   cost/budget framing is unchanged.  (c)
   [`python/vmaf/routine.py`](python/vmaf/routine.py) — both
@@ -1945,7 +1945,7 @@
   SIMD coverage matrix and `float_ms_ssim` <176×176 minimum
   documented in [`docs/metrics/features.md`](docs/metrics/features.md).
 - **Tracked `docs/state.md` + bug-status hygiene rule** (fork-local):
-  closes [Issue #20](https://github.com/lusoris/vmaf/issues/20) and
+  closes [Issue #20](https://github.com/VMAFx/vmafx/issues/20) and
   backlog item T7-1. New tracked file [`docs/state.md`](docs/state.md)
   is the canonical in-tree register of bug status (Open / Recently
   closed / Confirmed not-affected / Deferred). New CLAUDE.md §12

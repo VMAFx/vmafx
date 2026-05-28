@@ -112,7 +112,7 @@ The path is reopened only when both of the following are satisfied:
 
 - [Research-0086 §A.4](../research/0086-sycl-toolchain-audit-2026-05-08.md) —
   GO recommendation that motivated the implementation attempt.
-- [PR #464](https://github.com/lusoris/vmaf/pull/464) — the digest's
+- [PR #464](https://github.com/VMAFx/vmafx/pull/464) — the digest's
   own PR, where the §A.4 update lands as a review comment.
 - [ADR-0202](0202-float-adm-cuda-sycl.md) — float ADM CUDA + SYCL
   twin parent ADR (gains a Status update appendix in this PR).

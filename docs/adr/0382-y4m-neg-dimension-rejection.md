@@ -75,7 +75,7 @@ INT32-C (avoid signed integer overflow in size arithmetic).
   to keep the fuzz workflow on while bugs are open.
 - Prior Y4M parser fix: PR #357 / commit `05ba29a6`
   (`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow, ADR-0228).
-- Crash artefact: `gh run download 25538384046 --repo lusoris/vmaf
+- Crash artefact: `gh run download 25538384046 --repo VMAFx/vmafx
   --name fuzz_y4m_input-crashes-25538384046`; sha
   `crash-645a8f241b71d80ff496c10984d9b493d03dbfe1`.
 - req: "Fix T-FUZZ-Y4M-NEG-WIDTH-SEGV: real ASan-detected SEGV in the

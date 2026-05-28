@@ -12,7 +12,7 @@ something useful before the real DMOS-aligned dataset path is in place?
 
 ## Sources
 
-- Issue [#4](https://github.com/lusoris/vmaf/issues/4) — original
+- Issue [#4](https://github.com/VMAFx/vmafx/issues/4) — original
   request, prerequisites list, AC.
 - [`ai/src/vmaf_train/bisect_model_quality.py`](../../ai/src/vmaf_train/bisect_model_quality.py)
   — algorithm contract (monotonic timeline, threshold gates, log₂(N)
@@ -95,5 +95,5 @@ something useful before the real DMOS-aligned dataset path is in place?
 
 - ADRs: [ADR-0109](../adr/0109-nightly-bisect-model-quality.md)
 - PRs: this one (closes #4); follow-up TBD for the real cache swap.
-- Issues: [#4](https://github.com/lusoris/vmaf/issues/4),
-  [#40](https://github.com/lusoris/vmaf/issues/40) (sticky tracker).
+- Issues: [#4](https://github.com/VMAFx/vmafx/issues/4),
+  [#40](https://github.com/VMAFx/vmafx/issues/40) (sticky tracker).

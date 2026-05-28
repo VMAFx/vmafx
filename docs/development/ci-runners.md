@@ -3,7 +3,7 @@
 The fork's CI runs on a hybrid pool: GitHub-hosted runners by default,
 with selected jobs opt-in to a self-hosted [actions-runner-controller
 (ARC)](https://github.com/actions/actions-runner-controller)
-[`arc-runners`](https://github.com/lusoris/vmaf/settings/actions/runners)
+[`arc-runners`](https://github.com/VMAFx/vmafx/settings/actions/runners)
 scale set in the maintainer's personal Kubernetes cluster.
 
 ## How a job picks its pool
@@ -37,8 +37,8 @@ will sit queued indefinitely (no auto-fallback — see
 1. Flip `ARC_RUNNERS_ENABLED` back to `false`.
 2. Cancel any stuck PR's CI runs:
    ```bash
-   gh run list --repo lusoris/vmaf --branch <pr-branch> --status queued \
-       --json databaseId -q '.[].databaseId' | xargs -I{} gh run cancel {} --repo lusoris/vmaf
+   gh run list --repo VMAFx/vmafx --branch <pr-branch> --status queued \
+       --json databaseId -q '.[].databaseId' | xargs -I{} gh run cancel {} --repo VMAFx/vmafx
    ```
 3. Re-trigger CI on each affected PR (push an empty commit, or
    `gh workflow run`).

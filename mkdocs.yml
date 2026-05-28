@@ -1,8 +1,8 @@
 site_name: "VMAF — Lusoris fork"
 site_url: https://lusoris.github.io/vmaf/
 site_description: Perceptual video quality assessment with GPU/SIMD acceleration.
-repo_url: https://github.com/lusoris/vmaf
-repo_name: lusoris/vmaf
+repo_url: https://github.com/VMAFx/vmafx
+repo_name: VMAFx/vmafx
 edit_uri: edit/master/docs/
 copyright: "BSD-3-Clause-Plus-Patent — Netflix / Lusoris"
 
@@ -140,7 +140,7 @@ validation:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/lusoris/vmaf
+      link: https://github.com/VMAFx/vmafx
 
 nav:
   - Home: index.md

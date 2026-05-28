@@ -7,7 +7,7 @@
 
 ## Context
 
-[Issue #20](https://github.com/lusoris/vmaf/issues/20) flagged a recurring
+[Issue #20](https://github.com/VMAFx/vmafx/issues/20) flagged a recurring
 failure mode: Claude Code agents re-investigate already-closed bugs at the
 start of each session, because no in-flight bug-status record gets updated
 during the session that closed them. The closing comment on Issue #20

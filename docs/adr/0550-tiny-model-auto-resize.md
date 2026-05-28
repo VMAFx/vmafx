@@ -99,7 +99,7 @@ matched-dims path bit-identical regardless of the selected filter.
 ## References
 
 - `req`: post-fix probe Finding 11 — "Fix the NR-model input-size
-  mismatch in lusoris/vmaf surfaced by the post-fix probe …"
+  mismatch in VMAFx/vmafx surfaced by the post-fix probe …"
   (paraphrased: NR-path dispatch returns `-ERANGE` when the model's
   expected spatial dims don't match the YUV; the loop breaks at
   frame 0 -> 0 frames scored).

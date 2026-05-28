@@ -5,12 +5,12 @@
 #   - workflow_dispatch for manual runs
 #
 # Produces:
-#   ghcr.io/lusoris/vmafx:<tag>           (cpu, amd64+arm64)
-#   ghcr.io/lusoris/vmafx:latest          (same)
-#   ghcr.io/lusoris/vmafx:<tag>-cuda12    (amd64 only — CUDA not portable to arm64)
-#   ghcr.io/lusoris/vmafx:<tag>-rocm6     (amd64 only)
-#   ghcr.io/lusoris/vmafx:<tag>-oneapi2026 (amd64 only)
-#   ghcr.io/lusoris/vmafx:<tag>-vulkan    (amd64+arm64)
+#   ghcr.io/vmafx/vmafx:<tag>           (cpu, amd64+arm64)
+#   ghcr.io/vmafx/vmafx:latest          (same)
+#   ghcr.io/vmafx/vmafx:<tag>-cuda12    (amd64 only — CUDA not portable to arm64)
+#   ghcr.io/vmafx/vmafx:<tag>-rocm6     (amd64 only)
+#   ghcr.io/vmafx/vmafx:<tag>-oneapi2026 (amd64 only)
+#   ghcr.io/vmafx/vmafx:<tag>-vulkan    (amd64+arm64)
 #
 # Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
 # ADR-0698: vmafx-production-dockerfile
@@ -34,7 +34,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: lusoris/vmafx
+  IMAGE_NAME: vmafx/vmafx
 
 jobs:
   # -----------------------------------------------------------------------

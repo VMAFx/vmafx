@@ -103,7 +103,7 @@ Produces the table above in ~3 seconds against the shipped ONNX and the
 ## References
 
 - `model/tiny/vmaf_tiny_v2.json` — sidecar with baked-in scaler stats.
-- [PR #250](https://github.com/lusoris/vmaf/pull/250) — `vmaf_tiny_v2`
+- [PR #250](https://github.com/VMAFx/vmafx/pull/250) — `vmaf_tiny_v2`
   ship commit `3999cdab`.
 - [docs/research/0046-vmaf-tiny-v3-mlp-medium-evaluation.md](0046-vmaf-tiny-v3-mlp-medium-evaluation.md)
   — prior canonical-6 evaluation in the v3 (mlp_medium) regime.

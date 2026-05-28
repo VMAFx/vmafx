@@ -8,7 +8,7 @@
 
 The OpenSSF Scorecard workflow on `master` has been red on every push
 for an extended period, and the public dashboard at
-`https://scorecard.dev/viewer/?uri=github.com/lusoris/vmaf` shows an
+`https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx` shows an
 aggregate score of 6.2/10. Why is the workflow failing, which
 individual checks are dragging the score down, and which of those are
 addressable inside the fork without external services or paid
@@ -17,7 +17,7 @@ tooling?
 ## Sources
 
 - Scorecard run logs (project-internal): `gh run view 25281489510
-  --repo lusoris/vmaf --log` (the SARIF JSON containing the per-check
+  --repo VMAFx/vmafx --log` (the SARIF JSON containing the per-check
   scores is embedded verbatim in the `Run Scorecard` step output).
 - Scorecard checks reference:
   <https://github.com/ossf/scorecard/blob/main/docs/checks.md>
@@ -247,5 +247,5 @@ describing the conflict resolution. Deferred from this PR.
 
 - ADRs: [ADR-0263](../adr/0263-ossf-scorecard-policy.md)
 - Workflow: [`.github/workflows/scorecard.yml`](../../.github/workflows/scorecard.yml)
-- Run log: `gh run view 25281489510 --repo lusoris/vmaf --log`
-- Public dashboard: <https://scorecard.dev/viewer/?uri=github.com/lusoris/vmaf>
+- Run log: `gh run view 25281489510 --repo VMAFx/vmafx --log`
+- Public dashboard: <https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx>

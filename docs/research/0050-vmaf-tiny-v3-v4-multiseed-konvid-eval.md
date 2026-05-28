@@ -8,8 +8,8 @@
 
 ## Goal
 
-Both [PR #294](https://github.com/lusoris/vmaf/pull/294) (v3 mlp_medium) and
-[PR #299](https://github.com/lusoris/vmaf/pull/299) (v4 mlp_large) shipped with
+Both [PR #294](https://github.com/VMAFx/vmafx/pull/294) (v3 mlp_medium) and
+[PR #299](https://github.com/VMAFx/vmafx/pull/299) (v4 mlp_large) shipped with
 **single-seed (seed=0)** Netflix 9-fold LOSO numbers. v2's published 0.9978 ±
 0.0021 baseline is a 5-seed average. To compare apples-to-apples, this digest
 re-runs v3 + v4 with seeds 0..4 and averages.

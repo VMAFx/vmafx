@@ -10,7 +10,7 @@
 
 ## Context
 
-Issue [#40](https://github.com/lusoris/vmaf/issues/40) is the sticky
+Issue [#40](https://github.com/VMAFx/vmafx/issues/40) is the sticky
 tracker for the nightly `bisect-model-quality` workflow defined in
 [ADR-0109](0109-nightly-bisect-model-quality.md). The original ADR
 asserted full byte-equality between the committed
@@ -106,7 +106,7 @@ comparison; keep ONNX byte-equality as-is. Concretely:
 
 ## References
 
-- Issue [#40](https://github.com/lusoris/vmaf/issues/40) — sticky
+- Issue [#40](https://github.com/VMAFx/vmafx/issues/40) — sticky
   bisect tracker; the comment that froze on 2026-04-21.
 - [ADR-0109](0109-nightly-bisect-model-quality.md) — parent decision
   on the nightly bisect workflow + synthetic placeholder cache.

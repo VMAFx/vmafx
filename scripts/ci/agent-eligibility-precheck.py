@@ -242,8 +242,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--repo",
-        default=os.environ.get("GH_REPO", "lusoris/vmaf"),
-        help="GitHub repository (default: lusoris/vmaf).",
+        default=os.environ.get("GH_REPO", "VMAFx/vmafx"),
+        help="GitHub repository (default: VMAFx/vmafx).",
     )
     # The Claude Code harness writes per-task metadata under
     # `/tmp/claude-<uid>/...` — that path is the harness's contract,

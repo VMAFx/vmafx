@@ -200,8 +200,8 @@ def main() -> int:
     )
     p.add_argument(
         "--repo",
-        default=os.environ.get("GITHUB_REPOSITORY", "lusoris/vmaf"),
-        help="owner/name (defaults to $GITHUB_REPOSITORY or lusoris/vmaf)",
+        default=os.environ.get("GITHUB_REPOSITORY", "VMAFx/vmafx"),
+        help="owner/name (defaults to $GITHUB_REPOSITORY or VMAFx/vmafx)",
     )
     args = p.parse_args()
 

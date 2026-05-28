@@ -121,7 +121,7 @@ using Sigstore's keyless flow. The workflow emits `<artifact>.sig` and
 
 ```bash
 cosign verify-blob \
-    --certificate-identity-regexp "https://github.com/lusoris/vmaf/.github/workflows/supply-chain.yml@.*" \
+    --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*" \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
     --bundle vmaf_tiny_fr_v1.onnx.bundle \
     vmaf_tiny_fr_v1.onnx

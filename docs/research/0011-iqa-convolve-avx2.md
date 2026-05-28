@@ -265,7 +265,7 @@ separable kernel:
 - Predecessor ADR: [ADR-0125](../adr/0125-ms-ssim-decimate-simd.md)
 - Predecessor digest:
   [Research-0008](0008-ms-ssim-decimate-simd.md)
-- PR: lusoris/vmaf#TBD
+- PR: VMAFx/vmafx#TBD
 - Profile artifacts:
   `build/profiles/2026-04-20/ms_ssim_1080p_cpu.callgrind` (and
   `.svg`, `_topN.txt`).

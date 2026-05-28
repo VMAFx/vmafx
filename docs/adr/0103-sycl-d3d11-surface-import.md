@@ -12,7 +12,7 @@ declared `vmaf_sycl_import_d3d11_surface()` under `#ifdef _WIN32`
 alongside its doc block ("Creates a staging texture, copies the decoded
 surface, maps it for CPU read, and uploads via H2D memcpy"), but **no
 implementation existed anywhere in the tree**. Issue
-[#27](https://github.com/lusoris/vmaf/issues/27) surfaced this as a
+[#27](https://github.com/VMAFx/vmafx/issues/27) surfaced this as a
 link-time failure: any Windows consumer compiling against libvmaf-sycl
 would see `undefined reference to vmaf_sycl_import_d3d11_surface` at
 link time, because the symbol's declaration was visible but no TU
@@ -139,7 +139,7 @@ verifying the Wine-derived header family exports all 25 required APIs
 
 ## References
 
-- Issue [#27 — vmaf_sycl_import_d3d11_surface declared but not implemented](https://github.com/lusoris/vmaf/issues/27)
+- Issue [#27 — vmaf_sycl_import_d3d11_surface declared but not implemented](https://github.com/VMAFx/vmafx/issues/27)
 - [Microsoft — ID3D11DeviceContext::Map method](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-map)
 - [Microsoft — D3D11_USAGE enumeration](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ne-d3d11-d3d11_usage)
 - [Intel — oneAPI DPC++ Compiler, external_memory extension](https://github.com/intel/llvm/blob/sycl/sycl/doc/extensions/experimental/sycl_ext_oneapi_external_memory.asciidoc)

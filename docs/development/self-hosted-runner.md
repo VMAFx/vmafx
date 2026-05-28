@@ -54,13 +54,13 @@ adapted for this fork's labels.
 The token is short-lived (1 hour) and single-use. Generate one in
 the GitHub UI:
 
-`https://github.com/lusoris/vmaf/settings/actions/runners/new`
+`https://github.com/VMAFx/vmafx/settings/actions/runners/new`
 
 Or via `gh`:
 
 ```bash
 gh api -X POST \
-  /repos/lusoris/vmaf/actions/runners/registration-token \
+  /repos/VMAFx/vmafx/actions/runners/registration-token \
   --jq .token
 ```
 
@@ -83,7 +83,7 @@ tar xzf "actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
 
 ```bash
 ./config.sh \
-  --url https://github.com/lusoris/vmaf \
+  --url https://github.com/VMAFx/vmafx \
   --token "<token from step 1>" \
   --labels self-hosted,linux,gpu-full,gpu-cuda,gpu-intel,avx512 \
   --name "$(hostname)-gpu-full" \
@@ -109,7 +109,7 @@ The service auto-starts on boot and respawns on crash. Logs land in
 ### 5. Verify it's online
 
 ```bash
-gh api /repos/lusoris/vmaf/actions/runners --jq '.runners[] | {name, status, labels: [.labels[].name]}'
+gh api /repos/VMAFx/vmafx/actions/runners --jq '.runners[] | {name, status, labels: [.labels[].name]}'
 ```
 
 The runner should appear with `"status": "online"` and the full label
@@ -150,7 +150,7 @@ required (separate ADR + PR).
 cd ~/actions-runner
 sudo ./svc.sh stop && sudo ./svc.sh uninstall
 ./config.sh remove --token "$(gh api -X POST \
-  /repos/lusoris/vmaf/actions/runners/remove-token --jq .token)"
+  /repos/VMAFx/vmafx/actions/runners/remove-token --jq .token)"
 rm -rf ~/actions-runner
 ```
 

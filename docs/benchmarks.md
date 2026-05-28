@@ -157,7 +157,7 @@ VMAF_BIN="$(pwd)/core/build/tools/vmaf" bash testdata/bench_all.sh
 For SIMD breakdown / `--precision` overhead numbers, see the harness
 scripts under `testdata/` (or paste the inlined `repeat_bench.py` /
 `simd_bench.py` / `precision_bench.py` from the
-[T7-37 PR description](https://github.com/lusoris/vmaf/pulls?q=T7-37)).
+[T7-37 PR description](https://github.com/VMAFx/vmafx/pulls?q=T7-37)).
 
 ## FFmpeg lavfi performance harness
 

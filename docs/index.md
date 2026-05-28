@@ -115,5 +115,5 @@ GPU / SIMD backend notes under [backends/](backends/index.md):
 
 - [FAQ](reference/faq.md)
 - [References](reference/references.md) – a list of links and papers
-- [Papers](https://github.com/lusoris/vmaf/tree/master/docs/reference/papers)
-  and [Presentations](https://github.com/lusoris/vmaf/tree/master/docs/reference/presentations)
+- [Papers](https://github.com/VMAFx/vmafx/tree/master/docs/reference/papers)
+  and [Presentations](https://github.com/VMAFx/vmafx/tree/master/docs/reference/presentations)

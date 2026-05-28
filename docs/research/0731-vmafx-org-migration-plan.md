@@ -10,19 +10,19 @@
 
 ## 1. Background
 
-The current primary home is `lusoris/vmaf` — a private GitHub fork of
+The current primary home is `VMAFx/vmafx` — a private GitHub fork of
 `Netflix/vmaf`. The user has created a new GitHub organisation `VMAFx` and
 wants to migrate to `VMAFx/vmafx` as a clean (non-fork) repository. The
-new repo will carry the full git history and tags from `lusoris/vmaf` but
+new repo will carry the full git history and tags from `VMAFx/vmafx` but
 will have no GitHub fork relationship with Netflix/vmaf.
 
 Locked decisions captured in this session (2026-05-28):
 
-1. Hard cutover to `VMAFx/vmafx` as the new primary. `lusoris/vmaf` will be
+1. Hard cutover to `VMAFx/vmafx` as the new primary. `VMAFx/vmafx` will be
    archived after the migration.
 2. Netflix/vmaf upstream is tracked for backports via `git remote add upstream
    https://github.com/Netflix/vmaf.git` plus operational tooling.
-3. `lusoris/vmaf` was made private immediately; migration will complete before
+3. `VMAFx/vmafx` was made private immediately; migration will complete before
    re-publishing.
 4. Open PRs and issues will be manually transferred (the fork-detach mechanism
    does not carry them automatically).
@@ -225,7 +225,7 @@ cutover:
 | #1562 | dev container entrypoint fixes | DRAFT | Can merge before or after cutover |
 | #580 | release-please PR | OPEN | Must NOT auto-merge before cutover; close and re-open in new repo |
 
-**External contributor PRs:** All 42 open PRs in `lusoris/vmaf` are authored by
+**External contributor PRs:** All 42 open PRs in `VMAFx/vmafx` are authored by
 `lusoris` (the account running the routines agent). There are no external
 contributor PRs that require special handling. The single open issue
 (#1371 Dependency Dashboard, from Renovate bot) will be re-created automatically
@@ -266,7 +266,7 @@ gh api -X PATCH repos/VMAFx/vmafx -f default_branch=master
 
 **Step 4 — Configure branch protection on `VMAFx/vmafx`:**
 
-The current `lusoris/vmaf` protection is:
+The current `VMAFx/vmafx` protection is:
 - `required_status_checks.strict: false`
 - Contexts: `["Required Checks Aggregator"]` (app_id 15368)
 - `required_linear_history: true`
@@ -311,12 +311,12 @@ Also add `VMAFx/vmafx` to the Renovate app installation at
 
 **Step 6 — Re-set CI secrets:**
 
-Secrets in `lusoris/vmaf` do NOT transfer automatically. Re-create in `VMAFx/vmafx`:
+Secrets in `VMAFx/vmafx` do NOT transfer automatically. Re-create in `VMAFx/vmafx`:
 
 | Secret | Source | Notes |
 |---|---|---|
 | `GITHUB_TOKEN` | Auto-provisioned by GitHub Actions | No action needed |
-| Sigstore / OIDC signing | OIDC via `id-token: write` in supply-chain.yml | Keyless; no secret to migrate — the OIDC issuer in the attestation will change from `lusoris/vmaf` to `VMAFx/vmafx` |
+| Sigstore / OIDC signing | OIDC via `id-token: write` in supply-chain.yml | Keyless; no secret to migrate — the OIDC issuer in the attestation will change from `VMAFx/vmafx` to `VMAFx/vmafx` |
 | OpenSSF Scorecard token | `SCORECARD_TOKEN` or GitHub OIDC | Re-register scorecard badge URL to `VMAFx/vmafx` |
 
 This project's supply-chain workflow uses keyless Sigstore signing (OIDC, not a
@@ -324,17 +324,17 @@ stored COSIGN_KEY). There are no long-lived signing secrets to migrate. The SLSA
 provenance for future releases will reference `VMAFx/vmafx` automatically once
 the workflow runs in the new repo.
 
-**Step 7 — Update redirect and archive `lusoris/vmaf`:**
+**Step 7 — Update redirect and archive `VMAFx/vmafx`:**
 
 ```bash
-# Update lusoris/vmaf README (add migration notice at top)
+# Update VMAFx/vmafx README (add migration notice at top)
 # Then archive
-gh repo archive lusoris/vmaf
+gh repo archive VMAFx/vmafx
 ```
 
 ### 5.3 Post-cutover file updates
 
-**Files requiring `lusoris/vmaf` → `VMAFx/vmafx` substitution:**
+**Files requiring `VMAFx/vmafx` → `VMAFx/vmafx` substitution:**
 
 | File | References to update |
 |---|---|
@@ -344,7 +344,7 @@ gh repo archive lusoris/vmaf
 | `docs/adr/0011-versioning-lusoris-suffix.md` | repo URL cross-refs |
 | `docs/adr/0002-merge-path-master-default.md` | repo URL cross-refs |
 | `docs/adr/0008-readme-fork-rebrand.md` | repo URL cross-refs |
-| ~329 other `docs/` files | grep pass: `grep -rl 'lusoris/vmaf' docs/` |
+| ~329 other `docs/` files | grep pass: `grep -rl 'VMAFx/vmafx' docs/` |
 | `docs/benchmarks.md` | badge/link URLs |
 | `docs/index.md` | home page URLs |
 | `.github/workflows/scorecard.yml` | if it references the repo URL directly |
@@ -405,7 +405,7 @@ agnostic.
 
 **Open PRs (42 total, all authored by lusoris):**
 
-The 42 open PRs in `lusoris/vmaf` fall into three categories:
+The 42 open PRs in `VMAFx/vmafx` fall into three categories:
 
 | Category | Count | PRs | Recommendation |
 |---|---|---|---|
@@ -417,7 +417,7 @@ The 42 open PRs in `lusoris/vmaf` fall into three categories:
 Because `git push --mirror` copies all branches to `VMAFx/vmafx`, the diff for
 each in-flight PR is already present in the new repo. Reopening them requires
 only a `gh pr create` in the new repo context pointing at the already-pushed
-branch. The PR body and title can be carried over from `lusoris/vmaf` via
+branch. The PR body and title can be carried over from `VMAFx/vmafx` via
 `gh pr view <N> --json body,title`.
 
 **Open issues (1 total):**
@@ -429,20 +429,20 @@ by Renovate within 24 hours of it scanning `VMAFx/vmafx`.
 
 | Stage | How to roll back |
 |---|---|
-| Before step 6 (archive) | Delete `VMAFx/vmafx` (no archive was created yet), re-publicise `lusoris/vmaf`, update remote URLs back |
-| After archiving `lusoris/vmaf` | `gh repo unarchive lusoris/vmaf` (archival is reversible); delete `VMAFx/vmafx` if needed |
-| After deleting `lusoris/vmaf` | Not applicable — user chose to archive, not delete |
+| Before step 6 (archive) | Delete `VMAFx/vmafx` (no archive was created yet), re-publicise `VMAFx/vmafx`, update remote URLs back |
+| After archiving `VMAFx/vmafx` | `gh repo unarchive VMAFx/vmafx` (archival is reversible); delete `VMAFx/vmafx` if needed |
+| After deleting `VMAFx/vmafx` | Not applicable — user chose to archive, not delete |
 
-**What gets stuck after archival:** GitHub Actions in `lusoris/vmaf` will stop
-running. PRs and issues in `lusoris/vmaf` become read-only. Any external links
-to `lusoris/vmaf` (docs badges, issue URLs, external blog posts) will 404 or
+**What gets stuck after archival:** GitHub Actions in `VMAFx/vmafx` will stop
+running. PRs and issues in `VMAFx/vmafx` become read-only. Any external links
+to `VMAFx/vmafx` (docs badges, issue URLs, external blog posts) will 404 or
 redirect to the archived repo page — not to `VMAFx/vmafx`. GitHub does NOT
 provide automatic redirect for archived repos that were not transferred via
 "Transfer repository."
 
 **Mitigation:** The README redirect added in step 7 is the only redirect mechanism
 available without a true GitHub repository transfer. If the user later wants a
-proper redirect (HTTP 301 from `lusoris/vmaf` → `VMAFx/vmafx`), GitHub's
+proper redirect (HTTP 301 from `VMAFx/vmafx` → `VMAFx/vmafx`), GitHub's
 "Transfer repository" feature (Settings → Transfer) is still available on an
 archived repo and would set up a 1-year HTTP redirect. The hard cutover (mirror
 push + archive) is chosen for the fork-relationship removal benefit; the tradeoff
@@ -473,7 +473,7 @@ separate PR at any time after cutover.
 ## 7. Checklist summary for cutover day
 
 - [ ] Merge #1548 (SPDX sweep)
-- [ ] Merge or close #580 (release-please PR — its base is `lusoris/vmaf` master)
+- [ ] Merge or close #580 (release-please PR — its base is `VMAFx/vmafx` master)
 - [ ] Land PR #1554 (hardcoded path sweep) to clean repo before mirror
 - [ ] Create `VMAFx/vmafx` (empty, public, no fork relationship)
 - [ ] `git push --mirror git@github.com:VMAFx/vmafx.git`
@@ -482,8 +482,8 @@ separate PR at any time after cutover.
 - [ ] Update `mkdocs.yml`, `README.md`, `release-please-config.json` in a follow-up PR
 - [ ] Re-point dev clone remotes to `VMAFx/vmafx`
 - [ ] Add `VMAFx/vmafx` to Renovate app installation
-- [ ] Add redirect note to `lusoris/vmaf` README
-- [ ] Archive `lusoris/vmaf`
+- [ ] Add redirect note to `VMAFx/vmafx` README
+- [ ] Archive `VMAFx/vmafx`
 - [ ] Verify first CI run passes in `VMAFx/vmafx`
 - [ ] Open follow-on URL sweep PR for the 332 doc files
 
@@ -508,7 +508,7 @@ a clean foundation.
 - ADR-0686 VMAFX rebrand umbrella
 - User decision session 2026-05-28 (Q1–Q4 popup answers: hard cutover, track
   upstream via git remote + workflow, repo now private, manual PR transfer)
-- `gh api repos/lusoris/vmaf/branches/master/protection` — branch protection
+- `gh api repos/VMAFx/vmafx/branches/master/protection` — branch protection
   export used in §5.2 step 4
-- Open PR inventory from `gh pr list --repo lusoris/vmaf --state open --limit 50`
+- Open PR inventory from `gh pr list --repo VMAFx/vmafx --state open --limit 50`
 - Research-0730 Intel Arc cross-backend parity (precedent for research numbering)

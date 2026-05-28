@@ -9,7 +9,7 @@ scalar MOS prediction in `[1.0, 5.0]`.
 > **Status: Proposed — synthetic-corpus checkpoint (Phase 3 placeholder).**
 > The shipped ONNX is trained on a deterministic-seeded synthetic
 > corpus per ADR-0325 §Phase 3 because the real KonViD-150k JSONL
-> drop is in flight under [PR #447](https://github.com/lusoris/vmaf/pull/447).
+> drop is in flight under [PR #447](https://github.com/VMAFx/vmafx/pull/447).
 > The head **production-flip is blocked on the real-corpus retrain** —
 > see §Production-flip gate below for the threshold and §Honest gate
 > verdict for the synthetic-corpus run that produced the shipped
@@ -217,5 +217,5 @@ Patent licence.
 [ADR-0325 §Phase 2]: ../docs/adr/0325-konvid-150k-corpus-ingestion.md
 [ADR-0325 Phase 3]: ../docs/adr/0336-konvid-mos-head-v1.md
 [Research-0086]: ../docs/research/0086-konvid-150k-corpus-feasibility.md
-[PR #440]: https://github.com/lusoris/vmaf/pull/440
-[PR #447]: https://github.com/lusoris/vmaf/pull/447
+[PR #440]: https://github.com/VMAFx/vmafx/pull/440
+[PR #447]: https://github.com/VMAFx/vmafx/pull/447

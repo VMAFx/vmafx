@@ -169,5 +169,5 @@ ONNX is shipped or block on the production-flip retrain.
 [ADR-0169]: ../adr/0169-onnx-allowlist-loop-if.md
 [ADR-0223]: ../adr/0223-transnet-v2-shot-detector.md
 [ADR-0286]: ../adr/0286-saliency-student-fork-trained-on-duts.md
-[PR #440]: https://github.com/lusoris/vmaf/pull/440
-[PR #447]: https://github.com/lusoris/vmaf/pull/447
+[PR #440]: https://github.com/VMAFx/vmafx/pull/440
+[PR #447]: https://github.com/VMAFx/vmafx/pull/447

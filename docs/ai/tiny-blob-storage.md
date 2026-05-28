@@ -61,7 +61,7 @@ When introducing a new ONNX file ≥ 1 MB:
    current one:
    ```bash
    gh release upload tiny-blobs-v1 model/tiny/<name>.onnx \
-     --repo lusoris/vmaf
+     --repo VMAFx/vmafx
    ```
 4. Add `release_url` to the registry entry pointing at the upload.
 5. `git rm` the local file and let the fetcher serve it from the

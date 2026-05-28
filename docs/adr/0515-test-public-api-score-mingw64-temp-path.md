@@ -85,7 +85,7 @@ already gates correctly).
 
 - Workflow: `.github/workflows/libvmaf-build-matrix.yml` (MinGW64 leg at
   lines 731–820).
-- Failing job example: `gh run view --repo lusoris/vmaf 26021988312`
+- Failing job example: `gh run view --repo VMAFx/vmafx 26021988312`
   (job `76485707408`) — `test_public_api_score → test_vmaf_write_output:
   fail, mkstemp failed`.
 - Precedent: `core/test/dnn/test_model_loader.c::test_sidecar_parses`

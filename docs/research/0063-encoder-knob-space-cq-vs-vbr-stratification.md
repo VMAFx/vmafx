@@ -145,6 +145,6 @@ python3 scripts/dev/hw_encoder_corpus.py \
 ## References
 
 - [ADR-0237](../adr/0237-quality-aware-encode-automation.md) — vmaf-tune Phase A scope
-- [PR #392](https://github.com/lusoris/vmaf/pull/392) — `hw_encoder_corpus.py` runner
-- [PR #394](https://github.com/lusoris/vmaf/pull/394) — `fr_regressor_v2` ENCODER_VOCAB v2
+- [PR #392](https://github.com/VMAFx/vmafx/pull/392) — `hw_encoder_corpus.py` runner
+- [PR #394](https://github.com/VMAFx/vmafx/pull/394) — `fr_regressor_v2` ENCODER_VOCAB v2
 - [NVIDIA Video Codec SDK Programming Guide](https://docs.nvidia.com/video-technologies/video-codec-sdk/) — multipass / tune semantics

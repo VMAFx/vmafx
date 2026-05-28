@@ -137,7 +137,7 @@ Verification recipe documented in `docs/ai/u2netp-mirror.md`
 
 ```bash
 # Fetch the mirror
-gh release download <tag> --repo lusoris/vmaf \
+gh release download <tag> --repo VMAFx/vmafx \
   --pattern 'u2netp_mirror_v*.onnx' \
   --pattern 'u2netp_mirror_v*.onnx.bundle' \
   --pattern 'Apache-2.0-u2netp.txt'
@@ -145,7 +145,7 @@ gh release download <tag> --repo lusoris/vmaf \
 # Verify the Sigstore bundle (cosign v3+)
 cosign verify-blob \
   --bundle u2netp_mirror_v1.onnx.bundle \
-  --certificate-identity-regexp '^https://github\.com/lusoris/vmaf' \
+  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   u2netp_mirror_v1.onnx
 ```

@@ -31,7 +31,7 @@ assertion messages showed only "actual ≠ expected"; the actual VIF
 score was almost 2× the expected value, which read as a feature-
 extractor bug. The root cause was a fixture-content mismatch.
 
-A previous PR ([#1237](https://github.com/lusoris/vmaf/pull/1237))
+A previous PR ([#1237](https://github.com/VMAFx/vmafx/pull/1237))
 updated the ADM2 golden from `0.9345` to `0.9878` based on the output
 the (stale) fork was producing, on the assumption that the prior value
 was a stale hardcode. That commit is reverted as part of the same PR
@@ -74,7 +74,7 @@ not just file presence. Specifically:
   brings a fresh clone into a state where `pytest python/test/` runs
   against canonical fixtures. Silent fixture corruption is detected
   at provision time, not as a confusing test failure later.
-- **Positive**: PR [#1237](https://github.com/lusoris/vmaf/pull/1237)'s
+- **Positive**: PR [#1237](https://github.com/VMAFx/vmafx/pull/1237)'s
   ADM2 override is reverted; CLAUDE.md §8 is restored to "never modify
   Netflix golden assertions" with no live exception.
 - **Negative**: a third place (script, CI workflow, ADR) now records
@@ -90,6 +90,6 @@ not just file presence. Specifically:
 - Upstream removal commit: `bac8b6073` ("Remove python/test/resource/yuv files.")
 - Canonical fixture source: https://github.com/Netflix/vmaf_resource
 - CI download path: `.github/workflows/tests-and-quality-gates.yml`
-- Reverted PR: [#1237](https://github.com/lusoris/vmaf/pull/1237)
+- Reverted PR: [#1237](https://github.com/VMAFx/vmafx/pull/1237)
 - Related ADRs: [ADR-0024](0024-netflix-golden-tests.md) (Netflix golden gate)
 - Source: req (user investigation 2026-05-17 — "Investigate integer-VIF first")

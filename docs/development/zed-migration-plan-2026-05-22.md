@@ -1,4 +1,4 @@
-# Zed Migration Plan — lusoris/vmaf fork (2026-05-22 refresh)
+# Zed Migration Plan — VMAFx/vmafx fork (2026-05-22 refresh)
 
 Refresh of [`zed-migration-plan-2026-05-19.md`](zed-migration-plan-2026-05-19.md)
 after the Zed 1.3.5 (2026-05-20) and 1.3.6 (2026-05-21) releases.

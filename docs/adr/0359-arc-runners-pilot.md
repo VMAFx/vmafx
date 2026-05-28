@@ -13,7 +13,7 @@ train for 2+ hours — the symptom that prompted [ADR-0358](0358-ci-aggregator-t
 The owner runs an `arc-runners` scale set
 ([actions/actions-runner-controller](https://github.com/actions/actions-runner-controller))
 in their personal Kubernetes cluster as a registered self-hosted
-runner pool on `lusoris/vmaf`. As of this ADR, the scale set is
+runner pool on `VMAFx/vmafx`. As of this ADR, the scale set is
 registered (visible in `Settings → Actions → Runners → Self-hosted
 runners → arc-runners`) but no workflow uses it yet.
 
@@ -78,5 +78,5 @@ they don't bottleneck on queue depth and ARC churn isn't free.
 
 - User direction 2026-05-09 ("use them if they are working") —
   resolved as the variable-switch pattern documented above.
-- [`Settings → Actions → Runners → Self-hosted runners`](https://github.com/lusoris/vmaf/settings/actions/runners)
+- [`Settings → Actions → Runners → Self-hosted runners`](https://github.com/VMAFx/vmafx/settings/actions/runners)
   — `arc-runners` scale set registration.

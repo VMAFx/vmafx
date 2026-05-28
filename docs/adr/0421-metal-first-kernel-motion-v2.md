@@ -94,6 +94,6 @@ The dispatch uses the `vmaf_metal_context_{device,queue}_handle()` accessors add
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — `places=4` bit-exactness gate (the validation contract)
 - [ADR-0246](0246-cuda-kernel-template.md) — origin of the lifecycle template this Metal port replicates
 - [`core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu`](../../core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu) — CUDA twin (algorithmic reference)
-- Issue [#763](https://github.com/lusoris/vmaf/issues/763) — T8-1b/c tracking
+- Issue [#763](https://github.com/VMAFx/vmafx/issues/763) — T8-1b/c tracking
 - [Lusoris Homebrew tap](https://github.com/lusoris/homebrew-tap) — currently ships MoltenVK stopgap; flips to native once this kernel validates
 - Source: `req` — paraphrased: contributor asked for all eight Metal kernels in one PR; this is the anchor (T8-1c) with the remaining seven landing in the same PR as mechanical replicas.

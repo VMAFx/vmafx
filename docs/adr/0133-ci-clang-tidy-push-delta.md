@@ -35,7 +35,7 @@ PR #70 passed clang-tidy because its delta touched only the MS-SSIM /
 SSIMULACRA2 files. The push-event variant then fired on every file,
 failing on long-latent warnings in files the push did not touch.
 Observed: [run 24686615999, job
-72197545195](https://github.com/lusoris/vmaf/actions/runs/24686615999/job/72197545195).
+72197545195](https://github.com/VMAFx/vmafx/actions/runs/24686615999/job/72197545195).
 
 ## Decision
 
@@ -85,7 +85,7 @@ SHA is reachable locally without a second `git fetch` step.
 
 ## References
 
-- Failing run: [actions/runs/24686615999/job/72197545195](https://github.com/lusoris/vmaf/actions/runs/24686615999/job/72197545195)
+- Failing run: [actions/runs/24686615999/job/72197545195](https://github.com/VMAFx/vmafx/actions/runs/24686615999/job/72197545195)
 - Workflow: [.github/workflows/lint-and-format.yml](../../.github/workflows/lint-and-format.yml)
 - Source: `req` — "this must be something in the ci, the pr passed
   lol" (2026-04-20 popup directing CI-side fix over code-side).

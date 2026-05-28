@@ -120,7 +120,7 @@ git LFS. Anyone can reproduce the calibration set from source clips.
 
 For the current largest shipped tiny-AI model
 (`vmaf_tiny_v1_medium.onnx` — the `mlp_medium` variant landed by
-[PR #158](https://github.com/lusoris/vmaf/pull/158); originally
+[PR #158](https://github.com/VMAFx/vmafx/pull/158); originally
 referenced in early drafts of this digest as a `tiny-vmaf-v2`
 prototype before the LOSO 3-arch evaluation
 ([Research-0023](0023-loso-3arch-results.md)) settled on

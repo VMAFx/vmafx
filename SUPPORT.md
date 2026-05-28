@@ -13,7 +13,7 @@ We track upstream but don't duplicate its discussion threads.
 ## Is it about this fork specifically?
 
 - **GPU backends (CUDA / SYCL / Vulkan; HIP planned)** —
-  [open a bug report](https://github.com/lusoris/vmaf/issues/new/choose)
+  [open a bug report](https://github.com/VMAFx/vmafx/issues/new/choose)
 - **SIMD paths (AVX2 / AVX-512 / NEON)** — same
 - **`--precision` flag / IEEE-754 output** — same
 - **Tiny-AI surface / ONNX Runtime integration** — same
@@ -42,7 +42,7 @@ Questions that include all five usually get triaged within a few days.
 ## Chat / real-time
 
 None currently. If there's demand we'll open a Discord. Watch
-[the repo](https://github.com/lusoris/vmaf) for announcements.
+[the repo](https://github.com/VMAFx/vmafx) for announcements.
 
 ## Sponsoring
 

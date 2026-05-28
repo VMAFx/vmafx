@@ -85,7 +85,7 @@ wrote.
 
 ## References
 
-- PR #72 CI failure surfacing the bug: <https://github.com/lusoris/vmaf/actions/runs/24689802565/job/72208484948>
+- PR #72 CI failure surfacing the bug: <https://github.com/VMAFx/vmafx/actions/runs/24689802565/job/72208484948>
 - ADR-0108 — deep-dive deliverables rule (the policy this CI job enforces)
 - ADR-0133 — earlier rule-enforcement-adjacent CI fix (clang-tidy scope)
 - `.github/PULL_REQUEST_TEMPLATE.md` — the template whose backticks

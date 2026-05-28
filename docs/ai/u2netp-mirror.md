@@ -23,11 +23,11 @@ The model card explains *what* the mirror is; this page explains
 
 The mirror is **not** committed to git (it would bloat the
 history with a 4.7 MB binary). It is shipped as a GitHub
-Release asset attached to the lusoris/vmaf repository:
+Release asset attached to the VMAFx/vmafx repository:
 
 | Aspect          | Value                                                          |
 | --------------- | -------------------------------------------------------------- |
-| Repository      | <https://github.com/lusoris/vmaf>                              |
+| Repository      | <https://github.com/VMAFx/vmafx>                              |
 | Release tag     | `u2netp-mirror-v1`                                             |
 | Asset filenames | `u2netp_mirror_v<N>.onnx` (binary)                             |
 |                 | `u2netp_mirror_v<N>.onnx.bundle` (Sigstore signature bundle)   |
@@ -95,7 +95,7 @@ v3.0.0 or newer.
 TAG="u2netp-mirror-v1"
 
 # Pull the binary, the Sigstore bundle, and the license text
-gh release download "$TAG" --repo lusoris/vmaf \
+gh release download "$TAG" --repo VMAFx/vmafx \
   --pattern 'u2netp_mirror_v*.onnx' \
   --pattern 'u2netp_mirror_v*.onnx.bundle' \
   --pattern 'Apache-2.0-u2netp.txt' \
@@ -123,7 +123,7 @@ fails verification:
 ```bash
 cosign verify-blob \
   --bundle u2netp_mirror_v1.onnx.bundle \
-  --certificate-identity-regexp '^https://github\.com/lusoris/vmaf' \
+  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   u2netp_mirror_v1.onnx
 ```
@@ -157,7 +157,7 @@ directory at the canonical path:
 
 ```bash
 install -m 0644 u2netp_mirror_v1.onnx \
-  /path/to/lusoris/vmaf/model/u2netp_mirror.onnx
+  /path/to/VMAFx/vmafx/model/u2netp_mirror.onnx
 ```
 
 Loading the model from C-side `feature_mobilesal.c` requires
@@ -213,7 +213,7 @@ for the per-clause walk.
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `gh release download` returns no assets | Binary not uploaded yet | Export locally with `ai/scripts/export_u2netp_mirror.py` or wait for the signed release asset per ADR-0412 |
-| `cosign verify-blob` fails with "no matching signatures" | Wrong `--certificate-identity-regexp` | Use the regex shown above; the cert binds to `lusoris/vmaf` workflow runs |
+| `cosign verify-blob` fails with "no matching signatures" | Wrong `--certificate-identity-regexp` | Use the regex shown above; the cert binds to `VMAFx/vmafx` workflow runs |
 | `cosign verify-blob` fails with "expired certificate" | Sigstore short-lived certs need a fresh Rekor lookup | Cosign v3+ does this automatically; ensure your `cosign` is up to date |
 | sha256 mismatch | Wrong asset, partial download, or stale model card | Re-download; re-check model card on the same release tag |
 | ONNX load fails with "unsupported op" | Wire-format scanner rejecting an op | Check [`core/src/dnn/op_allowlist.c`](../../core/src/dnn/op_allowlist.c); `Resize` was added by ADR-0258 — older fork commits won't load this graph |

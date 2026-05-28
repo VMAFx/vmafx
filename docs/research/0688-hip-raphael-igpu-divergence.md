@@ -178,7 +178,7 @@ bit-exact.  The residual 0.228 VIF-driven VMAF delta is from `log_generate()` us
 ## 6. References
 
 - [ADR-0688](../adr/0688-hip-wave32-vif-motion-fix.md)
-- [PR #1561](https://github.com/lusoris/vmaf/pull/1561) — original smoke-test trigger
+- [PR #1561](https://github.com/VMAFx/vmafx/pull/1561) — original smoke-test trigger
 - [ADR-0552](../adr/0552-hip-integer-vif-deterministic-reduce.md) — prior VIF reduction fix
 - `libvmaf/src/cuda/cuda_helper.cuh` — CUDA carry-preserving reference
 - `libvmaf/src/feature/hip/integer_vif/vif_statistics.hip` — fixed kernel

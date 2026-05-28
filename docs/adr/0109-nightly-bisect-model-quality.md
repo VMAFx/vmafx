@@ -7,7 +7,7 @@
 
 ## Context
 
-Issue [#4](https://github.com/lusoris/vmaf/issues/4) requested a nightly
+Issue [#4](https://github.com/VMAFx/vmafx/issues/4) requested a nightly
 CI wrap of the existing `bisect-model-quality` tool (`vmaf-train
 bisect-model-quality`, landed in commit `4a6b76eb`). The issue itself
 flagged three prerequisites:
@@ -87,7 +87,7 @@ swaps in via a follow-up. Concretely:
 
 ## References
 
-- Issue [#4](https://github.com/lusoris/vmaf/issues/4) — feature
+- Issue [#4](https://github.com/VMAFx/vmafx/issues/4) — feature
   request that drove this PR.
 - [`ai/src/vmaf_train/bisect_model_quality.py`](../../ai/src/vmaf_train/bisect_model_quality.py)
   + [`ai/tests/test_bisect_model_quality.py`](../../ai/tests/test_bisect_model_quality.py)

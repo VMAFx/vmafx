@@ -1,4 +1,4 @@
-# Zed Migration Plan — lusoris/vmaf fork (2026-05-19)
+# Zed Migration Plan — VMAFx/vmafx fork (2026-05-19)
 
 Migration plan from VSCode to Zed for this repository.
 **Every Zed-feature claim below cites a WebFetched URL and retrieval date.**

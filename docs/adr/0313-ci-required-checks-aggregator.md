@@ -92,7 +92,7 @@ the exact `gh api PUT` call the operator runs after merge.
 
   ```bash
   # Replace the 23-check required list with the single aggregator.
-  gh api -X PUT "repos/lusoris/vmaf/branches/master/protection/required_status_checks" \
+  gh api -X PUT "repos/VMAFx/vmafx/branches/master/protection/required_status_checks" \
     -f strict=true \
     -F 'contexts=["Required Checks Aggregator"]'
   ```

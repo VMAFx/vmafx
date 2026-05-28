@@ -73,7 +73,7 @@ The `motion_v2_metal` extractor stays at "registered but kernel not ready" — t
   - Three new `.mm` TUs add Obj-C++ build complexity. CI lane `Build — macOS Metal` already exists from T8-1; just needs the Apple Clang to be ≥ Xcode 14 (every GHA macos-latest qualifies).
   - The struct layout for `VmafMetalContext` (and `VmafMetalState`) now lives in `common.mm`, which means it's not visible to TUs that include `common.h`. Accessors above mitigate the loss; consumers that need raw struct introspection (debugger only) can read the runtime layout from the `.mm` source.
 - **Neutral / follow-ups**:
-  - T8-1c (first real kernel) is the immediate follow-up — tracked in [issue #763](https://github.com/lusoris/vmaf/issues/763).
+  - T8-1c (first real kernel) is the immediate follow-up — tracked in [issue #763](https://github.com/VMAFx/vmafx/issues/763).
   - T8-1d through T8-1k (7 follow-up kernels) — mechanical replicas of T8-1c, one PR per kernel, ordered integer → float → SSIM (separable conv).
   - When T8-1c ships, the [Lusoris Homebrew tap `libvmaf` formula](https://github.com/lusoris/homebrew-tap/blob/master/Formula/libvmaf.rb) flips from `enable_vulkan=enabled` (MoltenVK stopgap) to `enable_metal=enabled`; MoltenVK deps demoted to `--with-moltenvk` opt-in.
 
@@ -84,6 +84,6 @@ The `motion_v2_metal` extractor stays at "registered but kernel not ready" — t
 - [ADR-0241](0241-hip-first-consumer-psnr.md) — HIP first kernel-template consumer (the structural twin)
 - [ADR-0246](0246-cuda-kernel-template.md) — CUDA kernel template (origin of the lifecycle shape)
 - [ADR-0338](0338-macos-vulkan-via-moltenvk-lane.md) — MoltenVK CI lane (the stopgap this PR will eventually retire)
-- Issue [#763](https://github.com/lusoris/vmaf/issues/763) — T8-1b + T8-1c tracking
+- Issue [#763](https://github.com/VMAFx/vmafx/issues/763) — T8-1b + T8-1c tracking
 - [Lusoris Homebrew tap](https://github.com/lusoris/homebrew-tap) — ships the MoltenVK stopgap; will swap to native Metal once T8-1c lands
 - Source: `req` — paraphrased: contributor wanted native Metal acceleration on macOS rather than the MoltenVK stopgap ("I want metal, period").

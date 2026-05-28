@@ -115,7 +115,7 @@ exit=0
 | `--task-tag TAG` | Free-form scope tag for runs without a backlog row (e.g. `codeql-cpp-overflow`). Skips checks 1 and 2. |
 | `--skip-gh-search` | Skip check 2 (merged-PR search). Useful offline. |
 | `--skip-active-scan` | Skip check 3 (in-flight scan). |
-| `--repo OWNER/REPO` | GitHub repository (default: `lusoris/vmaf`). |
+| `--repo OWNER/REPO` | GitHub repository (default: `VMAFx/vmafx`). |
 | `--harness-tasks-glob GLOB` | Override the harness task-files glob (default: `/tmp/claude-<uid>/*/tasks/*.output`). |
 | `--backlog-path PATH` | Override the BACKLOG.md path (default: autodetect from the worktree's main repo). |
 
@@ -142,7 +142,7 @@ bk.list_in_flight()                      # -> list[BacklogItem]
 bk.list_closed()                         # -> list[BacklogItem]
 bk.get("T3-9")                           # -> BacklogItem | None
 
-gh = GitHubTracker(repo="lusoris/vmaf")
+gh = GitHubTracker(repo="VMAFx/vmafx")
 gh.merged_prs_since(some_datetime)       # -> list[dict]
 gh.search_prs("T3-9 in:title,body")      # -> list[dict]
 gh.open_agent_branches()                 # -> list[str]

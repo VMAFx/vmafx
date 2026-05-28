@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/lusoris/vmaf/model/tiny/registry.schema.json",
+  "$id": "https://github.com/VMAFx/vmafx/model/tiny/registry.schema.json",
   "title": "VMAF tiny-model registry v1",
   "description": "Index of trusted ONNX tiny-models shipped with libvmaf. The registry is the *trust root*: every ONNX file referenced here must (1) live under model/tiny/, (2) carry a matching sidecar JSON with the same basename, and (3) match the sha256 digest recorded below. Runtime loaders cross-check the digest before CreateSession; a mismatch refuses to load. Per-model inference metadata (input/output tensor names, normalisation, opset) lives in the sidecar next to each ONNX file — NOT here — so the registry stays small and easy to audit. T6-9 (ADR-0211) added license metadata + Sigstore bundle paths to make `--tiny-model-verify` a complete supply-chain gate.",
   "type": "object",

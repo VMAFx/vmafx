@@ -62,7 +62,7 @@ protection sees the required check as passed.
 
 ## Scope
 
-Required-check inventory (23, from `gh api repos/lusoris/vmaf/branches/master/protection`):
+Required-check inventory (23, from `gh api repos/VMAFx/vmafx/branches/master/protection`):
 
 | category | # checks | candidate for skip-on-docs |
 |----------|---------:|---------------------------|
@@ -124,4 +124,4 @@ we don't churn workflows mid-train.
 
 - [GitHub Actions: paths-filter](https://github.com/dorny/paths-filter) — load-bearing dependency
 - [GitHub branch protection docs](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-status-checks-before-merging)
-- Required-check list for `lusoris/vmaf:master`: 23 entries (snapshot 2026-05-04)
+- Required-check list for `VMAFx/vmafx:master`: 23 entries (snapshot 2026-05-04)

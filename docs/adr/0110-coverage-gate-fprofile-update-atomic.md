@@ -110,7 +110,7 @@ which is a rounding error against the 30-min job budget and the
 
 ## References
 
-- Master CI run that exposed the issue: <https://github.com/lusoris/vmaf/actions/runs/24605954678>
+- Master CI run that exposed the issue: <https://github.com/VMAFx/vmafx/actions/runs/24605954678>
   (and four prior consecutive failures on `master` since the AVX-512
   motion port landed).
 - GCC docs on `-fprofile-update`: <https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html>

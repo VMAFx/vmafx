@@ -200,7 +200,7 @@ is enforced at the host, not just honored by convention.
   SIMD-counter races, see [ADR-0110](../adr/0110-coverage-gate-fprofile-update-atomic.md)),
   GPU-advisory jobs, Semgrep OSS.
 
-Management: `gh api --method PUT repos/lusoris/vmaf/branches/master/protection`
+Management: `gh api --method PUT repos/VMAFx/vmafx/branches/master/protection`
 with a JSON payload. The current rule set is documented in
 [ADR-0037](../adr/0037-master-branch-protection.md).
 When adding or renaming a required CI job, update the `contexts` list.

@@ -8,9 +8,9 @@ description: >
 type: application
 version: 0.1.0
 appVersion: "3.0.0"
-home: https://github.com/lusoris/vmaf
+home: https://github.com/VMAFx/vmafx
 sources:
-  - https://github.com/lusoris/vmaf
+  - https://github.com/VMAFx/vmafx
 keywords:
   - vmaf
   - video-quality

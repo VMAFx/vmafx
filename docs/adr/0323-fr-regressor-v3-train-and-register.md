@@ -179,7 +179,7 @@ bash core/test/dnn/test_registry.sh
 
 - `req` 2026-05-06: "Open a draft PR titled `feat(ai):
   fr_regressor_v3 — train + register on ENCODER_VOCAB v3 (16-slot)`
-  against `lusoris/vmaf` master." (paraphrased; this PR's task
+  against `VMAFx/vmafx` master." (paraphrased; this PR's task
   brief).
 - [ADR-0302](0302-encoder-vocab-v3-schema-expansion.md) §Retrain
   ship gate — re-uses ADR-0291's mean LOSO PLCC ≥ 0.95 floor.

@@ -298,7 +298,7 @@ class GitHubTracker:
     tests stub `_run` to avoid network calls.
     """
 
-    def __init__(self, repo: str = "lusoris/vmaf") -> None:
+    def __init__(self, repo: str = "VMAFx/vmafx") -> None:
         self.repo = repo
 
     # -- Internals ---------------------------------------------------

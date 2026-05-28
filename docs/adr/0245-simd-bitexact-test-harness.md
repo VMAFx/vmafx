@@ -96,7 +96,7 @@ risks shifting input bit patterns and is out of scope for this PR).
 
 ## References
 
-- [PR #198](https://github.com/lusoris/vmaf/pull/198) — portable
+- [PR #198](https://github.com/VMAFx/vmafx/pull/198) — portable
   aligned allocator MinGW fix that motivated centralising the helper.
 - [ADR-0138](0138-bit-exact-simd-contract.md) — bit-exactness contract
   for SIMD parity tests.

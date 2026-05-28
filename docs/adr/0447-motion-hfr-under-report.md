@@ -70,8 +70,8 @@ arithmetic is caught by CI.
 ## References
 
 - `req` — Issue #837 (lawrencecurtis, BBC 50p HFR motion under-prediction
-  report): <https://github.com/lusoris/vmaf/issues/837>
-- PR #851 (fix implementation): <https://github.com/lusoris/vmaf/pull/851>
+  report): <https://github.com/VMAFx/vmafx/issues/837>
+- PR #851 (fix implementation): <https://github.com/VMAFx/vmafx/pull/851>
 - ADR-0434 — CHUG parquet metadata enrichment (fps / is_hdr sidecar fields
   consumed by the fps-weight detection logic)
 - ADR-0214 — GPU-parity ULP gate (must cover `motion_fps_weight` clamping path)

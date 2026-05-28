@@ -275,7 +275,7 @@ That is a separate hardening task tracked under
 
 - `req` (the user's Phase 3b task brief): the three candidate-fix
   pseudo-code blocks and the stop-at-first-success process.
-- [PR #511](https://github.com/lusoris/vmaf/pull/511) — Phase 3 fix
+- [PR #511](https://github.com/VMAFx/vmafx/pull/511) — Phase 3 fix
   this digest builds on.
 - [research-0089](0089-vulkan-vif-fp-residual-bisect-2026-05-08.md) —
   Phase 2 + Phase 3 dynamic dump that motivated PR #511.

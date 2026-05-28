@@ -141,6 +141,6 @@ clears the gate.
   ("train a fork-owned tiny **MOS head** that predicts subjective MOS
   …").
 
-[PR #440]: https://github.com/lusoris/vmaf/pull/440
-[PR #447]: https://github.com/lusoris/vmaf/pull/447
+[PR #440]: https://github.com/VMAFx/vmafx/pull/440
+[PR #447]: https://github.com/VMAFx/vmafx/pull/447
 [Research-0086]: ../research/0086-konvid-150k-corpus-feasibility.md

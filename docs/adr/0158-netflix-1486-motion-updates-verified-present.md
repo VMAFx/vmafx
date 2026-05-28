@@ -120,7 +120,7 @@ reference.
 - Upstream commits: `a44e5e6`, `62f47d5` (in
   `Netflix/vmaf@master`).
 - Fork PR #45 (never merged;
-  [9371a0aa](https://github.com/lusoris/vmaf/pull/45)) — tracked
+  [9371a0aa](https://github.com/VMAFx/vmafx/pull/45)) — tracked
   the original port attempt; substance landed via incremental
   fork-native commits instead.
 - [ADR-0024](0024-netflix-golden-preserved.md) — Netflix golden

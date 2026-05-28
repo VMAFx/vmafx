@@ -52,6 +52,6 @@ only `nvcc`, `cudart`, `crt`, `nvvm`, and `visual_studio_integration`, exports
 
 - [ADR-0121](0121-windows-gpu-build-only-legs.md) — Windows GPU build-only gates.
 - [ADR-0603](0603-ubuntu-26-04-fallout-fixes.md) — CUDA 13.2.0 pin context.
-- [GitHub job 77141384870](https://github.com/lusoris/vmaf/actions/runs/26216865470/job/77141384870)
+- [GitHub job 77141384870](https://github.com/VMAFx/vmafx/actions/runs/26216865470/job/77141384870)
   — failed `Jimver/cuda-toolkit` Windows setup on PR #1463.
 - Source: req (user: "why did you stop? O.o you dont ask or say anything, do something for hours and still stop??")

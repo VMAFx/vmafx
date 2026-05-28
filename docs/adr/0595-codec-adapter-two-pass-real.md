@@ -110,4 +110,4 @@ when the driver chooses to short-circuit to single-pass.
 - FFmpeg `libavcodec/amfenc_*.c` `-preanalysis` AVOption.
 - Apple `VTCompressionSession` C API — no multi-pass interface.
 - Source: `req` ("Implement 2-pass encoding for the 14 codec adapters in
-  lusoris/vmaf that currently raise `NotImplementedError`").
+  VMAFx/vmafx that currently raise `NotImplementedError`").

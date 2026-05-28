@@ -14,7 +14,7 @@
         "run", "--rm", "-i",
         "-v", "/home/you/yuv-corpus:/data:ro",
         "-e", "VMAF_MCP_ALLOW=/data",
-        "ghcr.io/lusoris/vmaf-mcp:latest"
+        "ghcr.io/VMAFx/vmafx-mcp:latest"
       ]
     }
   }

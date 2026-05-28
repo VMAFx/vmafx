@@ -127,7 +127,7 @@ is documentation drift.
 
 ## References
 
-- `req`: "Fix the integer_vif_cuda chroma-plane bug in lusoris/vmaf
+- `req`: "Fix the integer_vif_cuda chroma-plane bug in VMAFx/vmafx
   surfaced by the deep audit (Finding 23 in
   `.workingdir/bbb_reports/DEEP_AUDIT_2026_05_18.md`) — paraphrased:
   if CPU also skips U/V (intentionally — VIF is luma-only by design),

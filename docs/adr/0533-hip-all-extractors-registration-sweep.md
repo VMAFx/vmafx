@@ -105,7 +105,7 @@ location, same registry-entry style, same smoke-test shape.
 - `core/src/hip/meson.build` lines 107–127 — `hip_sources` sweep.
 - `core/test/test_hip_smoke.c` — new per-extractor registration
   assertions.
-- `req`: "Register ALL the HIP feature extractors in lusoris/vmaf.
+- `req`: "Register ALL the HIP feature extractors in VMAFx/vmafx.
   PR #1283 only registered `vmaf_fex_integer_motion_hip` because
   the spec was too narrow — but `core/src/feature/hip/` has 20+
   kernel files that all need to land in `feature_extractor_list[]`."

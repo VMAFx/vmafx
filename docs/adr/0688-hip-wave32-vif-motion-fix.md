@@ -152,7 +152,7 @@ made HIP useless in practice.
 - [Research-0688](../research/0688-hip-raphael-igpu-divergence.md) — full
   investigation trace: carry-bug proof, debug accumulator values, metric comparison
   table.
-- [PR #1561](https://github.com/lusoris/vmaf/pull/1561) — dev-container smoke test
+- [PR #1561](https://github.com/VMAFx/vmafx/pull/1561) — dev-container smoke test
   that first surfaced the 19-point divergence.
 - `libvmaf/src/cuda/cuda_helper.cuh` — the CUDA carry-preserving `warp_reduce`
   reference implementation (lines 119–127).

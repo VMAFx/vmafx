@@ -134,7 +134,7 @@ PR template so reviewers can check them at a glance.
 
 ## References
 
-- Source: [issue #38](https://github.com/lusoris/vmaf/issues/38) (the
+- Source: [issue #38](https://github.com/VMAFx/vmafx/issues/38) (the
   body was edited to redact the personal-domain term "cauda" that
   leaked from the porting agent; the redacted issue is the canonical
   context).

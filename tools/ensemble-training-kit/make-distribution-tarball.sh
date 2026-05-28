@@ -67,7 +67,7 @@ done
 # the entry point on first untar.
 cat >"$top/README-FIRST.txt" <<'EOF'
 vmaf-ensemble-training-kit — portable Phase-A + LOSO retrain bundle
-ADR-0324 (lusoris/vmaf fork).
+ADR-0324 (VMAFx/vmafx fork).
 
 Start here:
   tools/ensemble-training-kit/README.md

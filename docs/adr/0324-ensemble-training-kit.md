@@ -89,7 +89,7 @@ merges shards via `ai/scripts/merge_corpora.py` (de-duplicates by
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
 | In-tree kit at `tools/ensemble-training-kit/` (chosen) | Single place to look; ships in PRs alongside the trainer; lints / changelog / ADR entry land together; tarball generator produces a self-contained bundle for collaborators with no checkout. | Adds ~500 LOC of bash + markdown to the tree. | — |
-| Git submodule pointing at a separate `lusoris/vmaf-ensemble-kit` repo | Cleanly separates the operator-facing surface from the engine. | Submodule overhead (extra clone step, separate CI, version-pin drift). The kit's scripts must stay in lockstep with `ai/scripts/` — a separate repo guarantees drift when the trainer's argv changes (already happened twice: PR #422 dropped `--corpus-root`, PR #424 added `--out-dir`). | Drift risk dwarfs the cleanliness benefit. |
+| Git submodule pointing at a separate `VMAFx/vmafx-ensemble-kit` repo | Cleanly separates the operator-facing surface from the engine. | Submodule overhead (extra clone step, separate CI, version-pin drift). The kit's scripts must stay in lockstep with `ai/scripts/` — a separate repo guarantees drift when the trainer's argv changes (already happened twice: PR #422 dropped `--corpus-root`, PR #424 added `--out-dir`). | Drift risk dwarfs the cleanliness benefit. |
 | Docker image bundling the toolchain | One-step setup; reproducible Python + CUDA env. | NVENC inside a container needs `--device /dev/nvidia*` + matching driver versions; libvmaf-CUDA build inside the image costs 10+ minutes; image is multi-GiB to ship. The CLAUDE.md constraint explicitly states "Docker is NOT a requirement". | Higher friction than a tarball + prereq check. |
 
 ## Consequences

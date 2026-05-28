@@ -334,7 +334,7 @@ $/month; on public-repo free-tier it's queue-contention reduction.
 ## 6. Method (data citations)
 
 `gh run list --workflow <file>.yml --limit 50 --json databaseId,conclusion,
-status,startedAt,updatedAt,event -R lusoris/vmaf` was issued for each of the
+status,startedAt,updatedAt,event -R VMAFx/vmafx` was issued for each of the
 15 workflow files. Returned successful-run counts (after filtering): 271
 across all workflows; per-workflow `n` shown in the table in §1. Wall-clock
 was computed as `updatedAt - startedAt`. Job-level breakdowns from

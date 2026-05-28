@@ -4,7 +4,7 @@ Third-party license bundle for the fork-local mirror of U-2-Net's
 Per ADR-0325 (`docs/adr/0325-u2netp-fork-mirror-scaffold.md`),
 the fork redistributes the upstream `xuebinqin/U-2-Net` `u2netp`
 checkpoint (and/or its ONNX rewrap) as a GitHub Release asset
-attached to the lusoris/vmaf repository. This file is the
+attached to the VMAFx/vmafx repository. This file is the
 Apache-2.0 §4 (a) + (c) compliance receipt — it travels with the
 binary in the same release.
 
@@ -261,8 +261,8 @@ END OF APACHE-2.0 LICENSE TEXT
 The above licence text is the canonical Apache-2.0 from
 <https://www.apache.org/licenses/LICENSE-2.0.txt> and applies to
 the redistributed `u2netp` checkpoint and any ONNX rewrap thereof
-attached to lusoris/vmaf GitHub Releases. The fork's own code
-under <https://github.com/lusoris/vmaf> is BSD-3-Clause-Plus-Patent
+attached to VMAFx/vmafx GitHub Releases. The fork's own code
+under <https://github.com/VMAFx/vmafx> is BSD-3-Clause-Plus-Patent
 (see the top-level `LICENSE` file); the two licences co-exist
 because the fork redistributes the upstream Apache-2.0 weights as
 a separately-attached release artefact, not as bundled fork

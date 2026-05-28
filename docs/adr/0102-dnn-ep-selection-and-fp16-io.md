@@ -18,7 +18,7 @@ accepted at the public surface and then silently dropped by the backend:
   `ROCM` enum values existed but had no wiring at all.
 - `fp16_io` was a documented `bool` with no code path ever reading it.
 
-Issue [#30](https://github.com/lusoris/vmaf/issues/30) flagged this as
+Issue [#30](https://github.com/VMAFx/vmafx/issues/30) flagged this as
 an API correctness bug: callers that set `device = VMAF_DNN_DEVICE_CUDA`
 or `fp16_io = true` got a CPU fp32 session, with no log, no error, and
 no way to detect the silent downgrade. The same applies to
@@ -109,7 +109,7 @@ hosts without hardware fp16.
 
 ## References
 
-- Issue [#30 — VmafDnnDevice OPENVINO/ROCM + fp16_io accepted-but-ignored](https://github.com/lusoris/vmaf/issues/30)
+- Issue [#30 — VmafDnnDevice OPENVINO/ROCM + fp16_io accepted-but-ignored](https://github.com/VMAFx/vmafx/issues/30)
 - [ONNX Runtime C API — execution providers](https://onnxruntime.ai/docs/execution-providers/)
 - [ADR-0040](decisions-log.md) — multi-input DNN session API (the same `VmafDnnConfig` this ADR extends)
 - [ADR-0042 / ADR-0100](decisions-log.md) — docs-in-same-PR rules (this PR updates `docs/api/dnn.md` accordingly)

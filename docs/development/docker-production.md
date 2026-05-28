@@ -1,7 +1,7 @@
 # VMAFX Production Docker Images
 
 This page covers pulling, running, and building the VMAFX production container images
-hosted at `ghcr.io/lusoris/vmafx`.
+hosted at `ghcr.io/vmafx/vmafx`.
 
 > For the **development MCP container** (full GPU toolchain, oneAPI, CUDA, Vulkan, MCP
 > server pre-installed), see [docs/development/dev-mcp.md](dev-mcp.md). That container
@@ -11,13 +11,13 @@ hosted at `ghcr.io/lusoris/vmafx`.
 
 ```bash
 # Pull and run the vmaf CLI (CPU, smallest image)
-docker pull ghcr.io/lusoris/vmafx:latest
-docker run --rm ghcr.io/lusoris/vmafx:latest --version
+docker pull ghcr.io/vmafx/vmafx:latest
+docker run --rm ghcr.io/vmafx/vmafx:latest --version
 
 # Score a video pair (mount a local directory)
 docker run --rm \
   -v /path/to/videos:/data:ro \
-  ghcr.io/lusoris/vmafx:latest \
+  ghcr.io/vmafx/vmafx:latest \
   --reference /data/ref.yuv \
   --distorted /data/dis.yuv \
   --width 576 --height 324 \
@@ -46,9 +46,9 @@ runtime. The attack surface is intentionally constrained.
 ### CUDA 12
 
 ```bash
-docker pull ghcr.io/lusoris/vmafx:latest-cuda12
+docker pull ghcr.io/vmafx/vmafx:latest-cuda12
 docker run --rm --gpus all \
-  ghcr.io/lusoris/vmafx:latest-cuda12 \
+  ghcr.io/vmafx/vmafx:latest-cuda12 \
   --version
 ```
 
@@ -58,11 +58,11 @@ compatible with CUDA 12 (driver >= 525.85).
 ### ROCm 6 (HIP)
 
 ```bash
-docker pull ghcr.io/lusoris/vmafx:latest-rocm6
+docker pull ghcr.io/vmafx/vmafx:latest-rocm6
 docker run --rm \
   --device /dev/kfd \
   --device /dev/dri \
-  ghcr.io/lusoris/vmafx:latest-rocm6 \
+  ghcr.io/vmafx/vmafx:latest-rocm6 \
   --version
 ```
 
@@ -71,10 +71,10 @@ Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>` acc
 ### oneAPI 2026 (SYCL / Intel Arc)
 
 ```bash
-docker pull ghcr.io/lusoris/vmafx:latest-oneapi2026
+docker pull ghcr.io/vmafx/vmafx:latest-oneapi2026
 docker run --rm \
   --device /dev/dri \
-  ghcr.io/lusoris/vmafx:latest-oneapi2026 \
+  ghcr.io/vmafx/vmafx:latest-oneapi2026 \
   --version
 ```
 
@@ -83,11 +83,11 @@ Requires: `i915` or `xe` kernel module loaded and `/dev/dri/renderD<N>` accessib
 ### Vulkan
 
 ```bash
-docker pull ghcr.io/lusoris/vmafx:latest-vulkan
+docker pull ghcr.io/vmafx/vmafx:latest-vulkan
 docker run --rm \
   --device /dev/dri \
   -v /usr/share/vulkan/icd.d:/usr/share/vulkan/icd.d:ro \
-  ghcr.io/lusoris/vmafx:latest-vulkan \
+  ghcr.io/vmafx/vmafx:latest-vulkan \
   --version
 ```
 
@@ -100,7 +100,7 @@ The `-server` tag starts the vmaf-mcp JSON-RPC server on port 8080:
 
 ```bash
 docker run --rm -p 8080:8080 \
-  ghcr.io/lusoris/vmafx:latest-server
+  ghcr.io/vmafx/vmafx:latest-server
 ```
 
 To override the transport or bind address:
@@ -109,7 +109,7 @@ To override the transport or bind address:
 docker run --rm -p 8080:8080 \
   -e VMAFX_MCP_HOST=0.0.0.0 \
   -e VMAFX_MCP_PORT=8080 \
-  ghcr.io/lusoris/vmafx:latest-server \
+  ghcr.io/vmafx/vmafx:latest-server \
   --transport http --host 0.0.0.0 --port 8080
 ```
 
@@ -131,16 +131,16 @@ attestation. Verify before deploying in a security-sensitive context:
 ```bash
 # Verify the cosign signature
 cosign verify \
-  --certificate-identity-regexp "https://github.com/lusoris/vmaf/.github/workflows/docker-publish-production.yml" \
+  --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/lusoris/vmafx:latest
+  ghcr.io/vmafx/vmafx:latest
 
 # Verify and print the SBOM attestation
 cosign verify-attestation \
-  --certificate-identity-regexp "https://github.com/lusoris/vmaf/.github/workflows/docker-publish-production.yml" \
+  --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --type cyclonedx \
-  ghcr.io/lusoris/vmafx:latest \
+  ghcr.io/vmafx/vmafx:latest \
   | jq '.payload | @base64d | fromjson'
 ```
 

@@ -156,7 +156,7 @@ kubectl scale -n vmafx deployment/vmafx --replicas=4
 
 # Rolling update to a new image
 kubectl set image -n vmafx deployment/vmafx \
-  vmafx=ghcr.io/lusoris/vmafx:3.1.0
+  vmafx=ghcr.io/vmafx/vmafx:3.1.0
 ```
 
 The chart uses `RollingUpdate` strategy with `maxUnavailable=0` by default,

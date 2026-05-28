@@ -3,7 +3,7 @@
 `integer_cambi_cuda.c::submit_fex_cuda` called `vmaf_cambi_preprocessing(dist_pic, ...)`
 directly on the CUDA picture. The CUDA picture's `data[0]` is a device pointer; reading
 it on the host caused a segfault (SIGSEGV, exit code 139) on every `--feature cambi_cuda`
-invocation. Fixes [Issue #857](https://github.com/lusoris/vmaf/issues/857).
+invocation. Fixes [Issue #857](https://github.com/VMAFx/vmafx/issues/857).
 
 **Root cause:** `vmaf_cambi_preprocessing` internally calls
 `decimate_generic_uint8_and_convert_to_10b` which dereferences `pic->data[0]` row-by-row

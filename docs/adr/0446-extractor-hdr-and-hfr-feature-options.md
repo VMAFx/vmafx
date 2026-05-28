@@ -133,7 +133,7 @@ Extend `extract_k150k_features.py` to:
 
 ## References
 
-- [Issue #837](https://github.com/lusoris/vmaf/issues/837) — lawrence's
+- [Issue #837](https://github.com/VMAFx/vmafx/issues/837) — lawrence's
   BBC50p HFR complaint + the audit-confirmed CAMBI HDR-EOTF gap.
 - [`docs/research/0135-hdr-ugc-dataset-license-audit-2026-05-15.md`](../research/0135-hdr-ugc-dataset-license-audit-2026-05-15.md)
   — HDR dataset audit (CHUG inventory + HFR clip count).

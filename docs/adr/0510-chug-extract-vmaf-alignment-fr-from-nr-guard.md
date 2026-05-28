@@ -123,7 +123,7 @@ parquet, several GPU-hours into the run.
   silently produced systematically-wrong VMAF scores across the
   entire output, and the fix is a refuse-or-correct guard at the
   point where the misconfiguration enters the pipeline.
-- Source: `req` ("CRITICAL bug fix in lusoris/vmaf … VMAF≈99 for
+- Source: `req` ("CRITICAL bug fix in VMAFx/vmafx … VMAF≈99 for
   ALL CHUG bitladder rows — including 360p @ 0.2 Mbps (which
   should physically be VMAF 30-60, not 99)") — verbatim quote
   from the dispatch request that opened this fix; paraphrased to

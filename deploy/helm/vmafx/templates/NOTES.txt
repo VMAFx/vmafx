@@ -25,7 +25,7 @@ To scale:
 
 To roll out a new image:
   kubectl set image -n {{ .Release.Namespace }} deployment/{{ include "vmafx.fullname" . }} \
-    {{ include "vmafx.name" . }}=ghcr.io/lusoris/vmafx:<new-tag>
+    {{ include "vmafx.name" . }}=ghcr.io/vmafx/vmafx:<new-tag>
 
 {{- else if eq .Values.workload "Job" }}
 ----------------------------------------------------------------------

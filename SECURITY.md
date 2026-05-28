@@ -20,7 +20,7 @@ the current `master` and the latest two tagged releases.
 **Please do not open a public issue for security problems.**
 
 Use GitHub's private vulnerability-reporting flow:
-`https://github.com/lusoris/vmaf/security/advisories/new`
+`https://github.com/VMAFx/vmafx/security/advisories/new`
 
 If the issue is in code inherited from upstream, we will coordinate
 disclosure with Netflix/vmaf maintainers.

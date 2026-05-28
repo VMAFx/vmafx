@@ -1,7 +1,7 @@
 - The K150K/CHUG feature extractor (`ai/scripts/extract_k150k_features.py`)
   now passes HDR-aware and HFR-aware per-feature options to libvmaf
   ([ADR-0446](../docs/adr/0446-extractor-hdr-and-hfr-feature-options.md)),
-  closing [Issue #837](https://github.com/lusoris/vmaf/issues/837) +
+  closing [Issue #837](https://github.com/VMAFx/vmafx/issues/837) +
   the parallel CAMBI HDR-EOTF gap surfaced by lawrence's review of the
   in-flight CHUG extraction. Per-clip ffprobe now surfaces
   `color_primaries`/`color_transfer`/`color_space`; HDR sources

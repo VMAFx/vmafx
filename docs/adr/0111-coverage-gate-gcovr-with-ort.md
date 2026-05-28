@@ -106,7 +106,7 @@ not address them.
   [ADR-0110 §Decision items 1 and 2](0110-coverage-gate-fprofile-update-atomic.md#decision).
 - Empirical evidence for the 1176% over-count after the ADR-0110
   race fixes:
-  <https://github.com/lusoris/vmaf/actions/runs/24606544171>
+  <https://github.com/VMAFx/vmafx/actions/runs/24606544171>
   (Coverage gate step at 14:20:34 — `dnn_api.c — 1176%` with the
   rest of the DNN tree at 5–14%).
 - gcovr docs:

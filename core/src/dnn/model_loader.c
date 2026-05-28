@@ -1094,13 +1094,13 @@ int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
 
     /* posix_spawnp argv. The certificate-identity-regexp + oidc-issuer
      * mirror docs/ai/security.md; they pin verification to
-     * lusoris/vmaf's supply-chain workflow identity. */
+     * VMAFx/vmafx's supply-chain workflow identity. */
     char *argv[] = {
         (char *)"cosign",
         (char *)"verify-blob",
         bundle_arg,
         (char *)"--certificate-identity-regexp",
-        (char *)"https://github.com/lusoris/vmaf/.github/workflows/.+",
+        (char *)"https://github.com/VMAFx/vmafx/.github/workflows/.+",
         (char *)"--certificate-oidc-issuer",
         (char *)"https://token.actions.githubusercontent.com",
         (char *)onnx_path,

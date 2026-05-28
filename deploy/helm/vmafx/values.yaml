@@ -11,7 +11,7 @@
 # Image
 # ---------------------------------------------------------------------------
 image:
-  repository: ghcr.io/lusoris/vmafx
+  repository: ghcr.io/vmafx/vmafx
   tag: ""           # Defaults to .Chart.AppVersion when empty.
   pullPolicy: IfNotPresent
 

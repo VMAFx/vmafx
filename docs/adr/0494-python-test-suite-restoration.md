@@ -109,8 +109,8 @@ build).
 
 ## References
 
-- Triggering PR: [#1193](https://github.com/lusoris/vmaf/pull/1193) (silent restore of `python/vmaf/core/`)
-- Related fixes shipping concurrently: [#1244](https://github.com/lusoris/vmaf/pull/1244) (canonical YUVs), [#1245](https://github.com/lusoris/vmaf/pull/1245) (tiny registry sha)
+- Triggering PR: [#1193](https://github.com/VMAFx/vmafx/pull/1193) (silent restore of `python/vmaf/core/`)
+- Related fixes shipping concurrently: [#1244](https://github.com/VMAFx/vmafx/pull/1244) (canonical YUVs), [#1245](https://github.com/VMAFx/vmafx/pull/1245) (tiny registry sha)
 - numpy 2.0 release notes — scalar repr change
 - libsvm 3.32 — `kernel_names` enum migration
 - ADR-0024 — Netflix golden gate (scope this PR does *not* touch)

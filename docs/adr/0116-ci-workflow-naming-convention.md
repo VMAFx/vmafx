@@ -44,7 +44,7 @@ We will use a uniform naming convention across all `.github/workflows/*.yml`:
    `Coverage Gate (Ramping to 70% / 85% Critical)`.
 4. **Status-check contexts** — driven by (3) above. After renaming, re-pin
    `required_status_checks.contexts` via
-   `gh api --method PUT repos/lusoris/vmaf/branches/master/protection` in
+   `gh api --method PUT repos/VMAFx/vmafx/branches/master/protection` in
    the same merge window so protection does not break.
 
 ## Alternatives considered
@@ -80,7 +80,7 @@ We will use a uniform naming convention across all `.github/workflows/*.yml`:
     follow-up.
   - The post-merge re-pin command is:
     ```
-    gh api --method PUT repos/lusoris/vmaf/branches/master/protection \
+    gh api --method PUT repos/VMAFx/vmafx/branches/master/protection \
       --input <updated-protection.json>
     ```
     where the JSON's `required_status_checks.contexts` array uses the new
