@@ -263,7 +263,7 @@ const file_vmafx_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\tR\amessage2\x85\x01\n" +
 	"\fVmafxScoring\x128\n" +
 	"\x05Score\x12\x16.vmafx.v1.ScoreRequest\x1a\x17.vmafx.v1.ScoreResponse\x12;\n" +
-	"\x06Health\x12\x17.vmafx.v1.HealthRequest\x1a\x18.vmafx.v1.HealthResponseB0Z.github.com/vmafx/vmafx/gen/go/vmafx/v1;vmafxv1b\x06proto3"
+	"\x06Health\x12\x17.vmafx.v1.HealthRequest\x1a\x18.vmafx.v1.HealthResponseB0Z.github.com/VMAFx/vmafx/gen/go/vmafx/v1;vmafxv1b\x06proto3"
 
 var (
 	file_vmafx_proto_rawDescOnce sync.Once

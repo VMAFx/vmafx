@@ -31,8 +31,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/vmafx/vmafx/pkg/libvmaf"
-	"github.com/vmafx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/pkg/libvmaf"
+	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
 // envOr returns the environment variable value, or def if the variable is unset / empty.

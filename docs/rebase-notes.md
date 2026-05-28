@@ -45,6 +45,18 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/vmafx-phase4-language-modernization-foundation (ADR-0702) — fork-only, no Netflix conflict
+
+**No upstream rebase impact.** The files added in this PR (`go.mod`, `Cargo.toml`,
+`pkg/`, `cmd/`, `bindings/`, `.github/workflows/go-ci.yml`,
+`.github/workflows/rust-ci.yml`) are entirely fork-local. Netflix/vmaf upstream
+does not have a Go or Rust surface; cherry-picks from upstream are unaffected.
+
+The `docs/principles.md`, `docs/development/languages.md`, `.gitignore`, and
+`Makefile` additions are additive; the Makefile targets are named distinctly
+(`go-build`, `go-test`, `rust-build`, `rust-test`) and do not conflict with any
+upstream Makefile target.
+
 ## chore/post-cutover-url-sweep — fork-only URL change, no Netflix conflict
 
 **No upstream rebase impact**: this change replaces all occurrences of the
@@ -39627,3 +39639,13 @@ Touched files:
 `docs/research/0706-tiny-ai-netflix-training-prep-2026-05-22.md`,
 `changelog.d/added/0682-tiny-ai-netflix-training-scaffold-2026-05-22.md`,
 `docs/rebase-notes.md` (this entry).
+
+## feat/bindings-rust-vmafx-sys (ADR-0706) — fork-only Rust crate, no Netflix upstream impact
+
+**No upstream rebase impact**: `bindings/rust/vmafx-sys`, the root `Cargo.toml`,
+`.github/workflows/rust-ci.yml`, and `docs/development/rust.md` are wholly
+fork-local. Netflix/vmaf upstream has no Rust surface; upstream cherry-picks
+and `port-upstream-commit` syncs are unaffected. The libvmaf C public headers
+consumed by `bindgen` remain at `core/include/libvmaf/` (ADR-0700 path); any
+future upstream header change that adds or removes a symbol is handled
+automatically by re-running `cargo build` (bindgen regenerates on every build).

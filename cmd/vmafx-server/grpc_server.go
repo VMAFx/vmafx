@@ -24,9 +24,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	vmafxv1 "github.com/vmafx/vmafx/gen/go"
-	"github.com/vmafx/vmafx/pkg/libvmaf"
-	"github.com/vmafx/vmafx/pkg/observability"
+	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	"github.com/VMAFx/vmafx/pkg/libvmaf"
+	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
 // grpcServer implements vmafxv1.VmafxScoringServer.

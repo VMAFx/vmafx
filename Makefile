@@ -25,7 +25,8 @@ LIBVMAF_DIR := libvmaf
 BUILD_DIR := $(LIBVMAF_DIR)/build
 DEBUG_DIR := $(LIBVMAF_DIR)/debug
 
-.PHONY: default all debug build install cythonize clean distclean cythonize-deps
+.PHONY: default all debug build install cythonize clean distclean cythonize-deps \
+    go-build go-test rust-build rust-test
 
 default: build
 
@@ -287,6 +288,38 @@ pr-check:
 	    exit 2; \
 	fi
 
+# ── Go workspace (ADR-0702) ─────────────────────────────────────────────────
+#
+# go-build: compile all Go packages in the workspace (no output binary in the
+#           foundation PR; cmd/ binaries are added by per-sweep PRs).
+# go-test:  run `go test ./...` (covers pkg/version and future packages).
+#
+# Both targets require Go ≥ 1.23 on PATH. If `go` is absent they fail with an
+# actionable message rather than a confusing "command not found".
+
+go-build:
+	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
+	go build ./...
+
+go-test:
+	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
+	go test ./...
+
+# ── Rust workspace (ADR-0702) ────────────────────────────────────────────────
+#
+# rust-build: cargo check --all (no members yet; validates the workspace manifest).
+# rust-test:  cargo test --all (no tests until vmafx-sys crate is added).
+#
+# Both targets require a stable Rust toolchain on PATH.
+
+rust-build:
+	@command -v cargo >/dev/null || { echo "cargo not found — install Rust via https://rustup.rs/"; exit 1; }
+	cargo check --all
+
+rust-test:
+	@command -v cargo >/dev/null || { echo "cargo not found — install Rust via https://rustup.rs/"; exit 1; }
+	cargo test --all
+
 help:
 	@echo "Fork-specific targets:"
 	@echo "  make lint             — clang-tidy + cppcheck + ruff + shellcheck"
@@ -303,5 +336,10 @@ help:
 	@echo "  make coverage-check   — enforce ≥70% overall / ≥85% critical"
 	@echo "  make assertion-density — Power-of-10 rule 5 density check"
 	@echo "  make hooks-install    — wire up pre-commit git hooks"
+	@echo ""
+	@echo "  make go-build         — go build ./... (Go workspace, ADR-0702)"
+	@echo "  make go-test          — go test ./... (Go workspace, ADR-0702)"
+	@echo "  make rust-build       — cargo check --all (Rust workspace, ADR-0702)"
+	@echo "  make rust-test        — cargo test --all (Rust workspace, ADR-0702)"
 	@echo ""
 	@echo "Upstream targets: build, test, debug, install, clean, distclean, cythonize"

@@ -25,8 +25,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/vmafx/vmafx/pkg/libvmaf"
-	"github.com/vmafx/vmafx/pkg/observability"
+	"github.com/VMAFx/vmafx/pkg/libvmaf"
+	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
 // ---------------------------------------------------------------------------

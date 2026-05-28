@@ -12,7 +12,7 @@ syntax = "proto3";
 
 package vmafx.v1;
 
-option go_package = "github.com/vmafx/vmafx/gen/go/vmafx/v1;vmafxv1";
+option go_package = "github.com/VMAFx/vmafx/gen/go/vmafx/v1;vmafxv1";
 
 // VmafxScoring is the primary scoring service.
 service VmafxScoring {

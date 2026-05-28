@@ -1,6 +1,6 @@
-module github.com/vmafx/vmafx
+module github.com/VMAFx/vmafx
 
-go 1.26.3
+go 1.23
 
 require (
 	github.com/prometheus/client_golang v1.23.2
