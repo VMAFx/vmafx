@@ -192,8 +192,8 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 FROM runtime-base AS final-rocm6
 # ROCm HIP runtime libs
-COPY --from=rocm/rocm-terminal:6.0 /opt/rocm/lib/libamdhip64.so*       /usr/local/lib/
-COPY --from=rocm/rocm-terminal:6.0 /opt/rocm/lib/libhsa-runtime64.so*  /usr/local/lib/
+COPY --from=rocm/rocm-terminal:6.0@sha256:36366ec2e24cb2985cb117165fb76d620b37c4a3cc0884fae21a2cb6a2f0bb9a /opt/rocm/lib/libamdhip64.so*       /usr/local/lib/
+COPY --from=rocm/rocm-terminal:6.0@sha256:36366ec2e24cb2985cb117165fb76d620b37c4a3cc0884fae21a2cb6a2f0bb9a /opt/rocm/lib/libhsa-runtime64.so*  /usr/local/lib/
 COPY --from=builder-rocm6 /dist/lib/   /usr/local/lib/
 COPY --from=builder-rocm6 /dist/bin/   /usr/local/bin/
 COPY --from=builder-rocm6 /dist/model/ /usr/local/share/vmafx/model/
