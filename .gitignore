@@ -1,3 +1,7 @@
+# Go build artifacts (compiled binaries from go build ./cmd/...)
+/vmafx-mcp
+/vmafx-server
+
 # Caches, build artifacts
 .DS_Store
 .cache/

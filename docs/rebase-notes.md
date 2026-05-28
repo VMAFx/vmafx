@@ -1,5 +1,12 @@
 # Rebase notes
 
+## feat/vmafx-mcp-go-port (ADR-0704) — fork-only, no Netflix conflict
+
+**No upstream rebase impact**: this PR adds `cmd/vmafx-mcp/`, `pkg/libvmaf/`,
+`go.mod`, and `go.sum` — all entirely fork-local. The Python MCP server at
+`mcp-server/vmaf-mcp/` is unchanged. Netflix/vmaf upstream does not contain
+any Go code or an MCP server. Cherry-picks from upstream are unaffected.
+
 Single ledger of fork-local changes that need attention when this fork
 syncs from `upstream/master` (Netflix/vmaf). Required by
 [ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local
