@@ -45,6 +45,12 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## docs/hw-backend-audit-2026-05-28 — doc-only, no rebase impact
+
+**No upstream rebase impact**: this PR adds a research digest
+(`docs/research/0733-hardware-backend-audit-2026-05-28.md`), a changelog fragment,
+and a `docs/state.md` update. No C source, build system, or upstream-shared path is
+touched. Netflix/vmaf upstream syncs are unaffected.
 ## feat/vmafx-phase4-language-modernization-foundation (ADR-0702) — fork-only, no Netflix conflict
 
 **No upstream rebase impact.** The files added in this PR (`go.mod`, `Cargo.toml`,
@@ -39757,4 +39763,3 @@ Touched files:
 `docs/adr/0707-vmafx-rust-pilot-feature.md`,
 `docs/metrics/tad.md`,
 `changelog.d/added/tad-rust-pilot.md`,
-

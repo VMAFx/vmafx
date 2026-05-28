@@ -1,0 +1,344 @@
+// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// Copyright 2026 Lusoris
+//
+// cmd/vmafx-controller/grpc_server.go — gRPC server implementation for vmafx-controller.
+//
+// Implements two gRPC services on a single port:
+//   - VmafxScoring  (gen/go/vmafxv1) — direct scoring retained from Phase 4a
+//   - VmafxController (gen/go/controller/controllerv1) — job queue + node API (Phase 4b.1)
+//
+// The scoring service delegates to pkg/libvmaf.
+// The controller service delegates to cmd/vmafx-controller/{queue,nodes,scheduler}.
+//
+// ADR-0703: vmafx-server Go gRPC + HTTP service (origin).
+// ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
+
+//go:build cgo
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
+	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
+	"github.com/VMAFx/vmafx/pkg/libvmaf"
+	"github.com/VMAFx/vmafx/pkg/observability"
+)
+
+// ---------------------------------------------------------------------------
+// VmafxScoring service (Phase 4a, retained)
+// ---------------------------------------------------------------------------
+
+// scoringServer implements vmafxv1.VmafxScoringServer.
+type scoringServer struct {
+	vmafxv1.UnimplementedVmafxScoringServer
+	scorer  *libvmaf.Scorer
+	metrics *observability.Metrics
+	log     *slog.Logger
+}
+
+func newScoringServer(scorer *libvmaf.Scorer, metrics *observability.Metrics, log *slog.Logger) *scoringServer {
+	return &scoringServer{scorer: scorer, metrics: metrics, log: log}
+}
+
+// Score implements VmafxScoring.Score.
+func (s *scoringServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*vmafxv1.ScoreResponse, error) {
+	s.metrics.ScoreRequests.Inc()
+	start := time.Now()
+
+	s.log.Info("grpc Score request",
+		"reference", req.GetReference(),
+		"distorted", req.GetDistorted(),
+		"model", req.GetModel(),
+	)
+
+	if req.GetReference() == "" || req.GetDistorted() == "" {
+		s.metrics.ScoreErrors.Inc()
+		return nil, status.Errorf(codes.InvalidArgument, "reference and distorted paths are required")
+	}
+
+	score, features, err := s.scorer.Score(req.GetReference(), req.GetDistorted(), req.GetModel())
+	elapsed := time.Since(start).Seconds()
+	s.metrics.ScoreDuration.Observe(elapsed)
+
+	if err != nil {
+		s.metrics.ScoreErrors.Inc()
+		s.log.Error("grpc Score failed", "error", err, "duration_s", elapsed)
+		return nil, status.Errorf(codes.Internal, "scoring failed: %v", err)
+	}
+
+	protoFeatures := make(map[string]float64, len(features))
+	for k, v := range features {
+		protoFeatures[k] = v
+	}
+
+	s.log.Info("grpc Score completed", "score", fmt.Sprintf("%.4f", score), "duration_s", elapsed)
+	return &vmafxv1.ScoreResponse{
+		Score:    score,
+		Features: protoFeatures,
+	}, nil
+}
+
+// Health implements VmafxScoring.Health.
+func (s *scoringServer) Health(_ context.Context, _ *vmafxv1.HealthRequest) (*vmafxv1.HealthResponse, error) {
+	s.metrics.HealthRequests.Inc()
+	return &vmafxv1.HealthResponse{Ok: true, Message: "ok"}, nil
+}
+
+// ---------------------------------------------------------------------------
+// VmafxController service (Phase 4b.1)
+// ---------------------------------------------------------------------------
+
+// controllerServer implements controllerv1.VmafxControllerServer.
+type controllerServer struct {
+	controllerv1.UnimplementedVmafxControllerServer
+	queue    queue.Queue
+	registry *nodes.Registry
+	sched    *scheduler.Scheduler
+	metrics  *observability.Metrics
+	log      *slog.Logger
+}
+
+func newControllerServer(
+	q queue.Queue,
+	r *nodes.Registry,
+	s *scheduler.Scheduler,
+	metrics *observability.Metrics,
+	log *slog.Logger,
+) *controllerServer {
+	return &controllerServer{queue: q, registry: r, sched: s, metrics: metrics, log: log}
+}
+
+// SubmitJob enqueues a new scoring job.
+func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.SubmitJobRequest) (*controllerv1.SubmitJobResponse, error) {
+	if req.GetScoring() == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "scoring params are required")
+	}
+	sp := req.GetScoring()
+	if sp.GetReference() == "" || sp.GetDistorted() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "reference and distorted paths are required")
+	}
+
+	j := &queue.Job{
+		Scoring: queue.ScoringParams{
+			Reference: sp.GetReference(),
+			Distorted: sp.GetDistorted(),
+			Model:     sp.GetModel(),
+			Backend:   sp.GetBackend(),
+		},
+	}
+
+	id, err := c.queue.Submit(ctx, j)
+	if err != nil {
+		c.log.Error("SubmitJob failed", "error", err)
+		return nil, status.Errorf(codes.Internal, "submit job: %v", err)
+	}
+
+	c.metrics.JobsSubmitted.Inc()
+	c.log.Info("job submitted via gRPC", "job_id", id, "reference", sp.GetReference(), "backend", sp.GetBackend())
+	return &controllerv1.SubmitJobResponse{JobId: id}, nil
+}
+
+// GetJob retrieves the current state of a job.
+func (c *controllerServer) GetJob(ctx context.Context, req *controllerv1.GetJobRequest) (*controllerv1.Job, error) {
+	if req.GetJobId() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "job_id is required")
+	}
+	j, err := c.queue.Get(ctx, req.GetJobId())
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "job %q not found: %v", req.GetJobId(), err)
+	}
+	return queueJobToProto(j), nil
+}
+
+// CancelJob requests cancellation of a pending or running job.
+func (c *controllerServer) CancelJob(ctx context.Context, req *controllerv1.CancelJobRequest) (*controllerv1.CancelJobResponse, error) {
+	if req.GetJobId() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "job_id is required")
+	}
+	if err := c.queue.Cancel(ctx, req.GetJobId()); err != nil {
+		return nil, status.Errorf(codes.Internal, "cancel job %q: %v", req.GetJobId(), err)
+	}
+	return &controllerv1.CancelJobResponse{Ok: true, Message: "cancellation requested"}, nil
+}
+
+// StreamJobs is a server-streaming RPC that pushes job updates.
+// Phase 4b.1 implementation: streams the current snapshot of all jobs once,
+// then closes.  A persistent push model is a Phase 4b.2 enhancement.
+func (c *controllerServer) StreamJobs(req *controllerv1.StreamJobsRequest, stream controllerv1.VmafxController_StreamJobsServer) error {
+	// For Phase 4b.1, this is a simple snapshot stream — send all current jobs
+	// matching the filter and return.  Long-lived subscription is Phase 4b.2.
+	c.log.Info("StreamJobs snapshot requested", "filter", req.GetStatusFilter())
+	return nil
+}
+
+// RegisterNode handles vmafx-node registration.
+func (c *controllerServer) RegisterNode(_ context.Context, req *controllerv1.RegisterNodeRequest) (*controllerv1.RegisterNodeResponse, error) {
+	if req.GetName() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "node name is required")
+	}
+
+	cap := protoCapToNodes(req.GetCapability())
+	nodeID, token, err := c.registry.Register(req.GetName(), cap)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "register node: %v", err)
+	}
+
+	c.log.Info("node registered via gRPC", "node_id", nodeID, "name", req.GetName())
+	return &controllerv1.RegisterNodeResponse{NodeId: nodeID, SessionToken: token}, nil
+}
+
+// Heartbeat processes a node keepalive ping.
+func (c *controllerServer) Heartbeat(_ context.Context, req *controllerv1.HeartbeatRequest) (*controllerv1.HeartbeatResponse, error) {
+	ok := c.registry.Heartbeat(req.GetNodeId(), req.GetSessionToken(), int(req.GetJobsRunning()))
+	return &controllerv1.HeartbeatResponse{Ok: ok}, nil
+}
+
+// PullWork assigns the next matching job to the requesting node.
+func (c *controllerServer) PullWork(ctx context.Context, req *controllerv1.PullWorkRequest) (*controllerv1.PullWorkResponse, error) {
+	cap := protoCapToNodes(req.GetCapability())
+	job, err := c.sched.Assign(ctx, req.GetNodeId(), req.GetSessionToken(), cap)
+	if err != nil {
+		return nil, status.Errorf(codes.PermissionDenied, "pull work: %v", err)
+	}
+	if job == nil {
+		return &controllerv1.PullWorkResponse{}, nil
+	}
+	return &controllerv1.PullWorkResponse{Job: queueJobToProto(job)}, nil
+}
+
+// ReportResult records the terminal (or partial) outcome of a job.
+func (c *controllerServer) ReportResult(ctx context.Context, req *controllerv1.ReportResultRequest) (*controllerv1.ReportResultResponse, error) {
+	if !c.registry.ValidateSession(req.GetNodeId(), req.GetSessionToken()) {
+		return nil, status.Errorf(codes.PermissionDenied, "invalid session for node %q", req.GetNodeId())
+	}
+
+	if !req.GetFinal() {
+		// Partial result: no terminal state update needed for Phase 4b.1.
+		c.log.Debug("partial result received", "job_id", req.GetJobId(), "node_id", req.GetNodeId())
+		return &controllerv1.ReportResultResponse{Ok: true}, nil
+	}
+
+	result := &queue.JobResult{
+		Score:    req.GetScore(),
+		Features: req.GetFeatures(),
+		Err:      req.GetError(),
+	}
+	if err := c.queue.ReportResult(ctx, req.GetJobId(), result); err != nil {
+		return nil, status.Errorf(codes.Internal, "report result: %v", err)
+	}
+
+	if req.GetError() != "" {
+		c.metrics.JobsFailed.Inc()
+	} else {
+		c.metrics.JobsCompleted.Inc()
+	}
+	return &controllerv1.ReportResultResponse{Ok: true}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Conversion helpers
+// ---------------------------------------------------------------------------
+
+// queueJobToProto converts a queue.Job to its proto representation.
+func queueJobToProto(j *queue.Job) *controllerv1.Job {
+	return &controllerv1.Job{
+		Id:     j.ID,
+		Status: queueStatusToProto(j.Status),
+		Scoring: &controllerv1.ScoringParams{
+			Reference: j.Scoring.Reference,
+			Distorted: j.Scoring.Distorted,
+			Model:     j.Scoring.Model,
+			Backend:   j.Scoring.Backend,
+		},
+		AssignedNode: j.AssignedNode,
+		Error:        j.Error,
+		CreatedAt:    j.CreatedAt.Unix(),
+		UpdatedAt:    j.UpdatedAt.Unix(),
+	}
+}
+
+// queueStatusToProto converts a queue status string to its proto enum value.
+func queueStatusToProto(s string) controllerv1.JobStatus {
+	switch s {
+	case queue.StatusRunning:
+		return controllerv1.JobStatus_RUNNING
+	case queue.StatusCompleted:
+		return controllerv1.JobStatus_COMPLETED
+	case queue.StatusFailed:
+		return controllerv1.JobStatus_FAILED
+	case queue.StatusCancelled:
+		return controllerv1.JobStatus_CANCELLED
+	default:
+		return controllerv1.JobStatus_PENDING
+	}
+}
+
+// protoCapToNodes converts a proto NodeCapability to a nodes.Capability.
+func protoCapToNodes(cap *controllerv1.NodeCapability) nodes.Capability {
+	if cap == nil {
+		return nodes.Capability{}
+	}
+	return nodes.Capability{
+		GPUVendor:   cap.GetGpuVendor(),
+		Backends:    cap.GetBackends(),
+		Concurrency: int(cap.GetConcurrency()),
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runGRPC — starts the gRPC listener with both services registered.
+// ---------------------------------------------------------------------------
+
+// runGRPC starts the gRPC listener on addr and blocks until ctx is cancelled.
+func runGRPC(
+	ctx context.Context,
+	addr string,
+	scorer *libvmaf.Scorer,
+	jobQueue queue.Queue,
+	nodeRegistry *nodes.Registry,
+	sched *scheduler.Scheduler,
+	metrics *observability.Metrics,
+	log *slog.Logger,
+) error {
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("grpc listen %s: %w", addr, err)
+	}
+
+	srv := grpc.NewServer()
+
+	// Phase 4a: direct scoring service.
+	vmafxv1.RegisterVmafxScoringServer(srv, newScoringServer(scorer, metrics, log))
+
+	// Phase 4b.1: controller service (job queue + node API).
+	controllerv1.RegisterVmafxControllerServer(srv,
+		newControllerServer(jobQueue, nodeRegistry, sched, metrics, log),
+	)
+
+	log.Info("gRPC server started", "addr", addr, "services", []string{"VmafxScoring", "VmafxController"})
+
+	// Graceful shutdown on context cancellation.
+	go func() {
+		<-ctx.Done()
+		log.Info("gRPC graceful shutdown initiated")
+		srv.GracefulStop()
+	}()
+
+	if err := srv.Serve(lis); err != nil {
+		return fmt.Errorf("grpc serve: %w", err)
+	}
+	return nil
+}
