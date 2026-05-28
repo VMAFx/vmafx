@@ -1548,6 +1548,22 @@ metadata_handler_cpp20_lib = static_library(
     install : false,
 )
 
+# ADR-0722: C++11 pilot — log.c converted to log.cpp.
+# Compiled as an isolated static lib so its cpp_std override does not
+# propagate to other C TUs; same isolation pattern as
+# metadata_handler_cpp20_lib (ADR-0708).  C++11 is sufficient for the
+# features used (std::array, constexpr, nullptr, template helpers);
+# no C++17/20 headers are pulled in, so the file also compiles inline
+# in test targets that inherit the project's C++11 default.
+log_cpp11_lib = static_library(
+    'log_cpp11',
+    src_dir + 'log.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++11'],
+    pic : true,
+    install : false,
+)
+
 libvmaf_sources = [
     src_dir + 'libvmaf.c',
     src_dir + 'predict.c',
@@ -1562,7 +1578,7 @@ libvmaf_sources = [
     src_dir + 'ref.c',
     src_dir + 'read_json_model.c',
     src_dir + 'pdjson.c',
-    src_dir + 'log.c',
+    # log.cpp is compiled as log_cpp11_lib (ADR-0722)
     src_dir + 'framesync.c',
     # metadata_handler.cpp is compiled as metadata_handler_cpp20_lib (ADR-0708)
     src_dir + 'picture_pool.c',
@@ -1676,6 +1692,8 @@ libvmaf = library(
         libsvm_static_lib.extract_all_objects(recursive: true),
         # ADR-0708: C++20 pilot TU compiled as isolated static lib.
         metadata_handler_cpp20_lib.extract_all_objects(recursive: true),
+        # ADR-0722: C++11 log.cpp pilot TU — isolated static lib.
+        log_cpp11_lib.extract_all_objects(recursive: true),
     ],
     version : vmaf_soname_version,
     soversion : vmaf_soversion,

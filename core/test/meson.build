@@ -43,7 +43,7 @@ test_propagate_metadata = executable('test_propagate_metadata',
 )
 
 test_feature_collector = executable('test_feature_collector',
-    ['test.c', 'test_feature_collector.c', '../src/log.c', '../src/predict.c',
+    ['test.c', 'test_feature_collector.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', rev_target],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
@@ -68,7 +68,7 @@ test_output = executable('test_output',
 )
 
 test_log = executable('test_log',
-    ['test.c', 'test_log.c', '../src/log.c'],
+    ['test.c', 'test_log.c', '../src/log.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [pthread_dependency, sycl_dependency],
 )
@@ -92,7 +92,7 @@ test_thread_pool = executable('test_thread_pool',
 )
 
 test_model = executable('test_model',
-    ['test.c', 'test_model.c', '../src/dict.c', '../src/pdjson.c', '../src/read_json_model.c', '../src/log.c', json_model_c_sources],
+    ['test.c', 'test_model.c', '../src/dict.c', '../src/pdjson.c', '../src/read_json_model.c', '../src/log.cpp', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
@@ -115,7 +115,7 @@ test_model_collection_api = executable('test_model_collection_api',
 
 test_predict = executable('test_predict',
     ['test.c', 'test_predict.c', '../src/dict.c', '../src/metadata_handler.cpp',
-     '../src/feature/feature_collector.c', '../src/feature/alias.c', '../src/model.c', '../src/log.c',
+     '../src/feature/feature_collector.c', '../src/feature/alias.c', '../src/model.c', '../src/log.cpp',
      '../src/read_json_model.c', '../src/pdjson.c', json_model_c_sources, '../src/feature/feature_name.c', '../src/feature/feature_extractor.c',],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
@@ -132,7 +132,7 @@ test_feature_extractor = executable('test_feature_extractor',
     # so it must be listed explicitly; the T-CUDA-FEATURE-EXTRACTOR-DOUBLE-WRITE
     # regression test exercises feature_extractor_vector_append() directly.
     ['test.c', 'test_feature_extractor.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c',
      '../src/fex_ctx_vector.c',
      dnn_sources],
@@ -192,7 +192,7 @@ test_ciede = executable('test_ciede',
 # extractor list and pulls in opt.c for the VmafOption typedef.
 test_lpips = executable('test_lpips',
     ['test.c', 'test_lpips.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -211,7 +211,7 @@ test_lpips = executable('test_lpips',
 # two-input extractor is discoverable without requiring an ORT session.
 test_dists = executable('test_dists',
     ['test.c', 'test_dists.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -232,7 +232,7 @@ test_dists = executable('test_dists',
 # model/tiny/fastdvdnet_pre.onnx covers the live inference path.
 test_fastdvdnet_pre = executable('test_fastdvdnet_pre',
     ['test.c', 'test_fastdvdnet_pre.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -253,7 +253,7 @@ test_fastdvdnet_pre = executable('test_fastdvdnet_pre',
 # gate against model/tiny/mobilesal.onnx.
 test_mobilesal = executable('test_mobilesal',
     ['test.c', 'test_mobilesal.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -273,7 +273,7 @@ test_mobilesal = executable('test_mobilesal',
 # model/tiny/transnet_v2.onnx covers the live inference path.
 test_transnet_v2 = executable('test_transnet_v2',
     ['test.c', 'test_transnet_v2.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -300,7 +300,7 @@ if cambi_simd_test_archs.contains(host_machine.cpu_family())
 test_cambi_simd = executable('test_cambi_simd',
     ['test.c', 'test_cambi_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -328,7 +328,7 @@ endif
 if get_option('enable_float')
 test_speed = executable('test_speed',
     ['test.c', 'test_speed.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -347,7 +347,7 @@ endif
 # ADR-0253 real-impl: registration, vtable, flat/noise entropy, temporal positivity.
 test_speed_qa = executable('test_speed_qa',
     ['test.c', 'test_speed_qa.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -451,7 +451,7 @@ if iqa_convolve_test_archs.contains(host_machine.cpu_family())
 test_iqa_convolve = executable('test_iqa_convolve',
     ['test.c', 'test_iqa_convolve.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -473,7 +473,7 @@ if psnr_hvs_avx2_test_archs.contains(host_machine.cpu_family())
 test_psnr_hvs_avx2 = executable('test_psnr_hvs_avx2',
     ['test.c', 'test_psnr_hvs_avx2.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -495,7 +495,7 @@ if vif_simd_test_archs.contains(host_machine.cpu_family())
 test_vif_simd = executable('test_vif_simd',
     ['test.c', 'test_vif_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -517,7 +517,7 @@ if psnr_hvs_simd_test_archs.contains(host_machine.cpu_family())
 test_psnr_hvs_simd = executable('test_psnr_hvs_simd',
     ['test.c', 'test_psnr_hvs_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -539,7 +539,7 @@ if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
 test_integer_adm_simd = executable('test_integer_adm_simd',
     ['test.c', 'test_integer_adm_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -561,7 +561,7 @@ if motion_v2_simd_test_archs.contains(host_machine.cpu_family())
 test_motion_v2_simd = executable('test_motion_v2_simd',
     ['test.c', 'test_motion_v2_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -590,7 +590,7 @@ if ssimulacra2_simd_test_archs.contains(host_machine.cpu_family())
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -612,7 +612,7 @@ if psnr_hvs_neon_test_archs.contains(host_machine.cpu_family())
 test_psnr_hvs_neon = executable('test_psnr_hvs_neon',
     ['test.c', 'test_psnr_hvs_neon.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -634,7 +634,7 @@ if float_enabled and moment_simd_test_archs.contains(host_machine.cpu_family())
 test_moment_simd = executable('test_moment_simd',
     ['test.c', 'test_moment_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -651,34 +651,14 @@ test_moment_simd = executable('test_moment_simd',
 )
 endif
 
-ansnr_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
-if ansnr_simd_test_archs.contains(host_machine.cpu_family())
-test_ansnr_simd = executable('test_ansnr_simd',
-    ['test.c', 'test_ansnr_simd.c',
-     '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
-     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
-                           include_directories('../src/feature/'), dnn_inc],
-    c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
-    objects : [
-      common_cuda_objects,
-      platform_specific_cpu_objects,
-      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
-      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
-      libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
-)
-endif
+# ansnr SIMD test removed — ansnr metric dropped in ADR-0720.
 
 ms_ssim_decimate_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
 if ms_ssim_decimate_test_archs.contains(host_machine.cpu_family())
 test_ms_ssim_decimate = executable('test_ms_ssim_decimate',
     ['test.c', 'test_ms_ssim_decimate.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -836,7 +816,7 @@ test('test_score_pooled_eagain', test_score_pooled_eagain, suite : ['fast'])
 # ADR-0153 — float_ms_ssim init rejects <176x176 (Netflix#1414).
 test_float_ms_ssim_min_dim = executable('test_float_ms_ssim_min_dim',
     ['test.c', 'test_float_ms_ssim_min_dim.c', '../src/mem.c', '../src/picture.c',
-     '../src/ref.c', '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/ref.c', '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -856,7 +836,7 @@ test('test_float_ms_ssim_min_dim', test_float_ms_ssim_min_dim, suite : ['fast'])
 # instead of reading out-of-bounds via the reflect-101 mirror-padding formula.
 test_motion_min_dim = executable('test_motion_min_dim',
     ['test.c', 'test_motion_min_dim.c', '../src/mem.c', '../src/picture.c',
-     '../src/ref.c', '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/ref.c', '../src/dict.c', '../src/opt.c', '../src/log.cpp', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -1118,9 +1098,7 @@ if float_enabled and moment_simd_test_archs.contains(host_machine.cpu_family())
 test('test_moment_simd', test_moment_simd, suite : ['fast', 'simd'])
 endif
 
-if ansnr_simd_test_archs.contains(host_machine.cpu_family())
-test('test_ansnr_simd', test_ansnr_simd, suite : ['fast', 'simd'])
-endif
+# test_ansnr_simd removed — ansnr metric dropped in ADR-0720.
 
 if iqa_convolve_test_archs.contains(host_machine.cpu_family())
 test('test_iqa_convolve', test_iqa_convolve, suite : ['fast', 'simd'])

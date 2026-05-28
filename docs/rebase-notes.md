@@ -6,6 +6,25 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## `core/src/log.cpp` — C++ Wave 1 conversion (ADR-0722)
+
+`log.c` was renamed to `log.cpp`. When upstream Netflix/vmaf modifies
+`libvmaf/src/log.c`, the patch will not apply automatically.
+
+1. After any upstream sync that touches `libvmaf/src/log.c`, manually
+   forward-port the change into `core/src/log.cpp`.
+2. The public API (`vmaf_set_log_level`, `vmaf_log`) is unchanged; `log.h`
+   now carries `extern "C"` guards — keep those if you re-apply the header.
+3. `core/test/meson.build` references `../src/log.cpp` (not `.c`); any
+   upstream sync that regenerates the test build file must preserve this.
+
+Fork-local files: `core/src/log.cpp` (new), `core/src/log.h` (extern "C"
+guards added), `core/src/meson.build` (`log_cpp11_lib` static-lib entry),
+`core/test/meson.build` (all `log.c` → `log.cpp`),
+`docs/adr/0722-cpp23-pilot-log.md`.
+
+---
+
 ## `docker/Dockerfile.node` — vmafx-node worker image + ffmpeg n8.2 (ADR-0717)
 
 **ffmpeg-patches now validated against both n8.1.1 and n8.2.** The node
