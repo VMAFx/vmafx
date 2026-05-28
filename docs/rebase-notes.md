@@ -39684,3 +39684,15 @@ Touched files: `docs/adr/0709-vmafx-phase4b-distributed-platform.md`,
 `docs/architecture/phase4b-distributed-platform.md`,
 `changelog.d/added/vmafx-phase4b-umbrella-adr.md`, `docs/state.md`,
 `docs/rebase-notes.md` (this entry), `docs/adr/README.md`.
+
+---
+
+## docs/research-netflix-pipeline-backlog-audit (Research-0732) — research digest only, no Netflix upstream impact
+
+**no rebase impact**: this PR adds only `docs/research/0732-netflix-pipeline-backlog-audit.md`
+and a changelog fragment. No C sources, headers, build files, or test fixtures are touched.
+Netflix/vmaf upstream cherry-picks and `port-upstream-commit` syncs are unaffected.
+
+Touched files: `docs/research/0732-netflix-pipeline-backlog-audit.md`,
+`changelog.d/added/0732-netflix-pipeline-backlog-audit.md`, `docs/state.md`,
+`docs/rebase-notes.md` (this entry).
