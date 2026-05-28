@@ -40079,3 +40079,25 @@ No new rebase-sensitive invariants beyond those already documented in the
 `ADR-0743 __launch_bounds__ + __ldg` entry above. The register budget (48 regs/thread)
 and `__ldg` annotations must be preserved on any upstream sync that touches
 `filter1d.cu` per the existing note.
+## One-off container SYCL device-access pattern (`--device /dev/dri --group-add 988`)
+
+**No rebase impact** on upstream C/Python code.
+
+When running `vmaf-dev-mcp:cuda13.3` as a one-off `docker run` with SYCL needed:
+
+1. `--device /dev/dri` is not sufficient. The Level Zero GPU ICD requires
+   `/dev/dri/by-path/pci-XXXX:YY:ZZ.W-render` symlinks to enumerate Intel devices.
+   These symlinks are **not** passed by `--device /dev/dri`; they require an explicit
+   `-v /dev/dri/by-path:/dev/dri/by-path:ro` bind-mount.
+2. `--group-add render` fails because `render` is not a group name inside the container.
+   Use `--group-add 988` (the host render GID, confirmed on this machine).
+3. Source `setvars.sh` inside the container before invoking `sycl-ls` or `vmaf --backend sycl`.
+
+The `docker compose` deployment (`dev/docker-compose.yml`) already carries the `by-path`
+bind-mount per ADR-0514; this note covers one-off `docker run` usage.
+
+Fork-local files:
+`docs/research/0734-cross-backend-baseline-with-sycl-20260528.md` (new),
+`changelog.d/changed/cross-backend-baseline-with-sycl.md` (new),
+`docs/rebase-notes.md` (this entry),
+`docs/state.md` (new row).
