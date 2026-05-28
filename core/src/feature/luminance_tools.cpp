@@ -55,8 +55,11 @@ constexpr double kBt1886Gamma = 2.4;
 constexpr double kBt1886Lw = 300.0;
 constexpr double kBt1886Lb = 0.01;
 
-[[nodiscard]] static int range_foot_head(int bitdepth, enum VmafPixelRange pix_range, int *foot,
-                                         int *head) noexcept
+/* `static` removed: anonymous namespace already provides internal linkage
+ * (Power of 10 #10 / -Wredundant-decls; adversarial review 2026-05-28
+ * finding #12). */
+[[nodiscard]] int range_foot_head(int bitdepth, enum VmafPixelRange pix_range, int *foot,
+                                  int *head) noexcept
 {
     switch (pix_range) {
     case VMAF_PIXEL_RANGE_LIMITED:
@@ -74,7 +77,7 @@ constexpr double kBt1886Lb = 0.01;
     return 0;
 }
 
-[[nodiscard]] static double normalize_range(int sample, VmafLumaRange range) noexcept
+[[nodiscard]] double normalize_range(int sample, VmafLumaRange range) noexcept
 {
     int clipped = std::clamp(sample, range.foot, range.head);
     return static_cast<double>(clipped - range.foot) / static_cast<double>(range.head - range.foot);

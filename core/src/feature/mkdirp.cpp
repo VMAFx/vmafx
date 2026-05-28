@@ -14,6 +14,8 @@
 //     that the C version required for both success and goto-fail paths.
 //   - RAII (`std::string`) replaces the `goto fail` cleanup pattern, making
 //     every exit path — including early returns — leak-free by construction.
+//   - Recursion replaced with an iterative prefix-walk (Power of 10 #1;
+//     adversarial review 2026-05-28 finding #11).
 //   - `nullptr` replaces `NULL` in C++ code.
 //   - `std::string_view` is used for the normalized path to avoid copies when
 //     finding the last separator.
@@ -75,21 +77,24 @@ extern "C" int mkdirp(const char *path, mode_t mode)
     if (pathname.empty())
         return -1;
 
-    // Find last separator to derive the parent path.
-    std::size_t sep_pos = pathname.rfind(kPathSep);
-    if (sep_pos != std::string::npos && sep_pos > 0) {
-        // Recurse to create parent; return early on failure.
-        std::string parent{pathname.substr(0, sep_pos)};
-        if (mkdirp(parent.c_str(), mode) != 0)
+    /* Iterative path-component creation (Power of 10 #1 — no recursion).
+     * Walk the normalised path left-to-right, creating each prefix component
+     * before attempting the final directory.  Bounded by the number of '/'
+     * separators, which is at most strlen(path) — statically verifiable
+     * upper bound (adversarial review 2026-05-28 finding #11). */
+    for (std::size_t pos = 1; pos <= pathname.size(); ++pos) {
+        if (pos < pathname.size() && pathname[pos] != kPathSep)
+            continue;
+        /* Create the prefix [0, pos). */
+        std::string prefix = pathname.substr(0, pos);
+#ifdef _WIN32
+        (void)mode;
+        int rc = _mkdir(prefix.c_str());
+#else
+        int rc = mkdir(prefix.c_str(), mode);
+#endif
+        if (rc != 0 && errno != EEXIST)
             return -1;
     }
-
-#ifdef _WIN32
-    (void)mode;
-    int rc = _mkdir(pathname.c_str());
-#else
-    int rc = mkdir(pathname.c_str(), mode);
-#endif
-
-    return (rc == 0 || errno == EEXIST) ? 0 : -1;
+    return 0;
 }

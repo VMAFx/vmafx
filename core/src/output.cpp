@@ -77,6 +77,15 @@ class LocaleGuard
   public:
     explicit LocaleGuard() noexcept : state_(vmaf_thread_locale_push_c())
     {
+        /* If vmaf_thread_locale_push_c fails (OOM in newlocale/duplocale),
+         * state_ is null.  vmaf_thread_locale_pop(nullptr) is a no-op, so
+         * teardown is safe, but output will proceed without C-locale,
+         * potentially producing incorrect decimal separators on non-C locales.
+         * Log a warning so this is observable (adversarial review 2026-05-28
+         * finding #16). */
+        if (!state_)
+            vmaf_log(VMAF_LOG_LEVEL_WARNING, "vmaf_thread_locale_push_c failed; output may use "
+                                             "wrong decimal separator\n");
     }
     ~LocaleGuard() noexcept
     {
@@ -117,6 +126,11 @@ static constexpr const char *pool_method_name[] = {
     "mean",         /* VMAF_POOL_METHOD_MEAN = 3    */
     "harmonic_mean" /* VMAF_POOL_METHOD_HARMONIC_MEAN = 4 */
 };
+/* Guard: if VMAF_POOL_METHOD_NB grows without updating this array,
+ * callers loop to NB-1 and read out of bounds. Catch it at compile time
+ * (adversarial review 2026-05-28 finding #17; JPL Rule 23 spirit). */
+static_assert(VMAF_POOL_METHOD_NB == 5,
+              "pool_method_name array size mismatch — update the array above");
 
 static inline std::string_view fmt_or_default(const char *score_format) noexcept
 {

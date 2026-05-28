@@ -45,10 +45,11 @@
  *     converted to -ENOMEM.
  */
 
+#include <cassert>
+#include <climits>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
-#include <vector>
 
 /* Pull in <atomic> before any extern "C" block so that C++ templates
  * in <atomic> are not incorrectly given C linkage.  feature_extractor.h
@@ -108,21 +109,10 @@ int feature_extractor_vector_init(RegisteredFeatureExtractors *rfe)
      * stays coherent after every mutating call. */
     static constexpr unsigned kInitialCapacity = 8u;
 
-    try {
-        std::vector<VmafFeatureExtractorContext *> v;
-        v.reserve(kInitialCapacity);
-        /* release the storage to the struct's raw pointer so the C
-         * callers that read rfe->fex_ctx directly still work.
-         * The vector is abandoned here; lifecycle management returns
-         * to the manual realloc path in _append (preserving the
-         * growth strategy) and the manual free in _destroy. */
-        (void)v; /* vector used only to validate the reserve above */
-    } catch (...) {
-        /* reserve never throws for trivially small capacity on any
-         * real allocator, but guard regardless. */
-        return -ENOMEM;
-    }
-
+    /* The original try/catch + dead vector were removed: the vector was
+     * constructed and immediately discarded without any observable effect.
+     * malloc below is the actual allocating path (adversarial review
+     * 2026-05-28 finding #5 — Power of 10 #3). */
     rfe->cnt = 0;
     rfe->capacity = kInitialCapacity;
     const size_t sz = sizeof(*(rfe->fex_ctx)) * rfe->capacity;
@@ -187,6 +177,9 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
         /* Capacity-doubling growth strategy — preserved exactly from the
          * original C implementation so that any test that relies on the
          * realloc pattern or resulting capacity values stays correct. */
+        /* Guard against size_t overflow in capacity doubling
+         * (CERT INT30-C; adversarial review 2026-05-28 finding #6). */
+        assert(rfe->capacity <= (SIZE_MAX / 2u) / sizeof(*rfe->fex_ctx));
         const size_t capacity = static_cast<size_t>(rfe->capacity) * 2u;
         auto *fex_ctx_new = static_cast<VmafFeatureExtractorContext **>(realloc(
             static_cast<void *>(rfe->fex_ctx), // NOLINT(cppcoreguidelines-no-malloc) — C ABI grow

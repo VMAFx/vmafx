@@ -172,19 +172,14 @@ dict_append_new_entry(VmafDictionary *d, std::string_view key, std::string_view 
 }
 
 // ---------------------------------------------------------------------------
-// Internal isnumeric helper (used by vmaf_feature_dictionary_set)
+// Internal isnumeric helper — defined in dict_internal.h (shared with tests)
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] static bool isnumeric(std::string_view str) noexcept
-{
-    char *end = nullptr;
-    (void)std::strtof(str.data(), &end);
-    if (end == str.data())
-        return false;
-    while (*end == ' ' || *end == '\t' || *end == '\n')
-        ++end;
-    return *end == '\0';
-}
+/* isnumeric is defined as `inline bool` in dict_internal.h so that the
+ * white-box test (test_dict.cpp) can include it without an ODR violation.
+ * The previous `static bool isnumeric` local definition is removed here
+ * (adversarial review 2026-05-28 finding #10). */
+#include "dict_internal.h"
 
 // ---------------------------------------------------------------------------
 // Public C API — all functions in extern "C" to preserve ABI

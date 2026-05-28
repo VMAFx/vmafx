@@ -26,8 +26,8 @@
  * free callbacks + cookie + pthread mutex round-robin) was always
  * backend-agnostic — only the include directory, the `VmafRingBuffer*`
  * names, and the `cuda/` location implied otherwise. ADR-0239 promotes
- * the file out of `cuda/` and renames the symbols so SYCL, HIP and Metal
- * can reuse the same pool shape.
+ * the file out of `cuda/` and renames the symbols so SYCL and Vulkan can
+ * stop hand-rolling the same pool.
  *
  * Each backend supplies:
  *   - `pic_cnt` slots

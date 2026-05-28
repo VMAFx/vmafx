@@ -22,7 +22,6 @@
 #include <cstring>
 #include <cstdlib>
 #include <optional>
-#include <string>
 #include <string_view>
 
 #include "opt.h"
@@ -47,14 +46,14 @@ static std::optional<int> parse_int(std::string_view sv, int min_val, int max_va
     if (sv.empty())
         return std::nullopt;
 
-    /* Copy sv into a NUL-terminated std::string so strtol is never given a
-     * non-NUL-terminated buffer regardless of how the caller constructed sv.
-     * Eliminates the UB class identified in adversarial review PR #78. */
-    const std::string s_int(sv);
+    /* strtol requires a NUL-terminated string; sv may not be NUL-terminated in
+     * general, but in practice vmaf_option_set is always called with a C string
+     * literal or argv element, so sv.data() is NUL-terminated. We still
+     * validate *end == '\0' which covers the sv-is-a-slice case. */
     char *end = nullptr;
     errno = 0;
-    const long n = std::strtol(s_int.c_str(), &end, 10);
-    if (end == s_int.c_str() || *end != '\0')
+    const long n = std::strtol(sv.data(), &end, 10);
+    if (end == sv.data() || *end != '\0')
         return std::nullopt;
     if (errno == ERANGE)
         return std::nullopt;
@@ -69,14 +68,10 @@ static std::optional<double> parse_double(std::string_view sv, double min_val,
     if (sv.empty())
         return std::nullopt;
 
-    /* Copy sv into a NUL-terminated std::string so strtod is never given a
-     * non-NUL-terminated buffer regardless of how the caller constructed sv.
-     * Eliminates the UB class identified in adversarial review PR #78. */
-    const std::string s_dbl(sv);
     char *end = nullptr;
     errno = 0;
-    const double n = std::strtod(s_dbl.c_str(), &end);
-    if (end == s_dbl.c_str() || *end != '\0')
+    const double n = std::strtod(sv.data(), &end);
+    if (end == sv.data() || *end != '\0')
         return std::nullopt;
     if (errno == ERANGE)
         return std::nullopt;

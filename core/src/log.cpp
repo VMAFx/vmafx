@@ -48,6 +48,7 @@
 #include <algorithm> /* std::clamp */
 #include <array>
 #include <cstdarg>
+#include <cassert>
 #include <cstdio>
 #include <string_view>
 
@@ -103,8 +104,13 @@ void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
     /* level is in [1, 4] here; map to zero-based array index. */
     const std::size_t idx = static_cast<std::size_t>(level) - 1u;
 
-    /* string_view::data() is a pointer to the underlying null-terminated
-     * string literal, safe to pass to fprintf's %s specifier. */
+    /* Enforce NUL-termination invariant: string_view::data() is safe to pass
+     * to fprintf's %s only when the underlying storage is NUL-terminated.
+     * These views are constructed from string literals so the byte at
+     * data()[size()] is always '\0'.  The asserts make the contract explicit
+     * and auditable (Power of 10 #5; adversarial review 2026-05-28 finding #7). */
+    assert(level_str[idx].data()[level_str[idx].size()] == '\0');
+    assert(level_str_color[idx].data()[level_str_color[idx].size()] == '\0');
     (void)fprintf(stderr, "%slibvmaf%s %s%s%s ", istty ? "\x1B[35m" : "", istty ? "\x1B[0m" : "",
                   istty ? level_str_color[idx].data() : "", level_str[idx].data(),
                   istty ? "\x1B[0m" : "");

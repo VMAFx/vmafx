@@ -16,9 +16,6 @@
  *
  */
 
-// NOLINTBEGIN — test-file include of dict.cpp to access isnumeric() (static internal);
-// not a production pattern. ADR-0727: dict.cpp is C++23; this test mirrors it.
-
 // test.h declares run_tests() without extern "C"; wrap it so the C test harness
 // (test.c, compiled as C) can link the symbol from this C++ TU.
 extern "C" {
@@ -26,7 +23,11 @@ extern "C" {
 }
 #include "dict.h"
 
-#include "dict.cpp" // NOLINT(bugprone-suspicious-include) — intentional: white-box test of static isnumeric()
+/* Use dict_internal.h to access isnumeric() without the ODR risk of
+ * `#include "dict.cpp"`.  dict_internal.h defines isnumeric as `inline`
+ * so this TU and dict.cpp can both see the definition with no ODR violation
+ * (adversarial review 2026-05-28 finding #10; Power of 10 #8). */
+#include "../src/dict_internal.h"
 
 static char *test_vmaf_dictionary()
 {

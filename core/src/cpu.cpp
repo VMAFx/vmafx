@@ -51,8 +51,12 @@ namespace
  *   - vmaf_get_cpu_flags() is a pure read on the hot path; relaxed load
  *     avoids unnecessary fence emission on ARM/POWER while still being
  *     defined behaviour for concurrent reads after a sequenced store. */
-std::atomic<unsigned> g_flags{0u};
-std::atomic<unsigned> g_flags_mask{std::numeric_limits<unsigned>::max()};
+/* constinit (C++20/23) guarantees compile-time initialisation of these atomics,
+ * preventing the static-initialisation-order fiasco if another TU's static
+ * initializer calls vmaf_get_cpu_flags() before this TU is constructed
+ * (adversarial review 2026-05-28 finding #19). */
+constinit std::atomic<unsigned> g_flags{0u};
+constinit std::atomic<unsigned> g_flags_mask{std::numeric_limits<unsigned>::max()};
 
 } // namespace
 

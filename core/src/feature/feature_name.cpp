@@ -76,7 +76,11 @@ static char *vmaf_feature_name_from_opts_dict(const char *name, const VmafOption
                                               VmafDictionary *opts_dict)
 {
     VmafDictionary *sorted_raw = nullptr;
-    vmaf_dictionary_copy(&opts_dict, &sorted_raw);
+    /* Check return value: OOM causes sorted_raw to stay null, which the
+     * !sorted guard below catches before any dereference (CERT MEM31-C;
+     * adversarial review 2026-05-28 finding #15). */
+    if (vmaf_dictionary_copy(&opts_dict, &sorted_raw) != 0)
+        return nullptr;
     vmaf_dictionary_alphabetical_sort(sorted_raw);
     DictPtr sorted(sorted_raw); /* freed by DictPtr destructor on any exit */
 

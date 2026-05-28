@@ -59,6 +59,11 @@ static void picture_copy_hbd(float *dst, std::ptrdiff_t dst_stride, VmafPicture 
         for (unsigned j = 0; j < w; j++) {
             dst[j] = static_cast<float>(row_in[j]) / scaler + static_cast<float>(offset);
         }
+        /* dst_stride is signed ptrdiff_t; negative values advance dst backwards
+         * (bottom-up image layout).  This is an intentional, supported use case
+         * preserved from the original C code.  Arithmetic on signed ptrdiff_t is
+         * well-defined; negative strides are valid (CERT INT31-C note;
+         * adversarial review 2026-05-28 finding #14). */
         dst += dst_stride / static_cast<std::ptrdiff_t>(sizeof(float));
         src_row += src_stride_samples;
     }
