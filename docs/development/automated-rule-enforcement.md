@@ -195,7 +195,11 @@ runs in two passes:
      `libvmaf_vulkan`, …)
    - `--enable-libvmaf-*` — FFmpeg configure flags
 2. **Build the diff set.** From the PR's diff against
+<<<<<<< HEAD
    `core/include/libvmaf/*.h` and `core/meson_options.txt`,
+=======
+   `core/include/core/*.h` and `core/meson_options.txt`,
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
    extract the same identifier shapes from `+`/`-` lines (single-line
    `//` and `/* … */` comments stripped best-effort).
 

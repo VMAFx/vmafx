@@ -1,6 +1,12 @@
+<<<<<<< HEAD
 # DNN session API — `libvmaf/dnn.h`
 
 The DNN surface in [`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h)
+=======
+# DNN session API — `core/dnn.h`
+
+The DNN surface in [`core/include/core/dnn.h`](../../core/include/core/dnn.h)
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 lets callers load and run tiny ONNX models from C, either attached to a
 `VmafContext` (so DNN scores show up next to SVM scores in the normal VMAF
 report) or as a standalone session (luma-in / luma-out filter-style
@@ -307,7 +313,11 @@ Only works when libvmaf was built with `-Denable_dnn=true`.
 
 The fork ships a Sigstore-keyless verification primitive for tiny-AI
 ONNX bundles, surfaced by both the C API
+<<<<<<< HEAD
 (`vmaf_dnn_verify_signature` in `core/include/libvmaf/dnn.h`) and
+=======
+(`vmaf_dnn_verify_signature` in `core/include/core/dnn.h`) and
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 the CLI flag `--tiny-model-verify` on the `vmaf` binary
 (see [`docs/usage/cli.md`](../usage/cli.md)).
 

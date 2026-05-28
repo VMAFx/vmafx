@@ -16,7 +16,11 @@ on AMD?
 ## Method
 
 1. Grep `vmaf_hip_import_state` across the tree. Found:
+<<<<<<< HEAD
    - Declaration: `core/include/libvmaf/libvmaf_hip.h:80`.
+=======
+   - Declaration: `core/include/core/libvmaf_hip.h:80`.
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
    - Definition: `core/src/hip/common.c:149` returning `-ENOSYS`
      with a comment "stays unwired until the first feature kernel
      lands (T7-10c)".

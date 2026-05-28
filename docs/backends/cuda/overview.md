@@ -268,6 +268,7 @@ to surface an unexpected delta.
 See [metrics/features.md](../../metrics/features.md) for the
 per-extractor coverage matrix.
 
+<<<<<<< HEAD
 ## CUDA version notes
 
 - **`__mul24` / `__umul24` / `__mul24hi` — absent from this codebase (safe).**
@@ -296,11 +297,14 @@ per-extractor coverage matrix.
 See [metrics/features.md](../../metrics/features.md) for the
 per-extractor coverage matrix.
 
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 ## References
 
 - [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)
 - [CUDA Driver API Reference](https://docs.nvidia.com/cuda/cuda-driver-api/)
 - [CUDA Runtime API Reference](https://docs.nvidia.com/cuda/cuda-runtime-api/) (informational — libvmaf itself uses the Driver API)
+<<<<<<< HEAD
 
 ## VIF filter1d horizontal kernel performance (ADR-0743, 2026-05-28)
 
@@ -336,3 +340,5 @@ ncu -k 'filter1d_8_horizontal_kernel_2_17_9' --set basic --csv \
 
 See [ADR-0743](../../adr/0743-cuda-vif-filter1d-ncu-driven-perf.md) and
 [Research-0743](../../research/research-0743-cuda-vif-filter1d-perf-impl.md).
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)

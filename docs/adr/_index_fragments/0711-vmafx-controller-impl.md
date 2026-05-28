@@ -1,0 +1,1 @@
+| [ADR-0711](0711-vmafx-controller-impl.md) | vmafx-controller Phase 4b.1 — Go service: gRPC + HTTP, in-memory job queue, persistent node registry, FIFO scheduler | Accepted | go, controller, phase4b, grpc, http, fork-local |

@@ -39,7 +39,11 @@ readiness").
 | Component | Version |
 |---|---|
 | vmaf git SHA | `d4458190a9a8ad14da8f3eabc6be4b422f9af49c` |
+<<<<<<< HEAD
 | Build dir | `libvmaf/build-sycl-vulkan` |
+=======
+| Build dir | `core/build-sycl-vulkan` |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | Build flags | `enable_sycl=true`, `enable_vulkan=enabled`, `enable_cuda=false` |
 | AOT SYCL targets | dg2-g10, dg2-g11, acm-g10/g11/g12, tgllp, adl-s/p/n, rpl-s/p, mtl-h/u, arl-h/s/u, lnl-m, bmg-g21/g31 |
 | Vulkan device index | 1 (GPU0 = RTX 4090 at index 0) |
@@ -60,7 +64,11 @@ readiness").
 ```bash
 # SYCL matrix
 python3 scripts/ci/cross_backend_parity_gate.py \
+<<<<<<< HEAD
   --vmaf-binary libvmaf/build-sycl-vulkan/tools/vmaf \
+=======
+  --vmaf-binary core/build-sycl-vulkan/tools/vmaf \
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   --reference testdata/ref_576x324_48f.yuv \
   --distorted testdata/dis_576x324_48f.yuv \
   --width 576 --height 324 \
@@ -73,7 +81,11 @@ python3 scripts/ci/cross_backend_parity_gate.py \
 
 # Vulkan matrix (Intel Arc = device 1)
 python3 scripts/ci/cross_backend_parity_gate.py \
+<<<<<<< HEAD
   --vmaf-binary libvmaf/build-sycl-vulkan/tools/vmaf \
+=======
+  --vmaf-binary core/build-sycl-vulkan/tools/vmaf \
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   --reference testdata/ref_576x324_48f.yuv \
   --distorted testdata/dis_576x324_48f.yuv \
   --width 576 --height 324 \
@@ -305,7 +317,11 @@ on the Level Zero path for this specific device. A reproducer:
 
 ```bash
 LD_LIBRARY_PATH=/opt/intel/oneapi-2025.3/2025.3/lib \
+<<<<<<< HEAD
   libvmaf/build-sycl-vulkan/tools/vmaf \
+=======
+  core/build-sycl-vulkan/tools/vmaf \
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   --reference testdata/ref_576x324_48f.yuv \
   --distorted testdata/dis_576x324_48f.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 \

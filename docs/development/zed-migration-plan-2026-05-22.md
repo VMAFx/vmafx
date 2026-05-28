@@ -343,7 +343,11 @@ Zed reads the **first matching file at the project root** from:
 Only the first match is used. This repo has both `AGENTS.md` (Zed panel
 picks this) and `CLAUDE.md` (Claude Agent ACP reads independently).
 **Subdirectory `AGENTS.md` files (28 of them under
+<<<<<<< HEAD
 `libvmaf/`, `ai/`, `tools/`, …) are NOT read by Zed's panel.** They are
+=======
+`core/`, `ai/`, `tools/`, …) are NOT read by Zed's panel.** They are
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 read by Claude Code CLI when it walks the directory tree during a session.
 
 This is intentional and correct; no action needed.

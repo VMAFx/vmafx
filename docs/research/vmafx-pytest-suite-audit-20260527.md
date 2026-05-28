@@ -86,7 +86,11 @@ manual `PYTHONPATH` prefix.
 
 | Test | Reason |
 |---|---|
+<<<<<<< HEAD
 | `test_e2e_frame_to_score.py::test_e2e_frame_to_score` | `vmaf` binary not built at `libvmaf/build-cpu/tools/vmaf` |
+=======
+| `test_e2e_frame_to_score.py::test_e2e_frame_to_score` | `vmaf` binary not built at `core/build-cpu/tools/vmaf` |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ### `tools/vmaf-tune/tests/` — 15 skips
 

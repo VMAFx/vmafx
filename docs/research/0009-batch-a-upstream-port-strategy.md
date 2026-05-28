@@ -87,7 +87,11 @@ The four items touch four different subsystems:
 - T0-1: `core/src/cuda/picture_cuda.c` (CUDA backend)
 - T4-4: `core/src/feature/feature_collector.c` + test
 - T4-5: `core/src/meson.build` (build)
+<<<<<<< HEAD
 - T4-6: `libvmaf/{include,src,test}` of model surface (public API)
+=======
+- T4-6: `core/{include,src,test}` of model surface (public API)
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 Four independent diffs with minimal cross-interaction. Bundling them
 into one PR is coherent because: all four are upstream-port fixes,

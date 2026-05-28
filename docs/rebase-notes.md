@@ -6,6 +6,7 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+<<<<<<< HEAD
 ## CI round-3 fix — `.semgrepignore`, `.gitleaks.toml`, `codeql-config.yml`, `compat/python-vmaf/` (2026-05-28)
 
 **Files touched:** `.semgrepignore`, `.gitleaks.toml`, `.github/codeql-config.yml`,
@@ -68,6 +69,8 @@ commands.
 ---
 
 
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
 
 If an upstream Netflix/vmaf sync or cherry-pick brings new CI references to
@@ -39979,6 +39982,7 @@ Fork-local files:
 `docs/adr/0714-vmafx-operator-skeleton.md`,
 `docs/development/operator.md`,
 `changelog.d/added/vmafx-operator-skeleton.md`,
+<<<<<<< HEAD
 
 ---
 
@@ -40125,3 +40129,131 @@ Fork-local files:
 `changelog.d/changed/cross-backend-baseline-with-sycl.md` (new),
 `docs/rebase-notes.md` (this entry),
 `docs/state.md` (new row).
+=======
+## docs/post-merge-train-sweep-20260528 — post-rebrand + rename doc sweep
+**no rebase impact**: doc-only hygiene sweep; no source-tree files touched. Replaces stale `libvmaf/` source-tree path refs with `core/` across 75 non-ADR doc files, fixes 9 dangling ADR fragment link targets caused by the dedup-sweep renumber, adds 26 ADR index fragments for ADRs 0683–0717, and regenerates `docs/adr/README.md`. ADR-frozen bodies and intentional historical rebase-guide refs (e.g., `sed s|libvmaf/|core/|` commands in this file) are preserved as-is. Upstream Netflix cherry-picks are unaffected.
+
+`core/include/core/libvmaf.h` (public ABI), review:
+- `pkg/core/libvmaf.go` — the cgo `#include` and JSON parsing in `parseOutput`.
+`pkg/core/libvmaf.go`,
+`pkg/core/libvmaf_test.go`,
+**No upstream rebase impact**: this PR adds `cmd/vmafx-mcp/`, `pkg/core/`,
+`core/` paths. When cherry-picking or porting upstream commits after
+  | sed 's|core/|core/|g' \
+  | sed 's|core/|core/|g' \
+resolve each `core/` path conflict by renaming to `core/`, and
+Makefile, scripts, docs, agent configs, and the `core/` and
+  `VmafConfiguration` from `core/include/core/libvmaf.h`. If a future
+No upstream Netflix/vmaf file is touched. No `core/` source is touched.
+  (`core/include/core/libvmaf_vulkan.h`). Append-only ABI
+  `core/meson_options.txt`, and `core/AGENTS.md`.
+- **Touches**: `core/include/core/libvmaf_metal.h` (new
+  nm build/core/libvmaf.dylib | grep vmaf_metal_picture_import
+  ls /tmp/vmaf-test-install/usr/local/include/core/libvmaf_metal.h
+  `core/include/core/libvmaf_metal.h` unchanged. Internal
+  - `core/include/core/libvmaf_mcp.h` — new public header.
+  shipped earlier under PR #169 (core/AGENTS.md backend-engagement
+  `core/include/core/libvmaf_sycl.h`,
+  `core/include/core/dnn.h`,
+  `core/include/core/libvmaf.h` (added
+  - `core/include/core/model.h`, `core/src/model.c`,
+  - [`core/include/core/libvmaf_cuda.h`](../core/include/core/libvmaf_cuda.h)
+     core/libvmaf_vulkan.h vmaf_vulkan_state_init_external`.
+  ls /tmp/libvmaf-install/usr/local/include/core/libvmaf_vulkan.h
+     [`core/AGENTS.md`](../core/AGENTS.md) §"Backend-engagement
+  `core/AGENTS.md` (rebase-sensitive invariant note).
+  `core/include/core/dnn.h` (public declaration),
+  - `core/include/core/libvmaf_hip.h` (new).
+  - `core/AGENTS.md` — new "HIP backend scaffold contract"
+  # CUDA build (configure inside core/ — see CLAUDE.md §2 note).
+  sync touching ffmpeg-patches or `core/` cannot collide with
+  surface in `core/include/core/libvmaf_vulkan.h`:
+  backends follow) and `core/include/core/AGENTS.md`
+  test -f core/include/core/AGENTS.md
+  grep -c 'gpu-backend-template' core/include/core/AGENTS.md
+  - `core/AGENTS.md` — new invariant block for the
+  (the headers live under `core/libvmaf.h` only; the
+  paths = [os.path.join(r, f) for r, _, fs in os.walk('core/src')
+  and lives outside `core/` and `python/`.
+  the path-filter does not hide it (any core/ or ffmpeg-patches/
+  lint input — `core/**`, `meson.build`, `meson_options.txt`,
+- **Invariant**: every TU under `core/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris and Claude (Anthropic)` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `core/include/core/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
+surface in [`libvmaf_cuda.h`](../core/include/core/libvmaf_cuda.h).
+- **Invariant**: same as ADR-0209 v1 — the entire `core/src/mcp/` subtree is fork-local; the public ABI in `core/include/core/libvmaf_mcp.h` is unchanged (only function bodies flipped — `vmaf_mcp_start_uds` from `-ENOSYS` to a working AF_UNIX listener; `compute_vmaf` from a `{"status":"deferred_to_v2"}` placeholder to a real `vmaf_score_pooled` binding). Per ADR-0128 § operational guardrails the UDS socket file is created mode 0700; that `chmod` happens in `vmaf_mcp_start_uds` after `bind` and is a load-bearing security invariant — do NOT relax it on rebase. `compute_vmaf` runs on a per-call ephemeral `VmafContext` so the host's main scoring run is unperturbed; do NOT rewire it to reuse `server->ctx` because `vmaf_score_pooled` commits the model destructively to the context.
+- **Invariant**: same as ADR-0209 / ADR-0332 v2 — the entire `core/src/mcp/` subtree is fork-local; the public ABI in `core/include/core/libvmaf_mcp.h` is unchanged (only `vmaf_mcp_start_sse`'s body flipped from `-ENOSYS` to a working AF_INET listener). The SSE listener binds `INADDR_LOOPBACK` only; do NOT switch to `INADDR_ANY` without a separate ADR + auth design (v3 ships intentionally without CORS/Bearer/per-session auth on the assumption of a same-host trust boundary). The SSE stop path uses `shutdown(SHUT_RDWR)` before `close()` — plain `close()` of an AF_INET listening fd from another thread does NOT unblock `accept()` on Linux; do NOT remove the `shutdown` call. `enable_mcp_sse` is now a `feature` option (default `auto`), not `boolean false`.
+  - `core/include/core/libvmaf_mcp.h` — new public header.
+  shipped earlier under PR #169 (core/AGENTS.md backend-engagement
+  `core/include/core/libvmaf_sycl.h`,
+  `core/include/core/dnn.h`,
+  `core/include/core/libvmaf.h` (added
+  - `core/include/core/model.h`, `core/src/model.c`,
+  - [`core/include/core/libvmaf_cuda.h`](../core/include/core/libvmaf_cuda.h)
+     core/libvmaf_vulkan.h vmaf_vulkan_state_init_external`.
+  ls /tmp/libvmaf-install/usr/local/include/core/libvmaf_vulkan.h
+     [`core/AGENTS.md`](../core/AGENTS.md) §"Backend-engagement
+  `core/AGENTS.md` (rebase-sensitive invariant note).
+  `core/include/core/dnn.h` (public declaration),
+  - `core/include/core/libvmaf_hip.h` (new).
+  - `core/AGENTS.md` — new "HIP backend scaffold contract"
+  # CUDA build (configure inside core/ — see CLAUDE.md §2 note).
+  sync touching ffmpeg-patches or `core/` cannot collide with
+  surface in `core/include/core/libvmaf_vulkan.h`:
+  backends follow) and `core/include/core/AGENTS.md`
+  test -f core/include/core/AGENTS.md
+  grep -c 'gpu-backend-template' core/include/core/AGENTS.md
+  - `core/AGENTS.md` — new invariant block for the
+  (the headers live under `core/libvmaf.h` only; the
+  paths = [os.path.join(r, f) for r, _, fs in os.walk('core/src')
+  and lives outside `core/` and `python/`.
+  the path-filter does not hide it (any core/ or ffmpeg-patches/
+  lint input — `core/**`, `meson.build`, `meson_options.txt`,
+- **Invariant**: every TU under `core/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris and Claude (Anthropic)` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `core/include/core/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
+surface in [`libvmaf_cuda.h`](../core/include/core/libvmaf_cuda.h).
+- **Invariant**: same as ADR-0209 v1 — the entire `core/src/mcp/` subtree is fork-local; the public ABI in `core/include/core/libvmaf_mcp.h` is unchanged (only function bodies flipped — `vmaf_mcp_start_uds` from `-ENOSYS` to a working AF_UNIX listener; `compute_vmaf` from a `{"status":"deferred_to_v2"}` placeholder to a real `vmaf_score_pooled` binding). Per ADR-0128 § operational guardrails the UDS socket file is created mode 0700; that `chmod` happens in `vmaf_mcp_start_uds` after `bind` and is a load-bearing security invariant — do NOT relax it on rebase. `compute_vmaf` runs on a per-call ephemeral `VmafContext` so the host's main scoring run is unperturbed; do NOT rewire it to reuse `server->ctx` because `vmaf_score_pooled` commits the model destructively to the context.
+- **Invariant**: same as ADR-0209 / ADR-0332 v2 — the entire `core/src/mcp/` subtree is fork-local; the public ABI in `core/include/core/libvmaf_mcp.h` is unchanged (only `vmaf_mcp_start_sse`'s body flipped from `-ENOSYS` to a working AF_INET listener). The SSE listener binds `INADDR_LOOPBACK` only; do NOT switch to `INADDR_ANY` without a separate ADR + auth design (v3 ships intentionally without CORS/Bearer/per-session auth on the assumption of a same-host trust boundary). The SSE stop path uses `shutdown(SHUT_RDWR)` before `close()` — plain `close()` of an AF_INET listening fd from another thread does NOT unblock `accept()` on Linux; do NOT remove the `shutdown` call. `enable_mcp_sse` is now a `feature` option (default `auto`), not `boolean false`.
+  - `core/include/core/libvmaf_mcp.h` — new public header.
+  shipped earlier under PR #169 (core/AGENTS.md backend-engagement
+  `core/include/core/libvmaf_sycl.h`,
+  `core/include/core/dnn.h`,
+  `core/include/core/libvmaf.h` (added
+  - `core/include/core/model.h`, `core/src/model.c`,
+  - [`core/include/core/libvmaf_cuda.h`](../core/include/core/libvmaf_cuda.h)
+     core/libvmaf_vulkan.h vmaf_vulkan_state_init_external`.
+  ls /tmp/libvmaf-install/usr/local/include/core/libvmaf_vulkan.h
+     [`core/AGENTS.md`](../core/AGENTS.md) §"Backend-engagement
+  `core/AGENTS.md` (rebase-sensitive invariant note).
+  `core/include/core/dnn.h` (public declaration),
+  - `core/include/core/libvmaf_hip.h` (new).
+  - `core/AGENTS.md` — new "HIP backend scaffold contract"
+  # CUDA build (configure inside core/ — see CLAUDE.md §2 note).
+  sync touching ffmpeg-patches or `core/` cannot collide with
+  surface in `core/include/core/libvmaf_vulkan.h`:
+  backends follow) and `core/include/core/AGENTS.md`
+  test -f core/include/core/AGENTS.md
+  grep -c 'gpu-backend-template' core/include/core/AGENTS.md
+  - `core/AGENTS.md` — new invariant block for the
+  (the headers live under `core/libvmaf.h` only; the
+  paths = [os.path.join(r, f) for r, _, fs in os.walk('core/src')
+  and lives outside `core/` and `python/`.
+  the path-filter does not hide it (any core/ or ffmpeg-patches/
+  lint input — `core/**`, `meson.build`, `meson_options.txt`,
+- **Invariant**: every TU under `core/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris and Claude (Anthropic)` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `core/include/core/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
+surface in [`libvmaf_cuda.h`](../core/include/core/libvmaf_cuda.h).
+- **Invariant**: same as ADR-0209 v1 — the entire `core/src/mcp/` subtree is fork-local; the public ABI in `core/include/core/libvmaf_mcp.h` is unchanged (only function bodies flipped — `vmaf_mcp_start_uds` from `-ENOSYS` to a working AF_UNIX listener; `compute_vmaf` from a `{"status":"deferred_to_v2"}` placeholder to a real `vmaf_score_pooled` binding). Per ADR-0128 § operational guardrails the UDS socket file is created mode 0700; that `chmod` happens in `vmaf_mcp_start_uds` after `bind` and is a load-bearing security invariant — do NOT relax it on rebase. `compute_vmaf` runs on a per-call ephemeral `VmafContext` so the host's main scoring run is unperturbed; do NOT rewire it to reuse `server->ctx` because `vmaf_score_pooled` commits the model destructively to the context.
+- **Invariant**: same as ADR-0209 / ADR-0332 v2 — the entire `core/src/mcp/` subtree is fork-local; the public ABI in `core/include/core/libvmaf_mcp.h` is unchanged (only `vmaf_mcp_start_sse`'s body flipped from `-ENOSYS` to a working AF_INET listener). The SSE listener binds `INADDR_LOOPBACK` only; do NOT switch to `INADDR_ANY` without a separate ADR + auth design (v3 ships intentionally without CORS/Bearer/per-session auth on the assumption of a same-host trust boundary). The SSE stop path uses `shutdown(SHUT_RDWR)` before `close()` — plain `close()` of an AF_INET listening fd from another thread does NOT unblock `accept()` on Linux; do NOT remove the `shutdown` call. `enable_mcp_sse` is now a `feature` option (default `auto`), not `boolean false`.
+- **Touches**: `core/include/core/dnn.h`, `core/src/dnn/ort_backend.{c,h}`, `core/tools/vmaf.c`, `core/tools/cli_parse.{c,h}`, `core/test/dnn/test_ep_fp16.c`, `core/test/dnn/test_cli.sh`, `docs/ai/inference.md`, `docs/usage/cli.md`, `docs/development/oneapi-install.md`, `docs/adr/0332-openvino-npu-ep-wiring.md` (new), `docs/adr/_index_fragments/0332-openvino-npu-ep-wiring.md` (new), `changelog.d/added/openvino-npu-ep.md` (new). The libvmaf `dnn/` and tools surfaces are fork-local additions; upstream Netflix/vmaf has no tiny-AI / ONNX Runtime dispatch layer, so conflict probability on `dnn/` is zero.
+- **Touches**: `core/include/core/dnn.h`,
+  - `core/include/core/libvmaf_metal.h` (new, fork-local) —
+  `core/include/core/*.h` (all public headers),
+  `core/include/core/macros.h` (new file),
+  `core/src/libvmaf.c` + `core/include/core/libvmaf.h`) will compile
+    -Icore/src -Icore/include \
+`core/include/core/libvmaf_metal.h`.
+existing public declaration in `core/include/core/libvmaf_hip.h`
+(`fr_regressor_v2`). Touched: `core/include/core/dnn.h`
+`VMAF_EXPORT` symbol on the public `core/dnn.h` surface; the
+`include/core/picture.h`; the ffmpeg `vf_libvmaf` filter
+consumed by `bindgen` remain at `core/include/core/` (ADR-0700 path); any
+upstream also has a `core/src/metadata_handler.c` at the same path (pre-rename).
+touches `core/src/metadata_handler.c`, the port must:
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)

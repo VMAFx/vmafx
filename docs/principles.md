@@ -233,7 +233,11 @@ VMAFX uses multiple languages. Each has a clearly bounded role:
 
 | Language | Role | Constraint |
 |---|---|---|
+<<<<<<< HEAD
 | **C / C++23** | Core library (`core/`) — metric engine, feature extractors, GPU backend runtimes | All of §1–§7 apply. C ABI at `core/include/libvmaf/` is frozen. New fork-added C files target C23; C++ files target C++23. Netflix-inherited C files are migrated per-TU only when a PR already touches the file. |
+=======
+| **C / C++23** | Core library (`core/`) — metric engine, feature extractors, GPU backend runtimes | All of §1–§7 apply. C ABI at `core/include/core/` is frozen. New fork-added C files target C23; C++ files target C++23. Netflix-inherited C files are migrated per-TU only when a PR already touches the file. |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | **Go (≥ 1.23)** | Production CLI binaries and servers (`cmd/`) | Module root `github.com/VMAFx/vmafx`. `go vet` is a required CI gate. New packages must have `_test.go` coverage before merging. |
 | **Rust (stable)** | libvmaf FFI bindings (`bindings/rust/vmafx-sys`) and optional feature-extractor pilots (`core/src/feature/rust/`) | `cargo clippy` + `cargo test` are required CI gates. `unsafe` blocks must be audited and explained in a doc comment. |
 | **Python** | ML training (`ai/`), dev scripts (`scripts/`), MCP server scaffolding (`mcp-server/`), vmaf-tune Python harness (`tools/vmaf-tune/`) | ruff + mypy strict. No Python in hot-path scoring code. |
@@ -241,7 +245,11 @@ VMAFX uses multiple languages. Each has a clearly bounded role:
 
 **Cross-language invariants:**
 
+<<<<<<< HEAD
 - The C ABI at `core/include/libvmaf/` is the single stable interface boundary.
+=======
+- The C ABI at `core/include/core/` is the single stable interface boundary.
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   Go, Rust, and Python all consume it; none of them may call each other directly.
 - A new language is never added to the project without a per-language CI gate
   (compile check + fast tests) and an ADR documenting the role.

@@ -53,8 +53,13 @@ For each ADR:
 | --- | --- | --- | --- |
 | 0125 | MS-SSIM decimate SIMD fast paths (AVX2 + AVX-512) | **Accepted** | `core/src/feature/x86/ms_ssim_decimate_{avx2,avx512}.{c,h}` exist; `core/src/feature/ms_ssim_decimate.{c,h}` (scalar-separable) exists; `core/test/test_ms_ssim_decimate.c` exists. Bit-exact vs scalar-separable harness landed. |
 | 0126 | SSIMULACRA 2 perceptual metric | **Accepted** | `core/src/feature/ssimulacra2.c` + `ssimulacra2_eotf_lut.h` + `ssimulacra2_math.h` + `ssimulacra2_simd_common.h`; `core/src/meson.build` `ssimulacra2` block lines 137 / 350-360. ADR-0130 was the implementation closeout. |
+<<<<<<< HEAD
 | 0127 | Vulkan compute backend | **Accepted** | `core/include/libvmaf/libvmaf_vulkan.h` + full `core/src/vulkan/` tree (common.c, dispatch_strategy, picture_vulkan, kernel_template, import); `enable_vulkan` Meson option live. ADR-0175 / 0186 expanded the surface. |
 | 0128 | Embedded MCP server in libvmaf | **Stay Proposed** | Public header `core/include/libvmaf/libvmaf_mcp.h` shipped via ADR-0209 audit-first scaffold (Accepted), but every entry point still returns `-ENOSYS`. cJSON + mongoose vendoring, dedicated MCP pthread, SPSC ring buffer, and SSE / UDS / stdio transport bodies are tracked as **T5-2b** (in flight). The strategic decision in ADR-0128 is implemented in stages; the runtime is incomplete. |
+=======
+| 0127 | Vulkan compute backend | **Accepted** | `core/include/core/libvmaf_vulkan.h` + full `core/src/vulkan/` tree (common.c, dispatch_strategy, picture_vulkan, kernel_template, import); `enable_vulkan` Meson option live. ADR-0175 / 0186 expanded the surface. |
+| 0128 | Embedded MCP server in libvmaf | **Stay Proposed** | Public header `core/include/core/libvmaf_mcp.h` shipped via ADR-0209 audit-first scaffold (Accepted), but every entry point still returns `-ENOSYS`. cJSON + mongoose vendoring, dedicated MCP pthread, SPSC ring buffer, and SSE / UDS / stdio transport bodies are tracked as **T5-2b** (in flight). The strategic decision in ADR-0128 is implemented in stages; the runtime is incomplete. |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | 0129 | Tiny-AI PTQ int8 quantisation policy | **Accepted** | `model/tiny/registry.schema.json` carries `quant_mode` / `quant_calibration_set` / `quant_accuracy_budget_plcc` (lines 64–79); `ai/scripts/ptq_static.py` + `ptq_dynamic.py` + `measure_quant_drop.py` exist; ADR-0173 (Accepted) was the audit-first implementation; ADR-0174 (Accepted) was the first-model PTQ. The policy this ADR specified is fully shipped. |
 | 0138 | `_iqa_convolve` AVX2 bit-exact double-precision fast path | **Accepted** | `core/src/feature/x86/convolve_avx2.{c,h}` exist; ADR-0140 references the bit-exactness pattern as load-bearing. |
 | 0139 | SSIM SIMD accumulate bit-exact via per-lane scalar double | **Accepted** | `core/src/feature/x86/ssim_avx2.{c,h}` + `ssim_avx512.{c,h}` carry the per-lane reduction pattern; ADR-0140 cites the pattern under `simd_dx.h`. |
@@ -63,9 +68,15 @@ For each ADR:
 | 0208 | First per-model QAT — `learned_filter_v1` int8 | **Accepted** | `model/tiny/learned_filter_v1.int8.onnx` exists alongside the fp32 ONNX; QAT pipeline + measurement scripts (`measure_quant_drop.py` / `_per_ep.py`) in tree. The `learned_filter_v1` registry row stays on `quant_mode: "dynamic"` (the empirical finding), but the pipeline that produced the verdict is shipped. |
 | 0235 | Codec-aware FR regressor (`fr_regressor_v2`) | **Accepted** | `ai/src/vmaf_train/codec.py` exists with the closed codec vocabulary; `FRRegressor` constructor accepts `num_codecs`; `model/tiny/fr_regressor_v2.{onnx,json}` registered, plus the `_ensemble_v1_seed{0..4}` family per ADR-0279. |
 | 0236 | DISTS extractor as LPIPS companion | **Stay Proposed** | No `core/src/feature/dists*` files; `model/tiny/registry.json` has no `dists_sq` row; tracked as backlog item **T7-DISTS** per the ADR's own scoping note. Implementation has not started. |
+<<<<<<< HEAD
 | 0238 | Vulkan VmafPicture preallocation surface | **Accepted** | `core/include/libvmaf/libvmaf_vulkan.h` declares `VmafVulkanPicturePreallocationMethod` (line 153), `vmaf_vulkan_preallocate_pictures` (180), `vmaf_vulkan_picture_fetch` (191). |
 | 0239 | Backend-agnostic GPU picture pool | **Accepted** | `core/src/gpu_picture_pool.{c,h}` exist; `core/src/cuda/ring_buffer.*` removed (verified by `ls` returning no match). |
 | 0251 | Vulkan VkImage import — v2 async pending-fence model | **Accepted** | `core/include/libvmaf/libvmaf_vulkan.h:64` declares `max_outstanding_frames`; `core/src/vulkan/common.c:444-486` implements the ring sizer + clamp; `core/src/vulkan/vulkan_internal.h:117` documents the captured request depth. |
+=======
+| 0238 | Vulkan VmafPicture preallocation surface | **Accepted** | `core/include/core/libvmaf_vulkan.h` declares `VmafVulkanPicturePreallocationMethod` (line 153), `vmaf_vulkan_preallocate_pictures` (180), `vmaf_vulkan_picture_fetch` (191). |
+| 0239 | Backend-agnostic GPU picture pool | **Accepted** | `core/src/gpu_picture_pool.{c,h}` exist; `core/src/cuda/ring_buffer.*` removed (verified by `ls` returning no match). |
+| 0251 | Vulkan VkImage import — v2 async pending-fence model | **Accepted** | `core/include/core/libvmaf_vulkan.h:64` declares `max_outstanding_frames`; `core/src/vulkan/common.c:444-486` implements the ring sizer + clamp; `core/src/vulkan/vulkan_internal.h:117` documents the captured request depth. |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | 0253 | Defer SpEED-QA full-reference reduction | **Accepted** | DEFER-shape decision; the deliverable is the documented position. `speed_chroma` / `speed_temporal` extractors remain unchanged; no `speed_qa` reduction; no SpEED-driven model. The three reversal triggers stay open. |
 | 0270 | libFuzzer scaffold for parser surfaces (OSSF) | **Accepted** | `core/test/fuzz/` carries `fuzz_y4m_input.c`, `fuzz_yuv_input.c`, `fuzz_cli_parse.c` plus seed corpora; `core/meson_options.txt` declares `option('fuzz', ...)`; `.github/workflows/fuzz.yml` exists. ADR-0311 expanded the harness set. |
 | 0272 | `fr_regressor_v2` codec-aware scaffold | **Accepted** | `ai/scripts/train_fr_regressor_v2.py` exists; `model/tiny/fr_regressor_v2.{onnx,json}` registered; companion ensemble (ADR-0279) shipped. |
@@ -160,5 +171,9 @@ ls tools/ensemble-training-kit/                        # ADR-0324
 
 # 3. Stays-Proposed gap evidence.
 ls core/src/feature/dists* 2>/dev/null              # ADR-0236: empty (T7-DISTS)
+<<<<<<< HEAD
 head -25 core/include/libvmaf/libvmaf_mcp.h         # ADR-0128: -ENOSYS docstring
+=======
+head -25 core/include/core/libvmaf_mcp.h         # ADR-0128: -ENOSYS docstring
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 ```

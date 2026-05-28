@@ -36,7 +36,11 @@ ninja -C build tools/vmaf_roi
 ```
 
 The binary depends only on libvmaf's public DNN surface
+<<<<<<< HEAD
 ([`libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h)); when libvmaf is
+=======
+([`core/dnn.h`](../../core/include/core/dnn.h)); when libvmaf is
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 built with `-Denable_dnn=false` the `--saliency-model` path returns
 `-ENOSYS` and the tool falls back to a deterministic radial placeholder
 useful only for smoke-testing the sidecar plumbing.

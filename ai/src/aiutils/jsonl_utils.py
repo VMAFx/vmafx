@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+<<<<<<< HEAD
 import math
 from pathlib import Path
 from typing import Any, Iterator
@@ -43,6 +44,10 @@ def dumps_jsonl_row(obj: dict, **kwargs: Any) -> str:
     sanitised = _sanitize_nonfinite(obj)
     kwargs.setdefault("sort_keys", True)
     return json.dumps(sanitised, **kwargs) + "\n"
+=======
+from pathlib import Path
+from typing import Iterator
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 
 def iter_jsonl(path: Path) -> Iterator[tuple[int, dict]]:

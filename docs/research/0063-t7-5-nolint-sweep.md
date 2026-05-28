@@ -118,7 +118,11 @@ invariant; the sweep adds an explicit ADR reference.
 # 1. Programmatic audit (Python; same script as in ADR-0278 §Verification)
 python3 - <<'PY'
 import re, os
+<<<<<<< HEAD
 paths = [os.path.join(r, f) for r, _, fs in os.walk('libvmaf/src')
+=======
+paths = [os.path.join(r, f) for r, _, fs in os.walk('core/src')
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
          for f in fs if f.endswith(('.c','.cpp','.h'))]
 paths.append('core/tools/vmaf.c')
 miss = total = 0

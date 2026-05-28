@@ -152,7 +152,11 @@ meson configure build | head -40
 
 All translation units in `libvmaf` are compiled with `-fvisibility=hidden`
 (see `core/src/meson.build`). Only symbols explicitly annotated with
+<<<<<<< HEAD
 `VMAF_EXPORT` (defined in `core/include/libvmaf/macros.h`) appear in
+=======
+`VMAF_EXPORT` (defined in `core/include/core/macros.h`) appear in
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 the dynamic symbol table of `libvmaf.so`. This eliminates silent symbol
 interposition from embedded third-party code (libsvm, pdjson) and internal
 helper symbols.

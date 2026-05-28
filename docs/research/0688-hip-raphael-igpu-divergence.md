@@ -111,7 +111,11 @@ accumulated carry loss reaches -776 trillion, confirmed by the debug output.
 
 ### Step 5 — Reference: CUDA carry-preserving pattern
 
+<<<<<<< HEAD
 `libvmaf/src/cuda/cuda_helper.cuh` lines 119–127:
+=======
+`core/src/cuda/cuda_helper.cuh` lines 119–127:
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ```c
 __forceinline__ __device__ int64_t warp_reduce(int64_t x)
@@ -180,6 +184,12 @@ bit-exact.  The residual 0.228 VIF-driven VMAF delta is from `log_generate()` us
 - [ADR-0688](../adr/0688-hip-wave32-vif-motion-fix.md)
 - [PR #1561](https://github.com/VMAFx/vmafx/pull/1561) — original smoke-test trigger
 - [ADR-0552](../adr/0552-hip-integer-vif-deterministic-reduce.md) — prior VIF reduction fix
+<<<<<<< HEAD
 - `libvmaf/src/cuda/cuda_helper.cuh` — CUDA carry-preserving reference
 - `libvmaf/src/feature/hip/integer_vif/vif_statistics.hip` — fixed kernel
 - `libvmaf/src/feature/hip/integer_motion/motion_score.hip` — fixed kernel
+=======
+- `core/src/cuda/cuda_helper.cuh` — CUDA carry-preserving reference
+- `core/src/feature/hip/integer_vif/vif_statistics.hip` — fixed kernel
+- `core/src/feature/hip/integer_motion/motion_score.hip` — fixed kernel
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)

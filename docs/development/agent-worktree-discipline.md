@@ -143,6 +143,7 @@ Three cases — commit-from-agent-WT (allow), main-WT-no-siblings
 (allow), main-WT-with-active-agent (refuse) — all run against
 disposable temp git repos. No build artifacts, no network.
 
+<<<<<<< HEAD
 ## Cleaning up stale agent state
 
 After a batch of agent runs, worktrees whose agent process has exited but
@@ -174,6 +175,8 @@ Run it after every significant multi-agent session or when
 `git worktree list` shows more than a handful of `agent-*` entries.
 
 
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 ## Why two layers and not just one
 
 Layer 1 alone (agent-side discipline) is fragile: agents drift

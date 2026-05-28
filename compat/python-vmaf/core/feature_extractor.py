@@ -460,11 +460,15 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
             [f"integer_{f}" for f in VmafFeatureExtractor.ATOM_FEATURES],
         )
     )
+<<<<<<< HEAD
     # float_ansnr was removed in feat(core): drop legacy ansnr feature (#38).
     # The "ansnr" → "float_ansnr" mapping is intentionally omitted here so
     # requests via VmafIntegerFeatureExtractor never pass the removed extractor
     # name to the CLI.  The float/legacy path (VmafFeatureExtractor) retains
     # the mapping for backward-compatibility of the legacy test suite.
+=======
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["ansnr"] = "float_ansnr"
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
     ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["anpsnr"] = "float_anpsnr"
 
     def _generate_result(self, asset):
@@ -479,10 +483,14 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
         h = quality_height
         logger = self.logger
 
+<<<<<<< HEAD
         # float_ansnr was removed in feat(core): drop legacy ansnr feature (#38).
         # The VmafQualityRunner (integer path) only needs adm/vif/motion to
         # produce VMAF scores; ansnr was never a model input for vmaf_v0.6.1.
         features = ["adm", "vif", "motion"]
+=======
+        features = ["adm", "vif", "motion", "float_ansnr"]
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
         options = {
             "adm": {"debug": True},
             "vif": {"debug": True},

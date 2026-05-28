@@ -195,7 +195,11 @@ export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 bindgen failed to parse the header. Check that:
 
 1. `LIBVMAF_PREFIX` points to a directory containing
+<<<<<<< HEAD
    `include/libvmaf/libvmaf.h`.
+=======
+   `include/core/libvmaf.h`.
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 2. `clang` / `libclang-dev` is installed.
 
 ### `cargo: error[E0425]: cannot find function ...`

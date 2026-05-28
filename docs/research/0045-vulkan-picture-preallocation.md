@@ -106,7 +106,11 @@ where bytes live, not which bytes the kernel reads).
 - SYCL pool reference: `core/src/sycl/picture_sycl.cpp`
   (`vmaf_sycl_picture_pool_init`).
 - CUDA preallocation reference:
+<<<<<<< HEAD
   `core/include/libvmaf/libvmaf_cuda.h`,
+=======
+  `core/include/core/libvmaf_cuda.h`,
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   `core/src/libvmaf.c::vmaf_cuda_preallocate_pictures`.
 - Parallel surfaces: ADR-0186 / ADR-0251 (zero-copy import) — not
   replaced by this PR; preallocation serves the host-driven path.

@@ -106,7 +106,11 @@ deployments should set it on. `cosign` must be on `$PATH`; install
 prebuilt binaries from the [Sigstore release page](https://github.com/sigstore/cosign/releases).
 
 The C entry point is `vmaf_dnn_verify_signature(onnx_path, registry_path)`
+<<<<<<< HEAD
 in [`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h);
+=======
+in [`core/include/core/dnn.h`](../../core/include/core/dnn.h);
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 both arguments are NULL-tolerant in the documented way.
 
 ## Directory jail — `VMAF_TINY_MODEL_DIR`

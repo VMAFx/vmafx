@@ -12,7 +12,11 @@ and [ADR-0186](../adr/0186-vulkan-image-import-impl.md) (impl +
 ffmpeg-patch wiring).
 
 The public header is
+<<<<<<< HEAD
 [`core/include/libvmaf/libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h).
+=======
+[`core/include/core/libvmaf_vulkan.h`](../../core/include/core/libvmaf_vulkan.h).
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 The Vulkan backend overview lives in
 [`docs/backends/vulkan/overview.md`](../backends/vulkan/overview.md).
 
@@ -126,7 +130,11 @@ on the host.
 
 - [`docs/backends/vulkan/overview.md`](../backends/vulkan/overview.md)
   — backend overview, kernel matrix, build flags.
+<<<<<<< HEAD
 - [`core/include/libvmaf/libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h)
+=======
+- [`core/include/core/libvmaf_vulkan.h`](../../core/include/core/libvmaf_vulkan.h)
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   — authoritative API surface.
 - [`docs/usage/ffmpeg.md`](../usage/ffmpeg.md) — `vf_libvmaf_vulkan`
   filter that consumes the import API end-to-end.

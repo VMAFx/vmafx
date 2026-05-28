@@ -1,6 +1,10 @@
 # Public C API reference
 
+<<<<<<< HEAD
 libvmaf ships a stable C API under [`core/include/libvmaf/`](../../core/include/libvmaf/).
+=======
+libvmaf ships a stable C API under [`core/include/core/`](../../core/include/core/).
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 This page is the canonical reference for the *core* API (context / picture /
 feature / model). GPU-backend entry points and the DNN session API each get
 their own page:
@@ -8,13 +12,18 @@ their own page:
 - [core](index.md) — this page
 - [gpu.md](gpu.md) — `libvmaf_cuda.h`, `libvmaf_sycl.h`, `libvmaf_vulkan.h`,
   `libvmaf_hip.h`, `libvmaf_metal.h`
+<<<<<<< HEAD
 - [dnn.md](dnn.md) — `libvmaf/dnn.h` (tiny-AI ONNX session)
+=======
+- [dnn.md](dnn.md) — `core/dnn.h` (tiny-AI ONNX session)
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 - [mcp.md](mcp.md) — `libvmaf_mcp.h` (embedded MCP server)
 
 ## What each header exposes
 
 | Header | Symbols | Purpose |
 | --- | --- | --- |
+<<<<<<< HEAD
 | [`libvmaf.h`](../../core/include/libvmaf/libvmaf.h) | `VmafContext`, `VmafConfiguration`, lifecycle + scoring functions | Main entry point. Everything else is pulled in transitively. |
 | [`picture.h`](../../core/include/libvmaf/picture.h) | `VmafPicture`, `VmafPixelFormat`, alloc / unref | Per-frame pixel container (YUV planes + metadata). |
 | [`feature.h`](../../core/include/libvmaf/feature.h) | `VmafFeatureDictionary` | Key/value options passed to a feature extractor. |
@@ -28,6 +37,21 @@ their own page:
 | [`libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h) | `VmafMcpServer`, `VmafMcpConfig`, transport start/stop | Embedded MCP server. Only usable in a build with `-Denable_mcp=true`. [Deep dive](mcp.md). |
 | [`vmaf_assert.h`](../../core/include/libvmaf/vmaf_assert.h) | `VMAF_ASSERT*` macros | Internal assertion helpers. Not for public use — may disappear. |
 | [`version.h`](../../core/include/libvmaf/libvmaf.h) (generated) | `VMAF_VERSION_MAJOR` etc. | Compile-time version constants. Run-time: `vmaf_version()`. |
+=======
+| [`libvmaf.h`](../../core/include/core/libvmaf.h) | `VmafContext`, `VmafConfiguration`, lifecycle + scoring functions | Main entry point. Everything else is pulled in transitively. |
+| [`picture.h`](../../core/include/core/picture.h) | `VmafPicture`, `VmafPixelFormat`, alloc / unref | Per-frame pixel container (YUV planes + metadata). |
+| [`feature.h`](../../core/include/core/feature.h) | `VmafFeatureDictionary` | Key/value options passed to a feature extractor. |
+| [`model.h`](../../core/include/core/model.h) | `VmafModel`, `VmafModelConfig`, `VmafModelCollection*` | Classic SVM model + bootstrap model collection. |
+| [`dnn.h`](../../core/include/core/dnn.h) | `VmafDnnSession`, `VmafDnnConfig`, tiny-model attach | Tiny-AI (ONNX Runtime) surface. [Deep dive](dnn.md). |
+| [`libvmaf_cuda.h`](../../core/include/core/libvmaf_cuda.h) | `VmafCudaState`, CUDA picture prealloc | CUDA backend. Only usable in a build with `-Denable_cuda=true`. [Deep dive](gpu.md#cuda). |
+| [`libvmaf_sycl.h`](../../core/include/core/libvmaf_sycl.h) | `VmafSyclState`, zero-copy frame buffers, dmabuf / VA / D3D11 import | SYCL backend. Only usable in a build with `-Denable_sycl=true`. [Deep dive](gpu.md#sycl). |
+| [`libvmaf_vulkan.h`](../../core/include/core/libvmaf_vulkan.h) | `VmafVulkanState`, queue / device lifecycle, zero-copy `VkImage` import | Vulkan compute backend. Only usable in a build with `-Denable_vulkan=true`. [Deep dive](gpu.md#vulkan). |
+| [`libvmaf_hip.h`](../../core/include/core/libvmaf_hip.h) | `VmafHipState`, lifecycle, picture prealloc | AMD HIP/ROCm backend. Only usable in a build with `-Denable_hip=true`. [Deep dive](gpu.md#hip). |
+| [`libvmaf_metal.h`](../../core/include/core/libvmaf_metal.h) | `VmafMetalState`, lifecycle, IOSurface import | Apple Metal backend. Runtime, IOSurface import, and the first eight feature kernels are usable in a build with `-Denable_metal=auto/enabled` on Apple Silicon; unsupported hosts return `-ENODEV`. [Deep dive](gpu.md#metal). |
+| [`libvmaf_mcp.h`](../../core/include/core/libvmaf_mcp.h) | `VmafMcpServer`, `VmafMcpConfig`, transport start/stop | Embedded MCP server. Only usable in a build with `-Denable_mcp=true`. [Deep dive](mcp.md). |
+| [`vmaf_assert.h`](../../core/include/core/vmaf_assert.h) | `VMAF_ASSERT*` macros | Internal assertion helpers. Not for public use — may disappear. |
+| [`version.h`](../../core/include/core/libvmaf.h) (generated) | `VMAF_VERSION_MAJOR` etc. | Compile-time version constants. Run-time: `vmaf_version()`. |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 All declarations are C (with `extern "C"` guards for C++ callers). The fork has
 no C++ entry points in its public API.

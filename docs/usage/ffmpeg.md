@@ -1,6 +1,10 @@
 # Using VMAF with FFmpeg
 
+<<<<<<< HEAD
 After [installing](../../libvmaf/README.md#install) `libvmaf`, you can use it with [FFmpeg](http://ffmpeg.org/). Under the FFmpeg directory, configure, build and install FFmpeg with:
+=======
+After [installing](../../core/README.md#install) `libvmaf`, you can use it with [FFmpeg](http://ffmpeg.org/). Under the FFmpeg directory, configure, build and install FFmpeg with:
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ```bash
 ./configure --enable-libvmaf

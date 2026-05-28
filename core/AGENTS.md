@@ -457,6 +457,7 @@ the corrected methodology.
   — `enable_avx512=true` with `enable_asm=false` issues a warning (no-op, not an error);
   — `enable_hipcc=true` with `enable_hip=false` issues a warning (no-op, not an error).
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
+<<<<<<< HEAD
 
 - **C→C++23 conversion safety invariants** (adversarial review 2026-05-28,
   `docs/research/cpp23-wave-adversarial-review-20260528.md`):
@@ -512,3 +513,5 @@ the corrected methodology.
   The legacy path (`VmafFeatureExtractor`, line ~301) retains the mapping as
   documented debt — tracked as T-LEGACY-RUNNER-ANSNR-BROKEN in `docs/state.md`.
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)

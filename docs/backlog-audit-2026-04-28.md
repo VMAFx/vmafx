@@ -361,7 +361,11 @@ import implementation + `libvmaf_vulkan` FFmpeg filter,
 `ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch`). The
 header still advertises the entry points as `-ENOSYS` stubs.
 
+<<<<<<< HEAD
 - [`core/include/libvmaf/libvmaf_vulkan.h:141-142`](../core/include/libvmaf/libvmaf_vulkan.h) —
+=======
+- [`core/include/core/libvmaf_vulkan.h:141-142`](../core/include/core/libvmaf_vulkan.h) —
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   *"Status: scaffold only (T7-29 part 1). Every function returns
   -ENOSYS pending the real implementation"*
 
@@ -375,7 +379,11 @@ T5-1b (full runtime) landed (ADR-0178); kernel matrix is now full
 GPU-long-tail batches landing in PR #122–#159). The header still
 says *"every entry point currently returns -ENOSYS unconditionally."*
 
+<<<<<<< HEAD
 - [`core/include/libvmaf/libvmaf_vulkan.h:14-22`](../core/include/libvmaf/libvmaf_vulkan.h) —
+=======
+- [`core/include/core/libvmaf_vulkan.h:14-22`](../core/include/core/libvmaf_vulkan.h) —
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   *"**Status: scaffold only.** Every entry point currently returns
   -ENOSYS [pending the kernels]."*
 

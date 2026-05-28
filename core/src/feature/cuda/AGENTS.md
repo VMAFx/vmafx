@@ -392,6 +392,7 @@ The `enable_cuda` umbrella flag gates inclusion via
   Removing the smem staging layer reverts the 15–35% VIF speedup.
   See [ADR-0454](../../../../docs/adr/0454-vif-cuda-smem-staging.md) and
   [Research-0135](../../../../docs/research/0135-vif-cuda-smem-staging-2026-05-16.md).
+<<<<<<< HEAD
 
 ## `__mul24` / `__umul24` prohibition (Research-0734)
 
@@ -475,3 +476,5 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   wave-limited (0.76 waves / 128 SMs) and the effect is neutral; at ≥1080p the
   combined tmp footprint exceeds L2 capacity and the cache-routing provides
   measurable L2-pressure relief.  See ADR-0743.
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)

@@ -73,8 +73,11 @@ __device__ static const int32_t ISSIM_KERNEL[ISSIM_K_SZ] = {2, 9, 28, 55, 68, 55
  * Writes six arrays of width*height int64_t:
  *   d_mux, d_muy, d_x2, d_xy, d_y2, d_w
  */
+<<<<<<< HEAD
 extern "C" {
 
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 __global__ void integer_ssim_horiz_8bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_stride,
                                         const uint8_t *__restrict__ cmp, ptrdiff_t cmp_stride,
                                         int64_t *__restrict__ d_mux, int64_t *__restrict__ d_muy,
@@ -273,4 +276,7 @@ integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__
         partial_weights[blk] = block_wgt;
     }
 }
+<<<<<<< HEAD
 } /* extern "C" */
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)

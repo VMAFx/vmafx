@@ -34,7 +34,11 @@ distribution shape is preserved.
 | `lsvq`             | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Ying et al., CVPR 2021 §4.1 — https://github.com/baidut/PatchVQ |
 | `youtube-ugc`      | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Wang et al., MMSP 2019 §3.2 — https://media.withyoutube.com/ |
 | `waterloo-ivc-4k`  | 0–100 continuous (DCR-like)        | identity                    | Cheon & Lee, CVPR-W 2016 §III.B — https://ece.uwaterloo.ca/~zduanmu/cvpr2016_4kvqa/ |
+<<<<<<< HEAD
 | `netflix-public`   | VMAF 0–100 (objective proxy)       | identity                    | `core/include/libvmaf/model.h` |
+=======
+| `netflix-public`   | VMAF 0–100 (objective proxy)       | identity                    | `core/include/core/model.h` |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 The mapping is a single source of truth in
 `ai/scripts/aggregate_corpora.py:SCALE_CONVERSIONS`; the unit tests

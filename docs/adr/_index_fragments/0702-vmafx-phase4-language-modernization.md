@@ -1,0 +1,1 @@
+| [ADR-0702](0702-vmafx-phase4-language-modernization.md) | VMAFX Phase 4 multi-language modernization: Go 1.23 workspace, Rust workspace, C++23 policy | Proposed | go, rust, cpp23, language-policy, modernization, vmafx |

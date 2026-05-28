@@ -39,8 +39,13 @@ folded into a larger fork PR.
 
 | upstream | subject |
 |---|---|
+<<<<<<< HEAD
 | `c70debb1` | libvmaf/test: port new adm/vif/speed tests |
 | `314db130` | libvmaf/feature: remove empty translation unit `all.c` |
+=======
+| `c70debb1` | core/test: port new adm/vif/speed tests |
+| `314db130` | core/feature: remove empty translation unit `all.c` |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | `8c645ce3` | feature/vif: port several feature extractor options |
 | `8a289703` | adm: add fallback for `extract_epi64` for 32-bit |
 | `1b6c3886` | x86/cpu: remove limit of avx+ on 32-bit |
@@ -55,7 +60,11 @@ folded into a larger fork PR.
 | `41d42c9e` | feature/vif: port helper functions, bugfix for edge mirroring |
 | `4ad6e0ea` | feature/vif: port helper functions |
 | `62f47d59` | loosen assertion precision for motion mirror bugfix |
+<<<<<<< HEAD
 | `966be8d5` | libvmaf/feature: port adm updates |
+=======
+| `966be8d5` | core/feature: port adm updates |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | `42276bc5` | feature/cambi: port updates |
 | `f740276a` | libvmaf: add support for `VMAF_FEATURE_EXTRACTOR_PREV_REF` |
 | `32b115df` | libvmaf: add experimental `VMAF_BATCH_THREADING` and `VMAF_PICTURE_POOL` threading modes |
@@ -67,7 +76,11 @@ folded into a larger fork PR.
 | upstream | subject | rationale |
 |---|---|---|
 | `7affcb7c` | x86/adm: fix compilation for 32-bit clang | small portability fix; partner to the already-ported 32-bit ADM/cpu fallbacks (PR #212). Unblocks fork's i686 cross build (ADR-0151). |
+<<<<<<< HEAD
 | `49d46e23` | libvmaf/predict: port chroma_from_luma correction | numerical-correctness bugfix in the predictor path; touches code the fork still mirrors verbatim. Verify Netflix golden gate after picking. |
+=======
+| `49d46e23` | core/predict: port chroma_from_luma correction | numerical-correctness bugfix in the predictor path; touches code the fork still mirrors verbatim. Verify Netflix golden gate after picking. |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | `de538216` | feature/integer_vif: port `vif_skip_scale0` | follow-up bugfix on integer_vif; feeds into the ongoing T-NEW vif-divergence reconciliation. Small, scoped. |
 | `4f5e366b` | integer_motion: fix dict leak in motion_force_zero case | clear leak fix; no fork divergence in this branch of motion. Trivial port. |
 | `9a2ca9b4` | Fix `enable_tools=false` breaking test builds (#1474) | depends on `84614a8b` (`enable_tools` option). If we take that, take this. |
@@ -83,9 +96,15 @@ folded into a larger fork PR.
 | `2e6bbb65` | python/routine: refactor `read_dataset` into `SubjectiveDatasetReader` class | python-harness refactor; fork has its own training/eval harness layered on top (`python/vmaf/workspace/`). Defer until we re-audit harness divergence. |
 | `2f2bb601` | python/test: add dataset reading tests for resampling, width/height, workfile_yuv_type | rides on `2e6bbb65`. Defer with it. |
 | `151a9822` | Merge pull request #1509 from Netflix/feature/routine-test-additions | merge wrapper around the two python/routine commits above. Defer with the parent pair. |
+<<<<<<< HEAD
 | `9dac0a59` | libvmaf/feature: update alias map for cambi/speed | partial: cambi half is on fork (PR #160 `79288e8d`); speed half pends per the prior audit's T-NEW-1. Defer until speed-extractor reconciliation lands. |
 | `a44e5e61` | libvmaf/feature: port motion updates, bugfix for edge mirroring | fork has consciously diverged on motion per Research-0024 + ADR-0145. The bugfix sub-piece may still be relevant; defer to the next motion-divergence re-audit, do not mass-port. |
 | `dae6c1a0` | libvmaf/feature: add `motion_v2` | new metric variant; pairs with the motion-divergence story (ADR-0145). Defer until we decide whether to absorb `motion_v2` or keep the fork's bespoke variant. |
+=======
+| `9dac0a59` | core/feature: update alias map for cambi/speed | partial: cambi half is on fork (PR #160 `79288e8d`); speed half pends per the prior audit's T-NEW-1. Defer until speed-extractor reconciliation lands. |
+| `a44e5e61` | core/feature: port motion updates, bugfix for edge mirroring | fork has consciously diverged on motion per Research-0024 + ADR-0145. The bugfix sub-piece may still be relevant; defer to the next motion-divergence re-audit, do not mass-port. |
+| `dae6c1a0` | core/feature: add `motion_v2` | new metric variant; pairs with the motion-divergence story (ADR-0145). Defer until we decide whether to absorb `motion_v2` or keep the fork's bespoke variant. |
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ### SKIP — intentional fork divergence / fork-managed CI / fork-managed deps
 
@@ -116,7 +135,11 @@ Tightly-scoped, low-risk, high-value picks for the next round of
    Pure leak fix; no SIMD/divergence interaction. Lowest risk.
 2. **`7affcb7c`** — x86/adm: fix compilation for 32-bit clang.
    Direct partner to PR #212; closes the i686 build-error class.
+<<<<<<< HEAD
 3. **`49d46e23`** — libvmaf/predict: port chroma_from_luma correction.
+=======
+3. **`49d46e23`** — core/predict: port chroma_from_luma correction.
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
    Numerical-correctness bugfix; verify Netflix golden + `/cross-backend-diff`.
 4. **`7c4beca3`** — Fix models symbols names when vmaf is compiled as a subproject.
    Self-contained meson change; benefits MCP/FFmpeg embedders.

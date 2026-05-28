@@ -52,7 +52,11 @@ secondary.
 ## What's wired
 
 - Public state-level API in
+<<<<<<< HEAD
   [`core/include/libvmaf/libvmaf_vulkan.h`][hdr] —
+=======
+  [`core/include/core/libvmaf_vulkan.h`][hdr] —
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   `VmafVulkanState`, `VmafVulkanConfiguration`,
   `vmaf_vulkan_state_init` / `_import_state` / `_state_free`,
   `vmaf_vulkan_list_devices`, `vmaf_vulkan_available`. The
@@ -394,7 +398,11 @@ buffers.
   — the skill that produced the initial scaffold (subsequently
   hand-finished here).
 
+<<<<<<< HEAD
 [hdr]: ../../../core/include/libvmaf/libvmaf_vulkan.h
+=======
+[hdr]: ../../../core/include/core/libvmaf_vulkan.h
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 [smoke-test]: ../../../core/test/test_vulkan_smoke.c
 [diff-script]: ../../../scripts/ci/cross_backend_vif_diff.py
 

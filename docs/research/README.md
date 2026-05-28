@@ -100,7 +100,10 @@ Conventions:
 <!-- Backfill entries for older workstreams land here as their authors
      revisit the corresponding code. -->
 
+<<<<<<< HEAD
 | [0734](0734-cuda-vif-filter1d-ncu-hotpath-20260528.md) | CUDA VIF `filter1d.cu` ncu hotpath profile on RTX 4090 (sm_89). Primary bottleneck: launch-width-limited (0.84 waves) + register pressure (56 regs/thread). Top kernel `filter1d_8_horizontal_kernel_2_17_9` = 35 % of VIF filter time. Three optimization candidates: increase `val_per_thread` 2→4, reduce register live range, add `__ldg()` for smem loads. | Active | — |
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 *(Index seeded by [ADR-0108](../adr/0108-deep-dive-deliverables-rule.md)'s
 adoption PR; backfilled digests for the existing major workstreams
 will be added as their authors revisit the corresponding code.)*

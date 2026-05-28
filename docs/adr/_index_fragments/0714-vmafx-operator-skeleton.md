@@ -1,0 +1,1 @@
+| [ADR-0714](0714-vmafx-operator-skeleton.md) | vmafx-operator kubebuilder skeleton + CRDs: `VmafxJob`, `VmafxNode`, `VmafxModelTraining`; Stage 1 reconcilers; Helm integration | Accepted | go, k8s, operator, crd, phase4b, fork-local |
