@@ -1,0 +1,78 @@
+name: Rust CI
+
+on:
+  push:
+    branches: ["master"]
+    paths:
+      - "bindings/rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust-ci.yml"
+  pull_request:
+    paths:
+      - "bindings/rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust-ci.yml"
+
+jobs:
+  rust-vmafx-sys:
+    name: vmafx-sys (fmt + clippy + test)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            meson ninja-build nasm libssl-dev \
+            clang libclang-dev pkg-config
+
+      - name: Build and install libvmaf (CPU only)
+        run: |
+          meson setup build-ci \
+            -Denable_cuda=false \
+            -Denable_sycl=false \
+            -Denable_hip=false \
+            -Denable_avx512=false \
+            --prefix /usr/local
+          ninja -C build-ci
+          sudo ninja -C build-ci install
+          sudo ldconfig
+
+      - name: Set up stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo fmt check
+        run: cargo fmt -p vmafx-sys --check
+
+      - name: Cargo clippy
+        env:
+          LIBVMAF_PREFIX: /usr/local
+        run: cargo clippy -p vmafx-sys --all-targets -- -D warnings
+
+      - name: Cargo build
+        env:
+          LIBVMAF_PREFIX: /usr/local
+        run: cargo build -p vmafx-sys
+
+      - name: Cargo test (unit + integration)
+        env:
+          LIBVMAF_PREFIX: /usr/local
+          VMAFX_REPO: ${{ github.workspace }}
+          LD_LIBRARY_PATH: /usr/local/lib
+        run: cargo test -p vmafx-sys --all-features
+
+      - name: Run score example (Netflix golden smoke test)
+        env:
+          LIBVMAF_PREFIX: /usr/local
+          VMAFX_REPO: ${{ github.workspace }}
+          LD_LIBRARY_PATH: /usr/local/lib
+        run: cargo run --example score

@@ -1,6 +1,8 @@
 # Caches, build artifacts
 .DS_Store
 .cache/
+# Rust build artifacts
+target/
 # Editor / refactor scratch backups — never in tree (ADR-0546 audit cleanup
 # bundle surfaced a 142 KB `tools/vmaf-tune/src/vmaftune/cli.py.bak` that
 # had been polluting greps for weeks).
@@ -114,3 +116,25 @@ model/tiny/training_runs/
 # workflow guard) is tracked, the binary itself is not.
 model/u2netp_mirror.onnx
 model/u2netp_mirror.pth
+
+# Go build artifacts (ADR-0702)
+# Compiled binaries at the repo root (from `go build ./cmd/...`)
+vmafx-server
+vmafx-mcp
+vmafx-tune
+# Per-package test binaries
+*.test
+# Go build cache is stored in $GOPATH/pkg, not the repo; go.sum is tracked.
+# Dist directories from per-cmd Makefile targets
+/cmd/*/dist/
+
+# Rust build artifacts (ADR-0702)
+# Workspace target directory (cargo output)
+/target/
+# Rust source backup files (rustfmt temp)
+**/*.rs.bk
+# Cargo.lock: kept for workspace binaries (this workspace's root Cargo.lock
+# is tracked); per-crate library Cargo.lock files are gitignored below.
+# Library crates inside bindings/ produce their own Cargo.lock which we
+# do NOT track (libraries let consumers pin).
+bindings/rust/**/Cargo.lock
