@@ -40014,3 +40014,10 @@ no rebase impact: pure research digest; no source files modified.
 ## Research-0744 cross-backend baseline (2026-05-28) — no rebase impact
 
 This PR adds only `docs/research/0744-cuda-cross-backend-baseline-pre-ncu-perf.md`, `changelog.d/perf/cuda-cross-backend-baseline.md`, and a `docs/state.md` row. No C, header, Python, or build files are modified. No upstream sync action is required.
+## `docs/research/0734–0738` — CUDA ADM/motion/SSIM/MS-SSIM ncu hotpath profiles (2026-05-28)
+
+No rebase impact: research-only documents, no source code changes. The profiling findings
+(Research-0734 through 0738) are advisory; no kernel modifications were made in this PR.
+When a follow-up PR implements the `integer_ssim_score.cu` `extern "C"` fix (Research-0736
+recommendation 1), that PR must also update `ssim_cuda.c` host glue and verify bit-exact
+parity against the CPU integer_ssim extractor on the Netflix golden fixture.
