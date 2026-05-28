@@ -7,6 +7,13 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## docs/hw-backend-audit-2026-05-28 — doc-only, no rebase impact
+
+**No upstream rebase impact**: this PR adds a research digest
+(`docs/research/0733-hardware-backend-audit-2026-05-28.md`), a changelog fragment,
+and a `docs/state.md` update. No C source, build system, or upstream-shared path is
+touched. Netflix/vmaf upstream syncs are unaffected.
+
 ## chore/post-cutover-url-sweep — fork-only URL change, no Netflix conflict
 
 **No upstream rebase impact**: this change replaces all occurrences of the
