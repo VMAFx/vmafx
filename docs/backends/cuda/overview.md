@@ -281,6 +281,7 @@ per-extractor coverage matrix.
   introducing these intrinsics; see the invariant note in
   `core/src/feature/cuda/AGENTS.md`.
 
+
 ## References
 
 - [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)

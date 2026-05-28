@@ -13,6 +13,23 @@ C sources, build files, or API surfaces. No upstream sync conflict expected.
 
 ---
 
+## `docs/research/0734-cudnn-version-audit-20260528.md` — cuDNN/ORT audit (doc-only)
+
+**No rebase impact** on upstream C/Python code: this PR adds only doc and changelog
+files. No C source, header, or Python source is modified.
+
+If a future upstream sync adds cuDNN pinning or `onnxruntime-gpu` to any
+Python requirement, re-check `dev/Containerfile` lines 529–539 (ORT install)
+and `ai/pyproject.toml` for compatibility with the then-current cuDNN series.
+
+Fork-local files added:
+`docs/research/0734-cudnn-version-audit-20260528.md` (new),
+`changelog.d/changed/docs-cudnn-version-audit.md` (new),
+`docs/rebase-notes.md` (this entry),
+`docs/state.md` (new deferred row).
+
+---
+
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
 
 If an upstream Netflix/vmaf sync or cherry-pick brings new CI references to
