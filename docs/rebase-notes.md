@@ -39958,7 +39958,6 @@ Fork-local files:
 
 ---
 
-<<<<<<< HEAD
 ## `core/src/feature/cuda/AGENTS.md` — `__mul24` prohibition invariant (Research-0734, 2026-05-28)
 
 The 2026-05-28 audit confirmed zero `__mul24` / `__umul24` / `__mul24hi` usages in
@@ -40012,3 +40011,6 @@ Fork-local files added:
 ## Research-0734 — CUDA VIF filter1d ncu hotpath (no rebase impact)
 
 no rebase impact: pure research digest; no source files modified.
+## Research-0744 cross-backend baseline (2026-05-28) — no rebase impact
+
+This PR adds only `docs/research/0744-cuda-cross-backend-baseline-pre-ncu-perf.md`, `changelog.d/perf/cuda-cross-backend-baseline.md`, and a `docs/state.md` row. No C, header, Python, or build files are modified. No upstream sync action is required.
