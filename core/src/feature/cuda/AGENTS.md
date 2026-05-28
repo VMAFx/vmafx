@@ -442,3 +442,36 @@ Rules:
   Run it locally before pushing CUDA kernel changes.
 
 See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
+## Register-pressure ceiling pattern for horizontal convolution kernels (ADR-0743)
+
+- **Occupancy-critical kernels with > 48 registers per thread must carry
+  `__launch_bounds__(BLOCKX, min_blocks)` where `min_blocks` satisfies
+  `floor(65536 / BLOCKX / min_blocks) ≤ 48` for sm_89 target.**
+  `filter1d_8_horizontal_kernel` (17-tap, vpt=2) hit 56 registers at baseline,
+  capping the register-limited block count at 9/SM and theoretical occupancy at 75%.
+  Adding `__launch_bounds__(128, 10)` reduced registers to 48, raising theoretical
+  occupancy to 83.3% (sm_89).
+
+  Key derivation: floor(65536 / 128 / 10) = 51 registers max → ptxas allocates
+  48.  This is a **compiler hint only** — it sets a maximum register budget; it
+  does not guarantee a particular schedule.
+
+  Caveat: on sm_75/sm_80/sm_86 (max 1024 threads/SM), `min_blocks=10` × 128 = 1280
+  exceeds the per-SM thread limit.  ptxas emits a non-fatal advisory
+  "minnctapersm out of range, ignored" for those targets; those targets retain
+  the pre-hint register count.  This is acceptable for the fork's primary target
+  (sm_89 / RTX 4090) and causes no regression on older targets.
+
+- **Do not increase `val_per_thread` past 2 for the 17-tap horizontal kernel.**
+  vpt=4 was evaluated during ADR-0743 profiling.  smem grows 7644 → 14812 B/block;
+  on sm_89 (102400 B/SM smem) this makes the kernel smem-limited at 6 blocks/SM =
+  37.5% occupancy — worse than the 48-reg vpt=2 path at 10 blocks/SM = 62.5%.
+  See [ADR-0743](../../../../docs/adr/0743-cuda-vif-filter1d-ncu-driven-perf.md).
+
+- **`__ldg()` on read-only tmp-channel loads is correct and beneficial at ≥1080p.**
+  The 7 tmp buffers (mu1, mu2, ref, dis, ref_dis, ref_convol, dis_convol) are
+  written exclusively by the preceding vertical pass.  `__ldg()` routes their
+  horizontal-pass loads through the read-only L1 cache.  At 576p the workload is
+  wave-limited (0.76 waves / 128 SMs) and the effect is neutral; at ≥1080p the
+  combined tmp footprint exceeds L2 capacity and the cache-routing provides
+  measurable L2-pressure relief.  See ADR-0743.

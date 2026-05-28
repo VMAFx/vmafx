@@ -301,3 +301,38 @@ per-extractor coverage matrix.
 - [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)
 - [CUDA Driver API Reference](https://docs.nvidia.com/cuda/cuda-driver-api/)
 - [CUDA Runtime API Reference](https://docs.nvidia.com/cuda/cuda-runtime-api/) (informational — libvmaf itself uses the Driver API)
+
+## VIF filter1d horizontal kernel performance (ADR-0743, 2026-05-28)
+
+`filter1d_8_horizontal_kernel_2_17_9` is the scale-0 8-bit 17-tap horizontal
+convolution pass and accounts for 35.3% of VIF self-time on RTX 4090 / CUDA 13.3.
+
+Two ncu-driven optimizations were applied:
+
+1. **`__launch_bounds__(128, 10)`** on the kernel: reduces registers 56 → 48
+   per thread on sm_89 (RTX 4090), lifting theoretical occupancy 75% → 83.3%.
+   At production resolutions (≥ 1080p) the higher block count per SM improves
+   latency hiding. At 576×324 the workload is wave-limited (< 1 wave / 128 SMs)
+   and the gain is invisible in achieved occupancy but causes no regression.
+
+2. **`__ldg()` on the 7 read-only tmp-channel loads** in the smem-fill phase:
+   routes these loads through the read-only L1 (texture) cache. Beneficial at
+   ≥ 1080p where the combined tmp footprint (7 channels × stride × height) exceeds
+   the 50 MB L2 capacity.
+
+`val_per_thread=4` was evaluated but rejected: smem grows 7644 → 14812 B/block,
+making the kernel smem-limited at 37.5% occupancy vs 62.5% for the retained
+vpt=2 path.
+
+Correctness: CUDA-optimized scores agree with the CPU reference within
+ADR-0214 places=4 tolerance (max absolute delta: 0.000010 per frame).
+
+ncu reproducer (see research digest):
+```bash
+ncu -k 'filter1d_8_horizontal_kernel_2_17_9' --set basic --csv \
+    build/tools/vmaf -r ref.yuv -d dis.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 --backend cuda
+```
+
+See [ADR-0743](../../adr/0743-cuda-vif-filter1d-ncu-driven-perf.md) and
+[Research-0743](../../research/research-0743-cuda-vif-filter1d-perf-impl.md).

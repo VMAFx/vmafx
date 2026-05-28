@@ -40052,3 +40052,30 @@ This invariant was formalised after the audit that found
 breaking `--feature ssim --backend cuda` since introduction (PR #77
 fixed the analogous break in `ssim_score.cu`; ADR-0747 fixes
 `integer_ssim_score.cu`).
+## `core/src/feature/cuda/integer_vif/filter1d.cu` — ADR-0743 __launch_bounds__ + __ldg
+
+**No rebase-sensitive invariants for downstream callers** — the changes are
+confined to the device-side kernel body and the `FILTER1D_8_HORI` macro.  The
+symbol name `filter1d_8_horizontal_kernel_2_17_9` is unchanged; the C host file
+`integer_vif_cuda.c` continues to load and dispatch it by name.
+
+If an upstream Netflix/vmaf sync introduces changes to `filter1d.cu`:
+
+1. The `__launch_bounds__(128, 10)` annotation on `FILTER1D_8_HORI` must be
+   preserved (or re-applied) — upstream does not carry this hint.
+2. The `__ldg()` calls on the 7 `buf.tmp.*` loads must be preserved.
+3. If upstream changes `val_per_thread` or `HORI_TILE_W`, recheck the smem
+   budget constraint (14812 B/block at vpt=4 is smem-limited on sm_89 —
+   see ADR-0743 for derivation).
+4. The ptxas advisory "minnctapersm out of range, ignored" for sm_75/sm_80/
+   sm_86 is expected and benign; do not treat it as a gate failure.
+
+---
+
+## research-0748 / PR #76 1080p re-measurement — no new rebase invariants
+
+The 1080p re-measurement (research-0748) validates PR #76 at production resolution.
+No new rebase-sensitive invariants beyond those already documented in the
+`ADR-0743 __launch_bounds__ + __ldg` entry above. The register budget (48 regs/thread)
+and `__ldg` annotations must be preserved on any upstream sync that touches
+`filter1d.cu` per the existing note.
