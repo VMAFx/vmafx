@@ -85,8 +85,8 @@
       "initialization_options": {
         "fallbackFlags": [
           "-std=c11",
-          "-I./core/include",
-          "-I./core/src"
+          "-I./libvmaf/include",
+          "-I./libvmaf/src"
         ]
       }
     },

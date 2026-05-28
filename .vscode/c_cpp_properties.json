@@ -8,8 +8,8 @@
       "cStandard": "c11",
       "cppStandard": "c++17",
       "includePath": [
-        "${workspaceFolder}/core/include",
-        "${workspaceFolder}/core/src"
+        "${workspaceFolder}/libvmaf/include",
+        "${workspaceFolder}/libvmaf/src"
       ]
     }
   ]

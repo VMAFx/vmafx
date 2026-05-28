@@ -39989,3 +39989,19 @@ Fork-local files:
 `changelog.d/changed/cuda-13.3-fix-list-deep-audit.md` (new),
 `docs/state.md` (new row),
 `docs/rebase-notes.md` (this entry).
+
+---
+
+## `scripts/dev/cleanup-agent-state.sh` — agent-state cleanup utility
+
+**No rebase impact** on upstream C/Python code: the script is entirely
+fork-local developer tooling that touches no compiled sources, tests,
+or public API.
+
+If a future upstream sync adds a `scripts/dev/` directory, merge manually
+(name collision is the only risk; no logic conflict).
+
+Fork-local files added:
+`scripts/dev/cleanup-agent-state.sh` (new),
+`docs/development/agent-worktree-discipline.md` (cleanup section added),
+`changelog.d/added/dev-cleanup-script.md` (new).

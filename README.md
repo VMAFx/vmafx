@@ -53,7 +53,7 @@ contract. The three Netflix CPU golden-data tests (1 normal + 2 checkerboard
 pairs) run as a required CI gate on every PR — see
 [`docs/principles.md`](docs/principles.md) §3.1 and decision D24.
 
-![vmaf logo](compat/python-vmaf/resource/images/vmaf_logo.jpg)
+![vmaf logo](python/vmaf/resource/images/vmaf_logo.jpg)
 
 ## Quickstart
 

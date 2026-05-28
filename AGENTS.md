@@ -59,8 +59,7 @@ See [CLAUDE.md §5](CLAUDE.md) — identical. Briefly:
 - `core/src/{cuda,sycl,dnn}/` — GPU / DNN backends
 - `core/src/feature/{x86,arm64,cuda,sycl}/` — per-platform feature implementations
 - `core/tools/` — `vmaf` CLI + `vmaf_bench`
-- `compat/python-vmaf/` + `python/test/` — Python harness + tests
-  (golden-data here); `python/vmaf/` is a compat shim
+- `python/vmaf/` + `python/test/` — Python bindings + tests (golden-data here)
 - `ai/` — PyTorch tiny-model training
 - `mcp-server/` — MCP JSON-RPC server
 - `model/` — VMAF models (.json / .pkl / .onnx)

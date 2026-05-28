@@ -143,6 +143,37 @@ Three cases — commit-from-agent-WT (allow), main-WT-no-siblings
 (allow), main-WT-with-active-agent (refuse) — all run against
 disposable temp git repos. No build artifacts, no network.
 
+## Cleaning up stale agent state
+
+After a batch of agent runs, worktrees whose agent process has exited but
+whose `.git/worktrees/<id>/locked` file still holds a dead PID will block
+`git worktree list --porcelain` output and slow down the host-side guard.
+Similarly, git stashes created during agent navigation on `master` or on
+branches that already exist locally accumulate noise in `git stash list`.
+
+Use the bundled utility to prune both in one pass:
+
+```bash
+# Preview what would be removed (no changes made)
+bash scripts/dev/cleanup-agent-state.sh --dry-run
+
+# Apply — removes dead-PID agent-* worktrees + redundant stashes
+bash scripts/dev/cleanup-agent-state.sh
+```
+
+The script:
+
+- Removes `agent-*` worktrees whose lock-file PID returns `kill -0` failure.
+- Drops stashes on `master`, `(no branch)` (detached HEAD), or branches
+  that still exist locally (where the stash is redundant).
+- Never touches worktrees owned by alive PIDs or stashes on branches
+  that no longer exist locally (the only surviving copy of that work).
+- Run from any worktree of the repo; `git -C <root>` is used throughout.
+
+Run it after every significant multi-agent session or when
+`git worktree list` shows more than a handful of `agent-*` entries.
+
+
 ## Why two layers and not just one
 
 Layer 1 alone (agent-side discipline) is fragile: agents drift

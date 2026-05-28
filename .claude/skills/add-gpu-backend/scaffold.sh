@@ -19,7 +19,7 @@ backend_pascal="${backend^}"
 
 repo_root=$(git rev-parse --show-toplevel)
 tpl="$repo_root/.claude/skills/add-gpu-backend/templates"
-src="$repo_root/core/src"
+src="$repo_root/libvmaf/src"
 
 subst() {
   sed -e "s/{{BACKEND}}/$backend/g" \
