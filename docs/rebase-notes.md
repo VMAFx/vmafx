@@ -6,6 +6,34 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## `docker/Dockerfile.node` — vmafx-node worker image + ffmpeg n8.2 (ADR-0717)
+
+**ffmpeg-patches now validated against both n8.1.1 and n8.2.** The node
+Dockerfile pins `FFMPEG_TAG=n8.2`. When the next upstream sync lands, confirm:
+
+1. `ffmpeg-patches/` still applies against the new tag.
+   Run `FFMPEG_SHA=<new-tag> bash ffmpeg-patches/test/build-and-run.sh`.
+2. If patches fail, rebase the affected patches and update `FFMPEG_TAG` in
+   both `dev/Containerfile` and `docker/Dockerfile.node` in the same PR
+   (CLAUDE.md §12 r14).
+3. `pkg/encoder/encoder.go` shells out to ffmpeg. If a new FFmpeg version
+   changes a codec's CLI flag, update the encoder package to match.
+
+Touched files:
+`docker/Dockerfile.node`,
+`cmd/vmafx-node/main.go`,
+`cmd/vmafx-node/probe/probe.go`,
+`cmd/vmafx-node/probe/probe_test.go`,
+`cmd/vmafx-node/server/server.go`,
+`cmd/vmafx-node/server/server_test.go`,
+`docs/adr/0717-vmafx-node-ffmpeg-latest.md`,
+`docs/development/vmafx-node.md`,
+`changelog.d/added/node-ffmpeg-latest.md`,
+`docs/state.md` (this entry),
+`docs/rebase-notes.md` (this entry).
+
+---
+
 ## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
 
 **no rebase impact** on upstream C/Python code: the Go server is entirely
