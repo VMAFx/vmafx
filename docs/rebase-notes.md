@@ -7,6 +7,13 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## ci/vmafx-ci-slim-down-v2 (ADR-0710) — fork-only CI change, no Netflix conflict
+
+**No upstream rebase impact**: this change modifies `.github/workflows/` files
+only. Netflix/vmaf upstream has its own CI configuration; upstream cherry-picks
+are unaffected. The new `build.yml` uses the same meson flags and test
+invocations as the retired per-backend legs — no build-system API change.
+
 ## chore/post-cutover-url-sweep — fork-only URL change, no Netflix conflict
 
 **No upstream rebase impact**: this change replaces all occurrences of the

@@ -3,7 +3,7 @@
 # `libvmaf-build-matrix.yml` handles the cross-platform build matrix; this file
 # owns the *correctness* gate.
 
-name: Tests & Quality Gates — Netflix Golden / Sanitizers / Tiny AI / Coverage
+name: Tests & Quality Gates — Netflix Golden / Tiny AI / Coverage
 on:
   push:
     branches: [master]
@@ -463,134 +463,12 @@ jobs:
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
             --width 576 --height 324 --feature adm --places 4
 
-  # ===== Sanitizer build =====
-  sanitizers:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: "Sanitizers — ASan + UBSan + MSan"
-    # ADR-0359 — ARC self-hosted runner pilot (same pattern as cppcheck in
-    # lint-and-format.yml). Variable `ARC_RUNNERS_ENABLED=true` routes this
-    # job to the in-cluster `arc-runners` scale set; default `false` keeps
-    # GitHub-hosted ubuntu-latest. If the ARC pool is degraded, set the
-    # variable to false and re-trigger CI to fall back instantly.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-latest' }}
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        sanitizer: [address, undefined, thread]
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          # lld-18 matches ubuntu-24.04's default clang-18; ld.bfd/gold pulls in
-          # a system-wide LLVM 16 gold plugin that can't read clang-18 LTO
-          # bitcode (Unknown attribute kind 91 in LLVM 16 reader). Using lld
-          # keeps the linker in the same LLVM major as the compiler.
-          # libclang-rt-18-dev ships the ASan/UBSan/TSan runtime libraries
-          # (libclang_rt.asan.a etc.); without it clang-18 emits instrumented
-          # code but lld-18 can't resolve __asan_*/__ubsan_* symbols.
-          sudo apt-get install -y meson ninja-build nasm clang-18 lld-18 \
-            libclang-rt-18-dev
-      - name: Build with ${{ matrix.sanitizer }} sanitizer
-        # ADR-0347: under UBSan, suppress the `function` check via
-        # `-fno-sanitize=function`. The pre-existing K&R-prototype
-        # `static char *test_X()` pattern across ~50 minunit-style
-        # harness files (`core/test/test.h` + every `test_*.c`)
-        # trips UBSan's function-pointer-type check unconditionally;
-        # rewriting all 50 files to `(void)` is a separate T7-5-style
-        # sweep PR. The suppression preserves UBSan signal on
-        # library code while skipping the harness-only UB.
-        working-directory: core
-        shell: bash
-        env:
-          CC: clang-18
-          CXX: clang++-18
-          LDFLAGS: -fuse-ld=lld-18
-        run: |
-          if [ "${{ matrix.sanitizer }}" = "undefined" ]; then
-            EXTRA_ARGS=( "-Dc_args=-fno-sanitize=function" "-Dcpp_args=-fno-sanitize=function" )
-          else
-            EXTRA_ARGS=()
-          fi
-          meson setup build -Db_sanitize=${{ matrix.sanitizer }} \
-            -Denable_cuda=false -Denable_sycl=false --buildtype=debug \
-            -Db_lto=false -Db_lundef=false "${EXTRA_ARGS[@]}"
-          meson compile -C build
-      - name: Run unit tests under sanitizer
-        # ADR-0347: replace the previous `--suite=unit` invocation
-        # (which matched zero tests because no `test()` call in
-        # `core/test/meson.build` carries a `suite: 'unit'` tag).
-        # We now run the full C unit-test set with a per-sanitizer
-        # deselect list — each excluded test corresponds to a real
-        # defect tracked in `docs/state.md` and removed from the list
-        # when the underlying bug-fix PR lands. Companion research
-        # digest: `docs/research/0090-sanitizer-matrix-test-scope.md`.
-        working-directory: core
-        shell: bash
-        run: |
-          case "${{ matrix.sanitizer }}" in
-            address)
-              # ASan deselects: test_model (svm.cpp parser
-              # alloc-too-big on malformed JSON) — pre-existing
-              # ASan/LSan defects revealed by PR #758's introspect-based
-              # test enumeration (the prior `meson test --list` parser
-              # returned empty in CI's meson 1.3.2 so these tests were
-              # never dispatched and the leaks went unnoticed). Tracked
-              # in `docs/state.md` as T-SANITIZER-DEFECTS-REVEALED-758.
-              # test_float_ms_ssim_min_dim was removed from this list
-              # after confirming it passes cleanly under ASAN_OPTIONS=
-              # detect_leaks=1 (the invoke_init helper already calls
-              # fex->close() + free(priv) on every code path).
-              EXCLUDE='test_model$'
-              ;;
-            undefined)
-              # UBSan deselects: test_model (NULL-to-nonnull memcpy
-              # in svm.cpp parser — same defect as ASan exclusion
-              # surfaced via a different sanitizer angle). Tracked as
-              # T-SANITIZER-DEFECTS-REVEALED-758.
-              # test_cambi was removed from this list after PR #761
-              # (merged 2026-05-11) added a runtime __builtin_cpu_supports
-              # AVX2 gate to test_calculate_c_values_scalar_avx2_parity,
-              # eliminating the SIGILL on non-AVX2 CI runners; confirmed
-              # clean under UBSan on current master.
-              EXCLUDE='test_model$'
-              ;;
-            thread)
-              # TSan deselects: test_model (same defect as ASan/UBSan
-              # exclusion above).
-              # test_framesync was removed from this list after PR #548
-              # (merged 2026-05-09) fixed the SAN-FRAMESYNC-MUTEX-DOMAIN
-              # mutex-domain mismatch; nightly TSan job was green on
-              # 2026-05-09 and 2026-05-10 (state.md entry).
-              EXCLUDE='test_model$'
-              ;;
-            *)
-              echo "::error::ADR-0347 deselect list is not defined for sanitizer=${{ matrix.sanitizer }}" >&2
-              exit 1
-              ;;
-          esac
-          # `meson test --list` output format varies across meson
-          # versions (1.3.x produces empty output for some build
-          # configurations; 1.11.x emits one test per line). Use
-          # `meson introspect --tests` instead — its JSON output is
-          # stable and machine-parseable across all supported meson
-          # versions. Each test object has `name` and `suite[]` fields
-          # which we join into the canonical `libvmaf:<name>` form
-          # that meson test dispatch expects.
-          set +o pipefail
-          TESTS=$(meson introspect build --tests 2>&1 \
-                  | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
-                  | grep -vE "$EXCLUDE" || true)
-          set -o pipefail
-          echo "test count: $(echo "$TESTS" | wc -l)"
-          echo "first 3: $(echo "$TESTS" | head -3 | tr '\n' ' ')"
-          if [ -z "$TESTS" ]; then
-            echo "::error::ADR-0347 test enumeration produced empty list for sanitizer=${{ matrix.sanitizer }}" >&2
-            exit 1
-          fi
-          # shellcheck disable=SC2086
-          meson test -C build --print-errorlogs $TESTS
+  # Sanitizer jobs have been moved to sanitizers.yml (ADR-0710):
+  #   - asan-ubsan: ASan + UBSan combined on every PR
+  #   - tsan: TSan on master push only
+  #   - fuzz-nightly: libFuzzer + ASan nightly via cron
+  # Required check updated in required-aggregator.yml:
+  #   "Sanitizers — ASan + UBSan (PR gate)" replaces the 3-way matrix.
 
   # ===== DNN / tiny-AI gate =====
   # Builds libvmaf with --enable_dnn (ONNX Runtime C API), runs the dnn

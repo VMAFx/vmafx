@@ -44,35 +44,36 @@ jobs:
         with:
           retries: 3
           script: |
-            // Ordered by historical reliability; no Build matrix entries here
-            // because they path-filter-skip on doc/Python-only diffs and that
-            // is the explicit semantics ADR-0313 codifies as acceptable.
+            // ADR-0710 slim-down: build matrix consolidated to 3 per-OS jobs
+            // (libvmaf-build-matrix.yml → build.yml). Sanitizer jobs moved to
+            // sanitizers.yml (asan-ubsan PR gate; tsan master-only; fuzz
+            // nightly). Cppcheck dropped (clang-tidy superset).
+            // Required check names updated to match the new workflow job names.
             const required = [
-              'Build — Ubuntu gcc (CPU) + DNN',
-              'Build — Ubuntu clang (CPU) + DNN',
-              'Build — Windows MinGW64 (CPU) (MINGW64, mingw-w64-x86_64)',
-              'Build — Windows MSVC + CUDA (build only)',
-              'Build — Windows MSVC + oneAPI SYCL (build only)',
+              // Per-OS build gates (ADR-0710)
+              'Build — Linux (GCC, all backends)',
+              'Build — macOS (Clang, CPU + Metal)',
+              'Build — Windows (MSVC + CUDA)',
+              // SAST / security gates
               'CodeQL',
               'CodeQL (Actions)',
               'CodeQL (C/C++)',
               'CodeQL (Python)',
-              'Pre-Commit (Formatters + Basic Checks)',
-              'Python Lint (Ruff + Black + isort + mypy)',
               'Semgrep (CWE Top 25 + CERT-C + Custom)',
-              'Clang-Tidy (Changed C/C++ Files)',
-              'Cppcheck (Whole Project)',
-              'Dependency Review (PR Diff)',
               'Gitleaks (Secret Scan)',
-              'Docs Build — mkdocs strict (PR gate)',
+              'Dependency Review (PR Diff)',
+              // Format / lint gates
+              'Pre-Commit (Formatters + Basic Checks)',
+              'Clang-Tidy (Changed C/C++ Files)',
+              'Python Lint (Ruff + Black + isort + mypy)',
               'ShellCheck + shfmt (All *.sh)',
+              // Correctness gates
               'Netflix CPU Golden Tests (D24)',
-              'Sanitizers — ASan + UBSan + MSan (address)',
-              'Sanitizers — ASan + UBSan + MSan (thread)',
-              'Sanitizers — ASan + UBSan + MSan (undefined)',
+              'Sanitizers — ASan + UBSan (PR gate)',
               'Assertion Density (Power of 10 §5)',
               'Tiny AI (DNN Suite + ai/ Pytests)',
-              'Build — Ubuntu HIP (T7-10b runtime)',
+              // Docs gate
+              'Docs Build — mkdocs strict (PR gate)',
             ];
             const sha = context.eventName === 'pull_request'
               ? context.payload.pull_request.head.sha
