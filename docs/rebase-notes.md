@@ -39763,3 +39763,29 @@ Touched files:
 `docs/adr/0707-vmafx-rust-pilot-feature.md`,
 `docs/metrics/tad.md`,
 `changelog.d/added/tad-rust-pilot.md`,
+
+---
+
+## `cmd/vmafx-operator` — Kubernetes Operator kubebuilder skeleton (ADR-0714)
+
+**No rebase impact** on upstream C/Python code: the operator is entirely
+fork-local (`api/vmafx/v1/`, `cmd/vmafx-operator/`, `config/crd/`,
+`config/rbac/`, `deploy/helm/vmafx/crds/`,
+`deploy/helm/vmafx/templates/operator-*.yaml`, `go.mod`, `go.sum`).
+None of these paths overlap with Netflix/vmaf upstream.
+
+If a future upstream sync adds a Go module or touches `go.mod`, merge
+the dependency lists in `go.mod` and regenerate `go.sum`.
+
+Fork-local files:
+`api/vmafx/v1/` (new),
+`cmd/vmafx-operator/` (new),
+`config/crd/bases/` (new),
+`config/rbac/role.yaml` (new),
+`deploy/helm/vmafx/crds/` (new),
+`deploy/helm/vmafx/templates/operator-deployment.yaml` (new),
+`deploy/helm/vmafx/templates/operator-rbac.yaml` (new),
+`deploy/helm/vmafx/values.yaml` (operator.* section added),
+`docs/adr/0714-vmafx-operator-skeleton.md`,
+`docs/development/operator.md`,
+`changelog.d/added/vmafx-operator-skeleton.md`,
