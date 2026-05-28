@@ -45,6 +45,12 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## docs/hw-backend-audit-2026-05-28 — doc-only, no rebase impact
+
+**No upstream rebase impact**: this PR adds a research digest
+(`docs/research/0733-hardware-backend-audit-2026-05-28.md`), a changelog fragment,
+and a `docs/state.md` update. No C source, build system, or upstream-shared path is
+touched. Netflix/vmaf upstream syncs are unaffected.
 ## feat/vmafx-phase4-language-modernization-foundation (ADR-0702) — fork-only, no Netflix conflict
 
 **No upstream rebase impact.** The files added in this PR (`go.mod`, `Cargo.toml`,
@@ -39771,3 +39777,29 @@ Touched files:
 `changelog.d/changed/ebpf-research.md` (new),
 `docs/state.md` (new row),
 `docs/rebase-notes.md` (this entry).
+
+---
+
+## `cmd/vmafx-operator` — Kubernetes Operator kubebuilder skeleton (ADR-0714)
+
+**No rebase impact** on upstream C/Python code: the operator is entirely
+fork-local (`api/vmafx/v1/`, `cmd/vmafx-operator/`, `config/crd/`,
+`config/rbac/`, `deploy/helm/vmafx/crds/`,
+`deploy/helm/vmafx/templates/operator-*.yaml`, `go.mod`, `go.sum`).
+None of these paths overlap with Netflix/vmaf upstream.
+
+If a future upstream sync adds a Go module or touches `go.mod`, merge
+the dependency lists in `go.mod` and regenerate `go.sum`.
+
+Fork-local files:
+`api/vmafx/v1/` (new),
+`cmd/vmafx-operator/` (new),
+`config/crd/bases/` (new),
+`config/rbac/role.yaml` (new),
+`deploy/helm/vmafx/crds/` (new),
+`deploy/helm/vmafx/templates/operator-deployment.yaml` (new),
+`deploy/helm/vmafx/templates/operator-rbac.yaml` (new),
+`deploy/helm/vmafx/values.yaml` (operator.* section added),
+`docs/adr/0714-vmafx-operator-skeleton.md`,
+`docs/development/operator.md`,
+`changelog.d/added/vmafx-operator-skeleton.md`,
