@@ -21,6 +21,10 @@
 
 #include "metadata.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct VmafCallbackItem {
     VmafMetadataConfiguration metadata_cfg;
     void (*callback)(void *, VmafMetadata *);
@@ -38,4 +42,8 @@ int vmaf_metadata_append(VmafCallbackList *metadata, const VmafMetadataConfigura
 
 int vmaf_metadata_destroy(VmafCallbackList *metadata);
 
-#endif // !__VMAF_PROPAGATE_METADATA_H__
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
+
+#endif /* __VMAF_SRC_PROPAGATE_METADATA_H__ */

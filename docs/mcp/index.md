@@ -1,11 +1,15 @@
 # MCP server — `vmaf-mcp`
 
-The Lusoris VMAF fork ships **two** MCP surfaces:
+The VMAFX fork ships **three** MCP surfaces:
 
-1. **External Python MCP server** (`vmaf-mcp`, this document) —
-   wraps the `vmaf` CLI, recommended for "score a video and hand
-   the result to my agent" workflows. Stable, in production use.
-2. **Embedded MCP server inside libvmaf** — runs in-process on
+1. **External Python MCP server** (`vmaf-mcp`) —
+   wraps the `vmaf` CLI via subprocess. Stable; in production use.
+   Lives in [`mcp-server/vmaf-mcp/`](../../mcp-server/vmaf-mcp/).
+2. **External Go MCP server** (`vmafx-mcp`) — single static binary,
+   same 15 tools, byte-for-byte schema parity with the Python server.
+   Lives in [`cmd/vmafx-mcp/`](../../cmd/vmafx-mcp/). Stage 1 (Python
+   preserved alongside). See [Go implementation](#go-implementation-vmafx-mcp) below.
+3. **Embedded MCP server inside libvmaf** — runs in-process on
    the host that loaded `libvmaf.so`; serves stdio, UDS, and
    loopback SSE transports with `list_features` and `compute_vmaf`.
    It is the right surface when an embedding host needs an
@@ -14,7 +18,8 @@ The Lusoris VMAF fork ships **two** MCP surfaces:
    work. See [`docs/mcp/embedded.md`](embedded.md) for build flags,
    transport limits, and the C API reference.
 
-The two surfaces are additive; running both at once is fine.
+All three surfaces are additive; running any combination at once is fine.
+This document covers surfaces 1 and 2. See [embedded.md](embedded.md) for surface 3.
 
 `vmaf-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
 server that exposes the Lusoris VMAF fork's scoring CLI to LLM tooling
@@ -153,6 +158,76 @@ hardening (ONNX operator allowlist, model size cap).
 MCP shines when the caller is an LLM that benefits from having a
 tool-calling interface with declared schemas and a JSON-shaped response.
 
+## Go implementation — `vmafx-mcp`
+
+`vmafx-mcp` is a single static Go binary that exposes the same 15 MCP tools as
+the Python server with byte-for-byte schema parity (ADR-0704). It is the
+recommended implementation for deployments that cannot install a Python
+environment.
+
+### Build
+
+```bash
+# From the repository root (Go 1.23+)
+go build -o vmafx-mcp ./cmd/vmafx-mcp/
+```
+
+The binary has no runtime dependencies other than the `vmaf` CLI binary
+(resolved via `VMAF_BIN` or the standard search order).
+
+### Run
+
+```bash
+# Default stdio transport — drop-in replacement for vmaf-mcp
+vmafx-mcp
+
+# HTTP transport (streamable MCP transport, port 3000)
+vmafx-mcp --transport http --port 3000
+```
+
+### Claude Desktop configuration (Go binary)
+
+```json
+{
+  "mcpServers": {
+    "vmafx-local": {
+      "command": "/path/to/vmafx-mcp",
+      "env": {
+        "VMAF_BIN": "/home/you/dev/vmaf/build/tools/vmaf",
+        "VMAF_MCP_ALLOW": "/home/you/yuv-corpus"
+      }
+    }
+  }
+}
+```
+
+### Differences from the Python server
+
+| Feature | Python (`vmaf-mcp`) | Go (`vmafx-mcp`) |
+|---|---|---|
+| Tool names / schemas | Reference | Byte-for-byte parity |
+| Transport | stdio (default), HTTP (PR #1583) | stdio (default), HTTP |
+| VLM descriptions (`describe_worst_frames`) | SmolVLM / Moondream2 when `[vlm]` extras installed | Returns placeholder; Stage 2 will add a native VLM bridge |
+| `eval_model_on_split` / `compare_models` | Native Python (onnxruntime, pandas, scipy) | Delegates to `python3` subprocess; requires Python env |
+| Binary size | ~50 MB Python env | ~10 MB static binary |
+| Startup time | ~300 ms (Python import) | ~10 ms |
+
+### Environment variables
+
+Same as the Python server (`VMAF_BIN`, `VMAF_MCP_ALLOW`). No additional
+variables.
+
+### Tests
+
+```bash
+go test ./cmd/vmafx-mcp/ -v
+```
+
+`TestToolListMatchesPython` and `TestToolSchemasMatchPython` run without any
+external dependencies. `TestVmafScoreTool` and `TestGoVsPythonOutputParity`
+require the Netflix golden YUVs and the `vmaf` binary (skipped automatically
+when absent).
+
 ## Related
 
 - [Tool reference](tools.md) — request/response schemas and error codes
@@ -163,5 +238,6 @@ tool-calling interface with declared schemas and a JSON-shaped response.
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) — the
   per-surface doc bar this page satisfies (MCP tool: what / schema /
   allowed paths / example / error codes).
+- [ADR-0704](../adr/0704-vmafx-mcp-go-port.md) — decision record for the Go port.
 - [mcp-server/vmaf-mcp/README.md](../../mcp-server/vmaf-mcp/README.md) —
-  short-form README kept alongside the code.
+  short-form README kept alongside the Python code.

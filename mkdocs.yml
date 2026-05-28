@@ -1,5 +1,5 @@
 site_name: "VMAF — Lusoris fork"
-site_url: https://lusoris.github.io/vmaf/
+site_url: https://vmafx.github.io/vmafx/
 site_description: Perceptual video quality assessment with GPU/SIMD acceleration.
 repo_url: https://github.com/VMAFx/vmafx
 repo_name: VMAFx/vmafx
