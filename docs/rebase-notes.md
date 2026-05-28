@@ -6,6 +6,43 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## `cmd/vmafx-tune/` — vmafx-tune Go Stage 2: `ladder` subcommand (ADR-0730)
+
+**No upstream rebase impact.** All new code lives in fork-local paths
+(`pkg/ladder/`, `cmd/vmafx-tune/cmd/ladder.go`, `cmd/vmafx-tune/AGENTS.md`,
+`docs/usage/vmafx-tune-go.md`) that have no counterpart in Netflix/vmaf.
+
+When syncing from upstream:
+
+- If Netflix/vmaf changes `tools/vmaf-tune/src/vmaftune/ladder.py` (e.g.
+  adds new hull or rung-selection logic), evaluate whether `pkg/ladder/` should
+  be updated to match. Key divergence points: `upperConvexHull` (Go uses
+  Graham-scan upper hull; Python uses a staircase), `selectRenditions` (Go uses
+  Kneedle perpendicular distance; Python uses curvature maxima).
+- `pkg/encoder/hardware.go` shells out to ffmpeg. If a new FFmpeg version
+  changes a hardware encoder's quality flag (`-cq`, `-global_quality`, `-qp_i`),
+  update the affected `Encode` method in `hardware.go`.
+- The `SamplerFn` interface `func(src, encoder string, width, height int,
+  targetVMAF float64) (Point, error)` must remain stable across rebases;
+  Stage-3 resolution-scaling depends on it.
+
+Touched files:
+`pkg/ladder/ladder.go`,
+`pkg/ladder/ladder_test.go`,
+`cmd/vmafx-tune/cmd/ladder.go`,
+`cmd/vmafx-tune/cmd/ladder_test.go`,
+`cmd/vmafx-tune/cmd/root.go`,
+`cmd/vmafx-tune/cmd/compare_test.go`,
+`cmd/vmafx-tune/AGENTS.md`,
+`docs/adr/0730-vmafx-tune-go-stage2.md`,
+`docs/adr/README.md`,
+`docs/usage/vmafx-tune-go.md`,
+`changelog.d/added/vmafx-tune-go-stage2.md`,
+`.markdownlint.json`,
+`docs/rebase-notes.md` (this entry).
+
+---
+
 ## `docker/Dockerfile.node` — vmafx-node worker image + ffmpeg n8.2 (ADR-0717)
 
 **ffmpeg-patches now validated against both n8.1.1 and n8.2.** The node
