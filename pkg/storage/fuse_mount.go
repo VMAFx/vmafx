@@ -1,0 +1,179 @@
+// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// Copyright 2026 Lusoris
+//
+// pkg/storage/fuse_mount.go — FUSEMountStorage implementation.
+//
+// FUSEMountStorage mounts a rclone remote at a per-job temporary directory via
+// "rclone mount", waits for the mount to be visible, and returns the local path
+// to the requested asset.  It is the fallback mode when the HTTP serve mode is
+// not appropriate (e.g., the caller requires random-access seeking beyond what
+// the HTTP serve mode provides).
+//
+// Lifecycle:
+//  1. Prepare() creates a per-job tmpdir under /tmp/vmafx-rclone-<id>/.
+//  2. Spawns: rclone mount <remote:root> /tmp/vmafx-rclone-<id>/ --daemon
+//     [--config FILE] --vfs-cache-mode off
+//  3. Polls the mountpoint until the asset path is readable.
+//  4. Returns the local path /tmp/vmafx-rclone-<id>/<asset>.
+//  5. cleanup() unmounts via "fusermount3 -u" (or "umount" as fallback), then
+//     removes the tmpdir.
+//
+// FUSE availability note: distroless containers do not include the FUSE userspace
+// tools by default.  The node image must install "fuse3" (Dockerfile.node includes
+// this).  The HTTPServeStorage is preferred precisely because it has no FUSE
+// dependency.  See ADR-0719.
+//
+// ADR-0719: vmafx-node rclone integration.
+package storage
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+const (
+	// mountReadyTimeout is the maximum time to wait for the FUSE mount to
+	// become visible after the rclone mount subprocess starts.
+	mountReadyTimeout = 20 * time.Second
+
+	// mountReadyPollInterval is the interval between mount readiness polls.
+	mountReadyPollInterval = 200 * time.Millisecond
+)
+
+// FUSEMountStorage mounts a rclone remote via FUSE and exposes a local path.
+// It is the fallback mode; prefer HTTPServeStorage in normal operation.
+type FUSEMountStorage struct {
+	rcloneBin    string
+	rcloneConfig string
+	log          *slog.Logger
+}
+
+// Mode returns ModeMount.
+func (s *FUSEMountStorage) Mode() Mode { return ModeMount }
+
+// Prepare mounts the remote root at a temporary directory and returns the local
+// path to the requested asset file.
+func (s *FUSEMountStorage) Prepare(ctx context.Context, sourceURI string) (string, func(), error) {
+	// Handle local paths without spawning rclone.
+	if IsLocal(sourceURI) {
+		lp, err := localPath(sourceURI)
+		if err != nil {
+			return "", func() {}, err
+		}
+		return lp, func() {}, nil
+	}
+
+	remotePath, err := rcloneRemotePath(sourceURI)
+	if err != nil {
+		return "", func() {}, err
+	}
+
+	remoteRoot, assetRel := splitRemotePath(remotePath)
+
+	// Create per-job mount directory.
+	mountDir, err := os.MkdirTemp("", "vmafx-rclone-")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("storage: create mount dir: %w", err)
+	}
+
+	argv := s.buildMountArgs(remoteRoot, mountDir)
+
+	s.log.Debug("starting rclone mount",
+		"remote_root", remoteRoot,
+		"mount_dir", mountDir,
+		"asset", assetRel,
+	)
+
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec -- argv built from validated inputs
+	cmd.Stderr = os.Stderr
+
+	if startErr := cmd.Start(); startErr != nil {
+		if removeErr := os.Remove(mountDir); removeErr != nil {
+			s.log.Warn("storage: remove mount dir after failed start", "error", removeErr)
+		}
+		return "", func() {}, fmt.Errorf("storage: start rclone mount: %w", startErr)
+	}
+
+	assetPath := filepath.Join(mountDir, strings.TrimPrefix(assetRel, "/"))
+
+	// Wait for the asset to appear on the FUSE mount.
+	if readyErr := waitForPath(ctx, assetPath, mountReadyTimeout); readyErr != nil {
+		s.unmount(mountDir)
+		killProcess(cmd)
+		if removeErr := os.RemoveAll(mountDir); removeErr != nil {
+			s.log.Warn("storage: remove mount dir after timeout", "error", removeErr)
+		}
+		return "", func() {}, fmt.Errorf("storage: rclone mount did not become ready: %w", readyErr)
+	}
+
+	cleanup := func() {
+		s.unmount(mountDir)
+		killProcess(cmd)
+		if removeErr := os.RemoveAll(mountDir); removeErr != nil {
+			s.log.Warn("storage: remove mount dir during cleanup", "error", removeErr)
+		}
+	}
+
+	s.log.Info("rclone mount ready",
+		"path", assetPath,
+		"remote_root", remoteRoot,
+	)
+
+	return assetPath, cleanup, nil
+}
+
+// buildMountArgs constructs the rclone mount argument list.
+func (s *FUSEMountStorage) buildMountArgs(remoteRoot, mountDir string) []string {
+	argv := []string{
+		s.rcloneBin, "mount", remoteRoot, mountDir,
+		"--daemon",
+		"--vfs-cache-mode", "off",
+		"--allow-non-empty",
+	}
+	if s.rcloneConfig != "" {
+		argv = append(argv, "--config", s.rcloneConfig)
+	}
+	return argv
+}
+
+// unmount unmounts the FUSE filesystem at mountDir using fusermount3 or umount
+// as a fallback.
+func (s *FUSEMountStorage) unmount(mountDir string) {
+	// Try fusermount3 first (fuse3 package), then fusermount (fuse2), then umount.
+	for _, bin := range []string{"fusermount3", "fusermount", "umount"} {
+		args := []string{"-u", mountDir}
+		if bin == "umount" {
+			args = []string{mountDir}
+		}
+		out, err := exec.Command(bin, args...).CombinedOutput() //nolint:gosec -- args constructed from known safe paths
+		if err == nil {
+			return
+		}
+		s.log.Debug("storage: unmount attempt", "bin", bin, "error", err, "output", string(out))
+	}
+	s.log.Warn("storage: failed to unmount FUSE mount", "mount_dir", mountDir)
+}
+
+// waitForPath polls until path is stat-able or timeout elapses.
+func waitForPath(ctx context.Context, assetPath string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out after %v waiting for %s", timeout, assetPath)
+		}
+		if _, err := os.Stat(assetPath); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(mountReadyPollInterval):
+		}
+	}
+}

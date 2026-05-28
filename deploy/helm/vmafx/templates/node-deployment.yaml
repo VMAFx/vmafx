@@ -1,0 +1,126 @@
+{{- if .Values.node.enabled }}
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# templates/node-deployment.yaml — vmafx-node worker Deployment.
+#
+# Deploys the vmafx-node binary as a k8s Deployment.  Each pod is a scoring
+# worker that registers with the vmafx-controller, pulls jobs, resolves remote
+# assets via rclone, and runs ffmpeg + libvmaf scoring.
+#
+# The rclone config Secret is mounted read-only at /etc/vmafx/rclone.conf.
+#
+# ADR-0709: Phase 4b umbrella.
+# ADR-0719: rclone integration.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vmafx.fullname" . }}-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  replicas: {{ .Values.node.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "vmafx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: node
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "vmafx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: node
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "vmafx.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vmafx-node
+          image: {{ .Values.node.image.repository }}:{{ .Values.node.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.node.image.pullPolicy | default "IfNotPresent" }}
+          env:
+            - name: VMAFX_CONTROLLER_ADDR
+              value: {{ .Values.node.controllerAddr | default (printf "%s:50051" (include "vmafx.fullname" .)) | quote }}
+            - name: VMAFX_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: VMAFX_STORAGE_MODE
+              value: {{ .Values.storage.mode | default "http-serve" | quote }}
+            - name: VMAFX_RCLONE_CONFIG
+              value: "/etc/vmafx/rclone.conf"
+            - name: VMAFX_VMAF_BINARY
+              value: "/usr/local/bin/vmaf"
+            - name: VMAFX_MODEL_DIR
+              value: "/usr/local/share/vmafx/model"
+            {{- if .Values.node.concurrency }}
+            - name: VMAFX_CONCURRENCY
+              value: {{ .Values.node.concurrency | quote }}
+            {{- end }}
+            {{- if .Values.node.gpuVendor }}
+            - name: VMAFX_GPU_VENDOR
+              value: {{ .Values.node.gpuVendor | quote }}
+            {{- end }}
+            {{- range $k, $v := .Values.node.env }}
+            - name: {{ $k | quote }}
+              value: {{ $v | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.node.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.storage.rclone.config }}
+            - name: rclone-config
+              mountPath: /etc/vmafx
+              readOnly: true
+            {{- end }}
+            {{- if .Values.persistence.models.enabled }}
+            - name: models
+              mountPath: {{ .Values.persistence.models.mountPath }}
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.storage.rclone.config }}
+        - name: rclone-config
+          secret:
+            secretName: {{ include "vmafx.fullname" . }}-rclone-config
+            defaultMode: 0400
+        {{- end }}
+        {{- if .Values.persistence.models.enabled }}
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-models
+            readOnly: true
+        {{- end }}
+{{- end }}
