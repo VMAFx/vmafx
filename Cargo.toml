@@ -1,0 +1,13 @@
+# VMAFX Rust workspace root
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+#
+# Members are filled in by per-sweep PRs. The vmafx-sys FFI crate is the
+# first member (ADR-0702). Additional members (feature-extractor pilot,
+# future Rust CLI binaries) are added by their respective ADR sweep PRs.
+
+[workspace]
+members = [
+    # "bindings/rust/vmafx-sys",  # uncommented by the vmafx-rust-sys sweep PR
+]
+resolver = "2"

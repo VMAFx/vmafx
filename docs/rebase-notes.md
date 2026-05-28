@@ -7,6 +7,18 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/vmafx-phase4-language-modernization-foundation (ADR-0702) — fork-only, no Netflix conflict
+
+**No upstream rebase impact.** The files added in this PR (`go.mod`, `Cargo.toml`,
+`pkg/`, `cmd/`, `bindings/`, `.github/workflows/go-ci.yml`,
+`.github/workflows/rust-ci.yml`) are entirely fork-local. Netflix/vmaf upstream
+does not have a Go or Rust surface; cherry-picks from upstream are unaffected.
+
+The `docs/principles.md`, `docs/development/languages.md`, `.gitignore`, and
+`Makefile` additions are additive; the Makefile targets are named distinctly
+(`go-build`, `go-test`, `rust-build`, `rust-test`) and do not conflict with any
+upstream Makefile target.
+
 ## chore/post-cutover-url-sweep — fork-only URL change, no Netflix conflict
 
 **No upstream rebase impact**: this change replaces all occurrences of the
