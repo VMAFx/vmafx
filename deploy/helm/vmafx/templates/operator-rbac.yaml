@@ -1,0 +1,89 @@
+{{- /*
+  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+  Copyright 2026 Lusoris
+
+  deploy/helm/vmafx/templates/operator-rbac.yaml
+  ServiceAccount, ClusterRole, and ClusterRoleBinding for the vmafx-operator.
+
+  Rendered only when operator.enabled == true.
+
+  ADR-0714: vmafx-operator kubebuilder skeleton + CRDs.
+*/ -}}
+{{- if .Values.operator.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "vmafx.serviceAccountName" . }}-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "vmafx.fullname" . }}-operator-role
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+rules:
+  # VmafxJob CRD
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxjobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxjobs/status]
+    verbs: [get, update, patch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxjobs/finalizers]
+    verbs: [update]
+  # VmafxNode CRD
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxnodes]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxnodes/status]
+    verbs: [get, update, patch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxnodes/finalizers]
+    verbs: [update]
+  # VmafxModelTraining CRD
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxmodeltrainings]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxmodeltrainings/status]
+    verbs: [get, update, patch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxmodeltrainings/finalizers]
+    verbs: [update]
+  # Worker Pods
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Events
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  # Leader election
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "vmafx.fullname" . }}-operator-rolebinding
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "vmafx.fullname" . }}-operator-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "vmafx.serviceAccountName" . }}-operator
+    namespace: {{ .Release.Namespace }}
+{{- end }}

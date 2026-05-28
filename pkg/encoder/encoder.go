@@ -161,7 +161,7 @@ func runEncode(src string, params EncodeParams, codec string, crfFlag string) (E
 		"-loglevel", "warning",
 		"-y",
 		"-i", src,
-		"-an", // drop audio
+		"-an",           // drop audio
 		"-c:v", codec,
 		crfFlag, strconv.Itoa(params.CRF),
 	}

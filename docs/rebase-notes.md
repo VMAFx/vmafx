@@ -6,6 +6,26 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## feat/speed-python-compat-extractors (Research-0732, item #2) — low-conflict upstream port
+
+**No structural rebase impact.** This PR adds fork-local content to paths
+(`compat/python-vmaf/core/feature_extractor.py`,
+`compat/python-vmaf/core/quality_runner.py`,
+`python/test/feature_extractor_test.py`,
+`docs/metrics/speed_qa.md`) that are already diverged from upstream
+(`python/vmaf/core/…` in Netflix/vmaf). When syncing from upstream:
+
+- If Netflix/vmaf updates `SpeedChromaFeatureExtractor` or
+  `SpeedTemporalFeatureExtractor` (e.g. bumps VERSION), apply the equivalent
+  change to `compat/python-vmaf/core/feature_extractor.py`.
+- If Netflix/vmaf adds new SpEED QualityRunner subclasses, port them to
+  `compat/python-vmaf/core/quality_runner.py`.
+- The compat harness mirrors Netflix's class hierarchy intentionally; keep the
+  TYPE, VERSION, and ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT in sync.
+
+---
+
+
 ## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
 
 **no rebase impact** on upstream C/Python code: the Go server is entirely
@@ -45,6 +65,12 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## docs/hw-backend-audit-2026-05-28 — doc-only, no rebase impact
+
+**No upstream rebase impact**: this PR adds a research digest
+(`docs/research/0733-hardware-backend-audit-2026-05-28.md`), a changelog fragment,
+and a `docs/state.md` update. No C source, build system, or upstream-shared path is
+touched. Netflix/vmaf upstream syncs are unaffected.
 ## feat/vmafx-phase4-language-modernization-foundation (ADR-0702) — fork-only, no Netflix conflict
 
 **No upstream rebase impact.** The files added in this PR (`go.mod`, `Cargo.toml`,
@@ -39792,3 +39818,43 @@ Files added:
 `docs/server/node.md` (new),
 `docs/adr/0713-vmafx-node-impl.md` (new),
 `changelog.d/added/vmafx-node.md` (new).
+
+---
+
+## Research-0733 — VMAFX eBPF optimization target — 2026-05-28
+
+No rebase impact: docs-only PR. All touched files (`docs/research/`, `changelog.d/`,
+`docs/state.md`, `docs/rebase-notes.md`) are fork-local with no upstream Netflix/vmaf
+equivalent. No C source, no build system, no test assertions changed.
+
+Touched files:
+`docs/research/0733-vmafx-ebpf-optimization-target.md` (new),
+`changelog.d/changed/ebpf-research.md` (new),
+`docs/state.md` (new row),
+`docs/rebase-notes.md` (this entry).
+
+---
+
+## `cmd/vmafx-operator` — Kubernetes Operator kubebuilder skeleton (ADR-0714)
+
+**No rebase impact** on upstream C/Python code: the operator is entirely
+fork-local (`api/vmafx/v1/`, `cmd/vmafx-operator/`, `config/crd/`,
+`config/rbac/`, `deploy/helm/vmafx/crds/`,
+`deploy/helm/vmafx/templates/operator-*.yaml`, `go.mod`, `go.sum`).
+None of these paths overlap with Netflix/vmaf upstream.
+
+If a future upstream sync adds a Go module or touches `go.mod`, merge
+the dependency lists in `go.mod` and regenerate `go.sum`.
+
+Fork-local files:
+`api/vmafx/v1/` (new),
+`cmd/vmafx-operator/` (new),
+`config/crd/bases/` (new),
+`config/rbac/role.yaml` (new),
+`deploy/helm/vmafx/crds/` (new),
+`deploy/helm/vmafx/templates/operator-deployment.yaml` (new),
+`deploy/helm/vmafx/templates/operator-rbac.yaml` (new),
+`deploy/helm/vmafx/values.yaml` (operator.* section added),
+`docs/adr/0714-vmafx-operator-skeleton.md`,
+`docs/development/operator.md`,
+`changelog.d/added/vmafx-operator-skeleton.md`,
