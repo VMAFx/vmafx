@@ -20,7 +20,7 @@
 
 /* ADR-0239: backend-agnostic GPU picture pool. Promoted from
  * `cuda/ring_buffer.c` — same callback-based round-robin shape, now
- * shared between CUDA, SYCL, and (after PR #264 lands) Vulkan. */
+ * shared between CUDA, SYCL, HIP, and Metal backends. */
 
 #include <errno.h>
 #include <pthread.h>

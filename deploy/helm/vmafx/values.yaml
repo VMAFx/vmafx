@@ -120,15 +120,13 @@ ingress:
 # GPU — multi-vendor device-plugin selector
 # ---------------------------------------------------------------------------
 # The chart maps "vendor" to the correct Kubernetes resource key:
-#   nvidia  →  nvidia.com/gpu     (CUDA backend + Vulkan-on-NVIDIA)
-#   amd     →  amd.com/gpu        (HIP backend + Vulkan-on-AMD via ROCm)
-#   intel   →  gpu.intel.com/i915 (SYCL backend + Vulkan-on-Intel)
+#   nvidia  →  nvidia.com/gpu     (CUDA backend)
+#   amd     →  amd.com/gpu        (HIP backend)
+#   intel   →  gpu.intel.com/i915 (SYCL backend)
 #   cpu     →  (no device-plugin resource; CPU-only execution)
 #
-# IMPORTANT — Vulkan is NOT a separate Kubernetes resource.
-# Vulkan runs through whichever GPU device-plugin is allocated.  The chart
-# requests the vendor's device-plugin resource; the Vulkan runtime inside the
-# container then addresses that device.  See docs/development/gpu-scheduling.md.
+# ADR-0726: Vulkan backend removed. See docs/backends/README.md.
+# See docs/development/gpu-scheduling.md for vendor-to-backend mapping.
 #
 # The chart also sets VMAFX_BACKEND automatically from vendor (see env below).
 gpu:

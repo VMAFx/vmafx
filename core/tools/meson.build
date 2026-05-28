@@ -20,9 +20,6 @@ if get_option('enable_sycl')
     vmaf_tool_cflags += ['-DHAVE_SYCL=1']
     vmaf_tool_deps += sycl_dependency
 endif
-if get_option('enable_vulkan').enabled()
-    vmaf_tool_cflags += ['-DHAVE_VULKAN=1']
-endif
 if get_option('enable_hip')
     # ADR-0514: the vmaf CLI gates HIP support on `#ifdef HAVE_HIP` (see
     # `libvmaf/tools/vmaf.c` — includes of `libvmaf_hip.h`, init/cleanup
@@ -93,9 +90,6 @@ endif
 if get_option('enable_sycl')
     vmaf_bench_deps += sycl_dependency
     vmaf_bench_cflags += ['-DHAVE_SYCL=1']
-endif
-if get_option('enable_vulkan').enabled()
-    vmaf_bench_cflags += ['-DHAVE_VULKAN=1']
 endif
 
 vmaf_bench_link_target = get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf

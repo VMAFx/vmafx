@@ -44,7 +44,7 @@ extern "C" {
  * across all threads.
  *
  * @param var_name  Name of the environment variable to snapshot
- *                  (e.g. "VMAF_VULKAN_DISPATCH"). Must be a string
+ *                  (e.g. "VMAF_SYCL_DISPATCH"). Must be a string
  *                  literal or otherwise outlive the process; the
  *                  function uses the pointer as a lookup key.
  * @return          The snapshotted value, or NULL if the variable

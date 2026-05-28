@@ -188,7 +188,6 @@ static char *test_backend_cuda_engages_cuda()
     mu_assert("cli_parse: --backend cuda must set gpumask = 0 (any nonzero DISABLES CUDA)",
               settings.gpumask == 0);
     mu_assert("cli_parse: --backend cuda must set no_sycl = true", settings.no_sycl);
-    mu_assert("cli_parse: --backend cuda must set no_vulkan = true", settings.no_vulkan);
     mu_assert("cli_parse: --backend cuda must set no_hip = true", settings.no_hip);
     mu_assert("cli_parse: --backend cuda must set no_metal = true", settings.no_metal);
     mu_assert("cli_parse: --backend cuda must NOT set no_cuda", !settings.no_cuda);
@@ -206,7 +205,6 @@ static char *test_backend_cpu()
     cli_parse(argc, argv, &settings);
     mu_assert("cli_parse: --backend cpu must set no_cuda = true", settings.no_cuda);
     mu_assert("cli_parse: --backend cpu must set no_sycl = true", settings.no_sycl);
-    mu_assert("cli_parse: --backend cpu must set no_vulkan = true", settings.no_vulkan);
     mu_assert("cli_parse: --backend cpu must set no_hip = true", settings.no_hip);
     mu_assert("cli_parse: --backend cpu must set no_metal = true", settings.no_metal);
     cli_free(&settings);
@@ -222,7 +220,6 @@ static char *test_backend_sycl()
     optind = 1;
     cli_parse(argc, argv, &settings);
     mu_assert("cli_parse: --backend sycl must set no_cuda = true", settings.no_cuda);
-    mu_assert("cli_parse: --backend sycl must set no_vulkan = true", settings.no_vulkan);
     mu_assert("cli_parse: --backend sycl must set no_hip = true", settings.no_hip);
     mu_assert("cli_parse: --backend sycl must set no_metal = true", settings.no_metal);
     mu_assert("cli_parse: --backend sycl must default sycl_device to 0", settings.sycl_device == 0);
@@ -231,23 +228,7 @@ static char *test_backend_sycl()
     return NULL;
 }
 
-static char *test_backend_vulkan()
-{
-    char *argv[8] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--backend", "vulkan"};
-    int argc = 7;
-    CLISettings settings;
-    optind = 1;
-    cli_parse(argc, argv, &settings);
-    mu_assert("cli_parse: --backend vulkan must set no_cuda = true", settings.no_cuda);
-    mu_assert("cli_parse: --backend vulkan must set no_sycl = true", settings.no_sycl);
-    mu_assert("cli_parse: --backend vulkan must set no_hip = true", settings.no_hip);
-    mu_assert("cli_parse: --backend vulkan must set no_metal = true", settings.no_metal);
-    mu_assert("cli_parse: --backend vulkan must default vulkan_device to 0",
-              settings.vulkan_device == 0);
-    cli_free(&settings);
-    cli_free_dicts(&settings);
-    return NULL;
-}
+/* test_backend_vulkan removed — ADR-0726: Vulkan backend dropped. */
 
 static char *test_backend_hip()
 {
@@ -258,7 +239,6 @@ static char *test_backend_hip()
     cli_parse(argc, argv, &settings);
     mu_assert("cli_parse: --backend hip must set no_cuda = true", settings.no_cuda);
     mu_assert("cli_parse: --backend hip must set no_sycl = true", settings.no_sycl);
-    mu_assert("cli_parse: --backend hip must set no_vulkan = true", settings.no_vulkan);
     mu_assert("cli_parse: --backend hip must set no_metal = true", settings.no_metal);
     mu_assert("cli_parse: --backend hip must NOT set no_hip", !settings.no_hip);
     mu_assert("cli_parse: --backend hip must default hip_device to 0", settings.hip_device == 0);
@@ -276,7 +256,6 @@ static char *test_backend_metal()
     cli_parse(argc, argv, &settings);
     mu_assert("cli_parse: --backend metal must set no_cuda = true", settings.no_cuda);
     mu_assert("cli_parse: --backend metal must set no_sycl = true", settings.no_sycl);
-    mu_assert("cli_parse: --backend metal must set no_vulkan = true", settings.no_vulkan);
     mu_assert("cli_parse: --backend metal must set no_hip = true", settings.no_hip);
     mu_assert("cli_parse: --backend metal must NOT set no_metal", !settings.no_metal);
     mu_assert("cli_parse: --backend metal must default metal_device to 0",
@@ -398,7 +377,7 @@ static char *run_backend_tests(void)
     mu_run_test(test_backend_cuda_engages_cuda);
     mu_run_test(test_backend_cuda_preserves_explicit_gpumask);
     mu_run_test(test_backend_sycl);
-    mu_run_test(test_backend_vulkan);
+    /* test_backend_vulkan removed — ADR-0726 */
     mu_run_test(test_backend_hip);
     mu_run_test(test_backend_metal);
     mu_run_test(test_hip_device_explicit);
