@@ -235,7 +235,6 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         "adm2",
         "aim",
         "adm3",
-        "ansnr",
         "motion",
         "motion2",
         "motion3",
@@ -243,7 +242,6 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         "vif_den",
         "adm_num",
         "adm_den",
-        "anpsnr",
         "vif_num_scale0",
         "vif_den_scale0",
         "vif_num_scale1",
@@ -271,8 +269,6 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     ]
 
     ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = dict(zip(ATOM_FEATURES, ATOM_FEATURES))
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["ansnr"] = "float_ansnr"
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["anpsnr"] = "float_anpsnr"
     # motion3, aim and adm3 now have short aliases registered in alias.c
     # (motion3, aim, adm3 respectively), so the XML key matches the feature name
     # directly — no override needed beyond the default zip mapping.
@@ -298,7 +294,7 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        features = ["float_adm", "float_vif", "float_motion", "float_ansnr"]
+        features = ["float_adm", "float_vif", "float_motion"]
         options = {
             "float_adm": {"debug": True},
             "float_vif": {"debug": True},
@@ -460,12 +456,6 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
             [f"integer_{f}" for f in VmafFeatureExtractor.ATOM_FEATURES],
         )
     )
-    # float_ansnr was removed in feat(core): drop legacy ansnr feature (#38).
-    # The "ansnr" → "float_ansnr" mapping is intentionally omitted here so
-    # requests via VmafIntegerFeatureExtractor never pass the removed extractor
-    # name to the CLI.  The float/legacy path (VmafFeatureExtractor) retains
-    # the mapping for backward-compatibility of the legacy test suite.
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["anpsnr"] = "float_anpsnr"
 
     def _generate_result(self, asset):
 
@@ -479,9 +469,6 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        # float_ansnr was removed in feat(core): drop legacy ansnr feature (#38).
-        # The VmafQualityRunner (integer path) only needs adm/vif/motion to
-        # produce VMAF scores; ansnr was never a model input for vmaf_v0.6.1.
         features = ["adm", "vif", "motion"]
         options = {
             "adm": {"debug": True},
