@@ -3,11 +3,20 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 #
 # Members are filled in by per-sweep PRs. The vmafx-sys FFI crate is the
-# first member (ADR-0702). Additional members (feature-extractor pilot,
-# future Rust CLI binaries) are added by their respective ADR sweep PRs.
+# first member (ADR-0702). Feature-extractor Rust pilots (TAD, ADR-0707)
+# and future Rust CLI binaries are added by their respective ADR sweep PRs.
 
 [workspace]
 members = [
     "bindings/rust/vmafx-sys",
+    "core/src/feature/rust/tad",
 ]
 resolver = "2"
+
+[profile.release]
+# Optimise for size as well as speed — libvmaf.so is embedded in
+# many video pipeline processes where binary size matters.
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

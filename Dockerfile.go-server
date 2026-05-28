@@ -30,7 +30,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — go-builder: compile the Go server
 # ---------------------------------------------------------------------------
-FROM golang:1.23-bookworm AS go-builder
+FROM golang:1.23-bookworm@sha256:167053a2bb901972bf2c1611f8f52c44d5fe7e762e5cab213708d82c421614db AS go-builder
 
 ARG CGO_ENABLED=1
 ARG DEBIAN_FRONTEND=noninteractive
@@ -64,7 +64,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # Stage 2 — vmaf-builder: compile libvmaf + vmaf CLI
 # ---------------------------------------------------------------------------
 # Reuses the same setup as docker/Dockerfile.production stage 1.
-FROM debian:12-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb AS vmaf-builder
+FROM debian:13-slim@sha256:b6e2a152f22a40ff69d92cb397223c906017e1391a73c952b588e51af8883bf8 AS vmaf-builder
 
 ARG VMAF_BUILD_JOBS=4
 ARG DEBIAN_FRONTEND=noninteractive

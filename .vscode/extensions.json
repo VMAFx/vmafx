@@ -2,11 +2,7 @@
   "//": "Recommendations VS Code surfaces to new contributors on first open.",
   "recommendations": [
     "llvm-vs-code-extensions.vscode-clangd",
-    "golang.go",
-    "rust-lang.rust-analyzer",
-    "zxh404.vscode-proto3",
-    "ms-kubernetes-tools.vscode-kubernetes-tools",
-    "ms-azuretools.vscode-docker",
+    "twxs.cmake",
     "mesonbuild.mesonbuild",
     "ms-python.python",
     "ms-python.black-formatter",
@@ -17,8 +13,6 @@
     "timonwong.shellcheck",
     "redhat.vscode-yaml",
     "tamasfe.even-better-toml",
-    "bierner.markdown-mermaid",
-    "vivaxy.vscode-conventional-commits",
     "editorconfig.editorconfig",
     "github.vscode-github-actions",
     "github.vscode-pull-request-github",
@@ -28,7 +22,6 @@
   "unwantedRecommendations": [
     "ms-vscode.cpptools",
     "ms-vscode.cpptools-extension-pack",
-    "ms-vscode.cmake-tools",
-    "twxs.cmake"
+    "ms-vscode.cmake-tools"
   ]
 }

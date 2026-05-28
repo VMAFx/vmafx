@@ -1,9 +1,9 @@
 [
   {
     "adapter": "CodeLLDB",
-    "label": "Debug: vmafx CLI (Netflix normal pair)",
+    "label": "Debug: vmaf CLI (Netflix normal pair)",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/build/tools/vmafx",
+    "program": "$ZED_WORKTREE_ROOT/build/tools/vmaf",
     "args": [
       "-r", "$ZED_WORKTREE_ROOT/python/test/resource/yuv/src01_hrc00_576x324.yuv",
       "-d", "$ZED_WORKTREE_ROOT/python/test/resource/yuv/src01_hrc01_576x324.yuv",
@@ -19,9 +19,9 @@
   },
   {
     "adapter": "CodeLLDB",
-    "label": "Debug: vmafx CLI (attach)",
+    "label": "Debug: vmaf CLI (attach)",
     "request": "attach",
-    "program": "$ZED_WORKTREE_ROOT/build/tools/vmafx"
+    "program": "$ZED_WORKTREE_ROOT/build/tools/vmaf"
   },
   {
     "adapter": "CodeLLDB",

@@ -2,10 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug: vmafx CLI (Netflix normal pair)",
+      "name": "Debug: vmaf CLI (Netflix normal pair)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/tools/vmafx",
+      "program": "${workspaceFolder}/build/tools/vmaf",
       "args": [
         "-r", "${workspaceFolder}/python/test/resource/yuv/src01_hrc00_576x324.yuv",
         "-d", "${workspaceFolder}/python/test/resource/yuv/src01_hrc01_576x324.yuv",
@@ -24,10 +24,10 @@
       ]
     },
     {
-      "name": "Debug: vmafx CLI (attach)",
+      "name": "Debug: vmaf CLI (attach)",
       "type": "cppdbg",
       "request": "attach",
-      "program": "${workspaceFolder}/build/tools/vmafx",
+      "program": "${workspaceFolder}/build/tools/vmaf",
       "MIMode": "gdb"
     },
     {

@@ -56,29 +56,7 @@
     "reveal": "always"
   },
   {
-    "label": "Build: Go",
-    "command": "go build ./...",
-    "reveal": "always",
-    "save": "all"
-  },
-  {
-    "label": "Test: Go",
-    "command": "go test ./...",
-    "reveal": "always"
-  },
-  {
-    "label": "Build: Rust",
-    "command": "cargo build --workspace",
-    "reveal": "always",
-    "save": "all"
-  },
-  {
-    "label": "Test: Rust",
-    "command": "cargo test --workspace",
-    "reveal": "always"
-  },
-  {
-    "label": "vmafx-tune compare BBB 1080p (smoke)",
+    "label": "vmaf-tune compare BBB 1080p (smoke)",
     "command": "python tools/vmaf-tune/vmaftune/compare.py --ref testdata/ref_576x324_48f.yuv --dis testdata/dis_576x324_48f.yuv --width 576 --height 324 --backend cpu",
     "reveal": "always"
   },
@@ -88,12 +66,7 @@
     "reveal": "always"
   },
   {
-    "label": "MCP smoke test (Go)",
-    "command": "cd cmd/vmafx-mcp && go test ./...",
-    "reveal": "always"
-  },
-  {
-    "label": "MCP smoke test (Python)",
+    "label": "MCP smoke test",
     "command": "cd mcp-server/vmaf-mcp && python -m pytest tests/test_smoke_e2e.py -v",
     "reveal": "always"
   },

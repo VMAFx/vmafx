@@ -17,7 +17,6 @@
     "--pch-storage=memory",
     "-j=8"
   ],
-  "clangd.path": "clangd",
   "clangd.fallbackFlags": [
     "-std=c11",
     "-I${workspaceFolder}/core/include",
@@ -71,10 +70,6 @@
   "files.associations": {
     "*.cu": "cuda-cpp",
     "*.cuh": "cuda-cpp",
-    "*.hip": "cuda-cpp",
-    "*.metal": "cpp",
-    "*.proto": "proto3",
-    "*.tmpl": "helm",
     "meson.build": "meson",
     "meson_options.txt": "meson"
   },
@@ -82,54 +77,16 @@
   "files.watcherExclude": {
     "**/build/**": true,
     "**/build-san/**": true,
-    "**/build-cpu/**": true,
-    "**/build-cuda/**": true,
-    "**/build-sycl/**": true,
-    "**/build-all/**": true,
     "**/subprojects/*/**": true,
     "**/.venv/**": true,
-    "**/node_modules/**": true,
-    "**/target/**": true,
-    "${workspaceFolder}/bindings/rust/*/target/**": true
+    "**/node_modules/**": true
   },
   "search.exclude": {
     "**/build": true,
     "**/build-san": true,
-    "**/build-cpu": true,
-    "**/build-cuda": true,
-    "**/build-sycl": true,
-    "**/build-all": true,
     "**/subprojects": true,
-    "**/.venv": true,
-    "**/target": true
+    "**/.venv": true
   },
-
-  "[go]": {
-    "editor.defaultFormatter": "golang.go",
-    "editor.formatOnSave": true,
-    "editor.tabSize": 4,
-    "editor.insertSpaces": false
-  },
-  "[rust]": {
-    "editor.defaultFormatter": "rust-lang.rust-analyzer",
-    "editor.formatOnSave": true,
-    "editor.tabSize": 4,
-    "editor.insertSpaces": true
-  },
-  "[proto3]": {
-    "editor.defaultFormatter": "zxh404.vscode-proto3",
-    "editor.formatOnSave": true,
-    "editor.tabSize": 2
-  },
-
-  "go.lintTool": "golangci-lint",
-  "go.lintFlags": ["--fast"],
-  "go.formatTool": "gofmt",
-  "go.toolsManagement.autoUpdate": false,
-
-  "rust-analyzer.cargo.allTargets": true,
-  "rust-analyzer.check.command": "clippy",
-  "rust-analyzer.check.extraArgs": ["-D", "warnings"],
 
   "cmake.configureOnOpen": false,
   "cmake.sourceDirectory": "",
