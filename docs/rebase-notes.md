@@ -6,6 +6,15 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## Research-0751 4K baseline + PR #79 adm_cm A/B (2026-05-29)
+
+**Files touched:** `docs/research/0751-cross-backend-4k-baseline-and-pr79-adm-cm-4k-measure.md`,
+`changelog.d/changed/cross-backend-4k-baseline.md`
+
+**Rebase impact:** None. Research-only digest; no source code changed.
+No upstream conflict possible — these are fork-added measurement artifacts.
+
+
 ## CI round-3 fix — `.semgrepignore`, `.gitleaks.toml`, `codeql-config.yml`, `compat/python-vmaf/` (2026-05-28)
 
 **Files touched:** `.semgrepignore`, `.gitleaks.toml`, `.github/codeql-config.yml`,
