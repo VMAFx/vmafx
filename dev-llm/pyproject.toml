@@ -19,7 +19,7 @@ dependencies = [
 dev = ["pytest>=9.0.3", "ruff>=0.15.14", "mypy>=2.1.0"]
 cloud = [
   "anthropic>=0.104.1",
-  "openai>=2.37.0",
+  "openai>=2.38.0",
 ]
 
 [project.scripts]
