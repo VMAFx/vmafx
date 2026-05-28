@@ -26,6 +26,8 @@ from vmaf.core.feature_extractor import (
     PyPsnrFeatureExtractor,
     PypsnrFeatureExtractor,
     PyPsnrMaxdb100FeatureExtractor,
+    SpeedChromaFeatureExtractor,
+    SpeedTemporalFeatureExtractor,
     SsimFeatureExtractor,
     VifFrameDifferenceFeatureExtractor,
     VmafFeatureExtractor,
@@ -3702,6 +3704,98 @@ class FeatureExtractorTest(MyTestCase):
         self.assertAlmostEqual(results[1]["PyPsnr_maxdb100_feature_psnry_score"], 100.0, places=4)
         self.assertAlmostEqual(results[1]["PyPsnr_maxdb100_feature_psnru_score"], 100.0, places=4)
         self.assertAlmostEqual(results[1]["PyPsnr_maxdb100_feature_psnrv_score"], 100.0, places=4)
+
+
+class SpeedChromaFeatureExtractorTest(MyTestCase):
+    """Smoke tests for SpeedChromaFeatureExtractor (Research-0732, PR #22).
+
+    These tests exercise the Python wrapper only — they do not invoke the
+    vmafexec CLI binary, so they run without a compiled libvmaf present.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.asset = Asset(
+            dataset="test",
+            content_id=0,
+            asset_id=0,
+            ref_path="dir/refvideo.yuv",
+            dis_path="dir/disvideo.yuv",
+            asset_dict={"width": 576, "height": 324},
+        )
+
+    def test_executor_id(self):
+        fextractor = SpeedChromaFeatureExtractor([self.asset], None)
+        self.assertEqual(
+            fextractor.executor_id,
+            "Speed_chroma_feature_V0.9",
+        )
+
+    def test_atom_features(self):
+        self.assertEqual(
+            SpeedChromaFeatureExtractor.ATOM_FEATURES,
+            ["speed_chroma_u", "speed_chroma_v", "speed_chroma_uv"],
+        )
+
+    def test_vmafexec_key_dict(self):
+        self.assertEqual(
+            SpeedChromaFeatureExtractor.ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT,
+            {
+                "speed_chroma_u": "speed_chroma_u",
+                "speed_chroma_v": "speed_chroma_v",
+                "speed_chroma_uv": "speed_chroma_uv",
+            },
+        )
+
+    def test_type(self):
+        self.assertEqual(SpeedChromaFeatureExtractor.TYPE, "Speed_chroma_feature")
+
+    def test_version(self):
+        self.assertEqual(SpeedChromaFeatureExtractor.VERSION, "0.9")
+
+
+class SpeedTemporalFeatureExtractorTest(MyTestCase):
+    """Smoke tests for SpeedTemporalFeatureExtractor (Research-0732, PR #22).
+
+    These tests exercise the Python wrapper only — they do not invoke the
+    vmafexec CLI binary, so they run without a compiled libvmaf present.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.asset = Asset(
+            dataset="test",
+            content_id=0,
+            asset_id=0,
+            ref_path="dir/refvideo.yuv",
+            dis_path="dir/disvideo.yuv",
+            asset_dict={"width": 576, "height": 324},
+        )
+
+    def test_executor_id(self):
+        fextractor = SpeedTemporalFeatureExtractor([self.asset], None)
+        self.assertEqual(
+            fextractor.executor_id,
+            "Speed_temporal_feature_V0.1",
+        )
+
+    def test_atom_features(self):
+        self.assertEqual(
+            SpeedTemporalFeatureExtractor.ATOM_FEATURES,
+            ["speed_temporal"],
+        )
+
+    def test_vmafexec_key_dict(self):
+        self.assertEqual(
+            SpeedTemporalFeatureExtractor.ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT,
+            {"speed_temporal": "speed_temporal"},
+        )
+
+    def test_type(self):
+        self.assertEqual(SpeedTemporalFeatureExtractor.TYPE, "Speed_temporal_feature")
+
+    def test_version(self):
+        self.assertEqual(SpeedTemporalFeatureExtractor.VERSION, "0.1")
 
 
 if __name__ == "__main__":

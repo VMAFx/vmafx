@@ -1,0 +1,153 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# docker/Dockerfile.node — vmafx-node worker binary container.
+#
+# Multi-stage build with a GPU_RUNTIME ARG:
+#   cpu       — software-only (default)
+#   cuda12    — CUDA 12 + NVCC toolchain
+#   rocm6     — ROCm 6 toolchain
+#   sycl-oneapi2026 — Intel oneAPI 2026 + DPC++ toolchain
+#
+# Build examples:
+#   docker build -f docker/Dockerfile.node --build-arg GPU_RUNTIME=cpu -t vmafx-node:cpu .
+#   docker build -f docker/Dockerfile.node --build-arg GPU_RUNTIME=cuda12 -t vmafx-node:cuda12 .
+#
+# ADR-0713: vmafx-node Go worker binary.
+# See also: docs/development/node.md, docs/development/gpu-scheduling.md.
+
+ARG GPU_RUNTIME=cpu
+
+# =============================================================================
+# Stage 1: builder
+# =============================================================================
+FROM ubuntu:24.04 AS builder
+
+ARG GPU_RUNTIME
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build essentials.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    curl \
+    git \
+    meson \
+    ninja-build \
+    nasm \
+    pkg-config \
+    libssl-dev \
+    libfontconfig1-dev \
+    libfreetype6-dev \
+    libx11-dev \
+    yasm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go 1.23.
+ENV GOVERSION=1.23.9
+RUN curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" \
+    | tar -C /usr/local -xzf -
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+# Install GPU SDK layer (conditional on GPU_RUNTIME).
+RUN case "${GPU_RUNTIME}" in \
+    cuda12) \
+        apt-get update && apt-get install -y --no-install-recommends \
+            cuda-compiler-12-4 cuda-libraries-dev-12-4 \
+            && rm -rf /var/lib/apt/lists/*; \
+        ;; \
+    rocm6) \
+        apt-get update && apt-get install -y --no-install-recommends \
+            rocm-dev rocm-libs \
+            && rm -rf /var/lib/apt/lists/*; \
+        ;; \
+    sycl-oneapi2026) \
+        apt-get update && apt-get install -y --no-install-recommends \
+            intel-oneapi-dpcpp-cpp-2026.0 intel-oneapi-tbb-devel \
+            && rm -rf /var/lib/apt/lists/*; \
+        ;; \
+    cpu|*) ;; \
+    esac
+
+# Copy repository and build libvmaf (CPU-only; GPU variants use pre-built .so).
+WORKDIR /src
+COPY . .
+
+# Build libvmaf.
+RUN meson setup core/build-cpu core/ \
+    -Denable_cuda=false \
+    -Denable_sycl=false \
+    -Dbuilt_in_models=true \
+    -Dbuildtype=release \
+    && ninja -C core/build-cpu
+
+# Build the vmafx-node Go binary.
+ENV CGO_ENABLED=1
+ENV CGO_LDFLAGS="-L/src/core/build-cpu/src -lvmaf -lm"
+ENV CGO_CFLAGS="-I/src/core/include"
+ENV LD_LIBRARY_PATH="/src/core/build-cpu/src"
+
+RUN go build \
+    -trimpath \
+    -ldflags="-s -w -extldflags '-static-libgcc'" \
+    -o /out/vmafx-node \
+    ./cmd/vmafx-node/
+
+# =============================================================================
+# Stage 2: runtime
+# =============================================================================
+FROM ubuntu:24.04 AS runtime
+
+ARG GPU_RUNTIME
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies.
+# We need: ffmpeg (for encoding), libvmaf.so, libc, and GPU runtime libraries.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    ffmpeg \
+    libgomp1 \
+    libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GPU runtime libraries (no dev headers needed).
+RUN case "${GPU_RUNTIME}" in \
+    cuda12) \
+        apt-get update && apt-get install -y --no-install-recommends \
+            cuda-libraries-12-4 \
+            && rm -rf /var/lib/apt/lists/*; \
+        ;; \
+    rocm6) \
+        apt-get update && apt-get install -y --no-install-recommends \
+            rocm-libs \
+            && rm -rf /var/lib/apt/lists/*; \
+        ;; \
+    sycl-oneapi2026) \
+        apt-get update && apt-get install -y --no-install-recommends \
+            intel-oneapi-tbb \
+            && rm -rf /var/lib/apt/lists/*; \
+        ;; \
+    cpu|*) ;; \
+    esac
+
+# Copy libvmaf.so from the builder stage.
+COPY --from=builder /src/core/build-cpu/src/libvmaf.so* /usr/local/lib/
+RUN ldconfig
+
+# Copy the built node binary.
+COPY --from=builder /out/vmafx-node /usr/local/bin/vmafx-node
+
+# Copy model files.
+COPY --from=builder /src/model/ /usr/local/share/vmafx/model/
+
+# Create a non-root user.
+RUN groupadd --gid 65534 vmafx && \
+    useradd --uid 65534 --gid 65534 --shell /usr/sbin/nologin vmafx
+
+USER vmafx
+
+# Prometheus metrics port.
+EXPOSE 9090
+
+# 12-factor config via env — no CMD defaults; let the operator supply them.
+ENTRYPOINT ["/usr/local/bin/vmafx-node"]

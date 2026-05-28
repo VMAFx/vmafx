@@ -6,6 +6,26 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## feat/speed-python-compat-extractors (Research-0732, item #2) — low-conflict upstream port
+
+**No structural rebase impact.** This PR adds fork-local content to paths
+(`compat/python-vmaf/core/feature_extractor.py`,
+`compat/python-vmaf/core/quality_runner.py`,
+`python/test/feature_extractor_test.py`,
+`docs/metrics/speed_qa.md`) that are already diverged from upstream
+(`python/vmaf/core/…` in Netflix/vmaf). When syncing from upstream:
+
+- If Netflix/vmaf updates `SpeedChromaFeatureExtractor` or
+  `SpeedTemporalFeatureExtractor` (e.g. bumps VERSION), apply the equivalent
+  change to `compat/python-vmaf/core/feature_extractor.py`.
+- If Netflix/vmaf adds new SpEED QualityRunner subclasses, port them to
+  `compat/python-vmaf/core/quality_runner.py`.
+- The compat harness mirrors Netflix's class hierarchy intentionally; keep the
+  TYPE, VERSION, and ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT in sync.
+
+---
+
+
 ## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
 
 **no rebase impact** on upstream C/Python code: the Go server is entirely
@@ -39782,3 +39802,77 @@ was introduced; this was a pure upstream port.
 `compat/python-vmaf/core/cambi_quality_runner.py`,
 `python/test/cambi_test.py`,
 `changelog.d/changed/cambi-python-v0.8-sync.md`,
+
+---
+
+## vmafx-node Go worker binary (ADR-0713)
+
+**no rebase impact: fork-only addition** — all new files under `cmd/vmafx-node/`,
+`pkg/gpu/`, `pkg/ai/`, `gen/go/controller/`, `docker/Dockerfile.node*`,
+`deploy/helm/vmafx/templates/node.yaml`. No C sources, no upstream-mirror files
+touched. `pkg/encoder/discover.go` and `pkg/encoder/hardware.go` are new fork-local
+files; `pkg/encoder/encoder.go` (already fork-local from ADR-0705) is not modified.
+
+Files added:
+`cmd/vmafx-node/main.go` (new),
+`cmd/vmafx-node/executor.go` (new),
+`cmd/vmafx-node/main_test.go` (new),
+`gen/go/controller/controller.pb.go` (new),
+`gen/go/controller/controller_grpc.pb.go` (new),
+`pkg/gpu/detect.go` (new),
+`pkg/gpu/detect_test.go` (new),
+`pkg/ai/infer.go` (new),
+`pkg/ai/infer_test.go` (new),
+`pkg/encoder/discover.go` (new),
+`pkg/encoder/hardware.go` (new),
+`docker/Dockerfile.node` (new),
+`docker/Dockerfile.node-cpu` (new),
+`docker/Dockerfile.node-cuda12` (new),
+`docker/Dockerfile.node-rocm6` (new),
+`docker/Dockerfile.node-sycl-oneapi2026` (new),
+`deploy/helm/vmafx/templates/node.yaml` (new),
+`deploy/helm/vmafx/templates/_helpers.tpl` (extended),
+`deploy/helm/vmafx/values.yaml` (extended — `.Values.node` section added),
+`docs/server/node.md` (new),
+`docs/adr/0713-vmafx-node-impl.md` (new),
+`changelog.d/added/vmafx-node.md` (new).
+
+---
+
+## Research-0733 — VMAFX eBPF optimization target — 2026-05-28
+
+No rebase impact: docs-only PR. All touched files (`docs/research/`, `changelog.d/`,
+`docs/state.md`, `docs/rebase-notes.md`) are fork-local with no upstream Netflix/vmaf
+equivalent. No C source, no build system, no test assertions changed.
+
+Touched files:
+`docs/research/0733-vmafx-ebpf-optimization-target.md` (new),
+`changelog.d/changed/ebpf-research.md` (new),
+`docs/state.md` (new row),
+`docs/rebase-notes.md` (this entry).
+
+---
+
+## `cmd/vmafx-operator` — Kubernetes Operator kubebuilder skeleton (ADR-0714)
+
+**No rebase impact** on upstream C/Python code: the operator is entirely
+fork-local (`api/vmafx/v1/`, `cmd/vmafx-operator/`, `config/crd/`,
+`config/rbac/`, `deploy/helm/vmafx/crds/`,
+`deploy/helm/vmafx/templates/operator-*.yaml`, `go.mod`, `go.sum`).
+None of these paths overlap with Netflix/vmaf upstream.
+
+If a future upstream sync adds a Go module or touches `go.mod`, merge
+the dependency lists in `go.mod` and regenerate `go.sum`.
+
+Fork-local files:
+`api/vmafx/v1/` (new),
+`cmd/vmafx-operator/` (new),
+`config/crd/bases/` (new),
+`config/rbac/role.yaml` (new),
+`deploy/helm/vmafx/crds/` (new),
+`deploy/helm/vmafx/templates/operator-deployment.yaml` (new),
+`deploy/helm/vmafx/templates/operator-rbac.yaml` (new),
+`deploy/helm/vmafx/values.yaml` (operator.* section added),
+`docs/adr/0714-vmafx-operator-skeleton.md`,
+`docs/development/operator.md`,
+`changelog.d/added/vmafx-operator-skeleton.md`,

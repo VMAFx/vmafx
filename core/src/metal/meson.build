@@ -62,7 +62,6 @@ metal_objcpp_lib = static_library(
               '../feature/metal/integer_motion_v2_metal.mm',
               '../feature/metal/float_psnr_metal.mm',
               '../feature/metal/float_moment_metal.mm',
-              '../feature/metal/float_ansnr_metal.mm',
               '../feature/metal/integer_psnr_metal.mm',
               '../feature/metal/float_motion_metal.mm',
               '../feature/metal/integer_motion_metal.mm',
@@ -123,14 +122,6 @@ float_moment_air = custom_target('float_moment_air',
               '-o', '@OUTPUT@'],
 )
 
-float_ansnr_air = custom_target('float_ansnr_air',
-    input: '../feature/metal/float_ansnr.metal',
-    output: 'float_ansnr.air',
-    command: [xcrun, '-sdk', 'macosx', 'metal',
-              '-c', '@INPUT@',
-              '-o', '@OUTPUT@'],
-)
-
 integer_psnr_air = custom_target('integer_psnr_air',
     input: '../feature/metal/integer_psnr.metal',
     output: 'integer_psnr.air',
@@ -176,7 +167,6 @@ metal_air_files = [
     mv2_air,
     float_psnr_air,
     float_moment_air,
-    float_ansnr_air,
     integer_psnr_air,
     float_motion_air,
     integer_motion_air,
