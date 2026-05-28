@@ -40021,3 +40021,16 @@ No rebase impact: research-only documents, no source code changes. The profiling
 When a follow-up PR implements the `integer_ssim_score.cu` `extern "C"` fix (Research-0736
 recommendation 1), that PR must also update `ssim_cuda.c` host glue and verify bit-exact
 parity against the CPU integer_ssim extractor on the Netflix golden fixture.
+## C++23 wave adversarial review (2026-05-28)
+
+Read-only review of PRs #41, #43, #44, #45, #48, #51, #54, #56, #58.
+No files were modified by this review. The review digest is in
+`docs/research/cpp23-wave-adversarial-review-20260528.md`.
+
+Critical issues that must be fixed before merge:
+- PR #43 `opt.cpp`: `strtol`/`strtod` on potentially non-NUL-terminated `string_view::data()`
+- PR #48 `dict.cpp`: `strtof` (float) assigned to `double` — precision loss on option values
+- PR #54 `model.cpp`: `strlen(model->name) - 5U` unsigned underflow → heap overflow
+- PR #58 `ref.cpp`: `make_unique` / C-caller `free()` allocator mismatch
+
+No rebase impact from the review itself; all findings are fixes required in those PRs.

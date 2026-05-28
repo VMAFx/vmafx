@@ -457,3 +457,40 @@ the corrected methodology.
   — `enable_avx512=true` with `enable_asm=false` issues a warning (no-op, not an error);
   — `enable_hipcc=true` with `enable_hip=false` issues a warning (no-op, not an error).
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
+
+- **C→C++23 conversion safety invariants** (adversarial review 2026-05-28,
+  `docs/research/cpp23-wave-adversarial-review-20260528.md`):
+  When converting a `.c` TU to `.cpp` with `std::string_view` / `std::optional` /
+  `std::unique_ptr` idioms, verify all of the following before merging:
+
+  1. **`string_view::data()` + C-string functions**: `strtol`, `strtod`, `strtof`,
+     `strcmp`, `strlen`, `printf("%s", sv.data())` all require NUL-termination.
+     If the `string_view` is constructed from a C-string literal or a full C-string
+     argument it is safe; if it could ever be a substring slice, copy to `std::string`
+     first or add `assert(sv.data()[sv.size()] == '\0')`.
+
+  2. **`strtof` vs `strtod` precision**: returning `float` from `strtof` and assigning
+     to `double` silently loses precision. If the downstream use is `snprintf("%g", dv)`
+     the output will be at `float` precision (~7 sig figs), not `double` (~15). Use
+     `strtod` when the result variable is `double`.
+
+  3. **`make_unique` / `operator new` vs C-caller `free()`**: if a struct is allocated
+     by `std::make_unique` (uses `operator new`) but C callers may also call `free()`
+     on the same pointer (e.g. pre-existing teardown paths), this is UB / heap
+     corruption. Document in the header that `operator delete` (via `vmaf_ref_close`
+     or equivalent) is the ONLY valid deallocator; search all C callers for direct
+     `free(ptr)` on that type.
+
+  4. **`strlen(x) - N` unsigned underflow**: subtracting an integer from `size_t`
+     (returned by `strlen`) when `strlen(x) < N` wraps to a huge value. Always
+     check `strlen(x) >= N` first, or use `(len >= N ? len - N : 0)`.
+
+  5. **Recursion in converted code**: the Power of 10 rule 1 (no recursion) applies
+     equally to `.cpp` files. `mkdirp` is the known violator; future conversions must
+     replace recursive path-splitting with an iterative approach.
+
+  6. **`[[nodiscard]]` on declarations vs definitions**: placing `[[nodiscard]]` only
+     on the `.cpp` definition without mirroring it in the `extern "C"` declaration in
+     the header means C++ callers that only see the header will not get the diagnostic.
+     Always add `[[nodiscard]]` to the header declaration (inside the `extern "C"` block
+     — C compilers silently ignore the attribute).
