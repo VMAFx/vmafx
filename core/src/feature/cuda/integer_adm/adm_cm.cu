@@ -362,7 +362,12 @@ adm_cm_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int lef
  * were migrated in PR perf/adm-cm-cuda-warp-reduce-fusion. */
 
 #define ADM_CM_LINE(rows_per_thread)                                                               \
-    __global__ void adm_cm_line_kernel_##rows_per_thread(                                          \
+    /* ADR-0744 Opt B: __launch_bounds__(128, 8) hints ptxas to ≤64 regs/thread     \
+     * (65536 regs / (8 CTAs × 128 threads)) — raising theoretical occupancy from         \
+     * 33% (114 regs) to ~67% at 1080p+.  Block size 128 is fixed by the host           \
+     * launcher (BLOCKX=32, BLOCKY=4 in integer_adm_cuda.c).  If register spill          \
+     * measurably degrades a future target arch, reduce minBPSM to 4. */            \
+    __global__ __launch_bounds__(128, 8) void adm_cm_line_kernel_##rows_per_thread(                \
         AdmBufferCuda buf, int h, int w, int top, int bottom, int left, int right, int start_row,  \
         int end_row, int start_col, int end_col, int src_stride, int csf_a_stride, int buffer_h,   \
         int buffer_stride, int32_t *accum_per_block, AdmFixedParametersCuda params, int scale,     \
