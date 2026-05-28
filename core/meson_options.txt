@@ -127,3 +127,8 @@ option('fuzz',
     type: 'boolean',
     value: false,
     description: 'Build libFuzzer harnesses under libvmaf/test/fuzz/ (ADR-0270, OSSF Scorecard `Fuzzing` remediation). Requires clang. Pair with `-Db_sanitize=address` for heap coverage. Default OFF — opt-in only.')
+
+option('enable_rust_features',
+    type: 'boolean',
+    value: true,
+    description: 'Build Rust-implemented feature extractors (requires cargo in PATH). ADR-0707 cbindgen pilot: TAD (Temporal Absolute Difference). Default ON when cargo is found; silently skips if cargo is absent.')

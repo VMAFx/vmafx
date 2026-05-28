@@ -26,7 +26,7 @@ ARG GPU_RUNTIME=cpu
 # selected by GPU_RUNTIME so the vmaf binary has the right backend compiled in)
 # ---------------------------------------------------------------------------
 # Builder on debian:12-slim to match the distroless cc-debian12 runtime glibc (2.36).
-FROM debian:12-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb AS builder-base
+FROM debian:13-slim@sha256:b6e2a152f22a40ff69d92cb397223c906017e1391a73c952b588e51af8883bf8 AS builder-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG VMAF_BUILD_JOBS=4
@@ -192,8 +192,8 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 FROM runtime-base AS final-rocm6
 # ROCm HIP runtime libs
-COPY --from=rocm/rocm-terminal:6.0 /opt/rocm/lib/libamdhip64.so*       /usr/local/lib/
-COPY --from=rocm/rocm-terminal:6.0 /opt/rocm/lib/libhsa-runtime64.so*  /usr/local/lib/
+COPY --from=rocm/rocm-terminal:6.0@sha256:36366ec2e24cb2985cb117165fb76d620b37c4a3cc0884fae21a2cb6a2f0bb9a /opt/rocm/lib/libamdhip64.so*       /usr/local/lib/
+COPY --from=rocm/rocm-terminal:6.0@sha256:36366ec2e24cb2985cb117165fb76d620b37c4a3cc0884fae21a2cb6a2f0bb9a /opt/rocm/lib/libhsa-runtime64.so*  /usr/local/lib/
 COPY --from=builder-rocm6 /dist/lib/   /usr/local/lib/
 COPY --from=builder-rocm6 /dist/bin/   /usr/local/bin/
 COPY --from=builder-rocm6 /dist/model/ /usr/local/share/vmafx/model/

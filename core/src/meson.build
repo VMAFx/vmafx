@@ -1263,6 +1263,76 @@ vmaf_include = include_directories(
     feature_src_dir + 'common',
 )
 
+# ---------------------------------------------------------------------------
+# ADR-0707: Rust/cbindgen pilot — build the TAD feature extractor crate.
+#
+# cargo build --release produces libvmafx_tad.a in the crate's
+# target/release/ directory.  We wrap it in a declare_dependency so the
+# archive is linked into libvmaf.so alongside the C sources.
+#
+# The option enable_rust_features (default: true) lets operators disable
+# the Rust build on hosts without a Rust toolchain.  When disabled, the
+# tad extractor is silently omitted and --feature tad returns -ENOSYS.
+# ---------------------------------------------------------------------------
+is_rust_enabled = get_option('enable_rust_features')
+
+rust_tad_objects = []
+rust_tad_dep = []
+
+if is_rust_enabled
+    cargo_exe = find_program('cargo', required: false)
+    if not cargo_exe.found()
+        warning('enable_rust_features=true but cargo not found; TAD extractor will be skipped.')
+        is_rust_enabled = false
+    endif
+endif
+
+if is_rust_enabled
+    rust_tad_crate_dir = meson.current_source_dir() / 'feature' / 'rust' / 'tad'
+    rust_tad_target_dir = meson.current_build_dir() / 'rust_tad_target'
+    rust_tad_lib_name = 'libvmafx_tad.a'
+
+    rust_tad_staticlib = custom_target('rust_tad_staticlib',
+        output: rust_tad_lib_name,
+        input: [
+            rust_tad_crate_dir / 'src' / 'lib.rs',
+            rust_tad_crate_dir / 'Cargo.toml',
+        ],
+        command: [
+            'sh', '-c',
+            cargo_exe.full_path() + ' build --release' +
+                ' --manifest-path ' + rust_tad_crate_dir / 'Cargo.toml' +
+                ' --target-dir ' + rust_tad_target_dir +
+                ' && cp ' + rust_tad_target_dir / 'release' / rust_tad_lib_name +
+                ' @OUTPUT@',
+        ],
+        build_by_default: true,
+        build_always_stale: false,
+    )
+
+    # -DHAVE_RUST_TAD is emitted as a compile_args so any TU that
+    # depends on this dependency gets the define. In practice only
+    # feature_extractor.c and tad_rust.c use it — the define gates the
+    # extern vmafx_tad_* declarations so builds without the archive can
+    # still compile (they get -ENOSYS stubs instead).
+    rust_tad_dep = declare_dependency(
+        sources: [rust_tad_staticlib],
+        compile_args: ['-DHAVE_RUST_TAD'],
+        link_args: [
+            meson.current_build_dir() / rust_tad_lib_name,
+        ],
+    )
+endif
+
+# tad_rust.c is compiled as a DIRECT source of the libvmaf library() target,
+# not into libvmaf_feature.a. This keeps it out of the static-lib variant that
+# tests link against (avoiding unresolved vmafx_tad_* refs in tests that don't
+# include rust_tad_dep). The shared libvmaf.so picks it up via libvmaf_sources.
+rust_tad_direct_sources = []
+if is_rust_enabled
+    rust_tad_direct_sources = [feature_src_dir + 'tad_rust.c']
+endif
+
 libvmaf_feature_sources = [
     feature_src_dir + 'picture_copy.c',
     feature_src_dir + 'integer_psnr.c',
@@ -1310,6 +1380,11 @@ libvmaf_feature_sources = [
     # as feature_lpips.c; compile unconditionally and let init()
     # decline at runtime on stub builds.
     feature_src_dir + 'transnet_v2.c',
+    # Note: tad_rust.c is NOT added here — it is compiled directly into
+    # the libvmaf library() target (see rust_tad_direct_sources) to avoid
+    # pulling vmafx_tad_* undefined references into libvmaf_feature.a, which
+    # would break static-lib-linked test executables that don't include
+    # rust_tad_dep. See ADR-0707.
 ]
 
 if float_enabled
@@ -1507,7 +1582,11 @@ libvmaf_sources = [
     # Compiled unconditionally so it is available to every GPU backend
     # (CUDA, Vulkan, SYCL) without a per-backend Meson guard.
     src_dir + 'gpu_dispatch_env.c',
-]
+    # ADR-0707: TAD Rust extractor C wrapper — compiled directly into
+    # the libvmaf library() target so it is not included in the static
+    # intermediate libs (avoids unresolved vmafx_tad_* refs in test
+    # binaries that link against libvmaf.a without rust_tad_dep).
+] + rust_tad_direct_sources
 
 if is_cuda_enabled
     vmaf_cflags_common += '-DHAVE_CUDA'
@@ -1598,6 +1677,7 @@ libvmaf = library(
       vulkan_deps,
       hip_deps,
       metal_deps,
+      rust_tad_dep,
     ],
     objects : [
         platform_specific_cpu_objects,
