@@ -39958,6 +39958,7 @@ Fork-local files:
 
 ---
 
+<<<<<<< HEAD
 ## `core/src/feature/cuda/AGENTS.md` — `__mul24` prohibition invariant (Research-0734, 2026-05-28)
 
 The 2026-05-28 audit confirmed zero `__mul24` / `__umul24` / `__mul24hi` usages in
@@ -40005,3 +40006,9 @@ Fork-local files added:
 `scripts/dev/cleanup-agent-state.sh` (new),
 `docs/development/agent-worktree-discipline.md` (cleanup section added),
 `changelog.d/added/dev-cleanup-script.md` (new).
+
+---
+
+## Research-0734 — CUDA VIF filter1d ncu hotpath (no rebase impact)
+
+no rebase impact: pure research digest; no source files modified.

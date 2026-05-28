@@ -138,3 +138,6 @@ vmafx-tune
 # Library crates inside bindings/ produce their own Cargo.lock which we
 # do NOT track (libraries let consumers pin).
 bindings/rust/**/Cargo.lock
+
+# Nsight Compute profiling artifacts
+*.ncu-rep
