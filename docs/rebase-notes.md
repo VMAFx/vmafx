@@ -6,6 +6,13 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## `docs/research/0734-r610-driver-changelog-audit-2026-05-28.md` — R610 driver audit
+
+No rebase impact. This is a documentation-only research digest; it does not touch any
+C sources, build files, or API surfaces. No upstream sync conflict expected.
+
+---
+
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
 
 If an upstream Netflix/vmaf sync or cherry-pick brings new CI references to
