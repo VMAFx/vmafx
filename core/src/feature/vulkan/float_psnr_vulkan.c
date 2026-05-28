@@ -9,9 +9,8 @@
  *
  *    score = MIN(10 * log10(peak² / max(noise/(w·h), 1e-10)), psnr_max)
  *
- *  Pattern reference: float_ansnr_vulkan.c (single-dispatch float
- *  partials), but simpler — no convolution, no halo, single output
- *  metric.
+ *  Single-dispatch float partials pattern; no convolution, no halo,
+ *  single output metric.
  *
  *  Submit-pool migration (T-GPU-OPT-VK-1 / ADR-0353 / PR-B):
  *  Replaced per-frame vkAllocateCommandBuffers + vkCreateFence +

@@ -57,22 +57,19 @@ class ResultTest(MyTestCase):
         df_vmaf = df.loc[df["scores_key"] == "VMAF_legacy_scores"]
         df_adm = df.loc[df["scores_key"] == "VMAF_feature_adm_scores"]
         df_vif = df.loc[df["scores_key"] == "VMAF_feature_vif_scores"]
-        df_ansnr = df.loc[df["scores_key"] == "VMAF_feature_ansnr_scores"]
         df_motion = df.loc[df["scores_key"] == "VMAF_feature_motion_scores"]
         df_adm_den = df.loc[df["scores_key"] == "VMAF_feature_adm_den_scores"]
         # ADR-0418: ADM port added `aim_score` + `adm3_score` to the
         # float_adm extractor's emitted feature list, bumping the total
-        # dataframe length by 2 (38 → 40).
-        self.assertEqual(len(df), 40)
+        # dataframe length by 2 (38 → 40). ADR-0716: ansnr dropped (-1 row, 39).
+        self.assertEqual(len(df), 39)
         self.assertEqual(len(df_vmaf), 1)
         self.assertEqual(len(df_adm), 1)
         self.assertEqual(len(df_vif), 1)
-        self.assertEqual(len(df_ansnr), 1)
         self.assertEqual(len(df_motion), 1)
         self.assertAlmostEqual(np.mean(df_vmaf.iloc[0]["scores"]), 40.421899030550769, places=3)
         self.assertAlmostEqual(np.mean(df_adm.iloc[0]["scores"]), 0.78533833333333336, places=4)
         self.assertAlmostEqual(np.mean(df_vif.iloc[0]["scores"]), 0.156834666667, places=4)
-        self.assertAlmostEqual(np.mean(df_ansnr.iloc[0]["scores"]), 7.92623066667, places=4)
         self.assertAlmostEqual(np.mean(df_motion.iloc[0]["scores"]), 12.5548366667, places=4)
         self.assertAlmostEqual(np.mean(df_adm_den.iloc[0]["scores"]), 2773.8912249999998, places=3)
         self.assertAlmostEqual(
@@ -88,11 +85,6 @@ class ResultTest(MyTestCase):
         self.assertAlmostEqual(
             np.mean(Result.get_unique_from_dataframe(df, "VMAF_feature_vif_scores", "scores")),
             0.156834666667,
-            places=4,
-        )
-        self.assertAlmostEqual(
-            np.mean(Result.get_unique_from_dataframe(df, "VMAF_feature_ansnr_scores", "scores")),
-            7.92623066667,
             places=4,
         )
         self.assertAlmostEqual(
@@ -130,7 +122,6 @@ class ResultTest(MyTestCase):
         self.assertAlmostEqual(self.result["VMAF_feature_adm_score"], 0.78533833333333336, places=4)
         self.assertAlmostEqual(self.result["VMAF_feature_vif_score"], 0.15683466666666665, places=4)
         self.assertAlmostEqual(self.result["VMAF_feature_motion_score"], 12.5548366667, places=4)
-        self.assertAlmostEqual(self.result["VMAF_feature_ansnr_score"], 7.92623066667, places=4)
         self.result.set_score_aggregate_method(np.min)
         self.assertAlmostEqual(
             self.result.get_result("VMAF_legacy_score"), 37.573531379639725, places=3

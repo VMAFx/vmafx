@@ -235,7 +235,6 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         "adm2",
         "aim",
         "adm3",
-        "ansnr",
         "motion",
         "motion2",
         "motion3",
@@ -243,7 +242,6 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         "vif_den",
         "adm_num",
         "adm_den",
-        "anpsnr",
         "vif_num_scale0",
         "vif_den_scale0",
         "vif_num_scale1",
@@ -271,8 +269,6 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     ]
 
     ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = dict(zip(ATOM_FEATURES, ATOM_FEATURES))
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["ansnr"] = "float_ansnr"
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["anpsnr"] = "float_anpsnr"
     # motion3, aim and adm3 now have short aliases registered in alias.c
     # (motion3, aim, adm3 respectively), so the XML key matches the feature name
     # directly — no override needed beyond the default zip mapping.
@@ -298,7 +294,7 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        features = ["float_adm", "float_vif", "float_motion", "float_ansnr"]
+        features = ["float_adm", "float_vif", "float_motion"]
         options = {
             "float_adm": {"debug": True},
             "float_vif": {"debug": True},
@@ -460,8 +456,6 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
             [f"integer_{f}" for f in VmafFeatureExtractor.ATOM_FEATURES],
         )
     )
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["ansnr"] = "float_ansnr"
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["anpsnr"] = "float_anpsnr"
 
     def _generate_result(self, asset):
 
@@ -475,7 +469,7 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        features = ["adm", "vif", "motion", "float_ansnr"]
+        features = ["adm", "vif", "motion"]
         options = {
             "adm": {"debug": True},
             "vif": {"debug": True},
@@ -1089,45 +1083,4 @@ class MsSsimFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
             log_file_path,
             logger,
             options={"enable_lcs": True, **optional_dict2},
-        )
-
-
-class AnsnrFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
-
-    TYPE = "ANSNR_feature"
-    VERSION = "1.0"
-
-    ATOM_FEATURES = ["ansnr", "anpsnr"]
-
-    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = {
-        "ansnr": "float_ansnr",
-        "anpsnr": "float_anpsnr",
-    }
-
-    def _generate_result(self, asset):
-        # routine to call the command-line executable and generate quality
-        # scores in the log file.
-
-        quality_width, quality_height = asset.quality_width_height
-        log_file_path = self._get_log_file_path(asset)
-
-        yuv_type = self._get_workfile_yuv_type(asset)
-        ref_path = asset.ref_procfile_path
-        dis_path = asset.dis_procfile_path
-        w = quality_width
-        h = quality_height
-        logger = self.logger
-
-        optional_dict2 = self.optional_dict2 if self.optional_dict2 is not None else dict()
-
-        ExternalProgramCaller.call_vmafexec_single_feature(
-            "float_ansnr",
-            yuv_type,
-            ref_path,
-            dis_path,
-            w,
-            h,
-            log_file_path,
-            logger,
-            options={**optional_dict2},
         )

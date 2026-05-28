@@ -249,7 +249,7 @@ if is_hipcc_enabled and is_hip_enabled
     message('HIP ROCm root: ' + rocm_root)
 
     # Kernel source → HSACO → xxd-embedded C array.
-    # Batch-1 (ADR-0372): psnr_score, float_ansnr_score.
+    # Batch-1 (ADR-0372): psnr_score.
     # Batch-1b (ADR-0254): float_psnr_score (pre-existing, omitted from earlier
     #   meson.build edit; added here alongside the float_motion fix).
     # Batch-2 (ADR-0373): float_motion_score (temporal Gaussian SAD).
@@ -259,7 +259,6 @@ if is_hipcc_enabled and is_hip_enabled
     hip_kernel_sources = {
         'psnr_score' : feature_src_dir + 'hip/integer_psnr/psnr_score.hip',
         'float_psnr_score' : feature_src_dir + 'hip/float_psnr/float_psnr_score.hip',
-        'float_ansnr_score' : feature_src_dir + 'hip/float_ansnr/float_ansnr_score.hip',
         'float_motion_score' : feature_src_dir + 'hip/float_motion/float_motion_score.hip',
         'moment_score' : feature_src_dir + 'hip/float_moment/moment_score.hip',
         'ssim_score' : feature_src_dir + 'hip/float_ssim/ssim_score.hip',
@@ -599,7 +598,6 @@ if is_asm_enabled
           feature_src_dir + 'arm64/cambi_neon.c',
           feature_src_dir + 'arm64/float_psnr_neon.c',
           feature_src_dir + 'arm64/float_motion_neon.c',
-          feature_src_dir + 'arm64/ansnr_neon.c',
           feature_src_dir + 'arm64/float_adm_neon.c',
           feature_src_dir + 'arm64/ciede_neon.c',
           feature_src_dir + 'arm64/ms_ssim_decimate_neon.c',
@@ -669,7 +667,6 @@ if is_asm_enabled
           feature_src_dir + 'x86/ssim_avx2.c',
           feature_src_dir + 'x86/float_psnr_avx2.c',
           feature_src_dir + 'x86/float_motion_avx2.c',
-          feature_src_dir + 'x86/ansnr_avx2.c',
           feature_src_dir + 'x86/float_adm_avx2.c',
           feature_src_dir + 'x86/ciede_avx2.c',
           feature_src_dir + 'x86/ms_ssim_decimate_avx2.c',
@@ -717,7 +714,6 @@ if is_asm_enabled
             feature_src_dir + 'x86/cambi_avx512.c',
             feature_src_dir + 'x86/float_psnr_avx512.c',
             feature_src_dir + 'x86/float_motion_avx512.c',
-            feature_src_dir + 'x86/ansnr_avx512.c',
             feature_src_dir + 'x86/float_adm_avx512.c',
             feature_src_dir + 'x86/ciede_avx512.c',
             feature_src_dir + 'x86/ms_ssim_decimate_avx512.c',
@@ -788,7 +784,6 @@ if is_cuda_enabled
         'integer_ssim_score' : [feature_src_dir + 'cuda/integer_ssim/integer_ssim_score.cu'],
         'ms_ssim_score' : [feature_src_dir + 'cuda/integer_ms_ssim/ms_ssim_score.cu'],
         'psnr_hvs_score' : [feature_src_dir + 'cuda/integer_psnr_hvs/psnr_hvs_score.cu'],
-        'float_ansnr_score' : [feature_src_dir + 'cuda/float_ansnr/float_ansnr_score.cu'],
         'float_psnr_score' : [feature_src_dir + 'cuda/float_psnr/float_psnr_score.cu'],
         'float_motion_score' : [feature_src_dir + 'cuda/float_motion/float_motion_score.cu'],
         'float_vif_score' : [feature_src_dir + 'cuda/float_vif/float_vif_score.cu'],
@@ -1391,18 +1386,14 @@ if float_enabled
     libvmaf_feature_sources += [
         feature_src_dir + 'float_adm.c',
         feature_src_dir + 'float_psnr.c',
-        feature_src_dir + 'float_ansnr.c',
         feature_src_dir + 'float_motion.c',
         feature_src_dir + 'float_vif.c',
         feature_src_dir + 'float_moment.c',
-        feature_src_dir + 'speed.c',
 
         feature_src_dir + 'common/convolution.c',
         feature_src_dir + 'offset.c',
         feature_src_dir + 'adm.c',
         feature_src_dir + 'adm_tools.c',
-        feature_src_dir + 'ansnr.c',
-        feature_src_dir + 'ansnr_tools.c',
         feature_src_dir + 'vif.c',
         feature_src_dir + 'vif_tools.c',
         feature_src_dir + 'motion.c',
@@ -1429,7 +1420,6 @@ if is_cuda_enabled
         feature_src_dir + 'cuda/ssim_cuda.c',
         feature_src_dir + 'cuda/integer_ms_ssim_cuda.c',
         feature_src_dir + 'cuda/integer_psnr_hvs_cuda.c',
-        feature_src_dir + 'cuda/float_ansnr_cuda.c',
         feature_src_dir + 'cuda/float_psnr_cuda.c',
         feature_src_dir + 'cuda/float_motion_cuda.c',
         feature_src_dir + 'cuda/float_vif_cuda.c',
@@ -1449,7 +1439,6 @@ if is_sycl_enabled
         feature_src_dir + 'sycl/integer_adm_sycl.cpp',
         feature_src_dir + 'sycl/integer_motion_sycl.cpp',
         feature_src_dir + 'sycl/integer_motion_v2_sycl.cpp',
-        feature_src_dir + 'sycl/float_ansnr_sycl.cpp',
         feature_src_dir + 'sycl/float_psnr_sycl.cpp',
         feature_src_dir + 'sycl/float_motion_sycl.cpp',
         feature_src_dir + 'sycl/float_vif_sycl.cpp',

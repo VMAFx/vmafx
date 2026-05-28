@@ -39763,3 +39763,45 @@ Touched files:
 `docs/adr/0707-vmafx-rust-pilot-feature.md`,
 `docs/metrics/tad.md`,
 `changelog.d/added/tad-rust-pilot.md`,
+
+---
+
+## ADR-0716: Drop ansnr / float_ansnr and speed_temporal / speed_chroma (2026-05-28)
+
+**Rebase impact:** Every upstream Netflix/vmaf commit that touches any of the
+files below must have its hunk **dropped** when porting to the fork. These
+features no longer exist in the fork; upstream patches to them are a no-op
+or will conflict.
+
+Files and directories removed:
+
+- `core/src/feature/ansnr.c` / `.h` / `_tools.c` / `_tools.h` / `_options.h`
+- `core/src/feature/float_ansnr.c`
+- `core/src/feature/x86/ansnr_avx2.c` / `.h` / `ansnr_avx512.c` / `.h`
+- `core/src/feature/arm64/ansnr_neon.c` / `.h`
+- `core/src/feature/cuda/float_ansnr_cuda.c` / `.h` / `float_ansnr/float_ansnr_score.cu`
+- `core/src/feature/hip/float_ansnr_hip.c` / `.h` / `float_ansnr/float_ansnr_score.hip`
+- `core/src/feature/sycl/float_ansnr_sycl.cpp`
+- `core/src/feature/vulkan/float_ansnr_vulkan.c` / `shaders/float_ansnr.comp`
+- `core/src/feature/metal/float_ansnr.metal` / `float_ansnr_metal.mm`
+- `core/src/feature/speed.c` (contained speed_chroma + speed_temporal extractors)
+- `core/src/feature/speed_internal.h` / `speed_gpu_common.h`
+- `core/src/feature/cuda/speed_temporal_cuda.c` / `.h` / `speed_chroma_cuda.c` / `.h`
+- `core/src/feature/hip/speed_temporal_hip.c` / `.h` / `speed_chroma_hip.c` / `.h`
+- `core/src/feature/sycl/speed_temporal_sycl.cpp` / `speed_chroma_sycl.cpp`
+- `core/src/feature/vulkan/speed_temporal_vulkan.c` / `.h` / `speed_chroma_vulkan.c` / `.h`
+- `core/test/test_ansnr_simd.c`
+- `core/test/test_speed.c`
+
+**Updated files** (any upstream hunk touching these must be adapted):
+
+- `core/src/feature/feature_extractor.c` — extern declarations and registry entries removed
+- `core/src/feature/alias.c` — speed_chroma / speed_temporal alias entries removed
+- `core/src/meson.build` — source lists, kernel dicts, SIMD lib lists updated
+- `core/src/hip/meson.build` — float_ansnr_hip.c removed
+- `core/src/vulkan/meson.build` — float_ansnr shader and TU removed
+- `core/src/metal/meson.build` — float_ansnr .metal and .mm removed
+- `core/test/meson.build` — test_speed and test_ansnr_simd executables removed
+- `compat/python-vmaf/core/feature_extractor.py` — AnsnrFeatureExtractor class removed;
+  VmafFeatureExtractor.ATOM_FEATURES updated
+- `compat/python-vmaf/core/quality_runner.py` — VmafLegacyQualityRunner ansnr references removed

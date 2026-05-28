@@ -22,8 +22,6 @@ static const char *const g_metal_features[] = {
     "float_moment_dis1st",
     "float_moment_ref2nd",
     "float_moment_dis2nd",
-    "float_ansnr_metal",
-    "float_ansnr",
     "integer_psnr_metal",
     "psnr_y",
     "psnr_cb",

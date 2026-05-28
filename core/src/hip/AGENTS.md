@@ -133,8 +133,8 @@ ADR-0372 (batch-1, this PR).
   IS now set on extractors that have a verified-working real HIP
   kernel — currently only `vmaf_fex_integer_motion_hip` qualifies.
   `vmaf_fex_psnr_hip`, `vmaf_fex_ciede_hip`,
-  `vmaf_fex_float_moment_hip`, `vmaf_fex_float_ansnr_hip`,
-  `vmaf_fex_integer_motion_v2_hip`, `vmaf_fex_float_motion_hip`,
+  `vmaf_fex_float_moment_hip`, `vmaf_fex_integer_motion_v2_hip`,
+  `vmaf_fex_float_motion_hip`,
   `vmaf_fex_float_ssim_hip`, `vmaf_fex_float_psnr_hip`,
   `vmaf_fex_float_adm_hip`, `vmaf_fex_cambi_hip`,
   `vmaf_fex_integer_vif_hip` remain unflagged because their kernels

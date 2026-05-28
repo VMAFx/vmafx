@@ -339,8 +339,8 @@ void vif_filter1d_s(const float *f, const float *src, float *dst, float *tmpbuf,
     const unsigned flags = vmaf_get_cpu_flags();
     /* ADR-0504 + ADR-0507: AVX-512 path only safe when row width is a multiple
      * of 16 floats (64 bytes) — the inner loop processes 16 floats per iter
-     * and reads past the row otherwise (caught by speed_temporal calling
-     * vif_filter1d_s with downscaled widths like 45 on 360-wide sources).
+     * and reads past the row otherwise (observed when vif is called with
+     * downscaled widths like 45 on 360-wide sources).
      * Fall through to AVX2 (8 floats / iter) when width isn't 16-aligned. */
     if ((flags & VMAF_X86_CPU_FLAG_AVX512) && fwidth <= MAX_FWIDTH_AVX_CONV && (w % 16) == 0) {
         convolution_f32_avx512_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride, dst_px_stride);

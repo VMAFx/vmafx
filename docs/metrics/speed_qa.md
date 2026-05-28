@@ -88,24 +88,9 @@ vmaf --reference ref.yuv --distorted dist.yuv \
 No build flags are required: `speed_qa` is compiled unconditionally
 (no `-Denable_float=true` needed).
 
-## Relationship to speed_chroma and speed_temporal
-
-The fork also carries the upstream Netflix full-reference SpEED extractors:
-
-- `speed_chroma` -- FR SpEED score on the U/V chroma channels.
-  Requires `-Denable_float=true`.
-- `speed_temporal` -- FR SpEED score on luma frame-differences.
-  Requires `-Denable_float=true`.
-
-Both use the full GSM prior model with eigenvalue decomposition of block
-covariance matrices (more accurate but more expensive than `speed_qa`'s
-simpler local-variance estimator). `speed_qa` is a lightweight alternative
-that does not require float compilation.
-
 ## Implementation notes
 
 - **No float dependency.** `speed_qa.c` is compiled unconditionally.
-  It does not depend on `speed.c` (float-gated).
 - **Integer pixel reads, double accumulation.** Luma is read directly as
   `uint8_t` (8-bpc) or `uint16_t` (HBD) without intermediate float buffers.
 - **Gaussian weights are Q16 fixed-point** (kernel sum = 65535). The 2-D

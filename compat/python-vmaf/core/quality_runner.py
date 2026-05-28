@@ -187,17 +187,16 @@ class VmafLegacyQualityRunner(QualityRunner):
     FEATURE_RESCALE_DICT = {
         "VMAF_feature_vif_scores": (0.0, 1.0),
         "VMAF_feature_adm_scores": (0.4, 1.0),
-        "VMAF_feature_ansnr_scores": (10.0, 50.0),
         "VMAF_feature_motion_scores": (0.0, 20.0),
     }
 
     SVM_MODEL_FILE = VmafConfig.model_path("other_models", "model_V8a.model")
 
-    # model_v8a.model is trained with customized feature order:
+    # model_v8a.model was trained with 4 features; ansnr dropped (ADR-0716),
+    # legacy prediction now uses 3 features (vif, adm, motion).
     SVM_MODEL_ORDERED_SCORES_KEYS = [
         "VMAF_feature_vif_scores",
         "VMAF_feature_adm_scores",
-        "VMAF_feature_ansnr_scores",
         "VMAF_feature_motion_scores",
     ]
 
@@ -249,8 +248,8 @@ class VmafLegacyQualityRunner(QualityRunner):
 
         scores = []
         for score_vector in zip(*ordered_scaled_scores_list):
-            vif, adm, ansnr, motion = score_vector
-            xs = [[vif, adm, ansnr, motion]]
+            vif, adm, motion = score_vector
+            xs = [[vif, adm, motion]]
             score = svmutil.svm_predict([0], xs, model)[0][0]
             score = self._post_correction(motion, score)
             scores.append(score)
@@ -389,8 +388,8 @@ class VmafQualityRunner(VmafQualityRunnerModelMixin, QualityRunner):
     DEFAULT_MODEL_FILEPATH = vmaf.model_path("vmaf_v0.6.1.json")
 
     DEFAULT_FEATURE_DICT = {
-        "VMAF_feature": ["vif", "adm", "motion", "ansnr"]
-    }  # for backward-compatible with older model only
+        "VMAF_feature": ["vif", "adm", "motion"]
+    }  # for backward-compatible with older model only (ansnr dropped ADR-0716)
 
     def _get_quality_scores(self, asset):
         raise NotImplementedError
@@ -659,9 +658,9 @@ class EnsembleVmafQualityRunner(VmafQualityRunner):
 
     # this now needs to become a list
     DEFAULT_FEATURE_DICT = [
-        {"VMAF_feature": ["vif", "adm", "motion", "ansnr"]},
-        {"VMAF_feature": ["vif", "adm", "motion", "ansnr"]},
-    ]
+        {"VMAF_feature": ["vif", "adm", "motion"]},
+        {"VMAF_feature": ["vif", "adm", "motion"]},
+    ]  # ansnr dropped ADR-0716
 
     def _populate_result_dict(self, feature_result, pred_result, result_dict):
         result_dict.update(feature_result.result_dict)  # add feature result

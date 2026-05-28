@@ -317,32 +317,6 @@ test_cambi_simd = executable('test_cambi_simd',
 )
 endif
 
-# speed_chroma + speed_temporal registration smoke tests — link against
-# libvmaf_feature_static_lib for the extractor list (mirrors test_lpips).
-# Both extractors live in libvmaf/src/feature/speed.c, which is only
-# compiled when -Denable_float=true (see libvmaf/src/meson.build); the
-# corresponding entries in feature_extractor.c's extractor list are
-# wrapped in `#if VMAF_FLOAT_FEATURES`. Gate the test on the same option
-# so a default `meson setup` (enable_float=false) doesn't fail on a
-# config that legitimately omits these extractors.
-if get_option('enable_float')
-test_speed = executable('test_speed',
-    ['test.c', 'test_speed.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
-     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
-    c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
-                    dnn_deps],
-    objects : [
-      common_cuda_objects,
-      platform_specific_cpu_objects,
-      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
-      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
-      libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
-)
-endif
 # SpEED-QA extractor tests -- unconditional (speed_qa.c is not float-gated).
 # ADR-0253 real-impl: registration, vtable, flat/noise entropy, temporal positivity.
 test_speed_qa = executable('test_speed_qa',
@@ -633,28 +607,6 @@ moment_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
 if float_enabled and moment_simd_test_archs.contains(host_machine.cpu_family())
 test_moment_simd = executable('test_moment_simd',
     ['test.c', 'test_moment_simd.c',
-     '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
-     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
-                           include_directories('../src/feature/'), dnn_inc],
-    c_args : vmaf_cflags_common + dnn_defines,
-    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
-                    gpu_all_deps, dnn_deps],
-    objects : [
-      common_cuda_objects,
-      platform_specific_cpu_objects,
-      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
-      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
-      libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
-)
-endif
-
-ansnr_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
-if ansnr_simd_test_archs.contains(host_machine.cpu_family())
-test_ansnr_simd = executable('test_ansnr_simd',
-    ['test.c', 'test_ansnr_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
      '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
@@ -1095,9 +1047,6 @@ test('test_cambi', test_cambi, suite : ['fast'])
 if cambi_simd_test_archs.contains(host_machine.cpu_family())
 test('test_cambi_simd', test_cambi_simd, suite : ['fast', 'simd'])
 endif
-if get_option('enable_float')
-test('test_speed', test_speed, suite : ['fast'])
-endif
 test('test_speed_qa', test_speed_qa, suite : ['fast'])
 test('test_luminance_tools', test_luminance_tools, suite : ['fast'])
 test('test_cli_parse', test_cli_parse, suite : ['fast'])
@@ -1116,10 +1065,6 @@ endif
 
 if float_enabled and moment_simd_test_archs.contains(host_machine.cpu_family())
 test('test_moment_simd', test_moment_simd, suite : ['fast', 'simd'])
-endif
-
-if ansnr_simd_test_archs.contains(host_machine.cpu_family())
-test('test_ansnr_simd', test_ansnr_simd, suite : ['fast', 'simd'])
 endif
 
 if iqa_convolve_test_archs.contains(host_machine.cpu_family())
