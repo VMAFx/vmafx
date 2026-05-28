@@ -102,6 +102,41 @@ covariance matrices (more accurate but more expensive than `speed_qa`'s
 simpler local-variance estimator). `speed_qa` is a lightweight alternative
 that does not require float compilation.
 
+## Python compat wrappers
+
+The compat Python harness (`compat/python-vmaf/`) ships Python wrappers for
+both full-reference SpEED extractors, ported from Netflix upstream per the
+Research-0732 audit (PR #22):
+
+| Class | Module | Feature flag |
+|---|---|---|
+| `SpeedChromaFeatureExtractor` | `vmaf.core.feature_extractor` | `speed_chroma` |
+| `SpeedTemporalFeatureExtractor` | `vmaf.core.feature_extractor` | `speed_temporal` |
+| `SpeedChromaQualityRunner` | `vmaf.core.quality_runner` | via `speed_chroma_uv` |
+| `SpeedChromaUQualityRunner` | `vmaf.core.quality_runner` | via `speed_chroma_u` |
+| `SpeedChromaVQualityRunner` | `vmaf.core.quality_runner` | via `speed_chroma_v` |
+| `SpeedTemporalQualityRunner` | `vmaf.core.quality_runner` | via `speed_temporal` |
+
+Usage:
+
+```python
+from vmaf.core.feature_extractor import SpeedChromaFeatureExtractor
+from vmaf.core.asset import Asset
+
+asset = Asset(dataset="test", content_id=0, asset_id=0,
+              ref_path="ref.yuv", dis_path="dis.yuv",
+              asset_dict={"width": 1920, "height": 1080})
+
+fextractor = SpeedChromaFeatureExtractor([asset], None)
+fextractor.run()
+result = fextractor.results[0]
+print(result["Speed_chroma_feature_speed_chroma_uv_score"])
+```
+
+These wrappers call the `vmafexec` binary with `--feature speed_chroma` or
+`--feature speed_temporal` respectively and parse the resulting XML log.
+The C extractors must have been compiled with `-Denable_float=true`.
+
 ## Implementation notes
 
 - **No float dependency.** `speed_qa.c` is compiled unconditionally.

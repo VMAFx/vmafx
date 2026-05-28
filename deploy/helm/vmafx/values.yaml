@@ -5,7 +5,31 @@
 #
 # Full documentation: docs/development/k8s-deployment.md
 # GPU scheduling guide: docs/development/gpu-scheduling.md
+# Operator guide: docs/development/operator.md
 # =============================================================================
+
+# ---------------------------------------------------------------------------
+# Operator — vmafx-operator kubebuilder controller (ADR-0714)
+# Disabled by default in Stage 1; enable after CRDs are installed.
+# ---------------------------------------------------------------------------
+operator:
+  # Set to true to deploy the vmafx-operator Deployment + RBAC.
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/vmafx/vmafx-operator
+    tag: ""       # Defaults to .Chart.AppVersion when empty.
+    pullPolicy: IfNotPresent
+  logLevel: info
+  # Enable leader election for HA (≥2 replicas).
+  leaderElect: false
+  resources:
+    limits:
+      cpu: "500m"
+      memory: 256Mi
+    requests:
+      cpu: "100m"
+      memory: 64Mi
 
 # ---------------------------------------------------------------------------
 # Image
@@ -268,6 +292,46 @@ monitoring:
 # ---------------------------------------------------------------------------
 pushgateway:
   enabled: false
+
+# ---------------------------------------------------------------------------
+# Node — vmafx-node worker pool (Deployment)
+# Enabled separately from the controller.
+# ---------------------------------------------------------------------------
+node:
+  # enabled controls whether the worker Deployment is created.
+  enabled: false
+
+  # replicaCount is the number of worker replicas.
+  replicaCount: 1
+
+  # image overrides for the node binary.
+  # Defaults to <image.repository>-node:<Chart.AppVersion>.
+  image:
+    repository: ""   # e.g. ghcr.io/vmafx/vmafx-node
+    tag: ""
+
+  # controllerAddr overrides the VMAFX_CONTROLLER_ADDR env var.
+  # Defaults to the in-cluster controller Service at <release>-controller:8080.
+  controllerAddr: ""
+
+  # resources overrides for the node pods.
+  # Falls back to .Values.resources when empty.
+  resources: {}
+
+  # nodeSelector pins node pods to GPU-labelled nodes.
+  # Example (NVIDIA):
+  #   nvidia.com/gpu.present: "true"
+  nodeSelector: {}
+
+  # tolerations for GPU taint (NVIDIA example):
+  #   - key: nvidia.com/gpu
+  #     operator: Exists
+  #     effect: NoSchedule
+  tolerations: []
+
+  # volumes / volumeMounts for corpus, output, model PVCs.
+  volumes: []
+  volumeMounts: []
 
 # ---------------------------------------------------------------------------
 # NOTES.txt / post-install

@@ -124,6 +124,44 @@ Falls back to .Chart.AppVersion when .Values.image.tag is empty.
 {{- end }}
 
 {{/*
+Resolve the Kubernetes device-plugin resource key (name only, no value).
+Used in node.yaml where we need the key inline.
+*/}}
+{{- define "vmafx.gpuResourceKey" -}}
+{{- if eq .Values.gpu.vendor "nvidia" -}}
+nvidia.com/gpu
+{{- else if eq .Values.gpu.vendor "amd" -}}
+amd.com/gpu
+{{- else if eq .Values.gpu.vendor "intel" -}}
+gpu.intel.com/i915
+{{- end }}
+{{- end }}
+
+{{/*
+Render the vmafx-node container image reference.
+Defaults to the same repository as the controller with a "-node" suffix on the tag.
+Override via .Values.node.image.repository / .Values.node.image.tag.
+*/}}
+{{- define "vmafx.nodeImage" -}}
+{{- $repo := .Values.node.image.repository | default (printf "%s-node" .Values.image.repository) -}}
+{{- $tag  := .Values.node.image.tag        | default .Chart.AppVersion -}}
+{{- printf "%s:%s" $repo $tag -}}
+{{- end }}
+
+{{/*
+Resolve the vmafx-controller address for the node's VMAFX_CONTROLLER_ADDR env var.
+Defaults to the in-cluster controller Service DNS name on port 8080.
+Override via .Values.node.controllerAddr.
+*/}}
+{{- define "vmafx.controllerAddr" -}}
+{{- if .Values.node.controllerAddr -}}
+{{ .Values.node.controllerAddr }}
+{{- else -}}
+{{ include "vmafx.fullname" . }}-controller:8080
+{{- end }}
+{{- end }}
+
+{{/*
 Shared pod-spec fragments used by Deployment, Job, and StatefulSet.
 Extracted here to avoid triplicating the container spec.
 */}}

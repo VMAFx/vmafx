@@ -92,6 +92,17 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
     "F401", "F541", "F841",
     "E401", "E402", "E701", "E722", "W291", "W292",
 ]
+# Upstream Netflix Python harness, relocated from python/vmaf/ to
+# compat/python-vmaf/ by the VMAFX repo-layout refactor (ADR-0700).
+# Same intent as the python/** exception above — Netflix style drift is
+# not our canon. Mutable-class-attribute annotations (RUF012), dict()
+# literal rewrites (C408), and the broader upstream style families are
+# suppressed to keep upstream-parity code free from fork noise.
+"compat/python-vmaf/**" = [
+    "S", "PL", "B", "C4", "PIE", "RET", "SIM", "RUF", "I001",
+    "F401", "F522", "F541", "F841",
+    "E402", "E711", "E722", "E731", "E741",
+]
 # Upstream Netflix dataset / model config scripts. Pure data, not
 # business logic — they ship as fixtures and are not in our hot path.
 # (Resource tree is also in [tool.ruff] extend-exclude; this per-file
