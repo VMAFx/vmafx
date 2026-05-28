@@ -6,6 +6,25 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## feat/speed-python-compat-extractors (Research-0732, item #2) — low-conflict upstream port
+
+**No structural rebase impact.** This PR adds fork-local content to paths
+(`compat/python-vmaf/core/feature_extractor.py`,
+`compat/python-vmaf/core/quality_runner.py`,
+`python/test/feature_extractor_test.py`,
+`docs/metrics/speed_qa.md`) that are already diverged from upstream
+(`python/vmaf/core/…` in Netflix/vmaf). When syncing from upstream:
+
+- If Netflix/vmaf updates `SpeedChromaFeatureExtractor` or
+  `SpeedTemporalFeatureExtractor` (e.g. bumps VERSION), apply the equivalent
+  change to `compat/python-vmaf/core/feature_extractor.py`.
+- If Netflix/vmaf adds new SpEED QualityRunner subclasses, port them to
+  `compat/python-vmaf/core/quality_runner.py`.
+- The compat harness mirrors Netflix's class hierarchy intentionally; keep the
+  TYPE, VERSION, and ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT in sync.
+
+---
+
 ## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
 
 **no rebase impact** on upstream C/Python code: the Go server is entirely

@@ -15,6 +15,8 @@ from vmaf.core.feature_extractor import (
     FeatureExtractor,
     MsSsimFeatureExtractor,
     PsnrFeatureExtractor,
+    SpeedChromaFeatureExtractor,
+    SpeedTemporalFeatureExtractor,
     SsimFeatureExtractor,
     VmafFeatureExtractor,
     VmafIntegerFeatureExtractor,
@@ -1589,6 +1591,84 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
                     feature_scores[i_feature]
                 )
         return quality_result
+
+
+class SpeedChromaQualityRunner(QualityRunnerFromFeatureExtractor, ABC):
+    """QualityRunner for the combined ``speed_chroma_uv`` score.
+
+    Ported from Netflix/vmaf ``python/vmaf/core/quality_runner.py``.
+    Research-0732 audit (PR #22) identified this class as missing from
+    ``compat/python-vmaf/``; restored here per that audit.
+    """
+
+    TYPE = "SpeedChroma"
+    VERSION = SpeedChromaFeatureExtractor.VERSION
+
+    @override(QualityRunnerFromFeatureExtractor)
+    def _get_feature_extractor_class(self):
+        return SpeedChromaFeatureExtractor
+
+    @override(QualityRunnerFromFeatureExtractor)
+    def _get_feature_key_for_score(self):
+        return "speed_chroma_uv"
+
+
+class SpeedChromaUQualityRunner(QualityRunnerFromFeatureExtractor, ABC):
+    """QualityRunner for the U-channel ``speed_chroma_u`` score.
+
+    Ported from Netflix/vmaf ``python/vmaf/core/quality_runner.py``.
+    Research-0732 audit (PR #22).
+    """
+
+    TYPE = "SpeedChromaU"
+    VERSION = SpeedChromaFeatureExtractor.VERSION
+
+    @override(QualityRunnerFromFeatureExtractor)
+    def _get_feature_extractor_class(self):
+        return SpeedChromaFeatureExtractor
+
+    @override(QualityRunnerFromFeatureExtractor)
+    def _get_feature_key_for_score(self):
+        return "speed_chroma_u"
+
+
+class SpeedChromaVQualityRunner(QualityRunnerFromFeatureExtractor, ABC):
+    """QualityRunner for the V-channel ``speed_chroma_v`` score.
+
+    Ported from Netflix/vmaf ``python/vmaf/core/quality_runner.py``.
+    Research-0732 audit (PR #22).
+    """
+
+    TYPE = "SpeedChromaV"
+    VERSION = SpeedChromaFeatureExtractor.VERSION
+
+    @override(QualityRunnerFromFeatureExtractor)
+    def _get_feature_extractor_class(self):
+        return SpeedChromaFeatureExtractor
+
+    @override(QualityRunnerFromFeatureExtractor)
+    def _get_feature_key_for_score(self):
+        return "speed_chroma_v"
+
+
+class SpeedTemporalQualityRunner(QualityRunnerFromFeatureExtractor, ABC):
+    """QualityRunner for the luma frame-difference ``speed_temporal`` score.
+
+    Ported from Netflix/vmaf ``python/vmaf/core/quality_runner.py``.
+    Research-0732 audit (PR #22) identified this class as missing from
+    ``compat/python-vmaf/``; restored here per that audit.
+    """
+
+    TYPE = "SpeedTemporal"
+    VERSION = SpeedTemporalFeatureExtractor.VERSION
+
+    @override(QualityRunnerFromFeatureExtractor)
+    def _get_feature_extractor_class(self):
+        return SpeedTemporalFeatureExtractor
+
+    @override(QualityRunnerFromFeatureExtractor)
+    def _get_feature_key_for_score(self):
+        return "speed_temporal"
 
 
 if __name__ == "__main__":
