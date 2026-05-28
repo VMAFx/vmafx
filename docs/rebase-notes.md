@@ -30,6 +30,7 @@ Fork-local files added:
 
 ---
 
+
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
 
 If an upstream Netflix/vmaf sync or cherry-pick brings new CI references to
@@ -39957,3 +39958,21 @@ acceptance criteria).
 No upstream file is currently in conflict; this note exists to alert future sync
 agents that the invariant file was intentionally added by the fork and should be
 preserved through rebases.
+
+---
+
+## Research-0734 — CUDA 13.3 fix-list deep audit
+
+**No rebase impact** on upstream C/Python code: this PR is docs-only (research digest,
+changelog fragment, state.md row, rebase-notes entry). No C source, `.cu` kernel, or
+build file is modified.
+
+If a future upstream sync changes `dev/Containerfile` or `Dockerfile` CUDA base-image
+pins, verify that the new pin is >= 13.3 to ensure the NVCC thread-reconvergence fix
+[6156910] is included.
+
+Fork-local files:
+`docs/research/0734-cuda-13.3-fix-list-deep-audit.md` (new),
+`changelog.d/changed/cuda-13.3-fix-list-deep-audit.md` (new),
+`docs/state.md` (new row),
+`docs/rebase-notes.md` (this entry).
