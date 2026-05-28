@@ -360,23 +360,13 @@ static char *test_float_moment_hip_extractor_registered(void)
     return NULL;
 }
 
-/* ---- Fifth/sixth consumer extractor registration (T7-10b /
- * ADR-0266 / ADR-0267) ---- */
-
-static char *test_float_ansnr_hip_extractor_registered(void)
-{
-    /* Fifth-consumer PR (ADR-0266) extends the same registration
-     * contract to `float_ansnr_hip`: extractor is found by name,
-     * with the matching `.name` string. `init()` is not invoked
-     * here — the scaffold returns -ENOSYS at that layer; the
-     * registration smoke test only pins the lookup contract. The
-     * runtime PR (T7-10b) keeps this assertion green and tightens
-     * it to "init returns 0 with a real device". */
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ansnr_hip");
-    mu_assert("float_ansnr_hip extractor must be registered", fex != NULL);
-    mu_assert("float_ansnr_hip extractor name matches", strcmp(fex->name, "float_ansnr_hip") == 0);
-    return NULL;
-}
+/* ---- Sixth consumer extractor registration (T7-10b / ADR-0267) ---- */
+/*
+ * Note: ADR-0266 (float_ansnr_hip) was removed when feat(core): drop legacy
+ * ansnr feature (#38 / ADR-0720) landed. float_ansnr is pre-VMAF (2001) and
+ * was never adopted by Netflix; the HIP extractor was dropped along with all
+ * other backends. The test is removed here to match the registry.
+ */
 
 static char *test_motion_v2_hip_extractor_registered(void)
 {
@@ -631,8 +621,7 @@ static const test_fn test_table[] = {
     /* T7-10b third + fourth consumers (ADR-0257 / ADR-0258) */
     test_ciede_hip_extractor_registered,
     test_float_moment_hip_extractor_registered,
-    /* T7-10b fifth/sixth consumers (ADR-0266 / ADR-0267) */
-    test_float_ansnr_hip_extractor_registered,
+    /* T7-10b sixth consumer (ADR-0267); ADR-0266 / float_ansnr_hip removed by #38 */
     test_motion_v2_hip_extractor_registered,
     /* T7-10b seventh + eighth consumers (ADR-0273 / ADR-0274) */
     test_float_motion_hip_extractor_registered,

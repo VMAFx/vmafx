@@ -494,3 +494,21 @@ the corrected methodology.
      the header means C++ callers that only see the header will not get the diagnostic.
      Always add `[[nodiscard]]` to the header declaration (inside the `extern "C"` block
      — C compilers silently ignore the attribute).
+
+- **Required-aggregator invariant — `float_ansnr` removal (PR #38 / ADR-0720):**
+  `float_ansnr` was deliberately removed from all backends (CPU, CUDA, HIP, SYCL,
+  Metal, Vulkan) in PR #38. The following must remain consistent on any rebase
+  or upstream-sync that touches these files:
+  - `core/test/test_hip_smoke.c`: the `test_float_ansnr_hip_extractor_registered`
+    function and its `test_table[]` entry have been removed. Do NOT restore them
+    without also restoring the HIP extractor source.
+  - `compat/python-vmaf/core/feature_extractor.py` (line ~478):
+    `VmafIntegerFeatureExtractor._generate_result()` must NOT list `float_ansnr`
+    in its features. If upstream Netflix/vmaf adds `float_ansnr` back, re-add it
+    in a dedicated PR with CI verification.
+  - `compat/python-vmaf/core/feature_extractor.py` (line ~463):
+    `VmafIntegerFeatureExtractor.ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT` must NOT
+    map `"ansnr"` to `"float_ansnr"` while the C library lacks the extractor.
+  The legacy path (`VmafFeatureExtractor`, line ~301) retains the mapping as
+  documented debt — tracked as T-LEGACY-RUNNER-ANSNR-BROKEN in `docs/state.md`.
+  The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).

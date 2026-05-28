@@ -7,18 +7,22 @@
 # Netflix-upstream MATLAB MEX helpers. Pure research reference, not linked
 # into libvmaf. The MEX sources use sprintf() in mexErrMsgTxt calls and
 # match our CERT STR31-C guard rule (vmaf-no-strcpy-strcat-sprintf).
+# Paths updated for ADR-0700 rename (python/vmaf/ → compat/python-vmaf/):
 python/vmaf/matlab/
+compat/python-vmaf/matlab/
 
 # Netflix-upstream Python training resource tree (datasets, param/feature
 # dicts). Not C/C++; included here for completeness since semgrep's Python
 # rules could fire on the same upstream drift ruff is silenced on.
+# Paths updated for ADR-0700 rename:
 python/vmaf/resource/
+compat/python-vmaf/resource/
 
 # Standard exclusions — third-party / generated.
 subprojects/
 build/
 dist/
-libvmaf/test/data/
+core/test/data/
 model/
 testdata/
 
@@ -34,7 +38,9 @@ scripts/git-hooks/pre-push-mkdocs-strict.sh
 # They are tracked in the cJSON project itself; we do not modify this file.
 # Lines: 1660 (FIXME overflow), 2774 (TODO O(n^2)), 2786 (TODO proper fix).
 # (scaffold-audit ADR-0621 P3-6)
+# Path updated for ADR-0700 rename (libvmaf/ → core/):
 libvmaf/src/mcp/3rdparty/cJSON/cJSON.c
+core/src/mcp/3rdparty/cJSON/cJSON.c
 
 # Binary / data suffixes.
 *.pkl

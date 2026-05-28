@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -113,3 +114,53 @@ def register(
 def load(sidecar_path: Path) -> ModelMetadata:
     doc: dict[str, Any] = json.loads(sidecar_path.read_text())
     return ModelMetadata(**doc)
+
+
+def _sanitize_nonfinite(obj: Any) -> Any:
+    """Recursively replace non-finite floats (NaN, Infinity) with None.
+
+    Standard JSON does not support NaN or Infinity; replacing with null
+    keeps the document valid while preserving all other numeric fields.
+    """
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize_nonfinite(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_nonfinite(v) for v in obj]
+    return obj
+
+
+def dumps_registry_json(payload: dict, **kwargs: Any) -> str:
+    """Serialise a registry payload to a pretty-printed, non-finite-safe JSON string.
+
+    NaN and Infinity values inside *payload* are replaced with ``null`` so the
+    output is valid RFC 8259 JSON.  The result is sorted and indented for
+    human readability.  It does NOT end with a newline — use
+    :func:`write_registry_json` when writing to a file.
+
+    Args:
+        payload:  The dict to serialise (e.g. ``{"models": [...]}``)
+        **kwargs: Extra keyword arguments forwarded to :func:`json.dumps`.
+
+    Returns:
+        A JSON string (no trailing newline).
+    """
+    kwargs.setdefault("indent", 2)
+    kwargs.setdefault("sort_keys", True)
+    return json.dumps(_sanitize_nonfinite(payload), **kwargs)
+
+
+def write_registry_json(path: Path, payload: dict, **kwargs: Any) -> None:
+    """Write *payload* as pretty-printed, newline-terminated JSON to *path*.
+
+    Convenience wrapper around :func:`dumps_registry_json` that appends a
+    trailing newline (POSIX convention) and writes atomically via
+    :meth:`Path.write_text`.
+
+    Args:
+        path:    Destination file path.
+        payload: The dict to serialise.
+        **kwargs: Forwarded to :func:`dumps_registry_json` / :func:`json.dumps`.
+    """
+    path.write_text(dumps_registry_json(payload, **kwargs) + "\n", encoding="utf-8")

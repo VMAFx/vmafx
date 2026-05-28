@@ -6,6 +6,30 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## CI round-3 fix — `.semgrepignore`, `.gitleaks.toml`, `codeql-config.yml`, `compat/python-vmaf/` (2026-05-28)
+
+**Files touched:** `.semgrepignore`, `.gitleaks.toml`, `.github/codeql-config.yml`,
+`compat/python-vmaf/core/feature_extractor.py`, `core/test/test_hip_smoke.c`,
+`ai/src/aiutils/jsonl_utils.py`, `ai/src/vmaf_train/registry.py`,
+`.github/workflows/libvmaf-build-matrix.yml`.
+
+**Rebase impact:** Low. All changes are either CI config fixes (path corrections
+post-ADR-0700 rename) or code fixes for missing functions and removed extractors.
+
+On upstream sync:
+- `.semgrepignore` and `.gitleaks.toml` are fork-local; no upstream conflict expected.
+- `codeql-config.yml` is fork-local; no upstream conflict expected.
+- `compat/python-vmaf/core/feature_extractor.py`: if Netflix upstream modifies
+  `python/vmaf/core/feature_extractor.py` (old path), the rename-shim must preserve
+  the removal of `float_ansnr` from `VmafIntegerFeatureExtractor`'s features list.
+  The legacy path (`VmafFeatureExtractor`, line 301) may still reference `float_ansnr`
+  if upstream restores it; that's intentional pending the legacy-runner sunset
+  decision.
+- `core/test/test_hip_smoke.c`: if upstream adds `float_ansnr_hip` back, the removed
+  test function must be restored.
+
+---
+
 ## `docs/research/0734-r610-driver-changelog-audit-2026-05-28.md` — R610 driver audit
 
 No rebase impact. This is a documentation-only research digest; it does not touch any
