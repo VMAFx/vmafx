@@ -16,7 +16,7 @@ description: Register a new VMAF model (.json / .pkl / .onnx) with the build, va
 1. Validate the file exists + has an allowed extension.
 2. For `.json`: parse; require top-level keys `model_type`, `feature_names`, `score_clip`,
    `model` (LibsvmNuSvr / BootstrapLibsvmNuSvr / Onnx). Reject on unknown keys.
-3. For `.pkl`: use `python/vmaf/tools/check_pkl_model.py` (if present) to validate
+3. For `.pkl`: use `compat/python-vmaf/tools/check_pkl_model.py` (if present) to validate
    the pickle — refuse arbitrary-code-execution pickles (see SECURITY.md).
 4. For `.onnx`: require opset ≥ 17, run `onnx.checker.check_model(...)`, verify
    input/output shapes match the declared `model_type`.

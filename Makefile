@@ -21,7 +21,7 @@ ENABLE_NVCC :=	true
 ENABLE_CUDA := -Denable_cuda=true -Denable_nvcc=$(ENABLE_NVCC)
 
 # Directories
-LIBVMAF_DIR := libvmaf
+LIBVMAF_DIR := core
 BUILD_DIR := $(LIBVMAF_DIR)/build
 DEBUG_DIR := $(LIBVMAF_DIR)/debug
 

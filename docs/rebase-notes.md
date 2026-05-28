@@ -30,6 +30,19 @@ Fork-local files added:
 
 ---
 
+## Periodic drift sweep — upstream syncs may reintroduce `libvmaf/` refs
+
+After every Netflix/vmaf upstream sync, run the inventory grep from PR
+chore/post-rename-drift-sweep-20260528 to catch any new `libvmaf/[a-z]`
+or `python/vmaf/` directory references outside ADR bodies and
+`CHANGELOG.md`. Files to recheck: `Makefile`, `Dockerfile`,
+`.github/codeql-config.yml`, IDE settings, skill scripts, and any
+newly-added utility under `scripts/`. See changelog fragment
+`changelog.d/fixed/post-rename-drift-sweep.md` for the full inventory
+commands.
+
+---
+
 
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
 
