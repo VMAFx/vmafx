@@ -11,10 +11,10 @@
 # Image
 # ---------------------------------------------------------------------------
 image:
-  # vmafx-controller is the distributed platform controller: job queue, node registry,
-  # scheduler, gRPC VmafxScoring + VmafxController services, HTTP API (ADR-0711).
-  # Supersedes vmafx-server (Phase 4a, ADR-0703) — same binary, expanded scope.
-  repository: ghcr.io/vmafx/vmafx-controller
+  # vmafx-server is the production Go gRPC + HTTP scoring service (ADR-0703).
+  # The Python vmaf-mcp server image (ghcr.io/vmafx/vmafx) remains available
+  # for MCP/stdio IDE deployments; see docs/server/grpc.md for the migration guide.
+  repository: ghcr.io/vmafx/vmafx-server
   tag: ""           # Defaults to .Chart.AppVersion when empty.
   pullPolicy: IfNotPresent
 
