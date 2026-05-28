@@ -25,6 +25,7 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+
 ## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
 
 **no rebase impact** on upstream C/Python code: the Go server is entirely
@@ -39782,3 +39783,43 @@ Touched files:
 `docs/adr/0707-vmafx-rust-pilot-feature.md`,
 `docs/metrics/tad.md`,
 `changelog.d/added/tad-rust-pilot.md`,
+
+---
+
+## Research-0733 — VMAFX eBPF optimization target — 2026-05-28
+
+No rebase impact: docs-only PR. All touched files (`docs/research/`, `changelog.d/`,
+`docs/state.md`, `docs/rebase-notes.md`) are fork-local with no upstream Netflix/vmaf
+equivalent. No C source, no build system, no test assertions changed.
+
+Touched files:
+`docs/research/0733-vmafx-ebpf-optimization-target.md` (new),
+`changelog.d/changed/ebpf-research.md` (new),
+`docs/state.md` (new row),
+`docs/rebase-notes.md` (this entry).
+
+---
+
+## `cmd/vmafx-operator` — Kubernetes Operator kubebuilder skeleton (ADR-0714)
+
+**No rebase impact** on upstream C/Python code: the operator is entirely
+fork-local (`api/vmafx/v1/`, `cmd/vmafx-operator/`, `config/crd/`,
+`config/rbac/`, `deploy/helm/vmafx/crds/`,
+`deploy/helm/vmafx/templates/operator-*.yaml`, `go.mod`, `go.sum`).
+None of these paths overlap with Netflix/vmaf upstream.
+
+If a future upstream sync adds a Go module or touches `go.mod`, merge
+the dependency lists in `go.mod` and regenerate `go.sum`.
+
+Fork-local files:
+`api/vmafx/v1/` (new),
+`cmd/vmafx-operator/` (new),
+`config/crd/bases/` (new),
+`config/rbac/role.yaml` (new),
+`deploy/helm/vmafx/crds/` (new),
+`deploy/helm/vmafx/templates/operator-deployment.yaml` (new),
+`deploy/helm/vmafx/templates/operator-rbac.yaml` (new),
+`deploy/helm/vmafx/values.yaml` (operator.* section added),
+`docs/adr/0714-vmafx-operator-skeleton.md`,
+`docs/development/operator.md`,
+`changelog.d/added/vmafx-operator-skeleton.md`,
