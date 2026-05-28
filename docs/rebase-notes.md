@@ -6,6 +6,15 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## `docs/research/0733-feature-importance-audit-2026-05-28.md` — Feature importance audit
+
+**no rebase impact:** research-only document; no C sources, no model changes, no public
+API changes. The findings (drop candidates: `ansnr`, `speed_temporal`, `speed_chroma`)
+are recommendations only — no code was modified. Any future drop PR will carry its own
+rebase-notes entry.
+
+---
+
 ## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
 
 **no rebase impact** on upstream C/Python code: the Go server is entirely
