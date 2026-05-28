@@ -18,7 +18,7 @@ on:
     # Required Checks Aggregator (ADR-0313) treats "workflow not
     # reported" as path-filter-skipped/acceptable, so paths-ignore at
     # the trigger level does NOT break branch protection. Conservative
-    # deny-list — `python/**`, `ai/**`, `mcp-server/**`, `libvmaf/**`,
+    # deny-list — `python/**`, `ai/**`, `mcp-server/**`, `core/**`,
     # `testdata/**`, `model/**` (binaries), and `.github/workflows/`
     # all still fire the gates because the corresponding test jobs
     # consume them as inputs.
@@ -63,7 +63,7 @@ jobs:
           python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
 
       - name: Build (CPU, release)
-        # Build inside libvmaf/ so the CLI lands at core/build/tools/vmaf
+        # Build inside core/ so the CLI lands at core/build/tools/vmaf
         # — python/vmaf/__init__.py hardcodes that relative path when no
         # external vmaf binary is configured via vmaf_path() / vmafexec_path().
         working-directory: core
@@ -749,7 +749,7 @@ jobs:
       - name: Run Python MCP server pytests
         # The MCP server's `_vmaf_binary()` defaults to
         # `<repo-root>/build/tools/vmaf` (`Path(__file__).parents[4]`
-        # is the top-level repo root, not `libvmaf/`). The CI build
+        # is the top-level repo root, not `core/`). The CI build
         # lives at `core/build-mcp/tools/vmaf`, so point
         # `VMAF_BIN` there explicitly so
         # test_call_tool_list_backends_includes_cpu's `_list_backends`
@@ -845,7 +845,7 @@ jobs:
           echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
           sudo ldconfig
       - name: Build with gcov instrumentation
-        # Build inside libvmaf/ so python/vmaf/__init__.py finds the CLI at
+        # Build inside core/ so python/vmaf/__init__.py finds the CLI at
         # core/build-coverage/tools/vmaf (it hardcodes that relative path).
         working-directory: core
         run: |

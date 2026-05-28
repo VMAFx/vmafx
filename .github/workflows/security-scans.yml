@@ -167,14 +167,38 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      security-events: write   # gitleaks-action uploads SARIF
+      security-events: write   # upload-sarif to Security tab
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Run gitleaks CLI directly to avoid the GITLEAKS_LICENSE org-repo
+      # requirement introduced in gitleaks-action v2. The CLI itself is
+      # Apache-2.0 and free for all use; only the action wrapper charges
+      # per-org. SARIF output is uploaded to the Security tab so findings
+      # appear there as before.
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=8.24.3
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Run gitleaks (detect secrets)
+        run: |
+          gitleaks detect \
+            --source . \
+            --config .gitleaks.toml \
+            --redact \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --exit-code 1
+      - name: Upload SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
 
   dependency-review:
     name: Dependency Review (PR Diff)

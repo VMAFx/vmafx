@@ -14,7 +14,7 @@ on:
     # level does NOT break branch protection. Mirrors the path-filter
     # structure introduced in ADR-0317 on docker-image.yml and
     # ffmpeg-integration.yml. Conservative deny-list — anything not
-    # listed here (libvmaf/, meson.build, meson_options.txt,
+    # listed here (core/, meson.build, meson_options.txt,
     # subprojects/, python/, ai/, mcp-server/, model/, testdata/,
     # .github/workflows/, ...) still fires the matrix.
     paths-ignore:

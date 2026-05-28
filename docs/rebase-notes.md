@@ -6,6 +6,19 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
+
+If an upstream Netflix/vmaf sync or cherry-pick brings new CI references to
+`libvmaf/` (path filters, `cd libvmaf`, `find libvmaf/src`), they must be
+remapped to `core/` in the same PR. The fork's source tree is rooted at
+`core/` per ADR-0700; any upstream workflow or Makefile that still hardcodes
+`libvmaf/` as a source directory will silently build from a non-existent path
+on this fork. Additionally, replace any `gitleaks/gitleaks-action` usage with
+the direct `gitleaks` CLI binary — the action requires a `GITLEAKS_LICENSE`
+for org repos even when public.
+
+---
+
 ## `docker/Dockerfile.node` — vmafx-node worker image + ffmpeg n8.2 (ADR-0717)
 
 **ffmpeg-patches now validated against both n8.1.1 and n8.2.** The node

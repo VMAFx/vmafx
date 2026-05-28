@@ -21,7 +21,7 @@ jobs:
           INSTALL_LINTERS: "1"
       - name: Meson setup (TSan)
         run: |
-          cd libvmaf
+          cd core
           meson setup ../build-tsan \
             -Db_sanitize=thread \
             -Denable_cuda=false \
@@ -44,11 +44,11 @@ jobs:
           INSTALL_LINTERS: "1"
       - name: Generate compile_commands.json
         run: |
-          cd libvmaf
+          cd core
           meson setup ../build -Denable_cuda=false -Denable_sycl=false
       - name: Run clang-tidy on full tree
         run: |
-          find libvmaf/src libvmaf/tools -name '*.c' -o -name '*.cpp' | \
+          find core/src core/tools -name '*.c' -o -name '*.cpp' | \
             parallel -j"$(nproc)" --joblog tidy.log \
               'clang-tidy -p build {} 2>&1 || true' | tee clang-tidy-full.log
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -67,7 +67,7 @@ jobs:
         run: bash scripts/setup/ubuntu.sh
       - name: Build
         run: |
-          cd libvmaf
+          cd core
           meson setup ../build -Denable_cuda=false -Denable_sycl=false --buildtype=release
           ninja -C ../build
       - name: Run benchmark

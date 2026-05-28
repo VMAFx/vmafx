@@ -41,7 +41,7 @@ jobs:
           sudo apt-get install -y meson ninja-build nasm pkg-config
       - name: Build (release, optimized)
         run: |
-          meson setup build libvmaf --buildtype=release -Denable_avx512=true \
+          meson setup build core --buildtype=release -Denable_avx512=true \
             -Denable_cuda=false -Denable_sycl=false
           meson compile -C build
       - name: Stage artifacts

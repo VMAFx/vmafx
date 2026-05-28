@@ -10,7 +10,7 @@ on:
       # the build, or this workflow file itself. Doc-only / Python-only
       # / vmaf-tune-only PRs (#409, #411, #412) were burning 10–15 min
       # of runner time per push without exercising any of these inputs.
-      - "libvmaf/**"
+      - "core/**"
       - "ffmpeg-patches/**"
       - "meson.build"
       - "meson_options.txt"
@@ -21,7 +21,7 @@ on:
     # CI when a draft PR is promoted to ready-for-review.
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - "libvmaf/**"
+      - "core/**"
       - "ffmpeg-patches/**"
       - "meson.build"
       - "meson_options.txt"
@@ -77,7 +77,7 @@ jobs:
 
       - name: Build vmaf
         run: |
-          meson setup libvmaf core/build --buildtype release
+          meson setup core core/build --buildtype release
           sudo ninja -vC core/build install
 
       - name: Build FFmpeg
@@ -142,7 +142,7 @@ jobs:
           # b_lto=false: see libvmaf-build-matrix.yml note; icx + meson's
           # -flto=auto leaves the static archive without LTO bitcode and
           # breaks the .so link.
-          meson setup libvmaf core/build --buildtype release \
+          meson setup core core/build --buildtype release \
             -Denable_float=true -Denable_sycl=true -Db_lto=false
           sudo -E PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
             ninja -vC core/build install
@@ -244,7 +244,7 @@ jobs:
           # PKG_CONFIG_PATH at the temp tree, which is the exact scenario
           # PR #234 broke under (libvmaf.pc Cflags leaking -DVK_NO_PROTOTYPES
           # into vf_libvmaf.c's compile).
-          meson setup libvmaf core/build --buildtype release \
+          meson setup core core/build --buildtype release \
             --prefix "$PWD/install" \
             -Denable_float=true \
             -Denable_vulkan=enabled \

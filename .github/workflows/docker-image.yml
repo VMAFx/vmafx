@@ -10,7 +10,7 @@ on:
       # push during the doc/Python merge train (#409, #411, #412).
       - "Dockerfile"
       - ".dockerignore"
-      - "libvmaf/**"
+      - "core/**"
       - "meson.build"
       - "meson_options.txt"
       - ".github/workflows/docker-image.yml"
@@ -24,7 +24,7 @@ on:
     paths:
       - "Dockerfile"
       - ".dockerignore"
-      - "libvmaf/**"
+      - "core/**"
       - "meson.build"
       - "meson_options.txt"
       - ".github/workflows/docker-image.yml"
