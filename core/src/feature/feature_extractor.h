@@ -52,7 +52,7 @@ enum VmafFeatureExtractorFlags {
     VMAF_FEATURE_FRAME_SYNC = 1 << 2,
     VMAF_FEATURE_EXTRACTOR_PREV_REF = 1 << 3,
     VMAF_FEATURE_EXTRACTOR_SYCL = 1 << 4,
-    VMAF_FEATURE_EXTRACTOR_VULKAN = 1 << 5,
+    /* Bit 5 was VMAF_FEATURE_EXTRACTOR_VULKAN (removed per ADR-0715). */
     /* Reserved for the HIP runtime PR (T7-10b). The first-consumer PR
      * (T7-10 / ADR-0241) registers `vmaf_fex_psnr_hip` without setting
      * this bit — the picture buffer-type plumbing for HIP arrives with
@@ -133,16 +133,13 @@ typedef struct VmafFeatureExtractor {
 #ifdef HAVE_SYCL
     struct VmafSyclState *sycl_state; ///< VmafSyclState, set by framework
 #endif
-#ifdef HAVE_VULKAN
-    struct VmafVulkanState *vulkan_state; ///< VmafVulkanState, set by framework
-#endif
 
     VmafFrameSyncContext *framesync;
     VmafPicture prev_ref; ///< Previous reference picture, set by framework.
 
     /**
      * Per-feature characteristics descriptor — drives the per-backend
-     * dispatch_strategy modules in libvmaf/src/{cuda,sycl,vulkan}/.
+     * dispatch_strategy modules in libvmaf/src/{cuda,sycl,hip}/.
      * Defaults to all-zero (= no preference) for unseeded extractors;
      * backends fall back to current global behaviour. See ADR-0181.
      */

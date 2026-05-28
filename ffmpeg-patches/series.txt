@@ -4,9 +4,7 @@
 0001-libvmaf-add-tiny-model-option.patch
 0002-add-vmaf_pre-filter.patch
 0003-libvmaf-wire-sycl-backend-selector.patch
-0004-libvmaf-wire-vulkan-backend-selector.patch
 0005-libvmaf-add-libvmaf-sycl-filter.patch
-0006-libvmaf-add-libvmaf-vulkan-filter.patch
 0007-libvmaf-tune-qpfile-unified.patch
 0008-add-libvmaf_tune-filter.patch
 0009-pass-autotune-cli-glue.patch

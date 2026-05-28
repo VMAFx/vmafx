@@ -53,9 +53,6 @@ enum {
     ARG_NO_CUDA,
     ARG_NO_SYCL,
     ARG_SYCL_DEVICE,
-    ARG_NO_VULKAN,
-    ARG_VULKAN_DEVICE,
-    ARG_VULKAN_REQUIRE_FP64,
     ARG_NO_HIP,
     ARG_HIP_DEVICE,
     ARG_NO_METAL,
@@ -139,10 +136,6 @@ static const struct option long_opts[] = {
     {"no_cuda", 0, NULL, ARG_NO_CUDA},
     {"no_sycl", 0, NULL, ARG_NO_SYCL},
     {"sycl_device", 1, NULL, ARG_SYCL_DEVICE},
-    {"no_vulkan", 0, NULL, ARG_NO_VULKAN},
-    {"vulkan_device", 1, NULL, ARG_VULKAN_DEVICE},
-    {"vulkan-require-fp64", 0, NULL, ARG_VULKAN_REQUIRE_FP64},
-    {"vulkan_require_fp64", 0, NULL, ARG_VULKAN_REQUIRE_FP64},
     {"no_hip", 0, NULL, ARG_NO_HIP},
     {"hip_device", 1, NULL, ARG_HIP_DEVICE},
     {"no_metal", 0, NULL, ARG_NO_METAL},
@@ -196,43 +189,35 @@ static void usage(const char *const app, const char *const reason, ...)
         (void)fprintf(stderr, "\n\n");
     }
     (void)fprintf(stderr, "Usage: %s [options]\n\n", app);
-    (void)fprintf(
-        stderr,
-        "Supported options:\n"
-        " --reference/-r $path:        path to reference .y4m or .yuv\n"
-        " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
-        " --width/-w $unsigned:        width\n"
-        " --height/-h $unsigned:       height\n"
-        " --pixel_format/-p: $string   pixel format (420/422/444)\n"
-        " --bitdepth/-b $unsigned:     bitdepth (8/10/12/16)\n"
-        " --model/-m $params:          model parameters, colon \":\" delimited\n"
-        "                              `path=` path to model file\n"
-        "                              `version=` built-in model version\n"
-        "                              `name=` name used in log (optional)\n"
-        " --output/-o $path:           output file\n"
-        " --xml:                       write output file as XML (default)\n"
-        " --json:                      write output file as JSON\n"
-        " --csv:                       write output file as CSV\n"
-        " --sub:                       write output file as subtitle\n"
-        " --threads $unsigned:         number of threads to use\n"
-        " --feature $string:           additional feature\n"
-        " --cpumask: $bitmask          restrict permitted CPU instruction sets\n"
-        " --gpumask: $bitmask          restrict permitted GPU operations\n"
-        " --frame_cnt $unsigned:       maximum number of frames to process\n"
-        " --frame_skip_ref $unsigned:  skip the first N frames in reference\n"
-        " --frame_skip_dist $unsigned: skip the first N frames in distorted\n"
-        " --subsample: $unsigned       compute scores only every N frames\n"
-        " --no_cuda:                   disable CUDA backend\n"
-        " --no_sycl:                    disable SYCL/oneAPI backend\n"
-        " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
-        " --no_vulkan:                  disable Vulkan backend\n"
-        " --vulkan_device $unsigned:    select Vulkan GPU by index (default: auto)\n"
-        " --vulkan-require-fp64:       bit-exact-strict opt-in (ADR-0512): refuse to attach\n"
-        "                              to Vulkan devices that lack shaderFloat64. Default\n"
-        "                              auto-falls-back to the fp32 VIF shader variant on\n"
-        "                              Intel Arc / AMD iGPU / older NVIDIA (within ~1e-4\n"
-        "                              VMAF of CPU on the Netflix golden corpus). Used by\n"
-        "                              parity test harnesses.\n");
+    (void)fprintf(stderr,
+                  "Supported options:\n"
+                  " --reference/-r $path:        path to reference .y4m or .yuv\n"
+                  " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
+                  " --width/-w $unsigned:        width\n"
+                  " --height/-h $unsigned:       height\n"
+                  " --pixel_format/-p: $string   pixel format (420/422/444)\n"
+                  " --bitdepth/-b $unsigned:     bitdepth (8/10/12/16)\n"
+                  " --model/-m $params:          model parameters, colon \":\" delimited\n"
+                  "                              `path=` path to model file\n"
+                  "                              `version=` built-in model version\n"
+                  "                              `name=` name used in log (optional)\n"
+                  " --output/-o $path:           output file\n"
+                  " --xml:                       write output file as XML (default)\n"
+                  " --json:                      write output file as JSON\n"
+                  " --csv:                       write output file as CSV\n"
+                  " --sub:                       write output file as subtitle\n"
+                  " --threads $unsigned:         number of threads to use\n"
+                  " --feature $string:           additional feature\n"
+                  " --cpumask: $bitmask          restrict permitted CPU instruction sets\n"
+                  " --gpumask: $bitmask          restrict permitted GPU operations\n"
+                  " --frame_cnt $unsigned:       maximum number of frames to process\n"
+                  " --frame_skip_ref $unsigned:  skip the first N frames in reference\n"
+                  " --frame_skip_dist $unsigned: skip the first N frames in distorted\n"
+                  " --subsample: $unsigned       compute scores only every N frames\n"
+                  " --no_cuda:                   disable CUDA backend\n"
+                  " --no_sycl:                    disable SYCL/oneAPI backend\n"
+                  " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
+                  "\n");
     /* C99 only requires compilers to support string literals up to 4095 chars
      * (5.2.4.1). Split the usage text in two fprintf calls so we stay under
      * the limit even as new flags accrete. */
@@ -242,11 +227,9 @@ static void usage(const char *const app, const char *const reason, ...)
         " --hip_device $unsigned:       select HIP GPU by index (default: auto)\n"
         " --no_metal:                   disable Metal (Apple Silicon) backend\n"
         " --metal_device $unsigned:     select Metal GPU by index (default: auto)\n"
-        " --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|vulkan|hip|metal.\n"
+        " --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|hip|metal.\n"
         "                               When set to a specific backend, the others are\n"
-        "                               disabled to avoid the dispatcher first-match-wins\n"
-        "                               race that silently routes to CUDA when both Vulkan\n"
-        "                               and CUDA are active.\n"
+        "                               disabled to avoid the dispatcher first-match-wins race.\n"
         " --precision $spec:            score output precision\n"
         "                                  N (1..17) -> printf \"%%.<N>g\"\n"
         "                                  max|full  -> \"%%.17g\" (round-trip lossless)\n"
@@ -684,10 +667,9 @@ static void parse_nflx_ctc(CLISettings *settings, const char *const optarg, cons
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings)
 {
     memset(settings, 0, sizeof(*settings));
-    settings->sycl_device = -1;   // auto-select by default
-    settings->vulkan_device = -1; // auto-select by default
-    settings->hip_device = -1;    // auto-select by default
-    settings->metal_device = -1;  // auto-select by default
+    settings->sycl_device = -1;  // auto-select by default
+    settings->hip_device = -1;   // auto-select by default
+    settings->metal_device = -1; // auto-select by default
     settings->precision_n = -1;
     settings->precision_fmt = VMAF_DEFAULT_PRECISION_FMT;
     settings->tiny_device = "auto";
@@ -797,15 +779,6 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
         case ARG_SYCL_DEVICE:
             settings->sycl_device = (int)parse_unsigned(optarg, ARG_SYCL_DEVICE, argv[0]);
             break;
-        case ARG_NO_VULKAN:
-            settings->no_vulkan = true;
-            break;
-        case ARG_VULKAN_DEVICE:
-            settings->vulkan_device = (int)parse_unsigned(optarg, ARG_VULKAN_DEVICE, argv[0]);
-            break;
-        case ARG_VULKAN_REQUIRE_FP64:
-            settings->vulkan_require_fp64 = true;
-            break;
         case ARG_NO_HIP:
             settings->no_hip = true;
             break;
@@ -898,7 +871,7 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     /* --backend exclusive selector. Apply BEFORE the rest of the
      * post-parse validation so the per-backend flags are consistent
      * downstream. Must run before any code path that consumes
-     * settings->no_cuda / no_sycl / no_vulkan. */
+     * settings->no_cuda / no_sycl / no_hip / no_metal. */
     if (settings->backend) {
         if (!strcmp(settings->backend, "auto")) {
             /* Default — leave per-backend flags as-is, BUT engage CUDA
@@ -919,12 +892,10 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
         } else if (!strcmp(settings->backend, "cpu")) {
             settings->no_cuda = true;
             settings->no_sycl = true;
-            settings->no_vulkan = true;
             settings->no_hip = true;
             settings->no_metal = true;
         } else if (!strcmp(settings->backend, "cuda")) {
             settings->no_sycl = true;
-            settings->no_vulkan = true;
             settings->no_hip = true;
             settings->no_metal = true;
             if (!settings->use_gpumask) {
@@ -942,36 +913,26 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
             }
         } else if (!strcmp(settings->backend, "sycl")) {
             settings->no_cuda = true;
-            settings->no_vulkan = true;
             settings->no_hip = true;
             settings->no_metal = true;
             if (settings->sycl_device < 0)
                 settings->sycl_device = 0;
-        } else if (!strcmp(settings->backend, "vulkan")) {
-            settings->no_cuda = true;
-            settings->no_sycl = true;
-            settings->no_hip = true;
-            settings->no_metal = true;
-            if (settings->vulkan_device < 0)
-                settings->vulkan_device = 0;
         } else if (!strcmp(settings->backend, "hip")) {
             settings->no_cuda = true;
             settings->no_sycl = true;
-            settings->no_vulkan = true;
             settings->no_metal = true;
             if (settings->hip_device < 0)
                 settings->hip_device = 0;
         } else if (!strcmp(settings->backend, "metal")) {
             settings->no_cuda = true;
             settings->no_sycl = true;
-            settings->no_vulkan = true;
             settings->no_hip = true;
             if (settings->metal_device < 0)
                 settings->metal_device = 0;
         } else {
             usage(argv[0],
                   "Unknown --backend value '%s' "
-                  "(expected: auto|cpu|cuda|sycl|vulkan|hip|metal)",
+                  "(expected: auto|cpu|cuda|sycl|hip|metal)",
                   settings->backend);
         }
     } else {

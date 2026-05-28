@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris and Claude (Anthropic)
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
-"""Cross-backend feature diff — gates GPU compute kernels (CUDA, SYCL,
-Vulkan) against the CPU scalar reference. Runs `vmaf` twice on the
-same (ref, dist) pair: once with the CPU integer extractor, once with
-the chosen GPU backend's named twin (e.g. ``adm_cuda`` /
-``adm_sycl`` / ``adm_vulkan``). Compares per-frame scores at
-``places=4`` and prints a per-metric verdict.
+"""Cross-backend feature diff — gates GPU compute kernels (CUDA, SYCL)
+against the CPU scalar reference. Runs `vmaf` twice on the same
+(ref, dist) pair: once with the CPU integer extractor, once with the
+chosen GPU backend's named twin (e.g. ``adm_cuda`` / ``adm_sycl``).
+Compares per-frame scores at ``places=4`` and prints a per-metric
+verdict.
 
 The script's filename is historical (it started life as the
-VIF-only Vulkan gate from PR #118 / ADR-0176); the broader scope is
+VIF-only gate from PR #118 / ADR-0176); the broader scope is
 controlled by ``--feature {vif,motion,adm}`` and
-``--backend {cuda,sycl,vulkan}``.
+``--backend {cuda,sycl}``.
 
 Default tolerance is ``places=4`` (matches the fork's GPU-vs-CPU
 snapshot contract — see ``docs/principles.md`` and the user's "GPU is
-NOT bit-exact" invariant). Empirically the GLSL kernels under
-``core/src/feature/vulkan/shaders/`` are essentially bit-exact
-with the scalar reference because both sides use deterministic
+NOT bit-exact" invariant). Empirically the kernels are essentially
+bit-exact with the scalar reference because both sides use deterministic
 ``int64`` accumulators. CUDA / SYCL kernels have their own histories.
 
 The gate uses an absolute-tolerance check
@@ -226,17 +225,7 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
 }
 
-BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
-    # ADR-0586: Vulkan's integer ADM extractor was renamed to the
-    # canonical "integer_adm_vulkan"; the CPU/CUDA/SYCL names stayed
-    # "adm", "adm_cuda", and "adm_sycl" for compatibility.
-    ("adm", "vulkan"): "integer_adm_vulkan",
-    # ADR-0662: lavapipe is stable with the canonical integer-motion
-    # Vulkan twin. The legacy "motion_vulkan" compatibility extractor
-    # remains explicit-name only because Mesa llvmpipe can crash inside
-    # that older two-buffer implementation.
-    ("motion", "vulkan"): "integer_motion_vulkan",
-}
+BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {}
 
 # Per-backend extractor-name suffix and the device-selection flag the
 # CLI uses to actually route to it. CPU is the implicit baseline (no
@@ -245,12 +234,10 @@ BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
 BACKEND_SUFFIX: dict[str, str] = {
     "cuda": "_cuda",
     "sycl": "_sycl",
-    "vulkan": "_vulkan",
 }
 BACKEND_DEVICE_FLAG: dict[str, str] = {
     "cuda": "--gpumask",
     "sycl": "--sycl_device",
-    "vulkan": "--vulkan_device",
 }
 
 
@@ -307,9 +294,9 @@ def run_vmaf(
         "--json",
     ]
     if backend is not None:
-        # --backend forces backend exclusivity (no_cuda / no_sycl /
-        # no_vulkan) so a build with multiple backends doesn't try
-        # to init the unselected ones (which can hang on SYCL when
+        # --backend forces backend exclusivity (no_cuda / no_sycl)
+        # so a build with multiple backends doesn't try to init the
+        # unselected ones (which can hang on SYCL when
         # the device map differs between backends). The device flag
         # still pins the index for the chosen backend.
         cmd += ["--backend", backend]
@@ -418,23 +405,19 @@ def main() -> int:
     ap.add_argument(
         "--backend",
         choices=tuple(BACKEND_SUFFIX),
-        default="vulkan",
-        help="GPU backend to compare against CPU (cuda | sycl | vulkan)",
+        default="cuda",
+        help="GPU backend to compare against CPU (cuda | sycl)",
     )
     ap.add_argument(
         "--device",
         type=int,
         default=None,
         help=(
-            "device index for the chosen backend. Vulkan/SYCL: 0+. "
-            "CUDA: gpumask (e.g. 1 = first GPU). Defaults: vulkan=0, "
-            "sycl=0, cuda=1."
+            "device index for the chosen backend. "
+            "CUDA: gpumask (e.g. 1 = first GPU). SYCL: 0+. "
+            "Defaults: cuda=1, sycl=0."
         ),
     )
-    # Back-compat alias for the existing CI lane that was wired before
-    # --backend / --device existed. If --vulkan-device is passed, use
-    # it as the Vulkan device index.
-    ap.add_argument("--vulkan-device", type=int, default=None, help=argparse.SUPPRESS)
     ap.add_argument(
         "--workdir",
         type=Path,
@@ -442,12 +425,9 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    if args.vulkan_device is not None:
-        args.backend = "vulkan"
-        args.device = args.vulkan_device
     if args.device is None:
         # Per-backend defaults: gpumask=1 picks the first GPU on CUDA;
-        # device 0 is the first compute-capable on SYCL/Vulkan.
+        # device 0 is the first compute-capable on SYCL.
         args.device = 1 if args.backend == "cuda" else 0
 
     if not args.vmaf_binary.exists():

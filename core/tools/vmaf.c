@@ -45,9 +45,6 @@
 #ifdef HAVE_SYCL
 #include "libvmaf/libvmaf_sycl.h"
 #endif
-#ifdef HAVE_VULKAN
-#include "libvmaf/libvmaf_vulkan.h"
-#endif
 #ifdef HAVE_HIP
 #include "libvmaf/libvmaf_hip.h"
 #endif
@@ -103,7 +100,7 @@ static enum VmafPixelFormat pix_fmt_map(int pf)
  * Schema (RFC 8259 strict):
  *   {
  *     "error": "<human-readable reason>",
- *     "backend_requested": "<sycl|cuda|vulkan|hip|metal>",
+ *     "backend_requested": "<sycl|cuda|hip|metal>",
  *     "errno": <int>,
  *     "adr": "ADR-0498",
  *     "exit_code": 100
@@ -528,20 +525,13 @@ static int open_input_videos(const CLISettings *c, FILE **file_ref, FILE **file_
 
 /* Initialise the GPU backends in declared priority order: SYCL first
  * (preferred when --sycl_device or --gpumask is set), CUDA second
- * (consulted only if SYCL was not activated), Vulkan last (explicit
- * --vulkan_device opt-in, host-pic only). On a hard backend-import failure
- * returns -1 so the caller can `goto cleanup`; soft init failures
- * (state_init returning non-zero) silently fall back to CPU. The
- * sycl/vulkan active flags + state pointers are passed by reference so
- * the cleanup block can free them.
+ * (consulted only if SYCL was not activated). On a hard backend-import
+ * failure returns -1 so the caller can `goto cleanup`; soft init failures
+ * (state_init returning non-zero) silently fall back to CPU.
  *
- * The function is intentionally kept in a single TU even though three
- * #ifdef-guarded backend stanzas push the line count just past the
- * 60-line threshold. Splitting into per-backend helpers would multiply
- * the `#if defined(HAVE_X)` decoration without making the activation
- * priority chain (SYCL > CUDA > Vulkan) any clearer to a reader
- * (ADR-0141 §2 load-bearing invariant: backend-priority chain
- * readability + #ifdef discipline; T7-5 sweep closeout — ADR-0278).
+ * The function is intentionally kept in a single TU so the activation
+ * priority chain (SYCL > CUDA > HIP > Metal) is readable in one place
+ * (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
  */
 // NOLINTNEXTLINE(readability-function-size,google-readability-function-size)
 static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
@@ -552,10 +542,6 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
 #ifdef HAVE_CUDA
                              ,
                              bool *cuda_active_out
-#endif
-#ifdef HAVE_VULKAN
-                             ,
-                             VmafVulkanState **vulkan_state, bool *vulkan_active
 #endif
 #ifdef HAVE_HIP
                              ,
@@ -594,10 +580,6 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
 #endif
 #ifdef HAVE_CUDA
         if (strcmp(c->backend, "cuda") == 0)
-            compiled_in = true;
-#endif
-#ifdef HAVE_VULKAN
-        if (strcmp(c->backend, "vulkan") == 0)
             compiled_in = true;
 #endif
 #ifdef HAVE_HIP
@@ -679,41 +661,6 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
     }
 #endif
 
-#ifdef HAVE_VULKAN
-    /* Vulkan opt-in: explicit --vulkan_device only. Unlike SYCL/CUDA
-     * the gpumask gate is not consulted; Vulkan is host-pic only and
-     * has no restricted-mode semantics yet. */
-    VmafVulkanConfiguration vulkan_cfg = {
-        .device_index = c->vulkan_device,
-        .enable_validation = 0,
-        /* ADR-0512 (supersedes ADR-0492): --vulkan-require-fp64 opt-in
-         * re-enables the strict shaderFloat64 gate; default is auto-
-         * fallback to the fp32 VIF shader variant. */
-        .require_fp64 = c->vulkan_require_fp64 ? 1 : 0,
-    };
-    if (c->vulkan_device >= 0 && !c->no_vulkan) {
-        err = vmaf_vulkan_state_init(vulkan_state, vulkan_cfg);
-        if (err) {
-            (void)fprintf(stderr, "problem during vmaf_vulkan_state_init (%d), using CPU\n", err);
-            if (explicit_backend && strcmp(c->backend, "vulkan") == 0) {
-                (void)fprintf(stderr, "vmaf: --backend vulkan requested but init failed; "
-                                      "refusing to silently fall back to CPU (ADR-0498)\n");
-                write_backend_error_json(c->output_path, c->output_fmt, "vulkan",
-                                         "vmaf_vulkan_state_init failed", err);
-                return VMAF_INIT_GPU_EXPLICIT_FAIL;
-            }
-        } else {
-            err = vmaf_vulkan_import_state(vmaf, *vulkan_state);
-            if (err) {
-                (void)fprintf(stderr, "problem during vmaf_vulkan_import_state\n");
-                return -1;
-            }
-            *vulkan_active = true;
-        }
-    }
-    (void)*vulkan_active;
-#endif
-
 #ifdef HAVE_HIP
     /* HIP opt-in: explicit --hip_device only. Same lifetime model as
      * SYCL + Vulkan — state is passed back by reference so the cleanup
@@ -780,7 +727,7 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
 }
 
 /* ADR-0543 (extends ADR-0498): a feature whose name ends in ``_cuda``
- * / ``_sycl`` / ``_vulkan`` / ``_hip`` / ``_metal`` is a GPU-pinned
+ * / ``_sycl`` / ``_hip`` / ``_metal`` is a GPU-pinned
  * variant. Asking for ``--feature integer_motion_hip`` against a
  * libvmaf build without HIP — or with HIP compiled in but no device
  * available — silently registers the CPU twin and produces scores
@@ -806,8 +753,10 @@ static int feature_backend_suffix(const char *feature_name, const char **backend
         const char *suffix;
         const char *backend;
     } table[] = {
-        {"_cuda", "cuda"}, {"_sycl", "sycl"},   {"_vulkan", "vulkan"},
-        {"_hip", "hip"},   {"_metal", "metal"},
+        {"_cuda", "cuda"},
+        {"_sycl", "sycl"},
+        {"_hip", "hip"},
+        {"_metal", "metal"},
     };
     const size_t nlen = strlen(feature_name);
     for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
@@ -824,15 +773,13 @@ static int feature_backend_suffix(const char *feature_name, const char **backend
  * succeeded and the matching ``--<backend>_device`` was requested),
  * 0 otherwise. The active flags live in main() so this helper accepts
  * each as a parameter. */
-static int backend_active(const char *backend, bool sycl_act, bool cuda_act, bool vulkan_act,
-                          bool hip_act, bool metal_act)
+static int backend_active(const char *backend, bool sycl_act, bool cuda_act, bool hip_act,
+                          bool metal_act)
 {
     if (!strcmp(backend, "sycl"))
         return sycl_act ? 1 : 0;
     if (!strcmp(backend, "cuda"))
         return cuda_act ? 1 : 0;
-    if (!strcmp(backend, "vulkan"))
-        return vulkan_act ? 1 : 0;
     if (!strcmp(backend, "hip"))
         return hip_act ? 1 : 0;
     if (!strcmp(backend, "metal"))
@@ -1244,10 +1191,6 @@ int main(int argc, char *argv[])
      * but no ``--backend cuda``. */
     bool cuda_active = false;
 #endif
-#ifdef HAVE_VULKAN
-    bool vulkan_active = false;
-    VmafVulkanState *vulkan_state = NULL;
-#endif
 #ifdef HAVE_HIP
     bool hip_active = false;
     VmafHipState *hip_state = NULL;
@@ -1328,10 +1271,6 @@ int main(int argc, char *argv[])
 #ifdef HAVE_CUDA
                                              ,
                                              &cuda_active
-#endif
-#ifdef HAVE_VULKAN
-                                             ,
-                                             &vulkan_state, &vulkan_active
 #endif
 #ifdef HAVE_HIP
                                              ,
@@ -1428,12 +1367,6 @@ int main(int argc, char *argv[])
 #else
                 false;
 #endif
-            const bool va =
-#ifdef HAVE_VULKAN
-                vulkan_active;
-#else
-                false;
-#endif
             const bool ha =
 #ifdef HAVE_HIP
                 hip_active;
@@ -1446,7 +1379,7 @@ int main(int argc, char *argv[])
 #else
                 false;
 #endif
-            if (!backend_active(requested_be, sa, ca, va, ha, ma)) {
+            if (!backend_active(requested_be, sa, ca, ha, ma)) {
                 (void)fprintf(stderr,
                               "vmaf: --feature %s pinned to %s backend but %s is not "
                               "active in this run; refusing to silently fall back to CPU "
@@ -1499,10 +1432,6 @@ int main(int argc, char *argv[])
         if (sycl_active)
             backend_used = "sycl";
 #endif
-#ifdef HAVE_VULKAN
-        if (vulkan_active)
-            backend_used = "vulkan";
-#endif
 #ifdef HAVE_HIP
         if (hip_active)
             backend_used = "hip";
@@ -1540,10 +1469,6 @@ cleanup:
 #ifdef HAVE_SYCL
     if (sycl_active)
         vmaf_sycl_state_free(&sycl_state);
-#endif
-#ifdef HAVE_VULKAN
-    if (vulkan_state)
-        vmaf_vulkan_state_free(&vulkan_state);
 #endif
 #ifdef HAVE_HIP
     if (hip_state)

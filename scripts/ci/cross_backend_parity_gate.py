@@ -211,20 +211,17 @@ BACKEND_SUFFIX: dict[str, str] = {
     "cpu": "",
     "cuda": "_cuda",
     "sycl": "_sycl",
-    "vulkan": "_vulkan",
 }
 BACKEND_DEVICE_FLAG: dict[str, str] = {
     "cuda": "--gpumask",
     "sycl": "--sycl_device",
-    "vulkan": "--vulkan_device",
 }
 
 # Default device index per backend. CUDA gpumask=1 picks the first GPU;
-# Vulkan / SYCL device 0 is the first compute-capable.
+# SYCL device 0 is the first compute-capable.
 BACKEND_DEFAULT_DEVICE: dict[str, int] = {
     "cuda": 1,
     "sycl": 0,
-    "vulkan": 0,
 }
 
 
@@ -285,17 +282,7 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
 }
 
-BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
-    # ADR-0586: Vulkan's integer ADM extractor was renamed to the
-    # canonical "integer_adm_vulkan"; the CPU/CUDA/SYCL names stayed
-    # "adm", "adm_cuda", and "adm_sycl" for compatibility.
-    ("adm", "vulkan"): "integer_adm_vulkan",
-    # ADR-0662: lavapipe is stable with the canonical integer-motion
-    # Vulkan twin. The legacy "motion_vulkan" compatibility extractor
-    # remains explicit-name only because Mesa llvmpipe can crash inside
-    # that older two-buffer implementation.
-    ("motion", "vulkan"): "integer_motion_vulkan",
-}
+BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {}
 
 
 def feature_extractor_name(feature: str, backend: str) -> str:
@@ -646,9 +633,9 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--backends",
         nargs="+",
-        default=["cpu", "vulkan"],
+        default=["cpu", "cuda"],
         choices=sorted(BACKEND_SUFFIX.keys()),
-        help="backends to pair (default: cpu + vulkan, lavapipe-friendly)",
+        help="backends to pair (default: cpu + cuda)",
     )
     ap.add_argument(
         "--fp16-features",
@@ -668,11 +655,6 @@ def parse_args() -> argparse.Namespace:
         "--sycl-device",
         type=int,
         default=BACKEND_DEFAULT_DEVICE["sycl"],
-    )
-    ap.add_argument(
-        "--vulkan-device",
-        type=int,
-        default=BACKEND_DEFAULT_DEVICE["vulkan"],
     )
     ap.add_argument(
         "--workdir",
@@ -697,10 +679,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "runtime GPU identifier (Research-0041 schema, e.g. "
-            "'vulkan:0x10005:0x0' for lavapipe, 'cuda:8.6' for Ampere "
-            "RTX 30). Used to look up per-arch tolerances in the "
-            "ADR-0234 calibration table; falls back to "
-            "FEATURE_TOLERANCE when omitted."
+            "'cuda:8.6' for Ampere RTX 30). Used to look up per-arch "
+            "tolerances in the ADR-0234 calibration table; falls back "
+            "to FEATURE_TOLERANCE when omitted."
         ),
     )
     ap.add_argument(
@@ -727,7 +708,6 @@ def main() -> int:
     devices = {
         "cuda": args.cuda_device,
         "sycl": args.sycl_device,
-        "vulkan": args.vulkan_device,
     }
 
     cells = build_matrix(args.features, args.backends)

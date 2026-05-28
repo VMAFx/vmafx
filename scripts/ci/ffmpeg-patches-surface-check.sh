@@ -16,7 +16,7 @@
 #        - vmaf_<ident>          (libvmaf public C symbols)
 #        - Vmaf<TitleCase>       (libvmaf public types: VmafModelConfig, VmafLogLevel, ...)
 #        - --enable-libvmaf-*    (FFmpeg configure flags)
-#        - libvmaf_<ident>       (pkg-config feature names: libvmaf_sycl, libvmaf_vulkan, ...)
+#        - libvmaf_<ident>       (pkg-config feature names: libvmaf_sycl, libvmaf_hip, ...)
 #      Cache as a regex-friendly pipe-joined union in $tmp_consumed.
 #
 #   2. For the diff: collect every added/removed/renamed identifier

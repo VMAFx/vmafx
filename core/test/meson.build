@@ -15,7 +15,6 @@ test_inc = include_directories('.')
 gpu_all_deps = [
   cuda_dependency,
   sycl_dependency,
-  vulkan_deps,
   hip_deps,
   metal_deps,
 ]
@@ -917,60 +916,6 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
 )
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
     suite : ['fast', 'gpu'])
-endif
-
-# ADR-0175 / T5-1: Vulkan backend scaffold smoke. Pins the -ENOSYS
-# contract so a future runtime PR can't accidentally enable the
-# backend without flipping the smoke expectations.
-if get_option('enable_vulkan').enabled()
-test_vulkan_smoke = executable('test_vulkan_smoke',
-    ['test.c', 'test_vulkan_smoke.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_VULKAN=1']
-)
-test('test_vulkan_smoke', test_vulkan_smoke, suite : ['fast', 'gpu'])
-
-# T7-29 part 4 (ADR-0251): contract smoke for the v2 async
-# pending-fence ring. Public-API only — the GPU-end-to-end
-# ring-wrap correctness path lives in the FFmpeg filter
-# downstream (T7-29 part 3) and the cross-backend gate.
-test_vulkan_async_pending_fence = executable('test_vulkan_async_pending_fence',
-    ['test.c', 'test_vulkan_async_pending_fence.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_VULKAN=1']
-)
-test('test_vulkan_async_pending_fence', test_vulkan_async_pending_fence, suite : ['fast', 'gpu'])
-
-# ADR-0238: contract smoke for the public Vulkan picture-preallocation
-# surface (vmaf_vulkan_preallocate_pictures / vmaf_vulkan_picture_fetch).
-test_vulkan_pic_preallocation = executable('test_vulkan_pic_preallocation',
-    ['test.c', 'test_vulkan_pic_preallocation.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency],
-    c_args: ['-DHAVE_VULKAN=1']
-)
-test('test_vulkan_pic_preallocation', test_vulkan_pic_preallocation, suite : ['fast', 'gpu'])
-
-# ADR-0456 / T7-36 parity audit gap 1 — CAMBI Vulkan extractor smoke.
-# Tests: (1) vmaf_fex_cambi_vulkan is discoverable by name, (2) default
-# option values match the CPU reference extractor (cambi.c), (3) end-to-end
-# init → extract → close on a flat 576×324 YUV420P frame does not crash and
-# emits a finite non-negative CAMBI score.  Skips gracefully when no Vulkan
-# device is present.
-test_cambi_vulkan = executable('test_cambi_vulkan',
-    ['test_cambi_vulkan.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
-                           include_directories('../src/feature/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, vulkan_deps],
-    c_args: ['-DHAVE_VULKAN=1']
-)
-test('test_cambi_vulkan', test_cambi_vulkan, suite : ['gpu'], timeout : 60)
 endif
 
 # ADR-0209 / T5-2: embedded MCP scaffold smoke. Pins the -ENOSYS

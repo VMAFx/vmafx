@@ -12,20 +12,6 @@ is_sycl_enabled = get_option('enable_sycl') == true
 # ADR-0209 / T7-10: HIP scaffold — install the public header whenever the
 # scaffold is opted in so downstream consumers can compile against it.
 is_hip_enabled = get_option('enable_hip') == true
-# `enable_vulkan` is a feature option (`disabled`/`enabled`/`auto`), not a
-# boolean — handle accordingly. Treat both `enabled` and `auto` as "install
-# the public header"; otherwise consumers who built with `-Denable_vulkan=
-# enabled` then ran `meson install` end up without `libvmaf_vulkan.h` under
-# their prefix and downstream pkg-config probes (e.g. FFmpeg's
-# `--enable-libvmaf-vulkan` configure check) silently fail. Symptom
-# reported by lawrence 2026-04-28: FFmpeg `configure` accepts
-# `--enable-libvmaf-vulkan` and reports it as enabled, but only `vmaf_pre`
-# and the regular `libvmaf` filter end up built — `libvmaf_vulkan` is
-# silently dropped because `check_pkg_config libvmaf_vulkan ...
-# libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init_external` can't find
-# the header.
-is_vulkan_enabled = get_option('enable_vulkan').enabled() \
-                    or get_option('enable_vulkan').auto()
 
 platform_specific_headers = []
 
@@ -35,10 +21,6 @@ endif
 
 if is_sycl_enabled
   platform_specific_headers += 'libvmaf_sycl.h'
-endif
-
-if is_vulkan_enabled
-  platform_specific_headers += 'libvmaf_vulkan.h'
 endif
 
 # Embedded MCP server header (ADR-0209 / T5-2 scaffold). Install
@@ -59,8 +41,7 @@ endif
 # `libvmaf/libvmaf_metal.h` in the install tree. Without this entry the header
 # was silently omitted from `meson install` output, breaking the
 # `check_pkg_config libvmaf_metal ... libvmaf/libvmaf_metal.h
-# vmaf_metal_state_init` configure check. Mirrors the Vulkan guard above —
-# same feature-option type, same treat-auto-as-install rationale (ADR-0437).
+# vmaf_metal_state_init` configure check (ADR-0437).
 is_metal_enabled = get_option('enable_metal').enabled() \
                    or get_option('enable_metal').auto()
 if is_metal_enabled

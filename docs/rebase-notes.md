@@ -6,6 +6,22 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## Vulkan backend removed (ADR-0715)
+
+**Impact on upstream syncs**: The Vulkan backend never existed in Netflix/vmaf upstream.
+All Vulkan source was fork-local (`core/src/vulkan/`, `core/src/feature/vulkan/`,
+`core/include/libvmaf/libvmaf_vulkan.h`). If Netflix/vmaf upstream ever adds a Vulkan
+backend in a future commit, do **not** port it — the fork has deliberately removed
+the backend per ADR-0715. Upstream Vulkan patches touching these paths should be
+dropped during `port-upstream-commit` or `sync-upstream`.
+
+The `ffmpeg-patches/` series now contains 4 patches (0001–0003 + 0005); patches
+`0004-libvmaf-wire-vulkan-backend-selector.patch` and
+`0006-libvmaf-add-libvmaf-vulkan-filter.patch` are removed. Any upstream FFmpeg
+patch that references `libvmaf_vulkan` or `vf_libvmaf_vulkan` must be dropped.
+
+---
+
 ## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
 
 **no rebase impact** on upstream C/Python code: the Go server is entirely
