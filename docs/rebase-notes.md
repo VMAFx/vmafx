@@ -6,6 +6,21 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## `core/src/feature/cuda/integer_ssim/integer_ssim_score.cu` — `extern "C"` invariant (ADR-0745)
+
+All `__global__` kernels that are looked up by host-side `cuModuleGetFunction`
+calls **must** be wrapped in an `extern "C" { ... }` block. Without it,
+`nvcc`'s C++ name-mangling makes the symbols unfindable at runtime
+(`CUDA_ERROR_NOT_FOUND`). Every `.cu` file in `core/src/feature/cuda/` already
+follows this pattern. When porting an upstream commit or adding a new CUDA
+kernel TU: verify that any `__global__` entry point the host glue calls by
+name is inside an `extern "C"` block.
+
+**Rebase recipe**: if an upstream sync adds a new kernel TU without the guard,
+add `extern "C" {` after the `#include` block and `} /* extern "C" */` at
+end-of-file before committing.
+
+---
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
 
 If an upstream Netflix/vmaf sync or cherry-pick brings new CI references to

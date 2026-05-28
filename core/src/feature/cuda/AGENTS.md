@@ -333,6 +333,19 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   performance benefit outweighs the launch cost at all resolutions ≥ 480p.
 
 
+- **Every `__global__` kernel looked up by `cuModuleGetFunction` on the host
+  side MUST be wrapped in an `extern "C" { ... }` block** (ADR-0745). Without
+  the guard, `nvcc`'s C++ name-mangling makes the symbol unfindable at runtime,
+  producing `CUDA_ERROR_NOT_FOUND (500)`. Every `.cu` file in this tree follows
+  this pattern. When adding a new CUDA kernel TU or porting an upstream commit:
+  verify the `extern "C"` block wraps all entry points the host glue calls by
+  name. Audit command:
+  ```
+  grep -rn '^__global__' core/src/feature/cuda/ --include='*.cu' | grep -v 'extern "C"'
+  ```
+  An empty result confirms compliance. Tripped by `integer_ssim_score.cu`
+  (ADR-0564 introduced it without the guard; ADR-0745 fixed it).
+
 - **`ssim_cuda.c` and `integer_ssim_cuda.c` provide different features — do not
   conflate them** (ADR-0564). `ssim_cuda.c` registers `vmaf_fex_integer_ssim_cuda`
   and provides `"ssim"` (the real 9-tap int64 integer SSIM, bit-exact with CPU).

@@ -47,6 +47,7 @@
 #include <stdint.h>
 #include "cuda_helper.cuh"
 
+extern "C" {
 #define ISSIM_BLOCK_X 16
 #define ISSIM_BLOCK_Y 8
 #define ISSIM_BLOCK_SZ (ISSIM_BLOCK_X * ISSIM_BLOCK_Y)
@@ -271,3 +272,5 @@ integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__
         partial_weights[blk] = block_wgt;
     }
 }
+
+} /* extern "C" */

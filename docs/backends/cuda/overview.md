@@ -217,6 +217,12 @@ to surface an unexpected delta.
   [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)). ANSNR falls back
   to the CPU twin unless the caller selects the separate `float_ansnr`
   CUDA extractor.
+  The integer SSIM CUDA path (`--feature ssim --backend cuda`, 9-tap int64,
+  `ssim_cuda.c` / `integer_ssim_score.cu`) was broken from ADR-0564 until
+  ADR-0745 by a missing `extern "C"` guard on the `__global__` entry points,
+  causing `CUDA_ERROR_NOT_FOUND (500)` at `cuModuleGetFunction` time. Fixed in
+  ADR-0745; verified bit-exact (diff=0) vs CPU on the Netflix golden 576x324
+  8bpc pair (48 frames).
 - **Float-twin extractors (`float_*`)** — the CUDA backend
   implements the float twins for ANSNR / PSNR / Motion / VIF / ADM
   ([ADR-0202](../../adr/0202-float-adm-cuda-sycl.md)). Requesting
