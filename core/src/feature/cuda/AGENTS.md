@@ -416,3 +416,29 @@ reason (e.g. a specific `dp4a` / `imad.lo.u32` targeting pattern), they must:
    constraint (CLAUDE.md §15).
 4. Document the constraint in `docs/backends/cuda/overview.md` under
    "Known gaps / CUDA version notes".
+## extern "C" invariant — mandatory for every new CUDA kernel TU (ADR-0747)
+
+Every `__global__` kernel that the host looks up by name via
+`cuModuleGetFunction` **must** be defined inside an `extern "C" { }`
+block in its `.cu` file.
+
+Rationale: nvcc compiles `.cu` files as C++ by default. Without
+`extern "C"`, the kernel symbol receives C++ name-mangling (e.g.,
+`_Z31integer_ssim_horiz_8bpc...`). `cuModuleGetFunction` uses the
+plain C name and receives `CUDA_ERROR_NOT_FOUND`, silently disabling
+the feature. This was found by a full sweep (Research-0747) that
+identified `integer_ssim/integer_ssim_score.cu` as broken; the
+pattern caused `--feature ssim --backend cuda` to fail silently from
+the file's introduction until this fix.
+
+Rules:
+- Wrap only `__global__` entry points. `__device__` helpers,
+  `__constant__` arrays, and `#define` macros do not need wrapping.
+- For macro-expanded kernel instantiations (e.g., the `FILTER1D_*`
+  and `ADM_CSF_KERNEL` patterns), place the macro invocations inside
+  the `extern "C" { }` block, not the macro definition.
+- CI gate: `scripts/dev/check-cuda-extern-c.sh` fails if any kernel
+  referenced by `cuModuleGetFunction` is found outside `extern "C"`.
+  Run it locally before pushing CUDA kernel changes.
+
+See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).

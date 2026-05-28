@@ -40034,3 +40034,21 @@ Critical issues that must be fixed before merge:
 - PR #58 `ref.cpp`: `make_unique` / C-caller `free()` allocator mismatch
 
 No rebase impact from the review itself; all findings are fixes required in those PRs.
+## `core/src/feature/cuda/integer_ssim/` — `extern "C"` on new kernels (ADR-0747)
+
+Any upstream or fork PR that adds a new `__global__` kernel to a `.cu`
+file under `core/src/feature/cuda/` or `core/src/cuda/` must wrap the
+entry point in `extern "C" { }` if it is also referenced by
+`cuModuleGetFunction` in the host `.c` glue.
+
+The invariant is enforced by `scripts/dev/check-cuda-extern-c.sh`.
+Run it locally before pushing. On upstream sync, if Netflix adds new
+CUDA kernels to their `libvmaf/src/feature/cuda/` tree, check whether
+those kernels use `extern "C"` in the upstream source and mirror the
+pattern here.
+
+This invariant was formalised after the audit that found
+`integer_ssim/integer_ssim_score.cu` missing `extern "C"`, silently
+breaking `--feature ssim --backend cuda` since introduction (PR #77
+fixed the analogous break in `ssim_score.cu`; ADR-0747 fixes
+`integer_ssim_score.cu`).

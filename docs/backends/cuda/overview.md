@@ -282,6 +282,20 @@ per-extractor coverage matrix.
   `core/src/feature/cuda/AGENTS.md`.
 
 
+- **Integer SSIM `extern "C"` sweep (fixed, ADR-0747)** — A full audit
+  of all 24 `.cu` kernel files confirmed that `integer_ssim/integer_ssim_score.cu`
+  was the only file with `__global__` kernels referenced by
+  `cuModuleGetFunction` but not wrapped in `extern "C"`.  This caused
+  `--feature ssim --backend cuda` to silently return `-EINVAL` from
+  `init_fex_cuda` (the driver returned `CUDA_ERROR_NOT_FOUND` for all
+  three kernel names) since the file was introduced.  Fixed in this PR by
+  wrapping the three entry points in `extern "C" { }`.  A CI script
+  (`scripts/dev/check-cuda-extern-c.sh`) prevents recurrence.
+  The analogous bug in `ssim_score.cu` was fixed earlier in PR #77.
+
+See [metrics/features.md](../../metrics/features.md) for the
+per-extractor coverage matrix.
+
 ## References
 
 - [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)
