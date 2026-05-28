@@ -39917,3 +39917,19 @@ Fork-local files:
 `docs/adr/0714-vmafx-operator-skeleton.md`,
 `docs/development/operator.md`,
 `changelog.d/added/vmafx-operator-skeleton.md`,
+
+---
+
+## `core/src/feature/cuda/AGENTS.md` — `__mul24` prohibition invariant (Research-0734, 2026-05-28)
+
+The 2026-05-28 audit confirmed zero `__mul24` / `__umul24` / `__mul24hi` usages in
+the fork's CUDA kernel tree. A prohibition invariant was added to
+`core/src/feature/cuda/AGENTS.md`. On upstream sync: if Netflix/vmaf ever adds a
+CUDA kernel that uses these intrinsics, the prohibiton invariant requires the caller
+to either remove the intrinsic (replace with `*`) or obtain CODEOWNERS sign-off
+documenting the minimum-CUDA-13.3 constraint (see the AGENTS.md note for the full
+acceptance criteria).
+
+No upstream file is currently in conflict; this note exists to alert future sync
+agents that the invariant file was intentionally added by the fork and should be
+preserved through rebases.
