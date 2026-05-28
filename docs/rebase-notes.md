@@ -39812,6 +39812,20 @@ Touched files:
 `docs/metrics/tad.md`,
 `changelog.d/added/tad-rust-pilot.md`,
 
+## CI fix: libvmafx_tad link error + orphan test_ansnr_simd — 2026-05-28
+
+- **ADR**: no ADR required — pure CI infrastructure bug fix.
+- `core/meson_options.txt` `enable_rust_features` default changed from `true` to
+  `false`. If you rebase a PR that adds a Rust extractor expecting `true`, change
+  the caller's `meson setup` invocation to pass `-Denable_rust_features=true` explicitly
+  rather than relying on the default. The Rust-TAD pilot itself is opt-in from this point.
+- `core/test/meson.build` orphan entries for `test_ansnr_simd` removed (PR #38 dropped
+  the source file but missed the meson declarations). On rebase: do not re-add these
+  entries unless `core/test/test_ansnr_simd.c` is also restored.
+
+**Affected files**: `core/meson_options.txt`, `core/test/meson.build`,
+`changelog.d/fixed/ci-libvmafx-tad-link.md`, `docs/state.md`.
+
 ## CAMBI Python compat-layer sync v0.5 → v0.8 — 2026-05-28
 
 - **ADR**: no ADR required — 1:1 upstream port with no fork-local divergence.
