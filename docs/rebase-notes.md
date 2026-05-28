@@ -6,6 +6,14 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## `.vscode/` and `.zed/` — IDE configs (ADR-0712)
+
+**no rebase impact**: IDE config files are entirely fork-local. Netflix/vmaf
+upstream does not ship `.vscode/` or `.zed/` directories. No conflict is possible
+on upstream sync.
+
+---
+
 ## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
 
 **no rebase impact** on upstream C/Python code: the Go server is entirely

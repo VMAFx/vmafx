@@ -4,33 +4,47 @@
     {
       "label": "meson: setup CPU",
       "type": "shell",
-      "command": "meson setup build libvmaf -Denable_cuda=false -Denable_sycl=false --buildtype=debug",
+      "command": "meson setup build -Denable_cuda=false -Denable_sycl=false --buildtype=debug",
       "problemMatcher": ["$gcc"],
       "group": "build"
     },
     {
       "label": "meson: setup CUDA",
       "type": "shell",
-      "command": "meson setup build libvmaf -Denable_cuda=true -Denable_sycl=false --buildtype=debug --reconfigure",
+      "command": "meson setup build -Denable_cuda=true -Denable_sycl=false --buildtype=debug --reconfigure",
       "problemMatcher": ["$gcc"],
       "group": "build"
     },
     {
       "label": "meson: setup SYCL",
       "type": "shell",
-      "command": "meson setup build libvmaf -Denable_cuda=false -Denable_sycl=true --buildtype=debug --reconfigure",
+      "command": "meson setup build -Denable_cuda=false -Denable_sycl=true --buildtype=debug --reconfigure",
       "problemMatcher": ["$gcc"],
       "group": "build"
     },
     {
-      "label": "build",
+      "label": "build: C (meson)",
       "type": "shell",
       "command": "meson compile -C build",
       "problemMatcher": ["$gcc"],
       "group": { "kind": "build", "isDefault": true }
     },
     {
-      "label": "test: unit",
+      "label": "build: Go",
+      "type": "shell",
+      "command": "go build ./...",
+      "problemMatcher": ["$go"],
+      "group": "build"
+    },
+    {
+      "label": "build: Rust",
+      "type": "shell",
+      "command": "cargo build --workspace",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "test: C unit",
       "type": "shell",
       "command": "meson test -C build --print-errorlogs",
       "problemMatcher": [],
@@ -41,6 +55,20 @@
       "type": "shell",
       "command": "make test-netflix-golden",
       "problemMatcher": []
+    },
+    {
+      "label": "test: Go",
+      "type": "shell",
+      "command": "go test ./...",
+      "problemMatcher": ["$go"],
+      "group": "test"
+    },
+    {
+      "label": "test: Rust",
+      "type": "shell",
+      "command": "cargo test --workspace",
+      "problemMatcher": ["$rustc"],
+      "group": "test"
     },
     {
       "label": "lint: all",

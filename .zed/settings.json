@@ -12,12 +12,14 @@
     ".git",
     "build",
     "build-san",
+    "build-cpu",
     "build-cuda",
     "build-sycl",
     "build-all",
     "subprojects",
     ".venv",
     "node_modules",
+    "target",
     "**/*.yuv",
     "**/*.onnx",
     "**/*.pkl"
@@ -25,7 +27,8 @@
 
   "file_types": {
     "C++": ["cu", "cuh", "hip", "metal"],
-    "GLSL": ["comp", "vert", "frag", "glsl"]
+    "GLSL": ["comp", "vert", "frag", "glsl"],
+    "Proto": ["proto"]
   },
 
   "languages": {
@@ -61,6 +64,17 @@
         }
       }
     },
+    "Go": {
+      "tab_size": 4,
+      "hard_tabs": true,
+      "format_on_save": "on",
+      "formatter": "language_server"
+    },
+    "Rust": {
+      "tab_size": 4,
+      "format_on_save": "on",
+      "formatter": "language_server"
+    },
     "TOML": { "tab_size": 2 },
     "YAML": { "tab_size": 2 },
     "JSON": { "tab_size": 2 },
@@ -85,8 +99,8 @@
       "initialization_options": {
         "fallbackFlags": [
           "-std=c11",
-          "-I./libvmaf/include",
-          "-I./libvmaf/src"
+          "-I./core/include",
+          "-I./core/src"
         ]
       }
     },
@@ -105,15 +119,36 @@
           "organizeImports": true
         }
       }
+    },
+    "gopls": {
+      "initialization_options": {
+        "usePlaceholders": true,
+        "completeUnimported": true,
+        "analyses": {
+          "unusedparams": true,
+          "shadow": false
+        }
+      }
+    },
+    "rust-analyzer": {
+      "initialization_options": {
+        "cargo": {
+          "allTargets": true
+        },
+        "check": {
+          "command": "clippy",
+          "extraArgs": ["-D", "warnings"]
+        }
+      }
     }
   },
 
   "context_servers": {
-    "vmaf-mcp": {
+    "vmafx-mcp": {
       "source": "custom",
-      "command": "vmaf-mcp",
+      "command": "vmafx-mcp",
       "env": {
-        "VMAF_BIN": "build/tools/vmaf"
+        "VMAF_BIN": "build/tools/vmafx"
       }
     }
   },
@@ -126,9 +161,9 @@
     "tool_permissions": {
       "default": "confirm",
       "tools": {
-        "mcp:vmaf-mcp:vmaf_score": { "default": "allow" },
-        "mcp:vmaf-mcp:list_models": { "default": "allow" },
-        "mcp:vmaf-mcp:list_backends": { "default": "allow" }
+        "mcp:vmafx-mcp:vmaf_score": { "default": "allow" },
+        "mcp:vmafx-mcp:list_models": { "default": "allow" },
+        "mcp:vmafx-mcp:list_backends": { "default": "allow" }
       }
     }
   },
