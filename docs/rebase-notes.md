@@ -1,5 +1,70 @@
 # Rebase notes
 
+Single ledger of fork-local changes that need attention when this fork
+syncs from `upstream/master` (Netflix/vmaf). Required by
+[ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local
+
+---
+
+## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
+
+**no rebase impact** on upstream C/Python code: the Go server is entirely
+fork-local (`cmd/`, `pkg/`, `gen/`, `proto/`, `go.mod`, `go.sum`,
+`Dockerfile.go-server`, `buf.gen.yaml`). None of these paths overlap with
+Netflix/vmaf upstream.
+
+If a future upstream sync touches `model/` (model JSON schema changes) or
+`core/include/libvmaf/libvmaf.h` (public ABI), review:
+- `pkg/libvmaf/libvmaf.go` — the cgo `#include` and JSON parsing in `parseOutput`.
+- The `ScoreResponse.features` map keys (derived from `pooled_metrics` keys in
+  the vmaf CLI JSON output; key names are stable but new keys may appear).
+
+Touched files:
+`cmd/vmafx-server/main.go`,
+`cmd/vmafx-server/grpc_server.go`,
+`cmd/vmafx-server/http_server.go`,
+`cmd/vmafx-server/main_test.go`,
+`pkg/libvmaf/libvmaf.go`,
+`pkg/libvmaf/libvmaf_test.go`,
+`pkg/observability/observability.go`,
+`proto/vmafx.proto`,
+`proto/buf.yaml`,
+`buf.gen.yaml`,
+`gen/go/vmafx.pb.go`,
+`gen/go/vmafx_grpc.pb.go`,
+`go.mod`, `go.sum`,
+`Dockerfile.go-server`,
+`docs/server/grpc.md`,
+`docs/adr/0703-vmafx-server-go-grpc.md`,
+`changelog.d/added/vmafx-server-go.md`,
+`docs/state.md`,
+`deploy/helm/vmafx/values.yaml` (image repository update).
+
+---
+PR that touches upstream-shared paths or establishes a rebase-sensitive
+invariant adds an entry here. PRs with no rebase impact state "no
+rebase impact" in the PR description and skip the entry.
+
+## feat/vmafx-phase4-language-modernization-foundation (ADR-0702) — fork-only, no Netflix conflict
+
+**No upstream rebase impact.** The files added in this PR (`go.mod`, `Cargo.toml`,
+`pkg/`, `cmd/`, `bindings/`, `.github/workflows/go-ci.yml`,
+`.github/workflows/rust-ci.yml`) are entirely fork-local. Netflix/vmaf upstream
+does not have a Go or Rust surface; cherry-picks from upstream are unaffected.
+
+The `docs/principles.md`, `docs/development/languages.md`, `.gitignore`, and
+`Makefile` additions are additive; the Makefile targets are named distinctly
+(`go-build`, `go-test`, `rust-build`, `rust-test`) and do not conflict with any
+upstream Makefile target.
+
+## feat/vmafx-tune-go-stage1 (ADR-0705) — fork-only, no Netflix conflict
+
+**No upstream rebase impact**: the Go port lives entirely under `cmd/vmafx-tune/`,
+`pkg/encoder/`, `pkg/bisect/`, and `pkg/report/`. These directories do not exist in
+upstream Netflix/vmaf. The Python `tools/vmaf-tune/` is unchanged. `go.mod` and
+`go.sum` are fork-local additions that upstream does not carry. Cherry-picks from
+upstream that touch `tools/vmaf-tune/` Python source files are unaffected by this PR.
+
 ## feat/vmafx-mcp-go-port (ADR-0704) — fork-only, no Netflix conflict
 
 **No upstream rebase impact**: this PR adds `cmd/vmafx-mcp/`, `pkg/libvmaf/`,
@@ -7,12 +72,6 @@
 `mcp-server/vmaf-mcp/` is unchanged. Netflix/vmaf upstream does not contain
 any Go code or an MCP server. Cherry-picks from upstream are unaffected.
 
-Single ledger of fork-local changes that need attention when this fork
-syncs from `upstream/master` (Netflix/vmaf). Required by
-[ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local
-PR that touches upstream-shared paths or establishes a rebase-sensitive
-invariant adds an entry here. PRs with no rebase impact state "no
-rebase impact" in the PR description and skip the entry.
 
 ## chore/post-cutover-url-sweep — fork-only URL change, no Netflix conflict
 
@@ -39596,3 +39655,13 @@ Touched files:
 `docs/research/0706-tiny-ai-netflix-training-prep-2026-05-22.md`,
 `changelog.d/added/0682-tiny-ai-netflix-training-scaffold-2026-05-22.md`,
 `docs/rebase-notes.md` (this entry).
+
+## feat/bindings-rust-vmafx-sys (ADR-0706) — fork-only Rust crate, no Netflix upstream impact
+
+**No upstream rebase impact**: `bindings/rust/vmafx-sys`, the root `Cargo.toml`,
+`.github/workflows/rust-ci.yml`, and `docs/development/rust.md` are wholly
+fork-local. Netflix/vmaf upstream has no Rust surface; upstream cherry-picks
+and `port-upstream-commit` syncs are unaffected. The libvmaf C public headers
+consumed by `bindgen` remain at `core/include/libvmaf/` (ADR-0700 path); any
+future upstream header change that adds or removes a symbol is handled
+automatically by re-running `cargo build` (bindgen regenerates on every build).

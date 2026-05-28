@@ -1,0 +1,36 @@
+# AGENTS.md — cmd/vmafx-tune
+
+Go port of the vmaf-tune rate-quality tuning CLI. Installed as `vmafx-tune-go`
+during the migration; see Stage roadmap in ADR-0705.
+
+## Rebase-sensitive invariants
+
+1. **JSON schema compatibility** (`pkg/report/report.go`): the JSON output of
+   `EmitJSON` must remain schema-compatible with the Python `compare.py` v1/v2
+   payloads. The Python `report.py` renderer ingests this JSON directly. Any
+   field rename or removal requires a coordinated Python-side change. Add new
+   optional fields only; never remove existing ones without a schema-version bump.
+
+2. **NaN coercion** (`pkg/report/report.go` `nanToNull`): `float64` fields that
+   can be NaN (failed-row bitrate, VMAF, encode time) MUST be serialized as JSON
+   `null`, not as bare `NaN` tokens. RFC 8259 strict parsers reject bare `NaN`.
+   Mirror the Python `_nan_to_none` discipline.
+
+3. **Bisect midpoint bias** (`pkg/bisect/bisect.go`): the midpoint rounds toward
+   the *higher* CRF end `(lo + hi + 1) / 2` so the best-so-far record is never
+   populated with an unvalidated CRF. Changing the rounding direction breaks the
+   monotonicity invariant.
+
+4. **ScoreFunc seam** (`pkg/bisect/bisect.go`): `ScoreFunc` is the subprocess
+   boundary. Tests inject mock score functions. Never merge the score function
+   inline into `Run`; the seam is load-bearing for unit testability.
+
+5. **Stage-1 scope** (`pkg/encoder/encoder.go`): `encoder.New` accepts only
+   `libx264` and `libx265`. Hardware encoders (NVENC, QSV, AMF) and SVT-AV1 are
+   Stage-2 scope. Do not add hardware encoder support here without a new ADR and
+   the associated hw-init flag plumbing from Python `compare.py`.
+
+6. **Binary name** (`cmd/vmafx-tune/main.go`): the binary installs as
+   `vmafx-tune-go`, not `vmaf-tune`, during Stage 1 to avoid collisions with the
+   Python binary. Stage 3 (swap) will rename. Never install it as `vmaf-tune` in
+   a PR that does not also remove the Python entry point.
