@@ -1,6 +1,6 @@
 # Arch Linux dev image. CPU-only by default; toggle ENABLE_CUDA / ENABLE_SYCL.
 # Arch rolls forward aggressively — use this for the "latest toolchain" build.
-FROM archlinux:latest@sha256:1047e6e7878d58e4ee47e1cd6459a32fab41246b0efc4109e11b7ef16f50b14d
+FROM archlinux:latest@sha256:40ec92af4b7de7127251038f2e1af7978c1dbc1625e4c7d23b7a89eee05e5a58
 
 ARG ENABLE_CUDA=false
 ARG ENABLE_SYCL=false
