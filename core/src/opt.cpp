@@ -1,0 +1,158 @@
+/**
+ *
+ *  Copyright 2016-2026 Netflix, Inc.
+ *
+ *     Licensed under the BSD+Patent License (the "License");
+ *     you may not use this file except in compliance with the License.
+ *     You may obtain a copy of the License at
+ *
+ *         https://opensource.org/licenses/BSDplusPatent
+ *
+ *     Unless required by applicable law or agreed to in writing, software
+ *     distributed under the License is distributed on an "AS IS" BASIS,
+ *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *     See the License for the specific language governing permissions and
+ *     limitations under the License.
+ *
+ */
+
+#include <cerrno>
+#include <climits>
+#include <cmath>
+#include <cstring>
+#include <cstdlib>
+#include <optional>
+#include <string>
+#include <string_view>
+
+#include "opt.h"
+
+// ---------------------------------------------------------------------------
+// Internal helpers returning std::optional<T> — parse failure → nullopt.
+// These never touch the C errno state beyond what strtol/strtod set themselves.
+// The C ABI boundary (vmaf_option_set) converts nullopt → -EINVAL.
+// ---------------------------------------------------------------------------
+
+static std::optional<bool> parse_bool(std::string_view sv) noexcept
+{
+    if (sv == "true")
+        return true;
+    if (sv == "false")
+        return false;
+    return std::nullopt;
+}
+
+static std::optional<int> parse_int(std::string_view sv, int min_val, int max_val) noexcept
+{
+    if (sv.empty())
+        return std::nullopt;
+
+    /* Copy sv into a NUL-terminated std::string so strtol is never given a
+     * non-NUL-terminated buffer regardless of how the caller constructed sv.
+     * Eliminates the UB class identified in adversarial review PR #78. */
+    const std::string s_int(sv);
+    char *end = nullptr;
+    errno = 0;
+    const long n = std::strtol(s_int.c_str(), &end, 10);
+    if (end == s_int.c_str() || *end != '\0')
+        return std::nullopt;
+    if (errno == ERANGE)
+        return std::nullopt;
+    if (n < static_cast<long>(min_val) || n > static_cast<long>(max_val))
+        return std::nullopt;
+    return static_cast<int>(n);
+}
+
+static std::optional<double> parse_double(std::string_view sv, double min_val,
+                                          double max_val) noexcept
+{
+    if (sv.empty())
+        return std::nullopt;
+
+    /* Copy sv into a NUL-terminated std::string so strtod is never given a
+     * non-NUL-terminated buffer regardless of how the caller constructed sv.
+     * Eliminates the UB class identified in adversarial review PR #78. */
+    const std::string s_dbl(sv);
+    char *end = nullptr;
+    errno = 0;
+    const double n = std::strtod(s_dbl.c_str(), &end);
+    if (end == s_dbl.c_str() || *end != '\0')
+        return std::nullopt;
+    if (errno == ERANGE)
+        return std::nullopt;
+    /* NaN bypasses ordered comparisons (NaN < x and NaN > x are both false),
+     * so reject it explicitly before the bounds check. Infinity is already
+     * rejected when the bound is finite (Inf > max is true), but NaN is not.
+     * T-ROUND8-OPT-NAN-BYPASS / CWE-704. */
+    if (std::isnan(n))
+        return std::nullopt;
+    if (n < min_val || n > max_val)
+        return std::nullopt;
+    return n;
+}
+
+// ---------------------------------------------------------------------------
+// C ABI entry point — identity preserved exactly (same signature, same errno
+// / return-code contract).  The [[nodiscard]] annotation is advisory for C++
+// callers; the C callers in feature_extractor.c are unaffected.
+// ---------------------------------------------------------------------------
+
+[[nodiscard]] int vmaf_option_set(const VmafOption *opt, void *obj, const char *val)
+{
+    if (!obj || !opt)
+        return -EINVAL;
+
+    uint8_t *base = static_cast<uint8_t *>(obj) + opt->offset;
+
+    switch (opt->type) {
+    case VMAF_OPT_TYPE_BOOL: {
+        bool *dst = reinterpret_cast<bool *>(base);
+        *dst = opt->default_val.b;
+        if (!val)
+            return 0;
+        auto result = parse_bool(val);
+        if (!result)
+            return -EINVAL;
+        *dst = *result;
+        return 0;
+    }
+    case VMAF_OPT_TYPE_INT: {
+        int *dst = reinterpret_cast<int *>(base);
+        *dst = opt->default_val.i;
+        if (!val)
+            return 0;
+        auto result = parse_int(val, static_cast<int>(opt->min), static_cast<int>(opt->max));
+        if (!result)
+            return -EINVAL;
+        *dst = *result;
+        return 0;
+    }
+    case VMAF_OPT_TYPE_DOUBLE: {
+        double *dst = reinterpret_cast<double *>(base);
+        *dst = opt->default_val.d;
+        if (!val)
+            return 0;
+        auto result = parse_double(val, opt->min, opt->max);
+        if (!result)
+            return -EINVAL;
+        *dst = *result;
+        return 0;
+    }
+    case VMAF_OPT_TYPE_STRING: {
+        char **dst = reinterpret_cast<char **>(base);
+        *dst = opt->default_val.s;
+        if (!val)
+            return 0;
+        /* String options store a borrowed pointer — lifetime owned by the
+         * caller; no allocation here, matching the original C behaviour. */
+        *dst = const_cast<char *>(val); // NOLINT(cppcoreguidelines-pro-type-const-cast)
+        // ADR-0721: the public VmafOption API exposes `char *` (not `const char *`)
+        // for string values. Removing the const_cast would require a public ABI
+        // change (VmafOption.default_val.s type). Preserved verbatim for ABI
+        // stability; the original opt.c performed the identical implicit cast.
+        return 0;
+    }
+    default:
+        return -EINVAL;
+    }
+}

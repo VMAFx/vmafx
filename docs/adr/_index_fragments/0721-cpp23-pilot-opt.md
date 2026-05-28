@@ -1,0 +1,1 @@
+| [ADR-0721](0721-cpp23-pilot-opt.md) | C++23 Wave 1 pilot: convert `opt.c` → `opt.cpp` using `std::optional<T>` for parse helpers; `extern "C"` guards; `[[nodiscard]]` on public entry point; isolated `opt_cpp23_lib` static-lib pattern (ADR-0708 playbook). | Accepted | 2026-05-28 | build, c++, cpp23, refactor, internals, fork-local, vmafx-rebrand |
