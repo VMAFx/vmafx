@@ -15,6 +15,12 @@ description = "VMAF-specific false positives"
 paths = [
   '''subprojects/''',
   '''python/test/resource/''',
+  # Historical pre-rename path for the Netflix YUV test fixtures
+  # (commit c35b50e4 from 2016 lived at `resource/yuv/...` before the
+  # python-package layout reshuffle). Random YUV pixel bytes trip the
+  # generic-api-key and sourcegraph-access-token entropy gates when
+  # gitleaks scans full git history.
+  '''resource/yuv/''',
   '''testdata/.*\.(yuv|y4m|mp4|json)$''',
   '''model/.*\.(json|pkl|onnx)$''',
   '''ai/src/vmaf_train/data/manifests/README\.md$''',
