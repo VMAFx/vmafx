@@ -42995,3 +42995,200 @@ are in flight, ensure:
 no rebase impact: changelog-only — `scripts/release/concat-changelog-fragments.sh` awk
 fix + `changelog.d/` fragment moves do not touch any upstream Netflix/vmaf source file.
 No C, Python, or test changes.
+
+## float_adm AVX2/AVX-512 F2+F3 precision fix (ADR-0844, 2026-05-29)
+
+Rebase invariant: if an upstream Netflix/vmaf commit changes
+`float_adm_csf_den_scale_s`, `float_adm_sum_cube_s`, or any other reduction
+function in `core/src/feature/float_adm.c`, the corresponding AVX2 and
+AVX-512 variants in `core/src/feature/x86/float_adm_avx2.c` and
+`float_adm_avx512.c` **must** be updated to preserve the double-precision
+widening contract (ADR-0844 / ADR-0139). The `hadd_pd4` and
+`hsum_ps_to_double` helpers are `static inline` and duplicated across TUs
+intentionally — do not merge them into a shared header. The
+`-ffp-contract=off` per-TU static library carve-out in `core/src/meson.build`
+(the `x86_float_adm_avx2_lib` and `x86_float_adm_avx512_lib` targets) must
+be preserved on any rebase that touches the `meson.build` AVX2/AVX-512 build
+block; they mirror the `ssimulacra2` carve-out already in tree.
+
+## AVX-512 motion parity tests (ADR-0854, 2026-05-29)
+
+no rebase impact: REASON — changes are confined to new test files
+(`core/test/test_motion_avx512_parity.c`, `changelog.d/added/motion-avx512-parity-tests.md`,
+`docs/adr/0854-motion-avx512-parity-tests.md`) and additive changes to
+`core/test/simd_bitexact_test.h` (new helper function) and `core/test/meson.build`
+(new test registration).  No upstream Netflix/vmaf production source is modified;
+no existing test is changed; no golden assertions are touched.
+
+## ADR-0852 — HIP speed extractor wiring (2026-05-29)
+
+no rebase impact: the three changed files (`core/src/meson.build`,
+`core/src/hip/meson.build`, `core/src/feature/feature_extractor.c`) are
+fork-owned; no upstream Netflix/vmaf C source is touched. The only upstream-
+adjacent file is `feature_extractor.c` whose `#if HAVE_HIP` block is a
+fork-added section; conflicts are only possible with other HIP-wiring PRs.
+
+## Dependency audit 2026-05-30 — `golang.org/x/net` + `x/sys` bump
+
+No rebase impact: the only changed files are `go.mod` / `go.sum`, plus a
+changelog fragment and a research digest. The Go workspace is a fork-only
+addition (Netflix/vmaf upstream does not ship Go modules); there is no
+upstream baseline to rebase against. Versions: `golang.org/x/net`
+`v0.53.0 -> v0.55.0`, `golang.org/x/sys` `v0.43.0 -> v0.45.0`,
+`golang.org/x/term` `v0.42.0 -> v0.43.0`, `golang.org/x/text`
+`v0.36.0 -> v0.37.0` (minimum-version selection).
+
+Fork-local files:
+`go.mod`, `go.sum`,
+`changelog.d/security/dependency-audit-2026-05-30.md`,
+`docs/research/dependency-audit-2026-05-30.md`.
+
+## CodeQL Go coverage + config conflict resolution (ADR-0811, 2026-05-29)
+
+no rebase impact: CI-config-only change; no public API surface affected.
+All changes are confined to `.github/codeql-config.yml` (Go paths addition
++ gen/go exclusion), `.github/workflows/security-scans.yml` (new codeql-go
+job), `docs/adr/0811-security-codeql-go-pvr.md`, and the changelog fragment.
+No upstream Netflix/vmaf files are touched; no C/Python/Go production code is
+modified. On upstream sync, the CodeQL workflow additions apply cleanly
+regardless of upstream changes.
+
+Fork-local files:
+`.github/codeql-config.yml`,
+`.github/workflows/security-scans.yml`,
+`docs/adr/0811-security-codeql-go-pvr.md`,
+`changelog.d/security/0811-codeql-go-config-fix.md`.
+
+## release-please draft mode
+
+no rebase impact: release-tooling-only change (`release-please-config.json`
+`"draft": true`). No C sources, headers, or test logic modified.
+
+## Coverage-overrides audit — tighten tiny_extractor_template.h (ADR-0881, 2026-05-30)
+
+no rebase impact: REASON — changes are confined to fork-only files:
+`scripts/ci/coverage-check.sh` (fork-only CI gate), the new
+`docs/adr/0881-*.md` ADR, the new `docs/research/0881-*.md` digest, the
+ADR index fragment under `docs/adr/_index_fragments/`, and the
+`changelog.d/changed/` fragment. The threshold ratchet only tightens an
+existing override (10 → 75) — does not introduce a new path Netflix
+upstream might also override. Future audits per the codified rule (see
+ADR-0881 §Decision) are also fork-only since `coverage-check.sh` itself
+is fork-only (Netflix upstream has no equivalent gate).
+
+## vmafx-operator envtest etcd setup (2026-05-30)
+
+no rebase impact: REASON — all changes are in fork-added paths only.
+Files touched: `Makefile` (new `setup-envtest` + `setup-envtest-env`
+targets in the Go workspace section, ADR-0702 scope),
+`.github/workflows/go-ci.yml` (new pre-test step installing
+`sigs.k8s.io/controller-runtime/tools/setup-envtest@latest` + exporting
+`KUBEBUILDER_ASSETS`), `cmd/vmafx-operator/internal/controller/suite_test.go`
+(top-of-`TestControllers` `t.Skip()` guard + nil-`testEnv` bailout in
+`AfterSuite`), `cmd/vmafx-operator/AGENTS.md` (new invariant #6 documenting
+the skip-safe envtest pattern), and the `changelog.d/fixed/` fragment.
+`cmd/vmafx-operator/` is fork-added per ADR-0714 — upstream Netflix/vmaf
+ships no Go sources, so no upstream merge can reach these files.
+
+## log.c → log.cpp C++23 pilot (ADR-0708 Wave 1, 2026-05-30)
+
+Upstream Netflix `libvmaf/src/log.c` is fork-renamed to
+`core/src/log.cpp`. Future port-upstream-commit runs that touch
+`libvmaf/src/log.c` must apply changes to `core/src/log.cpp` instead — the
+fork-rename mapping is recorded here.
+
+Public C ABI is preserved: `core/src/log.h` retains the same two function
+prototypes (`vmaf_log`, `vmaf_set_log_level`) and now carries `extern "C"`
+guards so it is includable from both C and C++ TUs. The C-mangled exported
+symbols are unchanged (`nm libvmaf.so` shows `vmaf_log` and
+`vmaf_set_log_level` with the same C-mangling as the prior log.c build).
+
+Meson wiring: log.cpp compiles in an isolated `log_cpp23_lib` static_library
+with `override_options: ['cpp_std=' + libvmaf_cpu_cpp_std]`, mirroring the
+`metadata_handler_cpp20_lib` pattern (ADR-0708 metadata_handler pilot). Test
+executables that previously direct-compiled `../src/log.c` (test_lpips,
+test_dists, test_feature_extractor, test_speed, ...) now pick up log symbols
+via the shared `log_cpp23_test_objects` aggregate in
+`core/test/meson.build`.
+
+Fork-local files:
+`core/src/log.cpp` (was: `core/src/log.c`, removed),
+`core/src/log.h` (added `extern "C"` guards),
+`core/src/meson.build` (replaced `log.c` source entry with `log_cpp23_lib`),
+`core/test/meson.build` (added `log_cpp23_test_objects`, removed inline
+`'../src/log.c'` source entries from ~20 test execs, wired `test_log` into
+the fast suite),
+`docs/adr/0708-vmafx-cpp23-internals-pilot.md` (consequences cross-link),
+`changelog.d/changed/log-c-to-cpp23.md`.**`extern "C"` guards added**: `log.h`, `model.h`, `read_json_model.h`,
+`opt.h`. Any upstream commit that adds new declarations to these headers
+must include the guard-wrapped declaration for correctness. Flag in the
+port if upstream adds a declaration outside the guard block.
+
+## port/upstream-netflix-may-jun-2026 — 2026-06-01
+
+Five Netflix upstream commits ported. Each reduces the diff against upstream
+and therefore reduces future rebase friction.
+
+1. **e4b93c6ed** (`fetch_picture` direct-read): `core/tools/vmaf.c` no longer
+   has a `#ifdef USE_DIRECT_READ` branch. Future upstreams that touch `vmaf.c`
+   will now merge cleanly without the compile-guard conflict.
+
+2. **a4a1492d3** (integer_motion rename): `core/src/feature/integer_motion.c`
+   and `core/src/feature/x86/motion_avx2.{c,h}` / `motion_avx512.{c,h}` are
+   now at upstream parity. `integer_motion_v2.c` and `motion_v2_avx2/512` are
+   fork-local (GPU build paths); any future upstream touch of those names
+   should check whether the GPU backends have been updated to the renamed API.
+
+3. **c2155d6cd** (2160p CSF): `core/src/feature/barten_csf_tools.h` is now
+   at upstream parity. `core/test/test_barten_csf.c` has new upstream tests.
+
+4. **9a078011c** (ADM SIMD fix): `core/src/feature/integer_adm.c` and
+   `core/src/feature/x86/adm_avx2.c` + `adm_avx512.c` at upstream parity.
+
+5. **30f472b14** (Speed_chroma AVX): `core/src/feature/speed.c`,
+   `core/src/feature/x86/speed_avx2.{c,h}`, `core/src/feature/x86/speed_avx512.{c,h}`
+   are new upstream-mirror files. Future upstream touches to speed.c may need
+   to propagate `compute_cov_kernel` into the GPU speed_chroma extractors.
+
+Fork-local files touched:
+`core/tools/vmaf.c` (commit #1 — call-site updates for signature change),
+`core/src/feature/feature_extractor.c` (commit #2 — remove CPU v2),
+`core/src/meson.build` (commits #2, #5 — add speed_avx2/512, remove motion_v2 CPU build).
+
+---
+
+## ADR-0700 Dockerfile path residuals — 2026-05-30
+
+no rebase impact: REASON — touches only fork-added Dockerfiles
+(`docker/Dockerfile.production`, `docker/Dockerfile.production-gpu`,
+`docker/dev/{alpine-3.20,arch,fedora-40}.Dockerfile`) and the fork-added
+`dev/Containerfile`. None of these files have an upstream Netflix/vmaf
+counterpart. The change is a literal `libvmaf/` → `core/` substitution at
+source-tree positions (`meson setup … core`, `COPY core/`, `cd core`);
+install-path / package / filter-name occurrences (`/usr/local/include/libvmaf/`,
+`libvmaf.so`, `libvmaf-dev`, `--enable-libvmaf*`) are deliberately preserved
+because they describe the shipped library / package / ffmpeg-filter surface,
+not the source layout.
+---
+
+## ADR-0709 residual ANSNR references in docs + ai/data — 2026-05-30
+
+no rebase impact: REASON — all changes are fork-local. Touched files are
+`ai/data/feature_extractor.py` (fork-added Python helper, no upstream
+counterpart), `docs/metrics/ansnr.md`, `docs/backends/index.md`,
+`docs/backends/cuda/overview.md`, `docs/backends/hip/overview.md`. The
+HIP and CUDA overviews and the metric page are fork-only docs; the
+backends index page is also fork-only. No upstream Netflix/vmaf source is
+touched. The cleanup closes residual references left over after PR #38
+(ADR-0709) removed the `float_ansnr` extractor from every backend.
+
+## fix/post-rename-post-vulkan-sweep — 2026-06-01
+
+no rebase impact: post-rename cleanup only. The Containerfile change adds a
+pkg-install line that cannot conflict with upstream (upstream has no
+Containerfile). The score_backend.py change is fork-local code with no
+upstream counterpart. The test and doc updates are purely fork-local.
+
+## ADR-0777 — Thread-Safety Audit: CUDA / SYCL / HIP Backends (2026-05-29)
+
+no rebase impact: docs/research + docs/adr only; no source files were changed.
