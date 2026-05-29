@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -40,6 +41,23 @@ func main() {
 }
 
 func run() error {
+	// --help: print usage and exit 0.
+	help := flag.Bool("help", false, "print usage and exit")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stdout, "Usage of vmafx-node:\n")
+		fmt.Fprintf(os.Stdout, "  vmafx-node is configured via environment variables:\n")
+		fmt.Fprintf(os.Stdout, "    VMAFX_NODE_ADDR    gRPC listen address (default :50052)\n")
+		fmt.Fprintf(os.Stdout, "    VMAFX_FFMPEG_BIN   path to ffmpeg binary (default: PATH lookup)\n")
+		fmt.Fprintf(os.Stdout, "    VMAFX_LOG_LEVEL    log level DEBUG|INFO|WARN|ERROR (default INFO)\n")
+		fmt.Fprintf(os.Stdout, "  Flags:\n")
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+	if *help {
+		flag.Usage()
+		os.Exit(0)
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: logLevel(),
 	}))
