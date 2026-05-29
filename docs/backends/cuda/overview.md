@@ -292,7 +292,35 @@ per-extractor coverage matrix.
   (`scripts/dev/check-cuda-extern-c.sh`) prevents recurrence.
   The analogous bug in `ssim_score.cu` was fixed earlier in PR #77.
 
+## CUDA motion extractor: N-slot SAD ring buffer (ADR-0766, 2026-05-29)
+
+`integer_motion_cuda.c` now uses an N-slot device SAD ring (`sad_ring`,
+`N = 16` default) and a matching N-element pinned host array (`sad_host`).
+Each frame targets an independent accumulator slot
+`slot = (1-based index - 1) % N`, eliminating the false-dependency where
+the single-slot design's `cuMemsetD8Async` for frame N+1 was unordered
+with respect to frame N's DtoH.
+
+**Meson option**: `-Dmotion_batch_n=N` (integer 1–64, default 16).
+Requires `enable_cuda=true`.
+
+**Full N× sync amortisation** (projected: 576p ~79 fps → ≥800 fps) requires
+the engine to batch N submits before any collects.  The current
+1-frame-lag dispatch (`collect(i-1)` → `submit(i)` per frame) means the
+ring provides per-frame independence but not sync batching.  A follow-up
+ADR will extend `read_pictures_extractor_loop_cuda` in `libvmaf.c` to
+batch N frames at a time.
+
+ncu reproducer:
+```bash
+ncu --kernel-name calculate_motion_score_kernel_8bpc     --section LaunchStats --section MemoryWorkloadAnalysis     build/tools/vmaf       --reference python/test/resource/yuv/src01_hrc00_576x324.yuv       --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv       --width 576 --height 324 --pixel_format 420 --bitdepth 8       --feature motion --backend cuda
+```
+
+See [ADR-0766](../../adr/0766-cuda-motion-multi-frame-batching.md) and
+[Research-0766](../../research/research-0766-cuda-motion-multi-frame-batching.md).
+
 ## References
+
 
 - [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)
 - [CUDA Driver API Reference](https://docs.nvidia.com/cuda/cuda-driver-api/)

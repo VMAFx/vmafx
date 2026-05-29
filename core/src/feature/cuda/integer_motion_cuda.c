@@ -40,27 +40,63 @@
  * T3-15(c) / ADR-0219. */
 #define MOTION_CUDA_DEFAULT_MAX_VAL (10000.0)
 
+/* N-frame SAD ring buffer (ADR-0766).
+ *
+ * The ring allocates N device SAD slots and N pinned-host SAD slots,
+ * used round-robin so that consecutive frames do not share a buffer.
+ * This eliminates the false-dependency hazard where a per-frame
+ * cuMemsetD8Async on the single sad buffer (pre-ADR-0766) would have
+ * to wait for the previous frame's DtoH to complete before zeroing.
+ * With N independent slots, each slot's zero + kernel + DtoH pipeline
+ * runs on pic_stream without stalling on any other frame's stream.
+ *
+ * Full N-frame sync amortisation (N cuStreamSynchronize → 1) requires
+ * the engine to submit N frames before collecting any of them.  The
+ * current 1-frame-lag engine (submit(i), collect(i-1)) means per-frame
+ * syncs are still needed today.  This ring provides the correct device-
+ * and host-side data layout for a future engine-level dispatch patch
+ * (see ADR-0766 §"Alternatives considered").
+ *
+ * N must satisfy 1 ≤ N ≤ 64.  Override at build time via meson option
+ * -Dmotion_batch_n=N.  N=1 is equivalent to the pre-ADR-0766 single
+ * SAD buffer. */
+#ifndef MOTION_CUDA_BATCH_N
+#define MOTION_CUDA_BATCH_N 16
+#endif
+
+#if MOTION_CUDA_BATCH_N < 1 || MOTION_CUDA_BATCH_N > 64
+#error "MOTION_CUDA_BATCH_N must be in [1, 64]"
+#endif
+
 typedef struct MotionStateCuda {
     CUevent event, finished;
     CUfunction funcbpc8, funcbpc16;
     CUstream str;
     VmafCudaBuffer *blur[2];
-    VmafCudaBuffer *sad;
+
+    /* N-slot SAD ring — device-side (ADR-0766).
+     * sad_ring->data + slot * sizeof(uint64_t) is slot k's accumulator.
+     * Slot k = (1-based index - 1) % N (frame 0 uses slot 0 as a
+     * throwaway; its SAD value is never read). */
+    VmafCudaBuffer *sad_ring;
+
+    /* Pinned host mirror of sad_ring (N × uint64_t).
+     * sad_host[k] receives the value of sad_ring slot k after the DtoH
+     * for that frame completes. */
     uint64_t *sad_host;
-    /* Engine-scope fence batching opt-in flag (T-GPU-OPT-1, ADR-0242).
-     * Set by ``vmaf_cuda_drain_batch_flush`` when this submit's
-     * ``finished`` event was waited on as part of the batched drain;
-     * the ``collect()`` path then skips its ``cuStreamSynchronize``
-     * and resets the flag for the next frame. */
+
+    /* Engine-scope fence batching opt-in (T-GPU-OPT-1, ADR-0242). */
     bool drained;
+
     unsigned index;
-    unsigned frame_index;      /* count of frames processed so far (for motion3) */
-    unsigned frame_w, frame_h; // stored by submit for collect
+    unsigned frame_index;      /* count of frames processed (for motion3) */
+    unsigned frame_w, frame_h; /* stored by submit for collect */
     double score;
-    /* motion3 post-processing state — tracks the last *unaveraged*
-     * blended score so the moving-average rule cascades correctly,
-     * mirroring the CPU MotionState.previous_score field. */
+
+    /* motion3 post-processing — mirrors CPU MotionState.previous_score.
+     * T3-15(c) / ADR-0219. */
     double prev_motion3_blended;
+
     bool debug;
     bool motion_force_zero;
     bool motion_five_frame_window; /* rejected with -ENOTSUP — see init() */
@@ -69,6 +105,7 @@ typedef struct MotionStateCuda {
     double motion_blend_offset;
     double motion_fps_weight;
     double motion_max_val;
+
     int (*calculate_motion_score)(const VmafPicture *src, VmafCudaBuffer *src_blurred,
                                   const VmafCudaBuffer *prev_blurred, VmafCudaBuffer *sad,
                                   unsigned width, unsigned height, ptrdiff_t src_stride,
@@ -311,10 +348,21 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[1], sizeof(uint16_t) * w * h);
     if (ret)
         goto free_ref;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->sad, sizeof(uint64_t));
+
+    /* N-slot SAD ring (ADR-0766): one uint64_t accumulator per slot.
+     * Slot k = (1-based index - 1) % N for index >= 1.  Frame 0 uses
+     * slot 0 as a throwaway; its SAD value is never read.  Each slot
+     * is zeroed and kernel-launched independently on pic_stream, then
+     * its 8-byte DtoH goes on s->str.  The ring eliminates the
+     * false-dependency between consecutive frames that the single-sad
+     * design had (each frame must wait for the previous frame's DtoH
+     * to complete before zeroing the shared sad buffer).  See ADR-0766. */
+    ret |=
+        vmaf_cuda_buffer_alloc(fex->cu_state, &s->sad_ring, MOTION_CUDA_BATCH_N * sizeof(uint64_t));
     if (ret)
         goto free_ref;
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->sad_host, sizeof(uint64_t));
+    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->sad_host,
+                                       MOTION_CUDA_BATCH_N * sizeof(uint64_t));
     if (ret)
         goto free_ref;
 
@@ -334,9 +382,9 @@ free_ref:
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
         free(s->blur[1]);
     }
-    if (s->sad) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->sad);
-        free(s->sad);
+    if (s->sad_ring) {
+        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->sad_ring);
+        free(s->sad_ring);
     }
     if (s->sad_host) {
         ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->sad_host);
@@ -400,6 +448,32 @@ static inline double normalize_and_scale_sad(uint64_t sad, unsigned w, unsigned 
     return (float)(sad / 256.) / (w * h);
 }
 
+/* submit_fex_cuda — N-slot SAD ring dispatch (ADR-0766).
+ *
+ * Slot assignment: slot k = (1-based index - 1) % N for index >= 1.
+ * Frame 0 uses slot 0 as a throwaway (result never read).
+ *
+ * For each frame:
+ *   1. Compute slot = (index - 1) % N (slot 0 for index 0, treated as
+ *      throwaway).
+ *   2. Zero device SAD slot on pic_stream (ADR-0358 ordering invariant:
+ *      memset must be on the same stream as the kernel it precedes).
+ *   3. Build a slot-view VmafCudaBuffer pointing into sad_ring.
+ *   4. Launch the motion kernel on pic_stream.
+ *   5. Record s->event on pic_stream; make s->str wait for it.
+ *   6. For index > 0: DtoH the 8-byte slot result onto s->str and
+ *      register s->finished with drain_batch.
+ *
+ * The ring eliminates false dependencies between consecutive frames:
+ * with the pre-ADR-0766 single-sad design, cuMemsetD8Async on the
+ * shared buffer had to wait (on s->str) for the previous frame's DtoH
+ * to complete.  With N independent slots, each frame's memset runs on
+ * its pic_stream independently, and the per-slot DtoH on s->str is
+ * 8 bytes (unchanged from before).
+ *
+ * Full N× sync amortisation requires the engine to batch N submits
+ * before collecting any frame.  See ADR-0766 for the planned
+ * libvmaf.c dispatch change. */
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
@@ -424,17 +498,29 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                       cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(dist_pic),
                                         CU_EVENT_WAIT_DEFAULT));
 
-    /* Reset device SAD on pic_stream (NOT s->str). The kernel below
-     * launches on pic_stream and atomicAdd's into ``s->sad``; running
-     * the memset on a different non-blocking stream (s->str) would
-     * race the kernel because no event pair links them. Mirrors the
-     * pattern in integer_motion_v2_cuda.c (T-GPU-OPT cleanup,
-     * 2026-05-09). */
-    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->sad->data, 0, sizeof(uint64_t), pic_stream));
+    /* Batch slot for this frame.
+     * For index 0: slot 0 (throwaway — SAD not read; blur populated).
+     * For index >= 1: slot = (index - 1) % N, wrapping round-robin. */
+    const unsigned slot =
+        (index == 0) ? 0u : (unsigned)((index - 1) % (unsigned)MOTION_CUDA_BATCH_N);
+    const CUdeviceptr slot_dptr = s->sad_ring->data + (CUdeviceptr)(slot * sizeof(uint64_t));
+
+    /* Zero THIS slot on pic_stream (ADR-0358: same stream as the kernel,
+     * so the memset is sequenced before the kernel's atomicAdd).
+     * With the ring, this memset does NOT wait for any previous frame's
+     * DtoH — it only serialises with activity on this pic_stream. */
+    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(slot_dptr, 0, sizeof(uint64_t), pic_stream));
+
+    /* Slot-view VmafCudaBuffer (stack-allocated; only .data is passed
+     * through kernelParams[]). */
+    VmafCudaBuffer sad_slot_view = {
+        .size = sizeof(uint64_t),
+        .data = slot_dptr,
+    };
 
     // Compute motion score (blur + SAD)
     int err = s->calculate_motion_score(
-        ref_pic, s->blur[src_blurred_idx], s->blur[prev_blurred_idx], s->sad, ref_pic->w[0],
+        ref_pic, s->blur[src_blurred_idx], s->blur[prev_blurred_idx], &sad_slot_view, ref_pic->w[0],
         ref_pic->h[0], ref_pic->stride[0], sizeof(uint16_t) * ref_pic->w[0], ref_pic->bpc,
         s->funcbpc8, s->funcbpc16, cu_f, pic_stream);
     if (err)
@@ -445,9 +531,11 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     if (index == 0)
         return 0; // No SAD to download for frame 0
 
-    // Download SAD for collect
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->sad_host, (CUdeviceptr)s->sad->data,
-                                              sizeof(*s->sad_host), s->str));
+    /* Per-frame DtoH: transfer 8 bytes (this slot only) to sad_host[slot].
+     * DtoH for ALL N slots at once (for N× sync amortisation) requires
+     * the engine to not call collect between the N submits; see ADR-0766. */
+    CHECK_CUDA_RETURN(cu_f,
+                      cuMemcpyDtoHAsync(&s->sad_host[slot], slot_dptr, sizeof(uint64_t), s->str));
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->finished, s->str));
     /* Engine-scope fence batching opt-in (T-GPU-OPT-1, ADR-0242).
      * Best-effort: registration failure (overflow / no batch open)
@@ -479,8 +567,11 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         return err;
     }
 
+    /* Slot within the N-element ring for this frame — mirrors submit. */
+    const unsigned slot = (unsigned)((index - 1) % (unsigned)MOTION_CUDA_BATCH_N);
+
     double score_prev = s->score;
-    s->score = normalize_and_scale_sad(*s->sad_host, s->frame_w, s->frame_h);
+    s->score = normalize_and_scale_sad(s->sad_host[slot], s->frame_w, s->frame_h);
     s->frame_index++;
 
     int err = 0;
@@ -545,14 +636,12 @@ after_event2_destroy:;
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
         free(s->blur[1]);
     }
-    if (s->sad) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->sad);
-        free(s->sad);
+    if (s->sad_ring) {
+        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->sad_ring);
+        free(s->sad_ring);
     }
-    /* Free the pinned host-side mirror of the SAD accumulator allocated
-     * via vmaf_cuda_buffer_host_alloc() in init_fex_cuda(). Missing this
-     * leaked one page-locked uint64 per init/close cycle (cuda-reviewer
-     * 2026-05-09). */
+    /* Free the pinned host-side SAD ring allocated via
+     * vmaf_cuda_buffer_host_alloc() in init_fex_cuda(). */
     if (s->sad_host) {
         ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->sad_host);
         s->sad_host = NULL;

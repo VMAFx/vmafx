@@ -6,37 +6,6 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
-## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
-
-**Files touched:**
-`core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`
-
-**Rebase impact:** None. The modified file is a fork-added CUDA kernel TU that
-does not exist in upstream Netflix/vmaf master (ms_ssim CUDA port is
-fork-local). No rebase conflict is possible.
-
-The change is a pure performance annotation: `__launch_bounds__(128)`,
-`const float *__restrict__` pointer extraction, and `__ldg()` on inner-loop
-loads. If upstream Netflix ever adds their own ms_ssim CUDA port, this file
-will need to be re-reviewed against theirs; the F3 pattern should carry
-forward.
-## cpp23 orphan .c sweep — metadata_handler.c (2026-05-29)
-
-**Files touched:** `core/src/metadata_handler.c` (deleted)
-
-**Rebase impact:** None. The file was dead source — never referenced by any
-meson.build after ADR-0708 renamed it to `metadata_handler.cpp`. Upstream
-Netflix/vmaf still uses `metadata_handler.c`; on future upstream sync, the
-upstream `.c` file will reappear in the patch context but meson.build will
-continue to reference only `.cpp`. No conflict possible: the deletion only
-affects the fork-local tree.
-
-**Rule for future cpp23 conversions:** when renaming `foo.c` → `foo.cpp` in
-meson.build, always `git rm core/src/foo.c` in the same commit. Leaving
-both files in tree causes the source tree to diverge from the build definition.
-
----
-
 ## cuda-readback-free-host-pinned-leak sweep (2026-05-29)
 
 **Files touched:** `core/src/cuda/kernel_template.h`,
@@ -51,39 +20,6 @@ upstream — it was introduced by the fork's kernel-template ADR. No rebase
 conflict is possible.
 
 
-
-## ADR-0753 — CUDA resolution-aware dispatch scaffold (2026-05-29)
-
-**Files touched (initial + extended scope):**
-- `core/src/feature/cuda/resolution_dispatch.{h,c}` (new)
-- `core/src/feature/cuda/integer_adm/adm_cm.cu` (two kernel macros)
-- `core/src/feature/cuda/integer_adm_cuda.c` (include, struct field, init, dispatch)
-- `core/src/feature/cuda/integer_vif/filter1d.cu` (FILTER1D_8_HORI_NO_BOUNDS macro + instantiation)
-- `core/src/feature/cuda/integer_vif_cuda.c` (struct field, init, resolution-aware dispatch in filter1d_8)
-- `core/src/feature/cuda/integer_ssim/ssim_score.cu` (calculate_ssim_vert_combine_no_bounds)
-- `core/src/feature/cuda/integer_ssim_cuda.c` (struct field, init, resolution-aware dispatch in submit_fex_cuda)
-- `core/src/feature/cuda/AGENTS.md` (invariant notes + verified wirings table)
-- `docs/adr/0753-cuda-resolution-aware-dispatch.md` (new; extended policy table)
-- `docs/backends/cuda/overview.md` (kernel dispatch table extended)
-- `docs/research/0753-cuda-resolution-aware-dispatch-design.md` (new)
-- `changelog.d/added/cuda-resolution-aware-dispatch.md` (new)
-
-**Rebase impact:** Low on `resolution_dispatch.{h,c}` — these are wholly new
-fork-local files; no upstream conflict possible.
-
-**adm_cm.cu:** The ADM_CM_LINE macro was split into ADM_CM_LINE_BOUNDED and
-ADM_CM_LINE_NO_BOUNDS. If upstream Netflix modifies `adm_cm.cu` after the
-fork diverges, the split needs to be reapplied around the new macro body.
-The `extern "C"` wrapping (ADR-0747) must be preserved for both entries.
-
-**integer_adm_cuda.c:** The `AdmStateCuda` struct grew one field
-(`func_adm_cm_line_kernel_8_no_bounds`). If upstream adds fields to the struct
-in the same location, resolve the merge conflict by keeping both additions.
-The new `#include "feature/cuda/resolution_dispatch.h"` line must survive any
-upstream shuffle of the include block.
-
-On rebase: verify that both `cuModuleGetFunction` calls in the init block still
-reference valid kernel symbol names from `adm_cm.cu`.
 
 ## Research-0751 4K baseline + PR #79 adm_cm A/B (2026-05-29)
 
@@ -40283,91 +40219,32 @@ Fork-local files added/modified:
 `docs/adr/README.md` (new row),
 `changelog.d/perf/cuda-f3-struct-by-value-audit.md` (new),
 `docs/state.md` (new row),
-## ADR-0755: C++23 Wave 7 — activate `cpu.cpp` (PR on 2026-05-29)
-
-**No rebase impact** on upstream C/Python code.
-
-`core/src/cpu.c` was deleted and `core/src/meson.build` updated to compile
-`cpu.cpp`. The file `cpu.cpp` is wholly fork-local (no upstream Netflix equivalent).
-No Netflix upstream commit will collide with this deletion.
-
-Fork-local files modified:
-`core/src/cpu.c` (deleted),
-`core/src/meson.build` (cpu.c → cpu.cpp in libvmaf_cpu_sources),
-`docs/adr/0755-cpp23-wave7-single-file.md` (new),
-`docs/adr/README.md` (new row),
-`changelog.d/changed/0755-cpp23-wave7-cpu-cpp.md` (new),
 `docs/rebase-notes.md` (this entry).
-## research/cuda-motion-ncu-profile-20260529
+## perf/cuda-motion-multi-frame-batching-20260529 (2026-05-29)
 
-No rebase impact: research-only commit. No source files modified.
-Files added: `docs/research/0760-cuda-motion-ncu-multi-resolution-20260529.md`,
-`changelog.d/perf/cuda-motion-ncu-multi-resolution.md`,
-`docs/adr/0760-cuda-motion-ncu-multi-resolution.md` (research ADR).
-No upstream collision risk.
+Rebase impact: low. The only changed source file is
+`core/src/feature/cuda/integer_motion_cuda.c`.  The change replaces
+`VmafCudaBuffer *sad` (single uint64_t) with `VmafCudaBuffer *sad_ring`
+(N × uint64_t) and `uint64_t *sad_host` (N-element pinned host array).
+The `MotionStateCuda` struct grows by two pointer fields; no public
+header is changed.
 
+If an upstream Netflix commit touches `integer_motion_cuda.c` (e.g. to
+add a new option or fix a SAD bug), the conflict will be localised to
+the struct definition, `init_fex_cuda`, `submit_fex_cuda`,
+`collect_fex_cuda`, and `close_fex_cuda`.  Resolution: keep the N-slot
+ring layout from this branch; apply any upstream functional change to
+the slot-view pattern.
 
-## HIP ADM buffer-by-pointer refactor (ADR-0759, 2026-05-29)
-
-**Files touched:** `core/src/feature/hip/integer_adm/adm_csf.hip`,
-`core/src/feature/hip/integer_adm/adm_cm.hip`,
-`core/src/feature/hip/integer_adm_hip.c`,
-`core/src/feature/hip/AGENTS.md`
-
-**Rebase impact:** None. All touched files are fork-added; no upstream Netflix/vmaf
-file is modified. The HIP backend does not exist in upstream. No rebase conflict
-is possible with upstream syncs.
-
-The changed kernel signatures are internal to the HIP dispatch path and are not
-part of any public API.
-
----
-
-### go-workspace-audit — Go dependency + test fixes (2026-05-29)
-
-No rebase impact. All changes are Go workspace files entirely fork-local:
-`go.mod` / `go.sum` (added `modernc.org/sqlite` and transitive deps),
-`pkg/observability/observability.go` (added controller metrics fields + `SetControllerSources`),
-`cmd/vmafx-node/executor_test.go`, `cmd/vmafx-node/main_test.go` (test alignment to current API),
-`cmd/vmafx-tune/cmd/root.go` (wire `newLadderCmd`),
-`cmd/vmafx-tune/cmd/compare_test.go` (remove stale stub assertion),
-`changelog.d/fixed/0529-go-workspace-audit.md` (new).
-
-None of these files are touched by Netflix upstream.
-
----
-
-### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
-
-No rebase impact on upstream C/Python code.
-
-All files modified are fork-local:
-`core/src/feature/cuda/integer_ciede/ciede_score.cu` (F3 fix — __ldg + __launch_bounds),
-`core/src/feature/cuda/integer_vif_cuda.c` (resolve pre-existing merge-conflict stub from 24bb5daf89),
-`docs/adr/0762-cuda-ciede-ldg.md` (new),
-`changelog.d/perf/cuda-ciede-ldg.md` (new),
+Fork-local files added/modified:
+`core/src/feature/cuda/integer_motion_cuda.c` (ring buffer),
+`core/src/feature/cuda/AGENTS.md` (N-slot invariant),
+`core/meson_options.txt` (motion_batch_n),
+`core/src/meson.build` (MOTION_CUDA_BATCH_N define),
+`docs/adr/0766-cuda-motion-multi-frame-batching.md` (new),
+`docs/adr/README.md` (new row),
+`docs/research/research-0766-cuda-motion-multi-frame-batching.md` (new),
+`docs/backends/cuda/overview.md` (new section),
+`changelog.d/perf/cuda-motion-multi-frame-batching.md` (new),
 `docs/rebase-notes.md` (this entry),
 `docs/state.md` (new row).
-
-`ciede_score.cu` is entirely fork-local (Netflix upstream has no CUDA ciede kernel).
-A sync-upstream that adds a CUDA ciede kernel upstream would need to incorporate this
-__ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD side
-(ADR-0743 comment block); no Netflix upstream content was discarded.
-
----
-
-## VmafFeatureDictionary ownership fixes (ADR-0806, 2026-05-29)
-
-no rebase impact: REASON — the only changed files are fork-added test files
-(`core/test/test_vif_skip_scale0.c`, `core/test/test_integer_vif_cpu_cuda_parity.c`)
-and docs (`docs/adr/0806-feature-dictionary-ownership.md`, `docs/adr/README.md`,
-`changelog.d/fixed/0806-feature-dictionary-ownership.md`). No upstream Netflix/vmaf
-file is touched. The fixed double-free and leak are in fork-local CUDA parity tests
-that have no upstream counterpart.
-
-## Lint config tightening (ADR-0805, 2026-05-29)
-
-no rebase impact: REASON — changes are confined to config files (`.clang-tidy`,
-`.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
-and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
-touched; the `HeaderFilterRegex` fix has no effect on any upstream file.

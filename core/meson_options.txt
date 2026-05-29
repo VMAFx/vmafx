@@ -132,3 +132,10 @@ option('enable_rust_features',
     type: 'boolean',
     value: false,
     description: 'Build Rust-implemented feature extractors (requires cargo + cbindgen in PATH). ADR-0707 cbindgen pilot: TAD (Temporal Absolute Difference). Default OFF — CI defaults to false; enable_rust_features=true requires cargo + cbindgen.')
+
+option('motion_batch_n',
+    type: 'integer',
+    value: 16,
+    min: 1,
+    max: 64,
+    description: 'N-slot SAD ring buffer size for the CUDA motion extractor (ADR-0766). Each slot is an independent uint64_t device accumulator, eliminating the false-dependency that the single-sad design had between consecutive frames. Full N× sync amortisation requires the engine to batch N submits before collecting; under the current 1-frame-lag dispatch the win is the false-dependency elimination only. Requires enable_cuda=true.')
