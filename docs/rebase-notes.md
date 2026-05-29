@@ -40371,3 +40371,9 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## Drop inert cpp23 shadow files (ADR-0843, 2026-05-29)
+
+no rebase impact: dead file cleanup — removes fork-local cpp23 `.cpp` shadow files
+that were never referenced by any meson target. The `.c` originals that meson
+actually compiles are unchanged. Netflix upstream has none of the removed files.
