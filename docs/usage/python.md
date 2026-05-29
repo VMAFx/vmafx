@@ -4,7 +4,7 @@ The VMAF Python library offers full functionalities from running basic VMAF comm
 
 ## Requirements
 
-Make sure you have `python3` (python 3.8 or higher). You can check the version by `python3 --version`.
+Make sure you have `python3` (Python 3.10 or higher). You can check the version by `python3 --version`.
 
 ### Linux
 
@@ -102,7 +102,15 @@ Run unittests and make sure they all pass:
 
 ### Run VMAF Using `run_vmaf`
 
-One can run VMAF in the command line by `run_vmaf`, which allows the input videos to be the `.yuv` format. To run VMAF on a single reference/distorted video pair, run:
+One can run VMAF in the command line by `run_vmaf`, which allows the input videos to be the `.yuv` format.
+
+The package ships a `__main__` module so the shortest invocation is:
+
+```bash
+python -m vmaf fmt width height ref_path dis_path [options]
+```
+
+Equivalently via the full module path:
 
 ```bash
 python -m vmaf.script.run_vmaf \
