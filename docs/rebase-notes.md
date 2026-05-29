@@ -1624,6 +1624,26 @@ will fail to compile and must add the grpcServer argument.
 
 ---
 
+### ADR-0783 — Kubernetes e2e integration test harness (2026-05-29)
+
+No rebase impact on upstream C/Python code.
+
+All files are wholly fork-local additions:
+`test/e2e/kind-cluster.sh`, `test/e2e/fixtures/gen-tiny-yuv.sh`,
+`test/e2e/fixtures/ref.yuv`, `test/e2e/fixtures/dist.yuv`,
+`test/e2e/kuttl-tests/` (all test case YAML),
+`.github/workflows/e2e-k8s.yml`,
+`docs/k8s/integration-tests.md`,
+`docs/adr/0783-k8s-e2e-integration-test-harness.md`,
+`changelog.d/added/k8s-e2e-integration-test-harness.md`.
+
+Netflix upstream has no Kubernetes test infrastructure; no merge conflict risk.
+A sync-upstream that adds an upstream e2e directory would not conflict with this
+harness because Netflix uses `libvmaf/` path roots that the fork has renamed to
+`core/` (ADR-0700).
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# test/e2e/kuttl-tests/04-rclone-score/03-assert.yaml
+#
+# Assert: VmafxJob job-rclone-cpu reaches Succeeded phase and has a numeric
+# score in status.score, confirming the full rclone-fetch → vmaf-score path.
+#
+# ADR-0783 / ADR-0709.
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: wait-rclone-job-succeeded
+timeout: 180
+---
+apiVersion: vmafx.dev/v1
+kind: VmafxJob
+metadata:
+  name: job-rclone-cpu
+  namespace: vmafx-e2e-test
+status:
+  phase: Succeeded
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: verify-score-populated
+commands:
+  # Confirm status.score is a non-empty number.
+  - command: >-
+      bash -c 'score=$(kubectl get vmafxjob job-rclone-cpu -n vmafx-e2e-test
+      -o jsonpath="{.status.score}") && [ -n "$score" ] &&
+      echo "VMAF score: $score" || (echo "ERROR: status.score not set" && exit 1)'

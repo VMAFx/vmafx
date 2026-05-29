@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# test/e2e/kuttl-tests/05-sidecar-trainer/02-assert.yaml
+#
+# Assert: the sidecar trainer consumed at least 1 sample and pushed a
+# checkpoint to the in-cluster registry stub.
+# status.currentSamples >= 1 AND status.modelVersion is non-empty.
+#
+# ADR-0783 / ADR-0714.
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: wait-checkpoint-pushed
+timeout: 180
+commands:
+  # Poll until currentSamples >= 1.
+  - command: >-
+      bash -c 'for i in $(seq 30); do
+        samples=$(kubectl get vmafxmodeltraining train-online-e2e -n vmafx-e2e-test
+          -o jsonpath="{.status.currentSamples}" 2>/dev/null);
+        [ "${samples:-0}" -ge 1 ] && echo "samples=$samples" && exit 0;
+        sleep 2;
+      done; echo "ERROR: currentSamples never reached 1" && exit 1'
+  # Poll until modelVersion is set (checkpoint pushed).
+  - command: >-
+      bash -c 'for i in $(seq 30); do
+        ver=$(kubectl get vmafxmodeltraining train-online-e2e -n vmafx-e2e-test
+          -o jsonpath="{.status.modelVersion}" 2>/dev/null);
+        [ -n "$ver" ] && echo "modelVersion=$ver" && exit 0;
+        sleep 2;
+      done; echo "ERROR: modelVersion never set (checkpoint not pushed)" && exit 1'

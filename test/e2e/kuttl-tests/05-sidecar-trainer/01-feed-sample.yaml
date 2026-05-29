@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# test/e2e/kuttl-tests/05-sidecar-trainer/01-feed-sample.yaml
+#
+# Wait for the training CR to be initialised, then trigger a completed
+# VmafxJob so the sidecar has one feedback sample available.  We reuse
+# job-tiny-cpu from test case 02 (it succeeded there); if this test case
+# runs after 02, the operator's reconciler should already see a Succeeded
+# job and tick the sample counter.  A second fallback job is created here
+# in case the namespace was cleaned between test cases.
+#
+# ADR-0783 / ADR-0714.
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: wait-training-init
+timeout: 60
+---
+# Wait for VmafxModelTraining to reach Running (initialisation complete).
+apiVersion: vmafx.dev/v1
+kind: VmafxModelTraining
+metadata:
+  name: train-online-e2e
+  namespace: vmafx-e2e-test
+status:
+  phase: Running
+---
+# Inject a completed VmafxJob to provide a feedback sample to the trainer.
+# The operator reconciler watches Succeeded jobs and increments currentSamples.
+apiVersion: vmafx.dev/v1
+kind: VmafxJob
+metadata:
+  name: job-trainer-seed
+  namespace: vmafx-e2e-test
+spec:
+  reference: "file:///fixtures/ref.yuv"
+  distorted: "file:///fixtures/dist.yuv"
+  backend: cpu

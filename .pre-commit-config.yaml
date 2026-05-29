@@ -29,7 +29,10 @@ repos:
         # superfences) which the default SafeLoader can't resolve.
         # Helm templates under deploy/helm/ contain Go template syntax ({{- if ... }})
         # which is not valid YAML; exclude them from the YAML linter.
-        exclude: '\.clang-format$|^mkdocs\.yml$|^deploy/helm/.*/templates/'
+        # kuttl test files are legitimately multi-document YAML (multiple `---`
+        # separators per file); the check-yaml hook's single-document constraint
+        # does not apply. Exclude the entire kuttl-tests/ directory.
+        exclude: '\.clang-format$|^mkdocs\.yml$|^deploy/helm/.*/templates/|^test/e2e/kuttl-tests/'
       - id: check-json
       - id: check-toml
       - id: check-added-large-files
