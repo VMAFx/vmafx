@@ -577,6 +577,34 @@ test_motion_v2_simd = executable('test_motion_v2_simd',
 )
 endif
 
+# ADR-0854: direct AVX-512 parity tests for the motion kernels.
+# Covers motion_score_pipeline_{8,16}_avx512, sad_avx512,
+# y_convolution_{8,16}_avx512, and x_convolution_16_avx512 against
+# their scalar references.  Gated to x86_64/x86 (AVX-512 ISA); the
+# test itself also gates on simd_test_have_avx512() at runtime so it
+# skips cleanly on hosts without AVX-512.
+motion_avx512_parity_test_archs = ['x86_64', 'x86']
+if motion_avx512_parity_test_archs.contains(host_machine.cpu_family())
+test_motion_avx512_parity = executable('test_motion_avx512_parity',
+    ['test.c', 'test_motion_avx512_parity.c',
+     '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ],
+)
+endif
+
 ssimulacra2_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
 if ssimulacra2_simd_test_archs.contains(host_machine.cpu_family())
 # `-ffp-contract=off` is required for bit-exactness on aarch64:
@@ -1068,6 +1096,11 @@ endif
 if motion_v2_simd_test_archs.contains(host_machine.cpu_family())
 test('test_motion_v2_simd', test_motion_v2_simd, suite : ['fast', 'simd'])
 endif
+
+if motion_avx512_parity_test_archs.contains(host_machine.cpu_family())
+test('test_motion_avx512_parity', test_motion_avx512_parity, suite : ['fast', 'simd'])
+endif
+
 
 if psnr_hvs_neon_test_archs.contains(host_machine.cpu_family())
 test('test_psnr_hvs_neon', test_psnr_hvs_neon, suite : ['fast', 'simd'])

@@ -1,6 +1,6 @@
-# AGENTS.md — libvmaf
+# AGENTS.md — core
 
-Orientation for any coding agent working inside `libvmaf/`. Root orientation
+Orientation for any coding agent working inside `core/`. Root orientation
 lives in [../AGENTS.md](../AGENTS.md); this file is the scoped hand-off for
 this subtree. Claude Code equivalents in [../CLAUDE.md](../CLAUDE.md).
 
@@ -10,7 +10,7 @@ The C engine — VMAF metric, feature extractors, backends, public API,
 CLI (`tools/vmaf`, `tools/vmaf_bench`), and C unit tests.
 
 ```
-libvmaf/
+core/
   include/libvmaf/   # public C API (libvmaf.h, dnn.h, model.h, picture.h, ...)
   src/               # engine + feature extractors + backends
     cuda/            # CUDA backend runtime (picture, dispatch, ring buffer)
@@ -282,8 +282,8 @@ libvmaf/
 - **icpx-aware clang-tidy wrapper for SYCL TUs** (fork-local,
   [ADR-0217](../docs/adr/0217-sycl-toolchain-cleanup.md)).
   [`scripts/ci/clang-tidy-sycl.sh`](../scripts/ci/clang-tidy-sycl.sh)
-  is the single entry point for linting `libvmaf/src/sycl/**` and
-  `libvmaf/src/feature/sycl/**` files; it injects the oneAPI SYCL
+  is the single entry point for linting `core/src/sycl/**` and
+  `core/src/feature/sycl/**` files; it injects the oneAPI SYCL
   include path + `-D__SYCL_DEVICE_ONLY__=0` so stock LLVM clang-tidy
   resolves `<sycl/sycl.hpp>`. The CI lane
   `Clang-Tidy SYCL (Changed Files, Advisory)` in
@@ -335,9 +335,9 @@ libvmaf/
 
 - **Symbol visibility: every new public entry point needs `VMAF_EXPORT`**
   (fork-local, [ADR-0379](../docs/adr/0379-libvmaf-symbol-visibility.md) /
-  Research-0092). `libvmaf/src/meson.build` compiles all TUs with
+  Research-0092). `core/src/meson.build` compiles all TUs with
   `-fvisibility=hidden`; only symbols annotated with `VMAF_EXPORT`
-  (defined in `libvmaf/include/libvmaf/macros.h`) appear in the
+  (defined in `core/include/libvmaf/macros.h`) appear in the
   dynamic symbol table of `libvmaf.so`. When adding a new public C
   entry point, apply `VMAF_EXPORT` to its declaration in the installed
   public header — the attribute propagates from declaration to
@@ -358,7 +358,7 @@ libvmaf/
 - **Fuzz-harness coverage rule** (fork-local,
   [ADR-0270](../docs/adr/0270-fuzzing-scaffold.md) +
   [ADR-0311](../docs/adr/0311-libfuzzer-harness-expansion.md)): every
-  attacker-reachable parser added under `libvmaf/tools/` must ship
+  attacker-reachable parser added under `core/tools/` must ship
   with a matching libFuzzer harness under
   [`test/fuzz/`](test/fuzz/) before merge — the convention is one
   `fuzz_<surface>.c` + a 3–6-seed corpus + a row in
@@ -450,14 +450,13 @@ flag pattern (`--no_sycl` for "CUDA"). Numbers from runs older than
 the corrected methodology.
 
 - **Build-option combination validation** (fork-local, fixes 1b/1c/1d of audit-build-matrix-symbols-2026-05-16):
-  `libvmaf/src/meson.build` validates dependent-option combinations and errors or warns when incompatible flags are set:
+  `core/src/meson.build` validates dependent-option combinations and errors or warns when incompatible flags are set:
   — `enable_mcp_sse=enabled/true` requires `enable_mcp=true` (error if violated);
   — `enable_mcp_uds=true` requires `enable_mcp=true` (error if violated);
   — `enable_mcp_stdio=true` requires `enable_mcp=true` (error if violated);
   — `enable_avx512=true` with `enable_asm=false` issues a warning (no-op, not an error);
   — `enable_hipcc=true` with `enable_hip=false` issues a warning (no-op, not an error).
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
-<<<<<<< HEAD
 
 - **C→C++23 conversion safety invariants** (adversarial review 2026-05-28,
   `docs/research/cpp23-wave-adversarial-review-20260528.md`):
@@ -512,9 +511,6 @@ the corrected methodology.
     map `"ansnr"` to `"float_ansnr"` while the C library lacks the extractor.
   The legacy path (`VmafFeatureExtractor`, line ~301) retains the mapping as
   documented debt — tracked as T-LEGACY-RUNNER-ANSNR-BROKEN in `docs/state.md`.
-  The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
-=======
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ## Performance benchmark invariant (ADR-0752)
 
@@ -531,3 +527,23 @@ the corrected methodology.
   `testdata/dis_1920x1080_48f.yuv`, `testdata/dis_2560x1440_48f.yuv`) are
   generated on first run and are **not committed** (they are reproducible via
   `ffmpeg -vf scale=W:H:flags=bilinear` from the in-tree 576×324 fixture).
+
+## AVX-512 motion parity test invariant (ADR-0854)
+
+- `core/test/test_motion_avx512_parity.c` provides direct bit-exact unit tests
+  for all six AVX-512 motion kernels.  If any of the following functions is
+  modified, the corresponding test case **must** be re-run and must pass:
+    - `motion_score_pipeline_8_avx512` (motion_v2_avx512.c)
+    - `motion_score_pipeline_16_avx512` (motion_v2_avx512.c)
+    - `sad_avx512` (motion_avx512.c)
+    - `y_convolution_8_avx512` (motion_avx512.c)
+    - `y_convolution_16_avx512` (motion_avx512.c)
+    - `x_convolution_16_avx512` (motion_avx512.c)
+- The scalar reference implementations in the test file are line-for-line
+  mirrors of the production scalar paths.  If the scalar production path
+  is changed (e.g. rounding bias, filter constants), update the test's
+  scalar reference accordingly and regenerate expected values.
+- The test skips on hosts without `VMAF_X86_CPU_FLAG_AVX512`; this is
+  intentional and correct.  CI must run on an AVX-512-capable host (see
+  `.github/workflows/build.yml` x86_64 runner) for the tests to be
+  meaningful.

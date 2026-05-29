@@ -40371,3 +40371,17 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## release-please draft mode
+
+no rebase impact: release-tooling-only change (`release-please-config.json`
+`"draft": true`). No C sources, headers, or test logic modified.
+
+## AVX-512 motion parity tests (ADR-0854, 2026-05-29)
+
+no rebase impact: REASON — changes are confined to new test files
+(`core/test/test_motion_avx512_parity.c`, `changelog.d/added/motion-avx512-parity-tests.md`,
+`docs/adr/0854-motion-avx512-parity-tests.md`) and additive changes to
+`core/test/simd_bitexact_test.h` (new helper function) and `core/test/meson.build`
+(new test registration).  No upstream Netflix/vmaf production source is modified;
+no existing test is changed; no golden assertions are touched.
