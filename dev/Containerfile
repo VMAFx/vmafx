@@ -226,12 +226,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG NEO_VER=26.18.38308.1
 ARG GMMLIB_VER=22.10.0
 ARG IGC_VER=2.34.4+21428
-# hadolint ignore=DL3008
+# clinfo is installed in the same layer as the NEO .debs to avoid a
+# separate apt-get update/install round (saves one image layer).
+# DL3009 suppressed: apt lists are cleaned between the two apt-get calls
+# (after clinfo install and again after the NEO .deb set install).
+# hadolint ignore=DL3003,DL3008,DL3009
 RUN apt-get update && apt-get install -y --no-install-recommends clinfo \
-    && rm -rf /var/lib/apt/lists/*
-
-# hadolint ignore=DL3003,DL3008
-RUN mkdir -p /tmp/neo && cd /tmp/neo \
+    && find /var/lib/apt/lists -mindepth 1 -delete \
+    && mkdir -p /tmp/neo && cd /tmp/neo \
     && curl -fsSL -O "https://github.com/intel/intel-graphics-compiler/releases/download/v${IGC_VER%+*}/intel-igc-core-2_${IGC_VER}_amd64.deb" \
     && curl -fsSL -O "https://github.com/intel/intel-graphics-compiler/releases/download/v${IGC_VER%+*}/intel-igc-opencl-2_${IGC_VER}_amd64.deb" \
     && curl -fsSL -O "https://github.com/intel/compute-runtime/releases/download/${NEO_VER}/intel-opencl-icd_${NEO_VER}-0_amd64.deb" \
@@ -244,7 +246,7 @@ RUN mkdir -p /tmp/neo && cd /tmp/neo \
         ./libigdgmm12_${GMMLIB_VER}_amd64.deb \
         ./intel-opencl-icd_${NEO_VER}-0_amd64.deb \
         ./libze-intel-gpu1_${NEO_VER}-0_amd64.deb \
-    && cd / && rm -rf /tmp/neo \
+    && cd / && find /tmp/neo -maxdepth 0 -exec rm -rf {} + \
     && find /var/lib/apt/lists -mindepth 1 -delete
 
 # Verify NEO compute-runtime packages were actually installed.
@@ -531,7 +533,8 @@ RUN cd libvmaf && CC=icx CXX=icpx meson setup build \
 
 USER root
 RUN cd libvmaf && ninja -C build install \
-    && ldconfig
+    && ldconfig \
+    && find /build/vmaf/libvmaf/build -maxdepth 0 -exec rm -rf {} +
 
 # ---------- Build-time backend smoke probe ---------------------------------
 # Walk every GPU backend the meson configure step claims to have enabled and
@@ -860,9 +863,14 @@ RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkg
     && make -j"$(nproc)"
 
 USER root
+# Install and then remove the FFmpeg source tree (sources + build objects).
+# The installed binaries and libraries live under /usr/local/; the source
+# tree at /build/ffmpeg is not needed at runtime and is several GB
+# (object files, .d deps, compiled codecs). ADR-0790.
 RUN cd /build/ffmpeg \
     && make install \
-    && /usr/local/bin/ffmpeg -version | head -3
+    && /usr/local/bin/ffmpeg -version | head -3 \
+    && find /build/ffmpeg -maxdepth 0 -exec rm -rf {} +
 
 # ---- Build-time encoder probe (ADR-0541) ----------------------------------
 # Walk every encoder this stage promises and grep the actual `ffmpeg
@@ -906,11 +914,11 @@ USER root
 # crashed on ``ModuleNotFoundError: matplotlib`` because the package
 # wasn't baked in. ADR-0498 closes the gap.
 RUN python3.14 -m venv /opt/vmaf-venv \
-    && /opt/vmaf-venv/bin/pip install --upgrade pip \
-    && /opt/vmaf-venv/bin/pip install matplotlib \
-    && /opt/vmaf-venv/bin/pip install -e /build/vmaf/mcp-server/vmaf-mcp \
-    && /opt/vmaf-venv/bin/pip install -e /build/vmaf/ai \
-    && /opt/vmaf-venv/bin/pip install -e /build/vmaf/tools/vmaf-tune
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir matplotlib \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/mcp-server/vmaf-mcp \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/ai \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/tools/vmaf-tune
 
 ENV PATH=/opt/vmaf-venv/bin:${PATH}
 ENV PYTHONPATH=/build/vmaf/python:${PYTHONPATH}
