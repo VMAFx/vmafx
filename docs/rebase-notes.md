@@ -40371,3 +40371,9 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## Changelog fragment consolidation (2026-05-29)
+
+no rebase impact: changelog-only — `scripts/release/concat-changelog-fragments.sh` awk
+fix + `changelog.d/` fragment moves do not touch any upstream Netflix/vmaf source file.
+No C, Python, or test changes.

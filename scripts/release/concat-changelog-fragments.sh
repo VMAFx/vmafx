@@ -103,7 +103,7 @@ fi
 
 current_block="$(awk '
     /^## \[Unreleased\]/ {in_block=1; next}
-    in_block && /^## [^[]/ {in_block=0}
+    in_block && /^## \[(Unreleased|[0-9])/ {in_block=0}
     in_block {print}
 ' "$CHANGELOG")"
 
@@ -134,7 +134,7 @@ tmp_out="$(mktemp)"
 
 awk '
     /^## \[Unreleased\]/ {print; in_block=1; next}
-    in_block && /^## [^[]/ {in_block=0}
+    in_block && /^## \[(Unreleased|[0-9])/ {in_block=0}
     !in_block {print}
 ' "$CHANGELOG" | awk -v body="$tmp_body" '
     /^## \[Unreleased\]/ {
