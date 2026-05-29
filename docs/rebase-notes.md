@@ -40339,3 +40339,7 @@ All files modified are fork-local:
 A sync-upstream that adds a CUDA ciede kernel upstream would need to incorporate this
 __ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD side
 (ADR-0743 comment block); no Netflix upstream content was discarded.
+
+## ADR-0777 — Thread-Safety Audit: CUDA / SYCL / HIP Backends (2026-05-29)
+
+no rebase impact: docs/research + docs/adr only; no source files were changed.
