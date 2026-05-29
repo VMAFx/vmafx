@@ -6,6 +6,19 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## codeql-config-fix-fp-triage (2026-05-29, ADR-0850)
+
+**Files touched:**
+`.github/codeql-config.yml`
+
+**Rebase impact:** None. This change resolves Git merge-conflict markers that were
+introduced into `.github/codeql-config.yml` by a prior merge-train sweep and retained
+the correct (`core/`) path set post-ADR-0700 rename. The conflict markers exist only
+in the fork's history; upstream Netflix/vmaf does not have this file. No rebase
+conflict is possible.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
