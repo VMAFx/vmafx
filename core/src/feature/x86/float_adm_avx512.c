@@ -30,6 +30,36 @@ static inline __m512 avx512_abs_ps(__m512 v)
     return _mm512_castsi512_ps(_mm512_and_si512(_mm512_castps_si512(v), mask));
 }
 
+/*
+ * Horizontally sum 4 doubles in a __m256d to a scalar double.
+ * Tree order: (v[0]+v[1]) + (v[2]+v[3]).
+ * Mirrors hadd_pd4 in float_adm_avx2.c — kept here to avoid a cross-TU
+ * dependency (each TU is compiled with its own ISA flags).
+ */
+/* NOLINTNEXTLINE(readability-function-size) — ADR-0139 bit-exactness: inline
+ * horizontal double reduction must not be outline-called. */
+static inline double hadd_pd4(__m256d v)
+{
+    __m256d h = _mm256_hadd_pd(v, v);
+    return _mm_cvtsd_f64(_mm256_castpd256_pd128(h)) + _mm_cvtsd_f64(_mm256_extractf128_pd(h, 1));
+}
+
+/*
+ * Widen all 16 float lanes of a __m512 to double and horizontally sum.
+ * Splits into four 4-float groups via _mm512_extractf32x4_ps, widens each
+ * with _mm256_cvtps_pd, and reduces with hadd_pd4.  The four group-sums are
+ * then added left-to-right.  This avoids a float-precision intermediate store
+ * and keeps the accumulation in double throughout — ADR-0139 / F2 fix.
+ */
+static inline double hsum_ps_to_double(__m512 v)
+{
+    __m256d d0 = _mm256_cvtps_pd(_mm512_extractf32x4_ps(v, 0));
+    __m256d d1 = _mm256_cvtps_pd(_mm512_extractf32x4_ps(v, 1));
+    __m256d d2 = _mm256_cvtps_pd(_mm512_extractf32x4_ps(v, 2));
+    __m256d d3 = _mm256_cvtps_pd(_mm512_extractf32x4_ps(v, 3));
+    return hadd_pd4(d0) + hadd_pd4(d1) + hadd_pd4(d2) + hadd_pd4(d3);
+}
+
 void float_adm_dwt2_avx512(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
                            int w, int h, int src_stride, int dst_stride)
 {
@@ -71,7 +101,9 @@ void float_adm_dwt2_avx512(const float *src, const adm_dwt_band_t_s *dst, int **
         const float *row2 = src + ind_y[2][i] * src_px_stride;
         const float *row3 = src + ind_y[3][i] * src_px_stride;
 
-        /* Vertical pass: process 16 floats per iteration with AVX-512 */
+        /* Vertical pass: process 16 floats per iteration with AVX-512.
+         * F3: mul+add chains match scalar tail; -ffp-contract=off per-TU
+         * (meson.build carve-out) prevents auto-FMA in both paths. */
         for (j = 0; j + 16 <= w; j += 16) {
             __m512 s0 = _mm512_loadu_ps(row0 + j);
             __m512 s1 = _mm512_loadu_ps(row1 + j);
@@ -285,10 +317,13 @@ float float_adm_csf_den_scale_avx512(const float *src, int w, int h, int src_str
             __m512 val2 = _mm512_mul_ps(val, val);
             __m512 val3 = _mm512_mul_ps(val2, val);
 
-            _Alignas(64) float tmp[16];
-            _mm512_store_ps(tmp, val3);
-            for (int k = 0; k < 16; k++)
-                row_accum += (double)tmp[k];
+            /*
+             * F2 fix: widen 16 float lanes to double via _mm512_extractf32x4_ps
+             * + _mm256_cvtps_pd (4 groups of 4), reducing each group with
+             * hadd_pd4 in double.  Avoids a float-precision intermediate store.
+             * See hsum_ps_to_double() above — ADR-0139.
+             */
+            row_accum += hsum_ps_to_double(val3);
         }
 
         for (; j < right; ++j) {
@@ -322,10 +357,8 @@ float float_adm_sum_cube_avx512(const float *x, int w, int h, int stride, int le
             __m512 val2 = _mm512_mul_ps(val, val);
             __m512 val3 = _mm512_mul_ps(val2, val);
 
-            _Alignas(64) float tmp[16];
-            _mm512_store_ps(tmp, val3);
-            for (int k = 0; k < 16; k++)
-                row_accum += (double)tmp[k];
+            /* F2 fix: same hsum_ps_to_double path as csf_den_scale above. */
+            row_accum += hsum_ps_to_double(val3);
         }
 
         for (; j < right; ++j) {

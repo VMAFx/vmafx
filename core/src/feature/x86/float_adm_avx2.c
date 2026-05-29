@@ -29,6 +29,22 @@ static const float dwt2_db2_coeffs_lo[4] = {0.482962913144690f, 0.83651630373746
 static const float dwt2_db2_coeffs_hi[4] = {-0.129409522550921f, -0.224143868041857f,
                                             0.836516303737469f, -0.482962913144690f};
 
+/*
+ * Horizontally sum 4 doubles in a __m256d to a scalar double.
+ * Uses _mm256_hadd_pd + lane extraction to avoid a store+loop.
+ * Tree order: (v[0]+v[1]) + (v[2]+v[3]).
+ */
+/* NOLINTNEXTLINE(readability-function-size) — ADR-0139 bit-exactness: inline
+ * horizontal double reduction must not be outline-called (register allocation
+ * changes rounding order on MSVC /fp:precise). */
+static inline double hadd_pd4(__m256d v)
+{
+    /* [v0+v1, v2+v3, v0+v1, v2+v3] */
+    __m256d h = _mm256_hadd_pd(v, v);
+    /* Extract upper lane (v2+v3) and add to lower (v0+v1). */
+    return _mm_cvtsd_f64(_mm256_castpd256_pd128(h)) + _mm_cvtsd_f64(_mm256_extractf128_pd(h, 1));
+}
+
 void float_adm_dwt2_avx2(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
                          int w, int h, int src_stride, int dst_stride)
 {
@@ -72,7 +88,10 @@ void float_adm_dwt2_avx2(const float *src, const adm_dwt_band_t_s *dst, int **in
         const float *row2 = src + ind_y[2][i] * src_px_stride;
         const float *row3 = src + ind_y[3][i] * src_px_stride;
 
-        /* Vertical pass: process 8 columns at a time with AVX2. */
+        /* Vertical pass: process 8 columns at a time with AVX2.
+         * F3: mul+add chains here match the scalar tail below; with
+         * -ffp-contract=off (enforced by the per-TU meson.build carve-out)
+         * neither path auto-fuses to FMA, keeping both paths bit-identical. */
         int j = 0;
         for (; j + 8 <= w; j += 8) {
             __m256 s0 = _mm256_loadu_ps(row0 + j);
@@ -226,10 +245,18 @@ float float_adm_csf_den_scale_avx2(const float *src, int w, int h, int src_strid
             __m256 vsq = _mm256_mul_ps(v, v);
             __m256 vcube = _mm256_mul_ps(vsq, v);
 
-            _Alignas(32) float tmp[8];
-            _mm256_store_ps(tmp, vcube);
-            for (int k = 0; k < 8; k++)
-                row_accum += (double)tmp[k];
+            /*
+             * F2 fix: accumulate via double-precision widening instead of
+             * store-to-tmp + scalar loop.  Widen the low 4 and high 4 float
+             * lanes to double separately, sum each group with hadd_pd4, then
+             * add both halves.  This avoids an intermediate float-precision
+             * store and keeps the entire lane accumulation in double. The
+             * tree reduction order (lo-half sum + hi-half sum) is consistent
+             * across all SIMD paths (AVX2 and AVX-512 twins) — see ADR-0139.
+             */
+            __m256d lo = _mm256_cvtps_pd(_mm256_castps256_ps128(vcube));
+            __m256d hi = _mm256_cvtps_pd(_mm256_extractf128_ps(vcube, 1));
+            row_accum += hadd_pd4(lo) + hadd_pd4(hi);
         }
 
         for (; j < right; ++j) {
@@ -264,10 +291,11 @@ float float_adm_sum_cube_avx2(const float *x, int w, int h, int stride, int left
             __m256 vsq = _mm256_mul_ps(v, v);
             __m256 vcube = _mm256_mul_ps(vsq, v);
 
-            _Alignas(32) float tmp[8];
-            _mm256_store_ps(tmp, vcube);
-            for (int k = 0; k < 8; k++)
-                row_accum += (double)tmp[k];
+            /* F2 fix: widen to double via _mm256_cvtps_pd, avoid store+loop.
+             * See float_adm_csf_den_scale_avx2 for rationale. */
+            __m256d lo = _mm256_cvtps_pd(_mm256_castps256_ps128(vcube));
+            __m256d hi = _mm256_cvtps_pd(_mm256_extractf128_ps(vcube, 1));
+            row_accum += hadd_pd4(lo) + hadd_pd4(hi);
         }
 
         for (; j < right; ++j) {
