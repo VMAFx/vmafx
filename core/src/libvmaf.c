@@ -292,7 +292,11 @@ free_framesync:
 free_v:
     free(v);
 fail:
-    return -ENOMEM;
+    /* Return the actual error code from the failing sub-init rather than
+     * a hardcoded -ENOMEM (which is only correct when the malloc fails).
+     * CERT ERR33-C: callers must be able to distinguish OOM from a
+     * configuration error returned by vmaf_framesync_init et al. */
+    return err ? err : -ENOMEM;
 }
 
 #ifdef HAVE_CUDA
@@ -343,6 +347,12 @@ int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictureConfigurati
 {
     if (!vmaf)
         return -EINVAL;
+    /* Guard against double-call: ring_buffer is non-NULL after the first
+     * successful preallocation.  Silently overwriting it would leak the
+     * existing pool and corrupt any in-flight CUDA picture references.
+     * -EBUSY is the POSIX code for "resource already in use". */
+    if (vmaf->cuda.ring_buffer)
+        return -EBUSY;
 
     int err = 0;
 
@@ -1331,10 +1341,18 @@ int vmaf_close(VmafContext *vmaf)
     if (!vmaf)
         return -EINVAL;
 
-    vmaf_thread_pool_wait(vmaf->thread_pool);
+    /* Propagate errors from cleanup helpers per CERT ERR33-C / Power-of-10 #7.
+     * Use the first non-zero code; later cleanup must still run so we
+     * cannot bail on the first error.
+     * Guard: thread_pool is NULL when cfg.n_threads == 0 (single-threaded
+     * mode); vmaf_thread_pool_wait returns -EINVAL for a NULL pool, which
+     * would be a false error here. */
+    int close_err = vmaf->thread_pool ? vmaf_thread_pool_wait(vmaf->thread_pool) : 0;
     if (vmaf->prev_ref.ref)
         vmaf_picture_unref(&vmaf->prev_ref);
-    vmaf_framesync_destroy(vmaf->framesync);
+    const int framesync_err = vmaf_framesync_destroy(vmaf->framesync);
+    if (!close_err)
+        close_err = framesync_err;
     feature_extractor_vector_destroy(&(vmaf->registered_feature_extractors));
     vmaf_feature_collector_destroy(vmaf->feature_collector);
     vmaf_thread_pool_destroy(vmaf->thread_pool);
@@ -1376,7 +1394,7 @@ int vmaf_close(VmafContext *vmaf)
 #endif
     free(vmaf);
 
-    return 0;
+    return close_err;
 }
 
 int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
@@ -2870,8 +2888,10 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
     int outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 #endif
     if (outfd < 0) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "could not open file: %s\n", output_path);
-        return -EINVAL;
+        /* Capture errno immediately — it is clobbered by fprintf(3). */
+        const int open_errno = errno;
+        (void)fprintf(stderr, "could not open file: %s\n", output_path);
+        return -open_errno;
     }
 #ifdef _WIN32
     FILE *outfile = _fdopen(outfd, "w");
@@ -2879,13 +2899,15 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
     FILE *outfile = fdopen(outfd, "w");
 #endif
     if (!outfile) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "could not open file: %s\n", output_path);
+        /* Same: capture before fprintf clobbers errno. */
+        const int fdopen_errno = errno;
+        (void)fprintf(stderr, "could not open file: %s\n", output_path);
 #ifdef _WIN32
         (void)_close(outfd);
 #else
         (void)close(outfd);
 #endif
-        return -EINVAL;
+        return -fdopen_errno;
     }
 
     /* ADR-0606: Compute fps defensively to avoid 0.0/0.0 = NaN when either

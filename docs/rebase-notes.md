@@ -24,6 +24,20 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 **Rebase impact:** no rebase impact — all changes are test files and CI workflows.
 None of these files have upstream counterparts in Netflix/vmaf.
 
+## pr125-errno-defects (2026-05-29)
+
+**Files touched:**
+`core/src/libvmaf.c`, `core/src/cuda/common.c`
+
+**Rebase impact:** Low. Changes are confined to error-return paths:
+`open(2)` errno propagation, `cuInit` errno mapping, `vmaf_close`
+return-value propagation, `-EBUSY` guard, and `vmaf_init` error passthrough.
+None of these paths exist in upstream Netflix/vmaf as the fork-added CUDA
+backend and the fdopen-based file writer are fork-local. On upstream sync,
+`core/src/libvmaf.c` will need a three-way merge against the errno-propagation
+hunks; the CUDA-backend changes in `cuda/common.c` are entirely fork-local
+and will not conflict.
+
 ---
 
 ## libvmaf.Score / ScoreDirect ctx.Context plumbing (2026-05-31, fix/libvmaf-score-ctx)

@@ -178,7 +178,11 @@ int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg)
                  "See docs/backends/cuda/overview.md#runtime-requirements.\n");
         free(c);
         *cu_state = NULL;
-        return -EINVAL;
+        /* -ENOSYS: the runtime capability (libcuda.so.1) is absent from
+         * this system — analogous to a syscall not implemented.  Callers
+         * can probe this code to degrade gracefully to a CPU path.
+         * Mirror: SYCL common.cpp returns -ENOSYS for a missing runtime. */
+        return -ENOSYS;
     }
 
     err = c->f->cuInit(0);
@@ -192,7 +196,12 @@ int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg)
         cuda_free_functions(&c->f);
         free(c);
         *cu_state = NULL;
-        return -EINVAL;
+        /* -ENODEV: the driver loaded but cuInit(0) failed — the most
+         * common cause is no CUDA-capable device visible to the process
+         * (VM with no GPU passthrough, driver/userspace version mismatch).
+         * Mirror: sycl/common.cpp and cuda/cuda_helper.cuh both return
+         * -ENODEV when no usable device is found. */
+        return -ENODEV;
     }
 
     /* Netflix#1300 — if the inner init fails (no visible device,
