@@ -40371,3 +40371,17 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## `core/src/libvmaf.c` — `prev_ref` UAF fix in `read_pictures_dispatch_one` (ADR-0778)
+
+The synchronous non-GPU dispatch path now calls `vmaf_picture_ref` /
+`vmaf_picture_unref` around `fex->prev_ref` (previously a bare struct
+copy). If upstream Netflix/vmaf also touches `read_pictures_dispatch_one`
+or the `prev_ref` plumbing, verify the ref-counting contract is preserved
+in the merge.
+
+## `core/src/picture_pool.c` — `pool_preallocate_pictures` error-unwind fix (ADR-0778)
+
+The two-pass restructuring (allocate all, then strip `priv`/`ref`)
+avoids a buffer leak on partial allocation failure. No ABI change; no
+conflict risk unless upstream also restructures this function.

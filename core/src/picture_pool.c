@@ -81,16 +81,29 @@ static int pooled_picture_release(VmafPicture *pic, void *cookie)
 
 static int pool_preallocate_pictures(VmafPicturePool *p, VmafPicturePoolConfig cfg)
 {
+    /* ADR-0778 Fix-E: strip priv/ref only after the full allocation loop
+     * succeeds.  The original code stripped immediately after each
+     * vmaf_picture_alloc, leaving the unwind-path vmaf_picture_unref calls
+     * with pic->ref == NULL, so they returned -EINVAL and leaked the buffer.
+     * Now: allocate all pictures first, then strip priv/ref in a second
+     * pass; the error unwind uses vmaf_picture_unref on intact pictures
+     * since the strip pass has not run yet. */
     for (unsigned i = 0; i < cfg.pic_cnt; i++) {
         int err = vmaf_picture_alloc(&p->pictures[i], cfg.pix_fmt, cfg.bpc, cfg.w, cfg.h);
         if (err) {
-            // Free any pictures we've already allocated
+            /* Free any pictures we've already fully allocated (priv/ref still
+             * intact on these since the strip pass has not run yet). */
             for (unsigned j = 0; j < i; j++) {
-                vmaf_picture_unref(&p->pictures[j]);
+                (void)vmaf_picture_unref(&p->pictures[j]);
             }
             return err;
         }
+    }
 
+    /* All pictures allocated successfully — now strip priv and ref so that
+     * pool_fetch can (re-)initialise them on every fetch without leaking the
+     * originals. */
+    for (unsigned i = 0; i < cfg.pic_cnt; i++) {
         // Clear priv and ref - we'll recreate them on each fetch
         free(p->pictures[i].priv);
         vmaf_ref_close(p->pictures[i].ref);
