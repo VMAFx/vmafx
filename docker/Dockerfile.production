@@ -52,7 +52,7 @@ COPY . .
 # default image). ONNX Runtime DNN is disabled to remove the onnxruntime.so
 # dependency from the runtime image — users who need tiny-AI scoring should
 # run the server variant where the Python venv carries onnxruntime.
-RUN meson setup /build libvmaf \
+RUN meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \

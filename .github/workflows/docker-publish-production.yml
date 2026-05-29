@@ -295,6 +295,21 @@ jobs:
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
+      - name: Install syft + generate SBOM + attest
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+
+      - name: Generate SBOM + attest (ROCm 6)
+        run: |
+          syft \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}" \
+            --output cyclonedx-json \
+            --file sbom-rocm6.cdx.json
+          cosign attest --yes \
+            --predicate sbom-rocm6.cdx.json \
+            --type cyclonedx \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+        continue-on-error: true   # SBOM is best-effort on GPU builds
+
   # -----------------------------------------------------------------------
   # GPU variant: oneAPI 2026 (amd64 only)
   # -----------------------------------------------------------------------
@@ -354,6 +369,21 @@ jobs:
         run: |
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+
+      - name: Install syft + generate SBOM + attest
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+
+      - name: Generate SBOM + attest (oneAPI 2026)
+        run: |
+          syft \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}" \
+            --output cyclonedx-json \
+            --file sbom-oneapi2026.cdx.json
+          cosign attest --yes \
+            --predicate sbom-oneapi2026.cdx.json \
+            --type cyclonedx \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+        continue-on-error: true   # SBOM is best-effort on GPU builds
 
   # -----------------------------------------------------------------------
   # GPU variant: Vulkan (amd64 + arm64 via QEMU)
@@ -417,6 +447,21 @@ jobs:
         run: |
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+
+      - name: Install syft + generate SBOM + attest
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+
+      - name: Generate SBOM + attest (Vulkan)
+        run: |
+          syft \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}" \
+            --output cyclonedx-json \
+            --file sbom-vulkan.cdx.json
+          cosign attest --yes \
+            --predicate sbom-vulkan.cdx.json \
+            --type cyclonedx \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+        continue-on-error: true   # SBOM is best-effort on GPU builds
 
   # -----------------------------------------------------------------------
   # MCP server variant (cpu base, amd64 + arm64)
@@ -495,6 +540,140 @@ jobs:
         continue-on-error: true
 
   # -----------------------------------------------------------------------
+  # Controller image (vmafx-controller Go binary + libvmaf, amd64 + arm64)
+  # -----------------------------------------------------------------------
+  build-controller:
+    name: Build + push controller image (amd64 + arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff9c35ca64c0f25fcea  # v3.6.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5fb029f  # v3.10.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata (controller)
+        id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbea8a5d2886d2c2a2f8e2f9a9c5  # v5.7.0
+        with:
+          images: ${{ env.REGISTRY }}/vmafx/vmafx-controller
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ github.event.inputs.tag || 'dev' }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Build and push controller (amd64 + arm64)
+        id: push
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1  # v6.16.0
+        with:
+          context: .
+          file: docker/Dockerfile.controller
+          target: controller
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VMAF_BUILD_JOBS=4
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: "v3.0.6"
+
+      - name: Sign controller image
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/vmafx/vmafx-controller@${{ steps.push.outputs.digest }}"
+
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+
+      - name: Generate SBOM (controller)
+        run: |
+          syft \
+            "${{ env.REGISTRY }}/vmafx/vmafx-controller@${{ steps.push.outputs.digest }}" \
+            --output cyclonedx-json \
+            --file sbom-controller.cdx.json
+
+      - name: Attach SBOM via cosign attest
+        run: |
+          cosign attest --yes \
+            --predicate sbom-controller.cdx.json \
+            --type cyclonedx \
+            "${{ env.REGISTRY }}/vmafx/vmafx-controller@${{ steps.push.outputs.digest }}"
+
+      - name: Upload SBOM as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom-controller
+          path: sbom-controller.cdx.json
+          retention-days: 90
+
+  # -----------------------------------------------------------------------
+  # Trivy container scan — runs against the just-pushed CPU image.
+  # Fails on HIGH or CRITICAL findings (ADR-0798).
+  # -----------------------------------------------------------------------
+  trivy-scan:
+    name: Trivy container scan (HIGH/CRITICAL gate)
+    needs: build-cpu
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+      security-events: write   # upload SARIF to Security tab
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy (SARIF output)
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8  # v0.30.0
+        with:
+          image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-cpu.outputs.digest }}"
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: "false"
+          vuln-type: os,library
+
+      - name: Upload SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container
+
+  # -----------------------------------------------------------------------
   # Summary job — depends on all build jobs so CI shows a single status
   # -----------------------------------------------------------------------
   all-images:
@@ -503,11 +682,13 @@ jobs:
     needs:
       - build-cpu
       - smoke-test
+      - trivy-scan
       - build-cuda12
       - build-rocm6
       - build-oneapi2026
       - build-vulkan
       - build-server
+      - build-controller
     runs-on: ubuntu-latest
     steps:
       - name: Check results
@@ -520,4 +701,8 @@ jobs:
             echo "smoke-test failed"
             exit 1
           fi
-          echo "CPU + smoke-test passed. GPU variants: cuda12=${{ needs.build-cuda12.result }} rocm6=${{ needs.build-rocm6.result }} oneapi=${{ needs.build-oneapi2026.result }} vulkan=${{ needs.build-vulkan.result }} server=${{ needs.build-server.result }}"
+          if [[ "${{ needs.trivy-scan.result }}" != "success" ]]; then
+            echo "trivy-scan failed — HIGH/CRITICAL CVEs in CPU image"
+            exit 1
+          fi
+          echo "CPU + smoke-test + trivy passed. GPU variants: cuda12=${{ needs.build-cuda12.result }} rocm6=${{ needs.build-rocm6.result }} oneapi=${{ needs.build-oneapi2026.result }} vulkan=${{ needs.build-vulkan.result }} server=${{ needs.build-server.result }} controller=${{ needs.build-controller.result }}"
