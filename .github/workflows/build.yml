@@ -2,15 +2,15 @@
 #
 # Supersedes libvmaf-build-matrix.yml (ADR-0689 dedup pass → ADR-0710 slim-down).
 # Three matrix rows only:
-#   - linux-full:          GCC + ALL backends (CUDA + SYCL + Vulkan + HIP + Metal scaffold + CPU + DNN)
+#   - linux-full:          GCC + ALL backends (CUDA + SYCL + HIP + Metal scaffold + CPU + DNN)
 #   - macos-cpu-metal:     Apple Clang + CPU + Metal scaffold
 #   - windows-msvc-cuda:   MSVC + CPU + CUDA
 #
 # Rationale: container-first VMAFX philosophy (ADR-0686, ADR-0701) means the
 # production artefact is the `vmafx-dev-mcp` image, not a per-backend binary.
-# Per-backend build legs (SYCL-only, CUDA-only, HIP-only, Vulkan-only, etc.)
-# are folded into the single Linux full build. ARM, i686, static-only, DNN-
-# only, and MoltenVK advisory legs are retired. See ADR-0710.
+# Per-backend build legs (SYCL-only, CUDA-only, HIP-only, etc.) are folded into
+# the single Linux full build. ARM, i686, static-only, DNN-only, and MoltenVK
+# advisory legs are retired. Vulkan removed per ADR-0726. See ADR-0710.
 #
 # Netflix golden gate is pinned to this workflow (linux-full runs the full
 # meson test suite that includes the golden assertions).
@@ -59,13 +59,11 @@ jobs:
             CXX: ccache g++
             cuda: true
             sycl: true
-            vulkan: true
             hip: true
             dnn: true
             meson_extra: >-
               -Denable_cuda=true -Denable_nvcc=true
               -Denable_sycl=true
-              -Denable_vulkan=enabled
               -Denable_hip=true
               -Denable_dnn=enabled
               -Denable_metal=disabled
@@ -84,7 +82,6 @@ jobs:
             metal: true
             meson_extra: >-
               -Denable_cuda=false -Denable_sycl=false -Denable_hip=false
-              -Denable_vulkan=disabled
               -Denable_metal=enabled
               -Denable_float=true
 
@@ -228,28 +225,6 @@ jobs:
       - name: Install base deps for CUDA leg (Linux)
         if: matrix.cuda && !matrix.sycl && startsWith(matrix.os, 'ubuntu')
         run: sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
-
-      # ── Vulkan SDK (Linux) ───────────────────────────────────────────
-      - name: Cache meson subprojects (Vulkan wraps)
-        if: matrix.vulkan
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
-        with:
-          path: core/subprojects/packagecache
-          key: meson-packagecache-vulkan-${{ hashFiles('core/subprojects/*.wrap') }}
-          restore-keys: |
-            meson-packagecache-vulkan-
-
-      - name: Install Vulkan SDK (Linux)
-        if: matrix.vulkan && startsWith(matrix.os, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo -E apt-get -yq install libvulkan-dev vulkan-tools glslang-tools \
-            mesa-vulkan-drivers
-          if ! command -v glslc >/dev/null; then
-            sudo -E apt-get -yq install glslc || sudo -E apt-get -yq install vulkan-sdk
-          fi
-          glslc --version | head -2
-          vulkaninfo --summary || true
 
       # ── ROCm / HIP (Linux) ───────────────────────────────────────────
       - name: Install ROCm / HIP runtime (Linux)

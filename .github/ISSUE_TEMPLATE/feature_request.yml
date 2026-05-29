@@ -28,7 +28,7 @@ body:
       label: Scope
       options:
         - New feature metric
-        - New GPU backend (Vulkan, Metal, ROCm, ...)
+        - New GPU backend (Metal, ROCm, ...)
         - New SIMD path
         - New model
         - CLI / API change

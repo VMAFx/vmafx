@@ -194,8 +194,7 @@ jobs:
             -Db_lundef=false \
             -Dfuzz=true \
             -Denable_cuda=false \
-            -Denable_sycl=false \
-            -Denable_vulkan=disabled
+            -Denable_sycl=false
       - name: Build harness
         run: ninja -C build-fuzz test/fuzz/${{ matrix.target }}
       - name: Run fuzzer (${{ env.MAX_TOTAL_TIME }}s)

@@ -73,11 +73,6 @@ option('enable_dnn',
     value: 'auto',
     description: 'Build DNN runtime (ONNX Runtime) for tiny-model inference')
 
-option('enable_vulkan',
-    type: 'feature',
-    value: 'disabled',
-    description: 'Build Vulkan compute backend (ADR-0127 design; ADR-0175 scaffold; ADR-0178 / T5-1b runtime; ADR-0193 default-model kernel matrix complete). Default disabled; opt in to use it. Requires volk + Vulkan SDK 1.3+ + glslc + VMA.')
-
 option('enable_mcp',
     type: 'boolean',
     value: false,

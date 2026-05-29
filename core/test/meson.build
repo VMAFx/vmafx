@@ -963,7 +963,7 @@ test('test_hip_adm_parity', test_hip_adm_parity,
 endif
 
 # ADR-0338 / T8-1: Metal (Apple Silicon) backend scaffold smoke. Same
-# pattern as the HIP / Vulkan scaffolds above — pins the -ENOSYS
+# pattern as the HIP scaffold above — pins the -ENOSYS
 # contract for every public C-API entry point until the runtime PR
 # (T8-1b) lands. Built whenever the parent meson resolved
 # is_metal_enabled to true (auto on macOS, or `enabled` explicitly).

@@ -123,7 +123,7 @@ docs/                         # all documentation (upstream-mirrored + fork-adde
 
 | Task                                | Skill invocation                              |
 |-------------------------------------|-----------------------------------------------|
-| New GPU backend (hip, vulkan, metal)| `/add-gpu-backend <name>`                     |
+| New GPU backend (hip, metal)        | `/add-gpu-backend <name>`                     |
 | New SIMD path                       | `/add-simd-path <isa> <feature>`              |
 | New feature extractor               | `/add-feature-extractor <name>`               |
 | Register a new model JSON           | `/add-model <path>`                           |
@@ -322,11 +322,11 @@ Use `/prep-release` to dry-run locally before merging a release PR.
 15. **Default to the `vmaf-dev-mcp` container for vmaf / vmaf-tune /
     ai / MCP-probing work.** The container at
     [`dev/Containerfile`](dev/Containerfile) bakes in every backend
-    (CUDA + SYCL + Vulkan + HIP + Metal scaffolds), oneAPI, the
+    (CUDA + SYCL + HIP + Metal scaffolds), oneAPI, the
     NVIDIA Container Toolkit runtime, ffmpeg with libvmaf, the MCP
     server, and the workspace mount. Host-side `meson setup build`
-    chases moving toolchain targets (icpx missing, Vulkan SDK gaps,
-    libsvm wheel drift, locale leaks); the container eliminates that
+    chases moving toolchain targets (icpx missing, libsvm wheel drift,
+    locale leaks); the container eliminates that
     entire class of yak shave. The rule:
     - **Before any non-trivial vmaf / vmaf-tune / ai / MCP run**:
       rebuild the container if its image predates the last `master`
@@ -354,12 +354,11 @@ Use `/prep-release` to dry-run locally before merging a release PR.
       a long-running job (CHUG re-extract, BVI-DVC sweep) is pinned to
       one device (e.g. CUDA / RTX 4090), schedule sibling parallel
       work on a *different* device: Intel Arc via SYCL, AMD via HIP,
-      Vulkan on a non-NVIDIA adapter, or CPU. The fork's
-      `--backend $name` selector forces exclusive backend choice; use
-      it (or `--no_cuda` / `--no_sycl` / etc. for negative selection)
-      to pin each parallel run to its own silicon. The dev machine
-      has at least CUDA (RTX 4090), Intel Arc (SYCL + Vulkan), and
-      CPU — three independent lanes for cross-backend parity sweeps
+      or CPU. The fork's `--backend $name` selector forces exclusive
+      backend choice; use it (or `--no_cuda` / `--no_sycl` / etc. for
+      negative selection) to pin each parallel run to its own silicon.
+      The dev machine has at least CUDA (RTX 4090), Intel Arc (SYCL),
+      and CPU — independent lanes for cross-backend parity sweeps
       while CHUG keeps CUDA hot.
 
     See [docs/development/dev-mcp.md](docs/development/dev-mcp.md) for

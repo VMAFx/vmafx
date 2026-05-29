@@ -188,7 +188,6 @@ nav:
       - DNN sessions: api/dnn.md
       - GPU (CUDA / SYCL): api/gpu.md
       - MCP C API: api/mcp.md
-      - Vulkan image import: api/vulkan-image-import.md
   - Metrics:
       - Features: metrics/features.md
       - CAMBI: metrics/cambi.md
@@ -211,8 +210,6 @@ nav:
       - NVTX profiling: backends/nvtx/profiling.md
       - SYCL / oneAPI: backends/sycl/overview.md
       - SYCL bundling: backends/sycl/bundling.md
-      - Vulkan: backends/vulkan/overview.md
-      - Vulkan via MoltenVK: backends/vulkan/moltenvk.md
       - HIP (AMD ROCm): backends/hip/overview.md
       - Metal (Apple Silicon): backends/metal/index.md
   - MCP:

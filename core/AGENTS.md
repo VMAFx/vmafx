@@ -47,7 +47,7 @@ libvmaf/
 | --- | --- |
 | Add a feature extractor | [../.claude/skills/add-feature-extractor/SKILL.md](../.claude/skills/add-feature-extractor/SKILL.md) |
 | Add a SIMD path (AVX2 / AVX-512 / NEON) | [../.claude/skills/add-simd-path/SKILL.md](../.claude/skills/add-simd-path/SKILL.md) |
-| Add a GPU backend (CUDA / SYCL / HIP / Vulkan) | [../.claude/skills/add-gpu-backend/SKILL.md](../.claude/skills/add-gpu-backend/SKILL.md) |
+| Add a GPU backend (CUDA / SYCL / HIP) | [../.claude/skills/add-gpu-backend/SKILL.md](../.claude/skills/add-gpu-backend/SKILL.md) |
 | Register a model JSON | [../.claude/skills/add-model/SKILL.md](../.claude/skills/add-model/SKILL.md) |
 | Cross-backend numeric diff | [../.claude/skills/cross-backend-diff/SKILL.md](../.claude/skills/cross-backend-diff/SKILL.md) |
 | Profile a hot path | [../.claude/skills/profile-hotpath/SKILL.md](../.claude/skills/profile-hotpath/SKILL.md) |
@@ -166,7 +166,7 @@ libvmaf/
   `data[0]` only and has no `enable_chroma` option; CUDA
   [`src/feature/cuda/integer_vif_cuda.c`](src/feature/cuda/integer_vif_cuda.c)
   hardcodes `s->n_planes = 1` and warn-on-trues `enable_chroma`; HIP,
-  SYCL, Vulkan, Metal twins all match. Upstream Netflix/vmaf is the
+  SYCL, Metal twins all match. Upstream Netflix/vmaf is the
   same. VIF (Sheikh & Bovik, 2006) is defined on a single luminance
   channel — multi-plane VIF has no MOS-correlation literature. Do not
   "fix" the `n_planes = 1` or "wire enable_chroma through" without
@@ -178,24 +178,10 @@ libvmaf/
   asserts CPU vs CUDA scale parity and `enable_chroma=true` bit-identity
   with the default invocation — both must keep passing.
 
-- **Vulkan PSNR chroma contract** (fork-local, [ADR-0216](../docs/adr/0216-vulkan-chroma-psnr.md)).
-  [`src/feature/vulkan/psnr_vulkan.c`](src/feature/vulkan/psnr_vulkan.c)
-  carries `ref_in[3] / dis_in[3] / se_partials[3]` arrays in
-  `PsnrVulkanState` (Y / Cb / Cr) and dispatches the same
-  `psnr.comp` shader once per active plane in a single command
-  buffer. The shader is plane-agnostic — it reads
-  `(width, height, num_workgroups_x)` from push constants — so
-  rebases that "simplify" the chroma loop back to a single luma
-  dispatch will silently regress `psnr_cb` / `psnr_cr` to CPU
-  fall-through (and break the `cross_backend_vif_diff.py
-  --feature psnr` gate, which now asserts on Y / Cb / Cr). YUV400
-  is the only supported `n_planes = 1` path; the `pix_fmt`
-  branch in `init` mirrors the `enable_chroma = false` clamp in
-  CPU `integer_psnr.c::init` and must follow it on any future
-  `min_sse` / `psnr_max[p]` divergence. The descriptor pool is
-  sized for 12 sets (4 frames in flight × 3 planes) — do not
-  shrink without re-checking lavapipe behaviour under
-  frames-in-flight > 1.
+- **Vulkan PSNR chroma contract** — removed per ADR-0726.
+  The `src/feature/vulkan/psnr_vulkan.c` implementation and its
+  chroma-plane invariants are no longer active. The ADR record
+  (ADR-0216) remains in `docs/adr/` for audit only.
 
 - **Embedded MCP runtime contract** (fork-local, [ADR-0209](../docs/adr/0209-mcp-embedded-scaffold.md)).
   [`src/mcp/`](src/mcp/) now contains the promoted in-process MCP
@@ -210,15 +196,13 @@ libvmaf/
   `VmafContext`, not the host scorer, because pooled scoring commits
   models destructively. The `enable_mcp` umbrella flag must default
   `false` until mutating measurement-thread tools and the SPSC bridge
-  land; the silent-flip risk is the same as ADR-0175's Vulkan
-  precedent.
+  land; the silent-flip risk must be assessed per-transport before
+  enabling by default.
 
 - **MS-SSIM `enable_lcs` GPU contract** (fork-local,
   [ADR-0243](../docs/adr/0243-enable-lcs-gpu.md)).
   [`src/feature/cuda/integer_ms_ssim_cuda.c`](src/feature/cuda/integer_ms_ssim_cuda.c)
-  and
-  [`src/feature/vulkan/ms_ssim_vulkan.c`](src/feature/vulkan/ms_ssim_vulkan.c)
-  emit 15 extra metrics — `float_ms_ssim_{l,c,s}_scale{0..4}` —
+  emits 15 extra metrics — `float_ms_ssim_{l,c,s}_scale{0..4}` —
   when the `enable_lcs` option is true, mirroring the CPU
   `float_ms_ssim` extractor in
   [`src/feature/float_ms_ssim.c`](src/feature/float_ms_ssim.c#L189-L221).
@@ -226,8 +210,8 @@ libvmaf/
   then `c_*`, then `s_*`), and `places=4` cross-backend contract
   are part of the public API surface; do not rename, reorder, or
   introduce per-backend variations. The kernels themselves
-  (`ms_ssim_vert_lcs` CUDA / vert pass in `ms_ssim.comp` Vulkan)
-  already compute the per-scale `l_means[i]` / `c_means[i]` /
+  (`ms_ssim_vert_lcs` CUDA) already compute the per-scale
+  `l_means[i]` / `c_means[i]` /
   `s_means[i]` doubles — gating only the host-side
   `vmaf_feature_collector_append` calls keeps default-path
   (`enable_lcs=false`) output bit-identical to the pre-T7-35
@@ -244,10 +228,9 @@ libvmaf/
   [`scripts/ci/cross_backend_parity_gate.py`](../scripts/ci/cross_backend_parity_gate.py)
   is the single source of truth for the per-feature absolute
   tolerance every (CPU↔GPU, GPU↔GPU) cell must respect. The CI
-  job `vulkan-parity-matrix-gate` in
-  [tests-and-quality-gates.yml](../.github/workflows/tests-and-quality-gates.yml)
-  runs it on every PR over CPU↔Vulkan/lavapipe; CUDA/SYCL/hardware-
-  Vulkan are advisory until a self-hosted runner exists. Do not
+  gate runs on every PR via
+  [tests-and-quality-gates.yml](../.github/workflows/tests-and-quality-gates.yml);
+  CUDA/SYCL gates are advisory until a self-hosted GPU runner exists. Do not
   tighten a `FEATURE_TOLERANCE` entry without a measurement-driven
   follow-up ADR (per CLAUDE.md §12 r1). Adding a new feature with
   a GPU twin requires (1) a `FEATURE_METRICS` entry, (2) a
@@ -270,8 +253,7 @@ libvmaf/
   fork-local caller (`float_adm.c`, `float_ansnr.c`, `float_moment.c`,
   `float_ms_ssim.c`, `float_psnr.c`, `float_ssim.c`, `float_vif.c`,
   `cuda/integer_ms_ssim_cuda.c`, `sycl/integer_ms_ssim_sycl.cpp`,
-  `sycl/integer_ssim_sycl.cpp`, `vulkan/ms_ssim_vulkan.c`,
-  `vulkan/ssim_vulkan.c`) passes `0` for the Y-plane. On future upstream
+  `sycl/integer_ssim_sycl.cpp`) passes `0` for the Y-plane. On future upstream
   syncs, do not drop the SIMD fast-path wrapper: the NASA/JPL Power-of-10
   inner-loop budget still demands it, and the Netflix golden-data gate
   ([ADR-0024](../docs/adr/0024-netflix-golden-preserved.md)) is regression-
@@ -299,20 +281,20 @@ libvmaf/
   list needs the new path added (see the `for cand in ...` block in
   the script). Companion bench-time helper:
   [`scripts/ci/sycl-bench-env.sh`](../scripts/ci/sycl-bench-env.sh).
-- **GPU long-tail terminus reached** (fork-local, T7-36 closure
+- **GPU long-tail terminus** (fork-local, T7-36 closure
   via [ADR-0210](../docs/adr/0210-cambi-vulkan-integration.md)).
-  Every registered feature extractor now has at least one GPU twin
-  — cambi was the last remaining gap. lpips remains ORT-delegated
-  per [ADR-0022](../docs/adr/0022-inference-runtime-onnx.md).
+  The Vulkan GPU twin layer was removed per ADR-0726; CUDA + SYCL
+  remain the active GPU backends. cambi was the last remaining gap
+  before removal. lpips remains ORT-delegated per
+  [ADR-0022](../docs/adr/0022-inference-runtime-onnx.md).
   Adding a new feature extractor without a same-PR GPU twin is now
   an explicit choice — record the deferral in the ADR body.
   Governing batches:
   [ADR-0182](../docs/adr/0182-gpu-long-tail-batch-1.md) (1) +
   [ADR-0188](../docs/adr/0188-gpu-long-tail-batch-2.md) (2) +
   [ADR-0192](../docs/adr/0192-gpu-long-tail-batch-3.md) (3).
-- **`motion3_score` GPU contract (T3-15(c) / ADR-0219).** The three GPU
-  motion twins (`src/feature/vulkan/motion_vulkan.c`,
-  `src/feature/cuda/integer_motion_cuda.c`,
+- **`motion3_score` GPU contract (T3-15(c) / ADR-0219).** The GPU
+  motion twins (`src/feature/cuda/integer_motion_cuda.c`,
   `src/feature/sycl/integer_motion_sycl.cpp`) emit
   `VMAF_integer_feature_motion3_score` in 3-frame window mode by
   applying CPU's host-side post-process to motion2: `clip(motion_blend(
@@ -383,7 +365,6 @@ Backend-specific orientation:
 
 - [src/cuda/AGENTS.md](src/cuda/AGENTS.md) — CUDA backend runtime
 - [src/sycl/AGENTS.md](src/sycl/AGENTS.md) — SYCL backend runtime
-- [src/vulkan/AGENTS.md](src/vulkan/AGENTS.md) — Vulkan backend runtime
 - [src/dnn/AGENTS.md](src/dnn/AGENTS.md) — ONNX Runtime integration (tiny AI)
 - [src/feature/AGENTS.md](src/feature/AGENTS.md) — feature extractors + SIMD
 - [test/AGENTS.md](test/AGENTS.md) — C unit tests
@@ -435,8 +416,6 @@ size unless the flags are right.**
 | CPU only | `--no_cuda --no_sycl` |
 | CUDA | `--gpumask=0 --no_sycl` |
 | SYCL | `--sycl_device=0 --no_cuda` |
-| Vulkan | `--vulkan_device=N` (no `--no_cuda`/`--no_sycl` interaction) |
-
 Verify CUDA actually engaged by inspecting the JSON `frames[0].metrics`
 key set: CPU emits 14–15 keys (`integer_aim`, `integer_motion3`,
 `integer_adm3` are CPU-only); CUDA emits 11–12 keys (the CPU-only
@@ -498,7 +477,7 @@ the corrected methodology.
 
 - **Required-aggregator invariant — `float_ansnr` removal (PR #38 / ADR-0720):**
   `float_ansnr` was deliberately removed from all backends (CPU, CUDA, HIP, SYCL,
-  Metal, Vulkan) in PR #38. The following must remain consistent on any rebase
+  Metal) in PR #38. The following must remain consistent on any rebase
   or upstream-sync that touches these files:
   - `core/test/test_hip_smoke.c`: the `test_float_ansnr_hip_extractor_registered`
     function and its `test_table[]` entry have been removed. Do NOT restore them

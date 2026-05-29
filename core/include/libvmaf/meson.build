@@ -12,8 +12,6 @@ is_sycl_enabled = get_option('enable_sycl') == true
 # ADR-0209 / T7-10: HIP scaffold — install the public header whenever the
 # scaffold is opted in so downstream consumers can compile against it.
 is_hip_enabled = get_option('enable_hip') == true
-# ADR-0726: Vulkan backend removed. The `enable_vulkan` option and
-# `libvmaf_vulkan.h` no longer exist.
 
 platform_specific_headers = []
 
@@ -43,8 +41,9 @@ endif
 # `libvmaf/libvmaf_metal.h` in the install tree. Without this entry the header
 # was silently omitted from `meson install` output, breaking the
 # `check_pkg_config libvmaf_metal ... libvmaf/libvmaf_metal.h
-# vmaf_metal_state_init` configure check. Same feature-option pattern as
-# the DNN guard (ADR-0437).
+# vmaf_metal_state_init` configure check. Same feature-option type and
+# treat-auto-as-install rationale as the CUDA/SYCL/HIP guards above
+# (ADR-0437).
 is_metal_enabled = get_option('enable_metal').enabled() \
                    or get_option('enable_metal').auto()
 if is_metal_enabled

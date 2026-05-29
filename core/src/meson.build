@@ -291,8 +291,8 @@ if is_hipcc_enabled and is_hip_enabled
     # recursive Gaussian IIR pole-tracking pre/prev sequence keeps IEEE-754
     # add/mul ordering (hipcc / amdclang++ default to `-ffp-contract=fast`
     # on the device side, which auto-fuses the n*sum - d*prev pair into an
-    # FMA and shifts the recursion past places=2 vs the CPU / Vulkan
-    # `precise` twin). The CUDA twin passes `--fmad=false` for the same
+    # FMA and shifts the recursion past places=2 vs the CPU reference
+    # implementation. The CUDA twin passes `--fmad=false` for the same
     # reason; HIP's amdclang++-driven hipcc honours `-ffp-contract=off`.
     hip_cu_extra_flags = {
         'ssimulacra2_blur' : ['-ffp-contract=off'],
@@ -324,8 +324,8 @@ if is_hipcc_enabled and is_hip_enabled
 endif
 
 # Metal (Apple Silicon) compute backend (ADR-0338 / T8-1 scaffold). Same
-# pattern as the HIP / Vulkan scaffolds above — empty arrays when the
-# option resolves to disabled (every non-macOS host), no-cost on default
+# pattern as the HIP scaffold above — empty arrays when the option resolves
+# to disabled (every non-macOS host), no-cost on default
 # builds. The dependency() probes inside `subdir('metal')` are
 # `required: false`; the scaffold compiles with no Metal SDK linkage on
 # any host, including Linux / Windows.
@@ -602,7 +602,7 @@ if is_asm_enabled
           'arm64_ssimulacra2',
           [
               feature_src_dir + 'arm64/ssimulacra2_neon.c',
-              # ADR-0242: host-kernel variants (plane_stride form for Vulkan pyramid)
+              # ADR-0242: host-kernel variants (plane_stride form for GPU pyramid)
               feature_src_dir + 'arm64/ssimulacra2_host_neon.c',
           ],
           include_directories : vmaf_base_include,
@@ -668,7 +668,7 @@ if is_asm_enabled
           'x86_ssimulacra2_avx2',
           [
               feature_src_dir + 'x86/ssimulacra2_avx2.c',
-              # ADR-0242: host-kernel variants (plane_stride form for Vulkan pyramid)
+              # ADR-0242: host-kernel variants (plane_stride form for GPU pyramid)
               feature_src_dir + 'x86/ssimulacra2_host_avx2.c',
           ],
           include_directories : vmaf_base_include,
@@ -791,7 +791,7 @@ if is_cuda_enabled
     }
     message(cuda_cu_sources)
     # gpu_picture_pool.c moved to libvmaf_sources (always-compiled) per
-    # ADR-0239 — SYCL + Vulkan also link against it.
+    # ADR-0239 — SYCL also links against it.
     cuda_sources = [
         cuda_dir + 'common.c',
         cuda_dir + 'dispatch_strategy.c',

@@ -1,6 +1,6 @@
 ---
 name: metal-reviewer
-description: Reviews Metal / Apple-Silicon code under core/src/metal/ (runtime, picture, IOSurface import) and core/src/feature/metal/ (.mm / .metal pairs) for correctness, parity vs the CUDA / Vulkan twins, and Apple-Family-7 gating. Use when reviewing .mm host wrappers, .metal MSL kernels, or IOSurface zero-copy patterns.
+description: Reviews Metal / Apple-Silicon code under core/src/metal/ (runtime, picture, IOSurface import) and core/src/feature/metal/ (.mm / .metal pairs) for correctness, parity vs the CUDA/SYCL twins, and Apple-Family-7 gating. Use when reviewing .mm host wrappers, .metal MSL kernels, or IOSurface zero-copy patterns.
 model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
@@ -39,8 +39,7 @@ The Metal backend is **live on Apple-Family-7+** as of ADR-0420
 6. **CUDA-twin numerical parity** — every Metal kernel must land
    alongside a cross-backend ULP gate showing `places=4` identity
    vs the CUDA twin (per ADR-0214 GPU-parity gate). lavapipe is
-   the parity reference; Metal is verified against it where the
-   feature has both a Vulkan + Metal implementation.
+   the parity reference (CUDA is the cross-backend gate target).
 7. **IOSurface zero-copy import** — `vmaf_metal_picture_import`
    (per ADR-0423) must:
    - Validate the IOSurface plane count + pixel format against the

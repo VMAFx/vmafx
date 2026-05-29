@@ -256,9 +256,8 @@ Rebase-sensitive invariants:
   preserved together.** Dropping `github.event_name == 'workflow_dispatch'`
   would cause the step to open a blocking SSH session on every failing PR push,
   stranding a macOS runner for up to 30 minutes per failure.
-- The step must remain **after** the `Run tests` step and **before** the
-  `Run Vulkan smoke tests (macOS MoltenVK)` step so it fires only when a
-  test failure has already set the job status to `failure()`.
+- The step must remain **after** the `Run tests` step so it fires only
+  when a test failure has already set the job status to `failure()`.
 - The action is pinned to a commit SHA per the fork's Renovate
   `helpers:pinGitHubActionDigests` policy. Renovate will propose digest bumps;
   accept only after verifying the new SHA corresponds to a signed release tag.
@@ -269,33 +268,11 @@ Rebase-sensitive invariants:
 See [ADR-0626](../docs/adr/0626-macos-ci-tmate-debug-on-failure.md) and
 [`docs/development/ci-tmate-debug.md`](../docs/development/ci-tmate-debug.md).
 
-## macOS Vulkan-via-MoltenVK lane (ADR-0338)
+## macOS Vulkan-via-MoltenVK lane (ADR-0338 — removed)
 
-`libvmaf-build-matrix.yml` carries an advisory lane
-`Build — macOS Vulkan via MoltenVK (advisory)` that runs on
-`macos-latest` (Apple Silicon). Rebase-sensitive invariants:
-
-- The lane is gated `continue-on-error: ${{ matrix.experimental ==
-  true && matrix.moltenvk == true }}`. The compound predicate is
-  load-bearing — the matrix has other `experimental: true` rows
-  (the macOS DNN lane) that must keep their default fail-fast
-  behaviour. A naive simplification to `${{ matrix.experimental }}`
-  would silently make those other rows advisory.
-- `VK_ICD_FILENAMES` MUST point at
-  `/opt/homebrew/etc/vulkan/icd.d/MoltenVK_icd.json` — the homebrew
-  formula `molten-vk` lays the JSON under `etc/vulkan/`, NOT
-  `share/vulkan/`. Do not "fix" the path; verify against
-  `Formula/m/molten-vk.rb` if in doubt.
-- The lane must NOT be added to `required-aggregator.yml` until one
-  green run lands on `master`. See ADR-0338 §Decision.
-- The existing `Run tests` / cache / tox steps gate on
-  `!matrix.moltenvk` — the moltenvk lane runs its own dedicated
-  Vulkan-only smoke step. Do not unify or the lane will try to run
-  tox tests against an Apple-Vulkan build, which is not the lane's
-  contract.
-
-See [ADR-0338](../docs/adr/0338-macos-vulkan-via-moltenvk-lane.md)
-and [`docs/backends/vulkan/moltenvk.md`](../docs/backends/vulkan/moltenvk.md).
+The `Build — macOS Vulkan via MoltenVK (advisory)` matrix lane and all
+associated Vulkan CI infrastructure were removed per ADR-0726. The ADR
+history (ADR-0338) remains in `docs/adr/` for audit only.
 
 ## Renovate (ADR-0363) supersedes Dependabot
 
