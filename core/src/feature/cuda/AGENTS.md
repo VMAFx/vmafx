@@ -540,3 +540,55 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   sub-4K throughput regardless of kernel-level changes. The primary fix is
   multi-frame SAD batching (accumulate N frames before readback synchronization).
   See [Research-0760](../../../../docs/research/0760-cuda-motion-ncu-multi-resolution-20260529.md).
+## Resolution-aware kernel variant dispatch (ADR-0753)
+
+`resolution_dispatch.h` / `resolution_dispatch.c` in this directory provide a
+lightweight `vmaf_cuda_workload_class(w, h)` classifier used to pick between
+kernel variants at runtime. The current policy table is in ADR-0753.
+
+**How to add a new resolution-aware variant:**
+
+1. In the extractor's `.cu` file, define two kernel entry points using sibling
+   macros: one WITH `__launch_bounds__` (or the other occupancy hint), one
+   WITHOUT, giving the no-hint variant a `_no_bounds` suffix.
+   Both must be inside the `extern "C" { }` block (ADR-0747).
+2. In the extractor state struct (e.g. `AdmStateCuda`), add a second
+   `CUfunction` pointer for the no-hint variant.
+3. In `init_fex_cuda`, load both pointers via `cuModuleGetFunction`.
+   Add a short comment citing the ADR-0753 policy (see existing examples).
+4. At the kernel-launch site in `submit_fex_cuda`, call
+   `vmaf_cuda_workload_class(w, h)` and branch on the result.
+   The branch structure is always a single ternary / if-else — no nested
+   policy trees. Consult the policy table in ADR-0753 for which class gets
+   the bounded variant; the pattern so far:
+   - `adm_cm`: BOUNDED at `WS_MEDIUM` only; NO_BOUNDS at `WS_SMALL` + `WS_LARGE`.
+   - `filter1d` + `ssim_vert_combine`: BOUNDED at `WS_MEDIUM` + `WS_LARGE`;
+     NO_BOUNDS at `WS_SMALL` only.
+5. Add a row to the policy table in ADR-0753 `## Decision` and to the kernel
+   list in `resolution_dispatch.h`.
+6. Note the new invariant in this file under "Rebase-sensitive invariants".
+7. Update `docs/backends/cuda/overview.md` kernel table.
+
+**Verified wirings (as of the ADR-0753 extended scope):**
+
+| Feature | BOUNDED variant (kernel name) | NO_BOUNDS variant | Policy |
+|---|---|---|---|
+| `adm_cm` | `adm_cm_line_kernel_8` | `adm_cm_line_kernel_8_no_bounds` | MEDIUM only |
+| `filter1d` | `filter1d_8_horizontal_kernel_2_17_9` | `filter1d_8_horizontal_kernel_2_17_9_no_bounds` | MEDIUM + LARGE |
+| `ssim_vert_combine` | `calculate_ssim_vert_combine` | `calculate_ssim_vert_combine_no_bounds` | MEDIUM + LARGE |
+
+- **`integer_vif_cuda.c::filter1d_8` picks `filter1d_8_horizontal_kernel_2_17_9_no_bounds`
+  at `WS_SMALL` and the bounded variant at `WS_MEDIUM`/`WS_LARGE`** (ADR-0753 extended
+  scope). `VifStateCuda` carries `func_filter1d_8_horizontal_kernel_2_17_9_no_bounds`.
+  `filter1d.cu` defines `FILTER1D_8_HORI_NO_BOUNDS(2, 17, 9)` inside `extern "C" {}`.
+  On rebase: verify both `cuModuleGetFunction` calls in `init_fex_cuda` reference
+  valid symbols. If upstream refactors the macro or adds new `fwidth` variants,
+  apply the `_NO_BOUNDS` sibling macro around the new body too.
+
+- **`integer_ssim_cuda.c::submit_fex_cuda` picks `calculate_ssim_vert_combine_no_bounds`
+  at `WS_SMALL` and the bounded variant at `WS_MEDIUM`/`WS_LARGE`** (ADR-0753 extended
+  scope). `SsimStateCuda` carries `func_vert_no_bounds`.
+  `integer_ssim/ssim_score.cu` defines both variants inside `extern "C" {}`.
+  On rebase: if upstream modifies `calculate_ssim_vert_combine`, apply the same
+  diff to `calculate_ssim_vert_combine_no_bounds` (body is identical; only the
+  `__launch_bounds__(128)` annotation differs).

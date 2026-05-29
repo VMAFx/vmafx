@@ -21,6 +21,39 @@ conflict is possible.
 
 
 
+## ADR-0753 — CUDA resolution-aware dispatch scaffold (2026-05-29)
+
+**Files touched (initial + extended scope):**
+- `core/src/feature/cuda/resolution_dispatch.{h,c}` (new)
+- `core/src/feature/cuda/integer_adm/adm_cm.cu` (two kernel macros)
+- `core/src/feature/cuda/integer_adm_cuda.c` (include, struct field, init, dispatch)
+- `core/src/feature/cuda/integer_vif/filter1d.cu` (FILTER1D_8_HORI_NO_BOUNDS macro + instantiation)
+- `core/src/feature/cuda/integer_vif_cuda.c` (struct field, init, resolution-aware dispatch in filter1d_8)
+- `core/src/feature/cuda/integer_ssim/ssim_score.cu` (calculate_ssim_vert_combine_no_bounds)
+- `core/src/feature/cuda/integer_ssim_cuda.c` (struct field, init, resolution-aware dispatch in submit_fex_cuda)
+- `core/src/feature/cuda/AGENTS.md` (invariant notes + verified wirings table)
+- `docs/adr/0753-cuda-resolution-aware-dispatch.md` (new; extended policy table)
+- `docs/backends/cuda/overview.md` (kernel dispatch table extended)
+- `docs/research/0753-cuda-resolution-aware-dispatch-design.md` (new)
+- `changelog.d/added/cuda-resolution-aware-dispatch.md` (new)
+
+**Rebase impact:** Low on `resolution_dispatch.{h,c}` — these are wholly new
+fork-local files; no upstream conflict possible.
+
+**adm_cm.cu:** The ADM_CM_LINE macro was split into ADM_CM_LINE_BOUNDED and
+ADM_CM_LINE_NO_BOUNDS. If upstream Netflix modifies `adm_cm.cu` after the
+fork diverges, the split needs to be reapplied around the new macro body.
+The `extern "C"` wrapping (ADR-0747) must be preserved for both entries.
+
+**integer_adm_cuda.c:** The `AdmStateCuda` struct grew one field
+(`func_adm_cm_line_kernel_8_no_bounds`). If upstream adds fields to the struct
+in the same location, resolve the merge conflict by keeping both additions.
+The new `#include "feature/cuda/resolution_dispatch.h"` line must survive any
+upstream shuffle of the include block.
+
+On rebase: verify that both `cuModuleGetFunction` calls in the init block still
+reference valid kernel symbol names from `adm_cm.cu`.
+
 ## Research-0751 4K baseline + PR #79 adm_cm A/B (2026-05-29)
 
 **Files touched:** `docs/research/0751-cross-backend-4k-baseline-and-pr79-adm-cm-4k-measure.md`,

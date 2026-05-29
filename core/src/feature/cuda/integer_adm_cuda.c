@@ -34,6 +34,7 @@
  * feature/integer_adm.h. No separate adm_options.h include is needed here. */
 #include "drain_batch.h"
 #include "picture_cuda.h"
+#include "feature/cuda/resolution_dispatch.h"
 
 #include <assert.h>
 
@@ -83,7 +84,9 @@ typedef struct AdmStateCuda {
         func_adm_csf_den_scale_line_kernel, func_adm_csf_den_s123_line_kernel,
         // adm_cm kernel
         /* func_adm_cm_reduce_line_kernel_4 removed: fused into i4_adm_cm_line_kernel_fused. */
-        func_adm_cm_line_kernel_8, func_i4_adm_cm_line_kernel_fused,
+        func_adm_cm_line_kernel_8,           /* with __launch_bounds__(128,8): WS_MEDIUM   */
+        func_adm_cm_line_kernel_8_no_bounds, /* without bounds hint: WS_SMALL / WS_LARGE   */
+        func_i4_adm_cm_line_kernel_fused,
         /* AIM CM kernels (ADR-0746): */
         func_adm_cm_aim_line_kernel_8, func_i4_adm_cm_aim_line_kernel_fused;
 
@@ -495,8 +498,13 @@ int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int src_str
                         &shift_inner_accum,
                         &add_shift_inner_accum};
 
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_adm_cm_line_kernel_8,
-                                               DIV_ROUND_UP(buffer_stride, BLOCKX),
+        /* ADR-0753: pick __launch_bounds__ variant only at WS_MEDIUM (1080p range).
+         * At WS_SMALL the kernel is launch-overhead-bound; at WS_LARGE the register
+         * pressure regime changes and the bounds hint shows zero gain (Research-0751). */
+        const enum WorkloadSize adm_cm_ws = vmaf_cuda_workload_class(w, h);
+        CUfunction adm_cm_fn = (adm_cm_ws == WS_MEDIUM) ? s->func_adm_cm_line_kernel_8 :
+                                                          s->func_adm_cm_line_kernel_8_no_bounds;
+        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(adm_cm_fn, DIV_ROUND_UP(buffer_stride, BLOCKX),
                                                DIV_ROUND_UP(buffer_h, BLOCKY * rows_per_thread), 3,
                                                BLOCKX, BLOCKY, 1, 0, c_stream, args, NULL));
     }
@@ -1373,10 +1381,19 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
 
     /* adm_cm_reduce_line_kernel_4 removed: fused into i4_adm_cm_line_kernel_fused. */
+    /* ADR-0753: load both resolution variants of adm_cm_line_kernel_8.
+     * The bounded variant (WS_MEDIUM) carries __launch_bounds__(128,8) which
+     * saves ~9.3% kernel time at 1080p by reducing register pressure.
+     * The no-bounds variant (WS_SMALL / WS_LARGE) lets the compiler allocate
+     * the full register budget where the occupancy win does not materialise. */
     CHECK_CUDA_GOTO(
         cu_f,
         cuModuleGetFunction(&s->func_adm_cm_line_kernel_8, adm_cm_module, "adm_cm_line_kernel_8"),
         fail);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_adm_cm_line_kernel_8_no_bounds, adm_cm_module,
+                                        "adm_cm_line_kernel_8_no_bounds"),
+                    fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_i4_adm_cm_line_kernel_fused, adm_cm_module,
                                         "i4_adm_cm_line_kernel_fused"),
