@@ -402,7 +402,6 @@ The `enable_cuda` umbrella flag gates inclusion via
   Removing the smem staging layer reverts the 15–35% VIF speedup.
   See [ADR-0454](../../../../docs/adr/0454-vif-cuda-smem-staging.md) and
   [Research-0135](../../../../docs/research/0135-vif-cuda-smem-staging-2026-05-16.md).
-<<<<<<< HEAD
 
 ## `__mul24` / `__umul24` prohibition (Research-0734)
 
@@ -427,6 +426,7 @@ reason (e.g. a specific `dp4a` / `imad.lo.u32` targeting pattern), they must:
    constraint (CLAUDE.md §15).
 4. Document the constraint in `docs/backends/cuda/overview.md` under
    "Known gaps / CUDA version notes".
+
 ## extern "C" invariant — mandatory for every new CUDA kernel TU (ADR-0747)
 
 Every `__global__` kernel that the host looks up by name via
@@ -453,6 +453,7 @@ Rules:
   Run it locally before pushing CUDA kernel changes.
 
 See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
+
 ## Register-pressure ceiling pattern for horizontal convolution kernels (ADR-0743)
 
 - **Occupancy-critical kernels with > 48 registers per thread must carry
@@ -486,5 +487,31 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   wave-limited (0.76 waves / 128 SMs) and the effect is neutral; at ≥1080p the
   combined tmp footprint exceeds L2 capacity and the cache-routing provides
   measurable L2-pressure relief.  See ADR-0743.
-=======
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
+
+## `__ldg()` pattern for pass-2 read-only intermediate buffers (ADR-0754)
+
+- **Extract raw `const float *__restrict__` pointers from `VmafCudaBuffer` structs
+  BEFORE the inner loop, then use `__ldg(&ptr[idx])` for every load.**
+  `calculate_ssim_vert_combine` in `integer_ssim/ssim_score.cu` is the canonical
+  example: the 5 horizontal-pass intermediate buffers are written exclusively by
+  the horiz kernel and are never aliased in the vert pass. Passing `VmafCudaBuffer`
+  by value hides the pointer from the compiler's non-coherent-load analysis; the
+  one-time pointer extraction at kernel entry makes the alias-free invariant visible
+  so `__ldg()` can route all 5×11 = 55 inner-loop loads through the read-only L1
+  texture cache rather than L2. Any future pass-2 kernel with a similar write-once /
+  read-many intermediate buffer must follow the same pattern.
+  See [ADR-0754](../../../../docs/adr/0754-cuda-ssim-vert-combine-ldg-pinned-leak.md).
+
+## Pinned-host memory free invariant after `readback_free` (ADR-0754)
+
+- **`vmaf_cuda_kernel_readback_free` NULLs `rb->host_pinned` but does NOT free it.**
+  The kernel template explicitly documents this as a caller responsibility (see
+  comment in `cuda/kernel_template.h` near `vmaf_cuda_kernel_readback_free`). Every
+  `close_fex_cuda` that calls `readback_free` must save `rb.host_pinned` to a local
+  BEFORE calling `readback_free`, then call `vmaf_cuda_buffer_host_free(cu_state,
+  saved)` afterward. Omitting the host-free leaks one page of CUDA pinned host
+  memory per `vmaf_close()` cycle. `integer_ssim_cuda.c::close_fex_cuda` is the
+  reference fix (ADR-0754). Verify with:
+  `compute-sanitizer --tool memcheck --leak-check full ./vmaf --feature float_ssim --backend cuda ...`
+  — the summary must show 0 bytes from `cuMemHostAlloc` after fix.
+  Note: `integer_psnr_cuda.c` has the same gap and is scheduled for a follow-up.

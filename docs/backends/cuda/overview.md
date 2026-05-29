@@ -268,7 +268,6 @@ to surface an unexpected delta.
 See [metrics/features.md](../../metrics/features.md) for the
 per-extractor coverage matrix.
 
-<<<<<<< HEAD
 ## CUDA version notes
 
 - **`__mul24` / `__umul24` / `__mul24hi` — absent from this codebase (safe).**
@@ -282,7 +281,6 @@ per-extractor coverage matrix.
   introducing these intrinsics; see the invariant note in
   `core/src/feature/cuda/AGENTS.md`.
 
-
 - **Integer SSIM `extern "C"` sweep (fixed, ADR-0747)** — A full audit
   of all 24 `.cu` kernel files confirmed that `integer_ssim/integer_ssim_score.cu`
   was the only file with `__global__` kernels referenced by
@@ -294,17 +292,11 @@ per-extractor coverage matrix.
   (`scripts/dev/check-cuda-extern-c.sh`) prevents recurrence.
   The analogous bug in `ssim_score.cu` was fixed earlier in PR #77.
 
-See [metrics/features.md](../../metrics/features.md) for the
-per-extractor coverage matrix.
-
-=======
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 ## References
 
 - [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)
 - [CUDA Driver API Reference](https://docs.nvidia.com/cuda/cuda-driver-api/)
 - [CUDA Runtime API Reference](https://docs.nvidia.com/cuda/cuda-runtime-api/) (informational — libvmaf itself uses the Driver API)
-<<<<<<< HEAD
 
 ## VIF filter1d horizontal kernel performance (ADR-0743, 2026-05-28)
 
@@ -340,5 +332,42 @@ ncu -k 'filter1d_8_horizontal_kernel_2_17_9' --set basic --csv \
 
 See [ADR-0743](../../adr/0743-cuda-vif-filter1d-ncu-driven-perf.md) and
 [Research-0743](../../research/research-0743-cuda-vif-filter1d-perf-impl.md).
-=======
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
+
+## SSIM vert_combine kernel performance (ADR-0754, 2026-05-29)
+
+`calculate_ssim_vert_combine` is the pass-2 (vertical 11-tap + SSIM combine)
+kernel in the `float_ssim_cuda` extractor. Three optimizations applied in
+[ADR-0754](../../adr/0754-cuda-ssim-vert-combine-ldg-pinned-leak.md):
+
+1. **`__launch_bounds__(128)`** — constrains register budget to the actual
+   128-thread (16×8) launch configuration. Minimum-form hint with no
+   `min_blocks` argument (conservative, zero risk of regression).
+
+2. **`__ldg()` on the 5×11 = 55 inner-loop loads** — the five intermediate
+   float buffers (h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp) are
+   written once by the horizontal pass and never aliased in the vertical
+   pass. Extracting `const float *__restrict__` pointers from the
+   `VmafCudaBuffer` struct arguments before the inner loop makes the
+   alias-free invariant visible to the compiler, enabling `__ldg()` to
+   route all 55 loads through the L1 read-only cache. Expected benefit at
+   ≥ 1080p where the combined 5-plane footprint exceeds L2 capacity.
+
+3. **Pinned-host memory leak fix** — `vmaf_cuda_kernel_readback_free` NULLs
+   `rb->host_pinned` but does not free it (documented in the template as
+   caller responsibility). `close_fex_cuda` now saves the pointer before
+   calling `readback_free` and calls `vmaf_cuda_buffer_host_free` afterward.
+   Verified with `compute-sanitizer --tool memcheck --leak-check full`.
+
+Live ncu A/B numbers pending; static analysis predicts behaviour analogous
+to the VIF filter1d `__ldg()` pattern at 1080p+.
+
+ncu reproducer:
+```bash
+ncu --kernel-name calculate_ssim_vert_combine \
+    --section MemoryWorkloadAnalysis --section LaunchStats \
+    build/tools/vmaf \
+      --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+      --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+      --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+      --feature float_ssim --backend cuda
+```

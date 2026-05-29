@@ -40166,3 +40166,27 @@ New fork-local files only:
 The upscaled fixture cache files (`testdata/ref_1920x1080_48f.yuv`, etc.)
 are generated on first run and should be `.gitignore`d (they are reproducible
 from the 576×324 native fixture via `ffmpeg -vf scale=W:H:flags=bilinear`).
+
+---
+
+### perf/cuda-ssim-vert-combine-ldg-launch-bounds-leak-20260529 (ADR-0754)
+
+**No rebase impact** on upstream C/Python code.
+
+`core/src/feature/cuda/integer_ssim/ssim_score.cu` and
+`core/src/feature/cuda/integer_ssim_cuda.c` are wholly fork-local files
+with no upstream Netflix equivalents. The `VmafCudaBuffer` struct and the
+`vmaf_cuda_kernel_readback_free` / `vmaf_cuda_buffer_host_free` helpers
+are fork-local CUDA infrastructure. No Netflix upstream commit will collide
+with these changes on `sync-upstream`.
+
+Fork-local files modified:
+`core/src/feature/cuda/integer_ssim/ssim_score.cu` (F2 + F4 — __ldg() + __launch_bounds__),
+`core/src/feature/cuda/integer_ssim_cuda.c` (F6 per-caller save+free DROPPED — superseded by helper fix in PR #94),
+`core/src/feature/cuda/AGENTS.md` (invariant notes),
+`docs/adr/0754-cuda-ssim-vert-combine-ldg-pinned-leak.md` (new),
+`docs/adr/README.md` (new row),
+`docs/research/0754-cuda-ssim-vert-combine-ldg-launch-bounds-2026-05-29.md` (new),
+`changelog.d/perf/cuda-ssim-vert-combine.md` (new),
+`docs/rebase-notes.md` (this entry),
+`docs/state.md` (new row).
