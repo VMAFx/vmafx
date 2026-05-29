@@ -17,7 +17,7 @@
  */
 
 #include "test.h"
-#include "feature_collector.c"
+#include "feature_collector_internal.h"
 #include "libvmaf.c"
 #include <time.h>
 

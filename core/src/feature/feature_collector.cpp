@@ -16,6 +16,7 @@
  *
  */
 
+/* Standard C headers are safe without wrapping. */
 #include <errno.h>
 #include <assert.h>
 #include <pthread.h>
@@ -24,22 +25,31 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "dict.h"
-#include "metadata_handler.h"
+/* Headers that already carry their own extern "C" guards — include freely. */
+#include "dict.h"             /* has #ifdef __cplusplus extern "C" */
+#include "metadata_handler.h" /* has #ifdef __cplusplus extern "C" */
+
+/* Headers without extern "C" guards — wrap explicitly. */
+extern "C" {
 #include "feature_collector.h"
+#include "feature_collector_internal.h"
 #include "feature_name.h"
 #include "libvmaf/libvmaf.h"
 #include "log.h"
 #include "predict.h"
+} /* extern "C" for non-guarded C headers */
 
-static int aggregate_vector_init(AggregateVector *aggregate_vector)
+/* All function definitions use C linkage. */
+extern "C" {
+
+int aggregate_vector_init(AggregateVector *aggregate_vector)
 {
     if (!aggregate_vector)
         return -EINVAL;
     memset(aggregate_vector, 0, sizeof(*aggregate_vector));
     const unsigned initial_capacity = 8;
     const size_t metric_vector_sz = sizeof(aggregate_vector->metric[0]) * initial_capacity;
-    aggregate_vector->metric = malloc(metric_vector_sz);
+    aggregate_vector->metric = (decltype(aggregate_vector->metric))malloc(metric_vector_sz);
     if (!aggregate_vector->metric)
         return -ENOMEM;
     memset(aggregate_vector->metric, 0, metric_vector_sz);
@@ -48,8 +58,8 @@ static int aggregate_vector_init(AggregateVector *aggregate_vector)
     return 0;
 }
 
-static int aggregate_vector_append(AggregateVector *aggregate_vector, const char *feature_name,
-                                   double score)
+int aggregate_vector_append(AggregateVector *aggregate_vector, const char *feature_name,
+                            double score)
 {
     if (!aggregate_vector)
         return -EINVAL;
@@ -73,12 +83,12 @@ static int aggregate_vector_append(AggregateVector *aggregate_vector, const char
         if (!metric)
             return -ENOMEM;
         memset((char *)metric + initial_size, 0, initial_size);
-        aggregate_vector->metric = metric;
+        aggregate_vector->metric = (decltype(aggregate_vector->metric))metric;
         aggregate_vector->capacity *= 2;
     }
 
     const size_t feature_name_sz = strnlen(feature_name, 2048);
-    char *f = malloc(feature_name_sz + 1);
+    char *f = (char *)malloc(feature_name_sz + 1);
     if (!f)
         return -EINVAL;
     memcpy(f, feature_name, feature_name_sz);
@@ -91,7 +101,7 @@ static int aggregate_vector_append(AggregateVector *aggregate_vector, const char
     return 0;
 }
 
-static void aggregate_vector_destroy(AggregateVector *aggregate_vector)
+void aggregate_vector_destroy(AggregateVector *aggregate_vector)
 {
     if (!aggregate_vector)
         return;
@@ -151,24 +161,24 @@ unlock:
     return err;
 }
 
-static int feature_vector_init(FeatureVector **const feature_vector, const char *name)
+int feature_vector_init(FeatureVector **const feature_vector, const char *name)
 {
     if (!feature_vector)
         return -EINVAL;
     if (!name)
         return -EINVAL;
 
-    FeatureVector *const fv = *feature_vector = malloc(sizeof(*fv));
+    const size_t name_sz = strlen(name);
+    FeatureVector *const fv = *feature_vector = (FeatureVector *)malloc(sizeof(*fv));
     if (!fv)
         goto fail;
     memset(fv, 0, sizeof(*fv));
-    const size_t name_sz = strlen(name);
-    fv->name = malloc(name_sz + 1);
+    fv->name = (char *)malloc(name_sz + 1);
     if (!fv->name)
         goto free_fv;
     memcpy(fv->name, name, name_sz + 1);
     fv->capacity = 8;
-    fv->score = malloc(sizeof(fv->score[0]) * fv->capacity);
+    fv->score = (decltype(fv->score))malloc(sizeof(fv->score[0]) * fv->capacity);
     if (!fv->score)
         goto free_name;
     memset(fv->score, 0, sizeof(fv->score[0]) * fv->capacity);
@@ -182,7 +192,7 @@ fail:
     return -ENOMEM;
 }
 
-static void feature_vector_destroy(FeatureVector *feature_vector)
+void feature_vector_destroy(FeatureVector *feature_vector)
 {
     if (!feature_vector)
         return;
@@ -191,7 +201,7 @@ static void feature_vector_destroy(FeatureVector *feature_vector)
     free(feature_vector);
 }
 
-static int feature_vector_append(FeatureVector *feature_vector, unsigned index, double score)
+int feature_vector_append(FeatureVector *feature_vector, unsigned index, double score)
 {
     if (!feature_vector)
         return -EINVAL;
@@ -199,11 +209,11 @@ static int feature_vector_append(FeatureVector *feature_vector, unsigned index, 
     while (index >= feature_vector->capacity) {
         assert(feature_vector->capacity > 0);
         const size_t initial_size = sizeof(feature_vector->score[0]) * feature_vector->capacity;
-        void *score = realloc(feature_vector->score, initial_size * 2);
-        if (!score)
+        void *score_buf = realloc(feature_vector->score, initial_size * 2);
+        if (!score_buf)
             return -ENOMEM;
-        memset((char *)score + initial_size, 0, initial_size);
-        feature_vector->score = score;
+        memset((char *)score_buf + initial_size, 0, initial_size);
+        feature_vector->score = (decltype(feature_vector->score))score_buf;
         feature_vector->capacity *= 2;
     }
 
@@ -225,12 +235,16 @@ int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector)
         return -EINVAL;
     int err = 0;
 
-    VmafFeatureCollector *const fc = *feature_collector = malloc(sizeof(*fc));
+    /* All locals that appear after a goto must be declared before the first
+     * goto that could jump over them (C++ cross-initialisation rule). */
+    size_t fv_sz;
+    VmafFeatureCollector *const fc = *feature_collector =
+        (VmafFeatureCollector *)malloc(sizeof(*fc));
     if (!fc)
         goto fail;
     memset(fc, 0, sizeof(*fc));
     fc->capacity = 8;
-    const size_t fv_sz = sizeof(FeatureVector *) * fc->capacity;
+    fv_sz = sizeof(FeatureVector *) * fc->capacity;
     fc->feature_vector = (FeatureVector **)malloc(fv_sz);
     if (!fc->feature_vector)
         goto free_fc;
@@ -265,7 +279,7 @@ int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, 
     if (!model)
         return -EINVAL;
 
-    VmafPredictModel *m = malloc(sizeof(VmafPredictModel));
+    VmafPredictModel *m = (VmafPredictModel *)malloc(sizeof(VmafPredictModel));
     if (!m)
         return -ENOMEM;
 
@@ -407,7 +421,7 @@ static void feature_collector_run_model_predict(VmafFeatureCollector *feature_co
         if (res) {
             pthread_mutex_unlock(&(feature_collector->lock));
             (void)vmaf_predict_score_at_index(model, feature_collector, picture_index, score, true,
-                                              true, 0);
+                                              true, (VmafModelFlags)0);
             pthread_mutex_lock(&(feature_collector->lock));
         }
         model_iter = model_iter->next;
@@ -424,11 +438,10 @@ static void feature_collector_dispatch_metadata(VmafFeatureCollector *feature_co
         // Check current feature name is the same as the metadata feature name
         if (!strcmp(metadata_iter->metadata_cfg.feature_name, feature_name)) {
             // Call the callback function with the metadata feature name
-            VmafMetadata data = {
-                .feature_name = metadata_iter->metadata_cfg.feature_name,
-                .picture_index = picture_index,
-                .score = score,
-            };
+            VmafMetadata data;
+            data.feature_name = metadata_iter->metadata_cfg.feature_name;
+            data.picture_index = picture_index;
+            data.score = score;
             metadata_iter->metadata_cfg.callback(metadata_iter->metadata_cfg.data, &data);
         } else {
             // If metadata feature name is not the same as the current feature feature_name
@@ -544,3 +557,5 @@ void vmaf_feature_collector_destroy(VmafFeatureCollector *feature_collector)
     pthread_mutex_destroy(&(feature_collector->lock));
     free(feature_collector);
 }
+
+} /* extern "C" */
