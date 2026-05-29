@@ -8,6 +8,11 @@ description = "VMAF-specific false positives"
 paths = [
   '''^subprojects/''',
   '''^python/test/resource/''',
+  # Pre-ADR-0700 layout: YUV fixtures lived at resource/yuv/ before the
+  # libvmaf/ -> core/ + python/ layout change. Binary YUV byte patterns
+  # in old commits (e.g. c35b50e4de) trip generic-api-key and
+  # sourcegraph-access-token as false positives.
+  '''^resource/yuv/''',
   '''^testdata/.*\.(yuv|y4m|mp4|json)$''',
   '''^model/.*\.(json|pkl|onnx)$''',
   '''^ai/src/vmaf_train/data/manifests/README\.md$''',
