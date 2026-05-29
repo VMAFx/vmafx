@@ -43161,3 +43161,8 @@ Fork-local files:
 `.github/workflows/security-scans.yml`,
 `docs/adr/0811-security-codeql-go-pvr.md`,
 `changelog.d/security/0811-codeql-go-config-fix.md`.
+
+## release-please draft mode
+
+no rebase impact: release-tooling-only change (`release-please-config.json`
+`"draft": true`). No C sources, headers, or test logic modified.
