@@ -198,6 +198,29 @@ static inline int simd_test_have_avx2(void)
 }
 
 /* ---------------------------------------------------------------------
+ * x86 AVX-512 CPUID gate.
+ *
+ * Returns 1 if the host CPU exposes VMAF_X86_CPU_FLAG_AVX512, 0
+ * otherwise (and prints a "skipping" line to stderr). Tests that
+ * exercise AVX-512 kernels should bail out of `run_tests` when this
+ * returns 0. See ADR-0854.
+ * ------------------------------------------------------------------- */
+
+static inline int simd_test_have_avx512(void)
+{
+#if ARCH_X86
+    const unsigned cpu_flags = vmaf_get_cpu_flags_x86();
+    if (!(cpu_flags & VMAF_X86_CPU_FLAG_AVX512)) {
+        (void)fprintf(stderr, "skipping: CPU lacks AVX-512\n");
+        return 0;
+    }
+    return 1;
+#else
+    return 1;
+#endif
+}
+
+/* ---------------------------------------------------------------------
  * Bit-exact assertion macros.
  *
  * `SIMD_BITEXACT_ASSERT_MEMCMP` byte-compares two buffers of equal

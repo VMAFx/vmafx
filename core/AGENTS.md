@@ -555,3 +555,23 @@ the corrected methodology.
   `testdata/dis_1920x1080_48f.yuv`, `testdata/dis_2560x1440_48f.yuv`) are
   generated on first run and are **not committed** (they are reproducible via
   `ffmpeg -vf scale=W:H:flags=bilinear` from the in-tree 576×324 fixture).
+
+## AVX-512 motion parity test invariant (ADR-0854)
+
+- `core/test/test_motion_avx512_parity.c` provides direct bit-exact unit tests
+  for all six AVX-512 motion kernels.  If any of the following functions is
+  modified, the corresponding test case **must** be re-run and must pass:
+    - `motion_score_pipeline_8_avx512` (motion_v2_avx512.c)
+    - `motion_score_pipeline_16_avx512` (motion_v2_avx512.c)
+    - `sad_avx512` (motion_avx512.c)
+    - `y_convolution_8_avx512` (motion_avx512.c)
+    - `y_convolution_16_avx512` (motion_avx512.c)
+    - `x_convolution_16_avx512` (motion_avx512.c)
+- The scalar reference implementations in the test file are line-for-line
+  mirrors of the production scalar paths.  If the scalar production path
+  is changed (e.g. rounding bias, filter constants), update the test's
+  scalar reference accordingly and regenerate expected values.
+- The test skips on hosts without `VMAF_X86_CPU_FLAG_AVX512`; this is
+  intentional and correct.  CI must run on an AVX-512-capable host (see
+  `.github/workflows/build.yml` x86_64 runner) for the tests to be
+  meaningful.

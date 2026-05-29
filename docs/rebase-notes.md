@@ -43100,3 +43100,12 @@ intentionally — do not merge them into a shared header. The
 (the `x86_float_adm_avx2_lib` and `x86_float_adm_avx512_lib` targets) must
 be preserved on any rebase that touches the `meson.build` AVX2/AVX-512 build
 block; they mirror the `ssimulacra2` carve-out already in tree.
+
+## AVX-512 motion parity tests (ADR-0854, 2026-05-29)
+
+no rebase impact: REASON — changes are confined to new test files
+(`core/test/test_motion_avx512_parity.c`, `changelog.d/added/motion-avx512-parity-tests.md`,
+`docs/adr/0854-motion-avx512-parity-tests.md`) and additive changes to
+`core/test/simd_bitexact_test.h` (new helper function) and `core/test/meson.build`
+(new test registration).  No upstream Netflix/vmaf production source is modified;
+no existing test is changed; no golden assertions are touched.
