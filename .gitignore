@@ -68,6 +68,10 @@ python/vmaf/matlab/**/*.exp
 python/vmaf/matlab/**/*.lib
 python/vmaf/matlab/**/*.o
 
+# Local corpus data — large YUV/MP4 fixtures, never committed.
+# Was only in .git/info/exclude; now visible to all contributors.
+.corpus/
+
 # Working/scratch directories
 .workingdir/
 .workingdir2/

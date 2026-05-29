@@ -40,6 +40,7 @@ import argparse
 import json
 import logging
 import math
+import os
 import subprocess
 import sys
 import tempfile
@@ -67,7 +68,7 @@ _log = logging.getLogger(__name__)
 
 _DEFAULT_MODEL_JSON = _REPO_ROOT / "model" / "tiny" / "nr_metric_v1.json"
 _DEFAULT_MODEL_ONNX = _REPO_ROOT / "model" / "tiny" / "nr_metric_v1.onnx"
-_DEFAULT_CORPUS = _REPO_ROOT / ".corpus" / "netflix"
+_DEFAULT_CORPUS = Path(os.environ.get("VMAF_CORPUS_DIR", str(_REPO_ROOT / ".corpus" / "netflix")))
 _DEFAULT_CRFS: tuple[int, ...] = (18, 23, 28, 33, 38)
 _DEFAULT_CODEC = "libx264"
 _DEFAULT_PRESET = "medium"
