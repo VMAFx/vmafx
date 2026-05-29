@@ -203,19 +203,16 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
     }
     state->ctx.device_index = -1; /* external; no -d N enumeration */
 
-    /* Device: bridge-retain so we balance the bridge_transfer in
-     * vmaf_metal_state_free. When caller-owned, retain ours
-     * explicitly so we drop only our own reference on teardown. */
-    if (device_owned_externally) {
-        CFRetain((__bridge CFTypeRef)device);
-    }
+    /* Device and queue: __bridge_retained transfers ownership (+1 retain)
+     * to the void * slot. vmaf_metal_state_free uses __bridge_transfer
+     * (-1 retain) to balance. One __bridge_retained per pointer is
+     * sufficient whether the handle was caller-owned or internally
+     * created — the caller retains its own reference; we carry ours.
+     * The previous CFRetain + __bridge_retained pattern was +2 with
+     * only one __bridge_transfer on free, leaking one reference per
+     * init/close cycle (PR #117 audit finding MT-2). */
     state->ctx.device = (__bridge_retained void *)device;
-    if (queue_owned_externally) {
-        CFRetain((__bridge CFTypeRef)queue);
-        state->ctx.command_queue = (__bridge_retained void *)queue;
-    } else {
-        state->ctx.command_queue = (__bridge_retained void *)queue;
-    }
+    state->ctx.command_queue = (__bridge_retained void *)queue;
     state->import_ring = NULL;
 
     *out = state;
