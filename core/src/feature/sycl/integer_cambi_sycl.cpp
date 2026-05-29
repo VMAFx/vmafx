@@ -560,6 +560,7 @@ static const VmafOption options_cambi_sycl[] = {
 /* ------------------------------------------------------------------ */
 /* init_fex_sycl                                                        */
 /* ------------------------------------------------------------------ */
+static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -609,6 +610,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     if (!s->d_image || !s->d_mask || !s->d_tmp || !s->h_image || !s->h_mask) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_sycl: USM allocation failed\n");
+        close_fex_sycl(fex);
         return -ENOMEM;
     }
 

@@ -627,6 +627,7 @@ static const VmafOption options_float_adm_sycl[] = {
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {0}};
 
+static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -710,18 +711,24 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     }
 
     if (!s->h_ref_raw || !s->h_dis_raw || !s->d_ref_raw || !s->d_dis_raw || !s->d_dwt_tmp_ref ||
-        !s->d_dwt_tmp_dis || !s->d_csf_a || !s->d_csf_f)
+        !s->d_dwt_tmp_dis || !s->d_csf_a || !s->d_csf_f) {
+        close_fex_sycl(fex);
         return -ENOMEM;
+    }
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         if (!s->d_ref_band[scale] || !s->d_dis_band[scale] || !s->d_accum[scale] ||
-            !s->h_accum[scale])
+            !s->h_accum[scale]) {
+            close_fex_sycl(fex);
             return -ENOMEM;
+        }
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        close_fex_sycl(fex);
         return -ENOMEM;
+    }
     return 0;
 }
 

@@ -399,6 +399,7 @@ static const VmafOption options_psnr_hvs_sycl[] = {
     {0},
 };
 
+static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -478,14 +479,17 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         if (!s->h_ref[p] || !s->h_dist[p] || !s->d_ref[p] || !s->d_dist[p] || !s->d_partials[p] ||
             !s->h_partials[p]) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: USM allocation failed\n");
+            close_fex_sycl(fex);
             return -ENOMEM;
         }
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        close_fex_sycl(fex);
         return -ENOMEM;
+    }
     s->has_pending = false;
     return 0;
 }

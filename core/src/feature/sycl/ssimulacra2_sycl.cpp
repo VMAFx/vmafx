@@ -713,6 +713,7 @@ const VmafOption options_ssimulacra2_sycl[] = {
     {0},
 };
 
+static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                   unsigned h)
 {
@@ -766,8 +767,10 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
     if (!s->d_ref_xyb || !s->d_dis_xyb || !s->d_mul_buf || !s->d_blur_scratch || !s->d_mu1 ||
         !s->d_mu2 || !s->d_s11 || !s->d_s22 || !s->d_s12 || !s->h_ref_lin || !s->h_dis_lin ||
         !s->h_ref_xyb || !s->h_dis_xyb || !s->h_mu1 || !s->h_mu2 || !s->h_s11 || !s->h_s22 ||
-        !s->h_s12)
+        !s->h_s12) {
+        close_fex_sycl(fex);
         return -ENOMEM;
+    }
     return 0;
 }
 
