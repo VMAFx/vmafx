@@ -6,6 +6,21 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+### PR #127 SYCL implicit-widening NOLINT elimination (2026-05-29)
+
+No rebase impact on upstream C/Python code.
+
+All files modified are fork-local:
+`core/src/feature/sycl/integer_adm_sycl.cpp` (12 NOLINT comments removed, 8 `(ptrdiff_t)` casts added),
+`core/src/feature/sycl/integer_vif_sycl.cpp` (4 `(ptrdiff_t)` casts added),
+`changelog.d/fixed/sycl-implicit-widening-explicit-cast.md` (new),
+`docs/rebase-notes.md` (this entry).
+
+Both files are entirely fork-local SYCL kernels with no Netflix upstream equivalent.
+No upstream sync hazard.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

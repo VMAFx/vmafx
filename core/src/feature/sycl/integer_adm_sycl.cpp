@@ -1283,7 +1283,6 @@ static void adm_pre_graph(void *queue_ptr, void *priv);
 static void adm_post_graph(void *queue_ptr, void *priv);
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -1362,8 +1361,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->d_div_lookup = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, div_size));
 
     // Accumulators: 4 scales x 3 bands = 12 int64 each
-    // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-    size_t const accum_size = ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
+    size_t const accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
     s->d_cm_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, accum_size));
     s->d_csf_den_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, accum_size));
     s->h_cm_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, accum_size));
@@ -1373,7 +1371,6 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (!s->d_dwt_tmp_ref || !s->d_dwt_tmp_dis || !s->d_div_lookup || !s->d_cm_accum ||
         !s->d_csf_den_accum || !s->h_cm_accum || !s->h_csf_den_accum) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: device memory allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
 
@@ -1381,8 +1378,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     {
         int32_t *lut = static_cast<int32_t *>(std::malloc(div_size));
         if (!lut)
-            close_fex_sycl(fex);
-        return -ENOMEM;
+            return -ENOMEM;
         std::memset(lut, 0, div_size);
         static const int32_t Q_factor = 1073741824; // 2^30
         for (int i = 1; i <= 32768; i++) {
@@ -1396,10 +1392,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
+    if (!s->feature_name_dict)
         return -ENOMEM;
-    }
 
     // Register with combined command graph
     err = vmaf_sycl_graph_register(state, enqueue_adm_work, adm_pre_graph, adm_post_graph, nullptr,
@@ -1467,24 +1461,20 @@ static void enqueue_adm_work_impl(sycl::queue &q, AdmStateSycl *s, void *shared_
                                    s->d_div_lookup);
 
         // CSF denominator + Contrast measure: fused 3-band kernel with inline decouple
-        launch_csf_den_cm_3band(
-            q, scale, half_w, half_h, cur_stride,
-            // csf_den inputs
-            s->d_ref_band[1], s->d_ref_band[2], s->d_ref_band[3],
-            // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-            s->d_csf_den_accum + scale * ADM_NUM_BANDS + 0,
-            // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-            s->d_csf_den_accum + scale * ADM_NUM_BANDS + 1,
-            // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-            s->d_csf_den_accum + scale * ADM_NUM_BANDS + 2,
-            // cm inputs (decouple inlined)
-            s->i_rfactor[scale * 3 + 0], s->i_rfactor[scale * 3 + 1], s->i_rfactor[scale * 3 + 2],
-            s->d_dis_band[1], s->d_dis_band[2], s->d_dis_band[3], s->d_csf_f[0], s->d_csf_f[1],
-            s->d_csf_f[2], s->d_div_lookup, s->adm_enhn_gain_limit,
-            // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-            s->d_cm_accum + scale * ADM_NUM_BANDS + 0, s->d_cm_accum + scale * ADM_NUM_BANDS + 1,
-            // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-            s->d_cm_accum + scale * ADM_NUM_BANDS + 2);
+        launch_csf_den_cm_3band(q, scale, half_w, half_h, cur_stride,
+                                // csf_den inputs
+                                s->d_ref_band[1], s->d_ref_band[2], s->d_ref_band[3],
+                                s->d_csf_den_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 0,
+                                s->d_csf_den_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 1,
+                                s->d_csf_den_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 2,
+                                // cm inputs (decouple inlined)
+                                s->i_rfactor[scale * 3 + 0], s->i_rfactor[scale * 3 + 1],
+                                s->i_rfactor[scale * 3 + 2], s->d_dis_band[1], s->d_dis_band[2],
+                                s->d_dis_band[3], s->d_csf_f[0], s->d_csf_f[1], s->d_csf_f[2],
+                                s->d_div_lookup, s->adm_enhn_gain_limit,
+                                s->d_cm_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 0,
+                                s->d_cm_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 1,
+                                s->d_cm_accum + (ptrdiff_t)scale * ADM_NUM_BANDS + 2);
 
         // Next scale dimensions
         cur_w = half_w;
@@ -1501,8 +1491,7 @@ static void adm_pre_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
-    // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-    size_t adm_accum_size = ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
+    size_t adm_accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
     q.memset(s->d_cm_accum, 0, adm_accum_size);
     q.memset(s->d_csf_den_accum, 0, adm_accum_size);
 }
@@ -1520,8 +1509,7 @@ static void adm_post_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<AdmStateSycl *>(priv);
-    // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-    size_t accum_size = ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
+    size_t accum_size = (ptrdiff_t)ADM_NUM_SCALES * ADM_NUM_BANDS * sizeof(int64_t);
     q.memcpy(s->h_cm_accum, s->d_cm_accum, accum_size);
     q.memcpy(s->h_csf_den_accum, s->d_csf_den_accum, accum_size);
 }
