@@ -123,3 +123,15 @@ When porting an upstream Netflix/vmaf commit that modifies the original
 `libvmaf/src/metadata_handler.c`, apply the diff content to
 `core/src/metadata_handler.cpp` (C code is valid C++; the `extern "C"` block
 in the header stays). Run `make test-netflix-golden` post-port.
+
+### 10. C++23 Wave 8: opt.cpp and read_json_model.cpp are the active files (ADR-0761)
+
+`core/src/opt.cpp` and `core/src/read_json_model.cpp` are the compiled
+implementations (via `opt_cpp23_lib` / `read_json_model_cpp23_lib` isolated
+static libs). The originals `opt.c` / `read_json_model.c` remain in the tree
+as upstream-parity references but are NOT compiled. Do not add them back to
+`libvmaf_sources` or any test `sources:` list.
+
+`opt.h`, `log.h`, `model.h`, and `read_json_model.h` carry `extern "C"`
+guards; do not remove them. When upstream modifies any of these four headers,
+ensure new function declarations land inside the `extern "C"` block.

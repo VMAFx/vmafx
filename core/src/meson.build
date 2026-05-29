@@ -518,7 +518,7 @@ endif
 config_h_target = configure_file(output: 'config.h', configuration: cdata)
 
 libvmaf_cpu_sources = [
-    src_dir + 'cpu.cpp',
+    src_dir + 'cpu.c',
 ]
 
 if is_asm_enabled
@@ -555,9 +555,6 @@ libvmaf_cpu_static_lib = static_library(
     'libvmaf_cpu',
     libvmaf_cpu_sources,
     include_directories : [libvmaf_include],
-    # ADR-0755: cpu.cpp uses constinit (C++20) and std::atomic; override
-    # cpp_std so this TU compiles under C++23 without affecting other TUs.
-    override_options : ['cpp_std=c++23'],
 )
 
 platform_specific_cpu_objects = []
@@ -1311,7 +1308,7 @@ libvmaf_feature_sources = [
     feature_src_dir + 'feature_name.c',
     feature_src_dir + 'alias.c',
     feature_src_dir + 'integer_adm.c',
-    feature_src_dir + 'feature_collector.cpp',
+    feature_src_dir + 'feature_collector.c',
     feature_src_dir + 'integer_motion.c',
     feature_src_dir + 'integer_motion_v2.c',
     feature_src_dir + 'integer_vif.c',
@@ -1521,6 +1518,27 @@ metadata_handler_cpp20_lib = static_library(
     install : false,
 )
 
+# ADR-0761: opt.cpp and predict.cpp — C++23 Wave 8. Isolated static libs so
+# cpp_std=c++23 does not propagate to the remaining C TUs in libvmaf.
+# Linked into libvmaf.so via extract_all_objects() in the library() call below.
+opt_cpp23_lib = static_library(
+    'opt_cpp23',
+    src_dir + 'opt.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++23'],
+    pic : true,
+    install : false,
+)
+
+read_json_model_cpp23_lib = static_library(
+    'read_json_model_cpp23',
+    src_dir + 'read_json_model.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++23'],
+    pic : true,
+    install : false,
+)
+
 libvmaf_sources = [
     src_dir + 'libvmaf.c',
     src_dir + 'predict.c',
@@ -1531,9 +1549,9 @@ libvmaf_sources = [
     src_dir + 'fex_ctx_vector.c',
     src_dir + 'thread_pool.c',
     src_dir + 'dict.c',
-    src_dir + 'opt.c',
+    # opt.cpp compiled as opt_cpp23_lib (ADR-0761)
     src_dir + 'ref.c',
-    src_dir + 'read_json_model.c',
+    # read_json_model.cpp compiled as read_json_model_cpp23_lib (ADR-0761)
     src_dir + 'pdjson.c',
     src_dir + 'log.c',
     src_dir + 'framesync.c',
@@ -1622,6 +1640,9 @@ libvmaf = library(
         libsvm_static_lib.extract_all_objects(recursive: true),
         # ADR-0708: C++20 pilot TU compiled as isolated static lib.
         metadata_handler_cpp20_lib.extract_all_objects(recursive: true),
+        # ADR-0761: C++23 Wave 8 isolated static libs.
+        opt_cpp23_lib.extract_all_objects(recursive: true),
+        read_json_model_cpp23_lib.extract_all_objects(recursive: true),
     ],
     version : vmaf_soname_version,
     soversion : vmaf_soversion,

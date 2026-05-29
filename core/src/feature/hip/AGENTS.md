@@ -262,33 +262,3 @@ preprocessor expands the macro at the point of instantiation (inside
 The pattern is load-bearing.  Do not "fix" it by adding an additional
 `extern "C"` declaration inside the macro body — that would create a nested
 `extern "C"` which is legal in C++ but redundant and confusing to reviewers.
-## AdmBufferHip MUST be passed by pointer — invariant (ADR-0759)
-
-**Resolved**: The P1 known issue documented above (struct-by-value in ADM kernel
-signatures) has been fixed by ADR-0759 (PR perf/hip-adm-buffer-by-pointer-20260529).
-
-**Invariant going forward**: Any new `__global__` kernel that needs `AdmBufferHip`
-(or any other large parameter struct) MUST accept it as a pointer parameter, not by
-value. The host launch site must:
-
-1. Hold a device-side copy of the struct allocated in `init_fex_hip` (or equivalent
-   init path) via `hipMalloc`.
-2. Populate it via `hipMemcpy(hipMemcpyHostToDevice)` after all device pointers inside
-   the struct are set.
-3. Pass `&dev_ptr_var` (address of the device pointer variable) as the kernel arg.
-
-Pattern:
-```c
-/* host dispatch helper — correct */
-AdmBufferHip *buf_dev = s->buf_dev;  /* device pointer, set in init */
-void *args[] = {&buf_dev, /* ... */};
-hipModuleLaunchKernel(fn, ..., args, NULL);
-```
-
-Rationale: `AdmBufferHip` is ~272 bytes. Passing by value marshals the full struct
-through the per-launch argument buffer on every call. Pointer passing reduces this
-to 8 bytes (one pointer) per launch.
-
-The same rule applies to `AdmFixedParametersHip` (~244 bytes) once that follow-up
-is scoped; see ADR-0759 alternatives table. Do not add new by-value large struct
-parameters to ADM kernels without an explicit ADR justification.

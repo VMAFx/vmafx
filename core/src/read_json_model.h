@@ -21,6 +21,10 @@
 
 #include "model.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int vmaf_read_json_model_from_buffer(VmafModel **model, VmafModelConfig *cfg, const char *data,
                                      const int data_len);
 
@@ -34,5 +38,9 @@ int vmaf_read_json_model_from_path(VmafModel **model, VmafModelConfig *cfg, cons
 int vmaf_read_json_model_collection_from_path(VmafModel **model,
                                               VmafModelCollection **model_collection,
                                               VmafModelConfig *cfg, const char *path);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* __VMAF_JSON_MODEL_H__ */

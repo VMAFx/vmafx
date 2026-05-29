@@ -24,6 +24,10 @@
 #include "dict.h"
 #include "libvmaf/model.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum VmafModelType {
     VMAF_MODEL_TYPE_UNKNOWN = 0,
     VMAF_MODEL_TYPE_SVM_NUSVR,
@@ -94,5 +98,9 @@ typedef struct VmafModelCollection {
 char *vmaf_model_generate_name(VmafModelConfig *cfg);
 
 int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafModel *model);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* __VMAF_SRC_MODEL_H__ */

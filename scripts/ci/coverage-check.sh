@@ -8,7 +8,7 @@
 # be modifying upstream paths over time (SIMD fixes, refactors, bug fixes)
 # and need a safety net.
 #
-# Security-critical = files under core/src/dnn/, plus opt.c and
+# Security-critical = files under core/src/dnn/, plus opt.cpp and
 # read_json_model.c (JSON + option parsing: user-supplied input paths).
 # Files with zero gcovr data are skipped (no tests → nothing to assert).
 #
@@ -40,7 +40,7 @@ declare -A PER_FILE_MIN=(
   # 30-LOC skeletons), so the unit suite covers only the helpers the
   # current extractors call. The lower bar reflects the structural ceiling;
   # adding tests just to inflate this number would be code-shaped padding,
-  # not real correctness coverage. Distinct from opt.c / read_json_model.c
+  # not real correctness coverage. Distinct from opt.cpp / read_json_model.cpp
   # which parse user-supplied input and are properly security-critical.
   ["core/src/dnn/tiny_extractor_template.h"]=10
 )
@@ -97,7 +97,7 @@ fail=0
 while IFS=$'\t' read -r path pct total; do
   [ -z "$path" ] && continue
   case "$path" in
-    *core/src/dnn/* | *core/src/opt.c | *core/src/read_json_model.c)
+    *core/src/dnn/* | *core/src/opt.cpp | *core/src/read_json_model.cpp)
       if [ "$total" = "0" ] || awk -v c="$pct" 'BEGIN{exit !(c+0 == 0)}'; then
         echo "  critical (no tests yet — not enforced): $path — ${pct}%"
         continue

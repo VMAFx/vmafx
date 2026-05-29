@@ -22,6 +22,15 @@ gpu_all_deps = [
 libvmaf_public_link = get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf
 test_output_lto_override = host_machine.system() == 'darwin' ? ['b_lto=false'] : []
 
+# ADR-0761: opt.cpp and predict.cpp are compiled as isolated C++23 static libs
+# in src/meson.build. Tests that previously listed these files as direct sources
+# now pull them in via extract_all_objects() so the compilation honours
+# cpp_std=c++23 instead of the project-wide c++11 default.
+wave8_cpp23_objects = [
+    opt_cpp23_lib.extract_all_objects(recursive: true),
+    read_json_model_cpp23_lib.extract_all_objects(recursive: true),
+]
+
 test_context = executable('test_context',
     ['test.c', 'test_context.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -42,12 +51,12 @@ test_propagate_metadata = executable('test_propagate_metadata',
 )
 
 test_feature_collector = executable('test_feature_collector',
-    ['test.c', 'test_feature_collector.c', '../src/log.c', '../src/predict.c',
+    ['test.c', 'test_feature_collector.c', '../src/log.c',
      '../src/metadata_handler.cpp', rev_target],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
-    objects : libsvm_static_lib.extract_all_objects(recursive: true),
+    objects : [libsvm_static_lib.extract_all_objects(recursive: true)] + wave8_cpp23_objects,
 )
 
 # Coverage follow-up to PR #313 (R3 from
@@ -91,12 +100,13 @@ test_thread_pool = executable('test_thread_pool',
 )
 
 test_model = executable('test_model',
-    ['test.c', 'test_model.c', '../src/dict.c', '../src/pdjson.c', '../src/read_json_model.c', '../src/log.c', json_model_c_sources],
+    ['test.c', 'test_model.c', '../src/dict.c', '../src/pdjson.c', '../src/log.c', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
-    objects : libsvm_static_lib.extract_all_objects(recursive: true),
+    objects : [libsvm_static_lib.extract_all_objects(recursive: true),
+               read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
 )
 
 # Coverage for model-collection public API: vmaf_model_collection_load,
@@ -114,13 +124,14 @@ test_model_collection_api = executable('test_model_collection_api',
 
 test_predict = executable('test_predict',
     ['test.c', 'test_predict.c', '../src/dict.c', '../src/metadata_handler.cpp',
-     '../src/feature/feature_collector.cpp', '../src/feature/alias.c', '../src/model.c', '../src/log.c',
-     '../src/read_json_model.c', '../src/pdjson.c', json_model_c_sources, '../src/feature/feature_name.c', '../src/feature/feature_extractor.c',],
+     '../src/feature/feature_collector.c', '../src/feature/alias.c', '../src/model.c', '../src/log.c',
+     '../src/pdjson.c', json_model_c_sources, '../src/feature/feature_name.c', '../src/feature/feature_extractor.c',],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
-    objects : libsvm_static_lib.extract_all_objects(recursive: true),
+    objects : [libsvm_static_lib.extract_all_objects(recursive: true),
+               read_json_model_cpp23_lib.extract_all_objects(recursive: true)],
 )
 
 test_feature_extractor = executable('test_feature_extractor',
@@ -131,7 +142,7 @@ test_feature_extractor = executable('test_feature_extractor',
     # so it must be listed explicitly; the T-CUDA-FEATURE-EXTRACTOR-DOUBLE-WRITE
     # regression test exercises feature_extractor_vector_append() directly.
     ['test.c', 'test_feature_extractor.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c',
      '../src/fex_ctx_vector.c',
      dnn_sources],
@@ -145,7 +156,7 @@ test_feature_extractor = executable('test_feature_extractor',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
+    ] + wave8_cpp23_objects
 )
 
 test_dict = executable('test_dict',
@@ -155,9 +166,10 @@ test_dict = executable('test_dict',
 )
 
 test_opt = executable('test_opt',
-    ['test.c', 'test_opt.c', '../src/opt.c'],
+    ['test.c', 'test_opt.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [math_lib, pthread_dependency, sycl_dependency],
+    objects : wave8_cpp23_objects,
 )
 
 test_cpu = executable('test_cpu',
@@ -188,10 +200,10 @@ test_ciede = executable('test_ciede',
 
 # LPIPS registration tests — verify feature wiring without depending on a
 # real ORT session. Links against libvmaf_feature_static_lib for the
-# extractor list and pulls in opt.c for the VmafOption typedef.
+# extractor list and pulls in opt.cpp for the VmafOption typedef.
 test_lpips = executable('test_lpips',
     ['test.c', 'test_lpips.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -203,14 +215,14 @@ test_lpips = executable('test_lpips',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
+    ] + wave8_cpp23_objects
 )
 
 # DISTS-Sq registration tests — mirrors test_lpips and verifies the
 # two-input extractor is discoverable without requiring an ORT session.
 test_dists = executable('test_dists',
     ['test.c', 'test_dists.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -222,7 +234,7 @@ test_dists = executable('test_dists',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
+    ] + wave8_cpp23_objects
 )
 
 # FastDVDnet temporal pre-filter (T6-7) — same registration-only test
@@ -231,7 +243,7 @@ test_dists = executable('test_dists',
 # model/tiny/fastdvdnet_pre.onnx covers the live inference path.
 test_fastdvdnet_pre = executable('test_fastdvdnet_pre',
     ['test.c', 'test_fastdvdnet_pre.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -243,7 +255,7 @@ test_fastdvdnet_pre = executable('test_fastdvdnet_pre',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
+    ] + wave8_cpp23_objects
 )
 
 # MobileSal saliency registration tests (T6-2a) — same pattern as
@@ -252,7 +264,7 @@ test_fastdvdnet_pre = executable('test_fastdvdnet_pre',
 # gate against model/tiny/mobilesal.onnx.
 test_mobilesal = executable('test_mobilesal',
     ['test.c', 'test_mobilesal.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -264,7 +276,7 @@ test_mobilesal = executable('test_mobilesal',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
+    ] + wave8_cpp23_objects
 )
 
 # TransNet V2 shot-boundary detector — structural test, no real ORT
@@ -272,7 +284,7 @@ test_mobilesal = executable('test_mobilesal',
 # model/tiny/transnet_v2.onnx covers the live inference path.
 test_transnet_v2 = executable('test_transnet_v2',
     ['test.c', 'test_transnet_v2.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -284,7 +296,7 @@ test_transnet_v2 = executable('test_transnet_v2',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
+    ] + wave8_cpp23_objects
 )
 
 test_cambi = executable('test_cambi',
@@ -299,7 +311,7 @@ if cambi_simd_test_archs.contains(host_machine.cpu_family())
 test_cambi_simd = executable('test_cambi_simd',
     ['test.c', 'test_cambi_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -312,7 +324,7 @@ test_cambi_simd = executable('test_cambi_simd',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -327,7 +339,7 @@ endif
 if get_option('enable_float')
 test_speed = executable('test_speed',
     ['test.c', 'test_speed.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -339,14 +351,14 @@ test_speed = executable('test_speed',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
+    ] + wave8_cpp23_objects
 )
 endif
 # SpEED-QA extractor tests -- unconditional (speed_qa.c is not float-gated).
 # ADR-0253 real-impl: registration, vtable, flat/noise entropy, temporal positivity.
 test_speed_qa = executable('test_speed_qa',
     ['test.c', 'test_speed_qa.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -358,7 +370,7 @@ test_speed_qa = executable('test_speed_qa',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
+    ] + wave8_cpp23_objects
 )
 
 test_luminance_tools = executable('test_luminance_tools',
@@ -450,7 +462,7 @@ if iqa_convolve_test_archs.contains(host_machine.cpu_family())
 test_iqa_convolve = executable('test_iqa_convolve',
     ['test.c', 'test_iqa_convolve.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -463,7 +475,7 @@ test_iqa_convolve = executable('test_iqa_convolve',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -472,7 +484,7 @@ if psnr_hvs_avx2_test_archs.contains(host_machine.cpu_family())
 test_psnr_hvs_avx2 = executable('test_psnr_hvs_avx2',
     ['test.c', 'test_psnr_hvs_avx2.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -485,7 +497,7 @@ test_psnr_hvs_avx2 = executable('test_psnr_hvs_avx2',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -494,7 +506,7 @@ if vif_simd_test_archs.contains(host_machine.cpu_family())
 test_vif_simd = executable('test_vif_simd',
     ['test.c', 'test_vif_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -507,7 +519,7 @@ test_vif_simd = executable('test_vif_simd',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -516,7 +528,7 @@ if psnr_hvs_simd_test_archs.contains(host_machine.cpu_family())
 test_psnr_hvs_simd = executable('test_psnr_hvs_simd',
     ['test.c', 'test_psnr_hvs_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -529,7 +541,7 @@ test_psnr_hvs_simd = executable('test_psnr_hvs_simd',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -538,7 +550,7 @@ if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
 test_integer_adm_simd = executable('test_integer_adm_simd',
     ['test.c', 'test_integer_adm_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -551,7 +563,7 @@ test_integer_adm_simd = executable('test_integer_adm_simd',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -560,7 +572,7 @@ if motion_v2_simd_test_archs.contains(host_machine.cpu_family())
 test_motion_v2_simd = executable('test_motion_v2_simd',
     ['test.c', 'test_motion_v2_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -573,7 +585,7 @@ test_motion_v2_simd = executable('test_motion_v2_simd',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -589,7 +601,7 @@ if ssimulacra2_simd_test_archs.contains(host_machine.cpu_family())
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -602,7 +614,7 @@ test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -611,7 +623,7 @@ if psnr_hvs_neon_test_archs.contains(host_machine.cpu_family())
 test_psnr_hvs_neon = executable('test_psnr_hvs_neon',
     ['test.c', 'test_psnr_hvs_neon.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -624,7 +636,7 @@ test_psnr_hvs_neon = executable('test_psnr_hvs_neon',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -633,7 +645,7 @@ if float_enabled and moment_simd_test_archs.contains(host_machine.cpu_family())
 test_moment_simd = executable('test_moment_simd',
     ['test.c', 'test_moment_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -646,7 +658,7 @@ test_moment_simd = executable('test_moment_simd',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -657,7 +669,7 @@ if ms_ssim_decimate_test_archs.contains(host_machine.cpu_family())
 test_ms_ssim_decimate = executable('test_ms_ssim_decimate',
     ['test.c', 'test_ms_ssim_decimate.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
-     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
@@ -670,7 +682,7 @@ test_ms_ssim_decimate = executable('test_ms_ssim_decimate',
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_cpp23_objects,
 )
 endif
 
@@ -815,7 +827,7 @@ test('test_score_pooled_eagain', test_score_pooled_eagain, suite : ['fast'])
 # ADR-0153 — float_ms_ssim init rejects <176x176 (Netflix#1414).
 test_float_ms_ssim_min_dim = executable('test_float_ms_ssim_min_dim',
     ['test.c', 'test_float_ms_ssim_min_dim.c', '../src/mem.c', '../src/picture.c',
-     '../src/ref.c', '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/ref.c', '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -827,7 +839,7 @@ test_float_ms_ssim_min_dim = executable('test_float_ms_ssim_min_dim',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
+    ] + wave8_cpp23_objects
 )
 test('test_float_ms_ssim_min_dim', test_float_ms_ssim_min_dim, suite : ['fast'])
 
@@ -835,7 +847,7 @@ test('test_float_ms_ssim_min_dim', test_float_ms_ssim_min_dim, suite : ['fast'])
 # instead of reading out-of-bounds via the reflect-101 mirror-padding formula.
 test_motion_min_dim = executable('test_motion_min_dim',
     ['test.c', 'test_motion_min_dim.c', '../src/mem.c', '../src/picture.c',
-     '../src/ref.c', '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/ref.c', '../src/dict.c', '../src/log.c', '../src/predict.c',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
     c_args : vmaf_cflags_common + dnn_defines,
@@ -847,7 +859,7 @@ test_motion_min_dim = executable('test_motion_min_dim',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ]
+    ] + wave8_cpp23_objects
 )
 test('test_motion_min_dim', test_motion_min_dim, suite : ['fast'])
 
