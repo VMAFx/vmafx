@@ -20,8 +20,8 @@ ENABLE_FLOAT := -Denable_float=true
 ENABLE_NVCC :=	true
 ENABLE_CUDA := -Denable_cuda=true -Denable_nvcc=$(ENABLE_NVCC)
 
-# Directories
-LIBVMAF_DIR := libvmaf
+# Directories (ADR-0700: libvmaf/ renamed to core/)
+LIBVMAF_DIR := core
 BUILD_DIR := $(LIBVMAF_DIR)/build
 DEBUG_DIR := $(LIBVMAF_DIR)/debug
 
@@ -82,7 +82,8 @@ cythonize-deps: $(VENV_PIP)
 
 .PHONY: lint lint-c lint-py lint-sh format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast hooks-install help \
-        coverage coverage-html coverage-check assertion-density pr-check
+        coverage coverage-html coverage-check assertion-density pr-check \
+        docs-fragments-check docs-fragments-write
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
 lint: lint-c lint-py lint-sh docs-fragments-check
@@ -175,18 +176,18 @@ test-netflix-golden: build
 # Sanitizer build (ASan + UBSan) — used by CI and `/build-vmaf --sanitizers`.
 test-sanitizers:
 	@mkdir -p build-san
-	meson setup build-san $(LIBVMAF_DIR) --buildtype=debug \
+	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) build-san $(LIBVMAF_DIR) --buildtype=debug \
 	    -Db_sanitize=address,undefined \
 	    -Denable_cuda=false -Denable_sycl=false \
 	    --reconfigure 2>/dev/null || \
-	meson setup build-san $(LIBVMAF_DIR) --buildtype=debug \
+	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) build-san $(LIBVMAF_DIR) --buildtype=debug \
 	    -Db_sanitize=address,undefined \
 	    -Denable_cuda=false -Denable_sycl=false
-	ninja -C build-san
-	meson test -C build-san --print-errorlogs
+	PATH="$(VENV)/bin:$$PATH" $(NINJA) -C build-san
+	PATH="$(VENV)/bin:$$PATH" $(MESON) test -C build-san --print-errorlogs
 
 test-fast: build
-	PATH="$(VENV)/bin:$$PATH" meson test -C $(BUILD_DIR) --suite=fast
+	PATH="$(VENV)/bin:$$PATH" $(MESON) test -C $(BUILD_DIR) --suite=fast
 
 # ============================================================================
 # Coverage gate (docs/principles.md §3 — ≥70% overall, ≥85% security-critical)
@@ -202,12 +203,12 @@ coverage:
 	@command -v lcov >/dev/null || { echo "lcov not found — install lcov"; exit 1; }
 	@command -v gcov >/dev/null || { echo "gcov not found — install gcc"; exit 1; }
 	@mkdir -p $(COVERAGE_DIR)
-	meson setup $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug -Db_coverage=true \
+	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug -Db_coverage=true \
 	    -Denable_cuda=false -Denable_sycl=false --reconfigure 2>/dev/null || \
-	meson setup $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug -Db_coverage=true \
+	PATH="$(VENV)/bin:$$PATH" $(MESON_SETUP) $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug -Db_coverage=true \
 	    -Denable_cuda=false -Denable_sycl=false
-	ninja -C $(COVERAGE_DIR)
-	meson test -C $(COVERAGE_DIR) --print-errorlogs
+	PATH="$(VENV)/bin:$$PATH" $(NINJA) -C $(COVERAGE_DIR)
+	PATH="$(VENV)/bin:$$PATH" $(MESON) test -C $(COVERAGE_DIR) --print-errorlogs
 	@echo "--- gathering coverage ---"
 	lcov --capture --directory $(COVERAGE_DIR) --output-file $(COVERAGE_DIR)/coverage.info \
 	     --ignore-errors mismatch,gcov,source --rc geninfo_unexecuted_blocks=1
@@ -322,24 +323,26 @@ rust-test:
 
 help:
 	@echo "Fork-specific targets:"
-	@echo "  make lint             — clang-tidy + cppcheck + ruff + shellcheck"
-	@echo "  make format           — clang-format + black + isort + shfmt (writes)"
-	@echo "  make format-check     — same, no writes (CI gate)"
-	@echo "  make sec              — semgrep (CERT-C + CWE + fork rules)"
-	@echo "  make sbom             — SPDX + CycloneDX SBOMs via syft"
-	@echo "  make pr-check         — ADR-0108 deliverables gate (PR=<num> or BODY=<file>)"
-	@echo "  make test-netflix-golden — D24 gate: 3 Netflix CPU test pairs"
-	@echo "  make test-sanitizers  — ASan + UBSan build + run"
-	@echo "  make test-fast        — meson --suite=fast (pre-push gate)"
-	@echo "  make coverage         — gcov/lcov line+branch coverage report"
-	@echo "  make coverage-html    — render HTML coverage report"
-	@echo "  make coverage-check   — enforce ≥70% overall / ≥85% critical"
-	@echo "  make assertion-density — Power-of-10 rule 5 density check"
-	@echo "  make hooks-install    — wire up pre-commit git hooks"
+	@echo "  make lint                  — clang-tidy + cppcheck + ruff + shellcheck"
+	@echo "  make format                — clang-format + black + isort + shfmt (writes)"
+	@echo "  make format-check          — same, no writes (CI gate)"
+	@echo "  make sec                   — semgrep (CERT-C + CWE + fork rules)"
+	@echo "  make sbom                  — SPDX + CycloneDX SBOMs via syft"
+	@echo "  make pr-check              — ADR-0108 deliverables gate (PR=<num> or BODY=<file>)"
+	@echo "  make docs-fragments-check  — verify changelog.d + ADR index in sync (ADR-0221)"
+	@echo "  make docs-fragments-write  — regenerate CHANGELOG.md + docs/adr/README.md from fragments"
+	@echo "  make test-netflix-golden   — D24 gate: 3 Netflix CPU test pairs"
+	@echo "  make test-sanitizers       — ASan + UBSan build + run"
+	@echo "  make test-fast             — meson --suite=fast (pre-push gate)"
+	@echo "  make coverage              — gcov/lcov line+branch coverage report"
+	@echo "  make coverage-html         — render HTML coverage report"
+	@echo "  make coverage-check        — enforce ≥70% overall / ≥85% critical"
+	@echo "  make assertion-density     — Power-of-10 rule 5 density check"
+	@echo "  make hooks-install         — wire up pre-commit git hooks"
 	@echo ""
-	@echo "  make go-build         — go build ./... (Go workspace, ADR-0702)"
-	@echo "  make go-test          — go test ./... (Go workspace, ADR-0702)"
-	@echo "  make rust-build       — cargo check --all (Rust workspace, ADR-0702)"
-	@echo "  make rust-test        — cargo test --all (Rust workspace, ADR-0702)"
+	@echo "  make go-build              — go build ./... (Go workspace, ADR-0702)"
+	@echo "  make go-test               — go test ./... (Go workspace, ADR-0702)"
+	@echo "  make rust-build            — cargo check --all (Rust workspace, ADR-0702)"
+	@echo "  make rust-test             — cargo test --all (Rust workspace, ADR-0702)"
 	@echo ""
 	@echo "Upstream targets: build, test, debug, install, clean, distclean, cythonize"
