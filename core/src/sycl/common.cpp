@@ -486,7 +486,7 @@ extern "C" int vmaf_sycl_shared_frame_init(VmafSyclState *state, unsigned w, uns
         return 0;
 
     unsigned bytes_per_pixel = (bpc + 7) / 8;
-    size_t buf_size = (size_t)w * h * bytes_per_pixel;
+    size_t buf_size = static_cast<size_t>(w) * h * bytes_per_pixel;
 
     // Allocate two sets of ref+dis buffers for double-buffering.
     // Buffer [cur_upload] receives H2D data while compute reads [cur_compute].
@@ -550,16 +550,16 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
     // In-order copy_queue ensures sequential uploads complete in order.
     int ui = state->cur_upload;
     unsigned bytes_per_pixel = (state->frame_bpc + 7) / 8;
-    size_t row_bytes = (size_t)state->frame_w * bytes_per_pixel;
+    size_t row_bytes = static_cast<size_t>(state->frame_w) * bytes_per_pixel;
 
     try {
         // If stride matches width, single memcpy; otherwise row-by-row
-        if ((unsigned)ref->stride[0] == row_bytes) {
+        if (static_cast<unsigned>(ref->stride[0]) == row_bytes) {
             state->copy_queue.memcpy(state->shared_ref_buf[ui], ref->data[0],
                                      state->shared_buf_size);
         } else {
-            uint8_t *dst = (uint8_t *)state->shared_ref_buf[ui];
-            const uint8_t *src = (const uint8_t *)ref->data[0];
+            auto *dst = static_cast<uint8_t *>(state->shared_ref_buf[ui]);
+            const auto *src = static_cast<const uint8_t *>(ref->data[0]);
             for (unsigned y = 0; y < state->frame_h; y++) {
                 state->copy_queue.memcpy(dst, src, row_bytes);
                 dst += row_bytes;
@@ -570,12 +570,12 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
         double t1 = monotonic_ms();
 
         sycl::event last_ev;
-        if ((unsigned)dis->stride[0] == row_bytes) {
+        if (static_cast<unsigned>(dis->stride[0]) == row_bytes) {
             last_ev = state->copy_queue.memcpy(state->shared_dis_buf[ui], dis->data[0],
                                                state->shared_buf_size);
         } else {
-            uint8_t *dst = (uint8_t *)state->shared_dis_buf[ui];
-            const uint8_t *src = (const uint8_t *)dis->data[0];
+            auto *dst = static_cast<uint8_t *>(state->shared_dis_buf[ui]);
+            const auto *src = static_cast<const uint8_t *>(dis->data[0]);
             for (unsigned y = 0; y < state->frame_h; y++) {
                 last_ev = state->copy_queue.memcpy(dst, src, row_bytes);
                 dst += row_bytes;
@@ -622,7 +622,7 @@ extern "C" int vmaf_sycl_upload_plane(VmafSyclState *state, const void *src, uns
         return -EINVAL;
 
     unsigned bytes_per_pixel = (bpc + 7) / 8;
-    size_t row_bytes = (size_t)w * bytes_per_pixel;
+    size_t row_bytes = static_cast<size_t>(w) * bytes_per_pixel;
 
     try {
         if (pitch == row_bytes) {
@@ -630,8 +630,8 @@ extern "C" int vmaf_sycl_upload_plane(VmafSyclState *state, const void *src, uns
             state->copy_queue.memcpy(target_buf, src, row_bytes * h);
         } else {
             /* Pitched — row-by-row H2D copy via copy queue */
-            uint8_t *dst = (uint8_t *)target_buf;
-            const uint8_t *s = (const uint8_t *)src;
+            auto *dst = static_cast<uint8_t *>(target_buf);
+            const auto *s = static_cast<const uint8_t *>(src);
             for (unsigned y = 0; y < h; y++) {
                 state->copy_queue.memcpy(dst, s, row_bytes);
                 dst += row_bytes;

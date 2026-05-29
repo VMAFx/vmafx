@@ -6,6 +6,16 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## cpp23-shadow-const-fixes (2026-05-29, ADR-0839)
+
+no rebase impact: REASON — all changed files (`core/src/feature/feature_collector.cpp`,
+`core/src/fex_ctx_vector.cpp`, `core/src/sycl/common.cpp`) are fork-local C++23
+conversions with no upstream counterpart in Netflix/vmaf master. The upstream originals
+(`feature_collector.c`, `fex_ctx_vector.c`) are pure C; the `.cpp` files were created by
+the fork's C++23 wave (ADR-0708 ff.) and are not subject to upstream rebase churn.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
