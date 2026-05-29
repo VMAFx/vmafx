@@ -25,31 +25,24 @@ query-filters:
       id: cpp/poorly-documented-function
 
 paths:
-<<<<<<< HEAD
   - core/src
   - core/include
   - core/tools
   - python/vmaf
   - compat/python-vmaf
-=======
-  - libvmaf/src
-  - libvmaf/include
-  - libvmaf/tools
-  - python/vmaf
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   - mcp-server
   - ai/src
+  - cmd
+  - pkg
+  - api
 
 paths-ignore:
   - subprojects
   - build
   - builddir
-<<<<<<< HEAD
   - core/test
-=======
-  - libvmaf/test
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   - python/test
   - testdata
   - "**/third_party/**"
   - "**/*.generated.*"
+  - gen/go
