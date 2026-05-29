@@ -74,13 +74,13 @@ Usage:
       {{ include "vmafx.gpuResource" . }}: {{ .Values.gpu.count | quote }}
 
 Vendor → resource mapping:
-  nvidia  →  nvidia.com/gpu       (CUDA backend)
-  amd     →  amd.com/gpu          (HIP backend via ROCm)
-  intel   →  gpu.intel.com/i915   (SYCL backend)
+  nvidia  →  nvidia.com/gpu       (CUDA + Vulkan-on-NVIDIA)
+  amd     →  amd.com/gpu          (HIP  + Vulkan-on-AMD via ROCm)
+  intel   →  gpu.intel.com/i915   (SYCL + Vulkan-on-Intel)
   cpu     →  (empty string — no device-plugin resource inserted)
 
-Note: Vulkan was removed as a VMAFX backend in ADR-0726.
-See docs/development/gpu-scheduling.md.
+Note: Vulkan is NOT a separate Kubernetes resource.  It runs through whichever
+GPU device-plugin is allocated.  See docs/development/gpu-scheduling.md.
 */}}
 {{- define "vmafx.gpuResource" -}}
 {{- if .Values.gpu.enabled }}

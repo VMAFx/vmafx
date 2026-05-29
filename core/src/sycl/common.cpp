@@ -1188,4 +1188,3 @@ extern "C" int vmaf_sycl_profiling_get_string(VmafSyclState *state, char **outpu
 }
 
 #endif /* HAVE_SYCL */
-// test
