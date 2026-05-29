@@ -18,6 +18,43 @@ extractors, quality runners, models).
 5. Test: `meson test -C build`
 6. Format + lint before pushing: `make format && make lint`
 
+## Pre-commit hook inventory
+
+The following hooks run automatically on `git commit` (unless noted as `pre-push`).
+Install them with `make hooks-install`.
+
+| Hook | Source repo | Stage | Purpose |
+|------|-------------|-------|---------|
+| `trailing-whitespace` | pre-commit-hooks | commit | Remove trailing whitespace (text files only) |
+| `end-of-file-fixer` | pre-commit-hooks | commit | Ensure files end with a newline |
+| `check-merge-conflict` | pre-commit-hooks | commit | Reject conflict markers left in source |
+| `check-yaml` | pre-commit-hooks | commit | Validate YAML syntax |
+| `check-json` | pre-commit-hooks | commit | Validate JSON syntax |
+| `check-toml` | pre-commit-hooks | commit | Validate TOML syntax |
+| `mixed-line-ending` | pre-commit-hooks | commit | Normalise line endings to LF |
+| `check-added-large-files` | pre-commit-hooks | commit | Reject files larger than 1 MB |
+| `detect-private-key` | pre-commit-hooks | commit | Detect accidentally staged private keys |
+| `forbid-new-submodules` | pre-commit-hooks | commit | Prevent introduction of git submodules |
+| `clang-format` | mirrors-clang-format | commit | Format C/C++/CUDA sources |
+| `black` | psf/black | commit | Format Python sources |
+| `isort` | PyCQA/isort | commit | Sort Python imports |
+| `ruff-check` | astral-sh/ruff | commit | Lint Python sources |
+| `shfmt-src` | scop/pre-commit-shfmt | commit | Format shell scripts |
+| `shellcheck` | shellcheck-py | commit | Lint shell scripts |
+| `gitleaks` | gitleaks | commit | Scan for secrets and credentials |
+| `conventional-pre-commit` | compilerla | commit-msg | Enforce Conventional Commits format |
+| `agent-worktree-drift-guard` | local | commit | Prevent commits to shared tree while agents are active (ADR-0332) |
+| `check-copyright` | local | commit | Require license headers in new C/C++/CUDA files (ADR-0105) |
+| `check-adr-numbering` | local | commit | Detect ADR number collisions (ADR-0386) |
+| `semgrep-local` | local | commit | Run project security rules (`.semgrep.yml`) |
+| `assertion-density` | local | **pre-push** | Enforce NASA Power-of-10 assertion density |
+| `mypy-local` | local | **pre-push** | Type-check `ai/` and `scripts/` Python |
+| `ffmpeg-patches-apply-check` | local | **pre-push** | Verify `ffmpeg-patches/` still apply cleanly |
+| `validate-pr-body` | local | **pre-push** | Check PR body deliverables checklist (ADR-0108) |
+
+See [ADR-0826](docs/adr/0826-pre-commit-hook-inventory.md) for hook selection rationale
+and binary-exclusion policies.
+
 ## Core rules
 
 - **Conventional Commits** — every commit. Enforced by commit-msg hook and

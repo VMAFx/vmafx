@@ -320,9 +320,9 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
 }
 
 /* Stub signature must match the real-ORT path declared in the header. */
-int vmaf_dnn_session_run_luma8(
-    VmafDnnSession *sess, const uint8_t *in, size_t in_stride, int w, int h, uint8_t *out,
-    size_t out_stride) // NOLINT(readability-non-const-parameter) — stub contract per ADR-0374
+int vmaf_dnn_session_run_luma8(VmafDnnSession *sess, const uint8_t *in, size_t in_stride, int w,
+                               int h, uint8_t *out,
+                               size_t out_stride) // NOLINT(readability-non-const-parameter)
 {
     (void)sess;
     (void)in;
@@ -334,10 +334,10 @@ int vmaf_dnn_session_run_luma8(
     return -ENOSYS;
 }
 
-int vmaf_dnn_session_run_plane16(
-    VmafDnnSession *sess, const uint16_t *in, size_t in_stride, int w, int h, int bpc,
-    uint16_t *out, // NOLINT(readability-non-const-parameter) — stub contract per ADR-0374
-    size_t out_stride)
+int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in, size_t in_stride, int w,
+                                 int h, int bpc,
+                                 uint16_t *out, // NOLINT(readability-non-const-parameter)
+                                 size_t out_stride)
 {
     (void)sess;
     (void)in;
@@ -350,9 +350,9 @@ int vmaf_dnn_session_run_plane16(
     return -ENOSYS;
 }
 
-int vmaf_dnn_session_run(
-    VmafDnnSession *sess, const VmafDnnInput *inputs, size_t n_inputs, VmafDnnOutput *outputs,
-    size_t n_outputs) // NOLINT(readability-non-const-parameter) — stub contract per ADR-0374
+int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *inputs, size_t n_inputs,
+                         VmafDnnOutput *outputs,
+                         size_t n_outputs) // NOLINT(readability-non-const-parameter)
 {
     (void)sess;
     (void)inputs;

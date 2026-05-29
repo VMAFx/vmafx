@@ -132,7 +132,6 @@ extern "C" {
 
 static const VmafOption options_moment_sycl[] = {{0}};
 
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -159,16 +158,13 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->h_sums = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, 4u * sizeof(int64_t)));
     if (!s->d_sums || !s->h_sums) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_moment_sycl: device memory allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
+    if (!s->feature_name_dict)
         return -ENOMEM;
-    }
 
     s->has_pending = false;
 

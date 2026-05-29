@@ -43,6 +43,7 @@ repos:
         # .onnx.data added alongside .onnx (external tensor sidecar; raw bytes).
         exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
       - id: detect-private-key
+      - id: forbid-new-submodules
 
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v22.1.5
