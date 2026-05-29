@@ -830,25 +830,6 @@ filter1d_16_horizontal_kernel(VifBufferCuda buf, int w, int h, int32_t add_shift
             buf, w, h, vif_filt_s0, vif_enhn_gain_limit, accum);                                   \
     }
 
-/*
- * ADR-0753: _NO_BOUNDS sibling — omits __launch_bounds__ for WS_SMALL (<720p)
- * where the kernel is wave-limited and the register-pressure hint provides no
- * occupancy gain.  The compiler allocates a larger register budget (up to 56
- * on sm_89), which is beneficial at low frame counts where occupancy is not
- * the bottleneck.  At WS_LARGE (>=4K) the __ldg() gains dominate and the
- * __launch_bounds__ overhead disappears behind the saturated wave count; the
- * no-bounds variant is also used there.
- */
-#define FILTER1D_8_HORI_NO_BOUNDS(val_per_thread, fwidth_0, fwidth_1)                              \
-    __global__ void                                                                                \
-    filter1d_8_horizontal_kernel_##val_per_thread##_##fwidth_0##_##fwidth_1##_no_bounds(           \
-        VifBufferCuda buf, int w, int h, filter_table_stuct vif_filt_s0,                           \
-        double vif_enhn_gain_limit, vif_accums *accum)                                             \
-    {                                                                                              \
-        filter1d_8_horizontal_kernel<val_per_thread, fwidth_0, fwidth_1>(                          \
-            buf, w, h, vif_filt_s0, vif_enhn_gain_limit, accum);                                   \
-    }
-
 #define FILTER1D_16_VERT(alignment_type, fwidth, fwidth_rd, scale)                                 \
     __global__ void                                                                                \
     filter1d_16_vertical_kernel_##alignment_type##_##fwidth##_##fwidth_rd##_##scale(               \
@@ -879,9 +860,7 @@ FILTER1D_8_VERT(uint32_t, 17, 9); // filter1d_8_vertical_kernel_uint32_t_17_9
  * making the 17-tap kernel smem-limited at 37.5% occupancy on sm_89 vs 83.3%
  * for vpt=2 with __launch_bounds__.  vpt=4 reverted.
  */
-FILTER1D_8_HORI(2, 17, 9); // filter1d_8_horizontal_kernel_2_17_9
-FILTER1D_8_HORI_NO_BOUNDS(
-    2, 17, 9); // filter1d_8_horizontal_kernel_2_17_9_no_bounds (ADR-0753 WS_SMALL/WS_LARGE)
+FILTER1D_8_HORI(2, 17, 9);         // filter1d_8_horizontal_kernel_2_17_9
 FILTER1D_16_VERT(uint2, 17, 9, 0); // filter1d_16_vertical_kernel_uint2_17_9_0
 FILTER1D_16_VERT(uint2, 9, 5, 1);  // filter1d_16_vertical_kernel_uint2_9_5_1
 FILTER1D_16_VERT(uint2, 5, 3, 2);  // filter1d_16_vertical_kernel_uint2_5_3_2

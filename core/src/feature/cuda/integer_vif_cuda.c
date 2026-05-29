@@ -34,7 +34,6 @@
 #include "cuda/integer_vif_cuda.h"
 #include "drain_batch.h"
 #include "picture_cuda.h"
-#include "feature/cuda/resolution_dispatch.h"
 
 #if ARCH_X86
 #include "x86/vif_avx2.h"
@@ -61,12 +60,11 @@ typedef struct VifStateCuda {
                         CUstream stream);
     VmafDictionary *feature_name_dict;
     CUfunction func_filter1d_8_vertical_kernel_uint32_t_17_9,
-        func_filter1d_8_horizontal_kernel_2_17_9, /* with __launch_bounds__(128,10): WS_MEDIUM + WS_LARGE */
-        func_filter1d_8_horizontal_kernel_2_17_9_no_bounds, /* without bounds hint: WS_SMALL only              */
-        func_filter1d_16_vertical_kernel_uint2_17_9_0, func_filter1d_16_vertical_kernel_uint2_9_5_1,
-        func_filter1d_16_vertical_kernel_uint2_5_3_2, func_filter1d_16_vertical_kernel_uint2_3_0_3,
-        func_filter1d_16_horizontal_kernel_2_17_9_0, func_filter1d_16_horizontal_kernel_2_9_5_1,
-        func_filter1d_16_horizontal_kernel_2_5_3_2, func_filter1d_16_horizontal_kernel_2_3_0_3;
+        func_filter1d_8_horizontal_kernel_2_17_9, func_filter1d_16_vertical_kernel_uint2_17_9_0,
+        func_filter1d_16_vertical_kernel_uint2_9_5_1, func_filter1d_16_vertical_kernel_uint2_5_3_2,
+        func_filter1d_16_vertical_kernel_uint2_3_0_3, func_filter1d_16_horizontal_kernel_2_17_9_0,
+        func_filter1d_16_horizontal_kernel_2_9_5_1, func_filter1d_16_horizontal_kernel_2_5_3_2,
+        func_filter1d_16_horizontal_kernel_2_3_0_3;
 } VifStateCuda;
 
 typedef struct write_score_parameters_vif {
@@ -145,20 +143,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                                         filter1d_module,
                                         "filter1d_8_vertical_kernel_uint32_t_17_9"),
                     fail);
-    /* ADR-0753: load both resolution variants of filter1d_8_horizontal_kernel_2_17_9.
-     * The bounded variant (WS_MEDIUM + WS_LARGE) carries __launch_bounds__(128,10)
-     * which reduces registers 56→48 on sm_89, lifting occupancy 75%→83.3% (ADR-0743).
-     * __ldg() loads are present in BOTH variants and remain beneficial at >=1080p.
-     * The no-bounds variant (WS_SMALL) lets the compiler keep the full register
-     * budget where the kernel is wave-limited and occupancy pressure is absent. */
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_8_horizontal_kernel_2_17_9,
                                         filter1d_module, "filter1d_8_horizontal_kernel_2_17_9"),
-                    fail);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter1d_8_horizontal_kernel_2_17_9_no_bounds,
-                                        filter1d_module,
-                                        "filter1d_8_horizontal_kernel_2_17_9_no_bounds"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_17_9_0,
@@ -346,6 +333,14 @@ int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *di
                                                stream, args_vert, NULL));
     }
     {
+<<<<<<< HEAD
+        /*
+         * ADR-0743: __launch_bounds__(128, 10) on filter1d_8_horizontal_kernel_2_17_9
+         * reduced registers from 56 to 48.  vpt=2 is retained (vpt=4 evaluated and
+         * rejected — smem-limited at 37.5% occupancy vs 62.5% for vpt=2).
+         */
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
         const int BLOCKX = 128, BLOCKY = 1, val_per_thread = 2;
 
         void *args_hori[] = {
@@ -354,29 +349,6 @@ int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *di
                                                DIV_ROUND_UP(w, BLOCKX * val_per_thread),
                                                DIV_ROUND_UP(h, BLOCKY), 1, BLOCKX, BLOCKY, 1, 0,
                                                stream, args_hori, NULL));
-=======
-        /*
-         * ADR-0753 / ADR-0743: resolution-aware dispatch for the 17-tap horizontal kernel.
-         * Policy: BOUNDED (__launch_bounds__(128,10), registers 48) at WS_MEDIUM and
-         * WS_LARGE (>=720p) where the workload has enough waves to benefit from the
-         * higher occupancy.  NO_BOUNDS (full register budget, up to 56 on sm_89) at
-         * WS_SMALL (<720p) where the kernel is wave-limited and occupancy pressure is
-         * absent.  __ldg() loads are present in BOTH variants (always beneficial per
-         * ADR-0743 Research-0748).
-         */
-        const int BLOCKX = 128, BLOCKY = 1, val_per_thread = 2;
-        const enum WorkloadSize filter1d_ws = vmaf_cuda_workload_class(w, h);
-        CUfunction filter1d_hori_fn = (filter1d_ws == WS_SMALL) ?
-                                          s->func_filter1d_8_horizontal_kernel_2_17_9_no_bounds :
-                                          s->func_filter1d_8_horizontal_kernel_2_17_9;
-
-        void *args_hori[] = {
-            &*buf, &w, &h, (uint16_t *)&vif_filter1d_table, &vif_enhn_gain_limit, &buf->accum};
-        CHECK_CUDA_RETURN(cu_f,
-                          cuLaunchKernel(filter1d_hori_fn, DIV_ROUND_UP(w, BLOCKX * val_per_thread),
-                                         DIV_ROUND_UP(h, BLOCKY), 1, BLOCKX, BLOCKY, 1, 0, stream,
-                                         args_hori, NULL));
->>>>>>> b8f2a794b0 (feat(cuda): wire filter1d + ssim_vert_combine variants into resolution dispatch (ADR-0753))
     }
     return 0;
 }

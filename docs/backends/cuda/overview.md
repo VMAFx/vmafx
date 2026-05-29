@@ -118,53 +118,6 @@ core/src/feature/cuda/        # per-feature kernels
 
 Adding a new CUDA extractor: see [`/add-feature-extractor`](../../../.claude/skills/add-feature-extractor/SKILL.md).
 
-## Resolution-aware kernel variant dispatch
-
-The fork ships a lightweight runtime classifier (`vmaf_cuda_workload_class`) that
-maps a frame's luma pixel count to one of three workload classes:
-
-| Class      | Luma pixels           | Canonical example |
-| ---------- | --------------------- | ----------------- |
-| `WS_SMALL` | < 921 600 (< 720p)    | 576p              |
-| `WS_MEDIUM`| 921 600 – 8 294 399   | 1080p             |
-| `WS_LARGE` | >= 8 294 400 (>= 4K)  | 4K UHD            |
-
-This is used to select between kernel variants that are tuned for different
-occupancy regimes. The initial policy (ADR-0753):
-
-| Optimisation                                         | WS_SMALL | WS_MEDIUM | WS_LARGE |
-| ---------------------------------------------------- | -------- | --------- | -------- |
-| `adm_cm` `__launch_bounds__(128,8)`                  | SKIP     | APPLY     | SKIP     |
-| `filter1d` `__ldg + __launch_bounds__(128,10)`       | SKIP     | APPLY     | APPLY    |
-| `ssim_vert_combine` `__ldg + __launch_bounds__(128)` | SKIP     | APPLY     | APPLY    |
-| `ms_ssim_decimate` smem tiling                       | SKIP     | SKIP      | SKIP     |
-
-Kernels currently wired to this dispatch (all three updated in ADR-0753 extended scope):
-
-| Kernel                              | Host file               | `.cu` file                |
-| ----------------------------------- | ----------------------- | ------------------------- |
-| `adm_cm_line_kernel_8[_no_bounds]`  | `integer_adm_cuda.c`    | `integer_adm/adm_cm.cu`   |
-| `filter1d_8_horizontal_kernel_2_17_9[_no_bounds]` | `integer_vif_cuda.c` | `integer_vif/filter1d.cu` |
-| `calculate_ssim_vert_combine[_no_bounds]` | `integer_ssim_cuda.c` | `integer_ssim/ssim_score.cu` |
-
-The classifier lives in:
-- `core/src/feature/cuda/resolution_dispatch.h` — enum + function declaration
-- `core/src/feature/cuda/resolution_dispatch.c` — implementation (pure C, no CUDA headers)
-
-See `core/src/feature/cuda/AGENTS.md` for the recipe for adding a new
-resolution-aware variant to any extractor.
-
-Profile guidance: to verify which workload class a kernel is landing in and
-whether the variant selection is correct, run:
-
-```bash
-ncu --section LaunchStats --kernel-name "adm_cm_line_kernel_8"     ./build/tools/vmaf --feature adm --backend cuda     --reference <ref.yuv> --distorted <dis.yuv>     --width 1920 --height 1080 --pixel_format yuv420p --bitdepth 8
-```
-
-`LaunchStats.BlocksPerSM` < 4 at WS_MEDIUM suggests the `__launch_bounds__`
-variant is register-limiting correctly; > 6 would suggest the bounds are
-overly aggressive.
-
 ## Design notes
 
 - **Driver API only.** We link against `cuda.h` via `ffnvcodec` and do not

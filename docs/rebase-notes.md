@@ -6,6 +6,23 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
+
+**Files touched:**
+`core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`
+
+**Rebase impact:** None. The modified file is a fork-added CUDA kernel TU that
+does not exist in upstream Netflix/vmaf master (ms_ssim CUDA port is
+fork-local). No rebase conflict is possible.
+
+The change is a pure performance annotation: `__launch_bounds__(128)`,
+`const float *__restrict__` pointer extraction, and `__ldg()` on inner-loop
+loads. If upstream Netflix ever adds their own ms_ssim CUDA port, this file
+will need to be re-reviewed against theirs; the F3 pattern should carry
+forward.
+
+---
+
 ## cuda-readback-free-host-pinned-leak sweep (2026-05-29)
 
 **Files touched:** `core/src/cuda/kernel_template.h`,

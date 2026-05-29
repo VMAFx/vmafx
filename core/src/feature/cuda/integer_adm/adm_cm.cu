@@ -361,42 +361,8 @@ adm_cm_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int lef
  * Scale 0 already used the fused pattern (adm_cm_line_kernel_8); scales 1-3
  * were migrated in PR perf/adm-cm-cuda-warp-reduce-fusion. */
 
-/* ADR-0753: Two variants of adm_cm_line_kernel_8 for resolution-aware dispatch.
- *
- *   adm_cm_line_kernel_8            — WITH __launch_bounds__(128, 8)
- *     Reduces register count on sm_89 from 114 to the bounds-guided budget,
- *     improving theoretical occupancy in the 8–32 wave regime (WS_MEDIUM: 1080p).
- *     Measured −9.3% kernel time at 1080p (Research-0749). Neutral at 576p / 4K.
- *
- *   adm_cm_line_kernel_8_no_bounds  — WITHOUT __launch_bounds__
- *     Compiler allocates the full register budget (114 regs, sm_89).
- *     Used at WS_SMALL (< 720p) and WS_LARGE (>= 4K) where the bounds hint
- *     shows no measurable gain and the extra register spilling from the hint
- *     could hurt future kernels on lower-SM GPUs.
- *
- * The dispatch site in integer_adm_cuda.c::adm_cm_device() picks the variant
- * via vmaf_cuda_workload_class(w, h) — a single integer compare per frame.
- * See resolution_dispatch.h and ADR-0753.
- */
-
-/* Macro for the bounds-guided variant (WS_MEDIUM). */
-#define ADM_CM_LINE_BOUNDED(rows_per_thread)                                                       \
-    __launch_bounds__(128, 8) __global__ void adm_cm_line_kernel_##rows_per_thread(                \
-        AdmBufferCuda buf, int h, int w, int top, int bottom, int left, int right, int start_row,  \
-        int end_row, int start_col, int end_col, int src_stride, int csf_a_stride, int buffer_h,   \
-        int buffer_stride, int32_t *accum_per_block, AdmFixedParametersCuda params, int scale,     \
-        int64_t *accum_global, WarpShift ws, const uint32_t shift_inner_accum,                     \
-        const uint32_t add_shift_inner_accum)                                                      \
-    {                                                                                              \
-        adm_cm_line_kernel<rows_per_thread>(                                                       \
-            buf, h, w, top, bottom, left, right, start_row, end_row, start_col, end_col,           \
-            src_stride, csf_a_stride, buffer_h, buffer_stride, accum_per_block, params, scale,     \
-            accum_global, ws, shift_inner_accum, add_shift_inner_accum);                           \
-    }
-
-/* Macro for the no-bounds variant (WS_SMALL, WS_LARGE). */
-#define ADM_CM_LINE_NO_BOUNDS(rows_per_thread)                                                     \
-    __global__ void adm_cm_line_kernel_##rows_per_thread##_no_bounds(                              \
+#define ADM_CM_LINE(rows_per_thread)                                                               \
+    __global__ void adm_cm_line_kernel_##rows_per_thread(                                          \
         AdmBufferCuda buf, int h, int w, int top, int bottom, int left, int right, int start_row,  \
         int end_row, int start_col, int end_col, int src_stride, int csf_a_stride, int buffer_h,   \
         int buffer_stride, int32_t *accum_per_block, AdmFixedParametersCuda params, int scale,     \
@@ -410,10 +376,9 @@ adm_cm_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int lef
     }
 
 extern "C" {
-// 128 = warps_per_thread * val_per_thread = 32 * 4 -- assuming 32 threads per warp
+// 128 = warps_per_thread * val_per_thread = 32 * 4 -- assuming 32 threads per warp, this might change in the future
 /* adm_cm_reduce_line_kernel_4 removed: fused into i4_adm_cm_line_kernel_fused (scales 1-3). */
-ADM_CM_LINE_BOUNDED(8);   /* adm_cm_line_kernel_8          — WS_MEDIUM (1080p)    */
-ADM_CM_LINE_NO_BOUNDS(8); /* adm_cm_line_kernel_8_no_bounds — WS_SMALL / WS_LARGE */
+ADM_CM_LINE(8); // adm_cm_line_kernel_8
 }
 
 /* ============================================================================

@@ -42,7 +42,6 @@
 #include "picture.h"
 #include "picture_cuda.h"
 #include "cuda_helper.cuh"
-#include "feature/cuda/resolution_dispatch.h"
 
 #define SSIM_BLOCK_X 16
 #define SSIM_BLOCK_Y 8
@@ -58,8 +57,7 @@ typedef struct SsimStateCuda {
 
     CUfunction func_horiz_8;
     CUfunction func_horiz_16;
-    CUfunction func_vert;           /* with __launch_bounds__(128): WS_MEDIUM + WS_LARGE */
-    CUfunction func_vert_no_bounds; /* without bounds hint: WS_SMALL                    */
+    CUfunction func_vert;
     int scale_override;
     /* `enable_chroma` option: when false, only luma is dispatched.
      * Default false mirrors CPU integer_ssim.c PR #939. */
@@ -176,11 +174,6 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->func_horiz_16, module, "calculate_ssim_horiz_16bpc"), fail);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_vert, module, "calculate_ssim_vert_combine"),
-                    fail);
-    /* ADR-0753: no-bounds sibling for WS_SMALL (<720p) where occupancy pressure is absent. */
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_vert_no_bounds, module,
-                                        "calculate_ssim_vert_combine_no_bounds"),
                     fail);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
@@ -310,12 +303,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     /* Pass 2 — vertical + SSIM combine. Grid sized over
      * (W-10) × (H-10). The horiz pass writes happen-before
      * the vert pass reads on the same stream — implicit
-     * stream ordering, no extra event needed.
-     *
-     * ADR-0753: resolution-aware dispatch. BOUNDED variant (__launch_bounds__(128))
-     * at WS_MEDIUM + WS_LARGE (>=720p); NO_BOUNDS at WS_SMALL (<720p).
-     * __ldg() loads are present in BOTH variants (correct and beneficial at all
-     * resolutions per ADR-0754). */
+     * stream ordering, no extra event needed. */
     void *params2[] = {
         (void *)s->h_ref_mu,
         (void *)s->h_cmp_mu,
@@ -329,14 +317,8 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         &s->c1,
         &s->c2,
     };
-    {
-        const enum WorkloadSize ssim_vert_ws =
-            vmaf_cuda_workload_class((int)s->width, (int)s->height);
-        CUfunction ssim_vert_fn =
-            (ssim_vert_ws == WS_SMALL) ? s->func_vert_no_bounds : s->func_vert;
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(ssim_vert_fn, grid_x, grid_y, 1, SSIM_BLOCK_X,
-                                               SSIM_BLOCK_Y, 1, 0, stream, params2, NULL));
-    }
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_vert, grid_x, grid_y, 1, SSIM_BLOCK_X,
+                                           SSIM_BLOCK_Y, 1, 0, stream, params2, NULL));
 
     /* DtoH copy of the partials on our private stream. */
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, stream));
