@@ -1382,6 +1382,13 @@ file is touched; no rebase conflict possible.
 Netflix/vmaf has no Go layer. All new files are test-only and never enter
 the libvmaf C build, the Python harness, or the FFmpeg patch stack. No
 production code is touched, so the upstream rebase boundary is unaffected.
+## nightly-workflow-audit (2026-05-29, ADR-0793)
+
+**Files touched:**
+`.github/workflows/nightly.yml`, `.github/workflows/nightly-bisect.yml`
+
+**Rebase impact:** None. The modified files are fork-local CI workflows that do
+not exist in upstream Netflix/vmaf master. No rebase conflict is possible.
 
 ---
 
