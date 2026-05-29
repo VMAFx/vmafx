@@ -68,11 +68,7 @@ two.
 
 ### PORTED-SILENTLY — already in fork
 
-<<<<<<< HEAD
-* `c17dd898` — `libvmaf/motion_v2: add motion_max_val`
-=======
 * `c17dd898` — `core/motion_v2: add motion_max_val`
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 Fork master has `motion_max_val` semantics but doesn't cite this SHA
 in its commit subject. Optional cleanup: backfill the citation in the
@@ -85,19 +81,11 @@ fork's commit message, or note the silent port in
 introduce new top-level identifiers. **The heuristic is the limit
 here, not the commits' importance.** A few are substantive:
 
-<<<<<<< HEAD
-* `4e469601` — `libvmaf/motion_v2: port remaining options` — option
-  plumbing that almost certainly *isn't* on the fork yet (we ported
-  motion_v2 selectively).
-* `856d3835` — `libvmaf/motion_v2: fix mirroring behavior, since a44e5e61` — a real bug fix on a feature we ship.
-* `a2b59b77` — `libvmaf/motion_v2: add motion_five_frame_window` — new
-=======
 * `4e469601` — `core/motion_v2: port remaining options` — option
   plumbing that almost certainly *isn't* on the fork yet (we ported
   motion_v2 selectively).
 * `856d3835` — `core/motion_v2: fix mirroring behavior, since a44e5e61` — a real bug fix on a feature we ship.
 * `a2b59b77` — `core/motion_v2: add motion_five_frame_window` — new
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   option; needs porting if we want feature parity.
 * `77474251`, `8c60dc9e`, `d655cefe`, `721569bc` — cambi
   refactors / option additions / docs.

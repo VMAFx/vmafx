@@ -52,11 +52,7 @@ wheel). The Go implementation delegates to an inline `python3 -c` script.
 This preserves tool availability (IDE clients can call the tool and get a
 result) while deferring a full Go ONNX binding to Stage 2.
 
-<<<<<<< HEAD
-## `pkg/libvmaf/` design
-=======
 ## `pkg/core/` design
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 The shared helper package was designed to be importable by both `vmafx-mcp`
 and the parallel `vmafx-server` agent's binary. It contains:

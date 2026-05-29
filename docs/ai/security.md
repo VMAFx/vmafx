@@ -132,11 +132,7 @@ the `--tiny-model-verify` flag invokes `cosign verify-blob` at load time
 via `posix_spawnp(3p)` and fails closed if the signature is missing or
 bad. Off by default for dev-friendliness; strongly recommended on for
 production deployments. The flag drives `vmaf_dnn_verify_signature()` in
-<<<<<<< HEAD
 [`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h),
-=======
-[`core/include/core/dnn.h`](../../core/include/core/dnn.h),
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 which looks up the model's `sigstore_bundle` field in
 [`model/tiny/registry.json`](../../model/tiny/registry.json) — see
 [model-registry.md](model-registry.md) for the full schema and CLI flow.

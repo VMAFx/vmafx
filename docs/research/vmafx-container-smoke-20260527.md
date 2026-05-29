@@ -13,11 +13,7 @@ End-to-end smoke test of the `vmaf-dev-mcp` container per
 `docs/development/dev-mcp.md`. Validates:
 
 - Container builds from a fresh image rebuild (stale 7-day image, commits had
-<<<<<<< HEAD
-  landed in `libvmaf/`, `mcp-server/`, `ai/`, `tools/vmaf-tune/` since last
-=======
   landed in `core/`, `mcp-server/`, `ai/`, `tools/vmaf-tune/` since last
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   build).
 - `vmaf` binary is present, reports version, and all six backends are compiled
   in.

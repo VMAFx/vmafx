@@ -60,11 +60,7 @@ agent panel. `CLAUDE.md` (position 8) would be ignored by the panel —
 it is read directly by the Claude Agent external agent process, which
 maintains its own configuration loading independent of Zed's rules system.
 
-<<<<<<< HEAD
-The multiple `AGENTS.md` files in subdirectories (`libvmaf/`, `ai/`, etc.)
-=======
 The multiple `AGENTS.md` files in subdirectories (`core/`, `ai/`, etc.)
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 are not read by Zed's rules system; they continue to serve tool-agnostic
 agents (GitHub Copilot Workspace, etc.) and the Claude Code CLI directly.
 
@@ -183,11 +179,7 @@ list in §1.2. For this repo:
 - `CLAUDE.md` is **not** read by the panel (it is superseded by `AGENTS.md`).
 - The **Claude Agent external agent** (via ACP) reads `CLAUDE.md` directly —
   this is the Claude Code CLI's own file loading, independent of Zed's rules.
-<<<<<<< HEAD
-- Per-directory `AGENTS.md` files (e.g. `libvmaf/AGENTS.md`, `ai/AGENTS.md`)
-=======
 - Per-directory `AGENTS.md` files (e.g. `core/AGENTS.md`, `ai/AGENTS.md`)
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   are read only by tool-agnostic agents that walk the directory tree (Copilot
   Workspace, Claude Code CLI) — not by Zed's panel, which only reads the
   root-level file.
@@ -332,13 +324,8 @@ root at runtime via `$ZED_WORKTREE_ROOT`.
       "initialization_options": {
         "fallbackFlags": [
           "-std=c11",
-<<<<<<< HEAD
-          "-I./libvmaf/include",
-          "-I./libvmaf/src"
-=======
           "-I./core/include",
           "-I./core/src"
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
         ]
       }
     },

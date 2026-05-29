@@ -38,11 +38,7 @@ Verified all three sources compile to HSACO via direct hipcc invocation:
 
 ```bash
 hipcc --genco --offload-arch=gfx1100 \
-<<<<<<< HEAD
-  -I libvmaf/src -I core/src/feature \
-=======
   -I core/src -I core/src/feature \
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   -I core/src/feature/hip -I core/src/hip \
   core/src/feature/hip/integer_moment/moment_score.hip \
   -o /tmp/integer_moment_score.hsaco

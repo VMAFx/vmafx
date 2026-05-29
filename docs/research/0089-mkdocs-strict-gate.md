@@ -39,11 +39,7 @@ Breakdown by link target (top 8 of 1,187 `not_found`):
 | `../../scripts/ci/cross_backend_parity_gate.py` | 15 | Cross-tree (CI script) |
 | `0253-fastdvdnet-pre-real-weights.md` | 9 | Renamed-ADR (slug now `0255-...`) |
 | `../../core/src/feature/third_party/xiph/psnr_hvs.c` | 9 | Cross-tree (vendored source) |
-<<<<<<< HEAD
 | `../../core/include/libvmaf/libvmaf_vulkan.h` | 9 | Cross-tree (public header) |
-=======
-| `../../core/include/core/libvmaf_vulkan.h` | 9 | Cross-tree (public header) |
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 The "cross-tree" class — links from docs to source-tree files / dirs outside
 `docs_dir` — is by far the dominant population. mkdocs cannot resolve them

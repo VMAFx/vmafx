@@ -60,11 +60,7 @@ any of these SHAs. Reproduced here for convenience; full rationale lives in
 
 1. **`4f5e366b`** — `integer_motion`: fix dict leak in `motion_force_zero` case.
 2. **`7affcb7c`** — x86/adm: fix compilation for 32-bit clang.
-<<<<<<< HEAD
-3. **`49d46e23`** — libvmaf/predict: port chroma_from_luma correction.
-=======
 3. **`49d46e23`** — core/predict: port chroma_from_luma correction.
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 4. **`7c4beca3`** — Fix models symbols names when vmaf is compiled as a subproject.
 5. **`332dde62`** — y4m_input: yuv444p12/yuv422p12/yuv420p12 support.
 

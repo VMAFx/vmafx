@@ -35,11 +35,7 @@ Backend dispatch rules + runtime precedence:
 
 ### Header
 
-<<<<<<< HEAD
 [`core/include/libvmaf/libvmaf_cuda.h`](../../core/include/libvmaf/libvmaf_cuda.h)
-=======
-[`core/include/core/libvmaf_cuda.h`](../../core/include/core/libvmaf_cuda.h)
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ### Lifecycle addition
 
@@ -213,11 +209,7 @@ int main(void) {
 
 ### Header
 
-<<<<<<< HEAD
 [`core/include/libvmaf/libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h)
-=======
-[`core/include/core/libvmaf_sycl.h`](../../core/include/core/libvmaf_sycl.h)
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ### State
 
@@ -425,11 +417,7 @@ the enable/disable pair to gate which frame ranges get timed.
 
 ### Header
 
-<<<<<<< HEAD
 [`core/include/libvmaf/libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h)
-=======
-[`core/include/core/libvmaf_vulkan.h`](../../core/include/core/libvmaf_vulkan.h)
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ### State
 

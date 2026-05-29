@@ -35,11 +35,7 @@ Current top-level surface area (as of master at the time of this digest):
 
 | Component | Path | Language | Outbound dependencies | Notes |
 |---|---|---|---|---|
-<<<<<<< HEAD
-| C library + CLI | `libvmaf/` (→ `core/` per PR #1571) | C, Meson | none (standalone) | libvmaf.so, vmaf CLI, vmafx CLI |
-=======
 | C library + CLI | `core/` (→ `core/` per PR #1571) | C, Meson | none (standalone) | libvmaf.so, vmaf CLI, vmafx CLI |
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | Netflix compat harness | `python/vmaf/`, `compat/python-vmaf/` per #1571 | Python | libvmaf.so via ctypes | Read-only compat layer |
 | Netflix golden tests | `python/test/` | Python + YUV fixtures | libvmaf.so | Never modify assertions |
 | Tiny-AI training | `ai/` | Python, PyTorch, ONNX | model/, python/vmaf/ | model outputs land in model/ |
@@ -116,21 +112,13 @@ shallow clones via `--filter=blob:none`).
 
 **Cross-repo issues identified:**
 
-<<<<<<< HEAD
-1. **Circular dev-container dependency.** `dev/Containerfile` builds `libvmaf/`
-=======
 1. **Circular dev-container dependency.** `dev/Containerfile` builds `core/`
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
    from source. In a split, `vmafx-dev` would need to either vendor `vmafx` source
    or pin to a release tag — breaking the current "build from live master" model
    that the CLAUDE.md §12 r15 dev container rule depends on.
 
 2. **Model bidirectionality.** `ai/` writes ONNX outputs into `model/`, which
-<<<<<<< HEAD
-   `libvmaf/src/dnn/` then loads at runtime. In a multi-repo split, both
-=======
    `core/src/dnn/` then loads at runtime. In a multi-repo split, both
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
    `vmafx-ai` and `vmafx` would need to commit to a stable model-artifact API
    and coordinate releases. At this project's scale this is a pure overhead
    burden.
@@ -170,11 +158,7 @@ history. Key benefits for this project:
 - ONNX artifacts can be 50–200 MB each. They currently live in `model/` under Git
   LFS. Moving them to a `VMAFx/vmafx-models` release-only repo eliminates LFS
   churn from the main clone.
-<<<<<<< HEAD
-- `libvmaf/src/dnn/` already loads models by URL or filesystem path (see
-=======
 - `core/src/dnn/` already loads models by URL or filesystem path (see
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   `dnn/ort_model.c`). Switching from a git-tracked path to a release-artifact URL
   is a one-time loader change.
 - `ai/` training scripts could push finished `.onnx` outputs directly to
@@ -228,11 +212,7 @@ cutover:
 | PR | Title | Status | Priority |
 |---|---|---|---|
 | #1548 | SPDX dual-license sweep | OPEN | Must merge — license metadata |
-<<<<<<< HEAD
-| #1571 | VMAFX repo layout (libvmaf/→core/, python/vmaf/→compat/) | DRAFT | Should merge — structural rename |
-=======
 | #1571 | VMAFX repo layout (core/→core/, python/vmaf/→compat/) | DRAFT | Should merge — structural rename |
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | #1565 | VMAFX binary + AI tool aliases | DRAFT | Should merge — user-facing CLI |
 | #1568 | C23 bump | DRAFT | Should merge — compiler standard |
 | #1564 | Drop legacy build paths | DRAFT | Should merge — cleanup |
@@ -476,11 +456,7 @@ Defer to a post-cutover PR. The implementation would be:
 
 1. Create `VMAFx/vmafx-models` as a release-only repo with no tracked code
    — only GitHub Releases with attached `.onnx`, `.pkl`, `.json` artifacts.
-<<<<<<< HEAD
-2. Update `libvmaf/src/dnn/ort_model.c` and the model loader to accept HTTP
-=======
 2. Update `core/src/dnn/ort_model.c` and the model loader to accept HTTP
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
    URLs in addition to filesystem paths (or use a sidecar download script).
 3. Remove binary blobs from `model/` in `VMAFx/vmafx`; retain only the
    lightweight JSON descriptor files.

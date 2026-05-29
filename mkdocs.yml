@@ -167,6 +167,7 @@ nav:
       - ROI scoring: usage/vmaf-roi.md
       - ROI score output: usage/vmaf-roi-score.md
       - External resources: usage/external-resources.md
+      - Remote storage streaming: usage/storage.md
       - vmaf-tune:
           - Overview: usage/vmaf-tune.md
           - Codec adapters: usage/vmaf-tune-codec-adapters.md
@@ -191,6 +192,7 @@ nav:
       - Vulkan image import: api/vulkan-image-import.md
   - Metrics:
       - Features: metrics/features.md
+      - ANSNR: metrics/ansnr.md
       - CAMBI: metrics/cambi.md
       - SSIMULACRA 2: metrics/ssimulacra2.md
       - DISTS: metrics/dists.md
@@ -293,6 +295,10 @@ nav:
       - Automated rule enforcement: development/automated-rule-enforcement.md
       - PR body validator: development/pr-body-validator.md
       - mkdocs strict pre-push hook: development/pre-push-mkdocs-strict.md
+      - Performance benchmarking: development/perf.md
+      - Deprecations: development/deprecations.md
+      - C++23 extractor pattern: development/cpp23-extractor-pattern.md
+      - Rust development: development/rust.md
   - Reference:
       - FAQ: reference/faq.md
       - References: reference/references.md
