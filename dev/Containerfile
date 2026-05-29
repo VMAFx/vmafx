@@ -9,7 +9,7 @@
 #   Stage 2 (gpu-sdks)    — GPU SDK layer on top of Stage 1:
 #                           CUDA latest (`cuda-toolkit` meta-package, currently
 #                           13.x; tracks host driver), Intel oneAPI latest,
-#                           ROCm latest (HIP toolchain;
+#                           Vulkan + lavapipe, ROCm latest (HIP toolchain;
 #                           build-only on NVIDIA host)
 #   Stage 3 (libvmaf)     — source build of libvmaf with all backends enabled
 #                           against an in-tree FFmpeg n8.1.1 (or `FFMPEG_TAG`
@@ -75,6 +75,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Runtime libs needed by libvmaf and ONNX Runtime
     libgomp1 \
     libc6-dev \
+    # Vulkan: loader + tools + mesa ICDs (intel_icd.json, radeon_icd.json,
+    # lvp_icd.json). We deliberately KEEP mesa-vulkan-drivers so that Intel
+    # Arc + AMD Radeon physical devices are reachable from inside the
+    # container (NVIDIA's nvidia_icd.json is bind-mounted by the NVIDIA
+    # Container Toolkit at runtime when NVIDIA_DRIVER_CAPABILITIES includes
+    # `graphics` — see dev/docker-compose.yml common-env). The lavapipe
+    # software ICD (lvp_icd.json) shipped by mesa is removed by the
+    # entrypoint at startup whenever at least one real GPU ICD is also
+    # registered, to prevent the Vulkan loader from racing the software
+    # adapter onto vulkan_device=0 on hosts where the real GPU ICD enumerates
+    # later. See ADR-0541.
+    libvulkan-dev \
+    vulkan-tools \
+    mesa-vulkan-drivers \
     libglvnd-dev \
     libva-dev \
     libva-drm2 \
@@ -94,15 +108,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # backends; only the package name changed. ADR-0603.
     intel-media-va-driver-non-free \
     mesa-libgallium \
+    # GLSL shader compiler (glslc) — required by the Vulkan backend at build time
+    glslang-tools \
+    glslc \
     xxd \
     # Misc
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Verify critical GPU/VA-API packages were actually installed.
+# Verify critical GPU/Vulkan/VA-API packages were actually installed.
 # A misconfigured repo or network failure during apt-get produces a silently
 # broken image; this check surfaces the gap at build time instead of run time.
-RUN for pkg in intel-media-va-driver-non-free mesa-libgallium libvpl-dev; do \
+RUN for pkg in mesa-vulkan-drivers intel-media-va-driver-non-free mesa-libgallium libvpl-dev; do \
         apt-mark showmanual | grep -q "^${pkg}$" \
             || (echo "FATAL: ${pkg} was not installed" && exit 1); \
     done
@@ -413,6 +430,48 @@ RUN echo "=== sycl-ls (SYCL device visibility) ===" \
     && echo "=== rocminfo agents ===" \
     && rocminfo 2>&1 | grep -E "Agent|Name:|Device Type|gfx" || true
 
+# ---------- Vulkan ICD selection ------------------------------------------
+# Do NOT set VK_ICD_FILENAMES / VK_DRIVER_FILES in the image. The
+# container entrypoint (`dev-mcp-entrypoint.sh`) dynamically rewrites
+# VK_DRIVER_FILES at startup to the colon-separated list of all
+# non-lavapipe ICD JSONs visible under /etc/vulkan/icd.d/ +
+# /usr/share/vulkan/icd.d/ — see ADR-0541. This guarantees that:
+#
+#   - NVIDIA discrete GPUs (via /etc/vulkan/icd.d/nvidia_icd.json,
+#     bind-mounted by nvidia-container-runtime when
+#     NVIDIA_DRIVER_CAPABILITIES includes `graphics`) are selected first
+#     when the host exposes them.
+#   - Intel Arc + AMD (via /usr/share/vulkan/icd.d/intel_icd.x86_64.json
+#     / radeon_icd.x86_64.json, installed by mesa-vulkan-drivers in
+#     stage 1) are visible alongside NVIDIA on multi-vendor hosts.
+#   - The mesa lavapipe ICD (lvp_icd.json) is filtered out whenever a
+#     real GPU ICD is present, so `vmaf --backend vulkan --vulkan_device 0`
+#     cannot accidentally land on software emulation. lavapipe remains as
+#     the fallback on CPU-only hosts (no real ICD visible) where the
+#     container is still useful for build-regression catching.
+#
+# Why not just delete /usr/share/vulkan/icd.d/lvp_icd.json from the
+# image? Because (a) it would couple us to mesa's package layout (the
+# file moves between minor releases) and (b) it would break the CPU-only
+# fallback on hosts without GPU passthrough. The entrypoint-time filter
+# is the right granularity.
+#
+# ADR-0509 / Research-0138 / ADR-0541 background: the old image set
+# `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json` (a typo
+# — mesa ships `lvp_icd.json`, no `.x86_64` suffix) which made the
+# loader return zero devices. Subsequent fix (ADR-0509) unset both vars
+# in the entrypoint and relied on the loader's default search to find
+# the NVIDIA bind-mount; this worked for NVIDIA on hosts where
+# `nvidia_icd.json` lexicographically beat `lvp_icd.json` but lost the
+# race on hosts where Intel-only / AMD-only mesa ICDs sort *after*
+# lavapipe. ADR-0541 closes that race by actively rewriting
+# VK_DRIVER_FILES instead of trusting alphabetical order.
+#
+# Operators that need to force a single ICD (e.g. for reproducibility
+# tests) can still set VK_DRIVER_FILES at `docker exec -e
+# VK_DRIVER_FILES=… …` time per-invocation; the entrypoint check only
+# runs once at container start.
+
 # ---------------------------------------------------------------------------
 # Stage 3 — libvmaf source build
 # ---------------------------------------------------------------------------
@@ -515,6 +574,7 @@ USER vmaf
 RUN cd libvmaf && CC=icx CXX=icpx meson setup build \
         -Denable_cuda=true \
         -Denable_sycl=true \
+        -Denable_vulkan=enabled \
         -Denable_hip=true \
         -Denable_hipcc=true \
         -Denable_metal=auto \
@@ -536,7 +596,7 @@ RUN cd libvmaf && ninja -C build install \
 # ---------- Build-time backend smoke probe ---------------------------------
 # Walk every GPU backend the meson configure step claims to have enabled and
 # run a tiny vmaf invocation against the Netflix golden CPU pair. The probe
-# is a soft-gate: backends that need device passthrough (CUDA/SYCL/HIP)
+# is a soft-gate: backends that need device passthrough (CUDA/SYCL/Vulkan/HIP)
 # will report "no device" or "not available" inside BuildKit's no-GPU sandbox,
 # which is non-fatal (|| echo WARN). What we actually catch here is the
 # "built without X support" class of regression — i.e. if a future commit
@@ -560,7 +620,7 @@ USER vmaf
 # golden CPU pair under python/test/resource/yuv/ which is fetched
 # separately via scripts/test/fetch-test-yuvs.sh per ADR-0493 and is
 # not part of the build context.
-RUN for B in cpu cuda sycl hip; do \
+RUN for B in cpu cuda sycl vulkan hip; do \
       echo "--- probe: backend=$B ---" ; \
       LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH} \
       vmaf --reference /build/vmaf/testdata/ref_576x324_48f.yuv \
@@ -575,9 +635,9 @@ RUN for B in cpu cuda sycl hip; do \
 # ---------------------------------------------------------------------------
 # Builds the same FFmpeg version the fork's `ffmpeg-patches/series.txt` is
 # pinned against. Applies every patch in series order, then configures with
-# every libvmaf-* hook our patches add (sycl / cuda / hip / metal-
+# every libvmaf-* hook our patches add (sycl / vulkan / cuda / hip / metal-
 # build-only on Linux). Result: `ffmpeg -filters` lists `libvmaf`,
-# `libvmaf_sycl`, `vmaf_pre`, `libvmaf_tune` so the dev
+# `libvmaf_sycl`, `libvmaf_vulkan`, `vmaf_pre`, `libvmaf_tune` so the dev
 # MCP probe can shell out to a real FFmpeg toolchain end-to-end.
 USER root
 
@@ -827,7 +887,7 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 #                          in `libavfilter/Makefile`.
 #
 # vmaf integration patches (unchanged):
-#     --enable-libvmaf{,-cuda,-sycl,-hip} — fork patches.
+#     --enable-libvmaf{,-cuda,-sycl,-vulkan,-hip} — fork patches.
 # PKG_CONFIG_PATH must explicitly include /usr/lib/x86_64-linux-gnu/pkgconfig
 # (the Ubuntu/Debian multiarch path) so FFmpeg's `check_pkg_config` probes
 # pick up the distro-installed `.pc` files — `SvtAv1Enc.pc` (from
@@ -844,6 +904,7 @@ RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkg
         --enable-libvmaf \
         --enable-libvmaf-cuda \
         --enable-libvmaf-sycl \
+        --enable-libvmaf-vulkan \
         --enable-libvmaf-hip \
         --enable-libx264 --enable-libx265 \
         --enable-libvpx --enable-libdav1d \

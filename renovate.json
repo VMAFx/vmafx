@@ -8,10 +8,10 @@
     ":semanticCommits",
     "helpers:disableTypesNodeMajor"
   ],
-  "schedule": ["at any time"],
+  "schedule": ["after 6am on Tuesday", "before 6am on Wednesday"],
   "timezone": "Europe/Vienna",
-  "prHourlyLimit": 0,
-  "prConcurrentLimit": 12,
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 5,
   "rangeStrategy": "bump",
   "commitMessagePrefix": "chore(deps):",
   "branchPrefix": "renovate/",
@@ -31,13 +31,13 @@
   ],
   "packageRules": [
     {
-      "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge — digest-only is mechanical and CI catches drift.",
+      "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge — digest-only is mechanical and CI catches drift. Fires Tuesday morning to avoid Monday-morning PR floods.",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "GitHub Actions (minor + patch)",
       "automerge": true,
       "automergeType": "pr",
-      "schedule": ["before 6am on Monday"]
+      "schedule": ["after 6am on Tuesday", "before 6am on Wednesday"]
     },
     {
       "description": "Major Action upgrades require human review — breaking changes possible.",
@@ -47,10 +47,11 @@
       "automerge": false
     },
     {
-      "description": "Group pre-commit hook rev bumps; auto-merge — mechanical, lint catches drift.",
+      "description": "Group pre-commit hook rev bumps; auto-merge — mechanical, lint catches drift. Fires in the same Tuesday window as GH Actions to batch with that group.",
       "matchManagers": ["pre-commit"],
       "groupName": "pre-commit hooks",
-      "automerge": true
+      "automerge": true,
+      "schedule": ["after 6am on Tuesday", "before 6am on Wednesday"]
     },
     {
       "description": "Python patch updates auto-merge; minor + major need review.",

@@ -9,11 +9,7 @@ _Status: Accepted — accompanies ADR-0708 (pilot conversion of `metadata_handle
 ## 1. Motivation
 
 The VMAFX fork's `core/src/` is implemented in C11 (now C23 after ADR-0692). The C ABI
-<<<<<<< HEAD
 boundary — `core/include/libvmaf/*.h` — is and must remain pure C with `extern "C"` guards.
-=======
-boundary — `core/include/core/*.h` — is and must remain pure C with `extern "C"` guards.
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 However, the *internal* implementation files (`core/src/*.c`) have no such constraint: they
 are never included by downstream C consumers directly.
 

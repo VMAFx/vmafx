@@ -15,6 +15,7 @@ test_inc = include_directories('.')
 gpu_all_deps = [
   cuda_dependency,
   sycl_dependency,
+  vulkan_deps,
   hip_deps,
   metal_deps,
 ]
@@ -114,7 +115,7 @@ test_model_collection_api = executable('test_model_collection_api',
 
 test_predict = executable('test_predict',
     ['test.c', 'test_predict.c', '../src/dict.c', '../src/metadata_handler.cpp',
-     '../src/feature/feature_collector.cpp', '../src/feature/alias.c', '../src/model.c', '../src/log.c',
+     '../src/feature/feature_collector.c', '../src/feature/alias.c', '../src/model.c', '../src/log.c',
      '../src/read_json_model.c', '../src/pdjson.c', json_model_c_sources, '../src/feature/feature_name.c', '../src/feature/feature_extractor.c',],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
@@ -650,7 +651,27 @@ test_moment_simd = executable('test_moment_simd',
 )
 endif
 
-# ADR-0720: test_ansnr_simd removed — ansnr feature was dropped.
+ansnr_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
+if ansnr_simd_test_archs.contains(host_machine.cpu_family())
+test_ansnr_simd = executable('test_ansnr_simd',
+    ['test.c', 'test_ansnr_simd.c',
+     '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ],
+)
+endif
 
 ms_ssim_decimate_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
 if ms_ssim_decimate_test_archs.contains(host_machine.cpu_family())
@@ -898,6 +919,60 @@ test('test_sycl_motion3_parity', test_sycl_motion3_parity,
     suite : ['fast', 'gpu'])
 endif
 
+# ADR-0175 / T5-1: Vulkan backend scaffold smoke. Pins the -ENOSYS
+# contract so a future runtime PR can't accidentally enable the
+# backend without flipping the smoke expectations.
+if get_option('enable_vulkan').enabled()
+test_vulkan_smoke = executable('test_vulkan_smoke',
+    ['test.c', 'test_vulkan_smoke.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+    c_args: ['-DHAVE_VULKAN=1']
+)
+test('test_vulkan_smoke', test_vulkan_smoke, suite : ['fast', 'gpu'])
+
+# T7-29 part 4 (ADR-0251): contract smoke for the v2 async
+# pending-fence ring. Public-API only — the GPU-end-to-end
+# ring-wrap correctness path lives in the FFmpeg filter
+# downstream (T7-29 part 3) and the cross-backend gate.
+test_vulkan_async_pending_fence = executable('test_vulkan_async_pending_fence',
+    ['test.c', 'test_vulkan_async_pending_fence.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+    c_args: ['-DHAVE_VULKAN=1']
+)
+test('test_vulkan_async_pending_fence', test_vulkan_async_pending_fence, suite : ['fast', 'gpu'])
+
+# ADR-0238: contract smoke for the public Vulkan picture-preallocation
+# surface (vmaf_vulkan_preallocate_pictures / vmaf_vulkan_picture_fetch).
+test_vulkan_pic_preallocation = executable('test_vulkan_pic_preallocation',
+    ['test.c', 'test_vulkan_pic_preallocation.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+    c_args: ['-DHAVE_VULKAN=1']
+)
+test('test_vulkan_pic_preallocation', test_vulkan_pic_preallocation, suite : ['fast', 'gpu'])
+
+# ADR-0456 / T7-36 parity audit gap 1 — CAMBI Vulkan extractor smoke.
+# Tests: (1) vmaf_fex_cambi_vulkan is discoverable by name, (2) default
+# option values match the CPU reference extractor (cambi.c), (3) end-to-end
+# init → extract → close on a flat 576×324 YUV420P frame does not crash and
+# emits a finite non-negative CAMBI score.  Skips gracefully when no Vulkan
+# device is present.
+test_cambi_vulkan = executable('test_cambi_vulkan',
+    ['test_cambi_vulkan.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, vulkan_deps],
+    c_args: ['-DHAVE_VULKAN=1']
+)
+test('test_cambi_vulkan', test_cambi_vulkan, suite : ['gpu'], timeout : 60)
+endif
+
 # ADR-0209 / T5-2: embedded MCP scaffold smoke. Pins the -ENOSYS
 # contract on every public entry point. T5-2b runtime
 # (ADR-0209 § "Status update 2026-05-08") flipped init/start_stdio/
@@ -1043,7 +1118,9 @@ if float_enabled and moment_simd_test_archs.contains(host_machine.cpu_family())
 test('test_moment_simd', test_moment_simd, suite : ['fast', 'simd'])
 endif
 
-# (test_ansnr_simd removed — ADR-0720)
+if ansnr_simd_test_archs.contains(host_machine.cpu_family())
+test('test_ansnr_simd', test_ansnr_simd, suite : ['fast', 'simd'])
+endif
 
 if iqa_convolve_test_archs.contains(host_machine.cpu_family())
 test('test_iqa_convolve', test_iqa_convolve, suite : ['fast', 'simd'])

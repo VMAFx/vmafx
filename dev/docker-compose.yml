@@ -29,8 +29,9 @@ x-common-env: &common-env
   # All NVIDIA devices are exposed; capabilities cover compute, graphics, utility,
   # and video (required for NVDEC/NVENC in FFmpeg). `graphics` is also what
   # makes the Container Toolkit bind-mount `nvidia_icd.json` into
-  # `/etc/vulkan/icd.d/` at runtime (kept for CUDA/NVTX; Vulkan backend
-  # removed per ADR-0726). ADR-0509 / ADR-0541.
+  # `/etc/vulkan/icd.d/` at runtime — without it the Vulkan loader sees no
+  # NVIDIA ICD and either lands on lavapipe (software fallback) or returns
+  # zero physical devices. ADR-0509 / ADR-0541.
   NVIDIA_VISIBLE_DEVICES: all
   NVIDIA_DRIVER_CAPABILITIES: compute,graphics,utility,video
 
@@ -138,7 +139,7 @@ services:
               count: all
               capabilities: [gpu]
 
-    # Intel Arc (SYCL via DRI) + AMD ROCm (HIP via /dev/kfd).
+    # Intel Arc (Vulkan/SYCL via DRI) + AMD ROCm (HIP via /dev/kfd).
     #
     # We need BOTH the `devices:` entry AND the `/dev/dri` bind-mount in
     # `volumes:` above — they do different things:

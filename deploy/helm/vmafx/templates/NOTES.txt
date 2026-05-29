@@ -56,11 +56,8 @@ GPU device-plugin reference
   intel   →  gpu.intel.com/i915   (requires: Intel GPU device plugin daemonset)
   cpu     →  (no device plugin required)
 
-Note: Vulkan was removed as a VMAFX backend (ADR-0726).
-Supported backends: cuda, hip, sycl, cpu.
-
-NVIDIA nodes require driver R610.43.02 or later (CUDA 13.3 toolkit minimum).
-See docs/backends/cuda/overview.md for driver and toolkit requirements.
+Vulkan is NOT a separate Kubernetes resource — it runs through whichever
+GPU device-plugin is allocated.  See docs/development/gpu-scheduling.md.
 
 To verify device-plugin allocations on a node:
   kubectl describe node <node> | grep -E "Capacity|Allocatable" -A 10

@@ -147,28 +147,20 @@ __global__ void calculate_ssim_horiz_16bpc(const VmafPicture ref, const VmafPict
     reinterpret_cast<float *>(h_refcmp.data)[dst_idx] = refcmp_h;
 }
 
-/* Pass 2 — vertical + SSIM combine + per-block partial sum.
- * __launch_bounds__(128) hints nvcc to budget registers for
- * 128-thread blocks; per ADR-0754 / ADR-0743 precedent. */
-__launch_bounds__(128) __global__
-    void calculate_ssim_vert_combine(VmafCudaBuffer h_ref_mu_buf, VmafCudaBuffer h_cmp_mu_buf,
-                                     VmafCudaBuffer h_ref_sq_buf, VmafCudaBuffer h_cmp_sq_buf,
-                                     VmafCudaBuffer h_refcmp_buf, VmafCudaBuffer partials,
-                                     unsigned w_horiz, unsigned w_final, unsigned h_final, float c1,
-                                     float c2)
+/* Pass 2 — vertical + SSIM combine + per-block partial sum. */
+__global__ void
+calculate_ssim_vert_combine(VmafCudaBuffer h_ref_mu_buf, VmafCudaBuffer h_cmp_mu_buf,
+                            VmafCudaBuffer h_ref_sq_buf, VmafCudaBuffer h_cmp_sq_buf,
+                            VmafCudaBuffer h_refcmp_buf, VmafCudaBuffer partials, unsigned w_horiz,
+                            unsigned w_final, unsigned h_final, float c1, float c2)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    /* Extract raw __restrict__ pointers once before the inner loop so
-     * the compiler can route all 5×11 loads through the read-only
-     * texture cache path via __ldg().  Passing VmafCudaBuffer by value
-     * hides the pointer from the compiler's non-coherent-load analysis;
-     * the extraction makes the alias-free invariant visible (ADR-0754). */
-    const float *__restrict__ h_ref_mu = reinterpret_cast<const float *>(h_ref_mu_buf.data);
-    const float *__restrict__ h_cmp_mu = reinterpret_cast<const float *>(h_cmp_mu_buf.data);
-    const float *__restrict__ h_ref_sq = reinterpret_cast<const float *>(h_ref_sq_buf.data);
-    const float *__restrict__ h_cmp_sq = reinterpret_cast<const float *>(h_cmp_sq_buf.data);
-    const float *__restrict__ h_refcmp = reinterpret_cast<const float *>(h_refcmp_buf.data);
+    const float *h_ref_mu = reinterpret_cast<const float *>(h_ref_mu_buf.data);
+    const float *h_cmp_mu = reinterpret_cast<const float *>(h_cmp_mu_buf.data);
+    const float *h_ref_sq = reinterpret_cast<const float *>(h_ref_sq_buf.data);
+    const float *h_cmp_sq = reinterpret_cast<const float *>(h_cmp_sq_buf.data);
+    const float *h_refcmp = reinterpret_cast<const float *>(h_refcmp_buf.data);
 
     float my_ssim = 0.0f;
     if (x < w_final && y < h_final) {
@@ -177,11 +169,11 @@ __launch_bounds__(128) __global__
             const unsigned src_y = y + (unsigned)v;
             const unsigned src_idx = src_y * w_horiz + x;
             const float w = G[v];
-            ref_mu += w * __ldg(&h_ref_mu[src_idx]);
-            cmp_mu += w * __ldg(&h_cmp_mu[src_idx]);
-            ref_sq += w * __ldg(&h_ref_sq[src_idx]);
-            cmp_sq += w * __ldg(&h_cmp_sq[src_idx]);
-            refcmp += w * __ldg(&h_refcmp[src_idx]);
+            ref_mu += w * h_ref_mu[src_idx];
+            cmp_mu += w * h_cmp_mu[src_idx];
+            ref_sq += w * h_ref_sq[src_idx];
+            cmp_sq += w * h_cmp_sq[src_idx];
+            refcmp += w * h_refcmp[src_idx];
         }
         const float ref_var = ref_sq - ref_mu * ref_mu;
         const float cmp_var = cmp_sq - cmp_mu * cmp_mu;

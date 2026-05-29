@@ -157,7 +157,7 @@ func TestStubSubcommands(t *testing.T) {
 		t.Fatalf("build vmafx-tune-go: %v\n%s", buildErr, buildOut)
 	}
 
-	for _, sub := range []string{"tune-per-shot", "fast", "corpus"} {
+	for _, sub := range []string{"ladder", "tune-per-shot", "fast", "corpus"} {
 		sub := sub
 		t.Run(sub, func(t *testing.T) {
 			t.Parallel()
