@@ -1,0 +1,79 @@
+{{- /*
+  sidecar-trainer.yaml — optional online-training sidecar container snippet.
+
+  When .Values.sidecar.trainer.enabled is true this file renders a
+  PodTemplate patch that adds the vmafx-sidecar container alongside
+  vmafx-node inside the same pod.  The patch is consumed by the
+  node-deployment.yaml template via the {{ include "vmafx.sidecarContainer" . }}
+  helper so both containers share the /tmp emptyDir volume (and therefore
+  the Unix socket at /tmp/vmafx-sidecar.sock).
+
+  ADR-0781: sidecar online training — SGD + EMA + replay buffer.
+*/}}
+
+{{- define "vmafx.sidecarContainer" -}}
+{{- if .Values.sidecar.trainer.enabled }}
+- name: vmafx-sidecar
+  image: {{ .Values.sidecar.trainer.image.repository }}:{{ .Values.sidecar.trainer.image.tag | default .Chart.AppVersion }}
+  imagePullPolicy: {{ .Values.sidecar.trainer.image.pullPolicy | default "IfNotPresent" }}
+  command: ["python", "-m", "ai.sidecar.online_trainer"]
+  env:
+    - name: VMAFX_SIDECAR_SOCKET
+      value: "/tmp/vmafx-sidecar.sock"
+    - name: VMAFX_BASE_MODEL_PATH
+      value: {{ .Values.sidecar.trainer.baseModelPath | default "/mnt/vmafx-models/base/model.onnx" | quote }}
+    - name: VMAFX_SIDECAR_CHECKPOINT_DIR
+      value: {{ .Values.sidecar.trainer.checkpointDir | default "/mnt/vmafx-models/online" | quote }}
+    - name: VMAFX_SIDECAR_REPLAY_CAPACITY
+      value: {{ .Values.sidecar.trainer.replayBufferSize | default 10000 | quote }}
+    - name: VMAFX_SIDECAR_BATCH_SIZE
+      value: {{ .Values.sidecar.trainer.batchSize | default 32 | quote }}
+    - name: VMAFX_SIDECAR_REPLAY_MIX
+      value: {{ .Values.sidecar.trainer.replayMixRatio | default "0.5" | quote }}
+    - name: VMAFX_SIDECAR_LR
+      value: {{ .Values.sidecar.trainer.learningRate | default "0.0001" | quote }}
+    - name: VMAFX_SIDECAR_EMA_DECAY
+      value: {{ .Values.sidecar.trainer.emaDecay | default "0.999" | quote }}
+    - name: VMAFX_SIDECAR_CKPT_INTERVAL_S
+      value: {{ .Values.sidecar.trainer.checkpointIntervalSeconds | default 600 | quote }}
+    - name: VMAFX_SIDECAR_MIN_SAMPLES_CKPT
+      value: {{ .Values.sidecar.trainer.minSamplesPerCheckpoint | default 1000 | quote }}
+    - name: VMAFX_SIDECAR_N_FEATURES
+      value: {{ .Values.sidecar.trainer.nFeatures | default 80 | quote }}
+    {{- range $k, $v := .Values.sidecar.trainer.env }}
+    - name: {{ $k | quote }}
+      value: {{ $v | quote }}
+    {{- end }}
+  resources:
+    {{- toYaml .Values.sidecar.trainer.resources | nindent 4 }}
+  volumeMounts:
+    # Shared with vmafx-node for the Unix socket.
+    - name: tmp
+      mountPath: /tmp
+    # Model PVC — read the base model and write checkpoints.
+    {{- if .Values.persistence.models.enabled }}
+    - name: models
+      mountPath: {{ .Values.persistence.models.mountPath }}
+    {{- end }}
+  readinessProbe:
+    exec:
+      # The sidecar is ready once it has bound the Unix socket.
+      command:
+        - python
+        - -c
+        - |
+          import socket, sys
+          s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          try:
+              s.connect('/tmp/vmafx-sidecar.sock')
+              s.close()
+          except OSError:
+              sys.exit(1)
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    failureThreshold: 6
+  # k8s 1.29+ native sidecar: always restart with the pod.
+  # On older clusters this is ignored (treated as a regular container).
+  restartPolicy: Always
+{{- end }}
+{{- end }}
