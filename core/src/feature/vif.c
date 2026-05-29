@@ -103,7 +103,7 @@ int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride
     /* When pre-computed filters are provided the caller has already validated
      * kernelscale in init(); skip the per-call transcendental path (ADR-0500). */
     if (!precomputed_filters && !vif_validate_kernelscale(vif_kernelscale)) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid vif_kernelscale: %f", vif_kernelscale);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid vif_kernelscale: %f\n", vif_kernelscale);
         goto fail_or_end;
     }
 

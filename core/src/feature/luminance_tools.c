@@ -52,7 +52,7 @@ static inline int range_foot_head(int bitdepth, enum VmafPixelRange pix_range, i
         *head = (1 << bitdepth) - 1;
         break;
     default:
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "unknown pixel range received");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "unknown pixel range received\n");
         return -EINVAL;
     }
     return 0;
@@ -78,7 +78,7 @@ int vmaf_luminance_init_eotf(VmafEOTF *eotf, const char *eotf_str)
     } else if (strcmp(eotf_str, "pq") == 0) {
         *eotf = vmaf_luminance_pq_eotf;
     } else {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "unknown EOTF received");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "unknown EOTF received\n");
         return -EINVAL;
     }
     return 0;
