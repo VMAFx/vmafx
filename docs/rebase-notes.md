@@ -40371,3 +40371,20 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## C++23 Wave 8: read_json_model.c → .cpp (ADR-0846, 2026-05-29)
+
+**Rebase impact: LOW.**
+
+If upstream Netflix/vmaf modifies `libvmaf/src/read_json_model.c` after this PR
+merges, the port path is:
+
+1. Apply the upstream diff to `core/src/read_json_model.cpp` (the active TU).
+2. `core/src/read_json_model.c` still exists on disk but is not compiled — leave
+   it or delete it; do not re-add it to `libvmaf_sources` in `meson.build`.
+3. Any new C-style construct the upstream diff adds (e.g. a new `goto` label,
+   a new `malloc`/`free` pair) should be ported as equivalent C++23 idioms to
+   stay consistent with the Wave 8 style.
+4. No public header (`read_json_model.h`) changes are expected for purely
+   internal parser work; if the upstream diff adds a new public entry point,
+   add the `extern "C"` wrapper in `.cpp` and update `read_json_model.h`.

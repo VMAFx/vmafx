@@ -104,8 +104,16 @@ libvmaf/
   is `push_c()` at entry → body → `pop()` before the `ferror`
   check; dropping the `pop()` leaks a `locale_t` on POSIX and
   leaves the calling thread locked to `"C"` on Windows.
+- **JSON model loader is now `read_json_model.cpp` (ADR-0846 / Wave 8).**
+  The active translation unit is [`src/read_json_model.cpp`](src/read_json_model.cpp),
+  compiled as the isolated `read_json_model_cpp23_lib` static lib
+  (`cpp_std=c++23`).  The original [`src/read_json_model.c`](src/read_json_model.c)
+  is still on disk but is **not compiled** — the `libvmaf_sources` list replaced
+  it with a comment.  Do not re-add `read_json_model.c` to `libvmaf_sources`;
+  doing so produces duplicate-symbol link errors for all four `extern "C"` entry
+  points.  The `.c` file will be deleted in a follow-on cleanup PR.
 - **JSON model loader has no fixed feature/knot schema ceiling.**
-  [`src/read_json_model.c`](src/read_json_model.c) grows
+  [`src/read_json_model.cpp`](src/read_json_model.cpp) grows
   `VmafModel.feature` and `score_transform.knots.list` from the JSON
   payload. Do not restore the old `MAX_FEATURE_COUNT` / `MAX_KNOT_COUNT`
   rejection pattern during an upstream sync; external model JSONs with

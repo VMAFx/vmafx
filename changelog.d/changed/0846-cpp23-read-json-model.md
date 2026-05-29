@@ -1,0 +1,1 @@
+- `core/src/read_json_model`: converted to C++23 (`read_json_model.cpp`, ADR-0846 Wave 8). `goto`-based teardown replaced with a scoped RAII guard; `unique_ptr<char[]>` for collection-name buffer; `std::string` for feature-option key copy; `[[nodiscard]]` on capacity helpers. No behaviour change; public C API and ABI unchanged.

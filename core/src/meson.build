@@ -1521,6 +1521,21 @@ metadata_handler_cpp20_lib = static_library(
     install : false,
 )
 
+# ADR-0846: read_json_model.cpp is a C++23 Wave 8 TU. Compiled as an isolated
+# static lib so its cpp_std override (c++23) does not propagate to any other TU
+# in libvmaf.  Mirrors the ADR-0708 pattern for metadata_handler_cpp20_lib.
+# The four public entry points retain their original C signatures and are
+# declared extern "C" inside the .cpp, so all existing C callers link without
+# modification.
+read_json_model_cpp23_lib = static_library(
+    'read_json_model_cpp23',
+    src_dir + 'read_json_model.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++23'],
+    pic : true,
+    install : false,
+)
+
 libvmaf_sources = [
     src_dir + 'libvmaf.c',
     src_dir + 'predict.c',
@@ -1533,7 +1548,7 @@ libvmaf_sources = [
     src_dir + 'dict.c',
     src_dir + 'opt.c',
     src_dir + 'ref.c',
-    src_dir + 'read_json_model.c',
+    # read_json_model.cpp is compiled as read_json_model_cpp23_lib (ADR-0846)
     src_dir + 'pdjson.c',
     src_dir + 'log.c',
     src_dir + 'framesync.c',
@@ -1622,6 +1637,8 @@ libvmaf = library(
         libsvm_static_lib.extract_all_objects(recursive: true),
         # ADR-0708: C++20 pilot TU compiled as isolated static lib.
         metadata_handler_cpp20_lib.extract_all_objects(recursive: true),
+        # ADR-0846: C++23 Wave 8 TU — read_json_model.cpp.
+        read_json_model_cpp23_lib.extract_all_objects(recursive: true),
     ],
     version : vmaf_soname_version,
     soversion : vmaf_soversion,
