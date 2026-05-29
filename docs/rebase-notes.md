@@ -39894,6 +39894,18 @@ Touched files:
 
 ---
 
+## ADR-0795 — prev_ref thread-safety hardening — 2026-05-29
+
+**No rebase impact**: all changes are in `core/src/libvmaf.c` (comments, a `const`
+qualifier, and a defensive `assert`).  No logic change; no new symbols; no API
+change.  The modified lines (`threaded_extract_func`, `threaded_extract_batch_func`)
+are fork-local dispatch paths not present in upstream Netflix/vmaf.
+
+Fork-local files:
+`core/src/libvmaf.c` (comments + assert),
+`docs/adr/0795-prev-ref-thread-safety.md`,
+`changelog.d/fixed/prev-ref-batch-thread-safety.md`.
+
 ## `cmd/vmafx-operator` — Kubernetes Operator kubebuilder skeleton (ADR-0714)
 
 **No rebase impact** on upstream C/Python code: the operator is entirely
