@@ -1,7 +1,7 @@
-From 1cbbd382223fbcd58a104c0d174ca1652817f28b Mon Sep 17 00:00:00 2001
+From 3692025f0d9ffd1c3067e7f498caa6f01f82d85b Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Tue, 5 May 2026 23:18:19 +0200
-Subject: [PATCH 9/9] fftools: add -pass-autotune CLI glue (vmaf-tune helper)
+Subject: [PATCH 07/13] fftools: add -pass-autotune CLI glue (vmaf-tune helper)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -28,10 +28,10 @@ ADR: docs/adr/0312-ffmpeg-patches-vmaf-tune-integration.md
  1 file changed, 21 insertions(+)
 
 diff --git a/fftools/ffmpeg_opt.c b/fftools/ffmpeg_opt.c
-index a0664e2964..7db30ac72b 100644
+index a256619..73b6fab 100644
 --- a/fftools/ffmpeg_opt.c
 +++ b/fftools/ffmpeg_opt.c
-@@ -1049,6 +1049,24 @@ static int opt_vstats_file(void *optctx, const char *opt, const char *arg)
+@@ -1051,6 +1051,24 @@ static int opt_vstats_file(void *optctx, const char *opt, const char *arg)
      return 0;
  }
  
@@ -56,7 +56,7 @@ index a0664e2964..7db30ac72b 100644
  static int opt_vstats(void *optctx, const char *opt, const char *arg)
  {
      char filename[40];
-@@ -1956,6 +1974,9 @@ const OptionDef options[] = {
+@@ -1958,6 +1976,9 @@ const OptionDef options[] = {
      { "pass",                       OPT_TYPE_INT,    OPT_VIDEO | OPT_PERSTREAM | OPT_OUTPUT | OPT_EXPERT,
          { .off = OFFSET(pass) },
          "select the pass number (1 to 3)", "n" },

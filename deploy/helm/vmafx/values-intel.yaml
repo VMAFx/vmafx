@@ -1,0 +1,82 @@
+# =============================================================================
+# VMAFX Helm — Intel GPU profile
+# =============================================================================
+# Installs VMAFX with the SYCL backend on an Intel GPU node (i915 kernel driver,
+# Arc / Iris Xe / Data Center GPU Flex / Max series).
+#
+# Prerequisites on the cluster:
+#   1. Intel GPU device-plugin (intel-device-plugins-for-kubernetes) installed.
+#      The recommended path uses the Node Feature Discovery (NFD) operator so
+#      the plugin only deploys onto nodes that have an i915 device detected:
+#        kubectl apply -k \
+#          https://github.com/intel/intel-device-plugins-for-kubernetes/deployments/gpu_plugin/overlays/nfd_labeled_nodes
+#   2. NFD must label nodes with:
+#        feature.node.kubernetes.io/kernel-module.i915=true
+#      before the device-plugin daemonset lands.  Verify:
+#        kubectl get node <node> --show-labels | grep i915
+#   3. The extended resource advertised is `gpu.intel.com/i915`.
+#      Verify: kubectl describe node <gpu-node> | grep "gpu.intel.com"
+#
+# Install:
+#   helm upgrade --install vmafx deploy/helm/vmafx/ \
+#     -f deploy/helm/vmafx/values-intel.yaml \
+#     --namespace vmafx --create-namespace
+#
+# See: docs/development/gpu-scheduling.md, docs/development/intel-arc-vaapi-driver-priority.md,
+#      ADR-0796.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# GPU — Intel SYCL backend
+# ---------------------------------------------------------------------------
+gpu:
+  enabled: true
+  vendor: intel
+  count: 1
+
+# ---------------------------------------------------------------------------
+# Node affinity — require Intel GPU nodes
+# ---------------------------------------------------------------------------
+# NFD sets `feature.node.kubernetes.io/kernel-module.i915: "true"` on nodes
+# where the i915 driver is loaded.  This is the most reliable signal for Intel
+# discrete and integrated GPU nodes.
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: feature.node.kubernetes.io/kernel-module.i915
+              operator: In
+              values: ["true"]
+
+# ---------------------------------------------------------------------------
+# Tolerations — admit Intel GPU-tainted nodes
+# ---------------------------------------------------------------------------
+# Intel GPU nodes may be tainted by the cluster operator to keep generic
+# workloads off them.  Adjust the key/value to match your cluster's taint.
+tolerations:
+  - key: gpu.intel.com/i915
+    operator: Exists
+    effect: NoSchedule
+
+# ---------------------------------------------------------------------------
+# Node worker pool — mirror GPU affinity/tolerations onto vmafx-node
+# ---------------------------------------------------------------------------
+node:
+  tolerations:
+    - key: gpu.intel.com/i915
+      operator: Exists
+      effect: NoSchedule
+  nodeSelector:
+    feature.node.kubernetes.io/kernel-module.i915: "true"
+
+# ---------------------------------------------------------------------------
+# Resources — Intel Arc A770 / Data Center GPU Flex 170 typical allocation
+# ---------------------------------------------------------------------------
+resources:
+  limits:
+    cpu: "4"
+    memory: 8Gi
+  requests:
+    cpu: "1"
+    memory: 2Gi

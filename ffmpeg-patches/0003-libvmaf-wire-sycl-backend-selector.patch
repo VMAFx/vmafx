@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 82e834e28c22c80a3240f504cdbcf745a09ec9bd Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Fri, 24 Apr 2026 22:23:38 +0200
-Subject: [PATCH] libvmaf: wire sycl backend selector (sycl_device /
+Subject: [PATCH 03/13] libvmaf: wire sycl backend selector (sycl_device /
  sycl_profile options)
 
 ---
@@ -22,7 +22,7 @@ index 87a9d35..c1666a9 100755
  enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
                                 require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc; }
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 552743f..e3cf572 100644
+index 552743f..4d72812 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -47,6 +47,10 @@
@@ -94,7 +94,7 @@ index 552743f..e3cf572 100644
      err = parse_models(ctx);
      if (err)
          return err;
-@@ -646,6 +687,13 @@ clean_up:
+@@ -655,6 +696,13 @@ clean_up:
  
      if (s->vmaf)
          vmaf_close(s->vmaf);
@@ -110,3 +110,4 @@ index 552743f..e3cf572 100644
  static const AVFilterPad libvmaf_inputs[] = {
 -- 
 2.54.0
+

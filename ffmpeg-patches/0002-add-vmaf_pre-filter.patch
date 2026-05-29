@@ -1,13 +1,13 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 5c1ae43bb25529f9c3b093bb24bc9f85fd6d7f98 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Fri, 24 Apr 2026 22:23:38 +0200
-Subject: [PATCH] add vmaf_pre filter (8-bit + 10-bit + optional chroma)
+Subject: [PATCH 02/13] add vmaf_pre filter (8-bit + 10-bit + optional chroma)
 
 ---
  configure                 |   2 +
  libavfilter/Makefile      |   1 +
  libavfilter/allfilters.c  |   1 +
- libavfilter/vf_vmaf_pre.c | 264 +++++++++++++++++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmaf_pre.c | 264 ++++++++++++++++++++++++++++++++++++++
  4 files changed, 268 insertions(+)
  create mode 100644 libavfilter/vf_vmaf_pre.c
 
@@ -57,7 +57,7 @@ index e26859e..4e951ca 100644
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmaf_pre.c b/libavfilter/vf_vmaf_pre.c
 new file mode 100644
-index 0000000..b339442
+index 0000000..16627ea
 --- /dev/null
 +++ b/libavfilter/vf_vmaf_pre.c
 @@ -0,0 +1,264 @@
@@ -327,3 +327,4 @@ index 0000000..b339442
 +};
 -- 
 2.54.0
+

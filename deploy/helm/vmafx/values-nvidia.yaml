@@ -1,0 +1,74 @@
+# =============================================================================
+# VMAFX Helm — NVIDIA GPU profile
+# =============================================================================
+# Installs VMAFX with the CUDA backend on an NVIDIA GPU node.
+#
+# Prerequisites on the cluster:
+#   1. NVIDIA GPU device-plugin daemonset installed:
+#        kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.14.5/nvidia-device-plugin.yml
+#   2. Nodes carrying the taint `nvidia.com/gpu=present:NoSchedule` (typical
+#      managed-cloud default — check with `kubectl describe node <node>`).
+#   3. NFD or manual node label `nvidia.com/gpu.present=true` on GPU nodes.
+#
+# Install:
+#   helm upgrade --install vmafx deploy/helm/vmafx/ \
+#     -f deploy/helm/vmafx/values-nvidia.yaml \
+#     --namespace vmafx --create-namespace
+#
+# See: docs/development/gpu-scheduling.md, ADR-0796.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# GPU — NVIDIA CUDA backend
+# ---------------------------------------------------------------------------
+gpu:
+  enabled: true
+  vendor: nvidia
+  count: 1
+
+# ---------------------------------------------------------------------------
+# Node affinity — require NVIDIA GPU nodes
+# ---------------------------------------------------------------------------
+# The `nvidia.com/gpu.present: "true"` label is set by the NVIDIA device-plugin
+# or NFD once a compatible GPU is detected on the node.
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: nvidia.com/gpu.present
+              operator: In
+              values: ["true"]
+
+# ---------------------------------------------------------------------------
+# Tolerations — admit NVIDIA-tainted GPU nodes
+# ---------------------------------------------------------------------------
+# Managed clouds (GKE, EKS, AKS) commonly taint GPU nodes with
+# `nvidia.com/gpu=present:NoSchedule` to prevent non-GPU pods from landing
+# on (expensive) GPU nodes.
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# ---------------------------------------------------------------------------
+# Node worker pool — mirror GPU affinity/tolerations onto vmafx-node
+# ---------------------------------------------------------------------------
+node:
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+
+# ---------------------------------------------------------------------------
+# Resources — NVIDIA A10G / T4 typical allocation
+# ---------------------------------------------------------------------------
+resources:
+  limits:
+    cpu: "4"
+    memory: 8Gi
+  requests:
+    cpu: "1"
+    memory: 2Gi

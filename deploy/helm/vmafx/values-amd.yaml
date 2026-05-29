@@ -1,0 +1,76 @@
+# =============================================================================
+# VMAFX Helm — AMD GPU profile
+# =============================================================================
+# Installs VMAFX with the HIP backend on an AMD GPU node (ROCm).
+#
+# Prerequisites on the cluster:
+#   1. AMD GPU device-plugin daemonset installed:
+#        kubectl apply -f \
+#          https://raw.githubusercontent.com/RadeonOpenCompute/k8s-device-plugin/master/k8s-ds-amdgpu-dp.yaml
+#   2. ROCm kernel modules installed on the node (the device-plugin pod mounts
+#      /dev/kfd and /dev/dri from the host; these must exist).
+#   3. Optional: NFD-generated label `amd.com/gpu=true` or operator-managed
+#      `feature.node.kubernetes.io/amd-gpu=true` on GPU nodes — substitute
+#      whichever label your cluster uses in the affinity rule below.
+#
+# Install:
+#   helm upgrade --install vmafx deploy/helm/vmafx/ \
+#     -f deploy/helm/vmafx/values-amd.yaml \
+#     --namespace vmafx --create-namespace
+#
+# See: docs/development/gpu-scheduling.md, ADR-0796.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# GPU — AMD HIP backend
+# ---------------------------------------------------------------------------
+gpu:
+  enabled: true
+  vendor: amd
+  count: 1
+
+# ---------------------------------------------------------------------------
+# Node affinity — require AMD GPU nodes
+# ---------------------------------------------------------------------------
+# `amd.com/gpu.present: "true"` is set by the ROCm device-plugin or NFD when
+# a compatible AMDGPU is detected.  Adjust the key to match your cluster's
+# node-labelling convention (e.g. feature.node.kubernetes.io/amd-gpu: "true").
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: amd.com/gpu.present
+              operator: In
+              values: ["true"]
+
+# ---------------------------------------------------------------------------
+# Tolerations — admit AMD GPU-tainted nodes
+# ---------------------------------------------------------------------------
+# ROCm-managed clusters may taint GPU nodes with `amd.com/gpu=present:NoSchedule`.
+tolerations:
+  - key: amd.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# ---------------------------------------------------------------------------
+# Node worker pool — mirror GPU affinity/tolerations onto vmafx-node
+# ---------------------------------------------------------------------------
+node:
+  tolerations:
+    - key: amd.com/gpu
+      operator: Exists
+      effect: NoSchedule
+  nodeSelector:
+    amd.com/gpu.present: "true"
+
+# ---------------------------------------------------------------------------
+# Resources — AMD RX 7900 / MI250 typical allocation
+# ---------------------------------------------------------------------------
+resources:
+  limits:
+    cpu: "4"
+    memory: 8Gi
+  requests:
+    cpu: "1"
+    memory: 2Gi

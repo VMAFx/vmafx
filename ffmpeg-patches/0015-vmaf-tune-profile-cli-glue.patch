@@ -1,11 +1,8 @@
-From 52df20e883c9c6e95f15a8c7ed934b3de2e93b11 Mon Sep 17 00:00:00 2001
+From 5dd3a020af759e630e5d672b9e2221d1106d16ce Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Wed, 20 May 2026 19:15:00 +0200
-Subject: [PATCH] fftools: add -vmaf-profile CLI glue (vmaf-tune profile
+Subject: [PATCH 13/13] fftools: add -vmaf-profile CLI glue (vmaf-tune profile
  helper)
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
 Adds a new -vmaf-profile <path> option to FFmpeg's CLI parser as the
 operator-visible hand-off to vmaf-tune's encoder-profile reports.
@@ -28,10 +25,10 @@ ADR: docs/adr/0643-vmaf-tune-encoder-profile-contract.md
  1 file changed, 21 insertions(+)
 
 diff --git a/fftools/ffmpeg_opt.c b/fftools/ffmpeg_opt.c
-index 7db30ac72b..ef9f83c74b 100644
+index 73b6fab..e8bf523 100644
 --- a/fftools/ffmpeg_opt.c
 +++ b/fftools/ffmpeg_opt.c
-@@ -1067,6 +1067,24 @@ static int opt_pass_autotune(void *optctx, const char *opt, const char *arg)
+@@ -1069,6 +1069,24 @@ static int opt_pass_autotune(void *optctx, const char *opt, const char *arg)
      return 0;
  }
  
@@ -56,7 +53,7 @@ index 7db30ac72b..ef9f83c74b 100644
  static int opt_vstats(void *optctx, const char *opt, const char *arg)
  {
      char filename[40];
-@@ -1977,6 +1998,9 @@ const OptionDef options[] = {
+@@ -1979,6 +1997,9 @@ const OptionDef options[] = {
      { "pass-autotune",              OPT_TYPE_FUNC,   OPT_VIDEO | OPT_EXPERT,
          { .func_arg = opt_pass_autotune },
          "vmaf-tune 2-pass orchestration helper (ADR-0312, advisory only)" },
@@ -68,3 +65,4 @@ index 7db30ac72b..ef9f83c74b 100644
          "select two pass log file name prefix", "prefix" },
 -- 
 2.54.0
+

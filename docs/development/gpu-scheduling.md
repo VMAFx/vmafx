@@ -19,12 +19,27 @@ VMAFX uses one device-plugin per GPU vendor:
 | AMD | `amd.com/gpu` | HIP | [k8s-device-plugin](https://github.com/RadeonOpenCompute/k8s-device-plugin) |
 | Intel | `gpu.intel.com/i915` | SYCL | [intel-device-plugins-for-kubernetes](https://github.com/intel/intel-device-plugins-for-kubernetes) |
 
-## Vulkan
+## Vulkan and Kubernetes
 
-The Vulkan backend was removed in ADR-0726.  Supported backends are `cuda`,
-`hip`, `sycl`, and `cpu`.  Set `gpu.vendor` to the physical GPU vendor;
-the chart selects the correct device-plugin resource and `VMAFX_BACKEND`
-automatically.
+**Vulkan is NOT a separate Kubernetes resource.** There is no
+`vulkan.khronos.org/gpu` or equivalent extended resource in any vendor's
+device-plugin.  Vulkan runs through whichever GPU device-plugin is allocated:
+
+- NVIDIA node with `nvidia.com/gpu: 1` → Vulkan addresses the NVIDIA GPU via the
+  NVIDIA Vulkan ICD.
+- AMD node with `amd.com/gpu: 1` → Vulkan addresses the AMD GPU via the
+  AMDVLK / Mesa RADV ICD.
+- Intel node with `gpu.intel.com/i915: 1` → Vulkan addresses the Intel GPU via
+  the Intel ANV / Mesa ANV ICD.
+
+The VMAFX container image ships all three Vulkan ICDs.  The runtime selects the
+correct ICD based on which device is present in `/dev/dri/` after the
+device-plugin allocation.
+
+**Consequence for the Helm chart:** set `gpu.vendor` to the physical GPU vendor.
+The chart requests the vendor's device-plugin resource and sets `VMAFX_BACKEND`
+accordingly.  Vulkan acceleration is available automatically on any allocated
+GPU node without a separate resource request.
 
 ## Installing device-plugins
 
@@ -188,8 +203,44 @@ helm upgrade vmafx deploy/helm/vmafx/ --set gpu.count=2
 Note that VMAFX processes a single job per pod; multiple GPUs per pod are only
 useful if the VMAFX backend supports intra-node multi-GPU dispatch.
 
+## Per-vendor example values files
+
+Ready-to-use values files are shipped alongside the chart.  Each file sets
+the correct `gpu.vendor`, `affinity`, and `tolerations` for its GPU vendor:
+
+| File | Vendor | Backend | GPU resource |
+|---|---|---|---|
+| `deploy/helm/vmafx/values-nvidia.yaml` | NVIDIA | CUDA | `nvidia.com/gpu` |
+| `deploy/helm/vmafx/values-amd.yaml` | AMD | HIP | `amd.com/gpu` |
+| `deploy/helm/vmafx/values-intel.yaml` | Intel | SYCL | `gpu.intel.com/i915` |
+
+Install example:
+
+```bash
+helm upgrade --install vmafx deploy/helm/vmafx/ \
+  -f deploy/helm/vmafx/values-nvidia.yaml \
+  --namespace vmafx --create-namespace
+```
+
+Operators with non-standard node labels or taint keys should override just
+the differing keys with `--set`:
+
+```bash
+helm upgrade --install vmafx deploy/helm/vmafx/ \
+  -f deploy/helm/vmafx/values-nvidia.yaml \
+  --set affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key=cloud.google.com/gke-accelerator
+```
+
+## Adding a 4th vendor
+
+See [ADR-0796](../adr/0796-helm-3vendor-gpu-scheduling.md) §Decision item 4
+for the full checklist.  In brief: add the resource key in `_helpers.tpl`,
+add the backend string, add a `values-<vendor>.yaml`, update this table, and
+add a `helm lint` CI invocation.
+
 ## Related
 
 - [Kubernetes deployment guide](k8s-deployment.md)
 - [Backend documentation](../backends/index.md)
 - [ADR-0699](../adr/0699-vmafx-helm-chart-k8s.md) — Helm chart design
+- [ADR-0796](../adr/0796-helm-3vendor-gpu-scheduling.md) — 3-vendor scheduling model and extension guide

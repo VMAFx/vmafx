@@ -6,6 +6,22 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## helm-3vendor-gpu-scheduling (2026-05-29, ADR-0796)
+
+**Files touched:**
+`deploy/helm/vmafx/values-nvidia.yaml` (new)
+`deploy/helm/vmafx/values-amd.yaml` (new)
+`deploy/helm/vmafx/values-intel.yaml` (new)
+`docs/adr/0796-helm-3vendor-gpu-scheduling.md` (new)
+`docs/development/gpu-scheduling.md` (updated)
+
+**Rebase impact:** None. All touched files are fork-local Helm chart and
+documentation files.  Netflix/vmaf upstream has no Helm chart or Kubernetes
+deployment layer; no upstream conflict is possible.
+
+---
+
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

@@ -1,7 +1,7 @@
-From 104a81396d3d580a943a14fef05f57705d15a067 Mon Sep 17 00:00:00 2001
+From ddc043885c6272b4502ff2d3aa92cb9db1204214 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Tue, 5 May 2026 23:24:55 +0200
-Subject: [PATCH 7/9] libavcodec: unified -qpfile across
+Subject: [PATCH 05/13] libavcodec: unified -qpfile across
  libx264/libsvtav1/libaom (vmaf-tune)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -49,16 +49,16 @@ Research: docs/research/0084-ffmpeg-patch-vmaf-tune-integration-survey.md
 ---
  libavcodec/Makefile        |   4 +-
  libavcodec/libaomenc.c     | 229 ++++++++++++++++++++++++++++
- libavcodec/libsvtav1.c     | 303 +++++++++++++++++++++++++++++++++++++
+ libavcodec/libsvtav1.c     | 304 +++++++++++++++++++++++++++++++++++++
  libavcodec/libx264.c       |  18 +++
  libavcodec/qpfile_parser.c | 302 ++++++++++++++++++++++++++++++++++++
  libavcodec/qpfile_parser.h |  55 +++++++
- 6 files changed, 910 insertions(+), 1 deletion(-)
+ 6 files changed, 911 insertions(+), 1 deletion(-)
  create mode 100644 libavcodec/qpfile_parser.c
  create mode 100644 libavcodec/qpfile_parser.h
 
 diff --git a/libavcodec/Makefile b/libavcodec/Makefile
-index 12a8265025..4cc0e2b46a 100644
+index 1410bd8..c8ce096 100644
 --- a/libavcodec/Makefile
 +++ b/libavcodec/Makefile
 @@ -1225,7 +1225,9 @@ OBJS-$(CONFIG_LIBVVENC_ENCODER)           += libvvenc.o
@@ -73,7 +73,7 @@ index 12a8265025..4cc0e2b46a 100644
  OBJS-$(CONFIG_LIBXAVS_ENCODER)            += libxavs.o
  OBJS-$(CONFIG_LIBXAVS2_ENCODER)           += libxavs2.o
 diff --git a/libavcodec/libaomenc.c b/libavcodec/libaomenc.c
-index 20e97e5d43..a93d01483b 100644
+index 20e97e5..a93d014 100644
 --- a/libavcodec/libaomenc.c
 +++ b/libavcodec/libaomenc.c
 @@ -50,6 +50,10 @@
@@ -355,7 +355,7 @@ index 20e97e5d43..a93d01483b 100644
      { "still-picture", "Encode in single frame mode (typically used for still AVIF images).", OFFSET(still_picture), AV_OPT_TYPE_BOOL, {.i64 = 0}, -1, 1, VE },
      { "dolbyvision",     "Enable Dolby Vision RPU coding", OFFSET(dovi.enable), AV_OPT_TYPE_BOOL, {.i64 = FF_DOVI_AUTOMATIC }, -1, 1, VE, .unit = "dovi" },
 diff --git a/libavcodec/libsvtav1.c b/libavcodec/libsvtav1.c
-index fec2ed596e..403810d78e 100644
+index fec2ed5..fbccb7e 100644
 --- a/libavcodec/libsvtav1.c
 +++ b/libavcodec/libsvtav1.c
 @@ -20,6 +20,8 @@
@@ -367,7 +367,7 @@ index fec2ed596e..403810d78e 100644
  #include <stdint.h>
  #include <inttypes.h>
  #include <EbSvtAv1ErrorCodes.h>
-@@ -42,6 +43,7 @@
+@@ -42,6 +44,7 @@
  #include "encode.h"
  #include "avcodec.h"
  #include "profiles.h"
@@ -375,7 +375,7 @@ index fec2ed596e..403810d78e 100644
  
  typedef enum eos_status {
      EOS_NOT_REACHED = 0,
-@@ -74,6 +76,31 @@ typedef struct SvtContext {
+@@ -74,6 +77,31 @@ typedef struct SvtContext {
      int enc_mode;
      int crf;
      int qp;
@@ -407,7 +407,7 @@ index fec2ed596e..403810d78e 100644
  } SvtContext;
  
  static const struct {
-@@ -464,6 +491,10 @@ static int read_in_data(EbSvtAv1EncConfiguration *param, const AVFrame *frame,
+@@ -464,6 +492,10 @@ static int read_in_data(EbSvtAv1EncConfiguration *param, const AVFrame *frame,
      return 0;
  }
  
@@ -418,7 +418,7 @@ index fec2ed596e..403810d78e 100644
  static av_cold int eb_enc_init(AVCodecContext *avctx)
  {
      SvtContext   *svt_enc = avctx->priv_data;
-@@ -487,11 +518,47 @@ static av_cold int eb_enc_init(AVCodecContext *avctx)
+@@ -487,11 +519,47 @@ static av_cold int eb_enc_init(AVCodecContext *avctx)
          return ret;
      }
  
@@ -466,7 +466,7 @@ index fec2ed596e..403810d78e 100644
      svt_ret = svt_av1_enc_init(svt_enc->svt_handle);
      if (svt_ret != EB_ErrorNone) {
          return svt_print_error(avctx, svt_ret, "Error initializing encoder");
-@@ -533,6 +600,193 @@ static av_cold int eb_enc_init(AVCodecContext *avctx)
+@@ -533,6 +601,193 @@ static av_cold int eb_enc_init(AVCodecContext *avctx)
      return alloc_buffer(&svt_enc->enc_params, svt_enc);
  }
  
@@ -660,7 +660,7 @@ index fec2ed596e..403810d78e 100644
  static int eb_send_frame(AVCodecContext *avctx, const AVFrame *frame)
  {
      SvtContext           *svt_enc = avctx->priv_data;
-@@ -595,8 +849,40 @@ static int eb_send_frame(AVCodecContext *avctx, const AVFrame *frame)
+@@ -595,8 +850,40 @@ static int eb_send_frame(AVCodecContext *avctx, const AVFrame *frame)
          return AVERROR_INVALIDDATA;
      }
  
@@ -701,7 +701,7 @@ index fec2ed596e..403810d78e 100644
      if (svt_ret != EB_ErrorNone)
          return svt_print_error(avctx, svt_ret, "Error sending a frame to encoder");
  
-@@ -766,6 +1052,22 @@ static av_cold int eb_enc_close(AVCodecContext *avctx)
+@@ -766,6 +1053,22 @@ static av_cold int eb_enc_close(AVCodecContext *avctx)
      ff_dovi_ctx_unref(&svt_enc->dovi);
      av_freep(&svt_enc->stats_buf);
  
@@ -724,7 +724,7 @@ index fec2ed596e..403810d78e 100644
      return 0;
  }
  
-@@ -810,6 +1112,7 @@ static const AVOption options[] = {
+@@ -810,6 +1113,7 @@ static const AVOption options[] = {
      { "qp", "Initial Quantizer level value", OFFSET(qp),
        AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 63, VE },
      { "svtav1-params", "Set the SVT-AV1 configuration using a :-separated list of key=value parameters", OFFSET(svtav1_opts), AV_OPT_TYPE_DICT, { 0 }, 0, 0, VE },
@@ -733,7 +733,7 @@ index fec2ed596e..403810d78e 100644
      { "dolbyvision", "Enable Dolby Vision RPU coding", OFFSET(dovi.enable), AV_OPT_TYPE_BOOL, {.i64 = FF_DOVI_AUTOMATIC }, -1, 1, VE, .unit = "dovi" },
      {   "auto", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = FF_DOVI_AUTOMATIC}, .flags = VE, .unit = "dovi" },
 diff --git a/libavcodec/libx264.c b/libavcodec/libx264.c
-index b688d4f321..44a6bacbd2 100644
+index b688d4f..44a6bac 100644
 --- a/libavcodec/libx264.c
 +++ b/libavcodec/libx264.c
 @@ -39,6 +39,8 @@
@@ -784,7 +784,7 @@ index b688d4f321..44a6bacbd2 100644
  
 diff --git a/libavcodec/qpfile_parser.c b/libavcodec/qpfile_parser.c
 new file mode 100644
-index 0000000000..cf781305ac
+index 0000000..cf78130
 --- /dev/null
 +++ b/libavcodec/qpfile_parser.c
 @@ -0,0 +1,302 @@
@@ -1092,7 +1092,7 @@ index 0000000000..cf781305ac
 +}
 diff --git a/libavcodec/qpfile_parser.h b/libavcodec/qpfile_parser.h
 new file mode 100644
-index 0000000000..bfc4af0cc8
+index 0000000..bfc4af0
 --- /dev/null
 +++ b/libavcodec/qpfile_parser.h
 @@ -0,0 +1,55 @@
