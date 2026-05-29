@@ -395,7 +395,9 @@ static void motion_pre_graph(void *queue_ptr, void *priv);
 static void motion_post_graph(void *queue_ptr, void *priv);
 static void config_motion_slot(void *priv, int slot);
 
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
+static int
+close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init failure cleanup — SY-2a */
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -479,8 +481,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     // Register with combined command graph
     int const err2 = vmaf_sycl_graph_register(state, enqueue_motion_work, motion_pre_graph,
                                               motion_post_graph, config_motion_slot, s, "MOTION");
-    if (err2)
+    if (err2) {
+        close_fex_sycl(fex);
         return err2;
+    }
 
     return 0;
 }

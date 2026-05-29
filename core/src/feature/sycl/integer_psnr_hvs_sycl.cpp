@@ -399,7 +399,9 @@ static const VmafOption options_psnr_hvs_sycl[] = {
     {0},
 };
 
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
+static int
+close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init failure cleanup — SY-2a */
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {

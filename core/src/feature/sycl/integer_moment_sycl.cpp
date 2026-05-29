@@ -71,7 +71,6 @@ static void launch_moment(sycl::queue &q, void *shared_ref, void *shared_dis, in
     const unsigned e_bpc = bpc;
     void *ref_in = shared_ref;
     void *dis_in = shared_dis;
-    int64_t *e_sums = d_sums;
 
     q.submit([=](sycl::handler &h) {
         h.parallel_for(global, [=](sycl::id<2> id) {
@@ -90,10 +89,10 @@ static void launch_moment(sycl::queue &q, void *shared_ref, void *shared_dis, in
             using atomic64 =
                 sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
                                  sycl::access::address_space::global_space>;
-            atomic64(e_sums[0]).fetch_add(r);
-            atomic64(e_sums[1]).fetch_add(d);
-            atomic64(e_sums[2]).fetch_add(r * r);
-            atomic64(e_sums[3]).fetch_add(d * d);
+            atomic64(d_sums[0]).fetch_add(r);
+            atomic64(d_sums[1]).fetch_add(d);
+            atomic64(d_sums[2]).fetch_add(r * r);
+            atomic64(d_sums[3]).fetch_add(d * d);
         });
     });
 }
@@ -132,7 +131,9 @@ extern "C" {
 
 static const VmafOption options_moment_sycl[] = {{0}};
 
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
+static int
+close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init failure cleanup — SY-2a */
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -174,8 +175,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int const err2 = vmaf_sycl_graph_register(state, enqueue_moment_work, moment_pre_graph,
                                               moment_post_graph, config_moment_slot, s, "MOMENT");
-    if (err2)
+    if (err2) {
+        close_fex_sycl(fex);
         return err2;
+    }
 
     return 0;
 }

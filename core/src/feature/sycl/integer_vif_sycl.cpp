@@ -1375,7 +1375,9 @@ static void vif_pre_graph(void *queue_ptr, void *priv);
 static void vif_post_graph(void *queue_ptr, void *priv);
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
+static int
+close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init failure cleanup — SY-2a */
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -1446,8 +1448,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     // Generate and upload log2 LUT
     {
         uint32_t *lut_host = static_cast<uint32_t *>(std::malloc(lut_size));
-        if (!lut_host)
+        if (!lut_host) {
+            close_fex_sycl(fex);
             return -ENOMEM;
+        }
         for (int j = 0; j < LOG2_LUT_SIZE; j++) {
             lut_host[j] = (uint32_t)std::roundf(std::log2f((float)(j + 32768)) * 2048.0f);
         }
@@ -1486,8 +1490,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     // Register with combined command graph
     err = vmaf_sycl_graph_register(state, enqueue_vif_work, vif_pre_graph, vif_post_graph, nullptr,
                                    s, "VIF");
-    if (err)
+    if (err) {
+        close_fex_sycl(fex);
         return err;
+    }
 
     return 0;
 }

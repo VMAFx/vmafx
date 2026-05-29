@@ -120,7 +120,6 @@ static void launch_sse(sycl::queue &q, const void *ref_buf, const void *dis_buf,
     const unsigned e_bpc = bpc;
     const void *ref_in = ref_buf;
     const void *dis_in = dis_buf;
-    int64_t *e_sse = d_sse;
 
     q.submit([=](sycl::handler &h) {
         h.parallel_for(global, [=](sycl::id<2> id) {
@@ -140,7 +139,7 @@ static void launch_sse(sycl::queue &q, const void *ref_buf, const void *dis_buf,
             const int64_t se = diff * diff;
             sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
                              sycl::access::address_space::global_space>
-                accum(*e_sse);
+                accum(*d_sse);
             accum.fetch_add(se);
         });
     });
@@ -237,7 +236,9 @@ static const VmafOption options_psnr_sycl[] = {{
                                                },
                                                {0}};
 
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
+static int
+close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init failure cleanup — SY-2a */
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -330,8 +331,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     int const err2 = vmaf_sycl_graph_register(state, enqueue_psnr_work, psnr_pre_graph,
                                               psnr_post_graph, config_psnr_slot, s, "PSNR");
-    if (err2)
+    if (err2) {
+        close_fex_sycl(fex);
         return err2;
+    }
 
     return 0;
 }

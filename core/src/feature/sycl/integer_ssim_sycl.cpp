@@ -302,7 +302,10 @@ static const VmafOption options_ssim_sycl[] = {
     {0},
 };
 
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
+static int close_fex_sycl(VmafFeatureExtractor *fex);
+static int close_fex_issim_sycl(
+    VmafFeatureExtractor *fex); /* forward decls for init failure cleanup — SY-2a */
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -739,7 +742,6 @@ static void launch_issim_vert_combine(sycl::queue &q, const int64_t *d_mux_h,
 
 } /* anonymous namespace */
 
-static int close_fex_issim_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 extern "C" {
 
 static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
