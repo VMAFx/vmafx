@@ -93,6 +93,16 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
 
 ## Rebase-sensitive invariants
 
+- **`vmaf_cuda_kernel_readback_free` owns the pinned-host free
+  (2026-05-29 sweep).** The helper in `core/src/cuda/kernel_template.h`
+  calls `vmaf_cuda_buffer_host_free(cu_state, rb->host_pinned)` before
+  NULLing the pointer. Callers of `vmaf_cuda_kernel_readback_free` must
+  NOT also call `vmaf_cuda_buffer_host_free` on `rb->host_pinned` — doing
+  so would double-free the pinned allocation. The pre-2026-05-29 pattern
+  where callers called `vmaf_cuda_buffer_host_free` explicitly is
+  incorrect; the helper now owns the free. See
+  PR fix/cuda-pinned-host-leak-sweep-20260529.
+
 - **`integer_ms_ssim_cuda.c` honours the `enable_lcs`, `enable_db`,
   and `clip_db` GPU contracts** (ADR-0243, ADR-0460). Emits 15 extra
   metrics (`float_ms_ssim_{l,c,s}_scale{0..4}`) when `enable_lcs=true`,

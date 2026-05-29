@@ -6,6 +6,21 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## cuda-readback-free-host-pinned-leak sweep (2026-05-29)
+
+**Files touched:** `core/src/cuda/kernel_template.h`,
+`docs/backends/kernel-scaffolding.md`
+
+**Rebase impact:** None. The fix is entirely in fork-added files
+(`kernel_template.h` is a Lusoris-added header; `kernel-scaffolding.md` is
+fork-added documentation). No upstream Netflix/vmaf file is modified.
+
+The changed function (`vmaf_cuda_kernel_readback_free`) did not exist in
+upstream — it was introduced by the fork's kernel-template ADR. No rebase
+conflict is possible.
+
+
+
 ## Research-0751 4K baseline + PR #79 adm_cm A/B (2026-05-29)
 
 **Files touched:** `docs/research/0751-cross-backend-4k-baseline-and-pr79-adm-cm-4k-measure.md`,
