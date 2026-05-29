@@ -529,3 +529,14 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   `compute-sanitizer --tool memcheck --leak-check full ./vmaf --feature float_ssim --backend cuda ...`
   — the summary must show 0 bytes from `cuMemHostAlloc` after fix.
   Note: `integer_psnr_cuda.c` has the same gap and is scheduled for a follow-up.
+
+## Motion kernel dispatch bottleneck (Research-0760)
+
+- **`calculate_motion_score_kernel_8bpc` is dispatch-bottlenecked at all resolutions
+  below 4K.** ncu profile (2026-05-29, RTX 4090) shows GPU busy fraction <1% of
+  wall time at 576p (kernel 7 µs, dispatch ~12.7 ms/frame). CUDA/CPU ratio is 0.22×
+  at 576p and 5.8× at 4K — the crossover is entirely explained by dispatch overhead.
+  Any optimization that does not address per-frame dispatch will not improve
+  sub-4K throughput regardless of kernel-level changes. The primary fix is
+  multi-frame SAD batching (accumulate N frames before readback synchronization).
+  See [Research-0760](../../../../docs/research/0760-cuda-motion-ncu-multi-resolution-20260529.md).

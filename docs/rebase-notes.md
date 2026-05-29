@@ -40234,3 +40234,10 @@ Fork-local files modified:
 `docs/adr/README.md` (new row),
 `changelog.d/changed/0755-cpp23-wave7-cpu-cpp.md` (new),
 `docs/rebase-notes.md` (this entry).
+## research/cuda-motion-ncu-profile-20260529
+
+No rebase impact: research-only commit. No source files modified.
+Files added: `docs/research/0760-cuda-motion-ncu-multi-resolution-20260529.md`,
+`changelog.d/perf/cuda-motion-ncu-multi-resolution.md`,
+`docs/adr/0760-cuda-motion-ncu-multi-resolution.md` (research ADR).
+No upstream collision risk.
