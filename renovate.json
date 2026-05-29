@@ -8,10 +8,10 @@
     ":semanticCommits",
     "helpers:disableTypesNodeMajor"
   ],
-  "schedule": ["at any time"],
+  "schedule": ["before 6am on weekdays"],
   "timezone": "Europe/Vienna",
   "prHourlyLimit": 0,
-  "prConcurrentLimit": 12,
+  "prConcurrentLimit": 10,
   "rangeStrategy": "bump",
   "commitMessagePrefix": "chore(deps):",
   "branchPrefix": "renovate/",
@@ -64,6 +64,38 @@
       "matchManagers": ["pep621", "pip_requirements"],
       "matchUpdateTypes": ["minor"],
       "groupName": "Python (minor)",
+      "automerge": false
+    },
+    {
+      "description": "Group all Go minor + patch updates into one PR; auto-merge. k8s/grpc/proto patch bumps are low-risk; CI gates catch regressions.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Go deps (minor + patch)",
+      "automerge": true,
+      "automergeType": "pr",
+      "schedule": ["before 6am on Monday"]
+    },
+    {
+      "description": "Go major upgrades travel individually and require human review — module path and API changes.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "Go deps (major)",
+      "automerge": false
+    },
+    {
+      "description": "Group all Cargo (Rust) minor + patch updates; auto-merge — Rust's semantic versioning is reliable and CI catches UB/breakage.",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Cargo deps (minor + patch)",
+      "automerge": true,
+      "automergeType": "pr",
+      "schedule": ["before 6am on Monday"]
+    },
+    {
+      "description": "Cargo major upgrades require human review — breaking API changes, unsafe code review.",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "Cargo deps (major)",
       "automerge": false
     },
     {
