@@ -6,6 +6,16 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## env-var consolidation + VMAF_SYCL_NO_GRAPH deprecation (2026-05-29, ADR-0841)
+
+No rebase impact: all changes are documentation (`docs/usage/env-vars.md`,
+`docs/server/operator.md`, `mkdocs.yml` nav, `docs/backends/*/overview.md`
+additions) plus a three-line deprecation warning in
+`core/src/sycl/dispatch_strategy.cpp` that is fork-local.  No upstream-shared
+C sources, no public headers, no build system files.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

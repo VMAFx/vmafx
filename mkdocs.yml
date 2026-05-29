@@ -167,6 +167,7 @@ nav:
       - ROI scoring: usage/vmaf-roi.md
       - ROI score output: usage/vmaf-roi-score.md
       - External resources: usage/external-resources.md
+      - Environment variables: usage/env-vars.md
       - vmaf-tune:
           - Overview: usage/vmaf-tune.md
           - Codec adapters: usage/vmaf-tune-codec-adapters.md

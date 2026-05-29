@@ -8,28 +8,39 @@ executes them against `libvmaf`, and reports results back.
 
 ```bash
 # 1. Start a controller (Phase 4b.1).
-export VMAFX_CONTROLLER_ADDR=localhost:8080
 ./vmafx-controller &
 
-# 2. Start a node.
-export VMAFX_CONTROLLER_ADDR=localhost:8080
+# 2. Start a node (listens on :50052 by default).
 export VMAFX_LOG_LEVEL=debug
 ./vmafx-node
 ```
 
-The node auto-detects the available GPU backend and registers with the
-controller within 5 s.
+The node auto-detects the available GPU backend.  Full controller-to-node
+registration (pull-based job dispatch) is tracked in ADR-0713 Stage 2 —
+see the planned env vars table below.
 
 ## Configuration (12-factor env vars)
 
 | Variable | Default | Description |
 |---|---|---|
-| `VMAFX_CONTROLLER_ADDR` | **required** | Controller gRPC address, e.g. `controller.vmafx.svc.cluster.local:8080` |
+| `VMAFX_FFMPEG_BIN` | `ffmpeg` (PATH) | Path to the `ffmpeg` binary.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
+| `VMAFX_LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, `error` |
+| `VMAFX_NODE_ADDR` | `:50052` | gRPC listen address for the node's worker service. |
+
+See also the [full environment variable reference](../usage/env-vars.md) for the complete table.
+
+### Planned env vars (ADR-0713 spec, not yet implemented)
+
+The following variables appeared in the original Phase 4b.1 design (ADR-0713)
+but are not currently read by the node binary.  They are reserved for a future
+implementation pass.
+
+| Variable | Planned default | Planned behaviour |
+|---|---|---|
+| `VMAFX_CONTROLLER_ADDR` | _(required)_ | Controller gRPC address for job pull (node-to-controller registration flow) |
 | `VMAFX_NODE_ID` | hostname | Human-readable node name sent in `RegisterNode` |
 | `VMAFX_BACKEND` | auto-detected | Force a specific backend: `cpu`, `cuda`, `sycl`, `hip`, `metal` |
 | `VMAFX_GPU_DEVICE` | `0` | GPU device index (for multi-GPU hosts) |
-| `VMAFX_LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, `error` |
-| `VMAFX_MODEL_DIR` | `/usr/local/share/vmafx/model` | Directory containing `.onnx` and `.json` model files |
 
 ## GPU auto-detection
 

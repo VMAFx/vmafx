@@ -200,6 +200,27 @@ with a commit-message justification; use
 [`/cross-backend-diff`](../../../.claude/skills/cross-backend-diff/SKILL.md)
 to surface an unexpected delta.
 
+## Backend dispatch knob
+
+`VMAF_CUDA_DISPATCH` controls how CUDA feature extractors batch and synchronise
+work.  Three values are accepted:
+
+| Value | Behaviour |
+|---|---|
+| `adaptive` | Runtime heuristic: selects `batched` above 720p frame area, `serial` below. **Default** when unset. |
+| `batched` | Drain-batch: enqueues all per-extractor events, waits once per frame (ADR-0483). Lowest latency at ≥ 1080p. |
+| `serial` | Synchronises after each extractor. Lower overhead at small resolutions. |
+
+Per-feature overrides use the `feature=strategy[,...]` syntax:
+
+```bash
+VMAF_CUDA_DISPATCH=adaptive,integer_vif=batched ./build/tools/vmaf ...
+```
+
+See [ADR-0483](../../adr/0483-gpu-dispatch-parse-dedup.md) for the full parse
+grammar and the [env-var reference](../../usage/env-vars.md#cuda-dispatch-knob)
+for the complete table.
+
 ## Known gaps
 
 - **CIEDE2000** — no CUDA kernel (same CPU-fallback behaviour).
