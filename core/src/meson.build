@@ -551,10 +551,15 @@ libvmaf_include = include_directories(
     is_nvtx_enabled ? '/usr/local/cuda/include' : '',
 )
 
-# MSVC names its C++23 standard `vc++latest`; GCC/Clang use `c++23`.
-# Pick the right token so the override doesn't reject on Windows.
-if meson.get_compiler('cpp').get_id() == 'msvc'
+# GCC/Clang accept `c++23`; MSVC needs `vc++latest`; Intel oneAPI on Windows
+# (icx-cl, `intel-llvm-cl`) and clang-cl reject `c++23` and need plain
+# `c++latest`. Pick the right token per compiler so override_options
+# doesn't fail meson configure.
+_cpp_id = meson.get_compiler('cpp').get_id()
+if _cpp_id == 'msvc'
     libvmaf_cpu_cpp_std = 'vc++latest'
+elif _cpp_id == 'intel-llvm-cl' or _cpp_id == 'intel-cl' or _cpp_id == 'clang-cl'
+    libvmaf_cpu_cpp_std = 'c++latest'
 else
     libvmaf_cpu_cpp_std = 'c++23'
 endif
