@@ -97,11 +97,7 @@ vmaf_mcp_close(&server);
 ```
 
 The full API is documented in
-<<<<<<< HEAD
 [`core/include/libvmaf/libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h).
-=======
-[`core/include/core/libvmaf_mcp.h`](../../core/include/core/libvmaf_mcp.h).
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ## Transport summary
 
@@ -208,11 +204,7 @@ This differs from the UDS transport (AF_UNIX), where plain
   then the embedded surface is read-only plus out-of-band scoring.
 
 These invariants are documented in the public header
-<<<<<<< HEAD
 ([`libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h)).
-=======
-([`libvmaf_mcp.h`](../../core/include/core/libvmaf_mcp.h)).
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ## Status table
 
@@ -288,8 +280,4 @@ Tool response (MCP `content` envelope wrapping the tool's JSON):
   the existing standalone Python MCP server.
 - [ADR-0128](../adr/0128-embedded-mcp-in-libvmaf.md) — governance.
 - [Research-0005](../research/0005-embedded-mcp-transport.md) — design.
-<<<<<<< HEAD
 - [`core/include/libvmaf/libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h) — API reference.
-=======
-- [`core/include/core/libvmaf_mcp.h`](../../core/include/core/libvmaf_mcp.h) — API reference.
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)

@@ -6,6 +6,12 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## pr50-residual-conflict-markers (2026-05-29)
+
+no rebase impact: conflict marker cleanup — removes committed `<<<<<<<`/`=======`/`>>>>>>>` lines from 38 files; no logic change, no upstream interaction
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

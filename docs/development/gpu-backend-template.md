@@ -182,9 +182,5 @@ extraction in flight as PR4 of the GPU dedup sequence (T-GPU-DEDUP-3,
 - [ADR-0250](../adr/0250-tiny-ai-extractor-template.md) — tiny-AI
   extractor template (the model for "pattern-doc + shared helpers
   rather than codegen").
-<<<<<<< HEAD
 - [`core/include/libvmaf/AGENTS.md`](../../core/include/libvmaf/AGENTS.md)
-=======
-- [`core/include/core/AGENTS.md`](../../core/include/core/AGENTS.md)
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   — the public-headers-tree invariant note that points back here.

@@ -44,15 +44,9 @@
 
 | upstream-sha | subject | fork-status | recommended-action | T-row |
 |---|---|---|---|---|
-<<<<<<< HEAD
 | `c70debb1` | libvmaf/test: port new adm/vif/speed tests | port | port the adm + vif test deltas; speed tests pend on T-NEW-1 | T-NEW-2 |
 | `314db130` | libvmaf/feature: remove empty translation unit `all.c` | already-on-fork | none — landed via PR #181 (`6eab09c0`) | — |
 | `9dac0a59` | libvmaf/feature: update alias map for cambi/speed | partial | cambi half is on fork (PR #160 `79288e8d`); speed half pends on T-NEW-1 | T-NEW-1 |
-=======
-| `c70debb1` | core/test: port new adm/vif/speed tests | port | port the adm + vif test deltas; speed tests pend on T-NEW-1 | T-NEW-2 |
-| `314db130` | core/feature: remove empty translation unit `all.c` | already-on-fork | none — landed via PR #181 (`6eab09c0`) | — |
-| `9dac0a59` | core/feature: update alias map for cambi/speed | partial | cambi half is on fork (PR #160 `79288e8d`); speed half pends on T-NEW-1 | T-NEW-1 |
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | `8c645ce3` | feature/vif: port several feature extractor options | diverged | none — Research-0024 + ADR-0142/0143/0144 record deliberate divergence; fork keeps closed-enum kernelscale | — |
 | `8a289703` | adm: add fallback for `extract_epi64` for 32-bit | port | small portability fix; aligns with fork's i686 build job (ADR-0151) | T-NEW-3 |
 | `1b6c3886` | x86/cpu: remove limit of avx+ on 32-bit | port | partner to `8a289703`; verify against fork's cpu-feature dispatch | T-NEW-3 |

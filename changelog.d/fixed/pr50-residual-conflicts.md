@@ -1,0 +1,1 @@
+Resolved committed git conflict markers left over from PR #50 (`libvmaf/ → core/` rename sweep) across 38 files: CI configs, `.semgrepignore`, Python AI sources, `core/AGENTS.md`, `core/test/test_hip_smoke.c`, and 32 docs files. HEAD (`core/` path) side taken in all cases; the `24bb5daf89` `libvmaf/` side discarded.
