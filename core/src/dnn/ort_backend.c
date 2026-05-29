@@ -23,6 +23,7 @@
 #include <onnxruntime_c_api.h>
 
 #include "op_allowlist.h"
+#include "../log.h"
 
 /* Maximum number of model inputs or outputs supported by vmaf_ort_run().
  * All current tiny-AI models are 1-in/1-out (NR) or 5-in/1-out (FR);
@@ -457,7 +458,15 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
         OrtStatus *cst = sess->api->CastTypeInfoToTensorInfo(ti, &tinfo);
         if (cst == NULL && tinfo != NULL) {
             ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
-            ort_discard_status(sess->api, sess->api->GetTensorElementType(tinfo, &et));
+            OrtStatus *et_st = sess->api->GetTensorElementType(tinfo, &et);
+            if (et_st != NULL) {
+                sess->api->ReleaseStatus(et_st);
+                sess->api->ReleaseTypeInfo(ti);
+                vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                         "libvmaf dnn: GetTensorElementType failed for input %zu\n", i);
+                vmaf_ort_close(sess);
+                return -EINVAL;
+            }
             sess->input_elem_types[i] = (int)et;
         } else if (cst != NULL) {
             sess->api->ReleaseStatus(cst);
@@ -471,7 +480,15 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
         OrtStatus *cst = sess->api->CastTypeInfoToTensorInfo(ti, &tinfo);
         if (cst == NULL && tinfo != NULL) {
             ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
-            ort_discard_status(sess->api, sess->api->GetTensorElementType(tinfo, &et));
+            OrtStatus *et_st = sess->api->GetTensorElementType(tinfo, &et);
+            if (et_st != NULL) {
+                sess->api->ReleaseStatus(et_st);
+                sess->api->ReleaseTypeInfo(ti);
+                vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                         "libvmaf dnn: GetTensorElementType failed for output %zu\n", i);
+                vmaf_ort_close(sess);
+                return -EINVAL;
+            }
             sess->output_elem_types[i] = (int)et;
         } else if (cst != NULL) {
             sess->api->ReleaseStatus(cst);
@@ -927,6 +944,22 @@ const char *vmaf_ort_internal_resolve_name(char **table, size_t count, const cha
     return resolve_name(table, count, name, pos);
 }
 
+int vmaf_ort_internal_input_elem_type(const void *vsess, size_t slot)
+{
+    const VmafOrtSession *sess = (const VmafOrtSession *)vsess;
+    if (!sess || !sess->input_elem_types || slot >= sess->n_inputs)
+        return 0; /* ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED */
+    return sess->input_elem_types[slot];
+}
+
+int vmaf_ort_internal_output_elem_type(const void *vsess, size_t slot)
+{
+    const VmafOrtSession *sess = (const VmafOrtSession *)vsess;
+    if (!sess || !sess->output_elem_types || slot >= sess->n_outputs)
+        return 0; /* ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED */
+    return sess->output_elem_types[slot];
+}
+
 #else /* !VMAF_HAVE_DNN */
 
 struct VmafOrtSession {
@@ -1038,6 +1071,20 @@ const char *vmaf_ort_internal_resolve_name(char **table, size_t count, const cha
     (void)name;
     (void)pos;
     return NULL;
+}
+
+int vmaf_ort_internal_input_elem_type(const void *vsess, size_t slot)
+{
+    (void)vsess;
+    (void)slot;
+    return 0;
+}
+
+int vmaf_ort_internal_output_elem_type(const void *vsess, size_t slot)
+{
+    (void)vsess;
+    (void)slot;
+    return 0;
 }
 
 #endif /* VMAF_HAVE_DNN */

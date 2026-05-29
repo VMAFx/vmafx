@@ -6,6 +6,20 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## ort-get-tensor-element-type-hard-error (2026-05-29)
+
+**Files touched:**
+`core/src/dnn/ort_backend.c`, `core/src/dnn/ort_backend_internal.h`,
+`core/test/dnn/test_ort_internals.c`
+
+**Rebase impact:** Low. `ort_backend.c` is a wholly fork-added file; upstream
+Netflix/vmaf has no ONNX Runtime integration. No rebase conflict is expected.
+If upstream ever adds an ORT backend, the checked `GetTensorElementType` pattern
+should be adopted there too — the silent-discard bug is a correctness hazard
+on any ORT wrapper.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

@@ -26,6 +26,13 @@
 #include "ort_backend.h"
 #include "ort_backend_internal.h"
 
+/* ONNX TensorElementDataType constants (ONNX spec, stable).
+ * We use integer literals to avoid pulling in onnxruntime_c_api.h
+ * into test code that runs on stub builds too. */
+#define ELEM_TYPE_UNDEFINED 0
+#define ELEM_TYPE_FLOAT 1    /* fp32 */
+#define ELEM_TYPE_FLOAT16 10 /* fp16 */
+
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
 #define SMOKE_FP16_MODEL "model/tiny/smoke_fp16_v0.onnx"
 
@@ -403,6 +410,58 @@ static char *test_ort_open_null_args(void)
     return NULL;
 }
 
+/* Regression-lock for the PR #112 ORT audit fix: vmaf_ort_open must populate
+ * input_elem_types / output_elem_types with the model's declared type, never
+ * leaving them at UNDEFINED (0).  Before the fix, GetTensorElementType errors
+ * were silently discarded via ort_discard_status, so a malformed model would
+ * leave elem_types[i] == 0 and the run path would silently emit fp32 tensors
+ * regardless of the model declaration. */
+static char *test_ort_open_elem_types_populated(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("elem_types: fp32 smoke open succeeds", rc == 0);
+    /* smoke_v0.onnx is a fp32 model; input[0] must be FLOAT (1), not UNDEFINED (0). */
+    mu_assert("elem_types: input[0] != UNDEFINED",
+              vmaf_ort_internal_input_elem_type(sess, 0) != ELEM_TYPE_UNDEFINED);
+    mu_assert("elem_types: input[0] == FLOAT",
+              vmaf_ort_internal_input_elem_type(sess, 0) == ELEM_TYPE_FLOAT);
+    mu_assert("elem_types: output[0] != UNDEFINED",
+              vmaf_ort_internal_output_elem_type(sess, 0) != ELEM_TYPE_UNDEFINED);
+    mu_assert("elem_types: output[0] == FLOAT",
+              vmaf_ort_internal_output_elem_type(sess, 0) == ELEM_TYPE_FLOAT);
+    /* Out-of-range slot must return UNDEFINED, not crash. */
+    mu_assert("elem_types: input OOB -> UNDEFINED",
+              vmaf_ort_internal_input_elem_type(sess, 99) == ELEM_TYPE_UNDEFINED);
+    mu_assert("elem_types: output OOB -> UNDEFINED",
+              vmaf_ort_internal_output_elem_type(sess, 99) == ELEM_TYPE_UNDEFINED);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_elem_types_fp16_model(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .fp16_io = true};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP16_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("elem_types fp16: open succeeds", rc == 0);
+    /* smoke_fp16_v0.onnx declares FLOAT16 tensors; input[0] must be FLOAT16 (10). */
+    mu_assert("elem_types fp16: input[0] == FLOAT16",
+              vmaf_ort_internal_input_elem_type(sess, 0) == ELEM_TYPE_FLOAT16);
+    mu_assert("elem_types fp16: output[0] == FLOAT16",
+              vmaf_ort_internal_output_elem_type(sess, 0) == ELEM_TYPE_FLOAT16);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_fp32_to_fp16_normal);
@@ -427,5 +486,7 @@ char *run_tests(void)
     mu_run_test(test_ort_infer_fp16_input_output_path);
     mu_run_test(test_ort_run_null_guards);
     mu_run_test(test_ort_open_null_args);
+    mu_run_test(test_ort_open_elem_types_populated);
+    mu_run_test(test_ort_open_elem_types_fp16_model);
     return NULL;
 }
