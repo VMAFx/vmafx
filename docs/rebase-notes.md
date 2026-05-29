@@ -6,6 +6,21 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## hip-smoke-conflict-markers + GPU test skip-gracefully (2026-05-29)
+
+**Files touched:**
+`core/test/test_hip_smoke.c`,
+`core/test/test_gpu_picture_pool.c`,
+`core/test/test_cuda_pic_preallocation.c`,
+`core/test/AGENTS.md`
+
+**Rebase impact:** None. All three touched test files are fork-local (GPU test
+surface not present in upstream Netflix/vmaf master). No rebase conflict is
+possible. The AGENTS.md invariant note will need forward-porting if upstream
+ever adds GPU test files of its own.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

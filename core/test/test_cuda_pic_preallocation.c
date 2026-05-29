@@ -75,7 +75,11 @@ static char *test_cuda_picture_preallocation_method_none()
     VmafCudaState *cu_state;
     VmafCudaConfiguration cuda_cfg = {0};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    mu_assert("problem during vmaf_cuda_state_init", !err);
+    if (err || !cu_state) {
+        (void)vmaf_close(vmaf);
+        fprintf(stderr, "[skip: no CUDA device] ");
+        return NULL;
+    }
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("problem during vmaf_cuda_import_state", !err);
 
@@ -123,7 +127,11 @@ static char *test_cuda_picture_preallocation_method_host()
     VmafCudaState *cu_state;
     VmafCudaConfiguration cuda_cfg = {0};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    mu_assert("problem during vmaf_cuda_state_init", !err);
+    if (err || !cu_state) {
+        (void)vmaf_close(vmaf);
+        fprintf(stderr, "[skip: no CUDA device] ");
+        return NULL;
+    }
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("problem during vmaf_cuda_import_state", !err);
 
@@ -185,7 +193,11 @@ static char *test_cuda_picture_preallocation_method_host_pinned()
     VmafCudaState *cu_state;
     VmafCudaConfiguration cuda_cfg = {0};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    mu_assert("problem during vmaf_cuda_state_init", !err);
+    if (err || !cu_state) {
+        (void)vmaf_close(vmaf);
+        fprintf(stderr, "[skip: no CUDA device] ");
+        return NULL;
+    }
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("problem during vmaf_cuda_import_state", !err);
 
@@ -247,7 +259,11 @@ static char *test_cuda_picture_preallocation_method_device()
     VmafCudaState *cu_state;
     VmafCudaConfiguration cuda_cfg = {0};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    mu_assert("problem during vmaf_cuda_state_init", !err);
+    if (err || !cu_state) {
+        (void)vmaf_close(vmaf);
+        fprintf(stderr, "[skip: no CUDA device] ");
+        return NULL;
+    }
     err = vmaf_cuda_import_state(vmaf, cu_state);
     mu_assert("problem during vmaf_cuda_import_state", !err);
 
