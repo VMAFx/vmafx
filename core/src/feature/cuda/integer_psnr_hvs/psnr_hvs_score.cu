@@ -194,10 +194,14 @@ __device__ static inline int sample_to_int(float v, int bpc)
  * means / variances in CPU's exact i,j summation order. The first
  * eight threads run the integer DCT passes in parallel; thread 0
  * resumes for the masking and final float reduction so the
- * established CUDA/Vulkan numeric contract stays unchanged. */
-__global__ void psnr_hvs(VmafCudaBuffer ref_in, VmafCudaBuffer dist_in, VmafCudaBuffer partials_out,
-                         unsigned width, unsigned height, unsigned num_blocks_x,
-                         unsigned num_blocks_y, int plane, int bpc)
+ * established CUDA/Vulkan numeric contract stays unchanged.
+ *
+ * __launch_bounds__(64): hints nvcc to budget registers for
+ * 64-thread blocks (8×8); per ADR-0764 / ADR-0754 precedent. */
+__launch_bounds__(64) __global__
+    void psnr_hvs(VmafCudaBuffer ref_in, VmafCudaBuffer dist_in, VmafCudaBuffer partials_out,
+                  unsigned width, unsigned height, unsigned num_blocks_x, unsigned num_blocks_y,
+                  int plane, int bpc)
 {
     __shared__ int s_ref[64];
     __shared__ int s_dist[64];
@@ -217,16 +221,22 @@ __global__ void psnr_hvs(VmafCudaBuffer ref_in, VmafCudaBuffer dist_in, VmafCuda
     const bool valid_block =
         (blk_x < num_blocks_x && blk_y < num_blocks_y && x0 + 7u < width && y0 + 7u < height);
 
+    /* Extract raw __restrict__ pointers once before the tile load so
+     * the compiler can route all 64 reads through the read-only
+     * texture cache path via __ldg().  Passing VmafCudaBuffer by value
+     * hides the pointer from the compiler's non-coherent-load analysis;
+     * the extraction makes the alias-free invariant visible (ADR-0764). */
+    const float *__restrict__ ref_buf = reinterpret_cast<const float *>(ref_in.data);
+    const float *__restrict__ dist_buf = reinterpret_cast<const float *>(dist_in.data);
+
     int my_ref = 0;
     int my_dist = 0;
     if (valid_block) {
         const unsigned sx = x0 + lx;
         const unsigned sy = y0 + ly;
         const unsigned src_idx = sy * width + sx;
-        const float *ref_buf = reinterpret_cast<const float *>(ref_in.data);
-        const float *dist_buf = reinterpret_cast<const float *>(dist_in.data);
-        my_ref = sample_to_int(ref_buf[src_idx], bpc);
-        my_dist = sample_to_int(dist_buf[src_idx], bpc);
+        my_ref = sample_to_int(__ldg(&ref_buf[src_idx]), bpc);
+        my_dist = sample_to_int(__ldg(&dist_buf[src_idx]), bpc);
     }
     s_ref[local_idx] = my_ref;
     s_dist[local_idx] = my_dist;
