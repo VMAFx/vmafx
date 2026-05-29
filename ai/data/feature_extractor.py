@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Per-frame feature extraction via the libvmaf CLI.
 
@@ -38,7 +38,7 @@ DEFAULT_FEATURES: tuple[str, ...] = (
     "motion2",
 )
 
-DEFAULT_VMAF_BINARY = Path("libvmaf") / "build-cpu" / "tools" / "vmaf"
+DEFAULT_VMAF_BINARY = Path("core") / "build-cpu" / "tools" / "vmaf"
 
 # Full feature set the fork's extractors can produce (per Research-0026,
 # extended by ADR-0559 to include SpEED chroma/temporal features).

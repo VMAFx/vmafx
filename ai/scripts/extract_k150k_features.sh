@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 #
 # K150K → FR-corpus extraction runbook (ADR-0346, ADR-0325).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """BVI-DVC → full-feature VMAF parquet (corpus-3 for tiny-AI v2).
 
@@ -693,8 +693,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--vmaf-bin",
         type=Path,
-        default=REPO_ROOT / "libvmaf" / "build-cpu" / "tools" / "vmaf",
-        help="Path to the libvmaf CLI binary.",
+        default=REPO_ROOT / "core" / "build-cpu" / "tools" / "vmaf",
+        help="Path to the fork vmaf CLI binary (core/build-cpu/tools/vmaf).",
     )
     ap.add_argument(
         "--model",
