@@ -229,3 +229,36 @@ explicitly rules out.
 The `VMAF_HSACO_WEAK_STUB` macro in `hip_hsaco_stubs.c` is retained
 as a documented pattern for in-progress ports of *new* extractors;
 it is currently used by zero extractors.
+
+## AdmBufferHip struct-by-value kernel parameters — P1 known issue (Research-0755)
+
+`AdmBufferHip` (defined in `integer_adm_hip.h:70–96`) is a ~272-byte struct
+containing 6 DWT band sub-structs (each 4 device pointers) plus 8 additional
+device-pointer fields.  It is currently passed by value in multiple `__global__`
+kernel signatures in `integer_adm/adm_csf.hip` and `integer_adm/adm_cm.hip`.
+
+This mirrors the PR #93 F3 finding on the CUDA side.  Consequences:
+- Every GPU thread's stack receives a full 272-byte copy via the kernel-argument
+  buffer path.  On RDNA/GCN this adds measurable argument-passing overhead.
+- Structs this large risk hitting the HIP/AMDDriver kernel-argument limit (varies
+  per target; typically 1024–4096 bytes total across all args).
+
+**Recommended fix**: replace `AdmBufferHip buf` parameters with
+`const AdmBufferHip * __restrict__ buf` (pass a pointer to a device-side copy
+of the struct).  No correctness impact — only the passing convention changes.
+
+Until fixed: do NOT add new `__global__` parameters of type `AdmBufferHip` by
+value.  Any new ADM kernel should take a pointer.
+
+## extern "C" macro-instantiation pattern is correct (Research-0755)
+
+Several ADM kernel files (`adm_csf.hip`, `adm_csf_den.hip`, `adm_dwt2.hip`)
+define `__global__` kernel bodies inside `#define` macros, then instantiate
+those macros inside an `extern "C" { }` block.  This is correct: the C++
+preprocessor expands the macro at the point of instantiation (inside
+`extern "C"`), so the resulting function definition is unmangled and
+`hipModuleGetFunction` name lookups work.  This is NOT an `extern "C"` gap.
+
+The pattern is load-bearing.  Do not "fix" it by adding an additional
+`extern "C"` declaration inside the macro body — that would create a nested
+`extern "C"` which is legal in C++ but redundant and confusing to reviewers.

@@ -40190,3 +40190,19 @@ Fork-local files modified:
 `changelog.d/perf/cuda-ssim-vert-combine.md` (new),
 `docs/rebase-notes.md` (this entry),
 `docs/state.md` (new row).
+
+---
+
+### Research-0755 — HIP backend audit (2026-05-29)
+
+No rebase impact on upstream C/Python code.
+
+All files modified are fork-local:
+`core/src/feature/hip/AGENTS.md` (invariant notes),
+`docs/research/0755-hip-backend-audit-20260529.md` (new),
+`changelog.d/changed/hip-backend-audit.md` (new),
+`docs/rebase-notes.md` (this entry),
+`docs/state.md` (new row).
+
+No source files were modified (audit-only).  No Netflix upstream commit
+will collide with these additions on `sync-upstream`.
