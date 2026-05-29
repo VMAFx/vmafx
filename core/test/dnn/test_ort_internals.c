@@ -552,6 +552,7 @@ static char *test_ort_public_accessor_coverage(void)
     vmaf_ort_close(sess);
     return NULL;
 }
+
 char *run_tests(void)
 {
     mu_run_test(test_fp32_to_fp16_normal);

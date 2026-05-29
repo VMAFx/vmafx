@@ -1,77 +1,90 @@
-<!-- markdownlint-disable MD013 MD041 MD060 -->
-# ADR-0815: Distroless multi-arch Dockerfiles for vmafx-operator and vmafx-node + release CI
+# ADR-0815: Distroless Dockerfiles for vmafx-operator and vmafx-node — multi-arch, release-wired
 
-- **Status**: Proposed
-- **Date**: 2026-06-03
-- **Deciders**: Lusoris
-- **Tags**: `ci`, `build`, `security`, `supply-chain`, `github`, `docker`
+- **Status**: Accepted
+- **Date**: 2026-05-29
+- **Deciders**: lusoris
+- **Tags**: `docker`, `ci`, `release`, `operator`, `node`, `k8s`, `phase4b`, `fork-local`
 
 ## Context
 
-The vmafx-operator (Go, CGO_ENABLED=0) and vmafx-node CPU variant need production
-container images for Kubernetes deployment. Without a published image, the k8s Operator
-(ADR-0711) and Phase 4b platform (ADR-0709) cannot be deployed from the Helm chart
-(ADR-0699). The node's CUDA image exists (`docker/Dockerfile.node`, ADR-0717) but is
-not wired to any release CI workflow. The operator has no Dockerfile at all.
+PR #152 added the vmafx-operator (`cmd/vmafx-operator`, ADR-0714) and the first
+published vmafx-node Dockerfile (`docker/Dockerfile.node`, ADR-0717). That PR did not
+include a dedicated `docker/Dockerfile.operator` — the operator binary was only built
+locally with `go build`. Without a release-wired image the operator cannot be deployed
+from a Helm chart or a `kubectl apply` manifest, and the node image (while the file
+exists) was not yet published by any CI workflow.
 
-Using `gcr.io/distroless/static-debian12` as the base image minimises the CVE surface
-(no shell, no package manager, no libc beyond musl stubs). Running as the distroless
-`nonroot` user (uid 65532, aligned with ADR-0878) satisfies the Kubernetes
-`pod-security.kubernetes.io/enforce=restricted` admission profile without extra pod
-spec overrides.
+Two decisions are needed:
 
-Multi-arch (amd64 + arm64) via BuildKit native cross-compilation (CGO_ENABLED=0 makes
-this straightforward for pure-Go binaries) avoids QEMU emulation and keeps build times
-under two minutes.
+1. **Operator image**: a `docker/Dockerfile.operator` that builds `cmd/vmafx-operator`
+   as a pure-Go, CGO_ENABLED=0 binary into a `gcr.io/distroless/static-debian12`
+   runtime. The operator never calls libvmaf directly (it drives Kubernetes CRD
+   reconciliation); static-distroless is therefore the appropriate runtime — it is
+   ~2 MB smaller than `distroless/cc-debian12` and has no libc in the attack surface.
+
+2. **CI release pipeline**: a new workflow `docker-publish-operator-node.yml` that fires
+   on `v*` tag pushes and `workflow_dispatch`, builds both images for `linux/amd64` +
+   `linux/arm64` (QEMU for the node's CGO stages; BuildKit cross-compilation for the
+   operator's pure-Go binary), and applies the same cosign + syft SBOM pipeline as
+   `docker-publish-production.yml` (ADR-0698).
+
+The node image (`docker/Dockerfile.node`) already existed and already used
+`distroless/cc-debian12`. This ADR covers wiring it to the release CI — no
+structural changes to the file itself.
 
 ## Decision
 
-We will add `docker/Dockerfile.operator` (pure-Go operator binary into distroless,
-runs as uid 65532, multi-arch amd64+arm64) and wire it alongside the existing
-`docker/Dockerfile.node` (ADR-0717) into a new release CI workflow
-(`.github/workflows/docker-publish-operator-node.yml`) that fires on `v*` tags and
-`workflow_dispatch`. The workflow builds and pushes `ghcr.io/vmafx/vmafx-operator` and
-`ghcr.io/vmafx/vmafx-node` (CPU variant), with cosign keyless signing and syft
-CycloneDX SBOM attestation, mirroring the `docker-publish-production.yml` pattern
-(ADR-0698).
+We will add `docker/Dockerfile.operator` and the CI workflow
+`.github/workflows/docker-publish-operator-node.yml`.
+
+- `Dockerfile.operator`: two stages — `golang:1.23-bookworm` builder (CGO_ENABLED=0,
+  TARGETOS/TARGETARCH build args for native cross-compilation) → `distroless/static-debian12`
+  runtime running as uid 65532 (distroless `nonroot`).
+- `Dockerfile.node` (existing): no structural change; the workflow targets `--target node-cpu`
+  (amd64 + arm64) for the released image; GPU variants remain manual or future-tracked.
+- CI workflow: three jobs (`build-operator`, `build-node`, `smoke-test`) + a final
+  aggregator gate. Operator job sets `TARGETARCH` build-arg per matrix platform; node
+  job uses QEMU for arm64. Both jobs sign via cosign keyless OIDC and attest a
+  CycloneDX SBOM.
+
+Tag matrix for operator:
+
+| Tag suffix       | Platforms     | Description         |
+|------------------|---------------|---------------------|
+| *(none)*         | amd64, arm64  | vmafx-operator      |
+
+Tag matrix for node:
+
+| Tag suffix       | Platforms     | Description         |
+|------------------|---------------|---------------------|
+| *(none)*         | amd64, arm64  | vmafx-node (CPU)    |
+
+GPU node variants (`-cuda12`, `-rocm6`, `-sycl`) are out of scope for this ADR;
+they are amd64-only and will be wired in a follow-on.
 
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
-| `gcr.io/distroless/static-debian12` (chosen) | Minimal CVE surface; no shell; aligns with ADR-0878 uid 65532 | No debugging tools in container; must use ephemeral debug containers for prod troubleshooting | Best security posture; debug containers are the k8s-native solution |
-| `gcr.io/distroless/cc-debian12` (C runtime variant) | Supports CGO-linked binaries | Larger image; CGO_ENABLED=0 makes this unnecessary for pure-Go operator | Unnecessary for a pure-Go binary |
-| `alpine:3.19` | Has shell + apk for ad-hoc debugging; lighter than Debian | Not distroless; larger CVE surface; musl libc can cause subtle differences | CVE surface wider; distroless is the standard for production Go |
-| Inline Dockerfile in workflow | Fewer files | Harder to test locally; no `docker build -f` reproducibility | Reproducibility is a first-class requirement |
-| Separate Dockerfile per arch | Full control per arch | Doubles maintenance; BuildKit native cross-compile is equivalent | Unnecessary complexity |
+| `distroless/cc-debian12` for operator | Same base as node | Includes glibc — unnecessary for a CGO_ENABLED=0 binary; ~2 MB larger; wider libc attack surface | `distroless/static-debian12` is correct for static binaries |
+| Inline operator build inside the node Dockerfile | Fewer Dockerfiles | Couples operator build time to the heavy ffmpeg/vmaf build stages; harder to cache | Separate file, faster CI, independent caching |
+| Helm chart OCI artifact (no separate Dockerfile) | All-in-one | Helm OCI does not replace container images; the operator Deployment spec still needs an image reference | Must have a separate image |
 
 ## Consequences
 
-- **Positive**: vmafx-operator and vmafx-node (CPU) are now release-published with
-  cosign attestation; Helm chart installs work without manual image builds;
-  multi-arch amd64+arm64 covers the arm node market without QEMU.
-- **Negative**: Two new images add ~2 min to release CI; distroless debugging
-  requires ephemeral debug containers (`kubectl debug`).
-- **Neutral / follow-ups**: Update `required-aggregator.yml` to include the new
-  workflow's smoke-test gate; update `docs/backends/operator.md` runbook with the
-  image reference and `docker pull` command.
-
-## Supply-chain impact
-
-- **New dependencies**: none at runtime (pure-Go, static binary).
-- **Build-time fetches**: `gcr.io/distroless/static-debian12` base image pulled at
-  build time; pinned by digest in the Dockerfile.
-- **Sigstore-signable**: cosign keyless signing via Sigstore OIDC is applied to both
-  images; syft CycloneDX SBOM is attached as an OCI attestation.
-- **CVE surface delta**: narrows — distroless has no shell, no package manager,
-  no libc beyond the Go runtime's own calls.
+- **Positive**: operator and node are both released as signed, SBOM-attested, multi-arch
+  OCI images on every `v*` tag. Helm chart can reference `ghcr.io/vmafx/vmafx-operator`
+  and `ghcr.io/vmafx/vmafx-node` with a real digest.
+- **Negative**: two additional CI jobs per release (~15 min each). The node job builds the
+  full ffmpeg stack twice (amd64 native + arm64 via QEMU), which is slow (~30 min arm64).
+- **Neutral / follow-ups**: GPU node variants should be added in a follow-on PR; the
+  `docker-publish-production.yml` pattern can be copied exactly.
 
 ## References
 
-- Open DRAFT PR: #184 (`feat(docker): Dockerfile.operator + node publish CI — distroless multi-arch`).
-- ADR-0698: `docker-publish-production.yml` pattern this mirrors.
-- ADR-0699: Helm chart that consumes the published images.
-- ADR-0709: Phase 4b distributed platform.
-- ADR-0711: vmafx-operator implementation.
-- ADR-0717: vmafx-node Dockerfile (existing, wired to release CI for the first time).
-- ADR-0878: Trivy DS-0002 distroless `nonroot` uid 65532 baseline.
+- ADR-0698: distroless base-image policy (production Dockerfile).
+- ADR-0709: VMAFX Phase 4b distributed platform (parent scope).
+- ADR-0713: vmafx-node Go worker binary.
+- ADR-0714: vmafx-operator kubebuilder skeleton.
+- ADR-0717: vmafx-node ffmpeg version policy + existing `docker/Dockerfile.node`.
+- req: "add `Dockerfile.operator` and `Dockerfile.node` (the operator builds the Go binary `cmd/vmafx-operator`, the node builds `cmd/vmafx-node`). Both distroless per ADR-0698. Multi-arch amd64+arm64. Wire to release-please + CI to build on tag."

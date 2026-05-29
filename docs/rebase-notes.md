@@ -42313,16 +42313,21 @@ __ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD sid
 
 ---
 
-## VmafFeatureDictionary ownership fixes (ADR-0806, 2026-05-29)
+### ADR-0815 — vmafx-operator + vmafx-node distroless Dockerfiles (2026-05-29)
 
-no rebase impact: REASON — the only changed files are fork-added test files
-(`core/test/test_vif_skip_scale0.c`, `core/test/test_integer_vif_cpu_cuda_parity.c`)
-and docs (`docs/adr/0806-feature-dictionary-ownership.md`, `docs/adr/README.md`,
-`changelog.d/fixed/0806-feature-dictionary-ownership.md`). No upstream Netflix/vmaf
-file is touched. The fixed double-free and leak are in fork-local CUDA parity tests
-that have no upstream counterpart.
+No rebase impact on upstream C/Python code.
 
-## Lint config tightening (ADR-0805, 2026-05-29)
+All files added are fork-local:
+`docker/Dockerfile.operator` (new),
+`.github/workflows/docker-publish-operator-node.yml` (new),
+`docs/adr/0815-operator-node-distroless-dockerfiles.md` (new),
+`changelog.d/added/0815-operator-node-distroless-dockerfiles.md` (new),
+`docs/backends/operator.md` (new),
+`docs/rebase-notes.md` (this entry).
+
+No upstream Netflix/vmaf files are touched. A sync-upstream cannot conflict with these
+additions. The `docker/Dockerfile.node` file was already in-tree (ADR-0717); this PR
+only adds the CI workflow that publishes it.
 
 no rebase impact: REASON — changes are confined to config files (`.clang-tidy`,
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`

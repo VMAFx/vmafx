@@ -370,7 +370,7 @@ linked AGENTS.md before resolving conflicts.
   `libvmaf_mcp.h`, audit-first `-ENOSYS` stubs in
   `core/src/mcp/mcp.c`, `enable_mcp` + 3 transport sub-flags. T5-2b
   (cJSON + mongoose + transport bodies) is open. See
-  [core/AGENTS.md §Rebase-sensitive invariants](core/AGENTS.md).
+  [libvmaf/AGENTS.md §Rebase-sensitive invariants](libvmaf/AGENTS.md).
 - **HIP scaffold (T7-10, ADR-0212 placeholder, PR #200)** —
   audit-first AMD HIP backend scaffold mirroring Vulkan T5-1 /
   ADR-0175. Public `libvmaf_hip.h`, stub kernels, `enable_hip` meson
@@ -386,7 +386,7 @@ linked AGENTS.md before resolving conflicts.
   requires (1) `FEATURE_METRICS` entry, (2) `FEATURE_TOLERANCE` entry
   if it relaxes places=4, (3) row in
   `docs/development/cross-backend-gate.md`. See
-  [core/AGENTS.md](core/AGENTS.md).
+  [libvmaf/AGENTS.md](libvmaf/AGENTS.md).
 - **FastDVDnet temporal pre-filter (T6-7, ADR-0215 placeholder,
   PR #203)** — 5-frame window pre-filter feeding ssim/ms_ssim.
 - **psnr chroma Vulkan (T3-15(b), ADR-0216 placeholder, PR #204)**
