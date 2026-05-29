@@ -279,6 +279,18 @@ libvmaf/
   / `_avx512` / `_neon`. See
   [`docs/rebase-notes.md` §0049](../docs/rebase-notes.md).
 
+- **float_adm dispatch table primed by `adm_prime_simd_dispatch()` in `float_adm.c` init()** (fork-local,
+  PR #116 F1). The four float-ADM SIMD kernels (dwt2, csf, csf_den_scale, sum_cube) are
+  wired via a static `AdmSimdDispatch` table in `src/feature/adm_tools.c`, initialised once
+  by `adm_init_simd_dispatch()`. `adm_prime_simd_dispatch()` is the public entry point called
+  from `float_adm.c:init()` to pre-warm the table at extractor init time (following the
+  `integer_motion_v2.c:311-333` pattern). On future upstream syncs: do not remove the
+  `adm_prime_simd_dispatch()` call from `float_adm.c:init()` — without it, dispatch falls
+  back to scalar on the first `compute_adm()` call and re-initialises per-call instead.
+  ADR-0418 / ADR-0214 numeric contracts apply: dwt2 and csf are bit-exact; csf_den_scale
+  and sum_cube accumulate in double and are within 1e-5 relative tolerance of the scalar
+  reference.
+
 - **icpx-aware clang-tidy wrapper for SYCL TUs** (fork-local,
   [ADR-0217](../docs/adr/0217-sycl-toolchain-cleanup.md)).
   [`scripts/ci/clang-tidy-sycl.sh`](../scripts/ci/clang-tidy-sycl.sh)

@@ -555,6 +555,28 @@ test_integer_adm_simd = executable('test_integer_adm_simd',
 )
 endif
 
+float_adm_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
+if float_adm_simd_test_archs.contains(host_machine.cpu_family())
+test_float_adm_simd = executable('test_float_adm_simd',
+    ['test.c', 'test_float_adm_simd.c',
+     '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ],
+)
+endif
+
 motion_v2_simd_test_archs = ['x86_64', 'x86']
 if motion_v2_simd_test_archs.contains(host_machine.cpu_family())
 test_motion_v2_simd = executable('test_motion_v2_simd',
@@ -1063,6 +1085,10 @@ endif
 
 if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
 test('test_integer_adm_simd', test_integer_adm_simd, suite : ['fast', 'simd'])
+endif
+
+if float_adm_simd_test_archs.contains(host_machine.cpu_family())
+test('test_float_adm_simd', test_float_adm_simd, suite : ['fast', 'simd'])
 endif
 
 if motion_v2_simd_test_archs.contains(host_machine.cpu_family())
