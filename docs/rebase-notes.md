@@ -40371,3 +40371,14 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## ADR-0848 — Per-surface doc compliance audit (2026-05-29)
+
+**Rebase impact: none.** This PR adds only docs/research/, docs/adr/, changelog.d/,
+and docs/state.md changes. No code, no meson, no public headers.
+
+**Future rebases:** If PRs that fix the three gaps (Issue A / B / C from Research-0848)
+are in flight, ensure:
+- Issue A (Vulkan removal docs): no conflict expected — docs/backends/vulkan/,
+  docs/metrics/features.md, docs/development/build-flags.md are rarely touched.
+- Issue B (deprecations.md): docs/development/deprecations.md is append-only.
