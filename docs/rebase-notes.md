@@ -40323,20 +40323,6 @@ part of any public API.
 
 ---
 
-### go-workspace-audit — Go dependency + test fixes (2026-05-29)
-
-No rebase impact. All changes are Go workspace files entirely fork-local:
-`go.mod` / `go.sum` (added `modernc.org/sqlite` and transitive deps),
-`pkg/observability/observability.go` (added controller metrics fields + `SetControllerSources`),
-`cmd/vmafx-node/executor_test.go`, `cmd/vmafx-node/main_test.go` (test alignment to current API),
-`cmd/vmafx-tune/cmd/root.go` (wire `newLadderCmd`),
-`cmd/vmafx-tune/cmd/compare_test.go` (remove stale stub assertion),
-`changelog.d/fixed/0529-go-workspace-audit.md` (new).
-
-None of these files are touched by Netflix upstream.
-
----
-
 ### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
 
 No rebase impact on upstream C/Python code.
@@ -40354,20 +40340,23 @@ A sync-upstream that adds a CUDA ciede kernel upstream would need to incorporate
 __ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD side
 (ADR-0743 comment block); no Netflix upstream content was discarded.
 
----
+## chore/changelog-d-hygiene-20260529 — ffmpeg-patches Vulkan-drop cleanup (ADR-0726)
 
-## VmafFeatureDictionary ownership fixes (ADR-0806, 2026-05-29)
+**Rebase impact**: `ffmpeg-patches/` only — no libvmaf C sources, public headers,
+or `meson_options.txt` touched. Upstream Netflix/vmaf does not ship `ffmpeg-patches/`;
+no rebase conflict surface.
 
-no rebase impact: REASON — the only changed files are fork-added test files
-(`core/test/test_vif_skip_scale0.c`, `core/test/test_integer_vif_cpu_cuda_parity.c`)
-and docs (`docs/adr/0806-feature-dictionary-ownership.md`, `docs/adr/README.md`,
-`changelog.d/fixed/0806-feature-dictionary-ownership.md`). No upstream Netflix/vmaf
-file is touched. The fixed double-free and leak are in fork-local CUDA parity tests
-that have no upstream counterpart.
+**What changed**: Removed orphaned `0004-libvmaf-wire-vulkan-backend-selector.patch`
+and `0006-libvmaf-add-libvmaf-vulkan-filter.patch` from disk (already removed from
+`series.txt` by ADR-0726 / PR #47). Regenerated all 13 remaining patches from a
+clean n8.1.1 baseline (no-vulkan branch) to eliminate stale Vulkan context lines that
+prevented `git am` from applying patches 0005, 0010–0014. Verified full series replay
+(0001–0003, 0005, 0007–0015) applies cleanly against pristine n8.1.1. README updated
+to remove 0004/0006 entries and update patch count.
 
-## Lint config tightening (ADR-0805, 2026-05-29)
+**Rebase-sensitive invariants**:
 
-no rebase impact: REASON — changes are confined to config files (`.clang-tidy`,
-`.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
-and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
-touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+- Series numbering gaps (0004 and 0006 are gone) are intentional; downstream scripts
+  must read from `series.txt`, not glob `000*.patch`.
+- Patch 0014 (cpumask/gpumask) still targets the cumulative struct state from 0003–0013;
+  it must remain last or be rebased against whichever patch last touches those init blocks.

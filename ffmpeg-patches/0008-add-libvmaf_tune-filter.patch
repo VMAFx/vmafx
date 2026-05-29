@@ -1,32 +1,10 @@
-From 6e5cb88a9786e13849339c3d778d60d552e3b59d Mon Sep 17 00:00:00 2001
+From 62ebf118a86dfc9f711c94513901ec3a91e7a5a0 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
-Date: Tue, 5 May 2026 23:17:41 +0200
-Subject: [PATCH 8/9] libavfilter: add libvmaf_tune filter (vmaf-tune helper)
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Date: Fri, 29 May 2026 12:15:09 +0200
+Subject: [PATCH 06/13] libavfilter: add libvmaf_tune filter (vmaf-tune helper)
 
-New 2-input video filter that runs alongside a 1-pass encode and emits
-a recommended CRF for the next pass:
-
-    ffmpeg -i in.mp4 -i ref.mp4 -lavfi '[0:v][1:v]libvmaf_tune' -f null -
-    [Parsed_libvmaf_tune_0 @ 0x...] recommended_crf=23 (target_vmaf=95.0, observed_vmaf=96.40, n_frames=240)
-
-AVOptions: model, feature, n_threads, recommend_target_vmaf (95),
-recommend_crf_min (18), recommend_crf_max (51), recommend_passes (1).
-
-Full impl per ADR-0312 (sub-decision retired):
-  * Filter mirrors `vf_libvmaf.c`'s framesync `do_vmaf` pipeline:
-    `vmaf_init` + `vmaf_model_load` + `vmaf_use_features_from_model`
-    in init(); per-frame `vmaf_picture_alloc` + memcpy from AVFrame +
-    `vmaf_read_pictures(ref, dist, idx)`; flush + `vmaf_score_pooled`
-    (mean) at uninit().
-  * The recommended CRF is a piece-wise linear mapping from observed
-    VMAF onto [crf_min, crf_max] anchored at the per-PR's calibrated
-    table (see uninit() comment); per-clip Optuna TPE search stays in
-    `tools/vmaf-tune/src/vmaftune/recommend.py`.
-
-ADR: docs/adr/0312-ffmpeg-patches-vmaf-tune-integration.md
+Patch regenerated post-Vulkan-drop (PR #47 ADR-0726): libvmaf_vulkan
+context line removed from configure and allfilters.c hunks.
 ---
  configure                     |   1 +
  libavfilter/Makefile          |   1 +
@@ -36,22 +14,22 @@ ADR: docs/adr/0312-ffmpeg-patches-vmaf-tune-integration.md
  create mode 100644 libavfilter/vf_libvmaf_tune.c
 
 diff --git a/configure b/configure
-index 3b3f0f1d13..4ab258cbc5 100755
+index 17bdabb..229201e 100755
 --- a/configure
 +++ b/configure
-@@ -4242,6 +4242,7 @@ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
+@@ -4238,6 +4238,7 @@ vidstabtransform_filter_deps="libvidstab"
+ libvmaf_filter_deps="libvmaf"
+ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
  libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
- libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
- vmaf_pre_filter_deps="libvmaf"
 +libvmaf_tune_filter_deps="libvmaf"
+ vmaf_pre_filter_deps="libvmaf"
  zmq_filter_deps="libzmq"
  zoompan_filter_deps="swscale"
- zscale_filter_deps="libzimg const_nan"
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 132eec6c11..5ac95a7772 100644
+index f3de17a..624148a 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -574,6 +574,7 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
+@@ -573,6 +573,7 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
  OBJS-$(CONFIG_VIGNETTE_FILTER)               += vf_vignette.o
  OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
  OBJS-$(CONFIG_VMAF_PRE_FILTER)               += vf_vmaf_pre.o
@@ -60,20 +38,20 @@ index 132eec6c11..5ac95a7772 100644
  OBJS-$(CONFIG_VPP_QSV_FILTER)                += vf_vpp_qsv.o
  OBJS-$(CONFIG_VSTACK_FILTER)                 += vf_stack.o framesync.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 1357561e70..de2ac96530 100644
+index f46c695..6ec1b5f 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
-@@ -352,6 +352,7 @@ extern const FFFilter ff_vf_libvmaf;
+@@ -351,6 +351,7 @@ extern const FFFilter ff_vf_libplacebo;
+ extern const FFFilter ff_vf_libvmaf;
  extern const FFFilter ff_vf_libvmaf_cuda;
  extern const FFFilter ff_vf_libvmaf_sycl;
- extern const FFFilter ff_vf_libvmaf_vulkan;
 +extern const FFFilter ff_vf_libvmaf_tune;
  extern const FFFilter ff_vf_limitdiff;
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf_tune.c b/libavfilter/vf_libvmaf_tune.c
 new file mode 100644
-index 0000000000..5a7e1d8c2c
+index 0000000..cbe294a
 --- /dev/null
 +++ b/libavfilter/vf_libvmaf_tune.c
 @@ -0,0 +1,410 @@
@@ -489,3 +467,4 @@ index 0000000000..5a7e1d8c2c
 +};
 -- 
 2.54.0
+

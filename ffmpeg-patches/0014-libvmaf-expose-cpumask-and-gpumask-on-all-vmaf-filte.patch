@@ -1,48 +1,23 @@
-From 645e401336d13d88380a2b7afc5158b75f794bf5 Mon Sep 17 00:00:00 2001
+From b396862abdc00539ed97c683a324a531aa2424fd Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
-Date: Mon, 18 May 2026 21:22:47 +0200
-Subject: [PATCH] libvmaf: expose cpumask and gpumask on all vmaf filters
+Date: Fri, 29 May 2026 12:22:53 +0200
+Subject: [PATCH 12/13] libvmaf: expose cpumask and gpumask on all vmaf filters
  (ADR-0576)
 
-VmafConfiguration has carried cpumask and gpumask fields since
-libvmaf 3.0, but the ffmpeg filter wrapper never wired them through.
-This meant users could not selectively disable SIMD ISAs (for
-regression testing or pinning to a specific SIMD level) or the GPU
-dispatch path from within ffmpeg.
-
-cpumask bit layout (matches libvmaf.h):
-  bit 0 (1)   - disable SSE2 / NEON (arm64)
-  bit 1 (2)   - disable SSE3/SSSE3
-  bit 2 (4)   - disable SSE4.1
-  bit 3 (8)   - disable AVX2
-  bit 4 (16)  - disable AVX512
-  bit 5 (32)  - disable AVX512ICL
-
-gpumask bit layout:
-  bit 0 (1)   - disable CUDA
-
-Default 0 for both (all ISAs / GPU paths enabled), matching the
-previous implicit behaviour.
-
-Both options are added to:
-  - the main libvmaf filter (LIBVMAFContext / libvmaf_options)
-  - the libvmaf_sycl filter  (libvmaf_sycl_options, SYCL init)
-  - the libvmaf_vulkan filter (libvmaf_vulkan_options, Vulkan init)
-  - the libvmaf_metal filter  (libvmaf_metal_options, Metal init)
-
-The upstream libvmaf_cuda filter (config_props_cuda) also passes through
-the new fields because it shares LIBVMAFContext.
-
-ADR-0576.
+Patch regenerated post-Vulkan-drop (PR #47 ADR-0726): the
+libvmaf_vulkan_options hunk (VK_FLAGS) is dropped since the Vulkan
+filter no longer exists. All other filters (libvmaf, libvmaf_sycl,
+libvmaf_metal) receive cpumask/gpumask. The config_props_vulkan hunk
+is also dropped for the same reason.
 ---
- libavfilter/vf_libvmaf.c | 30 ++++++++++++++++++++++++++++++
- 1 file changed, 30 insertions(+)
+ libavfilter/vf_libvmaf.c | 288 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 288 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 61f2747..8dabe15 100644
+index 51cdc9f..f5127e7 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -122,6 +122,12 @@ typedef struct LIBVMAFContext {
+@@ -107,6 +107,12 @@ typedef struct LIBVMAFContext {
  #if CONFIG_LIBVMAF_METAL
      VmafMetalState *metal_state;        /* owned by the libvmaf filter when metal_device >= -1 + !default-disabled */
  #endif
@@ -55,7 +30,7 @@ index 61f2747..8dabe15 100644
  
      VmafContext *vmaf;
      VmafModel **model;
-@@ -154,6 +160,8 @@ static const AVOption libvmaf_options[] = {
+@@ -138,6 +144,8 @@ static const AVOption libvmaf_options[] = {
      {"cuda",         "Enable the CUDA backend on the primary device (software AVFrame input).", OFFSET(cuda),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
      {"hip_device",   "HIP device index (-1 = disabled, 0+ = device index).",            OFFSET(hip_device),      AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
      {"metal_device", "Metal device index (-2 = disabled, -1 = system default, 0+ = MTLCopyAllDevices ordinal).", OFFSET(metal_device), AV_OPT_TYPE_INT, {.i64=-2}, -2, INT_MAX, FLAGS},
@@ -64,7 +39,7 @@ index 61f2747..8dabe15 100644
      { NULL }
  };
  
-@@ -572,6 +580,8 @@ static av_cold int init(AVFilterContext *ctx)
+@@ -530,6 +538,8 @@ static av_cold int init(AVFilterContext *ctx)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -73,7 +48,7 @@ index 61f2747..8dabe15 100644
      };
  
      err = vmaf_init(&s->vmaf, cfg);
-@@ -1040,6 +1050,8 @@ static int config_props_cuda(AVFilterLink *outlink)
+@@ -963,6 +973,8 @@ static int config_props_cuda(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -82,7 +57,7 @@ index 61f2747..8dabe15 100644
      };
  
      VmafCudaPictureConfiguration cuda_pic_cfg = {
-@@ -1223,6 +1235,10 @@ static const AVOption libvmaf_sycl_options[] = {
+@@ -1146,6 +1158,10 @@ static const AVOption libvmaf_sycl_options[] = {
                    OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, SYCL_FLAGS},
      {"gpu_profile", "Print per-kernel GPU timing breakdown at end.",
                      OFFSET(sycl_profile), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, SYCL_FLAGS},
@@ -93,7 +68,7 @@ index 61f2747..8dabe15 100644
      { NULL }
  };
  #undef SYCL_FLAGS
-@@ -1410,6 +1426,8 @@ static int config_props_sycl(AVFilterLink *outlink)
+@@ -1333,6 +1349,8 @@ static int config_props_sycl(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
@@ -102,41 +77,278 @@ index 61f2747..8dabe15 100644
      };
  
      err = vmaf_init(&s->vmaf, cfg);
-@@ -1498,6 +1516,10 @@ static const AVOption libvmaf_vulkan_options[] = {
-                   OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, VK_FLAGS},
-     {"feature",   "Set the feature to be used for computing vmaf.",
-                   OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, VK_FLAGS},
-+    {"cpumask",   "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).",
-+                  OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
-+    {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
-+                  OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
-     { NULL }
- };
- #undef VK_FLAGS
-@@ -1712,6 +1734,8 @@ static int config_props_vulkan(AVFilterLink *outlink)
+@@ -1618,6 +1636,276 @@ static int config_props_metal(AVFilterLink *outlink)
          .log_level = log_level_map(av_log_get_level()),
          .n_subsample = s->n_subsample,
          .n_threads = s->n_threads,
 +        .cpumask = (uint64_t)s->cpumask,
 +        .gpumask = (uint64_t)s->gpumask,
-     };
-     err = vmaf_init(&s->vmaf, cfg);
-     if (err)
-@@ -1777,6 +1801,10 @@ static const AVOption libvmaf_metal_options[] = {
-                   OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, MTL_FLAGS},
-     {"feature",   "Set the feature to be used for computing vmaf.",
-                   OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
++    };
++    err = vmaf_init(&s->vmaf, cfg);
++    if (err)
++        return AVERROR(EINVAL);
++
++    err = vmaf_metal_import_state(s->vmaf, s->metal_state);
++    if (err) {
++        av_log(ctx, AV_LOG_ERROR,
++               "vmaf_metal_import_state failed: %d\n", err);
++        return AVERROR_EXTERNAL;
++    }
++
++    err = parse_models(ctx);
++    if (err)
++        return err;
++
++    err = parse_features(ctx);
++    if (err)
++        return err;
++
++    return config_output(outlink);
++}
++
++static const AVFilterPad libvmaf_outputs_metal[] = {
++    {
++        .name         = "default",
++        .type         = AVMEDIA_TYPE_VIDEO,
++        .config_props = config_props_metal,
++    },
++};
++
++const FFFilter ff_vf_libvmaf_metal = {
++    .p.name         = "libvmaf_metal",
++    .p.description  = NULL_IF_CONFIG_SMALL("Calculate the VMAF between two video "
++                                           "streams using Metal zero-copy IOSurface import."),
++    .p.priv_class   = &libvmaf_metal_class,
++    .preinit        = libvmaf_metal_framesync_preinit,
++    .init           = init_metal,
++    .uninit         = uninit_metal,
++    .activate       = activate,
++    .priv_size      = sizeof(LIBVMAFContext),
++    FILTER_INPUTS(libvmaf_inputs),
++    FILTER_OUTPUTS(libvmaf_outputs_metal),
++    FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VIDEOTOOLBOX),
++    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
++};
++#endif
++#if CONFIG_LIBVMAF_METAL_FILTER
++
++#define MTL_FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
++static const AVOption libvmaf_metal_options[] = {
++    {"log_path",  "Set the file path to be used to write log.",
++                  OFFSET(log_path), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
++    {"log_fmt",   "Set the format of the log (csv, json, xml, or sub).",
++                  OFFSET(log_fmt), AV_OPT_TYPE_STRING, {.str="xml"}, 0, 1, MTL_FLAGS},
++    {"pool",      "Set the pool method to be used for computing vmaf.",
++                  OFFSET(pool), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
++    {"n_threads", "Set number of threads to be used when computing vmaf.",
++                  OFFSET(n_threads), AV_OPT_TYPE_INT, {.i64=0}, 0, UINT_MAX, MTL_FLAGS},
++    {"n_subsample", "Set interval for frame subsampling used when computing vmaf.",
++                    OFFSET(n_subsample), AV_OPT_TYPE_INT, {.i64=1}, 1, UINT_MAX, MTL_FLAGS},
++    {"model",     "Set the model to be used for computing vmaf.",
++                  OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, MTL_FLAGS},
++    {"feature",   "Set the feature to be used for computing vmaf.",
++                  OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
 +    {"cpumask",   "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).",
 +                  OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, MTL_FLAGS},
 +    {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
 +                  OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, MTL_FLAGS},
-     { NULL }
- };
- #undef MTL_FLAGS
-@@ -1974,6 +2002,8 @@ static int config_props_metal(AVFilterLink *outlink)
-         .log_level = log_level_map(av_log_get_level()),
-         .n_subsample = s->n_subsample,
-         .n_threads = s->n_threads,
++    { NULL }
++};
++#undef MTL_FLAGS
++FRAMESYNC_DEFINE_CLASS(libvmaf_metal, LIBVMAFContext, fs);
++
++/* Pull the IOSurface backing a VideoToolbox-decoded AVFrame.
++ * VideoToolbox stashes the CVPixelBufferRef in frame->data[3];
++ * CVPixelBufferGetIOSurface() returns the IOSurfaceRef without
++ * a host copy. Returns NULL if the frame is not VideoToolbox-
++ * backed (caller should fail-fast in config_props). */
++static IOSurfaceRef get_iosurface_from_frame(const AVFrame *frame)
++{
++    if (frame == NULL || frame->format != AV_PIX_FMT_VIDEOTOOLBOX) {
++        return NULL;
++    }
++    CVPixelBufferRef pb = (CVPixelBufferRef)frame->data[3];
++    if (pb == NULL) {
++        return NULL;
++    }
++    return CVPixelBufferGetIOSurface(pb);
++}
++
++static int do_vmaf_metal(FFFrameSync *fs)
++{
++    AVFilterContext *ctx = fs->parent;
++    LIBVMAFContext *s = ctx->priv;
++    AVFrame *ref, *dist;
++    int ret;
++
++    ret = ff_framesync_dualinput_get(fs, &dist, &ref);
++    if (ret < 0)
++        return ret;
++    if (ctx->is_disabled || !ref)
++        return ff_filter_frame(ctx->outputs[0], dist);
++
++    /* Drain any pending compute before reusing the import slots. */
++    ret = vmaf_metal_wait_compute(s->metal_state);
++    if (ret) {
++        av_log(ctx, AV_LOG_ERROR,
++               "vmaf_metal_wait_compute failed: %d\n", ret);
++        return AVERROR_EXTERNAL;
++    }
++
++    IOSurfaceRef ref_surf  = get_iosurface_from_frame(ref);
++    IOSurfaceRef dist_surf = get_iosurface_from_frame(dist);
++    if (ref_surf == NULL || dist_surf == NULL) {
++        av_log(ctx, AV_LOG_WARNING,
++               "non-VideoToolbox frame on libvmaf_metal input — skipping\n");
++        return ff_filter_frame(ctx->outputs[0], dist);
++    }
++
++    /* Plane 0 = luma. Chroma planes follow the bi-planar layout
++     * VideoToolbox emits for NV12 / P010; the runtime walks them
++     * via vmaf_metal_picture_import(plane=1) in T8-IOS-b. */
++    ret = vmaf_metal_picture_import(s->metal_state, (uintptr_t)ref_surf,
++                                    /*plane=*/0,
++                                    ref->width, ref->height, s->bpc,
++                                    /*is_ref=*/1, s->frame_cnt);
++    if (ret) {
++        av_log(ctx, AV_LOG_WARNING,
++               "vmaf_metal_picture_import (ref) failed: %d — skipping frame\n", ret);
++        return ff_filter_frame(ctx->outputs[0], dist);
++    }
++
++    ret = vmaf_metal_picture_import(s->metal_state, (uintptr_t)dist_surf,
++                                    /*plane=*/0,
++                                    dist->width, dist->height, s->bpc,
++                                    /*is_ref=*/0, s->frame_cnt);
++    if (ret) {
++        av_log(ctx, AV_LOG_WARNING,
++               "vmaf_metal_picture_import (dist) failed: %d — skipping frame\n", ret);
++        return ff_filter_frame(ctx->outputs[0], dist);
++    }
++
++    ret = vmaf_metal_read_imported_pictures(s->vmaf, s->frame_cnt++);
++    if (ret) {
++        av_log(ctx, AV_LOG_ERROR,
++               "vmaf_metal_read_imported_pictures failed: %d\n", ret);
++        return AVERROR_EXTERNAL;
++    }
++
++    return ff_filter_frame(ctx->outputs[0], dist);
++}
++
++static av_cold int init_metal(AVFilterContext *ctx)
++{
++    LIBVMAFContext *s = ctx->priv;
++    s->fs.on_event = do_vmaf_metal;
++    return 0;
++}
++
++static av_cold void uninit_metal(AVFilterContext *ctx)
++{
++    LIBVMAFContext *s = ctx->priv;
++    int err = 0;
++
++    ff_framesync_uninit(&s->fs);
++
++    if (!s->frame_cnt)
++        goto clean_up;
++
++    err = vmaf_read_pictures(s->vmaf, NULL, NULL, 0);
++    if (err)
++        av_log(ctx, AV_LOG_ERROR,
++               "vmaf flush failed: %d\n", err);
++
++    for (unsigned i = 0; i < s->model_cnt; i++) {
++        double vmaf_score;
++        err = vmaf_score_pooled(s->vmaf, s->model[i], pool_method_map(s->pool),
++                                &vmaf_score, 0, s->frame_cnt - 1);
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "problem getting pooled vmaf score.\n");
++        }
++        av_log(ctx, AV_LOG_INFO, "VMAF score: %f\n", vmaf_score);
++    }
++
++    if (s->vmaf && s->log_path && !err)
++        vmaf_write_output(s->vmaf, s->log_path, log_fmt_map(s->log_fmt));
++
++clean_up:
++    if (s->model) {
++        for (unsigned i = 0; i < s->model_cnt; i++) {
++            if (s->model[i])
++                vmaf_model_destroy(s->model[i]);
++        }
++        av_free(s->model);
++    }
++
++    if (s->vmaf)
++        vmaf_close(s->vmaf);
++    if (s->metal_state)
++        vmaf_metal_state_free(&s->metal_state);
++}
++
++static int config_props_metal(AVFilterLink *outlink)
++{
++    int err;
++    AVFilterContext *ctx = outlink->src;
++    LIBVMAFContext *s = ctx->priv;
++    AVFilterLink *inlink = ctx->inputs[0];
++    FilterLink *inl = ff_filter_link(inlink);
++    AVHWFramesContext *frames_ctx;
++    AVHWDeviceContext *device_ctx;
++    const AVPixFmtDescriptor *desc;
++
++    if (!inl->hw_frames_ctx) {
++        av_log(ctx, AV_LOG_ERROR,
++               "No VideoToolbox hw_frames_ctx on input. Use -hwaccel videotoolbox.\n");
++        return AVERROR(EINVAL);
++    }
++
++    frames_ctx = (AVHWFramesContext *)inl->hw_frames_ctx->data;
++    if (frames_ctx->device_ctx->type != AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
++        av_log(ctx, AV_LOG_ERROR,
++               "Expected VideoToolbox frames, got type %d\n",
++               frames_ctx->device_ctx->type);
++        return AVERROR(EINVAL);
++    }
++    device_ctx = frames_ctx->device_ctx;
++    (void)device_ctx; /* T8-IOS-b: pull AVMetalDeviceContext when FFmpeg exposes one */
++
++    desc = av_pix_fmt_desc_get(frames_ctx->sw_format);
++    s->bpc = desc->comp[0].depth;
++
++    av_log(ctx, AV_LOG_INFO,
++           "libvmaf_metal: sw_format=%s bpc=%u %dx%d\n",
++           desc->name, s->bpc, inlink->w, inlink->h);
++
++    /* T8-IOS-b (ADR-0423): FFmpeg n8.1.1 does not expose an
++     * AVMetalDeviceContext, so we pass device=0 / command_queue=0;
++     * libvmaf picks MTLCreateSystemDefaultDevice. IOSurfaces from
++     * VideoToolbox are addressable from any Apple-Family-7+ MTLDevice
++     * on a single-GPU host. Multi-GPU Mac Pro hosts will need
++     * explicit device matching once FFmpeg exposes the device
++     * pointer in AVVideoToolboxFramesContext. */
++    VmafMetalExternalHandles handles = {
++        .device        = 0,
++        .command_queue = 0,
++    };
++    err = vmaf_metal_state_init_external(&s->metal_state, handles);
++    if (err == -ENODEV) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_metal: no Apple-Family-7+ GPU available. "
++               "This filter requires Apple Silicon (M1 or later).\n");
++        return AVERROR(ENODEV);
++    }
++    if (err) {
++        av_log(ctx, AV_LOG_ERROR,
++               "vmaf_metal_state_init_external failed: %d\n", err);
++        return AVERROR_EXTERNAL;
++    }
++
++    VmafConfiguration cfg = {
++        .log_level = log_level_map(av_log_get_level()),
++        .n_subsample = s->n_subsample,
++        .n_threads = s->n_threads,
 +        .cpumask = (uint64_t)s->cpumask,
 +        .gpumask = (uint64_t)s->gpumask,
      };

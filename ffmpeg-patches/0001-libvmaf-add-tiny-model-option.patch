@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 97f6f9b41fa53a65770e88e61000879877e7b781 Mon Sep 17 00:00:00 2001
 From: Lusoris <lusoris@pm.me>
 Date: Fri, 24 Apr 2026 22:23:38 +0200
-Subject: [PATCH] libvmaf: add tiny_model / tiny_device / tiny_threads /
+Subject: [PATCH 01/13] libvmaf: add tiny_model / tiny_device / tiny_threads /
  tiny_fp16 options
 
 tiny_device exposes all VmafDnnDevice enum values from dnn.h (v2):
@@ -10,7 +10,7 @@ tiny_device exposes all VmafDnnDevice enum values from dnn.h (v2):
 - PR #676 (OpenVINO NPU EP): openvino-npu
 - PR #677 (OpenVINO CPU/GPU EP variant): openvino-cpu, openvino-gpu
 ---
- libavfilter/vf_libvmaf.c | 60 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ libavfilter/vf_libvmaf.c | 60 ++++++++++++++++++++++++++++++++++++++++
  1 file changed, 60 insertions(+)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
@@ -105,5 +105,6 @@ index 3ab67d3..552743f 100644
      s->fs.on_event = do_vmaf;
      return 0;
  }
---
+-- 
 2.54.0
+

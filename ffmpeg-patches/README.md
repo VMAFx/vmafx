@@ -15,15 +15,9 @@ Local patches against FFmpeg **n8.1.1** for integrating this VMAF fork into
   / `sycl_profile` options on the `libvmaf` filter; invokes
   `vmaf_sycl_state_init()` + `vmaf_sycl_import_state()` when
   `sycl_device >= 0`.
-- **`0004-libvmaf-wire-vulkan-backend-selector.patch`** — adds
-  `vulkan_device` option on the `libvmaf` filter; wires
-  `vmaf_vulkan_state_init` + the deferred-pool path from ADR-0238.
 - **`0005-libvmaf-add-libvmaf-sycl-filter.patch`** — registers a
   dedicated `libvmaf_sycl` filter for zero-copy VAAPI/QSV import
   (consumes `AVFrame->data[3] -> mfxFrameSurface1*`).
-- **`0006-libvmaf-add-libvmaf-vulkan-filter.patch`** — registers a
-  dedicated `libvmaf_vulkan` filter for zero-copy VkImage import per
-  [ADR-0186](../docs/adr/0186-vulkan-image-import-impl.md).
 - **`0010-libvmaf-wire-cuda-backend-selector.patch`** — adds a
   `cuda` boolean option on the `libvmaf` filter and the
   `--enable-libvmaf-cuda` configure flag. When `cuda=1` the filter
@@ -32,7 +26,7 @@ Local patches against FFmpeg **n8.1.1** for integrating this VMAF fork into
   and dispenses `VmafPicture`s from a HOST_PINNED preallocation pool
   so software AVFrame input flows into pinned-host memory the CUDA
   feature kernels DMA from without a staging copy. Mirrors the
-  SYCL/Vulkan selector pattern and runs alongside the upstream
+  SYCL selector pattern and runs alongside the upstream
   dedicated `libvmaf_cuda` filter (which keeps its own `cu_state`
   for hwaccel CUDA frames in). See
   [ADR-0350](../docs/adr/0350-ffmpeg-libvmaf-cuda-backend-selector.md).
@@ -41,7 +35,7 @@ Local patches against FFmpeg **n8.1.1** for integrating this VMAF fork into
   `--enable-libvmaf-hip` configure flag. When `hip_device >= 0` the
   filter inits a `VmafHipState` on the selected AMD ROCm/HIP device,
   imports it via `vmaf_hip_import_state`, and frees the state after
-  `vmaf_close()`. Completes the SYCL / Vulkan / CUDA / HIP selector
+  `vmaf_close()`. Completes the SYCL / CUDA / HIP selector
   symmetry on the `libvmaf` filter. A dedicated `libvmaf_hip` filter
   for ROCm hwdec zero-copy import is deferred until FFmpeg exposes a
   ROCm/HIP hardware-frame context (no `ffhipcodec` equivalent of
@@ -65,7 +59,7 @@ Local patches against FFmpeg **n8.1.1** for integrating this VMAF fork into
   [ADR-0423](../docs/adr/0423-metal-iosurface-import-scaffold.md).
 Every patch is guarded by `check_pkg_config` so it degrades gracefully when
 libvmaf was built without the relevant feature (`-Denable_dnn`, `-Denable_sycl`,
-`-Denable_vulkan`, `-Denable_cuda`, `-Denable_hip`).
+`-Denable_cuda`, `-Denable_hip`).
 
 ## What works without a patch
 
@@ -94,9 +88,9 @@ back to CPU SIMD — AVX-512 / AVX2 / NEON per ADR-0161 / 0162 / 0163).
 The patches in this directory only cover fork-added surfaces that
 DO NOT fit the generic `feature=` plumbing: the DNN session API
 (`tiny_model`), the learned pre-processing filter (`vmaf_pre`), the
-SYCL / Vulkan backend selectors on the `libvmaf` filter, and the
-dedicated `libvmaf_sycl` / `libvmaf_vulkan` filters for zero-copy
-hardware-frame import.
+SYCL / CUDA / HIP / Metal backend selectors on the `libvmaf` filter,
+and the dedicated `libvmaf_sycl` / `libvmaf_metal` filters for
+zero-copy hardware-frame import.
 
 ## How to apply
 
@@ -109,24 +103,20 @@ done
 
 Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
 
-> **Verification gate (CLAUDE.md §12 r14)**: patches `0002` through
-> `0006` build on each other (each assumes the cumulative state of
-> every earlier patch). Per
-> [ADR-0118](../docs/adr/0118-ffmpeg-patch-series-application.md) and
-> [ADR-0186](../docs/adr/0186-vulkan-image-import-impl.md), the
+> **Verification gate (CLAUDE.md §12 r14)**: patches build cumulatively —
+> each assumes the state left by all prior patches. Per
+> [ADR-0118](../docs/adr/0118-ffmpeg-patch-series-application.md), the
 > verification gate for any change touching a libvmaf C-API surface
 > the patches consume is a **series replay** against a pristine
 > `n8.1.1` checkout (cumulative `git am --3way`), NOT a per-patch
-> `git apply --check`. The latter rejects `0002+` because they
-> reference cumulative-state hunks that don't exist in pristine
-> `n8.1.1`. The most recent no-drift verification is
-> the encoder-profile hand-off (ADR-0643, 2026-05-20): all 15 patches
-> (0001-0015) apply cleanly against pristine `n8.1.1`, the latest
-> released FFmpeg 8.x.x tag verified on 2026-05-20, with zero conflicts.
-> The previous verification was the full-feature-exposure
-> sync (ADR-0576, 2026-05-18) against pristine `n8.1.1`; before that was
-> the n8.1 to n8.1.1 base
-> bump (2026-05-09); before that was
+> `git apply --check`. The most recent no-drift verification is
+> the Vulkan-drop post-refresh (ADR-0726, 2026-05-29): all 13 patches
+> (0001–0003, 0005, 0007–0015) apply cleanly against pristine `n8.1.1`
+> with zero conflicts after removing the Vulkan patches (0004, 0006).
+> The previous verification was
+> the encoder-profile hand-off (ADR-0643, 2026-05-20); before that was
+> the full-feature-exposure sync (ADR-0576, 2026-05-18); before that was
+> the n8.1 to n8.1.1 base bump (2026-05-09); before that was
 > [ADR-0277 (2026-05-04)](../docs/adr/0277-ffmpeg-patches-refresh-2026-05-04.md);
 > the procedure is captured in
 > [`docs/rebase-notes.md`](../docs/rebase-notes.md) under the same
