@@ -1,0 +1,1 @@
+**chore(deps):** Renovate config audit — fix schedule, rate-limits, and add missing Cargo/Go/Dockerfile/Helm manager rules (ADR-0855). Renovate now runs on Tuesdays only (`prHourlyLimit: 4`, `prConcurrentLimit: 5`); patch updates for Go modules and Rust crates auto-merge; Dockerfile tag bumps and Helm subchart bumps require human review.

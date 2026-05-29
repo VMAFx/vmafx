@@ -1,5 +1,15 @@
 # Rebase notes
 
+## Renovate config audit (ADR-0855, 2026-05-29)
+
+no rebase impact: REASON — only `renovate.json`, `docs/adr/0855-renovate-config-audit.md`,
+`docs/adr/README.md`, `changelog.d/changed/0855-renovate-config-audit.md`, and
+`docs/rebase-notes.md` are touched. None of these files exist in the Netflix upstream
+tree; there is no upstream `renovate.json` to conflict with.
+
+---
+
+
 Single ledger of fork-local changes that need attention when this fork
 syncs from `upstream/master` (Netflix/vmaf). Required by
 [ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local

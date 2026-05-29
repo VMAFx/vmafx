@@ -8,10 +8,10 @@
     ":semanticCommits",
     "helpers:disableTypesNodeMajor"
   ],
-  "schedule": ["at any time"],
+  "schedule": ["after 6am on Tuesday", "before 6am on Wednesday"],
   "timezone": "Europe/Vienna",
-  "prHourlyLimit": 0,
-  "prConcurrentLimit": 12,
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 5,
   "rangeStrategy": "bump",
   "commitMessagePrefix": "chore(deps):",
   "branchPrefix": "renovate/",
@@ -31,13 +31,13 @@
   ],
   "packageRules": [
     {
-      "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge — digest-only is mechanical and CI catches drift.",
+      "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge — digest-only is mechanical and CI catches drift. Fires in the Tuesday window to co-batch with other automated updates.",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "GitHub Actions (minor + patch)",
       "automerge": true,
       "automergeType": "pr",
-      "schedule": ["before 6am on Monday"]
+      "schedule": ["after 6am on Tuesday", "before 6am on Wednesday"]
     },
     {
       "description": "Major Action upgrades require human review — breaking changes possible.",
@@ -47,10 +47,11 @@
       "automerge": false
     },
     {
-      "description": "Group pre-commit hook rev bumps; auto-merge — mechanical, lint catches drift.",
+      "description": "Group pre-commit hook rev bumps; auto-merge — mechanical, lint catches drift. Fires in the same Tuesday window as GH Actions to batch with that group.",
       "matchManagers": ["pre-commit"],
       "groupName": "pre-commit hooks",
-      "automerge": true
+      "automerge": true,
+      "schedule": ["after 6am on Tuesday", "before 6am on Wednesday"]
     },
     {
       "description": "Python patch updates auto-merge; minor + major need review.",
@@ -65,6 +66,63 @@
       "matchUpdateTypes": ["minor"],
       "groupName": "Python (minor)",
       "automerge": false
+    },
+    {
+      "description": "Go module patch updates auto-merge; minor + major need review. Covers go.mod direct + indirect deps.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "Go modules (patch)",
+      "automerge": true
+    },
+    {
+      "description": "Go module minor updates grouped, manual review — API surface changes expected.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "Go modules (minor)",
+      "automerge": false
+    },
+    {
+      "description": "Go module major updates grouped, manual review — breaking changes likely.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "Go modules (major)",
+      "automerge": false
+    },
+    {
+      "description": "Rust (Cargo) patch updates auto-merge; minor + major need review.",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "Rust crates (patch)",
+      "automerge": true
+    },
+    {
+      "description": "Rust (Cargo) minor updates grouped, manual review — check semver compat of FFI surface.",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "Rust crates (minor)",
+      "automerge": false
+    },
+    {
+      "description": "Dockerfile FROM digest bumps — auto-merge; tag bumps for non-GPU base images need review. GPU-adjacent images (nvidia/cuda, nvcr.io) are manually reviewed because each CUDA major changes compute-cap / driver ABI.",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["digest"],
+      "groupName": "Dockerfile (digest bumps)",
+      "automerge": true
+    },
+    {
+      "description": "Dockerfile FROM tag bumps — manual review for all images; GPU ABI and container rebuild blast radius. Subsumes the custom-manager regex rules for Containerfile to ensure no tag bump slips through unreviewed.",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "groupName": "Dockerfile (tag bumps)",
+      "automerge": false,
+      "labels": ["dependencies", "dev-image"]
+    },
+    {
+      "description": "Helm subchart version bumps — manual review. The prometheus-pushgateway subchart carries its own rbac/service/pvc; operator must validate chart compatibility against the deployed CRDs.",
+      "matchManagers": ["helmv3"],
+      "groupName": "Helm subcharts",
+      "automerge": false,
+      "labels": ["dependencies", "helm"]
     },
     {
       "description": "Renovate's own action — manual review on bumps to retain auditability of the dep-bot itself.",
