@@ -21,21 +21,18 @@ checkout without a build.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
-onnx = pytest.importorskip("onnx")
-ort = pytest.importorskip("onnxruntime")
-
-import numpy as np  # noqa: E402
-from onnx import TensorProto, helper  # noqa: E402
-
-from vmaf_train.data.feature_dump import DEFAULT_FEATURES, Entry, dump_features  # noqa: E402
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-VMAF_BIN = REPO_ROOT / "libvmaf" / "build-cpu" / "tools" / "vmaf"
-YUV_DIR = REPO_ROOT / "python" / "test" / "resource" / "yuv"
+# Honour VMAF_BIN so any worktree / CI run can point at a freshly-built binary.
+# Default follows the post-ADR-0700 rename: libvmaf/ → core/.
+VMAF_BIN = Path(os.environ.get("VMAF_BIN", "")) or (
+    REPO_ROOT / "core" / "build-cpu" / "tools" / "vmaf"
+)
+# Honour VMAF_YUVDIR for worktrees where python/test/resource/ isn't checked out.
+YUV_DIR = Path(
+    os.environ.get(
+        "VMAF_YUVDIR",
+        str(REPO_ROOT / "python" / "test" / "resource" / "yuv"),
+    )
+)
 REF_YUV = YUV_DIR / "src01_hrc00_576x324.yuv"
 DIS_YUV = YUV_DIR / "src01_hrc01_576x324.yuv"
 
