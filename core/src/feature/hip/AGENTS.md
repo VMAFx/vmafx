@@ -292,3 +292,22 @@ to 8 bytes (one pointer) per launch.
 The same rule applies to `AdmFixedParametersHip` (~244 bytes) once that follow-up
 is scoped; see ADR-0759 alternatives table. Do not add new by-value large struct
 parameters to ADM kernels without an explicit ADR justification.
+
+## Wiring a new HIP extractor into the build (ADR-0852 lesson)
+
+Three files must be updated together — omitting any one silently leaves the
+extractor unreachable:
+
+1. **`core/src/meson.build` `hip_kernel_sources` dict** — add a `'<kernel_name>'`
+   entry pointing to the `.hip` source so `hipcc --genco` compiles the HSACO blob.
+2. **`core/src/hip/meson.build` `hip_sources`** — add the host `.c` wrapper so it
+   is compiled into the HIP runtime archive.
+3. **`core/src/feature/feature_extractor.c`** — add the `extern VmafFeatureExtractor`
+   declaration inside `#if HAVE_HIP` and a `&vmaf_fex_*_hip` pointer in the
+   dispatch table, so `vmaf_get_feature_extractor_by_name` can resolve it.
+
+Failure mode (ADR-0852): `speed_chroma_hip` and `speed_temporal_hip` (ADR-0567)
+had all three implementation files committed but were missing all three wiring
+entries, making the extractors completely unreachable for six weeks until ADR-0852
+closed the gap. The CI matrix had no `enable_hipcc=true` + `name-resolve` smoke
+test, so the omission was invisible until a manual audit.

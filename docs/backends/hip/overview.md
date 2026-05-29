@@ -37,7 +37,7 @@
 > promoted by its own follow-up PR + ADR after a successful
 > reproducer + cross-backend numerical check.
 >
-> **Status (2026-05-18):** 19 HIP feature extractors are registered in
+> **Status (2026-05-29):** 21 HIP feature extractors are registered in
 > `feature_extractor_list[]` and resolve via
 > `vmaf_get_feature_extractor_by_name(<name>)`. ADR-0523 wired the
 > first long-missing entry (`integer_motion_hip`); ADR-0533 swept in
@@ -73,8 +73,10 @@
 > | `integer_ms_ssim_hip` | `ms_ssim_hip` | ADR-0285 / PR #1013 |
 > | `integer_ssim_hip` | `integer_ssim_hip` | PR #999 |
 > | `float_adm_hip` | `float_adm_hip` | ADR-0468 / PR #1024 |
+> | `speed_chroma_hip` | `speed_chroma_hip` | ADR-0567 / ADR-0852 |
+> | `speed_temporal_hip` | `speed_temporal_hip` | ADR-0567 / ADR-0852 |
 >
-> All 20 real kernels require `enable_hip=true` + `enable_hipcc=true`.
+> All 22 real kernels require `enable_hip=true` + `enable_hipcc=true`.
 > Without `enable_hipcc`, the scaffold `-ENOSYS` posture is preserved.
 > The three stubs (`adm_hip`, `vif_hip`, `motion_hip`) use an older
 > `_init/_run/_destroy` API shape that predates the HSACO kernel template;

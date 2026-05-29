@@ -40371,3 +40371,11 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## ADR-0852 — HIP speed extractor wiring (2026-05-29)
+
+no rebase impact: the three changed files (`core/src/meson.build`,
+`core/src/hip/meson.build`, `core/src/feature/feature_extractor.c`) are
+fork-owned; no upstream Netflix/vmaf C source is touched. The only upstream-
+adjacent file is `feature_extractor.c` whose `#if HAVE_HIP` block is a
+fork-added section; conflicts are only possible with other HIP-wiring PRs.

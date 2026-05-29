@@ -173,6 +173,11 @@ extern VmafFeatureExtractor vmaf_fex_integer_ms_ssim_hip;
 extern VmafFeatureExtractor vmaf_fex_psnr_hvs_hip;
 extern VmafFeatureExtractor vmaf_fex_integer_ssim_hip;
 extern VmafFeatureExtractor vmaf_fex_ssimulacra2_hip;
+/* ADR-0852: speed_chroma_hip + speed_temporal_hip wiring.  Both TUs
+ * landed per ADR-0567 but were never added to the extern list or
+ * dispatch table; this closes the gap. */
+extern VmafFeatureExtractor vmaf_fex_speed_chroma_hip;
+extern VmafFeatureExtractor vmaf_fex_speed_temporal_hip;
 #endif
 #if HAVE_METAL
 /* Metal feature extractors — T8-1c through T8-1j / ADR-0421, plus
@@ -323,6 +328,8 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * HSACO blobs; the rest stay scaffold-only until the next batch). */
     &vmaf_fex_float_vif_hip, &vmaf_fex_integer_adm_hip, &vmaf_fex_integer_ms_ssim_hip,
     &vmaf_fex_psnr_hvs_hip, &vmaf_fex_integer_ssim_hip, &vmaf_fex_ssimulacra2_hip,
+    /* ADR-0852: SpEED HIP extractors (ADR-0567 wiring closeout). */
+    &vmaf_fex_speed_chroma_hip, &vmaf_fex_speed_temporal_hip,
 #endif
 #if HAVE_METAL
     /* T8-1 first consumer (ADR-0361): registration succeeds even on
