@@ -6,20 +6,6 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
-## ort-get-tensor-element-type-hard-error (2026-05-29)
-
-**Files touched:**
-`core/src/dnn/ort_backend.c`, `core/src/dnn/ort_backend_internal.h`,
-`core/test/dnn/test_ort_internals.c`
-
-**Rebase impact:** Low. `ort_backend.c` is a wholly fork-added file; upstream
-Netflix/vmaf has no ONNX Runtime integration. No rebase conflict is expected.
-If upstream ever adds an ORT backend, the checked `GetTensorElementType` pattern
-should be adopted there too — the silent-discard bug is a correctness hazard
-on any ORT wrapper.
-
----
-
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
@@ -40354,9 +40340,20 @@ A sync-upstream that adds a CUDA ciede kernel upstream would need to incorporate
 __ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD side
 (ADR-0743 comment block); no Netflix upstream content was discarded.
 
-## DNN ORT backend audit (ADR-0775, Research-0775)
+---
 
-No rebase impact: this PR adds only doc and research files under
-`docs/research/research-0775-dnn-ort-backend-audit.md`,
-`docs/adr/0775-dnn-ort-audit.md`, `changelog.d/changed/dnn-ort-backend-audit.md`,
-and a `docs/adr/README.md` row. No C sources or headers were modified.
+## VmafFeatureDictionary ownership fixes (ADR-0806, 2026-05-29)
+
+no rebase impact: REASON — the only changed files are fork-added test files
+(`core/test/test_vif_skip_scale0.c`, `core/test/test_integer_vif_cpu_cuda_parity.c`)
+and docs (`docs/adr/0806-feature-dictionary-ownership.md`, `docs/adr/README.md`,
+`changelog.d/fixed/0806-feature-dictionary-ownership.md`). No upstream Netflix/vmaf
+file is touched. The fixed double-free and leak are in fork-local CUDA parity tests
+that have no upstream counterpart.
+
+## Lint config tightening (ADR-0805, 2026-05-29)
+
+no rebase impact: REASON — changes are confined to config files (`.clang-tidy`,
+`.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
+and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
+touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
