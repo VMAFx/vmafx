@@ -84,14 +84,3 @@ unset in the calling context; `set -u` aborts on those references and bypasses `
   `VMAF_MCP_ALLOW` env-var override is preserved and additive (it
   extends the default list, does not replace it).
 - [ADR-0517](../docs/adr/0517-mcp-run-benchmark-repair.md) — `run_benchmark` repair.
-- **HTTP transport optional dep group (PR #1583, ADR-0701).** The
-  `[http]` optional dependency group in `vmaf-mcp/pyproject.toml`
-  (`aiohttp`, `prometheus-client`) must be preserved on any rebase or
-  `pyproject.toml` edit. The `--transport http` flag in
-  `src/vmaf_mcp/server.py::main()` dispatches to
-  `src/vmaf_mcp/http_transport.py`. The transport dispatch block
-  (`if args.transport == "http":`) must remain after the stdio-MCP
-  setup block — reordering them causes the stdio transport to be
-  registered even when HTTP mode is requested. Netflix upstream has no
-  MCP server; this entire subtree is fork-local and will never merge
-  upstream.
