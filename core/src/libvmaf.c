@@ -1533,6 +1533,12 @@ static void threaded_extract_func(void *e, void **thread_data)
     (void)thread_data;
     struct ThreadData *f = e;
 
+    /* Thread safety (ADR-0795): f->fex_ctx is a pool slot acquired exclusively
+     * by this thread (vmaf_fex_ctx_pool_aquire sets in_use=true under the pool
+     * lock).  f->fex_ctx->fex is a deep copy of the registered extractor created
+     * at pool-slot allocation time (vmaf_feature_extractor_context_create /
+     * memcpy).  Therefore writing fex->prev_ref here touches only this thread's
+     * own memory — no aliasing with other pool slots or the registered context. */
     if (f->prev_ref.ref)
         f->fex_ctx->fex->prev_ref = f->prev_ref;
 
@@ -1582,12 +1588,16 @@ static void threaded_extract_batch_func(void *e, void **thread_data)
     }
 
     for (unsigned i = 0; i < f->registered_fex->cnt; i++) {
-        VmafFeatureExtractor *fex = f->registered_fex->fex_ctx[i]->fex;
+        /* shared_fex: pointer to the registered extractor used only to read
+         * flags / name / opts.  Must never be written to from this thread —
+         * writes go exclusively to td->fex_ctx[i]->fex (per-thread deep copy).
+         * See ADR-0795. */
+        VmafFeatureExtractor *shared_fex = f->registered_fex->fex_ctx[i]->fex;
 
-        if (fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
+        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
             continue;
 
-        if (fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)
+        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)
             continue;
 
         if ((f->n_subsample > 1) && (f->index % f->n_subsample))
@@ -1603,14 +1613,25 @@ static void threaded_extract_batch_func(void *e, void **thread_data)
                     break;
                 }
             }
-            int err = vmaf_feature_extractor_context_create(&td->fex_ctx[i], fex, d);
+            /* vmaf_feature_extractor_context_create deep-copies shared_fex into
+             * a new VmafFeatureExtractor owned by this thread's td->fex_ctx[i].
+             * From this point td->fex_ctx[i]->fex != shared_fex (different heap
+             * objects), so writes to td->fex_ctx[i]->fex->prev_ref below are
+             * thread-private (ADR-0795). */
+            int err = vmaf_feature_extractor_context_create(&td->fex_ctx[i], shared_fex, d);
             if (err) {
                 f->err = err;
                 break;
             }
         }
 
-        if (fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
+        /* Invariant (ADR-0795): td->fex_ctx[i]->fex is this thread's private deep
+         * copy of shared_fex.  The prev_ref write below is safe because no other
+         * thread shares td — BatchThreadData lives in thread-local storage managed
+         * by the thread pool.  The write/extract/clear sequence is fully contained
+         * within this thread's execution of the extractor loop. */
+        assert(td->fex_ctx[i]->fex != shared_fex);
+        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
             if (f->prev_ref.ref)
                 td->fex_ctx[i]->fex->prev_ref = f->prev_ref;
         }
@@ -1618,7 +1639,7 @@ static void threaded_extract_batch_func(void *e, void **thread_data)
         int err = vmaf_feature_extractor_context_extract(td->fex_ctx[i], &f->ref, NULL, &f->dist,
                                                          NULL, f->index, f->feature_collector);
 
-        if (fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF)
+        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF)
             memset(&td->fex_ctx[i]->fex->prev_ref, 0, sizeof(td->fex_ctx[i]->fex->prev_ref));
 
         if (err) {
