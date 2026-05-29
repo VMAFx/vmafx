@@ -116,10 +116,17 @@ consume unbounded memory or divert through a non-allowlisted op.
 
 Release artifacts (including models shipped under `model/tiny/`) are
 signed by [`.github/workflows/supply-chain.yml`](../../.github/workflows/supply-chain.yml)
-using Sigstore's keyless flow. The workflow emits `<artifact>.sig` and
-`<artifact>.pem` beside each artifact. To verify locally before loading:
+using Sigstore's keyless flow. The workflow emits a `<artifact>.bundle`
+file (cosign v3 Sigstore bundle — contains signature, certificate, and
+Rekor entry in a single file) beside each artifact. To verify locally
+before loading:
 
 ```bash
+# Download the artifact + bundle from the GitHub Release
+gh release download v3.x.y-lusoris.N --repo VMAFx/vmafx \
+    --pattern 'vmaf_tiny_fr_v1.onnx' \
+    --pattern 'vmaf_tiny_fr_v1.onnx.bundle'
+
 cosign verify-blob \
     --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*" \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
@@ -132,11 +139,7 @@ the `--tiny-model-verify` flag invokes `cosign verify-blob` at load time
 via `posix_spawnp(3p)` and fails closed if the signature is missing or
 bad. Off by default for dev-friendliness; strongly recommended on for
 production deployments. The flag drives `vmaf_dnn_verify_signature()` in
-<<<<<<< HEAD
 [`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h),
-=======
-[`core/include/core/dnn.h`](../../core/include/core/dnn.h),
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 which looks up the model's `sigstore_bundle` field in
 [`model/tiny/registry.json`](../../model/tiny/registry.json) — see
 [model-registry.md](model-registry.md) for the full schema and CLI flow.

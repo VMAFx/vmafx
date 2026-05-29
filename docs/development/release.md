@@ -100,8 +100,62 @@ All release artefacts are signed via
 repository's GitHub OIDC identity. No long-lived signing keys live in the
 repo or in CI secrets.
 
-Consumers can verify signatures with
-`cosign verify-blob --certificate-identity-regexp …`.
+The `supply-chain.yml` workflow uses cosign v3, which emits a single
+`.bundle` file per artifact (containing signature + certificate + Rekor
+entry). The legacy split `.sig` / `.pem` pair is **not** produced.
+
+### Verifying a binary artifact
+
+```bash
+# Replace TAG and FILENAME with the actual release tag and artifact name.
+# Available artifacts: libvmaf.so, vmaf (CLI), models.tar.gz,
+#   vmaf_mcp-*.whl, vmaf_mcp-*.tar.gz
+TAG="v3.x.y-lusoris.N"
+FILENAME="vmaf"
+
+gh release download "$TAG" --repo VMAFx/vmafx \
+    --pattern "$FILENAME" \
+    --pattern "${FILENAME}.bundle"
+
+cosign verify-blob \
+    --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@refs/heads/master" \
+    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+    --bundle "${FILENAME}.bundle" \
+    "$FILENAME"
+```
+
+### Verifying a container image
+
+```bash
+# Replace TAG with the image tag (e.g. v3.x.y-lusoris.N, or with -cuda12 etc.)
+TAG="v3.x.y-lusoris.N"
+IMAGE="ghcr.io/vmafx/vmafx:${TAG}"
+
+cosign verify \
+    --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master" \
+    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+    "$IMAGE"
+
+# Verify + display the attached CycloneDX SBOM attestation
+cosign verify-attestation \
+    --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master" \
+    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+    --type cyclonedx \
+    "$IMAGE"
+```
+
+### SLSA provenance
+
+SLSA L3 provenance for binary artifacts is attached to each GitHub Release
+as `vmaf.intoto.jsonl`. Verify it with
+[`slsa-verifier`](https://github.com/slsa-framework/slsa-verifier):
+
+```bash
+slsa-verifier verify-artifact vmaf \
+    --provenance-path vmaf.intoto.jsonl \
+    --source-uri github.com/VMAFx/vmafx \
+    --source-tag "$TAG"
+```
 
 ## CHANGELOG.md fragment workflow (ADR-0221)
 
