@@ -40320,3 +40320,22 @@ is possible with upstream syncs.
 
 The changed kernel signatures are internal to the HIP dispatch path and are not
 part of any public API.
+
+---
+
+### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
+
+No rebase impact on upstream C/Python code.
+
+All files modified are fork-local:
+`core/src/feature/cuda/integer_ciede/ciede_score.cu` (F3 fix — __ldg + __launch_bounds),
+`core/src/feature/cuda/integer_vif_cuda.c` (resolve pre-existing merge-conflict stub from 24bb5daf89),
+`docs/adr/0762-cuda-ciede-ldg.md` (new),
+`changelog.d/perf/cuda-ciede-ldg.md` (new),
+`docs/rebase-notes.md` (this entry),
+`docs/state.md` (new row).
+
+`ciede_score.cu` is entirely fork-local (Netflix upstream has no CUDA ciede kernel).
+A sync-upstream that adds a CUDA ciede kernel upstream would need to incorporate this
+__ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD side
+(ADR-0743 comment block); no Netflix upstream content was discarded.

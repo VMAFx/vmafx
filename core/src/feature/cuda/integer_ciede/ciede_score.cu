@@ -1,5 +1,5 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  CUDA compute kernel for the ciede2000 feature extractor
@@ -172,9 +172,15 @@ __device__ static inline float warp_reduce_f32(float v)
     return v;
 }
 
-__global__ void calculate_ciede_kernel_8bpc(const VmafPicture ref, const VmafPicture dis,
-                                            VmafCudaBuffer sum, unsigned width, unsigned height,
-                                            unsigned bpc, unsigned ss_hor, unsigned ss_ver)
+/* F3: extract raw __restrict__ channel pointers before the per-pixel
+ * inner loop so __ldg() can route reads through the L1 read-only cache.
+ * Passing VmafPicture by value hides void *data[3] from the compiler's
+ * non-coherent-load analysis; extracting the typed pointers here makes
+ * the alias-free invariant visible (ADR-0762, mirrors ADR-0754 pattern). */
+__launch_bounds__(BLOCK_X *BLOCK_Y) __global__
+    void calculate_ciede_kernel_8bpc(const VmafPicture ref, const VmafPicture dis,
+                                     VmafCudaBuffer sum, unsigned width, unsigned height,
+                                     unsigned bpc, unsigned ss_hor, unsigned ss_ver)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -183,15 +189,17 @@ __global__ void calculate_ciede_kernel_8bpc(const VmafPicture ref, const VmafPic
     if (x < (int)width && y < (int)height) {
         const unsigned cx = ss_hor ? ((unsigned)x >> 1) : (unsigned)x;
         const unsigned cy = ss_ver ? ((unsigned)y >> 1) : (unsigned)y;
-        const uint8_t *r_y = (const uint8_t *)ref.data[0] + y * ref.stride[0];
-        const uint8_t *r_u = (const uint8_t *)ref.data[1] + cy * ref.stride[1];
-        const uint8_t *r_v = (const uint8_t *)ref.data[2] + cy * ref.stride[2];
-        const uint8_t *d_y = (const uint8_t *)dis.data[0] + y * dis.stride[0];
-        const uint8_t *d_u = (const uint8_t *)dis.data[1] + cy * dis.stride[1];
-        const uint8_t *d_v = (const uint8_t *)dis.data[2] + cy * dis.stride[2];
+        const uint8_t *__restrict__ r_y = (const uint8_t *)ref.data[0] + y * ref.stride[0];
+        const uint8_t *__restrict__ r_u = (const uint8_t *)ref.data[1] + cy * ref.stride[1];
+        const uint8_t *__restrict__ r_v = (const uint8_t *)ref.data[2] + cy * ref.stride[2];
+        const uint8_t *__restrict__ d_y = (const uint8_t *)dis.data[0] + y * dis.stride[0];
+        const uint8_t *__restrict__ d_u = (const uint8_t *)dis.data[1] + cy * dis.stride[1];
+        const uint8_t *__restrict__ d_v = (const uint8_t *)dis.data[2] + cy * dis.stride[2];
         float l1, a1, b1, l2, a2, b2;
-        yuv_to_lab((float)r_y[x], (float)r_u[cx], (float)r_v[cx], bpc, &l1, &a1, &b1);
-        yuv_to_lab((float)d_y[x], (float)d_u[cx], (float)d_v[cx], bpc, &l2, &a2, &b2);
+        yuv_to_lab((float)__ldg(&r_y[x]), (float)__ldg(&r_u[cx]), (float)__ldg(&r_v[cx]), bpc, &l1,
+                   &a1, &b1);
+        yuv_to_lab((float)__ldg(&d_y[x]), (float)__ldg(&d_u[cx]), (float)__ldg(&d_v[cx]), bpc, &l2,
+                   &a2, &b2);
         my_de = ciede2000_dev(l1, a1, b1, l2, a2, b2);
     }
 
@@ -215,9 +223,11 @@ __global__ void calculate_ciede_kernel_8bpc(const VmafPicture ref, const VmafPic
     }
 }
 
-__global__ void calculate_ciede_kernel_16bpc(const VmafPicture ref, const VmafPicture dis,
-                                             VmafCudaBuffer sum, unsigned width, unsigned height,
-                                             unsigned bpc, unsigned ss_hor, unsigned ss_ver)
+/* F3: same __restrict__ + __ldg() treatment as 8bpc above (ADR-0762). */
+__launch_bounds__(BLOCK_X *BLOCK_Y) __global__
+    void calculate_ciede_kernel_16bpc(const VmafPicture ref, const VmafPicture dis,
+                                      VmafCudaBuffer sum, unsigned width, unsigned height,
+                                      unsigned bpc, unsigned ss_hor, unsigned ss_ver)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -226,15 +236,23 @@ __global__ void calculate_ciede_kernel_16bpc(const VmafPicture ref, const VmafPi
     if (x < (int)width && y < (int)height) {
         const unsigned cx = ss_hor ? ((unsigned)x >> 1) : (unsigned)x;
         const unsigned cy = ss_ver ? ((unsigned)y >> 1) : (unsigned)y;
-        const uint16_t *r_y = (const uint16_t *)((const uint8_t *)ref.data[0] + y * ref.stride[0]);
-        const uint16_t *r_u = (const uint16_t *)((const uint8_t *)ref.data[1] + cy * ref.stride[1]);
-        const uint16_t *r_v = (const uint16_t *)((const uint8_t *)ref.data[2] + cy * ref.stride[2]);
-        const uint16_t *d_y = (const uint16_t *)((const uint8_t *)dis.data[0] + y * dis.stride[0]);
-        const uint16_t *d_u = (const uint16_t *)((const uint8_t *)dis.data[1] + cy * dis.stride[1]);
-        const uint16_t *d_v = (const uint16_t *)((const uint8_t *)dis.data[2] + cy * dis.stride[2]);
+        const uint16_t *__restrict__ r_y =
+            (const uint16_t *)((const uint8_t *)ref.data[0] + y * ref.stride[0]);
+        const uint16_t *__restrict__ r_u =
+            (const uint16_t *)((const uint8_t *)ref.data[1] + cy * ref.stride[1]);
+        const uint16_t *__restrict__ r_v =
+            (const uint16_t *)((const uint8_t *)ref.data[2] + cy * ref.stride[2]);
+        const uint16_t *__restrict__ d_y =
+            (const uint16_t *)((const uint8_t *)dis.data[0] + y * dis.stride[0]);
+        const uint16_t *__restrict__ d_u =
+            (const uint16_t *)((const uint8_t *)dis.data[1] + cy * dis.stride[1]);
+        const uint16_t *__restrict__ d_v =
+            (const uint16_t *)((const uint8_t *)dis.data[2] + cy * dis.stride[2]);
         float l1, a1, b1, l2, a2, b2;
-        yuv_to_lab((float)r_y[x], (float)r_u[cx], (float)r_v[cx], bpc, &l1, &a1, &b1);
-        yuv_to_lab((float)d_y[x], (float)d_u[cx], (float)d_v[cx], bpc, &l2, &a2, &b2);
+        yuv_to_lab((float)__ldg(&r_y[x]), (float)__ldg(&r_u[cx]), (float)__ldg(&r_v[cx]), bpc, &l1,
+                   &a1, &b1);
+        yuv_to_lab((float)__ldg(&d_y[x]), (float)__ldg(&d_u[cx]), (float)__ldg(&d_v[cx]), bpc, &l2,
+                   &a2, &b2);
         my_de = ciede2000_dev(l1, a1, b1, l2, a2, b2);
     }
 

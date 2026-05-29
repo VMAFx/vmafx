@@ -606,3 +606,16 @@ kernel variants at runtime. The current policy table is in ADR-0753.
   On rebase: if upstream modifies `calculate_ssim_vert_combine`, apply the same
   diff to `calculate_ssim_vert_combine_no_bounds` (body is identical; only the
   `__launch_bounds__(128)` annotation differs).
+## `__ldg()` pattern for VmafPicture channel reads (ADR-0762)
+
+- **Extract typed `const uint8_t *__restrict__` (or `uint16_t *__restrict__` for
+  16bpc) channel pointers from `VmafPicture` struct args BEFORE the per-pixel body,
+  then use `__ldg(&ptr[idx])` for all channel reads.**
+  `calculate_ciede_kernel_8bpc` and `calculate_ciede_kernel_16bpc` in
+  `integer_ciede/ciede_score.cu` are the canonical examples: the `VmafPicture` struct
+  carries `void *data[3]`, which prevents the compiler from seeing that the reads are
+  alias-free when the struct is passed by value. Extracting typed `__restrict__`
+  pointers at kernel entry makes the invariant visible and routes the 6 per-pixel
+  channel reads through the L1 read-only texture cache. Any future kernel that reads
+  per-pixel plane data from `VmafPicture` must follow the same pattern.
+  See [ADR-0762](../../../../docs/adr/0762-cuda-ciede-ldg.md).

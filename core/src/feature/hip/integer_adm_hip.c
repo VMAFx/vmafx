@@ -57,7 +57,6 @@
 typedef struct AdmStateHip {
     size_t integer_stride;
     AdmBufferHip buf;
-    AdmBufferHip *buf_dev; /* device-side copy of buf (ADR-0759: pointer-passing convention) */
     bool debug;
     double adm_enhn_gain_limit;
     double adm_norm_view_dist;
@@ -558,8 +557,8 @@ static int adm_dwt2_s123_combined_device_hip(AdmStateHip *s, const int32_t *d_i4
     return 0;
 }
 
-static int adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, AdmBufferHip *buf_dev, int w,
-                              int h, int stride, AdmFixedParametersHip *p, hipStream_t c_stream)
+static int adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, int stride,
+                              AdmFixedParametersHip *p, hipStream_t c_stream)
 {
     for (int band = 0; band < 3; ++band)
         assert(((size_t)(buf->csf_f.bands[band]) & 15) == 0);
@@ -584,7 +583,7 @@ static int adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, AdmBufferHip *b
     const int rows_per_thread = 1;
     const int BLOCKX = 32, BLOCKY = 4;
 
-    void *args[] = {&buf_dev, &top, &bottom, &left, &right, &stride, p};
+    void *args[] = {buf, &top, &bottom, &left, &right, &stride, p};
     hipError_t rc = hipModuleLaunchKernel(
         s->func_adm_csf_kernel_1_4, (uint32_t)DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
         (uint32_t)DIV_ROUND_UP(bottom - top, BLOCKY * rows_per_thread), 3, (uint32_t)BLOCKX,
@@ -592,9 +591,8 @@ static int adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, AdmBufferHip *b
     return hip_rc(rc);
 }
 
-static int i4_adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, AdmBufferHip *buf_dev,
-                                 int scale, int w, int h, int stride, AdmFixedParametersHip *p,
-                                 hipStream_t c_stream)
+static int i4_adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int scale, int w, int h,
+                                 int stride, AdmFixedParametersHip *p, hipStream_t c_stream)
 {
     for (int band = 0; band < 3; ++band)
         assert(((size_t)(buf->i4_csf_f.bands[band]) & 15) == 0);
@@ -619,7 +617,7 @@ static int i4_adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, AdmBufferHip
     const int rows_per_thread = 1;
     const int BLOCKX = 32, BLOCKY = 4;
 
-    void *args[] = {&buf_dev, &scale, &top, &bottom, &left, &right, &stride, p};
+    void *args[] = {buf, &scale, &top, &bottom, &left, &right, &stride, p};
     hipError_t rc =
         hipModuleLaunchKernel(s->func_i4_adm_csf_kernel_1_4,
                               (uint32_t)DIV_ROUND_UP(right - left, BLOCKX * cols_per_thread),
@@ -693,9 +691,9 @@ typedef struct WarpShiftHip {
     uint32_t add_shift_sq[3];
 } WarpShiftHip;
 
-static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, AdmBufferHip *buf_dev, int w,
-                                int h, int src_stride, int csf_a_stride, int scale,
-                                AdmFixedParametersHip *p, hipStream_t c_stream)
+static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, int src_stride,
+                                int csf_a_stride, int scale, AdmFixedParametersHip *p,
+                                hipStream_t c_stream)
 {
     int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
     int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f);
@@ -714,7 +712,7 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, AdmBufferHip 
     {
         const int BLOCKX = 128;
         void *args[] = {
-            &buf_dev,      &h,         &w,        &top,           &bottom,         &left,
+            buf,           &h,         &w,        &top,           &bottom,         &left,
             &right,        &start_row, &end_row,  &start_col,     &end_col,        &src_stride,
             &csf_a_stride, &scale,     &buffer_h, &buffer_stride, &buf->tmp_accum, p};
         hipError_t rc = hipModuleLaunchKernel(
@@ -741,9 +739,8 @@ static int i4_adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, AdmBufferHip 
     return 0;
 }
 
-static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, AdmBufferHip *buf_dev, int w, int h,
-                             int src_stride, int csf_a_stride, AdmFixedParametersHip *p,
-                             hipStream_t c_stream)
+static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h, int src_stride,
+                             int csf_a_stride, AdmFixedParametersHip *p, hipStream_t c_stream)
 {
     int scale = 0;
     int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
@@ -779,7 +776,7 @@ static int adm_cm_device_hip(AdmStateHip *s, AdmBufferHip *buf, AdmBufferHip *bu
     {
         const int rows_per_thread = 8;
         const int BLOCKX = 32, BLOCKY = 4;
-        void *args[] = {&buf_dev,
+        void *args[] = {buf,
                         &h,
                         &w,
                         &top,
@@ -941,12 +938,11 @@ static int integer_compute_adm_hip(AdmStateHip *s, VmafPicture *ref_pic, VmafPic
             if (err)
                 return err;
 
-            err = adm_csf_device_hip(s, buf, s->buf_dev, w, h, (int)buf_stride, &p, s->str);
+            err = adm_csf_device_hip(s, buf, w, h, (int)buf_stride, &p, s->str);
             if (err)
                 return err;
 
-            err = adm_cm_device_hip(s, buf, s->buf_dev, w, h, (int)buf_stride, (int)buf_stride, &p,
-                                    s->str);
+            err = adm_cm_device_hip(s, buf, w, h, (int)buf_stride, (int)buf_stride, &p, s->str);
             if (err)
                 return err;
         } else {
@@ -968,13 +964,12 @@ static int integer_compute_adm_hip(AdmStateHip *s, VmafPicture *ref_pic, VmafPic
             if (err)
                 return err;
 
-            err = i4_adm_csf_device_hip(s, buf, s->buf_dev, (int)scale, w, h, (int)buf_stride, &p,
-                                        s->str);
+            err = i4_adm_csf_device_hip(s, buf, (int)scale, w, h, (int)buf_stride, &p, s->str);
             if (err)
                 return err;
 
-            err = i4_adm_cm_device_hip(s, buf, s->buf_dev, w, h, (int)buf_stride, (int)buf_stride,
-                                       (int)scale, &p, s->str);
+            err = i4_adm_cm_device_hip(s, buf, w, h, (int)buf_stride, (int)buf_stride, (int)scale,
+                                       &p, s->str);
             if (err)
                 return err;
         }
@@ -1174,36 +1169,13 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         }
     }
 
-    /* ADR-0759: allocate and populate device-side copy of AdmBufferHip.
-     * The CSF and CM kernels take const AdmBufferHip * __restrict__ buf_ptr instead
-     * of AdmBufferHip by value (~272 bytes), eliminating per-launch argument-buffer
-     * overhead on every kernel call.  The struct contains only device pointers set up
-     * above; they are stable for the extractor's lifetime, so a single copy suffices. */
-    hip_err = hipMalloc(&s->buf_dev, sizeof(AdmBufferHip));
-    if (hip_err != hipSuccess)
-        goto fail_host; /* buf_dev not yet allocated; jump directly to results_host teardown */
-    hip_err = hipMemcpy(s->buf_dev, &s->buf, sizeof(AdmBufferHip), hipMemcpyHostToDevice);
-    if (hip_err != hipSuccess)
-        goto fail_buf_dev;
-
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (s->feature_name_dict == NULL)
-        goto fail_feature_dict;
+        goto fail_host;
 
     return 0;
 
-fail_feature_dict:
-    /* feature_name_dict failed: buf_dev was already allocated, free it */
-    (void)hipFree(s->buf_dev);
-    s->buf_dev = NULL;
-    /* fall through */
-fail_buf_dev:
-    /* hipMemcpy of buf_dev failed: buf_dev was allocated, free it */
-    if (s->buf_dev != NULL) {
-        (void)hipFree(s->buf_dev);
-        s->buf_dev = NULL;
-    }
 fail_host:
     (void)hipHostFree(s->buf.results_host);
     s->buf.results_host = NULL;
@@ -1374,10 +1346,6 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     if (s->buf.data_buf != NULL) {
         (void)hipFree(s->buf.data_buf);
         s->buf.data_buf = NULL;
-    }
-    if (s->buf_dev != NULL) {
-        (void)hipFree(s->buf_dev);
-        s->buf_dev = NULL;
     }
 #endif /* HAVE_HIPCC */
 

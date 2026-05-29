@@ -56,15 +56,15 @@ static __device__ __forceinline__ void copy_vec_4(const int16_t *__restrict__ in
 
 /* Scales 1-3 CSF with inline decouple — reads ref/dis DWT2, writes only csf_f */
 template <int rows_per_thread, int cols_per_thread>
-__device__ __forceinline__ void i4_adm_csf_kernel(const AdmBufferHip * __restrict__ buf_ptr, int scale, int top, int bottom,
+__device__ __forceinline__ void i4_adm_csf_kernel(AdmBufferHip buf, int scale, int top, int bottom,
                                                   int left, int right, int stride,
                                                   AdmFixedParametersHip params)
 {
 
     const int band = blockIdx.z + 1;
-    const hip_i4_adm_dwt_band_t *ref = &buf_ptr->i4_ref_dwt2;
-    const hip_i4_adm_dwt_band_t *dis = &buf_ptr->i4_dis_dwt2;
-    int32_t *flt_ptr = buf_ptr->i4_csf_f.bands[band];
+    const hip_i4_adm_dwt_band_t *ref = &buf.i4_ref_dwt2;
+    const hip_i4_adm_dwt_band_t *dis = &buf.i4_dis_dwt2;
+    int32_t *flt_ptr = buf.i4_csf_f.bands[band];
 
     int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
     int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
@@ -125,14 +125,14 @@ __constant__ const uint16_t i_shiftsadd[4] = {0, 16384, 16384, 65535};
 
 /* Scale-0 CSF with inline decouple — reads ref/dis DWT2, writes only csf_f */
 template <int rows_per_thread, int cols_per_thread>
-__device__ __forceinline__ void adm_csf_kernel(const AdmBufferHip * __restrict__ buf_ptr, int top, int bottom, int left,
+__device__ __forceinline__ void adm_csf_kernel(AdmBufferHip buf, int top, int bottom, int left,
                                                int right, int stride, AdmFixedParametersHip params)
 {
     const int band = blockIdx.z + 1;
 
-    const hip_adm_dwt_band_t *ref = &buf_ptr->ref_dwt2;
-    const hip_adm_dwt_band_t *dis = &buf_ptr->dis_dwt2;
-    int16_t *flt_ptr = buf_ptr->csf_f.bands[band];
+    const hip_adm_dwt_band_t *ref = &buf.ref_dwt2;
+    const hip_adm_dwt_band_t *dis = &buf.dis_dwt2;
+    int16_t *flt_ptr = buf.csf_f.bands[band];
     int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
     int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
 
@@ -183,19 +183,19 @@ __device__ __forceinline__ void adm_csf_kernel(const AdmBufferHip * __restrict__
 
 #define ADM_CSF_KERNEL(rows_per_thread, cols_per_thread)                                           \
     __global__ void adm_csf_kernel_##rows_per_thread##_##cols_per_thread(                          \
-        const AdmBufferHip * __restrict__ buf_ptr, int top, int bottom, int left, int right, int stride,                   \
+        AdmBufferHip buf, int top, int bottom, int left, int right, int stride,                   \
         AdmFixedParametersHip params)                                                             \
     {                                                                                              \
-        adm_csf_kernel<rows_per_thread, cols_per_thread>(buf_ptr, top, bottom, left, right, stride,    \
+        adm_csf_kernel<rows_per_thread, cols_per_thread>(buf, top, bottom, left, right, stride,    \
                                                          params);                                  \
     }
 
 #define I4_ADM_CSF_KERNEL(rows_per_thread, cols_per_thread)                                        \
     __global__ void i4_adm_csf_kernel_##rows_per_thread##_##cols_per_thread(                       \
-        const AdmBufferHip * __restrict__ buf_ptr, int scale, int top, int bottom, int left, int right, int stride,        \
+        AdmBufferHip buf, int scale, int top, int bottom, int left, int right, int stride,        \
         AdmFixedParametersHip params)                                                             \
     {                                                                                              \
-        i4_adm_csf_kernel<rows_per_thread, cols_per_thread>(buf_ptr, scale, top, bottom, left, right,  \
+        i4_adm_csf_kernel<rows_per_thread, cols_per_thread>(buf, scale, top, bottom, left, right,  \
                                                             stride, params);                       \
     }
 
