@@ -502,6 +502,20 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   read-many intermediate buffer must follow the same pattern.
   See [ADR-0754](../../../../docs/adr/0754-cuda-ssim-vert-combine-ldg-pinned-leak.md).
 
+## F3 pattern — VmafCudaBuffer / VmafPicture / AdmBufferCuda by-value arguments (ADR-0756)
+
+- **Passing an aggregating struct (VmafCudaBuffer, VmafPicture, AdmBufferCuda) by value to a
+  `__global__` kernel hides the embedded pointer from ptxas alias analysis.** ptxas cannot
+  emit `ld.global.nc` (the read-only L1 texture path) for any load through a pointer derived
+  from a struct field copied onto the kernel argument stack.
+- **The correct fix for inner-loop reads:** extract `const T *__restrict__` raw pointers from
+  every struct argument BEFORE the hot inner loop, then read via `__ldg(&ptr[idx])`.
+  This is the F3 fix pattern from PR #93 (Research-0754 / ADR-0754) and is the mandatory
+  approach for any new kernel that reads from `VmafCudaBuffer` or similar structs in a loop.
+- **Audit status:** ADR-0756 / Research-0756 (2026-05-29) catalogued 20 kernel variants with
+  this pattern. Priority-1 dispatch: `ms_ssim_vert_lcs` (`integer_ms_ssim/ms_ssim_score.cu`).
+  See [ADR-0756](../../../../docs/adr/0756-cuda-f3-struct-by-value-audit.md).
+
 ## Pinned-host memory free invariant after `readback_free` (ADR-0754)
 
 - **`vmaf_cuda_kernel_readback_free` NULLs `rb->host_pinned` but does NOT free it.**

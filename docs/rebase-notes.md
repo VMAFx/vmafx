@@ -40206,3 +40206,17 @@ All files modified are fork-local:
 
 No source files were modified (audit-only).  No Netflix upstream commit
 will collide with these additions on `sync-upstream`.
+## research/cuda-f3-struct-by-value-audit-20260529 (2026-05-29)
+
+No rebase impact: this PR adds documentation-only files (research digest, ADR,
+changelog fragment, state.md row). No CUDA source files are modified.
+`VmafCudaBuffer`, `VmafPicture`, and `AdmBufferCuda` definitions are
+unchanged; no upstream Netflix/vmaf commit will collide with this PR's diff.
+
+Fork-local files added/modified:
+`docs/research/research-0756-cuda-f3-struct-by-value-audit.md` (new),
+`docs/adr/0756-cuda-f3-struct-by-value-audit.md` (new),
+`docs/adr/README.md` (new row),
+`changelog.d/perf/cuda-f3-struct-by-value-audit.md` (new),
+`docs/state.md` (new row),
+`docs/rebase-notes.md` (this entry).
