@@ -642,7 +642,6 @@ if is_asm_enabled
           feature_src_dir + 'x86/ssim_avx2.c',
           feature_src_dir + 'x86/float_psnr_avx2.c',
           feature_src_dir + 'x86/float_motion_avx2.c',
-          feature_src_dir + 'x86/float_adm_avx2.c',
           feature_src_dir + 'x86/ciede_avx2.c',
           feature_src_dir + 'x86/ms_ssim_decimate_avx2.c',
           feature_src_dir + 'x86/convolve_avx2.c',
@@ -678,6 +677,21 @@ if is_asm_enabled
       platform_specific_cpu_objects += x86_avx2_static_lib.extract_all_objects(recursive: true)
       platform_specific_cpu_objects += x86_ssimulacra2_avx2_lib.extract_all_objects(recursive: true)
 
+      # float_adm AVX2 compiles in its own static lib with
+      # `-ffp-contract=off`.  Rationale (F3 fix, PR #116): the DWT2 vertical
+      # pass uses mul+add chains; with `-mfma` the compiler may auto-fuse
+      # these into FMAs, diverging from the scalar reference which uses plain
+      # C mul+add.  Disabling FP contraction keeps both paths bit-identical.
+      # The scalar `adm_sum_cube_s` / `adm_csf_den_scale_s` references
+      # compile without -mfma so they never see auto-fusion.
+      x86_float_adm_avx2_lib = static_library(
+          'x86_float_adm_avx2',
+          feature_src_dir + 'x86/float_adm_avx2.c',
+          include_directories : vmaf_base_include,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
+      )
+      platform_specific_cpu_objects += x86_float_adm_avx2_lib.extract_all_objects(recursive: true)
+
       if is_avx512_enabled and is_avx512_supported
         x86_avx512_sources = [
             feature_src_dir + 'x86/motion_avx512.c',
@@ -689,7 +703,6 @@ if is_asm_enabled
             feature_src_dir + 'x86/cambi_avx512.c',
             feature_src_dir + 'x86/float_psnr_avx512.c',
             feature_src_dir + 'x86/float_motion_avx512.c',
-            feature_src_dir + 'x86/float_adm_avx512.c',
             feature_src_dir + 'x86/ciede_avx512.c',
             feature_src_dir + 'x86/ms_ssim_decimate_avx512.c',
             feature_src_dir + 'x86/convolve_avx512.c',
@@ -718,6 +731,18 @@ if is_asm_enabled
 
         platform_specific_cpu_objects += x86_avx512_static_lib.extract_all_objects(recursive: true)
         platform_specific_cpu_objects += x86_ssimulacra2_avx512_lib.extract_all_objects(recursive: true)
+
+        # float_adm AVX-512 — same `-ffp-contract=off` carve-out as
+        # the AVX2 sibling above (F3 fix, PR #116).
+        x86_float_adm_avx512_lib = static_library(
+            'x86_float_adm_avx512',
+            feature_src_dir + 'x86/float_adm_avx512.c',
+            include_directories : vmaf_base_include,
+            c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
+                      '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
+                     vmaf_cflags_common,
+        )
+        platform_specific_cpu_objects += x86_float_adm_avx512_lib.extract_all_objects(recursive: true)
       endif
 
     endif
@@ -1311,7 +1336,7 @@ libvmaf_feature_sources = [
     feature_src_dir + 'feature_name.c',
     feature_src_dir + 'alias.c',
     feature_src_dir + 'integer_adm.c',
-    feature_src_dir + 'feature_collector.cpp',
+    feature_src_dir + 'feature_collector.c',
     feature_src_dir + 'integer_motion.c',
     feature_src_dir + 'integer_motion_v2.c',
     feature_src_dir + 'integer_vif.c',

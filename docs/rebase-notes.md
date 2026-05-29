@@ -40371,3 +40371,18 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## float_adm AVX2/AVX-512 F2+F3 precision fix (ADR-0844, 2026-05-29)
+
+Rebase invariant: if an upstream Netflix/vmaf commit changes
+`float_adm_csf_den_scale_s`, `float_adm_sum_cube_s`, or any other reduction
+function in `core/src/feature/float_adm.c`, the corresponding AVX2 and
+AVX-512 variants in `core/src/feature/x86/float_adm_avx2.c` and
+`float_adm_avx512.c` **must** be updated to preserve the double-precision
+widening contract (ADR-0844 / ADR-0139). The `hadd_pd4` and
+`hsum_ps_to_double` helpers are `static inline` and duplicated across TUs
+intentionally — do not merge them into a shared header. The
+`-ffp-contract=off` per-TU static library carve-out in `core/src/meson.build`
+(the `x86_float_adm_avx2_lib` and `x86_float_adm_avx512_lib` targets) must
+be preserved on any rebase that touches the `meson.build` AVX2/AVX-512 build
+block; they mirror the `ssimulacra2` carve-out already in tree.
