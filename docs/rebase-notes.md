@@ -6,6 +6,15 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## ADR-0042 model-card F5 closeout (2026-05-29)
+
+no rebase impact: docs-only — adds 4 model cards under
+`docs/ai/models/` and removes 2 orphan stubs; deletes forward-looking
+stub content that has no upstream counterpart. `mkdocs.yml` nav update
+is also docs-only.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
