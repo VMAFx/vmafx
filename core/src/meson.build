@@ -551,13 +551,22 @@ libvmaf_include = include_directories(
     is_nvtx_enabled ? '/usr/local/cuda/include' : '',
 )
 
+# MSVC names its C++23 standard `vc++latest`; GCC/Clang use `c++23`.
+# Pick the right token so the override doesn't reject on Windows.
+if meson.get_compiler('cpp').get_id() == 'msvc'
+    libvmaf_cpu_cpp_std = 'vc++latest'
+else
+    libvmaf_cpu_cpp_std = 'c++23'
+endif
+
 libvmaf_cpu_static_lib = static_library(
     'libvmaf_cpu',
     libvmaf_cpu_sources,
     include_directories : [libvmaf_include],
     # ADR-0755: cpu.cpp uses constinit (C++20) and std::atomic; override
     # cpp_std so this TU compiles under C++23 without affecting other TUs.
-    override_options : ['cpp_std=c++23'],
+    # ADR-0860: MSVC-vs-GCC/Clang cpp_std token disagreement workaround.
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
 )
 
 platform_specific_cpu_objects = []
