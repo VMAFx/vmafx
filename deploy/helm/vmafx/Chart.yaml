@@ -2,7 +2,7 @@ apiVersion: v2
 name: vmafx
 description: >
   VMAFX — perceptual video quality assessment engine with multi-vendor GPU
-  support (CUDA / HIP / SYCL).  Provides an HTTP scoring server
+  support (CUDA / HIP / SYCL / Vulkan).  Provides an HTTP scoring server
   (Deployment), one-shot batch scoring (Job), and an optional stateful MCP
   server (StatefulSet).
 type: application

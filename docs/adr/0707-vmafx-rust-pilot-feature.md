@@ -59,8 +59,13 @@ Integration architecture:
    (not into `libvmaf_feature.a`) for the same isolation reason.
 5. `feature_extractor.c` gates the `vmaf_fex_tad` extern and list entry behind
    `#if HAVE_RUST_TAD`, so static-lib-linked tests compile cleanly without the archive.
-6. A Meson option `enable_rust_features` (default `true`, auto-disables when `cargo`
-   is absent) lets operators opt out of the Rust build.
+6. A Meson option `enable_rust_features` (default `false`; set to `true` to enable
+   Rust builds — auto-skips with a warning if `cargo` is absent) lets operators opt
+   into the Rust build. CI defaults to `false`; environments with Rust toolchains
+   should pass `-Denable_rust_features=true` explicitly.
+   (Note: an earlier draft of this ADR incorrectly stated the default as `true`.
+   The implemented default is `false`, confirmed in `core/meson_options.txt`.
+   Corrected by Research-0760.)
 
 ## Alternatives considered
 
