@@ -20,6 +20,20 @@ The change is a pure performance annotation: `__launch_bounds__(128)`,
 loads. If upstream Netflix ever adds their own ms_ssim CUDA port, this file
 will need to be re-reviewed against theirs; the F3 pattern should carry
 forward.
+## cpp23 orphan .c sweep — metadata_handler.c (2026-05-29)
+
+**Files touched:** `core/src/metadata_handler.c` (deleted)
+
+**Rebase impact:** None. The file was dead source — never referenced by any
+meson.build after ADR-0708 renamed it to `metadata_handler.cpp`. Upstream
+Netflix/vmaf still uses `metadata_handler.c`; on future upstream sync, the
+upstream `.c` file will reappear in the patch context but meson.build will
+continue to reference only `.cpp`. No conflict possible: the deletion only
+affects the fork-local tree.
+
+**Rule for future cpp23 conversions:** when renaming `foo.c` → `foo.cpp` in
+meson.build, always `git rm core/src/foo.c` in the same commit. Leaving
+both files in tree causes the source tree to diverge from the build definition.
 
 ---
 
