@@ -165,6 +165,8 @@ is expected or needed for them.
 |---|---|
 | `smoke_v0` | Minimal ONNX graph used by `test_model_loader.c` smoke test. |
 | `smoke_fp16_v0` | Same graph, fp16 weights — exercises the fp16 loader path. |
+| `smoke_multi_output_v0` | Multi-output fixture (mean_score + peak_score) used by `test_vmaf_use_tiny_model.c` — exercises the attached multi-output DNN path. |
+| `smoke_v0_symbolic_batch` | Symbolic-batch fixture (dynamic first dim) used by `test_vmaf_use_tiny_model.c` — exercises the batch-agnostic load path. |
 | `dists_sq_placeholder_v0` | Superseded placeholder; replaced by `dists_sq` (real weights). The non-placeholder card lives at `docs/ai/models/dists_sq.md`. |
 | `mobilesal_placeholder_v0` | Placeholder until the full U-2-Net weights clear compliance (ADR-0257). Non-placeholder card: `docs/ai/models/mobilesal.md`. |
 | `vmaf_tiny_v1` | Superseded by `vmaf_tiny_v2`; kept for loader back-compat tests. |
