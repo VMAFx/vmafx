@@ -619,3 +619,13 @@ kernel variants at runtime. The current policy table is in ADR-0753.
   channel reads through the L1 read-only texture cache. Any future kernel that reads
   per-pixel plane data from `VmafPicture` must follow the same pattern.
   See [ADR-0762](../../../../docs/adr/0762-cuda-ciede-ldg.md).
+
+- **`integer_adm/adm_decouple.cu` carries the same F3 `__ldg()` fix (ADR-0763).**
+  `adm_decouple_kernel` (scale-0, `int16_t`) and `adm_decouple_s123_kernel`
+  (scales 1-3, `int32_t`) both extract `const T *__restrict__` read-only band
+  pointers before the per-pixel body and use `__ldg()` for all reads. Write-back
+  band pointers are plain non-`const` (no `__ldg()` on stores). Note: the file
+  is currently dead (decouple computation is inlined into `adm_csf.cu` /
+  `adm_cm.cu` via `adm_decouple_inline.cuh`) — rebase on a change to that file
+  does NOT affect `adm_decouple.cu`.
+  See [ADR-0763](../../../../docs/adr/0763-cuda-adm-decouple-ldg.md).
