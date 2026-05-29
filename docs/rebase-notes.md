@@ -6,6 +6,14 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## supply-chain-sbom-trivy (2026-05-29, ADR-0801)
+
+New workflow `.github/workflows/supply-chain-sbom.yml` — no rebase impact with
+upstream Netflix/vmaf. The workflow is entirely fork-local (Go binaries and
+container images do not exist in upstream). No upstream merge conflict risk.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
