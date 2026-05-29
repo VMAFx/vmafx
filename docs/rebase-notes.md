@@ -7,103 +7,7 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
-## Pre-existing macOS / Tiny-AI / Go-CI failures (2026-06-01, fix/preexisting-macos-python-tinyai-failures)
-
-**Files touched:**
-`core/test/test_metal_kernel_coverage_audit.c` (basename list correction),
-`ai/tests/test_data_datasets_branches.py` (sha256 fixture constants + pydantic ValidationError fix),
-`ai/tests/test_frame_loader.py` (fake Popen signature + _FakeProcess.stderr + timeout parameter),
-`ai/tests/test_parquet_utils.py` (failure injection via monkeypatch),
-`.github/workflows/go-ci.yml` (meson setup source-dir argument),
-`.github/workflows/sanitizers.yml` (exclude `test_y4m_alloc_failure` from ASan/TSan runs),
-`.github/workflows/tests-and-quality-gates.yml` (exclude `test_y4m_alloc_failure` from all sanitizer matrix variants),
-`.github/workflows/lint-and-format.yml` (exclude `core/src/compat/win32/` from clang-tidy changed-files scan),
-`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py` (remove dead old `_run_benchmark()` function),
-`mcp-server/vmaf-mcp/tests/test_probe_findings_2026_05_17.py` (update test_bug3 to expect RuntimeError).
-
-**Rebase impact:** no rebase impact — all changes are test files and CI workflows.
-None of these files have upstream counterparts in Netflix/vmaf.
-
-## pr125-errno-defects (2026-05-29)
-
-**Files touched:**
-`core/src/libvmaf.c`, `core/src/cuda/common.c`
-
-**Rebase impact:** Low. Changes are confined to error-return paths:
-`open(2)` errno propagation, `cuInit` errno mapping, `vmaf_close`
-return-value propagation, `-EBUSY` guard, and `vmaf_init` error passthrough.
-None of these paths exist in upstream Netflix/vmaf as the fork-added CUDA
-backend and the fdopen-based file writer are fork-local. On upstream sync,
-`core/src/libvmaf.c` will need a three-way merge against the errno-propagation
-hunks; the CUDA-backend changes in `cuda/common.c` are entirely fork-local
-and will not conflict.
-
-## SYCL kernel coverage round 4 (ADR-0957, 2026-05-31)
-
-**Files touched:**
-`core/test/test_sycl_float_moment_parity.c`,
-`core/test/test_sycl_speed_chroma_parity.c`,
-`core/test/test_sycl_speed_temporal_parity.c`,
-`core/test/test_sycl_ssimulacra2_parity.c`,
-`core/test/meson.build`,
-`core/src/feature/sycl/AGENTS.md`,
-`docs/adr/0957-sycl-kernel-coverage-round4.md` (+ index fragment),
-`docs/research/0957-sycl-kernel-coverage-round4-2026-05-31.md`,
-`changelog.d/added/0957-sycl-kernel-coverage-round4.md`.
-
-**Rebase impact:** None. All four new test files and the meson
-wiring block are fork-original (upstream Netflix/vmaf has no SYCL
-backend). The AGENTS.md table row updates are in-place edits of
-fork-local rows. The only file that overlaps with parallel fork PRs
-is `core/test/meson.build` — the round-4 block is appended
-immediately after the round-3 block (PR #446) inside the
-`if get_option('enable_sycl')` guard; if #446 merges first, this
-PR's block appends cleanly; if this PR merges first, #446 must
-insert its block before the round-4 block.
-
----
-
-## SYCL kernel coverage round 3 (ADR-0946, 2026-05-31)
-
-**Files touched:**
-`core/test/test_sycl_float_psnr_parity.c`,
-`core/test/test_sycl_float_adm_parity.c`,
-`core/test/test_sycl_float_vif_parity.c`,
-`core/test/test_sycl_float_motion_parity.c`,
-`core/test/test_sycl_psnr_hvs_parity.c`,
-`core/test/meson.build`,
-`core/src/feature/sycl/AGENTS.md`,
-`docs/adr/0946-sycl-kernel-coverage-round3.md` (+ index fragment),
-`docs/research/0946-sycl-kernel-coverage-round3-2026-05-31.md`,
-`changelog.d/added/0946-sycl-kernel-coverage-round3.md`.
-
-**Rebase impact:** None. All five test files and the meson wiring
-block are fork-original (upstream Netflix/vmaf has no SYCL backend).
-The AGENTS.md table row additions are append-only. The only file
-that overlaps with parallel fork PRs is `core/test/meson.build` —
-the round-3 block is appended immediately after the round-2 block
-(PR #376) inside the `if get_option('enable_sycl')` guard; if #376
-merges first, this PR's block appends cleanly; if this PR merges
-first, #376 must insert its block before the round-3 block.
-
-## ide-lint-config-adr-0700-paths (2026-05-30, ADR-0700)
-
-**Files touched:** `.vscode/c_cpp_properties.json`, `.zed/settings.json`,
-`.github/CODEOWNERS`, `.clang-tidy`, `.dockerignore`, `.gitignore`.
-
-**Rebase impact:** None. All six are fork-local config files; upstream
-Netflix/vmaf does not ship `.vscode/`, `.zed/`, `CODEOWNERS`,
-`.dockerignore`, or the same `.clang-tidy` profile, and the upstream
-`.gitignore` does not include the fork's `subprojects/` extraction
-rules. The change is a mechanical `libvmaf/` → `core/` substitution
-inside paths/regexes that the ADR-0700 rename missed. No upstream sync
-will conflict on these hunks.
-
----
-
 ## libvmaf.Score / ScoreDirect ctx.Context plumbing (2026-05-31, fix/libvmaf-score-ctx)
-
-## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
 
 **Files touched:**
 `pkg/libvmaf/libvmaf.go` (Score signature: ctx as first param;
@@ -1445,132 +1349,6 @@ file is touched; no rebase conflict possible.
 Netflix/vmaf has no Go layer. All new files are test-only and never enter
 the libvmaf C build, the Python harness, or the FFmpeg patch stack. No
 production code is touched, so the upstream rebase boundary is unaffected.
-## nightly-workflow-audit (2026-05-29, ADR-0793)
-
-**Files touched:**
-`.github/workflows/nightly.yml`, `.github/workflows/nightly-bisect.yml`
-
-**Rebase impact:** None. The modified files are fork-local CI workflows that do
-not exist in upstream Netflix/vmaf master. No rebase conflict is possible.
-## ci-runner-ubuntu-24-pin (2026-05-29, ADR-0802)
-
-**Files touched:** `.github/workflows/*.yml` (15 files)
-
-**Rebase impact:** None. CI workflow files are fork-local and are never
-present in upstream Netflix/vmaf master. No rebase conflict is possible.
-
----
-
-## cuda-adm-decouple-ldg (2026-05-29, ADR-0763)
-
-**Files touched:** `core/src/feature/cuda/integer_adm/adm_decouple.cu`
-
-**Rebase impact:** None. `adm_decouple.cu` is not in meson.build (dead file —
-decouple is inlined via `adm_decouple_inline.cuh`). Upstream is not expected to
-modify it independently.
-
-- **F3 fix (ADR-0763)**: `adm_decouple.cu` carries the `__ldg()` F3
-  maintenance fix (perf/cuda-adm-decouple-ldg-20260529). Dead-file only;
-  no rebase conflict expected — the file is not in meson.build and upstream
-  is not expected to modify it independently.
-
-## gpu-picture-pool-uaf-on-init-failure (2026-05-30)
-
-**Files touched:** `core/src/gpu_picture_pool.c`, `core/test/test_gpu_picture_pool_uaf.c`, `core/test/meson.build`
-
-**Rebase impact:** Minor. The fix touches `gpu_picture_pool.c`, which is
-fork-added by ADR-0239 (promotion of upstream's `cuda/ring_buffer.c` into a
-backend-agnostic helper). Upstream Netflix/vmaf still ships the original
-`cuda/ring_buffer.c`; if a future upstream sync ports the same UAF guard
-to their file, the change there will be in a different TU and won't
-conflict. The fork-local test (`test_gpu_picture_pool_uaf.c`) is wholly
-new and CPU-only — no upstream collision possible.
-
-The shape of the fix (`*pool = NULL` on every goto-free label) is
-mechanically replayable; if upstream later refactors `ring_buffer_init`
-the same way, the diffs will be parallel rather than colliding.
-
-## vmaf-bench-unchecked-returns (2026-05-30)
-
-**Files touched:** `core/tools/vmaf_bench.c`
-
-**Rebase impact:** None. `vmaf_bench.c` is a fork-added benchmark binary
-that does not exist upstream Netflix/vmaf master (the upstream tools/
-directory has `vmaf.c` only). No rebase conflict is possible. The change
-hardens three S9 unchecked-return sites (`fseek` x2 in `yuv_pair_read_frame`,
-`vmaf_picture_alloc` x2 + `vmaf_read_pictures` flush in
-`run_sycl_gpu_profile`) to JPL Power-of-10 r7.
-
----
-
-## gpu-dispatch-parse-strict-strategy-match (2026-05-30)
-
-**Files touched:**
-`core/src/gpu_dispatch_parse.h`,
-`core/test/test_gpu_dispatch_parse.c` (new),
-`core/test/meson.build`.
-
-**Rebase impact:** None. `gpu_dispatch_parse.h` is fork-added
-(ADR-0483 dedup helper for `VMAF_<BACKEND>_DISPATCH` env-variable
-parsing) and does not exist in upstream Netflix/vmaf. The new test
-binary lives only on the fork side. No rebase conflict is
-possible.
-
-Adds a token-boundary check after `strncmp(v, strategy_names[idx],
-slen)` so a trailing non-terminator byte (e.g. `directx` for
-`direct`) is treated as no match rather than silently routing to
-the prefix-shared strategy.
-## feature-extractor-cpp-rename (2026-05-29, ADR-0772)
-
-**Files touched:**
-`core/src/feature/feature_extractor.c` (deleted),
-`core/src/feature/feature_extractor.cpp` (new),
-`core/src/feature/feature_extractor.h`,
-`core/src/meson.build`, `core/test/meson.build`
-
-**Rebase impact:** Low. When Netflix/vmaf modifies `feature_extractor.c`
-upstream, the patch will apply against the now-deleted path. To apply an
-upstream patch: `git apply --reject` against `feature_extractor.cpp` and
-resolve manually, or `git show <sha> -- libvmaf/src/feature/feature_extractor.c
-| patch -p1 core/src/feature/feature_extractor.cpp`. The `extern "C"` block
-in the header must be preserved during any upstream-port of header changes.
----
-## cli-cpp23-wave8 (2026-05-29, ADR-0809)
-
-**Files touched:**
-`core/tools/cli_parse.c` (deleted), `core/tools/cli_parse.cpp` (new),
-`core/tools/vmaf.c` (deleted), `core/tools/vmaf.cpp` (new),
-`core/tools/cli_parse.h` (extern "C" guards), `core/tools/spinner.h` (static linkage),
-`core/tools/meson.build` (source list updated, cpp_std=c++23 override added).
-
-**Rebase impact:** Moderate. Upstream Netflix/vmaf still has `vmaf.c` and
-`cli_parse.c`. On an upstream sync the patch context will show the upstream `.c`
-files conflicting with our deleted entries and new `.cpp` files. Resolution:
-- Accept upstream functional changes into the `.cpp` files (not into the deleted `.c`).
-- Re-apply the C++23 idioms (nullptr, static_cast, string_view, [[nodiscard]]) to any
-  new code paths added upstream.
-- If upstream adds new CLI flags, add them to both the `.cpp` file and the `long_opts[]`
-  table in `cli_parse.cpp`.
-
----
-
-## adr-0726 vulkan user-surfaces sweep (2026-05-30)
-
-**Files touched:** `README.md`, `mkdocs.yml`, `pkg/gpu/detect{,_test}.go`,
-`cmd/vmafx-mcp/{impl,tools}.go`,
-`cmd/vmafx-controller/proto/controller.proto`,
-`mcp-server/vmaf-mcp/{README.md,src/vmaf_mcp/server.py}`,
-`tools/vmaf-tune/{README.md,AGENTS.md,src/vmaftune/*.py}`, and the
-corresponding test suites.
-
-**Rebase impact:** None. Every touched file is fork-local — neither
-Netflix/vmaf upstream nor any upstream-tracking patch references the
-Vulkan backend, the `vmafx-*` Go commands, the MCP server, or the
-`vmaf-tune` tool. The sweep aligns the user-discoverable surfaces
-with ADR-0726, which removed the Vulkan backend from libvmaf on
-2026-05-28. Companion PRs (#295 covers `docs/index.md` and the API /
-metrics / build-flags docs; #299 deletes the orphan Vulkan source
-tree under `core/`).
 
 ---
 
@@ -1603,21 +1381,6 @@ affects the fork-local tree.
 **Rule for future cpp23 conversions:** when renaming `foo.c` → `foo.cpp` in
 meson.build, always `git rm core/src/foo.c` in the same commit. Leaving
 both files in tree causes the source tree to diverge from the build definition.
-
----
-
-## feat/cpp23-gpu-dispatch-env-20260529 — ADR-0858 (2026-05-29)
-
-**Files touched:** `core/src/gpu_dispatch_env.c` (deleted), `core/src/gpu_dispatch_env.cpp`
-(new), `core/src/meson.build` (adds `gpu_dispatch_env_cpp23_lib`).
-
-**Rebase impact:** Low. `gpu_dispatch_env.c` and `.h` are fork-local files with no
-Netflix upstream equivalent (see ADR-0461 entry above at line 1808). Future upstream
-syncs will not touch either file. If Netflix ever introduces their own dispatch env
-helper, merge by adopting their approach. The isolated static lib pattern is identical
-to ADR-0708 (`metadata_handler_cpp20_lib`); any future merge conflict in `meson.build`
-should follow the same resolution — keep the `gpu_dispatch_env_cpp23_lib` block and
-the `extract_all_objects` line in the `libvmaf` `objects:` list.
 
 ---
 
@@ -42266,22 +42029,21 @@ part of any public API.
 
 ---
 
-### ADR-0761 — C++23 Wave 8: opt.cpp activation + read_json_model.cpp (2026-05-29)
+### go-workspace-audit — Go dependency + test fixes (2026-05-29)
 
-**Touches**: `core/src/opt.cpp`, `core/src/opt.h`, `core/src/opt.c` (removed
-from build), `core/src/read_json_model.cpp` (new), `core/src/read_json_model.c`
-(removed from build), `core/src/read_json_model.h`, `core/src/log.h`,
-`core/src/model.h`, `core/src/meson.build`, `core/test/meson.build`,
-`scripts/ci/coverage-check.sh`.
+No rebase impact. All changes are Go workspace files entirely fork-local:
+`go.mod` / `go.sum` (added `modernc.org/sqlite` and transitive deps),
+`pkg/observability/observability.go` (added controller metrics fields + `SetControllerSources`),
+`cmd/vmafx-node/executor_test.go`, `cmd/vmafx-node/main_test.go` (test alignment to current API),
+`cmd/vmafx-tune/cmd/root.go` (wire `newLadderCmd`),
+`cmd/vmafx-tune/cmd/compare_test.go` (remove stale stub assertion),
+`changelog.d/fixed/0529-go-workspace-audit.md` (new).
 
-**Upstream collision risk**: Low. Netflix upstream does not touch
-`read_json_model.c` or `opt.c` in the same cadence as the fork's C++23
-migration. If upstream modifies either file, the port author should check
-whether the upstream fix applies to the `.cpp` version; typically a
-mechanical `port-upstream-commit` handles it cleanly since the `.cpp` is
-a structural clone of the `.c`.
+None of these files are touched by Netflix upstream.
 
----### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
+---
+
+### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
 
 No rebase impact on upstream C/Python code.
 
@@ -43217,231 +42979,13 @@ Fork-local files:
 `core/src/feature/arm64/ssimulacra2_host_neon.c`,
 `changelog.d/fixed/simd-float-adm-dwt2-unchecked-aligned-malloc.md`.
 
-## ADR-0862 — K150K crash-restart row-loss consistency check — 2026-05-30
+## ADR-0848 — Per-surface doc compliance audit (2026-05-29)
 
-no rebase impact: REASON — all changes are in fork-added Python under `ai/`
-(`ai/scripts/extract_k150k_features.py`, `ai/tests/test_extract_k150k_consistency.py`,
-`ai/AGENTS.md`) plus docs (`docs/adr/0862-*`, `docs/research/k150k-*`,
-`docs/adr/README.md`, `docs/adr/_index_fragments/_order.txt`,
-`changelog.d/fixed/k150k-crash-restart-row-loss.md`). Upstream Netflix/vmaf
-ships no K150K extraction script and no `ai/` tree; the affected files have
-no upstream counterpart.
+**Rebase impact: none.** This PR adds only docs/research/, docs/adr/, changelog.d/,
+and docs/state.md changes. No code, no meson, no public headers.
 
-## `core/src/libvmaf.c` — `prev_ref` UAF fix in `read_pictures_dispatch_one` (ADR-0778)
-
-The synchronous non-GPU dispatch path now calls `vmaf_picture_ref` /
-`vmaf_picture_unref` around `fex->prev_ref` (previously a bare struct
-copy). If upstream Netflix/vmaf also touches `read_pictures_dispatch_one`
-or the `prev_ref` plumbing, verify the ref-counting contract is preserved
-in the merge.
-
-## `core/src/picture_pool.c` — `pool_preallocate_pictures` error-unwind fix (ADR-0778)
-
-The two-pass restructuring (allocate all, then strip `priv`/`ref`)
-avoids a buffer leak on partial allocation failure. No ABI change; no
-conflict risk unless upstream also restructures this function.
-
-## HIP/Metal -ENOSYS stubs for public API (2026-05-30)
-
-no rebase impact: REASON — all touched code is fork-local. The two
-new TUs (`core/src/hip/stubs.c`, `core/src/metal/stubs.c`) implement
-the public contract documented in
-`core/include/libvmaf/libvmaf_hip.h` / `libvmaf_metal.h`, both of
-which are fork-added headers with no upstream counterpart. The Meson
-gating change in `core/src/meson.build` is inside the
-`if is_hip_enabled / else` / `if is_metal_enabled / else` blocks that
-are also fork-local. Upstream Netflix/vmaf has no HIP or Metal
-backend.
-
-## float_adm AVX2/AVX-512 F2+F3 precision fix (ADR-0844, 2026-05-29)
-
-Rebase invariant: if an upstream Netflix/vmaf commit changes
-`float_adm_csf_den_scale_s`, `float_adm_sum_cube_s`, or any other reduction
-function in `core/src/feature/float_adm.c`, the corresponding AVX2 and
-AVX-512 variants in `core/src/feature/x86/float_adm_avx2.c` and
-`float_adm_avx512.c` **must** be updated to preserve the double-precision
-widening contract (ADR-0844 / ADR-0139). The `hadd_pd4` and
-`hsum_ps_to_double` helpers are `static inline` and duplicated across TUs
-intentionally — do not merge them into a shared header. The
-`-ffp-contract=off` per-TU static library carve-out in `core/src/meson.build`
-(the `x86_float_adm_avx2_lib` and `x86_float_adm_avx512_lib` targets) must
-be preserved on any rebase that touches the `meson.build` AVX2/AVX-512 build
-block; they mirror the `ssimulacra2` carve-out already in tree.
-
-## AVX-512 motion parity tests (ADR-0854, 2026-05-29)
-
-no rebase impact: REASON — changes are confined to new test files
-(`core/test/test_motion_avx512_parity.c`, `changelog.d/added/motion-avx512-parity-tests.md`,
-`docs/adr/0854-motion-avx512-parity-tests.md`) and additive changes to
-`core/test/simd_bitexact_test.h` (new helper function) and `core/test/meson.build`
-(new test registration).  No upstream Netflix/vmaf production source is modified;
-no existing test is changed; no golden assertions are touched.
-
-## ADR-0852 — HIP speed extractor wiring (2026-05-29)
-
-no rebase impact: the three changed files (`core/src/meson.build`,
-`core/src/hip/meson.build`, `core/src/feature/feature_extractor.c`) are
-fork-owned; no upstream Netflix/vmaf C source is touched. The only upstream-
-adjacent file is `feature_extractor.c` whose `#if HAVE_HIP` block is a
-fork-added section; conflicts are only possible with other HIP-wiring PRs.
-
-## Dependency audit 2026-05-30 — `golang.org/x/net` + `x/sys` bump
-
-No rebase impact: the only changed files are `go.mod` / `go.sum`, plus a
-changelog fragment and a research digest. The Go workspace is a fork-only
-addition (Netflix/vmaf upstream does not ship Go modules); there is no
-upstream baseline to rebase against. Versions: `golang.org/x/net`
-`v0.53.0 -> v0.55.0`, `golang.org/x/sys` `v0.43.0 -> v0.45.0`,
-`golang.org/x/term` `v0.42.0 -> v0.43.0`, `golang.org/x/text`
-`v0.36.0 -> v0.37.0` (minimum-version selection).
-
-Fork-local files:
-`go.mod`, `go.sum`,
-`changelog.d/security/dependency-audit-2026-05-30.md`,
-`docs/research/dependency-audit-2026-05-30.md`.
-
-## CodeQL Go coverage + config conflict resolution (ADR-0811, 2026-05-29)
-
-no rebase impact: CI-config-only change; no public API surface affected.
-All changes are confined to `.github/codeql-config.yml` (Go paths addition
-+ gen/go exclusion), `.github/workflows/security-scans.yml` (new codeql-go
-job), `docs/adr/0811-security-codeql-go-pvr.md`, and the changelog fragment.
-No upstream Netflix/vmaf files are touched; no C/Python/Go production code is
-modified. On upstream sync, the CodeQL workflow additions apply cleanly
-regardless of upstream changes.
-
-Fork-local files:
-`.github/codeql-config.yml`,
-`.github/workflows/security-scans.yml`,
-`docs/adr/0811-security-codeql-go-pvr.md`,
-`changelog.d/security/0811-codeql-go-config-fix.md`.
-
-## release-please draft mode
-
-no rebase impact: release-tooling-only change (`release-please-config.json`
-`"draft": true`). No C sources, headers, or test logic modified.
-
-## Coverage-overrides audit — tighten tiny_extractor_template.h (ADR-0881, 2026-05-30)
-
-no rebase impact: REASON — changes are confined to fork-only files:
-`scripts/ci/coverage-check.sh` (fork-only CI gate), the new
-`docs/adr/0881-*.md` ADR, the new `docs/research/0881-*.md` digest, the
-ADR index fragment under `docs/adr/_index_fragments/`, and the
-`changelog.d/changed/` fragment. The threshold ratchet only tightens an
-existing override (10 → 75) — does not introduce a new path Netflix
-upstream might also override. Future audits per the codified rule (see
-ADR-0881 §Decision) are also fork-only since `coverage-check.sh` itself
-is fork-only (Netflix upstream has no equivalent gate).
-
-## vmafx-operator envtest etcd setup (2026-05-30)
-
-no rebase impact: REASON — all changes are in fork-added paths only.
-Files touched: `Makefile` (new `setup-envtest` + `setup-envtest-env`
-targets in the Go workspace section, ADR-0702 scope),
-`.github/workflows/go-ci.yml` (new pre-test step installing
-`sigs.k8s.io/controller-runtime/tools/setup-envtest@latest` + exporting
-`KUBEBUILDER_ASSETS`), `cmd/vmafx-operator/internal/controller/suite_test.go`
-(top-of-`TestControllers` `t.Skip()` guard + nil-`testEnv` bailout in
-`AfterSuite`), `cmd/vmafx-operator/AGENTS.md` (new invariant #6 documenting
-the skip-safe envtest pattern), and the `changelog.d/fixed/` fragment.
-`cmd/vmafx-operator/` is fork-added per ADR-0714 — upstream Netflix/vmaf
-ships no Go sources, so no upstream merge can reach these files.
-
-## log.c → log.cpp C++23 pilot (ADR-0708 Wave 1, 2026-05-30)
-
-Upstream Netflix `libvmaf/src/log.c` is fork-renamed to
-`core/src/log.cpp`. Future port-upstream-commit runs that touch
-`libvmaf/src/log.c` must apply changes to `core/src/log.cpp` instead — the
-fork-rename mapping is recorded here.
-
-Public C ABI is preserved: `core/src/log.h` retains the same two function
-prototypes (`vmaf_log`, `vmaf_set_log_level`) and now carries `extern "C"`
-guards so it is includable from both C and C++ TUs. The C-mangled exported
-symbols are unchanged (`nm libvmaf.so` shows `vmaf_log` and
-`vmaf_set_log_level` with the same C-mangling as the prior log.c build).
-
-Meson wiring: log.cpp compiles in an isolated `log_cpp23_lib` static_library
-with `override_options: ['cpp_std=' + libvmaf_cpu_cpp_std]`, mirroring the
-`metadata_handler_cpp20_lib` pattern (ADR-0708 metadata_handler pilot). Test
-executables that previously direct-compiled `../src/log.c` (test_lpips,
-test_dists, test_feature_extractor, test_speed, ...) now pick up log symbols
-via the shared `log_cpp23_test_objects` aggregate in
-`core/test/meson.build`.
-
-Fork-local files:
-`core/src/log.cpp` (was: `core/src/log.c`, removed),
-`core/src/log.h` (added `extern "C"` guards),
-`core/src/meson.build` (replaced `log.c` source entry with `log_cpp23_lib`),
-`core/test/meson.build` (added `log_cpp23_test_objects`, removed inline
-`'../src/log.c'` source entries from ~20 test execs, wired `test_log` into
-the fast suite),
-`docs/adr/0708-vmafx-cpp23-internals-pilot.md` (consequences cross-link),
-`changelog.d/changed/log-c-to-cpp23.md`.**`extern "C"` guards added**: `log.h`, `model.h`, `read_json_model.h`,
-`opt.h`. Any upstream commit that adds new declarations to these headers
-must include the guard-wrapped declaration for correctness. Flag in the
-port if upstream adds a declaration outside the guard block.
-
-## port/upstream-netflix-may-jun-2026 — 2026-06-01
-
-Five Netflix upstream commits ported. Each reduces the diff against upstream
-and therefore reduces future rebase friction.
-
-1. **e4b93c6ed** (`fetch_picture` direct-read): `core/tools/vmaf.c` no longer
-   has a `#ifdef USE_DIRECT_READ` branch. Future upstreams that touch `vmaf.c`
-   will now merge cleanly without the compile-guard conflict.
-
-2. **a4a1492d3** (integer_motion rename): `core/src/feature/integer_motion.c`
-   and `core/src/feature/x86/motion_avx2.{c,h}` / `motion_avx512.{c,h}` are
-   now at upstream parity. `integer_motion_v2.c` and `motion_v2_avx2/512` are
-   fork-local (GPU build paths); any future upstream touch of those names
-   should check whether the GPU backends have been updated to the renamed API.
-
-3. **c2155d6cd** (2160p CSF): `core/src/feature/barten_csf_tools.h` is now
-   at upstream parity. `core/test/test_barten_csf.c` has new upstream tests.
-
-4. **9a078011c** (ADM SIMD fix): `core/src/feature/integer_adm.c` and
-   `core/src/feature/x86/adm_avx2.c` + `adm_avx512.c` at upstream parity.
-
-5. **30f472b14** (Speed_chroma AVX): `core/src/feature/speed.c`,
-   `core/src/feature/x86/speed_avx2.{c,h}`, `core/src/feature/x86/speed_avx512.{c,h}`
-   are new upstream-mirror files. Future upstream touches to speed.c may need
-   to propagate `compute_cov_kernel` into the GPU speed_chroma extractors.
-
-Fork-local files touched:
-`core/tools/vmaf.c` (commit #1 — call-site updates for signature change),
-`core/src/feature/feature_extractor.c` (commit #2 — remove CPU v2),
-`core/src/meson.build` (commits #2, #5 — add speed_avx2/512, remove motion_v2 CPU build).
-
----
-
-## ADR-0700 Dockerfile path residuals — 2026-05-30
-
-no rebase impact: REASON — touches only fork-added Dockerfiles
-(`docker/Dockerfile.production`, `docker/Dockerfile.production-gpu`,
-`docker/dev/{alpine-3.20,arch,fedora-40}.Dockerfile`) and the fork-added
-`dev/Containerfile`. None of these files have an upstream Netflix/vmaf
-counterpart. The change is a literal `libvmaf/` → `core/` substitution at
-source-tree positions (`meson setup … core`, `COPY core/`, `cd core`);
-install-path / package / filter-name occurrences (`/usr/local/include/libvmaf/`,
-`libvmaf.so`, `libvmaf-dev`, `--enable-libvmaf*`) are deliberately preserved
-because they describe the shipped library / package / ffmpeg-filter surface,
-not the source layout.
----
-
-## ADR-0709 residual ANSNR references in docs + ai/data — 2026-05-30
-
-no rebase impact: REASON — all changes are fork-local. Touched files are
-`ai/data/feature_extractor.py` (fork-added Python helper, no upstream
-counterpart), `docs/metrics/ansnr.md`, `docs/backends/index.md`,
-`docs/backends/cuda/overview.md`, `docs/backends/hip/overview.md`. The
-HIP and CUDA overviews and the metric page are fork-only docs; the
-backends index page is also fork-only. No upstream Netflix/vmaf source is
-touched. The cleanup closes residual references left over after PR #38
-(ADR-0709) removed the `float_ansnr` extractor from every backend.
-
-## fix/post-rename-post-vulkan-sweep — 2026-06-01
-
-no rebase impact: post-rename cleanup only. The Containerfile change adds a
-pkg-install line that cannot conflict with upstream (upstream has no
-Containerfile). The score_backend.py change is fork-local code with no
-upstream counterpart. The test and doc updates are purely fork-local.
+**Future rebases:** If PRs that fix the three gaps (Issue A / B / C from Research-0848)
+are in flight, ensure:
+- Issue A (Vulkan removal docs): no conflict expected — docs/backends/vulkan/,
+  docs/metrics/features.md, docs/development/build-flags.md are rarely touched.
+- Issue B (deprecations.md): docs/development/deprecations.md is append-only.
