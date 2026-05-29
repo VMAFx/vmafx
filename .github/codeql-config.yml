@@ -25,10 +25,11 @@ query-filters:
       id: cpp/poorly-documented-function
 
 paths:
-  - libvmaf/src
-  - libvmaf/include
-  - libvmaf/tools
+  - core/src
+  - core/include
+  - core/tools
   - python/vmaf
+  - compat/python-vmaf
   - mcp-server
   - ai/src
 
@@ -36,7 +37,7 @@ paths-ignore:
   - subprojects
   - build
   - builddir
-  - libvmaf/test
+  - core/test
   - python/test
   - testdata
   - "**/third_party/**"
