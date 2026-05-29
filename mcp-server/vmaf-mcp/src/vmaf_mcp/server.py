@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """MCP server for the Lusoris VMAF fork.
 
 Exposes ten tools over the Model Context Protocol (stdio transport):
@@ -81,7 +83,7 @@ def _vmaf_binary() -> Path:
 
     candidates = [
         Path("/usr/local/bin/vmaf"),
-        _repo_root() / "libvmaf" / "build" / "tools" / "vmaf",
+        _repo_root() / "core" / "build" / "tools" / "vmaf",
         _repo_root() / "build" / "tools" / "vmaf",
     ]
     for candidate in candidates:
@@ -152,6 +154,7 @@ class ScoreRequest:
     model: str = "version=vmaf_v0.6.1"
     backend: str = "auto"  # "cpu" | "cuda" | "sycl" | "auto"
     precision: str = "17"
+    subsample: int = 1  # score every Nth frame; passed as --subsample to the CLI
 
 
 # Map each named backend to the set of siblings it must disable so the
@@ -305,6 +308,8 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
             str(output),
             "--json",
         ]
+        if req.subsample > 1:
+            argv += ["--subsample", str(req.subsample)]
         if req.backend in _BACKEND_DISABLE:
             for sibling in _BACKEND_DISABLE[req.backend]:
                 argv.append(f"--no_{sibling}")
@@ -559,7 +564,12 @@ def _load_vlm() -> tuple[Any, str] | None:
             _vlm_state["pipeline"] = pipe
             _vlm_state["model_id"] = model_id
             return (pipe, model_id)
-        except Exception:  # pragma: no cover - depends on local env
+        except Exception as _vlm_exc:  # pragma: no cover - depends on local env
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "VLM candidate %r failed to load: %s", model_id, _vlm_exc
+            )
             continue
     return None
 
@@ -717,91 +727,6 @@ async def _describe_worst_frames(
     }
 
 
-async def _run_benchmark() -> dict[str, Any]:
-    """Run the full multi-fixture benchmark suite (bench_all.sh).
-
-    bench_all.sh is a fixed-fixture harness: it tests three canonical YUV
-    pairs (576x324, 1080p-5f, 4K-BBB-200f) across all available backends.
-    It does NOT accept per-call ref/dis arguments — those are hardcoded.
-
-    Root causes of the original failure (ADR-0513):
-    1. The MCP tool previously passed ``-r ref -d dis --width W --height H``
-       as positional args to the script.  bench_all.sh uses ``set -euo
-       pipefail`` and sources Intel oneAPI ``setvars.sh`` inside the script
-       body.  ``setvars.sh`` reads the calling script's ``$@`` (positional
-       parameters) to process its own flags; the unknown flags ``-r``,
-       ``-d``, ``--width``, ``--height`` propagate into per-component
-       ``env/vars.sh`` scripts, which hang or exit non-zero, aborting the
-       outer script before any output is emitted.
-    2. ``VMAF_BIN`` was not injected into the subprocess environment, so the
-       script fell back to the relative path ``core/build/tools/vmaf``
-       which is absent in the container after ``make install``.
-    """
-    script = _repo_root() / "testdata" / "bench_all.sh"
-    if not script.exists():
-        raise FileNotFoundError(f"benchmark harness not found: {script}")
-    # Resolve the data root — where bench_all.sh's fixture YUVs live.
-    # Priority:
-    #   1. VMAF_ROOT env var already set by the caller (explicit override).
-    #   2. _repo_root() when it contains the canonical fixture file.
-    #   3. /workspace — the vmaf-dev-mcp container bind-mount (ADR-0513).
-    # This handles the case where the MCP server is installed as an editable
-    # package from a git worktree (e.g. during development): _repo_root()
-    # then resolves to the worktree directory which shares the git objects but
-    # does not have the large YUV fixtures checked out.
-    _fixture_probe = "python/test/resource/yuv/src01_hrc00_576x324.yuv"
-    _candidate_roots = [
-        Path(os.environ["VMAF_ROOT"]) if "VMAF_ROOT" in os.environ else None,
-        _repo_root(),
-        Path("/workspace"),
-    ]
-    vmaf_root = next(
-        (r for r in _candidate_roots if r is not None and (r / _fixture_probe).exists()),
-        _repo_root(),
-    )
-    # Inherit the full environment so that PATH, LD_LIBRARY_PATH, and any
-    # GPU-runtime variables are preserved.  Inject VMAF_ROOT so bench_all.sh
-    # resolves its ``cd`` correctly when git is unavailable, and inject
-    # VMAF_BIN so the script uses the installed binary (not the relative
-    # in-tree path which is absent after ``make install`` in containers).
-    bench_env = {
-        **os.environ,
-        "VMAF_ROOT": str(vmaf_root),
-        "VMAF_BIN": str(_vmaf_binary()),
-    }
-    # bench_all.sh is invoked with NO positional arguments.  The script's
-    # fixture paths are hardcoded; passing extra args corrupts $@ inside
-    # the sourced oneAPI setvars.sh and causes a silent abort (ADR-0517).
-    proc = await asyncio.create_subprocess_exec(
-        str(script),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=bench_env,
-    )
-    stdout, stderr = await proc.communicate()
-    stdout_s = stdout.decode(errors="replace")
-    stderr_s = stderr.decode(errors="replace")
-    payload: dict[str, Any] = {
-        "exit_code": proc.returncode,
-        "stdout": stdout_s,
-        "stderr": stderr_s,
-    }
-    if proc.returncode != 0 and not stdout_s.strip() and not stderr_s.strip():
-        payload["error"] = (
-            f"bench_all.sh exited {proc.returncode} with no output — "
-            "likely aborted by set -euo pipefail before printing. Common "
-            f"causes: missing vmaf binary at {_vmaf_binary()}, missing "
-            "fixture YUVs under testdata/ or python/test/resource/yuv/. "
-            "Re-run with `bash -x testdata/bench_all.sh` to bisect."
-        )
-    return payload
-
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # list_extractors — enumerate VmafFeatureExtractor implementations (ADR-0608)
 # ---------------------------------------------------------------------------
@@ -853,9 +778,18 @@ def _list_extractors() -> list[dict[str, Any]]:
       (``cpu`` | ``cuda`` | ``sycl`` | ``vulkan`` | ``hip`` | ``metal``).
     - ``source``: relative path to the C file that defines the struct.
     """
-    feature_dir = _repo_root() / "libvmaf" / "src" / "feature"
+    import logging as _logging
+
+    feature_dir = _repo_root() / "core" / "src" / "feature"
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
+
+    if not feature_dir.is_dir():
+        _logging.getLogger(__name__).warning(
+            "list_extractors: feature directory not found at %s; " "is the source tree present?",
+            feature_dir,
+        )
+        return out
 
     for c_file in sorted(feature_dir.rglob("*.c")):
         try:
@@ -1027,6 +961,7 @@ def _vmaftune_binary() -> Path:
 # _send_progress — MCP progress notification helper (ADR-0608)
 # ---------------------------------------------------------------------------
 
+
 async def _send_progress(
     progress_token: str | int | None,
     progress: float,
@@ -1057,9 +992,12 @@ async def _send_progress(
     except LookupError:
         # Called outside a request context (e.g. unit tests) — silently skip.
         pass
-    except Exception:
-        pass
+    except Exception as _progress_exc:
+        import logging as _logging
 
+        _logging.getLogger(__name__).debug(
+            "progress notification failed (token=%r): %s", progress_token, _progress_exc
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1387,8 +1325,6 @@ async def _run_benchmark(
             "Re-run with `bash -x testdata/bench_all.sh` to bisect."
         )
     return payload
-
-
 
 
 # probe_backend — runtime health check (ADR-0608 / C-P0-1)
@@ -1749,6 +1685,7 @@ async def _run_vmaf_score_encoded(
             model=model,
             backend=backend,
             precision=precision,
+            subsample=subsample,
         )
         result = await _run_vmaf_score(req)
         # Surface the original encoded paths in the response.
@@ -1782,7 +1719,7 @@ async def _list_tools() -> list[Tool]:
                     "width": {"type": "integer", "minimum": 1},
                     "height": {"type": "integer", "minimum": 1},
                     "pixfmt": {"type": "string", "enum": ["420", "422", "444"]},
-                    "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16]},
+                    "bitdepth": {"type": "integer", "enum": [8, 10, 12]},
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
@@ -1877,7 +1814,7 @@ async def _list_tools() -> list[Tool]:
                     "width": {"type": "integer", "minimum": 1},
                     "height": {"type": "integer", "minimum": 1},
                     "pixfmt": {"type": "string", "enum": ["420", "422", "444"]},
-                    "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16]},
+                    "bitdepth": {"type": "integer", "enum": [8, 10, 12]},
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
