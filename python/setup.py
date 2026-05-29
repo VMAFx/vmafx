@@ -14,8 +14,13 @@ from setuptools import setup
 
 PYTHON_PROJECT = os.path.dirname(os.path.abspath(__file__))
 
-# Real package location after ADR-0700 repo-layout move.
-COMPAT_VMAF = os.path.normpath(os.path.join(PYTHON_PROJECT, "..", "compat", "python-vmaf"))
+# Real package location after ADR-0700 repo-layout move. Use the
+# `compat/vmaf` symlink rather than the hyphenated `compat/python-vmaf/`
+# directory so Cython can derive a valid module name from the .pyx path
+# (Cython rejects `python-vmaf.core.adm_dwt2_cy` because hyphens are
+# illegal in Python module names; via the symlink it sees
+# `vmaf.core.adm_dwt2_cy`).
+COMPAT_VMAF = os.path.normpath(os.path.join(PYTHON_PROJECT, "..", "compat", "vmaf"))
 
 
 def get_version():
