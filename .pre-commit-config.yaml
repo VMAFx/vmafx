@@ -262,8 +262,7 @@ repos:
         # parallelism. Cost on the staged-files commit path is
         # negligible (≈2 s → ≈4 s) and the all-files path goes from
         # "always fails" to "works".
-        entry: semgrep scan --config=.semgrep.yml --error --quiet --jobs 1
-        # `language: python` so pre-commit creates its own isolated
+        entry: semgrep scan --config=.semgrep.yml --error --quiet --jobs 1        # `language: python` so pre-commit creates its own isolated
         # venv and pip-installs semgrep there. The CI `pre-commit` job
         # doesn't ship semgrep on PATH; with `language: system` the
         # hook would fail with `Executable 'semgrep' not found` on

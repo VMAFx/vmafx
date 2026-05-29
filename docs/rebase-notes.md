@@ -1522,7 +1522,24 @@ resolve manually, or `git show <sha> -- libvmaf/src/feature/feature_extractor.c
 | patch -p1 core/src/feature/feature_extractor.cpp`. The `extern "C"` block
 in the header must be preserved during any upstream-port of header changes.
 ---
+## cli-cpp23-wave8 (2026-05-29, ADR-0809)
 
+**Files touched:**
+`core/tools/cli_parse.c` (deleted), `core/tools/cli_parse.cpp` (new),
+`core/tools/vmaf.c` (deleted), `core/tools/vmaf.cpp` (new),
+`core/tools/cli_parse.h` (extern "C" guards), `core/tools/spinner.h` (static linkage),
+`core/tools/meson.build` (source list updated, cpp_std=c++23 override added).
+
+**Rebase impact:** Moderate. Upstream Netflix/vmaf still has `vmaf.c` and
+`cli_parse.c`. On an upstream sync the patch context will show the upstream `.c`
+files conflicting with our deleted entries and new `.cpp` files. Resolution:
+- Accept upstream functional changes into the `.cpp` files (not into the deleted `.c`).
+- Re-apply the C++23 idioms (nullptr, static_cast, string_view, [[nodiscard]]) to any
+  new code paths added upstream.
+- If upstream adds new CLI flags, add them to both the `.cpp` file and the `long_opts[]`
+  table in `cli_parse.cpp`.
+
+---
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
@@ -42230,8 +42247,7 @@ whether the upstream fix applies to the `.cpp` version; typically a
 mechanical `port-upstream-commit` handles it cleanly since the `.cpp` is
 a structural clone of the `.c`.
 
----
-### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
+---### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
 
 No rebase impact on upstream C/Python code.
 

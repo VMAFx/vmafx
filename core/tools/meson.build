@@ -37,14 +37,21 @@ if get_option('default_library') == 'both'
     vmaf_tool_link_target = libvmaf.get_shared_lib()
 endif
 
+# ADR-0809: vmaf.c and cli_parse.c converted to C++23 (vmaf.cpp, cli_parse.cpp).
+# The two C++ TUs use override_options to pin cpp_std=c++23 independently of the
+# project-level default, matching the per-target pattern established in ADR-0708.
+# y4m_input.c / vidinput.c / yuv_input.c remain C23; they are compiled under the
+# project default (c_args only) and linked together with the C++ TUs.
 vmaf = executable(
     'vmaf',
-    ['vmaf.c', 'cli_parse.c', 'y4m_input.c', 'vidinput.c', 'yuv_input.c'],
+    ['vmaf.cpp', 'cli_parse.cpp', 'y4m_input.c', 'vidinput.c', 'yuv_input.c'],
     include_directories : [libvmaf_inc, vmaf_include],
     dependencies: vmaf_tool_deps,
     c_args : vmaf_tool_cflags,
+    cpp_args : vmaf_tool_cflags,
     link_args : vmaf_tool_link_args,
     link_with : vmaf_tool_link_target,
+    override_options : ['cpp_std=c++23'],
     install : true,
 )
 

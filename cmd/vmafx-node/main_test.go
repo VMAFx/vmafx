@@ -17,7 +17,6 @@ import (
 
 	"testing"
 	"time"
-
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 	"github.com/VMAFx/vmafx/pkg/ai"
 	"github.com/VMAFx/vmafx/pkg/gpu"

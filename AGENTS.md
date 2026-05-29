@@ -478,8 +478,7 @@ linked AGENTS.md before resolving conflicts.
   modifies `pyproject.toml` must preserve this group. The `--transport http`
   flag in `server.py::main()` dispatches to `http_transport.py`; do not
   reorder the transport dispatch block. See
-  [mcp-server/AGENTS.md](mcp-server/AGENTS.md).
-## 14. Interaction style — prefer structured popup questions
+  [mcp-server/AGENTS.md](mcp-server/AGENTS.md).## 14. Interaction style — prefer structured popup questions
 
 When your host agent exposes a structured-question UI (Claude Code's `AskUserQuestion`,
 Cursor's choice prompt, Aider's multi-choice, etc.), **use it instead of posting a

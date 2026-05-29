@@ -157,8 +157,10 @@ jobs:
       # fail trying to build the old libvmaf/ path (post-rename to core/).
       - name: No-op build (Python analysis only)
 <<<<<<< HEAD
+<<<<<<< HEAD
         run: echo "Python-only CodeQL scan — no C++ build required"      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
->>>>>>> refactor(core): rename feature_extractor.c → .cpp (ADR-0772)
+>>>>>>> refactor(core): rename feature_extractor.c → .cpp (ADR-0772)      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+>>>>>>> refactor(tools)!: C++23 Wave 8 — cli_parse.c + vmaf.c → .cpp (ADR-0809)
         with:
           category: "/language:python"
 
