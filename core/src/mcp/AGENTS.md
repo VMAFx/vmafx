@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/mcp
+# AGENTS.md — core/src/mcp
 Orientation for agents working on the embedded MCP server.
 Parent: [../../AGENTS.md](../../AGENTS.md).
 ## Scope
@@ -11,7 +11,7 @@ mcp/
   transport_stdio.c   # line-delimited JSON-RPC on stdin/stdout
   transport_uds.c     # AF_UNIX listener (mode 0700), one client at a time
   transport_sse.c     # AF_INET loopback HTTP/1.1 + Server-Sent Events
-  meson.build         # subdir() include from libvmaf/src/meson.build
+  meson.build         # subdir() include from core/src/meson.build
 ```
 Public C-API: [`../../include/libvmaf/libvmaf_mcp.h`](../../include/libvmaf/libvmaf_mcp.h).
 Smoke test: [`../../test/test_mcp_smoke.c`](../../test/test_mcp_smoke.c).
@@ -77,15 +77,15 @@ by code yet — the runtime PR makes them load-bearing):
   dual-copyright policy.
 - [ADR-0209](../../../docs/adr/0209-mcp-embedded-scaffold.md) —
   audit-first MCP scaffold.
-# `libvmaf/src/mcp/` — agent-relevant invariants
+# `core/src/mcp/` — agent-relevant invariants
 Fork-local subtree. Read this before editing any TU under
-`libvmaf/src/mcp/`.
+`core/src/mcp/`.
 ## Rebase-sensitive invariants (ADR-0108)
 1. **The entire subtree is fork-local.** Netflix/vmaf upstream has
    no embedded MCP surface. If a future upstream sync introduces
    a colliding `mcp/` directory, expect a port-only resolution —
    names collide, semantics may not.
-2. **Public ABI lives in `libvmaf/include/libvmaf/libvmaf_mcp.h`**;
+2. **Public ABI lives in `core/include/libvmaf/libvmaf_mcp.h`**;
    `mcp_internal.h` is implementation-only. ABI breaks require an
    ADR per CLAUDE §12 r8.
 3. **UDS socket file is mode 0700** (owner-only). The `chmod`

@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/test
+# AGENTS.md — core/test
 
 Orientation for agents working on the C unit test suite. Parent:
 [../AGENTS.md](../AGENTS.md).
@@ -69,7 +69,7 @@ and teardown.
   Windows. To reach `vmaf_feature_score_pooled` the test must
   use a real `VmafContext` (the writers require it for the
   `pooled_metrics` block); obtain the owned collector through
-  `libvmaf/src/libvmaf_priv.h::vmaf_feature_collector_get()` and link
+  `core/src/libvmaf_priv.h::vmaf_feature_collector_get()` and link
   against libvmaf. Do not include `libvmaf.c` / `output.c` directly from
   `test_output.c`: Apple ld64 + LTO has resolved that duplicate-definition
   pattern incorrectly under allocator poisoning, causing macOS writer-test
@@ -117,7 +117,7 @@ and teardown.
   MSVC portability: C source files touched by agents must not use bare
   `__attribute__((noinline, noclone))` without a MSVC-guarded macro, and must
   not call `fstat()` / `S_ISREG()` / rely on `off_t` being 64-bit without the
-  `#ifdef _WIN32` shims established in `libvmaf/tools/yuv_input.c`. **Rebase-
+  `#ifdef _WIN32` shims established in `core/tools/yuv_input.c`. **Rebase-
   sensitive**: any new `.c` file that introduces GCC-extension attributes or
   POSIX `<sys/stat.h>` calls must add a matching portability guard or it will
   wedge `Build — Windows MSVC + CUDA` and `Build — Windows MSVC + oneAPI SYCL`.
@@ -163,7 +163,7 @@ without `suite:` arguments when cherry-picking or syncing. After every
 upstream sync or port-upstream-commit, run:
 
 ```bash
-grep "^test(" libvmaf/test/meson.build | grep -v "suite :"
+grep "^test(" core/test/meson.build | grep -v "suite :"
 ```
 
 Any line returned is a violation — add the appropriate `suite:` before

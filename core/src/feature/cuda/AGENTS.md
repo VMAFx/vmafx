@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/feature/cuda
+# AGENTS.md — core/src/feature/cuda
 
 Orientation for agents working on per-feature CUDA kernels (host
 glue + `.cu` device code). Parent: [../AGENTS.md](../AGENTS.md). The
@@ -9,7 +9,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 
 `float_ssim_cuda.c` was removed by ADR-0546 (`chore/hip-cuda-orphan-tu-cleanup`,
 2026-05-18). It defined `vmaf_fex_float_ssim_cuda` but was not listed in
-`libvmaf/src/meson.build`; `integer_ssim_cuda.c` (which is compiled) also
+`core/src/meson.build`; `integer_ssim_cuda.c` (which is compiled) also
 defines the same symbol and is the current canonical TU (it adds the
 `enable_chroma` option and other improvements absent from the orphan copy).
 Do not re-add `float_ssim_cuda.c` without consulting ADR-0546.
@@ -39,7 +39,7 @@ because ADM splits across DWT2 + decouple + CSF + CM passes.
   Netflix header (with NVIDIA contributor lines on the `integer_adm/`
   CUDA kernels) — that is correct for upstream-mirrored files; do
   not retro-fit.
-- **`#include` order** mirrors the SYCL / Vulkan twins:
+- **`#include` order** mirrors the SYCL / HIP twins:
   `feature_collector.h` / `feature_extractor.h` first, then
   `cuda/integer_<feature>_cuda.h`, then `cuda_helper.cuh` /
   `kernel_template.h`. Don't shuffle.
@@ -47,8 +47,7 @@ because ADM splits across DWT2 + decouple + CSF + CM passes.
   parent build line passes `--fmad=false` to `nvcc` for feature
   TUs that participate in cross-backend gates with `places=4`.
   Removing it drifts `float_adm_cuda` /  `ssimulacra2_cuda` past
-  the gate (mirror of the SYCL `-fp-model=precise` and Vulkan
-  GLSL `precise` / `NoContraction` rules). On rebase: keep the
+  the gate (mirror of the SYCL `-fp-model=precise` rule). On rebase: keep the
   flag.
 
 ## Twin-update rules
@@ -59,20 +58,20 @@ the same PR:
 
 | Feature | Twins |
 | --- | --- |
-| **psnr** | `integer_psnr_cuda.c` ↔ `../sycl/integer_psnr_sycl.cpp` ↔ `../vulkan/psnr_vulkan.c` (+ `psnr.comp`) ↔ `../hip/integer_psnr_hip.c` |
-| **ciede** | `integer_ciede_cuda.c` ↔ `../sycl/integer_ciede_sycl.cpp` ↔ `../vulkan/ciede_vulkan.c` (+ `ciede.comp`) ↔ `../hip/ciede_hip.c` |
-| **moment** | `integer_moment_cuda.c` ↔ `../sycl/integer_moment_sycl.cpp` ↔ `../vulkan/moment_vulkan.c` (+ `moment.comp`) ↔ `../hip/float_moment_hip.c` |
-| **motion** | `integer_motion_cuda.c` ↔ `../sycl/integer_motion_sycl.cpp` ↔ `../vulkan/motion_vulkan.c` (+ `motion.comp`) |
-| **motion_v2** | `integer_motion_v2_cuda.c` ↔ `../sycl/integer_motion_v2_sycl.cpp` ↔ `../vulkan/motion_v2_vulkan.c` (+ `motion_v2.comp`) ↔ `../hip/integer_motion_v2_hip.c` |
-| **vif (integer)** | `integer_vif_cuda.c` (+ `integer_vif/filter1d.cu`) ↔ `../sycl/integer_vif_sycl.cpp` ↔ `../vulkan/vif_vulkan.c` (+ `vif.comp`) |
-| **adm (integer)** | `integer_adm_cuda.c` (+ `integer_adm/*.cu`) ↔ `../sycl/integer_adm_sycl.cpp` ↔ `../vulkan/adm_vulkan.c` (+ `adm.comp`) |
-| **ssim (float)** | `integer_ssim_cuda.c` (misnomer; provides `"float_ssim"` — 11-tap float Gaussian) ↔ `../sycl/integer_ssim_sycl.cpp` (float_ssim part) ↔ `../vulkan/ssim_vulkan.c` (+ `ssim.comp`) |
-| **ssim (integer)** | `ssim_cuda.c` (real integer_ssim; provides `"ssim"` — 9-tap int64) ↔ `../hip/integer_ssim_hip.c` ↔ `../sycl/integer_ssim_sycl.cpp` (integer_ssim part) — Vulkan integer_ssim pending (ADR-0564) |
-| **ms_ssim** | `integer_ms_ssim_cuda.c` ↔ `../sycl/integer_ms_ssim_sycl.cpp` ↔ `../vulkan/ms_ssim_vulkan.c` (+ `ms_ssim.comp`) |
-| **psnr_hvs** | `integer_psnr_hvs_cuda.c` ↔ `../sycl/integer_psnr_hvs_sycl.cpp` ↔ `../vulkan/psnr_hvs_vulkan.c` (+ `psnr_hvs.comp`) |
-| **ssimulacra2** | `ssimulacra2_cuda.c` (+ `ssimulacra2/*.cu`) ↔ `../sycl/ssimulacra2_sycl.cpp` ↔ `../vulkan/ssimulacra2_vulkan.c` (+ `ssimulacra2_*.comp`) |
-| **float_*** | `float_adm_cuda.c` / `float_ansnr_cuda.c` / `float_motion_cuda.c` / `float_psnr_cuda.c` / `float_vif_cuda.c` ↔ matching `../sycl/float_*_sycl.cpp` ↔ `../vulkan/float_*_vulkan.c` ↔ partial `../hip/float_*_hip.c` |
-| **cambi** | `integer_cambi_cuda.c` (+ `integer_cambi/cambi_score.cu`) ↔ `../vulkan/cambi_vulkan.c` (+ `cambi_*.comp`) — Strategy II hybrid twin. SYCL twin pending (T3-15b). |
+| **psnr** | `integer_psnr_cuda.c` ↔ `../sycl/integer_psnr_sycl.cpp` ↔ `../hip/integer_psnr_hip.c` |
+| **ciede** | `integer_ciede_cuda.c` ↔ `../sycl/integer_ciede_sycl.cpp` ↔ `../hip/ciede_hip.c` |
+| **moment** | `integer_moment_cuda.c` ↔ `../sycl/integer_moment_sycl.cpp` ↔ `../hip/float_moment_hip.c` |
+| **motion** | `integer_motion_cuda.c` ↔ `../sycl/integer_motion_sycl.cpp` |
+| **motion_v2** | `integer_motion_v2_cuda.c` ↔ `../sycl/integer_motion_v2_sycl.cpp` ↔ `../hip/integer_motion_v2_hip.c` |
+| **vif (integer)** | `integer_vif_cuda.c` (+ `integer_vif/filter1d.cu`) ↔ `../sycl/integer_vif_sycl.cpp` |
+| **adm (integer)** | `integer_adm_cuda.c` (+ `integer_adm/*.cu`) ↔ `../sycl/integer_adm_sycl.cpp` |
+| **ssim (float)** | `integer_ssim_cuda.c` (misnomer; provides `"float_ssim"` — 11-tap float Gaussian) ↔ `../sycl/integer_ssim_sycl.cpp` (float_ssim part) |
+| **ssim (integer)** | `ssim_cuda.c` (real integer_ssim; provides `"ssim"` — 9-tap int64) ↔ `../hip/integer_ssim_hip.c` ↔ `../sycl/integer_ssim_sycl.cpp` (integer_ssim part) |
+| **ms_ssim** | `integer_ms_ssim_cuda.c` ↔ `../sycl/integer_ms_ssim_sycl.cpp` |
+| **psnr_hvs** | `integer_psnr_hvs_cuda.c` ↔ `../sycl/integer_psnr_hvs_sycl.cpp` |
+| **ssimulacra2** | `ssimulacra2_cuda.c` (+ `ssimulacra2/*.cu`) ↔ `../sycl/ssimulacra2_sycl.cpp` |
+| **float_*** | `float_adm_cuda.c` / `float_motion_cuda.c` / `float_psnr_cuda.c` / `float_vif_cuda.c` ↔ matching `../sycl/float_*_sycl.cpp` ↔ partial `../hip/float_*_hip.c` |
+| **cambi** | `integer_cambi_cuda.c` (+ `integer_cambi/cambi_score.cu`) — Strategy II hybrid. SYCL twin pending (T3-15b). |
 
 The full GPU twin matrix is governed by the GPU long-tail batches:
 [ADR-0182](../../../../docs/adr/0182-gpu-long-tail-batch-1.md) (psnr /
@@ -86,9 +85,9 @@ ciede / moment), [ADR-0188](../../../../docs/adr/0188-gpu-long-tail-batch-2.md)
 the motion3 post-process as a host-side moving average over blended motion2
 scores. These two paths **must stay in numerical parity at places=4** (delta
 ≤ 1e-4, per ADR-0214). The gate is enforced by
-`libvmaf/test/test_cuda_motion3_parity.c`; any change to the blend formula
+`core/test/test_cuda_motion3_parity.c`; any change to the blend formula
 (`motion_blend()`), the moving-average guard condition, or `motion_max_val`
-clipping must be mirrored across both files (and across the SYCL / Vulkan /
+clipping must be mirrored across both files (and across the SYCL /
 HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
 
 ## Rebase-sensitive invariants
@@ -158,7 +157,7 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   `vmaf_cuda_kernel_collect_wait` before reading `h_partials[]`;
   reintroducing raw `cuMemcpyDtoHAsync` + `cuStreamSynchronize` in
   collect reopens T-GPU-OPT-3's per-frame sync stall. The scheduling
-  change is CUDA-only and does not require SYCL / Vulkan twin edits
+  change is CUDA-only and does not require SYCL / HIP twin edits
   because it does not alter kernel math or emitted metrics.
 
 - **`integer_psnr_hvs_cuda.c` honours `enable_chroma` option parity** (mirrors
@@ -168,7 +167,7 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   All plane loops (`upload_frame`, `launch_plane_kernels`,
   `enqueue_partials_readback`, `collect_fex_cuda`, `close_fex_cuda`) iterate
   over `s->n_planes`, not the compile-time constant `PSNR_HVS_NUM_PLANES`.
-  The Vulkan and SYCL twins do not yet carry this option; add it there in
+  The SYCL twin does not yet carry this option; add it there in
   lockstep if the combined-score formula diverges. The `collect_fex_cuda`
   combined-score path emits luma dB only when `n_planes == 1`.
 
@@ -187,7 +186,7 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   implementation. The host residual calls `vmaf_cambi_calculate_c_values`
   and `vmaf_cambi_spatial_pooling` via `cambi_internal.h`. If upstream
   Netflix refactors `cambi.c` and renames those entry points,
-  `cambi_internal.h` **and** `cambi_vulkan.c` must be updated in the
+  `cambi_internal.h` must be updated in the
   same PR. Never remove the `cuStreamSynchronize` calls inside
   `submit_fex_cuda` — they guard the DtoH coherency for the host
   residual. `places=4` gate is load-bearing; do not loosen it.
@@ -216,7 +215,7 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   regardless of the option. On rebase: if upstream Netflix adds an
   `enable_chroma` option to the CPU path that behaves differently from the
   fork's GPU guard, audit both and keep the GPU clamp semantically
-  equivalent. The SYCL and Vulkan twins carry the identical guard and must
+  equivalent. The SYCL twin carries the identical guard and must
   move in lockstep with any change to this one. The cross-backend parity
   gate at `places=4` covers both `enable_chroma=true` (default) and
   `enable_chroma=false` paths.
@@ -280,15 +279,15 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   If the application math ever changes in the CPU reference
   (`integer_motion_v2.c` / `float_motion.c`), all GPU twins must be
   updated in the same PR. Twins in scope: `integer_motion_v2_cuda.c`,
-  `integer_motion_v2_sycl.cpp`, `motion_v2_vulkan.c`,
+  `integer_motion_v2_sycl.cpp`,
   `integer_motion_v2_hip.c`, `integer_motion_v2_metal.mm`,
   `float_motion_cuda.c`, `float_motion_sycl.cpp`,
-  `float_motion_vulkan.c`, `float_motion_hip.c`,
+  `float_motion_hip.c`,
   `float_motion_metal.mm`. PR #863 initially wired this option.
 
 - **`integer_motion_v2_*` mirror contract** (ADR-0662) — CPU
   `integer_motion_v2.c::mirror` maps `idx >= size` to
-  `2 * size - idx - 2`. The CUDA, SYCL, and Vulkan `motion_v2`
+  `2 * size - idx - 2`. The CUDA and SYCL `motion_v2`
   kernels must keep that same high-edge literal. The old `-1`
   formula is stale prose from ADR-0193 bring-up and creates a
   measurable CPU/GPU drift.

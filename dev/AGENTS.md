@@ -93,6 +93,8 @@ a real container-side regression that hid a host GPU from libvmaf:
    if the device passthrough is otherwise correct.
 
 2. **Do NOT set `VK_ICD_FILENAMES` or `VK_DRIVER_FILES` in the image.**
+   (Note: Vulkan backend was dropped in ADR-0726; ICD settings are kept
+   for potential future container uses and do not affect the libvmaf binary.)
    The Vulkan loader's default search of `/etc/vulkan/icd.d/` +
    `/usr/share/vulkan/icd.d/` picks up both the NVIDIA Container
    Toolkit's run-time bind-mount AND the mesa intel/radeon/lavapipe
@@ -119,7 +121,7 @@ a real container-side regression that hid a host GPU from libvmaf:
 4. **The build-time backend probe loop in stage 3 must stay green for
    `cpu` + `cuda` and `WARN`-but-not-`built without X support` for the
    GPU backends.** The probe runs vmaf against the Netflix golden CPU
-   pair with `--backend cpu cuda sycl vulkan hip` and `|| echo WARN`s
+   pair with `--backend cpu cuda sycl hip` and `|| echo WARN`s
    on missing devices. The signal we care about is the precise
    `built without X support` string — that means a meson flag silently
    flipped off and a real backend disappeared from libvmaf entirely
@@ -135,16 +137,14 @@ corresponds to a backend that would otherwise land on CPU / lavapipe
 / `-ENODEV` despite the device being visible to the kernel:
 
 1. **The entrypoint's `VK_DRIVER_FILES` rewrite must stay in place.**
+   (Note: Vulkan backend was dropped in ADR-0726; this ICD rewrite is
+   kept for completeness and does not affect the libvmaf binary.)
    `dev/scripts/dev-mcp-entrypoint.sh` enumerates every JSON under
    `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/`, drops anything
    matching `lvp_*` / `lavapipe*`, and pins `VK_DRIVER_FILES` to the
-   colon-separated allowlist of real ICDs. Without the rewrite,
-   `vmaf --backend vulkan --vulkan_device 0` selects mesa's lavapipe
-   software ICD on multi-vendor hosts where lavapipe sorts before the
-   real GPU ICDs. Do NOT replace this with a static `ENV
-   VK_DRIVER_FILES=…` in the Containerfile — operators on CPU-only
-   hosts (no real ICD visible) need lavapipe to remain the fallback;
-   the entrypoint's "if any real ICD exists" guard preserves that.
+   colon-separated allowlist of real ICDs. Do NOT replace this with a
+   static `ENV VK_DRIVER_FILES=…` in the Containerfile — operators on
+   CPU-only hosts need lavapipe to remain the fallback.
 2. **`HSA_OVERRIDE_GFX_VERSION=10.3.0` must stay in
    `dev/docker-compose.yml` `common-env`.** AMD `gfx1036` (Raphael
    iGPU, RDNA2 IP rev 10.3.6) is not on the ROCm 6.x supported-GPU
@@ -238,7 +238,7 @@ would fail to compile:
 6. **The FFmpeg SYCL patch must use the current libvmaf state-free
    ownership contract.** `libvmaf_sycl.h` declares
    `vmaf_sycl_state_free(VmafSyclState **sycl_state)`, matching
-   Vulkan / HIP / Metal rather than CUDA. Keep
+   HIP / Metal rather than CUDA. Keep
    `ffmpeg-patches/0003-*` calling
    `vmaf_sycl_state_free(&s->sycl_state)`. Passing the single pointer
    builds against stale patch text and fails the container FFmpeg

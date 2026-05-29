@@ -1,4 +1,8 @@
-# AGENTS.md — libvmaf/src/vulkan
+# AGENTS.md — core/src/vulkan
+
+> **DEPRECATED — scheduled for deletion (ADR-0726).** The Vulkan backend
+> was dropped in PR #47. These source files remain in-tree temporarily;
+> do NOT add new code here. Deletion PR forthcoming.
 
 Orientation for agents working on the Vulkan compute backend
 runtime. Parent: [../../AGENTS.md](../../AGENTS.md).

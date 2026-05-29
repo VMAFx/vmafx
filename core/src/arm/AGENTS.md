@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/arm
+# AGENTS.md — core/src/arm
 
 Orientation for agents working on aarch64 CPU-feature detection.
 Parent: [../../AGENTS.md](../../AGENTS.md).

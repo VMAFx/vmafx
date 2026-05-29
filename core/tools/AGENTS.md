@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/tools
+# AGENTS.md — core/tools
 
 Orientation for agents working on the CLI binaries. Parent:
 [../AGENTS.md](../AGENTS.md).
@@ -89,9 +89,9 @@ tools/
   required to reach it. See
   [ADR-0316](../../docs/adr/0316-cli-parse-long-only-error-fix.md);
   the parked-then-promoted reproducer
-  `libvmaf/test/fuzz/cli_parse_corpus/cli_threads_abbrev_assert.argv`
+  `core/test/fuzz/cli_parse_corpus/cli_threads_abbrev_assert.argv`
   protects the rebase, and
-  `libvmaf/test/test_cli_parse_long_only_args.c` protects
+  `core/test/test_cli_parse_long_only_args.c` protects
   the unit-test path.
 - **`y4m_convert_411_422jpeg` chroma-row write guards are
   load-bearing** (rebase-sensitive). The 4:1:1 → 4:2:2-jpeg upsample
@@ -103,7 +103,7 @@ tools/
   guard the secondary write with `(x << 1 | 1) < dst_c_w`. Upstream
   Daala / Netflix carry the same code shape; if `/sync-upstream`
   reintroduces the unguarded write, re-apply the fix. Regression
-  test: `libvmaf/test/test_y4m_411_oob.c` (ASan-required to catch
+  test: `core/test/test_y4m_411_oob.c` (ASan-required to catch
   the regression deterministically).
 
 ## Governing ADRs

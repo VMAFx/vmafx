@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/feature/common
+# AGENTS.md — core/src/feature/common
 
 Orientation for agents working on the cross-architecture helpers
 shared by feature extractors. Parent: [../AGENTS.md](../AGENTS.md).

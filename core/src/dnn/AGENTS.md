@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/dnn
+# AGENTS.md — core/src/dnn
 
 Orientation for agents working on the ONNX Runtime integration (tiny-AI
 inference layer). Parent: [../../AGENTS.md](../../AGENTS.md).
@@ -282,7 +282,7 @@ to the model's expected NCHW input shape when they differ, using the
 filter selected by `vmaf->dnn.resize_mode` (0=DISABLED, 1=BILINEAR,
 2=NEAREST, 3=BICUBIC). The enum integer layout is shared between the
 public `VmafDnnResizeMode` (`libvmaf/include/libvmaf/dnn.h`) and the
-internal `VmafTinyResize` (`libvmaf/src/dnn/tensor_io.h`); the values
+internal `VmafTinyResize` (`core/src/dnn/tensor_io.h`); the values
 **must** stay 0-indexed and aligned across the two enums — the public
 setter casts directly without remapping.
 

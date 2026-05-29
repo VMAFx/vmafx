@@ -1,4 +1,4 @@
-# `libvmaf/src/feature/metal/` — Metal feature-kernel directory
+# `core/src/feature/metal/` — Metal feature-kernel directory
 
 ## Purpose
 
@@ -9,7 +9,7 @@ GPU backend, plus the per-T8-1 scaffold `.c` stubs that were superseded.
 Only `.mm` + `.metal` pairs are functional. The `.c` stubs (e.g.
 `float_psnr_metal.c`) are replaced by their `.mm` counterparts once
 a real kernel lands; they are removed from `metal_sources` in
-`libvmaf/src/metal/meson.build` when the conversion happens.
+`core/src/metal/meson.build` when the conversion happens.
 
 ## Rebase-sensitive invariants
 
@@ -25,7 +25,7 @@ a real kernel lands; they are removed from `metal_sources` in
   `integer_psnr_hvs_metal`, `integer_ssim_metal`, `integer_vif_metal`,
   `ssimulacra2_metal`) and their paired `.metal` kernels in tree; these
   were deleted because none of them was wired into
-  `libvmaf/src/metal/meson.build` and none had an extern reference in
+  `core/src/metal/meson.build` and none had an extern reference in
   `feature_extractor.c` (the lone exception, `vmaf_fex_integer_adm_metal`,
   was an orphan extern with no registry entry and was removed as part of
   the same change). Do **not** re-add a `<feature>_metal.mm` without (a)
@@ -70,7 +70,7 @@ a real kernel lands; they are removed from `metal_sources` in
 - **`float_moment` feature name correction**: the T8-1 scaffold
   `float_moment_metal.c` erroneously listed `{"float_moment1",
   "float_moment2", "float_std", NULL}` as `provided_features`. The
-  correct names (matching CPU, CUDA, HIP, SYCL, Vulkan) are
+  correct names (matching CPU, CUDA, HIP, SYCL) are
   `{"float_moment_ref1st", "float_moment_dis1st",
   "float_moment_ref2nd", "float_moment_dis2nd", NULL}`. The `.mm`
   conversion uses the correct names; the `.c` file is removed from
@@ -105,7 +105,7 @@ a real kernel lands; they are removed from `metal_sources` in
   invariant note in [`../cuda/AGENTS.md`](../cuda/AGENTS.md).
   `integer_motion_v2_metal.mm` and `float_motion_metal.mm` both carry
   the `motion_fps_weight` option and apply it identically to the
-  CUDA / SYCL / Vulkan / HIP twins: `motion_v2` applies the weight in
+  CUDA / SYCL / HIP twins: `motion_v2` applies the weight in
   `flush()` to both scores before the min; `float_motion` applies it
   in `collect()` (index >= 2, to both `w_cur` and `w_prev` before the
   min) and in `flush()` (scaled tail emission). When

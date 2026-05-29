@@ -1,4 +1,8 @@
-# AGENTS.md — libvmaf/src/feature/vulkan
+# AGENTS.md — core/src/feature/vulkan
+
+> **DEPRECATED — scheduled for deletion (ADR-0726).** The Vulkan backend
+> was dropped in PR #47. These source files remain in-tree temporarily;
+> do NOT add new code here. Deletion PR forthcoming.
 
 Orientation for agents working on per-feature Vulkan host-glue (`.c`
 TUs that drive compute shaders). Parent: [../AGENTS.md](../AGENTS.md).

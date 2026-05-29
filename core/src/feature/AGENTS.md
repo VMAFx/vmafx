@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/feature
+# AGENTS.md — core/src/feature
 
 Orientation for agents working on feature extractors (the VMAF metric
 components: VIF, ADM, motion, integer-valued VIF/ADM/motion, CIEDE, CAMBI,

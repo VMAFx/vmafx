@@ -595,3 +595,4 @@
 0714-vmafx-operator-skeleton
 0717-vmafx-node-ffmpeg-latest
 # Backfilled by docs-drift-sweep-2026-05-12 (manifest hygiene; numeric order)
+0859-agents-md-drift-sweep-0726

@@ -256,8 +256,7 @@ Rebase-sensitive invariants:
   preserved together.** Dropping `github.event_name == 'workflow_dispatch'`
   would cause the step to open a blocking SSH session on every failing PR push,
   stranding a macOS runner for up to 30 minutes per failure.
-- The step must remain **after** the `Run tests` step and **before** the
-  `Run Vulkan smoke tests (macOS MoltenVK)` step so it fires only when a
+- The step must remain **after** the `Run tests` step so it fires only when a
   test failure has already set the job status to `failure()`.
 - The action is pinned to a commit SHA per the fork's Renovate
   `helpers:pinGitHubActionDigests` policy. Renovate will propose digest bumps;
@@ -269,11 +268,14 @@ Rebase-sensitive invariants:
 See [ADR-0626](../docs/adr/0626-macos-ci-tmate-debug-on-failure.md) and
 [`docs/development/ci-tmate-debug.md`](../docs/development/ci-tmate-debug.md).
 
-## macOS Vulkan-via-MoltenVK lane (ADR-0338)
+## macOS Vulkan-via-MoltenVK lane (ADR-0338) — REMOVED (ADR-0726)
 
-`libvmaf-build-matrix.yml` carries an advisory lane
-`Build — macOS Vulkan via MoltenVK (advisory)` that runs on
-`macos-latest` (Apple Silicon). Rebase-sensitive invariants:
+> **REMOVED** — The Vulkan backend was dropped in PR #47 (ADR-0726).
+> This CI lane has been removed. The section below is retained for history only.
+
+`libvmaf-build-matrix.yml` carried an advisory lane
+`Build — macOS Vulkan via MoltenVK (advisory)` that ran on
+`macos-latest` (Apple Silicon). Historical invariants:
 
 - The lane is gated `continue-on-error: ${{ matrix.experimental ==
   true && matrix.moltenvk == true }}`. The compound predicate is

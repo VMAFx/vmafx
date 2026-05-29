@@ -6,6 +6,18 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## agents-md-drift-sweep-0726 (2026-05-29, ADR-0859)
+
+**Files touched:** All 44 `AGENTS.md` files across the tree.
+
+**Rebase impact:** No rebase conflict is possible. AGENTS.md files are
+fork-local documentation not present in upstream Netflix/vmaf. Any upstream
+sync that adds new `AGENTS.md` files would be an additive conflict; resolve by
+keeping both. The `core/AGENTS.md` conflict marker was from a previous rebase
+and has been resolved.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

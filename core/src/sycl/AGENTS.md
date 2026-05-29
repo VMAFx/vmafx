@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/sycl
+# AGENTS.md — core/src/sycl
 
 Orientation for agents working on the SYCL / DPC++ backend runtime. Parent:
 [../../AGENTS.md](../../AGENTS.md).
@@ -22,7 +22,7 @@ sycl/
   (ADR-0335).** `clang++ -fsycl` is also accepted in spirit but is not
   CI-tested. Do not assume MSVC-style extensions.
 - **Intel-specific kernel attributes go through
-  `libvmaf/src/feature/sycl/sycl_compat.h`** (ADR-0335). The
+  `core/src/feature/sycl/sycl_compat.h`** (ADR-0335). The
   `VMAF_SYCL_REQD_SG_SIZE(N)` macro expands to
   `[[intel::reqd_sub_group_size(N)]]` under icpx and to a no-op under
   AdaptiveCpp. New kernel sites that need an Intel-specific attribute
@@ -40,10 +40,9 @@ sycl/
   should assume the FD path exists on other OSes.
 - **Numerical snapshots**: same rule as CUDA — see CLAUDE.md §9.
 - **`-fp-model=precise` is load-bearing.** The SYCL feature build
-  line in `libvmaf/src/meson.build` adds `-fp-model=precise` to
+  line in `core/src/meson.build` adds `-fp-model=precise` to
   every per-kernel TU. This blocks `icpx` from FMA contraction in
-  the kernel lambdas and matches the GLSL `precise` /
-  `NoContraction` decorations on the Vulkan twins. Removing it
+  the kernel lambdas. Removing it
   drifts `float_adm_sycl` ([ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md))
   past `places=4` at scale 2 and `ssimulacra2_sycl`
   ([ADR-0206](../../../docs/adr/0206-ssimulacra2-cuda-sycl.md))
@@ -69,9 +68,7 @@ sycl/
 - **VAAPI / dmabuf zero-copy import surface
   ([ADR-0183](../../../docs/adr/0183-ffmpeg-libvmaf-sycl-filter.md))**:
   `vmaf_sycl_import_va_surface` is consumed by the `libvmaf_sycl`
-  FFmpeg filter (`ffmpeg-patches/0005-*.patch`). Symmetric to the
-  Vulkan VkImage import in
-  [ADR-0186](../../../docs/adr/0186-vulkan-image-import-impl.md).
+  FFmpeg filter (`ffmpeg-patches/0005-*.patch`).
   Public surface change touches the patch file too — see
   CLAUDE.md §12 r14.
 

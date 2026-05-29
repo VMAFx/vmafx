@@ -1,4 +1,6 @@
-# AGENTS.md — libvmaf/src/feature/vulkan/shaders
+# AGENTS.md — core/src/feature/vulkan/shaders
+
+> **DEPRECATED — scheduled for deletion (ADR-0726).** See parent AGENTS.md.
 
 Orientation for agents working on the GLSL compute shaders that back
 the Vulkan feature kernels. Parent: [../AGENTS.md](../AGENTS.md). The

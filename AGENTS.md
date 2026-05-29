@@ -242,14 +242,14 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
 12. **Default to the `vmaf-dev-mcp` container for vmaf / vmaf-tune /
     ai / MCP-probing work.** The container at
     [`dev/Containerfile`](dev/Containerfile) bakes in every backend
-    (CUDA + SYCL + Vulkan + HIP + Metal scaffolds), oneAPI, NVIDIA
+    (CUDA + SYCL + HIP + Metal scaffolds), oneAPI, NVIDIA
     Container Toolkit runtime, ffmpeg with libvmaf, MCP server, and
     workspace mount. Host-side `meson setup build` chases moving
-    toolchain targets (icpx missing, Vulkan SDK gaps, libsvm wheel
+    toolchain targets (icpx missing, libsvm wheel
     drift, locale leaks); the container eliminates that whole class.
     - **Before any non-trivial vmaf / vmaf-tune / ai / MCP run**:
       rebuild the container if its image predates the last `master`
-      sync that touched anything under `libvmaf/`, `mcp-server/`,
+      sync that touched anything under `core/`, `mcp-server/`,
       `ai/`, `tools/vmaf-tune/`, or `dev/`. One-liner:
       `docker compose --project-directory $(git rev-parse --show-toplevel)
       -f dev/docker-compose.yml build dev-mcp && docker compose
@@ -337,28 +337,12 @@ linked AGENTS.md before resolving conflicts.
   [ADR-0192](docs/adr/0192-gpu-long-tail-batch-3.md) (batch 3:
   motion_v2 / float_ansnr / float-twins / ssimulacra2 / cambi).
   See [core/src/feature/AGENTS.md](core/src/feature/AGENTS.md).
-- **Vulkan backend (scaffold + image import)**:
-  [ADR-0175](docs/adr/0175-vulkan-backend-scaffold.md) +
-  [ADR-0184](docs/adr/0184-vulkan-image-import-scaffold.md) +
-  [ADR-0186](docs/adr/0186-vulkan-image-import-impl.md). Public
-  symbols in `libvmaf_vulkan.h`. Volk-symbol hiding via
-  [ADR-0185](docs/adr/0185-vulkan-hide-volk-symbols.md) +
-  [ADR-0198](docs/adr/0198-volk-priv-remap-static-archive.md) +
-  [ADR-0200](docs/adr/0200-volk-priv-remap-pkgconfig-leak-fix.md).
-  See [core/src/vulkan/AGENTS.md](core/src/vulkan/AGENTS.md).
-- **ssim / ms_ssim Vulkan kernels**:
-  [ADR-0188](docs/adr/0188-gpu-long-tail-batch-2.md) +
-  [ADR-0189](docs/adr/0189-ssim-vulkan.md) +
-  [ADR-0190](docs/adr/0190-ms-ssim-vulkan.md). 11-tap Gaussian baked
-  into GLSL byte-for-byte from `iqa/ssim_tools.h::g_gaussian_window_h`.
-- **motion_v2 GPU port (T3-14)**:
-  [ADR-0193](docs/adr/0193-motion-v2-vulkan.md) — single-dispatch GLSL
-  with edge-replicating mirror that diverges from `motion.comp`'s
-  non-replicating variant; bit-exact vs CPU.
-- **cambi Vulkan integration (T7-36, ADR-0210)**:
-  [ADR-0210](docs/adr/0210-cambi-vulkan-integration.md) — Strategy II
-  hybrid host/GPU; closes ADR-0192 long-tail terminus. See
-  [core/src/feature/AGENTS.md](core/src/feature/AGENTS.md).
+- **Vulkan backend — DROPPED (ADR-0726, PR #47)**:
+  The Vulkan compute backend was removed from the fork in PR #47.
+  Source files under `core/src/vulkan/` and `core/src/feature/vulkan/`
+  are scheduled for cleanup. Do NOT add new Vulkan code. Historical
+  ADRs: [ADR-0175](docs/adr/0175-vulkan-backend-scaffold.md),
+  [ADR-0726](docs/adr/0726-drop-vulkan-backend.md).
 - **MCP embedded scaffold (T5-2a, ADR-0209)**:
   [ADR-0209](docs/adr/0209-mcp-embedded-scaffold.md). Public header
   `libvmaf_mcp.h`, audit-first `-ENOSYS` stubs in
@@ -366,9 +350,8 @@ linked AGENTS.md before resolving conflicts.
   (cJSON + mongoose + transport bodies) is open. See
   [core/AGENTS.md §Rebase-sensitive invariants](core/AGENTS.md).
 - **HIP scaffold (T7-10, ADR-0212 placeholder, PR #200)** —
-  audit-first AMD HIP backend scaffold mirroring Vulkan T5-1 /
-  ADR-0175. Public `libvmaf_hip.h`, stub kernels, `enable_hip` meson
-  option default `false`.
+  audit-first AMD HIP backend scaffold. Public `libvmaf_hip.h`,
+  stub kernels, `enable_hip` meson option default `false`.
 - **SVE2 SIMD ports (T7-38, ADR-0213 placeholder, PR #201)** —
   SSIMULACRA 2 PTLR + IIR-blur SVE2 ports developed against
   `qemu-aarch64-static`. Same bit-exact contract as the existing
@@ -383,9 +366,8 @@ linked AGENTS.md before resolving conflicts.
   [core/AGENTS.md](core/AGENTS.md).
 - **FastDVDnet temporal pre-filter (T6-7, ADR-0215 placeholder,
   PR #203)** — 5-frame window pre-filter feeding ssim/ms_ssim.
-- **psnr chroma Vulkan (T3-15(b), ADR-0216 placeholder, PR #204)**
-  — `psnr_cb` / `psnr_cr` Vulkan kernels alongside the existing
-  `psnr_y` from [ADR-0182](docs/adr/0182-gpu-long-tail-batch-1.md).
+- **psnr chroma (T3-15(b))** — `psnr_cb` / `psnr_cr` on remaining
+  live backends (CUDA/HIP/SYCL/Metal) alongside `psnr_y`.
 - **MobileSal saliency extractor (T6-2a, ADR-0218 placeholder,
   PR #208)** — first half of T6-2 (encoder-side ROI bundle).
   Saliency-weighted VMAF, sidecar emit for `tools/vmaf-roi`.

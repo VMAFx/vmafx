@@ -16,7 +16,7 @@ The following files were removed from this directory by ADR-0546
 - `feature_hip.h` — forward-declared only the above three triplets;
   removed with the last of its consumers.
 
-Also removed from `libvmaf/src/feature/hip/`:
+Also removed from `core/src/feature/hip/`:
 
 - `integer_ciede_hip.c` — duplicate of `ciede_hip.c`; both defined
   `vmaf_fex_ciede_hip`. Only `ciede_hip.c` is in `hip/meson.build`.
@@ -24,11 +24,11 @@ Also removed from `libvmaf/src/feature/hip/`:
   defined `vmaf_fex_float_moment_hip`. Only `float_moment_hip.c` is
   in `hip/meson.build`.
 
-And from `libvmaf/src/feature/cuda/`:
+And from `core/src/feature/cuda/`:
 
 - `float_ssim_cuda.c` — stale copy superseded by `integer_ssim_cuda.c`;
   both defined `vmaf_fex_float_ssim_cuda`. Only `integer_ssim_cuda.c`
-  is in `libvmaf/src/meson.build`. The newer TU adds `enable_chroma`
+  is in `core/src/meson.build`. The newer TU adds `enable_chroma`
   and other improvements missing from the orphan copy.
 
 Do not re-add any of these files without first consulting ADR-0546.
@@ -155,7 +155,7 @@ gotchas:
 
 When a `.hip` kernel under `feature/hip/<extractor>/` becomes
 standalone-buildable and you register it in `hip_kernel_sources` in
-`libvmaf/src/meson.build`, **also delete its matching
+`core/src/meson.build`, **also delete its matching
 `VMAF_HSACO_WEAK_STUB(<extractor>_score_hsaco)` line from
 `hip_hsaco_stubs.c` in the same PR.**  Leaving the stub creates two
 definitions of the same symbol — a strong xxd-embedded blob and a weak
@@ -177,7 +177,7 @@ When a HIP kernel relies on IEEE-754 add/mul ordering — for example any
 recursive IIR (the SSIMULACRA2 FastGaussian cascade), angle-flag
 reductions, or numerically-sensitive variance / covariance combines —
 add an entry to the `hip_cu_extra_flags` dict in
-`libvmaf/src/meson.build` with `['-ffp-contract=off']` (or richer flag
+`core/src/meson.build` with `['-ffp-contract=off']` (or richer flag
 list as needed).  hipcc / amdclang++ default to `-ffp-contract=fast` on
 the device side, which silently fuses `n2 * sum - d1 * prev` patterns
 into FMAs and shifts the recursion past places=2 vs the CPU / Vulkan
@@ -215,7 +215,7 @@ Precedents: `integer_vif/vif_statistics.hip` (ADR-0537),
 The `hip_hsaco_stubs.c` weak fallbacks for `adm_dwt2_hsaco`,
 `adm_csf_hsaco`, `adm_csf_den_hsaco`, `adm_cm_hsaco` have been
 **removed** — the four `.hip` kernels now build standalone via
-`hipcc --genco` (registered in `libvmaf/src/meson.build::hip_kernel_sources`)
+`hipcc --genco` (registered in `core/src/meson.build::hip_kernel_sources`)
 and their xxd-embedded strong symbols supply the blobs the host TU loads.
 
 If a future ADM PR re-introduces a CUDA-only helper into one of the
