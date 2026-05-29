@@ -120,6 +120,7 @@ static void launch_sse(sycl::queue &q, const void *ref_buf, const void *dis_buf,
     const unsigned e_bpc = bpc;
     const void *ref_in = ref_buf;
     const void *dis_in = dis_buf;
+    int64_t *e_sse = d_sse;
 
     q.submit([=](sycl::handler &h) {
         h.parallel_for(global, [=](sycl::id<2> id) {
@@ -139,7 +140,7 @@ static void launch_sse(sycl::queue &q, const void *ref_buf, const void *dis_buf,
             const int64_t se = diff * diff;
             sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
                              sycl::access::address_space::global_space>
-                accum(*d_sse);
+                accum(*e_sse);
             accum.fetch_add(se);
         });
     });

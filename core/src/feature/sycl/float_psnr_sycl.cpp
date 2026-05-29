@@ -71,6 +71,7 @@ static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void
     const unsigned e_wgx = wg_count_x;
     const void *e_ref = ref;
     const void *e_dis = dis;
+    float *e_partials = partials;
 
     return q.submit([&](sycl::handler &cgh) {
         constexpr int MAX_SUBGROUPS = FPSNR_WG_X * FPSNR_WG_Y;
@@ -129,7 +130,7 @@ static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void
                                      total += s_partials[s];
                                  const size_t wg_idx =
                                      item.get_group(0) * e_wgx + item.get_group(1);
-                                 partials[wg_idx] = total;
+                                 e_partials[wg_idx] = total;
                              }
                          });
     });
