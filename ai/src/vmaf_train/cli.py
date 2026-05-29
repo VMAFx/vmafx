@@ -27,7 +27,7 @@ from aiutils.run_manifest import build_run_provenance, write_manifest_json  # no
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
-DEFAULT_VMAF_BINARY = Path("libvmaf") / "build-cpu" / "tools" / "vmaf"
+DEFAULT_VMAF_BINARY = Path("core") / "build-cpu" / "tools" / "vmaf"
 
 
 def _write_cli_report_json(

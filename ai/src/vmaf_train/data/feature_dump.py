@@ -53,7 +53,7 @@ DEFAULT_FEATURES = (
     "motion2",
 )
 
-DEFAULT_VMAF_BINARY = Path("libvmaf") / "build-cpu" / "tools" / "vmaf"
+DEFAULT_VMAF_BINARY = Path("core") / "build-cpu" / "tools" / "vmaf"
 
 # vmaf's CLI takes feature-extractor names (``adm``, ``vif``, ``motion``) while
 # the JSON output labels individual metrics (``adm2``, ``vif_scale0``, …).

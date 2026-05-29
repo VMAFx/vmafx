@@ -1,8 +1,39 @@
 # Rebase notes
 
+<!-- markdownlint-disable MD001 MD004 MD012 MD013 MD022 MD023 MD024 MD025 MD026 MD031 MD032 MD033 MD034 MD037 MD038 MD040 MD046 MD050 MD053 MD058 -->
+
 Single ledger of fork-local changes that need attention when this fork
 syncs from `upstream/master` (Netflix/vmaf). Required by
 [ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local
+
+---
+
+## master-unblock-legacy-runner-dnn-path (2026-05-29, no ADR — bug fix)
+
+**Files touched:**
+`compat/python-vmaf/core/quality_runner.py`,
+`ai/tests/test_train_konvid_mos_head.py`,
+`ai/scripts/extract_k150k_features.py`,
+`ai/scripts/konvid_to_vmaf_pairs.py`,
+`ai/scripts/bvi_dvc_to_full_features.py`,
+`ai/data/feature_extractor.py`,
+`ai/src/vmaf_train/data/feature_dump.py`,
+`ai/src/vmaf_train/cli.py`,
+`ai/tests/test_chug_extract_features_smoke.py`,
+`ai/tests/test_e2e_frame_to_score.py`,
+`ai/tests/test_feature_extractor_defaults.py`
+
+**Rebase impact:** Post-ADR-0700 stragglers. The `libvmaf/` directory was
+renamed to `core/` by ADR-0700; path references in `ai/` scripts still used
+the old name. Any upstream sync that adds further `ai/` scripts or tests
+should check for `libvmaf/build-cpu` or `libvmaf/src/dnn` references and
+update them to `core/build-cpu` and `core/src/dnn` respectively. The
+`VmafLegacyQualityRunner` stub is fork-local and does not conflict with
+upstream.
+
+**Periodic check:** After any `sync-upstream` that touches `ai/` or
+`python/test/`, run `grep -rn 'libvmaf/src/dnn\|libvmaf.*build-cpu' ai/ scripts/`
+to catch new post-ADR-0700 stragglers before they break CI.
 
 ---
 
@@ -20,6 +51,7 @@ The change is a pure performance annotation: `__launch_bounds__(128)`,
 loads. If upstream Netflix ever adds their own ms_ssim CUDA port, this file
 will need to be re-reviewed against theirs; the F3 pattern should carry
 forward.
+
 ## cpp23 orphan .c sweep — metadata_handler.c (2026-05-29)
 
 **Files touched:** `core/src/metadata_handler.c` (deleted)

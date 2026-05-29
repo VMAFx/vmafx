@@ -1554,6 +1554,24 @@ class SpeedTemporalQualityRunner(QualityRunnerFromFeatureExtractor, ABC):
         return "speed_temporal"
 
 
+class VmafLegacyQualityRunner:
+    """Removed stub — do not use.
+
+    VmafLegacyQualityRunner was retired in ADR-0749 / PR #87 (legacy ANSNR
+    sunset).  The class is kept here as a stub so that ``import`` statements
+    do not raise ``ImportError``; any attempt to *instantiate* it raises
+    ``NotImplementedError`` with a pointer to the replacement.
+
+    Use :class:`VmafQualityRunner` instead.
+    """
+
+    def __init__(self, *args, **kwargs):
+        raise NotImplementedError(
+            "VmafLegacyQualityRunner was removed in ADR-0749 / PR #87; "
+            "use VmafQualityRunner instead."
+        )
+
+
 if __name__ == "__main__":
     import doctest
 
