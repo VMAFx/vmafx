@@ -6,6 +6,16 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## state-md-drift-sync (2026-05-29)
+
+**Files touched:** `docs/state.md`, `changelog.d/fixed/state-md-drift-sync-20260529.md`
+
+**Rebase impact:** None. `docs/state.md` is a fork-local tracking file with no upstream
+equivalent. Conflict markers are possible only when two parallel branches each append
+rows; resolve by keeping both new rows.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
