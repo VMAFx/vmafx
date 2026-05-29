@@ -37,7 +37,25 @@ rebase conflict is possible.
 
 ---
 
+## mcp-quality-pass (2026-05-29)
+
+**Files touched:**
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`,
+`mcp-server/vmaf-mcp/tests/test_p1_tools.py`,
+`mcp-server/AGENTS.md`,
+`docs/mcp/tools.md`,
+`changelog.d/fixed/mcp-quality-pass.md`
+
+**Rebase impact:** None. The MCP server is entirely fork-local
+(Netflix/vmaf has no MCP server); no upstream rebase conflict is
+possible. The `_list_extractors` path fix (`core/src/feature` instead
+of `libvmaf/src/feature`) is also fork-local — upstream never had this
+tool.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
+
 
 **Files touched:**
 `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`
@@ -81,18 +99,23 @@ The changed function (`vmaf_cuda_kernel_readback_free`) did not exist in
 upstream — it was introduced by the fork's kernel-template ADR. No rebase
 conflict is possible.
 
-
+---
 
 ## ADR-0753 — CUDA resolution-aware dispatch scaffold (2026-05-29)
 
 **Files touched (initial + extended scope):**
 - `core/src/feature/cuda/resolution_dispatch.{h,c}` (new)
 - `core/src/feature/cuda/integer_adm/adm_cm.cu` (two kernel macros)
-- `core/src/feature/cuda/integer_adm_cuda.c` (include, struct field, init, dispatch)
-- `core/src/feature/cuda/integer_vif/filter1d.cu` (FILTER1D_8_HORI_NO_BOUNDS macro + instantiation)
-- `core/src/feature/cuda/integer_vif_cuda.c` (struct field, init, resolution-aware dispatch in filter1d_8)
-- `core/src/feature/cuda/integer_ssim/ssim_score.cu` (calculate_ssim_vert_combine_no_bounds)
-- `core/src/feature/cuda/integer_ssim_cuda.c` (struct field, init, resolution-aware dispatch in submit_fex_cuda)
+- `core/src/feature/cuda/integer_adm_cuda.c`
+  (include, struct field, init, dispatch)
+- `core/src/feature/cuda/integer_vif/filter1d.cu`
+  (FILTER1D_8_HORI_NO_BOUNDS macro + instantiation)
+- `core/src/feature/cuda/integer_vif_cuda.c`
+  (struct field, init, resolution-aware dispatch in filter1d_8)
+- `core/src/feature/cuda/integer_ssim/ssim_score.cu`
+  (calculate_ssim_vert_combine_no_bounds)
+- `core/src/feature/cuda/integer_ssim_cuda.c`
+  (struct field, init, resolution-aware dispatch in submit_fex_cuda)
 - `core/src/feature/cuda/AGENTS.md` (invariant notes + verified wirings table)
 - `docs/adr/0753-cuda-resolution-aware-dispatch.md` (new; extended policy table)
 - `docs/backends/cuda/overview.md` (kernel dispatch table extended)
@@ -118,14 +141,15 @@ reference valid kernel symbol names from `adm_cm.cu`.
 
 ## Research-0751 4K baseline + PR #79 adm_cm A/B (2026-05-29)
 
-**Files touched:** `docs/research/0751-cross-backend-4k-baseline-and-pr79-adm-cm-4k-measure.md`,
+**Files touched:**
+`docs/research/0751-cross-backend-4k-baseline-and-pr79-adm-cm-4k-measure.md`,
 `changelog.d/changed/cross-backend-4k-baseline.md`
 
 **Rebase impact:** None. Research-only digest; no source code changed.
 No upstream conflict possible — these are fork-added measurement artifacts.
 
 
-## CI round-3 fix — `.semgrepignore`, `.gitleaks.toml`, `codeql-config.yml`, `compat/python-vmaf/` (2026-05-28)
+## CI round-3 fix — config + compat/python-vmaf (2026-05-28)
 
 **Files touched:** `.semgrepignore`, `.gitleaks.toml`, `.github/codeql-config.yml`,
 `compat/python-vmaf/core/feature_extractor.py`, `core/test/test_hip_smoke.c`,
@@ -136,30 +160,33 @@ No upstream conflict possible — these are fork-added measurement artifacts.
 post-ADR-0700 rename) or code fixes for missing functions and removed extractors.
 
 On upstream sync:
-- `.semgrepignore` and `.gitleaks.toml` are fork-local; no upstream conflict expected.
+- `.semgrepignore` and `.gitleaks.toml` are fork-local; no upstream
+  conflict expected.
 - `codeql-config.yml` is fork-local; no upstream conflict expected.
-- `compat/python-vmaf/core/feature_extractor.py`: if Netflix upstream modifies
-  `python/vmaf/core/feature_extractor.py` (old path), the rename-shim must preserve
-  the removal of `float_ansnr` from `VmafIntegerFeatureExtractor`'s features list.
-  The legacy path (`VmafFeatureExtractor`, line 301) may still reference `float_ansnr`
-  if upstream restores it; that's intentional pending the legacy-runner sunset
-  decision.
-- `core/test/test_hip_smoke.c`: if upstream adds `float_ansnr_hip` back, the removed
-  test function must be restored.
+- `compat/python-vmaf/core/feature_extractor.py`: if Netflix upstream
+  modifies `python/vmaf/core/feature_extractor.py` (old path), the
+  rename-shim must preserve the removal of `float_ansnr` from
+  `VmafIntegerFeatureExtractor`'s features list. The legacy path
+  (`VmafFeatureExtractor`, line 301) may still reference `float_ansnr`
+  if upstream restores it; that's intentional pending the legacy-runner
+  sunset decision.
+- `core/test/test_hip_smoke.c`: if upstream adds `float_ansnr_hip`
+  back, the removed test function must be restored.
 
 ---
 
-## `docs/research/0734-r610-driver-changelog-audit-2026-05-28.md` — R610 driver audit
+## R610 driver audit (docs/research/0734-r610-…, 2026-05-28)
 
-No rebase impact. This is a documentation-only research digest; it does not touch any
-C sources, build files, or API surfaces. No upstream sync conflict expected.
+No rebase impact. This is a documentation-only research digest; it does
+not touch any C sources, build files, or API surfaces. No upstream sync
+conflict expected.
 
 ---
 
-## `docs/research/0734-cudnn-version-audit-20260528.md` — cuDNN/ORT audit (doc-only)
+## cuDNN/ORT audit (docs/research/0734-cudnn-…, 2026-05-28, doc-only)
 
-**No rebase impact** on upstream C/Python code: this PR adds only doc and changelog
-files. No C source, header, or Python source is modified.
+**No rebase impact** on upstream C/Python code: this PR adds only doc
+and changelog files. No C source, header, or Python source is modified.
 
 If a future upstream sync adds cuDNN pinning or `onnxruntime-gpu` to any
 Python requirement, re-check `dev/Containerfile` lines 529–539 (ORT install)

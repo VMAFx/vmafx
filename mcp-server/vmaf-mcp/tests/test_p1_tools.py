@@ -31,6 +31,27 @@ WORKTREE = Path(__file__).resolve().parents[4]
 # ---------------------------------------------------------------------------
 
 
+def test_list_extractors_uses_core_src_path():
+    """_list_extractors must scan core/src/feature/, not the old libvmaf/src/feature/ path.
+
+    Regression test for the path mismatch fix: the old code pointed at
+    ``_repo_root() / "libvmaf" / "src" / "feature"`` which does not exist;
+    the correct tree is ``_repo_root() / "core" / "src" / "feature"``.
+    """
+    feature_dir = srv._repo_root() / "core" / "src" / "feature"
+    assert feature_dir.is_dir(), (
+        f"core/src/feature directory not found at {feature_dir}; "
+        "check that the repo tree is intact"
+    )
+    # The old (wrong) path should NOT exist so this test surfaces a regression
+    # if someone renames directories without updating the code.
+    old_dir = srv._repo_root() / "libvmaf" / "src" / "feature"
+    assert not old_dir.is_dir(), (
+        f"libvmaf/src/feature still exists at {old_dir}; "
+        "update _list_extractors to use the canonical path"
+    )
+
+
 def test_list_extractors_returns_list():
     """list_extractors must return a non-empty list when the C source tree
     is present (it always is in this repo)."""

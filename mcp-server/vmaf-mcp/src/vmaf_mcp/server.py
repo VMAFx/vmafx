@@ -41,6 +41,7 @@ from __future__ import annotations
 # with line-level suppression markers.
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -53,6 +54,8 @@ from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
+
+log = logging.getLogger("vmaf_mcp")
 
 # ---------------------------------------------------------------------------
 # Configuration & path validation
@@ -797,11 +800,6 @@ async def _run_benchmark() -> dict[str, Any]:
     return payload
 
 
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # list_extractors — enumerate VmafFeatureExtractor implementations (ADR-0608)
 # ---------------------------------------------------------------------------
@@ -853,7 +851,7 @@ def _list_extractors() -> list[dict[str, Any]]:
       (``cpu`` | ``cuda`` | ``sycl`` | ``vulkan`` | ``hip`` | ``metal``).
     - ``source``: relative path to the C file that defines the struct.
     """
-    feature_dir = _repo_root() / "libvmaf" / "src" / "feature"
+    feature_dir = _repo_root() / "core" / "src" / "feature"
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
 
@@ -1027,6 +1025,7 @@ def _vmaftune_binary() -> Path:
 # _send_progress — MCP progress notification helper (ADR-0608)
 # ---------------------------------------------------------------------------
 
+
 async def _send_progress(
     progress_token: str | int | None,
     progress: float,
@@ -1059,7 +1058,6 @@ async def _send_progress(
         pass
     except Exception:
         pass
-
 
 
 # ---------------------------------------------------------------------------
@@ -1387,8 +1385,6 @@ async def _run_benchmark(
             "Re-run with `bash -x testdata/bench_all.sh` to bisect."
         )
     return payload
-
-
 
 
 # probe_backend — runtime health check (ADR-0608 / C-P0-1)
@@ -2146,6 +2142,30 @@ async def _list_tools() -> list[Tool]:
 
 @server.call_tool()
 async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    """Dispatch an MCP tool call by name and return a single TextContent JSON reply.
+
+    Entry and completion are logged at INFO level; errors propagate as
+    exceptions so the mcp library can set ``isError=True`` on the
+    ``CallToolResult`` (ADR-0613 / E-1).
+
+    Args:
+        name: Tool name as declared in ``_list_tools()``.
+        arguments: Tool-call arguments from the MCP client.
+
+    Returns:
+        A single-element list containing a ``TextContent`` whose body is a
+        JSON-serialised result dict.
+    """
+    log.info("tool_call start: %s", name)
+    try:
+        return await _dispatch_tool(name, arguments)
+    except Exception as exc:
+        log.error("tool_call error: %s — %s: %s", name, type(exc).__name__, exc)
+        raise
+
+
+async def _dispatch_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    """Inner dispatch for _call_tool — separated so the outer function can log errors."""
     # Extract MCP progress token from the request context's meta field.
     # The client opts in by passing {"_meta": {"progressToken": <token>}} in the
     # tools/call params object (MCP spec §notifications/progress).
@@ -2272,6 +2292,7 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         )
     else:
         raise ValueError(f"unknown tool: {name}")
+    log.info("tool_call done: %s", name)
     return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
 

@@ -174,15 +174,6 @@ The server probes `vmaf --help` and looks for `--no_<backend>` flags;
 reports **compiled-in** backends only — a backend may be compiled in but
 its driver missing or non-functional at runtime. Use `probe_backend` to
 verify that a backend can actually run a score.
-  "cpu":  true,
-  "cuda": true,
-  "sycl": false,
-  "hip":  false
-}
-```
-
-The server runs `vmaf --version` with a 5-second timeout and grep's the
-output; `cpu` is reported `true` whenever the binary exists.
 
 ### Errors
 
@@ -562,35 +553,25 @@ Same shape as `vmaf_score`, plus two extra keys:
 
 ## Cross-tool error conventions
 
-**ADR-0613 (isError spec-correctness):** From ADR-0613 onward, all tool
-handler exceptions are propagated as raises rather than being caught and
-returned as `TextContent({"error": ...})`. This allows the `mcp` library's
-outer handler (`_make_error_result`) to set `isError=True` on the
-`CallToolResult`, so conformant MCP clients (which branch on `result.isError`)
-correctly treat tool errors as errors. The previous pattern left `isError`
+**ADR-0613 (isError spec-correctness):** All tool handler exceptions are
+propagated as raises so the `mcp` library's outer handler
+(`_make_error_result`) sets `isError=True` on the `CallToolResult`.
+Conformant MCP clients branch on `result.isError` to detect errors; the
+pre-ADR-0613 pattern returned `TextContent({"error": ...})` with `isError`
 implicitly `False`, causing clients to misclassify errors as successes.
 
-| Situation                             | MCP-level behavior                                       |
+| Situation                             | MCP-level behaviour                                      |
 |---------------------------------------|----------------------------------------------------------|
-| Unknown tool name                     | Raises `ValueError`; mcp sets `isError=True`            |
-| Path outside allowlist                | Raises `ValueError`; mcp sets `isError=True`            |
-| Path does not exist                   | Raises `FileNotFoundError`; mcp sets `isError=True`     |
-| Subprocess non-zero (`vmaf_score`)    | Raises `RuntimeError`; mcp sets `isError=True`          |
-| Missing optional extras               | Raises `RuntimeError`; mcp sets `isError=True`          |
-| `probe_backend` unhealthy backend     | Returns success result with `runtime_healthy: false`    |
-## Cross-tool error conventions
+| Unknown tool name                     | Raises `ValueError`; mcp sets `isError=True`             |
+| Path outside allowlist                | Raises `ValueError`; mcp sets `isError=True`             |
+| Path does not exist                   | Raises `FileNotFoundError`; mcp sets `isError=True`      |
+| Subprocess non-zero (`vmaf_score`)    | Raises `RuntimeError`; mcp sets `isError=True`           |
+| Missing optional extras               | Raises `RuntimeError`; mcp sets `isError=True`           |
+| `probe_backend` unhealthy backend     | Returns success result with `runtime_healthy: false`     |
+| `vmaf_version` binary missing         | Returns success result with `error` field populated      |
 
-| Situation                               | Shape                                                   |
-|-----------------------------------------|---------------------------------------------------------|
-| Unknown tool name                       | `{"error": "unknown tool: <name>"}`                     |
-| Path outside allowlist                  | `{"error": "path ... not under an allowlisted root"}`   |
-| Path does not exist                     | `{"error": "<resolved-abs-path>"}`                      |
-| Subprocess non-zero (vmaf_score only)   | `{"error": "vmaf exited <rc>: <stderr>"}`               |
-| Missing optional extras                 | `{"error": "... requires the 'eval' extra: ..."}`       |
-
-All exceptions raised inside a tool handler are caught and serialised
-into the `error` shape above — the JSON-RPC channel itself never
-returns a non-200.
+All errors are also logged at ERROR level by the `vmaf_mcp` logger
+(configurable via `VMAFX_LOG_LEVEL`).
 
 ## Related
 
@@ -600,8 +581,7 @@ returns a non-200.
 - [Tiny-AI inference](../ai/inference.md) — what
   `eval_model_on_split` / `compare_models` are scoring.
 - [ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md) — P0 fixes.
-- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
-- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
+- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) — doc-substance rule.
 
 ## `list_extractors`
 
@@ -776,4 +756,3 @@ The server sends two progress events per tool call:
 No finer-grained progress is available because the tools delegate to a subprocess.
 Clients without a token receive no progress events (per MCP spec — the server
 must not send unsolicited progress).
-- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).

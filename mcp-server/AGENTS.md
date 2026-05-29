@@ -84,6 +84,11 @@ unset in the calling context; `set -u` aborts on those references and bypasses `
   `VMAF_MCP_ALLOW` env-var override is preserved and additive (it
   extends the default list, does not replace it).
 - [ADR-0517](../docs/adr/0517-mcp-run-benchmark-repair.md) — `run_benchmark` repair.
+- **`_list_extractors` scans `core/src/feature/`, not `libvmaf/src/feature/` (MCP
+  quality pass, 2026-05-29).** The directory was renamed as part of the ADR-0700
+  core-library restructure. The old path never exists; using it returned an empty
+  list. A `test_list_extractors_uses_core_src_path` regression test guards this.
+  Do not revert to the `libvmaf/` prefix.
 - **HTTP transport optional dep group (PR #1583, ADR-0701).** The
   `[http]` optional dependency group in `vmaf-mcp/pyproject.toml`
   (`aiohttp`, `prometheus-client`) must be preserved on any rebase or
