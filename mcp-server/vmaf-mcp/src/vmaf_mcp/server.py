@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """MCP server for the Lusoris VMAF fork.
 
 Exposes ten tools over the Model Context Protocol (stdio transport):
@@ -211,6 +213,7 @@ class ScoreRequest:
     model: str = "version=vmaf_v0.6.1"
     backend: str = "auto"  # "cpu" | "cuda" | "sycl" | "auto"
     precision: str = "17"
+    subsample: int = 1  # score every Nth frame; passed as --subsample to the CLI
 
 
 # Map each named backend to the set of siblings it must disable so the
@@ -378,6 +381,8 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
             str(output),
             "--json",
         ]
+        if req.subsample > 1:
+            argv += ["--subsample", str(req.subsample)]
         if req.backend in _BACKEND_DISABLE:
             for sibling in _BACKEND_DISABLE[req.backend]:
                 argv.append(f"--no_{sibling}")
@@ -878,6 +883,13 @@ def _list_extractors() -> list[dict[str, Any]]:
     feature_dir = _repo_root() / "core" / "src" / "feature"
     seen: set[tuple[str, str]] = set()
     out: list[dict[str, Any]] = []
+
+    if not feature_dir.is_dir():
+        _logger.warning(
+            "list_extractors: feature directory not found at %s; is the source tree present?",
+            feature_dir,
+        )
+        return out
 
     for c_file in sorted(feature_dir.rglob("*.c")):
         try:
@@ -1787,6 +1799,7 @@ async def _run_vmaf_score_encoded(
             model=model,
             backend=backend,
             precision=precision,
+            subsample=subsample,
         )
         result = await _run_vmaf_score(req)
         # Surface the original encoded paths in the response.
@@ -1823,7 +1836,7 @@ async def _list_tools() -> list[Tool]:
                     "width": {"type": "integer", "minimum": 1},
                     "height": {"type": "integer", "minimum": 1},
                     "pixfmt": {"type": "string", "enum": ["420", "422", "444"]},
-                    "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16]},
+                    "bitdepth": {"type": "integer", "enum": [8, 10, 12]},
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
@@ -1918,7 +1931,7 @@ async def _list_tools() -> list[Tool]:
                     "width": {"type": "integer", "minimum": 1},
                     "height": {"type": "integer", "minimum": 1},
                     "pixfmt": {"type": "string", "enum": ["420", "422", "444"]},
-                    "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16]},
+                    "bitdepth": {"type": "integer", "enum": [8, 10, 12]},
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
