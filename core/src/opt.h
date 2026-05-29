@@ -49,6 +49,14 @@ typedef struct VmafOption {
     uint64_t flags;
 } VmafOption;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int vmaf_option_set(const VmafOption *opt, void *obj, const char *val);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* __VMAF_SRC_OPT_H__ */

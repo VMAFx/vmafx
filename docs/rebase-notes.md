@@ -6,6 +6,23 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## feature-extractor-cpp-rename (2026-05-29, ADR-0772)
+
+**Files touched:**
+`core/src/feature/feature_extractor.c` (deleted),
+`core/src/feature/feature_extractor.cpp` (new),
+`core/src/feature/feature_extractor.h`,
+`core/src/meson.build`, `core/test/meson.build`
+
+**Rebase impact:** Low. When Netflix/vmaf modifies `feature_extractor.c`
+upstream, the patch will apply against the now-deleted path. To apply an
+upstream patch: `git apply --reject` against `feature_extractor.cpp` and
+resolve manually, or `git show <sha> -- libvmaf/src/feature/feature_extractor.c
+| patch -p1 core/src/feature/feature_extractor.cpp`. The `extern "C"` block
+in the header must be preserved during any upstream-port of header changes.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
@@ -40323,20 +40340,6 @@ part of any public API.
 
 ---
 
-### go-workspace-audit — Go dependency + test fixes (2026-05-29)
-
-No rebase impact. All changes are Go workspace files entirely fork-local:
-`go.mod` / `go.sum` (added `modernc.org/sqlite` and transitive deps),
-`pkg/observability/observability.go` (added controller metrics fields + `SetControllerSources`),
-`cmd/vmafx-node/executor_test.go`, `cmd/vmafx-node/main_test.go` (test alignment to current API),
-`cmd/vmafx-tune/cmd/root.go` (wire `newLadderCmd`),
-`cmd/vmafx-tune/cmd/compare_test.go` (remove stale stub assertion),
-`changelog.d/fixed/0529-go-workspace-audit.md` (new).
-
-None of these files are touched by Netflix upstream.
-
----
-
 ### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
 
 No rebase impact on upstream C/Python code.
@@ -40353,21 +40356,3 @@ All files modified are fork-local:
 A sync-upstream that adds a CUDA ciede kernel upstream would need to incorporate this
 __ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD side
 (ADR-0743 comment block); no Netflix upstream content was discarded.
-
----
-
-## VmafFeatureDictionary ownership fixes (ADR-0806, 2026-05-29)
-
-no rebase impact: REASON — the only changed files are fork-added test files
-(`core/test/test_vif_skip_scale0.c`, `core/test/test_integer_vif_cpu_cuda_parity.c`)
-and docs (`docs/adr/0806-feature-dictionary-ownership.md`, `docs/adr/README.md`,
-`changelog.d/fixed/0806-feature-dictionary-ownership.md`). No upstream Netflix/vmaf
-file is touched. The fixed double-free and leak are in fork-local CUDA parity tests
-that have no upstream counterpart.
-
-## Lint config tightening (ADR-0805, 2026-05-29)
-
-no rebase impact: REASON — changes are confined to config files (`.clang-tidy`,
-`.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
-and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
-touched; the `HeaderFilterRegex` fix has no effect on any upstream file.

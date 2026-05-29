@@ -89,10 +89,12 @@ static std::optional<double> parse_double(std::string_view sv, double min_val,
 // ---------------------------------------------------------------------------
 // C ABI entry point — identity preserved exactly (same signature, same errno
 // / return-code contract).  The [[nodiscard]] annotation is advisory for C++
-// callers; the C callers in feature_extractor.c are unaffected.
+// callers; the C callers in feature_extractor.cpp are unaffected.
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] int vmaf_option_set(const VmafOption *opt, void *obj, const char *val)
+// extern "C" matches the declaration in opt.h and ensures C linkage when
+// opt.cpp is compiled instead of opt.c (ADR-0772).
+extern "C" [[nodiscard]] int vmaf_option_set(const VmafOption *opt, void *obj, const char *val)
 {
     if (!obj || !opt)
         return -EINVAL;
