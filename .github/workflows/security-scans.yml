@@ -28,7 +28,7 @@ jobs:
   semgrep:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Semgrep (CWE Top 25 + CERT-C + Custom)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -95,7 +95,7 @@ jobs:
   codeql-cpp:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: CodeQL (C/C++)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
       contents: read
@@ -121,7 +121,7 @@ jobs:
   codeql-python:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: CodeQL (Python)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -149,7 +149,7 @@ jobs:
   codeql-actions:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: CodeQL (Actions)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -168,7 +168,7 @@ jobs:
   secret-scan:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Gitleaks (Secret Scan)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -208,7 +208,7 @@ jobs:
   dependency-review:
     name: Dependency Review (PR Diff)
     if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'pull_request')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2

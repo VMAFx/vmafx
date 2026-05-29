@@ -46,11 +46,11 @@ jobs:
       matrix:
         include:
           # --- CPU-only builds ---
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: ccache gcc
             CXX: ccache g++
             name: Build — Ubuntu gcc (CPU)
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: ccache clang
             CXX: ccache clang++
             name: Build — Ubuntu clang (CPU)
@@ -73,7 +73,7 @@ jobs:
           # the matrix. Tests are skipped (meson cross-build marks
           # them SKIP 77 — host can run i686 binaries natively but
           # meson doesn't know that). See ADR-0151.
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: ccache gcc
             CXX: ccache g++
             i686: true
@@ -87,13 +87,13 @@ jobs:
           # (Linux: MS tarball pinned to 1.22.0; macOS: Homebrew) and runs
           # the meson dnn suite. macOS leg stays `experimental: true` so a
           # Homebrew ORT bump that breaks ABI doesn't block merge.
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: ccache gcc
             CXX: ccache g++
             dnn: true
             meson_extra: -Denable_dnn=enabled
             name: Build — Ubuntu gcc (CPU) + DNN
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: ccache clang
             CXX: ccache clang++
             dnn: true
@@ -114,7 +114,7 @@ jobs:
           # a compute-capable VkPhysicalDevice on headless runners
           # so the smoke test can run end-to-end. Wraps for volk +
           # VMA are sha256-pinned in core/subprojects/.
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: ccache gcc
             CXX: ccache g++
             vulkan: true
@@ -158,7 +158,7 @@ jobs:
           # device-resident smoke assertions, mirroring the
           # Vulkan-on-lavapipe-less-CI pattern from ADR-0175). See
           # ADR-0212 §"Status update 2026-05-09: CI lane enabled".
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: ccache gcc
             CXX: ccache g++
             hip: true
@@ -185,7 +185,7 @@ jobs:
             name: Build — macOS Metal (T8-1 scaffold)
 
           # --- Static library builds ---
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: ccache gcc
             CXX: ccache g++
             meson_extra: --default-library static
@@ -198,7 +198,7 @@ jobs:
           # could catch shows up first on the dynamic lane). The
           # CUDA Static lane stays because it exercises a distinct
           # NVCC-static interaction not covered by the dynamic build.
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: ccache gcc
             CXX: ccache g++
             cuda: true
@@ -208,7 +208,7 @@ jobs:
           # --- SYCL build (icpx for both host + SYCL sources so the device
           #     image is registered at the .so link step; see post-T7-8
           #     SYCL revival in core/src/meson.build) ---
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: icx
             CXX: icpx
             sycl: true
@@ -216,7 +216,7 @@ jobs:
             name: Build — Ubuntu SYCL
 
           # --- CUDA build (gcc + nvcc) ---
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: ccache gcc
             CXX: ccache g++
             cuda: true
@@ -225,7 +225,7 @@ jobs:
 
           # --- SYCL + CUDA combined (icpx host so SYCL link works; nvcc
           #     handles the CUDA TUs separately via -Denable_nvcc=true) ---
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: icx
             CXX: icpx
             sycl: true

@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Scoped to the one job that creates release PRs / tags; the workflow
     # default stays `contents: read` so any step added later starts from
     # least-privilege (Scorecard TokenPermissionsID).

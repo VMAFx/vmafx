@@ -24,7 +24,7 @@ permissions:
 jobs:
   build-artifacts:
     name: Build release artifacts (libvmaf.so, vmaf CLI, models)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
       contents: read
@@ -92,7 +92,7 @@ jobs:
   sbom:
     name: Generate SBOM (SPDX + CycloneDX)
     needs: build-artifacts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -120,7 +120,7 @@ jobs:
   sign:
     name: Sigstore keyless sign (cosign)
     needs: build-artifacts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       id-token: write   # Sigstore keyless OIDC
@@ -168,7 +168,7 @@ jobs:
 
   mcp-build:
     name: Build vmaf-mcp wheel + sdist
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -200,7 +200,7 @@ jobs:
   mcp-sign:
     name: Sigstore keyless sign — vmaf-mcp
     needs: mcp-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       id-token: write   # Sigstore keyless OIDC
@@ -227,7 +227,7 @@ jobs:
     name: Publish vmaf-mcp to PyPI (Trusted Publishing)
     if: github.event_name == 'release'
     needs: [mcp-build, mcp-sign]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: pypi-publish    # user binds this to PyPI Trusted Publisher
     permissions:
@@ -246,7 +246,7 @@ jobs:
     name: Attach SBOM + signatures to GitHub Release
     if: github.event_name == 'release'
     needs: [build-artifacts, sbom, sign, slsa-provenance, mcp-build, mcp-sign]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write   # upload files to the GitHub Release
     steps:

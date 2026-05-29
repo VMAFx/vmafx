@@ -6,6 +6,15 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## ci-runner-ubuntu-24-pin (2026-05-29, ADR-0802)
+
+**Files touched:** `.github/workflows/*.yml` (15 files)
+
+**Rebase impact:** None. CI workflow files are fork-local and are never
+present in upstream Netflix/vmaf master. No rebase conflict is possible.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
