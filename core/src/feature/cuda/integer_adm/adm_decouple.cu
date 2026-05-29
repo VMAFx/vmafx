@@ -51,17 +51,37 @@ __global__ void adm_decouple_kernel(AdmBufferCuda buf, int top, int bottom, int 
     const cuda_adm_dwt_band_t *r = &buf.decouple_r;
     const cuda_adm_dwt_band_t *a = &buf.decouple_a;
 
+    /* F3: extract raw __restrict__ pointers before the per-pixel body so the
+     * compiler can route all read-only loads through the L1 read-only cache
+     * via __ldg().  Passing AdmBufferCuda by value hides the sub-struct
+     * pointers from the compiler's non-coherent-load analysis; extracting them
+     * here makes the alias-free invariant visible (ADR-0763). */
+    const int16_t *__restrict__ ref_h = ref->band_h;
+    const int16_t *__restrict__ ref_v = ref->band_v;
+    const int16_t *__restrict__ ref_d = ref->band_d;
+    const int16_t *__restrict__ dis_h = dis->band_h;
+    const int16_t *__restrict__ dis_v = dis->band_v;
+    const int16_t *__restrict__ dis_d = dis->band_d;
+    /* Write-side: non-const raw pointers; __ldg() is not used on writes. */
+    int16_t *r_h = r->band_h;
+    int16_t *r_v = r->band_v;
+    int16_t *r_d = r->band_d;
+    int16_t *a_h = a->band_h;
+    int16_t *a_v = a->band_v;
+    int16_t *a_d = a->band_d;
+
     int i = top + blockIdx.y * blockDim.y + threadIdx.y;
     int j = left + blockIdx.x * blockDim.x + threadIdx.x;
     if (i < bottom && j < right) {
         int32_t ot_dp, o_mag_sq, t_mag_sq;
+        const int idx = i * stride + j;
 
-        int16_t oh = ref->band_h[i * stride + j];
-        int16_t ov = ref->band_v[i * stride + j];
-        int16_t od = ref->band_d[i * stride + j];
-        int16_t th = dis->band_h[i * stride + j];
-        int16_t tv = dis->band_v[i * stride + j];
-        int16_t td = dis->band_d[i * stride + j];
+        int16_t oh = __ldg(&ref_h[idx]);
+        int16_t ov = __ldg(&ref_v[idx]);
+        int16_t od = __ldg(&ref_d[idx]);
+        int16_t th = __ldg(&dis_h[idx]);
+        int16_t tv = __ldg(&dis_v[idx]);
+        int16_t td = __ldg(&dis_d[idx]);
         int32_t rst_h, rst_v, rst_d;
 
         // the result of 2*int16_t needs 31 bits.
@@ -113,13 +133,13 @@ __global__ void adm_decouple_kernel(AdmBufferCuda buf, int top, int bottom, int 
                 rst_d = max(rst_d, (int32_t)td);
         }
 
-        r->band_h[i * stride + j] = rst_h;
-        r->band_v[i * stride + j] = rst_v;
-        r->band_d[i * stride + j] = rst_d;
+        r_h[idx] = rst_h;
+        r_v[idx] = rst_v;
+        r_d[idx] = rst_d;
 
-        a->band_h[i * stride + j] = th - rst_h;
-        a->band_v[i * stride + j] = tv - rst_v;
-        a->band_d[i * stride + j] = td - rst_d;
+        a_h[idx] = th - rst_h;
+        a_v[idx] = tv - rst_v;
+        a_d[idx] = td - rst_d;
     }
 }
 
@@ -134,17 +154,37 @@ __global__ void adm_decouple_s123_kernel(AdmBufferCuda buf, int top, int bottom,
     const cuda_i4_adm_dwt_band_t *r = &buf.i4_decouple_r;
     const cuda_i4_adm_dwt_band_t *a = &buf.i4_decouple_a;
 
+    /* F3: extract raw __restrict__ pointers before the per-pixel body so the
+     * compiler can route all read-only loads through the L1 read-only cache
+     * via __ldg().  Passing AdmBufferCuda by value hides the sub-struct
+     * pointers from the compiler's non-coherent-load analysis; extracting them
+     * here makes the alias-free invariant visible (ADR-0763). */
+    const int32_t *__restrict__ ref_h = ref->band_h;
+    const int32_t *__restrict__ ref_v = ref->band_v;
+    const int32_t *__restrict__ ref_d = ref->band_d;
+    const int32_t *__restrict__ dis_h = dis->band_h;
+    const int32_t *__restrict__ dis_v = dis->band_v;
+    const int32_t *__restrict__ dis_d = dis->band_d;
+    /* Write-side: non-const raw pointers; __ldg() is not used on writes. */
+    int32_t *r_h = r->band_h;
+    int32_t *r_v = r->band_v;
+    int32_t *r_d = r->band_d;
+    int32_t *a_h = a->band_h;
+    int32_t *a_v = a->band_v;
+    int32_t *a_d = a->band_d;
+
     int i = top + blockIdx.y * blockDim.y + threadIdx.y;
     int j = left + blockIdx.x * blockDim.x + threadIdx.x;
     if (i < bottom && j < right) {
         int64_t ot_dp, o_mag_sq, t_mag_sq;
+        const int idx = i * stride + j;
 
-        int32_t oh = ref->band_h[i * stride + j];
-        int32_t ov = ref->band_v[i * stride + j];
-        int32_t od = ref->band_d[i * stride + j];
-        int32_t th = dis->band_h[i * stride + j];
-        int32_t tv = dis->band_v[i * stride + j];
-        int32_t td = dis->band_d[i * stride + j];
+        int32_t oh = __ldg(&ref_h[idx]);
+        int32_t ov = __ldg(&ref_v[idx]);
+        int32_t od = __ldg(&ref_d[idx]);
+        int32_t th = __ldg(&dis_h[idx]);
+        int32_t tv = __ldg(&dis_v[idx]);
+        int32_t td = __ldg(&dis_d[idx]);
         int32_t rst_h, rst_v, rst_d;
 
         ot_dp = (int64_t)oh * th + (int64_t)ov * tv;
@@ -218,13 +258,13 @@ __global__ void adm_decouple_s123_kernel(AdmBufferCuda buf, int top, int bottom,
         if (angle_flag && (rst_d_f < 0.f))
             rst_d = max(rst_d, td);
 
-        r->band_h[i * stride + j] = rst_h;
-        r->band_v[i * stride + j] = rst_v;
-        r->band_d[i * stride + j] = rst_d;
+        r_h[idx] = rst_h;
+        r_v[idx] = rst_v;
+        r_d[idx] = rst_d;
 
-        a->band_h[i * stride + j] = th - rst_h;
-        a->band_v[i * stride + j] = tv - rst_v;
-        a->band_d[i * stride + j] = td - rst_d;
+        a_h[idx] = th - rst_h;
+        a_v[idx] = tv - rst_v;
+        a_d[idx] = td - rst_d;
     }
 }
 }

@@ -1385,6 +1385,19 @@ production code is touched, so the upstream rebase boundary is unaffected.
 
 ---
 
+## cuda-adm-decouple-ldg (2026-05-29, ADR-0763)
+
+**Files touched:** `core/src/feature/cuda/integer_adm/adm_decouple.cu`
+
+**Rebase impact:** None. `adm_decouple.cu` is not in meson.build (dead file —
+decouple is inlined via `adm_decouple_inline.cuh`). Upstream is not expected to
+modify it independently.
+
+- **F3 fix (ADR-0763)**: `adm_decouple.cu` carries the `__ldg()` F3
+  maintenance fix (perf/cuda-adm-decouple-ldg-20260529). Dead-file only;
+  no rebase conflict expected — the file is not in meson.build and upstream
+  is not expected to modify it independently.
+
 ## gpu-picture-pool-uaf-on-init-failure (2026-05-30)
 
 **Files touched:** `core/src/gpu_picture_pool.c`, `core/test/test_gpu_picture_pool_uaf.c`, `core/test/meson.build`
