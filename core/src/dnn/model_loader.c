@@ -361,8 +361,7 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
     assert(sz <= (size_t)(1 << 20));
     /* buf was allocated as sz + 1u bytes (line ~115), so buf[sz] is valid. The
      * analyzer loses this relationship across the fread path. */
-    buf[sz] =
-        '\0'; // NOLINT(clang-analyzer-security.ArrayBound) — calloc(sz+1u, 1u) guarantees buf[sz] valid; analyzer loses this across fread; see ADR-0775
+    buf[sz] = '\0'; // NOLINT(clang-analyzer-security.ArrayBound)
 
     char *kind_str = extract_string(buf, "kind");
     if (kind_str) {

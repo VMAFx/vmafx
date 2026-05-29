@@ -489,7 +489,6 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   measurable L2-pressure relief.  See ADR-0743.
 
 ## `__ldg()` pattern for pass-2 read-only intermediate buffers (ADR-0754)
-## `__ldg()` pattern for pass-2 read-only intermediate buffers (ADR-0754, ADR-0757)
 
 - **Extract raw `const float *__restrict__` pointers from `VmafCudaBuffer` structs
   BEFORE the inner loop, then use `__ldg(&ptr[idx])` for every load.**
@@ -502,33 +501,6 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   texture cache rather than L2. Any future pass-2 kernel with a similar write-once /
   read-many intermediate buffer must follow the same pattern.
   See [ADR-0754](../../../../docs/adr/0754-cuda-ssim-vert-combine-ldg-pinned-leak.md).
-
-## F3 pattern — VmafCudaBuffer / VmafPicture / AdmBufferCuda by-value arguments (ADR-0756)
-
-- **Passing an aggregating struct (VmafCudaBuffer, VmafPicture, AdmBufferCuda) by value to a
-  `__global__` kernel hides the embedded pointer from ptxas alias analysis.** ptxas cannot
-  emit `ld.global.nc` (the read-only L1 texture path) for any load through a pointer derived
-  from a struct field copied onto the kernel argument stack.
-- **The correct fix for inner-loop reads:** extract `const T *__restrict__` raw pointers from
-  every struct argument BEFORE the hot inner loop, then read via `__ldg(&ptr[idx])`.
-  This is the F3 fix pattern from PR #93 (Research-0754 / ADR-0754) and is the mandatory
-  approach for any new kernel that reads from `VmafCudaBuffer` or similar structs in a loop.
-- **Audit status:** ADR-0756 / Research-0756 (2026-05-29) catalogued 20 kernel variants with
-  this pattern. Priority-1 dispatch: `ms_ssim_vert_lcs` (`integer_ms_ssim/ms_ssim_score.cu`).
-  See [ADR-0756](../../../../docs/adr/0756-cuda-f3-struct-by-value-audit.md).
-  example (ADR-0754, PR #93): the 5 horizontal-pass intermediate buffers are written
-  exclusively by the horiz kernel and are never aliased in the vert pass.
-  `ms_ssim_vert_lcs` and `ms_ssim_horiz` in
-  `integer_ms_ssim/ms_ssim_score.cu` are the second application (ADR-0757, PR #96
-  follow-up): 5×11 = 55 loads in `vert_lcs` and 2×11 = 22 loads in `horiz` both
-  route through `LDG.E.CONSTANT` after the fix.
-  Passing `VmafCudaBuffer` by value hides the pointer from the compiler's
-  non-coherent-load analysis; the one-time pointer extraction at kernel entry makes
-  the alias-free invariant visible so `__ldg()` can route loads through the
-  read-only L1 texture cache rather than L2. Any future pass-2 kernel with a
-  similar write-once / read-many intermediate buffer must follow the same pattern.
-  See [ADR-0754](../../../../docs/adr/0754-cuda-ssim-vert-combine-ldg-pinned-leak.md)
-  and [ADR-0757](../../../../docs/adr/0757-cuda-ms-ssim-vert-lcs-horiz-ldg.md).
 
 ## Pinned-host memory free invariant after `readback_free` (ADR-0754)
 
@@ -543,79 +515,3 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   `compute-sanitizer --tool memcheck --leak-check full ./vmaf --feature float_ssim --backend cuda ...`
   — the summary must show 0 bytes from `cuMemHostAlloc` after fix.
   Note: `integer_psnr_cuda.c` has the same gap and is scheduled for a follow-up.
-
-## Motion kernel dispatch bottleneck (Research-0760)
-
-- **`calculate_motion_score_kernel_8bpc` is dispatch-bottlenecked at all resolutions
-  below 4K.** ncu profile (2026-05-29, RTX 4090) shows GPU busy fraction <1% of
-  wall time at 576p (kernel 7 µs, dispatch ~12.7 ms/frame). CUDA/CPU ratio is 0.22×
-  at 576p and 5.8× at 4K — the crossover is entirely explained by dispatch overhead.
-  Any optimization that does not address per-frame dispatch will not improve
-  sub-4K throughput regardless of kernel-level changes. The primary fix is
-  multi-frame SAD batching (accumulate N frames before readback synchronization).
-  See [Research-0760](../../../../docs/research/0760-cuda-motion-ncu-multi-resolution-20260529.md).
-## Resolution-aware kernel variant dispatch (ADR-0753)
-
-`resolution_dispatch.h` / `resolution_dispatch.c` in this directory provide a
-lightweight `vmaf_cuda_workload_class(w, h)` classifier used to pick between
-kernel variants at runtime. The current policy table is in ADR-0753.
-
-**How to add a new resolution-aware variant:**
-
-1. In the extractor's `.cu` file, define two kernel entry points using sibling
-   macros: one WITH `__launch_bounds__` (or the other occupancy hint), one
-   WITHOUT, giving the no-hint variant a `_no_bounds` suffix.
-   Both must be inside the `extern "C" { }` block (ADR-0747).
-2. In the extractor state struct (e.g. `AdmStateCuda`), add a second
-   `CUfunction` pointer for the no-hint variant.
-3. In `init_fex_cuda`, load both pointers via `cuModuleGetFunction`.
-   Add a short comment citing the ADR-0753 policy (see existing examples).
-4. At the kernel-launch site in `submit_fex_cuda`, call
-   `vmaf_cuda_workload_class(w, h)` and branch on the result.
-   The branch structure is always a single ternary / if-else — no nested
-   policy trees. Consult the policy table in ADR-0753 for which class gets
-   the bounded variant; the pattern so far:
-   - `adm_cm`: BOUNDED at `WS_MEDIUM` only; NO_BOUNDS at `WS_SMALL` + `WS_LARGE`.
-   - `filter1d` + `ssim_vert_combine`: BOUNDED at `WS_MEDIUM` + `WS_LARGE`;
-     NO_BOUNDS at `WS_SMALL` only.
-5. Add a row to the policy table in ADR-0753 `## Decision` and to the kernel
-   list in `resolution_dispatch.h`.
-6. Note the new invariant in this file under "Rebase-sensitive invariants".
-7. Update `docs/backends/cuda/overview.md` kernel table.
-
-**Verified wirings (as of the ADR-0753 extended scope):**
-
-| Feature | BOUNDED variant (kernel name) | NO_BOUNDS variant | Policy |
-|---|---|---|---|
-| `adm_cm` | `adm_cm_line_kernel_8` | `adm_cm_line_kernel_8_no_bounds` | MEDIUM only |
-| `filter1d` | `filter1d_8_horizontal_kernel_2_17_9` | `filter1d_8_horizontal_kernel_2_17_9_no_bounds` | MEDIUM + LARGE |
-| `ssim_vert_combine` | `calculate_ssim_vert_combine` | `calculate_ssim_vert_combine_no_bounds` | MEDIUM + LARGE |
-
-- **`integer_vif_cuda.c::filter1d_8` picks `filter1d_8_horizontal_kernel_2_17_9_no_bounds`
-  at `WS_SMALL` and the bounded variant at `WS_MEDIUM`/`WS_LARGE`** (ADR-0753 extended
-  scope). `VifStateCuda` carries `func_filter1d_8_horizontal_kernel_2_17_9_no_bounds`.
-  `filter1d.cu` defines `FILTER1D_8_HORI_NO_BOUNDS(2, 17, 9)` inside `extern "C" {}`.
-  On rebase: verify both `cuModuleGetFunction` calls in `init_fex_cuda` reference
-  valid symbols. If upstream refactors the macro or adds new `fwidth` variants,
-  apply the `_NO_BOUNDS` sibling macro around the new body too.
-
-- **`integer_ssim_cuda.c::submit_fex_cuda` picks `calculate_ssim_vert_combine_no_bounds`
-  at `WS_SMALL` and the bounded variant at `WS_MEDIUM`/`WS_LARGE`** (ADR-0753 extended
-  scope). `SsimStateCuda` carries `func_vert_no_bounds`.
-  `integer_ssim/ssim_score.cu` defines both variants inside `extern "C" {}`.
-  On rebase: if upstream modifies `calculate_ssim_vert_combine`, apply the same
-  diff to `calculate_ssim_vert_combine_no_bounds` (body is identical; only the
-  `__launch_bounds__(128)` annotation differs).
-## `__ldg()` pattern for VmafPicture channel reads (ADR-0762)
-
-- **Extract typed `const uint8_t *__restrict__` (or `uint16_t *__restrict__` for
-  16bpc) channel pointers from `VmafPicture` struct args BEFORE the per-pixel body,
-  then use `__ldg(&ptr[idx])` for all channel reads.**
-  `calculate_ciede_kernel_8bpc` and `calculate_ciede_kernel_16bpc` in
-  `integer_ciede/ciede_score.cu` are the canonical examples: the `VmafPicture` struct
-  carries `void *data[3]`, which prevents the compiler from seeing that the reads are
-  alias-free when the struct is passed by value. Extracting typed `__restrict__`
-  pointers at kernel entry makes the invariant visible and routes the 6 per-pixel
-  channel reads through the L1 read-only texture cache. Any future kernel that reads
-  per-pixel plane data from `VmafPicture` must follow the same pattern.
-  See [ADR-0762](../../../../docs/adr/0762-cuda-ciede-ldg.md).
