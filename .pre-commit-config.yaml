@@ -182,7 +182,7 @@ repos:
 
       - id: semgrep-local
         name: semgrep (.semgrep.yml — local rules, error-gated)
-        entry: semgrep scan --config=.semgrep.yml --error --quiet
+        entry: semgrep scan --config=.semgrep.yml --error --quiet --disable-version-check
         # `language: python` so pre-commit creates its own isolated
         # venv and pip-installs semgrep there. The CI `pre-commit` job
         # doesn't ship semgrep on PATH; with `language: system` the

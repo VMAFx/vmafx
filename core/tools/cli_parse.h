@@ -19,6 +19,12 @@
 #ifndef __VMAF_CLI_PARSE_H__
 #define __VMAF_CLI_PARSE_H__
 
+/* ADR-0809: extern "C" guards so cli_parse.cpp and vmaf.cpp (C++23 TUs)
+ * can include this header without name-mangling the C-linkage functions. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -119,5 +125,9 @@ typedef struct {
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings);
 
 void cli_free(CLISettings *settings);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* __VMAF_CLI_PARSE_H__ */
