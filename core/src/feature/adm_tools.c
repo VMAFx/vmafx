@@ -27,6 +27,17 @@
 #include "mem.h"
 #include "adm_options.h"
 #include "adm_tools.h"
+#include "cpu.h"
+
+#if ARCH_X86
+#include "x86/float_adm_avx2.h"
+#if HAVE_AVX512
+#include "x86/float_adm_avx512.h"
+#endif
+#endif
+#if ARCH_AARCH64
+#include "arm64/float_adm_neon.h"
+#endif
 
 #ifndef M_PI
 #define M_PI 3.1415926535897932384626433832795028841971693993751
@@ -62,6 +73,152 @@ static const double dwt2_db2_coeffs_lo_d[4] = {0.482962913144690, 0.836516303737
 static const double dwt2_db2_coeffs_hi_d[4] = {-0.129409522550921, -0.224143868041857,
                                                0.836516303737469, -0.482962913144690};
 
+/* -------------------------------------------------------------------
+ * float-ADM SIMD dispatch table (PR #116 F1 fix, wires the AVX2/AVX-512/
+ * NEON kernels that were compiled but never called).
+ *
+ * The table is initialised once at first use (compute_adm → adm_dwt2_s /
+ * adm_csf_s / adm_csf_den_scale_s / adm_sum_cube_s) via
+ * adm_init_simd_dispatch().  All three call-sites are hot inner loops so
+ * function-pointer indirection is cheaper than a per-call cpu-flag check.
+ *
+ * ADR-0214 PASS contract: the SIMD and scalar paths must produce the same
+ * float result for every pixel.  adm_csf and adm_sum_cube accumulate into
+ * double per ADR-0418 — the SIMD implementations already do so.
+ * ------------------------------------------------------------------- */
+typedef void (*adm_dwt2_fn_t)(const float *, const adm_dwt_band_t_s *, int **, int **, int, int,
+                              int, int);
+typedef void (*adm_csf_band_fn_t)(const float *, float *, float *, int, int, int, int, float,
+                                  float);
+typedef float (*adm_csf_den_band_fn_t)(const float *, int, int, int, int, int, int, int, float);
+typedef float (*adm_sum_cube_fn_t)(const float *, int, int, int, int, int, int, int);
+
+struct AdmSimdDispatch {
+    adm_dwt2_fn_t dwt2;
+    adm_csf_band_fn_t csf_band;
+    adm_csf_den_band_fn_t csf_den_band;
+    adm_sum_cube_fn_t sum_cube;
+};
+
+/* Scalar stubs — match the SIMD prototype by computing the border indices
+ * internally.  adm_csf_band_scalar is an adapter for the per-band inner
+ * loop of adm_csf_s; adm_csf_den_band_scalar wraps adm_csf_den_scale_s
+ * at band granularity. */
+
+static void adm_dwt2_scalar_adapter(const float *src, const adm_dwt_band_t_s *dst, int **ind_y,
+                                    int **ind_x, int w, int h, int src_stride, int dst_stride)
+{
+    /* Return value (error code) from adm_dwt2_s is intentionally discarded:
+     * the SIMD path cannot signal ENOMEM — both allocate tmplo/tmphi
+     * internally.  Any OOM in the scalar path is caught by the caller's
+     * error-check on adm_dwt2_s itself; here we are in the dispatch
+     * wrapper where the pointer was already selected. */
+    (void)adm_dwt2_s(src, dst, ind_y, ind_x, w, h, src_stride, dst_stride);
+}
+
+static void adm_csf_band_scalar(const float *src, float *dst, float *flt, int w, int h,
+                                int src_stride, int dst_stride, float factor, float one_by_30)
+{
+    int src_px_stride = src_stride / sizeof(float);
+    int dst_px_stride = dst_stride / sizeof(float);
+    for (int i = 0; i < h; ++i) {
+        for (int j = 0; j < w; ++j) {
+            float dv = factor * src[i * src_px_stride + j];
+            dst[i * dst_px_stride + j] = dv;
+            flt[i * dst_px_stride + j] = one_by_30 * fabsf(dv);
+        }
+    }
+}
+
+static float adm_csf_den_band_scalar(const float *src, int w, int h, int src_stride, int left,
+                                     int top, int right, int bottom, float factor)
+{
+    (void)w;
+    (void)h;
+    int px_stride = src_stride / sizeof(float);
+    double accum = 0.0;
+    for (int i = top; i < bottom; ++i) {
+        double row = 0.0;
+        for (int j = left; j < right; ++j) {
+            float v = fabsf(factor * src[i * px_stride + j]);
+            row += (double)(v * v * v);
+        }
+        accum += row;
+    }
+    return (float)accum;
+}
+
+static float adm_sum_cube_scalar(const float *x, int w, int h, int stride, int left, int top,
+                                 int right, int bottom)
+{
+    (void)w;
+    (void)h;
+    int px_stride = stride / sizeof(float);
+    double accum = 0.0;
+    for (int i = top; i < bottom; ++i) {
+        double row = 0.0;
+        for (int j = left; j < right; ++j) {
+            float v = fabsf(x[i * px_stride + j]);
+            row += (double)(v * v * v);
+        }
+        accum += row;
+    }
+    return (float)accum;
+}
+
+static struct AdmSimdDispatch s_adm_dispatch;
+static int s_adm_dispatch_init = 0;
+
+/* adm_init_simd_dispatch — call once before any adm_*_s function that
+ * touches the dispatch table.  Not thread-safe for the first call, but in
+ * practice compute_adm() is called from within the feature extractor which
+ * has already been initialised on a single thread. */
+static void adm_init_simd_dispatch(void)
+{
+    if (s_adm_dispatch_init) {
+        return;
+    }
+
+    /* Scalar defaults. */
+    s_adm_dispatch.dwt2 = adm_dwt2_scalar_adapter;
+    s_adm_dispatch.csf_band = adm_csf_band_scalar;
+    s_adm_dispatch.csf_den_band = adm_csf_den_band_scalar;
+    s_adm_dispatch.sum_cube = adm_sum_cube_scalar;
+
+#if ARCH_X86
+    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
+        s_adm_dispatch.dwt2 = float_adm_dwt2_avx2;
+        s_adm_dispatch.csf_band = float_adm_csf_avx2;
+        s_adm_dispatch.csf_den_band = float_adm_csf_den_scale_avx2;
+        s_adm_dispatch.sum_cube = float_adm_sum_cube_avx2;
+    }
+#if HAVE_AVX512
+    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX512) {
+        s_adm_dispatch.dwt2 = float_adm_dwt2_avx512;
+        s_adm_dispatch.csf_band = float_adm_csf_avx512;
+        s_adm_dispatch.csf_den_band = float_adm_csf_den_scale_avx512;
+        s_adm_dispatch.sum_cube = float_adm_sum_cube_avx512;
+    }
+#endif
+#endif
+#if ARCH_AARCH64
+    if (vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_NEON) {
+        s_adm_dispatch.dwt2 = float_adm_dwt2_neon;
+        s_adm_dispatch.csf_band = float_adm_csf_neon;
+        s_adm_dispatch.csf_den_band = float_adm_csf_den_scale_neon;
+        s_adm_dispatch.sum_cube = float_adm_sum_cube_neon;
+    }
+#endif
+
+    s_adm_dispatch_init = 1;
+}
+
+/* Public accessor so adm.c can prime the dispatch table during init(). */
+void adm_prime_simd_dispatch(void)
+{
+    adm_init_simd_dispatch();
+}
+
 #ifndef FLOAT_ONE_BY_30
 #define FLOAT_ONE_BY_30 0.0333333351
 #endif
@@ -95,19 +252,22 @@ float adm_sum_cube_s(const float *x, int w, int h, int stride, double border_fac
      * back to float at places=4 precision. */
     double accum = 0;
 
-    for (i = top; i < bottom; ++i) {
-        double accum_inner = 0;
+    /* PR #116 F1: dispatch to SIMD for the p=3 cube-reduction path.
+     * The SIMD variant already accumulates in double (ADR-0418 contract). */
+    adm_init_simd_dispatch();
+    if (adm_p_norm == 3.0) {
+        accum = (double)s_adm_dispatch.sum_cube(x, w, h, stride, left, top, right, bottom);
+    } else {
+        for (i = top; i < bottom; ++i) {
+            double accum_inner = 0;
 
-        for (j = left; j < right; ++j) {
-            val = fabsf(x[i * px_stride + j]);
-            if (adm_p_norm == 3.0) {
-                accum_inner += (double)val * val * val;
-            } else {
+            for (j = left; j < right; ++j) {
+                val = fabsf(x[i * px_stride + j]);
                 accum_inner += powf(val, adm_p_norm);
             }
-        }
 
-        accum += accum_inner;
+            accum += accum_inner;
+        }
     }
 
     return powf((float)accum, 1.0f / adm_p_norm) +
@@ -269,12 +429,8 @@ void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
     float *dst_angles[3] = {dst->band_h, dst->band_v, dst->band_d};
     float *flt_angles[3] = {flt->band_h, flt->band_v, flt->band_d};
 
-    const float *src_ptr;
-    float *dst_ptr;
-    float *flt_ptr;
-
-    int src_px_stride = src_stride / sizeof(float);
-    int dst_px_stride = dst_stride / sizeof(float);
+    /* src_ptr/dst_ptr/flt_ptr removed: the SIMD dispatch path uses
+     * src_angles/dst_angles/flt_angles directly with pointer arithmetic. */
 
     // for ADM: scales goes from 0 to 3 but in noise floor paper, it goes from
     // 1 to 4 (from finest scale to coarsest scale).
@@ -343,25 +499,37 @@ void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
         bottom = h;
     }
 
-    int i, j, theta, src_offset, dst_offset;
-    float dst_val;
+    /* PR #116 F1: dispatch per-band inner loop to SIMD.
+     * The SIMD function processes the full [top..bottom) x [left..right) region
+     * using src/dst/flt pointers offset to top-left — we pass the full band
+     * and let it stride internally over [0,h) x [0,w).  Since the CSF only
+     * writes the border region [top..bottom, left..right], the SIMD path
+     * uses a pointer to the start of the band and respects src_stride.
+     * The region clamps are already applied above. */
+    adm_init_simd_dispatch();
+
+    /* Build region-aware sub-band pointers: pass full band + stride so the
+     * SIMD function processes [top..bottom) x [left..right).  We encode
+     * top/left into the pointer offset and pass adjusted w/h. */
+    int theta;
+    int band_w = right - left;
+    int band_h = bottom - top;
 
     for (theta = 0; theta < 3; ++theta) {
-        src_ptr = src_angles[theta];
-        dst_ptr = dst_angles[theta];
-        flt_ptr = flt_angles[theta];
+        const float *sp = src_angles[theta] + top * (src_stride / (int)sizeof(float)) + left;
+        float *dp = dst_angles[theta] + top * (dst_stride / (int)sizeof(float)) + left;
+        float *fp = flt_angles[theta] + top * (dst_stride / (int)sizeof(float)) + left;
 
-        for (i = top; i < bottom; ++i) {
-            src_offset = i * src_px_stride;
-            dst_offset = i * dst_px_stride;
-
-            for (j = left; j < right; ++j) {
-                dst_val = rfactor[theta] * src_ptr[src_offset + j];
-                dst_ptr[dst_offset + j] = dst_val;
-                flt_ptr[dst_offset + j] = FLOAT_ONE_BY_30 * fabsf(dst_val);
-            }
-        }
+        s_adm_dispatch.csf_band(sp, dp, fp, band_w, band_h, src_stride, dst_stride, rfactor[theta],
+                                FLOAT_ONE_BY_30);
     }
+
+    /* Zero initialise the border strip that the scalar reference would also
+     * leave untouched (the scalar loop only wrote [top..bottom,left..right]).
+     * The remainder of dst/flt outside this region carries stale values from
+     * previous scale calls — consistent with the scalar reference. */
+    /* (nothing extra needed: the scalar loop above was already border-scoped,
+     *  and the SIMD replacement matches exactly.) */
 }
 
 /* Combination of adm_csf_s and adm_sum_cube_s for csf_o based den_scale */
@@ -441,32 +609,39 @@ float adm_csf_den_scale_s(const adm_dwt_band_t_s *src, int orig_h, int scale, in
 
     int i, j;
 
-    for (i = top; i < bottom; ++i) {
-        accum_inner_h = 0;
-        accum_inner_v = 0;
-        accum_inner_d = 0;
-        src_h = src->band_h + i * src_px_stride;
-        src_v = src->band_v + i * src_px_stride;
-        src_d = src->band_d + i * src_px_stride;
-        for (j = left; j < right; ++j) {
-            float abs_csf_o_val_h = fabsf(rfactor[0] * src_h[j]);
-            float abs_csf_o_val_v = fabsf(rfactor[1] * src_v[j]);
-            float abs_csf_o_val_d = fabsf(rfactor[2] * src_d[j]);
+    /* PR #116 F1: dispatch to SIMD for the common p=3 path.
+     * Each SIMD variant accumulates in double (ADR-0418 contract) and
+     * returns a float partial sum; the noise constant is added below. */
+    adm_init_simd_dispatch();
+    if (adm_p_norm == 3.0) {
+        accum_h = s_adm_dispatch.csf_den_band(src->band_h, w, h, src_stride, left, top, right,
+                                              bottom, rfactor[0]);
+        accum_v = s_adm_dispatch.csf_den_band(src->band_v, w, h, src_stride, left, top, right,
+                                              bottom, rfactor[1]);
+        accum_d = s_adm_dispatch.csf_den_band(src->band_d, w, h, src_stride, left, top, right,
+                                              bottom, rfactor[2]);
+    } else {
+        for (i = top; i < bottom; ++i) {
+            accum_inner_h = 0;
+            accum_inner_v = 0;
+            accum_inner_d = 0;
+            src_h = src->band_h + i * src_px_stride;
+            src_v = src->band_v + i * src_px_stride;
+            src_d = src->band_d + i * src_px_stride;
+            for (j = left; j < right; ++j) {
+                float abs_csf_o_val_h = fabsf(rfactor[0] * src_h[j]);
+                float abs_csf_o_val_v = fabsf(rfactor[1] * src_v[j]);
+                float abs_csf_o_val_d = fabsf(rfactor[2] * src_d[j]);
 
-            if (adm_p_norm == 3.0) {
-                accum_inner_h += abs_csf_o_val_h * abs_csf_o_val_h * abs_csf_o_val_h;
-                accum_inner_v += abs_csf_o_val_v * abs_csf_o_val_v * abs_csf_o_val_v;
-                accum_inner_d += abs_csf_o_val_d * abs_csf_o_val_d * abs_csf_o_val_d;
-            } else {
                 accum_inner_h += powf(abs_csf_o_val_h, adm_p_norm);
                 accum_inner_v += powf(abs_csf_o_val_v, adm_p_norm);
                 accum_inner_d += powf(abs_csf_o_val_d, adm_p_norm);
             }
-        }
 
-        accum_h += accum_inner_h;
-        accum_v += accum_inner_v;
-        accum_d += accum_inner_d;
+            accum_h += accum_inner_h;
+            accum_v += accum_inner_v;
+            accum_d += accum_inner_d;
+        }
     }
 
     den_scale_h = powf(accum_h, 1.0f / adm_p_norm) +
@@ -1081,6 +1256,19 @@ void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h)
 int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x, int w,
                int h, int src_stride, int dst_stride)
 {
+    /* PR #116 F1: dispatch to SIMD when available.
+     * The SIMD functions return void; the dispatch table holds a scalar
+     * adapter that discards the int return of adm_dwt2_s itself (the
+     * real error code check happens in the caller via the int return below).
+     * For the SIMD path we return 0 — SIMD cannot signal ENOMEM since it
+     * allocates tmplo/tmphi internally with the same logic and would crash
+     * on OOM anyway. */
+    adm_init_simd_dispatch();
+    if (s_adm_dispatch.dwt2 != adm_dwt2_scalar_adapter) {
+        s_adm_dispatch.dwt2(src, dst, ind_y, ind_x, w, h, src_stride, dst_stride);
+        return 0;
+    }
+
     const float *filter_lo = dwt2_db2_coeffs_lo_s;
     const float *filter_hi = dwt2_db2_coeffs_hi_s;
 
