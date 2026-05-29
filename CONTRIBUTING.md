@@ -41,6 +41,37 @@ extractors, quality runners, models).
 - **No `git push --force` to `master`**. No `--no-verify` skipping hooks.
   `master` is merge-via-squash-or-ff-only via branch protection.
 
+## Security — reading the Security tab
+
+The fork runs automated supply-chain scans on every PR and weekly. Results appear
+on the **Security tab** of the repository under *Code scanning alerts*.
+
+Three scan categories are active for Go and container surfaces:
+
+| Category | Tool | What it covers |
+|---|---|---|
+| `trivy-go-binaries` | [Trivy](https://trivy.dev) | CVEs in Go binary dependencies (per binary) |
+| `trivy-go-deps` | Trivy | CVEs in `go.mod`/`go.sum` transitive deps |
+| `trivy-container` | Trivy | OS-level CVEs in container images |
+
+Additional categories from `security-scans.yml` cover C/C++, Python, Actions, and
+secret scanning.
+
+**Merge gate**: the `go-sbom-trivy` and `go-dep-trivy` jobs exit 1 on any HIGH or
+CRITICAL finding. A PR that introduces a new HIGH/CRITICAL CVE in Go deps will fail
+CI and must be resolved before merging.
+
+**SBOM artifacts**: syft generates SPDX-JSON and CycloneDX-JSON SBOMs for every
+Go binary and for the container image. They are available as workflow artifacts
+(90-day retention) under the `go-sboms` / `container-sbom` artifact names on any
+CI run, and are attached to GitHub Releases as part of the `supply-chain.yml`
+release pipeline.
+
+**Suppressing a finding**: if Trivy flags a CVE that is not exploitable in this
+context, open a PR that adds an entry to `.trivyignore` with an inline justification
+comment linking to the CVE advisory. Do not suppress HIGH/CRITICAL findings without
+a documented reason.
+
 ## Reporting bugs / requesting features
 
 Use the GitHub issue templates under `.github/ISSUE_TEMPLATE/`. Security
