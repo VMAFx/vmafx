@@ -457,7 +457,6 @@ the corrected methodology.
   — `enable_avx512=true` with `enable_asm=false` issues a warning (no-op, not an error);
   — `enable_hipcc=true` with `enable_hip=false` issues a warning (no-op, not an error).
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
-<<<<<<< HEAD
 
 - **C→C++23 conversion safety invariants** (adversarial review 2026-05-28,
   `docs/research/cpp23-wave-adversarial-review-20260528.md`):
@@ -496,6 +495,13 @@ the corrected methodology.
      Always add `[[nodiscard]]` to the header declaration (inside the `extern "C"` block
      — C compilers silently ignore the attribute).
 
+  7. **`gpu_dispatch_env.cpp` isolated lib pattern (ADR-0858)**: `gpu_dispatch_env.cpp`
+     is compiled as `gpu_dispatch_env_cpp23_lib` with `override_options: ['cpp_std=c++23']`
+     and linked into `libvmaf` via `extract_all_objects`. Do not add it to `libvmaf_sources`
+     directly — that would compile it at the project default `c++11` and drop C++23
+     features silently. Always follow the `metadata_handler_cpp20_lib`
+     (ADR-0708) pattern for any further `.c → .cpp` conversions.
+
 - **Required-aggregator invariant — `float_ansnr` removal (PR #38 / ADR-0720):**
   `float_ansnr` was deliberately removed from all backends (CPU, CUDA, HIP, SYCL,
   Metal, Vulkan) in PR #38. The following must remain consistent on any rebase
@@ -512,9 +518,6 @@ the corrected methodology.
     map `"ansnr"` to `"float_ansnr"` while the C library lacks the extractor.
   The legacy path (`VmafFeatureExtractor`, line ~301) retains the mapping as
   documented debt — tracked as T-LEGACY-RUNNER-ANSNR-BROKEN in `docs/state.md`.
-  The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
-=======
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ## Performance benchmark invariant (ADR-0752)
 

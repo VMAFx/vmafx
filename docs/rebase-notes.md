@@ -37,6 +37,21 @@ both files in tree causes the source tree to diverge from the build definition.
 
 ---
 
+## feat/cpp23-gpu-dispatch-env-20260529 — ADR-0858 (2026-05-29)
+
+**Files touched:** `core/src/gpu_dispatch_env.c` (deleted), `core/src/gpu_dispatch_env.cpp`
+(new), `core/src/meson.build` (adds `gpu_dispatch_env_cpp23_lib`).
+
+**Rebase impact:** Low. `gpu_dispatch_env.c` and `.h` are fork-local files with no
+Netflix upstream equivalent (see ADR-0461 entry above at line 1808). Future upstream
+syncs will not touch either file. If Netflix ever introduces their own dispatch env
+helper, merge by adopting their approach. The isolated static lib pattern is identical
+to ADR-0708 (`metadata_handler_cpp20_lib`); any future merge conflict in `meson.build`
+should follow the same resolution — keep the `gpu_dispatch_env_cpp23_lib` block and
+the `extract_all_objects` line in the `libvmaf` `objects:` list.
+
+---
+
 ## cuda-readback-free-host-pinned-leak sweep (2026-05-29)
 
 **Files touched:** `core/src/cuda/kernel_template.h`,
