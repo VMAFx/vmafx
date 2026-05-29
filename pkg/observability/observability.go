@@ -39,7 +39,6 @@ type jobQueueSource interface {
 	PendingCount() int
 	RunningCount() int
 }
-
 // NewLogger creates a JSON-structured slog.Logger writing to stdout.
 // levelStr is a slog.Level string (e.g. "DEBUG", "INFO", "WARN", "ERROR").
 // Unrecognised strings default to INFO.
@@ -165,8 +164,7 @@ func (m *Metrics) SetControllerSources(q jobQueueSource, r registry.Counter) {
 			Subsystem: "controller",
 			Name:      "nodes_live",
 			Help:      "Current number of registered (live) vmafx-node instances.",
-		}, func() float64 { return float64(r.Count()) }))
-	}
+		}, func() float64 { return float64(r.Count()) }))	}
 }
 
 // WaitForShutdown blocks until SIGTERM or SIGINT is received, then cancels

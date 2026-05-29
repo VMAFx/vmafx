@@ -1507,7 +1507,20 @@ Adds a token-boundary check after `strncmp(v, strategy_names[idx],
 slen)` so a trailing non-terminator byte (e.g. `directx` for
 `direct`) is treated as no match rather than silently routing to
 the prefix-shared strategy.
+## feature-extractor-cpp-rename (2026-05-29, ADR-0772)
 
+**Files touched:**
+`core/src/feature/feature_extractor.c` (deleted),
+`core/src/feature/feature_extractor.cpp` (new),
+`core/src/feature/feature_extractor.h`,
+`core/src/meson.build`, `core/test/meson.build`
+
+**Rebase impact:** Low. When Netflix/vmaf modifies `feature_extractor.c`
+upstream, the patch will apply against the now-deleted path. To apply an
+upstream patch: `git apply --reject` against `feature_extractor.cpp` and
+resolve manually, or `git show <sha> -- libvmaf/src/feature/feature_extractor.c
+| patch -p1 core/src/feature/feature_extractor.cpp`. The `extern "C"` block
+in the header must be preserved during any upstream-port of header changes.
 ---
 
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
@@ -42218,7 +42231,6 @@ mechanical `port-upstream-commit` handles it cleanly since the `.cpp` is
 a structural clone of the `.c`.
 
 ---
-
 ### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
 
 No rebase impact on upstream C/Python code.

@@ -15,8 +15,7 @@ require (
 
 require (
 	github.com/go-logr/logr v1.4.3
-	github.com/google/uuid v1.6.0
-	github.com/onsi/ginkgo/v2 v2.29.0
+	github.com/google/uuid v1.6.0	github.com/onsi/ginkgo/v2 v2.29.0
 	github.com/onsi/gomega v1.41.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.53.0
 	go.opentelemetry.io/otel v1.44.0
@@ -52,8 +51,7 @@ require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
-	github.com/imdario/mergo v0.3.6 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect	github.com/imdario/mergo v0.3.6 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kr/text v0.2.0 // indirect

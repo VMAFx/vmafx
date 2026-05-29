@@ -19,12 +19,10 @@
 #ifndef __VMAF_FEATURE_EXTRACTOR_H__
 #define __VMAF_FEATURE_EXTRACTOR_H__
 
-/* MSVC's <stdatomic.h> in C++ mode (icpx-cl on Windows) doesn't
- * surface atomic_int in the global namespace; only std::atomic_int.
- * gcc/clang on Linux/macOS surface both as a GNU extension. Bridge
- * the gap on MSVC C++ only — C TUs and non-MSVC C++ keep the existing
- * <stdatomic.h> path so ABI is unchanged on every working platform. */
-#if defined(__cplusplus) && defined(_MSC_VER)
+/* In C++ mode, <stdatomic.h> does not define atomic_int as a usable type
+ * on GCC/Clang or MSVC — use <atomic> + using-declaration instead.
+ * In C mode keep the canonical <stdatomic.h> path (ADR-0772). */
+#if defined(__cplusplus)
 #include <atomic>
 using std::atomic_int;
 #else
@@ -151,6 +149,10 @@ typedef struct VmafFeatureExtractor {
 
 } VmafFeatureExtractor;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name);
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *name, unsigned flags);
 
@@ -208,17 +210,23 @@ int vmaf_feature_extractor_context_delete(VmafFeatureExtractorContext *fex_ctx);
 
 int vmaf_feature_extractor_context_destroy(VmafFeatureExtractorContext *fex_ctx);
 
+/* Hoisted out of VmafFeatureExtractorContextPool so that C++ TUs
+ * (e.g. feature_extractor.cpp) can reference struct fex_list_entry
+ * by its unqualified tag — in C++ a struct tag nested inside a
+ * typedef struct is scoped to that struct (ADR-0772). */
+struct fex_list_entry {
+    VmafFeatureExtractor *fex;
+    VmafDictionary *opts_dict;
+    struct {
+        VmafFeatureExtractorContext *fex_ctx;
+        bool in_use;
+    } *ctx_list;
+    atomic_int capacity, in_use;
+    pthread_cond_t full;
+};
+
 typedef struct VmafFeatureExtractorContextPool {
-    struct fex_list_entry {
-        VmafFeatureExtractor *fex;
-        VmafDictionary *opts_dict;
-        struct {
-            VmafFeatureExtractorContext *fex_ctx;
-            bool in_use;
-        } *ctx_list;
-        atomic_int capacity, in_use;
-        pthread_cond_t full;
-    } *fex_list;
+    struct fex_list_entry *fex_list;
     unsigned cnt, capacity;
     pthread_mutex_t lock;
     unsigned n_threads;
@@ -236,5 +244,9 @@ int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
                             VmafFeatureCollector *feature_collector);
 
 int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* __VMAF_FEATURE_EXTRACTOR_H__ */

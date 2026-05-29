@@ -990,12 +990,16 @@ jobs:
         shell: cmd
         run: |
           ninja -v -C core\build install
+<<<<<<< HEAD
+>>>>>>> refactor(core): rename feature_extractor.c → .cpp (ADR-0772)
       - name: Build libvmaf (SYCL)
         if: matrix.backend == 'sycl'
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           ninja -v -C core\build install
+<<<<<<< HEAD
+>>>>>>> refactor(core): rename feature_extractor.c → .cpp (ADR-0772)
       # No test step — windows-2025 has no GPU. The whole point of
       # this job is exercising the MSVC + CUDA / MSVC + oneAPI link
       # paths to catch portability regressions at compile time.

@@ -346,7 +346,9 @@ int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *di
          * ADR-0743: __launch_bounds__(128, 10) on filter1d_8_horizontal_kernel_2_17_9
          * reduced registers from 56 to 48.  vpt=2 is retained (vpt=4 evaluated and
          * rejected — smem-limited at 37.5% occupancy vs 62.5% for vpt=2).
-         */        const int BLOCKX = 128, BLOCKY = 1, val_per_thread = 2;
+<<<<<<< HEAD
+         */        const int BLOCKX = 128, BLOCKY = 1, val_per_thread = 2;        const int BLOCKX = 128, BLOCKY = 1, val_per_thread = 2;
+>>>>>>> refactor(core): rename feature_extractor.c → .cpp (ADR-0772)
 
         void *args_hori[] = {
             &*buf, &w, &h, (uint16_t *)&vif_filter1d_table, &vif_enhn_gain_limit, &buf->accum};
