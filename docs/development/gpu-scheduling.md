@@ -19,27 +19,12 @@ VMAFX uses one device-plugin per GPU vendor:
 | AMD | `amd.com/gpu` | HIP | [k8s-device-plugin](https://github.com/RadeonOpenCompute/k8s-device-plugin) |
 | Intel | `gpu.intel.com/i915` | SYCL | [intel-device-plugins-for-kubernetes](https://github.com/intel/intel-device-plugins-for-kubernetes) |
 
-## Vulkan and Kubernetes
+## Vulkan
 
-**Vulkan is NOT a separate Kubernetes resource.** There is no
-`vulkan.khronos.org/gpu` or equivalent extended resource in any vendor's
-device-plugin.  Vulkan runs through whichever GPU device-plugin is allocated:
-
-- NVIDIA node with `nvidia.com/gpu: 1` → Vulkan addresses the NVIDIA GPU via the
-  NVIDIA Vulkan ICD.
-- AMD node with `amd.com/gpu: 1` → Vulkan addresses the AMD GPU via the
-  AMDVLK / Mesa RADV ICD.
-- Intel node with `gpu.intel.com/i915: 1` → Vulkan addresses the Intel GPU via
-  the Intel ANV / Mesa ANV ICD.
-
-The VMAFX container image ships all three Vulkan ICDs.  The runtime selects the
-correct ICD based on which device is present in `/dev/dri/` after the
-device-plugin allocation.
-
-**Consequence for the Helm chart:** set `gpu.vendor` to the physical GPU vendor.
-The chart requests the vendor's device-plugin resource and sets `VMAFX_BACKEND`
-accordingly.  Vulkan acceleration is available automatically on any allocated
-GPU node without a separate resource request.
+The Vulkan backend was removed in ADR-0726.  Supported backends are `cuda`,
+`hip`, `sycl`, and `cpu`.  Set `gpu.vendor` to the physical GPU vendor;
+the chart selects the correct device-plugin resource and `VMAFX_BACKEND`
+automatically.
 
 ## Installing device-plugins
 
