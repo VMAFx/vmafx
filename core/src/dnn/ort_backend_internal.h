@@ -44,19 +44,6 @@ float vmaf_ort_internal_fp16_to_fp32(uint16_t h);
 const char *vmaf_ort_internal_resolve_name(char **table, size_t count, const char *name,
                                            size_t pos);
 
-/**
- * Return the cached ONNXTensorElementDataType (cast to int) for input @p slot,
- * or ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED (0) if @p sess is NULL or @p slot
- * is out of range. Exposed for unit-testing the GetTensorElementType hard-error
- * path introduced in PR #112 ORT audit fix.
- */
-int vmaf_ort_internal_input_elem_type(const void *sess, size_t slot);
-
-/**
- * Same as vmaf_ort_internal_input_elem_type but for outputs.
- */
-int vmaf_ort_internal_output_elem_type(const void *sess, size_t slot);
-
 #ifdef __cplusplus
 }
 #endif

@@ -1375,7 +1375,6 @@ static void vif_pre_graph(void *queue_ptr, void *priv);
 static void vif_post_graph(void *queue_ptr, void *priv);
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -1434,12 +1433,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (!s->use_fused && (!s->d_tmp_mu1 || !s->d_tmp_mu2 || !s->d_tmp_ref || !s->d_tmp_dis ||
                           !s->d_tmp_ref_dis || !s->d_tmp_ref_convol || !s->d_tmp_dis_convol)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: tmp buffer allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
     if (!s->d_rd_ref || !s->d_rd_dis || !s->d_accum || !s->h_accum || !s->d_log2_lut) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: device memory allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
 
@@ -1478,10 +1475,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
+    if (!s->feature_name_dict)
         return -ENOMEM;
-    }
 
     // Register with combined command graph
     err = vmaf_sycl_graph_register(state, enqueue_vif_work, vif_pre_graph, vif_post_graph, nullptr,
