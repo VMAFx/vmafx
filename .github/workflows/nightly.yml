@@ -1,5 +1,12 @@
 name: nightly
 
+# Jobs in this file:
+#   clang-tidy-full  — full tree clang-tidy scan (too slow for per-PR).
+#   netflix-benchmark — CPU benchmark suite, result uploaded as artefact.
+#
+# TSan is NOT here: sanitizers.yml fires TSan on every push to master,
+# which is more timely than a nightly cron. See ADR-0793.
+
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -9,29 +16,6 @@ permissions:
   contents: read
 
 jobs:
-  tsan:
-    name: ThreadSanitizer
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - name: Install dependencies
-        run: bash scripts/setup/ubuntu.sh
-        env:
-          INSTALL_LINTERS: "1"
-      - name: Meson setup (TSan)
-        run: |
-          cd core
-          meson setup ../build-tsan \
-            -Db_sanitize=thread \
-            -Denable_cuda=false \
-            -Denable_sycl=false \
-            --buildtype=debugoptimized
-      - name: Build
-        run: ninja -C build-tsan
-      - name: Run tests
-        run: meson test -C build-tsan --print-errorlogs --timeout-multiplier 3
-
   clang-tidy-full:
     name: Full clang-tidy scan
     runs-on: ubuntu-24.04
@@ -56,6 +40,7 @@ jobs:
         with:
           name: clang-tidy-full-report
           path: clang-tidy-full.log
+          retention-days: 14
 
   netflix-benchmark:
     name: Netflix benchmark suite
@@ -77,3 +62,4 @@ jobs:
         with:
           name: nightly-benchmark-results
           path: testdata/netflix_benchmark_results.json
+          retention-days: 30

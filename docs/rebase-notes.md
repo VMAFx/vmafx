@@ -6,6 +6,16 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## nightly-workflow-audit (2026-05-29, ADR-0793)
+
+**Files touched:**
+`.github/workflows/nightly.yml`, `.github/workflows/nightly-bisect.yml`
+
+**Rebase impact:** None. The modified files are fork-local CI workflows that do
+not exist in upstream Netflix/vmaf master. No rebase conflict is possible.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
