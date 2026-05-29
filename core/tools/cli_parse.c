@@ -43,6 +43,7 @@ enum {
     ARG_THREADS,
     ARG_FEATURE,
     ARG_SUBSAMPLE,
+    ARG_HELP,
     ARG_CPUMASK,
     ARG_GPUMASK,
     ARG_AOM_CTC,
@@ -123,6 +124,7 @@ static const struct option long_opts[] = {
     {"json", 0, NULL, ARG_OUTPUT_JSON},
     {"csv", 0, NULL, ARG_OUTPUT_CSV},
     {"sub", 0, NULL, ARG_OUTPUT_SUB},
+    {"help", 0, NULL, ARG_HELP},
     {"threads", 1, NULL, ARG_THREADS},
     {"feature", 1, NULL, ARG_FEATURE},
     {"subsample", 1, NULL, ARG_SUBSAMPLE},
@@ -181,48 +183,53 @@ static const struct option long_opts[] = {
 _Noreturn static void usage(const char *const app, const char *const reason, ...);
 static void usage(const char *const app, const char *const reason, ...)
 {
+    /* When invoked via --help (reason == NULL) print to stdout and exit 0.
+     * When invoked as an error handler (reason != NULL) print to stderr and
+     * exit 1 so scripts can detect incorrect usage. */
+    const int exit_code = reason ? 1 : 0;
+    FILE *const out = reason ? stderr : stdout;
     if (reason) {
         va_list args;
         va_start(args, reason);
-        (void)vfprintf(stderr, reason, args);
+        (void)vfprintf(out, reason, args);
         va_end(args);
-        (void)fprintf(stderr, "\n\n");
+        (void)fprintf(out, "\n\n");
     }
-    (void)fprintf(stderr, "Usage: %s [options]\n\n", app);
-    (void)fprintf(stderr,
-                  "Supported options:\n"
-                  " --reference/-r $path:        path to reference .y4m or .yuv\n"
-                  " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
-                  " --width/-w $unsigned:        width\n"
-                  " --height/-h $unsigned:       height\n"
-                  " --pixel_format/-p: $string   pixel format (420/422/444)\n"
-                  " --bitdepth/-b $unsigned:     bitdepth (8/10/12/16)\n"
-                  " --model/-m $params:          model parameters, colon \":\" delimited\n"
-                  "                              `path=` path to model file\n"
-                  "                              `version=` built-in model version\n"
-                  "                              `name=` name used in log (optional)\n"
-                  " --output/-o $path:           output file\n"
-                  " --xml:                       write output file as XML (default)\n"
-                  " --json:                      write output file as JSON\n"
-                  " --csv:                       write output file as CSV\n"
-                  " --sub:                       write output file as subtitle\n"
-                  " --threads $unsigned:         number of threads to use\n"
-                  " --feature $string:           additional feature\n"
-                  " --cpumask: $bitmask          restrict permitted CPU instruction sets\n"
-                  " --gpumask: $bitmask          restrict permitted GPU operations\n"
-                  " --frame_cnt $unsigned:       maximum number of frames to process\n"
-                  " --frame_skip_ref $unsigned:  skip the first N frames in reference\n"
-                  " --frame_skip_dist $unsigned: skip the first N frames in distorted\n"
-                  " --subsample: $unsigned       compute scores only every N frames\n"
-                  " --no_cuda:                   disable CUDA backend\n"
-                  " --no_sycl:                    disable SYCL/oneAPI backend\n"
-                  " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
-                  "                              [Vulkan backend removed in ADR-0726]\n");
+    (void)fprintf(out, "Usage: %s [options]\n\n", app);
+    (void)fprintf(out, "Supported options:\n"
+                       " --help:                      print this message and exit\n"
+                       " --reference/-r $path:        path to reference .y4m or .yuv\n"
+                       " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
+                       " --width/-w $unsigned:        width\n"
+                       " --height/-h $unsigned:       height\n"
+                       " --pixel_format/-p: $string   pixel format (420/422/444)\n"
+                       " --bitdepth/-b $unsigned:     bitdepth (8/10/12/16)\n"
+                       " --model/-m $params:          model parameters, colon \":\" delimited\n"
+                       "                              `path=` path to model file\n"
+                       "                              `version=` built-in model version\n"
+                       "                              `name=` name used in log (optional)\n"
+                       " --output/-o $path:           output file\n"
+                       " --xml:                       write output file as XML (default)\n"
+                       " --json:                      write output file as JSON\n"
+                       " --csv:                       write output file as CSV\n"
+                       " --sub:                       write output file as subtitle\n"
+                       " --threads $unsigned:         number of threads to use\n"
+                       " --feature $string:           additional feature\n"
+                       " --cpumask: $bitmask          restrict permitted CPU instruction sets\n"
+                       " --gpumask: $bitmask          restrict permitted GPU operations\n"
+                       " --frame_cnt $unsigned:       maximum number of frames to process\n"
+                       " --frame_skip_ref $unsigned:  skip the first N frames in reference\n"
+                       " --frame_skip_dist $unsigned: skip the first N frames in distorted\n"
+                       " --subsample: $unsigned       compute scores only every N frames\n"
+                       " --no_cuda:                   disable CUDA backend\n"
+                       " --no_sycl:                    disable SYCL/oneAPI backend\n"
+                       " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
+                       "                              [Vulkan backend removed in ADR-0726]\n");
     /* C99 only requires compilers to support string literals up to 4095 chars
      * (5.2.4.1). Split the usage text in two fprintf calls so we stay under
      * the limit even as new flags accrete. */
     (void)fprintf(
-        stderr,
+        out,
         " --no_hip:                     disable HIP (AMD ROCm) backend\n"
         " --hip_device $unsigned:       select HIP GPU by index (default: auto)\n"
         " --no_metal:                   disable Metal (Apple Silicon) backend\n"
@@ -274,7 +281,7 @@ static void usage(const char *const app, const char *const reason, ...)
         " --quiet/-q:                  disable FPS meter when run in a TTY\n"
         " --no_prediction/-n:          no prediction, extract features only\n"
         " --version/-v:                print version and exit\n");
-    exit(1);
+    exit(exit_code);
 }
 
 #define CHECKED_APPEND(arr, cnt, val, app, desc)                                                   \
@@ -859,6 +866,9 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
         case 'q':
             settings->quiet = true;
             break;
+        case ARG_HELP:
+            usage(argv[0], NULL);
+            break; /* unreachable — usage() is _Noreturn */
         case 'v':
             (void)fprintf(stderr, "%s\n", vmaf_version());
             exit(0);

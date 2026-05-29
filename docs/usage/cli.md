@@ -314,6 +314,7 @@ workflow.
 
 | Flag | Short | Effect |
 | --- | --- | --- |
+| `--help` | | Print the flag reference to stdout and exit 0. |
 | `--quiet` | `-q` | Disable the FPS meter when run in a TTY. |
 | `--no_prediction` | `-n` | Skip final model prediction; extract features only. Useful for feeding raw features into a custom pool. |
 | `--version` | `-v` | Print `libvmaf` version + git SHA and exit. |
@@ -322,8 +323,9 @@ workflow.
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Success. |
+| 0 | Success, or `--help` / `--version` invocation. |
 | 1 | Any parse / I/O / runtime error. `vmaf` writes a diagnostic to stderr before exiting. |
+| 100 | Explicit `--backend <name>` requested but the backend failed to initialise (ADR-0543). |
 
 `libvmaf` does not currently surface granular error codes at the process
 boundary; the specific `VMAF_ERR_*` code from the C API is logged to stderr

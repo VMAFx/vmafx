@@ -6,6 +6,19 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## cli-help-exit-zero (2026-05-29)
+
+**Files touched:**
+`core/tools/cli_parse.c`, `cmd/vmafx-server/main.go`, `cmd/vmafx-node/main.go`
+
+**Rebase impact:** Low. `cli_parse.c` is fork-extended beyond upstream (GPU
+backend flags, precision, tiny-model flags). Any upstream sync that touches
+`cli_parse.c` will produce a context conflict near the `long_opts[]` table and
+`usage()` body; the `ARG_HELP` entry and the `exit_code`/`out` split need to be
+re-applied. The Go files are fork-only and have no upstream counterpart.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
