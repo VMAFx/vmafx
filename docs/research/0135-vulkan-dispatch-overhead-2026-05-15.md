@@ -231,11 +231,7 @@ NVIDIA discrete GPU.
 - Create one `VkPipelineCache` in `vmaf_vulkan_context_new` and store it on
   `VmafVulkanContext`. Pass it to every `vkCreateComputePipelines` call in
   `kernel_template.h` instead of `VK_NULL_HANDLE`.
-<<<<<<< HEAD
 - Serialize the cache to `$XDG_CACHE_HOME/libvmaf/pipeline_cache_<vendor>_<device>.bin`
-=======
-- Serialize the cache to `$XDG_CACHE_HOME/core/pipeline_cache_<vendor>_<device>.bin`
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   on `vmaf_vulkan_context_destroy`; reload at next `context_new` via
   `VkPipelineCacheCreateInfo.pInitialData`.
 - Cache validation: check `VkPhysicalDeviceProperties.vendorID + deviceID + driverVersion`

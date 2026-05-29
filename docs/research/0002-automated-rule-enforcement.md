@@ -94,11 +94,7 @@ the deliverable is absent.
 
 - **Blocking `doc-substance-check`**: initial sketch blocked PRs
   that edited `core/src/feature/*.c` without a `docs/metrics/`
-<<<<<<< HEAD
   diff. The `fix(libvmaf/feature): free VIF init base pointer`
-=======
-  diff. The `fix(core/feature): free VIF init base pointer`
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   commit on PR #47 would have been blocked by this — a pure bug
   fix with no user-visible delta (the exemption in ADR-0100).
   The predicate "has user-visible delta" cannot be computed from

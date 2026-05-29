@@ -49,11 +49,7 @@ clip counters, output paths, and an ADR-0661 `run_provenance` block. KoNViD also
 records folded-output settings; BVI-DVC records `--bvi-zip` versus `--bvi-dir`,
 the selected tier, and extractor group list.
 
-<<<<<<< HEAD
 Unit tests run both scripts with mocked libvmaf/ffprobe calls and assert the
-=======
-Unit tests run both scripts with mocked core/ffprobe calls and assert the
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 manifest schema, counters, and shared provenance block.
 
 ## Follow-Up

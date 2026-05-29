@@ -12,11 +12,7 @@ Scratch tree used by the **Python training / evaluation harness** (i.e.
 | This fork (Lusoris)      | `python/vmaf/workspace/` (next to its user)  |
 
 The move is motivated by CLAUDE.md §1 — the repo root is reserved for surfaces a
-<<<<<<< HEAD
 consumer actually builds against (`libvmaf/`, `ai/`, `mcp-server/`, `tools/`,
-=======
-consumer actually builds against (`core/`, `ai/`, `mcp-server/`, `tools/`,
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 `docs/`, `model/`, `testdata/`). Everything else is pushed down into the subtree
 that owns it.
 

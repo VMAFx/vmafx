@@ -202,11 +202,7 @@ any production VMAF model.
   approximately 5 lines.
 - `core/src/feature/vulkan/meson.build` (and `core/src/vulkan/meson.build`):
   delete entirely.
-<<<<<<< HEAD
 - `core/include/libvmaf/libvmaf.h`: remove `vmaf_vulkan_*` entry points (3–4
-=======
-- `core/include/core/libvmaf.h`: remove `vmaf_vulkan_*` entry points (3–4
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   functions) + `VmafVulkanState` forward declaration.
 - `ffmpeg-patches/`: the patch that wires `--backend vulkan` and `--vulkan_device`
   into `vf_libvmaf.c` must be updated in the same PR per CLAUDE §12 r14.
