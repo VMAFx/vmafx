@@ -346,15 +346,6 @@ int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *di
                                                stream, args_vert, NULL));
     }
     {
-        const int BLOCKX = 128, BLOCKY = 1, val_per_thread = 2;
-
-        void *args_hori[] = {
-            &*buf, &w, &h, (uint16_t *)&vif_filter1d_table, &vif_enhn_gain_limit, &buf->accum};
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_filter1d_8_horizontal_kernel_2_17_9,
-                                               DIV_ROUND_UP(w, BLOCKX * val_per_thread),
-                                               DIV_ROUND_UP(h, BLOCKY), 1, BLOCKX, BLOCKY, 1, 0,
-                                               stream, args_hori, NULL));
-=======
         /*
          * ADR-0753 / ADR-0743: resolution-aware dispatch for the 17-tap horizontal kernel.
          * Policy: BOUNDED (__launch_bounds__(128,10), registers 48) at WS_MEDIUM and
@@ -376,7 +367,6 @@ int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *di
                           cuLaunchKernel(filter1d_hori_fn, DIV_ROUND_UP(w, BLOCKX * val_per_thread),
                                          DIV_ROUND_UP(h, BLOCKY), 1, BLOCKX, BLOCKY, 1, 0, stream,
                                          args_hori, NULL));
->>>>>>> b8f2a794b0 (feat(cuda): wire filter1d + ssim_vert_combine variants into resolution dispatch (ADR-0753))
     }
     return 0;
 }
