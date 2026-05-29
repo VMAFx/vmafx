@@ -40339,3 +40339,10 @@ All files modified are fork-local:
 A sync-upstream that adds a CUDA ciede kernel upstream would need to incorporate this
 __ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD side
 (ADR-0743 comment block); no Netflix upstream content was discarded.
+
+## DNN ORT backend audit (ADR-0775, Research-0775)
+
+No rebase impact: this PR adds only doc and research files under
+`docs/research/research-0775-dnn-ort-backend-audit.md`,
+`docs/adr/0775-dnn-ort-audit.md`, `changelog.d/changed/dnn-ort-backend-audit.md`,
+and a `docs/adr/README.md` row. No C sources or headers were modified.
