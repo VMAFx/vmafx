@@ -1380,13 +1380,15 @@ test('test_motion_min_dim', test_motion_min_dim, suite : ['fast'])
 # had no direct unit test before this file.
 test_gpu_dispatch_runtime = executable('test_gpu_dispatch_runtime',
     ['test.c', 'test_gpu_dispatch_runtime.c',
-     '../src/gpu_dispatch_env.c',
      '../src/cuda/dispatch_strategy.c',
      '../src/hip/dispatch_strategy.c'],
     include_directories : [libvmaf_inc, test_inc,
                            include_directories('../src/'),
                            include_directories('../src/feature/')],
     dependencies: [pthread_dependency, stdatomic_dependency],
+    # ADR-0858 Wave: gpu_dispatch_env.c → gpu_dispatch_env.cpp; link via
+    # the isolated C++23 static lib instead of direct-compiling the source.
+    objects : [gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true)],
 )
 test('test_gpu_dispatch_runtime', test_gpu_dispatch_runtime, suite : ['fast'])
 

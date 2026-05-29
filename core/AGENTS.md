@@ -522,6 +522,13 @@ the corrected methodology.
      Always add `[[nodiscard]]` to the header declaration (inside the `extern "C"` block
      — C compilers silently ignore the attribute).
 
+  7. **`gpu_dispatch_env.cpp` isolated lib pattern (ADR-0858)**: `gpu_dispatch_env.cpp`
+     is compiled as `gpu_dispatch_env_cpp23_lib` with `override_options: ['cpp_std=c++23']`
+     and linked into `libvmaf` via `extract_all_objects`. Do not add it to `libvmaf_sources`
+     directly — that would compile it at the project default `c++11` and drop C++23
+     features silently. Always follow the `metadata_handler_cpp20_lib`
+     (ADR-0708) pattern for any further `.c → .cpp` conversions.
+
 - **Required-aggregator invariant — `float_ansnr` removal (PR #38 / ADR-0720):**
   `float_ansnr` was deliberately removed from all backends (CPU, CUDA, HIP, SYCL,
   Metal, Vulkan) in PR #38. The following must remain consistent on any rebase
