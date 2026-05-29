@@ -1013,7 +1013,7 @@ static int speed_init_dimensions(SpeedDimensions *dim, int w, int h, double spee
     dim->submatrix_height = dim->truncated_height - dim->block_size + 1;
 
     if (dim->truncated_height == 0 || dim->truncated_width == 0) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SpEED: image too small, operating width or height is 0\n");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SpEED: image too small, operating width or height is 0");
         return -EINVAL;
     }
     return 0;
@@ -1026,7 +1026,7 @@ int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
 
     // Check that the kernelscale is valid
     if (!vif_validate_kernelscale(opt->speed_kernelscale)) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid speed_kernelscale\n");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "invalid speed_kernelscale");
         return -EINVAL;
     }
 

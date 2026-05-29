@@ -78,6 +78,13 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "sycl/picture_sycl.h"
 #endif
 
+#ifdef HAVE_VULKAN
+#include "libvmaf/libvmaf_vulkan.h"
+#include "vulkan/import_picture.h"
+#include "vulkan/picture_vulkan.h"
+#include "vulkan/vulkan_internal.h"
+#endif
+
 #ifdef HAVE_METAL
 #include "libvmaf/libvmaf_metal.h"
 #include "metal/import.h"
@@ -124,10 +131,16 @@ typedef struct VmafContext {
         VmafSyclPicturePool *pool;
     } sycl;
 #endif
+#ifdef HAVE_VULKAN
+    struct {
+        VmafVulkanState *state;
+        VmafVulkanPicturePool *pool;
+    } vulkan;
+#endif
 #ifdef HAVE_METAL
     /* T8-IOS (ADR-0423): caller-imported MTLDevice + IOSurface ring.
      * Ownership stays with the caller — vmaf_metal_state_free()
-     * after vmaf_close(), same lifetime model as the SYCL and HIP
+     * after vmaf_close(), same lifetime model as the Vulkan + SYCL
      * backends. */
     struct {
         VmafMetalState *state;
@@ -135,7 +148,7 @@ typedef struct VmafContext {
 #endif
 #ifdef HAVE_HIP
     /* ADR-0519: caller-imported HIP state. Same lifetime model as the
-     * SYCL / Metal backends — vmaf_hip_state_free() after
+     * SYCL / Vulkan / Metal backends — vmaf_hip_state_free() after
      * vmaf_close(). The HIP feature extractors do not yet set the
      * VMAF_FEATURE_EXTRACTOR_HIP flag, so dispatch routes them through
      * their CPU twins; storing the state here is the wiring that
@@ -589,8 +602,110 @@ static int set_fex_sycl_state(VmafFeatureExtractorContext *fex_ctx, VmafContext 
 }
 #endif
 
+#ifdef HAVE_VULKAN
+int vmaf_vulkan_import_state(VmafContext *vmaf, VmafVulkanState *vulkan_state)
+{
+    if (!vmaf)
+        return -EINVAL;
+    if (!vulkan_state)
+        return -EINVAL;
+
+    vmaf->vulkan.state = vulkan_state;
+    return 0;
+}
+
+static int set_fex_vulkan_state(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
+{
+    if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_VULKAN)
+        fex_ctx->fex->vulkan_state = vmaf->vulkan.state;
+    return 0;
+}
+
+int vmaf_vulkan_read_imported_pictures(VmafContext *vmaf, unsigned index)
+{
+    if (!vmaf)
+        return -EINVAL;
+    if (!vmaf->vulkan.state)
+        return -EINVAL;
+    if (vmaf->flushed)
+        return -EINVAL;
+
+    /* Build VmafPicture handles whose pixel data points at the
+     * state's HOST_VISIBLE staging buffers. The release callbacks
+     * are no-ops; the buffers are owned by the VmafVulkanState. */
+    VmafPicture ref = {0};
+    VmafPicture dis = {0};
+    int err = vmaf_vulkan_state_build_pictures(vmaf->vulkan.state, index, &ref, &dis);
+    if (err)
+        return err;
+
+    /* vmaf_read_pictures takes ownership and unrefs both pictures
+     * (including on the error path), which routes through our
+     * noop_release_picture callback. */
+    return vmaf_read_pictures(vmaf, &ref, &dis, index);
+}
+
+/* ADR-0238: public picture-preallocation surface for the Vulkan
+ * backend. Mirrors vmaf_cuda_preallocate_pictures /
+ * vmaf_sycl_preallocate_pictures. The pool depth is fixed at 2
+ * (matches SYCL); the underlying VmafVulkanPicturePool lives in
+ * libvmaf/src/vulkan/picture_vulkan_pool.c. */
+int vmaf_vulkan_preallocate_pictures(VmafContext *vmaf, VmafVulkanPictureConfiguration cfg)
+{
+    if (!vmaf)
+        return -EINVAL;
+    if (!vmaf->vulkan.state)
+        return -EINVAL;
+    if (vmaf->vulkan.pool)
+        return -EBUSY;
+
+    if (cfg.pic_prealloc_method == VMAF_VULKAN_PICTURE_PREALLOCATION_METHOD_NONE)
+        return 0;
+
+    enum VmafVulkanPoolMethod method;
+    switch (cfg.pic_prealloc_method) {
+    case VMAF_VULKAN_PICTURE_PREALLOCATION_METHOD_HOST:
+        method = VMAF_VULKAN_POOL_HOST;
+        break;
+    case VMAF_VULKAN_PICTURE_PREALLOCATION_METHOD_DEVICE:
+        method = VMAF_VULKAN_POOL_DEVICE;
+        break;
+    default:
+        return -EINVAL;
+    }
+
+    /* Pool depth of 2 matches the SYCL preallocation contract — caller
+     * writes pic N while extractors still consume pic N-1. */
+    const unsigned pic_cnt = 2u;
+
+    VmafVulkanContext *ctx = vmaf_vulkan_state_context(vmaf->vulkan.state);
+    if (!ctx)
+        return -EINVAL;
+
+    return vmaf_vulkan_picture_pool_init(&vmaf->vulkan.pool, ctx, pic_cnt, cfg.pic_params.w,
+                                         cfg.pic_params.h, cfg.pic_params.bpc,
+                                         cfg.pic_params.pix_fmt, method);
+}
+
+int vmaf_vulkan_picture_fetch(VmafContext *vmaf, VmafPicture *pic)
+{
+    if (!vmaf || !pic)
+        return -EINVAL;
+
+    if (vmaf->vulkan.pool)
+        return vmaf_vulkan_picture_pool_fetch(vmaf->vulkan.pool, pic);
+
+    /* No pool configured — fall back to a host-backed picture so callers
+     * that ignored vmaf_vulkan_preallocate_pictures() still receive a
+     * usable buffer. Mirrors the SYCL fallback at vmaf_sycl_picture_fetch. */
+    return vmaf_picture_alloc(pic, vmaf->pic_params.pix_fmt, vmaf->pic_params.bpc,
+                              vmaf->pic_params.w, vmaf->pic_params.h);
+}
+#endif
+
 #ifdef HAVE_METAL
-/* T8-IOS (ADR-0423): caller-imported IOSurface path. The Metal runtime (T8-1b) was
+/* T8-IOS (ADR-0423): mirror of vmaf_vulkan_import_state /
+ * vmaf_vulkan_read_imported_pictures. The Metal runtime (T8-1b) was
  * already shipped; this PR adds the caller-imported IOSurface route
  * by stashing the external state on the VmafContext and routing
  * read_imported_pictures through vmaf_read_pictures. */
@@ -630,13 +745,14 @@ int vmaf_metal_read_imported_pictures(VmafContext *vmaf, unsigned index)
 
 #ifdef HAVE_HIP
 /* ADR-0519: stash the caller-imported HIP state on the VmafContext.
- * Mirrors vmaf_sycl_import_state / vmaf_metal_import_state field-for-field — ownership stays with the
+ * Mirrors vmaf_sycl_import_state / vmaf_vulkan_import_state /
+ * vmaf_metal_import_state field-for-field — ownership stays with the
  * caller, vmaf_close() clears the pointer without freeing, and the
  * caller calls vmaf_hip_state_free() after vmaf_close().
  *
  * Implementation lives here (not in libvmaf/src/hip/common.c) because
- * it needs VmafContext field-level access. The CUDA / SYCL / Metal
- * twins follow the same convention. */
+ * it needs VmafContext field-level access. The CUDA / SYCL / Vulkan /
+ * Metal twins follow the same convention. */
 int vmaf_hip_import_state(VmafContext *vmaf, VmafHipState *hip_state)
 {
     if (!vmaf)
@@ -1347,13 +1463,23 @@ int vmaf_close(VmafContext *vmaf)
      * The caller must call vmaf_sycl_state_free() after vmaf_close(). */
     vmaf->sycl.state = NULL;
 #endif
+#ifdef HAVE_VULKAN
+    if (vmaf->vulkan.pool) {
+        (void)vmaf_vulkan_picture_pool_close(vmaf->vulkan.pool);
+        vmaf->vulkan.pool = NULL;
+    }
+    /* Note: ownership of vulkan.state is NOT transferred by
+     * vmaf_vulkan_import_state(), so we do not free it here.
+     * The caller must call vmaf_vulkan_state_free() after vmaf_close(). */
+    vmaf->vulkan.state = NULL;
+#endif
 #ifdef HAVE_METAL
-    /* Caller owns metal.state and must call vmaf_metal_state_free()
-     * after vmaf_close(). */
+    /* Same lifetime contract as Vulkan: caller owns metal.state
+     * and must call vmaf_metal_state_free() after vmaf_close(). */
     vmaf->metal.state = NULL;
 #endif
 #ifdef HAVE_HIP
-    /* ADR-0519: same lifetime contract as SYCL / Metal —
+    /* ADR-0519: same lifetime contract as SYCL / Vulkan / Metal —
      * caller owns hip.state and must call vmaf_hip_state_free()
      * after vmaf_close(). */
     vmaf->hip.state = NULL;
@@ -1407,6 +1533,9 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
 #ifdef HAVE_SYCL
     err |= set_fex_sycl_state(fex_ctx, vmaf);
 #endif
+#ifdef HAVE_VULKAN
+    err |= set_fex_vulkan_state(fex_ctx, vmaf);
+#endif
     err |= set_fex_framesync(fex_ctx, vmaf);
     if (err)
         return err;
@@ -1426,12 +1555,12 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
 }
 
 /* Compose the extractor-selection flag mask from the active backends.
- * HIP is host-pic only (no gpumask gate, no device-picture pool)
- * per ADR-0530. */
+ * Vulkan / HIP are host-pic only (no gpumask gate, no device-picture
+ * pool). HIP follows the Vulkan posture per ADR-0530. */
 static unsigned compute_fex_flags(const VmafContext *vmaf)
 {
     unsigned fex_flags = 0;
-#if !defined(HAVE_CUDA) && !defined(HAVE_SYCL) && !defined(HAVE_HIP)
+#if !defined(HAVE_CUDA) && !defined(HAVE_SYCL) && !defined(HAVE_VULKAN) && !defined(HAVE_HIP)
     (void)vmaf; /* CPU-only build: no backend slots to inspect. */
 #endif
 #ifdef HAVE_CUDA
@@ -1442,10 +1571,15 @@ static unsigned compute_fex_flags(const VmafContext *vmaf)
     if (!vmaf->cfg.gpumask && vmaf->sycl.state)
         fex_flags |= VMAF_FEATURE_EXTRACTOR_SYCL;
 #endif
+#ifdef HAVE_VULKAN
+    if (vmaf->vulkan.state)
+        fex_flags |= VMAF_FEATURE_EXTRACTOR_VULKAN;
+#endif
 #ifdef HAVE_HIP
     /* ADR-0530: HIP-flagged extractors are selected when a HIP state
-     * pointer has been imported via vmaf_hip_import_state(). The HIP
-     * backend is host-pic (no gpumask gate). */
+     * pointer has been imported via vmaf_hip_import_state(). Like
+     * Vulkan the HIP backend is host-pic for now — the gpumask gate
+     * does not apply. */
     if (vmaf->hip.state)
         fex_flags |= VMAF_FEATURE_EXTRACTOR_HIP;
 #endif
@@ -1486,6 +1620,9 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
 #endif
 #ifdef HAVE_SYCL
         err |= set_fex_sycl_state(fex_ctx, vmaf);
+#endif
+#ifdef HAVE_VULKAN
+        err |= set_fex_vulkan_state(fex_ctx, vmaf);
 #endif
         err |= set_fex_framesync(fex_ctx, vmaf);
         if (err)

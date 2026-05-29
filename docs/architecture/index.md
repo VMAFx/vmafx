@@ -6,11 +6,7 @@ Map of the repository, from the top down.
 
 ```
 vmaf/
-<<<<<<< HEAD
 ├── libvmaf/            # The C library + CLI. The product.
-=======
-├── core/            # The C library + CLI. The product.
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 │   ├── src/            # metric engine, feature extractors
 │   │   ├── feature/    # per-feature CPU kernels
 │   │   │   ├── x86/    # AVX2 / AVX-512 SIMD paths

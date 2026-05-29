@@ -30,15 +30,9 @@ CLAUDE.md §12 r11 / [ADR-0108](../adr/0108-deep-dive-deliverables-rule.md).
 | --- | --- | --- |
 | `/` | EXISTS | current |
 | `.github/` | EXISTS | current |
-<<<<<<< HEAD
 | `libvmaf/` | EXISTS | current |
 | `core/include/libvmaf/` | EXISTS | current |
 | `core/src/` | N/A — covered by `libvmaf/AGENTS.md` (thread_pool, output, gpu_picture_pool, fuzz, MCP scaffold) | none |
-=======
-| `core/` | EXISTS | current |
-| `core/include/core/` | EXISTS | current |
-| `core/src/` | N/A — covered by `core/AGENTS.md` (thread_pool, output, gpu_picture_pool, fuzz, MCP scaffold) | none |
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | `core/src/arm/` | MISSING | backfill (SVE2 HWCAP2 fork-local fallback per T7-38) |
 | `core/src/x86/` | N/A — verbatim from dav1d, no fork-local additions | none |
 | `core/src/ext/x86/` | N/A — `x86inc.asm` is upstream-verbatim third-party | none |

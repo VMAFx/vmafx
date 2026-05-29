@@ -79,7 +79,7 @@ int  vmaf_cuda_kernel_readback_free(VmafCudaKernelReadback *,
 | `vmaf_cuda_kernel_submit_pre_launch`    | `cuMemsetD8Async` zero-out + `cuStreamWaitEvent` on dist's ready event.       |
 | `vmaf_cuda_kernel_collect_wait`         | `cuStreamSynchronize` on the private stream.                                  |
 | `vmaf_cuda_kernel_lifecycle_close`      | Stream sync + destroy + 2× event destroy, with partial-init safety.           |
-| `vmaf_cuda_kernel_readback_free`        | Device-buffer free (`vmaf_cuda_buffer_free` + `free`) **and** pinned-host free (`vmaf_cuda_buffer_host_free`). Callers do not call `vmaf_cuda_buffer_host_free` separately (PR #93 sweep, 2026-05-29). |
+| `vmaf_cuda_kernel_readback_free`        | Device-buffer free + struct-handle free; host-pinned free stays explicit.    |
 
 ### What stays in the kernel TU
 
@@ -90,12 +90,8 @@ int  vmaf_cuda_kernel_readback_free(VmafCudaKernelReadback *,
 - The host-side reduction and score emission. PSNR's `10 * log10(peak² / mse)`
   is one line; `ssimulacra2` has a 6-band pyramid pool. Neither belongs in a
   shared header.
-- The pinned-host buffer free is now handled inside
-  `vmaf_cuda_kernel_readback_free`; callers must **not** call
-  `vmaf_cuda_buffer_host_free` separately on `rb->host_pinned`.
-  (Pre-2026-05-29 callers that did nothing leaked the allocation;
-  that bug was fixed by moving the free into the helper —
-  PR #93 follow-up sweep.)
+- The pinned-host buffer free (existing `vmaf_cuda_buffer_host_free`-class
+  helper); the template intentionally does not reach across that boundary.
 
 ### Migration sketch
 
