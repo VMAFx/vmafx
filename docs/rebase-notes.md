@@ -40371,3 +40371,8 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## release-please draft mode
+
+no rebase impact: release-tooling-only change (`release-please-config.json`
+`"draft": true`). No C sources, headers, or test logic modified.
