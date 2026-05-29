@@ -5,8 +5,9 @@ set -euo pipefail
 source /opt/intel/oneapi/setvars.sh 2>/dev/null || true
 
 VMAF=/usr/local/bin/vmaf
-YUV=/home/kilian/dev/libvmaf_vulkan/python/test/resource/yuv
-TD=/home/kilian/dev/libvmaf_vulkan/testdata
+REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || echo /workspace)"
+YUV="$REPO_ROOT/python/test/resource/yuv"
+TD="$REPO_ROOT/testdata"
 
 REF1="$YUV/src01_hrc00_576x324.yuv"
 DIS1="$YUV/src01_hrc01_576x324.yuv"

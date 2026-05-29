@@ -4,11 +4,7 @@ The **Tiny AI** surface lets you ship small, specialized perceptual-quality
 models alongside the classic VMAF SVM without introducing a second ML
 runtime or giving up libvmaf's C-only deployment story. The whole feature
 is gated on `-Denable_dnn=auto|enabled|disabled` (default `auto`) and
-<<<<<<< HEAD
 consumed through a single public header, `libvmaf/dnn.h`.
-=======
-consumed through a single public header, `core/dnn.h`.
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ## The four capabilities
 

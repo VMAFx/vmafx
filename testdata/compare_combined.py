@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-import json, os
+import json
+import os
 
-os.chdir("/home/kilian/dev/libvmaf_vulkan/testdata")
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 for res in ["576", "640", "720", "1080", "4k"]:
     cpu_file = "scores_cpu_" + res + ".json"
@@ -23,7 +24,8 @@ for res in ["576", "640", "720", "1080", "4k"]:
         if d > 1.0:
             print("  frame %d: CPU=%.6f SYCL=%.6f diff=%.6f" % (i, cv, sv, d))
     print("  max diff at frame %d: %.6f" % (max_frame, max_diff))
-    print("  pooled CPU=%.6f SYCL=%.6f" % (
-        cpu["pooled_metrics"]["vmaf"]["mean"],
-        sycl["pooled_metrics"]["vmaf"]["mean"]))
+    print(
+        "  pooled CPU=%.6f SYCL=%.6f"
+        % (cpu["pooled_metrics"]["vmaf"]["mean"], sycl["pooled_metrics"]["vmaf"]["mean"])
+    )
     print()

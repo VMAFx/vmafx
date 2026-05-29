@@ -97,6 +97,9 @@ tools/external-bench/**/__pycache__/
 
 # Generated benchmark results
 testdata/bbb/results/
+# Ad-hoc benchmark run outputs — regenerate with benchmark_netflix.py / bench_perf.py (ADR-0813)
+testdata/netflix_benchmark_results.json
+testdata/perf_benchmark_results.json
 build-docs/
 preprints202604.0035.v1.pdf
 

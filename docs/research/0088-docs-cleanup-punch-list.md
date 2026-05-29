@@ -177,20 +177,12 @@ configuration so future entries land path-correct.
 
 ### libvmaf C API headers
 
-<<<<<<< HEAD
 - `core/include/libvmaf/libvmaf_mcp.h` ships but is not mentioned
-=======
-- `core/include/core/libvmaf_mcp.h` ships but is not mentioned
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   in any `docs/api/*.md`. ADR-0100 per-surface bar requires a doc.
   Either fold a section into `docs/api/index.md` or split into
   `docs/api/mcp.md`. (Independent from `docs/mcp/`, which covers
   the *server*; this gap is on the *embedded C API*.)
-<<<<<<< HEAD
 - `core/include/libvmaf/feature.h`, `model.h`, `picture.h`,
-=======
-- `core/include/core/feature.h`, `model.h`, `picture.h`,
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   `vmaf_assert.h` lack dedicated `docs/api/*.md` pages. They are
   mentioned in `docs/api/index.md` so this is a per-surface-bar
   judgement call rather than an outright omission; flag for triage.
