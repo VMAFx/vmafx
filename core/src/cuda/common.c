@@ -47,14 +47,14 @@ static int init_with_primary_context(VmafCudaState *cu_state)
     int n_gpu;
     res |= cu_state->f->cuDeviceGetCount(&n_gpu);
     if (device_id > n_gpu) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "device_id %d is out of range\n", device_id);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "Error: device_id %d is out of range\n", device_id);
         return -EINVAL;
     }
 
     res |= cu_state->f->cuDeviceGet(&cu_device, device_id);
     res |= cu_state->f->cuDevicePrimaryCtxRetain(&cu_context, cu_device);
     if (res != CUDA_SUCCESS) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "failed to initialize CUDA\n");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "Error: failed to initialize CUDA\n");
         return -EINVAL;
     }
 

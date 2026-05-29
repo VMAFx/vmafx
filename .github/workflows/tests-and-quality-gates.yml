@@ -681,7 +681,7 @@ jobs:
   # binary were never invoked in CI. This job closes that gap.
   #
   # Local repro:
-  #   cd libvmaf && meson setup build-mcp core \
+  #   cd libvmaf && meson setup build-mcp \
   #     -Denable_cuda=false -Denable_sycl=false \
   #     -Denable_mcp=true -Denable_mcp_sse=true \
   #     -Denable_mcp_uds=true -Denable_mcp_stdio=true && \

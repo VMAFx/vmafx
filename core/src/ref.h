@@ -35,10 +35,18 @@ typedef struct VmafRef {
     atomic_int cnt;
 } VmafRef;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int vmaf_ref_init(VmafRef **ref);
 void vmaf_ref_fetch_increment(VmafRef *ref);
 long vmaf_ref_fetch_decrement(VmafRef *ref);
 long vmaf_ref_load(VmafRef *ref);
 int vmaf_ref_close(VmafRef *ref);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __VMAF_SRC_REF_H__ */

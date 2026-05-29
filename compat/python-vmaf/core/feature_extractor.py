@@ -235,6 +235,7 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         "adm2",
         "aim",
         "adm3",
+        "ansnr",
         "motion",
         "motion2",
         "motion3",
@@ -242,6 +243,7 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         "vif_den",
         "adm_num",
         "adm_den",
+        "anpsnr",
         "vif_num_scale0",
         "vif_den_scale0",
         "vif_num_scale1",
@@ -269,6 +271,8 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     ]
 
     ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT = dict(zip(ATOM_FEATURES, ATOM_FEATURES))
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["ansnr"] = "float_ansnr"
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["anpsnr"] = "float_anpsnr"
     # motion3, aim and adm3 now have short aliases registered in alias.c
     # (motion3, aim, adm3 respectively), so the XML key matches the feature name
     # directly — no override needed beyond the default zip mapping.
@@ -294,7 +298,7 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        features = ["float_adm", "float_vif", "float_motion"]
+        features = ["float_adm", "float_vif", "float_motion", "float_ansnr"]
         options = {
             "float_adm": {"debug": True},
             "float_vif": {"debug": True},
@@ -456,6 +460,8 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
             [f"integer_{f}" for f in VmafFeatureExtractor.ATOM_FEATURES],
         )
     )
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["ansnr"] = "float_ansnr"
+    ATOM_FEATURES_TO_VMAFEXEC_KEY_DICT["anpsnr"] = "float_anpsnr"
 
     def _generate_result(self, asset):
 
@@ -469,7 +475,7 @@ class VmafIntegerFeatureExtractor(VmafFeatureExtractor):
         h = quality_height
         logger = self.logger
 
-        features = ["adm", "vif", "motion"]
+        features = ["adm", "vif", "motion", "float_ansnr"]
         options = {
             "adm": {"debug": True},
             "vif": {"debug": True},

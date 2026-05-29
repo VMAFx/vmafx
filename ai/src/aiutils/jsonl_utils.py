@@ -5,49 +5,8 @@
 from __future__ import annotations
 
 import json
-<<<<<<< HEAD
-import math
-from pathlib import Path
-from typing import Any, Iterator
-
-
-def _sanitize_nonfinite(obj: Any) -> Any:
-    """Recursively replace non-finite floats (NaN, Infinity) with None.
-
-    Standard JSON does not support NaN or Infinity; replacing with null
-    (None) keeps the document valid while preserving all other fields.
-    """
-    if isinstance(obj, float) and not math.isfinite(obj):
-        return None
-    if isinstance(obj, dict):
-        return {k: _sanitize_nonfinite(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_nonfinite(v) for v in obj]
-    return obj
-
-
-def dumps_jsonl_row(obj: dict, **kwargs: Any) -> str:
-    """Serialise *obj* to a single compact, sorted, newline-terminated JSON line.
-
-    Non-finite float values (``math.nan``, ``math.inf``, ``-math.inf``) are
-    replaced with ``null`` so the output is valid RFC 8259 JSON.  Keys are
-    sorted deterministically.  The result always ends with ``'\\n'``.
-
-    Args:
-        obj:     The dict to serialise.
-        **kwargs: Extra keyword arguments forwarded to :func:`json.dumps`
-                 (e.g. ``separators`` to control spacing).
-
-    Returns:
-        A JSON string terminated by a newline character.
-    """
-    sanitised = _sanitize_nonfinite(obj)
-    kwargs.setdefault("sort_keys", True)
-    return json.dumps(sanitised, **kwargs) + "\n"
-=======
 from pathlib import Path
 from typing import Iterator
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 
 def iter_jsonl(path: Path) -> Iterator[tuple[int, dict]]:

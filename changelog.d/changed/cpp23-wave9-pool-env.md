@@ -1,0 +1,1 @@
+- **C++23 Wave 9**: `picture_pool.c`, `gpu_picture_pool.c`, and `gpu_dispatch_env.c` converted to `.cpp` with `cpp_std=c++23` isolated static libs (ADR-0768). `extern "C"` guards added to `picture.h`, `mem.h`, `ref.h`, and `picture_pool.h`. Orphan `test_ansnr_simd` meson entry removed. No user-visible change.

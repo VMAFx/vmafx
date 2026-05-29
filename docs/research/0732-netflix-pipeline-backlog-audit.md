@@ -15,11 +15,7 @@ pipeline steps not yet ported to the VMAFX fork (`VMAFx/vmafx`).
 The upstream remote `https://github.com/Netflix/vmaf.git` was fetched fresh on
 2026-05-28. At that point `git log upstream/master ^HEAD --oneline` listed **2,251
 upstream commits** not present in the fork. The fork carries the rebrand
-<<<<<<< HEAD
 (`libvmaf/` → `core/`, `python/vmaf/` → `compat/python-vmaf/`, org migration to
-=======
-(`core/` → `core/`, `python/vmaf/` → `compat/python-vmaf/`, org migration to
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 `VMAFx/vmafx`), so the topology is a port-only fork — no shared merge base with
 upstream. Items were scored against the fork tree on the current `master` tip.
 
@@ -36,11 +32,7 @@ prioritised backlog.
 
 #### In upstream — fully ported to fork
 
-<<<<<<< HEAD
 All core feature extractors present in `libvmaf/src/feature/` on `upstream/master`
-=======
-All core feature extractors present in `core/src/feature/` on `upstream/master`
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 are present in `core/src/feature/` on the fork. The fork has gone further, adding:
 `ssimulacra2`, `ciede`, `psnr_hvs`, `ms_ssim_decimate`, `speed_qa`, and the full
 DNN-backed extractor family (`lpips`, `dists_sq`, `fastdvdnet_pre`, `mobilesal`,
@@ -126,11 +118,7 @@ extractors await a future HDR model.
 | Picture pool default-on | `46d3a15456` | Fork still guards behind `VMAF_PICTURE_POOL` ifdef | Medium |
 | Batch threading default-on | `dff4082b26` | Fork still guards behind `VMAF_BATCH_THREADING` ifdef | Medium |
 | Direct read default | `e4b93c6edb` | Fork has `USE_DIRECT_READ` guard | Low |
-<<<<<<< HEAD
 | `libvmaf/test`: 32-bit clang `-mfpmath=sse -msse2` toolchain | `9661232dcb` | Fork CI does not have a 32-bit clang matrix leg | Low |
-=======
-| `core/test`: 32-bit clang `-mfpmath=sse -msse2` toolchain | `9661232dcb` | Fork CI does not have a 32-bit clang matrix leg | Low |
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | `vif.c` on-the-fly filter + `reflect_101` boundary fix | `bf9ad33340` | Fork uses pre-computed cache (ADR-0500), boundary fix needs verification | Medium |
 
 ---
@@ -241,17 +229,10 @@ items above. Commit SHAs are from `upstream/master`.
 | `46d3a15456` | libvmaf: enable picture pool by default | Backlog #3 |
 | `dff4082b26` | libvmaf: enable batch threading by default | Backlog #3 |
 | `32780bd9b6` | python/config: make download_reactively race-safe | **Already in fork** |
-<<<<<<< HEAD
 | `4e46960105` | libvmaf/motion_v2: port remaining options | **Already in fork** |
 | `a2b59b7750` | libvmaf/motion_v2: add motion_five_frame_window | Backlog #1 |
 | `c17dd89806` | libvmaf/motion_v2: add motion_max_val | **Already in fork** |
 | `856d383532` | libvmaf/motion_v2: fix mirroring behavior | **Already in fork** |
-=======
-| `4e46960105` | core/motion_v2: port remaining options | **Already in fork** |
-| `a2b59b7750` | core/motion_v2: add motion_five_frame_window | Backlog #1 |
-| `c17dd89806` | core/motion_v2: add motion_max_val | **Already in fork** |
-| `856d383532` | core/motion_v2: fix mirroring behavior | **Already in fork** |
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | `41bacc83e1` | feature/cambi: move shared code to cambi.h | **Already in fork** |
 | `984f281f5b` | feature/cambi: fuse uh_slide/uh_slide_edge | **Already in fork** |
 | `933cccb4bc` | feature/cambi: frame-level calc_c_values dispatch | **Already in fork** |
@@ -290,19 +271,10 @@ items above. Commit SHAs are from `upstream/master`.
 | `6a7b1ae348` | python/test: reduce speed_chroma_uv tolerance | Investigate (Rule 1) |
 | `d4f6537210` | test: use pre-sliced 5-frame YUV for SpEED | N/A — fork has own fixtures |
 | `7922f2c04c` | python: add SpeedChroma/SpeedTemporal extractors | Backlog #2 |
-<<<<<<< HEAD
 | `9661232dcb` | libvmaf/test: 32-bit clang toolchain | Skip |
 | CAMBI Python v0.6–v0.8 (`095bb1818d`, `30a6e2a8dc`, `b2ec42c44d`, …) | cambi Python v0.8 + tests | Backlog #4, #12 |
 | `2e6bbb657d` | python/routine: SubjectiveDatasetReader | Backlog #6 |
 | `3685aa3c10` | python/test: SubjectiveDatasetReader tests | Companion to Backlog #6 |
 | `bf9ad33340` | libvmaf/feature/vif: on-the-fly filter + reflect_101 fix | Backlog #5 (reflect_101 only — fork has better precompute) |
 | `49d46e234b` | libvmaf/predict: port chroma_from_luma correction | **Already in fork** (predict.c confirmed) |
-=======
-| `9661232dcb` | core/test: 32-bit clang toolchain | Skip |
-| CAMBI Python v0.6–v0.8 (`095bb1818d`, `30a6e2a8dc`, `b2ec42c44d`, …) | cambi Python v0.8 + tests | Backlog #4, #12 |
-| `2e6bbb657d` | python/routine: SubjectiveDatasetReader | Backlog #6 |
-| `3685aa3c10` | python/test: SubjectiveDatasetReader tests | Companion to Backlog #6 |
-| `bf9ad33340` | core/feature/vif: on-the-fly filter + reflect_101 fix | Backlog #5 (reflect_101 only — fork has better precompute) |
-| `49d46e234b` | core/predict: port chroma_from_luma correction | **Already in fork** (predict.c confirmed) |
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 | `de53821641` | feature/integer_vif: port vif_skip_scale0 | **Already in fork** (integer_vif.c:77 confirmed) |
