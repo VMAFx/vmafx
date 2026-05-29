@@ -69,6 +69,18 @@ __device__ __forceinline__ void i4_adm_csf_kernel(AdmBufferCuda buf, int scale, 
     const cuda_i4_adm_dwt_band_t *dis = &buf.i4_dis_dwt2;
     int32_t *flt_ptr = buf.i4_csf_f.bands[band];
 
+    /* F3: extract __restrict__ read-only band pointers before the hot inner
+     * loop so the compiler can route all loads through the L1 read-only cache
+     * via __ldg().  AdmBufferCuda is passed by value, hiding the sub-struct
+     * pointers from ptxas alias analysis; the one-time extraction here makes
+     * the alias-free invariant visible (ADR-0773, mirrors ADR-0763/ADR-0754). */
+    const int32_t *__restrict__ ref_h = ref->band_h;
+    const int32_t *__restrict__ ref_v = ref->band_v;
+    const int32_t *__restrict__ ref_d = ref->band_d;
+    const int32_t *__restrict__ dis_h = dis->band_h;
+    const int32_t *__restrict__ dis_v = dis->band_v;
+    const int32_t *__restrict__ dis_d = dis->band_d;
+
     int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
     int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
 
@@ -91,12 +103,12 @@ __device__ __forceinline__ void i4_adm_csf_kernel(AdmBufferCuda buf, int scale, 
 
             for (int col = 0; col < cols_per_thread; ++col) {
                 const int idx = row_off + col;
-                int32_t oh = ref->band_h[idx];
-                int32_t ov = ref->band_v[idx];
-                int32_t od = ref->band_d[idx];
-                int32_t th = dis->band_h[idx];
-                int32_t tv = dis->band_v[idx];
-                int32_t td = dis->band_d[idx];
+                int32_t oh = __ldg(&ref_h[idx]);
+                int32_t ov = __ldg(&ref_v[idx]);
+                int32_t od = __ldg(&ref_d[idx]);
+                int32_t th = __ldg(&dis_h[idx]);
+                int32_t tv = __ldg(&dis_v[idx]);
+                int32_t td = __ldg(&dis_d[idx]);
 
                 int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
                 int32_t r_val = decouple_r_s123(oh, ov, od, th, tv, td, band - 1, angle_flag,
@@ -136,6 +148,16 @@ __device__ __forceinline__ void adm_csf_kernel(AdmBufferCuda buf, int top, int b
     const cuda_adm_dwt_band_t *ref = &buf.ref_dwt2;
     const cuda_adm_dwt_band_t *dis = &buf.dis_dwt2;
     int16_t *flt_ptr = buf.csf_f.bands[band];
+
+    /* F3: extract __restrict__ read-only band pointers before the hot inner
+     * loop (ADR-0773, mirrors ADR-0763/ADR-0754). */
+    const int16_t *__restrict__ ref_h = ref->band_h;
+    const int16_t *__restrict__ ref_v = ref->band_v;
+    const int16_t *__restrict__ ref_d = ref->band_d;
+    const int16_t *__restrict__ dis_h = dis->band_h;
+    const int16_t *__restrict__ dis_v = dis->band_v;
+    const int16_t *__restrict__ dis_d = dis->band_d;
+
     int y = top + (blockIdx.y * blockDim.y + threadIdx.y) * rows_per_thread;
     int x = left + (blockIdx.x * blockDim.x + threadIdx.x) * cols_per_thread;
 
@@ -154,12 +176,12 @@ __device__ __forceinline__ void adm_csf_kernel(AdmBufferCuda buf, int top, int b
 
             for (int col = 0; col < cols_per_thread; ++col) {
                 const int idx = row_off + col;
-                int16_t oh = ref->band_h[idx];
-                int16_t ov = ref->band_v[idx];
-                int16_t od = ref->band_d[idx];
-                int16_t th = dis->band_h[idx];
-                int16_t tv = dis->band_v[idx];
-                int16_t td = dis->band_d[idx];
+                int16_t oh = __ldg(&ref_h[idx]);
+                int16_t ov = __ldg(&ref_v[idx]);
+                int16_t od = __ldg(&ref_d[idx]);
+                int16_t th = __ldg(&dis_h[idx]);
+                int16_t tv = __ldg(&dis_v[idx]);
+                int16_t td = __ldg(&dis_d[idx]);
 
                 int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
                 int16_t r_val = decouple_r_s0(oh, ov, od, th, tv, td, band - 1, angle_flag,

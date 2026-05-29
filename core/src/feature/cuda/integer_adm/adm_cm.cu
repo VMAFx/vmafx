@@ -42,12 +42,20 @@ __device__ __forceinline__ int32_t inline_i4_csf_a(const cuda_i4_adm_dwt_band_t 
     const uint32_t shift_dst = 28;
     const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
 
-    int32_t oh = ref->band_h[idx];
-    int32_t ov = ref->band_v[idx];
-    int32_t od = ref->band_d[idx];
-    int32_t th = dis->band_h[idx];
-    int32_t tv = dis->band_v[idx];
-    int32_t td = dis->band_d[idx];
+    /* F3: extract __restrict__ pointers so __ldg() routes reads through the
+     * L1 read-only cache (ADR-0773). */
+    const int32_t *__restrict__ rh = ref->band_h;
+    const int32_t *__restrict__ rv = ref->band_v;
+    const int32_t *__restrict__ rd = ref->band_d;
+    const int32_t *__restrict__ dh = dis->band_h;
+    const int32_t *__restrict__ dv = dis->band_v;
+    const int32_t *__restrict__ dd = dis->band_d;
+    int32_t oh = __ldg(&rh[idx]);
+    int32_t ov = __ldg(&rv[idx]);
+    int32_t od = __ldg(&rd[idx]);
+    int32_t th = __ldg(&dh[idx]);
+    int32_t tv = __ldg(&dv[idx]);
+    int32_t td = __ldg(&dd[idx]);
 
     int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
     int32_t r_val = decouple_r_s123(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
@@ -73,12 +81,19 @@ __device__ __forceinline__ int32_t inline_i4_decouple_r(const cuda_i4_adm_dwt_ba
                                                         int band_idx, /* band_idx 0..2 → h/v/d */
                                                         double adm_enhn_gain_limit)
 {
-    int32_t oh = ref->band_h[idx];
-    int32_t ov = ref->band_v[idx];
-    int32_t od = ref->band_d[idx];
-    int32_t th = dis->band_h[idx];
-    int32_t tv = dis->band_v[idx];
-    int32_t td = dis->band_d[idx];
+    /* F3: __restrict__ extraction + __ldg() (ADR-0773). */
+    const int32_t *__restrict__ rh = ref->band_h;
+    const int32_t *__restrict__ rv = ref->band_v;
+    const int32_t *__restrict__ rd = ref->band_d;
+    const int32_t *__restrict__ dh = dis->band_h;
+    const int32_t *__restrict__ dv = dis->band_v;
+    const int32_t *__restrict__ dd = dis->band_d;
+    int32_t oh = __ldg(&rh[idx]);
+    int32_t ov = __ldg(&rv[idx]);
+    int32_t od = __ldg(&rd[idx]);
+    int32_t th = __ldg(&dh[idx]);
+    int32_t tv = __ldg(&dv[idx]);
+    int32_t td = __ldg(&dd[idx]);
 
     int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
     return decouple_r_s123(oh, ov, od, th, tv, td, band_idx, angle_flag, adm_enhn_gain_limit);
@@ -94,12 +109,19 @@ __device__ __forceinline__ int16_t inline_s0_csf_a(const cuda_adm_dwt_band_t *re
     __constant__ static const uint8_t i_shifts_cm[4] = {0, 15, 15, 17};
     __constant__ static const uint16_t i_shiftsadd_cm[4] = {0, 16384, 16384, 65535};
 
-    int16_t oh = ref->band_h[idx];
-    int16_t ov = ref->band_v[idx];
-    int16_t od = ref->band_d[idx];
-    int16_t th = dis->band_h[idx];
-    int16_t tv = dis->band_v[idx];
-    int16_t td = dis->band_d[idx];
+    /* F3: __restrict__ extraction + __ldg() (ADR-0773). */
+    const int16_t *__restrict__ rh = ref->band_h;
+    const int16_t *__restrict__ rv = ref->band_v;
+    const int16_t *__restrict__ rd = ref->band_d;
+    const int16_t *__restrict__ dh = dis->band_h;
+    const int16_t *__restrict__ dv = dis->band_v;
+    const int16_t *__restrict__ dd = dis->band_d;
+    int16_t oh = __ldg(&rh[idx]);
+    int16_t ov = __ldg(&rv[idx]);
+    int16_t od = __ldg(&rd[idx]);
+    int16_t th = __ldg(&dh[idx]);
+    int16_t tv = __ldg(&dv[idx]);
+    int16_t td = __ldg(&dd[idx]);
 
     int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
     int16_t r_val = decouple_r_s0(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
@@ -125,12 +147,19 @@ __device__ __forceinline__ int16_t inline_s0_decouple_r(const cuda_adm_dwt_band_
                                                         int band_idx, /* band_idx 0..2 → h/v/d */
                                                         double adm_enhn_gain_limit)
 {
-    int16_t oh = ref->band_h[idx];
-    int16_t ov = ref->band_v[idx];
-    int16_t od = ref->band_d[idx];
-    int16_t th = dis->band_h[idx];
-    int16_t tv = dis->band_v[idx];
-    int16_t td = dis->band_d[idx];
+    /* F3: __restrict__ extraction + __ldg() (ADR-0773). */
+    const int16_t *__restrict__ rh = ref->band_h;
+    const int16_t *__restrict__ rv = ref->band_v;
+    const int16_t *__restrict__ rd = ref->band_d;
+    const int16_t *__restrict__ dh = dis->band_h;
+    const int16_t *__restrict__ dv = dis->band_v;
+    const int16_t *__restrict__ dd = dis->band_d;
+    int16_t oh = __ldg(&rh[idx]);
+    int16_t ov = __ldg(&rv[idx]);
+    int16_t od = __ldg(&rd[idx]);
+    int16_t th = __ldg(&dh[idx]);
+    int16_t tv = __ldg(&dv[idx]);
+    int16_t td = __ldg(&dd[idx]);
 
     int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
     return decouple_r_s0(oh, ov, od, th, tv, td, band_idx, angle_flag, adm_enhn_gain_limit);
@@ -413,12 +442,19 @@ __device__ __forceinline__ int32_t inline_i4_csf_r(const cuda_i4_adm_dwt_band_t 
     const uint32_t shift_dst = 28;
     const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
 
-    int32_t oh = ref->band_h[idx];
-    int32_t ov = ref->band_v[idx];
-    int32_t od = ref->band_d[idx];
-    int32_t th = dis->band_h[idx];
-    int32_t tv = dis->band_v[idx];
-    int32_t td = dis->band_d[idx];
+    /* F3: __restrict__ extraction + __ldg() (ADR-0773). */
+    const int32_t *__restrict__ rh = ref->band_h;
+    const int32_t *__restrict__ rv = ref->band_v;
+    const int32_t *__restrict__ rd = ref->band_d;
+    const int32_t *__restrict__ dh = dis->band_h;
+    const int32_t *__restrict__ dv = dis->band_v;
+    const int32_t *__restrict__ dd = dis->band_d;
+    int32_t oh = __ldg(&rh[idx]);
+    int32_t ov = __ldg(&rv[idx]);
+    int32_t od = __ldg(&rd[idx]);
+    int32_t th = __ldg(&dh[idx]);
+    int32_t tv = __ldg(&dv[idx]);
+    int32_t td = __ldg(&dd[idx]);
 
     int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
     int32_t r_val = decouple_r_s123(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
@@ -434,12 +470,19 @@ __device__ __forceinline__ int16_t inline_s0_csf_r(const cuda_adm_dwt_band_t *re
     __constant__ static const uint8_t i_shifts_cm[4] = {0, 15, 15, 17};
     __constant__ static const uint16_t i_shiftsadd_cm[4] = {0, 16384, 16384, 65535};
 
-    int16_t oh = ref->band_h[idx];
-    int16_t ov = ref->band_v[idx];
-    int16_t od = ref->band_d[idx];
-    int16_t th = dis->band_h[idx];
-    int16_t tv = dis->band_v[idx];
-    int16_t td = dis->band_d[idx];
+    /* F3: __restrict__ extraction + __ldg() (ADR-0773). */
+    const int16_t *__restrict__ rh = ref->band_h;
+    const int16_t *__restrict__ rv = ref->band_v;
+    const int16_t *__restrict__ rd = ref->band_d;
+    const int16_t *__restrict__ dh = dis->band_h;
+    const int16_t *__restrict__ dv = dis->band_v;
+    const int16_t *__restrict__ dd = dis->band_d;
+    int16_t oh = __ldg(&rh[idx]);
+    int16_t ov = __ldg(&rv[idx]);
+    int16_t od = __ldg(&rd[idx]);
+    int16_t th = __ldg(&dh[idx]);
+    int16_t tv = __ldg(&dv[idx]);
+    int16_t td = __ldg(&dd[idx]);
 
     int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
     int16_t r_val = decouple_r_s0(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);

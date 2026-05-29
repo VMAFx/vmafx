@@ -619,3 +619,23 @@ kernel variants at runtime. The current policy table is in ADR-0753.
   channel reads through the L1 read-only texture cache. Any future kernel that reads
   per-pixel plane data from `VmafPicture` must follow the same pattern.
   See [ADR-0762](../../../../docs/adr/0762-cuda-ciede-ldg.md).
+
+## `__ldg()` pattern for ADM DWT2 band loads in inline helpers (ADR-0773)
+
+- **`adm_cm.cu` inline device helpers and `adm_csf.cu` kernel templates must
+  extract `const T *__restrict__` band pointers from `cuda_*_adm_dwt_band_t`
+  struct arguments BEFORE any indexed load, then read via `__ldg(&ptr[idx])`.**
+  The six inline helpers in `adm_cm.cu` (`inline_i4_csf_a`, `inline_i4_decouple_r`,
+  `inline_s0_csf_a`, `inline_s0_decouple_r`, `inline_i4_csf_r`, `inline_s0_csf_r`)
+  and the two kernel templates in `adm_csf.cu` (`i4_adm_csf_kernel<>`,
+  `adm_csf_kernel<>`) all receive band struct pointers derived from an
+  `AdmBufferCuda` passed by value to the enclosing `__global__` kernel. Without
+  explicit `__restrict__` extraction the compiler cannot infer alias-freedom and
+  falls back to the coherent L2 path for all 6 band reads per pixel.
+  On rebase: if upstream modifies the decouple logic and the changes need to be
+  ported, re-apply the `__restrict__` extraction and `__ldg()` pattern at each
+  affected load site. The invariant is cite-linked to ADR-0773 inline.
+  Note: `adm_decouple.cu` (dead code in the fork, rebase-note 0002) carries a
+  separate ADR-0763 comment; those kernels are never dispatched and require no
+  maintenance.
+  See [ADR-0773](../../../../docs/adr/0773-cuda-adm-decouple-inline-ldg.md).

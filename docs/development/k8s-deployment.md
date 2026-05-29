@@ -51,13 +51,9 @@ The chart automatically sets the `VMAFX_BACKEND` environment variable inside
 the container based on `gpu.vendor`, so the VMAFX runtime picks the correct
 backend without further configuration.
 
-**Vulkan:** The Vulkan backend was removed in ADR-0726 and is no longer
-supported. Supported backends are `cuda`, `hip`, `sycl`, and `cpu`.
-
-**NVIDIA driver requirement:** NVIDIA nodes must have driver **R610.43.02 or
-later** installed (required by the CUDA 13.3 toolkit). Earlier drivers are
-incompatible with the vmafx-server container image. See
-[CUDA backend overview](../backends/cuda/overview.md) for details.
+**Vulkan note:** Vulkan is not a separate Kubernetes resource. It runs through
+whichever GPU device-plugin is allocated. See
+[GPU scheduling guide](gpu-scheduling.md#vulkan-and-kubernetes).
 
 ## Workload types
 
