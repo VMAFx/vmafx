@@ -518,7 +518,7 @@ endif
 config_h_target = configure_file(output: 'config.h', configuration: cdata)
 
 libvmaf_cpu_sources = [
-    src_dir + 'cpu.c',
+    src_dir + 'cpu.cpp',
 ]
 
 if is_asm_enabled
@@ -555,6 +555,9 @@ libvmaf_cpu_static_lib = static_library(
     'libvmaf_cpu',
     libvmaf_cpu_sources,
     include_directories : [libvmaf_include],
+    # ADR-0755: cpu.cpp uses constinit (C++20) and std::atomic; override
+    # cpp_std so this TU compiles under C++23 without affecting other TUs.
+    override_options : ['cpp_std=c++23'],
 )
 
 platform_specific_cpu_objects = []

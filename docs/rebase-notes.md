@@ -40219,4 +40219,18 @@ Fork-local files added/modified:
 `docs/adr/README.md` (new row),
 `changelog.d/perf/cuda-f3-struct-by-value-audit.md` (new),
 `docs/state.md` (new row),
+## ADR-0755: C++23 Wave 7 — activate `cpu.cpp` (PR on 2026-05-29)
+
+**No rebase impact** on upstream C/Python code.
+
+`core/src/cpu.c` was deleted and `core/src/meson.build` updated to compile
+`cpu.cpp`. The file `cpu.cpp` is wholly fork-local (no upstream Netflix equivalent).
+No Netflix upstream commit will collide with this deletion.
+
+Fork-local files modified:
+`core/src/cpu.c` (deleted),
+`core/src/meson.build` (cpu.c → cpu.cpp in libvmaf_cpu_sources),
+`docs/adr/0755-cpp23-wave7-single-file.md` (new),
+`docs/adr/README.md` (new row),
+`changelog.d/changed/0755-cpp23-wave7-cpu-cpp.md` (new),
 `docs/rebase-notes.md` (this entry).
