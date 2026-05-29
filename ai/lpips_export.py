@@ -180,9 +180,15 @@ def _parity_check(onnx_path: Path, atol: float = 1e-4) -> None:
     print(f"[ok] parity: max|Δ|={diff:.3e} ≤ atol={atol:.1e}")
 
 
-def _write_sidecar(onnx_path: Path, opset: int) -> Path:
-    sidecar = onnx_path.with_suffix(".json")
-    payload = {
+def _write_sidecar(
+    onnx_path: Path,
+    opset: int,
+    *,
+    sidecar_path: Path | None = None,
+    run_provenance: dict | None = None,
+) -> Path:
+    sidecar = sidecar_path if sidecar_path is not None else onnx_path.with_suffix(".json")
+    payload: dict = {
         "input_name": "ref",
         "kind": "fr",
         "name": "vmaf_tiny_lpips_sq_v1",
@@ -195,6 +201,8 @@ def _write_sidecar(onnx_path: Path, opset: int) -> Path:
         "onnx_opset": opset,
         "output_name": "score",
     }
+    if run_provenance is not None:
+        payload["run_provenance"] = run_provenance
     sidecar.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return sidecar
 
@@ -208,11 +216,18 @@ def _sha256(path: Path) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    repo_root = Path(__file__).resolve().parent.parent
+    script_path = Path(__file__).resolve()
+    repo_root = script_path.parent.parent
     default_out = repo_root / "model" / "tiny" / "lpips_sq.onnx"
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--output", type=Path, default=default_out)
+    parser.add_argument("--output", "--out", dest="output", type=Path, default=default_out)
+    parser.add_argument(
+        "--sidecar",
+        type=Path,
+        default=None,
+        help="Path for the JSON sidecar (default: <output>.json).",
+    )
     parser.add_argument("--opset", type=int, default=17)
     parser.add_argument("--skip-parity", action="store_true")
     args = parser.parse_args(argv)
@@ -225,13 +240,40 @@ def main(argv: list[str] | None = None) -> int:
             "sidecar + registry should use the emitted value",
             file=sys.stderr,
         )
-    _write_sidecar(args.output, effective_opset)
+    # Build run_provenance lazily so aiutils import errors surface only when
+    # the sidecar is actually written (keeps the module importable without aiutils).
+    run_provenance: dict | None = None
+    try:
+        _ai_src = str(script_path.parent / "src")
+        if _ai_src not in sys.path:
+            sys.path.insert(0, _ai_src)
+        from aiutils.run_manifest import build_run_provenance
+
+        run_provenance = build_run_provenance(
+            entrypoint=script_path,
+            repo_root=repo_root,
+            argv=sys.argv[1:] if argv is None else list(argv),
+            args=vars(args),
+            outputs={"onnx": args.output},
+        )
+    except ImportError:
+        pass
+    _write_sidecar(
+        args.output,
+        effective_opset,
+        sidecar_path=args.sidecar,
+        run_provenance=run_provenance,
+    )
     if not args.skip_parity:
         _parity_check(args.output)
 
     sha = _sha256(args.output)
     size = args.output.stat().st_size
-    print(f"[ok] wrote {args.output.relative_to(repo_root)} ({size} bytes)")
+    try:
+        display_path = args.output.relative_to(repo_root)
+    except ValueError:
+        display_path = args.output
+    print(f"[ok] wrote {display_path} ({size} bytes)")
     print(f"     sha256 {sha}")
     print("     add this digest to model/tiny/registry.json")
     return 0

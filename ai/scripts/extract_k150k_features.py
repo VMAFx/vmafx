@@ -1112,7 +1112,7 @@ def main() -> int:
     ap.add_argument(
         "--vmaf-bin",
         type=Path,
-        default=REPO_ROOT / "libvmaf" / "build-cpu" / "tools" / "vmaf",
+        default=REPO_ROOT / "core" / "build-cpu" / "tools" / "vmaf",
         help=(
             "Path to the fork vmaf binary (built with ssimulacra2 + motion_v2).  "
             "Default: core/build-cpu/tools/vmaf.  Passing a CUDA-capable binary "
@@ -1123,7 +1123,7 @@ def main() -> int:
     ap.add_argument(
         "--cpu-vmaf-bin",
         type=Path,
-        default=REPO_ROOT / "libvmaf" / "build-cpu" / "tools" / "vmaf",
+        default=REPO_ROOT / "core" / "build-cpu" / "tools" / "vmaf",
         help=(
             "CPU vmaf binary used for residual CPU-only feature passes when "
             "--vmaf-bin points at a CUDA-capable binary. Default: "
@@ -1234,7 +1234,7 @@ def main() -> int:
         print(
             f"error: vmaf binary not found: {args.vmaf_bin}\n"
             "Build the fork vmaf binary with:\n"
-            "  meson setup core/build-cpu libvmaf -Denable_cuda=false "
+            "  meson setup core/build-cpu core -Denable_cuda=false "
             "--buildtype=release && ninja -C core/build-cpu\n"
             "Then re-run with --vmaf-bin core/build-cpu/tools/vmaf",
             file=sys.stderr,

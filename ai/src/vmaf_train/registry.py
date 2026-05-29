@@ -17,10 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-<<<<<<< HEAD
 import math
-=======
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -117,7 +114,6 @@ def register(
 def load(sidecar_path: Path) -> ModelMetadata:
     doc: dict[str, Any] = json.loads(sidecar_path.read_text())
     return ModelMetadata(**doc)
-<<<<<<< HEAD
 
 
 def _sanitize_nonfinite(obj: Any) -> Any:
@@ -168,5 +164,3 @@ def write_registry_json(path: Path, payload: dict, **kwargs: Any) -> None:
         **kwargs: Forwarded to :func:`dumps_registry_json` / :func:`json.dumps`.
     """
     path.write_text(dumps_registry_json(payload, **kwargs) + "\n", encoding="utf-8")
-=======
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
