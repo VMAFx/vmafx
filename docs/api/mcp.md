@@ -4,11 +4,7 @@ The fork ships an in-process MCP (Model Context Protocol) server that an
 embedding host (e.g. an editor plugin or a measurement-orchestration
 daemon) can drive over loopback HTTP, a Unix-domain socket, or a
 caller-owned stdio fd pair. The C surface is defined in
-<<<<<<< HEAD
 [`core/include/libvmaf/libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h).
-=======
-[`core/include/core/libvmaf_mcp.h`](../../core/include/core/libvmaf_mcp.h).
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 This page covers the **embedded C API**. The standalone Python MCP
 server under [`mcp-server/vmaf-mcp/`](../../mcp-server/vmaf-mcp/) is a

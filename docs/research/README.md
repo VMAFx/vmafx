@@ -100,9 +100,7 @@ Conventions:
 <!-- Backfill entries for older workstreams land here as their authors
      revisit the corresponding code. -->
 
-| [0734](0734-cuda-vif-filter1d-ncu-hotpath-20260528.md) | CUDA VIF `filter1d.cu` ncu hotpath profile on RTX 4090 (sm_89). Primary bottleneck: launch-width-limited (0.84 waves) + register pressure (56 regs/thread). Top kernel `filter1d_8_horizontal_kernel_2_17_9` = 35 % of VIF filter time. Three optimization candidates: increase `val_per_thread` 2→4, reduce register live range, add `__ldg()` for smem loads. | Active | — |
 *(Index seeded by [ADR-0108](../adr/0108-deep-dive-deliverables-rule.md)'s
 adoption PR; backfilled digests for the existing major workstreams
 will be added as their authors revisit the corresponding code.)*
 | [0135](0135-cambi-cuda-smem-tile-2026-05-16.md) | CAMBI CUDA spatial-mask SLM tile -- design analysis: img-tile correctness bug, 26x read reduction via direct zd_tile load, bank-conflict accepted at uint8 row access | Active | [ADR-0464](../adr/0464-cambi-cuda-smem-tile.md) |
-| [0751](0751-cross-backend-4k-baseline-and-pr79-adm-cm-4k-measure.md) | Cross-backend 4K (3840x2160) baseline (CPU + CUDA) and PR #79 `adm_cm_line_kernel_8` A/B at 4K. RTX 4090 medians: vif CUDA 147 fps, adm CUDA 161 fps. filter1d fully saturated at 4K (253 waves, 69.7% occ). adm_cm `__launch_bounds__` win is zero at 4K (-0.3%) vs -9.3% at 1080p (register-bound regime only). ms_ssim_decimate scale 0 saturated at 4K (88.1% occ). | Active | — |

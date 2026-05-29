@@ -13,9 +13,13 @@ Usage
 -----
 ::
 
-    # With Netflix corpus (preferred):
+    # With Netflix corpus (preferred); VMAF_CORPUS_DIR overrides the default:
+    VMAF_CORPUS_DIR=/data/corpus/netflix python ai/scripts/calibrate_nr_threshold.py \\
+        --output model/tiny/nr_metric_v1.json
+
+    # Or pass --corpus explicitly:
     python ai/scripts/calibrate_nr_threshold.py \\
-        --corpus .corpus/netflix/ \\
+        --corpus /data/corpus/netflix/ \\
         --output model/tiny/nr_metric_v1.json
 
     # Dry-run (no JSON write):
@@ -40,6 +44,7 @@ import argparse
 import json
 import logging
 import math
+import os
 import subprocess
 import sys
 import tempfile
@@ -67,7 +72,7 @@ _log = logging.getLogger(__name__)
 
 _DEFAULT_MODEL_JSON = _REPO_ROOT / "model" / "tiny" / "nr_metric_v1.json"
 _DEFAULT_MODEL_ONNX = _REPO_ROOT / "model" / "tiny" / "nr_metric_v1.onnx"
-_DEFAULT_CORPUS = _REPO_ROOT / ".corpus" / "netflix"
+_DEFAULT_CORPUS = Path(os.environ.get("VMAF_CORPUS_DIR", str(_REPO_ROOT / ".corpus" / "netflix")))
 _DEFAULT_CRFS: tuple[int, ...] = (18, 23, 28, 33, 38)
 _DEFAULT_CODEC = "libx264"
 _DEFAULT_PRESET = "medium"

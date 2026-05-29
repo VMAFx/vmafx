@@ -1,6 +1,10 @@
 # Caches, build artifacts
 .DS_Store
 .cache/
+# Local corpus data — large YUV/MP4 fixtures, never committed.
+# Also listed in .git/info/exclude for local-only cover; this entry
+# makes the exclusion visible to all contributors.
+.corpus/
 # Rust build artifacts
 target/
 # Editor / refactor scratch backups — never in tree (ADR-0546 audit cleanup
@@ -138,14 +142,3 @@ vmafx-tune
 # Library crates inside bindings/ produce their own Cargo.lock which we
 # do NOT track (libraries let consumers pin).
 bindings/rust/**/Cargo.lock
-
-# Nsight Compute profiling artifacts
-*.ncu-rep
-
-# Generated upscaled perf benchmark fixtures (reproducible from 576x324 native)
-testdata/ref_1920x1080_48f.yuv
-testdata/dis_1920x1080_48f.yuv
-testdata/ref_2560x1440_48f.yuv
-testdata/dis_2560x1440_48f.yuv
-testdata/bbb/ref_3840x2160_30f.yuv
-testdata/bbb/dis_3840x2160_30f.yuv

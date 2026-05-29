@@ -66,11 +66,7 @@ every known precision mitigation:
 
 Build: `meson setup build -Denable_vulkan=enabled -Denable_cuda=false
 -Denable_sycl=false -Dc_args="-DSS2V_USE_GPU_XYB=1"; ninja -C build`
-<<<<<<< HEAD
 in `libvmaf/`. Cross-backend gate:
-=======
-in `core/`. Cross-backend gate:
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ```bash
 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json \

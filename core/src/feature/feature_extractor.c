@@ -98,6 +98,28 @@ extern VmafFeatureExtractor vmaf_fex_float_adm_sycl;
  * parity gap). */
 extern VmafFeatureExtractor vmaf_fex_cambi_sycl;
 #endif
+#if HAVE_VULKAN
+extern VmafFeatureExtractor vmaf_fex_integer_vif_vulkan;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_vulkan;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_vulkan_impl;
+extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_vulkan;
+extern VmafFeatureExtractor vmaf_fex_integer_adm_vulkan;
+extern VmafFeatureExtractor vmaf_fex_psnr_vulkan;
+extern VmafFeatureExtractor vmaf_fex_integer_psnr_vulkan;
+extern VmafFeatureExtractor vmaf_fex_float_moment_vulkan;
+extern VmafFeatureExtractor vmaf_fex_ciede_vulkan;
+extern VmafFeatureExtractor vmaf_fex_integer_ciede_vulkan;
+extern VmafFeatureExtractor vmaf_fex_float_ssim_vulkan;
+extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_vulkan;
+extern VmafFeatureExtractor vmaf_fex_psnr_hvs_vulkan;
+extern VmafFeatureExtractor vmaf_fex_float_ansnr_vulkan;
+extern VmafFeatureExtractor vmaf_fex_float_psnr_vulkan;
+extern VmafFeatureExtractor vmaf_fex_float_motion_vulkan;
+extern VmafFeatureExtractor vmaf_fex_float_vif_vulkan;
+extern VmafFeatureExtractor vmaf_fex_float_adm_vulkan;
+extern VmafFeatureExtractor vmaf_fex_ssimulacra2_vulkan;
+extern VmafFeatureExtractor vmaf_fex_cambi_vulkan;
+#endif
 #if HAVE_HIP
 /* HIP first-consumer kernel — T7-10 / ADR-0241. Registration succeeds
  * but `init()` returns -ENOSYS until the runtime PR (T7-10b) replaces
@@ -238,6 +260,40 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     /* T3-15 / ADR-0371: cambi SYCL twin (closes last CUDA→SYCL parity gap). */
     &vmaf_fex_cambi_sycl,
 #endif
+#if HAVE_VULKAN
+    /* Vulkan is registered AFTER SYCL/CUDA — those backends remain
+     * the preferred GPU paths because they ship the full feature
+     * set (ADM + motion + VIF) and are bit-exact-tested against the
+     * Netflix golden gate. Vulkan is opt-in via explicit feature
+     * name selection until the full backend lands (T5-1c).
+     *
+     * ADR-0545: each Vulkan extractor appears EXACTLY ONCE.  Prior to
+     * the dedup pass this block held 67 entries instead of 18; nine
+     * extractors were re-registered (two of them eleven times each,
+     * seven of them six times), which caused
+     * `vmaf_fex_ctx_pool_aquire` to allocate one ctx-pool entry per
+     * registration and invoke each extractor's init/extract/flush
+     * hooks 6-11x per picture.  The first-match `get_by_name` path
+     * hid the bug from CLI users, but every iterator-driven dispatch
+     * (e.g. `vmaf_use_features_from_model`) paid the cost. */
+    &vmaf_fex_integer_vif_vulkan,
+    /* ADR-0546 (Vulkan-01): vmaf_fex_integer_motion_vulkan_impl provides the
+     * explicitly-named "integer_motion_vulkan" twin matching the CUDA/SYCL
+     * naming convention.  The symbol and TU existed since the Vulkan backend
+     * landed but were never entered into this list, causing
+     * vmaf_get_feature_extractor_by_name("integer_motion_vulkan") to return
+     * NULL even on Vulkan-enabled builds. ADR-0662 keeps it before the legacy
+     * "motion_vulkan" compatibility extractor so feature-name dispatch prefers
+     * the lavapipe-stable implementation. */
+    &vmaf_fex_integer_motion_vulkan_impl, &vmaf_fex_integer_motion_vulkan,
+    &vmaf_fex_integer_motion_v2_vulkan, &vmaf_fex_integer_adm_vulkan, &vmaf_fex_psnr_vulkan,
+    &vmaf_fex_float_moment_vulkan, &vmaf_fex_ciede_vulkan, &vmaf_fex_float_ssim_vulkan,
+    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_float_ansnr_vulkan,
+    &vmaf_fex_float_psnr_vulkan, &vmaf_fex_float_motion_vulkan, &vmaf_fex_float_vif_vulkan,
+    &vmaf_fex_float_adm_vulkan, &vmaf_fex_ssimulacra2_vulkan,
+    /* T7-36 / ADR-0205: cambi Vulkan twin (Strategy II hybrid). */
+    &vmaf_fex_cambi_vulkan,
+#endif
 #if HAVE_CUDA
     &vmaf_fex_integer_adm_cuda, &vmaf_fex_integer_vif_cuda, &vmaf_fex_integer_motion_cuda,
     &vmaf_fex_integer_motion_v2_cuda, &vmaf_fex_psnr_cuda, &vmaf_fex_float_moment_cuda,
@@ -333,9 +389,9 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_integer_motion_v2_metal,
     /* T8-1 batch-1 additional consumers (ADR-0361). */
     &vmaf_fex_integer_psnr_metal, &vmaf_fex_float_ssim_metal, &vmaf_fex_integer_motion_metal,
-    /* T8-1 batch-2 additional consumers (ADR-0361): 3 float features.
-     * float_ansnr_metal removed: ADR-0720 (ansnr backend drop). */
-    &vmaf_fex_float_psnr_metal, &vmaf_fex_float_motion_metal, &vmaf_fex_float_moment_metal,
+    /* T8-1 batch-2 additional consumers (ADR-0361): 4 float features. */
+    &vmaf_fex_float_psnr_metal, &vmaf_fex_float_ansnr_metal, &vmaf_fex_float_motion_metal,
+    &vmaf_fex_float_moment_metal,
     /* T8-2a: float_ms_ssim_metal — 5-scale MS-SSIM pyramid on Metal
      * (ADR-0435). Real kernel dispatch replacing the -ENOSYS scaffold. */
     &vmaf_fex_float_ms_ssim_metal,

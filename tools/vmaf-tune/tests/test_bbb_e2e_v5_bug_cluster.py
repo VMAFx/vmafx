@@ -491,7 +491,8 @@ def test_ladder_against_bbb_container_yields_plausible_vmaf() -> None:
     )
     if probe.returncode != 0:
         pytest.skip(f"dev-mcp container {container!r} not reachable")
-    src = "/workspace/.corpus/bbb_e2e/bbb_sunflower_1080p_30fps_normal.mp4"
+    _corpus_root = os.environ.get("VMAF_CORPUS_DIR", "/workspace/.corpus/bbb_e2e")
+    src = f"{_corpus_root}/bbb_sunflower_1080p_30fps_normal.mp4"
     corpus_check = subprocess.run(
         ["docker", "exec", container, "test", "-f", src],
         capture_output=True,

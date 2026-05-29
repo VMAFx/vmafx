@@ -39,8 +39,7 @@
  *      close():
  *          cuStreamSynchronize → cuStreamDestroy
  *          → cuEventDestroy(submit) → cuEventDestroy(finished)
- *          → vmaf_cuda_kernel_readback_free (device accumulator +
- *            pinned host slot via vmaf_cuda_buffer_host_free)
+ *          → vmaf_cuda_buffer_free(accumulator)
  *
  *  The helpers here own the lifecycle pieces that DON'T differ per
  *  metric (stream + event + accumulator triple). Per-metric work
@@ -321,11 +320,6 @@ static inline int vmaf_cuda_kernel_lifecycle_close(VmafCudaKernelLifecycle *lc,
  * Free the readback pair. Mirrors vmaf_cuda_kernel_readback_alloc's
  * leave-partial-state-on-failure contract: this routine is safe to
  * call on a partially-allocated readback.
- *
- * Both the device accumulator and the pinned host buffer are released
- * here.  Previously the helper only NULLed rb->host_pinned without
- * calling vmaf_cuda_buffer_host_free, causing every caller to leak the
- * pinned allocation on close (PR #93 follow-up sweep, 2026-05-29).
  */
 static inline int vmaf_cuda_kernel_readback_free(VmafCudaKernelReadback *rb,
                                                  VmafCudaState *cu_state)
@@ -340,16 +334,13 @@ static inline int vmaf_cuda_kernel_readback_free(VmafCudaKernelReadback *rb,
         free(rb->device);
         rb->device = NULL;
     }
-    if (rb->host_pinned != NULL) {
-        /* host_pinned is a cuMemHostAlloc allocation tracked by common.c's
-         * host-alloc table; release it through the matching helper so the
-         * table entry is removed and cuMemFreeHost is called. */
-        const int e = vmaf_cuda_buffer_host_free(cu_state, rb->host_pinned);
-        if (e != 0 && rc == 0) {
-            rc = e;
-        }
-        rb->host_pinned = NULL;
-    }
+    /* host_pinned is owned by the CUDA host alloc table; the
+     * matching free path lives behind common.c's
+     * vmaf_cuda_buffer_host_free. The template doesn't claim to
+     * release it — callers that adopted the template still call
+     * the existing host-free helper directly. Documented in the
+     * migration guide. */
+    rb->host_pinned = NULL;
     rb->bytes = 0;
     return rc;
 }
