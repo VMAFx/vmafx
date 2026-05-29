@@ -15,6 +15,9 @@ on:
       - "Cargo.lock"
       - ".github/workflows/rust-ci.yml"
 
+permissions:
+  contents: read
+
 jobs:
   rust-vmafx-sys:
     name: vmafx-sys (fmt + clippy + test)
