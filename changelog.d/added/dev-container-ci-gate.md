@@ -1,0 +1,1 @@
+- **CI gate for `dev/Containerfile`**: new `.github/workflows/dev-container-build.yml` builds the dev container up to the `libvmaf-build` stage and smoke-tests `vmaf --version` + CPU backend scoring on every PR that touches `dev/Containerfile` or `dev/scripts/`. Catches path-stale and SDK-pin regressions at PR time instead of user runtime (ADR-0819).

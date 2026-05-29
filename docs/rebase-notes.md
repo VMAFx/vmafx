@@ -40371,3 +40371,10 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## Dev container CI gate (ADR-0819, 2026-05-29)
+
+no rebase impact: CI-only addition. New workflow
+`.github/workflows/dev-container-build.yml` and supporting doc files are
+entirely fork-local; no upstream C sources, headers, or meson build logic
+are touched.
