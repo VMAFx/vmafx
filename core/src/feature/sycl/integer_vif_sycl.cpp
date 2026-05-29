@@ -1375,7 +1375,6 @@ static void vif_pre_graph(void *queue_ptr, void *priv);
 static void vif_post_graph(void *queue_ptr, void *priv);
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -1422,8 +1421,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->d_rd_dis = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, rd_size));
 
     // Accumulators: 4 scales x 7 fields x 8 bytes = 224 bytes
-    // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-    size_t const accum_size = VIF_NUM_SCALES * ACCUM_FIELDS * sizeof(int64_t);
+    size_t const accum_size = (ptrdiff_t)VIF_NUM_SCALES * ACCUM_FIELDS * sizeof(int64_t);
     s->d_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, accum_size));
     s->h_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, accum_size));
 
@@ -1434,12 +1432,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (!s->use_fused && (!s->d_tmp_mu1 || !s->d_tmp_mu2 || !s->d_tmp_ref || !s->d_tmp_dis ||
                           !s->d_tmp_ref_dis || !s->d_tmp_ref_convol || !s->d_tmp_dis_convol)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: tmp buffer allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
     if (!s->d_rd_ref || !s->d_rd_dis || !s->d_accum || !s->h_accum || !s->d_log2_lut) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: device memory allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
 
@@ -1478,10 +1474,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
+    if (!s->feature_name_dict)
         return -ENOMEM;
-    }
 
     // Register with combined command graph
     err = vmaf_sycl_graph_register(state, enqueue_vif_work, vif_pre_graph, vif_post_graph, nullptr,
@@ -1522,8 +1516,7 @@ static void enqueue_vif_work_impl(sycl::queue &q, VifStateSycl *s, void *shared_
             src_stride = cur_w;
         }
 
-        // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-        int64_t *scale_accum = s->d_accum + scale * ACCUM_FIELDS;
+        int64_t *scale_accum = s->d_accum + (ptrdiff_t)scale * ACCUM_FIELDS;
 
         if (s->use_fused) {
             // Fused V+H: single dispatch per scale, no tmp buffers needed.
@@ -1576,8 +1569,7 @@ static void vif_pre_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<VifStateSycl *>(priv);
-    // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-    size_t accum_size = VIF_NUM_SCALES * ACCUM_FIELDS * sizeof(int64_t);
+    size_t accum_size = (ptrdiff_t)VIF_NUM_SCALES * ACCUM_FIELDS * sizeof(int64_t);
     q.memset(s->d_accum, 0, accum_size);
 }
 
@@ -1594,8 +1586,7 @@ static void vif_post_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<VifStateSycl *>(priv);
-    // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): SYCL stride / global-id arithmetic; operands are bounded by the kernel `nd_range` and the widening to ptrdiff_t / size_t is the intended index calc.
-    size_t accum_size = VIF_NUM_SCALES * ACCUM_FIELDS * sizeof(int64_t);
+    size_t accum_size = (ptrdiff_t)VIF_NUM_SCALES * ACCUM_FIELDS * sizeof(int64_t);
     q.memcpy(s->h_accum, s->d_accum, accum_size);
 }
 

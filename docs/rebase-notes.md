@@ -40323,20 +40323,6 @@ part of any public API.
 
 ---
 
-### go-workspace-audit — Go dependency + test fixes (2026-05-29)
-
-No rebase impact. All changes are Go workspace files entirely fork-local:
-`go.mod` / `go.sum` (added `modernc.org/sqlite` and transitive deps),
-`pkg/observability/observability.go` (added controller metrics fields + `SetControllerSources`),
-`cmd/vmafx-node/executor_test.go`, `cmd/vmafx-node/main_test.go` (test alignment to current API),
-`cmd/vmafx-tune/cmd/root.go` (wire `newLadderCmd`),
-`cmd/vmafx-tune/cmd/compare_test.go` (remove stale stub assertion),
-`changelog.d/fixed/0529-go-workspace-audit.md` (new).
-
-None of these files are touched by Netflix upstream.
-
----
-
 ### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
 
 No rebase impact on upstream C/Python code.
@@ -40356,18 +40342,15 @@ __ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD sid
 
 ---
 
-## VmafFeatureDictionary ownership fixes (ADR-0806, 2026-05-29)
+### PR #127 SYCL implicit-widening NOLINT elimination (2026-05-29)
 
-no rebase impact: REASON — the only changed files are fork-added test files
-(`core/test/test_vif_skip_scale0.c`, `core/test/test_integer_vif_cpu_cuda_parity.c`)
-and docs (`docs/adr/0806-feature-dictionary-ownership.md`, `docs/adr/README.md`,
-`changelog.d/fixed/0806-feature-dictionary-ownership.md`). No upstream Netflix/vmaf
-file is touched. The fixed double-free and leak are in fork-local CUDA parity tests
-that have no upstream counterpart.
+No rebase impact on upstream C/Python code.
 
-## Lint config tightening (ADR-0805, 2026-05-29)
+All files modified are fork-local:
+`core/src/feature/sycl/integer_adm_sycl.cpp` (12 NOLINT comments removed, 8 `(ptrdiff_t)` casts added),
+`core/src/feature/sycl/integer_vif_sycl.cpp` (4 `(ptrdiff_t)` casts added),
+`changelog.d/fixed/sycl-implicit-widening-explicit-cast.md` (new),
+`docs/rebase-notes.md` (this entry).
 
-no rebase impact: REASON — changes are confined to config files (`.clang-tidy`,
-`.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
-and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
-touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+Both files are entirely fork-local SYCL kernels with no Netflix upstream equivalent.
+No upstream sync hazard.
