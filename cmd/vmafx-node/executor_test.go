@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 // Copyright 2026 Lusoris
 //
-// cmd/vmafx-node/executor_test.go — unit tests for the job executor.
+// cmd/vmafx-node/executor_test.go — unit tests for the job executor covering
+// the binary-delegation path (ScoringJob via "false" binary).
 //
 // ADR-0719: vmafx-node rclone integration.
 package main
@@ -12,26 +13,15 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/VMAFx/vmafx/pkg/storage"
+	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
+	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
 
-// mockStorage is a Storage that always returns the path it was given.
-type mockStorage struct {
-	mode storage.Mode
-}
-
-func (m *mockStorage) Mode() storage.Mode { return m.mode }
-
-func (m *mockStorage) Prepare(_ context.Context, sourceURI string) (string, func(), error) {
-	return sourceURI, func() {}, nil
-}
-
-// TestExecutor_LocalPaths verifies that the executor calls Prepare on both
-// reference and distorted URIs and forwards the resolved paths to vmaf.
-// The actual vmaf invocation is not run in the unit test; we verify only that
-// Prepare is called and that cleanup is deferred correctly by checking that no
-// goroutines are leaked.
-func TestExecutor_LocalPaths(t *testing.T) {
+// TestExecutor_ScoringJobFailsWithBadBinary verifies that Execute returns a
+// non-nil error when the underlying vmaf binary exits non-zero.
+// We construct a Scorer pointing at "false" (a POSIX built-in that always
+// exits 1) so the unit test never requires a real vmaf installation.
+func TestExecutor_ScoringJobFailsWithBadBinary(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -44,26 +34,26 @@ func TestExecutor_LocalPaths(t *testing.T) {
 		}
 	}
 
-	store := &mockStorage{mode: storage.ModeHTTPServe}
-	exec := NewExecutor(store, "false", nil) // "false" → exits 1 immediately, never actually runs vmaf
-
-	// We do NOT expect a successful score here since "false" is not vmaf.
-	// We just verify that Prepare is called for both URIs without panics or
-	// data races, and that cleanup() defers are handled.
-	job := ScoringJob{
-		JobID:        "test-001",
-		ReferenceURI: refPath,
-		DistortedURI: disPath,
-		Width:        576,
-		Height:       324,
-		PixelFormat:  "yuv420p",
-		ModelPath:    "/models/vmaf_v0.6.1.json",
+	// Build a Scorer that delegates to "false" — always exits 1.
+	scorer, err := libvmaf.New("false", "")
+	if err != nil {
+		// "false" must exist on the PATH in CI; skip rather than fail.
+		t.Skipf("could not locate 'false' binary: %v", err)
 	}
 
-	ctx := context.Background()
-	_, err := exec.Execute(ctx, job)
-	// We expect an error because "false" exits 1.
-	if err == nil {
+	exec := NewExecutor(scorer, nil, "cpu", nil)
+
+	job := &controllerv1.Job{
+		Id: "test-001",
+		Scoring: &controllerv1.ScoringParams{
+			Reference: refPath,
+			Distorted: disPath,
+			Model:     "vmaf_v0.6.1",
+		},
+	}
+
+	result := exec.Execute(context.Background(), job)
+	if result.Error == nil {
 		t.Error("expected error from 'false' vmaf binary, got nil")
 	}
 }
