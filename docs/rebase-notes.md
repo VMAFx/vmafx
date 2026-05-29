@@ -6,6 +6,23 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## gpu-dispatch-toctou-fence (2026-05-29, ADR-0840)
+
+**Files touched:**
+`core/tools/vmaf.c`, `core/src/gpu_dispatch_env.c`
+
+**Rebase impact:** None. Both files are fork-local additions. `core/tools/vmaf.c`
+has upstream touches only in the pre-existing CUDA block (which is itself
+fork-local); `gpu_dispatch_env.c` has no upstream counterpart. No rebase conflict
+is possible on a clean upstream sync.
+
+The `atomic_thread_fence` pairing (publish: release after value, before var_name;
+read: acquire after var_name match, before value read) must be preserved if the
+fast-path loop or publish path is ever refactored — see ADR-0840 for the
+formal C11 memory-model rationale.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
