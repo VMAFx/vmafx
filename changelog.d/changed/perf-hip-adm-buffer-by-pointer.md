@@ -1,4 +1,4 @@
-### HIP ADM: AdmBufferHip passed by pointer (ADR-0759)
+## HIP ADM: AdmBufferHip passed by pointer (ADR-0759)
 
 `AdmBufferHip` (~272 bytes) was previously passed by value in four HIP `__global__`
 kernel signatures in `adm_csf.hip` and `adm_cm.hip`. Each kernel launch marshalled

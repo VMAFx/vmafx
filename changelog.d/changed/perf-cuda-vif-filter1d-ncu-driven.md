@@ -1,4 +1,4 @@
-### perf(cuda): VIF filter1d horizontal kernel register pressure and cache routing
+## perf(cuda): VIF filter1d horizontal kernel register pressure and cache routing
 
 `filter1d_8_horizontal_kernel_2_17_9` (scale-0, 8-bit, 17-tap horizontal VIF pass):
 

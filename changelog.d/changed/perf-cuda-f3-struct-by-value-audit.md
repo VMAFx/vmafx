@@ -2,7 +2,7 @@
   Copyright 2026 Lusoris
   SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 -->
-### [perf] CUDA F3 struct-by-value kernel audit (ADR-0756)
+## [perf] CUDA F3 struct-by-value kernel audit (ADR-0756)
 
 Fork-wide audit of every `__global__` kernel accepting a `VmafCudaBuffer`,
 `VmafPicture`, or `AdmBufferCuda` argument by value — the "F3" pattern

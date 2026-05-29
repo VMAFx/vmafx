@@ -1,4 +1,4 @@
-### perf(vif): shrink log2 LUT from 128 KB to 64 KB; cache Gaussian filters per init
+## perf(vif): shrink log2 LUT from 128 KB to 64 KB; cache Gaussian filters per init
 
 The integer VIF `log2_table` was `uint16_t[65537]` (128 KB); after CLZ-based
 normalization the mantissa index is always in `[32768..65535]`, so entries `[0..32767]`

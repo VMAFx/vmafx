@@ -42989,3 +42989,9 @@ are in flight, ensure:
 - Issue A (Vulkan removal docs): no conflict expected — docs/backends/vulkan/,
   docs/metrics/features.md, docs/development/build-flags.md are rarely touched.
 - Issue B (deprecations.md): docs/development/deprecations.md is append-only.
+
+## Changelog fragment consolidation (2026-05-29)
+
+no rebase impact: changelog-only — `scripts/release/concat-changelog-fragments.sh` awk
+fix + `changelog.d/` fragment moves do not touch any upstream Netflix/vmaf source file.
+No C, Python, or test changes.

@@ -1,4 +1,4 @@
-### Performance
+## Performance
 
 - `adm_decouple_avx512`: prefetch `adm_div_lookup` LUT entries 2 iterations ahead
   into L2 before each `vpgatherdd` cluster. The 256 KB LUT exceeds L1 capacity and

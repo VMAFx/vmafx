@@ -184,7 +184,7 @@ fi
 
 current_block="$(awk -v boundary="$BOUNDARY_REGEX" '
     /^## \[Unreleased\]/ {in_block=1; next}
-    in_block && $0 ~ boundary {in_block=0}
+    in_block && /^## \[(Unreleased|[0-9])/ {in_block=0}
     in_block {print}
 ' "$CHANGELOG")"
 
@@ -216,7 +216,7 @@ trap 'rm -f "$tmp_body" "$tmp_out"' EXIT
 
 awk -v boundary="$BOUNDARY_REGEX" '
     /^## \[Unreleased\]/ {print; in_block=1; next}
-    in_block && $0 ~ boundary {in_block=0}
+    in_block && /^## \[(Unreleased|[0-9])/ {in_block=0}
     !in_block {print}
 ' "$CHANGELOG" | awk -v body="$tmp_body" '
     /^## \[Unreleased\]/ {
