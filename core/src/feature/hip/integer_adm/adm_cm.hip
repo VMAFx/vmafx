@@ -183,7 +183,7 @@ extern "C" {
  *
  * Pure __global__; no template helpers required.
  * -------------------------------------------------------------------- */
-__global__ void i4_adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, int bottom,
+__global__ void i4_adm_cm_line_kernel(const AdmBufferHip * __restrict__ buf_ptr, int h, int w, int top, int bottom,
                                       int left, int right, int start_row, int end_row,
                                       int start_col, int end_col, int src_stride, int csf_a_stride,
                                       int scale, int buffer_h, int buffer_stride,
@@ -191,9 +191,9 @@ __global__ void i4_adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, i
 {
     (void)csf_a_stride;
 
-    const hip_i4_adm_dwt_band_t *ref   = &buf.i4_ref_dwt2;
-    const hip_i4_adm_dwt_band_t *dis   = &buf.i4_dis_dwt2;
-    const hip_i4_adm_dwt_band_t *csf_f = &buf.i4_csf_f;
+    const hip_i4_adm_dwt_band_t *ref   = &buf_ptr->i4_ref_dwt2;
+    const hip_i4_adm_dwt_band_t *dis   = &buf_ptr->i4_dis_dwt2;
+    const hip_i4_adm_dwt_band_t *csf_f = &buf_ptr->i4_csf_f;
     const int band = blockIdx.z + 1;
     int32_t *const *flt_angles = csf_f->bands + 1;
 
@@ -274,7 +274,7 @@ __global__ void i4_adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, i
 
 template <int rows_per_thread>
 __device__ __forceinline__ static void
-adm_cm_line_kernel_body(AdmBufferHip buf, int h, int w, int top, int bottom, int left, int right,
+adm_cm_line_kernel_body(const AdmBufferHip * __restrict__ buf_ptr, int h, int w, int top, int bottom, int left, int right,
                         int start_row, int end_row, int start_col, int end_col, int src_stride,
                         int csf_a_stride, int buffer_h, int buffer_stride,
                         int32_t *accum_per_block, AdmFixedParametersHip params, int scale,
@@ -287,9 +287,9 @@ adm_cm_line_kernel_body(AdmBufferHip buf, int h, int w, int top, int bottom, int
     (void)accum_per_block;
     (void)scale;
 
-    const hip_adm_dwt_band_t *ref   = &buf.ref_dwt2;
-    const hip_adm_dwt_band_t *dis   = &buf.dis_dwt2;
-    const hip_adm_dwt_band_t *csf_f = &buf.csf_f;
+    const hip_adm_dwt_band_t *ref   = &buf_ptr->ref_dwt2;
+    const hip_adm_dwt_band_t *dis   = &buf_ptr->dis_dwt2;
+    const hip_adm_dwt_band_t *csf_f = &buf_ptr->csf_f;
     const int band = blockIdx.z + 1;
     int16_t *const *flt_angles = csf_f->bands + 1;
 
@@ -379,7 +379,7 @@ adm_cm_line_kernel_body(AdmBufferHip buf, int h, int w, int top, int bottom, int
     atomicAdd((uint64_cu *)&accum_global[band2], (uint64_cu)shifted);
 }
 
-extern "C" __global__ void adm_cm_line_kernel_8(AdmBufferHip buf, int h, int w, int top, int bottom, int left,
+extern "C" __global__ void adm_cm_line_kernel_8(const AdmBufferHip * __restrict__ buf_ptr, int h, int w, int top, int bottom, int left,
                                      int right, int start_row, int end_row, int start_col,
                                      int end_col, int src_stride, int csf_a_stride, int buffer_h,
                                      int buffer_stride, int32_t *accum_per_block,
@@ -388,7 +388,7 @@ extern "C" __global__ void adm_cm_line_kernel_8(AdmBufferHip buf, int h, int w, 
                                      const uint32_t shift_inner_accum,
                                      const uint32_t add_shift_inner_accum)
 {
-    adm_cm_line_kernel_body<8>(buf, h, w, top, bottom, left, right, start_row, end_row, start_col,
+    adm_cm_line_kernel_body<8>(buf_ptr, h, w, top, bottom, left, right, start_row, end_row, start_col,
                                end_col, src_stride, csf_a_stride, buffer_h, buffer_stride,
                                accum_per_block, params, scale, accum_global, ws, shift_inner_accum,
                                add_shift_inner_accum);

@@ -40305,3 +40305,18 @@ Files added: `docs/research/0760-cuda-motion-ncu-multi-resolution-20260529.md`,
 `changelog.d/perf/cuda-motion-ncu-multi-resolution.md`,
 `docs/adr/0760-cuda-motion-ncu-multi-resolution.md` (research ADR).
 No upstream collision risk.
+
+
+## HIP ADM buffer-by-pointer refactor (ADR-0759, 2026-05-29)
+
+**Files touched:** `core/src/feature/hip/integer_adm/adm_csf.hip`,
+`core/src/feature/hip/integer_adm/adm_cm.hip`,
+`core/src/feature/hip/integer_adm_hip.c`,
+`core/src/feature/hip/AGENTS.md`
+
+**Rebase impact:** None. All touched files are fork-added; no upstream Netflix/vmaf
+file is modified. The HIP backend does not exist in upstream. No rebase conflict
+is possible with upstream syncs.
+
+The changed kernel signatures are internal to the HIP dispatch path and are not
+part of any public API.
