@@ -1389,6 +1389,12 @@ production code is touched, so the upstream rebase boundary is unaffected.
 
 **Rebase impact:** None. The modified files are fork-local CI workflows that do
 not exist in upstream Netflix/vmaf master. No rebase conflict is possible.
+## ci-runner-ubuntu-24-pin (2026-05-29, ADR-0802)
+
+**Files touched:** `.github/workflows/*.yml` (15 files)
+
+**Rebase impact:** None. CI workflow files are fork-local and are never
+present in upstream Netflix/vmaf master. No rebase conflict is possible.
 
 ---
 

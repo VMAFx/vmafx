@@ -47,7 +47,7 @@ jobs:
   netflix-golden:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Netflix CPU Golden Tests (D24)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -127,7 +127,7 @@ jobs:
   cross-backend:
     name: "Cross-Backend ULP Diff (CPU Sanity)"
     if: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: netflix-golden
     timeout-minutes: 20
     steps:
@@ -216,7 +216,7 @@ jobs:
     # job to the in-cluster `arc-runners` scale set; default `false` keeps
     # GitHub-hosted ubuntu-latest. If the ARC pool is degraded, set the
     # variable to false and re-trigger CI to fall back instantly.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-latest' }}
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-24.04' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -525,7 +525,7 @@ jobs:
   coverage:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Coverage Gate (70% Overall / 90% Critical — ADR-0922)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       # Codecov OIDC upload (ADR-0903) requires `id-token: write` so
@@ -938,7 +938,7 @@ jobs:
   assertion-density:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Assertion Density (Power of 10 §5)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2

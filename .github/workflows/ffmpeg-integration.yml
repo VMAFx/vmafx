@@ -51,7 +51,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             CC: gcc
             CXX: g++
             name: FFmpeg — Ubuntu gcc (Build Only)
@@ -74,7 +74,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install meson
       - name: Install dependencies (ubuntu)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install ninja-build gcc nasm ccache
@@ -130,7 +130,7 @@ jobs:
   ffmpeg-sycl:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: FFmpeg — SYCL (Build Only)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CC: gcc
       CXX: g++
