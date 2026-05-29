@@ -40371,3 +40371,10 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## Remove dead debug macros from motion_avx2.c (ADR-0853, 2026-05-29)
+
+no rebase impact: pure dead-code removal. The deleted `print_128_*` / `print_256_*`
+macros were never invoked in any production path and are absent from upstream
+Netflix/vmaf. The only changed file is `core/src/feature/x86/motion_avx2.c`; no
+public header, ABI, or upstream rebase surface is affected.
