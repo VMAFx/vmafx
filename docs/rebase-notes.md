@@ -40371,3 +40371,9 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## Security advisory sweep (ADR-0856, 2026-05-29)
+
+no rebase impact: REASON — only `Cargo.lock` (repaired missing bindgen subtree) and
+docs/changelog files changed. `Cargo.lock` is not rebase-sensitive; no C/Python
+source or upstream-mirrored file is touched.
