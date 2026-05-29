@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, patch
 
 import anyio
 import pytest
-
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -49,9 +48,14 @@ def test_list_extractors_fields():
 
 
 def test_list_extractors_known_names():
-    """At minimum the canonical CPU extractors must be present."""
+    """At minimum the canonical CPU extractors must be present.
+
+    Note: ``float_ansnr`` (CPU-only) was removed in ADR-0720; the only
+    remaining variant is ``float_ansnr_vulkan``.  The expected set reflects
+    the current source tree, not the upstream Netflix list.
+    """
     names = {ex["name"] for ex in srv._list_extractors()}
-    for expected in ("float_ansnr", "float_vif", "psnr", "ssim", "vif"):
+    for expected in ("float_adm", "float_vif", "psnr", "ssim", "vif"):
         assert expected in names, f"Expected extractor {expected!r} not found; got {sorted(names)}"
 
 

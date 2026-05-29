@@ -6,6 +6,17 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## MCP extractor-scanner path fix (2026-05-29)
+
+no rebase impact: REASON — the only changed files are fork-local MCP server code
+(`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`,
+`mcp-server/vmaf-mcp/tests/test_p1_tools.py`) and supporting docs
+(`mcp-server/AGENTS.md`, `changelog.d/`).  No upstream Netflix/vmaf C source or
+test file is touched.  The renamed directory (`libvmaf/` → `core/`) is a
+fork-local change (ADR-0700); upstream Netflix retains `libvmaf/`.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

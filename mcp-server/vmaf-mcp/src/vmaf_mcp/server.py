@@ -797,11 +797,6 @@ async def _run_benchmark() -> dict[str, Any]:
     return payload
 
 
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # list_extractors — enumerate VmafFeatureExtractor implementations (ADR-0608)
 # ---------------------------------------------------------------------------
@@ -839,7 +834,7 @@ def _infer_backend_from_sym(sym: str) -> str:
 
 
 def _list_extractors() -> list[dict[str, Any]]:
-    """Walk the libvmaf C source tree and collect every VmafFeatureExtractor
+    """Walk the C source tree and collect every VmafFeatureExtractor
     registered in it.
 
     Parses only ``core/src/feature/`` (recursively) — the top-level extractor
@@ -853,7 +848,7 @@ def _list_extractors() -> list[dict[str, Any]]:
       (``cpu`` | ``cuda`` | ``sycl`` | ``vulkan`` | ``hip`` | ``metal``).
     - ``source``: relative path to the C file that defines the struct.
     """
-    feature_dir = _repo_root() / "libvmaf" / "src" / "feature"
+    feature_dir = _repo_root() / "core" / "src" / "feature"
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
 
@@ -1027,6 +1022,7 @@ def _vmaftune_binary() -> Path:
 # _send_progress — MCP progress notification helper (ADR-0608)
 # ---------------------------------------------------------------------------
 
+
 async def _send_progress(
     progress_token: str | int | None,
     progress: float,
@@ -1059,7 +1055,6 @@ async def _send_progress(
         pass
     except Exception:
         pass
-
 
 
 # ---------------------------------------------------------------------------
@@ -1387,8 +1382,6 @@ async def _run_benchmark(
             "Re-run with `bash -x testdata/bench_all.sh` to bisect."
         )
     return payload
-
-
 
 
 # probe_backend — runtime health check (ADR-0608 / C-P0-1)
