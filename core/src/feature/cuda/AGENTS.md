@@ -5,6 +5,14 @@ glue + `.cu` device code). Parent: [../AGENTS.md](../AGENTS.md). The
 backend runtime (context, stream, picture-pool) lives one level up
 in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 
+## GPU device-buffer carving — use `SLAB_FIELD` (ADR-0800)
+
+When carving a contiguous CUDA device buffer into typed sub-regions at init time,
+always use the `SLAB_FIELD(dst, type, slab)` macro from `../gpu_slab.h` instead
+of a raw `(TYPE *)slab` cast.  The macro carries the single cited
+`performance-no-int-to-ptr` suppression (ADR-0278 / ADR-0800).  Do NOT add bare
+`NOLINTNEXTLINE(performance-no-int-to-ptr)` annotations at new call sites.
+
 ## Deleted orphan TU (ADR-0546)
 
 `float_ssim_cuda.c` was removed by ADR-0546 (`chore/hip-cuda-orphan-tu-cleanup`,

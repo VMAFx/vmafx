@@ -28,6 +28,7 @@
 #include "feature_name.h"
 
 #include "cpu.h"
+#include "gpu_slab.h"
 #include "cuda/integer_adm_cuda.h"
 /* DEFAULT_ADM_NOISE_WEIGHT / DEFAULT_ADM_CSF_SCALE / DEFAULT_ADM_CSF_DIAG_SCALE and
  * enum ADM_CSF_MODE are pulled in transitively via cuda/integer_adm_cuda.h →
@@ -1114,8 +1115,8 @@ static int integer_compute_adm_cuda(VmafFeatureExtractor *fex, AdmStateCuda *s,
             // structs / layout helpers for cuLaunchKernel. The cast is inherent to
             // the CUDA Driver API and cannot be refactored away without changing
             // the public libvmaf-CUDA contract. Per ADR-0141 touched-file rule,
-            // upstream-parity exception.
-            // NOLINTBEGIN(performance-no-int-to-ptr)
+            // upstream-parity exception. SLAB_FIELD (ADR-0800) carries the cited
+            // suppression for all slab-carving helpers below.
             err = adm_dwt2_s123_combined_device(s, i4_curr_ref_scale, (int32_t *)buf->tmp_ref->data,
                                                 buf->i4_ref_dwt2, w, h, curr_ref_stride, buf_stride,
                                                 scale, &p, cu_f, s->str);
@@ -1180,13 +1181,13 @@ static CUdeviceptr init_dwt_band_cuda(struct VmafCudaState *cu_state,
                                       size_t stride)
 {
     (void)cu_state;
-    band->band_a = (int16_t *)data_top;
+    SLAB_FIELD(band->band_a, int16_t, data_top);
     data_top += stride;
-    band->band_h = (int16_t *)data_top;
+    SLAB_FIELD(band->band_h, int16_t, data_top);
     data_top += stride;
-    band->band_v = (int16_t *)data_top;
+    SLAB_FIELD(band->band_v, int16_t, data_top);
     data_top += stride;
-    band->band_d = (int16_t *)data_top;
+    SLAB_FIELD(band->band_d, int16_t, data_top);
     data_top += stride;
     return data_top;
 }
@@ -1197,11 +1198,11 @@ static CUdeviceptr init_dwt_band_hvd_cuda(struct VmafCudaState *cu_state,
 {
     (void)cu_state;
     band->band_a = NULL;
-    band->band_h = (int16_t *)data_top;
+    SLAB_FIELD(band->band_h, int16_t, data_top);
     data_top += stride;
-    band->band_v = (int16_t *)data_top;
+    SLAB_FIELD(band->band_v, int16_t, data_top);
     data_top += stride;
-    band->band_d = (int16_t *)data_top;
+    SLAB_FIELD(band->band_d, int16_t, data_top);
     data_top += stride;
     return data_top;
 }
@@ -1211,27 +1212,28 @@ static CUdeviceptr i4_init_dwt_band_cuda(struct VmafCudaState *cu_state,
                                          size_t stride)
 {
     (void)cu_state;
-    band->band_a = (int32_t *)data_top;
+    SLAB_FIELD(band->band_a, int32_t, data_top);
     data_top += stride;
-    band->band_h = (int32_t *)data_top;
+    SLAB_FIELD(band->band_h, int32_t, data_top);
     data_top += stride;
-    band->band_v = (int32_t *)data_top;
+    SLAB_FIELD(band->band_v, int32_t, data_top);
     data_top += stride;
-    band->band_d = (int32_t *)data_top;
+    SLAB_FIELD(band->band_d, int32_t, data_top);
     data_top += stride;
     return data_top;
 }
+
 static CUdeviceptr i4_init_dwt_band_hvd_cuda(struct VmafCudaState *cu_state,
                                              struct cuda_i4_adm_dwt_band_t *band,
                                              CUdeviceptr data_top, size_t stride)
 {
     (void)cu_state;
     band->band_a = NULL;
-    band->band_h = (int32_t *)data_top;
+    SLAB_FIELD(band->band_h, int32_t, data_top);
     data_top += stride;
-    band->band_v = (int32_t *)data_top;
+    SLAB_FIELD(band->band_v, int32_t, data_top);
     data_top += stride;
-    band->band_d = (int32_t *)data_top;
+    SLAB_FIELD(band->band_d, int32_t, data_top);
     data_top += stride;
     return data_top;
 }
@@ -1241,13 +1243,13 @@ static CUdeviceptr init_res_cm_cuda(struct VmafCudaState *cu_state, int64_t *sca
 {
     (void)cu_state;
     const int stride = 3 * sizeof(int64_t);
-    scale_pointer[0] = (int64_t *)data_top;
+    SLAB_FIELD(scale_pointer[0], int64_t, data_top);
     data_top += stride;
-    scale_pointer[1] = (int64_t *)data_top;
+    SLAB_FIELD(scale_pointer[1], int64_t, data_top);
     data_top += stride;
-    scale_pointer[2] = (int64_t *)data_top;
+    SLAB_FIELD(scale_pointer[2], int64_t, data_top);
     data_top += stride;
-    scale_pointer[3] = (int64_t *)data_top;
+    SLAB_FIELD(scale_pointer[3], int64_t, data_top);
     data_top += stride;
     return data_top;
 }
@@ -1257,13 +1259,13 @@ static CUdeviceptr init_res_csf_cuda(struct VmafCudaState *cu_state, uint64_t *s
 {
     (void)cu_state;
     const int stride = 3 * sizeof(uint64_t);
-    scale_pointer[0] = (uint64_t *)data_top;
+    SLAB_FIELD(scale_pointer[0], uint64_t, data_top);
     data_top += stride;
-    scale_pointer[1] = (uint64_t *)data_top;
+    SLAB_FIELD(scale_pointer[1], uint64_t, data_top);
     data_top += stride;
-    scale_pointer[2] = (uint64_t *)data_top;
+    SLAB_FIELD(scale_pointer[2], uint64_t, data_top);
     data_top += stride;
-    scale_pointer[3] = (uint64_t *)data_top;
+    SLAB_FIELD(scale_pointer[3], uint64_t, data_top);
     data_top += stride;
     return data_top;
 }
@@ -1273,30 +1275,29 @@ static CUdeviceptr init_res_aim_cm_cuda(struct VmafCudaState *cu_state, int64_t 
 {
     (void)cu_state;
     const int stride = 3 * sizeof(int64_t);
-    scale_pointer[0] = (int64_t *)data_top;
+    SLAB_FIELD(scale_pointer[0], int64_t, data_top);
     data_top += stride;
-    scale_pointer[1] = (int64_t *)data_top;
+    SLAB_FIELD(scale_pointer[1], int64_t, data_top);
     data_top += stride;
-    scale_pointer[2] = (int64_t *)data_top;
+    SLAB_FIELD(scale_pointer[2], int64_t, data_top);
     data_top += stride;
-    scale_pointer[3] = (int64_t *)data_top;
+    SLAB_FIELD(scale_pointer[3], int64_t, data_top);
     data_top += stride;
     return data_top;
 }
 
 static inline CUdeviceptr init_index_cuda(int32_t **index, CUdeviceptr data_top, size_t stride)
 {
-    index[0] = (int32_t *)data_top;
+    SLAB_FIELD(index[0], int32_t, data_top);
     data_top += stride;
-    index[1] = (int32_t *)data_top;
+    SLAB_FIELD(index[1], int32_t, data_top);
     data_top += stride;
-    index[2] = (int32_t *)data_top;
+    SLAB_FIELD(index[2], int32_t, data_top);
     data_top += stride;
-    index[3] = (int32_t *)data_top;
+    SLAB_FIELD(index[3], int32_t, data_top);
     data_top += stride;
     return data_top;
 }
-// NOLINTEND(performance-no-int-to-ptr)
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)

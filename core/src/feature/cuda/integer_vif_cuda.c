@@ -30,6 +30,7 @@
 #include "log.h"
 #include "mem.h"
 
+#include "gpu_slab.h"
 #include "picture.h"
 #include "cuda/integer_vif_cuda.h"
 #include "drain_batch.h"
@@ -249,37 +250,37 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     // subregions the launch-time kernel-args struct references. The cast is
     // inherent to the CUDA Driver API and cannot be refactored away without
     // changing the public libvmaf-CUDA contract. Per ADR-0141 touched-file
-    // rule, upstream-parity exception.
-    // NOLINTBEGIN(performance-no-int-to-ptr)
-    s->buf.mu1 = (uint16_t *)data;
+    // rule, upstream-parity exception. SLAB_FIELD (ADR-0800) carries the
+    // single cited suppression for all sites below.
+    SLAB_FIELD(s->buf.mu1, uint16_t, data);
     data += h * s->buf.stride_16;
-    s->buf.mu2 = (uint16_t *)data;
+    SLAB_FIELD(s->buf.mu2, uint16_t, data);
     data += h * s->buf.stride_16;
-    s->buf.mu1_32 = (uint32_t *)data;
+    SLAB_FIELD(s->buf.mu1_32, uint32_t, data);
     data += h * s->buf.stride_32;
-    s->buf.mu2_32 = (uint32_t *)data;
+    SLAB_FIELD(s->buf.mu2_32, uint32_t, data);
     data += h * s->buf.stride_32;
-    s->buf.ref_sq = (uint32_t *)data;
+    SLAB_FIELD(s->buf.ref_sq, uint32_t, data);
     data += h * s->buf.stride_32;
-    s->buf.dis_sq = (uint32_t *)data;
+    SLAB_FIELD(s->buf.dis_sq, uint32_t, data);
     data += h * s->buf.stride_32;
-    s->buf.ref_dis = (uint32_t *)data;
+    SLAB_FIELD(s->buf.ref_dis, uint32_t, data);
     data += h * s->buf.stride_32;
-    s->buf.tmp.mu1 = (uint32_t *)data;
+    SLAB_FIELD(s->buf.tmp.mu1, uint32_t, data);
     data += s->buf.stride_tmp * h;
-    s->buf.tmp.mu2 = (uint32_t *)data;
+    SLAB_FIELD(s->buf.tmp.mu2, uint32_t, data);
     data += s->buf.stride_tmp * h;
-    s->buf.tmp.ref = (uint32_t *)data;
+    SLAB_FIELD(s->buf.tmp.ref, uint32_t, data);
     data += s->buf.stride_tmp * h;
-    s->buf.tmp.dis = (uint32_t *)data;
+    SLAB_FIELD(s->buf.tmp.dis, uint32_t, data);
     data += s->buf.stride_tmp * h;
-    s->buf.tmp.ref_dis = (uint32_t *)data;
+    SLAB_FIELD(s->buf.tmp.ref_dis, uint32_t, data);
     data += s->buf.stride_tmp * h;
-    s->buf.tmp.ref_convol = (uint32_t *)data;
+    SLAB_FIELD(s->buf.tmp.ref_convol, uint32_t, data);
     data += s->buf.stride_tmp * h;
-    s->buf.tmp.dis_convol = (uint32_t *)data;
+    SLAB_FIELD(s->buf.tmp.dis_convol, uint32_t, data);
     data += s->buf.stride_tmp * h;
-    s->buf.tmp.padding = (uint32_t *)data;
+    SLAB_FIELD(s->buf.tmp.padding, uint32_t, data);
     data += s->buf.stride_tmp * h;
 
     CUdeviceptr data_accum;
@@ -287,8 +288,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (ret)
         goto free_ref;
 
-    s->buf.accum = (int64_t *)data_accum;
-    // NOLINTEND(performance-no-int-to-ptr)
+    SLAB_FIELD(s->buf.accum, int64_t, data_accum);
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
@@ -597,13 +597,15 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                                   s->vif_enhn_gain_limit, cu_f,
                                   vmaf_cuda_picture_get_stream(ref_pic));
             } else {
-                // s->buf.ref / s->buf.dis are CUdeviceptr (unsigned long long) carved
-                // from the master buffer in init; the filter1d_16 contract takes a
-                // typed uint16_t* view. Cast is inherent to the CUDA Driver API.
-                // Per ADR-0141 touched-file rule, upstream-parity exception.
-                // NOLINTNEXTLINE(performance-no-int-to-ptr)
-                err = filter1d_16(s, &s->buf, (uint16_t *)s->buf.ref, (uint16_t *)s->buf.dis, w, h,
-                                  scale, ref_pic->bpc, s->vif_enhn_gain_limit, cu_f, s->str);
+                // s->buf.ref / s->buf.dis are CUdeviceptr carved from the master
+                // buffer in init; filter1d_16 takes typed uint16_t* views.
+                // SLAB_FIELD (ADR-0800) carries the cited suppression.
+                uint16_t *ref_ptr;
+                uint16_t *dis_ptr;
+                SLAB_FIELD(ref_ptr, uint16_t, s->buf.ref);
+                SLAB_FIELD(dis_ptr, uint16_t, s->buf.dis);
+                err = filter1d_16(s, &s->buf, ref_ptr, dis_ptr, w, h, scale, ref_pic->bpc,
+                                  s->vif_enhn_gain_limit, cu_f, s->str);
             }
             if (err)
                 return err;

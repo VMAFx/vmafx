@@ -40,6 +40,7 @@
 #include "feature_name.h"
 #include "libvmaf/picture.h"
 
+#include "gpu_slab.h"
 #include "integer_vif.h"
 #include "integer_vif_hip.h"
 
@@ -423,50 +424,35 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     ptr += rd_size;
     s->buf.dis = (uintptr_t)ptr;
     ptr += rd_size;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.mu1 = (uint16_t *)ptr;
+    SLAB_FIELD(s->buf.mu1, uint16_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_16;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.mu2 = (uint16_t *)ptr;
+    SLAB_FIELD(s->buf.mu2, uint16_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_16;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.mu1_32 = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.mu1_32, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_32;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.mu2_32 = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.mu2_32, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_32;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.ref_sq = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.ref_sq, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_32;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.dis_sq = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.dis_sq, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_32;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.ref_dis = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.ref_dis, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_32;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.mu1 = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.tmp.mu1, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.mu2 = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.tmp.mu2, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.ref = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.tmp.ref, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.dis = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.tmp.dis, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.ref_dis = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.tmp.ref_dis, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.ref_convol = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.tmp.ref_convol, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.dis_convol = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.tmp.dis_convol, uint32_t, ptr);
     ptr += (size_t)h * (size_t)s->buf.stride_tmp;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-    s->buf.tmp.padding = (uint32_t *)ptr;
+    SLAB_FIELD(s->buf.tmp.padding, uint32_t, ptr);
 
     /* ADR-0537: per-frame host->device staging for the input picture. */
     s->pic_dev_bytes = (size_t)s->buf.stride * (size_t)h;
@@ -600,9 +586,13 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
             err = vif_hip_filter1d_16(s, (uint16_t *)s->ref_in_dev, (uint16_t *)s->dis_in_dev, w, h,
                                       (int)scale, (int)ref_pic->bpc, s->str);
         } else {
-            /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
-            err = vif_hip_filter1d_16(s, (uint16_t *)s->buf.ref, (uint16_t *)s->buf.dis, w, h,
-                                      (int)scale, (int)ref_pic->bpc, s->str);
+            /* buf.ref / buf.dis are uintptr_t device offsets; SLAB_FIELD (ADR-0800) for the cast. */
+            uint16_t *ref_ptr;
+            uint16_t *dis_ptr;
+            SLAB_FIELD(ref_ptr, uint16_t, s->buf.ref);
+            SLAB_FIELD(dis_ptr, uint16_t, s->buf.dis);
+            err = vif_hip_filter1d_16(s, ref_ptr, dis_ptr, w, h, (int)scale, (int)ref_pic->bpc,
+                                      s->str);
         }
         if (err != 0)
             return err;

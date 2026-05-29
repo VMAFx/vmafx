@@ -1,5 +1,13 @@
 # HIP Feature Extractors — Invariant Notes
 
+## GPU device-buffer carving — use `SLAB_FIELD` (ADR-0800)
+
+When carving a contiguous HIP device buffer into typed sub-regions at init time,
+always use the `SLAB_FIELD(dst, type, slab)` macro from `../gpu_slab.h` instead
+of a raw `(TYPE *)slab` cast.  The macro carries the single cited
+`performance-no-int-to-ptr` suppression (ADR-0278 / ADR-0800).  Do NOT add bare
+`NOLINTNEXTLINE(performance-no-int-to-ptr)` annotations at new call sites.
+
 ## Deleted orphan/dead TUs (ADR-0546)
 
 The following files were removed from this directory by ADR-0546
