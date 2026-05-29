@@ -1,0 +1,1 @@
+| [ADR-0728](0728-native-build-sunset.md) | Sunset legacy native build modes (per ADR-0691 / ADR-0710): remove `libvmaf/`, `build-cuda`, `build-all` paths; `core/` is the sole meson root | Accepted | ci, build, vmafx, breaking |

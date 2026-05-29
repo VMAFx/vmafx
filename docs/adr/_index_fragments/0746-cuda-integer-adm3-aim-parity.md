@@ -1,0 +1,1 @@
+| [ADR-0746](0746-cuda-integer-adm3-aim-parity.md) | CUDA `integer_adm`: emit `integer_adm3` + `integer_aim` outputs to reach parity with CPU feature set | Accepted | cuda, integer_adm, aim, adm3, parity |

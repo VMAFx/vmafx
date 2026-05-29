@@ -1,0 +1,1 @@
+| [ADR-0749](0749-sunset-legacy-vmaf-feature-extractor.md) | Remove `VmafLegacyQualityRunner` (float-path runner) from Python harness; breaking change for direct callers of the legacy Python API | Accepted | python, quality-runner, breaking-change, cleanup |

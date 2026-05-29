@@ -1,0 +1,1 @@
+| [ADR-0729](0729-cpp23-wave3-bundle.md) | C++23 Wave 3: convert `feature_name.c`, `picture_copy.c`, `model.c` to `.cpp`; `std::unique_ptr`, `std::string_view`, structured bindings | Accepted | build, cpp23, refactor |

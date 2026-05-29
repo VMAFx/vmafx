@@ -1,0 +1,1 @@
+| [ADR-0720](0720-cpp23-pilot-mem.md) | C++23 Wave 1 pilot: convert `mem.c` → `mem.cpp` with `cpp_std=c++23`; `[[nodiscard]]`, `static_assert`, `extern "C"` guards; isolated static-lib pattern | Accepted | build, c++, cpp23, refactor, internals, fork-local, vmafx-rebrand |

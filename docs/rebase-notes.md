@@ -40371,3 +40371,10 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## ADR index sync — 20 missing rows (2026-05-29)
+
+no rebase impact: REASON — changes are confined to `docs/adr/README.md`
+(regenerated from fragments), `docs/adr/_index_fragments/_order.txt` (20
+slug appends), 18 new fragment files under `docs/adr/_index_fragments/`,
+and one `changelog.d` entry. No upstream Netflix/vmaf file is touched.
