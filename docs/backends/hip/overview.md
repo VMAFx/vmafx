@@ -82,6 +82,8 @@
 
 ## Building
 
+ROCm 7.0 or later is required; 7.2.4 is the version tested in CI and the dev container.
+
 ```bash
 meson setup build -Denable_cuda=false -Denable_sycl=false \
                   -Denable_hip=true -Denable_hipcc=true

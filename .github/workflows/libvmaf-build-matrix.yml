@@ -520,7 +520,7 @@ jobs:
 
       # ---------- ROCm / HIP runtime (T7-10b) ----------
       # Installs `rocm-hip-runtime-dev` from the official AMD apt repo
-      # at `repo.radeon.com/rocm/apt/<ver>`. ROCm 7.2.3 matches the
+      # at `repo.radeon.com/rocm/apt/<ver>`. ROCm 7.2.4 matches the
       # version under test on the maintainer's local box; the apt URL
       # carries the version path component, so bumping ROCm here is a
       # one-line change. `noble` is the codename for `ubuntu-24.04`,
@@ -535,7 +535,7 @@ jobs:
       - name: Install ROCm / HIP runtime
         if: matrix.hip
         env:
-          ROCM_VERSION: "7.2.3"
+          ROCM_VERSION: "7.2.4"
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev \

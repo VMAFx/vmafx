@@ -101,12 +101,12 @@ option('enable_mcp_stdio',
 option('enable_hip',
     type: 'boolean',
     value: false,
-    description: 'Build HIP (AMD ROCm) compute backend (ADR-0212 scaffold / T7-10). Default OFF — every entry point returns -ENOSYS until the runtime PR lands. Requires ROCm 6+ when the kernels arrive; the scaffold has no SDK requirement.')
+    description: 'Build HIP (AMD ROCm) compute backend (ADR-0212 scaffold / T7-10). Default OFF — every entry point returns -ENOSYS until the runtime PR lands. Requires ROCm 7.0+ when the kernels arrive; the scaffold has no SDK requirement.')
 
 option('enable_hipcc',
     type: 'boolean',
     value: false,
-    description: 'Compile HIP device kernels via hipcc and embed the resulting HSACO fat binary (T7-10b / ADR-0254). Requires enable_hip=true and a ROCm 6+ toolchain with hipcc in PATH. Default OFF — without it, HIP feature extractors that have real kernels (float_psnr_hip) fall back to -ENOSYS at init(). Mirrors enable_nvcc for CUDA.')
+    description: 'Compile HIP device kernels via hipcc and embed the resulting HSACO fat binary (T7-10b / ADR-0254). Requires enable_hip=true and a ROCm 7.0+ toolchain with hipcc in PATH. Default OFF — without it, HIP feature extractors that have real kernels (float_psnr_hip) fall back to -ENOSYS at init(). Mirrors enable_nvcc for CUDA.')
 
 option('enable_float_vif_hip_autodispatch',
     type: 'boolean',

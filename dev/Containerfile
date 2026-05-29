@@ -338,7 +338,7 @@ ENV PKG_CONFIG_PATH=${ONEAPI_ROOT}/tbb/latest/lib/pkgconfig:${PKG_CONFIG_PATH}
 # `Unable to open /dev/kfd read-write: Invalid argument` from rocminfo and
 # vmaf --backend hip silently falls back to CPU. Pinning to ROCm 7.2.3 (the
 # same release Arch packages on the dev host) restores agent visibility.
-ARG ROCM_VER=7.2.3
+ARG ROCM_VER=7.2.4
 # AMD's apt repo only publishes a `noble` (Ubuntu 24.04) channel as of
 # 2026-05-18; there is no `resolute` (Ubuntu 26.04) channel yet.  The
 # `noble` packages install correctly on Ubuntu 26.04 — ROCm userspace

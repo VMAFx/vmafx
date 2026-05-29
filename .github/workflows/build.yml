@@ -255,7 +255,7 @@ jobs:
       - name: Install ROCm / HIP runtime (Linux)
         if: matrix.hip && startsWith(matrix.os, 'ubuntu')
         env:
-          ROCM_VERSION: "7.2.3"
+          ROCM_VERSION: "7.2.4"
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install wget gnupg lsb-release
