@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """End-to-end VMAF-floor smoke for ``ai/scripts/chug_extract_features.py``.
 
@@ -187,3 +187,41 @@ def test_chug_extract_features_floor_below_identity_on_degraded_pair(
         f"adm2_mean={adm2} is too close to the identity-pair value (1.0); "
         "ADR-0510 FR-from-NR regression suspected. Compare ref vs dis paths."
     )
+
+
+def test_chug_extract_features_manifest_sidecar(tmp_path: Path) -> None:
+    """ADR-0668: chug_extract_features.py must write a replay manifest sidecar.
+
+    Validates that ``main()`` emits a ``<output>.manifest.json`` sidecar with
+    the correct schema key, a ``run_provenance`` block, and a ``written_rows``
+    counter when there are no clips to process (empty JSONL input).
+    """
+    module = _load_module()
+
+    chug_jsonl = tmp_path / "chug.jsonl"
+    chug_jsonl.write_text("", encoding="utf-8")
+    output = tmp_path / "features.jsonl"
+
+    rc = module.main(
+        [
+            "--input",
+            str(chug_jsonl),
+            "--output",
+            str(output),
+            "--clips-dir",
+            str(tmp_path / "clips"),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--full",
+        ]
+    )
+    assert rc == 0
+
+    manifest_path = output.with_suffix(".manifest.json")
+    assert (
+        manifest_path.is_file()
+    ), "ADR-0668: chug_extract_features.py must write <output>.manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest.get("schema") == "chug-feature-extraction-manifest-v1"
+    assert "run_provenance" in manifest
+    assert manifest.get("written_rows") == 0

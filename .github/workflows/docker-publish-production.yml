@@ -7,7 +7,7 @@
 # Produces:
 #   ghcr.io/vmafx/vmafx:<tag>           (cpu, amd64+arm64)
 #   ghcr.io/vmafx/vmafx:latest          (same)
-#   ghcr.io/vmafx/vmafx:<tag>-cuda12    (amd64 only — CUDA not portable to arm64)
+#   ghcr.io/vmafx/vmafx:<tag>-cuda13    (amd64 only — CUDA not portable to arm64)
 #   ghcr.io/vmafx/vmafx:<tag>-rocm6     (amd64 only)
 #   ghcr.io/vmafx/vmafx:<tag>-oneapi2026 (amd64 only)
 #   ghcr.io/vmafx/vmafx:<tag>-vulkan    (amd64+arm64)
@@ -162,10 +162,10 @@ jobs:
           echo "Smoke test passed: --version exited 0"
 
   # -----------------------------------------------------------------------
-  # GPU variant: CUDA 12 (amd64 only)
+  # GPU variant: CUDA 13 (amd64 only)
   # -----------------------------------------------------------------------
-  build-cuda12:
-    name: Build + push CUDA 12 image (amd64)
+  build-cuda13:
+    name: Build + push CUDA 13 image (amd64)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -189,14 +189,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata (cuda12 tag suffix)
+      - name: Extract Docker metadata (cuda13 tag suffix)
         id: meta
         uses: docker/metadata-action@902fa8ec7d6ecbea8a5d2886d2c2a2f8e2f9a9c5  # v5.7.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=tag,suffix=-cuda12
-            type=raw,value=${{ github.event.inputs.tag || 'dev' }}-cuda12,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=ref,event=tag,suffix=-cuda13
+            type=raw,value=${{ github.event.inputs.tag || 'dev' }}-cuda13,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push (amd64 only)
         id: push
@@ -204,7 +204,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.production-gpu
-          target: final-cuda12
+          target: final-cuda13
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -228,9 +228,9 @@ jobs:
           syft \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}" \
             --output cyclonedx-json \
-            --file sbom-cuda12.cdx.json
+            --file sbom-cuda13.cdx.json
           cosign attest --yes \
-            --predicate sbom-cuda12.cdx.json \
+            --predicate sbom-cuda13.cdx.json \
             --type cyclonedx \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
         continue-on-error: true   # SBOM is best-effort on GPU builds
@@ -503,7 +503,7 @@ jobs:
     needs:
       - build-cpu
       - smoke-test
-      - build-cuda12
+      - build-cuda13
       - build-rocm6
       - build-oneapi2026
       - build-vulkan
@@ -520,4 +520,4 @@ jobs:
             echo "smoke-test failed"
             exit 1
           fi
-          echo "CPU + smoke-test passed. GPU variants: cuda12=${{ needs.build-cuda12.result }} rocm6=${{ needs.build-rocm6.result }} oneapi=${{ needs.build-oneapi2026.result }} vulkan=${{ needs.build-vulkan.result }} server=${{ needs.build-server.result }}"
+          echo "CPU + smoke-test passed. GPU variants: cuda13=${{ needs.build-cuda13.result }} rocm6=${{ needs.build-rocm6.result }} oneapi=${{ needs.build-oneapi2026.result }} vulkan=${{ needs.build-vulkan.result }} server=${{ needs.build-server.result }}"

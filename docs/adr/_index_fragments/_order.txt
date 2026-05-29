@@ -594,4 +594,5 @@
 0713-vmafx-node-impl
 0714-vmafx-operator-skeleton
 0717-vmafx-node-ffmpeg-latest
+0838-chug-extract-features-manifest-sidecar
 # Backfilled by docs-drift-sweep-2026-05-12 (manifest hygiene; numeric order)

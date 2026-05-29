@@ -1,0 +1,4 @@
+- Add `concurrency: cancel-in-progress` to `go-ci.yml`, `rust-ci.yml`, `ffmpeg-integration.yml`, and `docker-image.yml` to cancel superseded PR runs.
+- Add top-level `permissions: contents: read` to `go-ci.yml` and `rust-ci.yml` (least-privilege).
+- Pin remaining `ubuntu-latest` → `ubuntu-24.04` in `docker-image.yml` and `ffmpeg-integration.yml`.
+- Rename CUDA 12 job/tag/stage to CUDA 13 in `docker-publish-production.yml` and `Dockerfile.production-gpu`.

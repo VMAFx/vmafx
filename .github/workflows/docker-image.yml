@@ -30,6 +30,10 @@ on:
       - ".github/workflows/docker-image.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -43,7 +47,7 @@ jobs:
     # blocking to advisory until a real image-validation step lands.
     # Track follow-up: T7-DOCKER-SMOKE.
     name: Docker Image Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     continue-on-error: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2

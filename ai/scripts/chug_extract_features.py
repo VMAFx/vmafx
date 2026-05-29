@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Materialise full-reference feature rows from local CHUG clips.
 
@@ -52,7 +52,7 @@ from ai.data.feature_extractor import (  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance  # noqa: E402
+from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
 # Default working directory for CHUG feature extraction; override with
 # ``VMAF_CHUG_DIR`` env var for container / non-maintainer layouts.
@@ -873,24 +873,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ffmpeg-bin", default="ffmpeg")
     ap.add_argument("--ffprobe-bin", default="ffprobe")
     ap.add_argument("--vmaf-bin", type=Path, default=DEFAULT_VMAF_BINARY)
-    args = ap.parse_args(raw_argv)
-    run_provenance = build_run_provenance(
-        entrypoint=SCRIPT_PATH,
-        repo_root=REPO_ROOT,
-        argv=raw_argv,
-        args=args,
-        inputs={
-            "input_jsonl": args.input,
-            "clips_dir": args.clips_dir,
-            "cache_dir": args.cache_dir,
-            "vmaf_bin": args.vmaf_bin,
-        },
-        outputs={
-            "feature_jsonl": args.output,
-            "split_manifest": args.split_manifest,
-            "audit": args.audit_output,
-        },
+    ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <output>.manifest.json. "
+            "Per ADR-0668, every extraction run writes a replay manifest."
+        ),
     )
+    args = ap.parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
 
     with contextlib.suppress(KeyboardInterrupt):
         written = run(
@@ -908,7 +902,27 @@ def main(argv: list[str] | None = None) -> int:
             ffmpeg_bin=args.ffmpeg_bin,
             ffprobe_bin=args.ffprobe_bin,
             vmaf_bin=args.vmaf_bin,
-            run_provenance=run_provenance,
+        )
+        write_run_manifest(
+            args.manifest_out,
+            schema="chug-feature-extraction-manifest-v1",
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            inputs={
+                "input_jsonl": args.input,
+                "clips_dir": args.clips_dir,
+                "cache_dir": args.cache_dir,
+                "vmaf_bin": args.vmaf_bin,
+            },
+            outputs={
+                "feature_jsonl": args.output,
+                "manifest": args.manifest_out,
+                "split_manifest": args.split_manifest,
+                "audit": args.audit_output,
+            },
+            sections={"written_rows": written, "feature_set": args.feature_set},
         )
         print(f"[chug-features] wrote {written} rows to {args.output}")
         return 0

@@ -6,6 +6,37 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## helm-hpa-templates (2026-05-29, ADR-0822)
+
+**Files touched:**
+`deploy/helm/vmafx/templates/hpa.yaml` (new),
+`deploy/helm/vmafx/values.yaml` (modified — `autoscaling.*` section added),
+`docs/development/k8s-deployment.md` (modified — HPA and metrics-adapter sections added),
+`docs/adr/0822-controller-worker-autoscale.md` (new),
+`changelog.d/added/0822-helm-hpa-templates.md` (new)
+
+**Rebase impact:** None. The Helm chart under `deploy/helm/vmafx/` is entirely
+fork-local — upstream Netflix/vmaf has no Kubernetes deployment surface. No
+rebase conflict is possible.
+
+---
+
+## helm-secrets-handling (2026-05-29, ADR-0818)
+
+**Files touched:**
+`deploy/helm/vmafx/templates/externalsecret.yaml` (new),
+`deploy/helm/vmafx/templates/sealedsecret-rclone-config.yaml` (new),
+`deploy/helm/vmafx/templates/secret-rclone-config.yaml` (modified),
+`deploy/helm/vmafx/templates/_helpers.tpl` (modified),
+`deploy/helm/vmafx/values.yaml` (modified),
+`docs/k8s/secrets.md` (new)
+
+**Rebase impact:** None. The Helm chart under `deploy/helm/vmafx/` is entirely
+fork-local — upstream Netflix/vmaf has no Kubernetes deployment surface.  No
+rebase conflict is possible.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
@@ -40371,3 +40402,9 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## CHUG feature extraction replay manifest sidecar (ADR-0838, 2026-05-29)
+
+no rebase impact: changes confined to `ai/scripts/chug_extract_features.py` and
+`ai/tests/test_chug_extract_features_smoke.py`. No upstream Netflix/vmaf C or
+Python source is touched.

@@ -5,14 +5,14 @@
 #
 # Parametrized via GPU_RUNTIME build-arg:
 #   cpu        (default) — identical to Dockerfile.production; no GPU runtime added
-#   cuda12     — adds CUDA 12 runtime libs (libcuda.so stub + libcudart.so)
+#   cuda13     — adds CUDA 12 runtime libs (libcuda.so stub + libcudart.so)
 #   rocm6      — adds ROCm 6 HIP runtime (libamdhip64.so + libhsa-runtime64.so)
 #   oneapi2026 — adds Intel oneAPI 2026 Level Zero runtime (libze1 + libze_intel_gpu1)
 #   vulkan     — adds Vulkan runtime ICD loader (libvulkan.so + lavapipe ICD JSON)
 #
 # Tag matrix (built by CI):
 #   ghcr.io/vmafx/vmafx:<tag>          (cpu default, same as Dockerfile.production)
-#   ghcr.io/vmafx/vmafx:<tag>-cuda12
+#   ghcr.io/vmafx/vmafx:<tag>-cuda13
 #   ghcr.io/vmafx/vmafx:<tag>-rocm6
 #   ghcr.io/vmafx/vmafx:<tag>-oneapi2026
 #   ghcr.io/vmafx/vmafx:<tag>-vulkan
@@ -62,8 +62,8 @@ RUN meson setup /build libvmaf \
     && cp /build/tools/vmaf /dist/bin/ \
     && cp -r model/ /dist/model/
 
-# --- cuda12 build ---
-FROM builder-base AS builder-cuda12
+# --- cuda13 build ---
+FROM builder-base AS builder-cuda13
 
 # hadolint ignore=DL3008
 RUN apt-get update \
@@ -182,12 +182,12 @@ COPY --from=builder-cpu /dist/bin/   /usr/local/bin/
 COPY --from=builder-cpu /dist/model/ /usr/local/share/vmafx/model/
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
-FROM runtime-base AS final-cuda12
+FROM runtime-base AS final-cuda13
 # CUDA runtime libs — only the runtime, not the full toolkit
 COPY --from=nvidia/cuda:12.0-runtime-ubuntu22.04 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
-COPY --from=builder-cuda12 /dist/lib/   /usr/local/lib/
-COPY --from=builder-cuda12 /dist/bin/   /usr/local/bin/
-COPY --from=builder-cuda12 /dist/model/ /usr/local/share/vmafx/model/
+COPY --from=builder-cuda13 /dist/lib/   /usr/local/lib/
+COPY --from=builder-cuda13 /dist/bin/   /usr/local/bin/
+COPY --from=builder-cuda13 /dist/model/ /usr/local/share/vmafx/model/
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 FROM runtime-base AS final-rocm6

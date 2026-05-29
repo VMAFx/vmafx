@@ -12,6 +12,13 @@ on:
       - 'go.mod'
       - 'go.sum'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
   go-ci:
     name: go vet + go test

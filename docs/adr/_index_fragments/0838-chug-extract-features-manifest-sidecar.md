@@ -1,0 +1,1 @@
+| [ADR-0838](0838-chug-extract-features-manifest-sidecar.md) | `chug_extract_features.py` writes a `<output>.manifest.json` replay sidecar (schema `chug-feature-extraction-manifest-v1`) after each extraction run, per ADR-0668 | Accepted | 2026-05-29 | ai, training, provenance, chug |
