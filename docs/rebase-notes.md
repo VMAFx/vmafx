@@ -42333,6 +42333,26 @@ __ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD sid
 
 ---
 
+### ADR-0787 — libvmaf API error-path audit (2026-05-29)
+
+No rebase impact: this PR adds only documentation files (research digest, ADR, changelog
+fragment) and no C/Python source changes.
+
+All files modified are fork-local:
+`docs/research/research-0787-libvmaf-api-error-path-audit.md` (new),
+`docs/adr/0787-libvmaf-api-error-path-audit.md` (new),
+`docs/adr/README.md` (new row),
+`changelog.d/fixed/0787-libvmaf-api-error-path-audit.md` (new),
+`docs/rebase-notes.md` (this entry).
+
+The six implementation fixes recommended by the audit (`vmaf_write_output_with_format` errno,
+`vmaf_cuda_state_init` error codes, `vmaf_close` unchecked returns, CUDA EBUSY guard,
+`vmaf_init` error propagation) will land in a separate fix PR that will carry its own
+rebase-notes entry. The `vmaf_cuda_state_free` ABI-normalisation is deferred to a
+major-version PR.
+
+---
+
 ### ADR-0815 — vmafx-operator + vmafx-node distroless Dockerfiles (2026-05-29)
 
 No rebase impact on upstream C/Python code.
