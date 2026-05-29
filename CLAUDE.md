@@ -1,5 +1,10 @@
 # CLAUDE.md — VMAF Fork (Lusoris)
 
+> **CORRECT REPO: `VMAFx/vmafx` (active) — NOT `lusoris/vmaf` (archived)**
+> The fork was renamed and transferred. All new work, PRs, and gh commands must
+> target `VMAFx/vmafx`. Run `gh repo set-default VMAFx/vmafx` at the start of
+> every session before using any `gh` command.
+
 ## 🌟 GLOBAL PROJECT RULES (TOP PRIORITY)
 
 These 2 rules apply to ALL agents, ALL tools, and ALL commits — without exception.
