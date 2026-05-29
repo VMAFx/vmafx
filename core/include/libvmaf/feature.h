@@ -70,6 +70,8 @@ typedef struct VmafFeatureDictionary VmafFeatureDictionary;
  * @return 0 on success, or a negative errno code on error:
  *         `-EINVAL` for NULL arguments, `-ENOMEM` if allocation fails.
  *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ *
  * @since libvmaf 3.0.0 (upstream).
  */
 VMAF_EXPORT int vmaf_feature_dictionary_set(VmafFeatureDictionary **dict, const char *key,
@@ -90,6 +92,8 @@ VMAF_EXPORT int vmaf_feature_dictionary_set(VmafFeatureDictionary **dict, const 
  *             no-op; on a non-NULL @p dict, @p *dict is reset to NULL.
  *
  * @return 0 on success, or a negative errno code on internal failure.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */

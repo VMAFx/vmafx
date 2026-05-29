@@ -121,6 +121,8 @@ typedef struct VmafModelConfig {
  *         `-EINVAL` when @p version does not match any built-in model
  *         (the loader also logs a warning), `-ENOMEM` on allocation failure.
  *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ *
  * @since libvmaf 3.0.0 (upstream).
  */
 VMAF_EXPORT int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version);
@@ -146,6 +148,8 @@ VMAF_EXPORT int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const c
  * @return 0 on success, or a negative errno code on error: `-ENOENT` if the
  *         path does not exist, `-EINVAL` on a malformed JSON payload or a
  *         `.pkl` extension, `-ENOMEM` on allocation failure.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -176,6 +180,8 @@ VMAF_EXPORT int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cf
  * @return 0 on success, or a negative errno code on error: `-EINVAL` on NULL
  *         arguments, `-ENOMEM` on dictionary-merge allocation failure.
  *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ *
  * @since libvmaf 3.0.0 (upstream).
  */
 VMAF_EXPORT int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
@@ -195,6 +201,8 @@ VMAF_EXPORT int vmaf_model_feature_overload(VmafModel *model, const char *featur
  *
  * @param model Model handle from @ref vmaf_model_load or
  *              @ref vmaf_model_load_from_path. NULL is a no-op.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -282,6 +290,8 @@ typedef struct VmafModelCollectionScore {
  *         @p version does not match any built-in collection, `-ENOMEM` on
  *         allocation failure.
  *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ *
  * @since libvmaf 3.0.0 (upstream).
  */
 VMAF_EXPORT int vmaf_model_collection_load(VmafModel **model,
@@ -307,6 +317,8 @@ VMAF_EXPORT int vmaf_model_collection_load(VmafModel **model,
  * @return 0 on success, or a negative errno code on error: `-ENOENT` if the
  *         path does not exist, `-EINVAL` on a malformed payload or a `.pkl`
  *         extension, `-ENOMEM` on allocation failure.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */
@@ -340,6 +352,8 @@ VMAF_EXPORT int vmaf_model_collection_load_from_path(VmafModel **model,
  * @return 0 on success, or a negative errno code on error: `-EINVAL` on NULL
  *         arguments, `-ENOMEM` on dictionary-copy failure.
  *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
+ *
  * @since libvmaf 3.0.0 (upstream).
  */
 VMAF_EXPORT int vmaf_model_collection_feature_overload(VmafModel *model,
@@ -361,6 +375,8 @@ VMAF_EXPORT int vmaf_model_collection_feature_overload(VmafModel *model,
  *                         @ref vmaf_model_collection_load /
  *                         @ref vmaf_model_collection_load_from_path. NULL
  *                         is a no-op.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
  *
  * @since libvmaf 3.0.0 (upstream).
  */

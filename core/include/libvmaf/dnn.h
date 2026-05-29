@@ -331,6 +331,8 @@ VMAF_EXPORT int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *i
  * every successful @ref vmaf_dnn_session_open.
  *
  * @param sess Session handle from @ref vmaf_dnn_session_open. NULL is a no-op.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
 

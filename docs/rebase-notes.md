@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## doxygen-thread-safety-tags (2026-05-29, ADR-0788)
+
+**Files touched:**
+`core/include/libvmaf/libvmaf.h`, `core/include/libvmaf/picture.h`,
+`core/include/libvmaf/feature.h`, `core/include/libvmaf/model.h`,
+`core/include/libvmaf/dnn.h`
+
+**Rebase impact:** Low. These are comment-only additions. An upstream sync
+that modifies the same function signatures may create minor merge-fuzz on
+the Doxygen blocks; resolve by re-applying the `@thread-safety` tags
+to whatever the upstream version of the comment looks like.
+
+---
+
 ## containerfile-layer-optimization (ADR-0790, 2026-05-29)
 
 **Files touched:** `dev/Containerfile`
