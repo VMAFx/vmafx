@@ -1283,7 +1283,6 @@ static void adm_pre_graph(void *queue_ptr, void *priv);
 static void adm_post_graph(void *queue_ptr, void *priv);
 
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -1373,7 +1372,6 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (!s->d_dwt_tmp_ref || !s->d_dwt_tmp_dis || !s->d_div_lookup || !s->d_cm_accum ||
         !s->d_csf_den_accum || !s->h_cm_accum || !s->h_csf_den_accum) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: device memory allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
 
@@ -1381,8 +1379,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     {
         int32_t *lut = static_cast<int32_t *>(std::malloc(div_size));
         if (!lut)
-            close_fex_sycl(fex);
-        return -ENOMEM;
+            return -ENOMEM;
         std::memset(lut, 0, div_size);
         static const int32_t Q_factor = 1073741824; // 2^30
         for (int i = 1; i <= 32768; i++) {
@@ -1396,10 +1393,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
+    if (!s->feature_name_dict)
         return -ENOMEM;
-    }
 
     // Register with combined command graph
     err = vmaf_sycl_graph_register(state, enqueue_adm_work, adm_pre_graph, adm_post_graph, nullptr,

@@ -49,31 +49,32 @@ func Execute(version string) {
 
 	root := &cobra.Command{
 		Use:   "vmafx-tune-go",
-		Short: "vmafx-tune-go — Go port of vmaf-tune (Stage 1: compare + ladder subcommands)",
-		Long: `vmafx-tune-go is the Stage-1 Go port of the vmaf-tune rate-quality
-tuning CLI. It runs alongside the Python vmaf-tune binary during the migration.
+		Short: "vmafx-tune-go — Go port of vmaf-tune (Stage 4: compare/ladder/report subcommands)",
+		Long: `vmafx-tune-go is the Go port of the vmaf-tune rate-quality tuning CLI.
+It runs alongside the Python vmaf-tune binary during the migration.
 
 Fully ported subcommands:
-  compare     Rate-quality sweep: compare codecs at VMAF targets
-  ladder      Per-title ABR bitrate-ladder generation from a VMAF-target sweep
+  compare     Rate-quality sweep: compare codecs at VMAF targets (Stage 1)
+  ladder      Per-title ABR bitrate-ladder generation (Stage 2)
+  report      Render Markdown / HTML from prior compare or ladder runs (Stage 4)
 
 Not yet ported (use 'vmaf-tune <subcommand>' for these):
-  tune-per-shot, fast, corpus, report, benchmark, auto, sidecar`,
+  tune-per-shot, fast, corpus, benchmark, auto, sidecar`,
 		Version: version,
 		// Do not print usage on subcommand errors.
 		SilenceUsage: true,
 	}
 
-	// Stage-1 ported subcommands.
+	// Ported subcommands (Stages 1, 2, 4).
 	root.AddCommand(newCompareCmd())
 	root.AddCommand(newLadderCmd())
+	root.AddCommand(newReportCmd())
 
-	// Stage-2+ stubs: print redirect rather than silently failing.
+	// Stage-5+ stubs: print redirect rather than silently failing.
 	for _, stub := range []struct{ name, desc string }{
 		{"tune-per-shot", "Per-shot VMAF tuning"},
 		{"fast", "Fast NR-proxy accelerated tune"},
 		{"corpus", "Corpus management"},
-		{"report", "Report rendering"},
 		{"benchmark", "Encoder benchmark"},
 		{"auto", "Automatic subcommand selection"},
 		{"sidecar", "Sidecar state management"},

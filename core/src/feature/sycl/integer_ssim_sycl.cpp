@@ -302,7 +302,6 @@ static const VmafOption options_ssim_sycl[] = {
     {0},
 };
 
-static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -361,16 +360,13 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (!s->h_ref || !s->h_cmp || !s->d_ref || !s->d_cmp || !s->d_ref_mu || !s->d_cmp_mu ||
         !s->d_ref_sq || !s->d_cmp_sq || !s->d_refcmp || !s->d_partials || !s->h_partials) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssim_sycl: USM allocation failed\n");
-        close_fex_sycl(fex);
         return -ENOMEM;
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
+    if (!s->feature_name_dict)
         return -ENOMEM;
-    }
 
     s->has_pending = false;
     return 0;
@@ -739,7 +735,6 @@ static void launch_issim_vert_combine(sycl::queue &q, const int64_t *d_mux_h,
 
 } /* anonymous namespace */
 
-static int close_fex_issim_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 extern "C" {
 
 static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
@@ -796,16 +791,13 @@ static int init_fex_issim_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat p
         !s->d_xy || !s->d_y2 || !s->d_w || !s->d_partials || !s->h_partials || !s->d_wgt ||
         !s->h_wgt) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_ssim_sycl: USM allocation failed\n");
-        close_fex_issim_sycl(fex);
         return -ENOMEM;
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_issim_sycl(fex);
+    if (!s->feature_name_dict)
         return -ENOMEM;
-    }
 
     s->has_pending = false;
     return 0;

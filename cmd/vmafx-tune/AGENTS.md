@@ -34,3 +34,17 @@ during the migration; see Stage roadmap in ADR-0705.
    `vmafx-tune-go`, not `vmaf-tune`, during Stage 1 to avoid collisions with the
    Python binary. Stage 3 (swap) will rename. Never install it as `vmaf-tune` in
    a PR that does not also remove the Python entry point.
+
+7. **`WireRow` vs `Row` duality** (`pkg/report/`): `Row` (report.go) is the
+   emit-only shape used by `compare` to produce JSON output; `WireRow` (multi.go)
+   is the unmarshal-only shape used by `report` to read that JSON back in.
+   These are intentionally separate types. Do not merge them — `Row` uses bare
+   `float64` + NaN convention for emit; `WireRow` uses `*float64` for nullable
+   unmarshal. Merging the two would break either the emit path (RFC 8259 bare NaN)
+   or the unmarshal path (null vs 0 ambiguity). ADR-0770.
+
+8. **Schema auto-detection** (`cmd/vmafx-tune/cmd/report.go` `loadReportFile`):
+   the `report` subcommand probes `renditions` vs `rows` top-level keys to
+   determine whether a JSON file is a ladder or compare payload. This probe is
+   the contract between the two schemas. Any future schema that omits both keys
+   must be added to the probe before the `report` subcommand can read it.
