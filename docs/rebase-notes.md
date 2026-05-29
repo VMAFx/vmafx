@@ -43109,3 +43109,11 @@ no rebase impact: REASON — changes are confined to new test files
 `core/test/simd_bitexact_test.h` (new helper function) and `core/test/meson.build`
 (new test registration).  No upstream Netflix/vmaf production source is modified;
 no existing test is changed; no golden assertions are touched.
+
+## ADR-0852 — HIP speed extractor wiring (2026-05-29)
+
+no rebase impact: the three changed files (`core/src/meson.build`,
+`core/src/hip/meson.build`, `core/src/feature/feature_extractor.c`) are
+fork-owned; no upstream Netflix/vmaf C source is touched. The only upstream-
+adjacent file is `feature_extractor.c` whose `#if HAVE_HIP` block is a
+fork-added section; conflicts are only possible with other HIP-wiring PRs.

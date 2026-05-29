@@ -293,6 +293,11 @@ if is_hipcc_enabled and is_hip_enabled
         'adm_csf'         : feature_src_dir + 'hip/integer_adm/adm_csf.hip',
         'adm_csf_den'     : feature_src_dir + 'hip/integer_adm/adm_csf_den.hip',
         'adm_cm'          : feature_src_dir + 'hip/integer_adm/adm_cm.hip',
+        # ADR-0852: wire speed_chroma_hip + speed_temporal_hip (ADR-0567 HIP)
+        # into the HSACO build.  The kernel source was already written and
+        # committed; this entry causes hipcc --genco to compile it into an
+        # HSACO blob that hipModuleLoadData loads at runtime.
+        'speed_score'     : feature_src_dir + 'hip/speed/speed_score.hip',
     }
     # Per-kernel extra hipcc flags. Mirrors `cuda_cu_extra_flags` below for
     # the nvcc path. `ssimulacra2_blur` needs `-ffp-contract=off` so the
