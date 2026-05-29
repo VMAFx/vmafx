@@ -40371,3 +40371,9 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## CI workflow staleness sweep (ADR-0851, 2026-05-29)
+
+no rebase impact: REASON — change is a one-line fix to a fork-local CI workflow
+(`.github/workflows/supply-chain.yml`). No upstream Netflix/vmaf source file is
+touched; the `build/src/libvmaf.so*` path is fork-internal build output.
