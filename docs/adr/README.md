@@ -767,4 +767,5 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0713](0713-vmafx-node-impl.md) | vmafx-node Go worker binary — ffmpeg decode/encode/score pipeline, gRPC heartbeat to controller | Proposed | go, node, ffmpeg, phase4b, fork-local |
 | [ADR-0714](0714-vmafx-operator-skeleton.md) | vmafx-operator kubebuilder skeleton + CRDs: `VmafxJob`, `VmafxNode`, `VmafxModelTraining`; Stage 1 reconcilers; Helm integration | Accepted | go, k8s, operator, crd, phase4b, fork-local |
 | [ADR-0717](0717-vmafx-node-ffmpeg-latest.md) | vmafx-node ffmpeg version policy: pin to latest stable tag (n8.2); multi-stage Dockerfile with cpu/cuda/rocm/sycl variants | Accepted | node, ffmpeg, docker, phase4b, fork-local |
+| [ADR-0752](0752-perf-bench-multi-resolution.md) | Accepted | Multi-resolution performance benchmark baseline — `scripts/perf/bench-multi-resolution.sh` + versioned JSON in `testdata/perf_multi_resolution.json` |
 >>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)

@@ -515,3 +515,19 @@ the corrected methodology.
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
 =======
 >>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
+
+## Performance benchmark invariant (ADR-0752)
+
+- **`testdata/perf_multi_resolution.json` is the versioned performance baseline.**
+  Any PR that claims a performance improvement (CPU/CUDA/SYCL throughput, latency)
+  must re-run `scripts/perf/bench-multi-resolution.sh` with the same
+  `--backends` and `--resolutions` flags and include a structured diff table
+  in the PR description (see `docs/development/perf.md §Comparing a PR against
+  the baseline`).
+- If the PR intentionally changes throughput (optimisation or trade-off),
+  commit the updated `testdata/perf_multi_resolution.json` with the justification
+  in the commit message.
+- Upscaled fixture files (`testdata/ref_1920x1080_48f.yuv`, `testdata/ref_2560x1440_48f.yuv`,
+  `testdata/dis_1920x1080_48f.yuv`, `testdata/dis_2560x1440_48f.yuv`) are
+  generated on first run and are **not committed** (they are reproducible via
+  `ffmpeg -vf scale=W:H:flags=bilinear` from the in-tree 576×324 fixture).

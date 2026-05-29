@@ -40134,3 +40134,20 @@ Fork-local files:
 `changelog.d/changed/cross-backend-baseline-with-sycl.md` (new),
 `docs/rebase-notes.md` (this entry),
 `docs/state.md` (new row).
+
+## ADR-0752 — Multi-resolution perf benchmark baseline
+
+**No rebase impact** on upstream C/Python code.
+
+New fork-local files only:
+- `scripts/perf/bench-multi-resolution.sh` — benchmark harness
+- `testdata/perf_multi_resolution.json` — baseline snapshot (schema_version=1)
+- `docs/development/perf.md` — usage docs
+- `docs/research/research-0752-perf-bench-multi-resolution-baseline.md`
+- `docs/adr/0752-perf-bench-multi-resolution.md`
+- `changelog.d/added/perf-bench-multi-resolution.md`
+- `core/AGENTS.md` (new invariant appended)
+
+The upscaled fixture cache files (`testdata/ref_1920x1080_48f.yuv`, etc.)
+are generated on first run and should be `.gitignore`d (they are reproducible
+from the 576×324 native fixture via `ffmpeg -vf scale=W:H:flags=bilinear`).
