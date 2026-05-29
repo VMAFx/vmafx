@@ -34,7 +34,6 @@ static const char *const g_metal_features[] = {
     "motion3_score",
     "float_ssim_metal",
     "float_ssim",
-    "float_ms_ssim_metal",
     "float_ms_ssim",
     NULL,
 };
