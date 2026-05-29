@@ -269,7 +269,7 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
 
     /* Execution-provider selection.
      *
-     * AUTO: try CUDA → OpenVINO:GPU → ROCm → CoreML → CPU. The first EP
+     * AUTO: try CUDA → OpenVINO (GPU then CPU) → ROCm → CPU. The first EP
      * whose append call returns NULL OrtStatus wins; EPs absent from the
      * ORT build return non-null and we fall through. The CPU EP is always
      * linked, so the final fall-through never fails.

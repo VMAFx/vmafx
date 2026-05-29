@@ -540,7 +540,7 @@ endif
 config_h_target = configure_file(output: 'config.h', configuration: cdata)
 
 libvmaf_cpu_sources = [
-    src_dir + 'cpu.cpp',
+    src_dir + 'cpu.c',
 ]
 
 if is_asm_enabled
@@ -1695,6 +1695,18 @@ log_cpp23_lib = static_library(
     install : false,
 )
 
+# ADR-0761: opt.cpp and predict.cpp — C++23 Wave 8. Isolated static libs so
+# cpp_std=c++23 does not propagate to the remaining C TUs in libvmaf.
+# Linked into libvmaf.so via extract_all_objects() in the library() call below.
+opt_cpp23_lib = static_library(
+    'opt_cpp23',
+    src_dir + 'opt.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++23'],
+    pic : true,
+    install : false,
+)
+
 # ADR-0858: gpu_dispatch_env.cpp is compiled as an isolated C++23 static lib
 # so its cpp_std override (c++23) does not propagate to any other TU — same
 # isolation pattern as metadata_handler_cpp20_lib (ADR-0708).  The public C
@@ -1703,6 +1715,15 @@ log_cpp23_lib = static_library(
 gpu_dispatch_env_cpp23_lib = static_library(
     'gpu_dispatch_env_cpp23',
     src_dir + 'gpu_dispatch_env.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++23'],
+    pic : true,
+    install : false,
+)
+
+read_json_model_cpp23_lib = static_library(
+    'read_json_model_cpp23',
+    src_dir + 'read_json_model.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
     override_options : ['cpp_std=c++23'],
     pic : true,
@@ -1719,9 +1740,9 @@ libvmaf_sources = [
     src_dir + 'fex_ctx_vector.c',
     src_dir + 'thread_pool.c',
     src_dir + 'dict.c',
-    src_dir + 'opt.c',
+    # opt.cpp compiled as opt_cpp23_lib (ADR-0761)
     src_dir + 'ref.c',
-    src_dir + 'read_json_model.c',
+    # read_json_model.cpp compiled as read_json_model_cpp23_lib (ADR-0761)
     src_dir + 'pdjson.c',
     # log.cpp is compiled as log_cpp23_lib (ADR-0708 Wave 1 pilot)
     src_dir + 'framesync.c',
@@ -1812,6 +1833,9 @@ libvmaf = library(
         log_cpp23_lib.extract_all_objects(recursive: true),
         # ADR-0858: C++23 gpu_dispatch_env TU compiled as isolated static lib.
         gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true),
+        # ADR-0761: C++23 Wave 8 isolated static libs.
+        opt_cpp23_lib.extract_all_objects(recursive: true),
+        read_json_model_cpp23_lib.extract_all_objects(recursive: true),
     ],
     version : vmaf_soname_version,
     soversion : vmaf_soversion,

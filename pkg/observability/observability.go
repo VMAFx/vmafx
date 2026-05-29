@@ -53,8 +53,7 @@ func NewLogger(levelStr string) *slog.Logger {
 	return slog.New(handler)
 }
 
-// Metrics holds all Prometheus instruments registered by the vmafx-server
-// and vmafx-controller.
+// Metrics holds all Prometheus instruments registered by the vmafx-server.
 type Metrics struct {
 	// ScoreRequests is the total number of /v1/score / Score RPC calls.
 	ScoreRequests prometheus.Counter
@@ -66,12 +65,6 @@ type Metrics struct {
 	HealthRequests prometheus.Counter
 	// ReadyRequests counts /readyz calls.
 	ReadyRequests prometheus.Counter
-	// JobsSubmitted counts jobs accepted by the controller queue.
-	JobsSubmitted prometheus.Counter
-	// JobsCompleted counts jobs that finished successfully.
-	JobsCompleted prometheus.Counter
-	// JobsFailed counts jobs that finished with an error.
-	JobsFailed prometheus.Counter
 }
 
 // NewMetrics registers and returns the vmafx-server Prometheus metrics.

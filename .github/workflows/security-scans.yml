@@ -156,8 +156,7 @@ jobs:
       # below suppresses CodeQL's C++-oriented autobuild.sh which would
       # fail trying to build the old libvmaf/ path (post-rename to core/).
       - name: No-op build (Python analysis only)
-        run: echo "Python-only CodeQL scan — no C++ build required"
-      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        run: echo "Python-only CodeQL scan — no C++ build required"      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
         with:
           category: "/language:python"
 

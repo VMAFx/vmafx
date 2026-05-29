@@ -42202,6 +42202,23 @@ part of any public API.
 
 ---
 
+### ADR-0761 — C++23 Wave 8: opt.cpp activation + read_json_model.cpp (2026-05-29)
+
+**Touches**: `core/src/opt.cpp`, `core/src/opt.h`, `core/src/opt.c` (removed
+from build), `core/src/read_json_model.cpp` (new), `core/src/read_json_model.c`
+(removed from build), `core/src/read_json_model.h`, `core/src/log.h`,
+`core/src/model.h`, `core/src/meson.build`, `core/test/meson.build`,
+`scripts/ci/coverage-check.sh`.
+
+**Upstream collision risk**: Low. Netflix upstream does not touch
+`read_json_model.c` or `opt.c` in the same cadence as the fork's C++23
+migration. If upstream modifies either file, the port author should check
+whether the upstream fix applies to the `.cpp` version; typically a
+mechanical `port-upstream-commit` handles it cleanly since the `.cpp` is
+a structural clone of the `.c`.
+
+---
+
 ### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
 
 No rebase impact on upstream C/Python code.
@@ -43287,4 +43304,7 @@ Fork-local files:
 `'../src/log.c'` source entries from ~20 test execs, wired `test_log` into
 the fast suite),
 `docs/adr/0708-vmafx-cpp23-internals-pilot.md` (consequences cross-link),
-`changelog.d/changed/log-c-to-cpp23.md`.
+`changelog.d/changed/log-c-to-cpp23.md`.**`extern "C"` guards added**: `log.h`, `model.h`, `read_json_model.h`,
+`opt.h`. Any upstream commit that adds new declarations to these headers
+must include the guard-wrapped declaration for correctness. Flag in the
+port if upstream adds a declaration outside the guard block.

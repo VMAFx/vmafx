@@ -1397,10 +1397,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
+    if (!s->feature_name_dict)
         return -ENOMEM;
-    }
 
     // Register with combined command graph
     err = vmaf_sycl_graph_register(state, enqueue_adm_work, adm_pre_graph, adm_post_graph, nullptr,

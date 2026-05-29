@@ -22,6 +22,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum VmafOptionType {
     VMAF_OPT_TYPE_BOOL,
     VMAF_OPT_TYPE_INT,
@@ -50,5 +54,9 @@ typedef struct VmafOption {
 } VmafOption;
 
 int vmaf_option_set(const VmafOption *opt, void *obj, const char *val);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* __VMAF_SRC_OPT_H__ */
