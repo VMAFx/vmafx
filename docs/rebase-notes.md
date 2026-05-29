@@ -40371,3 +40371,9 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## PR #76 NCU validation digest (Research-0857, 2026-05-29)
+
+no rebase impact: REASON — this PR adds only `docs/research/research-0857-pr76-ncu-validation-20260529.md`,
+`changelog.d/perf/pr76-ncu-validation-20260529.md`, and `docs/state.md` row. No
+C source, kernel, or header is touched. No upstream Netflix/vmaf file is modified.

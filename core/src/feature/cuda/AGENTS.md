@@ -619,3 +619,13 @@ kernel variants at runtime. The current policy table is in ADR-0753.
   channel reads through the L1 read-only texture cache. Any future kernel that reads
   per-pixel plane data from `VmafPicture` must follow the same pattern.
   See [ADR-0762](../../../../docs/adr/0762-cuda-ciede-ldg.md).
+
+## Research-0857 (2026-05-29) — filter1d NCU A/B measurement
+
+**No rebase-sensitive invariant from Research-0857 / ADR-0857.** The `__launch_bounds__(128, 10)`
+hint and `__ldg()` loads in `integer_vif/filter1d.cu` were confirmed production-ready by
+live NCU measurement on RTX 4090 sm_89 (regs 56→48, +6 pp active warps at 1080p,
+l1tex +54.7%). The filter1d change is a pure optimization with no public API impact,
+no upstream file touched, and no rebase invariants introduced beyond the existing
+register-pressure ceiling pattern (see "Register-pressure ceiling" section above).
+See [ADR-0857](../../../../docs/adr/0857-pr76-ncu-validation.md).
