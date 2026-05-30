@@ -148,7 +148,7 @@ def probe_geometry(
     clip_path: Path,
     *,
     ffprobe_bin: str = "ffprobe",
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     timeout_s: float = _PROBE_GEOMETRY_TIMEOUT_S,
 ) -> dict[str, Any] | None:
     """Return a geometry dict for the first video stream in ``clip_path``.
@@ -330,7 +330,7 @@ def download_clip(
     url: str,
     dest: Path,
     curl_bin: str = "curl",
-    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     timeout_s: int = 120,
 ) -> tuple[bool, str]:
     """Download ``url`` to ``dest`` via curl.
@@ -549,7 +549,7 @@ class CorpusIngestBase(ABC):
         ffprobe_bin: str = "ffprobe",
         curl_bin: str = "curl",
         corpus_version: str = "",
-        runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+        runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
         now_fn: Callable[[], str] = utc_now_iso,
         attrition_warn_threshold: float = 0.10,
         download_timeout_s: int = 120,

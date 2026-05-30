@@ -1369,6 +1369,31 @@ Netflix/vmaf has no Go layer. All new files are test-only and never enter
 the libvmaf C build, the Python harness, or the FFmpeg patch stack. No
 production code is touched, so the upstream rebase boundary is unaffected.
 
+## python-type-annotations-audit (2026-05-30)
+
+**Files touched:**
+`ai/src/aiutils/{__init__,jsonl_utils,parquet_utils}.py`,
+`ai/src/corpus/base.py`,
+`mcp-server/vmaf-mcp/src/vmaf_mcp/{server,http_transport}.py`,
+`tools/vmaf-tune/src/vmaftune/{auto,benchmark,corpus,encoder_profile,
+fr_from_nr_adapter,hdr,predictor_features,report,saliency,score,
+score_backend,sidecar}.py`,
+`tools/vmaf-tune/src/vmaftune/codec_adapters/_gop_common.py`,
+`pyproject.toml`.
+
+**Rebase impact:** None. Every touched file is fork-added (`ai/`,
+`mcp-server/`, `tools/vmaf-tune/`) or fork-only mypy config
+(`pyproject.toml` `[tool.mypy.overrides]`). Upstream Netflix/vmaf
+does not ship any of these trees; on a future upstream sync there is
+no conflict surface.
+
+The change is a pure type-annotation tightening — no runtime
+semantics change. The one functional change is the removal of a
+dead-code duplicate `_run_benchmark()` definition in
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`; the deleted copy was
+silently shadowed at import time by the progress-token-aware
+implementation 575 lines later, so removal is behaviour-preserving.
+
 ---
 
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)

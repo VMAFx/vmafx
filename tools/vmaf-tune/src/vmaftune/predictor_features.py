@@ -400,9 +400,9 @@ def _compute_saliency(
     if width <= 0 or height <= 0 or frames <= 0:
         return (0.0, 0.0)
     try:
-        import numpy as np  # type: ignore[import-not-found]
+        import numpy as np
 
-        from . import saliency  # type: ignore[import-untyped]
+        from . import saliency
     except ImportError:
         return (0.0, 0.0)
     if not hasattr(saliency, "compute_saliency_map"):
@@ -434,7 +434,7 @@ def _compute_saliency(
             return (0.0, 0.0)
         try:
             frame_samples = max(1, min(int(cfg.saliency_frame_samples), frames))
-            smap = saliency.compute_saliency_map(  # type: ignore[attr-defined]
+            smap = saliency.compute_saliency_map(
                 raw_path,
                 width,
                 height,

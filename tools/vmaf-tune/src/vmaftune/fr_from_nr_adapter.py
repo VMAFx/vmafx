@@ -290,7 +290,7 @@ class NrToFrAdapter:
         decode_runner: RunnerFn | None = None,
         encode_runner: RunnerFn | None = None,
         score_runner: RunnerFn | None = None,
-    ) -> Iterator[dict]:
+    ) -> Iterator[dict[str, Any]]:
         """Yield FR corpus rows for one NR input row.
 
         ``probe_runner`` / ``decode_runner`` are the adapter's own
@@ -352,7 +352,7 @@ class NrToFrAdapter:
         decode_runner: RunnerFn | None = None,
         encode_runner: RunnerFn | None = None,
         score_runner: RunnerFn | None = None,
-    ) -> Iterator[dict]:
+    ) -> Iterator[dict[str, Any]]:
         """Yield FR rows for a list of NR inputs in deterministic order.
 
         Failures on any single NR row are surfaced as ``RuntimeError``

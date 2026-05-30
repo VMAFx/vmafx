@@ -1251,11 +1251,12 @@ def _shot_plot_fn(data: ReportData):
 
 
 def _fmt_bytes(n: int) -> str:
+    size = float(n)
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if n < 1024 or unit == "TiB":
-            return f"{n:.1f} {unit}"
-        n /= 1024.0
-    return f"{n:.1f} TiB"
+        if size < 1024 or unit == "TiB":
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} TiB"
 
 
 _DASH = "—"  # U+2014 em-dash; renderer placeholder for NaN / None.
@@ -1294,13 +1295,13 @@ def _fmt_duration(s: float | None) -> str:
 
 
 def _fmt_vmaf(v: float | None) -> str:
-    if _is_missing(v):
+    if v is None or _is_missing(v):
         return _DASH
     return f"{float(v):.2f}"
 
 
 def _fmt_ms(v: float | None) -> str:
-    if _is_missing(v):
+    if v is None or _is_missing(v):
         return _DASH
     return f"{float(v):.0f} ms"
 
@@ -1524,10 +1525,10 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
             lines.append("")
             lines.append("| Resolution | CRF | Bitrate | VMAF |")
             lines.append("|---|---:|---:|---:|")
-            for r in data.ladder_rungs:
+            for rung in data.ladder_rungs:
                 lines.append(
-                    f"| {r.width}×{r.height} | {_fmt_crf(r.crf)} | "
-                    f"{_fmt_kbps(r.bitrate_kbps)} | {_fmt_vmaf(r.vmaf)} |"
+                    f"| {rung.width}×{rung.height} | {_fmt_crf(rung.crf)} | "
+                    f"{_fmt_kbps(rung.bitrate_kbps)} | {_fmt_vmaf(rung.vmaf)} |"
                 )
             lines.append("")
         lines.append(_embed_png(_render_chart(7, 4, _ladder_plot_fn(data)), "ladder", assets_dir))

@@ -61,7 +61,13 @@ def default_probe_args(adapter: object) -> list[str]:
     ultrafast preset doesn't expose a usable bitrate signal) override
     this method directly rather than calling here.
     """
-    return adapter.ffmpeg_codec_args(adapter.probe_preset, adapter.probe_quality)  # type: ignore[attr-defined]
+    # adapter is duck-typed (CodecAdapter Protocol); attribute + return-type
+    # checks deferred to the call site (the dispatcher validates the registry).
+    result: list[str] = adapter.ffmpeg_codec_args(  # type: ignore[attr-defined]
+        adapter.probe_preset,  # type: ignore[attr-defined]
+        adapter.probe_quality,  # type: ignore[attr-defined]
+    )
+    return result
 
 
 __all__ = [

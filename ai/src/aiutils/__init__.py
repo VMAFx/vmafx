@@ -46,7 +46,7 @@ _LAZY_PARQUET_EXPORTS = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     """Import optional heavy helpers only when the caller asks for them."""
     if name in _LAZY_PARQUET_EXPORTS:
         import aiutils.parquet_utils as _pq

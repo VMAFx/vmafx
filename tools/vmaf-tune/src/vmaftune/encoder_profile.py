@@ -37,16 +37,19 @@ def _extract_profile(payload: dict[str, Any]) -> dict[str, Any]:
 def _json_from_text(text: str, *, source: Path) -> dict[str, Any]:
     stripped = text.lstrip()
     if stripped.startswith("{"):
-        return json.loads(text)
+        payload: dict[str, Any] = json.loads(text)
+        return payload
     if source.suffix.lower() in {".html", ".htm"}:
         match = _HTML_PRE_RE.search(text)
         if match is None:
             raise ValueError("HTML report does not contain a raw JSON <pre> block")
-        return json.loads(html.unescape(match.group("payload")))
+        payload = json.loads(html.unescape(match.group("payload")))
+        return payload
     match = _MD_JSON_RE.search(text)
     if match is None:
         raise ValueError("report does not contain a fenced JSON payload")
-    return json.loads(match.group("payload"))
+    payload = json.loads(match.group("payload"))
+    return payload
 
 
 def load_profile_payload(path: Path) -> dict[str, Any]:
@@ -77,7 +80,7 @@ def _default_preset(codec: str) -> str:
         adapter = get_adapter(codec)
     except KeyError:
         return "medium"
-    presets = tuple(getattr(adapter, "presets", ()))
+    presets: tuple[str, ...] = tuple(getattr(adapter, "presets", ()))
     if not presets:
         return "medium"
     if "medium" in presets:

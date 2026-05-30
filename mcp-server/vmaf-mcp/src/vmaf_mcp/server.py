@@ -392,7 +392,7 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
         # process's locale (LC_ALL may differ between MCP-stdio launches
         # and CI runners, and a non-UTF-8 default decoder would crash on
         # legitimate accented filenames in the vmaf JSON payload).
-        payload = json.loads(output.read_text(encoding="utf-8"))
+        payload: dict[str, Any] = json.loads(output.read_text(encoding="utf-8"))
         # Bug #1 (echo): tell the caller which backend actually ran, so
         # downstream parity tests can assert it instead of trusting the
         # request silently.
@@ -816,6 +816,15 @@ async def _describe_worst_frames(
     }
 
 
+# NOTE (type audit, 2026-05-30): the legacy _run_benchmark() definition that
+# previously lived here was a verbatim duplicate of the progress-token-aware
+# implementation below.  Python silently rebound the symbol to the later
+# definition at import time, but mypy correctly flagged the redefinition as a
+# real bug surface — any future edit to the dead-code copy would be invisible
+# at runtime.  The progress-token-aware implementation farther down is the
+# single source of truth.  See ADR-0608 (progress notifications).
+
+
 # ---------------------------------------------------------------------------
 # list_extractors — enumerate VmafFeatureExtractor implementations (ADR-0608)
 # ---------------------------------------------------------------------------
@@ -867,7 +876,7 @@ def _list_extractors() -> list[dict[str, Any]]:
     - ``source``: relative path to the C file that defines the struct.
     """
     feature_dir = _repo_root() / "core" / "src" / "feature"
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     out: list[dict[str, Any]] = []
 
     for c_file in sorted(feature_dir.rglob("*.c")):
@@ -1157,7 +1166,8 @@ async def _run_compare(
     # vmaf-tune compare --format json emits JSON to stdout; other formats
     # return a string.  We always pass --format json here so we can parse it.
     try:
-        return json.loads(stdout_s)
+        parsed: dict[str, Any] = json.loads(stdout_s)
+        return parsed
     except json.JSONDecodeError:
         # Non-JSON format or parse error — return raw output.
         return {
@@ -1309,7 +1319,8 @@ async def _run_tune_per_shot(
 
     if format == "json":
         try:
-            return json.loads(stdout_s)
+            parsed: dict[str, Any] = json.loads(stdout_s)
+            return parsed
         except json.JSONDecodeError:
             pass
     return {"exit_code": proc.returncode, "stdout": stdout_s, "stderr": stderr_s}
@@ -1794,7 +1805,10 @@ async def _run_vmaf_score_encoded(
 server: Server = Server("vmaf-mcp")
 
 
-@server.list_tools()
+# mcp.server.lowlevel.Server.list_tools() returns an untyped decorator (the
+# library has no py.typed marker); this is a library-stub gap, not a real
+# typing issue at the call site.
+@server.list_tools()  # type: ignore[no-untyped-call,untyped-decorator]
 async def _list_tools() -> list[Tool]:
     return [
         Tool(
@@ -2171,14 +2185,17 @@ async def _list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
+# Same untyped-decorator caveat as @server.list_tools() above.
+@server.call_tool()  # type: ignore[untyped-decorator]
 async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     # Extract MCP progress token from the request context's meta field.
     # The client opts in by passing {"_meta": {"progressToken": <token>}} in the
     # tools/call params object (MCP spec §notifications/progress).
     progress_token: str | int | None = None
     try:
-        meta = server.request_context.request.params.meta
+        # request is typed Any | None by the mcp lib; defensively guarded by
+        # the (LookupError, AttributeError) except below.
+        meta = server.request_context.request.params.meta  # type: ignore[union-attr]
         if meta is not None:
             progress_token = getattr(meta, "progressToken", None)
     except (LookupError, AttributeError):

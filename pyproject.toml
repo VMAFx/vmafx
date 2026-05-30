@@ -180,5 +180,9 @@ module = [
   "tensorflow.*",
   "pyarrow",
   "pyarrow.*",
+  "scipy",
+  "scipy.*",
+  "transformers",
+  "transformers.*",
 ]
 ignore_missing_imports = true

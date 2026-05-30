@@ -17,6 +17,7 @@ import json
 import math
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
+from typing import Any
 
 
 @dataclasses.dataclass(frozen=True)
@@ -28,7 +29,7 @@ class BenchmarkSummary:
     rows: int
     source_count: int
     preset_count: int
-    best_row: dict
+    best_row: dict[str, Any]
     target_vmaf: float
     margin: float
     bitrate_kbps: float
@@ -47,9 +48,9 @@ def _finite_float(value: object) -> float | None:
     return out
 
 
-def _eligible_rows(rows: Iterable[dict]) -> list[dict]:
+def _eligible_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return successful rows with finite VMAF and bitrate."""
-    eligible: list[dict] = []
+    eligible: list[dict[str, Any]] = []
     for row in rows:
         try:
             status = int(row.get("exit_status", 0))
@@ -72,7 +73,7 @@ def _mean_positive(values: Iterable[float | None]) -> float | None:
     return sum(kept) / len(kept)
 
 
-def _row_encode_fps(row: dict) -> float | None:
+def _row_encode_fps(row: dict[str, Any]) -> float | None:
     duration_s = _finite_float(row.get("duration_s"))
     encode_ms = _finite_float(row.get("encode_time_ms"))
     if duration_s is None or encode_ms is None or duration_s <= 0.0 or encode_ms <= 0.0:
@@ -80,7 +81,7 @@ def _row_encode_fps(row: dict) -> float | None:
     return duration_s / (encode_ms / 1000.0)
 
 
-def _row_score_fps(row: dict) -> float | None:
+def _row_score_fps(row: dict[str, Any]) -> float | None:
     duration_s = _finite_float(row.get("duration_s"))
     score_ms = _finite_float(row.get("score_time_ms"))
     framerate = _finite_float(row.get("framerate"))
@@ -96,7 +97,7 @@ def _row_score_fps(row: dict) -> float | None:
     return (duration_s * framerate) / (score_ms / 1000.0)
 
 
-def _best_row(rows: Sequence[dict], target_vmaf: float) -> tuple[str, dict]:
+def _best_row(rows: Sequence[dict[str, Any]], target_vmaf: float) -> tuple[str, dict[str, Any]]:
     clearing = [row for row in rows if float(row["vmaf_score"]) >= target_vmaf]
     if clearing:
         return (
@@ -123,7 +124,7 @@ def _best_row(rows: Sequence[dict], target_vmaf: float) -> tuple[str, dict]:
 
 
 def summarize_benchmark(
-    rows: Iterable[dict],
+    rows: Iterable[dict[str, Any]],
     *,
     target_vmaf: float,
     baseline_encoder: str | None = None,
@@ -138,7 +139,7 @@ def summarize_benchmark(
     if not eligible:
         raise ValueError("no successful finite corpus rows to benchmark")
 
-    by_encoder: dict[str, list[dict]] = defaultdict(list)
+    by_encoder: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in eligible:
         encoder = str(row.get("encoder", ""))
         if encoder:
@@ -201,9 +202,9 @@ def _summary_sort_key(item: BenchmarkSummary) -> tuple[int, float, str]:
     return (0 if item.status == "ok" else 1, item.bitrate_kbps, item.encoder)
 
 
-def summaries_to_dicts(summaries: Sequence[BenchmarkSummary]) -> list[dict]:
+def summaries_to_dicts(summaries: Sequence[BenchmarkSummary]) -> list[dict[str, Any]]:
     """JSON-serialisable benchmark payload."""
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for item in summaries:
         row = item.best_row
         out.append(
