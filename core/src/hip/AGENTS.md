@@ -18,6 +18,12 @@ hip/
   picture_hip.{c,h}     # VmafPicture on a HIP device — stub
   dispatch_strategy.{c,h} # Feature-name → kernel routing — stub
   kernel_template.{h,c} # per-feature HIP kernel scaffolding (T7-10 / ADR-0241)
+  stubs.c               # -ENOSYS fallbacks for the public libvmaf_hip.h
+                        #   entry points when HAVE_HIP is OFF. Wired in
+                        #   from core/src/meson.build's `else` branch of
+                        #   `if is_hip_enabled`, NOT via `subdir('hip')`.
+                        #   Mirrors core/src/dnn/dnn_api.c's VMAF_HAVE_DNN
+                        #   stub pattern.
   meson.build           # subdir() include from libvmaf/src/meson.build
 ```
 
