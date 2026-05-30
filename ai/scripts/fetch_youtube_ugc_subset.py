@@ -39,7 +39,12 @@ SUFFIXES = ("orig", "cbr", "vod", "vodlb")
 
 def _list_bucket(prefix: str) -> list[dict]:
     url = f"{GCS_LIST_URL}?prefix={prefix}&maxResults=5000&fields=items(name,size)"
-    with urllib.request.urlopen(url) as resp:
+    # Defensive scheme guard — see fetch_konvid_1k.py for rationale (bandit B310).
+    if not url.startswith("https://"):
+        raise ValueError(f"refusing non-https URL scheme: {url!r}")
+    # nosec B310: scheme is restricted to https above; URL is built from
+    # the hardcoded GCS_LIST_URL module constant.
+    with urllib.request.urlopen(url) as resp:  # nosec B310
         data = json.loads(resp.read().decode())
     return data.get("items", [])
 
@@ -72,9 +77,14 @@ def _download(url: str, dest: Path) -> None:
     if dest.exists() and dest.stat().st_size > 0:
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
+    # Defensive scheme guard — see fetch_konvid_1k.py for rationale (bandit B310).
+    if not url.startswith("https://"):
+        raise ValueError(f"refusing non-https URL scheme: {url!r}")
     print(f"  downloading {url} -> {dest}", flush=True)
     tmp = dest.with_suffix(dest.suffix + ".tmp")
-    with urllib.request.urlopen(url) as r, tmp.open("wb") as f:
+    # nosec B310: scheme restricted to https above; URL built from the
+    # GCS_OBJ_URL module constant plus a bucket-object name.
+    with urllib.request.urlopen(url) as r, tmp.open("wb") as f:  # nosec B310
         while True:
             chunk = r.read(1 << 20)
             if not chunk:

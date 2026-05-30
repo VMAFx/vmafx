@@ -68,6 +68,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 from pathlib import Path
@@ -720,7 +721,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--scratch",
         type=Path,
-        default=Path(os.environ.get("VMAF_TINY_AI_SCRATCH", "/tmp/bvi_dvc_full_acquire")),
+        default=Path(
+            os.environ.get(
+                "VMAF_TINY_AI_SCRATCH",
+                str(Path(tempfile.gettempdir()) / "bvi_dvc_full_acquire"),
+            )
+        ),
     )
     ap.add_argument(
         "--cache-dir",

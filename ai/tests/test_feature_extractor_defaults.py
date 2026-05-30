@@ -18,10 +18,11 @@ def test_default_vmaf_binary_uses_fork_cpu_build(monkeypatch) -> None:
     )
 
 
-def test_default_vmaf_binary_respects_env(monkeypatch) -> None:
-    monkeypatch.setenv("VMAF_BIN", "/tmp/custom-vmaf")
+def test_default_vmaf_binary_respects_env(monkeypatch, tmp_path: Path) -> None:
+    custom = tmp_path / "custom-vmaf"
+    monkeypatch.setenv("VMAF_BIN", str(custom))
 
-    assert feature_extractor.default_vmaf_binary() == Path("/tmp/custom-vmaf")
+    assert feature_extractor.default_vmaf_binary() == custom
 
 
 def test_vmaf_train_feature_dump_default_uses_fork_cpu_build() -> None:

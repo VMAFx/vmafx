@@ -161,9 +161,12 @@ def main(argv: list[str] | None = None) -> int:
 
     import torch
 
-    # weights_only=False is required because the .pt also stores
-    # scaler stats + train metrics in plain Python types.
-    state = torch.load(args.ckpt, map_location="cpu", weights_only=False)
+    # nosec B614: weights_only=False is required because the .pt also stores
+    # scaler stats + train metrics in plain Python types; weights_only=True
+    # rejects those with UnpicklingError. Trust boundary: the checkpoint is
+    # produced by our own train_predictor_v2.py run under runs/ — path is a
+    # required CLI arg from the developer, not network input.
+    state = torch.load(args.ckpt, map_location="cpu", weights_only=False)  # nosec B614
     features = state["features"]
     in_dim = len(features)
     mean = np.asarray(state["input_mean"], dtype=np.float64)
