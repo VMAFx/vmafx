@@ -43178,3 +43178,17 @@ existing override (10 → 75) — does not introduce a new path Netflix
 upstream might also override. Future audits per the codified rule (see
 ADR-0881 §Decision) are also fork-only since `coverage-check.sh` itself
 is fork-only (Netflix upstream has no equivalent gate).
+
+## vmafx-operator envtest etcd setup (2026-05-30)
+
+no rebase impact: REASON — all changes are in fork-added paths only.
+Files touched: `Makefile` (new `setup-envtest` + `setup-envtest-env`
+targets in the Go workspace section, ADR-0702 scope),
+`.github/workflows/go-ci.yml` (new pre-test step installing
+`sigs.k8s.io/controller-runtime/tools/setup-envtest@latest` + exporting
+`KUBEBUILDER_ASSETS`), `cmd/vmafx-operator/internal/controller/suite_test.go`
+(top-of-`TestControllers` `t.Skip()` guard + nil-`testEnv` bailout in
+`AfterSuite`), `cmd/vmafx-operator/AGENTS.md` (new invariant #6 documenting
+the skip-safe envtest pattern), and the `changelog.d/fixed/` fragment.
+`cmd/vmafx-operator/` is fork-added per ADR-0714 — upstream Netflix/vmaf
+ships no Go sources, so no upstream merge can reach these files.

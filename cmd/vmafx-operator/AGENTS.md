@@ -44,7 +44,20 @@ See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md) and
    `go.uber.org/zap` as a direct import when porting upstream
    kubebuilder template updates; keep the slog bridge.
 
+7. **envtest suite must remain skip-safe.**  `internal/controller/suite_test.go`
+   has a top-of-`TestControllers` `t.Skip()` guard plus a nil-`testEnv`
+   bailout in `AfterSuite` so the suite never panics when
+   `KUBEBUILDER_ASSETS` is unset (PRs #330 / #341 / #362 all tripped the
+   nil-pointer deref in `controlplane.(*APIServer).Stop` without these
+   guards). The CI workflow (`go-ci.yml`) and `make setup-envtest` arrange
+   the assets so the suite *does* run for real, but the skip path is the
+   guardrail for ad-hoc `go test` invocations from a fresh checkout. Do
+   not remove either guard without arranging an equivalent fail-loud
+   mechanism elsewhere.
+
 ## Test requirements
 
 Run `go test ./cmd/vmafx-operator/internal/controller/...` with
-`KUBEBUILDER_ASSETS` set (see `docs/development/operator.md#running-tests`).
+`KUBEBUILDER_ASSETS` set. The shortest path is `make setup-envtest`
+followed by `eval $(make -s setup-envtest-env)`, then `go test`. See
+`docs/development/operator.md#running-tests` for the manual variant.

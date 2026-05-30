@@ -29,7 +29,7 @@ BUILD_DIR := $(LIBVMAF_DIR)/build
 DEBUG_DIR := $(LIBVMAF_DIR)/debug
 
 .PHONY: default all debug build install cythonize clean distclean cythonize-deps \
-    go-build go-test rust-build rust-test
+    go-build go-test rust-build rust-test setup-envtest setup-envtest-env
 
 default: build
 
@@ -368,6 +368,45 @@ go-test:
 	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
 	go test ./...
 
+# setup-envtest: install the kubebuilder envtest control-plane binaries
+#                (etcd + kube-apiserver + kubectl) and print the export line
+#                needed to run `cmd/vmafx-operator/internal/controller` tests.
+#
+# The vmafx-operator suite needs an embedded etcd + API server to start before
+# BeforeSuite can run; without KUBEBUILDER_ASSETS pointing at the asset dir,
+# envtest.Environment.Start() panics with a nil-pointer deref (PRs #330 / #341 /
+# #362 all tripped this). This target installs the sigs.k8s.io/controller-runtime
+# setup-envtest binary into GOBIN, downloads the v1.31 control-plane bundle, and
+# prints the eval-friendly export line. Re-runs are idempotent.
+#
+# Usage:
+#   make setup-envtest                              # install + download
+#   eval $$(make -s setup-envtest-env)              # export KUBEBUILDER_ASSETS
+#   go test ./cmd/vmafx-operator/internal/controller/...
+#
+# The CI workflow (.github/workflows/go-ci.yml) runs this target before
+# `go test ./...` so the operator suite executes for real instead of skipping.
+
+ENVTEST_K8S_VERSION ?= 1.31
+
+setup-envtest:
+	@command -v go >/dev/null || { echo "go not found — install Go ≥ 1.23 (https://go.dev/dl/)"; exit 1; }
+	@command -v setup-envtest >/dev/null || \
+	    go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	@setup-envtest use $(ENVTEST_K8S_VERSION) -p path >/dev/null
+	@echo "envtest assets installed; export with:"
+	@echo "  export KUBEBUILDER_ASSETS=\$$(setup-envtest use $(ENVTEST_K8S_VERSION) -p path)"
+
+# setup-envtest-env: print the export line on stdout (machine-readable form).
+# Use as `eval $(make -s setup-envtest-env)` to wire KUBEBUILDER_ASSETS into the
+# current shell.
+setup-envtest-env:
+	@command -v setup-envtest >/dev/null || { \
+	    echo 'setup-envtest not installed — run `make setup-envtest` first' >&2; \
+	    exit 1; \
+	}
+	@printf 'export KUBEBUILDER_ASSETS=%s\n' "$$(setup-envtest use $(ENVTEST_K8S_VERSION) -p path)"
+
 # ── Rust workspace (ADR-0702) ────────────────────────────────────────────────
 #
 # rust-build: cargo check --all (no members yet; validates the workspace manifest).
@@ -407,5 +446,6 @@ help:
 	@echo "  make go-test          — go test ./... (Go workspace, ADR-0702)"
 	@echo "  make rust-build       — cargo check --all (Rust workspace, ADR-0702)"
 	@echo "  make rust-test        — cargo test --all (Rust workspace, ADR-0702)"
+	@echo "  make setup-envtest    — install kubebuilder envtest binaries for vmafx-operator suite"
 	@echo ""
 	@echo "Upstream targets: build, test, debug, install, clean, distclean, cythonize"

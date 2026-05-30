@@ -66,9 +66,16 @@ jobs:
           # filters those. Source files must remain at 0 findings.
           gosec -exclude-generated -quiet ./...
 
-      - name: go test (skip operator envtest — requires kubebuilder/etcd)
+      # Install the kubebuilder envtest control-plane binaries (etcd +
+      # kube-apiserver + kubectl) so the vmafx-operator suite at
+      # cmd/vmafx-operator/internal/controller/ runs for real instead of
+      # skipping. Without KUBEBUILDER_ASSETS the suite panics in BeforeSuite
+      # with a nil-pointer deref (PRs #330 / #341 / #362 all tripped this).
+      - name: Install envtest binaries (kubebuilder)
         run: |
-          # Skip cmd/vmafx-operator: needs /usr/local/kubebuilder/bin/etcd
-          # which is not available on GitHub-hosted runners.
-          # Tracked: T-GO-CI-OPERATOR-ENVTEST-2026-05-31.
-          go test $(go list ./... | grep -v "cmd/vmafx-operator")
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          ASSETS="$(setup-envtest use 1.31 -p path)"
+          echo "KUBEBUILDER_ASSETS=${ASSETS}" >> "${GITHUB_ENV}"
+
+      - name: go test
+        run: go test ./...

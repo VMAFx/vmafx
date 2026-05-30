@@ -20,6 +20,7 @@ package controller_test
 
 import (
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -36,6 +37,17 @@ import (
 	vmafxv1 "github.com/VMAFx/vmafx/api/vmafx/v1"
 )
 
+// envtestSkipMessage is emitted when KUBEBUILDER_ASSETS is unset. It explains
+// to the developer exactly how to install the envtest control-plane binaries
+// (etcd + kube-apiserver + kubectl) so the suite can run locally.
+//
+// The CI workflow (.github/workflows/go-ci.yml) and `make setup-envtest`
+// arrange this automatically; this skip path is defense in depth for ad-hoc
+// `go test` invocations from a fresh checkout where the assets are missing.
+const envtestSkipMessage = "skipping envtest suite: KUBEBUILDER_ASSETS is unset. " +
+	"Run `make setup-envtest` (or `go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest && " +
+	"export KUBEBUILDER_ASSETS=$(setup-envtest use 1.31 -p path)`) and re-run."
+
 var (
 	cfg       *rest.Config
 	k8sClient client.Client
@@ -44,6 +56,9 @@ var (
 )
 
 func TestControllers(t *testing.T) {
+	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
+		t.Skip(envtestSkipMessage)
+	}
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "vmafx-operator controller suite")
 }
@@ -80,5 +95,10 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
+	// testEnv is nil only when TestControllers skipped before BeforeSuite ran.
+	// Guard against the nil-deref panic noted in PRs #330 / #341 / #362.
+	if testEnv == nil {
+		return
+	}
 	Expect(testEnv.Stop()).To(Succeed())
 })
