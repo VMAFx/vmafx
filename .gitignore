@@ -126,13 +126,16 @@ model/u2netp_mirror.onnx
 model/u2netp_mirror.pth
 
 # Go build artifacts (ADR-0702)
-# Compiled binaries at the repo root (from `go build ./cmd/...`)
+# Compiled binaries at the repo root (from `go build ./cmd/...`).
 # Anchored with a leading "/" so the patterns match only files at the repo
 # root, not directories named "vmafx-tune" anywhere in the tree (e.g.
-# cmd/vmafx-tune/).
+# cmd/vmafx-tune/). Leading slash also prevents hiding new test files.
 /vmafx-server
 /vmafx-mcp
 /vmafx-tune
+/vmafx-controller
+/vmafx-node
+/vmafx-operator
 # Per-package test binaries
 *.test
 # Go build cache is stored in $GOPATH/pkg, not the repo; go.sum is tracked.

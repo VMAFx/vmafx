@@ -42998,6 +42998,22 @@ Fork-local files:
 `core/src/feature/arm64/ssimulacra2_host_neon.c`,
 `changelog.d/fixed/simd-float-adm-dwt2-unchecked-aligned-malloc.md`.
 
+## Go controller / server / MCP test coverage expansion (2026-05-30)
+
+No rebase impact: all touched files are fork-added Go tests under `cmd/` —
+none have an upstream Netflix/vmaf counterpart (upstream ships no Go
+sources). The PR adds:
+
+- `cmd/vmafx-controller/main_extra_test.go` (new)
+- `cmd/vmafx-controller/nodes/registry_edge_test.go` (new)
+- `cmd/vmafx-server/main_extra_test.go` (new)
+- `cmd/vmafx-mcp/impl_test.go` (new)
+- `changelog.d/added/go-controller-mcp-coverage.md` (new)
+- `docs/state.md` (one `_Updated:` annotation line; no row change)
+- `docs/rebase-notes.md` (this entry)
+
+No upstream-mirror file is touched.
+
 ## ADR-0848 — Per-surface doc compliance audit (2026-05-29)
 
 **Rebase impact: none.** This PR adds only docs/research/, docs/adr/, changelog.d/,
