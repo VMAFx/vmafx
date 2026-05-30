@@ -118,3 +118,25 @@ different git subcommand to compute the diff must update the shim
 accordingly, or `validate-pr-body.sh` will silently use the real
 git's output (potentially fine, potentially wrong depending on
 local repo state).
+
+## Pre-commit hook concurrency — semgrep-local invariant (ADR-0867)
+
+The `semgrep-local` hook in `.pre-commit-config.yaml` carries
+`require_serial: true` and **must keep it**. Pre-commit's default
+behaviour is to partition the candidate file list into `cpu_count()`
+batches and fan them out in parallel; `semgrep-core` (the OCaml
+binary under `semgrep scan`) initialises one `io_uring` instance per
+process, and `cpu_count()` concurrent rings exhaust the per-user
+`RLIMIT_MEMLOCK` (default 8 MB on most distros). The aggregate
+hook then returns an opaque `exit code 2` with no stderr because
+`--quiet` swallows the trace. Reproduced and root-caused in
+ADR-0867 / `docs/research/semgrep-local-iouring-audit-2026-05-30.md`
+after PR #331 (744-file VMAFx rebrand) had to ship with
+`SKIP=semgrep-local`.
+
+Do not "optimise" the hook by removing `require_serial`,
+introducing a custom `xargs` wrapper, or replacing
+`language: python` with `language: system` — the comment block in
+the hook spells out why each alternative was ruled out. If semgrep
+upstream switches away from io_uring or grows a shared-ring
+fork-safe mode, revisit via a new ADR superseding ADR-0867.

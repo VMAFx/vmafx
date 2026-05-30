@@ -208,6 +208,23 @@ repos:
         # the gate cheap on a single-file diff. For full-tree audits, run
         # `make lint` (which invokes `semgrep scan` against the worktree
         # without an explicit file list, picking up .semgrepignore).
+        #
+        # `require_serial: true` forces pre-commit to invoke semgrep
+        # exactly once with the full file list instead of splitting
+        # it into `cpu_count()` parallel partitions. semgrep-core
+        # (the OCaml binary behind `semgrep scan`) sets up an
+        # io_uring instance per process; ~32 concurrent semgreps on
+        # a typical workstation collide against RLIMIT_MEMLOCK
+        # (default 8 MB) and several partitions die with
+        # `Unix_error: Cannot allocate memory io_uring_queue_init`,
+        # surfacing as an opaque `exit code 2` with `--quiet`
+        # swallowing the stderr trace. PR #331 (744-file VMAFx
+        # rebrand) hit this and had to commit with
+        # `SKIP=semgrep-local`; serial mode fixes it. semgrep is
+        # already internally multi-threaded via `--jobs auto`, so
+        # wall-time on the full tree is ~3-4 s either way — no
+        # real parallelism lost. See ADR-0811.
+        require_serial: true
 
       - id: ffmpeg-patches-apply-check
         name: ffmpeg-patches apply --check (n8.1)
