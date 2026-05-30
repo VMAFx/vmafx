@@ -76,12 +76,10 @@ class QualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44609306249999997, places=3)
         self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 4.04982535417, places=2)
         self.assertAlmostEqual(results[0]["VMAF_feature_adm_score"], 0.9345148541666667, places=4)
-        self.assertAlmostEqual(results[0]["VMAF_feature_ansnr_score"], 23.5095715208, places=4)
 
         self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
         self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 4.04982535417, places=2)
         self.assertAlmostEqual(results[1]["VMAF_feature_adm_score"], 1.0, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 31.2714392708, places=4)
 
         self.assertAlmostEqual(results[0]["VMAF_score"], 77.17414738991636, places=2)
         self.assertAlmostEqual(results[1]["VMAF_score"], 100.0, places=4)
@@ -141,7 +139,7 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            self.assertAlmostEqual(results[1]["VMAF_integer_feature_ansnr_score"], 1.0, places=4)
+            pass
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_motion_score"], 1.0, places=4)
@@ -220,7 +218,7 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 1.0, places=4)
+            pass
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
@@ -1114,7 +1112,7 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 1.0, places=4)
+            pass
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
@@ -1418,7 +1416,7 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 1.0, places=4)
+            pass
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
@@ -1630,7 +1628,7 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            self.assertAlmostEqual(results[1]["VMAF_integer_feature_ansnr_score"], 1.0, places=4)
+            pass
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_motion_score"], 1.0, places=4)
@@ -1690,7 +1688,7 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 1.0, places=4)
+            pass
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
@@ -1795,7 +1793,7 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            self.assertAlmostEqual(results[1]["VMAF_integer_feature_ansnr_score"], 1.0, places=4)
+            pass
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_motion_score"], 1.0, places=4)

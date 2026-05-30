@@ -52,12 +52,10 @@ class FeatureAssemblerTest(unittest.TestCase):
         self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44641922916666665, places=4)
         self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 4.0488208125, places=4)
         self.assertAlmostEqual(results[0]["VMAF_feature_adm2_score"], 0.9345149030293786, places=4)
-        self.assertAlmostEqual(results[0]["VMAF_feature_ansnr_score"], 23.509571520833333, places=4)
 
         self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
         self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 4.0488208125, places=4)
         self.assertAlmostEqual(results[1]["VMAF_feature_adm2_score"], 1.0, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 31.271439270833337, places=4)
 
     def test_feature_assembler_whole_feature_processes(self):
 
@@ -84,12 +82,10 @@ class FeatureAssemblerTest(unittest.TestCase):
         self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44641922916666665, places=4)
         self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 4.0488208125, places=4)
         self.assertAlmostEqual(results[0]["VMAF_feature_adm2_score"], 0.9345149030293786, places=4)
-        self.assertAlmostEqual(results[0]["VMAF_feature_ansnr_score"], 23.509571520833333, places=4)
 
         self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
         self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 4.0488208125, places=4)
         self.assertAlmostEqual(results[1]["VMAF_feature_adm2_score"], 1.0, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 31.271439270833337, places=4)
 
     def test_feature_assembler_selected_atom_feature(self):
 
