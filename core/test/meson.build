@@ -606,6 +606,21 @@ if ssimulacra2_simd_test_archs.contains(host_machine.cpu_family())
 #   diverged from the SIMD lib (compiled with the strict-FP flags).
 # _simd_strict_fp_args = [-ffp-contract=off] on GCC/Clang;
 #                        [-ffp-contract=off, -fp-model=precise] on icx.
+#
+# ADR-0891 (round-2 fix): the ssimulacra2 ptlr tests use fmaf() in the
+# scalar reference and fmadd intrinsics in the SIMD lib. On x86 without
+# -mfma, GCC does NOT emit a hardware vfmadd for fmaf() — instead it
+# calls libm or uses double-precision emulation, which may differ from
+# vfmadd by 1 ULP. Adding -mavx2 -mfma ensures fmaf() in the test TU
+# generates the same hardware vfmadd instruction as _mm256_fmadd_ps /
+# _mm512_fmadd_ps in the SIMD libs, restoring bit-exactness on all
+# GCC/Clang builds. Safe: the test is already x86_64/x86-gated, and
+# the fmaf() result is identical to vfmadd on FMA-capable hardware.
+# aarch64 does not need this — Clang's fmaf() is already vfmla on NEON.
+_ssimulacra2_test_x86_fma_args = []
+if host_machine.cpu_family() in ['x86_64', 'x86']
+    _ssimulacra2_test_x86_fma_args = ['-mavx2', '-mfma']
+endif
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
@@ -613,7 +628,7 @@ test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
-    c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
+    c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args + _ssimulacra2_test_x86_fma_args,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
                     gpu_all_deps, dnn_deps],
     objects : [
