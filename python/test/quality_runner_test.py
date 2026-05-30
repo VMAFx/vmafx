@@ -139,9 +139,6 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            pass
-
-        with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_motion_score"], 1.0, places=4)
 
         self.assertAlmostEqual(results[0]["VMAF_score"], 76.66890519623612, places=2)
@@ -216,9 +213,6 @@ class QualityRunnerTest(MyTestCase):
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
-
-        with self.assertRaises(KeyError):
-            pass
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
@@ -1112,9 +1106,6 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            pass
-
-        with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
 
         # places=1: bootstrap VMAF score is the seed-0 single-model score (deterministic),
@@ -1416,9 +1407,6 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            pass
-
-        with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
 
         self.assertAlmostEqual(results[0]["BAGGING_VMAF_score"], 75.11496350766362, places=1)
@@ -1628,9 +1616,6 @@ class QualityRunnerTest(MyTestCase):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_vif_score"], 1.0, places=4)
 
         with self.assertRaises(KeyError):
-            pass
-
-        with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_motion_score"], 1.0, places=4)
 
         self.assertAlmostEqual(results[0]["VMAF_score"], 92.52344867729687, places=2)
@@ -1686,9 +1671,6 @@ class QualityRunnerTest(MyTestCase):
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
-
-        with self.assertRaises(KeyError):
-            pass
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
@@ -1791,9 +1773,6 @@ class QualityRunnerTest(MyTestCase):
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_vif_score"], 1.0, places=4)
-
-        with self.assertRaises(KeyError):
-            pass
 
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_motion_score"], 1.0, places=4)
