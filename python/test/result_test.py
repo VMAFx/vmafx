@@ -9,7 +9,7 @@ import numpy as np
 
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset
-from vmaf.core.quality_runner import VmafLegacyQualityRunner, VmafQualityRunner
+from vmaf.core.quality_runner import VmafQualityRunner
 from vmaf.core.result import Result
 from vmaf.core.result_store import FileSystemResultStore
 from vmaf.tools.misc import MyTestCase
@@ -19,162 +19,8 @@ __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 
-class ResultTest(MyTestCase):
-
-    def setUp(self):
-        super().setUp()
-        ref_path = VmafConfig.test_resource_path("yuv", "checkerboard_1920_1080_10_3_0_0.yuv")
-        dis_path = VmafConfig.test_resource_path("yuv", "checkerboard_1920_1080_10_3_1_0.yuv")
-        asset = Asset(
-            dataset="test",
-            content_id=0,
-            asset_id=0,
-            workdir_root=VmafConfig.workdir_path(),
-            ref_path=ref_path,
-            dis_path=dis_path,
-            asset_dict={"width": 1920, "height": 1080},
-        )
-
-        self.runner = VmafLegacyQualityRunner(
-            [asset],
-            None,
-            fifo_mode=True,
-            delete_workdir=True,
-            result_store=FileSystemResultStore(),
-        )
-        self.runner.run()
-
-        self.result = self.runner.results[0]
-
-    def tearDown(self):
-        if hasattr(self, "runner"):
-            self.runner.remove_results()
-        super().tearDown()
-
-    def test_todataframe_fromdataframe(self):
-
-        df = self.result.to_dataframe()
-        df_vmaf = df.loc[df["scores_key"] == "VMAF_legacy_scores"]
-        df_adm = df.loc[df["scores_key"] == "VMAF_feature_adm_scores"]
-        df_vif = df.loc[df["scores_key"] == "VMAF_feature_vif_scores"]
-        df_ansnr = df.loc[df["scores_key"] == "VMAF_feature_ansnr_scores"]
-        df_motion = df.loc[df["scores_key"] == "VMAF_feature_motion_scores"]
-        df_adm_den = df.loc[df["scores_key"] == "VMAF_feature_adm_den_scores"]
-        # ADR-0418: ADM port added `aim_score` + `adm3_score` to the
-        # float_adm extractor's emitted feature list, bumping the total
-        # dataframe length by 2 (38 → 40).
-        self.assertEqual(len(df), 40)
-        self.assertEqual(len(df_vmaf), 1)
-        self.assertEqual(len(df_adm), 1)
-        self.assertEqual(len(df_vif), 1)
-        self.assertEqual(len(df_ansnr), 1)
-        self.assertEqual(len(df_motion), 1)
-        self.assertAlmostEqual(np.mean(df_vmaf.iloc[0]["scores"]), 40.421899030550769, places=3)
-        self.assertAlmostEqual(np.mean(df_adm.iloc[0]["scores"]), 0.78533833333333336, places=4)
-        self.assertAlmostEqual(np.mean(df_vif.iloc[0]["scores"]), 0.156834666667, places=4)
-        self.assertAlmostEqual(np.mean(df_ansnr.iloc[0]["scores"]), 7.92623066667, places=4)
-        self.assertAlmostEqual(np.mean(df_motion.iloc[0]["scores"]), 12.5548366667, places=4)
-        self.assertAlmostEqual(np.mean(df_adm_den.iloc[0]["scores"]), 2773.8912249999998, places=3)
-        self.assertAlmostEqual(
-            np.mean(Result.get_unique_from_dataframe(df, "VMAF_legacy_scores", "scores")),
-            40.421899030550769,
-            places=3,
-        )
-        self.assertAlmostEqual(
-            np.mean(Result.get_unique_from_dataframe(df, "VMAF_feature_adm_scores", "scores")),
-            0.78533833333333336,
-            places=4,
-        )
-        self.assertAlmostEqual(
-            np.mean(Result.get_unique_from_dataframe(df, "VMAF_feature_vif_scores", "scores")),
-            0.156834666667,
-            places=4,
-        )
-        self.assertAlmostEqual(
-            np.mean(Result.get_unique_from_dataframe(df, "VMAF_feature_ansnr_scores", "scores")),
-            7.92623066667,
-            places=4,
-        )
-        self.assertAlmostEqual(
-            np.mean(Result.get_unique_from_dataframe(df, "VMAF_feature_motion_scores", "scores")),
-            12.5548366667,
-            places=4,
-        )
-        self.assertEqual(df.iloc[0]["dataset"], "test")
-        self.assertEqual(df.iloc[0]["content_id"], 0)
-        self.assertEqual(df.iloc[0]["asset_id"], 0)
-        self.assertEqual(df.iloc[0]["ref_name"], "checkerboard_1920_1080_10_3_0_0.yuv")
-        self.assertEqual(df.iloc[0]["dis_name"], "checkerboard_1920_1080_10_3_1_0.yuv")
-        self.assertEqual(
-            df.iloc[0]["asset"],
-            '{"asset_dict": {"height": 1080, "use_path_as_workpath": 1, "use_workpath_as_procpath": 1, "width": 1920}, "asset_id": 0, "content_id": 0, "dataset": "test", "dis_path": "checkerboard_1920_1080_10_3_1_0.yuv", "ref_path": "checkerboard_1920_1080_10_3_0_0.yuv", "workdir": ""}',
-        )  # noqa
-        self.assertEqual(df.iloc[0]["executor_id"], "VMAF_legacy_VF0.2.21-1.1")
-
-        Result._assert_asset_dataframe(df)
-
-        recon_result = Result.from_dataframe(df)
-        self.assertEqual(self.result, recon_result)
-        self.assertTrue(self.result == recon_result)
-        self.assertFalse(self.result != recon_result)
-        self.assertEqual(recon_result.asset.__class__, Asset)
-
-    def test_to_score_str(self):
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_legacy_score"), 40.421899030550769, places=3
-        )
-        self.assertAlmostEqual(self.result["VMAF_legacy_score"], 40.421899030550769, places=3)
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_feature_adm_score"), 0.78533833333333336, places=4
-        )
-        self.assertAlmostEqual(self.result["VMAF_feature_adm_score"], 0.78533833333333336, places=4)
-        self.assertAlmostEqual(self.result["VMAF_feature_vif_score"], 0.15683466666666665, places=4)
-        self.assertAlmostEqual(self.result["VMAF_feature_motion_score"], 12.5548366667, places=4)
-        self.assertAlmostEqual(self.result["VMAF_feature_ansnr_score"], 7.92623066667, places=4)
-        self.result.set_score_aggregate_method(np.min)
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_legacy_score"), 37.573531379639725, places=3
-        )
-        self.result.set_score_aggregate_method(np.max)
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_legacy_score"), 44.815357234059327, places=3
-        )
-        self.result.set_score_aggregate_method(np.median)
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_legacy_score"), 38.876808477953254, places=2
-        )
-        self.result.set_score_aggregate_method(np.mean)
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_legacy_score"), 40.421899030550769, places=3
-        )
-        self.result.set_score_aggregate_method(np.std)
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_legacy_score"), 3.1518765879212993, places=3
-        )
-        self.result.set_score_aggregate_method(np.var)
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_legacy_score"), 9.9343260254864134, places=2
-        )
-        self.result.set_score_aggregate_method(partial(np.percentile, q=50))
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_legacy_score"), 38.876808477953254, places=2
-        )
-        self.result.set_score_aggregate_method(partial(np.percentile, q=80))
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_legacy_score"), 42.439937731616901, places=3
-        )
-        self.result.set_score_aggregate_method(ListStats.total_variation)
-        self.assertAlmostEqual(
-            self.result.get_result("VMAF_legacy_score"), 6.5901873052628375, places=3
-        )
-        self.result.set_score_aggregate_method(partial(ListStats.moving_average, n=2))
-        for item in list(self.result.get_result("VMAF_legacy_score")):
-            self.assertAlmostEqual(item, 42.86773029545747, places=3)
-
-        with self.assertRaises(KeyError):
-            self.result.get_result("VVMAF_legacy_score")
-        with self.assertRaises(KeyError):
-            self.result.get_result("VMAF_motion_score")
+# ResultTest class removed per ADR-0749 (sunset 2026-05-28):
+# exclusively exercised the deleted VmafLegacyQualityRunner.
 
 
 class ResultFormattingTest(unittest.TestCase):
@@ -275,46 +121,8 @@ class ResultFormattingTest(unittest.TestCase):
         )
 
 
-class ResultStoreTest(unittest.TestCase):
-
-    def setUp(self):
-        ref_path = VmafConfig.test_resource_path("yuv", "checkerboard_1920_1080_10_3_0_0.yuv")
-        dis_path = VmafConfig.test_resource_path("yuv", "checkerboard_1920_1080_10_3_1_0.yuv")
-        asset = Asset(
-            dataset="test",
-            content_id=0,
-            asset_id=0,
-            workdir_root=VmafConfig.workdir_path(),
-            ref_path=ref_path,
-            dis_path=dis_path,
-            asset_dict={"width": 1920, "height": 1080},
-        )
-
-        self.runner = VmafLegacyQualityRunner(
-            [asset],
-            None,
-            fifo_mode=True,
-            delete_workdir=True,
-            result_store=None,
-        )
-        self.runner.run()
-        self.result = self.runner.results[0]
-
-    def tearDown(self):
-        if hasattr(self, "result") and hasattr(self, "result_store"):
-            self.result_store.delete(self.result.asset, self.result.executor_id)
-        pass
-
-    def test_file_system_result_store_save_load(self):
-        self.result_store = FileSystemResultStore(logger=None)
-        asset = self.result.asset
-        executor_id = self.result.executor_id
-
-        self.result_store.save(self.result)
-
-        loaded_result = self.result_store.load(asset, executor_id)
-
-        self.assertEqual(self.result, loaded_result)
+# ResultStoreTest class removed per ADR-0749 (sunset 2026-05-28):
+# exclusively exercised the deleted VmafLegacyQualityRunner.
 
 
 class ResultStoreTestWithNone(unittest.TestCase):
