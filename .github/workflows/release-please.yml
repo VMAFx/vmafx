@@ -23,14 +23,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      # continue-on-error: the action exits non-zero when the VMAFx org
-      # disallows GitHub Actions creating pull requests
-      # (Settings > Actions > Workflow permissions on the org). Until the
-      # org-level toggle is enabled, treat the action's failure as
-      # advisory so the workflow stays green and master CI is not
-      # perpetually red on a non-required check.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
-        continue-on-error: true
         id: release
         with:
           config-file: release-please-config.json
