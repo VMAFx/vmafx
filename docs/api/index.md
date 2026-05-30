@@ -6,8 +6,9 @@ feature / model). GPU-backend entry points and the DNN session API each get
 their own page:
 
 - [core](index.md) — this page
-- [gpu.md](gpu.md) — `libvmaf_cuda.h`, `libvmaf_sycl.h`, `libvmaf_vulkan.h`,
-  `libvmaf_hip.h`, `libvmaf_metal.h`
+- [gpu.md](gpu.md) — `libvmaf_cuda.h`, `libvmaf_sycl.h`,
+  `libvmaf_hip.h`, `libvmaf_metal.h` (Vulkan removed per
+  [ADR-0726](../adr/0726-drop-vulkan-backend.md))
 - [dnn.md](dnn.md) — `libvmaf/dnn.h` (tiny-AI ONNX session)
 - [mcp.md](mcp.md) — `libvmaf_mcp.h` (embedded MCP server)
 

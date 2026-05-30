@@ -24,26 +24,31 @@ limitations in the same PR as the code.
 
 ## Extractor overview
 
+> The **Vulkan** column was removed per [ADR-0726](../adr/0726-drop-vulkan-backend.md)
+> (2026-05-28). Footnotes below referencing "Vulkan" / "Vulkan stub" describe
+> historical state and are retained for traceability against earlier ADRs.
+> `float_ansnr` was removed per [ADR-0720](../adr/0720-sunset-float-ansnr.md).
+
 | Feature name       | Invocation name | Core feature? | Output metrics                                                                                 | SIMD                      | GPU                |
 |--------------------|-----------------|---------------|------------------------------------------------------------------------------------------------|---------------------------|--------------------|
-| VIF (fixed-point)  | `vif`           | Yes           | `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`                                         | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
-| VIF (float)        | `float_vif`     | Yes           | `float_vif_scale0..3`                                                                          | —                         | CUDA, SYCL, Vulkan |
-| Motion2 (fixed)    | `motion`        | Yes           | `motion2` (+ `motion` if `debug=true`)                                                         | AVX2, AVX-512, NEON       | CUDA, Vulkan       |
-| Motion v2 (fixed)  | `motion_v2`     | No            | `VMAF_integer_feature_motion_v2_sad_score`, `VMAF_integer_feature_motion2_v2_score`            | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
-| Motion2 (float)    | `float_motion`  | Yes           | `float_motion2` (+ `float_motion` if `debug=true`)                                             | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
-| ADM (fixed-point)  | `adm`           | Yes           | `adm2`, `adm_scale0`, `adm_scale1`, `adm_scale2`, `adm_scale3`                                 | AVX2, AVX-512, NEON       | CUDA, Vulkan       |
-| ADM (float)        | `float_adm`     | Yes           | `float_adm2`, `adm_scale0..3`, `aim_score`⁶, `adm3_score`⁶                                    | AVX2, AVX-512, NEON       | CUDA⁶, SYCL, Vulkan |
-| [CAMBI](cambi.md)  | `cambi`         | No            | `cambi`                                                                                        | —                         | Vulkan⁴            |
-| CIEDE2000          | `ciede`         | No            | `ciede2000`                                                                                    | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
-| PSNR (fixed)       | `psnr`          | No            | `psnr_y`, `psnr_cb`, `psnr_cr` (+ MSE / APSNR optional)                                        | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan¹|
-| PSNR (float)       | `float_psnr`    | No            | `float_psnr` (luma only — the CPU extractor emits a single luma score)                         | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
-| PSNR-HVS           | `psnr_hvs`      | No            | `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr`                                         | AVX2, NEON                | CUDA, SYCL, Vulkan |
-| SSIM (fixed)       | `ssim`          | No            | `ssim`                                                                                         | —                         | Vulkan²            |
-| SSIM (float)       | `float_ssim`    | No            | `float_ssim` (+ L/C/S if enabled)                                                              | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
-| MS-SSIM            | `float_ms_ssim` | No            | `float_ms_ssim` (+ per-scale L/C/S if enabled)                                                 | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
-| ANSNR              | `float_ansnr`   | No            | `float_ansnr`, `float_anpsnr`                                                                  | —                         | CUDA, SYCL, Vulkan |
-| SSIMULACRA 2       | `ssimulacra2`   | No            | `ssimulacra2`                                                                                  | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL, Vulkan |
-| Float moment       | `float_moment`  | No            | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd`     | AVX2, NEON                | CUDA, SYCL, Vulkan |
+| VIF (fixed-point)  | `vif`           | Yes           | `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`                                         | AVX2, AVX-512, NEON       | CUDA, SYCL |
+| VIF (float)        | `float_vif`     | Yes           | `float_vif_scale0..3`                                                                          | —                         | CUDA, SYCL |
+| Motion2 (fixed)    | `motion`        | Yes           | `motion2` (+ `motion` if `debug=true`)                                                         | AVX2, AVX-512, NEON       | CUDA       |
+| Motion v2 (fixed)  | `motion_v2`     | No            | `VMAF_integer_feature_motion_v2_sad_score`, `VMAF_integer_feature_motion2_v2_score`            | AVX2, AVX-512, NEON       | CUDA, SYCL |
+| Motion2 (float)    | `float_motion`  | Yes           | `float_motion2` (+ `float_motion` if `debug=true`)                                             | AVX2, AVX-512, NEON       | CUDA, SYCL |
+| ADM (fixed-point)  | `adm`           | Yes           | `adm2`, `adm_scale0`, `adm_scale1`, `adm_scale2`, `adm_scale3`                                 | AVX2, AVX-512, NEON       | CUDA       |
+| ADM (float)        | `float_adm`     | Yes           | `float_adm2`, `adm_scale0..3`, `aim_score`⁶, `adm3_score`⁶                                    | AVX2, AVX-512, NEON       | CUDA⁶, SYCL |
+| [CAMBI](cambi.md)  | `cambi`         | No            | `cambi`                                                                                        | —                         | —                  |
+| CIEDE2000          | `ciede`         | No            | `ciede2000`                                                                                    | AVX2, AVX-512, NEON       | CUDA, SYCL |
+| PSNR (fixed)       | `psnr`          | No            | `psnr_y`, `psnr_cb`, `psnr_cr` (+ MSE / APSNR optional)                                        | AVX2, AVX-512, NEON       | CUDA, SYCL|
+| PSNR (float)       | `float_psnr`    | No            | `float_psnr` (luma only — the CPU extractor emits a single luma score)                         | AVX2, AVX-512, NEON       | CUDA, SYCL |
+| PSNR-HVS           | `psnr_hvs`      | No            | `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr`                                         | AVX2, NEON                | CUDA, SYCL |
+| SSIM (fixed)       | `ssim`          | No            | `ssim`                                                                                         | —                         | —                  |
+| SSIM (float)       | `float_ssim`    | No            | `float_ssim` (+ L/C/S if enabled)                                                              | AVX2, AVX-512, NEON       | CUDA, SYCL |
+| MS-SSIM            | `float_ms_ssim` | No            | `float_ms_ssim` (+ per-scale L/C/S if enabled)                                                 | AVX2, AVX-512, NEON       | CUDA, SYCL |
+| ANSNR              | `float_ansnr`   | No            | `float_ansnr`, `float_anpsnr`                                                                  | —                         | CUDA, SYCL |
+| SSIMULACRA 2       | `ssimulacra2`   | No            | `ssimulacra2`                                                                                  | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL |
+| Float moment       | `float_moment`  | No            | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd`     | AVX2, NEON                | CUDA, SYCL |
 | LPIPS (tiny-AI)    | `lpips`         | No            | `lpips`                                                                                        | —                         | via ORT EP³        |
 | DISTS-Sq (tiny-AI) | `dists_sq`      | No            | `dists_sq`                                                                                     | —                         | via ORT EP³        |
 | FastDVDnet pre     | `fastdvdnet_pre`| No            | `fastdvdnet_pre_l1_residual`                                                                   | —                         | —                  |
@@ -178,7 +183,7 @@ Operates on the Y plane only.
 `egl=1.0` disables the enhancement-gain path entirely (matches pre-v1.3
 behaviour).
 
-**Backends** — `vif`: AVX2, AVX-512, NEON, CUDA, SYCL, Vulkan
+**Backends** — `vif`: AVX2, AVX-512, NEON, CUDA, SYCL
 (`vif_vulkan`, T5-1b — see
 [backends/vulkan/overview.md](../backends/vulkan/overview.md)).
 `float_vif`: scalar only.
@@ -283,7 +288,7 @@ Y plane only.
 
 **Options** — none.
 
-**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, Vulkan
+**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL
 ([`motion_v2_vulkan`](../../core/src/feature/vulkan/motion_v2_vulkan.c),
 [`integer_motion_v2_cuda.c`](../../core/src/feature/cuda/integer_motion_v2_cuda.c),
 [`integer_motion_v2_sycl.cpp`](../../core/src/feature/sycl/integer_motion_v2_sycl.cpp)).
@@ -370,8 +375,8 @@ Setting `adm_csf_scale`, `adm_csf_diag_scale`, and `adm_noise_weight` to their
 defaults (`1.0`, `1.0`, `0.03125`) produces output bit-identical to upstream
 Netflix ADM.
 
-**Backends** — `adm`: AVX2, AVX-512, NEON, CUDA, SYCL, Vulkan.
-`float_adm`: AVX2, AVX-512, NEON, CUDA, SYCL, Vulkan.
+**Backends** — `adm`: AVX2, AVX-512, NEON, CUDA, SYCL.
+`float_adm`: AVX2, AVX-512, NEON, CUDA, SYCL.
 
 **32-bit (i686) portability** — the integer ADM SSE2 path uses
 `_mm_extract_epi64`, an intrinsic that is unavailable on 32-bit x86 toolchains.
@@ -470,7 +475,7 @@ identical (MSE=0): 60 dB for 8 bpc, 72 dB for 10 bpc, 84 dB for 12 bpc,
 | `reduced_hbd_peak` | bool   | `false` | Scale HBD peak to match 8-bit content                                              |
 | `min_sse`          | double | `0.0`   | Clamp the minimum MSE (and so the PSNR ceiling) — useful for identical-frame tests |
 
-**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, Vulkan. All three GPU
+**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL. All three GPU
 extractors honour `enable_chroma` (default `true`) and emit `psnr_cb` /
 `psnr_cr` identically to the CPU path when enabled. Pass
 `enable_chroma=false` for luma-only operation on any backend. `float_psnr`
@@ -592,7 +597,7 @@ shipped model still consumes; kept for back-compat with external callers.
 
 **Options** — none.
 
-**Backends** — scalar (CPU) plus CUDA, SYCL, Vulkan
+**Backends** — scalar (CPU) plus CUDA, SYCL
 ([ADR-0194](../adr/0194-float-ansnr-gpu.md)). All three GPU
 kernels are single-dispatch — they apply the CPU's 3x3 ref filter
 and 5x5 dis filter inline from a 20×20 shared/SLM tile, accumulate
@@ -667,7 +672,7 @@ fork's host matrix (verified by `core/test/test_ssimulacra2_simd.c`,
 [ADR-0164](../adr/0164-ssimulacra2-snapshot-gate.md). The CI snapshot
 gate (`python/test/ssimulacra2_test.py`) pins 48-frame
 mean/min/max/hmean/frame-0/frame-47 values at `places=4` tolerance.
-The CPU, SIMD, Vulkan, and tiny-AI extractor registration structs are
+The CPU, SIMD, and tiny-AI extractor registration structs are
 kept warning-clean across the hosted CI build matrix. That maintenance
 does not change feature names, option names, score formulas, or backend
 selection; it exists so real score-path diagnostics are not buried by
