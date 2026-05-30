@@ -738,9 +738,14 @@ static void ref_picture_to_linear_rgb(int yuv_matrix, unsigned bpc, unsigned w, 
             const float Yn = (Y - y_off) * y_scale;
             const float Un = (U - c_off) * c_scale;
             const float Vn = (V - c_off) * c_scale;
-            float R = Yn + cr_r * Vn;
-            float G = Yn + cb_g * Un + cr_g * Vn;
-            float B = Yn + cb_b * Un;
+            /* ADR-0891: explicit fmaf() — icx + `-mfma` may contract
+             * plain `a + b*c` to FMA even under `-fp-model=precise`,
+             * diverging from the SIMD implementation. Preserves the
+             * left-to-right associativity of the G computation. */
+            float R = fmaf(cr_r, Vn, Yn);
+            float G = fmaf(cb_g, Un, Yn);
+            G = fmaf(cr_g, Vn, G);
+            float B = fmaf(cb_b, Un, Yn);
             if (R < 0.0f)
                 R = 0.0f;
             if (R > 1.0f)
