@@ -40372,15 +40372,9 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
 
-## ADR-0795 — prev_ref thread-safety hardening — 2026-05-29
+## Dev container CI gate (ADR-0819, 2026-05-29)
 
-No rebase impact: all changes are in `core/src/libvmaf.c` (comments, a rename
-from `fex` to `shared_fex`, and a defensive `assert`). No logic change; no new
-symbols; no API change. The modified functions (`threaded_extract_func`,
-`threaded_extract_batch_func`) are fork-local dispatch paths not present in
-upstream Netflix/vmaf.
-
-Fork-local files:
-`core/src/libvmaf.c` (comments + assert),
-`docs/adr/0795-prev-ref-thread-safety.md`,
-`changelog.d/fixed/prev-ref-batch-thread-safety.md`.
+no rebase impact: CI-only addition. New workflow
+`.github/workflows/dev-container-build.yml` and supporting doc files are
+entirely fork-local; no upstream C sources, headers, or meson build logic
+are touched.
