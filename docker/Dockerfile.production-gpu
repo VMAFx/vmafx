@@ -49,7 +49,7 @@ COPY . .
 # --- cpu build (default, no GPU SDK needed) ---
 FROM builder-base AS builder-cpu
 
-RUN meson setup /build libvmaf \
+RUN meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \
@@ -71,7 +71,7 @@ RUN apt-get update \
         cuda-toolkit-12-0 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN meson setup /build libvmaf \
+RUN meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=true \
@@ -93,7 +93,7 @@ RUN apt-get update \
         rocm-hip-runtime-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN meson setup /build libvmaf \
+RUN meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \
@@ -119,7 +119,7 @@ RUN apt-get update \
 ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
 
-RUN meson setup /build libvmaf \
+RUN meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \
@@ -143,7 +143,7 @@ RUN apt-get update \
         spirv-tools \
     && rm -rf /var/lib/apt/lists/*
 
-RUN meson setup /build libvmaf \
+RUN meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \

@@ -13,7 +13,7 @@ RUN apk add --no-cache \
 COPY . /vmaf
 WORKDIR /vmaf
 
-RUN meson setup build libvmaf \
+RUN meson setup build core \
       -Denable_cuda=false -Denable_sycl=false \
       --buildtype=release \
  && ninja -C build

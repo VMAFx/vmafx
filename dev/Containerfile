@@ -148,7 +148,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #     noexcept annotation and the conflict disappears.
 #
 #   - Fix B (belt-and-suspenders): `-D__MATH_NO_INLINES` is also added
-#     to the nvcc flags in `libvmaf/src/meson.build`.  That flag tells
+#     to the nvcc flags in `core/src/meson.build`.  That flag tells
 #     glibc to suppress the inline math-function definitions that carry
 #     the noexcept annotation, eliminating the conflict even if a future
 #     CUDA patch version accidentally re-introduces the mismatch.
@@ -431,7 +431,7 @@ WORKDIR /build/vmaf
 # already provides the full tree at run-time, so baking it in is unnecessary.
 #
 # Directories included:
-#   libvmaf/        — meson source (the actual library + feature extractors)
+#   core/           — meson source (the actual library + feature extractors)
 #   ffmpeg-patches/ — patch series applied in stage 3.5
 #   mcp-server/     — MCP JSON-RPC server (pip install -e)
 #   ai/             — tiny-AI training harness (pip install -e)
@@ -449,7 +449,7 @@ WORKDIR /build/vmaf
 # user cannot create the meson build subdir (os.makedirs → EACCES → meson
 # reports as OSError).  chown /build too so that future sub-directories created
 # inside /build by vmaf (e.g., /build/ffmpeg) are not blocked either.
-COPY --chown=vmaf:vmaf libvmaf/        /build/vmaf/libvmaf/
+COPY --chown=vmaf:vmaf core/           /build/vmaf/core/
 COPY --chown=vmaf:vmaf ffmpeg-patches/ /build/vmaf/ffmpeg-patches/
 COPY --chown=vmaf:vmaf mcp-server/     /build/vmaf/mcp-server/
 COPY --chown=vmaf:vmaf ai/             /build/vmaf/ai/
@@ -482,7 +482,7 @@ RUN curl -fsSL \
 USER vmaf
 
 # Configure with all backends enabled.
-# meson.build lives in libvmaf/ (not the repo root); pass the source dir
+# meson.build lives in core/ (not the repo root); pass the source dir
 # explicitly as the first positional argument to `meson setup`.
 # -Denable_metal=auto  → auto-disabled on Linux (no Metal SDK present).
 # -Denable_mcp_sse=auto → auto-disabled until POSIX socket impl is complete.
@@ -512,7 +512,7 @@ USER vmaf
 #
 # To revert to SPIR-V JIT only (smallest binary, first-run penalty):
 #   -Dsycl_icpx_aot_targets=''
-RUN cd libvmaf && CC=icx CXX=icpx meson setup build \
+RUN cd core && CC=icx CXX=icpx meson setup build \
         -Denable_cuda=true \
         -Denable_sycl=true \
         -Denable_hip=true \
@@ -530,7 +530,7 @@ RUN cd libvmaf && CC=icx CXX=icpx meson setup build \
     && ninja -C build
 
 USER root
-RUN cd libvmaf && ninja -C build install \
+RUN cd core && ninja -C build install \
     && ldconfig
 
 # ---------- Build-time backend smoke probe ---------------------------------

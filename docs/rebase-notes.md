@@ -40384,3 +40384,16 @@ Fork-local files:
 `core/src/libvmaf.c` (comments + assert),
 `docs/adr/0795-prev-ref-thread-safety.md`,
 `changelog.d/fixed/prev-ref-batch-thread-safety.md`.
+
+## ADR-0700 Dockerfile path residuals — 2026-05-30
+
+no rebase impact: REASON — touches only fork-added Dockerfiles
+(`docker/Dockerfile.production`, `docker/Dockerfile.production-gpu`,
+`docker/dev/{alpine-3.20,arch,fedora-40}.Dockerfile`) and the fork-added
+`dev/Containerfile`. None of these files have an upstream Netflix/vmaf
+counterpart. The change is a literal `libvmaf/` → `core/` substitution at
+source-tree positions (`meson setup … core`, `COPY core/`, `cd core`);
+install-path / package / filter-name occurrences (`/usr/local/include/libvmaf/`,
+`libvmaf.so`, `libvmaf-dev`, `--enable-libvmaf*`) are deliberately preserved
+because they describe the shipped library / package / ffmpeg-filter surface,
+not the source layout.
