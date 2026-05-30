@@ -19,7 +19,9 @@ per-shot tuning [0392](../../docs/adr/0392-vmaf-tune-phase-d-per-shot.md),
 fast-path [0276](../../docs/adr/0276-vmaf-tune-fast-path.md), bitrate
 ladder [0295](../../docs/adr/0295-vmaf-tune-phase-e-bitrate-ladder.md),
 GPU score backend
-[0314](../../docs/adr/0314-vmaf-tune-score-backend-vulkan.md), …).
+[0314](../../docs/adr/0314-vmaf-tune-score-backend-vulkan.md) — the
+Vulkan option was later removed by
+[ADR-0726](../../docs/adr/0726-drop-vulkan-backend.md), …).
 
 ## Codec adapters
 

@@ -73,7 +73,7 @@ func TestCapability_PrimaryBackend(t *testing.T) {
 		backends []string
 		want     string
 	}{
-		{[]string{"cuda", "vulkan", "cpu"}, "cuda"},
+		{[]string{"cuda", "cpu"}, "cuda"},
 		{[]string{"hip", "cpu"}, "hip"},
 		{[]string{"cpu"}, "cpu"},
 		{nil, "cpu"},

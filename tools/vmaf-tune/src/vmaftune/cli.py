@@ -233,10 +233,10 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=("auto", *ALL_BACKENDS),
         help=(
             "libvmaf scoring backend (default: auto). 'auto' picks the "
-            "fastest available (cuda > vulkan > sycl > cpu); a specific "
+            "fastest available (cuda > sycl > hip > cpu); a specific "
             "name is honoured strictly and errors out if unavailable. "
-            "Use 'vulkan' on AMD / Intel Arc / Apple-MoltenVK hosts "
-            "(ADR-0314)."
+            "Use 'hip' on AMD ROCm hosts (ADR-0726 dropped the Vulkan "
+            "backend 2026-05-28)."
         ),
     )
     corpus.add_argument(
@@ -898,7 +898,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "libvmaf scoring backend used by the default corpus sampler "
             "(default: auto). 'auto' picks the fastest available "
-            "(cuda > vulkan > sycl > cpu); a specific name is honoured "
+            "(cuda > sycl > hip > cpu); a specific name is honoured "
             "strictly and errors out if unavailable. Use 'cpu' to force "
             "bit-exact CPU scoring for verification against golden data. "
             "(Bug C / ADR-0509)"
@@ -1640,8 +1640,8 @@ def _add_recommend_args(p: argparse.ArgumentParser) -> None:
         default="auto",
         choices=("auto", *ALL_BACKENDS),
         help=(
-            "libvmaf scoring backend (default: auto; cuda > vulkan > "
-            "sycl > cpu). See `vmaf-tune corpus --help`."
+            "libvmaf scoring backend (default: auto; cuda > sycl > hip "
+            "> cpu). See `vmaf-tune corpus --help`."
         ),
     )
     p.add_argument("--no-source-hash", action="store_true")
@@ -3991,7 +3991,7 @@ def _add_fast_args(p: argparse.ArgumentParser) -> None:
         choices=("auto", *ALL_BACKENDS),
         help=(
             "libvmaf scoring backend for the verify pass (default: auto; "
-            "cuda > vulkan > sycl > cpu). See ``vmaf-tune corpus --help``."
+            "cuda > sycl > hip > cpu). See ``vmaf-tune corpus --help``."
         ),
     )
     p.add_argument(

@@ -253,7 +253,7 @@ def _gpu_verify(
     The verify pass is mandatory — the proxy alone never wins
     (ADR-0304 invariant). On hosts with a GPU backend installed, the
     libvmaf score axis is collapsed by the configured backend
-    (CUDA / Vulkan / SYCL); on GPU-less hosts the strict-mode selector
+    (CUDA / SYCL / HIP); on GPU-less hosts the strict-mode selector
     falls back to CPU when ``prefer="auto"`` is passed.
 
     Parameters

@@ -1553,6 +1553,27 @@ files conflicting with our deleted entries and new `.cpp` files. Resolution:
   table in `cli_parse.cpp`.
 
 ---
+
+## adr-0726 vulkan user-surfaces sweep (2026-05-30)
+
+**Files touched:** `README.md`, `mkdocs.yml`, `pkg/gpu/detect{,_test}.go`,
+`cmd/vmafx-mcp/{impl,tools}.go`,
+`cmd/vmafx-controller/proto/controller.proto`,
+`mcp-server/vmaf-mcp/{README.md,src/vmaf_mcp/server.py}`,
+`tools/vmaf-tune/{README.md,AGENTS.md,src/vmaftune/*.py}`, and the
+corresponding test suites.
+
+**Rebase impact:** None. Every touched file is fork-local — neither
+Netflix/vmaf upstream nor any upstream-tracking patch references the
+Vulkan backend, the `vmafx-*` Go commands, the MCP server, or the
+`vmaf-tune` tool. The sweep aligns the user-discoverable surfaces
+with ADR-0726, which removed the Vulkan backend from libvmaf on
+2026-05-28. Companion PRs (#295 covers `docs/index.md` and the API /
+metrics / build-flags docs; #299 deletes the orphan Vulkan source
+tree under `core/`).
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

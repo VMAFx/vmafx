@@ -241,7 +241,7 @@ def test_vmaf_version_missing_binary_returns_error(monkeypatch, tmp_path):
 
     assert result["error"] is not None
     assert result["version"] is None
-    for flag in ("cpu", "cuda", "sycl", "vulkan", "hip", "metal"):
+    for flag in ("cpu", "cuda", "sycl", "hip", "metal"):
         assert result["build_flags"][flag] is False
 
 

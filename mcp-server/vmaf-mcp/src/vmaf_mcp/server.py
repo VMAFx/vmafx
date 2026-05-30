@@ -6,7 +6,7 @@ Exposes ten tools over the Model Context Protocol (stdio transport):
 - ``vmaf_score_encoded``    — decode encoded video (MP4/MKV/Y4M/…) via ffmpeg then
   score, wrapping ``vmaf_score`` (ADR-0608).
 - ``list_models``           — enumerate the VMAF models registered with the build.
-- ``list_backends``         — report which backends (cpu/cuda/sycl/vulkan/hip/metal)
+- ``list_backends``         — report which backends (cpu/cuda/sycl/hip/metal)
   are compiled into the local vmaf binary.
 - ``probe_backend``         — run a 1-frame health check to distinguish
   "compiled in" from "driver present + functional" (ADR-0608).
@@ -217,12 +217,11 @@ class ScoreRequest:
 # vmaf binary does not probe and select a different runtime at startup.
 # "auto" leaves all probes active (no --no_* flags added).
 _BACKEND_DISABLE: dict[str, tuple[str, ...]] = {
-    "cpu": ("cuda", "sycl", "vulkan", "hip", "metal"),
-    "cuda": ("sycl", "vulkan", "hip", "metal"),
-    "sycl": ("cuda", "vulkan", "hip", "metal"),
-    "vulkan": ("cuda", "sycl", "hip", "metal"),
-    "hip": ("cuda", "sycl", "vulkan", "metal"),
-    "metal": ("cuda", "sycl", "vulkan", "hip"),
+    "cpu": ("cuda", "sycl", "hip", "metal"),
+    "cuda": ("sycl", "hip", "metal"),
+    "sycl": ("cuda", "hip", "metal"),
+    "hip": ("cuda", "sycl", "metal"),
+    "metal": ("cuda", "sycl", "hip"),
 }
 
 
@@ -317,7 +316,7 @@ def _probe_backends(vmaf: Path) -> frozenset[str]:
         return probe
     blob = (result.stdout or "") + (result.stderr or "")
     # The CLI documents disable-flags as `--no_<backend>` (one per line).
-    for name in ("cuda", "sycl", "vulkan", "hip", "metal"):
+    for name in ("cuda", "sycl", "hip", "metal"):
         if re.search(rf"--no_{name}\b", blob):
             advertised.add(name)
     probe = frozenset(advertised)
@@ -416,7 +415,7 @@ def _infer_backend_from_payload(payload: dict[str, Any]) -> str:
 
     libvmaf does not (yet) emit a ``backend`` field in its JSON, but the
     per-backend feature-key counts diverge in well-known ways (see the
-    `bench_all.sh` `compare` table: CPU 14-15, CUDA 11-12, Vulkan ~34).
+    `bench_all.sh` `compare` table: CPU 14-15, CUDA 11-12).
     When the count is ambiguous we return ``'cpu'`` — the conservative
     default the CLI also picks when no GPU is wired up.
     """
@@ -425,8 +424,6 @@ def _infer_backend_from_payload(payload: dict[str, Any]) -> str:
         return "cpu"
     metrics = frames[0].get("metrics") or {}
     nkeys = len(metrics)
-    if nkeys >= 30:
-        return "vulkan"
     if nkeys <= 12:
         # Could be CUDA or SYCL — without a backend marker we cannot
         # disambiguate further. Return 'gpu' as a hint.
@@ -455,7 +452,7 @@ def _list_backends() -> dict[str, bool]:
 
     Delegates to :func:`_probe_backends`, which reads ``vmaf --help``
     and looks for ``--no_<backend>`` flags (presence = compiled in).
-    This correctly identifies live CUDA/SYCL/Vulkan/HIP/Metal support
+    This correctly identifies live CUDA/SYCL/HIP/Metal support
     even on hosts where the ``--version`` banner does not mention GPU
     backends — the historical ``--version`` grep approach (Bug A,
     2026-05-18) missed CUDA on the ``vmaf-dev-mcp`` container because
@@ -474,7 +471,6 @@ def _list_backends() -> dict[str, bool]:
             "cpu": True,
             "cuda": False,
             "sycl": False,
-            "vulkan": False,
             "hip": False,
             "metal": False,
         }
@@ -483,7 +479,6 @@ def _list_backends() -> dict[str, bool]:
         "cpu": True,
         "cuda": "cuda" in advertised,
         "sycl": "sycl" in advertised,
-        "vulkan": "vulkan" in advertised,
         "hip": "hip" in advertised,
         "metal": "metal" in advertised,
     }
@@ -838,12 +833,11 @@ _FEX_STRUCT_RE = re.compile(
 )
 
 # Backend keyword → label (longest match wins; checked against the variable
-# name, not the .name string, because CUDA/SYCL/HIP/Vulkan twins are usually
+# name, not the .name string, because CUDA/SYCL/HIP twins are usually
 # named ``<feature>_cuda`` etc.).
 _BACKEND_KEYWORDS: list[tuple[str, str]] = [
     ("_cuda", "cuda"),
     ("_sycl", "sycl"),
-    ("_vulkan", "vulkan"),
     ("_hip", "hip"),
     ("_metal", "metal"),
 ]
@@ -869,7 +863,7 @@ def _list_extractors() -> list[dict[str, Any]]:
     Returns a list of dicts, one per extractor, with:
     - ``name``: the C-string advertised as the extractor name (no extension).
     - ``backend``: inferred from the symbol name suffix
-      (``cpu`` | ``cuda`` | ``sycl`` | ``vulkan`` | ``hip`` | ``metal``).
+      (``cpu`` | ``cuda`` | ``sycl`` | ``hip`` | ``metal``).
     - ``source``: relative path to the C file that defines the struct.
     """
     feature_dir = _repo_root() / "core" / "src" / "feature"
@@ -1573,7 +1567,6 @@ def _vmaf_version() -> dict[str, Any]:
                 "cpu": False,
                 "cuda": False,
                 "sycl": False,
-                "vulkan": False,
                 "hip": False,
                 "metal": False,
             },
@@ -1604,7 +1597,6 @@ def _vmaf_version() -> dict[str, Any]:
         "cpu": True,  # CPU is always compiled in when the binary exists.
         "cuda": "cuda" in advertised,
         "sycl": "sycl" in advertised,
-        "vulkan": "vulkan" in advertised,
         "hip": "hip" in advertised,
         "metal": "metal" in advertised,
     }
@@ -1821,7 +1813,7 @@ async def _list_tools() -> list[Tool]:
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
-                        "enum": ["auto", "cpu", "cuda", "sycl", "vulkan", "hip", "metal"],
+                        "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
                         "default": "auto",
                     },
                     "precision": {"type": "string", "default": "17"},
@@ -1836,7 +1828,7 @@ async def _list_tools() -> list[Tool]:
         Tool(
             name="list_backends",
             description=(
-                "Report which runtime backends (cpu / cuda / sycl / vulkan / hip / metal) "
+                "Report which runtime backends (cpu / cuda / sycl / hip / metal) "
                 "the local vmaf binary was built with."
             ),
             inputSchema={"type": "object", "properties": {}},
@@ -1845,7 +1837,7 @@ async def _list_tools() -> list[Tool]:
             name="run_benchmark",
             description=(
                 "Run the full multi-fixture benchmark harness (bench_all.sh) "
-                "across all available backends (CPU, CUDA, SYCL, Vulkan) on "
+                "across all available backends (CPU, CUDA, SYCL) on "
                 "three canonical YUV fixture sets: the 576x324 Netflix golden "
                 "pair, a 1080p 5-frame pair, and the 4K BBB 200-frame pair. "
                 "Returns stdout (per-backend scores + backend comparison table) "
@@ -1916,7 +1908,7 @@ async def _list_tools() -> list[Tool]:
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
-                        "enum": ["auto", "cpu", "cuda", "sycl", "vulkan", "hip", "metal"],
+                        "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
                         "default": "auto",
                     },
                     "n": {
@@ -1947,7 +1939,7 @@ async def _list_tools() -> list[Tool]:
                 "properties": {
                     "backend": {
                         "type": "string",
-                        "enum": ["cpu", "cuda", "sycl", "vulkan", "hip", "metal"],
+                        "enum": ["cpu", "cuda", "sycl", "hip", "metal"],
                         "description": "Backend to health-check.",
                     },
                 },
@@ -1958,7 +1950,7 @@ async def _list_tools() -> list[Tool]:
             description=(
                 "Return the local vmaf binary's identity and build flags. "
                 "Reports binary_path, version string (from --version), and "
-                "build_flags dict (cpu/cuda/sycl/vulkan/hip/metal). Use this "
+                "build_flags dict (cpu/cuda/sycl/hip/metal). Use this "
                 "to confirm which fork build is running before scoring. "
                 "ADR-0608."
             ),
@@ -1992,7 +1984,7 @@ async def _list_tools() -> list[Tool]:
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
-                        "enum": ["auto", "cpu", "cuda", "sycl", "vulkan", "hip", "metal"],
+                        "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
                         "default": "auto",
                     },
                     "subsample": {
@@ -2011,7 +2003,7 @@ async def _list_tools() -> list[Tool]:
             description=(
                 "Enumerate all VmafFeatureExtractor implementations found in the "
                 "local libvmaf C source tree. Returns each extractor's advertised "
-                "name, inferred backend (cpu / cuda / sycl / vulkan / hip / metal), "
+                "name, inferred backend (cpu / cuda / sycl / hip / metal), "
                 "and the source file it was defined in. Requires no binary — "
                 "parses the C source directly. ADR-0608."
             ),

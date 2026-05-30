@@ -8,8 +8,9 @@ for the cluster write-up.
 These tests pin three contracts:
 
 1. ``vmaf-tune ladder --help`` advertises the new
-   ``--score-backend {auto,cpu,cuda,sycl,vulkan}`` flag (DX symmetry
-   with the sibling ``compare`` and ``tune-per-shot`` subcommands).
+   ``--score-backend {auto,cpu,cuda,sycl,hip}`` flag (DX symmetry
+   with the sibling ``compare`` and ``tune-per-shot`` subcommands;
+   ADR-0726 dropped the Vulkan value 2026-05-28).
 2. ``--score-backend cuda`` plumbs through
    ``make_default_sampler`` → ``CorpusOptions.score_backend`` so the
    underlying corpus invocation runs ``vmaf --backend cuda``.
@@ -63,7 +64,7 @@ def test_ladder_help_advertises_score_backend_flag() -> None:
 
 def test_ladder_score_backend_accepts_all_supported_backends() -> None:
     """`--score-backend` must accept the same enum as the sibling
-    subcommands: ``auto|cpu|cuda|sycl|vulkan``."""
+    subcommands: ``auto|cpu|cuda|sycl|hip`` (post-ADR-0726)."""
     parser = cli_module._build_parser()
     # argparse exposes subparsers via `choices` on the action whose
     # ``choices`` is a dict-like of {name: subparser}.
@@ -74,11 +75,15 @@ def test_ladder_score_backend_accepts_all_supported_backends() -> None:
     score_action = next(
         a for a in ladder_parser._actions if "--score-backend" in (a.option_strings or [])
     )
-    expected = {"auto", "cpu", "cuda", "sycl", "vulkan"}
+    expected = {"auto", "cpu", "cuda", "sycl", "hip"}
     actual = set(score_action.choices or ())
-    assert expected.issubset(actual), (
-        f"--score-backend enum is missing {expected - actual} " f"(got {actual})"
-    )
+    assert expected.issubset(
+        actual
+    ), f"--score-backend enum is missing {expected - actual} (got {actual})"
+    # ADR-0726: vulkan must not be present.
+    assert (
+        "vulkan" not in actual
+    ), f"ADR-0726 regression: vulkan re-appeared in --score-backend choices (got {actual})"
 
 
 # ---------------------------------------------------------------------------

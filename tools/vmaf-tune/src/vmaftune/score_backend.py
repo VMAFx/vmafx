@@ -3,19 +3,19 @@
 """Backend selection for the libvmaf CLI used by `vmaf-tune`.
 
 `vmaf` exposes a unified ``--backend NAME`` selector
-(values: ``auto|cpu|cuda|sycl|vulkan|hip``) per ADR-0127 / ADR-0175 /
-ADR-0422.
+(values: ``auto|cpu|cuda|sycl|hip``) per ADR-0127 / ADR-0175 /
+ADR-0422 / ADR-0726 (Vulkan backend dropped 2026-05-28).
 The selector engages the GPU dispatch in libvmaf and gives a
 ~10-30x speedup on the score axis at 1080p relative to the CPU path.
 
-This module turns user intent (``--score-backend cuda|sycl|hip|vulkan|cpu|auto``)
+This module turns user intent (``--score-backend cuda|sycl|hip|cpu|auto``)
 into a concrete, validated choice by intersecting:
 
 1. What the **vmaf binary** advertises in its ``--help`` output (the
    `--backend` line lists which values are recognised);
 2. What the **host hardware / runtime** actually offers, probed via
    cheap external tools (``nvidia-smi``, ``sycl-ls``,
-   ``rocminfo`` / ``rocm-smi``, ``vulkaninfo``) with conservative fallbacks.
+   ``rocminfo`` / ``rocm-smi``) with conservative fallbacks.
 
 Hard rules (per task spec):
 
@@ -23,7 +23,7 @@ Hard rules (per task spec):
   clear error. We never silently fall back when the user explicitly
   requested a backend.
 - Only ``auto`` walks the fallback chain. The default chain is
-  ``cuda -> sycl -> hip -> vulkan -> cpu``, picking the first that is both
+  ``cuda -> sycl -> hip -> cpu``, picking the first that is both
   binary-supported and hardware-available.
 
 NRProxyBackend (ADR-0624 / ADR-0615)
@@ -58,12 +58,12 @@ from typing import NamedTuple
 _log = logging.getLogger(__name__)
 
 #: Backends the vmaf CLI accepts via ``--backend NAME``.
-ALL_BACKENDS: tuple[str, ...] = ("cpu", "cuda", "sycl", "hip", "vulkan")
+ALL_BACKENDS: tuple[str, ...] = ("cpu", "cuda", "sycl", "hip")
 
 #: Default fallback chain for ``auto``. Native vendor backends are preferred
-#: before Vulkan because they have the shortest dispatch/runtime path on their
-#: respective silicon. CPU is the always-available floor.
-DEFAULT_FALLBACKS: tuple[str, ...] = ("cuda", "sycl", "hip", "vulkan", "cpu")
+#: in vendor-priority order on their respective silicon. CPU is the
+#: always-available floor.
+DEFAULT_FALLBACKS: tuple[str, ...] = ("cuda", "sycl", "hip", "cpu")
 
 
 class BackendUnavailableError(RuntimeError):
@@ -117,7 +117,7 @@ def parse_supported_backends(help_text: str) -> frozenset[str]:
 
     The fork's CLI prints a line like::
 
-        --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|vulkan|hip.
+        --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|hip.
 
     We parse the alternation (``a|b|c``) and intersect it with
     `ALL_BACKENDS`. ``cpu`` is added unconditionally — every build
@@ -128,7 +128,7 @@ def parse_supported_backends(help_text: str) -> frozenset[str]:
     found: set[str] = {"cpu"}
     for backend in ALL_BACKENDS:
         # Look for the exact token surrounded by | or whitespace as
-        # a robust check; matches any of: auto|cpu|cuda|sycl|vulkan|hip
+        # a robust check; matches any of: auto|cpu|cuda|sycl|hip
         # without false-positives on substrings (e.g. "cuda" inside
         # a comment about CUDA).
         for needle in (f"|{backend}|", f"|{backend}.", f"|{backend}\n", f"|{backend} "):
@@ -156,27 +156,6 @@ def _probe_cuda(runner: object | None = None) -> bool:
     rc = int(getattr(completed, "returncode", 1))
     out = getattr(completed, "stdout", "") or ""
     return rc == 0 and "GPU" in out
-
-
-def _probe_vulkan(runner: object | None = None) -> bool:
-    """True if a Vulkan device is reachable. Tries `vulkaninfo --summary`."""
-    if shutil.which("vulkaninfo") is None:
-        return False
-    runner_fn = runner or subprocess.run
-    try:
-        completed = runner_fn(  # type: ignore[operator]
-            ["vulkaninfo", "--summary"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    rc = int(getattr(completed, "returncode", 1))
-    out = getattr(completed, "stdout", "") or ""
-    # vulkaninfo prints "deviceName" entries per detected GPU.
-    return rc == 0 and "deviceName" in out
 
 
 def _probe_sycl(runner: object | None = None) -> bool:
@@ -260,7 +239,6 @@ def detect_available_backends(
         "cuda": _probe_cuda(runner=runner) if "cuda" in supported else False,
         "sycl": _probe_sycl(runner=runner) if "sycl" in supported else False,
         "hip": _probe_hip(runner=runner) if "hip" in supported else False,
-        "vulkan": _probe_vulkan(runner=runner) if "vulkan" in supported else False,
     }
     return [b for b in ALL_BACKENDS if b in supported and probes[b]]
 
@@ -279,7 +257,7 @@ def select_backend(
       entry present in ``available``. ``cpu`` must be in the chain
       (or in ``available``) to guarantee a result.
     - Any other ``prefer`` value (``cpu``, ``cuda``, ``sycl``,
-      ``hip``, ``vulkan``) is honoured **strictly**: if it is not in
+      ``hip``) is honoured **strictly**: if it is not in
       ``available``, raise `BackendUnavailableError`. Never
       silently falls back — that would mask hardware/build mismatches
       and lie to the operator about wall-clock expectations.

@@ -33,12 +33,11 @@ import (
 // ---------------------------------------------------------------------------
 
 var backendDisable = map[string][]string{
-	"cpu":    {"cuda", "sycl", "vulkan", "hip", "metal"},
-	"cuda":   {"sycl", "vulkan", "hip", "metal"},
-	"sycl":   {"cuda", "vulkan", "hip", "metal"},
-	"vulkan": {"cuda", "sycl", "hip", "metal"},
-	"hip":    {"cuda", "sycl", "vulkan", "metal"},
-	"metal":  {"cuda", "sycl", "vulkan", "hip"},
+	"cpu":   {"cuda", "sycl", "hip", "metal"},
+	"cuda":  {"sycl", "hip", "metal"},
+	"sycl":  {"cuda", "hip", "metal"},
+	"hip":   {"cuda", "sycl", "metal"},
+	"metal": {"cuda", "sycl", "hip"},
 }
 
 // ---------------------------------------------------------------------------
@@ -67,7 +66,7 @@ func probeBackends(vmafBin string) map[string]bool {
 	out, err := exec.CommandContext(ctx, vmafBin, "--help").CombinedOutput()
 	if err == nil {
 		blob := string(out)
-		for _, name := range []string{"cuda", "sycl", "vulkan", "hip", "metal"} {
+		for _, name := range []string{"cuda", "sycl", "hip", "metal"} {
 			if strings.Contains(blob, "--no_"+name) {
 				advertised[name] = true
 			}
@@ -255,9 +254,6 @@ func inferBackendFromPayload(payload map[string]any) string {
 	first, _ := frames[0].(map[string]any)
 	metrics, _ := first["metrics"].(map[string]any)
 	n := len(metrics)
-	if n >= 30 {
-		return "vulkan"
-	}
 	if n <= 12 {
 		return "gpu"
 	}
@@ -365,17 +361,16 @@ func handleListBackends(_ context.Context, _ map[string]any) (any, error) {
 	if _, err := os.Stat(vmafBin); err != nil {
 		return map[string]bool{
 			"cpu": true, "cuda": false, "sycl": false,
-			"vulkan": false, "hip": false, "metal": false,
+			"hip": false, "metal": false,
 		}, nil
 	}
 	advertised := probeBackends(vmafBin)
 	return map[string]bool{
-		"cpu":    true,
-		"cuda":   advertised["cuda"],
-		"sycl":   advertised["sycl"],
-		"vulkan": advertised["vulkan"],
-		"hip":    advertised["hip"],
-		"metal":  advertised["metal"],
+		"cpu":   true,
+		"cuda":  advertised["cuda"],
+		"sycl":  advertised["sycl"],
+		"hip":   advertised["hip"],
+		"metal": advertised["metal"],
 	}, nil
 }
 
@@ -858,7 +853,7 @@ func handleVmafVersion(_ context.Context, _ map[string]any) (any, error) {
 			"version":     nil,
 			"build_flags": map[string]bool{
 				"cpu": false, "cuda": false, "sycl": false,
-				"vulkan": false, "hip": false, "metal": false,
+				"hip": false, "metal": false,
 			},
 			"error": fmt.Sprintf("vmaf binary not found at %s", vmafBin),
 		}, nil
@@ -882,12 +877,11 @@ func handleVmafVersion(_ context.Context, _ map[string]any) (any, error) {
 		"binary_path": vmafBin,
 		"version":     versionStr,
 		"build_flags": map[string]bool{
-			"cpu":    true,
-			"cuda":   advertised["cuda"],
-			"sycl":   advertised["sycl"],
-			"vulkan": advertised["vulkan"],
-			"hip":    advertised["hip"],
-			"metal":  advertised["metal"],
+			"cpu":   true,
+			"cuda":  advertised["cuda"],
+			"sycl":  advertised["sycl"],
+			"hip":   advertised["hip"],
+			"metal": advertised["metal"],
 		},
 		"error": nil,
 	}, nil
@@ -1035,7 +1029,7 @@ var fexStructRe = regexp.MustCompile(
 )
 
 var backendKeywords = []struct{ suffix, label string }{
-	{"_cuda", "cuda"}, {"_sycl", "sycl"}, {"_vulkan", "vulkan"},
+	{"_cuda", "cuda"}, {"_sycl", "sycl"},
 	{"_hip", "hip"}, {"_metal", "metal"},
 }
 

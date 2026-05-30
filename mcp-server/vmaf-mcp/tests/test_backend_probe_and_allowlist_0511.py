@@ -64,16 +64,15 @@ def test_probe_backends_picks_cuda_from_help_when_version_silent(
         _stub_help(
             "Usage: vmaf [options]\n"
             "  --no_cuda    disable CUDA backend\n"
-            "  --no_vulkan  disable Vulkan backend\n"
+            "  --no_hip     disable HIP backend\n"
         ),
     )
     backends = srv._probe_backends(fake)
     assert "cuda" in backends, backends
-    assert "vulkan" in backends, backends
+    assert "hip" in backends, backends
     assert "cpu" in backends, "CPU must always be present"
     # Backends NOT advertised in --help must be absent.
     assert "sycl" not in backends, backends
-    assert "hip" not in backends, backends
     assert "metal" not in backends, backends
 
 
@@ -132,7 +131,6 @@ def test_list_backends_reports_cuda_true_when_help_advertises_it(
     assert result["cpu"] is True
     assert result["cuda"] is True, f"Bug A regression: {result}"
     assert result["sycl"] is True, result
-    assert result["vulkan"] is False, result
     assert result["hip"] is False, result
     assert result["metal"] is False, result
 

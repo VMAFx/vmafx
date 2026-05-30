@@ -45,7 +45,7 @@ func registerTools(srv *mcp.Server) {
 				"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
 				"backend": schemaObj{
 					"type":    "string",
-					"enum":    []string{"auto", "cpu", "cuda", "sycl", "vulkan", "hip", "metal"},
+					"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
 					"default": "auto",
 				},
 				"precision": schemaObj{"type": "string", "default": "17"},
@@ -61,7 +61,7 @@ func registerTools(srv *mcp.Server) {
 
 	addRawTool(srv, &mcp.Tool{
 		Name: "list_backends",
-		Description: "Report which runtime backends (cpu / cuda / sycl / vulkan / hip / metal) " +
+		Description: "Report which runtime backends (cpu / cuda / sycl / hip / metal) " +
 			"the local vmaf binary was built with.",
 		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
 	}, handleListBackends)
@@ -69,7 +69,7 @@ func registerTools(srv *mcp.Server) {
 	addRawTool(srv, &mcp.Tool{
 		Name: "run_benchmark",
 		Description: "Run the full multi-fixture benchmark harness (bench_all.sh) " +
-			"across all available backends (CPU, CUDA, SYCL, Vulkan) on " +
+			"across all available backends (CPU, CUDA, SYCL) on " +
 			"three canonical YUV fixture sets: the 576x324 Netflix golden " +
 			"pair, a 1080p 5-frame pair, and the 4K BBB 200-frame pair. " +
 			"Returns stdout (per-backend scores + backend comparison table) " +
@@ -136,7 +136,7 @@ func registerTools(srv *mcp.Server) {
 				"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
 				"backend": schemaObj{
 					"type":    "string",
-					"enum":    []string{"auto", "cpu", "cuda", "sycl", "vulkan", "hip", "metal"},
+					"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
 					"default": "auto",
 				},
 				"n": schemaObj{
@@ -165,7 +165,7 @@ func registerTools(srv *mcp.Server) {
 			"properties": schemaObj{
 				"backend": schemaObj{
 					"type":        "string",
-					"enum":        []string{"cpu", "cuda", "sycl", "vulkan", "hip", "metal"},
+					"enum":        []string{"cpu", "cuda", "sycl", "hip", "metal"},
 					"description": "Backend to health-check.",
 				},
 			},
@@ -176,7 +176,7 @@ func registerTools(srv *mcp.Server) {
 		Name: "vmaf_version",
 		Description: "Return the local vmaf binary's identity and build flags. " +
 			"Reports binary_path, version string (from --version), and " +
-			"build_flags dict (cpu/cuda/sycl/vulkan/hip/metal). Use this " +
+			"build_flags dict (cpu/cuda/sycl/hip/metal). Use this " +
 			"to confirm which fork build is running before scoring. " +
 			"ADR-0608.",
 		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),
@@ -208,7 +208,7 @@ func registerTools(srv *mcp.Server) {
 				"model": schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
 				"backend": schemaObj{
 					"type":    "string",
-					"enum":    []string{"auto", "cpu", "cuda", "sycl", "vulkan", "hip", "metal"},
+					"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
 					"default": "auto",
 				},
 				"subsample": schemaObj{
@@ -226,7 +226,7 @@ func registerTools(srv *mcp.Server) {
 		Name: "list_extractors",
 		Description: "Enumerate all VmafFeatureExtractor implementations found in the " +
 			"local libvmaf C source tree. Returns each extractor's advertised " +
-			"name, inferred backend (cpu / cuda / sycl / vulkan / hip / metal), " +
+			"name, inferred backend (cpu / cuda / sycl / hip / metal), " +
 			"and the source file it was defined in. Requires no binary — " +
 			"parses the C source directly. ADR-0608.",
 		InputSchema: mustSchema(schemaObj{"type": "object", "properties": schemaObj{}}),

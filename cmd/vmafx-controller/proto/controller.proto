@@ -36,7 +36,7 @@ message ScoringParams {
   string distorted = 2;
   // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
   string model = 3;
-  // Optional backend hint: "cuda", "sycl", "hip", "vulkan", "cpu".
+  // Optional backend hint: "cuda", "sycl", "hip", "cpu".
   // The scheduler uses this to match a node with the required capability.
   // Empty string means the scheduler may assign any available node.
   string backend = 4;
