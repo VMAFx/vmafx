@@ -410,7 +410,15 @@ feature/
   golden by ~5.5e-5). `#pragma STDC FP_CONTRACT OFF` is ignored
   by aarch64 GCC (non-fatal `-Wunknown-pragmas`) but kept for
   portability; aarch64 GCC does not contract `a + b * c` across
-  statements at default optimization anyway. See
+  statements at default optimization anyway.
+  **IMPORTANT — Intel icx (`intel-llvm`)**: `#pragma STDC FP_CONTRACT
+  OFF` is also silently ignored by icx unless `-fp-model=precise` is
+  also on the command line. The SIMD carve-out static libs in
+  `core/src/meson.build` detect `cc.get_id() == 'intel-llvm'` and
+  append `-fp-model=precise`; the SIMD test executables in
+  `core/test/meson.build` do the same via `_simd_strict_fp_args`. Do
+  not remove these flags without re-running `--suite=fast --suite=simd`
+  under icx. Traced via the 2026-05-30 all-backends CI failure. See
   [ADR-0160](../../../docs/adr/0160-psnr-hvs-neon-bitexact.md)
   and [rebase-notes 0052](../../../docs/rebase-notes.md).
 - **`fastdvdnet_pre.c` 5-frame-window contract** (fork-local,

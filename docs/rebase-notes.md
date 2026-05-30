@@ -6,6 +6,26 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## SIMD strict-FP flags for icx (2026-05-30)
+
+**Files touched:**
+`core/src/meson.build`, `core/test/meson.build`,
+`core/src/feature/AGENTS.md`
+
+**Rebase impact:** Low. The changes add an `icx`-specific compile flag
+(`-fp-model=precise`) to x86 SIMD carve-out static libs and to the three
+SIMD bit-exactness test executables (`test_psnr_hvs_simd`,
+`test_ms_ssim_decimate`, `test_ssimulacra2_simd`). The flag is added only
+when `cc.get_id()` returns `'intel-llvm'` or `'intel-llvm-cl'`, so GCC
+and vanilla Clang builds are unaffected.
+
+If upstream Netflix adds new SIMD carve-out static libs, apply the same
+`_x86_simd_strict_fp_extra` pattern to them so the icx build stays green.
+If Netflix adds new SIMD test executables that compare a scalar reference
+against SIMD output, add `_simd_strict_fp_args` to their `c_args`.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
