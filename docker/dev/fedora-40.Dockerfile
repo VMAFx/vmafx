@@ -36,7 +36,7 @@ EOF\n\
 COPY . /vmaf
 WORKDIR /vmaf
 
-RUN meson setup build libvmaf \
+RUN meson setup build core \
       -Denable_cuda=$ENABLE_CUDA -Denable_sycl=$ENABLE_SYCL \
       --buildtype=release \
  && ninja -C build
