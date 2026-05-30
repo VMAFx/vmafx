@@ -111,10 +111,10 @@ preprints202604.0035.v1.pdf
 # Meson wrap-fetched subprojects (downloaded at meson setup time).
 # Only the .wrap files + packagefiles/ are tracked; the unpacked
 # upstream trees are gitignored.
-libvmaf/subprojects/*/
-!libvmaf/subprojects/packagefiles/
-libvmaf/subprojects/packagecache/
-libvmaf/subprojects/.wraplock
+core/subprojects/*/
+!core/subprojects/packagefiles/
+core/subprojects/packagecache/
+core/subprojects/.wraplock
 
 # Per-run training output (per-epoch ONNX checkpoints)
 model/tiny/training_runs/

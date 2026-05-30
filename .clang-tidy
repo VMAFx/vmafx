@@ -45,7 +45,7 @@ WarningsAsErrors: >
   performance-no-int-to-ptr
 
 # Lint our code; skip vendored / generated.
-HeaderFilterRegex: '^(libvmaf/(include|src|tools|test)|python|ai)/.*\.(h|hpp|hxx|cuh)$'
+HeaderFilterRegex: '^(core/(include|src|tools|test)|python|ai)/.*\.(h|hpp|hxx|cuh)$'
 
 FormatStyle: file
 

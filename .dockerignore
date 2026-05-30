@@ -26,18 +26,13 @@ testdata/bbb/
 runs/
 
 # Build trees — covers both hyphen and underscore variants.
-# core/ is the renamed `libvmaf/` source tree (ADR-0700); legacy
-# `libvmaf/build*` entries are retained so reusing this .dockerignore
-# against pre-rename worktrees still excludes their build dirs.
+# core/ is the renamed `libvmaf/` source tree (ADR-0700).
 build*/
 build-*/
 build_*/
 core/build*/
 core/build-*/
 core/build_*/
-libvmaf/build*/
-libvmaf/build-*/
-libvmaf/build_*/
 
 # Python virtual environments
 .venv*/

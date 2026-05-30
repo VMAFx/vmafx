@@ -86,6 +86,19 @@ the round-3 block is appended immediately after the round-2 block
 merges first, this PR's block appends cleanly; if this PR merges
 first, #376 must insert its block before the round-3 block.
 
+## ide-lint-config-adr-0700-paths (2026-05-30, ADR-0700)
+
+**Files touched:** `.vscode/c_cpp_properties.json`, `.zed/settings.json`,
+`.github/CODEOWNERS`, `.clang-tidy`, `.dockerignore`, `.gitignore`.
+
+**Rebase impact:** None. All six are fork-local config files; upstream
+Netflix/vmaf does not ship `.vscode/`, `.zed/`, `CODEOWNERS`,
+`.dockerignore`, or the same `.clang-tidy` profile, and the upstream
+`.gitignore` does not include the fork's `subprojects/` extraction
+rules. The change is a mechanical `libvmaf/` → `core/` substitution
+inside paths/regexes that the ADR-0700 rename missed. No upstream sync
+will conflict on these hunks.
+
 ---
 
 ## libvmaf.Score / ScoreDirect ctx.Context plumbing (2026-05-31, fix/libvmaf-score-ctx)

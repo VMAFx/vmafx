@@ -5,26 +5,26 @@
 *                                           @Lusoris
 
 # GPU backends — fork-authored, tight review loop.
-/libvmaf/src/cuda/                          @Lusoris
-/libvmaf/src/sycl/                          @Lusoris
-/libvmaf/src/feature/cuda/                  @Lusoris
-/libvmaf/src/feature/sycl/                  @Lusoris
-/libvmaf/include/libvmaf/libvmaf_sycl.h     @Lusoris
+/core/src/cuda/                             @Lusoris
+/core/src/sycl/                             @Lusoris
+/core/src/feature/cuda/                     @Lusoris
+/core/src/feature/sycl/                     @Lusoris
+/core/include/libvmaf/libvmaf_sycl.h        @Lusoris
 
 # SIMD paths — numerical-correctness sensitive.
-/libvmaf/src/feature/x86/                   @Lusoris
-/libvmaf/src/feature/arm64/                 @Lusoris
+/core/src/feature/x86/                      @Lusoris
+/core/src/feature/arm64/                    @Lusoris
 
 # Public C API surface — breaking changes need explicit sign-off.
-/libvmaf/include/                           @Lusoris
-/libvmaf/src/libvmaf.c                      @Lusoris
+/core/include/                              @Lusoris
+/core/src/libvmaf.c                         @Lusoris
 
 # CLI / tools — user-facing, versioning sensitive.
-/libvmaf/tools/                             @Lusoris
+/core/tools/                                @Lusoris
 
 # Build system.
-/libvmaf/meson.build                        @Lusoris
-/libvmaf/meson_options.txt                  @Lusoris
+/core/meson.build                           @Lusoris
+/core/meson_options.txt                     @Lusoris
 /Makefile                                   @Lusoris
 
 # CI / supply chain / security.
