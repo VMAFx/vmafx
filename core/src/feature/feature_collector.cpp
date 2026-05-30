@@ -49,7 +49,8 @@ int aggregate_vector_init(AggregateVector *aggregate_vector)
     memset(aggregate_vector, 0, sizeof(*aggregate_vector));
     const unsigned initial_capacity = 8;
     const size_t metric_vector_sz = sizeof(aggregate_vector->metric[0]) * initial_capacity;
-    aggregate_vector->metric = (decltype(aggregate_vector->metric))malloc(metric_vector_sz);
+    aggregate_vector->metric =
+        static_cast<decltype(aggregate_vector->metric)>(malloc(metric_vector_sz));
     if (!aggregate_vector->metric)
         return -ENOMEM;
     memset(aggregate_vector->metric, 0, metric_vector_sz);
@@ -82,13 +83,13 @@ int aggregate_vector_append(AggregateVector *aggregate_vector, const char *featu
         void *metric = realloc(aggregate_vector->metric, initial_size * 2);
         if (!metric)
             return -ENOMEM;
-        memset((char *)metric + initial_size, 0, initial_size);
-        aggregate_vector->metric = (decltype(aggregate_vector->metric))metric;
+        memset(static_cast<char *>(metric) + initial_size, 0, initial_size);
+        aggregate_vector->metric = static_cast<decltype(aggregate_vector->metric)>(metric);
         aggregate_vector->capacity *= 2;
     }
 
     const size_t feature_name_sz = strnlen(feature_name, 2048);
-    char *f = (char *)malloc(feature_name_sz + 1);
+    char *f = static_cast<char *>(malloc(feature_name_sz + 1));
     if (!f)
         return -EINVAL;
     memcpy(f, feature_name, feature_name_sz);
@@ -169,16 +170,16 @@ int feature_vector_init(FeatureVector **const feature_vector, const char *name)
         return -EINVAL;
 
     const size_t name_sz = strlen(name);
-    FeatureVector *const fv = *feature_vector = (FeatureVector *)malloc(sizeof(*fv));
+    FeatureVector *const fv = *feature_vector = static_cast<FeatureVector *>(malloc(sizeof(*fv)));
     if (!fv)
         goto fail;
     memset(fv, 0, sizeof(*fv));
-    fv->name = (char *)malloc(name_sz + 1);
+    fv->name = static_cast<char *>(malloc(name_sz + 1));
     if (!fv->name)
         goto free_fv;
     memcpy(fv->name, name, name_sz + 1);
     fv->capacity = 8;
-    fv->score = (decltype(fv->score))malloc(sizeof(fv->score[0]) * fv->capacity);
+    fv->score = static_cast<decltype(fv->score)>(malloc(sizeof(fv->score[0]) * fv->capacity));
     if (!fv->score)
         goto free_name;
     memset(fv->score, 0, sizeof(fv->score[0]) * fv->capacity);
@@ -212,8 +213,8 @@ int feature_vector_append(FeatureVector *feature_vector, unsigned index, double 
         void *score_buf = realloc(feature_vector->score, initial_size * 2);
         if (!score_buf)
             return -ENOMEM;
-        memset((char *)score_buf + initial_size, 0, initial_size);
-        feature_vector->score = (decltype(feature_vector->score))score_buf;
+        memset(static_cast<char *>(score_buf) + initial_size, 0, initial_size);
+        feature_vector->score = static_cast<decltype(feature_vector->score)>(score_buf);
         feature_vector->capacity *= 2;
     }
 
@@ -239,16 +240,16 @@ int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector)
      * goto that could jump over them (C++ cross-initialisation rule). */
     size_t fv_sz;
     VmafFeatureCollector *const fc = *feature_collector =
-        (VmafFeatureCollector *)malloc(sizeof(*fc));
+        static_cast<VmafFeatureCollector *>(malloc(sizeof(*fc)));
     if (!fc)
         goto fail;
     memset(fc, 0, sizeof(*fc));
     fc->capacity = 8;
     fv_sz = sizeof(FeatureVector *) * fc->capacity;
-    fc->feature_vector = (FeatureVector **)malloc(fv_sz);
+    fc->feature_vector = static_cast<FeatureVector **>(malloc(fv_sz));
     if (!fc->feature_vector)
         goto free_fc;
-    memset((void *)fc->feature_vector, 0, fv_sz);
+    memset(static_cast<void *>(fc->feature_vector), 0, fv_sz);
     err = aggregate_vector_init(&fc->aggregate_vector);
     if (err)
         goto free_feature_vector;
@@ -265,7 +266,7 @@ free_mutex:
 free_aggregate_vector:
     aggregate_vector_destroy(&(fc->aggregate_vector));
 free_feature_vector:
-    free((void *)fc->feature_vector);
+    free(static_cast<void *>(fc->feature_vector));
 free_fc:
     free(fc);
 fail:
@@ -279,7 +280,7 @@ int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, 
     if (!model)
         return -EINVAL;
 
-    VmafPredictModel *m = (VmafPredictModel *)malloc(sizeof(VmafPredictModel));
+    VmafPredictModel *m = static_cast<VmafPredictModel *>(malloc(sizeof(VmafPredictModel)));
     if (!m)
         return -ENOMEM;
 
@@ -374,11 +375,11 @@ static int feature_collector_grow_capacity(VmafFeatureCollector *feature_collect
     assert(feature_collector->capacity > 0);
     const size_t entry_sz = sizeof(FeatureVector *);
     const size_t old_bytes = entry_sz * feature_collector->capacity;
-    FeatureVector **fv =
-        (FeatureVector **)realloc((void *)feature_collector->feature_vector, old_bytes * 2);
+    FeatureVector **fv = static_cast<FeatureVector **>(
+        realloc(static_cast<void *>(feature_collector->feature_vector), old_bytes * 2));
     if (!fv)
         return -ENOMEM;
-    memset((void *)(fv + feature_collector->capacity), 0, old_bytes);
+    memset(static_cast<void *>(fv + feature_collector->capacity), 0, old_bytes);
     feature_collector->feature_vector = fv;
     feature_collector->capacity *= 2;
     return 0;
@@ -421,7 +422,7 @@ static void feature_collector_run_model_predict(VmafFeatureCollector *feature_co
         if (res) {
             pthread_mutex_unlock(&(feature_collector->lock));
             (void)vmaf_predict_score_at_index(model, feature_collector, picture_index, score, true,
-                                              true, (VmafModelFlags)0);
+                                              true, static_cast<VmafModelFlags>(0));
             pthread_mutex_lock(&(feature_collector->lock));
         }
         model_iter = model_iter->next;
@@ -552,7 +553,7 @@ void vmaf_feature_collector_destroy(VmafFeatureCollector *feature_collector)
         vmaf_feature_collector_unmount_model(feature_collector, feature_collector->models->model);
     }
     vmaf_metadata_destroy(feature_collector->metadata);
-    free((void *)feature_collector->feature_vector);
+    free(static_cast<void *>(feature_collector->feature_vector));
     pthread_mutex_unlock(&(feature_collector->lock));
     pthread_mutex_destroy(&(feature_collector->lock));
     free(feature_collector);

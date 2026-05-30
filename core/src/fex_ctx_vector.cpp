@@ -180,14 +180,14 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
         /* Guard against size_t overflow in capacity doubling
          * (CERT INT30-C; adversarial review 2026-05-28 finding #6). */
         assert(rfe->capacity <= (SIZE_MAX / 2u) / sizeof(*rfe->fex_ctx));
-        const size_t capacity = static_cast<size_t>(rfe->capacity) * 2u;
+        const size_t new_capacity = static_cast<size_t>(rfe->capacity) * 2u;
         auto *fex_ctx_new = static_cast<VmafFeatureExtractorContext **>(realloc(
             static_cast<void *>(rfe->fex_ctx), // NOLINT(cppcoreguidelines-no-malloc) — C ABI grow
-            sizeof(*(rfe->fex_ctx)) * capacity));
+            sizeof(*(rfe->fex_ctx)) * new_capacity));
         if (!fex_ctx_new)
             return -ENOMEM;
         rfe->fex_ctx = fex_ctx_new;
-        rfe->capacity = static_cast<unsigned>(capacity);
+        rfe->capacity = static_cast<unsigned>(new_capacity);
         for (unsigned i = rfe->cnt; i < rfe->capacity; i++)
             rfe->fex_ctx[i] = nullptr;
     }

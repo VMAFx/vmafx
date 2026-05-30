@@ -6,16 +6,13 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
-## cli-help-exit-zero (2026-05-29)
+## cpp23-shadow-const-fixes (2026-05-29, ADR-0839)
 
-**Files touched:**
-`core/tools/cli_parse.c`, `cmd/vmafx-server/main.go`, `cmd/vmafx-node/main.go`
-
-**Rebase impact:** Low. `cli_parse.c` is fork-extended beyond upstream (GPU
-backend flags, precision, tiny-model flags). Any upstream sync that touches
-`cli_parse.c` will produce a context conflict near the `long_opts[]` table and
-`usage()` body; the `ARG_HELP` entry and the `exit_code`/`out` split need to be
-re-applied. The Go files are fork-only and have no upstream counterpart.
+no rebase impact: REASON — all changed files (`core/src/feature/feature_collector.cpp`,
+`core/src/fex_ctx_vector.cpp`, `core/src/sycl/common.cpp`) are fork-local C++23
+conversions with no upstream counterpart in Netflix/vmaf master. The upstream originals
+(`feature_collector.c`, `fex_ctx_vector.c`) are pure C; the `.cpp` files were created by
+the fork's C++23 wave (ADR-0708 ff.) and are not subject to upstream rebase churn.
 
 ---
 
