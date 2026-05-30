@@ -1,0 +1,1 @@
+| [ADR-0750](0750-cuda-ms-ssim-decimate-adm-cm-measure.md) | Hardware measurement verdict for CUDA ms_ssim_decimate / adm_cm perf PR: accept `adm_cm` `__launch_bounds__` change; revert `ms_ssim_decimate` smem tiling | Accepted | cuda, performance, ms_ssim, adm_cm, measurement |

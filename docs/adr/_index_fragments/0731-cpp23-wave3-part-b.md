@@ -1,0 +1,1 @@
+| [ADR-0731](0731-cpp23-wave3-part-b.md) | C++23 Wave 3 Part B: convert `psnr_tools.c`, `luminance_tools.c`, `mkdirp.c` to `.cpp`; `std::filesystem` for mkdirp; `[[nodiscard]]` on pure helpers | Accepted | build, cpp23, modernization |

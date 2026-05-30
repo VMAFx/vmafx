@@ -1,0 +1,1 @@
+| [ADR-0810](0810-adr-0108-compliance-audit-2026-05-29.md) | ADR-0108 six-deliverables compliance audit (2026-05-29): 93% pass rate; D3 AGENTS.md gaps fixed in-place; audit findings accepted as baseline | Accepted | docs, agents, process |

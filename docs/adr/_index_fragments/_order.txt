@@ -595,3 +595,23 @@
 0714-vmafx-operator-skeleton
 0717-vmafx-node-ffmpeg-latest
 # Backfilled by docs-drift-sweep-2026-05-12 (manifest hygiene; numeric order)
+0719-vmafx-node-rclone-integration
+0720-cpp23-pilot-mem
+0721-cpp23-pilot-opt
+0723-cpp23-pilot-fex-ctx-vector
+0725-cpp23-pilot-log-v2
+0726-drop-vulkan-backend
+0727-cpp23-wave2-bump-and-dict
+0728-native-build-sunset
+0729-cpp23-wave3-bundle
+0730-vmafx-tune-go-stage2
+0731-cpp23-wave3-part-b
+0733-cpp23-wave4-output-writers
+0735-cpp23-wave5-bundle
+0738-bump-cuda-133-r610-local
+0744-cuda-ms-ssim-adm-cm-ncu-driven-perf
+0746-cuda-integer-adm3-aim-parity
+0749-sunset-legacy-vmaf-feature-extractor
+0750-cuda-ms-ssim-decimate-adm-cm-measure
+0775-dnn-ort-audit
+0810-adr-0108-compliance-audit-2026-05-29

@@ -1,0 +1,1 @@
+| [ADR-0726](0726-drop-vulkan-backend.md) | Drop Vulkan backend entirely from VMAFX: remove kernel sources, Volk, meson options, CI lanes, and all Vulkan-specific ADR references | Accepted | vulkan, gpu, backend, build, breaking, fork-local |

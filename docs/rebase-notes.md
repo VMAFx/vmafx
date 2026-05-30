@@ -40372,15 +40372,9 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
 
-## ADR-0795 — prev_ref thread-safety hardening — 2026-05-29
+## ADR index sync — 20 missing rows (2026-05-29)
 
-No rebase impact: all changes are in `core/src/libvmaf.c` (comments, a rename
-from `fex` to `shared_fex`, and a defensive `assert`). No logic change; no new
-symbols; no API change. The modified functions (`threaded_extract_func`,
-`threaded_extract_batch_func`) are fork-local dispatch paths not present in
-upstream Netflix/vmaf.
-
-Fork-local files:
-`core/src/libvmaf.c` (comments + assert),
-`docs/adr/0795-prev-ref-thread-safety.md`,
-`changelog.d/fixed/prev-ref-batch-thread-safety.md`.
+no rebase impact: REASON — changes are confined to `docs/adr/README.md`
+(regenerated from fragments), `docs/adr/_index_fragments/_order.txt` (20
+slug appends), 18 new fragment files under `docs/adr/_index_fragments/`,
+and one `changelog.d` entry. No upstream Netflix/vmaf file is touched.

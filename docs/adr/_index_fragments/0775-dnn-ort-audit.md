@@ -1,0 +1,1 @@
+| [ADR-0775](0775-dnn-ort-audit.md) | DNN ORT backend audit: documents thread-safety gaps, missing error propagation, and EP-fallback handling; no code changes, used as research baseline | Accepted | dnn, onnx, ort, thread-safety, correctness, fork-local, research |

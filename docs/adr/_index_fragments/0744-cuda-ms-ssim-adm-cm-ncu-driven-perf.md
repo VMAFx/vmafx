@@ -1,0 +1,1 @@
+| [ADR-0744](0744-cuda-ms-ssim-adm-cm-ncu-driven-perf.md) | CUDA `adm_cm` `__launch_bounds__(128,8)` register reduction (ncu-driven); `ms_ssim_decimate` smem tiling reverted as net regression | Accepted | cuda, performance, adm, ms_ssim, occupancy |

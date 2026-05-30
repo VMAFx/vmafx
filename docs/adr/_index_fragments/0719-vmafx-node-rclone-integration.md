@@ -1,0 +1,1 @@
+| [ADR-0719](0719-vmafx-node-rclone-integration.md) | vmafx-node rclone integration: bundle rclone into node image for remote-asset streaming without disk materialisation; rclone-config secret wired through Helm | Accepted | architecture, go, node, rclone, storage, ffmpeg, phase4b, fork-local |
