@@ -40397,3 +40397,15 @@ resolution is mechanical: if Netflix upstream still has the legacy assertions
 they were calibrated against `float_ansnr` output that this fork no longer
 produces — keep the skips. If Netflix upstream removes the legacy assertions
 themselves (matching this fork's direction), drop the local skips.
+
+## pyright-strict-audit (2026-05-30, ADR-0888)
+
+no rebase impact: REASON — all touched files are fork-added Python sources
+under `ai/src/` and `tools/vmaf-tune/src/` (and the `CodecAdapter` Protocol
+in `tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py`, also fork-added).
+No upstream Netflix/vmaf file is touched. The annotation tightening
+(`TYPE_CHECKING` torch import, `assert`-based Optional narrowing, `cast`
+through stub gaps, dropped dead Optional comparisons) does not change runtime
+behaviour — all 12 fixes are pure type-checker compliance. The audit's
+companion file `pyrightconfig.audit.json` is intentionally gitignored so this
+PR doesn't introduce a CI gate before the long-tail cleanup is done.

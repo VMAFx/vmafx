@@ -448,7 +448,9 @@ def _try_nr_early_elimination_on_yuv(
         nr_score = result.nr_score
     except NRProxyBackendError as exc:
         _log.debug(
-            "fast-nr: NR inference failed for %s: %s — falling through to FR", distorted_yuv, exc
+            "fast-nr: NR inference failed for %s: %s — falling through to FR",
+            distorted_yuv,
+            exc,
         )
         return None
 
@@ -649,7 +651,9 @@ def bisect_target_vmaf(
             # and distorted decodes can coexist. A pre-decoded/raw source
             # already occupies the reference side, so each iteration needs
             # only the distorted decode plus normal file overhead.
-            if _yuv_est_bytes is not None and workdir_path is not None:
+            # ``workdir_path`` is bound on every branch of the
+            # if/else above, so a None-check would be dead code.
+            if _yuv_est_bytes is not None:
                 _ctx = f"{codec} @ VMAF {target_vmaf:g}, iteration {n_iterations}"
                 _space_err = _check_disk_space(
                     workdir_path,
@@ -1265,11 +1269,12 @@ def make_bisect_predicate(
         # whenever ``compare_codecs`` calls us (it always supplies the
         # current target). We keep the closure default for callers that
         # bind the predicate directly without ``compare_codecs``.
-        target = (
-            runtime_target_vmaf
-            if not (runtime_target_vmaf is None or math.isnan(runtime_target_vmaf))
-            else target_vmaf
-        )
+        # ``runtime_target_vmaf`` is typed ``float`` so ``is None`` is
+        # statically impossible; NaN is the only way the predicate could
+        # ever request the closure default. Keeping the NaN branch is
+        # still meaningful — callers can signal "use my bound default"
+        # by passing ``float('nan')``.
+        target = runtime_target_vmaf if not math.isnan(runtime_target_vmaf) else target_vmaf
         result = bisect_target_vmaf(
             src,
             codec,

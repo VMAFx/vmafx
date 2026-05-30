@@ -653,8 +653,16 @@ def _saliency_was_applied(original_req: "EncodeRequest", enc: "EncodeResult") ->
     request, we inspect the result's ``request`` (which is the augmented one
     that ``run_encode`` received) for known ROI token prefixes.
     """
-    augmented_params = enc.request.extra_params if enc is not None else ()
-    roi_prefixes = ("-x264-params", "-x265-params", "-svtav1-params", "-vvenc-params", "-qpfile")
+    # ``enc`` is typed non-Optional so the dead-code ``None`` guard is
+    # dropped; ``enc.request`` is always present.
+    augmented_params = enc.request.extra_params
+    roi_prefixes = (
+        "-x264-params",
+        "-x265-params",
+        "-svtav1-params",
+        "-vvenc-params",
+        "-qpfile",
+    )
     return any(p in augmented_params for p in roi_prefixes)
 
 

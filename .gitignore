@@ -153,3 +153,9 @@ testdata/ref_2560x1440_48f.yuv
 testdata/dis_2560x1440_48f.yuv
 testdata/bbb/ref_3840x2160_30f.yuv
 testdata/bbb/dis_3840x2160_30f.yuv
+
+# Pyright strict-audit config (ADR-0888). Intentionally local-only —
+# shipping it would surface ~1,600 stub-cascade errors as a CI gate
+# before the long-tail cleanup is done. Operators re-run with
+# `pyright -p pyrightconfig.audit.json --outputjson <pkg>/`.
+pyrightconfig.audit.json

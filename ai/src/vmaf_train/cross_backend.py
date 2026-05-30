@@ -117,11 +117,22 @@ def compare_backends(
 
     cpu_sess = ort.InferenceSession(str(model_path), providers=[CPU_PROVIDER])
     cpu_input_name = cpu_sess.get_inputs()[0].name
-    cpu_out = cpu_sess.run(None, {cpu_input_name: x})[0]
+    # ORT's session.run() returns a union (ndarray | OrtValue | SparseTensor |
+    # list | dict); for a single dense FP regressor output we know it is
+    # ``np.ndarray`` and narrow accordingly so downstream ``.astype`` resolves.
+    cpu_out_raw = cpu_sess.run(None, {cpu_input_name: x})[0]
+    assert isinstance(
+        cpu_out_raw, np.ndarray
+    ), f"unexpected ORT CPU output type {type(cpu_out_raw).__name__}"
+    cpu_out: np.ndarray = cpu_out_raw
 
     for ep in runnable:
         sess = ort.InferenceSession(str(model_path), providers=[ep])
-        out = sess.run(None, {sess.get_inputs()[0].name: x})[0]
+        out_raw = sess.run(None, {sess.get_inputs()[0].name: x})[0]
+        assert isinstance(
+            out_raw, np.ndarray
+        ), f"unexpected ORT {ep} output type {type(out_raw).__name__}"
+        out: np.ndarray = out_raw
         diff = np.abs(out.astype(np.float64) - cpu_out.astype(np.float64))
         report.comparisons.append(
             BackendComparison(

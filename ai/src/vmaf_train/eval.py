@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 
@@ -22,8 +23,7 @@ class EvalReport:
 
     def pretty(self) -> str:
         return (
-            f"n={self.n:>6}  PLCC={self.plcc:+.4f}  "
-            f"SROCC={self.srocc:+.4f}  RMSE={self.rmse:.4f}"
+            f"n={self.n:>6}  PLCC={self.plcc:+.4f}  SROCC={self.srocc:+.4f}  RMSE={self.rmse:.4f}"
         )
 
 
@@ -32,8 +32,11 @@ def correlations(pred: np.ndarray, target: np.ndarray) -> EvalReport:
         raise ValueError("pred and target must be 1-D arrays of matching shape")
     from scipy.stats import pearsonr, spearmanr  # local import
 
-    plcc = float(pearsonr(pred, target).statistic)
-    srocc = float(spearmanr(pred, target).statistic)
+    # scipy returns *RResult dataclasses with ``.statistic`` / ``.pvalue``
+    # at runtime but the bundled pyright stubs don't expose those attrs;
+    # cast through Any so strict typecheck accepts the documented API.
+    plcc = float(cast(Any, pearsonr(pred, target)).statistic)
+    srocc = float(cast(Any, spearmanr(pred, target)).statistic)
     rmse = float(np.sqrt(((pred - target) ** 2).mean()))
     return EvalReport(plcc=plcc, srocc=srocc, rmse=rmse, n=pred.shape[0])
 

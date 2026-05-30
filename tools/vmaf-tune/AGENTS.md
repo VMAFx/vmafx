@@ -388,8 +388,9 @@ for the option-space digest.
   on their adapter (today: `X264Adapter`, returning
   `('-pass', str(N), '-passlogfile', str(path))`, and `X265Adapter`,
   returning `('-x265-params', f'pass={N}:stats={path}')`). The encode driver
-  (`encode.py`) calls the adapter via `getattr(adapter, "supports_two_pass", False)`
-  + `adapter.two_pass_args(...)` — it never branches on codec name.
+  (`encode.py`) calls the adapter via `getattr(adapter,
+  "supports_two_pass", False)` + `adapter.two_pass_args(...)` — it
+  never branches on codec name.
   `EncodeRequest` carries `pass_number: int = 0` (0 = single-pass /
   default; 1 / 2 = pass index) and `stats_path: Path | None = None`.
   `build_ffmpeg_command` redirects pass-1 output to `-f null -` so
@@ -667,6 +668,7 @@ ADR-0237 follow-up promoting the corresponding phase.
   codec name in `corpus.py` / `encode.py` / `score.py`; route via
   the adapter. New codecs are one-file additions under
   `codec_adapters/`.
+
 - **The QSV adapters share `_qsv_common.py`.** Three encoders with
   identical parameter shape (preset vocabulary, ICQ
   `global_quality` window) is a deliberate exception to the
@@ -710,7 +712,7 @@ ADR-0237 follow-up promoting the corresponding phase.
   `tests/test_corpus.py` and `tests/test_codec_adapter_qsv.py`
   will silently stop covering the path.
 
-## Phase scope
+## Phase scope (codec registry)
 
 Phase A (the original scaffold): grid sweep + JSONL emit, x264
 only. ADR-0281 added the three QSV codec adapters as a one-file
@@ -915,7 +917,6 @@ tree without an ADR-0237 follow-up promoting the corresponding phase.
   one — the encoder won't emit a parseable stats file outside
   ``-pass 1`` mode.
 
-
 ## Sidecar (ADR-0325) rebase-sensitive invariants
 
 - **`FEATURE_DIM = 14` and the column order in
@@ -982,6 +983,7 @@ canonical `encoder` / `crf` / `vmaf_score` /
 `bitrate_kbps` rows and historical hardware-sweep `codec` / `q` /
 `vmaf` / `actual_kbps` aliases; do not reintroduce external conversion
 scripts for those local corpora.
+
 - **`corpus.py` uses `aiutils` helpers for file hashing and timestamps.**
   `_sha256_file` (imported as `aiutils.file_utils.sha256`) and `_utc_now_iso`
   (imported as `aiutils.time_utils.now_iso_8601`) replace the formerly
@@ -1193,3 +1195,32 @@ scripts for those local corpora.
   as label-only annotation; they do not influence the encode loop. Do
   not short-circuit `_run_compare` before the format-validation block
   (the format guard still applies). Tests: `tests/test_compare_no_bisect.py`.
+- **`CodecAdapter` Protocol must declare every field every concrete
+  adapter relies on (ADR-0888).** `codec_adapters/__init__.py` declares
+  the `CodecAdapter` `typing.Protocol`; every concrete adapter
+  (`X264Adapter`, `LibaomAdapter`, NVENC / AMF / QSV / VideoToolbox /
+  VVenC / SvtAv1 / libvpx) implements the contract. When adding a
+  new field to *every* concrete adapter — most recently the
+  `presets: tuple[str, ...]` field consumed by
+  `ladder._default_sampler_preset` — promote it to the Protocol in the
+  same change. A concrete-only field that callers reach via
+  `getattr(adapter, "presets")` silently drops type safety and pyright
+  flags every cross-adapter call site. The Protocol is also the spec
+  for the `_REGISTRY: dict[str, CodecAdapter]` table; pyright variance
+  rules require the Protocol fields to be `Final` / read-only iff every
+  adapter uses a frozen dataclass — track that audit separately if a
+  new mutable-field adapter ever lands.
+- **`_ladder_point_from_row` returns a union the annotation hides
+  (ADR-0888).** `tools/vmaf-tune/src/vmaftune/ladder.py` documents that
+  `UncertaintyLadderPoint` is deliberately NOT a subclass of
+  `LadderPoint` (the "subclassing would require runtime isinstance
+  gymnastics" comment). The function returns either type at runtime
+  based on whether the row carries a `vmaf_interval`; downstream tests
+  (`test_ladder.py::test_build_ladder_default_sampler_preserves_vmaf_interval`)
+  assert the runtime variant. The return annotation is kept as the
+  narrower `LadderPoint` with an explicit `cast` because widening the
+  whole `Ladder.points` chain cascades through the public ladder API
+  (`build_ladder`, `make_default_sampler`, `select_knees`,
+  `convex_hull`). If a future change does promote the union into the
+  public surface, lift the `cast` and audit every `Ladder.points`
+  consumer for `isinstance` discriminators.
