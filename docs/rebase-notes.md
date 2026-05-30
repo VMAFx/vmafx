@@ -42998,6 +42998,25 @@ Fork-local files:
 `core/src/feature/arm64/ssimulacra2_host_neon.c`,
 `changelog.d/fixed/simd-float-adm-dwt2-unchecked-aligned-malloc.md`.
 
+## ai/ tempfile + path-safety bandit sweep — 2026-05-30
+
+no rebase impact: REASON — every touched file lives under `ai/scripts/`
+or `ai/tests/`, all of which are wholly fork-local (Netflix upstream
+ships no tiny-AI training, dataset acquisition, or ONNX export
+pipeline). No upstream Netflix/vmaf file is touched. Fork-local files:
+`ai/scripts/bvi_dvc_to_full_features.py`,
+`ai/scripts/konvid_to_full_features.py`,
+`ai/scripts/export_tiny_models.py`,
+`ai/scripts/export_u2netp_mirror.py`,
+`ai/scripts/export_vmaf_tiny_v{2,3,4}.py`,
+`ai/scripts/fetch_konvid_1k.py`,
+`ai/scripts/fetch_youtube_ugc_subset.py`,
+`ai/tests/test_corpus_base.py`,
+`ai/tests/test_feature_extractor_defaults.py`,
+`ai/tests/test_merge_corpora.py`,
+`ai/tests/test_train_predictor_v2_realcorpus.py`,
+`changelog.d/security/ai-tempfile-and-path-safety.md`.
+
 ## Go controller / server / MCP test coverage expansion (2026-05-30)
 
 No rebase impact: all touched files are fork-added Go tests under `cmd/` —

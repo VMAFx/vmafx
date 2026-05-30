@@ -396,7 +396,7 @@ def test_download_clip_success(tmp_path: Path) -> None:
     assert dest.is_file()
 
 
-def test_download_clip_no_url() -> None:
-    ok, reason = download_clip(url="", dest=Path("/tmp/noop.mp4"))
+def test_download_clip_no_url(tmp_path: Path) -> None:
+    ok, reason = download_clip(url="", dest=tmp_path / "noop.mp4")
     assert ok is False
     assert "no-url" in reason

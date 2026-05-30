@@ -73,6 +73,13 @@ def _download(url: str, dst: Path, min_bytes: int) -> Path:
         print(f"[konvid] {dst.name} already present ({_humanize(dst.stat().st_size)}) — skipping")
         return dst
 
+    # Defensive scheme guard: VIDEOS_URL / METADATA_URL are module-level
+    # literals today, but assert anyway so future refactors that thread
+    # URLs from CLI args don't silently allow file:// or other custom
+    # schemes (bandit B310).
+    if not url.startswith(("http://", "https://")):
+        raise ValueError(f"refusing non-http(s) URL scheme: {url!r}")
+
     print(f"[konvid] fetching {url}")
     # The mmsp-kn.de TLS cert was observed expired 2026-04-25; the host
     # is the canonical academic source for this dataset. Falling back to
@@ -83,7 +90,9 @@ def _download(url: str, dst: Path, min_bytes: int) -> Path:
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     req = urllib.request.Request(url, headers={"User-Agent": "vmaf-fork/fetch_konvid_1k.py"})
-    with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+    # nosec B310: scheme is restricted to http(s) above; URL provenance
+    # is the hardcoded VIDEOS_URL / METADATA_URL module constants.
+    with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:  # nosec B310
         total = int(resp.headers.get("Content-Length", 0))
         bytes_so_far = 0
         last_print = time.monotonic()

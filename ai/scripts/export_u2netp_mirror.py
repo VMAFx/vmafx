@@ -112,7 +112,12 @@ def _load_checkpoint(path: Path) -> dict[str, Any]:
     try:
         loaded = torch.load(path, map_location="cpu", weights_only=True)
     except TypeError:
-        loaded = torch.load(path, map_location="cpu")
+        # nosec B614: TypeError only fires on torch <1.13 which lacks the
+        # weights_only kwarg; the fallback path is hit by developer-side
+        # legacy installs only. The trust boundary is "upstream u2netp
+        # checkpoint already vetted by export_u2netp_mirror's caller" —
+        # the path comes from a `--upstream-dir` CLI flag, not user input.
+        loaded = torch.load(path, map_location="cpu")  # nosec B614
     if isinstance(loaded, dict) and "state_dict" in loaded:
         loaded = loaded["state_dict"]
     if not isinstance(loaded, dict):

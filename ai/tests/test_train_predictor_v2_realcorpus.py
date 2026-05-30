@@ -251,7 +251,7 @@ def test_render_report_carries_gate_constants() -> None:
         n_rows_total=100,
         n_distinct_sources=5,
         failure_reasons=(),
-        corpus_provenance=("/tmp/c.jsonl",),
+        corpus_provenance=("fixtures/c.jsonl",),
     )
     report = trainer.render_report([result], corpus_files=[])
     assert report["gate"]["mean_plcc_threshold"] == 0.95

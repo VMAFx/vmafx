@@ -48,7 +48,12 @@ C3_INPUT_HW = 224
 def _load_lightning_ckpt(model_cls, ckpt: Path):  # type: ignore[no-untyped-def]
     import torch
 
-    state = torch.load(ckpt, map_location="cpu", weights_only=False)
+    # nosec B614: Lightning checkpoints store hyper_parameters as plain
+    # Python objects alongside tensors, so weights_only=True rejects them
+    # with UnpicklingError. The trust boundary is "ckpt produced by our
+    # own training runs under runs/" — same pattern as the export_vmaf_tiny_v{2,3,4}
+    # scripts. Path is a CLI arg from the developer, not network input.
+    state = torch.load(ckpt, map_location="cpu", weights_only=False)  # nosec B614
     hp = state.get("hyper_parameters", {}) or {}
     model = model_cls(**hp)
     model.load_state_dict(state["state_dict"])

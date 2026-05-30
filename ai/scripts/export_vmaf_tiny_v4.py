@@ -161,7 +161,10 @@ def main(argv: list[str] | None = None) -> int:
 
     import torch
 
-    state = torch.load(args.ckpt, map_location="cpu", weights_only=False)
+    # nosec B614: weights_only=False is required because the .pt stores
+    # scaler stats + train metrics + features tuple in plain Python types.
+    # Trust boundary: developer-supplied --ckpt produced by train_predictor_v4.py.
+    state = torch.load(args.ckpt, map_location="cpu", weights_only=False)  # nosec B614
     features = state["features"]
     in_dim = len(features)
     mean = np.asarray(state["input_mean"], dtype=np.float64)
