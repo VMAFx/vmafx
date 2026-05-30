@@ -16,10 +16,10 @@ cube root (accuracy ~7e-7) and a 1024-entry LUT for the EOTF
 (accuracy ~5e-7, LUT values committed as hardcoded hex-float
 literals by the `scripts/gen_ssimulacra2_eotf_lut.py` generator).
 No runtime libc dependency for transcendentals, so the tight
-`places=4` gate holds within each CPU-family baseline. The 576x324
-fixture currently has separate x86_64 and arm64/aarch64 baselines
-because the fork has architecture-specific SSIMULACRA 2 paths; the
-160x90 tail fixture is shared.
+`places=4` gate holds across CPU families. The 576x324 and 160x90
+fixtures use a single shared baseline: the ADR-0891 FMA unification
+(round-2) ensures all paths (scalar, AVX2, AVX-512, NEON, SVE2)
+produce bit-identical output.
 """
 
 import json
@@ -50,7 +50,7 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
         # available for future divergence but return one shared dict.
         _machine = platform.machine().lower()  # noqa: F841 — kept for future arch divergence
         return {
-            "mean": 24.613842,
+            "mean": 24.614428,  # Updated: ADR-0891 FMA unification (round-2)
             "min": 13.816480,
             "max": 49.955009,
             "harmonic_mean": 22.904087,
@@ -132,7 +132,9 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
         pooled = result["pooled_metrics"]["ssimulacra2"]
         frames = result["frames"]
         self.assertEqual(len(frames), 48)
-        self.assertAlmostEqual(pooled["mean"], 77.693109, places=4)
+        self.assertAlmostEqual(
+            pooled["mean"], 77.692804, places=4
+        )  # Updated: ADR-0891 FMA unification (round-2)
         self.assertAlmostEqual(pooled["min"], 72.806309, places=4)
         self.assertAlmostEqual(pooled["max"], 86.795857, places=4)
         self.assertAlmostEqual(frames[0]["metrics"]["ssimulacra2"], 86.795857, places=4)
