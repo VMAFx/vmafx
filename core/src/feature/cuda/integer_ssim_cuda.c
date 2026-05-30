@@ -55,6 +55,11 @@ typedef struct SsimStateCuda {
      * template's readback bundle. */
     VmafCudaKernelReadback rb;
 
+    /* PTX module backing the SSIM kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB per init/close cycle (see
+     * `core/src/cuda/AGENTS.md` lifecycle invariants + ADR-0356). */
+    CUmodule module;
     CUfunction func_horiz_8;
     CUfunction func_horiz_16;
     CUfunction func_vert;
@@ -167,14 +172,14 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
 
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, ssim_score_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, ssim_score_ptx), fail);
     CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_horiz_8, module, "calculate_ssim_horiz_8bpc"), fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_horiz_16, module, "calculate_ssim_horiz_16bpc"), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_vert, module, "calculate_ssim_vert_combine"),
+        cu_f, cuModuleGetFunction(&s->func_horiz_8, s->module, "calculate_ssim_horiz_8bpc"), fail);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_horiz_16, s->module, "calculate_ssim_horiz_16bpc"),
                     fail);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->func_vert, s->module, "calculate_ssim_vert_combine"), fail);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
@@ -352,6 +357,9 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     SsimStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state ? fex->cu_state->f : NULL;
+    if (cu_f && s->module)
+        (void)cu_f->cuModuleUnload(s->module);
 
     int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
 
