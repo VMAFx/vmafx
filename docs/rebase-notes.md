@@ -40424,6 +40424,31 @@ Fork-local files:
 `docs/adr/0795-prev-ref-thread-safety.md`,
 `changelog.d/fixed/prev-ref-batch-thread-safety.md`.
 
+## ADR-0887 — vmaf_model_destroy slopes-OOB fix — 2026-05-30
+
+Low rebase impact, but not zero. Touches two upstream-mirrored files:
+
+- `core/src/read_json_model.c` — adds `sync_n_features` helper, replaces
+  `parse_feature_names`' unconditional `n_features++` with a per-iteration
+  `sync_n_features(model, i)` call, adds the same call to `parse_slopes` /
+  `parse_intercepts` / `parse_feature_opts_dicts`, and inserts
+  `validate_feature_arrays` before `parse_model_dict` returns.
+- `core/src/model.c::vmaf_model_destroy` — flips the destroy walk bound
+  from `max(feature_cap, n_features)` to `min(feature_cap, n_features)`.
+
+On upstream sync, if Netflix has independently changed `parse_feature_names`
+or `vmaf_model_destroy`, take the upstream changes for unrelated lines and
+re-apply this fork's hunks (the new `sync_n_features` helper, the
+`validate_feature_arrays` call, and the `min` bound in destroy). Upstream
+Netflix does not currently have this validation pass, so a conflict means
+upstream changed an adjacent surface — re-applying the fork's hunks
+post-upstream is mechanical.
+
+Fork-local files (no rebase impact): `docs/adr/0887-*.md`,
+`docs/research/0887-*.md`, `core/test/test_model.c` regression tests,
+`changelog.d/fixed/vmaf-model-destroy-slopes-oob.md`,
+`docs/state.md` row.
+
 ## macOS CI ansnr-residual cleanup (ADR-0749 follow-up, 2026-05-30)
 
 no rebase impact: REASON — changes are confined to fork-mirrored upstream test

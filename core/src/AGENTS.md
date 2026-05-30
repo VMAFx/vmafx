@@ -123,3 +123,34 @@ When porting an upstream Netflix/vmaf commit that modifies the original
 `libvmaf/src/metadata_handler.c`, apply the diff content to
 `core/src/metadata_handler.cpp` (C code is valid C++; the `extern "C"` block
 in the header stays). Run `make test-netflix-golden` post-port.
+
+### 10. `read_json_model.c` — `n_features` / `feature_cap` invariant (ADR-0887)
+
+Every per-feature walker (`parse_slopes`, `parse_intercepts`,
+`parse_feature_opts_dicts`, `parse_feature_names`) must call
+`sync_n_features(model, i)` so `model->n_features` is the max-merge of every
+walker's per-iteration high-water mark. The contract checked by
+`validate_feature_arrays` at end of `parse_model_dict` is:
+
+- For every slot `[0, n_features)`, `feature[i].name` must be non-NULL
+  (only `parse_feature_names` populates names).
+- `feature_cap >= n_features` is guaranteed by `ensure_feature_capacity`
+  inside every walker.
+
+Do not:
+- Reintroduce unconditional `model->n_features++` in `parse_feature_names`
+  (the prior shape double-counted on fuzzer-mangled JSON with repeated
+  `feature_names` keys; ADR-0887 reproducer).
+- Add a new per-feature walker without calling `sync_n_features`. Even if
+  the walker only touches an existing per-slot field (e.g. a future
+  `feature[i].chroma_correction`), `feature_cap` and `n_features` will
+  drift without the sync.
+- Loosen the `validate_feature_arrays` rejection back to a warning.
+  Surfacing the contract violation as `-EINVAL` at parse time is the
+  ADR-0887 invariant that prevents the OOB-read shape from re-emerging in
+  `vmaf_model_destroy`.
+
+When porting an upstream Netflix/vmaf commit that modifies
+`libvmaf/src/read_json_model.c` or `libvmaf/src/model.c::vmaf_model_destroy`,
+keep both the `sync_n_features` calls and the `min(feature_cap, n_features)`
+bound in destroy; re-apply the fork's hunks on top of any upstream changes.
