@@ -98,6 +98,11 @@ typedef struct CambiStateCuda {
     /* CUDA lifecycle (stream + events). */
     VmafCudaKernelLifecycle lc;
 
+    /* PTX module backing the cambi kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB per init/close cycle (see
+     * `core/src/cuda/AGENTS.md` lifecycle invariants + ADR-0356). */
+    CUmodule module;
     /* CUDA kernel function handles (loaded from cambi_score.cu). */
     CUfunction func_mask;
     CUfunction func_decimate;
@@ -434,15 +439,16 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail_cuda);
     ctx_pushed = 1;
 
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, cambi_score_ptx), fail_cuda);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_mask, module, "cambi_spatial_mask_kernel"),
-                    fail_cuda);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_decimate, module, "cambi_decimate_kernel"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, cambi_score_ptx), fail_cuda);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_mask, s->module, "cambi_spatial_mask_kernel"),
                     fail_cuda);
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter_mode, module, "cambi_filter_mode_kernel"),
+                    cuModuleGetFunction(&s->func_decimate, s->module, "cambi_decimate_kernel"),
                     fail_cuda);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->func_filter_mode, s->module, "cambi_filter_mode_kernel"),
+        fail_cuda);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
     ctx_pushed = 0;
 
@@ -968,6 +974,9 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     CambiStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state ? fex->cu_state->f : NULL;
+    if (cu_f && s->module)
+        (void)cu_f->cuModuleUnload(s->module);
     int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
 
     if (s->d_image) {
