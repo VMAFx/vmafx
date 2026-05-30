@@ -6,6 +6,33 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## ansnr-sunset-adr-authoring (2026-05-30, ADR-0865)
+
+**Files touched:**
+- `docs/adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md` (new)
+- `docs/adr/_index_fragments/0865-ansnr-sunset-pre-vmaf-metric-drop.md` (new)
+- `docs/adr/_index_fragments/_order.txt`
+- `docs/adr/README.md` (regenerated)
+- `docs/state.md`
+- `docs/rebase-notes.md`
+- `changelog.d/changed/ansnr-sunset-adr-authoring.md` (new)
+
+**Rebase impact:** None. Pure docs PR. The ANSNR drop itself (PR #38, merged
+2026-05-28) is the load-bearing change against upstream Netflix/vmaf — but
+that delete pre-dates this PR. This PR only adds the missing ADR + index row
+that PR #38 should have shipped under the ADR-0108 six-deliverables rule
+(PR #38 incorrectly cited the Phase 4b umbrella ADR-0709 instead of authoring
+a dedicated decision record).
+
+Upstream Netflix/vmaf still ships `ansnr` / `float_ansnr` extractors in their
+C tree (they ship the legacy SVM runner as historical scaffolding). On future
+upstream sync the upstream `.c` files for ansnr will reappear in patch context;
+the fork must continue to delete them. This ADR is the documentation backstop
+for that delete decision so the rebase contributor knows the delete is
+intentional, not an oversight.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
