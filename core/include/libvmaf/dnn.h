@@ -324,10 +324,13 @@ VMAF_EXPORT int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *i
                                      size_t n_inputs, VmafDnnOutput *outputs, size_t n_outputs);
 
 /**
- * Release a session handle previously opened by
- * @ref vmaf_dnn_session_open. Passing NULL is a no-op.
+ * Close a standalone DNN session and release all owned resources. Tears down
+ * the ONNX Runtime session, releases input/output binding caches, and frees
+ * the handle. Safe to call with a NULL @p sess. After this call any pointer
+ * cached from @ref vmaf_dnn_session_attached_ep is invalidated. Pair with
+ * every successful @ref vmaf_dnn_session_open.
  *
- * @param sess  session handle to release.
+ * @param sess Session handle from @ref vmaf_dnn_session_open. NULL is a no-op.
  */
 VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
 
