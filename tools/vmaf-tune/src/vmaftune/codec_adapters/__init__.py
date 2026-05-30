@@ -69,6 +69,13 @@ class CodecAdapter(Protocol):
     quality_range: tuple[int, int]
     quality_default: int
     invert_quality: bool
+    # The encoder's named preset tuple — e.g. ``("ultrafast", "fast",
+    # "medium", "slow", "veryslow")`` for x264 — surfaced through the
+    # ladder / sampler default-preset picker (see ``ladder.py``).
+    # Every concrete adapter declares this; promoting it to the Protocol
+    # so callers like ``_default_sampler_preset`` typecheck without
+    # ``getattr`` indirection.
+    presets: tuple[str, ...]
     # Bumps when the adapter's argv shape / preset list / quality
     # window changes — see ADR-0298 (vmaf-tune cache key).
     adapter_version: str

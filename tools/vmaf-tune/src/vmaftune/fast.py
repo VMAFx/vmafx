@@ -300,6 +300,12 @@ def _run_tpe(
     """Run the Optuna TPE search; return (recommended_crf, vmaf, kbps, trials)."""
     if time_budget_s is not None and time_budget_s <= 0.0:
         raise ValueError(f"time_budget_s must be > 0 when set; got {time_budget_s!r}")
+    # Cross-procedural narrowing: callers gate every fast-path entry on
+    # ``_require_optuna()`` which raises when the optional dep is
+    # missing, so by the time we land here ``optuna`` is bound. The
+    # assert is the cheapest way to surface that invariant to pyright
+    # (and to fail loud if a future caller skips ``_require_optuna``).
+    assert optuna is not None, "optuna not installed; call _require_optuna() first"
     objective = _objective_factory(target_vmaf, predictor, crf_range)
 
     # Suppress Optuna's default INFO-level chatter; the CLI is the

@@ -73,6 +73,7 @@ import math
 import tempfile
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
+from typing import cast
 
 from .uncertainty import ConfidenceDecision, ConfidenceThresholds, classify_interval
 
@@ -393,7 +394,17 @@ def _default_sampler(
 
 
 def _ladder_point_from_row(width: int, height: int, row: dict) -> "LadderPoint":
-    """Build a ladder point from a corpus row, preserving intervals if present."""
+    """Build a ladder point from a corpus row, preserving intervals if present.
+
+    When the row carries a ``vmaf_interval`` (conformal CV+ pipeline) the
+    runtime return is an :class:`UncertaintyLadderPoint`, which is *not*
+    a :class:`LadderPoint` subclass (see that class's docstring for the
+    rationale). The annotation is kept as ``LadderPoint`` because the
+    downstream :class:`Ladder.points` tuple is typed that way and
+    callers structurally consume only the LadderPoint-shaped fields;
+    the broader union would cascade through the public ladder API. The
+    cast tells the type-checker about the controlled widening.
+    """
     base = {
         "width": width,
         "height": height,
@@ -403,10 +414,13 @@ def _ladder_point_from_row(width: int, height: int, row: dict) -> "LadderPoint":
     }
     interval = row.get("vmaf_interval")
     if isinstance(interval, dict) and "low" in interval and "high" in interval:
-        return UncertaintyLadderPoint(
-            **base,
-            vmaf_low=float(interval["low"]),
-            vmaf_high=float(interval["high"]),
+        return cast(
+            "LadderPoint",
+            UncertaintyLadderPoint(
+                **base,
+                vmaf_low=float(interval["low"]),
+                vmaf_high=float(interval["high"]),
+            ),
         )
     return LadderPoint(**base)
 

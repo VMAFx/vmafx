@@ -43283,3 +43283,15 @@ with upstream (`python/test/requirements.txt`) gained a `>=7.1.0` floor on
 `pytest-cov` which is purely additive over upstream's bare `pytest-cov`
 line. On rebase, keep the bumped floor; if upstream introduces its own
 ceiling on `pytest-cov`, intersect rather than overwrite.
+
+## pyright-strict-audit (2026-05-30, ADR-0888)
+
+no rebase impact: REASON — all touched files are fork-added Python sources
+under `ai/src/` and `tools/vmaf-tune/src/` (and the `CodecAdapter` Protocol
+in `tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py`, also fork-added).
+No upstream Netflix/vmaf file is touched. The annotation tightening
+(`TYPE_CHECKING` torch import, `assert`-based Optional narrowing, `cast`
+through stub gaps, dropped dead Optional comparisons) does not change runtime
+behaviour — all 12 fixes are pure type-checker compliance. The audit's
+companion file `pyrightconfig.audit.json` is intentionally gitignored so this
+PR doesn't introduce a CI gate before the long-tail cleanup is done.

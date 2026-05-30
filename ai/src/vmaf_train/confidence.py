@@ -17,11 +17,15 @@ hard samples:
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from torch import Tensor
 
 MIN_LOGVAR = -6.0  # σ ≥ exp(-3) ≈ 0.05 MOS units, keeps NLL from diverging
 
 
-def gaussian_nll(pred: "Tensor", target: "Tensor", logvar: "Tensor") -> "Tensor":  # noqa: F821
+def gaussian_nll(pred: "Tensor", target: "Tensor", logvar: "Tensor") -> "Tensor":
     """Per-sample Gaussian NLL with a soft floor on logvar.
 
     The constant 0.5 * log(2π) is omitted: it is independent of the

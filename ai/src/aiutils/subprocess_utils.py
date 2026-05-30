@@ -5,10 +5,7 @@
 from __future__ import annotations
 
 import subprocess
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
+from typing import Any, cast
 
 
 def run_cmd(
@@ -17,8 +14,8 @@ def run_cmd(
     capture: bool = False,
     check: bool = True,
     timeout: float | None = None,
-    **kwargs: object,
-) -> subprocess.CompletedProcess:
+    **kwargs: Any,
+) -> subprocess.CompletedProcess[Any]:
     """Run a subprocess command with standard error handling.
 
     Args:
@@ -29,10 +26,14 @@ def run_cmd(
             Pass False to inspect returncode manually.
         timeout: Optional timeout in seconds. Raises TimeoutExpired on breach.
         **kwargs: Additional keyword arguments forwarded to subprocess.run().
+            Typed as :class:`Any` because ``subprocess.run`` is an
+            overload-heavy passthrough; we forward verbatim and let the
+            ``subprocess`` stubs validate at the call boundary.
 
     Returns:
         CompletedProcess instance. When capture=True, stdout and stderr are
-        available as strings on the returned object.
+        available as strings on the returned object; otherwise as bytes —
+        which is why the generic parameter is :class:`Any`.
 
     Raises:
         subprocess.CalledProcessError: If check=True and the command exits non-zero.
@@ -42,4 +43,11 @@ def run_cmd(
     if capture:
         kwargs.setdefault("capture_output", True)
         kwargs.setdefault("text", True)
-    return subprocess.run(cmd, check=check, timeout=timeout, **kwargs)
+    # Cast through CompletedProcess[Any]: the runtime ``mode`` (text vs.
+    # bytes) is decided by the ``text``/``capture`` kwargs the caller
+    # passes, which the overload chain can't reconcile against a
+    # ``**kwargs: Any`` forward.
+    return cast(
+        "subprocess.CompletedProcess[Any]",
+        subprocess.run(cmd, check=check, timeout=timeout, **kwargs),
+    )

@@ -727,7 +727,7 @@ ADR-0237 follow-up promoting the corresponding phase.
   `tests/test_corpus.py` and `tests/test_codec_adapter_qsv.py`
   will silently stop covering the path.
 
-## Phase scope
+## Phase scope (codec registry)
 
 Phase A (the original scaffold): grid sweep + JSONL emit, x264
 only. ADR-0281 added the three QSV codec adapters as a one-file
@@ -1220,3 +1220,32 @@ scripts for those local corpora.
   `EncodeCache.put` blob commit), prefer `tmp_path.replace(dst)` over
   `os.replace(tmp_path, dst)` — they are semantically identical, just
   the pathlib-method form.
+- **`CodecAdapter` Protocol must declare every field every concrete
+  adapter relies on (ADR-0888).** `codec_adapters/__init__.py` declares
+  the `CodecAdapter` `typing.Protocol`; every concrete adapter
+  (`X264Adapter`, `LibaomAdapter`, NVENC / AMF / QSV / VideoToolbox /
+  VVenC / SvtAv1 / libvpx) implements the contract. When adding a
+  new field to *every* concrete adapter — most recently the
+  `presets: tuple[str, ...]` field consumed by
+  `ladder._default_sampler_preset` — promote it to the Protocol in the
+  same change. A concrete-only field that callers reach via
+  `getattr(adapter, "presets")` silently drops type safety and pyright
+  flags every cross-adapter call site. The Protocol is also the spec
+  for the `_REGISTRY: dict[str, CodecAdapter]` table; pyright variance
+  rules require the Protocol fields to be `Final` / read-only iff every
+  adapter uses a frozen dataclass — track that audit separately if a
+  new mutable-field adapter ever lands.
+- **`_ladder_point_from_row` returns a union the annotation hides
+  (ADR-0888).** `tools/vmaf-tune/src/vmaftune/ladder.py` documents that
+  `UncertaintyLadderPoint` is deliberately NOT a subclass of
+  `LadderPoint` (the "subclassing would require runtime isinstance
+  gymnastics" comment). The function returns either type at runtime
+  based on whether the row carries a `vmaf_interval`; downstream tests
+  (`test_ladder.py::test_build_ladder_default_sampler_preserves_vmaf_interval`)
+  assert the runtime variant. The return annotation is kept as the
+  narrower `LadderPoint` with an explicit `cast` because widening the
+  whole `Ladder.points` chain cascades through the public ladder API
+  (`build_ladder`, `make_default_sampler`, `select_knees`,
+  `convex_hull`). If a future change does promote the union into the
+  public surface, lift the `cast` and audit every `Ladder.points`
+  consumer for `isinstance` discriminators.

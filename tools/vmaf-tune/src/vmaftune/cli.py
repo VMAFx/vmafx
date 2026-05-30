@@ -20,7 +20,7 @@ import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from . import __version__
 from .bisect import bisect_target_vmaf
@@ -2866,7 +2866,7 @@ def _resolve_compare_source_geometry(
     framerate_was_default: bool,
     duration_was_default: bool,
     probe_fn: object | None = None,
-    warn_stream: object | None = None,
+    warn_stream: TextIO | None = None,
 ) -> tuple[int | None, int | None, float, float]:
     """Reconcile user-supplied geometry with an ffprobe of a container source.
 
@@ -3490,6 +3490,10 @@ def _write_compare_profile_report(
         sweep_targets = tuple(float(t) for t in sweep_report.target_vmafs)
         target_vmaf = float(sweep_targets[0]) if sweep_targets else float(args.target_vmaf)
     else:
+        # The XOR-style guard above means ``comparison_report`` is bound
+        # whenever ``sweep_report`` is None; the assert tells the
+        # type-checker (and guards against a future signature drift).
+        assert comparison_report is not None
         codec_rows = tuple(
             _codec_row_from_json(r.to_row(float(comparison_report.target_vmaf)))
             for r in comparison_report.rows
