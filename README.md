@@ -5,6 +5,8 @@
 [![Security Scans](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
 [![libvmaf Build Matrix](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
 [![FFmpeg Integration](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
+[![Rust CI](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
+[![Go CI](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
 [![License: BSD-3-Clause+Patent](https://img.shields.io/badge/License-BSD--3--Clause--Plus--Patent-blue.svg)](LICENSE)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/VMAFx/vmafx/badge)](https://securityscorecards.dev/viewer/?uri=github.com/VMAFx/vmafx)
