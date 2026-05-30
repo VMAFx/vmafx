@@ -123,3 +123,24 @@ When porting an upstream Netflix/vmaf commit that modifies the original
 `libvmaf/src/metadata_handler.c`, apply the diff content to
 `core/src/metadata_handler.cpp` (C code is valid C++; the `extern "C"` block
 in the header stays). Run `make test-netflix-golden` post-port.
+
+### 10. Out-parameter init functions must clear the caller's handle on every failure path
+
+Functions with the shape `int X_init(X **out, ...)` that publish the
+allocation via the caller's `*out` must guarantee `*out == NULL` on any
+non-success return — including failure paths that take an internal `goto`
+and free the object before returning. The trap is the combined-assignment
+idiom `X *const p = *out = malloc(...);` which publishes the pointer to
+the caller *before* later `goto free_*` paths free it.
+
+If the caller stores the handle in a long-lived context (e.g.
+`VmafContext.cuda.ring_buffer`), the natural teardown (`vmaf_close()` →
+`X_close(*out)`) will then UAF on the freed object. The fix is mechanical:
+set `*out = NULL` after every `free()` in the failure-cleanup chain (and
+explicitly on the early-malloc-failure path even though the assignment
+already stored NULL there). The contract this pins is: "caller may inspect
+`*out` only on success; a non-zero return guarantees `*out == NULL`."
+
+Pattern: see `vmaf_gpu_picture_pool_init` in
+[`gpu_picture_pool.c`](gpu_picture_pool.c). Regression test:
+`core/test/test_gpu_picture_pool_uaf.c`.

@@ -53,9 +53,20 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
 
     int err = 0;
 
+    /* The combined assignment `*const p = *pool = malloc(...)` publishes the
+     * pointer to the caller's *pool argument *before* any later failure
+     * path. If a subsequent step (pthread_mutex_init / pic-array malloc /
+     * alloc_picture_callback) fails we free(p), but unless we also clear
+     * *pool the caller is left with a dangling pointer that the natural
+     * vmaf_close() teardown then double-frees via
+     * vmaf_gpu_picture_pool_close(). Set *pool = NULL on every failure
+     * label so the caller can safely treat a non-zero return as
+     * "pool not constructed". */
     VmafGpuPicturePool *const p = *pool = malloc(sizeof(*p));
-    if (!p)
+    if (!p) {
+        *pool = NULL;
         goto fail;
+    }
     memset(p, 0, sizeof(*p));
     p->cfg = cfg;
 
@@ -78,6 +89,7 @@ free_pic:
     free(p->pic);
 free_p:
     free(p);
+    *pool = NULL;
 fail:
     return err;
 }

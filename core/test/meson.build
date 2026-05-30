@@ -687,6 +687,18 @@ test_locale_handling = executable('test_locale_handling',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
 )
 
+# CPU-only regression test for the vmaf_gpu_picture_pool_init() UAF
+# (caller's *pool was left dangling on failure paths). Built on every
+# matrix entry — not gated by enable_cuda — so a future regression on
+# the pure-C init shape is caught even when no GPU backend is in scope.
+test_gpu_picture_pool_uaf = executable('test_gpu_picture_pool_uaf',
+    ['test.c', 'test_gpu_picture_pool_uaf.c', '../src/gpu_picture_pool.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+)
+test('test_gpu_picture_pool_uaf', test_gpu_picture_pool_uaf, suite : ['fast'])
+
 if get_option('enable_cuda')
 test_gpu_picture_pool = executable('test_gpu_picture_pool',
     ['test.c', 'test_gpu_picture_pool.c', '../src/gpu_picture_pool.c', '../src/cuda/picture_cuda.c'],
