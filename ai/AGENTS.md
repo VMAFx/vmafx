@@ -775,6 +775,31 @@ threshold). When extending these scripts:
   line, no header. Changing the format without a migration breaks
   in-progress runs. The `_load_done_set()` / `_append_done()` helpers are
   the single-exit-point for reads and writes; add any format change there.
+- **`.done` is the authoritative ledger; parquet row count must match
+  on restart (ADR-0862).** The restart no-op branch in `main()`
+  compares `len(done_set)` against `_parquet_row_count(args.out)` plus
+  any rows recovered from the JSONL staging file, and raises
+  `RuntimeError` on mismatch instead of silently writing
+  `status=complete-noop` and returning 0. Do not weaken this check to
+  a warning, do not auto-truncate `.done`, and do not skip it under
+  any `--allow-*` flag — silent confirmation of a row deficit is the
+  exact failure mode this guard prevents (Bug-3 RCA 2026-05-30 lost
+  ~92 K rows). The end-of-run write path has a matching
+  `len(rows) == len(recovered_rows) + ok` assert; preserve it through
+  any future refactor of the `as_completed` accounting loop.
+- **fsync parquet before unlinking staging (ADR-0862).** Both the
+  no-op branch and the end-of-run write path call
+  `_fsync_path(args.out)` AFTER the parquet rename(2) and BEFORE
+  `staging_path.unlink(missing_ok=True)`. The helper fsyncs the file
+  and its parent directory so the rename(2) is durable before the
+  companion unlink can race ahead of it on power loss. Do not reorder
+  these calls or drop the `fsync` — the staging-as-WAL design depends
+  on the parquet being durable when the WAL is discarded.
+- **JSONDecodeError surface (ADR-0862).** `_load_staging_rows`
+  reports the count of malformed lines to stderr as a WARNING.
+  Do not revert this to silent `continue`: a truncated-tail
+  staging file is a leading indicator that a worker died mid-write,
+  and the operator needs to know.
 - **Gitignore:** `runs/full_features_k150k.parquet` and
   `runs/k150k_extract.log` are gitignored (152K-clip output is not tracked).
   Do not commit these files.

@@ -863,10 +863,17 @@ def _append_row_to_staging(staging_path: Path, row: dict) -> None:
 
 
 def _load_staging_rows(staging_path: Path) -> list[dict]:
-    """Load all rows from the JSONL staging file, skipping malformed lines."""
+    """Load all rows from the JSONL staging file, skipping malformed lines.
+
+    Malformed lines are tolerated (a crash can truncate the in-flight final
+    line) but the count is reported via WARNING so an operator can detect
+    catastrophic staging corruption rather than have it silently swallowed
+    (see ADR for k150k crash-restart row loss).
+    """
     if not staging_path.is_file():
         return []
     rows: list[dict] = []
+    skipped = 0
     with staging_path.open("r", encoding="utf-8") as fh:
         for raw in fh:
             raw = raw.strip()
@@ -875,7 +882,16 @@ def _load_staging_rows(staging_path: Path) -> list[dict]:
             try:
                 rows.append(json.loads(raw))
             except json.JSONDecodeError:
+                skipped += 1
                 continue
+    if skipped:
+        print(
+            f"[k150k] WARNING: skipped {skipped} malformed line(s) in "
+            f"staging file {staging_path}; recovered {len(rows)} row(s). "
+            f"If skipped is large, operator should re-extract affected clips.",
+            file=sys.stderr,
+            flush=True,
+        )
     return rows
 
 
@@ -894,6 +910,38 @@ def _write_parquet_from_rows(rows: list[dict], out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(tmp, index=False)
     tmp.rename(out_path)
+
+
+def _fsync_path(path: Path) -> None:
+    """Best-effort fsync of a file and its parent directory.
+
+    Called before unlinking the JSONL staging file so a power-loss between
+    parquet rename(2) and staging unlink(2) cannot leave us with neither
+    the parquet nor the staging.  Errors are non-fatal (e.g. tmpfs, FUSE)
+    but logged for diagnosis.
+    """
+    try:
+        if path.is_file():
+            fd = os.open(str(path), os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        # Also fsync the parent directory so rename(2) is durable.
+        parent = path.parent
+        if parent.is_dir():
+            dfd = os.open(str(parent), os.O_RDONLY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+    except OSError as exc:
+        print(
+            f"[k150k] WARNING: fsync of {path} failed: {exc}; "
+            f"durability not guaranteed on this filesystem.",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 def _parquet_row_count(path: Path) -> int:
@@ -1311,7 +1359,35 @@ def main() -> int:
         recovered_rows = _load_staging_rows(staging_path)
         if recovered_rows:
             _write_parquet_from_rows(recovered_rows, args.out)
+            # fsync parquet before unlinking the staging file so a power-loss
+            # between rename(2) and unlink(2) cannot leave us with neither.
+            _fsync_path(args.out)
             staging_path.unlink(missing_ok=True)
+        # ------------------------------------------------------------------
+        # Consistency check: the .done checkpoint is the authoritative ledger
+        # of which clips have been processed.  If the parquet (+ any staging
+        # rows recovered above) has fewer rows than .done claims, a previous
+        # run lost data — refuse to silently no-op, or the operator will
+        # never notice the gap.  See ADR k150k-crash-restart-row-loss.
+        # ------------------------------------------------------------------
+        parquet_rows = _parquet_row_count(args.out)
+        # When recovered_rows was non-empty, _write_parquet_from_rows above
+        # has already merged-and-deduped recovered rows into the parquet,
+        # so parquet_rows already accounts for them; otherwise we still
+        # tolerate len(recovered_rows) extra rows as a margin.
+        accounted = parquet_rows if recovered_rows else parquet_rows + len(recovered_rows)
+        if len(done_set) > accounted:
+            missing = len(done_set) - accounted
+            raise RuntimeError(
+                f"[k150k] CONSISTENCY ERROR: .done lists {len(done_set)} "
+                f"completed clip(s) but parquet has only {parquet_rows} "
+                f"row(s) (+{len(recovered_rows)} recovered from staging). "
+                f"{missing} clip(s) appear to have been lost by a prior "
+                f"crash mid-write. Operator must re-extract them: remove "
+                f"the affected entries from {done_path} (or delete it to "
+                f"re-extract everything) and re-run. "
+                f"See ADR k150k-crash-restart-row-loss-consistency-check."
+            )
         _write_extraction_manifest(
             manifest_out=args.manifest_out,
             args=args,
@@ -1403,7 +1479,27 @@ def main() -> int:
     # Write parquet exactly once at the end (Research-0135 Win 1).
     # Include both newly-processed rows and any rows recovered from the staging file.
     if rows:
+        # Sanity check: row accounting must balance.
+        # rows = recovered_rows (loaded above) + newly produced ok rows.
+        # Failures don't append rows, so total ok = ok counter.
+        expected = len(recovered_rows) + ok
+        if len(rows) != expected:
+            raise RuntimeError(
+                f"[k150k] CONSISTENCY ERROR at end-of-run: produced "
+                f"{len(rows)} row(s) but accounting expected "
+                f"{expected} (= {len(recovered_rows)} recovered + "
+                f"{ok} new ok). fail={fail}. Refusing to write parquet "
+                f"with mismatched bookkeeping; the staging file at "
+                f"{staging_path} is preserved for forensic recovery. "
+                f"See ADR k150k-crash-restart-row-loss-consistency-check."
+            )
         _write_parquet_from_rows(rows, args.out)
+        # Fsync the parquet (and its parent dir) BEFORE unlinking staging.
+        # Otherwise a power-loss between rename(2) and unlink(2) can leave
+        # the directory entry pointing at a 0-byte parquet and the staging
+        # file gone — exactly the failure class this whole code path
+        # exists to prevent.
+        _fsync_path(args.out)
         # Clean up the staging file now that the parquet is durable.
         staging_path.unlink(missing_ok=True)
 
