@@ -32,12 +32,17 @@ jobs:
 
       - name: Build and install libvmaf (CPU only)
         run: |
+          # --libdir=lib: meson on Ubuntu defaults to multiarch
+          # (/usr/local/lib/x86_64-linux-gnu/), but vmafx-sys/build.rs and the
+          # downstream link step search /usr/local/lib directly. Pin the
+          # single-arch path so the `.so` lands where the linker looks.
           meson setup build-ci core \
             -Denable_cuda=false \
             -Denable_sycl=false \
             -Denable_hip=false \
             -Denable_avx512=false \
-            --prefix /usr/local
+            --prefix /usr/local \
+            --libdir lib
           ninja -C build-ci
           sudo ninja -C build-ci install
           sudo ldconfig
