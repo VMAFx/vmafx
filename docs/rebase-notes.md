@@ -6,6 +6,21 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## ide-lint-config-adr-0700-paths (2026-05-30, ADR-0700)
+
+**Files touched:** `.vscode/c_cpp_properties.json`, `.zed/settings.json`,
+`.github/CODEOWNERS`, `.clang-tidy`, `.dockerignore`, `.gitignore`.
+
+**Rebase impact:** None. All six are fork-local config files; upstream
+Netflix/vmaf does not ship `.vscode/`, `.zed/`, `CODEOWNERS`,
+`.dockerignore`, or the same `.clang-tidy` profile, and the upstream
+`.gitignore` does not include the fork's `subprojects/` extraction
+rules. The change is a mechanical `libvmaf/` → `core/` substitution
+inside paths/regexes that the ADR-0700 rename missed. No upstream sync
+will conflict on these hunks.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

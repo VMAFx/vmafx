@@ -29,9 +29,9 @@ runs/
 build*/
 build-*/
 build_*/
-libvmaf/build*/
-libvmaf/build-*/
-libvmaf/build_*/
+core/build*/
+core/build-*/
+core/build_*/
 
 # Python virtual environments
 .venv*/
