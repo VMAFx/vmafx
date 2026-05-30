@@ -279,6 +279,18 @@ libvmaf/
   / `_avx512` / `_neon`. See
   [`docs/rebase-notes.md` §0049](../docs/rebase-notes.md).
 
+- **float_adm dispatch table primed by `adm_prime_simd_dispatch()` in `float_adm.c` init()** (fork-local,
+  PR #116 F1). The four float-ADM SIMD kernels (dwt2, csf, csf_den_scale, sum_cube) are
+  wired via a static `AdmSimdDispatch` table in `src/feature/adm_tools.c`, initialised once
+  by `adm_init_simd_dispatch()`. `adm_prime_simd_dispatch()` is the public entry point called
+  from `float_adm.c:init()` to pre-warm the table at extractor init time (following the
+  `integer_motion_v2.c:311-333` pattern). On future upstream syncs: do not remove the
+  `adm_prime_simd_dispatch()` call from `float_adm.c:init()` — without it, dispatch falls
+  back to scalar on the first `compute_adm()` call and re-initialises per-call instead.
+  ADR-0418 / ADR-0214 numeric contracts apply: dwt2 and csf are bit-exact; csf_den_scale
+  and sum_cube accumulate in double and are within 1e-5 relative tolerance of the scalar
+  reference.
+
 - **icpx-aware clang-tidy wrapper for SYCL TUs** (fork-local,
   [ADR-0217](../docs/adr/0217-sycl-toolchain-cleanup.md)).
   [`scripts/ci/clang-tidy-sycl.sh`](../scripts/ci/clang-tidy-sycl.sh)
@@ -457,6 +469,7 @@ the corrected methodology.
   — `enable_avx512=true` with `enable_asm=false` issues a warning (no-op, not an error);
   — `enable_hipcc=true` with `enable_hip=false` issues a warning (no-op, not an error).
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
+<<<<<<< HEAD
 
 - **C→C++23 conversion safety invariants** (adversarial review 2026-05-28,
   `docs/research/cpp23-wave-adversarial-review-20260528.md`):
@@ -512,6 +525,8 @@ the corrected methodology.
   The legacy path (`VmafFeatureExtractor`, line ~301) retains the mapping as
   documented debt — tracked as T-LEGACY-RUNNER-ANSNR-BROKEN in `docs/state.md`.
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ## Performance benchmark invariant (ADR-0752)
 
