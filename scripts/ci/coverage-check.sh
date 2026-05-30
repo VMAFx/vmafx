@@ -45,8 +45,20 @@ declare -A PER_FILE_MIN=(
   # adding tests just to inflate this number would be code-shaped padding,
   # not real correctness coverage. Distinct from opt.c / read_json_model.c
   # which parse user-supplied input and are properly security-critical.
-  # ADR-0114 baseline 10%; ratcheted +5pp to 15% by ADR-0922 (2026-05-31).
-  ["core/src/dnn/tiny_extractor_template.h"]=15
+  #
+  # Ratcheted 10 → 75 on 2026-05-30 (ADR-0881): the live coverage on this
+  # file climbed to 77.4 % once `feature_lpips.c`, `fastdvdnet_pre.c`,
+  # `feature_mobilesal.c`, and `feature_transnet_v2.c` all landed, each
+  # instantiating a different subset of the inline helpers. The 10 % cap
+  # was set when only one consumer existed and ~90 % of the helpers were
+  # uncalled. With four consumers the realistic floor is ~75 % (2.4 pp
+  # slack against the 77.4 % measurement, mirroring the ~1.3 pp slack
+  # ADR-0114 used for ort_backend.c). ADR-0881 also codifies the audit
+  # rule: "tighten when actual exceeds override by >5 pp; keep at-cap
+  # entries; remove when actual ≥ global 85 % floor."
+  # ADR-0922 (2026-05-31) then applied its +5pp ratchet on top; the net
+  # floor is 75 (the ADR-0881 value dominates the ADR-0922 +5pp increment).
+  ["core/src/dnn/tiny_extractor_template.h"]=75
 )
 
 if ! command -v python3 >/dev/null; then

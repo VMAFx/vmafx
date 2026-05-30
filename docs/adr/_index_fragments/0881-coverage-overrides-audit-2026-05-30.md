@@ -1,0 +1,1 @@
+| [ADR-0881](0881-coverage-overrides-audit-2026-05-30.md) | Coverage-overrides audit: tighten `tiny_extractor_template.h` 10 % → 75 % (67 pp slack recovered); codify tighten/keep/remove rule + quarterly audit cadence | Accepted | 2026-05-30 | ci, coverage, dnn, gate, audit, adr-0114 |

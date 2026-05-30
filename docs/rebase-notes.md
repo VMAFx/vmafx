@@ -43166,3 +43166,15 @@ Fork-local files:
 
 no rebase impact: release-tooling-only change (`release-please-config.json`
 `"draft": true`). No C sources, headers, or test logic modified.
+
+## Coverage-overrides audit — tighten tiny_extractor_template.h (ADR-0881, 2026-05-30)
+
+no rebase impact: REASON — changes are confined to fork-only files:
+`scripts/ci/coverage-check.sh` (fork-only CI gate), the new
+`docs/adr/0881-*.md` ADR, the new `docs/research/0881-*.md` digest, the
+ADR index fragment under `docs/adr/_index_fragments/`, and the
+`changelog.d/changed/` fragment. The threshold ratchet only tightens an
+existing override (10 → 75) — does not introduce a new path Netflix
+upstream might also override. Future audits per the codified rule (see
+ADR-0881 §Decision) are also fork-only since `coverage-check.sh` itself
+is fork-only (Netflix upstream has no equivalent gate).

@@ -701,3 +701,4 @@
 0978-vmafx-server-bug-audit
 0980-markdown-lint-full-ruleset-discharge
 0983-gosec-findings-fix-sweep
+0881-coverage-overrides-audit-2026-05-30
