@@ -46,6 +46,11 @@ typedef struct VifStateCuda {
     VifBufferCuda buf;
     CUevent event, finished;
     CUstream str;
+    /* PTX module backing the filter1d kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB per init/close cycle (see
+     * `core/src/cuda/AGENTS.md` lifecycle invariants + ADR-0356). */
+    CUmodule filter1d_module;
     /* Engine-scope fence batching opt-in flag (T-GPU-OPT-1, ADR-0242). */
     bool drained;
     bool debug;
@@ -135,50 +140,55 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail);
-    // make this static
-    CUmodule filter1d_module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&filter1d_module, filter1d_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->filter1d_module, filter1d_ptx), fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_8_vertical_kernel_uint32_t_17_9,
-                                        filter1d_module,
+                                        s->filter1d_module,
                                         "filter1d_8_vertical_kernel_uint32_t_17_9"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_8_horizontal_kernel_2_17_9,
-                                        filter1d_module, "filter1d_8_horizontal_kernel_2_17_9"),
+                                        s->filter1d_module, "filter1d_8_horizontal_kernel_2_17_9"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_17_9_0,
-                                        filter1d_module,
+                                        s->filter1d_module,
                                         "filter1d_16_vertical_kernel_uint2_17_9_0"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_9_5_1,
-                                        filter1d_module, "filter1d_16_vertical_kernel_uint2_9_5_1"),
+                                        s->filter1d_module,
+                                        "filter1d_16_vertical_kernel_uint2_9_5_1"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_5_3_2,
-                                        filter1d_module, "filter1d_16_vertical_kernel_uint2_5_3_2"),
+                                        s->filter1d_module,
+                                        "filter1d_16_vertical_kernel_uint2_5_3_2"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_3_0_3,
-                                        filter1d_module, "filter1d_16_vertical_kernel_uint2_3_0_3"),
+                                        s->filter1d_module,
+                                        "filter1d_16_vertical_kernel_uint2_3_0_3"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_17_9_0,
-                                        filter1d_module, "filter1d_16_horizontal_kernel_2_17_9_0"),
+                                        s->filter1d_module,
+                                        "filter1d_16_horizontal_kernel_2_17_9_0"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_9_5_1,
-                                        filter1d_module, "filter1d_16_horizontal_kernel_2_9_5_1"),
+                                        s->filter1d_module,
+                                        "filter1d_16_horizontal_kernel_2_9_5_1"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_5_3_2,
-                                        filter1d_module, "filter1d_16_horizontal_kernel_2_5_3_2"),
+                                        s->filter1d_module,
+                                        "filter1d_16_horizontal_kernel_2_5_3_2"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_3_0_3,
-                                        filter1d_module, "filter1d_16_horizontal_kernel_2_3_0_3"),
+                                        s->filter1d_module,
+                                        "filter1d_16_horizontal_kernel_2_3_0_3"),
                     fail);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
@@ -653,6 +663,11 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     int _cuda_err = 0;
     CHECK_CUDA_GOTO(fex->cu_state->f, cuStreamSynchronize(s->str), after_sync);
 after_sync:
+    /* Unload the PTX module loaded by `init_fex_cuda` before tearing
+     * the stream down — see the `filter1d_module` field comment in the
+     * state struct for the leak rationale. */
+    if (s->filter1d_module)
+        (void)fex->cu_state->f->cuModuleUnload(s->filter1d_module);
     CHECK_CUDA_GOTO(fex->cu_state->f, cuStreamDestroy(s->str), after_stream);
 after_stream:
     CHECK_CUDA_GOTO(fex->cu_state->f, cuEventDestroy(s->event), after_ev1);
