@@ -117,8 +117,6 @@ jobs:
           - os: ubuntu-latest
             CC: ccache gcc
             CXX: ccache g++
-            vulkan: true
-            meson_extra: -Denable_vulkan=enabled
             name: Build — Ubuntu Vulkan (T5-1b runtime)
 
           # --- macOS Vulkan via MoltenVK (ADR-0338, advisory) ---
@@ -144,7 +142,6 @@ jobs:
             CC: ccache clang
             CXX: ccache clang++
             moltenvk: true
-            meson_extra: -Denable_vulkan=enabled
             experimental: true
             name: Build — macOS Vulkan via MoltenVK (advisory)
 

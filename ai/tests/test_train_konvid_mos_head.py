@@ -711,7 +711,7 @@ def test_smoke_run_produces_allowlist_conformant_onnx(tmp_path: Path) -> None:
     model = onnx_pkg.load(str(onnx_path))
     onnx_pkg.checker.check_model(model)
     ops = {n.op_type for n in model.graph.node}
-    allowlist_text = (REPO_ROOT / "libvmaf" / "src" / "dnn" / "op_allowlist.c").read_text()
+    allowlist_text = (REPO_ROOT / "core" / "src" / "dnn" / "op_allowlist.c").read_text()
     for op in ops:
         assert f'"{op}"' in allowlist_text, f"op {op} missing from op_allowlist.c"
 

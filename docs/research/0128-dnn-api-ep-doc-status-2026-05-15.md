@@ -13,11 +13,7 @@ execution-provider surface accurately?
 
 No. The page still described the early DNN runtime where `AUTO` was CPU-only,
 OpenVINO / ROCm were accepted but ignored, and `fp16_io` was a ghost field.
-<<<<<<< HEAD
 Current `core/include/libvmaf/dnn.h` and `core/src/dnn/ort_backend.c`
-=======
-Current `core/include/core/dnn.h` and `core/src/dnn/ort_backend.c`
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 show a broader runtime:
 
 - `AUTO` tries CUDA, OpenVINO GPU, ROCm, CoreML, then CPU.
@@ -43,9 +39,5 @@ the API page was the stale user-facing surface.
 
 ```bash
 rg -n 'VMAF_DNN_DEVICE_|try_append_openvino|try_append_rocm|try_append_coreml|fp16_io' \
-<<<<<<< HEAD
     core/include/libvmaf/dnn.h core/src/dnn/ort_backend.c docs/api/dnn.md
-=======
-    core/include/core/dnn.h core/src/dnn/ort_backend.c docs/api/dnn.md
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 ```

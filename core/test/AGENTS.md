@@ -34,6 +34,15 @@ and teardown.
 
 ## Ground rules
 
+- **GPU tests must skip gracefully when no device is present.** Any test that
+  calls `vmaf_cuda_state_init`, `vmaf_hip_state_init`, or equivalent GPU-init
+  helpers must check the return value before proceeding. On failure (`err != 0`
+  or returned pointer is NULL), emit `[skip: no CUDA/HIP/Vulkan device]` to
+  stderr and `return NULL` — do not hard-fail via `mu_assert`. Replacing a
+  hard-fail `mu_assert` with a skip guard is a one-line pattern; see
+  `test_cuda_buffer_alloc_oom.c` and `test_cuda_pic_preallocation.c` for
+  reference. **Rebase-sensitive**: any new GPU test that lacks this guard will
+  SIGSEGV on CPU-only CI runners.
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md)).
 - **POSIX-only APIs in tests** must be shimmed for MINGW. See
   [test_lpips.c](test_lpips.c) for the `_putenv_s`-based shim for

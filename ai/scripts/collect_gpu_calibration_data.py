@@ -91,13 +91,11 @@ BACKEND_SUFFIX: dict[str, str] = {
     "cpu": "",
     "cuda": "_cuda",
     "sycl": "_sycl",
-    "vulkan": "_vulkan",
 }
 
 BACKEND_DEVICE_FLAG: dict[str, str] = {
     "cuda": "--gpumask",
     "sycl": "--sycl_device",
-    "vulkan": "--vulkan_device",
 }
 
 # ``--smoke`` mode: smallest viable training set per Research-0041
@@ -112,7 +110,7 @@ SMOKE_FEATURES: tuple[str, ...] = (
     "float_ssim",
     "psnr_hvs",
 )
-SMOKE_BACKENDS: tuple[str, ...] = ("vulkan",)
+SMOKE_BACKENDS: tuple[str, ...] = ("cuda",)
 SMOKE_FRAME_LIMIT: int = 100
 
 
@@ -360,7 +358,6 @@ def _write_manifest(
             "devices": {
                 "cuda": int(args.cuda_device),
                 "sycl": int(args.sycl_device),
-                "vulkan": int(args.vulkan_device),
             },
         },
     )
@@ -382,7 +379,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--bitdepth", type=int, default=8)
     ap.add_argument(
         "--arch-id",
-        default="vulkan:0x10005:lavapipe",
+        default="cuda:default",
         help=(
             "stable per-(backend,device) identifier — see Research-0041 "
             '§ "Per-arch detection mechanism". Default targets Mesa lavapipe.'
@@ -400,7 +397,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         nargs="+",
         default=None,
         choices=[b for b in BACKEND_SUFFIX if b != "cpu"],
-        help="GPU backends to pair against CPU (default: vulkan only)",
+        help="GPU backends to pair against CPU (default: cuda only)",
     )
     ap.add_argument(
         "--frame-limit",
@@ -410,7 +407,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     ap.add_argument("--cuda-device", type=int, default=1)
     ap.add_argument("--sycl-device", type=int, default=0)
-    ap.add_argument("--vulkan-device", type=int, default=0)
     ap.add_argument(
         "--workdir",
         type=Path,
@@ -461,7 +457,7 @@ def main(argv: list[str] | None = None) -> int:
         frame_limit = SMOKE_FRAME_LIMIT
     else:
         features = args.features or sorted(FEATURE_METRICS.keys())
-        backends = args.backends or ["vulkan"]
+        backends = args.backends or ["cuda"]
         frame_limit = args.frame_limit
 
     args.workdir.mkdir(parents=True, exist_ok=True)

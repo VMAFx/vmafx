@@ -21,11 +21,7 @@ promotions?
   transport sub-flags as stub-only. It also listed `enable_mcp_sse` as a
   boolean defaulting false, while `core/meson_options.txt` now defines
   it as a feature option defaulting `auto`.
-<<<<<<< HEAD
 - `libvmaf/AGENTS.md` still carried the pre-runtime rebase invariant
-=======
-- `core/AGENTS.md` still carried the pre-runtime rebase invariant
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   saying `src/mcp/mcp.c` was a stub TU whose entry points validate and
   then return `-ENOSYS`.
 
@@ -62,11 +58,7 @@ notes without changing runtime code:
   transport behaviour.
 - `core/meson_options.txt` descriptions stop promising future bodies
   that already landed.
-<<<<<<< HEAD
 - `libvmaf/AGENTS.md` now preserves the actual runtime invariants:
-=======
-- `core/AGENTS.md` now preserves the actual runtime invariants:
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   early argument validation, `compute_vmaf` using an ephemeral
   `VmafContext`, and the default-off umbrella flag until mutating tools
   and the SPSC bridge land.
@@ -83,11 +75,7 @@ notes without changing runtime code:
 ```bash
 rg -n 'every entry point currently returns|Stub-only until T5-2b|all `libvmaf_metal.h` entry points return|all entry points return `-ENOSYS` until|4 consumers registered|Placeholder scoreboard|stubbing out via the placeholder predicate|Large / throughput-bound runs land on Metal once the runtime PR ships|Build — macOS Metal \(T8-1 scaffold\)' \
   docs/api docs/backends docs/development docs/usage docs/ai \
-<<<<<<< HEAD
   core/meson_options.txt libvmaf/AGENTS.md
-=======
-  core/meson_options.txt core/AGENTS.md
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 ```
 
 ## References
