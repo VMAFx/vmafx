@@ -1,6 +1,6 @@
 # ADR-0753: Runtime Resolution-Aware CUDA Kernel Variant Dispatch
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-29
 - **Deciders**: lusoris
 - **Tags**: `cuda`, `perf`, `build`

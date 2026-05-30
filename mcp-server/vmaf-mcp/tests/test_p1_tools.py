@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, patch
 
 import anyio
 import pytest
-
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -49,9 +48,13 @@ def test_list_extractors_fields():
 
 
 def test_list_extractors_known_names():
-    """At minimum the canonical CPU extractors must be present."""
+    """At minimum the canonical CPU extractors must be present.
+
+    float_ansnr was removed from the CPU backend in PR #38 (sunset per
+    ADR-0749); the Vulkan variant `float_ansnr_vulkan` remains.
+    """
     names = {ex["name"] for ex in srv._list_extractors()}
-    for expected in ("float_ansnr", "float_vif", "psnr", "ssim", "vif"):
+    for expected in ("float_vif", "psnr", "ssim", "vif"):
         assert expected in names, f"Expected extractor {expected!r} not found; got {sorted(names)}"
 
 
@@ -65,9 +68,12 @@ def test_list_extractors_backend_tags():
 
 
 def test_list_extractors_cpu_backend_for_cpu_extractors():
-    """float_ansnr / float_vif / ssim are CPU-only and must carry backend='cpu'."""
+    """float_vif / ssim are CPU-only and must carry backend='cpu'.
+
+    float_ansnr removed from CPU backend (PR #38 / ADR-0749).
+    """
     by_name = {ex["name"]: ex for ex in srv._list_extractors()}
-    for cpu_name in ("float_ansnr", "ssim"):
+    for cpu_name in ("float_vif", "ssim"):
         if cpu_name in by_name:
             assert by_name[cpu_name]["backend"] == "cpu", (
                 f"Extractor {cpu_name!r} should be tagged cpu, "

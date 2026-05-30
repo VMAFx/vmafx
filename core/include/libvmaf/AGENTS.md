@@ -17,8 +17,8 @@ libvmaf/include/libvmaf/
   dnn.h                  # tiny-AI session API
   libvmaf_cuda.h         # CUDA backend
   libvmaf_sycl.h         # SYCL backend
-  libvmaf_vulkan.h       # Vulkan backend
   libvmaf_hip.h          # HIP / AMD-ROCm backend (scaffold only)
+  # libvmaf_vulkan.h removed per ADR-0726 (Vulkan backend dropped)
 ```
 
 ## Ground rules
@@ -76,13 +76,13 @@ backend-agnostic `gpu_picture_pool.{c,h}` round-robin
   # Must print 0
   ```
 
-- **Public surface stability**: the four backend headers landed in
+- **Public surface stability**: the backend headers landed in
   this order — `libvmaf_cuda.h` (Netflix upstream, baseline),
   `libvmaf_sycl.h` (fork ADR-0152, T1-7 — SYCL backend scaffold),
-  `libvmaf_vulkan.h` (fork ADR-0175, T5-1 — Vulkan backend
-  scaffold), `libvmaf_hip.h` (fork ADR-0212 / T7-10 — HIP scaffold).
+  `libvmaf_vulkan.h` (fork ADR-0175, T5-1 — REMOVED in ADR-0726),
+  `libvmaf_hip.h` (fork ADR-0212 / T7-10 — HIP scaffold).
   An upstream sync that touches `libvmaf_cuda.h` is *expected*; one
-  that touches the other three would be a mis-merge.
+  that touches `libvmaf_sycl.h` or `libvmaf_hip.h` would be a mis-merge.
 - **Picture preallocation surfaces**: CUDA's
   `VmafCudaPicturePreallocationMethod` ships
   `NONE / DEVICE / HOST / HOST_PINNED`; SYCL + Vulkan ship

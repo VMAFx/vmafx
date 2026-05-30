@@ -152,7 +152,6 @@ PYEOF
 #   CPU:    --no_cuda --no_sycl --no_vulkan
 #   CUDA:   --gpumask=0 --no_sycl --no_vulkan
 #   SYCL:   --sycl_device=0 --no_cuda --no_vulkan
-#   Vulkan: --vulkan_device=0 --no_cuda --no_sycl
 #
 # Verifying engagement after a run: the JSON's `frames[0].metrics`
 # key set differs per backend (CPU 14-15, CUDA 11-12, SYCL ~15,
@@ -161,7 +160,7 @@ PYEOF
 FLAGS_CPU="--no_cuda --no_sycl --no_vulkan"
 FLAGS_CUDA="--gpumask=0 --no_sycl --no_vulkan"
 FLAGS_SYCL="--sycl_device=0 --no_cuda --no_vulkan"
-FLAGS_VULKAN="--vulkan_device=0 --no_cuda --no_sycl"
+# FLAGS_VULKAN removed per ADR-0726
 
 run_test() {
   local tag="$1" ref="$2" dis="$3" w="$4" h="$5" bd="$6"

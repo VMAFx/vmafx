@@ -139,7 +139,7 @@ corresponds to a backend that would otherwise land on CPU / lavapipe
    `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/`, drops anything
    matching `lvp_*` / `lavapipe*`, and pins `VK_DRIVER_FILES` to the
    colon-separated allowlist of real ICDs. Without the rewrite,
-   `vmaf --backend vulkan --vulkan_device 0` selects mesa's lavapipe
+   The Vulkan backend was dropped per ADR-0726.
    software ICD on multi-vendor hosts where lavapipe sorts before the
    real GPU ICDs. Do NOT replace this with a static `ENV
    VK_DRIVER_FILES=…` in the Containerfile — operators on CPU-only

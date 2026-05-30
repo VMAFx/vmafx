@@ -42,7 +42,6 @@ unset VK_ICD_FILENAMES VK_DRIVER_FILES || true
 # ADR-0541: drop the lavapipe software ICD when at least one real GPU ICD
 # is registered. The Vulkan loader enumerates every JSON under
 # /etc/vulkan/icd.d/ + /usr/share/vulkan/icd.d/ in lexicographic order and
-# exposes each as a `VkPhysicalDevice`. `vmaf --vulkan_device 0` picks the
 # first device, which on a stock mesa install is `lvp_icd.json` (lvp_ <
 # nvidia_ < intel_ < radeon_). The user-facing symptom is a `vmaf --backend
 # vulkan` run that lands on lavapipe (software emulation, ~5x slower than

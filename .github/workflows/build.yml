@@ -59,13 +59,11 @@ jobs:
             CXX: ccache g++
             cuda: true
             sycl: true
-            vulkan: true
             hip: true
             dnn: true
             meson_extra: >-
               -Denable_cuda=true -Denable_nvcc=true
               -Denable_sycl=true
-              -Denable_vulkan=enabled
               -Denable_hip=true
               -Denable_dnn=enabled
               -Denable_metal=disabled
@@ -84,7 +82,6 @@ jobs:
             metal: true
             meson_extra: >-
               -Denable_cuda=false -Denable_sycl=false -Denable_hip=false
-              -Denable_vulkan=disabled
               -Denable_metal=enabled
               -Denable_float=true
 
@@ -229,27 +226,8 @@ jobs:
         if: matrix.cuda && !matrix.sycl && startsWith(matrix.os, 'ubuntu')
         run: sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
 
-      # ── Vulkan SDK (Linux) ───────────────────────────────────────────
-      - name: Cache meson subprojects (Vulkan wraps)
-        if: matrix.vulkan
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
-        with:
-          path: core/subprojects/packagecache
-          key: meson-packagecache-vulkan-${{ hashFiles('core/subprojects/*.wrap') }}
-          restore-keys: |
-            meson-packagecache-vulkan-
-
-      - name: Install Vulkan SDK (Linux)
-        if: matrix.vulkan && startsWith(matrix.os, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo -E apt-get -yq install libvulkan-dev vulkan-tools glslang-tools \
-            mesa-vulkan-drivers
-          if ! command -v glslc >/dev/null; then
-            sudo -E apt-get -yq install glslc || sudo -E apt-get -yq install vulkan-sdk
-          fi
-          glslc --version | head -2
-          vulkaninfo --summary || true
+      # Vulkan SDK install + cache steps removed per ADR-0726
+      # (Vulkan backend dropped).
 
       # ── ROCm / HIP (Linux) ───────────────────────────────────────────
       - name: Install ROCm / HIP runtime (Linux)

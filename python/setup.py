@@ -14,8 +14,17 @@ from setuptools import setup
 
 PYTHON_PROJECT = os.path.dirname(os.path.abspath(__file__))
 
-# Real package location after ADR-0700 repo-layout move.
-COMPAT_VMAF = os.path.normpath(os.path.join(PYTHON_PROJECT, "..", "compat", "python-vmaf"))
+# Real package location after ADR-0700 repo-layout move. We need two forms:
+#   - COMPAT_VMAF_REL: relative to PYTHON_PROJECT, used in setup() kwargs
+#     (setuptools rejects absolute paths in package_dir on macOS Clang).
+#   - COMPAT_VMAF: absolute, used for file I/O (get_version, cythonize).
+# Use the `compat/vmaf` symlink rather than the hyphenated `compat/python-vmaf/`
+# directory so Cython can derive a valid module name from the .pyx path
+# (Cython rejects `python-vmaf.core.adm_dwt2_cy` because hyphens are
+# illegal in Python module names; via the symlink it sees
+# `vmaf.core.adm_dwt2_cy`).
+COMPAT_VMAF_REL = os.path.join("..", "compat", "vmaf")
+COMPAT_VMAF = os.path.normpath(os.path.join(PYTHON_PROJECT, COMPAT_VMAF_REL))
 
 
 def get_version():
@@ -41,15 +50,19 @@ class LazyExtensions(list):
             import numpy
             from Cython.Build import cythonize
 
+            # Use the relative path so the resulting Extension's source list
+            # stays relative to setup.py (setuptools rejects absolute paths
+            # in Extension.sources on macOS Clang the same way it does for
+            # package_dir).
             self._extensions = cythonize(
-                [os.path.join(COMPAT_VMAF, "core", "adm_dwt2_cy.pyx")],
+                [os.path.join(COMPAT_VMAF_REL, "core", "adm_dwt2_cy.pyx")],
                 compiler_directives={"language_level": "3"},
             )
             # python/compat/ contains a stub config.h that disables SIMD
             # dispatch (the SIMD .c files are not compiled into this extension).
             self._extensions[0].include_dirs = [
                 numpy.get_include(),
-                os.path.join(PYTHON_PROJECT, "compat"),
+                "compat",
                 "../core/src",
             ]
 
@@ -74,7 +87,7 @@ setup(
     long_description=open(os.path.join(PYTHON_PROJECT, "README.rst")).read(),
     long_description_content_type="text/x-rst",
     url="https://github.com/Netflix/vmaf",
-    package_dir={"vmaf": COMPAT_VMAF},
+    package_dir={"vmaf": COMPAT_VMAF_REL},
     packages=["vmaf", "vmaf.tools", "vmaf.core", "vmaf.script"],
     include_package_data=True,
     install_requires=[
