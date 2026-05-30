@@ -6,16 +6,6 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
-## env-var consolidation + VMAF_SYCL_NO_GRAPH deprecation (2026-05-29, ADR-0841)
-
-No rebase impact: all changes are documentation (`docs/usage/env-vars.md`,
-`docs/server/operator.md`, `mkdocs.yml` nav, `docs/backends/*/overview.md`
-additions) plus a three-line deprecation warning in
-`core/src/sycl/dispatch_strategy.cpp` that is fork-local.  No upstream-shared
-C sources, no public headers, no build system files.
-
----
-
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
@@ -40381,3 +40371,20 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## C++23 Wave 8: read_json_model.c → .cpp (ADR-0846, 2026-05-29)
+
+**Rebase impact: LOW.**
+
+If upstream Netflix/vmaf modifies `libvmaf/src/read_json_model.c` after this PR
+merges, the port path is:
+
+1. Apply the upstream diff to `core/src/read_json_model.cpp` (the active TU).
+2. `core/src/read_json_model.c` still exists on disk but is not compiled — leave
+   it or delete it; do not re-add it to `libvmaf_sources` in `meson.build`.
+3. Any new C-style construct the upstream diff adds (e.g. a new `goto` label,
+   a new `malloc`/`free` pair) should be ported as equivalent C++23 idioms to
+   stay consistent with the Wave 8 style.
+4. No public header (`read_json_model.h`) changes are expected for purely
+   internal parser work; if the upstream diff adds a new public entry point,
+   add the `extern "C"` wrapper in `.cpp` and update `read_json_model.h`.

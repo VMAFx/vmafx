@@ -104,8 +104,16 @@ libvmaf/
   is `push_c()` at entry → body → `pop()` before the `ferror`
   check; dropping the `pop()` leaks a `locale_t` on POSIX and
   leaves the calling thread locked to `"C"` on Windows.
+- **JSON model loader is now `read_json_model.cpp` (ADR-0846 / Wave 8).**
+  The active translation unit is [`src/read_json_model.cpp`](src/read_json_model.cpp),
+  compiled as the isolated `read_json_model_cpp23_lib` static lib
+  (`cpp_std=c++23`).  The original [`src/read_json_model.c`](src/read_json_model.c)
+  is still on disk but is **not compiled** — the `libvmaf_sources` list replaced
+  it with a comment.  Do not re-add `read_json_model.c` to `libvmaf_sources`;
+  doing so produces duplicate-symbol link errors for all four `extern "C"` entry
+  points.  The `.c` file will be deleted in a follow-on cleanup PR.
 - **JSON model loader has no fixed feature/knot schema ceiling.**
-  [`src/read_json_model.c`](src/read_json_model.c) grows
+  [`src/read_json_model.cpp`](src/read_json_model.cpp) grows
   `VmafModel.feature` and `score_transform.knots.list` from the JSON
   payload. Do not restore the old `MAX_FEATURE_COUNT` / `MAX_KNOT_COUNT`
   rejection pattern during an upstream sync; external model JSONs with
@@ -457,6 +465,7 @@ the corrected methodology.
   — `enable_avx512=true` with `enable_asm=false` issues a warning (no-op, not an error);
   — `enable_hipcc=true` with `enable_hip=false` issues a warning (no-op, not an error).
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
+<<<<<<< HEAD
 
 - **C→C++23 conversion safety invariants** (adversarial review 2026-05-28,
   `docs/research/cpp23-wave-adversarial-review-20260528.md`):
@@ -512,6 +521,8 @@ the corrected methodology.
   The legacy path (`VmafFeatureExtractor`, line ~301) retains the mapping as
   documented debt — tracked as T-LEGACY-RUNNER-ANSNR-BROKEN in `docs/state.md`.
   The checks run at configuration time (before `subdir()` calls) to catch misconfigurations early. The principle: every option that depends on another must `error()` on the bad combo, never silently no-op. See [`src/meson.build` lines 100–111, 74–76, 142–144](src/meson.build).
+=======
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
 ## Performance benchmark invariant (ADR-0752)
 

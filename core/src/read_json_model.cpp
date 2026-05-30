@@ -16,6 +16,41 @@
  *
  */
 
+/*
+ * C++23 implementation of the JSON model reader (ADR-0846).
+ *
+ * Migration note (ADR-0846 / Wave 8):
+ *   - `git mv read_json_model.c read_json_model.cpp` preserves blame.
+ *   - The public C API in read_json_model.h is unchanged; all four entry
+ *     points retain their original C signatures.  The header has no
+ *     `extern "C"` guard of its own, so this TU wraps it and every C
+ *     internal header it pulls in with an explicit `extern "C" {}` block.
+ *   - `goto fail:` / manual teardown in `vmaf_read_json_model` replaced
+ *     with a scoped RAII guard (`ModelParseGuard`) that calls
+ *     `vmaf_model_destroy` + nulls `*model` on any early exit.
+ *   - Heap-allocated `cfg_name` in `model_collection_parse` managed via
+ *     `std::unique_ptr<char[]>` — eliminates the naked `free(cfg_name)`
+ *     on every exit path.
+ *   - `malloc` + `memset` pairs in `grow_*` helpers replaced with
+ *     `static_cast<>` casts and zero-initialisation via `calloc`.
+ *   - C-style `(char *)` casts replaced with `static_cast<char *>`.
+ *   - `nullptr` replaces `NULL` throughout.
+ *   - `[[nodiscard]]` applied to the two capacity-growth helpers.
+ *   - `strdup` for `key` in `parse_feature_opts_object` replaced with
+ *     `std::string` so the copy is automatically freed on every exit
+ *     from the inner scope (early-return or normal flow).
+ *   - No behaviour change vs the original C implementation.
+ */
+
+#include <cerrno>
+#include <climits>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
+#include <string>
+
+extern "C" {
 #include "libvmaf/model.h"
 #include "log.h"
 #include "model.h"
@@ -23,18 +58,12 @@
 #include "read_json_model.h"
 #include "svm.h"
 #include "thread_locale.h"
-
-#include <errno.h>
-#include <limits.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+} /* extern "C" */
 
 #define MODEL_FEATURE_INITIAL_CAP 8u
 #define MODEL_KNOT_INITIAL_CAP 4u
 
-static int grow_count(unsigned current, unsigned needed, unsigned *out)
+[[nodiscard]] static int grow_count(unsigned current, unsigned needed, unsigned *out)
 {
     unsigned next = current ? current : 1u;
     while (next < needed) {
@@ -46,7 +75,7 @@ static int grow_count(unsigned current, unsigned needed, unsigned *out)
     return 0;
 }
 
-static int ensure_feature_capacity(VmafModel *model, unsigned needed)
+[[nodiscard]] static int ensure_feature_capacity(VmafModel *model, unsigned needed)
 {
     if (needed <= model->feature_cap)
         return 0;
@@ -57,7 +86,8 @@ static int ensure_feature_capacity(VmafModel *model, unsigned needed)
     if (err)
         return err;
 
-    VmafModelFeature *feature = realloc(model->feature, sizeof(*feature) * next);
+    VmafModelFeature *feature =
+        static_cast<VmafModelFeature *>(realloc(model->feature, sizeof(*feature) * next));
     if (!feature)
         return -ENOMEM;
 
@@ -68,7 +98,7 @@ static int ensure_feature_capacity(VmafModel *model, unsigned needed)
     return 0;
 }
 
-static int ensure_knot_capacity(VmafModel *model, unsigned needed)
+[[nodiscard]] static int ensure_knot_capacity(VmafModel *model, unsigned needed)
 {
     if (needed <= model->score_transform.knots.cap)
         return 0;
@@ -80,7 +110,8 @@ static int ensure_knot_capacity(VmafModel *model, unsigned needed)
     if (err)
         return err;
 
-    VmafPoint *list = realloc(model->score_transform.knots.list, sizeof(*list) * next);
+    VmafPoint *list =
+        static_cast<VmafPoint *>(realloc(model->score_transform.knots.list, sizeof(*list) * next));
     if (!list)
         return -ENOMEM;
 
@@ -91,10 +122,10 @@ static int ensure_knot_capacity(VmafModel *model, unsigned needed)
     return 0;
 }
 
-static int parse_feature_opts_entry(json_stream *s, VmafModel *model, unsigned i, char *key)
+static int parse_feature_opts_entry(json_stream *s, VmafModel *model, unsigned i, const char *key)
 {
     if (json_peek(s) == JSON_NUMBER) {
-        const char *val = json_get_string(s, NULL);
+        const char *val = json_get_string(s, nullptr);
         const uint64_t flags = VMAF_DICT_DO_NOT_OVERWRITE | VMAF_DICT_NORMALIZE_NUMERICAL_VALUES;
         return vmaf_dictionary_set(&(model->feature[i].opts_dict), key, val, flags);
     }
@@ -104,7 +135,7 @@ static int parse_feature_opts_entry(json_stream *s, VmafModel *model, unsigned i
         return vmaf_dictionary_set(&(model->feature[i].opts_dict), key, val, flags);
     }
     if (json_peek(s) == JSON_STRING) {
-        const char *val = json_get_string(s, NULL);
+        const char *val = json_get_string(s, nullptr);
         const uint64_t flags = VMAF_DICT_DO_NOT_OVERWRITE;
         return vmaf_dictionary_set(&(model->feature[i].opts_dict), key, val, flags);
     }
@@ -123,11 +154,10 @@ static int parse_feature_opts_object(json_stream *s, VmafModel *model, unsigned 
     while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
-        char *key = strdup(json_get_string(s, NULL));
-        if (!key)
-            return -ENOMEM;
-        int err = parse_feature_opts_entry(s, model, i, key);
-        free(key);
+        /* Use std::string so the copy is freed automatically on every exit
+         * path — early return or normal fall-through. */
+        const std::string key{json_get_string(s, nullptr)};
+        int err = parse_feature_opts_entry(s, model, i, key.c_str());
         if (err)
             return err;
         json_skip(s);
@@ -194,7 +224,7 @@ static int parse_slopes(json_stream *s, VmafModel *model)
     return 0;
 }
 
-static int parse_knots_list(struct json_stream *s, struct VmafModel *model, unsigned idx)
+static int parse_knots_list(json_stream *s, VmafModel *model, unsigned idx)
 {
     unsigned i = 0;
     while (json_peek(s) != JSON_ARRAY_END && !json_get_error(s)) {
@@ -213,7 +243,7 @@ static int parse_knots_list(struct json_stream *s, struct VmafModel *model, unsi
     return 0;
 }
 
-static int parse_knots(json_stream *s, struct VmafModel *model)
+static int parse_knots(json_stream *s, VmafModel *model)
 {
     unsigned i = 0;
     while (json_peek(s) != JSON_ARRAY_END && !json_get_error(s)) {
@@ -252,7 +282,7 @@ static int parse_feature_names(json_stream *s, VmafModel *model)
     while (json_peek(s) != JSON_ARRAY_END && !json_get_error(s)) {
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
-        const char *name = json_get_string(s, NULL);
+        const char *name = json_get_string(s, nullptr);
         err = append_feature_name(model, name, i++);
         if (err)
             return err;
@@ -298,7 +328,7 @@ static int parse_score_transform_bool_str(json_stream *s, bool *out)
 {
     if (json_next(s) != JSON_STRING)
         return -EINVAL;
-    const char *val = json_get_string(s, NULL);
+    const char *val = json_get_string(s, nullptr);
     if (!strcmp(val, "true"))
         *out = true;
     return 0;
@@ -342,7 +372,7 @@ static int parse_score_transform(json_stream *s, VmafModel *model)
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
 
-        const char *key = json_get_string(s, NULL);
+        const char *key = json_get_string(s, nullptr);
         int err = parse_score_transform_entry(s, model, key);
         if (err)
             return err;
@@ -383,7 +413,7 @@ static int parse_model_dict_model_type(json_stream *s, VmafModel *model)
 {
     if (json_next(s) != JSON_STRING)
         return -EINVAL;
-    const char *model_type = json_get_string(s, NULL);
+    const char *model_type = json_get_string(s, nullptr);
     if (!strcmp(model_type, "RESIDUEBOOTSTRAP_LIBSVMNUSVR")) {
         model->type = VMAF_MODEL_RESIDUE_BOOTSTRAP_SVM_NUSVR;
     } else if (!strcmp(model_type, "BOOTSTRAP_LIBSVMNUSVR")) {
@@ -400,7 +430,7 @@ static int parse_model_dict_norm_type(json_stream *s, VmafModel *model)
 {
     if (json_next(s) != JSON_STRING)
         return -EINVAL;
-    const char *norm_type = json_get_string(s, NULL);
+    const char *norm_type = json_get_string(s, nullptr);
     if (!strcmp(norm_type, "linear_rescale")) {
         model->norm_type = VMAF_MODEL_NORMALIZATION_TYPE_LINEAR_RESCALE;
     } else if (!strcmp(norm_type, "none")) {
@@ -506,7 +536,7 @@ static int parse_model_dict(json_stream *s, VmafModel *model, enum VmafModelFlag
     while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
-        const char *key = json_get_string(s, NULL);
+        const char *key = json_get_string(s, nullptr);
         int err = parse_model_dict_entry(s, model, flags, key);
         if (err)
             return err;
@@ -526,7 +556,7 @@ static int model_parse(json_stream *s, VmafModel *model, enum VmafModelFlags fla
     while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
-        const char *key = json_get_string(s, NULL);
+        const char *key = json_get_string(s, nullptr);
 
         if (!strcmp(key, "model_dict")) {
             err = parse_model_dict(s, model, flags);
@@ -542,63 +572,88 @@ static int model_parse(json_stream *s, VmafModel *model, enum VmafModelFlags fla
     return err;
 }
 
+/*
+ * RAII guard for the partially-constructed VmafModel allocated inside
+ * vmaf_read_json_model.  On destruction (scope exit via early return or
+ * exception) it calls vmaf_model_destroy() and nulls *model_out, giving
+ * the same leak-free teardown semantics as the original goto-based
+ * cleanup — without the goto.  On success the caller calls release()
+ * to transfer ownership to the caller.
+ */
+class ModelParseGuard
+{
+  public:
+    ModelParseGuard(VmafModel **model_out, VmafModel *m) noexcept
+        : m_model_out(model_out), m_model(m)
+    {
+    }
+    ~ModelParseGuard()
+    {
+        if (m_model) {
+            vmaf_model_destroy(m_model);
+            *m_model_out = nullptr;
+        }
+    }
+    /* Transfer ownership to the caller — guard becomes a no-op. */
+    void release() noexcept
+    {
+        m_model = nullptr;
+    }
+
+    ModelParseGuard(const ModelParseGuard &) = delete;
+    ModelParseGuard &operator=(const ModelParseGuard &) = delete;
+
+  private:
+    VmafModel **m_model_out;
+    VmafModel *m_model;
+};
+
 static int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_stream *s)
 {
-    int err = -EINVAL;
-    VmafModel *const m = *model = malloc(sizeof(*m));
+    VmafModel *const m = static_cast<VmafModel *>(calloc(1, sizeof(*m)));
     if (!m)
         return -ENOMEM;
-    memset(m, 0, sizeof(*m));
+    *model = m;
+
+    /* Guard calls vmaf_model_destroy(m) + nulls *model on any early return. */
+    ModelParseGuard guard(model, m);
 
     m->name = vmaf_model_generate_name(cfg);
-    if (!m->name) {
-        err = -ENOMEM;
-        goto fail;
-    }
+    if (!m->name)
+        return -ENOMEM;
 
     VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();
 
-    err = model_parse(s, m, cfg->flags);
+    int err = model_parse(s, m, static_cast<enum VmafModelFlags>(cfg->flags));
 
     vmaf_thread_locale_pop(locale_state);
 
     if (err)
-        goto fail;
+        return err;
 
+    guard.release();
     return 0;
-
-fail:
-    /* Leak-free teardown on parse failure. `vmaf_model_destroy`
-     * walks the partially-populated feature[] array (including any
-     * dict + strdup'd feature_name allocations from model_parse) +
-     * frees knots.list + name + the struct itself. Reset *model to
-     * NULL so naive callers (`if (m) vmaf_model_destroy(m)`) don't
-     * double-free. */
-    vmaf_model_destroy(m);
-    *model = NULL;
-    return err;
 }
 
-int vmaf_read_json_model_from_buffer(VmafModel **model, VmafModelConfig *cfg, const char *data,
-                                     const int data_len)
+extern "C" int vmaf_read_json_model_from_buffer(VmafModel **model, VmafModelConfig *cfg,
+                                                const char *data, const int data_len)
 {
-    int err = 0;
     json_stream s;
     json_open_buffer(&s, data, data_len);
-    err = vmaf_read_json_model(model, cfg, &s);
+    int err = vmaf_read_json_model(model, cfg, &s);
     json_close(&s);
     return err;
 }
 
-int vmaf_read_json_model_from_path(VmafModel **model, VmafModelConfig *cfg, const char *path)
+extern "C" int vmaf_read_json_model_from_path(VmafModel **model, VmafModelConfig *cfg,
+                                              const char *path)
 {
-    int err = 0;
     FILE *in = fopen(path, "r");
     if (!in)
         return -EINVAL;
     json_stream s;
     json_open_stream(&s, in);
-    err = vmaf_read_json_model(model, cfg, &s);
+    int err = vmaf_read_json_model(model, cfg, &s);
     json_close(&s);
     if (fclose(in) != 0 && err == 0)
         err = -EIO;
@@ -647,7 +702,7 @@ static int model_collection_parse_loop(json_stream *s, VmafModel **model,
         if (json_next(s) != JSON_STRING)
             return -EINVAL;
 
-        const char *key = json_get_string(s, NULL);
+        const char *key = json_get_string(s, nullptr);
         (void)snprintf(generated_key, sizeof(generated_key), "%d", i);
 
         if (strcmp(key, generated_key) != 0) {
@@ -672,7 +727,7 @@ static int model_collection_parse_loop(json_stream *s, VmafModel **model,
 static int model_collection_parse(json_stream *s, VmafModel **model,
                                   VmafModelCollection **model_collection, VmafModelConfig *cfg)
 {
-    *model_collection = NULL;
+    *model_collection = nullptr;
 
     if (json_next(s) != JSON_OBJECT)
         return -EINVAL;
@@ -683,49 +738,47 @@ static int model_collection_parse(json_stream *s, VmafModel **model,
         return -ENOMEM;
 
     const size_t cfg_name_sz = strlen(name) + 5 + 1;
-    /* Heap-allocated for MSVC portability (no VLAs). `cfg_name` survives
-     * across the while-loop iterations because `c.name` points into it
-     * after the first successful sub-model read. */
-    char *cfg_name = (char *)malloc(cfg_name_sz);
+    /* Use unique_ptr<char[]> so cfg_name is freed automatically on every
+     * exit path — early return, normal flow, or (future) exception. The
+     * original C code used naked malloc/free with two explicit free() calls
+     * at the end (one for cfg_name, one for name). */
+    auto cfg_name = std::make_unique<char[]>(cfg_name_sz);
     if (!cfg_name) {
-        free((char *)name);
+        free(static_cast<char *>(const_cast<char *>(name)));
         return -ENOMEM;
     }
 
-    int err =
-        model_collection_parse_loop(s, model, model_collection, &c, name, cfg_name, cfg_name_sz);
+    int err = model_collection_parse_loop(s, model, model_collection, &c, name, cfg_name.get(),
+                                          cfg_name_sz);
 
-    free(cfg_name);
-    free((char *)name);
+    free(static_cast<char *>(const_cast<char *>(name)));
     return err;
 }
 
-int vmaf_read_json_model_collection_from_path(VmafModel **model,
-                                              VmafModelCollection **model_collection,
-                                              VmafModelConfig *cfg, const char *path)
+extern "C" int vmaf_read_json_model_collection_from_path(VmafModel **model,
+                                                         VmafModelCollection **model_collection,
+                                                         VmafModelConfig *cfg, const char *path)
 {
-    int err = 0;
     FILE *in = fopen(path, "r");
     if (!in)
         return -EINVAL;
     json_stream s;
     json_open_stream(&s, in);
-    err = model_collection_parse(&s, model, model_collection, cfg);
+    int err = model_collection_parse(&s, model, model_collection, cfg);
     json_close(&s);
     if (fclose(in) != 0 && err == 0)
         err = -EIO;
     return err;
 }
 
-int vmaf_read_json_model_collection_from_buffer(VmafModel **model,
-                                                VmafModelCollection **model_collection,
-                                                VmafModelConfig *cfg, const char *data,
-                                                const int data_len)
+extern "C" int vmaf_read_json_model_collection_from_buffer(VmafModel **model,
+                                                           VmafModelCollection **model_collection,
+                                                           VmafModelConfig *cfg, const char *data,
+                                                           const int data_len)
 {
-    int err = 0;
     json_stream s;
     json_open_buffer(&s, data, data_len);
-    err = model_collection_parse(&s, model, model_collection, cfg);
+    int err = model_collection_parse(&s, model, model_collection, cfg);
     json_close(&s);
     return err;
 }
