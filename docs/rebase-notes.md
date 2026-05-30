@@ -40384,3 +40384,16 @@ Fork-local files:
 `core/src/libvmaf.c` (comments + assert),
 `docs/adr/0795-prev-ref-thread-safety.md`,
 `changelog.d/fixed/prev-ref-batch-thread-safety.md`.
+
+## macOS CI ansnr-residual cleanup (ADR-0749 follow-up, 2026-05-30)
+
+no rebase impact: REASON — changes are confined to fork-mirrored upstream test
+files (`python/test/feature_extractor_test.py`,
+`python/test/quality_runner_test.py`, `python/test/routine_test.py`) where
+assertions referencing the legacy `ansnr` / `anpsnr` keys are dropped or the
+tests are skipped per ADR-0749 (ansnr feature sunset). The
+`@unittest.skip` reasons cite ADR-0749, so on upstream sync the conflict
+resolution is mechanical: if Netflix upstream still has the legacy assertions
+they were calibrated against `float_ansnr` output that this fork no longer
+produces — keep the skips. If Netflix upstream removes the legacy assertions
+themselves (matching this fork's direction), drop the local skips.
