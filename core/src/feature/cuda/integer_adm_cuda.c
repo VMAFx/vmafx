@@ -67,6 +67,14 @@ typedef struct AdmStateCuda {
                    CUstream c_stream);
     CUstream str;
     CUevent ref_event, dis_event, finished;
+    /* PTX modules backing the DWT / CSF / CSF_den / CM kernels — owned
+     * here so `close_fex_cuda` can unload them. Skipping the unload
+     * leaks ~200-500 KB per module per init/close cycle (see
+     * `core/src/cuda/AGENTS.md` lifecycle invariants + ADR-0356). */
+    CUmodule adm_dwt_module;
+    CUmodule adm_csf_module;
+    CUmodule adm_csf_den_module;
+    CUmodule adm_cm_module;
     /* Engine-scope fence batching opt-in flag (T-GPU-OPT-1, ADR-0242). */
     bool drained;
     VmafDictionary *feature_name_dict;
@@ -1316,78 +1324,80 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->ref_event, CU_EVENT_DEFAULT), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->dis_event, CU_EVENT_DEFAULT), fail);
 
-    CUmodule adm_cm_module, adm_csf_den_module, adm_csf_module, adm_dwt_module;
-
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&adm_dwt_module, adm_dwt2_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&adm_csf_module, adm_csf_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&adm_csf_den_module, adm_csf_den_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&adm_cm_module, adm_cm_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_dwt_module, adm_dwt2_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_csf_module, adm_csf_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_csf_den_module, adm_csf_den_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_cm_module, adm_cm_ptx), fail);
 
     // Get DWT kernel function pointers check adm_dwt2.cu for __global__ templated kernels
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_vert_kernel_0_0_int32_t,
-                                        adm_dwt_module,
+                                        s->adm_dwt_module,
                                         "dwt_s123_combined_vert_kernel_0_0_int32_t"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_vert_kernel_32768_16_int32_t,
-                                        adm_dwt_module,
+                                        s->adm_dwt_module,
                                         "dwt_s123_combined_vert_kernel_32768_16_int32_t"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_hori_kernel_16384_15,
-                                        adm_dwt_module, "dwt_s123_combined_hori_kernel_16384_15"),
+                                        s->adm_dwt_module,
+                                        "dwt_s123_combined_hori_kernel_16384_15"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_hori_kernel_32768_16,
-                                        adm_dwt_module, "dwt_s123_combined_hori_kernel_32768_16"),
+                                        s->adm_dwt_module,
+                                        "dwt_s123_combined_hori_kernel_32768_16"),
                     fail);
-    CHECK_CUDA_GOTO(
-        cu_f,
-        cuModuleGetFunction(&s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t,
-                            adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t"),
-        fail);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(
+                        &s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t,
+                        s->adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t"),
+                    fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(
                         &s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t,
-                        adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t"),
+                        s->adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t"),
                     fail);
 
     // Get csf kernel function pointers check adm_csf.cu for __global__ templated kernels
     CHECK_CUDA_GOTO(
         cu_f,
-        cuModuleGetFunction(&s->func_adm_csf_kernel_1_4, adm_csf_module, "adm_csf_kernel_1_4"),
+        cuModuleGetFunction(&s->func_adm_csf_kernel_1_4, s->adm_csf_module, "adm_csf_kernel_1_4"),
         fail);
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_i4_adm_csf_kernel_1_4, adm_csf_module,
+                    cuModuleGetFunction(&s->func_i4_adm_csf_kernel_1_4, s->adm_csf_module,
                                         "i4_adm_csf_kernel_1_4"),
                     fail);
 
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_csf_den_scale_line_kernel, adm_csf_den_module,
+                    cuModuleGetFunction(&s->func_adm_csf_den_scale_line_kernel,
+                                        s->adm_csf_den_module,
                                         "adm_csf_den_scale_line_kernel_8_128"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_csf_den_s123_line_kernel, adm_csf_den_module,
+                    cuModuleGetFunction(&s->func_adm_csf_den_s123_line_kernel,
+                                        s->adm_csf_den_module,
                                         "adm_csf_den_s123_line_kernel_8_128"),
                     fail);
 
     /* adm_cm_reduce_line_kernel_4 removed: fused into i4_adm_cm_line_kernel_fused. */
-    CHECK_CUDA_GOTO(
-        cu_f,
-        cuModuleGetFunction(&s->func_adm_cm_line_kernel_8, adm_cm_module, "adm_cm_line_kernel_8"),
-        fail);
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_i4_adm_cm_line_kernel_fused, adm_cm_module,
+                    cuModuleGetFunction(&s->func_adm_cm_line_kernel_8, s->adm_cm_module,
+                                        "adm_cm_line_kernel_8"),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_i4_adm_cm_line_kernel_fused, s->adm_cm_module,
                                         "i4_adm_cm_line_kernel_fused"),
                     fail);
     /* AIM CM kernel function pointers (ADR-0746). */
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_cm_aim_line_kernel_8, adm_cm_module,
+                    cuModuleGetFunction(&s->func_adm_cm_aim_line_kernel_8, s->adm_cm_module,
                                         "adm_cm_aim_line_kernel_8"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_i4_adm_cm_aim_line_kernel_fused, adm_cm_module,
+                    cuModuleGetFunction(&s->func_i4_adm_cm_aim_line_kernel_fused, s->adm_cm_module,
                                         "i4_adm_cm_aim_line_kernel_fused"),
                     fail);
 
@@ -1557,6 +1567,20 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     int _cuda_err = 0;
     CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->str), after_sync);
 after_sync:
+    /* Unload the 4 PTX modules loaded by `init_fex_cuda` before tearing
+     * the stream down — see the `CUmodule` fields in `AdmStateCuda`
+     * for the leak-avoidance rationale (mirrors the ssimulacra2_cuda
+     * close path, ADR-0356). Discards are intentional: the close path
+     * already aggregates errors via `_cuda_err`, and module unload
+     * failure during teardown is non-recoverable. */
+    if (s->adm_dwt_module)
+        (void)cu_f->cuModuleUnload(s->adm_dwt_module);
+    if (s->adm_csf_module)
+        (void)cu_f->cuModuleUnload(s->adm_csf_module);
+    if (s->adm_csf_den_module)
+        (void)cu_f->cuModuleUnload(s->adm_csf_den_module);
+    if (s->adm_cm_module)
+        (void)cu_f->cuModuleUnload(s->adm_cm_module);
     CHECK_CUDA_GOTO(cu_f, cuStreamDestroy(s->str), after_stream);
 after_stream:
     CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->finished), after_ev1);
