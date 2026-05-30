@@ -20,6 +20,12 @@ metal/
   picture_metal.{mm,h}   # VmafPicture on a Metal device — MTLBuffer lifecycle (T8-1b)
   dispatch_strategy.{c,h} # Feature-name → landed-kernel support predicate
   kernel_template.{mm,h} # per-feature kernel scaffolding + runtime (T8-1b / ADR-0420)
+  stubs.c                # -ENOSYS fallbacks for the public libvmaf_metal.h
+                         #   entry points when HAVE_METAL is OFF. Wired in
+                         #   from core/src/meson.build's `else` branch of
+                         #   `if is_metal_enabled`, NOT via `subdir('metal')`.
+                         #   Mirrors core/src/dnn/dnn_api.c's VMAF_HAVE_DNN
+                         #   stub pattern.
   meson.build           # subdir() include from core/src/meson.build
 ```
 

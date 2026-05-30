@@ -139,6 +139,14 @@ endif
 if is_hip_enabled
     cdata.set10('HAVE_HIP', true)
     subdir('hip')
+else
+    # ADR-0212 / libvmaf_hip.h contract: every public HIP entry point
+    # returns -ENOSYS when libvmaf is built without HIP support. Without
+    # this stub TU the symbols are not emitted into libvmaf.so at all
+    # (the real bodies in hip/common.c + libvmaf.c sit behind
+    # `#ifdef HAVE_HIP`) and downstream consumers fail at link time.
+    # Mirrors the `core/src/dnn/dnn_api.c` `VMAF_HAVE_DNN` stub pattern.
+    hip_sources += files('hip/stubs.c')
 endif
 
 # HIP HSACO device-kernel pipeline (ADR-0372 / T7-10b batch-1).
@@ -334,6 +342,15 @@ metal_deps = []
 if is_metal_enabled
     cdata.set10('HAVE_METAL', true)
     subdir('metal')
+else
+    # ADR-0361 / libvmaf_metal.h contract: every public Metal entry point
+    # returns -ENOSYS when libvmaf is built without Metal support (or the
+    # auto-probe failed on a non-macOS host). Without this stub TU the
+    # symbols are not emitted into libvmaf.so at all (the real bodies in
+    # metal/common.mm + metal/picture_import.mm + libvmaf.c sit behind
+    # `#ifdef HAVE_METAL`) and downstream consumers fail at link time.
+    # Mirrors the `core/src/dnn/dnn_api.c` `VMAF_HAVE_DNN` stub pattern.
+    metal_sources += files('metal/stubs.c')
 endif
 if dnn_have_ort
     cdata.set10('HAVE_DNN', true)

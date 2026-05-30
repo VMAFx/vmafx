@@ -43040,3 +43040,15 @@ in the merge.
 The two-pass restructuring (allocate all, then strip `priv`/`ref`)
 avoids a buffer leak on partial allocation failure. No ABI change; no
 conflict risk unless upstream also restructures this function.
+
+## HIP/Metal -ENOSYS stubs for public API (2026-05-30)
+
+no rebase impact: REASON — all touched code is fork-local. The two
+new TUs (`core/src/hip/stubs.c`, `core/src/metal/stubs.c`) implement
+the public contract documented in
+`core/include/libvmaf/libvmaf_hip.h` / `libvmaf_metal.h`, both of
+which are fork-added headers with no upstream counterpart. The Meson
+gating change in `core/src/meson.build` is inside the
+`if is_hip_enabled / else` / `if is_metal_enabled / else` blocks that
+are also fork-local. Upstream Netflix/vmaf has no HIP or Metal
+backend.
