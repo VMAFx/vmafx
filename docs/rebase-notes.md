@@ -45,6 +45,29 @@ error-handling.
 
 ---
 
+## shell-injection-sweep-round2 (2026-05-30)
+
+**Files touched:**
+`scripts/ci/sycl-bench-env.sh`,
+`scripts/ci/test-sycl-bench-env.sh` (new),
+`dev/scripts/dev-mcp-entrypoint.sh`.
+
+**Rebase impact:** None. All three files are fork-added (the SYCL bench
+helper, dev-MCP entrypoint, and their tests do not exist in upstream
+Netflix/vmaf). No upstream file is modified, so a sync from
+`upstream/master` cannot conflict here.
+
+Hardens two shell-execution sites that interpolated externally-derived
+strings into a child shell's command body:
+`bash -c "... source '$ROOT/setvars.sh' ..."` becomes a positional-arg
+form, and `eval "${cmd}"` in the GPU probe helper becomes a direct argv
+invocation. The regression test `scripts/ci/test-sycl-bench-env.sh`
+codifies the expectation; future contributors must keep both files free
+of `bash -c "..."` string interpolation and `eval` of indirect command
+strings.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

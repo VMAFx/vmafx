@@ -73,16 +73,23 @@ fi
 #
 # The `--force` flag silences setvars.sh's "already initialized" notice when
 # a prior install was sourced earlier in the parent shell.
+#
+# Security: $ROOT is forwarded to the subshell as a positional arg ($1), not
+# spliced into the script body. An earlier revision interpolated $ROOT
+# directly into the bash -c body — a $ONEAPI_PREFIX or version arg with a
+# stray quote or `$(…)` would have escaped the subshell and run arbitrary
+# code under the caller's UID. The positional-arg form treats $ROOT as data
+# regardless of contents.
 ENV_DUMP=$(
-  bash -c "
+  bash -c '
     set -e
     # shellcheck disable=SC1090
-    source '$ROOT/setvars.sh' --force >/dev/null 2>&1 || true
-    printf 'CMPLR_ROOT=%s\n'      \"\${CMPLR_ROOT:-}\"
-    printf 'LD_LIBRARY_PATH=%s\n' \"\${LD_LIBRARY_PATH:-}\"
-    printf 'LIBRARY_PATH=%s\n'    \"\${LIBRARY_PATH:-}\"
-    printf 'PATH=%s\n'            \"\${PATH:-}\"
-  "
+    source "$1/setvars.sh" --force >/dev/null 2>&1 || true
+    printf "CMPLR_ROOT=%s\n"      "${CMPLR_ROOT:-}"
+    printf "LD_LIBRARY_PATH=%s\n" "${LD_LIBRARY_PATH:-}"
+    printf "LIBRARY_PATH=%s\n"    "${LIBRARY_PATH:-}"
+    printf "PATH=%s\n"            "${PATH:-}"
+  ' _ "$ROOT"
 )
 
 while IFS= read -r line; do

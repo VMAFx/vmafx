@@ -31,6 +31,10 @@ until master is fixed.
 
 | `test-state-md-touch-check.sh` | (local-only fixture driver, not invoked by CI) | Run before pushing changes to `state-md-touch-check.sh`; constructs throw-away `mktemp -d` git repos so the test is hermetic. |
 
+| `sycl-bench-env.sh` | (sourced via `eval "$(scripts/ci/sycl-bench-env.sh <version>)"` from any caller that needs side-by-side oneAPI activation; not directly invoked by a workflow today) | The script must keep `$ROOT` (derived from the `$ONEAPI_PREFIX` env or the `$VERSION` CLI arg) out of any `bash -c "..."` body — both inputs are externally-controlled and the 2026-05-30 shell-injection sweep round 2 demonstrated that a hostile prefix with a closing single-quote + `\|\|`-fallback escapes the helper subshell (`set -e` does not block OR-branches). The current form forwards `$ROOT` as a positional argument (`$1`) to `bash -c '... "$1/setvars.sh" ...' _ "$ROOT"` so the path is never re-tokenised by the shell. `scripts/ci/test-sycl-bench-env.sh` codifies the contract; run it before any change to this helper. |
+
+| `test-sycl-bench-env.sh` | (local fixture driver, not invoked by CI today) | Side-channel oracle: drops a marker file under `mktemp -d` and verifies it is never created when a hostile `$ONEAPI_PREFIX` is passed to `sycl-bench-env.sh`. If you need to re-introduce a `bash -c "..."` form, this test must continue to pass — string interpolation of operator-supplied paths into a child shell's command body is a flat-out shell-injection foot-gun. |
+
 
 ## Calibration table contract (ADR-0234)
 
