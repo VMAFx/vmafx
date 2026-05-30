@@ -40384,3 +40384,18 @@ Fork-local files:
 `core/src/libvmaf.c` (comments + assert),
 `docs/adr/0795-prev-ref-thread-safety.md`,
 `changelog.d/fixed/prev-ref-batch-thread-safety.md`.
+
+## Dependency audit 2026-05-30 — `golang.org/x/net` + `x/sys` bump
+
+No rebase impact: the only changed files are `go.mod` / `go.sum`, plus a
+changelog fragment and a research digest. The Go workspace is a fork-only
+addition (Netflix/vmaf upstream does not ship Go modules); there is no
+upstream baseline to rebase against. Versions: `golang.org/x/net`
+`v0.53.0 -> v0.55.0`, `golang.org/x/sys` `v0.43.0 -> v0.45.0`,
+`golang.org/x/term` `v0.42.0 -> v0.43.0`, `golang.org/x/text`
+`v0.36.0 -> v0.37.0` (minimum-version selection).
+
+Fork-local files:
+`go.mod`, `go.sum`,
+`changelog.d/security/dependency-audit-2026-05-30.md`,
+`docs/research/dependency-audit-2026-05-30.md`.
