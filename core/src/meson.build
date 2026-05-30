@@ -717,6 +717,14 @@ if is_asm_enabled
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
                       '-mavx512vbmi', '-mavx512vl'] +
                      vmaf_cflags_common,
+            # b_lto=false: with b_lto=true at meson.build top, LTO over
+            # this lib drops the convolution_f32_avx512_{s,sq_s,xy_s}
+            # symbols because vif_filter1d_s in vif_tools.c reaches them
+            # only via a runtime CPU-flag branch the linker treats as
+            # potentially-dead. Disable LTO so the public AVX-512 symbols
+            # stay externally visible. (Fixes pre-existing LTO link
+            # failure under the b_lto=true global default.)
+            override_options : ['b_lto=false'],
         )
 
         # ssimulacra2 AVX-512 — same `-ffp-contract=off` carve-out as
