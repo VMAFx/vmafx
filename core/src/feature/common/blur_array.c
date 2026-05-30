@@ -39,8 +39,20 @@ int init_blur_array(BLUR_BUF_ARRAY *arr, int array_length, size_t size, size_t a
         arr->blur_buf_array[i].frame_idx = -1;
         arr->blur_buf_array[i].blur_buf = aligned_malloc(size, alignement);
         arr->blur_buf_array[i].reference_count = 0;
-        if (arr->blur_buf_array[i].blur_buf == 0)
+        if (arr->blur_buf_array[i].blur_buf == 0) {
+            /* Free the previously-allocated entries before returning.
+             * Without this, every entry [0 .. i-1] kept its
+             * aligned_malloc pointer alive while the caller saw
+             * actual_length=i and assumed the array was unusable. */
+            for (int j = 0; j < i; j++) {
+                if (arr->blur_buf_array[j].blur_buf) {
+                    aligned_free(arr->blur_buf_array[j].blur_buf);
+                    arr->blur_buf_array[j].blur_buf = 0;
+                }
+            }
+            arr->actual_length = 0;
             return 0;
+        }
 
         arr->buffer_size = size;
         arr->actual_length = i + 1;
