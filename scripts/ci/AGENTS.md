@@ -130,7 +130,7 @@ process, and `cpu_count()` concurrent rings exhaust the per-user
 `RLIMIT_MEMLOCK` (default 8 MB on most distros). The aggregate
 hook then returns an opaque `exit code 2` with no stderr because
 `--quiet` swallows the trace. Reproduced and root-caused in
-ADR-0867 / `docs/research/semgrep-local-iouring-audit-2026-05-30.md`
+ADR-0867 / `docs/research/0867-semgrep-local-iouring-audit-20260530.md`
 after PR #331 (744-file VMAFx rebrand) had to ship with
 `SKIP=semgrep-local`.
 

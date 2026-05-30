@@ -40390,7 +40390,7 @@ Fork-local files:
 no rebase impact: REASON — touches only `.pre-commit-config.yaml`
 (adds `require_serial: true` to one hook plus inline rationale
 comment) and fork-local docs (`docs/adr/0867-...md`,
-`docs/research/semgrep-local-iouring-audit-2026-05-30.md`,
+`docs/research/0867-semgrep-local-iouring-audit-20260530.md`,
 `changelog.d/fixed/semgrep-local-batch-size.md`, the ADR index, and
 this note). No upstream Netflix/vmaf source is touched.
 `.pre-commit-config.yaml` is fork-added (Netflix upstream has no
@@ -40400,7 +40400,7 @@ upstream-port hunk.
 Fork-local files:
 `.pre-commit-config.yaml` (one-line `require_serial: true` + comment),
 `docs/adr/0867-semgrep-local-serial-execution.md`,
-`docs/research/semgrep-local-iouring-audit-2026-05-30.md`,
+`docs/research/0867-semgrep-local-iouring-audit-20260530.md`,
 `changelog.d/fixed/semgrep-local-batch-size.md`,
 `docs/adr/README.md` (one index row),
 `docs/adr/_index_fragments/_order.txt` (one slug).

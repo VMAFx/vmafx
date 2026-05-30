@@ -22,7 +22,7 @@ happens whenever the staged-file set is large enough to produce many
 partitions — several of them race against the per-user memlock budget
 and die during ring setup with:
 
-```
+```text
 Fatal error: Unix_error: Cannot allocate memory io_uring_queue_init
 Called from Core_scan.iter_targets_and_get_matches_and_exn_to_errors
 ```
@@ -83,7 +83,7 @@ on the typical single-file commit diff it is unchanged.
   indistinguishable.
 - **Neutral / follow-ups**: documented in
   `changelog.d/fixed/semgrep-local-batch-size.md`,
-  `docs/research/semgrep-local-iouring-audit-2026-05-30.md`, and
+  `docs/research/0867-semgrep-local-iouring-audit-20260530.md`, and
   `docs/rebase-notes.md`. If semgrep upstream switches away from
   `io_uring` (or makes the ring shareable across forks), revisit and
   consider re-enabling partitioned parallelism.
@@ -93,5 +93,5 @@ on the typical single-file commit diff it is unchanged.
 - Issue surfaced in PR #331 (VMAFx rebrand, 744-file commit).
 - Pre-commit partitioning logic: `/usr/lib/python3.14/site-packages/pre_commit/xargs.py` `partition()` and `xargs()`.
 - semgrep-core error: `Core_scan.iter_targets_and_get_matches_and_exn_to_errors`, `OSS/src/core_scan/Core_scan.ml`.
-- Pre-commit `require_serial` docs: https://pre-commit.com/#hooks-require_serial
+- Pre-commit `require_serial` docs: <https://pre-commit.com/#hooks-require_serial>
 - Source: `req` — user direction to fix the `semgrep-local` silent exit-2 on batches over 130 files (paraphrased: PR #331 had to use `SKIP=semgrep-local` to commit; reproducible on pristine master; direct `semgrep scan` returns 0 on the full changed set, so the bug is in the hook wiring, not in semgrep itself).
