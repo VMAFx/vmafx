@@ -65,6 +65,11 @@ extern const char speed_score_ptx[];
 /* ------------------------------------------------------------------ */
 
 typedef struct SpeedTemporalCudaState {
+    /* PTX module backing the speed_temporal kernels — owned here so
+     * `close_fex_st` can unload it. Skipping the unload leaks
+     * ~200-500 KB per init/close cycle (see
+     * `core/src/cuda/AGENTS.md` lifecycle invariants + ADR-0356). */
+    CUmodule module;
     CUfunction func_means;
     CUfunction func_cov;
     CUfunction func_indterm;
@@ -454,16 +459,16 @@ static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     const size_t score_bytes = num_blocks * sizeof(float);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, speed_score_ptx), fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_means, module, "speed_means_kernel"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, speed_score_ptx), fail_pop);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_means, s->module, "speed_means_kernel"),
                     fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_cov, module, "speed_cov_kernel"), fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_indterm, module, "speed_indterm_kernel"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_cov, s->module, "speed_cov_kernel"),
                     fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_solve, module, "speed_solve_kernel"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_indterm, s->module, "speed_indterm_kernel"),
                     fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_score, module, "speed_score_kernel"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_solve, s->module, "speed_solve_kernel"),
+                    fail_pop);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_score, s->module, "speed_score_kernel"),
                     fail_pop);
     CHECK_CUDA_GOTO(cu_f, cuStreamCreate(&s->stream, CU_STREAM_NON_BLOCKING), fail_pop);
 
@@ -639,9 +644,14 @@ static int close_fex_st(VmafFeatureExtractor *fex)
 {
     SpeedTemporalCudaState *s = fex->priv;
     if (fex->cu_state && fex->cu_state->f) {
-        free_cuda_buffers_st(s, fex->cu_state->f);
-        if (s->stream)
-            (void)fex->cu_state->f->cuStreamDestroy(s->stream);
+        CudaFunctions *cu_f = fex->cu_state->f;
+        free_cuda_buffers_st(s, cu_f);
+        if (s->stream) {
+            (void)cu_f->cuStreamSynchronize(s->stream);
+            if (s->module)
+                (void)cu_f->cuModuleUnload(s->module);
+            (void)cu_f->cuStreamDestroy(s->stream);
+        }
     }
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);
