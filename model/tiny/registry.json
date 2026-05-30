@@ -29,6 +29,8 @@
     {
       "id": "fr_regressor_v1",
       "kind": "fr",
+      "license": "BSD-3-Clause-Plus-Patent",
+      "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
       "notes": "Tiny FR regressor (C1) \u2014 6-feature canonical-6 vector (adm2, vif_scale0..3, motion2) \u2192 VMAF teacher score scalar. Trained on the Netflix Public Dataset (9 ref + 70 dis YUVs) with vmaf_v0.6.1 as DMOS-aligned teacher. 9-fold LOSO mean PLCC = 0.9982 \u00b1 0.0014. Shipped checkpoint trained on all 9 sources. Exported via ai/scripts/train_fr_regressor.py. See docs/ai/models/fr_regressor_v1.md + ADR-0249.",
       "onnx": "fr_regressor_v1.onnx",
       "opset": 17,
