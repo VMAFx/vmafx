@@ -1,10 +1,17 @@
 [package]
 name = "vmafx-tad"
 version = "0.1.0"
-edition = "2021"
 description = "Temporal Absolute Difference (TAD) feature extractor for VMAFX — cbindgen pilot (ADR-0707)"
-license = "BSD-3-Clause-Plus-Patent"
-authors = ["Lusoris <lusoris@pm.me>"]
+# Inherits edition / license / authors / repository / homepage /
+# documentation / readme from [workspace.package] in the root Cargo.toml
+# so URL metadata stays consistent across the Rust workspace.
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
 
 [lib]
 name = "vmafx_tad"

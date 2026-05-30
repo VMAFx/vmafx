@@ -13,6 +13,18 @@ members = [
 ]
 resolver = "2"
 
+# Shared crate metadata. Per-crate manifests opt in via
+# `repository.workspace = true` (etc.) so URL drift across the workspace
+# is impossible — touch this block once, every member inherits.
+[workspace.package]
+authors = ["Lusoris <lusoris@pm.me>"]
+edition = "2021"
+license = "BSD-3-Clause-Plus-Patent"
+repository = "https://github.com/VMAFx/vmafx"
+homepage = "https://github.com/VMAFx/vmafx"
+documentation = "https://vmafx.github.io/vmafx/"
+readme = "README.md"
+
 [profile.release]
 # Optimise for size as well as speed — libvmaf.so is embedded in
 # many video pipeline processes where binary size matters.

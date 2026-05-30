@@ -52,6 +52,13 @@ dev  = [
 [project.scripts]
 vmaf-train = "vmaf_train.cli:app"
 
+[project.urls]
+Homepage = "https://github.com/VMAFx/vmafx"
+Repository = "https://github.com/VMAFx/vmafx"
+Documentation = "https://vmafx.github.io/vmafx/ai/"
+Issues = "https://github.com/VMAFx/vmafx/issues"
+Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

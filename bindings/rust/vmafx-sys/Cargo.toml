@@ -1,9 +1,17 @@
 [package]
 name = "vmafx-sys"
 version = "0.1.0"
-edition = "2021"
 description = "Raw FFI bindings to libvmaf (VMAFX fork)"
-license = "BSD-3-Clause"
+# Workspace inheritance keeps repository / homepage / documentation /
+# license / authors / edition / readme aligned with the [workspace.package]
+# block in the root Cargo.toml. See ADR-0702 (vmafx-sys FFI crate).
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
 links = "vmaf"
 build = "build.rs"
 

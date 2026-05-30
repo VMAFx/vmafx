@@ -25,6 +25,13 @@ cloud = [
 [project.scripts]
 vmaf-dev-llm = "vmaf_dev_llm.cli:app"
 
+[project.urls]
+Homepage = "https://github.com/VMAFx/vmafx"
+Repository = "https://github.com/VMAFx/vmafx"
+Documentation = "https://vmafx.github.io/vmafx/"
+Issues = "https://github.com/VMAFx/vmafx/issues"
+Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

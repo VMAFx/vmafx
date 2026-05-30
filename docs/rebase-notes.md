@@ -6,6 +6,26 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## README badges + Cargo / pyproject repo-metadata sweep (2026-05-30)
+
+**Files touched:**
+`README.md`, `Cargo.toml`, `bindings/rust/vmafx-sys/Cargo.toml`,
+`core/src/feature/rust/tad/Cargo.toml`, `pyproject.toml`,
+`ai/pyproject.toml`, `tools/vmaf-tune/pyproject.toml`,
+`tools/vmaf-roi-score/pyproject.toml`,
+`tools/ensemble-training-kit/pyproject.toml`,
+`dev-llm/pyproject.toml`, `mcp-server/vmaf-mcp/pyproject.toml`,
+`changelog.d/fixed/readme-badges-metadata-audit.md`.
+
+**Rebase impact:** None. All touched files are fork-only — Netflix
+upstream has no Rust workspace, no fork-shaped `pyproject.toml` set,
+and a different (Netflix-branded) `README.md`. Upstream README sync
+would overwrite the badge row (which is fine — the fork's
+README.md is fully replaced from upstream on sync today).
+Cargo / pyproject metadata blocks are purely fork-authored.
+
+---
+
 ## SIMD strict-FP flags for icx (2026-05-30)
 
 **Files touched:**
