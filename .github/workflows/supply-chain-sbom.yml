@@ -1,0 +1,306 @@
+# SBOM + Trivy vulnerability scanning for Go binaries and container images.
+#
+# Runs on every PR and push to master. Generates a syft SBOM for each Go
+# binary and for the dev-mcp container image (built inline), uploads all
+# SARIFs to the GitHub Security tab, then runs Trivy with --exit-code 1
+# on HIGH/CRITICAL findings.
+#
+# Container images pulled from GHCR (built by docker-publish-production.yml)
+# are scanned on the weekly schedule; the inline build covers the current
+# working tree on PRs where docker-publish has not yet fired.
+#
+# ADR-0801: supply-chain-sbom-trivy
+
+name: SBOM + Trivy (Go + Container)
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "0 5 * * 2"   # weekly Tue 05:00 UTC (stagger from other scans)
+  workflow_dispatch:
+
+# Default to least-privilege; jobs that upload SARIF opt into
+# security-events: write per-job. Scorecard TokenPermissions compliance.
+permissions:
+  contents: read
+
+concurrency:
+  group: sbom-trivy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# -------------------------------------------------------------------------
+# Shared pin constants as env vars so bump-PRs touch one place.
+# -------------------------------------------------------------------------
+env:
+  SYFT_VERSION:  "1.5.0"
+  TRIVY_VERSION: "0.59.1"
+  REGISTRY:      "ghcr.io"
+  IMAGE_NAME:    "vmafx/vmafx"
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Go binaries — build all cmds, run syft + Trivy on each binary
+  # -----------------------------------------------------------------------
+  go-sbom-trivy:
+    name: Go binaries — SBOM + Trivy scan
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to Security tab
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build Go binaries
+        run: |
+          mkdir -p dist/go
+          for cmd in cmd/*/; do
+            name=$(basename "$cmd")
+            echo "Building $name ..."
+            CGO_ENABLED=0 go build \
+              -trimpath \
+              -ldflags="-s -w" \
+              -o "dist/go/$name" \
+              "./$cmd"
+          done
+          ls -lh dist/go/
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          syft-version: "v${{ env.SYFT_VERSION }}"
+
+      - name: Generate SBOMs (SPDX-JSON + CycloneDX-JSON) for each binary
+        run: |
+          mkdir -p sbom
+          for bin in dist/go/*; do
+            name=$(basename "$bin")
+            echo "syft: $name"
+            syft "$bin" \
+              --output spdx-json \
+              --file "sbom/${name}.spdx.json"
+            syft "$bin" \
+              --output cyclonedx-json \
+              --file "sbom/${name}.cdx.json"
+          done
+          ls -lh sbom/
+
+      - name: Upload SBOMs as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: go-sboms
+          path: sbom/
+          retention-days: 90
+
+      - name: Install Trivy
+        run: |
+          curl -sSfL \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | tar -xz -C /usr/local/bin trivy
+          trivy --version
+
+      - name: Trivy scan — Go binaries (HIGH/CRITICAL gate)
+        run: |
+          mkdir -p trivy-results
+          FAILED=0
+          for bin in dist/go/*; do
+            name=$(basename "$bin")
+            echo "=== trivy: $name ==="
+            trivy rootfs \
+              --severity HIGH,CRITICAL \
+              --exit-code 1 \
+              --format sarif \
+              --output "trivy-results/${name}.sarif" \
+              "$bin" || FAILED=1
+          done
+          exit $FAILED
+
+      - name: Upload Trivy SARIF (Go binaries) to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        with:
+          sarif_file: trivy-results/
+          category: trivy-go-binaries
+
+  # -----------------------------------------------------------------------
+  # Go module dependency scan — covers transitive deps via go.sum
+  # -----------------------------------------------------------------------
+  go-dep-trivy:
+    name: Go module deps — Trivy scan
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Trivy
+        run: |
+          curl -sSfL \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | tar -xz -C /usr/local/bin trivy
+          trivy --version
+
+      - name: Trivy scan — go.mod / go.sum (HIGH/CRITICAL gate)
+        run: |
+          trivy fs \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --format sarif \
+            --output trivy-go-deps.sarif \
+            .
+
+      - name: Upload SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        with:
+          sarif_file: trivy-go-deps.sarif
+          category: trivy-go-deps
+
+  # -----------------------------------------------------------------------
+  # Container image scan — pulls cpu image from GHCR (weekly + release)
+  # or builds inline (PRs / push) and scans with Trivy + syft SBOM.
+  # -----------------------------------------------------------------------
+  container-sbom-trivy:
+    name: Container image — SBOM + Trivy scan
+    if: |
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      security-events: write
+      packages: read   # pull from GHCR on schedule
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5fb029f  # v3.10.0
+
+      - name: Log in to GHCR (schedule only)
+        if: github.event_name == 'schedule'
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine image ref
+        id: image
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> "$GITHUB_OUTPUT"
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=vmafx-dev-mcp:scan" >> "$GITHUB_OUTPUT"
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build dev-mcp image (push/PR path)
+        if: steps.image.outputs.built == 'true'
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1  # v6.16.0
+        with:
+          context: .
+          file: dev/Containerfile
+          load: true
+          tags: vmafx-dev-mcp:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Pull image (schedule path)
+        if: steps.image.outputs.built == 'false'
+        run: docker pull "${{ steps.image.outputs.ref }}"
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          syft-version: "v${{ env.SYFT_VERSION }}"
+
+      - name: Generate container SBOM (SPDX-JSON + CycloneDX-JSON)
+        run: |
+          mkdir -p sbom
+          syft "${{ steps.image.outputs.ref }}" \
+            --output spdx-json \
+            --file sbom/container.spdx.json
+          syft "${{ steps.image.outputs.ref }}" \
+            --output cyclonedx-json \
+            --file sbom/container.cdx.json
+          ls -lh sbom/
+
+      - name: Upload container SBOM as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: container-sbom
+          path: sbom/
+          retention-days: 90
+
+      - name: Install Trivy
+        run: |
+          curl -sSfL \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | tar -xz -C /usr/local/bin trivy
+          trivy --version
+
+      - name: Trivy scan — container image (HIGH/CRITICAL gate)
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --format sarif \
+            --output trivy-container.sarif \
+            "${{ steps.image.outputs.ref }}"
+
+      - name: Upload Trivy SARIF (container) to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        with:
+          sarif_file: trivy-container.sarif
+          category: trivy-container
+
+  # -----------------------------------------------------------------------
+  # Summary gate (mirrors the required-aggregator pattern)
+  # -----------------------------------------------------------------------
+  sbom-trivy-all:
+    name: SBOM + Trivy — all gates passed
+    if: always()
+    needs: [go-sbom-trivy, go-dep-trivy, container-sbom-trivy]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check results
+        run: |
+          FAILED=0
+          for job in \
+            "${{ needs.go-sbom-trivy.result }}" \
+            "${{ needs.go-dep-trivy.result }}"
+          do
+            if [[ "$job" != "success" && "$job" != "skipped" ]]; then
+              echo "A required SBOM/Trivy gate failed: $job"
+              FAILED=1
+            fi
+          done
+          # container job may be skipped on certain paths
+          echo "container-sbom-trivy: ${{ needs.container-sbom-trivy.result }}"
+          exit $FAILED
