@@ -51,7 +51,8 @@ def test_list_extractors_known_names():
     """At minimum the canonical CPU extractors must be present.
 
     float_ansnr was removed from the CPU backend in PR #38 (sunset per
-    ADR-0749); the Vulkan variant `float_ansnr_vulkan` remains.
+    ADR-0749). The Vulkan twins were dropped wholesale by ADR-0726
+    (2026-05-28).
     """
     names = {ex["name"] for ex in srv._list_extractors()}
     for expected in ("float_vif", "psnr", "ssim", "vif"):
@@ -59,8 +60,8 @@ def test_list_extractors_known_names():
 
 
 def test_list_extractors_backend_tags():
-    """Backend tags must only be known labels."""
-    valid = {"cpu", "cuda", "sycl", "vulkan", "hip", "metal"}
+    """Backend tags must only be known labels (post-ADR-0726)."""
+    valid = {"cpu", "cuda", "sycl", "hip", "metal"}
     for ex in srv._list_extractors():
         assert (
             ex["backend"] in valid
@@ -82,7 +83,7 @@ def test_list_extractors_cpu_backend_for_cpu_extractors():
 
 
 def test_list_extractors_gpu_backend_tags():
-    """CUDA / SYCL / HIP / Vulkan twins carry the correct backend tag."""
+    """CUDA / SYCL / HIP twins carry the correct backend tag (post-ADR-0726)."""
     by_name = {ex["name"]: ex for ex in srv._list_extractors()}
     # float_motion_cuda is registered in the CUDA C source.
     if "float_motion_cuda" in by_name:

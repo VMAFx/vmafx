@@ -90,12 +90,11 @@ for the option-space digest.
   that tuple; the encoder will then automatically pay the dummy-encode
   cost on every `compare` invocation. CPU encoders short-circuit
   after the `ffmpeg -encoders` listing grep.
-- **Score backend auto-selection is native-first (ADR-0667).**
+- **Score backend auto-selection is native-first (ADR-0667 / ADR-0726).**
   `vmaftune.score_backend.DEFAULT_FALLBACKS` must stay
-  `cuda -> sycl -> hip -> vulkan -> cpu`. Vulkan remains the
-  cross-vendor fallback, but native CUDA / SYCL / HIP runtimes win
-  before it. Adding another explicit backend to `ALL_BACKENDS` requires
-  a same-PR probe, docs update, and strict-mode unit tests.
+  `cuda -> sycl -> hip -> cpu`. ADR-0726 (2026-05-28) removed Vulkan
+  from the chain. Adding another explicit backend to `ALL_BACKENDS`
+  requires a same-PR probe, docs update, and strict-mode unit tests.
 - **Compare runtime variants are labels, not adapters
   ([ADR-0644](../../docs/adr/0644-vmaf-tune-codec-runtime-variants.md)).**
   `ADAPTER@VARIANT` tokens in `vmaf-tune compare` must parse through
@@ -531,8 +530,8 @@ for the option-space digest.
   the omission. ([ADR-0549](../../docs/adr/0549-vmaftune-workdir-relocation.md))
 - **Score backend selection is strict-by-default
   ([ADR-0299](../../docs/adr/0299-vmaf-tune-gpu-score.md)).**
-  `score_backend.select_backend(prefer)` honours `cuda` / `vulkan` /
-  `sycl` / `cpu` exactly — if the requested backend is not available,
+  `score_backend.select_backend(prefer)` honours `cuda` / `sycl` /
+  `hip` / `cpu` exactly — if the requested backend is not available,
   it raises `BackendUnavailableError` rather than silently falling back
   to CPU. Only `prefer="auto"` walks the fallback chain. Do not "fix"
   a strict-mode test that fails on a CI runner without GPU by adding
@@ -541,15 +540,16 @@ for the option-space digest.
   `available` argument or `runner` instead.
 - **`--score-backend` argparse choices are kept in sync with
   `score_backend.ALL_BACKENDS` and libvmaf's `--backend NAME`
-  vocabulary ([ADR-0314](../../docs/adr/0314-vmaf-tune-score-backend-vulkan.md)).**
-  Do NOT add a new value (e.g. `hip`, `metal`) to the argparse
-  `choices` tuple in `cli.py` without the corresponding libvmaf-side
-  wiring landing in the same release. The four current values
-  (`cpu`, `cuda`, `sycl`, `vulkan`) are the exact set the libvmaf CLI
-  accepts; widening the harness without widening the binary produces
-  silent strict-mode failures on hosts that probe positively for the
-  new value. Cross-reference: `core/tools/cli_parse.c` `--backend`
-  alternation.
+  vocabulary ([ADR-0314](../../docs/adr/0314-vmaf-tune-score-backend-vulkan.md) /
+  [ADR-0726](../../docs/adr/0726-drop-vulkan-backend.md)).**
+  Do NOT add a new value (e.g. `metal`) to the argparse `choices`
+  tuple in `cli.py` without the corresponding libvmaf-side wiring
+  landing in the same release. The four current values (`cpu`,
+  `cuda`, `sycl`, `hip`) are the exact set the libvmaf CLI accepts
+  post-ADR-0726 (Vulkan dropped 2026-05-28); widening the harness
+  without widening the binary produces silent strict-mode failures
+  on hosts that probe positively for the new value. Cross-reference:
+  `core/tools/cli_parse.c` `--backend` alternation.
 - **HDR detection is fail-safe to SDR (ADR-0295).** `hdr.detect_hdr`
   returns `None` on any classification ambiguity (missing file,
   ffprobe failure, malformed JSON, mismatched primaries vs.

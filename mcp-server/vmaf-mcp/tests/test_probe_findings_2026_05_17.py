@@ -6,9 +6,9 @@ See `docs/adr/0495-mcp-probe-bug-fixes.md` for the cluster write-up.
 Bugs covered:
   1. Silent backend fallback (`backend="cuda"` on CPU-only build) — must
      now raise *and* the success path must echo `backend_used`.
-  2. Tool schema enum dropped `vulkan` / `hip` / `metal` — schema must
-     advertise all seven backends for both `vmaf_score` and
-     `describe_worst_frames`.
+  2. Tool schema enum dropped `hip` / `metal` — schema must advertise
+     every supported backend (post-ADR-0726: auto, cpu, cuda, sycl,
+     hip, metal) for both `vmaf_score` and `describe_worst_frames`.
   3. `run_benchmark` returning `exit_code=1` with empty stdout AND
      stderr — wrapper must surface a meaningful `error` field.
   5. `vmaf_4k_v0.6.1` on 576×324 silently saturates — wrapper must
@@ -27,7 +27,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -121,30 +120,32 @@ def test_bug1_auto_infers_backend_from_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """For `backend='auto'`, `backend_used` is inferred from the JSON
-    key-count signature documented in `bench_all.sh::compare`."""
-    _install_fake_vmaf(tmp_path, monkeypatch, advertised=("cuda", "vulkan"))
+    key-count signature documented in `bench_all.sh::compare`.
+    Post-ADR-0726 (Vulkan dropped 2026-05-28) the small-metrics-count
+    path maps to the generic 'gpu' label rather than 'vulkan'."""
+    _install_fake_vmaf(tmp_path, monkeypatch, advertised=("cuda",))
     req = _make_score_request(backend="auto")
-    # Vulkan-style payload — first-frame metrics has 32 keys (>= 30).
-    big_metrics = {f"k{i}": 1.0 for i in range(32)}
+    # GPU-style payload — first-frame metrics has 8 keys (<= 12).
+    small_metrics = {f"k{i}": 1.0 for i in range(8)}
     result = _run_score_with_fake_proc(
         req,
-        payload={"frames": [{"metrics": big_metrics}], "pooled_metrics": {}},
+        payload={"frames": [{"metrics": small_metrics}], "pooled_metrics": {}},
     )
     assert result["backend_requested"] == "auto"
-    assert result["backend_used"] == "vulkan"
+    assert result["backend_used"] == "gpu"
 
 
 # ---------------------------------------------------------------------------
-# Bug #2 — schema enum dropped vulkan/hip/metal
+# Bug #2 — schema enum dropped hip/metal (vulkan dropped by ADR-0726)
 # ---------------------------------------------------------------------------
 
 
-def test_bug2_schema_advertises_all_seven_backends() -> None:
-    """Both `vmaf_score` and `describe_worst_frames` must enumerate all
-    seven backends in their JSON-schema enum."""
+def test_bug2_schema_advertises_all_supported_backends() -> None:
+    """Both `vmaf_score` and `describe_worst_frames` must enumerate every
+    supported backend in their JSON-schema enum (post-ADR-0726)."""
     tools = asyncio.run(srv._list_tools())
     by_name = {t.name: t for t in tools}
-    expected = {"auto", "cpu", "cuda", "sycl", "vulkan", "hip", "metal"}
+    expected = {"auto", "cpu", "cuda", "sycl", "hip", "metal"}
 
     for tool_name in ("vmaf_score", "describe_worst_frames"):
         tool = by_name[tool_name]
@@ -267,7 +268,7 @@ def test_probe_backends_parses_help_output(tmp_path: Path, monkeypatch: pytest.M
     srv._BACKEND_PROBE_CACHE.pop(str(fake), None)
 
     class _R:
-        stdout = "--no_cuda    disable CUDA\n--no_vulkan  disable Vulkan\n"
+        stdout = "--no_cuda    disable CUDA\n--no_hip     disable HIP\n"
         stderr = ""
 
     def _fake_run(*args, **kwargs):
@@ -275,4 +276,4 @@ def test_probe_backends_parses_help_output(tmp_path: Path, monkeypatch: pytest.M
 
     monkeypatch.setattr(srv.subprocess, "run", _fake_run)
     backends = srv._probe_backends(fake)
-    assert backends == frozenset({"cpu", "cuda", "vulkan"}), backends
+    assert backends == frozenset({"cpu", "cuda", "hip"}), backends

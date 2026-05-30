@@ -89,7 +89,7 @@ def build_vmaf_command(
 
     ``backend`` (when set) is forwarded as the libvmaf CLI's
     ``--backend NAME`` selector — values ``cpu`` / ``cuda`` / ``sycl``
-    / ``vulkan`` per ADR-0127 / ADR-0175 / ADR-0186 / ADR-0299. When
+    / ``hip`` per ADR-0127 / ADR-0175 / ADR-0299 / ADR-0726. When
     ``None`` the flag is omitted so the libvmaf binary picks its own
     default (CPU on a stock build).
     """

@@ -10,7 +10,7 @@ scoring CLI to LLM tooling via JSON-RPC over stdio.
 | `vmaf_score`            | Score a (ref, dis) raw YUV pair. Returns the full JSON report.                     |
 | `vmaf_score_encoded`    | Score encoded video (MP4/MKV/Y4M/…) — decodes via ffmpeg, then scores. (ADR-0608) |
 | `list_models`           | Enumerate models under `model/` (`.json`, `.pkl`, `.onnx`).                        |
-| `list_backends`         | Report which backends (`cpu`/`cuda`/`sycl`/`vulkan`/`hip`/`metal`) are compiled in. |
+| `list_backends`         | Report which backends (`cpu`/`cuda`/`sycl`/`hip`/`metal`) are compiled in. |
 | `probe_backend`         | Runtime health check: compiled-in vs driver-functional distinction. (ADR-0608)     |
 | `vmaf_version`          | Return binary path, version string, and build flags. (ADR-0608)                    |
 | `run_benchmark`         | Run `testdata/bench_all.sh` on the built-in fixture pairs.                         |

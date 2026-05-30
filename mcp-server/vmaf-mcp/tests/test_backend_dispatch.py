@@ -1,7 +1,8 @@
 # Copyright 2026 Lusoris and Claude (Anthropic)
 """Verify ``_run_vmaf_score`` emits the correct ``--no_<backend>`` flag set
-for each backend selector — including ``vulkan``, ``hip``, ``metal``, which
-were missing before this PR and silently fell through to ``auto``."""
+for each backend selector — including ``hip``, ``metal``, which were missing
+before PR-1228 and silently fell through to ``auto``. ADR-0726 dropped the
+``vulkan`` value 2026-05-28."""
 
 from __future__ import annotations
 
@@ -10,7 +11,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from vmaf_mcp import server as srv
 
 
@@ -39,13 +39,12 @@ def _argv_from_call(mock_exec) -> list[str]:
     [
         (
             "cpu",
-            {"--no_cuda", "--no_sycl", "--no_vulkan", "--no_hip", "--no_metal"},
+            {"--no_cuda", "--no_sycl", "--no_hip", "--no_metal"},
         ),
-        ("cuda", {"--no_sycl", "--no_vulkan", "--no_hip", "--no_metal"}),
-        ("sycl", {"--no_cuda", "--no_vulkan", "--no_hip", "--no_metal"}),
-        ("vulkan", {"--no_cuda", "--no_sycl", "--no_hip", "--no_metal"}),
-        ("hip", {"--no_cuda", "--no_sycl", "--no_vulkan", "--no_metal"}),
-        ("metal", {"--no_cuda", "--no_sycl", "--no_vulkan", "--no_hip"}),
+        ("cuda", {"--no_sycl", "--no_hip", "--no_metal"}),
+        ("sycl", {"--no_cuda", "--no_hip", "--no_metal"}),
+        ("hip", {"--no_cuda", "--no_sycl", "--no_metal"}),
+        ("metal", {"--no_cuda", "--no_sycl", "--no_hip"}),
         ("auto", set()),
     ],
 )
@@ -68,7 +67,7 @@ def test_run_vmaf_score_emits_expected_no_flags(
     monkeypatch.setitem(
         srv._BACKEND_PROBE_CACHE,
         str(fake_vmaf),
-        frozenset({"cpu", "cuda", "sycl", "vulkan", "hip", "metal"}),
+        frozenset({"cpu", "cuda", "sycl", "hip", "metal"}),
     )
 
     # Fake output payload — _run_vmaf_score reads the JSON, so write one
@@ -104,16 +103,17 @@ def test_run_vmaf_score_emits_expected_no_flags(
     )
 
 
-def test_list_backends_includes_vulkan_hip_metal_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``_list_backends`` returns a dict with all 6 backend keys, even when
-    the local vmaf binary is missing (defensive default).
+def test_list_backends_includes_hip_metal_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``_list_backends`` returns a dict with every supported backend key,
+    even when the local vmaf binary is missing (defensive default).
 
+    Post-ADR-0726: the key set is {cpu, cuda, sycl, hip, metal}.
     CPU is always True — it requires no GPU driver.  Every GPU backend is
     False when the binary is absent (we cannot probe capabilities).
     """
     monkeypatch.setattr(srv, "_vmaf_binary", lambda: Path("/does/not/exist/vmaf"))
     result = srv._list_backends()
-    assert set(result.keys()) == {"cpu", "cuda", "sycl", "vulkan", "hip", "metal"}
+    assert set(result.keys()) == {"cpu", "cuda", "sycl", "hip", "metal"}
     # CPU must be True regardless of binary presence.
     assert result["cpu"] is True, result
     # GPU backends are all False when the binary is missing.

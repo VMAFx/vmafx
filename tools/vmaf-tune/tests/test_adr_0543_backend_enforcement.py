@@ -119,7 +119,7 @@ def _run_backend(backend: str, output_path: Path | None = None) -> subprocess.Co
     return subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
 
-@pytest.mark.parametrize("backend", ["sycl", "hip", "vulkan", "cuda", "metal"])
+@pytest.mark.parametrize("backend", ["sycl", "hip", "cuda", "metal"])
 def test_adr_0543_explicit_backend_failure_exits_100(backend: str, tmp_path: Path) -> None:
     """Explicit ``--backend NAME`` init failure must exit 100 (ADR-0543).
 
@@ -151,7 +151,7 @@ def test_adr_0543_explicit_backend_failure_exits_100(backend: str, tmp_path: Pat
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("backend", ["sycl", "hip", "vulkan", "cuda", "metal"])
+@pytest.mark.parametrize("backend", ["sycl", "hip", "cuda", "metal"])
 def test_adr_0543_failure_writes_structured_json(backend: str, tmp_path: Path) -> None:
     """``--output X.json`` must contain a structured error on backend failure.
 
@@ -275,7 +275,8 @@ def test_adr_0543_error_json_helper_wired_into_every_backend() -> None:
     backend keyword.
     """
     src = _vmaf_c_source()
-    for backend in ("sycl", "cuda", "vulkan", "hip", "metal"):
+    # Vulkan was dropped from this list by ADR-0726 (2026-05-28).
+    for backend in ("sycl", "cuda", "hip", "metal"):
         marker = f'write_backend_error_json(c->output_path, c->output_fmt, "{backend}"'
         assert marker in src, (
             f"ADR-0543 contract: write_backend_error_json must be called for "

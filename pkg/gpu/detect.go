@@ -115,7 +115,7 @@ func probeNVIDIA() (Capability, bool) {
 		DeviceCount:       len(lines),
 		DeviceName:        name,
 		ComputeCapability: computeCap,
-		Backends:          []string{"cuda", "vulkan", "cpu"},
+		Backends:          []string{"cuda", "cpu"},
 	}, true
 }
 
@@ -164,7 +164,7 @@ func probeAMD() (Capability, bool) {
 		Vendor:      VendorAMD,
 		DeviceCount: count,
 		DeviceName:  name,
-		Backends:    []string{"hip", "vulkan", "cpu"},
+		Backends:    []string{"hip", "cpu"},
 	}, true
 }
 
@@ -221,7 +221,7 @@ func probeIntel() (Capability, bool) {
 		Vendor:      VendorIntel,
 		DeviceCount: count,
 		DeviceName:  name,
-		Backends:    []string{"sycl", "vulkan", "cpu"},
+		Backends:    []string{"sycl", "cpu"},
 	}, true
 }
 

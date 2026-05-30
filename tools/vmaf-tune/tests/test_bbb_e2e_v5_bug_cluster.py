@@ -4,13 +4,13 @@
 
 The v5 probe surfaced three follow-ups against the v4 fixes:
 
-* **V5-1** — ``vmaf --backend vulkan`` strict-mode refusal must keep
-  propagating a non-zero exit byte to ``main()``. The v4 test was
-  ``pytest.skip``-gated on ``shutil.which("vmaf")`` so the gate
-  silently disengaged on every developer host that lacked the binary
-  on ``$PATH``. This file's harder integration test additionally
-  honours ``VMAF_BIN_FOR_TESTS`` and probes standard build
-  directories so the gate fires whenever a binary is reachable.
+* **V5-1** — ``vmaf --backend vulkan`` must exit non-zero (ADR-0726,
+  2026-05-28). The original V5-1 pinned the strict-mode refusal
+  message produced when Vulkan init failed; ADR-0726 dropped the
+  Vulkan backend entirely so the CLI now rejects the value outright.
+  This file's harder integration test additionally honours
+  ``VMAF_BIN_FOR_TESTS`` and probes standard build directories so
+  the gate fires whenever a binary is reachable.
 * **V5-2** — ``vmaf-tune ladder`` against a container source
   (``.mp4`` / ``.mkv``) produced VMAF 4-9 instead of 80-95 because
   the encode pipe re-interpreted the container's compressed bytes
@@ -113,23 +113,19 @@ def _find_yuv_resource_root() -> Path | None:
     return None
 
 
-def test_vmaf_backend_vulkan_refusal_exits_nonzero_v5() -> None:
-    """``vmaf --backend vulkan`` strict refusal MUST exit non-zero (V5-1).
+def test_vmaf_backend_vulkan_rejected_after_adr_0726() -> None:
+    """``vmaf --backend vulkan`` MUST exit non-zero (V5-1 / ADR-0726).
 
-    Improvements over the V4-A test:
+    ADR-0726 (2026-05-28) dropped the Vulkan backend from libvmaf.
+    The CLI now rejects ``--backend vulkan`` outright — either at the
+    argparse layer or via the "not compiled in" guard — and exits
+    non-zero. This pin guards against accidental reintroduction of
+    a vulkan code path that would silently succeed.
 
-    * Honours ``VMAF_BIN_FOR_TESTS`` and the canonical
-      ``build/tools/vmaf`` path so the test exercises a built binary
-      even when ``$PATH`` is not augmented. The v4 test only looked
-      at ``$PATH``, so on most developer hosts (and on the dev-mcp
-      container before this PR shipped) it silently skipped — a
-      RC=0 regression would have gone unnoticed.
-    * The skip reason explicitly names every probed location so a
-      CI failure that surfaces as "no binary found" is debuggable
-      from the log alone.
-    * Asserts both the refusal stderr token and the non-zero exit
-      so a refactor that drops one of the two halves still trips
-      the gate.
+    The test mirrors the V4-A improvements: it honours
+    ``VMAF_BIN_FOR_TESTS`` and the canonical ``build/tools/vmaf``
+    path so it exercises a built binary even when ``$PATH`` is not
+    augmented.
     """
     binary = _resolve_vmaf_binary()
     if binary is None:
@@ -162,16 +158,10 @@ def test_vmaf_backend_vulkan_refusal_exits_nonzero_v5() -> None:
         "8",
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    if proc.returncode == 0 and "refusing to silently fall back" not in proc.stderr:
-        # Host owns a working Vulkan device — the refusal path didn't
-        # fire and a clean exit is correct. Not a bug, but informational.
-        pytest.skip("host has a working Vulkan device; refusal path not exercised")
-    assert (
-        proc.returncode != 0
-    ), f"V5-1 regression: --backend vulkan refusal exited 0 (stderr={proc.stderr!r})"
-    assert (
-        "refusing to silently fall back" in proc.stderr
-    ), f"refusal stderr missing: {proc.stderr!r}"
+    assert proc.returncode != 0, (
+        "ADR-0726 regression: --backend vulkan exited 0 — Vulkan was "
+        f"dropped 2026-05-28 and must be rejected (stderr={proc.stderr!r})"
+    )
 
 
 # ---------------------------------------------------------------------------

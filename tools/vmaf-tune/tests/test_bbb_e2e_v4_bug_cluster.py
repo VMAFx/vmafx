@@ -5,13 +5,11 @@
 The v4 probe (after PR #1256 / ADR-0499 closed the v3 cluster) flagged
 three findings — pinned here one regression each per ADR-0501:
 
-* **V4-A**: ``vmaf --backend vulkan`` (when the requested backend
-  init fails) must exit with a non-zero status so CI gates can detect
-  the refusal. The strict-mode message added in ADR-0498 prints to
-  stderr and the helper returns ``-1``; the pin asserts the propagation
-  through ``main()`` so the exit byte is non-zero even when the C
-  compiler/linker re-flow the return chain. Skipped when ``vmaf`` is
-  not on ``$PATH``.
+* **V4-A**: *Retired by ADR-0726 (2026-05-28).* The original probe
+  used ``vmaf --backend vulkan`` to drive the strict-mode refusal
+  path. With the Vulkan backend removed, ``vmaf`` now rejects that
+  value at CLI parse time and the strict-mode exit-byte contract is
+  exercised by the equivalent CUDA / SYCL / HIP pins elsewhere.
 * **V4-B**: ``vmaf-tune ladder`` against a multi-resolution grid must
   (a) downscale the *reference* leg to the rung target before scoring
   — otherwise the libvmaf CLI mis-parses raw planar bytes at the wrong
@@ -29,14 +27,11 @@ The order mirrors the v4 bug log.
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-import pytest
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
@@ -59,60 +54,17 @@ class _FakeCompleted:
 
 
 # ---------------------------------------------------------------------------
-# Bug #V4-A — strict-mode --backend refusal exits non-zero
+# Bug #V4-A — RETIRED 2026-05-28 by ADR-0726
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(shutil.which("vmaf") is None, reason="vmaf binary not on PATH")
-def test_vmaf_backend_vulkan_refusal_exits_nonzero(tmp_path: Path) -> None:
-    """ADR-0498 strict-mode refusal must propagate to a non-zero exit byte.
-
-    Reproducer: invoke the binary with ``--backend vulkan`` against a
-    pair of checkerboard YUVs. In a container without a Vulkan device
-    the init fails (``-19 = -ENODEV``) and the strict-mode block
-    refuses to fall back to CPU. The test asserts the exit byte is
-    non-zero so CI gates and shell consumers can detect the refusal —
-    a previous regression had ``main()`` swallowing the error and
-    returning 0 (Bug #V4-A).
-
-    When the host *does* have a usable Vulkan device the binary will
-    succeed (exit 0). That outcome doesn't exercise the refusal path
-    but isn't a bug either; the test treats it as a skip-equivalent
-    pass with an informational marker.
-    """
-    yuv_root = _find_yuv_resource_root()
-    if yuv_root is None:
-        pytest.skip("Netflix golden YUV fixtures not available")
-    ref = yuv_root / "checkerboard_1920_1080_10_3_0_0.yuv"
-    dist = yuv_root / "checkerboard_1920_1080_10_3_1_0.yuv"
-    if not ref.exists() or not dist.exists():
-        pytest.skip(f"checkerboard YUVs missing under {yuv_root}")
-    cmd = [
-        "vmaf",
-        "--backend",
-        "vulkan",
-        "--reference",
-        str(ref),
-        "--distorted",
-        str(dist),
-        "--width",
-        "1920",
-        "--height",
-        "1080",
-        "-p",
-        "420",
-        "-b",
-        "8",
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    if proc.returncode == 0 and "refusing to silently fall back" not in proc.stderr:
-        # Host has Vulkan + a device; the refusal path didn't engage.
-        pytest.skip("host has a working Vulkan device; refusal path not exercised")
-    assert proc.returncode != 0, (
-        "strict-mode --backend vulkan refusal must exit non-zero "
-        f"(rc={proc.returncode}, stderr={proc.stderr!r})"
-    )
-    assert "refusing to silently fall back" in proc.stderr, proc.stderr
+#
+# The original V4-A reproducer drove the strict-mode --backend refusal
+# path with ``vmaf --backend vulkan`` against a CPU-only host. ADR-0726
+# removed the Vulkan backend entirely, so the CLI now rejects
+# ``vulkan`` at argparse time and the refusal path is unreachable
+# through that value. The strict-mode exit-byte contract is still
+# exercised against the surviving backends (CUDA / SYCL / HIP) in
+# the corresponding pins under ``tools/vmaf-tune/tests`` and
+# ``mcp-server/vmaf-mcp/tests``.
 
 
 def _find_yuv_resource_root() -> Path | None:

@@ -107,14 +107,14 @@ def test_run_compare_exits_2_on_unavailable_backend(monkeypatch) -> None:
 def test_run_compare_exits_2_with_actionable_message(monkeypatch) -> None:
     """The error message must include both the requested backend name and a
     hint that it is unavailable (mirrors the ladder contract in ADR-0511)."""
-    monkeypatch.setattr(cli_module, "select_backend", _make_unavailable_backend("vulkan"))
+    monkeypatch.setattr(cli_module, "select_backend", _make_unavailable_backend("hip"))
 
     args = argparse.Namespace(
         src="/tmp/missing.yuv",
         encoders="libx264",
         format="json",
         no_bisect=False,
-        score_backend="vulkan",
+        score_backend="hip",
         vmaf_bin="vmaf",
         vaapi_device=None,
         width=None,

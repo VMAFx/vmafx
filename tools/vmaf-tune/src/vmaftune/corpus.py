@@ -359,7 +359,7 @@ class CorpusOptions:
     sample_clip_seconds: float = 0.0
     # ADR-0299 / ADR-0314: libvmaf scoring backend. ``None`` (default)
     # omits the ``--backend`` flag so libvmaf picks its own default
-    # (CPU on a stock build); ``"cuda"`` / ``"vulkan"`` / ``"sycl"`` /
+    # (CPU on a stock build); ``"cuda"`` / ``"sycl"`` / ``"hip"`` /
     # ``"cpu"`` engage the corresponding backend explicitly. The CLI
     # resolves ``--score-backend auto`` to a concrete value before
     # populating this field; ``CorpusOptions`` itself never walks the
