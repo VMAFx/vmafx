@@ -40384,3 +40384,34 @@ Fork-local files:
 `core/src/libvmaf.c` (comments + assert),
 `docs/adr/0795-prev-ref-thread-safety.md`,
 `changelog.d/fixed/prev-ref-batch-thread-safety.md`.
+
+## log.c → log.cpp C++23 pilot (ADR-0708 Wave 1, 2026-05-30)
+
+Upstream Netflix `libvmaf/src/log.c` is fork-renamed to
+`core/src/log.cpp`. Future port-upstream-commit runs that touch
+`libvmaf/src/log.c` must apply changes to `core/src/log.cpp` instead — the
+fork-rename mapping is recorded here.
+
+Public C ABI is preserved: `core/src/log.h` retains the same two function
+prototypes (`vmaf_log`, `vmaf_set_log_level`) and now carries `extern "C"`
+guards so it is includable from both C and C++ TUs. The C-mangled exported
+symbols are unchanged (`nm libvmaf.so` shows `vmaf_log` and
+`vmaf_set_log_level` with the same C-mangling as the prior log.c build).
+
+Meson wiring: log.cpp compiles in an isolated `log_cpp23_lib` static_library
+with `override_options: ['cpp_std=' + libvmaf_cpu_cpp_std]`, mirroring the
+`metadata_handler_cpp20_lib` pattern (ADR-0708 metadata_handler pilot). Test
+executables that previously direct-compiled `../src/log.c` (test_lpips,
+test_dists, test_feature_extractor, test_speed, ...) now pick up log symbols
+via the shared `log_cpp23_test_objects` aggregate in
+`core/test/meson.build`.
+
+Fork-local files:
+`core/src/log.cpp` (was: `core/src/log.c`, removed),
+`core/src/log.h` (added `extern "C"` guards),
+`core/src/meson.build` (replaced `log.c` source entry with `log_cpp23_lib`),
+`core/test/meson.build` (added `log_cpp23_test_objects`, removed inline
+`'../src/log.c'` source entries from ~20 test execs, wired `test_log` into
+the fast suite),
+`docs/adr/0708-vmafx-cpp23-internals-pilot.md` (consequences cross-link),
+`changelog.d/changed/log-c-to-cpp23.md`.

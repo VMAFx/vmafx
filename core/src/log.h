@@ -21,7 +21,15 @@
 
 #include "libvmaf/libvmaf.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void vmaf_set_log_level(enum VmafLogLevel log_level);
 void vmaf_log(enum VmafLogLevel log_level, const char *fmt, ...);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* __VMAF_SRC_LOG_H__ */
