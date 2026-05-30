@@ -151,14 +151,22 @@ jobs:
         run: |
           git clone -q --branch release/8.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
           cd ffmpeg
-          # Apply the patch series in series.txt order. Patch 0003 (SYCL)
-          # depends on fields added by 0001 (tiny-AI), so applying out of
-          # order breaks the build.
+          # Apply the patch series in series.txt order using `git am --3way`
+          # so context shifts caused by skipped patches in series.txt
+          # (e.g. the Vulkan patches 0004/0006 dropped per ADR-0726) don't
+          # break later patches whose hunks reference cumulative state.
+          # Patch 0003 (SYCL) depends on fields added by 0001 (tiny-AI),
+          # so applying out of order breaks the build.
+          git config user.email "ci@vmafx.local"
+          git config user.name "VMAFx CI"
           while IFS= read -r line; do
             case "$line" in ''|\#*) continue ;; esac
-            echo "Applying ffmpeg-patches/$line"
-            git apply "../ffmpeg-patches/$line" \
-              || patch -p1 < "../ffmpeg-patches/$line"
+            echo "Applying ffmpeg-patches/$line (--3way)"
+            git am --3way "../ffmpeg-patches/$line" || {
+              echo "::error::patch $line failed even with --3way"
+              git am --abort 2>/dev/null || true
+              exit 1
+            }
           done < ../ffmpeg-patches/series.txt
           # libvmaf-sycl is auto-detected by check_pkg_config in patch 0003;
           # there is no `--enable-libvmaf-sycl` flag to pass.
