@@ -7,11 +7,13 @@ in [`docs/development/fuzzing.md`](../../../docs/development/fuzzing.md).
 
 ## Targets
 
-| Harness          | Surface under test                                                                               | Corpus              |
-|------------------|--------------------------------------------------------------------------------------------------|---------------------|
-| `fuzz_y4m_input` | `video_input_open` / `_fetch_frame` (Y4M parser, `libvmaf/tools/y4m_input.c`)                    | `y4m_input_corpus/` |
-| `fuzz_yuv_input` | `raw_input_open` / `_fetch_frame` (raw YUV reader, `libvmaf/tools/yuv_input.c`)                  | `yuv_input_corpus/` |
-| `fuzz_cli_parse` | `cli_parse` argv tokeniser + colon-delimited model/feature parsers (`libvmaf/tools/cli_parse.c`) | `cli_parse_corpus/` |
+| Harness            | Surface under test                                                                                            | Corpus                |
+|--------------------|---------------------------------------------------------------------------------------------------------------|-----------------------|
+| `fuzz_y4m_input`   | `video_input_open` / `_fetch_frame` (Y4M parser, `core/tools/y4m_input.c`)                                    | `y4m_input_corpus/`   |
+| `fuzz_yuv_input`   | `raw_input_open` / `_fetch_frame` (raw YUV reader, `core/tools/yuv_input.c`)                                  | `yuv_input_corpus/`   |
+| `fuzz_cli_parse`   | `cli_parse` argv tokeniser + colon-delimited model/feature parsers (`core/tools/cli_parse.c`)                 | `cli_parse_corpus/`   |
+| `fuzz_json_model`  | `vmaf_read_json_model_from_buffer` + collection variant (SVM model JSON parser, `core/src/read_json_model.c`) | `json_model_corpus/`  |
+| `fuzz_dnn_sidecar` | `vmaf_dnn_sidecar_load` (tiny-AI sidecar JSON parser, `core/src/dnn/model_loader.c`)                          | `dnn_sidecar_corpus/` |
 
 ## Build
 
@@ -85,6 +87,19 @@ call sites (`--th*`, `--s*`, `--c*`); see the
 [`fuzz_cli_parse.c`](fuzz_cli_parse.c) and the bug write-up in
 [ADR-0311 §Consequences](../../../docs/adr/0311-libfuzzer-harness-expansion.md#consequences).
 Remove the filter once the cli_parse fix lands.
+
+The `fuzz_json_model` harness surfaced a heap-buffer-overflow in
+`vmaf_model_destroy` (`core/src/model.c:210`) on a fork-local
+parser path: `parse_slopes` grows the feature array via
+`ensure_feature_capacity` while leaving `n_features` unchanged,
+so `vmaf_model_destroy` then walks past the initialised region.
+Reproducer in `json_model_known_crashes/slopes_oob_destroy.bin`
+(the `.bin` extension keeps the `pre-commit check-json` hook from
+trying to parse fuzzer-mutated bytes that are deliberately not
+valid JSON)
+— per ADR-0404, the harness is kept running unmodified until the
+fix PR lands; the next nightly run returns green automatically.
+Tracked in [`docs/state.md`](../../../docs/state.md).
 
 ## CI
 

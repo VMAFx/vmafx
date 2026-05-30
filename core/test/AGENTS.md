@@ -284,3 +284,37 @@ extractor / picture / collector C surface (no internal-source
 `#include`); preserve that property so the test stays a regression
 gate for the published API. See
 [ADR-0912](../../docs/adr/0912-pixel-format-edge-coverage.md).
+
+## libFuzzer harnesses (`fuzz/`)
+
+The [`fuzz/`](fuzz/) subdir holds libFuzzer harnesses for parser
+surfaces (ADR-0270 scaffold; ADR-0311 expansion;
+[ADR-0882](../../docs/adr/0882-fuzz-target-audit-json-model-sidecar.md)
+json_model + dnn_sidecar additions). Conventions:
+
+- Each harness binds **one** public parser entry point via
+  `LLVMFuzzerTestOneInput(const uint8_t *, size_t)`. Harnesses
+  that need a `FILE *` use `fmemopen`; path-based loaders use a
+  per-process `/tmp/vmaf-fuzz-<target>-<pid>` tempfile reused
+  across iterations (see `fuzz_dnn_sidecar.c` for the pattern).
+- Internal (non-`VMAF_EXPORT`) entry points cannot be reached
+  through `libvmaf.so` because
+  [ADR-0379](../../docs/adr/0379-libvmaf-symbol-visibility.md)
+  builds the shared library with `-fvisibility=hidden`. Mirror
+  the precedent in `test_model` / `test_model_loader` and
+  compile the relevant source files directly into the harness
+  binary (e.g. `fuzz_json_model` pulls
+  `core/src/read_json_model.c` + `pdjson.c` + `dict.c` + `log.c`).
+- Seed corpora under `<target>_corpus/` are committed verbatim
+  and kept small (one per branch class). Known-crash reproducers
+  go under `<target>_known_crashes/` and are **excluded** from
+  the nightly CI seed path; they exist so the regression catches
+  the moment the underlying fix lands.
+- Per [ADR-0404](../../docs/adr/0404-nightly-fuzz-triage-keep-gates.md),
+  a harness that surfaces a real bug stays on in CI without
+  `continue-on-error` until the fix lands. Document the finding
+  in `docs/state.md` and link the reproducer from `README.md`.
+- The fuzz build requires clang + `-Db_lto=false` when any
+  harness pulls libvmaf-internal sources (ASan + LTO discards
+  module-dtor sections at link time on the larger source sets).
+  See the build recipe at the top of `fuzz/README.md`.

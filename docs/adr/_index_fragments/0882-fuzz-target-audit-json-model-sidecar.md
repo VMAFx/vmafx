@@ -1,0 +1,1 @@
+| [ADR-0882](0882-fuzz-target-audit-json-model-sidecar.md) | Fuzz target audit: add `fuzz_json_model` + `fuzz_dnn_sidecar` libFuzzer harnesses closing deferred targets #3 + #4 from Research-0083. First run surfaced a heap-buffer-overflow in `vmaf_model_destroy` via `parse_slopes` outrunning `feature_names`. | Accepted | 2026-05-30 | ci, security, fuzzing, dnn |

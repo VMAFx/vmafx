@@ -4,9 +4,11 @@
 # clang as the compiler — gcc does not ship libFuzzer. Pairs with
 # AddressSanitizer (`-Db_sanitize=address`) for heap-error coverage.
 #
-# See ADR-0270 (initial scaffold) and ADR-0311 (this expansion: yuv_input +
-# cli_parse) plus docs/development/fuzzing.md for the design rationale and
-# operator runbook.
+# See ADR-0270 (initial scaffold), ADR-0311 (yuv_input + cli_parse
+# expansion), and the follow-up json_model + dnn_sidecar additions
+# tracked under docs/research/0083-libfuzzer-harness-expansion-target-survey.md
+# (deferred targets #3 + #4). Operator runbook in
+# docs/development/fuzzing.md.
 
 if not get_option('fuzz')
     subdir_done()
@@ -66,4 +68,49 @@ fuzz_cli_parse = executable('fuzz_cli_parse',
     c_args : fuzz_flags + compat_cflags,
     link_args : fuzz_flags + ['-Wl,--wrap=exit'],
     link_with : fuzz_cli_parse_link_target,
+)
+
+# fuzz_json_model — wraps the libvmaf SVM model JSON parser
+# (core/src/read_json_model.c) via its public buffer entry points
+# `vmaf_read_json_model_from_buffer` /
+# `vmaf_read_json_model_collection_from_buffer`. Those symbols are
+# fork-local (not VMAF_EXPORTed) and libvmaf is built with
+# `-fvisibility=hidden` (ADR-0379), so the harness links the parser
+# source directly — mirroring how `test_model` is wired upstream.
+# The libsvm static archive supplies `svm_load_model_from_string`
+# called from the embedded SV-block parser.
+fuzz_json_model = executable('fuzz_json_model',
+    ['fuzz_json_model.c',
+     '../../src/read_json_model.c',
+     '../../src/pdjson.c',
+     '../../src/dict.c',
+     '../../src/log.c',
+     json_model_c_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../../src')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    c_args : fuzz_flags + compat_cflags,
+    link_args : fuzz_flags,
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    objects : libsvm_static_lib.extract_all_objects(recursive: true),
+)
+
+# fuzz_dnn_sidecar — wraps the tiny-AI sidecar loader
+# (core/src/dnn/model_loader.c — `vmaf_dnn_sidecar_load`). The
+# loader takes an `.onnx` path and derives `<basename>.json` next
+# to it; the harness writes the fuzzer-controlled bytes into a
+# per-process tempfile pair (`/tmp/vmaf-fuzz-sidecar-<pid>.json`)
+# each iteration and calls the entry point. The sidecar API is
+# fork-internal (not VMAF_EXPORTed) and libvmaf hides non-exported
+# symbols at link time, so the harness compiles the same dnn-source
+# set that `test_model_loader` does, mirroring the precedent in
+# core/test/dnn/meson.build.
+fuzz_dnn_sidecar = executable('fuzz_dnn_sidecar',
+    ['fuzz_dnn_sidecar.c',
+     '../../src/dnn/model_loader.c',
+     '../../src/dnn/onnx_scan.c',
+     '../../src/dnn/op_allowlist.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../../src'),
+                           include_directories('../../src/dnn')],
+    c_args : fuzz_flags + dnn_defines,
+    link_args : fuzz_flags,
 )

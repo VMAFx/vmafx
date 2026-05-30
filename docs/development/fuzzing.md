@@ -3,20 +3,24 @@
 
 Operator runbook for the libFuzzer harnesses under
 [`core/test/fuzz/`](../../core/test/fuzz/). Tracked under
-[ADR-0270](../adr/0270-fuzzing-scaffold.md) (initial scaffold) and
+[ADR-0270](../adr/0270-fuzzing-scaffold.md) (initial scaffold),
 [ADR-0311](../adr/0311-libfuzzer-harness-expansion.md) (`fuzz_yuv_input`
-and `fuzz_cli_parse` expansion). The harnesses satisfy the OSSF
-Scorecard
+and `fuzz_cli_parse` expansion), and
+[ADR-0882](../adr/0882-fuzz-target-audit-json-model-sidecar.md)
+(`fuzz_json_model` + `fuzz_dnn_sidecar` audit). The harnesses
+satisfy the OSSF Scorecard
 [`Fuzzing`](https://github.com/ossf/scorecard/blob/main/docs/checks.md#fuzzing)
 check.
 
 ## What is shipped
 
-| Harness          | Surface                                                                     | Source                                                                           | Seed corpus                                                                | Known crashes                                                                                  |
-|------------------|-----------------------------------------------------------------------------|----------------------------------------------------------------------------------|----------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
-| `fuzz_y4m_input` | YUV4MPEG2 parser exposed via `video_input_open` / `_fetch_frame` / `_close` | [`core/test/fuzz/fuzz_y4m_input.c`](../../core/test/fuzz/fuzz_y4m_input.c) | [`y4m_input_corpus/`](../../core/test/fuzz/y4m_input_corpus/) (6 seeds) | 1 (411-chroma OOB write — see ADR-0270 §Consequences).                                         |
-| `fuzz_yuv_input` | Headerless raw-YUV reader exposed via `raw_input_open` / `_fetch_frame`     | [`core/test/fuzz/fuzz_yuv_input.c`](../../core/test/fuzz/fuzz_yuv_input.c) | [`yuv_input_corpus/`](../../core/test/fuzz/yuv_input_corpus/) (6 seeds) | 0                                                                                              |
-| `fuzz_cli_parse` | `cli_parse` argv tokeniser + colon-delimited `--feature` / `--model` parser | [`core/test/fuzz/fuzz_cli_parse.c`](../../core/test/fuzz/fuzz_cli_parse.c) | [`cli_parse_corpus/`](../../core/test/fuzz/cli_parse_corpus/) (6 seeds) | 1 (`--threads=<garbage>` abbreviation tripping `error()` assert — see ADR-0311 §Consequences). |
+| Harness            | Surface                                                                                                       | Source                                                                         | Seed corpus                                                                  | Known crashes                                                                                  |
+|--------------------|---------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
+| `fuzz_y4m_input`   | YUV4MPEG2 parser exposed via `video_input_open` / `_fetch_frame` / `_close`                                   | [`core/test/fuzz/fuzz_y4m_input.c`](../../core/test/fuzz/fuzz_y4m_input.c)     | [`y4m_input_corpus/`](../../core/test/fuzz/y4m_input_corpus/) (6 seeds)      | 1 (411-chroma OOB write — see ADR-0270 §Consequences).                                         |
+| `fuzz_yuv_input`   | Headerless raw-YUV reader exposed via `raw_input_open` / `_fetch_frame`                                       | [`core/test/fuzz/fuzz_yuv_input.c`](../../core/test/fuzz/fuzz_yuv_input.c)     | [`yuv_input_corpus/`](../../core/test/fuzz/yuv_input_corpus/) (6 seeds)      | 0                                                                                              |
+| `fuzz_cli_parse`   | `cli_parse` argv tokeniser + colon-delimited `--feature` / `--model` parser                                   | [`core/test/fuzz/fuzz_cli_parse.c`](../../core/test/fuzz/fuzz_cli_parse.c)     | [`cli_parse_corpus/`](../../core/test/fuzz/cli_parse_corpus/) (6 seeds)      | 1 (`--threads=<garbage>` abbreviation tripping `error()` assert — see ADR-0311 §Consequences). |
+| `fuzz_json_model`  | `vmaf_read_json_model_from_buffer` + collection variant (SVM model JSON parser, `core/src/read_json_model.c`) | [`core/test/fuzz/fuzz_json_model.c`](../../core/test/fuzz/fuzz_json_model.c)   | [`json_model_corpus/`](../../core/test/fuzz/json_model_corpus/) (4 seeds)    | 1 (`parse_slopes` outruns `feature_names` → `vmaf_model_destroy` OOB — see ADR-0882 + T-JSON-MODEL-SLOPES-FEATURE-CAP-OOB-2026-05-30). |
+| `fuzz_dnn_sidecar` | `vmaf_dnn_sidecar_load` (tiny-AI sidecar JSON parser, `core/src/dnn/model_loader.c`)                          | [`core/test/fuzz/fuzz_dnn_sidecar.c`](../../core/test/fuzz/fuzz_dnn_sidecar.c) | [`dnn_sidecar_corpus/`](../../core/test/fuzz/dnn_sidecar_corpus/) (5 seeds) | 0                                                                                              |
 
 New harnesses follow the README at
 [`core/test/fuzz/README.md`](../../core/test/fuzz/README.md).
@@ -28,18 +32,21 @@ a clang-only feature). They pair best with AddressSanitizer.
 
 ```bash
 CC=clang CXX=clang++ \
-  meson setup build-fuzz libvmaf \
+  meson setup build-fuzz core \
     --buildtype=debug \
     -Db_sanitize=address \
     -Db_lundef=false \
+    -Db_lto=false \
     -Dfuzz=true \
-    -Denable_cuda=false -Denable_sycl=false -Denable_vulkan=disabled
+    -Denable_cuda=false -Denable_sycl=false
 ninja -C build-fuzz test/fuzz/fuzz_y4m_input \
                     test/fuzz/fuzz_yuv_input \
-                    test/fuzz/fuzz_cli_parse
+                    test/fuzz/fuzz_cli_parse \
+                    test/fuzz/fuzz_json_model \
+                    test/fuzz/fuzz_dnn_sidecar
 ```
 
-Two non-default Meson flags are load-bearing:
+Three non-default Meson flags are load-bearing:
 
 - `-Dfuzz=true` — opts the `core/test/fuzz/` subdirectory into
   the build (default `false`).
@@ -47,6 +54,11 @@ Two non-default Meson flags are load-bearing:
   that resolve at final-link time; the default `b_lundef=true`
   errors them out at setup. The harness `meson.build` would
   emit a clear warning at setup time if this is forgotten.
+- `-Db_lto=false` — the json_model + dnn_sidecar harnesses
+  (ADR-0882) compile parser sources directly into the harness
+  binary. With LTO on, ASan's module-dtor sections are discarded
+  at link time on the larger source set, producing a hard
+  linker error.
 
 ## Run a 60-second smoke
 

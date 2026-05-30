@@ -1,0 +1,1 @@
+{"kind":"fr","name":"vmaf_tiny_v4","input_name":"features","output_name":"score","onnx_opset":17,"feature_order":["adm2","vif_scale0","vif_scale1","vif_scale2","vif_scale3","motion2"],"feature_mean":[0.7,0.5,0.6,0.6,0.7,15.2],"feature_std":[0.1,0.2,0.1,0.1,0.1,8.5],"norm_mean":0.5,"norm_std":0.25,"quant_mode":"fp32"}

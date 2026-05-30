@@ -43286,6 +43286,21 @@ Fork-local files:
 `docs/adr/0795-prev-ref-thread-safety.md`,
 `changelog.d/fixed/prev-ref-batch-thread-safety.md`.
 
+## ADR-0882 — fuzz target audit (json_model + dnn_sidecar) — 2026-05-30
+
+no rebase impact: REASON — all new files (`core/test/fuzz/fuzz_json_model.c`,
+`core/test/fuzz/fuzz_dnn_sidecar.c`, seed corpora under
+`core/test/fuzz/json_model_corpus/` + `core/test/fuzz/dnn_sidecar_corpus/`,
+the known-crash reproducer under `core/test/fuzz/json_model_known_crashes/`,
+and ADR-0882 + changelog fragment) are fork-local. Upstream Netflix/vmaf
+has no libFuzzer harnesses at all (the entire `core/test/fuzz/` subtree is
+fork-added per ADR-0270 + ADR-0311). The `core/test/fuzz/meson.build` edits
+sit in a `if not get_option('fuzz')` guarded subdir that upstream does not
+descend into. The `.github/workflows/fuzz.yml` matrix addition extends a
+fork-only workflow file. The only files touching shared upstream-mirror
+code are doc edits (`docs/state.md`, `docs/rebase-notes.md`,
+`docs/adr/README.md`) that always paint the fork-local row pattern.
+
 ## ADR-0887 — vmaf_model_destroy slopes-OOB fix — 2026-05-30
 
 Low rebase impact, but not zero. Touches two upstream-mirrored files:

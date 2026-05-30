@@ -124,6 +124,30 @@ with `-max_total_time=60`.
   the harness file so future maintainers reading the scaffold
   have a single grep-target for the pattern.
 
+## Status update — 2026-05-30 (ADR-0882)
+
+Deferred targets **#3 `fuzz_model_load`** and **#4 `fuzz_sidecar`**
+landed under [ADR-0882](../adr/0882-fuzz-target-audit-json-model-sidecar.md)
+as `fuzz_json_model` (libvmaf SVM model JSON parser) and
+`fuzz_dnn_sidecar` (tiny-AI sidecar JSON loader). First-run
+findings:
+
+- `fuzz_json_model`: surfaced a heap-buffer-overflow in
+  `vmaf_model_destroy` (`core/src/model.c:210`) — `parse_slopes`
+  grows `feature_cap` via `ensure_feature_capacity` without
+  updating `n_features`, so destruction walks past the
+  initialised region. Reproducer committed under
+  `core/test/fuzz/json_model_known_crashes/slopes_oob_destroy.bin`.
+  Tracked as T-JSON-MODEL-SLOPES-FEATURE-CAP-OOB-2026-05-30 in
+  [`docs/state.md`](../state.md); per
+  [ADR-0404](../adr/0404-nightly-fuzz-triage-keep-gates.md) the
+  nightly leg stays on until the fix lands.
+- `fuzz_dnn_sidecar`: 3.95 M iterations clean in a 30-second
+  local smoke run; no crashes surfaced.
+
+Rows **#5 `fuzz_per_shot`**, **#6 `fuzz_output`**, and **#7
+`fuzz_dnn_load`** remain Backlog per the original ranking.
+
 ## References
 
 - [ADR-0270](../adr/0270-fuzzing-scaffold.md) — parent scaffold.
