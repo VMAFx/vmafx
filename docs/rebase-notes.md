@@ -6,16 +6,6 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
-## state-md-drift-sync (2026-05-29)
-
-**Files touched:** `docs/state.md`, `changelog.d/fixed/state-md-drift-sync-20260529.md`
-
-**Rebase impact:** None. `docs/state.md` is a fork-local tracking file with no upstream
-equivalent. Conflict markers are possible only when two parallel branches each append
-rows; resolve by keeping both new rows.
-
----
-
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
@@ -40381,3 +40371,16 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
+
+## ADR-0795 — prev_ref thread-safety hardening — 2026-05-29
+
+No rebase impact: all changes are in `core/src/libvmaf.c` (comments, a rename
+from `fex` to `shared_fex`, and a defensive `assert`). No logic change; no new
+symbols; no API change. The modified functions (`threaded_extract_func`,
+`threaded_extract_batch_func`) are fork-local dispatch paths not present in
+upstream Netflix/vmaf.
+
+Fork-local files:
+`core/src/libvmaf.c` (comments + assert),
+`docs/adr/0795-prev-ref-thread-safety.md`,
+`changelog.d/fixed/prev-ref-batch-thread-safety.md`.
