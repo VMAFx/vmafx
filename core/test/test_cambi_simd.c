@@ -51,7 +51,9 @@
 
 #if ARCH_X86
 #include "feature/x86/cambi_avx2.h"
+#if HAVE_AVX512
 #include "feature/x86/cambi_avx512.h"
+#endif
 #endif
 #if ARCH_AARCH64
 #include "feature/arm64/cambi_neon.h"
@@ -211,6 +213,7 @@ static void build_fixture(CambiRowFixture *fx, uint32_t seed)
 
 #if ARCH_X86
 
+#if HAVE_AVX512
 static char *test_avx512_parity_seed_a(void)
 {
     CambiRowFixture fx;
@@ -229,7 +232,9 @@ static char *test_avx512_parity_seed_a(void)
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_out, simd_out, sizeof(scalar_out), "avx512 parity seed_a");
     return NULL;
 }
+#endif
 
+#if HAVE_AVX512
 static char *test_avx512_parity_seed_b(void)
 {
     CambiRowFixture fx;
@@ -248,7 +253,9 @@ static char *test_avx512_parity_seed_b(void)
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_out, simd_out, sizeof(scalar_out), "avx512 parity seed_b");
     return NULL;
 }
+#endif
 
+#if HAVE_AVX512
 static char *test_avx512_all_masked_out(void)
 {
     CambiRowFixture fx;
@@ -271,6 +278,7 @@ static char *test_avx512_all_masked_out(void)
     SIMD_BITEXACT_ASSERT_MEMCMP(scalar_out, simd_out, sizeof(scalar_out), "avx512 all-masked-out");
     return NULL;
 }
+#endif
 
 #endif /* ARCH_X86 */
 
@@ -350,9 +358,11 @@ char *run_tests(void)
     {
         const unsigned cpu_flags = vmaf_get_cpu_flags_x86();
         if (cpu_flags & VMAF_X86_CPU_FLAG_AVX512) {
+#if HAVE_AVX512
             mu_run_test(test_avx512_parity_seed_a);
             mu_run_test(test_avx512_parity_seed_b);
             mu_run_test(test_avx512_all_masked_out);
+#endif
         } else {
             (void)fprintf(stderr, "skipping AVX-512 tests: CPU lacks AVX-512\n");
         }

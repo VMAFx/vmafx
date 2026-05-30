@@ -342,10 +342,12 @@ void vif_filter1d_s(const float *f, const float *src, float *dst, float *tmpbuf,
      * and reads past the row otherwise (caught by speed_temporal calling
      * vif_filter1d_s with downscaled widths like 45 on 360-wide sources).
      * Fall through to AVX2 (8 floats / iter) when width isn't 16-aligned. */
+#if HAVE_AVX512
     if ((flags & VMAF_X86_CPU_FLAG_AVX512) && fwidth <= MAX_FWIDTH_AVX_CONV && (w % 16) == 0) {
         convolution_f32_avx512_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride, dst_px_stride);
         return;
     }
+#endif
     if ((flags & VMAF_X86_CPU_FLAG_AVX2) && fwidth <= MAX_FWIDTH_AVX_CONV) {
         convolution_f32_avx_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride, dst_px_stride);
         return;
@@ -417,12 +419,14 @@ void vif_filter1d_sq_s(const float *f, const float *src, float *dst, float *tmpb
 
 #if ARCH_X86
     const unsigned flags = vmaf_get_cpu_flags();
+#if HAVE_AVX512
     if ((flags & VMAF_X86_CPU_FLAG_AVX512) && fwidth <= MAX_FWIDTH_AVX_CONV && (w % 16) == 0) {
         /* ADR-0504: prefer 512-bit path on AVX-512 CPUs. */
         convolution_f32_avx512_sq_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride,
                                     dst_px_stride);
         return;
     }
+#endif
     if ((flags & VMAF_X86_CPU_FLAG_AVX2) && fwidth <= MAX_FWIDTH_AVX_CONV) {
         convolution_f32_avx_sq_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride, dst_px_stride);
         return;
@@ -493,12 +497,14 @@ void vif_filter1d_xy_s(const float *f, const float *src1, const float *src2, flo
 
 #if ARCH_X86
     const unsigned flags = vmaf_get_cpu_flags();
+#if HAVE_AVX512
     if ((flags & VMAF_X86_CPU_FLAG_AVX512) && fwidth <= MAX_FWIDTH_AVX_CONV && (w % 16) == 0) {
         /* ADR-0504: prefer 512-bit path on AVX-512 CPUs. */
         convolution_f32_avx512_xy_s(f, fwidth, src1, src2, dst, tmpbuf, w, h, src1_px_stride,
                                     src2_px_stride, dst_px_stride);
         return;
     }
+#endif
     if ((flags & VMAF_X86_CPU_FLAG_AVX2) && fwidth <= MAX_FWIDTH_AVX_CONV) {
         convolution_f32_avx_xy_s(f, fwidth, src1, src2, dst, tmpbuf, w, h, src1_px_stride,
                                  src2_px_stride, dst_px_stride);
