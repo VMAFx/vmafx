@@ -14,7 +14,7 @@ def test_default_vmaf_binary_uses_fork_cpu_build(monkeypatch) -> None:
     monkeypatch.delenv("VMAF_BIN", raising=False)
 
     assert feature_extractor.default_vmaf_binary() == (
-        Path("libvmaf") / "build-cpu" / "tools" / "vmaf"
+        Path("core") / "build-cpu" / "tools" / "vmaf"
     )
 
 
@@ -25,4 +25,4 @@ def test_default_vmaf_binary_respects_env(monkeypatch) -> None:
 
 
 def test_vmaf_train_feature_dump_default_uses_fork_cpu_build() -> None:
-    assert (Path("libvmaf") / "build-cpu" / "tools" / "vmaf") == feature_dump.DEFAULT_VMAF_BINARY
+    assert (Path("core") / "build-cpu" / "tools" / "vmaf") == feature_dump.DEFAULT_VMAF_BINARY

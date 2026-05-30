@@ -38,7 +38,7 @@ DEFAULT_FEATURES: tuple[str, ...] = (
     "motion2",
 )
 
-DEFAULT_VMAF_BINARY = Path("libvmaf") / "build-cpu" / "tools" / "vmaf"
+DEFAULT_VMAF_BINARY = Path("core") / "build-cpu" / "tools" / "vmaf"
 
 # Full feature set the fork's extractors can produce (per Research-0026,
 # extended by ADR-0559 to include SpEED chroma/temporal features).

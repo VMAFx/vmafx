@@ -55,7 +55,7 @@ def _resolve_vmaf_binary() -> Path | None:
         return Path(env)
     for candidate in (
         _REPO_ROOT / "build" / "tools" / "vmaf",
-        _REPO_ROOT / "libvmaf" / "build-cpu" / "tools" / "vmaf",
+        _REPO_ROOT / "core" / "build-cpu" / "tools" / "vmaf",
     ):
         if candidate.is_file():
             return candidate

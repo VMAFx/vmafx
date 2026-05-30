@@ -34,7 +34,7 @@ from onnx import TensorProto, helper  # noqa: E402
 from vmaf_train.data.feature_dump import DEFAULT_FEATURES, Entry, dump_features  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-VMAF_BIN = REPO_ROOT / "libvmaf" / "build-cpu" / "tools" / "vmaf"
+VMAF_BIN = REPO_ROOT / "core" / "build-cpu" / "tools" / "vmaf"
 YUV_DIR = REPO_ROOT / "python" / "test" / "resource" / "yuv"
 REF_YUV = YUV_DIR / "src01_hrc00_576x324.yuv"
 DIS_YUV = YUV_DIR / "src01_hrc01_576x324.yuv"
