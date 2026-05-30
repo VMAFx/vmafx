@@ -4,12 +4,14 @@ Addresses 2 HIGH and 10 MEDIUM findings from the adversarial code review of the
 C→C++23 conversion wave (PRs #41–#58, review PR #78).
 
 **HIGH fixes:**
+
 - `log.cpp` (PR #45): Add `assert()` enforcing NUL-termination on `string_view::data()`
   before passing to `fprintf %s` (CERT STR32-C, finding #7).
 - `mkdirp.cpp` (PR #51): Replace recursive `mkdirp()` with an iterative prefix-walk
   bounded by path length (Power of 10 #1, finding #11).
 
 **MEDIUM fixes:**
+
 - `opt.h` (PR #43): Add `[[nodiscard]]` to `vmaf_option_set` header declaration so C++
   TUs see the attribute (CERT ERR33-C, finding #4).
 - `fex_ctx_vector.cpp` (PR #44): Remove dead try/catch + abandoned vector from

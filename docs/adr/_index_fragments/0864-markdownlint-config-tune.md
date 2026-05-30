@@ -1,0 +1,1 @@
+| [ADR-0864](0864-markdownlint-config-tune.md) | Tune markdownlint config to silence convention-incompatible rules + unsafe-to-autofix rules, then sweep safe whitespace cleanups across docs/ + changelog.d/ | Accepted | 2026-05-30 | docs, lint, hygiene, config |

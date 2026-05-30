@@ -58,6 +58,7 @@ Any non-standard deps (e.g. `libspdlog`, `libfmt`) also need bundling.
 1. **Copy the `.so` files** into the FFmpeg binary directory (or a `lib/` subdirectory).
 
 2. **Set RPATH at link time** so the binary finds them without `LD_LIBRARY_PATH`:
+
    ```bash
    # Same directory as binary
    -Wl,-rpath,'$ORIGIN'
@@ -66,6 +67,7 @@ Any non-standard deps (e.g. `libspdlog`, `libfmt`) also need bundling.
    ```
 
 3. **Alternatively**, have users set `LD_LIBRARY_PATH` at runtime:
+
    ```bash
    export LD_LIBRARY_PATH=/path/to/bundled/libs:$LD_LIBRARY_PATH
    ```

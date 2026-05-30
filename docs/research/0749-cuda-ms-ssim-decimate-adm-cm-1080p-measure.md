@@ -35,7 +35,7 @@ The smem tiling optimization exhibits an **unexpected L1-hit-rate inversion**: t
 baseline already achieves 95% L1 hit rate (the small working set fits in L1/L2 cache
 naturally), so adding smem overhead increases kernel duration at both resolutions.
 
-### WL1 (576x324) — largest decimation launch, grid (18,21,1):
+### WL1 (576x324) — largest decimation launch, grid (18,21,1)
 
 | Metric | Baseline | Optimized | Delta |
 |---|---|---|---|
@@ -46,7 +46,7 @@ naturally), so adding smem overhead increases kernel duration at both resolution
 | Registers/thread | 39 | 40 | +1 |
 | Launches/frame | 8 per channel per scale | same | — |
 
-### WL2 (1080p) — largest decimation launch, grid (60,68,1):
+### WL2 (1080p) — largest decimation launch, grid (60,68,1)
 
 | Metric | Baseline | Optimized | Delta |
 |---|---|---|---|
@@ -72,7 +72,7 @@ Despite kernel-level regression, the end-to-end throughput is positive because t
 The `__launch_bounds__(128, 8)` hint achieves its primary goal: ptxas reduces register
 file from 114 to 64 registers per thread.
 
-### WL1 (576x324) — grid (8,5,3) = 120 CTAs:
+### WL1 (576x324) — grid (8,5,3) = 120 CTAs
 
 | Metric | Baseline | Optimized | Delta |
 |---|---|---|---|
@@ -84,7 +84,7 @@ file from 114 to 64 registers per thread.
 At 576x324 the wave count (120 CTAs / 128 SMs = <1 wave) limits occupancy regardless
 of register pressure; the register reduction does not help.
 
-### WL2 (1080p) — grid (25,14,3) = 1050 CTAs:
+### WL2 (1080p) — grid (25,14,3) = 1050 CTAs
 
 | Metric | Baseline | Optimized | Delta |
 |---|---|---|---|

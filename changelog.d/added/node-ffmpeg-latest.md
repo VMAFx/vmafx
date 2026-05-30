@@ -4,6 +4,7 @@
 variants (`node-cpu`, `node-cuda`, `node-rocm`, `node-sycl`).
 
 Each variant includes:
+
 - `ffmpeg` n8.2 compiled from source with all 15 `ffmpeg-patches/` patches
   applied, enabling the `libvmaf`, `libvmaf_sycl`, `libvmaf_vulkan`,
   `vmaf_pre`, and `libvmaf_tune` filters.

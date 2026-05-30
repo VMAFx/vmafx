@@ -27,6 +27,7 @@ core/build/tools/vmaf \
 ```
 
 This will yield the output:
+
 ```
 <VMAF version="4b42f672">
   <params qualityWidth="576" qualityHeight="324" />
@@ -73,6 +74,7 @@ core/build/tools/vmaf \
 ```
 
 This will yield the output:
+
 ```
 <VMAF version="4b42f672">
   <params qualityWidth="1280" qualityHeight="720" />
@@ -98,6 +100,7 @@ core/build/tools/vmaf \
 ```
 
 The output will be:
+
 ```
 <VMAF version="4b42f672">
   <params qualityWidth="1280" qualityHeight="720" />

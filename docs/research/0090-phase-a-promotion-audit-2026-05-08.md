@@ -392,27 +392,27 @@ in the Decision section.
 
 Ranked by leverage (user-visible impact ÷ engineering effort).
 
-1.  **HP-2: HDR integration into `iter_rows`** (small, ~100 LOC).
+1. **HP-2: HDR integration into `iter_rows`** (small, ~100 LOC).
     The biggest "appears-shipped-but-isn't" bug. Operator-facing
     silent failure with a documented dangerous-failure-mode
     classification. One-day PR; un-skips two pre-written tests.
-2.  **Cosmetic-drift sweep** (medium, ~30 file touches, no
+2. **Cosmetic-drift sweep** (medium, ~30 file touches, no
     behavioural change). Bundle the 12 docs/docstring fixes
     above into one PR. Drains the "Phase A scaffold" framing
     that mis-sells the harness to users. Coordinate with the
     docs-cleanup sibling agent (Research-0088) — likely overlap.
-3.  **HP-1: codec-adapter `ffmpeg_codec_args` dispatch** (medium,
+3. **HP-1: codec-adapter `ffmpeg_codec_args` dispatch** (medium,
     200–400 LOC). The biggest *correctness* gap in vmaf-tune.
     Without this, ADR-0237's "multi-codec from day one" invariant
     is a docstring lie. One-day PR + one manual smoke encode per
     adapter family.
-4.  **ADR Proposed→Accepted sweep** (small, mechanical).
+4. **ADR Proposed→Accepted sweep** (small, mechanical).
     9 flippable ADRs (0125, 0127, 0129, 0138, 0139, 0140, 0270,
     0295, 0237 phase-line update). Single doc-only PR; reviewer
     cost is low because each line cites a shipped PR. Trade a
     1-hour edit for cleaner ADR-status reporting in every future
     audit.
-5.  **HP-3: `vmaf-tune fast` CLI subcommand + production runners**
+5. **HP-3: `vmaf-tune fast` CLI subcommand + production runners**
     (medium, ~250 LOC). Closes the gap between the changelog
     claim ("graduates from scaffold-only to production-wired")
     and the actual surface (Python API only, both seams unwired).

@@ -80,6 +80,7 @@ adds noise but all are positive here.
 | 6 | `vif_scale0` | +0.0014 | +0.0020 | +0.0012 | +0.0020 | 0.0000 |
 
 **Key observations:**
+
 - `adm2` is dominant — shuffling it drops PLCC by ~0.47 (from 0.9999 to ~0.53)
 - `motion2` and `vif_scale3` are clearly load-bearing
 - `vif_scale0` is nearly redundant (PLCC drop < 0.002) — it carries almost no

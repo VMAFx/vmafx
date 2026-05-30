@@ -36,6 +36,7 @@ The column was likely included as a placeholder for a future tiny-AI model outpu
 ### Option A: Remove vmaf from FEATURE_NAMES (CHOSEN)
 
 **Pros:**
+
 - Simplifies the schema from 22 to 21 features (44 to 42 feature columns).
 - Eliminates two NaN columns from the parquet.
 - Removes the implicit contract that a `vmaf` feature is available.
@@ -43,6 +44,7 @@ The column was likely included as a placeholder for a future tiny-AI model outpu
 - Honest schema: the parquet reflects what is actually extracted.
 
 **Cons:**
+
 - If a future use case wants a tiny-AI VMAF approximation, a new feature name and extractor must be added (e.g., `vmaf_tiny_v1`).
 - Does not reuse the `vmaf` slot.
 
@@ -51,10 +53,12 @@ The column was likely included as a placeholder for a future tiny-AI model outpu
 ### Option B: Add --model to the extraction invocation
 
 **Pros:**
+
 - Populates the `vmaf` column with real model scores.
 - Keeps the current schema structure.
 
 **Cons:**
+
 - Requires running the VMAF model for every clip (O(N) model inference).
 - CHUG self-vs-self mode produces trivial model output (high score because ref == dis).
 - Adds ~5–10% wall time per clip with no training signal gain (for NR/self-vs-self, the model output is constant or near-constant).
@@ -81,6 +85,7 @@ For K150K/CHUG MOS-head training:
 ## Reproducer
 
 Before:
+
 ```bash
 python ai/scripts/extract_k150k_features.py --limit 5
 # Parquet schema: clip_name, mos, 22 × (mean, std) = 48 columns
@@ -88,6 +93,7 @@ python ai/scripts/extract_k150k_features.py --limit 5
 ```
 
 After:
+
 ```bash
 python ai/scripts/extract_k150k_features.py --limit 5
 # Parquet schema: clip_name, mos, 21 × (mean, std) = 46 columns

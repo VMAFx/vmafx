@@ -42,6 +42,7 @@ dominant cost. The expected end-to-end gain on `float_ssim` /
 **Block-of-N widen is mathematically incompatible with the scalar
 reference's rounding pattern.** The scalar reduces 11 single-rounded
 `float` products into a `double` accumulator with **11 separate widen
+
 + add steps**:
 
 ```c

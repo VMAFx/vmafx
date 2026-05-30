@@ -22,6 +22,7 @@ it isn't caught flat-footed when a successor lands?
 ## Sources
 
 ### Upstream code / PRs
+
 - Netflix PR [#1488](https://github.com/Netflix/vmaf/pull/1488) "port speed updates", opened 2026-04-20 (Kyle Swanson / @kylophone). 7 files, +570 / -222. Commits `18c07b22`, `cc615237`.
 - Netflix branch `upstream/speed_ported` — 4 commits, tip `86d929fc`. Carries `core/src/feature/speed.c` (1,566 LoC, commit `1e67d38d`, Swanson + Miret 2025-05-02). PR #1488 ships only the **first** of those four commits.
 - Netflix PR [#1391](https://github.com/Netflix/vmaf/pull/1391) "Add vmaf_v0.6.1still.json", opened 2024-10-11 by @cosmin (Meta). The only genuinely-pending model JSON anywhere in Netflix-upstream review.
@@ -29,6 +30,7 @@ it isn't caught flat-footed when a successor lands?
 - Netflix issue [#645](https://github.com/Netflix/vmaf/issues/645) "Did the HDR model ever get released?" — CLOSED 2025-07-25.
 
 ### Literature — efficient-VMAF / SpEED lineage
+
 - Bampis et al., "SpEED-QA: Spatial Efficient Entropic Differencing for Image and Video Quality", [IEEE 7979533](https://ieeexplore.ieee.org/document/7979533/).
 - Venkataramanan / Stejerean / Katsavounidis / Bovik, "One Transform To Compute Them All: Efficient Fusion-Based Full-Reference Video Quality Assessment", IEEE TIP 33:509, 2024, [arXiv:2304.03412](https://arxiv.org/abs/2304.03412) — FUNQUE+. Claims 4.2–5.3 % accuracy and 3.8–11× speed vs VMAF. Open-source at [funque_plus](https://github.com/abhinaukumar/funque_plus).
 - Hammou / Cai / Madhusudanarao / Bampis / Mantiuk, "Do image and video quality metrics model low-level human vision?", [arXiv:2503.16264](https://arxiv.org/abs/2503.16264) (Mar 2025). Benchmarks 33 metrics including VMAF against contrast sensitivity / masking / matching; flags VMAF as poor at contrast masking.
@@ -36,6 +38,7 @@ it isn't caught flat-footed when a successor lands?
 - Sivashanmugam et al., "A Low-Complexity Perceptual Video Quality Metric for SVT-AV1" (pVMAF), Mile-High Video 2025, [DOI 10.1145/3715675.3715850](https://dl.acm.org/doi/10.1145/3715675.3715850).
 
 ### Netflix engineering outputs
+
 - [VMAF: The Journey Continues](https://netflixtechblog.com/vmaf-the-journey-continues-44b51ee9ed12) — no "v3" or "next-generation" wording.
 - [All of Netflix's HDR video streaming is now dynamically optimized](https://netflixtechblog.com/all-of-netflixs-hdr-video-streaming-is-now-dynamically-optimized-e9e0cb15f2ba) (Nov 2023, Mavlankar / Li / Krasula / Bampis) — HDR-VMAF rollout. HDR-VMAF itself described as "tailored to our internal pipelines… in the process of improving before the official release" — confirms an unreleased successor exists but it is HDR-VMAF, not a SpEED-driven VMAF v3.
 - [Measuring and Predicting Perceptions of Video Quality across Screen Sizes](https://research.netflix.com/publication/measuring-and-predicting-perceptions-of-video-quality-across-screen-sizes) (Li / Krasula) — phone-adjacent crowdsourced screen-size study; no model release attached.
@@ -203,6 +206,7 @@ from absence.
   lawrence provides the command-line and repro.
 
 ## Corrections to the `project_deep_research_netflix_upstream_models`
+
 ## memory note (2026-04-21)
 
 Three of the five signals in the memory file were partially or

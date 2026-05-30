@@ -1,6 +1,7 @@
 fix(fex): restore 61 deduplicated entries + integer_ms_ssim_hip + integer_vif_metal clobbered by PR #1088
 
 PR #1088 (test_version squash) merged from a stale base that predated:
+
 - PR #1085 (remove 61 duplicate SYCL/Vulkan pointer entries from feature_extractor_list[])
 - PR #1111 (restore integer_ms_ssim_hip and integer_vif_metal wire-ins dropped by PR #1067)
 

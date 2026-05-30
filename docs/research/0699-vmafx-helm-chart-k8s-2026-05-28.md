@@ -37,6 +37,7 @@ the NVIDIA, AMD (AMDVLK), and Intel (ANV) Vulkan drivers; the correct one is
 selected when the physical device is present in `/dev/dri/` after allocation.
 
 This means:
+
 - No separate `gpu.vulkan.count: 1` request is needed or possible.
 - Vulkan backend availability follows GPU device-plugin availability.
 - The chart need only request the vendor's GPU resource; Vulkan "comes along for free".

@@ -151,6 +151,7 @@ documented "recommended" recipes:
 
 These revisions land in **follow-up PRs** that touch
 `tools/vmaf-tune/codec_adapters/*` directly. This PR is documentation
+
 + ADR only; per the task constraint, no adapter code is modified here.
 [ADR-0308](../adr/0308-encoder-knob-sweep-recipe-regression-policy.md)
 captures the decision-policy framing that gates those follow-ups.

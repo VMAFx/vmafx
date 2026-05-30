@@ -55,6 +55,7 @@ The Unreleased block in `CHANGELOG.md` (14 006 lines, rendered from ~200+
 Key sections present:
 
 ### Removed (breaking)
+
 - CI: MinGW64 Windows build removed (ADR-0691)
 - CI: i686 / no-asm 32-bit Linux build removed (ADR-0691)
 - `fix(cuda)!:` conflict marker removal — `integer_vif_cuda.c` (#108)
@@ -64,6 +65,7 @@ Key sections present:
 - `feat!:` `VmafLegacyQualityRunner` float-path runner retired (#87, ADR-0749)
 
 ### Added (notable)
+
 - `vmafx-server` HTTP transport + observability foundation (#1583)
 - `--netflix-compat` CLI flag (#1582)
 - Production multi-arch Dockerfile + image signing + SBOM (#1572)
@@ -78,6 +80,7 @@ Key sections present:
 - GPU-parity matrix CI gate (ADR-0214)
 
 ### Fixed (notable)
+
 - HIP wave32 carry-preserving int64 reduction in VIF/motion (#1573)
 - pytest collection crash + ADR-0543 binary path + PyTorch 2.10 deprecations (#1559)
 - libsvtav1 default CRF format (#1558)
@@ -88,6 +91,7 @@ Key sections present:
 - `strlen < 5` underflow guard in model_collection_append (#54)
 
 ### Performance (notable)
+
 - CUDA: CIEDE `__ldg()` routing (#102)
 - CUDA: ms_ssim_vert_lcs + horiz `__ldg` + `__launch_bounds` (#99)
 - CUDA: SSIM vert_combine smem + pinned leak fix (#93)
@@ -120,6 +124,7 @@ only needed for local pre-flight signing verification, which is optional.
 ## 4. Version scheme validation
 
 `release-please-config.json` uses:
+
 - `"release-type": "simple"` — respects Conventional Commits bump rules
 - `"versioning": "default"` — standard semver: breaking → major, feat → minor, fix → patch
 - Package name: `vmaf-lusoris`

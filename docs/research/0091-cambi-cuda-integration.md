@@ -1,4 +1,5 @@
 # Research Digest 0091 — CAMBI CUDA integration trade-offs
+
 # Research-0091
 
 - **Status**: Active
@@ -35,6 +36,7 @@ The CPU code computes the 7×7 summed-area table using a rolling DP
 sequential-within-a-workgroup approach via a `PASS` spec constant.
 
 For CUDA the options are:
+
 - **Shared-memory 2-pass SAT** (row-scan in smem, then col-scan in smem):
   requires a `(BLOCK_H + 2×PAD) × (BLOCK_W + 2×PAD)` smem tile, i.e. at
   16×16 blocks with PAD=3: `22 × 22 × 2 bytes = ~1 KB` per block. This
@@ -55,6 +57,7 @@ trade-offs. The smem approach can be revisited if profiling shows otherwise.
 ### 2. Per-scale synchronous DtoH vs async ring-buffer DtoH
 
 The 5-scale pipeline requires, for each scale:
+
 1. GPU kernel(s) run, producing an updated image buffer.
 2. Result copied from device to host for the CPU residual.
 3. CPU residual (`calculate_c_values` + `spatial_pooling`) runs.

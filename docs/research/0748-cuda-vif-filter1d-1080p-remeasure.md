@@ -103,6 +103,7 @@ just the filter1d_horizontal kernel in isolation.
 ## Verdict
 
 **PR #76 shows a measurable, positive production-workload result at 1080p:**
+
 - +6.85 pp active warps (warp utilisation improvement confirmed)
 - +3.6% end-to-end fps on the checkerboard 1080p pair (median, 3 runs)
 - Zero correctness regression (bit-identical on this pair)
@@ -141,6 +142,7 @@ docker run --rm --gpus all --privileged --entrypoint bash \
 ```
 
 Build inside worktree (build dir must be inside `core/` for NVCC relative include paths):
+
 ```bash
 docker run --rm --gpus all --entrypoint bash \
   -v /path/to/worktree:/workspace -w /workspace \

@@ -11,6 +11,7 @@
 The fork has every quality input a per-title, per-shot, codec-aware
 encode optimiser would need (VMAF + 8 supporting metrics + tiny-AI
 fusion regressor + saliency + shot detection + per-shot CRF predictor
+
 + FFmpeg patches + codec-aware vocabulary). What's the smallest tool
 that closes the loop — drives FFmpeg, captures bitrate + quality,
 recommends parameters — without locking the design to one codec, one

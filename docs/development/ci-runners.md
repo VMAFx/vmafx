@@ -36,10 +36,12 @@ will sit queued indefinitely (no auto-fallback — see
 
 1. Flip `ARC_RUNNERS_ENABLED` back to `false`.
 2. Cancel any stuck PR's CI runs:
+
    ```bash
    gh run list --repo VMAFx/vmafx --branch <pr-branch> --status queued \
        --json databaseId -q '.[].databaseId' | xargs -I{} gh run cancel {} --repo VMAFx/vmafx
    ```
+
 3. Re-trigger CI on each affected PR (push an empty commit, or
    `gh workflow run`).
 4. Address the cluster-side issue separately.

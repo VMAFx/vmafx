@@ -71,6 +71,7 @@ This run establishes the post-sprint reference point.
 | 10   | `adm_cm_avx512`                         | 0.9 %  | ADM contrast masking |
 
 Cache statistics (5 × 48 frames, perf stat):
+
 - IPC: 3.62 (well-utilised; AVX-512 units busy)
 - L1-dcache load-miss rate: 44.3 % (482.8 M misses / 1 089 M references)
 - LLC miss rate: 6.0 % (65.1 M LLC misses)
@@ -120,6 +121,7 @@ Hot lines are the scalar per-lane reduction loop body:
 ```
 
 The block:
+
 1. Computes 16-lane float intermediates in AVX-512 (`rm`, `cm`, `srsc`,
    `l_den`, `c_den`, `sv`).
 2. Stores all six arrays to 64-byte-aligned stack buffers (6 × 64 bytes =
@@ -162,12 +164,15 @@ shared table; L1 miss rate is high because indices are data-dependent.
 ### Target 1: `iqa_convolve_avx512` — eliminate redundant `vcvtps2pd` via 16-lane FMA-on-float with post-hoc double correction
 
 **Current pattern (per tap):**
+
 ```c
 const __m256 prod_f = _mm256_mul_ps(f8, coeff_f);      // float × float
 const __m512d prod  = _mm512_cvtps_pd(prod_f);          // widen
 acc = _mm512_add_pd(prod, acc);                          // double acc
 ```
+
 **Proposal:** Replace the 11-tap h-pass with a two-stage approach:
+
 - Stage 1: accumulate all 11 taps in `__m512` float using
   `_mm512_fmadd_ps` (32 lanes at a time, twice the throughput per cycle).
 - Stage 2: widen the final float sum once per output pixel via
@@ -203,6 +208,7 @@ of stack, then 16 scalar double iterations.
 
 **Proposal:** Replace the per-lane scalar loop with a vectorised
 double-lane reduction:
+
 - Process the 16-element float buffers (`t_rm`, `t_cm`, etc.) in pairs
   of 8 using `_mm512_cvtps_pd` (8 lanes of double at a time).
 - Compute `lv`, `cv`, `sv` in `__m512d` using `_mm512_fmadd_pd` /
@@ -290,6 +296,7 @@ measure the actual gains. The GPU wall-clock section of this document
 should be updated once a CUDA host is available.
 
 **Profiler gap summary:**
+
 - `nsys` / `ncu`: not installed — CUDA kernel-level hot functions unknown.
 - `vulkan-profiler` / `VK_LAYER_KHRONOS_profiles`: not installed — Vulkan
   shader timings unknown.

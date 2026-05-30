@@ -52,6 +52,7 @@ via `testdata/bench_perf.py`, FFmpeg lavfi path, BBB content, RTX 4090).
 ## Benchmark: CLI 7-extractor wall-clock (576x324, 48 frames, 30 runs)
 
 Stack: `vmaf_v0.6.1` (motion_v2 + adm + vif) + `psnr_cuda` + `ciede_cuda`
+
 + `ssim_cuda` + `psnr_hvs_cuda`. This mirrors the PR #312 rich-workload test.
 
 | Metric | Post-sprint | PR #312 reported (pre) | Delta |

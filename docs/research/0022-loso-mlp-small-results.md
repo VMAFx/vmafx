@@ -89,6 +89,7 @@ Two findings worth surfacing:
 concat PLCC (0.93–0.95).** Each LOSO fold trains on 8 sources and is
 scored on the 9th, so the per-fold model has actually seen
 *similar* clips in training; the baselines, trained on 8 sources
+
 + Tennis-as-val, then evaluated across all 9 clips, see a wider
 mismatch in the score-axis distribution between training-time and
 eval-time. The LOSO mean is the better number to quote when asked

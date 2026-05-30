@@ -14,6 +14,7 @@ at 576×324, and what are the top optimization candidates?
 - ncu `--set basic` profiles on RTX 4090 (sm_89) under CUDA 13.3
 - Source: `core/src/feature/cuda/integer_motion/motion_score.cu`
 - Reproducer:
+
   ```
   docker run --rm --gpus all --privileged --entrypoint bash \
     -v <worktree>:/workspace -v <repo>/python:/workspace/python:ro \

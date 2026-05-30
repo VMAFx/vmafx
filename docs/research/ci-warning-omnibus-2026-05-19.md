@@ -37,11 +37,13 @@ Node.js 20. The action author has not published a v2 or a Node.js 24 build.
 **Selected**: `TheMrMilchmann/setup-msvc-dev@v4.0.0`.
 
 Action YAML verified:
+
 ```yaml
 runs:
   using: 'node24'
   main: 'dist/index.cjs'
 ```
+
 No required inputs; `arch` defaults to amd64 — matching the current ilammy
 invocation (no inputs specified). SHA: `79dac248aac9d0059f86eae9d8b5bfab4e95e97c`.
 

@@ -6,6 +6,7 @@ in their options tables but never applied it: scale-0 accumulated into
 suppression, diverging from the CPU reference when the option was set.
 
 Both backends now match `integer_vif.c write_scores()` exactly:
+
 - `vif_scale0_score` → `0.0` when `vif_skip_scale0=true`
 - scale-0 excluded from the combined `score_num`/`score_den` totals
 - debug path: `num_scale0 → 0.0`, `den_scale0 → -1.0` (sentinel)

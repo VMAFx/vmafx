@@ -96,6 +96,7 @@ caused exit code 2.
 
 **Classification:** (a) workflow YAML / config bug — post-rename path drift.
 **Fix:**
+
 - Updated `paths:` in `.github/codeql-config.yml` from `libvmaf/{src,include,tools}`
   to `core/{src,include,tools}`. Also added `compat/python-vmaf` as an additional
   Python path.
@@ -120,6 +121,7 @@ None of these are credentials.
 
 **Classification:** (a)+(f) — false-positive configuration gap; pre-existing on master.
 **Fix:** Added the following to the `[allowlist]` in `.gitleaks.toml`:
+
 - `go.sum` and `Cargo.lock` added to the `paths` allowlist.
 - `gen/go/.*\.pb\.go` added to the `paths` allowlist (auto-generated protobuf stubs).
 - `h1:[A-Za-z0-9+/]{43}={0,2}` regex added to suppress go.sum hash lines.
@@ -151,6 +153,7 @@ to `core/src/mcp/3rdparty/cJSON/cJSON.c` (same rename pattern). Verified locally
 
 **Root cause:** Two test files imported functions that did not exist in the
 implementation:
+
 - `ai/tests/test_jsonl_utils.py` imported `dumps_jsonl_row` from
   `aiutils.jsonl_utils` — the function was referenced in the test but never
   implemented in the module.
@@ -160,6 +163,7 @@ Both caused `ImportError` at collection time, preventing any tests from running.
 
 **Classification:** (d) code bug — test stubs committed without matching implementation.
 **Fix:**
+
 - Added `dumps_jsonl_row()` to `ai/src/aiutils/jsonl_utils.py`: serialises a dict
   to a compact, sorted, newline-terminated JSON line with non-finite float
   sanitisation (NaN/Inf → null).

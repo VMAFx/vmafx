@@ -72,6 +72,7 @@ features [N, 6]
 ## Training data
 
 Identical to v2: `runs/full_features_4corpus.parquet` (Netflix Public
+
 + KoNViD-1k 5-fold + BVI-DVC A + B + C + D, 330 499 frame-rows × 22
 FULL_FEATURES + `vmaf` teacher score from `vmaf_v0.6.1`). The
 StandardScaler is fit on the 4-corpus union and baked into the

@@ -23,6 +23,7 @@ With `-flto=auto` (the repo default), the linker resolves all undefined symbols 
 **Solution**: compile `tad_rust.c` as a direct source of the `library('vmaf')` target
 (not into `libvmaf_feature.a`), and gate the `vmaf_fex_tad` extern + list entry in
 `feature_extractor.c` behind `#if HAVE_RUST_TAD`. This way:
+
 - Static-lib-linked test binaries see no TAD symbols at all.
 - The shared `libvmaf.so` compiles `tad_rust.c` with `-DHAVE_RUST_TAD` (via `declare_dependency compile_args`) and links the Rust archive.
 

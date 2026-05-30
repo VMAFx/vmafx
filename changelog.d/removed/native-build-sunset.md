@@ -4,6 +4,7 @@ The following CI build configurations have been removed from
 `.github/workflows/libvmaf-build-matrix.yml` and the required-checks list:
 
 **Removed from CI matrix:**
+
 - `Build — Windows MinGW64 (CPU)` — MinGW64 is not a VMAFX production target
 - `Build — Ubuntu i686 gcc (CPU, no-asm)` — fork is 64-bit only
 - `Build — Ubuntu gcc (CPU) + DNN` — superseded by Linux full-build in build.yml
@@ -20,6 +21,7 @@ The following CI build configurations have been removed from
 - `Build — Windows MSVC + oneAPI SYCL (build only)` — SYCL in Linux full-build
 
 **New canonical build matrix** (`build.yml`, ADR-0710):
+
 - `Build — Linux (GCC, all backends)` — full stack: CUDA + SYCL + Vulkan + HIP + DNN + CPU
 - `Build — macOS (Clang, CPU + Metal)` — Apple Clang + CPU + Metal scaffold
 - `Build — Windows (MSVC + CUDA)` — MSVC + CPU + CUDA (build-only)

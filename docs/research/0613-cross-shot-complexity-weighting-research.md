@@ -24,6 +24,7 @@ independently: every shot is bisected to the same per-shot VMAF target
 
 The desired model: assign per-shot CRFs such that the title-level VMAF
 distribution satisfies:
+
 - `mean(vmaf) ≥ target_mean` (e.g. 94)
 - `min(vmaf) ≥ floor` (e.g. 91)
 - `total_bits ≤ budget` (optional hard constraint)
@@ -58,6 +59,7 @@ The problem is related to:
 
 The `PredicateFn` signature is `(shot, target_vmaf, encoder) → (crf, vmaf)`.
 To support cross-shot weighting, the predicate must either:
+
 - Accept a per-shot target derived from a global constraint solver, or
 - Be replaced by a two-pass architecture: first pass estimates per-shot
   complexity; second pass solves the allocation problem; third pass runs

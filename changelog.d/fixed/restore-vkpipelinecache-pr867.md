@@ -2,6 +2,7 @@ fix(vulkan): restore VkPipelineCache persistence clobbered by PR #1067
 
 PR #1067 (refactor/bootstrap-name-builder) inadvertently reverted all
 pipeline-cache code originally landed by PR #867 (ADR-0445):
+
 - Dropped `VkPipelineCache pipeline_cache` field from `VmafVulkanContext`
 - Dropped the full `pipeline_cache_init` / `pipeline_cache_save` helper
   block (~300 LOC) from `common.c`

@@ -33,6 +33,7 @@ Release asset attached to the VMAFx/vmafx repository:
 |                 | `u2netp_mirror_v<N>.onnx.bundle` (Sigstore signature bundle)   |
 |                 | `Apache-2.0-u2netp.txt` (license text + attribution block)     |
 | In-tree path    | `model/u2netp_mirror.onnx` (gitignored; conventionally where
+
                     the operator drops the downloaded asset for the C-side loader
                     to find) |
 

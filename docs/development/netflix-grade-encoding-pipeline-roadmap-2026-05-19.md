@@ -115,6 +115,7 @@ front-loads the largest item and delays visible wins for 8 days.
 **Item 4 (VMAF NEG) + Item 3 (Fast NR pre-scoring).**
 
 Rationale:
+
 - Item 4 is the cheapest item (1.5 days), has no dependencies, and immediately
   unblocks correct codec-comparison workflows. The model files are in-tree;
   this is pure parameter plumbing.
@@ -214,6 +215,7 @@ per rung, short shots at rung boundary treated as up-/down-scale.
 Direct access to Netflix Tech Blog (netflixtechblog.com) failed during this
 research pass with SSL certificate errors. Relevant posts were identified by
 URL but not successfully fetched:
+
 - "Dynamic Optimizer: A Perceptual Video Encoding Optimization Framework"
 - "Per-Title Encode Optimization" (2015)
 - "Per-Shot Encoding for High-Quality Video Streaming"

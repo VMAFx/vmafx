@@ -4,6 +4,7 @@ Wave 1-5 conversions renamed the file in meson.build to
 Meson compiles only the `.cpp`; the `.c` was dead source.
 
 **Reproducer (inventory check):**
+
 ```
 find core/src -name '*.c' -not -path '*/vulkan/*' | while read f; do
   cpp="${f%.c}.cpp"

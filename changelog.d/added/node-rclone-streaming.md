@@ -29,6 +29,7 @@ docker run --rm --entrypoint /usr/local/bin/rclone ghcr.io/vmafx/vmafx-node:late
 ### New: Helm chart storage + node sections
 
 `values.yaml`:
+
 ```yaml
 storage:
   mode: http-serve  # http-serve | mount | auto

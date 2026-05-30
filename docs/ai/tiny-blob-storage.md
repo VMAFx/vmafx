@@ -59,10 +59,12 @@ When introducing a new ONNX file ≥ 1 MB:
 2. Record `sha256` in `model/tiny/registry.json`.
 3. Either roll a new `tiny-blobs-vN+1` release or attach to the
    current one:
+
    ```bash
    gh release upload tiny-blobs-v1 model/tiny/<name>.onnx \
      --repo VMAFx/vmafx
    ```
+
 4. Add `release_url` to the registry entry pointing at the upload.
 5. `git rm` the local file and let the fetcher serve it from the
    release.
