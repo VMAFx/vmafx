@@ -50,15 +50,19 @@ class LazyExtensions(list):
             import numpy
             from Cython.Build import cythonize
 
+            # Use the relative path so the resulting Extension's source list
+            # stays relative to setup.py (setuptools rejects absolute paths
+            # in Extension.sources on macOS Clang the same way it does for
+            # package_dir).
             self._extensions = cythonize(
-                [os.path.join(COMPAT_VMAF, "core", "adm_dwt2_cy.pyx")],
+                [os.path.join(COMPAT_VMAF_REL, "core", "adm_dwt2_cy.pyx")],
                 compiler_directives={"language_level": "3"},
             )
             # python/compat/ contains a stub config.h that disables SIMD
             # dispatch (the SIMD .c files are not compiled into this extension).
             self._extensions[0].include_dirs = [
                 numpy.get_include(),
-                os.path.join(PYTHON_PROJECT, "compat"),
+                "compat",
                 "../core/src",
             ]
 
