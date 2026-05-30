@@ -35,6 +35,11 @@ typedef struct FloatMotionStateCuda {
      * template's readback bundle. */
     VmafCudaKernelReadback rb;
 
+    /* PTX module backing the per-bpc kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB per init/close cycle (see
+     * `core/src/cuda/AGENTS.md` lifecycle invariants + ADR-0356). */
+    CUmodule module;
     CUfunction funcbpc8;
     CUfunction funcbpc16;
 
@@ -142,12 +147,11 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
 
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, float_motion_score_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc8, module, "float_motion_kernel_8bpc"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, float_motion_score_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "float_motion_kernel_8bpc"),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc16, module, "float_motion_kernel_16bpc"),
-                    fail);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "float_motion_kernel_16bpc"), fail);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
     if (s->motion_force_zero) {
@@ -365,6 +369,9 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     FloatMotionStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state ? fex->cu_state->f : NULL;
+    if (cu_f && s->module)
+        (void)cu_f->cuModuleUnload(s->module);
     int ret = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
 
     if (s->ref_in) {
