@@ -26,7 +26,11 @@ Meson options:
 ### `icpx` const-correctness on string default options
 
 Per-extractor `VmafOption` rows declare `default_val.s` as `char *`
+<<<<<<< HEAD
 (matching the C API contract in `core/include/libvmaf/libvmaf.h`).
+=======
+(matching the C API contract in `core/include/core/libvmaf.h`).
+>>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 The DPC++ compiler (`icpx`) is stricter than g++ about C++
 const-correctness and rejects initializing a `char *` member from a
 `const char *` source. SYCL feature kernels that need a string default
@@ -260,6 +264,26 @@ AdaptiveCpp's portable SPIR-V / SSCP JIT path — the same cold-start trap as
 the old icpx default. AOT under AdaptiveCpp requires `intel_gpu_<arch>` target
 strings (supported in AdaptiveCpp 23.10+); that broadening is tracked as a
 follow-up task (see Known gaps below).
+
+## Backend dispatch knob
+
+`VMAF_SYCL_DISPATCH` controls the SYCL graph-replay strategy:
+
+| Value | Behaviour |
+|---|---|
+| `direct` | Submit kernels directly to an in-order queue (no graph). Lower per-frame overhead at small resolutions. |
+| `graph` | SYCL graph replay (ADR-0483). Reduces kernel-launch overhead at ≥ 720p. |
+
+When unset, an area-threshold heuristic selects `graph` above 1280 × 720 pixels
+and `direct` below.  `VMAF_SYCL_USE_GRAPH` (boolean `true`/`false`) provides a
+simpler global override without per-feature granularity.
+
+`VMAF_SYCL_NO_GRAPH=1` is a **deprecated** alias for `VMAF_SYCL_USE_GRAPH=false`.
+It still works but prints a deprecation warning to stderr and will be removed in
+v4.0 (ADR-0841).
+
+See [ADR-0483](../../adr/0483-gpu-dispatch-parse-dedup.md) and the
+[env-var reference](../../usage/env-vars.md#sycl-dispatch-knob).
 
 ## Profiling
 

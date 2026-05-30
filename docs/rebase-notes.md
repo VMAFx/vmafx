@@ -6,12 +6,13 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
-## ADR-0042 model-card F5 closeout (2026-05-29)
+## env-var consolidation + VMAF_SYCL_NO_GRAPH deprecation (2026-05-29, ADR-0841)
 
-no rebase impact: docs-only — adds 4 model cards under
-`docs/ai/models/` and removes 2 orphan stubs; deletes forward-looking
-stub content that has no upstream counterpart. `mkdocs.yml` nav update
-is also docs-only.
+No rebase impact: all changes are documentation (`docs/usage/env-vars.md`,
+`docs/server/operator.md`, `mkdocs.yml` nav, `docs/backends/*/overview.md`
+additions) plus a three-line deprecation warning in
+`core/src/sycl/dispatch_strategy.cpp` that is fork-local.  No upstream-shared
+C sources, no public headers, no build system files.
 
 ---
 

@@ -8,6 +8,7 @@
 #include "dispatch_strategy.h"
 #include "../gpu_dispatch_parse.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 
 /* Backend default: SYCL graph replay wins above 720p frame area on
@@ -43,8 +44,17 @@ VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
     const char *env_no_graph = getenv("VMAF_SYCL_NO_GRAPH");
     if (env_use_graph && env_use_graph[0] == '1')
         return VMAF_SYCL_DISPATCH_GRAPH_REPLAY;
-    if (env_no_graph && env_no_graph[0] == '1')
-        return VMAF_SYCL_DISPATCH_DIRECT;
+    if (env_no_graph) {
+        /* ADR-0841: VMAF_SYCL_NO_GRAPH is deprecated. Keep reading it for one
+         * release so operators have time to migrate, but print a one-shot
+         * warning on the first call that detects the variable.  Removal is
+         * scheduled for v4.0. */
+        (void)fprintf(stderr, "libvmaf: VMAF_SYCL_NO_GRAPH deprecated; "
+                              "use VMAF_SYCL_USE_GRAPH=false. "
+                              "Will be removed in v4.0.\n");
+        if (env_no_graph[0] == '1')
+            return VMAF_SYCL_DISPATCH_DIRECT;
+    }
 
     /* Descriptor-driven decision. AUTO falls through to the
      * resolution-area default. */
