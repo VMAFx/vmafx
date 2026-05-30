@@ -180,8 +180,12 @@ void ssimulacra2_linear_rgb_to_xyb_avx2(const float *lin, float *xyb, unsigned w
 
         /* MakePositiveXYB rescale in libjxl order (B uses Y before Y offset). */
         const __m256 Bfinal = _mm256_add_ps(_mm256_sub_ps(B, Y), _mm256_set1_ps(0.55f));
-        const __m256 Xfinal = _mm256_add_ps(
-            _mm256_mul_ps(_mm256_sub_ps(L, M), _mm256_set1_ps(7.0f)), _mm256_set1_ps(0.42f));
+        /* Bit-exact match for the scalar reference: X = 0.5*(L-M); X = X*14 + 0.42.
+         * The folded form (L-M)*7 produces a different intermediate rounding
+         * sequence and fails the places=4 bit-exact assertion in test_xyb. */
+        const __m256 X_half = _mm256_mul_ps(_mm256_set1_ps(0.5f), _mm256_sub_ps(L, M));
+        const __m256 Xfinal =
+            _mm256_add_ps(_mm256_mul_ps(X_half, _mm256_set1_ps(14.0f)), _mm256_set1_ps(0.42f));
         const __m256 Yfinal = _mm256_add_ps(Y, _mm256_set1_ps(0.01f));
 
         _mm256_storeu_ps(xp + i, Xfinal);

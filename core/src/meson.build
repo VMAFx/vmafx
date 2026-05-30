@@ -658,9 +658,7 @@ if is_asm_enabled
           feature_src_dir + 'x86/float_motion_avx2.c',
           feature_src_dir + 'x86/float_adm_avx2.c',
           feature_src_dir + 'x86/ciede_avx2.c',
-          feature_src_dir + 'x86/ms_ssim_decimate_avx2.c',
           feature_src_dir + 'x86/convolve_avx2.c',
-          feature_src_dir + 'x86/psnr_hvs_avx2.c',
           feature_src_dir + 'x86/moment_avx2.c',
       ]
 
@@ -669,6 +667,26 @@ if is_asm_enabled
           x86_avx2_sources,
           include_directories : vmaf_base_include,
           c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_cflags_common,
+      )
+
+      # psnr_hvs_avx2 + ms_ssim_decimate_avx2 carve-outs (mirror of
+      # ssimulacra2 below). Reason: under -mfma + GCC silently
+      # ignoring `#pragma STDC FP_CONTRACT OFF`, plain C `a*b+c`
+      # in scalar tails / index math auto-contracts to FMA and
+      # diverges from the scalar reference (which is built without
+      # -mfma). Causes test_psnr_hvs_simd / test_ms_ssim_decimate
+      # to fail with sub-ULP rel-tol drift.
+      x86_psnr_hvs_avx2_lib = static_library(
+          'x86_psnr_hvs_avx2',
+          feature_src_dir + 'x86/psnr_hvs_avx2.c',
+          include_directories : vmaf_base_include,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
+      )
+      x86_ms_ssim_decimate_avx2_lib = static_library(
+          'x86_ms_ssim_decimate_avx2',
+          feature_src_dir + 'x86/ms_ssim_decimate_avx2.c',
+          include_directories : vmaf_base_include,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
       )
 
       # ssimulacra2 AVX2 compiles in its own static lib with
@@ -691,6 +709,8 @@ if is_asm_enabled
 
       platform_specific_cpu_objects += x86_avx2_static_lib.extract_all_objects(recursive: true)
       platform_specific_cpu_objects += x86_ssimulacra2_avx2_lib.extract_all_objects(recursive: true)
+      platform_specific_cpu_objects += x86_psnr_hvs_avx2_lib.extract_all_objects(recursive: true)
+      platform_specific_cpu_objects += x86_ms_ssim_decimate_avx2_lib.extract_all_objects(recursive: true)
 
       if is_avx512_enabled and is_avx512_supported
         x86_avx512_sources = [
