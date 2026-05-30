@@ -5,22 +5,18 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
 
 import pytest
 
+from .conftest import load_ai_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS_DIR = REPO_ROOT / "ai" / "scripts"
 
 
 def _load_script(name: str):
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS_DIR / f"{name}.py")
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_ai_script(name)
 
 
 def test_validate_model_registry_writes_report(tmp_path: Path) -> None:

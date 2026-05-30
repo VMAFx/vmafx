@@ -9,9 +9,7 @@ schema / fold file shape.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -19,17 +17,11 @@ import pandas as pd
 
 from ai.data.feature_extractor import FULL_FEATURES
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "konvid_to_full_features.py"
+from .conftest import load_ai_script
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("konvid_to_full_features", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["konvid_to_full_features_test_import"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script("konvid_to_full_features", name="konvid_to_full_features_test_import")
 
 
 def _make_fake_vmaf_json(n_frames: int = 2) -> str:

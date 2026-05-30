@@ -4,35 +4,16 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_to_corpus_jsonl.py"
-_FEATURE_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_extract_features.py"
+from .conftest import load_ai_script
 
-
-def _load_module():
-    spec = importlib.util.spec_from_file_location("chug_to_corpus_jsonl", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-CHUG = _load_module()
-_feature_spec = importlib.util.spec_from_file_location(
-    "chug_extract_features", _FEATURE_SCRIPT_PATH
-)
-assert _feature_spec is not None and _feature_spec.loader is not None
-CHUG_FEATURES = importlib.util.module_from_spec(_feature_spec)
-sys.modules[_feature_spec.name] = CHUG_FEATURES
-_feature_spec.loader.exec_module(CHUG_FEATURES)
+CHUG = load_ai_script("chug_to_corpus_jsonl")
+CHUG_FEATURES = load_ai_script("chug_extract_features")
 
 
 def _make_manifest(path: Path) -> None:

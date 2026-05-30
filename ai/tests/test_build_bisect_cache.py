@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 
@@ -10,16 +9,11 @@ import numpy as np
 import onnx
 import pandas as pd
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "build_bisect_cache.py"
+from .conftest import load_ai_script
 
 
 def _load_script():
-    spec = importlib.util.spec_from_file_location("build_bisect_cache", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_ai_script("build_bisect_cache")
 
 
 def test_real_feature_parquet_materialises_bisect_cache(tmp_path: Path) -> None:

@@ -4,9 +4,7 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -14,17 +12,14 @@ import pytest
 
 from ai.data.feature_extractor import FULL_FEATURES
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "combine_full_feature_parquets.py"
+from .conftest import load_ai_script
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("combine_full_feature_parquets", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["combine_full_feature_parquets_test_import"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script(
+        "combine_full_feature_parquets",
+        name="combine_full_feature_parquets_test_import",
+    )
 
 
 def _write_parquet(path: Path, rows: list[dict]) -> Path:

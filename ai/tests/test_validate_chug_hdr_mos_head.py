@@ -14,12 +14,13 @@ Covers:
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 from pathlib import Path
 
 import pytest
+
+from .conftest import load_ai_script
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
@@ -29,12 +30,7 @@ np = pytest.importorskip("numpy")
 import train_konvid_mos_head as trainer  # noqa: E402
 
 # Load validator under test without executing __main__.
-_SCRIPT_PATH = REPO_ROOT / "ai" / "scripts" / "validate_chug_hdr_mos_head.py"
-_SPEC = importlib.util.spec_from_file_location("validate_chug_hdr_mos_head", _SCRIPT_PATH)
-assert _SPEC is not None and _SPEC.loader is not None
-validator = importlib.util.module_from_spec(_SPEC)
-sys.modules[_SPEC.name] = validator
-_SPEC.loader.exec_module(validator)
+validator = load_ai_script("validate_chug_hdr_mos_head")
 
 
 # ---------------------------------------------------------------------------

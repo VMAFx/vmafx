@@ -13,12 +13,13 @@ Covers the contract the BVI-DVC ingestion path depends on:
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 from pathlib import Path
 
 import pytest
+
+from .conftest import load_ai_script
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _VMAFTUNE_SRC = _REPO_ROOT / "tools" / "vmaf-tune" / "src"
@@ -27,15 +28,9 @@ if str(_VMAFTUNE_SRC) not in sys.path:
 
 from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
 
-_MERGE_PATH = _REPO_ROOT / "ai" / "scripts" / "merge_corpora.py"
-
 
 def _load_merge_module():
-    spec = importlib.util.spec_from_file_location("merge_corpora", _MERGE_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script("merge_corpora")
 
 
 def _fixture_row(idx: int, *, src_sha: str | None = None) -> dict:

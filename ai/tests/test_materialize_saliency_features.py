@@ -4,10 +4,8 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -15,17 +13,11 @@ import pytest
 
 np = pytest.importorskip("numpy")
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "materialize_saliency_features.py"
+from .conftest import load_ai_script  # noqa: E402
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("materialize_saliency_features", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script("materialize_saliency_features")
 
 
 def _runner(cmd: list[str], **_: Any) -> subprocess.CompletedProcess[str]:

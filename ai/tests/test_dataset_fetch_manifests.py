@@ -2,22 +2,14 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPTS = _REPO_ROOT / "ai" / "scripts"
+from .conftest import load_ai_script
 
 
 def _load_module(name: str):
-    path = _SCRIPTS / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(f"{name}_manifest_test", path)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script(name, name=f"{name}_manifest_test")
 
 
 def test_fetch_youtube_ugc_subset_writes_run_manifest(tmp_path: Path, monkeypatch) -> None:

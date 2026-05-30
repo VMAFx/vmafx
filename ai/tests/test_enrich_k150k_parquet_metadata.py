@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 import sys
@@ -14,19 +13,18 @@ import pytest
 
 pd = pytest.importorskip("pandas")
 
+from .conftest import load_ai_script  # noqa: E402
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_DIR = _REPO_ROOT / "ai" / "scripts"
 _SCRIPT_PATH = _SCRIPT_DIR / "enrich_k150k_parquet_metadata.py"
 
 
 def _load_module():
+    # Preserve the original side-effect: put ai/scripts/ on sys.path so the
+    # script's intra-module ``from foo import bar`` statements resolve.
     sys.path.insert(0, str(_SCRIPT_DIR))
-    spec = importlib.util.spec_from_file_location("enrich_k150k_parquet_metadata", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script("enrich_k150k_parquet_metadata")
 
 
 ENRICH = _load_module()

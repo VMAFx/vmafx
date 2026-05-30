@@ -8,25 +8,17 @@ Synthetic 20-row JSONL fixture; the live 12,636-cell sweep at
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT_PATH = REPO_ROOT / "ai" / "scripts" / "analyze_knob_sweep.py"
+from .conftest import load_ai_script
 
 
 def _load_module():
     """Import ``analyze_knob_sweep`` from its scripts/ path."""
-    spec = importlib.util.spec_from_file_location("analyze_knob_sweep", SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["analyze_knob_sweep"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script("analyze_knob_sweep")
 
 
 @pytest.fixture(scope="module")

@@ -34,7 +34,6 @@ license-text wording).
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import logging
 import subprocess
@@ -43,19 +42,9 @@ from typing import Any
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "waterloo_ivc_to_corpus_jsonl.py"
+from .conftest import load_ai_script
 
-
-def _load_module():
-    spec = importlib.util.spec_from_file_location("waterloo_ivc_to_corpus_jsonl", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-WATERLOO = _load_module()
+WATERLOO = load_ai_script("waterloo_ivc_to_corpus_jsonl")
 
 
 # ---------------------------------------------------------------------------

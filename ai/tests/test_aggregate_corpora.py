@@ -17,29 +17,17 @@ Covers the contract the multi-corpus aggregator owes the trainer:
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_AGG_PATH = _REPO_ROOT / "ai" / "scripts" / "aggregate_corpora.py"
-
-
-def _load_agg_module():
-    spec = importlib.util.spec_from_file_location("aggregate_corpora", _AGG_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["aggregate_corpora"] = module
-    spec.loader.exec_module(module)
-    return module
+from .conftest import load_ai_script
 
 
 @pytest.fixture(scope="module")
 def agg():
-    return _load_agg_module()
+    return load_ai_script("aggregate_corpora")
 
 
 # ---------------------------------------------------------------------------

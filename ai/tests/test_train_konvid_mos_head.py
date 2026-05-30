@@ -30,12 +30,13 @@ misses — the model ships ``Status: Proposed`` instead.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 from pathlib import Path
 
 import pytest
+
+from .conftest import load_ai_script
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
@@ -45,12 +46,7 @@ torch = pytest.importorskip("torch")
 
 import train_konvid_mos_head as trainer  # noqa: E402
 
-_CHUG_SCRIPT_PATH = REPO_ROOT / "ai" / "scripts" / "train_chug_hdr_mos_head.py"
-_CHUG_SPEC = importlib.util.spec_from_file_location("train_chug_hdr_mos_head", _CHUG_SCRIPT_PATH)
-assert _CHUG_SPEC is not None and _CHUG_SPEC.loader is not None
-chug_trainer = importlib.util.module_from_spec(_CHUG_SPEC)
-sys.modules[_CHUG_SPEC.name] = chug_trainer
-_CHUG_SPEC.loader.exec_module(chug_trainer)
+chug_trainer = load_ai_script("train_chug_hdr_mos_head")
 
 # ---------------------------------------------------------------------
 # Schema pins — fail loudly if any constant drifts under us.

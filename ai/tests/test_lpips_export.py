@@ -4,9 +4,7 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
@@ -14,17 +12,11 @@ import pytest
 pytest.importorskip("onnx")
 pytest.importorskip("torch")
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "ai" / "lpips_export.py"
+from .conftest import load_ai_module
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("lpips_export_test", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_module("lpips_export", name="lpips_export_test")
 
 
 def test_main_accepts_documented_out_and_sidecar_flags(

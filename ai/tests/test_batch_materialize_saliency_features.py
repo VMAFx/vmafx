@@ -4,24 +4,14 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "batch_materialize_saliency_features.py"
+from .conftest import load_ai_script
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location(
-        "batch_materialize_saliency_features", _SCRIPT_PATH
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script("batch_materialize_saliency_features")
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:

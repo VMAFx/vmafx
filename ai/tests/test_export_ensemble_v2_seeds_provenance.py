@@ -4,17 +4,9 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
+from .conftest import load_ai_script
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT = _REPO_ROOT / "ai" / "scripts" / "export_ensemble_v2_seeds.py"
-_SPEC = importlib.util.spec_from_file_location("export_ensemble_v2_seeds", _SCRIPT)
-assert _SPEC is not None and _SPEC.loader is not None
-export_ensemble = importlib.util.module_from_spec(_SPEC)
-sys.modules["export_ensemble_v2_seeds"] = export_ensemble
-_SPEC.loader.exec_module(export_ensemble)
+export_ensemble = load_ai_script("export_ensemble_v2_seeds")
 
 
 def _sidecar(*, run_provenance: dict | None = None) -> dict:

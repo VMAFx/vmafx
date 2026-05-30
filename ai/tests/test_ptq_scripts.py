@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from .conftest import load_ai_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "ai" / "scripts"
 
@@ -55,12 +57,7 @@ def test_qat_train_help() -> None:
 def test_ptq_dynamic_imports_only_what_it_needs() -> None:
     """Import the module without executing main() — must not require
     onnxruntime.quantization just to load the file."""
-    spec = importlib.util.spec_from_file_location(
-        "ptq_dynamic_under_test", SCRIPTS_DIR / "ptq_dynamic.py"
-    )
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = load_ai_script("ptq_dynamic", name="ptq_dynamic_under_test")
     assert callable(mod.main)
 
 
@@ -126,12 +123,7 @@ def test_measure_quant_drop_report_for_fp32_skip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The CI quant-drop gate can write a provenance-backed report without ORT."""
-    spec = importlib.util.spec_from_file_location(
-        "measure_quant_drop_under_test", SCRIPTS_DIR / "measure_quant_drop.py"
-    )
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = load_ai_script("measure_quant_drop", name="measure_quant_drop_under_test")
 
     repo = tmp_path / "repo"
     registry = repo / "model" / "tiny" / "registry.json"

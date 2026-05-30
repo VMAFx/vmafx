@@ -11,23 +11,18 @@ that the validator emits ``PROMOTE.json`` iff the two-part gate
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_VALIDATE_PATH = _REPO_ROOT / "ai" / "scripts" / "validate_ensemble_seeds.py"
+from .conftest import load_ai_script
 
 # Load the script as a module without polluting ``sys.modules`` with a
 # package path that doesn't exist (``ai.scripts`` is not a package).
-_spec = importlib.util.spec_from_file_location("validate_ensemble_seeds_under_test", _VALIDATE_PATH)
-assert _spec is not None and _spec.loader is not None
-validate_ensemble_seeds = importlib.util.module_from_spec(_spec)
-sys.modules[_spec.name] = validate_ensemble_seeds
-_spec.loader.exec_module(validate_ensemble_seeds)
+validate_ensemble_seeds = load_ai_script(
+    "validate_ensemble_seeds", name="validate_ensemble_seeds_under_test"
+)
 
 
 def _write_seed_json(out_dir: Path, seed: int, mean_plcc: float) -> Path:

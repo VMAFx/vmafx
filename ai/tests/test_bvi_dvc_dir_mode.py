@@ -19,26 +19,18 @@ test suite can run without a built libvmaf on the host.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "bvi_dvc_to_full_features.py"
+from .conftest import load_ai_script
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("bvi_dvc_to_full_features", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
     # Use a fresh module name to avoid colliding with a cached import.
-    sys.modules["bvi_dvc_to_full_features_test_import"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script("bvi_dvc_to_full_features", name="bvi_dvc_to_full_features_test_import")
 
 
 # ---------------------------------------------------------------------------

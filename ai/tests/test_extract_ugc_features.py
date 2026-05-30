@@ -4,23 +4,15 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
 
 from ai.data.feature_extractor import FULL_FEATURES
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "extract_ugc_features.py"
+from .conftest import load_ai_script
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("extract_ugc_features", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["extract_ugc_features_test_import"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script("extract_ugc_features", name="extract_ugc_features_test_import")
 
 
 def test_schema_columns_track_full_features() -> None:

@@ -26,27 +26,21 @@ Skipped if the ``vmaf`` / ``ffmpeg`` binaries are not on PATH.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
+from .conftest import load_ai_script
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_extract_features.py"
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("chug_extract_features", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_ai_script("chug_extract_features")
 
 
 def _resolve_vmaf_binary() -> Path | None:

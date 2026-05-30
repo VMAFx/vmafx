@@ -11,21 +11,12 @@ per-feature options."""
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
 import pytest
 
-REPO = Path(__file__).resolve().parents[2]
-SCRIPT = REPO / "ai" / "scripts" / "extract_k150k_features.py"
+from .conftest import load_ai_script
 
 # ai/scripts/ is not a package; load the module by path.
-spec = importlib.util.spec_from_file_location("extract_k150k_features", SCRIPT)
-assert spec is not None and spec.loader is not None
-ek = importlib.util.module_from_spec(spec)
-sys.modules["extract_k150k_features"] = ek
-spec.loader.exec_module(ek)
+ek = load_ai_script("extract_k150k_features")
 
 
 # ---------------------------------------------------------------------------

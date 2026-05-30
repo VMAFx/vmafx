@@ -4,20 +4,14 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT = _REPO_ROOT / "ai" / "scripts" / "materialize_second_opinion_features.py"
-_SPEC = importlib.util.spec_from_file_location("materialize_second_opinion_features", _SCRIPT)
-assert _SPEC is not None and _SPEC.loader is not None
-second_opinion = importlib.util.module_from_spec(_SPEC)
-sys.modules["materialize_second_opinion_features"] = second_opinion
-_SPEC.loader.exec_module(second_opinion)
+from .conftest import load_ai_script
+
+second_opinion = load_ai_script("materialize_second_opinion_features")
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> Path:

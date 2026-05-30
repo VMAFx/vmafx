@@ -6,6 +6,24 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## ai/tests/ script-loader helper (2026-05-31)
+
+**Files touched:** `ai/tests/conftest.py` and 34 `ai/tests/test_*.py` files.
+
+**Rebase impact:** None. Pure fork-local DRY refactor inside the
+fork-only `ai/tests/` tree (upstream Netflix/vmaf has no `ai/` package).
+The change extracts the duplicated
+`importlib.util.spec_from_file_location → module_from_spec →
+exec_module` boilerplate into two helpers in `conftest.py`
+(`load_ai_script` for `ai/scripts/*.py`, `load_ai_module` for any other
+file under `ai/`) and replaces each call site. No behavior change.
+
+If a future fork-added test under `ai/tests/` needs to dynamically load
+an `ai/` Python file, use the shared helper instead of re-introducing
+the raw `importlib` recipe.
+
+---
+
 ## SIMD strict-FP flags for icx (2026-05-30)
 
 **Files touched:**
