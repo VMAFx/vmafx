@@ -25,7 +25,7 @@ def _sanitize_nonfinite(obj: Any) -> Any:
     return obj
 
 
-def dumps_jsonl_row(obj: dict, **kwargs: Any) -> str:
+def dumps_jsonl_row(obj: dict[str, Any], **kwargs: Any) -> str:
     """Serialise *obj* to a single compact, sorted, newline-terminated JSON line.
 
     Non-finite float values (``math.nan``, ``math.inf``, ``-math.inf``) are
@@ -45,7 +45,7 @@ def dumps_jsonl_row(obj: dict, **kwargs: Any) -> str:
     return json.dumps(sanitised, **kwargs) + "\n"
 
 
-def iter_jsonl(path: Path) -> Iterator[tuple[int, dict]]:
+def iter_jsonl(path: Path) -> Iterator[tuple[int, dict[str, Any]]]:
     """Yield (line_no, row) tuples from a JSONL file. Skips blank lines.
 
     Args:

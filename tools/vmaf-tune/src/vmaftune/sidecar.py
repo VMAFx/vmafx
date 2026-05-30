@@ -66,6 +66,7 @@ import os
 import secrets
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from .jsonio import write_json_strict
 from .predictor import Predictor, ShotFeatures
@@ -256,7 +257,7 @@ class SidecarModel:
     config: SidecarConfig = dataclasses.field(default_factory=SidecarConfig)
     weights: list[float] = dataclasses.field(default_factory=lambda: [0.0] * FEATURE_DIM)
     a_inv: list[list[float]] = dataclasses.field(default_factory=list)
-    history: list[dict] = dataclasses.field(default_factory=list)
+    history: list[dict[str, Any]] = dataclasses.field(default_factory=list)
     n_updates: int = 0
 
     def __post_init__(self) -> None:
@@ -347,7 +348,7 @@ class SidecarModel:
 
     # -- Persistence -------------------------------------------------
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-compatible dict."""
         return {
             "schema_version": SIDECAR_SCHEMA_VERSION,
@@ -361,7 +362,7 @@ class SidecarModel:
         }
 
     @classmethod
-    def from_dict(cls, state: dict, config: SidecarConfig) -> SidecarModel:
+    def from_dict(cls, state: dict[str, Any], config: SidecarConfig) -> SidecarModel:
         """Re-construct from a dict produced by :meth:`to_dict`.
 
         Raises :class:`ValueError` if the schema version, feature

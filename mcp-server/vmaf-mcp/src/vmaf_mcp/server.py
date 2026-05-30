@@ -280,7 +280,13 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
                 "vmaf pick, or rebuild with the requested backend enabled."
             )
 
-    output = Path("/tmp") / f"vmaf-mcp-{os.getpid()}-{asyncio.current_task().get_name()}.json"
+    # asyncio.current_task() is None only when called outside any task; this
+    # function is always invoked from the MCP request handler (which runs
+    # inside the asyncio task created by the transport), so fall back to a
+    # process-unique sentinel if the contract is ever violated.
+    _task = asyncio.current_task()
+    _task_name = _task.get_name() if _task is not None else "no-task"
+    output = Path("/tmp") / f"vmaf-mcp-{os.getpid()}-{_task_name}.json"
     try:
         argv = [
             str(vmaf),
@@ -315,7 +321,7 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
         _stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
             raise RuntimeError(f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace')}")
-        payload = json.loads(output.read_text())
+        payload: dict[str, Any] = json.loads(output.read_text())
         # Bug #1 (echo): tell the caller which backend actually ran, so
         # downstream parity tests can assert it instead of trusting the
         # request silently.
@@ -717,84 +723,13 @@ async def _describe_worst_frames(
     }
 
 
-async def _run_benchmark() -> dict[str, Any]:
-    """Run the full multi-fixture benchmark suite (bench_all.sh).
-
-    bench_all.sh is a fixed-fixture harness: it tests three canonical YUV
-    pairs (576x324, 1080p-5f, 4K-BBB-200f) across all available backends.
-    It does NOT accept per-call ref/dis arguments — those are hardcoded.
-
-    Root causes of the original failure (ADR-0513):
-    1. The MCP tool previously passed ``-r ref -d dis --width W --height H``
-       as positional args to the script.  bench_all.sh uses ``set -euo
-       pipefail`` and sources Intel oneAPI ``setvars.sh`` inside the script
-       body.  ``setvars.sh`` reads the calling script's ``$@`` (positional
-       parameters) to process its own flags; the unknown flags ``-r``,
-       ``-d``, ``--width``, ``--height`` propagate into per-component
-       ``env/vars.sh`` scripts, which hang or exit non-zero, aborting the
-       outer script before any output is emitted.
-    2. ``VMAF_BIN`` was not injected into the subprocess environment, so the
-       script fell back to the relative path ``core/build/tools/vmaf``
-       which is absent in the container after ``make install``.
-    """
-    script = _repo_root() / "testdata" / "bench_all.sh"
-    if not script.exists():
-        raise FileNotFoundError(f"benchmark harness not found: {script}")
-    # Resolve the data root — where bench_all.sh's fixture YUVs live.
-    # Priority:
-    #   1. VMAF_ROOT env var already set by the caller (explicit override).
-    #   2. _repo_root() when it contains the canonical fixture file.
-    #   3. /workspace — the vmaf-dev-mcp container bind-mount (ADR-0513).
-    # This handles the case where the MCP server is installed as an editable
-    # package from a git worktree (e.g. during development): _repo_root()
-    # then resolves to the worktree directory which shares the git objects but
-    # does not have the large YUV fixtures checked out.
-    _fixture_probe = "python/test/resource/yuv/src01_hrc00_576x324.yuv"
-    _candidate_roots = [
-        Path(os.environ["VMAF_ROOT"]) if "VMAF_ROOT" in os.environ else None,
-        _repo_root(),
-        Path("/workspace"),
-    ]
-    vmaf_root = next(
-        (r for r in _candidate_roots if r is not None and (r / _fixture_probe).exists()),
-        _repo_root(),
-    )
-    # Inherit the full environment so that PATH, LD_LIBRARY_PATH, and any
-    # GPU-runtime variables are preserved.  Inject VMAF_ROOT so bench_all.sh
-    # resolves its ``cd`` correctly when git is unavailable, and inject
-    # VMAF_BIN so the script uses the installed binary (not the relative
-    # in-tree path which is absent after ``make install`` in containers).
-    bench_env = {
-        **os.environ,
-        "VMAF_ROOT": str(vmaf_root),
-        "VMAF_BIN": str(_vmaf_binary()),
-    }
-    # bench_all.sh is invoked with NO positional arguments.  The script's
-    # fixture paths are hardcoded; passing extra args corrupts $@ inside
-    # the sourced oneAPI setvars.sh and causes a silent abort (ADR-0517).
-    proc = await asyncio.create_subprocess_exec(
-        str(script),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=bench_env,
-    )
-    stdout, stderr = await proc.communicate()
-    stdout_s = stdout.decode(errors="replace")
-    stderr_s = stderr.decode(errors="replace")
-    payload: dict[str, Any] = {
-        "exit_code": proc.returncode,
-        "stdout": stdout_s,
-        "stderr": stderr_s,
-    }
-    if proc.returncode != 0 and not stdout_s.strip() and not stderr_s.strip():
-        payload["error"] = (
-            f"bench_all.sh exited {proc.returncode} with no output — "
-            "likely aborted by set -euo pipefail before printing. Common "
-            f"causes: missing vmaf binary at {_vmaf_binary()}, missing "
-            "fixture YUVs under testdata/ or python/test/resource/yuv/. "
-            "Re-run with `bash -x testdata/bench_all.sh` to bisect."
-        )
-    return payload
+# NOTE (type audit, 2026-05-30): the legacy _run_benchmark() definition that
+# previously lived here was a verbatim duplicate of the progress-token-aware
+# implementation below.  Python silently rebound the symbol to the later
+# definition at import time, but mypy correctly flagged the redefinition as a
+# real bug surface — any future edit to the dead-code copy would be invisible
+# at runtime.  The progress-token-aware implementation farther down is the
+# single source of truth.  See ADR-0608 (progress notifications).
 
 
 # ---------------------------------------------------------------------------
@@ -849,7 +784,7 @@ def _list_extractors() -> list[dict[str, Any]]:
     - ``source``: relative path to the C file that defines the struct.
     """
     feature_dir = _repo_root() / "core" / "src" / "feature"
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     out: list[dict[str, Any]] = []
 
     for c_file in sorted(feature_dir.rglob("*.c")):
@@ -1129,7 +1064,8 @@ async def _run_compare(
     # vmaf-tune compare --format json emits JSON to stdout; other formats
     # return a string.  We always pass --format json here so we can parse it.
     try:
-        return json.loads(stdout_s)
+        parsed: dict[str, Any] = json.loads(stdout_s)
+        return parsed
     except json.JSONDecodeError:
         # Non-JSON format or parse error — return raw output.
         return {
@@ -1281,7 +1217,8 @@ async def _run_tune_per_shot(
 
     if format == "json":
         try:
-            return json.loads(stdout_s)
+            parsed: dict[str, Any] = json.loads(stdout_s)
+            return parsed
         except json.JSONDecodeError:
             pass
     return {"exit_code": proc.returncode, "stdout": stdout_s, "stderr": stderr_s}
@@ -1760,7 +1697,10 @@ async def _run_vmaf_score_encoded(
 server: Server = Server("vmaf-mcp")
 
 
-@server.list_tools()
+# mcp.server.lowlevel.Server.list_tools() returns an untyped decorator (the
+# library has no py.typed marker); this is a library-stub gap, not a real
+# typing issue at the call site.
+@server.list_tools()  # type: ignore[no-untyped-call,untyped-decorator]
 async def _list_tools() -> list[Tool]:
     return [
         Tool(
@@ -2137,14 +2077,17 @@ async def _list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
+# Same untyped-decorator caveat as @server.list_tools() above.
+@server.call_tool()  # type: ignore[untyped-decorator]
 async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     # Extract MCP progress token from the request context's meta field.
     # The client opts in by passing {"_meta": {"progressToken": <token>}} in the
     # tools/call params object (MCP spec §notifications/progress).
     progress_token: str | int | None = None
     try:
-        meta = server.request_context.request.params.meta
+        # request is typed Any | None by the mcp lib; defensively guarded by
+        # the (LookupError, AttributeError) except below.
+        meta = server.request_context.request.params.meta  # type: ignore[union-attr]
         if meta is not None:
             progress_token = getattr(meta, "progressToken", None)
     except (LookupError, AttributeError):

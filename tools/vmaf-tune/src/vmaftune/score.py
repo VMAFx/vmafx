@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 from . import CANONICAL6_FEATURES
 
@@ -159,7 +160,7 @@ def _bitdepth_for(pix_fmt: str) -> int:
     return 8
 
 
-def parse_vmaf_json(payload: dict) -> float:
+def parse_vmaf_json(payload: dict[str, Any]) -> float:
     """Pull the pooled VMAF score from libvmaf's JSON output.
 
     Tries the modern ``pooled_metrics.vmaf.mean`` shape first, falls
@@ -176,7 +177,7 @@ def parse_vmaf_json(payload: dict) -> float:
 
 
 def parse_feature_aggregates(
-    payload: dict, feature_names: tuple[str, ...]
+    payload: dict[str, Any], feature_names: tuple[str, ...]
 ) -> tuple[dict[str, float], dict[str, float]]:
     """Pull per-feature ``mean`` / ``stddev`` aggregates from libvmaf JSON.
 

@@ -53,7 +53,7 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 _log = logging.getLogger(__name__)
 
@@ -571,7 +571,7 @@ class NRProxyBackend:
 
     def _run_inference(
         self,
-        session: object,
+        session: Any,  # onnxruntime.InferenceSession (no py.typed marker)
         distorted: Path,
         *,
         width: int,

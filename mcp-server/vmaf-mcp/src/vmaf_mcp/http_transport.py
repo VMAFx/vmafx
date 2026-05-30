@@ -42,7 +42,7 @@ from typing import Any
 def _require_aiohttp() -> Any:
     """Return the aiohttp module; raise ImportError with install hint if absent."""
     try:
-        import aiohttp  # type: ignore[import-untyped]
+        import aiohttp
 
         return aiohttp
     except ImportError as exc:
@@ -52,7 +52,7 @@ def _require_aiohttp() -> Any:
 def _require_prometheus() -> Any:
     """Return the prometheus_client module; raise ImportError with install hint."""
     try:
-        import prometheus_client  # type: ignore[import-untyped]
+        import prometheus_client
 
         return prometheus_client
     except ImportError as exc:

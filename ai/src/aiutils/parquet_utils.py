@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
 
-def write_parquet_atomic(df: pd.DataFrame, output: Path, **kwargs: object) -> None:
+def write_parquet_atomic(df: pd.DataFrame, output: Path, **kwargs: Any) -> None:
     """Write a DataFrame to Parquet atomically using a temp file.
 
     Writes to a temporary file in the same directory as the output,

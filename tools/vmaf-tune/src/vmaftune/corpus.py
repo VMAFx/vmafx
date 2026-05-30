@@ -31,6 +31,7 @@ import sys
 import uuid
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import Any
 
 from . import (
     CANONICAL6_FEATURES,
@@ -559,7 +560,7 @@ def iter_rows(
     score_runner: object | None = None,
     shot_runner: object | None = None,
     probe_runner: object | None = None,
-) -> Iterator[dict]:
+) -> Iterator[dict[str, Any]]:
     """Yield one JSONL row per (preset, crf) cell.
 
     ``encode_runner`` / ``score_runner`` / ``shot_runner`` / ``probe_runner``
@@ -668,7 +669,7 @@ def iter_rows(
                 # Provenance metadata (run_id, timestamp) gets a fresh stamp
                 # so downstream tools can tell the row came from cache.
                 nan = float("nan")
-                hit_row = {k: nan for k in CORPUS_ROW_KEYS}
+                hit_row: dict[str, Any] = {k: nan for k in CORPUS_ROW_KEYS}
                 hit_row.update(
                     {
                         "schema_version": SCHEMA_VERSION,

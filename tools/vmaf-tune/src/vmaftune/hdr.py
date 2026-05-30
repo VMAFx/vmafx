@@ -129,7 +129,7 @@ def detect_hdr(
     return _classify_payload(payload)
 
 
-def _classify_payload(payload: dict) -> HdrInfo | None:
+def _classify_payload(payload: dict[str, Any]) -> HdrInfo | None:
     """Pure helper — turns an ffprobe JSON payload into HdrInfo."""
     streams = payload.get("streams") or []
     if not streams:
@@ -172,7 +172,7 @@ def _classify_payload(payload: dict) -> HdrInfo | None:
     )
 
 
-def _extract_mastering(side_data: list[dict]) -> tuple[str | None, str | None]:
+def _extract_mastering(side_data: list[dict[str, Any]]) -> tuple[str | None, str | None]:
     """Pull mastering-display + content-light SEI from side data.
 
     Returns ``(master_display, max_cll)`` strings in the format
@@ -194,7 +194,7 @@ def _extract_mastering(side_data: list[dict]) -> tuple[str | None, str | None]:
     return md_str, cll_str
 
 
-def _format_master_display(sd: dict) -> str | None:
+def _format_master_display(sd: dict[str, Any]) -> str | None:
     """x265 ``master-display`` format: ``G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min)``.
 
     ffprobe surfaces fractions as ``"<num>/<den>"`` strings. Encoders

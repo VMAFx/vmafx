@@ -76,6 +76,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from .hdr import HdrInfo
     from .predictor import ShotFeatures
 
 _LOG = logging.getLogger(__name__)
@@ -393,7 +394,7 @@ def _ugc_recipe() -> dict[str, object]:
 # dict) so the override returned to the driver is always a fresh copy
 # — mutations from one ``run_auto`` call cannot leak into the next.
 # Tests assert this read-only invariant explicitly.
-_CONTENT_RECIPE_TABLE: dict[str, "callable[[], dict[str, object]]"] = {  # type: ignore[type-arg]
+_CONTENT_RECIPE_TABLE: dict[str, Callable[[], dict[str, object]]] = {
     RECIPE_CLASS_ANIMATION: _animation_recipe,
     RECIPE_CLASS_SCREEN_CONTENT: _screen_content_recipe,
     RECIPE_CLASS_LIVE_ACTION_HDR: _live_action_hdr_recipe,
@@ -793,7 +794,9 @@ def _should_short_circuit_no_two_pass(meta: SourceMeta, plan_state: PlanState) -
 # tests assert that an earlier-firing predicate doesn't shadow a
 # later one whose result would have been different. Adding a new
 # short-circuit means appending here, never reordering.
-SHORT_CIRCUIT_PREDICATES: tuple[tuple[ShortCircuit, "callable"], ...] = (  # type: ignore[type-arg]
+SHORT_CIRCUIT_PREDICATES: tuple[
+    tuple[ShortCircuit, Callable[["SourceMeta", "PlanState"], bool]], ...
+] = (
     (ShortCircuit.LADDER_SINGLE_RUNG, _should_short_circuit_1_single_rung_ladder),
     (ShortCircuit.CODEC_PINNED, _should_short_circuit_2_codec_pinned),
     (ShortCircuit.PREDICTOR_GOSPEL, _should_short_circuit_3_predictor_gospel),
@@ -1174,7 +1177,7 @@ def run_auto(
     # ------------------------------------------------------------------
     # Stage 3 — HDR pipeline (short-circuit #5).
     # ------------------------------------------------------------------
-    _hdr_codec_args = None
+    _hdr_codec_args: Callable[[str, "HdrInfo"], tuple[str, ...]] | None = None
     if _should_short_circuit_5_sdr_skip(meta, plan_state):
         plan_state.fired(ShortCircuit.SDR_SKIP)
         hdr_info = None

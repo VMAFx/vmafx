@@ -35,7 +35,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     """Import optional heavy helpers only when the caller asks for them."""
     if name == "write_parquet_atomic":
         from aiutils.parquet_utils import write_parquet_atomic

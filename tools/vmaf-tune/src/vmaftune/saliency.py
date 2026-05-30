@@ -304,9 +304,9 @@ def compute_saliency_map(
 
     accum = np.zeros((height, width), dtype=np.float32)
     max_mask = np.zeros((height, width), dtype=np.float32)
-    ema_mask: np.ndarray | None = None
+    ema_mask: "np.ndarray | None" = None
     weight_sum = 0.0
-    prev_y: np.ndarray | None = None
+    prev_y: "np.ndarray | None" = None
     for fi in indices:
         y, u, v = _read_yuv420p_planes(video_path, fi, width, height)
         tensor = _yuv420p_to_rgb_imagenet(y, u, v)
