@@ -40384,3 +40384,14 @@ Fork-local files:
 `core/src/libvmaf.c` (comments + assert),
 `docs/adr/0795-prev-ref-thread-safety.md`,
 `changelog.d/fixed/prev-ref-batch-thread-safety.md`.
+
+## ADR-0709 residual ANSNR references in docs + ai/data — 2026-05-30
+
+no rebase impact: REASON — all changes are fork-local. Touched files are
+`ai/data/feature_extractor.py` (fork-added Python helper, no upstream
+counterpart), `docs/metrics/ansnr.md`, `docs/backends/index.md`,
+`docs/backends/cuda/overview.md`, `docs/backends/hip/overview.md`. The
+HIP and CUDA overviews and the metric page are fork-only docs; the
+backends index page is also fork-only. No upstream Netflix/vmaf source is
+touched. The cleanup closes residual references left over after PR #38
+(ADR-0709) removed the `float_ansnr` extractor from every backend.

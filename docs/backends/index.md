@@ -107,9 +107,11 @@ per-backend page below.
   runtime
 - [Vulkan](vulkan/overview.md) — opt-in backend; vif + motion + adm live
   (T5-1c), full default-model coverage
-- [HIP / AMD ROCm](hip/overview.md) — opt-in backend; 8/11 real
-  kernels (psnr, integer_psnr, float_ansnr, float_motion, float_moment,
-  float_ssim, ciede, integer_motion_v2); 3 stubs pending
+- [HIP / AMD ROCm](hip/overview.md) — opt-in backend; 7/10 real
+  kernels (psnr, integer_psnr, float_motion, float_moment, float_ssim,
+  ciede, integer_motion_v2); 3 stubs pending. The original 11th kernel
+  `float_ansnr_hip` was removed together with the CPU extractor in
+  [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) (PR #38).
 - [Metal / Apple Silicon](metal/index.md) — auto-on-macOS; runtime +
   8 feature kernels live, remaining kernels follow the parity matrix
 
