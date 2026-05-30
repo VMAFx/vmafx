@@ -6,6 +6,32 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## libvmaf-public-header-doc-gaps-round2 (2026-05-30)
+
+**Files touched:**
+- `core/include/libvmaf/feature.h` (doc comments + NOLINT-cited guard)
+- `core/include/libvmaf/model.h` (doc comments + NOLINT-cited guard)
+- `core/include/libvmaf/dnn.h` (`vmaf_dnn_session_close` doc + NOLINT-cited guard)
+
+**Rebase impact:** Low. The doc-comment additions land above unchanged
+upstream-mirror declarations; any future Netflix upstream that touches the
+same function signatures will produce a tractable 3-way merge — the doc text
+is fork-local and `git merge` will preserve our `/** ... */` block above
+whatever upstream rewrites the signature to. No identifier renames; no
+ABI/source impact.
+
+The NOLINT annotations on `__VMAF_FEATURE_H__` / `__VMAF_MODEL_H__` /
+`__VMAF_DNN_H__` are inline comments only — they do not alter the include
+guard symbols themselves, so upstream's preprocessor identity remains
+intact. If a future upstream sync changes the guard form (unlikely — these
+have been stable for years), the NOLINT cites become redundant and can be
+removed in a follow-on cleanup.
+
+No source/binary symbol renames; consumers of the patch stack
+(`ffmpeg-patches/`) and the Go/Rust bindings see identical declarations.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

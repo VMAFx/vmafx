@@ -18,7 +18,13 @@
  * returns 0 and every other entry point returns -ENOSYS.
  */
 
+/* Pre-2026 internal scaffold name kept for ABI/source-compat with the first
+ * fork consumers of this header (ffmpeg-patches/0008-add-libv*.patch +
+ * mcp-server/vmaf-mcp/). A future audit may rename to VMAF_DNN_H_; this lints
+ * stays cited until that lands. See CLAUDE.md §12 r12 / ADR-0278. */
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
 #ifndef __VMAF_DNN_H__
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
 #define __VMAF_DNN_H__
 
 #include <stdbool.h>
@@ -285,6 +291,15 @@ typedef struct VmafDnnOutput {
 VMAF_EXPORT int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *inputs,
                                      size_t n_inputs, VmafDnnOutput *outputs, size_t n_outputs);
 
+/**
+ * Close a standalone DNN session and release all owned resources. Tears down
+ * the ONNX Runtime session, releases input/output binding caches, and frees
+ * the handle. Safe to call with a NULL @p sess. After this call any pointer
+ * cached from @ref vmaf_dnn_session_attached_ep is invalidated. Pair with
+ * every successful @ref vmaf_dnn_session_open.
+ *
+ * @param sess Session handle from @ref vmaf_dnn_session_open. NULL is a no-op.
+ */
 VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
 
 /**
