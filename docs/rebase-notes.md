@@ -6,6 +6,39 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## cuda-module-unload-sweep (2026-05-30)
+
+**Files touched (host wrappers only — no `.cu` kernel touched):**
+`core/src/feature/cuda/float_psnr_cuda.c`,
+`core/src/feature/cuda/float_vif_cuda.c`,
+`core/src/feature/cuda/float_adm_cuda.c`,
+`core/src/feature/cuda/float_motion_cuda.c`,
+`core/src/feature/cuda/integer_ms_ssim_cuda.c`,
+`core/src/feature/cuda/integer_ciede_cuda.c`,
+`core/src/feature/cuda/integer_motion_v2_cuda.c`,
+`core/src/feature/cuda/integer_adm_cuda.c`,
+`core/src/feature/cuda/integer_moment_cuda.c`,
+`core/src/feature/cuda/ssim_cuda.c`,
+`core/src/feature/cuda/integer_psnr_cuda.c`,
+`core/src/feature/cuda/integer_cambi_cuda.c`,
+`core/src/feature/cuda/integer_psnr_hvs_cuda.c`,
+`core/src/feature/cuda/integer_motion_cuda.c`,
+`core/src/feature/cuda/integer_ssim_cuda.c`,
+`core/src/feature/cuda/integer_vif_cuda.c`,
+`core/src/feature/cuda/speed_chroma_cuda.c`,
+`core/src/feature/cuda/speed_temporal_cuda.c`.
+
+**Rebase impact:** None. Every modified file is a fork-added CUDA host
+wrapper (the CUDA backend is fork-local; upstream Netflix/vmaf only
+ships the CPU implementations of these metrics). The fix moves a
+`CUmodule` from a stack-local into the per-extractor state struct and
+adds a `cuModuleUnload` in `close_fex_cuda`. No upstream file is
+touched; no rebase conflict is possible. Mirrors the canonical pattern
+already in `ssimulacra2_cuda.c` (ADR-0356) and
+`core/src/cuda/AGENTS.md` "Lifecycle invariants".
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
