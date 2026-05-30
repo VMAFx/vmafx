@@ -43271,3 +43271,15 @@ upstream counterpart. The test and doc updates are purely fork-local.
 ## ADR-0777 — Thread-Safety Audit: CUDA / SYCL / HIP Backends (2026-05-29)
 
 no rebase impact: docs/research + docs/adr only; no source files were changed.
+
+## Python dep freshness sweep (ADR-0879, 2026-05-30)
+
+no rebase impact: all touched files are fork-local — `ai/pyproject.toml`,
+`mcp-server/vmaf-mcp/pyproject.toml`, `dev-llm/pyproject.toml`,
+`tools/vmaf-tune/pyproject.toml`, `tools/vmaf-roi-score/pyproject.toml`,
+`python/test/requirements.txt`. Netflix upstream does not ship the `ai/`,
+`mcp-server/`, `dev-llm/`, or `tools/vmaf-*` trees; the only file shared
+with upstream (`python/test/requirements.txt`) gained a `>=7.1.0` floor on
+`pytest-cov` which is purely additive over upstream's bare `pytest-cov`
+line. On rebase, keep the bumped floor; if upstream introduces its own
+ceiling on `pytest-cov`, intersect rather than overwrite.
