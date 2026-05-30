@@ -14,6 +14,7 @@
  */
 #include "gpu_dispatch_env.h"
 
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,17 +76,25 @@ const char *vmaf_gpu_dispatch_env_get(const char *var_name)
 
     /* Fast path: look for an already-populated row without locking.
      * The pointer comparison on var_name is safe because callers pass
-     * string literals that outlive the process. */
+     * string literals that outlive the process.
+     *
+     * Acquire fence after matching var_name pairs with the release fence
+     * on the publish side (ADR-0840), ensuring value is read after
+     * var_name has been fully written by the populating thread. */
     for (unsigned i = 0U; i < GPU_DISPATCH_ENV_TABLE_CAP; i++) {
-        if (g_rows[i].var_name == var_name)
+        if (g_rows[i].var_name == var_name) {
+            atomic_thread_fence(memory_order_acquire);
             return g_rows[i].value;
+        }
     }
 
     /* Also check by string equality in case two TUs use different
      * pointer addresses for the same variable name. */
     for (unsigned i = 0U; i < GPU_DISPATCH_ENV_TABLE_CAP; i++) {
-        if (g_rows[i].var_name && strcmp(g_rows[i].var_name, var_name) == 0)
+        if (g_rows[i].var_name && strcmp(g_rows[i].var_name, var_name) == 0) {
+            atomic_thread_fence(memory_order_acquire);
             return g_rows[i].value;
+        }
     }
 
     /* Slow path: snapshot the variable under the lock. */
@@ -124,9 +133,14 @@ const char *vmaf_gpu_dispatch_env_get(const char *var_name)
      * callers, not hypothetical concurrent setenv from user code. */
     /* NOLINT(concurrency-mt-unsafe): see above. */
     const char *val = getenv(var_name); /* NOLINT(concurrency-mt-unsafe) */
-    row->var_name = var_name;
     if (val)
         row->value = strdup(val);
+    /* Publish value before making the row visible via var_name.
+     * The paired acquire fence on the fast-path reader ensures that
+     * the value load cannot be speculated before the var_name match.
+     * ADR-0840. */
+    atomic_thread_fence(memory_order_release);
+    row->var_name = var_name;
     lock_release();
     return row->value;
 }

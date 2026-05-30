@@ -661,6 +661,7 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
             err |= vmaf_cuda_import_state(vmaf, cu_state);
             if (err) {
                 (void)fprintf(stderr, "problem during vmaf_cuda_import_state\n");
+                vmaf_cuda_state_free(cu_state);
                 return -1;
             }
             *cuda_active_out = true;

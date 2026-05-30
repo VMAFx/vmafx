@@ -6,13 +6,20 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
-## cpp23-shadow-const-fixes (2026-05-29, ADR-0839)
+## gpu-dispatch-toctou-fence (2026-05-29, ADR-0840)
 
-no rebase impact: REASON — all changed files (`core/src/feature/feature_collector.cpp`,
-`core/src/fex_ctx_vector.cpp`, `core/src/sycl/common.cpp`) are fork-local C++23
-conversions with no upstream counterpart in Netflix/vmaf master. The upstream originals
-(`feature_collector.c`, `fex_ctx_vector.c`) are pure C; the `.cpp` files were created by
-the fork's C++23 wave (ADR-0708 ff.) and are not subject to upstream rebase churn.
+**Files touched:**
+`core/tools/vmaf.c`, `core/src/gpu_dispatch_env.c`
+
+**Rebase impact:** None. Both files are fork-local additions. `core/tools/vmaf.c`
+has upstream touches only in the pre-existing CUDA block (which is itself
+fork-local); `gpu_dispatch_env.c` has no upstream counterpart. No rebase conflict
+is possible on a clean upstream sync.
+
+The `atomic_thread_fence` pairing (publish: release after value, before var_name;
+read: acquire after var_name match, before value read) must be preserved if the
+fast-path loop or publish path is ever refactored — see ADR-0840 for the
+formal C11 memory-model rationale.
 
 ---
 
