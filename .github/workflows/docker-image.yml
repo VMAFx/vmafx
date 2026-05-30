@@ -30,6 +30,10 @@ on:
       - ".github/workflows/docker-image.yml"
   workflow_dispatch:
 
+concurrency:
+  group: docker-image-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

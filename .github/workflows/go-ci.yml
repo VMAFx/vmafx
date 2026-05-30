@@ -12,6 +12,10 @@ on:
       - 'go.mod'
       - 'go.sum'
 
+concurrency:
+  group: go-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   go-ci:
     name: go vet + go test
