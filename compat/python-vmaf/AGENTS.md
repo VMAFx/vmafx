@@ -65,6 +65,18 @@ python/vmaf/
   3.14 appends assert-expression detail to `AssertionError` text. Cast numeric
   scalar examples to `float(...)` or format them, and print only the first
   exception-message line when a doctest is documenting assertion text.
+- **Leaf-utility coverage tests live in `python/test/compat_python_vmaf_coverage_test.py`.**
+  Pure-Python leaf modules (`tools/typing_utils.py`, `tools/exceptions.py`,
+  `tools/convex_hull.py`, `tools/stats.py`, `tools/writer.py`,
+  `tools/interpolation_utils.py`, plus `config.py` fork-local plumbing) are
+  unit-covered without spawning the vmaf binary. If an upstream sync touches
+  those modules' public API (e.g. renames `RdPoint`, alters the BD-rate
+  exception hierarchy, or adjusts `YuvWriter`'s `UV_WIDTH_HEIGHT_MULTIPLIERS_DICT`),
+  the coverage tests need an equivalent rename — they import by exact name. The
+  test file deliberately does **not** exercise `tools/decorator.py`'s sha1
+  helpers (`persist`, `persist_to_file`, `persist_to_dir`); those carry a
+  latent `TypeError: Strings must be encoded before hashing` bug and need a
+  one-line `.encode()` fix in a separate PR before coverage can land.
 
 ## Governing ADRs
 

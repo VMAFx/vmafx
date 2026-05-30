@@ -40436,3 +40436,14 @@ resolution is mechanical: if Netflix upstream still has the legacy assertions
 they were calibrated against `float_ansnr` output that this fork no longer
 produces — keep the skips. If Netflix upstream removes the legacy assertions
 themselves (matching this fork's direction), drop the local skips.
+
+## compat/python-vmaf leaf-utility coverage (2026-05-31)
+
+no rebase impact: REASON — the new test file lives entirely under
+`python/test/compat_python_vmaf_coverage_test.py` (fork-local test directory
+that Netflix upstream never touches) and imports leaf utilities by their
+existing public names. No production module under `compat/python-vmaf/` is
+modified; only `compat/python-vmaf/AGENTS.md` gains one paragraph documenting
+which leaves carry coverage tests and warning about the latent sha1 bug in
+`tools/decorator.py`'s persist helpers. Upstream syncs do not own
+`compat/python-vmaf/AGENTS.md` (fork-only file).
