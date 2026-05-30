@@ -37,6 +37,7 @@
  *    vmaf_bench --device N                               Select GPU device
  */
 
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -167,8 +168,19 @@ static int yuv_pair_open(YuvPair *yp, unsigned w, unsigned h)
 static int yuv_pair_read_frame(YuvPair *yp, unsigned frame_idx, VmafPicture *ref, VmafPicture *dist)
 {
     size_t offset = (size_t)frame_idx * yp->frame_bytes;
-    (void)fseek(yp->ref_fp, (long)offset, SEEK_SET);
-    (void)fseek(yp->dis_fp, (long)offset, SEEK_SET);
+    /* S9 fix (2026-05-30): fseek can fail (returns -1 on error). The
+     * previous `(void)`-cast silenced the lint but left the semantic
+     * bug: a failed seek leaves the FILE position undefined, so the
+     * subsequent fread reads from the wrong offset and silently feeds
+     * the wrong bytes into the benchmark. Surface the error instead. */
+    if (fseek(yp->ref_fp, (long)offset, SEEK_SET) != 0) {
+        perror("fseek(ref)");
+        return -EIO;
+    }
+    if (fseek(yp->dis_fp, (long)offset, SEEK_SET) != 0) {
+        perror("fseek(dis)");
+        return -EIO;
+    }
 
     if (fread(yp->ref_buf, 1, yp->frame_bytes, yp->ref_fp) != yp->frame_bytes ||
         fread(yp->dis_buf, 1, yp->frame_bytes, yp->dis_fp) != yp->frame_bytes) {
@@ -363,11 +375,25 @@ static int run_sycl_gpu_profile(unsigned w, unsigned h, unsigned n_frames)
 
     for (unsigned i = 0; i < n_frames; i++) {
         VmafPicture ref, dist;
-        vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
-        vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+        /* S9 fix (2026-05-30): vmaf_picture_alloc can fail (returns -ENOMEM
+         * or -EINVAL). Previously the returns were discarded, and the
+         * subsequent yuv_pair_read_frame -> ref->data[0] dereference would
+         * crash on a sentinel-zero VmafPicture. Bail out with the libvmaf
+         * error code instead. */
+        err = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+        if (err) {
+            (void)fprintf(stderr, "vmaf_picture_alloc(ref) failed at frame %u (err=%d)\n", i, err);
+            break;
+        }
+        err = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+        if (err) {
+            (void)fprintf(stderr, "vmaf_picture_alloc(dist) failed at frame %u (err=%d)\n", i, err);
+            (void)vmaf_picture_unref(&ref);
+            break;
+        }
         if (yuv_pair_read_frame(&yp, i, &ref, &dist)) {
-            vmaf_picture_unref(&ref);
-            vmaf_picture_unref(&dist);
+            (void)vmaf_picture_unref(&ref);
+            (void)vmaf_picture_unref(&dist);
             break;
         }
         err = vmaf_read_pictures(vmaf, &ref, &dist, i);
@@ -377,12 +403,18 @@ static int run_sycl_gpu_profile(unsigned w, unsigned h, unsigned n_frames)
     yuv_pair_close(&yp);
 
     /* Print per-kernel timing */
-    printf("SYCL Kernel Profile (%ux%u, %u-bit, %u frames)\n", w, h, g_bpc, n_frames);
+    (void)printf("SYCL Kernel Profile (%ux%u, %u-bit, %u frames)\n", w, h, g_bpc, n_frames);
     vmaf_sycl_profiling_print(sycl_state);
 
-    vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    vmaf_close(vmaf);
-    return 0;
+    /* S9 fix (2026-05-30): the final flush vmaf_read_pictures(..., NULL,
+     * NULL, 0) signals end-of-stream to libvmaf; its return code surfaces
+     * pooling / aggregation errors and previously was discarded. Capture
+     * and propagate. */
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    if (err)
+        (void)fprintf(stderr, "vmaf_read_pictures(flush) failed (err=%d)\n", err);
+    (void)vmaf_close(vmaf);
+    return err;
 }
 #endif /* HAVE_SYCL */
 

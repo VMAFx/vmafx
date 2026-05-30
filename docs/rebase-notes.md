@@ -6,6 +6,19 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## vmaf-bench-unchecked-returns (2026-05-30)
+
+**Files touched:** `core/tools/vmaf_bench.c`
+
+**Rebase impact:** None. `vmaf_bench.c` is a fork-added benchmark binary
+that does not exist upstream Netflix/vmaf master (the upstream tools/
+directory has `vmaf.c` only). No rebase conflict is possible. The change
+hardens three S9 unchecked-return sites (`fseek` x2 in `yuv_pair_read_frame`,
+`vmaf_picture_alloc` x2 + `vmaf_read_pictures` flush in
+`run_sycl_gpu_profile`) to JPL Power-of-10 r7.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
