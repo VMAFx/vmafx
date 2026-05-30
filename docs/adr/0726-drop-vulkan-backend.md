@@ -96,3 +96,8 @@ follows. Any future reuse of these slots requires an explicit ABI-bump ADR.
 - [ADR-0264](0264-vulkan-1-4-bump-blocked-on-fp-contraction.md) — T-VK-1.4-BUMP
 - [ADR-0273](0273-ciede-vulkan-nvidia-f32-f64-precision-gap.md) — T-VK-CIEDE-F32-F64
 - [ADR-0186](0186-vulkan-image-import-impl.md) — ffmpeg-patches r14 precedent
+- [ADR-0860](0860-ffmpeg-patch-chain-no-op-vulkan-shim.md) — supplemental: the
+  Vulkan FFmpeg patches (0004 + 0006) were retained in `series.txt` as no-op
+  compatibility shims because downstream patches reference Vulkan-conditional
+  context lines. The Vulkan runtime stays removed; the shims contribute zero
+  linked code at FFmpeg configure time.
