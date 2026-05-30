@@ -805,18 +805,22 @@ jobs:
         run: meson test -C core/build --num-processes $(nproc) --print-errorlogs
 
       - name: Show binary info and stage artifact
-        id: stage
         run: |
           ldd "$MINGW_PREFIX/bin/vmaf.exe" || true
           mkdir -p artifact
           cp "$MINGW_PREFIX/bin/vmaf.exe" artifact/vmaf.exe
-          echo "path=$(cygpath -m "$PWD/artifact/vmaf.exe")" >> "$GITHUB_OUTPUT"
 
       - name: Upload vmaf.exe artifact
+        # upload-artifact v7 resolves `path` relative to GITHUB_WORKSPACE
+        # and does not honour the cygpath-translated absolute path the
+        # previous `stage` step wrote to GITHUB_OUTPUT (the upload step
+        # reported "no files found" while the stage step succeeded —
+        # master CI run 26683038580). Pass the repo-relative path
+        # directly; the action handles platform translation internally.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: ${{ matrix.msystem }}-vmaf
-          path: ${{ steps.stage.outputs.path }}
+          path: artifact/vmaf.exe
           if-no-files-found: error
 
   # ===== Windows GPU build-only (MSVC + CUDA, MSVC + oneAPI SYCL) =====
