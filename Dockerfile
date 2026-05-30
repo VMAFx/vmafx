@@ -85,7 +85,7 @@ RUN rm -rf /tmp/nv-codec
 # ---------- build libvmaf ----------
 COPY . /vmaf
 WORKDIR /vmaf
-ENV PATH=/vmaf:/vmaf/libvmaf/build/tools:$PATH
+ENV PATH=/vmaf:/vmaf/core/build/tools:$PATH
 
 # when disabling NVCC, CUDA kernels are JIT-compiled at runtime
 RUN make clean && make ENABLE_NVCC=true && make install

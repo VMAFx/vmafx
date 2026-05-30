@@ -21,7 +21,10 @@ ENABLE_NVCC :=	true
 ENABLE_CUDA := -Denable_cuda=true -Denable_nvcc=$(ENABLE_NVCC)
 
 # Directories
-LIBVMAF_DIR := libvmaf
+# Tree was renamed `libvmaf/` → `core/` on 2026-05-28 (ADR-0700,
+# "VMAFX repo layout"). The variable name LIBVMAF_DIR stays for
+# rebase compatibility; only the path it points to changes.
+LIBVMAF_DIR := core
 BUILD_DIR := $(LIBVMAF_DIR)/build
 DEBUG_DIR := $(LIBVMAF_DIR)/debug
 
