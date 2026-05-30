@@ -4,9 +4,12 @@ set -euo pipefail
 
 source /opt/intel/oneapi/setvars.sh 2>/dev/null || true
 
-VMAF=/usr/local/bin/vmaf
-YUV=/home/kilian/dev/libvmaf_vulkan/python/test/resource/yuv
-TD=/home/kilian/dev/libvmaf_vulkan/testdata
+# Honour env overrides so any worktree / CI runner can point at a local build
+# and fixture tree without editing this file.
+VMAF_ROOT_RESOLVED="${VMAF_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+VMAF="${VMAF_BIN:-/usr/local/bin/vmaf}"
+YUV="${VMAF_YUVDIR:-${VMAF_ROOT_RESOLVED}/python/test/resource/yuv}"
+TD="${VMAF_TESTDATA:-${VMAF_ROOT_RESOLVED}/testdata}"
 
 REF1="$YUV/src01_hrc00_576x324.yuv"
 DIS1="$YUV/src01_hrc01_576x324.yuv"
