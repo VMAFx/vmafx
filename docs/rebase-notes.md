@@ -40436,3 +40436,17 @@ resolution is mechanical: if Netflix upstream still has the legacy assertions
 they were calibrated against `float_ansnr` output that this fork no longer
 produces — keep the skips. If Netflix upstream removes the legacy assertions
 themselves (matching this fork's direction), drop the local skips.
+
+## vmafx-operator envtest etcd setup (2026-05-30)
+
+no rebase impact: REASON — all changes are in fork-added paths only.
+Files touched: `Makefile` (new `setup-envtest` + `setup-envtest-env`
+targets in the Go workspace section, ADR-0702 scope),
+`.github/workflows/go-ci.yml` (new pre-test step installing
+`sigs.k8s.io/controller-runtime/tools/setup-envtest@latest` + exporting
+`KUBEBUILDER_ASSETS`), `cmd/vmafx-operator/internal/controller/suite_test.go`
+(top-of-`TestControllers` `t.Skip()` guard + nil-`testEnv` bailout in
+`AfterSuite`), `cmd/vmafx-operator/AGENTS.md` (new invariant #6 documenting
+the skip-safe envtest pattern), and the `changelog.d/fixed/` fragment.
+`cmd/vmafx-operator/` is fork-added per ADR-0714 — upstream Netflix/vmaf
+ships no Go sources, so no upstream merge can reach these files.
