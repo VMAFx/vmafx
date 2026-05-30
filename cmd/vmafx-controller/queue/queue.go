@@ -214,7 +214,7 @@ func (q *SQLiteQueue) reload() error {
 
 // Submit enqueues a new job.  The job's ID is assigned here (UUID v4) and
 // written to both SQLite and the in-memory FIFO.
-func (q *SQLiteQueue) Submit(_ context.Context, job *Job) (string, error) {
+func (q *SQLiteQueue) Submit(ctx context.Context, job *Job) (string, error) {
 	job.ID = uuid.New().String()
 	job.Status = StatusPending
 	now := time.Now()
@@ -226,7 +226,9 @@ func (q *SQLiteQueue) Submit(_ context.Context, job *Job) (string, error) {
 		return "", fmt.Errorf("queue: marshal scoring params: %w", err)
 	}
 
-	_, err = q.db.Exec(
+	// ExecContext propagates the caller's ctx so a cancelled gRPC SubmitJob
+	// can abort the INSERT instead of holding the SQLite write open.
+	_, err = q.db.ExecContext(ctx,
 		"INSERT INTO jobs (id, status, scoring, created_at, updated_at) VALUES (?,?,?,?,?)",
 		job.ID, StatusPending, string(scoringJSON), now.Unix(), now.Unix(),
 	)
@@ -245,7 +247,7 @@ func (q *SQLiteQueue) Submit(_ context.Context, job *Job) (string, error) {
 // PullWork atomically dequeues the oldest PENDING job whose backend requirement
 // (if any) is satisfied by the requesting node's capabilities.  Returns
 // (nil, nil) when no matching job is available.
-func (q *SQLiteQueue) PullWork(_ context.Context, nodeID string, capacity NodeCapacity) (*Job, error) {
+func (q *SQLiteQueue) PullWork(ctx context.Context, nodeID string, capacity NodeCapacity) (*Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -287,9 +289,10 @@ func (q *SQLiteQueue) PullWork(_ context.Context, nodeID string, capacity NodeCa
 	// Remove from FIFO.
 	q.pendingFIFO = append(q.pendingFIFO[:matchIdx], q.pendingFIFO[matchIdx+1:]...)
 
-	// Transition to RUNNING in SQLite.
+	// Transition to RUNNING in SQLite. ExecContext propagates the caller's
+	// ctx so an aborted PullWork RPC does not leave the UPDATE in flight.
 	now := time.Now().Unix()
-	_, err := q.db.Exec(
+	_, err := q.db.ExecContext(ctx,
 		"UPDATE jobs SET status=?, assigned_node=?, updated_at=? WHERE id=?",
 		StatusRunning, nodeID, now, matchID,
 	)
@@ -345,7 +348,7 @@ func (q *SQLiteQueue) rollbackTopending(jobID string) error {
 
 // ReportResult records the terminal outcome of a job.  If result.Err is
 // non-empty the job is marked FAILED; otherwise COMPLETED.
-func (q *SQLiteQueue) ReportResult(_ context.Context, jobID string, result *JobResult) error {
+func (q *SQLiteQueue) ReportResult(ctx context.Context, jobID string, result *JobResult) error {
 	status := StatusCompleted
 	if result.Err != "" {
 		status = StatusFailed
@@ -356,8 +359,10 @@ func (q *SQLiteQueue) ReportResult(_ context.Context, jobID string, result *JobR
 		featuresJSON = []byte("{}")
 	}
 
+	// ExecContext propagates the caller's ctx so the node's ReportResult RPC
+	// deadline / cancellation aborts the UPDATE cleanly.
 	now := time.Now().Unix()
-	_, err = q.db.Exec(
+	_, err = q.db.ExecContext(ctx,
 		"UPDATE jobs SET status=?, score=?, features=?, error=?, updated_at=? WHERE id=?",
 		status, result.Score, string(featuresJSON), result.Err, now, jobID,
 	)
@@ -427,9 +432,11 @@ func (q *SQLiteQueue) getUnlocked(jobID string) (*Job, error) {
 
 // Cancel marks a PENDING or RUNNING job as CANCELLED.  Returns nil if the job
 // was already in a terminal state (idempotent).
-func (q *SQLiteQueue) Cancel(_ context.Context, jobID string) error {
+func (q *SQLiteQueue) Cancel(ctx context.Context, jobID string) error {
+	// ExecContext propagates the caller's ctx so an aborted CancelJob RPC
+	// does not leave the UPDATE in flight.
 	now := time.Now().Unix()
-	res, err := q.db.Exec(
+	res, err := q.db.ExecContext(ctx,
 		"UPDATE jobs SET status=?, updated_at=? WHERE id=? AND status IN (?,?)",
 		StatusCancelled, now, jobID, StatusPending, StatusRunning,
 	)

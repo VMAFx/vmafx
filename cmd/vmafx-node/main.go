@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-node/probe"
 	"github.com/VMAFx/vmafx/cmd/vmafx-node/server"
@@ -68,8 +69,12 @@ func run() error {
 	ffmpegBin := ffmpegPath()
 	slog.Info("ffmpeg discovery", "path", ffmpegBin)
 
-	// Startup probe: enumerate available encoders and cache.
-	encoders, err := probe.EncoderInventory(ffmpegBin)
+	// Startup probe: enumerate available encoders and cache.  Bound the probe
+	// with a short timeout so a hung ffmpeg binary cannot stall node startup
+	// indefinitely.
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	encoders, err := probe.EncoderInventory(probeCtx, ffmpegBin)
+	probeCancel()
 	if err != nil {
 		// Non-fatal: node can still serve; encoders that are unavailable
 		// will fail at job-dispatch time with a clear error.

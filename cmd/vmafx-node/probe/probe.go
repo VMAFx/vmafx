@@ -13,6 +13,7 @@
 package probe
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -49,8 +50,12 @@ var expectedSoftwareCodecs = []string{
 
 // EncoderInventory runs `ffmpegBin -encoders` and returns the parsed inventory.
 // It also logs a WARN for each expected software codec that is absent.
-func EncoderInventory(ffmpegBin string) (*Inventory, error) {
-	out, err := exec.Command(ffmpegBin, "-hide_banner", "-encoders").Output()
+//
+// ctx is forwarded to exec.CommandContext so that a cancelled caller (timeout,
+// SIGINT during startup) terminates the ffmpeg subprocess instead of leaking
+// it. Pass context.Background() if no caller-side context is available.
+func EncoderInventory(ctx context.Context, ffmpegBin string) (*Inventory, error) {
+	out, err := exec.CommandContext(ctx, ffmpegBin, "-hide_banner", "-encoders").Output()
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg -encoders: %w", err)
 	}

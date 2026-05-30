@@ -4,6 +4,7 @@
 package probe_test
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"testing"
@@ -53,7 +54,7 @@ func TestEncoderInventory_RealBinary(t *testing.T) {
 		t.Skipf("ffmpeg not found on PATH (%s): %v", bin, err)
 	}
 
-	inv, err := probe.EncoderInventory(bin)
+	inv, err := probe.EncoderInventory(context.Background(), bin)
 	if err != nil {
 		t.Fatalf("EncoderInventory(%q): %v", bin, err)
 	}
