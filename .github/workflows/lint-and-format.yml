@@ -33,6 +33,7 @@ jobs:
           # "changes made by hooks" diff doesn't report pointer-vs-blob noise
           # against files no hook actually touched.
           lfs: true
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: "3.14.5"
@@ -64,6 +65,7 @@ jobs:
           # is enough for a squash-merge FF (one new commit), but use 0 to
           # tolerate multi-commit FF pushes without a second fetch step.
           fetch-depth: 0
+          persist-credentials: false
       - name: Install deps
         run: |
           sudo apt-get update
@@ -270,6 +272,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Detect changed SYCL files
         id: detect
         # Hardening per Semgrep `yaml.github-actions.security.run-shell-injection`
@@ -405,6 +408,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
       - name: Install
         run: sudo apt-get update && sudo apt-get install -y cppcheck meson ninja-build nasm
       - name: Generate compile_commands
@@ -446,6 +451,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: "3.14.5"
@@ -468,6 +475,7 @@ jobs:
           # Resolve LFS blobs so the sha256 cross-check sees real ONNX
           # bytes, not pointer files.
           lfs: true
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: "3.14.5"
@@ -489,6 +497,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: "3.14.5"
