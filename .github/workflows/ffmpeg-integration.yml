@@ -82,7 +82,7 @@ jobs:
 
       - name: Build FFmpeg
         run: |
-          git clone -q --branch release/8.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
+          git clone -q --branch release/8.1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
           cd ffmpeg
           ./configure --enable-version3 --enable-libvmaf --disable-indevs \
             --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
@@ -149,7 +149,7 @@ jobs:
 
       - name: Build FFmpeg with SYCL patch series
         run: |
-          git clone -q --branch release/8.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
+          git clone -q --branch release/8.1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
           cd ffmpeg
           # Apply the patch series in series.txt order using `git am --3way`
           # so context shifts caused by skipped patches in series.txt
