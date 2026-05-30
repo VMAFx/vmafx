@@ -462,6 +462,46 @@ static char *test_ort_open_elem_types_fp16_model(void)
     return NULL;
 }
 
+/* Public accessor coverage for vmaf_ort_output_name_at. Lines 792-798 were
+ * entirely uncovered at master tip bbcaa8d127. Combined with the +16 LOC
+ * GetTensorElementType hard-error path landed in PR #129 (b8a51866e7), the
+ * file's measured coverage drifted from the 79.3% baseline ADR-0114 used to
+ * pick the 78% per-file floor down to 77.8% (409 / 526 lines), tripping the
+ * gate. This test exercises the NULL-sess guard, the OOB-slot guard, and the
+ * happy-path return on a real session — covering 4 of the 5 uncovered lines.
+ * vmaf_ort_output_name_at ships to production callers
+ * (core/src/libvmaf.c:849 on the multi-output dispatch path), so we are
+ * gaining honest regression-lock value, not coverage padding. */
+static char *test_ort_public_accessor_coverage(void)
+{
+    /* NULL-session guard returns NULL without touching the underlying
+     * struct: covers the !sess arm of vmaf_ort_output_name_at. Safe to
+     * call even when ORT is not linked because the stub path also
+     * returns NULL. */
+    mu_assert("output_name_at: NULL sess -> NULL", vmaf_ort_output_name_at(NULL, 0) == NULL);
+
+    if (!vmaf_dnn_available())
+        return NULL;
+
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("accessor coverage: fp32 smoke open succeeds", rc == 0);
+
+    /* Happy path: slot 0 returns the output name registered at open time
+     * (non-NULL, owned by the session). Covers the bounds-check + return
+     * arms of vmaf_ort_output_name_at. */
+    const char *name0 = vmaf_ort_output_name_at(sess, 0);
+    mu_assert("output_name_at: slot 0 returns non-NULL on a real session", name0 != NULL);
+
+    /* OOB slot returns NULL — covers the slot >= n_outputs arm. */
+    mu_assert("output_name_at: OOB slot -> NULL", vmaf_ort_output_name_at(sess, 99) == NULL);
+
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_fp32_to_fp16_normal);
@@ -488,5 +528,6 @@ char *run_tests(void)
     mu_run_test(test_ort_open_null_args);
     mu_run_test(test_ort_open_elem_types_populated);
     mu_run_test(test_ort_open_elem_types_fp16_model);
+    mu_run_test(test_ort_public_accessor_coverage);
     return NULL;
 }

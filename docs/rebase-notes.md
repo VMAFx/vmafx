@@ -26,6 +26,25 @@ against SIMD output, add `_simd_strict_fp_args` to their `c_args`.
 
 ---
 
+## Coverage Gate ORT accessor coverage (2026-05-30)
+
+**Files touched:**
+`core/test/dnn/test_ort_internals.c`,
+`changelog.d/fixed/coverage-gate-ort-backend-accessor.md`.
+
+**Rebase impact:** None. The added test exercises a fork-only public
+accessor (`vmaf_ort_output_name_at`) on a fork-only file
+(`core/src/dnn/ort_backend.c`); the test TU itself is fork-only under
+ADR-0112's testability surface. Upstream Netflix/vmaf has no ORT
+backend, so there is no cross-repo file to reconcile on sync. The
+ADR-0114 per-file floor override
+(`PER_FILE_MIN["core/src/dnn/ort_backend.c"]=78`) stays in place; the
+coverage delta (409 → 413 / 526 = 78.5 %) is the per-file safety
+margin restored after PR #129 grew the denominator with unreachable
+error-handling.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
