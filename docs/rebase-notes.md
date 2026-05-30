@@ -43183,6 +43183,16 @@ Fork-local files:
 `core/src/feature/arm64/ssimulacra2_host_neon.c`,
 `changelog.d/fixed/simd-float-adm-dwt2-unchecked-aligned-malloc.md`.
 
+## ADR-0862 — K150K crash-restart row-loss consistency check — 2026-05-30
+
+no rebase impact: REASON — all changes are in fork-added Python under `ai/`
+(`ai/scripts/extract_k150k_features.py`, `ai/tests/test_extract_k150k_consistency.py`,
+`ai/AGENTS.md`) plus docs (`docs/adr/0862-*`, `docs/research/k150k-*`,
+`docs/adr/README.md`, `docs/adr/_index_fragments/_order.txt`,
+`changelog.d/fixed/k150k-crash-restart-row-loss.md`). Upstream Netflix/vmaf
+ships no K150K extraction script and no `ai/` tree; the affected files have
+no upstream counterpart.
+
 ## `core/src/libvmaf.c` — `prev_ref` UAF fix in `read_pictures_dispatch_one` (ADR-0778)
 
 The synchronous non-GPU dispatch path now calls `vmaf_picture_ref` /

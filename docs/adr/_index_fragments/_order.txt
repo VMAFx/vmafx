@@ -701,6 +701,7 @@
 0978-vmafx-server-bug-audit
 0980-markdown-lint-full-ruleset-discharge
 0983-gosec-findings-fix-sweep
+0862-k150k-crash-restart-row-loss-consistency-check
 0881-coverage-overrides-audit-2026-05-30
 0946-sycl-kernel-coverage-round3
 0957-sycl-kernel-coverage-round4
