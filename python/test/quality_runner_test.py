@@ -23,7 +23,6 @@ from vmaf.core.quality_runner import (
     SsimQualityRunner,
     Vif2QualityRunner,
     VifQualityRunner,
-    VmafLegacyQualityRunner,
     VmafnegQualityRunner,
     VmafPhoneQualityRunner,
     VmafQualityRunner,
@@ -47,139 +46,13 @@ class QualityRunnerTest(MyTestCase):
             self.runner.remove_results()
         super().tearDown()
 
-    def test_executor_id(self):
-        asset = Asset(
-            dataset="test",
-            content_id=0,
-            asset_id=1,
-            ref_path="dir/refvideo.yuv",
-            dis_path="dir/disvideo.yuv",
-            asset_dict={"width": 720, "height": 480},
-        )
-        runner = VmafLegacyQualityRunner([asset], None)
-        self.assertEqual(runner.executor_id, "VMAF_legacy_VF0.2.21-1.1")
-
-    def test_run_vmaf_legacy_runner(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        self.runner = VmafLegacyQualityRunner(
-            [asset, asset_original], None, fifo_mode=False, delete_workdir=True, result_store=None
-        )
-        self.runner.run(parallelize=False)
-
-        results = self.runner.results
-
-        self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.4460930625000001, places=3)
-        self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 4.04982535417, places=2)
-        self.assertAlmostEqual(results[0]["VMAF_feature_adm_score"], 0.9345148541666667, places=4)
-        self.assertAlmostEqual(results[0]["VMAF_feature_ansnr_score"], 23.509571520833337, places=4)
-
-        self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 4.04982535417, places=2)
-        self.assertAlmostEqual(results[1]["VMAF_feature_adm_score"], 1.0, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 31.271439270833337, places=4)
-
-        self.assertAlmostEqual(results[0]["VMAF_legacy_score"], 65.37503585467225, places=2)
-        self.assertAlmostEqual(results[1]["VMAF_legacy_score"], 96.444658329804156, places=3)
-
-    def test_run_vmaf_legacy_runner_10le(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_10bit_videos_for_testing()
-
-        self.runner = VmafLegacyQualityRunner(
-            [asset, asset_original], None, fifo_mode=False, delete_workdir=True, result_store=None
-        )
-        self.runner.run(parallelize=False)
-
-        results = self.runner.results
-
-        self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44609306249999997, places=3)
-        self.assertAlmostEqual(
-            results[0]["VMAF_feature_motion_score"], 4.0498253541666669, places=2
-        )
-        self.assertAlmostEqual(results[0]["VMAF_feature_adm_score"], 0.9345148541666667, places=4)
-        self.assertAlmostEqual(results[0]["VMAF_feature_ansnr_score"], 23.509571520833333, places=4)
-
-        self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
-        self.assertAlmostEqual(
-            results[1]["VMAF_feature_motion_score"], 4.0498253541666669, places=2
-        )
-        self.assertAlmostEqual(results[1]["VMAF_feature_adm_score"], 1.0, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 31.271439270833337, places=4)
-
-        self.assertAlmostEqual(results[0]["VMAF_legacy_score"], 65.37503585467225, places=2)
-        self.assertAlmostEqual(results[1]["VMAF_legacy_score"], 96.444658329804156, places=3)
-
-    def test_run_vmaf_legacy_runner_12le(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_12bit_videos_for_testing()
-
-        self.runner = VmafLegacyQualityRunner(
-            [asset, asset_original], None, fifo_mode=False, delete_workdir=True, result_store=None
-        )
-        self.runner.run(parallelize=False)
-
-        results = self.runner.results
-
-        self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.5129766666666666, places=2)
-        self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 2.932176666666667, places=2)
-        self.assertAlmostEqual(results[0]["VMAF_feature_adm_score"], 0.9517763333333334, places=4)
-        self.assertAlmostEqual(results[0]["VMAF_feature_ansnr_score"], 24.906395333333336, places=4)
-
-        self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 2.932176666666667, places=2)
-        self.assertAlmostEqual(results[1]["VMAF_feature_adm_score"], 1.0, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 31.004588333333334, places=4)
-
-        # places=1: legacy VMAF score passes through libsvm predict(), which
-        # converts int feature values to float32 internally; 12-bit input further
-        # introduces a per-bit-depth quantisation step.  The 0.1-VMAF tolerance
-        # is correct for deterministic-but-lossy libsvm-head inference.
-        self.assertAlmostEqual(results[0]["VMAF_legacy_score"], 72.18465772375357, places=1)
-        self.assertAlmostEqual(results[1]["VMAF_legacy_score"], 95.94112242732263, places=3)
-
-    def test_run_vmaf_legacy_runner_with_result_store(self):
-
-        ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
-
-        result_store = FileSystemResultStore(logger=None)
-
-        self.runner = VmafLegacyQualityRunner(
-            [asset, asset_original],
-            None,
-            fifo_mode=False,
-            delete_workdir=True,
-            result_store=result_store,
-        )
-
-        self.runner.run(parallelize=False)
-        result0, result1 = self.runner.results
-
-        # NOTE: since stored results are actually VMAF_feature's not VMAF's,
-        # the two paths below shouldn't exist
-        self.assertFalse(os.path.exists(result_store._get_result_file_path(result0)))
-        self.assertFalse(os.path.exists(result_store._get_result_file_path(result1)))
-
-        self.runner.run(parallelize=False)
-        results = self.runner.results
-
-        self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44609306249999997, places=3)
-        self.assertAlmostEqual(
-            results[0]["VMAF_feature_motion_score"], 4.0498253541666669, places=2
-        )
-        self.assertAlmostEqual(results[0]["VMAF_feature_adm_score"], 0.9345148541666667, places=4)
-        self.assertAlmostEqual(results[0]["VMAF_feature_ansnr_score"], 23.509571520833333, places=4)
-
-        self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
-        self.assertAlmostEqual(
-            results[1]["VMAF_feature_motion_score"], 4.0498253541666669, places=2
-        )
-        self.assertAlmostEqual(results[1]["VMAF_feature_adm_score"], 1.0, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 31.271439270833337, places=4)
-
-        self.assertAlmostEqual(results[0]["VMAF_legacy_score"], 65.37503585467225, places=2)
-        self.assertAlmostEqual(results[1]["VMAF_legacy_score"], 96.444658329804156, places=3)
+    # VmafLegacyQualityRunner tests removed per ADR-0749 (sunset 2026-05-28):
+    # test_executor_id, test_run_vmaf_legacy_runner,
+    # test_run_vmaf_legacy_runner_{10le,12le}, and
+    # test_run_vmaf_legacy_runner_with_result_store all exercised the
+    # legacy float-path runner that was deleted from compat/python-vmaf/
+    # in PR #87. The canonical Netflix golden test
+    # `test_run_vmaf_runner` (below) uses VmafQualityRunner and is untouched.
 
     def test_run_vmaf_runner_v1_model(self):
 

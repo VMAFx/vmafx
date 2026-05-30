@@ -551,13 +551,27 @@ libvmaf_include = include_directories(
     is_nvtx_enabled ? '/usr/local/cuda/include' : '',
 )
 
+# GCC/Clang accept `c++23`; MSVC needs `vc++latest`; Intel oneAPI on Windows
+# (icx-cl, `intel-llvm-cl`) and clang-cl reject `c++23` and need plain
+# `c++latest`. Pick the right token per compiler so override_options
+# doesn't fail meson configure.
+_cpp_id = meson.get_compiler('cpp').get_id()
+if _cpp_id == 'msvc'
+    libvmaf_cpu_cpp_std = 'vc++latest'
+elif _cpp_id == 'intel-llvm-cl' or _cpp_id == 'intel-cl' or _cpp_id == 'clang-cl'
+    libvmaf_cpu_cpp_std = 'c++latest'
+else
+    libvmaf_cpu_cpp_std = 'c++23'
+endif
+
 libvmaf_cpu_static_lib = static_library(
     'libvmaf_cpu',
     libvmaf_cpu_sources,
     include_directories : [libvmaf_include],
     # ADR-0755: cpu.cpp uses constinit (C++20) and std::atomic; override
     # cpp_std so this TU compiles under C++23 without affecting other TUs.
-    override_options : ['cpp_std=c++23'],
+    # ADR-0860: MSVC-vs-GCC/Clang cpp_std token disagreement workaround.
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
 )
 
 platform_specific_cpu_objects = []

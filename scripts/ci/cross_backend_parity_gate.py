@@ -646,7 +646,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--backends",
         nargs="+",
-        default=["cpu", "vulkan"],
+        default=["cpu", "cuda"],
         choices=sorted(BACKEND_SUFFIX.keys()),
         help="backends to pair (default: cpu + vulkan, lavapipe-friendly)",
     )

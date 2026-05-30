@@ -60,11 +60,7 @@ objects:
 ```bash
 hipcc --genco --offload-arch=gfx90a --offload-arch=gfx1030 \
       --offload-arch=gfx1036 --offload-arch=gfx1100 \
-<<<<<<< HEAD
       -I libvmaf/src -I core/src/feature -I libvmaf/include \
-=======
-      -I core/src -I core/src/feature -I core/include \
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
       core/src/feature/hip/integer_vif/vif_statistics.hip \
       -o /tmp/vif_stats.hsaco
 # Inspect targets:

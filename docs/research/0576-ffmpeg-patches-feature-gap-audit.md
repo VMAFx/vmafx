@@ -13,17 +13,10 @@ require dedicated patches?
 
 ## Sources
 
-<<<<<<< HEAD
 - `core/include/libvmaf/libvmaf.h` — `VmafConfiguration` struct
 - `core/include/libvmaf/feature.h` — `VmafFeatureDictionary` API
 - `core/include/libvmaf/dnn.h` — DNN session API
 - `core/include/libvmaf/libvmaf_cuda.h`, `libvmaf_sycl.h`,
-=======
-- `core/include/core/libvmaf.h` — `VmafConfiguration` struct
-- `core/include/core/feature.h` — `VmafFeatureDictionary` API
-- `core/include/core/dnn.h` — DNN session API
-- `core/include/core/libvmaf_cuda.h`, `libvmaf_sycl.h`,
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
   `libvmaf_vulkan.h`, `libvmaf_hip.h`, `libvmaf_metal.h` — backend APIs
 - `core/src/feature/feature_extractor.c` — `feature_extractor_list[]`
 - `ffmpeg-patches/` (all 13 patches) — current exposure state

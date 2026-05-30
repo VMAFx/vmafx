@@ -89,7 +89,6 @@ jobs:
               -Dfuzz=true \
               -Denable_cuda=false \
               -Denable_sycl=false \
-              -Denable_vulkan=disabled
 
       - name: Build harness
         run: ninja -C build-fuzz test/fuzz/${{ matrix.target }}

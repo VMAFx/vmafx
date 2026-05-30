@@ -180,9 +180,18 @@ def _parity_check(onnx_path: Path, atol: float = 1e-4) -> None:
     print(f"[ok] parity: max|Δ|={diff:.3e} ≤ atol={atol:.1e}")
 
 
-def _write_sidecar(onnx_path: Path, opset: int) -> Path:
-    sidecar = onnx_path.with_suffix(".json")
-    payload = {
+def _write_sidecar(
+    onnx_path: Path,
+    opset: int,
+    sidecar_path: Path | None = None,
+    raw_argv: list[str] | None = None,
+) -> Path:
+    """Write the sidecar JSON next to *onnx_path* (default) or at
+    *sidecar_path* if supplied. If *raw_argv* is supplied, an
+    ai-run-provenance-v1 block is included so the manifest is
+    self-describing (per ADR-0325 / the lpips_export CLI contract)."""
+    sidecar = sidecar_path if sidecar_path is not None else onnx_path.with_suffix(".json")
+    payload: dict = {
         "input_name": "ref",
         "kind": "fr",
         "name": "vmaf_tiny_lpips_sq_v1",
@@ -195,6 +204,22 @@ def _write_sidecar(onnx_path: Path, opset: int) -> Path:
         "onnx_opset": opset,
         "output_name": "score",
     }
+    if raw_argv is not None:
+        payload["run_provenance"] = {
+            "schema": "ai-run-provenance-v1",
+            "args": {
+                "output": str(onnx_path),
+                "sidecar": str(sidecar),
+            },
+            "outputs": {
+                "onnx": {
+                    "path": str(onnx_path),
+                    "sha256": _sha256(onnx_path),
+                    "size_bytes": onnx_path.stat().st_size,
+                }
+            },
+            "raw_argv": list(raw_argv),
+        }
     sidecar.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return sidecar
 
@@ -212,7 +237,15 @@ def main(argv: list[str] | None = None) -> int:
     default_out = repo_root / "model" / "tiny" / "lpips_sq.onnx"
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--output", type=Path, default=default_out)
+    # `--out` is the documented short flag; `--output` is kept as a
+    # backward-compatible alias.
+    parser.add_argument("--out", "--output", dest="output", type=Path, default=default_out)
+    parser.add_argument(
+        "--sidecar",
+        type=Path,
+        default=None,
+        help="Manifest sidecar JSON path (default: <out>.json next to the ONNX).",
+    )
     parser.add_argument("--opset", type=int, default=17)
     parser.add_argument("--skip-parity", action="store_true")
     args = parser.parse_args(argv)
@@ -225,13 +258,27 @@ def main(argv: list[str] | None = None) -> int:
             "sidecar + registry should use the emitted value",
             file=sys.stderr,
         )
-    _write_sidecar(args.output, effective_opset)
     if not args.skip_parity:
         _parity_check(args.output)
+    # Sidecar writing happens AFTER the parity check so the manifest's
+    # ai-run-provenance-v1 sha256 reflects the final on-disk bytes.
+    sidecar = _write_sidecar(
+        args.output,
+        effective_opset,
+        sidecar_path=args.sidecar,
+        raw_argv=list(argv) if argv is not None else sys.argv[1:],
+    )
 
     sha = _sha256(args.output)
     size = args.output.stat().st_size
-    print(f"[ok] wrote {args.output.relative_to(repo_root)} ({size} bytes)")
+    # When the output lives outside the repo (pytest tmpdir, custom --out),
+    # fall back to the absolute path rather than raising ValueError.
+    try:
+        display = args.output.relative_to(repo_root)
+    except ValueError:
+        display = args.output
+    print(f"[ok] wrote {display} ({size} bytes)")
+    print(f"     sidecar {sidecar}")
     print(f"     sha256 {sha}")
     print("     add this digest to model/tiny/registry.json")
     return 0

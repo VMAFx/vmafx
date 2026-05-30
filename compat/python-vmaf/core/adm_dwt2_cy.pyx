@@ -13,18 +13,18 @@ cdef extern from "feature/adm_tools.h":
         double *band_h
         double *band_d
 
-cdef extern from "../../../libvmaf/src/feature/adm_tools.c":
+cdef extern from "../../../core/src/feature/adm_tools.c":
     void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h)
     void adm_dwt2_d(const double *src, const adm_dwt_band_t_d *dst, int **ind_y, int **ind_x, int w, int h, int src_stride, int dst_stride)
 
-cdef extern from "../../../libvmaf/src/feature/adm.c":
+cdef extern from "../../../core/src/feature/adm.c":
     char *init_dwt_band_d(adm_dwt_band_t_d *band, char *data_top, size_t buf_sz_one)
 
-cdef extern from "../../../libvmaf/src/mem.c":
+cdef extern from "../../../core/src/mem.c":
     void *aligned_malloc(size_t size, size_t alignment)
     void aligned_free(void *ptr)
 
-cdef extern from "../../../libvmaf/src/feature/offset.c":
+cdef extern from "../../../core/src/feature/offset.c":
     int offset_image_s(float *buf, float off, int width, int height, int stride)  # TODO: find out why need this _s - doesn't seem to be called but if not, symbol not found error
 
 def adm_dwt2_cy(np.ndarray[np.float64_t, ndim=2, mode='c'] a):
