@@ -47,12 +47,24 @@ func main() {
 	// ---------------------------------------------------------------------------
 	// Flags — override env vars when explicitly supplied.
 	// ---------------------------------------------------------------------------
+	// Override the default flag.Usage so that -help / --help exits 0, not 2.
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stdout, "Usage of vmafx-server:\n")
+		flag.CommandLine.SetOutput(os.Stdout)
+		flag.PrintDefaults()
+	}
 	port := flag.String("port", envOr("VMAFX_PORT", "8080"), "HTTP listen port")
 	grpcPort := flag.String("grpc-port", envOr("VMAFX_GRPC_PORT", "50051"), "gRPC listen port")
 	logLevel := flag.String("log-level", envOr("VMAFX_LOG_LEVEL", "INFO"), "log level (DEBUG|INFO|WARN|ERROR)")
 	vmafBinary := flag.String("vmaf-binary", envOr("VMAFX_VMAF_BINARY", ""), "path to vmaf CLI binary (default: PATH lookup)")
 	modelDir := flag.String("model-dir", envOr("VMAFX_MODEL_DIR", ""), "directory containing VMAF .json model files")
+	helpFlag := flag.Bool("help", false, "print usage and exit")
 	flag.Parse()
+
+	if *helpFlag {
+		flag.Usage()
+		os.Exit(0)
+	}
 
 	// ---------------------------------------------------------------------------
 	// Logger.

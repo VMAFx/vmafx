@@ -6,18 +6,16 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
-## hip-smoke-conflict-markers + GPU test skip-gracefully (2026-05-29)
+## cli-help-exit-zero (2026-05-29)
 
 **Files touched:**
-`core/test/test_hip_smoke.c`,
-`core/test/test_gpu_picture_pool.c`,
-`core/test/test_cuda_pic_preallocation.c`,
-`core/test/AGENTS.md`
+`core/tools/cli_parse.c`, `cmd/vmafx-server/main.go`, `cmd/vmafx-node/main.go`
 
-**Rebase impact:** None. All three touched test files are fork-local (GPU test
-surface not present in upstream Netflix/vmaf master). No rebase conflict is
-possible. The AGENTS.md invariant note will need forward-porting if upstream
-ever adds GPU test files of its own.
+**Rebase impact:** Low. `cli_parse.c` is fork-extended beyond upstream (GPU
+backend flags, precision, tiny-model flags). Any upstream sync that touches
+`cli_parse.c` will produce a context conflict near the `long_opts[]` table and
+`usage()` body; the `ARG_HELP` entry and the `exit_code`/`out` split need to be
+re-applied. The Go files are fork-only and have no upstream counterpart.
 
 ---
 
@@ -40386,10 +40384,3 @@ no rebase impact: REASON — changes are confined to config files (`.clang-tidy`
 `.pre-commit-config.yaml`, `pyproject.toml`), fork-owned Python sources in `ai/`
 and `scripts/` (UP auto-fixes), and docs. No upstream Netflix/vmaf C source is
 touched; the `HeaderFilterRegex` fix has no effect on any upstream file.
-
-## Remove dead debug macros from motion_avx2.c (ADR-0853, 2026-05-29)
-
-no rebase impact: pure dead-code removal. The deleted `print_128_*` / `print_256_*`
-macros were never invoked in any production path and are absent from upstream
-Netflix/vmaf. The only changed file is `core/src/feature/x86/motion_avx2.c`; no
-public header, ABI, or upstream rebase surface is affected.
