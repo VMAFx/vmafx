@@ -6,6 +6,23 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## rust-pilot-audit-2026-05-30
+
+**Files touched:** `Cargo.lock` (workspace root)
+
+**Rebase impact:** None. The Rust workspace is entirely fork-local; upstream
+Netflix/vmaf has no Rust code. The committed `Cargo.lock` was out of sync
+with the resolved build-dependency graph (missing `bindgen` 0.69 + `cbindgen`
+0.27 transitives, 31 crate entries). `cargo build` regenerated the lock
+deterministically; no version downgrades, no MSRV impact, `cargo audit` clean.
+
+**Rule for future Rust pilots:** when adding a `[build-dependencies]` block
+to a crate manifest, commit the regenerated `Cargo.lock` in the same PR.
+Otherwise every fresh checkout dirties the lock on first `cargo build`,
+which masks real diffs on subsequent audit sweeps.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
