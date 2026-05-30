@@ -29,6 +29,14 @@ typedef struct FloatPsnrStateCuda {
      * template's readback bundle. */
     VmafCudaKernelReadback rb;
 
+    /* Module backing the per-bpc kernels — owned here so `close_fex_cuda`
+     * can `cuModuleUnload` it. `cuModuleLoadData` reserves ~200-500 KB
+     * of GPU-resident module storage that is NOT reclaimed by
+     * `cuCtxDestroy` on a primary context; skipping the unload leaks
+     * the module on every init/close cycle (per
+     * `core/src/cuda/AGENTS.md` lifecycle invariants + ADR-0356
+     * `ssimulacra2_cuda` precedent). */
+    CUmodule module;
     CUfunction funcbpc8;
     CUfunction funcbpc16;
 
@@ -84,11 +92,10 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
 
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, float_psnr_score_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc8, module, "float_psnr_kernel_8bpc"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, float_psnr_score_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "float_psnr_kernel_8bpc"),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc16, module, "float_psnr_kernel_16bpc"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "float_psnr_kernel_16bpc"),
                     fail);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
@@ -235,6 +242,11 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
 static int close_fex_cuda(VmafFeatureExtractor *fex)
 {
     FloatPsnrStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state ? fex->cu_state->f : NULL;
+    /* Unload the PTX module before the lifecycle stream is destroyed —
+     * see comment on `module` in the state struct. */
+    if (cu_f && s->module)
+        (void)cu_f->cuModuleUnload(s->module);
     int rc = vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);
 
     if (s->ref_in) {
