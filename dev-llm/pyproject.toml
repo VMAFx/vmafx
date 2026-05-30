@@ -10,16 +10,16 @@ authors = [
   { name = "Claude (Anthropic)", email = "noreply@anthropic.com" },
 ]
 dependencies = [
-  "typer>=0.25.1",
+  "typer>=0.26.4",
   "rich>=15.0.0",
   "pyyaml>=6.0.3",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0.3", "ruff>=0.15.14", "mypy>=2.1.0"]
+dev = ["pytest>=9.0.3", "ruff>=0.15.15", "mypy>=2.1.0"]
 cloud = [
-  "anthropic>=0.104.1",
-  "openai>=2.37.0",
+  "anthropic>=0.105.2",
+  "openai>=2.38.0",
 ]
 
 [project.scripts]

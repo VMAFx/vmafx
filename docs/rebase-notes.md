@@ -40397,3 +40397,15 @@ resolution is mechanical: if Netflix upstream still has the legacy assertions
 they were calibrated against `float_ansnr` output that this fork no longer
 produces — keep the skips. If Netflix upstream removes the legacy assertions
 themselves (matching this fork's direction), drop the local skips.
+
+## Python dep freshness sweep (ADR-0879, 2026-05-30)
+
+no rebase impact: all touched files are fork-local — `ai/pyproject.toml`,
+`mcp-server/vmaf-mcp/pyproject.toml`, `dev-llm/pyproject.toml`,
+`tools/vmaf-tune/pyproject.toml`, `tools/vmaf-roi-score/pyproject.toml`,
+`python/test/requirements.txt`. Netflix upstream does not ship the `ai/`,
+`mcp-server/`, `dev-llm/`, or `tools/vmaf-*` trees; the only file shared
+with upstream (`python/test/requirements.txt`) gained a `>=7.1.0` floor on
+`pytest-cov` which is purely additive over upstream's bare `pytest-cov`
+line. On rebase, keep the bumped floor; if upstream introduces its own
+ceiling on `pytest-cov`, intersect rather than overwrite.

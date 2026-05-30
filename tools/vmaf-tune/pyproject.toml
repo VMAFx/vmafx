@@ -14,7 +14,7 @@ authors = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0.3", "ruff>=0.15.14", "optuna>=3.6"]
+dev = ["pytest>=9.0.3", "ruff>=0.15.15", "optuna>=4.8.0"]
 # Phase A.5 fast-path (ADR-0276): proxy + Bayesian + GPU-verify
 # recommend. Optuna is the TPE sampler driver; gated behind an extra
 # so the core install path stays zero-dep.
