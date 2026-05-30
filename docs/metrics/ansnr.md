@@ -1,50 +1,37 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# ANSNR
+# ANSNR (removed)
 
-ANSNR (Average Noise-to-Signal Ratio) measures the ratio of distortion energy
-to signal energy averaged over the frame, providing a complementary view to
-PSNR for characterizing codec noise behavior.
+!!! warning "This metric was removed"
+    The `float_ansnr` feature extractor was removed from every backend in
+    PR #38 (see [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md)
+    and the follow-up
+    [ADR-0749](../adr/0749-sunset-legacy-vmaf-feature-extractor.md)).
+    ANSNR is a pre-VMAF metric (2001) that Netflix never adopted in
+    production; it was carried by the upstream codebase but no shipped VMAF
+    model references it. This page is retained for traceability.
 
-## Variant
+## Historical description
 
-| Extractor name | Algorithm | Options |
-|---|---|---|
-| `float_ansnr` | Floating-point implementation | `enable_chroma` |
+ANSNR (Average Noise-to-Signal Ratio) measured the ratio of distortion
+energy to signal energy averaged over the frame. It was registered as the
+`float_ansnr` feature extractor and emitted `float_ansnr` (luma) plus
+`float_ansnr_cb` / `float_ansnr_cr` when `enable_chroma=true`.
 
-## `float_ansnr` extractor
+## Migration
 
-The extractor computes the noise-to-signal ratio in the spatial domain using
-floating-point arithmetic. It is the extractor invoked when VMAF model JSON
-files reference `"float_ansnr"`.
+| Old surface | Status after PR #38 |
+|---|---|
+| `--feature float_ansnr` on the CLI | Unknown feature; the CLI errors out. |
+| `_METRIC_TO_EXTRACTOR["float_ansnr"]` (Python helper in `ai/data/feature_extractor.py`) | Mapping entry removed; passing `features=["float_ansnr"]` raises. |
+| `float_ansnr_hip` / `float_ansnr_cuda` / `float_ansnr_sycl` (GPU twins) | Sources removed together with the CPU registration. |
+| `VmafLegacyQualityRunner` (Python runner that fed ANSNR into a libsvm model) | Sunset in [ADR-0749](../adr/0749-sunset-legacy-vmaf-feature-extractor.md). Use `VmafQualityRunner` against a modern `.json` model instead. |
 
-### Output features
-
-| Feature name | Description | Condition |
-|---|---|---|
-| `float_ansnr` | ANSNR on the luma (Y) plane | Always |
-| `float_ansnr_cb` | ANSNR on the Cb (U) chroma plane | `enable_chroma=true` only |
-| `float_ansnr_cr` | ANSNR on the Cr (V) chroma plane | `enable_chroma=true` only |
-
-## Options
-
-- `enable_chroma` (bool, default `false`): emit per-plane `_cb` and `_cr` scores in addition to luma. YUV400P sources are always luma-only.
-
-### How to run
-
-```bash
-# Luma-only ANSNR (default)
-core/build/tools/vmaf \
-    --reference ref.yuv --distorted dist.yuv \
-    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --no_prediction --feature float_ansnr --output /dev/stdout
-
-# Per-channel ANSNR (luma + Cb + Cr)
-core/build/tools/vmaf \
-    --reference ref.yuv --distorted dist.yuv \
-    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-    --no_prediction --feature 'float_ansnr:enable_chroma=true' --output /dev/stdout
-```
+Callers that need a per-frame distortion-energy signal should use PSNR
+(`psnr_y` / `psnr_cb` / `psnr_cr`) or PSNR-HVS (`psnr_hvs`); both remain
+first-class extractors with active CPU + GPU paths.
 
 ## See also
 
-- [Features](features.md) - full feature extractor reference
+- [Features](features.md) — current feature extractor reference.
+- [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md)
+- [ADR-0749](../adr/0749-sunset-legacy-vmaf-feature-extractor.md)

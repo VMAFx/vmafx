@@ -31,7 +31,7 @@
 > dispatching.
 >
 > The other HIP-flagged extractors (`vif_hip`, `psnr_hip`, `ciede_hip`,
-> `float_moment_hip`, `float_ansnr_hip`, `motion_v2_hip`,
+> `float_moment_hip`, `motion_v2_hip`,
 > `float_motion_hip`, `float_ssim_hip`, `float_psnr_hip`,
 > `cambi_hip`, `float_adm_hip`, `ssimulacra2_hip`) remain unflagged
 > pending per-extractor end-to-end verification. Each will be
@@ -58,7 +58,6 @@
 > | `float_psnr_hip` | `float_psnr_hip` | ADR-0254 |
 > | `ciede_hip` (now `integer_ciede_hip`) | `ciede_hip` | ADR-0259 / PR #1016 |
 > | `float_moment_hip` | `float_moment_hip` | ADR-0260 |
-> | `float_ansnr_hip` | `float_ansnr_hip` | ADR-0266 |
 > | `integer_motion_v2_hip` | `motion_v2_hip` | ADR-0267 |
 > | `float_motion_hip` | `float_motion_hip` | ADR-0373 |
 > | `float_ssim_hip` | `float_ssim_hip` | ADR-0375 |
@@ -154,7 +153,7 @@ explicit opt-in:
 
 ```bash
 ./build/tools/vmaf --feature psnr_hip --reference ref.yuv ...
-./build/tools/vmaf --feature float_ansnr_hip --reference ref.yuv ...
+./build/tools/vmaf --feature float_psnr_hip --reference ref.yuv ...
 ./build/tools/vmaf --feature integer_vif_hip --reference ref.yuv ...
 ./build/tools/vmaf --feature integer_adm_hip:adm_skip_scale0=true --reference ref.yuv ...
 ```
@@ -169,7 +168,6 @@ core/src/hip/                  # HIP runtime (common, picture_hip, dispatch_stra
 core/src/feature/hip/          # per-feature kernels
   integer_psnr_hip.c              # uint64 atomic-SSE warp-64 __shfl_down
   float_psnr_hip.c                # float (ref-dis)^2 reduction per block
-  float_ansnr_hip.c               # (sig, noise) per-block float partials
   float_motion_hip.c              # 5x5 Gaussian blur + per-block float SAD
   float_moment_hip.c              # four uint64 atomic accumulator kernel
   float_ssim_hip.c                # two-pass separable 11-tap Gaussian kernel
@@ -197,9 +195,6 @@ core/src/feature/hip/          # per-feature kernels
 - **`integer_psnr_hip`** — uint64 atomic-SSE kernel, warp-64 `__shfl_down`
   reduction. Emits `psnr_y`.
 - **`float_psnr_hip`** — float (ref-dis)² reduction per block. Emits `float_psnr`.
-- **`float_ansnr_hip`** — per-block (sig, noise) float-partial kernel, 3×3 ref +
-  5×5 dis filter with shared-memory mirror-padded tile. Emits `float_ansnr` +
-  `float_anpsnr`.
 - **`float_motion_hip`** — temporal extractor. 5×5 separable Gaussian blur +
   per-block float SAD partials, blur ping-pong (`blur[2]`), first-frame
   `compute_sad=0` short-circuit, motion2 tail emission in `flush()`. Emits
@@ -272,7 +267,10 @@ Each returns `-ENOSYS` at `init()`. Tracked in
 - [ADR-0260](../../adr/0260-hip-fourth-consumer-float-moment.md) —
   fourth consumer (`float_moment_hip`).
 - [ADR-0266](../../adr/0266-hip-fifth-consumer-float-ansnr.md) —
-  fifth consumer (`float_ansnr_hip`).
+  fifth consumer (`float_ansnr_hip`), retained for historical
+  traceability. The kernel and its CPU twin were removed in
+  [ADR-0709](../../adr/0709-vmafx-phase4b-distributed-platform.md)
+  (PR #38) — ANSNR is no longer a registered feature on any backend.
 - [ADR-0267](../../adr/0267-hip-sixth-consumer-motion-v2.md) —
   sixth consumer (`motion_v2_hip`).
 - [ADR-0372](../../adr/0372-hip-batch1-runtime-kernels.md) — batch-1 kernels.

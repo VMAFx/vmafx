@@ -232,15 +232,16 @@ for the complete table.
   YUV400P clamps to luma-only at runtime. Cross-backend gate vs CPU
   is bit-exact (`max_abs_diff = 0.0` at `places=4` on the 576×324 +
   640×480 testdata fixtures, RTX 4090, 8-bit 4:2:0).
-- **SSIM / MS-SSIM / PSNR-HVS / ANSNR** — SSIM, MS-SSIM, and PSNR-HVS
-  have CUDA kernels and participate in the cross-backend parity gate
+- **SSIM / MS-SSIM / PSNR-HVS** — SSIM, MS-SSIM, and PSNR-HVS have
+  CUDA kernels and participate in the cross-backend parity gate
   (`psnr_hvs` uses the relaxed DCT/reduction tolerance from
   [ADR-0191](../../adr/0191-psnr-hvs-vulkan.md) /
-  [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)). ANSNR falls back
-  to the CPU twin unless the caller selects the separate `float_ansnr`
-  CUDA extractor.
+  [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)). The CUDA
+  `float_ansnr` extractor was removed together with its CPU twin in
+  [ADR-0709](../../adr/0709-vmafx-phase4b-distributed-platform.md)
+  (PR #38); ANSNR is no longer dispatched on any backend.
 - **Float-twin extractors (`float_*`)** — the CUDA backend
-  implements the float twins for ANSNR / PSNR / Motion / VIF / ADM
+  implements the float twins for PSNR / Motion / VIF / ADM
   ([ADR-0202](../../adr/0202-float-adm-cuda-sycl.md)). Requesting
   `--feature float_<x>` with `--no_cuda=false` dispatches to GPU
   for those metrics.
