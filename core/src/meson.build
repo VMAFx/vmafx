@@ -751,6 +751,7 @@ if is_asm_enabled
           c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
       )
 
+
       # psnr_hvs_avx2 + ms_ssim_decimate_avx2 carve-outs (mirror of
       # ssimulacra2 below). Reason: under -mfma + GCC silently
       # ignoring `#pragma STDC FP_CONTRACT OFF`, plain C `a*b+c`
