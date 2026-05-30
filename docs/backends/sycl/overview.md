@@ -26,11 +26,7 @@ Meson options:
 ### `icpx` const-correctness on string default options
 
 Per-extractor `VmafOption` rows declare `default_val.s` as `char *`
-<<<<<<< HEAD
 (matching the C API contract in `core/include/libvmaf/libvmaf.h`).
-=======
-(matching the C API contract in `core/include/core/libvmaf.h`).
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 The DPC++ compiler (`icpx`) is stricter than g++ about C++
 const-correctness and rejects initializing a `char *` member from a
 `const char *` source. SYCL feature kernels that need a string default
