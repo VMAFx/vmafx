@@ -262,6 +262,10 @@ nav:
           - Waterloo IVC 4K: ai/waterloo-ivc-4k-ingestion.md
       - Model cards:
           - KonViD MOS head v1: ai/models/konvid_mos_head_v1.md
+          - vmaf_tiny_v1: ai/models/vmaf_tiny_v1.md
+          - vmaf_tiny_v1_medium: ai/models/vmaf_tiny_v1_medium.md
+          - smoke_v0: ai/models/smoke_v0.md
+          - smoke_fp16_v0: ai/models/smoke_fp16_v0.md
   - Architecture:
       - architecture/index.md
       - C4 context: architecture/c4-context.md

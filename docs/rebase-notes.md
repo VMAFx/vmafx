@@ -6,20 +6,12 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
-## gpu-dispatch-toctou-fence (2026-05-29, ADR-0840)
+## ADR-0042 model-card F5 closeout (2026-05-29)
 
-**Files touched:**
-`core/tools/vmaf.c`, `core/src/gpu_dispatch_env.c`
-
-**Rebase impact:** None. Both files are fork-local additions. `core/tools/vmaf.c`
-has upstream touches only in the pre-existing CUDA block (which is itself
-fork-local); `gpu_dispatch_env.c` has no upstream counterpart. No rebase conflict
-is possible on a clean upstream sync.
-
-The `atomic_thread_fence` pairing (publish: release after value, before var_name;
-read: acquire after var_name match, before value read) must be preserved if the
-fast-path loop or publish path is ever refactored — see ADR-0840 for the
-formal C11 memory-model rationale.
+no rebase impact: docs-only — adds 4 model cards under
+`docs/ai/models/` and removes 2 orphan stubs; deletes forward-looking
+stub content that has no upstream counterpart. `mkdocs.yml` nav update
+is also docs-only.
 
 ---
 
