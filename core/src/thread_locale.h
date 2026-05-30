@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_THREAD_LOCALE_H__
-#define __VMAF_SRC_THREAD_LOCALE_H__
+#ifndef VMAF_SRC_THREAD_LOCALE_H_
+#define VMAF_SRC_THREAD_LOCALE_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,4 +57,4 @@ void vmaf_thread_locale_pop(VmafThreadLocaleState *state);
 }
 #endif
 
-#endif /* __VMAF_SRC_THREAD_LOCALE_H__ */
+#endif /* VMAF_SRC_THREAD_LOCALE_H_ */

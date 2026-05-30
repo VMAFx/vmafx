@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_MS_SSIM_DECIMATE_NEON_H__
-#define __VMAF_MS_SSIM_DECIMATE_NEON_H__
+#ifndef VMAF_MS_SSIM_DECIMATE_NEON_H_
+#define VMAF_MS_SSIM_DECIMATE_NEON_H_
 
 /*
  * NEON specialisation of ms_ssim_decimate_scalar.
@@ -42,4 +42,4 @@
 
 int ms_ssim_decimate_neon(const float *src, int w, int h, float *dst, int *rw, int *rh);
 
-#endif /* __VMAF_MS_SSIM_DECIMATE_NEON_H__ */
+#endif /* VMAF_MS_SSIM_DECIMATE_NEON_H_ */

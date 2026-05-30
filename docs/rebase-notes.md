@@ -6,6 +6,23 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## header-guard-reserved-identifier-rename (2026-05-30, ADR-0885)
+
+**Files touched:** eleven fork-added headers under `core/include/libvmaf/`,
+`core/src/`, `core/src/feature/{arm64,x86}/`, and `core/src/sycl/`. Full
+list in the ADR and the changelog fragment.
+
+**Rebase impact:** None for upstream Netflix/vmaf. Each renamed header is
+fork-added (verified via `git cat-file -e upstream/master:libvmaf/...`).
+The three public headers upstream maintains (`feature.h`, `model.h`,
+`picture.h`, etc.) keep their original `__VMAF_X_H__` guards untouched.
+A future upstream sync that introduces a new fork-only header should use
+the non-reserved `VMAF_X_H_` style from the start; the
+`bugprone-reserved-identifier` clang-tidy gate will flag any regression.
+
+Rule for new fork-added headers: never write `__VMAF_FOO_H__`; write
+`VMAF_FOO_H_` (drop leading underscores, single trailing underscore).
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

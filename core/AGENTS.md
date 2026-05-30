@@ -528,3 +528,20 @@ the corrected methodology.
   `testdata/dis_1920x1080_48f.yuv`, `testdata/dis_2560x1440_48f.yuv`) are
   generated on first run and are **not committed** (they are reproducible via
   `ffmpeg -vf scale=W:H:flags=bilinear` from the in-tree 576×324 fixture).
+
+## Header-guard style (ADR-0885)
+
+- **Fork-added headers MUST use `VMAF_<NAME>_H_` guard form** (no leading
+  underscore, single trailing underscore). The C-reserved form
+  `__VMAF_<NAME>_H__` is forbidden because C99 §7.1.3 reserves any identifier
+  that starts with an underscore + uppercase letter and any identifier
+  containing two consecutive underscores; `bugprone-reserved-identifier` /
+  CERT-C DCL37-C will flag it.
+- **Upstream-mirror headers keep their original guards** even when those
+  guards use the reserved form. Renaming them would diverge from
+  `upstream/master` and force a conflict on every sync. The three
+  public-API exceptions (`feature.h`, `model.h`, `dnn.h`) are cited via
+  [ADR-0278](../docs/adr/0278-t7-5-nolint-sweep.md).
+- Rebase invariant: if an upstream sync introduces a new header that we
+  fork (copy-and-modify), rename its guard to the conformant form in the
+  same commit that creates the fork copy.

@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_SYCL_PICTURE_SYCL_H__
-#define __VMAF_SRC_SYCL_PICTURE_SYCL_H__
+#ifndef VMAF_SRC_SYCL_PICTURE_SYCL_H_
+#define VMAF_SRC_SYCL_PICTURE_SYCL_H_
 
 #include "common.h"
 #include "libvmaf/picture.h"
@@ -145,4 +145,4 @@ int vmaf_sycl_picture_pool_close(VmafSyclPicturePool *pool);
 }
 #endif
 
-#endif /* __VMAF_SRC_SYCL_PICTURE_SYCL_H__ */
+#endif /* VMAF_SRC_SYCL_PICTURE_SYCL_H_ */

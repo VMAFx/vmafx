@@ -1,0 +1,1 @@
+| [ADR-0885](0885-header-guard-reserved-identifier-rename.md) | Rename include guards in eleven fork-added headers from reserved form `__VMAF_<X>_H__` to conformant `VMAF_<X>_H_` (CERT-C DCL37-C / `bugprone-reserved-identifier`); upstream-mirror and PR #327-cited public headers untouched. | Accepted | 2026-05-30 | cleanup, lint, principles, cert-c, fork-local |

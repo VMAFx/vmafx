@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_MS_SSIM_DECIMATE_AVX2_H__
-#define __VMAF_MS_SSIM_DECIMATE_AVX2_H__
+#ifndef VMAF_MS_SSIM_DECIMATE_AVX2_H_
+#define VMAF_MS_SSIM_DECIMATE_AVX2_H_
 
 /*
  * AVX2 specialisation of ms_ssim_decimate_scalar.
@@ -43,4 +43,4 @@
 
 int ms_ssim_decimate_avx2(const float *src, int w, int h, float *dst, int *rw, int *rh);
 
-#endif /* __VMAF_MS_SSIM_DECIMATE_AVX2_H__ */
+#endif /* VMAF_MS_SSIM_DECIMATE_AVX2_H_ */

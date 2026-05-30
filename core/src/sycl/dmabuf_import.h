@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_SYCL_DMABUF_IMPORT_H__
-#define __VMAF_SRC_SYCL_DMABUF_IMPORT_H__
+#ifndef VMAF_SRC_SYCL_DMABUF_IMPORT_H_
+#define VMAF_SRC_SYCL_DMABUF_IMPORT_H_
 
 #include "config.h"
 
@@ -88,4 +88,4 @@ int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_display, unsigned
 
 #endif /* HAVE_SYCL */
 
-#endif /* __VMAF_SRC_SYCL_DMABUF_IMPORT_H__ */
+#endif /* VMAF_SRC_SYCL_DMABUF_IMPORT_H_ */

@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_SYCL_COMMON_H__
-#define __VMAF_SRC_SYCL_COMMON_H__
+#ifndef VMAF_SRC_SYCL_COMMON_H_
+#define VMAF_SRC_SYCL_COMMON_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -488,4 +488,4 @@ bool vmaf_sycl_profiling_is_enabled(VmafSyclState *state);
 
 #endif /* HAVE_SYCL */
 
-#endif /* __VMAF_SRC_SYCL_COMMON_H__ */
+#endif /* VMAF_SRC_SYCL_COMMON_H_ */
