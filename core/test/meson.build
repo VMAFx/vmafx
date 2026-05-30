@@ -219,6 +219,16 @@ test_cpu = executable('test_cpu',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 
+# Pins down the VMAF_<BACKEND>_DISPATCH env-variable parser's strict-match
+# contract.  The parser is a header-only static-inline (no link deps), so the
+# test only needs the public src include path.  See the file header in
+# test_gpu_dispatch_parse.c for the regression history.
+test_gpu_dispatch_parse = executable('test_gpu_dispatch_parse',
+    ['test.c', 'test_gpu_dispatch_parse.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies: [pthread_dependency, sycl_dependency],
+)
+
 test_ref = executable('test_ref',
     ['test.c', 'test_ref.c', '../src/ref.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -1947,6 +1957,7 @@ test('test_feature_extractor', test_feature_extractor, suite : ['fast'])
 test('test_dict', test_dict, suite : ['fast'])
 test('test_opt', test_opt, suite : ['fast'])
 test('test_cpu', test_cpu, suite : ['fast'])
+test('test_gpu_dispatch_parse', test_gpu_dispatch_parse, suite : ['fast'])
 test('test_ref', test_ref, suite : ['fast'])
 test('test_feature', test_feature, suite : ['fast'])
 test('test_ciede', test_ciede, suite : ['fast'])

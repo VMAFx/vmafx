@@ -1414,6 +1414,26 @@ hardens three S9 unchecked-return sites (`fseek` x2 in `yuv_pair_read_frame`,
 
 ---
 
+## gpu-dispatch-parse-strict-strategy-match (2026-05-30)
+
+**Files touched:**
+`core/src/gpu_dispatch_parse.h`,
+`core/test/test_gpu_dispatch_parse.c` (new),
+`core/test/meson.build`.
+
+**Rebase impact:** None. `gpu_dispatch_parse.h` is fork-added
+(ADR-0483 dedup helper for `VMAF_<BACKEND>_DISPATCH` env-variable
+parsing) and does not exist in upstream Netflix/vmaf. The new test
+binary lives only on the fork side. No rebase conflict is
+possible.
+
+Adds a token-boundary check after `strncmp(v, strategy_names[idx],
+slen)` so a trailing non-terminator byte (e.g. `directx` for
+`direct`) is treated as no match rather than silently routing to
+the prefix-shared strategy.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

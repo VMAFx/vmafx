@@ -95,7 +95,20 @@ static inline int vmaf_gpu_dispatch_parse_env(const char *env_value, const char 
             v = colon + 1;
             for (idx = 0; strategy_names[idx] != NULL; ++idx) {
                 size_t slen = strlen(strategy_names[idx]);
-                if (strncmp(v, strategy_names[idx], slen) == 0) {
+                /* strncmp alone matches "directx" against "direct" because it
+                 * only compares slen bytes — it does not check that the byte
+                 * AFTER the match is a token boundary.  Without the boundary
+                 * check below, VMAF_<BACKEND>_DISPATCH=feature:directx would
+                 * silently route to the "direct" strategy instead of being
+                 * treated as an unknown strategy.  The accepted terminators
+                 * are: '\0' (end of env value), ',' (next token separator),
+                 * '\n' (line end — useful when env values are written to a
+                 * file and read back line-by-line in tests), and ' '/'\t'
+                 * (trailing whitespace inside the current token, per the
+                 * grammar in this header's doc comment). */
+                if (strncmp(v, strategy_names[idx], slen) == 0 &&
+                    (v[slen] == '\0' || v[slen] == ',' || v[slen] == '\n' || v[slen] == ' ' ||
+                     v[slen] == '\t')) {
                     *out_strategy_idx = idx;
                     return 1;
                 }
