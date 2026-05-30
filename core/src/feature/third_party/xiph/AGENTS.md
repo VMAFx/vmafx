@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/feature/third_party/xiph
+# AGENTS.md — core/src/feature/third_party/xiph
 
 Orientation for agents working on the Xiph third-party scalar
 reference under the feature tree. Parent: [../../AGENTS.md](../../AGENTS.md).

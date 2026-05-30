@@ -1,7 +1,7 @@
-# AGENTS.md — libvmaf/src
+# AGENTS.md — core/src
 
-Scoped orientation for any coding agent working directly inside `libvmaf/src/`.
-Parent scope: [`../AGENTS.md`](../AGENTS.md) (libvmaf) and
+Scoped orientation for any coding agent working directly inside `core/src/`.
+Parent scope: [`../AGENTS.md`](../AGENTS.md) (core) and
 [`../../AGENTS.md`](../../AGENTS.md) (root).
 
 ## Mandatory safety invariants
@@ -90,7 +90,7 @@ without a macOS CI run that covers `test_output`, `test_public_api_score`, and
 
 ### 7. `test_output` must not include libvmaf implementation TUs
 
-`libvmaf/test/test_output.c` links against libvmaf and reaches the owned
+`core/test/test_output.c` links against libvmaf and reaches the owned
 collector through `libvmaf_priv.h::vmaf_feature_collector_get()`. Do not bring
 back `#include "libvmaf.c"` or `#include "output.c"` in that test while it also
 links libvmaf: Apple ld64 + LTO has resolved the duplicate external definitions

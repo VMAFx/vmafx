@@ -1,4 +1,4 @@
-# `libvmaf/src/feature/metal/` — Metal feature-kernel directory
+# `core/src/feature/metal/` — Metal feature-kernel directory
 
 ## Purpose
 
@@ -9,7 +9,7 @@ GPU backend, plus the per-T8-1 scaffold `.c` stubs that were superseded.
 Only `.mm` + `.metal` pairs are functional. The `.c` stubs (e.g.
 `float_psnr_metal.c`) are replaced by their `.mm` counterparts once
 a real kernel lands; they are removed from `metal_sources` in
-`libvmaf/src/metal/meson.build` when the conversion happens.
+`core/src/metal/meson.build` when the conversion happens.
 
 ## Rebase-sensitive invariants
 
@@ -25,7 +25,7 @@ a real kernel lands; they are removed from `metal_sources` in
   `integer_psnr_hvs_metal`, `integer_ssim_metal`, `integer_vif_metal`,
   `ssimulacra2_metal`) and their paired `.metal` kernels in tree; these
   were deleted because none of them was wired into
-  `libvmaf/src/metal/meson.build` and none had an extern reference in
+  `core/src/metal/meson.build` and none had an extern reference in
   `feature_extractor.c` (the lone exception, `vmaf_fex_integer_adm_metal`,
   was an orphan extern with no registry entry and was removed as part of
   the same change). Do **not** re-add a `<feature>_metal.mm` without (a)

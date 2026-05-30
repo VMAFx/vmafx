@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/feature/sycl
+# AGENTS.md — core/src/feature/sycl
 
 Orientation for agents working on per-feature SYCL kernels (DPC++).
 Parent: [../AGENTS.md](../AGENTS.md). The backend runtime (queue, USM,
@@ -61,7 +61,7 @@ ADR-0214) catches drift but only after a full GPU run.
 the motion3 post-process as a host-side moving average over blended motion2
 scores. These two paths **must stay in numerical parity at places=4** (delta
 ≤ 1e-4, per ADR-0214). The gate is enforced by
-`libvmaf/test/test_sycl_motion3_parity.c`; any change to the blend formula
+`core/test/test_sycl_motion3_parity.c`; any change to the blend formula
 (`motion_blend()`), the moving-average guard condition, or `motion_max_val`
 clipping must be mirrored across both files (and across the CUDA / Vulkan /
 HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
@@ -222,7 +222,7 @@ DPC++ toolchain with `icpx` on PATH.
 Vulkan) requires adding it to all backends in the same PR** -- no deferred
 follow-ups. The canonical source of truth for the option signature (name,
 alias, type, min, max, default, flags) is the CPU feature extractor in
-`libvmaf/src/feature/` (e.g. `integer_motion.c`). The GPU twins copy the
+`core/src/feature/` (e.g. `integer_motion.c`). The GPU twins copy the
 option entry verbatim and apply the weight in the equivalent host-side
 `flush()` or post-processing callback.
 

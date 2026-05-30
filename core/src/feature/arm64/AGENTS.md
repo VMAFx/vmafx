@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/feature/arm64
+# AGENTS.md — core/src/feature/arm64
 
 Orientation for agents working on the NEON / SVE2 feature SIMD paths.
 Parent: [../AGENTS.md](../AGENTS.md). Sister directory:

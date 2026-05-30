@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/feature/iqa
+# AGENTS.md — core/src/feature/iqa
 
 Orientation for agents working on the IQA (Image Quality Assessment)
 scalar-reference tree — `iqa_*` helpers underlying SSIM, MS-SSIM, and

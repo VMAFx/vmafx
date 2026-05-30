@@ -1,8 +1,8 @@
-# AGENTS.md — libvmaf/src/metal
+# AGENTS.md — core/src/metal
 
 Orientation for agents working on the Metal (Apple Silicon) backend.
 Parent: [../../AGENTS.md](../../AGENTS.md). Mirrors
-[`libvmaf/src/hip/AGENTS.md`](../hip/AGENTS.md) — the HIP and Metal
+[`core/src/hip/AGENTS.md`](../hip/AGENTS.md) — the HIP and Metal
 backends share an audit-first scaffold story, and Metal's `MTLDevice`
 / `MTLCommandQueue` / `MTLBuffer` API parallels HIP's `hipDevice_t`
 / `hipStream_t` / `hipMalloc` surface closely enough that the rebase
@@ -20,7 +20,7 @@ metal/
   picture_metal.{mm,h}   # VmafPicture on a Metal device — MTLBuffer lifecycle (T8-1b)
   dispatch_strategy.{c,h} # Feature-name → landed-kernel support predicate
   kernel_template.{mm,h} # per-feature kernel scaffolding + runtime (T8-1b / ADR-0420)
-  meson.build           # subdir() include from libvmaf/src/meson.build
+  meson.build           # subdir() include from core/src/meson.build
 ```
 
 ## Backend status

@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/include/libvmaf
+# AGENTS.md — core/include/libvmaf
 
 Orientation for agents working on libvmaf's public C API headers.
 Parent: [../../AGENTS.md](../../AGENTS.md).
@@ -9,7 +9,7 @@ Public headers consumed by external callers (FFmpeg patches, MCP
 server, Python bindings, downstream tools). Layout:
 
 ```text
-libvmaf/include/libvmaf/
+core/include/libvmaf/
   libvmaf.h              # core: VmafContext, VmafConfiguration, score paths
   picture.h              # VmafPicture
   model.h                # VmafModel
@@ -56,7 +56,7 @@ dependency — ADR-0239's "headers second" PR consciously ships the
 template doc + AGENTS guidance instead).
 
 The matching internal-side companion files
-(`libvmaf/src/<backend>/`) follow their own pattern; the
+(`core/src/<backend>/`) follow their own pattern; the
 backend-agnostic `gpu_picture_pool.{c,h}` round-robin
 (ADR-0239) is the only currently-extracted shared internal helper.
 

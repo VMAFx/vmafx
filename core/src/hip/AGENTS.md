@@ -1,8 +1,8 @@
-# AGENTS.md — libvmaf/src/hip
+# AGENTS.md — core/src/hip
 
 Orientation for agents working on the HIP (AMD ROCm) backend. Parent:
 [../../AGENTS.md](../../AGENTS.md). Mirrors
-[`libvmaf/src/cuda/AGENTS.md`](../cuda/AGENTS.md) — HIP and CUDA share
+[`core/src/cuda/AGENTS.md`](../cuda/AGENTS.md) — HIP and CUDA share
 near-identical async-stream + event APIs, so the rebase / refactor
 contracts on this side track CUDA's closely.
 
@@ -18,7 +18,7 @@ hip/
   picture_hip.{c,h}     # VmafPicture on a HIP device — stub
   dispatch_strategy.{c,h} # Feature-name → kernel routing — stub
   kernel_template.{h,c} # per-feature HIP kernel scaffolding (T7-10 / ADR-0241)
-  meson.build           # subdir() include from libvmaf/src/meson.build
+  meson.build           # subdir() include from core/src/meson.build
 ```
 
 ## Backend status
@@ -60,7 +60,7 @@ ADR-0372 (batch-1, this PR).
    `hipGetDeviceCount`, `hipSetDevice`, `hipGetDeviceProperties`).
    `vmaf_hip_state_init` returns `0` on a host with `>=1` AMD GPU;
    `-ENODEV` otherwise. `vmaf_hip_import_state` was implemented in
-   ADR-0519 (2026-05-18) and now lives in `libvmaf/src/libvmaf.c`
+   ADR-0519 (2026-05-18) and now lives in `core/src/libvmaf.c`
    next to the CUDA / SYCL / Vulkan / Metal `_import_state` twins;
    the stub body has been removed from `common.c`. Remaining
    feature-kernel ports follow as their own PRs gated by the
@@ -247,8 +247,8 @@ do not replace — the scaffold invariants already documented above.
 
 ## Rebase-sensitive invariants (import-state — ADR-0519)
 
-- **`vmaf_hip_import_state` lives in `libvmaf/src/libvmaf.c`, not in
-  `libvmaf/src/hip/common.c`** (fork-local, ADR-0519). The function
+- **`vmaf_hip_import_state` lives in `core/src/libvmaf.c`, not in
+  `core/src/hip/common.c`** (fork-local, ADR-0519). The function
   needs `VmafContext` field-level access; placing it next to the
   CUDA / SYCL / Vulkan / Metal `_import_state` twins keeps the four
   "stash the borrowed state pointer on the context" implementations
@@ -279,7 +279,7 @@ do not replace — the scaffold invariants already documented above.
   changes the CUDA twin's ownership model, do NOT propagate the
   change to HIP without an ADR — the pointer-stash contract is
   load-bearing for the caller-owned `VmafHipState` lifetime
-  documented in `libvmaf/include/libvmaf/libvmaf_hip.h`.
+  documented in `core/include/libvmaf/libvmaf_hip.h`.
 
 ## Rebase-sensitive invariants (seventh + eighth consumers)
 
@@ -388,10 +388,10 @@ do not replace — the scaffold invariants already documented above.
   symbols but missing both from `hip_sources` and from the
   `extern` + registry block in `feature_extractor.c`. The sweep
   pinned the rebase-sensitive invariant: **every TU under
-  `libvmaf/src/feature/hip/` that defines a `VmafFeatureExtractor
+  `core/src/feature/hip/` that defines a `VmafFeatureExtractor
   vmaf_fex_*` symbol must appear in `hip_sources` and have a
   matching `extern` + `&vmaf_fex_*` entry inside the `#if HAVE_HIP`
-  blocks of `libvmaf/src/feature/feature_extractor.c`**. The three
+  blocks of `core/src/feature/feature_extractor.c`**. The three
   legacy plumbing TUs (`adm_hip.c`, `vif_hip.c`, `motion_hip.c`)
   carry no `VmafFeatureExtractor` and are exempt. The two
   duplicate-named TUs (`integer_ciede_hip.c`,

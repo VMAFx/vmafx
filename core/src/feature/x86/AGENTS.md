@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/feature/x86
+# AGENTS.md — core/src/feature/x86
 
 Orientation for agents working on the AVX2 / AVX-512 feature SIMD
 paths. Parent: [../AGENTS.md](../AGENTS.md).

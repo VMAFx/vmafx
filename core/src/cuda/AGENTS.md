@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/cuda
+# AGENTS.md — core/src/cuda
 
 Orientation for agents working on the CUDA backend runtime. Parent:
 [../../AGENTS.md](../../AGENTS.md).
@@ -16,7 +16,7 @@ cuda/
   cuda_helper.cuh      # launch macros, error-check, types
   kernel_template.h    # per-feature CUDA kernel scaffolding (ADR-0246)
   picture_cuda.c/.h    # VmafPicture on a CUDA device
-  # picture-pool round-robin lives in libvmaf/src/gpu_picture_pool.{h,c}
+  # picture-pool round-robin lives in core/src/gpu_picture_pool.{h,c}
   # (ADR-0239 — backend-agnostic; CUDA was the original consumer)
 ```
 
@@ -90,7 +90,7 @@ cuda/
   [ADR-0157](../../../docs/adr/0157-cuda-preallocation-leak-netflix-1300.md)
   and [rebase-notes 0050](../../../docs/rebase-notes.md).
 - **`vmaf_gpu_picture_pool_close` mutex destroy order** (fork-local,
-  ADR-0157, promoted out of `cuda/` to `libvmaf/src/gpu_picture_pool.c`
+  ADR-0157, promoted out of `cuda/` to `core/src/gpu_picture_pool.c`
   per ADR-0239): the function does
   `pthread_mutex_unlock` → `pthread_mutex_destroy` → `free(pic)`
   → `free(pool)`. Destroying a locked mutex is POSIX UB; the old code
@@ -205,13 +205,13 @@ cuda/
   rebase**: keep both the header and any kernel call-sites that
   later adopt it; upstream has no equivalent. Reference
   implementation that mirrors the template's shape lives in
-  `libvmaf/src/feature/cuda/integer_psnr_cuda.c`. See
+  `core/src/feature/cuda/integer_psnr_cuda.c`. See
   [ADR-0246](../../../docs/adr/0246-gpu-kernel-template.md) and
   [docs/backends/kernel-scaffolding.md](../../../docs/backends/kernel-scaffolding.md).
 
 ## Per-kernel nvcc flag invariants
 
-- `cuda_cu_extra_flags` map in `libvmaf/src/meson.build` routes
+- `cuda_cu_extra_flags` map in `core/src/meson.build` routes
   per-kernel nvcc flags. Currently inhabited by `float_adm_score`
   (added in PR #157,
   [ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)) and
@@ -253,7 +253,7 @@ cuda/
   `float_adm_cuda` requires `--fmad=false` on its fatbin to
   match the GLSL `precise` qualifier in `float_adm.comp`. See
   the per-kernel `cuda_cu_extra_flags` dict in
-  `libvmaf/src/meson.build`. **On rebase**: do not consolidate
+  `core/src/meson.build`. **On rebase**: do not consolidate
   `float_adm_score` into the global `cuda_flags` block; the
   FMA-off scope is intentionally one fatbin only.
 

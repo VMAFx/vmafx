@@ -1,4 +1,4 @@
-# AGENTS.md — libvmaf/src/feature/cuda
+# AGENTS.md — core/src/feature/cuda
 
 Orientation for agents working on per-feature CUDA kernels (host
 glue + `.cu` device code). Parent: [../AGENTS.md](../AGENTS.md). The
@@ -9,7 +9,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 
 `float_ssim_cuda.c` was removed by ADR-0546 (`chore/hip-cuda-orphan-tu-cleanup`,
 2026-05-18). It defined `vmaf_fex_float_ssim_cuda` but was not listed in
-`libvmaf/src/meson.build`; `integer_ssim_cuda.c` (which is compiled) also
+`core/src/meson.build`; `integer_ssim_cuda.c` (which is compiled) also
 defines the same symbol and is the current canonical TU (it adds the
 `enable_chroma` option and other improvements absent from the orphan copy).
 Do not re-add `float_ssim_cuda.c` without consulting ADR-0546.
@@ -86,7 +86,7 @@ ciede / moment), [ADR-0188](../../../../docs/adr/0188-gpu-long-tail-batch-2.md)
 the motion3 post-process as a host-side moving average over blended motion2
 scores. These two paths **must stay in numerical parity at places=4** (delta
 ≤ 1e-4, per ADR-0214). The gate is enforced by
-`libvmaf/test/test_cuda_motion3_parity.c`; any change to the blend formula
+`core/test/test_cuda_motion3_parity.c`; any change to the blend formula
 (`motion_blend()`), the moving-average guard condition, or `motion_max_val`
 clipping must be mirrored across both files (and across the SYCL / Vulkan /
 HIP / Metal motion twins listed in the Twin-update table below) in the same PR.

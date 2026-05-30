@@ -13,15 +13,15 @@ pinned at **v1.7.18** (the upstream stable release as of 2026-05-16).
   [ADR-0683](../../../../docs/adr/0683-cjson-banned-function-remediation.md).
 - **To update**: replace `cJSON.c` and `cJSON.h` with the upstream release, then
   verify that no banned functions remain by running:
-  `grep -n '\bsprintf\b\|\bstrcpy\b\|\bstrcat\b' libvmaf/src/mcp/3rdparty/cJSON/cJSON.c`
+  `grep -n '\bsprintf\b\|\bstrcpy\b\|\bstrcat\b' core/src/mcp/3rdparty/cJSON/cJSON.c`
   after any sync. Re-apply the banned-function fixes documented in ADR-0683 if they
   regress.
 - The `LICENSE` file must be kept in sync with the upstream release.
 
 ## Rebase note
 
-cJSON is an internal dependency of the MCP server (`libvmaf/src/mcp/`). It does not
-appear in the public C API (`libvmaf/include/`) and is not consumed by
+cJSON is an internal dependency of the MCP server (`core/src/mcp/`). It does not
+appear in the public C API (`core/include/`) and is not consumed by
 `ffmpeg-patches/`. Upstream Netflix/vmaf does not vendor cJSON, so there is no rebase
 conflict risk from the Netflix side. Conflicts can only arise if this fork adds a
 second copy of cJSON elsewhere.
