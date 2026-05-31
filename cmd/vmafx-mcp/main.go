@@ -27,8 +27,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
 const (
@@ -62,8 +65,12 @@ func main() {
 		logger.Info("vmafx-mcp starting on HTTP", "addr", addr)
 		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil)
 		httpSrv := &http.Server{
-			Addr:    addr,
-			Handler: handler,
+			Addr:              addr,
+			Handler:           handler,
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      120 * time.Second,
+			IdleTimeout:       60 * time.Second,
 		}
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
@@ -72,7 +79,9 @@ func main() {
 		}
 		go func() {
 			<-ctx.Done()
-			_ = httpSrv.Shutdown(context.Background()) //nolint:contextcheck
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), observability.GracefulShutdownTimeout) //nolint:contextcheck
+			defer cancel()
+			_ = httpSrv.Shutdown(shutdownCtx)
 		}()
 		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "http server error: %v\n", err)
