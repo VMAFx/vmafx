@@ -322,7 +322,7 @@ void vmaf_dictionary_alphabetical_sort(VmafDictionary *dict)
     if (!dict)
         return;
     std::qsort(dict->entry, dict->cnt, sizeof(*dict->entry),
-               [](const void *a, const void *b) -> int {
+               [](const void *a, const void *b) noexcept -> int {
                    const auto *ea = static_cast<const VmafDictionaryEntry *>(a);
                    const auto *eb = static_cast<const VmafDictionaryEntry *>(b);
                    return std::strcmp(ea->key, eb->key);

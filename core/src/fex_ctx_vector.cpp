@@ -83,7 +83,8 @@ extern "C" {
  * Returns false when either extractor has a NULL provided_features pointer
  * (extractors that do not declare what they emit are not considered twins).
  */
-static bool provided_features_overlap(const VmafFeatureExtractor *a, const VmafFeatureExtractor *b)
+[[nodiscard]] static bool provided_features_overlap(const VmafFeatureExtractor *a,
+                                                    const VmafFeatureExtractor *b) noexcept
 {
     if (!a->provided_features || !b->provided_features)
         return false;

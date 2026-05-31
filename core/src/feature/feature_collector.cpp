@@ -347,7 +347,8 @@ int vmaf_feature_collector_register_metadata(VmafFeatureCollector *feature_colle
     return 0;
 }
 
-static FeatureVector *find_feature_vector(VmafFeatureCollector *fc, const char *feature_name)
+[[nodiscard]] static FeatureVector *find_feature_vector(VmafFeatureCollector *fc,
+                                                        const char *feature_name) noexcept
 {
     FeatureVector *feature_vector = nullptr;
     for (unsigned i = 0; i < fc->cnt; i++) {
@@ -371,7 +372,8 @@ FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *fc, const char 
     return fv;
 }
 
-static int feature_collector_grow_capacity(VmafFeatureCollector *feature_collector)
+[[nodiscard]] static int
+feature_collector_grow_capacity(VmafFeatureCollector *feature_collector) noexcept
 {
     if (feature_collector->cnt + 1 <= feature_collector->capacity)
         return 0;
@@ -388,8 +390,9 @@ static int feature_collector_grow_capacity(VmafFeatureCollector *feature_collect
     return 0;
 }
 
-static int feature_collector_ensure_vector(VmafFeatureCollector *feature_collector,
-                                           const char *feature_name, FeatureVector **out)
+[[nodiscard]] static int feature_collector_ensure_vector(VmafFeatureCollector *feature_collector,
+                                                         const char *feature_name,
+                                                         FeatureVector **out) noexcept
 {
     FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
     if (feature_vector) {

@@ -32,7 +32,7 @@
 // The C ABI boundary (vmaf_option_set) converts nullopt → -EINVAL.
 // ---------------------------------------------------------------------------
 
-static std::optional<bool> parse_bool(std::string_view sv) noexcept
+[[nodiscard]] static std::optional<bool> parse_bool(std::string_view sv) noexcept
 {
     if (sv == "true")
         return true;
@@ -41,7 +41,8 @@ static std::optional<bool> parse_bool(std::string_view sv) noexcept
     return std::nullopt;
 }
 
-static std::optional<int> parse_int(std::string_view sv, int min_val, int max_val) noexcept
+[[nodiscard]] static std::optional<int> parse_int(std::string_view sv, int min_val,
+                                                  int max_val) noexcept
 {
     if (sv.empty())
         return std::nullopt;
@@ -62,8 +63,8 @@ static std::optional<int> parse_int(std::string_view sv, int min_val, int max_va
     return static_cast<int>(n);
 }
 
-static std::optional<double> parse_double(std::string_view sv, double min_val,
-                                          double max_val) noexcept
+[[nodiscard]] static std::optional<double> parse_double(std::string_view sv, double min_val,
+                                                        double max_val) noexcept
 {
     if (sv.empty())
         return std::nullopt;

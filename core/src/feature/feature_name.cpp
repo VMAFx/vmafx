@@ -72,8 +72,9 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
 
 #define VMAF_FEATURE_NAME_DEFAULT_BUFFER_SIZE 256
 
-static char *vmaf_feature_name_from_opts_dict(const char *name, const VmafOption *opts,
-                                              VmafDictionary *opts_dict)
+[[nodiscard]] static char *vmaf_feature_name_from_opts_dict(const char *name,
+                                                            const VmafOption *opts,
+                                                            VmafDictionary *opts_dict)
 {
     VmafDictionary *sorted_raw = nullptr;
     /* Check return value: OOM causes sorted_raw to stay null, which the
@@ -127,7 +128,7 @@ static char *vmaf_feature_name_from_opts_dict(const char *name, const VmafOption
     return dst;
 }
 
-static int option_is_default(const VmafOption *opt, const void *data)
+[[nodiscard]] static int option_is_default(const VmafOption *opt, const void *data) noexcept
 {
     if (!opt)
         return -EINVAL;

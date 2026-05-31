@@ -729,6 +729,21 @@ next `/sync-upstream`, Netflix's `.gitignore` will merge cleanly
 because the trimmed rules (`.gradle/`, `.pypirc`) and the rewired
 matlab paths (`compat/python-vmaf/matlab/**/*.mex*`) do not overlap
 any upstream rule.
+## cpp const/noexcept/nodiscard annotation sweep (2026-05-30)
+
+**Files touched:**
+`core/src/dict.cpp`, `core/src/feature/feature_collector.cpp`,
+`core/src/feature/feature_name.cpp`, `core/src/fex_ctx_vector.cpp`,
+`core/src/opt.cpp`.
+
+**Rebase impact:** None. All annotations are added to *fork-local*
+TU-internal static helpers and one TU-local lambda in C++23 files that
+were introduced by the ADR-0723 / ADR-0727 / ADR-0729 / ADR-0731 C++
+migration waves. The `extern "C"` public-ABI entry points are
+untouched, so no upstream header rebase is affected. If upstream
+Netflix introduces new fork-only C++ static helpers, apply the same
+`[[nodiscard]]` / `noexcept` discipline so the lint posture stays
+uniform.
 
 ---
 
