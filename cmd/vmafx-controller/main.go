@@ -33,12 +33,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
@@ -84,6 +87,23 @@ func main() {
 	)
 
 	// ---------------------------------------------------------------------------
+	// OpenTelemetry (ADR-0927) — Phase 1 pilot in vmafx-controller.
+	//
+	// Additive to slog + Prometheus. No-op when OTEL_EXPORTER_OTLP_ENDPOINT
+	// is unset. The shutdown function is deferred with a bounded context so
+	// process exit is not delayed indefinitely if the collector is
+	// unreachable.
+	// ---------------------------------------------------------------------------
+	otelShutdown := observability.InitOTel(context.Background(), "vmafx-controller", log)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := otelShutdown(shutdownCtx); err != nil {
+			log.Warn("otel: shutdown returned error", "error", err)
+		}
+	}()
+
+	// ---------------------------------------------------------------------------
 	// libvmaf scorer.
 	// ---------------------------------------------------------------------------
 	scorer, err := libvmaf.New(*vmafBinary, *modelDir)
@@ -97,8 +117,8 @@ func main() {
 	// Prometheus registry + metrics.
 	// ---------------------------------------------------------------------------
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(prometheus.NewGoCollector())
-	registry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
+	registry.MustRegister(collectors.NewGoCollector())
+	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	metrics := observability.NewMetrics(registry)
 
 	// ---------------------------------------------------------------------------

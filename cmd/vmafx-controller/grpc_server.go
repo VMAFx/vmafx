@@ -24,6 +24,7 @@ import (
 	"net"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -364,7 +365,12 @@ func runGRPC(
 		return fmt.Errorf("grpc listen %s: %w", addr, err)
 	}
 
-	srv := grpc.NewServer()
+	// ADR-0927: OTel stats handler instruments every gRPC RPC with a
+	// server span + propagates the W3C traceparent header from the
+	// client context. No-op when InitOTel installed no-op providers.
+	srv := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+	)
 
 	// Phase 4a: direct scoring service.
 	vmafxv1.RegisterVmafxScoringServer(srv, newScoringServer(scorer, metrics, log))

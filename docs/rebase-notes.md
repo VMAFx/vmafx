@@ -264,6 +264,62 @@ before merging any upstream-template re-sync PR.
 
 ---
 
+## MCP server cgo direct path Phase 1 (2026-05-31, ADR-0931)
+
+**Files touched:**
+`pkg/libvmaf/direct.go`, `pkg/libvmaf/errors.go`,
+`pkg/libvmaf/direct_test.go`, `pkg/libvmaf/errors_test.go`,
+`pkg/libvmaf/AGENTS.md`, `cmd/vmafx-mcp/impl.go`,
+`cmd/vmafx-mcp/impl_direct.go`, `cmd/vmafx-mcp/impl_direct_test.go`,
+`cmd/vmafx-mcp/AGENTS.md`.
+
+**Rebase impact:** None against Netflix upstream. The change is entirely
+fork-local: it adds a new in-process cgo scoring path (`ScoreDirect`,
+`ValidateModel`) to `pkg/libvmaf/` (which does not exist upstream) and
+wires two MCP tool handlers (`vmaf_score`, `describe_model`) in
+`cmd/vmafx-mcp/` (which also does not exist upstream) to take that path
+when `VMAFX_MCP_DIRECT=1`. The libvmaf public C ABI used
+(`vmaf_init` / `vmaf_use_features_from_model` / `vmaf_read_pictures` /
+`vmaf_score_pooled` / `vmaf_model_load_from_path` / `vmaf_picture_alloc`
+/ `vmaf_picture_unref` / `vmaf_model_destroy` / `vmaf_close`) is the
+canonical entry-point set documented in `core/include/libvmaf/`; the
+upstream signatures change rarely and any rename would already break
+`core/tools/vmaf.c`, so this code rides along.
+
+If upstream renames or removes any of those entry points, update
+`pkg/libvmaf/direct.go` to match, then run the unit suite
+(`LD_LIBRARY_PATH=$(pwd)/core/build-cpu/src go test ./pkg/libvmaf/
+./cmd/vmafx-mcp/`).
+
+---
+
+## OpenTelemetry traces + metrics — Phase 1 (2026-05-31)
+
+**Files touched:**
+`pkg/observability/otel.go` (new),
+`pkg/observability/otel_test.go` (new),
+`pkg/observability/AGENTS.md` (new),
+`cmd/vmafx-controller/main.go`,
+`cmd/vmafx-controller/grpc_server.go`,
+`docs/development/observability.md` (new),
+`docs/adr/0927-opentelemetry-traces-metrics-phase1.md` (new),
+`go.mod`, `go.sum`.
+
+**Rebase impact:** None on the Netflix/vmaf C tree. The change is
+entirely fork-local Go code under `pkg/observability` and
+`cmd/vmafx-controller`. Upstream Netflix/vmaf has no Go services, so
+there is no cross-repo file to reconcile on sync. The added OTel
+dependencies (`go.opentelemetry.io/otel`, `otelgrpc`, OTLP HTTP
+exporters) live in `go.mod` and do not touch the C build.
+
+When Phase 2 wires OTel into `vmafx-node` / `vmafx-server` /
+`vmafx-mcp` / `vmafx-tune`, follow the call-site pattern documented
+in `pkg/observability/AGENTS.md` (the 5 s bounded shutdown is
+mandatory). Each subsequent service ships as its own PR with its own
+ADR.
+
+---
+
 ## SIMD strict-FP flags for icx (2026-05-30)
 
 **Files touched:**
