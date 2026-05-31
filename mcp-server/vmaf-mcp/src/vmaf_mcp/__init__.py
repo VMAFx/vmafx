@@ -12,6 +12,6 @@ The package surface is a namespace per ADR-0911; downstream callers
 should import from sub-modules directly.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = ["__version__"]
