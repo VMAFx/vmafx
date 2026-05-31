@@ -796,9 +796,19 @@ static struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool
     memset(entry.ctx_list, 0, ctx_array_sz);
     /* vmaf_dictionary_copy returns -ENOMEM on alloc failure; the
      * caller must check, otherwise entry.opts_dict ends up
-     * partially-constructed and the comparison at line 750 lies. */
-    if (vmaf_dictionary_copy(&opts_dict, &entry.opts_dict) != 0)
-        goto free_ctx_list;
+     * partially-constructed and the comparison at line 750 lies.
+     *
+     * NULL opts_dict is the common case (e.g. vmaf_use_feature(... NULL),
+     * model-loaded features without options, test_feature_extractor's
+     * direct vmaf_fex_ctx_pool_aquire(... NULL ...) call). For NULL
+     * opts_dict we leave entry.opts_dict at its zero-initialised NULL
+     * — matching the pre-PR #296 silent-no-op semantics that
+     * vmaf_dictionary_compare(NULL, NULL) handles correctly. Only
+     * dispatch to the copy when there's actually something to copy. */
+    if (opts_dict != NULL) {
+        if (vmaf_dictionary_copy(&opts_dict, &entry.opts_dict) != 0)
+            goto free_ctx_list;
+    }
 
     if (pool->cnt >= pool->capacity) {
         assert(pool->capacity > 0);
