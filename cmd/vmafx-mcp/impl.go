@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -183,8 +184,15 @@ func runVmafScore(ref, dis string, width, height int, pixfmt string, bitdepth in
 		return nil, fmt.Errorf("failed to create temp output file: %w", err)
 	}
 	outPath := outFile.Name()
-	outFile.Close()
-	defer os.Remove(outPath)
+	if closeErr := outFile.Close(); closeErr != nil {
+		return nil, fmt.Errorf("close temp output file: %w", closeErr)
+	}
+	defer func() {
+		if rmErr := os.Remove(outPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			// Best-effort cleanup; surface via stderr but don't fail the call.
+			fmt.Fprintf(os.Stderr, "runVmafScore: remove temp %s: %v\n", outPath, rmErr)
+		}
+	}()
 
 	argv := []string{
 		"-r", ref,
@@ -205,6 +213,9 @@ func runVmafScore(ref, dis string, width, height int, pixfmt string, bitdepth in
 		}
 	}
 
+	// #nosec G204 -- vmafBin resolved via libvmaf.FindBinary (env-overridable to
+	// a fixed allowlist of paths) and `ref`/`dis` are already libvmaf.ValidatePath-
+	// filtered in the calling handlers (handleVmafScore + handleVmafScoreEncoded).
 	cmd := exec.Command(vmafBin, argv...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -212,6 +223,8 @@ func runVmafScore(ref, dis string, width, height int, pixfmt string, bitdepth in
 		return nil, fmt.Errorf("vmaf exited %v: %s", err, stderr.String())
 	}
 
+	// #nosec G304 -- outPath is the value returned by os.CreateTemp above, not
+	// a caller-supplied path; it cannot escape /tmp.
 	data, err := os.ReadFile(outPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read vmaf output: %w", err)
@@ -394,6 +407,8 @@ func handleRunBenchmark(ctx context.Context, _ map[string]any) (any, error) {
 		"VMAF_ROOT="+vmafRoot,
 		"VMAF_BIN="+libvmaf.FindBinary(),
 	)
+	// #nosec G204 -- script path is constructed from libvmaf.RepoRoot() and a
+	// fixed relative path (testdata/bench_all.sh); not caller-controlled.
 	cmd := exec.CommandContext(ctx, "bash", script)
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
@@ -495,6 +510,11 @@ rmse = float(np.sqrt(((pred-y)**2).mean()))
 print(json.dumps({"model":model_path,"features":features_path,"split":split,"n":len(x),
   "plcc":plcc,"srocc":srocc,"rmse":rmse,"columns":cols}))
 `
+	// #nosec G204 -- "python3" is a fixed binary name, script is a constant
+	// string literal above; modelPath and featuresPath are passed through
+	// libvmaf.ValidatePath by the caller (handleEvalModelOnSplit), split is
+	// constrained to {train,val,test,all} server-side, inputName is a JSON
+	// schema-validated identifier.
 	cmd := exec.Command("python3", "-c", script, modelPath, featuresPath, split, inputName)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -527,22 +547,22 @@ func handleCompareModels(ctx context.Context, args map[string]any) (any, error) 
 	inputName := strArg(args, "input_name", "features")
 
 	var ranked []map[string]any
-	var errors []map[string]any
+	var modelErrors []map[string]any
 	for _, m := range rawModels {
 		mStr, _ := m.(string)
 		mp, err := libvmaf.ValidatePath(mStr)
 		if err != nil {
-			errors = append(errors, map[string]any{"model": mStr, "error": err.Error()})
+			modelErrors = append(modelErrors, map[string]any{"model": mStr, "error": err.Error()})
 			continue
 		}
 		r, err := delegateToPythonEval(mp, featuresPath, split, inputName)
 		if err != nil {
-			errors = append(errors, map[string]any{"model": mStr, "error": err.Error()})
+			modelErrors = append(modelErrors, map[string]any{"model": mStr, "error": err.Error()})
 			continue
 		}
 		if rm, ok := r.(map[string]any); ok {
 			if errMsg, hasErr := rm["error"]; hasErr {
-				errors = append(errors, map[string]any{"model": mStr, "error": errMsg})
+				modelErrors = append(modelErrors, map[string]any{"model": mStr, "error": errMsg})
 				continue
 			}
 			ranked = append(ranked, rm)
@@ -553,7 +573,7 @@ func handleCompareModels(ctx context.Context, args map[string]any) (any, error) 
 		pj, _ := ranked[j]["plcc"].(float64)
 		return pi > pj
 	})
-	return map[string]any{"ranked": ranked, "errors": errors}, nil
+	return map[string]any{"ranked": ranked, "errors": modelErrors}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -684,6 +704,9 @@ func extractFramePNG(ctx context.Context, yuv, outPNG string, width, height int,
 		"-frames:v", "1",
 		"-y", outPNG,
 	}
+	// #nosec G204 -- "ffmpeg" is a fixed binary name; argv values originate
+	// from libvmaf.ValidatePath-filtered YUV paths and integer geometry
+	// fields validated by extractFramePNG's caller (handleDescribeWorstFrames).
 	cmd := exec.CommandContext(ctx, "ffmpeg", argv...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -750,6 +773,9 @@ func handleProbeBackend(_ context.Context, args map[string]any) (any, error) {
 	}
 
 	t0 := time.Now()
+	// #nosec G204 -- vmafBin resolved via libvmaf.FindBinary (env-overridable
+	// to allowlist); argv values are tmpDir paths from os.MkdirTemp + literal
+	// flag arguments, no caller-controlled input.
 	cmd := exec.Command(vmafBin, argv...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -767,6 +793,8 @@ func handleProbeBackend(_ context.Context, args map[string]any) (any, error) {
 		}, nil
 	}
 
+	// #nosec G304 -- outJSON is an os.MkdirTemp-derived path joined with a
+	// literal filename ("out.json"); not caller-controlled.
 	data, err := os.ReadFile(outJSON)
 	if err != nil {
 		return map[string]any{
@@ -839,6 +867,7 @@ func handleVmafVersion(_ context.Context, _ map[string]any) (any, error) {
 	var versionStr *string
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	// #nosec G204 -- vmafBin resolved via libvmaf.FindBinary; "--version" is literal.
 	out, err := exec.CommandContext(ctx, vmafBin, "--version").CombinedOutput()
 	if err == nil {
 		blob := string(out)
@@ -929,6 +958,8 @@ func ffprobeGeometry(path string) (width, height int, pixfmt string, bitdepth in
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	// #nosec G204 -- "ffprobe" is a fixed binary; `path` is the libvmaf.ValidatePath
+	// output already filtered to AllowedRoots by handleVmafScoreEncoded.
 	out, e := exec.CommandContext(ctx, "ffprobe", args...).Output()
 	if e != nil {
 		return 0, 0, "", 0, fmt.Errorf("ffprobe: %w", e)
@@ -983,6 +1014,10 @@ func decodeToYUV(ctx context.Context, src, dst, pixFmt string) error {
 		"-pix_fmt", pixFmt,
 		"-y", dst,
 	}
+	// #nosec G204 -- "ffmpeg" is a fixed binary; `src` originates from
+	// libvmaf.ValidatePath via handleVmafScoreEncoded, `dst` is an
+	// os.MkdirTemp output path, pixFmt comes from a fixed lookup table
+	// (toFFmpegPixfmt).
 	cmd := exec.CommandContext(ctx, "ffmpeg", argv...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1096,16 +1131,18 @@ func describeModel(nameOrPath string) (map[string]any, error) {
 	root := libvmaf.RepoRoot()
 	modelsDir := filepath.Join(root, "model")
 
-	// Step 1: try as a direct path.
+	// Step 1: try as a direct path. Validate via libvmaf.ValidatePath so the
+	// caller cannot reach files outside the allowlisted roots (e.g. via "../"
+	// traversal joined onto root).
 	candidate := nameOrPath
 	if !filepath.IsAbs(candidate) {
 		candidate = filepath.Join(root, candidate)
 	}
 	candidate, _ = filepath.Abs(candidate)
-	if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() {
-		ext := strings.ToLower(filepath.Ext(candidate))
+	if validated, vErr := libvmaf.ValidatePath(candidate); vErr == nil {
+		ext := strings.ToLower(filepath.Ext(validated))
 		if modelExtensions[ext] {
-			return describeModelFile(candidate, root)
+			return describeModelFile(validated, root)
 		}
 	}
 
@@ -1159,6 +1196,9 @@ func describeModelFile(path, root string) (map[string]any, error) {
 		"feature_names": nil,
 	}
 	if ext == ".json" {
+		// #nosec G304 -- describeModelFile is only reachable from describeModel
+		// which validates the path via libvmaf.ValidatePath OR walks the
+		// in-repo model/ dir (filepath.WalkDir).
 		data, err := os.ReadFile(path)
 		if err == nil {
 			var payload map[string]any
@@ -1208,6 +1248,9 @@ func handleRunCompare(ctx context.Context, args map[string]any) (any, error) {
 		argv = append(argv, "--no-parallel")
 	}
 
+	// #nosec G204 -- vmaftune is resolved via findVmafTune (fixed candidate
+	// list); argv values are flag-prefixed strings derived from JSON-Schema
+	// validated tool arguments.
 	out, err := exec.CommandContext(ctx, vmaftune, argv...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("vmaf-tune compare failed: %w", err)
@@ -1246,6 +1289,8 @@ func handleRunLadder(ctx context.Context, args map[string]any) (any, error) {
 		argv = append(argv, "--framerate", strconv.FormatFloat(floatArg(args, "framerate", 0), 'f', -1, 64))
 	}
 
+	// #nosec G204 -- vmaftune resolved via findVmafTune; argv values are
+	// schema-validated tool arguments prefixed by literal flags.
 	out, err := exec.CommandContext(ctx, vmaftune, argv...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("vmaf-tune ladder failed: %w", err)
@@ -1290,6 +1335,8 @@ func handleRunTunePerShot(ctx context.Context, args map[string]any) (any, error)
 		argv = append(argv, "--scene-threshold", strconv.FormatFloat(floatArg(args, "scene_threshold", 0), 'f', -1, 64))
 	}
 
+	// #nosec G204 -- vmaftune resolved via findVmafTune; argv values are
+	// schema-validated tool arguments prefixed by literal flags.
 	out, err := exec.CommandContext(ctx, vmaftune, argv...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("vmaf-tune tune-per-shot failed: %w", err)

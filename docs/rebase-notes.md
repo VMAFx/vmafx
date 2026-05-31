@@ -93,6 +93,25 @@ Fork-local files:
 `changelog.d/fixed/python-surfaces-bug-audit-2026-05-31.md` (new),
 `docs/research/0983-python-surfaces-bug-audit-2026-05-31.md` (new).
 
+## chore/gosec-findings-fix-v2 (2026-06-01, ADR-0983)
+
+no rebase impact: the Go surface (`cmd/`, `pkg/`, `gen/`,
+`api/vmafx/v1/`) is wholly fork-local. Netflix/vmaf has no Go code.
+The sweep touches only Go files plus `.github/workflows/go-ci.yml`,
+`docs/adr/`, `docs/research/`, `changelog.d/security/`, and the
+regression test `cmd/vmafx-mcp/impl_gosec_test.go`. No C, no SIMD,
+no GPU, no upstream-mirror file is touched.
+
+Re-run of the earlier `chore/gosec-findings-fix` (PR #509, closed
+without merge) against the post-#505 / post-#508 master tip. The
+prior PR conflicted with PR #505's `pkg/bisect/bisect.go` +
+`pkg/encoder/encoder.go` `exec.CommandContext` + per-stage timeout
+plumbing; this v2 sweep applies the same security-hardening fixes
+while preserving the ctx + timeout. Same set of touched files;
+same single real bug fixed (`describeModel` path traversal). No
+markdownlint / formatter regression; both parser CI scripts
+green.
+
 ---
 
 ## test_svm_parser link + vmafx-operator audit (2026-05-31, fix/test-svm-parser-link-plus-operator-audit)

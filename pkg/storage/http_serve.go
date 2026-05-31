@@ -94,7 +94,10 @@ func (s *HTTPServeStorage) Prepare(ctx context.Context, sourceURI string) (strin
 		"asset", assetRel,
 	)
 
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec -- argv built from validated inputs
+	// #nosec G204 -- argv[0] is s.rcloneBin (configured at construction);
+	// argv[1:] mixes literals with remoteRoot (validated by caller) and addr
+	// (formatted from a random free port + 127.0.0.1).
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Stderr = os.Stderr
 
 	if startErr := cmd.Start(); startErr != nil {
