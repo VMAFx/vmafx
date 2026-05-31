@@ -493,8 +493,10 @@ static int bootstrap_gather_scores(VmafModelCollection *model_collection,
         // gather the unclipped scores, for the purposes of these calculations
         // but do not write them to the feature collector
         const unsigned flags = VMAF_MODEL_FLAG_DISABLE_CLIP | VMAF_MODEL_FLAG_DISABLE_TRANSFORM;
-        /* Bitmask of VmafModelFlags values is not itself a named enumerator. */
-        // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+        /* Bitmask of VmafModelFlags values is not itself a named enumerator;
+         * the cast is intentional and the value space is closed by the union
+         * of DISABLE_CLIP | DISABLE_TRANSFORM here. Per ADR-0278 cite-form. */
+        // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange) — ADR-0278
         int err = vmaf_predict_score_at_index(model_collection->model[i], feature_collector, index,
                                               &scores[i], false, false, flags);
         // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

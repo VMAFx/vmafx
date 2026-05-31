@@ -26,9 +26,10 @@
  * project policy for vendored upstream code is to keep the libsvm diff
  * reviewable against the upstream source rather than re-flow it — so
  * suppress the whole file and track behaviour via the unit tests that
- * exercise svm_load_model / svm_predict / svm_save_model.
+ * exercise svm_load_model / svm_predict / svm_save_model. Per ADR-0141
+ * vendored-upstream carve-out; ADR-0278 cite form.
  */
-// NOLINTBEGIN
+// NOLINTBEGIN — ADR-0141 / ADR-0278 (vendored libsvm)
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

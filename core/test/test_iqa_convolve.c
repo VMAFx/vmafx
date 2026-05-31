@@ -96,9 +96,10 @@ typedef void (*convolve_simd_fn)(float *img, int w, int h, const float *kernel_h
                                  const float *kernel_v, int kw, int kh, int normalized,
                                  float *workspace, float *result, int *rw, int *rh);
 
-// NOLINTBEGIN(clang-analyzer-unix.Malloc)
 // test exits process on failure path via mu_assert; analyzer can't see
-// exit; small allocations leak by design at test end.
+// exit; small allocations leak by design at test end. Test scaffolding
+// per ADR-0141 §2; ADR-0278 cite form.
+// NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-0141 / ADR-0278
 static char *check_simd_variant(const float *src, int w, int h, const float *kernel_h,
                                 const float *kernel_v, int kw, int kh, const float *dst_scalar,
                                 size_t dst_n, convolve_simd_fn fn, int poison, char *fail_cmp)
@@ -193,9 +194,10 @@ static char *check_all_simd_variants(const float *src, int w, int h, int kw, con
     return NULL;
 }
 
-// NOLINTBEGIN(clang-analyzer-unix.Malloc)
 // test exits process on failure path via mu_assert; analyzer can't see
-// exit; small allocations leak by design at test end.
+// exit; small allocations leak by design at test end. Test scaffolding
+// per ADR-0141 §2; ADR-0278 cite form.
+// NOLINTBEGIN(clang-analyzer-unix.Malloc) — ADR-0141 / ADR-0278
 static char *check_case(int w, int h, int kw, const float *kernel_h, const float *kernel_v,
                         uint32_t seed)
 {

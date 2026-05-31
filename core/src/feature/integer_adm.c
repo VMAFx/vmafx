@@ -2865,9 +2865,12 @@ static void adm_dwt2_16(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffe
  * picture (8/16-bit) while scales 1..3 read prior 32-bit DWT output.
  *
  * Dispatched via `AdmState::adm_dwt2_s123_combined` (scalar / AVX2 /
- * AVX-512); see `init()` below for the runtime selection.
+ * AVX-512); see `init()` below for the runtime selection. Upstream-mirror
+ * from Netflix 966be8d5; refactoring would force matching splits across
+ * AVX2/AVX-512 SIMD twins (ADR-0141 §2 upstream-parity load-bearing
+ * invariant; ADR-0278 cite form).
  */
-// NOLINTNEXTLINE(readability-function-size)
+// NOLINTNEXTLINE(readability-function-size) — ADR-0141 / ADR-0278
 static void adm_dwt2_s123_combined(const int32_t *i4_ref_scale, const int32_t *i4_curr_dis,
                                    AdmBuffer *buf, int w, int h, int ref_stride, int dis_stride,
                                    int dst_stride, int scale)
@@ -3064,9 +3067,12 @@ static void adm_dwt2_s123_combined(const int32_t *i4_ref_scale, const int32_t *i
  * - Output ordering: `scores[2*scale + 0]` carries `num_scale`,
  *   `scores[2*scale + 1]` carries `den_scale` for each of the 4 scales,
  *   matching the per-scale `integer_adm_scaleN` features emitted by
- *   `extract()` below.
+ *   `extract()` below. Upstream-mirror compute pipeline from Netflix
+ *   966be8d5; splitting would force matching splits across the AVX2 /
+ *   AVX-512 SIMD twins (ADR-0141 §2 upstream-parity load-bearing
+ *   invariant; ADR-0278 cite form).
  */
-// NOLINTNEXTLINE(readability-function-size)
+// NOLINTNEXTLINE(readability-function-size) — ADR-0141 / ADR-0278
 static void integer_compute_adm(AdmState *s, VmafPicture *ref_pic, VmafPicture *dis_pic,
                                 double *score, double *score_num, double *score_den, double *scores,
                                 AdmBuffer *buf, double adm_enhn_gain_limit,
@@ -3320,7 +3326,7 @@ static inline void *i4_init_dwt_band_hvd(i4_adm_dwt_band_t *band, char *data_top
  * Returns `0` on success, `-ENOMEM` on any allocation or dictionary
  * failure with all partial state freed.
  */
-// NOLINTNEXTLINE(readability-function-size)
+// NOLINTNEXTLINE(readability-function-size) — ADR-0141 / ADR-0278
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {

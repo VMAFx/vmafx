@@ -310,7 +310,11 @@ static int close_fex_metal(VmafFeatureExtractor *fex)
 static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
 
 extern "C" {
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+/* Registered via extern in feature_extractor.c's feature_extractor_list[];
+ * making this static would unlink the extractor from the registry — same
+ * pattern every CUDA / HIP / SYCL feature extractor uses (ADR-0361 Metal
+ * backend; ADR-0278 cite form). */
+// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0361 / ADR-0278
 VmafFeatureExtractor vmaf_fex_integer_psnr_metal = {
     .name              = "integer_psnr_metal",
     .init              = init_fex_metal,

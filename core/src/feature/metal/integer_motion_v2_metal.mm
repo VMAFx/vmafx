@@ -436,7 +436,11 @@ static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_sc
                                           "VMAF_integer_feature_motion2_v2_score", NULL};
 
 extern "C" {
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+/* Registered via extern in feature_extractor.c's feature_extractor_list[];
+ * making this static would unlink the extractor from the registry — same
+ * pattern every CUDA / HIP / SYCL feature extractor uses (ADR-0421 Metal
+ * first-kernel motion_v2; ADR-0278 cite form). */
+// NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0421 / ADR-0278
 VmafFeatureExtractor vmaf_fex_integer_motion_v2_metal = {
     .name = "motion_v2_metal",
     .init = init_fex_metal,
