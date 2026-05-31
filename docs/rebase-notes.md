@@ -772,6 +772,29 @@ can be removed in a follow-on cleanup.
 
 No source/binary symbol renames; consumers of the patch stack
 (`ffmpeg-patches/`) and the Go/Rust bindings see identical declarations.
+## Bash strict-mode + trap-cleanup sweep (2026-05-30, ADR-0899)
+
+**Files touched:**
+`scripts/run_unittests.sh`, `scripts/ai/fetch-tiny-blobs.sh`,
+`dev/scripts/smoke-probe-loop.sh`,
+`scripts/ci/check-agent-worktree-drift.sh`,
+`scripts/ci/test_check_agent_worktree_drift.sh`,
+`scripts/ci/check-adr-numbering.sh`,
+`scripts/ci/check-dispatch-registry.sh`,
+`scripts/adr/next-free.sh`,
+`tools/ensemble-training-kit/_platform_detect.sh`.
+
+**Rebase impact:** None. All 9 files are fork-local (Netflix
+upstream has neither `scripts/adr/`, `scripts/ci/check-*-drift*`,
+`scripts/ai/fetch-tiny-blobs.sh`, `dev/scripts/smoke-probe-loop.sh`,
+`tools/ensemble-training-kit/`, nor the in-tree `scripts/run_unittests.sh`
+in this form). No conflict risk on `sync-upstream`.
+
+**Conflict watchpoints (none expected):** if a future upstream
+sync introduces a Netflix-side `scripts/run_unittests.sh`, the
+strict-mode `set -eu` block at the top of our version is the
+only carrier of fork-specific behaviour and trivially survives
+a 3-way merge.
 
 ---
 

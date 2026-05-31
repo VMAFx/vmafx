@@ -30,7 +30,24 @@ have no upstream-Netflix equivalent.
 
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md)).
 - **`set -euo pipefail` at the top of every shell script.** Pipes
-  carry errors; unset variables are fatal.
+  carry errors; unset variables are fatal. Sourced helpers (file
+  starts with `_` and is consumed via `source` / `.`) are the
+  exception: they must NOT call `set` at the top level because
+  that mutates the caller's shell options — document the exception
+  inline. See ADR-0899 (`tools/ensemble-training-kit/_platform_detect.sh`
+  is the canonical example).
+- **Every `mktemp` call gets a script-wide cleanup trap.**
+  Track allocations in a script-scope array and `trap _cleanup
+  EXIT INT TERM` so SIGTERM / OOM-kill don't leave orphans in
+  `$TMPDIR`. Pattern shown in `scripts/ai/fetch-tiny-blobs.sh`
+  and `dev/scripts/smoke-probe-loop.sh` (ADR-0899).
+- **`LC_ALL=C` prefixes any `sort` whose output feeds a
+  collision check.** Filename-numeric sorts (ADR numbers,
+  dispatch-registry symbols) must be locale-stable so the gate
+  produces the same answer on the dev box (de_DE.UTF-8), CI
+  containers (C.UTF-8), and macOS runners. See ADR-0899 for the
+  three scripts where this matters: `scripts/ci/check-adr-numbering.sh`,
+  `scripts/ci/check-dispatch-registry.sh`, `scripts/adr/next-free.sh`.
 - **All wholly-new fork shell scripts ship the dual Lusoris/Claude
   (Anthropic) copyright header**. Two upstream-mirror scripts
   (`run_unittests.sh`, parts of `setup/`) preserve their original

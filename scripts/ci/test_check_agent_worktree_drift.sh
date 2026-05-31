@@ -10,7 +10,7 @@
 # build artifacts. Invoked from CI alongside the other shellcheck /
 # self-tests in scripts/ci/.
 
-set -eu
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GUARD="$SCRIPT_DIR/check-agent-worktree-drift.sh"

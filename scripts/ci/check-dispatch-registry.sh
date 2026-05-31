@@ -50,7 +50,7 @@ check_backend() {
       echo "  OK: $sym"
     fi
   done < <(grep -rh 'VmafFeatureExtractor vmaf_fex_' "$src_dir"/ 2>/dev/null |
-    grep -oP 'vmaf_fex_\w+' | sort -u)
+    grep -oP 'vmaf_fex_\w+' | LC_ALL=C sort -u)
 
   if [[ "$found_any" -eq 0 ]]; then
     echo "  (no vmaf_fex_* symbols found — backend may not be built)"

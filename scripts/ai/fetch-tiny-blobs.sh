@@ -22,10 +22,23 @@
 #   3  registry.json malformed
 
 set -euo pipefail
+IFS=$'\n\t'
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$REPO_ROOT/.." && pwd)"
 REGISTRY="$REPO_ROOT/model/tiny/registry.json"
+
+# Track in-flight mktemp staging files so a Ctrl-C or unexpected exit between
+# mktemp and the success-path `mv` doesn't leave `*.XXXXXX` orphans next to
+# `model/tiny/*.onnx`. The fetch_one helper appends to this array on
+# allocation and clears it on successful mv.
+_TINY_STAGING_FILES=()
+_cleanup_staging() {
+  if [ "${#_TINY_STAGING_FILES[@]}" -gt 0 ]; then
+    rm -f "${_TINY_STAGING_FILES[@]}" 2>/dev/null || true
+  fi
+}
+trap _cleanup_staging EXIT INT TERM
 
 mode="fetch"
 while [ $# -gt 0 ]; do
@@ -94,13 +107,17 @@ fetch_one() {
   local dest="$2"
   local tmp
   tmp="$(mktemp "$dest.XXXXXX")"
+  _TINY_STAGING_FILES+=("$tmp")
   if ! curl --fail --silent --show-error --location \
     --max-time 600 --retry 3 --retry-connrefused \
     --output "$tmp" "$url"; then
     rm -f "$tmp"
+    # Pop the just-cleaned path so the EXIT trap doesn't double-rm.
+    unset '_TINY_STAGING_FILES[${#_TINY_STAGING_FILES[@]}-1]'
     return 1
   fi
   mv "$tmp" "$dest"
+  unset '_TINY_STAGING_FILES[${#_TINY_STAGING_FILES[@]}-1]'
 }
 
 failures=0

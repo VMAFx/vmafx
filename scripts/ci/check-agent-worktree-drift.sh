@@ -34,7 +34,7 @@
 #
 # References: docs/adr/0332-agent-worktree-drift-hard-guard.md.
 
-set -eu
+set -euo pipefail
 
 toplevel="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$toplevel" ]; then

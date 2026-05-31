@@ -144,7 +144,7 @@ _collect_remote_branch_numbers() {
     [ -n "${sha}" ] || continue
     [[ "${ref}" == "refs/heads/master" ]] && continue
     shas+=("${sha}")
-  done < <(printf '%s\n' "${ls_remote_out}" | sort -u -k1,1)
+  done < <(printf '%s\n' "${ls_remote_out}" | LC_ALL=C sort -u -k1,1)
 
   if [ "${#shas[@]}" -eq 0 ]; then
     return 0
@@ -310,7 +310,7 @@ if [ "${MODE}" = "release" ]; then
   found=()
   while IFS= read -r f; do
     found+=("${f}")
-  done < <(find "${ADR_DIR}" -maxdepth 1 -name "${RELEASE_NUM}-*.md.stub" 2>/dev/null | sort)
+  done < <(find "${ADR_DIR}" -maxdepth 1 -name "${RELEASE_NUM}-*.md.stub" 2>/dev/null | LC_ALL=C sort)
   if [ "${#found[@]}" -eq 0 ]; then
     printf 'ERROR: no stub file for %s found in %s.\n' "${RELEASE_NUM}" "${ADR_DIR}" >&2
     exit 1
@@ -385,7 +385,7 @@ number="$(
   {
     _collect_local_taken
     printf '%s\n' "${remote_numbers[@]+"${remote_numbers[@]}"}"
-  } | sort -u | _next_free_from_taken
+  } | LC_ALL=C sort -u | _next_free_from_taken
 )"
 
 stub_path="${ADR_DIR}/${number}-${SLUG}.md.stub"

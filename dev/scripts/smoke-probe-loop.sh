@@ -31,6 +31,19 @@
 #   }
 
 set -euo pipefail
+IFS=$'\n\t'
+
+# Clean up any per-iteration mktemp staging files on exit / signal. The
+# `probe_backend` helper allocates `tmp_out` via mktemp and removes it on
+# the success path, but a SIGTERM mid-probe (container stop, OOM kill) used
+# to leak `tmp.XXXXXX` files in $TMPDIR. The trap below sweeps them.
+_SMOKE_TMPFILES=()
+_smoke_cleanup() {
+  if [ "${#_SMOKE_TMPFILES[@]}" -gt 0 ]; then
+    rm -f "${_SMOKE_TMPFILES[@]}" 2>/dev/null || true
+  fi
+}
+trap _smoke_cleanup EXIT INT TERM
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -103,6 +116,7 @@ probe_backend() {
   # Run vmaf CLI; capture stdout + stderr separately
   local tmp_out
   tmp_out="$(mktemp)"
+  _SMOKE_TMPFILES+=("$tmp_out")
 
   # shellcheck disable=SC2086
   if vmaf \

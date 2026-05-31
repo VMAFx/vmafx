@@ -63,7 +63,7 @@ for file in "$@"; do
     # Exclude the file under test from the collision list.
     [[ "${candidate}" == "${file}" ]] && continue
     colliders+=("${candidate}")
-  done < <(find docs/adr -maxdepth 1 -name "${num}-*.md" 2>/dev/null | sort)
+  done < <(find docs/adr -maxdepth 1 -name "${num}-*.md" 2>/dev/null | LC_ALL=C sort)
 
   if [ "${#colliders[@]}" -gt 0 ]; then
     _error "${file}" \
