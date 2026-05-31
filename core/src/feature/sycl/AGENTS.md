@@ -217,6 +217,36 @@ DPC++ toolchain with `icpx` on PATH.
 - [ADR-0243](../../../../docs/adr/0243-enable-lcs-gpu.md) — MS-SSIM
   `enable_lcs` GPU contract.
 
+## Per-kernel parity-test invariant (rounds 1–3)
+
+Every SYCL feature kernel in this directory has a CPU twin and a
+`core/test/test_sycl_<kernel>_parity.c` gate at ADR-0214 places=4
+(1e-4) tolerance. The coverage matrix below tracks which SYCL kernel
+maps to which CPU twin and which parity test. **On rebase**: if a
+SYCL kernel is renamed or a new one is added, the parity test name +
+ADR-0884 / ADR-0946 backlog must be updated in the same PR.
+
+| SYCL TU | CPU TU | Parity test | ADR |
+|---|---|---|---|
+| `integer_cambi_sycl.cpp` | `cambi.c` | `test_integer_cambi_sycl.c` | pre-existing |
+| `integer_motion_sycl.cpp` (motion3) | `integer_motion.c` | `test_sycl_motion3_parity.c` | ADR-0219 |
+| `integer_psnr_sycl.cpp` | `integer_psnr.c` | `test_sycl_psnr_parity.c` | ADR-0868 (round 1) |
+| `integer_vif_sycl.cpp` | `integer_vif.c` | `test_sycl_vif_parity.c` | ADR-0868 (round 1) |
+| `integer_adm_sycl.cpp` | `integer_adm.c` | `test_sycl_adm_parity.c` | ADR-0884 (round 2) |
+| `integer_ciede_sycl.cpp` | `ciede.c` | `test_sycl_ciede_parity.c` | ADR-0884 (round 2) |
+| `integer_ssim_sycl.cpp` | `integer_ssim.c` | `test_sycl_ssim_parity.c` | ADR-0884 (round 2) |
+| `integer_ms_ssim_sycl.cpp` | `ms_ssim.c` | `test_sycl_ms_ssim_parity.c` | ADR-0884 (round 2) |
+| `integer_motion_v2_sycl.cpp` | `integer_motion_v2.c` | `test_sycl_motion_v2_parity.c` | ADR-0884 (round 2) |
+| `float_psnr_sycl.cpp` | `float_psnr.c` | `test_sycl_float_psnr_parity.c` | ADR-0946 (round 3) |
+| `float_adm_sycl.cpp` | `float_adm.c` | `test_sycl_float_adm_parity.c` | ADR-0946 (round 3) |
+| `float_vif_sycl.cpp` | `float_vif.c` | `test_sycl_float_vif_parity.c` | ADR-0946 (round 3) |
+| `float_motion_sycl.cpp` | `float_motion.c` | `test_sycl_float_motion_parity.c` | ADR-0946 (round 3) |
+| `integer_psnr_hvs_sycl.cpp` | `third_party/xiph/psnr_hvs.c` | `test_sycl_psnr_hvs_parity.c` | ADR-0946 (round 3) |
+| `integer_moment_sycl.cpp` | `moment.c` | — (round 4 backlog) | — |
+| `speed_chroma_sycl.cpp` | `speed.c` | — (round 4 backlog) | — |
+| `speed_temporal_sycl.cpp` | `speed.c` | — (round 4 backlog) | — |
+| `ssimulacra2_sycl.cpp` | `ssimulacra2.c` | — (round 4 backlog) | — |
+
 ## Per-feature option-table sync invariant
 
 **Adding a feature knob to any one backend (SYCL / CUDA / HIP / Metal /
