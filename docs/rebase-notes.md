@@ -134,6 +134,17 @@ is entirely fork-added (no upstream Netflix/vmaf equivalent); upstream syncs do 
 touch this subtree.
 
 ---
+## ai/src NaN propagation guards — eval.correlations + tune._read_best_metric (2026-05-31, ADR-0963)
+
+**Files touched:**
+`ai/src/vmaf_train/eval.py`,
+`ai/src/vmaf_train/tune.py`,
+`ai/tests/test_eval_correlations.py`,
+`ai/tests/test_tune_objective.py`.
+
+**Rebase impact:** None — `ai/src/vmaf_train/` is entirely fork-local with no
+upstream Netflix/vmaf equivalent. No C surface is touched. No upstream
+coupling.
 
 ---
 
