@@ -184,4 +184,4 @@ saved — **60% FR reduction**.
 - [ADR-0624](../adr/0624-fast-nr-prescoring-impl.md) — implementation record.
 - [Research-0611](../research/0611-fast-nr-prescoring-research.md) — design options and calibration plan.
 - [`vmaf-tune compare`](vmaf-tune.md) — main compare subcommand documentation.
-- [`vmaf-tune tune-per-shot`](vmaf-tune-per-shot.md) — per-shot encode documentation.
+- [`vmaf-tune tune-per-shot`](vmaf-tune.md#phase-d-per-shot-crf-tuning) — per-shot encode documentation.

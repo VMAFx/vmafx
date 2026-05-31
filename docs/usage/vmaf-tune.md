@@ -64,7 +64,7 @@ documented separately in the corpus schema below.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `VMAFTUNE_WORKDIR` | (OS default, typically `/tmp`) | Parent directory under which all vmaf-tune subcommands create their per-run temporary scratch directories (decoded reference YUV, intermediate encodes). Set this to a path on a volume with sufficient free space when the OS `/tmp` is a small `tmpfs` — e.g. a 634-second 1080p60 source decodes to approximately 118 GB of raw YUV420p. The `compare`, `tune-per-shot`, and `ladder` subcommands also accept `--workdir PATH` to override this variable per invocation. In the `vmaf-dev-mcp` container this is pre-set to `/probes/vmaftune-work` (the 435 GB `/probes` bind-mount). Resolution order: `--workdir` flag > `VMAFTUNE_WORKDIR` env var > OS default. ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
+| `VMAFTUNE_WORKDIR` | (OS default, typically `/tmp`) | Parent directory under which all vmaf-tune subcommands create their per-run temporary scratch directories (decoded reference YUV, intermediate encodes). Set this to a path on a volume with sufficient free space when the OS `/tmp` is a small `tmpfs` — e.g. a 634-second 1080p60 source decodes to approximately 118 GB of raw YUV420p. The `compare`, `tune-per-shot`, and `ladder` subcommands also accept `--workdir PATH` to override this variable per invocation. In the `vmaf-dev-mcp` container this is pre-set to `/probes/vmaftune-work` (the 435 GB `/probes` bind-mount). Resolution order: `--workdir` flag > `VMAFTUNE_WORKDIR` env var > OS default. ([ADR-0598](../adr/0598-vmaftune-workdir-relocation.md)) |
 
 ## Workdir disk-space management (ADR-0577)
 
@@ -778,7 +778,7 @@ instead — convenient for piping into other tooling.
 `vmaf-tune fast` is the seconds-to-minutes alternative to the Phase A
 grid for the recommendation use case. It runs an Optuna TPE search
 over the integer CRF axis, scores each trial with the
-`fr_regressor_v2` proxy ([ADR-0291](../adr/0291-fr-regressor-v2-prod-flip.md))
+`fr_regressor_v2` proxy ([ADR-0291](../adr/0291-fr-regressor-v2-prod-ship.md))
 on the canonical-6 libvmaf features extracted from a short probe
 encode, then runs **one** real-encode + libvmaf verify pass at the
 recommended CRF before reporting. The slow grid stays canonical
@@ -1362,7 +1362,7 @@ The saliency pipeline supports five encoder ROI mechanisms:
 | `libvvenc` | `ROIFile` CSV (VVenC v1.14.0+) | 64×64 CTU | `-vvenc-params ROIFile=…` |
 
 See [ADR-0293](../adr/0293-vmaf-tune-saliency-aware.md) (x264 baseline) and
-[ADR-0370](../adr/0370-saliency-roi-x265-svtav1-vvenc.md) (x265 / SVT-AV1 / VVenC).
+[ADR-0414](../adr/0414-saliency-roi-x265-svtav1-vvenc.md) (x265 / SVT-AV1 / VVenC).
 The libaom-av1 row uses the shared `-qpfile` bridge documented in
 [`vmaf-tune-ffmpeg.md`](vmaf-tune-ffmpeg.md#libaom-av1-full-roi-bridge).
 
@@ -1702,7 +1702,7 @@ from the ADR-0641 profile-report path (`--format both`) and list
 | `--predicate-module MOD:FN` | off | Advanced hook that bypasses the bisect backend. |
 | `--no-bisect` | off | Switch to CRF-sweep mode: skip target-VMAF bisect and encode each (codec, CRF) pair from `--crf-sweep` exactly once. See [CRF sweep mode](#crf-sweep-mode-no-bisect) below. (ADR-0542) |
 | `--crf-sweep LIST` | — | Comma-separated CRF values to use in `--no-bisect` mode. Example: `18,23,28,33`. Required when `--no-bisect` is passed. (ADR-0542) |
-| `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory for the decoded reference YUV and encodes. Overrides `VMAFTUNE_WORKDIR`. When unset, falls through to `VMAFTUNE_WORKDIR` (if set), then to the OS default (`/tmp`). Pass this when your source is large and `/tmp` is a small `tmpfs` (e.g. 634-second 1080p60 BBB decodes to ~118 GB raw YUV). ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
+| `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory for the decoded reference YUV and encodes. Overrides `VMAFTUNE_WORKDIR`. When unset, falls through to `VMAFTUNE_WORKDIR` (if set), then to the OS default (`/tmp`). Pass this when your source is large and `/tmp` is a small `tmpfs` (e.g. 634-second 1080p60 BBB decodes to ~118 GB raw YUV). ([ADR-0598](../adr/0598-vmaftune-workdir-relocation.md)) |
 | `--max-concurrent-decodes N` | `1` | Maximum number of reference-YUV decode operations that may run simultaneously across all codec bisect threads. Default `1` (serial decodes) caps peak workdir disk usage to one YUV at a time regardless of how many codecs run in the thread pool. For example, with 3 codecs and a 110 GB BBB source, the default prevents the 330 GB peak that caused the v13 ENOSPC failure — peak stays at 110 GB. Raise to `N` on hosts where `--workdir` points to a volume with sufficient free space and the I/O subsystem can sustain N parallel decode streams. Encoder runs are always parallel; only the decode-to-raw-YUV step is serialised at the default. ([ADR-0577](../adr/0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md)) |
 | `--output PATH` | stdout | Write the rendered report to PATH instead of stdout. |
 
@@ -2131,7 +2131,7 @@ accepted as a legacy alias for `vmaf`.
 | `--src-height INT` | largest `--resolutions` entry | Companion to `--src-width`. Default picks the tallest entry in `--resolutions` so a `--resolutions 1920x1080,1280x720,854x480` ladder against a 1080p raw YUV "just works". |
 | `--score-backend NAME` | `auto` | libvmaf scoring backend used by the default corpus sampler. Accepts `auto\|cpu\|cuda\|sycl\|hip\|vulkan` (same enum as `corpus --score-backend` / `compare --score-backend`). `auto` picks the fastest available in native-first order (`cuda > sycl > hip > vulkan > cpu`); a specific name is honoured strictly and the run errors out with RC=2 before any encodes start if the local `vmaf` binary does not advertise it. Use `cpu` to force bit-exact CPU scoring for verification against the Netflix golden gate. Added 2026-05-18 per ADR-0511 / Bug C; HIP and native-first order added by ADR-0667. |
 | `--vmaf-bin PATH` | `vmaf` | Path to the `vmaf` binary used to probe backend availability for `--score-backend`. Added 2026-05-18 per ADR-0511 / Bug C. |
-| `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
+| `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0598](../adr/0598-vmaftune-workdir-relocation.md)) |
 | `--max-concurrent-decodes N` | `1` | Accepted for consistency with `compare` and `tune-per-shot` (ADR-0577). Currently a no-op for `ladder` because the corpus sampler does not use the bisect decode path; effective when the ladder sampler is updated to bisect in a future PR. |
 
 > **Cross-resolution ladders against raw YUV**: prior to ADR-0498 the
@@ -2540,7 +2540,7 @@ the corpus row records it.
 
 Toggles are emitted in field-declaration order so the argv stays
 byte-stable for cache-key hashing (per
-[ADR-0298](../adr/0298-vmaf-tune-cache-key.md)). The `adapter_version`
+[ADR-0298](../adr/0298-vmaf-tune-cache.md)). The `adapter_version`
 field bumps to `"2"` for the 2026-05-09 surface — stale cached
 results are invalidated automatically.
 
@@ -2555,7 +2555,7 @@ VVenC and has been removed (see
 [ADR-0285](../adr/0285-vmaf-tune-vvenc-nnvc.md) §"Status update
 2026-05-09"). If upstream VVenC ever lands NN-VC tools the adapter
 will pick them up via the placeholder pattern from
-[ADR-0294](../adr/0294-vmaf-tune-codec-dispatcher.md)'s
+[ADR-0339](../adr/0339-av1-videotoolbox-placeholder-adapter.md)'s
 self-activating adapter set.
 
 ### External binary requirements
@@ -2644,7 +2644,7 @@ shell script of the per-segment + concat commands.
 | `--vmaf-model NAME` | `vmaf_v0.6.1` | VMAF model forwarded to the per-shot scorer. |
 | `--score-backend NAME` | `auto` | libvmaf scoring backend for the per-shot scorer (`auto`, `cpu`, `cuda`, `sycl`, `hip`, `vulkan`). |
 | `--predicate-module SPEC` | — | Advanced hook `MODULE:CALLABLE` matching `(shot, target_vmaf, encoder) -> (crf, measured_vmaf)`; bypasses real bisect. |
-| `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
+| `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0598](../adr/0598-vmaftune-workdir-relocation.md)) |
 | `--max-concurrent-decodes N` | `1` | Maximum number of simultaneous reference-YUV decode operations across all per-shot bisect threads. Default `1` (serial decodes). See `compare --max-concurrent-decodes` for full semantics. ([ADR-0577](../adr/0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md)) |
 | `--output PATH` | `per_shot_encode.mp4` | Final concatenated encode destination. |
 | `--segment-dir PATH` | see below | Directory for per-shot segment files. Priority order: (1) explicit `--segment-dir`; (2) `<plan-out>.parent/segments` when `--plan-out` is set; (3) `<output>.parent/segments`. If the resolved directory is not writable (e.g. a read-only bind-mount), a `WARN` is emitted to stderr and the command still exits 0 — the plan JSON remains the authoritative deliverable. See [ADR-0532](../adr/0532-per-shot-segments-readonly-cwd.md). |
@@ -2718,7 +2718,7 @@ to restore the historical single-shot behaviour. See
 luma delta against frame `N-1` (in the 8-bit domain) crosses the
 `--diff-threshold` cutoff. The compiled-in default is `12.0`, which
 the empirical calibration in
-[ADR-0222](../adr/0222-vmaf-pershot-binary.md) tuned against the
+[ADR-0222](../adr/0222-vmaf-per-shot-tool.md) tuned against the
 `testdata` fixtures. Real-world content varies: animated material
 with deep saturated transitions trips the heuristic easily, but
 short live-action clips with low-contrast scene changes (BBB's
@@ -2889,7 +2889,7 @@ runs regardless of plan content.
 #### Per-shot execution (ADR-0468)
 
 `run_plan_per_shot` splits the source into shot boundaries (via `vmaf-perShot` /
-TransNet V2, [ADR-0222](../adr/0222-vmaf-pershot-transnet-v2.md)) and scores each
+TransNet V2, [ADR-0223](../adr/0223-transnet-v2-shot-detector.md)) and scores each
 segment independently. Results land in `<runs-dir>/tune_results_per_shot.jsonl`:
 
 ```python
@@ -2939,7 +2939,7 @@ F.2 treats the predictor's verdict as a binary GOSPEL / FALL_BACK gate
 (short-circuit #3). F.3 makes the gate **continuous** by consulting
 the conformal interval half-width returned by
 `Predictor.predict_vmaf_with_uncertainty`
-([ADR-0279](../adr/0279-fr-regressor-v2-probabilistic.md)). Two width
+([ADR-0393](../adr/0393-fr-regressor-v2-probabilistic.md)). Two width
 gates carve the half-width axis into three regions:
 
 | Interval width | Outcome | Effect on F.2 |
@@ -3058,7 +3058,7 @@ calibration):
   the HDR pipeline already runs; the F.3 conformal-tight gate is
   narrowed to `1.4` because a wide predictor interval on HDR is more
   suspect than on SDR (the predictor was largely trained on SDR per
-  [ADR-0279](../adr/0279-fr-regressor-v2-probabilistic.md)).
+  [ADR-0393](../adr/0393-fr-regressor-v2-probabilistic.md)).
 - **UGC** — user-generated content carries higher upstream-encode
   noise, inconsistent grading, and resolution mismatches; predictor
   uncertainty is the baseline. Widening the F.3 tight gate to `3.5`
@@ -3094,8 +3094,8 @@ factory callables so each call returns a fresh dict that callers may
 mutate without affecting subsequent runs.
 
 References:
-[ADR-0325](../adr/0325-vmaf-tune-phase-f-auto.md) §F.4,
-[ADR-0279](../adr/0279-fr-regressor-v2-probabilistic.md),
+[ADR-0397](../adr/0397-vmaf-tune-phase-f-auto.md) §F.4,
+[ADR-0393](../adr/0393-fr-regressor-v2-probabilistic.md),
 [ADR-0300](../adr/0300-vmaf-tune-hdr-aware.md),
 [Research-0067](../research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md).
 

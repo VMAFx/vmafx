@@ -8,7 +8,7 @@ VIF is a **luma-only metric by design** (Sheikh & Bovik, 2006 — defined on a
 single luminance channel). Every libvmaf backend — CPU (AVX2, AVX-512, NEON),
 CUDA, HIP, SYCL, Vulkan, Metal — and upstream Netflix/vmaf reads only the Y
 plane (`data[0]`) of the input picture. There are no per-chroma-plane VIF
-features. See [ADR-0547](../adr/0547-integer-vif-luma-only-clarification.md)
+features. See [ADR-0597](../adr/0597-integer-vif-luma-only-clarification.md)
 for the disposition of the 2026-05-18 deep-audit finding that questioned this
 design.
 
@@ -48,7 +48,7 @@ All features are computed on the luma (Y) plane only.
 | `vif_enhn_gain_limit` | `egl` | double | `100.0` | `1.0–100.0` | Cap the per-pixel enhancement-gain ratio so over-sharpened content cannot saturate the score. Set to `1.0` to disable enhancement gain entirely. |
 | `vif_skip_scale0` | `ssclz` | bool | `false` | — | Skip scale-0 (finest pyramid level) calculations; scale-0 outputs are forced to `0.0` and excluded from the fused score. Matches the CPU path for GPU backends. |
 | `debug` | — | bool | `false` | — | Emit additional per-scale numerator/denominator debug metrics. |
-| `enable_chroma` (CUDA twin only) | — | bool | `false` | — | **No-op** retained for backward compatibility with callers that pass the option on the CLI or in a model JSON. VIF is luma-only by design; setting `enable_chroma=true` emits a one-shot warning during init and otherwise has no effect. See [ADR-0547](../adr/0547-integer-vif-luma-only-clarification.md). |
+| `enable_chroma` (CUDA twin only) | — | bool | `false` | — | **No-op** retained for backward compatibility with callers that pass the option on the CLI or in a model JSON. VIF is luma-only by design; setting `enable_chroma=true` emits a one-shot warning during init and otherwise has no effect. See [ADR-0597](../adr/0597-integer-vif-luma-only-clarification.md). |
 
 ### How to run
 
@@ -76,5 +76,5 @@ agreement within `1e-5` on the Netflix `src01_hrc00_576x324` reference pair
 ## See also
 
 - [Features](features.md) - full feature extractor reference
-- [ADR-0547](../adr/0547-integer-vif-luma-only-clarification.md) - why
+- [ADR-0597](../adr/0597-integer-vif-luma-only-clarification.md) - why
   `enable_chroma` is a documented no-op on the CUDA twin.

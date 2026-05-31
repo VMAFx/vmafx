@@ -8,7 +8,7 @@ Bucket 5: scan every row, return the smallest CRF whose
 `vmaf_score >= target`.
 
 This page covers the **uncertainty-aware extension**
-([ADR-0279](../adr/0279-fr-regressor-v2-probabilistic.md), shipped on
+([ADR-0393](../adr/0393-fr-regressor-v2-probabilistic.md), shipped on
 top of the conformal-VQA prediction surface in PR #488). The base
 behaviour is documented in
 [`vmaf-tune.md`](vmaf-tune.md#recommend-subcommand-target-vmaf-target-bitrate) and is unchanged

@@ -5,7 +5,7 @@ controller-runtime v0.19+ Kubernetes operator that watches `VmafxJob`,
 `VmafxNode`, and `VmafxModelTraining` custom resources and reconciles their
 Pod + status sub-resources.
 
-The operator is built per [ADR-0714](../adr/0714-vmafx-operator-kubebuilder-crds.md)
+The operator is built per [ADR-0714](../adr/0714-vmafx-operator-skeleton.md)
 and runs as a Kubernetes `Deployment` inside the cluster.
 
 ## Quick start (in-cluster)
@@ -71,7 +71,7 @@ kubectl apply -f deploy/helm/vmafx/crds/
 
 ## References
 
-- [ADR-0714](../adr/0714-vmafx-operator-kubebuilder-crds.md) — operator design
+- [ADR-0714](../adr/0714-vmafx-operator-skeleton.md) — operator design
 - [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) — Phase 4b platform
 - [Kubernetes Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
 - [controller-runtime v0.19](https://pkg.go.dev/sigs.k8s.io/controller-runtime)
