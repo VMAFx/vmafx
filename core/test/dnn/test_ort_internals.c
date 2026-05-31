@@ -35,6 +35,7 @@
 
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
 #define SMOKE_FP16_MODEL "model/tiny/smoke_fp16_v0.onnx"
+#define SMOKE_MULTI_OUTPUT_MODEL "model/tiny/smoke_multi_output_v0.onnx"
 
 /* ---------- fp32 ↔ fp16 conversion --------------------------------- */
 
@@ -462,6 +463,63 @@ static char *test_ort_open_elem_types_fp16_model(void)
     return NULL;
 }
 
+/* Drives vmaf_ort_run() against the multi-output smoke model so the
+ * `for (i = 0; i < n_outputs; ++i) copy_output_tensor()` loop body
+ * (ort_backend.c:897-901) and the `for (i = 0; i < n_outputs; ++i)
+ * ReleaseValue()` cleanup loop (ort_backend.c:918-920) each fire with
+ * i > 0 at least once — single-output sessions never reach the
+ * loop's tail iterations. Complements the existing single-output
+ * test_ort_infer_guards_and_smoke_paths smoke. */
+static char *test_ort_run_multi_output_smoke(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_MULTI_OUTPUT_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("multi-output smoke open ok", rc == 0);
+
+    size_t n_in = 0, n_out = 0;
+    rc = vmaf_ort_io_count(sess, &n_in, &n_out);
+    mu_assert("io_count succeeds on multi-output session", rc == 0);
+    mu_assert("multi-output session reports n_inputs >= 1", n_in >= 1u);
+    mu_assert("multi-output session reports n_outputs >= 2", n_out >= 2u);
+
+    /* Build per-output buffers. Cap at 8 to stay within VMAF_ORT_MAX_IO. */
+    if (n_out > 8u) {
+        vmaf_ort_close(sess);
+        return NULL;
+    }
+    float in_buf[16] = {0};
+    int64_t in_shape[4] = {1, 1, 4, 4};
+    VmafOrtTensorIn ti = {.name = NULL, .data = in_buf, .shape = in_shape, .rank = 4u};
+
+    float out_bufs[8][16];
+    VmafOrtTensorOut to[8] = {0};
+    for (size_t i = 0; i < n_out; ++i) {
+        memset(out_bufs[i], 0, sizeof(out_bufs[i]));
+        to[i].name = NULL;
+        to[i].data = out_bufs[i];
+        to[i].capacity = 16u;
+        to[i].written = 0u;
+    }
+    rc = vmaf_ort_run(sess, &ti, 1u, to, n_out);
+    /* The smoke model's outputs may have different element counts; we
+     * accept either 0 (happy path, all fit) or -ENOSPC (one output's
+     * required count > 16) — both branches walk the per-output loop. */
+    mu_assert("multi-output run finishes (0 or -ENOSPC)", rc == 0 || rc == -ENOSPC);
+    /* At least slot 0 must have a non-zero written count if the run
+     * reached the per-output loop tail. */
+    if (rc == 0) {
+        mu_assert("output 0 reports a written count", to[0].written > 0u);
+        mu_assert("output 1 reports a written count", to[1].written > 0u);
+    }
+
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
 /* Public accessor coverage for vmaf_ort_output_name_at. Lines 792-798 were
  * entirely uncovered at master tip bbcaa8d127. Combined with the +16 LOC
  * GetTensorElementType hard-error path landed in PR #129 (b8a51866e7), the
@@ -528,6 +586,7 @@ char *run_tests(void)
     mu_run_test(test_ort_open_null_args);
     mu_run_test(test_ort_open_elem_types_populated);
     mu_run_test(test_ort_open_elem_types_fp16_model);
+    mu_run_test(test_ort_run_multi_output_smoke);
     mu_run_test(test_ort_public_accessor_coverage);
     return NULL;
 }

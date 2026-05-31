@@ -1015,6 +1015,413 @@ static char *test_sidecar_no_encoder_vocab(void)
     (void)remove(tmpl);
     return NULL;
 }
+
+/* quant_mode "static" — drives the model_loader.c:434-435 branch in
+ * vmaf_dnn_sidecar_load that maps the literal string to
+ * VMAF_QUANT_STATIC. Sibling to test_sidecar_quant_mode_dynamic. */
+static char *test_sidecar_quant_mode_static(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-quant-static-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fprintf(s, "{\"kind\": \"fr\", \"quant_mode\": \"static\"}\n");
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("sidecar_load static failed", err == 0);
+    mu_assert("quant_mode static", meta.quant_mode == VMAF_QUANT_STATIC);
+    vmaf_dnn_sidecar_free(&meta);
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* quant_mode "qat" — drives the model_loader.c:436-437 branch (the
+ * third literal-string case) inside vmaf_dnn_sidecar_load. */
+static char *test_sidecar_quant_mode_qat(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-quant-qat-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fprintf(s, "{\"kind\": \"fr\", \"quant_mode\": \"qat\"}\n");
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("sidecar_load qat failed", err == 0);
+    mu_assert("quant_mode qat", meta.quant_mode == VMAF_QUANT_QAT);
+    vmaf_dnn_sidecar_free(&meta);
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* sidecar kind == "filter" — drives the model_loader.c:405-406 branch
+ * inside vmaf_dnn_sidecar_load that maps the literal string to
+ * VMAF_MODEL_KIND_DNN_FILTER. Sibling to test_sidecar_parses_kind_nr. */
+static char *test_sidecar_kind_filter(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-kind-filter-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fprintf(s, "{\"kind\": \"filter\"}\n");
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("sidecar_load kind=filter failed", err == 0);
+    mu_assert("kind == DNN_FILTER", meta.kind == VMAF_MODEL_KIND_DNN_FILTER);
+    vmaf_dnn_sidecar_free(&meta);
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* ADR-0976 regression sibling for encoder_vocab. Companion to the
+ * output_names + feature_order leak-no-leak tests above: drives the
+ * third call site of extract_string_array() in vmaf_dnn_sidecar_load
+ * so the encoder_vocab wipe loop (model_loader.c:511-515) executes.
+ * Without this, a malformed encoder_vocab array would leak whatever
+ * entries were parsed before the syntax error fires. */
+static char *test_sidecar_encoder_vocab_malformed_no_leak(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-vocab-malformed-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    /* Two valid encoder entries then an unterminated third entry —
+     * extract_string_array returns -EINVAL after allocating
+     * "libx264" + "libx265"; the loader's cleanup loop must observe
+     * n_encoder_vocab == 0 and NULL slots. */
+    (void)fputs("{\n"
+                "  \"kind\": \"fr\",\n"
+                "  \"encoder_vocab\": [\"libx264\", \"libx265\", unterminated\n"
+                "}\n",
+                s);
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("malformed encoder_vocab sidecar still loads", err == 0);
+    mu_assert("n_encoder_vocab == 0 after malformed parse", meta.n_encoder_vocab == 0u);
+    mu_assert("codec_aware stays false on malformed array", meta.codec_aware == false);
+    mu_assert("encoder_vocab[0] is NULL", meta.encoder_vocab[0] == NULL);
+    mu_assert("encoder_vocab[1] is NULL", meta.encoder_vocab[1] == NULL);
+    vmaf_dnn_sidecar_free(&meta);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* extract_string_array empty-array branch (model_loader.c:210-212):
+ * a literal `[]` is a valid empty list that returns 0 with *out_n=0.
+ * The loader treats absent vs empty distinctly — empty must NOT set
+ * codec_aware. Mirrors the equivalent feature_order absent-vs-empty
+ * contract for ADR-0518 producers. */
+static char *test_sidecar_empty_arrays_are_valid(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-empty-arr-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    /* All three string arrays explicitly empty. Each parser returns 0
+     * with *out_n == 0; the loader treats *out_n == 0 the same as
+     * absent and does not promote codec_aware / has_feature_scaler. */
+    (void)fputs("{\n"
+                "  \"kind\": \"fr\",\n"
+                "  \"output_names\": [],\n"
+                "  \"feature_order\": [],\n"
+                "  \"encoder_vocab\": []\n"
+                "}\n",
+                s);
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("empty-array sidecar loads ok", err == 0);
+    mu_assert("empty output_names → n_output_names 0", meta.n_output_names == 0u);
+    mu_assert("empty feature_order → n_features 0", meta.n_features == 0u);
+    mu_assert("empty encoder_vocab → not codec-aware", meta.codec_aware == false);
+    vmaf_dnn_sidecar_free(&meta);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* extract_string_array ERANGE branch (model_loader.c:225-227): when
+ * the JSON array carries more than the destination's @p max entries.
+ * encoder_vocab caps at VMAF_DNN_MAX_ENCODER_VOCAB (32); pad the
+ * array past that bound. */
+static char *test_sidecar_encoder_vocab_over_max_returns_erange(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-vocab-over-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fputs("{\n  \"kind\": \"fr\",\n  \"encoder_vocab\": [", s);
+    /* Emit 33 distinct entries — one over the 32-entry cap. */
+    for (int i = 0; i < 33; ++i) {
+        if (i > 0)
+            (void)fputs(",", s);
+        (void)fprintf(s, "\"enc_%d\"", i);
+    }
+    (void)fputs("]\n}\n", s);
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    /* The outer load remains successful — encoder_vocab over-cap is
+     * a wipe-and-continue condition, not a hard fail. */
+    mu_assert("over-cap encoder_vocab sidecar still loads", err == 0);
+    mu_assert("over-cap → codec_aware false", meta.codec_aware == false);
+    mu_assert("over-cap → n_encoder_vocab 0", meta.n_encoder_vocab == 0u);
+    vmaf_dnn_sidecar_free(&meta);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* extract_string_array trailing-junk branch (model_loader.c:248-249):
+ * a JSON array that ends with a non-`,`/non-`]` token after a
+ * successful entry must surface -EINVAL through the partial-cleanup
+ * path. The shipped consumer (vmaf_dnn_sidecar_load) absorbs the
+ * error and returns 0 with the array wiped; this test asserts the
+ * absorbed-state contract. */
+static char *test_sidecar_array_trailing_junk_wipes(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-arr-junk-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    /* `"a" Z` after the first entry is neither comma nor `]` — exercises
+     * the trailing-junk -EINVAL return inside extract_string_array. */
+    (void)fputs("{\n"
+                "  \"kind\": \"fr\",\n"
+                "  \"output_names\": [\"a\" Z]\n"
+                "}\n",
+                s);
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("trailing-junk sidecar still loads", err == 0);
+    mu_assert("trailing-junk → n_output_names 0", meta.n_output_names == 0u);
+    mu_assert("trailing-junk → slot 0 NULL", meta.output_names[0] == NULL);
+    vmaf_dnn_sidecar_free(&meta);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* extract_string_array non-string element branch
+ * (model_loader.c:214-217): an array entry that doesn't open with `"`
+ * is rejected. The shipping symptom we care about: a sidecar with
+ * `"output_names": [42]` (integer, not string) must not be parsed
+ * as a valid name list. */
+static char *test_sidecar_array_non_string_element_wipes(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-arr-int-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fputs("{\n"
+                "  \"kind\": \"fr\",\n"
+                "  \"output_names\": [42]\n"
+                "}\n",
+                s);
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("int-element sidecar still loads (loader absorbs)", err == 0);
+    mu_assert("int-element → n_output_names 0", meta.n_output_names == 0u);
+    vmaf_dnn_sidecar_free(&meta);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* extract_int -ERANGE branch (model_loader.c:332-333): a numeric
+ * onnx_opset value that overflows int triggers the strtol ERANGE /
+ * INT_MAX guard. */
+static char *test_sidecar_opset_overflow_returns_default(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-opset-over-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fputs("{\"kind\": \"fr\", \"onnx_opset\": 99999999999999999999999}\n", s);
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("overflow opset sidecar still loads", err == 0);
+    /* extract_int's -ERANGE branch is ignored downstream → opset
+     * stays at the zeroed default. */
+    mu_assert("overflow opset → default 0", meta.opset == 0);
+    vmaf_dnn_sidecar_free(&meta);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* extract_float_array trailing-junk -EINVAL branch
+ * (model_loader.c:306-307): when a feature_mean entry parses cleanly
+ * then is followed by neither `,` nor `]`. The shipped loader treats
+ * feature_mean / feature_std as paired with feature_order; a bad
+ * scaler vector falls back to has_feature_scaler=false. */
+static char *test_sidecar_feature_mean_trailing_junk(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-mean-junk-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fputs("{\n"
+                "  \"kind\": \"fr\",\n"
+                "  \"feature_order\": [\"adm2\"],\n"
+                "  \"feature_mean\": [1.5 Z],\n"
+                "  \"feature_std\": [0.5]\n"
+                "}\n",
+                s);
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("malformed feature_mean sidecar still loads", err == 0);
+    /* Bad scaler → has_feature_scaler stays false even though
+     * feature_order parsed successfully. */
+    mu_assert("malformed feature_mean → has_feature_scaler false",
+              meta.has_feature_scaler == false);
+    vmaf_dnn_sidecar_free(&meta);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
 #endif /* !_WIN32 */
 
 /* ADR-0519: vmaf_dnn_codec_block_fill — known codec produces the right
@@ -1077,6 +1484,92 @@ static char *test_codec_block_fill_h264_alias(void)
     int rc = vmaf_dnn_codec_block_fill(buf, 5u, VOCAB, 3u, "h264", "medium", 0);
     mu_assert("rc == 0 for h264 alias", rc == 0);
     mu_assert("buf[0] == 1.0 (libx264 via alias)", buf[0] > 0.999f && buf[0] < 1.001f);
+    return NULL;
+}
+
+/* resolve_codec_alias coverage: hevc/h265 → libx265 (model_loader.c:660-661),
+ * av1 → libsvtav1 (662-663), vp9 → libvpx-vp9 (664-665), vvc/h266 → libvvenc
+ * (666-667). Each alias takes a separate branch in the chained strcmp ladder
+ * and was uncovered when only the libx264 alias test ran. */
+static char *test_codec_block_fill_aliases_hevc_av1_vp9_vvc(void)
+{
+    static const char *VOCAB[] = {"libx264",  "libx265",    "libsvtav1",
+                                  "libvvenc", "libvpx-vp9", "unknown"};
+    const size_t n_vocab = 6u;
+    float buf[8] = {0};
+    /* hevc → libx265 (slot 1). */
+    int rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "hevc", "medium", 28);
+    mu_assert("hevc alias rc == 0", rc == 0);
+    mu_assert("hevc → libx265 (buf[1])", buf[1] > 0.999f && buf[1] < 1.001f);
+
+    /* h265 (synonym of hevc) → libx265. */
+    memset(buf, 0, sizeof(buf));
+    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "h265", "medium", 28);
+    mu_assert("h265 alias rc == 0", rc == 0);
+    mu_assert("h265 → libx265 (buf[1])", buf[1] > 0.999f && buf[1] < 1.001f);
+
+    /* av1 → libsvtav1 (slot 2). */
+    memset(buf, 0, sizeof(buf));
+    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "av1", "medium", 28);
+    mu_assert("av1 alias rc == 0", rc == 0);
+    mu_assert("av1 → libsvtav1 (buf[2])", buf[2] > 0.999f && buf[2] < 1.001f);
+
+    /* vp9 → libvpx-vp9 (slot 4). */
+    memset(buf, 0, sizeof(buf));
+    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "vp9", "medium", 28);
+    mu_assert("vp9 alias rc == 0", rc == 0);
+    mu_assert("vp9 → libvpx-vp9 (buf[4])", buf[4] > 0.999f && buf[4] < 1.001f);
+
+    /* vvc → libvvenc (slot 3). */
+    memset(buf, 0, sizeof(buf));
+    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "vvc", "medium", 28);
+    mu_assert("vvc alias rc == 0", rc == 0);
+    mu_assert("vvc → libvvenc (buf[3])", buf[3] > 0.999f && buf[3] < 1.001f);
+
+    /* h266 (synonym of vvc) → libvvenc. */
+    memset(buf, 0, sizeof(buf));
+    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "h266", "medium", 28);
+    mu_assert("h266 alias rc == 0", rc == 0);
+    mu_assert("h266 → libvvenc (buf[3])", buf[3] > 0.999f && buf[3] < 1.001f);
+
+    /* avc (synonym of h264) → libx264 — covers the second arm of the
+     * h264-side branch. */
+    memset(buf, 0, sizeof(buf));
+    rc = vmaf_dnn_codec_block_fill(buf, n_vocab + 2u, VOCAB, n_vocab, "avc", "medium", 28);
+    mu_assert("avc alias rc == 0", rc == 0);
+    mu_assert("avc → libx264 (buf[0])", buf[0] > 0.999f && buf[0] < 1.001f);
+    return NULL;
+}
+
+/* `slower` preset selector — model_loader.c:635-636 is the only preset
+ * ordinal that lacks a dedicated test in the existing
+ * test_codec_block_fill_preset_tables grid (the table covers
+ * ultrafast..veryslow but skips slower's distinct slot). */
+static char *test_codec_block_fill_preset_slower(void)
+{
+    static const char *VOCAB[] = {"libx264", "unknown"};
+    float buf[4] = {0};
+    int rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 2u, "libx264", "slower", 28);
+    mu_assert("slower preset rc == 0", rc == 0);
+    /* preset_norm = 7 / 9 = 0.777... */
+    mu_assert("slower preset_norm ~ 7/9", buf[2] > 0.777f && buf[2] < 0.778f);
+    return NULL;
+}
+
+/* NULL vocab entry skip branch — model_loader.c:702-704. When the
+ * vocab table carries a NULL entry the inner loop must continue past
+ * it rather than dereferencing. The existing tests use fully-populated
+ * vocabs so the NULL-skip branch is uncovered. */
+static char *test_codec_block_fill_null_vocab_entry_is_skipped(void)
+{
+    /* Mid-table NULL slot — the loop must skip it and still match
+     * "libx264" at slot 2. */
+    static const char *VOCAB[] = {"libx265", NULL, "libx264", "unknown"};
+    float buf[6] = {0};
+    int rc = vmaf_dnn_codec_block_fill(buf, 6u, VOCAB, 4u, "libx264", "medium", 28);
+    mu_assert("rc == 0 when matching past a NULL slot", rc == 0);
+    mu_assert("buf[2] == 1.0", buf[2] > 0.999f && buf[2] < 1.001f);
+    mu_assert("buf[1] (NULL slot) untouched", buf[1] == 0.0f);
     return NULL;
 }
 
@@ -1303,11 +1796,24 @@ char *run_tests(void)
     mu_run_test(test_sidecar_feature_vector_no_scaler);
     mu_run_test(test_sidecar_encoder_vocab_v2);
     mu_run_test(test_sidecar_no_encoder_vocab);
+    mu_run_test(test_sidecar_encoder_vocab_malformed_no_leak);
+    mu_run_test(test_sidecar_empty_arrays_are_valid);
+    mu_run_test(test_sidecar_encoder_vocab_over_max_returns_erange);
+    mu_run_test(test_sidecar_array_trailing_junk_wipes);
+    mu_run_test(test_sidecar_array_non_string_element_wipes);
+    mu_run_test(test_sidecar_opset_overflow_returns_default);
+    mu_run_test(test_sidecar_feature_mean_trailing_junk);
+    mu_run_test(test_sidecar_quant_mode_static);
+    mu_run_test(test_sidecar_quant_mode_qat);
+    mu_run_test(test_sidecar_kind_filter);
 #endif
     mu_run_test(test_codec_block_fill_libx264_medium_28);
     mu_run_test(test_codec_block_fill_unknown_returns_enoent);
     mu_run_test(test_codec_block_fill_null_codec_is_ok);
     mu_run_test(test_codec_block_fill_h264_alias);
+    mu_run_test(test_codec_block_fill_aliases_hevc_av1_vp9_vvc);
+    mu_run_test(test_codec_block_fill_preset_slower);
+    mu_run_test(test_codec_block_fill_null_vocab_entry_is_skipped);
     mu_run_test(test_codec_block_fill_crf_clamp);
     mu_run_test(test_codec_block_fill_preset_tables);
     mu_run_test(test_codec_block_fill_unknown_presets_default);

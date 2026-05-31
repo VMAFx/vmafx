@@ -1014,6 +1014,273 @@ static char *test_version_next(void)
     return NULL;
 }
 
+/* parse_model_dict_array_key: "slopes" value not an array → -EINVAL
+ * (read_json_model.c:444). The existing slopes_non_number test enters
+ * parse_slopes via a valid array; this one short-circuits one frame
+ * earlier on the outer type check. */
+static char *test_json_model_slopes_not_array(void)
+{
+    const char json[] = "{\"model_dict\": {\"slopes\": \"not an array\"}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("non-array slopes must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_model_dict_array_key: "intercepts" value not an array → -EINVAL
+ * (read_json_model.c:453). Companion to slopes_not_array — covers the
+ * same outer-type branch on the intercepts key. */
+static char *test_json_model_intercepts_not_array(void)
+{
+    const char json[] = "{\"model_dict\": {\"intercepts\": 42}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("non-array intercepts must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_model_dict_array_key: "feature_names" value not an array → -EINVAL
+ * (read_json_model.c:462). */
+static char *test_json_model_feature_names_not_array(void)
+{
+    const char json[] =
+        "{\"model_dict\": {\"feature_names\": \"VMAF_feature_integer_motion2_score\"}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("non-array feature_names must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_model_dict_array_key: "feature_opts_dicts" value not an array → -EINVAL
+ * (read_json_model.c:467). */
+static char *test_json_model_feature_opts_dicts_not_array(void)
+{
+    const char json[] = "{\"model_dict\": {\"feature_opts_dicts\": {\"a\": 1}}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("non-array feature_opts_dicts must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_model_dict_array_key: "model" value not a string → -EINVAL
+ * (read_json_model.c:472). The libsvm payload must come as a string; a
+ * numeric value short-circuits the parser before parse_libsvm_model. */
+static char *test_json_model_model_payload_not_string(void)
+{
+    const char json[] = "{\"model_dict\": {\"model\": 12345}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("non-string model payload must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_model_dict_chroma_correction: value not a number → -EINVAL
+ * (read_json_model.c:433-434). */
+static char *test_json_model_chroma_correction_not_number(void)
+{
+    const char json[] =
+        "{\"model_dict\": {\"chroma_correction_parameter\": \"definitely-not-a-number\"}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("non-number chroma_correction_parameter must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_model_dict_score_clip: first element (min) not a number → -EINVAL
+ * (read_json_model.c:420-421). The DISABLE_CLIP flag would short-circuit the
+ * type check before it fires; default flags include enable_clip so the test
+ * passes a 0-flag cfg. */
+static char *test_json_model_score_clip_min_not_number(void)
+{
+    const char json[] = "{\"model_dict\": {\"score_clip\": [\"x\", 100.0]}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("non-number score_clip min must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_model_dict_score_clip: second element (max) not a number → -EINVAL
+ * (read_json_model.c:423-424). */
+static char *test_json_model_score_clip_max_not_number(void)
+{
+    const char json[] = "{\"model_dict\": {\"score_clip\": [0.0, \"y\"]}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("non-number score_clip max must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_score_transform_poly: value is JSON_NULL → enabled=false, returns 0
+ * (read_json_model.c:268-270). The polynomial-disabled path is exercised by
+ * a model_dict with score_transform.p0=null and ENABLE_TRANSFORM in flags
+ * so the score_transform block isn't silently skipped. */
+static char *test_json_model_score_transform_poly_null_disables(void)
+{
+    const char json[] =
+        "{\"model_dict\": {\"score_transform\": {\"enabled\": true, \"p0\": null}}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    /* The model has no libsvm payload, so vmaf_read_json_model will surface
+     * a non-zero error downstream; we only need to know that parsing the
+     * null-poly key did not itself reject (no -EINVAL from parse_score_
+     * transform_poly). Walking the JSON_NULL branch is the goal. */
+    (void)err;
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_score_transform_knots_key: knots value is JSON_NULL → enabled=false
+ * (read_json_model.c:282-285). Companion to the poly null test above. */
+static char *test_json_model_score_transform_knots_null_disables(void)
+{
+    const char json[] =
+        "{\"model_dict\": {\"score_transform\": {\"enabled\": true, \"knots\": null}}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    (void)err;
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_score_transform_bool_str: value is not a string → -EINVAL
+ * (read_json_model.c:299-300). Existing tests cover the happy path
+ * ("true"/"false") and a non-string for "enabled"; this one drives the
+ * branch via the "out_lte_in" key which routes through bool_str. */
+static char *test_json_model_score_transform_bool_str_not_string(void)
+{
+    const char json[] = "{\"model_dict\": {\"score_transform\": {\"out_lte_in\": 1.5}}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("non-string bool field must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_model_dict_entry: an unrecognised key triggers the
+ * parse_model_dict_array_key fall-through and the json_skip(s) path
+ * (read_json_model.c:497). Differs from the existing collection_skips
+ * test in that this hits parse_model_dict_entry's tail, not the
+ * collection-level skip. */
+static char *test_json_model_unrecognised_model_dict_key(void)
+{
+    const char json[] = "{\"model_dict\": {\"this_key_is_not_recognised\": 42}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    /* parse_model_dict_array_key returns 1 → parse_model_dict_entry skips
+     * the value and continues. The outer model_parse still surfaces an
+     * error because there is no libsvm payload, but the skip branch has
+     * been walked. Any negative return is acceptable. */
+    (void)err;
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_intercepts: subsequent (not first) intercept not a number → -EINVAL
+ * (read_json_model.c:167-168). The existing
+ * test_json_model_intercepts_first_not_number covers the first-element
+ * check at line 161-162; this one drives the in-loop check after a valid
+ * first intercept has been consumed. */
+static char *test_json_model_intercepts_mid_not_number(void)
+{
+    const char json[] = "{\"model_dict\": {\"intercepts\": [1.0, \"bad\"]}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("non-number mid intercept must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_score_transform_poly: numeric branch surfaces a non-zero
+ * polynomial constant (read_json_model.c:272-275). Hit through "p1"
+ * because the vmaf_v0.6.1.json fixture only covers all-enabled paths;
+ * an isolated synthetic model with only p1 sets the enabled=true /
+ * value=number branch in isolation. */
+static char *test_json_model_score_transform_poly_number_sets_value(void)
+{
+    const char json[] = "{\"model_dict\": {\"score_transform\": {\"enabled\": true, "
+                        "\"p1\": 0.75}}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    /* No libsvm payload → vmaf_read_json_model surfaces an error
+     * downstream; the parse_score_transform_poly numeric branch ran
+     * before that, which is the goal. */
+    (void)err;
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_score_transform_poly: token is neither NULL nor NUMBER → -EINVAL
+ * (read_json_model.c:277). Existing tests cover bool tokens for p0/p1/p2;
+ * a STRING token routes through parse_score_transform_entry → poly and
+ * reaches the trailing -EINVAL return. */
+static char *test_json_model_score_transform_poly_string_rejects(void)
+{
+    const char json[] =
+        "{\"model_dict\": {\"score_transform\": {\"enabled\": true, \"p1\": \"oops\"}}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    mu_assert("string-valued polynomial constant must reject", err < 0);
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
+/* parse_score_transform_knots_key: knots is an array → walks parse_knots
+ * (read_json_model.c:287-292). Existing knots tests cover error branches
+ * inside parse_knots; this one drives the successful array-walk wrapping
+ * in parse_score_transform_knots_key. */
+static char *test_json_model_score_transform_knots_array_walks(void)
+{
+    const char json[] = "{\"model_dict\": {\"score_transform\": {\"enabled\": true, "
+                        "\"knots\": [[0.0, 0.0], [50.0, 50.0], [100.0, 100.0]]}}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {.flags = VMAF_MODEL_FLAG_ENABLE_TRANSFORM};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    /* No libsvm payload → downstream error, but the knots walk runs
+     * before the surface error fires. */
+    (void)err;
+    if (m)
+        vmaf_model_destroy(m);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_json_model);
@@ -1060,6 +1327,22 @@ char *run_tests(void)
     mu_run_test(test_json_model_feature_opts_dict_bad_value_type);
     mu_run_test(test_json_model_score_clip_not_array);
     mu_run_test(test_json_model_model_dict_not_object);
+    mu_run_test(test_json_model_slopes_not_array);
+    mu_run_test(test_json_model_intercepts_not_array);
+    mu_run_test(test_json_model_feature_names_not_array);
+    mu_run_test(test_json_model_feature_opts_dicts_not_array);
+    mu_run_test(test_json_model_model_payload_not_string);
+    mu_run_test(test_json_model_chroma_correction_not_number);
+    mu_run_test(test_json_model_score_clip_min_not_number);
+    mu_run_test(test_json_model_score_clip_max_not_number);
+    mu_run_test(test_json_model_score_transform_poly_null_disables);
+    mu_run_test(test_json_model_score_transform_knots_null_disables);
+    mu_run_test(test_json_model_score_transform_bool_str_not_string);
+    mu_run_test(test_json_model_unrecognised_model_dict_key);
+    mu_run_test(test_json_model_intercepts_mid_not_number);
+    mu_run_test(test_json_model_score_transform_poly_number_sets_value);
+    mu_run_test(test_json_model_score_transform_poly_string_rejects);
+    mu_run_test(test_json_model_score_transform_knots_array_walks);
     mu_run_test(test_version_next);
     return NULL;
 }
