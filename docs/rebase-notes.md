@@ -42851,3 +42851,23 @@ Fork-local files:
 `core/test/test_feature_extractor.c`,
 `core/test/meson.build`,
 `changelog.d/added/feature-extractor-coverage-push.md`.
+
+## fix/simd-bug-audit-20260531 — 2026-05-31
+
+no rebase impact: fork-local SIMD entry points only. The two patched
+files (`core/src/feature/x86/float_adm_avx2.c`,
+`core/src/feature/arm64/float_adm_neon.c`) are fork-added SIMD ports
+of upstream `adm_dwt2_s`; they are not yet wired through `compute_adm`
+(ADR-0873 follow-up). Upstream Netflix/vmaf has neither file. The
+change harmonises the NULL-allocation guard with the already-shipped
+AVX-512 sibling (`float_adm_avx512.c`) which has been the de-facto
+reference since master tip; no upstream merge can collide. The third
+file (`core/src/feature/arm64/ssimulacra2_host_neon.c`) is wholly
+fork-added (SSIMULACRA 2 is a fork extractor) and the edit is comment-
+only.
+
+Fork-local files:
+`core/src/feature/x86/float_adm_avx2.c`,
+`core/src/feature/arm64/float_adm_neon.c`,
+`core/src/feature/arm64/ssimulacra2_host_neon.c`,
+`changelog.d/fixed/simd-float-adm-dwt2-unchecked-aligned-malloc.md`.
