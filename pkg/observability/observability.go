@@ -22,6 +22,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/VMAFx/vmafx/pkg/registry"
 )
 
 // GracefulShutdownTimeout is the maximum time the server waits for in-flight
@@ -29,17 +31,13 @@ import (
 const GracefulShutdownTimeout = 30 * time.Second
 
 // jobQueueSource is the interface that SetControllerSources requires from the
-// job-queue implementation.  Defined here as a narrow interface to avoid an
-// import cycle between pkg/observability and cmd/vmafx-controller/queue.
+// job-queue implementation.  PendingCount + RunningCount are queue-specific
+// (terminal-status partitioning), so the narrow interface stays here rather
+// than collapsing into the generic registry.Counter.  See
+// ADR-0925 §Alternatives considered.
 type jobQueueSource interface {
 	PendingCount() int
 	RunningCount() int
-}
-
-// nodeRegistrySource is the interface that SetControllerSources requires from
-// the node registry.  Narrow interface — same motivation as jobQueueSource.
-type nodeRegistrySource interface {
-	Count() int
 }
 
 // NewLogger creates a JSON-structured slog.Logger writing to stdout.
@@ -144,10 +142,14 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 //	vmafx_controller_jobs_running  — current number of running jobs
 //	vmafx_controller_nodes_live    — current number of registered nodes
 //
-// SetControllerSources accepts narrow interfaces (jobQueueSource,
-// nodeRegistrySource) to avoid an import cycle between pkg/observability and
-// the cmd/vmafx-controller sub-packages.
-func (m *Metrics) SetControllerSources(q jobQueueSource, r nodeRegistrySource) {
+// SetControllerSources accepts a narrow jobQueueSource interface for queue
+// metrics (PendingCount/RunningCount partition by terminal status) and the
+// generic registry.Counter constraint for the node registry (any
+// Count()-shaped subsystem satisfies it).  This avoids an import cycle
+// between pkg/observability and the cmd/vmafx-controller sub-packages
+// while folding the prior nodeRegistrySource narrow interface into the
+// reusable registry.Counter (ADR-0925).
+func (m *Metrics) SetControllerSources(q jobQueueSource, r registry.Counter) {
 	if q != nil {
 		prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Namespace: "vmafx",

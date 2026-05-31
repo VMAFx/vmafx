@@ -598,6 +598,7 @@
 0860-ffmpeg-patch-chain-no-op-vulkan-shim
 0887-vmaf-model-slopes-feature-mismatch-validation
 0927-opentelemetry-traces-metrics-phase1
+0925-go-generic-registry
 0931-mcp-cgo-direct-replace-subprocess
 0929-rust-safe-binding-scaffold
 0969-helm-seccomp-default-plus-node-image-helper

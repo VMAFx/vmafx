@@ -41039,3 +41039,10 @@ cannot conflict here. The `cmd/vmafx-tune/AGENTS.md` invariant addition
 is also fork-original. If a follow-up port-PR introduces upstream Go
 code, the `errors.Join` discipline documented in
 `cmd/vmafx-tune/AGENTS.md` §7 applies on entry.
+## Generic registry for vmafx-controller (ADR-0925, 2026-05-31)
+
+no rebase impact: REASON — touched files are 100 % fork-only Go sources
+(`pkg/registry/registry.go`, `pkg/registry/registry_test.go`,
+`cmd/vmafx-controller/nodes/registry.go`, `pkg/observability/observability.go`).
+Netflix upstream is a pure C / Python tree; the `cmd/` and `pkg/` Go
+trees do not exist there.
