@@ -1462,13 +1462,11 @@ if is_cuda_enabled
         feature_src_dir + 'cuda/float_adm_cuda.c',
         # T3-15 / ADR-0360: cambi CUDA twin host glue.
         feature_src_dir + 'cuda/integer_cambi_cuda.c',
-        # ADR-0964: speed_chroma_cuda + speed_temporal_cuda are NOT wired
-        # here yet — the TUs reference symbols that do not exist in this
-        # tree (`CHECK_CUDA` instead of `CHECK_CUDA_RETURN`/`_GOTO`, and
-        # `CudaFunctions->cuMemAllocHost` which is not a member).  HIP +
-        # SYCL build cleanly with the same speed_internal.c contract; the
-        # CUDA TUs need a repair pass before wiring.  Tracked in
-        # docs/state.md as T-CUDA-SPEED-TU-REPAIR-2026-05-31.
+        # ADR-0965: speed_chroma_cuda + speed_temporal_cuda wired after
+        # CHECK_CUDA → CHECK_CUDA_GOTO repair pass (closes
+        # T-CUDA-SPEED-TU-REPAIR-2026-05-31).
+        feature_src_dir + 'cuda/speed_chroma_cuda.c',
+        feature_src_dir + 'cuda/speed_temporal_cuda.c',
     ]
 endif
 

@@ -598,3 +598,4 @@
 0860-ffmpeg-patch-chain-no-op-vulkan-shim
 0887-vmaf-model-slopes-feature-mismatch-validation
 0964-implement-speed-internal-and-wire-gpu-speed-extractors
+0965-cuda-speed-tu-repair

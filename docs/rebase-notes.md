@@ -40553,3 +40553,25 @@ in this PR — the TUs reference symbols (`CHECK_CUDA`,
 `CudaFunctions->cuMemAllocHost`) that do not exist; they need a
 repair pass. Tracked as `T-CUDA-SPEED-TU-REPAIR-2026-05-31` in
 `docs/state.md`.
+
+## CUDA SpEED TU repair + wiring (ADR-0965, 2026-05-31)
+
+**No new rebase risk beyond ADR-0964.** This repair PR fixes the latent
+bugs in `speed_chroma_cuda.c` and `speed_temporal_cuda.c` and wires them
+into meson. The changes are:
+
+- `CHECK_CUDA(cu_f, CALL)` replaced with `CHECK_CUDA_GOTO(cu_f, CALL, fail)`
+  throughout both TUs.
+- `cuMemAllocHost(ptr, sz)` replaced with `cuMemHostAlloc(ptr, sz, 0x01u)`
+  in the `ALLOC_HOST` macros (both TUs).
+
+Both changes are mechanical; no algorithmic content was altered. The
+rebase-note from ADR-0964 above covers the `speed_internal.c` drift risk
+(mirror fixes between `speed.c` and `speed_internal.c`).
+
+New additions:
+- `core/src/feature/feature_extractor.c` externs + registry rows for
+  `vmaf_fex_speed_chroma_cuda` / `vmaf_fex_speed_temporal_cuda` under
+  `#if HAVE_CUDA`.
+- `core/test/test_cuda_speed_chroma_parity.c` +
+  `core/test/test_cuda_speed_temporal_parity.c`.

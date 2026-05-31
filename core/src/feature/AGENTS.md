@@ -654,7 +654,24 @@ This is deliberate (see ADR-0964 Alternatives) — keeping
 `speed.c` clean of `extern` exposures preserves its
 Netflix-mirrored status for the `/sync-upstream` cadence.  If
 either copy gets a bug-fix, mirror it to the other; the
-CPU-vs-SYCL parity tests will surface drift at CI time.
+CPU-vs-SYCL and CPU-vs-CUDA parity tests will surface drift at CI time.
+
+**CUDA TU dependency on `CudaFunctions` schema (ADR-0965)**: the two
+CUDA SpEED TUs (`cuda/speed_chroma_cuda.c` and
+`cuda/speed_temporal_cuda.c`) call into the `CudaFunctions` table
+using **two specific members**:
+
+- `cuMemHostAlloc((void **)&ptr, size, flags)` — pinned host
+  allocation (NOT `cuMemAllocHost`; that variant is not in the table).
+- `cuMemFreeHost(ptr)` — pinned host free.
+
+The two CUDA TUs also use `CHECK_CUDA_GOTO(cu_f, CALL, label)` for all
+fallible CUDA calls (NOT the legacy `CHECK_CUDA` macro which was removed).
+If the `CudaFunctions` table ever gains or renames these members, update
+all four `ALLOC_HOST` / `FREE_HOST` macro call sites in both TUs in the
+same PR. See `core/src/cuda/cuda_helper.cuh` for the macro contract and
+`core/src/cuda/picture_cuda.c` / `core/src/cuda/common.c` for the
+canonical usage of these members across the codebase.
 
 ### CodeQL `cpp/declaration-hides-variable` rename invariants (2026-05-09)
 

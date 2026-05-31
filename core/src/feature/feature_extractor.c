@@ -74,12 +74,11 @@ extern VmafFeatureExtractor vmaf_fex_ssimulacra2_cuda;
 extern VmafFeatureExtractor vmaf_fex_float_adm_cuda;
 /* T3-15 / ADR-0360: cambi CUDA twin (Strategy II hybrid). */
 extern VmafFeatureExtractor vmaf_fex_cambi_cuda;
-/* ADR-0964: speed_{chroma,temporal} CUDA twins are NOT registered here yet.
- * The TUs at core/src/feature/cuda/speed_{chroma,temporal}_cuda.c reference
- * `CHECK_CUDA` (the helper is `CHECK_CUDA_RETURN`/`_GOTO`) and
- * `CudaFunctions->cuMemAllocHost` (the field does not exist); both need a
- * repair pass before wiring.  HIP + SYCL twins are wired in this PR.
- * Tracked in docs/state.md as T-CUDA-SPEED-TU-REPAIR-2026-05-31. */
+/* ADR-0965: speed_{chroma,temporal} CUDA twins — CHECK_CUDA → CHECK_CUDA_GOTO
+ * repair pass complete.  Real GPU kernels (means, cov, indterm, backward-sub,
+ * score); host-side eigendecomp + QR via speed_internal.c (ADR-0964). */
+extern VmafFeatureExtractor vmaf_fex_speed_chroma_cuda;
+extern VmafFeatureExtractor vmaf_fex_speed_temporal_cuda;
 #endif
 #if HAVE_SYCL
 extern VmafFeatureExtractor vmaf_fex_integer_vif_sycl;
@@ -271,11 +270,11 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_float_adm_cuda,
     /* T3-15 / ADR-0360: cambi CUDA twin (Strategy II hybrid). */
     &vmaf_fex_cambi_cuda,
-/* ADR-0964: speed_{chroma,temporal} CUDA twin registry rows are
-     * deferred — the TUs reference `CHECK_CUDA` (helper is
-     * `CHECK_CUDA_RETURN`/`_GOTO`) and `CudaFunctions->cuMemAllocHost`
-     * (not a member); a repair pass lands in a follow-up.  HIP + SYCL
-     * twins are wired in this PR. */
+    /* ADR-0965: speed_{chroma,temporal} CUDA twins — repair pass complete.
+     * Hybrid GPU/CPU split: GPU runs means/cov/indterm/backward-sub/score
+     * kernels; CPU runs eigendecomp + QR (unavoidable serial constraint).
+     * places=4 vs CPU reference (ADR-0214). */
+    &vmaf_fex_speed_chroma_cuda, &vmaf_fex_speed_temporal_cuda,
 #endif
 #if HAVE_HIP
     /* T7-10 first consumer (ADR-0241): registration succeeds even on

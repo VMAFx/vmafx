@@ -803,6 +803,30 @@ test_integer_vif_cpu_cuda_parity = executable('test_integer_vif_cpu_cuda_parity'
 )
 test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
     suite : ['fast', 'gpu'])
+
+# ADR-0965 — speed_chroma + speed_temporal CPU vs. CUDA parity gates.
+# Pin the cross-backend tolerance (places=4) for the CUDA SpEED twins wired
+# in this repair PR.  Both tests skip cleanly when no CUDA device is visible
+# (mirrors test_cuda_motion3_parity.c).
+test_cuda_speed_chroma_parity = executable('test_cuda_speed_chroma_parity',
+    ['test.c', 'test_cuda_speed_chroma_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_speed_chroma_parity', test_cuda_speed_chroma_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
+    ['test.c', 'test_cuda_speed_temporal_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
+    suite : ['fast', 'gpu'])
 endif
 
 # T6-2b / ADR-0247 — vmaf-roi sidecar core helpers (per-CTU mean reduce
