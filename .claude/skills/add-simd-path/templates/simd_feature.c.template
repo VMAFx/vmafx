@@ -24,7 +24,7 @@ void vmaf_{{FEATURE}}_{{ISA}}(const uint8_t *ref, const uint8_t *dis,
      *   - align load/store to {{ALIGN}} bytes; fall back to scalar tail.
      *   - reductions use double accumulation (see commit 24c88a32).
      *   - runtime dispatch hook is registered in ../{{FEATURE}}.c.
-     *   - `bit_exact_vs_scalar_{{ISA}}` test in libvmaf/test guards this.
+     *   - `bit_exact_vs_scalar_{{ISA}}` test in core/test guards this.
      */
     (void) ref; (void) dis; (void) width; (void) height; (void) stride;
     (void) out;

@@ -23,9 +23,9 @@ description: Regenerate the mkdocs-material site, validate cross-references, sur
    - mkdocs-material emits `INFO`-level "not found / unrecognized" messages for
      ADR / research / source-tree refs that don't resolve. Capture
      `/tmp/mkdocs_build.log` and grep for `INFO` lines.
-   - Categorise: (a) source-tree refs (`../../libvmaf/...`) — inherently
-     unresolvable; expected. (b) doc-to-doc refs — these are the actionable
-     drift, mostly ADR slug renames.
+   - Categorise: (a) source-tree refs (`../../core/...`) — inherently
+     unresolvable from the mkdocs site; expected. (b) doc-to-doc refs —
+     these are the actionable drift, mostly ADR slug renames.
 4. Validate ADR coherence:
    - Every `docs/adr/NNNN-*.md` has an index row in `docs/adr/README.md`.
    - Every `(adr/NNNN-slug.md)` ref in `docs/state.md` / `docs/rebase-notes.md`

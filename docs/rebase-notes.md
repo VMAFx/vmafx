@@ -816,6 +816,23 @@ If upstream ever ports a Metal backend, the test files would need
 re-pointing at the upstream kernel names; the synthetic-fixture +
 `-ENODEV` skip pattern from `test_sycl_motion3_parity.c` carries
 forward unchanged.
+## .claude/skills/ — ADR-0700 path drift cleanup (2026-05-30)
+
+**Files touched:**
+`.claude/skills/add-gpu-backend/scaffold.sh`,
+`.claude/skills/build-vmaf/build.sh`,
+`.claude/skills/build-vmaf/SKILL.md`,
+`.claude/skills/regen-docs/SKILL.md`,
+`.claude/skills/add-simd-path/templates/simd_feature.c.template`
+
+**Rebase impact:** None. Files are entirely fork-local (the `.claude/`
+tree does not exist upstream — see ADR-0331 / ADR-0700). The change
+rewrites four residual `libvmaf/` source-tree references to `core/` to
+match the post-ADR-0700 layout. Public install-path references
+(`core/include/libvmaf/...`, `libvmaf.so`) are unchanged.
+
+When syncing from upstream Netflix/vmaf, this file does not need
+attention; the conflict surface is empty.
 
 ---
 

@@ -27,7 +27,7 @@ for arg in "$@"; do
 done
 
 repo_root=$(git rev-parse --show-toplevel)
-cd "$repo_root/libvmaf"
+cd "$repo_root/core"
 
 opts=()
 case "$backend" in

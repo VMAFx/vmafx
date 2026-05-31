@@ -19,7 +19,7 @@ Defaults: `--backend=cpu --config=release --sanitizers=none`.
 
 ## What it does
 
-1. `cd` to `libvmaf/`.
+1. `cd` to `core/` (the libvmaf source root after ADR-0700).
 2. If `--clean` is passed, remove `build/`.
 3. `meson setup build [--reconfigure]` with the backend flags:
    - `cpu`:  `-Denable_cuda=false -Denable_sycl=false`
