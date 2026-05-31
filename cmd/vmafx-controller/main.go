@@ -117,6 +117,11 @@ func main() {
 	// Prometheus registry + metrics.
 	// ---------------------------------------------------------------------------
 	registry := prometheus.NewRegistry()
+<<<<<<< ours
+=======
+	// collectors.* replaces deprecated prometheus.NewGoCollector /
+	// NewProcessCollector — staticcheck SA1019.
+>>>>>>> theirs
 	registry.MustRegister(collectors.NewGoCollector())
 	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	metrics := observability.NewMetrics(registry)

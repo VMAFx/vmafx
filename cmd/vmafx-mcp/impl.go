@@ -1031,7 +1031,19 @@ func handleListExtractors(_ context.Context, _ map[string]any) (any, error) {
 		if !strings.HasSuffix(path, ".c") {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		// Defensive: ensure the WalkDir-supplied path is still inside the
+		// trusted feature dir (defeats symlinks that point outside the tree
+		// — gosec G122 / CWE-367 TOCTOU). The feature dir is the fork's own
+		// in-tree source, so this guard is precautionary.
+		absPath, absErr := filepath.Abs(path)
+		if absErr != nil {
+			return nil //nolint:nilerr // skip unreadable entries
+		}
+		absRoot, rootErr := filepath.Abs(featureDir)
+		if rootErr != nil || !strings.HasPrefix(absPath, absRoot+string(os.PathSeparator)) {
+			return nil
+		}
+		data, err := os.ReadFile(absPath) // #nosec G304,G122 -- absPath validated inside trusted root above
 		if err != nil {
 			return nil //nolint:nilerr
 		}

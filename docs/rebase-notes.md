@@ -895,6 +895,19 @@ The added `USER nonroot:nonroot` directive on each final stage will
 not conflict on any future upstream sync. If upstream ever publishes
 their own Dockerfile, the fork's containers stay separate (the GHCR
 namespace is `vmafx/`).
+## go-nilness-staticcheck-audit (2026-05-30)
+
+**Files touched:**
+`cmd/vmafx-server/{main.go,http_server.go}`,
+`cmd/vmafx-controller/{main.go,http_server.go}`,
+`cmd/vmafx-mcp/impl.go`,
+`cmd/vmafx-node/main_test.go`,
+`pkg/ai/infer_test.go`,
+`pkg/bisect/bisect_test.go`.
+
+**Rebase impact:** None. Every modified file is fork-original Go code
+under `cmd/vmafx-*` / `pkg/*`; Netflix/vmaf upstream does not ship Go
+code in these paths. No upstream conflict possible.
 
 ---
 

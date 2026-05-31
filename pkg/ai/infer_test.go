@@ -121,7 +121,9 @@ func TestListModels_MissingDir(t *testing.T) {
 	t.Parallel()
 	r := NewRegistry("/nonexistent/dir/that/cannot/exist/9x7k")
 	models := r.ListModels()
-	if models != nil && len(models) != 0 {
+	// len() on a nil slice is zero — no explicit nil guard needed
+	// (staticcheck S1009).
+	if len(models) != 0 {
 		t.Errorf("expected nil/empty models for missing dir, got %v", models)
 	}
 }

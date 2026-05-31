@@ -178,8 +178,14 @@ func runHTTP(
 
 	log.Info("HTTP server started", "addr", addr)
 
-	// Graceful shutdown on context cancellation.
-	go func() {
+	// Graceful shutdown on context cancellation. The shutdown goroutine
+	// intentionally derives its timeout context from context.Background()
+	// rather than the request-scoped ctx: that ctx has *just* been cancelled
+	// (we drain <-ctx.Done() below), so propagating it to Shutdown would
+	// abort the in-flight-request drain immediately. This is the canonical
+	// net/http graceful-shutdown pattern.
+	// #nosec G118 -- intentional: see graceful-shutdown comment above.
+	go func() { //nolint:contextcheck // see graceful-shutdown comment above
 		<-ctx.Done()
 		log.Info("HTTP graceful shutdown initiated")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), observability.GracefulShutdownTimeout)

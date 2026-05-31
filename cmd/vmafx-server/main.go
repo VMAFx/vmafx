@@ -29,6 +29,7 @@ import (
 	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
@@ -94,9 +95,10 @@ func main() {
 	// Prometheus registry + metrics.
 	// ---------------------------------------------------------------------------
 	registry := prometheus.NewRegistry()
-	// Register Go runtime collectors.
-	registry.MustRegister(prometheus.NewGoCollector())
-	registry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
+	// Register Go runtime collectors (collectors.* replaces deprecated
+	// prometheus.NewGoCollector / NewProcessCollector — staticcheck SA1019).
+	registry.MustRegister(collectors.NewGoCollector())
+	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	metrics := observability.NewMetrics(registry)
 
 	// ---------------------------------------------------------------------------

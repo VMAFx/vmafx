@@ -43,21 +43,12 @@ func (m *mockEncoder) Encode(src string, params encoder.EncodeParams) (encoder.E
 	}, nil
 }
 
-// mockScoreFunc returns a ScoreFunc that uses vmafByCRF to return a score
-// based on the CRF embedded in the distorted file's name.
-func mockScoreFunc(vmafByCRF func(crf int) float64) bisect.ScoreFunc {
-	return func(ref, distorted string) (float64, error) {
-		// The mock encoder encodes CRF into the filename; extract it.
-		var crf int
-		_, err := fmt.Sscanf(distorted, os.TempDir()+"/mock-enc-crf%d-", &crf)
-		if err != nil {
-			// Fallback: parse from the end of the file name.
-			// Since os.TempDir() may have subdirs, just return a fixed score.
-			return 85.0, nil
-		}
-		return vmafByCRF(crf), nil
-	}
-}
+// mockScoreFunc previously returned a ScoreFunc by parsing CRF out of the
+// distorted file's name. It was removed in the go-nilness audit
+// (2026-05-30, staticcheck U1000) — all current bisect tests build their
+// ScoreFunc inline via closures over linearVMAF, so the helper had no
+// remaining callers. The bisect.ScoreFunc import is retained via the
+// closures in TestBisect_* below.
 
 // linearVMAF returns a VMAF function that decreases linearly from 100 at
 // CRF=0 to 0 at CRF=100.
