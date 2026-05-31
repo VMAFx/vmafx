@@ -161,7 +161,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #     noexcept annotation and the conflict disappears.
 #
 #   - Fix B (belt-and-suspenders): `-D__MATH_NO_INLINES` is also added
-#     to the nvcc flags in `libvmaf/src/meson.build`.  That flag tells
+#     to the nvcc flags in `core/src/meson.build`.  That flag tells
 #     glibc to suppress the inline math-function definitions that carry
 #     the noexcept annotation, eliminating the conflict even if a future
 #     CUDA patch version accidentally re-introduces the mismatch.
@@ -454,12 +454,19 @@ WORKDIR /build/vmaf
 # already provides the full tree at run-time, so baking it in is unnecessary.
 #
 # Directories included:
-#   libvmaf/        — meson source (the actual library + feature extractors)
+#   core/           — meson source (the actual library + feature extractors).
+#                     Renamed from libvmaf/ per ADR-0700; the meson source dir
+#                     is now `core/` and is passed to `meson setup` below.
+#   compat/         — Python harness package (was python/vmaf/); pip-installed
+#                     via the `python/` shim, but the compat/ tree itself must
+#                     be present in the build context for the editable install
+#                     to resolve. ADR-0700.
 #   ffmpeg-patches/ — patch series applied in stage 3.5
 #   mcp-server/     — MCP JSON-RPC server (pip install -e)
 #   ai/             — tiny-AI training harness (pip install -e)
 #   tools/          — vmaf-tune CLI (pip install -e)
-#   python/         — Python bindings added to PYTHONPATH
+#   python/         — Python bindings shim added to PYTHONPATH
+#                     (re-exports from compat/python-vmaf/, ADR-0700)
 #   model/          — VMAF model JSON/ONNX files (VMAF_MODEL_PATH)
 #   testdata/       — YUV fixtures for smoke tests (VMAF_TESTDATA_PATH;
 #                     runtime bind-mount shadows this at run-time)
@@ -472,7 +479,8 @@ WORKDIR /build/vmaf
 # user cannot create the meson build subdir (os.makedirs → EACCES → meson
 # reports as OSError).  chown /build too so that future sub-directories created
 # inside /build by vmaf (e.g., /build/ffmpeg) are not blocked either.
-COPY --chown=vmaf:vmaf libvmaf/        /build/vmaf/libvmaf/
+COPY --chown=vmaf:vmaf core/           /build/vmaf/core/
+COPY --chown=vmaf:vmaf compat/         /build/vmaf/compat/
 COPY --chown=vmaf:vmaf ffmpeg-patches/ /build/vmaf/ffmpeg-patches/
 COPY --chown=vmaf:vmaf mcp-server/     /build/vmaf/mcp-server/
 COPY --chown=vmaf:vmaf ai/             /build/vmaf/ai/
@@ -505,8 +513,8 @@ RUN curl -fsSL \
 USER vmaf
 
 # Configure with all backends enabled.
-# meson.build lives in libvmaf/ (not the repo root); pass the source dir
-# explicitly as the first positional argument to `meson setup`.
+# meson.build lives in core/ (not the repo root); pass the source dir
+# explicitly as the first positional argument to `meson setup`. ADR-0700.
 # -Denable_metal=auto  → auto-disabled on Linux (no Metal SDK present).
 # -Denable_mcp_sse=auto → auto-disabled until POSIX socket impl is complete.
 USER root
@@ -535,6 +543,7 @@ USER vmaf
 #
 # To revert to SPIR-V JIT only (smallest binary, first-run penalty):
 #   -Dsycl_icpx_aot_targets=''
+<<<<<<< ours
 # ccache cache mount: persists compilation cache across image rebuilds so a
 # touch-once-build-everywhere cycle doesn't pay the full nvcc/icpx/hipcc compile
 # cost again. Meson auto-detects ccache when it's on PATH; passing the
@@ -542,6 +551,9 @@ USER vmaf
 RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=1000,gid=1000,id=ccache-dev-mcp-vmaf \
     CCACHE_DIR=/home/vmaf/.cache/ccache \
     cd libvmaf && CC=icx CXX=icpx meson setup build \
+=======
+RUN cd core && CC=icx CXX=icpx meson setup build \
+>>>>>>> theirs
         -Denable_cuda=true \
         -Denable_sycl=true \
         -Denable_hip=true \
@@ -559,7 +571,7 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=1000,g
     && ninja -C build
 
 USER root
-RUN cd libvmaf && ninja -C build install \
+RUN cd core && ninja -C build install \
     && ldconfig
 
 # ---------- Build-time backend smoke probe ---------------------------------

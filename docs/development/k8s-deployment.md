@@ -3,6 +3,19 @@
 VMAFX ships a Helm chart under `deploy/helm/vmafx/` that supports three
 workload types and all three GPU device-plugin vendors (NVIDIA, AMD, Intel).
 
+A `values.schema.json` (Draft 2020-12) sits next to `values.yaml` and is
+consulted automatically by `helm install`, `helm upgrade`, and `helm lint
+--strict`. The schema enforces enum constraints on the load-bearing fields
+(`workload`, `gpu.vendor`, `storage.mode`, `service.type`,
+`image.pullPolicy`, `persistence.accessMode`, `operator.logLevel`,
+`statefulSet.podManagementPolicy`,
+`monitoring.serviceMonitor.scheme`) and uses `additionalProperties:
+false` on every typed sub-object so sibling-key typos
+(`replicaCounts`, `repostiory`, `maxSurg`) fail fast at install time
+instead of silently rendering a broken manifest. See
+[ADR-0870](../adr/0870-helm-values-schema-and-container-rebuild-audit.md)
+for the rationale.
+
 ## Prerequisites
 
 - Helm v3.12 or later

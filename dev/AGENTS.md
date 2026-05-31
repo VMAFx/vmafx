@@ -82,6 +82,26 @@ detected`. Bump the relevant ARG and rebuild.
   a derived stage that contains a pipe will trigger DL4006 as a false positive.
   Suppress with `# hadolint ignore=DL4006` and note that SHELL is inherited.
 
+### Source-tree paths after ADR-0700 / ADR-0870
+
+- The library source tree was renamed from `libvmaf/` to `core/` per
+  ADR-0700. The Python harness was split into a `compat/python-vmaf/`
+  package + a `python/` shim. The Containerfile reflects this:
+  - `COPY core/        /build/vmaf/core/` (was `libvmaf/`).
+  - `COPY compat/      /build/vmaf/compat/` (required for the editable
+    Python install through the `python/` shim).
+  - `cd core && meson setup build` / `cd core && ninja -C build install`
+    (both occurrences).
+- **Rule**: any rebase that picks up an upstream patch touching the
+  old `libvmaf/` directory must rewrite the path to `core/` before
+  applying it inside the Containerfile's COPY/cd flow. The
+  `.dockerignore` carries both `core/build*/` and legacy
+  `libvmaf/build*/` siblings so a pre-rename worktree still excludes
+  its build dirs; do not delete the legacy entries.
+- See [ADR-0870](../docs/adr/0870-helm-values-schema-and-container-rebuild-audit.md)
+  for the audit that established this invariant after the drift went
+  undetected through several merge trains.
+
 ### GPU backend exposure invariants (ADR-0514 / Research-0138)
 
 These four constraints must survive every rebase. Each one corresponds to

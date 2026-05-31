@@ -42137,3 +42137,17 @@ Fork-local files:
 `core/src/sycl/common.cpp`,
 `docs/research/logging-consistency-audit-2026-05-30.md`,
 `changelog.d/changed/logging-consistency-audit.md`.
+## ADR-0870 — Helm `values.schema.json` + dev-MCP path drift — 2026-05-30
+
+no rebase impact: all touched files are fork-additions (`deploy/helm/`,
+`dev/Containerfile`, `dev/docker-compose.yml`, `.dockerignore`,
+`docs/adr/0870-*.md`, `docs/adr/README.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/development/k8s-deployment.md`,
+`changelog.d/added/0870-*.md`,
+`changelog.d/fixed/0870-*.md`,
+`docs/state.md`). None of these have upstream Netflix/vmaf counterparts.
+The Containerfile path fixes (`libvmaf/` → `core/`) are the downstream of
+ADR-0700's repo rename; future rebases against a hypothetical upstream
+that re-introduced a `libvmaf/` directory at the repo root would need
+their own audit, but no such state exists or is planned.
