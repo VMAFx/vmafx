@@ -1,5 +1,5 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  speed_chroma feature extractor — CUDA backend with real on-device
@@ -120,7 +120,7 @@ typedef struct SpeedChromaCudaState {
     CUdeviceptr d_dis_variances; /* [num_blocks] float */
 
     /* Pinned host staging for cov_mat D2H (avoids paged copy latency). */
-    float *h_cov_mat; /* [625] float, cuMemAllocHost */
+    float *h_cov_mat; /* [625] float, cuMemHostAlloc (pinned) */
 
     /* Host-side CPU float plane buffer (for picture_copy → filter → H2D). */
     float *h_plane_ref; /* alloc_height × stride_px floats */
@@ -333,7 +333,7 @@ static int run_gpu_pipeline(SpeedChromaCudaState *s, CudaFunctions *cu_f, CUdevi
     /* Upload operating-resolution plane to device (synchronous for simplicity;
      * the CPU eigendecomp below is the latency-hiding opportunity). */
     int _cuda_err = 0;
-    CHECK_CUDA(cu_f, cuMemcpyHtoDAsync(d_plane, h_plane, plane_op_bytes, s->stream));
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyHtoDAsync(d_plane, h_plane, plane_op_bytes, s->stream), fail);
 
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
@@ -349,8 +349,10 @@ static int run_gpu_pipeline(SpeedChromaCudaState *s, CudaFunctions *cu_f, CUdevi
         void *args[] = {(void *)&d_plane,     (void *)&s->d_means,   (void *)&op_w,
                         (void *)&stride_px,   (void *)&num_blocks_h, (void *)&num_blocks,
                         (void *)&submatrix_w, (void *)&submatrix_h};
-        CHECK_CUDA(cu_f, cuLaunchKernel(s->func_means, grid_x, 1u, 1u, SC_MEANS_BLOCK, 1u, 1u, 0u,
-                                        s->stream, args, NULL));
+        CHECK_CUDA_GOTO(cu_f,
+                        cuLaunchKernel(s->func_means, grid_x, 1u, 1u, SC_MEANS_BLOCK, 1u, 1u, 0u,
+                                       s->stream, args, NULL),
+                        fail);
     }
 
     /* --- Kernel 2: covariance matrix (625 blocks × COV_BLOCK threads) */
@@ -358,8 +360,10 @@ static int run_gpu_pipeline(SpeedChromaCudaState *s, CudaFunctions *cu_f, CUdevi
         void *args[] = {(void *)&d_plane,     (void *)&s->d_means,   (void *)&s->d_cov_mat,
                         (void *)&stride_px,   (void *)&num_blocks_h, (void *)&num_blocks,
                         (void *)&submatrix_w, (void *)&submatrix_h};
-        CHECK_CUDA(cu_f, cuLaunchKernel(s->func_cov, SC_ELEMENTS, SC_ELEMENTS, 1u, SC_COV_BLOCK, 1u,
-                                        1u, 0u, s->stream, args, NULL));
+        CHECK_CUDA_GOTO(cu_f,
+                        cuLaunchKernel(s->func_cov, SC_ELEMENTS, SC_ELEMENTS, 1u, SC_COV_BLOCK, 1u,
+                                       1u, 0u, s->stream, args, NULL),
+                        fail);
     }
 
     /* --- Kernel 3: independent term -------------------------------- */
@@ -368,22 +372,28 @@ static int run_gpu_pipeline(SpeedChromaCudaState *s, CudaFunctions *cu_f, CUdevi
         const uint32_t grid_x = (total + SC_INDTERM_BLOCK - 1u) / SC_INDTERM_BLOCK;
         void *args[] = {(void *)&d_plane, (void *)&d_indterm, (void *)&stride_px,
                         (void *)&num_blocks_h, (void *)&num_blocks};
-        CHECK_CUDA(cu_f, cuLaunchKernel(s->func_indterm, grid_x, 1u, 1u, SC_INDTERM_BLOCK, 1u, 1u,
-                                        0u, s->stream, args, NULL));
+        CHECK_CUDA_GOTO(cu_f,
+                        cuLaunchKernel(s->func_indterm, grid_x, 1u, 1u, SC_INDTERM_BLOCK, 1u, 1u,
+                                       0u, s->stream, args, NULL),
+                        fail);
     }
 
     /* Sync to get cov_mat back to CPU for eigendecomp. */
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(s->h_cov_mat, s->d_cov_mat,
-                                       SC_ELEMENTS * SC_ELEMENTS * sizeof(float), s->stream));
-    CHECK_CUDA(cu_f, cuStreamSynchronize(s->stream));
+    CHECK_CUDA_GOTO(cu_f,
+                    cuMemcpyDtoHAsync(s->h_cov_mat, s->d_cov_mat,
+                                      SC_ELEMENTS * SC_ELEMENTS * sizeof(float), s->stream),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
 
     /* Download indterm (needed for Qt multiply on CPU). */
     const size_t indterm_bytes = (size_t)SC_ELEMENTS * num_blocks * sizeof(float);
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync((void *)(uintptr_t)((d_indterm == s->d_indterm_ref) ?
-                                                               s->h_indterm_ref :
-                                                               s->h_indterm_dis),
-                                       d_indterm, indterm_bytes, s->stream));
-    CHECK_CUDA(cu_f, cuStreamSynchronize(s->stream));
+    CHECK_CUDA_GOTO(
+        cu_f,
+        cuMemcpyDtoHAsync((void *)(uintptr_t)((d_indterm == s->d_indterm_ref) ? s->h_indterm_ref :
+                                                                                s->h_indterm_dis),
+                          d_indterm, indterm_bytes, s->stream),
+        fail);
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
 
     return 0;
 
@@ -419,10 +429,14 @@ static int run_cpu_linalg(SpeedChromaCudaState *s, CudaFunctions *cu_f, float *h
         speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
 
         /* Upload R and Q^T×indterm to device for GPU backward substitution. */
-        CHECK_CUDA(cu_f, cuMemcpyHtoDAsync(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float),
-                                           s->stream));
-        CHECK_CUDA(cu_f, cuMemcpyHtoDAsync(d_sol, h_indterm,
-                                           (size_t)sz * (size_t)nb * sizeof(float), s->stream));
+        CHECK_CUDA_GOTO(
+            cu_f,
+            cuMemcpyHtoDAsync(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float), s->stream),
+            fail);
+        CHECK_CUDA_GOTO(
+            cu_f,
+            cuMemcpyHtoDAsync(d_sol, h_indterm, (size_t)sz * (size_t)nb * sizeof(float), s->stream),
+            fail);
 
         /* GPU Kernel 4: backward substitution. */
         const uint32_t u_nb = (uint32_t)nb;
@@ -430,14 +444,18 @@ static int run_cpu_linalg(SpeedChromaCudaState *s, CudaFunctions *cu_f, float *h
         const uint32_t threads = warps_per_block * SC_SOLVE_WARP;
         const uint32_t blocks = (u_nb + (threads / SC_SOLVE_WARP) - 1u) / (threads / SC_SOLVE_WARP);
         void *args[] = {(void *)&s->d_R, (void *)&d_sol, (void *)&u_nb};
-        CHECK_CUDA(cu_f, cuLaunchKernel(s->func_solve, blocks, 1u, 1u, threads, 1u, 1u, 0u,
-                                        s->stream, args, NULL));
-        CHECK_CUDA(cu_f, cuStreamSynchronize(s->stream));
+        CHECK_CUDA_GOTO(cu_f,
+                        cuLaunchKernel(s->func_solve, blocks, 1u, 1u, threads, 1u, 1u, 0u,
+                                       s->stream, args, NULL),
+                        fail);
+        CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
     }
 
     /* Upload eigenvalues to device for score kernel. */
-    CHECK_CUDA(cu_f, cuMemcpyHtoDAsync(s->d_eigenvalues, s->h_eigenvalues,
-                                       (size_t)sz * sizeof(float), s->stream));
+    CHECK_CUDA_GOTO(cu_f,
+                    cuMemcpyHtoDAsync(s->d_eigenvalues, s->h_eigenvalues,
+                                      (size_t)sz * sizeof(float), s->stream),
+                    fail);
 
     (void)d_indterm_ptr; /* unused but kept for symmetry */
     return 0;
@@ -470,17 +488,23 @@ static int run_score_and_collect(SpeedChromaCudaState *s, CudaFunctions *cu_f, f
                         (void *)&s->d_dis_variances,
                         (void *)&num_blocks,
                         (void *)&sigma_nn};
-        CHECK_CUDA(cu_f, cuLaunchKernel(s->func_score, grid, 1u, 1u, SC_SCORE_BLOCK, 1u, 1u, 0u,
-                                        s->stream, args, NULL));
+        CHECK_CUDA_GOTO(cu_f,
+                        cuLaunchKernel(s->func_score, grid, 1u, 1u, SC_SCORE_BLOCK, 1u, 1u, 0u,
+                                       s->stream, args, NULL),
+                        fail);
     }
 
     /* D2H: four arrays of num_blocks floats. */
     const size_t ab = (size_t)num_blocks * sizeof(float);
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(s->h_ref_entropies, s->d_ref_entropies, ab, s->stream));
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(s->h_ref_variances, s->d_ref_variances, ab, s->stream));
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(s->h_dis_entropies, s->d_dis_entropies, ab, s->stream));
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(s->h_dis_variances, s->d_dis_variances, ab, s->stream));
-    CHECK_CUDA(cu_f, cuStreamSynchronize(s->stream));
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoHAsync(s->h_ref_entropies, s->d_ref_entropies, ab, s->stream),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoHAsync(s->h_ref_variances, s->d_ref_variances, ab, s->stream),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoHAsync(s->h_dis_entropies, s->d_dis_entropies, ab, s->stream),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoHAsync(s->h_dis_variances, s->d_dis_variances, ab, s->stream),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
 
     /* CPU score aggregation (matches get_speed_score in speed.c). */
     const float base_entropy =
@@ -694,7 +718,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     /* Allocate pinned host buffers for D2H. */
 #define ALLOC_HOST(field, sz)                                                                      \
     do {                                                                                           \
-        CHECK_CUDA_GOTO(cu_f, cuMemAllocHost((void **)&(s->field), (sz)), fail_pop);               \
+        CHECK_CUDA_GOTO(cu_f, cuMemHostAlloc((void **)&(s->field), (sz), 0x01u), fail_pop);        \
     } while (0)
 
     ALLOC_HOST(h_cov_mat, cov_bytes);

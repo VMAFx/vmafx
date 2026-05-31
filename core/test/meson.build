@@ -804,6 +804,7 @@ test_integer_vif_cpu_cuda_parity = executable('test_integer_vif_cpu_cuda_parity'
 test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
     suite : ['fast', 'gpu'])
 
+<<<<<<< ours
 # ADR-0956 — CUDA kernel parity coverage round 4. Closes the last
 # three float-path CPU twins (`float_adm_cuda`, `float_motion_cuda`,
 # `float_ssim_cuda`) with cross-backend parity assertions at
@@ -813,21 +814,38 @@ test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
 # `[skip: no CUDA device]` guard when vmaf_cuda_state_init fails.
 test_cuda_float_adm_parity = executable('test_cuda_float_adm_parity',
     ['test.c', 'test_cuda_float_adm_parity.c'],
+=======
+# ADR-0965 — speed_chroma + speed_temporal CPU vs. CUDA parity gates.
+# Pin the cross-backend tolerance (places=4) for the CUDA SpEED twins wired
+# in this repair PR.  Both tests skip cleanly when no CUDA device is visible
+# (mirrors test_cuda_motion3_parity.c).
+test_cuda_speed_chroma_parity = executable('test_cuda_speed_chroma_parity',
+    ['test.c', 'test_cuda_speed_chroma_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 test('test_cuda_float_adm_parity', test_cuda_float_adm_parity,
     suite : ['fast', 'gpu'])
 
 test_cuda_float_motion_parity = executable('test_cuda_float_motion_parity',
     ['test.c', 'test_cuda_float_motion_parity.c'],
+=======
+test('test_cuda_speed_chroma_parity', test_cuda_speed_chroma_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
+    ['test.c', 'test_cuda_speed_temporal_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 test('test_cuda_float_motion_parity', test_cuda_float_motion_parity,
     suite : ['fast', 'gpu'])
 
@@ -866,6 +884,9 @@ test_cuda_speed_temporal_smoke = executable('test_cuda_speed_temporal_smoke',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_speed_temporal_smoke', test_cuda_speed_temporal_smoke,
+=======
+test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
+>>>>>>> theirs
     suite : ['fast', 'gpu'])
 endif
 
@@ -1007,6 +1028,30 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
+    suite : ['fast', 'gpu'])
+
+# ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.
+# Pin the cross-backend tolerance (places=4) for the SpEED-family GPU
+# twins that this PR wires.  Both tests skip cleanly when no SYCL device
+# is visible (mirrors test_sycl_motion3_parity.c).
+test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
+    ['test.c', 'test_sycl_speed_chroma_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
+    ['test.c', 'test_sycl_speed_temporal_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
     suite : ['fast', 'gpu'])
 endif
 

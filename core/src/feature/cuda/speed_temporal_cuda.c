@@ -1,5 +1,5 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  speed_temporal feature extractor — CUDA backend with real on-device
@@ -288,7 +288,7 @@ static int run_gpu_pipeline_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, f
     const uint32_t submatrix_w = (uint32_t)s->dim.submatrix_width;
     const uint32_t submatrix_h = (uint32_t)s->dim.submatrix_height;
 
-    CHECK_CUDA(cu_f, cuMemcpyHtoDAsync(s->d_plane, h_plane, plane_op_bytes, s->stream));
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyHtoDAsync(s->d_plane, h_plane, plane_op_bytes, s->stream), fail);
 
     /* K1: means */
     {
@@ -296,16 +296,20 @@ static int run_gpu_pipeline_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, f
         void *args[] = {(void *)&s->d_plane,  (void *)&s->d_means,   (void *)&op_w,
                         (void *)&stride_px,   (void *)&num_blocks_h, (void *)&num_blocks,
                         (void *)&submatrix_w, (void *)&submatrix_h};
-        CHECK_CUDA(cu_f, cuLaunchKernel(s->func_means, grid_x, 1u, 1u, ST_MEANS_BLOCK, 1u, 1u, 0u,
-                                        s->stream, args, NULL));
+        CHECK_CUDA_GOTO(cu_f,
+                        cuLaunchKernel(s->func_means, grid_x, 1u, 1u, ST_MEANS_BLOCK, 1u, 1u, 0u,
+                                       s->stream, args, NULL),
+                        fail);
     }
     /* K2: cov */
     {
         void *args[] = {(void *)&s->d_plane,  (void *)&s->d_means,   (void *)&s->d_cov_mat,
                         (void *)&stride_px,   (void *)&num_blocks_h, (void *)&num_blocks,
                         (void *)&submatrix_w, (void *)&submatrix_h};
-        CHECK_CUDA(cu_f, cuLaunchKernel(s->func_cov, ST_ELEMENTS, ST_ELEMENTS, 1u, ST_COV_BLOCK, 1u,
-                                        1u, 0u, s->stream, args, NULL));
+        CHECK_CUDA_GOTO(cu_f,
+                        cuLaunchKernel(s->func_cov, ST_ELEMENTS, ST_ELEMENTS, 1u, ST_COV_BLOCK, 1u,
+                                       1u, 0u, s->stream, args, NULL),
+                        fail);
     }
     /* K3: indterm */
     {
@@ -313,15 +317,19 @@ static int run_gpu_pipeline_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, f
         const uint32_t grid_x = (total + ST_INDTERM_BLOCK - 1u) / ST_INDTERM_BLOCK;
         void *args[] = {(void *)&s->d_plane, (void *)&d_indterm, (void *)&stride_px,
                         (void *)&num_blocks_h, (void *)&num_blocks};
-        CHECK_CUDA(cu_f, cuLaunchKernel(s->func_indterm, grid_x, 1u, 1u, ST_INDTERM_BLOCK, 1u, 1u,
-                                        0u, s->stream, args, NULL));
+        CHECK_CUDA_GOTO(cu_f,
+                        cuLaunchKernel(s->func_indterm, grid_x, 1u, 1u, ST_INDTERM_BLOCK, 1u, 1u,
+                                       0u, s->stream, args, NULL),
+                        fail);
     }
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(s->h_cov_mat, s->d_cov_mat,
-                                       ST_ELEMENTS * ST_ELEMENTS * sizeof(float), s->stream));
+    CHECK_CUDA_GOTO(cu_f,
+                    cuMemcpyDtoHAsync(s->h_cov_mat, s->d_cov_mat,
+                                      ST_ELEMENTS * ST_ELEMENTS * sizeof(float), s->stream),
+                    fail);
     const size_t indterm_bytes = (size_t)ST_ELEMENTS * num_blocks * sizeof(float);
     float *h_ind = (d_indterm == s->d_indterm_ref) ? s->h_indterm_ref : s->h_indterm_dis;
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(h_ind, d_indterm, indterm_bytes, s->stream));
-    CHECK_CUDA(cu_f, cuStreamSynchronize(s->stream));
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoHAsync(h_ind, d_indterm, indterm_bytes, s->stream), fail);
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
     return 0;
 fail:
     return -EIO;
@@ -344,20 +352,28 @@ static int run_cpu_linalg_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, flo
     } else {
         (void)speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
         speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
-        CHECK_CUDA(cu_f, cuMemcpyHtoDAsync(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float),
-                                           s->stream));
-        CHECK_CUDA(cu_f, cuMemcpyHtoDAsync(d_sol, h_indterm,
-                                           (size_t)sz * (size_t)nb * sizeof(float), s->stream));
+        CHECK_CUDA_GOTO(
+            cu_f,
+            cuMemcpyHtoDAsync(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float), s->stream),
+            fail);
+        CHECK_CUDA_GOTO(
+            cu_f,
+            cuMemcpyHtoDAsync(d_sol, h_indterm, (size_t)sz * (size_t)nb * sizeof(float), s->stream),
+            fail);
         const uint32_t u_nb = (uint32_t)nb;
         const uint32_t threads = ((u_nb + 7u) / 8u) * ST_SOLVE_WARP;
         const uint32_t blocks = (u_nb + (threads / ST_SOLVE_WARP) - 1u) / (threads / ST_SOLVE_WARP);
         void *args[] = {(void *)&s->d_R, (void *)&d_sol, (void *)&u_nb};
-        CHECK_CUDA(cu_f, cuLaunchKernel(s->func_solve, blocks, 1u, 1u, threads, 1u, 1u, 0u,
-                                        s->stream, args, NULL));
-        CHECK_CUDA(cu_f, cuStreamSynchronize(s->stream));
+        CHECK_CUDA_GOTO(cu_f,
+                        cuLaunchKernel(s->func_solve, blocks, 1u, 1u, threads, 1u, 1u, 0u,
+                                       s->stream, args, NULL),
+                        fail);
+        CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
     }
-    CHECK_CUDA(cu_f, cuMemcpyHtoDAsync(s->d_eigenvalues, s->h_eigenvalues,
-                                       (size_t)sz * sizeof(float), s->stream));
+    CHECK_CUDA_GOTO(cu_f,
+                    cuMemcpyHtoDAsync(s->d_eigenvalues, s->h_eigenvalues,
+                                      (size_t)sz * sizeof(float), s->stream),
+                    fail);
     return 0;
 fail:
     return -EIO;
@@ -382,15 +398,21 @@ static int run_score_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *s
                         (void *)&s->d_dis_variances,
                         (void *)&num_blocks,
                         (void *)&sigma_nn};
-        CHECK_CUDA(cu_f, cuLaunchKernel(s->func_score, grid, 1u, 1u, ST_SCORE_BLOCK, 1u, 1u, 0u,
-                                        s->stream, args, NULL));
+        CHECK_CUDA_GOTO(cu_f,
+                        cuLaunchKernel(s->func_score, grid, 1u, 1u, ST_SCORE_BLOCK, 1u, 1u, 0u,
+                                       s->stream, args, NULL),
+                        fail);
     }
     const size_t ab = (size_t)num_blocks * sizeof(float);
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(s->h_ref_entropies, s->d_ref_entropies, ab, s->stream));
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(s->h_ref_variances, s->d_ref_variances, ab, s->stream));
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(s->h_dis_entropies, s->d_dis_entropies, ab, s->stream));
-    CHECK_CUDA(cu_f, cuMemcpyDtoHAsync(s->h_dis_variances, s->d_dis_variances, ab, s->stream));
-    CHECK_CUDA(cu_f, cuStreamSynchronize(s->stream));
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoHAsync(s->h_ref_entropies, s->d_ref_entropies, ab, s->stream),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoHAsync(s->h_ref_variances, s->d_ref_variances, ab, s->stream),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoHAsync(s->h_dis_entropies, s->d_dis_entropies, ab, s->stream),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuMemcpyDtoHAsync(s->h_dis_variances, s->d_dis_variances, ab, s->stream),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
 
     const float base_entropy =
         (float)ST_ELEMENTS *
@@ -484,7 +506,7 @@ static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
 #undef ALLOC_D
 
 #define ALLOC_H(field, sz)                                                                         \
-    CHECK_CUDA_GOTO(cu_f, cuMemAllocHost((void **)&(s->field), (sz)), fail_pop)
+    CHECK_CUDA_GOTO(cu_f, cuMemHostAlloc((void **)&(s->field), (sz), 0x01u), fail_pop)
     ALLOC_H(h_cov_mat, cov_bytes);
     ALLOC_H(h_ref_entropies, score_bytes);
     ALLOC_H(h_ref_variances, score_bytes);

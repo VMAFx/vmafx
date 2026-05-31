@@ -40844,3 +40844,61 @@ binaries in the same `enable_cuda` block the conflict is a trivial
 append-vs-append three-way merge (no shared lines change). Fork-local
 documentation files (ADR-0956, the round 4 research digest, the
 changelog fragment, this rebase-notes row) are never authored upstream.
+## speed_internal.c + SpEED GPU twin wiring (ADR-0964, 2026-05-31)
+
+**Will bite a rebase.** This PR adds `core/src/feature/speed_internal.c`
+(a fork-local TU that duplicates ~600 LOC of pure math — eigendecomposition,
+QR factorisation, matrix helpers — from `speed.c`). When `/sync-upstream`
+ports any change to `speed.c`'s static helpers (`compute_eigenvalues`,
+`matrix_qr_decomposition`, `solve_triangular_system`,
+`convert_to_tridiagonal`, `compute_eigenvalues_tridiagonal`,
+`compute_covariance_matrix`, `filter_and_downscale`, ...), the same
+change must be mirrored into `speed_internal.c`.  Symptom of drift:
+`test_sycl_speed_chroma_parity` / `test_sycl_speed_temporal_parity`
+flag a places=4 violation between CPU and SYCL on Intel Arc.
+
+Also fork-local:
+- `core/src/feature/hip/speed_{chroma,temporal}_hip.c` (already in tree,
+  newly wired into `core/src/hip/meson.build`).
+- `core/src/feature/sycl/speed_{chroma,temporal}_sycl.cpp` (already in
+  tree, newly wired into `core/src/meson.build` `sycl_feature_sources`).
+- `core/src/feature/feature_extractor.c` externs + registry rows for
+  the four new GPU extractor symbols, gated on `#if HAVE_HIP` /
+  `#if HAVE_SYCL`.
+- `core/test/test_sycl_speed_chroma_parity.c` +
+  `core/test/test_sycl_speed_temporal_parity.c`.
+
+If Netflix upstream ever ships its own SpEED GPU implementation that
+takes a different code-sharing approach (e.g. exposing `speed.c`
+helpers via a non-static-prefix), the fork should consider migrating
+to upstream's pattern; until then `speed_internal.c` is the canonical
+location for the shared helpers and the GPU TUs depend on its
+function names.
+
+CUDA twins (`speed_chroma_cuda`, `speed_temporal_cuda`) are NOT wired
+in this PR — the TUs reference symbols (`CHECK_CUDA`,
+`CudaFunctions->cuMemAllocHost`) that do not exist; they need a
+repair pass. Tracked as `T-CUDA-SPEED-TU-REPAIR-2026-05-31` in
+`docs/state.md`.
+
+## CUDA SpEED TU repair + wiring (ADR-0965, 2026-05-31)
+
+**No new rebase risk beyond ADR-0964.** This repair PR fixes the latent
+bugs in `speed_chroma_cuda.c` and `speed_temporal_cuda.c` and wires them
+into meson. The changes are:
+
+- `CHECK_CUDA(cu_f, CALL)` replaced with `CHECK_CUDA_GOTO(cu_f, CALL, fail)`
+  throughout both TUs.
+- `cuMemAllocHost(ptr, sz)` replaced with `cuMemHostAlloc(ptr, sz, 0x01u)`
+  in the `ALLOC_HOST` macros (both TUs).
+
+Both changes are mechanical; no algorithmic content was altered. The
+rebase-note from ADR-0964 above covers the `speed_internal.c` drift risk
+(mirror fixes between `speed.c` and `speed_internal.c`).
+
+New additions:
+- `core/src/feature/feature_extractor.c` externs + registry rows for
+  `vmaf_fex_speed_chroma_cuda` / `vmaf_fex_speed_temporal_cuda` under
+  `#if HAVE_CUDA`.
+- `core/test/test_cuda_speed_chroma_parity.c` +
+  `core/test/test_cuda_speed_temporal_parity.c`.
