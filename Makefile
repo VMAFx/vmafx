@@ -84,7 +84,7 @@ cythonize-deps: $(VENV_PIP)
 # ============================================================================
 
 .PHONY: lint lint-c lint-py lint-sh format format-check sec sbom \
-        test-netflix-golden test-sanitizers test-fast hooks-install help \
+        test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
         coverage coverage-html coverage-check assertion-density pr-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
@@ -241,32 +241,32 @@ assertion-density:
 
 # Install the pre-commit + pre-push git hooks.
 #
-# - pre-commit / commit-msg come from .pre-commit-config.yaml (including
-#   the `agent-worktree-drift-guard` local hook; ADR-0332).
-# - pre-push is the PR-body deliverables validator at
-#   scripts/git-hooks/pre-push (mirrors the rule-enforcement.yml
-#   deep-dive-checklist gate locally; ADR-0108).
+# Default (framework) path — symlinks the framework-managed pre-commit
+# hook from .pre-commit-config.yaml (including the
+# `agent-worktree-drift-guard` local hook; ADR-0332) plus the commit-msg
+# hook, then the fork's pre-push PR-body deliverables validator at
+# scripts/git-hooks/pre-push (mirrors rule-enforcement.yml; ADR-0108).
 #
-# Idempotent: re-running replaces stale symlinks/copies. Existing
-# non-symlink pre-push hooks are preserved with a `.local-backup`
+# Native (opt-in) path — set VMAFX_NATIVE_HOOKS=1 to install the bash
+# pre-commit at scripts/githooks/pre-commit.sh instead of the framework
+# hook. The native path skips the per-hook venv-wrap cost (~3 s/hook)
+# and typically completes in ~0.4 s on a small commit. CI is unaffected.
+# See docs/development/pre-commit-hooks.md and ADR-0924.
+#
+# Usage:
+#   make install-hooks                          # framework (default)
+#   VMAFX_NATIVE_HOOKS=1 make install-hooks     # native bash
+#
+# Idempotent: re-running replaces stale symlinks. Existing non-symlink
+# pre-push or pre-commit hooks are preserved with a `.local-backup`
 # suffix so a contributor's hand-rolled hook is never silently
 # overwritten.
-hooks-install:
-	@command -v pre-commit >/dev/null || pip install pre-commit
-	pre-commit install --install-hooks
-	pre-commit install --hook-type commit-msg
-	@hooks_dir="$$(git rev-parse --git-path hooks)"; \
-	src="$$(git rev-parse --show-toplevel)/scripts/git-hooks/pre-push"; \
-	dst="$$hooks_dir/pre-push"; \
-	if [ ! -x "$$src" ]; then \
-	    echo "hooks-install: $$src missing or not executable" >&2; exit 1; \
-	fi; \
-	if [ -e "$$dst" ] && [ ! -L "$$dst" ]; then \
-	    echo "hooks-install: preserving existing $$dst as $$dst.local-backup"; \
-	    mv "$$dst" "$$dst.local-backup"; \
-	fi; \
-	ln -sfn "$$src" "$$dst"; \
-	echo "hooks-install: pre-push -> $$src"
+#
+# `hooks-install` retained as a legacy alias for `install-hooks`.
+install-hooks:
+	@scripts/githooks/install.sh
+
+hooks-install: install-hooks
 
 # pr-check — local equivalent of the rule-enforcement.yml deliverables gate.
 # Runs scripts/ci/deliverables-check.sh against an existing PR's body
@@ -338,7 +338,9 @@ help:
 	@echo "  make coverage-html    — render HTML coverage report"
 	@echo "  make coverage-check   — enforce ≥70% overall / ≥85% critical"
 	@echo "  make assertion-density — Power-of-10 rule 5 density check"
-	@echo "  make hooks-install    — wire up pre-commit git hooks"
+	@echo "  make install-hooks    — wire up pre-commit + pre-push git hooks"
+	@echo "                          (set VMAFX_NATIVE_HOOKS=1 for native bash; ADR-0924)"
+	@echo "  make hooks-install    — legacy alias for install-hooks"
 	@echo ""
 	@echo "  make go-build         — go build ./... (Go workspace, ADR-0702)"
 	@echo "  make go-test          — go test ./... (Go workspace, ADR-0702)"

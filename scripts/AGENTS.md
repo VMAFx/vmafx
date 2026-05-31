@@ -10,6 +10,8 @@ scripts/
   ci/               # CI utilities — separate AGENTS.md (see scripts/ci/AGENTS.md)
   dev/              # developer-time helpers (corpus generation, knob analysis)
   docs/             # ADR-0221 ADR-index fragment concatenation
+  git-hooks/        # framework pre-push hook (PR-body validator; ADR-0108)
+  githooks/         # native bash pre-commit hook + installer (opt-in; ADR-0924)
   release/          # ADR-0221 CHANGELOG.md fragment concatenation
   setup/            # OS/distro setup dispatcher + per-distro scripts
   gen_smoke_onnx.py                  # tiny-AI smoke fixture generator (deterministic)
@@ -189,6 +191,34 @@ production paths still rank.
 Do the same for non-implementation uses of the word "stub": Python type-stub
 packages, driver-stub environment diagnostics, and comments that pin
 disabled-build stub signatures to the real implementation ABI.
+
+### `git-hooks/` and `githooks/` are two coexisting directories — intentional
+
+Two parallel directories, both fork-original:
+
+- `scripts/git-hooks/` (hyphenated) holds the shared **pre-push**
+  PR-body deliverables validator (ADR-0108) plus the pre-rebase
+  worktree-drift guard (ADR-0684). These hooks are installed by
+  *both* pre-commit paths and are not specific to either.
+- `scripts/githooks/` (no hyphen) holds the **native bash pre-commit**
+  hook (`pre-commit.sh`) and the unified installer (`install.sh`)
+  added in [ADR-0924](../docs/adr/0924-native-pre-commit-hooks.md).
+  This directory is the opt-in alternative to the pre-commit
+  framework path.
+
+The naming split is deliberate — it lets `make install-hooks`
+delegate to `scripts/githooks/install.sh` (a single entry point
+that handles both framework and native modes) without colliding
+with the existing `scripts/git-hooks/pre-push` symlink target that
+the legacy `hooks-install` target wires in.
+
+**On rebase**: the native `pre-commit.sh` mirrors
+`.pre-commit-config.yaml`'s file-scope rules (excludes for
+`subprojects/`, `core/test/data/`, etc.). When the framework
+config changes scope, the native script needs a paired update —
+otherwise contributors on the native path drift silently from CI.
+The native path is staged-file scope only; CI continues to invoke
+`pre-commit run --all-files` against the framework matrix.
 
 ### `run_unittests.sh` is upstream-mirror
 

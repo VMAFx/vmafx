@@ -59,6 +59,15 @@ If a future upstream port touches `core/` in a way that changes the
 public C API consumed by `pkg/libvmaf`, the Phase 2 wiring of
 `ScoreStream` to libvmaf will need to mirror that change — but Phase
 1 is server-stub-only and doesn't reach the C surface yet.
+## Native bash pre-commit hook (ADR-0924, 2026-05-31)
+
+no rebase impact: all paths are fork-local — `scripts/githooks/`
+(new directory), `docs/development/pre-commit-hooks.md`,
+`docs/adr/0924-*.md`, `docs/research/0924-*.md`,
+`changelog.d/added/native-pre-commit-hooks.md`. The Makefile changes
+rename `hooks-install` → `install-hooks` (with the old name kept as
+a legacy alias), in a fork-only target that upstream Netflix does
+not define. No upstream-mirrored file is touched.
 
 ---
 
