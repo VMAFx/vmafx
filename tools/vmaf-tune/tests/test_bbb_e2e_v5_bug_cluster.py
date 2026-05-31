@@ -459,6 +459,7 @@ def test_make_default_sampler_passes_cloud_sink_through(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(
     shutil.which("docker") is None,
     reason="docker not available; cannot run the dev-mcp end-to-end probe",
@@ -511,9 +512,13 @@ def test_ladder_against_bbb_container_yields_plausible_vmaf() -> None:
         (
             "cd /workspace && PYTHONPATH=tools/vmaf-tune/src "
             "python -c 'from vmaftune.cli import main; raise SystemExit(main())' "
+            # ADR-0908: duration trimmed 4 -> 2 s and CRF sweep 3 -> 2 pts
+            # (`23,33`) to halve docker e2e wall (~13 s -> ~7 s). The
+            # `len(samples) >= 4` floor is preserved: 2 resolutions x 2
+            # CRFs = 4, and 2 s of BBB sunflower still clears `vmaf >= 50`.
             f"ladder --src {src} --target-vmafs 88,92 "
-            "--resolutions 1920x1080,1280x720 --framerate 30 --duration 4 "
-            f"--crf-sweep 23,28,33 --format json --output {out_json}"
+            "--resolutions 1920x1080,1280x720 --framerate 30 --duration 2 "
+            f"--crf-sweep 23,33 --format json --output {out_json}"
         ),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)

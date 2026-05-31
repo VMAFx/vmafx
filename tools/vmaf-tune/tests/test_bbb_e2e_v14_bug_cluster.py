@@ -334,6 +334,7 @@ def _ffmpeg_reports_encoder(encoder: str) -> bool:
     return False
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(
     not _ffmpeg_reports_encoder("h264_nvenc"),
     reason="h264_nvenc not compiled into local ffmpeg or no NVIDIA GPU",

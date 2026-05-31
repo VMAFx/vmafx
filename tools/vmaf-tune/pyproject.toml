@@ -33,6 +33,12 @@ packages = ["src/vmaftune"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    # Tests >30 s wall (or that exercise real GPUs / containers and may grow
+    # past 30 s). Exclude with `pytest -m 'not slow'` for fast iteration.
+    # See docs/adr/0908-slow-test-audit-2026-05-30.md.
+    "slow: marks tests as slow (deselect with -m 'not slow')",
+]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests legitimately compare to literal expected values; PLR2004 is noise here.

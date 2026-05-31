@@ -41628,3 +41628,14 @@ New fork-local files only:
 
 No upstream Netflix collision risk — the gate consumes only the fork-added
 `testdata/perf_multi_resolution.json` baseline (ADR-0752, fork-local).
+## Slow-test audit (ADR-0908, 2026-05-30)
+
+no rebase impact: REASON — all touched files are fork-local. A new ADR
+(`docs/adr/0908-slow-test-audit-2026-05-30.md`), a new research digest
+(`docs/research/slow-test-audit-2026-05-30.md`), fork-added pytest
+configuration in three `pyproject.toml` files registering the `slow`
+marker (`tools/vmaf-tune/pyproject.toml`, `ai/pyproject.toml`,
+`mcp-server/vmaf-mcp/pyproject.toml`), and fork-added test files
+(`tools/vmaf-tune/tests/test_bbb_e2e_v5_bug_cluster.py`,
+`tools/vmaf-tune/tests/test_bbb_e2e_v14_bug_cluster.py`). None are
+mirrored from upstream Netflix/vmaf.
