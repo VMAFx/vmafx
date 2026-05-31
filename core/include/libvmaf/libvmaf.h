@@ -97,6 +97,7 @@
         VMAF_OUTPUT_FORMAT_SUB,
     };
 
+<<<<<<< ours
     enum VmafPoolingMethod {
         VMAF_POOL_METHOD_UNKNOWN = 0,
         VMAF_POOL_METHOD_MIN,
@@ -105,6 +106,25 @@
         VMAF_POOL_METHOD_HARMONIC_MEAN,
         VMAF_POOL_METHOD_NB
     };
+=======
+enum VmafPoolingMethod {
+    VMAF_POOL_METHOD_UNKNOWN = 0,
+    VMAF_POOL_METHOD_MIN,
+    VMAF_POOL_METHOD_MAX,
+    VMAF_POOL_METHOD_MEAN,
+    VMAF_POOL_METHOD_HARMONIC_MEAN,
+    /**
+     * Count sentinel — exposed for backwards compatibility with callers
+     * that historically iterated `[0, VMAF_POOL_METHOD_NB)`. NOT a stable
+     * API value: its numeric value increases whenever a new pooling
+     * method is appended below it, so do not switch on it, persist it,
+     * or pass it across an ABI boundary. New code should switch on the
+     * named values and treat any unknown discriminant as
+     * `VMAF_POOL_METHOD_UNKNOWN`.
+     */
+    VMAF_POOL_METHOD_NB
+};
+>>>>>>> theirs
 
     /**
  * @struct VmafConfiguration
@@ -120,16 +140,32 @@
  *                    inaccurate results. For more detail, see
  *                    https://github.com/Netflix/vmaf/issues/1214
  *
- * @param cpumask     Restrict permitted CPU instruction sets.
- *                    if cpumask & 1:  disable SSE2 / disable NEON (on arm64)
- *                    if cpumask & 2:  disable SSE3/SSSE3
- *                    if cpumask & 4:  disable SSE4.1
- *                    if cpumask & 8:  disable AVX2
- *                    if cpumask & 16: disable AVX512
- *                    if cpumask & 32: disable AVX512ICL
+ * @param cpumask     Restrict permitted CPU instruction sets. The bit
+ *                    layout is architecture-specific — only the bits
+ *                    listed for the host architecture take effect; bits
+ *                    set for a different architecture are silently
+ *                    ignored.
  *
- * @param gpumask     Restrict permitted GPU operations.
- *                    if gpumask: disable CUDA
+ *                    On x86 / x86_64:
+ *                      if cpumask & 1:  disable SSE2
+ *                      if cpumask & 2:  disable SSE3 / SSSE3
+ *                      if cpumask & 4:  disable SSE4.1
+ *                      if cpumask & 8:  disable AVX2
+ *                      if cpumask & 16: disable AVX512
+ *                      if cpumask & 32: disable AVX512ICL
+ *
+ *                    On arm64 / aarch64:
+ *                      if cpumask & 1:  disable NEON (forces scalar)
+ *                      if cpumask & 2:  disable SVE2
+ *
+ * @param gpumask     Restrict permitted GPU operations. Any non-zero
+ *                    value disables the GPU feature-extractor selection
+ *                    for both the CUDA and SYCL backends (the runtime
+ *                    falls back to the CPU implementation). The HIP
+ *                    backend is host-pic and is not gated by gpumask —
+ *                    its activation is controlled solely by whether a
+ *                    HIP state pointer was imported via
+ *                    `vmaf_hip_import_state()`. ADR-0530.
  */
     typedef struct VmafConfiguration {
         enum VmafLogLevel log_level; /**< Logger verbosity. */
@@ -273,9 +309,9 @@
  *
  * @param model  Opaque model context.
  *
- * @param index  Picture index.
+ * @param score  Predicted score (out).
  *
- * @param score  Predicted score.
+ * @param index  Picture index.
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.

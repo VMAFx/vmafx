@@ -88,6 +88,7 @@
 >>>>>>> theirs
     typedef struct VmafRef VmafRef;
 
+<<<<<<< ours
     /**
  * Frame the library scores. Populated by the caller (or by
  * `vmaf_picture_alloc`); released with `vmaf_picture_unref`.
@@ -102,6 +103,28 @@
         VmafRef *ref;                 /**< Internal refcount cookie; do not touch. */
         void *priv;                   /**< Opaque slot for caller-owned metadata. */
     } VmafPicture;
+=======
+/**
+ * @struct VmafPicture
+ * @brief Reference-counted planar picture passed to feature extractors.
+ *
+ * Allocated by `vmaf_picture_alloc()` (or obtained from the preallocated
+ * pool via `vmaf_fetch_preallocated_picture()`) and released by
+ * `vmaf_picture_unref()`. Ownership transfers to the `VmafContext` on
+ * `vmaf_read_pictures()`; do not free / unref a picture after handing it
+ * to the context.
+ */
+typedef struct VmafPicture {
+    enum VmafPixelFormat pix_fmt; /**< planar pixel format (see VmafPixelFormat). */
+    unsigned bpc;                 /**< bits per component, typically 8, 10, 12, or 16. */
+    unsigned w[3];                /**< per-plane width in samples; index 0 = Y, 1 = U, 2 = V. */
+    unsigned h[3];                /**< per-plane height in samples; same indexing as @ref w. */
+    ptrdiff_t stride[3];          /**< per-plane row stride in **bytes** (>= w * sample_size). */
+    void *data[3]; /**< per-plane sample buffer; uint8_t* when bpc <= 8, uint16_t* otherwise. */
+    VmafRef *ref;  /**< opaque refcount handle owned by libvmaf — do not touch. */
+    void *priv;    /**< opaque per-picture private slot owned by libvmaf — do not touch. */
+} VmafPicture;
+>>>>>>> theirs
 
     /**
 <<<<<<< ours
