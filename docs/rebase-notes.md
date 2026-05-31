@@ -246,6 +246,44 @@ the existing 3-state state machine semantics intact and matching the
 CAS pattern already used by `vmaf_mcp_start_{stdio,uds,sse}`. The new
 regression test (`test_mcp_stop_idempotent.c`) is also fork-only.
 Sync impact: no Netflix file references `vmaf_mcp_*` symbols.
+## `compat/python-vmaf/` scanf + ProcessRunner locale fixes (2026-05-31, ADR-0955)
+
+**Files touched:**
+`compat/python-vmaf/tools/scanf.py`,
+`compat/python-vmaf/__init__.py`,
+`python/test/python_harness_scanf_locale_bugs_test.py` (new fork-only test).
+
+**Rebase impact:** Medium. Both fixes live inside the upstream-mirror tree
+(`compat/python-vmaf/`), so a future upstream sync may overwrite them.
+
+1. `tools/scanf.py::makeFormattedHandler.applyWidth` — the upstream code
+   has an **inverted** width guard:
+   ```python
+   def applyWidth(handler):
+       if width is None:
+           return makeWidthLimitedHandler(handler, width, ignoreWhitespace=True)
+       return handler
+   ```
+   The fork swaps the branches so implicit-width converters return
+   `handler` and explicit-width converters return the capped wrapper.
+   When porting an upstream commit that re-touches this function,
+   verify the swapped semantics are preserved. If Netflix has
+   independently fixed the same bug, drop the fork delta and update
+   ADR-0955's status to `Superseded by upstream`.
+
+2. `__init__.py::ProcessRunner.run` — upstream sets the C locale via
+   `env.setdefault("LC_ALL", "C")` / `env.setdefault("LANG", "C")`.
+   The fork replaces both `setdefault` calls with unconditional
+   assignment (`env["LC_ALL"] = "C"` / `env["LANG"] = "C"`) so a
+   parent shell with non-English `LC_ALL` / `LANG` cannot defeat
+   the override. When porting an upstream commit that re-touches
+   `ProcessRunner.run`, preserve the unconditional assignment
+   pattern.
+
+The regression test
+`python/test/python_harness_scanf_locale_bugs_test.py` exercises
+both code paths and will fail if either fix regresses during an
+upstream sync.
 
 ---
 

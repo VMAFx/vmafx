@@ -646,8 +646,8 @@ def makeFormattedHandler(suppression, width, formatCh):
 
     def applyWidth(handler):
         if width is None:
-            return makeWidthLimitedHandler(handler, width, ignoreWhitespace=True)
-        return handler
+            return handler
+        return makeWidthLimitedHandler(handler, width, ignoreWhitespace=True)
 
     # 'c' is a special case: it's the only handler that can't ignore
     # whitespace.

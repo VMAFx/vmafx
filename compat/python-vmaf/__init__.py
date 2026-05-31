@@ -54,9 +54,14 @@ class ProcessRunner(object):
             # shell errors (e.g. "Kommando nicht gefunden" instead of
             # "command not found") and breaks test assertions that grep
             # the message for canonical English phrases.
+            #
+            # Unconditional overwrite is intentional: setdefault() would
+            # respect a parent LC_ALL/LANG already set to e.g.
+            # "de_DE.UTF-8", defeating the whole point of the override.
+            # We need C-locale subprocess output regardless of host env.
             env = dict(os.environ)
-            env.setdefault("LC_ALL", "C")
-            env.setdefault("LANG", "C")
+            env["LC_ALL"] = "C"
+            env["LANG"] = "C"
             kwargs.setdefault("env", env)
             subprocess.check_output(cmd, stderr=subprocess.STDOUT, **kwargs)
         except subprocess.CalledProcessError as e:

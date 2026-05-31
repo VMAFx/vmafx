@@ -11,7 +11,7 @@ Orientation for agents working on the Python bindings and the **classic**
 
 Not in scope: tiny-AI training — that lives in [../../ai/](../../ai/AGENTS.md).
 
-```
+```text
 python/vmaf/
   config.py              # WORKSPACE / RESOURCE constants + env overrides
   workspace/             # classic-harness scratch (gitignored subtrees except placeholders)
@@ -65,6 +65,24 @@ python/vmaf/
   3.14 appends assert-expression detail to `AssertionError` text. Cast numeric
   scalar examples to `float(...)` or format them, and print only the first
   exception-message line when a doctest is documenting assertion text.
+- **`tools/scanf.py::makeFormattedHandler.applyWidth` width guard is
+  swapped vs upstream.** The fork inverts the upstream `if width is
+  None` branches so implicit-width converters return the unwrapped
+  handler and explicit-width converters return the capped wrapper.
+  Without this, implicit `%d` / `%f` / `%s` / `%x` crashes inside
+  `CappedBuffer` with `TypeError`, and explicit `%5d` silently drops
+  the cap. If a future upstream sync re-touches this function,
+  preserve the swapped semantics or confirm upstream has independently
+  applied the same fix. Regression test:
+  `python/test/python_harness_scanf_locale_bugs_test.py`. See
+  [ADR-0955](../../docs/adr/0955-compat-python-vmaf-scanf-locale-bugs.md).
+- **`ProcessRunner.run` uses unconditional `env[...] = "C"`, not
+  `env.setdefault(...)`.** The fork forces `LC_ALL=C` / `LANG=C` in
+  the subprocess env regardless of what the parent shell sets, so
+  English error messages survive a non-English host locale. Upstream
+  uses `setdefault`, which is a no-op when the key already exists and
+  defeats the intent. Preserve the unconditional assignment when
+  porting upstream changes to this method.
 
 ## Governing ADRs
 
