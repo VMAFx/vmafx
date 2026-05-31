@@ -81,6 +81,7 @@ type Registry struct {
 =======
 	store *registry.Store[string, Node]
 	log   *slog.Logger
+<<<<<<< ours
 >>>>>>> theirs
 }
 
@@ -92,6 +93,23 @@ type Registry struct {
 // ensuring tests and callers can stop the goroutine cleanly.
 func NewRegistry(ctx context.Context, log *slog.Logger) *Registry {
 	reaperCtx, cancel := context.WithCancel(ctx)
+=======
+
+	// Reaper lifecycle.  done is closed exactly once by Close() to signal the
+	// background reaper goroutine to exit; wg waits for it to actually exit
+	// so Close() is observable.  closeOnce guarantees Close() is idempotent.
+	done      chan struct{}
+	wg        sync.WaitGroup
+	closeOnce sync.Once
+}
+
+// NewRegistry creates an empty Registry and starts the reaper goroutine.
+//
+// Callers MUST invoke Close() when the registry is no longer needed (typically
+// via `defer` in main) to terminate the reaper goroutine — otherwise it leaks
+// for the lifetime of the process.
+func NewRegistry(log *slog.Logger) *Registry {
+>>>>>>> theirs
 	r := &Registry{
 <<<<<<< ours
 		nodes:  make(map[string]*Node),
@@ -100,6 +118,7 @@ func NewRegistry(ctx context.Context, log *slog.Logger) *Registry {
 =======
 		store: registry.New[string, Node](cloneNode),
 		log:   log,
+<<<<<<< ours
 >>>>>>> theirs
 	}
 	go r.reaper(reaperCtx)
@@ -121,6 +140,23 @@ func cloneNode(n Node) Node {
 		cp.Capability.Backends = append([]string(nil), n.Capability.Backends...)
 	}
 	return cp
+>>>>>>> theirs
+=======
+		done:  make(chan struct{}),
+	}
+	r.wg.Add(1)
+	go r.reaper()
+	return r
+}
+
+// Close signals the reaper goroutine to exit and waits for it to finish.
+// It is safe to call multiple times; subsequent calls are no-ops.
+func (r *Registry) Close() error {
+	r.closeOnce.Do(func() {
+		close(r.done)
+		r.wg.Wait()
+	})
+	return nil
 >>>>>>> theirs
 }
 
@@ -242,6 +278,7 @@ func (r *Registry) Count() int {
 
 // reaper runs in the background and evicts nodes that have not sent a
 <<<<<<< ours
+<<<<<<< ours
 // heartbeat within HeartbeatTimeout.  It exits when ctx is cancelled.
 //
 // ADR-0962: required non-variadic ctx replaces the old `_ ...context.Context`
@@ -285,6 +322,32 @@ func (r *Registry) reaper() {
 				)
 			},
 		)
+>>>>>>> theirs
+=======
+// heartbeat within HeartbeatTimeout.  Exits when r.done is closed.
+func (r *Registry) reaper(_ ...context.Context) {
+	defer r.wg.Done()
+	ticker := time.NewTicker(HeartbeatTimeout / 3)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.done:
+			return
+		case <-ticker.C:
+			deadline := time.Now().Add(-HeartbeatTimeout)
+			r.mu.Lock()
+			for id, n := range r.nodes {
+				if n.LastHeartbeat.Before(deadline) {
+					r.log.Warn("node evicted (heartbeat timeout)",
+						"node_id", id,
+						"name", n.Name,
+						"last_heartbeat", n.LastHeartbeat,
+					)
+					delete(r.nodes, id)
+				}
+			}
+			r.mu.Unlock()
+		}
 >>>>>>> theirs
 	}
 }

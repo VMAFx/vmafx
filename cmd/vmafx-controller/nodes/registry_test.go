@@ -13,6 +13,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -145,6 +146,7 @@ func TestAll(t *testing.T) {
 }
 
 <<<<<<< ours
+<<<<<<< ours
 // TestReaper_StopsOnContextCancel verifies that the reaper goroutine exits
 // within two ticker intervals after the context is cancelled.
 //
@@ -245,6 +247,75 @@ func TestAll_shimMatchesAllSeq(t *testing.T) {
 	}
 	if sliceCount != seqCount {
 		t.Errorf("All shim count %d != AllSeq count %d", sliceCount, seqCount)
+>>>>>>> theirs
+=======
+// TestCloseStopsReaper verifies that Close() returns within a bounded time
+// (proving the reaper goroutine exits promptly via the done channel rather
+// than waiting for the next ticker fire ~20 s away).
+//
+// Regression test for the goroutine-leak bug where NewRegistry() spawned a
+// reaper that ran for the lifetime of the binary because Registry had no
+// Close() method.
+func TestCloseStopsReaper(t *testing.T) {
+	r := newTestRegistry(t)
+
+	// The reaper's ticker fires every HeartbeatTimeout/3 (= 20 s).  If Close()
+	// fails to signal exit and merely waits for the next tick, this would take
+	// up to 20 s.  A 2 s budget proves we're using the done-channel path.
+	done := make(chan error, 1)
+	go func() { done <- r.Close() }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Close did not return within 2 s — reaper goroutine likely leaked")
+	}
+}
+
+// TestCloseIdempotent verifies that multiple Close() calls are safe and all
+// return nil — the second call must not double-close the done channel
+// (which would panic) or block forever on the WaitGroup.
+func TestCloseIdempotent(t *testing.T) {
+	r := newTestRegistry(t)
+
+	if err := r.Close(); err != nil {
+		t.Fatalf("first Close: %v", err)
+	}
+
+	// Second call from the same goroutine.
+	if err := r.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+
+	// Concurrent calls from multiple goroutines — also must not panic
+	// or deadlock.  Create a fresh registry so we exercise the race path
+	// before any single Close has completed.
+	r2 := newTestRegistry(t)
+	const concurrent = 8
+	var wg sync.WaitGroup
+	wg.Add(concurrent)
+	for i := 0; i < concurrent; i++ {
+		go func() {
+			defer wg.Done()
+			if err := r2.Close(); err != nil {
+				t.Errorf("concurrent Close: %v", err)
+			}
+		}()
+	}
+
+	doneAll := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(doneAll)
+	}()
+
+	select {
+	case <-doneAll:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("concurrent Close calls did not all return within 2 s")
 >>>>>>> theirs
 	}
 }

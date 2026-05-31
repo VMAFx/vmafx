@@ -136,6 +136,14 @@ func main() {
 	}
 	defer jobQueue.Close()
 
+<<<<<<< ours
+=======
+	nodeRegistry := nodes.NewRegistry(log)
+	defer func() { _ = nodeRegistry.Close() }()
+	sched := scheduler.New(jobQueue, nodeRegistry, log)
+	metrics.SetControllerSources(jobQueue, nodeRegistry)
+
+>>>>>>> theirs
 	// ---------------------------------------------------------------------------
 	// Shutdown context — cancelled on SIGTERM / SIGINT.
 	// ---------------------------------------------------------------------------
