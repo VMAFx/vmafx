@@ -1,0 +1,1 @@
+| [ADR-0969](0969-helm-seccomp-default-plus-node-image-helper.md) | Helm chart: add seccompProfile default + fix node-deployment image helper (Round 26 audit B.1 + B.3) | Accepted | 2026-05-31 | security, helm, kubernetes |

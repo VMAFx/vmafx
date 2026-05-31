@@ -219,6 +219,12 @@ podSecurityContext:
   runAsUser: 65534
   runAsGroup: 65534
   fsGroup: 65534
+  # PSA "restricted" profile requires seccompProfile (ADR-0969).
+  # RuntimeDefault uses the container runtime's default seccomp profile
+  # (typically equivalent to docker/default), which is safe for all
+  # vmafx workloads. Upgrade to Localhost + custom profile if needed.
+  seccompProfile:
+    type: RuntimeDefault
 
 securityContext:
   allowPrivilegeEscalation: false

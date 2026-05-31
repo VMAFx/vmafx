@@ -145,6 +145,14 @@ touch this subtree.
 **Rebase impact:** None — `ai/src/vmaf_train/` is entirely fork-local with no
 upstream Netflix/vmaf equivalent. No C surface is touched. No upstream
 coupling.
+## Helm chart seccompProfile + node-deployment image helper (2026-05-31, ADR-0969)
+
+no rebase impact: REASON — both changes are entirely within
+`deploy/helm/vmafx/` which is fork-added infrastructure with no upstream
+counterpart in Netflix/vmaf. Netflix upstream does not ship a Helm chart;
+upstream syncs never touch this directory. PR #439 (ADR-0930) will rebase
+cleanly on top (it modifies `values.yaml` in a non-conflicting block and
+does not touch `node-deployment.yaml`).
 
 ---
 

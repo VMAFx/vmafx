@@ -62,7 +62,7 @@ spec:
       {{- end }}
       containers:
         - name: vmafx-node
-          image: {{ .Values.node.image.repository }}:{{ .Values.node.image.tag | default .Chart.AppVersion }}
+          image: {{ include "vmafx.nodeImage" . }}
           imagePullPolicy: {{ .Values.node.image.pullPolicy | default "IfNotPresent" }}
           env:
             - name: VMAFX_CONTROLLER_ADDR
