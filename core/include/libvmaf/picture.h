@@ -16,48 +16,95 @@
  *
  */
 
+<<<<<<< ours
 #ifndef LIBVMAF_PICTURE_H
 #define LIBVMAF_PICTURE_H
+=======
+/* Upstream Netflix include guard preserved verbatim for rebase parity.
+ * Renaming would diverge from Netflix/vmaf master and break port-only sync.
+ * See CLAUDE.md §10 "Upstream sync" and docs/rebase-notes.md. */
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
+#ifndef __VMAF_PICTURE_H__
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
+#define __VMAF_PICTURE_H__
+    >>>>>>> theirs
 
 #include <stddef.h>
 
 #include "libvmaf/macros.h"
 
 #ifdef __cplusplus
-extern "C" {
+    extern "C"
+{
 #endif
 
-/**
+    /**
+<<<<<<< ours
  * Pixel format of a @ref VmafPicture. Mirrors the FFmpeg YUV planar
  * formats libvmaf consumes.
+=======
+ * @enum  VmafPixelFormat
+ * @brief Planar YUV pixel format discriminator for @ref VmafPicture.
+ *
+ * Drives chroma plane sizing in @ref vmaf_picture_alloc and downstream
+ * feature-extractor dispatch. libvmaf only supports planar layouts — interleaved
+ * formats (NV12, YUYV, ...) must be repacked by the caller before allocation.
+ *
+ *   - `VMAF_PIX_FMT_UNKNOWN` — sentinel / uninitialised; rejected by allocators.
+ *   - `VMAF_PIX_FMT_YUV420P` — 4:2:0, chroma subsampled 2x horiz + 2x vert
+ *                              (most common SDR / HDR delivery format).
+ *   - `VMAF_PIX_FMT_YUV422P` — 4:2:2, chroma subsampled 2x horiz only.
+ *   - `VMAF_PIX_FMT_YUV444P` — 4:4:4, no chroma subsampling.
+ *   - `VMAF_PIX_FMT_YUV400P` — luma only (a.k.a. Y-only / monochrome);
+ *                              `w[1] = h[1] = w[2] = h[2] = 0`.
+ *
+ * Stable enumerator values — append-only across libvmaf releases for ABI
+ * compatibility with downstream consumers (the ffmpeg `libvmaf` filter,
+ * Go/Rust bindings).
+>>>>>>> theirs
  */
-enum VmafPixelFormat {
-    VMAF_PIX_FMT_UNKNOWN, /**< Unset / sentinel value. */
-    VMAF_PIX_FMT_YUV420P, /**< 4:2:0 chroma subsampling, planar. */
-    VMAF_PIX_FMT_YUV422P, /**< 4:2:2 chroma subsampling, planar. */
-    VMAF_PIX_FMT_YUV444P, /**< 4:4:4 (no subsampling), planar. */
-    VMAF_PIX_FMT_YUV400P, /**< Luma only (no chroma planes). */
-};
+    enum VmafPixelFormat {
+        VMAF_PIX_FMT_UNKNOWN, /**< Unset / sentinel value. */
+        VMAF_PIX_FMT_YUV420P, /**< 4:2:0 chroma subsampling, planar. */
+        VMAF_PIX_FMT_YUV422P, /**< 4:2:2 chroma subsampling, planar. */
+        VMAF_PIX_FMT_YUV444P, /**< 4:4:4 (no subsampling), planar. */
+        VMAF_PIX_FMT_YUV400P, /**< Luma only (no chroma planes). */
+    };
 
-/** Opaque reference-counted handle backing a `VmafPicture`. */
-typedef struct VmafRef VmafRef;
-
+<<<<<<< ours
+    /** Opaque reference-counted handle backing a `VmafPicture`. */
+=======
 /**
+ * @typedef VmafRef
+ * @brief Opaque atomic refcount handle managed by libvmaf — do not dereference.
+ *
+ * Embedded in @ref VmafPicture::ref to track per-picture borrows across feature
+ * extractors. Lifetime is bound to the owning picture: created by
+ * @ref vmaf_picture_alloc, retained internally on each `vmaf_picture_ref`,
+ * released on the matching @ref vmaf_picture_unref, and freed by libvmaf when
+ * the count reaches zero. Callers must treat the field as opaque; the layout
+ * is libvmaf-internal and may change between releases without notice.
+ */
+>>>>>>> theirs
+    typedef struct VmafRef VmafRef;
+
+    /**
  * Frame the library scores. Populated by the caller (or by
  * `vmaf_picture_alloc`); released with `vmaf_picture_unref`.
  */
-typedef struct VmafPicture {
-    enum VmafPixelFormat pix_fmt; /**< Pixel format. */
-    unsigned bpc;                 /**< Bits per component (8 / 10 / 12 / 16). */
-    unsigned w[3];                /**< Per-plane width. */
-    unsigned h[3];                /**< Per-plane height. */
-    ptrdiff_t stride[3];          /**< Per-plane row stride, in bytes. */
-    void *data[3];                /**< Per-plane sample buffer. */
-    VmafRef *ref;                 /**< Internal refcount cookie; do not touch. */
-    void *priv;                   /**< Opaque slot for caller-owned metadata. */
-} VmafPicture;
+    typedef struct VmafPicture {
+        enum VmafPixelFormat pix_fmt; /**< Pixel format. */
+        unsigned bpc;                 /**< Bits per component (8 / 10 / 12 / 16). */
+        unsigned w[3];                /**< Per-plane width. */
+        unsigned h[3];                /**< Per-plane height. */
+        ptrdiff_t stride[3];          /**< Per-plane row stride, in bytes. */
+        void *data[3];                /**< Per-plane sample buffer. */
+        VmafRef *ref;                 /**< Internal refcount cookie; do not touch. */
+        void *priv;                   /**< Opaque slot for caller-owned metadata. */
+    } VmafPicture;
 
-/**
+    /**
+<<<<<<< ours
  * Allocate the per-plane buffers + refcount cookie of @p pic.
  *
  * @param pic      Caller-owned picture struct to populate.
@@ -67,19 +114,72 @@ typedef struct VmafPicture {
  * @param h        Luma (frame) height.
  *
  * @return 0 on success, a negative errno on failure.
+=======
+ * @brief Allocate a planar picture buffer sized for the given format + dimensions.
+ *
+ * Sets every field of @p pic according to @p pix_fmt, @p bpc, @p w, and @p h:
+ * per-plane widths/heights are derived from the chroma subsampling encoded in
+ * @p pix_fmt, row strides are rounded up to a 32-byte boundary (so AVX2 /
+ * AVX-512 SIMD paths can load full vector registers without tail handling),
+ * and the sample buffer is contiguously allocated for all three planes. The
+ * data buffers are *uninitialised*; the caller is expected to fill them
+ * before passing the picture to @ref vmaf_read_pictures.
+ *
+ * The picture's refcount is initialised to 1. Pair every successful
+ * allocation with exactly one @ref vmaf_picture_unref unless ownership is
+ * transferred via @ref vmaf_read_pictures (which calls
+ * @ref vmaf_picture_unref internally).
+ *
+ * @param pic     Out: receives the populated picture descriptor (struct passed
+ *                by pointer is filled in place). Must not be NULL.
+ * @param pix_fmt Planar pixel format. `VMAF_PIX_FMT_UNKNOWN` is rejected.
+ * @param bpc     Bits per component, typically 8, 10, 12, or 16. Values <= 8
+ *                produce a `uint8_t`-typed sample buffer; > 8 produces
+ *                `uint16_t` (packed LE).
+ * @param w       Luma width in samples. Must be > 0.
+ * @param h       Luma height in samples. Must be > 0.
+ *
+ * @return 0 on success, or a negative errno code on error: `-EINVAL` on bad
+ *         arguments (NULL pointer, unknown format, zero dimensions),
+ *         `-ENOMEM` on allocation failure.
+ *
+ * @since libvmaf 3.0.0 (upstream).
+>>>>>>> theirs
  */
-VMAF_EXPORT int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                                   unsigned w, unsigned h);
+    VMAF_EXPORT int vmaf_picture_alloc(VmafPicture * pic, enum VmafPixelFormat pix_fmt,
+                                       unsigned bpc, unsigned w, unsigned h);
 
-/**
+    /**
+<<<<<<< ours
  * Drop the caller's reference on @p pic. When the last reference is
  * released, the per-plane buffers are freed and @p pic is zeroed.
  *
  * @param pic  Picture to release.
  *
  * @return 0 on success, a negative errno on failure.
+=======
+ * @brief Drop one reference to a picture, freeing its buffers when the count
+ *        reaches zero.
+ *
+ * Symmetric to @ref vmaf_picture_alloc: every allocation contributes one
+ * outstanding reference, every successful @ref vmaf_read_pictures contributes
+ * one more (which libvmaf releases internally once feature extraction
+ * completes). When the final reference goes, the underlying sample buffers
+ * are freed and the descriptor fields are zeroed so a stale handle cannot be
+ * accidentally reused.
+ *
+ * Safe to call with a `NULL` @p pic (no-op). Safe to call on a picture that
+ * was preallocated via @ref vmaf_fetch_preallocated_picture — the picture
+ * returns to its pool instead of being freed.
+ *
+ * @param pic Picture descriptor to unref. NULL is a no-op.
+ *
+ * @return 0 on success, or a negative errno code on error.
+ *
+ * @since libvmaf 3.0.0 (upstream).
+>>>>>>> theirs
  */
-VMAF_EXPORT int vmaf_picture_unref(VmafPicture *pic);
+    VMAF_EXPORT int vmaf_picture_unref(VmafPicture * pic);
 
 #ifdef __cplusplus
 }

@@ -744,6 +744,34 @@ untouched, so no upstream header rebase is affected. If upstream
 Netflix introduces new fork-only C++ static helpers, apply the same
 `[[nodiscard]]` / `noexcept` discipline so the lint posture stays
 uniform.
+## libvmaf-public-header-doc-gaps-round3 (2026-05-30)
+
+**Files touched:**
+- `core/include/libvmaf/picture.h` (doc comments on enum + opaque typedef +
+  2 entry points, plus NOLINT-cited include guard)
+- `core/include/libvmaf/libvmaf.h` (doc comments on 2 enums + opaque
+  typedef + 1 struct, plus NOLINT-cited include guard)
+- `core/include/libvmaf/libvmaf_cuda.h` (doc comments on opaque typedef +
+  config struct + enum + 1 picture-config struct, plus NOLINT-cited
+  include guard)
+
+**Rebase impact:** Low. The doc-comment additions land above unchanged
+upstream-mirror declarations; any future Netflix upstream that touches the
+same function signatures, enum bodies, or struct definitions will produce
+a tractable 3-way merge — the doc text is fork-local and `git merge` will
+preserve our `/** ... */` block above whatever upstream rewrites the
+declaration to. No identifier renames; no ABI/source impact.
+
+The NOLINT annotations on `__VMAF_H__` / `__VMAF_PICTURE_H__` /
+`__VMAF_CUDA_H__` are inline comments only — they do not alter the include
+guard symbols themselves, so upstream's preprocessor identity remains
+intact. Same pattern PR #327 (round 2) used for `feature.h` / `model.h` /
+`dnn.h`. If a future upstream sync changes the guard form (unlikely —
+these have been stable for years), the NOLINT cites become redundant and
+can be removed in a follow-on cleanup.
+
+No source/binary symbol renames; consumers of the patch stack
+(`ffmpeg-patches/`) and the Go/Rust bindings see identical declarations.
 
 ---
 
