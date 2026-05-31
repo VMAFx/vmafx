@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 from pathlib import Path
@@ -340,6 +341,136 @@ def test_describe_worst_frames_tmpdir_cleared_on_next_call(tmp_path, monkeypatch
     )
     assert len(result["frames"]) == 1
     assert result["frames"][0]["description"] == "stub description"
+
+
+# ---------------------------------------------------------------------------
+# Round 26 A.2 — NamedTemporaryFile uniqueness + cleanup
+# ---------------------------------------------------------------------------
+
+
+def test_score_tempfile_uses_unique_path(tmp_path, monkeypatch):
+    """10 concurrent calls must produce 10 distinct output paths (no task-name
+    collision).  We intercept the subprocess call and write a minimal valid
+    JSON payload to the output path so _run_vmaf_score can read it back."""
+    import anyio
+
+    monkeypatch.setenv("VMAF_MCP_ALLOW", str(tmp_path))
+
+    # Create stub ref/dis files so path validation passes.
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    ref.write_bytes(b"\x00" * 16)
+    dis.write_bytes(b"\x00" * 16)
+
+    # Create a stub binary so the exists() check passes.
+    vmaf_stub = tmp_path / "vmaf-stub"
+    vmaf_stub.touch()
+
+    # Patch _vmaf_binary so no real binary is needed.
+    monkeypatch.setattr(srv, "_vmaf_binary", lambda: vmaf_stub)
+
+    # Patch _probe_backends so backend validation passes for "auto".
+    monkeypatch.setattr(srv, "_probe_backends", lambda _vmaf: frozenset({"cpu"}))
+
+    captured_paths: list[Path] = []
+
+    class _FakeProc:
+        returncode = 0
+
+        async def communicate(self):
+            return b"", b""
+
+    async def fake_subprocess(*argv, **_kwargs):
+        # The output path is the second-to-last arg (before --json).
+        # argv[0] is the vmaf binary string; scan for "-o".
+        args = list(argv)
+        idx = args.index("-o")
+        out_path = Path(args[idx + 1])
+        captured_paths.append(out_path)
+        # Write a minimal valid JSON result so json.loads succeeds.
+        out_path.write_text('{"frames": [{"frameNum": 0, "metrics": {"vmaf": 90.0}}]}')
+        return _FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_subprocess)
+
+    req = srv.ScoreRequest(
+        ref=ref,
+        dis=dis,
+        width=16,
+        height=1,
+        pixfmt="420",
+        bitdepth=8,
+    )
+
+    async def run_concurrent():
+        tasks = [asyncio.create_task(srv._run_vmaf_score(req)) for _ in range(10)]
+        return await asyncio.gather(*tasks)
+
+    anyio.run(run_concurrent)
+
+    assert len(captured_paths) == 10, "expected exactly 10 calls"
+    assert (
+        len(set(str(p) for p in captured_paths)) == 10
+    ), "task-name collision: two concurrent calls produced the same output path"
+    # All temp files must have been cleaned up by the finally block.
+    for p in captured_paths:
+        assert not p.exists(), f"tempfile not cleaned up: {p}"
+
+
+def test_score_tempfile_cleaned_up_on_exception(tmp_path, monkeypatch):
+    """An exception raised during scoring must still cause the output
+    tempfile to be unlinked (the finally block must fire)."""
+    import anyio
+
+    monkeypatch.setenv("VMAF_MCP_ALLOW", str(tmp_path))
+
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    ref.write_bytes(b"\x00" * 16)
+    dis.write_bytes(b"\x00" * 16)
+
+    vmaf_stub = tmp_path / "vmaf-stub"
+    vmaf_stub.touch()
+
+    monkeypatch.setattr(srv, "_vmaf_binary", lambda: vmaf_stub)
+    monkeypatch.setattr(srv, "_probe_backends", lambda _vmaf: frozenset({"cpu"}))
+
+    leaked_path: list[Path] = []
+
+    class _FailProc:
+        returncode = 1
+
+        async def communicate(self):
+            return b"", b"simulated scoring failure"
+
+    async def fail_subprocess(*argv, **_kwargs):
+        args = list(argv)
+        idx = args.index("-o")
+        out_path = Path(args[idx + 1])
+        leaked_path.append(out_path)
+        # Do NOT write the output file — vmaf "failed".
+        return _FailProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fail_subprocess)
+
+    req = srv.ScoreRequest(
+        ref=ref,
+        dis=dis,
+        width=16,
+        height=1,
+        pixfmt="420",
+        bitdepth=8,
+    )
+
+    async def run():
+        with pytest.raises(RuntimeError, match="vmaf exited 1"):
+            await srv._run_vmaf_score(req)
+
+    anyio.run(run)
+
+    assert len(leaked_path) == 1
+    # The finally block must have cleaned up even though scoring raised.
+    assert not leaked_path[0].exists(), "tempfile leaked after exception in _run_vmaf_score"
 
 
 def test_describe_image_falls_back_to_metadata_only_without_extras(monkeypatch):

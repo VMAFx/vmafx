@@ -46,6 +46,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -280,7 +281,16 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
                 "vmaf pick, or rebuild with the requested backend enabled."
             )
 
-    output = Path("/tmp") / f"vmaf-mcp-{os.getpid()}-{asyncio.current_task().get_name()}.json"
+    # Round 26 A.2: use NamedTemporaryFile to guarantee a unique path.
+    # The task-name approach (asyncio.current_task().get_name()) was vulnerable
+    # to collision if tasks were renamed, and the name space is small under
+    # high concurrency.  delete=False hands ownership to the finally block.
+    with tempfile.NamedTemporaryFile(
+        prefix="vmaf-mcp-",
+        suffix=".json",
+        delete=False,
+    ) as _tmp:
+        output = Path(_tmp.name)
     try:
         argv = [
             str(vmaf),

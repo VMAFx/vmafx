@@ -41342,3 +41342,9 @@ lines 100–144 is unchanged. On upstream sync the audit conclusions remain
 valid until Netflix introduces its own `.github/actions/` tree or
 `workflow_call:` workflow; re-run the three reproducer commands in the
 research digest to confirm.
+
+## fix(mcp-server): NamedTemporaryFile (ADR-0975) — no rebase impact
+
+Replaces a local variable assignment in `_run_vmaf_score`. No C surface, no public
+API, no upstream-mirrored file touched. On rebase against upstream Netflix/vmaf,
+this change applies cleanly to the MCP server layer which is entirely fork-local.
