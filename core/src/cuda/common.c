@@ -89,7 +89,7 @@ fail_after_stream:
     if (cu_state->str)
         (void)cu_state->f->cuStreamDestroy(cu_state->str);
     cu_state->str = 0;
-fail_after_pop:
+    /* fall-through after fail_after_stream - no explicit goto target */
     /* Netflix#1300 — release the primary context we just retained so
      * vmaf_cuda_state_init's unwind only has to free c + c->f. Without
      * this the driver keeps the primary context alive for the lifetime
@@ -145,7 +145,7 @@ fail_after_stream:
     if (cu_state->str)
         (void)cu_state->f->cuStreamDestroy(cu_state->str);
     cu_state->str = 0;
-fail_after_pop:
+    /* fall-through after fail_after_stream - no explicit goto target */
     return _cuda_err;
 }
 
