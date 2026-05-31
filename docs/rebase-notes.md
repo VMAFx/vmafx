@@ -192,6 +192,15 @@ Companion: `docs/adr/0958-hip-kernel-coverage-round4.md`,
 `docs/research/0958-hip-kernel-coverage-round4-2026-05-31.md`,
 `changelog.d/added/0958-hip-kernel-coverage-round4.md`.
 
+## Controller infrastructure fixes — StreamJobs + reaper stop signal (2026-05-31, ADR-0962)
+
+No rebase impact: all changes are confined to the fork-local controller package
+(`cmd/vmafx-controller/`) and the `Queue` interface in
+`cmd/vmafx-controller/queue/queue.go`.  Netflix upstream does not own these
+paths (the controller is a Phase 4b addition, not a port of Netflix code).
+The `nodes.Registry` context-propagation change is entirely within fork-local
+code and has no interaction with libvmaf C sources.
+
 ---
 
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)

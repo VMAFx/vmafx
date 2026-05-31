@@ -175,12 +175,41 @@ func (c *controllerServer) CancelJob(ctx context.Context, req *controllerv1.Canc
 }
 
 // StreamJobs is a server-streaming RPC that pushes job updates.
-// Phase 4b.1 implementation: streams the current snapshot of all jobs once,
-// then closes.  A persistent push model is a Phase 4b.2 enhancement.
+// Phase 4b.1 implementation: streams the current snapshot of all jobs matching
+// the optional status filter once, then closes.  A persistent push model is a
+// Phase 4b.2 enhancement.
+//
+// ADR-0962: previously this was a no-op (silent return nil after a log line),
+// causing callers to see an empty stream and incorrectly infer "no jobs queued".
+// Now it performs a real SQLite snapshot via queue.ListAll and streams each job.
 func (c *controllerServer) StreamJobs(req *controllerv1.StreamJobsRequest, stream controllerv1.VmafxController_StreamJobsServer) error {
-	// For Phase 4b.1, this is a simple snapshot stream — send all current jobs
-	// matching the filter and return.  Long-lived subscription is Phase 4b.2.
-	c.log.Info("StreamJobs snapshot requested", "filter", req.GetStatusFilter())
+	// Convert proto status filter values to queue status strings.
+	protoFilter := req.GetStatusFilter()
+	statusFilter := make([]string, 0, len(protoFilter))
+	for _, ps := range protoFilter {
+		statusFilter = append(statusFilter, protoStatusToQueue(ps))
+	}
+
+	c.log.Info("StreamJobs snapshot requested",
+		"filter", statusFilter,
+		"filter_len", len(statusFilter),
+	)
+
+	jobs, err := c.queue.ListAll(stream.Context(), statusFilter)
+	if err != nil {
+		c.log.Error("StreamJobs: ListAll failed", "error", err)
+		return status.Errorf(codes.Internal, "StreamJobs: list jobs: %v", err)
+	}
+
+	for _, j := range jobs {
+		if sendErr := stream.Send(queueJobToProto(j)); sendErr != nil {
+			// Client disconnected mid-stream — treat as a normal close.
+			c.log.Debug("StreamJobs: Send interrupted", "error", sendErr)
+			return sendErr
+		}
+	}
+
+	c.log.Info("StreamJobs snapshot complete", "sent", len(jobs))
 	return nil
 }
 
@@ -283,6 +312,23 @@ func queueStatusToProto(s string) controllerv1.JobStatus {
 		return controllerv1.JobStatus_CANCELLED
 	default:
 		return controllerv1.JobStatus_PENDING
+	}
+}
+
+// protoStatusToQueue converts a proto JobStatus enum to its queue status string.
+// Used by StreamJobs to translate the caller's status filter.
+func protoStatusToQueue(s controllerv1.JobStatus) string {
+	switch s {
+	case controllerv1.JobStatus_RUNNING:
+		return queue.StatusRunning
+	case controllerv1.JobStatus_COMPLETED:
+		return queue.StatusCompleted
+	case controllerv1.JobStatus_FAILED:
+		return queue.StatusFailed
+	case controllerv1.JobStatus_CANCELLED:
+		return queue.StatusCancelled
+	default:
+		return queue.StatusPending
 	}
 }
 

@@ -105,6 +105,10 @@ type Queue interface {
 	Get(ctx context.Context, jobID string) (*Job, error)
 	// Cancel requests cancellation of a pending or running job.
 	Cancel(ctx context.Context, jobID string) error
+	// ListAll returns a snapshot of all jobs, optionally filtered to the
+	// provided statuses.  An empty statuses slice returns all jobs.
+	// Used by StreamJobs to deliver a consistent point-in-time snapshot.
+	ListAll(ctx context.Context, statuses []string) ([]*Job, error)
 	// PendingCount returns the current number of PENDING jobs.
 	PendingCount() int
 	// RunningCount returns the current number of RUNNING jobs.
@@ -474,6 +478,83 @@ func (q *SQLiteQueue) SetGetUnlockedHookForTest(fn func(id string) error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.getUnlockedHook = fn
+}
+
+// ListAll returns a point-in-time snapshot of all jobs, optionally filtered
+// to the provided statuses.  An empty statuses slice returns every job.
+//
+// Callers receive copies — mutations to the returned slice do not affect the
+// queue.  Used by controllerServer.StreamJobs to send a consistent snapshot
+// (ADR-0962).
+func (q *SQLiteQueue) ListAll(_ context.Context, statuses []string) ([]*Job, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+
+	if len(statuses) == 0 {
+		rows, err = q.db.Query(
+			"SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), created_at, updated_at FROM jobs ORDER BY created_at ASC",
+		)
+	} else {
+		// Build a parameterised IN clause.  We limit statuses to the known set
+		// (max 5) so the query never becomes unbounded.
+		placeholders := make([]any, len(statuses))
+		for i, s := range statuses {
+			placeholders[i] = s
+		}
+		query := "SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), created_at, updated_at FROM jobs WHERE status IN (?" + repeatCommaQ(len(statuses)-1) + ") ORDER BY created_at ASC"
+		rows, err = q.db.Query(query, placeholders...)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("queue: list all jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*Job
+	for rows.Next() {
+		var (
+			job          Job
+			scoringJSON  string
+			featuresJSON string
+			createdAt    int64
+			updatedAt    int64
+		)
+		if err = rows.Scan(
+			&job.ID, &job.Status, &scoringJSON, &job.AssignedNode,
+			&job.Score, &featuresJSON, &job.Error,
+			&createdAt, &updatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("queue: scan job row in ListAll: %w", err)
+		}
+		if err = json.Unmarshal([]byte(scoringJSON), &job.Scoring); err != nil {
+			return nil, fmt.Errorf("queue: unmarshal scoring in ListAll: %w", err)
+		}
+		if err = json.Unmarshal([]byte(featuresJSON), &job.Features); err != nil {
+			job.Features = map[string]float64{}
+		}
+		job.CreatedAt = time.Unix(createdAt, 0)
+		job.UpdatedAt = time.Unix(updatedAt, 0)
+		cp := job
+		out = append(out, &cp)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("queue: iterate jobs in ListAll: %w", err)
+	}
+	return out, nil
+}
+
+// repeatCommaQ returns n comma-prefixed "?" placeholders (e.g. n=2 → ",?,?").
+func repeatCommaQ(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	buf := make([]byte, n*2)
+	for i := range n {
+		buf[i*2] = ','
+		buf[i*2+1] = '?'
+	}
+	return string(buf)
 }
 
 // Close releases the database connection.

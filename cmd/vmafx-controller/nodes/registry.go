@@ -15,6 +15,7 @@
 // Thread safety: all exported methods are safe for concurrent use.
 //
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
+// ADR-0962: fix reaper goroutine stop signal (round-25 audit B.4).
 
 package nodes
 
@@ -58,19 +59,33 @@ type Node struct {
 
 // Registry tracks live vmafx-node instances.
 type Registry struct {
-	mu    sync.RWMutex
-	nodes map[string]*Node // keyed by node ID
-	log   *slog.Logger
+	mu     sync.RWMutex
+	nodes  map[string]*Node // keyed by node ID
+	log    *slog.Logger
+	cancel context.CancelFunc // stops the reaper goroutine
 }
 
-// NewRegistry creates an empty Registry and starts the reaper goroutine.
-func NewRegistry(log *slog.Logger) *Registry {
+// NewRegistry creates an empty Registry, accepts a context for lifetime
+// control, and starts the reaper goroutine.  The reaper stops when ctx is
+// cancelled or when Close is called.
+//
+// ADR-0962: ctx propagation replaces the old variadic no-op signature,
+// ensuring tests and callers can stop the goroutine cleanly.
+func NewRegistry(ctx context.Context, log *slog.Logger) *Registry {
+	reaperCtx, cancel := context.WithCancel(ctx)
 	r := &Registry{
-		nodes: make(map[string]*Node),
-		log:   log,
+		nodes:  make(map[string]*Node),
+		log:    log,
+		cancel: cancel,
 	}
-	go r.reaper()
+	go r.reaper(reaperCtx)
 	return r
+}
+
+// Close stops the background reaper goroutine.  It is safe to call multiple
+// times; subsequent calls are no-ops.
+func (r *Registry) Close() {
+	r.cancel()
 }
 
 // Register adds (or replaces) a node.  Returns the assigned node_id and
@@ -162,24 +177,32 @@ func (r *Registry) Count() int {
 }
 
 // reaper runs in the background and evicts nodes that have not sent a
-// heartbeat within HeartbeatTimeout.
-func (r *Registry) reaper(_ ...context.Context) {
+// heartbeat within HeartbeatTimeout.  It exits when ctx is cancelled.
+//
+// ADR-0962: required non-variadic ctx replaces the old `_ ...context.Context`
+// no-op that left each NewRegistry call leaking one goroutine.
+func (r *Registry) reaper(ctx context.Context) {
 	ticker := time.NewTicker(HeartbeatTimeout / 3)
 	defer ticker.Stop()
-	for range ticker.C {
-		deadline := time.Now().Add(-HeartbeatTimeout)
-		r.mu.Lock()
-		for id, n := range r.nodes {
-			if n.LastHeartbeat.Before(deadline) {
-				r.log.Warn("node evicted (heartbeat timeout)",
-					"node_id", id,
-					"name", n.Name,
-					"last_heartbeat", n.LastHeartbeat,
-				)
-				delete(r.nodes, id)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			deadline := time.Now().Add(-HeartbeatTimeout)
+			r.mu.Lock()
+			for id, n := range r.nodes {
+				if n.LastHeartbeat.Before(deadline) {
+					r.log.Warn("node evicted (heartbeat timeout)",
+						"node_id", id,
+						"name", n.Name,
+						"last_heartbeat", n.LastHeartbeat,
+					)
+					delete(r.nodes, id)
+				}
 			}
+			r.mu.Unlock()
 		}
-		r.mu.Unlock()
 	}
 }
 

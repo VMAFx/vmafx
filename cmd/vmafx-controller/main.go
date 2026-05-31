@@ -25,6 +25,8 @@
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service (origin).
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
+// ADR-0962: pass shutdown ctx to NewRegistry so the reaper goroutine stops
+//           cleanly on SIGTERM / SIGINT.
 
 //go:build cgo
 
@@ -100,7 +102,7 @@ func main() {
 	metrics := observability.NewMetrics(registry)
 
 	// ---------------------------------------------------------------------------
-	// Controller subsystems: job queue, node registry, scheduler.
+	// Job queue.
 	// ---------------------------------------------------------------------------
 	jobQueue, err := queue.New(*dbPath, log)
 	if err != nil {
@@ -109,15 +111,22 @@ func main() {
 	}
 	defer jobQueue.Close()
 
-	nodeRegistry := nodes.NewRegistry(log)
-	sched := scheduler.New(jobQueue, nodeRegistry, log)
-	metrics.SetControllerSources(jobQueue, nodeRegistry)
-
 	// ---------------------------------------------------------------------------
 	// Shutdown context — cancelled on SIGTERM / SIGINT.
 	// ---------------------------------------------------------------------------
 	ctx, stop := observability.NewShutdownContext()
 	defer stop()
+
+	// ---------------------------------------------------------------------------
+	// Controller subsystems that need shutdown ctx.
+	// nodeRegistry receives ctx so its reaper goroutine stops on SIGTERM/SIGINT.
+	// ADR-0962: NewRegistry now requires a context; Close() is deferred below.
+	// ---------------------------------------------------------------------------
+	nodeRegistry := nodes.NewRegistry(ctx, log)
+	defer nodeRegistry.Close()
+
+	sched := scheduler.New(jobQueue, nodeRegistry, log)
+	metrics.SetControllerSources(jobQueue, nodeRegistry)
 
 	// ---------------------------------------------------------------------------
 	// Start HTTP + gRPC servers concurrently.

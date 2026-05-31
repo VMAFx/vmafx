@@ -6,6 +6,7 @@
 // Tests use real queue + registry instances backed by an in-memory SQLite DB.
 //
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
+// ADR-0962: NewRegistry now requires a context argument.
 
 package scheduler_test
 
@@ -42,7 +43,8 @@ func newFixture(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { _ = q.Close() })
 
-	r := nodes.NewRegistry(log)
+	r := nodes.NewRegistry(context.Background(), log)
+	t.Cleanup(func() { r.Close() })
 	s := scheduler.New(q, r, log)
 	return &fixture{q: q, r: r, s: s, log: log}
 }
@@ -142,7 +144,7 @@ func TestAssignJobBackToQueueOnNodeDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("q1 New: %v", err)
 	}
-	r1 := nodes.NewRegistry(log)
+	r1 := nodes.NewRegistry(context.Background(), log)
 	s1 := scheduler.New(q1, r1, log)
 
 	nodeID1, token1, err := r1.Register("crash-node", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
@@ -170,7 +172,7 @@ func TestAssignJobBackToQueueOnNodeDisconnect(t *testing.T) {
 		t.Fatalf("q2 New: %v", err)
 	}
 	defer q2.Close()
-	r2 := nodes.NewRegistry(log)
+	r2 := nodes.NewRegistry(context.Background(), log)
 	s2 := scheduler.New(q2, r2, log)
 
 	// Register a new node.
