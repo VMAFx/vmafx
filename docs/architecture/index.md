@@ -81,6 +81,7 @@ views. Levels are scaffolded and evolve as internal boundaries stabilise:
 ## Related reading
 
 - **[workspace.md](workspace.md)** — the Python harness scratch tree (and why it moved).
+- **[grpc-streaming.md](grpc-streaming.md)** — vmafx-server `ScoreStream` bidirectional RPC (ADR-0933, Phase 1).
 - **[../principles.md](../principles.md)** — coding standards (NASA/JPL, CERT C).
 - **[../ai/overview.md](../ai/overview.md)** — Tiny-AI architecture (C1 / C2 / C3 / C4).
 - **[../backends/](../backends/)** — CPU / CUDA / SYCL backend internals.

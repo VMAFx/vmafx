@@ -36,6 +36,29 @@ syncs do not interact with this code.
 If a future upstream PR adds a Rust workspace (extremely unlikely), the
 fork's `bindings/rust/vmafx/` and `bindings/rust/vmafx-sys/` paths must
 not collide with the upstream layout. As of n8.1 there is no precedent.
+## gRPC `ScoreStream` Phase 1 (2026-05-31)
+
+**Files touched:**
+`proto/vmafx.proto`, `gen/go/vmafx.pb.go`, `gen/go/vmafx_grpc.pb.go`,
+`cmd/vmafx-server/grpc_server.go`, `cmd/vmafx-server/AGENTS.md`,
+`pkg/score/grpc_client.go`, `pkg/score/grpc_client_test.go`,
+`pkg/score/AGENTS.md`, `docs/architecture/grpc-streaming.md`,
+`docs/architecture/index.md`,
+`docs/adr/0933-grpc-streaming-multi-frame-scoring.md`,
+`docs/adr/_index_fragments/0933-grpc-streaming-multi-frame-scoring.md`,
+`docs/adr/_index_fragments/_order.txt`, `docs/adr/README.md`,
+`changelog.d/added/0933-grpc-streaming-phase1.md`.
+
+**Rebase impact:** None against upstream — this surface is entirely
+fork-local (Netflix/vmaf has no Go gRPC service). The proto package
+stays `vmafx.v1`; the unary `Score` / `Health` RPCs are unchanged.
+`ScoreStream` is purely additive. The Phase 1 server handler returns
+`codes.Unimplemented` after validating the opening `StreamConfig`.
+
+If a future upstream port touches `core/` in a way that changes the
+public C API consumed by `pkg/libvmaf`, the Phase 2 wiring of
+`ScoreStream` to libvmaf will need to mirror that change — but Phase
+1 is server-stub-only and doesn't reach the C surface yet.
 
 ---
 

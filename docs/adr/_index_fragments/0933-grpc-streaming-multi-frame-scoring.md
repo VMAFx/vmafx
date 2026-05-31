@@ -1,0 +1,1 @@
+| [ADR-0933](0933-grpc-streaming-multi-frame-scoring.md) | Add bidirectional `ScoreStream` RPC for per-frame VMAF scoring (Phase 1: schema + server stub) | Proposed | 2026-05-31 | grpc, server, api, streaming, fork-local |
