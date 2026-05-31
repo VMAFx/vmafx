@@ -25,3 +25,11 @@ Rust feature extractor crates (ADR-0707 cbindgen pilot).
    (produced by `cargo build`). C wrappers re-declare the ABI signatures directly rather
    than `#include`-ing the generated header, to avoid a source-tree dependency on a
    build artifact.
+
+6. **`publish = false` on every fork-license crate in this tree.** `vmafx-tad` declares
+   `BSD-3-Clause-Plus-Patent`, which the SPDX parser used by `cargo-deny` 0.19.8 does not
+   yet recognise. The `publish = false` flag opts the crate out of crates.io publishing
+   AND makes `[licenses.private] ignore = true` in `deny.toml` skip the license check
+   for the workspace member. New Rust feature extractors using the fork license MUST
+   follow the same pattern (or use a plain `BSD-3-Clause` declaration that the parser
+   recognises). See [ADR-0917](../../../../docs/adr/0917-cargo-deny-supply-chain-policy.md).

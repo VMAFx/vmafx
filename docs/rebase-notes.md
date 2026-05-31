@@ -636,6 +636,26 @@ When syncing: keep the four `-modernize-*` opt-outs in `.clang-tidy`
 (noise / C-ABI hostility rationale documented in ADR-0915). If upstream
 ever ships their own clang-tidy config, merge by union — drop our
 opt-outs only with an explicit ADR.
+## cargo-deny supply-chain policy (2026-05-31)
+
+**Files touched:** `deny.toml` (new), `.github/workflows/rust-ci.yml`
+(new `cargo-deny` job + `deny.toml` / `core/src/feature/rust/**` path
+filters), `core/src/feature/rust/tad/Cargo.toml` (`publish = false`).
+
+**Rebase impact:** None against upstream Netflix/vmaf — `deny.toml`,
+the `cargo-deny` CI job, and the Rust workspace itself are all
+fork-local additions. Upstream does not maintain a Rust workspace, so
+no merge surface exists. The `publish = false` change to
+`core/src/feature/rust/tad/Cargo.toml` is also fork-local
+(`core/src/feature/rust/` is an ADR-0707 pilot directory that does
+not exist upstream).
+
+If a future upstream sync starts shipping a Rust workspace of its
+own, reconcile by extending `deny.toml`'s `[graph]` `members`
+implicit-include behaviour (cargo-deny picks up workspace members
+automatically) and audit whether upstream's choice of licenses /
+banned-crate stance differs from ours. See
+[ADR-0917](adr/0917-cargo-deny-supply-chain-policy.md).
 
 ---
 

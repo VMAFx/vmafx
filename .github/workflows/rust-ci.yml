@@ -5,14 +5,18 @@ on:
     branches: ["master"]
     paths:
       - "bindings/rust/**"
+      - "core/src/feature/rust/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "deny.toml"
       - ".github/workflows/rust-ci.yml"
   pull_request:
     paths:
       - "bindings/rust/**"
+      - "core/src/feature/rust/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "deny.toml"
       - ".github/workflows/rust-ci.yml"
 
 concurrency:
@@ -87,3 +91,24 @@ jobs:
           VMAFX_REPO: ${{ github.workspace }}
           LD_LIBRARY_PATH: /usr/local/lib
         run: cargo run --example score
+
+  cargo-deny:
+    name: cargo-deny (licenses, bans, advisories, sources)
+    runs-on: ubuntu-24.04
+    # Runs in parallel with rust-vmafx-sys: pure dependency-graph analysis, no
+    # libvmaf build required. Enforces the supply-chain policy in deny.toml
+    # (ADR-0917). Fails on: copyleft licenses, banned crates (openssl-sys /
+    # native-tls), known RustSec vulnerabilities, unknown crate registries,
+    # unknown git sources, wildcard version requirements.
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
+        with:
+          command: check
+          # Match the project root's deny.toml location.
+          arguments: --all-features
