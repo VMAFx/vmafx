@@ -723,6 +723,121 @@ static char *test_attached_ep_after_session_close(void)
     return NULL;
 }
 
+#ifndef _WIN32
+/* Drives the sidecar-load non-ENOENT error branch in vmaf_dnn_session_open
+ * (lines 78-79: free(s) + return rc when sidecar_load returns a non-ENOENT
+ * negative). vmaf_dnn_sidecar_load returns -EFBIG when the .json sidecar
+ * is larger than 1 MiB; we craft a 1.05 MiB sidecar to hit that path
+ * deterministically without depending on any specific malformed content. */
+static char *test_session_open_oversize_sidecar_returns_error(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    char base[] = "/tmp/vmaf-dnn-sidecar-big-XXXXXX";
+    int fd = mkstemp(base);
+    if (fd < 0)
+        return NULL;
+    (void)close(fd);
+
+    char onnx[1100];
+    char sidecar[1100];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", base);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", base);
+    if (copy_file(SMOKE_FP32_MODEL, onnx) != 0) {
+        (void)unlink(base);
+        return NULL;
+    }
+
+    /* Write a >1 MiB sidecar — the sidecar loader's hard cap is 1 << 20
+     * bytes (model_loader.c stat_sidecar path), so 1100000 bytes trips
+     * -EFBIG before any JSON parse, propagating out of vmaf_dnn_session_open
+     * via the lines 77-80 cleanup. The payload itself is arbitrary; we
+     * use a JSON-shaped buffer with padding to keep the file at least
+     * parseably-looking, but the size check fires first. */
+    FILE *s = fopen_w_600(sidecar);
+    if (!s) {
+        (void)unlink(onnx);
+        (void)unlink(base);
+        return NULL;
+    }
+    /* Header + huge filler-comment-string-value to push past 1 MiB. */
+    (void)fputs("{\"kind\": \"fr\", \"pad\": \"", s);
+    const size_t fill = (size_t)(1100000);
+    for (size_t i = 0; i < fill; ++i)
+        (void)fputc('x', s);
+    (void)fputs("\"}\n", s);
+    (void)fclose(s);
+
+    VmafDnnSession *sess = NULL;
+    int rc = vmaf_dnn_session_open(&sess, onnx, NULL);
+    mu_assert("oversize sidecar must surface a negative error", rc < 0);
+    mu_assert("session pointer remains NULL on sidecar error", sess == NULL);
+
+    (void)unlink(sidecar);
+    (void)unlink(onnx);
+    (void)unlink(base);
+    return NULL;
+}
+#endif /* !_WIN32 */
+
+/* Drives the rank==4 but shape[0] != 1 branch in vmaf_dnn_session_open —
+ * the else of the legacy luma fast-path detection (line 138). The
+ * smoke_v0_symbolic_batch.onnx fixture has a symbolic dim_param='batch'
+ * on axis 0, which onnxruntime reports as shape[0] == -1 (dynamic). The
+ * session opens successfully but in_buf / out_buf stay NULL, so any
+ * subsequent run_luma8 call must hit the !sess->in_buf guard and return
+ * -ENOTSUP. Complements test_attach_accepts_symbolic_batch_rank4 (which
+ * exercises the libvmaf.c attach path); this one exercises the standalone
+ * vmaf_dnn_session_open + vmaf_dnn_session_run_luma8 path. */
+#define SMOKE_SYMBATCH_MODEL "model/tiny/smoke_v0_symbolic_batch.onnx"
+static char *test_session_open_symbolic_batch_skips_luma_fast_path(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafDnnSession *sess = NULL;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_SYMBATCH_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    /* Symbolic-batch loader behaviour is gated on ADR-0523; the legacy
+     * fast-path detection inside vmaf_dnn_session_open must not crash and
+     * must leave the session usable through the generic run() path. */
+    mu_assert("symbolic-batch model opens ok", rc == 0);
+    mu_assert("session populated", sess != NULL);
+
+    uint8_t in[16] = {0};
+    uint8_t out[16] = {0};
+    rc = vmaf_dnn_session_run_luma8(sess, in, 4, 4, 4, out, 4);
+    mu_assert("luma8 must return -ENOTSUP when in_buf was not allocated", rc == -ENOTSUP);
+
+    vmaf_dnn_session_close(sess);
+    return NULL;
+}
+
+/* Drives the legacy luma fast-path's run_plane16 -ENOTSUP guard (line 207)
+ * paired with the open-time skip caused by a symbolic batch dim — same
+ * mechanism as the run_luma8 sibling above, exercises the 16-bit entry
+ * point so both fast-path entry points have the not-allocated branch
+ * covered. */
+static char *test_session_symbolic_batch_run_plane16_returns_notsup(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafDnnSession *sess = NULL;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_SYMBATCH_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("symbolic-batch model opens ok", rc == 0);
+    mu_assert("session populated", sess != NULL);
+
+    uint16_t in[16] = {0};
+    uint16_t out[16] = {0};
+    rc = vmaf_dnn_session_run_plane16(sess, in, 8, 4, 4, 10, out, 8);
+    mu_assert("plane16 must return -ENOTSUP when in_buf was not allocated", rc == -ENOTSUP);
+
+    vmaf_dnn_session_close(sess);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_stub_returns_enosys_when_disabled);
@@ -759,5 +874,10 @@ char *run_tests(void)
     mu_run_test(test_session_open_threads_config);
     mu_run_test(test_session_open_rocm_falls_through);
     mu_run_test(test_session_open_explicit_ep_selectors_fall_back);
+#ifndef _WIN32
+    mu_run_test(test_session_open_oversize_sidecar_returns_error);
+#endif
+    mu_run_test(test_session_open_symbolic_batch_skips_luma_fast_path);
+    mu_run_test(test_session_symbolic_batch_run_plane16_returns_notsup);
     return NULL;
 }

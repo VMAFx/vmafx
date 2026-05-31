@@ -160,14 +160,17 @@ static char *test_rgb_imagenet_rejects_bad_args(void)
 
 static char *test_f16_special_values(void)
 {
-    /* Cover the NaN/inf/subnormal branches in the soft-float converters
-     * that the smooth-roundtrip test does not reach. */
+    /* Cover the NaN/inf and flush-to-zero branches in the soft-float
+     * f32->f16 converter. The subnormal-rounding branch (lines 33-35 of
+     * tensor_io.c f32_to_f16_one) is exercised separately in
+     * test_f16_subnormal_range — splitting the two keeps each function
+     * under clang-tidy's branch-count threshold. */
     float specials[6] = {
         INFINITY,          /* exp >= 31, mant == 0  -> +inf */
         -INFINITY,         /* exp >= 31, mant == 0  -> -inf */
         NAN,               /* exp >= 31, mant != 0  -> NaN propagation (line 26-27) */
-        1e-8f,             /* exp <= 0, exp >= -10  -> subnormal path (line 33-35) */
-        -1e-8f,    1e-30f, /* exp < -10             -> flush-to-zero */
+        1e-8f,             /* exp < -10             -> flush-to-zero (line 31) */
+        -1e-8f,    1e-30f, /* exp < -10             -> flush-to-zero (line 31) */
     };
     uint16_t h[6];
     float back[6];
@@ -180,6 +183,35 @@ static char *test_f16_special_values(void)
     mu_assert("tiny positive becomes subnormal or zero", back[3] >= 0.0f && back[3] < 1e-3f);
     mu_assert("tiny negative becomes subnormal or zero", back[4] <= 0.0f && back[4] > -1e-3f);
     mu_assert("underflow flushes to zero", back[5] == 0.0f);
+    return NULL;
+}
+
+/* Drives the subnormal-rounding branch (lines 33-35) of f32_to_f16_one.
+ *
+ * The branch fires when the fp16 exponent lands in [-10, 0], which
+ * corresponds to fp32 magnitudes in roughly [3.0e-8, 3.0e-5]. The
+ * original test_f16_special_values comment claimed 1e-8f triggered this
+ * path, but 1e-8f has fp32 exp ~-27 which maps to fp16 exp ~-12 — that
+ * trips the flush-to-zero branch (line 31), not the subnormal-rounding
+ * branch. 1.0e-6f and 2.0e-5f land squarely in the subnormal-rounding
+ * window. */
+static char *test_f16_subnormal_range(void)
+{
+    float subn[2] = {
+        1.0e-6f, /* exp in [-10, 0] -> subnormal path */
+        2.0e-5f, /* exp in [-10, 0] -> subnormal path */
+    };
+    uint16_t h[2];
+    float back[2];
+    vmaf_f32_to_f16(subn, h, 2);
+    vmaf_f16_to_f32(h, back, 2);
+
+    /* fp16 subnormal granularity is 2^-24 ≈ 6e-8; round-trip is lossy
+     * but the converted value stays bounded and same-sign. */
+    mu_assert("subnormal-range 1e-6 stays non-negative and bounded",
+              back[0] >= 0.0f && back[0] < 1e-3f);
+    mu_assert("subnormal-range 2e-5 round-trips near input",
+              back[1] >= 0.0f && fabsf(back[1] - 2.0e-5f) < 5.0e-5f);
     return NULL;
 }
 
@@ -550,6 +582,7 @@ char *run_tests(void)
     mu_run_test(test_rgb_imagenet_nchw_layout);
     mu_run_test(test_rgb_imagenet_rejects_bad_args);
     mu_run_test(test_f16_special_values);
+    mu_run_test(test_f16_subnormal_range);
     mu_run_test(test_f16_to_f32_subnormal);
     mu_run_test(test_from_luma_zero_std_rejected);
     mu_run_test(test_from_luma_f16_path);
