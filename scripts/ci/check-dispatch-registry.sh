@@ -57,7 +57,7 @@ check_backend() {
   fi
 }
 
-for backend in cuda sycl vulkan hip metal; do
+for backend in cuda sycl hip metal; do
   check_backend "$backend"
 done
 

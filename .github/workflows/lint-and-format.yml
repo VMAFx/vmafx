@@ -179,9 +179,6 @@ jobs:
               | grep -v '^core/src/feature/sycl/' \
               | grep -v '^core/test/test_sycl' \
               | grep -v '^core/tools/vmaf_vpl\.c$' \
-              | grep -v '^core/src/vulkan/' \
-              | grep -v '^core/src/feature/vulkan/' \
-              | grep -v '^core/test/test_vulkan' \
               | grep -v '^core/src/mcp/' \
               | grep -v '^core/test/test_mcp' \
               | grep -v '^core/src/hip/' \
@@ -208,9 +205,6 @@ jobs:
               | grep -v '^core/src/feature/sycl/' \
               | grep -v '^core/test/test_sycl' \
               | grep -v '^core/tools/vmaf_vpl\.c$' \
-              | grep -v '^core/src/vulkan/' \
-              | grep -v '^core/src/feature/vulkan/' \
-              | grep -v '^core/test/test_vulkan' \
               | grep -v '^core/src/mcp/' \
               | grep -v '^core/test/test_mcp' \
               | grep -v '^core/src/hip/' \
@@ -234,9 +228,6 @@ jobs:
               | grep -v '^core/src/feature/sycl/' \
               | grep -v '^core/test/test_sycl' \
               | grep -v '^core/tools/vmaf_vpl\.c$' \
-              | grep -v '^core/src/vulkan/' \
-              | grep -v '^core/src/feature/vulkan/' \
-              | grep -v '^core/test/test_vulkan' \
               | grep -v '^core/src/mcp/' \
               | grep -v '^core/test/test_mcp' \
               | grep -v '^core/src/hip/' \
@@ -260,9 +251,6 @@ jobs:
               | grep -v '^core/src/feature/sycl/' \
               | grep -v '^core/test/test_sycl' \
               | grep -v '^core/tools/vmaf_vpl\.c$' \
-              | grep -v '^core/src/vulkan/' \
-              | grep -v '^core/src/feature/vulkan/' \
-              | grep -v '^core/test/test_vulkan' \
               | grep -v '^core/src/mcp/' \
               | grep -v '^core/test/test_mcp' \
               | grep -v '^core/src/hip/' \
