@@ -312,6 +312,18 @@ ADR-0700). When `/sync-upstream` runs, this file is fork-only and
 needs no re-baselining. Companion: PR #412
 (`test/compat-python-vmaf-coverage`) round 1, PR #413
 (`fix/decorator-persist-encode`) — neither overlap.
+## HIP ADM parity test feature-name + ENOSYS skip (ADR-0950, 2026-05-31)
+
+**Files touched:** `core/test/test_hip_adm_parity.c`.
+
+**Rebase impact:** `no rebase impact: Netflix/vmaf upstream has no HIP
+backend at all (HIP is a fork-exclusive backend per ADR-0212); the
+`adm_hip` extractor and its parity test only exist on this fork. There
+is no upstream counterpart to reconcile during sync.` Companion fix to
+ADR-0949 (motion3 sibling); both tests now follow the same two-axis
+(`enable_hip` × `enable_hipcc`) skip predicate. Companion docs:
+`docs/adr/0950-hip-adm-parity-feature-name-and-enosys-skip.md`,
+`changelog.d/fixed/0950-test-hip-adm-parity-feature-name-and-enosys-skip.md`.
 
 ---
 

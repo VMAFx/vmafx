@@ -27,9 +27,20 @@
  * fixture must match the CPU integer_adm extractor within places=4
  * (1e-4) per ADR-0214 cross-backend gate.
  *
- * Skip behaviour: if vmaf_hip_state_init() fails (no HIP/ROCm driver or
- * no device visible) the test emits "[skip: no HIP device]" and passes
- * cleanly.  Same pattern as test_hip_motion3_parity.c.
+ * Skip behaviour: the HIP path runs cleanly only when libvmaf was built
+ * with BOTH `enable_hip=true` (HIP runtime, HSA agent visible) AND
+ * `enable_hipcc=true` (device kernels compiled into the .so via the
+ * HSACO embed pipeline).  The test skips in either of these two cases:
+ *   1. `vmaf_hip_state_init()` fails — no HIP/ROCm driver or no device
+ *      visible.  Emits "[skip: no HIP device]" and passes.
+ *   2. `vmaf_read_pictures()` returns `-ENOSYS` on the first frame —
+ *      libvmaf was configured with `enable_hipcc=false`, so the
+ *      `adm_hip` extractor's submit/init hits the
+ *      `#ifndef HAVE_HIPCC` scaffold path (see
+ *      `core/src/feature/hip/integer_adm_hip.c` lines 1014-1289).
+ *      Emits "[skip: HIP kernels not built (enable_hipcc=false)]"
+ *      and passes.
+ * Same two-axis pattern as test_hip_motion3_parity.c (ADR-0949).
  */
 
 #include <errno.h>
@@ -119,6 +130,38 @@ static int fill_dis(VmafPicture *pic)
     return 0;
 }
 
+/* Per-frame submit helper.  Returns:
+ *   * NULL on success;
+ *   * a non-NULL message string on a hard failure (caller bubbles up);
+ *   * NULL with *enosys_skip=1 when the HIP extractor's submit/init
+ *     hits the `#ifndef HAVE_HIPCC` scaffold path and returns -ENOSYS.
+ * Extracted from run_extractor to keep that function under the fork's
+ * `readability-function-size.LineThreshold=60` budget. */
+static char *adm_submit_one_frame(VmafContext *vmaf, unsigned i, int *enosys_skip)
+{
+    *enosys_skip = 0;
+    VmafPicture ref, dist;
+    int err = fill_ref(&ref);
+    mu_assert("fill_ref failed", !err);
+    err = fill_dis(&dist);
+    mu_assert("fill_dis failed", !err);
+
+    err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+    /* The HIP `adm_hip` extractor's init/submit return -ENOSYS when
+     * libvmaf was built with `enable_hipcc=false` — the HSACO device
+     * kernels are not embedded in the .so, so dispatch hits the
+     * `#ifndef HAVE_HIPCC` scaffold path in `integer_adm_hip.c`.
+     * vmaf_read_pictures unrefs the caller pictures internally on every
+     * code path; the caller tears down the partially-initialised
+     * VmafContext on a skip. */
+    if (err == -ENOSYS) {
+        *enosys_skip = 1;
+        return NULL;
+    }
+    mu_assert("vmaf_read_pictures failed", !err);
+    return NULL;
+}
+
 /* Run one extractor over the fixture; fill scores[] for kAdmFeatures. */
 static char *run_extractor(const char *feature_name, int use_hip, double scores[NUM_ADM_FEATURES],
                            int *skipped)
@@ -149,14 +192,18 @@ static char *run_extractor(const char *feature_name, int use_hip, double scores[
     mu_assert("vmaf_use_feature failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_ref(&ref);
-        mu_assert("fill_ref failed", !err);
-        err = fill_dis(&dist);
-        mu_assert("fill_dis failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("vmaf_read_pictures failed", !err);
+        int enosys_skip = 0;
+        char *msg = adm_submit_one_frame(vmaf, i, &enosys_skip);
+        if (msg)
+            return msg;
+        if (enosys_skip) {
+            (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
+            *skipped = 1;
+            (void)vmaf_close(vmaf);
+            if (hip_state)
+                vmaf_hip_state_free(&hip_state);
+            return NULL;
+        }
     }
 
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
@@ -184,16 +231,21 @@ static char *test_integer_adm_cpu_hip_parity(void)
     double hip_scores[NUM_ADM_FEATURES] = {0};
     int skipped = 0;
 
+    /* CPU baseline: the upstream `adm` extractor (integer_adm.c) emits
+     * the four scale ratios under their `integer_adm_scale*` keys. */
     char *msg = run_extractor("adm", /*use_hip=*/0, cpu_scores, &skipped);
     if (msg)
         return msg;
 
-    msg = run_extractor("adm", /*use_hip=*/1, hip_scores, &skipped);
+    /* HIP comparand: the fork's `adm_hip` extractor (integer_adm_hip.c
+     * line 1391) — NOT `"adm"`, which would silently re-run the CPU
+     * extractor a second time and pass trivially.  See ADR-0950. */
+    msg = run_extractor("adm_hip", /*use_hip=*/1, hip_scores, &skipped);
     if (msg)
         return msg;
 
     if (skipped)
-        return NULL; /* No HIP device — skip cleanly. */
+        return NULL; /* No HIP device or no HIPCC kernels — skip cleanly. */
 
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
         double d = fabs(cpu_scores[f] - hip_scores[f]);
