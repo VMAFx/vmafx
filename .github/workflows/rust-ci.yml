@@ -23,6 +23,11 @@ concurrency:
   group: rust-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default for the whole workflow (ADR-0875).
+# Jobs widen only if they need to publish artefacts or push.
+permissions:
+  contents: read
+
 jobs:
   rust-vmafx-sys:
     name: vmafx-sys (fmt + clippy + test)

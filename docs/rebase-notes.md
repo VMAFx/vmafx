@@ -41990,3 +41990,21 @@ they have no upstream Netflix/vmaf counterpart. The change converts the
 the header docstring to match — no logic change on the hot path. Bit-exactness
 across scalar / AVX2 / AVX-512 / NEON is preserved (only the cold malloc-failure
 branch is touched).
+## ADR-0875 — GitHub Actions hardening audit — 2026-05-30
+
+no rebase impact: REASON — all changes are confined to fork-local CI
+workflows under `.github/workflows/` (`go-ci.yml`, `rust-ci.yml`,
+`sanitizers.yml`, `supply-chain.yml`). Upstream Netflix/vmaf has a
+completely different CI pipeline; none of these files exist upstream.
+Adds top-level `permissions: contents: read` to the two Go/Rust
+workflows and `persist-credentials: false` to five `actions/checkout`
+steps. No source code touched.
+
+Fork-local files:
+`.github/workflows/go-ci.yml`,
+`.github/workflows/rust-ci.yml`,
+`.github/workflows/sanitizers.yml`,
+`.github/workflows/supply-chain.yml`,
+`docs/adr/0875-github-actions-audit-2026-05-30.md`,
+`docs/research/github-actions-audit-2026-05-30.md`,
+`changelog.d/security/github-actions-audit-2026-05-30.md`.

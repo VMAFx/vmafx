@@ -16,6 +16,11 @@ concurrency:
   group: go-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default for the whole workflow (ADR-0875).
+# Jobs widen only if they need to publish artefacts or push.
+permissions:
+  contents: read
+
 jobs:
   go-ci:
     name: go vet + go test
