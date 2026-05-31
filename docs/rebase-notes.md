@@ -1030,6 +1030,18 @@ surfaces (codec-context DNN API, codec/preset/CRF/resize CLI flags,
 six Meson options) that originated in fork ADRs (ADR-0335, ADR-0361,
 ADR-0519, ADR-0550, ADR-0568, ADR-0623, ADR-0707, ADR-0726). No upstream
 file is touched; no rebase conflict possible.
+## go-pkg-coverage-push (2026-05-30)
+
+**Files touched:** `pkg/observability/observability_test.go`,
+`pkg/report/report_test.go`, `pkg/encoder/discover_test.go`,
+`pkg/libvmaf/paths_test.go`, `pkg/gpu/parsers_test.go`,
+`pkg/gpu/probe_shim_test.go`, `pkg/bisect/parse_test.go`,
+`pkg/storage/internals_test.go`, `changelog.d/added/go-pkg-coverage-push.md`.
+
+**Rebase impact:** None. The Go `pkg/` tree is wholly fork-added — upstream
+Netflix/vmaf has no Go layer. All new files are test-only and never enter
+the libvmaf C build, the Python harness, or the FFmpeg patch stack. No
+production code is touched, so the upstream rebase boundary is unaffected.
 
 ---
 
