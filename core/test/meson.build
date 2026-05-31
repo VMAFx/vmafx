@@ -1025,6 +1025,48 @@ test_hip_adm_parity = executable('test_hip_adm_parity',
 test('test_hip_adm_parity', test_hip_adm_parity,
     suite : ['gpu'],
     timeout : 60)
+
+# ADR-0958 round-4 — HIP kernel parity gap-fill (2 extractors).
+# Closes the next batch after round-3 (PR #443 / ADR-0945): ssimulacra2_hip,
+# float_ssim_hip.  Each test follows the same template as the round-1/2/3
+# parity tests: CPU reference vs. HIP score on a synthetic fixture,
+# places=3 (1e-3) for filtered / pooled features (ssimulacra2 multi-scale
+# pyramid, float_ssim windowed pooling).  HIP-gated: skips cleanly when
+# no AMD GPU is visible OR when the HIP scaffold returns -ENOSYS
+# (enable_hipcc=false).
+#
+# Note: speed_chroma_hip / speed_temporal_hip parity gates were planned
+# for this round but discovered to be blocked on a pre-existing latent
+# link defect — `speed_internal_init_dimensions` and
+# `speed_internal_float_stride` are declared in
+# `core/src/feature/speed_internal.h` but have no .c implementation.
+# Wiring `speed_chroma_hip.c` / `speed_temporal_hip.c` into the HIP
+# archive surfaces the undefined references at link time. Deferred to
+# a follow-up PR that adds the missing impl file. See ADR-0958
+# "Alternatives considered" + the T-HIP-SPEED-INTERNAL-IMPL-MISSING-2026-05-31
+# row in docs/state.md.
+
+test_hip_ssimulacra2_parity = executable('test_hip_ssimulacra2_parity',
+    ['test.c', 'test_hip_ssimulacra2_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_ssimulacra2_parity', test_hip_ssimulacra2_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+test_hip_float_ssim_parity = executable('test_hip_float_ssim_parity',
+    ['test.c', 'test_hip_float_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_float_ssim_parity', test_hip_float_ssim_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
 endif
 
 # ADR-0338 / T8-1: Metal (Apple Silicon) backend scaffold smoke. Same

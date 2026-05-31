@@ -159,6 +159,38 @@ no rebase impact: REASON — changes are confined to the fork-local MCP server s
 (`mcp-server/vmaf-mcp/`). Netflix upstream has no MCP server; this entire subtree will
 never merge upstream. The security middleware, auth helpers, and bind-host resolver are
 fork-invented code with no upstream counterpart.
+## HIP kernel parity-test coverage round 4 (2026-05-31, ADR-0958)
+
+**Files touched:**
+`core/test/test_hip_ssimulacra2_parity.c`,
+`core/test/test_hip_float_ssim_parity.c`,
+`core/test/meson.build`.
+
+**Rebase impact:** Low — the 2 new tests are fork-added consumers of
+fork-added HIP feature extractors (`ssimulacra2_hip`, `float_ssim_hip`).
+Upstream Netflix has no HIP backend, so neither the test sources nor
+the meson registration block has an upstream-mirror analogue. The
+skip-on-`-ENOSYS` contract matches the round-1/2/3 template
+(PR #351 / PR #372 / PR #443) — if upstream ever ships a HIP backend
+the tests can be kept verbatim; their CPU side calls only public C-API
+entry points (`vmaf_init`, `vmaf_use_feature`, `vmaf_read_pictures`,
+`vmaf_feature_score_at_index`, `vmaf_close`) that are upstream-stable.
+
+The round-4 plan also covered `speed_chroma_hip` /
+`speed_temporal_hip` parity gates, but those were deferred when the
+container build surfaced a pre-existing latent link defect — the
+helpers `speed_internal_init_dimensions` /
+`speed_internal_float_stride` are declared in
+`core/src/feature/speed_internal.h` but never defined. The same
+defect blocks the analogous CUDA / SYCL speed-family TUs from linking
+(none are currently wired into their respective meson archives). A
+follow-up PR adding `core/src/feature/speed_internal.c` will unblock
+all three GPU backends simultaneously. Tracked as
+T-HIP-SPEED-INTERNAL-IMPL-MISSING-2026-05-31 in `docs/state.md`.
+
+Companion: `docs/adr/0958-hip-kernel-coverage-round4.md`,
+`docs/research/0958-hip-kernel-coverage-round4-2026-05-31.md`,
+`changelog.d/added/0958-hip-kernel-coverage-round4.md`.
 
 ---
 
