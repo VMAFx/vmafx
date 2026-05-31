@@ -428,6 +428,104 @@ test_psnr = executable('test_psnr',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 
+# Coverage round 2 — drives the integer_psnr extract paths (10/12/16-bit
+# HBD), the min_sse=>psnr_max branch, and the apsnr flush surface that
+# test_psnr.c does not exercise.  Same link-recipe as test_speed_qa.
+test_integer_psnr_coverage = executable('test_integer_psnr_coverage',
+    ['test.c', 'test_integer_psnr_coverage.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ]
+)
+
+# Coverage round 2 — drives integer_motion (v1) motion_force_zero +
+# three-frame default + moving-average + five-frame-under-min branches.
+test_integer_motion_coverage = executable('test_integer_motion_coverage',
+    ['test.c', 'test_integer_motion_coverage.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ]
+)
+
+# Coverage round 2 — drives integer_motion_v2 pipelined extractor:
+# init() rejection of five-frame, index=0 short-circuit, force_zero,
+# multi-frame extract+flush, moving-average, 10-bit pipeline.
+test_integer_motion_v2_coverage = executable('test_integer_motion_v2_coverage',
+    ['test.c', 'test_integer_motion_v2_coverage.c', '../src/mem.c', '../src/picture.c',
+     '../src/ref.c', '../src/dict.c', '../src/opt.c', '../src/log.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ]
+)
+
+# Coverage round 2 — integer_vif.h log2_32 / log2_64 helpers exercised
+# directly (otherwise reached only via the AVX-512 hot path).
+test_integer_vif_log2 = executable('test_integer_vif_log2',
+    ['test.c', 'test_integer_vif_log2.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, sycl_dependency],
+)
+
+# Coverage round 2 — iqa/convolve.c boundary helpers (KBND_*) and the
+# 2-D iqa_img_filter / iqa_filter_pixel paths.
+test_iqa_convolve_coverage = executable('test_iqa_convolve_coverage',
+    ['test.c', 'test_iqa_convolve_coverage.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, sycl_dependency],
+)
+
+# Coverage round 2 — barten_csf_tools.h non-1080p resolutions + MAE
+# variant + -EINVAL fallthrough.
+test_barten_csf_coverage = executable('test_barten_csf_coverage',
+    ['test.c', 'test_barten_csf_coverage.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, sycl_dependency],
+)
+
+# Coverage round 2 — ms_ssim_decimate scalar NULL-out branch + the
+# runtime-dispatch wrapper entry.
+test_ms_ssim_decimate_coverage = executable('test_ms_ssim_decimate_coverage',
+    ['test.c', 'test_ms_ssim_decimate_coverage.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, sycl_dependency],
+)
+
 test_framesync = executable('test_framesync',
     ['test.c', 'test_framesync.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -1310,6 +1408,13 @@ if host_machine.system() != 'windows'
     test('test_cli_parse_long_only_args', test_cli_parse_long_only_args, suite : ['fast'])
 endif
 test('test_psnr', test_psnr, suite : ['fast'])
+test('test_integer_psnr_coverage', test_integer_psnr_coverage, suite : ['fast'])
+test('test_integer_motion_coverage', test_integer_motion_coverage, suite : ['fast'])
+test('test_integer_motion_v2_coverage', test_integer_motion_v2_coverage, suite : ['fast'])
+test('test_integer_vif_log2', test_integer_vif_log2, suite : ['fast'])
+test('test_iqa_convolve_coverage', test_iqa_convolve_coverage, suite : ['fast'])
+test('test_barten_csf_coverage', test_barten_csf_coverage, suite : ['fast'])
+test('test_ms_ssim_decimate_coverage', test_ms_ssim_decimate_coverage, suite : ['fast'])
 test('test_framesync', test_framesync, suite : ['fast'])
 test('test_propagate_metadata', test_propagate_metadata, suite : ['fast'])
 test('test_adm_csf', test_adm_csf, suite : ['fast'])

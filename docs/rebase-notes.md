@@ -40835,6 +40835,26 @@ Fork-local files (no rebase impact): `docs/adr/0887-*.md`,
 `changelog.d/fixed/vmaf-model-destroy-slopes-oob.md`,
 `docs/state.md` row.
 
+## Feature-extractor coverage round 2 (ADR-0938, 2026-05-31)
+
+no rebase impact: REASON — all seven new files
+(`core/test/test_integer_psnr_coverage.c`,
+`core/test/test_integer_motion_coverage.c`,
+`core/test/test_integer_motion_v2_coverage.c`,
+`core/test/test_integer_vif_log2.c`,
+`core/test/test_iqa_convolve_coverage.c`,
+`core/test/test_barten_csf_coverage.c`,
+`core/test/test_ms_ssim_decimate_coverage.c`) are fork-local additions
+under `core/test/` and seven additive blocks in `core/test/meson.build`
+that do not touch any upstream-mirrored test file. The only contact
+surface with upstream is the consumed public C-API and the public
+`feature/integer_vif.h` / `feature/barten_csf_tools.h` /
+`feature/iqa/convolve.h` headers, which are upstream-mirrored but
+read-only from these tests. On upstream sync, conflicts are restricted
+to the `meson.build` insertion points; reapply the seven
+`test_*_coverage = executable(...)` blocks and the matching
+`test('test_*_coverage', ...)` rows post-rebase.
+
 ## macOS CI ansnr-residual cleanup (ADR-0749 follow-up, 2026-05-30)
 
 no rebase impact: REASON — changes are confined to fork-mirrored upstream test
