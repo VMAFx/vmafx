@@ -83,6 +83,23 @@ python/vmaf/
   uses `setdefault`, which is a no-op when the key already exists and
   defeats the intent. Preserve the unconditional assignment when
   porting upstream changes to this method.
+- **`tools/scanf.py` has a latent inverted-width bug** at
+  `makeFormattedHandler.applyWidth` (line 648 — `if width is None:` instead
+  of `if width is not None:`). The implicit-width path (`%d`, `%f`, `%s`
+  with no explicit width) crashes with TypeError; the explicit-width path
+  silently ignores the cap. Only patterns with literal delimiters that
+  bound the capture for free work (`frame%08d.icpf` — `.icpf` ends the
+  digit run). Every in-tree caller (`tools/misc.check_scanf_match`,
+  dataset / frame-name parsers) uses the literal-delimited shape; do not
+  add tests that probe the broken branches without fixing the bug first.
+  Flagged in PR `test/python-test-coverage-push` (round-2 coverage push).
+- **`__init__.py:ProcessRunner.run` uses `setdefault` for LC_ALL/LANG.**
+  The intent (per the inline comment) is to force English subprocess error
+  messages, but `setdefault` only writes the key when it is absent — a dev
+  host with `LANG=de_DE.UTF-8` in the parent env still ships German errors
+  to the subprocess. Any test that asserts on the C-locale env must
+  `mock.patch.dict(os.environ, {}, clear=True)` first. Flagged in PR
+  `test/python-test-coverage-push`.
 
 ## Governing ADRs
 

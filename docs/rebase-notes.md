@@ -298,6 +298,20 @@ additions). The wiring in `core/test/meson.build` lives in the
 fork-added test region near other `test_*` entries; no upstream
 collision is possible. If upstream ever adds dispatch-strategy
 abstractions of its own, the test would coexist by name.
+## Python harness coverage push round 2 (2026-05-31)
+
+**Files touched:**
+`python/test/python_harness_coverage_test.py` (new — 82 cases).
+
+**Rebase impact:** None. The new test file lives under
+`python/test/`, exercises only fork-touched modules under
+`compat/python-vmaf/`, and does not modify any Netflix golden
+`assertAlmostEqual` value (CLAUDE.md §8). Upstream Netflix has no
+analogue at the `compat/` path (that subtree exists because of
+ADR-0700). When `/sync-upstream` runs, this file is fork-only and
+needs no re-baselining. Companion: PR #412
+(`test/compat-python-vmaf-coverage`) round 1, PR #413
+(`fix/decorator-persist-encode`) — neither overlap.
 
 ---
 
