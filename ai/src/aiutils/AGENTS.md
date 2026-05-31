@@ -15,7 +15,16 @@ When writing a new script in `ai/scripts/` or a new module in
 3. **JSONL iteration:** Use `iter_jsonl()` from `aiutils.jsonl_utils` to read
    newline-delimited JSON, not inline generators.
 4. **Atomic Parquet writes:** Use `write_parquet_atomic()` from `aiutils.parquet_utils`
-   to safely write DataFrames with cleanup on failure.
+   to safely write DataFrames with cleanup on failure. As of ADR-0926 the helper
+   produces **schema v2** by default: zstd-3 compression, canonical column order
+   (`clip_id`, `frame_idx`, sorted features, labels, metadata), and pyarrow file
+   metadata that carries `vmafx_schema_version` + `vmafx_pipeline_hash`. Pass
+   `compression="snappy"` if a downstream consumer cannot read zstd, and pass
+   explicit `labels=` / `metadata=` to override the column-classification
+   heuristics. To detect what produced an input file, use
+   `read_parquet_with_schema(path)` which returns `(df, schema_version)` — v1
+   for legacy files written by raw `df.to_parquet(...)`, v2 for files written
+   by this helper. **Do not** call `df.to_parquet(...)` directly in new code.
 5. **Run provenance:** Use `aiutils.run_manifest.write_run_manifest()` for
    script-specific sidecars that need stable entrypoint, args, input, and
    output metadata plus adapter-specific counts/config. Use
@@ -37,6 +46,10 @@ When writing a new script in `ai/scripts/` or a new module in
 - `file_utils.py` — `sha256(path) -> str`
 - `time_utils.py` — `now_iso_8601() -> str`
 - `jsonl_utils.py` — `iter_jsonl(path) -> Iterator[tuple[int, dict]]`
-- `parquet_utils.py` — `write_parquet_atomic(df, output, **kwargs) -> None`
+- `parquet_utils.py` — `write_parquet_atomic(df, output, **kwargs) -> None`,
+  `read_parquet_with_schema(path) -> (df, int)`,
+  `detect_schema_version(path) -> int`,
+  `apply_standard_column_order(df, *, labels=None, metadata=None) -> DataFrame`
+  (ADR-0926; schema v2 is the on-disk default)
 - `run_manifest.py` — deterministic `run_provenance` sidecar helpers
 - `cli_helpers.py` — shared parser/raw-argv/batch-manifest argument helpers

@@ -21,13 +21,16 @@ from aiutils.time_utils import now_iso_8601
 
 __all__ = [
     "add_batch_manifest_arguments",
+    "apply_standard_column_order",
     "build_run_manifest_payload",
     "build_run_provenance",
     "collect_cli_argv",
     "describe_path",
+    "detect_schema_version",
     "iter_jsonl",
     "make_argument_parser",
     "now_iso_8601",
+    "read_parquet_with_schema",
     "sha256",
     "write_manifest_json",
     "write_parquet_atomic",
@@ -35,10 +38,18 @@ __all__ = [
 ]
 
 
+_LAZY_PARQUET_EXPORTS = {
+    "apply_standard_column_order",
+    "detect_schema_version",
+    "read_parquet_with_schema",
+    "write_parquet_atomic",
+}
+
+
 def __getattr__(name: str):
     """Import optional heavy helpers only when the caller asks for them."""
-    if name == "write_parquet_atomic":
-        from aiutils.parquet_utils import write_parquet_atomic
+    if name in _LAZY_PARQUET_EXPORTS:
+        import aiutils.parquet_utils as _pq
 
-        return write_parquet_atomic
+        return getattr(_pq, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
