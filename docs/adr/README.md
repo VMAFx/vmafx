@@ -808,3 +808,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0840](0840-gpu-dispatch-toctou-fence.md) | Fix cu_state leak on import failure and gpu_dispatch_env TOCTOU | Accepted | cuda, security, framework, ci |
 | [ADR-0841](0841-env-var-consolidation.md) | Environment variable reference page and canonical naming | Accepted | docs, sycl, cuda, ai, workspace |
 | [ADR-0853](0853-motion-avx2-remove-debug-macros.md) | Remove dead debug-print macros from motion_avx2.c | Accepted | simd, lint, avx2, cleanup, fork-local |
+| [ADR-0911](0911-init-py-export-completeness-audit.md) | `__init__.py` export-completeness audit — `__all__` + SPDX headers across 8 fork-added Python packages | Accepted | 2026-05-31 | docs, python, ai, mcp, tools, lint |

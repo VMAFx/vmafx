@@ -671,3 +671,4 @@
 0840-gpu-dispatch-toctou-fence
 0841-env-var-consolidation
 0853-motion-avx2-remove-debug-macros
+0911-init-py-export-completeness-audit

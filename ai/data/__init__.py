@@ -17,3 +17,9 @@ the **Netflix VMAF training corpus** described in
 """
 
 from __future__ import annotations
+
+__all__ = [
+    "feature_extractor",
+    "netflix_loader",
+    "scores",
+]

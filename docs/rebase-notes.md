@@ -41574,3 +41574,15 @@ ADR-0892 introduces). On rebase the renderer's new stderr WARNING
 surfaces the wrong directory immediately; `bash
 scripts/release/concat-changelog-fragments.sh --check` then verifies
 the fix.
+## `__init__.py` export-completeness audit (ADR-0911, 2026-05-31)
+
+no rebase impact: REASON — all eight modified `__init__.py` files are
+fork-added (`ai/__init__.py`, `ai/data/__init__.py`,
+`ai/train/__init__.py`, `ai/src/vmaf_train/__init__.py`,
+`ai/src/vmaf_train/data/__init__.py`,
+`dev-llm/src/vmaf_dev_llm/__init__.py`,
+`mcp-server/vmaf-mcp/src/vmaf_mcp/__init__.py`, `scripts/lib/__init__.py`).
+Upstream-mirror packages (`compat/python-vmaf/**`,
+`python/test/__init__.py`) were deliberately left byte-identical per the
+upstream-mirror rebase-hygiene rule. No upstream Netflix/vmaf file is
+touched.

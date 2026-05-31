@@ -41,6 +41,15 @@ ai/
 - **Docs**: every new model or training recipe ships a page under
   `docs/ai/` in the same PR. See
   [ADR-0042](../docs/adr/0042-tinyai-docs-required-per-pr.md).
+- **Package `__init__.py` carries `__all__`** — every fork-added Python
+  package under `ai/` (top-level `ai/`, `ai/data/`, `ai/train/`,
+  `ai/src/vmaf_train/`, `ai/src/vmaf_train/data/`, ...) declares
+  `__all__` as a machine-readable public-surface contract, plus a
+  module docstring that enumerates sub-modules, plus the Lusoris + SPDX
+  header. For namespace packages `__all__` lists sub-module names; for
+  re-export packages it lists the re-exported symbols; for
+  `__version__`-only packages it is `["__version__"]`. See
+  [ADR-0911](../docs/adr/0911-init-py-export-completeness-audit.md).
 - **Bisect-cache fixture is content-stable** — `ai/testdata/bisect/`
   is the deterministic default for the nightly `bisect-model-quality`
   workflow. Regenerate the committed synthetic cache via
