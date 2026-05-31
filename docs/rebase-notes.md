@@ -41055,6 +41055,17 @@ read-only from these tests. On upstream sync, conflicts are restricted
 to the `meson.build` insertion points; reapply the seven
 `test_*_coverage = executable(...)` blocks and the matching
 `test('test_*_coverage', ...)` rows post-rebase.
+## Feature-extractor coverage round 3 (ADR-0948, 2026-05-31)
+
+no rebase impact: REASON — additions are confined to fork-local test
+binaries under `core/test/` (`test_integer_motion_edge16_coverage`,
+`test_adm_csf_tools_coverage`, `test_feature_collector_coverage`)
+and three append-only entries in `core/test/meson.build`. No
+upstream-mirrored source touched; no public API delta. On upstream
+sync the new tests apply cleanly regardless of what Netflix does to
+the underlying production files because the tests link against the
+existing `libvmaf` static target and import public + internal
+headers that already existed before round 3.
 
 ## macOS CI ansnr-residual cleanup (ADR-0749 follow-up, 2026-05-30)
 

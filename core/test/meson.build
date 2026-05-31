@@ -1585,3 +1585,38 @@ if is_rust_enabled
     )
     test('test_tad_rust', test_tad_rust, suite : ['fast'])
 endif
+
+# Coverage round 3 — core/src/feature/integer_motion.h `edge_16` mirror
+# extension (5-tap filter, both axes).  Pushes line coverage from 58 %
+# towards 100 % by driving the four mirror branches directly.
+test_integer_motion_edge16_coverage = executable('test_integer_motion_edge16_coverage',
+    ['test.c', 'test_integer_motion_edge16_coverage.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, sycl_dependency],
+)
+test('test_integer_motion_edge16_coverage', test_integer_motion_edge16_coverage, suite : ['fast'])
+
+# Coverage round 3 — core/src/feature/adm_csf_tools.h `adm_native_csf`
+# CSF curve (theta=0 H/V branch + theta=45 diagonal branch).  Drives
+# the inline body directly with a closed-form reference cross-check.
+test_adm_csf_tools_coverage = executable('test_adm_csf_tools_coverage',
+    ['test.c', 'test_adm_csf_tools_coverage.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, sycl_dependency],
+)
+test('test_adm_csf_tools_coverage', test_adm_csf_tools_coverage, suite : ['fast'])
+
+# Coverage round 3 — core/src/feature/feature_collector.cpp branch
+# coverage push (62.5 % -> 80 %+).  Hits NULL guards, duplicate-key
+# rejects, and unmount-not-found paths via the internal header.
+test_feature_collector_coverage = executable('test_feature_collector_coverage',
+    ['test.c', 'test_feature_collector_coverage.c'],
+    include_directories : [libvmaf_inc, test_inc,
+                           include_directories('../src/feature/'),
+                           include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, sycl_dependency],
+)
+test('test_feature_collector_coverage', test_feature_collector_coverage, suite : ['fast'])
