@@ -41,6 +41,86 @@ extractors, quality runners, models).
 - **No `git push --force` to `master`**. No `--no-verify` skipping hooks.
   `master` is merge-via-squash-or-ff-only via branch protection.
 
+## Branch naming
+
+Use a short, kebab-case prefix that mirrors the Conventional-Commits
+type of the work, followed by a slash and a descriptive slug:
+
+- `feat/<slug>` — new user-facing capability.
+- `fix/<slug>` — bug fix.
+- `perf/<slug>` — performance improvement.
+- `refactor/<slug>` — internal reshape with no behavior change.
+- `docs/<slug>` — docs-only.
+- `chore/<slug>` — tooling / housekeeping.
+- `port/<upstream-sha>` — single-commit Netflix port (use
+  `/port-upstream-commit`).
+- `sync-upstream/<date>` — periodic upstream sync (use
+  `/sync-upstream`).
+
+Working branches MUST NOT be force-pushed onto `master`. Once a PR is
+opened, force-push to the feature branch is fine — but re-run the
+local lint + fast-test gate against the rewritten tip before pushing
+(see `CLAUDE.md` §"Test locally before pushing").
+
+## Deep-dive deliverables (ADR-0108)
+
+Every **fork-local** PR ships the six deliverables in
+[ADR-0108](docs/adr/0108-deep-dive-deliverables-rule.md):
+
+1. **Research digest** under [`docs/research/`](docs/research/), OR
+   "no digest needed: trivial".
+2. **Decision matrix** in the accompanying ADR's `## Alternatives
+   considered`, OR "no alternatives: only-one-way fix".
+3. **`AGENTS.md` invariant note** in the relevant package, OR
+   "no rebase-sensitive invariants".
+4. **Reproducer / smoke-test command** in the PR description.
+5. **`changelog.d/<section>/<topic>.md`** fragment file
+   ([ADR-0221](docs/adr/0221-changelog-adr-fragment-pattern.md)).
+   Never edit `CHANGELOG.md` directly — it is rendered from the
+   fragment tree by `scripts/release/concat-changelog-fragments.sh`.
+6. **Rebase note** in [`docs/rebase-notes.md`](docs/rebase-notes.md),
+   OR `no rebase impact: REASON`.
+
+The PR template
+([`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md))
+carries the checklist. The CI gate parses it; prose bullets or
+numbered lists fail the parser. See
+[`docs/development/pr-body-sentinel-guide.md`](docs/development/pr-body-sentinel-guide.md)
+for the exact sentinel forms.
+
+**Upstream-port PRs are exempt** — pure `/port-upstream-commit` and
+`/sync-upstream` PRs skip this gate.
+
+## Architecture Decision Records
+
+Every non-trivial architectural, policy, or scope decision lands as
+an ADR under [`docs/adr/`](docs/adr/) **before** the implementing
+commit. Reserve the next number atomically with:
+
+```bash
+scripts/adr/next-free.sh --claim <kebab-slug>
+```
+
+This writes a `.stub` reservation visible to parallel agents (and
+to sibling worktrees via the side-pointer in `.git/adr-claims/`).
+Rename the stub to `.md` when committing. See
+[ADR-0535](docs/adr/0535-adr-atomic-allocator.md) and
+[ADR-0628](docs/adr/0628-adr-allocator-remote-aware.md) for the
+allocator semantics.
+
+ADRs follow the Nygard template
+([`docs/adr/0000-template.md`](docs/adr/0000-template.md)). Once an
+ADR's Status flips to **Accepted**, its body is immutable — a
+superseding decision gets a new ADR that links back via
+`Supersedes`.
+
+## Governance
+
+The fork follows the BDFL model documented in
+[`GOVERNANCE.md`](GOVERNANCE.md). The current maintainer list is in
+[`MAINTAINERS.md`](MAINTAINERS.md). PR review routing is in
+[`.github/CODEOWNERS`](.github/CODEOWNERS).
+
 ## Reporting bugs / requesting features
 
 Use the GitHub issue templates under `.github/ISSUE_TEMPLATE/`. Security

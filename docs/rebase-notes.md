@@ -41721,3 +41721,26 @@ no upstream counterpart. The new `core/doc/Doxyfile.public-api`,
 `.github/workflows/doxygen-public-api.yml`, ADR-0953, research
 digest, changelog fragment, and AGENTS.md invariant note are
 fork-local — zero rebase exposure.: warning-clean doxygen build for libvmaf public C API (recovery of #457)): warning-clean doxygen build for libvmaf public C API (recovery of #457))
+## governance-audit (2026-05-30, ADR-0901)
+
+No rebase impact — all changes are fork-local governance files that upstream
+Netflix/vmaf does not ship:
+
+- `GOVERNANCE.md` (new), `MAINTAINERS.md` (new) — top-level fork-only.
+- `.github/CODEOWNERS` — **append-only** additions below the existing rows
+  (the rename of the existing `/libvmaf/...` rows to `/core/...` is owned by
+  in-flight PR #321, not this PR).
+- `CONTRIBUTING.md` — fork-specific block extended with branch-naming,
+  ADR-0108 deliverables, ADR-allocator pointer, governance pointer. The
+  inherited Netflix upstream contribution-guide block at the bottom is
+  unchanged.
+- `docs/adr/0901-governance-audit.md`,
+  `docs/adr/_index_fragments/0901-governance-audit.md`,
+  `docs/adr/_index_fragments/_order.txt` (one-line append),
+  `docs/research/governance-audit-2026-05-30.md`,
+  `changelog.d/added/governance-audit.md` — all fork-only paths.
+
+On upstream sync, no conflict is expected. If CODEOWNERS shows a textual
+conflict because PR #321 landed in-between, the resolution is trivial:
+keep PR #321's renamed `/core/...` rows AND keep this PR's new append-only
+rows. Both edits are non-overlapping at the line level.

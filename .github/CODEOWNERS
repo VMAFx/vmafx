@@ -48,3 +48,45 @@
 /python/test/vmafexec_feature_extractor_test.py @Lusoris
 /python/test/result_test.py                 @Lusoris
 /python/test/resource/yuv/                  @Lusoris
+
+# Tiny-AI surface — model training, ONNX runtime integration.
+/ai/                                        @Lusoris
+/core/src/dnn/                              @Lusoris
+/model/                                     @Lusoris
+
+# MCP servers — JSON-RPC tool surface.
+/mcp-server/                                @Lusoris
+
+# Distributed platform — controller / node / operator / server / tune
+# (Phase 4b, ADR-0709).
+/cmd/                                       @Lusoris
+
+# Deployment & containers.
+/deploy/                                    @Lusoris
+/docker/                                    @Lusoris
+/dev/                                       @Lusoris
+
+# Python harness compatibility shim (post-ADR-0700 rename).
+/compat/                                    @Lusoris
+
+# ffmpeg integration — patches against n8.1 (ADR-0186).
+/ffmpeg-patches/                            @Lusoris
+
+# Scripts & tooling.
+/scripts/                                   @Lusoris
+/tools/                                     @Lusoris
+
+# ADRs — every fork decision must land an ADR here.
+/docs/adr/                                  @Lusoris
+
+# Changelog fragment tree (ADR-0221).
+/changelog.d/                               @Lusoris
+
+# Governance.
+/GOVERNANCE.md                              @Lusoris
+/MAINTAINERS.md                             @Lusoris
+/CODE_OF_CONDUCT.md                         @Lusoris
+/CONTRIBUTING.md                            @Lusoris
+/.github/CODEOWNERS                         @Lusoris
+/.github/ISSUE_TEMPLATE/                    @Lusoris
+/.github/PULL_REQUEST_TEMPLATE.md           @Lusoris
