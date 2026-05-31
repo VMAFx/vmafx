@@ -100,8 +100,54 @@ All release artefacts are signed via
 repository's GitHub OIDC identity. No long-lived signing keys live in the
 repo or in CI secrets.
 
-Consumers can verify signatures with
-`cosign verify-blob --certificate-identity-regexp …`.
+### What is signed
+
+- **Release blobs** (`libvmaf.so`, `vmaf`, `models.tar.gz`, optional
+  `u2netp_mirror.{onnx,pth}`): cosign sign-blob bundles attached to the
+  GitHub Release. SLSA L3 provenance via
+  `slsa-framework/slsa-github-generator`. SPDX + CycloneDX SBOM attached.
+- **`vmaf-mcp` Python package** (wheel + sdist): cosign sign-blob bundles
+  plus PEP 740 attestations stored alongside the PyPI artefact
+  (Trusted Publishing, no token). See
+  [ADR-0166](../adr/0166-mcp-server-release-channel.md).
+- **Production container images** (`ghcr.io/vmafx/vmafx:<tag>` and the
+  `-cuda12` / `-rocm6` / `-oneapi2026` / `-server` variants): cosign keyless
+  signature plus a GitHub-native build-provenance attestation
+  (`actions/attest-build-provenance`). See
+  [ADR-0902](../adr/0902-signing-and-attestation-audit.md).
+
+### Consumer verification recipes
+
+The OIDC identity is the workflow path inside the repo. The release blobs
+and MCP wheel come from `supply-chain.yml`; the container images come from
+`docker-publish-production.yml`.
+
+```bash
+# Release blob. The cosign bundle ships next to the artefact as FILE.bundle.
+cosign verify-blob --bundle vmaf.bundle vmaf \
+  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# vmaf-mcp wheel on PyPI. PEP 740 attestations — pip / uv verify automatically
+# when the index advertises the predicate. Manual check via cosign.
+cosign verify-blob --bundle vmaf_mcp-3.x.y-py3-none-any.whl.bundle \
+  vmaf_mcp-3.x.y-py3-none-any.whl \
+  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# Container image, cosign route. Replace DIGEST with the actual sha256 digest.
+cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
+  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# Container image, GitHub-native attestation route (added by ADR-0902).
+gh attestation verify oci://ghcr.io/vmafx/vmafx@sha256:DIGEST --repo VMAFx/vmafx
+```
+
+The post-push `smoke-test` job in `docker-publish-production.yml` runs the
+cosign verify recipe above against every freshly-built CPU image before
+running it, so a signature gap fails CI loudly rather than silently
+shipping an unsigned image.
 
 ## CHANGELOG.md fragment workflow (ADR-0221)
 

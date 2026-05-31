@@ -41681,3 +41681,13 @@ Both touched `Cargo.toml` files (`bindings/rust/vmafx-sys/Cargo.toml`,
 (ADR-0702, ADR-0707). The `[package.metadata.cargo-machete]` blocks add
 no-op metadata (`cargo` ignores keys it doesn't know) and cannot conflict
 with anything upstream might add later.
+## Signing and attestation audit (ADR-0902, 2026-05-30)
+
+no rebase impact: REASON — changes are confined to fork-local CI
+infrastructure (`.github/workflows/docker-publish-production.yml`,
+`docs/development/release.md`, `docs/adr/0902-*.md`,
+`docs/research/signing-and-attestation-audit-2026-05-30.md`,
+`changelog.d/security/signing-and-attestation-audit.md`). The supply-chain
+workflow (`supply-chain.yml`) is itself fork-additive (Netflix upstream
+does not ship a Sigstore + SLSA + SBOM release channel); upstream syncs
+never touch any of these files.

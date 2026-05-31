@@ -220,6 +220,41 @@ collisions are rare because the fork-added workflow names
 3. `PULL_REQUEST_TEMPLATE.md` is fork-authored; upstream has none.
    Never overwrite it on sync.
 
+## Signing + attestation chain invariants (ADR-0902)
+
+Container builds in `.github/workflows/docker-publish-production.yml` and
+release-blob signing in `.github/workflows/supply-chain.yml` carry a
+multi-layer signing chain that is load-bearing for the
+[release.md](../docs/development/release.md) consumer verification recipes.
+
+- Every container build job (CPU, CUDA, ROCm, oneAPI, server) must run
+  **both** `cosign sign --yes` **and** `actions/attest-build-provenance@<v4>`
+  against the same `${{ steps.push.outputs.digest }}`. The two
+  attestations cover different consumer toolchains (cosign for
+  Sigstore-native consumers, `gh attestation verify` for GitHub-native
+  consumers); neither replaces the other. Removing either side is a
+  policy change and needs a superseding ADR.
+- Every job that runs `actions/attest-build-provenance@*` needs
+  `attestations: write` in its `permissions:` block. Adding a new GPU
+  variant without this permission silently disables the GitHub-native
+  attestation for that variant.
+- The `smoke-test` job must run `cosign verify` against the freshly-pushed
+  CPU image before pulling and running it. Skipping this verification
+  would re-open the gap that ADR-0902 §G3 closed (compromised CI token
+  pushes an unsigned image; smoke test passes).
+- The certificate-identity regex in
+  [`release.md`](../docs/development/release.md) §"Consumer verification
+  recipes" assumes the workflow file path
+  `.github/workflows/docker-publish-production.yml` and
+  `.github/workflows/supply-chain.yml`. Renaming or splitting these
+  workflows requires updating both the docs AND any cached consumer
+  scripts (deprecated regex stays valid for old image digests in Rekor).
+- `cosign-installer` SHA-pin: every install step uses the same pinned
+  v4 SHA. When Renovate or a manual bump updates it, all five Docker
+  build jobs + the smoke-test job + both supply-chain.yml jobs must
+  move together — a mixed-version chain produces signature-format
+  mismatches that only surface at consumer-verify time.
+
 ## OSSF Scorecard pin invariant
 
 `.github/workflows/scorecard.yml` references
