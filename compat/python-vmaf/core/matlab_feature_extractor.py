@@ -1,4 +1,6 @@
 import os
+import subprocess
+from typing import List, Optional
 
 import numpy as np
 
@@ -6,11 +8,54 @@ from vmaf.config import VmafConfig, VmafExternalConfig
 from vmaf.core.executor import Executor
 from vmaf.core.feature_extractor import FeatureExtractor
 from vmaf.tools.decorator import override
-from vmaf.tools.misc import make_absolute_path, run_process
+from vmaf.tools.misc import make_absolute_path
 from vmaf.tools.stats import ListStats
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+
+
+def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: Optional[str] = None) -> None:
+    """Invoke MATLAB safely with a single -r script argument.
+
+    Replaces the historical ``run_process(' '.join(cmd), shell=True)``
+    pattern that joined user-derived asset paths into a shell string
+    (CWE-78: shell injection). We build the argv list explicitly and
+    bypass the shell entirely. If ``log_file_path`` is provided the
+    process stdout is appended to it — matching the previous
+    ``>> {log_file_path}`` redirect semantics without invoking a shell.
+
+    Stderr is folded into stdout so the captured/redirected log
+    matches the prior behaviour for MATLAB error diagnostics.
+    """
+    argv: List[str] = [
+        matlab_bin,
+        "-nodisplay",
+        "-nosplash",
+        "-nodesktop",
+        "-r",
+        matlab_script,
+    ]
+    # Force a deterministic C locale (mirrors ProcessRunner) so any
+    # AssertionError text raised on a non-English host stays English.
+    env = dict(os.environ)
+    env.setdefault("LC_ALL", "C")
+    env.setdefault("LANG", "C")
+    try:
+        if log_file_path is None:
+            subprocess.check_output(argv, stderr=subprocess.STDOUT, env=env, shell=False)
+        else:
+            with open(log_file_path, "ab") as log_fh:
+                subprocess.run(
+                    argv,
+                    stdout=log_fh,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    shell=False,
+                    check=True,
+                )
+    except subprocess.CalledProcessError as e:
+        raise AssertionError(f"Process returned {e.returncode}, cmd: {argv}, msg: {str(e.output)}")
 
 
 class MatlabFeatureExtractor(FeatureExtractor):
@@ -64,19 +109,26 @@ class StrredFeatureExtractor(MatlabFeatureExtractor):
 
         quality_width, quality_height = asset.quality_width_height
 
-        strred_cmd = """{matlab} -nodisplay -nosplash -nodesktop -r "run_strred('{ref}', '{dis}', {h}, {w}); exit;" >> {log_file_path}""".format(
-            matlab=VmafExternalConfig.get_and_assert_matlab(),
+        matlab_bin = VmafExternalConfig.get_and_assert_matlab()
+        matlab_script = "run_strred('{ref}', '{dis}', {h}, {w}); exit;".format(
             ref=ref_procfile_path,
             dis=dis_procfile_path,
             w=quality_width,
             h=quality_height,
-            log_file_path=log_file_path,
         )
         if self.logger:
-            self.logger.info(strred_cmd)
+            self.logger.info(
+                "%s -nodisplay -nosplash -nodesktop -r %r >> %s",
+                matlab_bin,
+                matlab_script,
+                log_file_path,
+            )
 
         os.chdir(self.MATLAB_WORKSPACE)
-        run_process(strred_cmd, shell=True)
+        # Argv-list invocation (no shell) — fixes CWE-78 shell injection
+        # via asset paths. Log redirect is performed by `_run_matlab`
+        # opening `log_file_path` in append mode.
+        _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
         os.chdir(current_dir)
 
     @classmethod
@@ -160,20 +212,25 @@ class StrredOptFeatureExtractor(MatlabFeatureExtractor):
 
         quality_width, quality_height = asset.quality_width_height
 
-        strredopt_cmd = """{matlab} -nodisplay -nosplash -nodesktop -r "run_strred_opt('{ref}', '{dis}', {w}, {h}); exit;" >> {log_file_path}""".format(
-            matlab=VmafExternalConfig.get_and_assert_matlab(),
+        matlab_bin = VmafExternalConfig.get_and_assert_matlab()
+        matlab_script = "run_strred_opt('{ref}', '{dis}', {w}, {h}); exit;".format(
             ref=ref_procfile_path,
             dis=dis_procfile_path,
             w=quality_width,
             h=quality_height,
-            log_file_path=log_file_path,
         )
 
         if self.logger:
-            self.logger.info(strredopt_cmd)
+            self.logger.info(
+                "%s -nodisplay -nosplash -nodesktop -r %r >> %s",
+                matlab_bin,
+                matlab_script,
+                log_file_path,
+            )
 
         os.chdir(self.MATLAB_WORKSPACE)
-        run_process(strredopt_cmd, shell=True)
+        # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
+        _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
         os.chdir(current_dir)
 
     @classmethod
@@ -253,20 +310,27 @@ class SpEEDMatlabFeatureExtractor(MatlabFeatureExtractor):
         dis_procfile_path = make_absolute_path(dis_procfile_path, current_dir)
         log_file_path = make_absolute_path(log_file_path, current_dir)
         quality_width, quality_height = asset.quality_width_height
-        speed_cmd = """{matlab} -nodisplay -nosplash -nodesktop -r "run_speed('{ref}', '{dis}', {w}, {h}, {bands}, '{yuv_type}'); exit;" >> {log_file_path}""".format(
-            matlab=VmafExternalConfig.get_and_assert_matlab(),
-            ref=ref_procfile_path,
-            dis=dis_procfile_path,
-            w=quality_width,
-            h=quality_height,
-            bands=self.scale_list,
-            yuv_type=self._get_workfile_yuv_type(asset),
-            log_file_path=log_file_path,
+        matlab_bin = VmafExternalConfig.get_and_assert_matlab()
+        matlab_script = (
+            "run_speed('{ref}', '{dis}', {w}, {h}, {bands}, '{yuv_type}'); exit;".format(
+                ref=ref_procfile_path,
+                dis=dis_procfile_path,
+                w=quality_width,
+                h=quality_height,
+                bands=self.scale_list,
+                yuv_type=self._get_workfile_yuv_type(asset),
+            )
         )
         if self.logger:
-            self.logger.info(speed_cmd)
+            self.logger.info(
+                "%s -nodisplay -nosplash -nodesktop -r %r >> %s",
+                matlab_bin,
+                matlab_script,
+                log_file_path,
+            )
         os.chdir(self.MATLAB_WORKSPACE)
-        run_process(speed_cmd, shell=True)
+        # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
+        _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
         os.chdir(current_dir)
 
     @classmethod
@@ -321,27 +385,16 @@ class STMADFeatureExtractor(MatlabFeatureExtractor):
     # compile necessary functions; need to use mex from within matlab
     def _custom_init(self):
 
-        def run_stmad_cmd(stmad_cmd):
+        def run_stmad_mex(matlab_bin: str, mex_script: str) -> None:
             current_dir = os.getcwd() + "/"
             os.chdir(self.MATLAB_WORKSPACE)
-            run_process(stmad_cmd, shell=True)
+            # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
+            _run_matlab(matlab_bin, mex_script)
             os.chdir(current_dir)
 
-        stmad_mex_cmd_1 = (
-            '''{matlab} -nodisplay -nosplash -nodesktop -r "mex ical_std.c; exit;"'''.format(
-                matlab=VmafExternalConfig.get_and_assert_matlab(),
-            )
-        )
-
-        run_stmad_cmd(stmad_mex_cmd_1)
-
-        stmad_mex_cmd_2 = (
-            '''{matlab} -nodisplay -nosplash -nodesktop -r "mex ical_stat.c; exit;"'''.format(
-                matlab=VmafExternalConfig.get_and_assert_matlab(),
-            )
-        )
-
-        run_stmad_cmd(stmad_mex_cmd_2)
+        matlab_bin = VmafExternalConfig.get_and_assert_matlab()
+        run_stmad_mex(matlab_bin, "mex ical_std.c; exit;")
+        run_stmad_mex(matlab_bin, "mex ical_stat.c; exit;")
 
     @classmethod
     def _assert_an_asset(cls, asset):
@@ -366,20 +419,25 @@ class STMADFeatureExtractor(MatlabFeatureExtractor):
 
         quality_width, quality_height = asset.quality_width_height
 
-        stmad_cmd = """{matlab} -nodisplay -nosplash -nodesktop -r "run_stmad('{ref}', '{dis}', {w}, {h}); exit;" >> {log_file_path}""".format(
-            matlab=VmafExternalConfig.get_and_assert_matlab(),
+        matlab_bin = VmafExternalConfig.get_and_assert_matlab()
+        matlab_script = "run_stmad('{ref}', '{dis}', {w}, {h}); exit;".format(
             ref=ref_procfile_path,
             dis=dis_procfile_path,
             w=quality_width,
             h=quality_height,
-            log_file_path=log_file_path,
         )
 
         if self.logger:
-            self.logger.info(stmad_cmd)
+            self.logger.info(
+                "%s -nodisplay -nosplash -nodesktop -r %r >> %s",
+                matlab_bin,
+                matlab_script,
+                log_file_path,
+            )
 
         os.chdir(self.MATLAB_WORKSPACE)
-        run_process(stmad_cmd, shell=True)
+        # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
+        _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
         os.chdir(current_dir)
 
     @classmethod
@@ -449,20 +507,25 @@ class iCIDFeatureExtractor(MatlabFeatureExtractor):
 
         quality_width, quality_height = asset.quality_width_height
 
-        icid_cmd = """{matlab} -nodisplay -nosplash -nodesktop -r "run_icid('{ref}', '{dis}', {h}, {w}, '{yuvtype}'); exit;" >> {log_file_path}""".format(
-            matlab=VmafExternalConfig.get_and_assert_matlab(),
+        matlab_bin = VmafExternalConfig.get_and_assert_matlab()
+        matlab_script = "run_icid('{ref}', '{dis}', {h}, {w}, '{yuvtype}'); exit;".format(
             ref=ref_workfile_path,
             dis=dis_workfile_path,
             w=quality_width,
             h=quality_height,
             yuvtype=asset.ref_yuv_type,
-            log_file_path=log_file_path,
         )
         if self.logger:
-            self.logger.info(icid_cmd)
+            self.logger.info(
+                "%s -nodisplay -nosplash -nodesktop -r %r >> %s",
+                matlab_bin,
+                matlab_script,
+                log_file_path,
+            )
 
         os.chdir(self.MATLAB_WORKSPACE)
-        run_process(icid_cmd, shell=True)
+        # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
+        _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
         os.chdir(current_dir)
 
     @classmethod

@@ -1,6 +1,7 @@
 import hashlib
 import multiprocessing
 import os
+import shlex
 import shutil
 from abc import ABCMeta, abstractmethod
 from typing import List, Optional, Tuple
@@ -758,22 +759,32 @@ class Executor(TypeVersionEnabled):
         vf_cmd = [select_cmd, crop_cmd, pad_cmd, scale_cmd] + filter_cmds
         vf_cmd = ",".join(filter(lambda s: s != "", vf_cmd))
 
-        ffmpeg_cmd = []
+        # Build the ffmpeg command as an argv list so it can be exec'd
+        # without a shell. `src_fmt_cmd` and `vframes_cmd` are
+        # space-joined internal multi-token strings (e.g.
+        # "-f rawvideo -pix_fmt yuv420p -s 320x240"); shlex.split is
+        # used to tokenise them into individual argv entries while
+        # leaving everything else as discrete tokens. Asset-derived
+        # paths flow through `path` / `workfile_path` as single argv
+        # elements, so shell metacharacters in filenames are inert
+        # (CWE-78: prevents shell injection via crafted asset paths).
+        ffmpeg_cmd: list[str] = []
         ffmpeg_cmd += [VmafExternalConfig.get_and_assert_ffmpeg()]
-        ffmpeg_cmd += [src_fmt_cmd]
+        if src_fmt_cmd:
+            ffmpeg_cmd += shlex.split(src_fmt_cmd)
         ffmpeg_cmd += ["-i", path]
         ffmpeg_cmd += ["-an", "-vsync", "0"]
         ffmpeg_cmd += ["-pix_fmt", workfile_yuv_type]
-        ffmpeg_cmd += [vframes_cmd]
+        if vframes_cmd:
+            ffmpeg_cmd += shlex.split(vframes_cmd)
         ffmpeg_cmd += ["-vf", vf_cmd]
         ffmpeg_cmd += ["-f", "rawvideo"]
         ffmpeg_cmd += ["-sws_flags", resampling_type]
         ffmpeg_cmd += ["-y", "-nostdin"]
         ffmpeg_cmd += [workfile_path]
-        ffmpeg_cmd = " ".join(ffmpeg_cmd)
         if logger:
-            logger.info(ffmpeg_cmd)
-        run_process(ffmpeg_cmd, shell=True, env=VmafExternalConfig.ffmpeg_env())
+            logger.info(" ".join(shlex.quote(part) for part in ffmpeg_cmd))
+        run_process(ffmpeg_cmd, shell=False, env=VmafExternalConfig.ffmpeg_env())
 
     # ===== procfile =====
 
