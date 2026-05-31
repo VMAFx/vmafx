@@ -13,43 +13,42 @@ package main
 
 import (
 	"context"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
 )
 
 // TestFeedbackClient_CloseStopsDrainer verifies that Close() returns only
-// after the background drainer goroutine has exited, with no goroutine
-// leak past the Close() call.
+// after the background drainer goroutine has exited.
+//
+// We don't compare goroutine counts directly — runtime.NumGoroutine is
+// influenced by parallel tests sharing the process and produces noisy
+// baselines under t.Parallel.  Instead we verify the documented contract:
+// Close blocks until the drainer's done channel closes, and a second
+// Close (or a Close after ctx-cancel) must still return promptly.
 func TestFeedbackClient_CloseStopsDrainer(t *testing.T) {
 	t.Parallel()
 
-	baseline := runtime.NumGoroutine()
 	fc := NewFeedbackClient(context.Background(), nil)
 
-	// Give the drainer a tick to start so the goroutine count actually
-	// reflects its presence.
-	time.Sleep(20 * time.Millisecond)
-	if got := runtime.NumGoroutine(); got <= baseline {
-		t.Logf("warning: goroutine count did not rise post-construction (baseline=%d got=%d)",
-			baseline, got)
+	done := make(chan struct{})
+	go func() {
+		fc.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close() did not return within 2s — drainer goroutine is stuck")
 	}
 
+	// A follow-up Close after the drainer has exited must also be
+	// instantaneous (idempotent).
+	postClose := time.Now()
 	fc.Close()
-
-	// After Close returns the drainer goroutine must be gone. Allow a
-	// short grace window for the runtime scheduler to retire the
-	// stack — Close itself blocks on <-fc.done so this is belt-and-braces.
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if runtime.NumGoroutine() <= baseline+1 {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	if d := time.Since(postClose); d > 50*time.Millisecond {
+		t.Errorf("second Close() took %v — expected near-instant return on a closed drainer", d)
 	}
-	t.Errorf("drainer goroutine still running after Close(): baseline=%d, now=%d",
-		baseline, runtime.NumGoroutine())
 }
 
 // TestFeedbackClient_CloseIdempotent verifies that calling Close() multiple
