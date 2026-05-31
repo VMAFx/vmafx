@@ -154,3 +154,31 @@ When porting an upstream Netflix/vmaf commit that modifies
 `libvmaf/src/read_json_model.c` or `libvmaf/src/model.c::vmaf_model_destroy`,
 keep both the `sync_n_features` calls and the `min(feature_cap, n_features)`
 bound in destroy; re-apply the fork's hunks on top of any upstream changes.
+
+### 11. Vendored libsvm + IQA test files are observation-only (ADR-0952)
+
+`core/test/test_svm_api.c` and `core/test/test_iqa_helpers.c` were added
+to lift coverage of the vendored bodies (`core/src/svm.cpp`,
+`core/src/feature/iqa/*.c`) from ≈14% to 74% without modifying any
+vendored source. The invariant is symmetric to the ADR-0889 cordon:
+
+- These test files **must not** import any private vendored header,
+  call any static-internal helper, or rely on any vendored macro
+  beyond the public surface declared in `svm.h` / `convolve.h` /
+  `decimate.h` / `math_utils.h` / `ssim_tools.h`.
+- The vendored cordon `NOLINTBEGIN/NOLINTEND` in `svm.cpp` and the
+  `tdistler.com` copyright headers in the IQA helpers stay
+  byte-identical across upstream re-pins.
+- The `_round()` / `_cmp_float()` asymmetry tests in
+  `test_iqa_helpers.c` double as behavioural documentation. They lock
+  the asymmetric "trunc toward zero, add sign when |frac| >= 0.5"
+  rounding rule. If a future upstream sync rewrites the helper to
+  IEEE-754 round-half-to-even, the test fails *by design* — the
+  failure surfaces the unintended numerical change at the rebase
+  diff, not at an integration-level SSIM/VMAF anomaly.
+
+When porting an upstream Netflix/vmaf commit that modifies the
+vendored libsvm or IQA bodies, the test files do not need to follow
+the upstream change; they observe public-API contracts that survive
+across versions. A test failure post-port is the signal — investigate
+the API drift before relaxing the assertion.

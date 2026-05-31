@@ -623,3 +623,4 @@
 0934-dataclass-to-pydantic-configs
 0955-compat-python-vmaf-scanf-locale-bugs
 0954-gpu-runtime-coverage-test
+0952-test-vendored-libsvm-iqa-coverage

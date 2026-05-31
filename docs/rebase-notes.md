@@ -41234,3 +41234,35 @@ JSON layout byte-identical (`ModelMetadata.to_json()` uses
 `model_dump(mode="json")` + `json.dumps(indent=2, sort_keys=True)`). On
 upstream sync the diff cannot conflict — Netflix has no equivalent file
 to merge into.
+## Vendored libsvm + IQA test-coverage uplift (2026-05-31, ADR-0952)
+
+`core/test/test_svm_api.c` and `core/test/test_iqa_helpers.c` are pure
+fork-local test additions. They link against the vendored
+`libsvm_static_lib` (for svm) and `libvmaf_feature_static_lib` +
+`libvmaf_cpu_static_lib` (for iqa) via their `extract_all_objects`
+recipes — the same pattern used by `test_iqa_convolve.c`,
+`test_feature_extractor.c`, and PR #381's `test_svm_parser.c`. No
+vendored source is touched.
+
+Rebase impact: when Netflix upstream re-pins libsvm (3.24 → 3.36 or
+later) or when the IQA helpers gain new public functions:
+
+- `test_svm_api.c` assertions on inspector outputs and on the C-SVC /
+  EPSILON-SVR predict round-trip are functional invariants of the
+  libsvm public API; a major-version bump that changes them is a
+  semantic break and should land its own ADR.
+- `test_iqa_helpers.c` `_round()` and `_cmp_float()` assertions
+  document the *current* asymmetric rounding rule ("trunc toward
+  zero, add sign when |frac| >= 0.5"). If upstream tdistler.com (or
+  Netflix's 2016 update) ever rewrites those helpers to IEEE-754
+  round-half-to-even, the tests will fail — that is by design; the
+  failure surfaces the unintended numerical change at the rebase
+  diff, not at the integration SSIM result.
+
+The meson wiring in `core/test/meson.build` inserts two new
+executables above `test_feature_extractor` and registers them in the
+`fast` suite. Both fragments are isolated; the only adjacency to
+upstream code is the alphabetical position in the test list.
+
+PR companion to ADR-0889 (PR #381, libsvm parser audit) — the two
+PRs can land in either order without conflict.
