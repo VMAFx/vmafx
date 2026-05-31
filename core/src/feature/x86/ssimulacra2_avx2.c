@@ -58,6 +58,7 @@
 #include <string.h>
 
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_simd_common.h"
 #include "ssimulacra2_avx2.h"
 
 #if defined(__GNUC__) && !defined(__clang__)

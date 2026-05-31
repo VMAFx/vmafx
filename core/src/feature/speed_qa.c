@@ -57,6 +57,7 @@
 #endif
 
 #include <math.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,6 +68,8 @@
 #ifndef M_E
 #define M_E 2.71828182845904523536
 #endif
+
+#include "libvmaf/picture.h"
 
 #include "feature_collector.h"
 #include "feature_extractor.h"

@@ -14,8 +14,6 @@
  */
 
 #include <math.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "test.h"
 #include "vmaf_roi_core.h"

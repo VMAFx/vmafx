@@ -22,7 +22,6 @@
  *  repo's model/ directory (same pattern as test_model.c).
  */
 
-#include <errno.h>
 #include <math.h>
 
 #include "test.h"

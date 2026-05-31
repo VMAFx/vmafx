@@ -20,7 +20,11 @@
  *  exercised by the CLI smoke gate, not by this unit test.
  */
 
+#include <string.h>
+
 #include "tiny_ai_test_template.h"
+
+#include "feature/feature_extractor.h"
 
 VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS("transnet_v2", "shot_boundary_probability",
                                        "VMAF_TRANSNET_V2_MODEL_PATH", transnet_v2)

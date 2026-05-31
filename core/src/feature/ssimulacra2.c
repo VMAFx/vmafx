@@ -48,12 +48,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "libvmaf/picture.h"
+
 #include "config.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature/ssimulacra2_math.h"
 #include "feature/ssimulacra2_simd_common.h"
 #include "mem.h"
+#include "opt.h"
 
 #if ARCH_X86 || ARCH_AARCH64
 #include "cpu.h"

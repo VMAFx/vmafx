@@ -40,7 +40,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "config.h"
@@ -50,7 +50,7 @@
 /* clang-format on */
 
 #if ARCH_X86
-#include "feature/x86/cambi_avx2.h"
+#include "x86/cpu.h"
 #if HAVE_AVX512
 #include "feature/x86/cambi_avx512.h"
 #endif

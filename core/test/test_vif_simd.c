@@ -38,6 +38,7 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "config.h"
@@ -51,6 +52,7 @@
 
 #if ARCH_X86
 #include "feature/x86/vif_statistic_avx2.h"
+#include "x86/cpu.h"
 #endif
 
 /* Test dimensions: width chosen non-multiple-of-8 to exercise the tail path;

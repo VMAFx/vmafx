@@ -24,6 +24,8 @@
 #include <errno.h>
 #include <stdlib.h>
 
+#include "libvmaf/picture.h"
+
 #include "test.h"
 
 #include "feature/feature_extractor.h"

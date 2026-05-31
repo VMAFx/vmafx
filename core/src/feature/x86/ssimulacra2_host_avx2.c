@@ -41,7 +41,6 @@
 
 #include <assert.h>
 #include <immintrin.h>
-#include <math.h>
 #include <stdalign.h>
 #include <stddef.h>
 #include <stdint.h>

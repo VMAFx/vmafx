@@ -908,6 +908,26 @@ namespace is `vmafx/`).
 **Rebase impact:** None. Every modified file is fork-original Go code
 under `cmd/vmafx-*` / `pkg/*`; Netflix/vmaf upstream does not ship Go
 code in these paths. No upstream conflict possible.
+## iwyu-audit (2026-05-30) — fork-only files, append-only direct includes
+
+**Files touched:** 16 fork-authored sources under `core/src/feature/`,
+`core/src/feature/x86/`, `core/test/`, `core/tools/`.
+
+**Rebase impact:** None. All modified files carry the Lusoris-only
+license header (filtered explicitly during scope selection — files
+with a Netflix header were skipped to preserve upstream-parity per
+`CLAUDE.md` §12 r12). The diff consists of removing dead `#include`
+directives and adding direct includes for symbols previously reached
+transitively. Upstream Netflix/vmaf does not contain any of these
+files in the form modified here, so there is no conflict surface for
+a future `sync-upstream` to navigate.
+
+**Follow-up:** A second-phase IWYU pass on `core/src/dnn/*`,
+`core/src/{cuda,sycl,hip,vulkan}/`, and the DNN-gated feature
+extractors is owed (the host CPU-only build cannot exercise
+`VMAF_HAVE_DNN` because ONNX Runtime is not installed locally). That
+pass will run inside the `vmaf-dev-mcp` container per
+`CLAUDE.md` §12 r15.
 
 ---
 
