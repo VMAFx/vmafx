@@ -38,6 +38,31 @@ backend and the fdopen-based file writer are fork-local. On upstream sync,
 hunks; the CUDA-backend changes in `cuda/common.c` are entirely fork-local
 and will not conflict.
 
+## SYCL kernel coverage round 4 (ADR-0957, 2026-05-31)
+
+**Files touched:**
+`core/test/test_sycl_float_moment_parity.c`,
+`core/test/test_sycl_speed_chroma_parity.c`,
+`core/test/test_sycl_speed_temporal_parity.c`,
+`core/test/test_sycl_ssimulacra2_parity.c`,
+`core/test/meson.build`,
+`core/src/feature/sycl/AGENTS.md`,
+`docs/adr/0957-sycl-kernel-coverage-round4.md` (+ index fragment),
+`docs/research/0957-sycl-kernel-coverage-round4-2026-05-31.md`,
+`changelog.d/added/0957-sycl-kernel-coverage-round4.md`.
+
+**Rebase impact:** None. All four new test files and the meson
+wiring block are fork-original (upstream Netflix/vmaf has no SYCL
+backend). The AGENTS.md table row updates are in-place edits of
+fork-local rows. The only file that overlaps with parallel fork PRs
+is `core/test/meson.build` — the round-4 block is appended
+immediately after the round-3 block (PR #446) inside the
+`if get_option('enable_sycl')` guard; if #446 merges first, this
+PR's block appends cleanly; if this PR merges first, #446 must
+insert its block before the round-4 block.
+
+---
+
 ## SYCL kernel coverage round 3 (ADR-0946, 2026-05-31)
 
 **Files touched:**

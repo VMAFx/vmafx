@@ -242,10 +242,21 @@ ADR-0884 / ADR-0946 backlog must be updated in the same PR.
 | `float_vif_sycl.cpp` | `float_vif.c` | `test_sycl_float_vif_parity.c` | ADR-0946 (round 3) |
 | `float_motion_sycl.cpp` | `float_motion.c` | `test_sycl_float_motion_parity.c` | ADR-0946 (round 3) |
 | `integer_psnr_hvs_sycl.cpp` | `third_party/xiph/psnr_hvs.c` | `test_sycl_psnr_hvs_parity.c` | ADR-0946 (round 3) |
-| `integer_moment_sycl.cpp` | `moment.c` | — (round 4 backlog) | — |
-| `speed_chroma_sycl.cpp` | `speed.c` | — (round 4 backlog) | — |
-| `speed_temporal_sycl.cpp` | `speed.c` | — (round 4 backlog) | — |
-| `ssimulacra2_sycl.cpp` | `ssimulacra2.c` | — (round 4 backlog) | — |
+| `integer_moment_sycl.cpp` (`float_moment_sycl`) | `float_moment.c` | `test_sycl_float_moment_parity.c` | ADR-0957 (round 4) |
+| `speed_chroma_sycl.cpp` (dormant — not built) | `speed.c` | `test_sycl_speed_chroma_parity.c` (skips until wired in) | ADR-0957 (round 4) |
+| `speed_temporal_sycl.cpp` (dormant — not built) | `speed.c` | `test_sycl_speed_temporal_parity.c` (skips until wired in) | ADR-0957 (round 4) |
+| `ssimulacra2_sycl.cpp` | `ssimulacra2.c` | `test_sycl_ssimulacra2_parity.c` | ADR-0957 (round 4) |
+
+> **`speed_chroma_sycl.cpp` and `speed_temporal_sycl.cpp` are dormant
+> scaffold (ADR-0957 §Context).** The source files exist (~1.5 KLOC
+> combined, no TODO/FIXME markers) but are not in
+> `sycl_feature_sources` in `core/src/meson.build` and the extractor
+> symbols `vmaf_fex_speed_chroma_sycl` / `vmaf_fex_speed_temporal_sycl`
+> are not declared/registered in `core/src/feature/feature_extractor.c`.
+> Wiring them in is a separate PR — it changes the production
+> extractor surface, not just test coverage. The round-4 parity
+> tests are added in dormant form and auto-activate as real gates
+> the day the wiring lands.
 
 ## Per-feature option-table sync invariant
 
