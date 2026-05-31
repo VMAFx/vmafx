@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 # Copyright 2026 Lusoris
 #
@@ -36,23 +37,30 @@ ARG CGO_ENABLED=1
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install libvmaf headers + library for cgo linking.
-# hadolint ignore=DL3008
-RUN apt-get update \
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
         gcc \
         pkg-config \
-        libvmaf-dev \
-    && rm -rf /var/lib/apt/lists/*
+        libvmaf-dev
 
 WORKDIR /src
 COPY . .
 
-# Download module dependencies.
-RUN go mod download
+# Download module dependencies. The Go module cache + build cache live at
+# /go/pkg/mod and /root/.cache/go-build respectively; BuildKit cache mounts
+# preserve them across builds so incremental rebuilds skip the network fetch
+# and reuse compiled package archives.
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    go mod download
 
 # Build the static-ish binary.  CGO_ENABLED=1 is required for cgo linkage to
 # libvmaf.  We use -trimpath and strip debug info to shrink the binary.
-RUN CGO_ENABLED=${CGO_ENABLED} \
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    CGO_ENABLED=${CGO_ENABLED} \
     CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lvmaf" \
     go build \
         -trimpath \
@@ -69,22 +77,28 @@ FROM debian:13-slim@sha256:b6e2a152f22a40ff69d92cb397223c906017e1391a73c952b588e
 ARG VMAF_BUILD_JOBS=4
 ARG DEBIAN_FRONTEND=noninteractive
 
-# hadolint ignore=DL3008
-RUN apt-get update \
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
+        ccache \
         gcc \
         g++ \
         meson \
         ninja-build \
         nasm \
         pkg-config \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+        ca-certificates
 
 WORKDIR /src
 COPY . .
 
-RUN meson setup /build core \
+# ccache cache mount accelerates incremental libvmaf rebuilds; meson auto-
+# detects ccache when it's on PATH.
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-go-server-vmaf \
+    CCACHE_DIR=/root/.cache/ccache \
+    meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Base: NVIDIA CUDA ≥13.2 devel on Ubuntu 24.04. Non-conservative pin per ADR D27 —
 # we follow latest-stable CUDA aggressively because the fork's value is GPU perf on
 # current hardware; being one release behind costs ~10-30% on kernel-bound stages.
@@ -38,9 +39,17 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # 24.04 archive; pinning every patch version would break on every
 # upstream security update. apt-get update + install happens in one
 # layer so the cache stays consistent (DL3009).
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# BuildKit cache mounts (`type=cache,target=/var/cache/apt` + `/var/lib/apt`)
+# preserve the apt package + index caches across builds so subsequent rebuilds
+# skip the network fetch. `sharing=locked` serialises concurrent BuildKit jobs
+# against the same cache. We INTENTIONALLY drop `rm -rf /var/lib/apt/lists/*`
+# here — with the cache mount the lists never make it into the image layer.
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ccache \
     ninja-build \
     nasm \
     doxygen \
@@ -52,13 +61,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     unzip \
     git \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+    pkg-config
 
 # ---------- Intel oneAPI (SYCL, optional) ----------
 # Modern keyring pattern (apt-key was deprecated in Ubuntu 22.04+).
-# hadolint ignore=DL3008
-RUN if [ "$ENABLE_SYCL" = "true" ]; then \
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    if [ "$ENABLE_SYCL" = "true" ]; then \
         apt-get update && apt-get install -y --no-install-recommends gnupg2 ca-certificates && \
         wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
             | gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg && \
@@ -69,8 +79,7 @@ RUN if [ "$ENABLE_SYCL" = "true" ]; then \
             intel-oneapi-runtime-libs-2025.3 \
             libva-dev \
             libva-drm2 \
-            level-zero-dev && \
-        rm -rf /var/lib/apt/lists/*; \
+            level-zero-dev ; \
     fi
 
 # ---------- nv-codec-headers ----------
@@ -87,8 +96,13 @@ COPY . /vmaf
 WORKDIR /vmaf
 ENV PATH=/vmaf:/vmaf/core/build/tools:$PATH
 
-# when disabling NVCC, CUDA kernels are JIT-compiled at runtime
-RUN make clean && make ENABLE_NVCC=true && make install
+# when disabling NVCC, CUDA kernels are JIT-compiled at runtime.
+# `ccache` was installed in the build-deps layer; mounting a BuildKit cache at
+# /root/.cache/ccache lets sequential rebuilds skip recompile of unchanged
+# translation units. Meson auto-detects ccache when it's on PATH.
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
+    CCACHE_DIR=/root/.cache/ccache \
+    make clean && make ENABLE_NVCC=true && make install
 
 # ---------- build FFmpeg ----------
 RUN wget -q "https://github.com/FFmpeg/FFmpeg/archive/${FFMPEG_TAG}.zip" && \
@@ -117,7 +131,9 @@ RUN set -e; \
 # is unrelated to VMAF; cuvid + nvdec + nvenc + libvmaf-cuda are what we
 # actually use here. Revisit once we move to an FFmpeg release that
 # supports CUDA 13 libnpp upstream.
-RUN ./configure \
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
+    CCACHE_DIR=/root/.cache/ccache \
+    ./configure \
         --enable-nonfree \
         --enable-nvdec \
         --enable-nvenc \
@@ -127,6 +143,8 @@ RUN ./configure \
         --enable-libvmaf \
         --enable-ffnvcodec \
         --disable-stripping \
+        --cc='ccache gcc' \
+        --cxx='ccache g++' \
         --nvccflags="${FFMPEG_NVCC_FLAGS}" && \
     make -j"$(nproc)" && \
     make install

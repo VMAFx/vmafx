@@ -283,3 +283,41 @@ the runtime is usable.
    container's ROCm 7.2.3 + CUDA 13.x stack set in ADR-0541/ADR-0542).
    When bumping ORT_VERSION: verify the new version's tarball exists at the
    GitHub releases URL before updating the ARG, and update this note.
+
+## BuildKit cache mount pattern (ADR-0923)
+
+The Containerfile uses BuildKit cache mounts to accelerate rebuilds.
+Three invariants must hold on every modification:
+
+1. **apt cache mounts pair with no apt-lists cleanup.** Every
+   `RUN apt-get install ...` line MUST be prefixed with:
+
+   ```dockerfile
+   RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+       --mount=type=cache,target=/var/lib/apt,sharing=locked \
+       apt-get update && apt-get install -y --no-install-recommends ...
+   ```
+
+   The trailing `&& rm -rf /var/lib/apt/lists/*` cleanup MUST NOT be
+   re-added — with the cache mount the lists never make it into the
+   image layer, and re-adding the cleanup defeats the cache.
+
+2. **ccache mount pairs with `CCACHE_DIR=...`.** Every meson / ninja /
+   cmake C/C++ compile step MUST be wrapped with a ccache cache mount
+   plus a matching `CCACHE_DIR` env hint. When the step runs as the
+   `vmaf` user the mount needs `uid=1000,gid=1000` (the user is
+   uid-pinned in the build-deps stage); when the step runs as root
+   point the cache at `/root/.cache/ccache`. The shared
+   `id=ccache-dev-mcp` / `id=ccache-dev-mcp-vmaf` markers serialise
+   concurrent BuildKit workers against the same cache and MUST stay
+   consistent across steps that should share a cache pool.
+
+3. **`# syntax=docker/dockerfile:1.7`** at the top of the file is what
+   enables `--mount=type=cache` parsing — do not remove or downgrade
+   the directive.
+
+4. **`vmaf` user uid/gid pin.** The user is created with
+   `useradd --uid 1000 --gid 1000` in the build-deps stage so the
+   `--mount=...,uid=1000,gid=1000` cache mounts resolve to the same
+   identity that runs the build. Preserve the explicit uid/gid pin
+   on any modification to the user-creation step.

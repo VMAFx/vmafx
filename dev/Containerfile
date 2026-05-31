@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 # Copyright 2026 Lusoris and Claude (Anthropic)
 #
@@ -46,9 +47,17 @@ LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# BuildKit cache mounts on /var/cache/apt and /var/lib/apt let sequential
+# rebuilds reuse the downloaded .deb files and the package index. With the
+# cache mount in place we INTENTIONALLY drop the trailing
+# `rm -rf /var/lib/apt/lists/*` — the cache lives in a tmpfs-backed mount
+# that does not get baked into the resulting image layer.
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     # Toolchains
+    ccache \
     gcc-13 \
     g++-13 \
     clang-19 \
@@ -96,8 +105,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mesa-libgallium \
     xxd \
     # Misc
-    jq \
-    && rm -rf /var/lib/apt/lists/*
+    jq
 
 # Verify critical GPU/VA-API packages were actually installed.
 # A misconfigured repo or network failure during apt-get produces a silently
@@ -113,8 +121,13 @@ RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
     && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-19 100 \
     && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100
 
-# Create a non-root build user (CERT C ENV32 — do not run builds as root)
-RUN useradd --create-home --shell /bin/bash vmaf
+# Create a non-root build user (CERT C ENV32 — do not run builds as root).
+# uid/gid 1000 are pinned so BuildKit `--mount=type=cache,uid=1000,gid=1000`
+# directives below resolve to the same identity that runs the build.
+RUN groupadd --gid 1000 vmaf \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash vmaf \
+    && mkdir -p /home/vmaf/.cache/ccache \
+    && chown -R vmaf:vmaf /home/vmaf/.cache
 
 # ---------------------------------------------------------------------------
 # Stage 2 — gpu-sdks
@@ -164,10 +177,11 @@ RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu24
 # library stubs. Do NOT install `libcuda1` (the runtime driver) — that
 # comes from the host via nvidia-container-runtime at run-time;
 # installing it here would shadow the host driver.
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    cuda-toolkit-13-2 \
-    && rm -rf /var/lib/apt/lists/*
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    cuda-toolkit-13-2
 
 # CUDA_HOME is the symlink the meta-package maintains pointing at the
 # latest installed major.minor (/usr/local/cuda → /usr/local/cuda-NN.M).
@@ -186,10 +200,11 @@ RUN curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-P
     && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] https://apt.repos.intel.com/oneapi all main\n' \
         > /etc/apt/sources.list.d/intel-oneapi.list
 
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    intel-basekit \
-    && rm -rf /var/lib/apt/lists/*
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    intel-basekit
 
 # ---------- Intel GPU compute-runtime (Arc / Xe dispatch via Level Zero) ----
 # Intel's "compute-runtime" stack (NEO) is what makes Arc / Xe / Gen12 GPUs
@@ -226,12 +241,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG NEO_VER=26.18.38308.1
 ARG GMMLIB_VER=22.10.0
 ARG IGC_VER=2.34.4+21428
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends clinfo \
-    && rm -rf /var/lib/apt/lists/*
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends clinfo
 
-# hadolint ignore=DL3003,DL3008
-RUN mkdir -p /tmp/neo && cd /tmp/neo \
+# hadolint ignore=DL3003,DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    mkdir -p /tmp/neo && cd /tmp/neo \
     && curl -fsSL -O "https://github.com/intel/intel-graphics-compiler/releases/download/v${IGC_VER%+*}/intel-igc-core-2_${IGC_VER}_amd64.deb" \
     && curl -fsSL -O "https://github.com/intel/intel-graphics-compiler/releases/download/v${IGC_VER%+*}/intel-igc-opencl-2_${IGC_VER}_amd64.deb" \
     && curl -fsSL -O "https://github.com/intel/compute-runtime/releases/download/${NEO_VER}/intel-opencl-icd_${NEO_VER}-0_amd64.deb" \
@@ -244,8 +262,7 @@ RUN mkdir -p /tmp/neo && cd /tmp/neo \
         ./libigdgmm12_${GMMLIB_VER}_amd64.deb \
         ./intel-opencl-icd_${NEO_VER}-0_amd64.deb \
         ./libze-intel-gpu1_${NEO_VER}-0_amd64.deb \
-    && cd / && rm -rf /tmp/neo \
-    && find /var/lib/apt/lists -mindepth 1 -delete
+    && cd / && rm -rf /tmp/neo
 
 # Verify NEO compute-runtime packages were actually installed.
 RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
@@ -255,12 +272,13 @@ RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
 
 # Level Zero loader (libze_loader) for SYCL
 ARG LEVEL_ZERO_VER=1.28.6
-RUN curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze1_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze1_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
     && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze-dev_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
     && apt-get update \
     && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
-    && find /tmp -maxdepth 1 -name 'libze*.deb' -delete \
-    && find /var/lib/apt/lists -mindepth 1 -delete
+    && find /tmp -maxdepth 1 -name 'libze*.deb' -delete
 
 # ---------- Intel oneVPL GPU runtime (QSV encode dispatch) -----------------
 # `libvpl-dev` installs the dispatcher (`libvpl.so.2`) but not the Gen GPU
@@ -272,13 +290,17 @@ RUN curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LE
 # per-command ONEVPL_SEARCH_PATH overrides.
 ARG VPL_GPU_RT_TAG=intel-onevpl-26.1.5
 # hadolint ignore=DL3003
-RUN git clone --depth=1 --branch "${VPL_GPU_RT_TAG}" https://github.com/intel/vpl-gpu-rt.git /tmp/vpl-gpu-rt \
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
+    CCACHE_DIR=/root/.cache/ccache \
+    git clone --depth=1 --branch "${VPL_GPU_RT_TAG}" https://github.com/intel/vpl-gpu-rt.git /tmp/vpl-gpu-rt \
     && cd /tmp/vpl-gpu-rt \
     && git lfs pull \
     && cmake -S . -B build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr \
         -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu \
+        -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
         -DBUILD_RUNTIME=ON \
         -DBUILD_TESTS=OFF \
         -DBUILD_TOOLS=OFF \
@@ -380,13 +402,14 @@ RUN curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key \
 # dynamic linker without installing any additional ROCm packages. The ABI is
 # backward-compatible (libxml2 major bumped only for packaging reasons, the
 # C API is the same). ADR-0603.
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     rocm-hip-runtime-dev \
     hipcc \
     rocm-cmake \
     libxml2-16 \
-    && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16.1.2 \
               /usr/lib/x86_64-linux-gnu/libxml2.so.2
 
@@ -512,7 +535,13 @@ USER vmaf
 #
 # To revert to SPIR-V JIT only (smallest binary, first-run penalty):
 #   -Dsycl_icpx_aot_targets=''
-RUN cd libvmaf && CC=icx CXX=icpx meson setup build \
+# ccache cache mount: persists compilation cache across image rebuilds so a
+# touch-once-build-everywhere cycle doesn't pay the full nvcc/icpx/hipcc compile
+# cost again. Meson auto-detects ccache when it's on PATH; passing the
+# environment hint keeps the cache scoped to the dev-mcp image.
+RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=1000,gid=1000,id=ccache-dev-mcp-vmaf \
+    CCACHE_DIR=/home/vmaf/.cache/ccache \
+    cd libvmaf && CC=icx CXX=icpx meson setup build \
         -Denable_cuda=true \
         -Denable_sycl=true \
         -Denable_hip=true \
@@ -629,13 +658,14 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # (analogous to libvvenc and AMF), which install pinned upstream
 # releases under `/usr/local/` with the correct headers + .pc files.
 #
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     libx264-dev libx265-dev libvpx-dev libdav1d-dev \
     libfdk-aac-dev libmp3lame-dev libopus-dev libvorbis-dev \
     libass-dev libfreetype-dev libfontconfig-dev libfribidi-dev \
-    libva-dev libvdpau-dev libvpl-dev \
-    && rm -rf /var/lib/apt/lists/*
+    libva-dev libvdpau-dev libvpl-dev
 
 # NOTE: libaom (Alliance for Open Media reference AV1 encoder) is
 # intentionally NOT built or enabled.
@@ -677,11 +707,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # exercises). Tags 2.x are current at time of writing; 2.1.0 is a
 # stable LTS-flavoured cut.
 ARG SVTAV1_VERSION=4.1.0
-RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
+    CCACHE_DIR=/root/.cache/ccache \
+    git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
         https://gitlab.com/AOMediaCodec/SVT-AV1.git /tmp/SVT-AV1 \
     && cmake -S /tmp/SVT-AV1 -B /tmp/SVT-AV1/build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
         -DBUILD_SHARED_LIBS=ON \
         -DBUILD_APPS=OFF \
         -DBUILD_TESTING=OFF \
@@ -710,11 +744,15 @@ RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
 # compatibility fixes. API-stable within the 1.x line.
 # Bumped from 1.12.0 per ADR-0568 (SDK audit 2026-05-18).
 ARG VVENC_VERSION=1.14.0
-RUN git clone --depth=1 --branch "v${VVENC_VERSION}" \
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
+    CCACHE_DIR=/root/.cache/ccache \
+    git clone --depth=1 --branch "v${VVENC_VERSION}" \
         https://github.com/fraunhoferhhi/vvenc.git /tmp/vvenc \
     && cmake -S /tmp/vvenc -B /tmp/vvenc/build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
         -DBUILD_SHARED_LIBS=ON \
         -DVVENC_ENABLE_INSTALL=ON \
     && cmake --build /tmp/vvenc/build -j"$(nproc)" \
@@ -837,7 +875,9 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 # also passes it through to its own pkg-config invocations which lose the
 # implicit defaults. Listing the multiarch path explicitly is the
 # robust fix (verified post-ADR-0541 SvtAv1Enc-not-found regression).
-RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
+RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=1000,gid=1000,id=ccache-dev-mcp-vmaf \
+    CCACHE_DIR=/home/vmaf/.cache/ccache \
+    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
     ./configure \
         --prefix=/usr/local \
         --enable-gpl --enable-version3 --enable-nonfree \
@@ -855,6 +895,8 @@ RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkg
         --enable-libvpl \
         --enable-amf \
         --disable-filter=amf_capture \
+        --cc='ccache gcc' \
+        --cxx='ccache g++' \
         --extra-cflags="-I${CUDA_HOME}/include -I/usr/local/include" \
         --extra-ldflags="-L${CUDA_HOME}/lib64 -L/usr/local/lib" \
     && make -j"$(nproc)"

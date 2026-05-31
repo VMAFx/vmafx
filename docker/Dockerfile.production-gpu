@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 # Copyright 2026 Lusoris
 #
@@ -31,17 +32,22 @@ FROM debian:13-slim@sha256:b6e2a152f22a40ff69d92cb397223c906017e1391a73c952b588e
 ARG DEBIAN_FRONTEND=noninteractive
 ARG VMAF_BUILD_JOBS=4
 
-# hadolint ignore=DL3008
-RUN apt-get update \
+# BuildKit cache mounts on the apt caches preserve the .deb downloads and
+# index files across builds; subsequent rebuilds skip the network fetch.
+# `sharing=locked` serialises concurrent BuildKit jobs against the same cache.
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
+        ccache \
         gcc \
         g++ \
         meson \
         ninja-build \
         nasm \
         pkg-config \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+        ca-certificates
 
 WORKDIR /src
 COPY . .
@@ -49,7 +55,11 @@ COPY . .
 # --- cpu build (default, no GPU SDK needed) ---
 FROM builder-base AS builder-cpu
 
-RUN meson setup /build libvmaf \
+# ccache cache mount accelerates incremental rebuilds across the per-variant
+# builder stages; each variant gets its own cache scope via the target path.
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cpu \
+    CCACHE_DIR=/root/.cache/ccache \
+    meson setup /build libvmaf \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \
@@ -65,13 +75,16 @@ RUN meson setup /build libvmaf \
 # --- cuda12 build ---
 FROM builder-base AS builder-cuda12
 
-# hadolint ignore=DL3008
-RUN apt-get update \
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
-        cuda-toolkit-12-0 \
-    && rm -rf /var/lib/apt/lists/*
+        cuda-toolkit-12-0
 
-RUN meson setup /build libvmaf \
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cuda12 \
+    CCACHE_DIR=/root/.cache/ccache \
+    meson setup /build libvmaf \
         --buildtype=release \
         --strip \
         -Denable_cuda=true \
@@ -87,13 +100,16 @@ RUN meson setup /build libvmaf \
 # --- rocm6 build ---
 FROM builder-base AS builder-rocm6
 
-# hadolint ignore=DL3008
-RUN apt-get update \
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
-        rocm-hip-runtime-dev \
-    && rm -rf /var/lib/apt/lists/*
+        rocm-hip-runtime-dev
 
-RUN meson setup /build libvmaf \
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-rocm6 \
+    CCACHE_DIR=/root/.cache/ccache \
+    meson setup /build libvmaf \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \
@@ -110,16 +126,19 @@ RUN meson setup /build libvmaf \
 # --- oneapi2026 build ---
 FROM builder-base AS builder-oneapi2026
 
-# hadolint ignore=DL3008
-RUN apt-get update \
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
-        intel-oneapi-dpcpp-cpp-2026.0 \
-    && rm -rf /var/lib/apt/lists/*
+        intel-oneapi-dpcpp-cpp-2026.0
 
 ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
 
-RUN meson setup /build libvmaf \
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-oneapi2026 \
+    CCACHE_DIR=/root/.cache/ccache \
+    meson setup /build libvmaf \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \
@@ -135,15 +154,18 @@ RUN meson setup /build libvmaf \
 # --- vulkan build ---
 FROM builder-base AS builder-vulkan
 
-# hadolint ignore=DL3008
-RUN apt-get update \
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
         libvulkan-dev \
         glslang-tools \
-        spirv-tools \
-    && rm -rf /var/lib/apt/lists/*
+        spirv-tools
 
-RUN meson setup /build libvmaf \
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-vulkan \
+    CCACHE_DIR=/root/.cache/ccache \
+    meson setup /build libvmaf \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \

@@ -375,6 +375,38 @@ If the per-hundred bucket labels in `LABELS` inside
 `scripts/docs/generate-adr-nav.sh` drift away from the actual bucket
 themes (e.g., the 0800s and 0900s fill out with a clear topic), edit
 the dict and re-run `--write`.
+## BuildKit cache mounts on container build matrix (2026-05-31)
+
+**Files touched:**
+`Dockerfile`, `docker/Dockerfile.production-gpu`, `dev/Containerfile`,
+`Dockerfile.go-server`, `docs/adr/0923-buildkit-cache-mounts.md`,
+`changelog.d/changed/buildkit-cache-mounts.md`.
+
+**Rebase impact:** None. These four Dockerfiles are fork-local
+(Netflix's upstream has only the top-level `Dockerfile` which we
+already heavily customise; the production-gpu / dev / go-server
+trio are wholly fork-added). The change introduces three patterns
+worth preserving across rebases:
+
+1. `# syntax=docker/dockerfile:1.7` header at the top of each file.
+2. `RUN --mount=type=cache,target=/var/cache/apt,sharing=locked
+   --mount=type=cache,target=/var/lib/apt,sharing=locked apt-get ...`
+   on every apt invocation, with the matching
+   `rm -rf /var/lib/apt/lists/*` cleanup REMOVED.
+3. `RUN --mount=type=cache,target=$CCACHE_DIR,sharing=locked
+   CCACHE_DIR=... <build command>` around every meson/ninja/cmake
+   invocation; `ccache` installed as a build dependency; FFmpeg gets
+   `--cc='ccache gcc' --cxx='ccache g++'`; cmake gets
+   `-DCMAKE_{C,CXX}_COMPILER_LAUNCHER=ccache`.
+
+If upstream Netflix adds new RUN apt-get install lines to the top-level
+`Dockerfile`, prepend the apt cache mount pair. If they add new
+C/C++ compile steps, wrap them with the ccache mount + env var.
+
+The `vmaf` user uid/gid is now explicitly pinned to 1000 in
+`dev/Containerfile` so BuildKit `--mount=...,uid=1000,gid=1000`
+directives resolve to the same identity that runs the build —
+preserve that pin on rebase.
 
 ---
 
