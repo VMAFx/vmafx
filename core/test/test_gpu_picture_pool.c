@@ -44,7 +44,6 @@ static char *test_ring_buffer()
         .h = 1080,
         .bpc = 8,
         .pix_fmt = VMAF_PIX_FMT_YUV400P,
-        .state = malloc(sizeof(VmafCudaState)),
     };
 
     VmafCudaConfiguration cu_cfg = {0};
@@ -116,102 +115,8 @@ static char *test_ring_buffer()
     return NULL;
 }
 
-/*
-typedef struct MyThreadPoolData {
-    VmafGpuPicturePool *ring_buffer;
-    unsigned i;
-    useconds_t timeout;
-    VmafCudaCookie my_cookie;
-} MyThreadPoolData;
-
-static void request_picture(void *data, void **thread_data)
-{
-    (void) thread_data;
-    MyThreadPoolData *my_thread_pool_data = data;
-    VmafGpuPicturePool *ring_buffer = my_thread_pool_data->ring_buffer;
-
-    VmafPicture pic;
-    vmaf_picture_alloc(&pic, my_thread_pool_data->my_cookie.pix_fmt,
-		       my_thread_pool_data->my_cookie.bpc,
-                       my_thread_pool_data->my_cookie.w,
-		       my_thread_pool_data->my_cookie.h);
-
-    VmafPicture pic_cuda_ref, pic_cuda_dist;
-    //fprintf(stderr, "request: %i\n", my_thread_pool_data->i);
-    vmaf_gpu_picture_pool_fetch(ring_buffer, &pic_cuda_ref);
-    vmaf_gpu_picture_pool_fetch(ring_buffer, &pic_cuda_dist);
-    vmaf_cuda_picture_upload_async(&pic_cuda_ref, &pic, 0x1);
-    vmaf_cuda_picture_upload_async(&pic_cuda_dist, &pic, 0x1);
-    //fprintf(stderr, "usleep=%d: %i\n",
-    //        my_thread_pool_data->timeout, my_thread_pool_data->i);
-    vmaf_picture_unref(&pic_cuda_ref);
-    vmaf_picture_unref(&pic_cuda_dist);
-    usleep(my_thread_pool_data->timeout);
-    //fprintf(stderr, "unref: %i\n", my_thread_pool_data->i);
-}
-
-static char *test_ring_buffer_threaded()
-{
-    int err;
-
-    VmafCudaCookie my_cookie = {
-        .w = 1920,
-        .h = 1080,
-        .bpc = 8,
-        .pix_fmt = VMAF_PIX_FMT_YUV400P,
-        .state = malloc(sizeof(VmafCudaState)),
-    };
-
-    VmafCudaConfiguration cfg = { 0 };
-    vmaf_cuda_state_init(my_cookie.state, cfg);
-
-    VmafGpuPicturePoolConfig cfg = {
-        .pic_cnt = 4,
-        .cookie = &my_cookie,
-        .alloc_picture_callback = vmaf_cuda_picture_alloc,
-        .free_picture_callback = vmaf_cuda_picture_free,
-        .synchronize_picture_callback = vmaf_cuda_picture_synchronize,
-    };
-
-    VmafGpuPicturePool *ring_buffer;
-    err = vmaf_gpu_picture_pool_init(&ring_buffer, cfg);
-    mu_assert("problem during vmaf_picture_pool_init", !err);
-
-    VmafThreadPool *thread_pool;
-    const unsigned n_threads = 4;
-    VmafThreadPoolConfig tpool_cfg = { .n_threads = n_threads };
-    err = vmaf_thread_pool_create(&thread_pool, tpool_cfg);
-    mu_assert("problem during vmaf_thread_pool_init", !err);
-
-    const unsigned n = n_threads * 8;
-    for (unsigned i = 0; i < n; i++) {
-        MyThreadPoolData my_thread_pool_data = {
-            .ring_buffer = ring_buffer,
-            .i = i,
-            .timeout = 100000 - (100000 * ((float)i / n)),
-            .my_cookie = my_cookie,
-        };
-        err = vmaf_thread_pool_enqueue(thread_pool, request_picture,
-                                       &my_thread_pool_data,
-                                       sizeof(my_thread_pool_data));
-        mu_assert("problem during vmaf_thread_pool_enqueue", !err);
-    }
-
-    err = vmaf_thread_pool_wait(thread_pool);
-    mu_assert("problem during vmaf_thread_pool_wait", !err);
-    err = vmaf_thread_pool_destroy(thread_pool);
-    mu_assert("problem during vmaf_thread_pool_destroy", !err);
-
-    err = vmaf_gpu_picture_pool_close(ring_buffer);
-    mu_assert("problem during vmaf_gpu_picture_pool_close", !err);
-
-    return NULL;
-}
-*/
-
 char *run_tests()
 {
     mu_run_test(test_ring_buffer);
-    //mu_run_test(test_ring_buffer_threaded);
     return NULL;
 }

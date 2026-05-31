@@ -34,6 +34,13 @@ and teardown.
 
 ## Ground rules
 
+- **No dead `/* ... */` blocks in test files.** Commented-out code that cannot
+  compile (duplicate declarations, type-mismatched calls, stale APIs) must be
+  deleted rather than left in place. If a test scenario is genuinely planned but
+  not yet ready, add a `// TODO(ADR-NNNN): <one-line description>` comment
+  instead — not a multi-line block comment containing broken code. See
+  [ADR-0970](../../docs/adr/0970-test-gpu-picture-pool-cleanup.md) for the
+  precedent (Round 27 audit D.4: `test_ring_buffer_threaded` dead block deleted).
 - **GPU tests must skip gracefully when no device is present.** Any test that
   calls `vmaf_cuda_state_init`, `vmaf_hip_state_init`, or equivalent GPU-init
   helpers must check the return value before proceeding. On failure (`err != 0`

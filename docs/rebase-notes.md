@@ -40700,3 +40700,10 @@ The fix adds a file-scope `#pragma clang fp contract(off)` block to
 scalar reference functions out into a helper header, the pragma block must
 move with them or the icx FMA contraction returns and `test_xyb` fails
 under the all-backends matrix leg.
+## test_gpu_picture_pool.c Round 27 D.3 + D.4 cleanup (ADR-0970, 2026-05-31)
+
+no rebase impact: REASON — `core/test/test_gpu_picture_pool.c` is a fork-local
+test file (it was introduced in this fork's PR #266 / ADR-0239; Netflix upstream
+has no equivalent file). The two changes (remove unused `.state` malloc,
+delete dead `/* ... */` block) affect only lines that Netflix upstream never
+touches. `core/test/AGENTS.md` is also fork-only.
