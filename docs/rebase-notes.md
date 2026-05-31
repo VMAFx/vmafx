@@ -42177,3 +42177,25 @@ The Containerfile path fixes (`libvmaf/` → `core/`) are the downstream of
 ADR-0700's repo rename; future rebases against a hypothetical upstream
 that re-introduced a `libvmaf/` directory at the repo root would need
 their own audit, but no such state exists or is planned.
+## ADR-0868 — GPU backend kernel coverage gap-fill — 2026-05-30
+
+No rebase impact: all changes are net-new fork-local test files under
+`core/test/test_{cuda,hip,sycl,metal}_*_parity*.c` plus their meson
+wiring. No upstream Netflix/vmaf source is touched. The tests target
+fork-added GPU extractor names (`psnr_cuda`, `ciede_cuda`, `psnr_hip`,
+`vif_hip`, `psnr_sycl`, `vif_sycl`, the 8 `*_metal` extractors) which
+do not exist upstream. Mirrors the existing
+`test_{cuda,hip,sycl}_motion3_parity.c` pattern (already fork-local).
+
+Fork-local files:
+`core/test/test_cuda_psnr_parity.c`,
+`core/test/test_cuda_ciede_parity.c`,
+`core/test/test_hip_psnr_parity.c`,
+`core/test/test_hip_vif_parity.c`,
+`core/test/test_sycl_psnr_parity.c`,
+`core/test/test_sycl_vif_parity.c`,
+`core/test/test_metal_kernel_registration.c`,
+`core/test/meson.build` (additive blocks only, no upstream-touching hunks),
+`docs/adr/0868-gpu-backend-kernel-coverage.md`,
+`docs/research/gpu-backend-kernel-coverage-audit-2026-05-30.md`,
+`changelog.d/added/0868-gpu-backend-kernel-coverage.md`.
