@@ -239,6 +239,24 @@ coverage-check: coverage
 assertion-density:
 	@scripts/ci/assertion-density.sh
 
+# LLVM IR diff harness (ADR-0918). On-demand only — NOT in CI by default
+# (would add a clang re-compile per SIMD file to every build).
+#
+# Use `make ir-diff` after touching a SIMD file or bumping clang to catch
+# compiler-induced bit-exactness regressions BEFORE the
+# score-vs-snapshot tests do. `make ir-diff-update` re-seeds the
+# snapshots; include the justification in the commit message (same
+# discipline as /regen-snapshots for score JSONs).
+#
+# Environment:
+#   IR_DIFF_CLANG=<path>     override clang binary
+#   IR_DIFF_FILTER=<substr>  run only entries whose source matches
+ir-diff:
+	@bash scripts/perf/check-ir-diff.sh
+
+ir-diff-update:
+	@bash scripts/perf/check-ir-diff.sh update
+
 # Install the pre-commit + pre-push git hooks.
 #
 # Default (framework) path — symlinks the framework-managed pre-commit

@@ -150,3 +150,14 @@ The ones that carve invariants on this directory specifically:
   SSIMULACRA 2 SIMD ports.
 - [ADR-0245](../../../../docs/adr/0245-simd-bitexact-test-harness.md) —
   shared bit-exact test harness.
+- [ADR-0918](../../../../docs/adr/0918-llvm-ir-diff-harness.md) —
+  LLVM IR diff harness. **Rebase-sensitive invariant**: any compiler
+  bump (`dev/Containerfile` clang version, GitHub Actions runner image,
+  `.github/workflows/*.yml` clang install lines) MUST be accompanied by
+  a local `make ir-diff` run. If the snapshots under
+  `testdata/ir-snapshots/` drift, do not regenerate them blindly —
+  investigate which intrinsic / FMA / FP-contract behaviour changed
+  and confirm it does not break the bit-exact contract that ADRs 0125
+  / 0138 / 0139 froze. Only after confirming intent is preserved (or
+  the ADRs are updated) is `make ir-diff-update` appropriate, with
+  justification in the commit message.

@@ -119,18 +119,11 @@ MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
 # retry loop avoids spurious WARN lines on healthy hosts without masking a
 # real userspace<->kernel ABI mismatch (which never recovers and keeps
 # failing past the retry window).
-#
-# Probe a GPU backend by running an argv command and grepping its output
-# for an expected pattern. argv is taken as a single positional command name
-# (no shell interpretation); add probe variants if a future backend needs
-# flags. Replaces an earlier `eval "${cmd}"` form — argv-as-string is a
-# shell-injection foot-gun even when the only callers pass hardcoded names
-# today, and this entrypoint runs as PID 1 with the container's full env.
 _probe_with_retry() {
-  local label="$1" prog="$2" pattern="$3" advice="$4"
+  local label="$1" cmd="$2" pattern="$3" advice="$4"
   local attempt
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if "${prog}" 2>&1 | grep -qE "${pattern}"; then
+    if eval "${cmd}" 2>&1 | grep -qE "${pattern}"; then
       echo "[dev-mcp-entrypoint]   ${label} detected (attempt ${attempt})"
       return 0
     fi

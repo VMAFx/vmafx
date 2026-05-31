@@ -1,0 +1,73 @@
+# LLVM IR diff harness — bit-exact SIMD baselines.
+#
+# See docs/adr/0918-llvm-ir-diff-harness.md and
+# scripts/perf/check-ir-diff.sh.
+#
+# Each entry is a `.c` source file in the fork-added SIMD tree and the
+# list of functions whose LLVM IR must be byte-identical (after
+# normalisation) to its snapshot under testdata/ir-snapshots/.
+#
+# The harness emits IR with the SAME compiler flags used for the
+# bit-exact gate in PRs #339 / #382:
+#
+#     clang -O2 -mavx2 -mfma -emit-llvm -S
+#
+# Override the toolchain with $IR_DIFF_CLANG (default: clang).
+#
+# Adding a new source/function entry:
+#
+#   1. Append below.
+#   2. Run:  make ir-diff-update
+#      → writes testdata/ir-snapshots/<func>.ll
+#   3. Commit both the config change and the snapshot in the same PR.
+#
+# Removing an entry: also `git rm` the matching snapshot file.
+#
+# CI does NOT run this gate by default (ADR-0918 §Decision). To run it:
+#
+#     make ir-diff           # check vs snapshots
+#     make ir-diff-update    # regenerate snapshots (intentional change)
+#
+# Format:
+#   - source: <path relative to repo root>
+#     cflags: <optional extra -m flags; omit to take defaults>
+#     functions:
+#       - <function-name>      # must appear exactly once in the IR
+#       - <function-name>
+#     # bit_exact: true (default) marks the entry as a hard-fail signal.
+#     # bit_exact: false makes drift a warning only — for inspection of
+#     # paths where FMA / contract differences are acceptable.
+
+entries:
+  - source: core/src/feature/x86/psnr_hvs_avx2.c
+    functions:
+      - calc_psnrhvs_avx2
+      - od_bin_fdct8x8_avx2
+    bit_exact: true
+    # ADR-0138: scalar bit-exactness invariant. The file pins
+    # `#pragma STDC FP_CONTRACT OFF`; the snapshot will contain zero
+    # llvm.fma intrinsics. Any compiler upgrade that re-introduces
+    # them must be caught here, not at score-diff time.
+
+  - source: core/src/feature/x86/ms_ssim_decimate_avx2.c
+    functions:
+      - ms_ssim_decimate_avx2
+      - h_pass_scalar
+      - v_pass_scalar
+    bit_exact: true
+    # ADR-0125: explicit AVX2 FMA calls via _mm256_fmadd_ps; the
+    # baseline snapshot pins the exact intrinsic sequence so a
+    # compiler-driven reassociation flips the gate. h_pass_row /
+    # v_pass_row are `static`; clang inlines them into the
+    # `ms_ssim_decimate_avx2` outer loop, so we track the scalar
+    # border-fallback helpers (which clang keeps as `internal fastcc`)
+    # plus the exported entry point for full coverage.
+
+  - source: core/src/feature/x86/ssimulacra2_avx2.c
+    functions:
+      - ssimulacra2_ssim_map_avx2
+      - ssimulacra2_edge_diff_map_avx2
+      - ssimulacra2_blur_plane_avx2
+    bit_exact: true
+    # ADR-0139: SSIMULACRA2 IIR-blur SIMD bit-exactness depends on
+    # the exact order of fmadd / fmsub emission.

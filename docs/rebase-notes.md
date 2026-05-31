@@ -698,29 +698,6 @@ error-handling.
 
 ---
 
-## shell-injection-sweep-round2 (2026-05-30)
-
-**Files touched:**
-`scripts/ci/sycl-bench-env.sh`,
-`scripts/ci/test-sycl-bench-env.sh` (new),
-`dev/scripts/dev-mcp-entrypoint.sh`.
-
-**Rebase impact:** None. All three files are fork-added (the SYCL bench
-helper, dev-MCP entrypoint, and their tests do not exist in upstream
-Netflix/vmaf). No upstream file is modified, so a sync from
-`upstream/master` cannot conflict here.
-
-Hardens two shell-execution sites that interpolated externally-derived
-strings into a child shell's command body:
-`bash -c "... source '$ROOT/setvars.sh' ..."` becomes a positional-arg
-form, and `eval "${cmd}"` in the GPU probe helper becomes a direct argv
-invocation. The regression test `scripts/ci/test-sycl-bench-env.sh`
-codifies the expectation; future contributors must keep both files free
-of `bash -c "..."` string interpolation and `eval` of indirect command
-strings.
-
----
-
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
@@ -41515,3 +41492,18 @@ The only non-test files touched are `docs/adr/README.md` (index row),
 `changelog.d/added/hip-kernel-coverage-round3.md` fragment, and the
 companion `docs/research/hip-kernel-coverage-round3-2026-05-31.md`
 audit — all fork-only.
+## ADR-0918 — LLVM IR diff harness — 2026-05-31
+
+no rebase impact: harness is fork-local tooling
+(`scripts/perf/check-ir-diff.sh`, `scripts/perf/ir-diff-config.yaml`,
+`testdata/ir-snapshots/`, `make ir-diff` / `make ir-diff-update`
+targets). It snapshots LLVM IR for fork-added SIMD sources only;
+Netflix upstream never touches these paths. The only upstream coupling
+is the SIMD source files themselves (`core/src/feature/x86/*.c`) —
+if a future upstream sync changes the *scalar* reference for
+`psnr_hvs` / `ms_ssim_decimate` / `ssimulacra2` and the AVX2 twin
+must change in lockstep, the snapshot regen step (`make
+ir-diff-update`) is a normal part of the port — same discipline as
+the score JSON snapshots under `/regen-snapshots`. The new
+[`core/src/feature/x86/AGENTS.md`](../core/src/feature/x86/AGENTS.md)
+invariant note flags this for the next sync agent.

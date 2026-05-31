@@ -1,0 +1,1 @@
+| [ADR-0918](0918-llvm-ir-diff-harness.md) | LLVM IR diff harness for bit-exact SIMD paths — opt-in `make ir-diff` gate that snapshots per-function IR under `testdata/ir-snapshots/` and fails on compiler-induced drift (FMA / FP-contract reassociation) | Accepted | simd, build, ci, perf, diagnostics, fork-local |
