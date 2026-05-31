@@ -584,7 +584,8 @@ if is_asm_enabled
           feature_src_dir + 'arm64/vif_neon.c',
           feature_src_dir + 'arm64/adm_neon.c',
           feature_src_dir + 'arm64/psnr_neon.c',
-          feature_src_dir + 'arm64/ssim_neon.c',
+          # ssim_neon.c lives in its own carve-out below — keep out
+          # of this list. See the arm64_ssim_neon_lib block.
           feature_src_dir + 'arm64/motion_neon.c',
           feature_src_dir + 'arm64/cambi_neon.c',
         ]
@@ -623,6 +624,21 @@ if is_asm_enabled
           c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-ffp-contract=off'],
         )
 
+        # ssim_neon carve-out (mirror of ssimulacra2_neon and x86 ssim_avx2).
+        # Rationale: ssim_accumulate_neon at line ~105 contains the
+        # `vaddq_f32(vaddq_f32(vmulq_f32(rm,rm), vmulq_f32(cm,cm)), vC1)`
+        # three-operand pattern. aarch64 GCC/Clang default
+        # `-ffp-contract=fast` fuses the outer add+mul into VFMADD,
+        # while the scalar reference in ssim_tools.c uses plain
+        # mul+add. Identified by simd-reviewer agent audit 2026-05-30
+        # (HIGH severity, no parity test exists yet).
+        arm64_ssim_neon_lib = static_library(
+          'arm64_ssim_neon',
+          feature_src_dir + 'arm64/ssim_neon.c',
+          include_directories : vmaf_base_include,
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-ffp-contract=off'],
+        )
+
         # ssimulacra2_neon.c compiles in its own static lib with
         # `-ffp-contract=off`. Rationale mirrors arm64_v8_fp above
         # (ADR-0161, ADR-0873).
@@ -640,6 +656,7 @@ if is_asm_enabled
         platform_specific_cpu_objects += arm64_static_lib.extract_all_objects()
         platform_specific_cpu_objects += arm64_fp_lib.extract_all_objects()
         platform_specific_cpu_objects += arm64_ssimulacra2_lib.extract_all_objects()
+        platform_specific_cpu_objects += arm64_ssim_neon_lib.extract_all_objects()
 
         # T7-38: SSIMULACRA 2 SVE2 sister TU. Only built when the
         # compiler accepts `-march=armv9-a+sve2`; gated by HAVE_SVE2.
@@ -668,7 +685,8 @@ if is_asm_enabled
           feature_src_dir + 'x86/adm_avx2.c',
           feature_src_dir + 'x86/cambi_avx2.c',
           feature_src_dir + 'x86/psnr_avx2.c',
-          feature_src_dir + 'x86/ssim_avx2.c',
+          # ssim_avx2.c lives in its own carve-out below — keep out of
+          # this list. See the x86_ssim_avx2_lib block.
           feature_src_dir + 'x86/float_psnr_avx2.c',
           feature_src_dir + 'x86/float_motion_avx2.c',
           feature_src_dir + 'x86/float_adm_avx2.c',
@@ -682,6 +700,20 @@ if is_asm_enabled
           x86_avx2_sources,
           include_directories : vmaf_base_include,
           c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_cflags_common,
+      )
+
+      # ssim_avx2 carve-out (mirror of psnr_hvs_avx2 / ms_ssim_decimate_avx2
+      # carve-outs above). Rationale: ssim_accumulate_avx2 contains the
+      # three-operand `add(add(mul(rm,rm), mul(cm,cm)), vC1)` pattern at
+      # line ~106 that GCC/Clang silently contract into VFMADD under
+      # -mfma. The scalar reference in ssim_tools.c is built without
+      # -mfma so the two paths diverge. Identified by simd-reviewer agent
+      # audit 2026-05-30 (HIGH severity, no parity test exists yet).
+      x86_ssim_avx2_lib = static_library(
+          'x86_ssim_avx2',
+          feature_src_dir + 'x86/ssim_avx2.c',
+          include_directories : vmaf_base_include,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
       )
 
       # psnr_hvs_avx2 + ms_ssim_decimate_avx2 carve-outs (mirror of
@@ -726,6 +758,7 @@ if is_asm_enabled
       platform_specific_cpu_objects += x86_ssimulacra2_avx2_lib.extract_all_objects(recursive: true)
       platform_specific_cpu_objects += x86_psnr_hvs_avx2_lib.extract_all_objects(recursive: true)
       platform_specific_cpu_objects += x86_ms_ssim_decimate_avx2_lib.extract_all_objects(recursive: true)
+      platform_specific_cpu_objects += x86_ssim_avx2_lib.extract_all_objects(recursive: true)
 
       if is_avx512_enabled and is_avx512_supported
         x86_avx512_sources = [
