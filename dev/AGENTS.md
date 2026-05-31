@@ -343,3 +343,23 @@ Three invariants must hold on every modification:
    `--mount=...,uid=1000,gid=1000` cache mounts resolve to the same
    identity that runs the build. Preserve the explicit uid/gid pin
    on any modification to the user-creation step.
+### Source-directory rename sweep invariant (ADR-0966)
+
+After any rename of the C source root (currently `core/`, formerly `libvmaf/`
+per ADR-0700), run a targeted grep across `dev/Containerfile` before committing:
+
+```bash
+grep -n 'COPY.*libvmaf\|cd libvmaf\|/build/vmaf/libvmaf' dev/Containerfile
+```
+
+The `libvmaf-build` stage name and `libvmaf.so`/`--enable-libvmaf` occurrences
+reference the **library product name** and must stay unchanged. Only `COPY`,
+`cd`, and destination-path occurrences that reference the *source directory*
+need to track the rename.
+
+ADR-0966 fixed three references that survived the ADR-0700 rename and caused
+`docker compose build dev-mcp` to fail at the first COPY step. The memory rule
+`feedback_fix_preexisting_bugs_too` (corollary: "Rename greps must be
+exhaustive") applies here: a single missed grep cost a full build-blockage
+incident. Run the check above as part of any PR that renames a top-level
+source directory.

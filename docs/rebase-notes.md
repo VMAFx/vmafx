@@ -375,6 +375,17 @@ rebase boundary is unaffected. The cmd/vmafx-controller grpc_server
 tests carry the `//go:build cgo` tag mirroring the production source
 file, so they compile only when cgo is enabled (matching the existing
 `main_test.go` invariant).
+## dev/Containerfile libvmaf → core path fix (2026-05-31, ADR-0966)
+
+No rebase impact: pure path fix, no upstream coupling. `dev/Containerfile`
+is entirely fork-local and the only change is substituting three occurrences
+of the old source-directory name `libvmaf/` with `core/` following the
+ADR-0700 rename. If a future sync touches `dev/Containerfile` (unlikely —
+Netflix does not ship a dev container), re-run
+`grep -n 'libvmaf/' dev/Containerfile` to confirm no stale references were
+re-introduced by the merge. The library output name (`libvmaf.so`) and stage
+name (`libvmaf-build`) are intentionally preserved as references to the
+*product*, not the source directory.
 
 ---
 
