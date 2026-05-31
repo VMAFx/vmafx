@@ -123,6 +123,16 @@ Fork-local subtree. Read this before editing any TU under
    broadcast.** Marked `__attribute__((unused))` in v3 to keep the
    build warning-free; v4 will route POST replies onto subscribed
    GET streams via these helpers.
+10. **Every `read(2)` on a blocking fd must retry on `EINTR`.** The
+    primary helpers (`read_line`, `sse_read_n`, `read_exact`) and
+    the over-length line drain loops in `transport_stdio.c` and
+    `transport_uds.c` all follow the pattern: `if (r < 0 && errno
+    == EINTR) continue;` then break on hard error / EOF / `\n`.
+    Do NOT collapse this to `if (r <= 0) break;` — a stray signal
+    (SIGCHLD, SIGURG, debugger attach) will then desynchronise the
+    stream framing on the very next request. Same for `write(2)` —
+    every fork-added write site loops `off < len` and retries on
+    `EINTR`. ADR-0872.
 ## Build flags
 ```bash
 meson setup build -Denable_mcp=true \

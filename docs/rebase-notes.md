@@ -945,6 +945,24 @@ A future upstream sync that re-introduces a raw `8`/`16` predicate on
 those lines should keep the fork's named constants — they are not bit-exact
 changes and do not alter behaviour. No new public C-API symbols introduced.
 
+## eintr-and-io-error-audit (2026-05-30, ADR-0872)
+
+**Files touched:**
+`core/src/mcp/transport_stdio.c`, `core/src/mcp/transport_uds.c`,
+`core/src/libvmaf.c`, `core/src/feature/cambi.c`,
+`core/src/sycl/dmabuf_import.cpp`, `core/tools/vmaf_vpl.c`.
+
+**Rebase impact:** Low. The MCP transports are fully fork-local (no
+upstream peer). `libvmaf.c`, `cambi.c`, and `vmaf_vpl.c` carry
+fork-local hunks (`vmaf_write_output`, heatmaps `close()` fail-path,
+VPL VA-API init) that are already non-shared with upstream — the new
+`(void)` casts sit inside those hunks. `dmabuf_import.cpp` is wholly
+fork-added (no upstream file). No upstream conflict expected on the
+next sync; if Netflix ever adds their own MCP transport, the EINTR
+retry pattern should be ported there too.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**

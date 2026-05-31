@@ -691,3 +691,4 @@
 0877-error-code-consistency-audit
 0875-github-actions-audit-2026-05-30
 0874-magic-number-audit-cert-int07c
+0872-io-error-and-eintr-audit

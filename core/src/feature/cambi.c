@@ -734,9 +734,9 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
             if (!s->heatmaps_files[scale]) {
                 vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: could not open heatmaps_path: %s\n", path);
 #ifdef _WIN32
-                _close(hfd);
+                (void)_close(hfd);
 #else
-                close(hfd);
+                (void)close(hfd);
 #endif
                 return -EINVAL;
             }

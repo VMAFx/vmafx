@@ -321,7 +321,7 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
 
     if (desc.num_layers < 1 || desc.num_objects < 1) {
         for (uint32_t i = 0; i < desc.num_objects; i++)
-            close(desc.objects[i].fd);
+            (void)close(desc.objects[i].fd);
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "DRM PRIME descriptor has no layers\n");
         return -EIO;
     }
@@ -347,7 +347,7 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
 
     /* Close all exported DMA-BUF fds (our API: caller retains ownership) */
     for (uint32_t i = 0; i < desc.num_objects; i++)
-        close(desc.objects[i].fd);
+        (void)close(desc.objects[i].fd);
 
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_INFO, "DMA-BUF import failed (%d) — using readback path\n", err);

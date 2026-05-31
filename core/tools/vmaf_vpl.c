@@ -114,7 +114,7 @@ static void vpl_cleanup_gpu(VplDecoder *dec)
         vaTerminate(dec->va_display);
     dec->va_display = NULL;
     if (dec->drm_fd >= 0)
-        close(dec->drm_fd);
+        (void)close(dec->drm_fd);
     dec->drm_fd = -1;
 }
 
@@ -133,7 +133,7 @@ static int vpl_decoder_open(VplDecoder *dec, const char *filename, const char *r
     dec->va_display = vaGetDisplayDRM(dec->drm_fd);
     if (!dec->va_display) {
         (void)fprintf(stderr, "vaGetDisplayDRM failed\n");
-        close(dec->drm_fd);
+        (void)close(dec->drm_fd);
         return -1;
     }
 
@@ -142,7 +142,7 @@ static int vpl_decoder_open(VplDecoder *dec, const char *filename, const char *r
     VAStatus va_st = vaInitialize(dec->va_display, &va_major, &va_minor);
     if (va_st != VA_STATUS_SUCCESS) {
         (void)fprintf(stderr, "vaInitialize failed: %s\n", vaErrorStr(va_st));
-        close(dec->drm_fd);
+        (void)close(dec->drm_fd);
         return -1;
     }
 

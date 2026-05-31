@@ -134,7 +134,12 @@ static void serve_client(struct VmafMcpServer *server, int client_fd)
             for (;;) {
                 char c = 0;
                 ssize_t r = read(client_fd, &c, 1);
-                if (r <= 0 || c == '\n')
+                if (r < 0) {
+                    if (errno == EINTR)
+                        continue;
+                    break;
+                }
+                if (r == 0 || c == '\n')
                     break;
             }
             continue;

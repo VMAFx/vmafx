@@ -151,7 +151,12 @@ void *vmaf_mcp_stdio_thread_main(void *arg)
                 char c = 0;
                 /* NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection) */
                 ssize_t r = read(server->stdio_fd_in, &c, 1);
-                if (r <= 0 || c == '\n')
+                if (r < 0) {
+                    if (errno == EINTR)
+                        continue;
+                    break;
+                }
+                if (r == 0 || c == '\n')
                     break;
             }
             continue;

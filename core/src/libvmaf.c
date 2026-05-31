@@ -2862,9 +2862,9 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
     if (!outfile) {
         (void)fprintf(stderr, "could not open file: %s\n", output_path);
 #ifdef _WIN32
-        _close(outfd);
+        (void)_close(outfd);
 #else
-        close(outfd);
+        (void)close(outfd);
 #endif
         return -EINVAL;
     }
