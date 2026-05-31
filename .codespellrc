@@ -1,0 +1,56 @@
+[codespell]
+# Project-wide codespell configuration.
+#
+# We deliberately skip:
+#   - build outputs and binaries that shift between sessions
+#   - Netflix-author / upstream-mirror code we are not authorized to rewrite
+#     (compat/python-vmaf/, python/test/, core/src/feature/{x86,arm64,cuda,
+#     hip,common,metal}, core/src/feature/{integer_adm.h,feature_extractor.h,
+#     cambi.c,tad_rust.c}, core/tools/{y4m_input.c,cli_parse.c},
+#     core/src/svm.cpp, core/src/pdjson.c)
+#   - frozen ADRs (Accepted/Superseded bodies are immutable per
+#     docs/adr/README.md) and the verbatim Q&A log
+#   - CHANGELOG.md (auto-generated from changelog.d/ fragments;
+#     historical entries are frozen)
+#   - ffmpeg-patches/*.patch (verbatim patches; hash-sensitive)
+#   - vendored MATLAB scripts under compat/python-vmaf/matlab/
+#   - large binary fixtures, models, lockfiles
+#
+# We ignore (real words / project-domain acronyms / variable-name fragments):
+#   - ANE, ane          Apple Neural Engine and coreml-ane EP variant
+#   - HSA               AMD/ROCm Heterogeneous System Architecture
+#   - SME               ARM Scalable Matrix Extension
+#   - CANN              Huawei Compute Architecture for Neural Networks
+#   - HSI               Hue Saturation Intensity color space
+#   - COO               Coordinate sparse matrix format
+#   - ND                Creative Commons "No Derivatives" / "No Data"
+#   - BU                Business Unit (Huawei paper citation)
+#   - renderD           Linux /dev/dri/renderD* device path
+#   - disPath           reference/distorted-path Go variable convention
+#   - fo                file-object Python idiom (with open(...) as fo:)
+#   - aks               analyze_knob_sweep module fixture name
+#   - thi               "top high" SIMD lane variable (psnr_avx2 / hip / cuda)
+#   - tlo               sibling "top low" lane variable
+#   - dout              VmafDnnOutput variable in API docs
+#   - iterm             "independent term" SPEED kernel design notation
+#   - padd              packed-add SIMD instruction shorthand (paddw/paddl)
+#   - recal             project shorthand for "recalibration" (test fixtures)
+#   - re-use, re-uses, re-using, re-used, re-usable, re-declare
+#                       valid English hyphenations the project uses
+#   - pre-emptive, pre-emptively, pre-empts, pre-empting
+#                       valid British English variants
+#   - browseable        kept where it appears inside frozen changelog text
+#   - unparseable       kept where it appears inside frozen changelog text
+#   - MeTriX            trademarked tool name in vendored MATLAB code
+#   - ISNT              ALL-CAPS macro convention in vendored matlabPyrTools
+#   - alse              C boolean alias in vendored pdjson.c
+#   - statics, ist      occur only in immutable ADR Q&A and verbatim quotes
+#   - accreting         valid English: "to accrete" (accumulate by layered growth)
+#   - trough            valid English: wave trough (low point of a waveform)
+#   - implementor       valid English variant of "implementer" used in fork docs
+#   - invokable         valid English variant of "invocable" used in fork docs
+#   - entirity          appears only inside verbatim University-of-Waterloo
+#                       IVC license quote in two corpus-ingestion docs
+#   - arent             appears only inside verbatim `req` user-quote citations
+ignore-words-list = ane,hsa,sme,cann,hsi,coo,nd,bu,renderd,dispath,fo,aks,thi,tlo,dout,iterm,padd,recal,re-use,re-uses,re-using,re-used,re-usable,re-declare,pre-emptive,pre-emptively,pre-empts,pre-empting,browseable,unparseable,metrix,isnt,alse,statics,ist,accreting,trough,implementor,invokable,entirity,arent
+skip = ./.git,./build,./core/build,./core/build-*,*.lock,*.svg,*.pdf,*.png,*.jpg,*.jpeg,*.gif,*.yuv,*.pkl,*.onnx,*.bin,*.so,*.a,*.o,*.zip,*.tar,*.tar.gz,*.tgz,./model,./third_party,./iqa,./3rdparty,./compat/python-vmaf/*,./python/test/*,./core/src/svm.cpp,./core/src/svm.h,./core/src/pdjson.c,./core/src/pdjson.h,./core/src/feature/x86/*,./core/src/feature/arm64/*,./core/src/feature/cuda/*,./core/src/feature/hip/*,./core/src/feature/common/*,./core/src/feature/metal/*,./core/src/feature/integer_adm.h,./core/src/feature/feature_extractor.h,./core/src/feature/cambi.c,./core/src/feature/tad_rust.c,./core/src/metal/*,./core/tools/y4m_input.c,./core/tools/cli_parse.c,./core/tools/README.md,./core/test/test_picture.c,./core/README.md,./docs/adr/0024-netflix-golden-preserved.md,./docs/adr/0027-non-conservative-image-pins.md,./docs/adr/0028-adr-maintenance-rule.md,./docs/adr/0036-tinyai-wave1-scope-expansion.md,./docs/adr/0106-adr-maintenance-rule.md,./docs/adr/0107-tinyai-wave1-scope-expansion.md,./docs/adr/0161-ssimulacra2-simd-bitexact.md,./docs/adr/0165-state-md-bug-tracking.md,./docs/adr/0200-volk-priv-remap-pkgconfig-leak-fix.md,./docs/adr/0203-tiny-ai-training-prep-impl.md,./docs/adr/0213-ssimulacra2-sve2.md,./docs/adr/0418-macos-test-recal-post-vif-sync.md,./docs/adr/0426-chug-hdr-corpus-ingestion.md,./docs/adr/0427-chug-hdr-feature-materialisation.md,./docs/adr/0642-ai-refresh-full-feature-defaults.md,./docs/adr/0648-mos-head-feature-jsonl-chug-id.md,./docs/adr/0649-chug-hdr-wide-mos-feature-schema.md,./docs/adr/0650-signal-mix-audit.md,./docs/adr/0651-chug-hdr-row-metadata.md,./docs/adr/0653-chug-display-profile-training.md,./docs/adr/0674-second-opinion-materializer-batch-manifest.md,./docs/adr/questions-answered.md,./CHANGELOG.md,./changelog.d/_pre_fragment_legacy.md,./changelog.d/fixed/codespell-sweep.md,./docs/adr/0910-codespell-sweep-config.md,./ffmpeg-patches/*

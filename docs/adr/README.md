@@ -809,3 +809,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0841](0841-env-var-consolidation.md) | Environment variable reference page and canonical naming | Accepted | docs, sycl, cuda, ai, workspace |
 | [ADR-0853](0853-motion-avx2-remove-debug-macros.md) | Remove dead debug-print macros from motion_avx2.c | Accepted | simd, lint, avx2, cleanup, fork-local |
 | [ADR-0911](0911-init-py-export-completeness-audit.md) | `__init__.py` export-completeness audit — `__all__` + SPDX headers across 8 fork-added Python packages | Accepted | 2026-05-31 | docs, python, ai, mcp, tools, lint |
+| [ADR-0910](0910-codespell-sweep-config.md) | Project-wide `codespell` config + skip-list policy: ignore Netflix-author / vendored / frozen-ADR files; ignore domain acronyms (ANE, HSA, SME, CANN, COO, …); 3 typo fixes (CONTRIBUTING.md, docs/metrics/cambi.md ×2) | Accepted | 2026-05-31 | docs, lint, tooling, fork-local |

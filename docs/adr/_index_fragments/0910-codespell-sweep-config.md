@@ -1,0 +1,1 @@
+| [ADR-0910](0910-codespell-sweep-config.md) | Project-wide `codespell` config + skip-list policy: ignore Netflix-author / vendored / frozen-ADR files; ignore domain acronyms (ANE, HSA, SME, CANN, COO, …); 3 typo fixes (CONTRIBUTING.md, docs/metrics/cambi.md ×2) | Accepted | 2026-05-31 | docs, lint, tooling, fork-local |

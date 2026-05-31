@@ -690,6 +690,31 @@ re-aligns three fork-local index sources against the
 already-authoritative `docs/adr/[0-9]*-*.md` ADR file set, with no
 content changes to any ADR body. Future regenerations are mechanical via
 `scripts/docs/concat-adr-index.sh --write`.
+## codespell sweep + `.codespellrc` (2026-05-31)
+
+**Files touched:** `.codespellrc` (new), `CONTRIBUTING.md`,
+`docs/metrics/cambi.md`, `docs/adr/0910-codespell-sweep-config.md` (new),
+`changelog.d/fixed/codespell-sweep.md` (new).
+
+**Rebase impact:** Low. `.codespellrc` skip-list explicitly excludes
+every Netflix-author / vendored / upstream-mirrored file enumerated in
+ADR-0910 §Context (e.g. `compat/python-vmaf/*`, `python/test/*`,
+`core/src/feature/{x86,arm64,cuda,hip,common,metal}/*`,
+`core/src/svm.cpp`, `core/src/pdjson.c`, `core/tools/y4m_input.c`,
+`core/tools/cli_parse.c`, `core/README.md`, `core/tools/README.md`,
+`core/test/test_picture.c`), so re-running `codespell` after a sync
+surfaces only newly-introduced fork typos. If upstream lands new files
+under the skipped trees that the fork later adopts as fork-local
+(e.g. a new feature extractor we then modify), drop the matching `skip`
+row and re-run `codespell` to catch any latent typos.
+
+If upstream changes path layout (rename `core/` back to `libvmaf/`,
+etc.), update the skip-list paths in `.codespellrc` to match.
+`ignore-words-list` is independent of upstream layout.
+
+**Re-run:** `codespell --config .codespellrc` (or just `codespell`
+from the repo root — picks up `.codespellrc` automatically). Expected
+output: no findings on a clean tree.
 
 ---
 

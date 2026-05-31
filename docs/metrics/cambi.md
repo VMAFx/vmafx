@@ -12,7 +12,7 @@ CAMBI also offers a full-reference mode which computes its score as `MAX(0, dist
 
 ## Scores
 
-The CAMBI score starts at 0, meaning no banding is detected. A higher CAMBI score means more visible banding artifacts are identified. The maximum CAMBI observed in a sequence is 24 (unwatchable). As a rule of thumb, a CAMBI score around 5 is where banding starts to become slightly annoying (also note that banding is highly dependent on the viewing environment - the brigher the display, and the dimmer the ambient light, the more visible banding is).
+The CAMBI score starts at 0, meaning no banding is detected. A higher CAMBI score means more visible banding artifacts are identified. The maximum CAMBI observed in a sequence is 24 (unwatchable). As a rule of thumb, a CAMBI score around 5 is where banding starts to become slightly annoying (also note that banding is highly dependent on the viewing environment - the brighter the display, and the dimmer the ambient light, the more visible banding is).
 
 ## How to run CAMBI
 
@@ -55,7 +55,7 @@ The CAMBI feature extractor also supports additional optional parameters as list
 
 - `window_size` (min: 15, max: 127, default: 63): Window size to compute CAMBI (default: 63 corresponds to ~1 degree at 4K resolution and 1.5H)
 - `topk` (min: 0, max: 1.0, default: 0.6): Ratio of pixels for the spatial pooling computation
-- `tvi_threshold` (min: 0.0001, max: 1.0, default: 0.019): Visibilty threshold for luminance ΔL < tvi_threshold*L_mean for BT.1886
+- `tvi_threshold` (min: 0.0001, max: 1.0, default: 0.019): Visibility threshold for luminance ΔL < tvi_threshold*L_mean for BT.1886
 - `max_log_contrast` (min: 0, max: 5, default: 2): Maximum contrast in log luma level (2^max_log_contrast) at 10-bits. Default 2 is equivalent to 4 luma levels at 10-bit and 1 luma level at 8-bit. The default is recommended for banding artifacts coming from video compression.
 - `full_ref`: optional flag (default: false) to run CAMBI as a full-reference metric, outputting the per-frame difference between the encoded and source images as well as the existing no-reference score.
 - `enc_width` and `enc_height`: Encoding/processing resolution to compute the banding score, useful in cases where scaling was applied to the input prior to the computation of metrics
