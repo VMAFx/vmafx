@@ -711,6 +711,111 @@ static char *test_sidecar_extract_string_no_close_quote(void)
     return NULL;
 }
 
+/* ADR-0976 regression: extract_string_array() must clean up its own
+ * partial allocations on every error path (-EINVAL, -ERANGE, -ENOMEM)
+ * and reset *out_n to 0. Previously the error branches left
+ * partially-allocated entries in out[] but never wrote *out_n, so the
+ * caller's `for (i = 0; i < *out_n; ++i) free(out[i])` cleanup looped
+ * zero times and the strings leaked.
+ *
+ * The shipping symptom: an attacker dropping a malformed sidecar JSON
+ * next to a tiny ONNX (e.g. "output_names": ["a", "b", garbage_no_close)
+ * leaked ~7 string allocations per `vmaf_dnn_session_open()`. With this
+ * fix the producer free()s its own partial work before returning -EINVAL,
+ * and *out_n is always 0 on error so a defensive caller loop is a no-op
+ * rather than a missed cleanup. */
+static char *test_sidecar_string_array_malformed_no_leak(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-arr-malformed-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    /* output_names array has two valid entries then a non-quote / EOF —
+     * extract_string_array() must return -EINVAL after allocating "a"
+     * and "b", and the loader must observe n_output_names == 0 with
+     * NULL slots so the subsequent vmaf_dnn_sidecar_free() does not
+     * see stale pointers (would double-free or leak). */
+    (void)fputs("{\n"
+                "  \"kind\": \"fr\",\n"
+                "  \"output_names\": [\"a\", \"b\", garbage\n"
+                "}\n",
+                s);
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("malformed array sidecar still loads (non-fatal)", err == 0);
+    /* The malformed array must NOT leave a non-zero count nor live
+     * pointers in the slots — otherwise the producer is leaking and the
+     * caller's fallback cleanup is silently wrong. */
+    mu_assert("n_output_names == 0 after malformed parse", meta.n_output_names == 0u);
+    mu_assert("output_names[0] is NULL", meta.output_names[0] == NULL);
+    mu_assert("output_names[1] is NULL", meta.output_names[1] == NULL);
+    /* Safe to free — would crash / report leaks under ASan if the
+     * producer left stale pointers. */
+    vmaf_dnn_sidecar_free(&meta);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* ADR-0976 regression: same invariant for feature_names (drives the
+ * second extract_string_array() call site in vmaf_dnn_sidecar_load).
+ * A malformed feature_order array must not leave partial allocations
+ * dangling in meta.feature_names[]. */
+static char *test_sidecar_feature_names_malformed_no_leak(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-fn-malformed-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    /* Two valid entries then an unterminated string — exercises the
+     * "no close quote" branch of extract_string_array(). */
+    (void)fputs("{\n"
+                "  \"kind\": \"fr\",\n"
+                "  \"feature_order\": [\"adm2\", \"vif_scale0\", \"unterminated\n"
+                "}\n",
+                s);
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("malformed feature_order sidecar still loads", err == 0);
+    mu_assert("n_features == 0 after malformed parse", meta.n_features == 0u);
+    mu_assert("feature_names[0] is NULL", meta.feature_names[0] == NULL);
+    mu_assert("feature_names[1] is NULL", meta.feature_names[1] == NULL);
+    vmaf_dnn_sidecar_free(&meta);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
 /* ADR-0517 regression: sidecar carrying a feature-vector schema
  * (feature_order / feature_mean / feature_std as written by
  * train_fr_regressor_v2.py) populates VmafModelSidecar.n_features,
@@ -1191,6 +1296,8 @@ char *run_tests(void)
     mu_run_test(test_sidecar_oversized_path);
     mu_run_test(test_sidecar_malformed_keys_default);
     mu_run_test(test_sidecar_extract_string_no_close_quote);
+    mu_run_test(test_sidecar_string_array_malformed_no_leak);
+    mu_run_test(test_sidecar_feature_names_malformed_no_leak);
     mu_run_test(test_sidecar_feature_vector_canonical6);
     mu_run_test(test_sidecar_feature_vector_vmaf_tiny_field_names);
     mu_run_test(test_sidecar_feature_vector_no_scaler);

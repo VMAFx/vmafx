@@ -696,3 +696,4 @@
 0872-io-error-and-eintr-audit
 0870-helm-values-schema-and-container-rebuild-audit
 0868-gpu-backend-kernel-coverage
+0976-dnn-sidecar-dead-norm-fields-removal

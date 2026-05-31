@@ -62,12 +62,12 @@ typedef struct VmafModelSidecar {
     char *output_name; /**< owned; legacy single-output spelling */
     size_t n_output_names;
     char *output_names[VMAF_DNN_MAX_OUTPUT_NAMES]; /**< owned */
-    float norm_mean;
-    float norm_std;
-    bool has_norm;
-    float expected_min;
-    float expected_max;
-    bool has_range;
+    /* ADR-0976 — removed dead `norm_mean`, `norm_std`, `has_norm`,
+     * `expected_min`, `expected_max`, `has_range` fields. None of the
+     * shipped trainers (ai/scripts/) write the corresponding JSON keys
+     * and `vmaf_dnn_sidecar_load` never populated them, so the consumer
+     * branches in dnn_api.c / libvmaf.c were dead code. The deletion is
+     * documented in ADR-0114 (Alternatives §2) as a follow-up cleanup. */
     VmafModelQuantMode quant_mode; /**< default FP32; mirrors sidecar/registry */
 
     /** Feature-vector tiny models (ADR-0518). The trainer ships the

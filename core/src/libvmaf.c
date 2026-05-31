@@ -1168,29 +1168,24 @@ static int vmaf_ctx_dnn_run_frame_nchw(VmafContext *vmaf, VmafPicture *ref, unsi
         return -ERANGE;
     }
 
-    const float *mean = NULL;
-    const float *std = NULL;
-    float m = 0.f;
-    float s = 1.f;
-    if (vmaf->dnn.has_sidecar && vmaf->dnn.meta.has_norm) {
-        m = vmaf->dnn.meta.norm_mean;
-        s = vmaf->dnn.meta.norm_std;
-        if (s > 0.f) {
-            mean = &m;
-            std = &s;
-        }
-    }
-
+    /* ADR-0976 — sidecar-driven luma normalisation was dead code: the
+     * `has_norm` / `norm_mean` / `norm_std` fields on VmafModelSidecar
+     * were never populated by `vmaf_dnn_sidecar_load`, so this branch
+     * always selected mean=NULL / std=NULL. The shipped tiny-AI
+     * pipeline bakes the affine into the ONNX graph at export time
+     * (canonical pattern); models that need a runtime scaler should
+     * use the generic `vmaf_dnn_session_run()` with caller-managed
+     * input tensors. */
     int rc;
     if (dim_mismatch) {
         rc = vmaf_tensor_from_luma_resize(
             (const uint8_t *)ref->data[0], (size_t)ref->stride[0], (int)ref->w[0], (int)ref->h[0],
             vmaf->dnn.expected_w, vmaf->dnn.expected_h, VMAF_TENSOR_LAYOUT_NCHW,
-            VMAF_TENSOR_DTYPE_F32, mean, std, resize_mode, vmaf->dnn.in_buf);
+            VMAF_TENSOR_DTYPE_F32, NULL, NULL, resize_mode, vmaf->dnn.in_buf);
     } else {
         rc = vmaf_tensor_from_luma((const uint8_t *)ref->data[0], (size_t)ref->stride[0],
                                    vmaf->dnn.expected_w, vmaf->dnn.expected_h,
-                                   VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, mean, std,
+                                   VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, NULL, NULL,
                                    vmaf->dnn.in_buf);
     }
     if (rc < 0)

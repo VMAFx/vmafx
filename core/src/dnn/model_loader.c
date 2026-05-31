@@ -163,9 +163,29 @@ static char *extract_string(const char *doc, const char *key)
  * when the key is found and parsed (even if the array is empty),
  * -ENOENT when the key is absent, -ERANGE when the array exceeds
  * @p max, -ENOMEM on allocation failure. */
+/* Helper for extract_string_array(): free [0..cnt) entries in @p out and
+ * NULL each slot, so the caller can rely on `*out_n == 0` after an error
+ * return meaning "no live allocations in @p out". */
+static void free_partial_string_array(char **out, size_t cnt)
+{
+    for (size_t i = 0; i < cnt; ++i) {
+        free(out[i]);
+        out[i] = NULL;
+    }
+}
+
 static int extract_string_array(const char *doc, const char *key, char **out, size_t max,
                                 size_t *out_n)
 {
+    /* Always initialise the out-count so callers can assume it is valid
+     * after every return — including error paths. Previously the -EINVAL
+     * / -ERANGE / -ENOMEM branches left `*out_n` untouched while leaving
+     * partially-allocated entries in `out[]`; the call sites in
+     * `vmaf_dnn_sidecar_load` then iterated `0..*out_n` (== 0) for
+     * cleanup and silently leaked every string allocated before the
+     * error fired. */
+    *out_n = 0u;
+
     char needle[64];
     int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
     if (n < 0 || (size_t)n >= sizeof(needle))
@@ -191,18 +211,26 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
             *out_n = cnt;
             return 0;
         }
-        if (*p != '"')
+        if (*p != '"') {
+            free_partial_string_array(out, cnt);
             return -EINVAL;
+        }
         ++p;
         const char *q = strchr(p, '"');
-        if (!q)
+        if (!q) {
+            free_partial_string_array(out, cnt);
             return -EINVAL;
+        }
         const size_t len = (size_t)(q - p);
-        if (cnt >= max)
+        if (cnt >= max) {
+            free_partial_string_array(out, cnt);
             return -ERANGE;
+        }
         char *s = (char *)malloc(len + 1u);
-        if (!s)
+        if (!s) {
+            free_partial_string_array(out, cnt);
             return -ENOMEM;
+        }
         memcpy(s, p, len);
         s[len] = '\0';
         out[cnt++] = s;
@@ -217,8 +245,10 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
             *out_n = cnt;
             return 0;
         }
+        free_partial_string_array(out, cnt);
         return -EINVAL;
     }
+    free_partial_string_array(out, cnt);
     return -EINVAL;
 }
 

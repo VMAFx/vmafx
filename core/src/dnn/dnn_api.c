@@ -168,18 +168,16 @@ int vmaf_dnn_session_run_luma8(VmafDnnSession *sess, const uint8_t *in, size_t i
     if (w != sess->w || h != sess->h)
         return -ERANGE;
 
-    const float *mean = NULL;
-    const float *std = NULL;
-    float m = 0.f, s_ = 1.f;
-    if (sess->has_sidecar && sess->meta.has_norm && sess->meta.norm_std > 0.f) {
-        m = sess->meta.norm_mean;
-        s_ = sess->meta.norm_std;
-        mean = &m;
-        std = &s_;
-    }
-
+    /* ADR-0976 — sidecar-driven luma normalisation was dead code: the
+     * JSON parser never populated `has_norm`, so this branch always
+     * fell through to mean=NULL / std=NULL. Removed along with the
+     * underlying struct fields. Models that need per-frame
+     * normalisation should bake the (x - mean) / std affine into the
+     * ONNX graph at export time (the canonical tiny-AI pipeline) or
+     * use the generic vmaf_dnn_session_run() with caller-managed
+     * tensors. */
     int rc = vmaf_tensor_from_luma(in, in_stride, w, h, VMAF_TENSOR_LAYOUT_NCHW,
-                                   VMAF_TENSOR_DTYPE_F32, mean, std, sess->in_buf);
+                                   VMAF_TENSOR_DTYPE_F32, NULL, NULL, sess->in_buf);
     if (rc < 0)
         return rc;
 
@@ -193,7 +191,7 @@ int vmaf_dnn_session_run_luma8(VmafDnnSession *sess, const uint8_t *in, size_t i
         return -ENOTSUP;
 
     return vmaf_tensor_to_luma(sess->out_buf, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, w, h,
-                               mean, std, out, out_stride);
+                               NULL, NULL, out, out_stride);
 }
 
 int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in, size_t in_stride, int w,
@@ -208,18 +206,10 @@ int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in, size_
     if (w != sess->w || h != sess->h)
         return -ERANGE;
 
-    const float *mean = NULL;
-    const float *std = NULL;
-    float m = 0.f, s_ = 1.f;
-    if (sess->has_sidecar && sess->meta.has_norm && sess->meta.norm_std > 0.f) {
-        m = sess->meta.norm_mean;
-        s_ = sess->meta.norm_std;
-        mean = &m;
-        std = &s_;
-    }
-
+    /* ADR-0976 — see vmaf_dnn_session_run_luma8 above for the rationale
+     * behind dropping the sidecar-driven normalisation branch. */
     int rc = vmaf_tensor_from_plane16(in, in_stride, w, h, bpc, VMAF_TENSOR_LAYOUT_NCHW,
-                                      VMAF_TENSOR_DTYPE_F32, mean, std, sess->in_buf);
+                                      VMAF_TENSOR_DTYPE_F32, NULL, NULL, sess->in_buf);
     if (rc < 0)
         return rc;
 
@@ -233,7 +223,7 @@ int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in, size_
         return -ENOTSUP;
 
     return vmaf_tensor_to_plane16(sess->out_buf, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, w,
-                                  h, bpc, mean, std, out, out_stride);
+                                  h, bpc, NULL, NULL, out, out_stride);
 }
 
 int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *inputs, size_t n_inputs,
