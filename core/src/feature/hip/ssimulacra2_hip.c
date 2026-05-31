@@ -527,6 +527,65 @@ static int ss2h_hip_rc(hipError_t rc)
 
 #ifdef HAVE_HIPCC
 
+/* Null-check + free helpers shared between init's fail_mod_mul path and
+ * close_fex_hip. When ss2h_alloc_device or ss2h_alloc_pinned returns on
+ * the first hipMalloc failure, any allocations that succeeded before that
+ * point would leak unless the unwind path frees them. ADR-0345 / HIP twin
+ * of ssimulacra2_cuda.c. */
+static void ss2h_free_device_buffers(Ssimu2StateHip *s)
+{
+#define SS2H_FREE_DEV_NULL(f)                                                                      \
+    do {                                                                                           \
+        if (s->f) {                                                                                \
+            (void)hipFree(s->f);                                                                   \
+            s->f = NULL;                                                                           \
+        }                                                                                          \
+    } while (0)
+    SS2H_FREE_DEV_NULL(d_ref_xyb);
+    SS2H_FREE_DEV_NULL(d_dis_xyb);
+    SS2H_FREE_DEV_NULL(d_mul_buf);
+    SS2H_FREE_DEV_NULL(d_blur_scratch);
+    SS2H_FREE_DEV_NULL(d_mu1);
+    SS2H_FREE_DEV_NULL(d_mu2);
+    SS2H_FREE_DEV_NULL(d_s11);
+    SS2H_FREE_DEV_NULL(d_s22);
+    SS2H_FREE_DEV_NULL(d_s12);
+#undef SS2H_FREE_DEV_NULL
+}
+
+static void ss2h_free_pinned_buffers(Ssimu2StateHip *s)
+{
+#define SS2H_FREE_PIN_NULL(f)                                                                      \
+    do {                                                                                           \
+        if (s->f) {                                                                                \
+            (void)hipHostFree(s->f);                                                               \
+            s->f = NULL;                                                                           \
+        }                                                                                          \
+    } while (0)
+    SS2H_FREE_PIN_NULL(h_ref_lin);
+    SS2H_FREE_PIN_NULL(h_dis_lin);
+    SS2H_FREE_PIN_NULL(h_ref_lin_ds);
+    SS2H_FREE_PIN_NULL(h_dis_lin_ds);
+    SS2H_FREE_PIN_NULL(h_ref_xyb);
+    SS2H_FREE_PIN_NULL(h_dis_xyb);
+    SS2H_FREE_PIN_NULL(h_mu1);
+    SS2H_FREE_PIN_NULL(h_mu2);
+    SS2H_FREE_PIN_NULL(h_s11);
+    SS2H_FREE_PIN_NULL(h_s22);
+    SS2H_FREE_PIN_NULL(h_s12);
+#undef SS2H_FREE_PIN_NULL
+    for (int p = 0; p < 3; p++) {
+        if (s->h_ref_raw[p]) {
+            (void)hipHostFree(s->h_ref_raw[p]);
+            s->h_ref_raw[p] = NULL;
+        }
+        if (s->h_dis_raw[p]) {
+            (void)hipHostFree(s->h_dis_raw[p]);
+            s->h_dis_raw[p] = NULL;
+        }
+    }
+}
+
 static int ss2h_alloc_device(Ssimu2StateHip *s)
 {
     const size_t three_plane_bytes = 3u * (size_t)s->width * (size_t)s->height * sizeof(float);
@@ -534,8 +593,10 @@ static int ss2h_alloc_device(Ssimu2StateHip *s)
 #define SS2H_ALLOC_DEV(f)                                                                          \
     do {                                                                                           \
         hip_rc = hipMalloc(&s->f, three_plane_bytes);                                              \
-        if (hip_rc != hipSuccess)                                                                  \
+        if (hip_rc != hipSuccess) {                                                                \
+            ss2h_free_device_buffers(s);                                                           \
             return ss2h_hip_rc(hip_rc);                                                            \
+        }                                                                                          \
     } while (0)
     SS2H_ALLOC_DEV(d_ref_xyb);
     SS2H_ALLOC_DEV(d_dis_xyb);
@@ -558,8 +619,10 @@ static int ss2h_alloc_pinned(Ssimu2StateHip *s)
 #define SS2H_ALLOC_PIN(f)                                                                          \
     do {                                                                                           \
         hip_rc = hipHostMalloc((void **)&s->f, three_plane_bytes, 0);                              \
-        if (hip_rc != hipSuccess)                                                                  \
+        if (hip_rc != hipSuccess) {                                                                \
+            ss2h_free_pinned_buffers(s);                                                           \
             return ss2h_hip_rc(hip_rc);                                                            \
+        }                                                                                          \
     } while (0)
     SS2H_ALLOC_PIN(h_ref_lin);
     SS2H_ALLOC_PIN(h_dis_lin);
@@ -575,12 +638,16 @@ static int ss2h_alloc_pinned(Ssimu2StateHip *s)
 #undef SS2H_ALLOC_PIN
     for (int p = 0; p < 3; p++) {
         hip_rc = hipHostMalloc(&s->h_ref_raw[p], worst_plane_bytes, 0);
-        if (hip_rc != hipSuccess)
+        if (hip_rc != hipSuccess) {
+            ss2h_free_pinned_buffers(s);
             return ss2h_hip_rc(hip_rc);
+        }
         s->raw_plane_bytes[p] = worst_plane_bytes;
         hip_rc = hipHostMalloc(&s->h_dis_raw[p], worst_plane_bytes, 0);
-        if (hip_rc != hipSuccess)
+        if (hip_rc != hipSuccess) {
+            ss2h_free_pinned_buffers(s);
             return ss2h_hip_rc(hip_rc);
+        }
     }
     return 0;
 }
@@ -894,6 +961,13 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return 0;
 
 fail_mod_mul:
+    /* Free any device + pinned allocations that succeeded before the
+     * fault. ss2h_alloc_device / ss2h_alloc_pinned each free their own
+     * partial state internally, but if init failed after one of them
+     * returned 0 (i.e. an allocation succeeded fully and then the OTHER
+     * helper or a later step failed), this label is the only cleanup. */
+    ss2h_free_pinned_buffers(s);
+    ss2h_free_device_buffers(s);
     (void)hipModuleUnload(s->module_mul);
     s->module_mul = NULL;
 fail_mod_blur:
@@ -998,54 +1072,10 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
     if (s->str)
         (void)hipStreamDestroy(s->str);
 
-#define SS2H_FREE_DEV(f)                                                                           \
-    do {                                                                                           \
-        if (s->f) {                                                                                \
-            (void)hipFree(s->f);                                                                   \
-            s->f = NULL;                                                                           \
-        }                                                                                          \
-    } while (0)
-    SS2H_FREE_DEV(d_ref_xyb);
-    SS2H_FREE_DEV(d_dis_xyb);
-    SS2H_FREE_DEV(d_mul_buf);
-    SS2H_FREE_DEV(d_blur_scratch);
-    SS2H_FREE_DEV(d_mu1);
-    SS2H_FREE_DEV(d_mu2);
-    SS2H_FREE_DEV(d_s11);
-    SS2H_FREE_DEV(d_s22);
-    SS2H_FREE_DEV(d_s12);
-#undef SS2H_FREE_DEV
-
-#define SS2H_FREE_PIN(f)                                                                           \
-    do {                                                                                           \
-        if (s->f) {                                                                                \
-            (void)hipHostFree(s->f);                                                               \
-            s->f = NULL;                                                                           \
-        }                                                                                          \
-    } while (0)
-    SS2H_FREE_PIN(h_ref_lin);
-    SS2H_FREE_PIN(h_dis_lin);
-    SS2H_FREE_PIN(h_ref_lin_ds);
-    SS2H_FREE_PIN(h_dis_lin_ds);
-    SS2H_FREE_PIN(h_ref_xyb);
-    SS2H_FREE_PIN(h_dis_xyb);
-    SS2H_FREE_PIN(h_mu1);
-    SS2H_FREE_PIN(h_mu2);
-    SS2H_FREE_PIN(h_s11);
-    SS2H_FREE_PIN(h_s22);
-    SS2H_FREE_PIN(h_s12);
-#undef SS2H_FREE_PIN
-
-    for (int p = 0; p < 3; p++) {
-        if (s->h_ref_raw[p]) {
-            (void)hipHostFree(s->h_ref_raw[p]);
-            s->h_ref_raw[p] = NULL;
-        }
-        if (s->h_dis_raw[p]) {
-            (void)hipHostFree(s->h_dis_raw[p]);
-            s->h_dis_raw[p] = NULL;
-        }
-    }
+    /* Shared with init's fail_mod_mul path so close and init unwind use
+     * the same null-guarded free sequence. */
+    ss2h_free_device_buffers(s);
+    ss2h_free_pinned_buffers(s);
 #endif
     return 0;
 }
