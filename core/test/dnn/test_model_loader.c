@@ -428,6 +428,35 @@ static char *test_sidecar_missing_returns_enoent(void)
 }
 
 #ifndef _WIN32
+static char *test_sidecar_non_regular_returns_einval(void)
+{
+    /* sidecar path exists but is a directory (not a regular file) →
+     * S_ISREG gate added by the PR #143 fix must return -EINVAL,
+     * not silently fall through to fopen which would then give -EISDIR
+     * or -EIO depending on the host. */
+    char dir_json[] = "/tmp/vmaf-dnn-dirjson-XXXXXX.json";
+    /* mkdtemp requires trailing XXXXXX with no suffix; use a two-step
+     * approach: mkstemp + remove + mkdir. */
+    char tmp[] = "/tmp/vmaf-dnn-dirjson-XXXXXX";
+    int fd = mkstemp(tmp);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    (void)remove(tmp);
+    mu_assert("mkdir for dir sidecar failed", mkdir(tmp, 0700) == 0);
+    /* Build a fake onnx path whose sidecar ("<base>.json") resolves to
+     * the directory we just created.  "<tmp>.onnx" → sidecar = "<tmp>.json";
+     * rename the dir to match the sidecar name. */
+    (void)snprintf(dir_json, sizeof(dir_json), "%s.json", tmp);
+    mu_assert("rename to .json dir failed", rename(tmp, dir_json) == 0);
+    char onnx[256];
+    (void)snprintf(onnx, sizeof(onnx), "%s.onnx", tmp);
+    VmafModelSidecar meta;
+    const int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    rmdir(dir_json);
+    mu_assert("non-regular sidecar (dir) → -EINVAL", err == -EINVAL);
+    return NULL;
+}
+
 static char *test_sidecar_parses_kind_nr(void)
 {
     /* kind == "nr" branch (line 224). */
@@ -1153,6 +1182,7 @@ char *run_tests(void)
     mu_run_test(test_sidecar_free_null_is_noop);
     mu_run_test(test_sidecar_missing_returns_enoent);
 #ifndef _WIN32
+    mu_run_test(test_sidecar_non_regular_returns_einval);
     mu_run_test(test_sidecar_parses_kind_nr);
     mu_run_test(test_sidecar_quant_mode_default_fp32);
     mu_run_test(test_sidecar_quant_mode_dynamic);

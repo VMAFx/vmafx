@@ -326,9 +326,12 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
     }
 
     struct stat st;
-    if (stat(sidecar, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0 &&
-        (size_t)st.st_size > (size_t)(1u << 20))
-        return -EFBIG;
+    if (stat(sidecar, &st) == 0) {
+        if (!S_ISREG(st.st_mode))
+            return -EINVAL;
+        if ((size_t)st.st_size > (size_t)(1u << 20))
+            return -EFBIG;
+    }
 
     FILE *f = fopen(sidecar, "rb");
     if (!f)
