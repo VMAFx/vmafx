@@ -932,6 +932,7 @@ test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
 
 <<<<<<< ours
 <<<<<<< ours
+<<<<<<< ours
 # ADR-0956 — CUDA kernel parity coverage round 4. Closes the last
 # three float-path CPU twins (`float_adm_cuda`, `float_motion_cuda`,
 # `float_ssim_cuda`) with cross-backend parity assertions at
@@ -960,10 +961,20 @@ test_cuda_float_psnr_parity = executable('test_cuda_float_psnr_parity',
     ['test.c', 'test_cuda_float_psnr_parity.c'],
 >>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
+=======
+# Round-2 GPU-kernel coverage gap-fill — adm2/adm3 CPU vs. CUDA parity
+# (places=4). Round-1 (PR #351) covered psnr_cuda + ciede_cuda; ADM was
+# the highest-impact remaining CUDA gap (default model component).
+# GPU-gated: skips cleanly when no CUDA device is visible.
+test_cuda_adm_parity = executable('test_cuda_adm_parity',
+    ['test.c', 'test_cuda_adm_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+>>>>>>> theirs
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
 test('test_cuda_float_adm_parity', test_cuda_float_adm_parity,
@@ -986,10 +997,23 @@ test_cuda_float_vif_parity = executable('test_cuda_float_vif_parity',
     ['test.c', 'test_cuda_float_vif_parity.c'],
 >>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
+=======
+test('test_cuda_adm_parity', test_cuda_adm_parity,
+    suite : ['fast', 'gpu'])
+
+# Round-2 GPU-kernel coverage gap-fill — motion_v2 CPU vs. CUDA parity
+# (places=4). Covers the SAD-weighted motion variant used by the
+# "vmaf_v0.6.1neg" model lineage. Distinct from test_cuda_motion3_parity
+# (which exercises the motion3 post-process, not the SAD reduction).
+test_cuda_motion_v2_parity = executable('test_cuda_motion_v2_parity',
+    ['test.c', 'test_cuda_motion_v2_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+>>>>>>> theirs
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 <<<<<<< ours
 <<<<<<< ours
 test('test_cuda_float_motion_parity', test_cuda_float_motion_parity,
@@ -1005,10 +1029,22 @@ test_cuda_float_ms_ssim_parity = executable('test_cuda_float_ms_ssim_parity',
     ['test.c', 'test_cuda_float_ms_ssim_parity.c'],
 >>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
+=======
+test('test_cuda_motion_v2_parity', test_cuda_motion_v2_parity,
+    suite : ['fast', 'gpu'])
+
+# Round-2 GPU-kernel coverage gap-fill — cambi CPU vs. CUDA parity
+# (places=4). Fixture is 256x256 to satisfy CAMBI_MIN_WIDTH_HEIGHT=216.
+# Locks the banding-detector parity used by libvmaf-2.x.x neg + 4k models.
+test_cuda_cambi_parity = executable('test_cuda_cambi_parity',
+    ['test.c', 'test_cuda_cambi_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+>>>>>>> theirs
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 <<<<<<< ours
 test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
     suite : ['fast', 'gpu'])
@@ -1030,10 +1066,22 @@ test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
     ['test.c', 'test_cuda_float_moment_parity.c'],
 >>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
+=======
+test('test_cuda_cambi_parity', test_cuda_cambi_parity,
+    suite : ['fast', 'gpu'])
+
+# Round-2 GPU-kernel coverage gap-fill — psnr_hvs CPU vs. CUDA parity
+# (places=4). Covers the HVS contrast-sensitivity-weighted DCT path
+# (third_party/xiph/psnr_hvs.c vs. integer_psnr_hvs/psnr_hvs_score.cu).
+test_cuda_psnr_hvs_parity = executable('test_cuda_psnr_hvs_parity',
+    ['test.c', 'test_cuda_psnr_hvs_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+>>>>>>> theirs
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 <<<<<<< ours
 test('test_cuda_speed_chroma_smoke', test_cuda_speed_chroma_smoke,
     suite : ['fast', 'gpu'])
@@ -1048,10 +1096,22 @@ test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
     ['test.c', 'test_cuda_ssimulacra2_parity.c'],
 >>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
+=======
+test('test_cuda_psnr_hvs_parity', test_cuda_psnr_hvs_parity,
+    suite : ['fast', 'gpu'])
+
+# Round-2 GPU-kernel coverage gap-fill — integer_ssim CPU vs. CUDA
+# parity (places=4). Covers the 11x11 Gaussian-windowed SSIM kernel
+# (integer_ssim.c vs. integer_ssim/integer_ssim_score.cu).
+test_cuda_ssim_parity = executable('test_cuda_ssim_parity',
+    ['test.c', 'test_cuda_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+>>>>>>> theirs
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 <<<<<<< ours
 test('test_cuda_speed_temporal_smoke', test_cuda_speed_temporal_smoke,
 =======
@@ -1059,6 +1119,9 @@ test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
 >>>>>>> theirs
 =======
 test('test_cuda_ssimulacra2_parity', test_cuda_ssimulacra2_parity,
+>>>>>>> theirs
+=======
+test('test_cuda_ssim_parity', test_cuda_ssim_parity,
 >>>>>>> theirs
     suite : ['fast', 'gpu'])
 endif

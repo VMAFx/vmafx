@@ -41322,6 +41322,28 @@ files in `core/test/meson.build`, and docs / changelog /
 Netflix/vmaf C source is touched. The SYCL backend itself is
 fork-original (Netflix/vmaf has no SYCL path), so there is no
 upstream rebase surface for these tests at all.
+## CUDA kernel parity tests — round 2 (ADR-0886, 2026-05-30)
+
+no rebase impact: REASON — adds five new fork-local test files under
+`core/test/` (`test_cuda_adm_parity.c`, `test_cuda_motion_v2_parity.c`,
+`test_cuda_cambi_parity.c`, `test_cuda_psnr_hvs_parity.c`,
+`test_cuda_ssim_parity.c`) and wires them through `core/test/meson.build`
+inside the existing `if cuda_dependency.found()` guard. The tests exercise
+the public C API (`vmaf_init` / `vmaf_use_feature` / `vmaf_cuda_state_init`
+/ `vmaf_feature_score_at_index`); upstream Netflix/vmaf does not own any
+of the touched files. Conflict surface on sync is limited to the
+`core/test/meson.build` stanza ordering, which is mechanical.
+
+Fork-local files:
+`core/test/test_cuda_adm_parity.c`,
+`core/test/test_cuda_motion_v2_parity.c`,
+`core/test/test_cuda_cambi_parity.c`,
+`core/test/test_cuda_psnr_hvs_parity.c`,
+`core/test/test_cuda_ssim_parity.c`,
+`core/test/meson.build` (new stanzas only),
+`docs/adr/0886-cuda-kernel-coverage-round2.md`,
+`docs/research/cuda-kernel-coverage-round2-2026-05-30.md`,
+`changelog.d/added/0886-cuda-kernel-coverage-round2.md`.
 
 ## macOS CI ansnr-residual cleanup (ADR-0749 follow-up, 2026-05-30)
 

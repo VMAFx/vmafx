@@ -683,3 +683,4 @@
 0889-libsvm-vendored-audit
 0890-ci-concurrency-cost-audit
 0884-sycl-kernel-coverage-round2
+0886-cuda-kernel-coverage-round2
