@@ -706,15 +706,10 @@ void ssimulacra2_picture_to_linear_rgb_avx512(int yuv_matrix, unsigned bpc, unsi
             const __m512 Yn = _mm512_mul_ps(_mm512_sub_ps(Y, vy_off), vy_scale);
             const __m512 Un = _mm512_mul_ps(_mm512_sub_ps(U, vc_off), vc_scale);
             const __m512 Vn = _mm512_mul_ps(_mm512_sub_ps(V, vc_off), vc_scale);
-            /* ADR-0891 round-2 fix: explicit FMA intrinsics — see
-             * sibling AVX2 TU for rationale (icx auto-fuses the
-             * separate mul+add pattern under `-fp-model=precise`,
-             * gcc does not; unifying on FMA via fmaf() in the
-             * scalar reference is the bit-exact pairing). */
-            __m512 R = _mm512_fmadd_ps(vcr_r, Vn, Yn);
-            __m512 G = _mm512_fmadd_ps(vcb_g, Un, Yn);
-            G = _mm512_fmadd_ps(vcr_g, Vn, G);
-            __m512 B = _mm512_fmadd_ps(vcb_b, Un, Yn);
+            __m512 R = _mm512_add_ps(Yn, _mm512_mul_ps(vcr_r, Vn));
+            __m512 G = _mm512_add_ps(Yn, _mm512_mul_ps(vcb_g, Un));
+            G = _mm512_add_ps(G, _mm512_mul_ps(vcr_g, Vn));
+            __m512 B = _mm512_add_ps(Yn, _mm512_mul_ps(vcb_b, Un));
             R = _mm512_max_ps(_mm512_min_ps(R, vone), vzero);
             G = _mm512_max_ps(_mm512_min_ps(G, vone), vzero);
             B = _mm512_max_ps(_mm512_min_ps(B, vone), vzero);
@@ -735,14 +730,9 @@ void ssimulacra2_picture_to_linear_rgb_avx512(int yuv_matrix, unsigned bpc, unsi
             const float Yn = (Ys - y_off) * y_scale;
             const float Un = (Us - c_off) * c_scale;
             const float Vn = (Vs - c_off) * c_scale;
-            /* ADR-0891: explicit fmaf() — icx + `-mfma` may contract
-             * plain `a + b*c` to FMA even under `-fp-model=precise`,
-             * diverging from the SIMD reference. Preserves the
-             * left-to-right associativity of the G computation. */
-            float R = fmaf(cr_r, Vn, Yn);
-            float G = fmaf(cb_g, Un, Yn);
-            G = fmaf(cr_g, Vn, G);
-            float B = fmaf(cb_b, Un, Yn);
+            float R = Yn + cr_r * Vn;
+            float G = Yn + cb_g * Un + cr_g * Vn;
+            float B = Yn + cb_b * Un;
             if (R < 0.0f)
                 R = 0.0f;
             if (R > 1.0f)

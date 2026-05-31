@@ -743,21 +743,6 @@ if ssimulacra2_simd_test_archs.contains(host_machine.cpu_family())
 #   diverged from the SIMD lib (compiled with the strict-FP flags).
 # _simd_strict_fp_args = [-ffp-contract=off] on GCC/Clang;
 #                        [-ffp-contract=off, -fp-model=precise] on icx.
-#
-# ADR-0891 (round-2 fix): the ssimulacra2 ptlr tests use fmaf() in the
-# scalar reference and fmadd intrinsics in the SIMD lib. On x86 without
-# -mfma, GCC does NOT emit a hardware vfmadd for fmaf() — instead it
-# calls libm or uses double-precision emulation, which may differ from
-# vfmadd by 1 ULP. Adding -mavx2 -mfma ensures fmaf() in the test TU
-# generates the same hardware vfmadd instruction as _mm256_fmadd_ps /
-# _mm512_fmadd_ps in the SIMD libs, restoring bit-exactness on all
-# GCC/Clang builds. Safe: the test is already x86_64/x86-gated, and
-# the fmaf() result is identical to vfmadd on FMA-capable hardware.
-# aarch64 does not need this — Clang's fmaf() is already vfmla on NEON.
-_ssimulacra2_test_x86_fma_args = []
-if host_machine.cpu_family() in ['x86_64', 'x86']
-    _ssimulacra2_test_x86_fma_args = ['-mavx2', '-mfma']
-endif
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
@@ -765,7 +750,7 @@ test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
-    c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args + _ssimulacra2_test_x86_fma_args,
+    c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
                     gpu_all_deps, dnn_deps],
     objects : [
@@ -942,6 +927,7 @@ test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
     suite : ['fast', 'gpu'])
 
 <<<<<<< ours
+<<<<<<< ours
 # ADR-0956 — CUDA kernel parity coverage round 4. Closes the last
 # three float-path CPU twins (`float_adm_cuda`, `float_motion_cuda`,
 # `float_ssim_cuda`) with cross-backend parity assertions at
@@ -959,11 +945,22 @@ test_cuda_float_adm_parity = executable('test_cuda_float_adm_parity',
 test_cuda_speed_chroma_parity = executable('test_cuda_speed_chroma_parity',
     ['test.c', 'test_cuda_speed_chroma_parity.c'],
 >>>>>>> theirs
+=======
+# ADR-0947 — CUDA kernel parity coverage, round 3. Closes the float-path
+# twin gap (float_psnr, float_vif, float_ms_ssim, float_moment) plus the
+# new ssimulacra2_cuda kernel.  Each test asserts CPU-vs-CUDA agreement
+# at places=4 / 1e-4 (ADR-0214 cross-backend gate) on a 256x144 YUV420P
+# fixture, 3 frames, score read at index 1.  GPU-gated: skips cleanly
+# when no CUDA device is visible (mirrors test_cuda_motion3_parity).
+test_cuda_float_psnr_parity = executable('test_cuda_float_psnr_parity',
+    ['test.c', 'test_cuda_float_psnr_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 <<<<<<< ours
 test('test_cuda_float_adm_parity', test_cuda_float_adm_parity,
     suite : ['fast', 'gpu'])
@@ -977,22 +974,38 @@ test('test_cuda_speed_chroma_parity', test_cuda_speed_chroma_parity,
 test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
     ['test.c', 'test_cuda_speed_temporal_parity.c'],
 >>>>>>> theirs
+=======
+test('test_cuda_float_psnr_parity', test_cuda_float_psnr_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_float_vif_parity = executable('test_cuda_float_vif_parity',
+    ['test.c', 'test_cuda_float_vif_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
 <<<<<<< ours
+<<<<<<< ours
 test('test_cuda_float_motion_parity', test_cuda_float_motion_parity,
     suite : ['fast', 'gpu'])
 
 test_cuda_float_ssim_parity = executable('test_cuda_float_ssim_parity',
     ['test.c', 'test_cuda_float_ssim_parity.c'],
+=======
+test('test_cuda_float_vif_parity', test_cuda_float_vif_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_float_ms_ssim_parity = executable('test_cuda_float_ms_ssim_parity',
+    ['test.c', 'test_cuda_float_ms_ssim_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
     suite : ['fast', 'gpu'])
 
@@ -1005,24 +1018,43 @@ test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
 # grid changes or covariance-matrix degenerate cases.
 test_cuda_speed_chroma_smoke = executable('test_cuda_speed_chroma_smoke',
     ['test.c', 'test_cuda_speed_chroma_smoke.c'],
+=======
+test('test_cuda_float_ms_ssim_parity', test_cuda_float_ms_ssim_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
+    ['test.c', 'test_cuda_float_moment_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 test('test_cuda_speed_chroma_smoke', test_cuda_speed_chroma_smoke,
     suite : ['fast', 'gpu'])
 
 test_cuda_speed_temporal_smoke = executable('test_cuda_speed_temporal_smoke',
     ['test.c', 'test_cuda_speed_temporal_smoke.c'],
+=======
+test('test_cuda_float_moment_parity', test_cuda_float_moment_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
+    ['test.c', 'test_cuda_ssimulacra2_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
+<<<<<<< ours
 test('test_cuda_speed_temporal_smoke', test_cuda_speed_temporal_smoke,
 =======
 test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
+>>>>>>> theirs
+=======
+test('test_cuda_ssimulacra2_parity', test_cuda_ssimulacra2_parity,
 >>>>>>> theirs
     suite : ['fast', 'gpu'])
 endif

@@ -46,19 +46,6 @@ contains only kernel TUs.
   per-lane scalar-double accumulate). The compiler's default
   `-ffp-contract=fast` would silently fuse `a + b * c` and break
   bit-identity vs scalar.
-- **Exception: SSIMULACRA 2 `picture_to_linear_rgb` colour matrix
-  is unified ON FMA across all implementations** (ADR-0891). The
-  AVX2 / AVX-512 main loops use `_mm256_fmadd_ps` / `_mm512_fmadd_ps`
-  and the scalar tails + the `test_ssimulacra2_simd.c` reference
-  use `fmaf()`. Reason: under icx + `-mfma`, the prior explicit
-  `_mm256_add_ps(_, _mm256_mul_ps(_, _))` pattern was being
-  auto-fused to FMA despite `-fp-model=precise`, while gcc kept
-  it as separate mul+add; unifying on FMA on both sides is the
-  cross-compiler bit-exact pairing. The left-to-right
-  associativity of `G = Yn + cb_g*Un + cr_g*Vn` is preserved by
-  chaining two FMAs (`G = fmaf(cb_g, Un, Yn);
-  G = fmaf(cr_g, Vn, G);`). Do NOT revert to separate mul+add
-  on rebase — the test will fail under icx.
 - **Reserved-identifier hygiene** (ADR-0148): no leading-underscore
   names. The IQA tree underwent a sweeping `_iqa_*` →
   `iqa_*` / `_kernel` → `iqa_kernel` / `_ssim_int` →

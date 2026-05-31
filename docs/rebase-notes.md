@@ -346,23 +346,38 @@ file, so they compile only when cgo is enabled (matching the existing
 ---
 
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
+## CUDA kernel parity coverage round 3 (2026-05-31)
 
 **Files touched:**
-`core/src/meson.build`,
-`core/src/feature/x86/ssimulacra2_avx2.c`,
-`core/src/feature/x86/ssimulacra2_avx512.c`,
-`core/test/test_ssimulacra2_simd.c`.
+`core/test/test_cuda_float_psnr_parity.c`,
+`core/test/test_cuda_float_vif_parity.c`,
+`core/test/test_cuda_float_ms_ssim_parity.c`,
+`core/test/test_cuda_float_moment_parity.c`,
+`core/test/test_cuda_ssimulacra2_parity.c`,
+`core/test/meson.build` (+5 `executable()` + `test()` blocks under the
+existing `if get_option('enable_cuda')` guard, suite `['fast', 'gpu']`),
+`docs/adr/0947-cuda-kernel-coverage-round3.md`,
+`docs/adr/README.md` (+1 row),
+`docs/adr/_index_fragments/_order.txt` (+1 line),
+`docs/research/cuda-kernel-coverage-round3-2026-05-31.md`,
+`changelog.d/added/cuda-kernel-coverage-round3.md`.
 
-**Rebase impact:** Low — SSIMULACRA 2 is fork-added (no upstream coupling)
-and the meson helper `_libvmaf_feature_icx_args` mirrors the existing
-`_x86_simd_strict_fp_extra` pattern from ADR-0339 (round-1). If upstream
-Netflix ever adds an `intel-llvm` build matrix and ships scalar references
-inside `libvmaf_feature_static_lib` that participate in SIMD bit-exactness
-tests, reuse `_libvmaf_feature_icx_args` rather than minting a new helper.
-The FMA-based `picture_to_linear_rgb` colour matrix is fully self-contained
-inside the SSIMULACRA 2 TUs; no upstream Netflix file references those
-symbols. Companion: `docs/adr/0891-simd-bit-exact-round2-fmaf-libvmaf-feature-icx.md`,
-`changelog.d/fixed/0891-simd-bit-exact-round2.md`.
+**Rebase impact:** None. All five test files are fork-local
+(`test_cuda_*_parity.c` pattern is fork-only; upstream Netflix/vmaf
+has no equivalent test scaffold). `core/test/meson.build` edits are
+additive blocks inside the existing `enable_cuda` guard — no upstream
+file in this region. If upstream Netflix adds new CUDA kernels with
+matching names (`float_psnr_cuda`, `float_vif_cuda`,
+`float_ms_ssim_cuda`, `float_moment_cuda`, `ssimulacra2_cuda`), the
+parity tests continue to work unchanged. If upstream adds new test
+files near `test_integer_vif_cpu_cuda_parity` (the closest neighbour
+in meson.build) the additive blocks may need re-anchoring — trivial
+3-way merge.
+
+The only **in-flight** conflict surface is `core/test/meson.build`
+against PR #351 (round 1) and PR #374 (round 2), both of which insert
+under the same `enable_cuda` guard. PRs land sequentially → each
+rebase resolves one trivial three-way merge per landing.
 
 ---
 

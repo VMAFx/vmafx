@@ -64,18 +64,6 @@ The CPU scalar/SIMD path is bit-exact across the fork's host matrix. The GPU
 twins offload the pyramid blur and per-pixel multiply stages while keeping the
 XYB conversion and final combine on the host.
 
-### Cross-compiler bit-exactness (FMA unification)
-
-`picture_to_linear_rgb` performs the YCbCr→linear-RGB conversion using a
-fused-multiply-add (FMA) chain on every code path: scalar uses `fmaf()` and the
-AVX2 / AVX-512 / NEON main loops use `_mm256_fmadd_ps` / `_mm512_fmadd_ps` /
-`vfmaq_f32`. Earlier revisions used explicit `mul + add` pairs, but icx with
-`-mfma` auto-fused them while gcc kept them separately-rounded, producing
-sub-ULP divergence between compilers. Unifying on FMA preserves the
-left-to-right associativity of `G = Yn + cb_g*Un + cr_g*Vn` (two chained FMAs)
-while delivering a single, identically-rounded result on every supported
-compiler. See ADR-0891 for the analysis and alternatives.
-
 ## Limitations
 
 - Chroma is nearest-neighbour upsampled to luma resolution before colour

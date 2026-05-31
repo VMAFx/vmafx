@@ -690,11 +690,10 @@ void ssimulacra2_picture_to_linear_rgb_neon(int yuv_matrix, unsigned bpc, unsign
             const float32x4_t Yn = vmulq_f32(vsubq_f32(Y, vy_off), vy_scale);
             const float32x4_t Un = vmulq_f32(vsubq_f32(U, vc_off), vc_scale);
             const float32x4_t Vn = vmulq_f32(vsubq_f32(V, vc_off), vc_scale);
-            /* ADR-0891: vfmaq_f32 — single-rounding FMA matches fmaf() in scalar ref. */
-            float32x4_t R = vfmaq_f32(Yn, vcr_r, Vn);
-            float32x4_t G = vfmaq_f32(Yn, vcb_g, Un);
-            G = vfmaq_f32(G, vcr_g, Vn);
-            float32x4_t B = vfmaq_f32(Yn, vcb_b, Un);
+            float32x4_t R = vaddq_f32(Yn, vmulq_f32(vcr_r, Vn));
+            float32x4_t G = vaddq_f32(Yn, vmulq_f32(vcb_g, Un));
+            G = vaddq_f32(G, vmulq_f32(vcr_g, Vn));
+            float32x4_t B = vaddq_f32(Yn, vmulq_f32(vcb_b, Un));
             R = vmaxq_f32(vminq_f32(R, vone), vzero);
             G = vmaxq_f32(vminq_f32(G, vone), vzero);
             B = vmaxq_f32(vminq_f32(B, vone), vzero);
@@ -715,11 +714,9 @@ void ssimulacra2_picture_to_linear_rgb_neon(int yuv_matrix, unsigned bpc, unsign
             const float Yn = (Ys - y_off) * y_scale;
             const float Un = (Us - c_off) * c_scale;
             const float Vn = (Vs - c_off) * c_scale;
-            /* ADR-0891: fmaf() matches vfmaq_f32 single-rounding contract. */
-            float R = fmaf(cr_r, Vn, Yn);
-            float G = fmaf(cb_g, Un, Yn);
-            G = fmaf(cr_g, Vn, G);
-            float B = fmaf(cb_b, Un, Yn);
+            float R = Yn + cr_r * Vn;
+            float G = Yn + cb_g * Un + cr_g * Vn;
+            float B = Yn + cb_b * Un;
             if (R < 0.0f)
                 R = 0.0f;
             if (R > 1.0f)
