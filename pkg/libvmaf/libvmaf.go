@@ -52,12 +52,14 @@ import "C"
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 	"unsafe"
 )
 
@@ -96,9 +98,31 @@ func New(binaryPath, modelDir string) (*Scorer, error) {
 // modelName selects the VMAF model (e.g. "vmaf_v0.6.1"); pass "" for the default.
 //
 // Score shells out to the vmaf CLI and parses its JSON output.
-func (s *Scorer) Score(ref, dis, modelName string) (float64, map[string]float64, error) {
+//
+// The supplied ctx governs the lifetime of the underlying vmaf subprocess via
+// exec.CommandContext: when ctx is cancelled (deadline elapsed or client
+// disconnected) the subprocess receives SIGKILL and any in-flight cgo work is
+// abandoned.  Callers in long-running services (HTTP / gRPC handlers) MUST
+// pass the request-scoped context so subprocesses do not outlive the request.
+//
+// Background-style callers may pass context.Background() to opt out of
+// cancellation; passing a nil ctx is treated as context.Background() but
+// raises ErrInvalidArgument from downstream callers that require a real
+// cancellation signal (see T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31).
+func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64, map[string]float64, error) {
+	if ctx == nil {
+		// Defensive: callers should pass a real context, but nil ctx would
+		// otherwise panic inside exec.CommandContext.
+		ctx = context.Background()
+	}
 	if modelName == "" {
 		modelName = "vmaf_v0.6.1"
+	}
+
+	// Honour an already-cancelled context up-front so we don't allocate temp
+	// files / fork a subprocess only to immediately tear them down.
+	if err := ctx.Err(); err != nil {
+		return 0, nil, fmt.Errorf("libvmaf: context cancelled before Score: %w", err)
 	}
 
 	// Locate the model file.
@@ -123,11 +147,32 @@ func (s *Scorer) Score(ref, dis, modelName string) (float64, map[string]float64,
 		"--json",
 	}
 
-	cmd := exec.Command(s.binaryPath, args...) //nolint:gosec // paths are operator-supplied
+	// exec.CommandContext wires SIGKILL to ctx.Done() so a cancelled context
+	// (client disconnect, deadline elapsed, parent shutdown) tears down the
+	// subprocess instead of leaving it running with the file descriptors of
+	// the dropped request.  Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
+	//
+	// WaitDelay enforces a hard upper bound on how long cmd.Run() blocks
+	// after the context is cancelled.  Without it, Go waits for every
+	// inherited file descriptor in the child (including those held by
+	// grandchildren the vmaf binary may have forked) to close, which can
+	// hang indefinitely.  After WaitDelay elapses, Go closes the I/O
+	// pipes and returns; the underlying SIGKILL ensures the kernel will
+	// reap the children eventually.  2 s is generous: in practice the
+	// kernel completes process teardown in single-digit milliseconds.
+	cmd := exec.CommandContext(ctx, s.binaryPath, args...) //nolint:gosec // paths are operator-supplied
+	cmd.WaitDelay = 2 * time.Second
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		// Surface the cancellation cause when ctx was the trigger so callers
+		// can distinguish "vmaf binary genuinely failed" from "we killed it
+		// because the request went away".
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return 0, nil, fmt.Errorf("libvmaf: vmaf subprocess cancelled: %w (run err: %v, stderr: %s)",
+				ctxErr, err, stderr.String())
+		}
 		return 0, nil, fmt.Errorf("libvmaf: vmaf binary failed: %w\nstderr: %s", err, stderr.String())
 	}
 

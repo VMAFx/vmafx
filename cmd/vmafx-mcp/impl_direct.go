@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -74,7 +75,12 @@ func runVmafScoreDirect(ref, dis string, width, height int, pixfmt string, bitde
 
 	libvmaf.LogDirectPathSelected()
 
-	res, err := libvmaf.ScoreDirect(libvmaf.ScoreDirectRequest{
+	// MCP handlers run inside the JSON-RPC dispatch loop without a
+	// request-scoped context yet — the JSON-RPC framing is best-effort and
+	// does not surface client disconnect.  context.Background() preserves
+	// the historical behaviour; a future ADR can plumb ctx through the
+	// MCP server's tool dispatch layer.
+	res, err := libvmaf.ScoreDirect(context.Background(), libvmaf.ScoreDirectRequest{
 		Ref:       ref,
 		Dis:       dis,
 		ModelPath: modelPath,

@@ -21,10 +21,12 @@
 package libvmaf
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestParsePixFmt(t *testing.T) {
@@ -142,7 +144,7 @@ func TestScoreDirect_ValidationErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := ScoreDirect(tc.req)
+			_, err := ScoreDirect(context.Background(), tc.req)
 			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}
@@ -164,7 +166,7 @@ func TestScoreDirect_ModelNotFound(t *testing.T) {
 	if err := os.WriteFile(dis, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := ScoreDirect(ScoreDirectRequest{
+	_, err := ScoreDirect(context.Background(), ScoreDirectRequest{
 		Ref:       ref,
 		Dis:       dis,
 		ModelPath: filepath.Join(dir, "nope.json"),
@@ -192,7 +194,7 @@ func TestScoreDirect_EndToEnd(t *testing.T) {
 			t.Skipf("fixture missing (%s); skipping end-to-end", p)
 		}
 	}
-	res, err := ScoreDirect(ScoreDirectRequest{
+	res, err := ScoreDirect(context.Background(), ScoreDirectRequest{
 		Ref:       ref,
 		Dis:       dis,
 		ModelPath: model,
@@ -220,4 +222,86 @@ func TestLogDirectPathSelected_Idempotent(t *testing.T) {
 	// stderr.  Repeated calls are the public contract we test.
 	LogDirectPathSelected()
 	LogDirectPathSelected()
+}
+
+// TestScoreDirect_PreCancelledContext verifies that ScoreDirect rejects a
+// pre-cancelled context before opening any files or allocating any C state.
+// This is the cheap-but-load-bearing fast path for the cgo direct flow —
+// the per-frame ctx.Err() check inside the loop covers the in-flight case.
+//
+// Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
+func TestScoreDirect_PreCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Use a request shape that would pass validation otherwise — that way
+	// we know ctx.Err() is the gate that fires, not ErrInvalidArgument.
+	dir := t.TempDir()
+	ref := filepath.Join(dir, "ref.yuv")
+	dis := filepath.Join(dir, "dis.yuv")
+	model := filepath.Join(dir, "model.json")
+	for _, p := range []string{ref, dis, model} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, err := ScoreDirect(ctx, ScoreDirectRequest{
+		Ref:       ref,
+		Dis:       dis,
+		ModelPath: model,
+		Width:     1, Height: 1, PixFmt: PixFmtYUV420P, BitDepth: 8,
+	})
+	if err == nil {
+		t.Fatal("expected error from pre-cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+// TestScoreDirect_CancelDuringLoop exercises the per-frame ctx.Done() check.
+// The test runs the full end-to-end fixture with a context that is cancelled
+// shortly after Score starts; if libvmaf is present, the loop must exit with
+// context.Canceled.  Skipped when fixtures are missing (same predicate as
+// TestScoreDirect_EndToEnd).
+//
+// Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
+func TestScoreDirect_CancelDuringLoop(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping cancel-during-loop test in -short mode")
+	}
+	root := RepoRoot()
+	ref := filepath.Join(root, "testdata", "ref_576x324_48f.yuv")
+	dis := filepath.Join(root, "testdata", "dis_576x324_48f.yuv")
+	model := filepath.Join(root, "model", "vmaf_v0.6.1.json")
+	for _, p := range []string{ref, dis, model} {
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("fixture missing (%s); skipping cancel-during-loop", p)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+
+	// Give the timeout time to fire before we even enter the function — that
+	// makes this deterministic across machines.  The 5ms sleep dominates the
+	// ScoreDirect entry path's cost so by the time we hit the loop, ctx is
+	// already done.
+	time.Sleep(5 * time.Millisecond)
+
+	_, err := ScoreDirect(ctx, ScoreDirectRequest{
+		Ref:       ref,
+		Dis:       dis,
+		ModelPath: model,
+		Width:     576, Height: 324,
+		PixFmt:   PixFmtYUV420P,
+		BitDepth: 8,
+	})
+	if err == nil {
+		t.Fatal("expected ScoreDirect to fail under a cancelled context, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.DeadlineExceeded or context.Canceled, got %v", err)
+	}
 }

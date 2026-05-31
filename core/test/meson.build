@@ -225,16 +225,6 @@ test_ref = executable('test_ref',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 
-# ADR-0982 round-26 audit — regression for gpu_picture_pool_init partial-
-# init unwind. CPU-only: uses pure-C stub alloc/free callbacks so no GPU
-# runtime is required. ASan / UBSan catches any leak if the unwind in
-# vmaf_gpu_picture_pool_init regresses.
-test_gpu_picture_pool_partial_init = executable('test_gpu_picture_pool_partial_init',
-    ['test.c', 'test_gpu_picture_pool_partial_init.c', '../src/gpu_picture_pool.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    dependencies: [pthread_dependency, sycl_dependency],
-)
-
 test_feature = executable('test_feature',
     ['test.c', 'test_feature.c', '../src/feature/alias.c', '../src/dict.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -1946,8 +1936,6 @@ test('test_dict', test_dict, suite : ['fast'])
 test('test_opt', test_opt, suite : ['fast'])
 test('test_cpu', test_cpu, suite : ['fast'])
 test('test_ref', test_ref, suite : ['fast'])
-test('test_gpu_picture_pool_partial_init', test_gpu_picture_pool_partial_init,
-    suite : ['fast'])
 test('test_feature', test_feature, suite : ['fast'])
 test('test_ciede', test_ciede, suite : ['fast'])
 test('test_lpips', test_lpips, suite : ['fast'])

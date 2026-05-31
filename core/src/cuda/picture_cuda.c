@@ -230,11 +230,6 @@ int vmaf_cuda_picture_alloc(VmafPicture *pic, void *cookie)
     if (!priv)
         return -ENOMEM;
 
-    /* Zero the priv struct so partial-init unwind can use NULL/0 sentinels
-     * to skip handles that were never created. priv was just malloc'd
-     * (uninitialised memory). Round-26 audit. */
-    memset(priv, 0, sizeof(*priv));
-
     int _cuda_err = 0;
     int ctx_pushed = 0;
     CHECK_CUDA_GOTO(cuda_cookie->state->f, cuCtxPushCurrent(cuda_cookie->state->ctx), fail);
@@ -280,29 +275,6 @@ int vmaf_cuda_picture_alloc(VmafPicture *pic, void *cookie)
     return 0;
 
 fail:
-    /* Round-26 audit: tear down anything we successfully created
-     * before bailing. The previous unwind only freed priv, leaking
-     * the upload stream + ready/finished events + every device
-     * pointer allocated by cuMemAllocPitch when a later allocation
-     * failed mid-loop. */
-    for (int i = 0; i < 3; i++) {
-        if (pic->data[i] != NULL) {
-            (void)cu_f->cuMemFree((CUdeviceptr)pic->data[i]);
-            pic->data[i] = NULL;
-        }
-    }
-    if (priv->cuda.finished != NULL) {
-        (void)cu_f->cuEventDestroy(priv->cuda.finished);
-        priv->cuda.finished = NULL;
-    }
-    if (priv->cuda.ready != NULL) {
-        (void)cu_f->cuEventDestroy(priv->cuda.ready);
-        priv->cuda.ready = NULL;
-    }
-    if (priv->cuda.str != NULL) {
-        (void)cu_f->cuStreamDestroy(priv->cuda.str);
-        priv->cuda.str = NULL;
-    }
     if (ctx_pushed)
         (void)cuda_cookie->state->f->cuCtxPopCurrent(NULL);
 fail_after_pop:

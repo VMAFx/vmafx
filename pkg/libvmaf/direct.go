@@ -44,6 +44,7 @@ static void score_direct_set_locale_c(void) {
 import "C"
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -159,7 +160,22 @@ func LogDirectPathSelected() {
 // Goroutine safety: each call constructs a fresh VmafContext + VmafModel and
 // destroys them on return.  Concurrent ScoreDirect calls are safe — libvmaf
 // is thread-safe at the per-context level since 2.0.0.
-func ScoreDirect(req ScoreDirectRequest) (*ScoreDirectResult, error) {
+//
+// The supplied ctx governs cancellation of the per-frame read+queue loop.
+// libvmaf itself has no cancellation API, so cancellation is checked at frame
+// boundaries: when ctx.Done() fires we unref any half-allocated pictures,
+// abandon the loop, and let the deferred vmaf_close / vmaf_model_destroy
+// release the context cleanly.  Cancelled calls return ctx.Err() wrapped
+// in fmt.Errorf so callers can use errors.Is(err, context.Canceled).
+// Passing nil ctx is treated as context.Background().
+// Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
+func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (*ScoreDirectResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("ScoreDirect: context cancelled before start: %w", err)
+	}
 	// Phase 1 validates inputs explicitly to fail fast with typed errors
 	// rather than relying on libvmaf's -EINVAL.
 	if req.Ref == "" || req.Dis == "" {
@@ -184,7 +200,7 @@ func ScoreDirect(req ScoreDirectRequest) (*ScoreDirectResult, error) {
 
 	// vmaf_init — single CPU thread for Phase 1 deterministic behaviour;
 	// n_threads=0 means "auto" per libvmaf convention.
-	var ctx *C.VmafContext
+	var vmafCtx *C.VmafContext
 	cfg := C.VmafConfiguration{
 		log_level:   C.VMAF_LOG_LEVEL_WARNING,
 		n_threads:   0,
@@ -192,11 +208,11 @@ func ScoreDirect(req ScoreDirectRequest) (*ScoreDirectResult, error) {
 		cpumask:     0,
 		gpumask:     0,
 	}
-	rc := C.vmaf_init(&ctx, cfg)
+	rc := C.vmaf_init(&vmafCtx, cfg)
 	if err := mapErrno("vmaf_init", int(rc)); err != nil {
 		return nil, err
 	}
-	defer C.vmaf_close(ctx)
+	defer C.vmaf_close(vmafCtx)
 
 	// vmaf_model_load_from_path — name field is informational only; pass
 	// the basename for diagnostic logging.
@@ -217,7 +233,7 @@ func ScoreDirect(req ScoreDirectRequest) (*ScoreDirectResult, error) {
 
 	// vmaf_use_features_from_model — registers the feature extractors the
 	// model's predictor needs.
-	rc = C.vmaf_use_features_from_model(ctx, model)
+	rc = C.vmaf_use_features_from_model(vmafCtx, model)
 	if err := mapErrno("vmaf_use_features_from_model", int(rc)); err != nil {
 		return nil, err
 	}
@@ -242,6 +258,14 @@ func ScoreDirect(req ScoreDirectRequest) (*ScoreDirectResult, error) {
 	frameSize := frameBytes(req.Width, req.Height, req.PixFmt, req.BitDepth)
 	frameIdx := 0
 	for {
+		// Check cancellation at frame boundaries — libvmaf has no
+		// cancellation API, so this is the only place we can bail out.
+		// Returning here lets the deferred vmaf_close + vmaf_model_destroy
+		// release whatever state libvmaf accumulated; the un-flushed
+		// frames simply never reach vmaf_score_pooled.
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("ScoreDirect: cancelled at frame %d: %w", frameIdx, err)
+		}
 		// Allocate ref + dis pictures.  vmaf_picture_alloc allocates the
 		// data planes via posix_memalign; ownership transfers to libvmaf on
 		// the vmaf_read_pictures call below.  On any error before that
@@ -286,7 +310,7 @@ func ScoreDirect(req ScoreDirectRequest) (*ScoreDirectResult, error) {
 
 		// Transfer ownership.  libvmaf calls vmaf_picture_unref internally
 		// after the read; we MUST NOT call it again from Go.
-		rc := C.vmaf_read_pictures(ctx, &refPic, &disPic, C.uint(frameIdx))
+		rc := C.vmaf_read_pictures(vmafCtx, &refPic, &disPic, C.uint(frameIdx))
 		if err := mapErrno("vmaf_read_pictures", int(rc)); err != nil {
 			return nil, err
 		}
@@ -300,7 +324,7 @@ func ScoreDirect(req ScoreDirectRequest) (*ScoreDirectResult, error) {
 
 	// Flush: vmaf_read_pictures(NULL, NULL, 0) signals end-of-stream so the
 	// feature extractors finalise their internal buffers.
-	rc = C.vmaf_read_pictures(ctx, nil, nil, 0)
+	rc = C.vmaf_read_pictures(vmafCtx, nil, nil, 0)
 	if err := mapErrno("vmaf_read_pictures(flush)", int(rc)); err != nil {
 		return nil, err
 	}
@@ -308,7 +332,7 @@ func ScoreDirect(req ScoreDirectRequest) (*ScoreDirectResult, error) {
 	// Pool: mean VMAF over [0, frameIdx-1].
 	var score C.double
 	rc = C.vmaf_score_pooled(
-		ctx, model,
+		vmafCtx, model,
 		C.VMAF_POOL_METHOD_MEAN,
 		&score,
 		0, C.uint(frameIdx-1),

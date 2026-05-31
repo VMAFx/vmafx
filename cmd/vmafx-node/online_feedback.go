@@ -84,6 +84,16 @@ type FeedbackClient struct {
 	queue      chan *FeedbackMessage
 	log        *slog.Logger
 
+	// cancel stops the background drainer goroutine when Close is called.
+	// It wraps the caller-supplied ctx so callers retain ownership of the
+	// outer lifetime while Close still provides an idempotent in-process
+	// shutdown handle.
+	cancel context.CancelFunc
+
+	// done is closed when the drainer goroutine has returned.  Close blocks
+	// on this so callers see a synchronous shutdown.
+	done chan struct{}
+
 	// Metrics — updated atomically so they can be read without locking.
 	dropped   atomic.Int64
 	delivered atomic.Int64
@@ -99,13 +109,34 @@ func NewFeedbackClient(ctx context.Context, log *slog.Logger) *FeedbackClient {
 	if path == "" {
 		path = feedbackSocketDefault
 	}
+	// Guard against a nil logger so callers (and tests) cannot accidentally
+	// trigger a panic deep inside the drainer.
+	if log == nil {
+		log = slog.Default()
+	}
+	drainCtx, cancel := context.WithCancel(ctx)
 	fc := &FeedbackClient{
 		socketPath: path,
 		queue:      make(chan *FeedbackMessage, feedbackQueueCap),
 		log:        log,
+		cancel:     cancel,
+		done:       make(chan struct{}),
 	}
-	go fc.drainLoop(ctx)
+	go func() {
+		defer close(fc.done)
+		fc.drainLoop(drainCtx)
+	}()
 	return fc
+}
+
+// Close stops the background drainer goroutine and waits for it to return.
+// It is safe to call multiple times; subsequent calls are no-ops.
+// Close does not flush in-flight queued messages — any messages still in
+// fc.queue at shutdown are discarded (consistent with the fire-and-forget
+// telemetry contract documented in the package header).
+func (fc *FeedbackClient) Close() {
+	fc.cancel()
+	<-fc.done
 }
 
 // Send enqueues a feedback message for async delivery.

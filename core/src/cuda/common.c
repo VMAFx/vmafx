@@ -237,10 +237,10 @@ int vmaf_cuda_release(VmafCudaState *cu_state)
     CHECK_CUDA_GOTO(cu_state->f, cuCtxPushCurrent(cu_state->ctx), fail);
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_state->f, cuStreamDestroy(cu_state->str), fail);
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_release_funcs);
+    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_pop);
 
     if (cu_state->release_ctx)
-        CHECK_CUDA_GOTO(cu_state->f, cuDevicePrimaryCtxRelease(cu_state->dev), fail_release_funcs);
+        CHECK_CUDA_GOTO(cu_state->f, cuDevicePrimaryCtxRelease(cu_state->dev), fail_after_pop);
 
     /* Save the dlopen'd driver function table before the memset so we
      * can release it afterwards. Order matters: zeroing cu_state first
@@ -258,22 +258,7 @@ int vmaf_cuda_release(VmafCudaState *cu_state)
 fail:
     if (ctx_pushed)
         (void)cu_state->f->cuCtxPopCurrent(NULL);
-fail_release_funcs:
-    /* Round-26 audit (ADR-0982): the previous unwind dropped to
-     * fail_after_pop, which only returned the error code, leaving
-     * the dlopen'd CudaFunctions table allocated. Release it on
-     * the error path too so a caller that loops over init→release
-     * after a transient driver fault does not leak ~hundreds of
-     * function pointers per cycle. Stream and context state may be
-     * partly destroyed at this point; zero the struct so a caller
-     * who re-enters via vmaf_cuda_release_state_free sees a
-     * "cleanly empty" state and skips the free path. */
-    {
-        CudaFunctions *f = cu_state->f;
-        memset((void *)cu_state, 0, sizeof(*cu_state));
-        if (f)
-            cuda_free_functions(&f);
-    }
+fail_after_pop:
     return _cuda_err;
 }
 

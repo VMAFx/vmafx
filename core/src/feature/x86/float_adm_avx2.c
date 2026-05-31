@@ -38,8 +38,21 @@ void float_adm_dwt2_avx2(const float *src, const adm_dwt_band_t_s *dst, int **in
     int src_px_stride = src_stride / sizeof(float);
     int dst_px_stride = dst_stride / sizeof(float);
 
+    /* aligned_malloc may return NULL on OOM; the scalar reference
+     * (adm_tools.c::adm_dwt2_s) treats this as -ENOMEM and aborts the
+     * frame.  This function signature is `void` (matched against the
+     * AVX-512 / NEON siblings — wiring tracked in adm.c ADR-0873
+     * follow-up), so we mirror the AVX-512 sibling's behaviour:
+     * release whichever allocation succeeded and silently no-op the
+     * transform.  Without this guard the SIMD stores at the vertical
+     * pass NULL-deref and segfault. */
     float *tmplo = aligned_malloc(ALIGN_CEIL(sizeof(float) * w), MAX_ALIGN);
     float *tmphi = aligned_malloc(ALIGN_CEIL(sizeof(float) * w), MAX_ALIGN);
+    if (!tmplo || !tmphi) {
+        aligned_free(tmplo);
+        aligned_free(tmphi);
+        return;
+    }
 
     /* Broadcast filter coefficients for vertical pass. */
     __m256 vlo0 = _mm256_set1_ps(filter_lo[0]);

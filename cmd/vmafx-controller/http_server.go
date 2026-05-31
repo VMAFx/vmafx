@@ -132,7 +132,11 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	score, features, err := h.scorer.Score(req.Reference, req.Distorted, req.Model)
+	// Pass the request-scoped context so a client disconnect (or the
+	// server's read/write timeout) propagates SIGKILL to the vmaf
+	// subprocess via exec.CommandContext.  Fixes
+	// T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
+	score, features, err := h.scorer.Score(r.Context(), req.Reference, req.Distorted, req.Model)
 	elapsed := time.Since(start).Seconds()
 	h.metrics.ScoreDuration.Observe(elapsed)
 
