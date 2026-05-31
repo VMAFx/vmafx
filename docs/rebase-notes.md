@@ -41830,3 +41830,12 @@ that must be re-applied:
 Regression coverage at `core/test/test_svm_parser.c` (suite `fast`). On
 sync, re-run that test plus `test_predict` and `test_model` before merging.
 See `core/src/AGENTS.md` §10 for the full invariant list.
+## CI concurrency + cost audit (ADR-0890, 2026-05-30)
+
+no rebase impact: REASON — CI-only changes to `.github/workflows/` files
+that are wholly fork-local. Netflix upstream's CI is one `.github/workflows/`
+file with a different name and structure; the five files modified here
+(`ffmpeg-integration.yml`, `sanitizers.yml`, `security-scans.yml`,
+`lint-and-format.yml`, plus the ADR / changelog / state.md surface) have no
+upstream counterpart. No source / header / patch surface touched; the
+`ffmpeg-patches/` series is unaffected.

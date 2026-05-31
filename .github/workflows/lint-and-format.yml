@@ -66,7 +66,43 @@ jobs:
           # tolerate multi-commit FF pushes without a second fetch step.
           fetch-depth: 0
           persist-credentials: false
+      # Early file-delta probe — if the PR / push touches no C/C++ files,
+      # short-circuit before the apt-install + meson-setup + meson-compile
+      # steps (~5 min on a cold runner). Saves doc-only / Python-only PRs
+      # from paying the heavy lint setup. The body of `Run clang-tidy on
+      # changed files` does its own (more thorough, exclusion-aware) delta
+      # later; this step only asks "is there anything plausible?".
+      - name: Detect C/C++ changes (early skip)
+        id: cpp-changes
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$GH_EVENT_NAME" = "pull_request" ]; then
+            files=$(git diff --name-only --diff-filter=d \
+              "origin/${PR_BASE_REF}...HEAD" -- '*.c' '*.h' '*.cpp' '*.hpp' || true)
+          elif [ "$GH_EVENT_NAME" = "push" ]; then
+            before="$PUSH_BEFORE_SHA"
+            zero="0000000000000000000000000000000000000000"
+            if [ -z "$before" ] || [ "$before" = "$zero" ]; then
+              files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD \
+                -- '*.c' '*.h' '*.cpp' '*.hpp' 2>/dev/null || true)
+            else
+              files=$(git diff --name-only --diff-filter=d "$before"..HEAD \
+                -- '*.c' '*.h' '*.cpp' '*.hpp' || true)
+            fi
+          else
+            files="full-tree-scan"  # workflow_dispatch — never skip
+          fi
+          if [ -z "$files" ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No C/C++ deltas — skipping clang-tidy install + build"
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install deps
+        if: steps.cpp-changes.outputs.any == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y meson ninja-build nasm clang-tidy-18 \
@@ -74,12 +110,14 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy \
             /usr/bin/clang-tidy-18 100
       - name: Generate compile_commands.json
+        if: steps.cpp-changes.outputs.any == 'true'
         run: |
           meson setup build core -Denable_cuda=false -Denable_sycl=false
           # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
           # exist on disk before clang-tidy parses the translation units.
           meson compile -C build
       - name: Run clang-tidy on changed files
+        if: steps.cpp-changes.outputs.any == 'true'
         # Hardening per Semgrep `yaml.github-actions.security.run-shell-injection`
         # (Research-0090, F2): pull every `${{ github.* }}` interpolation into
         # `env:` and reference the env var with double-quotes in shell. The

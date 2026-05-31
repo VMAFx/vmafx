@@ -9,6 +9,19 @@ on:
     # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
     # CI when a draft PR is promoted to ready-for-review.
     types: [opened, synchronize, reopened, ready_for_review]
+    # Skip the full Security scan (CodeQL C++ build is ~35 min) when only
+    # documentation paths change. Mirrors the paths-ignore in
+    # libvmaf-build-matrix.yml / tests-and-quality-gates.yml. The weekly
+    # schedule below still fires a full scan against master so doc-only
+    # PRs that skip the gate are not a coverage gap. Required Checks
+    # Aggregator (ADR-0313) treats "workflow not reported" as
+    # path-filter-skipped/acceptable. Conservative deny-list.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'changelog.d/**'
+      - 'CHANGELOG.md'
+      - '.workingdir2/**'
   schedule:
     - cron: "0 6 * * 1"   # weekly Mon 06:00 UTC
   workflow_dispatch:

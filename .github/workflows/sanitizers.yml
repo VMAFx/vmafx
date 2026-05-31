@@ -65,12 +65,28 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y meson ninja-build nasm clang-18 lld-18 \
-            libclang-rt-18-dev
+            libclang-rt-18-dev ccache
+      # ccache the clang-18 debug instrumentation build. Sanitizer builds
+      # are cold-rebuild ~5-7 min today; ccache + warm bucket per PR push
+      # cycle drops re-runs to <2 min for unchanged TUs. Mirrors the
+      # build.yml / libvmaf-build-matrix.yml pattern.
+      - name: Restore ccache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: ~/.ccache
+          key: ccache-v2-sanitizer-asan-ubsan-${{ github.sha }}
+          restore-keys: |
+            ccache-v2-sanitizer-asan-ubsan-
+      - name: Configure ccache
+        run: |
+          mkdir -p ~/.ccache
+          ccache --max-size=400M
+          ccache -z
       - name: Build (ASan + UBSan)
         working-directory: core
         env:
-          CC: clang-18
-          CXX: clang++-18
+          CC: ccache clang-18
+          CXX: ccache clang++-18
           LDFLAGS: -fuse-ld=lld-18
         run: |
           meson setup build \
@@ -81,6 +97,9 @@ jobs:
             --buildtype=debug \
             -Db_lto=false -Db_lundef=false
           meson compile -C build
+      - name: Report ccache statistics
+        if: always()
+        run: ccache -s
       - name: Run tests (ASan + UBSan)
         working-directory: core
         env:
@@ -119,12 +138,24 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y meson ninja-build nasm clang-18 lld-18 \
-            libclang-rt-18-dev
+            libclang-rt-18-dev ccache
+      - name: Restore ccache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: ~/.ccache
+          key: ccache-v2-sanitizer-tsan-${{ github.sha }}
+          restore-keys: |
+            ccache-v2-sanitizer-tsan-
+      - name: Configure ccache
+        run: |
+          mkdir -p ~/.ccache
+          ccache --max-size=400M
+          ccache -z
       - name: Build (TSan)
         working-directory: core
         env:
-          CC: clang-18
-          CXX: clang++-18
+          CC: ccache clang-18
+          CXX: ccache clang++-18
           LDFLAGS: -fuse-ld=lld-18
         run: |
           meson setup build \
@@ -133,6 +164,9 @@ jobs:
             --buildtype=debug \
             -Db_lto=false -Db_lundef=false
           meson compile -C build
+      - name: Report ccache statistics
+        if: always()
+        run: ccache -s
       - name: Run tests (TSan)
         working-directory: core
         run: |

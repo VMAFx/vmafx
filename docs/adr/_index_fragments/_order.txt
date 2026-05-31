@@ -681,3 +681,4 @@
 0901-governance-audit
 0893-pre-commit-audit-2026-05-30
 0889-libsvm-vendored-audit
+0890-ci-concurrency-cost-audit

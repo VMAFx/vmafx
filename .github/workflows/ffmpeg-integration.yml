@@ -31,6 +31,15 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs on the same ref. Mirrors the established
+# in-tree convention from build.yml / libvmaf-build-matrix.yml /
+# tests-and-quality-gates.yml. Originally deferred from PR #301
+# (per the "Out-of-scope" note there); landed here as part of the
+# CI concurrency + cost audit.
+concurrency:
+  group: ffmpeg-integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   DEBIAN_FRONTEND: noninteractive
   LD_LIBRARY_PATH: /usr/local/lib/x86_64-linux-gnu
@@ -68,27 +77,54 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo -E apt-get -yq install ninja-build gcc nasm
+          sudo -E apt-get -yq install ninja-build gcc nasm ccache
       - name: Install dependencies (mac)
         if: matrix.os == 'macos-latest'
-        run: brew install -q ninja nasm
+        run: brew install -q ninja nasm ccache
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
 
+      # Restore ccache between runs. libvmaf + FFmpeg combined are ~10 min
+      # of compile time per leg on a cold runner; ccache typically hits
+      # 60-85% after warm-up (Research-0089 §3.1, mirroring the
+      # libvmaf-build-matrix.yml pattern). Cache key includes the OS and
+      # compiler combo so a gcc / clang switch starts a fresh bucket.
+      - name: Restore ccache (Linux + macOS)
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: ~/.ccache
+          key: ccache-v2-ffmpeg-${{ matrix.os }}-${{ matrix.CC }}-${{ github.sha }}
+          restore-keys: |
+            ccache-v2-ffmpeg-${{ matrix.os }}-${{ matrix.CC }}-
+            ccache-v2-ffmpeg-${{ matrix.os }}-
+
+      - name: Configure ccache
+        run: |
+          mkdir -p ~/.ccache
+          ccache --max-size=400M
+          ccache -z
+
       - name: Build vmaf
+        env:
+          CC: ccache ${{ matrix.CC }}
+          CXX: ccache ${{ matrix.CXX }}
         run: |
           meson setup core core/build --buildtype release
-          sudo ninja -vC core/build install
+          sudo -E PATH="$PATH" ninja -vC core/build install
 
       - name: Build FFmpeg
         run: |
-          git clone -q --branch release/8.1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
+          git clone -q --depth=1 --branch release/8.1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
           cd ffmpeg
           ./configure --enable-version3 --enable-libvmaf --disable-indevs \
-            --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
-          sudo make --quiet -j $(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu) install
+            --cc="ccache $CC" --cxx="ccache $CXX" || { less ffbuild/config.log; exit 1; }
+          sudo -E PATH="$PATH" make --quiet -j $(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu) install
+
+      - name: Report ccache statistics
+        if: always()
+        run: ccache -s
 
   # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
   ffmpeg-sycl:
@@ -153,7 +189,7 @@ jobs:
 
       - name: Build FFmpeg with SYCL patch series
         run: |
-          git clone -q --branch release/8.1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
+          git clone -q --depth=1 --branch release/8.1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
           cd ffmpeg
           # Apply the patch series in series.txt order using `git am --3way`
           # so context shifts caused by skipped patches in series.txt
