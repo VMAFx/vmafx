@@ -18,10 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     # Scoped to the one job that creates release PRs / tags; the workflow
     # default stays `contents: read` so any step added later starts from
-    # least-privilege (Scorecard TokenPermissionsID).
+    # least-privilege (Scorecard TokenPermissionsID). `issues: write` is
+    # required per the release-please-action README — without it, the
+    # action fails with "Resource not accessible by integration" because
+    # release-please touches the labels API on the release PR's issue
+    # thread (label add/remove on `autorelease: pending` -> `tagged`).
     permissions:
       contents: write
       pull-requests: write
+      issues: write
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
         id: release
