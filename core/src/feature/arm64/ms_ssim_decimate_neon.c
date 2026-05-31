@@ -17,6 +17,7 @@
  */
 
 #include <arm_neon.h>
+#include <errno.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -194,7 +195,7 @@ int ms_ssim_decimate_neon(const float *src, int w, int h, float *dst, int *rw, i
 
     float *tmp = (float *)malloc((size_t)w_out * (size_t)h * sizeof(float));
     if (tmp == NULL) {
-        return -1;
+        return -ENOMEM;
     }
 
     int x_simd_start = 0;

@@ -88,6 +88,15 @@ feature/
   across the same four TUs and must match the upstream
   `KBND_SYMMETRIC` branch in `iqa/convolve.c`. Changing the boundary
   semantics in any one of them breaks bit-identity.
+- **MS-SSIM decimate `-ENOMEM` contract** (ADR-0877, 2026-05-30): the
+  `malloc`-failure branch in all four MS-SSIM decimate TUs returns
+  `-ENOMEM` (negative POSIX errno), matching the libvmaf internal
+  convention documented in `ms_ssim_decimate.h`. On rebase, if the
+  upstream port re-introduces a `return -1` here, restore the
+  `-ENOMEM` form (and the `#include <errno.h>`) — caller
+  `ms_ssim.c:207-208` uses a truthy check so either compiles, but the
+  errno form is required by ADR-0877 for higher-level error reporters
+  (Go controller, MCP server, ffmpeg filter) that surface the cause.
 - **SSIM / MS-SSIM SIMD bit-exactness invariants** (fork-local,
   ADR-0138 + ADR-0139 + ADR-0140): the AVX2 / AVX-512 / NEON paths
   in `x86/ssim_avx2.c` / `x86/ssim_avx512.c` /

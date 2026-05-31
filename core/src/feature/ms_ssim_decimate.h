@@ -51,7 +51,7 @@
  *               sized at least (w/2 + w%2) * (h/2 + h%2) floats.
  * @param rw     Optional out: destination width.
  * @param rh     Optional out: destination height.
- * @return 0 on success, non-zero on allocation failure.
+ * @return 0 on success, -ENOMEM on allocation failure.
  */
 int ms_ssim_decimate_scalar(const float *src, int w, int h, float *dst, int *rw, int *rh);
 

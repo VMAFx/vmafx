@@ -16,6 +16,7 @@
  *
  */
 
+#include <errno.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -136,7 +137,7 @@ int ms_ssim_decimate_scalar(const float *src, int w, int h, float *dst, int *rw,
      */
     float *tmp = (float *)malloc((size_t)w_out * (size_t)h * sizeof(float));
     if (tmp == NULL) {
-        return -1;
+        return -ENOMEM;
     }
 
     h_pass_scalar(src, w, h, tmp, w_out);

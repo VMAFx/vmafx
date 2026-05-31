@@ -41967,3 +41967,13 @@ were intentionally not changed — see
 Class C for the rationale. Future upstream syncs that touch the same
 lines will conflict trivially; resolve in favour of the PRI-macro form
 for fixed-width types.
+## ADR-0877 — error-code consistency audit (MS-SSIM decimate) — 2026-05-30
+
+no rebase impact: the four touched TUs (`core/src/feature/ms_ssim_decimate.{c,h}`,
+`core/src/feature/x86/ms_ssim_decimate_{avx2,avx512}.c`,
+`core/src/feature/arm64/ms_ssim_decimate_neon.c`) are fork-added 2026-04-20;
+they have no upstream Netflix/vmaf counterpart. The change converts the
+`malloc`-failure branch from bare `return -1` to `return -ENOMEM` and tightens
+the header docstring to match — no logic change on the hot path. Bit-exactness
+across scalar / AVX2 / AVX-512 / NEON is preserved (only the cold malloc-failure
+branch is touched).

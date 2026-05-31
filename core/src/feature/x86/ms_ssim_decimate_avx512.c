@@ -16,6 +16,7 @@
  *
  */
 
+#include <errno.h>
 #include <immintrin.h>
 #include <math.h>
 #include <stddef.h>
@@ -195,7 +196,7 @@ int ms_ssim_decimate_avx512(const float *src, int w, int h, float *dst, int *rw,
 
     float *tmp = (float *)malloc((size_t)w_out * (size_t)h * sizeof(float));
     if (tmp == NULL) {
-        return -1;
+        return -ENOMEM;
     }
 
     /*
