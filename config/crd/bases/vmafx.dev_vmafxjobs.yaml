@@ -71,13 +71,16 @@ spec:
                   description: VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to node default when omitted.
                   type: string
                 backend:
-                  description: Compute backend. One of cpu | cuda | sycl | hip | metal.
+                  description: Compute backend. One of cpu | cuda | sycl | hip | metal. Defaults to cpu.
                   type: string
                   enum: [cpu, cuda, sycl, hip, metal]
+                  default: cpu
                 priority:
-                  description: Non-negative scheduling priority; higher values are dispatched first.
+                  description: Non-negative scheduling priority; higher values are dispatched first. Defaults to 0.
                   type: integer
+                  format: int32
                   minimum: 0
+                  default: 0
             status:
               description: VmafxJobStatus defines the observed state of a VmafxJob.
               type: object

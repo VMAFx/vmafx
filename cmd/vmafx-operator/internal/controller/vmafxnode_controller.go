@@ -23,6 +23,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -112,7 +113,14 @@ func (r *VmafxNodeReconciler) probeHealthz(ctx context.Context, namespace string
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close() //nolint:errcheck // body is empty on /healthz
+	defer func() {
+		// Drain the body before Close so the underlying TCP connection is
+		// returned to the keep-alive pool instead of being torn down. Without
+		// the drain, polling every 30s × N nodes leaks one connection per
+		// probe to the controller (Go HTTP semantics, net/http docs).
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 
 	return resp.StatusCode == http.StatusOK
 }

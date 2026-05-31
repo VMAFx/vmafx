@@ -69,7 +69,7 @@ var _ = Describe("VmafxModelTraining controller — branch coverage", func() {
 		var fetched vmafxv1.VmafxModelTraining
 		Expect(k8sClient.Get(ctx, nn, &fetched)).To(Succeed())
 		fetched.Status.Phase = vmafxv1.VmafxModelTrainingPhaseRunning
-		fetched.Status.CurrentSamples = 42
+		fetched.Status.CurrentSamples = int32(42)
 		fetched.Status.ModelVersion = "sha256:deadbeef"
 		Expect(k8sClient.Status().Update(ctx, &fetched)).To(Succeed())
 
@@ -86,7 +86,7 @@ var _ = Describe("VmafxModelTraining controller — branch coverage", func() {
 		var after vmafxv1.VmafxModelTraining
 		Expect(k8sClient.Get(ctx, nn, &after)).To(Succeed())
 		Expect(after.Status.Phase).To(Equal(vmafxv1.VmafxModelTrainingPhaseRunning))
-		Expect(after.Status.CurrentSamples).To(Equal(42))
+		Expect(after.Status.CurrentSamples).To(Equal(int32(42)))
 		Expect(after.Status.ModelVersion).To(Equal("sha256:deadbeef"))
 	})
 })

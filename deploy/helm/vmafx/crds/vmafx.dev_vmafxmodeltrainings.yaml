@@ -84,10 +84,13 @@ spec:
                     interval:
                       description: Minimum wall-clock duration between checkpoints (e.g. "10m"). Default 10m.
                       type: string
+                      default: 10m
                     minSamples:
                       description: Minimum new samples required before writing a checkpoint. Default 1000.
                       type: integer
+                      format: int32
                       minimum: 1
+                      default: 1000
                 outputRegistry:
                   description: OCI registry URI where trained model artefacts are pushed.
                   type: string
@@ -99,6 +102,7 @@ spec:
                 currentSamples:
                   description: Total training samples ingested so far.
                   type: integer
+                  format: int32
                 lastCheckpoint:
                   description: When the most recent model checkpoint was written.
                   type: string

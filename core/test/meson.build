@@ -142,7 +142,7 @@ test_svm_api = executable('test_svm_api',
 # that pre-empt oob Malloc sizes and read-before-write defects in the
 # upstream-3.24 baseline.
 test_svm_parser = executable('test_svm_parser',
-    ['test.c', 'test_svm_parser.c'],
+    ['test.c', 'test_svm_parser.c', '../src/thread_locale.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib],

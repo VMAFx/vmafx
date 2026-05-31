@@ -43,14 +43,16 @@ type VmafxModelTrainingDataSource struct {
 type VmafxModelTrainingCheckpoint struct {
 	// Interval is the minimum wall-clock duration between checkpoints (e.g. "10m").
 	// Defaults to "10m" when omitted.
+	// +kubebuilder:default:="10m"
 	// +optional
 	Interval string `json:"interval,omitempty"`
 
 	// MinSamples is the minimum number of new training samples required before
 	// a checkpoint is written.  Defaults to 1000 when omitted.
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default:=1000
 	// +optional
-	MinSamples int `json:"minSamples,omitempty"`
+	MinSamples int32 `json:"minSamples,omitempty"`
 }
 
 // VmafxModelTrainingSpec defines the desired state of a VmafxModelTraining run.
@@ -79,7 +81,7 @@ type VmafxModelTrainingSpec struct {
 // VmafxModelTrainingStatus defines the observed state of a VmafxModelTraining run.
 type VmafxModelTrainingStatus struct {
 	// CurrentSamples is the total number of training samples ingested so far.
-	CurrentSamples int `json:"currentSamples"`
+	CurrentSamples int32 `json:"currentSamples"`
 
 	// LastCheckpoint records when the most recent model checkpoint was written.
 	// +optional

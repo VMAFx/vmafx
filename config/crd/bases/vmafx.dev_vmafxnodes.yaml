@@ -68,7 +68,9 @@ spec:
                 capacity:
                   description: Maximum concurrent VmafxJobs. Defaults to 1.
                   type: integer
+                  format: int32
                   minimum: 1
+                  default: 1
                 image:
                   description: Container image used when the operator creates worker Pods for this node.
                   type: string
@@ -86,6 +88,7 @@ spec:
                 assignedJobs:
                   description: Number of VmafxJobs currently in Running phase on this node.
                   type: integer
+                  format: int32
                 detectedDevice:
                   description: Device identifier reported by the node's /healthz probe.
                   type: string

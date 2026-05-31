@@ -50,13 +50,16 @@ type VmafxJobSpec struct {
 	// Backend selects the compute backend: cpu, cuda, sycl, hip, or metal.
 	// Defaults to cpu when omitted.
 	// +kubebuilder:validation:Enum=cpu;cuda;sycl;hip;metal
+	// +kubebuilder:default:=cpu
 	// +optional
 	Backend string `json:"backend,omitempty"`
 
 	// Priority is a non-negative scheduling priority; higher values are dispatched first.
+	// Defaults to 0 when omitted.
 	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:default:=0
 	// +optional
-	Priority int `json:"priority,omitempty"`
+	Priority int32 `json:"priority,omitempty"`
 }
 
 // VmafxJobStatus defines the observed state of a VmafxJob.

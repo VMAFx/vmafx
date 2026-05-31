@@ -7,6 +7,35 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## test_svm_parser link + vmafx-operator audit (2026-05-31, fix/test-svm-parser-link-plus-operator-audit)
+
+**Files touched:**
+`core/test/meson.build` (added `../src/thread_locale.c` to the
+`test_svm_parser` source list),
+`api/vmafx/v1/vmafxjob_types.go`,
+`api/vmafx/v1/vmafxnode_types.go`,
+`api/vmafx/v1/vmafxmodeltraining_types.go`,
+`config/crd/bases/vmafx.dev_vmafxjobs.yaml`,
+`config/crd/bases/vmafx.dev_vmafxnodes.yaml`,
+`config/crd/bases/vmafx.dev_vmafxmodeltrainings.yaml`,
+`deploy/helm/vmafx/crds/*.yaml` (synced copies),
+`cmd/vmafx-operator/internal/controller/vmafxnode_controller.go`,
+`cmd/vmafx-operator/internal/controller/vmafxnode_probehealthz_test.go`
+(new), `cmd/vmafx-operator/internal/controller/vmafxmodeltraining_controller_branch_test.go`
+(int32 casts).
+
+**Rebase impact:** All changes are fork-local — the operator,
+`vmafx.dev/v1` CRDs, and Helm chart are 100% additions on this fork
+(no upstream counterparts).  The single upstream-mirrored file is
+`core/test/meson.build`; the change there is one-line additive
+(append `'../src/thread_locale.c'`), no conflict surface.  No public
+C ABI is touched; the libsvm vendor remains observation-only per
+ADR-0889.
+
+No load-bearing invariants; no `AGENTS.md` rebase-pin required.
+
+---
+
 ## core/src lifecycle + memory audit (2026-05-31, fix/core-lifecycle-memory-audit)
 
 **Files touched:**

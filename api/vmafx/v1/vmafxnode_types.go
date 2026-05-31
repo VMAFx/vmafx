@@ -26,8 +26,9 @@ type VmafxNodeSpec struct {
 	// Capacity is the maximum number of concurrent VmafxJobs this node can execute.
 	// Defaults to 1 when omitted.
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default:=1
 	// +optional
-	Capacity int `json:"capacity,omitempty"`
+	Capacity int32 `json:"capacity,omitempty"`
 
 	// Image is the container image used when the operator creates worker Pods for this node.
 	// Defaults to the operator's global workerImage when omitted.
@@ -45,7 +46,7 @@ type VmafxNodeStatus struct {
 	LastHeartbeat *metav1.Time `json:"lastHeartbeat,omitempty"`
 
 	// AssignedJobs is the number of VmafxJobs currently in Running phase on this node.
-	AssignedJobs int `json:"assignedJobs"`
+	AssignedJobs int32 `json:"assignedJobs"`
 
 	// DetectedDevice is the device identifier reported by the node's /healthz probe
 	// (e.g., "NVIDIA RTX 4090", "Intel Arc A770").
