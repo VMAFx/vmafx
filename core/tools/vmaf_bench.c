@@ -38,6 +38,7 @@
  */
 
 #include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -409,51 +410,55 @@ static int bench_feature(const BenchTarget *target, unsigned w, unsigned h, unsi
     if (err)
         return err;
 
+    /* Hoist GPU state pointers to function scope so every early-return
+     * path can release them.  Previously these lived inside the
+     * #ifdef branches and leaked on every successful bench run and on
+     * every yuv_pair_open / vmaf_use_feature / vmaf_read_pictures
+     * failure path.  Mirrors the T5 state-leak audit fix already
+     * applied to run_feature_collect. The bench_cleanup label runs the
+     * full unwind in reverse-init order for every exit path. */
+#ifdef HAVE_CUDA
+    VmafCudaState *cu_state = NULL;
+#endif
+#ifdef HAVE_SYCL
+    VmafSyclState *sycl_state = NULL;
+#endif
+    YuvPair yp = {0};
+    bool yp_open = false;
+
 #ifdef HAVE_CUDA
     if (target->backend == BACKEND_CUDA) {
-        VmafCudaState *cu_state = NULL;
         VmafCudaConfiguration cu_cfg = {0};
         err = vmaf_cuda_state_init(&cu_state, cu_cfg);
-        if (err) {
-            vmaf_close(vmaf);
-            return err;
-        }
+        if (err)
+            goto bench_cleanup;
         err = vmaf_cuda_import_state(vmaf, cu_state);
-        if (err) {
-            vmaf_close(vmaf);
-            return err;
-        }
+        if (err)
+            goto bench_cleanup;
     }
 #endif
 #ifdef HAVE_SYCL
     if (target->backend == BACKEND_SYCL) {
-        VmafSyclState *sycl_state = NULL;
         VmafSyclConfiguration sycl_cfg = {.device_index = g_gpu_device_idx};
         err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-        if (err) {
-            vmaf_close(vmaf);
-            return err;
-        }
+        if (err)
+            goto bench_cleanup;
         err = vmaf_sycl_import_state(vmaf, sycl_state);
-        if (err) {
-            vmaf_close(vmaf);
-            return err;
-        }
+        if (err)
+            goto bench_cleanup;
     }
 #endif
 
     t0 = now_ms();
     err = vmaf_use_feature(vmaf, target->feature, NULL);
-    if (err) {
-        vmaf_close(vmaf);
-        return err;
-    }
+    if (err)
+        goto bench_cleanup;
 
-    YuvPair yp = {0};
     if (yuv_pair_open(&yp, w, h)) {
-        vmaf_close(vmaf);
-        return -1;
+        err = -1;
+        goto bench_cleanup;
     }
+    yp_open = true;
 
     /* Warm up: first frame also triggers init */
     VmafPicture ref;
@@ -463,16 +468,12 @@ static int bench_feature(const BenchTarget *target, unsigned w, unsigned h, unsi
     if (yuv_pair_read_frame(&yp, 0, &ref, &dist)) {
         vmaf_picture_unref(&ref);
         vmaf_picture_unref(&dist);
-        yuv_pair_close(&yp);
-        vmaf_close(vmaf);
-        return -1;
+        err = -1;
+        goto bench_cleanup;
     }
     err = vmaf_read_pictures(vmaf, &ref, &dist, 0);
-    if (err) {
-        yuv_pair_close(&yp);
-        vmaf_close(vmaf);
-        return err;
-    }
+    if (err)
+        goto bench_cleanup;
     t1 = now_ms();
     *out_init_ms = t1 - t0;
 
@@ -493,14 +494,25 @@ static int bench_feature(const BenchTarget *target, unsigned w, unsigned h, unsi
             break;
     }
     t1 = now_ms();
-    yuv_pair_close(&yp);
 
     *out_total_ms = t1 - t0;
     *out_avg_ms = *out_total_ms / (n_frames - 1);
 
     /* Flush */
     vmaf_read_pictures(vmaf, NULL, NULL, 0);
+
+bench_cleanup:
+    if (yp_open)
+        yuv_pair_close(&yp);
     vmaf_close(vmaf);
+#ifdef HAVE_CUDA
+    if (cu_state)
+        (void)vmaf_cuda_state_free(cu_state);
+#endif
+#ifdef HAVE_SYCL
+    if (sycl_state)
+        vmaf_sycl_state_free(&sycl_state);
+#endif
     return err;
 }
 

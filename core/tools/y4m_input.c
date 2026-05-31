@@ -800,11 +800,20 @@ static int y4m_input_open_impl(y4m_input *_y4m, FILE *_fin)
     }
     xstride = (_y4m->depth > 8) ? 2 : 1;
     /*The size of the final frame buffers is always computed from the
-     destination chroma decimation type.*/
-    _y4m->dst_buf_sz = _y4m->pic_w * _y4m->pic_h +
-                       2 * ((_y4m->pic_w + _y4m->dst_c_dec_h - 1) / _y4m->dst_c_dec_h) *
-                           ((_y4m->pic_h + _y4m->dst_c_dec_v - 1) / _y4m->dst_c_dec_v);
-    _y4m->dst_buf_sz *= xstride;
+     destination chroma decimation type.
+
+     Cast each pic_w/pic_h to size_t before the multiply so the arithmetic
+     proceeds in 64-bit on every supported platform.  Without the cast the
+     intermediate products run in `int` (pic_w/pic_h are int), which
+     overflows for the corner-case header that declares pic_w/pic_h near
+     INT_MAX and silently wraps `dst_buf_sz` to a small (or zero) value.
+     The subsequent malloc then succeeds with a too-small buffer and the
+     first fetch_frame writes past the heap allocation. */
+    _y4m->dst_buf_sz = (size_t)_y4m->pic_w * (size_t)_y4m->pic_h +
+                       (size_t)2 *
+                           (size_t)((_y4m->pic_w + _y4m->dst_c_dec_h - 1) / _y4m->dst_c_dec_h) *
+                           (size_t)((_y4m->pic_h + _y4m->dst_c_dec_v - 1) / _y4m->dst_c_dec_v);
+    _y4m->dst_buf_sz *= (size_t)xstride;
     /*Scale the picture size up to a multiple of 16.*/
     _y4m->frame_w = (_y4m->pic_w + 15) & ~0xF;
     _y4m->frame_h = (_y4m->pic_h + 15) & ~0xF;
@@ -812,8 +821,29 @@ static int y4m_input_open_impl(y4m_input *_y4m, FILE *_fin)
      expect.*/
     _y4m->pic_x = (_y4m->frame_w - _y4m->pic_w) >> 1 & ~1;
     _y4m->pic_y = (_y4m->frame_h - _y4m->pic_h) >> 1 & ~1;
+    /* Check malloc returns: a NULL dst_buf leaves the y4m struct in a state
+     * that looks valid to the caller (y4m_input_open returns success) but
+     * the very next fetch_frame reads into NULL via fread, faulting inside
+     * libc.  Same risk for aux_buf when aux_buf_sz > 0.  Fail the open
+     * cleanly instead so the CLI surfaces an OOM error and exits. */
     _y4m->dst_buf = (unsigned char *)malloc(_y4m->dst_buf_sz);
-    _y4m->aux_buf = _y4m->aux_buf_sz ? (unsigned char *)malloc(_y4m->aux_buf_sz) : NULL;
+    if (_y4m->dst_buf == NULL) {
+        (void)fprintf(stderr, "Could not allocate y4m destination buffer (%zu bytes).\n",
+                      _y4m->dst_buf_sz);
+        return -1;
+    }
+    if (_y4m->aux_buf_sz > 0) {
+        _y4m->aux_buf = (unsigned char *)malloc(_y4m->aux_buf_sz);
+        if (_y4m->aux_buf == NULL) {
+            (void)fprintf(stderr, "Could not allocate y4m auxiliary buffer (%zu bytes).\n",
+                          _y4m->aux_buf_sz);
+            free(_y4m->dst_buf);
+            _y4m->dst_buf = NULL;
+            return -1;
+        }
+    } else {
+        _y4m->aux_buf = NULL;
+    }
     return 0;
 }
 
@@ -824,8 +854,20 @@ static y4m_input *y4m_input_open(FILE *_fin)
         (void)fprintf(stderr, "Could not allocate y4m reader state.\n");
         return NULL;
     }
+    /* Zero-initialise so dst_buf / aux_buf are NULL on any early-return path
+     * inside y4m_input_open_impl.  Without this, a parse failure that fires
+     * before the malloc() block leaves the buffers uninitialised — harmless
+     * today because we always free(y4m) on failure, but a future cleanup
+     * path that calls y4m_input_close() on a partially-initialised struct
+     * would free uninitialised pointers. */
+    memset(y4m, 0, sizeof(*y4m));
     if (y4m_input_open_impl(y4m, _fin) < 0) {
         (void)fprintf(stderr, "Error opening y4m file.\n");
+        /* Free any buffers y4m_input_open_impl may have allocated before
+         * the failure point — the fix above frees dst_buf when aux_buf
+         * fails, but a future failure ordering would leak otherwise. */
+        free(y4m->dst_buf);
+        free(y4m->aux_buf);
         free(y4m);
         return NULL;
     }

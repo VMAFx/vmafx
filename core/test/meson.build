@@ -455,6 +455,20 @@ if host_machine.system() != 'windows'
         c_args : [compat_cflags],
         dependencies: [pthread_dependency, getopt_dependency, sycl_dependency],
     )
+
+    # test_y4m_alloc_failure drives the y4m parser against a header that
+    # requests an absurdly-large dst_buf; combined with RLIMIT_AS the
+    # malloc inside y4m_input_open_impl is forced to fail. Pre-fix the
+    # parser ignored the failed malloc and returned success, leaving
+    # dst_buf == NULL; the next fread() crashed inside libc. POSIX
+    # fmemopen + setrlimit, gated off Windows alongside the others.
+    test_y4m_alloc_failure = executable('test_y4m_alloc_failure',
+        ['test_y4m_alloc_failure.c', '../tools/vidinput.c', '../tools/y4m_input.c', '../tools/yuv_input.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), include_directories('../tools/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        c_args : [compat_cflags],
+        dependencies: [pthread_dependency, sycl_dependency],
+    )
 endif
 
 test_psnr = executable('test_psnr',
@@ -1943,6 +1957,7 @@ test('test_cli_parse', test_cli_parse, suite : ['fast'])
 if host_machine.system() != 'windows'
     test('test_y4m_411_oob', test_y4m_411_oob, suite : ['fast'])
     test('test_cli_parse_long_only_args', test_cli_parse_long_only_args, suite : ['fast'])
+    test('test_y4m_alloc_failure', test_y4m_alloc_failure, suite : ['fast'])
 endif
 test('test_psnr', test_psnr, suite : ['fast'])
 test('test_integer_psnr_coverage', test_integer_psnr_coverage, suite : ['fast'])

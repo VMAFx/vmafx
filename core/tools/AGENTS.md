@@ -144,6 +144,27 @@ tools/
   chroma-alignment gates; if upstream Netflix adds similar checks to
   `validate_videos()` in a sync, merge rather than duplicate — keep the
   fork's helpers and call them from the merged body.
+- [ADR-0977](../../docs/adr/0977-core-tools-input-reader-safety.md) —
+  input-reader safety in the vendored Daala YUV / Y4M parsers
+  (`y4m_input.c`, `yuv_input.c`) and the bench binary
+  (`vmaf_bench.c`).
+  **malloc-return invariant**: `y4m_input_open_impl` must check the
+  return of every `malloc()` and return -1 on NULL, freeing any
+  partial allocation. The pre-fix code returned 0 on OOM and the
+  caller surfaced a NULL `dst_buf` to the next `fread`, crashing.
+  Upstream Netflix/vmaf still carries the unchecked variant; on
+  `/sync-upstream` keep the fork's NULL check + cleanup block.
+  **size_t-precision invariant**: both readers compute `dst_buf_sz`
+  with the `(size_t)` cast applied to `pic_w` / `pic_h` (Y4M) and
+  `width` / `height` (YUV) **before** the multiply. The 4:4:4 paths
+  in `y4m_input.c` already cast for the same reason. If upstream
+  re-introduces `pic_w * pic_h` in `int` precision on a sync, keep
+  the fork's cast.
+  **bench GPU-state lifetime invariant**:
+  `vmaf_bench::bench_feature` declares `cu_state` / `sycl_state` at
+  function scope and routes every exit through the `bench_cleanup`
+  label so `vmaf_*_state_free` always runs. Mirrors the T5
+  state-leak audit pattern in the same file's `run_feature_collect`.
 - [ADR-0520](../../docs/adr/0520-cli-no-reference-wiring.md) —
   `--no-reference` wiring.
   **CLI gate invariant**: the reference-required gate at the end of

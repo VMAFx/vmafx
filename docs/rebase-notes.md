@@ -6,6 +6,32 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## core/tools input-reader safety (2026-05-31, ADR-0977)
+
+**Files touched:**
+`core/tools/y4m_input.c`,
+`core/tools/yuv_input.c`,
+`core/tools/vmaf_bench.c`,
+`core/test/test_y4m_alloc_failure.c` (new),
+`core/test/meson.build`.
+
+**Rebase impact:** PARTIAL. `y4m_input.c` and `yuv_input.c` are vendored
+from Daala via upstream Netflix/vmaf; upstream still carries the unchecked
+`malloc` returns and the `int`-precision `dst_buf_sz` arithmetic. On any
+upstream sync that touches the y4m / yuv parsers, **keep our `(size_t)`
+casts and the explicit `if (!_y4m->dst_buf) return -1;` block** — the
+diff is localised (the size-arithmetic stanza lines and the
+`return 0;` tail of `y4m_input_open_impl`).
+
+`vmaf_bench.c` is fork-only (no upstream churn).
+
+**Sync action:** Mechanical merge if upstream touches the same lines:
+prefer the fork side at the size-arithmetic stanza and the
+malloc-failure block in `y4m_input_open_impl`, prefer the fork
+`bench_cleanup` label structure in `vmaf_bench::bench_feature`.
+
+---
+
 ## Test suite: NULL-check malloc sweep (2026-05-31, ADR-0971)
 
 **Files touched:**
