@@ -39,6 +39,32 @@
 #include "feature/ssimulacra2_math.h"
 #include "feature/ssimulacra2_simd_common.h"
 
+/* Suppress FP contraction in the scalar reference functions below. The
+ * AVX2 / AVX-512 SIMD kernels under test use explicit `_mm*_mul_ps` +
+ * `_mm*_add_ps` intrinsics (no `_mm*_fmadd_ps`), so the scalar
+ * reference must produce identical mul-then-add sequences for the
+ * memcmp() bit-exactness assertion to hold. GCC defaults to
+ * `-ffp-contract=off` and the per-TU `_simd_strict_fp_args` flag
+ * reinforces that, but icx 2025.3 / 2026.0 IGNORE both `-fp-model=precise`
+ * and `#pragma STDC FP_CONTRACT OFF` for inline scalar code — they
+ * still contract `a*b + c` to `vfmadd231ps` and diverge from the SIMD
+ * by ~1 ULP per lane. icx (being clang-based) DOES honour
+ * `#pragma clang fp contract(off)`, which empirically suppresses the
+ * vfmadd emission (verified by disassembling the resulting object
+ * under icx 2026.0.0 with `-ffp-contract=off -fp-model=precise`). GCC
+ * warns "unknown pragma" — wrap with `-Wunknown-pragmas` suppression
+ * mirroring the established pattern in
+ * `core/src/feature/x86/ssimulacra2_host_avx2.c`. See ADR for full
+ * rationale + reproduction. */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
+#pragma clang fp contract(off)
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
 #if ARCH_X86
 #include "feature/x86/ssimulacra2_avx2.h"
 #include "feature/x86/ssimulacra2_host_avx2.h"

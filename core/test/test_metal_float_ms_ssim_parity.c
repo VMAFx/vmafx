@@ -24,9 +24,16 @@
  * MS-SSIM pyramid combining luminance, contrast, and structure across the
  * Wang et al. weight vector. This test runs the CPU `float_ms_ssim`
  * extractor against `float_ms_ssim_metal` on a single-frame YUV420P
- * fixture (large enough for the 5-scale pyramid: 256x144 -> 16x9 at scale
- * 4) and asserts that the public `float_ms_ssim` score matches within the
- * 1e-3 SSIM-specific bound from ADR-0589.
+ * fixture and asserts that the public `float_ms_ssim` score matches within
+ * the 1e-3 SSIM-specific bound from ADR-0589.
+ *
+ * Fixture dims: the 5-scale 11-tap MS-SSIM pyramid requires every input
+ * dimension to satisfy `min(w, h) >= GAUSSIAN_LEN << (SCALES - 1) = 11 << 4
+ * = 176` — anything smaller is rejected at init with -EINVAL (see
+ * `core/src/feature/float_ms_ssim.c:131-138`). The previous 256x144
+ * fixture tripped that gate on every macOS runner, so the CPU twin failed
+ * before the Metal path could even initialise. Use 256x192 (192 = 176
+ * rounded up to a multiple of 16 for clean pyramid downsamples).
  *
  * Tolerance rationale: SSIM-family metrics are normalised to [0, 1] and
  * the Metal pyramid uses workgroup-partial-sum reductions across 5 scales,
@@ -59,7 +66,7 @@
 #include "libvmaf/picture.h"
 
 #define FIXTURE_W 256u
-#define FIXTURE_H 144u
+#define FIXTURE_H 192u
 #define FIXTURE_BPC 8u
 
 /* MS-SSIM inherits the SSIM-family 1e-3 bound from ADR-0589. */

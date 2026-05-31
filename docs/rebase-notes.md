@@ -40681,3 +40681,22 @@ modified; only `compat/python-vmaf/AGENTS.md` gains one paragraph documenting
 which leaves carry coverage tests and warning about the latent sha1 bug in
 `tools/decorator.py`'s persist helpers. Upstream syncs do not own
 `compat/python-vmaf/AGENTS.md` (fork-only file).
+
+## Master CI regressions — Metal MS-SSIM fixture + ssimulacra2 icpx XYB (ADR-0973, 2026-05-31)
+
+no rebase impact: REASON — all touched files are fork-additions with no
+upstream conflict surface:
+
+- `core/test/test_metal_float_ms_ssim_parity.c` — fork-added in T8-2a;
+  Netflix upstream has no Metal backend.
+- `core/test/test_ssimulacra2_simd.c` — fork-added SIMD bit-exactness test;
+  Netflix upstream has no SSIMULACRA 2 SIMD paths.
+- `docs/adr/0973-*.md`, `docs/research/0973-*.md`,
+  `changelog.d/fixed/0973-*.md`, `core/test/AGENTS.md` — fork-only
+  governance / docs.
+
+The fix adds a file-scope `#pragma clang fp contract(off)` block to
+`test_ssimulacra2_simd.c`. If a future contributor refactors the file's
+scalar reference functions out into a helper header, the pragma block must
+move with them or the icx FMA contraction returns and `test_xyb` fails
+under the all-backends matrix leg.

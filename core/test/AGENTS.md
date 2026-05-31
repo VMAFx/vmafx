@@ -94,6 +94,34 @@ and teardown.
   on the first missing index and the writer skips that feature.
   Sparse-frame branches (`count_written_at == 0`, `i > capacity`)
   belong in CSV / SUB tests where pic_cnt isn't a precondition.
+- **MS-SSIM / `float_ms_ssim` fixture dims must be ≥ 176×176.** The 5-level
+  11-tap MS-SSIM pyramid rejects any input where `min(w, h) < GAUSSIAN_LEN
+  << (SCALES - 1) = 11 << 4 = 176` at init with `-EINVAL` (see
+  `core/src/feature/float_ms_ssim.c:131-138`, Netflix#1414 / ADR-0153).
+  A test fixture below this floor will fail at the *first*
+  `vmaf_read_pictures` call with `"vmaf_read_pictures failed"`, masking
+  the actual code path you intended to test. Use 192×192 or larger (192 =
+  176 rounded up to a multiple of 16 for clean pyramid downsamples).
+  This caught `test_metal_float_ms_ssim_parity` on all macOS jobs at
+  master `4948b771c`; see [ADR-0973](../../docs/adr/0973-master-ci-regressions-verified-2026-05-31.md).
+  **Rebase-sensitive**: any new test that exercises `float_ms_ssim` /
+  `float_ms_ssim_metal` / `float_ms_ssim_*` (any backend) must use
+  fixtures ≥ 176 in both dimensions.
+- **SSIMULACRA 2 SIMD test scalar reference is icx-FMA-sensitive.** The
+  scalar reference functions in
+  [`test_ssimulacra2_simd.c`](test_ssimulacra2_simd.c) (e.g.
+  `ref_linear_rgb_to_xyb`) must match the AVX2 / AVX-512 SIMD libs
+  bit-for-bit, but those libs use explicit `_mm*_mul_ps` + `_mm*_add_ps`
+  intrinsics (no `_mm*_fmadd_ps`). Under icx 2025.3 / 2026.0, neither
+  `-ffp-contract=off`, `-fp-model=precise`, nor
+  `#pragma STDC FP_CONTRACT OFF` suppresses scalar FMA contraction —
+  only **`#pragma clang fp contract(off)`** does. The file carries a
+  file-scope clang FP pragma block (with `-Wunknown-pragmas` suppression
+  for GCC) at the top; do not remove it. Any new ref function added to
+  this file inherits the pragma scope automatically.
+  See [ADR-0973](../../docs/adr/0973-master-ci-regressions-verified-2026-05-31.md).
+  **Rebase-sensitive**: if a refactor moves the ref functions out into a
+  helper header, port the pragma block with them.
 - **New SIMD parity test → use [`simd_bitexact_test.h`](simd_bitexact_test.h)**
   (ADR-0245). The shared harness centralises the `xorshift32` PRNG,
   the portable POSIX/MinGW/MSVC aligned allocator, the x86 AVX2 CPUID
