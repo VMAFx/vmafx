@@ -2961,22 +2961,37 @@ template <typename TSource> class SVMModelParser
                 exceptAssert(model->l > 0 && model->l <= VMAF_SVM_MAX_AXIS_COUNT,
                              "total_sv out of range");
             } else if (buffer == "rho") {
+                // Guard against malformed models that omit `nr_class` or place
+                // `rho` before it: without the guard `nr_class_permutations`
+                // is 0 and `Malloc(double, 0)` followed by a no-op
+                // `get_array` would silently succeed, leaving `model->rho`
+                // dereferenced as a zero-size buffer by `svm_predict_values`.
+                // SAN-MODEL-MALLOC-OOB extension (ADR-0889).
+                exceptAssert(model->nr_class > 0, "rho row must follow nr_class row in model file");
                 model->rho = Malloc(double, nr_class_permutations);
                 exceptAssert(model_source.get_array(model->rho, nr_class_permutations),
                              "Failed to read rho");
             } else if (buffer == "label") {
+                exceptAssert(model->nr_class > 0,
+                             "label row must follow nr_class row in model file");
                 model->label = Malloc(int, model->nr_class);
                 exceptAssert(model_source.get_array(model->label, model->nr_class),
                              "Failed to read label");
             } else if (buffer == "probA") {
+                exceptAssert(model->nr_class > 0,
+                             "probA row must follow nr_class row in model file");
                 model->probA = Malloc(double, nr_class_permutations);
                 exceptAssert(model_source.get_array(model->probA, nr_class_permutations),
                              "Failed to read probA");
             } else if (buffer == "probB") {
+                exceptAssert(model->nr_class > 0,
+                             "probB row must follow nr_class row in model file");
                 model->probB = Malloc(double, nr_class_permutations);
                 exceptAssert(model_source.get_array(model->probB, nr_class_permutations),
                              "Failed to read probB");
             } else if (buffer == "nr_sv") {
+                exceptAssert(model->nr_class > 0,
+                             "nr_sv row must follow nr_class row in model file");
                 model->nSV = Malloc(int, model->nr_class);
                 exceptAssert(model_source.get_array(model->nSV, model->nr_class),
                              "Failed to read nr_sv");

@@ -41803,3 +41803,30 @@ revisions and hooks listed are fork-owned. Touches one fork-owned Python
 file via isort 6.0.1 auto-fix
 (`tools/vmaf-tune/tests/test_codec_adapter_av1_videotoolbox.py`), which is
 itself outside the upstream tree.
+## libsvm vendored audit — extend SAN-MODEL-MALLOC-OOB to row-ordering (ADR-0889, 2026-05-30)
+
+Touches the vendored libsvm parser `core/src/svm.cpp`, which is wrapped in a
+file-level `NOLINTBEGIN` / `NOLINTEND` cordon. On Netflix-vmaf upstream sync
+the file is part of the fork-mirrored set: Netflix upstream has not refreshed
+its vendored libsvm copy since 2020-11 either, so a Netflix-only sync has
+near-zero conflict risk on this file.
+
+On an upstream **libsvm** (Chih-Chung Chang / Chih-Jen Lin) sync —
+deliberately deferred per ADR-0889 — the fork carries three patch families
+that must be re-applied:
+
+1. Thread-locale isolation (ADR-0137) — `buffer.imbue(std::locale::classic())`
+   in both `SVMModelParserFileSource` and `SVMModelParserBufferSource`
+   constructors.
+2. JSON in-memory entry point — `svm_parse_model_from_buffer` plus the
+   `SVMModelParserBufferSource` template instantiation. Consumed by
+   `read_json_model.c`; removing it breaks JSON-embedded SVM model loading.
+3. SAN-MODEL-MALLOC-OOB hardening — `VMAF_SVM_MAX_AXIS_COUNT` (1 << 24) bound,
+   `nr_class` / `total_sv` axis-size asserts in `parse_header()` and
+   `parse_support_vectors()`, `sv_buffer.empty()` post-parse guard, plus the
+   row-ordering preconditions (`exceptAssert(model->nr_class > 0, ...)`) on
+   `rho`, `label`, `probA`, `probB`, `nr_sv` added by ADR-0889.
+
+Regression coverage at `core/test/test_svm_parser.c` (suite `fast`). On
+sync, re-run that test plus `test_predict` and `test_model` before merging.
+See `core/src/AGENTS.md` §10 for the full invariant list.

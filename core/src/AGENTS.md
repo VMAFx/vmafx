@@ -198,3 +198,46 @@ a keyword), and use `auto*` for `static_cast<T*>(malloc(...))`-style
 initialisers where the cast already spells the type. These match the
 checks enabled by ADR-0915; deviating reintroduces warnings that the
 touched-file rule (ADR-0141) requires you to discharge in the same PR.
+### 10. Vendored libsvm — three fork patches must not regress on sync (ADR-0889)
+
+`core/src/svm.cpp` + `core/src/svm.h` are a verbatim vendored copy of
+upstream libsvm 3.24 (Chih-Chung Chang / Chih-Jen Lin), wrapped in a
+file-level `NOLINTBEGIN` / `NOLINTEND` cordon so the fork's
+touched-file lint-clean rule does not re-flow the vendored body. Three
+fork-local patch families live inside that cordon and must survive any
+future upstream sync:
+
+1. **Thread-locale isolation** — both `SVMModelParserFileSource` and
+   `SVMModelParserBufferSource` constructors call
+   `buffer.imbue(std::locale::classic())`. Removing this re-introduces
+   ADR-0137's locale-perturbation hazard on hosts whose `LC_NUMERIC`
+   uses `,` as the decimal separator. *Cite ADR-0137 in any commit
+   touching these lines.*
+
+2. **JSON in-memory entry point** — `svm_parse_model_from_buffer` (and
+   the `SVMModelParserBufferSource` class that backs it) is fork-added;
+   upstream libsvm has only `svm_load_model(const char *path)`. The
+   fork's `read_json_model.c` depends on the buffer entry point.
+   Removing it breaks JSON-embedded model loading.
+
+3. **SAN-MODEL-MALLOC-OOB hardening** — every `Malloc(...)` call in
+   `parse_header()` and `parse_support_vectors()` whose size depends on
+   `nr_class` or `total_sv` is gated by `exceptAssert(... > 0 && ... <=
+   VMAF_SVM_MAX_AXIS_COUNT, ...)`. The bound `VMAF_SVM_MAX_AXIS_COUNT
+   (1 << 24)` is fork-defined. The `sv_buffer.empty()` post-parse guard
+   is fork-added. The `model->nr_class > 0` row-ordering precondition
+   on `rho`, `label`, `probA`, `probB`, `nr_sv` is fork-added.
+   Regression coverage lives in `core/test/test_svm_parser.c` (suite
+   `fast`). *Cite the sanitizer-real-bug-fixes changelog and ADR-0889
+   in any commit touching these guards.*
+
+Additionally:
+
+- `model->free_sv = 1;` at the end of `parse_support_vectors` is the
+  load-bearing invariant for `svm_free_and_destroy_model`'s ownership
+  transfer. Vendor-original; do not flip it.
+- `LIBSVM_VERSION 324` in `svm.h` is the pin. A sync to a newer
+  version must re-apply the three patch families above and re-run
+  `core/test/test_svm_parser.c` + `core/test/test_predict` +
+  `core/test/test_model`. See ADR-0889 for the deferral rationale on
+  the upstream 3.36 sync.

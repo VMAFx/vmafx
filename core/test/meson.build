@@ -139,6 +139,7 @@ test_predict = executable('test_predict',
     objects : libsvm_static_lib.extract_all_objects(recursive: true),
 )
 
+<<<<<<< ours
 # Coverage-targeted runtime tests for vendored libsvm 3.24 (svm.cpp).
 # Complements PR #381's test_svm_parser.c (parser rejection paths) by
 # exercising svm_train + the inspector and predict family +
@@ -147,12 +148,21 @@ test_predict = executable('test_predict',
 # Observation-only: vendored source is not modified (ADR-0889, core/src/AGENTS.md §10).
 test_svm_api = executable('test_svm_api',
     ['test.c', 'test_svm_api.c', '../src/thread_locale.c'],
+=======
+# SAN-MODEL-MALLOC-OOB regression suite (ADR-0889). Covers the vendored
+# libsvm text-format parser hardening — crafted-model rejection paths
+# that pre-empt oob Malloc sizes and read-before-write defects in the
+# upstream-3.24 baseline.
+test_svm_parser = executable('test_svm_parser',
+    ['test.c', 'test_svm_parser.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib],
     objects : libsvm_static_lib.extract_all_objects(recursive: true),
 )
 
+<<<<<<< ours
 # Coverage-targeted unit tests for the vendored IQA helpers
 # (libvmaf/feature/iqa): math_utils, decimate, KBND_* border handlers,
 # iqa_filter_pixel / iqa_img_filter, and an iqa_ssim end-to-end drive
@@ -178,6 +188,8 @@ test_iqa_helpers = executable('test_iqa_helpers',
     ],
 )
 
+=======
+>>>>>>> theirs
 test_feature_extractor = executable('test_feature_extractor',
     # dnn_sources pulled in directly so feature_lpips.c can resolve its
     # libvmaf/dnn.h references (session_open/run/close,
@@ -1550,8 +1562,12 @@ test('test_thread_pool', test_thread_pool, suite : ['fast'])
 test('test_model', test_model, suite : ['fast'])
 test('test_model_collection_api', test_model_collection_api, suite : ['fast'])
 test('test_predict', test_predict, suite : ['fast'])
+<<<<<<< ours
 test('test_svm_api', test_svm_api, suite : ['fast'])
 test('test_iqa_helpers', test_iqa_helpers, suite : ['fast'])
+=======
+test('test_svm_parser', test_svm_parser, suite : ['fast'])
+>>>>>>> theirs
 test('test_feature_extractor', test_feature_extractor, suite : ['fast'])
 test('test_dict', test_dict, suite : ['fast'])
 test('test_opt', test_opt, suite : ['fast'])
