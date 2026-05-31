@@ -167,7 +167,24 @@ def _standardize_inplace(x_train: np.ndarray, x_val: np.ndarray) -> None:
     so the LOSO methodology stays honest. The constant 1e-8 floor on
     `std` avoids divide-by-zero on degenerate features (none in the
     current feature pool, but cheap insurance).
+
+    Contract: both arrays MUST be writeable. Pandas' ``DataFrame.to_numpy``
+    can hand back read-only views of the underlying block (especially when
+    no dtype conversion is needed, e.g. an all-``float64`` parquet column);
+    writing through a read-only view raises
+    ``ValueError: output array is read-only`` at the first ``-=`` below.
+    The ``_loso_sweep`` call site forces a copy via ``to_numpy(copy=True)``
+    so it always meets the contract. This function fails fast with a clear
+    message if a future caller forgets — silently no-op'ing on a copy would
+    drop the standardisation and skew downstream metrics.
     """
+    if not x_train.flags.writeable or not x_val.flags.writeable:
+        raise ValueError(
+            "_standardize_inplace requires writeable arrays; got "
+            f"x_train.writeable={x_train.flags.writeable}, "
+            f"x_val.writeable={x_val.flags.writeable}. "
+            "Pass arrays produced with to_numpy(copy=True) or call .copy()."
+        )
     mean = x_train.mean(axis=0)
     std = x_train.std(axis=0, ddof=0)
     std = np.where(std < 1e-8, 1.0, std)
@@ -192,10 +209,14 @@ def _loso_sweep(
     for held_out in sources:
         train_mask = df["source"] != held_out
         val_mask = df["source"] == held_out
-        x_train = df.loc[train_mask, list(feature_cols)].to_numpy(dtype=np.float64)
-        y_train = df.loc[train_mask, "vmaf"].to_numpy(dtype=np.float64)
-        x_val = df.loc[val_mask, list(feature_cols)].to_numpy(dtype=np.float64)
-        y_val = df.loc[val_mask, "vmaf"].to_numpy(dtype=np.float64)
+        # copy=True: pandas may otherwise return a read-only view of the
+        # parquet-backed block, which _standardize_inplace can't write
+        # through. Cheap (one fold-sized allocation) vs. the
+        # ValueError: output array is read-only failure mode.
+        x_train = df.loc[train_mask, list(feature_cols)].to_numpy(dtype=np.float64, copy=True)
+        y_train = df.loc[train_mask, "vmaf"].to_numpy(dtype=np.float64, copy=True)
+        x_val = df.loc[val_mask, list(feature_cols)].to_numpy(dtype=np.float64, copy=True)
+        y_val = df.loc[val_mask, "vmaf"].to_numpy(dtype=np.float64, copy=True)
         if x_train.shape[0] == 0 or x_val.shape[0] == 0:
             print(f"  [warn] fold={held_out}: empty split; skipping", file=sys.stderr)
             continue

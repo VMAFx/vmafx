@@ -70,6 +70,21 @@ coverage and reconcile by name. Companion: ADR-0108 deliverables in
 
 ---
 
+## phase3-subset-sweep readonly-view fix (2026-05-31)
+
+**Files touched:**
+`ai/scripts/phase3_subset_sweep.py`,
+`ai/tests/test_phase3_subset_sweep_unit.py`.
+
+**Rebase impact:** None — `ai/scripts/phase3_subset_sweep.py` is
+fork-original (Research-0027 Phase-3 tooling, no upstream Netflix
+analogue). The fix tightens an internal contract (`_standardize_inplace`
+now refuses read-only inputs and the caller forces a writeable copy
+via `to_numpy(copy=True)`); there is no public API change and no
+coupling to upstream files. Safe to carry through any upstream sync.
+
+---
+
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
 
 **Files touched:**
