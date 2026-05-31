@@ -41311,3 +41311,16 @@ inside the test's HIP-path helper; CPU baseline, tolerance, fixture
 geometry, and end-of-stream handling are unchanged. Upstream sync
 cannot conflict because no upstream file touches this test path or
 the `motion_hip` extractor's scaffold-vs-runtime split.
+## GitHub Actions custom-action + reusable-workflow audit (ADR-0951, 2026-05-31)
+
+no rebase impact: REASON — audit-only PR. No code under `core/`, `python/`,
+`ai/`, `mcp-server/`, or `tools/` is touched. The only edited files are:
+`docs/adr/0951-github-actions-custom-audit.md` (new ADR),
+`docs/adr/README.md` + `docs/adr/_index_fragments/_order.txt` (index rows),
+`docs/research/0951-github-actions-custom-audit.md` (digest),
+`changelog.d/changed/github-actions-custom-audit.md` (fragment), and this
+rebase-notes row. The fork-wide SHA-pin invariant in `.github/AGENTS.md`
+lines 100–144 is unchanged. On upstream sync the audit conclusions remain
+valid until Netflix introduces its own `.github/actions/` tree or
+`workflow_call:` workflow; re-run the three reproducer commands in the
+research digest to confirm.
