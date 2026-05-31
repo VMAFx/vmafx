@@ -593,9 +593,20 @@ static int run_feature_collect(const char *feature, enum Backend backend, unsign
     if (err)
         return err;
 
+    /* T5 (state-leak audit 2026-05-30): hoist the GPU state pointers to
+     * function scope so every early-return path (and the normal-exit
+     * path) can release them. Previously these lived inside the
+     * `#ifdef` branches and were leaked the instant `vmaf_use_feature`,
+     * `yuv_pair_open`, or any per-frame call failed. */
+#ifdef HAVE_CUDA
+    VmafCudaState *cu_state = NULL;
+#endif
+#ifdef HAVE_SYCL
+    VmafSyclState *sycl_state = NULL;
+#endif
+
 #ifdef HAVE_CUDA
     if (backend == BACKEND_CUDA) {
-        VmafCudaState *cu_state = NULL;
         VmafCudaConfiguration cu_cfg = {0};
         err = vmaf_cuda_state_init(&cu_state, cu_cfg);
         if (err) {
@@ -605,13 +616,13 @@ static int run_feature_collect(const char *feature, enum Backend backend, unsign
         err = vmaf_cuda_import_state(vmaf, cu_state);
         if (err) {
             vmaf_close(vmaf);
+            (void)vmaf_cuda_state_free(cu_state);
             return err;
         }
     }
 #endif
 #ifdef HAVE_SYCL
     if (backend == BACKEND_SYCL) {
-        VmafSyclState *sycl_state = NULL;
         VmafSyclConfiguration sycl_cfg = {.device_index = g_gpu_device_idx};
         err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
         if (err) {
@@ -621,6 +632,7 @@ static int run_feature_collect(const char *feature, enum Backend backend, unsign
         err = vmaf_sycl_import_state(vmaf, sycl_state);
         if (err) {
             vmaf_close(vmaf);
+            vmaf_sycl_state_free(&sycl_state);
             return err;
         }
     }
@@ -629,12 +641,28 @@ static int run_feature_collect(const char *feature, enum Backend backend, unsign
     err = vmaf_use_feature(vmaf, feature, NULL);
     if (err) {
         vmaf_close(vmaf);
+#ifdef HAVE_CUDA
+        if (cu_state)
+            (void)vmaf_cuda_state_free(cu_state);
+#endif
+#ifdef HAVE_SYCL
+        if (sycl_state)
+            vmaf_sycl_state_free(&sycl_state);
+#endif
         return err;
     }
 
     YuvPair yp = {0};
     if (yuv_pair_open(&yp, w, h)) {
         vmaf_close(vmaf);
+#ifdef HAVE_CUDA
+        if (cu_state)
+            (void)vmaf_cuda_state_free(cu_state);
+#endif
+#ifdef HAVE_SYCL
+        if (sycl_state)
+            vmaf_sycl_state_free(&sycl_state);
+#endif
         return -1;
     }
 
@@ -647,12 +675,28 @@ static int run_feature_collect(const char *feature, enum Backend backend, unsign
             vmaf_picture_unref(&d);
             yuv_pair_close(&yp);
             vmaf_close(vmaf);
+#ifdef HAVE_CUDA
+            if (cu_state)
+                (void)vmaf_cuda_state_free(cu_state);
+#endif
+#ifdef HAVE_SYCL
+            if (sycl_state)
+                vmaf_sycl_state_free(&sycl_state);
+#endif
             return -1;
         }
         err = vmaf_read_pictures(vmaf, &r, &d, i);
         if (err) {
             yuv_pair_close(&yp);
             vmaf_close(vmaf);
+#ifdef HAVE_CUDA
+            if (cu_state)
+                (void)vmaf_cuda_state_free(cu_state);
+#endif
+#ifdef HAVE_SYCL
+            if (sycl_state)
+                vmaf_sycl_state_free(&sycl_state);
+#endif
             return err;
         }
     }
@@ -669,6 +713,14 @@ static int run_feature_collect(const char *feature, enum Backend backend, unsign
     }
 
     vmaf_close(vmaf);
+#ifdef HAVE_CUDA
+    if (cu_state)
+        (void)vmaf_cuda_state_free(cu_state);
+#endif
+#ifdef HAVE_SYCL
+    if (sycl_state)
+        vmaf_sycl_state_free(&sycl_state);
+#endif
     return 0;
 }
 

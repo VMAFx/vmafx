@@ -548,7 +548,7 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
 #endif
 #ifdef HAVE_CUDA
                              ,
-                             bool *cuda_active_out
+                             VmafCudaState **cu_state, bool *cuda_active_out
 #endif
 #ifdef HAVE_HIP
                              ,
@@ -640,14 +640,19 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
 #endif
 #ifdef HAVE_CUDA
     *cuda_active_out = false;
-    VmafCudaState *cu_state;
     VmafCudaConfiguration cuda_cfg = {0};
     if (c->use_gpumask && !c->no_cuda
 #ifdef HAVE_SYCL
         && !*sycl_active
 #endif
     ) {
-        err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
+        /* T2 (state-leak audit 2026-05-30): propagate `cu_state` out via
+         * the caller-owned pointer so the cleanup label in main() can
+         * free it on the success path. Previously `cu_state` was a
+         * function-local and the only `vmaf_cuda_state_free` call lived
+         * on the import-error path — every successful CUDA run leaked
+         * the state. Mirrors the SYCL/HIP/Metal lifetime model. */
+        err = vmaf_cuda_state_init(cu_state, cuda_cfg);
         if (err) {
             (void)fprintf(stderr, "problem during vmaf_cuda_state_init, using CPU\n");
             if (explicit_backend && strcmp(c->backend, "cuda") == 0) {
@@ -658,10 +663,9 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
                 return VMAF_INIT_GPU_EXPLICIT_FAIL;
             }
         } else {
-            err |= vmaf_cuda_import_state(vmaf, cu_state);
+            err |= vmaf_cuda_import_state(vmaf, *cu_state);
             if (err) {
                 (void)fprintf(stderr, "problem during vmaf_cuda_import_state\n");
-                vmaf_cuda_state_free(cu_state);
                 return -1;
             }
             *cuda_active_out = true;
@@ -1198,6 +1202,9 @@ int main(int argc, char *argv[])
      * broke down when the user passed an explicit ``--feature *_cuda``
      * but no ``--backend cuda``. */
     bool cuda_active = false;
+    /* T2 (state-leak audit 2026-05-30): own the CUDA state at main()
+     * scope so the cleanup label can free it on every exit path. */
+    VmafCudaState *cu_state = NULL;
 #endif
 #ifdef HAVE_HIP
     bool hip_active = false;
@@ -1278,7 +1285,7 @@ int main(int argc, char *argv[])
 #endif
 #ifdef HAVE_CUDA
                                              ,
-                                             &cuda_active
+                                             &cu_state, &cuda_active
 #endif
 #ifdef HAVE_HIP
                                              ,
@@ -1431,7 +1438,19 @@ int main(int argc, char *argv[])
     }
 
     if (c.output_path) {
-        vmaf_write_output_with_format(vmaf, c.output_path, c.output_fmt, c.precision_fmt);
+        /* L7 (state-leak audit 2026-05-30): propagate the writer error
+         * instead of discarding it. A silent failure here previously
+         * let CI consumers read a stale / partial output file and
+         * report "the run succeeded but the JSON is wrong" — fail
+         * loud at the source. */
+        const int write_rc =
+            vmaf_write_output_with_format(vmaf, c.output_path, c.output_fmt, c.precision_fmt);
+        if (write_rc) {
+            (void)fprintf(stderr, "problem writing output to %s (err=%d)\n", c.output_path,
+                          write_rc);
+            ret = write_rc;
+            goto cleanup;
+        }
         /* ADR-0498 / Bug #v2-E: echo the active backend into the JSON
          * output so CI gates and MCP probes can confirm what actually
          * ran (mirrors the MCP-layer echo added by PR #1251). */
@@ -1474,8 +1493,23 @@ cleanup:
     free((void *)model_collection_label);
     if (vmaf)
         vmaf_close(vmaf);
+#ifdef HAVE_CUDA
+    /* T2 (state-leak audit 2026-05-30): free the CUDA state after
+     * vmaf_close() per the libvmaf_cuda.h lifetime contract. Gate
+     * on the pointer so a CPU-only run (cu_state still NULL) is a
+     * no-op. */
+    if (cu_state)
+        (void)vmaf_cuda_state_free(cu_state);
+#endif
 #ifdef HAVE_SYCL
-    if (sycl_active)
+    /* T1 (state-leak audit 2026-05-30): gate on the pointer, not the
+     * `sycl_active` flag. `vmaf_sycl_state_init` can succeed and
+     * populate `sycl_state` while the subsequent
+     * `vmaf_sycl_import_state` call fails — that early-return path
+     * never sets `sycl_active = true`, so a flag-gated cleanup
+     * leaks the just-allocated state. Mirrors the HIP/Metal
+     * pattern below which already guard on the pointer. */
+    if (sycl_state)
         vmaf_sycl_state_free(&sycl_state);
 #endif
 #ifdef HAVE_HIP
