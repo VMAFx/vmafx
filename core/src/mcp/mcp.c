@@ -60,12 +60,12 @@ int vmaf_mcp_transport_available(VmafMcpTransport transport)
      * per-arm `#ifdef` keeps the body structurally distinct (no
      * `bugprone-branch-clone`) regardless of which sub-flags are
      * on. */
-    if ((unsigned)transport > 31u) {
+    if ((unsigned)transport > VMAF_MCP_TRANSPORT_BITMASK_MAX) {
         return 0;
     }
     /* Post-guard invariant — same predicate as the early return,
      * preserved for Power-of-10 §5 assertion density. */
-    assert((unsigned)transport <= 31u);
+    assert((unsigned)transport <= VMAF_MCP_TRANSPORT_BITMASK_MAX);
     unsigned mask = 0u;
 #ifdef HAVE_MCP_SSE
     mask |= 1u << (unsigned)VMAF_MCP_TRANSPORT_SSE;
@@ -90,7 +90,7 @@ static int validate_config(const VmafMcpConfig *cfg)
         if ((q & (q - 1u)) != 0u)
             return -EINVAL;
     }
-    if (cfg->max_drain_per_frame > 64u)
+    if (cfg->max_drain_per_frame > VMAF_MCP_MAX_DRAIN_PER_FRAME)
         return -EINVAL;
     return 0;
 }
@@ -180,7 +180,7 @@ static int sse_bind_loopback(uint16_t requested_port, uint16_t *resolved_port)
         (void)close(fd);
         return saved == EADDRINUSE ? -EADDRINUSE : -saved;
     }
-    if (listen(fd, 16) != 0) {
+    if (listen(fd, VMAF_MCP_LISTEN_BACKLOG) != 0) {
         int saved = errno;
         (void)close(fd);
         return -saved;
@@ -217,7 +217,7 @@ int vmaf_mcp_start_sse(VmafMcpServer *server, VmafMcpSseConfig *cfg)
     char *path_dup = NULL;
     if (cfg->path != NULL) {
         size_t len = strlen(cfg->path);
-        if (len == 0u || len > 256u) {
+        if (len == 0u || len > VMAF_MCP_SSE_PATH_MAX) {
             atomic_store(&server->sse_running, 0);
             return -EINVAL;
         }
@@ -265,10 +265,11 @@ int vmaf_mcp_start_uds(VmafMcpServer *server, const VmafMcpUdsConfig *cfg)
         return -EINVAL;
 
     /* Path-length must fit AF_UNIX struct sockaddr_un.sun_path
-     * (typically 108 bytes on Linux, 104 on BSD); enforce 100 to
-     * leave headroom across POSIX hosts. */
+     * (typically 108 bytes on Linux, 104 on BSD); enforce
+     * VMAF_MCP_UDS_PATH_MAX (100) to leave headroom across POSIX
+     * hosts. */
     size_t path_len = strlen(cfg->path);
-    if (path_len == 0u || path_len >= 100u)
+    if (path_len == 0u || path_len >= VMAF_MCP_UDS_PATH_MAX)
         return -EINVAL;
 
     int expected = 0;
@@ -313,9 +314,10 @@ int vmaf_mcp_start_uds(VmafMcpServer *server, const VmafMcpUdsConfig *cfg)
         atomic_store(&server->uds_running, 0);
         return -saved;
     }
-    /* listen-backlog SOMAXCONN-equivalent; 16 is generous for the
-     * embedded use case. */
-    if (listen(fd, 16) != 0) {
+    /* listen-backlog SOMAXCONN-equivalent;
+     * VMAF_MCP_LISTEN_BACKLOG is generous for the embedded use
+     * case. */
+    if (listen(fd, VMAF_MCP_LISTEN_BACKLOG) != 0) {
         int saved = errno;
         (void)unlink(cfg->path);
         (void)close(fd);

@@ -78,6 +78,37 @@
 #define VMAF_MCP_SSE_BODY_MAX (64u * 1024u)
 #define VMAF_MCP_SSE_DEFAULT_PATH "/mcp/sse"
 
+/* Response-status scratch buffer (`HTTP/1.1 NNN <reason>` + headers).
+ * 256 bytes covers any short-form status emitted by sse_emit_status. */
+#define VMAF_MCP_SSE_STATUS_BUF 256u
+
+/* Headroom appended on top of VMAF_MCP_MAX_LINE_BYTES so the request
+ * line + status preamble fit in a single allocation. */
+#define VMAF_MCP_SSE_LINE_HEADROOM 256u
+
+/* Bounded scan budget when extracting a single string field from a
+ * raw JSON-RPC fragment (no allocator, no full parser). Power-of-10
+ * §1.2 rule 2: every loop terminates. */
+#define VMAF_MCP_SSE_FIELD_SCAN_BUDGET 64u
+
+/* Poll-loop heartbeat for the SSE service worker. The thread blocks
+ * up to this many microseconds on read() before re-checking the
+ * shutdown flag, bounding shutdown latency without a wake-up FD. */
+#define VMAF_MCP_SSE_POLL_USEC (200 * 1000)
+
+/* Drain scratch used by the SSE service worker — inbound bytes on a
+ * subscribed event stream are discarded. 64 bytes is enough to flush
+ * a typical TCP segment per iteration. */
+#define VMAF_MCP_SSE_DRAIN_BUF 64u
+
+/* HTTP method scratch — well-formed clients send GET/POST (3-4
+ * chars); 16 bytes leaves room for parser-side null-termination and
+ * mis-aligned inputs. */
+#define VMAF_MCP_SSE_METHOD_BUF 16u
+
+/* Tens base for the bounded decimal port-number scan. */
+#define VMAF_MCP_SSE_DECIMAL_RADIX 10
+
 /* Read up to `max_len - 1` bytes from `fd` into `buf` until LF or
  * EOF. Returns: > 0 = bytes consumed (excluding LF/CR), 0 = EOF,
  * -1 = error, -2 = line too long. NUL-terminates. Mirrors
@@ -201,7 +232,7 @@ static long sse_drain_headers(int fd)
             long v = 0;
             int any = 0;
             while (*p >= '0' && *p <= '9') {
-                v = v * 10 + (*p - '0');
+                v = v * VMAF_MCP_SSE_DECIMAL_RADIX + (*p - '0');
                 if (v > (long)VMAF_MCP_SSE_BODY_MAX)
                     return -2;
                 p++;
@@ -254,7 +285,7 @@ __attribute__((unused)) static int sse_emit_event(int fd, pthread_mutex_t *mtx,
     /* Compose into a heap buffer sized to fit the longest JSON-RPC
      * response we can produce (compute_vmaf wraps a stringified
      * JSON object, so reserve VMAF_MCP_MAX_LINE_BYTES + headroom). */
-    size_t cap = VMAF_MCP_MAX_LINE_BYTES + 256u;
+    size_t cap = VMAF_MCP_MAX_LINE_BYTES + VMAF_MCP_SSE_LINE_HEADROOM;
     char *frame = (char *)malloc(cap);
     if (frame == NULL)
         return -ENOMEM;
@@ -306,7 +337,7 @@ static int sse_emit_stream_headers(int fd, pthread_mutex_t *mtx)
 static int sse_emit_status(int fd, pthread_mutex_t *mtx, int code, const char *reason,
                            const char *content_type, const char *body)
 {
-    char hdr[256];
+    char hdr[VMAF_MCP_SSE_STATUS_BUF];
     size_t body_len = body != NULL ? strlen(body) : 0u;
     int n = snprintf(hdr, sizeof(hdr),
                      "HTTP/1.1 %d %s\r\n"
@@ -341,7 +372,7 @@ __attribute__((unused)) static char *sse_extract_id(const char *resp)
         p++;
     const char *end = p;
     /* Cap the scan so a malformed input cannot run away. */
-    size_t budget = 64u;
+    size_t budget = VMAF_MCP_SSE_FIELD_SCAN_BUDGET;
     while (*end != '\0' && *end != ',' && *end != '}' && budget > 0u) {
         end++;
         budget--;
@@ -381,9 +412,9 @@ static void sse_serve_stream(struct VmafMcpServer *server, int client_fd)
     /* Bound poll loop — Power-of-10 §1.2 rule 2. Each iteration
      * waits up to 200 ms; the loop terminates on EOF, error, or
      * shutdown signal. */
-    struct timeval tv = {.tv_sec = 0, .tv_usec = 200 * 1000};
+    struct timeval tv = {.tv_sec = 0, .tv_usec = VMAF_MCP_SSE_POLL_USEC};
     (void)setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    char drain[64];
+    char drain[VMAF_MCP_SSE_DRAIN_BUF];
     while (atomic_load(&server->sse_running) == 1) {
         ssize_t r = read(client_fd, drain, sizeof(drain));
         if (r == 0)
@@ -470,7 +501,7 @@ static void sse_serve_client(struct VmafMcpServer *server, int client_fd)
     if (n <= 0)
         return;
 
-    char method[16];
+    char method[VMAF_MCP_SSE_METHOD_BUF];
     char url[VMAF_MCP_SSE_HEADER_LINE_MAX];
     if (sse_parse_request_line(req_line, method, sizeof(method), url, sizeof(url)) != 0) {
         (void)sse_emit_status(client_fd, &server->write_mtx, 400, "Bad Request", "text/plain",

@@ -39,6 +39,32 @@ extern "C" {
 #define VMAF_MCP_MAX_LINE_BYTES ((size_t)64u * 1024u) /* 64 KiB request line. */
 #define VMAF_MCP_MAX_FEATURES 256u                    /* `list_features` cap. */
 
+/* Listener backlog — generous for the embedded single-server use case;
+ * the kernel silently clamps to SOMAXCONN. The MCP server is not
+ * expected to handle bursty accept storms, so 16 is comfortable. */
+#define VMAF_MCP_LISTEN_BACKLOG 16
+
+/* Upper bound on the `VmafMcpTransport` enum range expressed as a
+ * bitmask test. The bitmask is built from per-transport
+ * `1u << transport` shifts; restrict to the low 32 bits so the shift
+ * is always defined behaviour. CERT INT34-C: undefined when
+ * shift count >= bit width. */
+#define VMAF_MCP_TRANSPORT_BITMASK_MAX 31u
+
+/* Per-frame drain cap (paired-event bursts produced by the
+ * `vmaf_metadata_publish` callback). Cap matches the largest known
+ * publisher (DNN multi-output) plus 2x headroom. */
+#define VMAF_MCP_MAX_DRAIN_PER_FRAME 64u
+
+/* SSE URL-path string cap (e.g. "/events"). The path is purely a
+ * routing key; 256 bytes is well above any sensible HTTP route. */
+#define VMAF_MCP_SSE_PATH_MAX 256u
+
+/* AF_UNIX `struct sockaddr_un.sun_path` is 108 bytes on Linux,
+ * 104 on BSD. Cap at 100 to leave headroom across POSIX hosts and
+ * keep the rejection cross-platform identical. */
+#define VMAF_MCP_UDS_PATH_MAX 100u
+
 /* Forward decl for the stdio worker — defined in transport_stdio.c,
  * dispatched from mcp.c. Declared here (rather than file-local in
  * mcp.c) to satisfy clang-tidy's misc-use-internal-linkage check. */

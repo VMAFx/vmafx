@@ -930,6 +930,20 @@ pass will run inside the `vmaf-dev-mcp` container per
 `CLAUDE.md` §12 r15.
 
 ---
+## magic-number-audit cert-int07c (2026-05-30, ADR-0874)
+
+**Files touched:** `core/src/mcp/{mcp_internal.h,mcp.c,compute_vmaf.c,transport_sse.c}`,
+`core/src/picture.c`, `core/src/cuda/picture_cuda.c`, `core/src/libvmaf.c`.
+
+**Rebase impact:** Low. All five `core/src/mcp/*` files and
+`core/src/cuda/picture_cuda.c` are fork-added; upstream Netflix/vmaf has
+neither MCP nor a CUDA picture-allocator with these bounds. `core/src/picture.c`
+and `core/src/libvmaf.c` are fork-mirrored — the renames touch fork-added
+helpers (`dnn_*_output_feature_name`) and the fork's `VMAF_PIC_BPC_{MIN,MAX}`
+hardening (originally a fork-local guard against `bpc < 8 || bpc > 16`).
+A future upstream sync that re-introduces a raw `8`/`16` predicate on
+those lines should keep the fork's named constants — they are not bit-exact
+changes and do not alter behaviour. No new public C-API symbols introduced.
 
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 

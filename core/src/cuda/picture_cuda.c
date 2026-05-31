@@ -85,6 +85,11 @@ int vmaf_cuda_picture_upload_async(VmafPicture *cuda_pic, VmafPicture *pic, uint
 
 #define DATA_ALIGN_PINNED 32
 
+/* Mirrors picture.c VMAF_PIC_BPC_{MIN,MAX} — kept local so the CUDA
+ * TU does not pull libvmaf/src/picture.c into its include set. */
+#define VMAF_CUDA_PIC_BPC_MIN 8u
+#define VMAF_CUDA_PIC_BPC_MAX 16u
+
 static int default_release_pinned_picture(VmafPicture *pic, void *cookie)
 {
     (void)cookie;
@@ -115,7 +120,7 @@ int vmaf_cuda_picture_alloc_pinned(VmafPicture *pic, enum VmafPixelFormat pix_fm
         return -EINVAL;
     if (!pix_fmt)
         return -EINVAL;
-    if (bpc < 8 || bpc > 16)
+    if (bpc < VMAF_CUDA_PIC_BPC_MIN || bpc > VMAF_CUDA_PIC_BPC_MAX)
         return -EINVAL;
 
     int err = 0;
@@ -205,7 +210,7 @@ int vmaf_cuda_picture_alloc(VmafPicture *pic, void *cookie)
     VmafCudaCookie *cuda_cookie = cookie;
     if (!cuda_cookie->pix_fmt)
         return -1;
-    if (cuda_cookie->bpc < 8 || cuda_cookie->bpc > 16)
+    if (cuda_cookie->bpc < VMAF_CUDA_PIC_BPC_MIN || cuda_cookie->bpc > VMAF_CUDA_PIC_BPC_MAX)
         return -1;
 
     memset(pic, 0, sizeof(*pic));

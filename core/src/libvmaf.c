@@ -738,6 +738,26 @@ static bool dnn_feature_name_char_ok(char c)
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 }
 
+/* Fallback stack buffer for the synthesised "outputN" / "outputN_M"
+ * feature-name suffix used when the ONNX session reports no usable
+ * output node name. `output%zu` for a size_t-decoded `pos` fits in
+ * far fewer than 32 chars on any supported host (size_t is at most
+ * 20 decimal digits + the "output" prefix). */
+#define VMAF_DNN_NAME_FALLBACK_BUF 32
+
+/* Same idea with the de-duplication attempt counter appended:
+ * `output%zu_%zu`. 48 bytes leaves comfortable headroom over the
+ * worst case 6 + 20 + 1 + 20 + NUL = 48 bytes for two size_t
+ * decimal expansions. */
+#define VMAF_DNN_NAME_DEDUP_BUF 48
+
+/* `strnlen` cap when scanning user-supplied DNN feature names.
+ * Names land in libvmaf's feature-collector key string; a 1 KiB
+ * upper bound is well beyond any sensible model-output identifier
+ * and prevents an unterminated input from running off the end of
+ * the heap allocation. CERT STR06-C. */
+#define VMAF_DNN_NAME_STRNLEN_CAP 1024u
+
 static char *dnn_make_output_feature_name(const char *base, const char *suffix, size_t pos,
                                           bool multi_output)
 {
@@ -746,15 +766,15 @@ static char *dnn_make_output_feature_name(const char *base, const char *suffix, 
     if (!multi_output)
         return strdup(base);
 
-    char fallback[32];
+    char fallback[VMAF_DNN_NAME_FALLBACK_BUF];
     const char *raw = suffix;
     if (!raw || !*raw) {
         (void)snprintf(fallback, sizeof(fallback), "output%zu", pos);
         raw = fallback;
     }
 
-    const size_t base_len = strnlen(base, 1024u);
-    const size_t raw_len = strnlen(raw, 1024u);
+    const size_t base_len = strnlen(base, VMAF_DNN_NAME_STRNLEN_CAP);
+    const size_t raw_len = strnlen(raw, VMAF_DNN_NAME_STRNLEN_CAP);
     char *clean = (char *)malloc(raw_len + 1u);
     if (!clean)
         return NULL;
@@ -811,7 +831,7 @@ static void dnn_output_names_free(char **names, size_t count)
 static char *dnn_make_unique_fallback_output_name(const char *base, char *const *names,
                                                   size_t count, size_t pos)
 {
-    char suffix[48];
+    char suffix[VMAF_DNN_NAME_DEDUP_BUF];
     for (size_t attempt = 0; attempt <= VMAF_ORT_MAX_IO; ++attempt) {
         (void)snprintf(suffix, sizeof(suffix), "output%zu_%zu", pos, attempt);
         char *candidate = dnn_make_output_feature_name(base, suffix, pos, true);

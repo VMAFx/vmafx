@@ -50,9 +50,20 @@
  * should use the libvmaf CLI, not the MCP tool surface. */
 #define VMAF_MCP_COMPUTE_MAX_FRAMES 4096u
 
+/* Picture dimension bounds (per side). Floor is 4:2:0-even-friendly
+ * and matches the minimum a VMAF feature window can address; the
+ * 8192 ceiling is well beyond 8K UHD (7680 wide) and gives a safe
+ * uint64 product for the bytes-per-frame computation. */
+#define VMAF_MCP_PIC_DIM_MIN 8.0
+#define VMAF_MCP_PIC_DIM_MAX 8192.0
+
 /* Allowed pixel formats — the v2 surface accepts planar 4:2:0 with
  * 8/10/12/16-bit samples. Other chroma layouts remain -EINVAL until
  * the tool schema grows an explicit pixel_format field. */
+#define VMAF_MCP_BITDEPTH_8 8u
+#define VMAF_MCP_BITDEPTH_10 10u
+#define VMAF_MCP_BITDEPTH_12 12u
+#define VMAF_MCP_BITDEPTH_16 16u
 
 /* Set *err_owned to a heap-allocated copy of `msg`. Returns 0 on
  * success, -ENOMEM if allocation fails. */
@@ -90,7 +101,7 @@ static int read_exact(int fd, void *buf, size_t want)
 
 static size_t sample_bytes_for_bpc(unsigned bpc)
 {
-    return bpc > 8u ? 2u : 1u;
+    return bpc > VMAF_MCP_BITDEPTH_8 ? 2u : 1u;
 }
 
 /* Fill `pic` with the next frame from `fd`. Plane sizes for 4:2:0:
@@ -169,7 +180,8 @@ static int parse_arguments(const cJSON *arguments, ComputeArgs *out, char **err_
                    -ENOMEM;
     double wv = w->valuedouble;
     double hv = h->valuedouble;
-    if (wv < 8.0 || hv < 8.0 || wv > 8192.0 || hv > 8192.0)
+    if (wv < VMAF_MCP_PIC_DIM_MIN || hv < VMAF_MCP_PIC_DIM_MIN || wv > VMAF_MCP_PIC_DIM_MAX ||
+        hv > VMAF_MCP_PIC_DIM_MAX)
         return set_err(err_owned, "width/height out of range [8, 8192]") == 0 ? -EINVAL : -ENOMEM;
     /* Even-dim required for 4:2:0. */
     if (((unsigned)wv & 1u) || ((unsigned)hv & 1u))
@@ -180,7 +192,7 @@ static int parse_arguments(const cJSON *arguments, ComputeArgs *out, char **err_
     out->distorted_path = dis->valuestring;
     out->width = (unsigned)wv;
     out->height = (unsigned)hv;
-    out->bitdepth = 8u;
+    out->bitdepth = VMAF_MCP_BITDEPTH_8;
     if (bd != NULL) {
         if (!cJSON_IsNumber(bd))
             return set_err(err_owned, "bitdepth must be one of 8, 10, 12, 16") == 0 ? -EINVAL :
@@ -188,7 +200,8 @@ static int parse_arguments(const cJSON *arguments, ComputeArgs *out, char **err_
         double bdv = bd->valuedouble;
         out->bitdepth = (unsigned)bdv;
     }
-    if (out->bitdepth != 8u && out->bitdepth != 10u && out->bitdepth != 12u && out->bitdepth != 16u)
+    if (out->bitdepth != VMAF_MCP_BITDEPTH_8 && out->bitdepth != VMAF_MCP_BITDEPTH_10 &&
+        out->bitdepth != VMAF_MCP_BITDEPTH_12 && out->bitdepth != VMAF_MCP_BITDEPTH_16)
         return set_err(err_owned, "bitdepth must be one of 8, 10, 12, 16") == 0 ? -EINVAL : -ENOMEM;
     out->model_version = (cJSON_IsString(mv) ? mv->valuestring : "vmaf_v0.6.1");
     return 0;

@@ -28,6 +28,21 @@
 
 #define DATA_ALIGN 64
 
+/* Bit-depth bounds for all supported planar inputs (8 / 10 / 12 / 16
+ * bit per component). 8 is the floor for any libvmaf feature kernel;
+ * 16 is the storage ceiling (10- and 12-bit content is packed into
+ * little-endian 16-bit samples on read). */
+#define VMAF_PIC_BPC_MIN 8u
+#define VMAF_PIC_BPC_MAX 16u
+
+/* Per-side dimension cap. The product `(w + DATA_ALIGN - 1u)` is
+ * computed in 32-bit unsigned arithmetic during stride
+ * compute_geometry; capping each side at 32768 keeps that addition
+ * well clear of the UINT32_MAX wrap that would otherwise be reached
+ * when `w >= 0xFFFFFFC1u`. 32K is also well above 8K UHD (7680),
+ * the largest realistic input. CERT INT30-C. */
+#define VMAF_PIC_DIM_MAX 32768u
+
 // Picture buffer pool: reuses freed pixel buffers to avoid mmap/munmap
 // syscalls on each frame. Buffers are matched by exact size (LIFO stack).
 // Thread-safe: vmaf_picture_unref can be called from worker threads.
@@ -144,15 +159,11 @@ int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned 
         return -EINVAL;
     if (!pix_fmt)
         return -EINVAL;
-    if (bpc < 8 || bpc > 16)
+    if (bpc < VMAF_PIC_BPC_MIN || bpc > VMAF_PIC_BPC_MAX)
         return -EINVAL;
     /* Guard against integer overflow in picture_compute_geometry:
-     * (w + DATA_ALIGN - 1u) wraps to 0 when w >= 0xFFFFFFC1 on 32-bit
-     * unsigned arithmetic, producing a zero-byte allocation that passes
-     * but causes OOB on any pixel access.  32768 is well above any
-     * real VMAF input size and keeps the addition in safe range.
-     * CERT INT30-C. */
-    if (w == 0 || w > 32768u || h == 0 || h > 32768u)
+     * see VMAF_PIC_DIM_MAX comment. CERT INT30-C. */
+    if (w == 0 || w > VMAF_PIC_DIM_MAX || h == 0 || h > VMAF_PIC_DIM_MAX)
         return -EINVAL;
 
     memset(pic, 0, sizeof(*pic));
