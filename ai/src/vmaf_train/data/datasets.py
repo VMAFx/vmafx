@@ -12,10 +12,10 @@ See `vmaf_train.data.manifest_scan` for the scanner implementation.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+from pydantic import BaseModel, ConfigDict, field_validator
 
 DATASETS: dict[str, dict[str, str]] = {
     "nflx": {"capability": "C1/C2", "license": "Netflix research"},
@@ -26,12 +26,35 @@ DATASETS: dict[str, dict[str, str]] = {
 }
 
 
-@dataclass(frozen=True)
-class ManifestEntry:
+class ManifestEntry(BaseModel):
+    """One row in a YAML dataset manifest (key + path + SHA-256 + MOS).
+
+    Migrated from ``@dataclass(frozen=True)`` to ``pydantic.BaseModel``
+    so the YAML loader (``load_manifest``) surfaces structured errors
+    for missing/malformed SHA-256 strings or non-numeric MOS values.
+    See ADR-0934.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        validate_assignment=True,
+    )
+
     key: str
     path: str
     sha256: str
     mos: float | None = None
+
+    @field_validator("sha256")
+    @classmethod
+    def _sha256_shape(cls, v: str) -> str:
+        # Hex digest of SHA-256 is always 64 lowercase hex chars; reject
+        # eagerly so the malformed-line diagnostic points at the manifest
+        # row instead of the much later SHA-mismatch failure.
+        if len(v) != 64 or any(c not in "0123456789abcdef" for c in v.lower()):
+            raise ValueError("sha256 must be a 64-char hex digest")
+        return v.lower()
 
 
 def data_root() -> Path:

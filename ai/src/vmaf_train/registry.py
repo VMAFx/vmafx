@@ -18,23 +18,36 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SCHEMA_VERSION = 1
 VALID_KINDS = {"fr", "nr", "filter"}
 
 
-@dataclass
-class ModelMetadata:
+class ModelMetadata(BaseModel):
+    """Sidecar JSON describing a shipped tiny model.
+
+    Migrated from ``@dataclass`` to ``pydantic.BaseModel`` so the load
+    path (``json.loads(...) -> ModelMetadata.model_validate``) rejects
+    malformed sidecars with line-numbered errors instead of crashing
+    inside Python's keyword-argument machinery. See ADR-0934.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_assignment=True,
+    )
+
     schema_version: int
     name: str
     kind: str
     onnx_opset: int
     input_names: list[str]
     output_names: list[str]
-    normalization: dict[str, list[float]] = field(default_factory=dict)
+    normalization: dict[str, list[float]] = Field(default_factory=dict)
     dataset: str | None = None
     train_commit: str | None = None
     train_config_hash: str | None = None
@@ -44,8 +57,18 @@ class ModelMetadata:
     cosign_signature: str | None = None
     notes: str | None = None
 
+    @field_validator("kind")
+    @classmethod
+    def _valid_kind(cls, v: str) -> str:
+        if v not in VALID_KINDS:
+            raise ValueError(f"kind must be one of {sorted(VALID_KINDS)}; got {v!r}")
+        return v
+
     def to_json(self) -> str:
-        return json.dumps(asdict(self), indent=2, sort_keys=True) + "\n"
+        # ``mode='json'`` ensures Path / non-trivial types render as
+        # JSON-native primitives; sort_keys + indent match the prior
+        # dataclass-asdict output so the on-disk diff is empty.
+        return json.dumps(self.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
 
 
 def _hash_file(path: Path) -> str:
@@ -113,7 +136,7 @@ def register(
 
 def load(sidecar_path: Path) -> ModelMetadata:
     doc: dict[str, Any] = json.loads(sidecar_path.read_text())
-    return ModelMetadata(**doc)
+    return ModelMetadata.model_validate(doc)
 
 
 def _sanitize_nonfinite(obj: Any) -> Any:

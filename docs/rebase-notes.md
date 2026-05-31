@@ -41156,3 +41156,15 @@ If upstream Netflix ever adopts `.claude/` skills (unlikely — different
 agent tooling), revisit whether the three new scaffolds should be promoted
 or stay fork-only. The bisect-common library has no upstream analogue
 either, so the merge surface is zero.
+## ai/ dataclass → pydantic v2 migration (ADR-0934, 2026-05-31)
+
+no rebase impact: REASON — touched files are entirely fork-local. Upstream
+Netflix/vmaf does not ship `ai/src/vmaf_train/` at all (the package is
+fork-added — Tiny-AI surface, ADR-0042). `TrainConfig` (`train.py`),
+`ModelMetadata` (`registry.py`), and `ManifestEntry` (`data/datasets.py`)
+become `pydantic.BaseModel`s; `pydantic>=2.13.4` added to
+`ai/pyproject.toml` (already in tree via `mcp-server/vmaf-mcp`). Sidecar
+JSON layout byte-identical (`ModelMetadata.to_json()` uses
+`model_dump(mode="json")` + `json.dumps(indent=2, sort_keys=True)`). On
+upstream sync the diff cannot conflict — Netflix has no equivalent file
+to merge into.

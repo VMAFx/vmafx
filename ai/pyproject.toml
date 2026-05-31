@@ -31,6 +31,7 @@ dependencies = [
   "Pillow>=12.2.0,<14.0",
   "scipy>=1.17.1",
   "scikit-learn>=1.8.0",
+  "pydantic>=2.13.4",
   "pyyaml>=6.0.3",
   "typer>=0.25.1",
   "rich>=15.0.0",

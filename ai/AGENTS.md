@@ -1082,3 +1082,21 @@ binary upload is a separate PR.
   ingest time on either adapter. The trainer-side normaliser
   must read each row's `corpus` literal to pick the correct
   per-shard rescale factor.
+
+- **`vmaf_train.train.TrainConfig`, `vmaf_train.registry.ModelMetadata`,
+  and `vmaf_train.data.datasets.ManifestEntry` are pydantic v2
+  `BaseModel`s, not `@dataclass`es.** (ADR-0934.) They parse
+  operator-supplied YAML / JSON, so the boundary needs declared
+  validators + `extra="forbid"` + line-numbered errors. Every other
+  dataclass in `ai/src/vmaf_train/` (`NormReport`, `BisectResult`,
+  `EvalReport`, `CrossBackendReport`, `ModelAudit`, `ProfileReport`,
+  `QuantizationReport`, `AllowlistReport`, `Splits`, `Entry`, etc.)
+  is producer-controlled and stays as `@dataclass` on purpose — do
+  not mass-convert "for consistency". The rebase rule is: a new
+  dataclass that ingests `yaml.safe_load(...)` or `json.loads(...)`
+  output via `**doc` or `cls(field=doc["field"], ...)` becomes a
+  `BaseModel`; a new dataclass produced by a typed function call
+  stays a `@dataclass`. `ModelMetadata.to_json()` round-trips via
+  `model_dump(mode="json")` + `json.dumps(indent=2, sort_keys=True)`;
+  do not switch it to `BaseModel.model_dump_json()` (different
+  formatting — would invalidate sidecar goldens).

@@ -4,12 +4,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 import pytorch_lightning as L
 import yaml
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 from .datamodule import VmafTrainDataModule
@@ -40,12 +40,27 @@ PrecisionStr = Literal[
 ]
 
 
-@dataclass
-class TrainConfig:
+class TrainConfig(BaseModel):
+    """User-supplied training configuration (YAML / kwargs).
+
+    Migrated from ``@dataclass`` to ``pydantic.BaseModel`` so that loader
+    sites (``load_config``) surface declarative, line-numbered validation
+    errors instead of silently coercing or accepting bad inputs. See
+    ADR-0934.
+    """
+
+    model_config = ConfigDict(
+        # ``arbitrary_types_allowed`` keeps ``pathlib.Path`` round-tripping
+        # without forcing a converter; pydantic v2's native ``Path`` support
+        # already coerces from string but we keep the field type explicit.
+        extra="forbid",
+        validate_assignment=True,
+    )
+
     model: str
-    model_args: dict[str, Any]
+    model_args: dict[str, Any] = Field(default_factory=dict)
     cache: Path
-    output: Path
+    output: Path = Path("runs/default")
     epochs: int = 50
     batch_size: int = 256
     val_frac: float = 0.1
@@ -53,24 +68,34 @@ class TrainConfig:
     seed: int = 0
     precision: PrecisionStr = "32-true"
 
+    @field_validator("epochs", "batch_size")
+    @classmethod
+    def _positive_int(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("must be > 0")
+        return v
+
+    @field_validator("val_frac", "test_frac")
+    @classmethod
+    def _unit_interval(cls, v: float) -> float:
+        if not 0.0 <= v < 1.0:
+            raise ValueError("must lie in [0.0, 1.0)")
+        return v
+
+    @field_validator("seed")
+    @classmethod
+    def _nonnegative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("must be >= 0")
+        return v
+
 
 def load_config(path: Path, overrides: dict[str, Any] | None = None) -> TrainConfig:
     with path.open() as fh:
         doc = yaml.safe_load(fh) or {}
     if overrides:
         doc.update({k: v for k, v in overrides.items() if v is not None})
-    return TrainConfig(
-        model=doc["model"],
-        model_args=doc.get("model_args", {}),
-        cache=Path(doc["cache"]),
-        output=Path(doc.get("output", "runs/default")),
-        epochs=int(doc.get("epochs", 50)),
-        batch_size=int(doc.get("batch_size", 256)),
-        val_frac=float(doc.get("val_frac", 0.1)),
-        test_frac=float(doc.get("test_frac", 0.1)),
-        seed=int(doc.get("seed", 0)),
-        precision=doc.get("precision", "32-true"),  # type: ignore[arg-type]  # validated at runtime
-    )
+    return TrainConfig.model_validate(doc)
 
 
 def train(cfg: TrainConfig) -> Path:
