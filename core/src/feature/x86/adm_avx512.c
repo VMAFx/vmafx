@@ -3552,13 +3552,21 @@ void adm_dwt2_16_avx512(const uint16_t *src, const adm_dwt_band_t *dst, AdmBuffe
     int16_t *tmphi = tmplo + w;
     int32_t accum;
 
+    /* Cast each filter coefficient to uint32_t BEFORE the shift —
+     * `filter_*[k]` may be negative, and `(int) << 16` on a negative
+     * value is C undefined behaviour (caught by UBSan). The cast on
+     * the result `(uint32_t)(filter[k] << 16)` does not save us
+     * because precedence makes the shift execute on the signed type
+     * first. Reordering to `((uint32_t)filter[k] << 16)` is bit-exact
+     * with the previous wrap-on-overflow behaviour on every platform
+     * we target (two's complement, defined unsigned wrap). */
     __m512i f01_lo =
-        _mm512_set1_epi32(filter_lo[0] + (uint32_t)(filter_lo[1] << 16) /* + (1 << 16) */);
+        _mm512_set1_epi32(filter_lo[0] + ((uint32_t)filter_lo[1] << 16) /* + (1 << 16) */);
     __m512i f23_lo =
-        _mm512_set1_epi32(filter_lo[2] + (uint32_t)(filter_lo[3] << 16) /* + (1 << 16) */);
-    __m512i f01_hi = _mm512_set1_epi32(filter_hi[0] + (uint32_t)(filter_hi[1] << 16) + (1 << 16));
+        _mm512_set1_epi32(filter_lo[2] + ((uint32_t)filter_lo[3] << 16) /* + (1 << 16) */);
+    __m512i f01_hi = _mm512_set1_epi32(filter_hi[0] + ((uint32_t)filter_hi[1] << 16) + (1 << 16));
     __m512i f23_hi =
-        _mm512_set1_epi32(filter_hi[2] + (uint32_t)(filter_hi[3] << 16) /*+ (1 << 16)*/);
+        _mm512_set1_epi32(filter_hi[2] + ((uint32_t)filter_hi[3] << 16) /*+ (1 << 16)*/);
 
     __m512i accum0;
     __m512i accum0_lo;

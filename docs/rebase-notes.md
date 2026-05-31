@@ -863,6 +863,32 @@ Fork-local files:
 `docs/adr/0871-ssim-dispatch-pthread-once.md`,
 `docs/research/tsan-race-audit-2026-05-30.md`,
 `changelog.d/fixed/tsan-race-audit.md`.
+## sanitizer-pass-cleanup (2026-05-30, ADR-0869)
+
+**Files touched:**
+- `core/src/feature/cambi.c` — adds two `int` shadow slots
+  (`window_size_opt`, `max_log_contrast_opt`) to `CambiState`; the
+  options table targets them; `init()` copies into the existing
+  `uint16_t` runtime fields.
+- `core/src/feature/x86/adm_avx2.c` — moves the `uint32_t` cast inside
+  the shift in four DWT2 filter-packing expressions.
+- `core/src/feature/x86/adm_avx512.c` — same as AVX2.
+
+**Rebase impact:**
+- **CAMBI**: upstream Netflix's `CambiState` does not have the
+  `_opt` shadow slots. On upstream sync, expect a context conflict on
+  the struct definition and on the two option-table entries. Resolution
+  is to keep the fork's shadow slots and the init-bridge assignments;
+  upstream's option entries should be re-pointed at the `_opt` shadows.
+- **ADM AVX2/AVX-512**: the four filter-packing expressions are
+  upstream-mirrored code. On upstream sync, a textual conflict is
+  possible at every occurrence; the fork's resolution is the
+  inside-cast (`((uint32_t)filter[k] << 16)`). Bit-exact with upstream
+  output; safe to keep.
+
+Verified clean under ASan+UBSan against the full unit-test suite (63
+tests OK) and the vmaf CLI on 4:2:0 8-bit, 4:2:2 10-bit, 4:2:0 12-bit.
+Cambi tuned-options feature-name derivation (`cambi_mlc_3_ws_63`) works.
 
 ---
 

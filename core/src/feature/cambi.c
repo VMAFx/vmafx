@@ -141,6 +141,19 @@ typedef struct CambiState {
     unsigned enc_bitdepth;
     unsigned src_width;
     unsigned src_height;
+    /* `window_size_opt` and `max_log_contrast_opt` are the
+     * option-parser write targets — they must be `int` because the
+     * options table declares them as `VMAF_OPT_TYPE_INT`, and the
+     * parser dereferences `(int *)data` to store / read defaults.
+     * Writing a 4-byte int through a `uint16_t *` is undefined
+     * behaviour (misaligned store on the 2-byte-aligned
+     * `max_log_contrast` slot, silent overwrite of the adjacent
+     * `src_window_size` slot on `window_size`). The runtime fields
+     * `window_size` / `max_log_contrast` are populated from these in
+     * `init()` and remain `uint16_t` to keep the inner-loop call
+     * signatures unchanged. */
+    int window_size_opt;
+    int max_log_contrast_opt;
     uint16_t window_size;
     uint16_t src_window_size;
     double topk;
@@ -235,7 +248,7 @@ static const VmafOption options[] = {
     {
         .name = "window_size",
         .help = "Window size to compute CAMBI: 65 corresponds to ~1 degree at 4k",
-        .offset = offsetof(CambiState, window_size),
+        .offset = offsetof(CambiState, window_size_opt),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = DEFAULT_CAMBI_WINDOW_SIZE,
         .min = 15,
@@ -292,7 +305,7 @@ static const VmafOption options[] = {
         .help = "Maximum contrast in log luma level (2^max_log_contrast) at 10-bits, "
                 "e.g., 2 is equivalent to 4 luma levels at 10-bit and 1 luma level at 8-bit. "
                 "From 0 to 5: default 2 is recommended for banding from compression.",
-        .offset = offsetof(CambiState, max_log_contrast),
+        .offset = offsetof(CambiState, max_log_contrast_opt),
         .type = VMAF_OPT_TYPE_INT,
         .default_val.i = DEFAULT_CAMBI_MAX_LOG_CONTRAST,
         .min = 0,
@@ -558,6 +571,13 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     (void)pix_fmt;
 
     CambiState *s = fex->priv;
+
+    /* Copy parsed option values from the int shadow slots into the
+     * uint16_t runtime fields. Option-parser bounds (0..127 for
+     * window_size, 0..5 for max_log_contrast) guarantee the narrowing
+     * is lossless. See ADR-0790. */
+    s->window_size = (uint16_t)s->window_size_opt;
+    s->max_log_contrast = (uint16_t)s->max_log_contrast_opt;
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
