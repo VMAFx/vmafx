@@ -1,0 +1,34 @@
+# AGENTS.md — vmafx (safe binding crate)
+
+## Rebase-sensitive invariants
+
+- **`unsafe` boundary**: every `unsafe { ... }` block must be at an FFI
+  call site (i.e. directly invoking a `vmafx_sys::vmaf_*` symbol or
+  reading/writing an opaque C struct field). Adding `unsafe fn` to a
+  public method signature breaks the contract of the safe layer.
+- **Ownership transfer at `Context::read_pictures`**: the method
+  consumes both `Picture` values via `into_raw_owned()`, which clears
+  the `owned` flag so `Drop` does not double-free buffers libvmaf has
+  taken responsibility for. Any refactor that changes how pictures are
+  passed across the FFI boundary must preserve this contract.
+- **`Send` / `!Sync` split**: `Context`, `Model`, and `Picture` are
+  marked `Send` but deliberately not `Sync`. libvmaf does not document
+  thread-safe concurrent access on a single object. Do not add
+  `unsafe impl Sync` without an ADR.
+- **errno mapping is a stable subset**: `Error::from_libvmaf_rc` maps
+  five well-known POSIX errno values (`ENOMEM=12`, `EINVAL=22`,
+  `ENOSYS=38`/`ENOTSUP=95`, `EACCES=13`, `ENOENT=2`) and falls through
+  to `Error::Libvmaf { code }`. Adding new mapped variants is fine;
+  changing existing numeric values is a breaking change.
+- **No `unsafe` re-export from `vmafx-sys`**: this crate must not
+  re-export raw FFI symbols. If a user needs the escape hatch, they
+  add `vmafx-sys` as a direct dep.
+
+## Phase scope (Phase 1, ADR-0929)
+
+In scope: `Context`, `Model`, `Picture`, `Score`, `Error`, lifecycle +
+single-pool scoring.
+
+Deferred: model collections, per-feature score readout, output writers
+(JSON/XML/CSV), dmabuf/USM import, per-frame iteration adapters.
+The raw FFI in `vmafx_sys` remains the escape hatch for these.

@@ -9,6 +9,7 @@
 [workspace]
 members = [
     "bindings/rust/vmafx-sys",
+    "bindings/rust/vmafx",
     "core/src/feature/rust/tad",
 ]
 resolver = "2"

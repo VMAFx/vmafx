@@ -6,6 +6,23 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## Rust `vmafx` safe binding crate scaffold (2026-05-31)
+
+**Files touched:**
+`Cargo.toml` (workspace), `bindings/rust/vmafx/` (new crate).
+
+**Rebase impact:** None. Netflix/vmaf has no Rust bindings upstream. The
+new crate is a pure addition under `bindings/rust/`, parallel to the
+existing `vmafx-sys` crate (ADR-0706). The workspace `Cargo.toml` gains
+one `members` entry; no upstream file is touched. Subsequent upstream
+syncs do not interact with this code.
+
+If a future upstream PR adds a Rust workspace (extremely unlikely), the
+fork's `bindings/rust/vmafx/` and `bindings/rust/vmafx-sys/` paths must
+not collide with the upstream layout. As of n8.1 there is no precedent.
+
+---
+
 ## Metal kernel parity tests round 3 (2026-05-31)
 
 **Files touched:**
