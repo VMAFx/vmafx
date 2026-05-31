@@ -67,6 +67,35 @@ before merging any upstream-template re-sync PR.
 
 ---
 
+## MCP server cgo direct path Phase 1 (2026-05-31, ADR-0931)
+
+**Files touched:**
+`pkg/libvmaf/direct.go`, `pkg/libvmaf/errors.go`,
+`pkg/libvmaf/direct_test.go`, `pkg/libvmaf/errors_test.go`,
+`pkg/libvmaf/AGENTS.md`, `cmd/vmafx-mcp/impl.go`,
+`cmd/vmafx-mcp/impl_direct.go`, `cmd/vmafx-mcp/impl_direct_test.go`,
+`cmd/vmafx-mcp/AGENTS.md`.
+
+**Rebase impact:** None against Netflix upstream. The change is entirely
+fork-local: it adds a new in-process cgo scoring path (`ScoreDirect`,
+`ValidateModel`) to `pkg/libvmaf/` (which does not exist upstream) and
+wires two MCP tool handlers (`vmaf_score`, `describe_model`) in
+`cmd/vmafx-mcp/` (which also does not exist upstream) to take that path
+when `VMAFX_MCP_DIRECT=1`. The libvmaf public C ABI used
+(`vmaf_init` / `vmaf_use_features_from_model` / `vmaf_read_pictures` /
+`vmaf_score_pooled` / `vmaf_model_load_from_path` / `vmaf_picture_alloc`
+/ `vmaf_picture_unref` / `vmaf_model_destroy` / `vmaf_close`) is the
+canonical entry-point set documented in `core/include/libvmaf/`; the
+upstream signatures change rarely and any rename would already break
+`core/tools/vmaf.c`, so this code rides along.
+
+If upstream renames or removes any of those entry points, update
+`pkg/libvmaf/direct.go` to match, then run the unit suite
+(`LD_LIBRARY_PATH=$(pwd)/core/build-cpu/src go test ./pkg/libvmaf/
+./cmd/vmafx-mcp/`).
+
+---
+
 ## SIMD strict-FP flags for icx (2026-05-30)
 
 **Files touched:**

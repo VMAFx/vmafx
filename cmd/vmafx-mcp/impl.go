@@ -158,6 +158,13 @@ func handleVmafScore(_ context.Context, args map[string]any) (any, error) {
 	backend := strArg(args, "backend", "auto")
 	precision := strArg(args, "precision", "17")
 
+	// ADR-0931 Phase 1: direct cgo path behind VMAFX_MCP_DIRECT=1.
+	// The direct path itself falls back to the subprocess path for cases
+	// it cannot handle (GPU backends, .onnx models, unresolvable model
+	// args) so the env-gate is safe to flip on without losing coverage.
+	if directPathEnabled() {
+		return runVmafScoreDirect(ref, dis, width, height, pixfmt, bitdepth, model, backend)
+	}
 	return runVmafScore(ref, dis, width, height, pixfmt, bitdepth, model, backend, precision)
 }
 
@@ -1076,6 +1083,10 @@ func handleDescribeModel(_ context.Context, args map[string]any) (any, error) {
 	nameOrPath := strArg(args, "name", "")
 	if nameOrPath == "" {
 		return nil, fmt.Errorf("name is required")
+	}
+	// ADR-0931 Phase 1: optional libvmaf-side validation via cgo.
+	if directPathEnabled() {
+		return describeModelDirect(nameOrPath)
 	}
 	return describeModel(nameOrPath)
 }
