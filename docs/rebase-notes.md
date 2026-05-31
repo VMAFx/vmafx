@@ -6,6 +6,32 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## Metal kernel parity tests round 3 (2026-05-31)
+
+**Files touched:**
+`core/test/meson.build`,
+`core/test/test_metal_integer_motion_parity.c` (new),
+`core/test/test_metal_float_motion_parity.c` (new),
+`core/test/test_metal_float_moment_parity.c` (new),
+`core/test/test_metal_float_ms_ssim_parity.c` (new)
+
+**Rebase impact:** None. Closes the per-kernel parity coverage gap for the
+remaining four Metal extractors after PR #351 (registration audit) and
+PR #379 (round-2 parity: motion_v2, integer_psnr, float_psnr, float_ssim).
+All four new files live under the existing fork-local `enable_metal` block
+in `core/test/meson.build` (the entire Metal backend is fork-added —
+ADR-0361 / ADR-0421 / ADR-0589 / T8-2a — and absent from upstream
+Netflix/vmaf). The block edit appends four new `executable()` + `test()`
+pairs immediately after the round-2 block (or after
+`test_metal_install_header` if round-2 is not yet merged); the surrounding
+`endif` boundaries are untouched so upstream syncs cannot conflict here.
+
+If upstream ever ports a Metal backend, the test files would need
+re-pointing at the upstream kernel names; the synthetic-fixture +
+`-ENODEV` skip pattern carries forward unchanged.
+
+---
+
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
 
 **Files touched:**

@@ -1028,6 +1028,50 @@ test_metal_install_header = executable('test_metal_install_header',
 )
 test('test_metal_install_header', test_metal_install_header, suite : ['fast', 'gpu'])
 endif
+
+# Metal kernel coverage round 3 — per-extractor parity tests for the four
+# extractors not covered by round 2 (PR #379): integer_motion, float_motion,
+# float_moment, float_ms_ssim. Same pattern as round 2 — synthetic YUV420P
+# fixture fed through both the CPU twin and the Metal extractor, places=4
+# (1e-4) parity per ADR-0214; float_ms_ssim uses the 1e-3 SSIM-family bound
+# from ADR-0589. Each test skips cleanly when `vmaf_metal_state_init`
+# returns -ENODEV (Linux / Windows / Intel Mac); on Apple-Family-7+ macOS
+# CI lanes they exercise the live kernel.
+test_metal_integer_motion_parity = executable('test_metal_integer_motion_parity',
+    ['test.c', 'test_metal_integer_motion_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_integer_motion_parity', test_metal_integer_motion_parity, suite : ['fast', 'gpu'])
+
+test_metal_float_motion_parity = executable('test_metal_float_motion_parity',
+    ['test.c', 'test_metal_float_motion_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_float_motion_parity', test_metal_float_motion_parity, suite : ['fast', 'gpu'])
+
+test_metal_float_moment_parity = executable('test_metal_float_moment_parity',
+    ['test.c', 'test_metal_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_float_moment_parity', test_metal_float_moment_parity, suite : ['fast', 'gpu'])
+
+test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
+    ['test.c', 'test_metal_float_ms_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity, suite : ['fast', 'gpu'])
 endif
 
 test('test_picture', test_picture, suite : ['fast'])
