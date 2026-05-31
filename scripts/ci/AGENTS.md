@@ -1,5 +1,7 @@
 # `scripts/ci/` — agent invariants
 
+Parent: [../AGENTS.md](../AGENTS.md).
+
 Fork-local CI utilities. Anything in this directory is invoked from
 `.github/workflows/*.yml` (see "Rebase-sensitive surfaces" below);
 upstream Netflix/vmaf has no equivalent tree, so the rebase risk is

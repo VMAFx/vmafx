@@ -1,5 +1,7 @@
 # `tools/vmaf-tune/` — agent notes
 
+Parent: [../../AGENTS.md](../../AGENTS.md).
+
 Quality-aware encode automation harness. See
 [`docs/adr/0237-quality-aware-encode-automation.md`](../../docs/adr/0237-quality-aware-encode-automation.md)
 for the umbrella spec and

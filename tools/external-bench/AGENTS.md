@@ -1,9 +1,12 @@
 # `tools/external-bench/` — agent notes
 
+Parent: [../../AGENTS.md](../../AGENTS.md).
+
 External-competitor benchmark harness. See
-[ADR-0332](../../docs/adr/0332-external-bench-wrapper-only.md) for the
-licence-boundary architecture and
-[`README.md`](README.md) for operator usage.
+[ADR-0368](../../docs/adr/0368-external-bench-wrapper-only.md) for the
+licence-boundary architecture,
+[ADR-0656](../../docs/adr/0656-external-bench-wrapper-schema.md) for the
+wrapper-output schema, and [`README.md`](README.md) for operator usage.
 
 ## Rebase-sensitive invariants
 

@@ -1,5 +1,7 @@
 # aiutils — Shared AI Helpers
 
+Parent: [../../AGENTS.md](../../AGENTS.md) (ai/).
+
 This package centralizes common utility patterns to reduce duplication across
 `ai/scripts/` and `tools/vmaf-tune/src/vmaftune/` (and any other downstream
 consumer that adds `ai/src` to `sys.path`).

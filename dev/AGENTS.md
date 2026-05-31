@@ -1,5 +1,7 @@
 # AGENTS.md — dev/ (container infra)
 
+Parent: [../AGENTS.md](../AGENTS.md).
+
 Invariants for the `dev/` tree that agents must preserve across rebases and
 follow-up PRs. See [Research-0135](../docs/research/0135-dev-mcp-container-stage-3-fix-2026-05-16.md)
 for the diagnosis that established these.

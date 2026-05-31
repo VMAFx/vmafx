@@ -1,11 +1,14 @@
 # tools/vmaf-roi-score — agent notes
 
+Parent: [../../AGENTS.md](../../AGENTS.md).
+
 ## What this directory is
 
 Option C implementation for region-of-interest VMAF *scoring* — drives
 the `vmaf` CLI twice (full-frame + saliency-masked) and blends the
-pooled scores. Pure Python; no libvmaf C-side changes. See ADR-0296
-and ADR-0424.
+pooled scores. Pure Python; no libvmaf C-side changes. See
+[ADR-0296](../../docs/adr/0296-vmaf-roi-saliency-weighted.md) and
+[ADR-0424](../../docs/adr/0424-vmaf-tune-corpus-benchmark.md).
 
 > **Naming guard**: do **not** rename this tool to `vmaf-roi`. That
 > name belongs to `core/tools/vmaf_roi.c` (ADR-0247), the

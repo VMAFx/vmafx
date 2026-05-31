@@ -1,5 +1,7 @@
 # AGENTS.md — cmd/vmafx-operator
 
+Parent: [../../AGENTS.md](../../AGENTS.md).
+
 ## Package role
 
 vmafx-operator is a Kubernetes Operator built with kubebuilder v4 /

@@ -1,5 +1,10 @@
 # AGENTS.md — vmafx-sys
 
+Parent: [../../../AGENTS.md](../../../AGENTS.md). Established by
+[ADR-0707](../../../docs/adr/0707-vmafx-rust-pilot-feature.md) (Rust pilot
++ cbindgen) — this is the `-sys` FFI crate; a safe wrapper crate
+(`bindings/rust/vmafx/`) is in scope for a follow-up.
+
 ## Rebase-sensitive invariants
 
 - **bindgen allowlist**: `build.rs` uses `allowlist_function("vmaf_.*")`, `allowlist_type("Vmaf.*")`, and `allowlist_var("VMAF_.*")`. Do not widen this to `.*` — it would pull in OS internal types and break compilation. Widening requires an ADR.

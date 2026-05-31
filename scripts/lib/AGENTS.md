@@ -1,5 +1,7 @@
 # `scripts/lib/` — agent invariants
 
+Parent: [../AGENTS.md](../AGENTS.md).
+
 Shared Python utilities consumed by `scripts/ci/` and (in future)
 by `scripts/dev/` and `.github/workflows/*.yml`. Created by
 [ADR-0355](../../docs/adr/0355-symphony-agent-dispatch-infra.md);

@@ -1,5 +1,10 @@
 # `libvmaf/src/feature/metal/` — Metal feature-kernel directory
 
+Parent: [../AGENTS.md](../AGENTS.md). The Metal backend runtime lives at
+[`../../metal/AGENTS.md`](../../metal/AGENTS.md); ADRs governing this
+directory are listed in the "Governing ADRs" section at the bottom of
+this file.
+
 ## Purpose
 
 Contains one `.mm` (Objective-C++ host dispatch) + one `.metal` (Metal

@@ -1,5 +1,9 @@
 # HIP Feature Extractors — Invariant Notes
 
+Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
+[`../../hip/AGENTS.md`](../../hip/AGENTS.md); the CUDA sibling is
+[`../cuda/AGENTS.md`](../cuda/AGENTS.md).
+
 ## Deleted orphan/dead TUs (ADR-0546)
 
 The following files were removed from this directory by ADR-0546
@@ -47,7 +51,9 @@ Mismatches are undefined behavior on some HIP runtimes and may silently corrupt 
 - Picture planes arrive from the VMAF pipeline as CPU-side `VmafPicture` structs with `data[0..2]` pointers (host memory). Copying these into device-allocated staging buffers requires `hipMemcpyHostToDevice`.
 - Readback buffers allocated via `hipHostMalloc` in `src/hip/kernel_template.c` are host-pinned memory, safe to use with `hipMemcpyDeviceToHost` for kernel output collection.
 
-See PR #[TBD] / ADR-[TBD] for the discovery and fix of `integer_psnr_hip.c` lines 316/322 (2026-05-16 GPU audit).
+See the 2026-05-16 GPU audit (no follow-up ADR was filed; the invariant
+stands on its own and the relevant `hipMemcpy*` direction tags in
+`integer_psnr_hip.c` are now at lines 212 / 359 / 364 post-refactor).
 
 ## Kernel-arg pattern for `hipModuleLaunchKernel` pointer parameters (ADR-0537)
 

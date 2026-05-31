@@ -1,5 +1,7 @@
 # Agent notes — `.github/` (workflows + templates)
 
+Parent: [../AGENTS.md](../AGENTS.md).
+
 This directory holds GitHub-facing config: Actions workflows, issue /
 PR templates, the CODEOWNERS file. Everything here is fork-local —
 Netflix/vmaf upstream has its own `.github/` that rarely overlaps

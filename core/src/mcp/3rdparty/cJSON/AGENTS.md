@@ -1,5 +1,7 @@
 # AGENTS.md — vendored cJSON
 
+Parent: [../../AGENTS.md](../../AGENTS.md) (core/src/mcp/).
+
 ## Vendor policy
 
 This directory contains a vendored copy of [cJSON](https://github.com/DaveGamble/cJSON)

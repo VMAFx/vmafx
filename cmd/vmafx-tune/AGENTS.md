@@ -1,7 +1,10 @@
 # AGENTS.md — cmd/vmafx-tune
 
+Parent: [../../AGENTS.md](../../AGENTS.md).
+
 Go port of the vmaf-tune rate-quality tuning CLI. Installed as `vmafx-tune-go`
-during the migration; see Stage roadmap in ADR-0705.
+during the migration; see Stage roadmap in
+[ADR-0705](../../docs/adr/0705-vmafx-tune-go-stage1.md).
 
 ## Rebase-sensitive invariants
 

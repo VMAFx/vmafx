@@ -1,5 +1,9 @@
 # Research Digests — Agent Invariants
 
+Parent: [../../AGENTS.md](../../AGENTS.md). The deep-dive deliverable
+contract that makes research digests required PR artifacts is set by
+[ADR-0108](../adr/0108-deep-dive-deliverables-rule.md).
+
 ## Header ID normalization
 
 Research digest filename IDs and `# Research-NNNN` header IDs must match. Cross-links in the codebase and in other documents use the filename ID (e.g., `docs/research/0033-*.md`), so the header must mirror the filename to maintain consistency.
