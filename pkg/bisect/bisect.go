@@ -19,17 +19,39 @@
 package bisect
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"iter"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/VMAFx/vmafx/pkg/encoder"
 )
+
+// defaultScoreTimeout is the upper bound on a single vmaf scoring subprocess
+// invocation. A hung vmaf binary (waiting on a corrupt input pipe, blocked
+// on a missing libvmaf model file, deadlocked GPU driver) would otherwise
+// hang the entire compare sweep indefinitely. Override via the
+// VMAFX_TUNE_SCORE_TIMEOUT environment variable (Go duration string,
+// e.g. "5m" or "30s"). 0 or negative values disable the timeout.
+const defaultScoreTimeout = 30 * time.Minute
+
+// scoreTimeout returns the per-call vmaf-subprocess timeout, honouring the
+// VMAFX_TUNE_SCORE_TIMEOUT environment variable for operator overrides.
+func scoreTimeout() time.Duration {
+	if raw := os.Getenv("VMAFX_TUNE_SCORE_TIMEOUT"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil {
+			return d
+		}
+	}
+	return defaultScoreTimeout
+}
 
 // DefaultMaxIter is the default maximum number of bisect iterations.
 // Typically converges in 5-7 steps for a 64-unit CRF window.
@@ -130,6 +152,13 @@ func (p *Params) applyDefaults(enc encoder.Encoder) {
 //
 // The function writes a temporary JSON output file that it removes after
 // reading the mean VMAF score.
+//
+// Each invocation is bounded by scoreTimeout() (default 30 minutes,
+// overridable via VMAFX_TUNE_SCORE_TIMEOUT). Without the timeout, a hung
+// vmaf child blocks bisect.Run forever; this is especially likely on a
+// stuck GPU device, a missing libvmaf model file, or a corrupt input
+// pipe — none of which are deadlock-recoverable from the parent without
+// an external timeout.
 func VMAFScoreFunc(vmafBin string) ScoreFunc {
 	if vmafBin == "" {
 		vmafBin = "vmaf"
@@ -157,8 +186,21 @@ func VMAFScoreFunc(vmafBin string) ScoreFunc {
 			"--output", tmpPath,
 			"--xml",
 		}
-		out, runErr := exec.Command(argv[0], argv[1:]...).CombinedOutput() //nolint:gosec
+
+		ctx := context.Background()
+		var cancel context.CancelFunc = func() {}
+		if to := scoreTimeout(); to > 0 {
+			ctx, cancel = context.WithTimeout(ctx, to)
+		}
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec
+		out, runErr := cmd.CombinedOutput()
 		if runErr != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				return 0, fmt.Errorf("vmaf score timed out after %s: %w\n%s",
+					scoreTimeout(), runErr, string(out))
+			}
 			return 0, fmt.Errorf("vmaf score failed: %w\n%s", runErr, string(out))
 		}
 
@@ -193,7 +235,22 @@ func parseVMAFXMLMean(xmlPath string) (float64, error) {
 	if end < 0 {
 		return 0, errors.New("unterminated mean value in vmaf metric element")
 	}
-	return strconv.ParseFloat(rest[:end], 64)
+	score, parseErr := strconv.ParseFloat(rest[:end], 64)
+	if parseErr != nil {
+		return 0, fmt.Errorf("parse vmaf mean %q: %w", rest[:end], parseErr)
+	}
+	// strconv.ParseFloat accepts the literal tokens "NaN", "+Inf", "-Inf"
+	// (and variants) without returning an error. A NaN VMAF score would
+	// silently propagate into bisect.Sample.VMAFScore, then into the
+	// emitted JSON's bisect_samples, where json.MarshalIndent rejects it
+	// with "unsupported value: NaN" and breaks the Python ↔ Go parser-
+	// parity invariant (AGENTS.md #2). Reject the corrupt mean attribute
+	// at the source so the bisect step records the error rather than a
+	// non-finite score.
+	if math.IsNaN(score) || math.IsInf(score, 0) {
+		return 0, fmt.Errorf("vmaf mean is non-finite (%q); refusing to propagate corrupt score", rest[:end])
+	}
+	return score, nil
 }
 
 // Run performs the bisect and returns the result. It encodes src with enc,

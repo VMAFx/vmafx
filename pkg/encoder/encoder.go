@@ -10,6 +10,7 @@
 package encoder
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -19,6 +20,41 @@ import (
 	"strings"
 	"time"
 )
+
+// defaultEncodeTimeout is the upper bound on a single ffmpeg encode
+// subprocess. A hung ffmpeg (deadlocked encoder, blocked I/O, GPU driver
+// freeze) would otherwise pin the bisect loop forever. Override via
+// VMAFX_TUNE_ENCODE_TIMEOUT (Go duration). 0 or negative disables the
+// timeout.
+const defaultEncodeTimeout = 60 * time.Minute
+
+// defaultProbeTimeout bounds ffprobe invocations. Probing a finite-size
+// container file should take well under a second; a 30-second cap is
+// generous enough to absorb cold-cache stalls without indefinitely
+// stalling a sweep. Override via VMAFX_TUNE_PROBE_TIMEOUT.
+const defaultProbeTimeout = 30 * time.Second
+
+// encodeTimeout returns the per-call ffmpeg-encode timeout, honouring
+// VMAFX_TUNE_ENCODE_TIMEOUT for operator overrides.
+func encodeTimeout() time.Duration {
+	if raw := os.Getenv("VMAFX_TUNE_ENCODE_TIMEOUT"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil {
+			return d
+		}
+	}
+	return defaultEncodeTimeout
+}
+
+// probeTimeout returns the per-call ffprobe timeout, honouring
+// VMAFX_TUNE_PROBE_TIMEOUT for operator overrides.
+func probeTimeout() time.Duration {
+	if raw := os.Getenv("VMAFX_TUNE_PROBE_TIMEOUT"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil {
+			return d
+		}
+	}
+	return defaultProbeTimeout
+}
 
 // EncodeParams holds the per-encode configuration passed to Encoder.Encode.
 type EncodeParams struct {
@@ -97,8 +133,14 @@ func probeBitrateKbps(path, ffmpegBin string) float64 {
 	} else {
 		probeBin = filepath.Join(dir, "ffprobe")
 	}
-	out, err := exec.Command(
-		probeBin,
+	ctx := context.Background()
+	cancel := func() {}
+	if to := probeTimeout(); to > 0 {
+		ctx, cancel = context.WithTimeout(ctx, to)
+	}
+	defer cancel()
+	out, err := exec.CommandContext(
+		ctx, probeBin,
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "stream=bit_rate",
@@ -162,15 +204,22 @@ func runEncode(src string, params EncodeParams, codec string, crfFlag string) (E
 		"-loglevel", "warning",
 		"-y",
 		"-i", src,
-		"-an",           // drop audio
+		"-an", // drop audio
 		"-c:v", codec,
 		crfFlag, strconv.Itoa(params.CRF),
 	}
 	argv = append(argv, params.ExtraArgs...)
 	argv = append(argv, outPath)
 
+	ctx := context.Background()
+	cancel := func() {}
+	if to := encodeTimeout(); to > 0 {
+		ctx, cancel = context.WithTimeout(ctx, to)
+	}
+	defer cancel()
+
 	t0 := time.Now()
-	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec -- argv is constructed from validated inputs
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec -- argv is constructed from validated inputs
 	// Capture stderr for version extraction; stdout is discarded.
 	stderrBytes, runErr := cmd.CombinedOutput()
 	elapsed := time.Since(t0)
@@ -179,8 +228,14 @@ func runEncode(src string, params EncodeParams, codec string, crfFlag string) (E
 		// Clean up temp file if encode failed. Surface any cleanup failure
 		// via errors.Join so a disk-leak does not get silently swallowed by
 		// the primary encode error.
-		ffErr := fmt.Errorf("ffmpeg encode failed (crf=%d, codec=%s): %w\n%s",
-			params.CRF, codec, runErr, string(stderrBytes))
+		var ffErr error
+		if ctx.Err() == context.DeadlineExceeded {
+			ffErr = fmt.Errorf("ffmpeg encode timed out after %s (crf=%d, codec=%s): %w\n%s",
+				encodeTimeout(), params.CRF, codec, runErr, string(stderrBytes))
+		} else {
+			ffErr = fmt.Errorf("ffmpeg encode failed (crf=%d, codec=%s): %w\n%s",
+				params.CRF, codec, runErr, string(stderrBytes))
+		}
 		if rmErr := os.Remove(outPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
 			return EncodeResult{}, errors.Join(
 				ffErr,

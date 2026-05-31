@@ -13,7 +13,6 @@ package encoder
 import (
 	"os"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -81,16 +80,16 @@ func TestRunCodecProbe_DefaultsToPATH(t *testing.T) {
 	}
 }
 
-// TestProbeAvailableCodecs_CachesResult verifies the sync.Once gate keeps
-// the same map across calls.
+// TestProbeAvailableCodecs_CachesResult verifies the per-binary cache
+// returns the same map for the same binary path across calls.
 func TestProbeAvailableCodecs_CachesResult(t *testing.T) {
 	// Cannot run in parallel — touches the package-level cache.
 
 	// Reset cache so the test is reproducible across re-runs in the same
 	// test binary.
 	codecCacheMu.Lock()
-	codecCacheOnce = sync.Once{}
 	codecCacheMap = nil
+	codecCacheBin = ""
 	codecCacheMu.Unlock()
 
 	first := probeAvailableCodecs("/nonexistent/ffmpeg")
@@ -106,14 +105,14 @@ func TestProbeAvailableCodecs_CachesResult(t *testing.T) {
 }
 
 // TestRefreshCodecCache_RebuildsAndReplaces verifies the explicit refresh
-// API resets the sync.Once and stores a new map.
+// API re-probes the binary and replaces the cache map.
 func TestRefreshCodecCache_RebuildsAndReplaces(t *testing.T) {
 	// Cannot run in parallel — touches the package-level cache.
 
 	// Force a known initial state via probe.
 	codecCacheMu.Lock()
-	codecCacheOnce = sync.Once{}
 	codecCacheMap = nil
+	codecCacheBin = ""
 	codecCacheMu.Unlock()
 	_ = probeAvailableCodecs("/nonexistent/ffmpeg")
 
@@ -136,8 +135,8 @@ func TestRefreshCodecCache_RebuildsAndReplaces(t *testing.T) {
 func TestIsCodecAvailable_HandlesMissingBinary(t *testing.T) {
 	// Cannot run in parallel — uses the package cache.
 	codecCacheMu.Lock()
-	codecCacheOnce = sync.Once{}
 	codecCacheMap = nil
+	codecCacheBin = ""
 	codecCacheMu.Unlock()
 
 	// On most test hosts /usr/bin/ffmpeg may exist and report real codecs;
@@ -154,8 +153,8 @@ func TestIsCodecAvailable_HandlesMissingBinary(t *testing.T) {
 func TestAvailableHardwareEncoders_ReturnsSubset(t *testing.T) {
 	// Cannot run in parallel — uses the package cache.
 	codecCacheMu.Lock()
-	codecCacheOnce = sync.Once{}
 	codecCacheMap = nil
+	codecCacheBin = ""
 	codecCacheMu.Unlock()
 
 	// Prime cache from a missing binary so the result is the empty set.

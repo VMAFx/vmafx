@@ -241,15 +241,15 @@ func runCompare(flags *compareFlags) error {
 // failRow builds a failed Row for an encoder that could not be run.
 func failRow(codec string, target float64, ffmpegBin, reason string) report.Row {
 	return report.Row{
-		Codec:       codec,
-		FFmpegBin:   ffmpegBin,
-		BestCRF:     -1,
-		BitratekBps: math.NaN(),
+		Codec:        codec,
+		FFmpegBin:    ffmpegBin,
+		BestCRF:      -1,
+		BitratekBps:  math.NaN(),
 		EncodeTimeMS: math.NaN(),
-		VMAFScore:   math.NaN(),
-		TargetVMAF:  target,
-		OK:          false,
-		Error:       reason,
+		VMAFScore:    math.NaN(),
+		TargetVMAF:   target,
+		OK:           false,
+		Error:        reason,
 	}
 }
 
@@ -300,7 +300,11 @@ func sortRows(rows []report.Row) {
 	})
 }
 
-// emitSweepJSON emits a schema-v2 sweep JSON payload.
+// emitSweepJSON emits a schema-v2 sweep JSON payload. NaN / Inf float
+// values (including those nested inside bisect_samples) are coerced to
+// JSON null via report.SanitizeBisectSamples; a single corrupt vmaf-XML
+// mean value would otherwise crash json.MarshalIndent and break the
+// Python ↔ Go parser-parity invariant (AGENTS.md #2).
 func emitSweepJSON(
 	results []pairResult,
 	flags *compareFlags,
@@ -308,19 +312,19 @@ func emitSweepJSON(
 ) (string, error) {
 	// Build a flat payload matching Python SweepReport schema-v2.
 	type wireRow struct {
-		Codec          string          `json:"codec"`
-		Adapter        string          `json:"adapter"`
-		RuntimeVariant string          `json:"runtime_variant"`
-		FFmpegBin      string          `json:"ffmpeg_bin"`
-		EncoderVersion string          `json:"encoder_version"`
-		BestCRF        int             `json:"best_crf"`
-		BitratekBps    any             `json:"bitrate_kbps"`
-		EncodeTimeMS   any             `json:"encode_time_ms"`
-		VMAFScore      any             `json:"vmaf_score"`
-		TargetVMAF     float64         `json:"target_vmaf"`
-		OK             bool            `json:"ok"`
-		Error          string          `json:"error"`
-		BisectSamples  []bisect.Sample `json:"bisect_samples,omitempty"`
+		Codec          string  `json:"codec"`
+		Adapter        string  `json:"adapter"`
+		RuntimeVariant string  `json:"runtime_variant"`
+		FFmpegBin      string  `json:"ffmpeg_bin"`
+		EncoderVersion string  `json:"encoder_version"`
+		BestCRF        int     `json:"best_crf"`
+		BitratekBps    any     `json:"bitrate_kbps"`
+		EncodeTimeMS   any     `json:"encode_time_ms"`
+		VMAFScore      any     `json:"vmaf_score"`
+		TargetVMAF     float64 `json:"target_vmaf"`
+		OK             bool    `json:"ok"`
+		Error          string  `json:"error"`
+		BisectSamples  []any   `json:"bisect_samples,omitempty"`
 	}
 	nan2null := func(v float64) any {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
@@ -343,7 +347,7 @@ func emitSweepJSON(
 			TargetVMAF:     r.row.TargetVMAF,
 			OK:             r.row.OK,
 			Error:          r.row.Error,
-			BisectSamples:  r.row.BisectSamples,
+			BisectSamples:  report.SanitizeBisectSamples(r.row.BisectSamples),
 		}
 	}
 	payload := struct {

@@ -32,6 +32,43 @@ touched, so upstream syncs cannot collide.
 (`vmaf_init` / `vmaf_read_pictures` / `vmaf_score_pooled` /
 `vmaf_close`) the Go layer wraps is unchanged; we only renamed a
 local `C.VmafContext*` variable inside Go.
+## vmafx-tune-go deep bug audit (2026-05-31, fix/vmafx-tune-go-audit-20260531)
+
+**Files touched:**
+`pkg/report/report.go`, `pkg/report/sanitize_test.go` (new),
+`pkg/bisect/bisect.go`, `pkg/bisect/nan_parse_test.go` (new),
+`pkg/bisect/timeout_test.go` (new),
+`pkg/encoder/encoder.go`, `pkg/encoder/discover.go`,
+`pkg/encoder/discover_test.go`, `pkg/encoder/discover_cache_test.go`
+(new), `pkg/encoder/timeout_test.go` (new),
+`cmd/vmafx-tune/cmd/compare.go`,
+`cmd/vmafx-tune/cmd/ladder.go`,
+`cmd/vmafx-tune/cmd/ladder_nan_test.go` (new),
+`changelog.d/fixed/0979-vmafx-tune-go-deep-bug-audit.md` (new).
+
+**Rebase impact:** Fork-local only.  Every file lives under
+`pkg/{report,bisect,encoder}` or `cmd/vmafx-tune/`, which are 100%
+fork additions (the `vmafx-tune-go` Stage-1 surface from ADR-0705 /
+ADR-0713; no Netflix upstream counterpart exists).  An upstream
+sync will not encounter conflicts on any of these files.
+
+**On-disk surface changes (relevant to in-tree callers):**
+
+- New public helper `report.SanitizeBisectSamples([]bisect.Sample)
+  []any` — exported so the schema-v2 sweep emitter in
+  `cmd/vmafx-tune/cmd.emitSweepJSON` can apply the same nested
+  NaN→null coercion the Python emitter (`_nan_to_none` in
+  `tools/vmaf-tune/src/vmaftune/compare.py`) has used since the
+  RFC-8259 hardening of 2026-05-17.
+- New env-var knobs `VMAFX_TUNE_ENCODE_TIMEOUT` (default `60m`),
+  `VMAFX_TUNE_SCORE_TIMEOUT` (default `30m`),
+  `VMAFX_TUNE_PROBE_TIMEOUT` (default `30s`) for the ffmpeg / vmaf /
+  ffprobe subprocess upper bounds.  Operators can lower these in
+  CI to fail-fast instead of hanging a job.
+- Codec-discovery cache key is now the binary path, not a one-shot
+  `sync.Once`.  Callers that depended on the old "first probe wins
+  forever" shape (none in tree as of this PR) will see a re-probe
+  on binary-path change.
 
 ---
 

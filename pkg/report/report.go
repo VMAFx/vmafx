@@ -55,6 +55,47 @@ func nanToNull(v float64) any {
 	return v
 }
 
+// wireSample is the JSON wire shape for a bisect.Sample with non-finite
+// floats coerced to JSON null. The shape mirrors bisect.Sample's JSON tags
+// so the Python report.py renderer ingests it unchanged.
+//
+// AGENTS.md rebase-sensitive invariant #2 — the Go emitter must never write
+// bare NaN / Infinity tokens. The plain bisect.Sample struct has
+// float64 (not any) fields, so a single corrupt vmaf-XML mean= value (e.g.
+// "NaN" — a value strconv.ParseFloat accepts without error) would propagate
+// into Sample.VMAFScore and crash json.MarshalIndent later in the run with
+// "json: unsupported value: NaN". sanitizeBisectSamples walks the slice and
+// returns a wire shape with non-finite floats coerced to null.
+type wireSample struct {
+	CRF          int `json:"crf"`
+	BitratekBps  any `json:"bitrate_kbps"`
+	VMAFScore    any `json:"vmaf_score"`
+	EncodeTimeMS any `json:"encode_time_ms"`
+}
+
+// SanitizeBisectSamples converts a slice of bisect.Sample to a slice of
+// wireSample with non-finite floats (NaN / +Inf / -Inf) coerced to JSON
+// null. Returns nil for an empty input so the emitter omits the
+// bisect_samples key entirely (matching the omitempty JSON tag).
+//
+// Exported so cmd/vmafx-tune/cmd.emitSweepJSON can reuse the same logic for
+// schema-v2 multi-target sweep payloads.
+func SanitizeBisectSamples(samples []bisect.Sample) []any {
+	if len(samples) == 0 {
+		return nil
+	}
+	out := make([]any, len(samples))
+	for i, s := range samples {
+		out[i] = wireSample{
+			CRF:          s.CRF,
+			BitratekBps:  nanToNull(s.BitratekBps),
+			VMAFScore:    nanToNull(s.VMAFScore),
+			EncodeTimeMS: nanToNull(s.EncodeTimeMS),
+		}
+	}
+	return out
+}
+
 // Report is the result of a compare run.
 type Report struct {
 	Src         string  `json:"src"`
@@ -76,23 +117,26 @@ func (r *Report) Best() *Row {
 }
 
 // EmitJSON renders the report as pretty-printed JSON. NaN / Inf float values
-// are coerced to null before serialisation (RFC 8259 compliance).
+// are coerced to null before serialisation (RFC 8259 compliance). The
+// sanitisation walks into bisect_samples — a single NaN there is enough to
+// crash json.MarshalIndent with "json: unsupported value: NaN" and break
+// the Python ↔ Go parser-parity invariant (AGENTS.md #2).
 func EmitJSON(report Report) (string, error) {
 	// Sanitize non-finite floats before serialisation.
 	type wireRow struct {
-		Codec          string          `json:"codec"`
-		Adapter        string          `json:"adapter"`
-		RuntimeVariant string          `json:"runtime_variant"`
-		FFmpegBin      string          `json:"ffmpeg_bin"`
-		EncoderVersion string          `json:"encoder_version"`
-		BestCRF        int             `json:"best_crf"`
-		BitratekBps    any             `json:"bitrate_kbps"`
-		EncodeTimeMS   any             `json:"encode_time_ms"`
-		VMAFScore      any             `json:"vmaf_score"`
-		TargetVMAF     float64         `json:"target_vmaf"`
-		OK             bool            `json:"ok"`
-		Error          string          `json:"error"`
-		BisectSamples  []bisect.Sample `json:"bisect_samples,omitempty"`
+		Codec          string  `json:"codec"`
+		Adapter        string  `json:"adapter"`
+		RuntimeVariant string  `json:"runtime_variant"`
+		FFmpegBin      string  `json:"ffmpeg_bin"`
+		EncoderVersion string  `json:"encoder_version"`
+		BestCRF        int     `json:"best_crf"`
+		BitratekBps    any     `json:"bitrate_kbps"`
+		EncodeTimeMS   any     `json:"encode_time_ms"`
+		VMAFScore      any     `json:"vmaf_score"`
+		TargetVMAF     float64 `json:"target_vmaf"`
+		OK             bool    `json:"ok"`
+		Error          string  `json:"error"`
+		BisectSamples  []any   `json:"bisect_samples,omitempty"`
 	}
 	wireRows := make([]wireRow, len(report.Rows))
 	for i, row := range report.Rows {
@@ -109,7 +153,7 @@ func EmitJSON(report Report) (string, error) {
 			TargetVMAF:     row.TargetVMAF,
 			OK:             row.OK,
 			Error:          row.Error,
-			BisectSamples:  row.BisectSamples,
+			BisectSamples:  SanitizeBisectSamples(row.BisectSamples),
 		}
 	}
 	payload := struct {

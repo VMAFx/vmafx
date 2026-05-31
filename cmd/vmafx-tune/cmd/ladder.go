@@ -261,21 +261,21 @@ type ladderWirePayload struct {
 }
 
 // emitLadderJSON serialises the ladder result as pretty-printed JSON.
-// NaN / Inf bitrate fields are coerced to null (RFC 8259 compliance).
+// NaN / Inf bitrate and VMAF fields are coerced to 0 across the entire
+// payload (Cloud, Hull, Renditions) so json.MarshalIndent never aborts
+// with "unsupported value: NaN". A single corrupt vmaf-XML mean value can
+// otherwise propagate through bisect.Run into a Point and crash the whole
+// emitter — breaking the Python ↔ Go parser-parity invariant
+// (AGENTS.md #2). Failed points carry OK=false and an Error string,
+// preserving the lossless schema-v1 contract.
 func emitLadderJSON(
 	result ladder.LadderResult,
 	flags *ladderFlags,
 	wallTimeMS float64,
 ) (string, error) {
-	// Sanitise cloud points: NaN bitrates → 0 (ladder JSON does not use the
-	// report.Row NaN convention since failed points carry OK=false).
-	cloud := make([]ladder.Point, len(result.Cloud))
-	for i, p := range result.Cloud {
-		if math.IsNaN(p.BitratekBps) || math.IsInf(p.BitratekBps, 0) {
-			p.BitratekBps = 0
-		}
-		cloud[i] = p
-	}
+	cloud := sanitizeLadderPoints(result.Cloud)
+	hull := sanitizeLadderPoints(result.Hull)
+	renditions := sanitizeLadderRenditions(result.Renditions)
 
 	resStrs := make([]string, len(flags.resolutions))
 	copy(resStrs, flags.resolutions)
@@ -289,14 +289,50 @@ func emitLadderJSON(
 		ToolVersion:   report.ToolVersion,
 		WallTimeMS:    wallTimeMS,
 		Cloud:         cloud,
-		Hull:          result.Hull,
-		Renditions:    result.Renditions,
+		Hull:          hull,
+		Renditions:    renditions,
 	}
 	b, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal ladder: %w", err)
 	}
 	return string(b) + "\n", nil
+}
+
+// sanitizeFinite returns v when finite, else 0. The ladder JSON convention
+// is to coerce non-finite floats to 0 (with the OK=false flag carrying the
+// failure signal) rather than to JSON null, matching the existing schema-v1
+// contract that fields are always numeric.
+func sanitizeFinite(v float64) float64 {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0
+	}
+	return v
+}
+
+// sanitizeLadderPoints returns a copy of pts with all non-finite floats
+// (BitratekBps, VMAF) coerced to 0.
+func sanitizeLadderPoints(pts []ladder.Point) []ladder.Point {
+	out := make([]ladder.Point, len(pts))
+	for i, p := range pts {
+		p.BitratekBps = sanitizeFinite(p.BitratekBps)
+		p.VMAF = sanitizeFinite(p.VMAF)
+		p.TargetVMAF = sanitizeFinite(p.TargetVMAF)
+		out[i] = p
+	}
+	return out
+}
+
+// sanitizeLadderRenditions returns a copy of rs with all non-finite floats
+// coerced to 0.
+func sanitizeLadderRenditions(rs []ladder.Rendition) []ladder.Rendition {
+	out := make([]ladder.Rendition, len(rs))
+	for i, r := range rs {
+		r.BitratekBps = sanitizeFinite(r.BitratekBps)
+		r.VMAF = sanitizeFinite(r.VMAF)
+		out[i] = r
+	}
+	return out
 }
 
 // emitLadderMarkdown renders the ladder result as a Markdown document.

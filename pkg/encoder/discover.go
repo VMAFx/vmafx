@@ -13,29 +13,45 @@
 package encoder
 
 import (
+	"context"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 // codecCache caches the result of probeAvailableCodecs.
 var (
-	codecCacheMu   sync.Mutex
-	codecCacheOnce sync.Once
-	codecCacheMap  map[string]bool
+	codecCacheMu  sync.Mutex
+	codecCacheMap map[string]bool
+	codecCacheBin string // ffmpeg binary the cached map was probed against
 )
 
-// probeAvailableCodecs runs "ffmpeg -encoders" once and returns a set of
-// available codec names.  Subsequent calls return the cached result.
+// probeAvailableCodecs runs "ffmpeg -encoders" and returns a set of
+// available codec names. The result is cached per ffmpeg binary path so
+// the second call with the same binary returns instantly; a call with a
+// different binary path re-probes and replaces the cache.
+//
+// Cache invalidation on binary change is the explicit contract here — the
+// previous implementation used a one-shot sync.Once and silently returned
+// the first-binary's result forever, even when the caller switched to a
+// different ffmpeg (e.g. the dev-mcp container's
+// /usr/local/bin/ffmpeg-vmaf vs a host /usr/bin/ffmpeg). Stale cache
+// would then claim h264_nvenc was "unavailable" because the first probe
+// hit a CPU-only build.
 func probeAvailableCodecs(ffmpegBin string) map[string]bool {
 	codecCacheMu.Lock()
 	defer codecCacheMu.Unlock()
 
-	// Reset cache if bin changes (e.g. in tests).
-	_ = ffmpegBin
-	codecCacheOnce.Do(func() {
-		codecCacheMap = runCodecProbe(ffmpegBin)
-	})
+	normBin := ffmpegBin
+	if normBin == "" {
+		normBin = "ffmpeg"
+	}
+	if codecCacheMap != nil && codecCacheBin == normBin {
+		return codecCacheMap
+	}
+	codecCacheMap = runCodecProbe(normBin)
+	codecCacheBin = normBin
 	return codecCacheMap
 }
 
@@ -44,18 +60,26 @@ func probeAvailableCodecs(ffmpegBin string) map[string]bool {
 func RefreshCodecCache(ffmpegBin string) map[string]bool {
 	codecCacheMu.Lock()
 	defer codecCacheMu.Unlock()
-	codecCacheOnce = sync.Once{} // reset so the next probeAvailableCodecs call re-runs
-	result := runCodecProbe(ffmpegBin)
-	codecCacheMap = result
-	return result
+	normBin := ffmpegBin
+	if normBin == "" {
+		normBin = "ffmpeg"
+	}
+	codecCacheMap = runCodecProbe(normBin)
+	codecCacheBin = normBin
+	return codecCacheMap
 }
 
 // runCodecProbe executes "ffmpeg -encoders" and returns the codec name set.
+// Bounded by a 30-second timeout so a hung ffmpeg (waiting on a GPU driver
+// init, broken network mount, etc.) cannot indefinitely block first-call
+// initialisation.
 func runCodecProbe(ffmpegBin string) map[string]bool {
 	if ffmpegBin == "" {
 		ffmpegBin = "ffmpeg"
 	}
-	out, err := exec.Command(ffmpegBin, "-encoders", "-hide_banner").Output() //nolint:gosec // ffmpegBin is a tool path
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, ffmpegBin, "-encoders", "-hide_banner").Output() //nolint:gosec // ffmpegBin is a tool path
 	if err != nil {
 		return map[string]bool{}
 	}
