@@ -55,6 +55,10 @@
 #include "libvmaf/picture.h"
 #include "picture.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 /* -------------------------------------------------------------------------
  * Structural assertion for A.3:
  *
@@ -136,8 +140,12 @@ static char *test_pool_waiter_woken_on_unref()
     mu_assert("pthread_create should succeed", !err);
 
     /* Give the waiter time to enter pthread_cond_wait. */
+#ifdef _WIN32
+    Sleep(50); /* 50 ms */
+#else
     struct timespec ts = {.tv_sec = 0, .tv_nsec = 50000000L}; /* 50 ms */
     (void)nanosleep(&ts, NULL);
+#endif
 
     /* Return the picture — this should signal the waiter (normal path). */
     err = vmaf_picture_unref(&holder);
