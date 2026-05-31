@@ -62,6 +62,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     g++-13 \
     clang-19 \
     clang++-19 \
+    libclang-rt-19-dev \
     # Build system
     meson \
     ninja-build \

@@ -43438,3 +43438,10 @@ HIP and CUDA overviews and the metric page are fork-only docs; the
 backends index page is also fork-only. No upstream Netflix/vmaf source is
 touched. The cleanup closes residual references left over after PR #38
 (ADR-0709) removed the `float_ansnr` extractor from every backend.
+
+## fix/post-rename-post-vulkan-sweep — 2026-06-01
+
+no rebase impact: post-rename cleanup only. The Containerfile change adds a
+pkg-install line that cannot conflict with upstream (upstream has no
+Containerfile). The score_backend.py change is fork-local code with no
+upstream counterpart. The test and doc updates are purely fork-local.
