@@ -388,16 +388,10 @@ async def _handle_metrics(request: Any) -> Any:
     pc = _require_prometheus()
     aiohttp = _require_aiohttp()
     output = pc.generate_latest()
-    # aiohttp.web.Response rejects ``content_type=`` when the value contains
-    # a ``charset=`` directive (raises ValueError at construction time).
-    # ``prometheus_client.CONTENT_TYPE_LATEST`` is
-    # ``text/plain; version=0.0.4; charset=utf-8`` on modern releases, so we
-    # must send the full media-type via the ``Content-Type`` header instead
-    # and let aiohttp infer no internal charset.
     return aiohttp.web.Response(
         status=200,
+        content_type=pc.CONTENT_TYPE_LATEST,
         body=output,
-        headers={"Content-Type": pc.CONTENT_TYPE_LATEST},
     )
 
 

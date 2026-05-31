@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, patch
 
 import anyio
 import pytest
-
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -170,15 +169,8 @@ def test_describe_model_unknown_raises():
 
 def test_describe_model_onnx_no_metadata(tmp_path, monkeypatch):
     """ONNX models return model_type=None and feature_names=None."""
-    # Drop a tiny fake ONNX file under the same repo root the server is
-    # going to search.  Resolve that root through ``srv._repo_root()`` rather
-    # than the test-file-relative ``REPO`` constant — when the tests run
-    # from a worktree (``git worktree add /tmp/...``) the installed package
-    # still resolves the repo root to the canonical workspace and the two
-    # roots disagree.  Using ``srv._repo_root()`` keeps the file/lookup
-    # consistent regardless of the worktree the harness was invoked from.
-    repo = srv._repo_root()
-    fake_model = repo / "model" / "_mcp_test_fake.onnx"
+    # Create a tiny fake ONNX file under the model dir.
+    fake_model = REPO / "model" / "_mcp_test_fake.onnx"
     try:
         fake_model.write_bytes(b"\x00" * 4)
         result = srv._describe_model("_mcp_test_fake")

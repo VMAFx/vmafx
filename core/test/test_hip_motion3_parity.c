@@ -30,10 +30,25 @@
  * VMAF_integer_feature_motion3_score at frame index 1 matches to within
  * 1e-4 (places=4, per ADR-0214 cross-backend gate).
  *
- * Skip behaviour: if vmaf_hip_state_init() fails (no HIP/ROCm driver or
- * no device visible) the test emits "[skip: no HIP device]" and passes
- * cleanly.  This mirrors the pattern used in test_hip_smoke.c,
- * test_cuda_motion3_parity.c, and test_sycl_motion3_parity.c.
+ * Skip behaviour: the HIP path runs cleanly only when libvmaf was built
+ * with BOTH `enable_hip=true` (HIP runtime, HSA agent visible) AND
+ * `enable_hipcc=true` (device kernels compiled into the .so via the
+ * HSACO embed pipeline).  The test skips in either of these two cases:
+ *   1. `vmaf_hip_state_init()` fails — no HIP/ROCm driver or no device
+ *      visible.  Emits "[skip: no HIP device]" and passes.
+ *   2. `vmaf_read_pictures()` returns `-ENOSYS` on the first frame —
+ *      libvmaf was configured with `enable_hipcc=false`, so the
+ *      `motion_hip` extractor's submit/init hits the
+ *      `#ifndef HAVE_HIPCC` scaffold path.  Emits
+ *      "[skip: HIP kernels not built (enable_hipcc=false)]" and passes.
+ * This mirrors the runtime-vs-toolchain split documented in
+ * `core/src/feature/hip/integer_motion_hip.c` lines 442-553 and the
+ * `is_hipcc_enabled` gate in `core/src/meson.build` lines 128-166.
+ * Before this commit, case (2) emitted a hard failure
+ * ("HIP: vmaf_read_pictures failed") on every `meson test --suite gpu`
+ * run against a `enable_hip=true, enable_hipcc=false` build — the
+ * common dev posture for non-AMD hosts and for fork-CI runners that
+ * pin `enable_hipcc=false` to avoid the ROCm toolchain cost.
  *
  * Reproducer (manual):
  *   tools/vmaf --reference testdata/yuv/ref_256x144_2f.yuv \
@@ -132,6 +147,38 @@ static char *run_cpu_motion3(double *out_score)
     return NULL;
 }
 
+/* Per-frame submit helper.  Returns:
+ *   * NULL on success;
+ *   * a non-NULL message string on a hard failure (caller bubbles up);
+ *   * NULL with *enosys_skip=1 when the HIP extractor's submit/init
+ *     hits the `#ifndef HAVE_HIPCC` scaffold path and returns -ENOSYS.
+ * Extracted from run_hip_motion3 to keep that function under the
+ * fork's `readability-function-size.LineThreshold=60` budget. */
+static char *hip_submit_one_frame(VmafContext *vmaf, unsigned i, int *enosys_skip)
+{
+    *enosys_skip = 0;
+    VmafPicture ref, dist;
+    int err = fill_fixture(&ref, i);
+    mu_assert("HIP: fill_fixture(ref) failed", !err);
+    err = fill_fixture(&dist, i);
+    mu_assert("HIP: fill_fixture(dist) failed", !err);
+
+    err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+    /* The HIP `motion_hip` extractor's init/submit return -ENOSYS
+     * when libvmaf was built with `enable_hipcc=false` — the HSACO
+     * device kernels are not embedded in the .so, so dispatch hits
+     * the `#ifndef HAVE_HIPCC` scaffold path in
+     * `integer_motion_hip.c`.  vmaf_read_pictures unrefs the
+     * caller pictures internally on every code path; the caller
+     * tears down the partially-initialised VmafContext on a skip. */
+    if (err == -ENOSYS) {
+        *enosys_skip = 1;
+        return NULL;
+    }
+    mu_assert("HIP: vmaf_read_pictures failed", !err);
+    return NULL;
+}
+
 /* ---------------------------------------------------------------------- */
 /* HIP path — run the "motion_hip" extractor for NUM_FRAMES frames.       */
 /* Returns the motion3_score at frame index 1 via *out_score.            */
@@ -163,14 +210,16 @@ static char *run_hip_motion3(double *out_score)
     mu_assert("HIP: vmaf_use_feature(motion_hip) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i);
-        mu_assert("HIP: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i);
-        mu_assert("HIP: fill_fixture(dist) failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("HIP: vmaf_read_pictures failed", !err);
+        int enosys_skip = 0;
+        char *msg = hip_submit_one_frame(vmaf, i, &enosys_skip);
+        if (msg)
+            return msg;
+        if (enosys_skip) {
+            (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
+            (void)vmaf_close(vmaf);
+            vmaf_hip_state_free(&hip_state);
+            return NULL;
+        }
     }
 
     /* Signal end-of-stream so flush() runs and emits motion3 at index 1. */

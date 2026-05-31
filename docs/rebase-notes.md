@@ -41301,3 +41301,13 @@ ADR-0332 (no upstream counterpart); coverage backfill (14 new tests for
 BVI-DVC discovery edge cases, Netflix discovery edge cases, validator
 rejection paths, `run_wrapper` missing-output guard, and `main()`
 `--limit` + per-item skip flow) cannot conflict on upstream sync.
+## HIP motion3 parity test ENOSYS-skip (ADR-0949, 2026-05-31)
+
+no rebase impact: REASON — the only file touched in the libvmaf source
+tree is `core/test/test_hip_motion3_parity.c`, which is wholly
+fork-added (no Netflix upstream counterpart — Netflix/vmaf does not
+ship a HIP backend). The skip-on-`-ENOSYS` change is self-contained
+inside the test's HIP-path helper; CPU baseline, tolerance, fixture
+geometry, and end-of-stream handling are unchanged. Upstream sync
+cannot conflict because no upstream file touches this test path or
+the `motion_hip` extractor's scaffold-vs-runtime split.
