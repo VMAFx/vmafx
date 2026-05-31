@@ -416,3 +416,248 @@ def test_corpus_discovery_pairs_netflix_drop(tmp_path: pathlib.Path) -> None:
     assert len(items) == FIXTURE_DIS_COUNT
     assert all(i.width == FIXTURE_WIDTH and i.height == FIXTURE_HEIGHT for i in items)
     assert all(i.ref is not None and i.ref.name == "ref.yuv" for i in items)
+
+
+# --- coverage backfill: BVI-DVC discovery ----------------------------------
+
+
+def test_bvi_dvc_discovers_ref_dis_pairs(tmp_path: pathlib.Path) -> None:
+    """BVI-DVC test fold pairs every ``<stem>__dis*.yuv`` against the ref."""
+    fold = tmp_path / "test"
+    fold.mkdir()
+    stem = "clip01_1920x1080_24fps"
+    (fold / f"{stem}__ref.yuv").write_bytes(b"\x00")
+    (fold / f"{stem}__dis1.yuv").write_bytes(b"\x00")
+    (fold / f"{stem}__dis2.yuv").write_bytes(b"\x00")
+
+    items = compare.discover_corpus(
+        bvi_dvc_root=tmp_path,
+        netflix_root=tmp_path / "no-nf",
+    )
+    assert len(items) == FIXTURE_DIS_COUNT
+    assert all(i.width == 1920 and i.height == 1080 for i in items)  # noqa: PLR2004
+    assert all(i.name.startswith("bvi-dvc/") for i in items)
+    assert {i.dis.name for i in items} == {f"{stem}__dis1.yuv", f"{stem}__dis2.yuv"}
+
+
+def test_bvi_dvc_skips_ref_with_no_geometry(tmp_path: pathlib.Path) -> None:
+    """Refs whose stem lacks a ``WxH`` token are silently skipped."""
+    fold = tmp_path / "test"
+    fold.mkdir()
+    # No 'NxM' token anywhere in the stem.
+    (fold / "no_geometry_here__ref.yuv").write_bytes(b"\x00")
+    (fold / "no_geometry_here__dis1.yuv").write_bytes(b"\x00")
+
+    items = compare.discover_corpus(
+        bvi_dvc_root=tmp_path,
+        netflix_root=tmp_path / "no-nf",
+    )
+    assert items == []
+
+
+# --- coverage backfill: Netflix discovery edge cases -----------------------
+
+
+def test_netflix_skips_src_dir_missing_ref_or_dis(tmp_path: pathlib.Path) -> None:
+    """src dirs without both ``ref/`` and ``dis/`` subtrees are skipped."""
+    root = tmp_path / "netflix"
+    # Has ref/ but no dis/.
+    (root / "src01_576x324_24fps" / "ref").mkdir(parents=True)
+    (root / "src01_576x324_24fps" / "ref" / "ref.yuv").write_bytes(b"\x00")
+    # Has dis/ but no ref/.
+    (root / "src02_576x324_24fps" / "dis").mkdir(parents=True)
+    (root / "src02_576x324_24fps" / "dis" / "d.yuv").write_bytes(b"\x00")
+
+    items = compare.discover_corpus(
+        bvi_dvc_root=tmp_path / "no-bvi",
+        netflix_root=root,
+    )
+    assert items == []
+
+
+def test_netflix_skips_src_dir_with_empty_ref_dir(tmp_path: pathlib.Path) -> None:
+    """src dirs with an empty ``ref/`` directory are skipped."""
+    root = tmp_path / "netflix"
+    src = root / "src01_576x324_24fps"
+    (src / "ref").mkdir(parents=True)  # no *.yuv inside
+    (src / "dis").mkdir(parents=True)
+    (src / "dis" / "d.yuv").write_bytes(b"\x00")
+
+    items = compare.discover_corpus(
+        bvi_dvc_root=tmp_path / "no-bvi",
+        netflix_root=root,
+    )
+    assert items == []
+
+
+def test_netflix_skips_src_dir_without_geometry_token(tmp_path: pathlib.Path) -> None:
+    """src dirs whose name lacks a ``WxH`` token are skipped."""
+    root = tmp_path / "netflix"
+    src = root / "no_geometry_token_here"
+    (src / "ref").mkdir(parents=True)
+    (src / "ref" / "r.yuv").write_bytes(b"\x00")
+    (src / "dis").mkdir(parents=True)
+    (src / "dis" / "d.yuv").write_bytes(b"\x00")
+
+    items = compare.discover_corpus(
+        bvi_dvc_root=tmp_path / "no-bvi",
+        netflix_root=root,
+    )
+    assert items == []
+
+
+# --- coverage backfill: validate_wrapper_output rejections -----------------
+
+
+def test_validate_wrapper_output_rejects_non_dict_payload() -> None:
+    with pytest.raises(ValueError, match="JSON object"):
+        compare.validate_wrapper_output("x264-pvmaf", ["not", "a", "dict"])
+
+
+def test_validate_wrapper_output_rejects_non_list_frames() -> None:
+    payload = {"frames": "oops", "summary": {}}
+    with pytest.raises(ValueError, match="frames must be a list"):
+        compare.validate_wrapper_output("x264-pvmaf", payload)
+
+
+def test_validate_wrapper_output_rejects_non_dict_frame() -> None:
+    payload = {"frames": ["not-an-object"], "summary": {}}
+    with pytest.raises(ValueError, match=r"frames\[0\] must be an object"):
+        compare.validate_wrapper_output("x264-pvmaf", payload)
+
+
+def test_validate_wrapper_output_rejects_non_integer_frame_idx() -> None:
+    payload = _canned_output("x264-pvmaf")
+    payload["frames"][0]["frame_idx"] = 1.5
+    with pytest.raises(ValueError, match=r"frames\[0\]\.frame_idx"):
+        compare.validate_wrapper_output("x264-pvmaf", payload)
+
+
+def test_validate_wrapper_output_rejects_boolean_frame_idx() -> None:
+    """``bool`` is an ``int`` subclass in Python; the validator rejects it
+    explicitly so ``True``/``False`` cannot masquerade as a frame index."""
+    payload = _canned_output("x264-pvmaf")
+    payload["frames"][0]["frame_idx"] = True
+    with pytest.raises(ValueError, match=r"frames\[0\]\.frame_idx"):
+        compare.validate_wrapper_output("x264-pvmaf", payload)
+
+
+def test_validate_wrapper_output_rejects_boolean_summary_metric() -> None:
+    """Same bool-as-number guard for the summary numeric fields."""
+    payload = _canned_output("x264-pvmaf")
+    payload["summary"]["plcc"] = True
+    with pytest.raises(ValueError, match=r"summary\.plcc"):
+        compare.validate_wrapper_output("x264-pvmaf", payload)
+
+
+# --- coverage backfill: run_wrapper failure surfaces -----------------------
+
+
+def test_run_wrapper_errors_when_output_file_missing(tmp_path: pathlib.Path) -> None:
+    """A wrapper that returns rc=0 but never writes ``--out`` is rejected."""
+    item = compare.CorpusItem(
+        name="t/0",
+        ref=None,
+        dis=tmp_path / "dis.yuv",
+        width=10,
+        height=10,
+    )
+
+    def stub_run(cmd, *_a, **_kw):
+        # Deliberately do NOT create the --out file.
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    with pytest.raises(RuntimeError, match="did not produce"):
+        compare.run_wrapper(
+            "dover-mobile",
+            item,
+            tmp_path / "missing-out.json",
+            runner=stub_run,
+        )
+
+
+# --- coverage backfill: main() limit + per-item skip path ------------------
+
+
+def test_main_honours_limit_flag(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``--limit N`` truncates the corpus before dispatching wrappers."""
+    src = tmp_path / "netflix" / "src01_576x324_24fps"
+    (src / "ref").mkdir(parents=True)
+    (src / "ref" / "ref.yuv").write_bytes(b"\x00")
+    (src / "dis").mkdir(parents=True)
+    for n in range(5):
+        (src / "dis" / f"d{n}.yuv").write_bytes(b"\x00")
+
+    runner = _make_stub_runner({})
+    monkeypatch.setattr(compare.subprocess, "run", runner)
+
+    rc = compare.main(
+        [
+            "--bvi-dvc-root",
+            str(tmp_path / "no-bvi"),
+            "--netflix-public-root",
+            str(tmp_path / "netflix"),
+            "--competitors",
+            "x264-pvmaf",
+            "--limit",
+            "2",
+            "--out-json",
+            str(tmp_path / "agg.json"),
+        ]
+    )
+    assert rc == 0
+    capsys.readouterr()  # discard table
+    agg = json.loads((tmp_path / "agg.json").read_text())
+    assert len(agg) == 1
+    assert agg[0]["competitor"] == "x264-pvmaf"
+    assert agg[0]["n_clips"] == FIXTURE_DIS_COUNT  # 2 after --limit
+
+
+def test_main_skips_failing_wrapper_and_continues(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A wrapper that errors for a corpus item logs ``skip`` and the run
+    still completes for the remaining wrappers / items."""
+    src = tmp_path / "netflix" / "src01_576x324_24fps"
+    (src / "ref").mkdir(parents=True)
+    (src / "ref" / "ref.yuv").write_bytes(b"\x00")
+    (src / "dis").mkdir(parents=True)
+    (src / "dis" / "d.yuv").write_bytes(b"\x00")
+
+    # x264-pvmaf intentionally fails (rc!=0); dover-mobile succeeds.
+    def runner(cmd, *_a, **_kw):
+        wrapper = cmd[1]
+        out_idx = cmd.index("--out")
+        out_path = pathlib.Path(cmd[out_idx + 1])
+        if "x264-pvmaf" in wrapper:
+            return subprocess.CompletedProcess(args=cmd, returncode=2, stdout="", stderr="boom")
+        out_path.write_text(json.dumps(_canned_output("dover-mobile")))
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(compare.subprocess, "run", runner)
+
+    rc = compare.main(
+        [
+            "--bvi-dvc-root",
+            str(tmp_path / "no-bvi"),
+            "--netflix-public-root",
+            str(tmp_path / "netflix"),
+            "--competitors",
+            "x264-pvmaf",
+            "dover-mobile",
+        ]
+    )
+    assert rc == 0
+
+    captured = capsys.readouterr()
+    assert "skip x264-pvmaf" in captured.err
+    # Aggregated table still printed; dover-mobile produced data, x264-pvmaf
+    # is present with n_clips=0.
+    assert "x264-pvmaf" in captured.out
+    assert "dover-mobile" in captured.out

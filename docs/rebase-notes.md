@@ -41266,3 +41266,12 @@ upstream code is the alphabetical position in the test list.
 
 PR companion to ADR-0889 (PR #381, libsvm parser audit) — the two
 PRs can land in either order without conflict.
+## external-bench test coverage backfill (ADR-0332 follow-up, 2026-05-31)
+
+no rebase impact: REASON — changes are confined to fork-only files
+(`tools/external-bench/tests/test_compare.py`, `changelog.d/added/*`,
+`docs/research/*`). The `tools/external-bench/` tree is fork-only per
+ADR-0332 (no upstream counterpart); coverage backfill (14 new tests for
+BVI-DVC discovery edge cases, Netflix discovery edge cases, validator
+rejection paths, `run_wrapper` missing-output guard, and `main()`
+`--limit` + per-item skip flow) cannot conflict on upstream sync.
