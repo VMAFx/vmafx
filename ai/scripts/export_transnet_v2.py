@@ -65,6 +65,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 try:
@@ -436,11 +437,15 @@ def main(argv: list[str] | None = None) -> None:
         default=TINY_DIR / "transnet_v2.onnx",
         help="ONNX output path (default: model/tiny/transnet_v2.onnx)",
     )
+    scratch_root = Path(os.environ.get("VMAF_TINY_AI_SCRATCH", tempfile.gettempdir()))
     parser.add_argument(
         "--wrapped-savedmodel",
         type=Path,
-        default=Path("/tmp/transnetv2_wrapped_sm"),
-        help="Scratch directory for the wrapped SavedModel",
+        default=scratch_root / "transnetv2_wrapped_sm",
+        help=(
+            "Scratch directory for the wrapped SavedModel "
+            "(default: $VMAF_TINY_AI_SCRATCH/transnetv2_wrapped_sm)."
+        ),
     )
     parser.add_argument("--opset", type=int, default=17)
     parser.add_argument(

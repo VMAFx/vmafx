@@ -285,8 +285,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--scratch",
         type=Path,
-        default=Path("/tmp/konvid_vmaf_pairs_scratch"),
-        help="Scratch directory for intermediate YUV/JSON.",
+        default=Path(os.environ.get("VMAF_TINY_AI_SCRATCH", "/tmp/konvid_vmaf_pairs_scratch")),
+        help=(
+            "Scratch directory for intermediate YUV/JSON "
+            "(default: $VMAF_TINY_AI_SCRATCH, else /tmp/konvid_vmaf_pairs_scratch)."
+        ),
     )
     ap.add_argument(
         "--cache-dir",

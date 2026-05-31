@@ -61,7 +61,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import torch
@@ -363,13 +365,16 @@ def _update_registry(onnx_path: Path) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = make_argument_parser(description=__doc__)
+    scratch_root = Path(os.environ.get("VMAF_TINY_AI_SCRATCH", tempfile.gettempdir()))
+    default_upstream_dir = scratch_root / "fastdvdnet_upstream"
     parser.add_argument(
         "--upstream-dir",
         type=Path,
-        default=Path("/tmp/fastdvdnet_upstream"),
+        default=default_upstream_dir,
         help=(
             "Directory holding upstream model.pth + models.py at commit "
-            f"{UPSTREAM_COMMIT[:7]}. Default: /tmp/fastdvdnet_upstream."
+            f"{UPSTREAM_COMMIT[:7]}. Default: $VMAF_TINY_AI_SCRATCH/"
+            "fastdvdnet_upstream (falls back to the system temp dir)."
         ),
     )
     parser.add_argument(

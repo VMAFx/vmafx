@@ -61,7 +61,7 @@ Usage
 ::
 
     .venv/bin/python ai/scripts/train_saliency_student_v2.py \\
-        --duts-root /home/kilian/datasets/duts/DUTS-TR \\
+        --duts-root ~/datasets/duts/DUTS-TR \\
         --output    model/tiny/saliency_student_v2.onnx \\
         --epochs    50 --batch-size 32 --lr 1e-3 --seed 42
 

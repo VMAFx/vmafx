@@ -23,9 +23,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -126,41 +128,56 @@ def _run_vmaf(
     model: Path,
 ) -> list[dict]:
     """Run vmaf with FULL_FEATURES + the v0.6.1 model. Return frames list."""
-    out = Path(f"/tmp/ugc_vmaf_{ref.stem}_{dis.stem}.json")
-    feature_args: list[str] = []
-    for extractor in _extractors_for(FULL_FEATURES):
-        feature_args += ["--feature", extractor]
-    cmd = [
-        str(vmaf_bin),
-        "-r",
-        str(ref),
-        "-d",
-        str(dis),
-        "-w",
-        str(w),
-        "-h",
-        str(h),
-        "-p",
-        "420",
-        "-b",
-        "8",
-        "-m",
-        f"path={model}",
-        *feature_args,
-        "--threads",
-        str(n_threads),
-        "--no_cuda",
-        "--no_sycl",
-        "--no_vulkan",
-        "--output",
-        str(out),
-        "--json",
-    ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    with out.open() as f:
-        doc = json.load(f)
-    out.unlink(missing_ok=True)
-    return doc.get("frames", [])
+    # Per-pair scratch JSON: predictable /tmp paths leak username + invite
+    # collisions on multi-tenant hosts; route through tempfile honouring
+    # VMAF_TINY_AI_SCRATCH (same env-var convention as the BVI-DVC / KoNViD
+    # full-feature scripts).
+    scratch_dir = Path(os.environ.get("VMAF_TINY_AI_SCRATCH", tempfile.gettempdir()))
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".json",
+        prefix=f"ugc_vmaf_{ref.stem}_{dis.stem}_",
+        dir=scratch_dir,
+        delete=False,
+    ) as tmp_fh:
+        out = Path(tmp_fh.name)
+    try:
+        feature_args: list[str] = []
+        for extractor in _extractors_for(FULL_FEATURES):
+            feature_args += ["--feature", extractor]
+        cmd = [
+            str(vmaf_bin),
+            "-r",
+            str(ref),
+            "-d",
+            str(dis),
+            "-w",
+            str(w),
+            "-h",
+            str(h),
+            "-p",
+            "420",
+            "-b",
+            "8",
+            "-m",
+            f"path={model}",
+            *feature_args,
+            "--threads",
+            str(n_threads),
+            "--no_cuda",
+            "--no_sycl",
+            "--no_vulkan",
+            "--output",
+            str(out),
+            "--json",
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with out.open() as f:
+            doc = json.load(f)
+        return doc.get("frames", [])
+    finally:
+        out.unlink(missing_ok=True)
 
 
 def _frame_row(metrics: dict) -> dict:

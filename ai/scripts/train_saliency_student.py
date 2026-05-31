@@ -61,13 +61,13 @@ Usage
 ::
 
     # 1. fetch DUTS-TR (~270 MB) -- not redistributed in-tree
-    mkdir -p /home/kilian/datasets/duts && cd /home/kilian/datasets/duts
+    mkdir -p ~/datasets/duts && cd ~/datasets/duts
     wget https://saliencydetection.net/duts/download/DUTS-TR.zip
     unzip DUTS-TR.zip
 
     # 2. train + export
     .venv/bin/python ai/scripts/train_saliency_student.py \\
-        --duts-root /home/kilian/datasets/duts/DUTS-TR \\
+        --duts-root ~/datasets/duts/DUTS-TR \\
         --output    model/tiny/saliency_student_v1.onnx \\
         --epochs    50 --batch-size 32 --lr 1e-3
 
