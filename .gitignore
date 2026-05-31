@@ -9,10 +9,8 @@ target/
 *.bak
 *.orig
 *.egg*
-.gradle/
 .idea/
 *.py[cod]
-.pypirc
 .tox/
 .*version
 .venv*/
@@ -52,21 +50,27 @@ testdata/bbb/*.yuv
 
 # Upstream MATLAB MEX compiled artefacts (platform-specific binaries).
 # Rebuild locally via `mex file.c` if you need the MATLAB reference path.
+# Paths follow ADR-0700 rename (python/vmaf/ → compat/python-vmaf/).
 # See Scorecard Binary-Artifacts / D38.
-python/vmaf/matlab/**/*.mex
-python/vmaf/matlab/**/*.mex[0-9]*
-python/vmaf/matlab/**/*.mexa64
-python/vmaf/matlab/**/*.mexglx
-python/vmaf/matlab/**/*.mexlx
-python/vmaf/matlab/**/*.mexmac
-python/vmaf/matlab/**/*.mexmaci64
-python/vmaf/matlab/**/*.mexsol
-python/vmaf/matlab/**/*.mexw32
-python/vmaf/matlab/**/*.mexw64
-python/vmaf/matlab/**/*.dll
-python/vmaf/matlab/**/*.exp
-python/vmaf/matlab/**/*.lib
-python/vmaf/matlab/**/*.o
+compat/python-vmaf/matlab/**/*.mex
+compat/python-vmaf/matlab/**/*.mex[0-9]*
+compat/python-vmaf/matlab/**/*.mexa64
+compat/python-vmaf/matlab/**/*.mexglx
+compat/python-vmaf/matlab/**/*.mexlx
+compat/python-vmaf/matlab/**/*.mexmac
+compat/python-vmaf/matlab/**/*.mexmaci64
+compat/python-vmaf/matlab/**/*.mexsol
+compat/python-vmaf/matlab/**/*.mexw32
+compat/python-vmaf/matlab/**/*.mexw64
+compat/python-vmaf/matlab/**/*.dll
+compat/python-vmaf/matlab/**/*.exp
+compat/python-vmaf/matlab/**/*.lib
+compat/python-vmaf/matlab/**/*.o
+
+# Cython-generated C from compat/python-vmaf/core/adm_dwt2_cy.pyx
+# (produced by `python setup.py build_ext`; never tracked).
+compat/python-vmaf/core/adm_dwt2_cy.c
+compat/python-vmaf/core/adm_dwt2_cy.cpp
 
 # Local corpus data — large YUV/MP4 fixtures, never committed.
 # Was only in .git/info/exclude; now visible to all contributors.

@@ -715,6 +715,20 @@ etc.), update the skip-list paths in `.codespellrc` to match.
 **Re-run:** `codespell --config .codespellrc` (or just `codespell`
 from the repo root — picks up `.codespellrc` automatically). Expected
 output: no findings on a clean tree.
+## `.gitignore` staleness audit (ADR-0905, 2026-05-30)
+
+**Files touched:** `.gitignore`, `python/.gitignore`.
+
+**Rebase impact:** None. Both files are fork-local (the rules trimmed
+or rewired all originate from fork additions and the post-ADR-0700
+directory rename). Upstream Netflix/vmaf maintains its own
+`.gitignore` independently; the matlab MEX block, the Cython
+`adm_dwt2_cy` block, and the legacy `python/.gitignore` scope were
+fork-only artefacts of the rename and never tracked upstream. On the
+next `/sync-upstream`, Netflix's `.gitignore` will merge cleanly
+because the trimmed rules (`.gradle/`, `.pypirc`) and the rewired
+matlab paths (`compat/python-vmaf/matlab/**/*.mex*`) do not overlap
+any upstream rule.
 
 ---
 
