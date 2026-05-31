@@ -378,65 +378,88 @@ int vmaf_mcp_start_stdio(VmafMcpServer *server, const VmafMcpStdioConfig *cfg)
     return 0;
 }
 
+/* Per-transport stop helpers.
+ *
+ * Each stop() helper is a CAS-guarded one-shot: the `*_running`
+ * atomic rides a 3-state machine — 0 = never started, 1 = started,
+ * 2 = stop() has already observed it and joined the worker. The CAS
+ * `compare_exchange_strong(expected=1, desired=2)` is the only path
+ * that drives the join branch. A 0 (never started) or 2 (already
+ * stopped) state leaves the atomic untouched and the helper returns
+ * a no-op. This makes `vmaf_mcp_stop()` safe to call any number of
+ * times — including via `vmaf_mcp_close()` after the caller already
+ * invoked stop() explicitly. Prior implementation used an
+ * unconditional `atomic_exchange(..., 2)` plus a `prev == 1 || prev
+ * == 2` guard, which mutated `0 -> 2` silently on a never-started
+ * transport and re-entered the join branch on the next call —
+ * resulting in `pthread_join()` on a default-initialised or
+ * already-joined thread handle (UB; SIGSEGV on glibc 2.40). */
+
+static void stop_stdio(VmafMcpServer *server)
+{
+    int expected = 1;
+    if (!atomic_compare_exchange_strong(&server->stdio_running, &expected, 2))
+        return;
+    /* Closing fd_in is the canonical way to unblock the read() loop.
+     * The caller owns the fd per the public contract, so we cannot
+     * close it ourselves; instead we rely on the caller having
+     * already closed (or being about to close) fd_in to drive the
+     * worker to EOF. We still join the thread to release its
+     * resources. For tests and well-behaved hosts the read end is
+     * already EOF by the time stop() is called. */
+    (void)pthread_join(server->stdio_thread, NULL);
+}
+
+static void stop_uds(VmafMcpServer *server)
+{
+    int expected = 1;
+    if (!atomic_compare_exchange_strong(&server->uds_running, &expected, 2))
+        return;
+    /* Close listener fd to unblock accept(); join the thread. The
+     * path file is unlinked so the next start_uds() with the same
+     * path doesn't fail on stale-socket. */
+    if (server->uds_listen_fd >= 0) {
+        (void)close(server->uds_listen_fd);
+        server->uds_listen_fd = -1;
+    }
+    (void)pthread_join(server->uds_thread, NULL);
+    if (server->uds_path_owned != NULL) {
+        (void)unlink(server->uds_path_owned);
+        free(server->uds_path_owned);
+        server->uds_path_owned = NULL;
+    }
+}
+
+static void stop_sse(VmafMcpServer *server)
+{
+    int expected = 1;
+    if (!atomic_compare_exchange_strong(&server->sse_running, &expected, 2))
+        return;
+    /* shutdown + close listener fd to unblock accept(); join the
+     * thread. On Linux, plain close() of a listening AF_INET socket
+     * does NOT unblock accept() in another thread —
+     * shutdown(SHUT_RDWR) does (verified empirically; see
+     * docs/mcp/embedded.md). */
+    if (server->sse_listen_fd >= 0) {
+        (void)shutdown(server->sse_listen_fd, SHUT_RDWR);
+        (void)close(server->sse_listen_fd);
+        server->sse_listen_fd = -1;
+    }
+    (void)pthread_join(server->sse_thread, NULL);
+    free(server->sse_path_owned);
+    server->sse_path_owned = NULL;
+}
+
 int vmaf_mcp_stop(VmafMcpServer *server)
 {
     if (server == NULL)
         return -EINVAL;
     /* Power-of-10 §5: post-guard — server pointer is now known
-     * non-NULL; downstream branches assume that. */
+     * non-NULL; downstream helpers assume that. */
     assert(server != NULL);
-    int prev = atomic_exchange(&server->stdio_running, 2);
-    /* Power-of-10 §5: stdio state machine is one of {0,1,2}. */
-    assert(prev == 0 || prev == 1 || prev == 2);
-    if (prev == 1 || prev == 2) {
-        /* Closing fd_in is the canonical way to unblock the read()
-         * loop. The caller owns the fd per the public contract, so
-         * we cannot close it ourselves; instead we rely on the
-         * caller having already closed (or being about to close)
-         * fd_in to drive the worker to EOF. We still join the
-         * thread to release its resources.
-         *
-         * For tests and well-behaved hosts the read end is already
-         * EOF by the time stop() is called. */
-        (void)pthread_join(server->stdio_thread, NULL);
-        atomic_store(&server->stdio_running, 0);
-    }
-
-    /* UDS: close listener fd to unblock accept(); join the thread.
-     * The path file is unlinked here so the next start_uds() with
-     * the same path doesn't fail on stale-socket. */
-    int prev_uds = atomic_exchange(&server->uds_running, 2);
-    if (prev_uds == 1 || prev_uds == 2) {
-        if (server->uds_listen_fd >= 0) {
-            (void)close(server->uds_listen_fd);
-            server->uds_listen_fd = -1;
-        }
-        (void)pthread_join(server->uds_thread, NULL);
-        if (server->uds_path_owned != NULL) {
-            (void)unlink(server->uds_path_owned);
-            free(server->uds_path_owned);
-            server->uds_path_owned = NULL;
-        }
-        atomic_store(&server->uds_running, 0);
-    }
-
-    /* SSE: shutdown + close listener fd to unblock accept(); join
-     * the thread. On Linux, plain close() of a listening AF_INET
-     * socket does NOT unblock accept() in another thread —
-     * shutdown(SHUT_RDWR) does (verified empirically; see
-     * docs/mcp/embedded.md). */
-    int prev_sse = atomic_exchange(&server->sse_running, 2);
-    if (prev_sse == 1 || prev_sse == 2) {
-        if (server->sse_listen_fd >= 0) {
-            (void)shutdown(server->sse_listen_fd, SHUT_RDWR);
-            (void)close(server->sse_listen_fd);
-            server->sse_listen_fd = -1;
-        }
-        (void)pthread_join(server->sse_thread, NULL);
-        free(server->sse_path_owned);
-        server->sse_path_owned = NULL;
-        atomic_store(&server->sse_running, 0);
-    }
+    stop_stdio(server);
+    stop_uds(server);
+    stop_sse(server);
     return 0;
 }
 

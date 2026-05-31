@@ -232,6 +232,20 @@ No rebase impact: all changes are confined to the fork-local controller package
 paths (the controller is a Phase 4b addition, not a port of Netflix code).
 The `nodes.Registry` context-propagation change is entirely within fork-local
 code and has no interaction with libvmaf C sources.
+## `vmaf_mcp_stop()` idempotent (CAS instead of exchange) (2026-05-31)
+
+**Files touched:**
+`core/src/mcp/mcp.c`, `core/test/test_mcp_stop_idempotent.c`,
+`core/test/meson.build`.
+
+**Rebase impact:** None — `core/src/mcp/` is fork-only (Netflix has no
+MCP surface). The fix replaces three `atomic_exchange(running, 2)` +
+dual-value-guard pairs with three
+`atomic_compare_exchange_strong(expected=1, desired=2)` calls, keeping
+the existing 3-state state machine semantics intact and matching the
+CAS pattern already used by `vmaf_mcp_start_{stdio,uds,sse}`. The new
+regression test (`test_mcp_stop_idempotent.c`) is also fork-only.
+Sync impact: no Netflix file references `vmaf_mcp_*` symbols.
 
 ---
 

@@ -1168,6 +1168,7 @@ test_mcp_smoke = executable('test_mcp_smoke',
 )
 test('test_mcp_smoke', test_mcp_smoke, suite : ['slow'], timeout: 60)
 
+<<<<<<< ours
 # Coverage push for core/src/mcp/* — complements test_mcp_smoke.c by
 # pinning the dispatcher error envelopes, lifecycle state-machine
 # edges (validate_config, double-start -EBUSY, empty/overlong UDS+SSE
@@ -1178,12 +1179,25 @@ test('test_mcp_smoke', test_mcp_smoke, suite : ['slow'], timeout: 60)
 # docs/research/ digest.
 test_mcp_coverage = executable('test_mcp_coverage',
     ['test.c', 'test_mcp_coverage.c'],
+=======
+# Regression: PR #460 audit follow-up #5. Verifies that
+# vmaf_mcp_stop() is idempotent across multiple invocations
+# (was: SIGSEGV on the third call due to unconditional
+# atomic_exchange mutating 0 -> 2). See
+# changelog.d/fixed/vmaf-mcp-stop-double-join-segv.md.
+test_mcp_stop_idempotent = executable('test_mcp_stop_idempotent',
+    ['test.c', 'test_mcp_stop_idempotent.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
     c_args: ['-DHAVE_MCP=1']
 )
+<<<<<<< ours
 test('test_mcp_coverage', test_mcp_coverage, suite : ['slow'], timeout: 60)
+=======
+test('test_mcp_stop_idempotent', test_mcp_stop_idempotent, suite : ['fast'], timeout: 30)
+>>>>>>> theirs
 endif
 
 # ADR-0212 / T7-10: HIP (AMD ROCm) backend smoke.
