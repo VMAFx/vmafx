@@ -600,6 +600,23 @@ generic environment-probe pattern that will keep working unchanged for
 any future torch / torchvision / torchmetrics ABI drift; the only knob
 to revisit is whether to widen the broad `except Exception` if some
 future failure mode warrants more specific handling.
+## Unified Python test orchestrator — top-level noxfile.py (2026-05-31, ADR-0914)
+
+**Files touched:**
+`noxfile.py` (new), `docs/development/python-test-orchestrator.md` (new),
+`docs/adr/0914-unified-python-test-orchestrator.md` (new),
+`docs/adr/_index_fragments/0914-unified-python-test-orchestrator.md` (new),
+`docs/adr/_index_fragments/_order.txt`,
+`docs/research/0914-python-test-orchestrator-audit-2026-05-31.md` (new),
+`changelog.d/added/0914-unified-python-test-orchestrator.md` (new).
+
+**Rebase impact:** None. The orchestrator is entirely fork-local —
+upstream Netflix/vmaf ships only the `python/` legacy harness and its
+`python/tox.ini`, neither of which this change modifies. The new
+`noxfile.py` lives at repo root, a path upstream does not occupy. If
+upstream ever adds its own `noxfile.py`, treat the conflict as
+fork-takes-priority: our file delegates to upstream's `python/tox.ini`
+via the `python_harness` session, so behaviour is preserved.
 
 ---
 

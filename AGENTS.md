@@ -453,6 +453,19 @@ linked AGENTS.md before resolving conflicts.
   `git format-patch <base>..<tip> --stdout | sed 's|libvmaf/|core/|g' | git am --3way`
   The full recipe lives in `docs/rebase-notes.md` §`refactor/meta/vmafx-repo-layout`.
   Do not introduce new references to `libvmaf/` in any new file.
+- **Top-level `noxfile.py` is a local-dev affordance, not a CI gate (ADR-0914)**:
+  The repo-root `noxfile.py` exposes one session per Python package
+  (`ai`, `mcp`, `vmaf_tune`, `dev_llm`, `roi_score`, `ensemble_kit`,
+  `python_harness`) plus `all` / `lint` meta-sessions. CI does **not**
+  call nox — each package keeps its own `python3 -m venv && pip install
+  -e .[dev] && pytest` recipe in
+  `.github/workflows/tests-and-quality-gates.yml`. When adding a new
+  Python package, update **both** `noxfile.py` and the CI YAML; missing
+  one drifts the dev experience away from CI. See
+  [`docs/development/python-test-orchestrator.md`](docs/development/python-test-orchestrator.md).
+  The `python_harness` session intentionally delegates to `tox -c
+  python` rather than duplicating the Cython + Netflix golden-data
+  setup that lives in `python/tox.ini`; do not collapse them.
 - **vmafx-server HTTP transport (`[http]` optional dep, PR #1583, ADR-0701)**:
   `mcp-server/vmaf-mcp/pyproject.toml` gained an `[http]` optional
   dependency group (`aiohttp`, `prometheus-client`). Any rebase that
