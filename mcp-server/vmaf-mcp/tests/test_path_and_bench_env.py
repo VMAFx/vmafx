@@ -34,17 +34,17 @@ def test_vmaf_binary_prefers_usr_local(monkeypatch, tmp_path):
     else:
         monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
         result = srv._vmaf_binary()
-        assert "libvmaf" in str(result)
+        assert "core" in str(result)
 
 
-def test_vmaf_binary_falls_back_to_libvmaf_build(monkeypatch, tmp_path):
+def test_vmaf_binary_falls_back_to_core_build(monkeypatch, tmp_path):
     """When /usr/local/bin/vmaf is absent the core/build path is next."""
     monkeypatch.delenv("VMAF_BIN", raising=False)
     monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
 
-    libvmaf_bin = tmp_path / "libvmaf" / "build" / "tools" / "vmaf"
-    libvmaf_bin.parent.mkdir(parents=True)
-    libvmaf_bin.touch()
+    core_bin = tmp_path / "core" / "build" / "tools" / "vmaf"
+    core_bin.parent.mkdir(parents=True)
+    core_bin.touch()
 
     original_exists = Path.exists
 
@@ -56,10 +56,10 @@ def test_vmaf_binary_falls_back_to_libvmaf_build(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "exists", patched_exists)
 
     result = srv._vmaf_binary()
-    assert result == libvmaf_bin
+    assert result == core_bin
 
 
-def test_vmaf_binary_falls_back_to_libvmaf_when_all_absent(monkeypatch, tmp_path):
+def test_vmaf_binary_falls_back_to_core_when_all_absent(monkeypatch, tmp_path):
     """When no candidate exists, returns core/build path as the best guess."""
     monkeypatch.delenv("VMAF_BIN", raising=False)
     monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
@@ -74,7 +74,7 @@ def test_vmaf_binary_falls_back_to_libvmaf_when_all_absent(monkeypatch, tmp_path
     monkeypatch.setattr(Path, "exists", patched_exists)
 
     result = srv._vmaf_binary()
-    assert "libvmaf" in str(result) and "build" in str(result)
+    assert "core" in str(result) and "build" in str(result)
 
 
 # ---------------------------------------------------------------------------

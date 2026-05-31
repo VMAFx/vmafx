@@ -140,7 +140,7 @@ def _vmaf_binary() -> Path:
 
     candidates = [
         Path("/usr/local/bin/vmaf"),
-        _repo_root() / "libvmaf" / "build" / "tools" / "vmaf",
+        _repo_root() / "core" / "build" / "tools" / "vmaf",
         _repo_root() / "build" / "tools" / "vmaf",
     ]
     for candidate in candidates:
