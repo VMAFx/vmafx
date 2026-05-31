@@ -145,6 +145,9 @@ func TestAssignJobBackToQueueOnNodeDisconnect(t *testing.T) {
 		t.Fatalf("q1 New: %v", err)
 	}
 	r1 := nodes.NewRegistry(context.Background(), log)
+	// Stop the reaper goroutine before the test exits — otherwise it
+	// leaks past the test's lifetime and trips goroutine-leak detectors.
+	defer r1.Close()
 	s1 := scheduler.New(q1, r1, log)
 
 	nodeID1, token1, err := r1.Register("crash-node", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
@@ -173,6 +176,7 @@ func TestAssignJobBackToQueueOnNodeDisconnect(t *testing.T) {
 	}
 	defer q2.Close()
 	r2 := nodes.NewRegistry(context.Background(), log)
+	defer r2.Close()
 	s2 := scheduler.New(q2, r2, log)
 
 	// Register a new node.

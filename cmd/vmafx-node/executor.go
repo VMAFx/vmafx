@@ -60,7 +60,14 @@ type Executor struct {
 
 // NewExecutor creates an Executor.
 // scorer and aiReg may be nil when the corresponding pipeline is not required.
+// A nil log is replaced with slog.Default() so the executor never panics on
+// its own logging calls — important because executor_test.go and the gRPC
+// server both construct executors in code paths where a logger may not be
+// readily available.
 func NewExecutor(scorer *libvmaf.Scorer, aiReg *ai.Registry, backend string, log *slog.Logger) *Executor {
+	if log == nil {
+		log = slog.Default()
+	}
 	return &Executor{
 		scorer:  scorer,
 		aiReg:   aiReg,
@@ -102,7 +109,9 @@ func classifyJob(job *controllerv1.Job) jobType {
 	if sp.GetReference() != "" && sp.GetDistorted() != "" {
 		return jobTypeScoring
 	}
-	// Heuristic: if only one path is set and no model is set, treat as AI.
+	// Heuristic: if only the reference path is set AND a model is named,
+	// treat as AI inference (the "reference" path doubles as the input
+	// feature/tensor JSON for the AI pipeline — see executeAI).
 	if sp.GetReference() != "" && sp.GetDistorted() == "" && sp.GetModel() != "" {
 		return jobTypeAI
 	}
