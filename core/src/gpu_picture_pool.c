@@ -54,12 +54,18 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
     int err = 0;
 
     VmafGpuPicturePool *const p = *pool = malloc(sizeof(*p));
-    if (!p)
+    if (!p) {
+        err = -ENOMEM;
         goto fail;
+    }
     memset(p, 0, sizeof(*p));
     p->cfg = cfg;
 
-    p->pic = malloc(sizeof(VmafPicture) * p->cfg.pic_cnt);
+    /* calloc to zero every slot before any callback runs, so partial-
+     * init unwind can call free_picture_callback on uninitialised slots
+     * (their data[] / priv fields are NULL and the callback short-
+     * circuits). Round-26 audit. */
+    p->pic = calloc(p->cfg.pic_cnt, sizeof(VmafPicture));
     if (!p->pic) {
         err = -ENOMEM;
         goto free_p;
@@ -69,15 +75,35 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
     if (err)
         goto free_pic;
 
-    for (unsigned i = 0; i < p->cfg.pic_cnt; i++)
-        err |= p->cfg.alloc_picture_callback(&p->pic[i], p->cfg.cookie);
+    /* Allocate every slot. On first failure, unwind the slots that
+     * succeeded, destroy the mutex, free the pool, and return the
+     * error code. Previously the loop OR-aggregated all callback
+     * results then returned mid-initialised state with *pool set —
+     * callers (e.g. picture_sycl.cpp) propagated the error code,
+     * called `delete wrap`, and leaked the per-slot device memory +
+     * mutex + p->pic. Round-26 audit (ADR-0982). */
+    for (unsigned i = 0; i < p->cfg.pic_cnt; i++) {
+        const int alloc_err = p->cfg.alloc_picture_callback(&p->pic[i], p->cfg.cookie);
+        if (alloc_err != 0) {
+            err = alloc_err;
+            for (unsigned j = 0; j < i; j++) {
+                (void)p->cfg.free_picture_callback(&p->pic[j], p->cfg.cookie);
+            }
+            (void)pthread_mutex_destroy(&p->busy);
+            free(p->pic);
+            free(p);
+            *pool = NULL;
+            return err;
+        }
+    }
 
-    return err;
+    return 0;
 
 free_pic:
     free(p->pic);
 free_p:
     free(p);
+    *pool = NULL;
 fail:
     return err;
 }

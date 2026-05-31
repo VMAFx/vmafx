@@ -265,23 +265,37 @@ static int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_d
 
     sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
 
-    if (y_pitch == y_row_bytes) {
-        q->memcpy(target_buf, y_plane, y_row_bytes * h);
-    } else {
-        uint8_t *src = y_plane;
-        uint8_t *dst = (uint8_t *)target_buf;
-        for (unsigned row = 0; row < h; row++) {
-            q->memcpy(dst, src, y_row_bytes);
-            src += y_pitch;
-            dst += y_row_bytes;
+    /* Round-26 audit (ADR-0982): wrap the SYCL submits + wait so a
+     * thrown sycl::exception cannot escape with the VA image still
+     * mapped + the VA image still allocated. Previously a memcpy or
+     * wait throw leaked the VAImage descriptor and held the mapped
+     * buffer indefinitely. */
+    int rc = 0;
+    try {
+        if (y_pitch == y_row_bytes) {
+            q->memcpy(target_buf, y_plane, y_row_bytes * h);
+        } else {
+            uint8_t *src = y_plane;
+            uint8_t *dst = (uint8_t *)target_buf;
+            for (unsigned row = 0; row < h; row++) {
+                q->memcpy(dst, src, y_row_bytes);
+                src += y_pitch;
+                dst += y_row_bytes;
+            }
         }
+        q->wait();
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL VA readback memcpy: %s\n", e.what());
+        rc = -EIO;
+    } catch (...) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL VA readback memcpy: unknown exception\n");
+        rc = -EIO;
     }
-    q->wait();
 
     vaUnmapBuffer(va_dpy, va_img.buf);
     vaDestroyImage(va_dpy, va_img.image_id);
 
-    return 0;
+    return rc;
 }
 
 /* ------------------------------------------------------------------ */
