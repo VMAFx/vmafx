@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0628: Remote-aware ADR number allocator — cross-worktree collision prevention
 
 - **Status**: Accepted
@@ -25,6 +26,7 @@ both agents see the same highest-taken number and independently increment from
 it, producing identical candidate numbers.
 
 Three concrete failure modes:
+
 1. **Push-before-claim gap**: two agents start, both fetch master, pick the
    same next number, write stubs concurrently (the `/tmp` lock prevents this
    within the same PID namespace, but separate worktrees may use different
@@ -52,7 +54,7 @@ Extend `scripts/adr/next-free.sh --claim` with two complementary mechanisms:
    `git ls-remote --heads origin` in the main shell (not a subshell) to get
    all open branch refs, then for each non-master SHA run `git ls-tree -r` to
    enumerate `docs/adr/NNNN-*.md` entries.  The union of master + local stubs
-   + adr-claims + remote-branch trees forms the taken-number set from which
+   dr-claims + remote-branch trees forms the taken-number set from which
    `max + 1` is computed.
 
 3. **Offline fallback**: if `git ls-remote --heads` fails (network

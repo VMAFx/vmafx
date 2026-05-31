@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0676: MOS Corpus Adapter Manifests
 
 - **Status**: Accepted

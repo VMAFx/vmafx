@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0126: SSIMULACRA 2 perceptual metric as a fork-local feature extractor
 
 - **Status**: Accepted

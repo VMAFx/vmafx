@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 -->
 # ADR-0256: Vulkan submit-side template + fence pool + descriptor pre-alloc
 
 - Status: Accepted
@@ -134,7 +135,7 @@ Positive:
 - `kernel_template.h` exposes a complete submit-pool surface
   (`vmaf_vulkan_kernel_submit_pool_create` / `_destroy` / `_acquire`,
   plus the existing `_end_and_wait` / `_free`) reusable for `adm_vulkan`
-  + `ms_ssim_vulkan` once those land their template-adoption PRs.
+  `ms_ssim_vulkan` once those land their template-adoption PRs.
 - The descriptor-pre-alloc helper lifts the right shape for future
   graph-capture work.
 

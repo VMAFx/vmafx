@@ -3,6 +3,8 @@ name: refresh-ffmpeg-patches
 description: Rebase our ffmpeg-patches/ series onto the latest ffmpeg master (or a specified ref), resolve trivial conflicts, regenerate .patch files, and surface unresolved hunks for human attention.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /refresh-ffmpeg-patches
 
 Keeps our ffmpeg integration patches current with upstream ffmpeg. Run this whenever
@@ -10,7 +12,7 @@ Keeps our ffmpeg integration patches current with upstream ffmpeg. Run this when
 
 ## Invocation
 
-```
+```text
 /refresh-ffmpeg-patches [--ffmpeg-ref=master|n7.0|<sha>] [--ffmpeg-dir=/tmp/ffmpeg]
                         [--branch=vmaf-fork-patches]
 ```

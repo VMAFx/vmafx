@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # LIVE-VQC corpus ingestion
 
 LIVE Video Quality Challenge (LIVE-VQC; Sinno & Bovik, IEEE TIP 2019) is a
@@ -36,7 +37,7 @@ conversion script ships in tree.
 
 Expected local layout after extraction:
 
-```
+```text
 .workingdir2/live-vqc/
   ├── manifest.csv        # MOS table (operator drops — see Manifest below)
   └── clips/              # video files (operator extraction)
@@ -73,7 +74,7 @@ Two shapes are accepted and auto-detected:
 The LIVE-VQC MOS spreadsheet can be exported as a headerless
 `<filename>, <mos>` CSV. Drop it at `<live-vqc-dir>/manifest.csv`:
 
-```
+```text
 001.mp4,45.23
 002.mp4,72.18
 003.mp4,61.05
@@ -87,7 +88,7 @@ export does not include inter-rater spread).
 Alternatively, produce a standard CSV matching the LSVQ / KonViD-150k
 header convention:
 
-```
+```text
 name,url,mos,sd,n
 001.mp4,https://...,45.23,8.1,30
 002.mp4,https://...,72.18,6.4,28

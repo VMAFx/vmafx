@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD060 -->
 # ADR-0488: Shared once-snapshot helper for GPU dispatch env variables
 
 - **Status**: Accepted
@@ -56,6 +57,7 @@ removed; the shared helper subsumes it.
 ## Consequences
 
 **Positive**
+
 - The `concurrency-mt-unsafe` clang-tidy finding is closed for Vulkan and SYCL,
   matching the posture already established for CUDA.
 - The CUDA-specific ~35-LOC bespoke once-init block is removed.
@@ -63,6 +65,7 @@ removed; the shared helper subsumes it.
   one-line call; no per-backend boilerplate needed.
 
 **Neutral**
+
 - `gpu_dispatch_env.c` is compiled on every build, including CPU-only builds
   where no GPU backend is active. The file is ~130 LOC and adds negligible
   compile time.

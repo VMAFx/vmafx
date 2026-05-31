@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0067 — K150K-A corpus integration feasibility and pipeline design
 
 **Date:** 2026-05-09
@@ -90,6 +91,7 @@ or use only the informative subset.
 | Hardware | RTX 4090, CUDA 13.2, driver 595.71.05 |
 
 Parallelisation paths (follow-up):
+
 - N parallel processes, each with `--limit` + `--clips-dir` subset.
 - Task queue (e.g. `xargs -P 4` over clip batches).
 - Multi-GPU: route subsets to different CUDA devices via `CUDA_VISIBLE_DEVICES`.

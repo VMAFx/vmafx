@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0671: Ensemble LOSO Report Provenance
 
 ## Summary

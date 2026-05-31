@@ -11,7 +11,7 @@ The BBB end-to-end v5 probe (after PR #1258 / ADR-0501 closed the
 v4 cluster) surfaced three follow-ups that fall into two root
 causes:
 
-* **V5-1** — `vmaf --backend vulkan` strict-mode refusal was again
+- **V5-1** — `vmaf --backend vulkan` strict-mode refusal was again
   reported as exiting `0` on the dev-mcp container. A live re-run
   against the post-ADR-0501 binary shows the propagation chain
   `init_gpu_backends() -> ret = -1 -> main() -> exit(255)` is
@@ -23,7 +23,7 @@ causes:
   invocation in the test's pytest harness) the gate silently
   disengaged. A future RC=0 regression would have shipped without
   the regression test firing.
-* **V5-2** — `vmaf-tune ladder` against a container source
+- **V5-2** — `vmaf-tune ladder` against a container source
   (`bbb_sunflower_1080p_30fps_normal.mp4`) produced VMAF in the
   4-9 band at ~50 Mbps regardless of CRF — a uniformly-bogus
   encode. Root cause: `corpus.iter_rows` instantiates
@@ -36,7 +36,7 @@ causes:
   and the per-CRF cloud is uniformly low quality. ADR-0501's
   reference-side scale fix corrected the score-side geometry but
   did nothing for the encode-side container detection.
-* **V5-3** — The `samples[]` array in the v1 JSON descriptor
+- **V5-3** — The `samples[]` array in the v1 JSON descriptor
   double-listed every rendition. Root cause: ADR-0501's emit path
   derived the sample cloud from `ladder.points`, which contains
   one row per `(resolution, target_vmaf)` cell. The CLI ships

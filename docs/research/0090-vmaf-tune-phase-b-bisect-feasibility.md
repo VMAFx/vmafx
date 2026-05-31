@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0090: vmaf-tune Phase B target-VMAF bisect — feasibility
 
 - **Date**: 2026-05-08

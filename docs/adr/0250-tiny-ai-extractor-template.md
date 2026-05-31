@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0250: Tiny-AI extractor template — shared scaffolding header
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # `tools/external-bench/` — external-competitor benchmark harness
 
 Side-by-side numerical comparison between the fork's perceptual-quality
@@ -18,9 +19,9 @@ incompatible with redistribution alongside permissive-licensed code.
 mitigation: each external competitor lives in its own
 `tools/external-bench/<competitor>/run.sh` that:
 
-* invokes a **user-installed** external binary (path provided via env var);
-* reads the binary's output, **re-shapes** it into the harness JSON schema;
-* writes the normalised `output.json` to the path given by `--out`.
+- invokes a **user-installed** external binary (path provided via env var);
+- reads the binary's output, **re-shapes** it into the harness JSON schema;
+- writes the normalised `output.json` to the path given by `--out`.
 
 No GPL'd code is vendored, linked, or copied into this fork. Side-by-side
 benchmarking is fine because the fork only invokes the binary as a

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Netflix-Grade Encoding Pipeline Roadmap — 2026-05-19
 
 Planning-only document. No implementation decisions are final until the user
@@ -20,7 +21,7 @@ selects an item and the corresponding ADR is accepted.
 
 ## Dependency Graph
 
-```
+```text
                    ┌──────────────────────────────────────────┐
                    │                                          │
   4: VMAF NEG      │   (standalone — no prerequisites)        │
@@ -74,7 +75,7 @@ selects an item and the corresponding ADR is accepted.
 
 Optimises for early visible value; each item ships in a standalone PR.
 
-```
+```text
 Week 1:  Item 4 (NEG) — 1.5 days. Immediate value for codec comparisons.
 Week 1:  Item 3 (NR)  — 3 days.   Unlocks speed improvements for all later items.
 Week 2:  Item 5 (Cross-shot) — 4.5 days. Builds on NR; improves title quality.
@@ -89,7 +90,7 @@ Total: ~28 days / ~6 weeks.
 
 Implements the full stack from bottom up; maximises reuse during development.
 
-```
+```text
 Week 1:  Item 4 (NEG) — 1.5 days.
 Week 1:  Item 3 (NR)  — 3 days.
 Week 2:  Item 6 (Classifier) — 8 days (builds routing infra that DO + ABR use).
@@ -115,6 +116,7 @@ front-loads the largest item and delays visible wins for 8 days.
 **Item 4 (VMAF NEG) + Item 3 (Fast NR pre-scoring).**
 
 Rationale:
+
 - Item 4 is the cheapest item (1.5 days), has no dependencies, and immediately
   unblocks correct codec-comparison workflows. The model files are in-tree;
   this is pure parameter plumbing.
@@ -214,6 +216,7 @@ per rung, short shots at rung boundary treated as up-/down-scale.
 Direct access to Netflix Tech Blog (netflixtechblog.com) failed during this
 research pass with SSL certificate errors. Relevant posts were identified by
 URL but not successfully fetched:
+
 - "Dynamic Optimizer: A Perceptual Video Encoding Optimization Framework"
 - "Per-Title Encode Optimization" (2015)
 - "Per-Shot Encoding for High-Quality Video Streaming"

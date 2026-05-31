@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0291: fr_regressor_v2 — flip from smoke to production
 
 - **Status**: Accepted

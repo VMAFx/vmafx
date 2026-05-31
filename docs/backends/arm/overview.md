@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ARM NEON / SVE2 backend
 
 libvmaf's aarch64 path uses ARMv8-A NEON intrinsics by default and

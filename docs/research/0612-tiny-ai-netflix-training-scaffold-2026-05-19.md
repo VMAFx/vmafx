@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research Digest 0607 — Tiny-AI Netflix corpus training: 2024–2026 literature refresh
 
 **Date**: 2026-05-19
@@ -84,7 +85,7 @@ on KADID-10K; directly applicable to the fork's `fr_tiny_v1` distillation loop.
 
 For MSE distillation on clip-mean scores, the standard is:
 
-```
+```text
 L = (1/N) Σ (student(xi) - teacher(xi))^2
 ```
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ARM64 NEON bit-exactness audit — 2026-05-30
 
 **Purpose**: Verify that the `-ffp-contract=off` carve-out introduced in

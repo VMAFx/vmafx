@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Environment variable reference
 
 VMAFX reads a number of environment variables at runtime.  This page is the
@@ -161,7 +162,7 @@ provides a simpler global override.
 `VMAF_SYCL_NO_GRAPH` is a **deprecated** alias for `VMAF_SYCL_USE_GRAPH=false`.
 Setting it to `1` still works for one release but prints a warning to stderr:
 
-```
+```text
 VMAF_SYCL_NO_GRAPH deprecated; use VMAF_SYCL_USE_GRAPH=false. Will be removed in v4.0.
 ```
 

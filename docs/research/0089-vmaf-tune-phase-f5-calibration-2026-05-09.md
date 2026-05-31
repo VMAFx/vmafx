@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD049 -->
 # Research-0089: `vmaf-tune` Phase F.5 — recipe calibration on K150K (2026-05-09)
 
 - **Date**: 2026-05-09

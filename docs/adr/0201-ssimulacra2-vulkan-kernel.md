@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-27
-- **Deciders**: lusoris@pm.me
+- **Deciders**: <lusoris@pm.me>
 - **Tags**: vulkan, gpu, ssimulacra2, precision
 
 ## Context

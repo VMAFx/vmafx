@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # DNN session API — `libvmaf/dnn.h`
 
 The DNN surface in [`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h)

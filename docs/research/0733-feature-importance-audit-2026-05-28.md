@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD056 MD060 -->
 # Research-0733 — Feature Importance Audit and Drop Recommendations (2026-05-28)
 
 **Status:** Final
@@ -14,7 +15,7 @@ Every shipped tiny-AI regression model (`vmaf_tiny_v2`, `vmaf_tiny_v3`, `vmaf_ti
 `fr_regressor_v1..v3`, `fr_regressor_v2_ensemble_v1`) uses the identical six-feature
 **canonical-6** input vector:
 
-```
+```text
 adm2 | vif_scale0 | vif_scale1 | vif_scale2 | vif_scale3 | motion2
 ```
 
@@ -80,6 +81,7 @@ adds noise but all are positive here.
 | 6 | `vif_scale0` | +0.0014 | +0.0020 | +0.0012 | +0.0020 | 0.0000 |
 
 **Key observations:**
+
 - `adm2` is dominant — shuffling it drops PLCC by ~0.47 (from 0.9999 to ~0.53)
 - `motion2` and `vif_scale3` are clearly load-bearing
 - `vif_scale0` is nearly redundant (PLCC drop < 0.002) — it carries almost no

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0720 — vmaf-tune executor strict JSONL results
 
 ## Question

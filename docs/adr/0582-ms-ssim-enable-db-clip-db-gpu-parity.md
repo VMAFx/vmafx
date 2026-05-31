@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0582: MS-SSIM `enable_db` and `clip_db` option parity on CUDA and SYCL backends
 
 - **Status**: Accepted
@@ -35,6 +36,7 @@ changes are required.
 For each affected GPU twin:
 
 **CUDA (`integer_ms_ssim_cuda.c`)**:
+
 1. Add `bool enable_db` and `bool clip_db` to `MsSsimStateCuda`.
 2. Add matching `VmafOption` entries (type `VMAF_OPT_TYPE_BOOL`,
    `default_val.b = false`) to the existing `options[]` table.
@@ -43,6 +45,7 @@ For each affected GPU twin:
    `float_ms_ssim.c` exactly.
 
 **SYCL (`integer_ms_ssim_sycl.cpp`)**:
+
 1. Add `bool enable_lcs`, `bool enable_db`, and `bool clip_db` to
    `MsSsimStateSycl`.
 2. Replace the empty `options_ms_ssim_sycl[] = {{0}}` sentinel with a

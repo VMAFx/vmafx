@@ -3,6 +3,8 @@ name: build-vmaf
 description: Build the libvmaf library + CLI with the requested backend combination (cpu, cuda, sycl, hip, all) and build type. Wraps meson setup + ninja. Reports wall time + output artifact paths.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /build-vmaf
 
 Thin wrapper over `meson setup` + `ninja` that enforces the canonical command lines for
@@ -10,7 +12,7 @@ this repo.
 
 ## Invocation
 
-```
+```text
 /build-vmaf [--backend=cpu|cuda|sycl|hip|all] [--config=debug|release|relwithdebinfo]
             [--sanitizers=asan,ubsan,tsan|none] [--reconfigure] [--clean]
 ```

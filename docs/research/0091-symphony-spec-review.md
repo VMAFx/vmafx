@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0091: openai/symphony SPEC review — adoptable shapes for the fork
 
 - **Date**: 2026-05-09
@@ -70,7 +71,7 @@ dispatch. We had two this session.
 (17 OPEN, 78 closed-class, the rest BLOCKED/DEFERRED/IN_FLIGHT). Spot
 checks against the user-cited examples:
 
-```
+```text
 T0-1   → status=DONE     priority=0  prs=[#72]      (ground truth: DONE — PR #72)
 T0-3   → status=REMOVED  priority=0  prs=[#62]      (ground truth: REMOVED 2026-04-25)
 T1-1   → status=DONE     priority=1  prs=[#91]      (ground truth: DONE — PR #91)
@@ -81,7 +82,7 @@ TA-VOCAB → status=OPEN   priority=None prs=[#394, #401, #428] (ground truth: c
 
 `agent-eligibility-precheck.py` smoke against the same set:
 
-```
+```text
 T0-1   → exit=1, ::error agent-eligibility: T0-1 is DONE
 T7-5   → exit=1, ::error agent-eligibility: T7-5 is DONE
 T3-7   → exit=0, VERDICT=PASS — dispatch eligible

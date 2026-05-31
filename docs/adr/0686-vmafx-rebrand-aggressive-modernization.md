@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0686: VMAFX Rebrand and Aggressive Modernization — Umbrella ADR
 
 - **Status**: Proposed
@@ -216,6 +217,7 @@ handling rule — rendered in neutral English):
 - req: "Sweep timing: start NOW in parallel with merge train."
 
 Related ADRs:
+
 - [ADR-0024](0024-netflix-golden-preserved.md) — Netflix golden tests as required status check
 - [ADR-0100](0100-project-wide-doc-substance-rule.md) — documentation substance rule
 - [ADR-0108](0108-deep-dive-deliverables-rule.md) — deep-dive deliverables rule

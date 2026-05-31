@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 MD036 -->
 # ADR-0221: CHANGELOG + ADR-index fragment-file pattern
 
 - **Status**: Accepted
@@ -126,9 +127,9 @@ fragment files instead of editing the consolidated outputs directly.
   recognising fragment files as CHANGELOG entries.
 - [Research-0034](../research/0034-changelog-fragment-pattern.md) —
   cost-of-merge-conflict measurement + tool comparison.
-- Keep-a-Changelog (https://keepachangelog.com/) — section ordering
+- Keep-a-Changelog (<https://keepachangelog.com/>) — section ordering
   convention.
-- towncrier (https://towncrier.readthedocs.io/) — Python-ecosystem
+- towncrier (<https://towncrier.readthedocs.io/>) — Python-ecosystem
   precedent for fragment-file changelogs.
 
 ### Status update 2026-05-08

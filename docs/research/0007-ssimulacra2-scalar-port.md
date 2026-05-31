@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0007: SSIMULACRA 2 scalar port — YUV handling, blur deviation, snapshot tooling
 
 - **Status**: Active

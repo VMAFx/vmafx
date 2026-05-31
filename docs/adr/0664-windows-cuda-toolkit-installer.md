@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0664: Install Windows CUDA directly in CI
 
 - **Status**: Accepted

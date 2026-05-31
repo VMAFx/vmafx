@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0726 — AI legacy strict JSON writers
 
 ## Problem

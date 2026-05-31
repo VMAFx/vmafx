@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # TAD — Temporal Absolute Difference
 
 **Feature name (CLI):** `tad`
@@ -13,11 +14,12 @@ TAD is the mean absolute difference of luma (Y) pixel values between a reference
 and a distorted frame, normalised to the [0.0, 1.0] range by the peak luma value
 (2^bpc − 1):
 
-```
+```text
 tad(ref, dis) = (1 / (W × H × peak)) × Σ_{i,j} |ref_Y[i,j] − dis_Y[i,j]|
 ```
 
 where:
+
 - `W × H` = number of luma pixels per frame
 - `peak` = maximum luma sample value (255 for 8-bit, 1023 for 10-bit, etc.)
 - Only the luma (Y) plane is used; chroma planes are ignored.
@@ -98,6 +100,7 @@ When `enable_rust_features=false`, requesting `--feature tad` at runtime returns
 ## Implementation notes
 
 Source files:
+
 - `core/src/feature/rust/tad/src/lib.rs` — Rust implementation + unit tests
 - `core/src/feature/rust/tad/Cargo.toml` — crate manifest (cbindgen build-dep)
 - `core/src/feature/rust/tad/build.rs` — cbindgen header generation

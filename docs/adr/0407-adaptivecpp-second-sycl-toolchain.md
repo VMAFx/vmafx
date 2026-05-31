@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0407: AdaptiveCpp as a second SYCL toolchain
 
 - **Status**: Accepted

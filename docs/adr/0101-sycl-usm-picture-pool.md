@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0101: SYCL USM-backed picture pre-allocation pool
 
 - **Status**: Accepted

@@ -41,7 +41,8 @@ A second concern is the `motion_five_frame_window=true` mode in
 `a2b59b77`. Upstream wires it through a new
 `fex->prev_prev_ref` field on `VmafFeatureExtractor`, plus
 matching picture-pool sizing in `vmaf_read_pictures` (n‑threads × 2
-+ 2). The fork's `read_pictures_*` decomposition (ADR-0152
+
+- 2). The fork's `read_pictures_*` decomposition (ADR-0152
 monotonic-index gate) and existing `dnn`-block additions to
 `VmafContext` diverge from upstream's layout; porting the
 `prev_prev_ref` plumbing surfaces a four-conflict-region merge in
@@ -147,7 +148,7 @@ once the picture-pool refactor is reviewed in isolation.
   [`a2b59b77`](https://github.com/Netflix/vmaf/commit/a2b59b77),
   [`4e469601`](https://github.com/Netflix/vmaf/commit/4e469601).
 - Fork PRs preceding this one: PR #453 (narrow attempt; mirror fix
-  + citation backfill; deferred a2b59b77 + 4e469601), PR #460
+  citation backfill; deferred a2b59b77 + 4e469601), PR #460
   (cluster port; deferred via PR-body §1 "Public-API surface
   change in `4e469601` was NOT ported"). Both surfaced the
   architectural question this ADR resolves.

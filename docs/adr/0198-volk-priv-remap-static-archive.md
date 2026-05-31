@@ -25,7 +25,7 @@ loader).
 The collision shows up in **fully-static link environments**
 that consume both libvmaf and the official Vulkan loader:
 
-```
+```text
 $ gcc -static main.c libvmaf.a libvulkan.a -ldl
 ld: volk.c.o (symbol from plugin):
     multiple definition of `vkGetInstanceProcAddr';
@@ -126,12 +126,14 @@ Net effect:
   on `default_library=static -Denable_vulkan=enabled` returned
   ~700 before this commit; after, returns `0`.
 - Post-fix verification:
-  ```
+
+  ```text
   $ gcc -static main_stub.c libvmaf.a libvulkan-stub.a \
         -lstdc++ -lm -lpthread -ldl -o btbn_sim
   $ echo $?
   0
   ```
+
   (See PR description for the full repro script.)
 - Vulkan smoke test (`test_vulkan_smoke`) still passes 10 / 10
   on the renamed build — runtime-loaded entry points dispatch

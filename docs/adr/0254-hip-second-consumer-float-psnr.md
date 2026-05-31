@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0254: HIP second-consumer kernel — `float_psnr_hip` via mirrored kernel-template
 
 - **Status**: Accepted
@@ -40,7 +41,7 @@ The PR ships:
   verbatim: `init → context_new + lifecycle_init + readback_alloc +
   feature_name_dict`, `submit → submit_pre_launch + (kernel-launch +
   event-record + DtoH copy land in T7-10b)`, `collect → collect_wait
-  + score-emit (also T7-10b)`, `close → lifecycle_close +
+  score-emit (also T7-10b)`, `close → lifecycle_close +
   readback_free + dictionary_free + context_destroy`. The
   bit-depth-aware `peak` / `psnr_max` table is established at
   `init()` time so the eventual cross-backend numeric gate has

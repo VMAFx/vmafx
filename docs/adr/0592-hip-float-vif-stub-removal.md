@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0592: Remove float_vif_score weak HSACO stub now that real HIP kernel ships
 
 - **Status**: Accepted

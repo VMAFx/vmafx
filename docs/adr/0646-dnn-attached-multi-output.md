@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0646: Route Attached DNN Multi-Output Tensors
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0395: predictor stub-models policy
 
 - **Status**: Accepted

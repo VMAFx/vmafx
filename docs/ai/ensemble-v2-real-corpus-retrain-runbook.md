@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # `fr_regressor_v2` ensemble — real-corpus retrain runbook
 
 This runbook walks through the **real-corpus LOSO retrain** of the

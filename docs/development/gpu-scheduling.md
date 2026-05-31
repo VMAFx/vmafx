@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # GPU Scheduling in Kubernetes
 
 This guide explains how VMAFX maps GPU vendor device-plugins to Kubernetes
@@ -80,7 +81,7 @@ kubectl describe node <node-name> | grep -E "Capacity|Allocatable" -A 15
 
 Example output for an NVIDIA node:
 
-```
+```text
 Capacity:
   ...
   nvidia.com/gpu:     1
@@ -96,7 +97,7 @@ not installed or the node does not have a compatible GPU.
 
 ### `Insufficient nvidia.com/gpu`
 
-```
+```text
 0/3 nodes are available: 3 Insufficient nvidia.com/gpu.
 ```
 
@@ -104,15 +105,18 @@ Causes and fixes:
 
 1. **Device-plugin not installed.** Install the NVIDIA device-plugin daemonset.
 2. **Node is tainted but pod has no toleration.** Add a toleration:
+
    ```yaml
    tolerations:
      - key: nvidia.com/gpu
        operator: Exists
        effect: NoSchedule
    ```
+
 3. **All GPUs already allocated.** Reduce `gpu.count`, free other pods, or add
    a GPU node.
 4. **Pod is requesting more GPUs than available.**
+
    ```bash
    kubectl get pod <pod> -o jsonpath='{.spec.containers[0].resources}'
    ```

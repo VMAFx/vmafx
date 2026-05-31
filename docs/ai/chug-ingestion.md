@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # CHUG UGC-HDR ingestion
 
 `ai/scripts/chug_to_corpus_jsonl.py` ingests the CHUG UGC-HDR dataset

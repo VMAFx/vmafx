@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0596: Delete orphan and duplicate HIP/CUDA translation units
 
 - **Status**: Accepted

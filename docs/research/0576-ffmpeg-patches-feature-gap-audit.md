@@ -40,6 +40,7 @@ are passed through the `VmafFeatureDictionary` mechanism via
 ### VmafConfiguration gap
 
 The `VmafConfiguration` struct has 5 fields:
+
 - `log_level` — wired via `log_level_map(av_log_get_level())`
 - `n_threads` — exposed as `n_threads` AVOption (upstream)
 - `n_subsample` — exposed as `n_subsample` AVOption (upstream)
@@ -52,6 +53,7 @@ wired through the filter.
 ### Symbols audit (Goal B)
 
 The following symbols were named in the task brief as potentially deleted:
+
 - `float_ssim_cuda`: still live — defined in `integer_ssim_cuda.c` (the
   source file was renamed/merged in PR #1343 but the symbol was preserved).
 - `adm_hip`, `motion_hip`, `vif_hip`, `integer_ciede_hip`,

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0622: VMAF NEG Integration Implementation
 
 - **Status**: Accepted (Implemented)

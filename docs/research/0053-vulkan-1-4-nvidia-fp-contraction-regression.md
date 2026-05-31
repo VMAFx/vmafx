@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0053: Vulkan 1.4 bump — NVIDIA-only float contraction regression
 
 Date: 2026-05-03
@@ -63,7 +64,7 @@ hardcodes `glslc --target-env=vulkan1.3` (line 106). The hypothetical
 target. To rule out an indirect bytecode change, both shaders were
 compiled at both target levels and compared:
 
-```
+```text
 glslc --target-env=vulkan1.3 -O vif.comp   -o vif-13.spv
 glslc --target-env=vulkan1.4 -O vif.comp   -o vif-14.spv
 glslc --target-env=vulkan1.3 -O ciede.comp -o ciede-13.spv

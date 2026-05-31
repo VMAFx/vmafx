@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0654: Predictor Preserves Saliency Signals
 
 - **Status**: Accepted

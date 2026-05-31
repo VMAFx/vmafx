@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0860 — Re-include Vulkan FFmpeg patches as no-op shims for chain coherence
 
 | Status   | Date       | Supersedes | Superseded by |

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0007: Rewrite .claude/settings.json from scratch
 
 - **Status**: Accepted

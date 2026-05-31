@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Core MCP transport coverage push — 2026-05-31
 
 ADR-0108 §1 research digest for the

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0092: Symbol-Visibility Audit — Round-4 Bug-Hunt Finding
 
 **Date**: 2026-05-10
@@ -80,6 +81,7 @@ Add `-fvisibility=hidden` to `vmaf_cflags_common` in
 symbols.
 
 **Scope of changes**:
+
 - `core/src/meson.build`: add `-fvisibility=hidden` (~2 lines)
 - `core/include/libvmaf/*.h`: add `VMAF_EXPORT` to every public function
   declaration (~60–80 entry points across 8 headers)

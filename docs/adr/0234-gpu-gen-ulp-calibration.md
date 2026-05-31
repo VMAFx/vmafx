@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0234: GPU-generation-aware ULP calibration head
 
 - **Status**: Accepted (2026-05-03 — calibration-table tier landed; ONNX-head

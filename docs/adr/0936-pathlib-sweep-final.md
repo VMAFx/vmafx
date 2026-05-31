@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0936: Final `os.path` → `pathlib.Path` sweep + ruff PTH guard
 
 - **Status**: Accepted

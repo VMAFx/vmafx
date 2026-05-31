@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Kubernetes Deployment (Helm)
 
 VMAFX ships a Helm chart under `deploy/helm/vmafx/` that supports three

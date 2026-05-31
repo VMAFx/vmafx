@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0556: Python / MCP / AI silent-fallback audit fixes (2026-05-18)
 
 - **Status**: Accepted

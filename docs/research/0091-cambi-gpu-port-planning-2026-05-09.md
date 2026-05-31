@@ -343,7 +343,7 @@ own six-deliverables set as usual.
 - SYCL template reference: `core/src/feature/sycl/integer_adm_sycl.cpp`
   (1663 LOC).
 - HIP template reference: `core/src/feature/hip/integer_psnr_hip.c`
-  + `adm_hip.c`.
+  `adm_hip.c`.
 - User direction: standing CLAUDE.md §12 r10/r11 (every fork-local PR
   ships the six deep-dive deliverables; doc-substance rule applies);
   standing CLAUDE.md §13 (prefer closing the matrix over chasing peak

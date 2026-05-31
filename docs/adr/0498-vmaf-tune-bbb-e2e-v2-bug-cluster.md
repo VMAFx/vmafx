@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD029 MD060 -->
 # ADR-0498: vmaf-tune BBB end-to-end v2 bug cluster + explicit-backend semantics
 
 - **Status**: Accepted

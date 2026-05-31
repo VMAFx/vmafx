@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0931: MCP server — replace subprocess delegation with direct cgo (Phase 1)
 
 - **Status**: Proposed

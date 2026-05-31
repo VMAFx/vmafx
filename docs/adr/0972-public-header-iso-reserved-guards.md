@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0972: Public headers — replace ISO-reserved `__VMAF_*__` include guards with `LIBVMAF_*_H` (Round 27 audit A.1, SEI CERT DCL37-C)
 
 - **Status**: Accepted

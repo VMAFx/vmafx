@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0965: CUDA SpEED TU repair — align with current CudaFunctions table (closes T-CUDA-SPEED-TU-REPAIR-2026-05-31)
 
 - **Status**: Accepted
@@ -36,6 +37,7 @@ The bugs were latent because the TUs were never compiled before this PR.
 ## Decision
 
 Repair both TUs:
+
 - Replace all `CHECK_CUDA(cu_f, CALL)` calls with `CHECK_CUDA_GOTO(cu_f, CALL, fail)`.
 - Replace `cuMemAllocHost((void **)&ptr, sz)` with `cuMemHostAlloc((void **)&ptr, sz, 0x01u)`.
 - Fix copyright headers to `Copyright 2026 Lusoris`.

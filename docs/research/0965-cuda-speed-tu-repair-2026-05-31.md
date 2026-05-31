@@ -44,6 +44,7 @@ to `cu_f->cuMemAllocHost(...)`, referencing a non-existent struct member.
 `common.c:334` which use the same pattern.
 
 **Evidence from existing code:**
+
 ```c
 // core/src/cuda/picture_cuda.c:150
 CHECK_CUDA_GOTO(cu_f, cuMemHostAlloc((void **)&data, pic_size, 0x01), fail);

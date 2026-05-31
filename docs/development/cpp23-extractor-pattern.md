@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # C++23 extractor conversion pattern
 
 When converting a `core/src/*.c` internal file to C++23 per the ADR-0708 /

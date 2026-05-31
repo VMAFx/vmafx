@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0109: vmaf-tune auto winner selection
 
 - **Date**: 2026-05-14

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0702: VMAFX Phase 4 — Multi-Language Modernization Foundation
 
 - **Status**: Proposed
@@ -78,6 +79,7 @@ by dedicated follow-up PRs.
 ### C++23 internals migration
 
 No code is converted in this PR. The policy is recorded here for subsequent PRs:
+
 - New fork-added `.cpp` files use `-std=c++23`.
 - Existing C files are migrated per-TU only when a PR already touches the file for
   another reason.

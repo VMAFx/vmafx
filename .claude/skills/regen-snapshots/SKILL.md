@@ -3,11 +3,13 @@ name: regen-snapshots
 description: Regenerate fork-added test snapshot JSONs under testdata/ (scores_cpu_*.json, netflix_benchmark_results.json) after an intentional numerical change. Requires justification committed to the message.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /regen-snapshots
 
 ## Invocation
 
-```
+```text
 /regen-snapshots --justification="<short rationale>" [--files=scores_cpu_640,scores_cpu_576,...]
                  [--backend=cpu|cuda|sycl|all]
 ```
@@ -25,13 +27,15 @@ description: Regenerate fork-added test snapshot JSONs under testdata/ (scores_c
    - Otherwise, replace.
 4. Emit a diff summary: file, frames affected, max delta observed.
 5. Prepare a commit message draft:
-   ```
+
+   ```text
    test(snapshots): regenerate <files>
 
    Justification: <justification>
 
    Affected: <summary>
    ```
+
    Print it; do NOT auto-commit.
 
 ## Guardrails

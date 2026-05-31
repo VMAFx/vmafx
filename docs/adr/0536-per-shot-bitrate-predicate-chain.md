@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0536: Per-shot predicate threads bitrate_kbps through bisect sidecar (PR #1290 follow-up)
 
 - **Status**: Accepted

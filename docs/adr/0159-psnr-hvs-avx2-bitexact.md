@@ -67,7 +67,7 @@ Vectorization strategy:
   `_mm256_add_epi32` + `_mm256_srai_epi32` to reproduce the scalar
   arithmetic bit-for-bit. `OD_UNBIASED_RSHIFT32` is implemented via
   `_mm256_srli_epi32(_mm256_sub_epi32(_mm256_set1_epi32(0), x), 32-b)`
-  + `_mm256_add_epi32` (equivalent to scalar
+  `_mm256_add_epi32` (equivalent to scalar
   `(((uint32_t)x >> (32-b)) + x) >> b`).
 - **Float accumulators kept scalar**: means, variances, mask, and
   per-coefficient error accumulation stay in the outer `for each
@@ -163,7 +163,7 @@ NOLINT accounting (all with inline ADR-0141 citations):
 - **Netflix golden pair bit-exactness** (scalar vs AVX2 via
   `--cpumask $((~0x8))` vs default):
 
-  ```
+  ```text
   BIT-EXACT: src01_hrc00_576x324.yuv vs src01_hrc01_576x324.yuv (576×324, bpc=8)
   BIT-EXACT: checkerboard_1920_1080_10_3_0_0.yuv vs ..._1_0.yuv  (1920×1080, bpc=10)
   BIT-EXACT: checkerboard_1920_1080_10_3_0_0.yuv vs ..._10_0.yuv (1920×1080, bpc=10)

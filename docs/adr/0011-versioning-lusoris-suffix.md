@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0011: Version scheme v3.x.y-lusoris.N
 
 - **Status**: Accepted

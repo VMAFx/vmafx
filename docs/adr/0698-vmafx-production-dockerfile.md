@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0698: VMAFX Production Dockerfile — Multi-Arch, Image Signing, SBOM
 
 - **Status**: Proposed
@@ -108,9 +109,9 @@ cosign/syft tooling and maps cleanly to the Sigstore supply-chain story.
 - `docker/Dockerfile.production-gpu` — GPU-augmented variant
 - `.github/workflows/docker-publish-production.yml` — CI publish workflow
 - `docs/development/docker-production.md` — operator guide
-- Sigstore cosign: https://docs.sigstore.dev/cosign/signing/overview/
-- syft: https://github.com/anchore/syft
-- distroless cc-debian12: https://github.com/GoogleContainerTools/distroless
+- Sigstore cosign: <https://docs.sigstore.dev/cosign/signing/overview/>
+- syft: <https://github.com/anchore/syft>
+- distroless cc-debian12: <https://github.com/GoogleContainerTools/distroless>
 - PR: `feat(docker): production multi-arch Dockerfile + image signing + SBOM`
 - Parent PR: #1546 (VMAFX rebrand umbrella)
 - Source: user direction (VMAFX Phase 3B brief, 2026-05-28)

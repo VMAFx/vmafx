@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0404: Keep `nightly.yml` + `fuzz.yml` red until underlying bugs land
 
 - **Status**: Accepted

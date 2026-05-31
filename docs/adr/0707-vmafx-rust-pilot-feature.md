@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0707: TAD — Temporal Absolute Difference Feature Extractor Implemented in Rust (cbindgen Pilot)
 
 - **Status**: Accepted
@@ -17,7 +18,7 @@ The selected metric is **TAD — Temporal Absolute Difference**: the mean absolu
 difference of luma pixel values between a reference and a distorted frame, normalised
 by the peak luma value (2^bpc − 1) to the range [0.0, 1.0].
 
-```
+```text
 tad(ref, dis) = (1 / (W × H × peak)) × Σ |ref_y[i,j] − dis_y[i,j]|
 ```
 
@@ -47,6 +48,7 @@ three C-ABI lifecycle functions (`vmafx_tad_init`, `vmafx_tad_extract`,
 the name `"tad"`.
 
 Integration architecture:
+
 1. A workspace `Cargo.toml` at the repository root declares all future Rust crates.
 2. A Meson `custom_target` in `core/src/meson.build` runs `cargo build --release`
    and copies the output `libvmafx_tad.a` to the build directory.

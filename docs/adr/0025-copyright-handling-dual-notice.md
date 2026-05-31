@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0025: Copyright handling preserves Netflix and adds Lusoris/Claude
 
 - **Status**: Superseded by [ADR-0105](0105-copyright-handling-dual-notice.md)

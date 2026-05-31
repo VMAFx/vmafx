@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0674: Second-Opinion Materializer Batch Manifest
 
 - **Status**: Accepted

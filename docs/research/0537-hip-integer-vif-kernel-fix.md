@@ -53,7 +53,7 @@ decays to a host pointer.  `hipModuleLaunchKernel` then copied that
 host address into the kernel argument region, and the GPU dereferenced
 it on the first `filter[fi]` load.  AMD ROCm faulted with:
 
-```
+```text
 Memory access fault by GPU node-1 ... on address 0x55... Reason: Page
 not present or supervisor privilege.
 ```
@@ -145,7 +145,7 @@ in `integer_motion_hip.c::msh_submit_inputs()` at lines 372–373.
 After fixing the four kernel defects above, gdb showed a SIGSEGV
 inside `vmaf_dictionary_get` reading `dict->cnt`:
 
-```
+```text
 Thread 1 "vmaf" received signal SIGSEGV
 0x00007f... in vmaf_dictionary_get (dict=0x7fff..., key="VMAF_integer_feature_vif_scale0_score") at dict.c:40
 40    for (unsigned i = 0; i < d->cnt; i++) {

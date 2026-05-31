@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0508: vmaf-tune ladder pass-1 stats argv honours --duration
 
 - **Status**: Accepted
@@ -11,7 +12,7 @@ The BBB end-to-end v8 probe (after PR #1263 / ADR-0506 closed the
 v6 cluster's V6-1 "metadata-only `--duration`" bug) surfaced a sibling
 of V6-1 that the V6-1 fix did not reach:
 
-* **V8-A** — `vmaf-tune ladder --src bbb.mp4 --duration 5 ...` against
+- **V8-A** — `vmaf-tune ladder --src bbb.mp4 --duration 5 ...` against
   any codec adapter that declares `supports_encoder_stats = True`
   (`libx264` in practice — the corpus default) still re-encoded the
   full source during the ffmpeg **pass-1 stats sweep**. V6-1 patched
@@ -30,7 +31,7 @@ of V6-1 that the V6-1 fix did not reach:
 
 The diagnostic ffmpeg command observed in the v8 probe:
 
-```
+```text
 ffmpeg -y -hide_banner -loglevel info -i bbb_..._normal.mp4 \
   -c:v libx264 -preset medium -crf 23 -vf scale=1920:1080 \
   -pass 1 -passlogfile /tmp/vmaftune_stats_..._crf23 -f null /dev/null

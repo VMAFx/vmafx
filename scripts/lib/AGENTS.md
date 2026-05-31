@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # `scripts/lib/` — agent invariants
 
 Parent: [../AGENTS.md](../AGENTS.md).

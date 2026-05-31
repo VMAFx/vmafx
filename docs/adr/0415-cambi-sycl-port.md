@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0415: CAMBI SYCL port — closes last CUDA-to-SYCL parity gap
 
 - **Status**: Accepted

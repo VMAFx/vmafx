@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD029 -->
 # AGENTS.md — core/src/feature/rust/
 
 Rust feature extractor crates (ADR-0707 cbindgen pilot).

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research 0674 — Phase-3 subset-sweep report provenance
 
 ## Summary

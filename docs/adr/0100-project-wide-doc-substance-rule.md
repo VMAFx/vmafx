@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0100: Every user-discoverable change ships docs in the same PR
 
 - **Status**: Accepted

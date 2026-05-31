@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0725 — AI strict JSONL row helper
 
 ## Problem

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0601: vmaf-tune QSV/AMF hardware-device init + encoder probe size fix
 
 - **Status**: Accepted
@@ -24,7 +25,7 @@ same 64×64 input also fell below QSV's minimum resolution (approximately
 FFmpeg's QSV bridge on Linux requires a three-step hardware-device
 initialisation chain before the first `-i` argument:
 
-```
+```text
 -init_hw_device vaapi=va:<dev>
 -init_hw_device qsv=qsv_dev@va
 -filter_hw_device va
@@ -32,7 +33,7 @@ initialisation chain before the first `-i` argument:
 
 followed by a pixel-format conversion filter before the encoder:
 
-```
+```text
 -vf format=nv12,hwupload=extra_hw_frames=64
 ```
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0390: vmaf_tiny_v4 — mlp_large arch (opt-in only; arch ladder stops here)
 
 - **Status**: Accepted

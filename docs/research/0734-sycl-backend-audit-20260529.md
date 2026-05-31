@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0734 — SYCL Backend Audit (2026-05-29)
 
 **Status:** Complete
@@ -23,6 +24,7 @@ SYCL does not use dynamic kernel lookup by string (no `cuModuleGetFunction` equi
 
 **Severity:** Medium
 **Files:**
+
 - `/home/kilian/dev/vmaf/core/src/feature/sycl/float_adm_sycl.cpp` lines 676–719
 - `/home/kilian/dev/vmaf/core/src/feature/sycl/float_vif_sycl.cpp` (analogous pattern)
 
@@ -31,6 +33,7 @@ In `float_adm_sycl.cpp::init_fex_sycl`, USM host allocations (`h_ref_raw`, `h_di
 The CUDA equivalent (`vmaf_cuda_kernel_readback_free` / `init` unwind pattern) uses explicit goto-style unwind on each alloc failure. The SYCL `init` functions instead batch all allocations and check at the end — the `close_fex_sycl` path does guard with `if (ptr)` checks so it is safe to call on a partially-initialised state, but it is never called from the failure return path.
 
 **Recommendation:** On the `return -ENOMEM` path, call `close_fex_sycl(fex)` before returning, or refactor to check each allocation immediately and free any already-allocated USM before returning. Pattern:
+
 ```c
 if (!s->h_ref_raw) { close_fex_sycl(fex); return -ENOMEM; }
 ```
@@ -56,13 +59,16 @@ All kernels use explicit local scalar aliases before capture (the `e_xxx = xxx` 
 
 **Severity:** Medium
 **Files:**
+
 - `/home/kilian/dev/vmaf/core/src/feature/sycl/speed_temporal_sycl.cpp` lines 286, 352, 402, 542
 - `/home/kilian/dev/vmaf/core/src/feature/sycl/speed_chroma_sycl.cpp` lines 285, 341, 401, 582
 
 Both files cast `s->sycl_state->queue` directly:
+
 ```cpp
 sycl::queue &q = *(sycl::queue *)s->sycl_state->queue;
 ```
+
 This accesses the `VmafSyclState::queue` field by-address through `void*` reinterpret. The `VmafSyclState` struct is defined in `common.cpp` and intended to be opaque to external code; the public API exposes `vmaf_sycl_get_queue_ptr()` for exactly this purpose. The direct cast is technically correct since the worktree is a single binary, but it breaks the opacity contract and creates a silent coupling to the `queue` field's position in the struct.
 
 More importantly, these two TUs bypass `vmaf_sycl_get_combined_queue` and therefore **do not participate in the combined command graph** (`vmaf_sycl_graph_register` is not called). They access `state->queue` (the primary queue) rather than `state->combined_queue`, so they execute on a different queue than the rest of the extractors and cannot benefit from graph replay.
@@ -112,12 +118,14 @@ Unlike `integer_adm_sycl.cpp` which proactively avoids `sycl::reduction<double>`
 
 **Severity:** Medium (performance)
 **Files:**
+
 - `/home/kilian/dev/vmaf/core/src/feature/sycl/speed_temporal_sycl.cpp` — 7 `q.wait()` calls per frame (`run_channel_st` + `score_aggregate_st`)
 - `/home/kilian/dev/vmaf/core/src/feature/sycl/speed_chroma_sycl.cpp` — 7 `q.wait()` calls per frame
 
 These are CPU-serializing sync points in the hot frame loop. The SYCL 2020 spec §4.6.5 recommends event-chaining over repeated queue drains. The CUDA audit (PR #96 research-0563) found the equivalent CUDA pattern to cost 3–8 ms per frame on Arc.
 
 However, inspection shows most of these `q.wait()` calls are load-bearing:
+
 - The `q.wait()` after `launch_cov` (line 370) is required because `s->h_cov_mat` is read by `speed_internal_compute_eigenvalues` on the CPU.
 - The `q.wait()` after `launch_solve` (line 392) is required because `h_indterm` is read immediately after.
 - The `q.wait()` after `q.memcpy(d_eigenvalues)` (line 396) is immediately followed by `launch_score` which reads it — since the queue is in-order this `q.wait()` is technically redundant (the in-order queue guarantees the memcpy completes before the next submission).

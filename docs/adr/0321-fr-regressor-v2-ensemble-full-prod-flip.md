@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0321: `fr_regressor_v2_ensemble_v1` — full production flip (real ONNX + sidecars)
 
 - **Status**: Accepted

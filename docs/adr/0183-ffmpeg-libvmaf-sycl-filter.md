@@ -42,7 +42,7 @@ Configuration:
   (`CONFIG_LIBVMAF_SYCL_FILTER`).
 - The filter shares the existing `LIBVMAFContext` struct with
   `libvmaf` / `libvmaf_cuda`; it adds `sycl_state` + `va_display`
-  + `sycl_gpu_profile` fields and a dedicated frame callback
+  `sycl_gpu_profile` fields and a dedicated frame callback
   `do_vmaf_sycl()` that imports each frame's VA surface
   zero-copy.
 - Pairs with the existing `0003-libvmaf-wire-sycl-backend-selector.patch`

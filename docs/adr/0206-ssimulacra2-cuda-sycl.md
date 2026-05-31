@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-28
-- **Deciders**: lusoris@pm.me
+- **Deciders**: <lusoris@pm.me>
 - **Tags**: cuda, sycl, gpu, ssimulacra2, precision
 
 ## Context

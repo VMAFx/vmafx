@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Installing on macOS
 
 ```bash

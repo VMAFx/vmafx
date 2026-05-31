@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Features
 
 A **feature extractor** is a per-frame computation that libvmaf runs as part of

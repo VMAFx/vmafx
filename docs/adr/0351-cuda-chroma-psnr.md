@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0351: CUDA PSNR — chroma extension (psnr_cb / psnr_cr)
 
 - **Status**: Accepted

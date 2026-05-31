@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0947: CUDA kernel parity coverage — round 3 (float-path twins + ssimulacra2)
 
 - **Status**: Accepted

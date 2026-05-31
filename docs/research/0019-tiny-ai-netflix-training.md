@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research Digest 0019 — Tiny-AI Training on the Netflix VMAF Corpus
 
 **Date**: 2026-04-27
@@ -147,7 +148,7 @@ correlation on the held-out golden set is insufficient.
 The libvmaf feature extractor produces a per-frame vector of six values
 for `vmaf_v0.6.1`:
 
-```
+```text
 [ vif_scale0, vif_scale1, vif_scale2, vif_scale3, motion2, adm2 ]
 ```
 

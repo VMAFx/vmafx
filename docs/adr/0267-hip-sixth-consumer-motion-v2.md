@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0267: HIP sixth kernel-template consumer — `motion_v2_hip`
 
 - **Status**: Accepted

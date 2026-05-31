@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-29
-- **Deciders**: lusoris@pm.me, Claude (Anthropic)
+- **Deciders**: <lusoris@pm.me>, Claude (Anthropic)
 - **Tags**: vulkan, gpu, cambi, feature-extractor, fork-local, places-4
 
 ## Context
@@ -30,7 +30,7 @@ This PR implements:
    (descriptor pool / pipeline build / dispatch sequencer / readback
    path) replacing the `_stub` triple.
 3. **The host residual call path** — `vmaf_cambi_calculate_c_values`
-   + spatial pooling — invoked against the GPU-produced image + mask
+   patial pooling — invoked against the GPU-produced image + mask
    buffers via a small `cambi_internal.h` header that exposes cambi.c's
    file-static helpers without disturbing CPU SIMD callsites.
 4. **Build wiring** — registers the 5 shaders in
@@ -45,7 +45,7 @@ This PR implements:
 
 ### v1 architecture (recap from ADR-0205)
 
-```
+```text
                            cambi_vulkan_extract()
                                    │
    ┌───────────────────────────────┼───────────────────────────────┐

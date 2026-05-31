@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # vmaf-tune — target-VMAF bisect (Phase B)
 
 The `vmaftune.bisect` module finds the **largest CRF whose actual

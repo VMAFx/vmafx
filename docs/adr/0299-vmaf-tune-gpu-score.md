@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0299: GPU scoring backend for `vmaf-tune` (`--score-backend`)
 
 - **Status**: Accepted

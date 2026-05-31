@@ -3,11 +3,13 @@ name: dev-llm-commitmsg
 description: Draft a Conventional-Commits message from the current `git diff --staged` using a local LLM (Ollama). User edits before commit.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /dev-llm-commitmsg
 
 ## Invocation
 
-```
+```text
 /dev-llm-commitmsg [--model <name>]
 ```
 

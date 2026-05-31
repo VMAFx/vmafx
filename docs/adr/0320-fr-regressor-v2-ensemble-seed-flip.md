@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0320: `fr_regressor_v2` ensemble seeds — production flip (smoke → false)
 
 - **Status**: Accepted

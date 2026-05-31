@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD018 MD060 -->
 # Research digest: governance file audit — 2026-05-30
 
 ADR: [ADR-0901](../adr/0901-governance-audit.md).

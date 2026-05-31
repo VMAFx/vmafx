@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0926: Parquet schema v2 — canonical column order, zstd-3, schema metadata
 
 - **Status**: Accepted

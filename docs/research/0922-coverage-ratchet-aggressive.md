@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0922: Coverage ratchet sizing + per-PR delta gate design
 
 - **Date**: 2026-05-31

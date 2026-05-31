@@ -48,7 +48,7 @@ prompts_dir: null        # null = use packaged prompts
 
 ## Layout
 
-```
+```text
 dev-llm/
 ├── pyproject.toml
 ├── README.md

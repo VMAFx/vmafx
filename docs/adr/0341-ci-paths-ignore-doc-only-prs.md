@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0341: `paths-ignore` filter on heavy CI workflows for doc-only PRs
 
 - **Status**: Accepted

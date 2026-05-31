@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # AGENTS.md — python/vmaf
 
 Orientation for agents working on the Python bindings and the **classic**

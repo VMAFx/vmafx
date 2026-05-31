@@ -5,7 +5,7 @@ Regenerable from [`ai/scripts/build_bisect_cache.py`](../../scripts/build_bisect
 
 ## Layout
 
-```
+```text
 features.parquet      256 rows × 6 default features + mos column
 models/model_NN.onnx  8 linear FR models (input "input", output "score")
 ```

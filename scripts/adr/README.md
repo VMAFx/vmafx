@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # scripts/adr — ADR number allocator
 
 This directory contains the tooling for allocating ADR numbers without

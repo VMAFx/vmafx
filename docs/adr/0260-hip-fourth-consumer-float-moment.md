@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0260: HIP fourth-consumer kernel — `float_moment_hip` via mirrored kernel-template
 
 - **Status**: Accepted

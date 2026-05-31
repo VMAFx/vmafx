@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research digest — cargo-deny baseline scan (2026-05-31)
 
 **Scope:** Initial dependency-graph audit of the Rust workspace
@@ -23,7 +24,7 @@ Targets enumerated in `deny.toml`:
 
 ### Final scan (after policy + workspace fixes applied)
 
-```
+```text
 advisories ok, bans ok, licenses ok, sources ok
 ```
 

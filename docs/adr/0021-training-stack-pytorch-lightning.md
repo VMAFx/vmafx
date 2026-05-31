@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0021: Training stack is PyTorch + Lightning with ONNX export
 
 - **Status**: Accepted

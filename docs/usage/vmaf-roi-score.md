@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # vmaf-roi-score — saliency-weighted VMAF scoring
 
 `vmaf-roi-score` is a fork-local Python tool that produces a

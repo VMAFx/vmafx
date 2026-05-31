@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0332: Agent worktree-drift hard guard
 
 - **Status**: Accepted

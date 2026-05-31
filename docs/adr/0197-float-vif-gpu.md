@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0197: float_vif GPU kernels — 4-scale pyramid with mirror-asymmetry fix
 
 - **Status**: Accepted
@@ -70,7 +71,7 @@ matching scalar's mirror.
 
 ### Per-frame dispatch flow
 
-```
+```text
 scale 0 compute: read raw ref/dis            → (num0, den0)
 scale 1 decimate: read raw  → buf_A           (filter @ HFW=4, sample @ 2x)
 scale 1 compute:  read buf_A                  → (num1, den1)

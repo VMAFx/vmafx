@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research 0715: CHUG HDR MOS Head — Held-Out Test Partition Results (2026-05-27)
 
 ## Question

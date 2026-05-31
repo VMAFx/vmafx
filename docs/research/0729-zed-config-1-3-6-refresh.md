@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0729 — Zed 1.3.6 config refresh + agent_servers wiring
 
 ## Problem

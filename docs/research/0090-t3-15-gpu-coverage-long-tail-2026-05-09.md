@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research 0090 — T3-15 GPU coverage long-tail batch 4: actual gap re-audit + per-kernel ordering
 
 - **Date**: 2026-05-09

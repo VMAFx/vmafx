@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0924: Native bash pre-commit hook as opt-in alternative to the pre-commit framework
 
 - **Status**: Accepted

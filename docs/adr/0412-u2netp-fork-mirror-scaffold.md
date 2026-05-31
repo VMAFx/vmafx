@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD027 MD029 MD033 MD060 -->
 # ADR-0412: Fork-local release-artefact mirror scaffold for `u2netp.pth` (Apache-2.0)
 
 - **Status**: Accepted
@@ -25,7 +26,7 @@ extractor's underlying weights to U-2-Net's `u2netp` checkpoint:
 1. **Distribution**: `u2netp.pth` is published only behind a Google
    Drive viewer URL on `xuebinqin/U-2-Net` — no GitHub release, no
    pinnable raw URL, so the FastDVDnet pattern (pin upstream commit
-   + `curl -L -O <raw>` in CI) does not reproduce.
+   curl -L -O <raw>` in CI) does not reproduce.
 2. **ONNX op allowlist**: U-2-Net's bilinear `F.upsample` lowers to
    `Resize`, which was not on `core/src/dnn/op_allowlist.c` at
    the time.
@@ -125,7 +126,7 @@ the following pieces landing in this PR:
 5. **`changelog.d/added/0367-u2netp-fork-mirror-scaffold.md`**
    per [ADR-0221](0221-changelog-adr-fragment-pattern.md).
 6. **`docs/adr/_index_fragments/0367-u2netp-fork-mirror-scaffold.md`**
-   + `_order.txt` append per the index-fragment pattern.
+   _order.txt` append per the index-fragment pattern.
 7. **`docs/state.md`** Deferred row T6-2a updated to record this
    scaffold landing as partial progress on path (b)
    (`T6-2a-mirror-u2netp-via-release`).

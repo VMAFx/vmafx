@@ -154,7 +154,7 @@ constraint), not to add fault-injection or multi-EP CI.
 ## References
 
 - [ADR-0111](0111-coverage-gate-gcovr-with-ort.md) — gcovr migration
-  + ORT in coverage job.
+  ORT in coverage job.
 - `req` (paraphrased): user direction was to write tests for all 5
   critical files in this PR; on hitting the structural ceiling for
   `ort_backend.c`, user selected the recommended option to expose

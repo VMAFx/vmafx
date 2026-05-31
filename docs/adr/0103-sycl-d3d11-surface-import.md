@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0103: `vmaf_sycl_import_d3d11_surface` ships as a staging-texture H2D path, not zero-copy
 
 - **Status**: Accepted

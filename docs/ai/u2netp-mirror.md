@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD046 MD055 MD060 -->
 # `u2netp` fork-local mirror — operator workflow
 
 > **Status — exporter ready; release asset pending.** Per
@@ -33,6 +34,7 @@ Release asset attached to the VMAFx/vmafx repository:
 |                 | `u2netp_mirror_v<N>.onnx.bundle` (Sigstore signature bundle)   |
 |                 | `Apache-2.0-u2netp.txt` (license text + attribution block)     |
 | In-tree path    | `model/u2netp_mirror.onnx` (gitignored; conventionally where
+
                     the operator drops the downloaded asset for the C-side loader
                     to find) |
 
@@ -104,7 +106,7 @@ gh release download "$TAG" --repo VMAFx/vmafx \
 
 You should now have three files in `~/Downloads/u2netp-mirror/`:
 
-```
+```text
 u2netp_mirror_v1.onnx
 u2netp_mirror_v1.onnx.bundle
 Apache-2.0-u2netp.txt
@@ -130,7 +132,7 @@ cosign verify-blob \
 
 Expected output on success:
 
-```
+```text
 Verified OK
 ```
 

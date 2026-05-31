@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0922: Aggressive coverage ratchet + per-PR coverage-delta gate
 
 - **Status**: Accepted

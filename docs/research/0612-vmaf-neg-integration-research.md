@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research Digest 0612: VMAF NEG Integration
 
 **Scope**: Integrate the VMAF NEG ("No Enhancement Gain") model variants into
@@ -131,11 +132,13 @@ when Item 6 lands.
 ## When to Use NEG
 
 NEG is correct for:
+
 - Codec A vs codec B comparison (e.g. H.264 vs AV1) when both may use
   in-loop sharpening.
 - Pre-processing pipeline evaluation (does denoising actually help?).
 
 NEG is incorrect for:
+
 - Production quality monitoring (end viewer perceives the sharpened output).
 - Per-shot CRF selection aimed at maximising viewer QoE (use standard VMAF).
 

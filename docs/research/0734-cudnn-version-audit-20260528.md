@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD028 MD060 -->
 # Research digest 0734 — cuDNN version audit for ONNX Runtime / tiny-AI inference
 <!-- SPDX-License-Identifier: BSD-3-Clause-Plus-Patent -->
 <!-- Copyright 2026 Lusoris -->
@@ -17,7 +18,7 @@ INT8/FP16 small-CNN inference workload.
 
 `dev/Containerfile` installs ONNX Runtime from the **CPU-only** upstream tarball:
 
-```
+```text
 ARG ORT_VERSION=1.26.0
 RUN curl -fsSL \
     "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
@@ -47,7 +48,7 @@ or `Containerfile` in tree.
 The single cuDNN mention in the codebase is a documentation comment in
 `ai/scripts/measure_quant_drop_per_ep.py`:
 
-```
+```text
 # cuda  -> ORT CUDAExecutionProvider (NVIDIA, requires
 #           CUDA 12 / cuDNN 9 runtime libs and an ORT-GPU wheel).
 ```

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0310: BVI-DVC corpus ingestion for `fr_regressor_v2`
 
 - **Status**: Accepted

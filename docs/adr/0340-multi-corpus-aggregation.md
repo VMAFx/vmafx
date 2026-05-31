@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0340: Multi-corpus aggregation for the FR-regressor / predictor v2 trainer
 
 - **Status**: Accepted

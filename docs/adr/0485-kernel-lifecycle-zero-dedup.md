@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD060 -->
 # ADR-0485: Extract `VMAF_LIFECYCLE_ZERO` macro to eliminate struct-init duplication across HIP and Metal kernel templates
 
 - **Status**: Accepted
@@ -64,16 +65,19 @@ shared header is intentionally minimal — it contains only the zero macro and t
 ## Consequences
 
 **Positive**
+
 - New fields added to `VmafHipKernelLifecycle`, `VmafHipKernelReadback`,
   `VmafMetalKernelLifecycle`, or `VmafMetalKernelBuffer` are automatically
   zero-initialised; no manual update to the init functions required.
 - The zero-init pattern is named and grep-able (`VMAF_LIFECYCLE_ZERO`).
 
 **Negative**
+
 - Adds `core/src/kernel_lifecycle_common.h` as a new internal header that
   future GPU backends should also include.
 
 **Neutral**
+
 - No change to struct field types, API signatures, or observable behaviour.
 - No bit-exactness impact: the macro produces the same all-zeros result as the
   replaced field-by-field assignments on all POSIX targets.

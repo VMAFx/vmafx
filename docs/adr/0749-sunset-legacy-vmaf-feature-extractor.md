@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0749: Sunset VmafLegacyQualityRunner (float-path runner)
 
 - **Status**: Accepted

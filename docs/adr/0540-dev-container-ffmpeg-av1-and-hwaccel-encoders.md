@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0540: dev-MCP container FFmpeg ships AV1 (SVT/aom) + VVenC + hardware encoders (NVENC, oneVPL/QSV, AMF)
 
 - **Status**: Accepted
@@ -13,7 +14,7 @@ default execution environment for vmaf / vmaf-tune / ai / MCP work
 GPU backend runnable inside the container, the in-image FFmpeg was
 configured with only four video encoders:
 
-```
+```text
 --enable-libx264 --enable-libx265 --enable-libvpx --enable-libdav1d
 ```
 
@@ -29,7 +30,7 @@ libx264,libx265,libsvtav1,libvpx-vp9,h264_nvenc,hevc_nvenc,...`, the
 compare predicate dropped every encoder past the third with the
 stable error string:
 
-```
+```text
 hardware encoder not available: libsvtav1 not compiled into ffmpeg
 hardware encoder not available: h264_nvenc not compiled into ffmpeg
 ...
@@ -175,7 +176,7 @@ matrix and reproducer command.
 - **Negative**: First-build wall time grows by ~5-10 minutes
   (libvvenc cmake build ~3 min; libaom + libsvtav1 are apt installs;
   AMF is a `cp -r` of headers). Image size grows ~80 MB (libvvenc.so
-  + libaom + libsvtav1 + AMF headers).
+  libaom + libsvtav1 + AMF headers).
 - **Negative — runtime hardware-encoder gating**: NVENC requires the
   NVIDIA Container Toolkit + a host driver with NVENC capability.
   AMF requires the amdgpu-pro userspace driver (`libamfrt64.so`) bind-

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # vmaf-roi — saliency-driven ROI sidecars for x265 / SVT-AV1
 
 `vmaf-roi` is a sidecar binary that consumes a per-frame saliency map and

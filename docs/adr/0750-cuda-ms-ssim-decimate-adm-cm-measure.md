@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0750: Hardware Measurement Verdict for PR perf/cuda-ms-ssim-decimate-adm-cm-ncu-driven
 
 - **Status**: Accepted

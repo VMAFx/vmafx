@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0051: SpEED-QA full-reference metric — feasibility on the lusoris fork
 
 - **Status**: Active (Proposed ADR pending sign-off)

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0431: Split CUDA and CPU Feature Passes for FR-from-NR Extraction
 
 - **Status**: Accepted

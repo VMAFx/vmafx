@@ -7,7 +7,7 @@ description: Draft a Doxygen @brief/@param/@return block for a named function in
 
 ## Invocation
 
-```
+```text
 /dev-llm-docgen <file> <symbol> [--model <name>]
 ```
 

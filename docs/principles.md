@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # VMAF Fork — Engineering Principles
 
 This document defines the non-negotiable standards for code merged to `master`. Every
@@ -68,7 +69,7 @@ are additionally enforced:
   (non-reentrant), `atoi`, `atol`, `atof` (no error reporting), `rand` (non-cryptographic
   and non-reproducible), `system` (outside build scripts). Use: `fgets`, `strncpy` (with
   explicit null-termination) / `snprintf` / `strlcpy`, `snprintf`, `strtok_r`, `strtol`
-  + errno checking, `arc4random` or a seeded `xorshift`, direct process calls with arg arrays.
+  errno checking, `arc4random` or a seeded `xorshift`, direct process calls with arg arrays.
 - **Rule 31.** All headers must be self-contained (include what they need) and
   include-guard protected.
 

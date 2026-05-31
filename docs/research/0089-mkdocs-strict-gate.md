@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD037 MD060 -->
 # Research-0089: mkdocs `--strict` gate — warning census + carve-out justification
 
 - **Date**: 2026-05-09

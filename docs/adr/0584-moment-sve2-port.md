@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0584 — `float_moment` SVE2 port
 
 | Field        | Value                                          |

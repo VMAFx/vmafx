@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Tiny AI — overview
 
 The **Tiny AI** surface lets you ship small, specialized perceptual-quality
@@ -20,7 +21,7 @@ lives in [`dev-llm/`](../../dev-llm/).
 
 ## How the pieces fit together
 
-```
+```text
        ┌─────────────────────────┐
        │        ai/              │  torch + lightning + typer
        │  (train / export / reg) │  → ONNX

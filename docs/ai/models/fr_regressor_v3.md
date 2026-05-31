@@ -134,7 +134,7 @@ slots:
 
 - The MLP weights for the 15 unused one-hot columns remain at their
   Glorot initialisation; the bias path through the canonical-6 features
-  + `preset_norm` + `crf_norm` is what actually carries signal for
+  `preset_norm` + `crf_norm` is what actually carries signal for
   inference on those codecs.
 - In practice the model will produce **degraded but not random**
   predictions for the 15 untrained codecs — the canonical-6 features

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # FR regressor v2 — codec-aware (superseded design card)
 
 `vmaf_tiny_fr_regressor_v2_codec_aware` — a codec-conditioned successor
@@ -53,7 +54,7 @@ Two-input session, matching the LPIPS-Sq precedent
 ([ADR-0040](../../adr/0040-dnn-session-multi-input-api.md),
 [ADR-0041](../../adr/0041-lpips-sq-extractor.md)):
 
-```
+```text
 features:    float32 [N, 22]   # FULL_FEATURES vector
 codec_onehot: float32 [N, 6]    # one-hot codec id
 

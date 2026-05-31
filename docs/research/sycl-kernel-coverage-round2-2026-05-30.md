@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # SYCL kernel coverage round 2 — gap audit (2026-05-30)
 
 Companion research digest for [ADR-0884](../adr/0884-sycl-kernel-coverage-round2.md).

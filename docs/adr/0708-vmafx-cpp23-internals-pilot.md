@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0708: C++23 Internals Pilot — `metadata_handler.c` conversion
 
 - **Status**: Accepted

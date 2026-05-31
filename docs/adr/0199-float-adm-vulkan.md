@@ -11,7 +11,8 @@
 sixth and final Group B float twin in the GPU long-tail batch 3
 roadmap. CPU reference:
 [`float_adm.c`](../../core/src/feature/float_adm.c) (thin wrapper)
-+ [`adm.c::compute_adm`](../../core/src/feature/adm.c) (4-scale
+
+- [`adm.c::compute_adm`](../../core/src/feature/adm.c) (4-scale
 orchestration) +
 [`adm_tools.c`](../../core/src/feature/adm_tools.c) (the float
 `_s`-suffixed primitives: `adm_dwt2_s`, `adm_decouple_s`, `adm_csf_s`,

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0656: External-bench wrappers emit registry competitor keys
 
 - **Status**: Accepted

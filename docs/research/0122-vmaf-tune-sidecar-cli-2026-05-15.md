@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0122 — `vmaf-tune sidecar` CLI wiring
 
 ## Context

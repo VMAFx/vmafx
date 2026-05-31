@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0089: Vulkan VIF API-1.4 NVIDIA residual — CPU `double` vs Vulkan `float` stage bisect
 
 - **Status**: Active
@@ -37,7 +38,7 @@ re-running the gate against the live NVIDIA lane) is recorded as
   Step A implementation findings (SPIR-V emission audit + numbers
   table).
 - [ADR-0273](../adr/0273-ciede-vulkan-nvidia-f32-f64-precision-gap.md)
-  + [research-0055](0055-ciede-vulkan-nvidia-f32-f64-root-cause.md) —
+  [research-0055](0055-ciede-vulkan-nvidia-f32-f64-root-cause.md) —
   ciede2000 sibling investigation that proved the structural
   f32-vs-f64 hypothesis on the chained colour-space chain.
 - [`core/src/feature/integer_vif.c`](../../core/src/feature/integer_vif.c) —

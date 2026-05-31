@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0593: HIP integer_moment kernel — register real HSACO blob alongside psnr / psnr_hvs
 
 - **Status**: Accepted

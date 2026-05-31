@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0403: mkdocs `--strict` validation policy — actionable carve-outs
 
 - **Status**: Accepted

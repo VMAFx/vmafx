@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0603: Ubuntu 26.04 (Resolute Raccoon) fallout fixes — CUDA 13.2, Python 3.14, apt renames
 
 - **Status**: Accepted

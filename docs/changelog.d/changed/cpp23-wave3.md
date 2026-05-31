@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD041 -->
 ## C++23 Wave 3: feature_name, picture_copy, model (ADR-0729)
 
 - `core/src/feature/feature_name.c` → `.cpp`: `goto`-cleanup replaced with

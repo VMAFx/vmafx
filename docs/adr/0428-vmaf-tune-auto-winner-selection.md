@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0428: vmaf-tune auto selects one winner
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0516: `vmaf-tune compare` multi-target rate-quality sweep (schema v2) (2026-05-18)
 
 - **Status**: Accepted

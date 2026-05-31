@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Performance Benchmarking
 
 This page describes how to benchmark VMAF throughput across resolutions,
@@ -28,7 +29,7 @@ docker run --rm --gpus all \
 
 ## Script reference
 
-```
+```text
 scripts/perf/bench-multi-resolution.sh [OPTIONS]
 ```
 
@@ -144,7 +145,7 @@ python3 scripts/perf/check-regression.py \
 
 The gate prints a per-cell report:
 
-```
+```text
 == Perf regression gate (tolerance: +/- 5.0%) ==
 
 REGRESSIONS (1):

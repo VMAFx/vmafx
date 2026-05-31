@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD050 MD060 -->
 # Research-0744: CUDA ms_ssim_decimate smem tiling + adm_cm_line_kernel_8 register reduction
 
 **Date**: 2026-05-28

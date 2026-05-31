@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0022: Inference runtime is ONNX Runtime via execution providers
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0493: Test YUV fixtures must be md5-verified, not just present-by-name
 
 - **Status**: Accepted
@@ -15,7 +16,7 @@ fixtures back the §8 Netflix golden gate (CLAUDE.md / [ADR-0024](0024-netflix-g
 
 Netflix removed both files from the upstream repo in 2020 (commit
 `bac8b6073`) and moved them to a sibling repository:
-https://github.com/Netflix/vmaf_resource. The fork's
+<https://github.com/Netflix/vmaf_resource>. The fork's
 `python/test/resource/yuv/` directory is `.gitignore`-d. CI provisions
 the fixtures by inline `curl` in
 [`.github/workflows/tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml).
@@ -88,7 +89,7 @@ not just file presence. Specifically:
 ## References
 
 - Upstream removal commit: `bac8b6073` ("Remove python/test/resource/yuv files.")
-- Canonical fixture source: https://github.com/Netflix/vmaf_resource
+- Canonical fixture source: <https://github.com/Netflix/vmaf_resource>
 - CI download path: `.github/workflows/tests-and-quality-gates.yml`
 - Reverted PR: [#1237](https://github.com/VMAFx/vmafx/pull/1237)
 - Related ADRs: [ADR-0024](0024-netflix-golden-tests.md) (Netflix golden gate)

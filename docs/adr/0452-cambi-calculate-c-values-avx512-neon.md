@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0452: Port `calculate_c_values_row` to AVX-512 and NEON
 
 - **Status**: Accepted

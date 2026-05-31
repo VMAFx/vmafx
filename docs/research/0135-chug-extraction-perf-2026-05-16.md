@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0135: CHUG extraction I/O cost breakdown and Win 1 + Win 2 optimisations
 
 - **Status**: Active
@@ -43,6 +44,7 @@ daemon architecture; deferred to a follow-up PR.
 ### Win 1: Replace per-flush parquet with at-end-only write
 
 **Old strategy**: every 200 completed clips:
+
 ```python
 # Pseudocode of old _flush_parquet
 existing = pd.read_parquet(out_path)          # grows with N
@@ -50,12 +52,14 @@ combined = pd.concat([existing, new_df])
 combined.to_parquet(tmp, index=False)
 tmp.rename(out_path)
 ```
+
 Total I/O = sum_{k=1}^{30} k×200 rows = 30×31÷2×200 = 93 000 row-reads for a
 5992-clip run.  At ~48 float64 columns, each row is ~384 bytes compressed, so
 ~35 MB of redundant reads; the real figure is higher due to parquet metadata
 and the per-cycle write amplification.
 
 **New strategy**:
+
 - Rows are accumulated in memory throughout the run.
 - Each completed row is appended to a JSONL staging file
   (`<out>.rows.jsonl`) for crash durability (single-writer, main-process-only,

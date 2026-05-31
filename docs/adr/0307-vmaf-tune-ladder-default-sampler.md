@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0307: `vmaf-tune` ladder default sampler — wire Phase B/E gap
 
 - **Status**: Accepted

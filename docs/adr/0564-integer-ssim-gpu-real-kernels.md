@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0564: Real integer_ssim GPU kernels (CUDA, HIP, SYCL) — replace silent float_ssim substitution
 
 - **Status**: Accepted
@@ -19,6 +20,7 @@ the caller requested `integer_ssim` (feature name `"ssim"`). Specifically:
   was no `vmaf_fex_integer_ssim_sycl` at all.
 
 The CPU `integer_ssim` algorithm (`core/src/feature/integer_ssim.c`) uses:
+
 - A 9-tap Gaussian kernel with **integer** weights `[2,9,28,55,68,55,28,9,2]`
   (sigma=1.5, `KERNEL_WEIGHT=256`, sum=256)
 - `int64_t` accumulators for all per-pixel moments (mux, muy, x2, xy, y2, w)
@@ -35,6 +37,7 @@ We add real integer_ssim GPU kernels for all three backends and register them as
 `vmaf_fex_integer_ssim_{cuda,hip,sycl}` providing feature `"ssim"`.
 
 **CUDA** (`ssim_cuda.c` + `cuda/integer_ssim/integer_ssim_score.cu`):
+
 - Two-pass design: Pass 1 is a 9-tap horizontal int64 accumulation; Pass 2 is a 9-tap
   vertical int64 accumulation + double SSIM formula + per-block double partial sum.
 - Host reads back per-block double partials and int64 weights, computes
@@ -45,12 +48,14 @@ We add real integer_ssim GPU kernels for all three backends and register them as
   back-compat but registered under `"float_ssim"`).
 
 **HIP** (`integer_ssim_hip.c` rewrite + pre-existing `hip/integer_ssim/integer_ssim_score.hip`):
+
 - The `.hip` kernel already used int64 moments (per ADR-0533); the host glue used float
   intermediates — structural mismatch. Host glue rewritten to match: 6×int64 device
   buffers, two readback slots (double partials, int64 weights), same accumulation logic.
 - HIP wavefront-64 (GCN/RDNA): paired int32 shuffles for int64 lane reduction.
 
 **SYCL** (`integer_ssim_sycl.cpp` appended extractor):
+
 - fp64-free constraint (ADR-0220): the Intel Arc A380 Level Zero driver rejects SPIR-V
   modules that use `double` inside kernel lambdas. SSIM formula therefore uses `float32`
   in-kernel (int64 moments remain exact; only the final SSIM division is float32).

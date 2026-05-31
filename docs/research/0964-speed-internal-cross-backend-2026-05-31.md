@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0964 — `speed_internal.c` missing TU, cross-backend wiring gap
 
 - **Date**: 2026-05-31
@@ -66,7 +67,7 @@ member) that need their own repair pass.
 
 Compile errors observed when wiring the CUDA TUs:
 
-```
+```text
 error: implicit declaration of function 'CHECK_CUDA'
   → other CUDA TUs use CHECK_CUDA_RETURN / CHECK_CUDA_GOTO; the speed_*
     TUs use the wrong macro name.

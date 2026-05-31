@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0657: Second-Opinion Feature Materializer
 
 - **Status**: Accepted

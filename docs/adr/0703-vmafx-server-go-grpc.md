@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0703: vmafx-server in Go — gRPC + HTTP, observability
 
 - **Status**: Proposed
@@ -47,7 +48,7 @@ reaches production parity and the Helm chart / CI matrices have been updated.
 
 ### File layout
 
-```
+```text
 cmd/vmafx-server/
   main.go           — CLI flags, bootstrap, errgroup
   grpc_server.go    — gRPC service implementation

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0598: vmaf-tune workdir relocation — disk-space preflight + VMAFTUNE_WORKDIR env var
 
 - **Status**: Accepted

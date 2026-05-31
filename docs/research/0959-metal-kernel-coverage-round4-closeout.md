@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD014 -->
 # Research digest — Metal kernel coverage round 4 (closeout)
 
 **Date**: 2026-05-31
@@ -15,18 +16,22 @@ prevents silent regression the day a 9th kernel lands?
 ## Method
 
 1. **Enumerate `.mm` / `.metal` files on disk:**
-   ```
+
+   ```text
    $ find core/src/feature/metal -maxdepth 3 -type f \
         \( -name '*.mm' -o -name '*.metal' \) | sort
    ```
+
    Yields 8 kernel pairs:
    `float_moment`, `float_motion`, `float_ms_ssim`, `float_psnr`,
    `float_ssim`, `integer_motion`, `integer_motion_v2`, `integer_psnr`.
 
 2. **Enumerate `test_metal_*` tests on `master`:**
-   ```
+
+   ```text
    $ find core/test -maxdepth 2 -name 'test_metal*' -type f | sort
    ```
+
    Yields **only** `test_metal_install_header.c` + `test_metal_smoke.c`.
    No per-kernel parity tests on `master` (rounds 2 + 3 are still
    open DRAFTs as of 2026-05-31).

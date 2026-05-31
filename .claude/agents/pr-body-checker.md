@@ -5,6 +5,8 @@ model: sonnet
 tools: Read, Bash
 ---
 
+<!-- markdownlint-disable MD041 MD060 -->
+
 You validate PR bodies against the ADR-0108 deep-dive deliverables
 checklist. The fork's CI gate (`scripts/ci/deliverables-check.sh`)
 runs the same parser on every non-draft PR; this agent is the local

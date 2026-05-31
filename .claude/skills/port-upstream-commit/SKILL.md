@@ -3,11 +3,13 @@ name: port-upstream-commit
 description: Cherry-pick a single upstream Netflix/vmaf commit onto the fork's master, auto-adapting for SIMD/GPU paths where the commit touches a feature we have multiple implementations of.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /port-upstream-commit
 
 ## Invocation
 
-```
+```text
 /port-upstream-commit <sha> [--open-pr]
 ```
 

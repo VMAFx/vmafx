@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # FR-from-NR adapter (KonViD-150k → FR corpus)
 
 The fork's predictor schema (`fr_regressor_v2_ensemble`,

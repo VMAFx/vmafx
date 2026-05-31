@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0589: Metal `float_ssim` option parity — `enable_lcs`, `enable_db`, `clip_db`, `scale`
 
 - **Status**: Accepted

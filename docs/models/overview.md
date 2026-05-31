@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Models
 
 This repository offers a number of pre-trained VMAF models to be used in different scenarios. Besides the default VMAF model which predicts the quality of a video displayed on a HDTV in a living-room viewing condition, this repository also includes a number of additional models, covering mobile phone and 4KTV viewing conditions.

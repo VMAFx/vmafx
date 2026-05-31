@@ -1,10 +1,11 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Architecture
 
 Map of the repository, from the top down.
 
 ## Repository layout
 
-```
+```text
 vmaf/
 ├── libvmaf/            # The C library + CLI. The product.
 │   ├── src/            # metric engine, feature extractors

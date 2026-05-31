@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 <!--
   Copyright 2026 Lusoris
   SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
@@ -17,6 +18,7 @@ Full audit of `core/src/hip/` (runtime, picture, dispatch) and
 ## Scope
 
 Files read:
+
 - `core/src/hip/{common,picture_hip,dispatch_strategy,kernel_template}.c`
 - `core/src/feature/hip/*.c` (20 host TUs)
 - `core/src/feature/hip/**/*.hip` (25 kernel files)
@@ -125,6 +127,7 @@ here. No leak found.
 **File:** `core/src/feature/hip/integer_adm/adm_cm.hip` lines 186, 277, 382+
 
 `AdmBufferHip` is defined in `integer_adm_hip.h:70–96` and contains:
+
 - 2 × `size_t` (16 bytes on x86-64)
 - 6 × `hip_adm_dwt_band_t` structs (each contains 4 pointers: 32 bytes; ×6 = 192 bytes)
 - 8 × pointers (64 bytes)

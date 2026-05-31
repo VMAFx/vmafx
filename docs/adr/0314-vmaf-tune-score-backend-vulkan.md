@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0314: vmaf-tune `--score-backend=vulkan` (vendor-neutral GPU scoring)
 
 - **Status**: Accepted

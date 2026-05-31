@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # SpEED-QA Feature Extractor
 
 **Feature name:** `speed_qa`
@@ -32,7 +33,7 @@ are discarded. A 720p frame (1280x720) yields 182 x 102 = 18,564 blocks.
 Within each block, a **separable 7-tap Gaussian kernel** (sigma = 1.166,
 matching the VIF family) computes the weighted local mean and variance:
 
-```
+```text
 mu      = sum_ij( w(i,j) * p(i,j) ) / sum_ij( w(i,j) )
 sigma^2 = sum_ij( w(i,j) * p(i,j)^2 ) / sum_ij( w(i,j) ) - mu^2
 ```
@@ -42,7 +43,7 @@ the pixels are normalised to the 8-bpc range before weighting.
 
 ### Per-block entropy
 
-```
+```text
 H(block) = 0.5 * log2( 2 * pi * e * (sigma^2 + epsilon) )
 ```
 
@@ -54,7 +55,7 @@ perfectly flat (constant-valued) blocks.
 The spatial score S for frame n is the mean per-block entropy over the
 distorted luma plane:
 
-```
+```text
 S(n) = mean_i( H_i )
 ```
 
@@ -63,7 +64,7 @@ S(n) = mean_i( H_i )
 The temporal score T is computed identically to S but on the frame-difference
 image:
 
-```
+```text
 delta(i,j) = dist(n, i, j) - dist(n-1, i, j)
 T(n)       = mean_i( H_i(delta) )    for n > 0
 T(0)       = 0
@@ -73,7 +74,7 @@ The extractor stores the previous distorted frame internally.
 
 ### Combined output
 
-```
+```text
 score(n) = S(n) + T(n)
 ```
 

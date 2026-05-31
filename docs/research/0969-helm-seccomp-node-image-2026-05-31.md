@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research Digest — Helm Chart PSA B.1 + B.3 Fixes (ADR-0969)
 
 **Date**: 2026-05-31
@@ -27,7 +28,7 @@ The Kubernetes PSA "restricted" profile requires `seccompProfile.type` be set
 (either `RuntimeDefault` or `Localhost`). Without it, any namespace labelled
 `pod-security.kubernetes.io/enforce=restricted` rejects all pods with:
 
-```
+```text
 pods "vmafx-..." is forbidden: violates PodSecurity "restricted:latest":
 seccompProfile (pod or containers "vmafx" must set securityContext.seccompProfile
 to (...))
@@ -54,7 +55,7 @@ Add to `values.yaml` `podSecurityContext`:
 
 ### Verification
 
-```
+```text
 helm template test deploy/helm/vmafx/ | grep -A2 seccompProfile
 ```
 
@@ -72,13 +73,13 @@ image: {{ .Values.node.image.repository }}:{{ .Values.node.image.tag | default .
 
 With default `node.image.repository: ""` (empty string), Helm renders:
 
-```
+```text
 image: :3.0.0
 ```
 
 Kubernetes rejects this as an invalid image reference:
 
-```
+```text
 ImagePullBackOff: invalid reference format
 ```
 
@@ -87,7 +88,7 @@ ImagePullBackOff: invalid reference format
 The named helper `vmafx.nodeImage` (defined at `templates/_helpers.tpl:145-149`)
 already exists to handle exactly this case:
 
-```
+```text
 {{- define "vmafx.nodeImage" -}}
 {{- $repo := .Values.node.image.repository | default (printf "%s-node" .Values.image.repository) -}}
 {{- $tag  := .Values.node.image.tag        | default .Chart.AppVersion -}}
@@ -107,7 +108,7 @@ image: {{ include "vmafx.nodeImage" . }}
 
 ### Verification
 
-```
+```text
 # Default values (empty node.image.repository) — must render non-empty valid ref
 helm template test deploy/helm/vmafx/ --set node.enabled=true | grep -E '^\s+image:' | grep -v imagePullPolicy
 # Expected: ghcr.io/vmafx/vmafx-server-node:3.0.0
@@ -119,13 +120,13 @@ helm template test deploy/helm/vmafx/ --set node.enabled=true --set node.image.r
 
 ### Actual output (pre-PR baseline)
 
-```
+```text
 image: :3.0.0
 ```
 
 ### Actual output (post-fix)
 
-```
+```text
 image: ghcr.io/vmafx/vmafx-server-node:3.0.0
 ```
 

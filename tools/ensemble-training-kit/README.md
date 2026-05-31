@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Ensemble training kit
 
 Portable, one-command bundle for running the `fr_regressor_v2_ensemble_v1`

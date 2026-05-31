@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0018: Claude hooks scope includes safety and auto-format
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0935: Wrap multi-step Go cleanup paths with `errors.Join`; standardise `slog` error keys
 
 - **Status**: Accepted
@@ -82,7 +83,7 @@ and should not pollute the joined error.
 
 ## References
 
-- Go 1.20 release notes — `errors.Join`: https://go.dev/doc/go1.20#errors
+- Go 1.20 release notes — `errors.Join`: <https://go.dev/doc/go1.20#errors>
 - ADR-0711 — Phase 4b.1 controller scope expansion
 - ADR-0713 — Phase 4b vmafx-node Go worker
 - ADR-0719 — vmafx-node rclone integration (storage cleanup paths)

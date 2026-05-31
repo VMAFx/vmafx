@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0031: Fork-added docs live under docs/
 
 - **Status**: Accepted

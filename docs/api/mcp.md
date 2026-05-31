@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Embedded MCP server — `libvmaf_mcp.h`
 
 The fork ships an in-process MCP (Model Context Protocol) server that an

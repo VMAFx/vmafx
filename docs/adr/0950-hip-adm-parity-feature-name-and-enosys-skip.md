@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0950: Fix symmetric "adm" vs "adm_hip" feature-name bug in test_hip_adm_parity and add ENOSYS skip
 
 - **Status**: Accepted

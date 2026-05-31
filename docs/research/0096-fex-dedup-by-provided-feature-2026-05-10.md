@@ -32,7 +32,7 @@ callback and both attempt to write the same `feature_collector` slot
 (e.g. `VMAF_integer_feature_adm2_score` at index N). The second write
 trips `vmaf_feature_collector_append()`'s overwrite guard, emitting:
 
-```
+```text
 libvmaf WARNING feature "VMAF_integer_feature_adm2_score" cannot be overwritten at index N
 ```
 
@@ -86,7 +86,7 @@ CUDA binary produced 750+ "cannot be overwritten" warnings per scoring run
 
 **After fix:** zero "cannot be overwritten" warnings on the same run:
 
-```
+```text
 ./build-cpu/tools/vmaf \
   --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
   --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -106,7 +106,7 @@ requiring CUDA to be compiled in.
 ## Scope of change
 
 - `core/src/fex_ctx_vector.c` — new `provided_features_overlap()` helper
-  + updated `feature_extractor_vector_append()` dedup logic.
+  updated `feature_extractor_vector_append()` dedup logic.
 - `core/test/test_feature_extractor.c` — regression test.
 - `core/test/meson.build` — adds `fex_ctx_vector.c` to the test target
   sources (was not linked in previously; the test exercised only the

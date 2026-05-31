@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # VMAFX Deprecations
 
 This file tracks user-visible build configurations and CI modes that have been

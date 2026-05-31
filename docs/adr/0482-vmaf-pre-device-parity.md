@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0482: Expand vmaf_pre FFmpeg filter device strings to match full VmafDnnDevice enum
 
 - **Status**: Accepted

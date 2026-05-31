@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research Digest 0135 — VIF CPU Performance: Workspace Hoist + Fast Log2 Audit
 
 **Date**: 2026-05-16
@@ -23,7 +24,7 @@ extractor, identified in the CPU perf audit (`.workingdir/perf-audit-cpu-2026-05
 
 `compute_vif` (`core/src/feature/vif.c:116`) allocated:
 
-```
+```text
 10 × ALIGN_CEIL(w × sizeof(float)) × h bytes  per frame
 ```
 
@@ -70,7 +71,7 @@ CONTENTS. The 56-test meson suite passes identically before and after.
 The perf audit task description stated that `VIF_OPT_FAST_LOG2` was "missing
 from every `meson.build`". Inspection of the tree reveals:
 
-```
+```text
 core/src/feature/vif_options.h:28:  #define VIF_OPT_FAST_LOG2
 ```
 

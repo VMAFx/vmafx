@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # `libvmaf`
 
 ## Prerequisites
@@ -11,13 +12,15 @@ For building, you need the following:
 - `xxd`
 
 Follow the steps below to set up a clean virtual environment and install the tools:
-```
+
+```text
 python3 -m pip install virtualenv
 python3 -m virtualenv .venv
 source .venv/bin/activate
 pip install meson
 sudo [package-manager] install nasm ninja-build doxygen xxd
 ```
+
 You need to invoke `[package-manager]` depending on which system you are on: `apt-get` for Ubuntu and Debian, `yum` for CentOS and RHEL, `dnf` for Fedora, `zypper` for openSUSE, `brew` for MacOS (no `sudo`).
 
 Ninja package name might be `ninja` or `ninja-build`, depending on your system. Check [the pre-built ninja packages](https://github.com/ninja-build/ninja/wiki/Pre-built-Ninja-packages) before running the install command.
@@ -26,11 +29,12 @@ Ninja package name might be `ninja` or `ninja-build`, depending on your system. 
 
 Run:
 
-```
+```text
 meson setup build --buildtype release
 ```
 
 Special cases:
+
 - add `-Denable_float=true` flag in the rare case if you want to use the floating-point feature extractors.
 - add `-Denable_avx512=true` to support wider SIMD instructions to achieve the fastest processing on supported CPUs
 - add `-Denable_cuda=true` to build with CUDA support, which requires `nvcc` for compilation (tested with CUDA >= 11)
@@ -45,14 +49,14 @@ The SYCL backend targets Intel GPUs via oneAPI DPC++. Prerequisites:
 2. Set up the environment: `source /opt/intel/oneapi/setvars.sh` (or manually add compiler to PATH)
 3. Configure and build:
 
-```
+```text
 CC=icx CXX=icpx meson setup build -Denable_sycl=true -Db_lto=false
 ninja -vC build
 ```
 
 **Performance tip:** Set `SYCL_CACHE_PERSISTENT=1` to cache compiled SYCL kernels across runs, reducing JIT overhead on subsequent invocations:
 
-```
+```text
 export SYCL_CACHE_PERSISTENT=1
 ./build/tools/vmaf --reference ref.yuv --distorted dis.yuv ...
 ```
@@ -61,7 +65,7 @@ Use `--no_sycl` to force CPU-only mode, or `--sycl_device <N>` to select a speci
 
 Build with:
 
-```
+```text
 ninja -vC build
 ```
 
@@ -69,7 +73,7 @@ ninja -vC build
 
 Build and run tests with:
 
-```
+```text
 ninja -vC build test
 ```
 
@@ -77,13 +81,13 @@ ninja -vC build test
 
 Install the library, headers, and the `vmaf` command line tool:
 
-```
+```text
 ninja -vC build install
 ```
 
 This will install the following files:
 
-```
+```text
 ├── bin
 │   └── vmaf
 ├── include
@@ -105,7 +109,7 @@ This will install the following files:
 
 Generate HTML documentation with:
 
-```
+```text
 ninja -vC build doc/html
 ```
 
@@ -138,7 +142,6 @@ int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cfg,
 
 void vmaf_model_destroy(VmafModel *model);
 ```
-
 
 A VMAF score is a fusion of several elementary features which are specified by a model file. The next step is to register all feature extractors required by your model or models with `vmaf_use_features_from_model()`. If there are auxillary metrics (i.e. `PSNR`) you would also like to extract use `vmaf_use_feature()` to register it directly.
 

@@ -3,11 +3,13 @@ name: sync-upstream
 description: Reconcile fork master with Netflix/vmaf master. Detects the fork's port-only topology (no shared merge-base) and emits a coverage report; falls back to merge-based sync when the histories are actually connected.
 ---
 
+<!-- markdownlint-disable MD029 MD046 -->
+
 # /sync-upstream
 
 ## Invocation
 
-```
+```text
 /sync-upstream [--open-pr]
 ```
 
@@ -29,10 +31,12 @@ a merge.
 ## Steps
 
 1. **Pre-flight: topology detection.**
+
    ```bash
    git fetch upstream
    mb=$(git merge-base master upstream/master 2>/dev/null) || true
    ```
+
    - **If `mb` is empty** → port-only topology. Go to step 2a (coverage check).
    - **If `mb` is non-empty** → merge-based topology. Go to step 2b (classic merge).
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research: User-input dataclass → pydantic v2 migration triage — 2026-05-31
 
 - **Status**: Closed (implemented in ADR-0934)

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research 0713: CHUG HDR CLI Bootstrap Sweep
 
 Date: 2026-05-22

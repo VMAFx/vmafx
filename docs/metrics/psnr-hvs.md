@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # PSNR-HVS
 
 PSNR-HVS (Peak Signal-to-Noise Ratio - Human Visual System) extends traditional

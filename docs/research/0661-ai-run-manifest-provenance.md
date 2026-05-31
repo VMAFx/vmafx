@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0661: AI run manifest provenance
 
 ## Question

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # vmafx-node — Worker Binary
 
 `vmafx-node` is the data-plane worker in the VMAFX distributed platform

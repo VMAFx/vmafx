@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0503: `vif_subsample_rd_8_avx512` Loop Fission to Reduce ZMM Register Spill
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0743: CUDA VIF filter1d ncu-driven performance implementation
 
 **Date**: 2026-05-28

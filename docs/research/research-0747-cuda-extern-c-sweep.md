@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0747 — CUDA `extern "C"` name-mangling sweep
 
 **Date:** 2026-05-28

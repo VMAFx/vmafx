@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0020: Tiny-AI scope covers all four capabilities
 
 - **Status**: Accepted

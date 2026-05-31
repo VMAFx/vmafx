@@ -3,6 +3,8 @@ name: audit-modernization
 description: Replay the project modernization audit on the current tree and produce /tmp/modernization-audit-YYYY-MM-DD.md. Wraps scripts/dev/project_modernization_audit.py with sensible defaults and timestamped output.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /audit-modernization
 
 Runs `scripts/dev/project_modernization_audit.py` over the curated scan roots
@@ -32,7 +34,7 @@ the *user* says should land first. Reconcile the two before starting work.
 
 ## Invocation
 
-```
+```text
 /audit-modernization [--include-archives] [--max-findings=N] [--out=PATH]
 ```
 

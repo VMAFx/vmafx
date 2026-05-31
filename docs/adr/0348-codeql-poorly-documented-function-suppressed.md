@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0348: Globally suppress CodeQL `cpp/poorly-documented-function`
 
 - **Status**: Accepted

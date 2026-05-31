@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0810: ADR-0108 Six-Deliverables Compliance Audit (2026-05-29) + D3 Gap Fixes
 
 - **Status**: Accepted

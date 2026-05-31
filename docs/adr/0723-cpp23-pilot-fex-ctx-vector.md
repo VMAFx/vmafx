@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0723: C++23 Pilot — `fex_ctx_vector.c` Conversion (Wave 2)
 
 - **Status**: Accepted

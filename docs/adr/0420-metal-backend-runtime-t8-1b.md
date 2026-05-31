@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD037 MD060 -->
 # ADR-0420: Metal backend runtime (T8-1b)
 
 - **Status**: Accepted

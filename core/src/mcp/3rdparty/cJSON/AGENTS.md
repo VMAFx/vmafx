@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # AGENTS.md — vendored cJSON
 
 Parent: [../../AGENTS.md](../../AGENTS.md) (core/src/mcp/).

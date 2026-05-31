@@ -3,6 +3,8 @@ name: add-gpu-backend
 description: Scaffold a complete new GPU backend (hip, rocm, metal, opencl, etc.) with runtime, feature kernel stubs, public header, Meson options, CI workflow, doc stub, and smoke test. Flagship scaffolding skill. Established precedents on the fork — CUDA (legacy), SYCL (legacy), Vulkan (T5-1, ADR-0175 scaffold + ADR-0186 image-import).
 ---
 
+<!-- markdownlint-disable MD013 MD033 MD060 -->
+
 # /add-gpu-backend
 
 Creates a fully-wired new GPU backend directory tree + build integration. Generated
@@ -17,7 +19,7 @@ ffmpeg-patches contract that any new backend with image-import support inherits.
 
 ## Invocation
 
-```
+```text
 /add-gpu-backend <name>
 ```
 

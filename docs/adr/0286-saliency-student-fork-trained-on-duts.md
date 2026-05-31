@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0286: Fork-trained saliency student `saliency_student_v1` on DUTS-TR
 
 - **Status**: Accepted

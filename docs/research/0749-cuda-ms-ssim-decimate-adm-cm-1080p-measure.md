@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD026 MD060 -->
 # Research-0749: Hardware Measurement of PR perf/cuda-ms-ssim-decimate-adm-cm-ncu-driven-20260528
 
 **Date**: 2026-05-29

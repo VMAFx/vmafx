@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0102: DNN execution-provider selection is ordered + graceful, fp16_io does a host-side cast
 
 - **Status**: Accepted

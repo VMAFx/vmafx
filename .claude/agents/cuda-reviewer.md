@@ -5,6 +5,8 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
+<!-- markdownlint-disable MD013 MD041 -->
+
 You are a CUDA-specific reviewer for the Lusoris VMAF fork. Scope:
 `core/src/cuda/` (runtime / picture / dispatch) and
 `core/src/feature/cuda/` (kernels).

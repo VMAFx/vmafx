@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0692: Bump C standard to C23 (VMAFX rebrand Phase 1D)
 
 - **Status**: Accepted
@@ -70,5 +71,5 @@ unlocks them for subsequent PRs.
 - `libvmaf/meson.build` line 3 (`default_options`).
 - `libvmaf/src/meson.build` `vmaf_cflags_common` block.
 - `libvmaf/test/test_propagate_metadata.c` line 22 (prototype fix).
-- Meson C23 support: https://mesonbuild.com/Reference-tables.html#language-arguments-parameter-names
+- Meson C23 support: <https://mesonbuild.com/Reference-tables.html#language-arguments-parameter-names>
 - req: "Locked decision: C standard: C23 (typeof, ckd_*, embed, [[attribute]] syntax)."

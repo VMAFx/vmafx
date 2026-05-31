@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0208: First per-model QAT — `learned_filter_v1` int8 (T5-4)
 
 - **Status**: Accepted
@@ -21,10 +22,10 @@ The trainer-hook side has a real implementation challenge that
 ADR-0207's design did not surface: PyTorch 2.11's two ONNX exporters
 both refuse the QAT-converted graph.
 
-* The legacy TorchScript exporter emits `quantized::conv2d` /
+- The legacy TorchScript exporter emits `quantized::conv2d` /
   `quantized::add` ops (PyTorch's internal quantized namespace),
   which ORT cannot consume.
-* The new TorchDynamo exporter chokes on
+- The new TorchDynamo exporter chokes on
   `Conv2dPackedParamsBase` with a missing `__obj_flatten__`
   attribute.
 
@@ -63,10 +64,10 @@ the smaller quantization drop on real data.
 
 ### 2. `ai/train/qat.py` — Lightning-compatible trainer hook
 
-* `QatConfig` dataclass: `epochs_fp32`, `epochs_qat`, `lr_qat`,
+- `QatConfig` dataclass: `epochs_fp32`, `epochs_qat`, `lr_qat`,
   `n_calibration`, `output_int8_onnx`, `seed`, `smoke`. The `smoke`
   flag drops both training phases for the CI test path.
-* `run_qat(model_factory, qat_cfg, ...)`: zero-arg-callable model
+- `run_qat(model_factory, qat_cfg, ...)`: zero-arg-callable model
   factory + config + (optional) loader factory + (optional) loss.
   Returns a `QatResult` with `fp32_onnx` / `int8_onnx` / `n_params`.
 

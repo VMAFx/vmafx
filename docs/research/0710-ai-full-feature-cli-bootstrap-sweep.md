@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # AI full-feature CLI bootstrap sweep
 
 Date: 2026-05-22

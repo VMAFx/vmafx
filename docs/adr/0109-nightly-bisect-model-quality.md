@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0109: Nightly bisect-model-quality runs against a synthetic placeholder cache
 
 - **Status**: Accepted
@@ -64,7 +65,7 @@ swaps in via a follow-up. Concretely:
 
 - **Positive**:
   - Issue #4 closes; the nightly slot now exercises onnx + onnxruntime
-    + pandas + pyarrow + the bisect algorithm against a reproducible
+    ndas + pyarrow + the bisect algorithm against a reproducible
     fixture, surfacing toolchain breakage within 24 h.
   - Sticky comment on issue #40 gives at-a-glance health visibility.
   - Drift check guards against silent serialiser changes between Python
@@ -90,7 +91,7 @@ swaps in via a follow-up. Concretely:
 - Issue [#4](https://github.com/VMAFx/vmafx/issues/4) — feature
   request that drove this PR.
 - [`ai/src/vmaf_train/bisect_model_quality.py`](../../ai/src/vmaf_train/bisect_model_quality.py)
-  + [`ai/tests/test_bisect_model_quality.py`](../../ai/tests/test_bisect_model_quality.py)
+  [`ai/tests/test_bisect_model_quality.py`](../../ai/tests/test_bisect_model_quality.py)
   — the underlying tool + synthetic-regression unit test that satisfies
   the issue's "deliberately bad ONNX trips the alert" AC.
 - [Research-0001](../research/0001-bisect-model-quality-cache.md) —

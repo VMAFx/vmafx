@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # External Resources
 
 This page contains external resources, including a list of 3rd-party tools that are built on top of VMAF. You can also find links to webpages where you can download FFmpeg binaries that support libvmaf.

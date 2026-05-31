@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD060 -->
 # ADR-0517: Repair MCP `run_benchmark` tool — drop per-call args, inject VMAF_BIN, guard set -u in bench_all.sh
 
 - **Status**: Accepted
@@ -89,11 +90,13 @@ kill the whole harness under `set -euo pipefail`.
 ## Consequences
 
 **Positive**:
+
 - `run_benchmark` returns a complete benchmark JSON response with per-backend VMAF scores.
 - Backends that are unavailable (Vulkan without ICD) produce a SKIP line rather than aborting.
 - The fix is backward-compatible: existing calls with `{}` arguments work without changes.
 
 **Negative**:
+
 - Callers who previously passed `ref`/`dis`/`width`/`height` to `run_benchmark` will get
   a validation error ("unknown argument"). This is acceptable: those callers were receiving
   an error response anyway, so no regression in functionality.
@@ -102,6 +105,7 @@ kill the whole harness under `set -euo pipefail`.
   after the fact must set `VMAF_BENCH_OUTDIR`.
 
 **Neutral follow-ups**:
+
 - The vmaf binary's "could not open file" on Vulkan fallback (exit 0, no JSON written) is
   a pre-existing issue not introduced by this fix. Tracked separately.
 - `docs/mcp/run_benchmark.md` (new, this PR) documents the corrected tool surface.

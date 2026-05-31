@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0309: `fr_regressor_v2` ensemble — real-corpus retrain harness + flip workflow
 
 - **Status**: Accepted

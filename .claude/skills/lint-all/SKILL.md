@@ -7,7 +7,7 @@ description: Run clang-tidy, cppcheck, include-what-you-use, ruff, and semgrep i
 
 ## Invocation
 
-```
+```text
 /lint-all [--fix] [--changed-only] [--severity=warning|error]
 ```
 

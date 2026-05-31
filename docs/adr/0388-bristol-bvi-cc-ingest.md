@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0388: Ingest BVI-CC as the second tiny-AI training corpus
 
 - **Status**: Draft

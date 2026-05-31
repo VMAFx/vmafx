@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0912: Pixel-format edge coverage audit
 
 - **Date**: 2026-05-31
@@ -45,6 +46,7 @@ unit-test layer — regressions there are only caught downstream
 | `motion`    | ✓ smoke | — | — | — | — | — | (full-model only) | — |
 
 Notes:
+
 - "✓ smoke" = at least one end-to-end smoke test wired into the
   fast suite at the extractor's public surface.
 - "math only" = inner helper exercised via `#include` of the .c

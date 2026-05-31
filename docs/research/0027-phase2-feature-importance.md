@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD049 -->
 # Research-0027 — Phase-2 feature correlation, MI, and importance results
 
 _Updated: 2026-04-29._

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0548: vmaf-tune tune-per-shot accepts container sources directly; compare gains --no-bisect mode
 
 - **Status**: Accepted

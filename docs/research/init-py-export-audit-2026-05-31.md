@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research digest — `__init__.py` export-completeness audit (2026-05-31)
 
 **Companion ADR**: [ADR-0911](../adr/0911-init-py-export-completeness-audit.md)

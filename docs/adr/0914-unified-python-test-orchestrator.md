@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0914: Unified Python test orchestrator (nox at repo root)
 
 - **Status**: Accepted

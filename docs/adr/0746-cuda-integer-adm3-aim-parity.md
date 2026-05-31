@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0746: integer_adm_cuda — emit integer_adm3 + integer_aim (parity with CPU)
 
 - **Status**: Accepted
@@ -54,7 +55,7 @@ can be reused for the AIM accumulators.
 
 **Host-side post-processing (write_scores):**
 
-```
+```text
 score_aim  = aim_num / den   (same denominator as ADM2)
 score_adm3 = MAX(score * adm_dlm_weight + (1 - score_aim) * (1 - adm_dlm_weight),
                  adm_min_val)

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0305: Encoder knob-space Pareto-frontier analysis stratified per (source, codec, rc_mode)
 
 - **Status**: Accepted

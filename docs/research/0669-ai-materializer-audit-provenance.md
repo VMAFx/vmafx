@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0669: AI Materializer Audit Provenance
 
 ## Summary

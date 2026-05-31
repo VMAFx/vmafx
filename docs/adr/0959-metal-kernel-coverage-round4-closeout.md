@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0959: Metal kernel parity coverage round 4 — closeout
 
 - **Status**: Accepted

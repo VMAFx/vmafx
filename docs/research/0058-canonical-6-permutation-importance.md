@@ -1,4 +1,6 @@
+<!-- markdownlint-disable MD025 -->
 # Research 0058 — canonical-6 permutation importance for `vmaf_tiny_v2`
+
 # Research-0058
 
 - **Status:** Complete
@@ -98,7 +100,7 @@ Produces the table above in ~3 seconds against the shipped ONNX and the
 5. **`CHANGELOG.md` entry** — opt-out: research-only, no user-visible
    change.
 6. **`docs/rebase-notes.md` entry** — _no rebase impact: research-only doc
-   + dev script under `scripts/dev/`._
+   ev script under `scripts/dev/`._
 
 ## References
 

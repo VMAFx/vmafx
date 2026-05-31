@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research: mkdocs nav restructure for 631 ADRs (2026-05-31)
 
 **Context**: project-modernization-audit queue item #13 — "Restructure mkdocs

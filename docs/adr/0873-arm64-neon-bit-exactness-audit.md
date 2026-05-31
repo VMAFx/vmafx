@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD038 MD060 -->
 # ADR-0873: ARM64 NEON bit-exactness audit — `-ffp-contract=off` carve-out scope
 
 - **Status**: Accepted

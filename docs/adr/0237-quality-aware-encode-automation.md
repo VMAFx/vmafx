@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0237: Quality-aware encode automation surface (`vmaf-tune`)
 
 - **Status**: Accepted (Phase A only; Phases B–F remain Proposed)
@@ -44,7 +45,8 @@ surface. It is a hybrid C + Python tool (same shape as the
 existing `vmaf-perShot` binary), built via Meson alongside the
 rest of the libvmaf tree. The tool exposes one harness layer
 (drive FFmpeg with parameter grids, capture bitrate + decode
-+ score-via-libvmaf), one search layer (target-quality bisect /
+
+- score-via-libvmaf), one search layer (target-quality bisect /
 Bayesian / Pareto), and one selector layer (pre-trained per-title
 and per-shot CRF predictors with codec-aware conditioning).
 
@@ -102,7 +104,7 @@ greenlighting the design + corpus plan in this ADR.
     parquet row, and CI has to pin a known encoder set.
   - Training corpus we own: per-title / per-shot CRF predictors
     need (source, encode, score) tuples. We have Netflix Public
-    + KoNViD + BVI-DVC sources; *the encodes have to come from
+    NViD + BVI-DVC sources; *the encodes have to come from
     Phase A's harness because we can't redistribute third-party
     encodes*. This makes Phase A a hard prerequisite for every
     AI phase.

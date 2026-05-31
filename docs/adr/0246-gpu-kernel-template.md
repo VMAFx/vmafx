@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0246: Per-backend GPU kernel scaffolding templates (CUDA + Vulkan)
 
 - **Status**: Accepted
@@ -16,7 +17,8 @@ layout + shader module + compute pipeline + descriptor pool, plus a
 per-frame command-buffer + fence pair. Both lifecycles are mechanical, but
 they're hand-rolled in every kernel — a 14-kernel CUDA matrix and a
 15-kernel Vulkan matrix means roughly 90 copies of the same six-line stream
-+ event scaffold and 30 copies of the same descriptor-pool sizing
+
+- event scaffold and 30 copies of the same descriptor-pool sizing
 heuristic.
 
 A sister-agent scope analysis (referenced under "Reproducer / smoke-test

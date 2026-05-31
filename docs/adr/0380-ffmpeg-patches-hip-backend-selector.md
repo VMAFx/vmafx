@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0380: FFmpeg libvmaf filter — HIP backend selector patch (0011)
 
 - **Status**: Accepted

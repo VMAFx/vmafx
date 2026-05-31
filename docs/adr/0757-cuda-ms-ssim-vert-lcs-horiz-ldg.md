@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0757 — CUDA MS-SSIM `ms_ssim_vert_lcs` + `ms_ssim_horiz`: `__ldg()` + `__launch_bounds__` (F3 fix #2)
 
 | Field  | Value |

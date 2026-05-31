@@ -20,7 +20,7 @@ Go wrapper around the libvmaf C ABI. Provides two scoring surfaces:
    an explicit `vmaf_picture_unref` on the Go side. The current loop
    uses the structure:
 
-   ```
+   ```text
    vmaf_picture_alloc(ref); vmaf_picture_alloc(dis)
    // on error before read: unref both, return
    vmaf_read_pictures(ctx, &ref, &dis, idx)  // ownership transferred

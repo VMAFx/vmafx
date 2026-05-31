@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0391: ciede2000 Vulkan NVIDIA places=4 fork debt is a structural f32/f64 precision gap
 
 - **Status**: Accepted

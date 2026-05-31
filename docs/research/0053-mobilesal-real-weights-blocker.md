@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0053 — MobileSal real-weights swap blocker
 
 | Field      | Value                                                  |
@@ -58,7 +59,7 @@ two independent axes:
 
 1. **Non-Commercial clause** — the fork is BSD-3-Clause-Plus-Patent
    and is consumed by commercial encoder pipelines (FFmpeg + libvmaf
-   + the in-tree `ffmpeg-patches/` series ship with no commercial
+   he in-tree `ffmpeg-patches/` series ship with no commercial
    restriction). Bundling a CC-NC weight blob would force every
    downstream commercial consumer to either strip the model or
    relicense their use.

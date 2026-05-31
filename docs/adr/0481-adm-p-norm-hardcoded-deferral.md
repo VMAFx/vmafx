@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0481: ADM p-norm Parameter Hardcoded at 3.0 — Deferral Decision
 
 - **Status**: Accepted

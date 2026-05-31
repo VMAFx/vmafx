@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research 0135: VIF CUDA shared-memory staging (wins #1 and #4)
 
 ## Scope

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0242: Tiny-AI training on the original Netflix VMAF training corpus
 
 - **Status**: Accepted
@@ -19,7 +20,7 @@ never committed.
 
 The corpus naming pattern follows the Netflix encoding-ladder convention:
 
-```
+```text
 <source>_<quality_label>_<height>_<bitrate-kbps>.yuv
 ```
 

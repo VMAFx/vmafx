@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # AI evaluation and calibration CLI bootstrap sweep
 
 Date: 2026-05-22

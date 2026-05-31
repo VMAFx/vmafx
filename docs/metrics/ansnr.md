@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ANSNR
 
 ANSNR (Average Noise-to-Signal Ratio) measures the ratio of distortion energy

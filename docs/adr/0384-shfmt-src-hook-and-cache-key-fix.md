@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0384: Switch shfmt pre-commit hook from binary download to Go-source build
 
 - **Status**: Accepted

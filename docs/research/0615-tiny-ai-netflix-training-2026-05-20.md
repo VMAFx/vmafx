@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research Digest 0615 — Tiny-AI Netflix corpus training: 2026-05-20 literature refresh
 
 **Date**: 2026-05-20

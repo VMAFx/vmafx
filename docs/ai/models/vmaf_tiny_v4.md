@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # vmaf_tiny_v4 — top-rung VMAF feature-fusion estimator (opt-in only)
 
 `vmaf_tiny_v4` is a tiny multi-layer perceptron that predicts a VMAF
@@ -62,7 +63,7 @@ reading local shell history.
 
 Effective topology:
 
-```
+```text
 features [N, 6]
    |
    Sub  <- mean   ([6] constant)

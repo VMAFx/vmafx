@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0901: Governance file audit — add GOVERNANCE + MAINTAINERS, expand CODEOWNERS, document ADR-0108 in CONTRIBUTING
 
 - **Status**: Accepted

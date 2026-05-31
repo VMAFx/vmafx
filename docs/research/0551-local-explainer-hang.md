@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0551: VCQ-223 LocalExplainer CI timeout — root cause investigation
 
 **Date**: 2026-05-18
@@ -18,7 +19,7 @@ tight Python-C boundary loop. Wall time is 4–8 minutes, which exceeds CI timeo
 
 ### Step 1 — Git archaeology
 
-```
+```text
 git log --all --oneline -- python/test/local_explainer_test.py
 ```
 
@@ -81,7 +82,7 @@ runner.run()
 
 Result: SIGALRM fires at 30 s. Stack trace:
 
-```
+```text
 runner.run()
   executor.py:206  map(self._run_on_asset, self.assets)
   quality_runner_extra.py:40  exps = explainer.explain(model, xs)

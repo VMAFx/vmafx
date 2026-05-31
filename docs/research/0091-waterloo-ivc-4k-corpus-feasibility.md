@@ -52,14 +52,14 @@ The canonical scores table is published at
 (verified 2026-05-08). It is **headerless**, with five
 comma-separated columns:
 
-```
+```text
 encoder, video_number, resolution, distortion_level, mos
 ```
 
 First five rows verbatim from the upstream file
 (verified 2026-05-08):
 
-```
+```text
 HEVC, 1, 540p, 1, 18.21
 HEVC, 1, 540p, 2, 39.46
 HEVC, 1, 540p, 3, 50.23
@@ -106,16 +106,16 @@ KonViD-150k, ADR-0333 LSVQ).
 The dataset is genuinely public — verified directly
 against the official IVC dataset card 2026-05-08:
 
-* **No NDA, no request form, no registration**: the
+- **No NDA, no request form, no registration**: the
   download links on
   [`ivc.uwaterloo.ca/database/4KVQA.html`](https://ivc.uwaterloo.ca/database/4KVQA.html)
   point directly at archive ZIPs (Sources, H264, HEVC,
   VP9 single-archive each; AVS2 and AV1 split into 4
   parts each).
-* **No password gate**: HTTPS direct fetch from the
+- **No password gate**: HTTPS direct fetch from the
   archive base
   [`https://ivc.uwaterloo.ca/database/4KVQA/201908/`](https://ivc.uwaterloo.ca/database/4KVQA/201908/).
-* **No paperwork**: only attribution required (per the
+- **No paperwork**: only attribution required (per the
   license clause quoted above).
 
 A contact email (`z777li@uwaterloo.ca`) is listed for
@@ -142,15 +142,15 @@ See [ADR-0369 §Alternatives considered](../adr/0369-waterloo-ivc-4k-corpus-inge
 
 ## Open follow-ups
 
-* Cross-corpus MOS rescaler (0–100 → 1–5 or equivalent)
+- Cross-corpus MOS rescaler (0–100 → 1–5 or equivalent)
   in the trainer-side data loader. Required before the
   four-corpus union (BVI-DVC + KonViD-150k + LSVQ +
   Waterloo IVC) trains as one shard.
-* ENCODER_VOCAB v4 trainer-side routing of
+- ENCODER_VOCAB v4 trainer-side routing of
   `corpus = "waterloo-ivc-4k"` rows to the
   `"professional-graded"` slot rather than the
   `"ugc-mixed"` slot KonViD-150k / LSVQ use.
-* Optional `mos_scale_native` JSONL row field — explicit
+- Optional `mos_scale_native` JSONL row field — explicit
   scale tagging rather than implicit `corpus`-based
   lookup. Defer until the trainer-side scaler exists.
 

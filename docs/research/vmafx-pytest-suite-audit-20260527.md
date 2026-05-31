@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # pytest suite audit — ai/, tools/vmaf-tune/, mcp-server/vmaf-mcp/ (2026-05-27)
 
 <!-- Copyright 2026 Lusoris -->
@@ -25,7 +26,7 @@ were modified.
 
 ## Environment
 
-```
+```text
 Python  : 3.14.5
 pytest  : 9.0.3
 pytest-timeout : 2.4.0
@@ -44,7 +45,7 @@ Date    : 2026-05-27
 
 **Error (truncated):**
 
-```
+```text
 AssertionError: ADR-0543 regression: --feature motion_hip on --backend cpu exited 255 (expected 100)
 stderr="/usr/local/bin/vmaf: unrecognized option '--backend'\nproblem loading feature extractor: motion_hip\n"
 assert 255 == 100
@@ -65,7 +66,7 @@ not a code regression — the test is correct; the system binary is stale.
 
 All 8 mcp-server test files fail to collect with:
 
-```
+```text
 ModuleNotFoundError: No module named 'vmaf_mcp'
 ```
 

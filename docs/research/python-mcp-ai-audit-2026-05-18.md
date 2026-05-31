@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research digest: Python / MCP / AI stub-and-silent-fallback audit
 
 **Date**: 2026-05-18

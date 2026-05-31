@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0704: vmafx-mcp Go port (JSON-RPC, stdio transport)
 
 - **Status**: Accepted

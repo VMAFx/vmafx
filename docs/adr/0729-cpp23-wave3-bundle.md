@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0729: C++23 Wave 3 — feature_name, picture_copy, model
 
 - **Status**: Accepted

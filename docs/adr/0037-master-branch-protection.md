@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0037: Protect master branch on GitHub with required checks
 
 - **Status**: Accepted

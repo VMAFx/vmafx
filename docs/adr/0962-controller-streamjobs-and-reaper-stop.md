@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD060 -->
 # ADR-0962: Controller fixes — implement StreamJobs snapshot and add reaper stop signal (round-25 audit B.3 + B.4)
 
 - **Status**: Accepted

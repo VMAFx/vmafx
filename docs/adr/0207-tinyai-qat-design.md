@@ -1,8 +1,9 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0207: Tiny-AI Quantization-Aware Training (QAT) — design
 
 - **Status**: Accepted
 - **Date**: 2026-04-28
-- **Deciders**: lusoris@pm.me, Claude (Anthropic)
+- **Deciders**: <lusoris@pm.me>, Claude (Anthropic)
 - **Tags**: ai, quantization, dnn, tiny-ai, fork-local
 
 ## Context
@@ -25,25 +26,25 @@ locks the QAT pass design before code lands.
 
 The substantive forces driving the design:
 
-* **PTQ accuracy floor**: Research-0006's per-model PLCC budgets
+- **PTQ accuracy floor**: Research-0006's per-model PLCC budgets
   are ~0.005 (static PTQ) and ~0.01 (dynamic PTQ). On a tiny model
   with few layers there is little room for QAT to improve over
   static PTQ — the regression survey in `Research-0006 §1` puts
   QAT at 0.0002–0.003 PLCC drop. Whether QAT *measurably* helps on
   fork-trained models is the empirical question this ADR
   authorises us to answer.
-* **Training-time cost**: QAT requires a finetune phase after
+- **Training-time cost**: QAT requires a finetune phase after
   fp32 convergence. Research-0006 §4 estimates ~50% extra training
   time on `tiny-vmaf-v2`-class models, ~10 min on the smaller
   `learned_filter_v1` / `nr_metric_v1` shipped today. Cheap
   enough to default to QAT once a model exhausts PTQ budget.
-* **Determinism**: `_load_session` in the LOSO eval harness
+- **Determinism**: `_load_session` in the LOSO eval harness
   (PR #165, [`ai/scripts/eval_loso_mlp_small.py`](../../ai/scripts/eval_loso_mlp_small.py))
   already documents one ONNX-export determinism gotcha (the
   external_data location rename); QAT adds another (FakeQuant
   observer placement + qparam folding). The ADR pins the export
   path so the registry's `int8_sha256` field stays reproducible.
-* **Pairs with T5-3e** (PTQ on CUDA + Intel Arc accelerators):
+- **Pairs with T5-3e** (PTQ on CUDA + Intel Arc accelerators):
   QAT-trained models must round-trip through the same EP set,
   not just CPU EP. The export path picked here doubles as the
   T5-3e validation surface.

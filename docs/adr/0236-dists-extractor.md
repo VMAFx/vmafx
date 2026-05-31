@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0236 — DISTS extractor as LPIPS companion
 
 - **Status**: Accepted
@@ -22,7 +23,8 @@ as a tiny-AI FR extractor. We do not ship DISTS. The Bristol audit
 flagged this as actionable item #5 with effort estimate 1 week.
 
 Filing the design proposal now so the implementation PR has the ABI
-+ op-allowlist contract pre-committed; the implementation work is
+
+- op-allowlist contract pre-committed; the implementation work is
 tracked separately as backlog item `T7-DISTS`.
 
 ## Decision
@@ -109,7 +111,7 @@ No new op gating needed.
 
 - Doubles the deep-feature FR surface area (LPIPS + DISTS), which
   means doubling the model-card maintenance + license-tracking
-  + supply-chain (sigstore bundle, ADR-0211) burden.
+  supply-chain (sigstore bundle, ADR-0211) burden.
 - Some marginal user confusion ("which one should I use?") that
   doc copy in the model card has to address head-on.
 

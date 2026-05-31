@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0298: vmaf-tune content-addressed encode/score cache
 
 - **Status**: Accepted

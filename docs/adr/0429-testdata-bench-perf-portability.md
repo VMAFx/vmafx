@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0429: testdata bench_perf is configurable
 
 - **Status**: Accepted

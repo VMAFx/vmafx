@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0470: Disk-Persistent VkPipelineCache for Vulkan Feature Extractors
 
 - **Status**: Accepted
@@ -25,7 +26,7 @@ subsequent process launches can skip re-linking entirely.
 We will create a `VkPipelineCache` per `VmafVulkanContext`, keyed by the
 physical device UUID, stored at:
 
-```
+```text
 ${XDG_CACHE_HOME:-$HOME/.cache}/vmaf/vulkan/<device-uuid>.bin
 ```
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0523: Register `vmaf_fex_integer_motion_hip` in the extractor list
 
 - **Status**: Accepted

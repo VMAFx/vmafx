@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0872: POSIX I/O EINTR-retry + return-value audit on fork-added C
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0973: Master CI fixes — Metal MS-SSIM fixture dim + ssimulacra2 icpx XYB bit-exactness
 
 - **Status**: Accepted

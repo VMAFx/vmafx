@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0955: Fix two latent bugs in upstream-mirror `compat/python-vmaf/` (scanf width handling + ProcessRunner locale forcing)
 
 - **Status**: Accepted

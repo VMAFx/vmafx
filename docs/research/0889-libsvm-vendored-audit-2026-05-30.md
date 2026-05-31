@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # 0889 — Vendored libsvm 3.24 audit (2026-05-30)
 
 ## Scope
@@ -73,7 +74,7 @@ The existing SAN-MODEL-MALLOC-OOB mitigation bounds `nr_class` and
 against an unset `nr_class`. It does **not** pre-flight the per-row
 `Malloc(...)` calls in `parse_header()` against an unset `nr_class`.
 
-```
+```text
 } else if (buffer == "label") {
     model->label = Malloc(int, model->nr_class);          // (*)
     exceptAssert(model_source.get_array(model->label, model->nr_class),

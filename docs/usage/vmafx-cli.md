@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # `vmafx` — modernized CLI reference
 
 `vmafx` is a thin alias for the `vmaf` binary that activates modernized

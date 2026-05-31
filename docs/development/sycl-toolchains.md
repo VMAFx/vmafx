@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # SYCL toolchain options — Intel oneAPI vs AdaptiveCpp
 
 The fork's `-Denable_sycl=true` build path supports **two** SYCL

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0211: Tiny-model registry schema + Sigstore `--tiny-model-verify`
 
 - **Status**: Accepted

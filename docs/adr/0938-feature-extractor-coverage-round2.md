@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0938: Feature-extractor coverage round 2 — seven CPU-side test executables
 
 - **Status**: Accepted

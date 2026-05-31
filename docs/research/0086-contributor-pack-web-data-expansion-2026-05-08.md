@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0086 — Contributor data-pack expansion via web-researched data
 
 - **Status**: Active feasibility study. Pure desk research; no code
@@ -115,7 +116,7 @@ exercised. Two ways to "fill" the gap from web research:
   Numbers are *secondary*; they reflect the test machine's
   thermal envelope and the OS version. M4 Max Metal score
   ≈ 192 532, M3 Max ≈ 154 860 [\[external — Geekbench browser
-  + wccftech aggregator, 2026-05-08\]](https://wccftech.com/m4-max-gpu-benchmarks-revealed/) — `[UNVERIFIED]` for
+  wccftech aggregator, 2026-05-08\]](<https://wccftech.com/m4-max-gpu-benchmarks-revealed/>) — `[UNVERIFIED]` for
   fork-corpus embedding because we cannot replay the run on
   our infrastructure.
 - **VMAF-relevant signal**: video-encode capability per Metal

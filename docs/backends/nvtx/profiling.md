@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # NVTX Profiling
 
 NVTX (NVIDIA Tools Extension) annotates ranges in the libvmaf source so

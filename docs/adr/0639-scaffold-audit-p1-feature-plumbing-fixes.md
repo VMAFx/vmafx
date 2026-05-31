@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0639: Scaffold-audit P1 — backend precheck, HIP picture, mobilesal bpc, DNN multi-output
 
 - **Status**: Accepted

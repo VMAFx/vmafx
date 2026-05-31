@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0752 — Multi-Resolution Performance Benchmark Baseline
 
 | Field      | Value                                          |
@@ -70,4 +71,4 @@ benchmark harness.  Key choices:
 ## References
 
 - req: "Productionize [the multi-resolution benchmark] as a script + JSON output
-  + checked into testdata, so future perf PRs can compare against a versioned baseline."
+  checked into testdata, so future perf PRs can compare against a versioned baseline."

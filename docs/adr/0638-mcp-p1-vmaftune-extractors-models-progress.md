@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0638: MCP P1 surface — vmaf-tune integration, list_extractors, describe_model, progress notifications
 
 - **Status**: Accepted
@@ -78,7 +79,7 @@ name matching, fixing the `.1` truncation bug permanently.
 ## References
 
 - Prior agent session: a770012d89c6aef9d — identified Path.stem bug mid-debug.
-- MCP spec §notifications/progress: https://modelcontextprotocol.io/docs/specification/server/notifications/progress
+- MCP spec §notifications/progress: <https://modelcontextprotocol.io/docs/specification/server/notifications/progress>
 - req: "Second attempt at MCP P1 surface expansion. Prior agent died mid-debug after finding a real Path.stem bug."
 - ADR-0172 (describe_worst_frames / T6-6)
 - ADR-0495 (backend-probe allowlist)

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # gRPC streaming (`ScoreStream`) — Phase 1
 
 Status: **Proposed** (ADR-0933). Phase 1 ships the schema + server stub.

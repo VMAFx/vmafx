@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research Digest 0730 — Tiny-AI Netflix Training Prep: 2026-05-27 Literature Update
 
 **Date**: 2026-05-27

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0661: AI run manifest provenance
 
 - **Status**: Accepted

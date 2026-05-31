@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 -->
 # Research-0034: CHANGELOG + ADR-index fragment-file pattern
 
 - **Date**: 2026-04-29

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Local sidecar training
 
 > **Status**: shipped local surface — public API, persistence layout,
@@ -22,7 +23,7 @@ and the libvmaf score actually observed at encode time. At inference
 the sidecar's correction is *added* to the shipped predictor's
 output; the shipped predictor itself stays read-only:
 
-```
+```text
 sidecar_vmaf = Predictor.predict_vmaf(features, crf, codec)
              + SidecarModel.predict_correction(features, crf)
 ```
@@ -57,7 +58,7 @@ The sidecar is trained from your own encodes. Each capture is a
 Persistence layout (per
 [Research-0086](../research/0086-local-sidecar-feasibility.md)):
 
-```
+```text
 ${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar/
   host-uuid                                  # 32-char hex, random per install
   <predictor-version>/

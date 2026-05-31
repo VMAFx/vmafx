@@ -7,7 +7,7 @@ description: Draft a Markdown model-card for a shipped ONNX tiny-AI model by col
 
 ## Invocation
 
-```
+```text
 /dev-llm-modelcard <onnx-path> [--features <parquet>] [--split test|val|train|all] [--model <ollama-model>]
 ```
 

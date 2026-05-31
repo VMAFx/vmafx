@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0079: `vmaf-tune` Phase E ladder default sampler — gap analysis
 
 - **Date**: 2026-05-05

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0467: SSIMULACRA2 AVX-512 + NEON IIR Blur / picture_to_linear_rgb ULP Audit — Clean Close
 
 - **Status**: Accepted

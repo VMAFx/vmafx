@@ -121,6 +121,7 @@ budget violation fails the PR.
 ## Consequences
 
 **Positive:**
+
 - Closes T5-3 fully (audit half via ADR-0173; first-model half +
   CI gate via this ADR).
 - The runtime int8 redirect is now a **load-bearing** code path —
@@ -133,6 +134,7 @@ budget violation fails the PR.
   documented in `docs/ai/quantization.md` as an operator concern.
 
 **Negative:**
+
 - The redirect block in `vmaf_dnn_session_open` is non-trivial
   C-string manipulation. The path-cap at 4096 is consistent with
   the existing sidecar parser; longer paths (rare) hit
@@ -149,7 +151,8 @@ budget violation fails the PR.
 ## Tests
 
 - Manual: `python ai/scripts/measure_quant_drop.py --all` →
-  ```
+
+  ```text
   [PASS] learned_filter_v1   mode=dynamic PLCC=0.999883
                              drop=0.000117 budget=0.0100 worst_abs=0.0257
   [skip] lpips_sq_v1 — quant_mode=fp32, no quantised model to gate
@@ -157,6 +160,7 @@ budget violation fails the PR.
   [skip] smoke_fp16_v0 — quant_mode=fp32, no quantised model to gate
   [skip] smoke_v0 — quant_mode=fp32, no quantised model to gate
   ```
+
 - CI: the new `ai-quant-accuracy` step in the `Tiny AI` job runs
   the same script on every PR.
 - Existing C sidecar tests from ADR-0173 already cover the

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0970: test_gpu_picture_pool.c: remove unused malloc + dead code (Round 27 audit D.3 + D.4)
 
 - **Status**: Accepted
@@ -23,6 +24,7 @@ permanently unreachable.
 **D.4 — Dead `/* ... */` block containing uncompilable code (lines 119–210):**
 A `test_ring_buffer_threaded` function was wrapped in a C block comment. The
 block contained two latent bugs:
+
 1. A duplicate `cfg` declaration (`VmafCudaConfiguration cfg` followed by
    `VmafGpuPicturePoolConfig cfg` in the same scope) — this would fail to
    compile if uncommented.

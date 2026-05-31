@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0005: Embedded MCP in libvmaf — threading, JSON library, SSE server, Power-of-10 fit
 
 - **Status**: Active

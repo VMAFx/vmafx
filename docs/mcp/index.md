@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD051 MD060 -->
 # MCP server — `vmaf-mcp`
 
 The VMAFX fork ships **three** MCP surfaces:

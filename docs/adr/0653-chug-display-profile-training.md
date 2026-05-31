@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0653: CHUG Display Profile Training
 
 - **Status**: Proposed

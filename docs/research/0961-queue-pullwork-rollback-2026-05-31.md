@@ -15,7 +15,7 @@ the analysis, options considered, and rationale for the chosen fix.
 `PullWork` performs a multi-step sequence that is only partially rolled back on
 error:
 
-```
+```text
 1. Remove from pendingFIFO            ← in-memory
 2. UPDATE jobs SET status='running'   ← SQL commit
 3. runningSet[matchID] = {}           ← in-memory

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0382: Y4M header parser — reject non-positive width or height before allocation
 
 - **Status**: Accepted

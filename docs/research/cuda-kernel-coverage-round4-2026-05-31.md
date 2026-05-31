@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research Digest — CUDA kernel parity coverage round 4 (2026-05-31)
 
 **Companion to**: [ADR-0956](../adr/0956-cuda-kernel-coverage-round4.md)
@@ -98,7 +99,7 @@ frame.
 The two speed smoke tests need a larger fixture because
 `speed_internal_init_dimensions` derives:
 
-```
+```text
 operating_w = (w * prescale) >> NUM_SCALES        # NUM_SCALES = 4
 truncated_w = (operating_w / DEFAULT_BLOCK_SIZE) * DEFAULT_BLOCK_SIZE
                                                   # DEFAULT_BLOCK_SIZE = 5

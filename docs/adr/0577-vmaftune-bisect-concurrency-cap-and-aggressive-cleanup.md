@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0577: vmaf-tune bisect decode concurrency cap and aggressive workdir cleanup
 
 - **Status**: Accepted

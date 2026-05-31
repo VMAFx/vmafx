@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Development
 
 ## Testing
@@ -6,7 +7,7 @@ A `tox.ini` was added to provide unit tests. Before running tests using tox, be 
 
 Run:
 
-```
+```text
 tox
 ```
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0667: vmaf-tune score backend native priority
 
 - **Status**: Accepted

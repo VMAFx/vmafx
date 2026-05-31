@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 MD060 -->
 # CUDA-kernel parity-test coverage — round 2 audit (2026-05-30)
 
 Status: complete (paired with ADR-0886 and the round-2 PR).
@@ -136,7 +137,7 @@ contract.
 
 Smoke-test command for reviewers (when CUDA is present):
 
-```
+```text
 meson setup build -Denable_cuda=true -Denable_sycl=false
 ninja -C build
 meson test -C build --suite=fast \

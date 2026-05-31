@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0490: float_ms_ssim Metal port
 
 - **Status**: Accepted

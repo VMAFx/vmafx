@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD056 MD060 -->
 # ADR-0422: CLI HIP and Metal Backend Selectors
 
 - **Status**: Accepted

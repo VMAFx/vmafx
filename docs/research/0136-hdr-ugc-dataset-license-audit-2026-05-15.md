@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0136: HDR/UGC Dataset License Audit (2026-05-15)
 
 **Status:** Complete
@@ -23,7 +24,6 @@ introduced a new panel/display-aware workstream scoped in ADR-0459.
 
 ## Dataset Summary Table
 
-<!-- markdownlint-disable MD013 -->
 | # | Dataset + URL | Scale | License | Distribution | HDR coverage | HFR coverage | Bit depth | Resolution | Subjective method | Actionability | Recommended next step |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | [Beyond8Bits](https://shreshthsaini.github.io/Beyond8Bits) | ~44k clips, ~1.5M crowd ratings | CC BY-SA 4.0 (metadata); NC restriction on video payload ("non-commercial research" + no redistribution + no commercial deployment) | Direct download via AWS S3; no sign-up wall | HDR-only — PQ/BT.2020, 10-bit HEVC ladder | 24/25/30/60 fps | 10-bit | 360p–1080p + source ref | Single-stimulus ACR, AMT workers, SUREAL-MLE aggregation | ACTIONABLE-NOW | Direct S3 download of metadata + selected clips; cite Chen et al. + comply with NC clause |
@@ -39,7 +39,6 @@ introduced a new panel/display-aware workstream scoped in ADR-0459.
 | 11 | [SJTU HDR Video Sequences](https://medialab.sjtu.edu.cn/tag/dataset/) | 16 video sequences | CC BY-NC-ND 4.0 | Academic-only; contact admin for Dropbox/file-share access; no public direct download link | HDR — Sony RAW 16-bit, OpenEXR output, S-Gamut/S-Log3, BT.2020, SMPTE ST.2084 | Not specified | 16-bit raw (half-float 4:4:4 RGB OpenEXR) | UHD (4K) | No subjective ratings | BLOCKED-on-access | Contact SJTU Media Lab admin; note ND clause prohibits format conversion or derivative works |
 | 12 | [HDR-VDC](https://github.com/gfxdisp/HDR-VDC) | 16 reference + 132 test videos; 30 subjects; JOD scores | CC BY 4.0 | DOI repository (Cambridge Apollo): `https://doi.org/10.17863/CAM.107964`; direct download | HDR (PQ, LG G2 OLED displays) | Not specified | Not specified | 720p, 1080p, 4K | Pairwise comparison; JOD (Just-Objectionable-Difference); 2 luminance levels × 2 viewing distances | ACTIONABLE-NOW | Direct Cambridge Apollo DOI download; CC BY 4.0 permits training use with attribution |
 | 13 | [AGH/NTIA/Dolby (CDVL)](https://www.cdvl.org/) | Unknown — content search required after registration | No specific license quoted on public pages; "freely available for research and development" per site copy | Registration required ("free to join"); no NDA mentioned; members-only access | Possibly HDR (Dolby involvement suggests HDR); confirmation requires access | Unknown | Unknown | Unknown | Unknown | BLOCKED-on-access | Register at cdvl.org (free); search for `AGH-NTIA-Dolby` after login; confirm HDR coverage and license before committing to ingest |
-<!-- markdownlint-enable MD013 -->
 
 ---
 

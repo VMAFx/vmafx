@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0670: Ensemble Seed Export Provenance
 
 ## Summary

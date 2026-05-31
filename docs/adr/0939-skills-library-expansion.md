@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0939: Skills library expansion — MCP, k8s, audit, bisect consolidation
 
 - **Status**: Accepted

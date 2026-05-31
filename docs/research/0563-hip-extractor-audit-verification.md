@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research digest — HIP extractor audit (9 remaining scaffold claims) (ADR-0563)
 
 - **Date**: 2026-05-18

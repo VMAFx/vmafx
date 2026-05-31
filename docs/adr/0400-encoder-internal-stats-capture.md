@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0400: encoder-internal-stats capture (corpus expansion v1)
 
 - **Status**: Accepted

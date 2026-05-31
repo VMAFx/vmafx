@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0573: Dev-mcp container — ubuntu:26.04 + CUDA 13.2 + hipcc + ocloc
 
 - **Status**: Superseded by [ADR-0738](0738-bump-cuda-133-r610-local.md)

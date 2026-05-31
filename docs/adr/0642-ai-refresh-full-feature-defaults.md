@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0642: AI refresh defaults use current fork full-feature extractors
 
 - **Status**: Accepted

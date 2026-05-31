@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0069: Region-of-interest VMAF — option-space digest
 
 - **Status**: digest (informs ADR-0288)

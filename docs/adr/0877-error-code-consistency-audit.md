@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0877: Error-code consistency audit — fork-added MS-SSIM decimate dispatcher
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0315: Vendor-neutral VVC encode strategy — tiered Tier-1-now / Tier-2-backlog / Tier-3-revisit
 
 - **Status**: Accepted

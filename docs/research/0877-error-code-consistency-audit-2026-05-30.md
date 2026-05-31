@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0877: Error-code consistency audit — fork-added C surfaces
 
 - **Date**: 2026-05-30

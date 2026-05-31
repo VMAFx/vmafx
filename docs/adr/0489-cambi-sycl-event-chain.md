@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0489: CAMBI SYCL — Replace GPU-to-GPU `q.wait()` Calls with Event Chains (SY-1)
 
 - **Status**: Accepted

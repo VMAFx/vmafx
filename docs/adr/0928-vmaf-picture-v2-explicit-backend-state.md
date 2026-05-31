@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0928: VmafPicture v2 — explicit per-backend GPU state
 
 - **Status**: Proposed
@@ -118,7 +119,7 @@ No SONAME bump. Header is declared, not yet built into libvmaf.so.
      `@deprecated` in Doxygen + emit `__attribute__((deprecated))`
      on `vmaf_picture_alloc`. SONAME stays at 3 (additive).
   3. **Cycle N+2** (≈ 6 months): convert in-tree backends + tools
-     + FFmpeg patches to v2. v1 functions still callable but
+     peg patches to v2. v1 functions still callable but
      `deprecated`. SONAME stays at 3.
   4. **Cycle N+3** (≈ 12 months from this PR, target v4.0.0):
      remove v1 entry points, drop converters, bump SONAME

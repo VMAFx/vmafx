@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0583: Add `enable_chroma` option to the `float_ms_ssim` extractor
 
 - **Status**: Accepted

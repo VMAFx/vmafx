@@ -29,7 +29,7 @@ trigger* and the *guard predicate*.
 
 Pre-fix control flow on each transport atomic:
 
-```
+```text
 int prev = atomic_exchange(&server->stdio_running, 2);
 assert(prev == 0 || prev == 1 || prev == 2);
 if (prev == 1 || prev == 2) {

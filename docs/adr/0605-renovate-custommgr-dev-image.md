@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0605: Renovate customManagers for all dev/Containerfile pinned dependencies
 
 - **Status**: Accepted

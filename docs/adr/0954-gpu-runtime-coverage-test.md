@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0954: Host-only unit test for shared GPU dispatch runtime
 
 - **Status**: Accepted

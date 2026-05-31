@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0128: Embedded MCP server in libvmaf — SSE + UDS + stdio transports, build-flag-gated
 
 - **Status**: Accepted

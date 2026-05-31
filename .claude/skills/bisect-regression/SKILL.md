@@ -3,11 +3,13 @@ name: bisect-regression
 description: Run git bisect against a user-defined failure predicate (numeric diff, perf threshold, test failure). Outputs the first-bad commit with context.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /bisect-regression
 
 ## Invocation
 
-```
+```text
 /bisect-regression --bad=<sha> --good=<sha> --predicate=<type> [--predicate-arg=...]
 ```
 

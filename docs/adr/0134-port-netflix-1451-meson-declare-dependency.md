@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0134: Port Netflix#1451 — `meson declare_dependency` + `override_dependency` for libvmaf
 
 - **Status**: Accepted

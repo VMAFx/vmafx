@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0162: SSIMULACRA 2 IIR blur SIMD ports — AVX2 + AVX-512 + NEON (T3-1 phase 2)
 
 - **Status**: Accepted
@@ -64,6 +65,7 @@ lanes don't write to output.
 - Scalar tail for leftover columns (identical to scalar reference).
 
 Bit-exactness preserved because:
+
 - Per-lane SIMD arithmetic is IEEE-754 lane-commutative (each lane
   computes the exact scalar sequence in isolation).
 - Summation order is preserved: `n2_k * sum - d1_k * prev1_k - prev2_k`
@@ -110,7 +112,7 @@ keeps the scalar fallback; non-NULL replaces both
     established pattern but slower than a true gather.
 - **Neutral / follow-ups**:
   - `picture_to_linear_rgb` SIMD port — per-lane scalar `powf`
-    + matmul SIMD. Small ROI (2 calls / frame).
+    tmul SIMD. Small ROI (2 calls / frame).
   - T3-3 SSIMULACRA 2 snapshot-JSON regression test — still
     pending (gated on `tools/ssimulacra2` availability).
   - `-ffp-contract=off` already scoped to the per-ISA ssimulacra2
@@ -137,7 +139,7 @@ keeps the scalar fallback; non-NULL replaces both
   reduction pattern.
 - [ADR-0141](0141-touched-file-cleanup-rule.md) — NOLINT scope.
 - [ADR-0161](0161-ssimulacra2-simd-bitexact.md) — phase-1 pointwise
-  + reduction SIMD ports (this ADR is phase 2).
+  reduction SIMD ports (this ADR is phase 2).
 - libjxl FastGaussian reference:
   [`lib/jxl/gauss_blur.cc`](https://github.com/libjxl/libjxl/blob/main/lib/jxl/gauss_blur.cc).
 - Research digest: [`docs/research/0016-ssimulacra2-iir-blur-simd.md`](../research/0016-ssimulacra2-iir-blur-simd.md).

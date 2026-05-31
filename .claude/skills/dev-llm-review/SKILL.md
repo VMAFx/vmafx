@@ -7,7 +7,7 @@ description: Run a local LLM code review via vmaf-dev-llm (Ollama-backed) agains
 
 ## Invocation
 
-```
+```text
 /dev-llm-review <path> [--model <name>]
 ```
 
@@ -32,7 +32,7 @@ description: Run a local LLM code review via vmaf-dev-llm (Ollama-backed) agains
 
 ## Output format
 
-```
+```text
 ## Review of <path> (model: <name>)
 
 <model output verbatim>

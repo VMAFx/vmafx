@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0651: Preserve CHUG HDR Metadata On Feature Rows
 
 - **Status**: Accepted

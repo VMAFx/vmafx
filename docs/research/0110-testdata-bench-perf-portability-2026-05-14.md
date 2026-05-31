@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0110: testdata bench_perf portability
 
 - **Date**: 2026-05-14

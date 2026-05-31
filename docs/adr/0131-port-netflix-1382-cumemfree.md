@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0131: Port Netflix#1382 — `cuMemFreeAsync` → `cuMemFree` in `vmaf_cuda_picture_free`
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0006: Set CLI precision default to %.17g with --precision flag
 
 - **Status**: Superseded by [ADR-0119](0119-cli-precision-default-revert.md)

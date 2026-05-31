@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # LSVQ → MOS-corpus JSONL ingestion
 
 The fork's `nr_metric_v1` tiny no-reference VQA model is trained
@@ -13,13 +14,13 @@ no-reference VQA training corpus: ~39 000 user-generated videos
 with ~5.5 M individual subjective ratings collapsed into per-clip
 MOS values on a 1.0–5.0 Likert scale.
 
-* **Canonical splits**: `LSVQ_whole_train` (~28 056 clips),
+- **Canonical splits**: `LSVQ_whole_train` (~28 056 clips),
   `LSVQ_test` (~7 400 clips, mixed-resolution),
   `LSVQ_test_1080p` (~3 600 1080p clips).
-* **Hugging Face mirror**:
+- **Hugging Face mirror**:
   <https://huggingface.co/datasets/teowu/LSVQ-videos>
   (CC-BY-4.0).
-* **Author drop**: <https://github.com/baidut/PatchVQ>.
+- **Author drop**: <https://github.com/baidut/PatchVQ>.
 
 ## When to run the adapter
 
@@ -135,15 +136,15 @@ row cap, attrition counters, effective corpus version, and ADR-0661
 
 ## Failure handling
 
-* **Download failure** (HTTP 404 / 410, curl spawn failure,
+- **Download failure** (HTTP 404 / 410, curl spawn failure,
   empty body): logged with the reason, persisted to the progress
   file as `state: "failed"`, run continues. Re-runs honour the
   non-retry contract — to retry, delete the entry from the
   progress file or delete the whole file.
-* **ffprobe failure** ("broken-clip"): logged, run continues,
+- **ffprobe failure** ("broken-clip"): logged, run continues,
   no row emitted. Distinct from download-failed in the summary
   line.
-* **Attrition WARNING**: when the download-failed fraction
+- **Attrition WARNING**: when the download-failed fraction
   exceeds `--attrition-warn-threshold` (default 10 %), an
   advisory WARNING is logged. The run still completes.
 
@@ -157,12 +158,12 @@ travelling alongside.
 
 ## Related
 
-* [ADR-0367: LSVQ corpus ingestion](../adr/0367-lsvq-corpus-ingestion.md).
-* [Research-0090: LSVQ corpus feasibility](../research/0090-lsvq-corpus-feasibility.md).
-* [Tiny-AI SOTA deep-dive](../research/0086-tiny-ai-sota-deep-dive-2026-05-08.md)
+- [ADR-0367: LSVQ corpus ingestion](../adr/0367-lsvq-corpus-ingestion.md).
+- [Research-0090: LSVQ corpus feasibility](../research/0090-lsvq-corpus-feasibility.md).
+- [Tiny-AI SOTA deep-dive](../research/0086-tiny-ai-sota-deep-dive-2026-05-08.md)
   (LSVQ vs DOVER vs FAST-VQA leaderboard context).
-* ADR-0325 Phase 2 (KonViD-150k) — same adapter shape;
+- ADR-0325 Phase 2 (KonViD-150k) — same adapter shape;
   this LSVQ adapter is a near-mirror modulo dataset specifics.
-* [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md) (BVI-DVC) —
+- [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md) (BVI-DVC) —
   the first second-shard ingestion ADR; sets the
   local-only-corpus / redistributable-derivatives precedent.

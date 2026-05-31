@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0615: Fast NR Pre-Scoring for CRF Bisect Acceleration
 
 - **Status**: Proposed

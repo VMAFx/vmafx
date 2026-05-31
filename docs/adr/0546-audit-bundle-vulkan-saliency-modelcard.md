@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0546: Audit bundle — Vulkan motion dispatch wiring, saliency hard-fail, model-card placeholder
 
 - **Status**: Accepted

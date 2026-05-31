@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0086 — Local sidecar training feasibility
 
 - **Status**: Active — scaffold-grade. Establishes the algorithm

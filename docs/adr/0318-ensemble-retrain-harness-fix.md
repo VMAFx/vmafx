@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0318: `fr_regressor_v2` ensemble retrain harness — wrapper-trainer interface fix + Phase A pre-step doc
 
 - **Status**: Accepted

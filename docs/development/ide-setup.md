@@ -1,4 +1,6 @@
+<!-- markdownlint-disable MD025 MD060 -->
 # IDE setup (VS Code + clangd)
+
 # IDE setup (VS Code + Zed + clangd)
 
 `.vscode/settings.json` ships with clangd as the C/C++ language
@@ -140,6 +142,7 @@ Open the extension panel (Ctrl+Shift+X) and install:
 | Meson (community, optional) | Meson build file syntax; not yet in the marketplace as of 2026-05-19 — map `.build`/`meson.build` files manually if available |
 
 Extension IDs verified against the Zed marketplace 2026-05-19:
+
 - `zed-industries/clangd` (bundled with Zed, auto-enabled for C/C++)
 - `zed-industries/shellcheck` (from Zed extensions registry)
 - CodeLLDB: install from Zed debugger extension panel

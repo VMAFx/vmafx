@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0383: K150K corpus scoring driver — parallel CPU worker redesign
 
 - **Status**: Accepted

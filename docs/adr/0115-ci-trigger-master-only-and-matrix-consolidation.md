@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0115: CI workflows trigger on `master` only; consolidate windows.yml into libvmaf.yml
 
 - **Status**: Accepted

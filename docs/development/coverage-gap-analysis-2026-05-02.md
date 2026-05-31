@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Coverage Gap Analysis — 2026-05-02 Baseline
 
 **Date:** 2026-05-02

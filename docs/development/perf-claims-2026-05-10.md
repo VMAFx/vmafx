@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD029 -->
 # Performance Claims Aggregator — May 2026
 
 This document collates performance improvements from PRs shipped in May 2026.

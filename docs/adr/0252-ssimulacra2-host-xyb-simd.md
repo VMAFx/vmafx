@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0252: ssimulacra2 Vulkan host-path AVX2 + NEON SIMD (T-GPU-OPT-VK-2)
 
 - **Status**: Accepted
@@ -34,6 +35,7 @@ assume `plane_stride = w * h`.
 ## Decision
 
 Add new SIMD entry points with an explicit `plane_stride` parameter:
+
 - `ssimulacra2_host_linear_rgb_to_xyb_avx2` / `_neon` in new TUs
   `feature/x86/ssimulacra2_host_avx2.c` and `feature/arm64/ssimulacra2_host_neon.c`.
 - `ssimulacra2_host_downsample_2x2_avx2` / `_neon` in the same TUs.
@@ -53,6 +55,7 @@ match the scalar reference in `ss2v_host_linear_rgb_to_xyb`. Tests extended in
 `memcmp`-level byte-exactness against the scalar reference.
 
 Measured wall-clock speedup on the 576×324 benchmark (micro-benchmark, x86-64):
+
 - XYB host kernel (6 scales, cbrtf-bound): **~2× scalar**.
 - Downsample kernel (5 inter-scale steps): **~3.2× scalar**.
 

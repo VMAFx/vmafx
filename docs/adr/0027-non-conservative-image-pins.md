@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0027: Non-conservative image pins with experimental toolchain flags
 
 - **Status**: Accepted

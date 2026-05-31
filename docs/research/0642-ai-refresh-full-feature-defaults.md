@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research: AI full-feature refresh defaults
 
 Companion to [ADR-0642](../adr/0642-ai-refresh-full-feature-defaults.md).

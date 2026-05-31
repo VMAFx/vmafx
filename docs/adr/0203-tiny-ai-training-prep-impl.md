@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0203: Tiny-AI training prep — implementation decisions
 
 - **Status**: Accepted

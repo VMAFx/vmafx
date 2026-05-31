@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0385: Feature-extractor deduplication by provided-feature names
 
 - **Status**: Accepted

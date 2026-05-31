@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0880: Remove unreferenced testdata debug scripts and orphan snapshot
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0681: AI Script Bootstrap Helper
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0135: dev-MCP container stage-3 EACCES diagnosis
 
 **Date**: 2026-05-16
@@ -9,7 +10,7 @@
 Build attempts 5 and 6 (logged at `/tmp/dev-mcp-build6.log`) reached stage 2
 (oneAPI install) successfully but failed at stage 3 (`libvmaf-build`) with:
 
-```
+```text
 PermissionError: [Errno 13] Permission denied: '/build/vmaf/build'
 ERROR: Unhandled python OSError. This is probably not a Meson bug, but an issue
 with your build environment.
@@ -25,7 +26,7 @@ copies file and subdirectory contents into that directory and chowns each
 transferred node — but `--chown` does **not** retroactively change the ownership
 of the destination directory itself (`/build/vmaf`). It is equivalent to:
 
-```
+```text
 mkdir -p /build/vmaf          # root:root, mode 0755
 rsync --chown=vmaf:vmaf src/ /build/vmaf/
 ```

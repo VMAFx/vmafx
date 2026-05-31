@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD029 MD060 -->
 # ADR-0358: CUDA `motion` correctness — SAD race, pinned-mem leak, and motion2/motion3 precision parity with CPU
 
 - **Status**: Accepted

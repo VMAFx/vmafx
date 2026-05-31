@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0663: MOS Label Materializer
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0513: Expose `--scene-threshold` + `--max-shot-duration`; render 1-shot timeline chart
 
 - **Status**: Accepted

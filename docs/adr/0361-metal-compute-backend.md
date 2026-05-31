@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0361: Metal compute backend — scaffold-only audit-first PR (T8-1)
 
 - **Status**: Accepted

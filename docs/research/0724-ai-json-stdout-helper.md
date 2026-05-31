@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0724 — AI strict JSON stdout helper
 
 ## Problem

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0257: MobileSal real-weights swap deferred (T6-2a-followup blocker)
 
 - **Status**: Accepted

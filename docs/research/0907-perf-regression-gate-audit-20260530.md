@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD056 MD060 -->
 # Research 0907 — Perf regression gate audit (2026-05-30)
 
 ## Question

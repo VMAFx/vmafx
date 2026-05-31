@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0446: K150K/CHUG extractor passes HDR and HFR per-feature options
 
 - **Status**: Accepted

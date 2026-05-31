@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0512: Vulkan VIF Two-Variant Compute Shader (fp32 Auto-Fallback)
 
 - **Status**: Accepted

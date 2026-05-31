@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # MS-SSIM
 
 MS-SSIM (Multi-Scale Structural Similarity Index Measure) extends SSIM to a

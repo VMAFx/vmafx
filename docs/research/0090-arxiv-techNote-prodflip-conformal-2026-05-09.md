@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0090 — arXiv tech-note draft: production-flip gates and conformal prediction for VMAF predictors
 
 - **Status**: DRAFT — preprint under preparation; not yet submitted to arXiv.
@@ -66,16 +67,16 @@ from cheap encoder-side features (quantisation parameters,
 pre-analysis statistics, low-cost pixel features). Three commercial
 analogues are documented at the time of writing:
 
-* **Synamedia / Quortex pVMAF** [1, 2] — a shallow MLP trained on a
+- **Synamedia / Quortex pVMAF** [1, 2] — a shallow MLP trained on a
   proprietary corpus; reported PLCC `0.985`, SROCC `0.988` at
   sequence level against full VMAF; CPU overhead `\approx 0.06\%`
   during a 1080p medium-preset H.264 encode. The companion
   open-source release `x264-pVMAF` [3] is GPL-2.0 licensed; weights,
   training code and evaluation splits are not published.
-* **MainConcept VMAF-E (vScore suite)** [4, 5] — claimed `\pm 2`
+- **MainConcept VMAF-E (vScore suite)** [4, 5] — claimed `\pm 2`
   VMAF accuracy at up to `10\times` the speed of full VMAF;
   closed-source.
-* **Huawei PyTorch VMAF re-implementation** [6] — a full-pipeline
+- **Huawei PyTorch VMAF re-implementation** [6] — a full-pipeline
   reproduction with `\lesssim 10^{-2}` VMAF-unit discrepancy versus
   `libvmaf`; intended for gradient-based filter optimisation, not as
   a tiny inference student. Code release deferred at the time of the
@@ -94,14 +95,14 @@ What is **missing from this published landscape** is a precise
 specification of the *deployment-time* contract that turns a trained
 predictor into a shipped artefact. In particular:
 
-* No public reference describes a two-criterion production-flip gate
+- No public reference describes a two-criterion production-flip gate
   for an *ensemble* of VMAF predictors that requires both an
   ensemble-mean correlation floor and an across-seed spread cap.
   Industry write-ups quote a single PLCC number from a fixed
   validation split (e.g. pVMAF's `0.985` sequence-level number), with
   no published methodology for *when* the model is allowed to flip
   from staging to production.
-* No public reference applies **conformal prediction** to VQA.
+- No public reference applies **conformal prediction** to VQA.
   Conformal prediction (Vovk, Gammerman, Shafer 2005 [10]; Lei et al.
   2018 [11]; Romano et al. 2019 [12]; Angelopoulos & Bates 2023 [13])
   is a distribution-free framework for turning a point prediction
@@ -175,7 +176,7 @@ exceptionally well by chance, with `\text{PLCC}_0 = 0.99` and the
 other four at `0.94`. The mean is `0.95`; the floor passes. The
 ensemble nominally ships. But:
 
-* The ensemble's predictive variance — used downstream in the fork
+- The ensemble's predictive variance — used downstream in the fork
   to feed the conformal calibrator and to drive
   `vmaf-tune --quality-confidence` — relies on the across-seed
   spread being a measure of *epistemic uncertainty over content*.
@@ -185,7 +186,7 @@ ensemble nominally ships. But:
   calibration on top of this variance is mis-specified: the
   calibration assumption (that the calibration residuals are
   exchangeable with the test residuals) silently breaks.
-* The four under-performing seeds are individually at or below the
+- The four under-performing seeds are individually at or below the
   ship floor. A user who downloads any single seed file from the
   registry and inspects it via the per-model `*.json` sidecar would
   see a number under the gate threshold, conflicting with the
@@ -239,7 +240,7 @@ A conformal predictor turns any point estimator `f : \mathcal{X} \to
 empirical `1 - \alpha` quantile of the absolute residuals. The
 **marginal coverage guarantee** is:
 
-```
+```text
 P\!\left( y_{\text{test}} \in \hat{C}(x_{\text{test}}) \right)
     \geq 1 - \alpha
 ```
@@ -259,10 +260,10 @@ The fork's conformal-VQA wrapper (PR #488, branch
 *outside* the ONNX graph as a pure-Python dependency-free module.
 It exposes two estimators:
 
-* **Split conformal** (`SplitConformalCalibration`) — Lei et al.
+- **Split conformal** (`SplitConformalCalibration`) — Lei et al.
   2018 [11] Theorem 2.2. Requires a calibration set disjoint from
   the training set. Tightest interval at the cost of one extra split.
-* **CV+ / jackknife+ conformal** (`CVPlusConformalCalibration`) —
+- **CV+ / jackknife+ conformal** (`CVPlusConformalCalibration`) —
   Barber et al. 2021 [16] Theorem 1. No held-out calibration set
   required; coverage bound is the slightly weaker `1 - 2\alpha`.
   Used when the labelled corpus is too small to spare a split.
@@ -412,12 +413,12 @@ A second consumer, PR #519
 2026-05-09), wires the conformal interval into two existing
 `vmaf-tune` surfaces:
 
-* `recommend.py` — the per-clip CRF target search short-circuits its
+- `recommend.py` — the per-clip CRF target search short-circuits its
   scan when the conformal interval at a candidate CRF is entirely
   above (or entirely below) the target VMAF, and falls back to a
   full scan when the interval straddles the target by more than
   `5.0` VMAF units.
-* `ladder.py` — the ABR ladder builder prunes adjacent rungs whose
+- `ladder.py` — the ABR ladder builder prunes adjacent rungs whose
   conformal intervals overlap by more than `0.5` of either
   interval's width, and inserts an extra mid-rung when adjacent
   intervals' gap is wider than `5.0` VMAF units.
@@ -443,7 +444,7 @@ both are available under BSD-3-Clause-Plus-Patent.
 
 ### 5.1 Limitations
 
-* **Hardware-specific performance claims**: we report no wall-clock
+- **Hardware-specific performance claims**: we report no wall-clock
   performance comparison against pVMAF, MainConcept VMAF-E, or any
   closed-source VQA predictor. The fork's predictors are tiny
   (~5 KB ONNX per ensemble seed; five seeds = `\approx 25` KB
@@ -453,26 +454,26 @@ both are available under BSD-3-Clause-Plus-Patent.
   access to the closed-source predictors' inference binaries, which
   is out of scope for this draft. The "tiny" framing is a
   parameter-count claim, not a wall-clock claim.
-* **Single corpus for the production-flip gate verdict**: the
+- **Single corpus for the production-flip gate verdict**: the
   `PROMOTE` verdict reported in §4.1 is from a single corpus
   (Netflix Public Drop, nine reference sources, two hardware
   encoders). The two-criterion gate's calibration — specifically
   the `5 \times 10^{-3}` spread cap — is hand-set; a corpus
   expansion to BVI-DVC [ADR-0310] is the next gate-stress test on
   the roadmap.
-* **Synthetic conformal-coverage probe only**: the `0.9515`
+- **Synthetic conformal-coverage probe only**: the `0.9515`
   coverage number is on a synthetic Gaussian-noise corpus, not on
   real VMAF residuals from the deep-ensemble itself. The
   end-to-end empirical-coverage check on real VMAF data is gated
   on the C-side runtime adapter that exposes per-frame ensemble
   outputs through the libvmaf API [ADR-0279 §"What remains gated"].
-* **Marginal not conditional coverage**: the conformal guarantee
+- **Marginal not conditional coverage**: the conformal guarantee
   in §3.1 is *marginal* — it averages over all test points. It
   does not guarantee `P(y \in \hat{C}(x) \mid x) \geq 1 - \alpha`
   pointwise. Conditional coverage requires localised conformal
   variants (Romano et al. 2019 [12]; Angelopoulos & Bates
   2023 [13]) which we have not yet implemented in the fork.
-* **License-asymmetry as the durable moat**: the fork is BSD;
+- **License-asymmetry as the durable moat**: the fork is BSD;
   Synamedia's open-source x264-pVMAF [3] is GPL-2.0, which means
   it cannot be linked into proprietary downstream pipelines that
   the fork's stack can. This is an *external* moat
@@ -486,22 +487,22 @@ both are available under BSD-3-Clause-Plus-Patent.
 Every cited number in this draft has a primary source on the
 `VMAFx/vmafx` repository. Specifically:
 
-* **Production-flip gate thresholds** (`0.95`, `5 \times 10^{-3}`)
+- **Production-flip gate thresholds** (`0.95`, `5 \times 10^{-3}`)
   — [ADR-0303] §Decision (commit on master).
-* **PROMOTE.json verdict** — `model/tiny/fr_regressor_v2_ensemble_v1_seed_flip_PROMOTE.json`
+- **PROMOTE.json verdict** — `model/tiny/fr_regressor_v2_ensemble_v1_seed_flip_PROMOTE.json`
   on branch `feat/fr-regressor-v2-ensemble-seeds-prod-flip`
   (PR #423, closed without merge as of 2026-05-08).
-* **Conformal-coverage probe `0.9515`** — pinned by
+- **Conformal-coverage probe `0.9515`** — pinned by
   `tools/vmaf-tune/tests/test_conformal.py::test_split_conformal_attains_nominal_coverage_on_synthetic_gaussian`
   on branch `feat/conformal-vqa-prediction` (PR #488, open as of
   2026-05-09).
-* **Conformal sidecar JSON schema** — `docs/ai/conformal-vqa.md`
+- **Conformal sidecar JSON schema** — `docs/ai/conformal-vqa.md`
   on branch `feat/conformal-vqa-prediction` (PR #488).
-* **LOSO trainer harness and validator** — [ADR-0319],
+- **LOSO trainer harness and validator** — [ADR-0319],
   [ADR-0303]; trainer at
   `ai/scripts/run_ensemble_v2_real_corpus_loso.sh`, validator at
   `ai/scripts/validate_ensemble_seeds.py` (both on master).
-* **Ensemble registry rows** — `model/tiny/registry.json`,
+- **Ensemble registry rows** — `model/tiny/registry.json`,
   `model/tiny/fr_regressor_v2_ensemble_v1_seed{0..4}.{json,onnx,onnx.data}`
   (all on master; `smoke: true` until PR #423 or a successor
   re-runs the harness and re-emits a `PROMOTE` verdict).
@@ -519,7 +520,7 @@ recipe and here is a coverage pin* — is bounded by the empirical
 basis. To turn either pattern into a stronger positional claim, we
 would need:
 
-* **For the production-flip gate**: an empirical study of the gate
+- **For the production-flip gate**: an empirical study of the gate
   behaviour as a function of the spread cap. A
   spread-cap-versus-promotion-rate curve, sampled across multiple
   corpora (Netflix Public Drop, BVI-DVC, KonViD-150k once
@@ -527,7 +528,7 @@ would need:
   matching their tolerance for a one-outlier-seed ensemble. The
   current `5 \times 10^{-3}` value is hand-set and not justified
   by a held-out calibration.
-* **For conformal-VQA**: an empirical-coverage measurement on real
+- **For conformal-VQA**: an empirical-coverage measurement on real
   VMAF residuals from the production ensemble, on a held-out source
   fold. The synthetic-Gaussian probe verifies the *implementation*;
   it does not verify the *applicability* of the calibration
@@ -691,18 +692,18 @@ re-confirmed for this draft.
 
 ## Appendix A: Process notes for reviewers
 
-* This is a DRAFT preprint. It has not been submitted to arXiv or
+- This is a DRAFT preprint. It has not been submitted to arXiv or
   any conference / journal venue.
-* The draft is intentionally Markdown-first; conversion to LaTeX
+- The draft is intentionally Markdown-first; conversion to LaTeX
   via `pandoc -s -o paper.tex --citeproc` is straightforward when
   the user opts to submit. The reference list is in order-of-appearance
   numeric-citation style for compatibility with most arXiv templates.
-* Every empirical number cited in §4 has a verifiable source on
+- Every empirical number cited in §4 has a verifiable source on
   the fork; in particular, no PLCC, SROCC, RMSE, or coverage value
   in this draft has been generated, fabricated, or estimated from
   context. Where the source is an in-flight PR rather than a
   merged-on-master artefact, the citation explicitly says so.
-* The two novelty claims are *negative-search claims*: the literature
+- The two novelty claims are *negative-search claims*: the literature
   search behind them (Research-0086, dated 2026-05-08, web-search
   bounded) found no public prior art for the precise patterns
   described. A future reader should treat each "no published prior

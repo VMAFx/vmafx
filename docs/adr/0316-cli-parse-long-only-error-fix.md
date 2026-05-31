@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0316: cli_parse — handle long-only options in `error()`
 
 - **Status**: Accepted

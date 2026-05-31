@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0370 — LIVE-VQC MOS-corpus ingestion for `nr_metric_v1`
 
 | Field | Value |
@@ -97,7 +98,7 @@ Waterloo IVC (ADR-0369):
 - Sinno, Z., Bovik, A. C., "Large-Scale Study of Perceptual Video Quality,"
   IEEE Transactions on Image Processing, 28(2), pp. 612–627, Feb. 2019.
   DOI: 10.1109/TIP.2018.2875341
-- Dataset page: https://live.ece.utexas.edu/research/LIVEVQC/
+- Dataset page: <https://live.ece.utexas.edu/research/LIVEVQC/>
 - [ADR-0325](0325-konvid-150k-corpus-ingestion.md) — KonViD-150k ingestion
 - [ADR-0366](0366-corpus-schema-v3.md) — corpus_v3 schema
 - [ADR-0367](0367-lsvq-corpus-ingestion.md) — LSVQ ingestion (template adapter)

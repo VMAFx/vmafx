@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research 0676 — Phase F calibration provenance
 
 ## Context

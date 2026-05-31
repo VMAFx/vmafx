@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0538: vmaf-tune compare ships premium-archival --target-vmafs default + bisect reaches VMAF 95+
 
 - **Status**: Accepted

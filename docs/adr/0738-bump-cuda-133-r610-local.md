@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0738: Bump local CUDA toolkit pin to 13.3 + R610 minimum driver (partial — CI deferred)
 
 - **Status**: Accepted

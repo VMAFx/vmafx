@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD038 MD060 -->
 # Research digest — LLVM IR diff harness for bit-exact SIMD paths
 
 **Date**: 2026-05-31
@@ -54,7 +55,7 @@ diffing.
 Mutated `testdata/ir-snapshots/h_pass_scalar.ll` (deleted 5 lines) and
 re-ran `make ir-diff`:
 
-```
+```text
 DRIFT    h_pass_scalar  FMAs: ref=9 cur=9
 --- snapshot/h_pass_scalar.ll
 +++ current/h_pass_scalar.ll

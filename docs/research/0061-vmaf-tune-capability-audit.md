@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0061: `vmaf-tune` capability audit — beyond Phases A/B + the fast path
 
 - **Status**: Active
@@ -210,7 +211,7 @@ what a producer can ship).
 - **Existing primitives**: libvmaf supports HDR scoring
   (PQ transfer); the encoders all have HDR flags.
 - **Effort**: **M** — HDR metadata propagation through the harness
-  + HDR-specific VMAF model selection + per-codec HDR flag plumbing.
+  HDR-specific VMAF model selection + per-codec HDR flag plumbing.
 - **Impact**: **Medium** — narrow audience (HDR producers) but the
   audience is high-value (premium content).
 - **Open**: do we re-train the proxy on HDR sources? (Suspect: yes;

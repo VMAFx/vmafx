@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0127: Vulkan compute backend — vendor-neutral GPU path alongside CUDA/SYCL/HIP
 
 - **Status**: Accepted
@@ -172,6 +173,7 @@ Acceptance criteria verified in tree at HEAD `0a8b539e`:
   sweep) shipped the async pending-fence v2 model.
 - Verification command:
   `ls core/include/libvmaf/libvmaf_vulkan.h core/src/vulkan/`.
+
 ### Status update 2026-05-09: MoltenVK validation lane added
 
 Added an advisory CI lane on `macos-latest` (Apple Silicon) that

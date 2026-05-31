@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0701: vmafx-server HTTP transport + observability foundation
 
 - **Status**: Proposed

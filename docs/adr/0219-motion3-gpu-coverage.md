@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0219: motion3 GPU coverage on Vulkan + CUDA + SYCL (3-frame window)
 
 - **Status**: Accepted

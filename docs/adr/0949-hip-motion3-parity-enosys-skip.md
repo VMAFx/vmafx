@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0949: HIP motion3 parity test skips cleanly when HIPCC kernels are not built
 
 - **Status**: Accepted
@@ -45,12 +46,12 @@ first-frame `vmaf_read_pictures` call.  A new helper
 the fork's `readability-function-size.LineThreshold=60` budget)
 distinguishes the scaffold path from any other failure:
 
-* `err == 0` — proceed to the next frame.
-* `err == -ENOSYS` — set `enosys_skip = 1`, tear down the
+- `err == 0` — proceed to the next frame.
+- `err == -ENOSYS` — set `enosys_skip = 1`, tear down the
   partially-initialised `VmafContext`, release the imported
   `VmafHipState`, emit
   `[skip: HIP kernels not built (enable_hipcc=false)]`, and pass.
-* any other negative `err` — `mu_assert` fails the test loudly
+- any other negative `err` — `mu_assert` fails the test loudly
   (real bug surfaces unchanged).
 
 The CPU baseline is unaffected and the `places=4` tolerance is

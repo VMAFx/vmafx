@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0013: Support full local dev distro matrix
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 -->
 # ADR-0313 — CI required-checks aggregator (unblock doc/Python-only PRs)
 
 | Field | Value |

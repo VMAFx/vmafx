@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0687: CHUG HDR MOS head — held-out test partition validator
 
 - **Status**: Accepted

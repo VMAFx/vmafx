@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0124: Automate enforcement of process ADRs (0100 / 0105 / 0106 / 0108)
 
 - **Status**: Accepted

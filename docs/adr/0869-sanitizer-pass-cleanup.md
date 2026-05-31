@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0869: Sanitizer-Pass Cleanup — CAMBI Option-Type Mismatch and AVX{2,512} ADM Signed-Shift UB
 
 - **Status**: Accepted

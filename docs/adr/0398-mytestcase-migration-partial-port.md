@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0398: MyTestCase upstream migration — partial port (golden-pinned files deferred)
 
 - **Status**: Accepted

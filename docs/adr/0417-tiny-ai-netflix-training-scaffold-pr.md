@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0417: Tiny-AI Netflix corpus training scaffold — draft PR registration
 
 - **Status**: Accepted

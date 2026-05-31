@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 <!--
   Copyright 2026 Lusoris
   SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
@@ -12,6 +13,7 @@
 **Device**: RTX 4090 (CC 8.9, 128 SMs), CUDA 13.3, driver R610.43.02, ncu 2026.2.0.0
 **SYCL**: not measurable in one-off containers (no `/dev/dri/by-path` passthrough)
 **Workload**:
+
 - `BigBuckBunny_25fps.yuv` (`.corpus/netflix/ref/`, 3840×2160, 8-bit yuv420p, 75 frames)
 - `BigBuckBunny_85_1080_3800.yuv` (`.corpus/netflix/dis/`, 3840×2160, 8-bit, 75 frames)
 - `vmaf_bench --resolution 3840x2160 --frames 24`, 3 runs per cell, median reported
@@ -46,6 +48,7 @@ character of every kernel.
 | adm | CUDA | 160.8 | 163.8 | +1.9% (noise) |
 
 Notes:
+
 - Optimized binary differs from baseline **only** in `adm_cm.cu` (`__launch_bounds__(128,8)`).
   The ms_ssim smem tiling from PR #79 was NOT included (per the partial-revert
   recommendation from Research-0749).
@@ -137,6 +140,7 @@ At 4K (32+ waves) the gain is masked by the large wave count filling the schedul
 regardless.
 
 **Recommendation**: The `__launch_bounds__` change is worth shipping because:
+
 1. 1080p is the most common deployment resolution for real-time QA pipelines.
 2. It is bit-exact (correctness confirmed at all resolutions).
 3. It costs nothing at 4K (zero regression).

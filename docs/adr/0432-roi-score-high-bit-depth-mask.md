@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0432: High-Bit-Depth ROI-Score Mask Materialisation
 
 - **Status**: Accepted

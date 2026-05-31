@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD029 -->
 # ADR-0165: Tracked `docs/state.md` for bug-status hygiene (T7-1)
 
 - **Status**: Accepted
@@ -89,6 +90,7 @@ slot in the hard-rules block):
 ## Consequences
 
 **Positive:**
+
 - One canonical place for "what bugs are still real?"
 - Cross-linkable: ADRs and PR descriptions can link to specific
   rows in `docs/state.md` for grounding.
@@ -96,6 +98,7 @@ slot in the hard-rules block):
 - Survives session resets and fresh clones.
 
 **Negative:**
+
 - Yet another rule to remember. Mitigated by binding it to PR-merge
   events (the same moment Conventional Commit + ADR rules already
   fire). The PR template ([.github/PULL_REQUEST_TEMPLATE.md](../../.github/PULL_REQUEST_TEMPLATE.md))

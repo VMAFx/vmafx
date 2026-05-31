@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0095 — ATOM_FEATURES port (3dee9666 + 7209110e) blocker
 
 **Date:** 2026-05-10
@@ -77,7 +78,7 @@ regress ADM scoring perf?), and its own GPU-backend update sweep.
 ## References
 
 - Upstream commits: `3dee9666`, `7209110e` on
-  https://github.com/Netflix/vmaf master.
+  <https://github.com/Netflix/vmaf> master.
 - Fork-local PRs that touch the same surface and must be preserved on
   any future port attempt:
   - PR #715 (VERSION 0.2.7 → 0.2.21)

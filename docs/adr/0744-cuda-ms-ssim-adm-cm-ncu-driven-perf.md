@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD050 MD060 -->
 # ADR-0744: CUDA adm_cm `__launch_bounds__(128, 8)` register reduction (ms_ssim_decimate smem tiling reverted)
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0444: Promote `saliency_student_v2` to production default
 
 - **Status**: Accepted

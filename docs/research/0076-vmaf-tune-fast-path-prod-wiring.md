@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0076: `vmaf-tune fast` — production wiring
 
 - **Date**: 2026-05-05

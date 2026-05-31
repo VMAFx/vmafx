@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0046 — `vmaf_tiny_v3` mlp_medium evaluation vs v2 mlp_small
 
 - **Status**: Active
@@ -18,21 +19,21 @@ PR #255) was the last open question on the v2 → v3 path.
 
 ## Methodology
 
-* **Training data**: `runs/full_features_4corpus.parquet` — 330 499
+- **Training data**: `runs/full_features_4corpus.parquet` — 330 499
   per-frame rows, Netflix Public + KoNViD-1k + BVI-DVC A+B+C+D.
   Identical to v2.
-* **Features**: canonical-6 — `(adm2, vif_scale0, vif_scale1,
+- **Features**: canonical-6 — `(adm2, vif_scale0, vif_scale1,
   vif_scale2, vif_scale3, motion2)`. Identical to v2.
-* **Preprocessing**: corpus-wide StandardScaler. Fit on full corpus
+- **Preprocessing**: corpus-wide StandardScaler. Fit on full corpus
   for the production export; fit per-fold (8 of 9 sources) for the
   LOSO eval. Identical to v2.
-* **Optimiser**: Adam @ lr=1e-3, MSE loss, 90 epochs, batch_size
+- **Optimiser**: Adam @ lr=1e-3, MSE loss, 90 epochs, batch_size
   256, seed=0. Identical to v2 ship recipe.
-* **Architecture (only thing that changes)**:
-  * v2 `mlp_small`  — `Linear(6, 16) → ReLU → Linear(16, 8) → ReLU → Linear(8, 1)`,  257 params.
-  * v3 `mlp_medium` — `Linear(6, 32) → ReLU → Linear(32, 16) → ReLU → Linear(16, 1)`, 769 params.
+- **Architecture (only thing that changes)**:
+  v2 `mlp_small`  — `Linear(6, 16) → ReLU → Linear(16, 8) → ReLU → Linear(8, 1)`,  257 params.
+  v3 `mlp_medium` — `Linear(6, 32) → ReLU → Linear(32, 16) → ReLU → Linear(16, 1)`, 769 params.
 
-* **LOSO methodology**: for each of the 9 Netflix sources, train
+- **LOSO methodology**: for each of the 9 Netflix sources, train
   from scratch on the union of the other 8 (with StandardScaler fit
   on those 8) and evaluate PLCC / SROCC / RMSE on the held-out
   source. Single-seed (seed=0); v2's published 0.9978 ± 0.0021 was

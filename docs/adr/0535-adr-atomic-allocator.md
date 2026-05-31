@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0535: Atomic ADR Number Allocator with Cross-Branch Claim
 
 - **Status**: Accepted

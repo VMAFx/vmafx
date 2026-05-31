@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0097: `vmaf_thread_pool_create` — unchecked `pthread_create` and racy `n_threads` read in `destroy`
 
 **Date**: 2026-05-10
@@ -50,6 +51,7 @@ time. The extend touched these lines and inherited the latent defects.
 ## Fix
 
 **Bug 1**: Check the return value of `pthread_create`. On failure:
+
 - If zero threads started (`i == 0`): tear down primitives and return `-rc`
   to the caller (propagates `EAGAIN` / `EPERM`).
 - If at least one thread started: set `p->n_threads = i` and

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # CLAUDE.md — VMAF Fork (Lusoris)
 
 > **CORRECT REPO: `VMAFx/vmafx` (active) — NOT `lusoris/vmaf` (archived)**
@@ -84,7 +85,7 @@ Skills: `/format-all`, `/lint-all`.
 
 ## 5. Where the code is
 
-```
+```text
 core/                         # C library + build root (was libvmaf/, ADR-0700)
   src/                        # C sources (metric engine, feature extractors)
     feature/                  # per-feature CPU implementations

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0436: MCP server backend-selector parity
 
 - **Status**: Accepted

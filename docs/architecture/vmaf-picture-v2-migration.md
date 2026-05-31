@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # `VmafPicture` v2 — consumer migration guide
 
 > **Status:** Design + scaffold only. v2 is declared in

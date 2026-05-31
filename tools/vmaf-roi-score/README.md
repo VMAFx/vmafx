@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # vmaf-roi-score (Option C)
 
 Region-of-interest VMAF *scoring* for the lusoris vmaf fork.

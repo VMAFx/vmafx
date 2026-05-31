@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0098: Round-9 endianness audit — 10-bit YUV read path on big-endian hosts
 
 **Date**: 2026-05-10
@@ -14,6 +15,7 @@ would produce byte-swapped pixel values without any byte-swap correction,
 yielding silently wrong VMAF scores.
 
 The same pattern appears in:
+
 - `core/tools/vmaf.c` (HBD branch in `video_open_yuv` and `video_open_y4m`)
 - `core/src/dnn/tensor_io.h` (documented as "little-endian per pixel" at line 73)
 - `core/src/feature/hip/float_psnr/float_psnr_score.hip` (comment line 95)

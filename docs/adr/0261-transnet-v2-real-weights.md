@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0261: TransNet V2 shot-boundary detector — real upstream weights via NTCHW adapter (T6-3a-followup)
 
 - **Status**: Accepted

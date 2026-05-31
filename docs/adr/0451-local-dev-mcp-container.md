@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0451: Local dev-MCP container for live probing
 
 - **Status**: Accepted
@@ -48,7 +49,7 @@ The container installs all four GPU SDKs:
 
 libvmaf is built from the in-tree source with:
 
-```
+```text
 -Denable_cuda=true -Denable_sycl=true -Denable_vulkan=enabled
 -Denable_hip=true -Denable_hipcc=true -Denable_metal=auto
 -Denable_dnn=enabled -Denable_mcp=true -Denable_mcp_stdio=true

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0414: Saliency-aware ROI for x265 / SVT-AV1 / libvvenc adapters
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0193: motion_v2 Vulkan kernel — single-dispatch SAD via convolution linearity
 
 - **Status**: Accepted
@@ -21,7 +22,7 @@ Stateless variant of `integer_motion`: instead of storing blurred
 ref frames between `extract` calls, it exploits convolution
 linearity:
 
-```
+```text
 SAD(blur(prev), blur(cur)) == sum(|blur(prev - cur)|)
 ```
 

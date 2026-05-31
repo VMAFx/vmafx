@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0455: KonViD-150k k150ka/k150kb split promotion into the MOS-head trainer
 
 - **Status**: Accepted
@@ -44,7 +45,7 @@ Extend `_normalise_split()` in `train_konvid_mos_head.py` with a
 translation table that maps the K150K identifiers to the trainer
 vocabulary before the canonical acceptor runs:
 
-```
+```text
 "k150ka" → "train"
 "k150kb" → "val"
 ```

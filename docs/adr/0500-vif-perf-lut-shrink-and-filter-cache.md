@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0500: VIF log2 LUT Shrink and Gaussian Filter Cache
 
 - **Status**: Accepted

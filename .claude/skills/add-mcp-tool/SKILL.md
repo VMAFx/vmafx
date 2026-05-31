@@ -3,6 +3,8 @@ name: add-mcp-tool
 description: Scaffold a new VMAFX MCP tool handler with byte-compatible Go (cmd/vmafx-mcp) and Python (mcp-server/vmaf-mcp) implementations, registration, smoke tests, and docs/mcp/ page. Companion to /add-gpu-backend and /add-feature-extractor for the MCP surface.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /add-mcp-tool
 
 Adds a new MCP tool to **both** the Go server (`cmd/vmafx-mcp`) and the Python
@@ -25,7 +27,7 @@ without re-configuration.
 
 ## Invocation
 
-```
+```text
 /add-mcp-tool <name>
 ```
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0492: Promote Vulkan VIF g/sv_sq Computation to double Precision
 
 - **Status**: Superseded by [ADR-0512](0512-vulkan-vif-two-variant-shader.md)

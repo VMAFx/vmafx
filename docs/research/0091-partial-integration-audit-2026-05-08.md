@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0091: Partial-integration audit — features the AI can't learn from yet
 
 - **Status:** Draft

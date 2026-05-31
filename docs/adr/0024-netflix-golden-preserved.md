@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0024: Preserve Netflix source-of-truth tests verbatim
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0902: Signing and attestation audit — close residual gaps (2026-05-30)
 
 - **Status**: Accepted

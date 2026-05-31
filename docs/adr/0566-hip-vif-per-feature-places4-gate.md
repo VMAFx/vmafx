@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0566 — HIP VIF per-feature parity gate: places=4 (supersedes ADR-0537 §follow-up)
 
 | Field | Value |
@@ -28,7 +29,7 @@ The VMAF v0.6.1 SVM model (`model/vmaf_v0.6.1.json`) uses VIF per-scale
 coefficients extracted from the SVM support vectors. The effective amplification
 factor from per-feature delta to VMAF-score delta is:
 
-```
+```text
 VMAF-score delta ≈ sum_over_scales(coeff_s × per-feature-delta_s)
 ```
 
@@ -43,7 +44,7 @@ With VIF scale coefficients in the range 1.2–2.1 and four scales (0–3):
 
 Worst-case VMAF-score delta (all scales at max coefficient × max per-feature delta):
 
-```
+```text
 Δ_VMAF = 1.2×0.014 + 1.5×0.014 + 1.8×0.014 + 2.1×0.014
         = 0.014 × (1.2 + 1.5 + 1.8 + 2.1)
         = 0.014 × 6.6

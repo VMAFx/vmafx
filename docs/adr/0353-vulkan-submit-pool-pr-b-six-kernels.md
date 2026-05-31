@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0353: Vulkan submit-pool migration PR-B — six secondary kernels
 
 - **Status**: Accepted

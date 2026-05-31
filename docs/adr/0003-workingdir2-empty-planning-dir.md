@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0003: Introduce .workingdir2 as new planning directory
 
 - **Status**: Accepted

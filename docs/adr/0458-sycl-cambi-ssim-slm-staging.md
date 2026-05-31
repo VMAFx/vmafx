@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0458: SYCL CAMBI queue-sync collapse + SSIM horizontal SLM staging
 
 - **Status**: Accepted

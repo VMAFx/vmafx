@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0002: Automating process-ADR enforcement
 
 - **Status**: Active

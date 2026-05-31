@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0093: Vulkan GCC 16 `-Wreturn-mismatch` build-break root-cause
 
 **Date**: 2026-05-10

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0290: NVENC codec adapters for `vmaf-tune` (h264 / hevc / av1)
 
 - **Status**: Accepted

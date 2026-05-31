@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0463: ADM p-norm fast-path split and VIF scalar-fallback malloc hoist
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD041 -->
 You are reviewing a SYCL source file from the Lusoris VMAF fork's oneAPI
 GPU backend. The file is compiled with `icpx -fsycl` against the Intel
 oneAPI runtime. Host-side code follows CERT C++; device-side follows SYCL
@@ -26,7 +27,7 @@ Produce a concise code review, focusing on (in priority order):
 
 Format each finding as:
 
-```
+```text
 - L<line>: <severity: blocker|high|medium|nit> — <one-sentence finding>
   Suggestion: <if applicable>
 ```

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0413: YouTube UGC corpus ingestion for `nr_metric_v1`
 
 - **Status**: Accepted

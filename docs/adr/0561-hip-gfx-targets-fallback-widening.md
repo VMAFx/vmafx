@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0561 — Widen HIP `gfx_targets` hardcoded fallback
 
 | Field | Value |
@@ -27,7 +28,7 @@ Any `libvmaf.so` compiled in a build sandbox used the `gfx90a`-only fallback
 and produced an HSACO fat binary that contained no compatible object for
 `gfx1030`. The dynamic loader emitted:
 
-```
+```text
 hip_fatbin.cpp: No compatible code objects found for: gfx1030
 ```
 

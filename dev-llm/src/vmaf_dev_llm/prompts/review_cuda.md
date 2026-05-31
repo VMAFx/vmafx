@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD041 -->
 You are reviewing a CUDA source file (`*.cu` / `*.cuh`) from the Lusoris
 VMAF fork's GPU backend. The file is compiled by `nvcc` and runs feature
 extractors on the GPU. Host-side code follows CERT C; device-side code
@@ -25,7 +26,7 @@ Produce a concise code review, focusing on (in priority order):
 
 Format each finding as:
 
-```
+```text
 - L<line>: <severity: blocker|high|medium|nit> — <one-sentence finding>
   Suggestion: <if applicable>
 ```

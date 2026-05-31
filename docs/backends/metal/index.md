@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD029 -->
 # Metal (Apple Silicon) compute backend
 
 > **Status: runtime + first and second kernel batches.** The Metal

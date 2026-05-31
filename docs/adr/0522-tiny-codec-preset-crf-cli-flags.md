@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0522: `--tiny-codec` / `--tiny-preset` / `--tiny-crf` populate codec one-hot block
 
 - **Status**: Accepted

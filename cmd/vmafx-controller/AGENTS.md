@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # AGENTS.md — cmd/vmafx-controller
 
 Go controller service for the VMAFX distributed platform (ADR-0711, ADR-0709).

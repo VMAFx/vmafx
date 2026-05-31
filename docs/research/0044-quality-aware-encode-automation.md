@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0044: Quality-aware encode automation (`vmaf-tune`) — option-space digest
 
 - **Date**: 2026-05-02
@@ -11,7 +12,8 @@
 The fork has every quality input a per-title, per-shot, codec-aware
 encode optimiser would need (VMAF + 8 supporting metrics + tiny-AI
 fusion regressor + saliency + shot detection + per-shot CRF predictor
-+ FFmpeg patches + codec-aware vocabulary). What's the smallest tool
+
+- FFmpeg patches + codec-aware vocabulary). What's the smallest tool
 that closes the loop — drives FFmpeg, captures bitrate + quality,
 recommends parameters — without locking the design to one codec, one
 search strategy, or one quality target?

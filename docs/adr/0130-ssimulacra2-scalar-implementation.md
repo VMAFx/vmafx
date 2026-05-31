@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0130: SSIMULACRA 2 scalar implementation
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0694: Tighten clang-tidy enforcement + confirm sanitizers as required CI gates
 
 - **Status**: Accepted

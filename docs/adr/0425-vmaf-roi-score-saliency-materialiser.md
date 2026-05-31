@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0425: vmaf-roi-score saliency materialiser
 
 - **Status**: Accepted

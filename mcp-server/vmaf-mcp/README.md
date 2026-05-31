@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # vmaf-mcp
 
 MCP (Model Context Protocol) server that exposes the Lusoris VMAF fork's

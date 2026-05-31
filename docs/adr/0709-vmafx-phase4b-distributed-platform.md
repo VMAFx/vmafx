@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0709: VMAFX Phase 4b — Distributed Video-Quality, Encoding, and ML Platform
 
 - **Status**: Proposed
@@ -200,6 +201,7 @@ This ADR does NOT cover:
 ## Consequences
 
 **Positive:**
+
 - Horizontal scaling: add `vmafx-node` pods to process more jobs in parallel.
 - k8s-native deployment: CRDs, RBAC, HPA, Helm chart — standard operator pattern.
 - GPU-vendor-agnostic pools: controller dispatches to NVIDIA / AMD / Intel nodes by
@@ -212,6 +214,7 @@ This ADR does NOT cover:
   frozen for downstream compatibility reasons.
 
 **Negative:**
+
 - Significant engineering effort: controller, node, and operator are three new Go
   binaries with distinct responsibilities.
 - ffmpeg-patches series must be updated when the C ABI break lands (Phase 4b.8);
@@ -224,6 +227,7 @@ This ADR does NOT cover:
   be validated against distroless image constraints.
 
 **Neutral / follow-ups:**
+
 - The in-flight Phase 4a agents (vmafx-server, vmafx-mcp, vmafx-tune, vmafx-sys Rust
   bindings, C++23 internals) finish before Phase 4b sweeps start. Each completed agent
   output becomes an input dependency for the corresponding Phase 4b phase.
@@ -237,6 +241,7 @@ This ADR does NOT cover:
 ## References
 
 **Parent ADRs:**
+
 - [ADR-0686](0686-vmafx-rebrand-aggressive-modernization.md) — VMAFX rebrand and
   aggressive modernization umbrella (Phase 1 + 2).
 - [ADR-0701](0701-vmafx-cloud-native-redesign.md) — VMAFX cloud-native redesign
@@ -247,6 +252,7 @@ This ADR does NOT cover:
 - [ADR-0706](0706-vmafx-rust-sys-bindings.md) — Rust `vmafx-sys` FFI crate (Phase 4a).
 
 **Memory files consulted:**
+
 - `project_vmafx_phase4b_distributed_platform.md` — locked Phase 4b decisions, popup
   answers verbatim, in-flight agent status.
 - `project_vmafx_k8s_cloud_native.md` — Phase 3 cloud-native redesign decisions.
@@ -254,6 +260,7 @@ This ADR does NOT cover:
 - `project_vmafx_rebrand_plan.md` — Phase 1+2 rebrand plan.
 
 **Verbatim user popup answers (req):**
+
 - `req` — "of course this has to be fully connected to a ffmpeg worker as well (latest
   of course)... and I think it was (thanks lawrence) that we should use rclone for using
   files without copying to disk/ram first? and if possible do ebpf optimizations..."

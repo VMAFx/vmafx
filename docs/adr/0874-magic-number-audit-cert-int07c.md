@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0874: Name magic numbers in fork-added C surfaces (CERT INT07-C closeout pass 1)
 
 - **Status**: Accepted

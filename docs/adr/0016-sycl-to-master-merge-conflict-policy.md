@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0016: Sycl to master merge conflict resolution policy
 
 - **Status**: Accepted

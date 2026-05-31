@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0543: ADR-0498 enforcement hardening — distinct exit code + structured JSON error + per-feature gate
 
 - **Status**: Accepted

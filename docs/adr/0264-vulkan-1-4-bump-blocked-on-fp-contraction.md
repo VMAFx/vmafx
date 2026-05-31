@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0264: Vulkan 1.4 API-version bump blocked on shader FP-contraction audit
 
 - **Status**: Accepted

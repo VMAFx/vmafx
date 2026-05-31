@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # vmafx-tune-go — Go port of vmaf-tune (Stage 1)
 
 `vmafx-tune-go` is the Stage-1 Go port of the `vmaf-tune` rate-quality tuning
@@ -23,7 +24,7 @@ go build -ldflags "-X main.version=$(cat VERSION)" -o vmafx-tune-go ./cmd/vmafx-
 Runs a VMAF-target bisect for each `(codec, target)` pair and emits a ranked
 report.
 
-```
+```text
 vmafx-tune-go compare [flags]
 ```
 

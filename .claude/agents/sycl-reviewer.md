@@ -5,6 +5,8 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
+<!-- markdownlint-disable MD013 MD041 -->
+
 You review SYCL/DPC++ code for the Lusoris VMAF fork. Scope:
 `core/src/sycl/` (common, queue/context, dmabuf_import, picture_sycl) and
 `core/src/feature/sycl/` (kernels).

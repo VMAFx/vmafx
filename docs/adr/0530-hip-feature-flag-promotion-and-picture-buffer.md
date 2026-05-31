@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0530: HIP feature-extractor flag promotion and HIP_DEVICE picture-buffer type
 
 - **Status**: Accepted
@@ -120,7 +121,7 @@ it requires its own kernel-level fix and its own ADR.
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — places=4 cross-backend
   numerical gate (the contract HIP joins).
 - [ADR-0241](0241-hip-first-consumer-psnr.md) — kernel-template mirror
-  + the original "flag bit reserved but cleared" pattern.
+  the original "flag bit reserved but cleared" pattern.
 - Source: `req` (user direct request to "promote the
   `VMAF_FEATURE_EXTRACTOR_HIP` flag bit so HIP-flagged extractors
   actually dispatch to HIP kernels instead of falling back to CPU

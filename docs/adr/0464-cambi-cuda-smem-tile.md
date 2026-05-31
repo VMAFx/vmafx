@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0464: CAMBI CUDA spatial-mask shared-memory tile
 
 - **Status**: Accepted

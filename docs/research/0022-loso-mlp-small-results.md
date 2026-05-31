@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research Digest 0022 — LOSO results for `mlp_small` on the Netflix corpus
 
 **Date**: 2026-04-28
@@ -13,18 +14,18 @@ Research Digest 0019 (Netflix corpus methodology).
 
 ## 1. Setup
 
-* Corpus: `.workingdir2/netflix/{ref,dis}/`, 9 reference YUVs, 70
+- Corpus: `.workingdir2/netflix/{ref,dis}/`, 9 reference YUVs, 70
   distortion variants per source where complete (some sources have
   fewer; `(n)` columns below).
-* Teacher: `vmaf_v0.6.1` per-frame scores via the libvmaf CLI in
+- Teacher: `vmaf_v0.6.1` per-frame scores via the libvmaf CLI in
   `core/build/tools/vmaf`.
-* Architecture: `mlp_small` (257 params) — see ADR-0203.
-* Training: 30 epochs per fold, default optimizer / lr / seed. Each
+- Architecture: `mlp_small` (257 params) — see ADR-0203.
+- Training: 30 epochs per fold, default optimizer / lr / seed. Each
   fold trains on the 8 non-held-out sources and is scored on the
   held-out 9th.
-* Evaluation harness:
+- Evaluation harness:
   [`ai/scripts/eval_loso_mlp_small.py`](../../ai/scripts/eval_loso_mlp_small.py).
-* Hardware: Ryzen 7950X / 4090 / 64 GB. Total wall time ≈ 55 min for
+- Hardware: Ryzen 7950X / 4090 / 64 GB. Total wall time ≈ 55 min for
   the 9-fold sweep on a populated feature cache; ≈ 5 s for the eval
   pass on cached features.
 
@@ -89,7 +90,8 @@ Two findings worth surfacing:
 concat PLCC (0.93–0.95).** Each LOSO fold trains on 8 sources and is
 scored on the 9th, so the per-fold model has actually seen
 *similar* clips in training; the baselines, trained on 8 sources
-+ Tennis-as-val, then evaluated across all 9 clips, see a wider
+
+- Tennis-as-val, then evaluated across all 9 clips, see a wider
 mismatch in the score-axis distribution between training-time and
 eval-time. The LOSO mean is the better number to quote when asked
 "how good is `mlp_small` on a new clip from this distribution?".
@@ -110,10 +112,10 @@ this concat-axis effect.
 
 ## 5. Implications
 
-* `vmaf_tiny_v1.onnx` (mlp_small @ val=Tennis) remains the shipped
+- `vmaf_tiny_v1.onnx` (mlp_small @ val=Tennis) remains the shipped
   default tiny model. Its per-clip PLCC > 0.98 across all 9 sources
   is a strong real-world signal.
-* The `mlp_medium` variant (`vmaf_tiny_v1_medium.onnx`) wins on
+- The `mlp_medium` variant (`vmaf_tiny_v1_medium.onnx`) wins on
   absolute fit (RMSE 8.4 vs 14.8) but loses on ranking (PLCC 0.948
   vs 0.936); consistent with mlp_small being the better ranking
   model and mlp_medium being the better calibration model. Users
@@ -121,9 +123,9 @@ this concat-axis effect.
   distribution can opt into the medium variant; users who care
   about pair-ranking (the canonical VMAF use case) keep the small
   variant.
-* The LOSO mean PLCC of 0.98 is the number to quote in
+- The LOSO mean PLCC of 0.98 is the number to quote in
   `docs/ai/training.md` when describing tiny-AI generalization.
-* The FoxBird outlier (per-fold PLCC 0.93) suggests the corpus is
+- The FoxBird outlier (per-fold PLCC 0.93) suggests the corpus is
   small enough that single-source representation matters; future
   work on a larger corpus (T6-1a Netflix Public Dataset) is the
   proper path to reduce per-fold variance.
@@ -154,11 +156,11 @@ cat runs/loso_eval/loso_mlp_small_eval.md
 
 ## 7. Known artefacts
 
-* `model/tiny/vmaf_tiny_v1*.onnx` baselines reference their
+- `model/tiny/vmaf_tiny_v1*.onnx` baselines reference their
   pre-rename external-data filenames; the harness works around this
   in `_load_session`. Follow-up: re-export the baselines with
   matching `external_data.location`. Tracked in the LOSO PR's
   CHANGELOG row.
-* The previous chat session that drove this run hit a context-limit
+- The previous chat session that drove this run hit a context-limit
   reset before the eval was packaged; the rerun used the same fold
   outputs (regenerated from the trainer) so numbers are stable.

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0644: Add vmaf-tune codec runtime variants
 
 - **Status**: Accepted

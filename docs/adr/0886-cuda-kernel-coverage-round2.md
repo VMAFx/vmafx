@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0886: CUDA kernel parity test coverage — round 2 gap-fill
 
 - **Status**: Accepted

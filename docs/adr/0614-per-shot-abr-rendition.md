@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0614: Per-Shot ABR Rendition Selection
 
 - **Status**: Proposed

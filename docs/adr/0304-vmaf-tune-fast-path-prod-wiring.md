@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0304: `vmaf-tune fast` — production wiring (Optuna TPE + v2 proxy + GPU verify)
 
 - **Status**: Accepted

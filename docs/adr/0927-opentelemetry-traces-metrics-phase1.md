@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0927: OpenTelemetry traces + metrics — Phase 1 pilot in vmafx-controller
 
 - **Status**: Accepted

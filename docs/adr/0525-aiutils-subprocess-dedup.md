@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0525: Extract `run_cmd` subprocess helper into `aiutils`
 
 - **Status**: Accepted

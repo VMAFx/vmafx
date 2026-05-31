@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0948: Feature-extractor coverage round 3 — targeted unit tests for low-coverage files
 
 - **Status**: Accepted
@@ -45,7 +46,7 @@ Add three focused test binaries under `core/test/`:
    index reject, `vmaf_feature_collector_init(NULL)`,
    `vmaf_feature_collector_append` NULL guards + duplicate-index
    propagation, `vmaf_feature_collector_unmount_model` NULL inputs
-   + not-found path, `set/get_aggregate` round-trip, and `destroy(NULL)`.
+   ot-found path, `set/get_aggregate` round-trip, and `destroy(NULL)`.
 
 All three binaries link against the existing `libvmaf` static target —
 no new build-system surface, no symbol changes to production code, no

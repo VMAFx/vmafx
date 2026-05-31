@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0616: VMAF NEG Integration into vmaf-tune
 
 - **Status**: Proposed

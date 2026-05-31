@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0652: Add CHUG Visual-Signal Primitives
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Observability — VMAFX Go services
 
 This page is the operator guide for telemetry emitted by the VMAFX Go

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0624: Fast NR Pre-Scoring Implementation (ADR-0615 impl)
 
 - **Status**: Accepted (Implemented)

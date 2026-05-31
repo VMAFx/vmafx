@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0459: vmaf-tune panel/display-aware recommendation workstream
 
 - **Status**: Proposed

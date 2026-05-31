@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Dependency-update bot — operator playbook
 
 The fork uses **Mend Renovate** as a [GitHub App][app], not self-hosted.

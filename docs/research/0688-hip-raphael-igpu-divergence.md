@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0688: HIP AMD Raphael iGPU divergence — carry-loss in int64 wavefront reduction
 
 **Date**: 2026-05-28
@@ -60,7 +61,7 @@ Fix: replace `MS_WARP_SIZE` with runtime `warpSize`.  After this fix, motion del
 After the warpSize fix, VIF scales were still near zero.  Debugging via a
 temporary `fprintf(stderr, ...)` in `write_scores_hip()` dumped the raw accumulator:
 
-```
+```text
 [HIP-VIF-DEBUG frame=0] x = -776495728965065  (expected ~-1586633)
 ```
 
@@ -87,6 +88,7 @@ return (int64_t)((uint64_t)lo | ((uint64_t)hi << 32));
 ```
 
 For a single warp where all 32 lanes carry `x = -2`:
+
 - `lo = 0xFFFFFFFE`, `hi = 0xFFFFFFFF`
 - After XOR-tree: `lo_sum = (32 × 0xFFFFFFFE) mod 2^32`
 

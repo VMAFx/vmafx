@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # `vmaf-tune ladder` — uncertainty-aware ABR ladder construction
 
 `vmaf-tune ladder` builds a per-title bitrate ladder by sampling the
@@ -24,11 +25,11 @@ A point-estimate ladder treats every rung's VMAF as exact. In
 practice the predictor's intervals carry information that bears
 directly on rung selection:
 
-* **Adjacent rungs whose intervals overlap a lot** — the predictor
+- **Adjacent rungs whose intervals overlap a lot** — the predictor
   cannot statistically distinguish them. Shipping both adds no
   quality information; ship the higher-quality rung and drop the
   lower-bitrate one.
-* **Adjacent rungs whose averaged interval width is in the
+- **Adjacent rungs whose averaged interval width is in the
   WIDE band** — the predictor cannot localise even the rung. Insert
   a synthetic mid-rung; this is the highest-information-per-encode
   use of the budget because the operator empirically does not know
@@ -80,16 +81,16 @@ Walks the rungs in ascending-bitrate order. For each adjacent pair
 averaged width is `>= wide_interval_min_width`, inserts a synthetic
 rung at:
 
-* **Bitrate** — geometric midpoint of `(a.bitrate, b.bitrate)`. The
+- **Bitrate** — geometric midpoint of `(a.bitrate, b.bitrate)`. The
   geometric mean matches the log-bitrate spacing convention used by
   HLS authoring (see
   [`select_knees`](../api/ladder.md) `spacing="log_bitrate"`).
-* **VMAF** — arithmetic midpoint of `(a.vmaf, b.vmaf)`.
-* **Interval** — union of the parent intervals
+- **VMAF** — arithmetic midpoint of `(a.vmaf, b.vmaf)`.
+- **Interval** — union of the parent intervals
   (`min(a.low, b.low), max(a.high, b.high)`). Conservative on
   purpose: subsequent encodes refine it.
-* **CRF** — rounded average of the parent CRFs.
-* **Resolution** — inherited from the higher-quality parent.
+- **CRF** — rounded average of the parent CRFs.
+- **Resolution** — inherited from the higher-quality parent.
 
 ### `apply_uncertainty_recipe`
 
@@ -184,20 +185,20 @@ Per the [`feedback_no_test_weakening`](../../CLAUDE.md) project rule,
 the uncertainty-aware recipe affects **which rungs the ladder
 builder evaluates**. It does **not** change:
 
-* The Netflix golden-data assertions
+- The Netflix golden-data assertions
   ([§8 of CLAUDE.md](../../CLAUDE.md#8-netflix-golden-data-gate-do-not-modify)).
-* The convex-hull invariant
+- The convex-hull invariant
   ([`convex_hull`](../api/ladder.md) is unchanged).
-* The knee-selection invariant
+- The knee-selection invariant
   ([`select_knees`](../api/ladder.md) is unchanged).
-* The HLS / DASH / JSON manifest schema
+- The HLS / DASH / JSON manifest schema
   ([`emit_manifest`](../api/ladder.md) is unchanged).
 
 ## See also
 
-* [`docs/ai/conformal-vqa.md`](../ai/conformal-vqa.md) — the
+- [`docs/ai/conformal-vqa.md`](../ai/conformal-vqa.md) — the
   underlying conformal-prediction surface (PR #488 / ADR-0279).
-* [`docs/usage/vmaf-tune-recommend.md`](vmaf-tune-recommend.md) —
+- [`docs/usage/vmaf-tune-recommend.md`](vmaf-tune-recommend.md) —
   the per-clip CRF-search consumer of the same intervals.
-* [`docs/research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md`](../research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md)
+- [`docs/research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md`](../research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md)
   — provenance of the threshold defaults.

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research — pre-existing test failures across ai/, tools/vmaf-tune/, mcp-server/
 
 **Date:** 2026-05-30
@@ -23,25 +24,25 @@ Total: 27 distinct failing assertions across 12 test files in 3 packages, all fi
 
 Three test files erred at collection time:
 
-* `ai/tests/test_dnn_exporter_run_provenance.py`
-* `ai/tests/test_export_roundtrip.py`
-* `ai/tests/test_registry.py`
+- `ai/tests/test_dnn_exporter_run_provenance.py`
+- `ai/tests/test_export_roundtrip.py`
+- `ai/tests/test_registry.py`
 
 Six additional files failed at runtime when individual tests imported
 `vmaf_train.models` (which pulls `pytorch_lightning`):
 
-* `ai/tests/test_codec_aware_fr.py` (6 tests)
-* `ai/tests/test_qat_smoke.py` (2)
-* `ai/tests/test_train_fr_regressor_v2_ensemble_loso_train.py` (3)
-* `ai/tests/test_train_fr_regressor_v3.py` (2)
-* `ai/tests/test_tune_cli.py` (1)
-* `ai/tests/test_variance_mode.py` (5)
+- `ai/tests/test_codec_aware_fr.py` (6 tests)
+- `ai/tests/test_qat_smoke.py` (2)
+- `ai/tests/test_train_fr_regressor_v2_ensemble_loso_train.py` (3)
+- `ai/tests/test_train_fr_regressor_v3.py` (2)
+- `ai/tests/test_tune_cli.py` (1)
+- `ai/tests/test_variance_mode.py` (5)
 
 ### Diagnostic chain
 
 `import pytorch_lightning` triggers the following eager import cascade:
 
-```
+```text
 pytorch_lightning.callbacks
   -> pytorch_lightning.callbacks.callback
     -> pytorch_lightning.utilities.types
@@ -61,8 +62,8 @@ because the compiled `torchvision._C` extension was built against a
 different torch ABI than the one currently loaded. Concretely on this
 dev machine:
 
-* `torch-2.12.0+cu130`
-* `torchvision-0.26.0` (built against torch 2.10/2.11 ABI)
+- `torch-2.12.0+cu130`
+- `torchvision-0.26.0` (built against torch 2.10/2.11 ABI)
 
 The matched pair for torch 2.12.0 is **`torchvision-0.27.0`** (per PyPI
 `requires_dist` for the 0.27.0 release).
@@ -98,7 +99,7 @@ pytest ai/tests/  # before: 19 failed + 3 collection errors
 The skip reason surfaces the actual error string so the operator knows
 exactly what to fix:
 
-```
+```text
 SKIPPED [9] ai/tests/conftest.py:80: pytorch_lightning unavailable:
             RuntimeError: operator torchvision::nms does not exist
 ```
@@ -115,8 +116,8 @@ RuntimeError catching, and skip semantics).
 
 Four tests across two files:
 
-* `tools/vmaf-tune/tests/test_ladder_svtav1_default_crf.py` (3 tests)
-* `tools/vmaf-tune/tests/test_ladder.py::test_build_ladder_default_sampler_uses_corpus_and_recommend`
+- `tools/vmaf-tune/tests/test_ladder_svtav1_default_crf.py` (3 tests)
+- `tools/vmaf-tune/tests/test_ladder.py::test_build_ladder_default_sampler_uses_corpus_and_recommend`
 
 ### Diagnostic chain
 
@@ -166,7 +167,7 @@ pytest tools/vmaf-tune/tests/test_ladder_svtav1_default_crf.py \
 
 ### Failure surface
 
-* `mcp-server/vmaf-mcp/tests/test_http_transport.py::test_metrics_returns_200`
+- `mcp-server/vmaf-mcp/tests/test_http_transport.py::test_metrics_returns_200`
 
 ### Diagnostic chain
 
@@ -213,10 +214,10 @@ The new test pins the wire-level invariant:
 Two `tools/vmaf-tune/` tests fail for unrelated reasons and were left
 for follow-up PRs:
 
-* `test_bbb_e2e_v2_bug_cluster.py::test_vmaf_explicit_backend_failure_errors`
+- `test_bbb_e2e_v2_bug_cluster.py::test_vmaf_explicit_backend_failure_errors`
   — pinned source-string `'strcmp(c->backend, "vulkan") == 0'` no longer
   present in `core/tools/vmaf.c`.
-* `test_format_both_json.py::test_compare_format_both_writes_json`
+- `test_format_both_json.py::test_compare_format_both_writes_json`
   — `_write_compare_profile_report` no longer emits the JSON path
   alongside HTML/MD.
 
@@ -225,9 +226,9 @@ inflate this PR beyond the "fix one thing well" scope.
 
 ## References
 
-* User task brief specifying the three clusters and their candidate fixes
+- User task brief specifying the three clusters and their candidate fixes
   (torchvision NMS, SVT-AV1 quality range, aiohttp content_type)
-* `ai/tests/conftest.py` (new `requires_pytorch_lightning()` helper)
-* `tools/vmaf-tune/src/vmaftune/ladder.py` (`DEFAULT_SAMPLER_CRF_SWEEP`)
-* `mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py` (`_handle_metrics`)
-* PR #346 (precedent for the `headers={"Content-Type": ...}` aiohttp pattern)
+- `ai/tests/conftest.py` (new `requires_pytorch_lightning()` helper)
+- `tools/vmaf-tune/src/vmaftune/ladder.py` (`DEFAULT_SAMPLER_CRF_SWEEP`)
+- `mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py` (`_handle_metrics`)
+- PR #346 (precedent for the `headers={"Content-Type": ...}` aiohttp pattern)

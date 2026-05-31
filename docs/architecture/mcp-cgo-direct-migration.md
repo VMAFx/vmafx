@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # MCP server: subprocess → direct cgo migration plan
 
 Status: Phase 1 (Proposed)
@@ -42,7 +43,7 @@ VMAFX_MCP_DIRECT=1 vmafx-mcp serve --transport stdio
 On the first call the direct path emits a one-shot marker to stderr so the
 operator can confirm the choice took effect:
 
-```
+```text
 libvmaf: VMAFX_MCP_DIRECT=1 — using in-process cgo scoring path (ADR-0931)
 ```
 

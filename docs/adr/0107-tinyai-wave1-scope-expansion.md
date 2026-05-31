@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0107: Tiny-AI Wave 1 scope expanded beyond ADR-0020 through ADR-0023
 
 - **Status**: Accepted

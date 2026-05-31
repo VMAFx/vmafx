@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Second-opinion feature materializer
 
 `ai/scripts/materialize_second_opinion_features.py` joins externally generated

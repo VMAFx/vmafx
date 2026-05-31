@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research digest — parquet schema v2 (zstd-3 + canonical column order + schema metadata)
 
 - **Date**: 2026-05-31

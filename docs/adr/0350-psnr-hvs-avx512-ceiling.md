@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0350: `psnr_hvs` AVX-512 — re-bench confirms AVX2 ceiling (T3-9 (a))
 
 - **Status**: Accepted
@@ -166,7 +167,7 @@ perf report -i /tmp/perf.data --stdio --no-children -g none | head -10
 
 Recorded output (Zen 5, 2026-05-09):
 
-```
+```text
     78.42%  vmaf   libvmaf.so.3.0.0   [.] calc_psnrhvs_avx2
     14.82%  vmaf   libvmaf.so.3.0.0   [.] od_bin_fdct8x8_avx2
      ...

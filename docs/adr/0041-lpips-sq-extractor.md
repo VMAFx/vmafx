@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0041: Ship LPIPS-SqueezeNet FR extractor with inverse-ImageNet in graph
 
 - **Status**: Accepted

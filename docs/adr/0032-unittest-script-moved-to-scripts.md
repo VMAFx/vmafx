@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0032: Relocate root unittest script to scripts/
 
 - **Status**: Accepted

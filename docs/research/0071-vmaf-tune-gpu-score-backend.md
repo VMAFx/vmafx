@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0071: `vmaf-tune` GPU score backend — option-space digest
 
 - **Date**: 2026-05-03

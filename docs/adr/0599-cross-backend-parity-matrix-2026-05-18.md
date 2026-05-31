@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0599: Cross-Backend Parity Audit — Full Extractor Matrix (2026-05-18)
 
 - **Status**: Accepted

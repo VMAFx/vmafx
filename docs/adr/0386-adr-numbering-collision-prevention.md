@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0386: ADR Number Collision Prevention — Hook + CI Gate + Helper Script
 
 - **Status**: Accepted

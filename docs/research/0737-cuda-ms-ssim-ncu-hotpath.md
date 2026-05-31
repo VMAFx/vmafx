@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0737: CUDA MS-SSIM kernel ncu hotpath analysis (576x324)
 
 - **Status**: Active
@@ -15,7 +16,8 @@ candidates?
 - ncu `--set basic` profiles on RTX 4090 (sm_89) under CUDA 13.3
 - Source: `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`
 - Reproducer:
-  ```
+
+  ```text
   docker run --rm --gpus all --privileged --entrypoint bash \
     -v <worktree>:/workspace -v <repo>/python:/workspace/python:ro \
     -w /workspace/core vmaf-dev-mcp:cuda13.3 -c \
@@ -27,6 +29,7 @@ candidates?
            --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
            --feature float_ms_ssim_cuda --backend cuda -o /dev/null'
   ```
+
   Note: `--feature float_ms_ssim_cuda` is the registered CUDA extractor name
   (`integer_ms_ssim_cuda.c`, `.name = "float_ms_ssim_cuda"`).
 
@@ -36,6 +39,7 @@ GPU: RTX 4090, 128 SMs, sm_89. Four `ms_ssim_decimate` launches profiled (two pe
 scale per invocation, at scales 1/2 = 288×162 and 1/4 = 144×81).
 
 MS-SSIM produces a 5-scale pyramid. At 576×324, the pyramid levels are:
+
 - Scale 1: 576×324 (no decimate)
 - Scale 2: 288×162 (decimate scale 1)
 - Scale 3: 144×81 (decimate scale 2)

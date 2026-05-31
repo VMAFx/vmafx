@@ -3,11 +3,13 @@ name: validate-scores
 description: Run identical (ref, dist) through all enabled backends and report per-backend score + pairwise ULP diffs. Use to verify bit-exactness of a new SIMD path, new GPU backend, or any hot-path change.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /validate-scores
 
 ## Invocation
 
-```
+```text
 /validate-scores --ref=PATH --dist=PATH --width=W --height=H --pixfmt=420p --bitdepth=8
                  [--backends=cpu,cuda,sycl,vulkan] [--precision=17]
 ```

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # GPU Backend Context-API Contract
 
 This document records the three-function API surface that every GPU backend in

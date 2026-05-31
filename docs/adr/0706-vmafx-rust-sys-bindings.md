@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0706: Rust `vmafx-sys` FFI bindings crate
 
 - **Status**: Accepted

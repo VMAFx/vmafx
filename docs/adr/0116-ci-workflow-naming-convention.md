@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0116: CI workflow naming convention — purpose-named files + Title Case display names
 
 - **Status**: Accepted
@@ -79,10 +80,12 @@ We will use a uniform naming convention across all `.github/workflows/*.yml`:
     The `gh api` re-pin step in §"Consequences" is the operational
     follow-up.
   - The post-merge re-pin command is:
-    ```
+
+    ```text
     gh api --method PUT repos/VMAFx/vmafx/branches/master/protection \
       --input <updated-protection.json>
     ```
+
     where the JSON's `required_status_checks.contexts` array uses the new
     Title Case job names produced by this PR.
   - [`docs/principles.md`](../principles.md) line 5 updated from

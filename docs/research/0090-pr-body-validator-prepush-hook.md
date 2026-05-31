@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 -->
 # Research-0090 — Pre-push PR-body deliverables validator
 
 **Date**: 2026-05-09
@@ -101,7 +102,7 @@ to add the flag.
 
 8/8 test cases pass:
 
-```
+```text
 PASS: ticked + files present in diff (exit=0)
 PASS: ticked Research digest, no file in diff (exit=1)
 PASS: numbered-list shape (no - [x]) (exit=1)

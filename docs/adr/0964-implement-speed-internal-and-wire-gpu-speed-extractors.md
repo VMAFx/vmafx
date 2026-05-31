@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0964: Implement `speed_internal.c` and wire `speed_{chroma,temporal}_{hip,sycl}`
 
 - **Status**: Accepted
@@ -20,7 +21,7 @@ for `speed_chroma` and `speed_temporal` on three backends:
 All six TUs `#include "feature/speed_internal.h"` and call seven of its
 nine declared functions:
 
-```
+```text
 speed_internal_init_dimensions
 speed_internal_float_stride
 speed_internal_filter_and_downscale
@@ -93,7 +94,7 @@ TUs are repaired.
 
 While wiring, the CUDA TUs produced compile errors:
 
-```
+```text
 error: implicit declaration of function 'CHECK_CUDA'      (use CHECK_CUDA_RETURN / _GOTO)
 error: 'CudaFunctions' has no member named 'cuMemAllocHost'  (use cuMemHostAlloc)
 warning: unused label 'fail'                              (left over from CHECK_CUDA_GOTO migration)

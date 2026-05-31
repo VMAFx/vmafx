@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0883: HIP kernel parity-test coverage round 2
 
 - **Status**: Accepted

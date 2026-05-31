@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # `core/src/feature/metal/` — Metal feature-kernel directory
 
 Parent: [../AGENTS.md](../AGENTS.md). The Metal backend runtime lives at
@@ -35,7 +36,7 @@ a real kernel lands; they are removed from `metal_sources` in
   was an orphan extern with no registry entry and was removed as part of
   the same change). Do **not** re-add a `<feature>_metal.mm` without (a)
   the matching `.metal` kernel, (b) a meson entry in `metal_objcpp_lib`
-  + a `<feature>_air` `custom_target` + an entry in `metal_air_files`,
+  a `<feature>_air` `custom_target` + an entry in `metal_air_files`,
   and (c) an `extern VmafFeatureExtractor` declaration in
   `feature_extractor.c` plus a slot in `feature_extractor_list[]` under
   the `HAVE_METAL` block.

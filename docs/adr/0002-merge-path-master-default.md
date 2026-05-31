@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0002: Merge path gpu-opt to sycl to master, master is fork default
 
 - **Status**: Accepted

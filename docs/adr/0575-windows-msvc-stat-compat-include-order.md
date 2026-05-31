@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD037 MD060 -->
 # ADR-0575: Fix yuv_input.c stat compat — include-order and _MSC_VER guard
 
 - **Status**: Accepted
@@ -30,7 +31,7 @@ a `_fstat64` declaration. When `#define stat __stat64` is active during
 `#include <sys/stat.h>`, the preprocessor expands `_stat64` tokens inside
 the system header, producing:
 
-```
+```text
 error: redefinition of 'struct _stat64'
 error: conflicting types for '_stat64'
 error: passing argument 2 of '_fstat64' from incompatible pointer type

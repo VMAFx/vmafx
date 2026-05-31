@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0430: Saliency RGB ingest and SSIMULACRA2 public docs
 
 - **Status**: Accepted

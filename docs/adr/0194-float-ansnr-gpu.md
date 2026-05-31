@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0194: float_ansnr GPU kernels — single-dispatch 3x3 + 5x5 filters with per-WG float partials
 
 - **Status**: Accepted

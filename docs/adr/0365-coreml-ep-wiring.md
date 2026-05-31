@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0365: Wire the CoreML execution provider into tiny-AI ORT dispatch
 
 - **Status**: Accepted

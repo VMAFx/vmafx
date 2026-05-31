@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0333: `vmaf-tune` Phase F — multi-pass encoding (libx265 first)
 
 - **Status**: Accepted

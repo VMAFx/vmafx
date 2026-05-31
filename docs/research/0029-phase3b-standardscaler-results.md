@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD049 -->
 # Research-0029 — Phase-3b: StandardScaler retry of the subset sweep
 
 _Updated: 2026-04-29._
@@ -54,20 +55,20 @@ VIF scales. It validates **all four** of Research-0027's findings:
 
 ## Subset comparison detail
 
-* **Subset A (canonical-6 + ssimulacra2)** matches canonical6
+- **Subset A (canonical-6 + ssimulacra2)** matches canonical6
   within noise (Δ −0.0008). One extra feature without redundancy
   pruning doesn't help; the model has to make room for ssimulacra2
   by attenuating something else. The PLCC delta is statistically
   meaningless (std on 9 folds is ±0.029), but the *expectation*
   that adding any consensus-top feature would lift PLCC was
   wrong. **Pruning matters.**
-* **Subset B (consensus-7 with redundancy pruning)** is the
+- **Subset B (consensus-7 with redundancy pruning)** is the
   winner. **Drops 3 redundant VIF scales** (kept only `vif_scale2`)
   and **drops `motion3`** (redundant with `motion2`); **adds**
   `adm_scale3`, `ssimulacra2`, `psnr_hvs`, `float_ssim`. Same
   feature count as A (7), better PLCC (+0.0114 vs A), better RMSE
   (8.7 → 7.9).
-* **Subset C (full-21)** loses (Δ −0.0081). Including all 21
+- **Subset C (full-21)** loses (Δ −0.0081). Including all 21
   features overwhelms the 16-unit hidden layer; the model can't
   exploit the high-signal additions because most of the input is
   noise from redundant features. RMSE goes the wrong way too
@@ -125,7 +126,7 @@ gate actual model-shipping:
 
 ### Phase-3c (gated on Phase-3b)
 
-* Sweep `lr ∈ {1e-3, 3e-4, 1e-4}` × `epochs ∈ {30, 60, 100}` ×
+- Sweep `lr ∈ {1e-3, 3e-4, 1e-4}` × `epochs ∈ {30, 60, 100}` ×
   `arch ∈ {mlp_small, mlp_medium}` on canonical6 + Subset B with
   StandardScaler. Identifies the canonical6 PLCC ceiling under
   matched preprocessing and tests whether a wider arch helps
@@ -133,7 +134,7 @@ gate actual model-shipping:
 
 ### Phase-3d (gated on Phase-3c if B still wins)
 
-* Per-feature ablation of Subset B: train (B − {f}) for each f
+- Per-feature ablation of Subset B: train (B − {f}) for each f
   in B's 7 features, report PLCC delta. Identifies which
   Subset-B features are load-bearing vs which are decoration.
 

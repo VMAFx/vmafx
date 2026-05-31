@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0394: Local sidecar training — on-host bias-correction model
 
 - **Status**: Accepted

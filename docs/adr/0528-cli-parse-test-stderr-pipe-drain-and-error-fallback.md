@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0528: `test_cli_parse_long_only_args` stderr-pipe drain + `error()` non-fatal fallback
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0934: Migrate user-input dataclass configs to pydantic v2 BaseModel
 
 - **Status**: Accepted

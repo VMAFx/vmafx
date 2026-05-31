@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # AGENTS.md — core/test
 
 Orientation for agents working on the C unit test suite. Parent:

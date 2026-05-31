@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0588: vmaf-tune executor — per-shot and saliency execution modes
 
 - **Status**: Accepted

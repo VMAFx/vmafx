@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research Digest 0609: Dynamic Optimizer (DO)
 
 **Scope**: Joint shot-boundary + CRF co-optimization for per-shot encoding.

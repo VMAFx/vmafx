@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0576: ffmpeg-patches n8.1.1 full-feature-exposure sync
 
 - **Status**: Accepted

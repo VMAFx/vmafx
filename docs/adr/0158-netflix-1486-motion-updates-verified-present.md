@@ -101,6 +101,7 @@ reference.
 - `ninja -C build && meson test -C build` → **35/35 pass** (no
   delta vs pre-verification master).
 - Markers verified present via:
+
   ```bash
   grep -n "height - (i_tap - height + 2)\|motion_max_val\|VMAF_integer_feature_motion3_score" \
       core/src/feature/integer_motion.c \
@@ -108,6 +109,7 @@ reference.
       core/src/feature/x86/motion_avx2.c \
       core/src/feature/x86/motion_avx512.c
   ```
+
 - 73-triple golden-value match on python tests verified by
   programmatic AST-style scan (details in subagent report).
 - `git status` → clean; this PR contributes no code hunks.

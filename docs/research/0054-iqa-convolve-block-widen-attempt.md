@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0054: `iqa_convolve` block-of-N tap widen — bit-exactness post-mortem
 
 - **Status**: Active (failed-attempt write-up)
@@ -42,7 +43,8 @@ dominant cost. The expected end-to-end gain on `float_ssim` /
 **Block-of-N widen is mathematically incompatible with the scalar
 reference's rounding pattern.** The scalar reduces 11 single-rounded
 `float` products into a `double` accumulator with **11 separate widen
-+ add steps**:
+
+- add steps**:
 
 ```c
 double sum = 0.0;

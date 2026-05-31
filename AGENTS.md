@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # AGENTS.md — VMAF Fork (Lusoris)
 
 > **CORRECT REPO: `VMAFx/vmafx` (active) — NOT `lusoris/vmaf` (archived)**
@@ -34,14 +35,14 @@ opened in this repo. For Claude Code–specific tooling (skills, hooks), see
 
 Meson + Ninja.
 
-```
+```text
 meson setup build [-Denable_cuda=true|false] [-Denable_sycl=true|false]
 ninja -C build
 ```
 
 ## 3. Test
 
-```
+```text
 meson test -C build                     # unit tests
 meson test -C build --suite=fast        # fast subset
 make test                               # full + ASan + UBSan
@@ -50,7 +51,7 @@ make test-netflix-golden                # Netflix CPU golden-data gate (see §8)
 
 ## 4. Lint / format
 
-```
+```text
 make lint          # clang-tidy + cppcheck + iwyu + ruff + semgrep
 make format        # clang-format + black + isort (writes)
 make format-check  # dry-run (CI / pre-commit)

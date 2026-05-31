@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0719: vmafx-node rclone Integration — Remote-Asset Streaming Without Disk Materialisation
 
 - **Status**: Accepted
@@ -19,7 +20,7 @@ sequence can exceed 10 GB; writing it to ephemeral node storage before scoring w
 - Require large ephemeral disk allocations in the k8s PodSpec.
 - Eliminate the per-job cost benefit of horizontal scaling.
 
-rclone (https://rclone.org) provides a single binary that can access 70+ storage backends
+rclone (<https://rclone.org>) provides a single binary that can access 70+ storage backends
 (S3, GCS, Azure Blob, SFTP, HTTP, local filesystem, etc.) and expose them to consumer
 processes either as an HTTP server (`rclone serve http`) or as a POSIX FUSE mount
 (`rclone mount`).  The user identified rclone as the correct tool for this use case.
@@ -75,6 +76,7 @@ The rclone configuration is provided via a Kubernetes Secret mounted at
 ## Consequences
 
 **Positive:**
+
 - Zero-copy streaming: reference and distorted videos stream from S3 / GCS / Azure Blob /
   SFTP / HTTP without any intermediate disk write.
 - Unified storage abstraction: `pkg/storage.Storage` interface decouples the executor
@@ -84,6 +86,7 @@ The rclone configuration is provided via a Kubernetes Secret mounted at
 - HTTP-serve mode adds no FUSE kernel dependency to the node container.
 
 **Negative:**
+
 - rclone binary (~55 MB uncompressed) increases the node image size.
 - Per-job `rclone serve http` subprocess adds ~100 ms startup latency before ffmpeg can
   read the first byte.  The readiness poller in `waitForHTTP` compensates.
@@ -91,6 +94,7 @@ The rclone configuration is provided via a Kubernetes Secret mounted at
   (add `securityContext.capabilities.add: [SYS_ADMIN]` when using mount mode).
 
 **Neutral / follow-ups:**
+
 - Phase 4b.6 (eBPF) will investigate whether eBPF can reduce FUSE round-trip overhead
   for the mount-mode fallback (Research-0733 target: FUSE bypass).
 - The HTTP-serve port is ephemeral (OS-assigned free port); no port reservation in the
@@ -108,5 +112,5 @@ The rclone configuration is provided via a Kubernetes Secret mounted at
   into the encoder without materialising files to disk or RAM." (2026-05-28)
 - `req` — architecture dispatch (paraphrased): use rclone to stream files without copying
   to disk or RAM first; HTTP-serve mode recommended as primary mode. (2026-05-28)
-- https://rclone.org/commands/rclone_serve_http/
-- https://rclone.org/commands/rclone_mount/
+- <https://rclone.org/commands/rclone_serve_http/>
+- <https://rclone.org/commands/rclone_mount/>

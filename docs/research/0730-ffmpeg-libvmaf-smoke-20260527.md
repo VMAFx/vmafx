@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 <!--
   Copyright 2026 Lusoris
   SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
@@ -135,7 +136,7 @@ conventional `ref, dis` order. When a user feeds the pair in `ref, dis` order
 (matching every other VMAF interface), the filter silently computes reference
 quality against itself as distorted, yielding an inflated score:
 
-```
+```text
 # WRONG: ref=hrc00 as main, dis=hrc01 as reference
 -i src01_hrc00_576x324.yuv  -i src01_hrc01_576x324.yuv
 -lavfi '[0:v][1:v]libvmaf'
@@ -169,7 +170,8 @@ with the default CPU build.
 **Sub-issue B — ORT version mismatch:** `libvmaf/build-dnn/` was linked against
 ORT 1.22.0, which is not present on the host. Available ORT versions are 1.20.1 and 1.26.0.
 The `VERS_1.22.0` versioned symbol check fails at `dlopen` time:
-```
+
+```text
 libonnxruntime.so.1: version `VERS_1.22.0' not found
 ```
 
@@ -187,7 +189,7 @@ model is added to `model/`.
 
 Fork-added options confirmed present in `ffmpeg -h filter=libvmaf`:
 
-```
+```text
 tiny_model        Path to tiny ONNX model (libvmaf --enable_dnn).
 tiny_device       tiny-model device: auto|cpu|cuda|openvino|openvino-npu|...
 tiny_threads      tiny-model CPU EP intra-op threads.

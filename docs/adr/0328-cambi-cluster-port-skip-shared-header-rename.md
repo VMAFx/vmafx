@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0328: Cambi cluster port — skip the shared-header rename
 
 - **Status**: Accepted

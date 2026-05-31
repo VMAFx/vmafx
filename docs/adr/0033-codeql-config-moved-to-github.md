@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0033: Relocate CodeQL config to .github/
 
 - **Status**: Accepted

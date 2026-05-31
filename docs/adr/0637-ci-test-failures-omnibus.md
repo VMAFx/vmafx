@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0637: Fix 5 master CI failures — MCP smoke syntax, coverage floor, and job timeouts
 
 - **Status**: Accepted
@@ -8,7 +9,8 @@
 ## Context
 
 After merging PRs #1417 and #1418 (MCP `probe_backend`/`vmaf_version`/`vmaf_score_encoded`
-+ P1 surface additions), the "Tests & Quality Gates" workflow on master had five failures:
+
+- P1 surface additions), the "Tests & Quality Gates" workflow on master had five failures:
 
 1. **MCP Smoke (Embedded C + Python Server)** — `SyntaxError: invalid syntax` at line 77 of
    `mcp-server/vmaf-mcp/tests/test_smoke_e2e.py`. Root cause: the squash-merge that landed

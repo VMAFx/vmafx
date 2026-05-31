@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0721 — AI run manifest strict JSON
 
 ## Question

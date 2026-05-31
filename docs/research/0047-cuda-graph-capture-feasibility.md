@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0047 — CUDA graph capture feasibility for the per-frame submit chain
 
 | Field             | Value                                                                |
@@ -48,7 +49,7 @@ the submit-chain is still the dominant residual.
 
 The per-frame CUDA lifecycle (per `cuda/kernel_template.h`) is:
 
-```
+```text
 submit():
     cuMemsetD8Async(rb->device, 0, bytes, lc->str)                       (i)
     cuStreamWaitEvent(picture_stream, dist_ready_event, 0)               (ii)

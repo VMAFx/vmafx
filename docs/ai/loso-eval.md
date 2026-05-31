@@ -51,11 +51,11 @@ python ai/scripts/eval_loso_mlp_small.py \
 
 Outputs:
 
-* `runs/loso_eval/loso_mlp_small_eval.json` — machine-readable, including a
+- `runs/loso_eval/loso_mlp_small_eval.json` — machine-readable, including a
   `run_provenance` block with the script entrypoint, argv, parsed arguments,
   data root, fold directory, baseline ONNX inputs, and JSON/Markdown output
   targets.
-* `runs/loso_eval/loso_mlp_small_eval.md` — markdown summary.
+- `runs/loso_eval/loso_mlp_small_eval.md` — markdown summary.
 
 The 3-architecture companion harness
 [`ai/scripts/eval_loso_3arch.py`](../../ai/scripts/eval_loso_3arch.py) writes

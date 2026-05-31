@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # vmaf-tune — Fast NR Pre-Scoring (`--fast-nr`)
 
 `--fast-nr` enables **NR early-elimination** in the Phase B CRF bisect
@@ -22,7 +23,7 @@ away from the target VMAF.
 
 ## Requirements
 
-```
+```text
 pip install onnxruntime         # CPU only
 pip install onnxruntime-gpu     # CUDA / ROCm EP (recommended on GPU hosts)
 pip install numpy               # required by the NR frame extractor
@@ -52,13 +53,13 @@ vmaf-tune tune-per-shot \
 
 The terminal will print the resolved δ_fast threshold at startup:
 
-```
+```text
 vmaf-tune compare: --fast-nr enabled; δ_fast=8.0 VMAF (NR early-elimination)
 ```
 
 And INFO-level logs report savings per bisect run:
 
-```
+```text
 fast-nr: bisect done — FR calls 3 total, 4 saved (57%)
 ```
 
@@ -114,7 +115,7 @@ runs FR + NR scoring for each clip, fits
 `vmaf_fr ≈ calibration_slope × nr_raw + calibration_intercept` via
 least-squares, and sets `δ_fast = 2σ(residuals)`.
 
-```
+```text
 usage: calibrate_nr_threshold.py [-h] [--corpus CORPUS] [--output JSON]
                                  [--onnx ONNX] [--crfs CRFS] [--codec CODEC]
                                  [--preset PRESET] [--width WIDTH]

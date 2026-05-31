@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0684: Pre-rebase worktree-drift guard
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # MOS Label Materializer
 
 `ai/scripts/materialize_mos_labels.py` joins subjective MOS labels onto

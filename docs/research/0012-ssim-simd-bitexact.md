@@ -183,7 +183,7 @@ same as "more accurate". Scalar wins by definition here.
 
 After the rewrite:
 
-```
+```text
 $ diff <(grep -v '<fyi fps' /tmp/scalar.xml) \
        <(grep -v '<fyi fps' /tmp/avx2.xml)
 $ diff <(grep -v '<fyi fps' /tmp/scalar.xml) \
@@ -227,4 +227,4 @@ across scalar / AVX2 / AVX-512 dispatch.
 - Companion: [ADR-0138](../adr/0138-iqa-convolve-avx2-bitexact-double.md)
   and [Research-0011](0011-iqa-convolve-avx2.md).
 - Prior attempt: PR #18 (`f082cfd3`) "SIMD bit-identical reductions
-  + CI fixes".
+  CI fixes".

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # AGENTS.md — core/src/feature/cuda
 
 Orientation for agents working on per-feature CUDA kernels (host
@@ -320,7 +321,6 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   [`../../hip/AGENTS.md`](../../hip/AGENTS.md) for the full
   consumer list.
 
-
 - **kernels with high spatial overlap (>=50% redundant cross-thread reads) must
   stage into `__shared__`** (ADR-0464). `cambi_spatial_mask_kernel` sets the
   precedent: a 22x22 `uint8_t zd_tile[22][32]` tile is populated cooperatively
@@ -341,7 +341,6 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   iterates over columns (V-direction IIR) requires a preceding transpose for
   coalescing; do not skip the transpose to save one launch — the V-pass
   performance benefit outweighs the launch cost at all resolutions ≥ 480p.
-
 
 - **`ssim_cuda.c` and `integer_ssim_cuda.c` provide different features — do not
   conflate them** (ADR-0564). `ssim_cuda.c` registers `vmaf_fex_integer_ssim_cuda`
@@ -388,7 +387,6 @@ The `enable_cuda` umbrella flag gates inclusion via
   CUDA twins for HDR-model `aim` and `adm3` sub-features (Phase 1);
   `FADM_ACCUM_SLOTS` 6→9 slot-sync invariant.
 
-
 ## Stencil/convolution kernel invariant (ADR-0454)
 
 - **Stencil and convolution kernels with data reuse > 2 taps must stage
@@ -419,6 +417,7 @@ correctly at all toolchain versions.
 
 If a future author believes `__mul24` is required for a documented performance
 reason (e.g. a specific `dp4a` / `imad.lo.u32` targeting pattern), they must:
+
 1. Cite this invariant note in the PR.
 2. Demonstrate via `ncu --section InstructionStats` that the performance gain
    is load-bearing.
@@ -443,6 +442,7 @@ pattern caused `--feature ssim --backend cuda` to fail silently from
 the file's introduction until this fix.
 
 Rules:
+
 - Wrap only `__global__` entry points. `__device__` helpers,
   `__constant__` arrays, and `#define` macros do not need wrapping.
 - For macro-expanded kernel instantiations (e.g., the `FILTER1D_*`
@@ -489,6 +489,7 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   measurable L2-pressure relief.  See ADR-0743.
 
 ## `__ldg()` pattern for pass-2 read-only intermediate buffers (ADR-0754)
+
 ## `__ldg()` pattern for pass-2 read-only intermediate buffers (ADR-0754, ADR-0757)
 
 - **Extract raw `const float *__restrict__` pointers from `VmafCudaBuffer` structs
@@ -554,6 +555,7 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   sub-4K throughput regardless of kernel-level changes. The primary fix is
   multi-frame SAD batching (accumulate N frames before readback synchronization).
   See [Research-0760](../../../../docs/research/0760-cuda-motion-ncu-multi-resolution-20260529.md).
+
 ## Resolution-aware kernel variant dispatch (ADR-0753)
 
 `resolution_dispatch.h` / `resolution_dispatch.c` in this directory provide a
@@ -606,6 +608,7 @@ kernel variants at runtime. The current policy table is in ADR-0753.
   On rebase: if upstream modifies `calculate_ssim_vert_combine`, apply the same
   diff to `calculate_ssim_vert_combine_no_bounds` (body is identical; only the
   `__launch_bounds__(128)` annotation differs).
+
 ## `__ldg()` pattern for VmafPicture channel reads (ADR-0762)
 
 - **Extract typed `const uint8_t *__restrict__` (or `uint16_t *__restrict__` for

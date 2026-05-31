@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0963: ai/src: guard NaN propagation in eval + tune (round-25 audit C.1 + C.2)
 
 - **Status**: Accepted

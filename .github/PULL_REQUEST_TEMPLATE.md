@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD041 -->
 <!-- Thanks for contributing! Please fill out the checklist so reviewers can ship this quickly. -->
 <!-- CORRECT REPO: VMAFx/vmafx (active) — NOT lusoris/vmaf (archived).
      Run `gh repo set-default VMAFx/vmafx` before any gh command this session. -->

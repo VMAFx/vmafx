@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research 0102: vmaf-tune compare bisect CLI closure
 
 Date: 2026-05-14

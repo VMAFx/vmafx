@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0034: Delete patches/ leftover, keep only ffmpeg-patches/
 
 - **Status**: Accepted

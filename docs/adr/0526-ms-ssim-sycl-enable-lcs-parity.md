@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0526: Add enable_lcs and enable_chroma to float_ms_ssim SYCL twin
 
 - **Status**: Accepted

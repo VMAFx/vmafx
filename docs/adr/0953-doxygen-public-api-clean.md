@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0953: Doxygen public-API build is warning-clean
 
 - **Status**: Accepted
@@ -94,6 +95,6 @@ the workflow is informational only.
 - `core/include/libvmaf/*.h` - every public header touched in this PR.
 - Prior fork PRs that documented public symbols but never gated them:
   PR #302, PR #327, PR #388.
-- Doxygen 1.15 warning reference: https://www.doxygen.nl/manual/commands.html
+- Doxygen 1.15 warning reference: <https://www.doxygen.nl/manual/commands.html>
 - Source: `req` - "Add + clean a doxygen build for the libvmaf public C
   API" (user request, this session).

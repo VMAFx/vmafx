@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research Digest: Netflix Upstream Feature Additions — CUDA Twin Gap Audit (2026-05-18)
 
 **Task**: Identify which C-side sub-features consumed by the Netflix HDR VMAF

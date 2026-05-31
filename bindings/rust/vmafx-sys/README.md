@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # vmafx-sys
 
 Raw FFI bindings to **libvmaf** (the [VMAFX](https://github.com/VMAFx/vmafx) fork of

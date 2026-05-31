@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # `vmaf-tune` codec adapters
 
 `vmaf-tune corpus` and `vmaf-tune per-shot` drive an FFmpeg encode for

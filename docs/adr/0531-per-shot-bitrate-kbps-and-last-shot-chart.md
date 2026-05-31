@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0531: Per-shot plan emits bitrate_kbps + chart shows last shot
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # SYCL Backend
 
 The SYCL / oneAPI backend runs VMAF's core feature extractors (VIF, ADM,

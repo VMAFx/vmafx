@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0136: Strip markdown emphasis/code characters before ADR-0108 deliverables grep
 
 - **Status**: Accepted

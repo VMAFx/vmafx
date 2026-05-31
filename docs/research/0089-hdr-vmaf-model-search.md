@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0089 — HDR VMAF model: source / train / placeholder
 
 - **Status**: digest closed; Path C selected (no model file shipped)
@@ -38,7 +39,7 @@ that gap:
 `gh api repos/Netflix/vmaf/contents/model` (2026-05-09) returns the
 following filenames — note **no `vmaf_hdr_*` entry**:
 
-```
+```text
 other_models, vmaf_4k_rb_v0.6.2, vmaf_4k_v0.6.1.json,
 vmaf_4k_v0.6.1neg.json, vmaf_b_v0.6.3.json,
 vmaf_float_4k_v0.6.1.json, vmaf_float_b_v0.6.3.json,
@@ -73,6 +74,7 @@ URL: <https://www.csimagazine.com/csi/netflix-reveals-hdrvmaf-solution.php>
 No download URL, no license declaration, no estimated release date.
 
 ### Netflix Tech Blog — "All of Netflix's HDR video streaming is now
+
 dynamically optimized" (2023-11-29)
 
 URLs (access date 2026-05-09):

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Perf Snapshot Audit — 2026-05-29
 
 Audit of all `testdata/perf_*.json` and `testdata/netflix_benchmark_results.json`

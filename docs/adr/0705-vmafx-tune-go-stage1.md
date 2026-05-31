@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0705: vmafx-tune Go port — Stage 1 (compare subcommand)
 
 - **Status**: Accepted

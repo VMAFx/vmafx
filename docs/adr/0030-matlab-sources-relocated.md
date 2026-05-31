@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0030: Relocate MATLAB sources under python/vmaf/
 
 - **Status**: Accepted

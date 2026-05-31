@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Vulkan compute backend
 
 > **Status: T5-1c closed — full default-model coverage (vif + motion + adm).**

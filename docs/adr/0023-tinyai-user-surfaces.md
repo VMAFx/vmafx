@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0023: Tiny-AI user surfaces span CLI, C API, ffmpeg, and training
 
 - **Status**: Accepted

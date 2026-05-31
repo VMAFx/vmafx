@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0519: Implement vmaf_hip_import_state to unblock --backend hip
 
 - **Status**: Accepted

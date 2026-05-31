@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0042: Tiny-AI PRs must ship human-readable docs in the same PR
 
 - **Status**: Accepted

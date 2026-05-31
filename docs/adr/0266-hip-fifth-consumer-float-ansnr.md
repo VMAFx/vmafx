@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0266: HIP fifth kernel-template consumer — `float_ansnr_hip`
 
 - **Status**: Accepted

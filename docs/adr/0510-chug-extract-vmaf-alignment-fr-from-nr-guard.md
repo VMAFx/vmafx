@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0510: CHUG re-extract VMAF-alignment fix — FR-corpus guard on the FR-from-NR extractor
 
 - **Status**: Accepted

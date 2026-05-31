@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # AGENTS.md — core
 
 Orientation for any coding agent working inside `core/`. Root orientation
@@ -9,7 +10,7 @@ this subtree. Claude Code equivalents in [../CLAUDE.md](../CLAUDE.md).
 The C engine — VMAF metric, feature extractors, backends, public API,
 CLI (`tools/vmaf`, `tools/vmaf_bench`), and C unit tests.
 
-```
+```text
 core/
   include/libvmaf/   # public C API (libvmaf.h, dnn.h, model.h, picture.h, ...)
   src/               # engine + feature extractors + backends
@@ -371,10 +372,12 @@ core/
   `src/dnn/model_loader.h` → `vmaf_dnn_verify_signature`), apply
   `VMAF_EXPORT` to the internal declaration instead. Verify after any
   structural change with:
+
   ```bash
   nm -D --defined-only build/src/libvmaf.so.3.0.0 | grep ' [TW] ' | grep -v ' vmaf_' | wc -l
   # Must print 0
   ```
+
   On upstream sync: any new `vmaf_*` entry point added upstream that
   the fork's headers re-export needs `VMAF_EXPORT` added in the same
   merge commit; missing it will silently hide the symbol.

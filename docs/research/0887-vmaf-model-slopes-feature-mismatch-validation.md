@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0887: `vmaf_model_destroy` heap-buffer-overflow from per-feature array length mismatch
 
 - **Date**: 2026-05-30
@@ -29,7 +30,7 @@ if (rc == 0) vmaf_model_destroy(m);
 
 ASan output (pre-fix):
 
-```
+```text
 ==…==ERROR: AddressSanitizer: heap-buffer-overflow on address …
 READ of size 8 at … thread T0
     #0 vmaf_model_destroy core/src/model.c:210

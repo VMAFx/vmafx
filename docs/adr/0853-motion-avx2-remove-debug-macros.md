@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0853: Remove dead debug-print macros from motion_avx2.c
 
 - **Status**: Accepted

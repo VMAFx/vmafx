@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0326: vmaf-tune Phase B — target-VMAF bisect
 
 - **Status**: Accepted
@@ -63,7 +64,7 @@ symbols:
 The algorithm is a textbook integer binary search over CRF assuming
 monotone-decreasing VMAF in CRF:
 
-```
+```text
 lo, hi = crf_range or adapter.quality_range
 while lo <= hi and n_iterations < max_iterations:
     mid = midpoint_lower_quality(lo, hi)        # round toward higher CRF

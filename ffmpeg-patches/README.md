@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ffmpeg-patches/
 
 Local patches against FFmpeg **n8.1.1** for integrating this VMAF fork into

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0544: deduplicate `feature_extractor_list[]` registrations
 
 - **Status**: Accepted

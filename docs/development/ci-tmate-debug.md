@@ -28,7 +28,7 @@ Or from the GitHub UI: **Actions → libvmaf Build Matrix → Run workflow**.
 3. Expand the **SSH debug session on test failure** step.
 4. The step prints two lines:
 
-   ```
+   ```text
    SSH: ssh <session-id>@nyc1.tmate.io
    or: https://tmate.io/t/<session-id>
    ```

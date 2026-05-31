@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0036: Tiny-AI Wave 1 scope expanded beyond D20–D23
 
 - **Status**: Superseded by [ADR-0107](0107-tinyai-wave1-scope-expansion.md)

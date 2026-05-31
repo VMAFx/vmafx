@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD041 MD060 -->
 > **Allocator**: run `scripts/adr/next-free.sh --claim <your-topic-slug>` to atomically
 > reserve a number before creating this file.  The command creates a
 > `docs/adr/NNNN-<slug>.md.stub` placeholder that prevents parallel agents from

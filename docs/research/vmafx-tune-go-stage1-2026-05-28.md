@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research: vmafx-tune Go port — Stage 1 design decisions
 
 **Date**: 2026-05-28

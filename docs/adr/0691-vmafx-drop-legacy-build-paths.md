@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0691: VMAFX Phase 1C — Drop Legacy Build Paths
 
 - **Status**: Accepted

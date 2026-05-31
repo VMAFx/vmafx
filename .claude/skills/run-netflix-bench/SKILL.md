@@ -3,6 +3,8 @@ name: run-netflix-bench
 description: Run the Netflix benchmark suite (testdata/bench_all.sh) and diff the output against testdata/netflix_benchmark_results.json. Reports any delta per (resolution, feature, backend).
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /run-netflix-bench
 
 ## Steps

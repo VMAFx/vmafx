@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0645: Thread integer ADM p-norm through SIMD callbacks
 
 - **Status**: Accepted

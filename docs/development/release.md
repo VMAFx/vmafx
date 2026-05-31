@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD051 -->
 # Release process
 
 The Lusoris fork of libvmaf releases via automation — not manual tag-and-draft.

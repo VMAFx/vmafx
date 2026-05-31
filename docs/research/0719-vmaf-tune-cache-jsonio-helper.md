@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0719 — vmaf-tune cache strict JSON metadata
 
 ## Question

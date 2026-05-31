@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # CAMBI
 
 CAMBI (Contrast Aware Multiscale Banding Index) is Netflix's detector for banding (aka contouring) artifacts.
@@ -27,7 +28,8 @@ core/build/tools/vmaf \
 ```
 
 This will yield the output:
-```
+
+```text
 <VMAF version="4b42f672">
   <params qualityWidth="576" qualityHeight="324" />
   <fyi fps="52.47" />
@@ -73,7 +75,8 @@ core/build/tools/vmaf \
 ```
 
 This will yield the output:
-```
+
+```text
 <VMAF version="4b42f672">
   <params qualityWidth="1280" qualityHeight="720" />
   <fyi fps="40000.00" />
@@ -98,7 +101,8 @@ core/build/tools/vmaf \
 ```
 
 The output will be:
-```
+
+```text
 <VMAF version="4b42f672">
   <params qualityWidth="1280" qualityHeight="720" />
   <fyi fps="47619.05" />
@@ -116,7 +120,7 @@ The output will be:
 
 To generate the heatmaps, run CAMBI with the `heatmaps_path` option set to a local folder. It will write files such as:
 
-```
+```text
 cambi_heatmap_scale_0_1280x720_16b.gray
 cambi_heatmap_scale_1_640x360_16b.gray
 cambi_heatmap_scale_2_320x180_16b.gray
@@ -128,7 +132,7 @@ containing the raw grayscale heatmap data.
 
 You can use `ffmpeg` to convert them:
 
-```
+```text
 ffmpeg -f rawvideo -pix_fmt gray16le -s 1280x720 -i heatmaps/cambi_heatmap_scale_0_1280x720_16b.gray -frames:v 1 heatmaps/cambi_heatmap_scale_0_1280x720_16b.png
 ```
 
@@ -136,7 +140,7 @@ ffmpeg -f rawvideo -pix_fmt gray16le -s 1280x720 -i heatmaps/cambi_heatmap_scale
 
 CAMBI can also be invoked in the [Python library](../usage/python.md). Use `CambiFeatureExtractor` as the feature extractor, and `CambiQualityRunner` as the quality runner. Use `CambiFullReferenceFeatureExtractor` and `CambiFullReferenceQualityRunner` to run the full-reference version of CAMBI.
 
-```
+```text
 dis_path = VmafConfig.test_resource_path("yuv", "KristenAndSara_1280x720_8bit_processed.yuv")
 asset = Asset(dataset="test", content_id=0, asset_id=0,
               workdir_root=VmafConfig.workdir_path(),

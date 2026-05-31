@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0005: Adopt full framework adaptation scope a-g
 
 - **Status**: Accepted

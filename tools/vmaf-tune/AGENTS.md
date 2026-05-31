@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD024 -->
 # `tools/vmaf-tune/` — agent notes
 
 Parent: [../../AGENTS.md](../../AGENTS.md).
@@ -404,7 +405,7 @@ for the option-space digest.
   `('-pass', str(N), '-passlogfile', str(path))`, and `X265Adapter`,
   returning `('-x265-params', f'pass={N}:stats={path}')`). The encode driver
   (`encode.py`) calls the adapter via `getattr(adapter, "supports_two_pass", False)`
-  + `adapter.two_pass_args(...)` — it never branches on codec name.
+  `adapter.two_pass_args(...)` — it never branches on codec name.
   `EncodeRequest` carries `pass_number: int = 0` (0 = single-pass /
   default; 1 / 2 = pass index) and `stats_path: Path | None = None`.
   `build_ffmpeg_command` redirects pass-1 output to `-f null -` so
@@ -682,6 +683,7 @@ ADR-0237 follow-up promoting the corresponding phase.
   codec name in `corpus.py` / `encode.py` / `score.py`; route via
   the adapter. New codecs are one-file additions under
   `codec_adapters/`.
+
 - **The QSV adapters share `_qsv_common.py`.** Three encoders with
   identical parameter shape (preset vocabulary, ICQ
   `global_quality` window) is a deliberate exception to the
@@ -930,7 +932,6 @@ tree without an ADR-0237 follow-up promoting the corresponding phase.
   one — the encoder won't emit a parseable stats file outside
   ``-pass 1`` mode.
 
-
 ## Sidecar (ADR-0325) rebase-sensitive invariants
 
 - **`FEATURE_DIM = 14` and the column order in
@@ -997,6 +998,7 @@ canonical `encoder` / `crf` / `vmaf_score` /
 `bitrate_kbps` rows and historical hardware-sweep `codec` / `q` /
 `vmaf` / `actual_kbps` aliases; do not reintroduce external conversion
 scripts for those local corpora.
+
 - **`corpus.py` uses `aiutils` helpers for file hashing and timestamps.**
   `_sha256_file` (imported as `aiutils.file_utils.sha256`) and `_utc_now_iso`
   (imported as `aiutils.time_utils.now_iso_8601`) replace the formerly

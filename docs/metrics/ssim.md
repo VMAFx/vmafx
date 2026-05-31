@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # SSIM
 
 SSIM (Structural Similarity Index Measure) quantifies perceptual image quality

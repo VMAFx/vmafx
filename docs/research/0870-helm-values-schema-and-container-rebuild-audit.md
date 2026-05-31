@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0870: Helm values.schema.json + dev-MCP Containerfile rebuild audit
 
 - **Date**: 2026-05-30

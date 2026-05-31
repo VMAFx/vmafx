@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0090: Upstream SKIP-bucket triage — 2026-05-08
 
 - **Date**: 2026-05-08

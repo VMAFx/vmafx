@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research digest — Controller infrastructure fixes (ADR-0962)
 
 **Date**: 2026-05-31

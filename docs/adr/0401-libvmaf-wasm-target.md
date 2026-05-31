@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0401: libvmaf WebAssembly target — phased EXPERIMENT then GO
 
 - **Status**: Proposed

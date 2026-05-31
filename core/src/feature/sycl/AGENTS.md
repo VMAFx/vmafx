@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # AGENTS.md — core/src/feature/sycl
 
 Orientation for agents working on per-feature SYCL kernels (DPC++).

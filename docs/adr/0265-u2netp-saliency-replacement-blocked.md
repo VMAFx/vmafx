@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0265: U-2-Net `u2netp` saliency replacement blocked on weights distribution + op allowlist
 
 - **Status**: Accepted
@@ -20,7 +21,8 @@ T6-2a-replace-with-u2netp.
 This ADR records the result of attempting that replacement. Two
 independent blockers came up that PR #326's FastDVDnet pattern (pin
 upstream commit + curl `.pth` from raw GitHub URL + wrap with adapter
-+ export to allowlist-safe ONNX with `< 1e-5` parity) cannot resolve:
+
+- export to allowlist-safe ONNX with `< 1e-5` parity) cannot resolve:
 
 1. **Weights distribution — Google Drive only.** The upstream
    repository [`xuebinqin/U-2-Net`](https://github.com/xuebinqin/U-2-Net)

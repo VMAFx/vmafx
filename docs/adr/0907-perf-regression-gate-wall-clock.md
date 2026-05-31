@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0907: Wall-clock perf regression gate over the multi-resolution baseline
 
 - **Status**: Proposed

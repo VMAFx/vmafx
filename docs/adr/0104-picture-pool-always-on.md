@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0104: Compile `picture_pool` unconditionally and size it for the live-picture set
 
 - **Status**: Accepted

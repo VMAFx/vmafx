@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0520: Wire `vmaf --no-reference` through to the scoring path
 
 - **Status**: Accepted

@@ -15,7 +15,7 @@
 
 ## Reproducer
 
-```
+```text
 TSAN_OPTIONS="halt_on_error=0 second_deadlock_stack=1 history_size=7" \
 ./build-tsan/tools/vmaf \
   -r python/test/resource/yuv/checkerboard_1920_1080_10_3_0_0.yuv \
@@ -108,7 +108,7 @@ full decision record, alternatives matrix, and consequences.
 
 ## Verification
 
-```
+```text
 $ TSAN_OPTIONS=... ./build-tsan/tools/vmaf ...           # post-fix
 $ grep -cE 'WARNING: ThreadSanitizer' /tmp/tsan-bigstress3.log
 0

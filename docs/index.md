@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Documentation
 
 This is an overview of the available documentation in the VMAF repository.

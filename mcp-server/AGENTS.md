@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD024 -->
 # AGENTS.md — mcp-server/
 
 Orientation for agents working on the MCP (Model Context Protocol) server.
@@ -8,7 +9,7 @@ Parent: [../AGENTS.md](../AGENTS.md).
 A Python JSON-RPC server that exposes libvmaf capabilities as MCP tools
 for editor/agent consumers.
 
-```
+```text
 mcp-server/
   vmaf-mcp/
     pyproject.toml

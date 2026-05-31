@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0587: Real Metal Compute Kernels for CAMBI
 
 - **Status**: Accepted

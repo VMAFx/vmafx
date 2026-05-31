@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0092: CUDA motion sub-4K performance root cause (2026-05-10)
 
 **Status:** Confirmed — fix in PR #695 (fix/motion-cuda-stream).

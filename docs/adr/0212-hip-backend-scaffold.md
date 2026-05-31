@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0212: HIP (AMD ROCm) compute backend — scaffold-only audit-first PR (T7-10)
 
 - **Status**: Accepted

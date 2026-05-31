@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # `binaries/` — pre-compiled `libvmaf` per-platform drop
 
 This directory is **populated by the operator**, not by source control.
@@ -8,7 +9,7 @@ correct subdirectory before tarballing or running the pipeline.
 
 ## Layout
 
-```
+```text
 tools/ensemble-training-kit/binaries/
 ├── linux-x86_64-cuda/vmaf       # NVIDIA CUDA path
 ├── linux-x86_64-sycl/vmaf       # Intel Arc / iGPU SYCL path

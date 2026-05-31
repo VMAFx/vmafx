@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research digest — Skills library expansion (2026-05-31)
 
 Backs [ADR-0939](../adr/0939-skills-library-expansion.md). Modernization audit

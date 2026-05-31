@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0189: float_ssim Vulkan kernel — host decimation, 2-dispatch GPU
 
 - **Status**: Accepted
@@ -61,6 +62,7 @@ The cross-backend gate fixture (576×324) auto-resolves to
 the decimation code path.
 
 GPU-side decimation lands in v2 either via:
+
 - A pre-pass GLSL kernel that does the 11×11 Gaussian
   low-pass + 2× sub-sample, looped `log₂(scale)` times.
 - Or, exposing `iqa_decimate` via a public header and calling
@@ -85,7 +87,7 @@ intermediates of the previous pass; applies the vertical 11-tap
 kernel to get the final 5 SSIM stats. Computes per-pixel SSIM
 in `float`:
 
-```
+```text
 mu_xy   = ref_mu · cmp_mu
 sigma2  = ref_σ²·cmp_σ² - σ_xy²    (not used directly)
 ssim_px = ((2·mu_xy + C1)·(2·σ_xy + C2)) /

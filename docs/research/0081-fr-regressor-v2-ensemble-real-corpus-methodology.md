@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD049 MD060 -->
 # Research-0081: `fr_regressor_v2` ensemble — real-corpus retrain methodology
 
 - **Status**: Active

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0504: AVX-512F port of float separable convolution scanlines
 
 - **Status**: Accepted
@@ -37,6 +38,7 @@ scalar. The new TU is compiled with `-mavx512f -mavx512dq -mavx512bw` inside
 the existing `x86_avx512_static_lib` in `core/src/meson.build`.
 
 The invariants from ADR-0143 are preserved in the new file:
+
 - Scanline helpers carry `static` linkage.
 - Inner-loop strides are `ptrdiff_t`.
 - Horizontal pass uses `_mm512_loadu_ps` (no alignment guarantee on tmp row

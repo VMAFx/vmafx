@@ -55,7 +55,7 @@ reading local shell history.
 
 Effective topology:
 
-```
+```text
 features [N, 6]
    |
    Sub  <- mean   ([6] constant)
@@ -69,9 +69,9 @@ features [N, 6]
 
 ## Training data
 
-* Netflix Public Dataset (9 sources × encodings — local extract).
-* KoNViD-1k (5-fold extract; CC BY 4.0; not redistributed).
-* BVI-DVC subsets A + B + C + D (full coverage).
+- Netflix Public Dataset (9 sources × encodings — local extract).
+- KoNViD-1k (5-fold extract; CC BY 4.0; not redistributed).
+- BVI-DVC subsets A + B + C + D (full coverage).
 
 All combined into `runs/full_features_4corpus.parquet` (330 499
 frame-rows × 22 FULL_FEATURES + `vmaf` teacher score from
@@ -166,15 +166,15 @@ stats target. Keep that block with any refreshed stats used for export.
 
 ## Limitations
 
-* The model fuses six **already-extracted** features — it is *not* a
+- The model fuses six **already-extracted** features — it is *not* a
   pixel-input quality model. To use it from raw YUV, the feature
   extraction stage runs first (the regular libvmaf path).
-* Trained on SDR content. HDR coverage is out of scope until the
+- Trained on SDR content. HDR coverage is out of scope until the
   upstream HDR feature extractors land.
-* The 4-corpus parquet uses `vmaf_v0.6.1` as the teacher score; v2
+- The 4-corpus parquet uses `vmaf_v0.6.1` as the teacher score; v2
   cannot exceed `vmaf_v0.6.1` in absolute correctness — it
   approximates the SVM with a much smaller MLP.
-* Bit-exactness across CPU/GPU execution providers is not guaranteed
+- Bit-exactness across CPU/GPU execution providers is not guaranteed
   (ADR-0042 / ADR-0119 — places=4 tolerance applies to tiny-AI
   models too).
 

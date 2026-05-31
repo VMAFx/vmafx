@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0048: vmaf_tiny_v4 (mlp_large) evaluation — does the arch ladder saturate?
 
 - **Date**: 2026-05-02

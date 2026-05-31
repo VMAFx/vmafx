@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0377: HIP batch-4 — `ciede_hip` and `integer_motion_v2_hip` real kernels
 
 - **Status**: Accepted

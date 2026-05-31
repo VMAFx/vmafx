@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0061: CUDA `integer_ms_ssim_cuda` drain_batch wire-up — host-blocking syscall profile
 
 - **Date**: 2026-05-04

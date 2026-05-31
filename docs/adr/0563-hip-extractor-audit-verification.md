@@ -1,6 +1,5 @@
-<!-- markdownlint-disable MD013 -->
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0563: HIP extractor audit — verification of 9 remaining scaffold claims
-<!-- markdownlint-enable MD013 -->
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

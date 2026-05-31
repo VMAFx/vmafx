@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0749: Sunset VmafLegacyQualityRunner
 
 **Date**: 2026-05-28

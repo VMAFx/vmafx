@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0143: Port Netflix upstream generalised AVX convolve for arbitrary filter widths
 
 - **Status**: Accepted

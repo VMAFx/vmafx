@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0734: CUDA ADM kernel ncu hotpath analysis (576x324)
 
 - **Status**: Active
@@ -16,7 +17,8 @@ applies to each, and what are the 2–3 highest-leverage optimization candidates
 - Build: `core/build-ncu` (meson release + `-g -fno-omit-frame-pointer`)
 - Input: Netflix golden pair `src01_hrc00_576x324.yuv` ↔ `src01_hrc01_576x324.yuv` (8bpc, YUV 4:2:0)
 - Reproducer:
-  ```
+
+  ```text
   docker run --rm --gpus all --privileged --entrypoint bash \
     -v <worktree>:/workspace -v <repo>/python:/workspace/python:ro \
     -w /workspace/core vmaf-dev-mcp:cuda13.3 -c \

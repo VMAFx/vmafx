@@ -7,7 +7,7 @@ description: Core debugging skill. Runs the same (ref, dist) through every enabl
 
 ## Invocation
 
-```
+```text
 /cross-backend-diff --ref=PATH --dist=PATH --width=W --height=H --pixfmt=420p
                     [--bitdepth=8] [--frames=48] [--tolerance-ulp=2]
                     [--backends=cpu,cuda,sycl,vulkan]
@@ -23,12 +23,14 @@ description: Core debugging skill. Runs the same (ref, dist) through every enabl
    - Absolute max diff
    - ULP distance (double bits XOR)
 5. Report a table:
-   ```
+
+   ```text
    Feature   Pair           MaxAbsDiff   MaxULP  WorstFrame   Verdict
    adm       cpu vs cuda    3.2e-16      1       17           OK
    vif       cpu vs sycl    4.1e-15      18      23           FAIL(>2)
    ...
    ```
+
 6. Exit 0 if all ULPs ≤ `--tolerance-ulp`, else 1.
 
 ## Notes

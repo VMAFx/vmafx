@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Tiny AI — training
 
 Everything happens through `vmaf-train`, the typer CLI in

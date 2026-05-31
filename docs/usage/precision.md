@@ -10,7 +10,7 @@ lossless `%.17g` is opt-in via `--precision=max`.
 
 ## Grammar
 
-```
+```text
 --precision N          # integer 1..17 → printf "%.<N>g"
 --precision max        # alias for "%.17g" (IEEE-754 round-trip lossless)
 --precision full       # alias for "%.17g"
@@ -46,7 +46,7 @@ rationale.
 IEEE-754 double precision holds ~15.95 significant decimal digits. `%.17g` is
 the *minimum* printf format that guarantees:
 
-```
+```text
 parse(print(x)) == x    for every finite double x
 ```
 

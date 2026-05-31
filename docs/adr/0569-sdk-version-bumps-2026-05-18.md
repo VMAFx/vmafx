@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0569: SDK / Tool Version Bumps — 2026-05-18
 
 - **Status**: Accepted

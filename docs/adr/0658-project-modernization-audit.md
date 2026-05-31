@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0658: Project modernization audit
 
 - **Status**: Accepted

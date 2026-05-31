@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0562: VCQ-223 LocalExplainer hang fix — cap neighbor_samples in test runner
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD036 -->
 # Research digest: macOS SIGSEGV deep-fix in output.c writers (ADR-0606)
 
 _2026-05-19 — lusoris / Claude_
@@ -14,6 +15,7 @@ SIGSEGV after #1403 merged.
 ## Environment factors (macOS CI)
 
 The macOS CI runs under:
+
 - `MALLOC_PERTURB_=198` — fills newly-allocated memory with `0xC6`, freed
   memory with `0x39`. Any read from uninitialized or freed memory returns a
   byte in `[0x39, 0xC6]` rather than a safe zero.
@@ -112,6 +114,7 @@ static void json_write_pool_score(FILE *outfile, unsigned j, double score, const
 ```
 
 `j` is the `VmafPoolingMethod` enum value:
+
 - 1 = `VMAF_POOL_METHOD_MIN`
 - 2 = `VMAF_POOL_METHOD_MEAN`
 - 3 = `VMAF_POOL_METHOD_HARMONIC_MEAN`
@@ -142,7 +145,7 @@ Fix: `bool first_frame = true` flag, flipped after the first emission.
 
 Linux (with MALLOC_PERTURB_=198 simulation):
 
-```
+```text
 MALLOC_PERTURB_=198 meson test -C core/build test_output test_public_api_score
 1/2 fast - libvmaf:test_output           OK   0.00s
 2/2 fast - libvmaf:test_public_api_score OK   0.01s

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0524: Tiny-model loader accepts symbolic batch dim
 
 - **Status**: Accepted

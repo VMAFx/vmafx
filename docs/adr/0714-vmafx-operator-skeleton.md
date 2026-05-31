@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0714: vmafx-operator kubebuilder skeleton + CRDs
 
 - **Status**: Accepted
@@ -38,7 +39,7 @@ Three CRDs are registered:
 
 ### Directory layout
 
-```
+```text
 api/vmafx/v1/                          # CRD Go types + deepcopy
 cmd/vmafx-operator/
   main.go                              # entry point; manager setup

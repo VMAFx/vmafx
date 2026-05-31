@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0051 — ssimulacra2 GPU XYB shader precision re-investigation (T-GPU-OPT-VK-3)
 
 | Field             | Value                                                                                  |

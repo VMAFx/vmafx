@@ -14,7 +14,7 @@ volk Vulkan-loader (a static-archive function-pointer dispatcher,
 symbols have default visibility, so they end up in the shared
 library's public ABI:
 
-```
+```text
 $ nm -D libvmaf.so.3.0.0 | grep volk
 T volkFinalize
 T volkGetInstanceVersion
@@ -36,7 +36,7 @@ into the same final binary. Both contributors define every
 Vulkan entry point (`vkGetInstanceProcAddr`,
 `vkCopyMemoryToImage`, …); the GNU linker rejects with:
 
-```
+```text
 /opt/ffbuild/lib/libvulkan.a(loader.c.o):
   multiple definition of `vkGetInstanceProcAddr';
 volk.c.o (symbol from plugin): first defined here

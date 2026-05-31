@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0712: IDE config audit and refresh for multi-language post-rebrand VMAFX
 
 - **Status**: Accepted
@@ -90,6 +91,7 @@ and `.zed/settings.json` in a single PR:
 ## Consequences
 
 **Positive:**
+
 - Contributors opening the repo in VS Code or Zed immediately get working
   LSP for all four languages without manual configuration.
 - `c_cpp_properties.json` no longer references the deleted `libvmaf/` path,
@@ -98,12 +100,14 @@ and `.zed/settings.json` in a single PR:
   preventing IDE slowdowns as those trees grow.
 
 **Negative:**
+
 - Developers who had customised their local `.vscode/settings.json` via
   workspace-local overrides will not be affected (workspace overrides are not
   committed), but contributors who rely on the project-level settings.json
   directly will observe formatter and LSP changes on next VS Code reload.
 
 **Neutral follow-ups:**
+
 - When `cmd/vmafx-controller` and `cmd/vmafx-node` are scaffolded (ADR-0709
   Phase 4b), no additional IDE config changes are required — gopls discovers
   `go.mod` at the root automatically.

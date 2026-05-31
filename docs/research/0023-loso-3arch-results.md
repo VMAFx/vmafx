@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research Digest 0023 — 3-arch LOSO results on the Netflix corpus
 
 **Date**: 2026-04-28
@@ -15,21 +16,21 @@ covered `mlp_small` alone) and [ADR-0203](../adr/0203-tiny-ai-training-prep-impl
 
 ## 1. Setup
 
-* Corpus: `.workingdir2/netflix/{ref,dis}/`, 9 reference YUVs.
-* Teacher: `vmaf_v0.6.1` per-frame scores via the libvmaf CLI in
+- Corpus: `.workingdir2/netflix/{ref,dis}/`, 9 reference YUVs.
+- Teacher: `vmaf_v0.6.1` per-frame scores via the libvmaf CLI in
   `core/build/tools/vmaf`.
-* Architectures (params):
-  * `mlp_small` — 257
-  * `mlp_medium` — 2 561
-  * `linear` — 7
-* Training: 30 epochs per fold per arch, default optimizer / lr /
+- Architectures (params):
+  - `mlp_small` — 257
+  - `mlp_medium` — 2 561
+  - `linear` — 7
+- Training: 30 epochs per fold per arch, default optimizer / lr /
   seed. Each fold trains on the 8 non-held-out sources.
-* Evaluation harness:
+- Evaluation harness:
   [`ai/scripts/eval_loso_3arch.py`](../../ai/scripts/eval_loso_3arch.py).
   Reuses the per-clip JSON cache + `_load_session` helpers from PR
   #165's `eval_loso_mlp_small.py`.
-* Hardware: Ryzen 9 9950X3D / RTX 4090 / 64 GB.
-* Wall time: 9 folds × 3 arch ≈ 9 × ~6 min × ~1.0–1.4× per arch
+- Hardware: Ryzen 9 9950X3D / RTX 4090 / 64 GB.
+- Wall time: 9 folds × 3 arch ≈ 9 × ~6 min × ~1.0–1.4× per arch
   (mlp_medium ~1.4× of mlp_small; linear ~0.4×). All three sweeps
   ran in parallel on local hardware.
 
@@ -44,13 +45,13 @@ covered `mlp_small` alone) and [ADR-0203](../adr/0203-tiny-ai-training-prep-impl
 Clear pattern, replicated on the LOSO axis from the single-split
 finding in ADR-0203:
 
-* **`mlp_small` wins ranking** — highest PLCC + SROCC. Default tiny
+- **`mlp_small` wins ranking** — highest PLCC + SROCC. Default tiny
   model `vmaf_tiny_v1.onnx` stays.
-* **`mlp_medium` wins absolute fit** — RMSE 10.85 vs 14.91 (~27 %
+- **`mlp_medium` wins absolute fit** — RMSE 10.85 vs 14.91 (~27 %
   reduction). Alternate `vmaf_tiny_v1_medium.onnx` stays for users
   who care about absolute-VMAF agreement on the Netflix corpus
   distribution.
-* **`linear` is a sanity floor** — PLCC 0.37 vs MLP 0.97+. Confirms
+- **`linear` is a sanity floor** — PLCC 0.37 vs MLP 0.97+. Confirms
   the 6 features carry substantial signal but the relationship is
   strongly non-linear; linear is unshippable as a quality model.
 
@@ -100,7 +101,7 @@ finding in ADR-0203:
 
 ## 4. Cross-arch observations
 
-* **FoxBird is the per-fold outlier on both MLPs** — lowest PLCC on
+- **FoxBird is the per-fold outlier on both MLPs** — lowest PLCC on
   `mlp_small` (0.9266) and `mlp_medium` (0.9286). FoxBird has the
   smallest sample count (900) and the most distinctive
   motion-coherence profile in the corpus, so the held-out fold has
@@ -117,31 +118,31 @@ finding in ADR-0203:
   Tier 6 has T6-1b (LPIPS-Sq) for an FR baseline expansion; corpus
   expansion is its own thread to open if FoxBird-class variance
   becomes a shipped-model concern.
-* **Linear's variance is much higher** (PLCC ±0.077 vs ±0.020 for
+- **Linear's variance is much higher** (PLCC ±0.077 vs ±0.020 for
   MLPs). The poor-fit linear model exposes more inter-clip noise —
   a fact about the linear model's inability to capture the feature-
   to-score relationship, not about the corpus itself.
-* **PLCC and SROCC track each other tightly across all 27 fold-
+- **PLCC and SROCC track each other tightly across all 27 fold-
   arch combinations** (Pearson ≈ 0.97 between PLCC and SROCC across
   the table). Either is a sufficient ranking summary; we keep both
   for consistency with prior work.
-* **mlp_medium's RMSE win is consistent across folds** — every fold
+- **mlp_medium's RMSE win is consistent across folds** — every fold
   shows lower RMSE on medium than small except CrowdRun and FoxBird
   (within 0.1 RMSE either way). The 27 % aggregate RMSE reduction
   is real, not driven by a single fold.
 
 ## 5. Implications
 
-* `vmaf_tiny_v1.onnx` (mlp_small) **remains the shipped default** —
+- `vmaf_tiny_v1.onnx` (mlp_small) **remains the shipped default** —
   its LOSO-mean PLCC of 0.98 is the honest "expected accuracy on a
   new clip from this distribution" number, beating mlp_medium by
   ~1 PLCC point.
-* `vmaf_tiny_v1_medium.onnx` (mlp_medium) **remains the shipped
+- `vmaf_tiny_v1_medium.onnx` (mlp_medium) **remains the shipped
   alternate** for users who care about absolute-VMAF agreement —
   the 27 % RMSE reduction is the canonical reason to opt in.
-* `linear` **does not ship**; remains as a sanity-floor harness
+- `linear` **does not ship**; remains as a sanity-floor harness
   control documented in ADR-0203's "Three-arch sweep" section.
-* Future work for FoxBird's outlier status: T6-1a (Netflix Public
+- Future work for FoxBird's outlier status: T6-1a (Netflix Public
   Dataset training corpus) increases the effective fold count and
   sample diversity beyond the 9-source ceiling.
 
@@ -172,13 +173,13 @@ cat runs/loso_eval/loso_3arch_eval.md
 
 ## 7. Known artefacts
 
-* `runs/loso_eval/loso_3arch_eval.{json,md}` is gitignored — the
+- `runs/loso_eval/loso_3arch_eval.{json,md}` is gitignored — the
   empirical numbers in §2–3 above are the durable record. Re-run
   the harness to regenerate.
-* The per-fold ONNX files under
+- The per-fold ONNX files under
   `model/tiny/training_runs/loso_{mlp_small,mlp_medium,linear}/`
   are also gitignored. Regenerate via the loop in §6.
-* The shipped baselines `vmaf_tiny_v1*.onnx` retain their pre-rename
+- The shipped baselines `vmaf_tiny_v1*.onnx` retain their pre-rename
   `external_data.location` references (a known issue worked around
   in `_load_session`); a proper re-export with matching names is a
   follow-up tracked elsewhere.

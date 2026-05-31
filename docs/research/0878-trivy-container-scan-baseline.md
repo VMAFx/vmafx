@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research digest — Trivy container scan baseline (2026-05-30)
 
 ADR: [ADR-0878](../adr/0878-trivy-container-scan-baseline.md)
@@ -140,5 +141,6 @@ trivy config --skip-version-check dev/Containerfile
 ## Source
 
 `req` — task brief 2026-05-30: "Scan published container images for CVEs
-+ misconfigurations via Trivy. ... CVEs in published images = direct
+
+- misconfigurations via Trivy. ... CVEs in published images = direct
 user exposure."

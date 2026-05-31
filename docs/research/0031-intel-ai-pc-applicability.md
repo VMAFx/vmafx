@@ -229,7 +229,7 @@ re-investigate from scratch.
 - **Add the DirectML EP for Windows-native NPU support**: rejected
   for this digest's scope — DirectML brings a Windows CI matrix the
   fork does not have today, and the OpenVINO-NPU path covers Linux
-  + Windows once hardware access is available. Re-evaluate if a
+  Windows once hardware access is available. Re-evaluate if a
   Windows-specific user need surfaces.
 - **Treat AI-PC NPU as out of scope permanently**: rejected.
   Volume is real and growing; the deferral is for "no

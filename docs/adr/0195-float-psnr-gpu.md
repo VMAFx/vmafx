@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0195: float_psnr GPU kernels — single-dispatch diff² with float partials, bit-exact vs CPU
 
 - **Status**: Accepted

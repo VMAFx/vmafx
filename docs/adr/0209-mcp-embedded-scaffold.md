@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0209: Embedded MCP server — scaffold-only audit-first PR (T5-2)
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0680: Shared AI CLI Helper Pattern
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Waterloo IVC 4K-VQA → MOS-corpus JSONL ingestion
 
 The fork's `nr_metric_v1` tiny no-reference VQA model is
@@ -16,18 +17,18 @@ re-encoded with five contemporary codecs at three
 resolutions and four distortion levels, yielding 1 200
 distorted clips with per-clip MOS.
 
-* **Sources**: 20 pristine 2160p sequences.
-* **Encoders**: H.264/AVC, H.265/HEVC, VP9, AVS2, AV1.
-* **Resolutions**: 540p / 1080p / 2160p.
-* **Distortion levels**: 4 per (encoder, resolution).
-* **Total distorted clips**: 1 200.
-* **MOS scale**: 0–100 native (not 1–5 Likert; see
+- **Sources**: 20 pristine 2160p sequences.
+- **Encoders**: H.264/AVC, H.265/HEVC, VP9, AVS2, AV1.
+- **Resolutions**: 540p / 1080p / 2160p.
+- **Distortion levels**: 4 per (encoder, resolution).
+- **Total distorted clips**: 1 200.
+- **MOS scale**: 0–100 native (not 1–5 Likert; see
   "Cross-corpus MOS scale caveat" below).
-* **Dataset card**:
+- **Dataset card**:
   <https://ivc.uwaterloo.ca/database/4KVQA.html>.
-* **Archive base**:
+- **Archive base**:
   <https://ivc.uwaterloo.ca/database/4KVQA/201908/>.
-* **Licence**: Permissive academic — attribution required,
+- **Licence**: Permissive academic — attribution required,
   no NDA, no password gate, no registration form.
 
 ## When to run the adapter
@@ -122,8 +123,8 @@ records the score verbatim on its native scale (no
 ingest-time rescaling), matching the policy of LSVQ /
 KonViD-150k. The convention is:
 
-* `corpus = "waterloo-ivc-4k"` rows carry MOS on 0–100.
-* `corpus = "konvid-150k"` / `"lsvq"` rows carry MOS on
+- `corpus = "waterloo-ivc-4k"` rows carry MOS on 0–100.
+- `corpus = "konvid-150k"` / `"lsvq"` rows carry MOS on
   1–5.
 
 A trainer-side per-corpus normaliser (e.g. mapping
@@ -141,13 +142,13 @@ sniffs the first row.
 The upstream `scores.txt` is **headerless**, with five
 comma-separated columns:
 
-```
+```text
 encoder, video_number, resolution, distortion_level, mos
 ```
 
 Sample rows verbatim:
 
-```
+```text
 HEVC, 1, 540p, 1, 18.21
 HEVC, 1, 540p, 2, 39.46
 HEVC, 1, 540p, 3, 50.23
@@ -212,17 +213,17 @@ paths, row cap, attrition counters, effective corpus version, and ADR-0661
 
 ## Failure handling
 
-* **Download failure** (HTTP 404 / 410, curl spawn
+- **Download failure** (HTTP 404 / 410, curl spawn
   failure, empty body, missing URL on canonical-shape
   rows): logged with the reason, persisted to the
   progress file as `state: "failed"`, run continues.
   Re-runs honour the non-retry contract — to retry,
   delete the entry from the progress file or delete the
   whole file.
-* **ffprobe failure** ("broken-clip"): logged, run
+- **ffprobe failure** ("broken-clip"): logged, run
   continues, no row emitted. Distinct from
   download-failed in the summary line.
-* **Attrition WARNING**: when the download-failed
+- **Attrition WARNING**: when the download-failed
   fraction exceeds `--attrition-warn-threshold` (default
   10 %), an advisory WARNING is logged. The run still
   completes. For canonical-shape (no-URL) operations the
@@ -257,14 +258,14 @@ State-of-the-art Video Encoders on 4K Videos," ICIAR
 
 ## Related
 
-* [ADR-0369: Waterloo IVC 4K-VQA corpus ingestion](../adr/0369-waterloo-ivc-4k-corpus-ingestion.md).
-* [Research-0091: Waterloo IVC 4K-VQA corpus feasibility](../research/0091-waterloo-ivc-4k-corpus-feasibility.md).
-* ADR-0333 (LSVQ) — same adapter shape; this Waterloo
+- [ADR-0369: Waterloo IVC 4K-VQA corpus ingestion](../adr/0369-waterloo-ivc-4k-corpus-ingestion.md).
+- [Research-0091: Waterloo IVC 4K-VQA corpus feasibility](../research/0091-waterloo-ivc-4k-corpus-feasibility.md).
+- ADR-0333 (LSVQ) — same adapter shape; this Waterloo
   IVC adapter is a near-mirror modulo dataset specifics
   (manifest shape + MOS scale).
-* [ADR-0325 Phase 2](../adr/0325-konvid-150k-phase2.md) (KonViD-150k) — same
+- [ADR-0325 Phase 2](../adr/0325-konvid-150k-phase2.md) (KonViD-150k) — same
   schema; same resumable-download contract.
-* [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md)
+- [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md)
   (BVI-DVC) — first second-shard ingestion ADR; sets the
   local-only-corpus / redistributable-derivatives
   precedent.

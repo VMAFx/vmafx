@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0717: vmafx-node — ffmpeg latest-tag pinning + ffmpeg-patches bundled into Dockerfile
 
 - **Status**: Accepted
@@ -75,6 +76,7 @@ matrix without shelling into the container.
 ## Consequences
 
 **Positive:**
+
 - Every `vmafx-node` pod runs the exact same ffmpeg binary with all 15 fork patches.
 - The `pkg/encoder` package and `cmd/vmafx-node/probe` package are codec-inventory-aware
   at startup, enabling the controller to dispatch only to nodes that carry the requested
@@ -85,6 +87,7 @@ matrix without shelling into the container.
 - CI can validate the node image build with `docker buildx build --target node-cpu`.
 
 **Negative:**
+
 - Every node image build must compile ffmpeg from source (~5–10 min on standard runners).
   This can be accelerated with `--cache-from` in CI.
 - When `ffmpeg-patches/` are updated (e.g., after an FFmpeg n8.3 base bump), the
@@ -92,6 +95,7 @@ matrix without shelling into the container.
   (CLAUDE.md §12 r14).
 
 **Neutral / follow-ups:**
+
 - Phase 4b.5+ will add full gRPC service registration in `cmd/vmafx-node/server/server.go`
   once the controller proto is finalized.
 - NVENC / QSV / AMF hardware encoders require the host's GPU driver; the node container

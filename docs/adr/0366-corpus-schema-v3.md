@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0366: vmaf-tune corpus schema v3 — canonical-6 per-feature aggregates
 
 - **Status**: Accepted

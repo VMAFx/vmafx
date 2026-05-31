@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD060 -->
 # ADR-0381: Fix Vulkan VIF Scale 2/3 Numerical Saturation (PR #718)
 
 - **Status**: Accepted

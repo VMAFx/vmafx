@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0067: fr_regressor_v2 PROD — LOSO ship-gate evaluation
 
 **Date**: 2026-05-05

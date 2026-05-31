@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0405: Wire OpenVINO NPU execution provider into the tiny-AI dispatch layer
 
 - **Status**: Accepted

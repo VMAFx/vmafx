@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD056 MD060 -->
 # Research-0003: SSIMULACRA 2 port sourcing and upstream-drift strategy
 
 - **Status**: Active

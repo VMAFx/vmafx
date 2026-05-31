@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # YouTube UGC -> MOS-corpus JSONL ingestion
 
 The fork's `nr_metric_v1` tiny no-reference VQA model is trained
@@ -13,12 +14,12 @@ original community-uploaded clips spanning gaming, vlogs,
 lyric-videos, sports, HDR, and animation, with crowd MOS values
 on the same 1.0-5.0 Likert scale as LSVQ / KonViD.
 
-* **Public bucket**:
+- **Public bucket**:
   <https://storage.googleapis.com/ugc-dataset/>
   (CC-BY, no sign-up, no request form).
-* **Original-video listing CSV**:
+- **Original-video listing CSV**:
   <https://storage.googleapis.com/ugc-dataset/original_videos.csv>.
-* **Attribution / license**:
+- **Attribution / license**:
   <https://storage.googleapis.com/ugc-dataset/ATTRIBUTION>.
 
 ## When to run the adapter
@@ -179,15 +180,15 @@ row cap, attrition counters, effective corpus version, and ADR-0661
 
 ## Failure handling
 
-* **Download failure** (HTTP 404 / 410, curl spawn failure,
+- **Download failure** (HTTP 404 / 410, curl spawn failure,
   empty body): logged with the reason, persisted to the progress
   file as `state: "failed"`, run continues. Re-runs honour the
   non-retry contract — to retry, delete the entry from the
   progress file or delete the whole file.
-* **ffprobe failure** ("broken-clip"): logged, run continues,
+- **ffprobe failure** ("broken-clip"): logged, run continues,
   no row emitted. Distinct from download-failed in the summary
   line.
-* **Attrition WARNING**: when the download-failed fraction
+- **Attrition WARNING**: when the download-failed fraction
   exceeds `--attrition-warn-threshold` (default 10%), an
   advisory WARNING is logged. The run still completes.
 
@@ -201,12 +202,12 @@ attribution travelling alongside.
 
 ## Related
 
-* [ADR-0368: YouTube UGC corpus ingestion](../adr/0368-youtube-ugc-corpus-ingestion.md).
-* [Research-0091: YouTube UGC corpus feasibility](../research/0091-youtube-ugc-corpus-feasibility.md).
-* [ADR-0333](../adr/0333-lsvq-corpus-ingestion.md) (LSVQ) —
+- [ADR-0368: YouTube UGC corpus ingestion](../adr/0368-youtube-ugc-corpus-ingestion.md).
+- [Research-0091: YouTube UGC corpus feasibility](../research/0091-youtube-ugc-corpus-feasibility.md).
+- [ADR-0333](../adr/0333-lsvq-corpus-ingestion.md) (LSVQ) —
   same adapter shape; this YouTube UGC adapter is a near-mirror
   modulo dataset specifics + the synthesised-bucket-URL path.
-* ADR-0325 Phase 2 (KonViD-150k) — schema co-author.
-* [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md) (BVI-DVC) —
+- ADR-0325 Phase 2 (KonViD-150k) — schema co-author.
+- [ADR-0310](../adr/0310-bvi-dvc-corpus-ingestion.md) (BVI-DVC) —
   the first second-shard ingestion ADR; sets the
   local-only-corpus / redistributable-derivatives precedent.

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Using VMAF with FFmpeg
 
 After [installing](../../libvmaf/README.md#install) `libvmaf`, you can use it with [FFmpeg](http://ffmpeg.org/). Under the FFmpeg directory, configure, build and install FFmpeg with:
@@ -169,11 +170,13 @@ The final command line will depend on what shell you are running `ffmpeg` throug
 3. Then escape that backslash with another backslash (`D\\:/mypath/vmaf_v0.6.1.json`)
 4. The next step will depend on the shell that will run `ffmpeg`:
     - For PowerShell and Command Prompt, this will be enough and your final `ffmpeg` command line will look something like
+
     ```powershell
     ./ffmpeg.exe -i dist.y4m -i ref.y4m \
         -lavfi libvmaf=model_path="D\\:/mypath/vmaf_v0.6.1.json" \
         -f null -
     ```
+
     Note: I only quoted the path part for trivial reasons and in this specific case, it can be unquoted or you can quote the whole part after lavfi starting from `libvmaf` to `json` and it should give the same result due to neither shell treating the `\` as a special character
 
     - For bash or specifically msys2 bash, it has some additional considerations. The first thing to know is that bash treats the backslash character `\` a bit special in that it's an escape character normally when not put inside single quotes. The second thing to know is that msys2's bash attempts convert a posix-like path (`/mingw64/share/model/vmaf_v0.6.1.json`) to a Windows mixed path (`D:/msys2/mingw64/share/model/vmaf_v0.6.1.json`) when passing arguments to a program. Normally, this would be fine, however, in our case, this works against us since we cannot allow it to convert the path to a normal path with an un-escaped colon. For this, we will need to not only escape the escaped backslash, but we will also need to pass the `MSYS2_ARG_CONV_EXCL` environment variable with the value of `*` to make sure it doesn't apply that special conversion on any of the arguments

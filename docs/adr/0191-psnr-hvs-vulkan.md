@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD018 -->
 # ADR-0191: float_psnr_hvs Vulkan kernel — overlapping 8×8 DCT blocks + per-plane log transform
 
 - **Status**: Accepted
@@ -85,7 +86,7 @@ DC step-by-step computation matches `calc_psnrhvs` line-for-line.
 
 ### Host orchestrator: `psnr_hvs_vulkan.c`
 
-```
+```text
 init:
     reject bpc > 12 + YUV400P (mirror CPU)
     allocate per-plane:

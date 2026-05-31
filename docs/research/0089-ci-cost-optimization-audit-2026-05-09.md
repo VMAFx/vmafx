@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # CI cost-optimization audit (2026-05-09)
 
 Scope: every workflow under [`.github/workflows/`](../../.github/workflows/) on

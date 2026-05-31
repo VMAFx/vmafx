@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Sidecar Online Training
 
 The VMAFX sidecar trainer continuously fine-tunes a tiny-AI ONNX model
@@ -48,7 +49,7 @@ The sidecar container starts alongside `vmafx-node` in the same pod, binds
 
 ## Architecture
 
-```
+```text
 vmafx-node (Go)               vmafx-sidecar (Python)
 ─────────────────             ──────────────────────────
 scorer.Score(ref, dis)   ──→  ReplayBuffer (10 000 cap)
@@ -112,7 +113,7 @@ and should not be changed unless the volume mount path also changes.
 
 Each checkpoint export writes two files atomically:
 
-```
+```text
 /mnt/vmafx-models/online/model_v000042.onnx         # EMA model
 /mnt/vmafx-models/online/model_v000042.onnx.sha256  # SHA-256 digest
 ```

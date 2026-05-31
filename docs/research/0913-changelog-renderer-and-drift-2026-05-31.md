@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD038 MD060 -->
 # Research-0913 — CHANGELOG.md renderer splice bug + 23 k+ line drift audit
 
 - **Date**: 2026-05-31

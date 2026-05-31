@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0904: Pin `cargo-machete` ignore entries for `bindgen` / `cbindgen` build dependencies
 
 - **Status**: Accepted

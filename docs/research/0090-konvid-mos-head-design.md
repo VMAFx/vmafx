@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0090 — KonViD MOS head v1 design
 
 - **Status**: Notes for [ADR-0336](../adr/0336-konvid-mos-head-v1.md) (Phase 3 of [ADR-0325](../adr/0325-konvid-150k-corpus-ingestion.md))

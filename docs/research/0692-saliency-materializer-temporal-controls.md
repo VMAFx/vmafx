@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0692: Saliency Materializer Temporal Controls
 
 - **Status**: Completed

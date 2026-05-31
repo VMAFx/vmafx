@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0262: bisect-model-quality cache check uses logical comparison for parquet
 
 - **Status**: Accepted

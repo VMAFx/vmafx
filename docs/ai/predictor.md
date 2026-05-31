@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Per-shot VMAF predictor
 
 The per-shot VMAF predictor turns "encode every shot, score every
@@ -161,7 +162,7 @@ for published tags, following the same release workflow as the
 
 ## File layout
 
-```
+```text
 model/
   predictor_libx264.onnx         + predictor_libx264_card.md
   predictor_libx265.onnx         + predictor_libx265_card.md

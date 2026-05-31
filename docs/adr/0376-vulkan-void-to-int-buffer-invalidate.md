@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0376: Fix silent error-swallow in Vulkan buffer-invalidate readback functions
 
 - **Status**: Accepted

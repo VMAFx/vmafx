@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0012: Coding standards stack JPL + CERT + MISRA
 
 - **Status**: Accepted

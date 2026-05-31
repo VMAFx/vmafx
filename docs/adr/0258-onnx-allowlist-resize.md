@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0258: ONNX op-allowlist — admit `Resize` for saliency / segmentation models (T7-32)
 
 - **Status**: Accepted
@@ -58,6 +59,7 @@ new entry automatically.
 ## Consequences
 
 **Positive:**
+
 - Unblocks PR #341 (U-2-Net) and the wider saliency / segmentation
   surface (mobilesal, BASNet, PiDiNet, FPN-style detectors) on the
   fork's tiny-AI pipeline.
@@ -70,6 +72,7 @@ new entry automatically.
   additional plumbing.
 
 **Negative:**
+
 - Models that ship `mode="cubic"` will load and run at the
   fork's tiny-AI surface. Per ADR D39 / ADR-0169 the scanner
   is op-type-only; mode-level filtering would either expand the
@@ -82,6 +85,7 @@ new entry automatically.
   cross-reference. No mechanical enforcement.
 
 **Neutral / follow-ups:**
+
 - If a future fork model needs `Loop`-style attribute gating
   symmetric to ADR-0171 (bounded-iteration guard), the precedent
   exists — but `Resize` does not need it.
@@ -103,7 +107,7 @@ new entry automatically.
 - [ADR-0039](0039-onnx-runtime-op-walk-registry.md) — op-allowlist
   walk + registry origin.
 - [ADR-0169](0169-onnx-allowlist-loop-if.md) — Loop / If precedent
-  + recursive-subgraph scan.
+  recursive-subgraph scan.
 - [ADR-0171](0171-bounded-loop-trip-count.md) — bounded-iteration
   guard pattern referenced for completeness.
 - [docs/ai/security.md § Layer 1 — operator allowlist](../ai/security.md).

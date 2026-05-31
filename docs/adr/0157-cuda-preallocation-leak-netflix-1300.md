@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0157: CUDA preallocation memory leak fix + `vmaf_cuda_state_free` public API (Netflix#1300)
 
 - **Status**: Accepted
@@ -17,7 +18,8 @@ only avoid the leak by switching to the non-preallocating allocation
 path.
 
 Verification via `meson setup build-asan-cuda -Db_sanitize=address`
-+ running `test_cuda_pic_preallocation` confirmed **30 799 bytes
+
+- running `test_cuda_pic_preallocation` confirmed **30 799 bytes
 leaked in 28 allocations** across several distinct framework-side
 paths. Code inspection identified the root causes:
 

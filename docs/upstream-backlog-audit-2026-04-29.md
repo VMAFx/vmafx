@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Upstream-backlog re-audit — 2026-04-29 (T7-4)
 
 > Quarterly upstream-backlog re-audit per

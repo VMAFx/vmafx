@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0604: Add Renovate customManager for ROCm apt-repo tracking
 
 - **Status**: Accepted

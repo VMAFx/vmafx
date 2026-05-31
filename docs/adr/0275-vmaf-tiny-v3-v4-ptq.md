@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0275: `vmaf_tiny_v3` and `vmaf_tiny_v4` join dynamic-PTQ family (T5-3d follow-up)
 
 - **Status**: Accepted

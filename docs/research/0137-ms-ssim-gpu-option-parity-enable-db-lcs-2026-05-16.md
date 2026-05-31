@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0137: MS-SSIM GPU option parity — `enable_db`, `clip_db`, `enable_lcs`
 
 **Date**: 2026-05-16

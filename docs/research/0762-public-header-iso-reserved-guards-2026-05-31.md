@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0762: Public-header ISO-reserved include-guards — Round 27 audit A.1 (2026-05-31)
 
 **Date:** 2026-05-31
@@ -90,7 +91,7 @@ clang -Wreserved-identifier -Werror -fsyntax-only main.c
 
 **Result (clang 22.1.6 on Linux x86_64):**
 
-```
+```text
 In file included from main.c:1:
 ./before.h:2:9: error: macro name is a reserved identifier
                        [-Werror,-Wreserved-macro-identifier]

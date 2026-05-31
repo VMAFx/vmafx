@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0090: Semgrep OSS warnings audit — 2026-05-09
 
 - **Status**: Closed (this PR ships the disposition)

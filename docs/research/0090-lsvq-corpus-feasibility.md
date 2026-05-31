@@ -60,12 +60,12 @@ See [ADR-0367 §Alternatives considered](../adr/0367-lsvq-corpus-ingestion.md#al
 
 ## Open follow-ups
 
-* ENCODER_VOCAB v4 trainer-side collapse to `"ugc-mixed"` for
+- ENCODER_VOCAB v4 trainer-side collapse to `"ugc-mixed"` for
   KonViD-150k + LSVQ rows (separate PR).
-* Held-out evaluation harness wiring for ``LSVQ_test`` /
+- Held-out evaluation harness wiring for ``LSVQ_test`` /
   ``LSVQ_test_1080p`` so PLCC / SROCC / KRCC vs LSVQ becomes a
   CI-comparable number rather than an ad-hoc one.
-* Corpus-level rescaling audit if the cross-corpus distribution
+- Corpus-level rescaling audit if the cross-corpus distribution
   (KonViD MOS vs LSVQ MOS vs BVI-DVC objective scores) turns out
   to need a per-shard normaliser. None applied at ingest time
   today.

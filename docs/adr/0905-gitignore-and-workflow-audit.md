@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0905: `.gitignore` + `.github/workflows/` staleness audit (2026-05-30)
 
 - **Status**: Accepted

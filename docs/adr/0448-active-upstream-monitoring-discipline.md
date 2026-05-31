@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0448: Active upstream monitoring (no silent "wait" deferrals)
 
 - **Status**: Accepted

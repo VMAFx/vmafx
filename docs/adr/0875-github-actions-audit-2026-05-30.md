@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0875: GitHub Actions hardening audit (2026-05-30)
 
 - **Status**: Accepted

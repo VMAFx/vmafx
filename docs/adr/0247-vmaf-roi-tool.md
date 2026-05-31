@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0247: vmaf-roi sidecar binary for per-CTU QP offsets
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0487: Wire adm_min_val option into integer_adm GPU backends
 
 - **Status**: Accepted

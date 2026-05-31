@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research digest — Vendored libsvm + IQA coverage uplift (ADR-0952)
 
 - **Date**: 2026-05-31
@@ -94,7 +95,7 @@ public API. No vendored source is modified:
   inspects `svm_type`, `nr_class`, `nr_sv`, `labels`, `sv_indices`,
   `check_probability_model` (negative when probability=0),
   `svm_get_svr_probability` (returns 0 for classifier), predicts on
-  + side and − side, asserts `svm_predict == svm_predict_values`,
+  side and − side, asserts `svm_predict == svm_predict_values`,
   drives `svm_free_and_destroy_model` and asserts pointer nulled.
 - `test_predict_probability_csvc` — re-trains with `probability=1`,
   asserts `check_probability_model == 1`, calls
@@ -114,12 +115,12 @@ public API. No vendored source is modified:
 - 5 KBND_* tests: in-bounds passthrough, negative reflect, positive
   reflect, replicate clamp, constant fallthrough.
 - 6 filter tests: `iqa_filter_pixel` (NULL kernel + interior 3x3 box
-  + edge with REPLICATE border), `iqa_img_filter` (writes result,
+  edge with REPLICATE border), `iqa_img_filter` (writes result,
   rejects NULL bnd_opt with rc=1, in-place when result==NULL).
 - 3 decimate tests: factor-2 with no kernel + in-place + odd
   dimension (sw = w/factor + (w&1) — the half-pixel ceiling).
 - 2 iqa_ssim tests: identical frames (ssim ≈ 1.0, all of l/c/s ≈ 1.0)
-  + random frames (asserts finite values + ssim < 0.99). These drive
+  random frames (asserts finite values + ssim < 0.99). These drive
   `ssim_tools.c`'s scalar precompute / variance / accumulate
   fallbacks (since no SIMD dispatch is installed in the test process).
 

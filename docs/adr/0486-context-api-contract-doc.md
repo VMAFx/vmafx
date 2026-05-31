@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0486: Codify the three-function GPU backend context-API contract in docs
 
 - **Status**: Accepted

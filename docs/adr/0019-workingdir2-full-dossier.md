@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0019: .workingdir2 is the full planning dossier
 
 - **Status**: Accepted

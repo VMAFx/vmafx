@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0527: Accept pre-extracted BVI-DVC YUVs via `--bvi-dir`
 
 - **Status**: Accepted

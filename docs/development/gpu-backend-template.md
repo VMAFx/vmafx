@@ -124,7 +124,8 @@ The implementation MUST delegate to the backend-agnostic
 `VmafGpuPicturePool` (`core/src/gpu_picture_pool.{h,c}`) per
 ADR-0239 — do not reimplement the round-robin / mutex / unwind
 shape. Each backend supplies the alloc / free / synchronize callbacks
-+ a per-pool cookie carrying its state pointer.
+
+- a per-pool cookie carrying its state pointer.
 
 ## Optional: zero-copy hwaccel import paths
 
@@ -157,7 +158,7 @@ safe to free the source).
 
 The corresponding backend-internal files follow their own pattern:
 
-```
+```text
 core/src/<backend>/
   common.{c,h}              # state init / device enumeration / queue setup
   picture_<backend>.{c,h}   # buffer / picture allocation

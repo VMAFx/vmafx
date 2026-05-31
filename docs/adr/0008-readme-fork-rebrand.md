@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0008: Rewrite README with fork branding preserving Netflix attribution
 
 - **Status**: Accepted

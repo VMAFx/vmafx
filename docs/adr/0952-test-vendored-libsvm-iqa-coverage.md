@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0952: Push test coverage on vendored libsvm + IQA paths the fork uses
 
 - **Status**: Accepted

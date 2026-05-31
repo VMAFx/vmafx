@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0094: `integer_motion_v2` `flush()` dictionary leak — round-7 stability audit
 
 **Date**: 2026-05-10

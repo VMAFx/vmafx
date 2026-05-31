@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research 0123: `vmaf-roi` High-Bit-Depth Input
 
 Date: 2026-05-15

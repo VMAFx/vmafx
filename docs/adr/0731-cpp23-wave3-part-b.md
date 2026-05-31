@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0731: C++23 Wave 3 Part B — psnr_tools, luminance_tools, mkdirp
 
 - **Status**: Accepted

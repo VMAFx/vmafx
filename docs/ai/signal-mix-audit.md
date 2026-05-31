@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Signal-mix audit
 
 `ai/scripts/signal_mix_audit.py` audits already-extracted feature tables and

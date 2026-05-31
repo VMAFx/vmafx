@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0067: `vmaf-tune` Phase F — adaptive recipe-aware composition feasibility
 
 - **Date**: 2026-05-08
@@ -80,7 +81,7 @@ The decision tree must fit on one page (project rule per the design
 brief). Anything not shown below delegates to the existing
 subcommand contracts.
 
-```
+```text
 auto(src, target_vmaf, max_budget_kbps, allow_codecs):
     # 1. Cheap probe — ffprobe metadata only
     meta = probe(src)                    # res, codec, fps, color, duration

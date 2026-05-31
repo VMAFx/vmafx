@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0925: Generic in-memory registry for vmafx-controller subsystems
 
 - **Status**: Accepted
@@ -12,7 +13,7 @@ both carried boilerplate that Go generics (available since 1.18, the fork
 targets 1.25 per `go.mod`) can collapse:
 
 1. The node registry hand-rolled the same `sync.RWMutex` + `map[string]*Node`
-   + snapshot-copy + predicate-eviction pattern that any keyed in-memory
+   napshot-copy + predicate-eviction pattern that any keyed in-memory
    store needs.  The reaper goroutine, the `Get` / `All` / `Count` /
    `Heartbeat` helpers, and the shallow-copy guards were all generic in
    shape; only the `SessionToken` validation and heartbeat-deadline

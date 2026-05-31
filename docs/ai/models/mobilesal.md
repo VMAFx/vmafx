@@ -153,7 +153,7 @@ Equivalent to setting `VMAF_MOBILESAL_MODEL_PATH` before
   10` (or `--bitdepth 12`) together with `--feature mobilesal`, the run will
   abort before scoring with a message like:
 
-  ```
+  ```text
   mobilesal: bpc=10 is not supported (8-bit only). The mobilesal extractor
   requires 8-bit YUV input because the saliency model was trained on 8-bit
   ImageNet-RGB. Use --bitdepth 8 or omit --feature mobilesal for HDR /

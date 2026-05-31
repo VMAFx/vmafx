@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD018 MD060 -->
 # Research-0063: T7-5 NOLINT sweep — citation audit + closeout
 
 - **Date**: 2026-05-04
@@ -98,7 +99,7 @@ this PR leaves it consistent with the existing prose justification.
   priority chain clearer.
 - `main`: Already swept by ADR-0146 / PR #327 — eight helpers
   extracted, the residual body is the cleanup-ownership spine
-  + inter-step glue.
+  inter-step glue.
 
 All three already had multi-line prose comments documenting the
 invariant; the sweep adds an explicit ADR reference.

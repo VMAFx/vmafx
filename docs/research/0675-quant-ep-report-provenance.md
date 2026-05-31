@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0675: Per-EP quantisation report provenance
 
 ## Question

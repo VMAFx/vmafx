@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0494: Restore the non-golden Python test suite to green
 
 - **Status**: Accepted

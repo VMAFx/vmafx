@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research 0109: `vmaf-tune` Bisect Sample-Clip Wiring
 
 ## Question

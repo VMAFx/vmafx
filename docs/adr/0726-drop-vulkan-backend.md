@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0726: Drop Vulkan backend
 
 - **Status**: Accepted

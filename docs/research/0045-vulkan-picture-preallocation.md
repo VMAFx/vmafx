@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0045: Vulkan picture preallocation — option-space digest
 
 - **Date**: 2026-05-02
@@ -6,7 +7,8 @@
 ## Question
 
 CUDA + SYCL ship a public picture-preallocation surface (`*_preallocate_pictures`
-+ `*_picture_fetch`); Vulkan does not. What's the smallest surface
+
+- `*_picture_fetch`); Vulkan does not. What's the smallest surface
 that closes the parity gap without locking the design to a single
 host-allocator pattern?
 

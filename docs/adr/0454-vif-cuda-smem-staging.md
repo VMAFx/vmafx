@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0454: VIF CUDA shared-memory staging for horizontal and vertical filter passes
 
 - **Status**: Proposed

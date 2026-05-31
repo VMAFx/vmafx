@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD029 MD060 -->
 # ADR-0923: Adopt BuildKit cache mounts and ccache across the container build matrix
 
 - **Status**: Accepted

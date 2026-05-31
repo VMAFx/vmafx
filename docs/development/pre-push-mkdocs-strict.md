@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Pre-push mkdocs strict-mode gate
 
 The fork runs `mkdocs build --strict` in CI (the `docs.yml` lane) on

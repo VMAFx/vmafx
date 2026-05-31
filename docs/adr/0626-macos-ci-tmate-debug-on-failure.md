@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0626: SSH-into-runner debug session on macOS CI failure via tmate
 
 - **Status**: Accepted

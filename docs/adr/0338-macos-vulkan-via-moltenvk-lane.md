@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0338: macOS Vulkan-via-MoltenVK CI lane (advisory) for the Vulkan backend
 
 - **Status**: Accepted

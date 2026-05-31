@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0009: MCP server exposes four core tools
 
 - **Status**: Accepted

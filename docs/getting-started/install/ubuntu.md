@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Installing on Ubuntu (22.04 / 24.04)
 
 The [`scripts/setup/ubuntu.sh`](../../scripts/setup/ubuntu.sh) helper does

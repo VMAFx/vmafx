@@ -3,11 +3,13 @@ name: add-simd-path
 description: Scaffold a new SIMD implementation for an existing feature. Creates intrinsics source + header + a bit-exact-vs-scalar comparison test; wires into runtime dispatch. Supports kernel-spec flags that pull recurring patterns from simd_dx.h.
 ---
 
+<!-- markdownlint-disable MD060 -->
+
 # /add-simd-path
 
 ## Invocation
 
-```
+```text
 /add-simd-path <isa> <feature> [--kernel-spec=<spec>] [--lanes=N] [--tail=scalar|masked]
 ```
 
@@ -82,7 +84,7 @@ body with the actual intrinsics while keeping the DX macros in place.
 - If `<isa> == neon` and the dev host is x86_64, a follow-up note
   reminds to cross-compile + run under `qemu-aarch64-static`:
 
-  ```
+  ```text
   meson setup build-aarch64 \
     --cross-file=build-aux/aarch64-linux-gnu.ini \
     -Denable_cuda=false -Denable_sycl=false

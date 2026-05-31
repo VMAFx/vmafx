@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0289: `vmaf-tune` resolution-aware model selection + CRF offsets
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Pre-commit hooks — framework (default) vs native (opt-in)
 
 The fork ships **two** parallel implementations of the local
@@ -102,7 +103,7 @@ Files that the formatter rewrites are `git add`-ed back so the
 commit picks up the autofix in the same operation, and a summary
 line is printed:
 
-```
+```text
 [pre-commit] auto-fixed and re-staged 3 file(s): ruff=2 clang-format=1
 ```
 

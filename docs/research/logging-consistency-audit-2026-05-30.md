@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research: Logging consistency audit in fork-added C/C++ code
 
 - **Status**: Active

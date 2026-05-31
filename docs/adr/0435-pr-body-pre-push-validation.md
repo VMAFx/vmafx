@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0435: PR-body pre-push validation hook
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0349: `fr_regressor_v3` namespace — reserve `_v3plus_features` for the next feature-set bump
 
 - **Status**: Accepted
@@ -17,7 +18,8 @@ that checkpoint immutable in-place.
 
 A separate workstream wants to introduce a second axis of variation on the
 same regressor lineage: the canonical-6 + `encoder_internal` + shot-boundary
-+ `hwcap` feature-set superset (driven by ADR-0235's codec-aware extension
+
+- `hwcap` feature-set superset (driven by ADR-0235's codec-aware extension
 plus the TransNet shot-boundary surface and the hardware-capability fingerprint
 from the vmaf-tune corpus). That work was originally referred to as
 "feature-set v3" in agent reports, which collides verbatim with the

@@ -139,7 +139,7 @@ the IQA header guards.
   - CI does not yet exercise the Windows CUDA path — no runner
     with MSYS2 + MSVC Build Tools + CUDA toolkit is currently
     enrolled. The port is provably complete on Linux (CPU build
-    + CUDA build both pass all tests); Windows validation is
+    DA build both pass all tests); Windows validation is
     operator-driven. Tracked as T7-3 in `.workingdir2/OPEN.md`
     (self-hosted GPU runner enrollment).
   - nv-codec-headers on MinGW needs to be built from

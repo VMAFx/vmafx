@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0397: `vmaf-tune` Phase F — `auto` adaptive recipe-aware tuning
 
 - **Status**: Accepted
@@ -247,14 +248,14 @@ Calibrated values:
 
 Honest-data caveats:
 
-* K150K is a UGC-only corpus and carries no per-source
+- K150K is a UGC-only corpus and carries no per-source
   `content_class` column; only the `ugc` row is corpus-derived. The
   other three rows are calibrated as documented absolute offsets
   ("proxy") anchored on the F.4 envelope. PR #477's TransNet
   shot-metadata columns plus a class-labelled subset will let a
   future re-calibration replace the proxy rows with corpus-derived
   values.
-* UGC's empirical `target_vmaf_offset` came out **positive** (`+1.5`)
+- UGC's empirical `target_vmaf_offset` came out **positive** (`+1.5`)
   on K150K because the corpus's MOS distribution has a heavier upper
   tail than lower tail. The calibration script clamps every offset
   to the F.4 documented envelope of `[-2.0, +2.0]` so a pathological
@@ -263,7 +264,7 @@ Honest-data caveats:
   `feedback_no_test_weakening`, the offset shifts only the
   predictor's effective target — never the input `--target-vmaf`
   gate that ships models.
-* The `mos_to_vmaf_proxy` mapping (slope 20, intercept 0) is the
+- The `mos_to_vmaf_proxy` mapping (slope 20, intercept 0) is the
   Hosu et al. 2017 §3.3 anchor. A future re-calibration that
   measures end-to-end VMAF against the K150K reference clips
   (libvmaf full-reference pass) will replace the proxy with measured
@@ -285,16 +286,16 @@ Three additional short-circuit predicates ship in
 `tools/vmaf-tune/src/vmaftune/auto.py`, appended after the original
 seven in `SHORT_CIRCUIT_PREDICATES` (canonical positions 7, 8, 9):
 
-* **#8 `low-complexity`** (`_should_short_circuit_low_complexity`) —
+- **#8 `low-complexity`** (`_should_short_circuit_low_complexity`) —
   skips `recommend.coarse_to_fine` when `meta.complexity_score` (the
   probe-encode bitrate at the adapter's `probe_quality`/`probe_preset`)
   is below `LOW_COMPLEXITY_PROBE_BITRATE_THRESHOLD_KBPS` (200 kbps
   placeholder). `0.0` or `NaN` does not fire (no probe yet).
-* **#9 `baseline-meets-target`**
+- **#9 `baseline-meets-target`**
   (`_should_short_circuit_baseline_meets_target`) — skips the full
   predictor sweep when `meta.baseline_vmaf` already meets or exceeds
   `plan_state.target_vmaf`. `0.0` or `NaN` does not fire.
-* **#10 `no-two-pass`** (`_should_short_circuit_no_two_pass`) — skips
+- **#10 `no-two-pass`** (`_should_short_circuit_no_two_pass`) — skips
   the two-pass calibration stage when the resolved codec adapter's
   `supports_two_pass` flag is `False` (ADR-0333). `None` (adapter not
   yet resolved) does not fire.

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Vulkan via MoltenVK on macOS
 
 > **Status (2026-05-09):** advisory CI lane — `Build — macOS Vulkan via
@@ -63,7 +64,7 @@ brew install molten-vk vulkan-loader vulkan-headers shaderc
 
 The MoltenVK ICD descriptor is installed by the `molten-vk` formula at:
 
-```
+```text
 /opt/homebrew/etc/vulkan/icd.d/MoltenVK_icd.json
 ```
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0082 — BVI-DVC corpus feasibility for `fr_regressor_v2`
 
 ## Question
@@ -82,7 +83,8 @@ posture. Content overlap is favourable: BVI-DVC fills the urban and
 texture gaps the Netflix drop has and reinforces high-motion. The
 LOSO partition expansion materially widens the training surface. The
 infrastructure to make this measurable (JSONL adapter + merge utility
-+ tests) is small and ships with ADR-0310.
+
+- tests) is small and ships with ADR-0310.
 
 The actual PLCC measurement and the production-weights flip are
 deferred to a multi-seed sweep that runs outside this PR. The flip

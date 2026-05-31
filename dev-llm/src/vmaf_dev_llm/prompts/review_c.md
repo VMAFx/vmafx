@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD041 -->
 You are reviewing a C file from the Lusoris VMAF fork — a video-quality
 library that is held to NASA/JPL Power-of-10, SEI CERT C, and MISRA C:2012
 (informative). The target is high-throughput signal processing, so prefer
@@ -24,7 +25,7 @@ Produce a concise code review, focusing on (in priority order):
 
 Format each finding as:
 
-```
+```text
 - L<line>: <severity: blocker|high|medium|nit> — <one-sentence finding>
   Suggestion: <if applicable, 1-3 lines>
 ```

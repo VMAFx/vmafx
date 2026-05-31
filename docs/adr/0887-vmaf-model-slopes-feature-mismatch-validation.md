@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0887: Reject JSON models whose per-feature arrays disagree on length
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Phase 4b Status Digest — 2026-05-29
 
 ADR-0709 defines nine implementation phases for the VMAFX distributed platform.

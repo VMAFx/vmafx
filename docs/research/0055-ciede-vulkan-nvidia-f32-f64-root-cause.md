@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD049 MD060 -->
 # Research-0055 — ciede2000 Vulkan NVIDIA places=4 root cause: f32 vs f64 colour-space chain
 
 _Date: 2026-05-03._
@@ -70,7 +71,7 @@ throughout) was tested by a controlled experiment:
 
 ## Result
 
-```
+```text
 Frame |  CPU(double)  CPU(float)  GPU(NV)   |dbl-flt|   |dbl-gpu|   |flt-gpu|
 ------+-----------------------------------------------------------------------
    0  |  50.833718    50.833770   50.833770 | 5.15e-05    5.21e-05    5.79e-07

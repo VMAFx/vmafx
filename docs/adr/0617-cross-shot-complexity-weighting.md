@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0617: Cross-Shot Complexity Weighting and Title-Level Quality Constraints
 
 - **Status**: Proposed

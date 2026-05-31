@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Rust development guide
 
 This page covers getting started with the VMAFX Rust bindings.
@@ -137,7 +138,7 @@ VMAFX_REPO=$(git rev-parse --show-toplevel) \
 
 Expected output:
 
-```
+```text
 vmafx-sys version: 3.x.y-lusoris.N
 Reference:  .../python/test/resource/yuv/src01_hrc00_576x324.yuv
 Distorted:  .../python/test/resource/yuv/src01_hrc01_576x324.yuv

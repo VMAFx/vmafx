@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0181: Global feature-characteristics registry + per-backend dispatch strategy
 
 - **Status**: Accepted
@@ -32,7 +33,8 @@ benefits most.
 
 About to add ~14 new GPU kernels (psnr, ssim, ms_ssim,
 ssimulacra2, ciede, cambi, psnr_hvs, ansnr, moment, motion_v2,
-+ float variants) × 3 backends = up to 42 new dispatch sites.
+
+- float variants) × 3 backends = up to 42 new dispatch sites.
 Without consolidation, each new kernel writes its own
 `if (frame_size > X) graph_replay = on` decision per backend.
 T7-26 wants to fix that *before* the new kernels land.

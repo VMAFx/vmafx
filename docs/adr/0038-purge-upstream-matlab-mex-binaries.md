@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0038: Purge upstream MATLAB MEX compiled binaries from tree
 
 - **Status**: Accepted

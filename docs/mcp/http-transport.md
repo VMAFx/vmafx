@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD036 MD060 -->
 # vmafx-mcp HTTP transport
 
 > **Added in**: VMAFX Phase 3A (ADR-0701)

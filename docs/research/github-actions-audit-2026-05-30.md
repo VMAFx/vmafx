@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research digest: GitHub Actions hardening audit (2026-05-30)
 
 Companion research digest for [ADR-0875](../adr/0875-github-actions-audit-2026-05-30.md).

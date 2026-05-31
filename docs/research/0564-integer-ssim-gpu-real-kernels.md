@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research digest: Real integer_ssim GPU kernels (ADR-0564)
 
 ## Correctness investigation
@@ -21,7 +22,7 @@ The CPU integer_ssim (`integer_ssim.c`) computes per-pixel moments using a 9-tap
 Gaussian with integer weights `[2,9,28,55,68,55,28,9,2]` (sum=256). It uses `int64_t`
 throughout the accumulation to avoid floating-point rounding. The SSIM formula:
 
-```
+```text
 c1 = (K1 * samplemax * w)^2     // w = per-pixel accumulated weight
 c2 = (K2 * samplemax * w)^2
 num = (2*mux*muy + c1) * (2*(xy*w - mux*muy) + c2)
@@ -37,6 +38,7 @@ only the in-bounds tap weights.
 
 Separating horizontal and vertical passes avoids large shared-memory tiles. Each
 pass processes one 16×8 block:
+
 - Pass 1 writes six `int64_t` arrays of size `W×H` (one per moment: mux, muy, x2, xy, y2, w).
 - Pass 2 reads those arrays, applies the 9-tap vertical kernel, computes the SSIM formula
   in `double`, and accumulates per-block double partial sums.
@@ -56,6 +58,7 @@ which packs hi/lo into paired int32 shuffles — analogous to the CUDA paired-sh
 approach.
 
 The host glue rewrite (`integer_ssim_hip.c`) changes:
+
 - 5 `float *` buffers → 6 `int64_t *` device buffers
 - Readback: two slots (double partials, int64 weights)
 - `collect`: `ssim = total_ssim / (double)total_wgt`

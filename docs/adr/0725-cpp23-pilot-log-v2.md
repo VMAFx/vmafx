@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0725: C++23 Pilot — `log.c` conversion (real C++23, supersedes ADR-0722)
 
 - **Status**: Accepted

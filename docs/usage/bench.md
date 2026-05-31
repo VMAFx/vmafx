@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # `vmaf_bench` — micro-benchmark & validation harness
 
 `vmaf_bench` is a fork-added binary that times individual feature extractors on
@@ -31,7 +32,7 @@ automatically omitted when the respective backend is disabled.
 `vmaf_bench` expects a staging directory (default `/tmp/vmaf_test/`, override
 with `--data-dir` or `VMAF_TEST_DATA`):
 
-```
+```text
 /tmp/vmaf_test/
 ├── ref_576x324.yuv      # 48 frames of YUV420P-8
 ├── dis_576x324.yuv
@@ -100,7 +101,7 @@ unless justified inline ([`.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL
 
 Expected output (abbreviated):
 
-```
+```text
 === VMAF Benchmark — 1920x1080, 10 frames ===
 Feature          CPU(scalar)   CPU(AVX-512)   CUDA         SYCL
 integer_vif      112.4 ms        5.1 ms       0.8 ms       1.1 ms
@@ -117,7 +118,7 @@ integer_motion    34.6 ms        1.9 ms       0.3 ms       0.4 ms
 
 Expected output:
 
-```
+```text
 === Cross-backend validation — 1920x1080, 10 frames ===
 Feature          CPU vs CUDA      CPU vs SYCL       Verdict
 integer_vif      max |Δ| = 1 ULP   max |Δ| = 1 ULP    OK

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0956: CUDA kernel parity coverage — round 4 (last 5 uncovered kernels)
 
 - **Status**: Accepted

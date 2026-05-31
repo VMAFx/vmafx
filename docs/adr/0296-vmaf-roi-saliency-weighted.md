@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0296: Region-of-interest VMAF scoring (`vmaf-roi-score`) — saliency-weighted scaffold
 
 - **Status**: Accepted (Option C scaffold only; Option A remains Proposed)

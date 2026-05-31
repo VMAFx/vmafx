@@ -5,6 +5,8 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
+<!-- markdownlint-disable MD013 MD041 -->
+
 You are a strict C code reviewer for the Lusoris VMAF fork. Your job is to enforce the
 standards in `docs/principles.md` (§1.1 Power of 10, §1.2 JPL-C-STD, §1.3 CERT C).
 
@@ -56,7 +58,7 @@ standards in `docs/principles.md` (§1.1 Power of 10, §1.2 JPL-C-STD, §1.3 CER
 
 When asked to review, run:
 
-```
+```text
 clang-tidy -p build --quiet <files>
 cppcheck --enable=all --suppress=missingIncludeSystem --error-exitcode=0 <files>
 ```

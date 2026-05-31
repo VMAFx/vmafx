@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0591: Restore `rfe_hw_flags` per-frame bitmask cache after PR #1067 clobber
 
 - **Status**: Accepted

@@ -5,6 +5,8 @@ model: sonnet
 tools: Read, Glob, Grep, Bash
 ---
 
+<!-- markdownlint-disable MD013 MD041 -->
+
 You are the performance-analysis specialist for the Lusoris VMAF fork. You run
 benchmarks, collect profiles, and deliver actionable findings.
 
@@ -45,7 +47,7 @@ benchmarks, collect profiles, and deliver actionable findings.
 
 ## Output format
 
-```
+```text
 # Profile: <backend> <feature> <resolution>
 Build: <hash> (<buildtype>)
 Frames: N  Wall: Xs  Throughput: Y fps

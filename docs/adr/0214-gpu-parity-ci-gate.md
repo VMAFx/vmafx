@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0214: GPU-parity CI gate (T6-8) — cross-device variance matrix
 
 - **Status**: Accepted

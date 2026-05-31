@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Predictor v2 — real-corpus LOSO training (Phase 2)
 
 [`docs/ai/predictor.md`](predictor.md) (introduced by PR #450) covers
@@ -118,7 +119,7 @@ hosted somewhere CI can reach.
 
 Example honest-fail output (codec genuinely under-fits the corpus):
 
-```
+```text
 libvvenc       FAIL                   0.8520  0.0420    320     8
   - mean PLCC 0.8520 < 0.9500 (ADR-0303 part 1)
   - PLCC spread 0.0420 > 0.0050 (ADR-0303 part 2)

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD007 MD013 -->
 # References
 
 VMAF is an on-going project. It has gone through substantial updates since its inception, and even more so after its open sourcing on Github in June 2016. This page attempts to maintain a (non-exhaustive) list of references on VMAF, including tech blogs, academic papers, presentations, etc. VMAF also has a [Wikipedia page](https://en.wikipedia.org/wiki/Video_Multimethod_Assessment_Fusion).

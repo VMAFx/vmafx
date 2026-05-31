@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0923: BuildKit cache mounts + ccache rollout (2026-05-31)
 
 - **Status**: Complete

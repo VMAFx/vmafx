@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD024 MD036 MD060 -->
 # `vmaf-tune` — quality-aware encode automation harness
 
 `vmaf-tune` is a fork-added Python tool

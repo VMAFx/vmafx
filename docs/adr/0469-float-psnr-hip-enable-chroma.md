@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0469: `float_psnr` HIP twin — wire `enable_chroma` option
 
 - **Status**: Accepted

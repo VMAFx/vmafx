@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research digest: ADR-0561 — HIP gfx_targets fallback widening
 
 ## Problem characterisation
@@ -15,7 +16,7 @@ which maps the iGPU to `gfx1030` for device-code dispatch. At runtime the
 loader looked for an HSACO blob compiled for `gfx1030`; the `gfx90a`-only fat
 binary contained no compatible object and emitted:
 
-```
+```text
 hip_fatbin.cpp: No compatible code objects found for: gfx1030
 ```
 

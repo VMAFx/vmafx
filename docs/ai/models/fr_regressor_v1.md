@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # `fr_regressor_v1` — full-reference VMAF score regressor (C1 baseline)
 
 `fr_regressor_v1` is the Wave-1 **C1** baseline (full-reference scoring): a

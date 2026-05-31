@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0096: K150K GPU driver investigation — CUDA timing and double-write root cause
 
 **Date**: 2026-05-10
@@ -22,7 +23,7 @@ is met via parallel CPU workers.
 Single-clip timing with `core/build-cpu/tools/vmaf`, `--threads 4`, 11 feature
 extractors on `orig_10000251326_540_5s.mp4` (960×540, yuv420p, ~150 frames):
 
-```
+```text
 real  7.062s  user  27.19s  sys  0.70s  cpu  395%
 ```
 
@@ -34,7 +35,7 @@ Timing the worktree CUDA binary (`core/build-cuda/tools/vmaf`,
 `-Denable_cuda=true --buildtype=release`) with `--threads 1 --backend cuda` on the
 same clip:
 
-```
+```text
 real  26.3s  user  25.6s  sys  0.70s  cpu  100%
 ```
 
@@ -47,7 +48,7 @@ CUDA context initialisation — which is paid afresh for every `vmaf` subprocess
 
 For reference, the `batch1b` binary (earlier CUDA build) was benchmarked at:
 
-```
+```text
 4 workers, 16 clips: 16/114.6s = 0.140 clip/s
 ```
 
@@ -56,7 +57,7 @@ theoretical GPU speedup for this clip geometry.
 
 ### 4. ProcessPoolExecutor parallelism (CPU binary, earlier bash benchmarks)
 
-```
+```text
  8 workers, threads=2, 32 clips: 32/64.8s  = 0.494 clip/s
 12 workers, threads=2, 32 clips: 32/53.6s  = 0.597 clip/s
 16 workers, threads=2, 32 clips: 32/77.5s  = 0.413 clip/s
@@ -86,6 +87,7 @@ second write fires "cannot be overwritten" warnings at every frame (5 warnings �
 150 frames = 750 warnings for `--feature adm` alone).
 
 Affected feature pairs (CUDA twin + CPU twin both registered):
+
 - `adm_cuda` + `adm` → 5 features × 150 frames = 750 warnings
 - `vif_cuda` + `vif` → 5 features × 150 frames = 750 warnings
 - `motion_cuda` + `motion` → 2 features × 150 frames = 300 warnings

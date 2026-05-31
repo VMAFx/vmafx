@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0567: SpEED GPU Kernel Design — CPU/GPU Split and Backend Implementation Choices
 
 - **Status**: Accepted
@@ -43,6 +44,7 @@ tile-parallel portion runs in ~800 µs on an RTX 4090, so the round-trip overhea
 4–6% of total frame time. For 4K content with ~400 tiles the ratio drops below 1%.
 
 The alternative of running Jacobi on GPU would require either:
+
 - A single-warp reduction loop (25×25 → 1 warp, massively underutilized), or
 - A custom convergence loop with dynamic parallelism (>5× implementation complexity).
 

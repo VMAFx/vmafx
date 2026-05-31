@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0506: vmaf-tune ladder duration clipping, raw-YUV cross-res decode, CLI exit code
 
 - **Status**: Accepted
@@ -11,7 +12,7 @@ The BBB end-to-end v6 probe (after PR #1262 / ADR-0505 closed the
 v5 cluster) surfaced three follow-ups, all confined to the
 `vmaf-tune ladder` orchestration:
 
-* **V6-1** — `ladder --duration N` was metadata-only. The flag is
+- **V6-1** — `ladder --duration N` was metadata-only. The flag is
   used by the sampler to compute kbps (`size_bytes * 8 / N`) but
   never wired into the ffmpeg encode pipe. A 10-second smoke run
   against a 9-minute container source therefore re-encoded the
@@ -23,7 +24,7 @@ v5 cluster) surfaced three follow-ups, all confined to the
   only honoured `sample_clip_seconds` (the ADR-0297 sample-clip
   mode), which the ladder CLI does not set.
 
-* **V6-2** — A cross-resolution ladder against a raw-YUV source
+- **V6-2** — A cross-resolution ladder against a raw-YUV source
   failed on every rung whose target differed from the source dims.
   The v4 reference-side scale path (`_decode_source_to_yuv` with
   `target_width/target_height`) builds an ffmpeg argv of the form
@@ -37,7 +38,7 @@ v5 cluster) surfaced three follow-ups, all confined to the
   exercises ffmpeg's container auto-detect and silently masks the
   missing raw-input flags.
 
-* **V6-3** — `vmaf-tune ladder` returned exit code 0 even when the
+- **V6-3** — `vmaf-tune ladder` returned exit code 0 even when the
   sampler raised a `RuntimeError` ("default sampler produced no
   scorable encodes"). The Python traceback was printed to stderr
   but the wrapper that calls `main()` returned `0` to the shell,

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 MD060 -->
 # Research 0905 — `.gitignore` + `.github/workflows/` staleness audit (2026-05-30)
 
 ## Question

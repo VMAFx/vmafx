@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0977: core/tools input-reader safety — Y4M malloc-NULL check, YUV/Y4M size_t cast, bench GPU-state leaks
 
 - **Status**: Accepted

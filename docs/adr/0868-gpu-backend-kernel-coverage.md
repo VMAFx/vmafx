@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0868: GPU backend kernel parity-test coverage gap-fill
 
 - **Status**: Accepted

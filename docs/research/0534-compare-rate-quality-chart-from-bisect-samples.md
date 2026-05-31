@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0530: compare rate-quality chart from bisect samples
 
 - **Status**: Active

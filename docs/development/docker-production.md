@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # VMAFX Production Docker Images
 
 This page covers pulling, running, and building the VMAFX production container images

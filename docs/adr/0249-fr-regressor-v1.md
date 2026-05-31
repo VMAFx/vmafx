@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0249: Tiny-AI Wave 1 baseline C1 — `fr_regressor_v1` on Netflix Public
 
 - **Status**: Accepted

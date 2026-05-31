@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0372: HIP Batch-1 — `integer_psnr_hip` and `float_ansnr_hip` Real Kernels
 
 - **Status**: Accepted

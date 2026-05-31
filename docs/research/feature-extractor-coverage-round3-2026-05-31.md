@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Feature-extractor coverage round 3 — research digest
 
 **Date**: 2026-05-31

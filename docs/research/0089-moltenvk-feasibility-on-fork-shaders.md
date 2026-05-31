@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0089: MoltenVK feasibility on the fork's Vulkan shader inventory
 
 - **Date**: 2026-05-09

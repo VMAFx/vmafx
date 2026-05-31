@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0220: SYCL feature kernels are unconditionally fp64-free
 
 - **Status**: Accepted

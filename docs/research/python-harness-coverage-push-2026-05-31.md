@@ -21,7 +21,7 @@ command string rather than running the binary.
 
 ## Environment
 
-```
+```text
 Python  : 3.14.5
 pytest  : 9.0.3
 pytest-cov : 7.1.0

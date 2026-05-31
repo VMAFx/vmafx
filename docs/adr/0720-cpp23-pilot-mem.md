@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0720: C++23 Wave-1 Pilot — `mem.c` conversion
 
 - **Status**: Accepted

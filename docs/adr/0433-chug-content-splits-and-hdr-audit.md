@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0433: CHUG Content Splits And HDR Audit
 
 - **Status**: Accepted

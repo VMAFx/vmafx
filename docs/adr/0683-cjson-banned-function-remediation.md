@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0683: Replace banned functions in vendored MCP cJSON
 
 - **Status**: Accepted

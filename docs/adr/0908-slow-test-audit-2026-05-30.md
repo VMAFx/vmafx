@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0908: Slow-test audit (2026-05-30) — no >30 s tests found; install `slow` marker as a future gate
 
 - **Status**: Accepted

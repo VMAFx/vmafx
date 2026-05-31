@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0132: Port Netflix#1406 — `feature_collector` mount/unmount model-list bugfix
 
 - **Status**: Accepted

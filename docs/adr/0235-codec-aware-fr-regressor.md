@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0235: Codec-aware FR regressor (`fr_regressor_v2`)
 
 - **Status**: Accepted

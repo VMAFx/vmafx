@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0251: Vulkan VkImage import — v2 async pending-fence model (T7-29 part 4)
 
 - **Status**: Accepted

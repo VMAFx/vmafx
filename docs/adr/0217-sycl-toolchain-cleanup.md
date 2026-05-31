@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0217: SYCL toolchain cleanup — multi-version recipe + icpx-aware clang-tidy wrapper
 
 - **Status**: Accepted

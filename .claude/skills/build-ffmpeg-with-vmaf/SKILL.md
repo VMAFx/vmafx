@@ -3,6 +3,8 @@ name: build-ffmpeg-with-vmaf
 description: Clone (or update) ffmpeg, apply our fork's patches under ffmpeg-patches/, configure with --enable-libvmaf against our local libvmaf.so, build, and run smoke tests on both the 'libvmaf' and 'vmaf_pre' filters.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /build-ffmpeg-with-vmaf
 
 End-to-end verification that our libvmaf (CLI, C API, tiny-AI surface) integrates
@@ -10,7 +12,7 @@ correctly with ffmpeg.
 
 ## Invocation
 
-```
+```text
 /build-ffmpeg-with-vmaf [--ffmpeg-ref=master|n7.0|<sha>] [--ffmpeg-dir=/tmp/ffmpeg]
                         [--libvmaf-build=core/build] [--jobs=N]
                         [--run-filter-smoketest]
@@ -30,12 +32,14 @@ jobs, smoke-test enabled.
    On conflict: abort the `am`, report the failing patch + hunks, suggest
    `/refresh-ffmpeg-patches`.
 5. Configure ffmpeg:
-   ```
+
+   ```text
    PKG_CONFIG_PATH=$repo/core/build/src:$PKG_CONFIG_PATH \
    LD_LIBRARY_PATH=$repo/core/build/src:$LD_LIBRARY_PATH \
    ./configure --prefix=/tmp/ffmpeg-install --enable-libvmaf --enable-gpl \
                --enable-version3
    ```
+
 6. `make -j$jobs && make install`.
 7. Smoke test (if `--run-filter-smoketest`):
    - `ffmpeg -i testdata/ref_576x324_48f.yuv -i testdata/dis_576x324_48f.yuv \

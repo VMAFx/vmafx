@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Magic-number audit (fork-added C surfaces) — 2026-05-30
 
 ## Scope

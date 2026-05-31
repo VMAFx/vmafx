@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0046 — Bristol VI-Lab dataset feasibility for tiny-AI training and parity soak
 
 | Field             | Value                                                                                  |
@@ -114,7 +115,7 @@ HD only — useful as a held-out single-codec validation slice.
 BVI-CC is the smallest *useful* MOS-labelled candidate and has the
 codec axis the v2 regressor needs.
 
-```
+```text
 # 1. Submit registration form (manual; ~2 day SLA)
 #    https://fan-aaron-zhang.github.io/BVI-CC/
 

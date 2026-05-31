@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # vmaf_tiny_v3 — wider/deeper VMAF feature-fusion estimator
 
 `vmaf_tiny_v3` is a tiny multi-layer perceptron that predicts a VMAF
@@ -57,7 +58,7 @@ reading local shell history.
 
 Effective topology:
 
-```
+```text
 features [N, 6]
    |
    Sub  <- mean   ([6] constant)
@@ -72,7 +73,8 @@ features [N, 6]
 ## Training data
 
 Identical to v2: `runs/full_features_4corpus.parquet` (Netflix Public
-+ KoNViD-1k 5-fold + BVI-DVC A + B + C + D, 330 499 frame-rows × 22
+
+- KoNViD-1k 5-fold + BVI-DVC A + B + C + D, 330 499 frame-rows × 22
 FULL_FEATURES + `vmaf` teacher score from `vmaf_v0.6.1`). The
 StandardScaler is fit on the 4-corpus union and baked into the
 exported ONNX as Constant nodes.
@@ -182,14 +184,14 @@ stats target. Keep that block with any refreshed stats used for export.
 
 ## Choosing between v2 and v3
 
-* **Default to v2.** Smaller bundle (2 446 B vs 4 496 B), validated
+- **Default to v2.** Smaller bundle (2 446 B vs 4 496 B), validated
   Phase-3 chain, +0.005–0.018 PLCC over the upstream SVM. v2 is the
   baseline for 99 % of users.
-* **Use v3 when:** you need the lowest-variance VMAF estimator across
+- **Use v3 when:** you need the lowest-variance VMAF estimator across
   diverse content (the LOSO std shrinks 30 %), or when the upstream
   pipeline is already paying ONNX-Runtime dispatch cost and the
   extra +0.0008 PLCC mean is worth the +2 KB.
-* **Don't use v3 when:** disk / network footprint matters (e.g.
+- **Don't use v3 when:** disk / network footprint matters (e.g.
   embedded deploys, very-many-model bundles), or when the
   measurement target is upstream-comparable metrics — v2 is the
   cited baseline in the Phase-3 chain.
@@ -228,18 +230,18 @@ python ai/scripts/measure_quant_drop.py model/tiny/vmaf_tiny_v3.onnx
 
 ## Limitations
 
-* The model fuses six **already-extracted** features — it is *not* a
+- The model fuses six **already-extracted** features — it is *not* a
   pixel-input quality model. To use it from raw YUV, the feature
   extraction stage runs first (the regular libvmaf path).
-* Trained on SDR content. HDR coverage is out of scope until the
+- Trained on SDR content. HDR coverage is out of scope until the
   upstream HDR feature extractors land.
-* The 4-corpus parquet uses `vmaf_v0.6.1` as the teacher score; v3
+- The 4-corpus parquet uses `vmaf_v0.6.1` as the teacher score; v3
   cannot exceed `vmaf_v0.6.1` in absolute correctness — it
   approximates the SVM with a slightly larger MLP.
-* Bit-exactness across CPU/GPU execution providers is not guaranteed
+- Bit-exactness across CPU/GPU execution providers is not guaranteed
   (ADR-0042 / ADR-0119 — places=4 tolerance applies to tiny-AI
   models too).
-* Single-seed LOSO. v2's published 0.9978 was averaged over 5 seeds;
+- Single-seed LOSO. v2's published 0.9978 was averaged over 5 seeds;
   v3's 0.9986 is the seed=0 number. A multi-seed v3 sweep is
   follow-up scope.
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0608: Commit `.zed/` project configuration for Zed editor parity with `.vscode/`
 
 - **Status**: Accepted
@@ -25,6 +26,7 @@ audited Zed's feature set against this repo's requirements and confirmed that:
 - `.vscode/` and `.zed/` coexist without conflict.
 
 Sources:
+
 - <https://zed.dev/docs/reference/all-settings>, retrieved 2026-05-19
 - <https://zed.dev/docs/configuring-languages>, retrieved 2026-05-19
 - <https://zed.dev/docs/ai/mcp>, retrieved 2026-05-19

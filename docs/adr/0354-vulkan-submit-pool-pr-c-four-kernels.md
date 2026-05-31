@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0354: Vulkan submit-pool migration PR-C — cambi, ssimulacra2, float_ansnr, moment
 
 - **Status**: Accepted

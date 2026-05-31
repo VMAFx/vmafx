@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Languages used in VMAFX
 
 VMAFX is a multi-language project. This page documents the role of each language,

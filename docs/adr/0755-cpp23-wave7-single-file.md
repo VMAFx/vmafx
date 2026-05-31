@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0755: C++23 Wave 7 — drop orphan `cpu.c`, activate `cpu.cpp`
 
 - **Status**: Accepted

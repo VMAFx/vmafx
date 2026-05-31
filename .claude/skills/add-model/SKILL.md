@@ -3,11 +3,13 @@ name: add-model
 description: Register a new VMAF model (.json / .pkl / .onnx) with the build, validate its schema, and add a loader smoke test.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /add-model
 
 ## Invocation
 
-```
+```text
 /add-model <path> [--type=classical-json|bootstrap-pkl|tiny-onnx] [--install]
 ```
 

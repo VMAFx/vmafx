@@ -12,7 +12,7 @@ Netflix upstream issue
 running two VMAF-CUDA analyses concurrently aborts the second
 process with:
 
-```
+```text
 ffmpeg: ../src/cuda/common.c:166: vmaf_cuda_buffer_alloc:
 Assertion `0' failed.
 ```

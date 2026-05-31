@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0620: Scaffold audit P0 — three silent-correctness fixes
 
 - **Status**: Accepted

@@ -1,7 +1,7 @@
 # Research Digest 0032 — cambi Vulkan integration trade-offs
 
 - **Date**: 2026-04-29
-- **Author**: Claude (Anthropic), reviewed by lusoris@pm.me
+- **Author**: Claude (Anthropic), reviewed by <lusoris@pm.me>
 - **Companion ADR**: [ADR-0210](../adr/0210-cambi-vulkan-integration.md)
 - **Predecessor**: [Research-0020](0020-cambi-gpu-strategies.md) — the
   feasibility spike's strategy comparison
@@ -50,6 +50,7 @@ input, 1 output, both word-packed) and their push constant struct
 divergence is the `main()` body's branch.
 
 Single TU with `PASS` spec constant:
+
 - Pre-compiles 3 distinct SPIR-V variants at pipeline build via
   `vkCreateComputePipelines`'s `pSpecializationInfo`.
 - Runtime cost identical to 3 separate modules (the SPIR-V optimiser
@@ -71,6 +72,7 @@ Tactical question: record everything in one command buffer (32
 dispatches in one submit) or use 32 one-shot buffers?
 
 Per-stage:
+
 - Simpler debug — each stage's `vkSubmit` returns a discrete error
   if anything fails.
 - Higher submit overhead — ~50 µs / submit on lavapipe → ~1.6 ms /
@@ -79,6 +81,7 @@ Per-stage:
   scratch_buf as scratch then memcpy back via mapped pointers).
 
 Single buffer:
+
 - Lower submit overhead (~50 µs / frame).
 - Forces all per-scale memcpy work onto the GPU (extra
   `vkCmdCopyBuffer` dispatches), or requires staging the memcpys to

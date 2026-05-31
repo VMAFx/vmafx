@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0241: HIP first-consumer kernel — `integer_psnr_hip` via mirrored kernel-template
 
 - **Status**: Accepted
@@ -58,7 +59,7 @@ The PR ships:
   verbatim: `init → context_new + lifecycle_init + readback_alloc +
   feature_name_dict`; `submit → submit_pre_launch + (kernel-launch +
   event-record + DtoH copy land in T7-10b)`; `collect → collect_wait
-  + score-emit (also T7-10b)`; `close → lifecycle_close +
+  score-emit (also T7-10b)`; `close → lifecycle_close +
   readback_free + dictionary_free + context_destroy`. Init returns
   `-ENOSYS` (because the template helpers do); the consumer's
   call-site shape is the load-bearing artefact this PR pins.

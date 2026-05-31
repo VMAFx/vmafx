@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0728: Sunset Legacy Native Build Modes — Phase 4b.9 Follow-On
 
 - **Status**: Accepted

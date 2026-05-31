@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0271: Wire `integer_ms_ssim_cuda` through the CUDA fence-batching helper
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0461: CLI validates positive dimensions and chroma-alignment on input videos
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0744 — Cross-Backend Parity Baseline (Pre-ncu-opt)
 
 **Date:** 2026-05-28

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0378: Per-picture CUDA streams must use CU_STREAM_NON_BLOCKING
 
 - **Status**: Accepted

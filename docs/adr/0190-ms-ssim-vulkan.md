@@ -44,7 +44,7 @@ Each scale's `l, c, s` formulas (from
 [`ssim_tools.c`](../../core/src/feature/iqa/ssim_tools.c)
 `ssim_accumulate_default_scalar`):
 
-```
+```text
 l = (2·μxμy + C1) / (μx² + μy² + C1)
 c = (2·sqrt(σx²·σy²) + C2) / (σx² + σy² + C2)
 s = (clamped(σxy) + C3) / (sqrt(σx²·σy²) + C3)
@@ -90,7 +90,7 @@ Ship `float_ms_ssim_vulkan` as **two new GLSL shaders + a
 
 ### Host orchestrator: `ms_ssim_vulkan.c`
 
-```
+```text
 init:
     picture_copy()-style float buffer for ref + cmp at full res
     allocate pyramid: 5 ref + 5 cmp float buffers, sized by halving
@@ -122,7 +122,8 @@ satisfies the [ADR-0153](0153-float-ms-ssim-min-dim-netflix-1414.md)
 floor.
 
 Each scale's `l, c, s` reduction follows the same per-WG-float
-+ host-double pattern as ssim_vulkan. The Wang product combine
+
+- host-double pattern as ssim_vulkan. The Wang product combine
 runs entirely on the host in `double`, so the per-pixel
 `pow(x, α)` calls don't accumulate float ULPs across scales.
 
@@ -155,7 +156,7 @@ to a focused follow-up.
   No new public C-API surface — the extractor registers as
   `float_ms_ssim_vulkan` under `HAVE_VULKAN`.
 - **Negative**: 11 dispatches per frame (5 decimates + 5 horiz
-  + 5 vert+combine, rounded down because scale 0 skips
+  5 vert+combine, rounded down because scale 0 skips
   decimate). Higher submission overhead than ssim's 2
   dispatches; not noticeable at 1080p but worth a v2 fusion
   pass if a profiling pass shows submission overhead > 10% of

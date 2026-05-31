@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD038 MD060 -->
 # ADR-0913: Changelog fragment renderer — splice contract is `^## \[`, not `^## `
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0890: CI concurrency + cost audit follow-up to PR #301
 
 - **Status**: Accepted
@@ -43,7 +44,7 @@ applied:
    provides full coverage against master, so doc-only PRs that skip the
    gate are not a coverage gap.
 5. `lint-and-format.yml::clang-tidy` paid ~5 min of apt-install + meson-setup
-   + meson-compile **before** its existing "no C/C++ changes — exit 0"
+   eson-compile **before** its existing "no C/C++ changes — exit 0"
    short-circuit at the inner `Run clang-tidy on changed files` step. An
    early file-delta probe gated on `*.c` / `*.h` / `*.cpp` / `*.hpp` extension
    lets the install + build steps be skipped entirely on doc-only / Python-only

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0222: `vmaf-perShot` per-shot CRF predictor sidecar
 
 - **Status**: Accepted
@@ -44,7 +45,7 @@ We will ship `vmaf-perShot` as a standalone executable under
   shot's frames.
 - **CRF predictor** (v1, transparent linear blend):
 
-  ```
+  ```text
   crf = base
         + 0.20 * range * motion_norm * length_factor
         - 0.20 * range * complexity_norm

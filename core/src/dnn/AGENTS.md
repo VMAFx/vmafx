@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # AGENTS.md — core/src/dnn
 
 Orientation for agents working on the ONNX Runtime integration (tiny-AI
@@ -8,7 +9,7 @@ inference layer). Parent: [../../AGENTS.md](../../AGENTS.md).
 The C-side runtime for tiny-AI checkpoints. Sits between the feature
 extractors and ONNX Runtime.
 
-```
+```text
 dnn/
   dnn_api.c / dnn_ctx.h    # public vmaf_dnn_* surface (opened from feature extractors)
   model_loader.c/.h        # loads model/tiny/registry.json, pins paths, checks sha256
@@ -190,7 +191,6 @@ Runtime directly.
   other taking 8..11). The OpenVINO + CoreML AUTO-chain ordering
   (CUDA → OpenVINO-GPU → ROCm → CoreML → CPU) is
   ADR-0365-Decision-load-bearing.
-
 
 - **Op-allowlist additions for TransNet V2 (ADR-0257)**:
   `BitShift`, `GatherND`, `Pad`, `Reciprocal`, `ReduceProd`,

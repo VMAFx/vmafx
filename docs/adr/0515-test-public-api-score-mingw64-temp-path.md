@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0515: Portable temp-path setup for `test_public_api_score` on MinGW64
 
 - **Status**: Accepted
@@ -13,7 +14,7 @@ has been red on master ever since `test_public_api_score.c` was added by
 the 2026-05-16 coverage-audit closure. The compile succeeds; the failure
 is in `meson test`:
 
-```
+```text
 test_vmaf_write_output: fail, mkstemp failed
 3 tests run, 1 failed
 12/61 fast - libvmaf:test_public_api_score        FAIL            0.24s   exit status 1

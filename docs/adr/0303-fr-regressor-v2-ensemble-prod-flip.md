@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD049 MD060 -->
 # ADR-0303: `fr_regressor_v2` ensemble — production flip trainer + CI gate
 
 - **Status**: Accepted
@@ -123,7 +124,7 @@ the variance bound holds.
 - [ADR-0279](0279-fr-regressor-v2-probabilistic.md) — probabilistic
   head scaffold; the parent of the ensemble surface this ADR flips.
 - [ADR-0235](0235-codec-aware-fr-regressor.md) — codec-aware decision
-  + 0.95 LOSO PLCC ship gate.
+  0.95 LOSO PLCC ship gate.
 - [ADR-0237](0237-quality-aware-encode-automation.md) — `vmaf-tune`
   Phase A consumer + `--quality-confidence` flag that needs the
   ensemble's predictive distribution.

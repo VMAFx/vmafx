@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0759: HIP ADM AdmBufferHip by-pointer refactor
 
 **Date**: 2026-05-29
@@ -11,6 +12,7 @@ PR #95 (Research-0755) audited the HIP backend and identified a P1 finding:
 signatures across `adm_csf.hip` and `adm_cm.hip`. This mirrors the CUDA F3 finding.
 
 `AdmBufferHip` (defined in `core/src/feature/hip/integer_adm_hip.h:70–96`) contains:
+
 - 3 `hip_adm_dwt_band_t` (scale-0 bands): 4 × `int16_t *` each = 12 pointers
 - 3 `hip_i4_adm_dwt_band_t` (scales 1-3 bands): 4 × `int32_t *` each = 12 pointers
 - 4 `int64_t *adm_cm[4]` + 4 `uint64_t *adm_csf_den[4]` = 8 pointers
@@ -60,13 +62,15 @@ hipcc availability: `docker exec vmaf-dev-mcp which hipcc` (requires ROCm 7.2.3 
 ## Runtime verification status
 
 PENDING — no AMD GPU available at time of writing. Verification requires:
-```
+
+```text
 docker exec vmaf-dev-mcp vmaf \
   --feature integer_adm --backend hip \
   --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
   --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8
 ```
+
 Expected: places=4 parity vs CPU (ADR-0214). The change is numerically transparent
 (pointer indirection only; all arithmetic and load patterns are identical).
 

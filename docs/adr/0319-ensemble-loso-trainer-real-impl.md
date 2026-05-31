@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0319: `fr_regressor_v2` ensemble LOSO trainer — real loader + per-fold training
 
 - **Status**: Accepted

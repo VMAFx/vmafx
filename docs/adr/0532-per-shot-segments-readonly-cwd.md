@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0532: tune-per-shot tolerates read-only CWD when writing segments
 
 - **Status**: Accepted

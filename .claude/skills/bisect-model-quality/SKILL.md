@@ -3,6 +3,8 @@ name: bisect-model-quality
 description: Binary-search a timeline of ONNX checkpoints for the first one that falls below a PLCC / SROCC / RMSE gate on a held-out set. Companion to /bisect-regression (which bisects code commits).
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /bisect-model-quality
 
 ## When to use
@@ -15,7 +17,7 @@ Unlike `/bisect-regression`, this skill does not rebuild anything; it only runs 
 
 ## Invocation
 
-```
+```text
 vmaf-train bisect-model-quality \
   <model_0.onnx> <model_1.onnx> ... <model_N.onnx> \
   --features path/to/holdout.parquet \

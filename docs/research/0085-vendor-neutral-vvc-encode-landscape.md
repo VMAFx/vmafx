@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0085 — Vendor-neutral VVC GPU encode landscape
 
 - **Status**: Active — most factual claims now verified against primary

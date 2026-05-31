@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0899: Bash strict-mode + trap-cleanup sweep across in-tree shell scripts
 
 - **Status**: Accepted

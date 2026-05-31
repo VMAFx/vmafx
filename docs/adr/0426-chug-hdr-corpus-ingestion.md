@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0426: CHUG HDR corpus ingestion
 
 - **Status**: Accepted
@@ -53,6 +54,6 @@ corpus rows are committed.
 
 - CHUG repository: <https://github.com/shreshthsaini/CHUG>
 - CHUG paper DOI: <https://doi.org/10.1109/ICIP55913.2025.11084488>
-- Source: `req` — "and we need this as well https://github.com/shreshthsaini/CHUG"
+- Source: `req` — "and we need this as well <https://github.com/shreshthsaini/CHUG>"
 - Source: `req` — "yeah well download, prep and train lol... thats a local hardware background job..."
 - Source: `req` — "and then lets unlock fucking hdr baby"

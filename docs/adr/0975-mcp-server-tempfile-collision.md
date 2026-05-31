@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0975: Use NamedTemporaryFile in _run_vmaf_score to eliminate task-name collision risk
 
 - **Status**: Accepted
@@ -43,4 +44,4 @@ block which calls `output.unlink(missing_ok=True)`.
 ## References
 
 - Round 26 audit finding A.2 (user request 2026-05-31).
-- `tempfile` stdlib docs: https://docs.python.org/3/library/tempfile.html
+- `tempfile` stdlib docs: <https://docs.python.org/3/library/tempfile.html>

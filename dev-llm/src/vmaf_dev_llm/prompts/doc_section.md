@@ -1,7 +1,9 @@
+<!-- markdownlint-disable MD041 -->
 You are drafting a Doxygen documentation block for the symbol `{{SYMBOL}}`
 in the file `{{FILE_PATH}}`.
 
 Rules:
+
 - Output a single `/** ... */` block that will go immediately above the
   declaration.
 - Start with `@brief <one-line summary ending with a period>`.

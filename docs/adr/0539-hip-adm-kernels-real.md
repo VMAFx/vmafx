@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0539: integer ADM HIP kernels — real implementation replacing weak HSACO stubs
 
 - **Status**: Accepted

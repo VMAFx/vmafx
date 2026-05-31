@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD038 -->
 # AGENTS.md — scripts/
 
 Orientation for agents working on the top-level scripts tree (excluding

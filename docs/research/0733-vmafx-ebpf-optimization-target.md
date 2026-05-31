@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0733 — VMAFX eBPF Optimization Target
 
 - **Date**: 2026-05-28
@@ -34,7 +35,7 @@ A single 1080p60 10-bit encode job reads approximately:
 
 The rclone VFS FUSE mount adds a round-trip cost to every `read()` call:
 
-```
+```text
 ffmpeg read() → FUSE kernel driver → /dev/fuse → rclone process (user-space)
              → rclone VFS cache lookup → (on miss) network fetch → return
 ```
@@ -116,7 +117,7 @@ When ffmpeg reads from a FUSE-mounted path (`/mnt/rclone-src/<clip>.mp4`) and th
 requested page is already in the kernel page cache (rclone VFS in `--vfs-cache-mode
 full`), the read() path is:
 
-```
+```text
 ffmpeg                       kernel                        rclone daemon
   |                             |                               |
   |-- sys_read(fd, buf, n) ---> |                               |
@@ -142,7 +143,7 @@ serves the read directly from the page cache, bypassing `/dev/fuse` entirely.
 
 **Relevant tracepoints and kprobes:**
 
-```
+```text
 kprobe:fuse_file_read_iter         — entry point; read request arrives
 kretprobe:fuse_file_read_iter      — exit; measure latency
 tracepoint:fuse:fuse_request_send  — fires when request is dispatched to daemon
@@ -152,7 +153,7 @@ kprobe:find_get_pages_range        — page cache lookup
 
 The eBPF map design:
 
-```
+```text
 BPF_MAP_TYPE_HASH: fd_inode_map
   key:   {pid, fd}
   value: {inode, is_fuse_mount}    // populated at open() kprobe
@@ -324,6 +325,7 @@ curl -s :9102/metrics | grep vmafx_fuse_read_latency_ns
 **Job-level impact:**
 
 For a 60-second 1080p60 clip:
+
 - Before: 215,000 reads × 150 µs avg = 32 seconds of FUSE overhead
 - After (cached, bypass): 215,000 reads × 4 µs avg = 0.86 seconds
 - Expected job wall-time reduction: 31 seconds (~50% for I/O-bound stage)
@@ -369,6 +371,7 @@ to arbitrary kernel memory. This is the minimal privilege set.
 writing any eBPF code.
 
 **Deliverables:**
+
 - `scripts/ebpf/measure-fuse-baseline.sh` — wraps `bcc funclatency` + `bpftrace`
   commands from §4.5 into a single reproducible script
 - `docs/research/0733-vmafx-ebpf-optimization-target.md` (this digest) — establishes
@@ -385,6 +388,7 @@ Run it against a local vmafx-node instance, confirm the ring-buffer output match
 `bpftrace` baseline numbers.
 
 **Deliverables:**
+
 - `pkg/ebpf/fuse_latency.bpf.c` — the eBPF C source
 - `pkg/ebpf/fuse_latency.go` — `bpf2go`-generated loader
 - `cmd/vmafx-ebpf-probe/main.go` — standalone CLI tool for ad-hoc measurement
@@ -399,6 +403,7 @@ Run it against a local vmafx-node instance, confirm the ring-buffer output match
 optionally gate job dispatch on roundtrip ratio.
 
 **Deliverables:**
+
 - `FuseLatencyMonitor` integrated into `cmd/vmafx-node/main.go`
 - `--enable-ebpf-fuse-monitor` feature flag (off by default)
 - Prometheus metrics: `vmafx_fuse_read_latency_ns`, `vmafx_fuse_daemon_roundtrip_ratio`
@@ -413,6 +418,7 @@ optionally gate job dispatch on roundtrip ratio.
 **Goal**: Enable the feature in the default Helm chart with the minimal privilege set.
 
 **Deliverables:**
+
 - `deploy/helm/vmafx/values.yaml`: `ebpf.fuseMonitor.enabled: false` (opt-in)
 - `deploy/helm/vmafx/templates/node-deployment.yaml`: conditional `CAP_BPF` + `CAP_PERFMON`
 - `docs/deployment/ebpf-capabilities.md` — k8s privilege model documentation

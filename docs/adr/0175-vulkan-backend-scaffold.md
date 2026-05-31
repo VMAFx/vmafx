@@ -117,6 +117,7 @@ to run flip `-Denable_vulkan=enabled` explicitly.
 ## Consequences
 
 **Positive:**
+
 - Header surface lands without committing to runtime details.
   Future Vulkan-targeting consumers (third-party tools, MCP
   surfaces) can compile against the API today; calls fail
@@ -132,8 +133,9 @@ to run flip `-Denable_vulkan=enabled` explicitly.
   larger runtime PR.
 
 **Negative:**
+
 - Five new C files (1 public header, 5 implementation, 1 test)
-  + 1 ADR + 1 doc + 1 ffmpeg patch with no functional code yet.
+  1 ADR + 1 doc + 1 ffmpeg patch with no functional code yet.
   Acceptable for an audit-first PR; the runtime PR will swap the
   bodies in place.
 - `vmaf_vulkan_available()` returns `1` when built with

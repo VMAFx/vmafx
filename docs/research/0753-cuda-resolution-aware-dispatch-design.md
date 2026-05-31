@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD050 MD060 -->
 # Research-0753: CUDA Resolution-Aware Dispatch — Design Rationale
 
 **Date**: 2026-05-29
@@ -67,6 +68,7 @@ branch, so the distinction is academic).
 ## Future expansion
 
 The policy table in ADR-0753 has empty rows for:
+
 - **motion CPU fallback at WS_SMALL**: at 576p CUDA loses to CPU outright. A
   future PR could call the CPU motion path when `ws == WS_SMALL`, bypassing the
   CUDA kernel entirely. This requires refactoring the extractor to hold a CPU

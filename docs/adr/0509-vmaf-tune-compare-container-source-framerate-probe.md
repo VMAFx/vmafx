@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0509: vmaf-tune compare auto-probes container-source framerate / duration
 
 - **Status**: Accepted
@@ -12,7 +13,7 @@ The BBB end-to-end v7 probe surfaced a sister bug to ADR-0505: the
 VMAF scores when `--src` was a container (mp4 / mkv / mov / ...).
 Reproducer (against the dev-mcp BBB MP4 at native 60 fps):
 
-```
+```text
 vmaf-tune compare \
   --src /workspace/.corpus/bbb_e2e/bbb_sunflower_1080p_60fps_normal.mp4 \
   --width 1920 --height 1080 --target-vmaf 92 \

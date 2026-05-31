@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0042: Vulkan async pending-fence model for the VkImage zero-copy import path
 
 - **Date**: 2026-05-01
@@ -128,10 +129,10 @@ that flips Status to Accepted.
 - ADR-0184 (grandparent — pinned the public ABI surface).
 - Issue #239 — profile signal.
 - Khronos Vulkan-Docs wiki, "Synchronization examples"
-  (https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples)
+  (<https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples>)
   — canonical fence-ring + timeline-semaphore patterns.
 - AMD GPUOpen, "Vulkan Barriers Explained"
-  (https://gpuopen.com/learn/vulkan-barriers-explained/)
+  (<https://gpuopen.com/learn/vulkan-barriers-explained/>)
   — fence vs semaphore choice rubric.
 - VK-Hpp samples, `samples/12_InitFrameBuffers/` — frames-
   in-flight ring at depth 2 (the lower bound that gives any

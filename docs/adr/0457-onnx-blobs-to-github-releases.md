@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0457: model/tiny/*.onnx blobs ≥1MB live in GitHub Releases, not git
 
 - **Status**: Accepted

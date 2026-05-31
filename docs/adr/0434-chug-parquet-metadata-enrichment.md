@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0434: CHUG Parquet Metadata Enrichment
 
 - **Status**: Accepted

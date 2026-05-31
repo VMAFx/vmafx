@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0969: Helm chart — add seccompProfile default and fix node-deployment image helper (Round 26 audit B.1 + B.3)
 
 - **Status**: Accepted
@@ -21,7 +22,7 @@ verbatim, the fix belongs in `values.yaml`.
 **B.3 — broken node-deployment image reference**: `templates/node-deployment.yaml`
 rendered the node container image as:
 
-```
+```text
 {{ .Values.node.image.repository }}:{{ .Values.node.image.tag | default .Chart.AppVersion }}
 ```
 

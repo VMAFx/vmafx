@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0483: Extract shared `vmaf_gpu_dispatch_parse_env` tokenizer
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD060 -->
 # Backlog audit — untracked follow-up items (2026-04-28)
 
 > Audit of in-tree follow-up mentions (TODO / FIXME / "deferred" /

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research Digest 0610: Per-Shot ABR Rendition Selection
 
 **Scope**: Assign each shot a (resolution, bitrate) rendition drawn from the
@@ -65,7 +66,7 @@ per-title ladder — is the gap.
 
 ## Data Flow Design
 
-```
+```text
 Source video
     │
     ▼
@@ -146,6 +147,7 @@ resolution, CRF). The state space is larger but conceptually identical.
 ## Packaging Constraint Analysis
 
 HLS requires consistent resolution per variant. Options:
+
 1. **Segment-level resolution lock**: all segments of a given representation
    encode at the same resolution; some shots are upscaled.
 2. **DASH AdaptationSet per resolution**: full DASH packaging, each resolution

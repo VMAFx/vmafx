@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD056 MD060 -->
 # ADR-0685: Tiny-AI Netflix corpus training scaffold — 2026-05-27 prep scope
 
 - **Status**: Accepted

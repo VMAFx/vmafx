@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0647: Refresh `fr_regressor_v1` from the 2026-05-20 Netflix feature table
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Remote Storage Streaming (rclone)
 
 `vmafx-node` streams reference and distorted video directly from remote storage
@@ -40,6 +41,7 @@ to ffmpeg via `-i`.  libavformat's built-in HTTP demuxer reads the bytes; rclone
 fetches them from the remote backend.
 
 Advantages:
+
 - No FUSE kernel dependency.
 - Both `--reference` and `--distorted` can be served simultaneously on
   different ports.
@@ -51,6 +53,7 @@ The node mounts the remote at a per-job temporary directory, waits for the
 asset to appear on the mount, and returns the local path to ffmpeg.
 
 Requirements:
+
 - The `fuse3` package must be present in the container (`docker/Dockerfile.node`
   includes it).
 - The pod must have `securityContext.capabilities.add: [SYS_ADMIN]` and
@@ -102,7 +105,7 @@ and mounts it read-only at `/etc/vmafx/rclone.conf` in every `vmafx-node` pod.
 Jobs reference assets by URI.  The `vmafx-controller` accepts job requests
 with `reference_uri` and `distorted_uri` fields.  Examples:
 
-```
+```text
 s3://my-bucket/src01_hrc00_576x324.yuv
 gcs://vmaf-corpus/src01_hrc01_576x324.yuv
 sftp://archive.example.com/corpus/ref.yuv
@@ -186,7 +189,7 @@ helm upgrade vmafx deploy/helm/vmafx --set storage.mode=http-serve
 
 ## Architecture
 
-```
+```text
 vmafx-node
   │
   ├── pkg/storage.Storage (interface)

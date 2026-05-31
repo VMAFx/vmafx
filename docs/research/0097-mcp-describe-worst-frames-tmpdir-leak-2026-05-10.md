@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0097 — MCP `describe_worst_frames` temporary directory leak
 
 **Date:** 2026-05-10

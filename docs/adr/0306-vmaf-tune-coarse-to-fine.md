@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0306: `vmaf-tune` coarse-to-fine CRF search
 
 - **Status**: Accepted

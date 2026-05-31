@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0001: Treat uncommitted benchmark result JSON as noise
 
 - **Status**: Accepted

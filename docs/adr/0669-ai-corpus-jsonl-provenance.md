@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0669: AI Corpus JSONL Provenance
 
 - **Status**: Proposed

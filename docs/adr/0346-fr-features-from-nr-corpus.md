@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0346: FR-features-from-NR-corpus adapter pattern
 
 - **Status**: Accepted

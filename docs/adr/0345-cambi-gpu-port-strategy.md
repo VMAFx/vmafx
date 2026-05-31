@@ -7,7 +7,7 @@
   master; cross-backend gate at places=4 active. HIP port deferred
   to a separate follow-up task.
 - **Date**: 2026-05-09
-- **Deciders**: lusoris@pm.me, Claude (Anthropic)
+- **Deciders**: <lusoris@pm.me>, Claude (Anthropic)
 - **Tags**: cuda, sycl, hip, gpu, cambi, fork-local, places-4
 
 ## Context

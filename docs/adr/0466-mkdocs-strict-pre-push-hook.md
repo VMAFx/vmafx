@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0466: mkdocs strict-mode pre-push hook
 
 - **Status**: Accepted

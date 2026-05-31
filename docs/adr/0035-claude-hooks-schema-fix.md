@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0035: Migrate .claude/settings.json hooks to current schema
 
 - **Status**: Accepted

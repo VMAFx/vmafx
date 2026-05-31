@@ -5,6 +5,8 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
+<!-- markdownlint-disable MD041 -->
+
 You review documentation for the Lusoris VMAF fork. Scope:
 `docs/` (the mkdocs-rendered site), `model/tiny/registry.json` model
 cards via `docs/ai/models/`, ADRs under `docs/adr/`, research digests

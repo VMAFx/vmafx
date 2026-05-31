@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD060 -->
 # ADR-0559: Feature Coverage Audit — Add speed_chroma + speed_temporal to Extraction Scripts (HDR-model prep)
 
 - **Status**: Accepted
@@ -65,6 +66,7 @@ copies exist. Re-extract deferred to the corpus agent.
 ## Consequences
 
 **Positive**
+
 - All extraction scripts that consume `FULL_FEATURES` from the shared module
   will automatically include speed features on the next run.
 - Future corpus runs produce populated `speed_temporal` / `speed_chroma_u/v/uv`
@@ -73,6 +75,7 @@ copies exist. Re-extract deferred to the corpus agent.
   extraction infrastructure is already correct.
 
 **Negative**
+
 - Existing corpora remain stale until re-extract. Training code must tolerate
   NaN in speed columns for backward compatibility (already the case per
   `ai/data/feature_extractor.py` NaN-handling contract).
@@ -81,6 +84,7 @@ copies exist. Re-extract deferred to the corpus agent.
   "Keep in sync" is already present; this ADR documents the divergence.
 
 **Neutral / Follow-ups**
+
 - GPU twins for `speed_chroma` and `speed_temporal` are tracked in ADR-0557
   (CUDA) and ADR-0558 (HIP) by parallel agents; this ADR is independent.
 - `vmaf_tiny_v1` / `vmaf_tiny_v1_medium` lack model cards; that gap is noted

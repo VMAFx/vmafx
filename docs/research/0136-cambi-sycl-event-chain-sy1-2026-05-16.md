@@ -38,6 +38,7 @@ scheduler level without a host barrier. This is the standard SYCL pattern for
 GPU pipeline stages (SYCL 2020 spec §4.7.6.3).
 
 The two remaining `q.wait()` calls are semantically required:
+
 1. Post-H2D: USM device memory is not visible to kernels until the upload
    completes; `q.wait()` provides the host-visible guarantee.
 2. Post-D2H: USM host memory written by device `memcpy` is not visible to the

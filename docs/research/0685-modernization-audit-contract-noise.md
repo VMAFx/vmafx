@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0685: Modernization Audit Contract-Noise Follow-Up
 
 ## Question

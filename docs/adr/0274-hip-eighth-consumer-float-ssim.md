@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0274: HIP eighth kernel-template consumer — `float_ssim_hip`
 
 - **Status**: Accepted

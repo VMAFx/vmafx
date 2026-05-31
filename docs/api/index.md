@@ -43,7 +43,7 @@ Install or build libvmaf, then include and link:
 #include <libvmaf/model.h>
 ```
 
-```
+```text
 cc app.c -o app $(pkg-config --cflags --libs libvmaf)
 ```
 
@@ -119,7 +119,7 @@ directly.
 
 ## Lifecycle
 
-```
+```text
   ┌─────────────────┐
   │ vmaf_init()     │  → VmafContext*
   └────────┬────────┘

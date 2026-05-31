@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0541: Pin dev-MCP container Intel NEO + ROCm runtimes to versions matching the host kernel
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0514: dev-MCP container exposes every host GPU backend (CUDA + SYCL + Vulkan + HIP)
 
 - **Status**: Accepted
@@ -13,7 +14,7 @@ ai / MCP work (CLAUDE.md §12 rule 15, ADR-0496). Despite shipping CUDA,
 Intel oneAPI, ROCm, and Mesa Vulkan SDKs in its image layers, only CPU and
 CUDA were actually usable at run-time on the dev host:
 
-```
+```text
 backend=cpu     ok      VMAF 76.66783
 backend=cuda    ok      VMAF 76.66783
 backend=sycl    fail    "No device of requested type available"

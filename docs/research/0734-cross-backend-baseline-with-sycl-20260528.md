@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0734: Cross-Backend Throughput Baseline + SYCL on Intel Arc (2026-05-28)
 
 **Date:** 2026-05-28
@@ -69,7 +70,7 @@ docker run --rm --gpus all \
 
 After applying this invocation, `sycl-ls` correctly enumerates:
 
-```
+```text
 [level_zero:gpu][level_zero:0] Intel(R) oneAPI Unified Runtime over Level-Zero,
     Intel(R) Arc(TM) A380 Graphics 12.56.5 [1.15.38308+1]
 [opencl:gpu][opencl:1] Intel(R) OpenCL Graphics, Intel(R) Arc(TM) A380 Graphics
@@ -183,7 +184,7 @@ winner.
 
 ## 6. Regression Check vs Testdata Baseline
 
-```
+```text
 testdata/perf_benchmark_results.json
 testdata/netflix_benchmark_results.json
 ```

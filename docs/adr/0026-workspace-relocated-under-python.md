@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0026: Relocate Python harness workspace under python/vmaf/
 
 - **Status**: Accepted

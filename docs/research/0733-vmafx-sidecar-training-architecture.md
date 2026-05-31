@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD049 MD060 -->
 # Research-0733 — VMAFX Sidecar Online Training Architecture
 
 _Date: 2026-05-28_
@@ -40,6 +41,7 @@ Lightning online learning loop. When a checkpoint threshold is met, the sidecar 
 ONNX model and pushes it to the model registry (PVC mount or S3 via rclone).
 
 **Advantages:**
+
 - Reuses the existing PyTorch + Lightning stack from `ai/`. No new ML framework.
 - In-pod latency: data-to-training is sub-100 ms.
 - No network round-trip for training data.
@@ -50,6 +52,7 @@ ONNX model and pushes it to the model registry (PVC mount or S3 via rclone).
   same pod can use the same GPU as the scoring container.
 
 **Disadvantages:**
+
 - Pod image is heavier: each node pod carries both Go scoring binary and Python + PyTorch
   sidecar. Estimated additional image size: ~1.5 GB for PyTorch CPU, ~5 GB for PyTorch CUDA.
 - Sidecar lifecycle must be managed by the Operator (readiness probe, restart policy).
@@ -57,6 +60,7 @@ ONNX model and pushes it to the model registry (PVC mount or S3 via rclone).
   Mitigation: sidecar trains on CPU or a separate inference EP; scoring uses the GPU.
 
 **Resource estimates (per pod):**
+
 - Sidecar RAM: ~400-600 MB for PyTorch CPU training on small batches.
 - Sidecar CPU: ~0.5 vCPU sustained, ~2 vCPU burst during forward/backward pass.
 - Sidecar GPU (optional): 0 if CPU-only; 2-4 GB VRAM if CUDA EP is enabled for training.
@@ -68,12 +72,14 @@ A separate `vmafx-training-node` pool receives batched triples from the controll
 Training nodes pull work from a shared queue, train, and push checkpoints.
 
 **Advantages:**
+
 - Clean separation of concerns: scoring and training resource pools are independently scaled.
 - Training nodes can have larger GPU VRAM budgets (A100-class) without over-provisioning
   every scoring node.
 - Simpler scoring pod images (no Python).
 
 **Disadvantages:**
+
 - Cross-pod data transport adds latency (1-10 s round-trip through the controller).
 - Two new node types in the Helm chart and Operator: `VmafxNode` and `VmafxTrainingNode`.
 - Training queue must be fault-tolerant: if training nodes are unavailable, triples must be
@@ -88,10 +94,12 @@ Training nodes pull work from a shared queue, train, and push checkpoints.
 Pure-Go SGD using Gorgonia or hand-rolled tensor math. No Python sidecar.
 
 **Advantages:**
+
 - Single Go binary. No Python dependency anywhere in the node image.
 - Lowest per-sample overhead: no cross-process communication.
 
 **Disadvantages:**
+
 - Go ML ecosystem is not production-ready for full neural network training. Gorgonia is
   effectively unmaintained (last meaningful commit 2023). Hand-rolled SGD can handle linear
   heads but not multi-layer networks with normalization.
@@ -122,7 +130,7 @@ goroutine: reference features, distorted features, and the predicted score.
 
 In executor pseudocode (Go):
 
-```
+```text
 result, err := scorer.ScoreJob(ctx, job)
 if err != nil { ... }
 // Triple is available here — capture before returning result.
@@ -175,6 +183,7 @@ triples are queued (default 32) or a flush interval elapses (default 5 s), which
 **Chosen: gRPC over loopback (Option B in the transport evaluation).**
 
 Rationale:
+
 - The controller already uses gRPC for node communication; reusing the same framework avoids
   a second RPC library dependency.
 - Proto definitions give strong typing and schema evolution via field numbering.
@@ -224,6 +233,7 @@ container port and avoids FUSE/volume-mount dependencies for the socket path.
 **Algorithm: Online SGD with exponential moving average (EMA) weight update.**
 
 The sidecar maintains two model copies:
+
 1. `live_model` — the model being trained in-place via SGD.
 2. `ema_model` — an exponential moving average of `live_model` weights, updated after each
    gradient step with a configurable decay `beta` (default 0.999).
@@ -270,6 +280,7 @@ class SidecarTrainer(pl.LightningModule):
 ```
 
 **Checkpoint trigger:** dual-condition AND gate:
+
 - Time since last checkpoint >= `checkpoint_interval` (default 10 minutes).
 - New samples since last checkpoint >= `min_samples` (default 1000).
 
@@ -450,7 +461,7 @@ status:
 
 The `vmafx-operator` reconciles `VmafxModelTraining` objects. High-level pseudocode:
 
-```
+```text
 func (r *VmafxModelTrainingReconciler) Reconcile(ctx, req) (ctrl.Result, error):
 
     training = fetch VmafxModelTraining by req.NamespacedName

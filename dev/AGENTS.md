@@ -148,6 +148,7 @@ a real container-side regression that hid a host GPU from libvmaf:
    (the precise failure mode that triggered ADR-0514 for HIP).
 
 ### FFmpeg encoder exposure invariants (ADR-0541)
+
 ### Full GPU backend plumbing invariants (ADR-0541)
 
 Four constraints that close the last silent-fallback gaps surfaced
@@ -343,6 +344,7 @@ Three invariants must hold on every modification:
    `--mount=...,uid=1000,gid=1000` cache mounts resolve to the same
    identity that runs the build. Preserve the explicit uid/gid pin
    on any modification to the user-creation step.
+
 ### Source-directory rename sweep invariant (ADR-0966)
 
 After any rename of the C source root (currently `core/`, formerly `libvmaf/`

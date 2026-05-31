@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0278: T7-5 NOLINT-sweep closeout — citation normalisation across libvmaf
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0029: Relocate resource tree under python/vmaf/
 
 - **Status**: Accepted

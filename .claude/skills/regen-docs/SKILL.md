@@ -3,11 +3,13 @@ name: regen-docs
 description: Regenerate the mkdocs-material site, validate cross-references, surface stale or broken links.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /regen-docs
 
 ## Invocation
 
-```
+```text
 /regen-docs [--strict] [--open]
 ```
 

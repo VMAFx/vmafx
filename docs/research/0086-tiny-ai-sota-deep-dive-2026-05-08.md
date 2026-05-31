@@ -403,7 +403,7 @@ prediction*.
 2. **Catastrophic forgetting is a real risk** if the sidecar bias
    term is ever fed back into the shipped predictor. Industry
    prescription: replay buffer of "anchor" examples (NF Public Drop
-   + BVI-DVC) interleaved with new data. We should design this
+   VI-DVC) interleaved with new data. We should design this
    *before* the sidecar pattern moves from scaffold to closed loop.
 3. **Federated VQ training** (the user's K>10-contributor vision) is
    still genuinely open ground — no published precedent. Do not

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD060 -->
 # Research: vmaf-dev-mcp Container Smoke Test — 2026-05-27
 
 **Date:** 2026-05-27
@@ -40,7 +41,7 @@ End-to-end smoke test of the `vmaf-dev-mcp` container per
 
 ## 3. Container Build
 
-```
+```text
 docker compose --project-directory $(git rev-parse --show-toplevel) \
     -f dev/docker-compose.yml build dev-mcp 2>&1 | tail -30
 ```
@@ -53,7 +54,7 @@ Build time was within the expected range; layer cache reused stages 1-3.
 
 ## 4. Container Start
 
-```
+```text
 docker compose --project-directory $(git rev-parse --show-toplevel) \
     -f dev/docker-compose.yml up -d
 ```
@@ -65,7 +66,7 @@ started and depends on the primary healthcheck passing.
 
 ## 5. vmaf Binary Smoke Test
 
-```
+```text
 docker exec vmaf-dev-mcp /usr/local/bin/vmaf --version
 ```
 
@@ -73,7 +74,7 @@ docker exec vmaf-dev-mcp /usr/local/bin/vmaf --version
 
 Backend flags compiled in (from `vmaf --help`):
 
-```
+```text
 --no_cuda          --no_sycl          --sycl_device
 --no_vulkan        --vulkan_device    --no_hip
 --hip_device       --no_metal         --metal_device

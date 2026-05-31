@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0374: Build-time-optional public APIs return `-ENOSYS` when disabled
 
 - **Status**: Accepted

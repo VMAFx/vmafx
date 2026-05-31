@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0537: premium-archival VMAF target defaults + bisect reaches VMAF 95+
 
 - **Status**: Active

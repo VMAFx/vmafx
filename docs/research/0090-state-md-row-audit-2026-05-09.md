@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0090: `docs/state.md` comprehensive verify-every-row audit, 2026-05-09
 
 - **Date**: 2026-05-09

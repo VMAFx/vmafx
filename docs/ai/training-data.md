@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Tiny AI — training data
 
 This page documents the corpus path convention for the Netflix VMAF training
@@ -10,7 +11,7 @@ see [training.md](training.md).
 Training data is **never committed**. All YUV files are gitignored. The
 canonical local path for the Netflix corpus is:
 
-```
+```text
 .workingdir2/netflix/
   ref/    # 9 reference YUVs
   dis/    # 70 distorted YUVs
@@ -44,13 +45,13 @@ the downloaded corpora when citing training evidence.
 
 Files follow the Netflix encoding-ladder convention:
 
-```
+```text
 <source>_<quality_label>_<height>_<bitrate-kbps>.yuv
 ```
 
 For example:
 
-```
+```text
 ref/
   BigBuck_0_576_0.yuv        # source, quality 0 = pristine, 576 lines
 dis/

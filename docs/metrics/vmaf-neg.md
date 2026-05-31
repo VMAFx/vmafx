@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # VMAF NEG (No Enhancement Gain)
 
 VMAF NEG is a model variant that penalises encoder in-loop sharpening and similar

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Questions Answered (verbatim)
 
 Q&A from the in-agent popup rounds during planning. User replies are verbatim.

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0711: vmafx-controller Phase 4b.1 — Job Queue, Node Registry, and Scheduler
 
 - **Status**: Accepted
@@ -41,6 +42,7 @@ A new service `VmafxController` is added in
 is retained unmodified.
 
 **Client API** (CLI, MCP, future Web UI):
+
 - `SubmitJob` — enqueue a scoring job; returns a job ID.
 - `GetJob` — retrieve job state by ID.
 - `CancelJob` — cancel a pending or running job.
@@ -48,6 +50,7 @@ is retained unmodified.
   subscription in Phase 4b.2).
 
 **Node API** (vmafx-node workers):
+
 - `RegisterNode` — announce node capabilities on startup.
 - `Heartbeat` — keepalive every 10 s.
 - `PullWork` — pull the next matching PENDING job.
@@ -80,6 +83,7 @@ Phase 4b.2.
 ### Observability
 
 New Prometheus gauges and counters added to `pkg/observability`:
+
 - `vmafx_controller_jobs_pending` (gauge)
 - `vmafx_controller_jobs_running` (gauge)
 - `vmafx_controller_nodes_registered` (gauge)
@@ -94,6 +98,7 @@ New Prometheus gauges and counters added to `pkg/observability`:
 
 PostgreSQL or Redis would provide richer querying, pub/sub for streaming job updates,
 and horizontal scalability.  Rejected for Phase 4b.1 because:
+
 - A single controller instance is the expected deployment for initial rollout.
 - SQLite eliminates an external process dependency, simplifying the dev and test
   environment.

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Embedded MCP server (in-process, inside libvmaf)
 
 > **Status: T5-2d v3 runtime landed (2026-05-09).**

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0574: CUDA Twins for HDR-Model Features — Phase 1 (aim, adm3)
 
 - **Status**: Accepted

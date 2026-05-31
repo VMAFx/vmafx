@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research digest — slow-test audit (2026-05-30)
 
 Companion to [ADR-0908](../adr/0908-slow-test-audit-2026-05-30.md).

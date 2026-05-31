@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # BD-rate with VMAF
 
 BD-rate (Bjøntegaard Delta rate) measures the average bitrate

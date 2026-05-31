@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0688: HIP wave32 carry-preserving int64 reduction for VIF and motion kernels
 
 - **Status**: Accepted

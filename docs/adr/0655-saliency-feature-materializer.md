@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0655: Saliency Feature Materializer
 
 - **Status**: Accepted

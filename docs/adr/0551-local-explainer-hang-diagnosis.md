@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0551: VCQ-223 LocalExplainer CI timeout — root cause and fix path
 
 - **Status**: Proposed
@@ -53,7 +54,7 @@ roughly 50× fewer — which completes in seconds.
 
 The stack trace at hang time (confirmed via `SIGALRM`-driven traceback):
 
-```
+```text
 runner.run()
   executor.py: _run_on_asset
     quality_runner_extra.py: exps = explainer.explain(model, xs)

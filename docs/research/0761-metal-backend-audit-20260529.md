@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 <!--
   Copyright 2026 Lusoris
   SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
@@ -114,7 +115,7 @@ correct interpretation is "we take our own +1; the caller still owns theirs". Wi
 
 `core/include/libvmaf/libvmaf_metal.h` lines 17–18 read:
 
-```
+```text
 * (T8-1c/d, ADR-0421 — `integer_motion_v2.metal` + 7 additional
 * feature-extractor MSL shaders) are fully shipped.
 ```
@@ -142,7 +143,7 @@ The parity obligation still applies per ADR-0214.
 
 **Recommend:** Add to `float_ms_ssim.metal` header:
 
-```
+```text
  *  Parity gate (ADR-0214): `places=4` cross-backend-diff against CPU
  *  float_ms_ssim. Run with:
  *    scripts/parity/cross-backend-diff.sh --extractor float_ms_ssim \

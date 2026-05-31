@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # HIP kernel parity coverage — round 3 audit (2026-05-31)
 
 Companion research digest for ADR-0945.  Quantifies the HIP-side

@@ -1,10 +1,12 @@
+<!-- markdownlint-disable MD060 -->
 # Research: Local Sanitizer Audit — 2026-05-30
 
 ## Summary
 
 A local `-Db_sanitize=address,undefined` build of `core/` on master tip
 `bbcaa8d127` was run against the full unit-test suite (49 fast + 12 dnn
-+ 2 slow = **63 tests, all OK**) plus the vmaf CLI binary against the
+
+- 2 slow = **63 tests, all OK**) plus the vmaf CLI binary against the
 Netflix golden YUVs across 4:2:0 8-bit, 4:2:2 10-bit, and 4:2:0 12-bit
 inputs and the full feature set.
 
@@ -51,7 +53,7 @@ ASan + UBSan + leak-check were enabled simultaneously across every run.
 
 **Signal:**
 
-```
+```text
 core/src/opt.c:46:10: runtime error: store to misaligned address
    0x7cc8bfde0902 for type 'int', which requires 4 byte alignment
 
@@ -89,12 +91,13 @@ typedef struct CambiState {
 
 `set_option_int` in `core/src/opt.c` writes `*(int *)data = value;`,
 which:
-* on `window_size`: writes 4 bytes starting at a 4-byte-aligned address,
+
+- on `window_size`: writes 4 bytes starting at a 4-byte-aligned address,
   overwriting `src_window_size`. `init()` later sets `s->src_window_size
   = s->window_size`, so the corruption is masked at runtime — but the
   silent overwrite is real and an implementation tweak (e.g., reordering
   init) would expose it.
-* on `max_log_contrast`: writes 4 bytes starting at a 2-byte-aligned
+- on `max_log_contrast`: writes 4 bytes starting at a 2-byte-aligned
   address — UBSan's misaligned-access trap fires. The trailing 2 bytes
   spill into the padding before `heatmaps_path` (a pointer, 8-byte
   aligned), so the pointer itself survives — but that survival depends
@@ -116,22 +119,22 @@ extractor kernel needs to be touched.
 
 **Verification:**
 
-* Re-ran `--feature cambi` alone, `--feature cambi=window_size=63:max_log_contrast=3`,
+- Re-ran `--feature cambi` alone, `--feature cambi=window_size=63:max_log_contrast=3`,
   and the full 7-feature CLI command. All clean under UBSan.
-* The feature-name derivation correctly produces `cambi_mlc_3_ws_63`
+- The feature-name derivation correctly produces `cambi_mlc_3_ws_63`
   for tuned options (proving the option-parser AND name generator both
   read the shadow slots correctly).
-* Full unit-test suite (63 tests) passes; specifically, `test_cambi`,
+- Full unit-test suite (63 tests) passes; specifically, `test_cambi`,
   `test_cambi_simd`, `test_feature`, `test_feature_extractor`,
   `test_feature_collector`, `test_predict`, `test_model`,
   `test_model_collection_api`.
-* CAMBI score values bit-exact with master on the Netflix golden YUV.
+- CAMBI score values bit-exact with master on the Netflix golden YUV.
 
 ## Finding 2 — AVX2 / AVX-512 ADM signed-shift UB
 
 **Signal:**
 
-```
+```text
 core/src/feature/x86/adm_avx512.c:3558:66: runtime error:
    left shift of negative value -4240
 ```
@@ -166,11 +169,11 @@ Same pattern appears 4× in `adm_avx512.c` and 4× in `adm_avx2.c`.
 
 **Verification:**
 
-* Re-ran HBD 4:2:2 10-bit and 4:2:0 12-bit CLI invocations exercising
+- Re-ran HBD 4:2:2 10-bit and 4:2:0 12-bit CLI invocations exercising
   `--feature adm`. Clean under UBSan.
-* `test_integer_adm_simd` (which compares AVX2/AVX-512 against scalar)
+- `test_integer_adm_simd` (which compares AVX2/AVX-512 against scalar)
   still passes — bit-exact.
-* Netflix golden 10-bit/12-bit ADM scores unchanged.
+- Netflix golden 10-bit/12-bit ADM scores unchanged.
 
 ## Out-of-scope follow-up candidates
 

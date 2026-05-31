@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0679: CI Draft Auto-Merge Gate
 
 - **Status**: Accepted

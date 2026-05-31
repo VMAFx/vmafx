@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0775: DNN ORT Backend Audit Findings
 
 - **Status**: Accepted
@@ -34,15 +35,18 @@ Accept Research-0775 findings as the authoritative audit. No code changes in thi
 ## Consequences
 
 **Positive:**
+
 - Establishes a clear baseline: the ORT integration is largely correct; only the three
   items above need follow-up.
 - Documents that `vmaf_read_pictures` must not be called concurrently against the same
   `VmafContext` when a tiny model is attached, until a mutex is added.
 
 **Negative / follow-up:**
+
 - Three open issues (documented above) require separate PRs.
 
 **Neutral:**
+
 - Current production call pattern (single-threaded `vmaf_read_pictures`) is safe; the
   latent race is not triggered today.
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD033 MD060 -->
 # ADR-0547: VMAF_<NAME>_DIR env-var overrides for ai/scripts corpus paths + drop cli.py.bak
 
 - **Status**: Accepted

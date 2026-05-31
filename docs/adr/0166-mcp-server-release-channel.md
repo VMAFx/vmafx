@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0166: MCP server release artifact channel — PyPI + GitHub release attachment + Sigstore (T7-2)
 
 - **Status**: Accepted
@@ -93,6 +94,7 @@ pip install vmaf_mcp-X.Y.Z-py3-none-any.whl
 ## Consequences
 
 **Positive:**
+
 - Discovery: `pip install vmaf-mcp` works from day one of the next
   release.
 - Provenance: every wheel + sdist carries a Sigstore bundle and
@@ -103,6 +105,7 @@ pip install vmaf_mcp-X.Y.Z-py3-none-any.whl
   release matrix coherent.
 
 **Negative:**
+
 - One-time setup: a Trusted Publisher entry must be configured on
   PyPI (organisation `lusoris`, repository `vmaf`, workflow
   `supply-chain.yml`, environment `pypi-publish`). This is a

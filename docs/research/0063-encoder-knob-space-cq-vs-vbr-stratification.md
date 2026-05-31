@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0063 — Encoder knob-space stratifies by rate-control mode (CQ vs VBR)
 
 ## TL;DR
@@ -41,7 +42,7 @@ Mean VMAF lift (tuned − bare) across matched (encoder, cq) cells:
 
 Per-cell deltas at cq=30 (mid-quality operating point):
 
-```
+```text
 av1_nvenc  bare 96.96 / tuned 96.23 (Δ -0.73)
 h264_nvenc bare 92.75 / tuned 88.06 (Δ -4.69)
 hevc_nvenc bare 94.50 / tuned 90.19 (Δ -4.30)

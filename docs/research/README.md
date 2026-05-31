@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research digests
 
 Iteration-time research notes for the lusoris vmaf fork. Each digest

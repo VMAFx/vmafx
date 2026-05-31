@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-04-28
-- **Deciders**: lusoris@pm.me, Claude (Anthropic)
+- **Deciders**: <lusoris@pm.me>, Claude (Anthropic)
 - **Tags**: vulkan, gpu, cambi, feasibility-spike, fork-local
 
 ## Context
@@ -54,7 +54,7 @@ The c-values phase stays on the host for v1.
 
 ### v1 architecture sketch
 
-```
+```text
                           cambi_vulkan_extract()
                                   │
    ┌──────────────────────────────┼──────────────────────────────┐

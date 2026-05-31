@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0578: Hoist VIF scratch buffer from per-frame allocation to VifState
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # AGENTS.md — core/src/cuda
 
 Orientation for agents working on the CUDA backend runtime. Parent:
@@ -147,7 +148,7 @@ cuda/
   (fork-local, T-GPU-OPT-2 / ADR-0271): the file allocates
   **per-scale** device + pinned-host partials buffers
   (`l_partials[MS_SSIM_SCALES]`, `c_partials[...]`, `s_partials[...]`
-  + the matching `h_*_partials[...]`). All 5 SSIM scales' `horiz` +
+  the matching `h_*_partials[...]`). All 5 SSIM scales' `horiz` +
   `vert_lcs` launches and DtoH copies enqueue back-to-back on
   `s->lc.str` inside `submit()`; `cuEventRecord(s->lc.finished, s->lc.str)`
   is recorded once after the last DtoH and registered with

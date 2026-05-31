@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0499: vmaf-tune ladder must decode container/Y4M references before scoring
 
 - **Status**: Accepted
@@ -11,7 +12,7 @@ The BBB end-to-end smoke run on 2026-05-18 (post-PR #1255 / ADR-0498)
 confirmed five of the v2 bug fixes still hold but surfaced one fresh
 blocker:
 
-* `vmaf-tune ladder --src <bbb>.mp4 …` exits 1 with
+- `vmaf-tune ladder --src <bbb>.mp4 …` exits 1 with
   `RuntimeError: default sampler produced no scorable encodes`. The
   encode succeeds, but the score step fails. Traced to
   `vmaftune.corpus._maybe_decode_distorted` only decoding the

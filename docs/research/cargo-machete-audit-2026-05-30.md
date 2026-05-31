@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research — cargo-machete unused-dependency audit (2026-05-30)
 
 ## Question
@@ -38,7 +39,7 @@ surface is therefore *very* small.
 
 ### `cargo-machete` (default mode)
 
-```
+```text
 cargo-machete didn't find any unused dependencies in this directory.
 ```
 
@@ -47,7 +48,7 @@ no regular dependencies.
 
 ### `cargo-machete --with-metadata`
 
-```
+```text
 vmafx-tad -- ./core/src/feature/rust/tad/Cargo.toml:
     cbindgen
 vmafx-sys -- ./bindings/rust/vmafx-sys/Cargo.toml:
@@ -69,7 +70,7 @@ own help text is to add `[package.metadata.cargo-machete] ignored = [...]`.
 
 ### Build / test after Cargo.toml edits
 
-```
+```text
 $ cargo build --all
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
 $ cargo test --all

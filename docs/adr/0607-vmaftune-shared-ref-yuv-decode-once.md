@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0607: vmaf-tune compare: decode reference YUV once for the entire run
 
 - **Status**: Accepted
@@ -64,6 +65,7 @@ mock encoder/scorer, measured over 100 repeat runs on the dev machine):
 | After fix (shared ref decode) | 1 | T_decode + ε |
 
 For the v14 BBB real run (118 GB ref, 3-minute decode, 56 workers, 7 iterations):
+
 - Before: up to 392 decode calls = ~19.6 hours of serial decode time
 - After: 1 decode call = ~3 minutes
 

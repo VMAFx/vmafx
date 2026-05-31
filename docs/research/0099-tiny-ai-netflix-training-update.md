@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research Digest 0099 — Tiny-AI VMAF Training: 2024–2026 Distillation and ONNX Runtime Update
 
 **Date**: 2026-05-11

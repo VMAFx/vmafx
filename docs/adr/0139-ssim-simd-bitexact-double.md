@@ -163,7 +163,8 @@ non-reducing elementwise float ops.
     reduction pattern so rebase conflicts on `ssim_accumulate_*`
     are resolved in favour of the fork's bit-exact pattern.
   - Reproducer (for PR description):
-    ```
+
+    ```text
     vmaf --cpumask 255 ... --feature float_ms_ssim --precision max -o scalar.xml
     vmaf --cpumask 16  ... --feature float_ms_ssim --precision max -o avx2.xml
     vmaf              ... --feature float_ms_ssim --precision max -o avx512.xml

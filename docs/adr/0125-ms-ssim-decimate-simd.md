@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0125: MS-SSIM decimate SIMD fast paths (AVX2 + AVX-512)
 
 - **Status**: Accepted (amended 2026-04-20 — separable-form chosen with

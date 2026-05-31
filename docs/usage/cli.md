@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # `vmaf` — command-line reference
 
 `vmaf` is the main CLI binary shipped with this fork. It takes a reference /

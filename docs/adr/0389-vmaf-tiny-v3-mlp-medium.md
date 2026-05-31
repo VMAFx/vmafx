@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0389: vmaf_tiny_v3 — wider/deeper mlp_medium tiny VMAF MLP
 
 - **Status**: Accepted

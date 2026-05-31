@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Multi-corpus aggregation for the FR-regressor / predictor v2 trainer
 
 The fork ingests several MOS-labelled video-quality corpora — KonViD-1k,
@@ -29,11 +30,11 @@ distribution shape is preserved.
 
 | `corpus_source`    | source scale                       | conversion to 0–100         | citation (access 2026-05-09) |
 |--------------------|------------------------------------|-----------------------------|------------------------------|
-| `konvid-1k`        | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Hosu et al., QoMEX 2017 — http://database.mmsp-kn.de/konvid-1k-database.html |
-| `konvid-150k`      | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Götz-Hahn et al., IEEE Access 2021 — https://database.mmsp-kn.de/konvid-150k-vqa-database.html |
-| `lsvq`             | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Ying et al., CVPR 2021 §4.1 — https://github.com/baidut/PatchVQ |
-| `youtube-ugc`      | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Wang et al., MMSP 2019 §3.2 — https://media.withyoutube.com/ |
-| `waterloo-ivc-4k`  | 0–100 continuous (DCR-like)        | identity                    | Cheon & Lee, CVPR-W 2016 §III.B — https://ece.uwaterloo.ca/~zduanmu/cvpr2016_4kvqa/ |
+| `konvid-1k`        | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Hosu et al., QoMEX 2017 — <http://database.mmsp-kn.de/konvid-1k-database.html> |
+| `konvid-150k`      | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Götz-Hahn et al., IEEE Access 2021 — <https://database.mmsp-kn.de/konvid-150k-vqa-database.html> |
+| `lsvq`             | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Ying et al., CVPR 2021 §4.1 — <https://github.com/baidut/PatchVQ> |
+| `youtube-ugc`      | 1.0–5.0 ACR Likert                 | `unified = (mos - 1) * 25`  | Wang et al., MMSP 2019 §3.2 — <https://media.withyoutube.com/> |
+| `waterloo-ivc-4k`  | 0–100 continuous (DCR-like)        | identity                    | Cheon & Lee, CVPR-W 2016 §III.B — <https://ece.uwaterloo.ca/~zduanmu/cvpr2016_4kvqa/> |
 | `netflix-public`   | VMAF 0–100 (objective proxy)       | identity                    | `core/include/libvmaf/model.h` |
 
 The mapping is a single source of truth in

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0924 — Native bash pre-commit hook (opt-in)
 
 **Date**: 2026-05-31
@@ -98,6 +99,7 @@ cross-platform Windows-native hooks, revisit.
 ### E — Native bash + opt-in env var (chosen)
 
 Pros:
+
 - Zero impact on default flow — framework remains the default,
   CI unchanged.
 - ~0.4 s total observed for a typical 3-formatter commit (vs ~9 s
@@ -111,6 +113,7 @@ Pros:
   to keep in sync by review).
 
 Cons:
+
 - Two install paths to document and maintain.
 - Native path misses the wider framework matrix locally — gitleaks,
   semgrep, conventional-commits surface on push / in CI instead of

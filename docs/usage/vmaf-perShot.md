@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # `vmaf-perShot` — per-shot CRF predictor sidecar
 
 `vmaf-perShot` is a fork-added CLI binary (T6-3b /
@@ -11,7 +12,7 @@ quality score. Use [`vmaf`](cli.md) to verify the post-encode VMAF.
 
 ## Pipeline
 
-```
+```text
 ref.yuv ──► vmaf-perShot ──► plan.csv ──► encoder (--zones / --crf table)
                                 │
                                 └──► (post-encode) vmaf to verify VMAF
@@ -66,7 +67,7 @@ vmaf-perShot \
 
 ## Output format — CSV
 
-```
+```text
 shot_id,start_frame,end_frame,frames,mean_complexity,mean_motion,predicted_crf
 0,0,3,4,0.000051,0.020046,25.48
 1,4,47,44,0.019353,0.016716,24.62

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0375: HIP batch-3 — `float_moment_hip` and `float_ssim_hip` real kernels
 
 - **Status**: Accepted
@@ -34,6 +35,7 @@ We promote `float_moment_hip` and `float_ssim_hip` from `-ENOSYS` stubs to real
 
 **`float_moment_hip`** (`hip/float_moment/moment_score.hip` + updated
 `float_moment_hip.c` / `float_moment_hip.h`):
+
 - Two kernels: `calculate_moment_hip_kernel_8bpc` / `_16bpc` (same 7-arg
   signature for both — no `bpc` arg; raw uint8 bytes addressed as uint16 for
   16bpc).
@@ -45,6 +47,7 @@ We promote `float_moment_hip` and `float_ssim_hip` from `-ENOSYS` stubs to real
 
 **`float_ssim_hip`** (`hip/float_ssim/ssim_score.hip` + updated `float_ssim_hip.c`
 / `float_ssim_hip.h`):
+
 - Three kernels: `calculate_ssim_hip_horiz_8bpc`, `calculate_ssim_hip_horiz_16bpc`,
   `calculate_ssim_hip_vert_combine`.
 - Warp size 64 (GCN/RDNA): `SSIM_WARPS_PER_BLOCK = 128 / 64 = 2` (vs CUDA's

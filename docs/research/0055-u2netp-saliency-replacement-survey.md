@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0055 — U-2-Net `u2netp` saliency replacement survey
 
 | Field      | Value                                                       |
@@ -59,7 +60,7 @@ The repository was probed via the GitHub REST API on 2026-05-03.
 
 The repository carries a clean SPDX `LICENSE` file:
 
-```
+```text
 $ gh api repos/xuebinqin/U-2-Net/license --jq '.license'
 { "spdx_id": "Apache-2.0", "name": "Apache License 2.0" }
 ```
@@ -130,7 +131,7 @@ opset 17 emits `Resize` exclusively).
 The fork's ONNX op allowlist
 (`core/src/dnn/op_allowlist.c`) does **not** include `Resize`:
 
-```
+```text
 /* structural / shape */         Identity, Reshape, Flatten, Squeeze,
                                  Unsqueeze, Transpose, Concat, Slice,
                                  Gather, Cast, Shape, Expand

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0918: LLVM IR diff harness for bit-exact SIMD paths
 
 - **Status**: Accepted

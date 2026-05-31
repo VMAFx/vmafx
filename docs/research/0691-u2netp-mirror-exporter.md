@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0691 — U2NetP mirror exporter
 
 | Field      | Value |

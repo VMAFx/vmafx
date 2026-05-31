@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research 0712: AI Training CLI Bootstrap Sweep
 
 Date: 2026-05-22

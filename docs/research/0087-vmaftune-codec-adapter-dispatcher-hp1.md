@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0087: `vmaf-tune` codec-adapter dispatcher pivot (HP-1 audit)
 
 - **Date**: 2026-05-08

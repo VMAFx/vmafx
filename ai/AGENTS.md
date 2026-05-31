@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # AGENTS.md — ai/
 
 Orientation for agents working on the tiny-AI **training** side. Parent:
@@ -1007,7 +1008,6 @@ consumes its output:
   the rename in-process — do NOT modify
   `analyze_knob_sweep.py` to accept both spellings.
 
-
 ## `u2netp` fork-local mirror invariants (ADR-0412 / ADR-0671)
 
 The fork ships a release-artefact mirror for the upstream U-2-Net
@@ -1064,7 +1064,6 @@ binary upload is a separate PR.
   in only one adapter — adding or removing a column means a
   lockstep edit across both, plus a `corpus_version` bump.
 
-
 - **CHUG display-profile training is trainer-side context, not a
   corpus-schema mutation.** `train_chug_hdr_mos_head.py` keeps
   `chug-hdr-wide-v1` as the no-profile default, and auto-selects
@@ -1074,7 +1073,6 @@ binary upload is a separate PR.
   usable. Do not widen CHUG JSONL adapters just to carry one operator's
   local panel profile; profiles are recorded in the emitted manifest
   with their source sha256.
-
 
   `ai/scripts/youtube_ugc_to_corpus_jsonl.py` (ADR-0368) is
   byte-identical to the LSVQ adapter

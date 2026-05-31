@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0335: Hardware-capability priors for the FR-regressor corpus
 
 - **Status**: Accepted

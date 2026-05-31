@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0585: Add `enable_chroma` option to `psnr_hvs_vulkan`
 
 - **Status**: Accepted
@@ -23,6 +24,7 @@ Add a `bool enable_chroma` field to `PsnrHvsVulkanState` with
 `default_val.b = true`, matching the ADR-0453 / `psnr_vulkan` precedent.
 
 When `enable_chroma=false`:
+
 - `n_planes` is set to 1 in `init()`.
 - The chroma pipeline variants (`pipeline_chroma_u`, `pipeline_chroma_v`)
   are not created in `create_pipeline()`.

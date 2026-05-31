@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # vmaf-tune
 
 Quality-aware encode automation harness for the lusoris vmaf fork. Drives
@@ -53,7 +54,7 @@ captured in `docs/usage/vmaf-tune.md` §"Codec adapters".
 
 ## Layout
 
-```
+```text
 tools/vmaf-tune/
   pyproject.toml
   vmaf-tune                       # console entry-point shim

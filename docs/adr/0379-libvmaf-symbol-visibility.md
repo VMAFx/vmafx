@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0379: libvmaf Symbol Visibility — Hide Internal Symbols with `-fvisibility=hidden`
 
 - **Status**: Accepted

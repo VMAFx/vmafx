@@ -103,7 +103,7 @@ Vulkan-on-lavapipe-less-CI pattern).
 
 End-to-end repro inside `vmaf-dev-mcp`:
 
-```
+```text
 vmaf --reference /workspace/python/test/resource/yuv/src01_hrc00_576x324.yuv \
      --distorted /workspace/python/test/resource/yuv/src01_hrc01_576x324.yuv \
      --width 576 --height 324 --pixel_format 420 --bitdepth 8 \

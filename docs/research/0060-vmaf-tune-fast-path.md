@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0060: `vmaf-tune fast` — proxy-based recommend (Phase A.5)
 
 - **Date**: 2026-05-03

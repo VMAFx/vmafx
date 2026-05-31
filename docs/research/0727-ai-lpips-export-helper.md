@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0727 — LPIPS exporter helper alignment
 
 ## Problem

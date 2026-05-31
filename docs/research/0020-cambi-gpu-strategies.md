@@ -42,6 +42,7 @@ The pragmatic outcome — which mirrors the ssimulacra2 Vulkan kernel
    select-based spatial pooling.
 
 This shape:
+
 - Closes the CAMBI matrix gap (every metric has at least one GPU
   twin).
 - Avoids the precision risk of reformulating the histogram phase

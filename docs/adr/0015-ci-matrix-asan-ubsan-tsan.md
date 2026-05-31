@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0015: CI matrix Linux/macOS/Windows with sanitizers
 
 - **Status**: Accepted

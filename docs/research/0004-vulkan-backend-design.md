@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0004: Vulkan compute backend — toolchain, loader, memory model, DMABUF import
 
 - **Status**: Active
@@ -28,7 +29,7 @@ are the concrete tool-chain and memory-model choices? Specifically:
   — the normative reference.
 - [volk](https://github.com/zeux/volk) — single-header meta-loader
   by Arseny Kapoulkine; MIT; currently ~5000 installs/week via vcpkg
-  + Conan.
+  Conan.
 - [VMA (Vulkan Memory Allocator)](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
   — AMD; MIT; the industry-standard allocator; 23k GitHub stars.
 - [shaderc](https://github.com/google/shaderc) — Google's

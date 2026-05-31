@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0363: Mend Renovate replaces Dependabot as the dependency-update bot
 
 - **Status**: Accepted
@@ -20,6 +21,7 @@ a similar `FFMPEG_PATCHES_BRANCH` default. Dependabot has no regex/custom-manage
 capability and cannot track these.
 
 Mend Renovate's self-hosted GitHub Action mode provides:
+
 - All Dependabot ecosystems (GitHub Actions, pip/pep621, Docker).
 - `customManagers` with regex support for arbitrary file patterns — enabling
   FFmpeg tag tracking in shell scripts.

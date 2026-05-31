@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0040: Extend DNN session API to multi-input/multi-output with named bindings
 
 - **Status**: Accepted

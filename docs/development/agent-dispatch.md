@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Agent dispatch — workflow templates and eligibility precheck
 
 > Operational guide for briefing and dispatching Claude Code agents

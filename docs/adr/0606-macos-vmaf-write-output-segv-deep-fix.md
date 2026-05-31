@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0606: macOS SIGSEGV deep-fix in output.c writers (PR #1403 follow-up)
 
 - **Status**: Accepted
@@ -43,10 +44,12 @@ The affected sites are: `count_written_at`, `xml_write_frames`, `json_write_fram
 **Secondary issue — fps 0.0/0.0 when pic_cnt == 0.**
 
 `vmaf_write_output_with_format` computes:
+
 ```c
 const double fps = vmaf->pic_cnt /
     ((double)(timer.end - timer.begin) / CLOCKS_PER_SEC);
 ```
+
 When `pic_cnt == 0` and `timer.begin == timer.end` (no frames processed),
 this is `0.0 / 0.0 = NaN`. The JSON writer's `fpclassify()` switch handles
 NaN correctly on Linux (IEEE-754 quiet NaN), but Apple Clang under a strict

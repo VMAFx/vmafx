@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD038 MD060 -->
 # Research: CI Warning Omnibus (2026-05-19)
 
 **Context**: CI run 26111553607 (workflow_dispatch on master) surfaced five
@@ -15,7 +16,7 @@ developer command prompt on Windows GitHub Actions runners. The pinned SHA
 `0b201ec74fa43914dc39ae48a89fd1d8cb592756` is v1.13.0, the latest published
 release as of 2026-05-19. Verified via:
 
-```
+```text
 gh api repos/ilammy/msvc-dev-cmd/releases --jq '.[].tag_name'
 # → v1.13.0 (only release)
 gh api repos/ilammy/msvc-dev-cmd/commits/HEAD --jq '.sha'
@@ -37,11 +38,13 @@ Node.js 20. The action author has not published a v2 or a Node.js 24 build.
 **Selected**: `TheMrMilchmann/setup-msvc-dev@v4.0.0`.
 
 Action YAML verified:
+
 ```yaml
 runs:
   using: 'node24'
   main: 'dist/index.cjs'
 ```
+
 No required inputs; `arch` defaults to amd64 — matching the current ilammy
 invocation (no inputs specified). SHA: `79dac248aac9d0059f86eae9d8b5bfab4e95e97c`.
 
@@ -109,7 +112,7 @@ fallback message from `::warning::` to `::debug::` with an explanatory note.
 
 The macOS Vulkan lane's ccache restore step logs:
 
-```
+```text
 WARNING: Cache entry deserialization failed, entry ignored
 ```
 

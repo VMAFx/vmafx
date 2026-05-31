@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0041: GPU-generation ULP calibration corpus design
 
 - **Status**: Active

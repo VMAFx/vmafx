@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0958: HIP kernel parity-test coverage round 4
 
 - **Status**: Accepted
@@ -36,7 +37,7 @@ findings:
    `speed_temporal_hip.c` added to the HIP archive surfaced 4 undefined
    references at link time:
 
-   ```
+   ```text
    undefined reference to `speed_internal_init_dimensions'
    undefined reference to `speed_internal_float_stride'
    ```

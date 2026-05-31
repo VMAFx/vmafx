@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0590: Wire `enable_db` / `clip_db` into the CUDA and SYCL MS-SSIM twins
 
 - **Status**: Accepted

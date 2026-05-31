@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0497: vmaf-tune BBB end-to-end bug cluster (compare / ladder / report)
 
 - **Status**: Accepted

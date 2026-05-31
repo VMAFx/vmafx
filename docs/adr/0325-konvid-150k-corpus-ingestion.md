@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0325: KonViD-150k corpus ingestion
 
 - **Status**: Accepted (2026-05-15 — corpus materialized at
@@ -79,7 +80,8 @@ Adopt KonViD-150k as a third training shard for the
 ### Phase 0 — this ADR + research digest
 
 Land [Research-0086](../research/0086-konvid-150k-corpus-feasibility.md)
-+ this ADR. No code. Disk impact: ~30 KB of docs.
+
+- this ADR. No code. Disk impact: ~30 KB of docs.
 
 ### Phase 1 — KonViD-1k pipeline
 
@@ -175,4 +177,4 @@ free-of-cost robustness check. Surface the PLCC / SROCC numbers in
 - [ADR-0309](0309-fr-regressor-v2-ensemble-real-corpus-retrain.md) — Netflix Public Drop
 - [ADR-0310](0310-bvi-dvc-corpus-ingestion.md) — BVI-DVC ingestion
 - [ADR-0324](0324-ensemble-training-kit.md) — ensemble-training-kit harness
-- User direction (2026-05-07, this conversation): "I think we also need these two datasets? https://database.mmsp-kn.de/konvid-150k-vqa-database.html"
+- User direction (2026-05-07, this conversation): "I think we also need these two datasets? <https://database.mmsp-kn.de/konvid-150k-vqa-database.html>"

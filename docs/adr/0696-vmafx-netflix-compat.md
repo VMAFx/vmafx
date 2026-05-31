@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0696: `--netflix-compat` flag for restoring legacy defaults
 
 - **Status**: Accepted

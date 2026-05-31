@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0078: ENCODER_VOCAB v3 — 16-slot schema expansion + retrain plan
 
 - **Status**: First retrain landed gate-passing (ADR-0323, 2026-05-06);

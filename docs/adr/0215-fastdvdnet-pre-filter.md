@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0215: FastDVDnet temporal pre-filter — 5-frame window, placeholder weights
 
 - **Status**: Accepted

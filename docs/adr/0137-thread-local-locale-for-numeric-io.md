@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0137: Thread-local locale handling for numeric I/O
 
 - **Status**: Accepted

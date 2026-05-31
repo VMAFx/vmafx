@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0730: Cross-backend numerical parity — Intel Arc A380 (2026-05-27)
 
 **Date:** 2026-05-27

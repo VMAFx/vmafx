@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0841: Environment variable reference page and canonical naming
 
 - **Status**: Accepted

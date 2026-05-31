@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0738: CUDA remaining kernels ncu hotpath summary (adm, motion, ssim, ms_ssim)
 
 - **Status**: Active

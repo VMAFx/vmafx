@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0245: SIMD bit-exact test harness shared header
 
 - **Status**: Accepted

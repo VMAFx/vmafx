@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD052 MD060 -->
 # Research-0135: CAMBI CUDA spatial-mask shared-memory tile design
 
 - **Status**: Active
@@ -48,6 +49,7 @@ The 484 zero_deriv values for a 16x16 block need a (16+6)x(16+6) = 22x22 tile.
 At uint8 (zero_deriv is 0 or 1), that is 484 bytes without padding.
 
 Padding the row to 32 bytes (22x32 = 704 bytes) was chosen because:
+
 - It places each row on a 32-byte boundary, reducing false sharing between rows
   in the 4-byte-bank shared-memory system.
 - A 22-byte natural row stride causes rows 0 and 1 to start at banks 0 and
@@ -95,6 +97,7 @@ still 26x fewer than the original 37,632.
 ### Load distribution
 
 With 256 threads and 484 elements, two passes suffice:
+
 - Pass 0: all 256 threads load elements 0..255.
 - Pass 1: threads 0..227 (228 threads) load elements 256..483.
 

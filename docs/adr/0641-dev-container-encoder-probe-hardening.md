@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0641: Harden dev-container encoder probes and compare reports
 
 - **Status**: Accepted

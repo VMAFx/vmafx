@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0649: CHUG HDR Wide MOS Feature Schema
 
 - **Status**: Proposed

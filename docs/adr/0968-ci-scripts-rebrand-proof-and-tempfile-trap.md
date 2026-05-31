@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0968: CI scripts — rebrand-proof assertion-density grep + tempfile EXIT trap in changelog concat (Round 26 audit D.1 + D.2)
 
 - **Status**: Accepted

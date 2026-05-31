@@ -3,11 +3,13 @@ name: prep-release
 description: Dry-run release-please locally, preview the CHANGELOG diff, verify signing prerequisites (Sigstore/OIDC), and surface any blockers before a release PR merges.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /prep-release
 
 ## Invocation
 
-```
+```text
 /prep-release [--next-version=auto|<semver>]
 ```
 

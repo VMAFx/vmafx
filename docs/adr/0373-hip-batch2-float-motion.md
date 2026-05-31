@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0373: HIP Batch-2 — `float_motion_hip` Real Kernel
 
 - **Status**: Accepted

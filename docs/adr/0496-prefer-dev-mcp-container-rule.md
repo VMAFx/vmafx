@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0496: Default to the `vmaf-dev-mcp` container for all vmaf / vmaf-tune / ai / MCP work
 
 - **Status**: Accepted

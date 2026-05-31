@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # MOS-corpus ingestion family
 
 The lusoris fork trains no-reference and mixed-reference VQA models against

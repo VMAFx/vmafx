@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0650: Add a Signal-Mix Audit CLI
 
 - **Status**: Accepted

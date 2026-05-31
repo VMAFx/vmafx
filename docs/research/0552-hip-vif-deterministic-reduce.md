@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research digest: ADR-0552 — HIP VIF deterministic wavefront reduction
 
 ## Problem characterisation
@@ -66,6 +67,7 @@ errors or warnings against the modified kernel.
 
 Numerical verification (to be run in the vmaf-dev-mcp container per the scope
 specification):
+
 ```bash
 docker exec vmaf-dev-mcp /workspace/build-hip/core/tools/vmaf \
   --backend hip \

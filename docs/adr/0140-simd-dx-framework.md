@@ -74,7 +74,7 @@ ADR):
 Both are demonstrated in the same PR on two real kernels:
 
 - **Demo 1 — convolve NEON.** Uses `SIMD_WIDEN_ADD_F32_F64_NEON`
-  + the per-lane-scalar-double pattern to match ADR-0138's
+  the per-lane-scalar-double pattern to match ADR-0138's
   bit-exactness invariant on aarch64. Runs under QEMU
   (`qemu-aarch64-static` + `aarch64-linux-gnu-gcc` cross toolchain).
 - **Demo 2 — ssim NEON bit-exactness audit.** Research-0012
@@ -126,7 +126,8 @@ real code* before PR #B consumes it at scale.
     of the fork's version.
   - [`CHANGELOG.md`](../../CHANGELOG.md) entry under Added.
   - Reproducer for PR #A:
-    ```
+
+    ```text
     # Cross-compile + run NEON audit under QEMU
     meson setup build-aarch64 \
       --cross-file=build-aux/aarch64-linux-gnu.ini \

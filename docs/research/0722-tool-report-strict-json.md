@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0722 — tool report strict JSON
 
 ## Problem

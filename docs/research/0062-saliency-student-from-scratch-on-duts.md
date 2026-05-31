@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0062 — Fork-trained saliency student on DUTS-TR
 
 | Field      | Value                                                       |
@@ -60,7 +61,7 @@ themselves are deliberately *not* committed to the repository.
 DUTS-TR archive provenance recorded in
 `docs/ai/models/saliency_student_v1.md`:
 
-```
+```text
 URL:           https://saliencydetection.net/duts/download/DUTS-TR.zip
 Last-Modified: 2025-03-10
 Content-Length: 270 997 309 bytes
@@ -126,7 +127,7 @@ shapes, same dynamic axes).
 
 ## Reproducer
 
-```
+```text
 .venv/bin/python ai/scripts/train_saliency_student.py \
     --duts-root /path/to/DUTS-TR \
     --output    model/tiny/saliency_student_v1.onnx \

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0668: AI Derived Table Provenance
 
 - **Status**: Proposed

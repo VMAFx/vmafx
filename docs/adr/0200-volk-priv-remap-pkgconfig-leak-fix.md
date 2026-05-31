@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0200: Move volk `-include` flag off of `volk_dep.compile_args` (libvmaf.pc leak fix)
 
 - **Status**: Accepted
@@ -25,7 +26,7 @@ to link against the static archive's transitively-required deps.
 Net effect on `libvmaf.pc` from a `default_library=static -Denable_vulkan=enabled`
 build:
 
-```
+```text
 Cflags: -I${includedir} -I${includedir}/libvmaf -DVK_NO_PROTOTYPES \
         -include /<libvmaf-build-dir>/subprojects/volk-vulkan-sdk-1.4.341.0/volk_priv_remap.h \
         -pthread
@@ -34,7 +35,7 @@ Cflags: -I${includedir} -I${includedir}/libvmaf -DVK_NO_PROTOTYPES \
 Lawrence's BtbN-style fully-static FFmpeg build (cross-toolchain,
 `x86_64-ffbuild-linux-gnu-gcc`, glibc-2.28) ran:
 
-```
+```text
 $ pkg-config --cflags libvmaf
 -I/opt/ffbuild/include/libvmaf -DVK_NO_PROTOTYPES \
   -include /45-vmaf/lusoris/core/build/subprojects/volk-vulkan-sdk-1.4.341.0/volk_priv_remap.h \
@@ -45,7 +46,7 @@ After libvmaf was installed to `/opt/ffbuild/`, the build-dir path
 was gone. FFmpeg's `configure` ran `check_func_headers aom/aom_codec.h`
 with the leaked Cflags, hit:
 
-```
+```text
 <command-line>: fatal error: \
   /45-vmaf/lusoris/core/build/subprojects/volk-vulkan-sdk-1.4.341.0/volk_priv_remap.h: \
   No such file or directory
@@ -122,17 +123,21 @@ them either way.
 - Source: lawrence's chat report 2026-04-27 22:19 — pasted FFmpeg
   configure log showing the leaked path.
 - Pre-fix verification (this dev box):
-  ```
+
+  ```text
   $ grep Cflags core/build-vk-static-test/meson-private/libvmaf.pc
   Cflags: -I${includedir} -I${includedir}/libvmaf -DVK_NO_PROTOTYPES \
           -include /home/kilian/dev/vmaf/core/build-vk-static-test/subprojects/.../volk_priv_remap.h \
           -pthread
   ```
+
 - Post-fix verification:
-  ```
+
+  ```text
   $ grep Cflags core/build-vk-static-test/meson-private/libvmaf.pc
   Cflags: -I${includedir} -I${includedir}/libvmaf -DVK_NO_PROTOTYPES -pthread
   ```
+
 - Parent: [ADR-0198](0198-volk-priv-remap-static-archive.md) —
   introduced the rename mechanism whose flag we're now relocating.
 - Original fix: [ADR-0185](0185-vulkan-hide-volk-symbols.md) —

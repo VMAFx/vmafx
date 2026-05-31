@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0648: CHUG HDR MOS Trainer Entry Point
 
 - **Status**: Proposed

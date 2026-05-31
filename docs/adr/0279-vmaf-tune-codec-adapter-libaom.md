@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0279: vmaf-tune codec adapter — libaom-av1
 
 - **Status**: Accepted

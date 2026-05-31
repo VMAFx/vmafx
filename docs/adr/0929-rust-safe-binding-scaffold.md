@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0929: Rust `vmafx` safe binding crate — Phase 1 scaffold
 
 - **Status**: Accepted

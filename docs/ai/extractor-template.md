@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Tiny-AI extractor template
 
 This page is the recipe for adding a new tiny-AI feature extractor to

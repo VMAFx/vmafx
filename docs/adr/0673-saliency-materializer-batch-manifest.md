@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD025 MD033 MD060 -->
 <!-- ADR-0673 stub — claimed by scripts/adr/next-free.sh --claim saliency-materializer-batch-manifest on 2026-05-21T19:33:32Z -->
 <!-- Replace this file with the real ADR and rename to 0673-saliency-materializer-batch-manifest.md before committing. -->
 <!-- To abandon this claim run: scripts/adr/next-free.sh --release 0673 -->
@@ -34,6 +35,7 @@
 - See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
 - See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
 - Source: <req or Q<round>.<q>>
+
 # ADR-0673: Saliency Materializer Batch Manifest
 
 - **Status**: Accepted

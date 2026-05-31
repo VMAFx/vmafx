@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0034 — CI pipeline audit (2026-05-01)
 
 | Field      | Value                                                                  |

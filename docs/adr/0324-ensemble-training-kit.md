@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0324: Ensemble training kit — portable Phase-A + LOSO retrain bundle
 
 - **Status**: Accepted

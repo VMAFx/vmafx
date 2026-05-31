@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0094 — T-PYPSNR-AST-EVAL: `str`/`ast.literal_eval` log serialization incompatible with numpy 2.x
 
 **Date**: 2026-05-10
@@ -13,7 +14,7 @@ Under numpy 1.x, `str(np.float64(34.79))` produced `'34.79'` — a plain numeric
 `'np.float64(34.79)'` — a call expression that `ast.literal_eval` correctly rejects for
 security reasons. All eight `test_run_pypsnr_*` test cases raised:
 
-```
+```text
 ValueError: malformed node or string on line 1:
   Call(func=Attribute(value=Name(id='np', ...), attr='float64', ...), ...)
 ```

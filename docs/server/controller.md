@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # vmafx-controller gRPC service
 
 `vmafx-controller` is the distributed platform controller for VMAFX Phase 4b.  It is a single Go binary
@@ -135,7 +136,7 @@ Node lifecycle:
 
 ### Job lifecycle
 
-```
+```text
 PENDING --> RUNNING --> COMPLETED
                     \-> FAILED
 PENDING --> CANCELLED

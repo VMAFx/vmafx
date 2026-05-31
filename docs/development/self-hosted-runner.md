@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Self-hosted GPU runner — enrollment guide
 
 A small set of CI jobs (`coverage-gpu` in

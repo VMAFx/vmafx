@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0447: Motion features under-report on HFR / 50p content
 
 - **Status**: Accepted

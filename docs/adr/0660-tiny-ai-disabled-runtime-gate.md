@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0660: Tiny-AI extractors check DNN availability before model paths
 
 - **Status**: Accepted

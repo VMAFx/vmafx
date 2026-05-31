@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Upstream port — Netflix/vmaf `1b08bb4d` (needs manual port)
 
 **Upstream commit:** [`1b08bb4d`](https://github.com/Netflix/vmaf/commit/1b08bb4da533fe3bc08700e4c1adb45f5adccc0b)

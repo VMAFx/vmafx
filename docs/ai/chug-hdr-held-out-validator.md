@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # CHUG HDR MOS head — held-out test validator
 
 `ai/scripts/validate_chug_hdr_mos_head.py` evaluates a trained CHUG HDR MOS

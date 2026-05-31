@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0755: PR #91 576p NO_BOUNDS dispatch validation — A/B at SMALL workload class
 
 **Date:** 2026-05-29
@@ -123,6 +124,7 @@ the snapshot does not have container-built CUDA numbers for PR #91.
 ## Verdict
 
 **Kernel-level:** DISPATCH IS CORRECT AND BENEFICIAL at WS_SMALL.
+
 - `adm_cm_line_kernel_8_no_bounds` is −11.2% faster than the bounded variant
   at 576p. Exceeds the ≥3% threshold from the task spec.
 - `filter1d_8_horizontal_kernel_2_17_9_no_bounds` is −3.9% faster.

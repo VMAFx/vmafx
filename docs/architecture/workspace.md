@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # `python/vmaf/workspace/` — Python harness workspace
 
 Scratch tree used by the **Python training / evaluation harness** (i.e.

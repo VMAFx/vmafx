@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # CPU score drift — bisect triage (2026-05-02)
 
 **Status:** investigation only, no fix.
@@ -138,15 +139,15 @@ gate.
 
 ## Methodology notes / caveats
 
-* Initial bisect run aborted with "no binary search possible" because every
+- Initial bisect run aborted with "no binary search possible" because every
   intermediate commit tripped a meson-setup error: older commits' `enable_vulkan`
   is a `feature` option (`enabled`/`disabled`/`auto`), not a boolean. Predicate
   fixed and bisect rerun cleanly.
-* Bisect "first bad" landed on `41301496` only because the search tree treats
+- Bisect "first bad" landed on `41301496` only because the search tree treats
   the fork root as the earliest known commit. That hash should be read as
   "drift was present at every fork commit" — it is not a regression introducer
   in any meaningful sense.
-* Predicate: build CPU-only, run `vmaf` on the Netflix normal pair via the
+- Predicate: build CPU-only, run `vmaf` on the Netflix normal pair via the
   `--model path=...` flag with `--threads 1`, parse `pooled_metrics.vmaf.mean`,
   good if `|score - 76.668904| < 1e-4`, bad if `> 5e-4`, skip otherwise.
   Predicate file: `/tmp/bisect-predicate.sh` (not committed).
@@ -173,10 +174,10 @@ build/tools/vmaf <same flags> --no_cuda --no_sycl --no_vulkan
 
 ## References
 
-* Upstream Netflix commit
+- Upstream Netflix commit
   [`a44e5e61`](https://github.com/Netflix/vmaf/commit/a44e5e61) — "libvmaf/feature:
   port motion updates, bugfix for edge mirroring", Kyle Swanson, 2026-04-17.
-* CLAUDE.md §8 (Netflix golden gate, places=2 tolerance).
-* CLAUDE.md §9 (snapshot regeneration).
-* `bench_all.sh` (`testdata/bench_all.sh`) — defaults `VMAF` to
+- CLAUDE.md §8 (Netflix golden gate, places=2 tolerance).
+- CLAUDE.md §9 (snapshot regeneration).
+- `bench_all.sh` (`testdata/bench_all.sh`) — defaults `VMAF` to
   `/usr/local/bin/vmaf` if `VMAF_BIN` is unset.

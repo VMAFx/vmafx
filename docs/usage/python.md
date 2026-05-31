@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # VMAF Python Library
 
 The VMAF Python library offers full functionalities from running basic VMAF command lines, software testing, training and validating a new VMAF model on video datasets, data visualization tools, etc. It is the playground to experiment with VMAF and other video quality metrics.

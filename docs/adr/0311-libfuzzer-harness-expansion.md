@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0311: libFuzzer harness expansion — `fuzz_yuv_input` + `fuzz_cli_parse`
 
 - **Status**: Accepted

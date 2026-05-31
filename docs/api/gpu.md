@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # GPU backends C API — `libvmaf_cuda.h` / `libvmaf_sycl.h` / `libvmaf_vulkan.h` / `libvmaf_hip.h` / `libvmaf_metal.h`
 
 Each GPU backend adds its own small API on top of the core

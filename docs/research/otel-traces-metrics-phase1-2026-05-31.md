@@ -18,7 +18,7 @@ Phase 1 pilot in `vmafx-controller`. Companion to
 - `SetControllerSources(queue, registry)` → live gauges
   (`jobs_pending`, `jobs_running`, `nodes_live`).
 - `WaitForShutdown(ctx, log, timeout)` / `NewShutdownContext()` — signal
-  + graceful-drain plumbing.
+  graceful-drain plumbing.
 
 What is **missing**: distributed traces across process boundaries.
 When `vmafx-controller.SubmitJob` enqueues a job, the

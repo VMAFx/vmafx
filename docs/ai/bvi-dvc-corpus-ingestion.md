@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # BVI-DVC corpus ingestion → fr_regressor_v2
 
 The BVI-DVC dataset (Ma, Zhang, Bull 2021) is a 4-tier 4:2:0 10-bit

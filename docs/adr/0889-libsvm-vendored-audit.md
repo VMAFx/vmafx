@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0889: Vendored libsvm 3.24 audit — close header-row-ordering oob, document upstream-version policy
 
 - **Status**: Accepted

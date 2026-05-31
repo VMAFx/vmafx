@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0672: Saliency Materializer Temporal Controls
 
 - **Status**: Accepted

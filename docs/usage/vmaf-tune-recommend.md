@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # `vmaf-tune recommend` — uncertainty-aware CRF target search
 
 `vmaf-tune recommend` searches a corpus (or builds one on the fly) for
@@ -22,13 +23,13 @@ practice the predictor's residuals carry a distribution; the
 prediction in a `(low, high)` interval whose width is the
 predictor's local confidence:
 
-* **Tight interval** — the predictor is confident; the lower bound
+- **Tight interval** — the predictor is confident; the lower bound
   is a faithful proxy for the truth and the search can short-circuit
   the moment a row whose `low >= target` is observed.
-* **Wide interval** — the predictor is uncertain; the search refuses
+- **Wide interval** — the predictor is uncertain; the search refuses
   to short-circuit on any single row and falls back to a full scan
   with the result tagged `(UNCERTAIN)`.
-* **Middle band** — defer to the existing point-estimate predicate
+- **Middle band** — defer to the existing point-estimate predicate
   exactly. This preserves pre-uncertainty behaviour for callers who
   upgrade the binary but keep their corpus uncalibrated.
 
@@ -88,13 +89,13 @@ src=ref.yuv preset=medium crf=20 vmaf=94.250 \
 
 Reading the output:
 
-* `decision=tight` — the conformal interval at CRF 20 has
+- `decision=tight` — the conformal interval at CRF 20 has
   `width=0.6 <= tight_max=2.0` and `low=93.42 >= target=93.0`, so the
   search short-circuited.
-* `visited=2/15` — the search examined 2 rows out of the 15 the
+- `visited=2/15` — the search examined 2 rows out of the 15 the
   coarse-to-fine sweep would have produced. The remaining 13 encodes
   were skipped, saving wall-clock time.
-* `predicate=...(TIGHT, low=93.420)` — the predicate that fired,
+- `predicate=...(TIGHT, low=93.420)` — the predicate that fired,
   with the lower bound that promoted the row.
 
 If the calibration sidecar were missing, the same call would emit a
@@ -155,19 +156,19 @@ the uncertainty-aware recipe affects **search cost** and **which
 qualifying row gets picked from an equivalence class**. It does
 **not** change:
 
-* The Netflix golden-data assertions
+- The Netflix golden-data assertions
   ([§8 of CLAUDE.md](../../CLAUDE.md#8-netflix-golden-data-gate-do-not-modify)).
-* The production-flip gate in `predictor_validate.py`. That gate
+- The production-flip gate in `predictor_validate.py`. That gate
   decides which encodes get shipped, not which encodes get probed.
-* The point estimate itself —
+- The point estimate itself —
   [`Predictor.predict_vmaf`](../api/predictor.md) returns the same
   scalar with or without uncertainty wiring.
 
 ## See also
 
-* [`docs/ai/conformal-vqa.md`](../ai/conformal-vqa.md) — the
+- [`docs/ai/conformal-vqa.md`](../ai/conformal-vqa.md) — the
   underlying conformal-prediction surface (PR #488 / ADR-0279).
-* [`docs/usage/vmaf-tune-ladder.md`](vmaf-tune-ladder.md) — the
+- [`docs/usage/vmaf-tune-ladder.md`](vmaf-tune-ladder.md) — the
   ABR-ladder consumer of the same intervals.
-* [`docs/research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md`](../research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md)
+- [`docs/research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md`](../research/0067-vmaf-tune-phase-f-feasibility-2026-05-08.md)
   — provenance of the threshold defaults.

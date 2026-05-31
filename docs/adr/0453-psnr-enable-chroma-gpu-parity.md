@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0453: PSNR `enable_chroma` option parity across all GPU backends
 
 - **Status**: Accepted

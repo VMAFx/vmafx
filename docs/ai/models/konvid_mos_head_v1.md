@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # `konvid_mos_head_v1` — KonViD subjective MOS head v1
 
 `konvid_mos_head_v1` is the fork's first model trained directly against

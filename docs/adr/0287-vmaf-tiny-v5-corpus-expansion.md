@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0287: vmaf_tiny_v5 — corpus expansion (4-corpus + YouTube UGC vp9 subset)
 
 - **Status**: Accepted (decision: defer — no `vmaf_tiny_v5.onnx` shipped)

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0871: SSIM SIMD dispatch installation must be pthread_once-guarded
 
 - **Status**: Accepted
@@ -11,7 +12,7 @@ A TSan (ThreadSanitizer) audit of the libvmaf thread pool on
 2026-05-30 (worktree `fix/tsan-race-audit`, master tip
 `bbcaa8d127`) ran the CLI under
 
-```
+```text
 TSAN_OPTIONS="halt_on_error=0 second_deadlock_stack=1 history_size=7" \
 ./build-tsan/tools/vmaf -r checkerboard_1920_1080_10_3_0_0.yuv \
                        -d checkerboard_1920_1080_10_3_1_0.yuv \

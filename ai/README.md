@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # `vmaf-train` — tiny AI training harness
 
 Training, exporting, registering, and evaluating **tiny perceptual-quality
@@ -50,7 +51,7 @@ vmaf-train register \
 
 ## Layout
 
-```
+```text
 ai/
 ├── pyproject.toml
 ├── configs/                       # fr_tiny_v1, nr_mobilenet_v1, filter_residual_v1

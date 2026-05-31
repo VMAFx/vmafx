@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Python test orchestrator (nox)
 
 The fork ships eight Python distributions, each with its own

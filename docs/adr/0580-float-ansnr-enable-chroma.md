@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0580: float_ansnr enable_chroma option
 
 - **Status**: Accepted

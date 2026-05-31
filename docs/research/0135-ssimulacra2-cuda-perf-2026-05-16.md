@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research Digest 0135: SSIMULACRA2 CUDA Blur Performance Optimisation
 
 **Date**: 2026-05-16

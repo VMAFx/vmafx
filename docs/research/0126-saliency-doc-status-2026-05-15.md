@@ -1,4 +1,6 @@
+<!-- markdownlint-disable MD013 MD025 -->
 # Research 0126: saliency docs status sweep
+
 # Research-0126
 
 ## Scope

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0010: Sign release artifacts keyless via Sigstore
 
 - **Status**: Accepted

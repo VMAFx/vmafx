@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0550 — Cross-Backend Parity Matrix (2026-05-18)
 
 **Status:** Complete

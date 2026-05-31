@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research digest — Pre-commit config audit (2026-05-30)
 
 **Companion ADR**: [ADR-0893](../adr/0893-pre-commit-audit-2026-05-30.md)
@@ -110,7 +111,7 @@
 
 ## 5. Verification — `pre-commit run --all-files` (post-edit)
 
-```
+```text
 trim trailing whitespace........................................................Passed
 fix end of files................................................................Passed
 check for merge conflicts.......................................................Passed

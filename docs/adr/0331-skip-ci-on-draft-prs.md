@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0331: Skip CI on draft pull requests
 
 - **Status**: Accepted

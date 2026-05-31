@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0427: Materialise CHUG HDR Features With Reference-Aligned Pairs
 
 - **Status**: Accepted

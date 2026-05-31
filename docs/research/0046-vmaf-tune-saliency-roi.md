@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0046: `vmaf-tune` saliency-aware ROI tuning (Bucket #2)
 
 - **Status**: Companion to [ADR-0293](../adr/0293-vmaf-tune-saliency-aware.md)

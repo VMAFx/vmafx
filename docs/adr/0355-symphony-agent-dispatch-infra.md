@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0355: Symphony-inspired agent-dispatch infrastructure
 
 - **Status**: Accepted

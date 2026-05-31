@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0218: MobileSal saliency feature extractor (T6-2a)
 
 - **Status**: Accepted

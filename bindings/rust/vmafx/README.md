@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # vmafx — safe Rust bindings to libvmaf
 
 [![License](https://img.shields.io/badge/license-BSD--3--Clause--Plus--Patent-blue.svg)](../../../LICENSE)

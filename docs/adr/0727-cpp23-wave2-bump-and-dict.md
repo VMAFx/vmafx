@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD018 MD060 -->
 # ADR-0727: C++23 Wave 2 — project-wide `cpp_std=c++23` bump and `dict.c` → `dict.cpp`
 
 - **Status**: Accepted

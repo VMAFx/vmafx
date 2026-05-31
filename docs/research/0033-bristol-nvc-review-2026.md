@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0033 — Bristol VI-Lab Neural Video Compression review (2026-04 preprint)
 
 | Field      | Value                                              |

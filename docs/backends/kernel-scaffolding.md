@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # GPU per-feature kernel scaffolding templates
 
 Status: introduced 2026-04-29 ([ADR-0246](../adr/0246-gpu-kernel-template.md));

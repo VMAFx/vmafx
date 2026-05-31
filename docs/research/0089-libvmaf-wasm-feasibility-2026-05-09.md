@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD029 MD060 -->
 # Research-0089: libvmaf WebAssembly compilation feasibility
 
 - **Status**: Active
@@ -101,7 +102,7 @@ without touching libc file I/O.
   The Emscripten project maintains an integration path —
   `emconfigure meson setup` plus an Emscripten cross-file — that
   drives Meson with `emcc` as `c_compiler` and produces `.wasm`
-  + `.js` glue
+  `.js` glue
   ([source 13](https://emscripten.org/docs/compiling/Building-Projects.html)).
   No upstream Meson change is required.
 - The fork's banned-function policy (CLAUDE §6) already forbids
@@ -248,7 +249,7 @@ A new WASM build target adds:
 - A new `meson_options.txt` flag (`enable_wasm` or driven entirely
   by the cross-file).
 - Per CLAUDE §12 r10 (project-wide doc rule): `docs/development/wasm.md`
-  + a `docs/usage/wasm-quickstart.md` + a row in
+  a `docs/usage/wasm-quickstart.md` + a row in
   [`docs/backends/`](../backends/) covering the WASM surface.
 - Per memory `feedback_no_lint_skip_upstream`: clang-tidy + the rest
   of `make lint` must apply to the WASM build's source files; if

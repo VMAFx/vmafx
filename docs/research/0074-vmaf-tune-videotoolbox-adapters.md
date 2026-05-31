@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0074: `vmaf-tune` Apple VideoToolbox codec adapters
 
 - **Date**: 2026-05-05

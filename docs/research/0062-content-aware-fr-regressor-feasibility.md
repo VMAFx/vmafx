@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0062 — Content-aware fr_regressor_v2 feasibility
 
 ## Question
@@ -14,7 +15,7 @@ codecs × 4 CQ values) over the codec-only baseline?
 2. Extend `_row_to_features` to append a 6-dim content-class one-hot
    to `codec_block`. Tag the 9 Netflix sources by genre (manual):
 
-   ```
+   ```text
    BigBuckBunny → animation
    CrowdRun, Tennis → sports
    Seeking, ElFuente1, ElFuente2, OldTownCross → film_drama
@@ -64,6 +65,7 @@ is the classic capacity-without-data symptom.
 ## Decision
 
 Park the content_class extension. Re-evaluate when:
+
 - The corpus exceeds ~2000 rows (10x current), OR
 - A LOSO eval surfaces a per-genre PLCC gap that content_class would close, OR
 - Auto-extracted content features are available (Research-0063 candidate)

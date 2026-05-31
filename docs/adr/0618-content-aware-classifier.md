@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0618: Content-Aware Classifier for Encoder Routing
 
 - **Status**: Proposed

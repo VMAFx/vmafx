@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # LPIPS-SqueezeNet (full-reference perceptual distance)
 
 `vmaf_tiny_lpips_sq_v1` — a full-reference perceptual distance metric based on

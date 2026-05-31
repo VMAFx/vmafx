@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0602: macOS SIGSEGV in vmaf_write_output — pic_cnt underflow + missing vmaf NULL guard
 
 - **Status**: Accepted

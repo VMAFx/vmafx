@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR Authoring Workflow
 
 This page describes how to create a new Architectural Decision Record (ADR) in this
@@ -74,7 +75,7 @@ abandoned and the stub was never promoted to a real ADR.
 
 ## Stub lifecycle
 
-```
+```text
 --claim slug      stub created (NNNN-slug.md.stub)
                   ↓
 edit stub         fill in ADR content in-place

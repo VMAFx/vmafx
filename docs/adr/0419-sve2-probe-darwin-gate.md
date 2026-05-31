@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0419: Gate SVE2 build probe to non-Darwin hosts
 
 - **Status**: Accepted

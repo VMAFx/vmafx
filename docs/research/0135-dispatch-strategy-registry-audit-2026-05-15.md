@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research: Dispatch-Strategy Registry Audit — 2026-05-15
 
 ## Summary

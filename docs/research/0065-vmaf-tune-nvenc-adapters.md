@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0065: NVENC codec adapters for `vmaf-tune` — option-space digest
 
 - **Date**: 2026-05-03

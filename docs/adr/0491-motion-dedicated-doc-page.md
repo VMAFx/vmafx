@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0491: Add dedicated `docs/metrics/motion.md` reference page
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # GitHub Actions custom-action + reusable-workflow audit — 2026-05-31
 
 **Status**: Audit complete. No gaps found; two abstraction candidates
@@ -25,7 +26,7 @@ The user asked for an audit of the `.github/` tree on the fork covering:
 
 ### (1) Custom actions: none exist
 
-```
+```text
 $ find .github/actions -name 'action.yml' -o -name 'action.yaml' 2>/dev/null
 (no output)
 
@@ -41,7 +42,7 @@ external actions (SHA-pinned per `.github/AGENTS.md`).
 
 ### (2) Reusable workflows: none exist
 
-```
+```text
 $ grep -l 'workflow_call:' .github/workflows/*.yml
 (no output)
 ```
@@ -60,7 +61,7 @@ do not apply.
 The fork-wide SHA-pin policy for external `uses:` directives is
 already enforced and was independently re-verified during this audit:
 
-```
+```text
 $ grep -hnE '^\s*(- )?uses:\s+[^@]+@[^ #]+\s*$' .github/workflows/*.yml \
     | grep -vE '@[a-f0-9]{40}' \
     | grep -v 'slsa-framework/slsa-github-generator/.github/workflows/'

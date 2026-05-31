@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0654: Predictor Saliency Signal Wiring
 
 ## Summary

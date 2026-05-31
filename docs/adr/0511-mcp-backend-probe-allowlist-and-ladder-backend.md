@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0511: MCP backend probe, default allowlist, and `vmaf-tune ladder --score-backend` (2026-05-18)
 
 - **Status**: Accepted

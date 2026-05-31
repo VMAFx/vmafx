@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # vmafx-operator
 
 The vmafx-operator is a Kubernetes Operator built with kubebuilder v4 /
@@ -115,7 +116,7 @@ The operator runs as a single Deployment (`vmafx-operator`) with a
 controller-runtime Manager.  Three independent reconcilers watch their
 respective CRDs.
 
-```
+```text
 ┌─────────────────────────────────────────────┐
 │              vmafx-operator Pod             │
 │                                             │

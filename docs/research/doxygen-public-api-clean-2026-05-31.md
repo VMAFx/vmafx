@@ -79,7 +79,7 @@ Distribution by warning class:
 
 Doxygen 1.15 run after the fixes:
 
-```
+```text
 $ wc -l build/doxygen-public-api/warnings.log
 0 build/doxygen-public-api/warnings.log
 ```

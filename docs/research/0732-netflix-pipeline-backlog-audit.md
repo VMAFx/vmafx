@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research Digest 0732: Netflix Pipeline Functions Backlog Audit
 
 **Status**: Complete

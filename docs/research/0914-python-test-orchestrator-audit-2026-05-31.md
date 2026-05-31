@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0914: Python test orchestrator audit (2026-05-31)
 
 ## Question

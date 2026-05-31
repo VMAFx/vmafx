@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Zed Migration Plan — VMAFx/vmafx fork (2026-05-22 refresh)
 
 Refresh of [`zed-migration-plan-2026-05-19.md`](zed-migration-plan-2026-05-19.md)
@@ -328,7 +329,7 @@ When splitting work across agents:
 Live docs (<https://zed.dev/docs/ai/rules>, retrieved 2026-05-22) confirm
 Zed reads the **first matching file at the project root** from:
 
-```
+```text
 1. .rules
 2. .cursorrules
 3. .windsurfrules

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0043 — DISTS extractor design digest
 
 | Field      | Value                                                  |

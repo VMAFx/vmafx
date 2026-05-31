@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0138: dev-MCP container backend exposure (SYCL / Vulkan / HIP)
 
 **Date**: 2026-05-18
@@ -38,7 +39,7 @@ docker exec vmaf-dev-mcp sycl-ls --verbose
 
 emitted:
 
-```
+```text
 <LOADER>[INFO]: failed to load adapter 'libur_adapter_level_zero.so.0'
                 with error: libhwloc.so.15: cannot open shared object file
 <LOADER>[INFO]: failed to load adapter 'libur_adapter_level_zero_v2.so.0'
@@ -59,7 +60,7 @@ matches the **container's** view of the by-path symlink, but the
 container's by-path only had **one** entry while the host had three).
 `ls /dev/dri/by-path/` on host:
 
-```
+```text
 pci-0000:03:00.0-{card,render}  -> Intel Arc A380
 pci-0000:06:00.0-{card,render}  -> NVIDIA RTX 4090
 pci-0000:7d:00.0-{card,render}  -> AMD gfx1036
@@ -67,7 +68,7 @@ pci-0000:7d:00.0-{card,render}  -> AMD gfx1036
 
 vs. container:
 
-```
+```text
 pci-0000:01:00.0-{card,render}  -> card1, renderD128   (orphan; PCI BFD doesn't match any host card)
 ```
 
@@ -103,7 +104,7 @@ docker exec vmaf-dev-mcp bash -c 'unset VK_ICD_FILENAMES VK_DRIVER_FILES; vulkan
 
 surfaced all four ICDs concurrently:
 
-```
+```text
 deviceName = NVIDIA GeForce RTX 4090
 deviceName = Intel(R) Arc(tm) A380 Graphics (DG2)
 deviceName = AMD Ryzen 9 9950X3D (RADV RAPHAEL_MENDOCINO)

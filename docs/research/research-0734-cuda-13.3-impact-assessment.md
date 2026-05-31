@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD029 MD060 -->
 # Research-0734: CUDA 13.3 impact assessment for the VMAFX fork
 
 - **Status**: Active

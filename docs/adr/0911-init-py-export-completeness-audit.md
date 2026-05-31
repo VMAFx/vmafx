@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0911: `__init__.py` export-completeness audit — `__all__` + SPDX headers across fork-added Python packages
 
 - **Status**: Accepted

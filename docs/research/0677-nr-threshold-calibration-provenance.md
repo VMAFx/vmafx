@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research 0677 — NR threshold calibration provenance
 
 ## Question

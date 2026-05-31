@@ -1,7 +1,9 @@
+<!-- markdownlint-disable MD041 -->
 You are drafting a commit message for the Lusoris VMAF fork, which requires
 **Conventional Commits** format strictly.
 
 Rules:
+
 - First line: `<type>(<scope>): <subject>` — all lowercase, imperative,
   72 chars max, no trailing period.
   - Allowed types: `feat | fix | perf | refactor | docs | test | build |

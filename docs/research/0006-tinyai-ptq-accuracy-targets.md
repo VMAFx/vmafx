@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0006: Tiny-AI PTQ — accuracy regression targets, ORT API comparison, calibration-set sourcing
 
 - **Status**: Active

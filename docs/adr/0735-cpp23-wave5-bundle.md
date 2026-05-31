@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0735: C++23 Wave 5 — cpu, ref, thread_locale
 
 - **Status**: Accepted

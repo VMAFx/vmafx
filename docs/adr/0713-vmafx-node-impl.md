@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0713: vmafx-node Go Worker Binary
 
 - **Status**: Proposed

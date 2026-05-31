@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # HIP Feature Extractors — Invariant Notes
 
 Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
@@ -48,6 +49,7 @@ Every `hipMemcpy*` call's direction enum **must match the actual memory placemen
 Mismatches are undefined behavior on some HIP runtimes and may silently corrupt results or trigger runtime faults.
 
 **Established patterns:**
+
 - Picture planes arrive from the VMAF pipeline as CPU-side `VmafPicture` structs with `data[0..2]` pointers (host memory). Copying these into device-allocated staging buffers requires `hipMemcpyHostToDevice`.
 - Readback buffers allocated via `hipHostMalloc` in `src/hip/kernel_template.c` are host-pinned memory, safe to use with `hipMemcpyDeviceToHost` for kernel output collection.
 
@@ -157,6 +159,7 @@ gotchas:
    such a link failure, either register the kernel (preferred) or add
    a weak stub in `hip_hsaco_stubs.c` (per ADR-0536 — only for kernels
    that can't yet compile standalone via `hipcc --genco`).
+
 ## Remove the weak HSACO stub the moment a real .hip lands (ADR-0539)
 
 When a `.hip` kernel under `feature/hip/<extractor>/` becomes
@@ -170,6 +173,7 @@ the cost of `-Wlto-type-mismatch` warnings on every build.  The user
 direction is "no stubs anywhere" once a real kernel exists.
 
 Pattern (ADR-0539 example for `float_vif_score`):
+
 1. Confirm the `.hip` source compiles via `hipcc --genco` in the
    container (`ninja -C <build> src/<name>.hsaco`).
 2. Remove the `VMAF_HSACO_WEAK_STUB(<name>_hsaco)` line from
@@ -177,6 +181,7 @@ Pattern (ADR-0539 example for `float_vif_score`):
    reviewer sees why the slot is gone.
 3. Rebuild with `enable_hipcc=true` and grep the ninja output for
    warnings referencing the symbol — none should remain.
+
 ## IEEE-strict kernels go in `hip_cu_extra_flags` (ADR-0539)
 
 When a HIP kernel relies on IEEE-754 add/mul ordering — for example any
@@ -192,6 +197,7 @@ file.  Current entries: `ssimulacra2_blur`.  Rebase invariant: when
 porting a new CUDA kernel that lists `--fmad=false` /
 `-ffp-contract=off` in `cuda_cu_extra_flags`, add the matching HIP
 entry in the same PR.
+
 ## Per-thread atomicAdd replaces CUDA per-warp `__shfl_down_sync` reduce (ADR-0539)
 
 The CUDA twin's `cuda_helper.cuh::warp_reduce` hard-codes
@@ -244,6 +250,7 @@ device-pointer fields.  It is currently passed by value in multiple `__global__`
 kernel signatures in `integer_adm/adm_csf.hip` and `integer_adm/adm_cm.hip`.
 
 This mirrors the PR #93 F3 finding on the CUDA side.  Consequences:
+
 - Every GPU thread's stack receives a full 272-byte copy via the kernel-argument
   buffer path.  On RDNA/GCN this adds measurable argument-passing overhead.
 - Structs this large risk hitting the HIP/AMDDriver kernel-argument limit (varies
@@ -268,6 +275,7 @@ preprocessor expands the macro at the point of instantiation (inside
 The pattern is load-bearing.  Do not "fix" it by adding an additional
 `extern "C"` declaration inside the macro body — that would create a nested
 `extern "C"` which is legal in C++ but redundant and confusing to reviewers.
+
 ## AdmBufferHip MUST be passed by pointer — invariant (ADR-0759)
 
 **Resolved**: The P1 known issue documented above (struct-by-value in ADM kernel
@@ -284,6 +292,7 @@ value. The host launch site must:
 3. Pass `&dev_ptr_var` (address of the device pointer variable) as the kernel arg.
 
 Pattern:
+
 ```c
 /* host dispatch helper — correct */
 AdmBufferHip *buf_dev = s->buf_dev;  /* device pointer, set in init */

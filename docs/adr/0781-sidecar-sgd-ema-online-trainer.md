@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0781: Sidecar online training — SGD + EMA + replay buffer
 
 - **Status**: Proposed

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0017: Claude skills scope includes domain scaffolding
 
 - **Status**: Accepted

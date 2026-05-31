@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research digest: Test suite unchecked malloc sweep (Round 27 audit D.1)
 
 **Date**: 2026-05-31
@@ -62,7 +63,8 @@ analogous files.
 ## Verification
 
 Build + test output:
-```
+
+```text
 $ meson setup build-cpu core -Denable_cuda=false -Denable_sycl=false
 $ ninja -C build-cpu
 $ meson test -C build-cpu --suite=fast --no-rebuild
@@ -73,6 +75,7 @@ $ bash scripts/ci/assertion-density.sh
 ```
 
 Pre-fix crash reproduction:
+
 ```bash
 MALLOC_PERTURB_=198 meson test -C build-cpu test_ssimulacra2_simd --no-rebuild
 # Pre-fix: SIGSEGV in fill_random() when malloc returns NULL

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0735: CUDA motion kernel ncu hotpath analysis (576x324)
 
 - **Status**: Active
@@ -14,7 +15,8 @@ at 576×324, and what are the top optimization candidates?
 - ncu `--set basic` profiles on RTX 4090 (sm_89) under CUDA 13.3
 - Source: `core/src/feature/cuda/integer_motion/motion_score.cu`
 - Reproducer:
-  ```
+
+  ```text
   docker run --rm --gpus all --privileged --entrypoint bash \
     -v <worktree>:/workspace -v <repo>/python:/workspace/python:ro \
     -w /workspace/core vmaf-dev-mcp:cuda13.3 -c \

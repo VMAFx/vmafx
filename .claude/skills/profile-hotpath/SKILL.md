@@ -3,11 +3,13 @@ name: profile-hotpath
 description: Profile a hot path (feature + backend) using the appropriate profiler (perf / ncu / Vtune / rocprof), produce flamegraph + top-N hot functions, and suggest concrete optimizations. Delegates to the perf-profiler agent.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /profile-hotpath
 
 ## Invocation
 
-```
+```text
 /profile-hotpath <backend> <feature> [--resolution=576|640|720|1080|4k] [--frames=120]
 ```
 

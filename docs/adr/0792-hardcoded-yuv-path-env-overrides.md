@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0792: Env-var overrides for hardcoded YUV and testdata paths
 
 - **Status**: Accepted

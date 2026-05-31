@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD049 MD060 -->
 # ADR-0269: `precise` decoration audit on `vif.comp` + `ciede.comp` — Step A of the Vulkan 1.4 bump path
 
 - **Status**: Accepted
@@ -17,7 +18,7 @@ the `VK_API_VERSION_1_3 → 1_4` bump pending a two-step fix:
   by Vulkan).
 - **Step B** — bump the four API-version sites in
   [`core/src/vulkan/common.c`](../../core/src/vulkan/common.c)
-  + [`core/src/vulkan/vma_impl.cpp`](../../core/src/vulkan/vma_impl.cpp).
+  [`core/src/vulkan/vma_impl.cpp`](../../core/src/vulkan/vma_impl.cpp).
 
 This ADR records the implementation outcome of Step A.
 [Research-0054](../research/0056-vif-ciede-precise-step-a-implementation.md)

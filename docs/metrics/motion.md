@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Motion
 
 Motion measures temporal activity in the **reference** stream by computing the

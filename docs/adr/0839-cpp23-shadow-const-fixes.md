@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0839: C++23 wave — shadow-identifier and implicit-cast cleanup
 
 - **Status**: Accepted

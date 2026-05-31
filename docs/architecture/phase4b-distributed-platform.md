@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # VMAFX Phase 4b — Distributed Platform Architecture
 
 > **Status**: Proposed (2026-05-28). Locks when ADR-0709 moves to Accepted.
@@ -96,7 +97,7 @@ graph TB
 
 ## Storage flow (zero-copy via rclone)
 
-```
+```text
 Object store (S3 / GCS / Azure Blob / SFTP)
         │
         │  rclone mount / rclone-vfs (FUSE)

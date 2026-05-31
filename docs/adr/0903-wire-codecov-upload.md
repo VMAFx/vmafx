@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0903: Wire Codecov upload into the existing Coverage Gate jobs
 
 - **Status**: Accepted

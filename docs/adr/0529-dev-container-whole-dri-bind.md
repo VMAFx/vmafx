@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0529: Replace `/dev/dri/by-path` bind with whole `/dev/dri` bind in dev container
 
 - **Status**: Accepted

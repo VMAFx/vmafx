@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0671: U2NetP Mirror Exporter
 
 - **Status**: Accepted

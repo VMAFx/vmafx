@@ -3,6 +3,8 @@ name: add-k8s-resource
 description: Scaffold a new Kubernetes CRD + kubebuilder controller + RBAC + helm chart entry for the vmafx-operator. Follows the VmafxJob / VmafxNode / VmafxModelTraining precedent in cmd/vmafx-operator/ (ADR-0714, ADR-0709 parent).
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /add-k8s-resource
 
 Adds a new Custom Resource Definition (CRD) under the `vmafx.dev` API group,
@@ -24,7 +26,7 @@ established by `VmafxJob`, `VmafxNode`, and `VmafxModelTraining` in
 
 ## Invocation
 
-```
+```text
 /add-k8s-resource <KindName>
 ```
 

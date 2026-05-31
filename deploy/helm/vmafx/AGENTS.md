@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # AGENTS.md — deploy/helm/vmafx/
 
 This directory contains the VMAFX Helm chart. Notes for agents working here.

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD049 -->
 # Research-0075: `fr_regressor_v2` ensemble — production flip LOSO protocol
 
 - **Date**: 2026-05-05
@@ -72,7 +73,7 @@ conformal layer to consume without re-running training.
 
 The LOSO eval runs nine folds, one per Netflix source:
 
-```
+```text
 sources = [
     "BigBuckBunny_25fps", "BirdsInCage_30fps",  "CrowdRun_25fps",
     "ElFuente1_30fps",    "ElFuente2_30fps",    "FoxBird_25fps",

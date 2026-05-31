@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD018 MD060 -->
 # Post-merge CPU Profile — 2026-05-03
 
 **Date:** 2026-05-03
@@ -71,6 +72,7 @@ This run establishes the post-sprint reference point.
 | 10   | `adm_cm_avx512`                         | 0.9 %  | ADM contrast masking |
 
 Cache statistics (5 × 48 frames, perf stat):
+
 - IPC: 3.62 (well-utilised; AVX-512 units busy)
 - L1-dcache load-miss rate: 44.3 % (482.8 M misses / 1 089 M references)
 - LLC miss rate: 6.0 % (65.1 M LLC misses)
@@ -85,7 +87,7 @@ Source: `core/src/feature/x86/convolve_avx512.c`
 
 Hot lines concentrate on two idioms in `h_tap8_avx512` and `v_tap8_avx512`:
 
-```
+```text
 12.9%   vcvtps2pd %ymm1,%zmm1     // float→double widen (every tap, both passes)
  7.6%   vaddpd %zmm1,%zmm0,%zmm0  // double accumulate
  7.3%   vcvtps2pd %ymm1,%zmm1     // second widen in v-pass
@@ -111,7 +113,7 @@ Source: `core/src/feature/x86/ssim_avx512.c`, lines 88–125.
 
 Hot lines are the scalar per-lane reduction loop body:
 
-```
+```text
  7.3%   vcvtss2sd (%rdx),%xmm5,%xmm0    // spilled float → double
  7.2%   vaddsd (%rbx),%xmm0,%xmm0       // scalar double add
  6.2%   add $0x4,%rsi                   // loop counter
@@ -120,6 +122,7 @@ Hot lines are the scalar per-lane reduction loop body:
 ```
 
 The block:
+
 1. Computes 16-lane float intermediates in AVX-512 (`rm`, `cm`, `srsc`,
    `l_den`, `c_den`, `sv`).
 2. Stores all six arrays to 64-byte-aligned stack buffers (6 × 64 bytes =
@@ -138,7 +141,7 @@ Source: `core/src/feature/x86/vif_avx512.c`, lines ~85–160.
 
 Hot lines are gather instructions:
 
-```
+```text
 13.2%   vpgatherdq (%r12,%ymm0,2),%zmm27{%k5}   // log2 table lookup
  3.6%   vpgatherdq (%r12,%ymm17,2),%zmm7{%k6}
  3.2%   vpmuludq %zmm0,%zmm1,%zmm1               // 64-bit multiply
@@ -162,12 +165,15 @@ shared table; L1 miss rate is high because indices are data-dependent.
 ### Target 1: `iqa_convolve_avx512` — eliminate redundant `vcvtps2pd` via 16-lane FMA-on-float with post-hoc double correction
 
 **Current pattern (per tap):**
+
 ```c
 const __m256 prod_f = _mm256_mul_ps(f8, coeff_f);      // float × float
 const __m512d prod  = _mm512_cvtps_pd(prod_f);          // widen
 acc = _mm512_add_pd(prod, acc);                          // double acc
 ```
+
 **Proposal:** Replace the 11-tap h-pass with a two-stage approach:
+
 - Stage 1: accumulate all 11 taps in `__m512` float using
   `_mm512_fmadd_ps` (32 lanes at a time, twice the throughput per cycle).
 - Stage 2: widen the final float sum once per output pixel via
@@ -203,6 +209,7 @@ of stack, then 16 scalar double iterations.
 
 **Proposal:** Replace the per-lane scalar loop with a vectorised
 double-lane reduction:
+
 - Process the 16-element float buffers (`t_rm`, `t_cm`, etc.) in pairs
   of 8 using `_mm512_cvtps_pd` (8 lanes of double at a time).
 - Compute `lv`, `cv`, `sv` in `__m512d` using `_mm512_fmadd_pd` /
@@ -242,7 +249,7 @@ across the full workload, with VIF being the dominant contributor).
 **Proposal:** Replace `vpgatherdq` + table with a 5th-order minimax
 polynomial for `log2(x)` evaluated in `__m512d`:
 
-```
+```text
 log2(x) = exponent + polynomial(mantissa)
 ```
 
@@ -290,6 +297,7 @@ measure the actual gains. The GPU wall-clock section of this document
 should be updated once a CUDA host is available.
 
 **Profiler gap summary:**
+
 - `nsys` / `ncu`: not installed — CUDA kernel-level hot functions unknown.
 - `vulkan-profiler` / `VK_LAYER_KHRONOS_profiles`: not installed — Vulkan
   shader timings unknown.

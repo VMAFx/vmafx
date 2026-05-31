@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Research-0050: vmaf_tiny v3 + v4 — multi-seed Netflix LOSO + KoNViD 5-fold
 
 - **Date**: 2026-05-02

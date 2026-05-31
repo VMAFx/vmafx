@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD036 MD060 -->
 # ADR-0937: mkdocs ADR nav — per-hundred bucket layout + auto by-tag indexes
 
 - **Status**: Accepted

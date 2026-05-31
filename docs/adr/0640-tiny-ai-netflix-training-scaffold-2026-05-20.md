@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0640: Tiny-AI training on the original Netflix VMAF training corpus (2026-05-20 scaffold iteration)
 
 - **Status**: Proposed
@@ -13,7 +14,7 @@ full-reference (FR) regressor that can be distilled from the public
 user holds the original Netflix VMAF training corpus locally at
 `.workingdir2/netflix/` (gitignored, approximately 37 GB):
 
-```
+```text
 .workingdir2/netflix/
   ref/    # 9 reference YUVs
   dis/    # 70 distorted YUVs
@@ -21,7 +22,7 @@ user holds the original Netflix VMAF training corpus locally at
 
 File names follow the Netflix encoding-ladder convention:
 
-```
+```text
 <source>_<quality_label>_<height>_<bitrate-kbps>.yuv
 ```
 

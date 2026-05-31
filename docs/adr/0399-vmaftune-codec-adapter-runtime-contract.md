@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0399: `vmaf-tune` codec-adapter contract becomes a runtime contract (HP-1)
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # VMAF Confidence Interval
 
 Since v1.3.7 (June 2018), we have introduced a way to quantify the level of confidence that a VMAF prediction entails. With this method, each VMAF prediction score can be accompanied by a 95% confidence interval (CI), which quantifies the level of confidence that the prediction lies within the interval.
@@ -24,7 +25,7 @@ python -m vmaf.script.run_vmaf yuv420p 576 324 \
 
 yields:
 
-```
+```text
 ...
     "aggregate": {
         "BOOTSTRAP_VMAF_bagging_score": 74.96366248843681,

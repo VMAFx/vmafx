@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0966 — dev/Containerfile libvmaf → core rename (Round 26 audit C.1)
 
 **Date**: 2026-05-31
@@ -26,13 +27,14 @@ code paths.
 
 **Pre-fix behaviour** was confirmed by running:
 
-```
+```text
 docker compose --project-directory /home/kilian/dev/vmaf \
   -f /home/kilian/dev/vmaf/dev/docker-compose.yml build dev-mcp 2>&1 | tail -20
 ```
 
 Output:
-```
+
+```text
 #25 [libvmaf-build  2/28] COPY --chown=vmaf:vmaf libvmaf/        /build/vmaf/libvmaf/
 #25 ERROR: failed to calculate checksum … "/libvmaf": not found
 Containerfile:452

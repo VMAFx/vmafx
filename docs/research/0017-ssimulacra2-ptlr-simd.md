@@ -28,6 +28,7 @@ Scalar `read_plane` handles:
 - Bounds clamping at plane edges.
 
 Options:
+
 1. **Per-lane scalar reads** (chosen): every pixel read goes through
    the scalar helper; fills a float[N] scratch; SIMD loads that.
    Handles all formats uniformly. Limits speedup on reads but keeps
@@ -42,6 +43,7 @@ Given only 2 calls/frame, option 1 is the right trade-off.
 ### Axis 2 — sRGB EOTF
 
 Scalar:
+
 ```c
 if (v <= 0.04045f)
     return v / 12.92f;
@@ -49,6 +51,7 @@ return powf((v + 0.055f) / 1.055f, 2.4f);
 ```
 
 Options:
+
 1. **Per-lane scalar** (chosen): spill SIMD vector to scratch,
    branch per lane, reload. Bit-exact by construction.
 2. **Vector polynomial `powf` approximation**: 1–2 ulp drift from
@@ -79,7 +82,7 @@ in `ssimulacra2.c` unpacks `VmafPicture` fields into the struct.
 
 - `test_ssimulacra2_simd` gets 5 new subtests (420-8bit, 420-10bit,
   444-8bit, 444-10bit, 422-8bit) covering the common pixel formats
-  + two BT matrices.
+  two BT matrices.
 - Test input: 24×16 pixel frame (wide/height chosen to exercise
   both SIMD main-loop and scalar tail for all 3 ISAs).
 - `memcmp` byte-equality of the 3×W×H float output between scalar

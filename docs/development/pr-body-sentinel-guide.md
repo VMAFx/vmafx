@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # PR body sentinel guide
 
 The fork's `rule-enforcement.yml` workflow runs a **deep-dive
@@ -52,13 +53,13 @@ are exempt from the entire section.
 
 **Ticked checkbox (item addressed):**
 
-```
+```text
 - [x] **Research digest** — docs/research/0435-foo.md written.
 ```
 
 **Opt-out (item explicitly skipped):**
 
-```
+```text
 - [ ] **Research digest** — no digest needed: trivial change.
 ```
 
@@ -83,7 +84,7 @@ is correct.
 If you tick "Research digest" but do not add a `docs/research/NNNN-*.md`
 file, the gate fails with:
 
-```
+```text
 ::error title=ADR-0108 research digest::Checkbox ticked but no
 docs/research/NNNN-*.md added in this PR.
 ```
@@ -107,7 +108,7 @@ and numbered lists are **not** recognised.
 When the gate detects a prose bullet, it emits a warning before the
 error line:
 
-```
+```text
 ::warning title=ADR-0108 prose-bullet format::One or more deliverables
   appear to be in prose bullet format (e.g. '- Research digest: ...').
   The parser requires the checkbox form: '- [x] **Research digest** ...'

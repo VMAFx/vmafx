@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0270: libFuzzer scaffold for parser surfaces (OSSF Scorecard remediation)
 
 - **Status**: Accepted

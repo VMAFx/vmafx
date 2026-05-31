@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0089: `saliency_student_v2` — Resize-decoder ablation
 
 **Date**: 2026-05-09

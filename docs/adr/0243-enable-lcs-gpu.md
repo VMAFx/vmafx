@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0243: `enable_lcs` MS-SSIM extras on CUDA + Vulkan
 
 - **Status**: Accepted

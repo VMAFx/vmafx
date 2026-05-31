@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 MD060 -->
 # Const-correctness audit — fork-added C / C++ — 2026-05-30
 
 Sweep of fork-added C / C++ translation units for pointer-parameter
@@ -75,7 +76,7 @@ buildable C / C++ surfaces.**
 The audit produced exactly one `readability-non-const-parameter`
 warning, and it is a NOLINT-placement bug, not a missing `const`:
 
-```
+```text
 core/src/dnn/dnn_api.c:324:87: warning: pointer parameter 'out'
   can be pointer to const [readability-non-const-parameter]
 ```

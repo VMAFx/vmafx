@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Test fixtures
 
 The Python test suite (`python/test/quality_runner_test.py`,
@@ -5,7 +6,7 @@ The Python test suite (`python/test/quality_runner_test.py`,
 gates exercise libvmaf against a fixed set of YUV reference clips.
 These clips live **outside the repo** — Netflix removed them upstream
 in 2020 (commit `bac8b6073`) and moved them to a sibling resource
-repository at https://github.com/Netflix/vmaf_resource.
+repository at <https://github.com/Netflix/vmaf_resource>.
 
 The local target directory `python/test/resource/yuv/` is `.gitignore`-d.
 
@@ -44,7 +45,7 @@ mismatch, not a code bug. See
 The md5 check turns this class of failure into an immediately legible
 error at provision time:
 
-```
+```text
 stale   src01_hrc00_576x324.yuv (md5 4226fb7e…, want b16f67d3…) — refetching
 ```
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0283: `vmaf-tune` Apple VideoToolbox codec adapters
 
 - **Status**: Accepted

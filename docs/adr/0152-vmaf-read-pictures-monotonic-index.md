@@ -56,10 +56,12 @@ boundary in `vmaf_read_pictures`:
    is already `memset(…, 0, …)`'d on init).
 2. In the existing `read_pictures_validate_and_prep` helper
    (introduced in T7-5 / ADR-0146), prepend a check:
+
    ```c
    if (vmaf->have_last_index && index <= vmaf->last_index)
        return -EINVAL;
    ```
+
 3. After the helper's existing validation passes, set
    `vmaf->last_index = index; vmaf->have_last_index = true;`
    so subsequent calls see the guard.

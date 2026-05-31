@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # HIP kernel parity coverage — round 4 audit (2026-05-31)
 
 Companion research digest for ADR-0958. Quantifies the residual
@@ -83,7 +84,7 @@ The 2 round-4 picks were ranked on three axes:
      `hip_sources`. Adding them surfaces 4 undefined references at
      link time:
 
-     ```
+     ```text
      undefined reference to `speed_internal_init_dimensions'
      undefined reference to `speed_internal_float_stride'
      ```
@@ -131,7 +132,7 @@ Each test exercises the same skip contract as the round-3 tests:
 Container-verified (vmaf-dev-mcp:cuda13.3, `enable_hip=true
 enable_hipcc=false`):
 
-```
+```text
 ==== test_hip_ssimulacra2_parity ====
 test_ssimulacra2_hip_registered: pass
 test_ssimulacra2_cpu_hip_parity: [skip: no HIP device] pass

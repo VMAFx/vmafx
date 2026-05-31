@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD033 MD060 -->
 # Research-0086 — `u2netp.pth` fork-local mirror: Apache-2.0 §4 compliance + supply-chain surface
 
 | Field      | Value                                                       |
@@ -33,7 +34,7 @@ Apache-2.0 §4.
 
 ## Upstream licence audit (re-verified 2026-05-08)
 
-```
+```text
 $ gh api repos/xuebinqin/U-2-Net/license --jq '.license'
 { "spdx_id": "Apache-2.0", "name": "Apache License 2.0" }
 ```
@@ -47,7 +48,7 @@ combine-and-redistribute pattern.
 A recursive listing of HEAD confirms there is **no** `NOTICE`
 file in the upstream tree:
 
-```
+```text
 $ gh api 'repos/xuebinqin/U-2-Net/git/trees/master?recursive=1' \
     --jq '.tree[] | select(.path | test("NOTICE$"; "i")) | .path'
 (empty)
@@ -185,7 +186,7 @@ while preserving the release-asset-only binary contract.
 - [ADR-0258](../adr/0258-onnx-allowlist-resize.md) — `Resize`
   added to the allowlist; resolves ADR-0265's axis-2 blocker.
 - [ADR-0265](../adr/0265-u2netp-saliency-replacement-blocked.md)
-  + [Research-0054](0055-u2netp-saliency-replacement-survey.md)
+  [Research-0054](0055-u2netp-saliency-replacement-survey.md)
   — the U-2-Net survey + blocker decision this digest extends.
 - [ADR-0286](../adr/0286-saliency-student-fork-trained-on-duts.md)
   — fork-trained `saliency_student_v1`; the recommended primary

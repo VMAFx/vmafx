@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0052: Vulkan submit-side template + fence pool + descriptor pre-alloc
 
 Date: 2026-05-02

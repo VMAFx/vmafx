@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD049 MD060 -->
 # Research-0028 — Phase-3 MLP arch sweep on Top-K feature subsets
 
 _Updated: 2026-04-29._
@@ -7,10 +8,10 @@ _Updated: 2026-04-29._
 [Research-0027 §"Decision"](0027-phase2-feature-importance.md) ratified
 Phase-3 GO and named three feature subsets to sweep:
 
-* **Subset A** — canonical-6 ∪ {`ssimulacra2`} (7 features).
-* **Subset B** — consensus-7 (`adm2`, `adm_scale3`, `vif_scale2`,
+- **Subset A** — canonical-6 ∪ {`ssimulacra2`} (7 features).
+- **Subset B** — consensus-7 (`adm2`, `adm_scale3`, `vif_scale2`,
   `motion2`, `ssimulacra2`, `psnr_hvs`, `float_ssim`).
-* **Subset C** — full-21 (sanity ceiling).
+- **Subset C** — full-21 (sanity ceiling).
 
 The stopping rule was: *"If Subset A's mean LOSO PLCC fails to beat
 canonical6 by ≥ 0.005, the hypothesis is dead and canonical-6 stays."*
@@ -19,16 +20,16 @@ This digest reports the empirical result.
 
 ## Method
 
-* Same parquet as Research-0027 (`runs/full_features_netflix.parquet`,
+- Same parquet as Research-0027 (`runs/full_features_netflix.parquet`,
   11 040 frames × 21 features).
-* `mlp_small` (Linear(N→16) → ReLU → Linear(16→8) → ReLU →
+- `mlp_small` (Linear(N→16) → ReLU → Linear(16→8) → ReLU →
   Linear(8→1)) trained for **30 epochs**, Adam `lr=1e-3`, batch 256,
   `seed=0` per fold.
-* 9-fold leave-one-source-out across the Netflix Public sources.
-* Per-fold metrics: PLCC, SROCC, RMSE; aggregated as mean ± std
+- 9-fold leave-one-source-out across the Netflix Public sources.
+- Per-fold metrics: PLCC, SROCC, RMSE; aggregated as mean ± std
   across folds.
-* Driver: [`ai/scripts/phase3_subset_sweep.py`](../../ai/scripts/phase3_subset_sweep.py).
-* **Features fed to the model raw — no standardisation, no
+- Driver: [`ai/scripts/phase3_subset_sweep.py`](../../ai/scripts/phase3_subset_sweep.py).
+- **Features fed to the model raw — no standardisation, no
   normalisation.** This is load-bearing for interpreting the
   result; see §"Why this is surprising" below.
 
@@ -55,9 +56,9 @@ the hypothesis "broader feature set helps a tiny MLP" is killed.
 
 But every subset cuts RMSE by **~40 %**:
 
-* canonical6 RMSE 15.20 → A 9.13 (−40 %)
-* canonical6 RMSE 15.20 → B 8.91 (−41 %)
-* canonical6 RMSE 15.20 → C 8.50 (−44 %)
+- canonical6 RMSE 15.20 → A 9.13 (−40 %)
+- canonical6 RMSE 15.20 → B 8.91 (−41 %)
+- canonical6 RMSE 15.20 → C 8.50 (−44 %)
 
 That's a *huge* absolute-fit improvement. Mean RMSE is in raw
 `vmaf_v0.6.1` score units (0–100 range), so canonical6 is averaging
@@ -126,9 +127,10 @@ single most likely fix and adds maybe ~10 lines to
 ### Phase-3c — wider MLP / more epochs
 
 If 3b still doesn't beat canonical6, sweep:
-* `mlp_medium` (`Linear(N→64) → ReLU → Linear(64→32) → ReLU → Linear(32→1)`)
-* 60 and 100 epochs (vs canonical 30)
-* `lr` ∈ `{1e-3, 3e-4, 1e-4}`
+
+- `mlp_medium` (`Linear(N→64) → ReLU → Linear(64→32) → ReLU → Linear(32→1)`)
+- 60 and 100 epochs (vs canonical 30)
+- `lr` ∈ `{1e-3, 3e-4, 1e-4}`
 
 Cheap because each fold is <30 s on the small-feature corpus.
 

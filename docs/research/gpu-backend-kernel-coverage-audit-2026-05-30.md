@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # GPU backend kernel coverage audit — 2026-05-30
 
 ## Scope

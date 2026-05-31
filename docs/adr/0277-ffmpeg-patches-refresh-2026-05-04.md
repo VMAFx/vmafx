@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0277: ffmpeg-patches refresh against n8.1 — 2026-05-04 (no drift)
 
 - **Status**: Accepted
@@ -72,7 +73,7 @@ original to minimise churn."
   as ordered `series.txt`, not a single carry; per-patch standalone
   apply is the wrong gate.
 - [ADR-0186](0186-vulkan-image-import-impl.md) — image-import contract
-  + the FFmpeg patch coupling rule (libvmaf C-API change ⇒ patch
+  the FFmpeg patch coupling rule (libvmaf C-API change ⇒ patch
   refresh in same PR).
 - [ADR-0238](0238-vulkan-picture-preallocation.md) — picture
   preallocation surface; the most recent `ffmpeg-patches/` content

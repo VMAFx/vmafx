@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0912: Pixel-format edge coverage at the libvmaf unit-test layer
 
 - **Status**: Accepted

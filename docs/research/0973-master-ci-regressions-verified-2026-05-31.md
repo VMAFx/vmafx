@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD010 -->
 # Research-0973: Master CI regressions — verified reproduction and root-cause analysis
 
 **Date**: 2026-05-31
@@ -19,7 +20,7 @@ writing any fix. No guessing." This digest records:
 
 ## Container environment
 
-```
+```text
 $ docker inspect vmaf-dev-mcp --format '{{json .Mounts}}'
 [{"Type":"bind","Source":"/home/kilian/dev/vmaf","Destination":"/workspace","Mode":"ro",...},
  ...]
@@ -56,9 +57,10 @@ The test itself is gated by `enable_metal=enabled or (auto and darwin)` and
 needs the Apple `Foundation` framework to compile its Metal sources — not
 buildable on Linux. Instead the diagnosis was verified through the
 production CLI, which exercises the *exact same* `vmaf_use_feature("float_ms_ssim")`
-+ `vmaf_read_pictures` code path that the test's `run_cpu_float_ms_ssim` uses.
 
-```
+- `vmaf_read_pictures` code path that the test's `run_cpu_float_ms_ssim` uses.
+
+```text
 $ docker exec vmaf-dev-mcp bash -c \
     "cd /tmp/wt/core && meson setup build-fix \
        -Denable_cuda=false -Denable_sycl=false 2>&1 | tail -3"
@@ -91,7 +93,7 @@ assertion message the CI surfaced.
 Independent corroboration: the existing test
 `core/test/test_float_ms_ssim_min_dim.c` proves the 176 floor:
 
-```
+```text
 $ docker exec vmaf-dev-mcp bash -c \
     "cd /tmp/wt/core && meson test -C build-fix test_float_ms_ssim_min_dim 2>&1 | tail -5"
 1/1 fast - libvmaf:test_float_ms_ssim_min_dim OK              0.00s
@@ -108,7 +110,7 @@ scale).
 
 ### Verification (post-fix)
 
-```
+```text
 $ docker exec vmaf-dev-mcp bash -c \
     "head -c $((256*192*3/2)) /dev/zero > /tmp/test_256x192.yuv && \
      /tmp/wt/core/build-fix/tools/vmaf \
@@ -149,7 +151,7 @@ that gets contracted.
 
 ### Reproduction (pre-fix)
 
-```
+```text
 $ docker exec vmaf-dev-mcp bash -c \
     "source /opt/intel/oneapi/setvars.sh > /dev/null 2>&1 && \
      cd /tmp/wt/core && \
@@ -179,7 +181,7 @@ Failure reproduced. Exact CI message.
 The test TU is compiled with `-ffp-contract=off -fp-model=precise`
 (verified by inspecting `build-icpx/build.ninja`):
 
-```
+```text
 $ docker exec vmaf-dev-mcp bash -c \
     "cd /tmp/wt/core/build-icpx && \
      awk '/^build test\\/test_ssimulacra2_simd\\.p\\/test_ssimulacra2_simd\\.c\\.o:/{flag=1; print; next} \
@@ -191,7 +193,7 @@ build test/test_ssimulacra2_simd.p/test_ssimulacra2_simd.c.o: c_COMPILER ../test
 Both flags are present. Yet the emitted assembly contains 242 `vfmadd*`
 instructions in the test TU (verified via `icx -S` with the same flags):
 
-```
+```text
 $ docker exec vmaf-dev-mcp bash -c \
     "source /opt/intel/oneapi/setvars.sh > /dev/null 2>&1 && \
      cd /tmp/wt/core/build-icpx && \
@@ -204,7 +206,7 @@ $ docker exec vmaf-dev-mcp bash -c \
 
 Excerpt from the loop body of the inlined `ref_linear_rgb_to_xyb`:
 
-```
+```text
     vmovups	32(%rbx,%rax,4), %ymm3       # r
     vmovups	2804(%rbx,%rax,4), %ymm4     # g
     vmovups	5576(%rbx,%rax,4), %ymm2     # b
@@ -218,7 +220,7 @@ Excerpt from the loop body of the inlined `ref_linear_rgb_to_xyb`:
 The corresponding SIMD lib `libx86_ssimulacra2_avx2.a` (compiled with the
 same strict-FP flags + `-ffp-contract=off`) emits zero `vfmadd`:
 
-```
+```text
 $ docker exec vmaf-dev-mcp bash -c \
     "objdump -d /tmp/wt/core/build-icpx/src/libx86_ssimulacra2_avx2.a 2>&1 | grep -c vfmadd"
 0
@@ -230,7 +232,7 @@ comments in the test TU build wiring at `core/test/meson.build:32-34`)
 suppresses FMA contraction in inline scalar code. Only **`#pragma clang
 fp contract(off)`** does — verified directly with a 4-line test program:
 
-```
+```text
 $ docker exec vmaf-dev-mcp bash -c \
     "cat > /tmp/icx_test.c <<'EOF'
 #pragma clang fp contract(off)
@@ -264,7 +266,7 @@ production scalar paths are untouched — no score drift.
 
 Under icpx (the failing job):
 
-```
+```text
 $ docker exec vmaf-dev-mcp bash -c \
     "source /opt/intel/oneapi/setvars.sh > /dev/null 2>&1 && \
      cd /tmp/wt/core && \
@@ -289,7 +291,7 @@ test_host_downsample: pass
 
 Under GCC (the existing CPU build):
 
-```
+```text
 $ docker exec vmaf-dev-mcp bash -c \
     "cd /tmp/wt/core && \
      ninja -C build-fix test/test_ssimulacra2_simd 2>&1 | tail -3 && \

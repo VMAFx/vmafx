@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD028 MD060 -->
 # Research Digest 0734: NVIDIA R610.43.02 Driver Changelog Audit
 
 **Date:** 2026-05-28

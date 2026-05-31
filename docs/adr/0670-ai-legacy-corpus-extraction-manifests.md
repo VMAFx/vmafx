@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0670: AI Legacy Corpus Extraction Manifests
 
 - **Status**: Proposed

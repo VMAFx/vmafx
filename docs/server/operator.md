@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # vmafx-operator — Kubernetes Operator
 
 `vmafx-operator` is a [kubebuilder](https://kubebuilder.io/) v4 /

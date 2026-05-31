@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0597: `integer_vif` is luma-only across every backend; CUDA `enable_chroma` is a documented no-op
 
 - **Status**: Accepted

@@ -3,11 +3,13 @@ name: format-all
 description: Apply clang-format, black, isort, and shfmt across the whole repo. Idempotent; safe to run repeatedly.
 ---
 
+<!-- markdownlint-disable MD013 -->
+
 # /format-all
 
 ## Invocation
 
-```
+```text
 /format-all [--check]
 ```
 

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0613: Dynamic Optimizer — Joint Shot-Boundary + CRF Co-Optimisation
 
 - **Status**: Proposed

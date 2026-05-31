@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD059 -->
 # Datasets
 
 We also provide two sample datasets including the video files and the properly formatted dataset files in Python. They can be used as sample datasets to train and test custom VMAF models.

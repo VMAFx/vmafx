@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0244: vmaf_tiny_v2 — canonical-6 + StandardScaler tiny VMAF MLP
 
 - **Status**: Accepted
@@ -9,11 +10,11 @@
 
 The shipped `vmaf_tiny_v1.onnx` was trained on the Netflix corpus alone with a single train/val split (`val=Tennis`); it had no scaler stats baked in and no end-to-end provenance to the FULL-feature parquet that the Phase-3 research chain produced. The Phase-3 chain (Research-0027 → 0028 → 0029 → 0030) validated a concrete configuration on Netflix LOSO + KoNViD 5-fold:
 
-* **Architecture**: `mlp_small` (6 → 16 → 8 → 1, ~257 params). Phase-3d's arch sweep was inconclusive against `mlp_medium`, so the small variant remains the v2 baseline.
-* **Features**: `canonical-6` = (`adm2`, `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`, `motion2`).
-* **Preprocessing**: per-fold StandardScaler (fit on train, applied to val).
-* **Optimiser**: Adam @ `lr=1e-3`, MSE loss, 90 epochs, batch_size 256.
-* **Validated PLCC**: `0.9978 ± 0.0021` Netflix LOSO, `0.9998` KoNViD 5-fold; +0.005–0.018 PLCC over the prior Subset-B baseline.
+- **Architecture**: `mlp_small` (6 → 16 → 8 → 1, ~257 params). Phase-3d's arch sweep was inconclusive against `mlp_medium`, so the small variant remains the v2 baseline.
+- **Features**: `canonical-6` = (`adm2`, `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`, `motion2`).
+- **Preprocessing**: per-fold StandardScaler (fit on train, applied to val).
+- **Optimiser**: Adam @ `lr=1e-3`, MSE loss, 90 epochs, batch_size 256.
+- **Validated PLCC**: `0.9978 ± 0.0021` Netflix LOSO, `0.9998` KoNViD 5-fold; +0.005–0.018 PLCC over the prior Subset-B baseline.
 
 The v2 model needs to ship these gains, and it needs to ship them in a way the runtime can consume without requiring the caller to know the scaler stats out-of-band.
 

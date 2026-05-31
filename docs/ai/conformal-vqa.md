@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Conformal VQA — distribution-free prediction intervals
 
 The conformal-VQA wrapper turns any point predictor under
@@ -18,10 +19,10 @@ nominal miscoverage level `alpha`.
 
 Two calibration estimators ship:
 
-* **Split conformal** (`SplitConformalCalibration`) — the
+- **Split conformal** (`SplitConformalCalibration`) — the
   ``Lei et al. 2018`` form. Wants a calibration set disjoint from
   training. Cheapest, tightest bound.
-* **CV+ / jackknife+ conformal** (`CVPlusConformalCalibration`) —
+- **CV+ / jackknife+ conformal** (`CVPlusConformalCalibration`) —
   the ``Barber et al. 2021`` form. No holdout needed; coverage bound
   weakens to `1 - 2*alpha`. Use this when the labelled corpus is too
   small to spare a calibration split.
@@ -32,15 +33,15 @@ runtime dependency, and no change to the existing op allowlist.
 
 ## Output range and interpretation
 
-* **`point`** — the underlying predictor's VMAF estimate, in
+- **`point`** — the underlying predictor's VMAF estimate, in
   `[0, 100]`. Identical to what `Predictor.predict_vmaf` returns.
-* **`low`, `high`** — the conformal prediction interval, clamped to
+- **`low`, `high`** — the conformal prediction interval, clamped to
   `[0, 100]`. By construction, ``low <= point <= high``. The
   marginal coverage guarantee is
   ``P(target_vmaf in [low, high]) >= 1 - alpha`` for any test point
   exchangeable with the calibration set (Lei et al. 2018
   Theorem 2.2 for split; Barber et al. 2021 Theorem 1 for CV+).
-* **`alpha`** — the nominal miscoverage level. Default `0.05`
+- **`alpha`** — the nominal miscoverage level. Default `0.05`
   (95 % interval). A `null` / `NaN` value signals an uncalibrated
   wrapper: `low == high == point` and the interval is *not* a
   coverage bound. Persisted calibration sidecars are strict JSON:
@@ -112,39 +113,39 @@ point, low, high = predictor.predict_vmaf_with_uncertainty(
 
 ## Provenance and constraints
 
-* **Implementation**: pure Python, `tools/vmaf-tune/src/vmaftune/conformal.py`.
+- **Implementation**: pure Python, `tools/vmaf-tune/src/vmaftune/conformal.py`.
   No new build-time dependencies — the module imports only `math`,
   `statistics`, `dataclasses`, and `json`. No new ONNX op is loaded;
   the wrapper sits *outside* the ONNX graph.
-* **Sidecar JSON schema** (split conformal):
+- **Sidecar JSON schema** (split conformal):
   `{"method": "split-conformal", "alpha": <float>, "n": <int>, "residuals": [<float>, ...]}`.
   Versioned by the `method` discriminator; future `cv-plus`
   sidecars use a different value.
-* **License**: BSD-3-Clause-Plus-Patent, matching the rest of
+- **License**: BSD-3-Clause-Plus-Patent, matching the rest of
   `vmaf-tune/`. The conformal-prediction theory is in the public
   domain (algorithmic results, no patent claims known to us).
 
 ## Known limitations
 
-* **Bit-depth / colour space**: the wrapper inherits the underlying
+- **Bit-depth / colour space**: the wrapper inherits the underlying
   predictor's input contract; it neither widens nor restricts
   the supported pixel formats.
-* **Minimum calibration size**: the marginal-coverage proof holds
+- **Minimum calibration size**: the marginal-coverage proof holds
   for any `n >= 1`, but at small `n` the upper-bound bracket
   ``1 - alpha + 1/(n+1)`` becomes loose. We recommend `n >= 100`
   per (codec, resolution-class) cell for a 5 % miscoverage target.
   At `n < 20` the wrapper still returns intervals but they are
   effectively the maximum-residual fallback.
-* **Distribution shift**: marginal validity assumes the calibration
+- **Distribution shift**: marginal validity assumes the calibration
   set and the test point are exchangeable. Encoding a 4K HDR shot
   against a 1080p SDR calibration set breaks the assumption silently;
   the `coverage_probe()` diagnostic surfaces this when called with
   a held-out probe drawn from the operational distribution.
-* **CPU-only**: the wrapper is pure Python and runs on the host
+- **CPU-only**: the wrapper is pure Python and runs on the host
   thread; it is not a GPU path. The cost relative to the underlying
   ONNX inference is negligible (one quantile on a sorted residual
   vector per call site, amortised across an entire job).
-* **Symmetric intervals only (split conformal)**: split conformal
+- **Symmetric intervals only (split conformal)**: split conformal
   with the absolute-residual score produces a symmetric interval
   about the point estimate. For asymmetric noise (e.g. the residual
   distribution skews high near VMAF 100 because of the [0, 100]
@@ -172,11 +173,11 @@ docstring at `tools/vmaf-tune/src/vmaftune/conformal.py`.
 
 ## Cross-references
 
-* [ADR-0279](../adr/0279-fr-regressor-v2-probabilistic.md) — the
+- [ADR-0279](../adr/0279-fr-regressor-v2-probabilistic.md) — the
   scoping ADR (deep-ensemble + conformal scaffold). The "Status
   update 2026-05-08" addendum tracks the implementation deliverables
   shipped here.
-* [ADR-0042](../adr/0042-tinyai-docs-required-per-pr.md) — the
+- [ADR-0042](../adr/0042-tinyai-docs-required-per-pr.md) — the
   per-PR doc-substance rule this page satisfies.
-* `tools/vmaf-tune/tests/test_conformal.py` — the empirical-coverage
+- `tools/vmaf-tune/tests/test_conformal.py` — the empirical-coverage
   pin, miscalibration-warning pin, and CV+ ``1 - 2*alpha`` pin.

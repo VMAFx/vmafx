@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research 0733 — Hardware GPU backend audit and drop recommendation (2026-05-28)
 
 > **Status: final**
@@ -97,11 +98,13 @@ ADR-0586.
 ## 2. Implementation completeness
 
 ### CUDA
+
 Fully implemented. All 21 features have real CUDA kernel dispatch (`hipModuleLoadData`
 pattern via PTX/cubin) through the `cuda/` runtime. No ENOSYS stubs. CI-gated at
 `places=4` via the CUDA parity lane. **KEEP.**
 
 ### HIP
+
 Fully implemented with HSACO kernel pipeline (ADR-0372/0374). All 21 feature extractors
 have `hipModuleLoadData` in their init path. The `enable_hipcc=false` default causes the
 binary HSACO blob to be replaced by a stub that returns `-ENOSYS` at runtime — this is a
@@ -111,6 +114,7 @@ ENOSYS-only stub). The `hip_hsaco_stubs.c` file provides the fallback for the ze
 case — it is an intentional graceful-degradation path, not dead code. **KEEP.**
 
 ### SYCL
+
 19 features implemented (CUDA feature set minus `float_ssim` alias and `ssim` float
 alias). Two toolchain paths: Intel icpx (default, Intel Arc + iGPU, SPIR-V JIT/AOT) and
 AdaptiveCpp/acpp (ADR-0335, supports CUDA/HIP targets as acpp-targets at build time). The
@@ -122,8 +126,10 @@ AMD primary in the Helm chart (`_helpers.tpl` lines 106–114: `nvidia → cuda`
 built, no separate LOC to delete — it is a meson option not a code path).
 
 ### Vulkan
+
 24 feature extractors (24 .c files + shaders). Cross-vendor portability rationale. **3 open
 bugs, all long-standing:**
+
 - **T-VK-1.4-BUMP** — NVIDIA FP-contraction regression survives Phase 1–3 shader fixes.
   API version bump remains blocked. Months of active investigation, no resolution date.
 - **T-VK-CIEDE-F32-F64** — Structural f32/f64 precision gap in the CIEDE shader accepted
@@ -134,7 +140,8 @@ bugs, all long-standing:**
 
 CI impact: 3 jobs in `tests-and-quality-gates.yml` (`vulkan-vif-cross-backend`,
 `vulkan-parity-matrix-gate`, `vulkan-vif-arc-nightly`) + 2 rows in `libvmaf-build-matrix.yml`
-+ 1 in `ffmpeg-integration.yml` + 1 in `fuzz.yml`. This is the highest per-backend CI
+
+- 1 in `ffmpeg-integration.yml` + 1 in `fuzz.yml`. This is the highest per-backend CI
 footprint of any non-CUDA backend.
 
 The Helm chart already documents that Vulkan is not a separate Kubernetes resource — it
@@ -144,6 +151,7 @@ This confirms Vulkan is not independently schedulable in the k8s model.
 **RECOMMENDATION: DROP.**
 
 ### Metal
+
 9 features implemented (float motion, float/integer motion family, float psnr, float
 ssim/ms-ssim, float ansnr). Runtime is fully live (ADR-0420, `T8-1b closed`): `common.mm`,
 `picture_metal.mm`, `picture_import.mm`, and `kernel_template.mm` replaced all prior

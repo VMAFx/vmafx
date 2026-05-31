@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0721: C++23 Pilot Wave 1 — `opt.c` conversion
 
 - **Status**: Accepted

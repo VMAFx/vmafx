@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # vmafx-server gRPC service
 
 `vmafx-server` is a single Go binary that exposes VMAF scoring over both gRPC and HTTP/JSON.

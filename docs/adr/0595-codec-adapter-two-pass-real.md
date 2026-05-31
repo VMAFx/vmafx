@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0595: Real two-pass argv for all 14 codec adapters
 
 - **Status**: Accepted

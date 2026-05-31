@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0438: CLI parser short-option handler coverage invariant
 
 - **Status**: Accepted

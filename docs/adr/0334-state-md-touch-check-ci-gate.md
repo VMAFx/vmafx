@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD033 -->
 # ADR-0334: state.md-touch-check CI gate (ADR-0165 enforcement)
 
 - **Status**: Accepted
@@ -166,7 +167,8 @@ accept) covering each placeholder form plus two regression cases:
 state.md, not what is being cleaned up); (b) substrings like
 `debug-pr` (no whitespace between `this` and `pr`) must not
 match. Total fixture-script cases: 18 (5 primary + 3 regression
-+ 10 placeholder-ref).
+
+- 10 placeholder-ref).
 
 The hardening is *additive*: every existing pass / fail case from
 the 2026-05-08 ADR remains unchanged. Per

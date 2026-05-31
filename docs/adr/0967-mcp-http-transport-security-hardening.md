@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0967: MCP HTTP transport security — add auth + body limit + safer bind default (Round 26 audit A.1)
 
 - **Status**: Accepted

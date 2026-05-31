@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0135 — CHUG vmaf column: SDR baseline via vmaf_v0.6.1
 
 **Date:** 2026-05-16

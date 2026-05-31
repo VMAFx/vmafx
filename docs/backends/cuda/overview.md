@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # CUDA Backend
 
 The CUDA backend runs VMAF's core feature extractors (VIF, ADM, Motion)
@@ -345,6 +346,7 @@ Correctness: CUDA-optimized scores agree with the CPU reference within
 ADR-0214 places=4 tolerance (max absolute delta: 0.000010 per frame).
 
 ncu reproducer (see research digest):
+
 ```bash
 ncu -k 'filter1d_8_horizontal_kernel_2_17_9' --set basic --csv \
     build/tools/vmaf -r ref.yuv -d dis.yuv \
@@ -383,6 +385,7 @@ Live ncu A/B numbers pending; static analysis predicts behaviour analogous
 to the VIF filter1d `__ldg()` pattern at 1080p+.
 
 ncu reproducer:
+
 ```bash
 ncu --kernel-name calculate_ssim_vert_combine \
     --section MemoryWorkloadAnalysis --section LaunchStats \

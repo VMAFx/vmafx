@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # cargo-deny — Rust supply-chain policy
 
 The fork enforces a supply-chain policy on the Rust workspace
@@ -36,7 +37,7 @@ cargo deny check sources
 
 Expected output on a clean tree:
 
-```
+```text
 advisories ok, bans ok, licenses ok, sources ok
 ```
 

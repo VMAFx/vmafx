@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Fuzzing libvmaf
 
 Operator runbook for the libFuzzer harnesses under

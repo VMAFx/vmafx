@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0083: libFuzzer harness expansion — target survey
 
 - **Date**: 2026-05-05

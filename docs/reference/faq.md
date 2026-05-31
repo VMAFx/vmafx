@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # Frequently Asked Questions
 
 > This FAQ covers both the upstream [Netflix/vmaf](https://github.com/Netflix/vmaf)

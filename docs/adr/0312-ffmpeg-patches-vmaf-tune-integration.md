@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0312: FFmpeg-patch series for vmaf-tune integration (qpfile + libvmaf_tune + pass-autotune)
 
 - **Status**: Accepted
@@ -45,7 +46,7 @@ series (0007 / 0008 / 0009):
    at the time of this ADR (parse, validate, log; full ROI-bridge
    wiring deferred). Both deferrals have since been retired:
    SVT-AV1 ROI bridge via PR #417 (per-frame `ROI_MAP_EVENT` priv-data
-   + `enable_roi_map`, gated on SVT-AV1 1.6.0+); libaom-av1 ROI bridge
+   enable_roi_map`, gated on SVT-AV1 1.6.0+); libaom-av1 ROI bridge
    via PR #419 (`AOME_SET_ROI_MAP` per frame with 8-segment uniform
    binning of qp_offsets). Patch 0007 is now full-impl across all
    three encoders.

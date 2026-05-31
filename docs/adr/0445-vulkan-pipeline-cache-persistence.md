@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0445: Persistent VkPipelineCache for Vulkan compute backend
 
 - **Status**: Accepted

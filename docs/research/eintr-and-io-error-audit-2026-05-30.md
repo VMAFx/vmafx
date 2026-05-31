@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research: POSIX I/O EINTR + return-value audit (2026-05-30)
 
 **Companion to:** [ADR-0872](../adr/0872-io-error-and-eintr-audit.md)

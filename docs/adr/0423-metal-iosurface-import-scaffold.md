@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0423: Metal IOSurface zero-copy import (T8-IOS)
 
 - **Status**: Accepted

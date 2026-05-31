@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # AGENTS.md — core/src/feature
 
 Orientation for agents working on feature extractors (the VMAF metric
@@ -129,7 +130,7 @@ feature/
      left-to-right scalar into `local_*`. The vector-double form
      is bit-identical to scalar lane-wise by IEEE-754, but only
      because: (a) op order matches scalar's parse — `((2*rm)*cm
-     + C1)/l_den`, etc.; (b) no FMA contraction; (c) the running
+     /l_den`, etc.; (b) no FMA contraction; (c) the running
      sum stays scalar left-to-right, lane 0 → lane 15. Tree
      reductions over the 16-lane block break ADR-0139's
      running-sum invariant against scalar and are forbidden
@@ -479,7 +480,7 @@ feature/
   subgraph — semantics-preserving but a load-bearing rewrite that
   any future upstream-graph re-conversion has to repeat. See
   [ADR-0223](../../../docs/adr/0223-transnet-v2-shot-detector.md)
-  + [ADR-0257](../../../docs/adr/0257-transnet-v2-real-weights.md).
+  [ADR-0257](../../../docs/adr/0257-transnet-v2-real-weights.md).
 
 - **`cambi.c` GPU port is hybrid host/GPU per
   [ADR-0205](../../../docs/adr/0205-cambi-gpu-feasibility.md) +
@@ -735,7 +736,8 @@ identifier dictionary is:
 | `cambi.c` full-ref extract path | inner `int err` shadowing dist-side accumulator | `src_err` |
 
 Bit-exactness: the sweep is provably no-op (renames + scope-tighten
-+ identical-typed deletes only). Netflix CPU golden 3 must remain
+
+- identical-typed deletes only). Netflix CPU golden 3 must remain
 green across rebases — re-run the
 `PYTHONPATH=$PWD/python python3 -m pytest python/test/quality_runner_test.py
 -k test_run_vmaf python/test/vmafexec_test.py

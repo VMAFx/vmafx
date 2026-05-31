@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # vmafx-node: worker node image
 
 `vmafx-node` is the VMAFX worker binary and its container image. Each node

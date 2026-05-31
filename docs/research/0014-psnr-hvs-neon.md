@@ -22,7 +22,7 @@ against the AVX2 TU?
 - **Scalar reference**:
   [`third_party/xiph/psnr_hvs.c`](../../core/src/feature/third_party/xiph/psnr_hvs.c)
   — Xiph/Daala 8×8 integer DCT + contrast-sensitivity weighting
-  + masking, floats only for per-block means / variances / mask
+  masking, floats only for per-block means / variances / mask
   / error accumulators.
 - **AVX2 sister**:
   [`x86/psnr_hvs_avx2.c`](../../core/src/feature/x86/psnr_hvs_avx2.c)

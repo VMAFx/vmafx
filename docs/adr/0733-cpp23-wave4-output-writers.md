@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0733: C++23 Wave 4 — output writers (XML, JSON, CSV, subtitle)
 
 - **Status**: Accepted

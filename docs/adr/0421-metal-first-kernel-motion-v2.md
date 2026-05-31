@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0421: Metal first kernel — `integer_motion_v2` (T8-1c)
 
 - **Status**: Accepted

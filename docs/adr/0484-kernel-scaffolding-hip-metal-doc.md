@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0484: Extend kernel-scaffolding.md with HIP and Metal lifecycle contract
 
 - **Status**: Accepted

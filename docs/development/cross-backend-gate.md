@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Cross-backend GPU-parity gate
 
 The GPU-parity gate is the fork's single matrix gate for verifying

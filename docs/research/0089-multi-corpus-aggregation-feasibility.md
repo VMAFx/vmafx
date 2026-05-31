@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 MD060 -->
 # Research-0089: Multi-corpus MOS aggregation — scale unification feasibility
 
 - **Date**: 2026-05-09
@@ -22,11 +23,11 @@ is honest?
 
 | corpus | scale | citation | access (2026-05-09) |
 |--------|-------|----------|---------------------|
-| KonViD-1k | 1–5 ACR Likert (5-point absolute category rating) | Hosu et al., QoMEX 2017 §III | http://database.mmsp-kn.de/konvid-1k-database.html |
-| KonViD-150k | 1–5 ACR Likert (same protocol as KonViD-1k) | Götz-Hahn et al., IEEE Access 2021 §III.B (companion ICIP 2019) | https://database.mmsp-kn.de/konvid-150k-vqa-database.html |
-| LSVQ | 1–5 ACR Likert, crowd-sourced | Ying et al. (Patch-VQ), CVPR 2021 §4.1 | https://github.com/baidut/PatchVQ |
-| YouTube UGC | 1–5 ACR (5 = best, 1 = worst) | Wang et al., MMSP 2019 §3.2 | https://media.withyoutube.com/ |
-| Waterloo IVC 4K-VQA | 0–100 continuous (DCR-like numerical-category) | Cheon & Lee, CVPR-W 2016 §III.B | https://ece.uwaterloo.ca/~zduanmu/cvpr2016_4kvqa/ |
+| KonViD-1k | 1–5 ACR Likert (5-point absolute category rating) | Hosu et al., QoMEX 2017 §III | <http://database.mmsp-kn.de/konvid-1k-database.html> |
+| KonViD-150k | 1–5 ACR Likert (same protocol as KonViD-1k) | Götz-Hahn et al., IEEE Access 2021 §III.B (companion ICIP 2019) | <https://database.mmsp-kn.de/konvid-150k-vqa-database.html> |
+| LSVQ | 1–5 ACR Likert, crowd-sourced | Ying et al. (Patch-VQ), CVPR 2021 §4.1 | <https://github.com/baidut/PatchVQ> |
+| YouTube UGC | 1–5 ACR (5 = best, 1 = worst) | Wang et al., MMSP 2019 §3.2 | <https://media.withyoutube.com/> |
+| Waterloo IVC 4K-VQA | 0–100 continuous (DCR-like numerical-category) | Cheon & Lee, CVPR-W 2016 §III.B | <https://ece.uwaterloo.ca/~zduanmu/cvpr2016_4kvqa/> |
 | Netflix Public | VMAF 0–100 (objective proxy via `vmaf_v0.6.1`) | `core/include/libvmaf/model.h` | repo-local |
 
 ## 3. Conversion choices — affine vs. quantile

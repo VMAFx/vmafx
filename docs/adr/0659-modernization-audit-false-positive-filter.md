@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0659: Modernization audit false-positive filter
 
 - **Status**: Accepted

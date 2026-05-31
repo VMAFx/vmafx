@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0840: Fix cu_state leak on import failure and gpu_dispatch_env TOCTOU
 
 - **Status**: Accepted

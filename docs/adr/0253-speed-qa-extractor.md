@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD037 MD060 -->
 # ADR-0253: Defer SpEED-QA full-reference reduction
 
 - **Status**: Accepted
@@ -26,7 +27,7 @@ differencing score from Bampis, Gupta, Soundararajan and Bovik,
    estimators); the only differentiator is throughput, which inverts
    on the fork's AVX-512 / CUDA / SYCL VIF stack.
 3. Implementation cost is 2–3 weeks for one engineer to land scalar
-   + AVX2 + CUDA at numeric parity, which is the same engineering
+   VX2 + CUDA at numeric parity, which is the same engineering
    window that funds higher-leverage tracks (FUNQUE+ port, Vulkan
    coverage push, tiny-AI v3 / v4 evaluation).
 
@@ -148,6 +149,7 @@ has fired. The real spatial and temporal entropic-difference algorithm has
 replaced the placeholder scaffold in `core/src/feature/speed_qa.c`.
 
 Implementation summary:
+
 - Non-overlapping 7x7 luma blocks; separable Gaussian window (sigma=1.166, Q16).
 - Per-block entropy: H = 0.5 * log2(2*pi*e*(sigma^2 + 1.0)).
 - Spatial score S: mean(H) over all blocks of the distorted luma frame.

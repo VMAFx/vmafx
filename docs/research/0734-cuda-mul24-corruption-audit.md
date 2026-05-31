@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 <!--
 SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 Copyright 2026 Lusoris
@@ -30,7 +31,7 @@ All `.cu`, `.cuh`, `.c`, `.h` files under:
 
 ## Inventory
 
-```
+```text
 grep -rn '__mul24\|__umul24\|__mul24hi' \
     core/src/feature/cuda/ core/src/cuda/
 # → no output; exit 1 (grep found nothing)

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0933: gRPC streaming for multi-frame scoring (`ScoreStream`)
 
 - **Status**: Proposed

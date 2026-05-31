@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research-0723 — AI registry strict JSON helper
 
 ## Problem

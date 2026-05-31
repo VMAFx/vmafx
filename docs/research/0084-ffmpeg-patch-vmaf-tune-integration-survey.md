@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD033 MD056 MD060 -->
 # Research-0084: FFmpeg-side integration patterns for video-quality tools (vmaf-tune)
 
 - **Date**: 2026-05-05

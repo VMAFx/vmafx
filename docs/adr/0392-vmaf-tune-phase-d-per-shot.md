@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 -->
 # ADR-0392: `vmaf-tune` Phase D — per-shot CRF tuning
 
 - **Status**: Accepted (CLI bisect wiring landed 2026-05-14; native
@@ -134,7 +135,7 @@ Default CLI behaviour is real per-shot bisect unless
 - Source: `req` 2026-05-03 — "Scaffold Phase D of `vmaf-tune` per
   PR #354's audit (Bucket #1, M effort, 'Netflix per-shot
   table-stakes')." Don't fully implement — ship a working scaffold
-  + design ADR.
+  design ADR.
 - [ADR-0237](0237-quality-aware-encode-automation.md) — `vmaf-tune`
   umbrella; this ADR is its first per-phase split.
 - [ADR-0222](0222-vmaf-per-shot-tool.md) — C-side `vmaf-perShot` CLI

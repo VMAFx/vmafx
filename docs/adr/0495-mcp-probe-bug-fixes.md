@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0495: MCP server probe-driven bug-fix cluster (2026-05-17)
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0196: float_motion GPU kernels — float twin of integer_motion blur+SAD
 
 - **Status**: Accepted
@@ -105,7 +106,7 @@ magnitude.
   reused 1:1 from `motion_*`'s GPU kernels with only the arithmetic
   type changed.
 - **Positive**: per-backend kernels at ~200 LOC GLSL + ~250 LOC PTX
-  + ~340 LOC SYCL. Host glue ~480 LOC each (motion_*'s ping-pong
+  ~340 LOC SYCL. Host glue ~480 LOC each (motion_*'s ping-pong
   shape).
 - **Positive**: identical empirical drift across backends — strong
   correctness signal.

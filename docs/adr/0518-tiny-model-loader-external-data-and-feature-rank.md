@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0518: Tiny-model loader accepts external-data and feature-vector ONNX
 
 - **Status**: Accepted
@@ -125,7 +126,7 @@ direct ORT-API probe before the libvmaf-side fix landed.
 - ONNX Runtime external-data semantics:
   `onnxruntime/python/tools/transformers/large_model_exporter.py`
   upstream comment on sibling-file resolution
-  (https://github.com/microsoft/onnxruntime).
+  (<https://github.com/microsoft/onnxruntime>).
 - Related ADRs: ADR-0040 (multi-input session API),
   ADR-0042 (tiny-AI docs rule), ADR-0249 (fr_regressor_v1 model
   card), ADR-0272 (fr_regressor_v2 model card),

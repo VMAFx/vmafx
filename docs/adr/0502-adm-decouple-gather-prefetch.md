@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0502: ADM decouple gather prefetch (Approach B)
 
 - **Status**: Accepted

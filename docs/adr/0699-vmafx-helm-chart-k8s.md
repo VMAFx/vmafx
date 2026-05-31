@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0699: VMAFX Helm Chart and Kubernetes Manifests with 3-Vendor GPU Device-Plugin Support
 
 - **Status**: Proposed

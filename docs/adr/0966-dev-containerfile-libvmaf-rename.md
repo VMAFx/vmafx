@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0966: Fix dev/Containerfile post-ADR-0700 libvmaf → core paths (Round 26 audit C.1)
 
 - **Status**: Accepted

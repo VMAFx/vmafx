@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD060 -->
 # Research: Adversarial code review — C++23 conversion wave (PRs #41–#58)
 
 **Date**: 2026-05-28

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0368: External-competitor benchmark harness — wrapper-only architecture
 
 - **Status**: Accepted
@@ -59,7 +60,8 @@ We will land a benchmark harness at `tools/external-bench/` under a
   being installed.
 
 The fork redistributes only the wrapper scripts + comparison logic
-+ documentation. **No GPL'd code is vendored, linked, or copied
+
+- documentation. **No GPL'd code is vendored, linked, or copied
 into this fork.** Side-by-side benchmarking is permissible because
 the harness invokes the external binary as a subprocess and reads
 its (factual) numerical output — same posture as running

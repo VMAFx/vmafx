@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0878: Trivy container scan baseline — production images run as non-root
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Getting started
 
 Choose your platform below, or see [Building on Windows](building-on-windows.md) for a source build.

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD049 MD060 -->
 # Research-0030 — Phase-3b multi-seed validation (Gate 1)
 
 _Updated: 2026-04-29._
@@ -35,9 +36,9 @@ in single-seed Phase-3b and don't gate the v2 decision.
 |  3  | 0.9746    | 0.0222   |
 |  4  | **0.9381**| **0.0649** |
 
-* **Aggregate**: mean PLCC = 0.9633, fold-std (over 5×9=45 folds) = 0.0398
-* **Seed-mean-std**: **0.0150** — high variance across seeds.
-* **Worst seed (4)** dropped 3.6 percentage points below the best (3).
+- **Aggregate**: mean PLCC = 0.9633, fold-std (over 5×9=45 folds) = 0.0398
+- **Seed-mean-std**: **0.0150** — high variance across seeds.
+- **Worst seed (4)** dropped 3.6 percentage points below the best (3).
 
 ### Subset B (consensus-7)
 
@@ -49,9 +50,9 @@ in single-seed Phase-3b and don't gate the v2 decision.
 |  3  | 0.9795    | 0.0135   |
 |  4  | 0.9816    | 0.0194   |
 
-* **Aggregate**: mean PLCC = **0.9807**, fold-std = 0.0164
-* **Seed-mean-std**: **0.0019** — extremely stable.
-* All five seeds within `[0.9783, 0.9833]`.
+- **Aggregate**: mean PLCC = **0.9807**, fold-std = 0.0164
+- **Seed-mean-std**: **0.0019** — extremely stable.
+- All five seeds within `[0.9783, 0.9833]`.
 
 ## Headline
 
@@ -62,9 +63,9 @@ threshold of +0.005. Single-seed Phase-3b (Research-0029) measured
 The reason is canonical-6 is unstable across seeds while Subset B is
 stable. Specifically:
 
-* canonical-6 seed-mean-std = 0.0150
-* Subset B seed-mean-std = 0.0019
-* **Subset B is 8× more stable** than canonical-6 under the same
+- canonical-6 seed-mean-std = 0.0150
+- Subset B seed-mean-std = 0.0019
+- **Subset B is 8× more stable** than canonical-6 under the same
   Adam-on-StandardScaler training regime.
 
 ## Why Subset B is more stable
@@ -93,19 +94,19 @@ them is a Phase-3d ablation (per Research-0029 §"Phase-3d").
 
 Both gate-1 criteria from Research-0029 are met:
 
-* **Δ ≥ +0.005**: actual Δ is +0.0175. ✅
-* **Seed-only std ≤ 0.01**: actual seed-mean-std for Subset B is 0.0019. ✅
+- **Δ ≥ +0.005**: actual Δ is +0.0175. ✅
+- **Seed-only std ≤ 0.01**: actual seed-mean-std for Subset B is 0.0019. ✅
 
 Subset B advances to gates 2 and 3.
 
 ### Open gates before `vmaf_tiny_v2.onnx`
 
-* **Gate 2 — KoNViD cross-corpus check.** Extract the full-feature
+- **Gate 2 — KoNViD cross-corpus check.** Extract the full-feature
   parquet over the 1200-clip KoNViD corpus (~3 h CPU wall, per
   Research-0025 precedent). Re-run the multi-seed sweep on that
   parquet. Require Subset B to win there too — even if the absolute
   numbers differ, the *direction* must match.
-* **Gate 3 — Phase-3c lr-sweep on canonical-6.** Sweep
+- **Gate 3 — Phase-3c lr-sweep on canonical-6.** Sweep
   `lr ∈ {1e-3, 3e-4, 1e-4}` × `epochs ∈ {30, 60, 100}` on canonical-6
   alone with StandardScaler. If a tuned `lr/epochs` recovers
   canonical-6's Phase-3a PLCC of 0.9845 under matched preprocessing,

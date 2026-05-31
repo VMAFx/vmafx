@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Tiny-model registry — schema and verification
 
 The registry at [`model/tiny/registry.json`](../../model/tiny/registry.json)

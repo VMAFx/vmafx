@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0317: Path-filter Docker + FFmpeg-integration on doc/Python-only PRs
 
 - **Status**: Accepted

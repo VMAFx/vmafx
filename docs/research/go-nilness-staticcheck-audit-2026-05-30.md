@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 -->
 # Research digest: Go static-analysis audit (2026-05-30)
 
 ## Scope

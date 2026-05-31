@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0534: vmaf-tune compare emits + renders rate-quality curve from per-iteration bisect samples
 
 - **Status**: Accepted (target-VMAF defaults superseded by [ADR-0538](0538-premium-vmaf-target-defaults-and-bisect.md))

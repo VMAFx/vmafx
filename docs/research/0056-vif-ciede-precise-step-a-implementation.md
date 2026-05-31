@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0056: `precise` decoration audit on `vif.comp` + `ciede.comp` — Step A implementation findings
 
 - **Status**: Active

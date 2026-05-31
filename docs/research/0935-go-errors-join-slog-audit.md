@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research digest 0935 — Go `errors.Join` cleanup-path audit + `slog` key standardisation (2026-05-31)
 
 ## Scope

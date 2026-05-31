@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0255: FastDVDnet temporal pre-filter — real upstream weights via luma adapter (T6-7b)
 
 - **Status**: Accepted

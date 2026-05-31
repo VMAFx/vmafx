@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0456: SSIMULACRA2 CUDA Blur: 3-Channel Kernel Fusion and V-Pass Transpose for Coalesced Access
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0336: KonViD MOS head v1 (ADR-0325 Phase 3)
 
 - **Status**: Accepted

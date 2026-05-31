@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0579: `vmaf-tune auto --execute` — Phase F real encode/score execution mode
 
 - **Status**: Accepted

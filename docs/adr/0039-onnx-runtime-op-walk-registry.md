@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0039: Pull forward runtime op-allowlist walk and model registry
 
 - **Status**: Accepted

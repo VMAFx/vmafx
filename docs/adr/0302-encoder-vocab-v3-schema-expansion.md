@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0302: ENCODER_VOCAB v3 — 16-slot schema expansion + retrain plan
 
 - **Status**: Accepted

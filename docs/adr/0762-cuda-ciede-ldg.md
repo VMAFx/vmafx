@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0762: CUDA CIEDE2000 8bpc/16bpc — `__ldg()` read-only cache routing (F3 fix)
 
 - **Status**: Accepted

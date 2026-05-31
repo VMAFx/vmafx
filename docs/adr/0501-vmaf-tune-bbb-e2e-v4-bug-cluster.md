@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0501: vmaf-tune ladder cross-resolution scoring + report degraded flag
 
 - **Status**: Accepted
@@ -10,7 +11,7 @@
 The BBB end-to-end v4 probe (after PR #1257 / ADR-0499 closed the v3
 cluster) surfaced three findings:
 
-* **V4-A** — `vmaf --backend vulkan` against a Vulkan-less runtime
+- **V4-A** — `vmaf --backend vulkan` against a Vulkan-less runtime
   prints the ADR-0498 strict-mode refusal *and* (per the v4 bug log)
   was reported as exiting `0`. A re-run on the current dev-mcp
   binary (built 2026-05-17) shows the propagation chain
@@ -18,7 +19,7 @@ cluster) surfaced three findings:
   fact working, but the contract had no regression test pinning it.
   The risk was a future refactor of `main()`'s ret-chain silently
   re-introducing the failure.
-* **V4-B** — `vmaf-tune ladder --resolutions 1920x1080,1280x720` on
+- **V4-B** — `vmaf-tune ladder --resolutions 1920x1080,1280x720` on
   the BBB 1080p mp4 produced a single rung with `vmaf=21.3 @ 23 Mbps
   720p`, which is implausible (`compare` at the same CRF returns
   ~93). Root cause: `vmaftune.corpus._maybe_decode_reference` (added
@@ -33,7 +34,7 @@ cluster) surfaced three findings:
   treatment. Separately, the JSON descriptor only emitted
   `renditions[]` — the `report` consumer's `ladder_samples` counter
   always read `0` because no `samples[]` array was wired.
-* **V4-C** — `vmaf-tune report` aggregated `ok=true` only when every
+- **V4-C** — `vmaf-tune report` aggregated `ok=true` only when every
   codec row was `ok=true`. The ADR-0498 bisect discriminator marks
   rows for unavailable encoders as
   `error="encoder unavailable (NAME): …"` — an *infrastructure gap*,

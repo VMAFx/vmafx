@@ -144,7 +144,7 @@ The SSE transport deferred above has now landed. Delta:
 ### Consequences (v3 SSE)
 
 - **Positive**: AI hosts can subscribe to libvmaf via plain HTTP
-  + SSE — no UDS / stdio fd plumbing required. The transport is
+  SSE — no UDS / stdio fd plumbing required. The transport is
   testable with `curl -N http://127.0.0.1:<port>/mcp/sse` for
   quick interactive debugging.
 - **Negative**: Hand-rolled HTTP parser is narrowly-featured; we

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 <!-- ADR-0567 — reserved by scripts/adr/next-free.sh --claim speed-chroma-temporal-real-gpu -->
 
 # ADR-0567: Real On-Device GPU Kernels for speed_chroma and speed_temporal (4 Backends)

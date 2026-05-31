@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0248: `nr_metric_v1` joins dynamic-PTQ family (T5-3d)
 
 - **Status**: Accepted

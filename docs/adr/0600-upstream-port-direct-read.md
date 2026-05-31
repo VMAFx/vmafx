@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0600: Port upstream USE_DIRECT_READ zero-copy input path (Netflix/vmaf@30a6e2a8d)
 
 - **Status**: Accepted
@@ -23,7 +24,7 @@ The port touches five files:
 - `core/tools/vidinput.c` — new `video_input_fetch_into_vmaf_picture()`
   dispatcher.
 - `core/tools/yuv_input.c` — `yuv_fetch_into_vmaf_picture()` implementation
-  + vtable update.
+  vtable update.
 - `core/tools/y4m_input.c` — `y4m_fetch_into_vmaf_picture()` implementation
   (falls back to `-1` when a colour-space conversion is required) + vtable
   update.

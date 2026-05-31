@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # Research Digest 0611: Fast NR Pre-Scoring
 
 **Scope**: Use the in-tree `nr_metric_v1` ONNX model as a coarse VMAF proxy
@@ -24,6 +25,7 @@ of encoding + scoring.
 
 No-reference (NR) metrics infer perceptual quality from the distorted signal
 alone, without the reference YUV. They are inherently faster because:
+
 - No reference decode / YUV copy.
 - Lighter feature set (spatial statistics, DCT moments, NIQE-style, etc.).
 - Can run on the encoder output without a separate decode step if features

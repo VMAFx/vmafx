@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0884: SYCL kernel coverage round 2 — five additional CPU-vs-SYCL parity gates
 
 - **Status**: Accepted

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0876: Adopt `<inttypes.h>` PRI macros for fixed-width integer printf formatting
 
 - **Status**: Accepted

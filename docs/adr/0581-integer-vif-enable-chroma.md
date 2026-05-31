@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0581: Add `enable_chroma` option to `integer_vif`
 
 - **Status**: Accepted

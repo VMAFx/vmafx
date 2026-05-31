@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0090: Vulkan VIF API-1.4 NVIDIA residual — Phase 3b stronger-fence experiments
 
 - **Status**: Concluded — none of the three Phase-3b candidates closes the residual; deferral path documented.
@@ -31,7 +32,7 @@ the residual to 0/48 5-run-deterministic at `places=4`.
 This session ran on a **multi-GPU host** with three Vulkan-capable
 devices visible to the loader:
 
-```
+```text
 device 0: type=DISCRETE_GPU score=100 name=NVIDIA GeForce RTX 4090
 device 1: type=DISCRETE_GPU score=100 name=Intel(R) Arc(tm) A380 Graphics (DG2)
 device 2: type=INTEGRATED_GPU score=50  name=AMD Ryzen 9 9950X3D 16-Core Processor (RADV RAPHAEL_MENDOCINO)
@@ -103,7 +104,7 @@ shared volatile int64_t s_lmem[ACCUM_FIELDS * MAX_SUBGROUPS];   // alternate
 
 `glslc 2026.1` (Vulkan SDK) rejects both with:
 
-```
+```text
 vif.comp:227: error: '' : memory qualifiers cannot be used on this type
 vif.comp:228: error: '' : memory qualifiers cannot be used on this type
 vif.comp:234: error: '' : memory qualifiers cannot be used on this type
@@ -136,7 +137,7 @@ barrier();
 
 Cross-backend gate on device 0 (NVIDIA) at API 1.4:
 
-```
+```text
 metric                    max_abs_diff    mismatches
   integer_vif_scale0        1.000000e-06    0/48  OK
   integer_vif_scale1        1.000000e-06    0/48  OK
@@ -165,7 +166,7 @@ cache flush on NVIDIA's hierarchy.
 
 Cross-backend gate on device 0 (NVIDIA) at API 1.4:
 
-```
+```text
 metric                    max_abs_diff    mismatches
   integer_vif_scale0        1.000000e-06    0/48  OK
   integer_vif_scale1        1.000000e-06    0/48  OK
@@ -175,7 +176,7 @@ metric                    max_abs_diff    mismatches
 
 5-run determinism on device 0 with C3:
 
-```
+```text
 C3 run 1: scale2_num=  123171072105107.73, scale2_den=  -932360090756074.0
 C3 run 2: scale2_num=  123171072105107.73, scale2_den= -1231427253580778.0
 C3 run 3: scale2_num=  105578886056595.73, scale2_den= -1213835067532266.0
@@ -262,7 +263,7 @@ That is a separate hardening task tracked under
 ## Conclusion + next step
 
 - C1 not buildable; C2 / C3 buildable but ineffective on NVIDIA RTX 4090
-  + driver 595.71.05.
+  driver 595.71.05.
 - Phase 3b is **concluded with deferral**. State.md row updated to
   `T-VK-VIF-1.4-RESIDUAL-NVIDIA-DEFERRED`. Per
   [`feedback_no_test_weakening`](../../.workingdir2/...) — the gate is

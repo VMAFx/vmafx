@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD036 MD060 -->
 # ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 
 **Scope:** Five most recently merged PRs as of 2026-05-29
@@ -38,6 +39,7 @@ Legend: ✓ = present and substantive | ✗ = absent or only opt-out sentinel mi
 ## 3. Findings per PR
 
 ### PR #1573 — fix(hip): wave32 carry-preserving int64 reduction
+
 **All 6 deliverables present.**
 
 - D1: `docs/research/0688-hip-raphael-igpu-divergence.md` (185 lines, root-cause analysis of RDNA2 wave32 + int64 carry loss)
@@ -48,6 +50,7 @@ Legend: ✓ = present and substantive | ✗ = absent or only opt-out sentinel mi
 - D6: `docs/rebase-notes.md` `fix/hip-wave32-vif-motion-20260528` section
 
 ### PR #1568 — chore(build): bump C standard to C23
+
 **All 6 deliverables present.**
 
 - D1: No digest sentinel ("no research digest needed: trivial build-standard bump") — valid per ADR-0108 "trivial" exemption
@@ -58,6 +61,7 @@ Legend: ✓ = present and substantive | ✗ = absent or only opt-out sentinel mi
 - D6: `docs/rebase-notes.md` `chore/vmafx-c23-bump` section with upstream divergence note
 
 ### PR #1582 — feat(cli): --netflix-compat flag
+
 **All 6 deliverables present.**
 
 - D1: No digest sentinel ("trivial CLI flag addition") — valid
@@ -68,6 +72,7 @@ Legend: ✓ = present and substantive | ✗ = absent or only opt-out sentinel mi
 - D6: `docs/rebase-notes.md` entry
 
 ### PR #1583 — feat(server): vmafx-server HTTP transport
+
 **D3 missing — no AGENTS.md change and no opt-out sentinel in PR body.**
 
 - D1: No digest sentinel ("foundation scaffold, ADR-0701 captures design decisions") — valid
@@ -78,6 +83,7 @@ Legend: ✓ = present and substantive | ✗ = absent or only opt-out sentinel mi
 - D6: `docs/rebase-notes.md` `feat/vmafx-server-foundation-20260528` section
 
 ### PR #1571 — refactor(meta): VMAFX repo layout libvmaf/ → core/
+
 **D3 missing — AGENTS.md changes are path-reference updates, not a new invariant note.**
 
 - D1: No digest sentinel ("trivial directory rename, no algorithmic change") — valid

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # ADR-0192: GPU long-tail batch 3 — closing every remaining metric gap (motion_v2 / float_ansnr / ssimulacra2 / cambi + float twins)
 
 - **Status**: Accepted

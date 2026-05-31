@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0678: Shared AI Run Manifest Helper
 
 - **Status**: Accepted

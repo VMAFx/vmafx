@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0133: Clang-Tidy push-event should scan push delta, not full tree
 
 - **Status**: Accepted

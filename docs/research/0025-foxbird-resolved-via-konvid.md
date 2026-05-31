@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD049 MD060 -->
 # Research-0025 — FoxBird outlier resolved via Netflix + KoNViD-1k combined training
 
 _Updated: 2026-04-28._
@@ -35,6 +36,7 @@ python ai/train/train_combined.py \
 ```
 
 **Data composition:**
+
 - Netflix Public 9 sources × 70 distortion pairs ≈ 9 690 frames
   (Tennis held out for validation).
 - KoNViD-1k 1 200 clips × variable length = 270 051 frames

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # Research-0061 — Docs-only PR fast-track for CI matrix
 
 ## Problem
@@ -29,6 +30,7 @@ PR × 5+ docs PRs/week ≈ 2 hours/week of pure CI latency.
 The standard pattern across large open-source repos:
 
 1. **Detector job** at the top of every heavy workflow:
+
    ```yaml
    detect-changes:
      runs-on: ubuntu-latest
@@ -45,8 +47,10 @@ The standard pattern across large open-source repos:
                - '!**/*.md'
                - '!**/AGENTS.md'
    ```
+
 2. **Heavy job** consumes the output: `if: needs.detect-changes.outputs.code == 'true'`.
 3. **Always-success shim** for the same check name when docs-only:
+
    ```yaml
    build-shim:
      needs: detect-changes

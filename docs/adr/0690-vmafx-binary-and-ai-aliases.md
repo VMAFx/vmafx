@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0690: VMAFX Binary and AI Tool Aliases
 
 - **Status**: Accepted

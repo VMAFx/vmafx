@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0545: Wire or delete dead Vulkan/Metal feature-extractor source files
 
 - **Status**: Accepted
@@ -38,6 +39,7 @@ apply one of three actions:
 The applied per-file dispositions are recorded in the PR body's decision table.
 
 In summary:
+
 - **Wired**: `core/src/feature/metal/float_ms_ssim_metal.mm` +
   `float_ms_ssim.metal` (ADR-0490 was Accepted but the meson wiring was missed).
 - **Deleted**: 7 Vulkan `.c` files + 7 orphan `.comp` shaders, 11 Metal `.mm`

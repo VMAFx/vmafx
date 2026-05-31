@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD018 MD060 -->
 # ADR-0369: Waterloo IVC 4K-VQA corpus ingestion for `nr_metric_v1`
 
 - **Status**: Accepted

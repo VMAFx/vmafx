@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0173: PTQ int8 audit implementation — registry schema + scripts + CI gate (T5-3)
 
 - **Status**: Accepted
@@ -118,6 +119,7 @@ moving CI leg lands when there's a model to gate.
 ## Consequences
 
 **Positive:**
+
 - Closes the "policy → code" gap from ADR-0129 (Proposed) without
   changing any shipped model's behaviour.
 - Per-model quantisation PRs (T5-3b, T5-3c, ...) now have a clear
@@ -128,6 +130,7 @@ moving CI leg lands when there's a model to gate.
   (default FP32).
 
 **Negative:**
+
 - Three Python scripts that are partially exercised by this PR
   (only `ptq_dynamic.py` is a pure wrapper; `ptq_static.py` needs
   a real calibration set; `qat_train.py` is a scaffold).
@@ -140,7 +143,7 @@ moving CI leg lands when there's a model to gate.
 ## Tests
 
 - `ai/tests/test_ptq_scripts.py` (new) — smoke that `ptq_dynamic.py`
-  + `ptq_static.py` import cleanly and surface useful CLI help. The
+  `ptq_static.py` import cleanly and surface useful CLI help. The
   full quantisation round-trip needs `onnxruntime.quantization`
   installed; the test marker auto-skips if not.
 - `core/test/dnn/test_model_loader.c` (extended) — new sub-test

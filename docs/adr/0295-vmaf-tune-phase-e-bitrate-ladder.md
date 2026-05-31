@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # ADR-0295: vmaf-tune Phase E — per-title bitrate-ladder generator
 
 - **Status**: Accepted

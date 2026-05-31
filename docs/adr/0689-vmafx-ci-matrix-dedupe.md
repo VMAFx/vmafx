@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0689: VMAFX CI Matrix Deduplication
 
 - **Status**: Accepted
@@ -87,7 +88,7 @@ The aggregator's `required` array is unchanged. No branch-protection update need
 - **Positive**: PR matrix reduces from 20 active build rows to 15. `tests-and-quality-gates.yml`
   loses one complete duplicate job. MoltenVK advisory coverage is preserved in nightly.
   Approximate wall-clock saving per PR: ~15–25 minutes of runner time (3 × Ubuntu CPU legs
-  + 1 × macOS Vulkan MoltenVK leg dropped).
+  1 × macOS Vulkan MoltenVK leg dropped).
 - **Negative**: A regression that only manifests on plain CPU gcc/clang without ORT linked in
   would not be caught on the PR matrix (effectively zero risk — ORT is header-included, not
   invasive; the DNN flag adds ORT link steps only).

@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD060 -->
 # NOLINT inventory audit — ADR-0278 cite-form drift sweep (2026-05-30)
 
 ## Question

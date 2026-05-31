@@ -164,7 +164,7 @@ Lint carve-outs (all NOLINT with ADR citation inline):
 - `qemu-aarch64-static build-aarch64/test/test_ssimulacra2_simd`
   — 5/5 subtests pass (NEON).
 - clang-tidy `-p build` on all three SIMD TUs + dispatch TU
-  + test TU: zero un-NOLINT'd warnings. NOLINTs all cite
+  test TU: zero un-NOLINT'd warnings. NOLINTs all cite
   ADR-0141 / ADR-0139 / this ADR.
 - assertion-density PASS, check-copyright PASS, pre-commit PASS.
 

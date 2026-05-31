@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # ADR-0014: VSCode uses clangd, disable MS C/C++ IntelliSense
 
 - **Status**: Accepted
