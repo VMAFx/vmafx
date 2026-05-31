@@ -1,6 +1,6 @@
 # ADR-0573: Dev-mcp container — ubuntu:26.04 + CUDA 13.2 + hipcc + ocloc
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0738](0738-bump-cuda-133-r610-local.md)
 - **Date**: 2026-05-18
 - **Deciders**: lusoris
 - **Tags**: `build`, `ci`, `cuda`, `container`, `dev`

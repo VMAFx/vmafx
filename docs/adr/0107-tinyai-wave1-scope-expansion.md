@@ -1,6 +1,7 @@
 # ADR-0107: Tiny-AI Wave 1 scope expanded beyond ADR-0020 through ADR-0023
 
-- **Status**: Supersedes [ADR-0036](0036-tinyai-wave1-scope-expansion.md)
+- **Status**: Accepted
+- **Supersedes**: [ADR-0036](0036-tinyai-wave1-scope-expansion.md)
 - **Date**: 2026-04-18
 - **Deciders**: Lusoris, Claude (Anthropic)
 - **Tags**: ai, dnn, cli, framework, mcp

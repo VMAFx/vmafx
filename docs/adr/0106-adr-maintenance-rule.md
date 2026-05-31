@@ -1,6 +1,7 @@
 # ADR-0106: Every non-trivial decision gets its own ADR file before the commit
 
-- **Status**: Supersedes [ADR-0028](0028-adr-maintenance-rule.md)
+- **Status**: Accepted
+- **Supersedes**: [ADR-0028](0028-adr-maintenance-rule.md)
 - **Date**: 2026-04-18
 - **Deciders**: Lusoris, Claude (Anthropic)
 - **Tags**: docs, planning, agents

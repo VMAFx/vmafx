@@ -41639,3 +41639,12 @@ marker (`tools/vmaf-tune/pyproject.toml`, `ai/pyproject.toml`,
 (`tools/vmaf-tune/tests/test_bbb_e2e_v5_bug_cluster.py`,
 `tools/vmaf-tune/tests/test_bbb_e2e_v14_bug_cluster.py`). None are
 mirrored from upstream Netflix/vmaf.
+## ADR status-field drift sweep (2026-05-30)
+
+no rebase impact: changes are confined to fork-local ADR markdown files
+under `docs/adr/`. Status-field flips on ADR-0573 (→ Superseded by
+ADR-0738) and Status normalisation on ADR-0105 / ADR-0106 / ADR-0107
+(Supersedes-in-Status → Accepted + explicit Supersedes line). Netflix
+upstream has no `docs/adr/` tree; nothing to reconcile on sync. Audit
+methodology and the full decision matrix live in
+`docs/research/adr-status-drift-audit-2026-05-30.md`.
