@@ -122,3 +122,24 @@ different git subcommand to compute the diff must update the shim
 accordingly, or `validate-pr-body.sh` will silently use the real
 git's output (potentially fine, potentially wrong depending on
 local repo state).
+
+## assertion-density.sh — copyright-grep scope (ADR-0968)
+
+`assertion-density.sh` identifies fork-added files by scanning the first
+20 lines of each `.c` / `.cpp` for a Lusoris copyright marker. The grep
+pattern **must** accept both the legacy format (`Lusoris and Claude
+(Anthropic)`) and the current post-rebrand format (`Copyright YYYY
+Lusoris`). The current pattern is:
+
+```
+grep -qE "(Lusoris and Claude|Copyright [0-9]+ Lusoris)"
+```
+
+**Invariant**: do not simplify this to a single literal string. The
+2026-05-27 copyright-rebrand decision (memory: `project_copyright_lusoris_only`)
+dropped "and Claude (Anthropic)" from new files; older files in-tree still
+carry the legacy form. A grep that matches only one format causes the script
+to silently exit 0 ("no fork-added files found; skipping"), bypassing the
+assertion-density gate for all files carrying the other format.
+
+Test coverage: `scripts/ci/tests/test-assertion-density.sh` (T1–T6).

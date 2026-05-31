@@ -5,8 +5,11 @@
 # average; we enforce "any non-trivial fork-added function has at least
 # one assert" in CI, and report the ≥2 average informationally.
 #
-# Scope: files whose copyright header reads "Lusoris and Claude".
-# Upstream Netflix files are exempted (separate cleanup ticket).
+# Scope: files whose copyright header contains a Lusoris copyright line
+# in either the legacy "Lusoris and Claude (Anthropic)" format or the
+# current "Copyright YYYY Lusoris" format (rebrand decided 2026-05-27;
+# memory: project_copyright_lusoris_only). Upstream Netflix files are
+# exempted (separate cleanup ticket).
 #
 # Exit 0 on pass, 1 on any fork-added function ≥MIN_LINES lines with zero asserts.
 
@@ -19,7 +22,7 @@ mapfile -t FILES < <(
   git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' \
     2>/dev/null | while read -r f; do
     [ -f "$f" ] || continue
-    if head -n 20 "$f" 2>/dev/null | grep -q "Lusoris and Claude"; then
+    if head -n 20 "$f" 2>/dev/null | grep -qE "(Lusoris and Claude|Copyright [0-9]+ Lusoris)"; then
       echo "$f"
     fi
   done

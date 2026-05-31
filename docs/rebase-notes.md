@@ -40725,6 +40725,14 @@ they were calibrated against `float_ansnr` output that this fork no longer
 produces — keep the skips. If Netflix upstream removes the legacy assertions
 themselves (matching this fork's direction), drop the local skips.
 
+## CI scripts: rebrand-proof assertion-density + tempfile trap (ADR-0968, 2026-05-31)
+
+no rebase impact: fork-local — `scripts/ci/assertion-density.sh` and
+`scripts/release/concat-changelog-fragments.sh` are entirely fork-introduced;
+Netflix upstream has no equivalent files in either path. The only rebase risk
+is a new upstream `scripts/` entry shadowing the directory, which would surface
+as an explicit conflict rather than a silent behaviour change.
+
 ## compat/python-vmaf leaf-utility coverage (2026-05-31)
 
 no rebase impact: REASON — the new test file lives entirely under

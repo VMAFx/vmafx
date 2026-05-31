@@ -124,6 +124,7 @@ fi
 # so the rendered text never has to fit in an argv variable.
 tmp_body="$(mktemp)"
 tmp_out="$(mktemp)"
+trap 'rm -f "$tmp_body" "$tmp_out"' EXIT
 # Command substitution strips trailing newlines from "$rendered". The legacy
 # archive ends with one blank line (separator before the next release header)
 # so we re-emit the rendered body followed by an explicit blank line.
@@ -150,5 +151,4 @@ awk '
 ' >"$tmp_out"
 
 mv "$tmp_out" "$CHANGELOG"
-rm -f "$tmp_body"
 printf 'CHANGELOG.md Unreleased block rewritten from changelog.d/.\n' >&2
