@@ -590,6 +590,39 @@ generated `config.h` include in `feature_extractor.h` is the
 project-wide guard for this layout; keep it there so every extractor
 definition and every registry consumer sees the same backend fields.
 
+### SSIM SIMD dispatch globals are pthread_once-installed (ADR-0871)
+
+`float_ssim.c` and `float_ms_ssim.c` install the SSIM/iqa_convolve
+SIMD dispatch tables (`g_ssim_precompute`, `g_ssim_variance`,
+`g_ssim_accumulate`, `g_iqa_convolve` in `iqa/ssim_tools.c`) by
+calling `iqa_ssim_install_dispatch_once(&s_dispatch_guard,
+installer_cb)` from their per-extractor `init()`. The guard
+parameter is retained for API symmetry but the actual mutual
+exclusion is provided by a file-static `pthread_once_t` inside
+`iqa/ssim_tools.c` shared across both TUs — without that sharing
+the two per-TU guards would each be allowed to fire once, racing
+on the same dispatch globals (TSan-confirmed 2026-05-30).
+
+**Invariants** when modifying SSIM-related dispatch code:
+
+- Never call `iqa_ssim_set_dispatch` / `iqa_convolve_set_dispatch`
+  directly from a per-extractor `init()` body. The setters
+  themselves are unsynchronised by design; the only correct
+  serialisation point is `iqa_ssim_install_dispatch_once`.
+- The installer callbacks across TUs must remain idempotent (install
+  the same ISA-best function pointers). If a future SIMD path
+  (e.g. SVE, AVX10) is added, extend the existing installer rather
+  than creating a parallel one — the once-guard fires exactly once
+  process-wide.
+- If a future upstream commit refactors `float_ssim::init` or
+  `float_ms_ssim::init`, preserve the
+  `iqa_ssim_install_dispatch_once(...)` call. Replacing it with a
+  bare dispatch install resurrects the data race.
+
+See [ADR-0871](../../../docs/adr/0871-ssim-dispatch-pthread-once.md)
+and the underlying research digest at
+[`docs/research/tsan-race-audit-2026-05-30.md`](../../../docs/research/tsan-race-audit-2026-05-30.md).
+
 ### `speed_chroma` / `speed_temporal` are float-build-only
 
 The two upstream Speed extractors register inside the

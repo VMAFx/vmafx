@@ -38,6 +38,7 @@
 #include <math.h>
 #include <stddef.h>
 #include <assert.h> /* zli-nflx */
+#include <pthread.h>
 
 #include "iqa.h"
 #include "convolve.h"
@@ -66,6 +67,60 @@ static iqa_convolve_fn g_iqa_convolve = NULL;
 void iqa_convolve_set_dispatch(iqa_convolve_fn convolve)
 {
     g_iqa_convolve = convolve;
+}
+
+/* One-shot guard for SIMD dispatch installation. The pthread_once
+ * primitive guarantees the installer callback runs exactly once
+ * across the process and emits a full memory barrier before any
+ * thread is allowed past the call site. Subsequent threads observe
+ * the four global function pointers
+ * (g_ssim_precompute, g_ssim_variance, g_ssim_accumulate,
+ *  g_iqa_convolve) as fully constructed, never torn.
+ *
+ * The guard is owned by this translation unit (not by the caller)
+ * so that float_ssim.c and float_ms_ssim.c — both of which install
+ * the same idempotent ISA-best dispatch — share a single fire.
+ * Without that sharing, two per-TU guards would each be allowed to
+ * fire once, racing on the same globals (TSan race audit
+ * 2026-05-30).
+ *
+ * The installer callback pointer is published via an atomic store
+ * with release-ordering paired against pthread_once's acquire-style
+ * barrier inside the trampoline. The pthread_once specified
+ * semantics imply that exactly one thread executes the trampoline;
+ * losing threads block until that completes, then read the four
+ * dispatch globals through pthread_once's full barrier. */
+#include <stdatomic.h>
+static pthread_once_t g_ssim_dispatch_once = PTHREAD_ONCE_INIT;
+static _Atomic(void (*)(void)) g_ssim_dispatch_installer = ATOMIC_VAR_INIT(NULL);
+
+static void iqa_ssim_dispatch_trampoline(void)
+{
+    void (*installer)(void) =
+        atomic_load_explicit(&g_ssim_dispatch_installer, memory_order_acquire);
+    if (installer)
+        installer();
+}
+
+void iqa_ssim_install_dispatch_once(pthread_once_t *guard, void (*installer)(void))
+{
+    /* `guard` parameter is retained for API symmetry with the
+     * per-TU header signature; the actual guard is the shared
+     * `g_ssim_dispatch_once` so float_ssim.c and float_ms_ssim.c
+     * cooperate. The first caller wins; subsequent callers are
+     * short-circuited by pthread_once and never re-publish the
+     * installer pointer. */
+    (void)guard;
+    if (!installer)
+        return;
+    /* Idempotent publish: every caller installs the same ISA-detect
+     * routine. We use a relaxed store guarded by a CAS so only the
+     * first publisher writes — eliminating the TSan-visible data
+     * race on the installer pointer itself. */
+    void (*expected)(void) = NULL;
+    (void)atomic_compare_exchange_strong_explicit(&g_ssim_dispatch_installer, &expected, installer,
+                                                  memory_order_release, memory_order_relaxed);
+    (void)pthread_once(&g_ssim_dispatch_once, iqa_ssim_dispatch_trampoline);
 }
 
 /* Adapter: feeds the `struct iqa_kernel *` call site into the

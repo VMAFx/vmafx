@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <pthread.h>
 #include <stddef.h>
 
 #include "cpu.h"
@@ -88,7 +89,15 @@ static const VmafOption options[] = {
     },
     {0}};
 
-/* Wire the SSIM + convolve SIMD dispatch tables for the host ISA. */
+/* Wire the SSIM + convolve SIMD dispatch tables for the host ISA.
+ * Called from `init()` below via `iqa_ssim_install_dispatch_once`
+ * under a pthread_once guard; the dispatch globals
+ * (g_ssim_precompute / g_ssim_variance / g_ssim_accumulate /
+ * g_iqa_convolve) are process-wide and must be installed exactly
+ * once across all libvmaf thread-pool workers — TSan race audit
+ * 2026-05-30 confirmed concurrent install on those globals when
+ * both float_ssim and float_ms_ssim ran with --threads >= 4.
+ * The installer is idempotent across float_ssim.c and this TU. */
 static void ms_ssim_init_simd_dispatch(void)
 {
 #if ARCH_X86
@@ -145,7 +154,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         s->max_db = INFINITY;
     }
 
-    ms_ssim_init_simd_dispatch();
+    static pthread_once_t s_dispatch_guard = PTHREAD_ONCE_INIT;
+    iqa_ssim_install_dispatch_once(&s_dispatch_guard, ms_ssim_init_simd_dispatch);
 
     s->float_stride = ALIGN_CEIL(w * sizeof(float));
     s->ref = aligned_malloc(s->float_stride * h, 32);

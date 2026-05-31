@@ -833,6 +833,36 @@ match the post-ADR-0700 layout. Public install-path references
 
 When syncing from upstream Netflix/vmaf, this file does not need
 attention; the conflict surface is empty.
+## ADR-0871 — SSIM SIMD dispatch pthread_once guard — 2026-05-30
+
+Low rebase impact. The fix sits in two fork-added zones:
+
+- `core/src/feature/iqa/ssim_tools.c` — the file is a Tom-Distler
+  BSD-2011 import, but the four globals
+  (`g_ssim_precompute`, `g_ssim_variance`, `g_ssim_accumulate`,
+  `g_iqa_convolve`), the setter functions, and the new
+  `iqa_ssim_install_dispatch_once` helper are **fork additions**
+  (Distler's 2011 import has no SIMD dispatch). The pthread_once
+  guard and atomic-installer publish are appended to the existing
+  fork-added block. A future re-import of Tom Distler's IQA would
+  not collide because the new code lives in fork-added territory.
+- `core/src/feature/iqa/ssim_simd.h` — fork-added header
+  (Netflix/vmaf has no equivalent); appends one declaration.
+- `core/src/feature/float_ssim.c` and `core/src/feature/float_ms_ssim.c` —
+  the dispatch-install bodies are fork additions; the change
+  factors them into a callback and routes the call through the
+  once-helper. The Netflix-upstream init() bodies are unchanged
+  beyond the dispatch block, so a future upstream change to the
+  init() prologue would merge cleanly.
+
+Fork-local files:
+`core/src/feature/iqa/ssim_tools.c` (fork-added dispatch zone),
+`core/src/feature/iqa/ssim_simd.h` (fork-added header),
+`core/src/feature/float_ssim.c` (fork-added SIMD-install block),
+`core/src/feature/float_ms_ssim.c` (fork-added SIMD-install block),
+`docs/adr/0871-ssim-dispatch-pthread-once.md`,
+`docs/research/tsan-race-audit-2026-05-30.md`,
+`changelog.d/fixed/tsan-race-audit.md`.
 
 ---
 

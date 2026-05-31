@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <pthread.h>
 #include <stddef.h>
 
 #include "cpu.h"
@@ -87,6 +88,32 @@ static const VmafOption options[] = {
     },
     {0}};
 
+/* Idempotent host-ISA SSIM + iqa_convolve dispatch installer. Selected
+ * by `iqa_ssim_install_dispatch_once` under a pthread_once guard so
+ * the dispatch globals are written exactly once across all workers. */
+static void ssim_install_dispatch_for_host_isa(void)
+{
+#if ARCH_X86
+    unsigned flags = vmaf_get_cpu_flags();
+    if (flags & VMAF_X86_CPU_FLAG_AVX2) {
+        iqa_ssim_set_dispatch(ssim_precompute_avx2, ssim_variance_avx2, ssim_accumulate_avx2);
+        iqa_convolve_set_dispatch(iqa_convolve_avx2);
+    }
+#if HAVE_AVX512
+    if (flags & VMAF_X86_CPU_FLAG_AVX512) {
+        iqa_ssim_set_dispatch(ssim_precompute_avx512, ssim_variance_avx512, ssim_accumulate_avx512);
+        iqa_convolve_set_dispatch(iqa_convolve_avx512);
+    }
+#endif
+#elif ARCH_AARCH64
+    unsigned flags = vmaf_get_cpu_flags();
+    if (flags & VMAF_ARM_CPU_FLAG_NEON) {
+        iqa_ssim_set_dispatch(ssim_precompute_neon, ssim_variance_neon, ssim_accumulate_neon);
+        iqa_convolve_set_dispatch(iqa_convolve_neon);
+    }
+#endif
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -102,31 +129,13 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         s->max_db = INFINITY;
     }
 
-    /* Set up SSIM SIMD dispatch */
-#if ARCH_X86
-    {
-        unsigned flags = vmaf_get_cpu_flags();
-        if (flags & VMAF_X86_CPU_FLAG_AVX2) {
-            iqa_ssim_set_dispatch(ssim_precompute_avx2, ssim_variance_avx2, ssim_accumulate_avx2);
-            iqa_convolve_set_dispatch(iqa_convolve_avx2);
-        }
-#if HAVE_AVX512
-        if (flags & VMAF_X86_CPU_FLAG_AVX512) {
-            iqa_ssim_set_dispatch(ssim_precompute_avx512, ssim_variance_avx512,
-                                  ssim_accumulate_avx512);
-            iqa_convolve_set_dispatch(iqa_convolve_avx512);
-        }
-#endif
-    }
-#elif ARCH_AARCH64
-    {
-        unsigned flags = vmaf_get_cpu_flags();
-        if (flags & VMAF_ARM_CPU_FLAG_NEON) {
-            iqa_ssim_set_dispatch(ssim_precompute_neon, ssim_variance_neon, ssim_accumulate_neon);
-            iqa_convolve_set_dispatch(iqa_convolve_neon);
-        }
-    }
-#endif
+    /* Set up SSIM SIMD dispatch. The dispatch globals
+     * (g_ssim_precompute / g_ssim_variance / g_ssim_accumulate /
+     * g_iqa_convolve) are process-wide; the pthread_once guard
+     * below serialises installation across the libvmaf thread-pool
+     * workers (TSan race audit 2026-05-30; see ssim_simd.h). */
+    static pthread_once_t s_dispatch_guard = PTHREAD_ONCE_INIT;
+    iqa_ssim_install_dispatch_once(&s_dispatch_guard, ssim_install_dispatch_for_host_isa);
 
     s->float_stride = ALIGN_CEIL(w * sizeof(float));
     s->ref = aligned_malloc(s->float_stride * h, 32);
