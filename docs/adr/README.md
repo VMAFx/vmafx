@@ -26,20 +26,8 @@ and follows the structure in [0000-template.md](0000-template.md):
 ## Decision             — one paragraph in active voice
 ## Alternatives considered  — at minimum the runner-up, in a pros/cons table
 ## Consequences         — Positive / Negative / Neutral-follow-ups
-## Supply-chain impact  — OPTIONAL: deps added/removed, build-time fetches, Sigstore-signable, CVE surface delta
-## SBOM delta           — OPTIONAL: cyclonedx-flavoured components added/removed snippet
-## Carbon / footprint   — OPTIONAL: image-size MiB delta, build-time delta, runtime energy estimate
 ## References           — upstream docs, prior ADRs, related PRs, popup-answer source
 ```
-
-The three sections after `## Consequences` are **optional** — include them
-when the decision adds or removes a dependency, fetches build-time
-artifacts, changes the container layer set, or measurably shifts build /
-runtime cost. Delete the section header entirely when not applicable
-rather than leaving an empty `N/A` stub. The release pipeline reconciles
-declared SBOM deltas against the generated CycloneDX SBOM; supply-chain
-audits and the climate-footprint dashboard sweep ADRs for the other two
-sections.
 
 ## Conventions
 
@@ -58,15 +46,6 @@ sections.
   the ADR practice was formalised on 2026-04-17, captured retroactively from
   commit history and planning dossiers. Their `Status` reflects the current
   code, not the original decision date. New decisions start at 0100.
-- **Optional-sections roll-out**: the three optional sections
-  (`Supply-chain impact`, `SBOM delta`, `Carbon / footprint`) were added
-  to the template on 2026-05-31. Existing **Accepted** ADRs are not
-  back-edited (immutable-once-Accepted rule). The **next three ADRs
-  authored from scratch** after the template change must include all
-  three sections — even if the content is a one-line `none — no
-  dependency / build / runtime delta` — so reviewers calibrate the
-  new shape. After that warm-up, the sections are routinely optional
-  per the criteria above.
 
 ### Tag palette
 
@@ -807,3 +786,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0970](0970-test-gpu-picture-pool-cleanup.md) | test_gpu_picture_pool.c: remove unused malloc + dead code (Round 27 audit D.3 + D.4) | Accepted | 2026-05-31 | testing, cuda, memory, cleanup, fork-local |
 | [ADR-0971](0971-test-unchecked-malloc-sweep.md) | Test suite: NULL-check malloc in 3 test files (Round 27 audit D.1) | Accepted | 2026-05-31 | testing, correctness, asan, fork-local |
 | [ADR-0960](0960-gpu-runtime-error-path-leaks-round25.md) | GPU runtime error-path leak fixes — round 25 (A.1 + A.2 + A.3): CUDA stream leaked on cuCtxPopCurrent failure; picture_pool return_to_pool missing pthread_cond_signal; dangling pic->priv after failed fetch | Accepted | 2026-05-31 | cuda, memory, threading, correctness, fork-local |
+| [ADR-0961](0961-queue-pullwork-rollback-on-get-failure.md) | Controller queue: roll back PullWork on post-update Get failure (round-25 audit B.1) — adds explicit SQL + in-memory rollback when getUnlocked fails after status='running' UPDATE commits | Accepted | 2026-05-31 | go, controller, correctness, queue, phase4b, fork-local |

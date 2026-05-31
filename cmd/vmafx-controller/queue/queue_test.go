@@ -7,11 +7,13 @@
 // No mocks required; the in-process SQLite driver is fast enough.
 //
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
+// ADR-0961: TestPullWork_GetUnlockedFailure_RollsBackToPending added.
 
 package queue_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -256,6 +258,88 @@ func TestNodeDisconnectedMidJob(t *testing.T) {
 	}
 	if got.AssignedNode != "" {
 		t.Errorf("expected empty assigned_node after restart, got %q", got.AssignedNode)
+	}
+}
+
+// TestPullWork_GetUnlockedFailure_RollsBackToPending verifies that when
+// getUnlocked fails after the SQL UPDATE to RUNNING, PullWork rolls back:
+//   - SQL status returns to "pending" with assigned_node=NULL
+//   - runningSet does not contain the job
+//   - FIFO has the job re-prepended (PendingCount == 1)
+//
+// ADR-0961: round-25 scheduler-correctness audit, bug B.1.
+func TestPullWork_GetUnlockedFailure_RollsBackToPending(t *testing.T) {
+	q := newTestQueue(t)
+	id := submit(t, q, "/ref.yuv", "/dis.yuv", "cpu")
+
+	// Install a hook that fails only for the target job ID.
+	// The hook fires for every getUnlocked call including FIFO-scan ones; we
+	// count invocations and only start failing on the second call — the first
+	// is the FIFO-scan pass (which succeeds so the job is matched), the second
+	// is the post-UPDATE fetch that the bug report identifies as the failure
+	// point.
+	var callCount int
+	q.SetGetUnlockedHookForTest(func(gotID string) error {
+		if gotID != id {
+			return nil
+		}
+		callCount++
+		if callCount >= 2 {
+			return fmt.Errorf("injected getUnlocked failure (call %d)", callCount)
+		}
+		return nil
+	})
+
+	cap := queue.NodeCapacity{Backends: []string{"cpu"}, Slots: 1}
+	job, err := q.PullWork(context.Background(), "node-1", cap)
+
+	// PullWork must return an error (not silently orphan the job).
+	if err == nil {
+		t.Fatal("PullWork: expected error from injected getUnlocked failure, got nil")
+	}
+	// PullWork must not return a job object on the error path.
+	if job != nil {
+		t.Errorf("PullWork: expected nil job on error path, got %+v", job)
+	}
+
+	// Remove the hook before calling Get so it reads cleanly.
+	q.SetGetUnlockedHookForTest(nil)
+
+	// SQL status must be back to "pending".
+	got, getErr := q.Get(context.Background(), id)
+	if getErr != nil {
+		t.Fatalf("Get after failed PullWork: %v", getErr)
+	}
+	if got.Status != queue.StatusPending {
+		t.Errorf("status after rollback: got %q, want %q", got.Status, queue.StatusPending)
+	}
+	if got.AssignedNode != "" {
+		t.Errorf("assigned_node after rollback: got %q, want empty", got.AssignedNode)
+	}
+
+	// runningSet must not contain the job (checked via RunningCount proxy).
+	if q.RunningCount() != 0 {
+		t.Errorf("RunningCount after rollback: got %d, want 0", q.RunningCount())
+	}
+
+	// FIFO must have the job back (PendingCount proxy).
+	if q.PendingCount() != 1 {
+		t.Errorf("PendingCount after rollback: got %d, want 1", q.PendingCount())
+	}
+
+	// A subsequent PullWork (without the hook) must succeed and get the same job.
+	job2, err2 := q.PullWork(context.Background(), "node-2", cap)
+	if err2 != nil {
+		t.Fatalf("PullWork after rollback: %v", err2)
+	}
+	if job2 == nil {
+		t.Fatal("PullWork after rollback: expected job, got nil")
+	}
+	if job2.ID != id {
+		t.Errorf("job ID after rollback: got %q, want %q", job2.ID, id)
+	}
+	if job2.Status != queue.StatusRunning {
+		t.Errorf("job status after rollback: got %q, want %q", job2.Status, queue.StatusRunning)
 	}
 }
 

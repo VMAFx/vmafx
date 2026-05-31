@@ -127,6 +127,14 @@ labels) and `core/src/picture_pool.c` (one `pthread_cond_signal` call and two
 The new test file `core/test/test_picture_pool_error_paths.c` is wholly
 fork-added with no upstream counterpart.
 
+## queue PullWork rollback on post-update Get failure (2026-05-31, ADR-0961)
+
+no rebase impact: pure Go controller-internal fix.  `cmd/vmafx-controller/queue/`
+is entirely fork-added (no upstream Netflix/vmaf equivalent); upstream syncs do not
+touch this subtree.
+
+---
+
 ---
 
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)

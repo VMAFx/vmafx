@@ -22,6 +22,7 @@
 // Thread safety: all exported methods are safe for concurrent use.
 //
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
+// ADR-0961: PullWork rolls back RUNNING state when post-update Get fails.
 
 package queue
 
@@ -122,6 +123,11 @@ type SQLiteQueue struct {
 	pendingFIFO []string
 	// runningSet tracks IDs of RUNNING jobs for counter accuracy.
 	runningSet map[string]struct{}
+
+	// getUnlockedHook is called at the start of getUnlocked when non-nil.
+	// It is used in tests to inject failures on demand; production code
+	// always leaves this nil.  ADR-0961.
+	getUnlockedHook func(id string) error
 }
 
 // New opens (or creates) the SQLite database at dbPath, applies the schema,
@@ -288,11 +294,44 @@ func (q *SQLiteQueue) PullWork(_ context.Context, nodeID string, capacity NodeCa
 
 	job, err := q.getUnlocked(matchID)
 	if err != nil {
+		// The SQL UPDATE already committed (status=running, assigned_node set)
+		// and the FIFO entry was removed.  We must roll back all three changes
+		// so the job is not permanently stranded in RUNNING state.
+		// ADR-0961: PullWork rollback on post-update Get failure.
+		rbErr := q.rollbackTopending(matchID)
+		if rbErr != nil {
+			q.log.Error("CRITICAL: rollback failed after PullWork Get error; job is stranded in RUNNING state — restart controller to recover",
+				"job_id", matchID,
+				"get_error", err,
+				"rollback_error", rbErr,
+			)
+			return nil, fmt.Errorf("queue: fetch assigned job %s: %w; rollback also failed: %v", matchID, err, rbErr)
+		}
 		return nil, fmt.Errorf("queue: fetch assigned job %s: %w", matchID, err)
 	}
 
 	q.log.Info("job assigned", "job_id", matchID, "node_id", nodeID)
 	return job, nil
+}
+
+// rollbackTopending reverses a PullWork that succeeded at the SQL UPDATE step
+// but subsequently failed.  It must be called with q.mu held.
+//
+// Steps (ADR-0961):
+//  1. Reset SQL status to PENDING and clear assigned_node.
+//  2. Remove from runningSet.
+//  3. Re-prepend the FIFO entry so the job is retried next.
+func (q *SQLiteQueue) rollbackTopending(jobID string) error {
+	_, err := q.db.Exec(
+		"UPDATE jobs SET status=?, assigned_node=NULL, updated_at=? WHERE id=?",
+		StatusPending, time.Now().Unix(), jobID,
+	)
+	if err != nil {
+		return fmt.Errorf("queue: rollback SQL for job %s: %w", jobID, err)
+	}
+	delete(q.runningSet, jobID)
+	q.pendingFIFO = append([]string{jobID}, q.pendingFIFO...)
+	return nil
 }
 
 // ReportResult records the terminal outcome of a job.  If result.Err is
@@ -334,7 +373,14 @@ func (q *SQLiteQueue) Get(_ context.Context, jobID string) (*Job, error) {
 
 // getUnlocked fetches a job from SQLite without acquiring q.mu.
 // Must be called with q.mu held (or from contexts that don't need the lock).
+// If q.getUnlockedHook is non-nil it is invoked first; a non-nil error from
+// the hook causes an early return (used in tests — ADR-0961).
 func (q *SQLiteQueue) getUnlocked(jobID string) (*Job, error) {
+	if q.getUnlockedHook != nil {
+		if err := q.getUnlockedHook(jobID); err != nil {
+			return nil, err
+		}
+	}
 	row := q.db.QueryRow(
 		"SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), created_at, updated_at FROM jobs WHERE id=?",
 		jobID,
@@ -416,6 +462,18 @@ func (q *SQLiteQueue) RunningCount() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return len(q.runningSet)
+}
+
+// SetGetUnlockedHookForTest installs a function that is called at the start of
+// every getUnlocked call.  When the hook returns a non-nil error, getUnlocked
+// returns that error immediately without hitting SQLite.
+//
+// This is a test-only escape hatch; do not call it in production code.
+// ADR-0961: hook exists solely to exercise the PullWork rollback path.
+func (q *SQLiteQueue) SetGetUnlockedHookForTest(fn func(id string) error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.getUnlockedHook = fn
 }
 
 // Close releases the database connection.
