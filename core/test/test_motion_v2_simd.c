@@ -105,6 +105,60 @@
 #include "feature/integer_motion.h"
 #include "feature/x86/motion_v2_avx2.h"
 #endif
+#if ARCH_AARCH64
+#include "feature/integer_motion.h"
+#include "feature/arm64/motion_v2_neon.h"
+#endif
+
+#define ALIGN_BYTES 32
+#define TEST_W 80 /* >= 18 to exercise SIMD body for x_conv */
+#define TEST_H 12
+
+/*
+ * Adversarial-frame builder: ref pixels uniformly low, dis pixels
+ * uniformly high — produces large negative diffs (`prev - cur < 0`)
+ * and consequently negative `accum` across the SIMD body. 10-bit
+ * range so the high-bit pattern of the two's-complement int64 is
+ * non-trivial on the >>bpc shift.
+ */
+static void fill_adversarial_neg(uint16_t *prev, uint16_t *cur, unsigned w, unsigned h,
+                                 ptrdiff_t p_stride, ptrdiff_t c_stride, uint32_t seed)
+{
+    uint32_t state = seed;
+    for (unsigned i = 0; i < h; i++) {
+        for (unsigned j = 0; j < w; j++) {
+            /* prev (ref) low: [0, 64) */
+            prev[i * p_stride + j] = (uint16_t)(simd_test_xorshift32(&state) & 0x3F);
+            /* cur (dis) high: [960, 1024) — 10-bit max range upper end */
+            cur[i * c_stride + j] = (uint16_t)(960 + (simd_test_xorshift32(&state) & 0x3F));
+        }
+    }
+}
+
+/*
+ * Adversarial mixed: alternating columns flip sign of diff to
+ * produce both negative-accum and positive-accum lanes within the
+ * same 8-lane SIMD body. Stresses the per-lane logical-vs-arithmetic
+ * shift divergence.
+ */
+static void fill_adversarial_mixed(uint16_t *prev, uint16_t *cur, unsigned w, unsigned h,
+                                   ptrdiff_t p_stride, ptrdiff_t c_stride, uint32_t seed)
+{
+    uint32_t state = seed;
+    for (unsigned i = 0; i < h; i++) {
+        for (unsigned j = 0; j < w; j++) {
+            const uint16_t a = (uint16_t)(simd_test_xorshift32(&state) & 0x3F);
+            const uint16_t b = (uint16_t)(960 + (simd_test_xorshift32(&state) & 0x3F));
+            if ((j & 1) == 0) {
+                prev[i * p_stride + j] = a;
+                cur[i * c_stride + j] = b;
+            } else {
+                prev[i * p_stride + j] = b;
+                cur[i * c_stride + j] = a;
+            }
+        }
+    }
+}
 
 #if ARCH_X86
 
@@ -170,56 +224,6 @@ static uint64_t motion_score_pipeline_16_scalar_ref(const uint8_t *prev_u8, ptrd
     }
 
     return sad;
-}
-
-#define ALIGN_BYTES 32
-#define TEST_W 80 /* >= 18 to exercise SIMD body for x_conv */
-#define TEST_H 12
-
-/*
- * Adversarial-frame builder: ref pixels uniformly low, dis pixels
- * uniformly high — produces large negative diffs (`prev - cur < 0`)
- * and consequently negative `accum` across the SIMD body. 10-bit
- * range so the high-bit pattern of the two's-complement int64 is
- * non-trivial on the >>bpc shift.
- */
-static void fill_adversarial_neg(uint16_t *prev, uint16_t *cur, unsigned w, unsigned h,
-                                 ptrdiff_t p_stride, ptrdiff_t c_stride, uint32_t seed)
-{
-    uint32_t state = seed;
-    for (unsigned i = 0; i < h; i++) {
-        for (unsigned j = 0; j < w; j++) {
-            /* prev (ref) low: [0, 64) */
-            prev[i * p_stride + j] = (uint16_t)(simd_test_xorshift32(&state) & 0x3F);
-            /* cur (dis) high: [960, 1024) — 10-bit max range upper end */
-            cur[i * c_stride + j] = (uint16_t)(960 + (simd_test_xorshift32(&state) & 0x3F));
-        }
-    }
-}
-
-/*
- * Adversarial mixed: alternating columns flip sign of diff to
- * produce both negative-accum and positive-accum lanes within the
- * same 8-lane SIMD body. Stresses the per-lane logical-vs-arithmetic
- * shift divergence.
- */
-static void fill_adversarial_mixed(uint16_t *prev, uint16_t *cur, unsigned w, unsigned h,
-                                   ptrdiff_t p_stride, ptrdiff_t c_stride, uint32_t seed)
-{
-    uint32_t state = seed;
-    for (unsigned i = 0; i < h; i++) {
-        for (unsigned j = 0; j < w; j++) {
-            const uint16_t a = (uint16_t)(simd_test_xorshift32(&state) & 0x3F);
-            const uint16_t b = (uint16_t)(960 + (simd_test_xorshift32(&state) & 0x3F));
-            if ((j & 1) == 0) {
-                prev[i * p_stride + j] = a;
-                cur[i * c_stride + j] = b;
-            } else {
-                prev[i * p_stride + j] = b;
-                cur[i * c_stride + j] = a;
-            }
-        }
-    }
 }
 
 static char *check_pipeline_16(unsigned bpc,
@@ -294,6 +298,142 @@ static char *test_mixed_diff_bpc12(void)
 
 #endif /* ARCH_X86 */
 
+#if ARCH_AARCH64
+
+/* Scalar reference for NEON audit — identical to the AVX2 arm above,
+ * duplicated because the upstream symbol has static linkage.
+ * ADR-0873. */
+static inline int mirror_idx_neon(int idx, int size)
+{
+    if (idx < 0)
+        return -idx;
+    if (idx >= size)
+        return 2 * size - idx - 2;
+    return idx;
+}
+
+static uint64_t motion_score_pipeline_16_scalar_ref_neon(const uint8_t *prev_u8,
+                                                         ptrdiff_t prev_stride,
+                                                         const uint8_t *cur_u8,
+                                                         ptrdiff_t cur_stride, int32_t *y_row,
+                                                         unsigned w, unsigned h, unsigned bpc)
+{
+    const uint16_t *prev = (const uint16_t *)prev_u8;
+    const uint16_t *cur = (const uint16_t *)cur_u8;
+    const ptrdiff_t p_stride = prev_stride / 2;
+    const ptrdiff_t c_stride = cur_stride / 2;
+
+    const int radius = filter_width / 2;
+    const int64_t y_round = (int64_t)1 << (bpc - 1);
+    const int32_t x_round = 1 << 15;
+
+    uint64_t sad = 0;
+
+    for (unsigned i = 0; i < h; i++) {
+        int32_t any_nonzero = 0;
+        for (unsigned j = 0; j < w; j++) {
+            int64_t accum = 0;
+            for (int k = 0; k < filter_width; k++) {
+                const int row = mirror_idx_neon((int)i - radius + k, (int)h);
+                const int32_t diff =
+                    (int32_t)prev[row * p_stride + j] - (int32_t)cur[row * c_stride + j];
+                accum += (int64_t)filter[k] * diff;
+            }
+            y_row[j] = (int32_t)((accum + y_round) >> bpc);
+            any_nonzero |= y_row[j];
+        }
+
+        if (!any_nonzero)
+            continue;
+
+        uint32_t row_sad = 0;
+        for (unsigned j = 0; j < w; j++) {
+            int64_t accum = 0;
+            for (int k = 0; k < filter_width; k++) {
+                const int col = mirror_idx_neon((int)j - radius + k, (int)w);
+                accum += (int64_t)filter[k] * y_row[col];
+            }
+            int32_t val = (int32_t)((accum + x_round) >> 16);
+            row_sad += (uint32_t)abs(val);
+        }
+        sad += row_sad;
+    }
+
+    return sad;
+}
+
+#define TEST_W_NEON 80
+#define TEST_H_NEON 12
+#define ALIGN_BYTES_NEON 16
+
+static char *check_neon_pipeline_16(unsigned bpc,
+                                    void (*fill)(uint16_t *, uint16_t *, unsigned, unsigned,
+                                                 ptrdiff_t, ptrdiff_t, uint32_t),
+                                    uint32_t seed, const char *label)
+{
+    const ptrdiff_t stride16 = TEST_W_NEON;
+    uint16_t *prev = (uint16_t *)simd_test_aligned_malloc(
+        sizeof(uint16_t) * TEST_W_NEON * TEST_H_NEON, ALIGN_BYTES_NEON);
+    uint16_t *cur = (uint16_t *)simd_test_aligned_malloc(
+        sizeof(uint16_t) * TEST_W_NEON * TEST_H_NEON, ALIGN_BYTES_NEON);
+    int32_t *y_row_scalar =
+        (int32_t *)simd_test_aligned_malloc(sizeof(int32_t) * TEST_W_NEON, ALIGN_BYTES_NEON);
+    int32_t *y_row_neon =
+        (int32_t *)simd_test_aligned_malloc(sizeof(int32_t) * TEST_W_NEON, ALIGN_BYTES_NEON);
+    if (!prev || !cur || !y_row_scalar || !y_row_neon) {
+        simd_test_aligned_free(prev);
+        simd_test_aligned_free(cur);
+        simd_test_aligned_free(y_row_scalar);
+        simd_test_aligned_free(y_row_neon);
+        return "allocation failure";
+    }
+
+    fill(prev, cur, TEST_W_NEON, TEST_H_NEON, stride16, stride16, seed);
+
+    const ptrdiff_t byte_stride = stride16 * (ptrdiff_t)sizeof(uint16_t);
+
+    const uint64_t sad_scalar = motion_score_pipeline_16_scalar_ref_neon(
+        (const uint8_t *)prev, byte_stride, (const uint8_t *)cur, byte_stride, y_row_scalar,
+        TEST_W_NEON, TEST_H_NEON, bpc);
+    const uint64_t sad_neon =
+        motion_score_pipeline_16_neon((const uint8_t *)prev, byte_stride, (const uint8_t *)cur,
+                                      byte_stride, y_row_neon, TEST_W_NEON, TEST_H_NEON, bpc);
+
+    simd_test_aligned_free(prev);
+    simd_test_aligned_free(cur);
+    simd_test_aligned_free(y_row_scalar);
+    simd_test_aligned_free(y_row_neon);
+
+    if (sad_scalar != sad_neon) {
+        (void)fprintf(stderr,
+                      "ADR-0873 motion_v2 NEON audit (%s, bpc=%u, seed=0x%08x): "
+                      "scalar=%llu neon=%llu\n",
+                      label, bpc, seed, (unsigned long long)sad_scalar,
+                      (unsigned long long)sad_neon);
+        return "motion_v2 NEON 16-bit pipeline diverges from scalar";
+    }
+    return NULL;
+}
+
+static char *test_neon_neg_diff_bpc10(void)
+{
+    return check_neon_pipeline_16(10, fill_adversarial_neg, 0xa5a5a5a5u, "neg-diff");
+}
+static char *test_neon_neg_diff_bpc12(void)
+{
+    return check_neon_pipeline_16(12, fill_adversarial_neg, 0x0f0f0f0fu, "neg-diff bpc12");
+}
+static char *test_neon_mixed_diff_bpc10(void)
+{
+    return check_neon_pipeline_16(10, fill_adversarial_mixed, 0xdeadbeefu, "mixed-diff");
+}
+static char *test_neon_mixed_diff_bpc12(void)
+{
+    return check_neon_pipeline_16(12, fill_adversarial_mixed, 0x12345678u, "mixed-diff bpc12");
+}
+
+#endif /* ARCH_AARCH64 */
+
 char *run_tests(void)
 {
 #if ARCH_X86
@@ -304,8 +444,13 @@ char *run_tests(void)
     mu_run_test(test_neg_diff_bpc12);
     mu_run_test(test_mixed_diff_bpc10);
     mu_run_test(test_mixed_diff_bpc12);
+#elif ARCH_AARCH64
+    mu_run_test(test_neon_neg_diff_bpc10);
+    mu_run_test(test_neon_neg_diff_bpc12);
+    mu_run_test(test_neon_mixed_diff_bpc10);
+    mu_run_test(test_neon_mixed_diff_bpc12);
 #else
-    (void)fprintf(stderr, "skipping: non-x86 arch\n");
+    (void)fprintf(stderr, "skipping: non-x86/non-arm64 arch\n");
 #endif
     return NULL;
 }

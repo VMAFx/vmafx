@@ -40,6 +40,13 @@ feature/arm64/
   pragma is portable and aarch64 GCC does not contract `a + b * c`
   across statements at default optimisation anyway. Removing it on
   rebase loses the cross-architecture documentation.
+- **Float-arithmetic NEON TUs belong in `arm64_v8_fp`** (not
+  `arm64_v8`). The `arm64_v8_fp` static lib is compiled with
+  `-ffp-contract=off` (ADR-0873); the `arm64_v8` lib is integer-only
+  and carries no FP flag. Adding a new float-arithmetic TU to
+  `arm64_v8` is a bit-exactness regression waiting to happen.
+  Conversely, moving an integer-only TU to `arm64_v8_fp` is
+  harmless but unnecessary.
 - **`accumulate_error()` and similar reductions thread accumulators
   by pointer** — do NOT introduce a local-float accumulator inside a
   helper. ADR-0159 burned this lesson into `psnr_hvs_neon.c`: a

@@ -42060,3 +42060,33 @@ Fork-local files:
 `docs/adr/0875-github-actions-audit-2026-05-30.md`,
 `docs/research/github-actions-audit-2026-05-30.md`,
 `changelog.d/security/github-actions-audit-2026-05-30.md`.
+## ADR-0873 — ARM64 NEON bit-exactness audit — 2026-05-30
+
+Rebase impact: **low, limited to build system and one test file**.
+
+`core/src/meson.build` lines 581–643: the `arm64_v8` static lib is split
+into `arm64_v8` (integer-only TUs, unchanged compile flags) and `arm64_v8_fp`
+(float-arithmetic TUs, new `-ffp-contract=off` flag). If upstream Netflix/vmaf
+adds new NEON TUs to this region, they must be classified as integer or float
+and placed in the correct lib.
+
+`core/src/feature/arm64/float_adm_neon.c`: `float_adm_sum_cube_neon` and
+`float_adm_csf_den_scale_neon` now accumulate into `float64x2_t` instead of
+`float32x4_t`. This is a numeric change — if upstream modifies these functions,
+the double-accumulation pattern must be preserved.
+
+`core/src/feature/adm.c`: comment-only change (ADR-0873 follow-up note).
+
+`core/test/test_motion_v2_simd.c`: `fill_adversarial_neg` and
+`fill_adversarial_mixed` moved outside `#if ARCH_X86`; NEON test arm added
+for `motion_score_pipeline_16_neon`. On upstream sync, ensure the x86 test
+body still compiles.
+
+Fork-local files:
+`core/src/meson.build` (lib split),
+`core/src/feature/arm64/float_adm_neon.c` (reduction stability),
+`core/src/feature/arm64/AGENTS.md` (invariant note),
+`core/src/feature/adm.c` (comment),
+`core/test/test_motion_v2_simd.c` (NEON test arm),
+`docs/adr/0873-arm64-neon-bit-exactness-audit.md`,
+`changelog.d/fixed/arm64-neon-bit-exactness-audit.md`.

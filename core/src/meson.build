@@ -578,13 +578,33 @@ platform_specific_cpu_objects = []
 
 if is_asm_enabled
     if host_machine.cpu_family().startswith('arm64') or host_machine.cpu_family().startswith('aarch64')
-        arm64_sources = [
+        # Integer-only NEON TUs — no floating-point arithmetic; no
+        # `-ffp-contract=off` needed.  ADR-0873.
+        arm64_int_sources = [
           feature_src_dir + 'arm64/vif_neon.c',
           feature_src_dir + 'arm64/adm_neon.c',
           feature_src_dir + 'arm64/psnr_neon.c',
           feature_src_dir + 'arm64/ssim_neon.c',
           feature_src_dir + 'arm64/motion_neon.c',
           feature_src_dir + 'arm64/cambi_neon.c',
+        ]
+
+        arm64_static_lib = static_library(
+          'arm64_v8',
+          arm64_int_sources,
+          include_directories : vmaf_base_include,
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64']
+        )
+
+        # Float-arithmetic NEON TUs compiled with `-ffp-contract=off`.
+        # Rationale: GCC 10+ / clang default to `-ffp-contract=fast` on
+        # aarch64, which auto-fuses plain C `a*b+c` expressions (and the
+        # scalar tail of NEON loops) into `fmla` instructions.  NEON
+        # intrinsics are opaque to the fusion pass, so without this flag
+        # the scalar tail and the NEON main loop can produce different
+        # results from the scalar reference (~1 ulp per fused op).
+        # ADR-0873.  Same rationale as x86 `x86_avx2_ffp` carve-out.
+        arm64_fp_sources = [
           feature_src_dir + 'arm64/float_psnr_neon.c',
           feature_src_dir + 'arm64/float_motion_neon.c',
           feature_src_dir + 'arm64/float_adm_neon.c',
@@ -596,22 +616,16 @@ if is_asm_enabled
           feature_src_dir + 'arm64/moment_neon.c',
         ]
 
-          arm64_static_lib = static_library(
-          'arm64_v8',
-          arm64_sources,
+        arm64_fp_lib = static_library(
+          'arm64_v8_fp',
+          arm64_fp_sources,
           include_directories : vmaf_base_include,
-          c_args : vmaf_cflags_common + ['-DARCH_AARCH64']
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-ffp-contract=off'],
         )
 
         # ssimulacra2_neon.c compiles in its own static lib with
-        # `-ffp-contract=off`. Rationale: GCC 10+ / clang default to
-        # `-ffp-contract=fast` on aarch64, which auto-fuses plain C
-        # `a*b+c` in the scalar tail / scalar reference into `fmla`.
-        # NEON intrinsics are opaque to the fusion pass, so the SIMD
-        # loop stays unfused. Without the flag, scalar tail and SIMD
-        # main loop drift by ~1 ulp (ADR-0161 regression seen in CI).
-        # Scoped to ssimulacra2 only so prior NEON TUs (psnr_hvs,
-        # motion_v2, etc.) keep their established bit-exact behaviour.
+        # `-ffp-contract=off`. Rationale mirrors arm64_v8_fp above
+        # (ADR-0161, ADR-0873).
         arm64_ssimulacra2_lib = static_library(
           'arm64_ssimulacra2',
           [
@@ -624,6 +638,7 @@ if is_asm_enabled
         )
 
         platform_specific_cpu_objects += arm64_static_lib.extract_all_objects()
+        platform_specific_cpu_objects += arm64_fp_lib.extract_all_objects()
         platform_specific_cpu_objects += arm64_ssimulacra2_lib.extract_all_objects()
 
         # T7-38: SSIMULACRA 2 SVE2 sister TU. Only built when the

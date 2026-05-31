@@ -40,6 +40,14 @@ typedef adm_dwt_band_t_s adm_dwt_band_t;
 #define offset_image offset_image_s
 
 #define adm_csf_den_scale adm_csf_den_scale_s
+
+/* ADR-0873 follow-up: `float_adm_dwt2_neon`, `float_adm_csf_den_scale_neon`,
+ * and `float_adm_sum_cube_neon` are compiled into `arm64_v8_fp` but not yet
+ * wired into this `compute_adm` call path. The same gap exists for the x86
+ * AVX2 variants. Dispatch wiring requires a function-pointer table analogous
+ * to `integer_adm.c`'s `s->adm_csf_den_scale` pattern, plus verification
+ * that the Netflix golden gate still passes. Tracked as a follow-up to
+ * this PR. */
 #define dwt2_src_indices_filt dwt2_src_indices_filt_s
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
