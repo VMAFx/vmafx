@@ -604,3 +604,4 @@
 0922-coverage-ratchet-aggressive
 0958-hip-kernel-coverage-round4
 0962-controller-streamjobs-and-reaper-stop
+0956-cuda-kernel-coverage-round4

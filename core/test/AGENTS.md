@@ -62,6 +62,20 @@ and teardown.
   `test_cuda_buffer_alloc_oom.c` and `test_cuda_pic_preallocation.c` for
   reference. **Rebase-sensitive**: any new GPU test that lacks this guard will
   SIGSEGV on CPU-only CI runners.
+- **GPU-only extractors get a smoke gate, not a parity gate.** When a CUDA /
+  HIP / SYCL feature extractor has no CPU twin emitting the same feature name
+  (e.g. `speed_chroma_cuda`, `speed_temporal_cuda` — emit
+  `Speed_*_feature_*_score`, no CPU producer), a CPU-vs-GPU parity assertion
+  is the wrong tool. The gate is a smoke test: register the extractor, run a
+  multi-frame fixture, assert finite scores at frame index 1. Catches the
+  high-impact failure modes (NaN/Inf drift from kernel grid changes or
+  covariance-matrix degenerate cases) without inventing a redundant CPU
+  reference. See `test_cuda_speed_chroma_smoke.c` /
+  `test_cuda_speed_temporal_smoke.c` (ADR-0956). Fixture sizing matters here:
+  the speed kernels need 640x360+ to admit a non-singular covariance matrix in
+  the ADR-0567 host-side eigendecomp path. **Rebase-sensitive**: do not "fix"
+  a smoke test by adding a fake CPU twin — the ADR-0956 alternatives table
+  documents why.
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md)).
 - **POSIX-only APIs in tests** must be shimmed for MINGW. See
   [test_lpips.c](test_lpips.c) for the `_putenv_s`-based shim for

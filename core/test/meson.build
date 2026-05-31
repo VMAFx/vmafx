@@ -803,6 +803,70 @@ test_integer_vif_cpu_cuda_parity = executable('test_integer_vif_cpu_cuda_parity'
 )
 test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
     suite : ['fast', 'gpu'])
+
+# ADR-0956 — CUDA kernel parity coverage round 4. Closes the last
+# three float-path CPU twins (`float_adm_cuda`, `float_motion_cuda`,
+# `float_ssim_cuda`) with cross-backend parity assertions at
+# `places=4` / 1e-4 (ADR-0214). Each follows the
+# `test_cuda_motion3_parity.c` template: 256x144 YUV420P 8-bpc
+# synthetic fixture, 3 frames, score at frame index 1,
+# `[skip: no CUDA device]` guard when vmaf_cuda_state_init fails.
+test_cuda_float_adm_parity = executable('test_cuda_float_adm_parity',
+    ['test.c', 'test_cuda_float_adm_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_adm_parity', test_cuda_float_adm_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_float_motion_parity = executable('test_cuda_float_motion_parity',
+    ['test.c', 'test_cuda_float_motion_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_motion_parity', test_cuda_float_motion_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_float_ssim_parity = executable('test_cuda_float_ssim_parity',
+    ['test.c', 'test_cuda_float_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
+    suite : ['fast', 'gpu'])
+
+# ADR-0956 — CUDA-only speed kernels. `speed_chroma_cuda` and
+# `speed_temporal_cuda` have no CPU twin emitting the same
+# `Speed_*_feature_*_score` family, so the gate is a smoke test:
+# register the extractor, run a 640x360 YUV420P fixture through the
+# filter → eigendecomp → kernel pipeline (ADR-0567), and assert
+# finite scores at frame index 1. Catches NaN/Inf drift from kernel
+# grid changes or covariance-matrix degenerate cases.
+test_cuda_speed_chroma_smoke = executable('test_cuda_speed_chroma_smoke',
+    ['test.c', 'test_cuda_speed_chroma_smoke.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_speed_chroma_smoke', test_cuda_speed_chroma_smoke,
+    suite : ['fast', 'gpu'])
+
+test_cuda_speed_temporal_smoke = executable('test_cuda_speed_temporal_smoke',
+    ['test.c', 'test_cuda_speed_temporal_smoke.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_speed_temporal_smoke', test_cuda_speed_temporal_smoke,
+    suite : ['fast', 'gpu'])
 endif
 
 # T6-2b / ADR-0247 — vmaf-roi sidecar core helpers (per-CTU mean reduce

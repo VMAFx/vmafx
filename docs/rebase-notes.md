@@ -40827,3 +40827,20 @@ Fork-local additions (no rebase impact):
 `changelog.d/added/metal-kernel-coverage-round4.md`, the new audit row in
 `docs/adr/README.md`, the `T-METAL-KERNEL-PARITY-ROUND4-2026-05-31` row in
 `docs/state.md`.
+## CUDA kernel parity coverage — round 4 (ADR-0956, 2026-05-31)
+
+no rebase impact: REASON — all five new files
+(`core/test/test_cuda_float_adm_parity.c`,
+`core/test/test_cuda_float_motion_parity.c`,
+`core/test/test_cuda_float_ssim_parity.c`,
+`core/test/test_cuda_speed_chroma_smoke.c`,
+`core/test/test_cuda_speed_temporal_smoke.c`) live entirely under
+fork-local test directories that Netflix upstream never touches. The
+only modified shared file is `core/test/meson.build`, where the round 4
+block is appended after the existing round 3 / ADR-0541 / motion3
+parity blocks inside the existing `if get_option('enable_cuda')`
+guard. On upstream sync, if Netflix has independently added test
+binaries in the same `enable_cuda` block the conflict is a trivial
+append-vs-append three-way merge (no shared lines change). Fork-local
+documentation files (ADR-0956, the round 4 research digest, the
+changelog fragment, this rebase-notes row) are never authored upstream.
