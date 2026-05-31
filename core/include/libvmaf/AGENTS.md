@@ -62,6 +62,20 @@ backend-agnostic `gpu_picture_pool.{c,h}` round-robin
 
 ## Rebase-sensitive invariants
 
+- **Include guards use the `LIBVMAF_<BASENAME>_H` pattern**
+  ([ADR-0972](../../../docs/adr/0972-public-header-iso-reserved-guards.md),
+  [Research-0762](../../../docs/research/0762-public-header-iso-reserved-guards-2026-05-31.md)).
+  Identifiers starting with `__` or `_` followed by an uppercase
+  letter are reserved by C17 §7.1.3 and banned by SEI CERT DCL37-C.
+  Clang's `-Wreserved-identifier` rejects them. Upstream Netflix/vmaf
+  still ships the old `__VMAF_*__` form in headers it owns
+  (`libvmaf.h`, `picture.h`, `feature.h`, `model.h`, `libvmaf_cuda.h`);
+  an upstream sync that re-introduces those identifiers must be
+  rewritten on import to keep our `LIBVMAF_<BASENAME>_H` form.
+  `macros.h`, `vmaf_assert.h`, `dnn.h`, `libvmaf_sycl.h`,
+  `libvmaf_hip.h`, `libvmaf_metal.h`, `libvmaf_mcp.h` are fork-only
+  and not subject to upstream churn here.
+
 - **Every declaration in this directory must carry `VMAF_EXPORT`**
   ([ADR-0379](../../../docs/adr/0379-libvmaf-symbol-visibility.md),
   Research-0092). `libvmaf.so` is built with `-fvisibility=hidden`

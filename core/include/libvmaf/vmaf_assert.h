@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_ASSERT_H__
-#define __VMAF_ASSERT_H__
+#ifndef LIBVMAF_VMAF_ASSERT_H
+#define LIBVMAF_VMAF_ASSERT_H
 
 /*
  * VMAF_ASSERT_DEBUG(expr)
@@ -44,4 +44,4 @@
 #define VMAF_ASSERT_DEBUG(expr) ((void)sizeof(expr))
 #endif
 
-#endif /* __VMAF_ASSERT_H__ */
+#endif /* LIBVMAF_VMAF_ASSERT_H */

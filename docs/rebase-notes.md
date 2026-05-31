@@ -19,6 +19,39 @@ test-only files. Netflix/vmaf does not carry these test files upstream
 (`test_ssimulacra2_simd.c`, `test_pic_preallocation.c` are fork-added;
 `test_framesync.c` has fork-local modifications). No C API or public ABI
 is touched. Subsequent upstream syncs do not interact with this change.
+## Public-header ISO-reserved include guards renamed (2026-05-31)
+
+**Files touched:**
+`core/include/libvmaf/libvmaf.h`,
+`core/include/libvmaf/picture.h`,
+`core/include/libvmaf/feature.h`,
+`core/include/libvmaf/model.h`,
+`core/include/libvmaf/macros.h`,
+`core/include/libvmaf/vmaf_assert.h`,
+`core/include/libvmaf/dnn.h`,
+`core/include/libvmaf/libvmaf_cuda.h`,
+`core/include/libvmaf/libvmaf_sycl.h`.
+
+**Rebase impact:** REAL. Six of the nine renamed headers
+(`libvmaf.h`, `picture.h`, `feature.h`, `model.h`, `libvmaf_cuda.h`,
+plus arguably `dnn.h` if upstream ever ports the tiny-AI surface) are
+upstream-mirrored from Netflix/vmaf. Upstream still ships the
+ISO-reserved `__VMAF_*__` guard pattern that SEI CERT DCL37-C bans
+(ADR-0972).
+
+**Sync action:** On any upstream sync that touches these six headers,
+**keep our `LIBVMAF_<BASENAME>_H` lines** and drop the upstream
+`__VMAF_*__` ones. The diff is mechanical (3 lines per header — the
+`#ifndef`, the `#define`, and the closing `#endif` comment); no
+semantic merge required. The full guard-rename table is in
+[ADR-0972 §Decision](adr/0972-public-header-iso-reserved-guards.md#decision).
+
+The remaining three renamed headers (`macros.h`, `vmaf_assert.h`,
+`libvmaf_sycl.h`) are fork-only and never receive upstream churn.
+
+If a future upstream sync changes the `LIBVMAF_*` pattern itself
+(e.g. Netflix adopts the same fix with a different spelling), reopen
+ADR-0972 to decide whether to converge.
 
 ---
 

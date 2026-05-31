@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_MACROS_H__
-#define __VMAF_MACROS_H__
+#ifndef LIBVMAF_MACROS_H
+#define LIBVMAF_MACROS_H
 
 /**
  * VMAF_EXPORT — marks a public API symbol as visible in the shared library.
@@ -39,4 +39,4 @@
 #define VMAF_EXPORT
 #endif
 
-#endif /* __VMAF_MACROS_H__ */
+#endif /* LIBVMAF_MACROS_H */

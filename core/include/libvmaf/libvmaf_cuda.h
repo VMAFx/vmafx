@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_CUDA_H__
-#define __VMAF_CUDA_H__
+#ifndef LIBVMAF_LIBVMAF_CUDA_H
+#define LIBVMAF_LIBVMAF_CUDA_H
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/macros.h"
@@ -121,4 +121,4 @@ VMAF_EXPORT int vmaf_cuda_fetch_preallocated_picture(VmafContext *vmaf, VmafPict
 }
 #endif
 
-#endif /* __VMAF_CUDA_H__ */
+#endif /* LIBVMAF_LIBVMAF_CUDA_H */

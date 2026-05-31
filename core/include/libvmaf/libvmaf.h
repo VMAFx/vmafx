@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_H__
-#define __VMAF_H__
+#ifndef LIBVMAF_LIBVMAF_H
+#define LIBVMAF_LIBVMAF_H
 
 #include <stdint.h>
 #include <stdio.h>
@@ -417,4 +417,4 @@ VMAF_EXPORT const char *vmaf_version(void);
 }
 #endif
 
-#endif /* __VMAF_H__ */
+#endif /* LIBVMAF_LIBVMAF_H */

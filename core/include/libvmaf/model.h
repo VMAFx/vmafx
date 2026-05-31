@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_MODEL_H__
-#define __VMAF_MODEL_H__
+#ifndef LIBVMAF_MODEL_H
+#define LIBVMAF_MODEL_H
 
 #include <stdint.h>
 
@@ -130,4 +130,4 @@ VMAF_EXPORT const void *vmaf_model_version_next(const void *prev, const char **v
 }
 #endif
 
-#endif /* __VMAF_MODEL_H__ */
+#endif /* LIBVMAF_MODEL_H */

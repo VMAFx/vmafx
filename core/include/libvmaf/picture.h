@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_PICTURE_H__
-#define __VMAF_PICTURE_H__
+#ifndef LIBVMAF_PICTURE_H
+#define LIBVMAF_PICTURE_H
 
 #include <stddef.h>
 
@@ -56,4 +56,4 @@ VMAF_EXPORT int vmaf_picture_unref(VmafPicture *pic);
 }
 #endif
 
-#endif /* __VMAF_PICTURE_H__ */
+#endif /* LIBVMAF_PICTURE_H */

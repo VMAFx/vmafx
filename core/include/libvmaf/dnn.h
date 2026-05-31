@@ -18,8 +18,8 @@
  * returns 0 and every other entry point returns -ENOSYS.
  */
 
-#ifndef __VMAF_DNN_H__
-#define __VMAF_DNN_H__
+#ifndef LIBVMAF_DNN_H
+#define LIBVMAF_DNN_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -319,4 +319,4 @@ VMAF_EXPORT int vmaf_dnn_verify_signature(const char *onnx_path, const char *reg
 }
 #endif
 
-#endif /* __VMAF_DNN_H__ */
+#endif /* LIBVMAF_DNN_H */

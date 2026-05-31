@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_LIBVMAF_SYCL_H__
-#define __VMAF_LIBVMAF_SYCL_H__
+#ifndef LIBVMAF_LIBVMAF_SYCL_H
+#define LIBVMAF_LIBVMAF_SYCL_H
 
 #include "libvmaf.h"
 #include "libvmaf/macros.h"
@@ -341,4 +341,4 @@ VMAF_EXPORT int vmaf_sycl_list_devices(void);
 }
 #endif
 
-#endif /* __VMAF_LIBVMAF_SYCL_H__ */
+#endif /* LIBVMAF_LIBVMAF_SYCL_H */

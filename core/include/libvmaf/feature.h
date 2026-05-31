@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __VMAF_FEATURE_H__
-#define __VMAF_FEATURE_H__
+#ifndef LIBVMAF_FEATURE_H
+#define LIBVMAF_FEATURE_H
 
 #include "libvmaf/macros.h"
 
@@ -36,4 +36,4 @@ VMAF_EXPORT int vmaf_feature_dictionary_free(VmafFeatureDictionary **dict);
 }
 #endif
 
-#endif /* __VMAF_FEATURE_H__ */
+#endif /* LIBVMAF_FEATURE_H */
