@@ -40,7 +40,9 @@ from __future__ import annotations
 # rules, re-evaluate these sites deliberately rather than silencing
 # with line-level suppression markers.
 import asyncio
+import contextlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -54,6 +56,62 @@ from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
+
+_logger = logging.getLogger(__name__)
+
+
+# Default per-tool wall-clock timeout (seconds) for any awaited subprocess
+# `communicate()` call. Each async subprocess site below funnels through
+# `_communicate_with_timeout` so a hung child cannot wedge an MCP tool
+# indefinitely. The default of 600 s (10 min) is generous enough for the
+# heaviest in-process workload (bench_all.sh runs ~30–120 s, vmaf-tune
+# ladder builds can run several minutes) while still putting a finite cap
+# on hangs.  Override at deploy time with `VMAF_MCP_SUBPROCESS_TIMEOUT_S`
+# (any positive int or float, decimals OK).
+def _subprocess_timeout_s() -> float:
+    """Return the configured subprocess timeout in seconds.
+
+    Re-reads the env var on every call so test suites can override it
+    per-test without re-importing the module.
+    """
+    raw = os.environ.get("VMAF_MCP_SUBPROCESS_TIMEOUT_S")
+    if not raw:
+        return 600.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 600.0
+    return value if value > 0.0 else 600.0
+
+
+async def _communicate_with_timeout(
+    proc: asyncio.subprocess.Process,
+    timeout: float | None = None,
+) -> tuple[bytes, bytes]:
+    """Await ``proc.communicate()`` with a wall-clock @p timeout.
+
+    On :class:`asyncio.TimeoutError` the child process is killed (after a
+    best-effort drain) and a :class:`RuntimeError` is raised. The default
+    timeout comes from :func:`_subprocess_timeout_s` (see ``VMAF_MCP_
+    SUBPROCESS_TIMEOUT_S``).  Mirrors the existing per-call timeouts on
+    the synchronous ``subprocess.run`` sites so async and sync paths
+    have symmetric hang protection.
+    """
+    deadline = timeout if timeout is not None else _subprocess_timeout_s()
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=deadline)
+    except asyncio.TimeoutError as exc:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        # Best-effort drain so the OS releases the pipes; ignore further
+        # timeouts here — the process is already going away.
+        with contextlib.suppress(asyncio.TimeoutError, ProcessLookupError):
+            await asyncio.wait_for(proc.communicate(), timeout=5.0)
+        raise RuntimeError(
+            f"subprocess timed out after {deadline:.1f}s (set "
+            "VMAF_MCP_SUBPROCESS_TIMEOUT_S to override)"
+        ) from exc
+
 
 # ---------------------------------------------------------------------------
 # Configuration & path validation
@@ -250,6 +308,10 @@ def _probe_backends(vmaf: Path) -> frozenset[str]:
         # On probe failure we conservatively assume CPU-only — better to
         # over-reject and let the user override via env than to silently
         # fall back as bug #1 used to.
+        _logger.warning(
+            "vmaf --help probe failed; assuming CPU-only backend support",
+            exc_info=True,
+        )
         probe = frozenset(advertised)
         _BACKEND_PROBE_CACHE[key] = probe
         return probe
@@ -281,6 +343,7 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
                 "vmaf pick, or rebuild with the requested backend enabled."
             )
 
+<<<<<<< ours
     # Round 26 A.2: use NamedTemporaryFile to guarantee a unique path.
     # The task-name approach (asyncio.current_task().get_name()) was vulnerable
     # to collision if tasks were renamed, and the name space is small under
@@ -291,6 +354,21 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
         delete=False,
     ) as _tmp:
         output = Path(_tmp.name)
+=======
+    # Use tempfile.NamedTemporaryFile (delete=False so the vmaf subprocess can
+    # reopen the path by name) instead of the predictable
+    # /tmp/vmaf-mcp-{pid}-{taskname}.json filename.  The previous scheme was
+    # predictable from outside the process (PID + asyncio task name) which
+    # would let a co-tenant on a shared host pre-create or symlink-attack
+    # the destination.  The try/finally below unlinks unconditionally.
+    tmp_handle = tempfile.NamedTemporaryFile(  # noqa: SIM115 — closed below
+        prefix="vmaf-mcp-",
+        suffix=".json",
+        delete=False,
+    )
+    tmp_handle.close()
+    output = Path(tmp_handle.name)
+>>>>>>> theirs
     try:
         argv = [
             str(vmaf),
@@ -322,7 +400,7 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
         proc = await asyncio.create_subprocess_exec(
             *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        _stdout, stderr = await proc.communicate()
+        _stdout, stderr = await _communicate_with_timeout(proc)
         if proc.returncode != 0:
             raise RuntimeError(f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace')}")
         payload = json.loads(output.read_text())
@@ -516,6 +594,7 @@ def _compare_models(
         try:
             reports.append(_eval_model_on_split(m, features, split, input_name))
         except Exception as exc:
+            _logger.warning("model %s failed to evaluate; skipping", m, exc_info=True)
             errors.append({"model": str(m), "error": str(exc)})
     reports.sort(key=lambda r: r["plcc"], reverse=True)
     return {"ranked": reports, "errors": errors}
@@ -570,6 +649,11 @@ def _load_vlm() -> tuple[Any, str] | None:
             _vlm_state["model_id"] = model_id
             return (pipe, model_id)
         except Exception:  # pragma: no cover - depends on local env
+            _logger.warning(
+                "VLM candidate %s failed to load; trying next fallback",
+                model_id,
+                exc_info=True,
+            )
             continue
     return None
 
@@ -644,7 +728,7 @@ async def _extract_frame_png(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    _stdout, stderr = await proc.communicate()
+    _stdout, stderr = await _communicate_with_timeout(proc)
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg frame-extract failed: {stderr.decode(errors='replace')}")
 
@@ -1064,7 +1148,13 @@ async def _send_progress(
         # Called outside a request context (e.g. unit tests) — silently skip.
         pass
     except Exception:
-        pass
+        # Progress notifications are best-effort; a failure here must NEVER
+        # propagate and abort the tool call. Log the cause so operators can
+        # spot a misbehaving MCP transport without re-triggering the run.
+        _logger.warning(
+            "send_progress_notification failed; suppressing to keep tool call alive",
+            exc_info=True,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1127,7 +1217,7 @@ async def _run_compare(
     proc = await asyncio.create_subprocess_exec(
         *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
-    stdout, stderr = await proc.communicate()
+    stdout, stderr = await _communicate_with_timeout(proc)
 
     await _send_progress(progress_token, 1.0, 1.0, "vmaf-tune compare done")
 
@@ -1204,7 +1294,7 @@ async def _run_ladder(
     proc = await asyncio.create_subprocess_exec(
         *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
-    stdout, stderr = await proc.communicate()
+    stdout, stderr = await _communicate_with_timeout(proc)
 
     await _send_progress(progress_token, 1.0, 1.0, "vmaf-tune ladder done")
 
@@ -1280,7 +1370,7 @@ async def _run_tune_per_shot(
     proc = await asyncio.create_subprocess_exec(
         *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
-    stdout, stderr = await proc.communicate()
+    stdout, stderr = await _communicate_with_timeout(proc)
 
     await _send_progress(progress_token, 1.0, 1.0, "vmaf-tune tune-per-shot done")
 
@@ -1372,25 +1462,32 @@ async def _run_benchmark(
         stderr=subprocess.PIPE,
         env=bench_env,
     )
-    stdout, stderr = await proc.communicate()
+    stdout, stderr = await _communicate_with_timeout(proc)
 
     await _send_progress(progress_token, 1.0, 1.0, "benchmark harness done")
 
     stdout_s = stdout.decode(errors="replace")
     stderr_s = stderr.decode(errors="replace")
+    # ADR-0608 E-1: previously, a non-zero exit from bench_all.sh returned a
+    # success-shaped payload that the MCP layer wrapped with isError=False —
+    # callers could not branch on "benchmark failed".  Raise so the MCP
+    # surface marks the call as isError=True (matches the sibling
+    # _run_compare / _run_ladder / _run_tune_per_shot error path).
+    if proc.returncode != 0:
+        detail = stderr_s.strip() or stdout_s.strip()
+        if not detail:
+            detail = (
+                "no output — likely aborted by set -euo pipefail before printing. "
+                f"Common causes: missing vmaf binary at {_vmaf_binary()}, missing "
+                "fixture YUVs under testdata/ or python/test/resource/yuv/. "
+                "Re-run with `bash -x testdata/bench_all.sh` to bisect."
+            )
+        raise RuntimeError(f"benchmark failed (rc={proc.returncode}): {detail}")
     payload: dict[str, Any] = {
         "exit_code": proc.returncode,
         "stdout": stdout_s,
         "stderr": stderr_s,
     }
-    if proc.returncode != 0 and not stdout_s.strip() and not stderr_s.strip():
-        payload["error"] = (
-            f"bench_all.sh exited {proc.returncode} with no output — "
-            "likely aborted by set -euo pipefail before printing. Common "
-            f"causes: missing vmaf binary at {_vmaf_binary()}, missing "
-            "fixture YUVs under testdata/ or python/test/resource/yuv/. "
-            "Re-run with `bash -x testdata/bench_all.sh` to bisect."
-        )
     return payload
 
 
@@ -1470,7 +1567,7 @@ async def _probe_backend(backend: str) -> dict[str, Any]:
             proc = await asyncio.create_subprocess_exec(
                 *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
-            _stdout, stderr = await proc.communicate()
+            _stdout, stderr = await _communicate_with_timeout(proc)
         except OSError as exc:
             return {
                 "backend": backend,
@@ -1498,6 +1595,7 @@ async def _probe_backend(backend: str) -> dict[str, Any]:
             vmaf_pool = pooled.get("vmaf") or {}
             score = vmaf_pool.get("mean")
         except Exception as exc:
+            _logger.warning("probe %s: failed to parse vmaf JSON output", backend, exc_info=True)
             return {
                 "backend": backend,
                 "compiled_in": compiled_in,
@@ -1698,7 +1796,7 @@ async def _decode_to_yuv(src: Path, dst: Path, *, pix_fmt: str) -> None:
     proc = await asyncio.create_subprocess_exec(
         *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
-    _stdout, stderr = await proc.communicate()
+    _stdout, stderr = await _communicate_with_timeout(proc)
     if proc.returncode != 0:
         raise RuntimeError(
             f"ffmpeg decode failed (rc={proc.returncode}): {stderr.decode(errors='replace').strip()[:500]}"
