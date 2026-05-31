@@ -31,12 +31,17 @@
 extern "C" {
 #endif
 
+/**
+ * Execution-provider hint for @ref VmafDnnConfig. The AUTO value asks
+ * ORT to pick the best available provider; the explicit values pin a
+ * single provider (see per-value docs for the exact semantics).
+ */
 typedef enum VmafDnnDevice {
-    VMAF_DNN_DEVICE_AUTO = 0,
-    VMAF_DNN_DEVICE_CPU = 1,
-    VMAF_DNN_DEVICE_CUDA = 2,
+    VMAF_DNN_DEVICE_AUTO = 0,     /**< Let ORT pick the best provider. */
+    VMAF_DNN_DEVICE_CPU = 1,      /**< CPU execution provider. */
+    VMAF_DNN_DEVICE_CUDA = 2,     /**< NVIDIA CUDA EP. */
     VMAF_DNN_DEVICE_OPENVINO = 3, /**< OpenVINO EP, GPU device type with CPU fallback */
-    VMAF_DNN_DEVICE_ROCM = 4,
+    VMAF_DNN_DEVICE_ROCM = 4,     /**< AMD ROCm EP. */
     /**
      * Apple CoreML execution provider. The base value lets CoreML pick
      * any compute unit; the explicit ANE/GPU/CPU variants pin a single
@@ -53,32 +58,38 @@ typedef enum VmafDnnDevice {
      * On non-Apple hosts the EP is not present in ORT and the session
      * silently degrades to the CPU EP — see ADR-0365.
      */
-    VMAF_DNN_DEVICE_COREML = 5,
-    VMAF_DNN_DEVICE_COREML_ANE = 6,
-    VMAF_DNN_DEVICE_COREML_GPU = 7,
-    VMAF_DNN_DEVICE_COREML_CPU = 8,
+    VMAF_DNN_DEVICE_COREML = 5,     /**< CoreML EP, MLComputeUnits = ALL. */
+    VMAF_DNN_DEVICE_COREML_ANE = 6, /**< CoreML EP, pinned to the Apple Neural Engine. */
+    VMAF_DNN_DEVICE_COREML_GPU = 7, /**< CoreML EP, pinned to the Metal GPU. */
+    VMAF_DNN_DEVICE_COREML_CPU = 8, /**< CoreML EP, pinned to the CPU compute unit. */
     /**
      * OpenVINO EP pinned to a single device type (no fallback). NPU targets
      * the Intel AI-PC neural processing unit (Meteor / Lunar / Arrow Lake);
      * CPU and GPU disambiguate the OpenVINO CPU and iGPU/dGPU plugins from
-     * each other. See [Research-0031](docs/research/0031-intel-ai-pc-applicability.md).
+     * each other. See Research-0031 (docs/research/0031-intel-ai-pc-applicability.md).
      * Values 9..11 are append-only.
      */
-    VMAF_DNN_DEVICE_OPENVINO_NPU = 9,
-    VMAF_DNN_DEVICE_OPENVINO_CPU = 10,
-    VMAF_DNN_DEVICE_OPENVINO_GPU = 11,
+    VMAF_DNN_DEVICE_OPENVINO_NPU = 9,  /**< OpenVINO EP pinned to the NPU. */
+    VMAF_DNN_DEVICE_OPENVINO_CPU = 10, /**< OpenVINO EP pinned to the CPU plugin. */
+    VMAF_DNN_DEVICE_OPENVINO_GPU = 11, /**< OpenVINO EP pinned to the iGPU/dGPU. */
 } VmafDnnDevice;
 
+/**
+ * DNN session configuration. Passed to @ref vmaf_use_tiny_model and
+ * @ref vmaf_dnn_session_open; safe to zero-initialise.
+ */
 typedef struct VmafDnnConfig {
-    VmafDnnDevice device;
-    int device_index; /**< multi-GPU index; 0 for single-GPU/CPU */
-    int threads;      /**< CPU EP intra-op threads; 0 = ORT default */
-    bool fp16_io;     /**< request fp16 tensors when supported */
+    VmafDnnDevice device; /**< execution-provider hint; AUTO lets ORT choose */
+    int device_index;     /**< multi-GPU index; 0 for single-GPU/CPU */
+    int threads;          /**< CPU EP intra-op threads; 0 = ORT default */
+    bool fp16_io;         /**< request fp16 tensors when supported */
 } VmafDnnConfig;
 
 /**
  * Returns 1 if libvmaf was built with DNN support (-Denable_dnn=true) and
  * ONNX Runtime is linked, 0 otherwise.
+ *
+ * @return 1 if DNN support was compiled in, 0 otherwise.
  */
 VMAF_EXPORT int vmaf_dnn_available(void);
 
@@ -183,6 +194,9 @@ typedef enum VmafDnnResizeMode {
  * takes effect on the next `vmaf_read_pictures()` call. See @ref
  * VmafDnnResizeMode for filter semantics. ADR-0550.
  *
+ * @param ctx   live VmafContext (from vmaf_init()).
+ * @param mode  resize filter selector; see @ref VmafDnnResizeMode.
+ *
  * @return  0          success.
  * @return -EINVAL     @p ctx is NULL or @p mode is outside the enum.
  * @return -ENOSYS     libvmaf was built without DNN support.
@@ -199,6 +213,16 @@ typedef struct VmafDnnSession VmafDnnSession;
 /**
  * Open a session against @p onnx_path. Applies the same size-cap + allowlist
  * validation as vmaf_use_tiny_model().
+ *
+ * @param out        receives the new session handle on success. Pair with
+ *                   @ref vmaf_dnn_session_close.
+ * @param onnx_path  filesystem path to a .onnx file; must be a regular file.
+ * @param cfg        optional device config; NULL uses VMAF_DNN_DEVICE_AUTO.
+ *
+ * @return 0 on success; -ENOSYS if built without DNN support; -EINVAL on
+ *         NULL @p out / @p onnx_path; -ENOENT if the file does not exist;
+ *         -E2BIG if the file exceeds VMAF_DNN_DEFAULT_MAX_BYTES; -EIO on
+ *         ORT failure.
  */
 VMAF_EXPORT int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path,
                                       const VmafDnnConfig *cfg);
@@ -208,6 +232,14 @@ VMAF_EXPORT int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_pat
  * [1, 1, H, W] float32. Input luma is normalised to [0,1] (and mean/std
  * from the sidecar if available); output is denormalised, rounded, and
  * clamped to [0, 255].
+ *
+ * @param sess        open session from @ref vmaf_dnn_session_open.
+ * @param in          input luma plane (uint8).
+ * @param in_stride   source row stride in bytes (>= w).
+ * @param w           plane width; must match the model's static input shape.
+ * @param h           plane height; must match the model's static input shape.
+ * @param out         output luma plane (uint8); caller-owned.
+ * @param out_stride  destination row stride in bytes.
  *
  * @return 0 on success, -ENOTSUP if the model shape is not luma-only,
  *         -ERANGE if @p w/@p h don't match the model's static input shape.
@@ -251,10 +283,10 @@ VMAF_EXPORT int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_
  * row-major, with @p rank dimensions.
  */
 typedef struct VmafDnnInput {
-    const char *name;
-    const float *data;
-    const int64_t *shape;
-    size_t rank;
+    const char *name;     /**< ONNX graph input name, or NULL for positional binding */
+    const float *data;    /**< float32 element buffer, row-major */
+    const int64_t *shape; /**< element extents, length @p rank */
+    size_t rank;          /**< number of dimensions in @p shape */
 } VmafDnnInput;
 
 /**
@@ -264,10 +296,10 @@ typedef struct VmafDnnInput {
  * non-NULL, else positionally.
  */
 typedef struct VmafDnnOutput {
-    const char *name;
-    float *data;
-    size_t capacity;
-    size_t written;
+    const char *name; /**< ONNX graph output name, or NULL for positional binding */
+    float *data;      /**< caller-owned float32 output buffer */
+    size_t capacity;  /**< @p data element capacity */
+    size_t written;   /**< populated by the call with the element count produced */
 } VmafDnnOutput;
 
 /**
@@ -278,6 +310,12 @@ typedef struct VmafDnnOutput {
  * return -ENOSPC; on -ENOSPC the @p written field is still populated
  * with the required element count so the caller can resize and retry.
  *
+ * @param sess       open session from @ref vmaf_dnn_session_open.
+ * @param inputs     array of @p n_inputs input descriptors.
+ * @param n_inputs   element count of @p inputs.
+ * @param outputs    array of @p n_outputs output descriptors.
+ * @param n_outputs  element count of @p outputs.
+ *
  * @return 0 on success; -ENOSYS if built without DNN support;
  *         -EINVAL on bad arity / null pointers; -ENOSPC if any output
  *         buffer is too small; -EIO on ORT failure.
@@ -285,6 +323,12 @@ typedef struct VmafDnnOutput {
 VMAF_EXPORT int vmaf_dnn_session_run(VmafDnnSession *sess, const VmafDnnInput *inputs,
                                      size_t n_inputs, VmafDnnOutput *outputs, size_t n_outputs);
 
+/**
+ * Release a session handle previously opened by
+ * @ref vmaf_dnn_session_open. Passing NULL is a no-op.
+ *
+ * @param sess  session handle to release.
+ */
 VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
 
 /**
@@ -294,6 +338,11 @@ VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
  * "CoreML", "CoreML:ANE", "CoreML:GPU", "CoreML:CPU", "OpenVINO:NPU",
  * "OpenVINO:CPU", "OpenVINO:GPU", "ROCm". Returns NULL if @p sess is NULL
  * or libvmaf was built without DNN support. Lifetime: owned by @p sess.
+ *
+ * @param sess  open session from @ref vmaf_dnn_session_open.
+ *
+ * @return NUL-terminated provider tag, or NULL if @p sess is NULL or
+ *         libvmaf was built without DNN support.
  */
 VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
 
@@ -306,6 +355,10 @@ VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
  *
  * Designed to fail closed: any error short-circuits model load. Wired
  * through the CLI by `--tiny-model-verify`.
+ *
+ * @param onnx_path      filesystem path to the model file.
+ * @param registry_path  optional explicit registry path; NULL → look up
+ *                       `registry.json` next to @p onnx_path.
  *
  * @return 0 on successful verification, -ENOENT on missing registry /
  *         missing bundle / no matching entry, -EACCES when `cosign` is

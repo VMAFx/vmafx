@@ -500,6 +500,26 @@ Run against the Netflix golden pair:
 Note: this example reads `1920x1080` — change `W`, `H` when running against
 the 576×324 fixture.
 
+## Doxygen reference (auto-generated)
+
+For browsable per-symbol HTML, run the standalone doxygen build the fork
+ships for the public-API surface — separate from the meson-driven
+full-tree generator so the warning bar stays tight on the installable
+headers:
+
+```bash
+sudo apt-get install -y --no-install-recommends doxygen   # one-off
+mkdir -p build/doxygen-public-api
+doxygen core/doc/Doxyfile.public-api
+open build/doxygen-public-api/html/index.html             # browse
+```
+
+The `doxygen-public-api` GitHub Actions workflow runs the same command
+on every PR that touches `core/include/libvmaf/` or the Doxyfile and
+publishes the rendered HTML + the warning log as build artifacts.
+The build is warning-clean — see
+[ADR-0953](../adr/0953-doxygen-public-api-clean.md).
+
 ## Related
 
 - [gpu.md](gpu.md) — CUDA / SYCL additions to the lifecycle

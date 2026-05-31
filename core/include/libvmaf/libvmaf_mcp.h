@@ -74,6 +74,8 @@ extern "C" {
  * The umbrella flag is independent of the per-transport sub-flags
  * (`enable_mcp_sse`, `enable_mcp_uds`, `enable_mcp_stdio`); use
  * @ref vmaf_mcp_transport_available to query a specific transport.
+ *
+ * @return 1 if the MCP feature was compiled in, 0 otherwise.
  */
 VMAF_EXPORT int vmaf_mcp_available(void);
 
@@ -91,6 +93,11 @@ typedef enum VmafMcpTransport {
  * Returns 1 if the per-transport sub-flag was enabled at build
  * time (e.g. `-Denable_mcp_sse=true`), 0 otherwise. Returns 0 for
  * unknown transport ids.
+ *
+ * @param transport Transport identifier to query.
+ *
+ * @return 1 if the transport was compiled in, 0 otherwise (also 0
+ *         for unknown transport ids).
  */
 VMAF_EXPORT int vmaf_mcp_transport_available(VmafMcpTransport transport);
 
@@ -105,25 +112,20 @@ typedef struct VmafMcpServer VmafMcpServer;
 /**
  * MCP server configuration — populated by the host before
  * @ref vmaf_mcp_init. POD struct; safe to zero-initialise.
- *
- * @field queue_depth         SPSC ring slot count. 0 → default 64.
- *                            Must be a power of two; rejected
- *                            otherwise with -EINVAL. Slots are
- *                            fixed-size (no heap-owned data crosses
- *                            the boundary), pre-allocated at
- *                            @ref vmaf_mcp_init time.
- * @field max_drain_per_frame Upper bound on command envelopes the
- *                            measurement thread drains per frame
- *                            (NASA Power-of-10 rule 2). 0 →
- *                            default 4. Cap 64.
- * @field user_agent          Optional NUL-terminated tag returned
- *                            in MCP `serverInfo`. NULL → libvmaf
- *                            default. Caller retains ownership;
- *                            the string is copied into the handle.
  */
 typedef struct VmafMcpConfig {
+    /** SPSC ring slot count. 0 → default 64. Must be a power of
+     *  two; rejected otherwise with -EINVAL. Slots are fixed-size
+     *  (no heap-owned data crosses the boundary), pre-allocated at
+     *  @ref vmaf_mcp_init time. */
     uint32_t queue_depth;
+    /** Upper bound on command envelopes the measurement thread
+     *  drains per frame (NASA Power-of-10 rule 2). 0 → default 4.
+     *  Cap 64. */
     uint32_t max_drain_per_frame;
+    /** Optional NUL-terminated tag returned in MCP `serverInfo`.
+     *  NULL → libvmaf default. Caller retains ownership; the string
+     *  is copied into the handle. */
     const char *user_agent;
 } VmafMcpConfig;
 
@@ -151,16 +153,15 @@ VMAF_EXPORT int vmaf_mcp_init(VmafMcpServer **out, VmafContext *ctx, const VmafM
 /**
  * SSE transport configuration. Populated by the host before
  * @ref vmaf_mcp_start_sse.
- *
- * @field port  Loopback TCP port, in [1, 65535]. 0 → kernel-picked
- *              ephemeral port; on success the chosen port is
- *              written back into this field for the host to read.
- * @field path  Optional URL path the SSE stream binds to. NULL →
- *              libvmaf default ("/mcp/sse"). Caller retains
- *              ownership; the string is copied.
  */
 typedef struct VmafMcpSseConfig {
+    /** Loopback TCP port, in [1, 65535]. 0 → kernel-picked
+     *  ephemeral port; on success the chosen port is written back
+     *  into this field for the host to read. */
     uint16_t port;
+    /** Optional URL path the SSE stream binds to. NULL → libvmaf
+     *  default ("/mcp/sse"). Caller retains ownership; the string
+     *  is copied. */
     const char *path;
 } VmafMcpSseConfig;
 
@@ -168,6 +169,10 @@ typedef struct VmafMcpSseConfig {
  * Start the SSE (Server-Sent Events) transport on a loopback
  * socket. Spawns one dedicated MCP pthread that owns the listener.
  * The transport refuses to bind to a non-loopback address.
+ *
+ * @param server  Server handle previously created via
+ *                @ref vmaf_mcp_init.
+ * @param cfg     Transport configuration. Required.
  *
  * @return 0 on success, -ENOSYS when built without
  *         `-Denable_mcp_sse=true`, -EINVAL on bad arguments,
@@ -178,13 +183,11 @@ VMAF_EXPORT int vmaf_mcp_start_sse(VmafMcpServer *server, VmafMcpSseConfig *cfg)
 
 /**
  * UDS (Unix domain socket) transport configuration.
- *
- * @field path  Filesystem path the listener binds to. The file is
- *              created mode 0700 (per ADR-0128 § auth). Required.
- *              Caller retains ownership of the string; it is
- *              copied.
  */
 typedef struct VmafMcpUdsConfig {
+    /** Filesystem path the listener binds to. The file is created
+     *  mode 0700 (per ADR-0128 § auth). Required. Caller retains
+     *  ownership of the string; it is copied. */
     const char *path;
 } VmafMcpUdsConfig;
 
@@ -192,6 +195,10 @@ typedef struct VmafMcpUdsConfig {
  * Start the Unix-domain-socket transport. Spawns one dedicated
  * MCP pthread that owns the listener. Wire framing is
  * newline-delimited JSON-RPC.
+ *
+ * @param server  Server handle previously created via
+ *                @ref vmaf_mcp_init.
+ * @param cfg     Transport configuration. Required.
  *
  * @return 0 on success, -ENOSYS when built without
  *         `-Denable_mcp_uds=true`, -ENODEV on non-POSIX hosts
@@ -206,15 +213,13 @@ VMAF_EXPORT int vmaf_mcp_start_uds(VmafMcpServer *server, const VmafMcpUdsConfig
  * embedded server does NOT claim the host's own stdin/stdout — the
  * host hands over a dedicated fd pair (typically fd 3 / fd 4 from
  * a parent-spawned wrapper).
- *
- * @field fd_in   File descriptor the server reads JSON-RPC from.
- *                Must be >= 0. Caller retains ownership; libvmaf
- *                does not close it.
- * @field fd_out  File descriptor the server writes JSON-RPC to.
- *                Must be >= 0. Caller retains ownership.
  */
 typedef struct VmafMcpStdioConfig {
+    /** File descriptor the server reads JSON-RPC from. Must be
+     *  >= 0. Caller retains ownership; libvmaf does not close it. */
     int fd_in;
+    /** File descriptor the server writes JSON-RPC to. Must be
+     *  >= 0. Caller retains ownership. */
     int fd_out;
 } VmafMcpStdioConfig;
 
@@ -222,6 +227,10 @@ typedef struct VmafMcpStdioConfig {
  * Start the stdio transport. Spawns one dedicated MCP pthread that
  * reads LSP-framed JSON-RPC on `fd_in` and writes responses on
  * `fd_out`.
+ *
+ * @param server  Server handle previously created via
+ *                @ref vmaf_mcp_init.
+ * @param cfg     Transport configuration. Required.
  *
  * @return 0 on success, -ENOSYS when built without
  *         `-Denable_mcp_stdio=true`, -EINVAL on bad arguments
@@ -236,6 +245,8 @@ VMAF_EXPORT int vmaf_mcp_start_stdio(VmafMcpServer *server, const VmafMcpStdioCo
  * transport is a no-op and returns 0. Does NOT release the server
  * handle itself; pair with @ref vmaf_mcp_close.
  *
+ * @param server  Server handle to stop.
+ *
  * @return 0 on success, -EINVAL on NULL @p server.
  */
 VMAF_EXPORT int vmaf_mcp_stop(VmafMcpServer *server);
@@ -247,6 +258,8 @@ VMAF_EXPORT int vmaf_mcp_stop(VmafMcpServer *server);
  *
  * Implicitly calls @ref vmaf_mcp_stop if any transport is still
  * running.
+ *
+ * @param server  Pointer to the server handle to release.
  */
 VMAF_EXPORT void vmaf_mcp_close(VmafMcpServer **server);
 

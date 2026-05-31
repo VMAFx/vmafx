@@ -28,8 +28,13 @@ extern "C" {
 
 typedef struct VmafCudaState VmafCudaState;
 
+/**
+ * Configuration passed to `vmaf_cuda_state_init`. Safe to
+ * zero-initialise — libvmaf creates its own CUcontext when
+ * @p cu_ctx is NULL.
+ */
 typedef struct VmafCudaConfiguration {
-    void *cu_ctx; ///< CUcontext
+    void *cu_ctx; /**< Optional CUcontext (cast from `CUcontext`); NULL → create one. */
 } VmafCudaConfiguration;
 
 /**
@@ -79,12 +84,18 @@ enum VmafCudaPicturePreallocationMethod {
     VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST_PINNED,
 };
 
+/**
+ * Picture-pool configuration for the CUDA backend. Passed to
+ * `vmaf_cuda_preallocate_pictures`.
+ */
 typedef struct VmafCudaPictureConfiguration {
+    /** Per-picture shape (width/height/bpc/pixel-format). */
     struct {
-        unsigned w, h;
-        unsigned bpc;
-        enum VmafPixelFormat pix_fmt;
+        unsigned w, h;                /**< Per-plane width / height. */
+        unsigned bpc;                 /**< Bits per component. */
+        enum VmafPixelFormat pix_fmt; /**< Pixel format. */
     } pic_params;
+    /** Selector for how each VmafPicture's data buffers are placed. */
     enum VmafCudaPicturePreallocationMethod pic_prealloc_method;
 } VmafCudaPictureConfiguration;
 

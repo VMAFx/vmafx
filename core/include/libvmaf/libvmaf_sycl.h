@@ -44,8 +44,8 @@ typedef struct VmafSyclState VmafSyclState;
  *                    per-kernel timing can be collected.
  */
 typedef struct VmafSyclConfiguration {
-    int device_index;
-    int enable_profiling;
+    int device_index;     /**< Level-Zero GPU ordinal; -1 = SYCL default device. */
+    int enable_profiling; /**< Non-zero → create the queue with profiling enabled. */
 } VmafSyclConfiguration;
 
 /**
@@ -83,11 +83,13 @@ enum VmafSyclPicturePreallocationMethod {
  * Configuration for pre-allocating SYCL device pictures.
  */
 typedef struct VmafSyclPictureConfiguration {
+    /** Per-picture shape (width/height/bpc/pixel-format). */
     struct {
-        unsigned w, h;
-        unsigned bpc;
-        enum VmafPixelFormat pix_fmt;
+        unsigned w, h;                /**< Per-plane width / height. */
+        unsigned bpc;                 /**< Bits per component. */
+        enum VmafPixelFormat pix_fmt; /**< Pixel format. */
     } pic_params;
+    /** Where the per-picture buffers live (device / host / none). */
     enum VmafSyclPicturePreallocationMethod pic_prealloc_method;
 } VmafSyclPictureConfiguration;
 

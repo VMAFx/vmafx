@@ -61,9 +61,13 @@ enum VmafModelFlags {
     VMAF_MODEL_FLAG_DISABLE_TRANSFORM = (1 << 2),
 };
 
+/**
+ * VMAF model configuration. Passed to `vmaf_model_load` /
+ * `vmaf_model_load_from_path`.
+ */
 typedef struct VmafModelConfig {
-    const char *name;
-    uint64_t flags;
+    const char *name; /**< Caller-supplied tag exposed in scoring output. */
+    uint64_t flags;   /**< Bitwise OR of `VmafModelFlags` values. */
 } VmafModelConfig;
 
 VMAF_EXPORT int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version);
@@ -83,14 +87,22 @@ enum VmafModelCollectionScoreType {
     VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP,
 };
 
+/**
+ * Aggregate score returned from a model-collection (e.g. bootstrap
+ * VMAF). Populated by `vmaf_score_pooled_model_collection`.
+ */
 typedef struct VmafModelCollectionScore {
-    enum VmafModelCollectionScoreType type;
+    enum VmafModelCollectionScoreType type; /**< Discriminator for the score family. */
+    /** Bootstrap variant: bagging score + dispersion + 95% confidence
+     *  interval. Valid when @p type == VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP. */
     struct {
-        double bagging_score;
-        double stddev;
+        double bagging_score; /**< Mean of the per-sub-model scores. */
+        double stddev;        /**< Standard deviation across sub-models. */
+        /** Confidence-interval block. */
         struct {
+            /** 95% confidence interval [lo, hi]. */
             struct {
-                double lo, hi;
+                double lo, hi; /**< Lower / upper 95% CI bounds. */
             } p95;
         } ci;
     } bootstrap;

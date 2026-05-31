@@ -112,3 +112,21 @@ backend-agnostic `gpu_picture_pool.{c,h}` round-robin
   from `libvmaf.so.3` to `.4` at VMAFX v4.0.0. `picture_v2.h` is
   declared but not yet linked in cycle N; entry points return
   `-ENOSYS` until the cycle-N+1 implementation PR lands.
+
+- **Doxygen-clean public API** ([ADR-0953](../../../docs/adr/0953-doxygen-public-api-clean.md)):
+  every header in this directory must produce **zero warnings** when
+  run through `doxygen core/doc/Doxyfile.public-api`. The CI workflow
+  `.github/workflows/doxygen-public-api.yml` builds the doxygen tree
+  on every PR touching this directory and publishes the warning log
+  as a build artifact. Patterns to avoid because they trigger
+  warnings (and which the audit closed out):
+  - **`@field name desc` for struct members** is not a doxygen
+    command — use per-member inline `/**< desc */`.
+  - **`@ref function_name` from a struct doc-block** does not resolve
+    cross-symbol — use backtick literals (`vmaf_picture_alloc`)
+    instead.
+  - **Functions without `@param` per parameter** or **without
+    `@return`** trigger `WARN_NO_PARAMDOC` / incomplete-doc warnings.
+  - **Multi-name declarations** (`unsigned w[3], h[3];`) attach the
+    inline doc to one symbol only — split into one declaration per
+    line so each symbol carries its own doc.

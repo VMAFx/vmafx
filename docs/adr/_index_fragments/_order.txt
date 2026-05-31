@@ -677,3 +677,4 @@
 0905-gitignore-and-workflow-audit
 0903-wire-codecov-upload
 0902-signing-and-attestation-audit
+0953-doxygen-public-api-clean: warning-clean doxygen build for libvmaf public C API (recovery of #457)): warning-clean doxygen build for libvmaf public C API (recovery of #457))

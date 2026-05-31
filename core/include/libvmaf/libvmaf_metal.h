@@ -61,6 +61,8 @@ extern "C" {
  * (-Denable_metal=enabled or auto-probe succeeded on macOS), 0
  * otherwise. Cheap to call; no Metal runtime is touched until @ref
  * vmaf_metal_state_init().
+ *
+ * @return 1 if Metal support was compiled in, 0 otherwise.
  */
 VMAF_EXPORT int vmaf_metal_available(void);
 
@@ -72,6 +74,10 @@ VMAF_EXPORT int vmaf_metal_available(void);
  */
 typedef struct VmafMetalState VmafMetalState;
 
+/**
+ * Configuration passed to @ref vmaf_metal_state_init. POD struct; safe
+ * to zero-initialise (yields device_index = 0).
+ */
 typedef struct VmafMetalConfiguration {
     int device_index; /**< -1 = system default Metal device (typical Apple Silicon path) */
     int flags;        /**< reserved for future use; pass 0 */
@@ -81,6 +87,10 @@ typedef struct VmafMetalConfiguration {
  * Allocate a VmafMetalState. Picks the device by index; -1 selects the
  * system default Metal device (`MTLCreateSystemDefaultDevice` on
  * Apple Silicon).
+ *
+ * @param out  receives the new state handle on success. Pair with
+ *             @ref vmaf_metal_state_free.
+ * @param cfg  device selection.
  *
  * @return 0 on success, -ENOSYS when built without Metal, -ENODEV when
  *         no Apple-Family-7+ device is available (Intel Mac, non-macOS
@@ -95,6 +105,13 @@ VMAF_EXPORT int vmaf_metal_state_init(VmafMetalState **out, VmafMetalConfigurati
  * caller still owns the state and must free it with
  * @ref vmaf_metal_state_free after vmaf_close(). Same lifetime model as
  * the SYCL + Vulkan + HIP backends.
+ *
+ * @param ctx    live VmafContext (from vmaf_init()).
+ * @param state  state handle previously allocated via
+ *               @ref vmaf_metal_state_init.
+ *
+ * @return 0 on success, -EINVAL on bad arguments, -ENOSYS when built
+ *         without Metal.
  */
 VMAF_EXPORT int vmaf_metal_import_state(VmafContext *ctx, VmafMetalState *state);
 
@@ -103,13 +120,17 @@ VMAF_EXPORT int vmaf_metal_import_state(VmafContext *ctx, VmafMetalState *state)
  * Safe to pass `NULL` or a state that was never imported. After import
  * the caller is still responsible for freeing — call this after
  * vmaf_close() to avoid using a state the context still references.
+ *
+ * @param state  pointer to the state handle to release; set to NULL on
+ *               return.
  */
 VMAF_EXPORT void vmaf_metal_state_free(VmafMetalState **state);
 
 /**
  * Enumerate Apple-Family-7+ Metal devices visible to the runtime.
  * Prints one line per device with its ordinal, name, and GPU family.
- * Returns the device count or -ENOSYS when built without Metal.
+ *
+ * @return Device count, or -ENOSYS when built without Metal.
  */
 VMAF_EXPORT int vmaf_metal_list_devices(void);
 
@@ -184,6 +205,10 @@ typedef struct VmafMetalExternalHandles {
  * Mutually exclusive with @ref vmaf_metal_state_init in a single
  * process context: pick one.
  *
+ * @param out      receives the new state handle on success. Pair with
+ *                 @ref vmaf_metal_state_free.
+ * @param handles  caller-owned MTLDevice / MTLCommandQueue handles.
+ *
  * @return 0 on success, -EINVAL on bad arguments, -ENODEV on a
  *         non-Apple-Family-7 device, -ENOMEM on allocation failure.
  */
@@ -218,7 +243,7 @@ VMAF_EXPORT int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosur
 
 /**
  * Block until all previously-submitted Metal compute work on
- * `state` has finished. Mirrors @ref vmaf_vulkan_wait_compute.
+ * `state` has finished. Mirrors `vmaf_vulkan_wait_compute`.
  * Used by FFmpeg-side filters before reusing imported IOSurfaces
  * in the next frame.
  *
@@ -227,6 +252,8 @@ VMAF_EXPORT int vmaf_metal_picture_import(VmafMetalState *state, uintptr_t iosur
  * returns). A future async path replaces this with a per-frame
  * MTLSharedEvent drain.
  *
+ * @param state  Metal state handle.
+ *
  * @return 0 on success, -EINVAL on NULL state.
  */
 VMAF_EXPORT int vmaf_metal_wait_compute(VmafMetalState *state);
@@ -234,10 +261,14 @@ VMAF_EXPORT int vmaf_metal_wait_compute(VmafMetalState *state);
 /**
  * Trigger a libvmaf score read for the imported reference +
  * distorted IOSurfaces at `index`. Mirrors
- * @ref vmaf_vulkan_read_imported_pictures.
+ * `vmaf_vulkan_read_imported_pictures`.
  *
  * Requires all 3 planes (Y/U/V) to have been imported for both
  * ref and dis at the matching index.
+ *
+ * @param ctx    live VmafContext (from vmaf_init()).
+ * @param index  frame index matching the value passed to
+ *               @ref vmaf_metal_picture_import.
  *
  * @return 0 on success, -EINVAL on missing imports or stale state.
  */

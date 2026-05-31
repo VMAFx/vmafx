@@ -41691,3 +41691,18 @@ infrastructure (`.github/workflows/docker-publish-production.yml`,
 workflow (`supply-chain.yml`) is itself fork-additive (Netflix upstream
 does not ship a Sigstore + SLSA + SBOM release channel); upstream syncs
 never touch any of these files.
+## Doxygen public-API clean (ADR-0953, 2026-05-31)
+
+**Low rebase impact**: every edit lands as additional doxygen comments
+or per-member `/**< desc */` annotations inside the public headers
+under `core/include/libvmaf/`. Two of the headers touched are
+Netflix-upstream-mirrored — `picture.h` and `model.h` — but the
+edits are pure documentation; no struct layout, function signature,
+or symbol name moves. An upstream sync that re-touches either file
+should accept its hunks unchanged and let the fork's doc comments
+remain in place. The four fork-added headers (`libvmaf_mcp.h`,
+`dnn.h`, `libvmaf_metal.h`, `libvmaf_hip.h`) are fork-local and have
+no upstream counterpart. The new `core/doc/Doxyfile.public-api`,
+`.github/workflows/doxygen-public-api.yml`, ADR-0953, research
+digest, changelog fragment, and AGENTS.md invariant note are
+fork-local — zero rebase exposure.: warning-clean doxygen build for libvmaf public C API (recovery of #457)): warning-clean doxygen build for libvmaf public C API (recovery of #457))

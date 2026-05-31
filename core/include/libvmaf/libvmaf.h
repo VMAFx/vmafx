@@ -82,11 +82,11 @@ enum VmafPoolingMethod {
  *                    if gpumask: disable CUDA
  */
 typedef struct VmafConfiguration {
-    enum VmafLogLevel log_level;
-    unsigned n_threads;
-    unsigned n_subsample;
-    uint64_t cpumask;
-    uint64_t gpumask;
+    enum VmafLogLevel log_level; /**< Logger verbosity. */
+    unsigned n_threads;          /**< Worker thread count; 0 = library default. */
+    unsigned n_subsample;        /**< Compute scores only every N frames; 0/1 = every frame. */
+    uint64_t cpumask;            /**< CPU-ISA disable bitmask; see struct doc above. */
+    uint64_t gpumask;            /**< GPU-feature disable bitmask; see struct doc above. */
 } VmafConfiguration;
 
 typedef struct VmafContext VmafContext;
@@ -323,15 +323,16 @@ VMAF_EXPORT int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature
                                           unsigned index_low, unsigned index_high);
 
 /**
- * Picture Pool Configuration
+ * Picture-pool configuration passed to `vmaf_picture_pool_create`.
  */
 typedef struct VmafPictureConfiguration {
+    /** Per-picture shape (width/height/bpc/pixel-format). */
     struct {
-        unsigned w, h;
-        unsigned bpc;
-        enum VmafPixelFormat pix_fmt;
+        unsigned w, h;                /**< Per-plane width / height. */
+        unsigned bpc;                 /**< Bits per component. */
+        enum VmafPixelFormat pix_fmt; /**< Pixel format. */
     } pic_params;
-    unsigned pic_cnt;
+    unsigned pic_cnt; /**< Pool size — count of pre-allocated pictures. */
 } VmafPictureConfiguration;
 
 /**

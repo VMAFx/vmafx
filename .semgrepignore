@@ -33,6 +33,13 @@ testdata/
 # is exempt: it is the hook being bypassed, not a caller that bypasses it.
 scripts/git-hooks/pre-push-mkdocs-strict.sh
 
+# scripts/githooks/pre-commit.sh is the native-bash hook (ADR-0924). Line 33
+# contains a comment explaining the --no-verify escape hatch for users; it is
+# documentation, not a programmatic bypass. The vmaf-no-skip-hooks-in-scripts
+# rule fires on the comment's literal text; exempt this file the same way we
+# exempt pre-push-mkdocs-strict.sh above.
+scripts/githooks/pre-commit.sh
+
 # Vendored upstream cJSON — three upstream TODO/FIXME markers that cannot be
 # fixed without diverging from the upstream cJSON source (cJSON 1.7.x).
 # They are tracked in the cJSON project itself; we do not modify this file.

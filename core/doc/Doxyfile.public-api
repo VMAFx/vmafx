@@ -1,0 +1,73 @@
+# Doxyfile for the libvmaf public C API.
+#
+# This is a *standalone* Doxyfile (no meson configure_file substitution) so
+# the build can run outside of `meson setup` — useful for the on-demand CI
+# job and for local "is the API still doc-clean?" checks.
+#
+# Inputs are deliberately scoped to the installable public headers under
+# core/include/libvmaf/ — internal headers under core/src/ and feature
+# kernels are NOT in scope here. The pre-existing core/doc/Doxyfile.in
+# (driven by the `enable_docs` meson option) covers the wider source tree
+# and is left untouched.
+#
+# Invocation (from repo root):
+#     doxygen core/doc/Doxyfile.public-api
+#
+# Output: build/doxygen-public-api/html/index.html (gitignored).
+
+PROJECT_NAME            = "libvmaf (public C API)"
+PROJECT_BRIEF           = "Public C API for the VMAF perceptual quality library"
+OUTPUT_DIRECTORY        = build/doxygen-public-api
+OUTPUT_LANGUAGE         = English
+TAB_SIZE                = 4
+OPTIMIZE_OUTPUT_FOR_C   = YES
+DOXYFILE_ENCODING       = UTF-8
+TYPEDEF_HIDES_STRUCT    = YES
+
+# We require every public symbol to be documented, but we do NOT auto-emit
+# stubs for undocumented ones (EXTRACT_ALL=NO) — that would hide warnings
+# behind empty placeholders. Set EXTRACT_ALL=YES for the rendered-doc job
+# if a contributor wants to browse the partial result locally.
+EXTRACT_ALL             = NO
+EXTRACT_STATIC          = NO
+HIDE_UNDOC_MEMBERS      = NO
+HIDE_UNDOC_CLASSES      = NO
+
+# Warnings: every undocumented public symbol is a warning, every malformed
+# @param / @return is a warning. WARN_AS_ERROR is OFF so the on-demand CI
+# job can publish the warning log as an artifact without failing the run —
+# we'll flip it ON once we make this a required gate (tracked in ADR).
+QUIET                   = YES
+WARNINGS                = YES
+WARN_IF_UNDOCUMENTED    = YES
+WARN_IF_DOC_ERROR       = YES
+WARN_IF_INCOMPLETE_DOC  = YES
+WARN_NO_PARAMDOC        = YES
+WARN_AS_ERROR           = NO
+WARN_LOGFILE            = build/doxygen-public-api/warnings.log
+
+INPUT                   = core/include/libvmaf
+FILE_PATTERNS           = *.h
+RECURSIVE               = YES
+STRIP_FROM_PATH         = core/include
+
+# Skip the .in template — it has unsubstituted @VAR@ tokens that confuse
+# the C parser. Strip the per-directory AGENTS.md scaffolding note too.
+EXCLUDE_PATTERNS        = */version.h.in \
+                          */AGENTS.md
+
+# Preprocessing: define the public macros so doxygen sees the real
+# function declarations rather than skipping them due to attribute spelling.
+ENABLE_PREPROCESSING    = YES
+MACRO_EXPANSION         = YES
+EXPAND_ONLY_PREDEF      = YES
+PREDEFINED              = VMAF_PUBLIC= \
+                          VMAF_DEPRECATED= \
+                          __attribute__(x)=
+
+GENERATE_HTML           = YES
+GENERATE_LATEX          = NO
+GENERATE_XML            = NO
+
+# No dot graphs — keeps the on-demand CI job fast and the artifact small.
+HAVE_DOT                = NO
