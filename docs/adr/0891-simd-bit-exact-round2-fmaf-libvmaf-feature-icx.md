@@ -105,3 +105,59 @@ We will:
 - ADR-0161 (SSIMULACRA 2 AVX2 port)
 - ADR-0278 (NOLINT citation closeout — pattern of inline ADR cites carried through to the new FMA comments)
 - Source: `req` — round-2 RCA dossier dispatched by user 2026-05-30 covering the two root causes (Fix A: scalar lib FP-model gap; Fix B: SSIMULACRA 2 colour-matrix auto-fusion under icx).
+
+## Notes — cross-arch IIR blur divergence (round-4 investigation)
+
+A round-4 investigation (2026-05-31) identified a remaining source of
+cross-arch divergence that is distinct from the colour-matrix FMA issue
+fixed in this ADR:
+
+**Root cause**: the Gaussian IIR blur recurrence in `ssimulacra2.c`:
+```
+out_k = n2_k * sum - d1_k * prev1_k - prev2_k
+```
+is implemented in the SIMD paths as:
+```c
+// NEON example
+float32x4_t o0 = vsubq_f32(vmulq_f32(vn2_0, sum), vmulq_f32(vd1_0, prev1_0));
+o0 = vsubq_f32(o0, prev2_0);
+```
+and in the scalar path (with `#pragma STDC FP_CONTRACT OFF`) as:
+```c
+const float o0 = n2_0 * sum - d1_0 * prev1_0[x] - prev2_0[x];
+```
+
+Apple Clang on macOS arm64 (Apple Silicon) auto-contracts the
+`vmulq_f32 + vsubq_f32` pair to a single-rounded `FMLS` instruction
+even when `#pragma STDC FP_CONTRACT OFF` is set — this pragma applies
+to C-level expressions but not to SIMD intrinsic pairs that Apple
+Clang peephole-folds. gcc on Linux x86_64 honours the pragma and emits
+separate `MULSS + SUBSS` for the scalar path. The NEON path's FMLS
+instruction vs gcc's separate mul+sub on x86_64 produces blur output
+floats that differ by up to 1 ULP per IIR step. These compound through
+the 6-scale pyramid and shift individual per-frame scores by up to
+~1e-2 and the 48-frame pooled mean by ~1e-3.
+
+**Scope**: This divergence is between architectures (Linux x86_64 gcc
+vs macOS arm64 Apple Clang), not within a single architecture. The
+`test_ssimulacra2_simd` per-arch unit test verifies that the SIMD blur
+is byte-identical to the scalar reference ON THE SAME MACHINE. The
+cross-arch divergence is a platform FP-contract behaviour difference,
+not a bug in the SIMD ports.
+
+**Decision**: The `python/test/ssimulacra2_test.py` snapshot gate
+uses Linux x86_64 (gcc, AVX2 path) as the primary CI baseline with
+`places=4` (1e-4) tolerance. The macOS arm64 CI runner is expected to
+differ at the per-frame level; the Python test is scoped to the Linux
+x86_64 runner in CI. A deeper fix (double-precision IIR state in the
+blur recurrence) would achieve true cross-arch bit-exactness but
+changes all numeric outputs and requires a full snapshot regeneration
+cycle — deferred to a future ADR.
+
+**Alternatives not taken**: Kahan-compensated summation at the pooling
+level, per-arch baseline dictionaries in the test, or loosening the
+tolerance to `places=3`. All of these were rejected: pooling-level
+Kahan cannot fix per-frame score divergence caused by upstream blur
+differences; per-arch baselines add maintenance surface; `places=3`
+is the wrong tolerance for a gate that is intended to catch SIMD
+regressions of the scale that actually occur (≥ 1e-4 for genuine bugs).
