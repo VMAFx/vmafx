@@ -151,6 +151,22 @@ repos:
 
   - repo: local
     hooks:
+      - id: no-conflict-markers
+        name: No committed git conflict markers (belt-and-suspenders)
+        # Belt-and-suspenders companion to the `check-merge-conflict` hook
+        # from pre-commit-hooks above. That hook is Python-based and covers
+        # the standard three-way conflict syntax; this shell hook uses
+        # `git grep` which is executed by git's own C binary and is
+        # essentially free (< 5ms on a typical staged tree). If either fires,
+        # the merge wasn't fully resolved. PR #50 shipped conflict markers
+        # into 70 docs and source files; this hook would have blocked it.
+        entry: scripts/ci/check-conflict-markers.sh
+        language: script
+        # Always fire — conflict markers can appear in YAML, C, Python,
+        # Markdown, etc., regardless of which file types were staged.
+        pass_filenames: false
+        always_run: true
+
       - id: agent-worktree-drift-guard
         name: ADR-0332 agent worktree-drift guard
         entry: scripts/ci/check-agent-worktree-drift.sh
