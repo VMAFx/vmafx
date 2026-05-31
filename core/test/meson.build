@@ -1246,6 +1246,7 @@ test_motion_min_dim = executable('test_motion_min_dim',
 )
 test('test_motion_min_dim', test_motion_min_dim, suite : ['fast'])
 
+<<<<<<< ours
 # GPU dispatch-runtime coverage (host-only). Targets the shared
 # `gpu_dispatch_env.c` + `gpu_dispatch_parse.h` helpers and the
 # host-buildable subset of the per-backend dispatch_strategy TUs
@@ -1268,6 +1269,31 @@ test_gpu_dispatch_runtime = executable('test_gpu_dispatch_runtime',
     dependencies: [pthread_dependency, stdatomic_dependency],
 )
 test('test_gpu_dispatch_runtime', test_gpu_dispatch_runtime, suite : ['fast'])
+=======
+# Public-API smoke: vmaf_version() returns non-empty, printable, whitespace-free
+# string. Closes the orphan-source gap surfaced by the 2026-05-29 test-meson
+# audit — the source already existed at core/test/test_version.c but was never
+# wired into the build. Links against libvmaf only.
+test_version = executable('test_version',
+    ['test.c', 'test_version.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, gpu_all_deps],
+)
+test('test_version', test_version, suite : ['fast'])
+
+# integer_vif vif_skip_scale0 option (CPU path) — closes the gap noted in
+# .workingdir/audit-test-coverage-2026-05-16.md §1. Source already existed at
+# core/test/test_vif_skip_scale0.c but was never registered. Public-API only,
+# so it links against libvmaf without pulling in feature internals.
+test_vif_skip_scale0 = executable('test_vif_skip_scale0',
+    ['test.c', 'test_vif_skip_scale0.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
+)
+test('test_vif_skip_scale0', test_vif_skip_scale0, suite : ['fast'])
+>>>>>>> theirs
 
 if get_option('enable_sycl')
 test_sycl = executable('test_sycl',
@@ -1496,7 +1522,7 @@ test_hip_motion3_parity = executable('test_hip_motion3_parity',
     c_args: ['-DHAVE_HIP=1']
 )
 test('test_hip_motion3_parity', test_hip_motion3_parity,
-    suite : ['gpu'],
+    suite : ['fast', 'gpu'],
     timeout : 60)
 
 # ADR-0539 — integer ADM CPU vs. HIP parity gate (places=4).
@@ -1512,7 +1538,7 @@ test_hip_adm_parity = executable('test_hip_adm_parity',
     c_args: ['-DHAVE_HIP=1']
 )
 test('test_hip_adm_parity', test_hip_adm_parity,
-    suite : ['gpu'],
+    suite : ['fast', 'gpu'],
     timeout : 60)
 
 <<<<<<< ours
@@ -1837,6 +1863,8 @@ test('test_metal_kernel_registration', test_metal_kernel_registration,
 >>>>>>> theirs
 endif
 
+test('test_context', test_context, suite : ['fast'])
+test('test_log', test_log, suite : ['fast'])
 test('test_picture', test_picture, suite : ['fast'])
 test('test_feature_collector', test_feature_collector, suite : ['fast'])
 test('test_output', test_output, suite : ['fast'])
