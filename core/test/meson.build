@@ -931,6 +931,30 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
 )
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
     suite : ['fast', 'gpu'])
+
+# ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.
+# Pin the cross-backend tolerance (places=4) for the SpEED-family GPU
+# twins that this PR wires.  Both tests skip cleanly when no SYCL device
+# is visible (mirrors test_sycl_motion3_parity.c).
+test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
+    ['test.c', 'test_sycl_speed_chroma_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
+    ['test.c', 'test_sycl_speed_temporal_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
+    suite : ['fast', 'gpu'])
 endif
 
 # ADR-0209 / T5-2: embedded MCP scaffold smoke. Pins the -ENOSYS

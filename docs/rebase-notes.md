@@ -40516,3 +40516,40 @@ modified; only `compat/python-vmaf/AGENTS.md` gains one paragraph documenting
 which leaves carry coverage tests and warning about the latent sha1 bug in
 `tools/decorator.py`'s persist helpers. Upstream syncs do not own
 `compat/python-vmaf/AGENTS.md` (fork-only file).
+
+## speed_internal.c + SpEED GPU twin wiring (ADR-0964, 2026-05-31)
+
+**Will bite a rebase.** This PR adds `core/src/feature/speed_internal.c`
+(a fork-local TU that duplicates ~600 LOC of pure math — eigendecomposition,
+QR factorisation, matrix helpers — from `speed.c`). When `/sync-upstream`
+ports any change to `speed.c`'s static helpers (`compute_eigenvalues`,
+`matrix_qr_decomposition`, `solve_triangular_system`,
+`convert_to_tridiagonal`, `compute_eigenvalues_tridiagonal`,
+`compute_covariance_matrix`, `filter_and_downscale`, ...), the same
+change must be mirrored into `speed_internal.c`.  Symptom of drift:
+`test_sycl_speed_chroma_parity` / `test_sycl_speed_temporal_parity`
+flag a places=4 violation between CPU and SYCL on Intel Arc.
+
+Also fork-local:
+- `core/src/feature/hip/speed_{chroma,temporal}_hip.c` (already in tree,
+  newly wired into `core/src/hip/meson.build`).
+- `core/src/feature/sycl/speed_{chroma,temporal}_sycl.cpp` (already in
+  tree, newly wired into `core/src/meson.build` `sycl_feature_sources`).
+- `core/src/feature/feature_extractor.c` externs + registry rows for
+  the four new GPU extractor symbols, gated on `#if HAVE_HIP` /
+  `#if HAVE_SYCL`.
+- `core/test/test_sycl_speed_chroma_parity.c` +
+  `core/test/test_sycl_speed_temporal_parity.c`.
+
+If Netflix upstream ever ships its own SpEED GPU implementation that
+takes a different code-sharing approach (e.g. exposing `speed.c`
+helpers via a non-static-prefix), the fork should consider migrating
+to upstream's pattern; until then `speed_internal.c` is the canonical
+location for the shared helpers and the GPU TUs depend on its
+function names.
+
+CUDA twins (`speed_chroma_cuda`, `speed_temporal_cuda`) are NOT wired
+in this PR — the TUs reference symbols (`CHECK_CUDA`,
+`CudaFunctions->cuMemAllocHost`) that do not exist; they need a
+repair pass. Tracked as `T-CUDA-SPEED-TU-REPAIR-2026-05-31` in
+`docs/state.md`.

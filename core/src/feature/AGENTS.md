@@ -605,6 +605,57 @@ SpEED-QA full-frame reduction or a SpEED-driven model. Status quo
 is the binding contract until one of the three named triggers in
 that ADR fires.
 
+### `speed_internal.c` is the shared CPU helper TU for the SpEED GPU twins (ADR-0964)
+
+`core/src/feature/speed_internal.{h,c}` is the contract between the
+CPU SpEED extractor (`speed.c`) and the GPU twins
+(`feature/{cuda,hip,sycl}/speed_{chroma,temporal}_*.{c,cpp}`).
+The header declares 9 functions (dimensions, float-stride,
+filter+downscale, covariance, eigendecomp, QR factorise, Q^T
+multiply, backward-substitution, regularity check); the GPU TUs
+`#include` it and call 7 of them.
+
+**Wiring invariant — any new feature extractor that ships GPU
+twins must have FIVE companion changes in the same PR**:
+
+1. **CPU implementation TU** — the scalar reference under
+   `core/src/feature/<name>.c` (or, for shared math, an
+   `<name>_internal.c` under the same directory).
+2. **Header declaration** in `core/src/feature/<name>.h` or
+   `<name>_internal.h` — the GPU-callable surface.
+3. **Meson source list** —
+   - CPU TU added to the appropriate block in `core/src/meson.build`
+     (`libvmaf_feature_sources` or under `if float_enabled`).
+   - HIP TU added to `core/src/hip/meson.build` `hip_sources +=
+     files(...)`.
+   - SYCL TU added to `core/src/meson.build` `sycl_feature_sources`.
+   - CUDA TU added to `core/src/meson.build`
+     `libvmaf_feature_sources` under `if is_cuda_enabled`.
+4. **Registry entry** in
+   `core/src/feature/feature_extractor.c` — `extern` declaration
+   under the right `#if HAVE_<BACKEND>` block plus a row in
+   `feature_extractor_list[]`.
+5. **CPU-vs-GPU parity test** under `core/test/`, mirroring
+   `test_sycl_motion3_parity.c` (or
+   `test_sycl_speed_{chroma,temporal}_parity.c` for the SpEED
+   example).  Must skip cleanly when the relevant GPU device is
+   not visible.
+
+If any of the five is missing, the symptom is silent: the
+extractor name does not resolve in `vmaf_get_feature_extractor_by_name()`
+and the GPU pipeline never runs, while CI stays green because no
+parity gate fires.  The `feature_extractor_list_audit()` function
+in `feature_extractor.c` catches duplicate registrations, not
+*missing* ones.
+
+**Source-of-truth note**: `speed_internal.c` duplicates ~600 LOC
+of pure math (eigendecomp, QR, matrix helpers) from `speed.c`.
+This is deliberate (see ADR-0964 Alternatives) — keeping
+`speed.c` clean of `extern` exposures preserves its
+Netflix-mirrored status for the `/sync-upstream` cadence.  If
+either copy gets a bug-fix, mirror it to the other; the
+CPU-vs-SYCL parity tests will surface drift at CI time.
+
 ### CodeQL `cpp/declaration-hides-variable` rename invariants (2026-05-09)
 
 The 64-alert sweep of 2026-05-09 (see

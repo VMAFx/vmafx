@@ -1420,6 +1420,10 @@ if float_enabled
         feature_src_dir + 'float_vif.c',
         feature_src_dir + 'float_moment.c',
         feature_src_dir + 'speed.c',
+        # ADR-0964: speed_internal.c — CPU-side helpers shared by speed.c
+        # and the speed_{chroma,temporal}_{cuda,hip,sycl} GPU twins.
+        # See feature/speed_internal.h for the contract.
+        feature_src_dir + 'speed_internal.c',
 
         feature_src_dir + 'common/convolution.c',
         feature_src_dir + 'offset.c',
@@ -1458,6 +1462,13 @@ if is_cuda_enabled
         feature_src_dir + 'cuda/float_adm_cuda.c',
         # T3-15 / ADR-0360: cambi CUDA twin host glue.
         feature_src_dir + 'cuda/integer_cambi_cuda.c',
+        # ADR-0964: speed_chroma_cuda + speed_temporal_cuda are NOT wired
+        # here yet — the TUs reference symbols that do not exist in this
+        # tree (`CHECK_CUDA` instead of `CHECK_CUDA_RETURN`/`_GOTO`, and
+        # `CudaFunctions->cuMemAllocHost` which is not a member).  HIP +
+        # SYCL build cleanly with the same speed_internal.c contract; the
+        # CUDA TUs need a repair pass before wiring.  Tracked in
+        # docs/state.md as T-CUDA-SPEED-TU-REPAIR-2026-05-31.
     ]
 endif
 
@@ -1482,6 +1493,12 @@ if is_sycl_enabled
         feature_src_dir + 'sycl/ssimulacra2_sycl.cpp',
         feature_src_dir + 'sycl/float_adm_sycl.cpp',
         feature_src_dir + 'sycl/integer_cambi_sycl.cpp',
+        # ADR-0964: speed_chroma_sycl + speed_temporal_sycl — GPU twins of
+        # vmaf_fex_speed_chroma / vmaf_fex_speed_temporal.  Hybrid GPU/CPU
+        # split mirrors the CUDA and HIP twins; CPU-side eigendecomp + QR
+        # live in feature/speed_internal.c.
+        feature_src_dir + 'sycl/speed_chroma_sycl.cpp',
+        feature_src_dir + 'sycl/speed_temporal_sycl.cpp',
     ]
 
     # `-fp-model=precise` is Intel's strict-FP flag: no FMA contraction,
