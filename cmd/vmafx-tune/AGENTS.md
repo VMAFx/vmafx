@@ -34,3 +34,13 @@ during the migration; see Stage roadmap in ADR-0705.
    `vmafx-tune-go`, not `vmaf-tune`, during Stage 1 to avoid collisions with the
    Python binary. Stage 3 (swap) will rename. Never install it as `vmaf-tune` in
    a PR that does not also remove the Python entry point.
+
+7. **`errors.Join` for multi-step cleanup** (`pkg/bisect`, `pkg/encoder`,
+   `pkg/storage`, `cmd/vmafx-controller/queue` — and any new sibling package
+   that grows a similar pipeline): when a primary error and a cleanup error
+   can both arise, return `errors.Join(primary, cleanup)` rather than
+   silently dropping the cleanup error via `_ = X()` or
+   `X() //nolint:errcheck`. Guard cleanup `os.Remove` calls with
+   `errors.Is(rmErr, os.ErrNotExist)` so a not-yet-created file is not
+   flagged as a cleanup failure. The `slog` error-attribute key is
+   `"error"` everywhere (`"err"` is retired). See ADR-0935.

@@ -21,6 +21,7 @@ package bisect
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -142,7 +143,11 @@ func VMAFScoreFunc(vmafBin string) ScoreFunc {
 		if closeErr := tmp.Close(); closeErr != nil {
 			return 0, fmt.Errorf("close score temp: %w", closeErr)
 		}
-		defer os.Remove(tmpPath)
+		defer func() {
+			if rmErr := os.Remove(tmpPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+				slog.Warn("bisect: remove score temp", "error", rmErr, "path", tmpPath)
+			}
+		}()
 
 		argv := []string{
 			vmafBin,
@@ -242,9 +247,20 @@ func Run(
 
 		vmafScore, scoreErr := scoreFunc(src, encodedPath)
 		// Always clean up the encoded file regardless of scoring outcome.
-		_ = os.Remove(encodedPath)
-		if scoreErr != nil {
-			return Result{}, fmt.Errorf("score at CRF %d: %w", mid, scoreErr)
+		// If both score and remove fail, surface both via errors.Join so the
+		// caller can see the disk-leak alongside the scoring failure.
+		removeErr := os.Remove(encodedPath)
+		if scoreErr != nil || removeErr != nil {
+			var joinErrs []error
+			if scoreErr != nil {
+				joinErrs = append(joinErrs, fmt.Errorf("score at CRF %d: %w", mid, scoreErr))
+			}
+			if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				joinErrs = append(joinErrs, fmt.Errorf("remove encoded temp %q at CRF %d: %w", encodedPath, mid, removeErr))
+			}
+			if len(joinErrs) > 0 {
+				return Result{}, errors.Join(joinErrs...)
+			}
 		}
 
 		samples = append(samples, Sample{

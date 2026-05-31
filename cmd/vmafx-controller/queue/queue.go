@@ -136,6 +136,10 @@ type SQLiteQueue struct {
 
 // New opens (or creates) the SQLite database at dbPath, applies the schema,
 // and reconstructs the in-memory FIFO from any pre-existing PENDING rows.
+//
+// On any post-open failure (WAL pragma, schema apply, reload) the db handle
+// is closed and any close-time error is joined onto the primary failure via
+// errors.Join so callers can see both halves of the cleanup.
 func New(dbPath string, log *slog.Logger) (*SQLiteQueue, error) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -144,14 +148,12 @@ func New(dbPath string, log *slog.Logger) (*SQLiteQueue, error) {
 
 	// Enable WAL mode for better concurrent read performance.
 	if _, err = db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close() //nolint:errcheck // best-effort on error path
-		return nil, fmt.Errorf("queue: enable WAL: %w", err)
+		return nil, closeAndJoin(db, fmt.Errorf("queue: enable WAL: %w", err))
 	}
 
 	// Apply schema (idempotent via CREATE TABLE IF NOT EXISTS).
 	if _, err = db.Exec(schemaSQL); err != nil {
-		db.Close() //nolint:errcheck // best-effort on error path
-		return nil, fmt.Errorf("queue: apply schema: %w", err)
+		return nil, closeAndJoin(db, fmt.Errorf("queue: apply schema: %w", err))
 	}
 
 	q := &SQLiteQueue{
@@ -162,8 +164,7 @@ func New(dbPath string, log *slog.Logger) (*SQLiteQueue, error) {
 
 	// Reload in-flight state from the previous run.
 	if err = q.reload(); err != nil {
-		db.Close() //nolint:errcheck // best-effort on error path
-		return nil, fmt.Errorf("queue: reload state: %w", err)
+		return nil, closeAndJoin(db, fmt.Errorf("queue: reload state: %w", err))
 	}
 
 	log.Info("job queue opened",
@@ -195,7 +196,11 @@ func (q *SQLiteQueue) reload() error {
 	if err != nil {
 		return fmt.Errorf("load pending jobs: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			q.log.Warn("queue: close reload rows", "error", closeErr)
+		}
+	}()
 
 	for rows.Next() {
 		var id string
@@ -250,7 +255,7 @@ func (q *SQLiteQueue) PullWork(_ context.Context, nodeID string, capacity NodeCa
 	}
 
 	// Find the first PENDING job whose backend requirement is satisfied.
-	var matchIdx int = -1
+	matchIdx := -1
 	var matchID string
 	for i, id := range q.pendingFIFO {
 		job, err := q.getUnlocked(id)
@@ -560,4 +565,16 @@ func repeatCommaQ(n int) string {
 // Close releases the database connection.
 func (q *SQLiteQueue) Close() error {
 	return q.db.Close()
+}
+
+// closeAndJoin closes db and joins any close-time error onto the primary
+// failure via errors.Join. Used by New() to ensure the db handle is not
+// leaked when a post-open initialisation step fails while still surfacing
+// both the primary error and any close-time error to the caller.
+func closeAndJoin(db *sql.DB, primary error) error {
+	closeErr := db.Close()
+	if closeErr == nil {
+		return primary
+	}
+	return errors.Join(primary, fmt.Errorf("queue: close db after init failure: %w", closeErr))
 }

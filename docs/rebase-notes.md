@@ -41027,3 +41027,15 @@ New additions:
   `#if HAVE_CUDA`.
 - `core/test/test_cuda_speed_chroma_parity.c` +
   `core/test/test_cuda_speed_temporal_parity.c`.
+---
+
+## Go `errors.Join` cleanup paths + `slog` key standardisation (ADR-0935, 2026-05-31)
+
+no rebase impact: REASON — every file touched lives in fork-original
+Phase 4b Go subtree (`pkg/bisect/`, `pkg/encoder/`, `pkg/storage/`,
+`cmd/vmafx-controller/queue/`, `cmd/vmafx-node/`). Netflix upstream
+ships no Go code under these paths, so a future `upstream/master` sync
+cannot conflict here. The `cmd/vmafx-tune/AGENTS.md` invariant addition
+is also fork-original. If a follow-up port-PR introduces upstream Go
+code, the `errors.Join` discipline documented in
+`cmd/vmafx-tune/AGENTS.md` §7 applies on entry.

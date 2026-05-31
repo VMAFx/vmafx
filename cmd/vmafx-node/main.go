@@ -35,7 +35,7 @@ var buildVersion = "dev"
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("vmafx-node fatal", "err", err)
+		slog.Error("vmafx-node fatal", "error", err)
 		os.Exit(1)
 	}
 }
@@ -74,7 +74,7 @@ func run() error {
 		// Non-fatal: node can still serve; encoders that are unavailable
 		// will fail at job-dispatch time with a clear error.
 		slog.Warn("encoder probe failed — node will serve with empty inventory",
-			"err", err, "ffmpeg", ffmpegBin)
+			"error", err, "ffmpeg", ffmpegBin)
 		encoders = probe.EmptyInventory()
 	} else {
 		slog.Info("encoder inventory", "count", len(encoders.Available),

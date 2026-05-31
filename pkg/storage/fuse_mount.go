@@ -28,6 +28,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -94,29 +95,46 @@ func (s *FUSEMountStorage) Prepare(ctx context.Context, sourceURI string) (strin
 	cmd.Stderr = os.Stderr
 
 	if startErr := cmd.Start(); startErr != nil {
-		if removeErr := os.Remove(mountDir); removeErr != nil {
-			s.log.Warn("storage: remove mount dir after failed start", "error", removeErr)
+		// Join the start failure with any cleanup error so a stray empty
+		// mount dir does not get silently leaked when removal also fails.
+		errs := []error{fmt.Errorf("storage: start rclone mount: %w", startErr)}
+		if removeErr := os.Remove(mountDir); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("storage: remove mount dir after failed start: %w", removeErr))
 		}
-		return "", func() {}, fmt.Errorf("storage: start rclone mount: %w", startErr)
+		return "", func() {}, errors.Join(errs...)
 	}
 
 	assetPath := filepath.Join(mountDir, strings.TrimPrefix(assetRel, "/"))
 
 	// Wait for the asset to appear on the FUSE mount.
 	if readyErr := waitForPath(ctx, assetPath, mountReadyTimeout); readyErr != nil {
-		s.unmount(mountDir)
-		killProcess(cmd)
-		if removeErr := os.RemoveAll(mountDir); removeErr != nil {
-			s.log.Warn("storage: remove mount dir after timeout", "error", removeErr)
+		// Unmount + kill + rmdir on the readiness-timeout path; surface
+		// every failure via errors.Join so an operator can see whether the
+		// mount actually came down or is still leaking under /tmp.
+		errs := []error{fmt.Errorf("storage: rclone mount did not become ready: %w", readyErr)}
+		if umErr := s.unmount(mountDir); umErr != nil {
+			errs = append(errs, fmt.Errorf("storage: unmount after timeout: %w", umErr))
 		}
-		return "", func() {}, fmt.Errorf("storage: rclone mount did not become ready: %w", readyErr)
+		if killErr := killProcess(cmd); killErr != nil {
+			errs = append(errs, fmt.Errorf("storage: kill rclone after timeout: %w", killErr))
+		}
+		if removeErr := os.RemoveAll(mountDir); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("storage: remove mount dir after timeout: %w", removeErr))
+		}
+		return "", func() {}, errors.Join(errs...)
 	}
 
 	cleanup := func() {
-		s.unmount(mountDir)
-		killProcess(cmd)
-		if removeErr := os.RemoveAll(mountDir); removeErr != nil {
-			s.log.Warn("storage: remove mount dir during cleanup", "error", removeErr)
+		// Cleanup runs from defer paths in production, so we can't propagate
+		// errors out — log each failure but do not swallow silently.
+		if umErr := s.unmount(mountDir); umErr != nil {
+			s.log.Warn("storage: unmount during cleanup", "error", umErr, "mount_dir", mountDir)
+		}
+		if killErr := killProcess(cmd); killErr != nil {
+			s.log.Warn("storage: kill rclone during cleanup", "error", killErr)
+		}
+		if removeErr := os.RemoveAll(mountDir); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			s.log.Warn("storage: remove mount dir during cleanup", "error", removeErr, "mount_dir", mountDir)
 		}
 	}
 
@@ -143,9 +161,12 @@ func (s *FUSEMountStorage) buildMountArgs(remoteRoot, mountDir string) []string 
 }
 
 // unmount unmounts the FUSE filesystem at mountDir using fusermount3 or umount
-// as a fallback.
-func (s *FUSEMountStorage) unmount(mountDir string) {
+// as a fallback. Returns nil on the first success; if every attempt fails the
+// joined error from all attempts is returned so the operator can see which
+// binaries are missing and why.
+func (s *FUSEMountStorage) unmount(mountDir string) error {
 	// Try fusermount3 first (fuse3 package), then fusermount (fuse2), then umount.
+	var attemptErrs []error
 	for _, bin := range []string{"fusermount3", "fusermount", "umount"} {
 		args := []string{"-u", mountDir}
 		if bin == "umount" {
@@ -153,11 +174,13 @@ func (s *FUSEMountStorage) unmount(mountDir string) {
 		}
 		out, err := exec.Command(bin, args...).CombinedOutput() //nolint:gosec -- args constructed from known safe paths
 		if err == nil {
-			return
+			return nil
 		}
 		s.log.Debug("storage: unmount attempt", "bin", bin, "error", err, "output", string(out))
+		attemptErrs = append(attemptErrs, fmt.Errorf("%s: %w", bin, err))
 	}
 	s.log.Warn("storage: failed to unmount FUSE mount", "mount_dir", mountDir)
+	return errors.Join(attemptErrs...)
 }
 
 // waitForPath polls until path is stat-able or timeout elapses.

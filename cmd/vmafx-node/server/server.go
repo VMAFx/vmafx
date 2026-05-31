@@ -67,7 +67,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 	defer func() {
 		if closeErr := ln.Close(); closeErr != nil {
-			s.cfg.Logger.Warn("listener close error", "err", closeErr)
+			s.cfg.Logger.Warn("listener close error", "error", closeErr)
 		}
 	}()
 

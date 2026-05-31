@@ -611,3 +611,4 @@
 0937-mkdocs-nav-decade-buckets
 0933-grpc-streaming-multi-frame-scoring
 0938-feature-extractor-coverage-round2
+0935-go-errors-join-slog-audit

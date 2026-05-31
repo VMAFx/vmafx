@@ -10,6 +10,7 @@
 package encoder
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -175,10 +176,18 @@ func runEncode(src string, params EncodeParams, codec string, crfFlag string) (E
 	elapsed := time.Since(t0)
 
 	if runErr != nil {
-		// Clean up temp file if encode failed.
-		_ = os.Remove(outPath)
-		return EncodeResult{}, fmt.Errorf("ffmpeg encode failed (crf=%d, codec=%s): %w\n%s",
+		// Clean up temp file if encode failed. Surface any cleanup failure
+		// via errors.Join so a disk-leak does not get silently swallowed by
+		// the primary encode error.
+		ffErr := fmt.Errorf("ffmpeg encode failed (crf=%d, codec=%s): %w\n%s",
 			params.CRF, codec, runErr, string(stderrBytes))
+		if rmErr := os.Remove(outPath); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			return EncodeResult{}, errors.Join(
+				ffErr,
+				fmt.Errorf("remove failed-encode temp %q: %w", outPath, rmErr),
+			)
+		}
+		return EncodeResult{}, ffErr
 	}
 
 	bitrateKbps := probeBitrateKbps(outPath, bin)

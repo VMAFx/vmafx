@@ -19,6 +19,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -100,16 +101,23 @@ func (s *HTTPServeStorage) Prepare(ctx context.Context, sourceURI string) (strin
 		return "", func() {}, fmt.Errorf("storage: start rclone serve: %w", startErr)
 	}
 
-	// Wait for the server to be ready.
+	// Wait for the server to be ready. On timeout, surface both the
+	// readiness failure and any kill-cleanup failure via errors.Join so
+	// an orphaned rclone process does not get silently masked.
 	if readyErr := waitForHTTP(ctx, addr, serveReadyTimeout); readyErr != nil {
-		killProcess(cmd)
-		return "", func() {}, fmt.Errorf("storage: rclone serve did not become ready: %w", readyErr)
+		errs := []error{fmt.Errorf("storage: rclone serve did not become ready: %w", readyErr)}
+		if killErr := killProcess(cmd); killErr != nil {
+			errs = append(errs, fmt.Errorf("storage: kill rclone after readiness timeout: %w", killErr))
+		}
+		return "", func() {}, errors.Join(errs...)
 	}
 
 	readableURL := fmt.Sprintf("http://%s/%s", addr, strings.TrimPrefix(assetRel, "/"))
 
 	cleanup := func() {
-		killProcess(cmd)
+		if killErr := killProcess(cmd); killErr != nil {
+			s.log.Warn("storage: kill rclone during cleanup", "error", killErr)
+		}
 	}
 
 	s.log.Info("rclone serve http ready",
@@ -186,17 +194,21 @@ func waitForHTTP(ctx context.Context, addr string, timeout time.Duration) error 
 	}
 }
 
-// killProcess sends SIGTERM to cmd and waits for it to exit.
-// Errors are logged but not returned; cleanup must never block the caller.
-func killProcess(cmd *exec.Cmd) {
+// killProcess sends SIGKILL to cmd and waits for it to exit. The kill failure
+// is returned to the caller so multi-step cleanup paths can join it with their
+// primary error; the post-kill Wait() error is intentionally not returned
+// because it is expected to be "signal: killed".
+func killProcess(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
-		return
+		return nil
 	}
-	if killErr := cmd.Process.Kill(); killErr != nil {
+	killErr := cmd.Process.Kill()
+	if killErr != nil {
 		slog.Warn("storage: kill rclone serve", "error", killErr)
 	}
 	if waitErr := cmd.Wait(); waitErr != nil {
 		// Expected: "signal: killed" — not an error from our perspective.
 		slog.Debug("storage: rclone serve wait", "error", waitErr)
 	}
+	return killErr
 }
