@@ -598,3 +598,4 @@
 0860-ffmpeg-patch-chain-no-op-vulkan-shim
 0887-vmaf-model-slopes-feature-mismatch-validation
 0946-sycl-kernel-coverage-round3
+0957-sycl-kernel-coverage-round4
