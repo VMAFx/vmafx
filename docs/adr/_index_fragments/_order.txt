@@ -687,3 +687,4 @@
 0883-hip-kernel-coverage-round2
 0880-unused-testdata-debug-scripts-cleanup
 0878-trivy-container-scan-baseline
+0876-printf-format-portability-pri-macros

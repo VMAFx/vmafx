@@ -53,6 +53,7 @@
 #ifndef _WIN32
 
 #include <cerrno>
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 
@@ -335,10 +336,9 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     unsigned bpp = (bpc + 7) / 8;
 
     vmaf_log(VMAF_LOG_LEVEL_DEBUG,
-             "[%s] DRM PRIME: fd=%d size=%u modifier=0x%llx "
+             "[%s] DRM PRIME: fd=%d size=%u modifier=0x%" PRIx64 " "
              "offset=%u pitch=%u (%ux%u @ %u bpp)\n",
-             is_ref ? "ref" : "dis", y_fd, y_size, (unsigned long long)modifier, y_offset, y_pitch,
-             w, h, bpp);
+             is_ref ? "ref" : "dis", y_fd, y_size, modifier, y_offset, y_pitch, w, h, bpp);
 
     /* Import the DMA-BUF fd into Level Zero as device memory.
      * This wraps the SAME GPU memory — no copy happens here. */
@@ -513,8 +513,8 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     } else {
         /* Unknown tiling — fall back to VA readback path */
         vmaf_sycl_dmabuf_free(state, imported_ptr);
-        vmaf_log(VMAF_LOG_LEVEL_WARNING, "Unknown DRM modifier 0x%llx — using readback path\n",
-                 (unsigned long long)modifier);
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "Unknown DRM modifier 0x%" PRIx64 " — using readback path\n", modifier);
         return vmaf_sycl_import_va_surface_readback(state, va_display_handle, va_surface_id, is_ref,
                                                     w, h, bpc);
     }

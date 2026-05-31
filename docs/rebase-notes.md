@@ -41948,3 +41948,22 @@ was added by the HIP scaffold landing in ADR-0212).  Wiring lives
 strictly inside that block.  The only non-test file touched is
 `docs/adr/README.md` (index row) and
 `docs/adr/_index_fragments/_order.txt` — both fork-only.
+## ADR-0876 — printf-format portability sweep (CERT FIO47-C) — 2026-05-30
+
+Low rebase impact, scoped to fork-added log / debug call sites. The four
+touched source files (`core/src/libvmaf.c`, `core/src/sycl/common.cpp`,
+`core/src/sycl/dmabuf_import.cpp`, `core/test/test_motion_v2_simd.c`)
+either are fork-added (the SYCL TUs + the AVX2 test) or contain a
+fork-added block inside an upstream-mirror file (the tiny-model loader
+in `libvmaf.c`, which is post-ADR-0700 fork-edited per `git blame`).
+The format-string changes are mechanical: `(unsigned long)x` + `%lu`
+→ `x` + `%" PRIu64 "` for `uint64_t`; `(long long)x` + `%lld` → `x` +
+`%" PRId64 "` for `int64_t`; `(unsigned long long)x` + `%llx` → `x` +
+`%" PRIx64 "` for `uint64_t` hex prints. Three call sites in
+upstream-mirror code (`core/src/feature/x86/adm_avx512.c`
+`print_128_64` debug macro) and POSIX-`off_t` / Windows-`DWORD` sites
+were intentionally not changed — see
+`docs/research/0876-printf-format-portability-audit.md` §2
+Class C for the rationale. Future upstream syncs that touch the same
+lines will conflict trivially; resolve in favour of the PRI-macro form
+for fixed-width types.

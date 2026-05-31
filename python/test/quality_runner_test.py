@@ -54,12 +54,6 @@ class QualityRunnerTest(MyTestCase):
     # in PR #87. The canonical Netflix golden test
     # `test_run_vmaf_runner` (below) uses VmafQualityRunner and is untouched.
 
-    @unittest.skip(
-        "ADR-0749: model/other_models/nflx_v1.json is a legacy SVM model whose "
-        "feature_names list requires VMAF_feature_ansnr_score (no longer "
-        "produced post-PR #38). The model cannot score against the current "
-        "binary. Tracked alongside ADR-0749 sunset."
-    )
     def test_run_vmaf_runner_v1_model(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()

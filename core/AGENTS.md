@@ -40,6 +40,16 @@ libvmaf/
 - **Every non-void return value is checked or explicitly `(void)`-discarded.**
 - **Every new file starts with the license header** (Netflix preserved on
   upstream-touched; Lusoris/Claude on wholly-new — see ADR-0025).
+- **Fixed-width integer printf formatting uses `<inttypes.h>` PRI macros**
+  (`PRId64`, `PRIu64`, `PRIx64`, `PRIu32`, …) — never `(unsigned long)` +
+  `%lu` or `(long long)` + `%lld` for `uint64_t` / `int64_t`. The
+  `(unsigned long)` form silently truncates on Windows LLP64 (32-bit
+  `unsigned long`); PRI macros expand correctly on every supported data
+  model. CERT FIO47-C, MISRA 21.6, [ADR-0876](../docs/adr/0876-printf-format-portability-pri-macros.md).
+  Non-fixed-width POSIX types (`off_t`, `pid_t`, `time_t`) keep the
+  `(long long)` + `%lld` cast idiom (or `(intmax_t)` + `%jd`); Windows
+  `DWORD` keeps `(unsigned long)` + `%lu` (the cast spells the type
+  exactly).
 
 ## Workflows routed here
 

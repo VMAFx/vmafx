@@ -87,6 +87,7 @@
  * is provided by `simd_bitexact_test.h` (ADR-0245).
  */
 
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -260,9 +261,10 @@ static char *check_pipeline_16(unsigned bpc,
     simd_test_aligned_free(y_row_avx2);
 
     if (sad_scalar != sad_avx2) {
-        (void)fprintf(
-            stderr, "T7-32 motion_v2 AVX2 audit (%s, bpc=%u, seed=0x%08x): scalar=%llu avx2=%llu\n",
-            label, bpc, seed, (unsigned long long)sad_scalar, (unsigned long long)sad_avx2);
+        (void)fprintf(stderr,
+                      "T7-32 motion_v2 AVX2 audit (%s, bpc=%u, seed=0x%08x): scalar=%" PRIu64
+                      " avx2=%" PRIu64 "\n",
+                      label, bpc, seed, sad_scalar, sad_avx2);
         return "motion_v2 AVX2 16-bit pipeline diverges from scalar on adversarial negative-diff "
                "fixture (srlv_epi64 logical-shift bug);"
                " see docs/rebase-notes.md §0038 follow-up.";

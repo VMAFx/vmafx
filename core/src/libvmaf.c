@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -920,17 +921,17 @@ static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafMod
      * the runtime does not support. */
     if (in_shape[0] != 1 && in_shape[0] != -1) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "tiny-model loader: rank-4 model has fixed batch %lld; "
+                 "tiny-model loader: rank-4 model has fixed batch %" PRId64 "; "
                  "only batch=1 or symbolic batch (-1) is supported\n",
-                 (long long)in_shape[0]);
+                 in_shape[0]);
         free(name);
         return -ENOTSUP;
     }
     if (in_shape[1] != 1) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "tiny-model loader: rank-4 model has channels=%lld; "
+                 "tiny-model loader: rank-4 model has channels=%" PRId64 "; "
                  "only single-channel luma (C=1) is supported\n",
-                 (long long)in_shape[1]);
+                 in_shape[1]);
         free(name);
         return -ENOTSUP;
     }
@@ -939,9 +940,9 @@ static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafMod
     if (h <= 0 || w <= 0) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "tiny-model loader: rank-4 model has dynamic / non-positive "
-                 "spatial dims (H=%lld, W=%lld); symbolic H/W is unsupported — "
+                 "spatial dims (H=%" PRId64 ", W=%" PRId64 "); symbolic H/W is unsupported — "
                  "re-export with a fixed input resolution\n",
-                 (long long)h, (long long)w);
+                 h, w);
         free(name);
         return -ENOTSUP; /* dynamic dims unsupported */
     }
@@ -985,9 +986,9 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
      * feeds a single sample per Run() call. */
     if (in_shape[0] != 1 && in_shape[0] != -1) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "tiny-model loader: feature-vector model has fixed batch %lld; "
+                 "tiny-model loader: feature-vector model has fixed batch %" PRId64 "; "
                  "only batch=1 or symbolic batch (-1) is supported\n",
-                 (long long)in_shape[0]);
+                 in_shape[0]);
         free(name);
         return -ENOTSUP;
     }
@@ -996,8 +997,8 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
         free(name);
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "tiny-model loader: feature-vector model has invalid "
-                 "feature width %lld\n",
-                 (long long)f);
+                 "feature width %" PRId64 "\n",
+                 f);
         return -ENOTSUP;
     }
     const size_t n = (size_t)f;
@@ -1037,8 +1038,8 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
             free(name);
             vmaf_log(VMAF_LOG_LEVEL_ERROR,
                      "tiny-model loader: second input has unsupported "
-                     "shape (rank %zu, batch %lld, width %lld)\n",
-                     extra_rank, (long long)extra_shape[0], (long long)extra_shape[1]);
+                     "shape (rank %zu, batch %" PRId64 ", width %" PRId64 ")\n",
+                     extra_rank, extra_shape[0], extra_shape[1]);
             return -ENOTSUP;
         }
         extra_w = (size_t)extra_shape[1];

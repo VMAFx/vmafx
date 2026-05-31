@@ -28,6 +28,7 @@
 #include <cassert>
 #include <cerrno>
 #include <chrono>
+#include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -597,8 +598,8 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
         state->frame_counter++;
 
         if (state->extractor_timing && state->frame_counter <= 30) {
-            fprintf(stderr, "UPLOAD frame %lu: ref=%.1fms dis=%.1fms total=%.1fms\n",
-                    (unsigned long)state->frame_counter, t1 - t0, t2 - t1, t2 - t0);
+            fprintf(stderr, "UPLOAD frame %" PRIu64 ": ref=%.1fms dis=%.1fms total=%.1fms\n",
+                    state->frame_counter, t1 - t0, t2 - t1, t2 - t0);
         }
 
     } catch (const sycl::exception &e) {
@@ -1057,10 +1058,9 @@ extern "C" void vmaf_sycl_print_timing(VmafSyclState *state)
     double avg_total = avg_cpu + avg_gpu;
     double fps = avg_total > 0 ? 1000.0 / avg_total : 0;
     fprintf(stderr,
-            "[vmaf-sycl] timing: %lu frames, avg cpu=%.2fms gpu=%.2fms "
+            "[vmaf-sycl] timing: %" PRIu64 " frames, avg cpu=%.2fms gpu=%.2fms "
             "total=%.2fms (%.1f fps), gpu%%=%.0f%%\n",
-            (unsigned long)state->timing_frames, avg_cpu, avg_gpu, avg_total, fps,
-            100.0 * avg_gpu / avg_total);
+            state->timing_frames, avg_cpu, avg_gpu, avg_total, fps, 100.0 * avg_gpu / avg_total);
     fflush(stderr);
 
     // Print per-kernel profiling if enabled
