@@ -41309,6 +41309,19 @@ sync the new tests apply cleanly regardless of what Netflix does to
 the underlying production files because the tests link against the
 existing `libvmaf` static target and import public + internal
 headers that already existed before round 3.
+## SYCL kernel coverage round 2 (ADR-0884, 2026-05-30)
+
+no rebase impact: REASON — all changes are confined to fork-added test
+files (`core/test/test_sycl_adm_parity.c`,
+`core/test/test_sycl_ciede_parity.c`,
+`core/test/test_sycl_ssim_parity.c`,
+`core/test/test_sycl_ms_ssim_parity.c`,
+`core/test/test_sycl_motion_v2_parity.c`), the meson wiring for those
+files in `core/test/meson.build`, and docs / changelog /
+`core/src/feature/sycl/AGENTS.md` companion notes. No upstream
+Netflix/vmaf C source is touched. The SYCL backend itself is
+fork-original (Netflix/vmaf has no SYCL path), so there is no
+upstream rebase surface for these tests at all.
 
 ## macOS CI ansnr-residual cleanup (ADR-0749 follow-up, 2026-05-30)
 

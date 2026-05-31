@@ -22,22 +22,6 @@ gpu_all_deps = [
 libvmaf_public_link = get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf
 test_output_lto_override = host_machine.system() == 'darwin' ? ['b_lto=false'] : []
 
-# SIMD bit-exactness tests: suppress FP contraction in the test TU so
-# the inline scalar reference functions match the SIMD libs (which are
-# compiled with -ffp-contract=off via the carve-out static libraries).
-#
-# GCC defaults to -ffp-contract=off. Clang and icx default to
-# -ffp-contract=on which auto-contracts mul-add pairs to FMA.
-# Adding -ffp-contract=off keeps all three compilers consistent.
-# Intel icx (meson id 'intel-llvm') additionally ignores
-# #pragma STDC FP_CONTRACT OFF unless -fp-model=precise is also on the
-# command line, so we detect icx and append that flag. See ADR-0161.
-_cc_id = cc.get_id()
-_simd_strict_fp_args = ['-ffp-contract=off']
-if _cc_id == 'intel-llvm' or _cc_id == 'intel-llvm-cl'
-    _simd_strict_fp_args += ['-fp-model=precise']
-endif
-
 test_context = executable('test_context',
     ['test.c', 'test_context.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -697,7 +681,7 @@ test_psnr_hvs_simd = executable('test_psnr_hvs_simd',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
-    c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
+    c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
                     gpu_all_deps, dnn_deps],
     objects : [
@@ -756,17 +740,13 @@ endif
 
 ssimulacra2_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
 if ssimulacra2_simd_test_archs.contains(host_machine.cpu_family())
-# Strict FP is required for bit-exactness:
-# - aarch64: GCC/clang default to -ffp-contract=fast, which auto-fuses
-#   mul-add pairs to fmla. NEON intrinsics are opaque to that fusion.
-#   Without the flag, the scalar tail and SIMD loop drift by ~1 ULP.
-# - x86 with icx (Intel oneAPI, meson id 'intel-llvm'): icx ignores
-#   #pragma STDC FP_CONTRACT OFF unless -fp-model=precise is also on
-#   the command line. This caused the "all-backends" CI failure on
-#   master 2026-05-30 where the scalar reference (auto-contracted)
-#   diverged from the SIMD lib (compiled with the strict-FP flags).
-# _simd_strict_fp_args = [-ffp-contract=off] on GCC/Clang;
-#                        [-ffp-contract=off, -fp-model=precise] on icx.
+# `-ffp-contract=off` is required for bit-exactness on aarch64:
+# GCC 10+ and clang default to `-ffp-contract=fast` on aarch64, which
+# auto-fuses plain C `a*b+c` into `fmla`. The scalar reference in the
+# test TU would fuse; NEON intrinsics do not fuse (compiler treats
+# them as opaque). x86 avoids this because `-mfma` is scoped to the
+# AVX2/AVX-512 static libs only, so scalar code can't fuse on x86
+# regardless of contract setting. See ADR-0161 follow-up notes.
 test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
     ['test.c', 'test_ssimulacra2_simd.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
@@ -774,7 +754,7 @@ test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
-    c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
+    c_args : vmaf_cflags_common + dnn_defines + ['-ffp-contract=off'],
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
                     gpu_all_deps, dnn_deps],
     objects : [
@@ -842,7 +822,7 @@ test_ms_ssim_decimate = executable('test_ms_ssim_decimate',
      '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.c', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
                            include_directories('../src/feature/'), dnn_inc],
-    c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
+    c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
                     gpu_all_deps, dnn_deps],
     objects : [
@@ -1246,28 +1226,84 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
     suite : ['fast', 'gpu'])
 
+<<<<<<< ours
 # ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.
 # Pin the cross-backend tolerance (places=4) for the SpEED-family GPU
 # twins that this PR wires.  Both tests skip cleanly when no SYCL device
 # is visible (mirrors test_sycl_motion3_parity.c).
 test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
     ['test.c', 'test_sycl_speed_chroma_parity.c'],
+=======
+# ADR-0884 — SYCL kernel coverage round 2.
+# Five additional CPU-vs-SYCL parity gates: adm, ciede, integer_ssim,
+# float_ms_ssim, motion_v2. Round 1 (ADR-0868 / PR #351) added psnr +
+# vif; this round closes the remaining numerical-correctness gap for
+# the high-value SYCL kernels (adm is the dominant feature in every
+# shipping VMAF model; ms_ssim's 5-scale exponent stack is the most
+# delicate; ciede covers the Intel-Arc Lab-colour path that the Vulkan
+# backend cannot reach at places=4 per T-VK-CIEDE-F32-F64). All five
+# tests skip cleanly when no SYCL device is visible.
+test_sycl_adm_parity = executable('test_sycl_adm_parity',
+    ['test.c', 'test_sycl_adm_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1']
 )
+<<<<<<< ours
 test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
     suite : ['fast', 'gpu'])
 
 test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
     ['test.c', 'test_sycl_speed_temporal_parity.c'],
+=======
+test('test_sycl_adm_parity', test_sycl_adm_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
+    ['test.c', 'test_sycl_ciede_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1']
 )
+<<<<<<< ours
 test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
+=======
+test('test_sycl_ciede_parity', test_sycl_ciede_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
+    ['test.c', 'test_sycl_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_ssim_parity', test_sycl_ssim_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_ms_ssim_parity = executable('test_sycl_ms_ssim_parity',
+    ['test.c', 'test_sycl_ms_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_ms_ssim_parity', test_sycl_ms_ssim_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_motion_v2_parity = executable('test_sycl_motion_v2_parity',
+    ['test.c', 'test_sycl_motion_v2_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_motion_v2_parity', test_sycl_motion_v2_parity,
+>>>>>>> theirs
     suite : ['fast', 'gpu'])
 endif
 

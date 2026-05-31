@@ -1,0 +1,1 @@
+| [ADR-0884](0884-sycl-kernel-coverage-round2.md) | SYCL kernel coverage round 2 — five new CPU-vs-SYCL parity gates (adm, ciede, integer_ssim, float_ms_ssim, motion_v2) at ADR-0214 places=4; follows round 1 / ADR-0868 | Accepted | 2026-05-30 | testing, sycl, gpu, parity, fork-local |

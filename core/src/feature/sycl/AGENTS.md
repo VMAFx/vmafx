@@ -233,3 +233,35 @@ is missing the knob the option silently falls through to the default,
 producing silently-wrong scores without any error. This is the root cause
 of the `motion_fps_weight` gap in `integer_motion_v2_sycl.cpp` closed by
 PR #851-follow-up (2026-05-16).
+
+## Per-kernel parity-test invariant (ADR-0214 + ADR-0868 + ADR-0884)
+
+**Every shipping SYCL kernel here must have a CPU-vs-SYCL parity test
+under [`core/test/`](../../../test/) wired into
+[`core/test/meson.build`](../../../test/meson.build) with suite
+`['fast', 'gpu']`.** The parity test asserts the headline score
+matches the CPU scalar reference within ADR-0214 places=4 (`1e-4`)
+tolerance and skips cleanly when no SYCL device is visible (mirrors
+the `[skip: no SYCL device]` pattern in
+[`test_sycl_motion3_parity.c`](../../../test/test_sycl_motion3_parity.c)).
+
+Coverage matrix:
+
+| Kernel TU | Parity test | ADR |
+|---|---|---|
+| `integer_psnr_sycl.cpp` | `test_sycl_psnr_parity.c` | [ADR-0868](../../../../docs/adr/0868-gpu-backend-kernel-coverage.md) |
+| `integer_vif_sycl.cpp` | `test_sycl_vif_parity.c` | ADR-0868 |
+| `integer_adm_sycl.cpp` | `test_sycl_adm_parity.c` | [ADR-0884](../../../../docs/adr/0884-sycl-kernel-coverage-round2.md) |
+| `integer_ciede_sycl.cpp` | `test_sycl_ciede_parity.c` | ADR-0884 |
+| `integer_ssim_sycl.cpp` (integer fex) | `test_sycl_ssim_parity.c` | ADR-0884 |
+| `integer_ms_ssim_sycl.cpp` | `test_sycl_ms_ssim_parity.c` | ADR-0884 |
+| `integer_motion_v2_sycl.cpp` | `test_sycl_motion_v2_parity.c` | ADR-0884 |
+| `integer_motion_sycl.cpp` | `test_sycl_motion3_parity.c` | [ADR-0219](../../../../docs/adr/0219-motion3-gpu-contract.md) |
+| `integer_cambi_sycl.cpp` | `test_integer_cambi_sycl.c` (smoke + score sanity) | [ADR-0371](../../../../docs/adr/0371-sycl-cambi-port.md) |
+| `float_*_sycl.cpp`, `speed_*_sycl.cpp`, `ssimulacra2_sycl.cpp`, `integer_moment_sycl.cpp`, `integer_psnr_hvs_sycl.cpp` | (round 3 backlog — see ADR-0884) | — |
+
+**Rebase-sensitive**: when adding a new SYCL kernel TU, the same PR
+must add the matching `test_sycl_<kernel>_parity.c` and meson
+wiring. The `/cross-backend-diff` skill is a dev-time tool only and
+does NOT run in CI on every PR; only the in-tree `meson test` parity
+tests catch per-kernel regressions automatically.

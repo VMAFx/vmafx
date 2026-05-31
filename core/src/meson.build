@@ -644,19 +644,6 @@ if is_asm_enabled
     endif
 
     if host_machine.cpu_family().startswith('x86')
-      # icx (Intel oneAPI DPC++/C++, meson id 'intel-llvm' or 'intel-llvm-cl')
-      # ignores #pragma STDC FP_CONTRACT OFF in source files at -O3 unless
-      # -fp-model=precise is also passed on the command line. For strict-FP
-      # carve-out static libs we add it alongside -ffp-contract=off so that
-      # both scalar tails and any C-level glue inside the SIMD TUs stay
-      # bit-exact with the scalar reference even under the icx optimizer.
-      # GCC and vanilla Clang do not recognise -fp-model=precise; we detect
-      # icx via cc.get_id() and append the flag only for that compiler.
-      _cc_id_x86 = cc.get_id()
-      _x86_simd_strict_fp_extra = []
-      if _cc_id_x86 == 'intel-llvm' or _cc_id_x86 == 'intel-llvm-cl'
-          _x86_simd_strict_fp_extra = ['-fp-model=precise']
-      endif
       x86_avx2_sources = [
           feature_src_dir + 'common/convolution_avx.c',
           feature_src_dir + 'x86/motion_avx2.c',
@@ -693,13 +680,13 @@ if is_asm_enabled
           'x86_psnr_hvs_avx2',
           feature_src_dir + 'x86/psnr_hvs_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
       )
       x86_ms_ssim_decimate_avx2_lib = static_library(
           'x86_ms_ssim_decimate_avx2',
           feature_src_dir + 'x86/ms_ssim_decimate_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
       )
 
       # ssimulacra2 AVX2 compiles in its own static lib with
@@ -717,7 +704,7 @@ if is_asm_enabled
               feature_src_dir + 'x86/ssimulacra2_host_avx2.c',
           ],
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
       )
 
       platform_specific_cpu_objects += x86_avx2_static_lib.extract_all_objects(recursive: true)
@@ -768,7 +755,7 @@ if is_asm_enabled
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
                       '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
-                     _x86_simd_strict_fp_extra + vmaf_cflags_common,
+                     vmaf_cflags_common,
         )
 
         platform_specific_cpu_objects += x86_avx512_static_lib.extract_all_objects(recursive: true)
