@@ -32,6 +32,26 @@ re-pointing at the upstream kernel names; the synthetic-fixture +
 
 ---
 
+## vmaf-tune coverage push — lowest-covered modules (2026-05-31)
+
+**Files touched:**
+`tools/vmaf-tune/tests/test_coverage_push_lowcov_modules.py`,
+`changelog.d/added/vmaf-tune-coverage-push.md`.
+
+**Rebase impact:** None. `tools/vmaf-tune/` is fork-only (no upstream
+Netflix counterpart); the new test file imports only public + underscore-
+prefixed seams that already existed in the package. The 92 added tests
+are pure unit-level (no subprocess / no ffmpeg / no ONNX / no GPU) and
+exercise documented error paths in `uncertainty.py`, `_gop_common.py`,
+`proxy.py`, `predictor_features.py`, `benchmark.py`, `encoder_profile.py`,
+and `fast.py`. If a future refactor renames any of the targeted internal
+helpers (`_parse_fps`, `_run_probe_encode`, `_run_signalstats`,
+`_parse_frame_sizes`, `_mean`, `_resolve_baseline`, `_row_encode_fps`,
+`_row_score_fps`, `_resolve_model_path`), update the corresponding import
+in this single test file.
+
+---
+
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
 
 **Files touched:**
