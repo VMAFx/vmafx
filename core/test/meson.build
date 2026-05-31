@@ -123,30 +123,32 @@ test_predict = executable('test_predict',
     objects : libsvm_static_lib.extract_all_objects(recursive: true),
 )
 
-<<<<<<< ours
 # Coverage-targeted runtime tests for vendored libsvm 3.24 (svm.cpp).
-# Complements PR #381's test_svm_parser.c (parser rejection paths) by
+# Complements test_svm_parser.c (parser rejection paths) by
 # exercising svm_train + the inspector and predict family +
 # svm_check_parameter + a save/load round-trip — together lifting
-# svm.cpp coverage past the parser-only floor PR #381 established.
+# svm.cpp coverage past the parser-only floor.
 # Observation-only: vendored source is not modified (ADR-0889, core/src/AGENTS.md §10).
 test_svm_api = executable('test_svm_api',
     ['test.c', 'test_svm_api.c', '../src/thread_locale.c'],
-=======
-# SAN-MODEL-MALLOC-OOB regression suite (ADR-0889). Covers the vendored
-# libsvm text-format parser hardening — crafted-model rejection paths
-# that pre-empt oob Malloc sizes and read-before-write defects in the
-# upstream-3.24 baseline.
-test_svm_parser = executable('test_svm_parser',
-    ['test.c', 'test_svm_parser.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     c_args : vmaf_cflags_common,
     dependencies : [pthread_dependency, thread_lib],
     objects : libsvm_static_lib.extract_all_objects(recursive: true),
 )
 
-<<<<<<< ours
+# SAN-MODEL-MALLOC-OOB regression suite (ADR-0889). Covers the vendored
+# libsvm text-format parser hardening — crafted-model rejection paths
+# that pre-empt oob Malloc sizes and read-before-write defects in the
+# upstream-3.24 baseline.
+test_svm_parser = executable('test_svm_parser',
+    ['test.c', 'test_svm_parser.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    dependencies : [pthread_dependency, thread_lib],
+    objects : libsvm_static_lib.extract_all_objects(recursive: true),
+)
+
 # Coverage-targeted unit tests for the vendored IQA helpers
 # (libvmaf/feature/iqa): math_utils, decimate, KBND_* border handlers,
 # iqa_filter_pixel / iqa_img_filter, and an iqa_ssim end-to-end drive
@@ -172,8 +174,7 @@ test_iqa_helpers = executable('test_iqa_helpers',
     ],
 )
 
-=======
->>>>>>> theirs
+
 test_feature_extractor = executable('test_feature_extractor',
     # dnn_sources pulled in directly so feature_lpips.c can resolve its
     # libvmaf/dnn.h references (session_open/run/close,
@@ -463,7 +464,6 @@ test_psnr = executable('test_psnr',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 
-<<<<<<< ours
 # Coverage round 2 — drives the integer_psnr extract paths (10/12/16-bit
 # HBD), the min_sse=>psnr_max branch, and the apsnr flush surface that
 # test_psnr.c does not exercise.  Same link-recipe as test_speed_qa.
@@ -560,7 +560,8 @@ test_ms_ssim_decimate_coverage = executable('test_ms_ssim_decimate_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, sycl_dependency],
-=======
+)
+
 # ADR-0912: end-to-end pixel-format edge coverage (4:2:2, 4:4:4, 10/12-bit)
 # through the public CPU extractor surface. Links libvmaf the same way as
 # test_feature_extractor / test_psnr — no internal-source includes; the file
@@ -570,7 +571,6 @@ test_pixel_format_edge_coverage = executable('test_pixel_format_edge_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],
->>>>>>> theirs
 )
 
 test_framesync = executable('test_framesync',
@@ -930,10 +930,6 @@ test_integer_vif_cpu_cuda_parity = executable('test_integer_vif_cpu_cuda_parity'
 test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
     suite : ['fast', 'gpu'])
 
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
 # ADR-0956 — CUDA kernel parity coverage round 4. Closes the last
 # three float-path CPU twins (`float_adm_cuda`, `float_motion_cuda`,
 # `float_ssim_cuda`) with cross-backend parity assertions at
@@ -943,120 +939,31 @@ test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
 # `[skip: no CUDA device]` guard when vmaf_cuda_state_init fails.
 test_cuda_float_adm_parity = executable('test_cuda_float_adm_parity',
     ['test.c', 'test_cuda_float_adm_parity.c'],
-=======
-# ADR-0965 — speed_chroma + speed_temporal CPU vs. CUDA parity gates.
-# Pin the cross-backend tolerance (places=4) for the CUDA SpEED twins wired
-# in this repair PR.  Both tests skip cleanly when no CUDA device is visible
-# (mirrors test_cuda_motion3_parity.c).
-test_cuda_speed_chroma_parity = executable('test_cuda_speed_chroma_parity',
-    ['test.c', 'test_cuda_speed_chroma_parity.c'],
->>>>>>> theirs
-=======
-# ADR-0947 — CUDA kernel parity coverage, round 3. Closes the float-path
-# twin gap (float_psnr, float_vif, float_ms_ssim, float_moment) plus the
-# new ssimulacra2_cuda kernel.  Each test asserts CPU-vs-CUDA agreement
-# at places=4 / 1e-4 (ADR-0214 cross-backend gate) on a 256x144 YUV420P
-# fixture, 3 frames, score read at index 1.  GPU-gated: skips cleanly
-# when no CUDA device is visible (mirrors test_cuda_motion3_parity).
-test_cuda_float_psnr_parity = executable('test_cuda_float_psnr_parity',
-    ['test.c', 'test_cuda_float_psnr_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
-=======
-# Round-2 GPU-kernel coverage gap-fill — adm2/adm3 CPU vs. CUDA parity
-# (places=4). Round-1 (PR #351) covered psnr_cuda + ciede_cuda; ADM was
-# the highest-impact remaining CUDA gap (default model component).
-# GPU-gated: skips cleanly when no CUDA device is visible.
-test_cuda_adm_parity = executable('test_cuda_adm_parity',
-    ['test.c', 'test_cuda_adm_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
->>>>>>> theirs
-=======
-# GPU-kernel coverage gap-fill — psnr CPU vs. CUDA parity (places=4).
-# Pre-existing CUDA tests covered motion3 + vif; psnr_cuda
-# (integer_psnr_cuda.c + integer_psnr/psnr_score.cu) was uncovered.
-# GPU-gated: skips cleanly when no CUDA device is visible.
-test_cuda_psnr_parity = executable('test_cuda_psnr_parity',
-    ['test.c', 'test_cuda_psnr_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
->>>>>>> theirs
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
 test('test_cuda_float_adm_parity', test_cuda_float_adm_parity,
     suite : ['fast', 'gpu'])
 
 test_cuda_float_motion_parity = executable('test_cuda_float_motion_parity',
     ['test.c', 'test_cuda_float_motion_parity.c'],
-=======
-test('test_cuda_speed_chroma_parity', test_cuda_speed_chroma_parity,
-    suite : ['fast', 'gpu'])
-
-test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
-    ['test.c', 'test_cuda_speed_temporal_parity.c'],
->>>>>>> theirs
-=======
-test('test_cuda_float_psnr_parity', test_cuda_float_psnr_parity,
-    suite : ['fast', 'gpu'])
-
-test_cuda_float_vif_parity = executable('test_cuda_float_vif_parity',
-    ['test.c', 'test_cuda_float_vif_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
-=======
-test('test_cuda_adm_parity', test_cuda_adm_parity,
-    suite : ['fast', 'gpu'])
-
-# Round-2 GPU-kernel coverage gap-fill — motion_v2 CPU vs. CUDA parity
-# (places=4). Covers the SAD-weighted motion variant used by the
-# "vmaf_v0.6.1neg" model lineage. Distinct from test_cuda_motion3_parity
-# (which exercises the motion3 post-process, not the SAD reduction).
-test_cuda_motion_v2_parity = executable('test_cuda_motion_v2_parity',
-    ['test.c', 'test_cuda_motion_v2_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
->>>>>>> theirs
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
 test('test_cuda_float_motion_parity', test_cuda_float_motion_parity,
     suite : ['fast', 'gpu'])
 
 test_cuda_float_ssim_parity = executable('test_cuda_float_ssim_parity',
     ['test.c', 'test_cuda_float_ssim_parity.c'],
-=======
-test('test_cuda_float_vif_parity', test_cuda_float_vif_parity,
-    suite : ['fast', 'gpu'])
-
-test_cuda_float_ms_ssim_parity = executable('test_cuda_float_ms_ssim_parity',
-    ['test.c', 'test_cuda_float_ms_ssim_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
-=======
-test('test_cuda_motion_v2_parity', test_cuda_motion_v2_parity,
-    suite : ['fast', 'gpu'])
-
-# Round-2 GPU-kernel coverage gap-fill — cambi CPU vs. CUDA parity
-# (places=4). Fixture is 256x256 to satisfy CAMBI_MIN_WIDTH_HEIGHT=216.
-# Locks the banding-detector parity used by libvmaf-2.x.x neg + 4k models.
-test_cuda_cambi_parity = executable('test_cuda_cambi_parity',
-    ['test.c', 'test_cuda_cambi_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
->>>>>>> theirs
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
-<<<<<<< ours
-<<<<<<< ours
 test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
     suite : ['fast', 'gpu'])
 
@@ -1069,15 +976,142 @@ test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
 # grid changes or covariance-matrix degenerate cases.
 test_cuda_speed_chroma_smoke = executable('test_cuda_speed_chroma_smoke',
     ['test.c', 'test_cuda_speed_chroma_smoke.c'],
-=======
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_speed_chroma_smoke', test_cuda_speed_chroma_smoke,
+    suite : ['fast', 'gpu'])
+
+test_cuda_speed_temporal_smoke = executable('test_cuda_speed_temporal_smoke',
+    ['test.c', 'test_cuda_speed_temporal_smoke.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_speed_temporal_smoke', test_cuda_speed_temporal_smoke,
+    suite : ['fast', 'gpu'])
+
+# ADR-0965 — speed_chroma + speed_temporal CPU vs. CUDA parity gates.
+# Pin the cross-backend tolerance (places=4) for the CUDA SpEED twins wired
+# in this repair PR.  Both tests skip cleanly when no CUDA device is visible
+# (mirrors test_cuda_motion3_parity.c).
+test_cuda_speed_chroma_parity = executable('test_cuda_speed_chroma_parity',
+    ['test.c', 'test_cuda_speed_chroma_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_speed_chroma_parity', test_cuda_speed_chroma_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
+    ['test.c', 'test_cuda_speed_temporal_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
+    suite : ['fast', 'gpu'])
+
+# ADR-0947 — CUDA kernel parity coverage, round 3. Closes the float-path
+# twin gap (float_psnr, float_vif, float_ms_ssim, float_moment) plus the
+# new ssimulacra2_cuda kernel.  Each test asserts CPU-vs-CUDA agreement
+# at places=4 / 1e-4 (ADR-0214 cross-backend gate) on a 256x144 YUV420P
+# fixture, 3 frames, score read at index 1.  GPU-gated: skips cleanly
+# when no CUDA device is visible (mirrors test_cuda_motion3_parity).
+test_cuda_float_psnr_parity = executable('test_cuda_float_psnr_parity',
+    ['test.c', 'test_cuda_float_psnr_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_psnr_parity', test_cuda_float_psnr_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_float_vif_parity = executable('test_cuda_float_vif_parity',
+    ['test.c', 'test_cuda_float_vif_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_vif_parity', test_cuda_float_vif_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_float_ms_ssim_parity = executable('test_cuda_float_ms_ssim_parity',
+    ['test.c', 'test_cuda_float_ms_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
 test('test_cuda_float_ms_ssim_parity', test_cuda_float_ms_ssim_parity,
     suite : ['fast', 'gpu'])
 
 test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
     ['test.c', 'test_cuda_float_moment_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc],
-=======
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_moment_parity', test_cuda_float_moment_parity,
+    suite : ['fast', 'gpu'])
+
+test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
+    ['test.c', 'test_cuda_ssimulacra2_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_ssimulacra2_parity', test_cuda_ssimulacra2_parity,
+    suite : ['fast', 'gpu'])
+
+# Round-2 GPU-kernel coverage gap-fill — adm2/adm3 CPU vs. CUDA parity
+# (places=4). Round-1 (PR #351) covered psnr_cuda + ciede_cuda; ADM was
+# the highest-impact remaining CUDA gap (default model component).
+# GPU-gated: skips cleanly when no CUDA device is visible.
+test_cuda_adm_parity = executable('test_cuda_adm_parity',
+    ['test.c', 'test_cuda_adm_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_adm_parity', test_cuda_adm_parity,
+    suite : ['fast', 'gpu'])
+
+# Round-2 GPU-kernel coverage gap-fill — motion_v2 CPU vs. CUDA parity
+# (places=4). Covers the SAD-weighted motion variant used by the
+# "vmaf_v0.6.1neg" model lineage. Distinct from test_cuda_motion3_parity
+# (which exercises the motion3 post-process, not the SAD reduction).
+test_cuda_motion_v2_parity = executable('test_cuda_motion_v2_parity',
+    ['test.c', 'test_cuda_motion_v2_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_motion_v2_parity', test_cuda_motion_v2_parity,
+    suite : ['fast', 'gpu'])
+
+# Round-2 GPU-kernel coverage gap-fill — cambi CPU vs. CUDA parity
+# (places=4). Fixture is 256x256 to satisfy CAMBI_MIN_WIDTH_HEIGHT=216.
+# Locks the banding-detector parity used by libvmaf-2.x.x neg + 4k models.
+test_cuda_cambi_parity = executable('test_cuda_cambi_parity',
+    ['test.c', 'test_cuda_cambi_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
 test('test_cuda_cambi_parity', test_cuda_cambi_parity,
     suite : ['fast', 'gpu'])
 
@@ -1087,27 +1121,10 @@ test('test_cuda_cambi_parity', test_cuda_cambi_parity,
 test_cuda_psnr_hvs_parity = executable('test_cuda_psnr_hvs_parity',
     ['test.c', 'test_cuda_psnr_hvs_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
->>>>>>> theirs
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
-<<<<<<< ours
-<<<<<<< ours
-test('test_cuda_speed_chroma_smoke', test_cuda_speed_chroma_smoke,
-    suite : ['fast', 'gpu'])
-
-test_cuda_speed_temporal_smoke = executable('test_cuda_speed_temporal_smoke',
-    ['test.c', 'test_cuda_speed_temporal_smoke.c'],
-=======
-test('test_cuda_float_moment_parity', test_cuda_float_moment_parity,
-    suite : ['fast', 'gpu'])
-
-test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
-    ['test.c', 'test_cuda_ssimulacra2_parity.c'],
->>>>>>> theirs
-    include_directories : [libvmaf_inc, test_inc],
-=======
 test('test_cuda_psnr_hvs_parity', test_cuda_psnr_hvs_parity,
     suite : ['fast', 'gpu'])
 
@@ -1117,8 +1134,24 @@ test('test_cuda_psnr_hvs_parity', test_cuda_psnr_hvs_parity,
 test_cuda_ssim_parity = executable('test_cuda_ssim_parity',
     ['test.c', 'test_cuda_ssim_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
->>>>>>> theirs
-=======
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_ssim_parity', test_cuda_ssim_parity,
+    suite : ['fast', 'gpu'])
+
+# GPU-kernel coverage gap-fill — psnr CPU vs. CUDA parity (places=4).
+# Pre-existing CUDA tests covered motion3 + vif; psnr_cuda
+# (integer_psnr_cuda.c + integer_psnr/psnr_score.cu) was uncovered.
+# GPU-gated: skips cleanly when no CUDA device is visible.
+test_cuda_psnr_parity = executable('test_cuda_psnr_parity',
+    ['test.c', 'test_cuda_psnr_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
 test('test_cuda_psnr_parity', test_cuda_psnr_parity,
     suite : ['fast', 'gpu'])
 
@@ -1128,27 +1161,11 @@ test('test_cuda_psnr_parity', test_cuda_psnr_parity,
 test_cuda_ciede_parity = executable('test_cuda_ciede_parity',
     ['test.c', 'test_cuda_ciede_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
->>>>>>> theirs
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-test('test_cuda_speed_temporal_smoke', test_cuda_speed_temporal_smoke,
-=======
-test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
->>>>>>> theirs
-=======
-test('test_cuda_ssimulacra2_parity', test_cuda_ssimulacra2_parity,
->>>>>>> theirs
-=======
-test('test_cuda_ssim_parity', test_cuda_ssim_parity,
->>>>>>> theirs
-=======
 test('test_cuda_ciede_parity', test_cuda_ciede_parity,
->>>>>>> theirs
     suite : ['fast', 'gpu'])
 endif
 
@@ -1246,7 +1263,6 @@ test_motion_min_dim = executable('test_motion_min_dim',
 )
 test('test_motion_min_dim', test_motion_min_dim, suite : ['fast'])
 
-<<<<<<< ours
 # GPU dispatch-runtime coverage (host-only). Targets the shared
 # `gpu_dispatch_env.c` + `gpu_dispatch_parse.h` helpers and the
 # host-buildable subset of the per-backend dispatch_strategy TUs
@@ -1269,7 +1285,7 @@ test_gpu_dispatch_runtime = executable('test_gpu_dispatch_runtime',
     dependencies: [pthread_dependency, stdatomic_dependency],
 )
 test('test_gpu_dispatch_runtime', test_gpu_dispatch_runtime, suite : ['fast'])
-=======
+
 # Public-API smoke: vmaf_version() returns non-empty, printable, whitespace-free
 # string. Closes the orphan-source gap surfaced by the 2026-05-29 test-meson
 # audit — the source already existed at core/test/test_version.c but was never
@@ -1293,7 +1309,6 @@ test_vif_skip_scale0 = executable('test_vif_skip_scale0',
     dependencies: [math_lib, pthread_dependency, thread_lib, gpu_all_deps],
 )
 test('test_vif_skip_scale0', test_vif_skip_scale0, suite : ['fast'])
->>>>>>> theirs
 
 if get_option('enable_sycl')
 test_sycl = executable('test_sycl',
@@ -1341,15 +1356,30 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
     suite : ['fast', 'gpu'])
 
-<<<<<<< ours
-<<<<<<< ours
 # ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.
 # Pin the cross-backend tolerance (places=4) for the SpEED-family GPU
 # twins that this PR wires.  Both tests skip cleanly when no SYCL device
 # is visible (mirrors test_sycl_motion3_parity.c).
 test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
     ['test.c', 'test_sycl_speed_chroma_parity.c'],
-=======
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
+    ['test.c', 'test_sycl_speed_temporal_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
+    suite : ['fast', 'gpu'])
+
 # ADR-0884 — SYCL kernel coverage round 2.
 # Five additional CPU-vs-SYCL parity gates: adm, ciede, integer_ssim,
 # float_ms_ssim, motion_v2. Round 1 (ADR-0868 / PR #351) added psnr +
@@ -1361,42 +1391,21 @@ test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
 # tests skip cleanly when no SYCL device is visible.
 test_sycl_adm_parity = executable('test_sycl_adm_parity',
     ['test.c', 'test_sycl_adm_parity.c'],
->>>>>>> theirs
-=======
-# GPU-kernel coverage gap-fill — psnr CPU vs. SYCL parity (places=4).
-# Covers integer_psnr_sycl.cpp, which previously had no cross-backend
-# parity gate (only motion3 + cambi had one for SYCL). SYCL-gated:
-# skips cleanly when no SYCL device is visible.
-test_sycl_psnr_parity = executable('test_sycl_psnr_parity',
-    ['test.c', 'test_sycl_psnr_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1']
 )
-<<<<<<< ours
-<<<<<<< ours
-test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
-    suite : ['fast', 'gpu'])
-
-test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
-    ['test.c', 'test_sycl_speed_temporal_parity.c'],
-=======
 test('test_sycl_adm_parity', test_sycl_adm_parity,
     suite : ['fast', 'gpu'])
 
 test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
     ['test.c', 'test_sycl_ciede_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1']
 )
-<<<<<<< ours
-test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
-=======
 test('test_sycl_ciede_parity', test_sycl_ciede_parity,
     suite : ['fast', 'gpu'])
 
@@ -1422,7 +1431,25 @@ test('test_sycl_ms_ssim_parity', test_sycl_ms_ssim_parity,
 
 test_sycl_motion_v2_parity = executable('test_sycl_motion_v2_parity',
     ['test.c', 'test_sycl_motion_v2_parity.c'],
-=======
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_motion_v2_parity', test_sycl_motion_v2_parity,
+    suite : ['fast', 'gpu'])
+
+# GPU-kernel coverage gap-fill — psnr CPU vs. SYCL parity (places=4).
+# Covers integer_psnr_sycl.cpp, which previously had no cross-backend
+# parity gate (only motion3 + cambi had one for SYCL). SYCL-gated:
+# skips cleanly when no SYCL device is visible.
+test_sycl_psnr_parity = executable('test_sycl_psnr_parity',
+    ['test.c', 'test_sycl_psnr_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
 test('test_sycl_psnr_parity', test_sycl_psnr_parity,
     suite : ['fast', 'gpu'])
 
@@ -1432,18 +1459,12 @@ test('test_sycl_psnr_parity', test_sycl_psnr_parity,
 # SYCL-gated: skips cleanly when no SYCL device is visible.
 test_sycl_vif_parity = executable('test_sycl_vif_parity',
     ['test.c', 'test_sycl_vif_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1']
 )
-<<<<<<< ours
-test('test_sycl_motion_v2_parity', test_sycl_motion_v2_parity,
->>>>>>> theirs
-=======
 test('test_sycl_vif_parity', test_sycl_vif_parity,
->>>>>>> theirs
     suite : ['fast', 'gpu'])
 endif
 
@@ -1462,7 +1483,6 @@ test_mcp_smoke = executable('test_mcp_smoke',
 )
 test('test_mcp_smoke', test_mcp_smoke, suite : ['slow'], timeout: 60)
 
-<<<<<<< ours
 # Coverage push for core/src/mcp/* — complements test_mcp_smoke.c by
 # pinning the dispatcher error envelopes, lifecycle state-machine
 # edges (validate_config, double-start -EBUSY, empty/overlong UDS+SSE
@@ -1473,7 +1493,13 @@ test('test_mcp_smoke', test_mcp_smoke, suite : ['slow'], timeout: 60)
 # docs/research/ digest.
 test_mcp_coverage = executable('test_mcp_coverage',
     ['test.c', 'test_mcp_coverage.c'],
-=======
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+    c_args: ['-DHAVE_MCP=1']
+)
+test('test_mcp_coverage', test_mcp_coverage, suite : ['slow'], timeout: 60)
+
 # Regression: PR #460 audit follow-up #5. Verifies that
 # vmaf_mcp_stop() is idempotent across multiple invocations
 # (was: SIGSEGV on the third call due to unconditional
@@ -1481,17 +1507,12 @@ test_mcp_coverage = executable('test_mcp_coverage',
 # changelog.d/fixed/vmaf-mcp-stop-double-join-segv.md.
 test_mcp_stop_idempotent = executable('test_mcp_stop_idempotent',
     ['test.c', 'test_mcp_stop_idempotent.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
     c_args: ['-DHAVE_MCP=1']
 )
-<<<<<<< ours
-test('test_mcp_coverage', test_mcp_coverage, suite : ['slow'], timeout: 60)
-=======
 test('test_mcp_stop_idempotent', test_mcp_stop_idempotent, suite : ['fast'], timeout: 30)
->>>>>>> theirs
 endif
 
 # ADR-0212 / T7-10: HIP (AMD ROCm) backend smoke.
@@ -1541,9 +1562,6 @@ test('test_hip_adm_parity', test_hip_adm_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
 # ADR-0958 round-4 — HIP kernel parity gap-fill (2 extractors).
 # Closes the next batch after round-3 (PR #443 / ADR-0945): ssimulacra2_hip,
 # float_ssim_hip.  Each test follows the same template as the round-1/2/3
@@ -1566,7 +1584,26 @@ test('test_hip_adm_parity', test_hip_adm_parity,
 
 test_hip_ssimulacra2_parity = executable('test_hip_ssimulacra2_parity',
     ['test.c', 'test_hip_ssimulacra2_parity.c'],
-=======
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_ssimulacra2_parity', test_hip_ssimulacra2_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+test_hip_float_ssim_parity = executable('test_hip_float_ssim_parity',
+    ['test.c', 'test_hip_float_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_float_ssim_parity', test_hip_float_ssim_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
 # ADR-0945 round-3 — HIP kernel parity gap-fill (4 extractors).
 # Closes the next batch after round-2 (PR #372 / ADR-0883): cambi_hip,
 # float_adm_hip, float_motion_hip, float_psnr_hip.  Each test follows
@@ -1579,8 +1616,48 @@ test_hip_ssimulacra2_parity = executable('test_hip_ssimulacra2_parity',
 
 test_hip_cambi_parity = executable('test_hip_cambi_parity',
     ['test.c', 'test_hip_cambi_parity.c'],
->>>>>>> theirs
-=======
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_cambi_parity', test_hip_cambi_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+test_hip_float_adm_parity = executable('test_hip_float_adm_parity',
+    ['test.c', 'test_hip_float_adm_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_float_adm_parity', test_hip_float_adm_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+test_hip_float_motion_parity = executable('test_hip_float_motion_parity',
+    ['test.c', 'test_hip_float_motion_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_float_motion_parity', test_hip_float_motion_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+test_hip_float_psnr_parity = executable('test_hip_float_psnr_parity',
+    ['test.c', 'test_hip_float_psnr_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_float_psnr_parity', test_hip_float_psnr_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
 # ADR-0883 round-2 — HIP kernel parity gap-fill (5 extractors).
 # Closes the gaps left after PR #351 (psnr_hip + vif_hip) and the
 # pre-existing adm/motion3 tests.  Each test follows the same template:
@@ -1591,100 +1668,70 @@ test_hip_cambi_parity = executable('test_hip_cambi_parity',
 
 test_hip_ciede_parity = executable('test_hip_ciede_parity',
     ['test.c', 'test_hip_ciede_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
     c_args: ['-DHAVE_HIP=1']
 )
-<<<<<<< ours
-<<<<<<< ours
-test('test_hip_ssimulacra2_parity', test_hip_ssimulacra2_parity,
-    suite : ['fast', 'gpu'],
-    timeout : 60)
-
-test_hip_float_ssim_parity = executable('test_hip_float_ssim_parity',
-    ['test.c', 'test_hip_float_ssim_parity.c'],
-=======
-test('test_hip_cambi_parity', test_hip_cambi_parity,
-    suite : ['fast', 'gpu'],
-    timeout : 60)
-
-test_hip_float_adm_parity = executable('test_hip_float_adm_parity',
-    ['test.c', 'test_hip_float_adm_parity.c'],
->>>>>>> theirs
-=======
 test('test_hip_ciede_parity', test_hip_ciede_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
 test_hip_psnr_hvs_parity = executable('test_hip_psnr_hvs_parity',
     ['test.c', 'test_hip_psnr_hvs_parity.c'],
-=======
-# GPU-kernel coverage gap-fill — psnr CPU vs. HIP parity (places=4).
-# Covers integer_psnr_hip.c + integer_psnr/psnr_score.hip, which had
-# no cross-backend parity assertion (only smoke + motion3 + ADM).
-# HIP-gated: skips cleanly when no AMD GPU is visible.
-test_hip_psnr_parity = executable('test_hip_psnr_parity',
-    ['test.c', 'test_hip_psnr_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
     c_args: ['-DHAVE_HIP=1']
 )
-<<<<<<< ours
 test('test_hip_psnr_hvs_parity', test_hip_psnr_hvs_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
 test_hip_motion_parity = executable('test_hip_motion_parity',
     ['test.c', 'test_hip_motion_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
     c_args: ['-DHAVE_HIP=1']
 )
-<<<<<<< ours
-<<<<<<< ours
-test('test_hip_float_ssim_parity', test_hip_float_ssim_parity,
-=======
-test('test_hip_float_adm_parity', test_hip_float_adm_parity,
-    suite : ['fast', 'gpu'],
-    timeout : 60)
-
-test_hip_float_motion_parity = executable('test_hip_float_motion_parity',
-    ['test.c', 'test_hip_float_motion_parity.c'],
-=======
 test('test_hip_motion_parity', test_hip_motion_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
 test_hip_ssim_parity = executable('test_hip_ssim_parity',
     ['test.c', 'test_hip_ssim_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
     c_args: ['-DHAVE_HIP=1']
 )
-<<<<<<< ours
-test('test_hip_float_motion_parity', test_hip_float_motion_parity,
-    suite : ['fast', 'gpu'],
-    timeout : 60)
-
-test_hip_float_psnr_parity = executable('test_hip_float_psnr_parity',
-    ['test.c', 'test_hip_float_psnr_parity.c'],
-=======
 test('test_hip_ssim_parity', test_hip_ssim_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
 test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',
     ['test.c', 'test_hip_ms_ssim_parity.c'],
->>>>>>> theirs
-=======
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_ms_ssim_parity', test_hip_ms_ssim_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+# GPU-kernel coverage gap-fill — psnr CPU vs. HIP parity (places=4).
+# Covers integer_psnr_hip.c + integer_psnr/psnr_score.hip, which had
+# no cross-backend parity assertion (only smoke + motion3 + ADM).
+# HIP-gated: skips cleanly when no AMD GPU is visible.
+test_hip_psnr_parity = executable('test_hip_psnr_parity',
+    ['test.c', 'test_hip_psnr_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
 test('test_hip_psnr_parity', test_hip_psnr_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
@@ -1695,22 +1742,12 @@ test('test_hip_psnr_parity', test_hip_psnr_parity,
 # HIP-gated: skips cleanly when no AMD GPU is visible.
 test_hip_vif_parity = executable('test_hip_vif_parity',
     ['test.c', 'test_hip_vif_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
     c_args: ['-DHAVE_HIP=1']
 )
-<<<<<<< ours
-<<<<<<< ours
-test('test_hip_float_psnr_parity', test_hip_float_psnr_parity,
->>>>>>> theirs
-=======
-test('test_hip_ms_ssim_parity', test_hip_ms_ssim_parity,
->>>>>>> theirs
-=======
 test('test_hip_vif_parity', test_hip_vif_parity,
->>>>>>> theirs
     suite : ['fast', 'gpu'],
     timeout : 60)
 endif
@@ -1747,9 +1784,6 @@ test_metal_install_header = executable('test_metal_install_header',
 test('test_metal_install_header', test_metal_install_header, suite : ['fast', 'gpu'])
 endif
 
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
 # Metal kernel coverage round 3 — per-extractor parity tests for the four
 # extractors not covered by round 2 (PR #379): integer_motion, float_motion,
 # float_moment, float_ms_ssim. Same pattern as round 2 — synthetic YUV420P
@@ -1760,7 +1794,40 @@ endif
 # CI lanes they exercise the live kernel.
 test_metal_integer_motion_parity = executable('test_metal_integer_motion_parity',
     ['test.c', 'test_metal_integer_motion_parity.c'],
-=======
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_integer_motion_parity', test_metal_integer_motion_parity, suite : ['fast', 'gpu'])
+
+test_metal_float_motion_parity = executable('test_metal_float_motion_parity',
+    ['test.c', 'test_metal_float_motion_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_float_motion_parity', test_metal_float_motion_parity, suite : ['fast', 'gpu'])
+
+test_metal_float_moment_parity = executable('test_metal_float_moment_parity',
+    ['test.c', 'test_metal_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_float_moment_parity', test_metal_float_moment_parity, suite : ['fast', 'gpu'])
+
+test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
+    ['test.c', 'test_metal_float_ms_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity, suite : ['fast', 'gpu'])
+
 # Metal kernel coverage round 2 — per-extractor parity tests (ADR-0421 /
 # ADR-0589 / ADR-0214). Extend PR #351's registration audit with real CPU
 # vs. Metal score comparisons on synthetic YUV420P fixtures. Each test
@@ -1770,63 +1837,40 @@ test_metal_integer_motion_parity = executable('test_metal_integer_motion_parity'
 # float_ssim which uses the 1e-3 SSIM-specific bound from ADR-0589.
 test_metal_motion_v2_parity = executable('test_metal_motion_v2_parity',
     ['test.c', 'test_metal_motion_v2_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-<<<<<<< ours
-test('test_metal_integer_motion_parity', test_metal_integer_motion_parity, suite : ['fast', 'gpu'])
-
-test_metal_float_motion_parity = executable('test_metal_float_motion_parity',
-    ['test.c', 'test_metal_float_motion_parity.c'],
-=======
 test('test_metal_motion_v2_parity', test_metal_motion_v2_parity, suite : ['fast', 'gpu'])
 
 test_metal_integer_psnr_parity = executable('test_metal_integer_psnr_parity',
     ['test.c', 'test_metal_integer_psnr_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-<<<<<<< ours
-test('test_metal_float_motion_parity', test_metal_float_motion_parity, suite : ['fast', 'gpu'])
-
-test_metal_float_moment_parity = executable('test_metal_float_moment_parity',
-    ['test.c', 'test_metal_float_moment_parity.c'],
-=======
 test('test_metal_integer_psnr_parity', test_metal_integer_psnr_parity, suite : ['fast', 'gpu'])
 
 test_metal_float_psnr_parity = executable('test_metal_float_psnr_parity',
     ['test.c', 'test_metal_float_psnr_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-<<<<<<< ours
-test('test_metal_float_moment_parity', test_metal_float_moment_parity, suite : ['fast', 'gpu'])
-
-test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
-    ['test.c', 'test_metal_float_ms_ssim_parity.c'],
-=======
 test('test_metal_float_psnr_parity', test_metal_float_psnr_parity, suite : ['fast', 'gpu'])
 
 test_metal_float_ssim_parity = executable('test_metal_float_ssim_parity',
     ['test.c', 'test_metal_float_ssim_parity.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
-<<<<<<< ours
-test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity, suite : ['fast', 'gpu'])
-=======
+test('test_metal_float_ssim_parity', test_metal_float_ssim_parity, suite : ['fast', 'gpu'])
+
 # Metal kernel coverage round 4 (closeout) — meta-audit regression guard
 # (ADR-0959). Enumerates the 8 .mm kernel basenames under
 # core/src/feature/metal/ and asserts each has a registered
@@ -1837,7 +1881,13 @@ test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity, suite :
 # 3).
 test_metal_kernel_coverage_audit = executable('test_metal_kernel_coverage_audit',
     ['test.c', 'test_metal_kernel_coverage_audit.c'],
-=======
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_kernel_coverage_audit', test_metal_kernel_coverage_audit, suite : ['fast', 'gpu'])
+
 # GPU-kernel coverage gap-fill — extractor-registration audit for the
 # 8 Metal extractors (ADR-0361 T8-1c/d). Registration is compile-time
 # so this test runs on Linux dev hosts too whenever the Metal build is
@@ -1845,22 +1895,13 @@ test_metal_kernel_coverage_audit = executable('test_metal_kernel_coverage_audit'
 # are motion_v2_metal + float_psnr_metal.
 test_metal_kernel_registration = executable('test_metal_kernel_registration',
     ['test.c', 'test_metal_kernel_registration.c'],
->>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency],
     c_args: ['-DHAVE_METAL=1']
 )
-<<<<<<< ours
-test('test_metal_kernel_coverage_audit', test_metal_kernel_coverage_audit, suite : ['fast', 'gpu'])
->>>>>>> theirs
-=======
-test('test_metal_float_ssim_parity', test_metal_float_ssim_parity, suite : ['fast', 'gpu'])
->>>>>>> theirs
-=======
 test('test_metal_kernel_registration', test_metal_kernel_registration,
     suite : ['fast', 'gpu'])
->>>>>>> theirs
 endif
 
 test('test_context', test_context, suite : ['fast'])
@@ -1873,12 +1914,9 @@ test('test_thread_pool', test_thread_pool, suite : ['fast'])
 test('test_model', test_model, suite : ['fast'])
 test('test_model_collection_api', test_model_collection_api, suite : ['fast'])
 test('test_predict', test_predict, suite : ['fast'])
-<<<<<<< ours
 test('test_svm_api', test_svm_api, suite : ['fast'])
-test('test_iqa_helpers', test_iqa_helpers, suite : ['fast'])
-=======
 test('test_svm_parser', test_svm_parser, suite : ['fast'])
->>>>>>> theirs
+test('test_iqa_helpers', test_iqa_helpers, suite : ['fast'])
 test('test_feature_extractor', test_feature_extractor, suite : ['fast'])
 test('test_dict', test_dict, suite : ['fast'])
 test('test_opt', test_opt, suite : ['fast'])
@@ -1907,7 +1945,6 @@ if host_machine.system() != 'windows'
     test('test_cli_parse_long_only_args', test_cli_parse_long_only_args, suite : ['fast'])
 endif
 test('test_psnr', test_psnr, suite : ['fast'])
-<<<<<<< ours
 test('test_integer_psnr_coverage', test_integer_psnr_coverage, suite : ['fast'])
 test('test_integer_motion_coverage', test_integer_motion_coverage, suite : ['fast'])
 test('test_integer_motion_v2_coverage', test_integer_motion_v2_coverage, suite : ['fast'])
@@ -1915,10 +1952,8 @@ test('test_integer_vif_log2', test_integer_vif_log2, suite : ['fast'])
 test('test_iqa_convolve_coverage', test_iqa_convolve_coverage, suite : ['fast'])
 test('test_barten_csf_coverage', test_barten_csf_coverage, suite : ['fast'])
 test('test_ms_ssim_decimate_coverage', test_ms_ssim_decimate_coverage, suite : ['fast'])
-=======
 test('test_pixel_format_edge_coverage',
     test_pixel_format_edge_coverage, suite : ['fast'])
->>>>>>> theirs
 test('test_framesync', test_framesync, suite : ['fast'])
 test('test_propagate_metadata', test_propagate_metadata, suite : ['fast'])
 test('test_adm_csf', test_adm_csf, suite : ['fast'])
@@ -1980,7 +2015,6 @@ if is_rust_enabled
     test('test_tad_rust', test_tad_rust, suite : ['fast'])
 endif
 
-<<<<<<< ours
 # Coverage round 3 — core/src/feature/integer_motion.h `edge_16` mirror
 # extension (5-tap filter, both axes).  Pushes line coverage from 58 %
 # towards 100 % by driving the four mirror branches directly.
@@ -2015,7 +2049,7 @@ test_feature_collector_coverage = executable('test_feature_collector_coverage',
     dependencies : [pthread_dependency, sycl_dependency],
 )
 test('test_feature_collector_coverage', test_feature_collector_coverage, suite : ['fast'])
-=======
+
 # Coverage push: core/src/feature/mkdirp.c had 0/35 line coverage in the
 # 2026-05-30 Coverage Gate baseline because the only in-tree caller is
 # cambi.c's `heatmaps_path` sidecar, which no unit test exercises.  This
@@ -2031,4 +2065,3 @@ test_mkdirp = executable('test_mkdirp',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 test('test_mkdirp', test_mkdirp, suite : ['fast'])
->>>>>>> theirs

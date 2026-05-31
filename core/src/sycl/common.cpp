@@ -598,13 +598,8 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
         state->frame_counter++;
 
         if (state->extractor_timing && state->frame_counter <= 30) {
-<<<<<<< ours
-            fprintf(stderr, "UPLOAD frame %" PRIu64 ": ref=%.1fms dis=%.1fms total=%.1fms\n",
-                    state->frame_counter, t1 - t0, t2 - t1, t2 - t0);
-=======
             vmaf_log(VMAF_LOG_LEVEL_DEBUG, "UPLOAD frame %lu: ref=%.1fms dis=%.1fms total=%.1fms\n",
                      (unsigned long)state->frame_counter, t1 - t0, t2 - t1, t2 - t0);
->>>>>>> theirs
         }
 
     } catch (const sycl::exception &e) {

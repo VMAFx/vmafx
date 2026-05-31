@@ -16,28 +16,17 @@
  *
  */
 
-<<<<<<< ours
 #ifndef LIBVMAF_LIBVMAF_CUDA_H
 #define LIBVMAF_LIBVMAF_CUDA_H
-=======
-/* Upstream Netflix include guard preserved verbatim for rebase parity.
- * Renaming would diverge from Netflix/vmaf master and break port-only sync.
- * See CLAUDE.md §10 "Upstream sync" and docs/rebase-notes.md. */
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
-#ifndef __VMAF_CUDA_H__
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
-#define __VMAF_CUDA_H__
-    >>>>>>> theirs
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/macros.h"
 
 #ifdef __cplusplus
-    extern "C"
-{
+extern "C" {
 #endif
 
-    /**
+/**
  * @typedef VmafCudaState
  * @brief   Opaque CUDA backend handle pinning one device + compute stream.
  *
@@ -51,14 +40,9 @@
  * `VmafMetalState`. One state pins one device; callers that want multi-GPU
  * fan-out create one state per device and one VmafContext per state.
  */
-    typedef struct VmafCudaState VmafCudaState;
+typedef struct VmafCudaState VmafCudaState;
 
-    /**
-<<<<<<< ours
- * Configuration passed to `vmaf_cuda_state_init`. Safe to
- * zero-initialise — libvmaf creates its own CUcontext when
- * @p cu_ctx is NULL.
-=======
+/**
  * @struct VmafCudaConfiguration
  * @brief  Configuration for @ref vmaf_cuda_state_init.
  *
@@ -71,13 +55,12 @@
  *               header stays free of `<cuda.h>`). NULL → libvmaf creates a
  *               new context. When non-NULL the caller retains ownership; the
  *               context must outlive the VmafCudaState.
->>>>>>> theirs
  */
-    typedef struct VmafCudaConfiguration {
-        void *cu_ctx; /**< Optional CUcontext (cast from `CUcontext`); NULL → create one. */
-    } VmafCudaConfiguration;
+typedef struct VmafCudaConfiguration {
+    void *cu_ctx; /**< Optional CUcontext (cast from `CUcontext`); NULL → create one. */
+} VmafCudaConfiguration;
 
-    /**
+/**
  * Initialize VmafCudaState.
  * VmafCudaState can optionally be configured with VmafCudaConfiguration.
  *
@@ -88,9 +71,9 @@
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState * *cu_state, VmafCudaConfiguration cfg);
+VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg);
 
-    /**
+/**
  * Free VmafCudaState allocated by `vmaf_cuda_state_init()`.
  *
  * Must be called AFTER `vmaf_close()` on any VmafContext that imported
@@ -103,9 +86,9 @@
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState * cu_state);
+VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
 
-    /**
+/**
  * Import VmafCudaState for use during CUDA feature extraction.
  *
  * @param vmaf VMAF context allocated with `vmaf_init()`.
@@ -115,9 +98,9 @@
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_cuda_import_state(VmafContext * vmaf, VmafCudaState * cu_state);
+VMAF_EXPORT int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state);
 
-    /**
+/**
  * @enum  VmafCudaPicturePreallocationMethod
  * @brief Storage tier used by @ref vmaf_cuda_preallocate_pictures.
  *
@@ -138,18 +121,14 @@
  *
  * Stable enumerator values — append-only across libvmaf releases.
  */
-    enum VmafCudaPicturePreallocationMethod {
-        VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_NONE = 0,
-        VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_DEVICE,
-        VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST,
-        VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST_PINNED,
-    };
+enum VmafCudaPicturePreallocationMethod {
+    VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_NONE = 0,
+    VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_DEVICE,
+    VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST,
+    VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST_PINNED,
+};
 
-    /**
-<<<<<<< ours
- * Picture-pool configuration for the CUDA backend. Passed to
- * `vmaf_cuda_preallocate_pictures`.
-=======
+/**
  * @struct VmafCudaPictureConfiguration
  * @brief  Picture-pool configuration for @ref vmaf_cuda_preallocate_pictures.
  *
@@ -164,20 +143,19 @@
  * @field pic_params.pix_fmt   Planar pixel format (see @ref VmafPixelFormat).
  * @field pic_prealloc_method  Storage tier — see
  *                             @ref VmafCudaPicturePreallocationMethod.
->>>>>>> theirs
  */
-    typedef struct VmafCudaPictureConfiguration {
-        /** Per-picture shape (width/height/bpc/pixel-format). */
-        struct {
-            unsigned w, h;                /**< Per-plane width / height. */
-            unsigned bpc;                 /**< Bits per component. */
-            enum VmafPixelFormat pix_fmt; /**< Pixel format. */
-        } pic_params;
-        /** Selector for how each VmafPicture's data buffers are placed. */
-        enum VmafCudaPicturePreallocationMethod pic_prealloc_method;
-    } VmafCudaPictureConfiguration;
+typedef struct VmafCudaPictureConfiguration {
+    /** Per-picture shape (width/height/bpc/pixel-format). */
+    struct {
+        unsigned w, h;                /**< Per-plane width / height. */
+        unsigned bpc;                 /**< Bits per component. */
+        enum VmafPixelFormat pix_fmt; /**< Pixel format. */
+    } pic_params;
+    /** Selector for how each VmafPicture's data buffers are placed. */
+    enum VmafCudaPicturePreallocationMethod pic_prealloc_method;
+} VmafCudaPictureConfiguration;
 
-    /**
+/**
  * Config and preallocate VmafPictures for use during CUDA feature extraction.
  * The preallocated VmafPicture data buffers are set according to
  * cfg.pic_prealloc_method.
@@ -189,10 +167,9 @@
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext * vmaf,
-                                                   VmafCudaPictureConfiguration cfg);
+VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictureConfiguration cfg);
 
-    /**
+/**
  * Fetch a preallocated VmafPicture for use during CUDA feature extraction.
  * pictures are allocated during `vmaf_cuda_preallocate_pictures` and data
  * buffers are set according to cfg.pic_prealloc_method.
@@ -205,7 +182,7 @@
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_cuda_fetch_preallocated_picture(VmafContext * vmaf, VmafPicture * pic);
+VMAF_EXPORT int vmaf_cuda_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
 
 #ifdef __cplusplus
 }

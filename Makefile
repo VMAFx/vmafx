@@ -83,13 +83,8 @@ cythonize-deps: $(VENV_PIP)
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.
 # ============================================================================
 
-<<<<<<< ours
-.PHONY: lint lint-c lint-py lint-sh format format-check sec sbom \
-        test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
-=======
 .PHONY: lint lint-c lint-py lint-sh lint-md format format-check sec sbom \
-        test-netflix-golden test-sanitizers test-fast hooks-install help \
->>>>>>> theirs
+        test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
         coverage coverage-html coverage-check assertion-density pr-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.

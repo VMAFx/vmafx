@@ -16,18 +16,8 @@
  *
  */
 
-<<<<<<< ours
 #ifndef LIBVMAF_LIBVMAF_H
 #define LIBVMAF_LIBVMAF_H
-=======
-/* Upstream Netflix include guard preserved verbatim for rebase parity.
- * Renaming would diverge from Netflix/vmaf master and break port-only sync.
- * See CLAUDE.md §10 "Upstream sync" and docs/rebase-notes.md. */
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
-#ifndef __VMAF_H__
-/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
-#define __VMAF_H__
-    >>>>>>> theirs
 
 #include <stdint.h>
 #include <stdio.h>
@@ -38,11 +28,10 @@
 #include "libvmaf/feature.h"
 
 #ifdef __cplusplus
-    extern "C"
-{
+extern "C" {
 #endif
 
-    /**
+/**
  * @enum  VmafLogLevel
  * @brief Verbosity tier used by libvmaf's stderr logger.
  *
@@ -61,15 +50,15 @@
  *
  * Stable enumerator values — append-only across libvmaf releases.
  */
-    enum VmafLogLevel {
-        VMAF_LOG_LEVEL_NONE = 0,
-        VMAF_LOG_LEVEL_ERROR,
-        VMAF_LOG_LEVEL_WARNING,
-        VMAF_LOG_LEVEL_INFO,
-        VMAF_LOG_LEVEL_DEBUG,
-    };
+enum VmafLogLevel {
+    VMAF_LOG_LEVEL_NONE = 0,
+    VMAF_LOG_LEVEL_ERROR,
+    VMAF_LOG_LEVEL_WARNING,
+    VMAF_LOG_LEVEL_INFO,
+    VMAF_LOG_LEVEL_DEBUG,
+};
 
-    /**
+/**
  * @enum  VmafOutputFormat
  * @brief Output serialisation format for @ref vmaf_write_output and
  *        @ref vmaf_write_output_with_format.
@@ -89,24 +78,14 @@
  *
  * Stable enumerator values — append-only across libvmaf releases.
  */
-    enum VmafOutputFormat {
-        VMAF_OUTPUT_FORMAT_NONE = 0,
-        VMAF_OUTPUT_FORMAT_XML,
-        VMAF_OUTPUT_FORMAT_JSON,
-        VMAF_OUTPUT_FORMAT_CSV,
-        VMAF_OUTPUT_FORMAT_SUB,
-    };
+enum VmafOutputFormat {
+    VMAF_OUTPUT_FORMAT_NONE = 0,
+    VMAF_OUTPUT_FORMAT_XML,
+    VMAF_OUTPUT_FORMAT_JSON,
+    VMAF_OUTPUT_FORMAT_CSV,
+    VMAF_OUTPUT_FORMAT_SUB,
+};
 
-<<<<<<< ours
-    enum VmafPoolingMethod {
-        VMAF_POOL_METHOD_UNKNOWN = 0,
-        VMAF_POOL_METHOD_MIN,
-        VMAF_POOL_METHOD_MAX,
-        VMAF_POOL_METHOD_MEAN,
-        VMAF_POOL_METHOD_HARMONIC_MEAN,
-        VMAF_POOL_METHOD_NB
-    };
-=======
 enum VmafPoolingMethod {
     VMAF_POOL_METHOD_UNKNOWN = 0,
     VMAF_POOL_METHOD_MIN,
@@ -124,9 +103,8 @@ enum VmafPoolingMethod {
      */
     VMAF_POOL_METHOD_NB
 };
->>>>>>> theirs
 
-    /**
+/**
  * @struct VmafConfiguration
  * @brief  Configuration needed to initialize a `VmafContext`
  *
@@ -167,15 +145,15 @@ enum VmafPoolingMethod {
  *                    HIP state pointer was imported via
  *                    `vmaf_hip_import_state()`. ADR-0530.
  */
-    typedef struct VmafConfiguration {
-        enum VmafLogLevel log_level; /**< Logger verbosity. */
-        unsigned n_threads;          /**< Worker thread count; 0 = library default. */
-        unsigned n_subsample;        /**< Compute scores only every N frames; 0/1 = every frame. */
-        uint64_t cpumask;            /**< CPU-ISA disable bitmask; see struct doc above. */
-        uint64_t gpumask;            /**< GPU-feature disable bitmask; see struct doc above. */
-    } VmafConfiguration;
+typedef struct VmafConfiguration {
+    enum VmafLogLevel log_level; /**< Logger verbosity. */
+    unsigned n_threads;          /**< Worker thread count; 0 = library default. */
+    unsigned n_subsample;        /**< Compute scores only every N frames; 0/1 = every frame. */
+    uint64_t cpumask;            /**< CPU-ISA disable bitmask; see struct doc above. */
+    uint64_t gpumask;            /**< GPU-feature disable bitmask; see struct doc above. */
+} VmafConfiguration;
 
-    /**
+/**
  * @typedef VmafContext
  * @brief   Opaque per-measurement-session handle owning the feature pipeline.
  *
@@ -190,9 +168,9 @@ enum VmafPoolingMethod {
  * parallel; libvmaf's own per-extractor thread pool (configured via
  * @ref VmafConfiguration::n_threads) handles intra-frame parallelism.
  */
-    typedef struct VmafContext VmafContext;
+typedef struct VmafContext VmafContext;
 
-    /**
+/**
  * Allocate and open a VMAF instance.
  *
  * @param vmaf The VMAF instance to open.
@@ -205,9 +183,9 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_init(VmafContext * *vmaf, VmafConfiguration cfg);
+VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
 
-    /**
+/**
  * Register feature extractors required by a specific `VmafModel`.
  * This may be called multiple times using different models.
  * In this case, the registered feature extractors will form a set, and any
@@ -220,9 +198,9 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_use_features_from_model(VmafContext * vmaf, VmafModel * model);
+VMAF_EXPORT int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model);
 
-    /**
+/**
  * Register feature extractors required by a specific `VmafModelCollection`
  * Like `vmaf_use_features_from_model()`, this function may be called
  * multiple times using different model collections.
@@ -234,10 +212,10 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext * vmaf,
-                                                            VmafModelCollection * model_collection);
+VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext *vmaf,
+                                                        VmafModelCollection *model_collection);
 
-    /**
+/**
  * Register specific feature extractor.
  * Useful when a specific/additional feature is required, usually one which
  * is not already provided by a model via `vmaf_use_features_from_model()`.
@@ -255,10 +233,10 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_use_feature(VmafContext * vmaf, const char *feature_name,
-                                     VmafFeatureDictionary *opts_dict);
+VMAF_EXPORT int vmaf_use_feature(VmafContext *vmaf, const char *feature_name,
+                                 VmafFeatureDictionary *opts_dict);
 
-    /**
+/**
  * Import an external feature score.
  * Useful when pre-computed feature scores are available.
  * Also useful in the case where there is no libvmaf feature extractor
@@ -275,10 +253,10 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_import_feature_score(VmafContext * vmaf, const char *feature_name,
-                                              double value, unsigned index);
+VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
+                                          unsigned index);
 
-    /**
+/**
  * Read a pair of pictures and queue them for eventual feature extraction.
  * This should be called after feature extractors are registered via
  * `vmaf_use_features_from_model()` and/or `vmaf_use_feature()`.
@@ -299,10 +277,10 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_read_pictures(VmafContext * vmaf, VmafPicture * ref, VmafPicture * dist,
-                                       unsigned index);
+VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
+                                   unsigned index);
 
-    /**
+/**
  * Predict VMAF score at specific index.
  *
  * @param vmaf   The VMAF context allocated with `vmaf_init()`.
@@ -316,10 +294,10 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_score_at_index(VmafContext * vmaf, VmafModel * model, double *score,
-                                        unsigned index);
+VMAF_EXPORT int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score,
+                                    unsigned index);
 
-    /**
+/**
  * Predict VMAF score at specific index, using a model collection.
  *
  * @param vmaf              The VMAF context allocated with `vmaf_init()`.
@@ -333,11 +311,12 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_score_at_index_model_collection(
-        VmafContext * vmaf, VmafModelCollection * model_collection,
-        VmafModelCollectionScore * score, unsigned index);
+VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
+                                                     VmafModelCollection *model_collection,
+                                                     VmafModelCollectionScore *score,
+                                                     unsigned index);
 
-    /**
+/**
  * Fetch feature score at specific index.
  *
  * @param vmaf          The VMAF context allocated with `vmaf_init()`.
@@ -351,10 +330,10 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_feature_score_at_index(VmafContext * vmaf, const char *feature_name,
-                                                double *score, unsigned index);
+VMAF_EXPORT int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name,
+                                            double *score, unsigned index);
 
-    /**
+/**
  * Pooled VMAF score for a specific interval.
  *
  * @param vmaf         The VMAF context allocated with `vmaf_init()`.
@@ -372,11 +351,11 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_score_pooled(VmafContext * vmaf, VmafModel * model,
-                                      enum VmafPoolingMethod pool_method, double *score,
-                                      unsigned index_low, unsigned index_high);
+VMAF_EXPORT int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model,
+                                  enum VmafPoolingMethod pool_method, double *score,
+                                  unsigned index_low, unsigned index_high);
 
-    /**
+/**
  * Pooled VMAF score for a specific interval, using a model collection.
  *
  * @param vmaf              The VMAF context allocated with `vmaf_init()`.
@@ -394,12 +373,13 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_score_pooled_model_collection(
-        VmafContext * vmaf, VmafModelCollection * model_collection,
-        enum VmafPoolingMethod pool_method, VmafModelCollectionScore * score, unsigned index_low,
-        unsigned index_high);
+VMAF_EXPORT int vmaf_score_pooled_model_collection(VmafContext *vmaf,
+                                                   VmafModelCollection *model_collection,
+                                                   enum VmafPoolingMethod pool_method,
+                                                   VmafModelCollectionScore *score,
+                                                   unsigned index_low, unsigned index_high);
 
-    /**
+/**
  * Pooled feature score for a specific interval.
  *
  * @param vmaf          The VMAF context allocated with `vmaf_init()`.
@@ -417,14 +397,11 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_feature_score_pooled(VmafContext * vmaf, const char *feature_name,
-                                              enum VmafPoolingMethod pool_method, double *score,
-                                              unsigned index_low, unsigned index_high);
+VMAF_EXPORT int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
+                                          enum VmafPoolingMethod pool_method, double *score,
+                                          unsigned index_low, unsigned index_high);
 
-    /**
-<<<<<<< ours
- * Picture-pool configuration passed to `vmaf_picture_pool_create`.
-=======
+/**
  * @struct VmafPictureConfiguration
  * @brief  Picture-pool configuration for @ref vmaf_preallocate_pictures.
  *
@@ -448,19 +425,18 @@ enum VmafPoolingMethod {
  * @field pic_params.pix_fmt Planar pixel format (see @ref VmafPixelFormat).
  * @field pic_cnt            Number of pool slots to allocate. 0 disables the
  *                           pool entirely.
->>>>>>> theirs
  */
-    typedef struct VmafPictureConfiguration {
-        /** Per-picture shape (width/height/bpc/pixel-format). */
-        struct {
-            unsigned w, h;                /**< Per-plane width / height. */
-            unsigned bpc;                 /**< Bits per component. */
-            enum VmafPixelFormat pix_fmt; /**< Pixel format. */
-        } pic_params;
-        unsigned pic_cnt; /**< Pool size — count of pre-allocated pictures. */
-    } VmafPictureConfiguration;
+typedef struct VmafPictureConfiguration {
+    /** Per-picture shape (width/height/bpc/pixel-format). */
+    struct {
+        unsigned w, h;                /**< Per-plane width / height. */
+        unsigned bpc;                 /**< Bits per component. */
+        enum VmafPixelFormat pix_fmt; /**< Pixel format. */
+    } pic_params;
+    unsigned pic_cnt; /**< Pool size — count of pre-allocated pictures. */
+} VmafPictureConfiguration;
 
-    /**
+/**
  * Preallocate pictures for use with multi-threaded feature extraction.
  * Pictures are allocated once and automatically returned to the pool when
  * fully unref'd, avoiding repeated allocation/deallocation overhead.
@@ -472,9 +448,9 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_preallocate_pictures(VmafContext * vmaf, VmafPictureConfiguration cfg);
+VMAF_EXPORT int vmaf_preallocate_pictures(VmafContext *vmaf, VmafPictureConfiguration cfg);
 
-    /**
+/**
  * Fetch a preallocated picture from the picture pool.
  * The picture must be returned to the pool via vmaf_picture_unref() when done.
  * Pictures automatically return to the pool when their reference count reaches zero.
@@ -486,9 +462,9 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext * vmaf, VmafPicture * pic);
+VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
 
-    /**
+/**
  * Close a VMAF instance and free all associated memory.
  *
  * @param vmaf The VMAF instance to close.
@@ -496,9 +472,9 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_close(VmafContext * vmaf);
+VMAF_EXPORT int vmaf_close(VmafContext *vmaf);
 
-    /**
+/**
  * Write VMAF stats to an output file.
  *
  * @param vmaf         The VMAF context allocated with `vmaf_init()`.
@@ -511,10 +487,10 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_write_output(VmafContext * vmaf, const char *output_path,
-                                      enum VmafOutputFormat fmt);
+VMAF_EXPORT int vmaf_write_output(VmafContext *vmaf, const char *output_path,
+                                  enum VmafOutputFormat fmt);
 
-    /**
+/**
  * Write VMAF stats to an output file with a caller-controlled score format.
  *
  * Identical to `vmaf_write_output()`, but lets the caller specify the printf
@@ -531,14 +507,13 @@ enum VmafPoolingMethod {
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  */
-    VMAF_EXPORT int vmaf_write_output_with_format(VmafContext * vmaf, const char *output_path,
-                                                  enum VmafOutputFormat fmt,
-                                                  const char *score_format);
+VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
+                                              enum VmafOutputFormat fmt, const char *score_format);
 
-    /**
+/**
  * Get libvmaf version.
  */
-    VMAF_EXPORT const char *vmaf_version(void);
+VMAF_EXPORT const char *vmaf_version(void);
 
 #ifdef __cplusplus
 }

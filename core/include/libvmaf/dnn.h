@@ -334,22 +334,15 @@ VMAF_EXPORT void vmaf_dnn_session_close(VmafDnnSession *sess);
 /**
  * Name of the ONNX Runtime execution provider that actually bound to the
  * session. Useful for diagnostics and for asserting AUTO-chain behaviour
-<<<<<<< ours
- * in tests. Stable strings: "CPU", "CUDA", "OpenVINO:GPU", "OpenVINO:CPU",
- * "CoreML", "CoreML:ANE", "CoreML:GPU", "CoreML:CPU", "OpenVINO:NPU",
- * "OpenVINO:CPU", "OpenVINO:GPU", "ROCm". Returns NULL if @p sess is NULL
- * or libvmaf was built without DNN support. Lifetime: owned by @p sess.
+ * in tests. Stable strings: "CPU", "CUDA", "ROCm", "CoreML", "CoreML:ANE",
+ * "CoreML:GPU", "CoreML:CPU", "OpenVINO:CPU", "OpenVINO:GPU",
+ * "OpenVINO:NPU". Returns NULL if @p sess is NULL or libvmaf was built
+ * without DNN support. Lifetime: owned by @p sess.
  *
  * @param sess  open session from @ref vmaf_dnn_session_open.
  *
  * @return NUL-terminated provider tag, or NULL if @p sess is NULL or
  *         libvmaf was built without DNN support.
-=======
- * in tests. Stable strings: "CPU", "CUDA", "ROCm", "CoreML", "CoreML:ANE",
- * "CoreML:GPU", "CoreML:CPU", "OpenVINO:CPU", "OpenVINO:GPU",
- * "OpenVINO:NPU". Returns NULL if @p sess is NULL or libvmaf was built
- * without DNN support. Lifetime: owned by @p sess.
->>>>>>> theirs
  */
 VMAF_EXPORT const char *vmaf_dnn_session_attached_ep(VmafDnnSession *sess);
 
