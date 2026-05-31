@@ -11,10 +11,30 @@
 
 #include <string.h>
 
+/* Each extractor's provided_features[] array is the source-of-truth for
+ * the canonical score-level names the dispatcher's `feature` argument
+ * carries. Aliases stored here that do not match a provided_features
+ * entry exactly cause vmaf_metal_dispatch_supports() to return 0 for the
+ * canonical name and silently fall back to CPU — see ADR-0421 §Routing
+ * and the metal/AGENTS.md "Dispatch table contract" section.
+ *
+ * Verified against (all on master tip 2026-05-30):
+ *   - integer_motion_v2_metal.mm  → "VMAF_integer_feature_motion_v2_sad_score",
+ *                                   "VMAF_integer_feature_motion2_v2_score"
+ *   - integer_motion_metal.mm     → "VMAF_integer_feature_motion_y_score",
+ *                                   "VMAF_integer_feature_motion2_score"
+ *   - float_motion_metal.mm       → "VMAF_feature_motion_score",
+ *                                   "VMAF_feature_motion2_score"
+ *
+ * The previous short forms ("motion2_v2_score", "motion2_score",
+ * "motion3_score") never matched any canonical name. "motion3" is also
+ * not implemented on Metal (per integer_motion_metal.mm:15), so the
+ * entry is removed entirely.
+ */
 static const char *const g_metal_features[] = {
     "motion_v2_metal",
     "VMAF_integer_feature_motion_v2_sad_score",
-    "motion2_v2_score",
+    "VMAF_integer_feature_motion2_v2_score",
     "float_psnr_metal",
     "float_psnr",
     "float_moment_metal",
@@ -28,10 +48,11 @@ static const char *const g_metal_features[] = {
     "psnr_cr",
     "float_motion_metal",
     "float_motion",
+    "VMAF_feature_motion_score",
+    "VMAF_feature_motion2_score",
     "integer_motion_metal",
     "VMAF_integer_feature_motion_y_score",
-    "motion2_score",
-    "motion3_score",
+    "VMAF_integer_feature_motion2_score",
     "float_ssim_metal",
     "float_ssim",
     "float_ms_ssim_metal",
