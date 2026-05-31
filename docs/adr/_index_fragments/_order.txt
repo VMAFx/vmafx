@@ -622,3 +622,4 @@
 0939-skills-library-expansion
 0934-dataclass-to-pydantic-configs
 0955-compat-python-vmaf-scanf-locale-bugs
+0954-gpu-runtime-coverage-test

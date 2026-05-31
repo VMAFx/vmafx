@@ -1082,6 +1082,29 @@ test_motion_min_dim = executable('test_motion_min_dim',
 )
 test('test_motion_min_dim', test_motion_min_dim, suite : ['fast'])
 
+# GPU dispatch-runtime coverage (host-only). Targets the shared
+# `gpu_dispatch_env.c` + `gpu_dispatch_parse.h` helpers and the
+# host-buildable subset of the per-backend dispatch_strategy TUs
+# (CUDA + HIP — both compile without their respective SDKs because
+# they only depend on stdlib + pthread + opaque forward-declared
+# context types). No GPU driver required at runtime — purely
+# exercises pure-function dispatch logic.
+#
+# Coverage gap discovered by the 2026-05-31 runtime-files audit:
+# the dispatch_strategy selectors and shared env-snapshot helpers
+# had no direct unit test before this file.
+test_gpu_dispatch_runtime = executable('test_gpu_dispatch_runtime',
+    ['test.c', 'test_gpu_dispatch_runtime.c',
+     '../src/gpu_dispatch_env.c',
+     '../src/cuda/dispatch_strategy.c',
+     '../src/hip/dispatch_strategy.c'],
+    include_directories : [libvmaf_inc, test_inc,
+                           include_directories('../src/'),
+                           include_directories('../src/feature/')],
+    dependencies: [pthread_dependency, stdatomic_dependency],
+)
+test('test_gpu_dispatch_runtime', test_gpu_dispatch_runtime, suite : ['fast'])
+
 if get_option('enable_sycl')
 test_sycl = executable('test_sycl',
     ['test.c', 'test_sycl.c'],

@@ -155,6 +155,16 @@ and teardown.
   See [ADR-0973](../../docs/adr/0973-master-ci-regressions-verified-2026-05-31.md).
   **Rebase-sensitive**: if a refactor moves the ref functions out into a
   helper header, port the pragma block with them.
+- **GPU dispatch-runtime test mutates the process env.**
+  [`test_gpu_dispatch_runtime.c`](test_gpu_dispatch_runtime.c) calls
+  `setenv()` on `VMAFX_TEST_DISPATCH_RUNTIME_*` keys + the real
+  `VMAF_CUDA_DISPATCH` to exercise the once-snapshot semantics. The
+  snapshot table is a process-wide singleton (ADR-0461) so the first
+  `vmaf_gpu_dispatch_env_get(key)` call wins permanently — tests must
+  pre-set the env BEFORE the first selector call. The test executable
+  is fork-local (no upstream coupling); namespaced `VMAFX_TEST_*` keys
+  prevent collisions with production `VMAF_*_DISPATCH` variables. See
+  [ADR-0954](../../docs/adr/0954-gpu-runtime-coverage-test.md).
 - **New SIMD parity test → use [`simd_bitexact_test.h`](simd_bitexact_test.h)**
   (ADR-0245). The shared harness centralises the `xorshift32` PRNG,
   the portable POSIX/MinGW/MSVC aligned allocator, the x86 AVX2 CPUID

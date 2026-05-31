@@ -284,6 +284,20 @@ The regression test
 `python/test/python_harness_scanf_locale_bugs_test.py` exercises
 both code paths and will fail if either fix regresses during an
 upstream sync.
+## GPU dispatch-runtime host-only unit test (2026-05-31, ADR-0954)
+
+**Files touched:**
+`core/test/test_gpu_dispatch_runtime.c` (new),
+`core/test/meson.build`.
+
+**Rebase impact:** Low. The new test executable is fork-local —
+upstream Netflix/vmaf does not ship the `gpu_dispatch_env`,
+`gpu_dispatch_parse`, or per-backend `dispatch_strategy` TUs targeted
+by the test (those are all ADR-0181 / ADR-0461 / ADR-0483 fork
+additions). The wiring in `core/test/meson.build` lives in the
+fork-added test region near other `test_*` entries; no upstream
+collision is possible. If upstream ever adds dispatch-strategy
+abstractions of its own, the test would coexist by name.
 
 ---
 
