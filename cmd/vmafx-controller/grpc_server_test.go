@@ -1,25 +1,18 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 // Copyright 2026 Lusoris
 //
-<<<<<<< ours
-// cmd/vmafx-controller/grpc_server_test.go — unit tests for the gRPC server.
-//
-// Tests use real SQLite-backed queue instances to avoid mock drift.  The
-// stream is exercised through a minimal in-process mock that satisfies the
-// VmafxController_StreamJobsServer interface without a live gRPC connection.
-//
-// ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
-// ADR-0962: StreamJobs was a no-op; these tests pin the fixed behaviour.
-=======
 // cmd/vmafx-controller/grpc_server_test.go — unit tests for the
 // controllerServer + scoringServer gRPC implementations.
 //
-// We do not stand up a real grpc.Server; tests call the handler methods
-// directly with synthetic request structs. The queue is a real SQLite-backed
-// queue (in a temp dir); the node registry is the real in-memory one.
+// Tests use real SQLite-backed queue instances to avoid mock drift.  The
+// StreamJobs stream is exercised through a minimal in-process mock that
+// satisfies the VmafxController_StreamJobsServer interface without a live
+// gRPC connection.  We do not stand up a real grpc.Server; the per-RPC
+// handler methods are called directly with synthetic request structs.
 //
 // ADR-0703 / ADR-0711 — Phase 4b.1 controller scope.
->>>>>>> theirs
+// ADR-0962: StreamJobs was a no-op; these tests pin the fixed snapshot
+//           behaviour.
 
 //go:build cgo
 
@@ -30,32 +23,24 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-<<<<<<< ours
-	"testing"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
-=======
 	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
->>>>>>> theirs
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 	"github.com/VMAFx/vmafx/pkg/observability"
-<<<<<<< ours
-
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ---------------------------------------------------------------------------
-// In-process mock stream
+// In-process mock stream — exercises StreamJobs and captures sent messages.
 // ---------------------------------------------------------------------------
 
 // mockStreamJobsServer implements controllerv1.VmafxController_StreamJobsServer
@@ -73,10 +58,6 @@ func (m *mockStreamJobsServer) Send(j *controllerv1.Job) error {
 
 func (m *mockStreamJobsServer) Context() context.Context { return m.ctx }
 
-// The remaining grpc.ServerStream methods are satisfied by the embedded
-// grpc.ServerStream (zero value — panics are safe here since tests never
-// exercise header/trailer paths).
-
 // Satisfy the grpc.ServerStream methods that are not provided by the zero-value embed.
 func (m *mockStreamJobsServer) SetHeader(metadata.MD) error  { return nil }
 func (m *mockStreamJobsServer) SendHeader(metadata.MD) error { return nil }
@@ -84,8 +65,24 @@ func (m *mockStreamJobsServer) SetTrailer(metadata.MD)       {}
 func (m *mockStreamJobsServer) SendMsg(any) error            { return nil }
 func (m *mockStreamJobsServer) RecvMsg(any) error            { return nil }
 
+// dummyStreamServer is the minimal stub required by StreamJobs's signature for
+// tests that do not introspect the sent messages.  Send swallows the payload;
+// Context returns a background context so the handler's cancellation check is
+// safe to call.
+type dummyStreamServer struct {
+	controllerv1.VmafxController_StreamJobsServer
+}
+
+func (d *dummyStreamServer) Send(*controllerv1.Job) error { return nil }
+func (d *dummyStreamServer) Context() context.Context     { return context.Background() }
+func (d *dummyStreamServer) SetHeader(metadata.MD) error  { return nil }
+func (d *dummyStreamServer) SendHeader(metadata.MD) error { return nil }
+func (d *dummyStreamServer) SetTrailer(metadata.MD)       {}
+func (d *dummyStreamServer) SendMsg(any) error            { return nil }
+func (d *dummyStreamServer) RecvMsg(any) error            { return nil }
+
 // ---------------------------------------------------------------------------
-// Test helpers
+// Test fixtures
 // ---------------------------------------------------------------------------
 
 func newTestControllerServer(t *testing.T) *controllerServer {
@@ -124,6 +121,47 @@ func submitTestJob(t *testing.T, cs *controllerServer, ref, dis string) string {
 		t.Fatalf("Submit: %v", err)
 	}
 	return id
+}
+
+// grpcFixture holds the wired controllerServer + its backing deps for tests
+// that need direct access to the registry / queue / scheduler / metrics.
+type grpcFixture struct {
+	srv      *controllerServer
+	queue    *queue.SQLiteQueue
+	registry *nodes.Registry
+	sched    *scheduler.Scheduler
+	metrics  *observability.Metrics
+}
+
+func newGRPCFixture(t *testing.T) *grpcFixture {
+	t.Helper()
+	dir := t.TempDir()
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	q, err := queue.New(filepath.Join(dir, "grpc.db"), log)
+	if err != nil {
+		t.Fatalf("queue.New: %v", err)
+	}
+	t.Cleanup(func() { _ = q.Close() })
+
+	reg := nodes.NewRegistry(context.Background(), log)
+	t.Cleanup(func() { reg.Close() })
+	sch := scheduler.New(q, reg, log)
+	reg2 := prometheus.NewRegistry()
+	metrics := observability.NewMetrics(reg2)
+
+	return &grpcFixture{
+		srv:      newControllerServer(q, reg, sch, metrics, log),
+		queue:    q,
+		registry: reg,
+		sched:    sch,
+		metrics:  metrics,
+	}
+}
+
+// codeOf extracts the grpc status code from an error, defaulting to OK.
+func codeOf(err error) codes.Code {
+	st, _ := status.FromError(err)
+	return st.Code()
 }
 
 // ---------------------------------------------------------------------------
@@ -171,50 +209,8 @@ func TestStreamJobs_WithJobs_StreamsSnapshot(t *testing.T) {
 	for _, j := range stream.sent {
 		if !ids[j.GetId()] {
 			t.Errorf("received unexpected job ID %q", j.GetId())
-=======
-)
-
-// ---------------------------------------------------------------------------
-// Test fixtures
-// ---------------------------------------------------------------------------
-
-// grpcFixture holds the wired controllerServer + its backing deps.
-type grpcFixture struct {
-	srv      *controllerServer
-	queue    *queue.SQLiteQueue
-	registry *nodes.Registry
-	sched    *scheduler.Scheduler
-	metrics  *observability.Metrics
-}
-
-func newGRPCFixture(t *testing.T) *grpcFixture {
-	t.Helper()
-	dir := t.TempDir()
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	q, err := queue.New(filepath.Join(dir, "grpc.db"), log)
-	if err != nil {
-		t.Fatalf("queue.New: %v", err)
+		}
 	}
-	t.Cleanup(func() { _ = q.Close() })
-
-	reg := nodes.NewRegistry(log)
-	sch := scheduler.New(q, reg, log)
-	reg2 := prometheus.NewRegistry()
-	metrics := observability.NewMetrics(reg2)
-
-	return &grpcFixture{
-		srv:      newControllerServer(q, reg, sch, metrics, log),
-		queue:    q,
-		registry: reg,
-		sched:    sch,
-		metrics:  metrics,
-	}
-}
-
-// codeOf extracts the grpc status code from an error, defaulting to OK.
-func codeOf(err error) codes.Code {
-	st, _ := status.FromError(err)
-	return st.Code()
 }
 
 // ---------------------------------------------------------------------------
@@ -341,21 +337,14 @@ func TestCancelJob_EmptyIDRejected(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// StreamJobs (Phase 4b.1 snapshot stub)
+// StreamJobs filter coverage (ADR-0962 + Phase 4b.1 snapshot)
 // ---------------------------------------------------------------------------
 
-// dummyStreamServer is the minimal stub required by StreamJobs's signature.
-// The current handler returns immediately, so we just need a non-nil object
-// that satisfies the interface — we don't actually exchange messages.
-type dummyStreamServer struct {
-	controllerv1.VmafxController_StreamJobsServer
-}
-
-func TestStreamJobs_ReturnsNil(t *testing.T) {
+func TestStreamJobs_DummyStream_ReturnsNil(t *testing.T) {
 	f := newGRPCFixture(t)
 	err := f.srv.StreamJobs(&controllerv1.StreamJobsRequest{StatusFilter: []controllerv1.JobStatus{controllerv1.JobStatus_PENDING}}, &dummyStreamServer{})
 	if err != nil {
-		t.Errorf("StreamJobs snapshot stub should return nil, got %v", err)
+		t.Errorf("StreamJobs snapshot with dummy stream should return nil, got %v", err)
 	}
 }
 
@@ -627,14 +616,12 @@ func TestQueueStatusToProto(t *testing.T) {
 	for _, tc := range cases {
 		if got := queueStatusToProto(tc.in); got != tc.want {
 			t.Errorf("queueStatusToProto(%q) = %v, want %v", tc.in, got, tc.want)
->>>>>>> theirs
 		}
 	}
 }
 
-<<<<<<< ours
-// TestStreamJobs_WithStatusFilter verifies that a PENDING-only filter returns
-// only the pending jobs (not completed ones).
+// TestStreamJobs_WithStatusFilter_PendingOnly verifies that a PENDING-only
+// filter returns only the pending jobs (not completed ones).
 func TestStreamJobs_WithStatusFilter_PendingOnly(t *testing.T) {
 	cs := newTestControllerServer(t)
 	stream := newTestStream(context.Background())
@@ -656,7 +643,9 @@ func TestStreamJobs_WithStatusFilter_PendingOnly(t *testing.T) {
 		if j.GetStatus() != controllerv1.JobStatus_PENDING {
 			t.Errorf("job %q has status %v, want PENDING", j.GetId(), j.GetStatus())
 		}
-=======
+	}
+}
+
 func TestProtoCapToNodes_Nil(t *testing.T) {
 	t.Parallel()
 	got := protoCapToNodes(nil)
@@ -729,6 +718,5 @@ func TestScoringServer_HealthReportsOK(t *testing.T) {
 	}
 	if !resp.GetOk() {
 		t.Error("Health ok: got false, want true")
->>>>>>> theirs
 	}
 }

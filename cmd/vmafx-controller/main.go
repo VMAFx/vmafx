@@ -117,11 +117,8 @@ func main() {
 	// Prometheus registry + metrics.
 	// ---------------------------------------------------------------------------
 	registry := prometheus.NewRegistry()
-<<<<<<< ours
-=======
 	// collectors.* replaces deprecated prometheus.NewGoCollector /
 	// NewProcessCollector — staticcheck SA1019.
->>>>>>> theirs
 	registry.MustRegister(collectors.NewGoCollector())
 	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	metrics := observability.NewMetrics(registry)
@@ -136,14 +133,6 @@ func main() {
 	}
 	defer jobQueue.Close()
 
-<<<<<<< ours
-=======
-	nodeRegistry := nodes.NewRegistry(log)
-	defer func() { _ = nodeRegistry.Close() }()
-	sched := scheduler.New(jobQueue, nodeRegistry, log)
-	metrics.SetControllerSources(jobQueue, nodeRegistry)
-
->>>>>>> theirs
 	// ---------------------------------------------------------------------------
 	// Shutdown context — cancelled on SIGTERM / SIGINT.
 	// ---------------------------------------------------------------------------

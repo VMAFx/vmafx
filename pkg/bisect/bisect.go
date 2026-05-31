@@ -21,11 +21,8 @@ package bisect
 import (
 	"errors"
 	"fmt"
-<<<<<<< ours
-	"log/slog"
-=======
 	"iter"
->>>>>>> theirs
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"

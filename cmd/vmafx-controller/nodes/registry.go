@@ -8,37 +8,27 @@
 // then sends a Heartbeat RPC every ~10 s.  A node that misses heartbeats
 // for more than HeartbeatTimeout (60 s) is considered dead and removed.
 //
-// Storage: pkg/registry.Store[string, Node] supplies the keyed map,
-// RWMutex, snapshot copying, and predicate eviction (ADR-0925).  This
-// file holds only the heartbeat / session / capability-specific logic.
-// On controller restart, nodes must re-register (their heartbeat loop
-// does this automatically); there is no SQLite persistence for nodes.
+// Storage: a plain map[string]*Node guarded by RWMutex.  Snapshots are
+// returned by value so callers can mutate without holding the lock.  On
+// controller restart, nodes must re-register (their heartbeat loop does
+// this automatically); there is no SQLite persistence for nodes.
 //
 // Thread safety: all exported methods are safe for concurrent use.
 //
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
-<<<<<<< ours
 // ADR-0962: fix reaper goroutine stop signal (round-25 audit B.4).
-=======
-// ADR-0925: Generic in-memory registry for vmafx-controller subsystems.
->>>>>>> theirs
 
 package nodes
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"iter"
 	"log/slog"
-<<<<<<< ours
-=======
-	"slices"
 	"sync"
->>>>>>> theirs
 	"time"
-
-	"github.com/VMAFx/vmafx/pkg/registry"
 )
 
 const (
@@ -69,20 +59,14 @@ type Node struct {
 	JobsRunning   int
 }
 
-// Registry tracks live vmafx-node instances.  It composes a generic
-// registry.Store[string, Node] with the heartbeat-eviction reaper and
-// session-token semantics specific to node management.
+// Registry tracks live vmafx-node instances.  The reaper goroutine is
+// stopped when the context handed to NewRegistry is cancelled, or when
+// Close() is called (which cancels that context).
 type Registry struct {
-<<<<<<< ours
 	mu     sync.RWMutex
 	nodes  map[string]*Node // keyed by node ID
 	log    *slog.Logger
 	cancel context.CancelFunc // stops the reaper goroutine
-=======
-	store *registry.Store[string, Node]
-	log   *slog.Logger
-<<<<<<< ours
->>>>>>> theirs
 }
 
 // NewRegistry creates an empty Registry, accepts a context for lifetime
@@ -93,71 +77,19 @@ type Registry struct {
 // ensuring tests and callers can stop the goroutine cleanly.
 func NewRegistry(ctx context.Context, log *slog.Logger) *Registry {
 	reaperCtx, cancel := context.WithCancel(ctx)
-=======
-
-	// Reaper lifecycle.  done is closed exactly once by Close() to signal the
-	// background reaper goroutine to exit; wg waits for it to actually exit
-	// so Close() is observable.  closeOnce guarantees Close() is idempotent.
-	done      chan struct{}
-	wg        sync.WaitGroup
-	closeOnce sync.Once
-}
-
-// NewRegistry creates an empty Registry and starts the reaper goroutine.
-//
-// Callers MUST invoke Close() when the registry is no longer needed (typically
-// via `defer` in main) to terminate the reaper goroutine — otherwise it leaks
-// for the lifetime of the process.
-func NewRegistry(log *slog.Logger) *Registry {
->>>>>>> theirs
 	r := &Registry{
-<<<<<<< ours
 		nodes:  make(map[string]*Node),
 		log:    log,
 		cancel: cancel,
-=======
-		store: registry.New[string, Node](cloneNode),
-		log:   log,
-<<<<<<< ours
->>>>>>> theirs
 	}
 	go r.reaper(reaperCtx)
 	return r
 }
 
-<<<<<<< ours
 // Close stops the background reaper goroutine.  It is safe to call multiple
 // times; subsequent calls are no-ops.
 func (r *Registry) Close() {
 	r.cancel()
-=======
-// cloneNode is the snapshot copier handed to the generic Store.  Node
-// contains a Capability which itself has a Backends slice; a shallow
-// struct copy would alias that slice into snapshots.  Copy it explicitly.
-func cloneNode(n Node) Node {
-	cp := n
-	if n.Capability.Backends != nil {
-		cp.Capability.Backends = append([]string(nil), n.Capability.Backends...)
-	}
-	return cp
->>>>>>> theirs
-=======
-		done:  make(chan struct{}),
-	}
-	r.wg.Add(1)
-	go r.reaper()
-	return r
-}
-
-// Close signals the reaper goroutine to exit and waits for it to finish.
-// It is safe to call multiple times; subsequent calls are no-ops.
-func (r *Registry) Close() error {
-	r.closeOnce.Do(func() {
-		close(r.done)
-		r.wg.Wait()
-	})
-	return nil
->>>>>>> theirs
 }
 
 // Register adds (or replaces) a node.  Returns the assigned node_id and
@@ -172,13 +104,15 @@ func (r *Registry) Register(name string, cap Capability) (nodeID, sessionToken s
 		return "", "", fmt.Errorf("registry: generate session token: %w", err)
 	}
 
-	r.store.Put(nodeID, Node{
+	r.mu.Lock()
+	r.nodes[nodeID] = &Node{
 		ID:            nodeID,
 		Name:          name,
 		SessionToken:  sessionToken,
 		Capability:    cap,
 		LastHeartbeat: time.Now(),
-	})
+	}
+	r.mu.Unlock()
 
 	r.log.Info("node registered",
 		"node_id", nodeID,
@@ -193,36 +127,39 @@ func (r *Registry) Register(name string, cap Capability) (nodeID, sessionToken s
 // Heartbeat updates the last-seen timestamp for a node.  Returns false if
 // the node_id / session_token pair is unknown (caller should re-register).
 func (r *Registry) Heartbeat(nodeID, sessionToken string, jobsRunning int) bool {
-	tokenOK := false
-	_, ok := r.store.Update(nodeID, func(n Node) Node {
-		if n.SessionToken != sessionToken {
-			return n // leave untouched; tokenOK stays false
-		}
-		n.LastHeartbeat = time.Now()
-		n.JobsRunning = jobsRunning
-		tokenOK = true
-		return n
-	})
-	return ok && tokenOK
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.nodes[nodeID]
+	if !ok || n.SessionToken != sessionToken {
+		return false
+	}
+	n.LastHeartbeat = time.Now()
+	n.JobsRunning = jobsRunning
+	return true
 }
 
 // Get returns a snapshot of a node by ID.  Returns (nil, false) if not found.
 func (r *Registry) Get(nodeID string) (*Node, bool) {
-	n, ok := r.store.Get(nodeID)
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n, ok := r.nodes[nodeID]
 	if !ok {
 		return nil, false
 	}
-	return &n, true
+	cp := *n
+	if n.Capability.Backends != nil {
+		cp.Capability.Backends = append([]string(nil), n.Capability.Backends...)
+	}
+	return &cp, true
 }
 
 // ValidateSession returns true if the node_id and session_token are both
 // present and match.
 func (r *Registry) ValidateSession(nodeID, sessionToken string) bool {
-	match := false
-	r.store.Read(nodeID, func(n Node) {
-		match = n.SessionToken == sessionToken
-	})
-	return match
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n, ok := r.nodes[nodeID]
+	return ok && n.SessionToken == sessionToken
 }
 
 // All returns a snapshot of all live nodes.
@@ -234,14 +171,17 @@ func (r *Registry) ValidateSession(nodeID, sessionToken string) bool {
 // supported for one release as a shim and will be removed in
 // v3.x.y-lusoris.N+2 (see ADR-0932).
 func (r *Registry) All() []*Node {
-<<<<<<< ours
-	snapshots := r.store.All()
-	out := make([]*Node, len(snapshots))
-	for i := range snapshots {
-		n := snapshots[i]
-		out[i] = &n
-=======
-	return slices.Collect(r.AllSeq())
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*Node, 0, len(r.nodes))
+	for _, n := range r.nodes {
+		cp := *n
+		if n.Capability.Backends != nil {
+			cp.Capability.Backends = append([]string(nil), n.Capability.Backends...)
+		}
+		out = append(out, &cp)
+	}
+	return out
 }
 
 // AllSeq returns a single-shot iterator over a snapshot of all live nodes.
@@ -262,23 +202,25 @@ func (r *Registry) AllSeq() iter.Seq[*Node] {
 		defer r.mu.RUnlock()
 		for _, n := range r.nodes {
 			cp := *n
+			if n.Capability.Backends != nil {
+				cp.Capability.Backends = append([]string(nil), n.Capability.Backends...)
+			}
 			if !yield(&cp) {
 				return
 			}
 		}
->>>>>>> theirs
 	}
 }
 
 // Count returns the number of currently registered nodes.  Also satisfies
 // the registry.Counter constraint consumed by pkg/observability.
 func (r *Registry) Count() int {
-	return r.store.Count()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.nodes)
 }
 
 // reaper runs in the background and evicts nodes that have not sent a
-<<<<<<< ours
-<<<<<<< ours
 // heartbeat within HeartbeatTimeout.  It exits when ctx is cancelled.
 //
 // ADR-0962: required non-variadic ctx replaces the old `_ ...context.Context`
@@ -305,50 +247,6 @@ func (r *Registry) reaper(ctx context.Context) {
 			}
 			r.mu.Unlock()
 		}
-=======
-// heartbeat within HeartbeatTimeout.
-func (r *Registry) reaper() {
-	ticker := time.NewTicker(HeartbeatTimeout / 3)
-	defer ticker.Stop()
-	for range ticker.C {
-		deadline := time.Now().Add(-HeartbeatTimeout)
-		r.store.EvictWhere(
-			func(_ string, n Node) bool { return n.LastHeartbeat.Before(deadline) },
-			func(id string, n Node) {
-				r.log.Warn("node evicted (heartbeat timeout)",
-					"node_id", id,
-					"name", n.Name,
-					"last_heartbeat", n.LastHeartbeat,
-				)
-			},
-		)
->>>>>>> theirs
-=======
-// heartbeat within HeartbeatTimeout.  Exits when r.done is closed.
-func (r *Registry) reaper(_ ...context.Context) {
-	defer r.wg.Done()
-	ticker := time.NewTicker(HeartbeatTimeout / 3)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.done:
-			return
-		case <-ticker.C:
-			deadline := time.Now().Add(-HeartbeatTimeout)
-			r.mu.Lock()
-			for id, n := range r.nodes {
-				if n.LastHeartbeat.Before(deadline) {
-					r.log.Warn("node evicted (heartbeat timeout)",
-						"node_id", id,
-						"name", n.Name,
-						"last_heartbeat", n.LastHeartbeat,
-					)
-					delete(r.nodes, id)
-				}
-			}
-			r.mu.Unlock()
-		}
->>>>>>> theirs
 	}
 }
 

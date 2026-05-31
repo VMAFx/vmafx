@@ -343,32 +343,18 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
                 "vmaf pick, or rebuild with the requested backend enabled."
             )
 
-<<<<<<< ours
     # Round 26 A.2: use NamedTemporaryFile to guarantee a unique path.
     # The task-name approach (asyncio.current_task().get_name()) was vulnerable
     # to collision if tasks were renamed, and the name space is small under
-    # high concurrency.  delete=False hands ownership to the finally block.
+    # high concurrency.  delete=False hands ownership to the finally block so
+    # the vmaf subprocess can reopen the path by name; the try/finally below
+    # unlinks unconditionally.
     with tempfile.NamedTemporaryFile(
         prefix="vmaf-mcp-",
         suffix=".json",
         delete=False,
     ) as _tmp:
         output = Path(_tmp.name)
-=======
-    # Use tempfile.NamedTemporaryFile (delete=False so the vmaf subprocess can
-    # reopen the path by name) instead of the predictable
-    # /tmp/vmaf-mcp-{pid}-{taskname}.json filename.  The previous scheme was
-    # predictable from outside the process (PID + asyncio task name) which
-    # would let a co-tenant on a shared host pre-create or symlink-attack
-    # the destination.  The try/finally below unlinks unconditionally.
-    tmp_handle = tempfile.NamedTemporaryFile(  # noqa: SIM115 — closed below
-        prefix="vmaf-mcp-",
-        suffix=".json",
-        delete=False,
-    )
-    tmp_handle.close()
-    output = Path(tmp_handle.name)
->>>>>>> theirs
     try:
         argv = [
             str(vmaf),
