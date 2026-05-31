@@ -407,6 +407,19 @@ linked AGENTS.md before resolving conflicts.
   ports `d3647c73` `feature/speed` extractors (`speed_chroma` +
   `speed_temporal`).
 
+- **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
+  [ADR-0922](docs/adr/0922-coverage-ratchet-aggressive.md). Absolute
+  floors live in `scripts/ci/coverage-check.sh`
+  (`OVERALL_MIN=70`, `CRITICAL_MIN=90`, `PER_FILE_MIN[...]`); per-PR
+  drop tolerance lives in `scripts/ci/coverage-delta-check.sh`
+  (default 0.5pp on overall and per-touched-file). Lowering any
+  floor or loosening the delta tolerance requires a new ADR
+  superseding ADR-0922. The Coverage Gate job in
+  `.github/workflows/tests-and-quality-gates.yml` invokes both
+  scripts; the delta gate needs `actions/checkout` with
+  `fetch-depth: 0` because it runs `git merge-base`. See
+  [scripts/ci/AGENTS.md](scripts/ci/AGENTS.md) §Coverage Gate
+  ratchet for the full coupling.
 - **CI action pins — Windows MSVC dev env**
   ([ADR-0635](docs/adr/0635-ci-warning-omnibus-2026-05-19.md)):
   `.github/workflows/libvmaf-build-matrix.yml` uses

@@ -460,16 +460,21 @@ jobs:
           /tmp/mcp-venv/bin/pytest mcp-server/vmaf-mcp/tests/ -v --tb=short
 
   # ===== Coverage gate (principles.md §3) =====
-  # ≥70% overall line coverage, ≥85% on security-critical files
-  # (core/src/dnn/, opt.c, read_json_model.c).
+  # ≥70% overall line coverage, ≥90% on security-critical files
+  # (core/src/dnn/, opt.c, read_json_model.c). Floors ratcheted aggressively
+  # on 2026-05-31 by ADR-0922 (was 37% / 85%); OVERALL_MIN further raised to
+  # 70% by master post-ADR-0922 (#420/#412 coverage uplift).
   coverage:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: "Coverage Gate (Ramping to 70% / 85% Critical)"
+    name: "Coverage Gate (70% Overall / 90% Critical — ADR-0922)"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          # Need full history so we can check out the PR's merge-base for the
+          # coverage-delta gate (ADR-0922). Shallow clone breaks the delta job.
+          fetch-depth: 0
           persist-credentials: false
       - name: Install deps
         run: |
@@ -636,13 +641,13 @@ jobs:
           cat build-coverage/coverage.txt
       - name: Enforce coverage thresholds
         run: |
-          # docs/principles.md §3 targets: 70% overall, 85% critical (dnn/,
+          # docs/principles.md §3 targets: 70% overall, 90% critical (dnn/,
           # opt.c, read_json_model.c). Applies to upstream + fork-added code:
           # we've already linted upstream heavily (clang-tidy cleanup rounds
           # 2-4) and will keep modifying it (SIMD fixes, refactors), so the
           # safety net has to cover everything we might touch.
           #
-          # Floor history (ADR-0637):
+          # Floor history (ADR-0637, ADR-0922):
           #   40% — original floor (meson unit suite + Python feature/CLI tests)
           #   37% — 2026-05-19 merge burst (PRs #1417, #1418, #1424, #1425)
           #          added ~2 200 LOC of new MCP/HIP/DNN/scaffold C that the
@@ -650,7 +655,78 @@ jobs:
           #          coverage from ~39% to 37.7%. The floor tracks the measured
           #          floor, not the aspirational target; ratchet upward as
           #          targeted tests land for those paths.
-          scripts/ci/coverage-check.sh core/build-coverage/coverage.json 37 85
+          #   60% — 2026-05-31 aggressive ratchet (ADR-0922). The 37% floor
+          #          was tracking measured, not enforcing investment. The
+          #          ratchet pushes the overall bar back toward the
+          #          docs/principles.md §3 aspirational target so coverage
+          #          gaps surface immediately instead of accumulating. See
+          #          ADR-0922 for the 30-day grace period covering PRs that
+          #          were already open at ratchet time.
+          #   70% — 2026-05-31 further uplift from #420/#412 coverage additions
+          #          (core/src/dnn/ + compat/python-vmaf/ tests); floor raised
+          #          to match measured coverage on master post-merge.
+          scripts/ci/coverage-check.sh core/build-coverage/coverage.json 70 90
+      - name: Compute base-branch coverage for delta gate
+        # ADR-0922 per-PR ratchet: rebuild + re-measure coverage on the PR's
+        # merge-base so we can compare absolute-floor head numbers against
+        # what the target branch (usually origin/master) was reporting just
+        # before this PR. The base build is intentionally lean (CPU-only,
+        # no ORT install, no Python suite) to keep the additional CI cost
+        # bounded; the delta gate only needs the gcovr JSON summary.
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # Save head coverage so it survives the checkout swap below.
+          cp core/build-coverage/coverage.json /tmp/head-coverage.json
+          # Compute the changed-file list against the merge-base. The delta
+          # gate only scores files that appear in the diff.
+          git fetch --no-tags --depth=1 origin "$BASE_REF" || true
+          MERGE_BASE="$(git merge-base HEAD "$BASE_REF")"
+          echo "Merge base: $MERGE_BASE"
+          git diff --name-only "$MERGE_BASE"..HEAD > /tmp/changed-files.txt
+          echo "----- Changed files -----"
+          cat /tmp/changed-files.txt
+          # Worktree-add the base so we don't disturb the head checkout
+          # (artifacts, build dirs, coverage outputs all stay put).
+          git worktree add /tmp/base-tree "$MERGE_BASE"
+          (
+            cd /tmp/base-tree
+            meson setup base-cov --buildtype=debug \
+              -Db_coverage=true -Denable_cuda=false -Denable_sycl=false \
+              -Denable_float=true \
+              -Dc_args=-fprofile-update=atomic \
+              -Dcpp_args=-fprofile-update=atomic \
+              core
+            ninja -C base-cov
+            meson test -C base-cov --print-errorlogs --num-processes 1 || true
+            ~/.local/bin/gcovr --root . \
+                --filter 'core/src/.*' \
+                --exclude '.*/test/.*' \
+                --exclude '.*/tests/.*' \
+                --exclude '.*/subprojects/.*' \
+                --gcov-ignore-parse-errors=negative_hits.warn \
+                --gcov-ignore-parse-errors=suspicious_hits.warn \
+                --json-summary /tmp/base-coverage.json \
+                base-cov \
+              2> >(grep -vE 'Ignoring (suspicious|negative) hits' >&2 || true)
+          )
+          # Cleanup the worktree so subsequent steps see a clean tree.
+          git worktree remove --force /tmp/base-tree
+      - name: Enforce coverage-delta gate (ADR-0922)
+        # Fails if overall coverage drops by more than 0.5pp OR any
+        # touched file drops by more than 0.5pp vs the merge-base. The
+        # ratchet is one-way: drops require a follow-up ADR superseding
+        # ADR-0922 to justify the new floor.
+        if: github.event_name == 'pull_request'
+        run: |
+          scripts/ci/coverage-delta-check.sh \
+            --base-json /tmp/base-coverage.json \
+            --head-json /tmp/head-coverage.json \
+            --changed-files /tmp/changed-files.txt \
+            --max-overall-drop 0.5 \
+            --max-file-drop 0.5
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -743,7 +819,9 @@ jobs:
           cat build-coverage-gpu/coverage.txt
       - name: Enforce coverage thresholds (GPU)
         run: |
-          scripts/ci/coverage-check.sh core/build-coverage-gpu/coverage.json 70 85
+          # ADR-0922 ratchet (2026-05-31): critical bar raised to 90 (was 85).
+          # Overall floor kept at 70 (master already above the PR's proposed 60).
+          scripts/ci/coverage-check.sh core/build-coverage-gpu/coverage.json 70 90
       - name: Upload GPU coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

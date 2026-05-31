@@ -143,3 +143,43 @@ to silently exit 0 ("no fork-added files found; skipping"), bypassing the
 assertion-density gate for all files carrying the other format.
 
 Test coverage: `scripts/ci/tests/test-assertion-density.sh` (T1–T6).
+## Coverage Gate ratchet (ADR-0922)
+
+`scripts/ci/coverage-check.sh` (absolute floors) and the new
+`scripts/ci/coverage-delta-check.sh` (per-PR delta gate) are tightly
+coupled to `.github/workflows/tests-and-quality-gates.yml` and to each
+other. Rebase-sensitive invariants:
+
+1. **Floors are one-way.** `OVERALL_MIN` (70), `CRITICAL_MIN` (90), and
+   every `PER_FILE_MIN` value may be raised in any PR; lowering any of
+   them requires a new ADR that explicitly supersedes ADR-0922 and is
+   cited inline at the changed threshold. The change-control comment
+   above each `PER_FILE_MIN` row carries the citation; do not delete
+   those comments when editing the table.
+2. **Delta-gate tolerances default to 0.5pp.** The two CLI flags
+   (`--max-overall-drop`, `--max-file-drop`) exist for the workflow to
+   pin the values explicitly; do not tighten beyond 0.5pp without first
+   confirming gcov hit-count variance has fallen (current floor of
+   variance ~0.2pp, see ADR-0922 alternatives table).
+3. **Workflow coupling.** The `Compute base-branch coverage for delta
+   gate` and `Enforce coverage-delta gate (ADR-0922)` steps in
+   `tests-and-quality-gates.yml`'s `coverage` job require:
+   - `actions/checkout` with `fetch-depth: 0` (the delta gate runs
+     `git merge-base HEAD "$BASE_REF"` — shallow clone breaks it).
+   - `gcovr>=8.0` installed in the runner (same dependency as
+     `coverage-check.sh`).
+   - The `coverage:` job's `if:` predicate still gates on draft-PR
+     status (ADR-0331 self-hosted-runner economy convention applies
+     even for the hosted CPU lane to avoid wasted base-coverage builds
+     on draft PRs).
+4. **Grace window.** PRs opened before 2026-05-31 are exempt from the
+   new floors and the delta gate through 2026-06-30 (operational, not
+   enforced in code). After 2026-06-30 the workflow can drop any
+   remaining grace-related notes.
+5. **Upstream sync impact.** Upstream Netflix/vmaf has no coverage
+   gate, so `/sync-upstream` cannot conflict with these files. The
+   only risk is that an upstream-introduced source file lands without
+   any tests and drags overall coverage below the OVERALL_MIN floor; in
+   that case the sync PR itself trips the gate and the resolution is to
+   add tests in the same PR (preferred) or to land an ADR-0922 supersede
+   ADR first (only if structurally impossible).

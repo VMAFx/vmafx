@@ -23,16 +23,19 @@ set -euo pipefail
 
 INFO="${1:?usage: coverage-check.sh <gcovr-summary.json> <overall_min%> <critical_min%>}"
 OVERALL_MIN="${2:-70}"
-CRITICAL_MIN="${3:-85}"
+CRITICAL_MIN="${3:-90}"
 
 # Per-file critical-coverage overrides. Files listed here use the override
 # instead of CRITICAL_MIN. Keep this list short and tied to ADRs so the
 # rationale doesn't rot — every entry must cite the ADR that justifies the
 # lower bar. See ADR-0114 for the EP-availability structural ceiling on
-# the dnn/ort_backend.c + dnn/dnn_api.c entries.
+# the dnn/ort_backend.c + dnn/dnn_api.c entries, and ADR-0922 for the
+# fork-wide ratchet that tightened each entry by +5pp on 2026-05-31.
 declare -A PER_FILE_MIN=(
-  ["core/src/dnn/ort_backend.c"]=78
-  ["core/src/dnn/dnn_api.c"]=78
+  # ADR-0114 baseline 78%; ratcheted +5pp to 83% by ADR-0922 (2026-05-31).
+  ["core/src/dnn/ort_backend.c"]=83
+  # ADR-0114 baseline 78%; ratcheted +5pp to 83% by ADR-0922 (2026-05-31).
+  ["core/src/dnn/dnn_api.c"]=83
   # core/src/dnn/tiny_extractor_template.h is a refactor template
   # of `static inline` helpers conditionally instantiated by per-extractor
   # callers. By design each new extractor uses a different subset of the
@@ -42,7 +45,8 @@ declare -A PER_FILE_MIN=(
   # adding tests just to inflate this number would be code-shaped padding,
   # not real correctness coverage. Distinct from opt.c / read_json_model.c
   # which parse user-supplied input and are properly security-critical.
-  ["core/src/dnn/tiny_extractor_template.h"]=10
+  # ADR-0114 baseline 10%; ratcheted +5pp to 15% by ADR-0922 (2026-05-31).
+  ["core/src/dnn/tiny_extractor_template.h"]=15
 )
 
 if ! command -v python3 >/dev/null; then
