@@ -1016,6 +1016,20 @@ VPL VA-API init) that are already non-shared with upstream — the new
 fork-added (no upstream file). No upstream conflict expected on the
 next sync; if Netflix ever adds their own MCP transport, the EINTR
 retry pattern should be ported there too.
+## adr-0100-per-surface-doc-audit (2026-05-30)
+
+**Files touched:** `docs/development/build-flags.md`,
+`docs/api/dnn.md`, `docs/usage/cli.md`,
+`changelog.d/added/adr-0100-per-surface-doc-audit.md`.
+
+**Rebase impact:** None. All four files are fork-added (the upstream
+Netflix/vmaf tree has no `docs/development/build-flags.md`, no
+`docs/api/dnn.md`, no `docs/usage/cli.md` at the fork's depth, and no
+`changelog.d/`). The audit closes per-surface doc gaps for fork-local
+surfaces (codec-context DNN API, codec/preset/CRF/resize CLI flags,
+six Meson options) that originated in fork ADRs (ADR-0335, ADR-0361,
+ADR-0519, ADR-0550, ADR-0568, ADR-0623, ADR-0707, ADR-0726). No upstream
+file is touched; no rebase conflict possible.
 
 ---
 

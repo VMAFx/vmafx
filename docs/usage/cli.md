@@ -275,6 +275,51 @@ See [../ai/inference.md](../ai/inference.md) for the full tiny-AI CLI
 walkthrough and the per-model registry (`model/tiny/registry.json`,
 sha256 pins, known limitations).
 
+### Codec-context flags (fork-added)
+
+```text
+--tiny-codec <name>            # encoder identity for codec-conditioned tiny models
+                                # (libx264, libx265, libsvtav1, libvpx-vp9, h264_nvenc, ...)
+--tiny-preset <name>           # encoder preset string (medium, slow, p4, 5, ...)
+--tiny-crf <0..63>             # CRF / QP integer; values above 63 clamp at 63
+--tiny-resize <mode>           # bilinear | nearest | bicubic | disabled
+```
+
+These flags drive `vmaf_dnn_set_codec_context()` and
+`vmaf_dnn_set_resize_mode()` on the tiny model — see
+[api/dnn.md](../api/dnn.md#codec-aware-tiny-model-inputs-vmaf_dnn_set_codec_context).
+
+**Codec block.** Codec-conditioned tiny models (e.g. the v2 ladder
+regressor) accept a small categorical block alongside the per-frame
+features: encoder identity, preset ordinal, and CRF / QP. The CLI sets
+this block once at model-load time. Unknown encoder names fall back to
+the `"unknown"` bucket with a stderr diagnostic; missing `--tiny-codec`
+on a model that requires codec context is permitted and routes through
+the `"unknown"` bucket silently. Set `--tiny-codec`, `--tiny-preset`,
+or `--tiny-crf` to **any** non-default value to enable the path. See
+[ADR-0522](../adr/0522-tiny-codec-preset-crf-cli-flags.md) for the categorical
+encoding rationale.
+
+**Resize mode** ([ADR-0550](../adr/0550-tiny-dnn-resize-mode.md)).
+Required when the source frame size (`--width` / `--height`) differs from
+the tiny model's declared input shape:
+
+| `--tiny-resize` | Filter                                                      | Score-stable? |
+|-----------------|-------------------------------------------------------------|---------------|
+| `disabled`      | None — size mismatch fails with `-ERANGE` (the default)     | Strict        |
+| `bilinear`      | OpenCV `INTER_LINEAR` / torchvision `BILINEAR`              | Yes — convention used by every shipped NR / image-input model |
+| `nearest`       | OpenCV `INTER_NEAREST`                                      | Yes — deterministic floor of source coord |
+| `bicubic`       | Separable Catmull-Rom (`a = -0.5`); torchvision `BICUBIC`   | Yes — exporter parity         |
+
+The three filter modes produce scores that differ by approximately
+2% on the same input — treat filter choice as a model hyperparameter
+and pin it alongside the model checkpoint. A typo in the resize
+keyword surfaces at parse time
+(`--tiny-resize must be one of: bilinear, nearest, bicubic, disabled`)
+rather than after model load. Underscore aliases (`--tiny_codec`,
+`--tiny_preset`, `--tiny_crf`, `--tiny_resize`) are accepted for
+scripting symmetry.
+
 ### Sigstore bundle verification (fork-added)
 
 ```text

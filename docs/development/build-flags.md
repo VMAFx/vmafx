@@ -35,8 +35,10 @@ ninja -C build
 | `enable_cuda` | bool | `false` | Compile the CUDA backend + `.cu` kernels; requires CUDA toolkit (`nvcc`) |
 | `enable_nvtx` | bool | `false` | Instrument CUDA kernels with NVTX ranges for Nsight Systems — see [backends/nvtx/profiling.md](../backends/nvtx/profiling.md) |
 | `enable_nvcc` | bool | `true` | Use `nvcc` to compile the CUDA kernel objects (the alternative is the clang CUDA driver); only takes effect when `enable_cuda=true` |
-| `enable_sycl` | bool | `false` | Compile the SYCL / oneAPI backend + DPC++ kernels; requires `icpx` on PATH |
-| `sycl_compiler` | string | `icpx` | Path or name of the SYCL compiler — only consulted when `enable_sycl=true` |
+| `enable_sycl` | bool | `false` | Compile the SYCL / oneAPI backend + DPC++ kernels; requires `icpx` on PATH (or `acpp`/`syclcc` when paired with `sycl_compiler=acpp`, [ADR-0407](../adr/0407-adaptivecpp-second-sycl-toolchain.md)) |
+| `sycl_compiler` | string | `icpx` | Path or name of the SYCL compiler. Supported toolchains: Intel `icpx` (default) and AdaptiveCpp `acpp` / `syclcc` ([ADR-0407](../adr/0407-adaptivecpp-second-sycl-toolchain.md)). Only consulted when `enable_sycl=true` |
+| `sycl_acpp_targets` | string | `generic` | AdaptiveCpp `--acpp-targets` argument: `generic`, `omp`, `omp;cuda:sm_75`, `omp;hip:gfx1100`, etc. Ignored when `sycl_compiler=icpx`. See [ADR-0407](../adr/0407-adaptivecpp-second-sycl-toolchain.md) for the toolchain-selection rationale |
+| `sycl_icpx_aot_targets` | string | (broad Intel matrix) | Comma-separated Intel SYCL AOT target list passed to `icpx -fsycl-targets=spir64_gen -Xs '-device <list>'`. Default covers Arc dGPU plus every common Intel iGPU silicon (Tiger Lake → Battlemage). Set to empty string for SPIR-V JIT (smaller binary, slower first launch); set to a single target (e.g. `dg2-g11`) to shrink the fat-binary for a known fleet. Ignored when `sycl_compiler != "icpx"`. See [ADR-0568](../adr/0568-sycl-icpx-aot-target-list.md) |
 | `enable_dnn` | feature | `auto` | Build the tiny-AI ONNX Runtime surface. `auto` tries to link ORT and silently disables if it's missing; `enabled` fails the configure step when ORT is unavailable; `disabled` omits the `dnn.h` symbols entirely |
 | `enable_vulkan` | feature | `disabled` | Compile the Vulkan compute backend. Scaffold landed via [ADR-0175](../adr/0175-vulkan-backend-scaffold.md), runtime via ADR-0178 (T5-1b), default-model kernel matrix complete per ADR-0193 (VIF + ADM + motion + motion_v2 + ssimulacra2 plus the GPU long-tail batches). Default `disabled` — `auto` would silently flip on in builds with a Vulkan SDK installed and we keep it opt-in. When enabled, requires `volk` + Vulkan SDK ≥ 1.3 + `glslc` + VMA. |
 | `enable_mcp` | bool | `false` | Compile the embedded MCP (Model Context Protocol) server inside libvmaf. The runtime serves `list_features` and `compute_vmaf` over stdio, UDS, and loopback SSE when the matching transport flags are enabled; mutating measurement-thread tools remain future v4 work. See [`docs/mcp/embedded.md`](../mcp/embedded.md). |
@@ -45,7 +47,11 @@ ninja -C build
 | `enable_mcp_stdio` | bool | `false` | Compile in the stdio transport: newline-delimited JSON-RPC on a caller-supplied fd pair. Requires `enable_mcp=true`; LSP `Content-Length:` framing remains a future compatibility addition. |
 | `enable_hip` | bool | `false` | Compile the HIP (AMD ROCm) compute backend. Default off. With `enable_hipcc=false` the public C-API entry points return `-ENOSYS` for unported features; with `enable_hipcc=true` the real kernels are compiled and 8/11 features run on-device (psnr, integer_psnr, float_ansnr, float_motion, float_moment, float_ssim, ciede, integer_motion_v2). Adm/vif/integer_motion remain `-ENOSYS` stubs. ROCm 6+ + `gfx1036` (RDNA 2) tested. See [ADR-0212](../adr/0212-hip-backend-scaffold.md), [ADR-0373](../adr/0373-hip-batch2-float-motion.md), [backends/hip/overview.md](../backends/hip/overview.md). |
 | `enable_hipcc` | bool | `false` | Compile real HIP kernels via `hipcc` (vs ENOSYS-stub host TUs only). Required for any real-on-device kernel dispatch. Pair with `enable_hip=true`. |
+| `enable_float_vif_hip_autodispatch` | bool | `false` | Auto-dispatch `float_vif_hip` from the model registry by setting `VMAF_FEATURE_EXTRACTOR_HIP` on its descriptor ([ADR-0623](../adr/0623-float-vif-hip-autodispatch.md)). Default OFF pending T7-10c picture-pool plumbing — without the pool, pictures arrive as CPU `VmafPicture`s and the extractor performs explicit host-to-device copies rather than zero-copy from the HIP picture pool. Enable only after T7-10c lands. |
+| `hip_gfx_targets` | string | (auto-detect) | Comma-separated AMD GFX targets for `hipcc --offload-arch`, e.g. `gfx1036,gfx1100`. When empty (default), the build auto-detects via `rocm_agent_enumerator` then `hipconfig`; falls back to `gfx90a,gfx1030,gfx1036,gfx1100` (CDNA2 + RDNA2 desktop + Raphael iGPU + RDNA3) if both probes fail — the typical no-GPU build-sandbox case. Override here when auto-detection misparses, when cross-compiling for a remote GPU, or to shrink the fat-binary to a single target. |
+| `enable_metal` | feature | `auto` | Build the Metal (Apple Silicon) compute backend ([ADR-0361](../adr/0361-metal-backend-scaffold.md), T8-1 series). `auto` probes for `Metal.framework` and `MetalKit.framework` on macOS and disables elsewhere. Apple Silicon (M1+ / GPU Family Apple 7+) only — Intel Macs surface `-ENODEV` at runtime. Runtime, IOSurface import, and the first eight feature kernels are live; remaining metrics land as follow-up kernel batches. |
 | `fuzz` | bool | `false` | Build libFuzzer harnesses under `core/test/fuzz/` ([ADR-0270](../adr/0270-fuzzing-scaffold.md), OSSF Scorecard `Fuzzing` remediation). Requires `clang`. Pair with `-Db_sanitize=address` for heap coverage. Default off — opt-in only. |
+| `enable_rust_features` | bool | `false` | Build Rust-implemented feature extractors via the `cbindgen` pilot ([ADR-0707](../adr/0707-rust-feature-extractor-pilot.md)). First migrated metric: TAD (Temporal Absolute Difference, `core/src/feature/tad/`). Requires `cargo` and `cbindgen` on `PATH`. Default OFF — CI defaults to false. When enabled, the build runs `cargo build` for the Rust crate and links the resulting static library into `libvmaf.so`. |
 
 ### Flag interactions
 
@@ -75,11 +81,21 @@ ninja -C build
 
 ### Options referenced in docs but not present
 
-(All build flags referenced elsewhere in the docs are now defined in
-`core/meson_options.txt`. `enable_hip` was added by ADR-0212
-(T7-10) — the option exists but the backend it enables is a scaffold
-returning `-ENOSYS`; see the table above and
-[backends/hip/overview.md](../backends/hip/overview.md).)
+All build flags referenced elsewhere in the docs are defined in
+`core/meson_options.txt`. The table above is exhaustive — every option
+listed there matches a `core/meson_options.txt` entry as of
+2026-05-30 (ADR-0100 per-surface doc-substance audit). The `enable_vulkan`
+option referenced in older revisions was removed per
+[ADR-0726](../adr/0726-vulkan-backend-removal.md); the corresponding
+`core/src/vulkan/` tree and `libvmaf_vulkan.h` header are gone, though
+`subprojects/packagefiles/volk/` and `vk-mem-alloc/` remain in tree
+pending follow-up cleanup.
+
+`enable_hip` was added by [ADR-0212](../adr/0212-hip-backend-scaffold.md)
+(T7-10) — the option exists and the backend it enables is partially
+live; see the table above and
+[backends/hip/overview.md](../backends/hip/overview.md) for the per-kernel
+coverage matrix.
 
 ## Standard Meson options that matter
 

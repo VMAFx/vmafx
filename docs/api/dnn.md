@@ -114,6 +114,94 @@ Attached scores are written to the normal feature collector:
   `[A-Za-z0-9_]`; duplicate sanitized suffixes fall back to deterministic
   `output<slot>_<attempt>` keys.
 
+## Codec-aware tiny-model inputs — `vmaf_dnn_set_codec_context`
+
+Codec-conditioned tiny models (e.g. the v2 ladder regressor) accept a
+small categorical block alongside the per-frame features: encoder
+identity, preset ordinal, and CRF / QP. `vmaf_dnn_set_codec_context`
+populates that block on the attached tiny model so the loop body does
+not need to re-supply it per frame.
+
+```c
+int vmaf_dnn_set_codec_context(VmafContext *ctx,
+                               const char *codec_name,
+                               const char *preset,
+                               int crf);
+```
+
+### Parameters
+
+| Parameter    | Notes                                                                                                                                  |
+|--------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `ctx`        | Context with a tiny model already attached via `vmaf_use_tiny_model()`.                                                                |
+| `codec_name` | Encoder name (`libx264`, `libx265`, `libsvtav1`, `libvpx-vp9`, `h264_nvenc`, ...). `NULL` or `""` selects the `"unknown"` bucket.      |
+| `preset`     | Preset string (`medium`, `slow`, `p4`, `5`, ...). `NULL` defaults to ordinal 5 (mid-tier).                                             |
+| `crf`        | CRF / QP integer; clamped to `[0, 63]`.                                                                                                |
+
+### Returns
+
+| Code        | Meaning                                                                                            |
+|-------------|----------------------------------------------------------------------------------------------------|
+| `0`         | Codec block written, or the model accepted the `"unknown"` bucket.                                 |
+| `-ENOENT`   | `codec_name` is non-`NULL` but not in the model's `encoder_vocab`; the `"unknown"` bucket was used.|
+| `-ENOSYS`   | libvmaf was built without DNN support (`-Denable_dnn=disabled`).                                   |
+| `-EINVAL`   | `ctx` is `NULL` or no tiny model is attached.                                                      |
+| `-ENOTSUP`  | The attached model has no codec block (rank-4 image model or rank-2 single-input model).           |
+
+Equivalent CLI flags (the `vmaf` CLI calls this internally):
+`--tiny-codec`, `--tiny-preset`, `--tiny-crf` — see
+[usage/cli.md](../usage/cli.md#codec-context-flags-fork-added).
+Per-codec / per-preset vocabularies live in the model's sidecar JSON
+under `encoder_vocab` and `preset_vocab`; the loader bakes them into
+the runtime descriptor at `vmaf_use_tiny_model()` time.
+
+## Tiny-model auto-resize — `vmaf_dnn_set_resize_mode`
+
+NCHW tiny models declare a fixed input shape at training time (e.g.
+224×224 for the `nr_metric_v1` NR scorer). When the user-supplied frame
+dims don't match, the per-frame dispatch resamples the luma plane to
+the model dims using the selected filter before invoking ONNX Runtime.
+Bit-exact when source dims already equal model dims (the routine
+forwards to `vmaf_tensor_from_luma` unchanged). Introduced in
+[ADR-0550](../adr/0550-tiny-model-auto-resize.md).
+
+```c
+typedef enum VmafDnnResizeMode {
+    VMAF_DNN_RESIZE_DISABLED = 0, /* default; mismatch → -ERANGE      */
+    VMAF_DNN_RESIZE_BILINEAR = 1, /* OpenCV INTER_LINEAR / torchvision */
+    VMAF_DNN_RESIZE_NEAREST  = 2, /* nearest, floor coord              */
+    VMAF_DNN_RESIZE_BICUBIC  = 3, /* Catmull-Rom (a = -0.5)            */
+} VmafDnnResizeMode;
+
+int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode);
+```
+
+### Filter semantics
+
+| Mode       | Equivalent                                                              | When to use                                            |
+|------------|-------------------------------------------------------------------------|--------------------------------------------------------|
+| `DISABLED` | None — size mismatch returns `-ERANGE`                                  | Parity harnesses; strict-mode pipelines (default).     |
+| `BILINEAR` | torchvision `Resize(..., antialias=False)` / OpenCV `INTER_LINEAR`      | Every shipped NR / image-input tiny-AI model was trained against this.       |
+| `NEAREST`  | OpenCV `INTER_NEAREST`; deterministic floor of source coord             | Cheaper; debugging dispatch without a filter parameter.                      |
+| `BICUBIC`  | Separable Catmull-Rom (`a = -0.5`); torchvision `BICUBIC`               | Parity with exporters that used `transforms.Resize(interpolation=BICUBIC)`.  |
+
+The three filter modes produce scores that differ by approximately 2%
+on the same input — treat filter choice as a model hyperparameter and
+document it alongside the model checkpoint.
+
+### Resize-mode returns
+
+| Code      | Meaning                                                              |
+|-----------|----------------------------------------------------------------------|
+| `0`       | Resize mode updated; takes effect on the next `vmaf_read_pictures()`. |
+| `-EINVAL` | `ctx` is `NULL`, or `mode` is outside the enum range.                |
+| `-ENOSYS` | libvmaf was built without DNN support.                               |
+
+Equivalent CLI flag: `--tiny-resize <bilinear|nearest|bicubic|disabled>`
+— see [usage/cli.md](../usage/cli.md#codec-context-flags-fork-added).
+May be called before or after `vmaf_use_tiny_model()`; the setting is
+sticky for the lifetime of the context.
+
 ## Standalone sessions — `VmafDnnSession`
 
 Standalone mode is for filter-style inference that does not need a
@@ -297,7 +385,7 @@ int main(int argc, char **argv)
 
 Build:
 
-```
+```bash
 cc filter.c -o filter $(pkg-config --cflags --libs libvmaf)
 ```
 
