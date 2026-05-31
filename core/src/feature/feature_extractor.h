@@ -133,16 +133,17 @@ typedef struct VmafFeatureExtractor {
 #ifdef HAVE_SYCL
     struct VmafSyclState *sycl_state; ///< VmafSyclState, set by framework
 #endif
-#ifdef HAVE_VULKAN
-    struct VmafVulkanState *vulkan_state; ///< VmafVulkanState, set by framework
-#endif
+    /* HAVE_VULKAN block removed per ADR-0726 (Vulkan backend dropped
+     * 2026-05-28). The VMAF_FEATURE_EXTRACTOR_VULKAN bit below is kept
+     * as a reserved gap to preserve the ABI numbering of subsequent
+     * flag values (notably _HIP and _METAL). */
 
     VmafFrameSyncContext *framesync;
     VmafPicture prev_ref; ///< Previous reference picture, set by framework.
 
     /**
      * Per-feature characteristics descriptor — drives the per-backend
-     * dispatch_strategy modules in libvmaf/src/{cuda,sycl,vulkan}/.
+     * dispatch_strategy modules in core/src/{cuda,sycl,hip,metal}/.
      * Defaults to all-zero (= no preference) for unseeded extractors;
      * backends fall back to current global behaviour. See ADR-0181.
      */
