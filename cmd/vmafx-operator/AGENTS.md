@@ -32,6 +32,16 @@ See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md) and
 5. **No shared state between reconcilers.**  Each reconciler has its own
    `client.Client` and `Scheme`.  Do not add package-level variables.
 
+6. **Logger is `slog` via `logr.FromSlogHandler`, not zap.**  Despite
+   kubebuilder's template defaulting to `sigs.k8s.io/controller-runtime/pkg/log/zap`,
+   this operator deliberately uses the standard-library `log/slog` package
+   so all 25 vmafx Go binaries log uniformly.  `main.go` installs the
+   logger via `ctrl.SetLogger(logr.FromSlogHandler(slog.NewJSONHandler(...)))`
+   and `internal/controller/suite_test.go` uses
+   `slog.NewTextHandler(GinkgoWriter, ...)`.  Do not reintroduce
+   `go.uber.org/zap` as a direct import when porting upstream
+   kubebuilder template updates; keep the slog bridge.
+
 ## Test requirements
 
 Run `go test ./cmd/vmafx-operator/internal/controller/...` with

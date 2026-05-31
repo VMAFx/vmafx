@@ -24,16 +24,16 @@ package main
 
 import (
 	"flag"
+	"log/slog"
 	"os"
 	"strings"
 
-	"go.uber.org/zap/zapcore"
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	vmafxv1 "github.com/VMAFx/vmafx/api/vmafx/v1"
@@ -54,6 +54,21 @@ func envOr(key, def string) string {
 	return def
 }
 
+// parseLogLevel maps a string ("debug"|"info"|"warn"|"error") to a slog.Level.
+// Unknown values fall back to slog.LevelInfo.
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func main() {
 	metricsAddr := flag.String("metrics-bind-address",
 		envOr("VMAFX_OPERATOR_METRICS_ADDR", ":8081"),
@@ -70,23 +85,14 @@ func main() {
 	flag.Parse()
 
 	// ---------------------------------------------------------------------------
-	// Logger — zap (controller-runtime standard).
+	// Logger — slog (JSON, stderr) bridged to controller-runtime via logr.
+	// Uniform across all 25 vmafx Go binaries; zap was retired in favour of the
+	// stdlib slog handler.
 	// ---------------------------------------------------------------------------
-	level := zapcore.InfoLevel
-	switch strings.ToLower(*logLevel) {
-	case "debug":
-		level = zapcore.DebugLevel
-	case "warn":
-		level = zapcore.WarnLevel
-	case "error":
-		level = zapcore.ErrorLevel
-	}
-
-	zapOpts := zap.Options{
-		Development: level == zapcore.DebugLevel,
-		Level:       level,
-	}
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+	handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: parseLogLevel(*logLevel),
+	})
+	ctrl.SetLogger(logr.FromSlogHandler(handler))
 	setupLog := ctrl.Log.WithName("setup")
 
 	// ---------------------------------------------------------------------------

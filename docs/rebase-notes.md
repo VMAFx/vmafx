@@ -40,6 +40,33 @@ optional sections (`## Supply-chain impact`, `## SBOM delta`,
 
 ---
 
+## vmafx-operator zap → slog uniformity (2026-05-31)
+
+**Files touched:**
+`cmd/vmafx-operator/main.go`,
+`cmd/vmafx-operator/internal/controller/suite_test.go`,
+`cmd/vmafx-operator/AGENTS.md`, `go.mod`, `go.sum`.
+
+**Rebase impact:** None against Netflix/vmaf (the operator is a fork-only
+Go package; upstream ships no Kubernetes operator). Rebase impact does
+exist against the **kubebuilder v4 template** itself: future scaffold
+upgrades will re-introduce `sigs.k8s.io/controller-runtime/pkg/log/zap`
+imports in `main.go` and `suite_test.go`. When re-running
+`kubebuilder edit` / `operator-sdk init`, re-apply the slog bridge:
+
+- `main.go`: replace the zap.Options block with
+  `slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: ...})`
+  passed through `logr.FromSlogHandler`.
+- `suite_test.go`: replace
+  `zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))` with
+  `slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{Level: slog.LevelDebug})`
+  through `logr.FromSlogHandler`.
+
+The `cmd/vmafx-operator/AGENTS.md` invariant #6 documents this; check it
+before merging any upstream-template re-sync PR.
+
+---
+
 ## SIMD strict-FP flags for icx (2026-05-30)
 
 **Files touched:**

@@ -19,9 +19,11 @@
 package controller_test
 
 import (
+	"log/slog"
 	"path/filepath"
 	"testing"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	vmafxv1 "github.com/VMAFx/vmafx/api/vmafx/v1"
 )
@@ -48,7 +49,12 @@ func TestControllers(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	// Test logger: slog text handler at debug level, routed to GinkgoWriter so
+	// the test runner interleaves log output with spec output.
+	handler := slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})
+	logf.SetLogger(logr.FromSlogHandler(handler))
 
 	// CRD manifests are in config/crd/bases/ relative to the repo root.
 	// The envtest runner expects absolute paths; filepath.Join resolves from
