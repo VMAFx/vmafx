@@ -634,3 +634,4 @@
 0914-unified-python-test-orchestrator
 0917-cargo-deny-supply-chain-policy
 0918-llvm-ir-diff-harness
+0912-pixel-format-edge-coverage

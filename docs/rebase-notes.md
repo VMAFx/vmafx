@@ -656,6 +656,25 @@ implicit-include behaviour (cargo-deny picks up workspace members
 automatically) and audit whether upstream's choice of licenses /
 banned-crate stance differs from ours. See
 [ADR-0917](adr/0917-cargo-deny-supply-chain-policy.md).
+## Pixel-format edge coverage test (2026-05-31)
+
+**Files touched:**
+`core/test/test_pixel_format_edge_coverage.c` (new),
+`core/test/meson.build` (one executable + one `test()` registration).
+
+**Rebase impact:** Low. The new test file is wholly fork-local and only
+links against the public extractor / picture / collector C surface
+(no internal-source `#include`). If upstream Netflix renames any of
+the API entry points the test uses (`vmaf_get_feature_extractor_by_name`,
+`vmaf_feature_extractor_context_create / _extract / _close / _destroy`,
+`vmaf_feature_collector_init / _get_score / _destroy`,
+`vmaf_picture_alloc / _unref`), update the test accordingly. The
+meson.build additions sit between the existing `test_psnr` block and
+`test_framesync`; no upstream `core/test/meson.build` reordering
+should conflict, since the inserted block is immediately adjacent to
+fork-only neighbours.
+
+ADR-0912.
 
 ---
 

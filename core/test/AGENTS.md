@@ -249,3 +249,18 @@ grep "^test(" libvmaf/test/meson.build | grep -v "suite :"
 Any line returned is a violation — add the appropriate `suite:` before
 merging. See the audit that identified this bug:
 `.workingdir/audit-build-matrix-symbols-2026-05-16.md` finding 5c.
+
+## Pixel-format edge coverage invariant (ADR-0912)
+
+`test_pixel_format_edge_coverage.c` is the canonical home for
+cross-cutting `(extractor × pix_fmt × bpc)` smoke tests. Five cases
+ship today (PSNR on 4:2:2 8-bit, 4:4:4 10-bit, 4:2:0 12-bit; SSIM on
+4:2:2 8-bit; CIEDE on 4:2:2 8-bit). When adding a new extractor or
+extending an existing one to a previously-unsupported pixel format,
+add a follow-up case to this file rather than to a new per-extractor
+file — the audit value of one file per cross-cutting axis is higher
+than per-extractor locality. The file links only against the **public**
+extractor / picture / collector C surface (no internal-source
+`#include`); preserve that property so the test stays a regression
+gate for the published API. See
+[ADR-0912](../../docs/adr/0912-pixel-format-edge-coverage.md).

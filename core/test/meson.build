@@ -467,6 +467,7 @@ test_psnr = executable('test_psnr',
     dependencies: [pthread_dependency, sycl_dependency],
 )
 
+<<<<<<< ours
 # Coverage round 2 — drives the integer_psnr extract paths (10/12/16-bit
 # HBD), the min_sse=>psnr_max branch, and the apsnr flush surface that
 # test_psnr.c does not exercise.  Same link-recipe as test_speed_qa.
@@ -563,6 +564,17 @@ test_ms_ssim_decimate_coverage = executable('test_ms_ssim_decimate_coverage',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [pthread_dependency, sycl_dependency],
+=======
+# ADR-0912: end-to-end pixel-format edge coverage (4:2:2, 4:4:4, 10/12-bit)
+# through the public CPU extractor surface. Links libvmaf the same way as
+# test_feature_extractor / test_psnr — no internal-source includes; the file
+# uses only the public picture/extractor/collector APIs.
+test_pixel_format_edge_coverage = executable('test_pixel_format_edge_coverage',
+    ['test.c', 'test_pixel_format_edge_coverage.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency],
+>>>>>>> theirs
 )
 
 test_framesync = executable('test_framesync',
@@ -1568,6 +1580,7 @@ if host_machine.system() != 'windows'
     test('test_cli_parse_long_only_args', test_cli_parse_long_only_args, suite : ['fast'])
 endif
 test('test_psnr', test_psnr, suite : ['fast'])
+<<<<<<< ours
 test('test_integer_psnr_coverage', test_integer_psnr_coverage, suite : ['fast'])
 test('test_integer_motion_coverage', test_integer_motion_coverage, suite : ['fast'])
 test('test_integer_motion_v2_coverage', test_integer_motion_v2_coverage, suite : ['fast'])
@@ -1575,6 +1588,10 @@ test('test_integer_vif_log2', test_integer_vif_log2, suite : ['fast'])
 test('test_iqa_convolve_coverage', test_iqa_convolve_coverage, suite : ['fast'])
 test('test_barten_csf_coverage', test_barten_csf_coverage, suite : ['fast'])
 test('test_ms_ssim_decimate_coverage', test_ms_ssim_decimate_coverage, suite : ['fast'])
+=======
+test('test_pixel_format_edge_coverage',
+    test_pixel_format_edge_coverage, suite : ['fast'])
+>>>>>>> theirs
 test('test_framesync', test_framesync, suite : ['fast'])
 test('test_propagate_metadata', test_propagate_metadata, suite : ['fast'])
 test('test_adm_csf', test_adm_csf, suite : ['fast'])

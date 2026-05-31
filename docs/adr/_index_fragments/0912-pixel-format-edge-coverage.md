@@ -1,0 +1,1 @@
+| [ADR-0912](0912-pixel-format-edge-coverage.md) | Pixel-format edge coverage at the libvmaf unit-test layer (4:2:2, 4:4:4, 10/12-bit PSNR/SSIM/CIEDE end-to-end smoke) | Accepted | test, coverage, fork-local, pixel-format, hbd |
