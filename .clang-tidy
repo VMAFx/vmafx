@@ -10,8 +10,7 @@ Checks: >
   clang-analyzer-*,
   concurrency-*,
   misc-*,
-  modernize-use-nullptr,
-  modernize-use-override,
+  modernize-*,
   performance-*,
   portability-*,
   readability-braces-around-statements,
@@ -24,7 +23,14 @@ Checks: >
   -bugprone-narrowing-conversions,
   -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
   -misc-include-cleaner,
-  -misc-no-recursion
+  -misc-no-recursion,
+  -modernize-use-trailing-return-type,
+  -modernize-use-auto,
+  -modernize-avoid-c-arrays,
+  -modernize-use-nodiscard,
+  -modernize-avoid-c-style-cast,
+  -modernize-macro-to-enum,
+  -modernize-avoid-variadic-functions
 
 WarningsAsErrors: >
   bugprone-use-after-move,

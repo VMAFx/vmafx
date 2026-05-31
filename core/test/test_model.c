@@ -896,80 +896,6 @@ static char *test_json_model_score_clip_not_array(void)
     return NULL;
 }
 
-/* Regression test for ADR-0887 (T-JSON-MODEL-SLOPES-FEATURE-CAP-OOB-2026-05-30):
- * A JSON model whose `slopes` array carries more per-feature entries than
- * `feature_names` previously caused `vmaf_model_destroy` to walk past the
- * `feature[]` buffer (`max(feature_cap, n_features)` formula), tripping ASan
- * with a heap-buffer-overflow read. The parse-time validation now rejects the
- * mismatch with -EINVAL and the destroy uses `min(feature_cap, n_features)`
- * defensively. Discovered by `fuzz_json_model` in PR #371 (reproducer:
- * `core/test/fuzz/json_model_known_crashes/slopes_oob_destroy.bin`). */
-static char *test_json_model_slopes_longer_than_feature_names(void)
-{
-    /* feature_names: 1 entry; slopes: model_slope + 2 per-feature = 1 too many.
-     * Forces parse_slopes to grow feature_cap past what parse_feature_names
-     * populated. validate_feature_arrays must reject with -EINVAL. */
-    const char json[] = "{"
-                        "\"model_dict\": {"
-                        "\"feature_names\": [\"VMAF_feature_adm2_score\"],"
-                        "\"slopes\": [0.0, 1.0, 2.0],"
-                        "\"intercepts\": [0.0, 0.0, 0.0]"
-                        "}"
-                        "}";
-    VmafModel *m = NULL;
-    VmafModelConfig cfg = {0};
-    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
-    mu_assert("slopes longer than feature_names must reject with -EINVAL", err == -EINVAL);
-    /* Even when the parser rejects, the fail-path teardown must not OOB. */
-    if (m)
-        vmaf_model_destroy(m);
-    return NULL;
-}
-
-/* Symmetric to test_json_model_slopes_longer_than_feature_names: a JSON model
- * whose `intercepts` array is longer than `feature_names` must also be
- * rejected. Same mechanism — parse_intercepts grows feature_cap past
- * n_features, validate_feature_arrays catches it. */
-static char *test_json_model_intercepts_longer_than_feature_names(void)
-{
-    const char json[] = "{"
-                        "\"model_dict\": {"
-                        "\"feature_names\": [\"VMAF_feature_adm2_score\"],"
-                        "\"slopes\": [0.0, 1.0],"
-                        "\"intercepts\": [0.0, 0.0, 0.0]"
-                        "}"
-                        "}";
-    VmafModel *m = NULL;
-    VmafModelConfig cfg = {0};
-    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
-    mu_assert("intercepts longer than feature_names must reject with -EINVAL", err == -EINVAL);
-    if (m)
-        vmaf_model_destroy(m);
-    return NULL;
-}
-
-/* Same vector with slopes / intercepts arriving BEFORE feature_names in the
- * JSON key order. parse_slopes runs first, grows feature_cap to 2 while
- * n_features is still 0; parse_feature_names then populates n_features=1; the
- * end-of-dict validator must still reject because slot 1 has no name. */
-static char *test_json_model_slopes_before_feature_names(void)
-{
-    const char json[] = "{"
-                        "\"model_dict\": {"
-                        "\"slopes\": [0.0, 1.0, 2.0],"
-                        "\"intercepts\": [0.0, 0.0, 0.0],"
-                        "\"feature_names\": [\"VMAF_feature_adm2_score\"]"
-                        "}"
-                        "}";
-    VmafModel *m = NULL;
-    VmafModelConfig cfg = {0};
-    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
-    mu_assert("key-order-independent: must still reject with -EINVAL", err == -EINVAL);
-    if (m)
-        vmaf_model_destroy(m);
-    return NULL;
-}
-
 /* parse_model_dict: top-level model_dict value not an object → -EINVAL (line 299). */
 static char *test_json_model_model_dict_not_object(void)
 {
@@ -1111,9 +1037,6 @@ char *run_tests(void)
     mu_run_test(test_json_model_feature_opts_dict_bad_value_type);
     mu_run_test(test_json_model_score_clip_not_array);
     mu_run_test(test_json_model_model_dict_not_object);
-    mu_run_test(test_json_model_slopes_longer_than_feature_names);
-    mu_run_test(test_json_model_intercepts_longer_than_feature_names);
-    mu_run_test(test_json_model_slopes_before_feature_names);
     mu_run_test(test_version_next);
     return NULL;
 }

@@ -182,3 +182,19 @@ vendored libsvm or IQA bodies, the test files do not need to follow
 the upstream change; they observe public-API contracts that survive
 across versions. A test failure post-port is the signal — investigate
 the API drift before relaxing the assertion.
+### 10. `.cpp` files lint-clean to `modernize-*` profile (ADR-0915)
+
+`.clang-tidy` enables the full `modernize-*` family minus four explicit
+opt-outs (`-modernize-use-trailing-return-type`, `-modernize-use-auto`,
+`-modernize-avoid-c-arrays`, `-modernize-use-nodiscard`). The CPU-built
+`.cpp` translation units (`core/src/cpu.cpp`,
+`core/src/feature/feature_collector.cpp`,
+`core/src/metadata_handler.cpp`) are lint-clean to this profile.
+
+When porting an upstream Netflix `.c` patch onto one of these `.cpp`
+files: prefer `nullptr` over `NULL`, prefer `<cstdlib>`/`<cstring>` over
+`<stdlib.h>`/`<string.h>`, drop `<stdbool.h>` includes (in C++ `bool` is
+a keyword), and use `auto*` for `static_cast<T*>(malloc(...))`-style
+initialisers where the cast already spells the type. These match the
+checks enabled by ADR-0915; deviating reintroduces warnings that the
+touched-file rule (ADR-0141) requires you to discharge in the same PR.

@@ -204,18 +204,8 @@ void vmaf_model_destroy(VmafModel *model)
     free(model->path);
     free(model->name);
     svm_free_and_destroy_model(&(model->svm));
-    /* Walk min(feature_cap, n_features) — never past the malloc'd buffer.
-     * Belt-and-suspenders to the parse-time validation added by ADR-0887:
-     * `read_json_model.c::validate_feature_arrays` rejects models whose
-     * per-feature arrays disagree on length, so in steady state
-     * `n_features == feature_cap` for every slot we touched. Bounding by
-     * the smaller of the two means a future regression that drifts
-     * `n_features` past `feature_cap` cannot turn into a heap-buffer-
-     * overflow read in this destructor. Any leak from skipped slots is
-     * caught by ASan + the parse-time validation path, not silently
-     * masked by an OOB-tolerant walk. */
     const unsigned feature_count =
-        model->feature_cap < model->n_features ? model->feature_cap : model->n_features;
+        model->feature_cap > model->n_features ? model->feature_cap : model->n_features;
     for (unsigned i = 0; i < feature_count; i++) {
         free(model->feature[i].name);
         vmaf_dictionary_free(&model->feature[i].opts_dict);

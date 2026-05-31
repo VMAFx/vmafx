@@ -16,14 +16,17 @@
  *
  */
 
-/* Standard C headers are safe without wrapping. */
-#include <errno.h>
-#include <assert.h>
+/* Standard C headers are safe without wrapping.
+ * Use the C++ equivalents (<cerrno>, <cassert>, ...) per
+ * clang-tidy modernize-deprecated-headers. <stdbool.h> is dropped:
+ * in C++, `bool` / `true` / `false` are language keywords. <pthread.h>
+ * has no C++ equivalent and stays as-is. */
+#include <cerrno>
+#include <cassert>
 #include <pthread.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdarg>
+#include <cstdlib>
+#include <cstring>
 
 /* Headers that already carry their own extern "C" guards — include freely. */
 #include "dict.h"             /* has #ifdef __cplusplus extern "C" */
@@ -141,7 +144,7 @@ int vmaf_feature_collector_get_aggregate(VmafFeatureCollector *feature_collector
     pthread_mutex_lock(&(feature_collector->lock));
     int err = 0;
 
-    double *s = NULL;
+    double *s = nullptr;
     for (unsigned i = 0; i < feature_collector->aggregate_vector.cnt; i++) {
         const char *f = feature_collector->aggregate_vector.metric[i].name;
         if (!strcmp(f, feature_name)) {
@@ -253,7 +256,7 @@ int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector)
     err = aggregate_vector_init(&fc->aggregate_vector);
     if (err)
         goto free_feature_vector;
-    err = pthread_mutex_init(&(fc->lock), NULL);
+    err = pthread_mutex_init(&(fc->lock), nullptr);
     if (err)
         goto free_aggregate_vector;
     err = vmaf_metadata_init(&(fc->metadata));
@@ -280,12 +283,12 @@ int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, 
     if (!model)
         return -EINVAL;
 
-    VmafPredictModel *m = static_cast<VmafPredictModel *>(malloc(sizeof(VmafPredictModel)));
+    auto *m = static_cast<VmafPredictModel *>(malloc(sizeof(VmafPredictModel)));
     if (!m)
         return -ENOMEM;
 
     m->model = model;
-    m->next = NULL;
+    m->next = nullptr;
 
     VmafPredictModel *head = feature_collector->models;
     if (!head) {
@@ -307,7 +310,7 @@ int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector
         return -EINVAL;
 
     VmafPredictModel *head = feature_collector->models;
-    VmafPredictModel *prev = NULL;
+    VmafPredictModel *prev = nullptr;
 
     while (head) {
         if (head->model == model) {
@@ -346,7 +349,7 @@ int vmaf_feature_collector_register_metadata(VmafFeatureCollector *feature_colle
 
 static FeatureVector *find_feature_vector(VmafFeatureCollector *fc, const char *feature_name)
 {
-    FeatureVector *feature_vector = NULL;
+    FeatureVector *feature_vector = nullptr;
     for (unsigned i = 0; i < fc->cnt; i++) {
         FeatureVector *fv = fc->feature_vector[i];
         if (!strcmp(fv->name, feature_name)) {
@@ -360,7 +363,7 @@ static FeatureVector *find_feature_vector(VmafFeatureCollector *fc, const char *
 FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *fc, const char *feature_name)
 {
     if (!fc || !feature_name)
-        return NULL;
+        return nullptr;
 
     pthread_mutex_lock(&fc->lock);
     FeatureVector *fv = find_feature_vector(fc, feature_name);
@@ -434,7 +437,7 @@ static void feature_collector_dispatch_metadata(VmafFeatureCollector *feature_co
                                                 double score)
 {
     VmafCallbackItem *metadata_iter =
-        feature_collector->metadata ? feature_collector->metadata->head : NULL;
+        feature_collector->metadata ? feature_collector->metadata->head : nullptr;
     while (metadata_iter) {
         // Check current feature name is the same as the metadata feature name
         if (!strcmp(metadata_iter->metadata_cfg.feature_name, feature_name)) {
@@ -467,7 +470,7 @@ int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const
     if (!feature_collector->timer.begin)
         feature_collector->timer.begin = clock();
 
-    FeatureVector *feature_vector = NULL;
+    FeatureVector *feature_vector = nullptr;
     err = feature_collector_ensure_vector(feature_collector, feature_name, &feature_vector);
     if (err)
         goto unlock;

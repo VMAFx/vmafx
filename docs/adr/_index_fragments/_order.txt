@@ -594,6 +594,7 @@
 0713-vmafx-node-impl
 0714-vmafx-operator-skeleton
 0717-vmafx-node-ffmpeg-latest
+0915-clang-tidy-modernize-sweep
 # Backfilled by docs-drift-sweep-2026-05-12 (manifest hygiene; numeric order)
 0860-ffmpeg-patch-chain-no-op-vulkan-shim
 0887-vmaf-model-slopes-feature-mismatch-validation

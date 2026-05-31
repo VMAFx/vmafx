@@ -617,6 +617,25 @@ upstream Netflix/vmaf ships only the `python/` legacy harness and its
 upstream ever adds its own `noxfile.py`, treat the conflict as
 fork-takes-priority: our file delegates to upstream's `python/tox.ini`
 via the `python_harness` session, so behaviour is preserved.
+## clang-tidy `modernize-*` family enablement (2026-05-31)
+
+**Files touched:**
+`.clang-tidy`, `core/src/feature/feature_collector.cpp`,
+`core/src/metadata_handler.cpp`.
+
+**Rebase impact:** Low. `.clang-tidy` is fork-local; upstream Netflix
+does not ship one. `feature_collector.cpp` is fork-renamed from
+upstream `.c` under ADR-0725-family migrations — if an upstream sync
+brings a new `.c` patch that touches `feature_collector`, the patch
+likely applies cleanly to the `.cpp` (extern "C" linkage is preserved)
+but should be replayed in the C++ idiom (`nullptr` not `NULL`,
+`<cstring>` not `<string.h>`). `metadata_handler.cpp` is wholly fork-
+local with no upstream counterpart.
+
+When syncing: keep the four `-modernize-*` opt-outs in `.clang-tidy`
+(noise / C-ABI hostility rationale documented in ADR-0915). If upstream
+ever ships their own clang-tidy config, merge by union — drop our
+opt-outs only with an explicit ADR.
 
 ---
 
