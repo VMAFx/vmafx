@@ -732,10 +732,11 @@ void ssimulacra2_picture_to_linear_rgb_sve2(int yuv_matrix, unsigned bpc, unsign
             const svfloat32_t Yn = svmul_f32_x(pg, svsub_f32_x(pg, Y, vy_off), vy_scale);
             const svfloat32_t Un = svmul_f32_x(pg, svsub_f32_x(pg, U, vc_off), vc_scale);
             const svfloat32_t Vn = svmul_f32_x(pg, svsub_f32_x(pg, V, vc_off), vc_scale);
-            svfloat32_t R = svadd_f32_x(pg, Yn, svmul_f32_x(pg, vcr_r, Vn));
-            svfloat32_t G = svadd_f32_x(pg, Yn, svmul_f32_x(pg, vcb_g, Un));
-            G = svadd_f32_x(pg, G, svmul_f32_x(pg, vcr_g, Vn));
-            svfloat32_t B = svadd_f32_x(pg, Yn, svmul_f32_x(pg, vcb_b, Un));
+            /* ADR-0891: svmla_f32_x — single-rounding FMA matches fmaf() in scalar ref. */
+            svfloat32_t R = svmla_f32_x(pg, Yn, vcr_r, Vn);
+            svfloat32_t G = svmla_f32_x(pg, Yn, vcb_g, Un);
+            G = svmla_f32_x(pg, G, vcr_g, Vn);
+            svfloat32_t B = svmla_f32_x(pg, Yn, vcb_b, Un);
             R = svmax_f32_x(pg, svmin_f32_x(pg, R, vone), vzero);
             G = svmax_f32_x(pg, svmin_f32_x(pg, G, vone), vzero);
             B = svmax_f32_x(pg, svmin_f32_x(pg, B, vone), vzero);
@@ -756,9 +757,11 @@ void ssimulacra2_picture_to_linear_rgb_sve2(int yuv_matrix, unsigned bpc, unsign
             const float Yn = (Ys - y_off) * y_scale;
             const float Un = (Us - c_off) * c_scale;
             const float Vn = (Vs - c_off) * c_scale;
-            float R = Yn + cr_r * Vn;
-            float G = Yn + cb_g * Un + cr_g * Vn;
-            float B = Yn + cb_b * Un;
+            /* ADR-0891: fmaf() matches svmla_f32_x single-rounding contract. */
+            float R = fmaf(cr_r, Vn, Yn);
+            float G = fmaf(cb_g, Un, Yn);
+            G = fmaf(cr_g, Vn, G);
+            float B = fmaf(cb_b, Un, Yn);
             if (R < 0.0f)
                 R = 0.0f;
             if (R > 1.0f)

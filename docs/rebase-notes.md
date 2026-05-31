@@ -2183,6 +2183,24 @@ Fork-local files:
 Verified clean under ASan+UBSan against the full unit-test suite (63
 tests OK) and the vmaf CLI on 4:2:0 8-bit, 4:2:2 10-bit, 4:2:0 12-bit.
 Cambi tuned-options feature-name derivation (`cambi_mlc_3_ws_63`) works.
+## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
+
+**Files touched:**
+`core/src/meson.build`,
+`core/src/feature/x86/ssimulacra2_avx2.c`,
+`core/src/feature/x86/ssimulacra2_avx512.c`,
+`core/test/test_ssimulacra2_simd.c`.
+
+**Rebase impact:** Low — SSIMULACRA 2 is fork-added (no upstream coupling)
+and the meson helper `_libvmaf_feature_icx_args` mirrors the existing
+`_x86_simd_strict_fp_extra` pattern from ADR-0339 (round-1). If upstream
+Netflix ever adds an `intel-llvm` build matrix and ships scalar references
+inside `libvmaf_feature_static_lib` that participate in SIMD bit-exactness
+tests, reuse `_libvmaf_feature_icx_args` rather than minting a new helper.
+The FMA-based `picture_to_linear_rgb` colour matrix is fully self-contained
+inside the SSIMULACRA 2 TUs; no upstream Netflix file references those
+symbols. Companion: `docs/adr/0891-simd-bit-exact-round2-fmaf-libvmaf-feature-icx.md`,
+`changelog.d/fixed/0891-simd-bit-exact-round2.md`.
 
 ---
 

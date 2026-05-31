@@ -1655,6 +1655,20 @@ if is_sycl_enabled
     endforeach
 endif
 
+# ADR-0891 (round-2 SIMD bit-exact fix, follow-up to #339):
+# Under icx, `-ffp-contract=off` alone does not constrain the
+# optimizer's relaxed FP-model defaults. Scalar reference TUs
+# inside `libvmaf_feature_static_lib` (e.g. `ms_ssim_decimate_scalar`)
+# end up with non-strict floating-point semantics, while the SIMD
+# carve-out libs already gained `-fp-model=precise` in #339. The
+# resulting asymmetry caused `test_ms_ssim_decimate` to diverge
+# from the SIMD path. Mirror the same flag onto every static-lib
+# that owns scalar references the SIMD tests compare against.
+_libvmaf_feature_icx_args = []
+if cc.get_id() == 'intel-llvm' or cc.get_id() == 'intel-llvm-cl'
+    _libvmaf_feature_icx_args = ['-fp-model=precise']
+endif
+
 # ssimulacra2.c scalar extractor compiles in its own static lib with
 # `-ffp-contract=off`. Rationale: `compute_vars` / `compute_masks` /
 # `accumulate_error` and the scalar fallback functions mix with the
@@ -1668,14 +1682,14 @@ libvmaf_ssimulacra2_static_lib = static_library(
     feature_src_dir + 'ssimulacra2.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + ['-ffp-contract=off'],
+    c_args: vmaf_cflags_common + ['-ffp-contract=off'] + _libvmaf_feature_icx_args,
 )
 
 libvmaf_feature_static_lib = static_library(
     'libvmaf_feature',
     libvmaf_feature_sources + hip_sources + hip_hsaco_sources + metal_sources,
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
-    c_args : vmaf_cflags_common,
+    c_args : vmaf_cflags_common + _libvmaf_feature_icx_args,
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps],
     objects: [common_cuda_objects, common_sycl_objects, sycl_feature_objects,
               libvmaf_ssimulacra2_static_lib.extract_all_objects(recursive: false)]

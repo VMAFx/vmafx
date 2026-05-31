@@ -816,12 +816,19 @@ void ssimulacra2_picture_to_linear_rgb_avx2(int yuv_matrix, unsigned bpc, unsign
             const __m256 Un = _mm256_mul_ps(_mm256_sub_ps(U, vc_off), vc_scale);
             const __m256 Vn = _mm256_mul_ps(_mm256_sub_ps(V, vc_off), vc_scale);
 
-            /* Scalar-order matmul: R = Yn + cr_r*Vn; G = Yn + cb_g*Un + cr_g*Vn;
-             * B = Yn + cb_b*Un. Preserve left-to-right associativity. */
-            __m256 R = _mm256_add_ps(Yn, _mm256_mul_ps(vcr_r, Vn));
-            __m256 G = _mm256_add_ps(Yn, _mm256_mul_ps(vcb_g, Un));
-            G = _mm256_add_ps(G, _mm256_mul_ps(vcr_g, Vn));
-            __m256 B = _mm256_add_ps(Yn, _mm256_mul_ps(vcb_b, Un));
+            /* ADR-0891 round-2 fix: use explicit FMA intrinsics to
+             * pair with `fmaf()` in the scalar tail and test
+             * reference. Under icx + `-mfma`, the prior
+             * `_mm256_add_ps(_, _mm256_mul_ps(_, _))` pattern was
+             * being auto-fused to FMA despite `-fp-model=precise`,
+             * while gcc kept it as separate mul+add. Forcing FMA
+             * on both sides unifies the rounding for every
+             * compiler. Preserves the left-to-right associativity
+             * of the G computation. */
+            __m256 R = _mm256_fmadd_ps(vcr_r, Vn, Yn);
+            __m256 G = _mm256_fmadd_ps(vcb_g, Un, Yn);
+            G = _mm256_fmadd_ps(vcr_g, Vn, G);
+            __m256 B = _mm256_fmadd_ps(vcb_b, Un, Yn);
 
             R = _mm256_max_ps(_mm256_min_ps(R, vone), vzero);
             G = _mm256_max_ps(_mm256_min_ps(G, vone), vzero);
@@ -843,9 +850,14 @@ void ssimulacra2_picture_to_linear_rgb_avx2(int yuv_matrix, unsigned bpc, unsign
             const float Yn = (Ys - y_off) * y_scale;
             const float Un = (Us - c_off) * c_scale;
             const float Vn = (Vs - c_off) * c_scale;
-            float R = Yn + cr_r * Vn;
-            float G = Yn + cb_g * Un + cr_g * Vn;
-            float B = Yn + cb_b * Un;
+            /* ADR-0891: explicit fmaf() — icx + `-mfma` may contract
+             * plain `a + b*c` to FMA even under `-fp-model=precise`,
+             * diverging from the SIMD reference. Preserves the
+             * left-to-right associativity of the G computation. */
+            float R = fmaf(cr_r, Vn, Yn);
+            float G = fmaf(cb_g, Un, Yn);
+            G = fmaf(cr_g, Vn, G);
+            float B = fmaf(cb_b, Un, Yn);
             if (R < 0.0f)
                 R = 0.0f;
             if (R > 1.0f)
