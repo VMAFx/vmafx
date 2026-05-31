@@ -11,6 +11,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+extern "C" {
+#include "../log.h"
+}
+
 /* Backend default: SYCL graph replay wins above 720p frame area on
  * Intel Arc A380 / oneAPI 2025.3 (empirical sweep documented in
  * libvmaf/src/sycl/common.cpp § "Resolution-aware default").
@@ -49,9 +53,9 @@ VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
          * release so operators have time to migrate, but print a one-shot
          * warning on the first call that detects the variable.  Removal is
          * scheduled for v4.0. */
-        (void)fprintf(stderr, "libvmaf: VMAF_SYCL_NO_GRAPH deprecated; "
-                              "use VMAF_SYCL_USE_GRAPH=false. "
-                              "Will be removed in v4.0.\n");
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "libvmaf: VMAF_SYCL_NO_GRAPH deprecated; "
+                                         "use VMAF_SYCL_USE_GRAPH=false. "
+                                         "Will be removed in v4.0.\n");
         if (env_no_graph[0] == '1')
             return VMAF_SYCL_DISPATCH_DIRECT;
     }

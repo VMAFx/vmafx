@@ -42090,3 +42090,20 @@ Fork-local files:
 `core/test/test_motion_v2_simd.c` (NEON test arm),
 `docs/adr/0873-arm64-neon-bit-exactness-audit.md`,
 `changelog.d/fixed/arm64-neon-bit-exactness-audit.md`.
+## Logging consistency audit — 2026-05-30
+
+No rebase impact on upstream. All routed sites are fork-local:
+`core/src/libvmaf.c` (`vmaf_write_output` — fork-added entry point added
+by the `--precision`/output overhaul), `core/src/sycl/dispatch_strategy.cpp`
+(fork-only file, ADR-0181), `core/src/sycl/common.cpp` (fork-only file).
+Vendored `core/src/svm.cpp` and upstream-mirror feature extractors
+(`vif.c`, `adm.c`, `ms_ssim.c`, `motion.c`, `ssim.c`) are explicitly
+deferred precisely because they carry upstream-sync invariants — leaving
+them untouched preserves the rebase story.
+
+Fork-local files:
+`core/src/libvmaf.c`,
+`core/src/sycl/dispatch_strategy.cpp`,
+`core/src/sycl/common.cpp`,
+`docs/research/logging-consistency-audit-2026-05-30.md`,
+`changelog.d/changed/logging-consistency-audit.md`.

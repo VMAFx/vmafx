@@ -170,7 +170,7 @@ extern "C" int vmaf_sycl_list_devices(void)
         }
         return static_cast<int>(idx);
     } catch (const sycl::exception &e) {
-        fprintf(stderr, "SYCL: device enumeration failed: %s\n", e.what());
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL: device enumeration failed: %s\n", e.what());
         return -EIO;
     }
 }
@@ -598,8 +598,13 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
         state->frame_counter++;
 
         if (state->extractor_timing && state->frame_counter <= 30) {
+<<<<<<< ours
             fprintf(stderr, "UPLOAD frame %" PRIu64 ": ref=%.1fms dis=%.1fms total=%.1fms\n",
                     state->frame_counter, t1 - t0, t2 - t1, t2 - t0);
+=======
+            vmaf_log(VMAF_LOG_LEVEL_DEBUG, "UPLOAD frame %lu: ref=%.1fms dis=%.1fms total=%.1fms\n",
+                     (unsigned long)state->frame_counter, t1 - t0, t2 - t1, t2 - t0);
+>>>>>>> theirs
         }
 
     } catch (const sycl::exception &e) {
@@ -924,13 +929,13 @@ extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
         }
 
     } catch (const sycl::exception &e) {
-        fprintf(stderr, "libvmaf SYCL exception in graph_submit: %s\n", e.what());
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "libvmaf SYCL exception in graph_submit: %s\n", e.what());
         return -EIO;
     } catch (const std::exception &e) {
-        fprintf(stderr, "libvmaf exception in graph_submit: %s\n", e.what());
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "libvmaf exception in graph_submit: %s\n", e.what());
         return -EIO;
     } catch (...) {
-        fprintf(stderr, "libvmaf unknown exception in graph_submit\n");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "libvmaf unknown exception in graph_submit\n");
         return -EIO;
     }
 

@@ -241,3 +241,34 @@ Additionally:
   `core/test/test_svm_parser.c` + `core/test/test_predict` +
   `core/test/test_model`. See ADR-0889 for the deferral rationale on
   the upstream 3.36 sync.
+### 10. Fork-added diagnostics route through `vmaf_log`, not `fprintf(stderr, …)`
+
+libvmaf exposes a user-installable log callback via
+`vmaf_set_log_callback` and a level filter via `vmaf_set_log_level`.
+Direct `fprintf(stderr, ...)` / `printf(...)` bypasses both surfaces —
+the message reaches the terminal regardless of the user's installed
+callback or chosen verbosity, and embedded callers (FFmpeg filter, MCP
+server, future bindings) can never capture it.
+
+For any new fork-local diagnostic (errors, warnings, debug traces),
+use `vmaf_log(VMAF_LOG_LEVEL_{ERROR,WARNING,INFO,DEBUG}, fmt, ...)`
+declared in [`log.h`](log.h). C++ TUs include the header inside an
+`extern "C" { }` block — see `core/src/sycl/common.cpp` and
+`core/src/sycl/dispatch_strategy.cpp` for the pattern.
+
+Exceptions — direct stream writes are correct in these cases:
+- `core/src/log.{c,cpp}` — the log implementation itself.
+- CLI tools under `core/tools/` — stdout score / JSON output is the
+  contract.
+- Pull-style "print on request" SYCL APIs
+  (`vmaf_sycl_list_devices`, `vmaf_sycl_print_timing`,
+  `vmaf_sycl_profiling_print`) — the stream IS the function's contract;
+  routing through the callback would silently drop output for callers
+  without an installed callback at the matching level.
+- Vendored libsvm (`core/src/svm.cpp`) and upstream-mirror feature
+  extractors (`feature/vif.c`, `feature/adm.c`, etc.) — leave as-is to
+  preserve upstream-sync semantics; route only if the touching PR has
+  an upstream-sync impact note.
+
+See `docs/research/logging-consistency-audit-2026-05-30.md` for the
+audit that established this invariant.

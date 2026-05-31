@@ -2830,15 +2830,15 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
      * call entirely and falls through to undefined memory with SIGSEGV
      * before the error-path even executes.  Guard both up front. */
     if (!vmaf) {
-        (void)fprintf(stderr, "vmaf_write_output: vmaf context must not be NULL\n");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_write_output: vmaf context must not be NULL\n");
         return -EINVAL;
     }
     if (!vmaf->feature_collector) {
-        (void)fprintf(stderr, "vmaf_write_output: feature_collector not initialised\n");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_write_output: feature_collector not initialised\n");
         return -EINVAL;
     }
     if (!output_path) {
-        (void)fprintf(stderr, "vmaf_write_output: output_path must not be NULL\n");
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_write_output: output_path must not be NULL\n");
         return -EINVAL;
     }
     /* Open with mode 0644 so the output file is never world-writable.
@@ -2851,7 +2851,7 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
     int outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 #endif
     if (outfd < 0) {
-        (void)fprintf(stderr, "could not open file: %s\n", output_path);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "could not open file: %s\n", output_path);
         return -EINVAL;
     }
 #ifdef _WIN32
@@ -2860,7 +2860,7 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
     FILE *outfile = fdopen(outfd, "w");
 #endif
     if (!outfile) {
-        (void)fprintf(stderr, "could not open file: %s\n", output_path);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "could not open file: %s\n", output_path);
 #ifdef _WIN32
         (void)_close(outfd);
 #else
