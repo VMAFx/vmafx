@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, patch
 
 import anyio
 import pytest
+
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
