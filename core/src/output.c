@@ -384,6 +384,15 @@ int vmaf_write_output_json(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *ou
 int vmaf_write_output_csv(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
                           const char *score_format)
 {
+    /* Mirror the XML/JSON writers' NULL guards (ADR-0602).  Both fc and
+     * outfile are dereferenced unconditionally below; previously this writer
+     * would SIGSEGV on NULL input where the sibling writers returned -EINVAL.
+     * Adversarial audit 2026-05-31. */
+    if (!fc)
+        return -EINVAL;
+    if (!outfile)
+        return -EINVAL;
+
     const char *sf = fmt_or_default(score_format);
 
     VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();
@@ -429,6 +438,13 @@ int vmaf_write_output_csv(VmafFeatureCollector *fc, FILE *outfile, unsigned subs
 int vmaf_write_output_sub(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
                           const char *score_format)
 {
+    /* Mirror the XML/JSON writers' NULL guards (ADR-0602).  See the CSV
+     * writer above for rationale. */
+    if (!fc)
+        return -EINVAL;
+    if (!outfile)
+        return -EINVAL;
+
     const char *sf = fmt_or_default(score_format);
 
     VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();

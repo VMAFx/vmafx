@@ -300,11 +300,40 @@ static char *test_piecewise_linear_mapping(void)
     return NULL;
 }
 
+/* Regression for fix/core-lifecycle-memory-audit:
+ * piecewise_linear_mapping / piecewise_segment_apply previously returned
+ * bare positive `EINVAL` instead of the negated convention used everywhere
+ * else in libvmaf.  Local callers only check truthiness so the bug was
+ * silent, but any caller that propagates the value upward inverts the sign.
+ * Lock the contract down by asserting the negative value explicitly. */
+static char *test_piecewise_linear_mapping_returns_neg_einval(void)
+{
+    double y = 0.0;
+
+    /* n_knots <= 1 → -EINVAL */
+    VmafPoint single[] = {{.x = 0, .y = 1}};
+    int err = piecewise_linear_mapping(0, single, 1, &y);
+    mu_assert("n_knots<=1 must return -EINVAL (not +EINVAL)", err == -EINVAL);
+
+    /* horizontal-segment knots (x equal, y differ) → -EINVAL via segment guard */
+    VmafPoint vertical[] = {{.x = 0, .y = 1}, {.x = 0, .y = 2}};
+    err = piecewise_linear_mapping(0, vertical, 2, &y);
+    mu_assert("vertical segment must return -EINVAL (not +EINVAL)", err == -EINVAL);
+
+    /* decreasing y → -EINVAL */
+    VmafPoint decreasing[] = {{.x = 0, .y = 2}, {.x = 1, .y = 1}};
+    err = piecewise_linear_mapping(0, decreasing, 2, &y);
+    mu_assert("decreasing y must return -EINVAL (not +EINVAL)", err == -EINVAL);
+
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_predict_score_at_index);
     mu_run_test(test_find_linear_function_parameters);
     mu_run_test(test_piecewise_linear_mapping);
+    mu_run_test(test_piecewise_linear_mapping_returns_neg_einval);
     mu_run_test(test_propagate_metadata);
     return NULL;
 }

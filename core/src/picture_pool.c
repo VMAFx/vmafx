@@ -84,9 +84,14 @@ static int pool_preallocate_pictures(VmafPicturePool *p, VmafPicturePoolConfig c
     for (unsigned i = 0; i < cfg.pic_cnt; i++) {
         int err = vmaf_picture_alloc(&p->pictures[i], cfg.pix_fmt, cfg.bpc, cfg.w, cfg.h);
         if (err) {
-            // Free any pictures we've already allocated
+            /* Free pictures already detached from the refcount machinery
+             * (priv/ref cleared below) — vmaf_picture_unref short-circuits on
+             * priv==NULL || ref==NULL and would leak the data buffer.  Each
+             * earlier slot owns a single aligned_malloc'd data[0]; free that
+             * explicitly here so the caller does not inherit a partial leak.
+             * Adversarial audit 2026-05-31, fix/core-lifecycle-memory-audit. */
             for (unsigned j = 0; j < i; j++) {
-                vmaf_picture_unref(&p->pictures[j]);
+                aligned_free(p->pictures[j].data[0]);
             }
             return err;
         }

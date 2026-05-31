@@ -71,7 +71,14 @@ static int dict_normalize_numeric(const char *val, char **buf_out)
 {
     *buf_out = NULL;
     char *end = NULL;
-    double dv = strtof(val, &end);
+    /* strtod, not strtof: the result is stored in a `double` and reformatted
+     * via `%g`.  strtof first truncated to single precision and silently
+     * dropped the bottom half of the mantissa for any value with more than
+     * ~7 decimal digits — observable when callers normalise option values
+     * such as "1.234567890123" (model thresholds, score-format probes) and
+     * subsequently parse the normalised string back through strtod.
+     * Adversarial audit 2026-05-31. */
+    double dv = strtod(val, &end);
     if (dv == 0 && val == end)
         return 0;
 

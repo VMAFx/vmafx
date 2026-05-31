@@ -104,8 +104,14 @@ static int find_linear_function_parameters(VmafPoint p1, VmafPoint p2, double *a
 static int piecewise_segment_apply(double x, VmafPoint *knots, unsigned idx, unsigned n_seg,
                                    double *y)
 {
+    /* Errno values are positive; libvmaf's convention is to return their
+     * negation so callers can distinguish them from a successful 0.  Returning
+     * positive EINVAL here surfaced as a truthy error to local callers but
+     * inverted the sign on any caller that propagated `err` upward (e.g.
+     * vmaf_predict_score_at_index downstream).  Adversarial audit 2026-05-31,
+     * fix/core-lifecycle-memory-audit. */
     if (!(knots[idx].x < knots[idx + 1].x && knots[idx].y <= knots[idx + 1].y))
-        return EINVAL;
+        return -EINVAL;
 
     const bool cond0 = knots[idx].x <= x;
     const bool cond1 = x <= knots[idx + 1].x;
@@ -135,8 +141,9 @@ static int piecewise_segment_apply(double x, VmafPoint *knots, unsigned idx, uns
 
 static int piecewise_linear_mapping(double x, VmafPoint *knots, unsigned n_knots, double *y)
 {
+    /* See piecewise_segment_apply: -EINVAL not +EINVAL. */
     if (n_knots <= 1)
-        return EINVAL;
+        return -EINVAL;
     unsigned n_seg = n_knots - 1;
 
     *y = 0.0;
@@ -190,8 +197,13 @@ static int transform(const VmafModel *model, double *y_in, enum VmafModelFlags f
     // piecewise-linear mapping
     y_stage = y_out;
     if (model->score_transform.knots.enabled) {
-        piecewise_linear_mapping(y_stage, model->score_transform.knots.list,
-                                 model->score_transform.knots.n_knots, &y_out);
+        /* Propagate error rather than silently overwriting y_in with 0 (the
+         * out-param defaults to 0.0 on the early-error path inside
+         * piecewise_linear_mapping).  Adversarial audit 2026-05-31. */
+        const int err = piecewise_linear_mapping(y_stage, model->score_transform.knots.list,
+                                                 model->score_transform.knots.n_knots, &y_out);
+        if (err)
+            return err;
     } else {
         y_out = y_stage;
     }
@@ -328,8 +340,18 @@ static int predict_ensure_caches(VmafModel *model, VmafFeatureCollector *feature
 
         for (unsigned i = 0; i < model->n_features; i++) {
             int err = predict_resolve_feature_name(model, i);
-            if (err)
+            if (err) {
+                /* Roll back the partial table so a retry path can rebuild
+                 * from scratch.  Without this rollback, the next call sees a
+                 * non-NULL predict_feature_names with NULL holes and skips
+                 * the re-init branch entirely — later reads dereference NULL.
+                 * Adversarial audit 2026-05-31. */
+                for (unsigned k = 0; k < i; k++)
+                    free(model->predict_feature_names[k]);
+                free(model->predict_feature_names);
+                model->predict_feature_names = NULL;
                 return err;
+            }
         }
     }
 

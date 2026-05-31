@@ -289,6 +289,37 @@ static char *test_xml_einval_guards()
     return NULL;
 }
 
+/* Regression for fix/core-lifecycle-memory-audit:
+ * CSV and SUB writers previously omitted the NULL-fc / NULL-outfile guards
+ * that the XML / JSON writers had since ADR-0602.  A NULL caller would
+ * SIGSEGV on the very first fprintf instead of returning -EINVAL. */
+static char *test_csv_sub_einval_guards()
+{
+    VmafContext *vmaf;
+    int err = seed_normal(&vmaf);
+    mu_assert("seed_normal failed", !err);
+
+    FILE *f = tmpfile();
+    mu_assert("tmpfile failed", f);
+
+    VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
+
+    err = vmaf_write_output_csv(NULL, f, 0, NULL);
+    mu_assert("csv: NULL fc must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_write_output_csv(fc, NULL, 0, NULL);
+    mu_assert("csv: NULL outfile must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_write_output_sub(NULL, f, 0, NULL);
+    mu_assert("sub: NULL fc must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_write_output_sub(fc, NULL, 0, NULL);
+    mu_assert("sub: NULL outfile must return -EINVAL", err == -EINVAL);
+
+    teardown(vmaf, f, NULL);
+    return NULL;
+}
+
 static char *test_xml_basic()
 {
     /* For the pooled-metrics block to emit per-feature mean/min/max/harmonic
@@ -661,6 +692,7 @@ char *run_tests()
     mu_run_test(test_csv_subsample_and_custom_format);
     mu_run_test(test_sub_basic);
     mu_run_test(test_xml_einval_guards);
+    mu_run_test(test_csv_sub_einval_guards);
     mu_run_test(test_xml_basic);
     mu_run_test(test_json_basic_and_format);
     mu_run_test(test_json_nan_and_inf);

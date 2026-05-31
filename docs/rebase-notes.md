@@ -7,6 +7,48 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## core/src lifecycle + memory audit (2026-05-31, fix/core-lifecycle-memory-audit)
+
+**Files touched:**
+`core/src/picture_pool.c`,
+`core/src/model.c`,
+`core/src/model.cpp`,
+`core/src/predict.c`,
+`core/src/output.c`,
+`core/src/dict.c`,
+`core/src/feature/feature_collector.cpp`,
+`core/test/test_predict.c` (new test case),
+`core/test/test_model.c` (new test case),
+`core/test/test_output.c` (new test case).
+
+**Rebase impact:** Touch points are all upstream-mirrored TUs. Each fix is
+a narrow correctness patch (NULL guard, errno sign, errno code, missing
+return-value propagation, free-on-error path) — none of them changes the
+public C ABI, the entry-point list, or the data layout of any struct.
+
+On upstream sync:
+
+- `picture_pool.c::pool_preallocate_pictures` cleanup: trivial
+  `vmaf_picture_unref → aligned_free` swap on a fork-only code path
+  (Netflix has no `pool_preallocate_pictures` in this form).
+- `model.{c,cpp}::vmaf_model_load` + `vmaf_model_collection_load` NULL
+  guards: add the `if (!version) return -EINVAL;` block at the top of
+  each function. Conflicts only if upstream reorders the body.
+- `predict.c` sign and propagation fixes: small textual deltas on
+  upstream-mirrored functions. If upstream changes the sign convention,
+  fall in line with upstream.
+- `output.c` CSV/SUB NULL guards: paste the same three-line guard the
+  XML/JSON writers already have (ADR-0602).
+- `dict.c::dict_normalize_numeric`: one-word change
+  `strtof` → `strtod`. Conflicts only if upstream switches to a
+  different parser entirely.
+- `feature_collector.cpp::aggregate_vector_append`: one-word change
+  `-EINVAL` → `-ENOMEM`.
+
+No load-bearing invariants; no `AGENTS.md` rebase-pin required.
+
+---
+
 ## Markdown-lint full-ruleset discharge (2026-05-31, ADR-0980)
 
 **Files touched:** ~1,400 `.md` files across `docs/`, `.claude/`,

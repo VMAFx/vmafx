@@ -168,6 +168,28 @@ static char *test_built_in_model(void)
 }
 #endif
 
+/* Regression for fix/core-lifecycle-memory-audit:
+ * vmaf_model_load / vmaf_model_collection_load previously passed `version`
+ * straight into strcmp(); a NULL caller dereferenced the second operand.
+ * Both entry points must now reject NULL with -EINVAL. */
+static char *test_model_load_rejects_null_version(void)
+{
+    VmafModel *model = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_model_load(&model, &cfg, NULL);
+    mu_assert("vmaf_model_load(NULL version) must return -EINVAL", err == -EINVAL);
+    mu_assert("vmaf_model_load(NULL version) must not allocate model", model == NULL);
+
+    VmafModelCollection *collection = NULL;
+    err = vmaf_model_collection_load(&model, &collection, &cfg, NULL);
+    mu_assert("vmaf_model_collection_load(NULL version) must return -EINVAL", err == -EINVAL);
+    mu_assert("vmaf_model_collection_load(NULL version) must not allocate model", model == NULL);
+    mu_assert("vmaf_model_collection_load(NULL version) must not allocate collection",
+              collection == NULL);
+
+    return NULL;
+}
+
 static char *test_model_load_and_destroy(void)
 {
     int err;
@@ -999,6 +1021,7 @@ char *run_tests(void)
     mu_run_test(test_built_in_model);
 #endif
     mu_run_test(test_model_load_and_destroy);
+    mu_run_test(test_model_load_rejects_null_version);
     mu_run_test(test_model_check_default_behavior_unset_flags);
     mu_run_test(test_model_check_default_behavior_set_flags);
     mu_run_test(test_model_set_flags);

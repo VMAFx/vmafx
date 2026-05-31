@@ -149,6 +149,12 @@ static const VmafBuiltInModel built_in_models[] = {
 
 int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version)
 {
+    /* `version` reaches strcmp unprotected; a NULL caller would dereference
+     * the second operand.  Reject up-front instead of crashing.  Adversarial
+     * audit 2026-05-31, fix/core-lifecycle-memory-audit. */
+    if (!version)
+        return -EINVAL;
+
     const VmafBuiltInModel *built_in_model = nullptr;
 
     for (unsigned i = 0; i < BUILT_IN_MODEL_CNT; i++) {
@@ -341,6 +347,10 @@ void vmaf_model_collection_destroy(VmafModelCollection *model_collection)
 int vmaf_model_collection_load(VmafModel **model, VmafModelCollection **model_collection,
                                VmafModelConfig *cfg, const char *version)
 {
+    /* Mirror vmaf_model_load NULL guard — strcmp on a NULL operand is UB. */
+    if (!version)
+        return -EINVAL;
+
     const VmafBuiltInModel *built_in_model = nullptr;
 
     for (unsigned i = 0; i < BUILT_IN_MODEL_CNT; i++) {
