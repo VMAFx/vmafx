@@ -95,3 +95,13 @@ unset in the calling context; `set -u` aborts on those references and bypasses `
   registered even when HTTP mode is requested. Netflix upstream has no
   MCP server; this entire subtree is fork-local and will never merge
   upstream.
+- **HTTP transport requires explicit env opt-in for 0.0.0.0 bind; auth
+  defaults on (ADR-0967).** The default bind host for `--transport http`
+  is `127.0.0.1` (loopback-only). To listen on all interfaces (required
+  for pod-network reachability in Kubernetes), set
+  `VMAFX_MCP_HTTP_BIND=0.0.0.0`. Authentication is enforced by default:
+  if `VMAFX_MCP_HTTP_TOKEN` is unset and `VMAFX_MCP_HTTP_NO_AUTH` is
+  also unset, the server rejects every request with 401. A regression
+  that reverts `_resolve_bind_host()` to return `"0.0.0.0"` or removes
+  the security middleware from `_make_app()` re-introduces the Round 26
+  audit finding A.1 vulnerabilities.

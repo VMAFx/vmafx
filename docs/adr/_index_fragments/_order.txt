@@ -600,3 +600,4 @@
 0931-mcp-cgo-direct-replace-subprocess
 0929-rust-safe-binding-scaffold
 0969-helm-seccomp-default-plus-node-image-helper
+0967-mcp-http-transport-security-hardening

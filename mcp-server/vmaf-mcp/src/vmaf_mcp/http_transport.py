@@ -10,15 +10,46 @@ Activated via ``vmaf-mcp --transport http [--port PORT]``.
 Default transport remains stdio for IDE/MCP-client compatibility.
 
 Environment variables (12-factor §III):
-- ``VMAFX_PORT``       — HTTP listen port (default 8080; overridden by ``--port``).
-- ``VMAFX_LOG_LEVEL``  — Python log level name (default ``INFO``).
-- ``VMAFX_VMAF_BINARY`` — Path to the vmaf binary (same as ``VMAF_BIN``).
-- ``VMAFX_MODEL_DIR``   — Additional model search root.
+- ``VMAFX_PORT``              — HTTP listen port (default 8080; overridden by ``--port``).
+- ``VMAFX_LOG_LEVEL``         — Python log level name (default ``INFO``).
+- ``VMAFX_VMAF_BINARY``       — Path to the vmaf binary (same as ``VMAF_BIN``).
+- ``VMAFX_MODEL_DIR``         — Additional model search root.
+- ``VMAFX_MCP_HTTP_TOKEN``    — Bearer token for ``Authorization: Bearer <token>``
+                                 enforcement.  **Required** in production.  If unset
+                                 and ``VMAFX_MCP_HTTP_NO_AUTH`` is also unset the
+                                 server starts but rejects all requests with 401.
+- ``VMAFX_MCP_HTTP_NO_AUTH``  — Set to ``1`` to disable authentication entirely
+                                 (e.g. when sitting behind a network-level auth
+                                 gateway). Logged as a warning on startup.
+- ``VMAFX_MCP_HTTP_BIND``     — Bind address (default ``127.0.0.1``).  Set to
+                                 ``0.0.0.0`` to listen on all interfaces.
+                                 **Breaking change from pre-ADR-0967 behaviour**:
+                                 the old default was ``0.0.0.0``.  Existing
+                                 deployments must set ``VMAFX_MCP_HTTP_BIND=0.0.0.0``
+                                 to restore the old behaviour.
+- ``VMAFX_MCP_HTTP_TLS_CERT`` — Path to PEM certificate file.  When set together
+                                 with ``VMAFX_MCP_HTTP_TLS_KEY`` the server enables
+                                 TLS.  If absent, a warning is logged (HTTP only).
+- ``VMAFX_MCP_HTTP_TLS_KEY``  — Path to PEM private key file.
+
+Security (ADR-0967):
+- Bodies larger than ``MAX_REQUEST_BODY_BYTES`` (4 MiB) are rejected with 413.
+  This is enforced via two complementary mechanisms:
+  (a) ``client_max_size`` on the aiohttp ``Application`` — handles chunked/
+      streaming bodies; aiohttp raises ``HTTPRequestEntityTooLarge`` (413)
+      automatically when ``request.read()`` / ``request.json()`` is called.
+  (b) A ``Content-Length`` pre-flight in the security middleware — fast-fails
+      before reading any bytes when the declared size exceeds the limit.
+- Requests lacking a valid ``Authorization: Bearer`` header are rejected with 401
+  unless ``VMAFX_MCP_HTTP_NO_AUTH=1``.
+- The server binds ``127.0.0.1`` by default; ``0.0.0.0`` requires an explicit
+  opt-in via ``VMAFX_MCP_HTTP_BIND``.
 
 CLI flags take precedence over environment variables; environment variables
 take precedence over compiled-in defaults.
 
 ADR-0701: vmafx-server HTTP transport + observability foundation.
+ADR-0967: MCP HTTP transport security hardening (auth + body limit + bind default).
 """
 
 from __future__ import annotations
@@ -28,11 +59,25 @@ import json
 import logging
 import os
 import signal
+import ssl
 import sys
 import time
 import uuid
 from collections.abc import Callable
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# Security constants (ADR-0967)
+# ---------------------------------------------------------------------------
+
+#: Maximum request body size accepted by the transport.  Requests whose
+#: ``Content-Length`` header exceeds this limit are rejected with HTTP 413
+#: by the security middleware before any body bytes are read.  Requests
+#: without ``Content-Length`` (chunked transfer) are limited by
+#: ``client_max_size`` passed to the aiohttp ``Application``, which raises
+#: ``HTTPRequestEntityTooLarge`` (413) inside ``request.read()`` /
+#: ``request.json()``.
+MAX_REQUEST_BODY_BYTES: int = 4 * 1024 * 1024  # 4 MiB
 
 # ---------------------------------------------------------------------------
 # Lazy-import guards for optional heavy deps
@@ -141,6 +186,159 @@ def _build_metrics(pc: Any) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Security helpers (ADR-0967)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_auth_token() -> str | None:
+    """Return the expected bearer token from the environment, or None.
+
+    Returns the value of ``VMAFX_MCP_HTTP_TOKEN`` if set and non-empty;
+    otherwise ``None``.
+    """
+    val = os.environ.get("VMAFX_MCP_HTTP_TOKEN", "").strip()
+    return val if val else None
+
+
+def _no_auth_mode() -> bool:
+    """Return True when ``VMAFX_MCP_HTTP_NO_AUTH=1`` is set."""
+    return os.environ.get("VMAFX_MCP_HTTP_NO_AUTH", "").strip() == "1"
+
+
+def _resolve_bind_host() -> str:
+    """Return the effective bind host.
+
+    Defaults to ``127.0.0.1`` (loopback-only) per ADR-0967.  Operators who
+    need to listen on all interfaces must set ``VMAFX_MCP_HTTP_BIND=0.0.0.0``
+    explicitly.
+
+    **Migration note**: the pre-ADR-0967 default was ``0.0.0.0``.  Existing
+    Helm deployments or ``docker run`` invocations that rely on pod-network
+    reachability must add ``VMAFX_MCP_HTTP_BIND=0.0.0.0`` to their environment.
+    The Helm values file ``deploy/helm/vmafx/values.yaml`` ships with this set
+    as a documented operator choice.
+    """
+    return os.environ.get("VMAFX_MCP_HTTP_BIND", "127.0.0.1")
+
+
+def _build_ssl_context() -> ssl.SSLContext | None:
+    """Build and return an ``ssl.SSLContext`` if TLS env vars are set.
+
+    Returns ``None`` (plain HTTP) if either env var is absent.  Logs a warning
+    when TLS is not configured so operators are not surprised.
+    """
+    cert = os.environ.get("VMAFX_MCP_HTTP_TLS_CERT", "").strip()
+    key = os.environ.get("VMAFX_MCP_HTTP_TLS_KEY", "").strip()
+
+    if cert and key:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=cert, keyfile=key)
+        _log.info(
+            "TLS enabled: cert=%s key=%s",
+            cert,
+            key,
+            extra={"request_id": "-"},
+        )
+        return ctx
+
+    _log.warning(
+        "VMAFX_MCP_HTTP_TLS_CERT / VMAFX_MCP_HTTP_TLS_KEY not set — "
+        "HTTP transport is running without TLS.  Set both env vars to enable TLS.",
+        extra={"request_id": "-"},
+    )
+    return None
+
+
+def _make_security_middleware() -> Any:
+    """Return an aiohttp ``@web.middleware`` that enforces body size + bearer auth.
+
+    The returned function is decorated with ``@web.middleware`` so aiohttp
+    registers it correctly.  It is constructed via a factory so that unit tests
+    can patch ``_resolve_auth_token`` / ``_no_auth_mode`` before the middleware
+    is called without needing to re-create the application.
+
+    Body-size gate (all verbs):
+    - If ``Content-Length`` header is present and > ``MAX_REQUEST_BODY_BYTES``,
+      reject immediately with 413 before reading any body bytes.
+    - For chunked or unknown-length bodies, ``client_max_size`` on the aiohttp
+      ``Application`` enforces the limit inside ``request.json()`` / ``.read()``
+      by raising ``HTTPRequestEntityTooLarge`` (which aiohttp converts to 413).
+
+    Auth gate (all verbs):
+    - If ``VMAFX_MCP_HTTP_NO_AUTH=1``, skip authentication entirely.
+    - If ``VMAFX_MCP_HTTP_TOKEN`` is unset (and NO_AUTH is also unset), reject
+      every request with 401.  No-token-configured means the operator has not
+      set up auth; refusing all traffic is safer than silently accepting it.
+    - Otherwise, the ``Authorization: Bearer <token>`` header must match
+      ``VMAFX_MCP_HTTP_TOKEN`` exactly (constant-time comparison is not required
+      here because the token is not a cryptographic secret used for signing —
+      it is a shared bearer token; timing attacks require a much more targeted
+      setup than this deployment model exposes).
+
+    Health probes (``/healthz``, ``/readyz``) and ``/metrics`` are **not** exempt
+    from auth because Kubernetes health-check source IPs should already be inside
+    the network trust boundary when token auth is required.
+    """
+    aiohttp = _require_aiohttp()
+
+    @aiohttp.web.middleware
+    async def _security_middleware(request: Any, handler: Any) -> Any:
+        # --- Body-size pre-flight via Content-Length header -------------------
+        content_length = request.content_length
+        if content_length is not None and content_length > MAX_REQUEST_BODY_BYTES:
+            return aiohttp.web.Response(
+                status=413,
+                content_type="application/json",
+                text=json.dumps(
+                    {
+                        "error": (
+                            f"Request body too large: Content-Length {content_length} "
+                            f"exceeds limit {MAX_REQUEST_BODY_BYTES}"
+                        )
+                    }
+                ),
+            )
+
+        # --- Auth gate --------------------------------------------------------
+        if not _no_auth_mode():
+            expected_token = _resolve_auth_token()
+            if expected_token is None:
+                # No token configured and no explicit opt-out: refuse all traffic.
+                _log.warning(
+                    "VMAFX_MCP_HTTP_TOKEN is unset and VMAFX_MCP_HTTP_NO_AUTH!=1; "
+                    "rejecting request (set the token or set NO_AUTH=1 to accept "
+                    "unauthenticated traffic)",
+                    extra={"request_id": "-"},
+                )
+                return aiohttp.web.Response(
+                    status=401,
+                    content_type="application/json",
+                    text=json.dumps(
+                        {
+                            "error": (
+                                "Unauthorized: server requires VMAFX_MCP_HTTP_TOKEN "
+                                "or VMAFX_MCP_HTTP_NO_AUTH=1"
+                            )
+                        }
+                    ),
+                )
+            auth_header = request.headers.get("Authorization", "")
+            if (
+                not auth_header.startswith("Bearer ")
+                or auth_header[len("Bearer ") :] != expected_token
+            ):
+                return aiohttp.web.Response(
+                    status=401,
+                    content_type="application/json",
+                    text=json.dumps({"error": "Unauthorized: invalid or missing Bearer token"}),
+                )
+
+        return await handler(request)
+
+    return _security_middleware
+
+
+# ---------------------------------------------------------------------------
 # Request handlers
 # ---------------------------------------------------------------------------
 
@@ -223,6 +421,11 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
 
     Returns the vmaf JSON payload on success; ``{"error": "..."}`` with
     status 400/500 on failure.
+
+    Body size is bounded to ``MAX_REQUEST_BODY_BYTES`` by the security
+    middleware (Content-Length pre-flight) and by ``client_max_size`` on the
+    ``Application`` (chunked bodies — raises ``HTTPRequestEntityTooLarge`` 413
+    inside ``request.json()``).
     """
     aiohttp = _require_aiohttp()
     from vmaf_mcp.server import ScoreRequest, _run_vmaf_score, _validate_path
@@ -351,9 +554,16 @@ def _make_app(metrics: dict[str, Any]) -> Any:
 
     The ``metrics`` dict is passed in so tests can inject a fresh registry
     without touching module-level state.
+
+    Security middleware (ADR-0967) is attached here so it runs for every route
+    including health probes and metrics.  The ``client_max_size`` parameter
+    enforces the body limit for chunked / unknown-length bodies.
     """
     aiohttp = _require_aiohttp()
-    app = aiohttp.web.Application()
+    app = aiohttp.web.Application(
+        middlewares=[_make_security_middleware()],
+        client_max_size=MAX_REQUEST_BODY_BYTES,
+    )
 
     # Bind metrics into the score handler via a closure.
     async def _score_handler(request: Any) -> Any:
@@ -371,17 +581,45 @@ async def _serve(port: int, metrics: dict[str, Any]) -> None:
 
     Separated from ``run_http_server`` so tests can call it directly
     without going through the signal-handler / shutdown machinery.
+
+    Bind host defaults to ``127.0.0.1`` (loopback-only) per ADR-0967.
+    Set ``VMAFX_MCP_HTTP_BIND=0.0.0.0`` to listen on all interfaces.
+    TLS is optional — set ``VMAFX_MCP_HTTP_TLS_CERT`` and
+    ``VMAFX_MCP_HTTP_TLS_KEY`` to enable.
     """
     aiohttp = _require_aiohttp()
     app = _make_app(metrics)
     runner = aiohttp.web.AppRunner(app)
     await runner.setup()
-    site = aiohttp.web.TCPSite(runner, "0.0.0.0", port)
+
+    bind_host = _resolve_bind_host()
+    ssl_context = _build_ssl_context()
+    scheme = "https" if ssl_context else "http"
+
+    site = aiohttp.web.TCPSite(runner, bind_host, port, ssl_context=ssl_context)
     await site.start()
     _log.info(
-        f"vmafx-server listening on http://0.0.0.0:{port}",
+        "vmafx-server listening on %s://%s:%d",
+        scheme,
+        bind_host,
+        port,
         extra={"request_id": "-"},
     )
+
+    # Emit startup warnings about auth / TLS state.
+    if not _no_auth_mode() and _resolve_auth_token() is None:
+        _log.warning(
+            "VMAFX_MCP_HTTP_TOKEN is unset — all requests will be rejected with 401. "
+            "Set the token or set VMAFX_MCP_HTTP_NO_AUTH=1 to accept unauthenticated traffic.",
+            extra={"request_id": "-"},
+        )
+    elif _no_auth_mode():
+        _log.warning(
+            "VMAFX_MCP_HTTP_NO_AUTH=1 — authentication disabled.  "
+            "Ensure network-level controls restrict access.",
+            extra={"request_id": "-"},
+        )
+
     # Hang here until the event loop is stopped by the SIGTERM handler.
     try:
         await asyncio.Event().wait()  # effectively forever

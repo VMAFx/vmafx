@@ -1,12 +1,18 @@
-"""Smoke tests for the vmafx-mcp HTTP transport (ADR-0701).
+"""Smoke tests for the vmafx-mcp HTTP transport (ADR-0701, ADR-0967).
 
 Tests use aiohttp's TestClient for lightweight in-process HTTP testing.
 No network access, no GPU, no vmaf binary required for health/metrics endpoints.
 The /v1/score endpoint is tested with a monkeypatched _run_vmaf_score coroutine.
+
+Security tests (ADR-0967):
+- Bearer auth enforcement (token set / wrong token / no token / NO_AUTH opt-out)
+- Body size limit (Content-Length pre-flight → 413)
+- Default bind host is 127.0.0.1
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -58,12 +64,68 @@ def _fresh_metrics() -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Fixtures
+#
+# All security fixtures are async generators (yield-based) so that the
+# patch.dict context manager remains active for the entire test body.
+# A non-generator fixture that does ``return await aiohttp_client(app)``
+# inside a ``with patch.dict(...)`` block exits the context manager before
+# the test body runs, silently restoring the env vars too early.
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture
+async def no_auth_client(aiohttp_client: Any) -> TestClient:
+    """TestClient with VMAFX_MCP_HTTP_NO_AUTH=1 (auth disabled)."""
+    with patch.dict(os.environ, {"VMAFX_MCP_HTTP_NO_AUTH": "1"}, clear=False):
+        app = ht._make_app(_fresh_metrics())
+        client = await aiohttp_client(app)
+        yield client
+
+
+@pytest_asyncio.fixture
+async def token_client(aiohttp_client: Any) -> TestClient:
+    """TestClient with VMAFX_MCP_HTTP_TOKEN=test-secret-token (auth enabled)."""
+    # Also clear NO_AUTH in case the test environment has it set.
+    with patch.dict(
+        os.environ,
+        {"VMAFX_MCP_HTTP_TOKEN": "test-secret-token"},
+        clear=False,
+    ):
+        os.environ.pop("VMAFX_MCP_HTTP_NO_AUTH", None)
+        app = ht._make_app(_fresh_metrics())
+        client = await aiohttp_client(app)
+        yield client
+
+
+@pytest_asyncio.fixture
+async def no_token_client(aiohttp_client: Any) -> TestClient:
+    """TestClient with no token and no NO_AUTH (locked-out mode)."""
+    # Remove only the auth env vars; preserve everything else (PATH etc.).
+    saved = {
+        k: os.environ.pop(k)
+        for k in ("VMAFX_MCP_HTTP_TOKEN", "VMAFX_MCP_HTTP_NO_AUTH")
+        if k in os.environ
+    }
+    try:
+        app = ht._make_app(_fresh_metrics())
+        client = await aiohttp_client(app)
+        yield client
+    finally:
+        os.environ.update(saved)
+
+
+# Legacy fixture used by the original tests — runs in NO_AUTH mode so they
+# pass without requiring a token.
 @pytest_asyncio.fixture
 async def test_client(aiohttp_client: Any) -> TestClient:
-    """Return an aiohttp TestClient connected to a fresh app instance."""
-    metrics = _fresh_metrics()
-    app = ht._make_app(metrics)
-    return await aiohttp_client(app)
+    """Return an aiohttp TestClient connected to a fresh app instance (NO_AUTH mode)."""
+    with patch.dict(os.environ, {"VMAFX_MCP_HTTP_NO_AUTH": "1"}, clear=False):
+        metrics = _fresh_metrics()
+        app = ht._make_app(metrics)
+        client = await aiohttp_client(app)
+        yield client
 
 
 # ---------------------------------------------------------------------------
@@ -226,3 +288,151 @@ async def test_score_returns_400_on_invalid_json(test_client: TestClient) -> Non
     assert resp.status == 400
     body = await resp.json()
     assert "error" in body
+
+
+# ---------------------------------------------------------------------------
+# Security tests (ADR-0967)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_request_rejected(token_client: TestClient) -> None:
+    """Request without Authorization header must return 401 when token is configured."""
+    resp = await token_client.get("/healthz")
+    assert resp.status == 401
+    body = await resp.json()
+    assert "error" in body
+    assert "Unauthorized" in body["error"]
+
+
+@pytest.mark.asyncio
+async def test_wrong_token_rejected(token_client: TestClient) -> None:
+    """Request with wrong Bearer token must return 401."""
+    resp = await token_client.get(
+        "/healthz",
+        headers={"Authorization": "Bearer wrong-token"},
+    )
+    assert resp.status == 401
+    body = await resp.json()
+    assert "Unauthorized" in body["error"]
+
+
+@pytest.mark.asyncio
+async def test_correct_token_accepted(token_client: TestClient) -> None:
+    """Request with correct Bearer token must be accepted (200 for /healthz)."""
+    resp = await token_client.get(
+        "/healthz",
+        headers={"Authorization": "Bearer test-secret-token"},
+    )
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_no_token_configured_rejects_all(no_token_client: TestClient) -> None:
+    """When VMAFX_MCP_HTTP_TOKEN is unset and NO_AUTH is not set, all requests return 401."""
+    resp = await no_token_client.get("/healthz")
+    assert resp.status == 401
+    body = await resp.json()
+    assert "error" in body
+    assert "VMAFX_MCP_HTTP_TOKEN" in body["error"]
+
+
+@pytest.mark.asyncio
+async def test_body_too_large_rejected_via_content_length(no_auth_client: TestClient) -> None:
+    """POST with Content-Length > 4 MiB must be rejected with 413."""
+    oversized = ht.MAX_REQUEST_BODY_BYTES + 1
+    resp = await no_auth_client.post(
+        "/v1/score",
+        data=b"x",  # actual bytes don't matter — Content-Length header drives the check
+        headers={
+            "Content-Type": "application/json",
+            "Content-Length": str(oversized),
+        },
+    )
+    assert resp.status == 413
+    body = await resp.json()
+    assert "error" in body
+    assert "too large" in body["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_body_at_limit_accepted(monkeypatch: Any) -> None:
+    """Content-Length exactly at MAX_REQUEST_BODY_BYTES must not trigger the 413 pre-flight.
+
+    Tests the middleware logic directly via a mock request so we avoid sending
+    4 MiB of actual TCP data (which would stall the TestClient connection).
+    """
+    import aiohttp.web as web
+
+    # Build the middleware under NO_AUTH so the auth gate is bypassed.
+    monkeypatch.setenv("VMAFX_MCP_HTTP_NO_AUTH", "1")
+    monkeypatch.delenv("VMAFX_MCP_HTTP_TOKEN", raising=False)
+
+    sentinel = web.Response(status=200, text="ok")
+    handler_called = []
+
+    async def _fake_handler(request: Any) -> Any:
+        handler_called.append(True)
+        return sentinel
+
+    middleware_fn = ht._make_security_middleware()
+
+    class _FakeHeaders:
+        def get(self, key: str, default: str = "") -> str:
+            return default
+
+    class _FakeRequest:
+        content_length: int | None = ht.MAX_REQUEST_BODY_BYTES  # exactly at limit
+        headers = _FakeHeaders()
+
+    result = await middleware_fn(_FakeRequest(), _fake_handler)
+    # The middleware must have passed through to the handler (not 413).
+    assert result is sentinel
+    assert handler_called == [True]
+
+
+@pytest.mark.asyncio
+async def test_explicit_no_auth_allows_anonymous(no_auth_client: TestClient) -> None:
+    """When VMAFX_MCP_HTTP_NO_AUTH=1, requests without Authorization are accepted."""
+    resp = await no_auth_client.get("/healthz")
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["status"] == "healthy"
+
+
+def test_default_bind_is_loopback(monkeypatch: Any) -> None:
+    """Without VMAFX_MCP_HTTP_BIND, _resolve_bind_host() returns 127.0.0.1."""
+    monkeypatch.delenv("VMAFX_MCP_HTTP_BIND", raising=False)
+    assert ht._resolve_bind_host() == "127.0.0.1"
+
+
+def test_explicit_bind_overrides_default(monkeypatch: Any) -> None:
+    """VMAFX_MCP_HTTP_BIND=0.0.0.0 must override the default loopback."""
+    monkeypatch.setenv("VMAFX_MCP_HTTP_BIND", "0.0.0.0")
+    assert ht._resolve_bind_host() == "0.0.0.0"
+
+
+def test_resolve_auth_token_returns_none_when_unset(monkeypatch: Any) -> None:
+    """_resolve_auth_token() returns None when VMAFX_MCP_HTTP_TOKEN is absent."""
+    monkeypatch.delenv("VMAFX_MCP_HTTP_TOKEN", raising=False)
+    assert ht._resolve_auth_token() is None
+
+
+def test_resolve_auth_token_returns_value_when_set(monkeypatch: Any) -> None:
+    """_resolve_auth_token() returns the token string when the env var is set."""
+    monkeypatch.setenv("VMAFX_MCP_HTTP_TOKEN", "my-secret")
+    assert ht._resolve_auth_token() == "my-secret"
+
+
+def test_no_auth_mode_false_by_default(monkeypatch: Any) -> None:
+    """_no_auth_mode() returns False when VMAFX_MCP_HTTP_NO_AUTH is absent."""
+    monkeypatch.delenv("VMAFX_MCP_HTTP_NO_AUTH", raising=False)
+    assert ht._no_auth_mode() is False
+
+
+def test_no_auth_mode_true_when_set(monkeypatch: Any) -> None:
+    """_no_auth_mode() returns True when VMAFX_MCP_HTTP_NO_AUTH=1."""
+    monkeypatch.setenv("VMAFX_MCP_HTTP_NO_AUTH", "1")
+    assert ht._no_auth_mode() is True
