@@ -20,3 +20,11 @@ crate-type = ["staticlib", "rlib"]
 
 [build-dependencies]
 cbindgen = "0.27"
+
+[package.metadata.cargo-machete]
+# cbindgen is consumed by build.rs to generate the C header that the
+# Meson custom_target copies into the build tree (see core/src/meson.build).
+# cargo-machete's --with-metadata mode does not introspect build.rs
+# symbol usage and flags it as unused; pin the ignore so future audits
+# stay clean. See ADR-0707 (TAD Rust pilot, cbindgen integration).
+ignored = ["cbindgen"]

@@ -33,3 +33,10 @@ Rust feature extractor crates (ADR-0707 cbindgen pilot).
    for the workspace member. New Rust feature extractors using the fork license MUST
    follow the same pattern (or use a plain `BSD-3-Clause` declaration that the parser
    recognises). See [ADR-0917](../../../../docs/adr/0917-cargo-deny-supply-chain-policy.md).
+6. **Codegen-only `build-dependencies` get a `[package.metadata.cargo-machete]`
+   ignore**. `cargo-machete --with-metadata` does not introspect `build.rs` symbol
+   usage, so build-only deps (`bindgen`, `cbindgen`, etc.) are mis-flagged as
+   unused. Every new Rust crate whose only `[build-dependencies]` are codegen
+   tools consumed by `build.rs` must add `[package.metadata.cargo-machete]`
+   with `ignored = [<dep-names>]` and an inline comment citing the usage.
+   See ADR-0904.

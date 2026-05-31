@@ -11,3 +11,10 @@ build = "build.rs"
 bindgen = "0.69"
 
 [dev-dependencies]
+
+[package.metadata.cargo-machete]
+# bindgen is consumed by build.rs to generate FFI bindings against
+# libvmaf.h. cargo-machete's --with-metadata mode does not introspect
+# build.rs symbol usage and flags it as unused; pin the ignore so
+# future audits stay clean. See ADR-0702 (vmafx-sys FFI crate).
+ignored = ["bindgen"]

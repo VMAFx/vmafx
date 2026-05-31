@@ -41673,3 +41673,11 @@ fragment per ADR-0221. The added `codecov/codecov-action` steps depend
 only on the Cobertura XML the existing gcovr step already produces;
 upstream sync cannot break this wiring because the gcovr job itself is
 fork-only.
+## ADR-0904 — cargo-machete build-dep ignores (2026-05-30)
+
+no rebase impact: REASON — Netflix/vmaf upstream has no Rust workspace.
+Both touched `Cargo.toml` files (`bindings/rust/vmafx-sys/Cargo.toml`,
+`core/src/feature/rust/tad/Cargo.toml`) live entirely in fork-local trees
+(ADR-0702, ADR-0707). The `[package.metadata.cargo-machete]` blocks add
+no-op metadata (`cargo` ignores keys it doesn't know) and cannot conflict
+with anything upstream might add later.
