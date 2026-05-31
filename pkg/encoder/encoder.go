@@ -97,6 +97,9 @@ func probeBitrateKbps(path, ffmpegBin string) float64 {
 	} else {
 		probeBin = filepath.Join(dir, "ffprobe")
 	}
+	// #nosec G204 -- probeBin is derived from ffmpegBin (operator-configured
+	// EncodeParams) via filepath.Join; `path` is the temp file produced by
+	// runEncode (os.CreateTemp output).
 	out, err := exec.Command(
 		probeBin,
 		"-v", "error",
@@ -170,7 +173,11 @@ func runEncode(src string, params EncodeParams, codec string, crfFlag string) (E
 	argv = append(argv, outPath)
 
 	t0 := time.Now()
-	cmd := exec.Command(argv[0], argv[1:]...) //nolint:gosec -- argv is constructed from validated inputs
+	// #nosec G204 -- argv[0] is ffmpegBin (operator-configured via
+	// EncodeParams); argv[1:] mixes fixed flags with `src` (validated by the
+	// caller / `pkg/storage` mount path), integer CRF, and the os.CreateTemp
+	// output path.
+	cmd := exec.Command(argv[0], argv[1:]...)
 	// Capture stderr for version extraction; stdout is discarded.
 	stderrBytes, runErr := cmd.CombinedOutput()
 	elapsed := time.Since(t0)

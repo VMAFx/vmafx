@@ -91,7 +91,11 @@ func (s *FUSEMountStorage) Prepare(ctx context.Context, sourceURI string) (strin
 		"asset", assetRel,
 	)
 
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec -- argv built from validated inputs
+	// #nosec G204 -- argv[0] is s.rcloneBin (configured at FUSEMountStorage
+	// construction from operator-supplied trusted config); argv[1:] mixes
+	// fixed literals (mount, --daemon, ...) with remoteRoot/mountDir already
+	// validated by the caller and os.MkdirTemp respectively.
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Stderr = os.Stderr
 
 	if startErr := cmd.Start(); startErr != nil {
@@ -172,7 +176,10 @@ func (s *FUSEMountStorage) unmount(mountDir string) error {
 		if bin == "umount" {
 			args = []string{mountDir}
 		}
-		out, err := exec.Command(bin, args...).CombinedOutput() //nolint:gosec -- args constructed from known safe paths
+		// #nosec G204 -- `bin` is one of {fusermount3, fusermount, umount} from
+		// the const-string loop above; `args` is either {"-u", mountDir} or
+		// {mountDir} where mountDir is the os.MkdirTemp output passed in.
+		out, err := exec.Command(bin, args...).CombinedOutput()
 		if err == nil {
 			return nil
 		}

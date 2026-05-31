@@ -84,7 +84,10 @@ func Detect() Capability {
 // runProbe runs cmd with args, respects probeTimeout, and returns stdout.
 // Returns ("", false) on any failure.
 func runProbe(cmd string, args ...string) (string, bool) {
-	c := exec.Command(cmd, args...) //nolint:gosec // cmd names are hard-coded constants
+	// #nosec G204 -- runProbe is only invoked with hard-coded vendor probe
+	// commands (nvidia-smi, rocm-smi, etc.) from this package; never with
+	// caller-supplied input.
+	c := exec.Command(cmd, args...)
 	c.WaitDelay = probeTimeout
 	out, err := c.Output()
 	if err != nil {

@@ -47,3 +47,20 @@ path (default) and the direct cgo path introduced by ADR-0931 (opt-in via
    accepts the four MCP-level model forms (`version=NAME`, `path=ABS`,
    bare stem, abs/rel path). New forms require a coordinated update to
    the Python server's resolver (`mcp-server/vmaf-mcp/src/vmaf_mcp/`).
+
+7. **gosec G304 / G204 contract** (every `os.ReadFile` / `os.Open` /
+   `exec.Command*` in `impl.go`): any path or command variable consumed
+   by these calls MUST either (a) round-trip through
+   `libvmaf.ValidatePath` (caller-supplied paths), (b) originate from
+   `os.CreateTemp` / `os.MkdirTemp` (locally-generated temp paths), or
+   (c) come from `libvmaf.FindBinary` / `findVmafTune` / an
+   `exec.LookPath` of a fixed binary name. Adding a new subprocess call
+   site or file read without one of these gates means the new path is
+   directly attacker-influenced; either add the validation or annotate
+   `// #nosec G204` / `// #nosec G304` with a citation that names the
+   protecting helper. The CI gate (`gosec -exclude-generated` in
+   `go-ci.yml`) blocks the merge until one of the two is true.
+   `cmd/vmafx-mcp/impl_gosec_test.go::TestDescribeModelRejectsTraversal`
+   pins the `describeModel` allowlist; equivalent regressions for new
+   tools belong next to it. See
+   [ADR-0983](../../docs/adr/0983-gosec-findings-fix-sweep.md).

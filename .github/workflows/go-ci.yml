@@ -56,6 +56,16 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
+
+      - name: gosec (exclude generated)
+        run: |
+          # Generated protobuf code (gen/) carries G103 (unsafe.Slice) and
+          # G115 (int -> uint32 cgo casts) by design; -exclude-generated
+          # filters those. Source files must remain at 0 findings.
+          gosec -exclude-generated -quiet ./...
+
       - name: go test (skip operator envtest — requires kubebuilder/etcd)
         run: |
           # Skip cmd/vmafx-operator: needs /usr/local/kubebuilder/bin/etcd

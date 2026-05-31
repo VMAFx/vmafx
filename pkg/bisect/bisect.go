@@ -157,7 +157,11 @@ func VMAFScoreFunc(vmafBin string) ScoreFunc {
 			"--output", tmpPath,
 			"--xml",
 		}
-		out, runErr := exec.Command(argv[0], argv[1:]...).CombinedOutput() //nolint:gosec
+		// #nosec G204 -- argv[0] is vmafBin (operator-configured at scorerFn
+		// construction); argv[1:] mixes fixed flags with `ref` / `distorted`
+		// (caller-controlled but bisect is a dev-time tool not an RPC surface)
+		// and the os.CreateTemp output path.
+		out, runErr := exec.Command(argv[0], argv[1:]...).CombinedOutput()
 		if runErr != nil {
 			return 0, fmt.Errorf("vmaf score failed: %w\n%s", runErr, string(out))
 		}
@@ -169,7 +173,9 @@ func VMAFScoreFunc(vmafBin string) ScoreFunc {
 // parseVMAFXMLMean reads the vmaf XML output and extracts the pooled mean
 // VMAF score. Returns an error if the file is missing or malformed.
 func parseVMAFXMLMean(xmlPath string) (float64, error) {
-	data, err := os.ReadFile(xmlPath) //nolint:gosec
+	// #nosec G304 -- xmlPath is the os.CreateTemp output passed to vmaf
+	// via "--output"; not caller-controlled.
+	data, err := os.ReadFile(xmlPath)
 	if err != nil {
 		return 0, fmt.Errorf("read vmaf output %q: %w", xmlPath, err)
 	}

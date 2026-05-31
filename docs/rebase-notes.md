@@ -7,6 +7,18 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## chore/gosec-findings-fix (2026-06-01, ADR-0983)
+
+no rebase impact: the Go surface (`cmd/`, `pkg/`, `gen/`,
+`api/vmafx/v1/`) is wholly fork-local. Netflix/vmaf has no Go code.
+The sweep touches only Go files plus `.github/workflows/go-ci.yml`,
+`Makefile` (new `lint-go` target), `docs/adr/`, `docs/research/`,
+`changelog.d/security/`, and the regression test
+`cmd/vmafx-mcp/impl_gosec_test.go`. No C, no SIMD, no GPU, no
+upstream-mirror file is touched.
+
+---
+
 ## test_svm_parser link + vmafx-operator audit (2026-05-31, fix/test-svm-parser-link-plus-operator-audit)
 
 **Files touched:**

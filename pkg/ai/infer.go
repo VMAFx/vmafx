@@ -108,7 +108,10 @@ func (r *Registry) Infer(modelName string, inputs []float64) ([]float64, error) 
 		return nil, fmt.Errorf("ai: marshal inputs: %w", err)
 	}
 
-	cmd := exec.Command(runnerPath, //nolint:gosec // path from PATH lookup
+	// #nosec G204 -- runnerPath comes from exec.LookPath("vmafx-ort-runner"),
+	// modelPath is resolved via r.ModelPath (registry-controlled), inputJSON
+	// is the JSON-marshalled []float64 inputs.
+	cmd := exec.Command(runnerPath,
 		"--model", modelPath,
 		"--inputs", string(inputJSON),
 	)
@@ -180,7 +183,11 @@ func (r *Registry) ListModelsSeq() iter.Seq[string] {
 // sidecar exists (callers can proceed without input validation).
 func (r *Registry) InputCount(modelName string) (int, error) {
 	sidecar := filepath.Join(r.modelDir, modelName+".json")
-	data, err := os.ReadFile(sidecar) //nolint:gosec // path is constructed from validated dir + name
+	// #nosec G304 -- sidecar is filepath.Join(r.modelDir, modelName+".json")
+	// where r.modelDir is registry-controlled at construction. Caller must
+	// have first resolved modelName via Registry.ModelPath which enforces
+	// the same prefix.
+	data, err := os.ReadFile(sidecar)
 	if os.IsNotExist(err) {
 		return 0, nil
 	}

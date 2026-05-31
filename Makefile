@@ -83,13 +83,24 @@ cythonize-deps: $(VENV_PIP)
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.
 # ============================================================================
 
-.PHONY: lint lint-c lint-py lint-sh lint-md format format-check sec sbom \
+.PHONY: lint lint-c lint-py lint-sh lint-md lint-go format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
         coverage coverage-html coverage-check assertion-density pr-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
-lint: lint-c lint-py lint-sh lint-md docs-fragments-check
+lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check
 	@echo "=== all lints passed ==="
+
+# Go security scan (gosec). Skips generated files by default; surfaces every
+# G* finding outside the gen/ tree. Source of truth for the gate added by
+# the gosec-findings-fix sweep — keep the touched-file rule honest.
+lint-go:
+	@command -v gosec >/dev/null || { \
+	    echo "gosec not found — install via 'go install github.com/securego/gosec/v2/cmd/gosec@latest'; skipping"; \
+	    exit 0; \
+	}
+	@echo "--- gosec (exclude-generated) ---"
+	@gosec -exclude-generated -quiet ./...
 
 # Fragment-tree drift check (ADR-0221). Verifies CHANGELOG.md and
 # docs/adr/README.md are in sync with their per-PR fragment trees.

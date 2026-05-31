@@ -700,3 +700,4 @@
 0977-core-tools-input-reader-safety
 0978-vmafx-server-bug-audit
 0980-markdown-lint-full-ruleset-discharge
+0983-gosec-findings-fix-sweep

@@ -508,6 +508,10 @@ func (q *SQLiteQueue) ListAll(_ context.Context, statuses []string) ([]*Job, err
 		for i, s := range statuses {
 			placeholders[i] = s
 		}
+		// #nosec G202 -- The concatenated fragment is repeatCommaQ output, a
+		// pure ",?,?,..." placeholder string of length len(statuses)-1; no
+		// user data enters the SQL text. Status values bind through
+		// `placeholders...` as parameterised arguments.
 		query := "SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), created_at, updated_at FROM jobs WHERE status IN (?" + repeatCommaQ(len(statuses)-1) + ") ORDER BY created_at ASC"
 		rows, err = q.db.Query(query, placeholders...)
 	}

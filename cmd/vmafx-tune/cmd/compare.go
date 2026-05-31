@@ -428,8 +428,11 @@ func writeOutput(path, content string) error {
 		_, err := fmt.Print(content)
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// G301: 0o750 keeps directories accessible to the owner group only.
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
-	return os.WriteFile(path, []byte(content), 0o644) //nolint:gosec
+	// G306: 0o600 — comparison reports may include path strings that leak
+	// dataset identifiers; restrict to the owner.
+	return os.WriteFile(path, []byte(content), 0o600)
 }
