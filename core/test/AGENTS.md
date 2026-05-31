@@ -34,7 +34,6 @@ and teardown.
 
 ## Ground rules
 
-<<<<<<< ours
 - **No dead `/* ... */` blocks in test files.** Commented-out code that cannot
   compile (duplicate declarations, type-mismatched calls, stale APIs) must be
   deleted rather than left in place. If a test scenario is genuinely planned but
@@ -42,7 +41,6 @@ and teardown.
   instead — not a multi-line block comment containing broken code. See
   [ADR-0970](../../docs/adr/0970-test-gpu-picture-pool-cleanup.md) for the
   precedent (Round 27 audit D.4: `test_ring_buffer_threaded` dead block deleted).
-=======
 - **Every `malloc` / `calloc` in a test must be NULL-checked immediately.**
   Two idiomatic patterns are accepted:
   1. *Consolidated guard* (multi-alloc SIMD tests): allocate all buffers,
@@ -55,7 +53,6 @@ and teardown.
   Do **not** dereference a `malloc` return value before checking it.
   An unchecked dereference is a latent SIGSEGV under ASan `MALLOC_PERTURB_=198`
   (ADR-0971). **Rebase-sensitive**: this rule applies to every new test file.
->>>>>>> theirs
 - **GPU tests must skip gracefully when no device is present.** Any test that
   calls `vmaf_cuda_state_init`, `vmaf_hip_state_init`, or equivalent GPU-init
   helpers must check the return value before proceeding. On failure (`err != 0`
