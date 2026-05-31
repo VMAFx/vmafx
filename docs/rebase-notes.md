@@ -6,6 +6,22 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## Test suite: NULL-check malloc sweep (2026-05-31, ADR-0971)
+
+**Files touched:**
+`core/test/test_ssimulacra2_simd.c`,
+`core/test/test_framesync.c`,
+`core/test/test_pic_preallocation.c`,
+`core/test/AGENTS.md`.
+
+**Rebase impact:** None. All changes are purely additive NULL-checks in
+test-only files. Netflix/vmaf does not carry these test files upstream
+(`test_ssimulacra2_simd.c`, `test_pic_preallocation.c` are fork-added;
+`test_framesync.c` has fork-local modifications). No C API or public ABI
+is touched. Subsequent upstream syncs do not interact with this change.
+
+---
+
 ## Rust `vmafx` safe binding crate scaffold (2026-05-31)
 
 **Files touched:**

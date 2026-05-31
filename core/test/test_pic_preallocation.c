@@ -405,6 +405,7 @@ static char *test_picture_pool_multithreaded()
         thread_data[i].fetch_count = fetches_per_thread;
         thread_data[i].error = 0;
         thread_data[i].data_ptrs = malloc(sizeof(void *) * fetches_per_thread);
+        mu_assert("malloc failed for data_ptrs", thread_data[i].data_ptrs);
 
         err = pthread_create(&threads[i], NULL, thread_fetch_worker, &thread_data[i]);
         mu_assert("problem creating thread", !err);
@@ -529,6 +530,7 @@ static char *test_picture_pool_stress()
         thread_data[i].fetch_count = fetches_per_thread;
         thread_data[i].error = 0;
         thread_data[i].data_ptrs = malloc(sizeof(void *) * fetches_per_thread);
+        mu_assert("malloc failed for data_ptrs", thread_data[i].data_ptrs);
 
         err = pthread_create(&threads[i], NULL, thread_fetch_worker, &thread_data[i]);
         mu_assert("problem creating thread", !err);

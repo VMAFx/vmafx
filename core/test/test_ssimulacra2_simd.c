@@ -397,6 +397,13 @@ static char *test_multiply(void)
     float *b = malloc(RGB_SZ * sizeof(float));
     float *out_ref = malloc(RGB_SZ * sizeof(float));
     float *out_simd = malloc(RGB_SZ * sizeof(float));
+    if (!a || !b || !out_ref || !out_simd) {
+        free(a);
+        free(b);
+        free(out_ref);
+        free(out_simd);
+        return "malloc failed";
+    }
     fill_random(a, RGB_SZ, -2.0f, 2.0f, 0xdeadbeefu);
     fill_random(b, RGB_SZ, -2.0f, 2.0f, 0x12345678u);
     ref_multiply_3plane(a, b, out_ref, W, H);
@@ -421,6 +428,12 @@ static char *test_xyb(void)
     float *lin = malloc(RGB_SZ * sizeof(float));
     float *out_ref = malloc(RGB_SZ * sizeof(float));
     float *out_simd = malloc(RGB_SZ * sizeof(float));
+    if (!lin || !out_ref || !out_simd) {
+        free(lin);
+        free(out_ref);
+        free(out_simd);
+        return "malloc failed";
+    }
     fill_random(lin, RGB_SZ, 0.0f, 1.0f, 0xabcdef01u);
     ref_linear_rgb_to_xyb(lin, out_ref, W, H);
     fn(lin, out_simd, W, H);
@@ -442,6 +455,12 @@ static char *test_downsample(void)
     const size_t out_plane = (size_t)((W + 1) / 2) * (size_t)((H + 1) / 2);
     float *out_ref = malloc(3 * out_plane * sizeof(float));
     float *out_simd = malloc(3 * out_plane * sizeof(float));
+    if (!in || !out_ref || !out_simd) {
+        free(in);
+        free(out_ref);
+        free(out_simd);
+        return "malloc failed";
+    }
     fill_random(in, RGB_SZ, -1.0f, 1.0f, 0x5a5a5a5au);
     unsigned ow_r = 0;
     unsigned oh_r = 0;
@@ -469,6 +488,14 @@ static char *test_ssim(void)
     float *s11 = malloc(RGB_SZ * sizeof(float));
     float *s22 = malloc(RGB_SZ * sizeof(float));
     float *s12 = malloc(RGB_SZ * sizeof(float));
+    if (!m1 || !m2 || !s11 || !s22 || !s12) {
+        free(m1);
+        free(m2);
+        free(s11);
+        free(s22);
+        free(s12);
+        return "malloc failed";
+    }
     fill_random(m1, RGB_SZ, -0.5f, 0.5f, 0x11111111u);
     fill_random(m2, RGB_SZ, -0.5f, 0.5f, 0x22222222u);
     fill_random(s11, RGB_SZ, 0.0f, 1.0f, 0x33333333u);
@@ -612,6 +639,13 @@ static char *test_edge(void)
     float *mu1 = malloc(RGB_SZ * sizeof(float));
     float *img2 = malloc(RGB_SZ * sizeof(float));
     float *mu2 = malloc(RGB_SZ * sizeof(float));
+    if (!img1 || !mu1 || !img2 || !mu2) {
+        free(img1);
+        free(mu1);
+        free(img2);
+        free(mu2);
+        return "malloc failed";
+    }
     fill_random(img1, RGB_SZ, -1.0f, 1.0f, 0x66666666u);
     fill_random(mu1, RGB_SZ, -1.0f, 1.0f, 0x77777777u);
     fill_random(img2, RGB_SZ, -1.0f, 1.0f, 0x88888888u);
@@ -651,6 +685,17 @@ static char *test_blur(void)
     float *scratch_simd = malloc(plane * sizeof(float));
     float *col_state_ref = malloc(6u * (size_t)W * sizeof(float));
     float *col_state_simd = malloc(6u * (size_t)W * sizeof(float));
+    if (!in || !out_ref || !out_simd || !scratch_ref || !scratch_simd || !col_state_ref ||
+        !col_state_simd) {
+        free(in);
+        free(out_ref);
+        free(out_simd);
+        free(scratch_ref);
+        free(scratch_simd);
+        free(col_state_ref);
+        free(col_state_simd);
+        return "malloc failed";
+    }
     fill_random(in, plane, -0.5f, 0.5f, 0xcafebabeu);
     ref_blur_plane(n2, d1, radius, col_state_ref, in, out_ref, scratch_ref, W, H);
     fn(n2, d1, radius, col_state_simd, in, out_simd, scratch_simd, W, H);
@@ -854,6 +899,12 @@ static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
     void *y_buf = calloc(y_sz, elem);
     void *u_buf = calloc(c_sz, elem);
     void *v_buf = calloc(c_sz, elem);
+    if (!y_buf || !u_buf || !v_buf) {
+        free(y_buf);
+        free(u_buf);
+        free(v_buf);
+        return "calloc failed";
+    }
     /* Fill with pseudo-random 8/16-bit pixel values. */
     uint32_t s = 0xabadcafeu ^ (uint32_t)(yuv_matrix * 7 + bpc * 13 + uw_div * 5 + uh_div);
     const unsigned maxv = (1u << bpc) - 1u;
@@ -898,6 +949,14 @@ static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
     const size_t out_sz = 3u * y_sz;
     float *out_ref = malloc(out_sz * sizeof(float));
     float *out_simd = malloc(out_sz * sizeof(float));
+    if (!out_ref || !out_simd) {
+        free(y_buf);
+        free(u_buf);
+        free(v_buf);
+        free(out_ref);
+        free(out_simd);
+        return "malloc failed";
+    }
     ref_picture_to_linear_rgb(yuv_matrix, bpc, LW, LH, planes, out_ref);
     fn(yuv_matrix, bpc, LW, LH, planes, out_simd);
     // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison,cert-exp42-c,cert-flp37-c) ADR-0163 byte-exact

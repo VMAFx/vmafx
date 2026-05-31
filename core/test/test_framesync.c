@@ -107,6 +107,7 @@ static char *test_framesync_create_process_and_destroy(void)
     for (frame_index = 0; frame_index < NUM_TEST_FRAMES; frame_index++) {
         uint8_t *pic_a = malloc(FRAME_BUF_LEN);
         uint8_t *pic_b = malloc(FRAME_BUF_LEN);
+        mu_assert("malloc failed for pic_a/pic_b", pic_a && pic_b);
 
         (void)fprintf(stderr, "processing frame %d\r", frame_index);
 
