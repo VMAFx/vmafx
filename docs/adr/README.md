@@ -715,6 +715,145 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0762](0762-cuda-ciede-ldg.md) | CUDA CIEDE2000 8bpc/16bpc — `__ldg()` read-only cache routing + `__launch_bounds__` (F3 fix, mirrors ADR-0754) | Accepted | 2026-05-29 | cuda, performance, ciede, fork-local |
 | [ADR-0795](0795-prev-ref-thread-safety.md) | Clarify and harden `VmafFeatureExtractor.prev_ref` thread-safety invariant: rename shared-fex pointer to `shared_fex`, add `assert(td->fex_ctx[i]->fex != shared_fex)`, and add ADR-0795 citations at both write sites documenting why no race exists in BATCH_THREADING and pool-based paths. | Accepted | 2026-05-29 | threading, feature-extractor, correctness, fork-local |
 | [ADR-0805](0805-lint-config-tighten-2026-05-29.md) | Lint config tightening: fix `.clang-tidy` HeaderFilterRegex (`libvmaf/` → `core/`), bump clang-format/ruff hooks, add `UP` pyupgrade rule, auto-fix 48 violations | Accepted | 2026-05-29 | lint, build, python, ci, fork-local |
+| [ADR-0340](0340-multi-corpus-aggregation.md) | Multi-corpus aggregation for the FR-regressor / predictor v2 trainer | Accepted | ai, training, corpus, fork-local |
+| [ADR-0409](0409-ffmpeg-patches-surface-gate.md) | Automated CI gate for the ffmpeg-patches surface-sync rule (CLAUDE.md §12 r14) | Accepted | ci, ffmpeg-integration, process, rule-enforcement |
+| [ADR-0445](0445-vulkan-pipeline-cache-persistence.md) | Persistent VkPipelineCache for Vulkan compute backend | Accepted | vulkan, gpu, performance, pipeline-cache, fork-local |
+| [ADR-0453](0453-psnr-enable-chroma-gpu-parity.md) | PSNR `enable_chroma` option parity across all GPU backends | Accepted | cuda, sycl, vulkan, psnr, option-parity, bug |
+| [ADR-0454](0454-vif-cuda-smem-staging.md) | VIF CUDA shared-memory staging for horizontal and vertical filter passes | Proposed | cuda, gpu, vif, performance, smem, fork-local |
+| [ADR-0455](0455-k150k-split-trainer-promotion.md) | KonViD-150k k150ka/k150kb split promotion into the MOS-head trainer | Accepted | ai, training, corpus, konvid, fork-local |
+| [ADR-0457](0457-onnx-blobs-to-github-releases.md) | model/tiny/*.onnx blobs ≥1MB live in GitHub Releases, not git | Accepted | ai, model-storage, repo-size, fork-local |
+| [ADR-0458](0458-sycl-cambi-ssim-slm-staging.md) | SYCL CAMBI queue-sync collapse + SSIM horizontal SLM staging | Accepted | sycl, perf, cambi, ssim, gpu, fork-local |
+| [ADR-0461](0461-cli-validate-dimensions-chroma.md) | CLI validates positive dimensions and chroma-alignment on input videos | Accepted | cli, validation, correctness |
+| [ADR-0463](0463-adm-p-norm-fast-path-vif-arm64-malloc-hoist.md) | ADM p-norm fast-path split and VIF scalar-fallback malloc hoist | Accepted | perf, adm, vif, simd, cpu, fork-local |
+| [ADR-0464](0464-cambi-cuda-smem-tile.md) | CAMBI CUDA spatial-mask shared-memory tile | Accepted | cuda, gpu, cambi, performance, kernel, fork-local |
+| [ADR-0468](0468-hip-float-adm-real-kernel.md) | HIP float_adm real kernel (ninth HIP consumer) | Accepted | hip, build, feature-extractor |
+| [ADR-0469](0469-float-psnr-hip-enable-chroma.md) | `float_psnr` HIP twin — wire `enable_chroma` option | Accepted | hip, psnr, option-parity |
+| [ADR-0470](0470-vulkan-pipeline-cache.md) | Disk-Persistent VkPipelineCache for Vulkan Feature Extractors | Accepted | vulkan, perf, build |
+| [ADR-0471](0471-integer-psnr-hip-enable-chroma.md) | Add `enable_chroma` to `integer_psnr_hip` (chroma parity with CUDA/SYCL/Vulkan twins) | Accepted | hip, psnr, option-parity, chroma, fork-local |
+| [ADR-0480](0480-bootstrap-name-builder-dedup.md) | Bootstrap Score Name-Builder Deduplication | Accepted | refactor, predict, libvmaf |
+| [ADR-0481](0481-adm-p-norm-hardcoded-deferral.md) | ADM p-norm Parameter Hardcoded at 3.0 — Deferral Decision | Accepted | adm, predict, ai, testing |
+| [ADR-0482](0482-vmaf-pre-device-parity.md) | Expand vmaf_pre FFmpeg filter device strings to match full VmafDnnDevice enum | Accepted | ffmpeg, ai, build |
+| [ADR-0484](0484-kernel-scaffolding-hip-metal-doc.md) | Extend kernel-scaffolding.md with HIP and Metal lifecycle contract | Accepted | docs, hip, metal, gpu, fork-local |
+| [ADR-0485](0485-kernel-lifecycle-zero-dedup.md) | Extract `VMAF_LIFECYCLE_ZERO` macro to eliminate struct-init duplication across HIP and Metal kernel templates | Accepted | cuda, framework, lint, build |
+| [ADR-0486](0486-context-api-contract-doc.md) | Codify the three-function GPU backend context-API contract in docs | Accepted | docs, gpu, hip, metal, vulkan, cuda, api, fork-local |
+| [ADR-0487](0487-integer-adm-min-val-gpu-parity.md) | Wire adm_min_val option into integer_adm GPU backends | Accepted | cuda, sycl, vulkan, adm, parity |
+| [ADR-0488](0488-gpu-dispatch-env-shared-snapshot.md) | Shared once-snapshot helper for GPU dispatch env variables | Accepted | gpu, cuda, vulkan, sycl, dispatch, threading, refactor, fork-local |
+| [ADR-0489](0489-cambi-sycl-event-chain.md) | CAMBI SYCL — Replace GPU-to-GPU `q.wait()` Calls with Event Chains (SY-1) | Accepted | sycl, gpu, cambi, performance, fork-local |
+| [ADR-0490](0490-float-ms-ssim-metal-port.md) | float_ms_ssim Metal port | Accepted | metal, ms-ssim, float, apple-silicon, fork-local |
+| [ADR-0491](0491-motion-dedicated-doc-page.md) | Add dedicated `docs/metrics/motion.md` reference page | Accepted | docs, metrics, motion, fork-local |
+| [ADR-0493](0493-test-yuv-fixture-md5-verification.md) | Test YUV fixtures must be md5-verified, not just present-by-name | Accepted | testing, ci, fixtures, golden-data |
+| [ADR-0494](0494-python-test-suite-restoration.md) | Restore the non-golden Python test suite to green | Accepted | testing, ci, python, regression-recovery |
+| [ADR-0495](0495-mcp-probe-bug-fixes.md) | MCP server probe-driven bug-fix cluster (2026-05-17) | Accepted | mcp, ai, testing, regression-recovery |
+| [ADR-0496](0496-prefer-dev-mcp-container-rule.md) | Default to the `vmaf-dev-mcp` container for all vmaf / vmaf-tune / ai / MCP work | Accepted | tooling, container, dev-experience, project-rule, fork-local |
+| [ADR-0497](0497-vmaf-tune-bbb-e2e-bug-cluster.md) | vmaf-tune BBB end-to-end bug cluster (compare / ladder / report) | Accepted | vmaf-tune, cli, bugfix, docs |
+| [ADR-0498](0498-vmaf-tune-bbb-e2e-v2-bug-cluster.md) | vmaf-tune BBB end-to-end v2 bug cluster + explicit-backend semantics | Accepted | vmaf-tune, cli, libvmaf, bugfix, docs, container |
+| [ADR-0499](0499-vmaf-tune-ladder-reference-decode-v3.md) | vmaf-tune ladder must decode container/Y4M references before scoring | Accepted | vmaf-tune, ladder, corpus, ffmpeg, docs |
+| [ADR-0500](0500-vif-perf-lut-shrink-and-filter-cache.md) | VIF log2 LUT Shrink and Gaussian Filter Cache | Accepted | simd, perf, integer-vif, float-vif |
+| [ADR-0501](0501-vmaf-tune-bbb-e2e-v4-bug-cluster.md) | vmaf-tune ladder cross-resolution scoring + report degraded flag | Accepted | vmaf-tune, ladder, corpus, report, vmaf-cli, docs |
+| [ADR-0502](0502-adm-decouple-gather-prefetch.md) | ADM decouple gather prefetch (Approach B) | Accepted | simd, perf, adm, avx512, fork-local |
+| [ADR-0503](0503-vif-subsample-rd-8-loop-fission.md) | `vif_subsample_rd_8_avx512` Loop Fission to Reduce ZMM Register Spill | Accepted | simd, performance, avx512, vif |
+| [ADR-0504](0504-float-convolution-avx512-port.md) | AVX-512F port of float separable convolution scanlines | Accepted | simd, performance, build |
+| [ADR-0505](0505-vmaf-tune-bbb-e2e-v5-bug-cluster.md) | vmaf-tune ladder container-source encode + full per-CRF sample cloud | Accepted | vmaf-tune, ladder, corpus, encode, vmaf-cli, docs |
+| [ADR-0506](0506-vmaf-tune-bbb-e2e-v6-bug-cluster.md) | vmaf-tune ladder duration clipping, raw-YUV cross-res decode, CLI exit code | Accepted | vmaf-tune, ladder, corpus, encode, cli, docs |
+| [ADR-0508](0508-vmaf-tune-ladder-pass1-stats-duration-clip.md) | vmaf-tune ladder pass-1 stats argv honours --duration | Accepted | vmaf-tune, ladder, encode, bugfix |
+| [ADR-0509](0509-vmaf-tune-compare-container-source-framerate-probe.md) | vmaf-tune compare auto-probes container-source framerate / duration | Accepted | vmaf-tune, compare, bisect, encode, vmaf-cli |
+| [ADR-0510](0510-chug-extract-vmaf-alignment-fr-from-nr-guard.md) | CHUG re-extract VMAF-alignment fix — FR-corpus guard on the FR-from-NR extractor | Accepted | ai, corpus, chug, k150k, extractor, training-data, regression-guard |
+| [ADR-0511](0511-mcp-backend-probe-allowlist-and-ladder-backend.md) | MCP backend probe, default allowlist, and `vmaf-tune ladder --score-backend` (2026-05-18) | Accepted | mcp, vmaf-tune, ai, dx, bugfix |
+| [ADR-0512](0512-vulkan-vif-two-variant-shader.md) | Vulkan VIF Two-Variant Compute Shader (fp32 Auto-Fallback) | Accepted | vulkan, vif, gpu-parity, precision, compatibility |
+| [ADR-0516](0516-vmaf-tune-compare-rate-quality-sweep.md) | `vmaf-tune compare` multi-target rate-quality sweep (schema v2) (2026-05-18) | Accepted | vmaf-tune, ux, dx, schema-evolution |
+| [ADR-0517](0517-mcp-run-benchmark-repair.md) | Repair MCP `run_benchmark` tool — drop per-call args, inject VMAF_BIN, guard set -u in bench_all.sh | Accepted | mcp, bugfix, fork-local, benchmark |
+| [ADR-0518](0518-tiny-model-loader-external-data-and-feature-rank.md) | Tiny-model loader accepts external-data and feature-vector ONNX | Accepted | ai, dnn, loader, bug-fix |
+| [ADR-0521](0521-msvc-posix-gating-vif-avx512-yuv-input.md) | MSVC portability gating — `vif_avx512.c` noinline/noclone + `yuv_input.c` S_ISREG/fstat | Accepted | ci, build, windows, msvc, simd, tools, portability, fork-local, bugfix |
+| [ADR-0522](0522-tiny-codec-preset-crf-cli-flags.md) | `--tiny-codec` / `--tiny-preset` / `--tiny-crf` populate codec one-hot block | Accepted | cli, ai, dnn, tiny-model |
+| [ADR-0525](0525-aiutils-subprocess-dedup.md) | Extract `run_cmd` subprocess helper into `aiutils` | Accepted | ai, refactor, fork-local |
+| [ADR-0526](0526-ms-ssim-sycl-enable-lcs-parity.md) | Add enable_lcs and enable_chroma to float_ms_ssim SYCL twin | Accepted | sycl, parity, options |
+| [ADR-0527](0527-bvi-dvc-pre-extracted-dir-input.md) | Accept pre-extracted BVI-DVC YUVs via `--bvi-dir` | Accepted | ai, corpus, cli, docs |
+| [ADR-0529](0529-dev-container-whole-dri-bind.md) | Replace `/dev/dri/by-path` bind with whole `/dev/dri` bind in dev container | Accepted | build, ci, cuda, sycl, agents |
+| [ADR-0531](0531-per-shot-bitrate-kbps-and-last-shot-chart.md) | Per-shot plan emits bitrate_kbps + chart shows last shot | Accepted | vmaf-tune, per-shot, report, chart |
+| [ADR-0532](0532-per-shot-segments-readonly-cwd.md) | tune-per-shot tolerates read-only CWD when writing segments | Accepted | vmaf-tune, cli, robustness, container |
+| [ADR-0534](0534-compare-rate-quality-chart-from-bisect-samples.md) | vmaf-tune compare emits + renders rate-quality curve from per-iteration bisect samples | Accepted (target-VMAF defaults superseded by [ADR-0538](0538-premium-vmaf-target-defaults-and-bisect.md)) | vmaf-tune, compare, report, chart, ux |
+| [ADR-0535](0535-adr-atomic-allocator.md) | Atomic ADR Number Allocator with Cross-Branch Claim | Accepted | ci, docs, git, agents, tooling |
+| [ADR-0536](0536-per-shot-bitrate-predicate-chain.md) | Per-shot predicate threads bitrate_kbps through bisect sidecar (PR #1290 follow-up) | Accepted | vmaf-tune, per-shot, bugfix |
+| [ADR-0538](0538-premium-vmaf-target-defaults-and-bisect.md) | vmaf-tune compare ships premium-archival --target-vmafs default + bisect reaches VMAF 95+ | Accepted | vmaf-tune, compare, bisect, defaults, premium-archival |
+| [ADR-0541](0541-dev-container-sycl-hip-runtime-fix.md) | Pin dev-MCP container Intel NEO + ROCm runtimes to versions matching the host kernel | Accepted | build, dev, sycl, hip, container, gpu |
+| [ADR-0543](0543-adr-0498-enforcement-hardening.md) | ADR-0498 enforcement hardening — distinct exit code + structured JSON error + per-feature gate | Accepted | cli, libvmaf, bugfix, backend, exit-code, extends-adr-0498 |
+| [ADR-0545](0545-wire-or-delete-dead-extractor-files.md) | Wire or delete dead Vulkan/Metal feature-extractor source files | Accepted | vulkan, metal, build, housekeeping, dead-code |
+| [ADR-0546](0546-audit-bundle-vulkan-saliency-modelcard.md) | Audit bundle — Vulkan motion dispatch wiring, saliency hard-fail, model-card placeholder | Accepted | vulkan, vmaf-tune, ai, build, docs |
+| [ADR-0547](0547-ai-script-env-vars.md) | VMAF_<NAME>_DIR env-var overrides for ai/scripts corpus paths + drop cli.py.bak | Accepted | ai, scripts, container, hygiene, fork-local |
+| [ADR-0548](0548-vmaf-tune-full-file-and-no-bisect.md) | vmaf-tune tune-per-shot accepts container sources directly; compare gains --no-bisect mode | Accepted | vmaf-tune, cli, ergonomics, compare, per-shot |
+| [ADR-0549](0549-audit-cleanup-bundle-2.md) | Audit cleanup bundle 2 | Accepted | docs, build, container, housekeeping, fork-local |
+| [ADR-0550](0550-tiny-model-auto-resize.md) | Auto-resize input plane to NR tiny-model dims + `--tiny-resize` flag | Accepted | ai, cli, dnn, api |
+| [ADR-0551](0551-local-explainer-hang-diagnosis.md) | VCQ-223 LocalExplainer CI timeout — root cause and fix path | Proposed | python, test, local-explainer, performance, bugfix, fork-local |
+| [ADR-0552](0552-hip-integer-vif-deterministic-reduce.md) | Deterministic wavefront reduction for `integer_vif_hip` horizontal kernels | Accepted | hip, gpu, kernel, vif, parity, correctness, fork-local |
+| [ADR-0556](0556-python-mcp-ai-audit-2026-05-18.md) | Python / MCP / AI silent-fallback audit fixes (2026-05-18) | Accepted | python, mcp, ai, vmaf-tune, correctness, audit |
+| [ADR-0559](0559-feature-coverage-audit.md) | Feature Coverage Audit — Add speed_chroma + speed_temporal to Extraction Scripts (HDR-model prep) | Accepted | ai, feature-extraction, speed, hdr, corpus, fork-local |
+| [ADR-0561](0561-hip-gfx-targets-fallback-widening.md) | Widen HIP `gfx_targets` hardcoded fallback | Accepted | hip, build, gfx, rocm, meson, fork-local |
+| [ADR-0562](0562-local-explainer-hang-fix.md) | VCQ-223 LocalExplainer hang fix — cap neighbor_samples in test runner | Accepted | python, test, local-explainer, performance, bugfix, fork-local |
+| [ADR-0563](0563-hip-extractor-audit-verification.md) | HIP extractor audit — verification of 9 remaining scaffold claims | Accepted | hip, gpu, audit, parity, fork-local |
+| [ADR-0564](0564-integer-ssim-gpu-real-kernels.md) | Real integer_ssim GPU kernels (CUDA, HIP, SYCL) — replace silent float_ssim substitution | Accepted | cuda, hip, sycl, ssim, kernel, correctness, gpu, fork-local |
+| [ADR-0566](0566-hip-vif-per-feature-places4-gate.md) | HIP VIF per-feature parity gate: places=4 (supersedes ADR-0537 §follow-up) | Accepted | hip, vif, parity, gate, svm, correctness, fork-local |
+| [ADR-0573](0573-dev-container-ubuntu-26-04-with-cuda-13-2.md) | Dev-mcp container — ubuntu:26.04 + CUDA 13.2 + hipcc + ocloc | Accepted | build, ci, cuda, container, dev |
+| [ADR-0574](0574-hdr-features-cuda-twins-phase-1.md) | CUDA Twins for HDR-Model Features — Phase 1 (aim, adm3) | Accepted | cuda, feature, hdr, adm |
+| [ADR-0575](0575-windows-msvc-stat-compat-include-order.md) | Fix yuv_input.c stat compat — include-order and _MSC_VER guard | Accepted | ci, build, windows, msvc, mingw, tools, portability, bugfix, fork-local |
+| [ADR-0576](0576-ffmpeg-patches-n811-full-feature-exposure.md) | ffmpeg-patches n8.1.1 full-feature-exposure sync | Accepted | ffmpeg, build, ci, cuda, sycl, hip, vulkan, metal |
+| [ADR-0577](0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md) | vmaf-tune bisect decode concurrency cap and aggressive workdir cleanup | Accepted | vmaf-tune, compare, bisect, disk-space, concurrency, fork-local |
+| [ADR-0579](0579-vmaf-tune-auto-execute-mode.md) | `vmaf-tune auto --execute` — Phase F real encode/score execution mode | Accepted | vmaf-tune, phase-f, encode, score, cli, fork-local |
+| [ADR-0580](0580-float-ansnr-enable-chroma.md) | float_ansnr enable_chroma option | Accepted | feature-extractor, metrics |
+| [ADR-0581](0581-integer-vif-enable-chroma.md) | Add `enable_chroma` option to `integer_vif` | Accepted | feature, vif, chroma |
+| [ADR-0582](0582-ms-ssim-enable-db-clip-db-gpu-parity.md) | MS-SSIM `enable_db` and `clip_db` option parity on CUDA and SYCL backends | Accepted | cuda, sycl, ms_ssim, option-parity, bug |
+| [ADR-0584](0584-moment-sve2-port.md) | `float_moment` SVE2 port | Accepted | arm64, sve2, simd, float_moment, bit-exactness |
+| [ADR-0585](0585-psnr-hvs-vulkan-enable-chroma.md) | Add `enable_chroma` option to `psnr_hvs_vulkan` | Accepted | psnr-hvs, vulkan, option-parity, metrics, fork-local |
+| [ADR-0586](0586-integer-adm-vulkan-canonical-rename.md) | Introduce integer_adm_vulkan.c as canonical Vulkan integer ADM extractor | Accepted | vulkan, build, feature-extractor |
+| [ADR-0587](0587-metal-cambi-real-kernel.md) | Real Metal Compute Kernels for CAMBI | Accepted | metal, cambi, gpu, build |
+| [ADR-0588](0588-vmaf-tune-executor-pershot-saliency.md) | vmaf-tune executor — per-shot and saliency execution modes | Accepted | vmaf-tune, executor, per-shot, saliency, phase-f, fork-local |
+| [ADR-0590](0590-ms-ssim-enable-db-gpu-parity.md) | Wire `enable_db` / `clip_db` into the CUDA and SYCL MS-SSIM twins | Accepted | cuda, sycl, ms-ssim, option-parity, bug, fork-local |
+| [ADR-0591](0591-restore-rfe-hw-flags-cache.md) | Restore `rfe_hw_flags` per-frame bitmask cache after PR #1067 clobber | Accepted | cuda, perf, bug, libvmaf |
+| [ADR-0592](0592-hip-float-vif-stub-removal.md) | Remove float_vif_score weak HSACO stub now that real HIP kernel ships | Accepted | hip, build, cleanup |
+| [ADR-0593](0593-hip-psnr-moment-kernels-real.md) | HIP integer_moment kernel — register real HSACO blob alongside psnr / psnr_hvs | Accepted | hip, gpu, parity, build |
+| [ADR-0595](0595-codec-adapter-two-pass-real.md) | Real two-pass argv for all 14 codec adapters | Accepted | vmaf-tune, codec, encode, ffmpeg |
+| [ADR-0596](0596-hip-cuda-dead-tu-cleanup.md) | Delete orphan and duplicate HIP/CUDA translation units | Accepted | hip, cuda, build, cleanup |
+| [ADR-0597](0597-integer-vif-luma-only-clarification.md) | `integer_vif` is luma-only across every backend; CUDA `enable_chroma` is a documented no-op | Accepted | cuda, vif, parity, docs, audit-disposition |
+| [ADR-0598](0598-vmaftune-workdir-relocation.md) | vmaf-tune workdir relocation — disk-space preflight + VMAFTUNE_WORKDIR env var | Accepted | vmaf-tune, bugfix, cli, container, workspace |
+| [ADR-0599](0599-cross-backend-parity-matrix-2026-05-18.md) | Cross-Backend Parity Audit — Full Extractor Matrix (2026-05-18) | Accepted | cuda, sycl, vulkan, hip, ci, parity, audit |
+| [ADR-0602](0602-macos-vmaf-write-output-segv.md) | macOS SIGSEGV in vmaf_write_output — pic_cnt underflow + missing vmaf NULL guard | Accepted | bugfix, macos, output, portability, correctness, fork-local |
+| [ADR-0603](0603-ubuntu-26-04-fallout-fixes.md) | Ubuntu 26.04 (Resolute Raccoon) fallout fixes — CUDA 13.2, Python 3.14, apt renames | Accepted | build, cuda, ci, python, supply-chain |
+| [ADR-0604](0604-rocm-renovate-manager.md) | Add Renovate customManager for ROCm apt-repo tracking | Accepted | build, container, supply-chain, hip, renovate |
+| [ADR-0605](0605-renovate-custommgr-dev-image.md) | Renovate customManagers for all dev/Containerfile pinned dependencies | Accepted | build, container, supply-chain, renovate, cuda, sycl, hip, intel, onnx |
+| [ADR-0606](0606-macos-vmaf-write-output-segv-deep-fix.md) | macOS SIGSEGV deep-fix in output.c writers (PR #1403 follow-up) | Accepted | bugfix, macos, output, portability, correctness, fork-local |
+| [ADR-0607](0607-vmaftune-shared-ref-yuv-decode-once.md) | vmaf-tune compare: decode reference YUV once for the entire run | Accepted | vmaf-tune, performance, disk-space, compare |
+| [ADR-0613](0613-dynamic-optimizer.md) | Dynamic Optimizer — Joint Shot-Boundary + CRF Co-Optimisation | Proposed | ai, planning, vmaf-tune |
+| [ADR-0614](0614-per-shot-abr-rendition.md) | Per-Shot ABR Rendition Selection | Proposed | ai, planning, vmaf-tune |
+| [ADR-0615](0615-fast-nr-prescoring.md) | Fast NR Pre-Scoring for CRF Bisect Acceleration | Proposed | ai, planning, vmaf-tune |
+| [ADR-0616](0616-vmaf-neg-integration.md) | VMAF NEG Integration into vmaf-tune | Proposed | ai, planning, vmaf-tune, docs |
+| [ADR-0617](0617-cross-shot-complexity-weighting.md) | Cross-Shot Complexity Weighting and Title-Level Quality Constraints | Proposed | ai, planning, vmaf-tune |
+| [ADR-0618](0618-content-aware-classifier.md) | Content-Aware Classifier for Encoder Routing | Proposed | ai, planning, vmaf-tune, dnn |
+| [ADR-0620](0620-scaffold-audit-p0-silent-correctness-fixes.md) | Scaffold audit P0 — three silent-correctness fixes | Accepted | python, correctness, bugfix, fork-local |
+| [ADR-0626](0626-macos-ci-tmate-debug-on-failure.md) | SSH-into-runner debug session on macOS CI failure via tmate | Accepted | ci, macos, debug, fork-local |
+| [ADR-0628](0628-adr-allocator-remote-aware.md) | Remote-aware ADR number allocator — cross-worktree collision prevention | Accepted | adr, tooling, ci, governance, agents, fork-local |
+| [ADR-0635](0635-ci-warning-omnibus-2026-05-19.md) | CI Warning Omnibus (2026-05-19) | Accepted |  |
+| [ADR-0638](0638-mcp-p1-vmaftune-extractors-models-progress.md) | MCP P1 surface — vmaf-tune integration, list_extractors, describe_model, progress notifications | Accepted | mcp, vmaf-tune, api, docs |
+| [ADR-0639](0639-scaffold-audit-p1-feature-plumbing-fixes.md) | Scaffold-audit P1 — backend precheck, HIP picture, mobilesal bpc, DNN multi-output | Accepted | python, hip, ai, dnn, docs, vmaf-tune |
+| [ADR-0640](0640-tiny-ai-netflix-training-scaffold-2026-05-20.md) | Tiny-AI training on the original Netflix VMAF training corpus (2026-05-20 scaffold iteration) | Proposed | ai, docs, workspace, mcp |
+| [ADR-0657](0657-second-opinion-feature-materializer.md) | Second-Opinion Feature Materializer | Accepted | ai, signal-mix, mos, external-bench |
+| [ADR-0679](0679-ci-draft-automerge-gate.md) | CI Draft Auto-Merge Gate | Accepted | ci, github-actions, merge-train, adr, fork-local |
+| [ADR-0719](0719-vmafx-node-rclone-integration.md) | vmafx-node rclone Integration — Remote-Asset Streaming Without Disk Materialisation | Accepted | architecture, go, node, rclone, storage, ffmpeg, phase4b, fork-local |
+| [ADR-0720](0720-cpp23-pilot-mem.md) | C++23 Wave-1 Pilot — `mem.c` conversion | Accepted | build, c++, cpp23, refactor, internals, fork-local, vmafx-rebrand |
+| [ADR-0721](0721-cpp23-pilot-opt.md) | C++23 Pilot Wave 1 — `opt.c` conversion | Accepted | build, c++, cpp23, refactor, internals, fork-local, vmafx-rebrand |
+| [ADR-0723](0723-cpp23-pilot-fex-ctx-vector.md) | C++23 Pilot — `fex_ctx_vector.c` Conversion (Wave 2) | Accepted | build, c++, cpp23, refactor, internals, fork-local, vmafx-rebrand |
+| [ADR-0725](0725-cpp23-pilot-log-v2.md) | C++23 Pilot — `log.c` conversion (real C++23, supersedes ADR-0722) | Accepted | build, c++, cpp23, refactor, internals, fork-local, vmafx-rebrand |
+| [ADR-0726](0726-drop-vulkan-backend.md) | Drop Vulkan backend | Accepted | vulkan, gpu, backend, build, breaking, fork-local |
+| [ADR-0727](0727-cpp23-wave2-bump-and-dict.md) | C++23 Wave 2 — project-wide `cpp_std=c++23` bump and `dict.c` → `dict.cpp` | Accepted | build, c++, cpp23, refactor, internals, fork-local, vmafx-rebrand |
+| [ADR-0728](0728-native-build-sunset.md) | Sunset Legacy Native Build Modes — Phase 4b.9 Follow-On | Accepted | ci, build, vmafx, breaking |
+| [ADR-0729](0729-cpp23-wave3-bundle.md) | C++23 Wave 3 — feature_name, picture_copy, model | Accepted | build, cpp23, refactor |
+| [ADR-0730](0730-vmafx-tune-go-stage2.md) | vmafx-tune Go port — Stage 2 (ladder subcommand) | Accepted | go, vmafx-tune, language-modernization, cli, phase4, fork-local |
+| [ADR-0731](0731-cpp23-wave3-part-b.md) | C++23 Wave 3 Part B — psnr_tools, luminance_tools, mkdirp | Accepted | build, cpp23, modernization |
+| [ADR-0733](0733-cpp23-wave4-output-writers.md) | C++23 Wave 4 — output writers (XML, JSON, CSV, subtitle) | Accepted | build, c++, cpp23, refactor, internals, fork-local, vmafx-rebrand |
+| [ADR-0735](0735-cpp23-wave5-bundle.md) | C++23 Wave 5 — cpu, ref, thread_locale | Accepted | build, c++, cpp23, refactor, internals, fork-local |
+| [ADR-0738](0738-bump-cuda-133-r610-local.md) | Bump local CUDA toolkit pin to 13.3 + R610 minimum driver (partial — CI deferred) | Accepted | cuda, build, container, ci, deps |
+| [ADR-0744](0744-cuda-ms-ssim-adm-cm-ncu-driven-perf.md) | CUDA adm_cm `__launch_bounds__(128, 8)` register reduction (ms_ssim_decimate smem tiling reverted) | Accepted | cuda, performance, adm, ms_ssim, occupancy |
+| [ADR-0746](0746-cuda-integer-adm3-aim-parity.md) | integer_adm_cuda — emit integer_adm3 + integer_aim (parity with CPU) | Accepted | cuda, integer_adm, aim, adm3, parity |
+| [ADR-0759](0759-hip-adm-buffer-by-pointer.md) | HIP ADM — replace AdmBufferHip by-value kernel params with const pointer (F3 fix from Research-0755 PR #95 audit); device-side struct copy at init | Accepted | hip, performance, adm, kernel, cuda, fork-local |
+| [ADR-0762](0762-cuda-ciede-ldg.md) | CUDA CIEDE2000 8bpc/16bpc — `__ldg()` read-only cache routing + `__launch_bounds__` (F3 fix, mirrors ADR-0754) | Accepted | 2026-05-29 | cuda, performance, ciede, fork-local |
 | [ADR-0806](0806-feature-dictionary-ownership.md) | VmafFeatureDictionary caller-ownership contract: `vmaf_use_feature` and `vmaf_model_feature_overload` take ownership; fixes double-free in test_vif_skip_scale0 and leak in test_integer_vif_cpu_cuda_parity | Accepted | 2026-05-29 | api, memory, testing |
 | [ADR-0810](0810-adr-0108-compliance-audit-2026-05-29.md) | ADR-0108 six-deliverables compliance audit (2026-05-29): 93 % pass rate on 5 PRs; D3 AGENTS.md gap fixes for PR #1571 (repo rename) and PR #1583 (HTTP transport) | Accepted | 2026-05-29 | docs, agents, process |
 | [ADR-0811](0811-security-codeql-go-pvr.md) | Security hardening: CodeQL Go coverage, codeql-config.yml conflict resolution, Dependabot/Renovate posture | Accepted | 2026-05-29 | ci, security, codeql, go, dependabot, ossf |
