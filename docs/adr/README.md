@@ -26,8 +26,20 @@ and follows the structure in [0000-template.md](0000-template.md):
 ## Decision             — one paragraph in active voice
 ## Alternatives considered  — at minimum the runner-up, in a pros/cons table
 ## Consequences         — Positive / Negative / Neutral-follow-ups
+## Supply-chain impact  — OPTIONAL: deps added/removed, build-time fetches, Sigstore-signable, CVE surface delta
+## SBOM delta           — OPTIONAL: cyclonedx-flavoured components added/removed snippet
+## Carbon / footprint   — OPTIONAL: image-size MiB delta, build-time delta, runtime energy estimate
 ## References           — upstream docs, prior ADRs, related PRs, popup-answer source
 ```
+
+The three sections after `## Consequences` are **optional** — include them
+when the decision adds or removes a dependency, fetches build-time
+artifacts, changes the container layer set, or measurably shifts build /
+runtime cost. Delete the section header entirely when not applicable
+rather than leaving an empty `N/A` stub. The release pipeline reconciles
+declared SBOM deltas against the generated CycloneDX SBOM; supply-chain
+audits and the climate-footprint dashboard sweep ADRs for the other two
+sections.
 
 ## Conventions
 
@@ -46,6 +58,15 @@ and follows the structure in [0000-template.md](0000-template.md):
   the ADR practice was formalised on 2026-04-17, captured retroactively from
   commit history and planning dossiers. Their `Status` reflects the current
   code, not the original decision date. New decisions start at 0100.
+- **Optional-sections roll-out**: the three optional sections
+  (`Supply-chain impact`, `SBOM delta`, `Carbon / footprint`) were added
+  to the template on 2026-05-31. Existing **Accepted** ADRs are not
+  back-edited (immutable-once-Accepted rule). The **next three ADRs
+  authored from scratch** after the template change must include all
+  three sections — even if the content is a one-line `none — no
+  dependency / build / runtime delta` — so reviewers calibrate the
+  new shape. After that warm-up, the sections are routinely optional
+  per the criteria above.
 
 ### Tag palette
 

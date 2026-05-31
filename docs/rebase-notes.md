@@ -27,6 +27,19 @@ symbols. Companion: `docs/adr/0891-simd-bit-exact-round2-fmaf-libvmaf-feature-ic
 
 ---
 
+## ADR template — optional supply-chain / SBOM / carbon sections (2026-05-31)
+
+**Files touched:**
+`docs/adr/0000-template.md`, `docs/adr/README.md`
+
+**Rebase impact:** None. Upstream Netflix/vmaf does not maintain an
+ADR template; the entire `docs/adr/` tree is fork-local. The new
+optional sections (`## Supply-chain impact`, `## SBOM delta`,
+`## Carbon / footprint`) appear between `## Consequences` and
+`## References`. No upstream conflict surface.
+
+---
+
 ## SIMD strict-FP flags for icx (2026-05-30)
 
 **Files touched:**
