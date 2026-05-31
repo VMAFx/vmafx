@@ -41507,3 +41507,16 @@ ir-diff-update`) is a normal part of the port — same discipline as
 the score JSON snapshots under `/regen-snapshots`. The new
 [`core/src/feature/x86/AGENTS.md`](../core/src/feature/x86/AGENTS.md)
 invariant note flags this for the next sync agent.
+## vmafx-operator functional test coverage uplift (2026-05-31)
+
+no rebase impact: REASON — all four new test files live under
+`cmd/vmafx-operator/internal/controller/` which is fork-added per ADR-0714
+(vmafx-operator kubebuilder skeleton). Upstream Netflix/vmaf ships no Go
+sources and no Kubernetes operator surface; there is nothing to merge against.
+
+Fork-local files:
+`cmd/vmafx-operator/internal/controller/vmafxnode_controller_test.go` (new),
+`cmd/vmafx-operator/internal/controller/vmafxjob_controller_branch_test.go` (new),
+`cmd/vmafx-operator/internal/controller/vmafxmodeltraining_controller_branch_test.go` (new),
+`cmd/vmafx-operator/internal/controller/setup_with_manager_test.go` (new),
+`changelog.d/added/operator-functional-coverage.md` (new).
