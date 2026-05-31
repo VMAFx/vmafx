@@ -270,3 +270,12 @@ pytest paths; this file ships unchanged for upstream-sync hygiene.
   ensemble retrain runbook.
 - [ADR-0937](../docs/adr/0937-mkdocs-nav-decade-buckets.md) —
   mkdocs ADR nav generator + by-tag indexes.
+- [ADR-0752](../docs/adr/0752-perf-bench-multi-resolution.md) —
+  `scripts/perf/bench-multi-resolution.sh` baseline harness.
+- [ADR-0907](../docs/adr/0907-perf-regression-gate-wall-clock.md) —
+  `scripts/perf/check-regression.py` wall-clock regression gate
+  (CPU-only at first iteration). The gate's tolerance defaults to
+  ±5% and the baseline lives at `testdata/perf_multi_resolution.json`
+  (ADR-0752); intentional perf changes must regenerate the baseline
+  in the same PR. Schema_version drift in the baseline file requires
+  updating `_index_runs()` in `check-regression.py` in lockstep.

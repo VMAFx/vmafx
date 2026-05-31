@@ -115,7 +115,52 @@ comparable to production content).
 
 ## Comparing a PR against the baseline
 
-Run the script before and after your change, then diff:
+### Automated (CI gate — ADR-0907)
+
+CI runs `scripts/perf/check-regression.py` against the committed
+baseline on every PR (CPU-only, `tests-and-quality-gates.yml` job
+`perf-regression`). The gate fails if any
+`(resolution, backend, metric)` cell regresses by more than **5%**
+wall-clock vs the baseline. The job is `continue-on-error: true` for
+one release cycle so cross-runner variance data can inform whether
+the 5% tolerance is right before the step is promoted to a required
+check.
+
+Run the same gate locally:
+
+```bash
+# 1. Produce a fresh run JSON.
+./scripts/perf/bench-multi-resolution.sh \
+  --backends cpu --runs 3 \
+  --output /tmp/perf_current.json
+
+# 2. Diff against the committed baseline (exit 1 on regression > 5%).
+python3 scripts/perf/check-regression.py \
+  --baseline testdata/perf_multi_resolution.json \
+  --current  /tmp/perf_current.json \
+  --tolerance-pct 5.0 \
+  --backend cpu
+```
+
+The gate prints a per-cell report:
+
+```
+== Perf regression gate (tolerance: +/- 5.0%) ==
+
+REGRESSIONS (1):
+  1080p  cpu      adm :   142.0 ms ->  151.5 ms ( +6.69%)
+
+Improvements (informational, 1):
+   720p  cpu      vif :   105.0 ms ->   95.0 ms ( -9.52%)
+```
+
+Cells with `status != "ok"` in either side (e.g. SYCL skipped because
+oneAPI is unavailable) are reported under `Skipped` and do not fail
+the gate.
+
+### Manual diff (legacy)
+
+Run the script before and after your change, then diff in Python:
 
 ```python
 import json, sys

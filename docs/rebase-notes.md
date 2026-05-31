@@ -41611,3 +41611,20 @@ Upstream-mirror packages (`compat/python-vmaf/**`,
 `python/test/__init__.py`) were deliberately left byte-identical per the
 upstream-mirror rebase-hygiene rule. No upstream Netflix/vmaf file is
 touched.
+## ADR-0907 — Wall-clock perf regression gate (2026-05-30)
+
+**No rebase impact** on upstream C/Python code.
+
+New fork-local files only:
+- `scripts/perf/check-regression.py` — gate script (stdlib-only)
+- `scripts/perf/test_check_regression.py` — smoke tests
+- `docs/adr/0907-perf-regression-gate-wall-clock.md` (new)
+- `docs/adr/_index_fragments/0907-perf-regression-gate-wall-clock.md` (new)
+- `changelog.d/added/perf-regression-gate.md` (new)
+- `.github/workflows/tests-and-quality-gates.yml` (new `perf-regression` job;
+  the disabled `cross-backend` job's broken `bench_all.sh --backend=cpu
+  --snapshot-only --tolerance-ulp=2` invocation is replaced with a no-op
+  placeholder echo since `bench_all.sh` does not parse those flags)
+
+No upstream Netflix collision risk — the gate consumes only the fork-added
+`testdata/perf_multi_resolution.json` baseline (ADR-0752, fork-local).

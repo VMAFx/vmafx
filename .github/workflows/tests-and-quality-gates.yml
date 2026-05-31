@@ -119,6 +119,11 @@ jobs:
   # ===== Cross-backend ULP gate =====
   # Requires GPU hardware + local YUV fixtures not present on GitHub-hosted
   # runners. Disabled until a self-hosted GPU runner is available.
+  # The previous invocation called `bench_all.sh --backend=cpu --snapshot-only
+  # --tolerance-ulp=2` but `bench_all.sh` does not parse those flags; the gate
+  # was a silent no-op. ADR-0907 carved the wall-clock perf concern off into the
+  # `perf-regression` job below; if a CPU-side score-parity gate is wanted later
+  # it lives in `bench_all.sh`'s in-script `compare()` (max_diff < 0.01).
   cross-backend:
     name: "Cross-Backend ULP Diff (CPU Sanity)"
     if: false
@@ -139,9 +144,59 @@ jobs:
         run: |
           meson setup build -Denable_cuda=false -Denable_sycl=false --buildtype=release
           meson compile -C build
-      - name: Compute CPU scores against snapshot
+      - name: Cross-backend ULP placeholder
         run: |
-          ./testdata/bench_all.sh --backend=cpu --snapshot-only --tolerance-ulp=2
+          echo "Cross-backend ULP gate is disabled until a self-hosted GPU runner is available."
+
+  # ===== Wall-clock perf regression gate (ADR-0907) =====
+  # Runs scripts/perf/bench-multi-resolution.sh against the committed
+  # testdata/perf_multi_resolution.json baseline and asserts that no
+  # (resolution, backend, metric) cell regresses by > 5% wall-clock.
+  # CPU-only at first iteration; a follow-up ADR will add GPU lanes once
+  # self-hosted GPU runners are stable. Kept `continue-on-error: true` for
+  # one release cycle so cross-runner variance data can inform whether the
+  # 5% tolerance is right before the step is promoted to a required check.
+  perf-regression:
+    name: "Perf regression gate (CPU wall-clock, ADR-0907)"
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    needs: netflix-golden
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm pkg-config python3 ffmpeg
+      - name: Build CPU
+        working-directory: core
+        run: |
+          meson setup build -Denable_cuda=false -Denable_sycl=false --buildtype=release
+          meson compile -C build
+      - name: Run multi-resolution perf bench (CPU only)
+        env:
+          VMAF_BIN: ${{ github.workspace }}/core/build/tools/vmaf
+          VMAF_ROOT: ${{ github.workspace }}
+        run: |
+          ./scripts/perf/bench-multi-resolution.sh \
+            --backends cpu \
+            --runs 3 \
+            --output testdata/perf_multi_resolution.current.json
+      - name: Check regression vs committed baseline (+/- 5%)
+        run: |
+          python3 scripts/perf/check-regression.py \
+            --baseline testdata/perf_multi_resolution.json \
+            --current testdata/perf_multi_resolution.current.json \
+            --tolerance-pct 5.0 \
+            --backend cpu
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: perf-regression-current-run
+          path: testdata/perf_multi_resolution.current.json
 
   # ===== Vulkan VIF cross-backend gate (lavapipe) =====
   # Builds CPU + Vulkan, runs `vmaf` twice on the Netflix normal pair, diffs
