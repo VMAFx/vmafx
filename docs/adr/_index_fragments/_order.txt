@@ -685,3 +685,4 @@
 0884-sycl-kernel-coverage-round2
 0886-cuda-kernel-coverage-round2
 0883-hip-kernel-coverage-round2
+0880-unused-testdata-debug-scripts-cleanup

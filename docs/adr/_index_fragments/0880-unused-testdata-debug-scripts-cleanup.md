@@ -1,0 +1,1 @@
+| [ADR-0880](0880-unused-testdata-debug-scripts-cleanup.md) | Remove three unreferenced fork-added testdata artifacts: `check_borders.py` (one-off ADM border debug), `compare_a380.py` (superseded by `compare_combined.py`), `scores_sycl_b580_576_mq.json` (orphan slim-schema snapshot) | Accepted | 2026-05-30 | cleanup, testdata, repo-hygiene |

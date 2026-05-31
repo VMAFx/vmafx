@@ -874,6 +874,15 @@ margin restored after PR #129 grew the denominator with unreachable
 error-handling.
 
 ---
+## unused-testdata-debug-scripts-cleanup (2026-05-30, ADR-0880)
+
+**Files touched:** `testdata/check_borders.py` (deleted),
+`testdata/compare_a380.py` (deleted),
+`testdata/scores_sycl_b580_576_mq.json` (deleted).
+
+**Rebase impact:** None. All three files were fork-added and not present in
+upstream Netflix/vmaf. No upstream patch context references them. Future
+`/sync-upstream` runs will not surface any conflicts on these paths.
 
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
