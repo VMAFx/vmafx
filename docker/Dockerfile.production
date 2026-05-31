@@ -121,6 +121,10 @@ FROM runtime-base AS cli
 
 COPY --from=builder /dist/bin/vmaf /usr/local/bin/vmaf
 
+# Drop privileges — distroless cc-debian12 ships a `nonroot` user at
+# UID:GID 65532:65532. Trivy DS-0002 / CIS-Docker 4.1.
+USER nonroot:nonroot
+
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 # ---------------------------------------------------------------------------
@@ -142,5 +146,10 @@ ENV PATH="/venv/bin:/usr/local/bin:${PATH}"
 ENV VMAF_BINARY="/usr/local/bin/vmaf"
 
 EXPOSE 8080
+
+# Drop privileges — distroless cc-debian12 ships a `nonroot` user at
+# UID:GID 65532:65532. The MCP server binds 8080 (>1024, unprivileged).
+# Trivy DS-0002 / CIS-Docker 4.1.
+USER nonroot:nonroot
 
 ENTRYPOINT ["/venv/bin/vmaf-mcp", "--transport", "http"]

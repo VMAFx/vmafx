@@ -884,6 +884,20 @@ error-handling.
 upstream Netflix/vmaf. No upstream patch context references them. Future
 `/sync-upstream` runs will not surface any conflicts on these paths.
 
+## trivy-container-scan-baseline (2026-05-30, ADR-0878)
+
+**Files touched:** `docker/Dockerfile.production`,
+`docker/Dockerfile.production-gpu`
+
+**Rebase impact:** None. Both files are fork-added (no upstream
+Netflix/vmaf equivalents — Netflix ships no production Dockerfile).
+The added `USER nonroot:nonroot` directive on each final stage will
+not conflict on any future upstream sync. If upstream ever publishes
+their own Dockerfile, the fork's containers stay separate (the GHCR
+namespace is `vmafx/`).
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
