@@ -562,3 +562,97 @@ jobs:
     steps:
       - run: |
           echo "shellcheck/shfmt covered by pre-commit job above; this is a no-op proxy."
+
+  markdownlint:
+    # ADR-0866 — markdownlint-cli2 gate over the touched markdown delta.
+    # Mirrors the clang-tidy job's PR/push/dispatch fan-out so the
+    # ~6.2k pre-existing warnings (ADR-0864 tail) don't gate innocent
+    # PRs. Reads .markdownlint.json from the repo root (PR #332's tuned
+    # config). NO --fix: 7 default rules are unsafe under autofix per
+    # ADR-0864.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Markdown lint (markdownlint-cli2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          # Full history so the push-delta diff against `before` works for
+          # multi-commit FF pushes; PR mode uses origin/${base_ref}...HEAD.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: "20"
+      - name: Detect changed markdown files
+        id: detect
+        # Hardening per Semgrep `yaml.github-actions.security.run-shell-injection`:
+        # pull every `${{ github.* }}` interpolation into `env:` and reference
+        # via env vars. Same posture as the clang-tidy job above.
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          # Restrict to the tracked markdown corpus (docs/ + changelog.d/
+          # + top-level *.md). Upstream vendored trees and test fixtures
+          # are excluded via the leading filter; the .markdownlintignore
+          # path would also work but the explicit corpus is clearer.
+          if [ "$GH_EVENT_NAME" = "pull_request" ]; then
+            files=$(git diff --name-only --diff-filter=d \
+              "origin/${PR_BASE_REF}...HEAD" -- '*.md' \
+              | grep -E '^(docs/|changelog\.d/|README\.md|CLAUDE\.md|AGENTS\.md)' \
+              | grep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
+              | grep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)' \
+              || true)
+          elif [ "$GH_EVENT_NAME" = "push" ]; then
+            before="$PUSH_BEFORE_SHA"
+            zero="0000000000000000000000000000000000000000"
+            if [ -z "$before" ] || [ "$before" = "$zero" ]; then
+              if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD -- '*.md' \
+                  | grep -E '^(docs/|changelog\.d/|README\.md|CLAUDE\.md|AGENTS\.md)' \
+                  | grep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
+              | grep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)' \
+                  || true)
+              else
+                files=""
+              fi
+            else
+              files=$(git diff --name-only --diff-filter=d "$before"..HEAD -- '*.md' \
+                | grep -E '^(docs/|changelog\.d/|README\.md|CLAUDE\.md|AGENTS\.md)' \
+                | grep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
+              | grep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)' \
+                || true)
+            fi
+          else
+            # workflow_dispatch — scan the full corpus. Operator-explicit.
+            files=$(git ls-files \
+              'docs/**/*.md' \
+              'README.md' 'CLAUDE.md' 'AGENTS.md' \
+              | grep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
+              | grep -vE '^(docs/adr/README\.md|docs/adr/_index_fragments/)' \
+              || true)
+          fi
+          # Newline-delimit for the next step (one path per line, no IFS surprises).
+          {
+            echo 'files<<EOF'
+            echo "$files"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+          if [ -z "$files" ]; then
+            echo "no markdown changes — job will short-circuit"
+          else
+            echo "changed markdown files:"
+            echo "$files"
+          fi
+      - name: Run markdownlint-cli2
+        if: steps.detect.outputs.files != ''
+        env:
+          MD_FILES: ${{ steps.detect.outputs.files }}
+        run: |
+          # `npx --yes` resolves the package from the npm registry on first
+          # run; subsequent runs hit the runner's npx cache. No project-
+          # local package.json is needed.
+          # shellcheck disable=SC2086
+          echo "$MD_FILES" | xargs -r npx --yes markdownlint-cli2

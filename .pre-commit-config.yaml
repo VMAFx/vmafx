@@ -102,6 +102,41 @@ repos:
     hooks:
       - id: shellcheck
 
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.22.1
+    hooks:
+      # ADR-0866 — wire markdownlint-cli2 into pre-commit. pass_filenames
+      # is true (the default) so only staged *.md files are linted; the
+      # ~6.2k pre-existing-warning tail (ADR-0864) does not gate
+      # innocent PRs. NO --fix arg: ADR-0864 documents 7 default rules
+      # that silently change meaning under autofix (MD004 prose
+      # conjunctions, MD007 reference-list indent, MD018 PR-number
+      # headings, MD027 license-block quoting, MD029 ordered-list
+      # renumbering, MD037/MD038 emphasis/code spacing).
+      # Exclude upstream / vendored / fixture trees that ship markdown
+      # we do not author. The Netflix MATLAB tree has no .md files but
+      # is listed for symmetry with check-copyright above.
+      - id: markdownlint-cli2
+        # Default is true, but call it out explicitly per ADR-0866:
+        # the gate's whole shape depends on per-file scope (matches the
+        # touched-file rule, CLAUDE.md §12 r12).
+        pass_filenames: true
+        # Exclusions:
+        #   - subprojects/, core/test/data/, *resource/, *matlab/, model/,
+        #     testdata/: upstream / vendored / fixture trees we don't author.
+        #   - docs/adr/README.md, CHANGELOG.md: auto-generated from
+        #     fragments by scripts/docs/concat-adr-index.sh /
+        #     scripts/release/concat-changelog-fragments.sh (ADR-0221).
+        #   - docs/adr/_index_fragments/, changelog.d/: per-PR fragments
+        #     that are concatenated mechanically. Each fragment is a
+        #     bare table row or a body-only ## heading section — they
+        #     are not standalone documents and will always trip MD013
+        #     (long table rows) / MD041 (no first-line H1). Their
+        #     rendered output (README.md / CHANGELOG.md, both excluded
+        #     above) is what readers see; the fragments themselves are
+        #     pipeline input.
+        exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|^testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^changelog\.d/'
+
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:

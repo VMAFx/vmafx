@@ -83,12 +83,17 @@ cythonize-deps: $(VENV_PIP)
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.
 # ============================================================================
 
+<<<<<<< ours
 .PHONY: lint lint-c lint-py lint-sh format format-check sec sbom \
         test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
+=======
+.PHONY: lint lint-c lint-py lint-sh lint-md format format-check sec sbom \
+        test-netflix-golden test-sanitizers test-fast hooks-install help \
+>>>>>>> theirs
         coverage coverage-html coverage-check assertion-density pr-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
-lint: lint-c lint-py lint-sh docs-fragments-check
+lint: lint-c lint-py lint-sh lint-md docs-fragments-check
 	@echo "=== all lints passed ==="
 
 # Fragment-tree drift check (ADR-0221). Verifies CHANGELOG.md and
@@ -126,6 +131,37 @@ lint-py:
 lint-sh:
 	@command -v shellcheck >/dev/null || { echo "shellcheck not found; skipping"; exit 0; }
 	shellcheck $$(git ls-files '*.sh')
+
+# Markdown lint (ADR-0866). Default scope is the touched-file delta vs
+# origin/master so the ~6.2k pre-existing-warning tail (ADR-0864) doesn't
+# gate innocent PRs. Override MDLINT_SCOPE=all to run against the full
+# corpus (docs/**/*.md changelog.d/**/*.md README.md CLAUDE.md AGENTS.md).
+#
+# The hook reads .markdownlint.json from the repo root (PR #332's tuned
+# config). markdownlint-cli2 is unsafe under --fix for 7 default rules
+# (ADR-0864); this target never passes --fix.
+MDLINT_SCOPE ?= changed
+
+lint-md:
+	@command -v npx >/dev/null || { echo "npx not found (install Node.js to enable lint-md); skipping"; exit 0; }
+	@if [ "$(MDLINT_SCOPE)" = "all" ]; then \
+	    echo "--- markdownlint-cli2 (all files) ---"; \
+	    npx --yes markdownlint-cli2 \
+	        'docs/**/*.md' \
+	        'README.md' 'CLAUDE.md' 'AGENTS.md' \
+	        '!docs/adr/README.md' '!docs/adr/_index_fragments/**'; \
+	else \
+	    echo "--- markdownlint-cli2 (changed vs origin/master) ---"; \
+	    files=$$(git diff --name-only --diff-filter=d origin/master...HEAD -- '*.md' 2>/dev/null \
+	             | grep -E '^(docs/|README\.md|CLAUDE\.md|AGENTS\.md)' \
+	             | grep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)' || true); \
+	    if [ -z "$$files" ]; then \
+	        echo "no markdown changes vs origin/master — skipping"; \
+	    else \
+	        echo "$$files"; \
+	        npx --yes markdownlint-cli2 $$files; \
+	    fi; \
+	fi
 
 # Formatters — writes changes.
 format:
@@ -343,7 +379,8 @@ rust-test:
 
 help:
 	@echo "Fork-specific targets:"
-	@echo "  make lint             — clang-tidy + cppcheck + ruff + shellcheck"
+	@echo "  make lint             — clang-tidy + cppcheck + ruff + shellcheck + markdownlint"
+	@echo "  make lint-md          — markdownlint-cli2 on changed *.md (MDLINT_SCOPE=all for full tree, ADR-0866)"
 	@echo "  make format           — clang-format + black + isort + shfmt (writes)"
 	@echo "  make format-check     — same, no writes (CI gate)"
 	@echo "  make sec              — semgrep (CERT-C + CWE + fork rules)"
