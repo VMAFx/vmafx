@@ -4,7 +4,7 @@ Promotes the seven remaining Metal feature-extractor scaffolds from
 `-ENOSYS` stubs to functional MSL kernels, following the `integer_motion_v2`
 template established in T8-1c.
 
-## What ships
+### What ships
 
 - **`float_psnr.metal`** / **`float_psnr_metal.mm`** (T8-1d): per-pixel
   `(ref - dis)^2` float accumulation. 8bpc and 16bpc kernel variants.
@@ -44,14 +44,14 @@ template established in T8-1c.
   intermediate blurred planes in MTLBuffers allocated at init. Features:
   `float_ssim`, `float_ms_ssim`.
 
-## Key design note: no `atomic_ulong`
+### Key design note: no `atomic_ulong`
 
 All kernels use per-WG `float`/`uint` partials arrays — **not** MSL
 `atomic_fetch_add_explicit` for 64-bit types, which fails silently on
 Apple Silicon (CI run 25685703780 / job 75408804495). Host reduces in
 `double`. See `docs/research/0421-metal-kernel-batch-t8-1c-k.md`.
 
-## Build (macOS only)
+### Build (macOS only)
 
 ```bash
 meson setup build libvmaf -Denable_metal=enabled \
@@ -60,7 +60,7 @@ ninja -C build
 meson test -C build test_metal_smoke
 ```
 
-## Parity gate
+### Parity gate
 
 ```bash
 scripts/ci/cross_backend_parity_gate.py \

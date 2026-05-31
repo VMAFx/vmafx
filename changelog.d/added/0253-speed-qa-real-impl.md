@@ -1,5 +1,3 @@
-## Added
-
 - **`speed_qa` real SpEED-QA implementation** (`core/src/feature/speed_qa.c`):
   replaces the 0.0-placeholder scaffold with a working spatial and temporal
   entropic-differencing extractor per Bampis et al. 2017 (IEEE SPL 24(9)).

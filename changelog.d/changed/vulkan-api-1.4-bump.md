@@ -1,5 +1,3 @@
-### Changed
-
 - vulkan: bump instance + VMA `apiVersion` from `VK_API_VERSION_1_3` to
   `VK_API_VERSION_1_4` across the four pinned sites in
   [`core/src/vulkan/common.c`](core/src/vulkan/common.c) (lines 54,

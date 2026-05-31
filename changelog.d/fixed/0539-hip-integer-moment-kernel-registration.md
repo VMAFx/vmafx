@@ -33,7 +33,7 @@ float_moment_dis2nd mean : HIP=4798.659574 CPU=4798.659574 delta=0.000000
 
 All within places=4 (in fact bit-exact: delta=0.000000).
 
-## ADRs
+### ADRs
 
 - [ADR-0539](../docs/adr/0539-hip-psnr-moment-kernels-real.md) — this change.
 - [ADR-0533](../docs/adr/0533-hip-all-extractors-registration-sweep.md) — registered the HIP integer_moment extractor in the dispatch table.

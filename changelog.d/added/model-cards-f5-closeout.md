@@ -1,5 +1,3 @@
-## Added
-
 - **Model cards for 4 previously undocumented tiny-AI checkpoints**
   (`docs/ai/models/vmaf_tiny_v1.md`, `vmaf_tiny_v1_medium.md`,
   `smoke_v0.md`, `smoke_fp16_v0.md`): closes the ADR-0042 F5 gap

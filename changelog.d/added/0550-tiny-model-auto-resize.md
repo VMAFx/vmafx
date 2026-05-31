@@ -1,5 +1,3 @@
-## Added
-
 - **`--tiny-resize {bilinear,nearest,bicubic,disabled}` CLI flag** plus
   matching public C API `vmaf_dnn_set_resize_mode(ctx, mode)` and
   `VmafDnnResizeMode` enum
@@ -18,7 +16,7 @@
   replicate-edge clamping. Bit-identical to `vmaf_tensor_from_luma`
   on the no-resize fast path. ADR-0550.
 
-## Fixed
+### Fixed
 
 - **NR tiny-model 0-frames footgun (post-fix probe Finding 11)**:
   `vmaf --no-reference --tiny-model nr_metric_v1.onnx --distorted

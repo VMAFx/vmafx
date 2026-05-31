@@ -1,5 +1,3 @@
-## Added
-
 - **`scripts/git-hooks/pre-push-mkdocs-strict.sh` — mkdocs strict-mode pre-push gate
   ([ADR-0466](../docs/adr/0466-mkdocs-strict-pre-push-hook.md)).**
   Detects whether a push touches `docs/` or `mkdocs.yml`; skips immediately on

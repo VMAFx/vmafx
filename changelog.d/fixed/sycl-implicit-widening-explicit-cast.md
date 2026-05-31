@@ -1,5 +1,3 @@
-### Fixed
-
 - `core/src/feature/sycl/integer_adm_sycl.cpp`,
   `core/src/feature/sycl/integer_vif_sycl.cpp`:
   Eliminated 12 `bugprone-implicit-widening-of-multiplication-result`

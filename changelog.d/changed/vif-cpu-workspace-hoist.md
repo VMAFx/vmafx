@@ -1,5 +1,3 @@
-## changed
-
 - `float_vif` CPU extractor: hoist 10-plane VIF scratch buffer
   (`VIF_SCRATCH_BUF_CNT × plane_sz`) from per-frame `aligned_malloc` /
   `aligned_free` to `VifState` init/close lifecycle (ADR-0452). Eliminates

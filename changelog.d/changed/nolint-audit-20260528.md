@@ -1,4 +1,4 @@
-## NOLINT citation audit + closeout (ADR-0278 compliance)
+### NOLINT citation audit + closeout (ADR-0278 compliance)
 
 All 54 previously uncited `// NOLINT` and `// NOLINTNEXTLINE` suppressions
 across `core/` have been given inline citations per ADR-0278 / CLAUDE §12 r12.

@@ -1,4 +1,4 @@
-## `vmaf-tune auto` — three additional F.1/F.2 short-circuit predicates
+### `vmaf-tune auto` — three additional F.1/F.2 short-circuit predicates
 
 Three new short-circuit predicates (#8, #9, #10) are appended to
 `SHORT_CIRCUIT_PREDICATES` in `tools/vmaf-tune/src/vmaftune/auto.py`:

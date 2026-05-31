@@ -1,4 +1,4 @@
-## Fixed: `cambi` absent from cross-backend parity gate
+### Fixed: `cambi` absent from cross-backend parity gate
 
 `scripts/ci/cross_backend_parity_gate.py` listed 17 features in `FEATURE_METRICS` but
 omitted `cambi`, even though `vmaf_fex_cambi_cuda`, `*_sycl`, and `*_vulkan` are all

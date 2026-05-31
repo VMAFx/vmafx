@@ -1,4 +1,4 @@
-## Vulkan compute shader workgroup size fix (VK-1 + VK-2)
+### Vulkan compute shader workgroup size fix (VK-1 + VK-2)
 
 Raised `local_size_x` from 1 to 32 in `ssimulacra2_blur.comp` (VK-1) and in
 `cambi_mask_dp.comp` PASS 0/1 (VK-2), fixing a performance defect flagged in

@@ -1,4 +1,4 @@
-## C++23 Wave 3 Part B — psnr_tools, luminance_tools, mkdirp (ADR-0731)
+### C++23 Wave 3 Part B — psnr_tools, luminance_tools, mkdirp (ADR-0731)
 
 Three small feature utility translation units are converted from C to C++23:
 

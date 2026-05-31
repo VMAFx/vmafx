@@ -1,5 +1,3 @@
-### Fixed
-
 - `vmaf_pre` FFmpeg filter `device=` option now accepts all 12 `VmafDnnDevice` strings
   (`openvino-npu`, `openvino-cpu`, `openvino-gpu`, `coreml`, `coreml-ane`, `coreml-gpu`,
   `coreml-cpu` were previously silently rejected with `AVERROR(EINVAL)`). Parity with the

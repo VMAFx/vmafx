@@ -1,5 +1,3 @@
-## Changed
-
 - `docs/state.md`: fixed 9 broken markdown table rows caused by `\|` characters
   (backslash-pipe) outside backtick code spans. Pipes inside table cells must be
   inside inline code spans to avoid being parsed as cell boundaries. Fixed rows:

@@ -1,5 +1,3 @@
-## Added
-
 - **`ai/scripts/validate_chug_hdr_mos_head.py`**: held-out test-partition
   validator for the CHUG HDR MOS head. Loads a CHUG MOS head ONNX, filters
   CHUG feature JSONL shards to `split == "test"` rows (552 rows, never used

@@ -1,5 +1,3 @@
-## Added
-
 - **Real `two_pass_args` for all 14 codec adapters that previously raised
   `NotImplementedError`** (ADR-0546). Software adapters `libaom-av1`
   and `libvvenc` now run true two-invocation 2-pass via FFmpeg's

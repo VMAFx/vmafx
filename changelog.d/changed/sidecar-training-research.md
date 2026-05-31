@@ -1,4 +1,4 @@
-## Research-0733: VMAFX Sidecar Online Training Architecture
+### Research-0733: VMAFX Sidecar Online Training Architecture
 
 Added `docs/research/0733-vmafx-sidecar-training-architecture.md` — a comprehensive
 architecture research digest for the Phase 4b.7 sidecar online training workstream

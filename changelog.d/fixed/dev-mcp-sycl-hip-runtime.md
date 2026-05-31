@@ -1,5 +1,3 @@
-## Fixed
-
 - `dev/Containerfile`: add Intel GPU compute-runtime (`intel-opencl-icd`,
   `libze-intel-gpu1`) from Intel's GPU apt repo so the Level Zero loader can
   probe the Arc GPU ICD inside the container. Without these packages

@@ -1,4 +1,4 @@
-## `vmaf-tune --fast-nr`: NR early-elimination for 2–4× bisect wall-time cut
+### `vmaf-tune --fast-nr`: NR early-elimination for 2–4× bisect wall-time cut
 
 Added `--fast-nr` flag to `vmaf-tune compare` and `vmaf-tune tune-per-shot`
 (ADR-0624, implementing ADR-0615).  At each bisect midpoint the cheap

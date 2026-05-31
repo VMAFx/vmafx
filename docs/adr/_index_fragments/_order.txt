@@ -635,3 +635,4 @@
 0917-cargo-deny-supply-chain-policy
 0918-llvm-ir-diff-harness
 0912-pixel-format-edge-coverage
+0913-changelog-renderer-splice-contract

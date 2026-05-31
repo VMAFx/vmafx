@@ -1,5 +1,3 @@
-## Added
-
 - **`float_ansnr_hip` `enable_chroma` option** (ADR-0453 parity):
   `FloatAnsnrStateHip` gains `bool enable_chroma` (default `false`) and
   `unsigned n_planes`. When `enable_chroma=true`, the extractor dispatches

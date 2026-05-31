@@ -1,4 +1,4 @@
-## Cross-backend throughput baseline + SYCL on Intel Arc (Research-0734)
+### Cross-backend throughput baseline + SYCL on Intel Arc (Research-0734)
 
 Extended the PR #75 CPU/CUDA baseline with measured SYCL (Intel Arc A380) numbers.
 Fixed the one-off container SYCL device-access issue: `docker run` with `--device /dev/dri`

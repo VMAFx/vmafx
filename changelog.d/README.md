@@ -4,10 +4,10 @@ The fork's `CHANGELOG.md` Unreleased block is **rendered**, not edited
 directly. Each PR adds one fragment file under one of the
 Keep-a-Changelog sections:
 
-```
+```text
 changelog.d/
   added/        new user-discoverable surface
-  changed/      enhancement to an existing surface
+  changed/      enhancement to an existing surface (includes perf — name files perf-<topic>.md)
   deprecated/   surface marked for removal
   removed/      surface deleted
   fixed/        bug fix with user-visible delta
@@ -16,6 +16,13 @@ changelog.d/
                             block (do not edit; rolled into a versioned
                             section at the next release tag)
 ```
+
+There is **no `perf/` or `performance/` directory** — the renderer
+warns on any non-Keep-a-Changelog subdirectory and skips its
+contents. Performance fragments live in `changed/` with a `perf-`
+filename prefix so they sort contiguously inside the rendered
+`### Changed` section. See [ADR-0892](../docs/adr/0892-conventional-commits-and-changelog-fragment-hygiene.md)
+and [ADR-0913](../docs/adr/0913-changelog-renderer-splice-contract.md).
 
 ## How to add a fragment
 

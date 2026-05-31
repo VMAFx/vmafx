@@ -4,7 +4,7 @@ Promotes two HIP feature extractors from `-ENOSYS` scaffolds to real
 HIP Module API consumers, following the pattern established by PR #612
 (`float_psnr_hip`, ADR-0254).
 
-## What ships
+### What ships
 
 - **`psnr_score.hip`** — device kernel for `integer_psnr_hip`:
   uint64 atomic-SSE reduction, warp-size-64 `__shfl_down` (split into
@@ -23,7 +23,7 @@ HIP Module API consumers, following the pattern established by PR #612
   (`hipcc --genco` + `xxd -i`), mirroring the CUDA `ptx_arrays` pattern.
   Controlled by the existing `enable_hipcc` option.
 
-## How to use
+### How to use
 
 ```bash
 # Build with real HIP kernels (requires ROCm 6+ and hipcc in PATH):
@@ -39,7 +39,7 @@ vmaf --reference ref.yuv --distorted dis.yuv --feature float_ansnr_hip \
      --width 1920 --height 1080 --pixel_format 420
 ```
 
-## Skipped (batch-2 candidates)
+### Skipped (batch-2 candidates)
 
 - `float_ssim_hip`: two-pass design with five intermediate device
   buffers and three kernel functions — non-trivial ABI adaptation.

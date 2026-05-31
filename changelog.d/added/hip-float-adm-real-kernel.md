@@ -1,4 +1,4 @@
-## HIP float_adm real kernel (ADR-0468)
+### HIP float_adm real kernel (ADR-0468)
 
 Port the CUDA `float_adm_cuda.c` / `float_adm_score.cu` four-stage DWT+CSF+CM pipeline
 to HIP as the ninth kernel-template consumer. Adds `float_adm_hip.c`,

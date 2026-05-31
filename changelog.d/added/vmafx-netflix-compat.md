@@ -1,4 +1,4 @@
-## `--netflix-compat` flag for legacy-default opt-out (ADR-0696)
+### `--netflix-compat` flag for legacy-default opt-out (ADR-0696)
 
 - Add `--netflix-compat` / `--netflix_compat` CLI flag to both the `vmaf` and
   `vmafx` binaries.

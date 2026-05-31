@@ -1,4 +1,4 @@
-## Deduplicate file-hash and UTC-timestamp helpers in vmaf-tune corpus
+### Deduplicate file-hash and UTC-timestamp helpers in vmaf-tune corpus
 
 `tools/vmaf-tune/src/vmaftune/corpus.py` previously contained private inline
 implementations of `_sha256_of` (streaming SHA-256 file hash) and `_utc_now_iso`

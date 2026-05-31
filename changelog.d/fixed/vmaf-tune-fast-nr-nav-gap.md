@@ -1,5 +1,3 @@
-## Fixed
-
 - Wire `docs/usage/vmaf-tune-fast-nr.md` into the mkdocs.yml navigation
   so the `--fast-nr` user guide is reachable from the built site.
   Add `--fast-nr` entries to the `compare` and `tune-per-shot` CLI flag

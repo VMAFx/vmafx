@@ -1,5 +1,3 @@
-## fixed
-
 - **Vulkan-01**: `vmaf_get_feature_extractor_by_name("integer_motion_vulkan")` now
   returns the correct extractor on Vulkan-enabled builds. The symbol
   `vmaf_fex_integer_motion_vulkan_impl` was declared extern in

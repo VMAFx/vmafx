@@ -1,4 +1,4 @@
-## Vulkan backend: persistent `VkPipelineCache` (ADR-0445)
+### Vulkan backend: persistent `VkPipelineCache` (ADR-0445)
 
 The Vulkan compute backend now persists its compiled pipeline cache to
 `$XDG_CACHE_HOME/libvmaf/vulkan-pipeline-cache.bin` across process

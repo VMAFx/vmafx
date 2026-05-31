@@ -1,5 +1,3 @@
-### Fixed
-
 - **CLI**: `vmaf` now rejects non-positive frame dimensions (zero width or height)
   and odd luma dimensions for chroma-subsampled formats (4:2:0 width/height,
   4:2:2 width) before the main loop, printing a descriptive error to stderr and

@@ -1,4 +1,4 @@
-## vmaf-tune executor: per-shot and saliency execution modes (ADR-0468)
+### vmaf-tune executor: per-shot and saliency execution modes (ADR-0468)
 
 `vmaftune.executor` gains two new execution-mode entry-points that extend the Phase F
 base execute mode (ADR-0454):

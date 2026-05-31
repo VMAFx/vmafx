@@ -19,7 +19,7 @@ clip; before this PR the HIP integer_motion path never executed any
 HIP code because `compute_fex_flags()` didn't include the HIP slot
 and the per-extractor flag bit was cleared.
 
-## What ships
+### What ships
 
 - New picture-buffer enum entry `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`
   reserved for the future HIP picture pool. Today's HIP TUs accept
@@ -48,7 +48,7 @@ and the per-extractor flag bit was cleared.
   `hip_kernel_sources` map (previously the source file existed but
   was not compiled or linked).
 
-## What does NOT ship
+### What does NOT ship
 
 `vmaf_fex_integer_vif_hip` was speculatively flagged in its batch-1
 commit but crashes with a GPU memory access fault on the first
@@ -59,7 +59,7 @@ float_motion / float_ssim / float_psnr / cambi / float_adm /
 ssimulacra2) stay unflagged pending per-extractor end-to-end
 verification.
 
-## ADRs
+### ADRs
 
 - [ADR-0530](../docs/adr/0530-hip-feature-flag-promotion-and-picture-buffer.md)
   — this change.

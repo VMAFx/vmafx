@@ -1,4 +1,4 @@
-## Changed: remove orphaned `/* XXX */` marker from vendored `svm.h`
+### Changed: remove orphaned `/* XXX */` marker from vendored `svm.h`
 
 `core/src/svm.h:101` carried an empty `/* XXX */` comment inherited from the
 upstream libsvm vendored source with no explanation or tracking issue. The two

@@ -1,4 +1,4 @@
-## CUDA extractor `cuModuleUnload` teardown (16 extractors)
+### CUDA extractor `cuModuleUnload` teardown (16 extractors)
 
 All 16 CUDA feature extractors that called `cuModuleLoadData` in their
 `init_fex_cuda` callback but omitted the matching `cuModuleUnload` in

@@ -1,5 +1,3 @@
-### Changed
-
 - CodeQL C bulk sweep: fixed 60 of 78 deferred alerts across 18 upstream-mirror
   files. Categories addressed: `cpp/integer-multiplication-cast-to-long` (44 of
   44 alerts; widening cast prefixed on the LHS operand before multiplication),

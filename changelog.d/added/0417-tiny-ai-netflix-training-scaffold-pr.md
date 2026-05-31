@@ -1,5 +1,3 @@
-## Added
-
 - **Tiny-AI Netflix corpus training scaffold — draft PR registration (ADR-0417).**
   Opens `ai/tiny-netflix-training-scaffold` as a formal draft PR so the user can
   review and confirm architecture choices before triggering a training run against

@@ -1,4 +1,4 @@
-## Vulkan backend: two-level GPU reduction for VIF / ADM / motion (T-GPU-PERF-VK-3)
+### Vulkan backend: two-level GPU reduction for VIF / ADM / motion (T-GPU-PERF-VK-3)
 
 The per-workgroup accumulator readback bottleneck (59.73% CPU self-time at
 1080p on discrete GPU, perf-hunt 2026-05-09) is eliminated for the three

@@ -1,4 +1,4 @@
-## Added multi-resolution performance benchmark baseline
+### Added multi-resolution performance benchmark baseline
 
 `scripts/perf/bench-multi-resolution.sh` is now the canonical multi-resolution,
 multi-backend, multi-metric throughput benchmark for VMAF.  It runs across

@@ -1,4 +1,4 @@
-## Vulkan submit-pool migration PR-C (ADR-0354)
+### Vulkan submit-pool migration PR-C (ADR-0354)
 
 Migrated the four remaining Vulkan feature extractors
 (`cambi_vulkan`, `ssimulacra2_vulkan`, `float_ansnr_vulkan`,

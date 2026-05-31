@@ -1,4 +1,4 @@
-## CI matrix slimmed to 1 build per OS + state-of-the-art sanitizers (ADR-0710)
+### CI matrix slimmed to 1 build per OS + state-of-the-art sanitizers (ADR-0710)
 
 `libvmaf-build-matrix.yml` (15 build rows post-ADR-0689) is replaced by
 `build.yml` with three matrix rows:

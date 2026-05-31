@@ -1,5 +1,3 @@
-## Changed
-
 - **CUDA toolkit pin bumped to 13.3** (`dev/Containerfile`):
   `cuda-toolkit-13-2` → `cuda-toolkit-13-3` (13.3.0-1 from NVIDIA ubuntu2404
   apt repo, GA 2026-05-28). Minimum host driver updated to R610.43.02 (Linux

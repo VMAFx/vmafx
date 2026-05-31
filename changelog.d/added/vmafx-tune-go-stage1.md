@@ -1,4 +1,4 @@
-## vmafx-tune-go Stage 1 — Go port of vmaf-tune compare subcommand
+### vmafx-tune-go Stage 1 — Go port of vmaf-tune compare subcommand
 
 Adds `cmd/vmafx-tune/` — a Go port of the Python `vmaf-tune` rate-quality
 tuning CLI, installed as `vmafx-tune-go` alongside the Python binary.

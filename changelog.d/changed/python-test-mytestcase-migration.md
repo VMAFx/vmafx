@@ -1,5 +1,3 @@
-### Changed
-
 - **`python/test/`**: complete port of upstream's MyTestCase migration cluster
   (15 cherry-picked commits) — adopt the new test base class, port aim/adm3/
   motion3 test methods, widen macOS FP precision tolerances per upstream,

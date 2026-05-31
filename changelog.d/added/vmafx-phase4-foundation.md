@@ -1,4 +1,4 @@
-## VMAFX Phase 4 language-modernization foundation (ADR-0702)
+### VMAFX Phase 4 language-modernization foundation (ADR-0702)
 
 - Added Go workspace root (`go.mod`, module `github.com/VMAFx/vmafx`, Go 1.23)
   with `pkg/version` package and `go-ci.yml` CI gate.

@@ -1,4 +1,4 @@
-## CI — tighter clang-tidy + required sanitizer gates (ADR-0694)
+### CI — tighter clang-tidy + required sanitizer gates (ADR-0694)
 
 ### clang-tidy
 

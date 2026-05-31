@@ -1,4 +1,4 @@
-## vmaf-tune: `--neg` flag for VMAF NEG model variants (ADR-0622)
+### vmaf-tune: `--neg` flag for VMAF NEG model variants (ADR-0622)
 
 Add a `--neg` flag to `vmaf-tune recommend`, `compare`, `tune-per-shot`,
 `ladder`, and `corpus`. When set, the flag routes the VMAF model to the

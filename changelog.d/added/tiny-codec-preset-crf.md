@@ -1,5 +1,3 @@
-### Added
-
 - **`--tiny-codec` / `--tiny-preset` / `--tiny-crf` CLI flags** populate
   the codec one-hot block of codec-aware tiny models (today
   `fr_regressor_v2`) so the model receives the real encoder context

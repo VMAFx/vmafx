@@ -1,4 +1,4 @@
-## `integer_vif`: add `enable_chroma` option
+### `integer_vif`: add `enable_chroma` option
 
 `integer_vif` now accepts `enable_chroma` (bool, default `false`). When enabled,
 the four-scale VIF pipeline runs on the Cb and Cr planes in addition to luma and

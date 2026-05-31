@@ -2,7 +2,7 @@
   Copyright 2026 Lusoris
   SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 -->
-## Cross-backend 4K (3840×2160) baseline + PR #79 adm_cm A/B at 4K
+### Cross-backend 4K (3840×2160) baseline + PR #79 adm_cm A/B at 4K
 
 Research-0751 establishes the first measured 4K CUDA throughput baseline on RTX 4090
 (BigBuckBunny 3840×2160, 8-bit yuv420p, 24 frames, `vmaf_bench`):

@@ -1,4 +1,4 @@
-## Meson build-option combination validation
+### Meson build-option combination validation
 
 **Fixed:** Three broken build-option combinations now produce clear diagnostics instead of silently succeeding with no effect (audit findings 1b, 1c, 1d from audit-build-matrix-symbols-2026-05-16).
 

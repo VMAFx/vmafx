@@ -1,4 +1,4 @@
-## SYCL GPU: CAMBI queue-sync collapse + SSIM horizontal SLM staging (SY-1/SY-2)
+### SYCL GPU: CAMBI queue-sync collapse + SSIM horizontal SLM staging (SY-1/SY-2)
 
 **`integer_cambi_sycl.cpp` (SY-1)**: Eliminate 20 redundant `q.wait()` calls per
 frame from the 5-scale CAMBI loop (25 → 5 total, one per scale). The SYCL in-order

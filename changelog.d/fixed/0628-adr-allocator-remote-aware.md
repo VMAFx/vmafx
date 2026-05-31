@@ -1,4 +1,4 @@
-## fix(adr): remote-aware ADR number allocator — eliminate parallel-worktree collisions
+### fix(adr): remote-aware ADR number allocator — eliminate parallel-worktree collisions
 
 `scripts/adr/next-free.sh --claim` now prevents collisions across isolated
 worktrees and in-flight remote branches:

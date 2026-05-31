@@ -1,4 +1,4 @@
-## chore(review): adversarial code review — C++23 wave (PRs #41–#58)
+### chore(review): adversarial code review — C++23 wave (PRs #41–#58)
 
 Read-only adversarial review of the cpp23 conversion wave. Found 4 CRITICAL, 2 HIGH,
 10 MEDIUM, 3 LOW issues across all 9 PRs. Key findings:

@@ -1,4 +1,4 @@
-## CUDA ADM/motion/SSIM/MS-SSIM ncu hotpath profiles published
+### CUDA ADM/motion/SSIM/MS-SSIM ncu hotpath profiles published
 
 Per-kernel ncu `--set basic` profiles collected on RTX 4090 (sm_89, CUDA 13.3) for the
 four remaining CUDA metric families. Digests at Research-0734 (ADM), Research-0735

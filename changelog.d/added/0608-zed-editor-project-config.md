@@ -1,5 +1,3 @@
-## Added
-
 - **`.zed/` project configuration** — Zed editor parity with `.vscode/` (ADR-0608):
   `.zed/settings.json` (clangd LSP, pyright, ruff, shfmt, vmaf-mcp MCP server,
   Claude Agent via ACP, file-type associations for CUDA/HIP/Metal/GLSL, telemetry

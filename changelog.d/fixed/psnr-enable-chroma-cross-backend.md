@@ -1,5 +1,3 @@
-## Fixed
-
 `psnr_cuda`, `psnr_sycl`, and `psnr_vulkan` now honour the `enable_chroma`
 option (default `true`). Previously the option was absent from the GPU
 option tables, causing it to be silently ignored and the GPU extractors to

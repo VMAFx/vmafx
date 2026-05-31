@@ -1,4 +1,4 @@
-## Fixed: `cambi_cuda` SIGSEGV on `submit_fex_cuda` — host dereference of device pointer
+### Fixed: `cambi_cuda` SIGSEGV on `submit_fex_cuda` — host dereference of device pointer
 
 `integer_cambi_cuda.c::submit_fex_cuda` called `vmaf_cambi_preprocessing(dist_pic, ...)`
 directly on the CUDA picture. The CUDA picture's `data[0]` is a device pointer; reading

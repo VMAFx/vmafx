@@ -1,5 +1,3 @@
-## Added
-
 - **SpEED Python compat wrappers** (`compat/python-vmaf/core/feature_extractor.py`):
   ports `SpeedChromaFeatureExtractor` and `SpeedTemporalFeatureExtractor` from
   Netflix/vmaf upstream into the compat harness. Both wrap the `speed_chroma` and

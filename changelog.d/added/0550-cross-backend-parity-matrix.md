@@ -1,5 +1,3 @@
-## Added
-
 - **Cross-backend parity matrix** (`docs/research/0550-cross-backend-parity-matrix-2026-05-18.md`):
   systematic audit of all 18 CPU feature extractors across SYCL (Intel Arc A380),
   CUDA (RTX 4090), and Vulkan on the Netflix 576x324 golden fixture.

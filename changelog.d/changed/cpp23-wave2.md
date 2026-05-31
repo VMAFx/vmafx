@@ -1,4 +1,4 @@
-## C++23 Wave 2: project-wide `cpp_std=c++23` + `dict.c` → `dict.cpp` (ADR-0727)
+### C++23 Wave 2: project-wide `cpp_std=c++23` + `dict.c` → `dict.cpp` (ADR-0727)
 
 - The Meson project default is now `cpp_std=c++23` (was `c++11`). New C++ source
   files in `core/src/` no longer need an isolated static library with

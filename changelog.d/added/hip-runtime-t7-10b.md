@@ -1,5 +1,3 @@
-### Added
-
 - HIP (AMD ROCm) backend runtime — flips
   `core/src/hip/{common,kernel_template}.c` from the audit-first
   `-ENOSYS` scaffold (ADR-0212) to real HIP runtime calls. New

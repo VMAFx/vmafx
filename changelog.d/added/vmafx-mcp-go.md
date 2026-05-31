@@ -1,4 +1,4 @@
-## vmafx-mcp: Go implementation of the VMAFX MCP server
+### vmafx-mcp: Go implementation of the VMAFX MCP server
 
 Added `cmd/vmafx-mcp/` — a single static Go binary that exposes the same 15
 MCP tools as the Python `vmaf-mcp` server with byte-for-byte schema parity

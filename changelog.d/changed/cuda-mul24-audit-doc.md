@@ -1,4 +1,4 @@
-## CUDA `__mul24` silent-corruption audit (Research-0734)
+### CUDA `__mul24` silent-corruption audit (Research-0734)
 
 Audited all 78 CUDA kernel and runtime files under `core/src/feature/cuda/`
 and `core/src/cuda/` for use of the CUDA `__mul24` / `__umul24` / `__mul24hi`

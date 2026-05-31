@@ -1,5 +1,3 @@
-## Added
-
 - **`core/test/dnn/test_vmaf_use_tiny_model.c`**: 5 new unit tests covering
   the `vmaf_use_tiny_model()` public ctx-attach entry point, which had zero
   C-unit-test coverage (identified in `audit-test-coverage-2026-05-16.md §2`).

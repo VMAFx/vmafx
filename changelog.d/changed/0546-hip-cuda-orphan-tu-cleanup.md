@@ -1,4 +1,4 @@
-## chore(feature): delete orphan HIP/CUDA TUs (ADR-0546)
+### chore(feature): delete orphan HIP/CUDA TUs (ADR-0546)
 
 Removed 6 dead/orphan translation units found by a deep audit of
 `core/src/feature/hip/` and `core/src/feature/cuda/`:

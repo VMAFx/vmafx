@@ -1,4 +1,4 @@
-## fix(core): cpp23 adversarial review — HIGH + MEDIUM findings cleanup
+### fix(core): cpp23 adversarial review — HIGH + MEDIUM findings cleanup
 
 Addresses 2 HIGH and 10 MEDIUM findings from the adversarial code review of the
 C→C++23 conversion wave (PRs #41–#58, review PR #78).

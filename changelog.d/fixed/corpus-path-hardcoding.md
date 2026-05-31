@@ -1,5 +1,3 @@
-## Fixed
-
 - `ai/scripts/calibrate_nr_threshold.py`: `_DEFAULT_CORPUS` now reads the
   `VMAF_CORPUS_DIR` environment variable (falling back to `.corpus/netflix`),
   matching the pattern already used by `validate_ensemble_seeds.py`. Added

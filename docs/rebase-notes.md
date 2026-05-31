@@ -41539,3 +41539,23 @@ Fork-local files:
 `cmd/vmafx-operator/internal/controller/vmafxmodeltraining_controller_branch_test.go` (new),
 `cmd/vmafx-operator/internal/controller/setup_with_manager_test.go` (new),
 `changelog.d/added/operator-functional-coverage.md` (new).
+## ADR-0913 — CHANGELOG.md renderer splice contract + 44 k-line drift sweep — 2026-05-31
+
+no rebase impact (upstream): REASON — fork-local infrastructure only. The
+renderer (`scripts/release/concat-changelog-fragments.sh`), the rendered
+file (`CHANGELOG.md`), and the fragment tree (`changelog.d/`) are all
+fork-added; Netflix/vmaf upstream uses a hand-edited `CHANGELOG.md` with
+no fragment system.
+
+**In-flight fork-branch impact (medium)**: every in-flight fork branch
+that added a fragment under the old `## Section` / `### Section` shape
+will conflict on its fragment file at rebase time. Resolution is
+mechanical — keep the bullet content, drop the redundant first-line
+section header (the renderer emits `### Section` itself). Branches that
+added perf entries under `changelog.d/perf/` or
+`changelog.d/performance/` need to rename to
+`changelog.d/changed/perf-<topic>.md` (the same convention PR #384 /
+ADR-0892 introduces). On rebase the renderer's new stderr WARNING
+surfaces the wrong directory immediately; `bash
+scripts/release/concat-changelog-fragments.sh --check` then verifies
+the fix.

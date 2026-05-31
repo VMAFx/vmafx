@@ -1,4 +1,4 @@
-## `vmafx` binary and AI tool aliases (ADR-0690)
+### `vmafx` binary and AI tool aliases (ADR-0690)
 
 - Install `vmafx` as a symlink to `vmaf` in the same `bindir` via Meson
   `install_symlink()`. No separate binary; one binary, one symlink.

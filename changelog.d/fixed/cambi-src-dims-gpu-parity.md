@@ -1,5 +1,3 @@
-## Fixed
-
 - `cambi` CUDA, SYCL, and Vulkan backends now accept `src_width` and `src_height`
   options (aliases `srcw` / `srch`), matching the CPU backend's option surface.
   Previously these fields existed in the state struct but were always overridden

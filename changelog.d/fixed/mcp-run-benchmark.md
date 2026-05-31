@@ -1,5 +1,3 @@
-### Fixed
-
 - **MCP `run_benchmark` tool** now returns a complete benchmark JSON instead of an
   error response. Three root causes were fixed: (1) spurious positional arguments
   (`-r`, `-d`, `--width`, `--height`) passed to `bench_all.sh` corrupted `$@` inside

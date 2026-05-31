@@ -1,4 +1,4 @@
-## vmafx-tune-go Stage 2 — `ladder` subcommand (per-title ABR bitrate-ladder)
+### vmafx-tune-go Stage 2 — `ladder` subcommand (per-title ABR bitrate-ladder)
 
 Adds `vmafx-tune-go ladder` — the per-title ABR bitrate-ladder generator,
 porting the Python `vmaf-tune ladder` Phase E algorithm to Go.

@@ -1,4 +1,4 @@
-## Added: Runtime resolution-aware CUDA kernel variant dispatch (ADR-0753)
+### Added: Runtime resolution-aware CUDA kernel variant dispatch (ADR-0753)
 
 A new `vmaf_cuda_workload_class(w, h)` classifier (`core/src/feature/cuda/resolution_dispatch.{h,c}`)
 maps each frame's luma pixel count to `WS_SMALL` (< 720p), `WS_MEDIUM` (720p–4K), or

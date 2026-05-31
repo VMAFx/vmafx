@@ -1,5 +1,3 @@
-## Fixed
-
 - **`vmaf_cuda_picture_alloc_pinned`: null-deref when `vmaf_picture_priv_init` fails
   (cross-PR seam, CWE-476, round-6 audit)** — `vmaf_picture_priv_init` allocates
   `pic->priv`; if it fails (OOM), the function returned `NULL` in `pic->priv`. The

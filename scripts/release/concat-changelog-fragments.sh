@@ -24,7 +24,27 @@
 #              CI lane.
 #   --write    Rewrite CHANGELOG.md in place with the rendered body.
 #
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Splice contract (ADR-0900):
+#   The Unreleased block lives between the "## [Unreleased] ..." header
+#   and the *next bracketed* "## [version] - date" header that release-please
+#   writes at release time. The boundary regex is `^## \[` — NOT `^## ` —
+#   because fragment bodies may legitimately contain `## ` subheadings
+#   (per-PR section headers like "## Vulkan submit-pool migration").
+#   A bare `^## ` sentinel would treat those as boundaries and explode the
+#   rendered body across re-runs of --write (the 23 k-line drift PR #332 /
+#   PR #383 / PR #401 observed). The contract release-please honours: every
+#   release header is `## [vX.Y.Z] - YYYY-MM-DD`; never `## Foo`.
+#
+# Fragment-body hygiene:
+#   Stray `## ` headers inside a fragment body are demoted to `**bold**`
+#   pseudo-headers at render time. Reasoning: they were never the right
+#   shape (the renderer emits `### Section` itself) and they hurt the splice
+#   contract above. Authors should write bullets, not in-fragment sections;
+#   the demotion keeps history-rendered text legible without forcing a
+#   cross-PR rewrite of 80+ existing fragments. New fragments are validated
+#   by `--lint`.
+#
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 
 set -euo pipefail
@@ -39,13 +59,62 @@ LEGACY="$FRAG_ROOT/_pre_fragment_legacy.md"
 SECTIONS=(added changed deprecated removed fixed security)
 SECTION_TITLES=(Added Changed Deprecated Removed Fixed Security)
 
+# Boundary regex (awk ERE): release-please writes "## [vX.Y.Z] - YYYY-MM-DD";
+# the Unreleased block header is "## [Unreleased] ...". Anchoring on "## ["
+# is the only sentinel safe against fragment-internal "## " headers. The
+# literal "[" needs escaping inside the awk regex; we ship it pre-escaped so
+# the `-v boundary=...` plumbing stays string-clean.
+BOUNDARY_REGEX='^## \\['
+
+# Emit one fragment with stray h1/h2 headers demoted to bold pseudo-headers.
+# The renderer-emitted "### Section" heading is the only h3 the Unreleased
+# block should carry; in-fragment headers would pollute both the visual
+# tree and the splice contract.
+emit_fragment() {
+  local frag="$1"
+  # Replace leading "# " or "## " with "**…**" using awk so we keep any
+  # trailing newline and avoid sed -E portability gotchas.
+  awk '
+    /^# / {
+      sub(/^# /, "")
+      printf "**%s**\n", $0
+      next
+    }
+    /^## / {
+      sub(/^## /, "")
+      printf "**%s**\n", $0
+      next
+    }
+    { print }
+  ' "$frag"
+}
+
+warn_unknown_subdirs() {
+  # Surface (but do not fail on) fragments living in subdirs the renderer
+  # does not know about. PR #384 / ADR-0892 cleaned up perf/ + performance/;
+  # this guard keeps future drifts visible.
+  local known_csv
+  known_csv="$(printf '%s\n' "${SECTIONS[@]}" | LC_ALL=C sort | paste -sd, -)"
+  local unknown
+  unknown="$(find "$FRAG_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
+    LC_ALL=C sort |
+    awk -v known="$known_csv" 'BEGIN { n=split(known, k, ","); for (i=1; i<=n; i++) ok[k[i]]=1 } !($0 in ok) { print }')"
+  if [[ -n "$unknown" ]]; then
+    while IFS= read -r d; do
+      printf 'WARNING: changelog.d/%s/ is not a Keep-a-Changelog section; fragments here are SKIPPED.\n' "$d" >&2
+    done <<<"$unknown"
+  fi
+}
+
 render() {
   # Emit the Unreleased body (without the "## [Unreleased] ..." header).
   # The body always begins with the legacy archive (verbatim — no edits
   # to existing entries during migration) and then appends one section
   # per Keep-a-Changelog category from the fragment tree. Sections that
-  # have no fragments are silently skipped.
+  # have no fragments are silently skipped; fragments under unknown
+  # subdirs trigger a stderr warning (per PR #384 / ADR-0892).
   local section title dir frag
+  warn_unknown_subdirs
   if [[ -f "$LEGACY" ]]; then
     cat "$LEGACY"
   fi
@@ -60,9 +129,19 @@ render() {
       mapfile -t files < <(find "$dir" -maxdepth 1 -type f -name '*.md' \
         ! -name '.*' | LC_ALL=C sort)
       if [[ ${#files[@]} -gt 0 ]]; then
-        printf '### %s\n\n' "$title"
+        local first_in_section=1
         for frag in "${files[@]}"; do
-          cat "$frag"
+          # Skip empty / whitespace-only fragments; warn so the author
+          # notices the stub rather than silently dropping the entry.
+          if [[ ! -s "$frag" ]] || ! grep -q '[^[:space:]]' "$frag"; then
+            printf 'WARNING: %s is empty; skipping.\n' "${frag#"$REPO_ROOT"/}" >&2
+            continue
+          fi
+          if [[ $first_in_section -eq 1 ]]; then
+            printf '### %s\n\n' "$title"
+            first_in_section=0
+          fi
+          emit_fragment "$frag"
           # Each fragment ends in newline; ensure exactly one blank
           # line follows so neighbouring bullets don't fuse.
           [[ "$(tail -c1 "$frag")" == $'\n' ]] || printf '\n'
@@ -98,12 +177,14 @@ if [[ "$mode" == render ]]; then
 fi
 
 # --check / --write splice the rendered body into CHANGELOG.md between the
-# "## [Unreleased] ..." header and the next "## " heading (which marks the
-# previous release's first section start). Implemented in awk for speed.
+# "## [Unreleased] ..." header and the next bracketed "## [vX.Y.Z]" heading
+# (which marks the previous release's first section start). The boundary
+# regex is `^## \[`, NOT `^## ` — see "Splice contract" in the file header
+# for the 23 k-line drift this avoids. Implemented in awk for speed.
 
-current_block="$(awk '
+current_block="$(awk -v boundary="$BOUNDARY_REGEX" '
     /^## \[Unreleased\]/ {in_block=1; next}
-    in_block && /^## [^[]/ {in_block=0}
+    in_block && $0 ~ boundary {in_block=0}
     in_block {print}
 ' "$CHANGELOG")"
 
@@ -133,9 +214,9 @@ trap 'rm -f "$tmp_body" "$tmp_out"' EXIT
   printf '\n'
 } >"$tmp_body"
 
-awk '
+awk -v boundary="$BOUNDARY_REGEX" '
     /^## \[Unreleased\]/ {print; in_block=1; next}
-    in_block && /^## [^[]/ {in_block=0}
+    in_block && $0 ~ boundary {in_block=0}
     !in_block {print}
 ' "$CHANGELOG" | awk -v body="$tmp_body" '
     /^## \[Unreleased\]/ {

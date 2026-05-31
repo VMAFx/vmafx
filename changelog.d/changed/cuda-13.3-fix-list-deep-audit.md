@@ -1,4 +1,4 @@
-## Research-0734 — CUDA 13.3 fix-list deep audit (per-issue exposure mapping)
+### Research-0734 — CUDA 13.3 fix-list deep audit (per-issue exposure mapping)
 
 Audited all 40 "Fixed/Resolved an issue where…" entries in CUDA 13.3 release notes
 (plus 13.2 / 13.1 / 13.0) against `core/src/feature/cuda/` and `core/src/cuda/`.

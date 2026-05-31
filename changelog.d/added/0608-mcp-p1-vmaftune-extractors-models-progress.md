@@ -1,4 +1,4 @@
-## MCP P1 surface: vmaf-tune integration, list_extractors, describe_model, progress notifications (ADR-0608)
+### MCP P1 surface: vmaf-tune integration, list_extractors, describe_model, progress notifications (ADR-0608)
 
 Five new MCP tools added to `vmaf-mcp`:
 

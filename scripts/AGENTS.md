@@ -60,6 +60,27 @@ fragment, then run the script with `--write`. The CI lane
 Renaming the script breaks `release-please` config + the CI gate
 in the same instant.
 
+**Splice contract (ADR-0913)**: the script anchors the end-of-Unreleased
+boundary on `^## \[` — the bracketed form release-please uses for
+released sections (`## [vX.Y.Z] - YYYY-MM-DD`) and that
+`## [Unreleased]` itself uses. **Do not weaken this regex** to
+`^## ` or `^## [^[]` — both shapes were tried previously and both
+failed when fragment bodies contained `## ` headers (the 23 k+
+line drift PR #332 / #383 / #401 / #384 observed). Fragment
+bodies may legitimately contain `## ` or `### ` sub-headings; the
+renderer demotes leading `# ` / `## ` to `**bold**` at render time
+as defense-in-depth. Authors should still write **bullets, not
+headers** per `changelog.d/README.md`; the demoter is for
+backwards-compat, not the contract.
+
+**Fragment hygiene**: every fragment lives under one of the six
+Keep-a-Changelog section directories (`added/`, `changed/`,
+`deprecated/`, `removed/`, `fixed/`, `security/`). Anything else
+triggers a stderr WARNING and the fragments inside are skipped.
+PR #384 / ADR-0892 catalogued the `perf/` + `performance/`
+silent-skip failure mode; ADR-0913 added the visible WARNING.
+Empty fragments also emit a stderr WARNING + skip.
+
 ### `docs/concat-adr-index.sh` is the source of truth for `docs/adr/README.md`
 
 Per [ADR-0221](../docs/adr/0221-changelog-adr-fragment-pattern.md),
