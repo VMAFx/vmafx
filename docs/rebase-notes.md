@@ -91,7 +91,7 @@ Fork-local files:
 `ai/tests/test_python_surfaces_bug_audit.py` (new),
 `mcp-server/vmaf-mcp/tests/test_python_surfaces_bug_audit.py` (new),
 `changelog.d/fixed/python-surfaces-bug-audit-2026-05-31.md` (new),
-`docs/research/python-surfaces-bug-audit-2026-05-31.md` (new).
+`docs/research/0983-python-surfaces-bug-audit-2026-05-31.md` (new).
 
 ---
 
