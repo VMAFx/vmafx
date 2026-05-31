@@ -181,16 +181,27 @@ float float_adm_csf_den_scale_neon(const float *src, int w, int h, int src_strid
     int src_px_stride = src_stride / sizeof(float);
 
     float32x4_t v_factor = vdupq_n_f32(factor);
+<<<<<<< ours
     /* ADR-0873 / ADR-0138: accumulate in double to match the AVX2
      * _mm256_cvtps_pd strategy and bound tree-reduction ULP error. */
     float64x2_t v_accum0 = vdupq_n_f64(0.0);
     float64x2_t v_accum1 = vdupq_n_f64(0.0);
 
     int i, j;
+=======
+
+    int i, j;
+    /* Promote the outer accumulator to double so we match the scalar
+     * reference (adm_tools.c::adm_sum_cube_s) and the x86 AVX2 twin
+     * (float_adm_csf_den_scale_avx2). A float32 row accumulator drifts
+     * ~10 ULPs on large frames because per-lane cubed-float sums lose
+     * mantissa bits at every accumulate. */
+>>>>>>> theirs
     double accum = 0.0;
 
     for (i = top; i < bottom; ++i) {
         const float *row = src + i * src_px_stride;
+        double row_accum = 0.0;
 
         j = left;
         for (; j + 3 < right; j += 4) {
@@ -199,6 +210,7 @@ float float_adm_csf_den_scale_neon(const float *src, int w, int h, int src_strid
             /* val^3 = val * val * val */
             float32x4_t val2 = vmulq_f32(val, val);
             float32x4_t val3 = vmulq_f32(val2, val);
+<<<<<<< ours
             /* Widen to double before accumulating (ADR-0873). */
             v_accum0 = vaddq_f64(v_accum0, vcvt_f64_f32(vget_low_f32(val3)));
             v_accum1 = vaddq_f64(v_accum1, vcvt_f64_f32(vget_high_f32(val3)));
@@ -208,52 +220,93 @@ float float_adm_csf_den_scale_neon(const float *src, int w, int h, int src_strid
         for (; j < right; ++j) {
             double val = fabs((double)factor * (double)row[j]);
             accum += val * val * val;
-        }
-    }
+=======
 
-    accum += vaddvq_f64(vaddq_f64(v_accum0, v_accum1));
-
-    return (float)accum;
-}
-
-float float_adm_sum_cube_neon(const float *x, int w, int h, int stride, int left, int top,
-                              int right, int bottom)
-{
-    (void)w;
-    (void)h;
-    int px_stride = stride / sizeof(float);
-
-    /* ADR-0873 / ADR-0138: accumulate in double to match the AVX2
-     * _mm256_cvtps_pd strategy and bound tree-reduction ULP error. */
-    float64x2_t v_accum0 = vdupq_n_f64(0.0);
-    float64x2_t v_accum1 = vdupq_n_f64(0.0);
-    double accum = 0.0;
-
-    int i, j;
-
-    for (i = top; i < bottom; ++i) {
-        const float *row = x + i * px_stride;
-
-        j = left;
-        for (; j + 3 < right; j += 4) {
-            float32x4_t s = vld1q_f32(row + j);
-            float32x4_t val = vabsq_f32(s);
-            /* val^3 = val * val * val */
-            float32x4_t val2 = vmulq_f32(val, val);
-            float32x4_t val3 = vmulq_f32(val2, val);
-            /* Widen to double before accumulating (ADR-0873). */
-            v_accum0 = vaddq_f64(v_accum0, vcvt_f64_f32(vget_low_f32(val3)));
-            v_accum1 = vaddq_f64(v_accum1, vcvt_f64_f32(vget_high_f32(val3)));
+            _Alignas(16) float tmp[4];
+            vst1q_f32(tmp, val3);
+            for (int k = 0; k < 4; k++)
+                row_accum += (double)tmp[k];
         }
 
         /* Scalar tail. */
         for (; j < right; ++j) {
-            double val = fabs((double)row[j]);
-            accum += val * val * val;
+            float val = fabsf(factor * row[j]);
+            row_accum += (double)(val * val * val);
+>>>>>>> theirs
         }
+
+<<<<<<< ours
+        accum += vaddvq_f64(vaddq_f64(v_accum0, v_accum1));
+=======
+        accum += row_accum;
+    }
+>>>>>>> theirs
+
+        return (float)accum;
     }
 
-    accum += vaddvq_f64(vaddq_f64(v_accum0, v_accum1));
+    float float_adm_sum_cube_neon(const float *x, int w, int h, int stride, int left, int top,
+                                  int right, int bottom)
+    {
+        (void)w;
+        (void)h;
+        int px_stride = stride / sizeof(float);
 
-    return (float)accum;
-}
+<<<<<<< ours
+        /* ADR-0873 / ADR-0138: accumulate in double to match the AVX2
+     * _mm256_cvtps_pd strategy and bound tree-reduction ULP error. */
+        float64x2_t v_accum0 = vdupq_n_f64(0.0);
+        float64x2_t v_accum1 = vdupq_n_f64(0.0);
+        double accum = 0.0;
+
+=======
+>>>>>>> theirs
+        int i, j;
+        /* Promote to double — see float_adm_csf_den_scale_neon above. */
+        double accum = 0.0;
+
+        for (i = top; i < bottom; ++i) {
+            const float *row = x + i * px_stride;
+            double row_accum = 0.0;
+
+            j = left;
+            for (; j + 3 < right; j += 4) {
+                float32x4_t s = vld1q_f32(row + j);
+                float32x4_t val = vabsq_f32(s);
+                /* val^3 = val * val * val */
+                float32x4_t val2 = vmulq_f32(val, val);
+                float32x4_t val3 = vmulq_f32(val2, val);
+<<<<<<< ours
+                /* Widen to double before accumulating (ADR-0873). */
+                v_accum0 = vaddq_f64(v_accum0, vcvt_f64_f32(vget_low_f32(val3)));
+                v_accum1 = vaddq_f64(v_accum1, vcvt_f64_f32(vget_high_f32(val3)));
+            }
+
+            /* Scalar tail. */
+            for (; j < right; ++j) {
+                double val = fabs((double)row[j]);
+                accum += val * val * val;
+=======
+
+            _Alignas(16) float tmp[4];
+            vst1q_f32(tmp, val3);
+            for (int k = 0; k < 4; k++)
+                row_accum += (double)tmp[k];
+        }
+
+        /* Scalar tail. */
+        for (; j < right; ++j) {
+            float val = fabsf(row[j]);
+            row_accum += (double)(val * val * val);
+>>>>>>> theirs
+            }
+
+<<<<<<< ours
+            accum += vaddvq_f64(vaddq_f64(v_accum0, v_accum1));
+=======
+        accum += row_accum;
+    }
+>>>>>>> theirs
+
+            return (float)accum;
+        }
