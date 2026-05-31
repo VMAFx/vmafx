@@ -123,6 +123,46 @@ static char *test_normalize_range()
     return NULL;
 }
 
+/* Coverage push: vmaf_luminance_init_eotf accepts "bt1886" and "pq"
+ * literally and otherwise returns -EINVAL.  The function was reachable
+ * only via the float_ssim public path before; this drives it directly. */
+static char *test_init_eotf_dispatch()
+{
+    VmafEOTF eotf = NULL;
+
+    int err = vmaf_luminance_init_eotf(&eotf, "bt1886");
+    mu_assert("init_eotf(bt1886) must succeed", err == 0);
+    mu_assert("init_eotf(bt1886) must bind the BT.1886 function pointer",
+              eotf == vmaf_luminance_bt1886_eotf);
+
+    eotf = NULL;
+    err = vmaf_luminance_init_eotf(&eotf, "pq");
+    mu_assert("init_eotf(pq) must succeed", err == 0);
+    mu_assert("init_eotf(pq) must bind the PQ function pointer", eotf == vmaf_luminance_pq_eotf);
+
+    eotf = NULL;
+    err = vmaf_luminance_init_eotf(&eotf, "hlg-nonexistent");
+    mu_assert("init_eotf(unknown) must return -EINVAL", err == -EINVAL);
+    mu_assert("init_eotf(unknown) must not write the out param", eotf == NULL);
+
+    return NULL;
+}
+
+/* Coverage push: range_foot_head must reject unknown VmafPixelRange
+ * enum values with -EINVAL.  Exercises the default branch that was
+ * silently dead before. */
+static char *test_range_foot_head_invalid()
+{
+    int foot = 0xDEAD;
+    int head = 0xBEEF;
+
+    /* Cast through an integer value the enum cannot legitimately hold. */
+    int err = range_foot_head(8, (enum VmafPixelRange)0x7F, &foot, &head);
+    mu_assert("range_foot_head(unknown) must return -EINVAL", err == -EINVAL);
+
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_bt1886_eotf);
@@ -130,6 +170,8 @@ char *run_tests()
     mu_run_test(test_range_foot_head);
     mu_run_test(test_get_luminance);
     mu_run_test(test_normalize_range);
+    mu_run_test(test_init_eotf_dispatch);
+    mu_run_test(test_range_foot_head_invalid);
 
     return NULL;
 }

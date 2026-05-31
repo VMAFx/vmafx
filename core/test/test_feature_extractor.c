@@ -298,6 +298,105 @@ static char *test_feature_extractor_list_no_duplicates(void)
     return NULL;
 }
 
+/* Coverage push: NULL-input and unknown-name guards on the public lookup
+ * symbols.  Pre-fix the gcovr report showed these single-line guards as
+ * silently dead (lines 403-404 and the full-list walkthrough returning
+ * NULL at line 443 in feature_extractor.c). */
+static char *test_get_feature_extractor_null_and_unknown(void)
+{
+    VmafFeatureExtractor *fex;
+
+    fex = vmaf_get_feature_extractor_by_name(NULL);
+    mu_assert("by_name(NULL) must return NULL", !fex);
+    fex = vmaf_get_feature_extractor_by_name("definitely-not-a-real-extractor");
+    mu_assert("by_name(unknown) must return NULL", !fex);
+
+    fex = vmaf_get_feature_extractor_by_feature_name(NULL, 0);
+    mu_assert("by_feature_name(NULL) must return NULL", !fex);
+    fex = vmaf_get_feature_extractor_by_feature_name("VMAF_not_a_provided_feature", 0);
+    mu_assert("by_feature_name(unknown) must return NULL", !fex);
+
+    return NULL;
+}
+
+/* Coverage push: ADR-0530 fallback path in
+ * vmaf_get_feature_extractor_by_feature_name.  When the caller requests
+ * a backend flag that no extractor on the registry carries for the named
+ * feature, the second pass must drop the flag filter and return the CPU
+ * twin.  In the CPU-only build the entire registry has no
+ * VMAF_FEATURE_EXTRACTOR_CUDA-flagged motion2 provider, so requesting
+ * the CUDA flag must fall back to the CPU "motion" extractor that
+ * provides "VMAF_integer_feature_motion2_score". */
+static char *test_get_feature_extractor_by_name_cuda_fallback(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_feature_name(
+        "VMAF_integer_feature_motion2_score", VMAF_FEATURE_EXTRACTOR_CUDA);
+    mu_assert("by_feature_name(CUDA) must fall back to the CPU twin", fex != NULL);
+#if !HAVE_CUDA
+    mu_assert("CPU build fallback must resolve to the CPU 'motion' extractor",
+              !strcmp(fex->name, "motion"));
+#endif
+    return NULL;
+}
+
+/* Coverage push: NULL-input guards on the public extract / submit /
+ * collect / flush / close / destroy entry points. */
+static char *test_feature_extractor_context_null_guards(void)
+{
+    VmafPicture pic;
+    VmafFeatureCollector *vfc = NULL;
+
+    int err = vmaf_feature_extractor_context_extract(NULL, &pic, NULL, &pic, NULL, 0, vfc);
+    mu_assert("extract(NULL ctx) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_feature_extractor_context_submit(NULL, &pic, NULL, &pic, NULL, 0);
+    mu_assert("submit(NULL ctx) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_feature_extractor_context_submit_nocopy(NULL, 0);
+    mu_assert("submit_nocopy(NULL ctx) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_feature_extractor_context_collect(NULL, 0, vfc);
+    mu_assert("collect(NULL ctx) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_feature_extractor_context_flush(NULL, vfc);
+    mu_assert("flush(NULL ctx) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_feature_extractor_context_close(NULL);
+    mu_assert("close(NULL ctx) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_feature_extractor_context_destroy(NULL);
+    mu_assert("destroy(NULL ctx) must return -EINVAL", err == -EINVAL);
+
+    return NULL;
+}
+
+/* Coverage push: vmaf_fex_ctx_pool entry-point guards.  Exercises the
+ * (!pool / !fex / !fex_ctx) -EINVAL guards on create / aquire / release
+ * / flush / destroy. */
+static char *test_fex_ctx_pool_null_guards(void)
+{
+    int err = vmaf_fex_ctx_pool_create(NULL, 1);
+    mu_assert("pool_create(NULL pool) must return -EINVAL", err == -EINVAL);
+
+    VmafFeatureExtractorContextPool *pool = NULL;
+    err = vmaf_fex_ctx_pool_create(&pool, 0);
+    mu_assert("pool_create(n_threads=0) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_fex_ctx_pool_aquire(NULL, NULL, NULL, NULL);
+    mu_assert("pool_aquire(NULL pool) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_fex_ctx_pool_release(NULL, NULL);
+    mu_assert("pool_release(NULL pool) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_fex_ctx_pool_flush(NULL, NULL);
+    mu_assert("pool_flush(NULL pool) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_fex_ctx_pool_destroy(NULL);
+    mu_assert("pool_destroy(NULL pool) must return -EINVAL", err == -EINVAL);
+
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_get_feature_extractor_by_name_and_feature_name);
@@ -307,5 +406,9 @@ char *run_tests(void)
     mu_run_test(test_ssim_extractor_registered_and_extracts);
     mu_run_test(test_fex_vector_dedup_by_provided_feature_name);
     mu_run_test(test_feature_extractor_list_no_duplicates);
+    mu_run_test(test_get_feature_extractor_null_and_unknown);
+    mu_run_test(test_get_feature_extractor_by_name_cuda_fallback);
+    mu_run_test(test_feature_extractor_context_null_guards);
+    mu_run_test(test_fex_ctx_pool_null_guards);
     return NULL;
 }

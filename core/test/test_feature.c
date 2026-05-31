@@ -154,8 +154,95 @@ static char *test_feature_name_from_options()
     return NULL;
 }
 
+/* Coverage push: vmaf_feature_name_from_options must return NULL when
+ * name is NULL, and must produce the unadorned name when opts or obj
+ * is NULL (the two `goto write_output` short-circuits at lines 122-125). */
+static char *test_feature_name_null_inputs()
+{
+    char *out = vmaf_feature_name_from_options(NULL, NULL, NULL);
+    mu_assert("name=NULL must return NULL", out == NULL);
+
+    out = vmaf_feature_name_from_options("bare", NULL, NULL);
+    mu_assert("opts=NULL must produce the unadorned name", !strcmp(out, "bare"));
+    free(out);
+
+    static VmafOption opts[] = {
+        {.name = "dummy", .type = VMAF_OPT_TYPE_INT, .flags = VMAF_OPT_FLAG_FEATURE_PARAM}, {0}};
+
+    out = vmaf_feature_name_from_options("bare2", opts, NULL);
+    mu_assert("obj=NULL must short-circuit to unadorned name", !strcmp(out, "bare2"));
+    free(out);
+
+    return NULL;
+}
+
+/* Coverage push: STRING-type options must round-trip through
+ * vmaf_feature_name_from_options.  Exercises both the STRING case in
+ * `option_is_default` (line 107-108) and the STRING case in the
+ * `from_options` switch (line 151-153). */
+static char *test_feature_name_string_option()
+{
+    typedef struct {
+        char *mode;
+    } StringState;
+
+    static char default_mode[] = "auto";
+    static VmafOption opts[] = {{
+                                    .name = "mode",
+                                    .offset = offsetof(StringState, mode),
+                                    .type = VMAF_OPT_TYPE_STRING,
+                                    .default_val.s = default_mode,
+                                    .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+                                },
+                                {0}};
+
+    StringState s_default = {.mode = default_mode};
+    char *out = vmaf_feature_name_from_options("fname", opts, &s_default);
+    mu_assert("default STRING option must not appear in feature_name", !strcmp(out, "fname"));
+    free(out);
+
+    static char custom_mode[] = "fast";
+    StringState s_custom = {.mode = custom_mode};
+    out = vmaf_feature_name_from_options("fname", opts, &s_custom);
+    mu_assert("non-default STRING option must be appended to feature_name",
+              !strcmp(out, "fname_mode_fast"));
+    free(out);
+
+    return NULL;
+}
+
+/* Coverage push: vmaf_feature_name_dict_from_provided_features must
+ * walk every provided_features[] entry, allocate a dict entry per
+ * feature, and free the per-feature name afterwards.  Empty list
+ * (provided_features[0] == NULL) is a legal corner case that must
+ * return a NULL dict (vmaf_dictionary_set is never called). */
+static char *test_feature_name_dict_from_provided_features()
+{
+    static const char *provided[] = {"a", "b", NULL};
+
+    typedef struct {
+        int dummy;
+    } DummyState;
+    static VmafOption opts[] = {{0}};
+    DummyState s = {0};
+
+    VmafDictionary *dict = vmaf_feature_name_dict_from_provided_features(provided, opts, &s);
+    mu_assert("dict must be allocated when provided_features is non-empty", dict != NULL);
+    if (dict)
+        vmaf_dictionary_free(&dict);
+
+    static const char *empty[] = {NULL};
+    dict = vmaf_feature_name_dict_from_provided_features(empty, opts, &s);
+    mu_assert("dict must be NULL when provided_features is empty", dict == NULL);
+
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_feature_name_from_options);
+    mu_run_test(test_feature_name_null_inputs);
+    mu_run_test(test_feature_name_string_option);
+    mu_run_test(test_feature_name_dict_from_provided_features);
     return NULL;
 }

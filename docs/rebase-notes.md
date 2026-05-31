@@ -42236,3 +42236,24 @@ Fork-local files:
 `docs/adr/0868-gpu-backend-kernel-coverage.md`,
 `docs/research/gpu-backend-kernel-coverage-audit-2026-05-30.md`,
 `changelog.d/added/0868-gpu-backend-kernel-coverage.md`.
+## test/feature-extractor-coverage-push — 2026-05-30
+
+no rebase impact: REASON — test-only changes confined to fork-local files
+under `core/test/`. New test file `core/test/test_mkdirp.c` is wholly fork-added
+(no upstream equivalent); the four touched files
+(`core/test/test_luminance_tools.c`, `core/test/test_feature.c`,
+`core/test/test_feature_extractor.c`, `core/test/meson.build`) gain only new
+`static char *test_…` functions and registrations — no existing logic edited.
+No production source under `core/src/` is touched. The `test_mkdirp` binary
+compiles `core/src/feature/mkdirp.c` directly into its TU; this is the same
+pattern other test binaries already use (`test_ref` compiles `../src/ref.c`,
+`test_thread_pool` compiles `../src/thread_pool.c`, etc.), so the linkage
+introduces no new precedent.
+
+Fork-local files:
+`core/test/test_mkdirp.c` (new),
+`core/test/test_luminance_tools.c`,
+`core/test/test_feature.c`,
+`core/test/test_feature_extractor.c`,
+`core/test/meson.build`,
+`changelog.d/added/feature-extractor-coverage-push.md`.

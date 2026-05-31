@@ -1952,6 +1952,7 @@ if is_rust_enabled
     test('test_tad_rust', test_tad_rust, suite : ['fast'])
 endif
 
+<<<<<<< ours
 # Coverage round 3 — core/src/feature/integer_motion.h `edge_16` mirror
 # extension (5-tap filter, both axes).  Pushes line coverage from 58 %
 # towards 100 % by driving the four mirror branches directly.
@@ -1986,3 +1987,20 @@ test_feature_collector_coverage = executable('test_feature_collector_coverage',
     dependencies : [pthread_dependency, sycl_dependency],
 )
 test('test_feature_collector_coverage', test_feature_collector_coverage, suite : ['fast'])
+=======
+# Coverage push: core/src/feature/mkdirp.c had 0/35 line coverage in the
+# 2026-05-30 Coverage Gate baseline because the only in-tree caller is
+# cambi.c's `heatmaps_path` sidecar, which no unit test exercises.  This
+# binary drives the public `mkdirp` symbol directly with NULL guard,
+# single-level mkdir, EEXIST idempotence, and double-slash normalization.
+# Compiles `mkdirp.c` into the binary directly — the file is part of
+# libvmaf_feature_static_lib so linking against libvmaf would also work,
+# but a TU-local compile keeps the test self-contained and avoids
+# coupling to libvmaf's link graph.
+test_mkdirp = executable('test_mkdirp',
+    ['test.c', 'test_mkdirp.c', '../src/feature/mkdirp.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies: [pthread_dependency, sycl_dependency],
+)
+test('test_mkdirp', test_mkdirp, suite : ['fast'])
+>>>>>>> theirs
