@@ -1193,3 +1193,13 @@ scripts for those local corpora.
   as label-only annotation; they do not influence the encode loop. Do
   not short-circuit `_run_compare` before the format-validation block
   (the format guard still applies). Tests: `tests/test_compare_no_bisect.py`.
+- **Pathlib-only filesystem ops (ADR-0936).** Fork-owned modules under
+  `tools/vmaf-tune/src/` and `tools/vmaf-tune/tests/` use `pathlib.Path`
+  exclusively for filesystem operations — no `os.path.*`, `os.replace`,
+  `os.symlink`, `os.path.getsize`, `os.path.splitext`, builtin `open()`
+  on a path argument, or `glob.glob`. The ruff `PTH` ruleset
+  (flake8-use-pathlib) is enabled in `pyproject.toml` and will fail
+  lint on regression. When refactoring atomic-rename plumbing (e.g.
+  `EncodeCache.put` blob commit), prefer `tmp_path.replace(dst)` over
+  `os.replace(tmp_path, dst)` — they are semantically identical, just
+  the pathlib-method form.

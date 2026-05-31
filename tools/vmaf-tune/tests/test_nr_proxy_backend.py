@@ -45,7 +45,7 @@ from vmaftune.score_backend import (  # noqa: E402
 def _write_synthetic_yuv(path: Path, *, width: int, height: int, pix_fmt: str, n_frames: int = 3):
     """Write n_frames of synthetic all-gray luma (128) YUV to path."""
     frame_sz = _frame_bytes(width, height, pix_fmt)
-    with open(path, "wb") as fh:
+    with path.open("wb") as fh:
         for _ in range(n_frames):
             fh.write(bytes([128]) * frame_sz)
 

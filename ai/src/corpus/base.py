@@ -265,7 +265,7 @@ def save_progress(progress_path: Path, state: dict[str, dict[str, Any]]) -> None
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(state, fh, sort_keys=True, indent=2)
             fh.write("\n")
-        os.replace(tmp_path, progress_path)
+        tmp_path.replace(progress_path)
     except Exception:
         with contextlib.suppress(OSError):
             tmp_path.unlink()
@@ -361,7 +361,7 @@ def download_clip(
         return False, "curl-empty-output"
 
     try:
-        os.replace(part, dest)
+        part.replace(dest)
     except OSError as exc:
         return False, f"rename-failed: {exc}"
     return True, ""

@@ -41088,3 +41088,14 @@ own before cycle N+3, reconcile by adopting upstream's naming
 (`VmafPicture2` is intentionally generic) and remap our converters;
 otherwise the cycle-N+3 v1-removal commit is the natural ABI break
 window.
+## pathlib sweep + ruff PTH guard (ADR-0936, 2026-05-31)
+
+no rebase impact: changes are confined to fork-owned Python — the two
+console-shim files under `tools/vmaf-*/` (fork-added, no upstream twin),
+fork-owned `ai/scripts/`, `ai/src/corpus/`, `mcp-server/`,
+`scripts/ci/`, and `tools/vmaf-tune/src/` modules. The `pyproject.toml`
+ruff config delta adds `PTH` to `select` and lists it in the existing
+per-file ignores for the upstream-mirror trees (`python/**`,
+`compat/python-vmaf/**`, `testdata/**`). Upstream Netflix Python is
+covered by those ignores; an upstream sync will not see the `PTH` rule
+applied to their files.

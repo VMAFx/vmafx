@@ -60,6 +60,7 @@ select = [
   "S",             # bandit (security)
   "PL",            # pylint subset
   "RUF",
+  "PTH",           # flake8-use-pathlib: ban os.path.* in favour of pathlib.Path
 ]
 ignore = [
   "E501",          # line length handled by black
@@ -79,7 +80,7 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 # (unused imports, unused vars, bare except) — those represent style
 # drift Netflix owns, not regressions we introduced.
 "python/**" = [
-    "S", "PL", "B", "C4", "PIE", "RET", "SIM", "RUF", "I001",
+    "S", "PL", "B", "C4", "PIE", "RET", "SIM", "RUF", "I001", "PTH",
     "F401", "F522", "F541", "F841",
     "E402", "E711", "E722", "E731", "E741",
 ]
@@ -88,7 +89,7 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 # drift is acceptable and the bandit `S` warnings (subprocess,
 # try/except pass) are known-and-accepted in a dev context.
 "testdata/**" = [
-    "S", "PL", "B", "SIM", "RUF", "I001",
+    "S", "PL", "B", "SIM", "RUF", "I001", "PTH",
     "F401", "F541", "F841",
     "E401", "E402", "E701", "E722", "W291", "W292",
 ]
@@ -99,7 +100,7 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 # literal rewrites (C408), and the broader upstream style families are
 # suppressed to keep upstream-parity code free from fork noise.
 "compat/python-vmaf/**" = [
-    "S", "PL", "B", "C4", "PIE", "RET", "SIM", "RUF", "I001",
+    "S", "PL", "B", "C4", "PIE", "RET", "SIM", "RUF", "I001", "PTH",
     "F401", "F522", "F541", "F841",
     "E402", "E711", "E722", "E731", "E741",
 ]
@@ -109,7 +110,7 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 # ignore block stays as a belt-and-suspenders guard for any files that
 # slip past the directory exclude.)
 "compat/python-vmaf/resource/**" = [
-    "S", "PL", "B", "SIM", "RUF", "I001",
+    "S", "PL", "B", "SIM", "RUF", "I001", "PTH",
     "F401", "F541", "F841",
     "E401", "E402", "E701", "E711", "E722", "W291", "W292",
 ]

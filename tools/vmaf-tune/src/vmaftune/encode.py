@@ -384,7 +384,7 @@ def run_encode(
     # zeros tripping callers that interpret a zero-size on a non-pass-1
     # encode as failure.
     if rc == 0 and req.pass_number != 1 and req.output.exists():
-        size = os.path.getsize(req.output)
+        size = req.output.stat().st_size
 
     ffmpeg_v, encoder_v = parse_versions(stderr, encoder=req.encoder)
     # ADR-0498 follow-up #7: when the encode succeeded but the per-

@@ -194,7 +194,12 @@ def check_no_active_agent(
     # is configured differently or no agents are active — that's a
     # pass, not an error.
     matching_tasks: list[str] = []
-    for path_str in glob.glob(tasks_glob):
+    # PTH207 noqa: tasks_glob is a user-overridable, fully-arbitrary glob
+    # (default is an absolute multi-wildcard pattern like
+    # ``/tmp/claude-*/tasks/*.output``). ``Path.glob`` would require splitting
+    # into a base directory + relative pattern, which we cannot do without
+    # parsing the user-supplied glob — ``glob.glob`` is the correct primitive.
+    for path_str in glob.glob(tasks_glob):  # noqa: PTH207
         text = _read_text_safely(Path(path_str))
         if token.search(text):
             matching_tasks.append(path_str)

@@ -471,9 +471,7 @@ def _build_production_encode_runner(
                 )
 
             # Approximate duration from frame count; good enough for kbps.
-            import os  # noqa: PLC0415
-
-            size_bytes = os.path.getsize(dist)
+            size_bytes = dist.stat().st_size
             score_req = ScoreRequest(
                 reference=src,
                 distorted=dist,

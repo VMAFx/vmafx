@@ -895,7 +895,7 @@ def _strip_model_ext(filename: str) -> str:
     This function is used to normalise *registry keys* — the input is
     always the filesystem filename, not a user-supplied bare name.
     """
-    _, ext = os.path.splitext(filename)
+    ext = Path(filename).suffix
     if ext.lower() in _MODEL_EXTENSIONS:
         return filename[: -len(ext)]
     return filename

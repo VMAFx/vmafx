@@ -8,12 +8,12 @@ Useful when the package is run from a checkout without a ``pip install``.
 
 from __future__ import annotations
 
-import os
 import sys
+from pathlib import Path
 
 # Make src/ importable when invoked from the repo without pip install.
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "src"))
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE / "src"))
 
 from vmaftune.cli import main  # noqa: E402
 

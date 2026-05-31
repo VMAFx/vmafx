@@ -241,7 +241,7 @@ class TuneCache:
         # Atomic blob put: copy to tmp in the same dir, then rename.
         tmp_blob = blob.with_suffix(".bin.tmp")
         shutil.copyfile(artifact_path, tmp_blob)
-        os.replace(tmp_blob, blob)
+        tmp_blob.replace(blob)
 
         payload = {
             "encode_size_bytes": int(result.encode_size_bytes),
@@ -325,7 +325,7 @@ class TuneCache:
         with tempfile.NamedTemporaryFile("wb", dir=dst.parent, delete=False) as fh:
             fh.write(payload)
             tmp = Path(fh.name)
-        os.replace(tmp, dst)
+        tmp.replace(dst)
         return dst
 
 

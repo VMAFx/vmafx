@@ -132,7 +132,7 @@ LOSO_FOLD_COUNT: int = 5
 # Default corpus discovery roots
 # ---------------------------------------------------------------------
 
-_HOME = Path(os.path.expanduser("~"))
+_HOME = Path.home()
 
 #: Directory layout the operator is expected to populate. Each root is
 #: scanned recursively for ``*.jsonl`` corpora at runtime; absent
