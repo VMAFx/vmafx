@@ -947,6 +947,23 @@ test_mcp_smoke = executable('test_mcp_smoke',
     c_args: ['-DHAVE_MCP=1']
 )
 test('test_mcp_smoke', test_mcp_smoke, suite : ['slow'], timeout: 60)
+
+# Coverage push for core/src/mcp/* — complements test_mcp_smoke.c by
+# pinning the dispatcher error envelopes, lifecycle state-machine
+# edges (validate_config, double-start -EBUSY, empty/overlong UDS+SSE
+# paths, stop-then-close), and transport-level error paths
+# (stdio oversize-line overflow envelope, SSE 404 / health / malformed
+# request / POST without Content-Length). See
+# changelog.d/added/core-mcp-coverage-push.md and the matching
+# docs/research/ digest.
+test_mcp_coverage = executable('test_mcp_coverage',
+    ['test.c', 'test_mcp_coverage.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+    c_args: ['-DHAVE_MCP=1']
+)
+test('test_mcp_coverage', test_mcp_coverage, suite : ['slow'], timeout: 60)
 endif
 
 # ADR-0212 / T7-10: HIP (AMD ROCm) backend smoke.

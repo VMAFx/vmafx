@@ -52,6 +52,24 @@ in this single test file.
 
 ---
 
+## Core MCP transport coverage push (2026-05-31)
+
+**Files touched:**
+`core/test/test_mcp_coverage.c` (new),
+`core/test/meson.build`,
+`changelog.d/added/core-mcp-coverage-push.md`,
+`docs/research/core-mcp-coverage-push-2026-05-31.md`.
+
+**Rebase impact:** None. The embedded MCP server
+(`core/src/mcp/`, `core/include/libvmaf/libvmaf_mcp.h`) is fork-only —
+upstream Netflix/vmaf has no MCP surface — so this test-only push is
+fully self-contained and never lands on a Netflix file. If upstream
+ever adds an MCP-shaped surface, treat the test as canonical fork-side
+coverage and reconcile by name. Companion: ADR-0108 deliverables in
+`docs/research/core-mcp-coverage-push-2026-05-31.md`.
+
+---
+
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
 
 **Files touched:**
