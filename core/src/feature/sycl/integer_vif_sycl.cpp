@@ -1442,8 +1442,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     // Generate and upload log2 LUT
     {
         uint32_t *lut_host = static_cast<uint32_t *>(std::malloc(lut_size));
-        if (!lut_host)
+        if (!lut_host) {
+            close_fex_sycl(fex);
             return -ENOMEM;
+        }
         for (int j = 0; j < LOG2_LUT_SIZE; j++) {
             lut_host[j] = (uint32_t)std::roundf(std::log2f((float)(j + 32768)) * 2048.0f);
         }
@@ -1474,14 +1476,18 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        close_fex_sycl(fex);
         return -ENOMEM;
+    }
 
     // Register with combined command graph
     err = vmaf_sycl_graph_register(state, enqueue_vif_work, vif_pre_graph, vif_post_graph, nullptr,
                                    s, "VIF");
-    if (err)
+    if (err) {
+        close_fex_sycl(fex);
         return err;
+    }
 
     return 0;
 }

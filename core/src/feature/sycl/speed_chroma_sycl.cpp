@@ -624,13 +624,17 @@ static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
 #undef ALLOC_H
 #undef ALLOC_A
 
-    if (!s->d_plane || !s->h_plane_ref || !s->h_eigenvalues || !s->h_Q || !s->h_R)
+    if (!s->d_plane || !s->h_plane_ref || !s->h_eigenvalues || !s->h_Q || !s->h_R) {
+        free_sycl_state(s);
         return -ENOMEM;
+    }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        free_sycl_state(s);
         return -ENOMEM;
+    }
 
     return 0;
 }

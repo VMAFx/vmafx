@@ -1377,8 +1377,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     // Generate and upload div_lookup
     {
         int32_t *lut = static_cast<int32_t *>(std::malloc(div_size));
-        if (!lut)
+        if (!lut) {
+            close_fex_sycl(fex);
             return -ENOMEM;
+        }
         std::memset(lut, 0, div_size);
         static const int32_t Q_factor = 1073741824; // 2^30
         for (int i = 1; i <= 32768; i++) {
@@ -1392,14 +1394,18 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        close_fex_sycl(fex);
         return -ENOMEM;
+    }
 
     // Register with combined command graph
     err = vmaf_sycl_graph_register(state, enqueue_adm_work, adm_pre_graph, adm_post_graph, nullptr,
                                    s, "ADM");
-    if (err)
+    if (err) {
+        close_fex_sycl(fex);
         return err;
+    }
 
     return 0;
 }

@@ -587,13 +587,17 @@ static int init_temporal_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
 #undef ALLOC_A
 
     if (!s->d_plane || !s->h_ref[0] || !s->h_ref[1] || !s->h_dis[0] || !s->h_dis[1] ||
-        !s->h_eigenvalues || !s->h_Q || !s->h_R)
+        !s->h_eigenvalues || !s->h_Q || !s->h_R) {
+        free_sycl_state_st(s);
         return -ENOMEM;
+    }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        free_sycl_state_st(s);
         return -ENOMEM;
+    }
 
     s->frame_index = 0;
     return 0;
