@@ -181,3 +181,29 @@ other. Rebase-sensitive invariants:
    that case the sync PR itself trips the gate and the resolution is to
    add tests in the same PR (preferred) or to land an ADR-0922 supersede
    ADR first (only if structurally impossible).
+## Pre-commit hook hygiene — no submodules (ADR-0893)
+
+`.pre-commit-config.yaml` ships the upstream `forbid-new-submodules`
+hook. The fork pulls upstream Netflix/vmaf code via `subprojects/`
+(Meson wraps with sha256 pinning) and `ffmpeg-patches/` (out-of-tree
+patch series), **never** via `.gitmodules`. A submodule entry would
+bypass:
+
+- the wrap-pin sha256 enforcement,
+- the CycloneDX SBOM walk (which inspects `subprojects/*.wrap`, not
+  `.gitmodules`),
+- and the license-allow-list audit.
+
+If you need to add a new third-party dependency, use a Meson wrap
+(or vendor it under a clear "Vendored 3rd-party" banner, with the
+attendant `.semgrepignore` / `check-copyright` exclusion). Do not
+work around the `forbid-new-submodules` hook with `--no-verify`.
+
+**Pinned-revision audit cadence**: re-audit `.pre-commit-config.yaml`
+revisions roughly every ~6 months or when CI surfaces a deprecation
+warning. Use `pre-commit autoupdate` as a starting point but verify
+each proposed bump against `git ls-remote --tags --refs <repo>` —
+the autoupdate heuristic has a known sort-order bug on repos that
+land point releases out of branch order (it suggested a
+`gitleaks v8.30.1 → v8.30.0` downgrade during the ADR-0893 audit).
+Alpha pre-releases (`X.Y.Za<N>`) are never an acceptable pin.

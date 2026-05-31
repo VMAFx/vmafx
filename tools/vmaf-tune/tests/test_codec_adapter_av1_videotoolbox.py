@@ -26,7 +26,10 @@ from vmaftune.codec_adapters import (  # noqa: E402  # noqa: E402
     Av1VideoToolboxUnavailableError,
 )
 from vmaftune.codec_adapters import av1_videotoolbox as mod  # noqa: E402
-from vmaftune.codec_adapters import get_adapter, known_codecs  # noqa: E402  # noqa: E402
+from vmaftune.codec_adapters import (  # noqa: E402  # noqa: E402
+    get_adapter,
+    known_codecs,
+)
 
 
 class _FakeCompleted:

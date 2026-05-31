@@ -43,6 +43,13 @@ repos:
         # .onnx.data added alongside .onnx (external tensor sidecar; raw bytes).
         exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
       - id: detect-private-key
+      # forbid-new-submodules: the fork pulls upstream Netflix code via
+      # subprojects/ wraps (Meson dependency mechanism) and ffmpeg-patches/
+      # (out-of-tree patch series), never via .gitmodules. Any attempt to
+      # add a git submodule is almost certainly a mistake or a supply-chain
+      # vector; gate it here so it shows up at commit time, not at review
+      # time.
+      - id: forbid-new-submodules
 
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v22.1.5
@@ -63,14 +70,14 @@ repos:
         exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
 
   - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+    rev: 6.0.1
     hooks:
       - id: isort
         files: '^(python|ai|scripts|tools)/.*\.py$'
         exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.13
+    rev: v0.15.15
     hooks:
       - id: ruff-check
         files: '^(python|ai|scripts|tools)/.*\.py$'

@@ -41772,3 +41772,11 @@ On upstream sync, no conflict is expected. If CODEOWNERS shows a textual
 conflict because PR #321 landed in-between, the resolution is trivial:
 keep PR #321's renamed `/core/...` rows AND keep this PR's new append-only
 rows. Both edits are non-overlapping at the line level.
+## ADR-0893 — Pre-commit config audit — 2026-05-30
+
+no rebase impact: REASON — `.pre-commit-config.yaml` is a fork-local config
+file. Upstream Netflix/vmaf does not ship pre-commit configuration; all
+revisions and hooks listed are fork-owned. Touches one fork-owned Python
+file via isort 6.0.1 auto-fix
+(`tools/vmaf-tune/tests/test_codec_adapter_av1_videotoolbox.py`), which is
+itself outside the upstream tree.
