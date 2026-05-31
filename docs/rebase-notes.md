@@ -795,6 +795,27 @@ sync introduces a Netflix-side `scripts/run_unittests.sh`, the
 strict-mode `set -eu` block at the top of our version is the
 only carrier of fork-specific behaviour and trivially survives
 a 3-way merge.
+## Metal kernel parity tests round 2 (2026-05-30)
+
+**Files touched:**
+`core/test/meson.build`,
+`core/test/test_metal_motion_v2_parity.c` (new),
+`core/test/test_metal_integer_psnr_parity.c` (new),
+`core/test/test_metal_float_psnr_parity.c` (new),
+`core/test/test_metal_float_ssim_parity.c` (new)
+
+**Rebase impact:** None. All four new files live under the existing
+fork-local `enable_metal` block in `core/test/meson.build` (the entire
+Metal backend is fork-added — ADR-0361 / ADR-0421 / ADR-0589 — and
+absent from upstream Netflix/vmaf). The block edit appends four new
+`executable()` + `test()` pairs immediately after the
+`test_metal_install_header` block; the surrounding `endif` boundaries
+are untouched so upstream syncs cannot conflict here.
+
+If upstream ever ports a Metal backend, the test files would need
+re-pointing at the upstream kernel names; the synthetic-fixture +
+`-ENODEV` skip pattern from `test_sycl_motion3_parity.c` carries
+forward unchanged.
 
 ---
 

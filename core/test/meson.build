@@ -1491,6 +1491,7 @@ test('test_metal_install_header', test_metal_install_header, suite : ['fast', 'g
 endif
 
 <<<<<<< ours
+<<<<<<< ours
 # Metal kernel coverage round 3 — per-extractor parity tests for the four
 # extractors not covered by round 2 (PR #379): integer_motion, float_motion,
 # float_moment, float_ms_ssim. Same pattern as round 2 — synthetic YUV420P
@@ -1501,38 +1502,71 @@ endif
 # CI lanes they exercise the live kernel.
 test_metal_integer_motion_parity = executable('test_metal_integer_motion_parity',
     ['test.c', 'test_metal_integer_motion_parity.c'],
+=======
+# Metal kernel coverage round 2 — per-extractor parity tests (ADR-0421 /
+# ADR-0589 / ADR-0214). Extend PR #351's registration audit with real CPU
+# vs. Metal score comparisons on synthetic YUV420P fixtures. Each test
+# skips cleanly when `vmaf_metal_state_init` returns -ENODEV (Linux,
+# Windows, Intel Mac); on Apple-Family-7+ macOS CI lanes they exercise
+# the live kernel and assert places=4 (1e-4) parity per ADR-0214 — except
+# float_ssim which uses the 1e-3 SSIM-specific bound from ADR-0589.
+test_metal_motion_v2_parity = executable('test_metal_motion_v2_parity',
+    ['test.c', 'test_metal_motion_v2_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
+<<<<<<< ours
 test('test_metal_integer_motion_parity', test_metal_integer_motion_parity, suite : ['fast', 'gpu'])
 
 test_metal_float_motion_parity = executable('test_metal_float_motion_parity',
     ['test.c', 'test_metal_float_motion_parity.c'],
+=======
+test('test_metal_motion_v2_parity', test_metal_motion_v2_parity, suite : ['fast', 'gpu'])
+
+test_metal_integer_psnr_parity = executable('test_metal_integer_psnr_parity',
+    ['test.c', 'test_metal_integer_psnr_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
+<<<<<<< ours
 test('test_metal_float_motion_parity', test_metal_float_motion_parity, suite : ['fast', 'gpu'])
 
 test_metal_float_moment_parity = executable('test_metal_float_moment_parity',
     ['test.c', 'test_metal_float_moment_parity.c'],
+=======
+test('test_metal_integer_psnr_parity', test_metal_integer_psnr_parity, suite : ['fast', 'gpu'])
+
+test_metal_float_psnr_parity = executable('test_metal_float_psnr_parity',
+    ['test.c', 'test_metal_float_psnr_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
+<<<<<<< ours
 test('test_metal_float_moment_parity', test_metal_float_moment_parity, suite : ['fast', 'gpu'])
 
 test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
     ['test.c', 'test_metal_float_ms_ssim_parity.c'],
+=======
+test('test_metal_float_psnr_parity', test_metal_float_psnr_parity, suite : ['fast', 'gpu'])
+
+test_metal_float_ssim_parity = executable('test_metal_float_ssim_parity',
+    ['test.c', 'test_metal_float_ssim_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, math_lib],
     c_args: ['-DHAVE_METAL=1']
 )
+<<<<<<< ours
 test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity, suite : ['fast', 'gpu'])
 =======
 # Metal kernel coverage round 4 (closeout) — meta-audit regression guard
@@ -1551,6 +1585,9 @@ test_metal_kernel_coverage_audit = executable('test_metal_kernel_coverage_audit'
     c_args: ['-DHAVE_METAL=1']
 )
 test('test_metal_kernel_coverage_audit', test_metal_kernel_coverage_audit, suite : ['fast', 'gpu'])
+>>>>>>> theirs
+=======
+test('test_metal_float_ssim_parity', test_metal_float_ssim_parity, suite : ['fast', 'gpu'])
 >>>>>>> theirs
 endif
 
