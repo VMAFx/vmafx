@@ -204,16 +204,18 @@ func WaitForShutdown(ctx context.Context, log *slog.Logger, timeout time.Duratio
 }
 
 // NewShutdownContext returns a context that is cancelled on SIGTERM / SIGINT.
-// The returned stop function must be called when the context is no longer needed
-// to release resources.
+// The returned stop function MUST be called (typically via `defer`) when the
+// context is no longer needed: it both releases the signal handler
+// subscription (avoiding a process-lifetime goroutine + signal-handler leak
+// when the caller exits without a signal arriving — e.g. early `os.Exit(1)`
+// paths in `main`) and cancels the context.
+//
+// Implementation note: this delegates to `signal.NotifyContext` (Go 1.16+),
+// which is the stdlib idiom and unwinds correctly on both paths (signal
+// arrival AND `stop()` called first). The previous implementation spawned
+// a goroutine blocked on `<-ch` with no `<-ctx.Done()` arm, leaking the
+// goroutine + the signal subscription whenever the caller invoked `stop()`
+// before any signal fired. ADR-0978.
 func NewShutdownContext() (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		ch := make(chan os.Signal, 1)
-		signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
-		defer signal.Stop(ch)
-		<-ch
-		cancel()
-	}()
-	return ctx, cancel
+	return signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 }

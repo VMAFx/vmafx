@@ -1,0 +1,1 @@
+| [ADR-0978](0978-vmafx-server-bug-audit.md) | vmafx-server + pkg/score bug-audit — shutdown leak, gRPC Send-EOF surfacing, HTTP body cap, panic recovery | Accepted | security, bug, audit, go, grpc, http, server |

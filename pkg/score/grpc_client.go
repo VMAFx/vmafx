@@ -19,6 +19,7 @@ package score
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -95,6 +96,13 @@ type ScoreStream struct {
 // StreamConfig message. The returned ScoreStream is ready for PushFrame.
 //
 // model and frameCountHint may be zero / empty if not known.
+//
+// Send-error surfacing: gRPC bidirectional streams report a Send failure as
+// `io.EOF` when the server has already closed its side with an error (e.g.
+// `codes.InvalidArgument` for a malformed StreamConfig). The actual server
+// status only surfaces on `Recv`. We therefore convert a Send `io.EOF` into
+// the underlying gRPC status by draining `Recv`, so callers get the real
+// reason ("InvalidArgument: …") rather than the meaningless `EOF`. ADR-0978.
 func (c *Client) OpenScoreStream(
 	ctx context.Context,
 	width, height uint32,
@@ -118,9 +126,27 @@ func (c *Client) OpenScoreStream(
 		},
 	}
 	if err := raw.Send(cfg); err != nil {
-		return nil, fmt.Errorf("score: send StreamConfig: %w", err)
+		return nil, fmt.Errorf("score: send StreamConfig: %w", recvStatusOnEOF(raw, err))
 	}
 	return &ScoreStream{raw: raw}, nil
+}
+
+// recvStatusOnEOF translates a stream Send `io.EOF` into the server's actual
+// gRPC status. Per the gRPC Go docs, Send returns `io.EOF` whenever the
+// stream is "done" from the server's perspective; the caller must then call
+// Recv to obtain the underlying status. For any other error we return it
+// unchanged (Send may also return network errors that already carry full
+// context). When Recv returns nil (no error message available, e.g. server
+// closed cleanly), we fall through to the original error so the caller still
+// gets a non-nil cause.
+func recvStatusOnEOF(s vmafxv1.VmafxScoring_ScoreStreamClient, sendErr error) error {
+	if !errors.Is(sendErr, io.EOF) {
+		return sendErr
+	}
+	if _, err := s.Recv(); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return sendErr
 }
 
 // PushFrame sends one (reference, distorted) frame pair. The raw byte
@@ -128,6 +154,9 @@ func (c *Client) OpenScoreStream(
 // StreamConfig, with no padding between planes.
 //
 // frameIndex must be strictly monotonically increasing from 0.
+//
+// On Send failure, this surfaces the server's actual gRPC status (see
+// OpenScoreStream's recvStatusOnEOF comment for the rationale). ADR-0978.
 func (s *ScoreStream) PushFrame(frameIndex uint32, rawReference, rawDistorted []byte) error {
 	msg := &vmafxv1.ScoreStreamRequest{
 		Payload: &vmafxv1.ScoreStreamRequest_FramePair{
@@ -139,7 +168,7 @@ func (s *ScoreStream) PushFrame(frameIndex uint32, rawReference, rawDistorted []
 		},
 	}
 	if err := s.raw.Send(msg); err != nil {
-		return fmt.Errorf("score: push frame %d: %w", frameIndex, err)
+		return fmt.Errorf("score: push frame %d: %w", frameIndex, recvStatusOnEOF(s.raw, err))
 	}
 	return nil
 }
@@ -169,7 +198,11 @@ func (s *ScoreStream) CloseSend() error {
 func (s *ScoreStream) Recv() (*FrameScore, *Aggregate, error) {
 	resp, err := s.raw.Recv()
 	if err != nil {
-		if err == io.EOF {
+		// Defensive: prefer errors.Is over `==` even though the gRPC client
+		// surfaces io.EOF as the bare sentinel today. Future gRPC versions
+		// may wrap it (e.g. into a status with codes.OK), and this keeps the
+		// caller-visible EOF semantics stable. ADR-0978.
+		if errors.Is(err, io.EOF) {
 			return nil, nil, io.EOF
 		}
 		return nil, nil, fmt.Errorf("score: recv: %w", err)

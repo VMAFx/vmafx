@@ -6,6 +6,31 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## vmafx-server + pkg/score bug-audit (2026-05-31, ADR-0978)
+
+**Files touched:**
+`pkg/observability/observability.go`,
+`pkg/observability/observability_test.go`,
+`pkg/score/grpc_client.go`,
+`pkg/score/grpc_client_test.go`,
+`cmd/vmafx-server/grpc_server.go`,
+`cmd/vmafx-server/http_server.go`,
+`cmd/vmafx-server/main_test.go`,
+`cmd/vmafx-server/grpc_recovery_test.go` (new).
+
+**Rebase impact:** None. All five surfaces are fork-local Go code:
+- `pkg/observability/` is a fork-added package; Netflix/vmaf has no
+  equivalent.
+- `pkg/score/` is a fork-added wrapper around the fork's vmafx.v1 proto;
+  Netflix/vmaf does not ship a gRPC client.
+- `cmd/vmafx-server/` is a fork-added binary (ADR-0703); Netflix/vmaf
+  has no equivalent gRPC + HTTP scoring service.
+
+No C ABI, no public header, no upstream-mirrored TU touched. Upstream
+syncs do not interact with this change.
+
+---
+
 ## core/tools input-reader safety (2026-05-31, ADR-0977)
 
 **Files touched:**

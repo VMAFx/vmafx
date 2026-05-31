@@ -34,3 +34,23 @@ Go gRPC + HTTP scoring service. See [ADR-0703](../../docs/adr/0703-vmafx-server-
    so future proto additions don't break the build. Do not remove the
    embed even after every RPC has a real implementation; the generator
    regenerates the unimplemented stub on every proto change.
+
+5. **Panic-recovery interceptors are not optional** (`grpc_server.go`,
+   ADR-0978): `runGRPC` constructs the `grpc.Server` with
+   `grpc.UnaryInterceptor(recoveryUnaryInterceptor(log))` +
+   `grpc.StreamInterceptor(recoveryStreamInterceptor(log))`. These
+   convert a panic inside any handler (notably the cgo libvmaf call
+   path) into a `codes.Internal` reply, keeping the server alive across
+   the bad request. Removing either interceptor reverts to "one bad
+   request kills the whole server" — every handler panic would tear
+   down the gRPC worker goroutine and crash the process. If the
+   gRPC server constructor is refactored, the interceptors MUST be
+   carried through.
+
+6. **`POST /v1/score` body cap** (`http_server.go`, ADR-0978): the
+   handler wraps `r.Body` in `http.MaxBytesReader(w, r.Body,
+   maxScoreRequestBodyBytes)` (1 MiB) and maps `*http.MaxBytesError`
+   to HTTP 413. This is defence-in-depth against unauthenticated POST
+   DoS even after TLS / auth lands. If the legitimate request shape
+   ever needs to exceed 1 MiB (e.g. inlined picture data), raise
+   `maxScoreRequestBodyBytes` rather than removing the cap.

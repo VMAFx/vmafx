@@ -280,3 +280,64 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// TestScoreEndpoint_RejectsOversizedBody guards the ADR-0978 regression: the
+// /v1/score endpoint must cap incoming JSON bodies to maxScoreRequestBodyBytes
+// (1 MiB) so an unauthenticated POST with a multi-GB body cannot OOM the
+// process via the JSON decoder's read buffer.
+func TestScoreEndpoint_RejectsOversizedBody(t *testing.T) {
+	hs, _ := newTestHTTPServer(t)
+	mux := http.NewServeMux()
+	hs.routes(mux)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// Construct a syntactically-valid JSON body larger than the 1 MiB cap.
+	// The Reference field carries the padding.
+	const oversized = maxScoreRequestBodyBytes + 1024
+	pad := strings.Repeat("a", oversized)
+	reqBody := `{"reference":"` + pad + `","distorted":"/tmp/dis.yuv"}`
+
+	resp, err := ts.Client().Post(ts.URL+"/v1/score", "application/json",
+		strings.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("POST /v1/score: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		body, _ := io.ReadAll(resp.Body)
+		t.Errorf("expected 413, got %d; body: %s", resp.StatusCode, body)
+	}
+}
+
+// TestScoreEndpoint_AcceptsBoundedBody verifies the cap is permissive enough
+// for legitimate requests — a 64 KiB body well within the cap is accepted
+// even though it's much larger than a typical (~200-byte) request.
+func TestScoreEndpoint_AcceptsBoundedBody(t *testing.T) {
+	hs, _ := newTestHTTPServer(t)
+	mux := http.NewServeMux()
+	hs.routes(mux)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// 64 KiB of padding inside the Model field (kept under the per-field
+	// JSON tag where length is harmless).
+	pad := strings.Repeat("m", 64*1024)
+	reqBody := `{"reference":"/tmp/ref.yuv","distorted":"/tmp/dis.yuv","model":"` + pad + `"}`
+
+	resp, err := ts.Client().Post(ts.URL+"/v1/score", "application/json",
+		strings.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("POST /v1/score: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// We don't care about the exact status — only that the body cap did
+	// NOT reject it (so 200 OK from the stub scorer or some other 4xx /
+	// 5xx unrelated to body size is acceptable). 413 specifically means
+	// the cap was too tight.
+	if resp.StatusCode == http.StatusRequestEntityTooLarge {
+		t.Errorf("64 KiB body wrongly rejected as too large; cap too tight")
+	}
+}

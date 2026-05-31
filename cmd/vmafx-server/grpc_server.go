@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"runtime/debug"
 	"time"
 
 	"google.golang.org/grpc"
@@ -151,7 +152,14 @@ func runGRPC(
 		return fmt.Errorf("grpc listen %s: %w", addr, err)
 	}
 
-	srv := grpc.NewServer()
+	// Install panic-recovery interceptors so a single misbehaving handler
+	// (e.g. a nil-pointer deref inside the cgo libvmaf path) surfaces as a
+	// codes.Internal status to the offending client instead of crashing the
+	// whole server process and dropping every in-flight stream. ADR-0978.
+	srv := grpc.NewServer(
+		grpc.UnaryInterceptor(recoveryUnaryInterceptor(log)),
+		grpc.StreamInterceptor(recoveryStreamInterceptor(log)),
+	)
 	vmafxv1.RegisterVmafxScoringServer(srv, newGRPCServer(scorer, metrics, log))
 
 	log.Info("gRPC server started", "addr", addr)
@@ -167,4 +175,53 @@ func runGRPC(
 		return fmt.Errorf("grpc serve: %w", err)
 	}
 	return nil
+}
+
+// recoveryUnaryInterceptor returns a UnaryServerInterceptor that converts a
+// panic inside the handler into a codes.Internal gRPC status, logging the
+// stack trace at ERROR level. Without this a panic in any handler tears down
+// the gRPC server's worker goroutine; the gRPC library then re-raises it in
+// the connection's read loop and crashes the process. ADR-0978.
+func recoveryUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req interface{},
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (resp interface{}, err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				log.Error("grpc unary handler panic recovered",
+					"method", info.FullMethod,
+					"panic", fmt.Sprintf("%v", p),
+					"stack", string(debug.Stack()),
+				)
+				err = status.Errorf(codes.Internal, "internal server error")
+			}
+		}()
+		return handler(ctx, req)
+	}
+}
+
+// recoveryStreamInterceptor is the streaming counterpart of
+// recoveryUnaryInterceptor. ADR-0978.
+func recoveryStreamInterceptor(log *slog.Logger) grpc.StreamServerInterceptor {
+	return func(
+		srv interface{},
+		ss grpc.ServerStream,
+		info *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) (err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				log.Error("grpc stream handler panic recovered",
+					"method", info.FullMethod,
+					"panic", fmt.Sprintf("%v", p),
+					"stack", string(debug.Stack()),
+				)
+				err = status.Errorf(codes.Internal, "internal server error")
+			}
+		}()
+		return handler(srv, ss)
+	}
 }

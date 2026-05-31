@@ -25,4 +25,21 @@ for the streaming surface.
    first two is non-nil per call, and `io.EOF` signals the stream is
    fully drained after the terminal `Aggregate` was already returned.
    Callers loop until `io.EOF`; do not change the return shape to a
-   single typed sum without coordinated updates to every caller.
+   single typed sum without coordinated updates to every caller. Recv
+   compares the EOF sentinel via `errors.Is(err, io.EOF)` (ADR-0978);
+   do not regress to `err == io.EOF` — the defensive form keeps the
+   EOF semantics stable if a future gRPC release wraps the sentinel
+   inside a status.
+
+4. **Send-EOF translation** (`grpc_client.go`, ADR-0978): both
+   `OpenScoreStream` and `PushFrame` route Send errors through
+   `recvStatusOnEOF`, which detects an `io.EOF` from Send (gRPC's
+   "stream already done from the server's perspective" signal) and
+   calls Recv to retrieve the server's actual non-OK status. The
+   caller-visible error is then the real `codes.Foo` from the server
+   (e.g. `InvalidArgument: ScoreStream: first message must set the
+   config oneof`) rather than the meaningless bare `EOF`. Removing
+   this translation would re-introduce the regression where every
+   server-side rejection of a malformed StreamConfig surfaces as
+   "send StreamConfig: EOF" with no clue about what was actually
+   wrong.

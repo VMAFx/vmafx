@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -238,6 +239,45 @@ func TestNewShutdownContext_CancelsCleanly(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Error("context did not cancel within 2s after stop()")
 	}
+}
+
+// TestNewShutdownContext_NoGoroutineLeak guards against the regression fixed
+// in ADR-0978: the previous implementation spawned a goroutine blocked on
+// `<-ch` with no `<-ctx.Done()` arm, so each NewShutdownContext / stop()
+// cycle leaked one goroutine plus one signal-handler subscription. The fix
+// (`signal.NotifyContext`) unwinds on both paths.
+//
+// We allocate, stop, allow the runtime a moment to scavenge, then check the
+// goroutine count returns to baseline (within a small tolerance for the test
+// scheduler and any background goroutines). Pre-fix, repeated cycles would
+// leak monotonically and the assertion would trip.
+func TestNewShutdownContext_NoGoroutineLeak(t *testing.T) {
+	// Not Parallel: the goroutine count must be measurable against a stable
+	// baseline. Concurrent tests would race with the count.
+	baseline := runtime.NumGoroutine()
+
+	const iterations = 100
+	for i := 0; i < iterations; i++ {
+		_, stop := NewShutdownContext()
+		stop()
+	}
+
+	// Give the runtime a chance to garbage-collect any short-lived helper
+	// goroutines spawned inside signal.NotifyContext. signal.NotifyContext's
+	// internal goroutine exits when the parent ctx (or the returned cancel
+	// func) cancels — usually within a single scheduler tick.
+	runtime.Gosched()
+	deadline := time.Now().Add(2 * time.Second)
+	var current int
+	for time.Now().Before(deadline) {
+		current = runtime.NumGoroutine()
+		if current <= baseline+2 { // small tolerance for scheduler noise
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("goroutine leak: baseline=%d, after %d cycles=%d (tolerance=%d)",
+		baseline, iterations, current, baseline+2)
 }
 
 // TestWaitForShutdown_ReturnsOnContextCancel verifies WaitForShutdown

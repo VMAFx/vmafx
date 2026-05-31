@@ -18,6 +18,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -29,6 +30,15 @@ import (
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
+
+// maxScoreRequestBodyBytes caps the request body size for POST /v1/score.
+// The endpoint only consumes a small JSON blob with three string fields
+// (reference path, distorted path, model name); 1 MiB is well above any
+// legitimate payload (the longest realistic path on Linux is PATH_MAX = 4096
+// bytes per field) and well below the threshold where a single request can
+// pressure the heap. Without this cap an unauthenticated POST with a multi-GB
+// body would balloon the JSON decoder's read buffer until OOM. ADR-0978.
+const maxScoreRequestBodyBytes = 1 << 20 // 1 MiB
 
 // scoreRequest mirrors the /v1/score JSON body.
 type scoreRequest struct {
@@ -118,9 +128,21 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	h.metrics.ScoreRequests.Inc()
 	start := time.Now()
 
+	// Cap the request body at maxScoreRequestBodyBytes. http.MaxBytesReader
+	// closes the underlying body when the limit trips and surfaces the cause
+	// to the decoder as `*http.MaxBytesError`, which we map to 413 below.
+	r.Body = http.MaxBytesReader(w, r.Body, maxScoreRequestBodyBytes)
+
 	var req scoreRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.metrics.ScoreErrors.Inc()
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{
+				Error: fmt.Sprintf("request body exceeds %d bytes", maxScoreRequestBodyBytes),
+			})
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: fmt.Sprintf("invalid JSON body: %v", err)})
 		return
 	}
