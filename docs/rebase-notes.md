@@ -41131,3 +41131,14 @@ per-file ignores for the upstream-mirror trees (`python/**`,
 `compat/python-vmaf/**`, `testdata/**`). Upstream Netflix Python is
 covered by those ignores; an upstream sync will not see the `PTH` rule
 applied to their files.
+## iter.Seq[T] companion APIs for Go packages (ADR-0932, 2026-05-31)
+
+no rebase impact: REASON — every touched file is fork-original Go code
+under `pkg/bisect/`, `pkg/ladder/`, `pkg/ai/`, and
+`cmd/vmafx-controller/nodes/`. None of these paths exist upstream
+(Netflix/vmaf has no Go module), so an upstream sync cannot conflict with
+the new `IterSamples` / `IterCloud` / `IterHull` / `AllSeq` /
+`ListModelsSeq` surfaces. The deprecated `Registry.All` /
+`Registry.ListModels` shims are likewise fork-local. If a future Netflix
+upstream adds Go bindings, the conflict is resolution-only at the
+package-tree level (different directory layout, no symbol overlap).

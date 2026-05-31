@@ -21,7 +21,11 @@ package bisect
 import (
 	"errors"
 	"fmt"
+<<<<<<< ours
 	"log/slog"
+=======
+	"iter"
+>>>>>>> theirs
 	"os"
 	"os/exec"
 	"strconv"
@@ -295,4 +299,28 @@ func Run(
 		Samples:          samples,
 		Iterations:       iterations,
 	}, nil
+}
+
+// IterSamples returns a single-shot iterator over the bisect probes that
+// produced this Result, in iteration order.  Equivalent to ranging over
+// r.Samples but adapter-friendly for callers that stream the bisect walk
+// into a gRPC response, an event log, or a chart-rendering pipeline
+// without materialising the slice into their own working set.
+//
+// The Samples field remains the authoritative store and is what the JSON
+// schema serialises; IterSamples is an ergonomic adapter, not a replacement.
+// Mutating r.Samples after the iterator is created has the usual slice-range
+// semantics — the iterator captures the slice header at call time, not at
+// each yield.
+//
+// Added in v3.x.y-lusoris.N+1 (ADR-0932).  Callers iterating linearly with
+// no random access or re-iteration are encouraged to prefer this method.
+func (r Result) IterSamples() iter.Seq[Sample] {
+	return func(yield func(Sample) bool) {
+		for _, s := range r.Samples {
+			if !yield(s) {
+				return
+			}
+		}
+	}
 }

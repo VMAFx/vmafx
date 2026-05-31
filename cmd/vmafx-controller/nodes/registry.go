@@ -29,7 +29,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"iter"
 	"log/slog"
+<<<<<<< ours
+=======
+	"slices"
+	"sync"
+>>>>>>> theirs
 	"time"
 
 	"github.com/VMAFx/vmafx/pkg/registry"
@@ -184,14 +190,48 @@ func (r *Registry) ValidateSession(nodeID, sessionToken string) bool {
 }
 
 // All returns a snapshot of all live nodes.
+//
+// Deprecated: prefer AllSeq for new code.  All retains a slice allocation
+// proportional to the registered-node count even when the caller breaks
+// out of the range early (e.g. "find first NVIDIA node").  AllSeq is the
+// streaming-friendly equivalent and avoids the snapshot.  All remains
+// supported for one release as a shim and will be removed in
+// v3.x.y-lusoris.N+2 (see ADR-0932).
 func (r *Registry) All() []*Node {
+<<<<<<< ours
 	snapshots := r.store.All()
 	out := make([]*Node, len(snapshots))
 	for i := range snapshots {
 		n := snapshots[i]
 		out[i] = &n
+=======
+	return slices.Collect(r.AllSeq())
+}
+
+// AllSeq returns a single-shot iterator over a snapshot of all live nodes.
+// Each yielded *Node is a defensive copy (same semantics as Get), safe for
+// the caller to mutate without holding the registry lock.
+//
+// The iterator holds the registry RLock for its full lifetime — callers
+// must not call back into Registry methods that take the write lock from
+// within the yield function, or they will deadlock.  The common pattern
+// (filter, accumulate, dispatch) is safe.  If a caller needs to mutate
+// the registry mid-walk, snapshot via AllSeq + slices.Collect first.
+//
+// Added in v3.x.y-lusoris.N+1 (ADR-0932).  Callers iterating linearly
+// with no random access or re-iteration should prefer this over All.
+func (r *Registry) AllSeq() iter.Seq[*Node] {
+	return func(yield func(*Node) bool) {
+		r.mu.RLock()
+		defer r.mu.RUnlock()
+		for _, n := range r.nodes {
+			cp := *n
+			if !yield(&cp) {
+				return
+			}
+		}
+>>>>>>> theirs
 	}
-	return out
 }
 
 // Count returns the number of currently registered nodes.  Also satisfies

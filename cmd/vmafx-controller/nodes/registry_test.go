@@ -144,6 +144,7 @@ func TestAll(t *testing.T) {
 	}
 }
 
+<<<<<<< ours
 // TestReaper_StopsOnContextCancel verifies that the reaper goroutine exits
 // within two ticker intervals after the context is cancelled.
 //
@@ -181,5 +182,69 @@ func TestReaper_StopsOnContextCancel(t *testing.T) {
 		// Registry still responsive after context cancellation — pass.
 	case <-deadline:
 		t.Fatal("registry.Count() blocked after context cancel: reaper may not have exited")
+=======
+// TestAllSeq verifies the iter.Seq adapter walks every registered node
+// (map iteration order is non-deterministic, so the test compares the
+// yielded set against the expected set).
+func TestAllSeq(t *testing.T) {
+	r := newTestRegistry(t)
+	_, _, _ = r.Register("a", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	_, _, _ = r.Register("b", nodes.Capability{Backends: []string{"cuda"}, Concurrency: 2})
+	_, _, _ = r.Register("c", nodes.Capability{Backends: []string{"hip"}, Concurrency: 4})
+
+	seen := make(map[string]bool)
+	for n := range r.AllSeq() {
+		if n == nil {
+			t.Fatal("AllSeq yielded a nil *Node")
+		}
+		seen[n.Name] = true
+	}
+	if len(seen) != 3 {
+		t.Errorf("AllSeq yielded %d distinct names, want 3 (got %v)", len(seen), seen)
+	}
+	for _, want := range []string{"a", "b", "c"} {
+		if !seen[want] {
+			t.Errorf("AllSeq did not yield node %q", want)
+		}
+	}
+}
+
+// TestAllSeq_earlyBreak verifies the iter.Seq adapter honours caller break.
+// This is the load-bearing property motivating AllSeq over All (the slice
+// allocation in All is unavoidable even when the caller wants the first match).
+func TestAllSeq_earlyBreak(t *testing.T) {
+	r := newTestRegistry(t)
+	for i := 0; i < 5; i++ {
+		_, _, _ = r.Register("worker", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	}
+
+	var walked int
+	for range r.AllSeq() {
+		walked++
+		if walked == 2 {
+			break
+		}
+	}
+	if walked != 2 {
+		t.Errorf("AllSeq early-break: walked %d, want 2", walked)
+	}
+}
+
+// TestAll_shimMatchesAllSeq guards the All -> AllSeq deprecation shim:
+// the deprecated slice form must continue to return what the iterator
+// produces, for one release.
+func TestAll_shimMatchesAllSeq(t *testing.T) {
+	r := newTestRegistry(t)
+	_, _, _ = r.Register("a", nodes.Capability{Backends: []string{"cpu"}, Concurrency: 1})
+	_, _, _ = r.Register("b", nodes.Capability{Backends: []string{"cuda"}, Concurrency: 2})
+
+	sliceCount := len(r.All())
+	var seqCount int
+	for range r.AllSeq() {
+		seqCount++
+	}
+	if sliceCount != seqCount {
+		t.Errorf("All shim count %d != AllSeq count %d", sliceCount, seqCount)
+>>>>>>> theirs
 	}
 }

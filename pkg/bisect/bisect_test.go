@@ -22,7 +22,7 @@ type mockEncoder struct {
 	vmafByCRF func(crf int) float64
 }
 
-func (m *mockEncoder) Name() string        { return m.name }
+func (m *mockEncoder) Name() string         { return m.name }
 func (m *mockEncoder) CRFRange() (int, int) { return 0, 51 }
 
 func (m *mockEncoder) Encode(src string, params encoder.EncodeParams) (encoder.EncodeResult, error) {
@@ -159,6 +159,71 @@ func TestBisect_noSatisfyingCRF(t *testing.T) {
 	}
 }
 
+// TestResult_IterSamples_full verifies the iter.Seq adapter walks every
+// sample in order with no observable difference vs. ranging over Samples.
+func TestResult_IterSamples_full(t *testing.T) {
+	t.Parallel()
+
+	res := bisect.Result{
+		Samples: []bisect.Sample{
+			{CRF: 18, BitratekBps: 4000, VMAFScore: 92.1},
+			{CRF: 24, BitratekBps: 2500, VMAFScore: 88.4},
+			{CRF: 28, BitratekBps: 1800, VMAFScore: 85.0},
+		},
+	}
+
+	var walked []bisect.Sample
+	for s := range res.IterSamples() {
+		walked = append(walked, s)
+	}
+	if len(walked) != len(res.Samples) {
+		t.Fatalf("IterSamples yielded %d samples, want %d", len(walked), len(res.Samples))
+	}
+	for i, s := range walked {
+		if s != res.Samples[i] {
+			t.Errorf("IterSamples[%d] = %+v, want %+v", i, s, res.Samples[i])
+		}
+	}
+}
+
+// TestResult_IterSamples_earlyBreak verifies the iter.Seq adapter honours
+// caller break — the yield contract requires returning when yield returns
+// false, otherwise long-walk callers can't short-circuit.
+func TestResult_IterSamples_earlyBreak(t *testing.T) {
+	t.Parallel()
+
+	res := bisect.Result{
+		Samples: []bisect.Sample{
+			{CRF: 18, VMAFScore: 92.1},
+			{CRF: 24, VMAFScore: 88.4},
+			{CRF: 28, VMAFScore: 85.0},
+			{CRF: 32, VMAFScore: 80.2},
+		},
+	}
+
+	var walked []int
+	for s := range res.IterSamples() {
+		walked = append(walked, s.CRF)
+		if len(walked) == 2 {
+			break
+		}
+	}
+	if len(walked) != 2 {
+		t.Errorf("expected break after 2 samples, walked = %v", walked)
+	}
+}
+
+// TestResult_IterSamples_empty handles the no-probes case (e.g. param
+// validation error returned before the loop ran).
+func TestResult_IterSamples_empty(t *testing.T) {
+	t.Parallel()
+
+	var res bisect.Result
+	for s := range res.IterSamples() {
+		t.Errorf("expected zero yields, got %+v", s)
+	}
+}
+
 // TestBisect_invalidParams checks that Bisect rejects nonsensical parameters
 // without panicking.
 func TestBisect_invalidParams(t *testing.T) {
@@ -171,7 +236,7 @@ func TestBisect_invalidParams(t *testing.T) {
 		t.Parallel()
 		_, err := bisect.Run("/dev/null", enc, noopScore, bisect.Params{
 			TargetVMAF: 0.0, // invalid
-			CRFLo: 0, CRFHi: 51,
+			CRFLo:      0, CRFHi: 51,
 		})
 		if err == nil {
 			t.Error("expected error for TargetVMAF=0, got nil")
@@ -182,7 +247,7 @@ func TestBisect_invalidParams(t *testing.T) {
 		t.Parallel()
 		_, err := bisect.Run("/dev/null", enc, noopScore, bisect.Params{
 			TargetVMAF: 85.0,
-			CRFLo: 51, CRFHi: 0,
+			CRFLo:      51, CRFHi: 0,
 		})
 		if err == nil {
 			t.Error("expected error for CRFLo > CRFHi, got nil")

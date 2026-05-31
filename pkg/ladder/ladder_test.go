@@ -322,3 +322,80 @@ func TestBuild_renditionsSubsetOfHull(t *testing.T) {
 		}
 	}
 }
+
+// TestLadderResult_IterCloudAndHull verifies the iter.Seq adapters walk
+// every Cloud / Hull point in order with the same payload as ranging over
+// the field directly.
+func TestLadderResult_IterCloudAndHull(t *testing.T) {
+	t.Parallel()
+
+	result, err := ladder.Build("src.mp4", "libx264", ladder.Params{
+		Resolutions: [][2]int{{640, 480}, {1280, 720}, {1920, 1080}},
+		TargetVMAFs: []float64{75.0, 85.0, 95.0},
+		Sampler:     syntheticSampler(1000.0),
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var walkedCloud []ladder.Point
+	for p := range result.IterCloud() {
+		walkedCloud = append(walkedCloud, p)
+	}
+	if len(walkedCloud) != len(result.Cloud) {
+		t.Fatalf("IterCloud yielded %d, want %d", len(walkedCloud), len(result.Cloud))
+	}
+	for i, p := range walkedCloud {
+		if p != result.Cloud[i] {
+			t.Errorf("IterCloud[%d] = %+v, want %+v", i, p, result.Cloud[i])
+		}
+	}
+
+	var walkedHull []ladder.Point
+	for p := range result.IterHull() {
+		walkedHull = append(walkedHull, p)
+	}
+	if len(walkedHull) != len(result.Hull) {
+		t.Fatalf("IterHull yielded %d, want %d", len(walkedHull), len(result.Hull))
+	}
+	for i, p := range walkedHull {
+		if p != result.Hull[i] {
+			t.Errorf("IterHull[%d] = %+v, want %+v", i, p, result.Hull[i])
+		}
+	}
+}
+
+// TestLadderResult_IterEarlyBreak verifies both iter.Seq adapters honour
+// caller break — required by the iter.Seq contract.
+func TestLadderResult_IterEarlyBreak(t *testing.T) {
+	t.Parallel()
+
+	result, err := ladder.Build("src.mp4", "libx264", ladder.Params{
+		Resolutions: [][2]int{{640, 480}, {1280, 720}, {1920, 1080}},
+		TargetVMAFs: []float64{75.0, 85.0, 95.0},
+		Sampler:     syntheticSampler(1000.0),
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	var n int
+	for range result.IterCloud() {
+		n++
+		if n == 2 {
+			break
+		}
+	}
+	if n != 2 {
+		t.Errorf("IterCloud early-break: walked %d, want 2", n)
+	}
+
+	n = 0
+	for range result.IterHull() {
+		n++
+		break
+	}
+	if n != 1 {
+		t.Errorf("IterHull early-break: walked %d, want 1", n)
+	}
+}

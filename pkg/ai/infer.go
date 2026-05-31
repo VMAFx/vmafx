@@ -28,9 +28,11 @@ package ai
 import (
 	"encoding/json"
 	"fmt"
+	"iter"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -139,18 +141,38 @@ var ErrDirectInferNotImplemented = fmt.Errorf("ai: direct ORT CGO path not yet i
 
 // ListModels returns the names of .onnx models in the registry's model directory.
 // Returns an empty slice (not an error) when the directory is absent or empty.
+//
+// Deprecated: prefer ListModelsSeq for new code.  ListModels eagerly walks
+// the directory and materialises a slice even when the caller breaks out
+// of the range early (e.g. "is model X registered?").  ListModelsSeq is
+// the streaming-friendly equivalent that defers each os.ReadDir entry
+// inspection to the yield call.  ListModels remains supported for one
+// release as a shim and will be removed in v3.x.y-lusoris.N+2 (ADR-0932).
 func (r *Registry) ListModels() []string {
-	entries, err := os.ReadDir(r.modelDir)
-	if err != nil {
-		return nil
-	}
-	var names []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".onnx") {
-			names = append(names, strings.TrimSuffix(e.Name(), ".onnx"))
+	return slices.Collect(r.ListModelsSeq())
+}
+
+// ListModelsSeq returns a single-shot iterator over the names of .onnx
+// models in the registry's model directory, in os.ReadDir order.
+// Yields nothing when the directory is absent or unreadable.
+//
+// Added in v3.x.y-lusoris.N+1 (ADR-0932).  Callers iterating linearly
+// (filter, dispatch, early-break) should prefer this over ListModels.
+func (r *Registry) ListModelsSeq() iter.Seq[string] {
+	return func(yield func(string) bool) {
+		entries, err := os.ReadDir(r.modelDir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".onnx") {
+				continue
+			}
+			if !yield(strings.TrimSuffix(e.Name(), ".onnx")) {
+				return
+			}
 		}
 	}
-	return names
 }
 
 // InputCount reads the expected number of inputs for a model from the sidecar

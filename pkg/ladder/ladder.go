@@ -34,6 +34,7 @@ package ladder
 import (
 	"cmp"
 	"fmt"
+	"iter"
 	"math"
 	"slices"
 )
@@ -381,6 +382,44 @@ func toRendition(p Point) Rendition {
 		BitratekBps: p.BitratekBps,
 		VMAF:        p.VMAF,
 		CRF:         p.CRF,
+	}
+}
+
+// IterCloud returns a single-shot iterator over every sampled point in the
+// ladder's data cloud, in sampling order.  Adapter-friendly for callers that
+// stream the cloud into a gRPC response or progressive plotter without
+// snapshotting the slice into their own working set.
+//
+// The Cloud field remains the authoritative store (JSON-serialised by the
+// existing schema); this iterator is an ergonomic adapter, not a replacement.
+//
+// Added in v3.x.y-lusoris.N+1 (ADR-0932).
+func (r LadderResult) IterCloud() iter.Seq[Point] {
+	return func(yield func(Point) bool) {
+		for _, p := range r.Cloud {
+			if !yield(p) {
+				return
+			}
+		}
+	}
+}
+
+// IterHull returns a single-shot iterator over the upper-convex-hull points,
+// sorted by ascending bitrate.  Adapter-friendly for callers that walk the
+// Pareto frontier once linearly (e.g. emitting an SVG polyline or comparing
+// adjacent hull segments).
+//
+// The Hull field remains the authoritative store (JSON-serialised); this
+// iterator is an ergonomic adapter, not a replacement.
+//
+// Added in v3.x.y-lusoris.N+1 (ADR-0932).
+func (r LadderResult) IterHull() iter.Seq[Point] {
+	return func(yield func(Point) bool) {
+		for _, p := range r.Hull {
+			if !yield(p) {
+				return
+			}
+		}
 	}
 }
 

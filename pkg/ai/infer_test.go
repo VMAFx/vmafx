@@ -126,6 +126,79 @@ func TestListModels_MissingDir(t *testing.T) {
 	}
 }
 
+// TestListModelsSeq_full walks every model in the registry directory and
+// confirms the iter.Seq adapter visits them all.
+func TestListModelsSeq_full(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeONNX(t, dir, "alpha")
+	writeONNX(t, dir, "beta")
+	writeONNX(t, dir, "gamma")
+
+	r := NewRegistry(dir)
+	seen := make(map[string]bool)
+	for name := range r.ListModelsSeq() {
+		seen[name] = true
+	}
+	for _, want := range []string{"alpha", "beta", "gamma"} {
+		if !seen[want] {
+			t.Errorf("ListModelsSeq did not yield %q (got %v)", want, seen)
+		}
+	}
+}
+
+// TestListModelsSeq_earlyBreak verifies the iter.Seq adapter honours
+// caller break (load-bearing property motivating the streaming API).
+func TestListModelsSeq_earlyBreak(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		writeONNX(t, dir, name)
+	}
+
+	r := NewRegistry(dir)
+	var walked int
+	for range r.ListModelsSeq() {
+		walked++
+		if walked == 2 {
+			break
+		}
+	}
+	if walked != 2 {
+		t.Errorf("ListModelsSeq early-break: walked %d, want 2", walked)
+	}
+}
+
+// TestListModelsSeq_missingDir mirrors TestListModels_MissingDir for the
+// iterator path: it must yield nothing when the directory is absent.
+func TestListModelsSeq_missingDir(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry("/nonexistent/dir/that/cannot/exist/9x7k")
+	for name := range r.ListModelsSeq() {
+		t.Errorf("ListModelsSeq yielded %q on missing dir, want zero yields", name)
+	}
+}
+
+// TestListModels_shimMatchesListModelsSeq guards the deprecation shim:
+// the deprecated slice form continues to return what the iterator yields,
+// for one release.
+func TestListModels_shimMatchesListModelsSeq(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeONNX(t, dir, "alpha")
+	writeONNX(t, dir, "beta")
+
+	r := NewRegistry(dir)
+	sliceCount := len(r.ListModels())
+	var seqCount int
+	for range r.ListModelsSeq() {
+		seqCount++
+	}
+	if sliceCount != seqCount {
+		t.Errorf("ListModels shim count %d != ListModelsSeq count %d", sliceCount, seqCount)
+	}
+}
+
 func TestInputCount_WithSidecar(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
