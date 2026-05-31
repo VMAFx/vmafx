@@ -140,5 +140,6 @@ trivy config --skip-version-check dev/Containerfile
 ## Source
 
 `req` — task brief 2026-05-30: "Scan published container images for CVEs
+
 + misconfigurations via Trivy. ... CVEs in published images = direct
 user exposure."

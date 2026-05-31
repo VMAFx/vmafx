@@ -173,7 +173,6 @@ The script:
 Run it after every significant multi-agent session or when
 `git worktree list` shows more than a handful of `agent-*` entries.
 
-
 ## Why two layers and not just one
 
 Layer 1 alone (agent-side discipline) is fragile: agents drift

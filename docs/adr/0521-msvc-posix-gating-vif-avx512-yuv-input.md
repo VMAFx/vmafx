@@ -32,6 +32,7 @@ is also a POSIX name; the MSVC equivalent is `_fstat64` / `struct __stat64`.
 above 2 GiB.
 
 Neither issue surfaced before PR #1274 because:
+
 - The `vif_avx512.c` helper functions were introduced in PR #1261 (ADR-0503,
   merged just prior).
 - The `yuv_input.c` `S_ISREG` check was added post-PR #1274 or was previously

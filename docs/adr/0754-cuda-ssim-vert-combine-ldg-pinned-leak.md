@@ -44,6 +44,7 @@ per `vmaf_close()` cycle. Fix: save `rb.host_pinned` to a local before
 `readback_free`, then call `vmaf_cuda_buffer_host_free(fex->cu_state, saved)`.
 
 **Deferred findings (not in this PR):**
+
 - F1 (AoS to SoA buffer pack) — bigger change; revisit if F2 does not move
   the needle enough at 1080p.
 - F3 (kernel signature change paired with F1) — dependent on F1.

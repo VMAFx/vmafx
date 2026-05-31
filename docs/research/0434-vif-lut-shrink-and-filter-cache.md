@@ -29,6 +29,7 @@ three `_mm512_i32gather_epi64` sites in `vif_statistic_avx512`.
 `vif_get_filter(out, scale, kernelscale)` calls `get_1d_gaussian_kernel(out, n, n/5.0f)`
 which computes a 1D Gaussian by calling `expf` for each coefficient. With `scale` from
 0–3, `kernelscale = 1.0` (default), the four filter widths are:
+
 - scale 0: 17 taps
 - scale 1: 9 taps
 - scale 2: 5 taps

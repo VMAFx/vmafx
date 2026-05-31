@@ -72,6 +72,7 @@ is at the external agents page above.
 
 ACP is a protocol through which Zed (acting as **host/client**) launches an
 external agent process and communicates with it. Zed forwards:
+
 - Model and mode selection
 - Environment variables
 - MCP servers (via `context_servers`, relayed through ACP)
@@ -94,6 +95,7 @@ in `settings.json`. The `source: "custom"` flag is **required** for manually
 added servers; without it Zed silently skips the entry.
 
 **Supported transports:**
+
 - **stdio** — native, first-class. Zed spawns the server as a child process.
 - **HTTP/SSE** — supported via `url` + `headers` keys (no `command`).
 - **Unix domain socket (UDS)** — not natively supported. The `vmaf-mcp` server
@@ -470,6 +472,7 @@ Source: <https://zed.dev/docs/ai/mcp>, retrieved 2026-05-19.
 **No UDS bridge is needed.** The server speaks stdio, which Zed supports natively.
 
 **Configuration** (already shown in §4):
+
 ```jsonc
 "context_servers": {
   "vmaf-mcp": {
@@ -500,6 +503,7 @@ Source: <https://zed.dev/docs/ai/agent-settings>, retrieved 2026-05-19.
 ### 8.1 Line endings and EditorConfig
 
 `.editorconfig` exists at the repo root (verified 2026-05-19) with:
+
 - `end_of_line = lf`
 - `insert_final_newline = true`
 - `trim_trailing_whitespace = true`
@@ -513,9 +517,11 @@ settings will override `.editorconfig`** where they conflict. Set
 ### 8.2 Telemetry opt-out
 
 Set in `.zed/settings.json` (shown in §4):
+
 ```json
 "telemetry": { "diagnostics": false, "metrics": false }
 ```
+
 Source: privacy section at <https://zed.dev/docs>, retrieved 2026-05-19.
 
 ### 8.3 Vim mode
@@ -606,6 +612,7 @@ Open Zed, complete onboarding, click "Import VS Code settings" (or run
 tab behaviour, and terminal settings.
 
 Add to `~/.config/zed/settings.json`:
+
 ```json
 { "base_keymap": "VSCode" }
 ```
@@ -613,6 +620,7 @@ Add to `~/.config/zed/settings.json`:
 ### Step 2 — Install required extensions (est: 10 min)
 
 Open the extension panel (`cmd/ctrl+shift+x`) and install:
+
 - **clangd** (if not auto-detected; provides C/C++ LSP)
 - **ShellCheck** (shell script linting)
 - Any community **meson** syntax extension if available
@@ -625,6 +633,7 @@ Adjust the `clangd` `binary.path` if needed (remove the key to use system
 clangd).
 
 Verify clangd is loading `build/compile_commands.json`:
+
 - Build first: `meson setup build libvmaf -Denable_cuda=false -Denable_sycl=false && ninja -C build`
 - Check Zed status bar shows language server activity on a `.c` file.
 
@@ -800,6 +809,7 @@ indefinitely; both read the same source files.
 - <https://markaicode.com/mcp-zed-editor-setup/> — MCP config detail + `source: "custom"` requirement
 
 **404s encountered:**
+
 - `https://zed.dev/docs/acp` — 404; ACP documented at `/docs/ai/external-agents`
 - `https://zed.dev/docs/mcp` — 404; MCP documented at `/docs/ai/mcp`
 - `https://zed.dev/docs/lsp` — 404; LSP documented at `/docs/configuring-languages`

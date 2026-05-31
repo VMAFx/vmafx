@@ -48,6 +48,7 @@ instead of beside it.
 ### Status-field malformation (3 cases)
 
 ADR-0105 / ADR-0106 / ADR-0107 each have:
+
 - **Status**: Supersedes [ADR-00NN](00NN-…)
 
 This is malformed — the Status field encodes the ADR's own state, not
@@ -55,6 +56,7 @@ its relationship to a predecessor. The successor is itself `Accepted`
 and active; the `Supersedes` relationship belongs in a sibling field.
 
 **Fix**: split into two lines —
+
 - **Status**: Accepted
 - **Supersedes**: [ADR-00NN](00NN-…)
 

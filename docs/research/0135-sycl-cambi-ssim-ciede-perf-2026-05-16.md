@@ -25,6 +25,7 @@ per frame across the 5-scale CAMBI loop:
 Total: 2 + 4 + 4 + 5 + 5 + 5 = **25 q.wait() calls per frame**.
 
 Each `q.wait()` drains the Level Zero command queue to idle, incurring:
+
 - L0 submit fence wait (~5–15 µs on Arc A380 via anv driver)
 - CPU→GPU→CPU round-trip for the fence signal
 - GPU pipeline flush (prevents next dispatch from pipelining in the command buffer)
@@ -69,6 +70,7 @@ Result: 25 waits/frame → **5 waits/frame** (one per scale).
 | After (5 waits) | 0.737 s | 15.4 ms |
 
 The delta is small at 576x324 because the CPU residual (`vmaf_cambi_calculate_c_values`
+
 + `vmaf_cambi_spatial_pooling`) dominates per-frame time at this resolution. At 1080p
 the GPU phases are heavier and the synchronisation overhead contribution is proportionally
 larger. The expected 15–40 ms/frame saving from the task description applies to 4K
@@ -90,6 +92,7 @@ channel:
 - 5 MACs computed from those 22 loads
 
 Neighbouring work-items in the same subgroup read overlapping input regions:
+
 - work-item at x=0 reads ref[0..10]
 - work-item at x=1 reads ref[1..11]
 - ...
@@ -102,6 +105,7 @@ all 26×2 = 52 float reads per subgroup row are separate global-memory transacti
 ### Fix
 
 Convert `launch_horiz` to `nd_range` with two `local_accessor` arrays:
+
 - `s_ref[SSIM_WG_Y × SSIM_TILE_W]` — 8 × 26 floats = 208 floats
 - `s_cmp[SSIM_WG_Y × SSIM_TILE_W]` — 8 × 26 floats = 208 floats
 
@@ -122,9 +126,11 @@ The cooperative load pays 2 × (SSIM_TILE_W × SSIM_WG_Y) / (SSIM_WG_X × SSIM_W
 ### Correctness
 
 The 11-tap filter `G[]` is the same array. SLM index arithmetic:
+
 ```
 SLM index for convolution tap u at local (ly, lx) = ly * SSIM_TILE_W + lx + u
 ```
+
 Because `lx` ranges [0, SSIM_WG_X) and u ranges [0, SSIM_K), the maximum column
 accessed is `SSIM_WG_X - 1 + SSIM_K - 1 = SSIM_TILE_W - 1`, which is within bounds.
 

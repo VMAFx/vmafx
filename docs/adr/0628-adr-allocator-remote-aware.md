@@ -25,6 +25,7 @@ both agents see the same highest-taken number and independently increment from
 it, producing identical candidate numbers.
 
 Three concrete failure modes:
+
 1. **Push-before-claim gap**: two agents start, both fetch master, pick the
    same next number, write stubs concurrently (the `/tmp` lock prevents this
    within the same PID namespace, but separate worktrees may use different

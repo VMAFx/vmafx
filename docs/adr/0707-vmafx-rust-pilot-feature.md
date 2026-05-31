@@ -47,6 +47,7 @@ three C-ABI lifecycle functions (`vmafx_tad_init`, `vmafx_tad_extract`,
 the name `"tad"`.
 
 Integration architecture:
+
 1. A workspace `Cargo.toml` at the repository root declares all future Rust crates.
 2. A Meson `custom_target` in `core/src/meson.build` runs `cargo build --release`
    and copies the output `libvmafx_tad.a` to the build directory.

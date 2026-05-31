@@ -14,6 +14,7 @@ SIGSEGV after #1403 merged.
 ## Environment factors (macOS CI)
 
 The macOS CI runs under:
+
 - `MALLOC_PERTURB_=198` — fills newly-allocated memory with `0xC6`, freed
   memory with `0x39`. Any read from uninitialized or freed memory returns a
   byte in `[0x39, 0xC6]` rather than a safe zero.
@@ -112,6 +113,7 @@ static void json_write_pool_score(FILE *outfile, unsigned j, double score, const
 ```
 
 `j` is the `VmafPoolingMethod` enum value:
+
 - 1 = `VMAF_POOL_METHOD_MIN`
 - 2 = `VMAF_POOL_METHOD_MEAN`
 - 3 = `VMAF_POOL_METHOD_HARMONIC_MEAN`

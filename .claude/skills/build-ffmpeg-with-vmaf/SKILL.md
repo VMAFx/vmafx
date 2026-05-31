@@ -30,12 +30,14 @@ jobs, smoke-test enabled.
    On conflict: abort the `am`, report the failing patch + hunks, suggest
    `/refresh-ffmpeg-patches`.
 5. Configure ffmpeg:
+
    ```
    PKG_CONFIG_PATH=$repo/core/build/src:$PKG_CONFIG_PATH \
    LD_LIBRARY_PATH=$repo/core/build/src:$LD_LIBRARY_PATH \
    ./configure --prefix=/tmp/ffmpeg-install --enable-libvmaf --enable-gpl \
                --enable-version3
    ```
+
 6. `make -j$jobs && make install`.
 7. Smoke test (if `--run-filter-smoketest`):
    - `ffmpeg -i testdata/ref_576x324_48f.yuv -i testdata/dis_576x324_48f.yuv \

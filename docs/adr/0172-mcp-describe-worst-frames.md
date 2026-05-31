@@ -110,6 +110,7 @@ Runtime + pandas + scipy) stay separate.
 ## Consequences
 
 **Positive:**
+
 - Closes T6-6, the last MCP-flavoured Wave-1 item.
 - First VLM integration in the fork. Future tools (e.g.
   whole-clip narration, MOS rationale generation) reuse
@@ -121,6 +122,7 @@ Runtime + pandas + scipy) stay separate.
   path; this PR is the first concrete consumer of that guard.
 
 **Negative:**
+
 - VLM weights (~2 GB) are pulled from HuggingFace on first use.
   Air-gapped deployments need to pre-cache via
   `huggingface-cli download <model_id>`. Documented in the tool

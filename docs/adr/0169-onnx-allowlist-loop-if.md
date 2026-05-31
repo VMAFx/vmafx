@@ -135,6 +135,7 @@ a separate ADR keeps this PR's scope honest.
 ## Consequences
 
 **Positive:**
+
 - Tiny-AI surface admits `Loop` + `If` baselines that were
   previously blocked. MUSIQ / RAFT / small-VLM-class models become
   exportable through the fork's pipeline.
@@ -148,6 +149,7 @@ a separate ADR keeps this PR's scope honest.
   catches issues before the model ever leaves the trainer.
 
 **Negative:**
+
 - Without the bounded-iteration guard, a malicious or poorly-
   written `Loop` model could enter an unbounded compute loop at
   runtime. ORT's process-level inference timeout is the only

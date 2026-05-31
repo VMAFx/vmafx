@@ -121,6 +121,7 @@ Both renderers produce the same logical sections:
 - Raw JSON dump — parity: HTML uses `<details><pre>`; MD uses `<details><summary>…</summary>\n```json`
 
 **HTML-only features:**
+
 - Dark/light mode via `prefers-color-scheme` media query
 - `overflow-x: auto` table scroll containers
 - Codec chip colour via `--codec-colour` CSS variable (MD shows only a text chip)

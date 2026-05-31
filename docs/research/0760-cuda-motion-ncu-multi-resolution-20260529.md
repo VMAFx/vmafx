@@ -121,6 +121,7 @@ The 7.5 fps wall time for 3 frames reflects cold-start overhead
 only. At 48 frames the steady-state would approach ~300–400 fps
 (extrapolating from the 576p pattern: dispatch overhead is
 ~12 ms fixed, kernel time is 43 µs; 48 frames → 48×43µs=2ms kernel
+
 + ~600ms dispatch = ~78 fps, similar to 576p pattern — dispatch
 still dominates).
 
@@ -164,6 +165,7 @@ passes — which is the primary optimization candidate.
 
 The kernel uses 38 registers/thread and 1.68 KB/block static shared
 memory. With `__launch_bounds__(256, 8)`:
+
 - Register limit: 48 warps/SM × 32 threads/warp × 38 reg = 58,368
   registers needed; sm_89 has 65,536 registers/SM → 6 blocks/SM
   (6 × 8 warps = 48 warps = 100% theoretical occupancy).
@@ -204,6 +206,7 @@ a running-total approach). The per-frame `motion_score` can be
 derived post-hoc from the delta between consecutive SAD readings.
 
 **Impact estimate**:
+
 - 576p: reduces dispatch overhead by ~(N-1)/N × 12.7 ms/frame.
   At N=16: ~93% overhead reduction → CUDA fps from 79 → ~800 fps.
   CUDA/CPU ratio: ~2.3× (vs current 0.22×).
@@ -224,6 +227,7 @@ serially within a warp, limiting per-warp IPC to the chain depth
 50% SM throughput).
 
 **Change**: Split into two kernel launches:
+
 1. `motion_hblur_kernel`: horizontal 5-tap Gaussian, writes
    `uint16_t` intermediate buffer. Grid: same (36,21,1) etc.
 2. `motion_vblur_sad_kernel`: vertical 5-tap Gaussian + SAD
@@ -237,6 +241,7 @@ from 1.68 KB (20×21 uint32) to 0.88 KB per pass (20×7 or 7×21
 with halo).
 
 **Impact estimate**:
+
 - At 4K where kernel compute is the leading intra-kernel bottleneck:
   reducing dependency chain from 25 to 5 MACs increases ILP by ~5×.
   SM throughput expected to increase from 48% toward 70–80%.
@@ -258,6 +263,7 @@ complete. The barrier-wait contributes to the 18–29% occupancy gap
 (100% theoretical vs 70–82% achieved).
 
 **Change**: Replace the scalar global-load loop with CUDA `cp.async`:
+
 ```
 // Phase 1 async tile load
 for (unsigned i = lid; i < tile_elems; i += wg_size) {
@@ -270,11 +276,13 @@ for (unsigned i = lid; i < tile_elems; i += wg_size) {
 asm volatile("cp.async.wait_all;");
 __syncthreads();
 ```
+
 `cp.async.cg.shared.global` issues asynchronous global-to-shared
 transfers, allowing Phase 2 compute to overlap with tile load if the
 pipeline is restructured with double-buffering.
 
 **Impact estimate**:
+
 - Eliminates ~30–40% of barrier-wait stall at all resolutions.
 - Occupancy expected to improve from 70–82% to 85–90%.
 - Kernel duration: -10–15% at 1080p and 4K.

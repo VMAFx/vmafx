@@ -14,6 +14,7 @@ However, the *internal* implementation files (`core/src/*.c`) have no such const
 are never included by downstream C consumers directly.
 
 Selected internal files contain patterns that cause real footguns in maintenance:
+
 - Manual malloc/free paired with early-return error paths — easy to leak on OOM.
 - Raw pointer + length parameter pairs — callers can silently mis-size them.
 - `#define` numeric constants — no type safety, no debugger visibility.
@@ -179,6 +180,7 @@ ninja -C /tmp/cpp23-build 2>&1 | grep 'error:' | head -40
 ```
 
 Common fixes:
+
 - `malloc(n)` return — add `static_cast<T*>(malloc(n))`.
 - `(void)`-casts on discarded returns — already required by CLAUDE.md §6; should be
   present.
@@ -244,6 +246,7 @@ the Vulkan backend precedent (see `core/src/vulkan/meson.build:157`).
 ## 6. Test plan for future PRs
 
 Each wave-N conversion PR must:
+
 1. Pass `meson test -C build --suite=fast` (pre-push gate).
 2. Pass `make test-netflix-golden` (scores unchanged, places=4).
 3. Pass `make lint` on the converted file (zero new clang-tidy errors).

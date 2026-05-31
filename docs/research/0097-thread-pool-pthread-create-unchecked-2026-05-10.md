@@ -50,6 +50,7 @@ time. The extend touched these lines and inherited the latent defects.
 ## Fix
 
 **Bug 1**: Check the return value of `pthread_create`. On failure:
+
 - If zero threads started (`i == 0`): tear down primitives and return `-rc`
   to the caller (propagates `EAGAIN` / `EPERM`).
 - If at least one thread started: set `p->n_threads = i` and

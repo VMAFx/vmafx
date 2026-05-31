@@ -65,6 +65,7 @@ across ~150,000 lines of code and documentation.
 Everything in a single repository, as today.
 
 **Pros:**
+
 - Cross-component refactors stay in a single PR (e.g., a new C feature extractor
   in `core/` + its Python binding + MCP tool + docs + test all land atomically).
 - One release-please cycle, one version number to communicate externally.
@@ -80,6 +81,7 @@ Everything in a single repository, as today.
   problem without a repo split.
 
 **Cons:**
+
 - Model artifacts (ONNX, pkl) can be large; they currently live in `model/` and
   some are in Git LFS. A separate model-release repo isolates binary blob growth
   from code history.
@@ -168,6 +170,7 @@ history. Key benefits for this project:
   metadata; binary blobs move to the release repo.
 
 **Dependency footprint:**
+
 - `vmafx-models` has zero inbound code dependencies; it is a release artifact sink.
 - Consumer code pins artifacts via URL + SHA256 hash (supply-chain-compatible).
 - `release-please-config.json` does not need to track `vmafx-models` — binary
@@ -186,6 +189,7 @@ the org migration cutover. It can be implemented as a follow-on PR once
 as a follow-on within the next 4 weeks.**
 
 Rationale:
+
 - The cutover is time-sensitive (rebrand PRs are in-flight; the repo is private).
   Introducing a model-artifact split on cutover day adds unnecessary risk.
 - The dependency audit confirms that Options A and C are the only operationally
@@ -254,6 +258,7 @@ git push --mirror git@github.com:VMAFx/vmafx.git
 ```
 
 This copies:
+
 - All branches (master + all in-flight worktree branches)
 - All tags (v3.x.y-lusoris.N series)
 - All git history
@@ -267,6 +272,7 @@ gh api -X PATCH repos/VMAFx/vmafx -f default_branch=master
 **Step 4 — Configure branch protection on `VMAFx/vmafx`:**
 
 The current `VMAFx/vmafx` protection is:
+
 - `required_status_checks.strict: false`
 - Contexts: `["Required Checks Aggregator"]` (app_id 15368)
 - `required_linear_history: true`

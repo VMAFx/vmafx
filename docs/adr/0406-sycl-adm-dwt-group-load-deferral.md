@@ -50,6 +50,7 @@ cooperative load to replace with `group_load`.
 
 The Battlemage register-pressure claim that motivated the GO
 recommendation is unverifiable on the dev host (Arc A380 Alchemist
+
 + AMD Granite Ridge CPU; no Xe2 / Battlemage GPU available, see
 [research-0086 §A.4 author note](../research/0086-sycl-toolchain-audit-2026-05-08.md)).
 

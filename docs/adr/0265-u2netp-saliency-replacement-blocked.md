@@ -20,6 +20,7 @@ T6-2a-replace-with-u2netp.
 This ADR records the result of attempting that replacement. Two
 independent blockers came up that PR #326's FastDVDnet pattern (pin
 upstream commit + curl `.pth` from raw GitHub URL + wrap with adapter
+
 + export to allowlist-safe ONNX with `< 1e-5` parity) cannot resolve:
 
 1. **Weights distribution — Google Drive only.** The upstream

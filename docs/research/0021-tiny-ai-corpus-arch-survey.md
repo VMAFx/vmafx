@@ -84,6 +84,7 @@ which makes them straightforward to lift wholesale into the fork's
 itself.
 
 **Relevance to the tiny-AI module**:
+
 - (a) **Corpus**: high. The Netflix corpus's 9 sources × ~70 distortions
   is small enough that any one source dropping out (LOSO fold)
   removes 11 % of the training distribution. Augmenting with REDS
@@ -134,6 +135,7 @@ tiny-AI fork would inherit a sizeable comparable-prior-work network
 effect by training on it.
 
 **Relevance to the tiny-AI module**:
+
 - (a) **Corpus**: very high. REDS's 240 training sequences × 100
   frames = 24 000 frames at 720 p directly addresses the Netflix
   corpus's two main weaknesses: low source diversity (9 vs 240) and
@@ -181,6 +183,7 @@ encoder/decoder stack, far beyond the fork's ≤ 50 KB ONNX deployment
 ceiling.
 
 **Relevance to the tiny-AI module**:
+
 - (a) **Corpus**: very limited. NEVC does not publish its training
   corpus on the README; even if it did, an end-to-end codec's
   training data is curated for reconstruction quality, not for
@@ -229,6 +232,7 @@ high-motion scenes, which is exactly where the Netflix corpus
 under-represents.
 
 **Relevance to the tiny-AI module**:
+
 - (a) **Corpus**: indirect — same REDS + Vimeo recommendation as §2.2.
 - (b) **Feature inputs**: medium. The trajectory mechanism implies the
   feature vector should include a per-frame motion-flow summary
@@ -271,6 +275,7 @@ small flow-summarisation head whose output is shaped by the loss
 on VMAF distillation rather than on photometric reconstruction.
 
 **Relevance to the tiny-AI module**:
+
 - (a) **Corpus**: high. Vimeo-90K is the second biggest open-source,
   motion-rich, ref-pair-friendly corpus after REDS, with the
   Vimeo-90K septuplet variant providing 7-frame temporal context per
@@ -323,6 +328,7 @@ work that wants to combine, say, a saliency-encoder ONNX subgraph
 with a regressor-head subgraph in a single deployment.
 
 **Relevance to the tiny-AI module**:
+
 - (a) **Corpus**: not relevant.
 - (b) **Feature inputs**: low. A frozen Gemma-vision encoder could
   in principle produce a semantic feature embedding for a saliency-
@@ -374,6 +380,7 @@ for the tiny-AI verifiable-checkpoint story (T6-9
 `--tiny-model-verify` + Sigstore sidecar).
 
 **Relevance to the tiny-AI module**:
+
 - (a) **Corpus**: not directly relevant; DCVC-RT trains on
   Vimeo-90K + UVG + HEVC test sequences, which the tiny-AI module
   could also adopt (the UVG / HEVC test sequences are the canonical
@@ -426,6 +433,7 @@ without immediately distilling a learned HDR regressor; that's a
 two-phase rollout the project owner should consider.
 
 **Relevance to the tiny-AI module**:
+
 - (a) **Corpus**: high but blocked. HDR training data is not
   publicly available; the fork would need to negotiate access or
   build a synthetic corpus by HDR-grading the existing SDR sources

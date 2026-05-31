@@ -118,6 +118,7 @@ moving CI leg lands when there's a model to gate.
 ## Consequences
 
 **Positive:**
+
 - Closes the "policy → code" gap from ADR-0129 (Proposed) without
   changing any shipped model's behaviour.
 - Per-model quantisation PRs (T5-3b, T5-3c, ...) now have a clear
@@ -128,6 +129,7 @@ moving CI leg lands when there's a model to gate.
   (default FP32).
 
 **Negative:**
+
 - Three Python scripts that are partially exercised by this PR
   (only `ptq_dynamic.py` is a pure wrapper; `ptq_static.py` needs
   a real calibration set; `qat_train.py` is a scaffold).

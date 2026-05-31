@@ -13,6 +13,7 @@ between PR #125 and PR #137 — every batch-1 metric now has a
 twin on all three GPU backends. Empirical contracts:
 `places=4` for the integer-reduction kernels (psnr / moment),
 `places=4` for ciede on real hardware after the per-WG-float
+
 + host-double pattern locked in (ADR-0187).
 
 Batch 2 picks up the **next-most-impactful** trio:

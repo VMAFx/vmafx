@@ -122,17 +122,21 @@ them either way.
 - Source: lawrence's chat report 2026-04-27 22:19 — pasted FFmpeg
   configure log showing the leaked path.
 - Pre-fix verification (this dev box):
+
   ```
   $ grep Cflags core/build-vk-static-test/meson-private/libvmaf.pc
   Cflags: -I${includedir} -I${includedir}/libvmaf -DVK_NO_PROTOTYPES \
           -include /home/kilian/dev/vmaf/core/build-vk-static-test/subprojects/.../volk_priv_remap.h \
           -pthread
   ```
+
 - Post-fix verification:
+
   ```
   $ grep Cflags core/build-vk-static-test/meson-private/libvmaf.pc
   Cflags: -I${includedir} -I${includedir}/libvmaf -DVK_NO_PROTOTYPES -pthread
   ```
+
 - Parent: [ADR-0198](0198-volk-priv-remap-static-archive.md) —
   introduced the rename mechanism whose flag we're now relocating.
 - Original fix: [ADR-0185](0185-vulkan-hide-volk-symbols.md) —

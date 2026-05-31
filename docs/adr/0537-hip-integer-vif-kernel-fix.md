@@ -138,6 +138,7 @@ The same PR also closes three small adjacent gaps surfaced by the
 ## Consequences
 
 **Positive:**
+
 - `vmaf --backend hip --feature vif_hip` no longer crashes on
   gfx1036; produces VMAF scores end-to-end on the Netflix golden
   pair (src01_hrc00 vs src01_hrc01 at 576×324).
@@ -148,6 +149,7 @@ The same PR also closes three small adjacent gaps surfaced by the
   ADR-0533's extractor-registration sweep.
 
 **Negative:**
+
 - HIP VIF scores are within ~0.003 of CPU per scale on the Netflix
   golden pair (places=3 — not places=4 of ADR-0214).  Sources of
   divergence: clamp boundary inside the kernel vs CPU's pre-padded
@@ -161,6 +163,7 @@ The same PR also closes three small adjacent gaps surfaced by the
   developer-only); the perf optimisation is a separate ADR.
 
 **Neutral / follow-ups:**
+
 - Tighten cross-backend parity from places=3 to places=4 for HIP
   VIF by porting the CPU boundary semantics.
 - Port the CUDA twin's shared-memory tiling for perf parity.

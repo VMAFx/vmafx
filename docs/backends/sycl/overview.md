@@ -193,7 +193,6 @@ without reading the documentation.
 
 ### Default target list
 
-<!-- markdownlint-disable MD013 -->
 The default `sycl_icpx_aot_targets` value covers the following Intel GPU
 micro-architectures:
 
@@ -218,7 +217,6 @@ micro-architectures:
 | `lnl-m` | Lunar Lake-M integrated (requires icpx 2025.0+) |
 | `bmg-g21` | Battlemage G21 dGPU (requires icpx 2025.1+) |
 | `bmg-g31` | Battlemage G31 dGPU (requires icpx 2025.1+) |
-<!-- markdownlint-enable MD013 -->
 
 The fat binary also embeds a SPIR-V JIT fallback (`spir64`) for any device not
 in the list, so an unlisted or future device still works — it just pays the

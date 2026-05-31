@@ -59,6 +59,7 @@ The pre-ADR-0967 default was `0.0.0.0` (all interfaces). The new default is `127
 (loopback only).
 
 Affected deployment patterns:
+
 - **Docker `docker run`**: must add `-e VMAFX_MCP_HTTP_BIND=0.0.0.0` or map port via
   `--publish 127.0.0.1:8080:8080` if the container needs to receive traffic from the
   host or other containers.

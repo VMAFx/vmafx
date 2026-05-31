@@ -29,11 +29,13 @@ strict compiler / analyzer will flag and that the fork's
 1. **NULL-pointer arithmetic (UB, C11 §6.5.6/9)** — when `prev ==
    NULL`, the upstream body executes both `if` branches because they
    are not joined by `else`:
+
    ```c
    if (!prev_model) out_model = &built_in_models[0];
    if (prev_model - built_in_models < BUILT_IN_MODEL_CNT)
        out_model = prev_model + 1;   /* NULL + 1: UB */
    ```
+
    The second branch performs pointer arithmetic on a NULL pointer,
    overwriting `out_model` with `(void *)0x1` on typical platforms.
    The caller then dereferences that as `VmafBuiltInModel *` — segfault.

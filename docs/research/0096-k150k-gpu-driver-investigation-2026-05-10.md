@@ -86,6 +86,7 @@ second write fires "cannot be overwritten" warnings at every frame (5 warnings �
 150 frames = 750 warnings for `--feature adm` alone).
 
 Affected feature pairs (CUDA twin + CPU twin both registered):
+
 - `adm_cuda` + `adm` → 5 features × 150 frames = 750 warnings
 - `vif_cuda` + `vif` → 5 features × 150 frames = 750 warnings
 - `motion_cuda` + `motion` → 2 features × 150 frames = 300 warnings

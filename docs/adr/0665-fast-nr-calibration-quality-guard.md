@@ -34,6 +34,7 @@
 - See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
 - See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
 - Source: <req or Q<round>.<q>>
+
 # ADR-0665: Fast-NR calibration quality guard
 
 - **Status**: Accepted

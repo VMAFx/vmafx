@@ -61,6 +61,7 @@ The cross-backend gate fixture (576×324) auto-resolves to
 the decimation code path.
 
 GPU-side decimation lands in v2 either via:
+
 - A pre-pass GLSL kernel that does the 11×11 Gaussian
   low-pass + 2× sub-sample, looped `log₂(scale)` times.
 - Or, exposing `iqa_decimate` via a public header and calling

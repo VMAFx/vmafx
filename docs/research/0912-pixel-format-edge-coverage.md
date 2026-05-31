@@ -45,6 +45,7 @@ unit-test layer — regressions there are only caught downstream
 | `motion`    | ✓ smoke | — | — | — | — | — | (full-model only) | — |
 
 Notes:
+
 - "✓ smoke" = at least one end-to-end smoke test wired into the
   fast suite at the extractor's public surface.
 - "math only" = inner helper exercised via `#include` of the .c

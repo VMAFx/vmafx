@@ -62,6 +62,7 @@ analogous files.
 ## Verification
 
 Build + test output:
+
 ```
 $ meson setup build-cpu core -Denable_cuda=false -Denable_sycl=false
 $ ninja -C build-cpu
@@ -73,6 +74,7 @@ $ bash scripts/ci/assertion-density.sh
 ```
 
 Pre-fix crash reproduction:
+
 ```bash
 MALLOC_PERTURB_=198 meson test -C build-cpu test_ssimulacra2_simd --no-rebuild
 # Pre-fix: SIGSEGV in fill_random() when malloc returns NULL

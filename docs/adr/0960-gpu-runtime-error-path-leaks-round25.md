@@ -65,6 +65,7 @@ Apply the following targeted fixes:
 
 Add a new CPU-gated test `core/test/test_picture_pool_error_paths.c` that
 covers:
+
 - `test_pool_fetch_priv_not_null_on_success` — confirms the A.3 fix does not
   clobber `pic->priv` on the success path.
 - `test_pool_fetch_unref_refetch` — confirms the A.2 signal path allows

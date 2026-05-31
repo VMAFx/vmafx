@@ -41,6 +41,7 @@ A second concern is the `motion_five_frame_window=true` mode in
 `a2b59b77`. Upstream wires it through a new
 `fex->prev_prev_ref` field on `VmafFeatureExtractor`, plus
 matching picture-pool sizing in `vmaf_read_pictures` (n‑threads × 2
+
 + 2). The fork's `read_pictures_*` decomposition (ADR-0152
 monotonic-index gate) and existing `dnn`-block additions to
 `VmafContext` diverge from upstream's layout; porting the

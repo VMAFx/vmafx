@@ -52,6 +52,7 @@ We will add a **per-model `quant_mode` field** to
 the fp32 originals.
 
 - **Registry schema extension**: each model entry gains
+
   ```json
   {
     "quant_mode": "fp32" | "static" | "dynamic" | "qat",
@@ -59,6 +60,7 @@ the fp32 originals.
     "quant_accuracy_budget_plcc": 0.01                    // max allowed PLCC drop vs fp32
   }
   ```
+
 - **Three scripts** under `ai/scripts/`:
   - `ptq_static.py` — loads fp32 ONNX, runs
     `onnxruntime.quantization.quantize_static` against the calibration

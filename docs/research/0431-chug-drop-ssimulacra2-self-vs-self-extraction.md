@@ -38,6 +38,7 @@ training label variance, or content.
 ### GPU load analysis
 
 CUDA-backed feature extraction splits the workload:
+
 - **CUDA pass**: `CUDA_EXTRACTOR_NAMES` (8 metrics, ~50% GPU time).
 - **CPU residual pass**: `CUDA_CPU_RESIDUAL_EXTRACTOR_NAMES` (2 metrics, ~50% CPU time).
 
@@ -50,6 +51,7 @@ The constant output means the computation is pure waste for MOS-head training.
 ### Schema versioning
 
 Parquet schema bumped from v1 (22 features + MOS + metadata) to v2 (21 features
+
 + MOS + metadata):
 
 | Schema | Feature count | ssimulacra2? | Notes |
@@ -72,6 +74,7 @@ remain in the same positions.
    document the ADR-0431 rationale.
 
 No changes to:
+
 - `EXTRACTOR_NAMES` (CPU-only path; ssimulacra2 remains available for genuine FR).
 - `CUDA_CPU_RESIDUAL_EXTRACTOR_NAMES` (float_ssim, cambi unchanged).
 - Parquet I/O logic, checkpoint formats, or parallelism model.
@@ -90,6 +93,7 @@ No changes to:
 ### Keep ssimulacra2, add feature masking at training time
 
 Compute ssimulacra2 but mask it out during training. **Rejected** because:
+
 1. Wastes 30–50% of GPU time on a feature that will be masked anyway.
 2. No benefit over dropping it upstream; all masking is applied downstream.
 3. Increases training data volume and I/O without signal.
@@ -98,6 +102,7 @@ Compute ssimulacra2 but mask it out during training. **Rejected** because:
 
 Run ssimulacra2 via the CPU residual pass (`--cpu-vmaf-bin`), reusing the existing
 split architecture. **Rejected** because:
+
 1. Still wastes CPU cycles on a constant (~100) feature; marginal savings.
 2. Residual pass is already optimized for float_ssim + cambi (two fast metrics).
 3. Adds complexity: CPU-side ssimulacra2 is slower than CUDA, so wall-time
@@ -107,6 +112,7 @@ split architecture. **Rejected** because:
 
 Train the head with all 22 features, let the model ignore ssimulacra2 automatically.
 **Rejected** because:
+
 1. Degrades training efficiency during each epoch (longer wall-time per dataset
    pass, higher memory for parquet I/O).
 2. Model may not converge to zero weight on a constant feature; numerical

@@ -145,7 +145,6 @@ project-level Scorecard policy (introduced by PR #337) and entry 0231
 of [`docs/rebase-notes.md`](../docs/rebase-notes.md) for the standing
 re-test command.
 
-
 ### Dependency-update bot: Renovate, not Dependabot (ADR-0363)
 
 The fork uses **Mend Renovate** self-hosted via
@@ -202,7 +201,6 @@ special-cases the Windows network-installer path. Keep the explicit
 Windows package set (`nvcc`, `cudart`, `crt`, `nvvm`, and
 `visual_studio_integration`) aligned with the CUDA major/minor suffix
 in the workflow when bumping CUDA.
-
 
 ## Upstream-merge guidance
 

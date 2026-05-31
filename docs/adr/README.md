@@ -775,3 +775,4 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0539](0539-hip-ssimulacra2-blur-fp-contract-off.md) | Per-kernel `hip_cu_extra_flags` keeps SSIMULACRA2 recursive blur FP contraction disabled on HIP so parity stays inside the ADR-0214 gate. | Accepted | hip, build, ssimulacra2, numerics, fork-local |
 | [ADR-0567](0567-upstream-port-direct-read.md) | Port Netflix upstream `30a6e2a8d` direct-read CLI path, avoiding the intermediate `video_input_ycbcr` buffer when `USE_DIRECT_READ` is enabled. | Accepted | upstream-port, performance, tools, cli, build |
 | [ADR-0866](0866-wire-markdownlint-into-lint-pipeline.md) | Wire markdownlint-cli2 into `make lint` + pre-commit + CI (touched-file scope) | Accepted | 2026-05-30 | ci, docs, lint, hygiene |
+| [ADR-0979](0979-markdown-lint-blank-line-sweep.md) | Markdown lint sweep — blank-line normalisation only (ultra-safe `--fix` subset, 253 files, -1,953 violations) | Accepted | docs, lint, hygiene |

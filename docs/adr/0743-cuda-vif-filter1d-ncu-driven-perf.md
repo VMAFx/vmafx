@@ -12,11 +12,13 @@ PR #74 profiling identified `filter1d_8_horizontal_kernel_2_17_9` as consuming
 versus a 75% theoretical ceiling (56 registers per thread, 9 blocks/SM).
 
 Three optimizations were proposed:
+
 1. `val_per_thread` 2 → 4 (halve grid count, reduce wave fragmentation)
 2. Split accumulator live range to reduce register count below 48
 3. `__ldg()` / `const __restrict__` on the 7 read-only tmp channel loads
 
 Baseline ncu measurements (576×324 YUV, sm_89):
+
 - Registers Per Thread: 56
 - Theoretical Occupancy: 75%
 - Achieved Occupancy: 42.91%
@@ -32,6 +34,7 @@ achieves the same register reduction without algorithmic restructuring or added
 `__syncthreads()` overhead.
 
 Post-optimization ncu measurements (same workload):
+
 - Registers Per Thread: 48 (down from 56)
 - Theoretical Occupancy: 83.33% (up from 75%)
 - Achieved Occupancy: 41.35%

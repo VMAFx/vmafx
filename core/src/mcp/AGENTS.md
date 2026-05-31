@@ -1,7 +1,10 @@
 # AGENTS.md — core/src/mcp
+
 Orientation for agents working on the embedded MCP server.
 Parent: [../../AGENTS.md](../../AGENTS.md).
+
 ## Scope
+
 ```text
 mcp/
   mcp.c               # public entry points, lifecycle, listener bring-up
@@ -13,9 +16,12 @@ mcp/
   transport_sse.c     # AF_INET loopback HTTP/1.1 + Server-Sent Events
   meson.build         # subdir() include from core/src/meson.build
 ```
+
 Public C-API: [`../../include/libvmaf/libvmaf_mcp.h`](../../include/libvmaf/libvmaf_mcp.h).
 Smoke test: [`../../test/test_mcp_smoke.c`](../../test/test_mcp_smoke.c).
+
 ## Backend status
+
 **Live** (T5-2b + v2 + v3, [ADR-0209](../../../docs/adr/0209-mcp-embedded-scaffold.md)).
 All three transports are real implementations: stdio,
 `AF_UNIX` UDS (mode 0700, single client at a time), and
@@ -25,7 +31,9 @@ below). Every public entry point still validates its arguments
 first (`-EINVAL` on NULLs / negative fds / NULL paths); the
 smoke test pins both the input-validation contract and the
 live round-trip behaviour.
+
 ## Ground rules
+
 - **Parent rules** apply (see [../../AGENTS.md](../../AGENTS.md)).
 - **Wholly-new fork file** — uses the dual Lusoris/Claude (Anthropic)
   copyright header per [ADR-0025](../../../docs/adr/0025-copyright-handling-dual-notice.md).
@@ -34,7 +42,9 @@ live round-trip behaviour.
   returning `-ENOSYS`. The validation must survive the runtime PR
   — the smoke tests for `_init`, `_start_uds`, `_start_stdio` rely
   on early `-EINVAL` even after the runtime arrives.
+
 ## Rebase-sensitive invariants
+
 - **The smoke test pins the contract.**
   [`../../test/test_mcp_smoke.c`](../../test/test_mcp_smoke.c) has
   12 sub-tests asserting per-entry-point return values
@@ -64,23 +74,32 @@ live round-trip behaviour.
   then any future runtime body, then a fall-through
   `return -ENOSYS;`. Do not invert this order on rebase — the
   smoke contract depends on it.
+
 ## Power-of-10 reservations for the runtime PR
+
 Documented for forward-looking discipline (these are not enforced
 by code yet — the runtime PR makes them load-bearing):
+
 - **No alloc on the measurement-thread hot path** (rule 3). The
   runtime PR uses a pre-sized SPSC ring buffer drained at frame
   boundaries; the measurement thread never calls `malloc`.
 - **Bounded drain loops** (rule 2). Every loop in the future
   runtime body has a static upper bound on iteration count.
+
 ## Governing ADRs
+
 - [ADR-0025](../../../docs/adr/0025-copyright-handling-dual-notice.md) —
   dual-copyright policy.
 - [ADR-0209](../../../docs/adr/0209-mcp-embedded-scaffold.md) —
   audit-first MCP scaffold.
+
 # `core/src/mcp/` — agent-relevant invariants
+
 Fork-local subtree. Read this before editing any TU under
 `core/src/mcp/`.
+
 ## Rebase-sensitive invariants (ADR-0108)
+
 1. **The entire subtree is fork-local.** Netflix/vmaf upstream has
    no embedded MCP surface. If a future upstream sync introduces
    a colliding `mcp/` directory, expect a port-only resolution —
@@ -133,7 +152,9 @@ Fork-local subtree. Read this before editing any TU under
     stream framing on the very next request. Same for `write(2)` —
     every fork-added write site loops `off < len` and retries on
     `EINTR`. ADR-0872.
+
 ## Build flags
+
 ```bash
 meson setup build -Denable_mcp=true \
                   -Denable_mcp_stdio=true \
@@ -142,10 +163,13 @@ meson setup build -Denable_mcp=true \
 # enable_mcp_sse is a `feature` option (default: auto). The SSE
 # transport is plain POSIX sockets — no third-party vendor probe.
 ```
+
 ## Smoke test
+
 ```
 build/test/test_mcp_smoke   # expects "17 tests run, 17 passed"
 ```
+
 The v3 sub-test `test_sse_event_stream` spawns the SSE server on
 an ephemeral loopback port, performs a `GET /mcp/sse` and checks
 for `Content-Type: text/event-stream`, an `event: ready` field, a

@@ -169,6 +169,7 @@ with the default CPU build.
 **Sub-issue B — ORT version mismatch:** `libvmaf/build-dnn/` was linked against
 ORT 1.22.0, which is not present on the host. Available ORT versions are 1.20.1 and 1.26.0.
 The `VERS_1.22.0` versioned symbol check fails at `dlopen` time:
+
 ```
 libonnxruntime.so.1: version `VERS_1.22.0' not found
 ```

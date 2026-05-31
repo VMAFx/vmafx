@@ -100,6 +100,7 @@ descriptor overhead for these two extractors.
 ## Consequences
 
 Positive:
+
 - Eliminates 12–16 Vulkan API round-trips per frame across the three
   extractors. At sub-HD resolutions where these calls are not GPU-bound
   the gain is 10–60 % throughput per the ADR-0256 profile projection.
@@ -112,11 +113,13 @@ Positive:
   rewrite.
 
 Negative / cost:
+
 - Three more extractor files touched. Reviewer must verify init-time
   stability for adm + psnr, and correctness of the per-frame rebind
   for motion.
 
 Risk:
+
 - None beyond ADR-0256's documented risk: bit-exactness slip if a
   pre-allocated set accidentally gets stale buffer handles. Mitigated
   by the `places=4` gate.

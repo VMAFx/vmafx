@@ -14,6 +14,7 @@ because it was still listed as luma-only with a follow-up note in ADR-0372
 ("Chroma extension is a follow-up").
 
 As a result the HIP extractor:
+
 - only dispatched and emitted `psnr_y`;
 - did not advertise `psnr_cb` / `psnr_cr` in `provided_features`;
 - silently dropped any `enable_chroma=false` caller intent;

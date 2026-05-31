@@ -40,6 +40,7 @@ to ffmpeg via `-i`.  libavformat's built-in HTTP demuxer reads the bytes; rclone
 fetches them from the remote backend.
 
 Advantages:
+
 - No FUSE kernel dependency.
 - Both `--reference` and `--distorted` can be served simultaneously on
   different ports.
@@ -51,6 +52,7 @@ The node mounts the remote at a per-job temporary directory, waits for the
 asset to appear on the mount, and returns the local path to ffmpeg.
 
 Requirements:
+
 - The `fuse3` package must be present in the container (`docker/Dockerfile.node`
   includes it).
 - The pod must have `securityContext.capabilities.add: [SYS_ADMIN]` and

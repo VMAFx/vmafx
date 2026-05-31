@@ -32,6 +32,7 @@ docker compose --project-directory /home/kilian/dev/vmaf \
 ```
 
 Output:
+
 ```
 #25 [libvmaf-build  2/28] COPY --chown=vmaf:vmaf libvmaf/        /build/vmaf/libvmaf/
 #25 ERROR: failed to calculate checksum … "/libvmaf": not found

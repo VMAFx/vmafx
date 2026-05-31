@@ -85,6 +85,7 @@ backend-agnostic `gpu_picture_pool.{c,h}` round-robin
   `macros.h` defines the macro and is included by `libvmaf.h`, which
   all backend headers already include — no extra `#include` is needed
   for headers that transitively pull in `libvmaf.h`. Verify with:
+
   ```bash
   nm -D --defined-only build/src/libvmaf.so.3.0.0 | grep ' [TW] ' | grep -v ' vmaf_' | wc -l
   # Must print 0

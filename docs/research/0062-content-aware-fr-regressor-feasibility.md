@@ -64,6 +64,7 @@ is the classic capacity-without-data symptom.
 ## Decision
 
 Park the content_class extension. Re-evaluate when:
+
 - The corpus exceeds ~2000 rows (10x current), OR
 - A LOSO eval surfaces a per-genre PLCC gap that content_class would close, OR
 - Auto-extracted content features are available (Research-0063 candidate)

@@ -87,6 +87,7 @@ return (int64_t)((uint64_t)lo | ((uint64_t)hi << 32));
 ```
 
 For a single warp where all 32 lanes carry `x = -2`:
+
 - `lo = 0xFFFFFFFE`, `hi = 0xFFFFFFFF`
 - After XOR-tree: `lo_sum = (32 × 0xFFFFFFFE) mod 2^32`
 

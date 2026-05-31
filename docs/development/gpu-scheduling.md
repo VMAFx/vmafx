@@ -104,15 +104,18 @@ Causes and fixes:
 
 1. **Device-plugin not installed.** Install the NVIDIA device-plugin daemonset.
 2. **Node is tainted but pod has no toleration.** Add a toleration:
+
    ```yaml
    tolerations:
      - key: nvidia.com/gpu
        operator: Exists
        effect: NoSchedule
    ```
+
 3. **All GPUs already allocated.** Reduce `gpu.count`, free other pods, or add
    a GPU node.
 4. **Pod is requesting more GPUs than available.**
+
    ```bash
    kubectl get pod <pod> -o jsonpath='{.spec.containers[0].resources}'
    ```

@@ -49,12 +49,14 @@ Hardware: RTX 4090 via `build-cpu/tools/vmaf --backend cuda` (fork build).
 ## Consequences
 
 **Positive:**
+
 - Training corpus grows from ~15,000 clips to ~167,000 clips.
 - K150K-A's MOS distribution spans a wider quality range than the Netflix
   reference corpus, improving model calibration at low-quality content.
 - Fully restartable extraction (`.done` checkpoint + atomic parquet flush).
 
 **Negative:**
+
 - `ciede2000` and `psnr_hvs` are all-NaN for every K150K-A clip.  The libvmaf
   ciede2000 and psnr_hvs implementations return `null` when ref == distorted
   (identity pair) — this is correct behaviour, not a bug.  Downstream loaders

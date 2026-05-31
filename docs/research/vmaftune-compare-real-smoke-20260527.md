@@ -1,4 +1,5 @@
 # Copyright 2026 Lusoris
+
 # vmaf-tune compare — Real Integration Smoke Test (2026-05-27)
 
 **Date:** 2026-05-27
@@ -68,6 +69,7 @@ present. On a 980 px desktop the text is readable; on a mobile viewport
 the browser defaults to a 980 px layout, making text tiny.
 
 Grep check:
+
 ```
 grep -c "viewport" /tmp/vmaftune-smoke/report.html  → 0
 ```
@@ -146,6 +148,7 @@ encoder_profile, a stable payload that can be passed to
 JSON sidecar, not only the HTML-embedded copy.
 
 **Reproduction:**
+
 ```bash
 vmaf-tune compare --src <yuv> --output /tmp/foo/report.json --format both …
 ls /tmp/foo/         # report.html report.md   (no report.json)
@@ -155,6 +158,7 @@ ls /tmp/foo/         # report.html report.md   (no report.json)
 
 **Severity: High (blocks libsvtav1 ladder runs)**
 **Files:**
+
 - `tools/vmaf-tune/src/vmaftune/ladder.py` line 173
 - `tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py` line 92
 
@@ -176,6 +180,7 @@ the default encoder but fails as soon as the user passes
 `--encoder libsvtav1`.
 
 **Reproduction:**
+
 ```bash
 vmaf-tune ladder \
   --src <yuv> --encoder libsvtav1 \

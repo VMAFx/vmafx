@@ -30,6 +30,7 @@ value must be checked.
 
 Add NULL checks immediately after each `malloc` / `calloc` group using the
 established project idiom:
+
 - For single-TU SIMD tests (`test_ssimulacra2_simd.c`): consolidated
   `if (!ptr1 || !ptr2 || ...) { free(each); return "malloc failed"; }`.
 - For loop-local allocations (`test_framesync.c`, `test_pic_preallocation.c`):

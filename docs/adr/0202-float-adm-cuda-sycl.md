@@ -16,6 +16,7 @@ following the established two-PR pattern from earlier batches
 
 CPU reference:
 [`float_adm.c`](../../core/src/feature/float_adm.c) (thin wrapper)
+
 + [`adm.c::compute_adm`](../../core/src/feature/adm.c) (4-scale
 orchestration) +
 [`adm_tools.c`](../../core/src/feature/adm_tools.c) (the float
@@ -33,6 +34,7 @@ extractor's `places=4` precision contract is preserved by both
 backends.
 
 ### CUDA twin —
+
 [`float_adm_cuda.c`](../../core/src/feature/cuda/float_adm_cuda.c)
 ([`float_adm_score.cu`](../../core/src/feature/cuda/float_adm/float_adm_score.cu))
 
@@ -54,6 +56,7 @@ backends.
   ownership and easier debugging.
 
 ### SYCL twin —
+
 [`float_adm_sycl.cpp`](../../core/src/feature/sycl/float_adm_sycl.cpp)
 
 - Single `.cpp` file with four `launch_*` templates over `SCALE`,
@@ -77,6 +80,7 @@ the Netflix normal pair before fixing).
 
 `meson.build` now carries a small per-kernel flag dict
 (`cuda_cu_extra_flags`) and threads `--fmad=false`
+
 + `-Xcompiler=-ffp-contract=off` into the `float_adm_score`
 fatbin only — the integer ADM kernel uses `int64` accumulators
 for which FMA is irrelevant, so the existing FMA-on path is
@@ -99,6 +103,7 @@ wander into uninitialised memory at scale 1+. Symptom:
 `max_abs_diff = 3.6e-4` at `adm_scale3` and `1.4e-4` at `adm2`
 on the Netflix normal pair. Fix:
 [`float_adm_cuda.c::submit_fex_cuda`](../../core/src/feature/cuda/float_adm_cuda.c)
+
 + [`float_adm_sycl.cpp::submit_fex_sycl`](../../core/src/feature/sycl/float_adm_sycl.cpp)
 both now pass `scale_w/h[scale]`. Cited inline at the
 declaration so future refactors don't regress the bounds.

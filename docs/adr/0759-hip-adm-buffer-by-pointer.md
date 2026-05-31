@@ -16,6 +16,7 @@ the F3 finding on the CUDA side (PR #93 audit), where the same pattern in the CU
 twins was also flagged.
 
 Passing a 272-byte struct by value to a HIP/ROCm kernel has two concrete costs:
+
 1. The HIP runtime must marshal the full struct through the kernel argument buffer
    on every kernel launch. ROCm targets (gfx906/gfx90a/gfx10/gfx11) have per-launch
    argument buffer limits that vary by target; a 272-byte struct consumes a large

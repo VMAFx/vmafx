@@ -70,6 +70,7 @@ audit trail.
 ## Consequences
 
 **Positive**
+
 - Jobs are never permanently stranded due to a transient post-UPDATE read
   failure.
 - The CRITICAL log message provides an unambiguous operator signal when the
@@ -78,6 +79,7 @@ audit trail.
   exercises all three rollback assertions (SQL status, runningSet, FIFO).
 
 **Negative**
+
 - The rollback SQL adds one extra write on the failure path; this is
   acceptable because the path is already an error condition.
 - The `getUnlockedHook` field is a production-visible (exported setter) test
@@ -85,6 +87,7 @@ audit trail.
   (`ForTest` suffix) makes the restriction clear.
 
 **Neutral follow-ups**
+
 - A future ADR may wrap `PullWork` in a transaction once a performance
   baseline for WAL-mode write serialisation is established.
 

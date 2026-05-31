@@ -95,12 +95,14 @@ target drivers:
 
 The reducer dispatch is recorded in the same command buffer immediately after
 the per-WG dispatch, separated by a `VkMemoryBarrier`:
+
 ```
 srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT
 dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT
 srcStageMask  = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
 dstStageMask  = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
 ```
+
 This satisfies Vulkan 1.3 spec §7.1 "Execution and Memory Dependencies" for
 write-after-write (the reducer also writes `reduced_accum` via atomicAdd)
 and read-after-write ordering. No `vkQueueWaitIdle` between dispatches.
@@ -114,6 +116,7 @@ non-coherent host cache before `vmaf_vulkan_buffer_host` reads the result.
 
 The reduction shader uses the pattern already established in `vif.comp`
 Phase 4 (see research-0089 / ADR-0269):
+
 - subgroupAdd for the per-subgroup partial;
 - elected threads write subgroup partials to shared memory;
 - `memoryBarrierShared(); barrier();` before thread 0 reads;

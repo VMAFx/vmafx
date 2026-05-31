@@ -149,6 +149,7 @@ filter consumes them by path.
 ## Consequences
 
 **Positive:**
+
 - Two real, trained, ONNX-exportable, ORT-validated baseline models
   ship in `model/tiny/`. Closes 2 of the 3 sub-items of T6-1.
 - The training pipeline is exercised end-to-end: dataset fetch →
@@ -162,6 +163,7 @@ filter consumes them by path.
   another schema change.
 
 **Negative:**
+
 - C2 quality is baseline-grade (RMSE ~0.62 on 1–5 MOS, well below
   state-of-the-art NR metrics at this size). Improvements should
   use either (a) bigger backbone, (b) more training data, (c)

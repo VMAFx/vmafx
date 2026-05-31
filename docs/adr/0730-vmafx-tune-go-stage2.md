@@ -19,6 +19,7 @@ commonly invoked subcommand after `compare`, and has the highest leverage ratio
 requiring new subprocess plumbing.
 
 The Python `ladder.py` Phase E algorithm is well-specified:
+
 1. Sample the `(resolution × VMAF-target)` plane via the Phase B bisect.
 2. Compute the upper convex hull (Pareto frontier) of the `(bitrate, vmaf)` cloud.
 3. Select a small set of "knee" renditions using curvature-based inflection

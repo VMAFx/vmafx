@@ -10,6 +10,7 @@
 Research-0016 (IIR blur SIMD) and Research-0017 (`picture_to_linear_rgb`
 SIMD) both closed with the footnote *"SVE2 port — deferred pending CI
 hardware"*. The fork has shipped AVX2 / AVX-512 / NEON ports and a CUDA
+
 + SYCL twin (ADR-0161, ADR-0162, ADR-0163, ADR-0206) for SSIMULACRA 2;
 SVE2 was the last gap on the SIMD matrix.
 

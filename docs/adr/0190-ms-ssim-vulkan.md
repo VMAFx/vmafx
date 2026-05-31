@@ -122,6 +122,7 @@ satisfies the [ADR-0153](0153-float-ms-ssim-min-dim-netflix-1414.md)
 floor.
 
 Each scale's `l, c, s` reduction follows the same per-WG-float
+
 + host-double pattern as ssim_vulkan. The Wang product combine
 runs entirely on the host in `double`, so the per-pixel
 `pow(x, α)` calls don't accumulate float ULPs across scales.

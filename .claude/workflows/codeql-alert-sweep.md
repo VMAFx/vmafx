@@ -10,6 +10,7 @@ agent_type: general-purpose
 isolation: worktree
 worktree_drift_check: true
 required_deliverables:
+
   - changelog
   - rebase_note
 verification:
@@ -22,6 +23,7 @@ forbidden:
   - blanket_nolint_suppress            # CodeQL is severity-tiered; suppress only with cite
 master_status_check: true
 backlog_id: null                       # CodeQL sweeps usually have no backlog row
+
 ---
 
 # CodeQL alert sweep — {{ALERT_CATEGORY}}

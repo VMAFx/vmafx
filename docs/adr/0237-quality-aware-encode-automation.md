@@ -44,6 +44,7 @@ surface. It is a hybrid C + Python tool (same shape as the
 existing `vmaf-perShot` binary), built via Meson alongside the
 rest of the libvmaf tree. The tool exposes one harness layer
 (drive FFmpeg with parameter grids, capture bitrate + decode
+
 + score-via-libvmaf), one search layer (target-quality bisect /
 Bayesian / Pareto), and one selector layer (pre-trained per-title
 and per-shot CRF predictors with codec-aware conditioning).

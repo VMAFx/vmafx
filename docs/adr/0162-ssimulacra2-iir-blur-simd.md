@@ -64,6 +64,7 @@ lanes don't write to output.
 - Scalar tail for leftover columns (identical to scalar reference).
 
 Bit-exactness preserved because:
+
 - Per-lane SIMD arithmetic is IEEE-754 lane-commutative (each lane
   computes the exact scalar sequence in isolation).
 - Summation order is preserved: `n2_k * sum - d1_k * prev1_k - prev2_k`

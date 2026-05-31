@@ -94,6 +94,7 @@ computes exactly the same sequence of IEEE-754 operations as the
 scalar inner loop for output column `x + i`.** The store path
 (`_mm256_cvtpd_ps` followed by `_mm_storeu_ps`) produces the same
 `(float)(sum * 1.0f)` cast as the scalar `img_cache[...] = (float)(sum
+
 * scale)`.
 
 **Bit-identical output by construction.** No tolerance check

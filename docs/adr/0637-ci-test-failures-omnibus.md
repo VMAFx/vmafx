@@ -8,6 +8,7 @@
 ## Context
 
 After merging PRs #1417 and #1418 (MCP `probe_backend`/`vmaf_version`/`vmaf_score_encoded`
+
 + P1 surface additions), the "Tests & Quality Gates" workflow on master had five failures:
 
 1. **MCP Smoke (Embedded C + Python Server)** — `SyntaxError: invalid syntax` at line 77 of

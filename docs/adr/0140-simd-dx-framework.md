@@ -126,6 +126,7 @@ real code* before PR #B consumes it at scale.
     of the fork's version.
   - [`CHANGELOG.md`](../../CHANGELOG.md) entry under Added.
   - Reproducer for PR #A:
+
     ```
     # Cross-compile + run NEON audit under QEMU
     meson setup build-aarch64 \

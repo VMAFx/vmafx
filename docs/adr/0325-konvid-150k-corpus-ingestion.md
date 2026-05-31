@@ -79,6 +79,7 @@ Adopt KonViD-150k as a third training shard for the
 ### Phase 0 — this ADR + research digest
 
 Land [Research-0086](../research/0086-konvid-150k-corpus-feasibility.md)
+
 + this ADR. No code. Disk impact: ~30 KB of docs.
 
 ### Phase 1 — KonViD-1k pipeline

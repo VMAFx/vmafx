@@ -75,6 +75,7 @@ The rclone configuration is provided via a Kubernetes Secret mounted at
 ## Consequences
 
 **Positive:**
+
 - Zero-copy streaming: reference and distorted videos stream from S3 / GCS / Azure Blob /
   SFTP / HTTP without any intermediate disk write.
 - Unified storage abstraction: `pkg/storage.Storage` interface decouples the executor
@@ -84,6 +85,7 @@ The rclone configuration is provided via a Kubernetes Secret mounted at
 - HTTP-serve mode adds no FUSE kernel dependency to the node container.
 
 **Negative:**
+
 - rclone binary (~55 MB uncompressed) increases the node image size.
 - Per-job `rclone serve http` subprocess adds ~100 ms startup latency before ffmpeg can
   read the first byte.  The readiness poller in `waitForHTTP` compensates.
@@ -91,6 +93,7 @@ The rclone configuration is provided via a Kubernetes Secret mounted at
   (add `securityContext.capabilities.add: [SYS_ADMIN]` when using mount mode).
 
 **Neutral / follow-ups:**
+
 - Phase 4b.6 (eBPF) will investigate whether eBPF can reduce FUSE round-trip overhead
   for the mount-mode fallback (Research-0733 target: FUSE bypass).
 - The HTTP-serve port is ephemeral (OS-assigned free port); no port reservation in the

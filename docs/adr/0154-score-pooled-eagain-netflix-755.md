@@ -172,6 +172,7 @@ flush before pooling.
   reports `Fail: 1` — the test is a real gate, not a tautology.
 - Reproducer standalone binary (matches the issue's code
   pattern):
+
   ```
   read_pictures(0) -> 0
   score_pooled(0,0) -> rc=0 score=97.428043
@@ -182,6 +183,7 @@ flush before pooling.
   flush -> 0
   final_pool(0..2) -> rc=0 score=97.428043
   ```
+
 - `clang-tidy -p build core/src/feature/feature_collector.c
   core/src/feature/feature_collector.h` → zero warnings.
 

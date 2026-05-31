@@ -115,6 +115,7 @@ chroma through.
 ## Consequences
 
 **Positive:**
+
 - Real 10-bit HDR content now flows through the learned filter. No
   downcast to 8-bit in the pipeline.
 - Chroma denoising becomes available as an opt-in — matches the
@@ -126,6 +127,7 @@ chroma through.
   with round-to-even + clamp. No precision loss vs the 8-bit path.
 
 **Negative:**
+
 - `chroma=1` on a luma-trained model is an **experimental** setting
   and may degrade subjective quality on chroma-heavy clips. The
   docstring + CLI help flag it; future C3 variants trained

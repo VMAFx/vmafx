@@ -126,12 +126,14 @@ Net effect:
   on `default_library=static -Denable_vulkan=enabled` returned
   ~700 before this commit; after, returns `0`.
 - Post-fix verification:
+
   ```
   $ gcc -static main_stub.c libvmaf.a libvulkan-stub.a \
         -lstdc++ -lm -lpthread -ldl -o btbn_sim
   $ echo $?
   0
   ```
+
   (See PR description for the full repro script.)
 - Vulkan smoke test (`test_vulkan_smoke`) still passes 10 / 10
   on the renamed build — runtime-loaded entry points dispatch

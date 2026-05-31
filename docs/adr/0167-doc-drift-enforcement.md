@@ -135,6 +135,7 @@ new tiny-AI submodule).
 ## Consequences
 
 **Positive:**
+
 - The drift class that produced this audit becomes statically
   unmergeable: a SIMD port for `ssimulacra2` cannot land without
   touching `docs/metrics/features.md` (or claiming
@@ -145,6 +146,7 @@ new tiny-AI submodule).
   from decision logging.
 
 **Negative:**
+
 - Path map maintenance: every new user-discoverable surface needs a
   new mapping row. Acceptable cost — adding a backend / metric /
   CLI subcommand is rare.

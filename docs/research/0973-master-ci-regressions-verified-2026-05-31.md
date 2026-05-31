@@ -56,6 +56,7 @@ The test itself is gated by `enable_metal=enabled or (auto and darwin)` and
 needs the Apple `Foundation` framework to compile its Metal sources — not
 buildable on Linux. Instead the diagnosis was verified through the
 production CLI, which exercises the *exact same* `vmaf_use_feature("float_ms_ssim")`
+
 + `vmaf_read_pictures` code path that the test's `run_cpu_float_ms_ssim` uses.
 
 ```

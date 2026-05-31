@@ -9,6 +9,7 @@ agent_type: simd-reviewer
 isolation: worktree
 worktree_drift_check: true
 required_deliverables:
+
   - digest                             # ADR-0180-style bench-first ceiling decision
   - alternatives                       # AVX2 vs AVX-512 vs NEON vs scalar tail
   - agents_md                          # rebase-sensitive: feature/x86 + arm64 trees
@@ -25,6 +26,7 @@ forbidden:
   - replace_libm_without_lut           # ADR-0164: deterministic LUTs only
 master_status_check: true
 backlog_id: null                       # set to the relevant T3-x / T7-x row
+
 ---
 
 # SIMD port — {{ISA}} {{FEATURE}}
@@ -53,10 +55,13 @@ Mandatory steps:
    Netflix normal pair, **document as a ceiling row** in the
    relevant ADR (ADR-0180 / ADR-0350 pattern) — do **not** ship.
 2. Cross-backend diff at `places=4`:
+
    ```bash
    /cross-backend-diff --feature {{FEATURE}} --places 4
    ```
+
 3. Netflix golden gate:
+
    ```bash
    make test-netflix-golden
    ```

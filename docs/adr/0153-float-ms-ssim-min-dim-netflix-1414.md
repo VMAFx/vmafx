@@ -41,6 +41,7 @@ Reject small resolutions up front at init time.
    [`core/src/feature/float_ms_ssim.c`](../../core/src/feature/float_ms_ssim.c),
    compute the minimum supported dimension from the existing
    `GAUSSIAN_LEN` + `SCALES` constants:
+
    ```c
    const unsigned min_dim = GAUSSIAN_LEN << (SCALES - 1); /* 176 */
    if (w < min_dim || h < min_dim) {
@@ -52,6 +53,7 @@ Reject small resolutions up front at init time.
        return -EINVAL;
    }
    ```
+
 2. Extract the SIMD-dispatch wiring into a new static helper
    `ms_ssim_init_simd_dispatch` to keep the `init` function body
    under the ADR-0141 60-line `readability-function-size` limit
@@ -127,10 +129,12 @@ it stays in sync if upstream ever changes `SCALES` or
   meson test -C build test_float_ms_ssim_min_dim` reports
   `Fail: 1` — the test is a real gate, not a tautology.
 - Reproducer from the upstream issue (with a 160×144 YUV):
+
   ```
   libvmaf ERROR float_ms_ssim: input resolution 160x144 is too small;
   the 5-level 11-tap MS-SSIM pyramid requires at least 176x176 (Netflix#1414)
   ```
+
 - `clang-tidy -p build core/src/feature/float_ms_ssim.c` →
   zero warnings (`init` stays within the
   `readability-function-size` budget via the extracted

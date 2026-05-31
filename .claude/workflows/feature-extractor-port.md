@@ -10,6 +10,7 @@ agent_type: general-purpose            # or vulkan-reviewer for VK PRs
 isolation: worktree
 worktree_drift_check: true
 required_deliverables:
+
   - digest
   - alternatives
   - agents_md
@@ -27,6 +28,7 @@ forbidden:
   - claim_gpu_bit_exact                # feedback_golden_gate_cpu_only: never claim CPU bit-exact
 master_status_check: true
 backlog_id: null                       # set to "T3-12", "T7-36", etc.
+
 ---
 
 # Feature-extractor port — {{FEATURE}} → {{BACKEND}}
@@ -55,11 +57,14 @@ Mandatory steps:
 3. Register the new `vmaf_fex_{{FEATURE}}_{{BACKEND}}` symbol in
    the backend dispatch table.
 4. Cross-backend ULP gate at `places=4`:
+
    ```bash
    scripts/ci/cross_backend_parity_gate.py \
        --feature {{FEATURE}} --backends cpu,{{BACKEND}} --places 4
    ```
+
 5. Netflix golden gate (CPU-only — confirms the scalar isn't broken):
+
    ```bash
    make test-netflix-golden
    ```

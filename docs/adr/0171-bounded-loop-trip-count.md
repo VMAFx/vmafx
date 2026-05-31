@@ -130,6 +130,7 @@ of Loops within Loops" attack purely from wire-format observation.
 ## Consequences
 
 **Positive:**
+
 - Closes the bounded-iteration follow-up flagged in ADR-0169 with
   the picked path (a) from that ADR's § Alternatives.
 - The Python check produces actionable diagnostics
@@ -143,6 +144,7 @@ of Loops within Loops" attack purely from wire-format observation.
   with > 1024 steps) opt in without forking the codebase.
 
 **Negative:**
+
 - The C cap is coarse — 16 well-bounded Loops trip the same gate
   as 16 unbounded ones. Operators using a model with many Loops
   (rare, but possible in some VLM architectures) need to either

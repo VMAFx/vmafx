@@ -735,6 +735,7 @@ identifier dictionary is:
 | `cambi.c` full-ref extract path | inner `int err` shadowing dist-side accumulator | `src_err` |
 
 Bit-exactness: the sweep is provably no-op (renames + scope-tighten
+
 + identical-typed deletes only). Netflix CPU golden 3 must remain
 green across rebases — re-run the
 `PYTHONPATH=$PWD/python python3 -m pytest python/test/quality_runner_test.py

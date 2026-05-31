@@ -191,7 +191,6 @@ Runtime directly.
   (CUDA → OpenVINO-GPU → ROCm → CoreML → CPU) is
   ADR-0365-Decision-load-bearing.
 
-
 - **Op-allowlist additions for TransNet V2 (ADR-0257)**:
   `BitShift`, `GatherND`, `Pad`, `Reciprocal`, `ReduceProd`,
   and `ScatterND` are now load-bearing for

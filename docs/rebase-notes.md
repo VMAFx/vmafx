@@ -19,6 +19,7 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 `cmd/vmafx-server/grpc_recovery_test.go` (new).
 
 **Rebase impact:** None. All five surfaces are fork-local Go code:
+
 - `pkg/observability/` is a fork-added package; Netflix/vmaf has no
   equivalent.
 - `pkg/score/` is a fork-added wrapper around the fork's vmafx.v1 proto;
@@ -28,6 +29,23 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 No C ABI, no public header, no upstream-mirrored TU touched. Upstream
 syncs do not interact with this change.
+
+---
+
+## Markdown lint blank-line sweep (2026-05-31, ADR-0979)
+
+no rebase impact: docs-only. The sweep applies
+`markdownlint-cli2 --fix` with a blank-line-only allow-list
+(`MD012`, `MD022`, `MD031`, `MD032`, `MD058`) to 253 fork-added
+and upstream-mirrored markdown files. `git diff -w` confirms no
+content change. Upstream Netflix/vmaf does not run markdownlint
+on its docs corpus, so the fork-side blank-line normalisation
+will silently survive an upstream sync. If upstream later adds
+its own markdownlint pass, conflicts in shared docs files
+(`README.md`, `compat/python-vmaf/README.md`) will be trivial
+to resolve — prefer the upstream content side and re-run
+`markdownlint-cli2 --fix` with `.markdownlint.json` restored to
+the fork's tuned config.
 
 ---
 
@@ -70,6 +88,7 @@ test-only files. Netflix/vmaf does not carry these test files upstream
 (`test_ssimulacra2_simd.c`, `test_pic_preallocation.c` are fork-added;
 `test_framesync.c` has fork-local modifications). No C API or public ABI
 is touched. Subsequent upstream syncs do not interact with this change.
+
 ## Public-header ISO-reserved include guards renamed (2026-05-31)
 
 **Files touched:**
@@ -120,6 +139,7 @@ syncs do not interact with this code.
 If a future upstream PR adds a Rust workspace (extremely unlikely), the
 fork's `bindings/rust/vmafx/` and `bindings/rust/vmafx-sys/` paths must
 not collide with the upstream layout. As of n8.1 there is no precedent.
+
 ## gRPC `ScoreStream` Phase 1 (2026-05-31)
 
 **Files touched:**
@@ -143,6 +163,7 @@ If a future upstream port touches `core/` in a way that changes the
 public C API consumed by `pkg/libvmaf`, the Phase 2 wiring of
 `ScoreStream` to libvmaf will need to mirror that change — but Phase
 1 is server-stub-only and doesn't reach the C surface yet.
+
 ## Native bash pre-commit hook (ADR-0924, 2026-05-31)
 
 no rebase impact: all paths are fork-local — `scripts/githooks/`
@@ -250,6 +271,7 @@ is entirely fork-added (no upstream Netflix/vmaf equivalent); upstream syncs do 
 touch this subtree.
 
 ---
+
 ## ai/src NaN propagation guards — eval.correlations + tune._read_best_metric (2026-05-31, ADR-0963)
 
 **Files touched:**
@@ -261,6 +283,7 @@ touch this subtree.
 **Rebase impact:** None — `ai/src/vmaf_train/` is entirely fork-local with no
 upstream Netflix/vmaf equivalent. No C surface is touched. No upstream
 coupling.
+
 ## Helm chart seccompProfile + node-deployment image helper (2026-05-31, ADR-0969)
 
 no rebase impact: REASON — both changes are entirely within
@@ -269,12 +292,14 @@ counterpart in Netflix/vmaf. Netflix upstream does not ship a Helm chart;
 upstream syncs never touch this directory. PR #439 (ADR-0930) will rebase
 cleanly on top (it modifies `values.yaml` in a non-conflicting block and
 does not touch `node-deployment.yaml`).
+
 ## MCP HTTP transport security hardening (2026-05-31, ADR-0967)
 
 no rebase impact: REASON — changes are confined to the fork-local MCP server subtree
 (`mcp-server/vmaf-mcp/`). Netflix upstream has no MCP server; this entire subtree will
 never merge upstream. The security middleware, auth helpers, and bind-host resolver are
 fork-invented code with no upstream counterpart.
+
 ## HIP kernel parity-test coverage round 4 (2026-05-31, ADR-0958)
 
 **Files touched:**
@@ -316,6 +341,7 @@ No rebase impact: all changes are confined to the fork-local controller package
 paths (the controller is a Phase 4b addition, not a port of Netflix code).
 The `nodes.Registry` context-propagation change is entirely within fork-local
 code and has no interaction with libvmaf C sources.
+
 ## `vmaf_mcp_stop()` idempotent (CAS instead of exchange) (2026-05-31)
 
 **Files touched:**
@@ -330,6 +356,7 @@ the existing 3-state state machine semantics intact and matching the
 CAS pattern already used by `vmaf_mcp_start_{stdio,uds,sse}`. The new
 regression test (`test_mcp_stop_idempotent.c`) is also fork-only.
 Sync impact: no Netflix file references `vmaf_mcp_*` symbols.
+
 ## `compat/python-vmaf/` scanf + ProcessRunner locale fixes (2026-05-31, ADR-0955)
 
 **Files touched:**
@@ -342,12 +369,14 @@ Sync impact: no Netflix file references `vmaf_mcp_*` symbols.
 
 1. `tools/scanf.py::makeFormattedHandler.applyWidth` — the upstream code
    has an **inverted** width guard:
+
    ```python
    def applyWidth(handler):
        if width is None:
            return makeWidthLimitedHandler(handler, width, ignoreWhitespace=True)
        return handler
    ```
+
    The fork swaps the branches so implicit-width converters return
    `handler` and explicit-width converters return the capped wrapper.
    When porting an upstream commit that re-touches this function,
@@ -368,6 +397,7 @@ The regression test
 `python/test/python_harness_scanf_locale_bugs_test.py` exercises
 both code paths and will fail if either fix regresses during an
 upstream sync.
+
 ## GPU dispatch-runtime host-only unit test (2026-05-31, ADR-0954)
 
 **Files touched:**
@@ -382,6 +412,7 @@ additions). The wiring in `core/test/meson.build` lives in the
 fork-added test region near other `test_*` entries; no upstream
 collision is possible. If upstream ever adds dispatch-strategy
 abstractions of its own, the test would coexist by name.
+
 ## Python harness coverage push round 2 (2026-05-31)
 
 **Files touched:**
@@ -396,6 +427,7 @@ ADR-0700). When `/sync-upstream` runs, this file is fork-only and
 needs no re-baselining. Companion: PR #412
 (`test/compat-python-vmaf-coverage`) round 1, PR #413
 (`fix/decorator-persist-encode`) — neither overlap.
+
 ## HIP ADM parity test feature-name + ENOSYS skip (ADR-0950, 2026-05-31)
 
 **Files touched:** `core/test/test_hip_adm_parity.c`.
@@ -408,6 +440,7 @@ ADR-0949 (motion3 sibling); both tests now follow the same two-axis
 (`enable_hip` × `enable_hipcc`) skip predicate. Companion docs:
 `docs/adr/0950-hip-adm-parity-feature-name-and-enosys-skip.md`,
 `changelog.d/fixed/0950-test-hip-adm-parity-feature-name-and-enosys-skip.md`.
+
 ## go-services-coverage-round2 (2026-05-31)
 
 **Files touched:**
@@ -426,6 +459,7 @@ rebase boundary is unaffected. The cmd/vmafx-controller grpc_server
 tests carry the `//go:build cgo` tag mirroring the production source
 file, so they compile only when cgo is enabled (matching the existing
 `main_test.go` invariant).
+
 ## dev/Containerfile libvmaf → core path fix (2026-05-31, ADR-0966)
 
 No rebase impact: pure path fix, no upstream coupling. `dev/Containerfile`
@@ -441,6 +475,7 @@ name (`libvmaf-build`) are intentionally preserved as references to the
 ---
 
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
+
 ## CUDA kernel parity coverage round 3 (2026-05-31)
 
 **Files touched:**
@@ -569,6 +604,7 @@ When Phase 2 wires OTel into `vmafx-node` / `vmafx-server` /
 in `pkg/observability/AGENTS.md` (the 5 s bounded shutdown is
 mandatory). Each subsequent service ships as its own PR with its own
 ADR.
+
 ## mkdocs ADR nav restructure + by-tag generator (2026-05-31)
 
 **Files touched:**
@@ -595,6 +631,7 @@ If the per-hundred bucket labels in `LABELS` inside
 `scripts/docs/generate-adr-nav.sh` drift away from the actual bucket
 themes (e.g., the 0800s and 0900s fill out with a clear topic), edit
 the dict and re-run `--write`.
+
 ## BuildKit cache mounts on container build matrix (2026-05-31)
 
 **Files touched:**
@@ -627,6 +664,7 @@ The `vmaf` user uid/gid is now explicitly pinned to 1000 in
 `dev/Containerfile` so BuildKit `--mount=...,uid=1000,gid=1000`
 directives resolve to the same identity that runs the build —
 preserve that pin on rebase.
+
 ## Pre-existing test failures across ai/, vmaf-tune, mcp-server (2026-05-30)
 
 **Files touched:**
@@ -662,6 +700,7 @@ generic environment-probe pattern that will keep working unchanged for
 any future torch / torchvision / torchmetrics ABI drift; the only knob
 to revisit is whether to widen the broad `except Exception` if some
 future failure mode warrants more specific handling.
+
 ## Unified Python test orchestrator — top-level noxfile.py (2026-05-31, ADR-0914)
 
 **Files touched:**
@@ -679,6 +718,7 @@ upstream Netflix/vmaf ships only the `python/` legacy harness and its
 upstream ever adds its own `noxfile.py`, treat the conflict as
 fork-takes-priority: our file delegates to upstream's `python/tox.ini`
 via the `python_harness` session, so behaviour is preserved.
+
 ## clang-tidy `modernize-*` family enablement (2026-05-31)
 
 **Files touched:**
@@ -698,6 +738,7 @@ When syncing: keep the four `-modernize-*` opt-outs in `.clang-tidy`
 (noise / C-ABI hostility rationale documented in ADR-0915). If upstream
 ever ships their own clang-tidy config, merge by union — drop our
 opt-outs only with an explicit ADR.
+
 ## cargo-deny supply-chain policy (2026-05-31)
 
 **Files touched:** `deny.toml` (new), `.github/workflows/rust-ci.yml`
@@ -718,6 +759,7 @@ implicit-include behaviour (cargo-deny picks up workspace members
 automatically) and audit whether upstream's choice of licenses /
 banned-crate stance differs from ours. See
 [ADR-0917](adr/0917-cargo-deny-supply-chain-policy.md).
+
 ## Pixel-format edge coverage test (2026-05-31)
 
 **Files touched:**
@@ -737,6 +779,7 @@ should conflict, since the inserted block is immediately adjacent to
 fork-only neighbours.
 
 ADR-0912.
+
 ## ADR README drift sweep (2026-05-31)
 
 **Files touched:**
@@ -752,6 +795,7 @@ re-aligns three fork-local index sources against the
 already-authoritative `docs/adr/[0-9]*-*.md` ADR file set, with no
 content changes to any ADR body. Future regenerations are mechanical via
 `scripts/docs/concat-adr-index.sh --write`.
+
 ## codespell sweep + `.codespellrc` (2026-05-31)
 
 **Files touched:** `.codespellrc` (new), `CONTRIBUTING.md`,
@@ -777,6 +821,7 @@ etc.), update the skip-list paths in `.codespellrc` to match.
 **Re-run:** `codespell --config .codespellrc` (or just `codespell`
 from the repo root — picks up `.codespellrc` automatically). Expected
 output: no findings on a clean tree.
+
 ## `.gitignore` staleness audit (ADR-0905, 2026-05-30)
 
 **Files touched:** `.gitignore`, `python/.gitignore`.
@@ -791,6 +836,7 @@ next `/sync-upstream`, Netflix's `.gitignore` will merge cleanly
 because the trimmed rules (`.gradle/`, `.pypirc`) and the rewired
 matlab paths (`compat/python-vmaf/matlab/**/*.mex*`) do not overlap
 any upstream rule.
+
 ## cpp const/noexcept/nodiscard annotation sweep (2026-05-30)
 
 **Files touched:**
@@ -806,9 +852,11 @@ untouched, so no upstream header rebase is affected. If upstream
 Netflix introduces new fork-only C++ static helpers, apply the same
 `[[nodiscard]]` / `noexcept` discipline so the lint posture stays
 uniform.
+
 ## libvmaf-public-header-doc-gaps-round3 (2026-05-30)
 
 **Files touched:**
+
 - `core/include/libvmaf/picture.h` (doc comments on enum + opaque typedef +
   2 entry points, plus NOLINT-cited include guard)
 - `core/include/libvmaf/libvmaf.h` (doc comments on 2 enums + opaque
@@ -834,6 +882,7 @@ can be removed in a follow-on cleanup.
 
 No source/binary symbol renames; consumers of the patch stack
 (`ffmpeg-patches/`) and the Go/Rust bindings see identical declarations.
+
 ## Bash strict-mode + trap-cleanup sweep (2026-05-30, ADR-0899)
 
 **Files touched:**
@@ -857,6 +906,7 @@ sync introduces a Netflix-side `scripts/run_unittests.sh`, the
 strict-mode `set -eu` block at the top of our version is the
 only carrier of fork-specific behaviour and trivially survives
 a 3-way merge.
+
 ## Metal kernel parity tests round 2 (2026-05-30)
 
 **Files touched:**
@@ -878,6 +928,7 @@ If upstream ever ports a Metal backend, the test files would need
 re-pointing at the upstream kernel names; the synthetic-fixture +
 `-ENODEV` skip pattern from `test_sycl_motion3_parity.c` carries
 forward unchanged.
+
 ## .claude/skills/ — ADR-0700 path drift cleanup (2026-05-30)
 
 **Files touched:**
@@ -895,6 +946,7 @@ match the post-ADR-0700 layout. Public install-path references
 
 When syncing from upstream Netflix/vmaf, this file does not need
 attention; the conflict surface is empty.
+
 ## ADR-0871 — SSIM SIMD dispatch pthread_once guard — 2026-05-30
 
 Low rebase impact. The fix sits in two fork-added zones:
@@ -925,9 +977,11 @@ Fork-local files:
 `docs/adr/0871-ssim-dispatch-pthread-once.md`,
 `docs/research/tsan-race-audit-2026-05-30.md`,
 `changelog.d/fixed/tsan-race-audit.md`.
+
 ## sanitizer-pass-cleanup (2026-05-30, ADR-0869)
 
 **Files touched:**
+
 - `core/src/feature/cambi.c` — adds two `int` shadow slots
   (`window_size_opt`, `max_log_contrast_opt`) to `CambiState`; the
   options table targets them; `init()` copies into the existing
@@ -937,6 +991,7 @@ Fork-local files:
 - `core/src/feature/x86/adm_avx512.c` — same as AVX2.
 
 **Rebase impact:**
+
 - **CAMBI**: upstream Netflix's `CambiState` does not have the
   `_opt` shadow slots. On upstream sync, expect a context conflict on
   the struct definition and on the two option-table entries. Resolution
@@ -992,6 +1047,7 @@ margin restored after PR #129 grew the denominator with unreachable
 error-handling.
 
 ---
+
 ## unused-testdata-debug-scripts-cleanup (2026-05-30, ADR-0880)
 
 **Files touched:** `testdata/check_borders.py` (deleted),
@@ -1013,6 +1069,7 @@ The added `USER nonroot:nonroot` directive on each final stage will
 not conflict on any future upstream sync. If upstream ever publishes
 their own Dockerfile, the fork's containers stay separate (the GHCR
 namespace is `vmafx/`).
+
 ## go-nilness-staticcheck-audit (2026-05-30)
 
 **Files touched:**
@@ -1026,6 +1083,7 @@ namespace is `vmafx/`).
 **Rebase impact:** None. Every modified file is fork-original Go code
 under `cmd/vmafx-*` / `pkg/*`; Netflix/vmaf upstream does not ship Go
 code in these paths. No upstream conflict possible.
+
 ## iwyu-audit (2026-05-30) — fork-only files, append-only direct includes
 
 **Files touched:** 16 fork-authored sources under `core/src/feature/`,
@@ -1048,6 +1106,7 @@ pass will run inside the `vmaf-dev-mcp` container per
 `CLAUDE.md` §12 r15.
 
 ---
+
 ## magic-number-audit cert-int07c (2026-05-30, ADR-0874)
 
 **Files touched:** `core/src/mcp/{mcp_internal.h,mcp.c,compute_vmaf.c,transport_sse.c}`,
@@ -1078,6 +1137,7 @@ VPL VA-API init) that are already non-shared with upstream — the new
 fork-added (no upstream file). No upstream conflict expected on the
 next sync; if Netflix ever adds their own MCP transport, the EINTR
 retry pattern should be ported there too.
+
 ## adr-0100-per-surface-doc-audit (2026-05-30)
 
 **Files touched:** `docs/development/build-flags.md`,
@@ -1092,6 +1152,7 @@ surfaces (codec-context DNN API, codec/preset/CRF/resize CLI flags,
 six Meson options) that originated in fork ADRs (ADR-0335, ADR-0361,
 ADR-0519, ADR-0550, ADR-0568, ADR-0623, ADR-0707, ADR-0726). No upstream
 file is touched; no rebase conflict possible.
+
 ## go-pkg-coverage-push (2026-05-30)
 
 **Files touched:** `pkg/observability/observability_test.go`,
@@ -1121,6 +1182,7 @@ The change is a pure performance annotation: `__launch_bounds__(128)`,
 loads. If upstream Netflix ever adds their own ms_ssim CUDA port, this file
 will need to be re-reviewed against theirs; the F3 pattern should carry
 forward.
+
 ## cpp23 orphan .c sweep — metadata_handler.c (2026-05-29)
 
 **Files touched:** `core/src/metadata_handler.c` (deleted)
@@ -1151,11 +1213,10 @@ The changed function (`vmaf_cuda_kernel_readback_free`) did not exist in
 upstream — it was introduced by the fork's kernel-template ADR. No rebase
 conflict is possible.
 
-
-
 ## ADR-0753 — CUDA resolution-aware dispatch scaffold (2026-05-29)
 
 **Files touched (initial + extended scope):**
+
 - `core/src/feature/cuda/resolution_dispatch.{h,c}` (new)
 - `core/src/feature/cuda/integer_adm/adm_cm.cu` (two kernel macros)
 - `core/src/feature/cuda/integer_adm_cuda.c` (include, struct field, init, dispatch)
@@ -1194,7 +1255,6 @@ reference valid kernel symbol names from `adm_cm.cu`.
 **Rebase impact:** None. Research-only digest; no source code changed.
 No upstream conflict possible — these are fork-added measurement artifacts.
 
-
 ## CI round-3 fix — `.semgrepignore`, `.gitleaks.toml`, `codeql-config.yml`, `compat/python-vmaf/` (2026-05-28)
 
 **Files touched:** `.semgrepignore`, `.gitleaks.toml`, `.github/codeql-config.yml`,
@@ -1206,6 +1266,7 @@ No upstream conflict possible — these are fork-added measurement artifacts.
 post-ADR-0700 rename) or code fixes for missing functions and removed extractors.
 
 On upstream sync:
+
 - `.semgrepignore` and `.gitleaks.toml` are fork-local; no upstream conflict expected.
 - `codeql-config.yml` is fork-local; no upstream conflict expected.
 - `compat/python-vmaf/core/feature_extractor.py`: if Netflix upstream modifies
@@ -1255,7 +1316,6 @@ newly-added utility under `scripts/`. See changelog fragment
 commands.
 
 ---
-
 
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
 
@@ -1317,7 +1377,6 @@ Touched files:
 
 ---
 
-
 ## `cmd/vmafx-server` — Go gRPC + HTTP server (ADR-0703)
 
 **no rebase impact** on upstream C/Python code: the Go server is entirely
@@ -1327,6 +1386,7 @@ Netflix/vmaf upstream.
 
 If a future upstream sync touches `model/` (model JSON schema changes) or
 `core/include/libvmaf/libvmaf.h` (public ABI), review:
+
 - `pkg/libvmaf/libvmaf.go` — the cgo `#include` and JSON parsing in `parseOutput`.
 - The `ScoreResponse.features` map keys (derived from `pooled_metrics` keys in
   the vmaf CLI JSON output; key names are stable but new keys may appear).
@@ -1363,6 +1423,7 @@ rebase impact" in the PR description and skip the entry.
 (`docs/research/0733-hardware-backend-audit-2026-05-28.md`), a changelog fragment,
 and a `docs/state.md` update. No C source, build system, or upstream-shared path is
 touched. Netflix/vmaf upstream syncs are unaffected.
+
 ## feat/vmafx-phase4-language-modernization-foundation (ADR-0702) — fork-only, no Netflix conflict
 
 **No upstream rebase impact.** The files added in this PR (`go.mod`, `Cargo.toml`,
@@ -1389,7 +1450,6 @@ upstream that touch `tools/vmaf-tune/` Python source files are unaffected by thi
 `go.mod`, and `go.sum` — all entirely fork-local. The Python MCP server at
 `mcp-server/vmaf-mcp/` is unchanged. Netflix/vmaf upstream does not contain
 any Go code or an MCP server. Cherry-picks from upstream are unaffected.
-
 
 ## chore/post-cutover-url-sweep — fork-only URL change, no Netflix conflict
 
@@ -2007,6 +2067,7 @@ layout stable. When real corpora carry `probe_*_avg_bytes`,
 `saliency_mean`, `saliency_var`, `frame_diff_mean`, `y_avg`, or `y_var`,
 preserve those finite values. Only legacy rows should fall back to
 bitrate-derived probe bytes and zero saliency / signalstats values.
+
 ## fix/ci-test-failures-omnibus (ADR-0637)
 
 **No rebase impact**: all touched files are fork-local CI configuration
@@ -2039,6 +2100,7 @@ Touched files:
 `docs/adr/README.md` (one index row),
 `docs/state.md` (3 rows moved from Open to Recently closed),
 `changelog.d/fixed/adr0620-scaffold-audit-p0-silent-correctness.md`,
+
 ## fix/scaffold-audit-p1-feature-plumbing (ADR-0613)
 
 Touches `core/src/hip/picture_hip.c`, `core/src/feature/feature_mobilesal.c`,
@@ -2085,6 +2147,7 @@ Touched files:
 `docs/adr/README.md` (regenerated),
 `changelog.d/added/0608-zed-editor-project-config.md`,
 `docs/rebase-notes.md` (this entry).
+
 ## plan/netflix-grade-encoding-roadmap (ADR-0613 – ADR-0618)
 
 No rebase-sensitive invariants — all changes are planning documents only:
@@ -2135,9 +2198,11 @@ Touched files:
 `docs/adr/README.md`,
 `docs/state.md`,
 `changelog.d/fixed/0621-scaffold-audit-p3-cleanup.md`.
+
 ## feat/mcp-p1-vmaftune-extractors-models-progress (ADR-0608)
 
 No rebase-sensitive invariants. The only changed files are:
+
 - `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py` — fork-local MCP server, never in Netflix upstream.
 - `mcp-server/vmaf-mcp/tests/` — fork-local tests.
 - `mcp-server/vmaf-mcp/tests/test_smoke_e2e.py` — updated expected tool-name set.
@@ -2287,6 +2352,7 @@ done
 
 Upstream Netflix/vmaf has no `ffmpeg-patches/`; no rebase conflict surface
 against `upstream/master`. All 14 patches are fork-local.
+
 ## feat/vmaftune-bisect-concurrency-cap (ADR-0577)
 
 **Rebase impact**: pure Python — touches only `tools/vmaf-tune/` and
@@ -2393,6 +2459,7 @@ poses no rebase conflict risk.
 ## docs/vcq-223-local-explainer-hang-diagnosis (ADR-0563)
 
 **No rebase impact.** All changes are confined to fork-local documentation:
+
 - `docs/adr/0551-local-explainer-hang-diagnosis.md` (new file, fork-local).
 - `docs/research/0551-local-explainer-hang.md` (new file, fork-local).
 - `docs/state.md` — updated T-VCQ-223-LOCAL-EXPLAINER-HANG row (fork-local).
@@ -2420,6 +2487,7 @@ fork-local. `core/src/feature/hip/AGENTS.md` and
 
 **No rebase impact.** This PR is documentation and audit closure only.
 All changed files are fork-local:
+
 - `docs/adr/0563-hip-extractor-audit-verification.md` (new ADR, fork-local).
 - `docs/research/0563-hip-extractor-audit-verification.md` (new research digest, fork-local).
 - `docs/state.md` (fork-local tracking ledger).
@@ -2434,6 +2502,7 @@ No new rebase-sensitive invariant is introduced.
 ## fix/dev-container-sycl-hip-runtime (ADR-0543)
 
 **No rebase impact.** All changes are confined to:
+
 - `dev/Containerfile` (fork-local; whole file is fork-added).
 - `dev/scripts/dev-mcp-entrypoint.sh` (fork-local).
 - `dev/AGENTS.md` (fork-local invariant note).
@@ -2448,6 +2517,7 @@ recurring maintenance item: when a future host kernel revs the i915 /
 xe / KFD UAPI, bump the relevant ARG. The `dev-mcp-entrypoint.sh`
 visibility probe surfaces such regressions in ≤ 30 s of container
 start so future bumps are easy to identify.
+
 ## fix/dev-container-full-gpu-plumbing (ADR-0542)
 
 **No upstream-mirror paths touched.** Modifies:
@@ -2473,9 +2543,11 @@ no `meson_options.txt`, no `ffmpeg-patches/` entry. The CLAUDE.md
 §12 r14 patch-stack rule does not apply (no libvmaf surface
 touched). Netflix upstream has no container infra under `dev/` to
 conflict with.
+
 ## fix/integer-vif-cuda-chroma-plane (ADR-0547)
 
 **Touches upstream-mirror path.** Modifies:
+
 - `core/src/feature/cuda/integer_vif_cuda.c` (upstream-mirror — comment
   + option-help-text clarifications plus a one-shot warn-on-true block for
   the vestigial `enable_chroma` option; no kernel changes, no behaviour
@@ -2509,9 +2581,11 @@ neighbouring kernel-load paths.
 **Test reference.** `core/test/test_integer_vif_cpu_cuda_parity.c`
 (suite `fast`/`gpu`) is the regression gate; it must continue to pass
 after any sync.
+
 ## feat/hip-float-vif-score-kernel-real (ADR-0539)
 
 **No rebase impact.** Touches:
+
 - `core/src/feature/hip/hip_hsaco_stubs.c` — fork-local TU; removes
   one `VMAF_HSACO_WEAK_STUB(float_vif_score_hsaco)` line. Upstream
   Netflix/vmaf has no HIP backend so no conflict possible.
@@ -2528,6 +2602,7 @@ The AGENTS.md note added by this PR captures the pattern.
 ## fix/hip-integer-vif-kernel-crash (ADR-0538)
 
 **Touches upstream-mirror paths.** Modifies:
+
 - `core/src/feature/hip/integer_vif/vif_statistics.hip` (fork-local —
   HIP backend addition; no upstream conflict expected).
 - `core/src/feature/hip/integer_vif_hip.c` (fork-local — added by
@@ -2564,6 +2639,7 @@ The `tools/vmaf-tune/` tree does not exist in upstream Netflix/vmaf.
 No conflict risk on sync.
 
 ## fix/per-shot-segments-readonly-cwd (ADR-0532)
+
 ## fix/per-shot-segments-readonly-cwd (ADR-0530)
 
 **No rebase impact.** All changes are confined to
@@ -2586,6 +2662,7 @@ No conflict risk on sync.
 `docs/adr/README.md`, `docs/rebase-notes.md`, `docs/state.md`, and
 `changelog.d/fixed/dev-container-dri-bind.md`. None of these paths exist in
 upstream Netflix/vmaf. No conflict risk on sync.
+
 ## fix/compare-rate-quality-chart-from-bisect-samples (ADR-0534)
 
 **No rebase impact.** All changes are confined to fork-local files:
@@ -2615,6 +2692,7 @@ None of these paths exist in upstream Netflix/vmaf (the entire
 
 ffmpeg-patch stack: no impact (this PR doesn't touch any libvmaf
 C-API, public header, or `meson_options.txt` entry).
+
 ## tooling/adr-atomic-allocator (ADR-0535)
 
 **No rebase impact.** All changes are confined to
@@ -2678,6 +2756,7 @@ Netflix/vmaf. No conflict risk on sync.
 (the HIP and Metal extractor blocks it contains have no upstream equivalent).
 Upstream Netflix/vmaf does not ship `integer_motion_hip` and the
 `#if HAVE_HIP` block does not exist in upstream. No conflict risk on sync.
+
 ## fix/dnn-symbolic-batch-dim (ADR-0524)
 
 **Rebase-sensitive — `core/src/libvmaf.c` carries the fork-local
@@ -2749,6 +2828,7 @@ surface NR-mode wiring today.
 
 Netflix upstream does not ship `--no-reference`; the flag is a
 fork-local addition.
+
 ## fix/msvc-unistd-gating (ADR-0521)
 
 **Rebase sensitivity: low — targeted portability guards on upstream-shared files.**
@@ -2790,6 +2870,7 @@ ADR-0222. Docs: ADR-0512, `docs/adr/README.md` index row,
 section, `docs/state.md` Recently-closed rows,
 `changelog.d/fixed/per-shot-scene-threshold-and-1-shot-chart.md`.
 Netflix upstream does not ship `tools/vmaf-tune/`.
+
 ## feat/compare-rate-quality-sweep — ADR-0516
 
 **No rebase impact.** Changes confined to fork-local files:
@@ -2818,6 +2899,7 @@ C sources, public headers, Meson options, or `ffmpeg-patches/`
 patches are touched.
 
 ---
+
 ## fix/compare-source-is-container-plumbing (ADR-0509)
 
 **No rebase impact.** Changes confined to `tools/vmaf-tune/` (fork-local
@@ -2830,6 +2912,7 @@ headers, or build files are modified. The ADR (`0509`) and changelog
 fragment are fork-local docs only.
 
 ---
+
 ## fix/chug-extract-vmaf-alignment — ADR-0510
 
 **No rebase impact.** Changes confined to fork-local files:
@@ -2844,6 +2927,7 @@ and the FR-from-NR adapter pattern are fork-local — Netflix upstream has
 no CHUG ingestion, no K150K-A extractor, and no FR-from-NR adapter. No
 upstream-shared code, headers, build files, public C-API, or feature
 extractors are modified; the libvmaf CLI and all backends are unchanged.
+
 ## fix/vulkan-two-variant-vif-shader (ADR-0512, supersedes ADR-0492)
 
 **No rebase impact** on Netflix upstream — the Vulkan backend and its
@@ -2870,6 +2954,7 @@ Fork-internal rebase invariants:
   `--vulkan_require_fp64`); the usage string was split across two
   `fprintf` calls to stay under the C99 4095-char string-literal
   limit.
+
 ## fix/dev-container-backend-exposure (ADR-0514)
 
 **No rebase impact.** `dev/Containerfile`, `dev/docker-compose.yml`,
@@ -2880,6 +2965,7 @@ discipline and re-applying the four invariants documented in
 `dev/AGENTS.md` (`tcm/latest/lib` on `LD_LIBRARY_PATH`, no
 `VK_ICD_FILENAMES` pin, `/dev/dri/by-path` bind-mount, build-time
 backend probe).
+
 ## fix/mcp-run-benchmark-repair — no rebase impact
 
 All changed files (`mcp-server/`, `testdata/bench_all.sh`, `docs/adr/0513-*`,
@@ -3025,11 +3111,11 @@ cover several PRs in one workstream; cross-link from the ID heading.
   post-D2H) remain. The CUDA twin (`integer_cambi_cuda.c`) retains
   synchronous v1 posture and is not affected by this change.
 - **Re-test**:
+
   ```
   meson test -C build --suite=fast cambi_sycl
   python3 scripts/ci/cross_backend_parity_gate.py --feature cambi --places 4
   ```
-
 
 ### fix/psnr-enable-chroma-gpu-parity-2026-05-16 — PSNR `enable_chroma` option GPU parity
 
@@ -3058,7 +3144,6 @@ cover several PRs in one workstream; cross-link from the ID heading.
       --feature-opts 'psnr_cuda=enable_chroma=false'
 
   ```
-
 
 ### fix/vmaf-tune-temporal-saliency-2026-05-15 — recommend-saliency temporal aggregation
 
@@ -3863,6 +3948,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   are unrelated and predate HP-1.
 
 ### 0310 — Vulkan VIF int64 reduction race condition Phase 3 fix
+
 - **Touches**: `core/src/feature/vulkan/shaders/vif.comp`
   (replaces all three bare `barrier()` calls with explicit
   `memoryBarrierShared(); barrier();` pairs covering the Phase-1
@@ -3906,6 +3992,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   `--vulkan_device 0` on this multi-GPU host is the Intel Arc
   A380 lane and **will still fail** at API 1.4 (separate
   `T-VK-VIF-1.4-RESIDUAL-ARC` row Open).
+
 ### 0309 — Vulkan VIF API-1.4 Phase 2 dump (T-VK-VIF-1.4-RESIDUAL)
 
 - **Touches**: `docs/research/0089-vulkan-vif-fp-residual-bisect-2026-05-08.md`
@@ -4128,6 +4215,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   assert cmd[cmd.index('-crf') + 1] == '23'
   print('x264 dispatcher path OK')
   "
+
 ### 0260 — `vmaf-tune --sample-clip-seconds` (ADR-0301)
 
 - **Touches**:
@@ -4238,6 +4326,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
     — must report `1 tests run, 1 passed`. Pre-fix the binary aborts
     with `AddressSanitizer: heap-buffer-overflow … WRITE of size 1`
     at `y4m_input.c:507`.
+
 ### 0270 — `saliency_student_v1` fork-trained on DUTS-TR (ADR-0286)
 
 - **Touches**:
@@ -4378,6 +4467,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
       --distorted testdata/dis_576x324_48f.yuv \
       --width 576 --height 324 \
       --feature float_ms_ssim --backend vulkan --places 4
+
 ### 0231 — SHA-pin GitHub Actions (OSSF `Pinned-Dependencies`)
 
 - **Touches**: every workflow file under `.github/workflows/`.
@@ -4689,6 +4779,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   `integer_vif` bit-identically to 4 decimals.
 - **Rebase impact**: low. Builds on top of PR #272's
   `_add_variant()` helper.
+
 ### 0122 — float_adm_vulkan migrated to kernel_template + `_add_variant` (T-GPU-DEDUP-22)
 
 - **Touches**:
@@ -4707,6 +4798,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   primitives from `adm_tools.c`; same 5-element spec-constant
   tuple; same float partial accumulation reduced in double on
   the host.
+
 ### 0121 — adm_vulkan migrated to kernel_template + `_add_variant` (T-GPU-DEDUP-21)
 
 - **Touches**:
@@ -4728,6 +4820,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   spec-constant tuple (width, height, bpc, scale, stage) +
   push-constants.
 - **Rebase impact**: low. Builds on top of PR #272.
+
 ### 0123 — `ms_ssim_vulkan` 2-bundle migration (T-GPU-DEDUP-23)
 
 - **Touches**:
@@ -4823,6 +4916,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   predate this change (PR #270 / #271); the new
   `_add_variant` is additive. Upstream Netflix has no Vulkan
   backend to conflict with.
+
 ### 0111 — integer_ciede_cuda migrated to kernel_template (T-GPU-DEDUP-11)
 
 - **Touches**:
@@ -4839,6 +4933,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   consolidation. The host-side reduction in collect still uses
   the same `double` accumulator over per-block float partials —
   `places=4` (ADR-0187) holds.
+
 ### 0112 — integer_moment_cuda migrated to kernel_template (T-GPU-DEDUP-12)
 
 - **Touches**:
@@ -4853,6 +4948,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   host division.
 - **Rebase impact**: low. Upstream Netflix has no equivalent
   template; this consolidation is fork-local.
+
 ### 0113 — integer_motion_v2_cuda migrated to kernel_template (T-GPU-DEDUP-13)
 
 - **Touches**:
@@ -4867,6 +4963,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
 - **Numerical contract**: unchanged. Same D2D copy, same
   conditional kernel launch on frame ≥ 1, same
   host-side `min(score[i], score[i+1])` flush.
+
 ### 0114 — integer_ssim_cuda migrated to kernel_template (T-GPU-DEDUP-14)
 
 - **Touches**:
@@ -4885,6 +4982,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   precision pattern) holds.
 - **Rebase impact**: low. Upstream Netflix has no equivalent;
   this is fork-added.
+
 ### 0115 — ms_ssim_cuda + psnr_hvs_cuda lifecycle migration (T-GPU-DEDUP-15)
 
 - **Touches**:
@@ -4900,6 +4998,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   reduction paths are untouched apart from the
   `s->str` → `s->lc.str` / `s->event` → `s->lc.submit` /
   `s->finished` → `s->lc.finished` field renames.
+
 ### 0116 — float_psnr/ansnr/motion cuda → kernel_template (T-GPU-DEDUP-16)
 
 - **Touches**:
@@ -4913,6 +5012,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
 - **Numerical contract**: unchanged. Same dispatch geometry, same
   reduction order. Cross-backend parity gate at the kernels'
   contracted precision (places=3 per ADR-0192) holds.
+
 ### 0117 — float_adm + float_vif cuda lifecycle migration (T-GPU-DEDUP-17)
 
 - **Touches**:
@@ -4929,6 +5029,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   the field renames.
 - **Rebase impact**: low. Upstream Netflix has no equivalent
   template; this is fork-added.
+
 ### 0107 — float_psnr_vulkan migrated to kernel_template (T-GPU-DEDUP-8)
 
 - **Touches**:
@@ -4942,6 +5043,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   Vulkan-boilerplate consolidation. Cross-backend parity gate
   at `places=4` holds — Netflix-pair smoke reports `float_psnr`
   mean 30.755 dB, identical to pre-migration.
+
 ### 0109 — float_ansnr_vulkan + motion_v2_vulkan migrated to kernel_template (T-GPU-DEDUP-9)
 
 - **Touches**:
@@ -4955,6 +5057,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   contracted precision holds — Netflix-pair smoke reports
   `float_ansnr` mean 23.51 dB and `motion2_v2_score` mean 3.895,
   identical to pre-migration.
+
 ### 0110 — float_motion_vulkan migrated to kernel_template (T-GPU-DEDUP-10)
 
 - **Touches**:
@@ -4966,6 +5069,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   consolidation. Netflix-pair smoke reports `motion` mean
   4.049 / `motion2` mean 3.894, identical to pre-migration.
 - **Rebase impact**: low. Upstream Netflix has no Vulkan backend.
+
 ### 0108 — Bristol VI-Lab feasibility digest + BVI-CC ingest ADR (Draft)
 
 - **Touches**:
@@ -5343,6 +5447,7 @@ than per-PR. Future PRs add entries individually.
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --feature float_adm --places 4
   ```
+
 ### 0083 — SSIMULACRA 2 Vulkan kernel (ADR-0201)
 
 - **ADR**: [ADR-0201](adr/0201-ssimulacra2-vulkan-kernel.md)
@@ -5384,6 +5489,7 @@ than per-PR. Future PRs add entries individually.
     --feature ssimulacra2 --backend vulkan --places 1
   # expected: max_abs_diff ≈ 1.59e-2, 0/48 mismatches at places=1
   ```
+
 - **Follow-ups**:
   - CUDA + SYCL twins (batch 3 parts 7b + 7c per ADR-0192).
   - Performance follow-up: re-bin multiple rows / columns per WG
@@ -8388,6 +8494,7 @@ inline.*
    `vif_scale_frame_s`.
 
 **Reproducer:**
+
 ```bash
 # verify bit-exactness (default options, scores must be identical):
 ./core/build/tools/vmaf \
@@ -9600,6 +9707,7 @@ inline.*
   meson setup build -Denable_vulkan=enabled -Denable_cuda=false -Denable_sycl=false
   ninja -C build
   meson test -C build
+
 ### 0059 — Tiny-AI Netflix corpus training prep (ADR-0203)
 
 - **ADR**: [ADR-0203](adr/0203-tiny-ai-training-prep-impl.md).
@@ -9798,7 +9906,6 @@ inline.*
   ```
 
 ### 0091 — T6-9 model registry schema + `--tiny-model-verify` (ADR-0211)
-
 
 - **No rebase impact: 100% fork-local surface.** The registry
   (`model/tiny/registry.json`), its JSON Schema
@@ -10130,6 +10237,7 @@ inline.*
   meson test -C build-cpu test_speed
   meson test -C build-cpu              # full meson suite
   make test-netflix-golden             # 3 CPU canonical pairs
+
 ### 0221 — CHANGELOG + ADR-index fragment-file pattern (T7-39 / ADR-0221)
 
 - **What changed**: the fork stopped editing `CHANGELOG.md` and
@@ -10168,6 +10276,7 @@ inline.*
   vmaf --feature dists_sq=model_path=model/tiny/dists_sq.onnx \
        --reference ref.yuv --distorted dist.yuv \
        --width 1920 --height 1080 --pix_fmt yuv420p
+
 ### 0076 — GPU-gen ULP calibration head (proposal-stage, T7-GPU-ULP-CAL / ADR-0234)
 
 - **What landed**: ADR-0234 (Proposed), Research-0041, data-collection
@@ -10180,6 +10289,7 @@ inline.*
 
   ```sh
   python3 ai/scripts/collect_gpu_calibration_data.py --smoke
+
 ### 0095 — Per-backend GPU kernel scaffolding templates (CUDA + Vulkan, ADR-0246)
 
 - **ADR**: [ADR-0246](adr/0246-gpu-kernel-template.md).
@@ -10233,6 +10343,7 @@ inline.*
       -Denable_vulkan=enabled -Denable_cuda=false -Denable_sycl=false
   ninja -C core/build-vulkan
   meson test -C core/build-vulkan
+
 ### 0222 — `vmaf-perShot` per-shot CRF predictor sidecar (T6-3b)
 
 - **Touches**: `core/tools/meson.build` (new executable +
@@ -10268,6 +10379,7 @@ inline.*
       --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
       --output /tmp/plan.csv
   cat /tmp/plan.csv
+
 ### 0075 — `vmaf-roi` sidecar binary (T6-2b / ADR-0247)
 
 - **Touches**:
@@ -10316,6 +10428,7 @@ inline.*
       --encoder x265 --ctu-size 64 --strength 6.0 | head -3
   # First two lines are the # comment header; row 1 of the grid
   # should be "4 2 1 -1 -1 -1 1 2 4" (placeholder radial map).
+
 ### 0219 — motion3 GPU coverage on Vulkan + CUDA + SYCL (T3-15(c) / ADR-0219)
 
 - **What changed**: The `motion` GPU twins
@@ -10374,6 +10487,7 @@ inline.*
       --width 576 --height 324 --bitdepth 8 \
       --vmaf-bin core/build/tools/vmaf
   # Expect: integer_motion / integer_motion2 / integer_motion3 all OK at places=4.
+
 ### 0216 — vmaf_tiny_v2 (Phase-3-validated tiny VMAF MLP)
 
 - **Touches**: `model/tiny/registry.json`, `model/tiny/vmaf_tiny_v2.{onnx,json}`,
@@ -10418,6 +10532,7 @@ inline.*
       --parquet runs/full_features_netflix.parquet \
       --rows 100 --min-plcc 0.97
   meson test -C build-cpu --suite=dnn
+
 ### 0094 — Tiny-AI extractor template (ADR-0250)
 
 - **Touches**: `core/src/dnn/tiny_extractor_template.h` (new),
@@ -10463,7 +10578,6 @@ inline.*
   # All 10 dnn-suite + both extractor tests must pass.
   ```
 
-
 ### 0095 — Vulkan ring-depth tunable (ADR-0251 follow-up #3)
 
 - **PR**: feat/t7-29-followup3-ring-tunable.
@@ -10490,6 +10604,7 @@ inline.*
   ninja -C build
   meson test -C build test_vulkan_async_pending_fence
   # All 8 cases must pass: 4 v2-contract + 4 ring-tunable.
+
 ### 0096 — `tools/vmaf-tune/` automation umbrella spec (ADR-0237 / Research-0044)
 
 - **PR**: feat/vmaf-tune-spec.
@@ -10572,6 +10687,7 @@ inline.*
   #   test_fetch_without_preallocate_falls_back
   #   test_unknown_method_rejected
   #   test_null_args_rejected
+
 ### 0099 — feature_mobilesal.c + transnet_v2.c migrated to tiny_extractor_template.h
 
 - **PR**: refactor/migrate-ai-to-template.
@@ -10591,6 +10707,7 @@ inline.*
   hand-rolled version produced.
 - **On upstream sync**: zero interaction. Both files are
   fork-introduced; upstream Netflix has neither extractor.
+
 ### 0100 — `cuda/ring_buffer.{c,h}` → `gpu_picture_pool.{c,h}` (ADR-0239)
 
 - **PR**: refactor/gpu-picture-pool-extract.
@@ -10729,6 +10846,7 @@ inline.*
   meson test -C build  # 50/50 pass on lavapipe (under ASan/UBSan)
   python scripts/ci/cross_backend_parity_gate.py --feature float_moment_ref1st --places 4
   python scripts/ci/cross_backend_parity_gate.py --feature ciede2000 --places 2
+
 ### 0101 — GPU backend pattern doc (ADR-0240)
 
 - **PR**: docs/gpu-backend-template.
@@ -10746,6 +10864,7 @@ inline.*
   test -f docs/development/gpu-backend-template.md
   test -f core/include/libvmaf/AGENTS.md
   grep -c 'gpu-backend-template' core/include/libvmaf/AGENTS.md
+
 ### 0102 — Tiny-AI test registration macro (`tiny_ai_test_template.h`)
 
 - **PR**: refactor/test-registration-macro.
@@ -10775,6 +10894,7 @@ inline.*
   meson test -C build test_lpips test_mobilesal test_transnet_v2 test_fastdvdnet_pre
   # 4/4 binaries pass; 18 individual tests total (4x4 standard + 2
   # TransNet V2 extras).
+
 ### 0103 — `integer_psnr_cuda.c` migrated to `cuda/kernel_template.h`
 
 - **PR**: refactor/migrate-psnr-cuda-to-template.
@@ -10963,6 +11083,7 @@ inline.*
   gh api "/repos/github/codeql-action/commits/$pin" --jq '.sha'
   # Then watch the next master push for a green Scorecard run:
   gh run list --workflow scorecard --repo VMAFx/vmafx --limit 1
+
 ### 0228 — U-2-Net `u2netp` saliency replacement deferred (ADR-0265)
 
 - **Touches**: docs-only.
@@ -11009,7 +11130,6 @@ inline.*
   bash scripts/docs/concat-adr-index.sh --check
   bash scripts/release/concat-changelog-fragments.sh --check
   ```
-
 
 ### 0108 — `ssim_accumulate_avx512` per-lane double reduction vectorised
 
@@ -11072,6 +11192,7 @@ inline.*
   diff <(grep -v 'fyi fps' /tmp/m0.xml) <(grep -v 'fyi fps' /tmp/m16.xml)   # empty
   diff <(grep -v 'fyi fps' /tmp/m0.xml) <(grep -v 'fyi fps' /tmp/m255.xml)  # empty
   ```
+
 - **Why this matters on rebase**: an upstream commit that touches
   `core/src/feature/ssimulacra2.c` could prompt a "let's also
   port the GPU XYB while we're here" follow-up. The ledger entry
@@ -11140,6 +11261,7 @@ inline.*
   meson test -C build test_op_allowlist test_onnx_scan
   PYTHONPATH=ai/src python -m pytest ai/tests/test_op_allowlist.py
   ```
+
 ### 0231 — `vif.comp` + `ciede.comp` `precise` decorations (ADR-0269 / Step A of Vulkan 1.4 bump)
 
 - **Touches**:
@@ -11186,6 +11308,7 @@ inline.*
   Expected on NVIDIA 595.71+: vif 0/48 OK, ciede 5/48 FAIL (max abs
   8.9e-05 — pre-existing fork debt at API 1.3, see ADR-0269). On
   RADV / lavapipe: bit-exact (`precise` is a no-op there).
+
 ### 0229 — `fr_regressor_v2` codec-aware scaffold (ADR-0272)
 
 - **ADR**: [ADR-0272](adr/0272-fr-regressor-v2-codec-aware-scaffold.md)
@@ -11458,8 +11581,11 @@ inline.*
   ```
 
 ### 0229 — `vmaf_tiny_v3` + `vmaf_tiny_v4` dynamic-PTQ int8 sidecars (ADR-0275)
+
 ### 0278 — `vmaf-tune` libaom-av1 codec adapter (2026-05-03)
+
 ### 0228 — `vmaf-tune` libx265 codec adapter (ADR-0288)
+
 ### 0280 — `vmaf-tune` NVENC codec adapters (ADR-0290)
 
 - **Touches**:
@@ -11578,6 +11704,7 @@ inline.*
   ```bash
   python ai/scripts/validate_model_registry.py
   python ai/scripts/measure_quant_drop.py --all
+
 ### 0229 — NVIDIA-Vulkan ciede2000 places=4 fork debt root-cause (ADR-0273)
 
 - **Touched files**: docs-only.
@@ -11621,6 +11748,7 @@ inline.*
   # Expected pre-PR-346 (current master): 42/48 mismatches at higher ratio.
   # If the count drops below 5/48 on NVIDIA, ADR-0273 should record the
   # delta and consider closing T-VK-CIEDE-F32-F64.
+
 ### 0229 — `tools/vmaf-tune fast` Phase A.5 scaffold (ADR-0276)
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/fast.py` (new),
@@ -11648,7 +11776,6 @@ inline.*
   pytest tools/vmaf-tune/tests/test_fast.py -v
   vmaf-tune fast --smoke --target-vmaf 92
   ```
-
 
 ### 0229 — `vmaf-tune recommend` subcommand (ADR-0237 Phase B-lite)
 
@@ -11714,6 +11841,7 @@ inline.*
   # Cross-backend parity (places=4 gate, ADR-0214):
   /cross-backend-diff
   ```
+
 ### 0277 — ffmpeg-patches refresh against `n8.1` — 2026-05-04 (ADR-0277)
 
 - **Touches**: `ffmpeg-patches/` is unchanged (no content drift).
@@ -11775,6 +11903,7 @@ inline.*
   system-installed `.pc` carries an extra
   `-I${includedir}/libvmaf` shortcut that the uninstalled `.pc`
   omits).
+
 ### 0229 — T7-5 NOLINT-sweep closeout (ADR-0278)
 
 - **Touched files**:
@@ -11841,6 +11970,7 @@ inline.*
   meson setup build -Denable_cuda=false -Denable_sycl=false
   ninja -C build
   make test-netflix-golden
+
 ### 0231 — `vmaf-tune` score path decodes mp4 -> raw YUV
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/score.py` (new
@@ -11868,6 +11998,7 @@ inline.*
       --encoder libx264 --preset medium --crf 23 \
       --output /tmp/smoke.jsonl --no-source-hash
   # expect: vmaf_score is a real number, not NaN.
+
 ### 0232 — CUDA build pins nvcc `--std c++20`
 
 - **Touches**: `core/src/meson.build` line 686 (`cuda_flags = [...]`).
@@ -11973,6 +12104,7 @@ inline.*
 - **Re-test on rebase**: `python3 ai/scripts/train_fr_regressor_v2.py
   --corpus <jsonl> --epochs 200 --no-export` — expect PLCC > 0.95 on
   a multi-codec corpus.
+
 ### 0276 — `vmaf_tiny_v5` corpus-expansion probe (ADR-0287) — defer
 
 - **What changed**: research-only addition. New scripts under
@@ -12106,6 +12238,7 @@ inline.*
   (fork-local file, no upstream-tree touch).
 
 ### 0228 — `vmaf-tune` Phase D scaffold (ADR-0276)
+
 - **Touches**: `tools/vmaf-tune/src/vmaftune/per_shot.py`,
   `tools/vmaf-tune/src/vmaftune/cli.py`,
   `tools/vmaf-tune/tests/test_per_shot.py`,
@@ -12128,11 +12261,14 @@ inline.*
 - **On upstream sync**: zero interaction expected. No file in
   this PR overlaps an upstream-mirrored path.
 - **Re-test on rebase**:
+
   ```bash
   python -m pytest tools/vmaf-tune/tests/test_per_shot.py -q
   python tools/vmaf-tune/vmaf-tune tune-per-shot --help
   ```
+
 ### 0229 — `vmaf-tune` SVT-AV1 codec adapter (ADR-0278)
+
 - **Touches**: `tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py`
   (new), `tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py`
   (registry), `tools/vmaf-tune/src/vmaftune/encode.py`
@@ -12151,6 +12287,7 @@ inline.*
 - **On upstream sync**: zero interaction. Lives entirely under the
   fork-local `tools/vmaf-tune/` tree.
 - **Re-test on rebase**:
+
   ```bash
   python -m pytest tools/vmaf-tune/tests/ -v
   ```
@@ -12160,6 +12297,7 @@ inline.*
 - **ADR**: [ADR-0352](adr/0291-fr-regressor-v2-prod-ship.md)
 
 ### 0230 — fr_regressor_v2 PROD ship (ADR-0291)
+
 - **ADR**: [ADR-0291](adr/0291-fr-regressor-v2-prod-ship.md)
 
 - **Touches**: `model/tiny/fr_regressor_v2.onnx` (binary, refreshed),
@@ -12175,7 +12313,9 @@ inline.*
   do not re-train against the cell-only `comprehensive.jsonl` (it lacks
   the per-frame features and produces PLCC ≈ 0.7 — the smoke baseline).
 - **No upstream interaction**: `fr_regressor_v2` is fork-local (ADR-0272).
+
 ### 0229 — vmaf-tune Phase E ladder generator (ADR-0295)
+
 - **ADR**: [ADR-0295](adr/0295-vmaf-tune-phase-e-bitrate-ladder.md)
 - **Touches**: entirely fork-local under `tools/vmaf-tune/`. New
   module `tools/vmaf-tune/src/vmaftune/ladder.py`, new test file
@@ -12195,10 +12335,13 @@ inline.*
 - **Rebase impact**: none — fork-local Python tool; upstream
   Netflix/vmaf does not ship a `tools/vmaf-tune/` tree.
 - **Re-test on rebase**:
+
   ```bash
   python -m pytest tools/vmaf-tune/tests/test_ladder.py -v
   ```
+
 ### 0229 — `fr_regressor_v2` probabilistic head scaffold (ADR-0279)
+
 - **Touches**:
   - `ai/scripts/train_fr_regressor_v2_ensemble.py` (new — fork-local).
   - `ai/scripts/eval_probabilistic_proxy.py` (new — fork-local).
@@ -12235,12 +12378,15 @@ inline.*
   `fr_regressor_v2` variant, do NOT merge — register both ids
   side-by-side.
 - **Re-test on rebase**:
+
   ```bash
   python ai/scripts/train_fr_regressor_v2_ensemble.py --smoke
   python ai/scripts/eval_probabilistic_proxy.py --smoke
   python ai/scripts/validate_model_registry.py
   ```
+
 ### 0287 — `vmaf-tune` saliency-aware ROI tuning (ADR-0293)
+
 - **Touches**: `tools/vmaf-tune/src/vmaftune/saliency.py`,
   `tools/vmaf-tune/src/vmaftune/cli.py` (new `recommend`
   subcommand), `tools/vmaf-tune/AGENTS.md` (saliency invariant),
@@ -12259,10 +12405,13 @@ inline.*
   `encode_runner=…`) lets the suite run without `onnxruntime`
   or `ffmpeg`.
 - **Re-test on rebase**:
+
   ```bash
   pytest tools/vmaf-tune/tests/ -q
   ```
+
 ### 0229 — `tools/vmaf-roi-score/` Option C scaffold (ADR-0296)
+
 - **ADR**: [ADR-0296](adr/0296-vmaf-roi-saliency-weighted.md)
 - **Touches**:
   - `tools/vmaf-roi-score/pyproject.toml` (new)
@@ -12291,10 +12440,13 @@ inline.*
 - **Rebase impact**: zero. Pure-Python tool under `tools/`; not part
   of the libvmaf C build, not part of any Netflix-mirrored surface.
 - **Re-test on rebase**:
+
   ```bash
   pytest tools/vmaf-roi-score/tests
   ```
+
 ### 0228 — `vmaf-tune compare` codec-comparison mode (research-0061 Bucket #7)
+
 - **Touches**:
   - `tools/vmaf-tune/src/vmaftune/compare.py` (new). Wholly fork-local;
     no upstream Netflix/vmaf path overlap.
@@ -12316,11 +12468,14 @@ inline.*
   recommend backend (ADR-0237) is fork-internal; upstream
   Netflix/vmaf has no `tools/vmaf-tune/` tree.
 - **Re-test on rebase**:
+
   ```shell
   pytest tools/vmaf-tune/tests/test_compare.py -v
   PYTHONPATH=tools/vmaf-tune/src python -m vmaftune.cli compare \
       --src /tmp/ref.yuv --target-vmaf 92 --format markdown
+
 ### 0229 — `vmaf-tune --score-backend` GPU score wiring (ADR-0299)
+
 - **Touches**:
   - `tools/vmaf-tune/src/vmaftune/score_backend.py` (new). Wholly
     fork-local — `tools/vmaf-tune/` has no upstream Netflix/vmaf
@@ -12344,13 +12499,16 @@ inline.*
   in fork-introduced paths and consumes only the fork's
   `--backend` flag.
 - **Re-test on rebase**:
+
   ```bash
   pytest tools/vmaf-tune/tests/test_score_backend.py -v
   # If the libvmaf help text reformats, parse_supported_backends
   # will return {"cpu"} on test_parse_full_backend_line_yields_all_four
   # and the test fails loudly.
   ```
+
 ### 0261 — `vmaf-tune` HDR-aware encode + score path (2026-05-03)
+
 - **What changed**: fork-local addition under
   `tools/vmaf-tune/src/vmaftune/hdr.py` plus wiring into
   `corpus.py` / `cli.py` / `score.py`. Adds ffprobe-driven HDR
@@ -12367,11 +12525,14 @@ inline.*
   three new keys are additive — Phase B / C loaders treat missing
   keys as SDR for backward compat with v1 rows.
 - **Re-test on rebase**:
+
   ```bash
   python -m pytest tools/vmaf-tune/tests/ -q
   python -m vmaftune.cli corpus --help  # confirm --auto-hdr surfaces
   ```
+
 ### 0298 — vmaf-tune content-addressed cache (ADR-0298)
+
 - **What changed**: fork-local. New module
   `tools/vmaf-tune/src/vmaftune/cache.py`; cache integration in
   `tools/vmaf-tune/src/vmaftune/corpus.py` (`iter_rows` now consults
@@ -12391,9 +12552,12 @@ inline.*
   contract is asserted by `test_cache_key_diffs_on_each_field` in
   `tests/test_cache.py`.
 - **Re-test on rebase**:
+
   ```bash
   pytest tools/vmaf-tune/tests/test_cache.py -v
+
 ### 0283 — `vmaf-tune` Apple VideoToolbox adapters (2026-05-05)
+
 - **What changed**: fork-local addition under
   `tools/vmaf-tune/src/vmaftune/codec_adapters/`. New files:
   `h264_videotoolbox.py`, `hevc_videotoolbox.py`,
@@ -12415,11 +12579,14 @@ inline.*
   (Phase A under [ADR-0237](adr/0237-quality-aware-encode-automation.md)).
 - **On upstream sync**: zero interaction.
 - **Re-test on rebase**:
+
   ```bash
   python -m pytest tools/vmaf-tune/tests/test_codec_adapter_videotoolbox.py -q
   python -m pytest tools/vmaf-tune/tests/test_codec_adapter_prores_videotoolbox.py -q
   ```
+
 ### 0228 — `vmaf-tune` coarse-to-fine CRF search (ADR-0306)
+
 - **What changed**: fork-local tooling. Adds
   `coarse_to_fine_search()` to
   `tools/vmaf-tune/src/vmaftune/corpus.py`, plumbs new CLI flags onto
@@ -12435,10 +12602,13 @@ inline.*
 - **On upstream sync**: zero interaction. `tools/vmaf-tune/` is not
   mirrored from upstream.
 - **Re-test on rebase**:
+
   ```bash
   pytest tools/vmaf-tune/tests/test_corpus.py -k coarse_to_fine
   ```
+
 ### 0314 — `vmaf-tune --score-backend=vulkan` (ADR-0314)
+
 - **Touches**:
   - `tools/vmaf-tune/src/vmaftune/cli.py` (additive argparse flag on
     `corpus` + `recommend` subparsers; resolves `select_backend` and
@@ -12468,14 +12638,18 @@ inline.*
 - **On upstream sync**: zero interaction. No upstream-mirror file is
   touched.
 - **Re-test on rebase**:
+
   ```bash
   pytest tools/vmaf-tune/tests/test_score_backend.py -v -k vulkan
   pytest tools/vmaf-tune/tests/test_score_backend.py -v
   ```
+
   Failures here usually indicate the libvmaf help-text format
   changed; `score_backend.parse_supported_backends` test fixtures
   pin the format and will fail loudly.
+
 ### 0303 — fr_regressor_v2 ensemble prod flip (ADR-0303)
+
 - **ADR**: [ADR-0303](adr/0303-fr-regressor-v2-ensemble-prod-flip.md)
 - **Touches**: entirely fork-local.
   - `ai/scripts/train_fr_regressor_v2_ensemble_loso.py` (new — 9-fold
@@ -12504,16 +12678,20 @@ inline.*
   run + the CI gate. Do not flip seed rows during a rebase merge
   conflict resolution.
 - **Re-test on rebase**:
+
   ```bash
   python3 -c "import ast; ast.parse(open('ai/scripts/train_fr_regressor_v2_ensemble_loso.py').read())"
   python3 -c "import ast; ast.parse(open('scripts/ci/ensemble_prod_gate.py').read())"
   python ai/scripts/train_fr_regressor_v2_ensemble_loso.py --help
   python scripts/ci/ensemble_prod_gate.py --help
   ```
+
 - **Upstream source**: zero. `fr_regressor_v2` and its ensemble are
   fork-introduced (parent ADR-0272 / ADR-0279).
 - **On upstream sync**: zero interaction.
+
 ### 0313 — CI required-checks aggregator (2026-05-05)
+
 - **What changed**: fork-local CI policy. New
   `.github/workflows/required-aggregator.yml` — single workflow that
   runs on every non-draft PR and verifies the 23 named required checks
@@ -12530,16 +12708,21 @@ inline.*
 - **On upstream sync**: zero interaction with Netflix/vmaf master.
 - **Manual operator step at adoption** (uses PATCH, not PUT — corrected
   from the original ADR-0313 body which had the wrong verb):
+
   ```bash
   echo '{"strict": false, "contexts": ["Required Checks Aggregator"]}' | \
     gh api -X PATCH "repos/VMAFx/vmafx/branches/master/protection/required_status_checks" --input -
   ```
+
 - **Re-test on rebase**:
+
   ```bash
   # YAML lint passes
   python3 -c "import yaml; yaml.safe_load(open('.github/workflows/required-aggregator.yml'))"
   ```
+
 ### 0305 — encoder knob-space Pareto analysis (2026-05-05)
+
 - **What changed**: fork-local. New analysis scaffold for the
   12,636-cell encoder knob sweep that backs
   `tools/vmaf-tune/codec_adapters/*` recipe defaults. New files:
@@ -12570,10 +12753,13 @@ inline.*
   is generated locally and lives under `runs/phase_a/full_grid/`
   (gitignored — never committed).
 - **Re-test on rebase**:
+
   ```bash
   pytest ai/tests/test_knob_sweep_analysis.py -v
   ```
+
 ### 0302 — ENCODER_VOCAB v3 schema expansion (ADR-0302)
+
 - **Touches**: `ai/scripts/train_fr_regressor_v2.py` (adds an
   `ENCODER_VOCAB_V3` parallel constant; does not modify the live
   `ENCODER_VOCAB` or `ENCODER_VOCAB_VERSION`).
@@ -12587,6 +12773,7 @@ inline.*
 - **Upstream interaction**: zero. `ai/scripts/train_fr_regressor_v2.py`
   is fork-introduced (ADR-0272) and has no upstream counterpart.
 - **Re-test on rebase**:
+
   ```bash
   python3 -c "
   import importlib.util, pathlib
@@ -12600,7 +12787,9 @@ inline.*
   print('OK')
   "
   ```
+
 ### 0304 — vmaf-tune fast-path prod wiring (ADR-0304)
+
 - **Touches**: `tools/vmaf-tune/src/vmaftune/fast.py` (replaces the
   ADR-0276 scaffold's `NotImplementedError` paths with concrete
   Optuna TPE + v2 proxy + GPU verify wiring); new module
@@ -12623,10 +12812,13 @@ inline.*
   at inference time before bad predictions ship.
 - **On upstream sync**: zero interaction with Netflix/vmaf master.
 - **Re-test on rebase**:
+
   ```bash
   python -m pytest tools/vmaf-tune/tests/test_fast.py -v
   ```
+
 ### 0307 — `vmaf-tune` ladder default sampler wiring (ADR-0307)
+
 - **What changed**: fork-local tooling.
   `tools/vmaf-tune/src/vmaftune/ladder.py::_default_sampler` no
   longer raises `NotImplementedError`; it composes
@@ -12649,10 +12841,13 @@ inline.*
   without an ADR-0307 follow-up. The `SamplerFn` seam stays open —
   callers needing finer grids pass an explicit `sampler=`.
 - **Re-test on rebase**:
+
   ```bash
   pytest tools/vmaf-tune/tests/test_ladder.py -v
   ```
+
 ### 0309 — fr_regressor_v2 ensemble real-corpus retrain harness (ADR-0309)
+
 - **ADR**: [ADR-0309](adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md)
 - **Touches**: entirely fork-local.
   - `ai/scripts/run_ensemble_v2_real_corpus_loso.sh` (new — Bash
@@ -12679,14 +12874,18 @@ inline.*
   of shipped registry rows is the foot-gun this invariant
   exists to prevent.
 - **Re-test on rebase**:
+
   ```bash
   python -m pytest ai/tests/test_validate_ensemble_seeds.py -v
   python ai/scripts/validate_ensemble_seeds.py --help
   bash -n ai/scripts/run_ensemble_v2_real_corpus_loso.sh
   ```
+
 - **Upstream source**: zero.
 - **On upstream sync**: zero interaction.
+
 ### 0310 — BVI-DVC corpus ingestion for `fr_regressor_v2` (ADR-0310)
+
 - **Touches**: `ai/scripts/bvi_dvc_to_corpus_jsonl.py` (new
   fork-only adapter), `ai/scripts/merge_corpora.py` (new fork-only
   shard merger), `ai/tests/test_merge_corpora.py` (new),
@@ -12706,10 +12905,13 @@ inline.*
 - **Upstream interaction**: none. `ai/` is fork-introduced; BVI-DVC
   is not part of Netflix/vmaf upstream.
 - **Re-test on rebase**:
+
   ```bash
   python -m pytest ai/tests/test_merge_corpora.py -v
   ```
+
 ## ADR-0312 — `ffmpeg-patches/` vmaf-tune integration (2026-05-05)
+
 - **Files**: `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch`,
   `ffmpeg-patches/0008-add-libvmaf_tune-filter.patch`,
   `ffmpeg-patches/0009-pass-autotune-cli-glue.patch`,
@@ -12762,6 +12964,7 @@ inline.*
   separately under each refresh ADR (e.g., ADR-0277 for the
   2026-05-04 refresh).
 - **Re-test on rebase**:
+
   ```bash
   git -C /path/to/ffmpeg-8 reset --hard n8.1
   for p in ffmpeg-patches/000*-*.patch; do
@@ -12773,6 +12976,7 @@ inline.*
   make -j$(nproc) ffmpeg
   ./ffmpeg -hide_banner -h encoder=libx264 2>&1 | grep -i qpfile
   ```
+
 - **2026-05-06 update — patch 0007 SVT-AV1 ROI bridge promoted from
   scaffold to full impl**: the libsvtav1 hunk now sets
   `enc_params.enable_roi_map = true`, builds one `SvtAv1RoiMapEvt`
@@ -12812,7 +13016,9 @@ inline.*
   noted under ADR-0312 — both AV1 encoder hooks (libsvtav1 and
   libaom-av1) are now full-impl. No new ADR per CLAUDE.md §12 r8
   (executes the existing ADR-0312 decision).
+
 ### 0315 — Vendor-neutral VVC encode strategy (ADR-0315 / Research-0085)
+
 - **ADR**: [ADR-0315](adr/0315-vendor-neutral-vvc-encode-strategy.md)
 - **Digest**: [Research-0085](research/0085-vendor-neutral-vvc-encode-landscape.md)
 - **Touches**: docs-only.
@@ -12830,9 +13036,11 @@ inline.*
   encode-automation surface.
 - **On upstream sync**: zero interaction. Pure docs.
 - **Re-test on rebase**:
+
   ```bash
   mkdocs build --strict 2>&1 | grep -E "(WARNING|ERROR)" || echo "docs build clean"
   ```
+
 - **2026-05-06 follow-up (Research-0085 verification pass)**:
   - `docs/research/0085-vendor-neutral-vvc-encode-landscape.md`
     flipped from `Status: SKELETON` to `Status: Active`. Most
@@ -12848,7 +13056,9 @@ inline.*
     profile, HHI's non-public roadmap).
   - No code touched. No rebase impact beyond the existing docs-only
     posture.
+
 ### 0316 — `cli_parse.c` `error()` long-only-option fix (ADR-0316)
+
 - **ADR**: [ADR-0316](adr/0316-cli-parse-long-only-error-fix.md) (follow-up to [ADR-0311](adr/0311-libfuzzer-harness-expansion.md)).
 - **Digest**: none — bug-fix; fix shape fits in the ADR/commit body.
 - **Touches**:
@@ -12881,13 +13091,16 @@ inline.*
   `cli_parse.c` if upstream resets the call-site args. The unit
   test is fork-local and stays.
 - **Re-test on rebase**:
+
   ```bash
   meson setup core/build libvmaf -Denable_tests=true \
       -Denable_cuda=false -Denable_sycl=false
   ninja -C core/build test/test_cli_parse_long_only_args
   meson test -C core/build test_cli_parse_long_only_args -v
   ```
+
 ## ADR-0317 — CI flake fix: doc-only PR path-filter (2026-05-06)
+
 - **Touched files**:
   - `.github/workflows/docker-image.yml` — added `paths:` filter on
     both `push:` and `pull_request:` triggers.
@@ -12917,6 +13130,7 @@ inline.*
   the path-filter does not hide it (any libvmaf/ or ffmpeg-patches/
   PR will still trip the SYCL lane).
 - **Re-test on rebase**:
+
   ```bash
   python3 -c "import yaml; \
     yaml.safe_load(open('.github/workflows/docker-image.yml')); \
@@ -12924,11 +13138,8 @@ inline.*
     print('OK')"
   ```
 
-
-
-
-
 ### 0319 — fr_regressor_v2 ensemble LOSO trainer — real loader + per-fold training (ADR-0319)
+
 - **Touches**: `ai/scripts/train_fr_regressor_v2_ensemble_loso.py`
   (real `_load_corpus` + `_train_one_seed` bodies),
   `ai/scripts/run_ensemble_v2_real_corpus_loso.sh` (wrapper argv
@@ -12957,17 +13168,15 @@ inline.*
   merge them — keep the fork's training stack under `ai/` per the
   AGENTS.md scope rule.
 - **Re-test on rebase**:
+
   ```bash
   pytest ai/tests/test_train_fr_regressor_v2_ensemble_loso_loader.py \
          ai/tests/test_train_fr_regressor_v2_ensemble_loso_train.py -v
   bash -n ai/scripts/run_ensemble_v2_real_corpus_loso.sh
   ```
 
-
-
-
-
 ## ADR-0323 — `fr_regressor_v3` train + register on `ENCODER_VOCAB` v3 (2026-05-06)
+
 - **Scope**: `ai/scripts/train_fr_regressor_v3.py` (new),
   `ai/tests/test_train_fr_regressor_v3.py` (new),
   `model/tiny/fr_regressor_v3.onnx` (new, real-weight checkpoint
@@ -12997,12 +13206,15 @@ inline.*
   separate "promote v3 to authoritative" PR per ADR-0302's
   production-flip checklist.
 - **Re-test on rebase**:
+
   ```bash
   pytest ai/tests/test_train_fr_regressor_v3.py -v
   bash core/test/dnn/test_registry.sh   # must report OK: 20+
   python -c "import onnx; onnx.checker.check_model(onnx.load('model/tiny/fr_regressor_v3.onnx')); print('OK')"
   ```
+
 ## ADR-0321 — `fr_regressor_v2_ensemble_v1` full production flip (2026-05-06)
+
 - **Scope**: `ai/scripts/export_ensemble_v2_seeds.py` (new),
   `model/tiny/fr_regressor_v2_ensemble_v1_seed{0..4}.onnx` (real
   full-corpus-trained weights replacing the 3025-byte synthetic
@@ -13022,24 +13234,26 @@ inline.*
   weights are gated on `runs/ensemble_v2_real/PROMOTE.json` and
   are not portable to a different training stack.
 - **Re-test on rebase**:
+
   ```bash
   bash core/test/dnn/test_registry.sh   # must report OK: 19
   python -c "import onnx; \
     [onnx.checker.check_model(onnx.load(f'model/tiny/fr_regressor_v2_ensemble_v1_seed{i}.onnx')) \
      for i in range(5)]; print('OK')"
   ```
+
 ## ADR-0324 — Ensemble training kit (2026-05-06)
+
 - **Touches**: `tools/ensemble-training-kit/` (new), `docs/adr/0324-ensemble-training-kit.md` (new), `docs/adr/README.md` (index row), `changelog.d/added/0324-ensemble-training-kit.md` (new). No engine code touched; no upstream-shared paths.
 - **Invariant**: the kit assumes the LOSO wrapper hard-codes seeds `(0 1 2 3 4)`. The orchestrator surfaces a warning if `--seeds` deviates but still hands off to the wrapper. If a future PR parameterises the wrapper's seed list, update both the wrapper and the kit's pass-through logic in lockstep.
 - **On upstream sync**: no action required. The kit lives entirely under `tools/ensemble-training-kit/` (a fork-local path) and only invokes other fork-local scripts (`ai/scripts/`, `scripts/dev/`, `scripts/ci/`).
 - **Re-test on rebase**:
+
   ```bash
   bash -n tools/ensemble-training-kit/*.sh
   bash tools/ensemble-training-kit/make-distribution-tarball.sh /tmp/kit-test.tar.gz
   tar -tzf /tmp/kit-test.tar.gz | grep -q "tools/ensemble-training-kit/run-full-pipeline.sh"
   ```
-
-
 
 ## ADR-0335 — Hardware-capability priors (2026-05-08)
 
@@ -13137,6 +13351,7 @@ inline.*
   ```
 
 ## CI `paths-ignore` deny-list on heavy workflows (ADR-0341, 2026-05-09)
+
 - **Touches**: `.github/workflows/libvmaf-build-matrix.yml` (fork-local —
   `paths-ignore:` block under `pull_request:`),
   `.github/workflows/tests-and-quality-gates.yml` (fork-local — same
@@ -13157,7 +13372,9 @@ inline.*
   workflow files (they are fork-local additions). No sync conflict
   expected.
 - **Re-test on rebase**:
+
 ## HDR VMAF model search — Path C documentation only (2026-05-09)
+
 - **Files added (this fork only; upstream Netflix/vmaf has none of
   these)**:
   - `model/vmaf_hdr_model_card.md` — discoverable warning that the
@@ -13184,6 +13401,7 @@ inline.*
   <https://github.com/Netflix/vmaf/issues/645> for the upstream
   release announcement.
 - **Re-test on rebase**: no behavioural change — pure docs. Sanity:
+
   ```bash
   python3 -c "from pathlib import Path; \
     import sys; sys.path.insert(0,'tools/vmaf-tune/src'); \
@@ -13191,7 +13409,9 @@ inline.*
     print(select_hdr_vmaf_model(Path('model')))"
   # Expect: None  — confirms the .md card does not match the glob
   ```
+
 ## ADR-0349 — `fr_regressor_v3` namespace resolution (2026-05-09)
+
 - **Rebase impact**: none. Docs-only change — adds
   [ADR-0349](adr/0349-fr-regressor-v3-namespace.md), an
   append-only status appendix on
@@ -13209,6 +13429,7 @@ inline.*
   reservation; reviewers verify the map row exists before
   approving any new `fr_regressor_*` registry id.
 - **Reproducer**:
+
   ```bash
   # ADR + AGENTS.md namespace map present and consistent:
   test -f docs/adr/0349-fr-regressor-v3-namespace.md
@@ -13219,6 +13440,7 @@ inline.*
     docs/adr/0302-encoder-vocab-v3-schema-expansion.md
   # Existing v3 production row bit-identical (sha256 unchanged):
   python3 -c "
+
 import json
 reg = json.load(open('model/tiny/registry.json'))
 v3 = next(m for m in reg['models'] if m['id'] == 'fr_regressor_v3')
@@ -13226,9 +13448,13 @@ assert v3['sha256'] == 'eaa16d23461eda74940b2ed590edfcaf13428aade294e47792a5a15f
 assert v3['smoke'] is False
 print('OK: fr_regressor_v3 production row unchanged')
 "
+
   # Registry test still passes:
+
   bash core/test/dnn/test_registry.sh
+
 ### 0327 — Pre-push PR-body deliverables validator hook
+
 - **Touches**: `scripts/ci/validate-pr-body.sh` (new),
   `scripts/git-hooks/pre-push` (new),
   `scripts/ci/test-validate-pr-body.sh` (new),
@@ -13247,8 +13473,8 @@ print('OK: fr_regressor_v3 production row unchanged')
   test harness's expected exit codes must follow.
   bash scripts/ci/test-validate-pr-body.sh   # 8/8 cases pass
 
-
 ### 0320 — Semgrep `# nosemgrep` cites on Netflix-upstream Python harness (Research-0090)
+
 - **Touches**: `python/vmaf/core/asset.py`, `python/vmaf/core/executor.py`,
   `python/vmaf/core/feature_extractor.py`,
   `python/vmaf/core/quality_runner.py`,
@@ -13270,8 +13496,11 @@ print('OK: fr_regressor_v3 production row unchanged')
   process-global default and is unjustified per Research-0090, F1.
   semgrep scan --config=p/cwe-top-25 --config=p/c --config=p/python . \
     --metrics=off --json | jq '.results | length'
+
   # expect 0 — every legit finding either has a # nosemgrep cite or was fixed
+
 ### 0321 — Security-scans workflow registry-pack list (Research-0090)
+
 - **Touches**: `.github/workflows/security-scans.yml`,
   `.github/workflows/lint-and-format.yml`.
 - **Invariant**: the registry packs the workflow cites
@@ -13287,6 +13516,7 @@ print('OK: fr_regressor_v3 production row unchanged')
     [ "$code" = "200" ] && echo "${pack}: OK" || echo "${pack}: FAIL ($code)"
 
 ### 0320 — CodeQL C bulk sweep (78 deferred alerts → 60 fixed, 14 deferred to T7-5)
+
 - **Touches**: `core/src/feature/{cambi.c,ciede.c,integer_adm.c,integer_psnr.c,adm_tools.h,third_party/xiph/psnr_hvs.c}`,
   `core/src/feature/x86/{adm_avx2.c,adm_avx512.c,ansnr_avx2.c,ansnr_avx512.c,vif_avx2.c,vif_avx512.c}`,
   `core/src/{pdjson.c,svm.cpp}`, `core/test/{test_cpu.c,test_model.c}`,
@@ -13312,13 +13542,11 @@ print('OK: fr_regressor_v3 production row unchanged')
 - **Re-test on rebase**:
   cd libvmaf && meson test -C build  # all 50+ C tests
   make test-netflix-golden            # upstream golden gate
+
   # Re-run CodeQL on master afterwards; the 60 fixed alerts must stay closed.
 
-
-
-
-
 ## CodeQL `cpp/declaration-hides-variable` sweep (2026-05-09)
+
 - **What changed**: Mechanical rename / scope-tighten / dedupe sweep
   closing 64 open `cpp/declaration-hides-variable` CodeQL alerts on
   `master`. Touched files: `core/src/feature/cambi.c`,
@@ -13372,6 +13600,7 @@ print('OK: fr_regressor_v3 production row unchanged')
     -m "not slow" -q
 
 ## ADR-0209 v1 stdio runtime (T5-2b) — Embedded MCP server (2026-05-08)
+
 - **Touches**: `core/src/mcp/{mcp.c,dispatcher.c,transport_stdio.c,mcp_internal.h,meson.build,3rdparty/cJSON/{cJSON.c,cJSON.h,LICENSE}}`, `core/test/test_mcp_smoke.c`, `core/test/meson.build`. All paths are fork-local. cJSON is vendored verbatim from upstream `DaveGamble/cJSON@v1.7.18` under its MIT license.
 - **Invariant**: every TU under `core/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris and Claude (Anthropic)` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `core/include/libvmaf/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
 - **On upstream sync**: no action required. Netflix/vmaf upstream has no embedded MCP surface; the entire `core/src/mcp/` subtree is fork-local. If upstream ever adds an MCP surface, expect a port-only sync since names will collide.
@@ -13379,8 +13608,8 @@ print('OK: fr_regressor_v3 production row unchanged')
                                   -Denable_mcp=true -Denable_mcp_stdio=true
   ninja -C build && meson test -C build test_mcp_smoke -v
 
-
 ## ADR-0334 — state.md-touch-check CI gate (2026-05-08)
+
 - **Touches**: `.github/workflows/rule-enforcement.yml` (new top-level job `state-md-touch-check`), `scripts/ci/state-md-touch-check.sh` (new), `scripts/ci/test-state-md-touch-check.sh` (new), `scripts/ci/AGENTS.md` (new rebase-sensitive-surface row), `.github/PULL_REQUEST_TEMPLATE.md` (already carries the "Bug-status hygiene" section + `no state delta: REASON` opt-out — coupled to the script's regex). No upstream-shared paths.
 - **Invariant**: the gate's trigger predicate (Conventional-Commit `fix:` prefix, bare `bug` token in title, GitHub close-keywords `closes`/`fixes`/`resolves` `#N`, unchecked Bug-status-hygiene checkbox) and opt-out sentinel (`no state delta: REASON`) match the wording of the `## Bug-status hygiene` section in `.github/PULL_REQUEST_TEMPLATE.md`. Reword the template only alongside the script. The job carries the `pull_request.draft == false || github.event_name != 'pull_request'` gate (ADR-0331 pattern) — keep that on any future hoist into the required-aggregator set.
 - **On upstream sync**: Netflix/vmaf has no equivalent rule. No conflict expected; the workflow file is fork-introduced.
@@ -13390,8 +13619,8 @@ print('OK: fr_regressor_v3 production row unchanged')
   pre-commit run shellcheck --files scripts/ci/state-md-touch-check.sh scripts/ci/test-state-md-touch-check.sh
   pre-commit run shfmt      --files scripts/ci/state-md-touch-check.sh scripts/ci/test-state-md-touch-check.sh
 
-
 ## SYCL PSNR chroma extension (T3-15(b), 2026-05-09)
+
 - **Touches**: `core/src/feature/sycl/integer_psnr_sycl.cpp`
   (per-extractor chroma device buffers, per-plane SSE accumulators,
   and a `provided_features` extension to `psnr_y` / `psnr_cb` / `psnr_cr`),
@@ -13425,12 +13654,15 @@ print('OK: fr_regressor_v3 production row unchanged')
     --distorted testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 --pixel-format 420 --bitdepth 8 \
     --feature psnr --backend sycl --device 0
+
   # Expect 0/48 mismatches across psnr_y / psnr_cb / psnr_cr at places=4.
 
-
   ```
+
 ## Cppcheck `nullPointer` false-positive in `dict.c` (2026-05-09)
+
 **Files pinned**:
+
 - `core/src/dict.c:121` (one-line redundant-condition fix in
   `dict_overwrite_existing`).
 **Why this rebase-note exists**: Master CI's `Cppcheck (Whole Project)`
@@ -13449,28 +13681,21 @@ upstream sync of this file should keep the fix or re-run cppcheck
 locally to confirm absence of recurrence.
 
 ## Aggregator timeout bump (2026-05-09)
+
 **Files pinned**:
+
 - `.github/workflows/required-aggregator.yml` (deadline 30→90 min, job timeout 35→100 min)
 **Why**: 41 PRs in flight 2026-05-09 morning hit Aggregator timeouts
 while real CI eventually passed. Bumping both deadlines unblocks the
 train without touching the underlying matrix.
 **Rebase-sensitivity**: zero — workflow file is wholly fork-local.
+
 ## ARC self-hosted runner pool — pilot Cppcheck routing (2026-05-09)
+
 - `.github/workflows/lint-and-format.yml` (Cppcheck `runs-on:` ternary).
 **Why**: opt-in graceful migration; ADR-0359 + docs/development/ci-runners.md
 document the flip-the-variable recipe when the cluster is degraded.
 **Rebase-sensitivity**: zero — workflow file is fork-local.
-
-
-
-
-
-
-
-
-
-
-
 
 ## ADR-0338 — macOS Vulkan-via-MoltenVK CI lane (2026-05-09)
 
@@ -13552,7 +13777,9 @@ document the flip-the-variable recipe when the cluster is degraded.
   ```
 
 ## ADR-0355 — Symphony-inspired agent-dispatch infrastructure (2026-05-09)
+
 **Files added (all fork-introduced, none mirror upstream)**:
+
 - `.claude/workflows/_template.md`,
   `.claude/workflows/codeql-alert-sweep.md`,
   `.claude/workflows/simd-port.md`,
@@ -13583,7 +13810,9 @@ table-shape edits. If a future BACKLOG.md edit adds a column or
 renames a status word, the parser will silently mis-classify rows
 — the smoke parses 101 rows on master at 2026-05-09; expect ≥ 100
 after any structural edit.
+
 ### 0350 — `psnr_hvs` AVX-512 ceiling re-bench (ADR-0350, T3-9 (a))
+
 - [`docs/adr/0350-psnr-hvs-avx512-ceiling.md`](adr/0350-psnr-hvs-avx512-ceiling.md)
   — closure ADR.
 - [`docs/adr/0160-psnr-hvs-neon-bitexact.md`](adr/0160-psnr-hvs-neon-bitexact.md)
@@ -13614,8 +13843,8 @@ trips on ≥ 5.5e-5 drift per ADR-0160 §Context). The ADR-0350
 share shifts, the Netflix normal-pair fixture changes, or a new
 host class (e.g. wide-issue Granite Rapids) goes into CI.
 
-
 ### 0320 — FFmpeg n8.1 → n8.1.1 base bump (2026-05-09)
+
 - **Touches**: `ffmpeg-patches/series.txt` (header comment),
   `ffmpeg-patches/README.md` (apply / verify / smoke sections),
   `ffmpeg-patches/test/build-and-run.sh` (`FFMPEG_SHA` default),
@@ -13645,6 +13874,7 @@ host class (e.g. wide-issue Granite Rapids) goes into CI.
   in the five files listed under "Touches", and add a fresh
   rebase-notes entry citing the conflict file(s).
 - **Re-test on rebase**:
+
   ```bash
   cd /tmp && rm -rf ffmpeg-n811 && \
     git clone --depth 1 --branch n8.1.1 \
@@ -13657,27 +13887,29 @@ host class (e.g. wide-issue Granite Rapids) goes into CI.
   bash scripts/ci/ffmpeg-patches-check.sh
   ```
 
-
-
 ## ADR-0281 follow-up — QSV install-matrix discoverability backfill (2026-05-08)
+
 - **Touches**: `docs/getting-started/install/{arch,fedora,ubuntu,macos,windows}.md` (new `## Intel QSV` section per page), `docs/adr/0281-vmaf-tune-qsv-adapters.md` (status-update appendix per ADR-0028), `changelog.d/changed/qsv-install-matrix-docs.md` (new fragment). No code, no engine, no upstream-shared C / Python source touched. Pure documentation backfill closing the SYCL-audit research-0086 Topic C gap (issue #464).
 - **Invariant**: each per-OS QSV section pins the package names against verified upstream URLs with a `Verified 2026-05-08` access date. The hardware-generation matrix is sourced from the public Wikipedia "Intel Quick Sync Video — Hardware decoding and encoding" table; if Intel revises which generation supports AV1 encode (e.g. backports the encoder to Lunar Lake / Meteor Lake silicon currently absent from the table), the matrix in all five pages must move in lockstep — the Arch / Fedora / Ubuntu / Windows pages all carry the same matrix verbatim. The macOS page deliberately omits the matrix (QSV unsupported on macOS).
 - **On upstream sync**: no action required — Netflix/vmaf upstream does not ship per-OS install pages under `docs/getting-started/install/`; that tree is fork-only.
+
   # Lint the install pages (markdownlint via pre-commit):
+
   pre-commit run --files docs/getting-started/install/*.md
+
   # Verify each page (except alpine + macos) still carries the matrix:
+
   for f in arch fedora ubuntu windows; do
     grep -q 'Arc Battlemage' "docs/getting-started/install/${f}.md" || echo "MISSING: ${f}"
+
   # Confirm the macOS page documents QSV as unsupported:
+
   grep -q 'Intel QSV. is unsupported on macOS' docs/getting-started/install/macos.md
 
-
-
-
-
-
 ### 0333 — vmaf-tune Phase F multi-pass encoding (ADR-0333)
+
 **Touches**:
+
 - `tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py` (CodecAdapter
   Protocol gains `supports_two_pass: bool` + `two_pass_args(...)`)
 - `tools/vmaf-tune/src/vmaftune/codec_adapters/x265.py` (overrides both)
@@ -13699,15 +13931,19 @@ fork-local extension to the ADR-0237 Phase A multi-codec contract;
 upstream Netflix/vmaf has no equivalent and does not own this code
 path.
 **Re-test**:
+
 ```bash
 cd tools/vmaf-tune
 python -m pytest tests/test_codec_adapter_x265_two_pass.py -q
 ```
+
 (Optional, requires ffmpeg + libx265 in the runner's PATH:)
+
 ```bash
 VMAF_TUNE_INTEGRATION=1 python -m pytest \
   tests/test_codec_adapter_x265_two_pass.py::test_real_x265_two_pass_smoke -q
 ```
+
 **Rebase-sensitivity**: zero from upstream — `tools/vmaf-tune/` is
 fork-local. The only concern is the codec_adapters Protocol shape: a
 future upstream commit that adds a sibling codec adapter SHOULD
@@ -13716,8 +13952,6 @@ opt in or leave the flag off. Downstream sibling-codec PRs in this
 fork should follow the ADR-0288 / ADR-0333 pattern: one adapter file,
 override the two methods, add a test file mirroring
 `test_codec_adapter_x265_two_pass.py`.
-
-
 
 ## ADR-0360 — CAMBI CUDA port (T3-15a, 2026-05-09)
 
@@ -13762,11 +13996,10 @@ implementation may differ if they choose Strategy III (fully-on-GPU
 the Vulkan twin (`cambi_vulkan.c`) has — see ADR-0210's rebase note for
 the full list of exposed functions.
 
-
-
 ## Vulkan submit-pool PR-B: six secondary kernels (2026-05-09, ADR-0353)
 
 **Files changed**:
+
 - `core/src/feature/vulkan/ssim_vulkan.c`
 - `core/src/feature/vulkan/ciede_vulkan.c`
 - `core/src/feature/vulkan/ms_ssim_vulkan.c`
@@ -13793,8 +14026,8 @@ MUST be called before `vmaf_vulkan_kernel_pipeline_destroy` in every migrated
 kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
 §"Submit-pool ordering invariant"`.
 
-
 ### 0354 — Vulkan submit-pool PR-C: submit_pool_destroy-before-pipeline ordering
+
 - **Touches**: `core/src/feature/vulkan/cambi_vulkan.c`,
   `core/src/feature/vulkan/ssimulacra2_vulkan.c`,
   `core/src/feature/vulkan/float_ansnr_vulkan.c`,
@@ -13807,9 +14040,10 @@ kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
   shows `places=4` for all four extractors on all three target devices
   (RTX 4090, Arc A380, RADV iGPU).
 
-
 ### 0231 — Vulkan submit-pool migration PR A: adm + motion + psnr (ADR-0291)
+
 ### 0231 — Vulkan submit-pool migration PR A: adm + motion + psnr (ADR-0352)
+
 - **Touches**: `core/src/feature/vulkan/adm_vulkan.c`,
   `core/src/feature/vulkan/motion_vulkan.c`,
   `core/src/feature/vulkan/psnr_vulkan.c` (all fork-local
@@ -13834,6 +14068,7 @@ kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
 - **On upstream sync**: zero interaction. Upstream cannot conflict with
   this PR's paths. The Vulkan backend is entirely fork-introduced.
 - **Re-test on rebase**:
+
   ```bash
   meson test -C build --suite=fast
   # Cross-backend parity gate (places=4):
@@ -13845,9 +14080,10 @@ kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
               testdata/yuv/src01_hrc01_576x324.yuv
   ```
 
-
 ## ADR-0350 — FFmpeg `libvmaf` filter CUDA backend selector (`0010` patch)
+
 **Patch**: [`ffmpeg-patches/0010-libvmaf-wire-cuda-backend-selector.patch`](../ffmpeg-patches/0010-libvmaf-wire-cuda-backend-selector.patch).
+
 - `libavfilter/vf_libvmaf.c` — adds `cuda` AVOption + state field +
   init / cleanup / picture-pool wiring under
   `CONFIG_LIBVMAF_CUDA && !CONFIG_LIBVMAF_CUDA_FILTER`.
@@ -13887,7 +14123,6 @@ init time per `#else` branch) and `CONFIG_LIBVMAF_CUDA=1 &&
 !CONFIG_LIBVMAF_CUDA_FILTER` (selector active, picture-pool wiring
 compiles).
 
-
 ### 0320 — Vulkan instance / VMA `apiVersion` bump to 1.4 (Step B)
 
 - **Touches**: `core/src/vulkan/common.c`,
@@ -13919,12 +14154,13 @@ compiles).
   # All 0/N mismatches at places=4 once Phase 3c (PR #512) has landed.
   ```
 
-
 ## ADR-0332 v2 runtime (T5-2c) — Embedded MCP server UDS + real `compute_vmaf` (2026-05-09)
+
 - **Touches**: `core/src/mcp/{mcp.c,dispatcher.c,mcp_internal.h,meson.build,compute_vmaf.c,transport_uds.c}`, `core/test/test_mcp_smoke.c`. All paths are fork-local. No new third-party vendor drop in v2 — mongoose vendoring stays deferred to v3 with the SSE transport.
 - **Invariant**: same as ADR-0209 v1 — the entire `core/src/mcp/` subtree is fork-local; the public ABI in `core/include/libvmaf/libvmaf_mcp.h` is unchanged (only function bodies flipped — `vmaf_mcp_start_uds` from `-ENOSYS` to a working AF_UNIX listener; `compute_vmaf` from a `{"status":"deferred_to_v2"}` placeholder to a real `vmaf_score_pooled` binding). Per ADR-0128 § operational guardrails the UDS socket file is created mode 0700; that `chmod` happens in `vmaf_mcp_start_uds` after `bind` and is a load-bearing security invariant — do NOT relax it on rebase. `compute_vmaf` runs on a per-call ephemeral `VmafContext` so the host's main scoring run is unperturbed; do NOT rewire it to reuse `server->ctx` because `vmaf_score_pooled` commits the model destructively to the context.
 - **On upstream sync**: no action required. Netflix/vmaf upstream has no embedded MCP surface. If upstream adds one, expect a port-only sync since names will collide.
 - **Re-test on rebase**:
+
   ```bash
   cd libvmaf && meson setup build -Denable_cuda=false -Denable_sycl=false \
                                   -Denable_mcp=true -Denable_mcp_stdio=true \
@@ -13933,12 +14169,6 @@ compiles).
   # Real-score smoke (single 576x324 pair):
   build/test/test_mcp_smoke 2>&1 | tail -3   # expects "16 tests run, 16 passed"
   ```
-
-
-
-
-
-
 
 ## ADR-0332 v3 runtime (T5-2d) — Embedded MCP server SSE transport (2026-05-09)
 
@@ -13956,8 +14186,8 @@ compiles).
   build/test/test_mcp_smoke 2>&1 | tail -3   # expects "17 tests run, 17 passed"
   ```
 
-
 ### Status update 2026-05-09 — placeholder-ref hardening
+
 - **Additional touches**: same set as the 2026-05-08 ADR-0334 entry,
   no new files. The hardening adds a `git diff -U0 ... -- docs/state.md`
   call inside `scripts/ci/state-md-touch-check.sh` (case 4a) plus 10
@@ -13973,8 +14203,8 @@ compiles).
   run as the 2026-05-08 entry; the harness now reports
   `18/18 passed` (was `8/8 passed`).
 
-
 ### 0347 — Sanitizer matrix test-set scope (ADR-0347)
+
 - **Touches**: [`.github/workflows/tests-and-quality-gates.yml`](../.github/workflows/tests-and-quality-gates.yml)
   job `sanitizers` (build + test step), [`core/test/meson.build`](../core/test/meson.build)
   (no edits — the absence of any `suite: 'unit'` tag is the upstream
@@ -14023,8 +14253,8 @@ compiles).
             | sed 's/^libvmaf://')
     meson test -C "build-$SAN" --print-errorlogs $TESTS
 
-
 ## CodeQL bulk mechanical sweep — Python tree (2026-05-09)
+
 - **Why this matters on rebase**: no rebase impact. The diff lives entirely
   in `python/vmaf/` and one fork-local helper (`core/src/vulkan/spv_embed.py`).
   None of the touched Python modules have been changed by Netflix upstream
@@ -14041,8 +14271,8 @@ compiles).
   for f in (...)]"` over the touched files; `ruff check` over the same set
   must produce no NEW errors versus master baseline.
 
-
 ### 0345 — cambi × {CUDA, SYCL, HIP} GPU port planning (ADR-0345, docs-only)
+
 - **Touches**: `docs/research/0091-cambi-gpu-port-planning-2026-05-09.md`
   (new), `docs/adr/0345-cambi-gpu-port-strategy.md` (new),
   `docs/adr/_index_fragments/0345-cambi-gpu-port-strategy.md` (new
@@ -14074,10 +14304,8 @@ compiles).
   Strategy III v2 follow-up (parked per ADR-0205 §Out of scope) gets
   its own ADR + rebase-notes entry when profile data lands.
 
-
-
-
 ### 0320 — Vulkan VIF API-1.4 NVIDIA residual Phase 3b (deferral)
+
 - **Touches**: `core/src/feature/vulkan/shaders/vif.comp`
   (comment-only update at the Phase-4 reduction site —
   documents the Phase-3b candidate-fix experiments and the
@@ -14115,7 +14343,9 @@ compiles).
 - **Re-test on rebase** (assumes a multi-GPU CI workstation with
   NVIDIA + Arc + RADV; lavapipe-only CI lanes are a no-op for
   the API-1.4 residual since lavapipe never reproduced the bug):
+
   # Local API-1.4 bump (off-master reproducer; do NOT commit).
+
   sed -i 's/VK_API_VERSION_1_3/VK_API_VERSION_1_4/g' \
       core/src/vulkan/common.c
   sed -i 's/VMA_VULKAN_VERSION 1003000/VMA_VULKAN_VERSION 1004000/' \
@@ -14123,22 +14353,29 @@ compiles).
   cd libvmaf && meson setup build -Denable_vulkan=enabled \
       -Denable_cuda=false -Denable_sycl=false && ninja -C build
   cd ..
+
   # NVIDIA lane — expected 45/48 FAIL scale 2 until either the
+
   # manual int64 subgroup-reduction patch lands or NVIDIA fixes
+
   # the driver. Arc + RADV expected 0/48.
+
   python3 scripts/ci/cross_backend_vif_diff.py \
       --vmaf-binary core/build/tools/vmaf \
       --reference testdata/ref_576x324_48f.yuv \
       --distorted testdata/dis_576x324_48f.yuv \
       --width 576 --height 324 \
       --feature vif --backend vulkan --device <NVIDIA-index>
+
   # Revert local bump after testing.
+
   sed -i 's/VK_API_VERSION_1_4/VK_API_VERSION_1_3/g' \
       core/src/vulkan/common.c
   sed -i 's/VMA_VULKAN_VERSION 1004000/VMA_VULKAN_VERSION 1003000/' \
       core/src/vulkan/vma_impl.cpp
 
 ### Upstream-port-later batch — Research-0090 18-commit triage close-out (2026-05-09)
+
 - **Touches**: `docs/state.md` (one row in "Deferred (waiting on
   external trigger)"), this file, `changelog.d/changed/upstream-port-later-batch-2026-05-09.md`.
   No code touched. Companion to PR #446 (Research-0090) and the
@@ -14146,6 +14383,7 @@ compiles).
   duplicate pair).
 - **Per-commit classification (input set: 18 PORT_LATER SHAs from
   Research-0090)**:
+
   | # | Upstream SHA | Subject (truncated) | Verdict | Reopen / forward path |
   | --- | --- | --- | --- | --- |
   | 1 | `38e905d1` | adopt MyTestCase + reformat BD-rate test data | PORT_DEFERRED | Subsumed by PR #497 commit `e1dbdc09`; close out when #497 merges |
@@ -14166,6 +14404,7 @@ compiles).
   | 16 | `d93495f5` | reduce tolerance for VMAF scores in quality_runner tests | PORT_DEFERRED **w/ Netflix-golden guard** | PR #497 — Netflix-golden tolerance guard same as row 3 |
   | 17 | `7d1ad54b` | port feature extractor tests for aim/adm3/motion3 | PORT_DEFERRED | Subsumed by PR #497 commit `44b9e626`; close out when #497 merges |
   | 18 | `721569bc` | resource/doc: cambi_high_res_speedup + motion2 score | PORT_DEFERRED → DEDUP | Already in flight on TWO branches (PR #443 + PR #444). Maintainer picks one and abandons the other per Research-0090 §Recommended action #4. No third port-PR opened. |
+
 - **Invariant**: after PR #497 merges, the Research-0090 PORT_LATER
   bucket reduces to exactly two follow-up cherry-picks against
   post-#497 master:
@@ -14198,7 +14437,9 @@ compiles).
   (`25ff9f18` + `0341f730`) eventually land, run
   meson test -C build --suite=fast
   make test-netflix-golden  # 3/3 CPU goldens still pass
+
 ### 0356 — Vulkan two-level GPU reduction for VIF / ADM / motion
+
 - **Touches**: `core/src/feature/vulkan/vif_vulkan.c`,
   `adm_vulkan.c`, `motion_vulkan.c`,
   `core/src/vulkan/picture_vulkan.{h,c}`,
@@ -14243,7 +14484,6 @@ IDs are assigned in commit order and never reused. A single entry may
 cover several PRs in one workstream; cross-link from the ID heading.
 
 ## Entries (backfilled 2026-04-18 per ADR-0108 adoption)
-
 
 ### 0332 — Agent worktree-drift hard guard (ADR-0332)
 
@@ -14404,6 +14644,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   whole commits.
 
 ### 0310 — Vulkan VIF int64 reduction race condition Phase 3 fix
+
 - **Touches**: `core/src/feature/vulkan/shaders/vif.comp`
   (replaces all three bare `barrier()` calls with explicit
   `memoryBarrierShared(); barrier();` pairs covering the Phase-1
@@ -14447,6 +14688,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   `--vulkan_device 0` on this multi-GPU host is the Intel Arc
   A380 lane and **will still fail** at API 1.4 (separate
   `T-VK-VIF-1.4-RESIDUAL-ARC` row Open).
+
 ### 0309 — Vulkan VIF API-1.4 Phase 2 dump (T-VK-VIF-1.4-RESIDUAL)
 
 - **Touches**: `docs/research/0089-vulkan-vif-fp-residual-bisect-2026-05-08.md`
@@ -14485,7 +14727,6 @@ cover several PRs in one workstream; cross-link from the ID heading.
   `--feature 'vif_vulkan=debug=true'`. Both observations
   reproduced bit-for-bit on this session's hardware lane
   (UUID `e478b41b-5c4f-1ddb-f990-e44916aff4c8`).
-
 
 ### 0308 — encoder knob-sweep recipe-regression policy (ADR-0308, docs-only)
 
@@ -14548,10 +14789,15 @@ cover several PRs in one workstream; cross-link from the ID heading.
   and the same with `--feature ciede` against NVIDIA + RADV +
   lavapipe; max abs diff must stay ≤ `5.0e-05` (`places=4`) on all
   three.
+
 ### 0229 — HIP fifth-consumer kernel `float_ansnr_hip` (ADR-0266)
+
 ### 0228 — `y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow fix
+
 ### 0228 — `vmaf-tune` resolution-aware model selection (ADR-0289)
+
 ### 0282 — `vmaf-tune` AMD AMF codec adapters (ADR-0282)
+
 ### 0228 — `tools/vmaf-tune/` codec-agnostic encode dispatcher (ADR-0294)
 
 - **Touches**:
@@ -14598,6 +14844,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   assert cmd[cmd.index('-crf') + 1] == '23'
   print('x264 dispatcher path OK')
   "
+
 ### 0260 — `vmaf-tune --sample-clip-seconds` (ADR-0301)
 
 - **Touches**:
@@ -14708,6 +14955,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
     — must report `1 tests run, 1 passed`. Pre-fix the binary aborts
     with `AddressSanitizer: heap-buffer-overflow … WRITE of size 1`
     at `y4m_input.c:507`.
+
 ### 0270 — `saliency_student_v1` fork-trained on DUTS-TR (ADR-0286)
 
 - **Touches**:
@@ -14848,6 +15096,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
       --distorted testdata/dis_576x324_48f.yuv \
       --width 576 --height 324 \
       --feature float_ms_ssim --backend vulkan --places 4
+
 ### 0231 — SHA-pin GitHub Actions (OSSF `Pinned-Dependencies`)
 
 - **Touches**: every workflow file under `.github/workflows/`.
@@ -15159,6 +15408,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   `integer_vif` bit-identically to 4 decimals.
 - **Rebase impact**: low. Builds on top of PR #272's
   `_add_variant()` helper.
+
 ### 0122 — float_adm_vulkan migrated to kernel_template + `_add_variant` (T-GPU-DEDUP-22)
 
 - **Touches**:
@@ -15177,6 +15427,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   primitives from `adm_tools.c`; same 5-element spec-constant
   tuple; same float partial accumulation reduced in double on
   the host.
+
 ### 0121 — adm_vulkan migrated to kernel_template + `_add_variant` (T-GPU-DEDUP-21)
 
 - **Touches**:
@@ -15198,6 +15449,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   spec-constant tuple (width, height, bpc, scale, stage) +
   push-constants.
 - **Rebase impact**: low. Builds on top of PR #272.
+
 ### 0123 — `ms_ssim_vulkan` 2-bundle migration (T-GPU-DEDUP-23)
 
 - **Touches**:
@@ -15293,6 +15545,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   predate this change (PR #270 / #271); the new
   `_add_variant` is additive. Upstream Netflix has no Vulkan
   backend to conflict with.
+
 ### 0111 — integer_ciede_cuda migrated to kernel_template (T-GPU-DEDUP-11)
 
 - **Touches**:
@@ -15309,6 +15562,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   consolidation. The host-side reduction in collect still uses
   the same `double` accumulator over per-block float partials —
   `places=4` (ADR-0187) holds.
+
 ### 0112 — integer_moment_cuda migrated to kernel_template (T-GPU-DEDUP-12)
 
 - **Touches**:
@@ -15323,6 +15577,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   host division.
 - **Rebase impact**: low. Upstream Netflix has no equivalent
   template; this consolidation is fork-local.
+
 ### 0113 — integer_motion_v2_cuda migrated to kernel_template (T-GPU-DEDUP-13)
 
 - **Touches**:
@@ -15337,6 +15592,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
 - **Numerical contract**: unchanged. Same D2D copy, same
   conditional kernel launch on frame ≥ 1, same
   host-side `min(score[i], score[i+1])` flush.
+
 ### 0114 — integer_ssim_cuda migrated to kernel_template (T-GPU-DEDUP-14)
 
 - **Touches**:
@@ -15355,6 +15611,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   precision pattern) holds.
 - **Rebase impact**: low. Upstream Netflix has no equivalent;
   this is fork-added.
+
 ### 0115 — ms_ssim_cuda + psnr_hvs_cuda lifecycle migration (T-GPU-DEDUP-15)
 
 - **Touches**:
@@ -15370,6 +15627,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   reduction paths are untouched apart from the
   `s->str` → `s->lc.str` / `s->event` → `s->lc.submit` /
   `s->finished` → `s->lc.finished` field renames.
+
 ### 0116 — float_psnr/ansnr/motion cuda → kernel_template (T-GPU-DEDUP-16)
 
 - **Touches**:
@@ -15383,6 +15641,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
 - **Numerical contract**: unchanged. Same dispatch geometry, same
   reduction order. Cross-backend parity gate at the kernels'
   contracted precision (places=3 per ADR-0192) holds.
+
 ### 0117 — float_adm + float_vif cuda lifecycle migration (T-GPU-DEDUP-17)
 
 - **Touches**:
@@ -15399,6 +15658,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   the field renames.
 - **Rebase impact**: low. Upstream Netflix has no equivalent
   template; this is fork-added.
+
 ### 0107 — float_psnr_vulkan migrated to kernel_template (T-GPU-DEDUP-8)
 
 - **Touches**:
@@ -15412,6 +15672,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   Vulkan-boilerplate consolidation. Cross-backend parity gate
   at `places=4` holds — Netflix-pair smoke reports `float_psnr`
   mean 30.755 dB, identical to pre-migration.
+
 ### 0109 — float_ansnr_vulkan + motion_v2_vulkan migrated to kernel_template (T-GPU-DEDUP-9)
 
 - **Touches**:
@@ -15425,6 +15686,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   contracted precision holds — Netflix-pair smoke reports
   `float_ansnr` mean 23.51 dB and `motion2_v2_score` mean 3.895,
   identical to pre-migration.
+
 ### 0110 — float_motion_vulkan migrated to kernel_template (T-GPU-DEDUP-10)
 
 - **Touches**:
@@ -15436,6 +15698,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   consolidation. Netflix-pair smoke reports `motion` mean
   4.049 / `motion2` mean 3.894, identical to pre-migration.
 - **Rebase impact**: low. Upstream Netflix has no Vulkan backend.
+
 ### 0108 — Bristol VI-Lab feasibility digest + BVI-CC ingest ADR (Draft)
 
 - **Touches**:
@@ -15813,6 +16076,7 @@ than per-PR. Future PRs add entries individually.
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --feature float_adm --places 4
   ```
+
 ### 0083 — SSIMULACRA 2 Vulkan kernel (ADR-0201)
 
 - **ADR**: [ADR-0201](adr/0201-ssimulacra2-vulkan-kernel.md)
@@ -15854,6 +16118,7 @@ than per-PR. Future PRs add entries individually.
     --feature ssimulacra2 --backend vulkan --places 1
   # expected: max_abs_diff ≈ 1.59e-2, 0/48 mismatches at places=1
   ```
+
 - **Follow-ups**:
   - CUDA + SYCL twins (batch 3 parts 7b + 7c per ADR-0192).
   - Performance follow-up: re-bin multiple rows / columns per WG
@@ -18832,6 +19097,7 @@ inline.*
    `vif_scale_frame_s`.
 
 **Reproducer:**
+
 ```bash
 # verify bit-exactness (default options, scores must be identical):
 ./core/build/tools/vmaf \
@@ -20044,6 +20310,7 @@ inline.*
   meson setup build -Denable_vulkan=enabled -Denable_cuda=false -Denable_sycl=false
   ninja -C build
   meson test -C build
+
 ### 0059 — Tiny-AI Netflix corpus training prep (ADR-0203)
 
 - **ADR**: [ADR-0203](adr/0203-tiny-ai-training-prep-impl.md).
@@ -20242,7 +20509,6 @@ inline.*
   ```
 
 ### 0091 — T6-9 model registry schema + `--tiny-model-verify` (ADR-0211)
-
 
 - **No rebase impact: 100% fork-local surface.** The registry
   (`model/tiny/registry.json`), its JSON Schema
@@ -20574,6 +20840,7 @@ inline.*
   meson test -C build-cpu test_speed
   meson test -C build-cpu              # full meson suite
   make test-netflix-golden             # 3 CPU canonical pairs
+
 ### 0221 — CHANGELOG + ADR-index fragment-file pattern (T7-39 / ADR-0221)
 
 - **What changed**: the fork stopped editing `CHANGELOG.md` and
@@ -20612,6 +20879,7 @@ inline.*
   vmaf --feature dists_sq=model_path=model/tiny/dists_sq.onnx \
        --reference ref.yuv --distorted dist.yuv \
        --width 1920 --height 1080 --pix_fmt yuv420p
+
 ### 0076 — GPU-gen ULP calibration head (proposal-stage, T7-GPU-ULP-CAL / ADR-0234)
 
 - **What landed**: ADR-0234 (Proposed), Research-0041, data-collection
@@ -20624,6 +20892,7 @@ inline.*
 
   ```sh
   python3 ai/scripts/collect_gpu_calibration_data.py --smoke
+
 ### 0095 — Per-backend GPU kernel scaffolding templates (CUDA + Vulkan, ADR-0246)
 
 - **ADR**: [ADR-0246](adr/0246-gpu-kernel-template.md).
@@ -20677,6 +20946,7 @@ inline.*
       -Denable_vulkan=enabled -Denable_cuda=false -Denable_sycl=false
   ninja -C core/build-vulkan
   meson test -C core/build-vulkan
+
 ### 0222 — `vmaf-perShot` per-shot CRF predictor sidecar (T6-3b)
 
 - **Touches**: `core/tools/meson.build` (new executable +
@@ -20712,6 +20982,7 @@ inline.*
       --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
       --output /tmp/plan.csv
   cat /tmp/plan.csv
+
 ### 0075 — `vmaf-roi` sidecar binary (T6-2b / ADR-0247)
 
 - **Touches**:
@@ -20760,6 +21031,7 @@ inline.*
       --encoder x265 --ctu-size 64 --strength 6.0 | head -3
   # First two lines are the # comment header; row 1 of the grid
   # should be "4 2 1 -1 -1 -1 1 2 4" (placeholder radial map).
+
 ### 0219 — motion3 GPU coverage on Vulkan + CUDA + SYCL (T3-15(c) / ADR-0219)
 
 - **What changed**: The `motion` GPU twins
@@ -20818,6 +21090,7 @@ inline.*
       --width 576 --height 324 --bitdepth 8 \
       --vmaf-bin core/build/tools/vmaf
   # Expect: integer_motion / integer_motion2 / integer_motion3 all OK at places=4.
+
 ### 0216 — vmaf_tiny_v2 (Phase-3-validated tiny VMAF MLP)
 
 - **Touches**: `model/tiny/registry.json`, `model/tiny/vmaf_tiny_v2.{onnx,json}`,
@@ -20862,6 +21135,7 @@ inline.*
       --parquet runs/full_features_netflix.parquet \
       --rows 100 --min-plcc 0.97
   meson test -C build-cpu --suite=dnn
+
 ### 0094 — Tiny-AI extractor template (ADR-0250)
 
 - **Touches**: `core/src/dnn/tiny_extractor_template.h` (new),
@@ -20906,7 +21180,6 @@ inline.*
   meson test -C build-cpu test_lpips test_fastdvdnet_pre
   # All 10 dnn-suite + both extractor tests must pass.
   ```
-
 
 ### 0095 — Vulkan ring-depth tunable (ADR-0251 follow-up #3)
 
@@ -20970,10 +21243,13 @@ inline.*
   done
   bash scripts/docs/concat-adr-index.sh >/dev/null  # must succeed
   ```
+
       -Denable_vulkan=enabled
   ninja -C build
   meson test -C build test_vulkan_async_pending_fence
+
   # All 8 cases must pass: 4 v2-contract + 4 ring-tunable.
+
 ### 0096 — `tools/vmaf-tune/` automation umbrella spec (ADR-0237 / Research-0044)
 
 - **PR**: feat/vmaf-tune-spec.
@@ -21056,6 +21332,7 @@ inline.*
   #   test_fetch_without_preallocate_falls_back
   #   test_unknown_method_rejected
   #   test_null_args_rejected
+
 ### 0099 — feature_mobilesal.c + transnet_v2.c migrated to tiny_extractor_template.h
 
 - **PR**: refactor/migrate-ai-to-template.
@@ -21075,6 +21352,7 @@ inline.*
   hand-rolled version produced.
 - **On upstream sync**: zero interaction. Both files are
   fork-introduced; upstream Netflix has neither extractor.
+
 ### 0100 — `cuda/ring_buffer.{c,h}` → `gpu_picture_pool.{c,h}` (ADR-0239)
 
 - **PR**: refactor/gpu-picture-pool-extract.
@@ -21213,6 +21491,7 @@ inline.*
   meson test -C build  # 50/50 pass on lavapipe (under ASan/UBSan)
   python scripts/ci/cross_backend_parity_gate.py --feature float_moment_ref1st --places 4
   python scripts/ci/cross_backend_parity_gate.py --feature ciede2000 --places 2
+
 ### 0101 — GPU backend pattern doc (ADR-0240)
 
 - **PR**: docs/gpu-backend-template.
@@ -21230,6 +21509,7 @@ inline.*
   test -f docs/development/gpu-backend-template.md
   test -f core/include/libvmaf/AGENTS.md
   grep -c 'gpu-backend-template' core/include/libvmaf/AGENTS.md
+
 ### 0102 — Tiny-AI test registration macro (`tiny_ai_test_template.h`)
 
 - **PR**: refactor/test-registration-macro.
@@ -21259,6 +21539,7 @@ inline.*
   meson test -C build test_lpips test_mobilesal test_transnet_v2 test_fastdvdnet_pre
   # 4/4 binaries pass; 18 individual tests total (4x4 standard + 2
   # TransNet V2 extras).
+
 ### 0103 — `integer_psnr_cuda.c` migrated to `cuda/kernel_template.h`
 
 - **PR**: refactor/migrate-psnr-cuda-to-template.
@@ -21447,6 +21728,7 @@ inline.*
   gh api "/repos/github/codeql-action/commits/$pin" --jq '.sha'
   # Then watch the next master push for a green Scorecard run:
   gh run list --workflow scorecard --repo VMAFx/vmafx --limit 1
+
 ### 0228 — U-2-Net `u2netp` saliency replacement deferred (ADR-0265)
 
 - **Touches**: docs-only.
@@ -21493,7 +21775,6 @@ inline.*
   bash scripts/docs/concat-adr-index.sh --check
   bash scripts/release/concat-changelog-fragments.sh --check
   ```
-
 
 ### 0108 — `ssim_accumulate_avx512` per-lane double reduction vectorised
 
@@ -21556,6 +21837,7 @@ inline.*
   diff <(grep -v 'fyi fps' /tmp/m0.xml) <(grep -v 'fyi fps' /tmp/m16.xml)   # empty
   diff <(grep -v 'fyi fps' /tmp/m0.xml) <(grep -v 'fyi fps' /tmp/m255.xml)  # empty
   ```
+
 - **Why this matters on rebase**: an upstream commit that touches
   `core/src/feature/ssimulacra2.c` could prompt a "let's also
   port the GPU XYB while we're here" follow-up. The ledger entry
@@ -21624,6 +21906,7 @@ inline.*
   meson test -C build test_op_allowlist test_onnx_scan
   PYTHONPATH=ai/src python -m pytest ai/tests/test_op_allowlist.py
   ```
+
 ### 0231 — `vif.comp` + `ciede.comp` `precise` decorations (ADR-0269 / Step A of Vulkan 1.4 bump)
 
 - **Touches**:
@@ -21670,6 +21953,7 @@ inline.*
   Expected on NVIDIA 595.71+: vif 0/48 OK, ciede 5/48 FAIL (max abs
   8.9e-05 — pre-existing fork debt at API 1.3, see ADR-0269). On
   RADV / lavapipe: bit-exact (`precise` is a no-op there).
+
 ### 0229 — `fr_regressor_v2` codec-aware scaffold (ADR-0272)
 
 - **ADR**: [ADR-0272](adr/0272-fr-regressor-v2-codec-aware-scaffold.md)
@@ -21942,8 +22226,11 @@ inline.*
   ```
 
 ### 0229 — `vmaf_tiny_v3` + `vmaf_tiny_v4` dynamic-PTQ int8 sidecars (ADR-0275)
+
 ### 0278 — `vmaf-tune` libaom-av1 codec adapter (2026-05-03)
+
 ### 0228 — `vmaf-tune` libx265 codec adapter (ADR-0288)
+
 ### 0280 — `vmaf-tune` NVENC codec adapters (ADR-0290)
 
 - **Touches**:
@@ -22062,6 +22349,7 @@ inline.*
   ```bash
   python ai/scripts/validate_model_registry.py
   python ai/scripts/measure_quant_drop.py --all
+
 ### 0229 — NVIDIA-Vulkan ciede2000 places=4 fork debt root-cause (ADR-0273)
 
 - **Touched files**: docs-only.
@@ -22105,6 +22393,7 @@ inline.*
   # Expected pre-PR-346 (current master): 42/48 mismatches at higher ratio.
   # If the count drops below 5/48 on NVIDIA, ADR-0273 should record the
   # delta and consider closing T-VK-CIEDE-F32-F64.
+
 ### 0229 — `tools/vmaf-tune fast` Phase A.5 scaffold (ADR-0276)
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/fast.py` (new),
@@ -22132,7 +22421,6 @@ inline.*
   pytest tools/vmaf-tune/tests/test_fast.py -v
   vmaf-tune fast --smoke --target-vmaf 92
   ```
-
 
 ### 0229 — `vmaf-tune recommend` subcommand (ADR-0237 Phase B-lite)
 
@@ -22198,6 +22486,7 @@ inline.*
   # Cross-backend parity (places=4 gate, ADR-0214):
   /cross-backend-diff
   ```
+
 ### 0277 — ffmpeg-patches refresh against `n8.1` — 2026-05-04 (ADR-0277)
 
 - **Touches**: `ffmpeg-patches/` is unchanged (no content drift).
@@ -22259,6 +22548,7 @@ inline.*
   system-installed `.pc` carries an extra
   `-I${includedir}/libvmaf` shortcut that the uninstalled `.pc`
   omits).
+
 ### 0229 — T7-5 NOLINT-sweep closeout (ADR-0278)
 
 - **Touched files**:
@@ -22325,6 +22615,7 @@ inline.*
   meson setup build -Denable_cuda=false -Denable_sycl=false
   ninja -C build
   make test-netflix-golden
+
 ### 0231 — `vmaf-tune` score path decodes mp4 -> raw YUV
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/score.py` (new
@@ -22352,6 +22643,7 @@ inline.*
       --encoder libx264 --preset medium --crf 23 \
       --output /tmp/smoke.jsonl --no-source-hash
   # expect: vmaf_score is a real number, not NaN.
+
 ### 0232 — CUDA build pins nvcc `--std c++20`
 
 - **Touches**: `core/src/meson.build` line 686 (`cuda_flags = [...]`).
@@ -22457,6 +22749,7 @@ inline.*
 - **Re-test on rebase**: `python3 ai/scripts/train_fr_regressor_v2.py
   --corpus <jsonl> --epochs 200 --no-export` — expect PLCC > 0.95 on
   a multi-codec corpus.
+
 ### 0276 — `vmaf_tiny_v5` corpus-expansion probe (ADR-0287) — defer
 
 - **What changed**: research-only addition. New scripts under
@@ -22621,6 +22914,7 @@ inline.*
   ```bash
   python -m pytest tools/vmaf-tune/tests/ -v
   ```
+
 ### 0230 — fr_regressor_v2 PROD ship (ADR-0352)
 
 - **ADR**: [ADR-0352](adr/0291-fr-regressor-v2-prod-ship.md)
@@ -22797,6 +23091,7 @@ inline.*
   pytest tools/vmaf-tune/tests/test_compare.py -v
   PYTHONPATH=tools/vmaf-tune/src python -m vmaftune.cli compare \
       --src /tmp/ref.yuv --target-vmaf 92 --format markdown
+
 ### 0229 — `vmaf-tune --score-backend` GPU score wiring (ADR-0299)
 
 - **Touches**:
@@ -22878,6 +23173,7 @@ inline.*
 
   ```bash
   pytest tools/vmaf-tune/tests/test_cache.py -v
+
 ### 0283 — `vmaf-tune` Apple VideoToolbox adapters (2026-05-05)
 
 - **What changed**: fork-local addition under
@@ -23603,11 +23899,13 @@ inline.*
   Netflix-shared code.
 
 ## ADR-0331 — Skip CI on draft pull requests (2026-05-08)
+
 - **Touches**: `.github/workflows/{docker-image,security-scans,lint-and-format,ffmpeg-integration,libvmaf-build-matrix,rule-enforcement,tests-and-quality-gates}.yml` (per-job `if:` clause + `pull_request.types` list). `required-aggregator.yml` is unchanged — it already adopted the pattern under ADR-0313. No upstream-shared paths.
 - **Invariant**: every top-level job in the eight fork workflows that trigger on `pull_request` carries `if: github.event_name != 'pull_request' || github.event.pull_request.draft == false`. The `pull_request:` block lists `ready_for_review` in `types:` so promotion of a draft fires CI exactly once. The second clause keeps `push:` triggers (no PR object) intact. If an upstream merge introduces a new top-level job, that job MUST inherit the gate; otherwise drafts will silently consume one matrix slot per push.
 - **On upstream sync**: Netflix/vmaf upstream does not gate on draft state; if a sync brings in new `pull_request` workflow content, replay the gate on every newly-introduced top-level job. Composing with an existing `if:` follows the `coverage-gpu` pattern — wrap both predicates in `${{ ... && ( ... ) }}`.
 
 - **Re-test on rebase**:
+
   ```bash
   python3 -c "import yaml; names=['docker-image','security-scans','lint-and-format','required-aggregator','ffmpeg-integration','libvmaf-build-matrix','rule-enforcement','tests-and-quality-gates']; [yaml.safe_load(open(f'.github/workflows/{n}.yml')) for n in names]; print('OK')"
   # Spot-check the gate is present on every top-level job:
@@ -23616,7 +23914,9 @@ inline.*
            required-aggregator; do
     grep -c "pull_request.draft == false" ".github/workflows/${f}.yml"
   done  # Each must report >= 1.
+
 ## SSIM extractor registration fix (2026-05-08)
+
 - **Touches**: `core/src/feature/feature_extractor.c` (upstream-mirror —
   adds one extern + one registry-array entry near the existing SSIM rows),
   `core/src/feature/integer_ssim.c` (upstream-mirror — adds
@@ -23640,6 +23940,7 @@ inline.*
   (the file has been dormant on master for years), revert the
   meson.build addition. Otherwise no action.
 - **Re-test on rebase**:
+
   ```bash
   meson setup build -Denable_cuda=false -Denable_sycl=false && ninja -C build
   ./build/test/test_feature_extractor    # 5/5 pass, includes new ssim row
@@ -23652,7 +23953,9 @@ inline.*
   meson setup build-vulkan -Denable_vulkan=enabled --reconfigure && \
     ninja -C build-vulkan tools/vmaf
   ```
+
 ## CI `paths-ignore` deny-list on heavy workflows (ADR-0341, 2026-05-09)
+
 - **Touches**: `.github/workflows/libvmaf-build-matrix.yml` (fork-local —
   `paths-ignore:` block under `pull_request:`),
   `.github/workflows/tests-and-quality-gates.yml` (fork-local — same
@@ -23675,6 +23978,7 @@ inline.*
 - **Re-test on rebase**:
 
 ## HDR VMAF model search — Path C documentation only (2026-05-09)
+
 - **Files added (this fork only; upstream Netflix/vmaf has none of
   these)**:
   - `model/vmaf_hdr_model_card.md` — discoverable warning that the
@@ -23702,7 +24006,6 @@ inline.*
   release announcement.
 - **Re-test on rebase**: no behavioural change — pure docs. Sanity:
 
-
   ```bash
   python3 -c "from pathlib import Path; \
     import sys; sys.path.insert(0,'tools/vmaf-tune/src'); \
@@ -23710,7 +24013,9 @@ inline.*
     print(select_hdr_vmaf_model(Path('model')))"
   # Expect: None  — confirms the .md card does not match the glob
   ```
+
 ## ADR-0349 — `fr_regressor_v3` namespace resolution (2026-05-09)
+
 - **Rebase impact**: none. Docs-only change — adds
   [ADR-0349](adr/0349-fr-regressor-v3-namespace.md), an
   append-only status appendix on
@@ -23728,6 +24033,7 @@ inline.*
   reservation; reviewers verify the map row exists before
   approving any new `fr_regressor_*` registry id.
 - **Reproducer**:
+
   ```bash
   # ADR + AGENTS.md namespace map present and consistent:
   test -f docs/adr/0349-fr-regressor-v3-namespace.md
@@ -23738,6 +24044,7 @@ inline.*
     docs/adr/0302-encoder-vocab-v3-schema-expansion.md
   # Existing v3 production row bit-identical (sha256 unchanged):
   python3 -c "
+
 import json
 reg = json.load(open('model/tiny/registry.json'))
 v3 = next(m for m in reg['models'] if m['id'] == 'fr_regressor_v3')
@@ -23745,9 +24052,13 @@ assert v3['sha256'] == 'eaa16d23461eda74940b2ed590edfcaf13428aade294e47792a5a15f
 assert v3['smoke'] is False
 print('OK: fr_regressor_v3 production row unchanged')
 "
+
   # Registry test still passes:
+
   bash core/test/dnn/test_registry.sh
+
 ### 0327 — Pre-push PR-body deliverables validator hook
+
 - **Touches**: `scripts/ci/validate-pr-body.sh` (new),
   `scripts/git-hooks/pre-push` (new),
   `scripts/ci/test-validate-pr-body.sh` (new),
@@ -23766,8 +24077,8 @@ print('OK: fr_regressor_v3 production row unchanged')
   test harness's expected exit codes must follow.
   bash scripts/ci/test-validate-pr-body.sh   # 8/8 cases pass
 
-
 ### 0320 — Semgrep `# nosemgrep` cites on Netflix-upstream Python harness (Research-0090)
+
 - **Touches**: `python/vmaf/core/asset.py`, `python/vmaf/core/executor.py`,
   `python/vmaf/core/feature_extractor.py`,
   `python/vmaf/core/quality_runner.py`,
@@ -23789,8 +24100,11 @@ print('OK: fr_regressor_v3 production row unchanged')
   process-global default and is unjustified per Research-0090, F1.
   semgrep scan --config=p/cwe-top-25 --config=p/c --config=p/python . \
     --metrics=off --json | jq '.results | length'
+
   # expect 0 — every legit finding either has a # nosemgrep cite or was fixed
+
 ### 0321 — Security-scans workflow registry-pack list (Research-0090)
+
 - **Touches**: `.github/workflows/security-scans.yml`,
   `.github/workflows/lint-and-format.yml`.
 - **Invariant**: the registry packs the workflow cites
@@ -23806,6 +24120,7 @@ print('OK: fr_regressor_v3 production row unchanged')
     [ "$code" = "200" ] && echo "${pack}: OK" || echo "${pack}: FAIL ($code)"
 
 ### 0320 — CodeQL C bulk sweep (78 deferred alerts → 60 fixed, 14 deferred to T7-5)
+
 - **Touches**: `core/src/feature/{cambi.c,ciede.c,integer_adm.c,integer_psnr.c,adm_tools.h,third_party/xiph/psnr_hvs.c}`,
   `core/src/feature/x86/{adm_avx2.c,adm_avx512.c,ansnr_avx2.c,ansnr_avx512.c,vif_avx2.c,vif_avx512.c}`,
   `core/src/{pdjson.c,svm.cpp}`, `core/test/{test_cpu.c,test_model.c}`,
@@ -23831,13 +24146,11 @@ print('OK: fr_regressor_v3 production row unchanged')
 - **Re-test on rebase**:
   cd libvmaf && meson test -C build  # all 50+ C tests
   make test-netflix-golden            # upstream golden gate
+
   # Re-run CodeQL on master afterwards; the 60 fixed alerts must stay closed.
 
-
-
-
-
 ## CodeQL `cpp/declaration-hides-variable` sweep (2026-05-09)
+
 - **What changed**: Mechanical rename / scope-tighten / dedupe sweep
   closing 64 open `cpp/declaration-hides-variable` CodeQL alerts on
   `master`. Touched files: `core/src/feature/cambi.c`,
@@ -23891,6 +24204,7 @@ print('OK: fr_regressor_v3 production row unchanged')
     -m "not slow" -q
 
 ## ADR-0209 v1 stdio runtime (T5-2b) — Embedded MCP server (2026-05-08)
+
 - **Touches**: `core/src/mcp/{mcp.c,dispatcher.c,transport_stdio.c,mcp_internal.h,meson.build,3rdparty/cJSON/{cJSON.c,cJSON.h,LICENSE}}`, `core/test/test_mcp_smoke.c`, `core/test/meson.build`. All paths are fork-local. cJSON is vendored verbatim from upstream `DaveGamble/cJSON@v1.7.18` under its MIT license.
 - **Invariant**: every TU under `core/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris and Claude (Anthropic)` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `core/include/libvmaf/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
 - **On upstream sync**: no action required. Netflix/vmaf upstream has no embedded MCP surface; the entire `core/src/mcp/` subtree is fork-local. If upstream ever adds an MCP surface, expect a port-only sync since names will collide.
@@ -23898,8 +24212,8 @@ print('OK: fr_regressor_v3 production row unchanged')
                                   -Denable_mcp=true -Denable_mcp_stdio=true
   ninja -C build && meson test -C build test_mcp_smoke -v
 
-
 ## ADR-0334 — state.md-touch-check CI gate (2026-05-08)
+
 - **Touches**: `.github/workflows/rule-enforcement.yml` (new top-level job `state-md-touch-check`), `scripts/ci/state-md-touch-check.sh` (new), `scripts/ci/test-state-md-touch-check.sh` (new), `scripts/ci/AGENTS.md` (new rebase-sensitive-surface row), `.github/PULL_REQUEST_TEMPLATE.md` (already carries the "Bug-status hygiene" section + `no state delta: REASON` opt-out — coupled to the script's regex). No upstream-shared paths.
 - **Invariant**: the gate's trigger predicate (Conventional-Commit `fix:` prefix, bare `bug` token in title, GitHub close-keywords `closes`/`fixes`/`resolves` `#N`, unchecked Bug-status-hygiene checkbox) and opt-out sentinel (`no state delta: REASON`) match the wording of the `## Bug-status hygiene` section in `.github/PULL_REQUEST_TEMPLATE.md`. Reword the template only alongside the script. The job carries the `pull_request.draft == false || github.event_name != 'pull_request'` gate (ADR-0331 pattern) — keep that on any future hoist into the required-aggregator set.
 - **On upstream sync**: Netflix/vmaf has no equivalent rule. No conflict expected; the workflow file is fork-introduced.
@@ -23909,8 +24223,8 @@ print('OK: fr_regressor_v3 production row unchanged')
   pre-commit run shellcheck --files scripts/ci/state-md-touch-check.sh scripts/ci/test-state-md-touch-check.sh
   pre-commit run shfmt      --files scripts/ci/state-md-touch-check.sh scripts/ci/test-state-md-touch-check.sh
 
-
 ## SYCL PSNR chroma extension (T3-15(b), 2026-05-09)
+
 - **Touches**: `core/src/feature/sycl/integer_psnr_sycl.cpp`
   (per-extractor chroma device buffers, per-plane SSE accumulators,
   and a `provided_features` extension to `psnr_y` / `psnr_cb` / `psnr_cr`),
@@ -23944,12 +24258,15 @@ print('OK: fr_regressor_v3 production row unchanged')
     --distorted testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 --pixel-format 420 --bitdepth 8 \
     --feature psnr --backend sycl --device 0
+
   # Expect 0/48 mismatches across psnr_y / psnr_cb / psnr_cr at places=4.
 
-
   ```
+
 ## Cppcheck `nullPointer` false-positive in `dict.c` (2026-05-09)
+
 **Files pinned**:
+
 - `core/src/dict.c:121` (one-line redundant-condition fix in
   `dict_overwrite_existing`).
 **Why this rebase-note exists**: Master CI's `Cppcheck (Whole Project)`
@@ -23968,24 +24285,21 @@ upstream sync of this file should keep the fix or re-run cppcheck
 locally to confirm absence of recurrence.
 
 ## Aggregator timeout bump (2026-05-09)
+
 **Files pinned**:
+
 - `.github/workflows/required-aggregator.yml` (deadline 30→90 min, job timeout 35→100 min)
 **Why**: 41 PRs in flight 2026-05-09 morning hit Aggregator timeouts
 while real CI eventually passed. Bumping both deadlines unblocks the
 train without touching the underlying matrix.
 **Rebase-sensitivity**: zero — workflow file is wholly fork-local.
+
 ## ARC self-hosted runner pool — pilot Cppcheck routing (2026-05-09)
+
 - `.github/workflows/lint-and-format.yml` (Cppcheck `runs-on:` ternary).
 **Why**: opt-in graceful migration; ADR-0359 + docs/development/ci-runners.md
 document the flip-the-variable recipe when the cluster is degraded.
 **Rebase-sensitivity**: zero — workflow file is fork-local.
-
-
-
-
-
-
-
 
 ## ADR-0338 — macOS Vulkan-via-MoltenVK CI lane (2026-05-09)
 
@@ -24067,7 +24381,9 @@ document the flip-the-variable recipe when the cluster is degraded.
   ```
 
 ## ADR-0355 — Symphony-inspired agent-dispatch infrastructure (2026-05-09)
+
 **Files added (all fork-introduced, none mirror upstream)**:
+
 - `.claude/workflows/_template.md`,
   `.claude/workflows/codeql-alert-sweep.md`,
   `.claude/workflows/simd-port.md`,
@@ -24098,7 +24414,9 @@ table-shape edits. If a future BACKLOG.md edit adds a column or
 renames a status word, the parser will silently mis-classify rows
 — the smoke parses 101 rows on master at 2026-05-09; expect ≥ 100
 after any structural edit.
+
 ### 0350 — `psnr_hvs` AVX-512 ceiling re-bench (ADR-0350, T3-9 (a))
+
 - [`docs/adr/0350-psnr-hvs-avx512-ceiling.md`](adr/0350-psnr-hvs-avx512-ceiling.md)
   — closure ADR.
 - [`docs/adr/0160-psnr-hvs-neon-bitexact.md`](adr/0160-psnr-hvs-neon-bitexact.md)
@@ -24129,8 +24447,8 @@ trips on ≥ 5.5e-5 drift per ADR-0160 §Context). The ADR-0350
 share shifts, the Netflix normal-pair fixture changes, or a new
 host class (e.g. wide-issue Granite Rapids) goes into CI.
 
-
 ### 0320 — FFmpeg n8.1 → n8.1.1 base bump (2026-05-09)
+
 - **Touches**: `ffmpeg-patches/series.txt` (header comment),
   `ffmpeg-patches/README.md` (apply / verify / smoke sections),
   `ffmpeg-patches/test/build-and-run.sh` (`FFMPEG_SHA` default),
@@ -24160,6 +24478,7 @@ host class (e.g. wide-issue Granite Rapids) goes into CI.
   in the five files listed under "Touches", and add a fresh
   rebase-notes entry citing the conflict file(s).
 - **Re-test on rebase**:
+
   ```bash
   cd /tmp && rm -rf ffmpeg-n811 && \
     git clone --depth 1 --branch n8.1.1 \
@@ -24172,27 +24491,29 @@ host class (e.g. wide-issue Granite Rapids) goes into CI.
   bash scripts/ci/ffmpeg-patches-check.sh
   ```
 
-
-
 ## ADR-0281 follow-up — QSV install-matrix discoverability backfill (2026-05-08)
+
 - **Touches**: `docs/getting-started/install/{arch,fedora,ubuntu,macos,windows}.md` (new `## Intel QSV` section per page), `docs/adr/0281-vmaf-tune-qsv-adapters.md` (status-update appendix per ADR-0028), `changelog.d/changed/qsv-install-matrix-docs.md` (new fragment). No code, no engine, no upstream-shared C / Python source touched. Pure documentation backfill closing the SYCL-audit research-0086 Topic C gap (issue #464).
 - **Invariant**: each per-OS QSV section pins the package names against verified upstream URLs with a `Verified 2026-05-08` access date. The hardware-generation matrix is sourced from the public Wikipedia "Intel Quick Sync Video — Hardware decoding and encoding" table; if Intel revises which generation supports AV1 encode (e.g. backports the encoder to Lunar Lake / Meteor Lake silicon currently absent from the table), the matrix in all five pages must move in lockstep — the Arch / Fedora / Ubuntu / Windows pages all carry the same matrix verbatim. The macOS page deliberately omits the matrix (QSV unsupported on macOS).
 - **On upstream sync**: no action required — Netflix/vmaf upstream does not ship per-OS install pages under `docs/getting-started/install/`; that tree is fork-only.
+
   # Lint the install pages (markdownlint via pre-commit):
+
   pre-commit run --files docs/getting-started/install/*.md
+
   # Verify each page (except alpine + macos) still carries the matrix:
+
   for f in arch fedora ubuntu windows; do
     grep -q 'Arc Battlemage' "docs/getting-started/install/${f}.md" || echo "MISSING: ${f}"
+
   # Confirm the macOS page documents QSV as unsupported:
+
   grep -q 'Intel QSV. is unsupported on macOS' docs/getting-started/install/macos.md
 
-
-
-
-
-
 ### 0333 — vmaf-tune Phase F multi-pass encoding (ADR-0333)
+
 **Touches**:
+
 - `tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py` (CodecAdapter
   Protocol gains `supports_two_pass: bool` + `two_pass_args(...)`)
 - `tools/vmaf-tune/src/vmaftune/codec_adapters/x265.py` (overrides both)
@@ -24214,15 +24535,19 @@ fork-local extension to the ADR-0237 Phase A multi-codec contract;
 upstream Netflix/vmaf has no equivalent and does not own this code
 path.
 **Re-test**:
+
 ```bash
 cd tools/vmaf-tune
 python -m pytest tests/test_codec_adapter_x265_two_pass.py -q
 ```
+
 (Optional, requires ffmpeg + libx265 in the runner's PATH:)
+
 ```bash
 VMAF_TUNE_INTEGRATION=1 python -m pytest \
   tests/test_codec_adapter_x265_two_pass.py::test_real_x265_two_pass_smoke -q
 ```
+
 **Rebase-sensitivity**: zero from upstream — `tools/vmaf-tune/` is
 fork-local. The only concern is the codec_adapters Protocol shape: a
 future upstream commit that adds a sibling codec adapter SHOULD
@@ -24231,8 +24556,6 @@ opt in or leave the flag off. Downstream sibling-codec PRs in this
 fork should follow the ADR-0288 / ADR-0333 pattern: one adapter file,
 override the two methods, add a test file mirroring
 `test_codec_adapter_x265_two_pass.py`.
-
-
 
 ## ADR-0360 — CAMBI CUDA port (T3-15a, 2026-05-09)
 
@@ -24277,11 +24600,10 @@ implementation may differ if they choose Strategy III (fully-on-GPU
 the Vulkan twin (`cambi_vulkan.c`) has — see ADR-0210's rebase note for
 the full list of exposed functions.
 
-
-
 ## Vulkan submit-pool PR-B: six secondary kernels (2026-05-09, ADR-0353)
 
 **Files changed**:
+
 - `core/src/feature/vulkan/ssim_vulkan.c`
 - `core/src/feature/vulkan/ciede_vulkan.c`
 - `core/src/feature/vulkan/ms_ssim_vulkan.c`
@@ -24308,8 +24630,8 @@ MUST be called before `vmaf_vulkan_kernel_pipeline_destroy` in every migrated
 kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
 §"Submit-pool ordering invariant"`.
 
-
 ### 0354 — Vulkan submit-pool PR-C: submit_pool_destroy-before-pipeline ordering
+
 - **Touches**: `core/src/feature/vulkan/cambi_vulkan.c`,
   `core/src/feature/vulkan/ssimulacra2_vulkan.c`,
   `core/src/feature/vulkan/float_ansnr_vulkan.c`,
@@ -24322,9 +24644,10 @@ kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
   shows `places=4` for all four extractors on all three target devices
   (RTX 4090, Arc A380, RADV iGPU).
 
-
 ### 0231 — Vulkan submit-pool migration PR A: adm + motion + psnr (ADR-0291)
+
 ### 0231 — Vulkan submit-pool migration PR A: adm + motion + psnr (ADR-0352)
+
 - **Touches**: `core/src/feature/vulkan/adm_vulkan.c`,
   `core/src/feature/vulkan/motion_vulkan.c`,
   `core/src/feature/vulkan/psnr_vulkan.c` (all fork-local
@@ -24349,6 +24672,7 @@ kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
 - **On upstream sync**: zero interaction. Upstream cannot conflict with
   this PR's paths. The Vulkan backend is entirely fork-introduced.
 - **Re-test on rebase**:
+
   ```bash
   meson test -C build --suite=fast
   # Cross-backend parity gate (places=4):
@@ -24360,9 +24684,10 @@ kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
               testdata/yuv/src01_hrc01_576x324.yuv
   ```
 
-
 ## ADR-0350 — FFmpeg `libvmaf` filter CUDA backend selector (`0010` patch)
+
 **Patch**: [`ffmpeg-patches/0010-libvmaf-wire-cuda-backend-selector.patch`](../ffmpeg-patches/0010-libvmaf-wire-cuda-backend-selector.patch).
+
 - `libavfilter/vf_libvmaf.c` — adds `cuda` AVOption + state field +
   init / cleanup / picture-pool wiring under
   `CONFIG_LIBVMAF_CUDA && !CONFIG_LIBVMAF_CUDA_FILTER`.
@@ -24402,7 +24727,6 @@ init time per `#else` branch) and `CONFIG_LIBVMAF_CUDA=1 &&
 !CONFIG_LIBVMAF_CUDA_FILTER` (selector active, picture-pool wiring
 compiles).
 
-
 ### 0320 — Vulkan instance / VMA `apiVersion` bump to 1.4 (Step B)
 
 - **Touches**: `core/src/vulkan/common.c`,
@@ -24434,12 +24758,13 @@ compiles).
   # All 0/N mismatches at places=4 once Phase 3c (PR #512) has landed.
   ```
 
-
 ## ADR-0332 v2 runtime (T5-2c) — Embedded MCP server UDS + real `compute_vmaf` (2026-05-09)
+
 - **Touches**: `core/src/mcp/{mcp.c,dispatcher.c,mcp_internal.h,meson.build,compute_vmaf.c,transport_uds.c}`, `core/test/test_mcp_smoke.c`. All paths are fork-local. No new third-party vendor drop in v2 — mongoose vendoring stays deferred to v3 with the SSE transport.
 - **Invariant**: same as ADR-0209 v1 — the entire `core/src/mcp/` subtree is fork-local; the public ABI in `core/include/libvmaf/libvmaf_mcp.h` is unchanged (only function bodies flipped — `vmaf_mcp_start_uds` from `-ENOSYS` to a working AF_UNIX listener; `compute_vmaf` from a `{"status":"deferred_to_v2"}` placeholder to a real `vmaf_score_pooled` binding). Per ADR-0128 § operational guardrails the UDS socket file is created mode 0700; that `chmod` happens in `vmaf_mcp_start_uds` after `bind` and is a load-bearing security invariant — do NOT relax it on rebase. `compute_vmaf` runs on a per-call ephemeral `VmafContext` so the host's main scoring run is unperturbed; do NOT rewire it to reuse `server->ctx` because `vmaf_score_pooled` commits the model destructively to the context.
 - **On upstream sync**: no action required. Netflix/vmaf upstream has no embedded MCP surface. If upstream adds one, expect a port-only sync since names will collide.
 - **Re-test on rebase**:
+
   ```bash
   cd libvmaf && meson setup build -Denable_cuda=false -Denable_sycl=false \
                                   -Denable_mcp=true -Denable_mcp_stdio=true \
@@ -24448,12 +24773,6 @@ compiles).
   # Real-score smoke (single 576x324 pair):
   build/test/test_mcp_smoke 2>&1 | tail -3   # expects "16 tests run, 16 passed"
   ```
-
-
-
-
-
-
 
 ## ADR-0332 v3 runtime (T5-2d) — Embedded MCP server SSE transport (2026-05-09)
 
@@ -24471,8 +24790,8 @@ compiles).
   build/test/test_mcp_smoke 2>&1 | tail -3   # expects "17 tests run, 17 passed"
   ```
 
-
 ### Status update 2026-05-09 — placeholder-ref hardening
+
 - **Additional touches**: same set as the 2026-05-08 ADR-0334 entry,
   no new files. The hardening adds a `git diff -U0 ... -- docs/state.md`
   call inside `scripts/ci/state-md-touch-check.sh` (case 4a) plus 10
@@ -24488,8 +24807,8 @@ compiles).
   run as the 2026-05-08 entry; the harness now reports
   `18/18 passed` (was `8/8 passed`).
 
-
 ### 0347 — Sanitizer matrix test-set scope (ADR-0347)
+
 - **Touches**: [`.github/workflows/tests-and-quality-gates.yml`](../.github/workflows/tests-and-quality-gates.yml)
   job `sanitizers` (build + test step), [`core/test/meson.build`](../core/test/meson.build)
   (no edits — the absence of any `suite: 'unit'` tag is the upstream
@@ -24538,8 +24857,8 @@ compiles).
             | sed 's/^libvmaf://')
     meson test -C "build-$SAN" --print-errorlogs $TESTS
 
-
 ## CodeQL bulk mechanical sweep — Python tree (2026-05-09)
+
 - **Why this matters on rebase**: no rebase impact. The diff lives entirely
   in `python/vmaf/` and one fork-local helper (`core/src/vulkan/spv_embed.py`).
   None of the touched Python modules have been changed by Netflix upstream
@@ -24556,8 +24875,8 @@ compiles).
   for f in (...)]"` over the touched files; `ruff check` over the same set
   must produce no NEW errors versus master baseline.
 
-
 ### 0345 — cambi × {CUDA, SYCL, HIP} GPU port planning (ADR-0345, docs-only)
+
 - **Touches**: `docs/research/0091-cambi-gpu-port-planning-2026-05-09.md`
   (new), `docs/adr/0345-cambi-gpu-port-strategy.md` (new),
   `docs/adr/_index_fragments/0345-cambi-gpu-port-strategy.md` (new
@@ -24589,10 +24908,8 @@ compiles).
   Strategy III v2 follow-up (parked per ADR-0205 §Out of scope) gets
   its own ADR + rebase-notes entry when profile data lands.
 
-
-
-
 ### 0320 — Vulkan VIF API-1.4 NVIDIA residual Phase 3b (deferral)
+
 - **Touches**: `core/src/feature/vulkan/shaders/vif.comp`
   (comment-only update at the Phase-4 reduction site —
   documents the Phase-3b candidate-fix experiments and the
@@ -24630,7 +24947,9 @@ compiles).
 - **Re-test on rebase** (assumes a multi-GPU CI workstation with
   NVIDIA + Arc + RADV; lavapipe-only CI lanes are a no-op for
   the API-1.4 residual since lavapipe never reproduced the bug):
+
   # Local API-1.4 bump (off-master reproducer; do NOT commit).
+
   sed -i 's/VK_API_VERSION_1_3/VK_API_VERSION_1_4/g' \
       core/src/vulkan/common.c
   sed -i 's/VMA_VULKAN_VERSION 1003000/VMA_VULKAN_VERSION 1004000/' \
@@ -24638,11 +24957,15 @@ compiles).
   cd libvmaf && meson setup build -Denable_vulkan=enabled \
       -Denable_cuda=false -Denable_sycl=false && ninja -C build
   cd ..
+
   # NVIDIA lane — expected 45/48 FAIL scale 2 until either the
+
   # manual int64 subgroup-reduction patch lands or NVIDIA fixes
+
   # the driver. Arc + RADV expected 0/48.
 
 ### 0230 — `ssimulacra2_cuda` GPU module unload + per-scale `malloc` removal (ADR-0356)
+
 - **Touches**: `core/src/feature/cuda/ssimulacra2_cuda.c`
   (fork-only — fork-added CUDA extractor), `core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu`
   (fork-only kernel), `core/src/cuda/AGENTS.md` (fork-local
@@ -24670,13 +24993,16 @@ compiles).
       --width 576 --height 324 \
 
       --feature vif --backend vulkan --device <NVIDIA-index>
+
   # Revert local bump after testing.
+
   sed -i 's/VK_API_VERSION_1_4/VK_API_VERSION_1_3/g' \
       core/src/vulkan/common.c
   sed -i 's/VMA_VULKAN_VERSION 1004000/VMA_VULKAN_VERSION 1003000/' \
       core/src/vulkan/vma_impl.cpp
 
 ### Upstream-port-later batch — Research-0090 18-commit triage close-out (2026-05-09)
+
 - **Touches**: `docs/state.md` (one row in "Deferred (waiting on
   external trigger)"), this file, `changelog.d/changed/upstream-port-later-batch-2026-05-09.md`.
   No code touched. Companion to PR #446 (Research-0090) and the
@@ -24684,6 +25010,7 @@ compiles).
   duplicate pair).
 - **Per-commit classification (input set: 18 PORT_LATER SHAs from
   Research-0090)**:
+
   | # | Upstream SHA | Subject (truncated) | Verdict | Reopen / forward path |
   | --- | --- | --- | --- | --- |
   | 1 | `38e905d1` | adopt MyTestCase + reformat BD-rate test data | PORT_DEFERRED | Subsumed by PR #497 commit `e1dbdc09`; close out when #497 merges |
@@ -24704,6 +25031,7 @@ compiles).
   | 16 | `d93495f5` | reduce tolerance for VMAF scores in quality_runner tests | PORT_DEFERRED **w/ Netflix-golden guard** | PR #497 — Netflix-golden tolerance guard same as row 3 |
   | 17 | `7d1ad54b` | port feature extractor tests for aim/adm3/motion3 | PORT_DEFERRED | Subsumed by PR #497 commit `44b9e626`; close out when #497 merges |
   | 18 | `721569bc` | resource/doc: cambi_high_res_speedup + motion2 score | PORT_DEFERRED → DEDUP | Already in flight on TWO branches (PR #443 + PR #444). Maintainer picks one and abandons the other per Research-0090 §Recommended action #4. No third port-PR opened. |
+
 - **Invariant**: after PR #497 merges, the Research-0090 PORT_LATER
   bucket reduces to exactly two follow-up cherry-picks against
   post-#497 master:
@@ -24761,9 +25089,8 @@ cover several PRs in one workstream; cross-link from the ID heading.
 
 ## Entries (backfilled 2026-04-18 per ADR-0108 adoption)
 
-
-
 ### 0310 — Vulkan VIF int64 reduction race condition Phase 3 fix
+
 - **Touches**: `core/src/feature/vulkan/shaders/vif.comp`
   (replaces all three bare `barrier()` calls with explicit
   `memoryBarrierShared(); barrier();` pairs covering the Phase-1
@@ -24807,6 +25134,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   `--vulkan_device 0` on this multi-GPU host is the Intel Arc
   A380 lane and **will still fail** at API 1.4 (separate
   `T-VK-VIF-1.4-RESIDUAL-ARC` row Open).
+
 ### 0309 — Vulkan VIF API-1.4 Phase 2 dump (T-VK-VIF-1.4-RESIDUAL)
 
 - **Touches**: `docs/research/0089-vulkan-vif-fp-residual-bisect-2026-05-08.md`
@@ -24845,7 +25173,6 @@ cover several PRs in one workstream; cross-link from the ID heading.
   `--feature 'vif_vulkan=debug=true'`. Both observations
   reproduced bit-for-bit on this session's hardware lane
   (UUID `e478b41b-5c4f-1ddb-f990-e44916aff4c8`).
-
 
 ### 0308 — encoder knob-sweep recipe-regression policy (ADR-0308, docs-only)
 
@@ -24908,10 +25235,15 @@ cover several PRs in one workstream; cross-link from the ID heading.
   and the same with `--feature ciede` against NVIDIA + RADV +
   lavapipe; max abs diff must stay ≤ `5.0e-05` (`places=4`) on all
   three.
+
 ### 0229 — HIP fifth-consumer kernel `float_ansnr_hip` (ADR-0266)
+
 ### 0228 — `y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow fix
+
 ### 0228 — `vmaf-tune` resolution-aware model selection (ADR-0289)
+
 ### 0282 — `vmaf-tune` AMD AMF codec adapters (ADR-0282)
+
 ### 0228 — `tools/vmaf-tune/` codec-agnostic encode dispatcher (ADR-0294)
 
 - **Touches**:
@@ -24958,6 +25290,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   assert cmd[cmd.index('-crf') + 1] == '23'
   print('x264 dispatcher path OK')
   "
+
 ### 0260 — `vmaf-tune --sample-clip-seconds` (ADR-0301)
 
 - **Touches**:
@@ -25068,6 +25401,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
     — must report `1 tests run, 1 passed`. Pre-fix the binary aborts
     with `AddressSanitizer: heap-buffer-overflow … WRITE of size 1`
     at `y4m_input.c:507`.
+
 ### 0270 — `saliency_student_v1` fork-trained on DUTS-TR (ADR-0286)
 
 - **Touches**:
@@ -25208,6 +25542,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
       --distorted testdata/dis_576x324_48f.yuv \
       --width 576 --height 324 \
       --feature float_ms_ssim --backend vulkan --places 4
+
 ### 0231 — SHA-pin GitHub Actions (OSSF `Pinned-Dependencies`)
 
 - **Touches**: every workflow file under `.github/workflows/`.
@@ -25519,6 +25854,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   `integer_vif` bit-identically to 4 decimals.
 - **Rebase impact**: low. Builds on top of PR #272's
   `_add_variant()` helper.
+
 ### 0122 — float_adm_vulkan migrated to kernel_template + `_add_variant` (T-GPU-DEDUP-22)
 
 - **Touches**:
@@ -25537,6 +25873,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   primitives from `adm_tools.c`; same 5-element spec-constant
   tuple; same float partial accumulation reduced in double on
   the host.
+
 ### 0121 — adm_vulkan migrated to kernel_template + `_add_variant` (T-GPU-DEDUP-21)
 
 - **Touches**:
@@ -25558,6 +25895,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   spec-constant tuple (width, height, bpc, scale, stage) +
   push-constants.
 - **Rebase impact**: low. Builds on top of PR #272.
+
 ### 0123 — `ms_ssim_vulkan` 2-bundle migration (T-GPU-DEDUP-23)
 
 - **Touches**:
@@ -25653,6 +25991,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   predate this change (PR #270 / #271); the new
   `_add_variant` is additive. Upstream Netflix has no Vulkan
   backend to conflict with.
+
 ### 0111 — integer_ciede_cuda migrated to kernel_template (T-GPU-DEDUP-11)
 
 - **Touches**:
@@ -25669,6 +26008,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   consolidation. The host-side reduction in collect still uses
   the same `double` accumulator over per-block float partials —
   `places=4` (ADR-0187) holds.
+
 ### 0112 — integer_moment_cuda migrated to kernel_template (T-GPU-DEDUP-12)
 
 - **Touches**:
@@ -25683,6 +26023,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   host division.
 - **Rebase impact**: low. Upstream Netflix has no equivalent
   template; this consolidation is fork-local.
+
 ### 0113 — integer_motion_v2_cuda migrated to kernel_template (T-GPU-DEDUP-13)
 
 - **Touches**:
@@ -25697,6 +26038,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
 - **Numerical contract**: unchanged. Same D2D copy, same
   conditional kernel launch on frame ≥ 1, same
   host-side `min(score[i], score[i+1])` flush.
+
 ### 0114 — integer_ssim_cuda migrated to kernel_template (T-GPU-DEDUP-14)
 
 - **Touches**:
@@ -25715,6 +26057,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   precision pattern) holds.
 - **Rebase impact**: low. Upstream Netflix has no equivalent;
   this is fork-added.
+
 ### 0115 — ms_ssim_cuda + psnr_hvs_cuda lifecycle migration (T-GPU-DEDUP-15)
 
 - **Touches**:
@@ -25730,6 +26073,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   reduction paths are untouched apart from the
   `s->str` → `s->lc.str` / `s->event` → `s->lc.submit` /
   `s->finished` → `s->lc.finished` field renames.
+
 ### 0116 — float_psnr/ansnr/motion cuda → kernel_template (T-GPU-DEDUP-16)
 
 - **Touches**:
@@ -25743,6 +26087,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
 - **Numerical contract**: unchanged. Same dispatch geometry, same
   reduction order. Cross-backend parity gate at the kernels'
   contracted precision (places=3 per ADR-0192) holds.
+
 ### 0117 — float_adm + float_vif cuda lifecycle migration (T-GPU-DEDUP-17)
 
 - **Touches**:
@@ -25759,6 +26104,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   the field renames.
 - **Rebase impact**: low. Upstream Netflix has no equivalent
   template; this is fork-added.
+
 ### 0107 — float_psnr_vulkan migrated to kernel_template (T-GPU-DEDUP-8)
 
 - **Touches**:
@@ -25772,6 +26118,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   Vulkan-boilerplate consolidation. Cross-backend parity gate
   at `places=4` holds — Netflix-pair smoke reports `float_psnr`
   mean 30.755 dB, identical to pre-migration.
+
 ### 0109 — float_ansnr_vulkan + motion_v2_vulkan migrated to kernel_template (T-GPU-DEDUP-9)
 
 - **Touches**:
@@ -25785,6 +26132,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   contracted precision holds — Netflix-pair smoke reports
   `float_ansnr` mean 23.51 dB and `motion2_v2_score` mean 3.895,
   identical to pre-migration.
+
 ### 0110 — float_motion_vulkan migrated to kernel_template (T-GPU-DEDUP-10)
 
 - **Touches**:
@@ -25796,6 +26144,7 @@ cover several PRs in one workstream; cross-link from the ID heading.
   consolidation. Netflix-pair smoke reports `motion` mean
   4.049 / `motion2` mean 3.894, identical to pre-migration.
 - **Rebase impact**: low. Upstream Netflix has no Vulkan backend.
+
 ### 0108 — Bristol VI-Lab feasibility digest + BVI-CC ingest ADR (Draft)
 
 - **Touches**:
@@ -26173,6 +26522,7 @@ than per-PR. Future PRs add entries individually.
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --feature float_adm --places 4
   ```
+
 ### 0083 — SSIMULACRA 2 Vulkan kernel (ADR-0201)
 
 - **ADR**: [ADR-0201](adr/0201-ssimulacra2-vulkan-kernel.md)
@@ -26214,6 +26564,7 @@ than per-PR. Future PRs add entries individually.
     --feature ssimulacra2 --backend vulkan --places 1
   # expected: max_abs_diff ≈ 1.59e-2, 0/48 mismatches at places=1
   ```
+
 - **Follow-ups**:
   - CUDA + SYCL twins (batch 3 parts 7b + 7c per ADR-0192).
   - Performance follow-up: re-bin multiple rows / columns per WG
@@ -29192,6 +29543,7 @@ inline.*
    `vif_scale_frame_s`.
 
 **Reproducer:**
+
 ```bash
 # verify bit-exactness (default options, scores must be identical):
 ./core/build/tools/vmaf \
@@ -30404,6 +30756,7 @@ inline.*
   meson setup build -Denable_vulkan=enabled -Denable_cuda=false -Denable_sycl=false
   ninja -C build
   meson test -C build
+
 ### 0059 — Tiny-AI Netflix corpus training prep (ADR-0203)
 
 - **ADR**: [ADR-0203](adr/0203-tiny-ai-training-prep-impl.md).
@@ -30602,7 +30955,6 @@ inline.*
   ```
 
 ### 0091 — T6-9 model registry schema + `--tiny-model-verify` (ADR-0211)
-
 
 - **No rebase impact: 100% fork-local surface.** The registry
   (`model/tiny/registry.json`), its JSON Schema
@@ -30934,6 +31286,7 @@ inline.*
   meson test -C build-cpu test_speed
   meson test -C build-cpu              # full meson suite
   make test-netflix-golden             # 3 CPU canonical pairs
+
 ### 0221 — CHANGELOG + ADR-index fragment-file pattern (T7-39 / ADR-0221)
 
 - **What changed**: the fork stopped editing `CHANGELOG.md` and
@@ -30972,6 +31325,7 @@ inline.*
   vmaf --feature dists_sq=model_path=model/tiny/dists_sq.onnx \
        --reference ref.yuv --distorted dist.yuv \
        --width 1920 --height 1080 --pix_fmt yuv420p
+
 ### 0076 — GPU-gen ULP calibration head (proposal-stage, T7-GPU-ULP-CAL / ADR-0234)
 
 - **What landed**: ADR-0234 (Proposed), Research-0041, data-collection
@@ -30984,6 +31338,7 @@ inline.*
 
   ```sh
   python3 ai/scripts/collect_gpu_calibration_data.py --smoke
+
 ### 0095 — Per-backend GPU kernel scaffolding templates (CUDA + Vulkan, ADR-0246)
 
 - **ADR**: [ADR-0246](adr/0246-gpu-kernel-template.md).
@@ -31037,6 +31392,7 @@ inline.*
       -Denable_vulkan=enabled -Denable_cuda=false -Denable_sycl=false
   ninja -C core/build-vulkan
   meson test -C core/build-vulkan
+
 ### 0222 — `vmaf-perShot` per-shot CRF predictor sidecar (T6-3b)
 
 - **Touches**: `core/tools/meson.build` (new executable +
@@ -31072,6 +31428,7 @@ inline.*
       --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
       --output /tmp/plan.csv
   cat /tmp/plan.csv
+
 ### 0075 — `vmaf-roi` sidecar binary (T6-2b / ADR-0247)
 
 - **Touches**:
@@ -31120,6 +31477,7 @@ inline.*
       --encoder x265 --ctu-size 64 --strength 6.0 | head -3
   # First two lines are the # comment header; row 1 of the grid
   # should be "4 2 1 -1 -1 -1 1 2 4" (placeholder radial map).
+
 ### 0219 — motion3 GPU coverage on Vulkan + CUDA + SYCL (T3-15(c) / ADR-0219)
 
 - **What changed**: The `motion` GPU twins
@@ -31178,6 +31536,7 @@ inline.*
       --width 576 --height 324 --bitdepth 8 \
       --vmaf-bin core/build/tools/vmaf
   # Expect: integer_motion / integer_motion2 / integer_motion3 all OK at places=4.
+
 ### 0216 — vmaf_tiny_v2 (Phase-3-validated tiny VMAF MLP)
 
 - **Touches**: `model/tiny/registry.json`, `model/tiny/vmaf_tiny_v2.{onnx,json}`,
@@ -31222,6 +31581,7 @@ inline.*
       --parquet runs/full_features_netflix.parquet \
       --rows 100 --min-plcc 0.97
   meson test -C build-cpu --suite=dnn
+
 ### 0094 — Tiny-AI extractor template (ADR-0250)
 
 - **Touches**: `core/src/dnn/tiny_extractor_template.h` (new),
@@ -31267,7 +31627,6 @@ inline.*
   # All 10 dnn-suite + both extractor tests must pass.
   ```
 
-
 ### 0095 — Vulkan ring-depth tunable (ADR-0251 follow-up #3)
 
 - **PR**: feat/t7-29-followup3-ring-tunable.
@@ -31294,6 +31653,7 @@ inline.*
   ninja -C build
   meson test -C build test_vulkan_async_pending_fence
   # All 8 cases must pass: 4 v2-contract + 4 ring-tunable.
+
 ### 0096 — `tools/vmaf-tune/` automation umbrella spec (ADR-0237 / Research-0044)
 
 - **PR**: feat/vmaf-tune-spec.
@@ -31376,6 +31736,7 @@ inline.*
   #   test_fetch_without_preallocate_falls_back
   #   test_unknown_method_rejected
   #   test_null_args_rejected
+
 ### 0099 — feature_mobilesal.c + transnet_v2.c migrated to tiny_extractor_template.h
 
 - **PR**: refactor/migrate-ai-to-template.
@@ -31395,6 +31756,7 @@ inline.*
   hand-rolled version produced.
 - **On upstream sync**: zero interaction. Both files are
   fork-introduced; upstream Netflix has neither extractor.
+
 ### 0100 — `cuda/ring_buffer.{c,h}` → `gpu_picture_pool.{c,h}` (ADR-0239)
 
 - **PR**: refactor/gpu-picture-pool-extract.
@@ -31533,6 +31895,7 @@ inline.*
   meson test -C build  # 50/50 pass on lavapipe (under ASan/UBSan)
   python scripts/ci/cross_backend_parity_gate.py --feature float_moment_ref1st --places 4
   python scripts/ci/cross_backend_parity_gate.py --feature ciede2000 --places 2
+
 ### 0101 — GPU backend pattern doc (ADR-0240)
 
 - **PR**: docs/gpu-backend-template.
@@ -31550,6 +31913,7 @@ inline.*
   test -f docs/development/gpu-backend-template.md
   test -f core/include/libvmaf/AGENTS.md
   grep -c 'gpu-backend-template' core/include/libvmaf/AGENTS.md
+
 ### 0102 — Tiny-AI test registration macro (`tiny_ai_test_template.h`)
 
 - **PR**: refactor/test-registration-macro.
@@ -31579,6 +31943,7 @@ inline.*
   meson test -C build test_lpips test_mobilesal test_transnet_v2 test_fastdvdnet_pre
   # 4/4 binaries pass; 18 individual tests total (4x4 standard + 2
   # TransNet V2 extras).
+
 ### 0103 — `integer_psnr_cuda.c` migrated to `cuda/kernel_template.h`
 
 - **PR**: refactor/migrate-psnr-cuda-to-template.
@@ -31767,6 +32132,7 @@ inline.*
   gh api "/repos/github/codeql-action/commits/$pin" --jq '.sha'
   # Then watch the next master push for a green Scorecard run:
   gh run list --workflow scorecard --repo VMAFx/vmafx --limit 1
+
 ### 0228 — U-2-Net `u2netp` saliency replacement deferred (ADR-0265)
 
 - **Touches**: docs-only.
@@ -31813,7 +32179,6 @@ inline.*
   bash scripts/docs/concat-adr-index.sh --check
   bash scripts/release/concat-changelog-fragments.sh --check
   ```
-
 
 ### 0108 — `ssim_accumulate_avx512` per-lane double reduction vectorised
 
@@ -31876,6 +32241,7 @@ inline.*
   diff <(grep -v 'fyi fps' /tmp/m0.xml) <(grep -v 'fyi fps' /tmp/m16.xml)   # empty
   diff <(grep -v 'fyi fps' /tmp/m0.xml) <(grep -v 'fyi fps' /tmp/m255.xml)  # empty
   ```
+
 - **Why this matters on rebase**: an upstream commit that touches
   `core/src/feature/ssimulacra2.c` could prompt a "let's also
   port the GPU XYB while we're here" follow-up. The ledger entry
@@ -31944,6 +32310,7 @@ inline.*
   meson test -C build test_op_allowlist test_onnx_scan
   PYTHONPATH=ai/src python -m pytest ai/tests/test_op_allowlist.py
   ```
+
 ### 0231 — `vif.comp` + `ciede.comp` `precise` decorations (ADR-0269 / Step A of Vulkan 1.4 bump)
 
 - **Touches**:
@@ -31990,6 +32357,7 @@ inline.*
   Expected on NVIDIA 595.71+: vif 0/48 OK, ciede 5/48 FAIL (max abs
   8.9e-05 — pre-existing fork debt at API 1.3, see ADR-0269). On
   RADV / lavapipe: bit-exact (`precise` is a no-op there).
+
 ### 0229 — `fr_regressor_v2` codec-aware scaffold (ADR-0272)
 
 - **ADR**: [ADR-0272](adr/0272-fr-regressor-v2-codec-aware-scaffold.md)
@@ -32262,8 +32630,11 @@ inline.*
   ```
 
 ### 0229 — `vmaf_tiny_v3` + `vmaf_tiny_v4` dynamic-PTQ int8 sidecars (ADR-0275)
+
 ### 0278 — `vmaf-tune` libaom-av1 codec adapter (2026-05-03)
+
 ### 0228 — `vmaf-tune` libx265 codec adapter (ADR-0288)
+
 ### 0280 — `vmaf-tune` NVENC codec adapters (ADR-0290)
 
 - **Touches**:
@@ -32382,6 +32753,7 @@ inline.*
   ```bash
   python ai/scripts/validate_model_registry.py
   python ai/scripts/measure_quant_drop.py --all
+
 ### 0229 — NVIDIA-Vulkan ciede2000 places=4 fork debt root-cause (ADR-0273)
 
 - **Touched files**: docs-only.
@@ -32425,6 +32797,7 @@ inline.*
   # Expected pre-PR-346 (current master): 42/48 mismatches at higher ratio.
   # If the count drops below 5/48 on NVIDIA, ADR-0273 should record the
   # delta and consider closing T-VK-CIEDE-F32-F64.
+
 ### 0229 — `tools/vmaf-tune fast` Phase A.5 scaffold (ADR-0276)
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/fast.py` (new),
@@ -32452,7 +32825,6 @@ inline.*
   pytest tools/vmaf-tune/tests/test_fast.py -v
   vmaf-tune fast --smoke --target-vmaf 92
   ```
-
 
 ### 0229 — `vmaf-tune recommend` subcommand (ADR-0237 Phase B-lite)
 
@@ -32518,6 +32890,7 @@ inline.*
   # Cross-backend parity (places=4 gate, ADR-0214):
   /cross-backend-diff
   ```
+
 ### 0277 — ffmpeg-patches refresh against `n8.1` — 2026-05-04 (ADR-0277)
 
 - **Touches**: `ffmpeg-patches/` is unchanged (no content drift).
@@ -32579,6 +32952,7 @@ inline.*
   system-installed `.pc` carries an extra
   `-I${includedir}/libvmaf` shortcut that the uninstalled `.pc`
   omits).
+
 ### 0229 — T7-5 NOLINT-sweep closeout (ADR-0278)
 
 - **Touched files**:
@@ -32645,6 +33019,7 @@ inline.*
   meson setup build -Denable_cuda=false -Denable_sycl=false
   ninja -C build
   make test-netflix-golden
+
 ### 0231 — `vmaf-tune` score path decodes mp4 -> raw YUV
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/score.py` (new
@@ -32672,6 +33047,7 @@ inline.*
       --encoder libx264 --preset medium --crf 23 \
       --output /tmp/smoke.jsonl --no-source-hash
   # expect: vmaf_score is a real number, not NaN.
+
 ### 0232 — CUDA build pins nvcc `--std c++20`
 
 - **Touches**: `core/src/meson.build` line 686 (`cuda_flags = [...]`).
@@ -32777,6 +33153,7 @@ inline.*
 - **Re-test on rebase**: `python3 ai/scripts/train_fr_regressor_v2.py
   --corpus <jsonl> --epochs 200 --no-export` — expect PLCC > 0.95 on
   a multi-codec corpus.
+
 ### 0276 — `vmaf_tiny_v5` corpus-expansion probe (ADR-0287) — defer
 
 - **What changed**: research-only addition. New scripts under
@@ -32941,6 +33318,7 @@ inline.*
   ```bash
   python -m pytest tools/vmaf-tune/tests/ -v
   ```
+
 ### 0230 — fr_regressor_v2 PROD ship (ADR-0352)
 
 - **ADR**: [ADR-0352](adr/0291-fr-regressor-v2-prod-ship.md)
@@ -33117,6 +33495,7 @@ inline.*
   pytest tools/vmaf-tune/tests/test_compare.py -v
   PYTHONPATH=tools/vmaf-tune/src python -m vmaftune.cli compare \
       --src /tmp/ref.yuv --target-vmaf 92 --format markdown
+
 ### 0229 — `vmaf-tune --score-backend` GPU score wiring (ADR-0299)
 
 - **Touches**:
@@ -33223,6 +33602,7 @@ inline.*
 
   ```bash
   pytest tools/vmaf-tune/tests/test_cache.py -v
+
 ### 0283 — `vmaf-tune` Apple VideoToolbox adapters (2026-05-05)
 
 - **What changed**: fork-local addition under
@@ -34030,6 +34410,7 @@ inline.*
   ```
 
 ## CI `paths-ignore` deny-list on heavy workflows (ADR-0341, 2026-05-09)
+
 - **Touches**: `.github/workflows/libvmaf-build-matrix.yml` (fork-local —
   `paths-ignore:` block under `pull_request:`),
   `.github/workflows/tests-and-quality-gates.yml` (fork-local — same
@@ -34049,7 +34430,9 @@ inline.*
 - **On upstream sync**: Netflix/vmaf upstream does not carry these two
   workflow files (they are fork-local additions). No sync conflict
   expected.
+
 ### 0332 — mkdocs `--strict` validation policy (ADR-0332)
+
 - **Touches**: `mkdocs.yml` (validation block + `exclude_docs:`),
   `docs/mcp/embedded.md` (one anchor fix), `docs/research/0055-...md`
   (one anchor fix), `docs/{index,state,rebase-notes}.md` (small
@@ -34070,7 +34453,9 @@ inline.*
   hold turns the docs lane permanently red.
 - **On upstream sync**: no action — the lane is fork-local.
 - **Re-test on rebase**:
+
 ## HDR VMAF model search — Path C documentation only (2026-05-09)
+
 - **Files added (this fork only; upstream Netflix/vmaf has none of
   these)**:
   - `model/vmaf_hdr_model_card.md` — discoverable warning that the
@@ -34097,6 +34482,7 @@ inline.*
   <https://github.com/Netflix/vmaf/issues/645> for the upstream
   release announcement.
 - **Re-test on rebase**: no behavioural change — pure docs. Sanity:
+
   ```bash
 
   python3 -c "from pathlib import Path; \
@@ -34108,7 +34494,9 @@ inline.*
   mkdocs build --strict   # must EXIT=0 with no WARNING lines
 
   ```
+
 ## ADR-0349 — `fr_regressor_v3` namespace resolution (2026-05-09)
+
 - **Rebase impact**: none. Docs-only change — adds
   [ADR-0349](adr/0349-fr-regressor-v3-namespace.md), an
   append-only status appendix on
@@ -34126,6 +34514,7 @@ inline.*
   reservation; reviewers verify the map row exists before
   approving any new `fr_regressor_*` registry id.
 - **Reproducer**:
+
   ```bash
   # ADR + AGENTS.md namespace map present and consistent:
   test -f docs/adr/0349-fr-regressor-v3-namespace.md
@@ -34136,6 +34525,7 @@ inline.*
     docs/adr/0302-encoder-vocab-v3-schema-expansion.md
   # Existing v3 production row bit-identical (sha256 unchanged):
   python3 -c "
+
 import json
 reg = json.load(open('model/tiny/registry.json'))
 v3 = next(m for m in reg['models'] if m['id'] == 'fr_regressor_v3')
@@ -34143,9 +34533,13 @@ assert v3['sha256'] == 'eaa16d23461eda74940b2ed590edfcaf13428aade294e47792a5a15f
 assert v3['smoke'] is False
 print('OK: fr_regressor_v3 production row unchanged')
 "
+
   # Registry test still passes:
+
   bash core/test/dnn/test_registry.sh
+
 ### 0327 — Pre-push PR-body deliverables validator hook
+
 - **Touches**: `scripts/ci/validate-pr-body.sh` (new),
   `scripts/git-hooks/pre-push` (new),
   `scripts/ci/test-validate-pr-body.sh` (new),
@@ -34164,8 +34558,8 @@ print('OK: fr_regressor_v3 production row unchanged')
   test harness's expected exit codes must follow.
   bash scripts/ci/test-validate-pr-body.sh   # 8/8 cases pass
 
-
 ### 0320 — Semgrep `# nosemgrep` cites on Netflix-upstream Python harness (Research-0090)
+
 - **Touches**: `python/vmaf/core/asset.py`, `python/vmaf/core/executor.py`,
   `python/vmaf/core/feature_extractor.py`,
   `python/vmaf/core/quality_runner.py`,
@@ -34187,8 +34581,11 @@ print('OK: fr_regressor_v3 production row unchanged')
   process-global default and is unjustified per Research-0090, F1.
   semgrep scan --config=p/cwe-top-25 --config=p/c --config=p/python . \
     --metrics=off --json | jq '.results | length'
+
   # expect 0 — every legit finding either has a # nosemgrep cite or was fixed
+
 ### 0321 — Security-scans workflow registry-pack list (Research-0090)
+
 - **Touches**: `.github/workflows/security-scans.yml`,
   `.github/workflows/lint-and-format.yml`.
 - **Invariant**: the registry packs the workflow cites
@@ -34204,6 +34601,7 @@ print('OK: fr_regressor_v3 production row unchanged')
     [ "$code" = "200" ] && echo "${pack}: OK" || echo "${pack}: FAIL ($code)"
 
 ### 0320 — CodeQL C bulk sweep (78 deferred alerts → 60 fixed, 14 deferred to T7-5)
+
 - **Touches**: `core/src/feature/{cambi.c,ciede.c,integer_adm.c,integer_psnr.c,adm_tools.h,third_party/xiph/psnr_hvs.c}`,
   `core/src/feature/x86/{adm_avx2.c,adm_avx512.c,ansnr_avx2.c,ansnr_avx512.c,vif_avx2.c,vif_avx512.c}`,
   `core/src/{pdjson.c,svm.cpp}`, `core/test/{test_cpu.c,test_model.c}`,
@@ -34229,13 +34627,11 @@ print('OK: fr_regressor_v3 production row unchanged')
 - **Re-test on rebase**:
   cd libvmaf && meson test -C build  # all 50+ C tests
   make test-netflix-golden            # upstream golden gate
+
   # Re-run CodeQL on master afterwards; the 60 fixed alerts must stay closed.
 
-
-
-
-
 ## CodeQL `cpp/declaration-hides-variable` sweep (2026-05-09)
+
 - **What changed**: Mechanical rename / scope-tighten / dedupe sweep
   closing 64 open `cpp/declaration-hides-variable` CodeQL alerts on
   `master`. Touched files: `core/src/feature/cambi.c`,
@@ -34289,6 +34685,7 @@ print('OK: fr_regressor_v3 production row unchanged')
     -m "not slow" -q
 
 ## ADR-0209 v1 stdio runtime (T5-2b) — Embedded MCP server (2026-05-08)
+
 - **Touches**: `core/src/mcp/{mcp.c,dispatcher.c,transport_stdio.c,mcp_internal.h,meson.build,3rdparty/cJSON/{cJSON.c,cJSON.h,LICENSE}}`, `core/test/test_mcp_smoke.c`, `core/test/meson.build`. All paths are fork-local. cJSON is vendored verbatim from upstream `DaveGamble/cJSON@v1.7.18` under its MIT license.
 - **Invariant**: every TU under `core/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris and Claude (Anthropic)` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `core/include/libvmaf/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
 - **On upstream sync**: no action required. Netflix/vmaf upstream has no embedded MCP surface; the entire `core/src/mcp/` subtree is fork-local. If upstream ever adds an MCP surface, expect a port-only sync since names will collide.
@@ -34296,8 +34693,8 @@ print('OK: fr_regressor_v3 production row unchanged')
                                   -Denable_mcp=true -Denable_mcp_stdio=true
   ninja -C build && meson test -C build test_mcp_smoke -v
 
-
 ## ADR-0334 — state.md-touch-check CI gate (2026-05-08)
+
 - **Touches**: `.github/workflows/rule-enforcement.yml` (new top-level job `state-md-touch-check`), `scripts/ci/state-md-touch-check.sh` (new), `scripts/ci/test-state-md-touch-check.sh` (new), `scripts/ci/AGENTS.md` (new rebase-sensitive-surface row), `.github/PULL_REQUEST_TEMPLATE.md` (already carries the "Bug-status hygiene" section + `no state delta: REASON` opt-out — coupled to the script's regex). No upstream-shared paths.
 - **Invariant**: the gate's trigger predicate (Conventional-Commit `fix:` prefix, bare `bug` token in title, GitHub close-keywords `closes`/`fixes`/`resolves` `#N`, unchecked Bug-status-hygiene checkbox) and opt-out sentinel (`no state delta: REASON`) match the wording of the `## Bug-status hygiene` section in `.github/PULL_REQUEST_TEMPLATE.md`. Reword the template only alongside the script. The job carries the `pull_request.draft == false || github.event_name != 'pull_request'` gate (ADR-0331 pattern) — keep that on any future hoist into the required-aggregator set.
 - **On upstream sync**: Netflix/vmaf has no equivalent rule. No conflict expected; the workflow file is fork-introduced.
@@ -34307,8 +34704,8 @@ print('OK: fr_regressor_v3 production row unchanged')
   pre-commit run shellcheck --files scripts/ci/state-md-touch-check.sh scripts/ci/test-state-md-touch-check.sh
   pre-commit run shfmt      --files scripts/ci/state-md-touch-check.sh scripts/ci/test-state-md-touch-check.sh
 
-
 ## SYCL PSNR chroma extension (T3-15(b), 2026-05-09)
+
 - **Touches**: `core/src/feature/sycl/integer_psnr_sycl.cpp`
   (per-extractor chroma device buffers, per-plane SSE accumulators,
   and a `provided_features` extension to `psnr_y` / `psnr_cb` / `psnr_cr`),
@@ -34342,12 +34739,15 @@ print('OK: fr_regressor_v3 production row unchanged')
     --distorted testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 --pixel-format 420 --bitdepth 8 \
     --feature psnr --backend sycl --device 0
+
   # Expect 0/48 mismatches across psnr_y / psnr_cb / psnr_cr at places=4.
 
-
   ```
+
 ## Cppcheck `nullPointer` false-positive in `dict.c` (2026-05-09)
+
 **Files pinned**:
+
 - `core/src/dict.c:121` (one-line redundant-condition fix in
   `dict_overwrite_existing`).
 **Why this rebase-note exists**: Master CI's `Cppcheck (Whole Project)`
@@ -34364,29 +34764,23 @@ guarantee.
 **Rebase-sensitivity**: zero — change is local to `dict.c`. Future
 upstream sync of this file should keep the fix or re-run cppcheck
 locally to confirm absence of recurrence.
+
 ## Aggregator timeout bump (2026-05-09)
+
 **Files pinned**:
+
 - `.github/workflows/required-aggregator.yml` (deadline 30→90 min, job timeout 35→100 min)
 **Why**: 41 PRs in flight 2026-05-09 morning hit Aggregator timeouts
 while real CI eventually passed. Bumping both deadlines unblocks the
 train without touching the underlying matrix.
 **Rebase-sensitivity**: zero — workflow file is wholly fork-local.
+
 ## ARC self-hosted runner pool — pilot Cppcheck routing (2026-05-09)
+
 - `.github/workflows/lint-and-format.yml` (Cppcheck `runs-on:` ternary).
 **Why**: opt-in graceful migration; ADR-0359 + docs/development/ci-runners.md
 document the flip-the-variable recipe when the cluster is degraded.
 **Rebase-sensitivity**: zero — workflow file is fork-local.
-
-
-
-
-
-
-
-
-
-
-
 
 ## ADR-0338 — macOS Vulkan-via-MoltenVK CI lane (2026-05-09)
 
@@ -34468,7 +34862,9 @@ document the flip-the-variable recipe when the cluster is degraded.
   ```
 
 ## ADR-0355 — Symphony-inspired agent-dispatch infrastructure (2026-05-09)
+
 **Files added (all fork-introduced, none mirror upstream)**:
+
 - `.claude/workflows/_template.md`,
   `.claude/workflows/codeql-alert-sweep.md`,
   `.claude/workflows/simd-port.md`,
@@ -34499,7 +34895,9 @@ table-shape edits. If a future BACKLOG.md edit adds a column or
 renames a status word, the parser will silently mis-classify rows
 — the smoke parses 101 rows on master at 2026-05-09; expect ≥ 100
 after any structural edit.
+
 ### 0350 — `psnr_hvs` AVX-512 ceiling re-bench (ADR-0350, T3-9 (a))
+
 - [`docs/adr/0350-psnr-hvs-avx512-ceiling.md`](adr/0350-psnr-hvs-avx512-ceiling.md)
   — closure ADR.
 - [`docs/adr/0160-psnr-hvs-neon-bitexact.md`](adr/0160-psnr-hvs-neon-bitexact.md)
@@ -34530,8 +34928,8 @@ trips on ≥ 5.5e-5 drift per ADR-0160 §Context). The ADR-0350
 share shifts, the Netflix normal-pair fixture changes, or a new
 host class (e.g. wide-issue Granite Rapids) goes into CI.
 
-
 ### 0320 — FFmpeg n8.1 → n8.1.1 base bump (2026-05-09)
+
 - **Touches**: `ffmpeg-patches/series.txt` (header comment),
   `ffmpeg-patches/README.md` (apply / verify / smoke sections),
   `ffmpeg-patches/test/build-and-run.sh` (`FFMPEG_SHA` default),
@@ -34561,6 +34959,7 @@ host class (e.g. wide-issue Granite Rapids) goes into CI.
   in the five files listed under "Touches", and add a fresh
   rebase-notes entry citing the conflict file(s).
 - **Re-test on rebase**:
+
   ```bash
   cd /tmp && rm -rf ffmpeg-n811 && \
     git clone --depth 1 --branch n8.1.1 \
@@ -34573,27 +34972,29 @@ host class (e.g. wide-issue Granite Rapids) goes into CI.
   bash scripts/ci/ffmpeg-patches-check.sh
   ```
 
-
-
 ## ADR-0281 follow-up — QSV install-matrix discoverability backfill (2026-05-08)
+
 - **Touches**: `docs/getting-started/install/{arch,fedora,ubuntu,macos,windows}.md` (new `## Intel QSV` section per page), `docs/adr/0281-vmaf-tune-qsv-adapters.md` (status-update appendix per ADR-0028), `changelog.d/changed/qsv-install-matrix-docs.md` (new fragment). No code, no engine, no upstream-shared C / Python source touched. Pure documentation backfill closing the SYCL-audit research-0086 Topic C gap (issue #464).
 - **Invariant**: each per-OS QSV section pins the package names against verified upstream URLs with a `Verified 2026-05-08` access date. The hardware-generation matrix is sourced from the public Wikipedia "Intel Quick Sync Video — Hardware decoding and encoding" table; if Intel revises which generation supports AV1 encode (e.g. backports the encoder to Lunar Lake / Meteor Lake silicon currently absent from the table), the matrix in all five pages must move in lockstep — the Arch / Fedora / Ubuntu / Windows pages all carry the same matrix verbatim. The macOS page deliberately omits the matrix (QSV unsupported on macOS).
 - **On upstream sync**: no action required — Netflix/vmaf upstream does not ship per-OS install pages under `docs/getting-started/install/`; that tree is fork-only.
+
   # Lint the install pages (markdownlint via pre-commit):
+
   pre-commit run --files docs/getting-started/install/*.md
+
   # Verify each page (except alpine + macos) still carries the matrix:
+
   for f in arch fedora ubuntu windows; do
     grep -q 'Arc Battlemage' "docs/getting-started/install/${f}.md" || echo "MISSING: ${f}"
+
   # Confirm the macOS page documents QSV as unsupported:
+
   grep -q 'Intel QSV. is unsupported on macOS' docs/getting-started/install/macos.md
 
-
-
-
-
-
 ### 0333 — vmaf-tune Phase F multi-pass encoding (ADR-0333)
+
 **Touches**:
+
 - `tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py` (CodecAdapter
   Protocol gains `supports_two_pass: bool` + `two_pass_args(...)`)
 - `tools/vmaf-tune/src/vmaftune/codec_adapters/x265.py` (overrides both)
@@ -34615,15 +35016,19 @@ fork-local extension to the ADR-0237 Phase A multi-codec contract;
 upstream Netflix/vmaf has no equivalent and does not own this code
 path.
 **Re-test**:
+
 ```bash
 cd tools/vmaf-tune
 python -m pytest tests/test_codec_adapter_x265_two_pass.py -q
 ```
+
 (Optional, requires ffmpeg + libx265 in the runner's PATH:)
+
 ```bash
 VMAF_TUNE_INTEGRATION=1 python -m pytest \
   tests/test_codec_adapter_x265_two_pass.py::test_real_x265_two_pass_smoke -q
 ```
+
 **Rebase-sensitivity**: zero from upstream — `tools/vmaf-tune/` is
 fork-local. The only concern is the codec_adapters Protocol shape: a
 future upstream commit that adds a sibling codec adapter SHOULD
@@ -34632,8 +35037,6 @@ opt in or leave the flag off. Downstream sibling-codec PRs in this
 fork should follow the ADR-0288 / ADR-0333 pattern: one adapter file,
 override the two methods, add a test file mirroring
 `test_codec_adapter_x265_two_pass.py`.
-
-
 
 ## ADR-0360 — CAMBI CUDA port (T3-15a, 2026-05-09)
 
@@ -34678,11 +35081,10 @@ implementation may differ if they choose Strategy III (fully-on-GPU
 the Vulkan twin (`cambi_vulkan.c`) has — see ADR-0210's rebase note for
 the full list of exposed functions.
 
-
-
 ## Vulkan submit-pool PR-B: six secondary kernels (2026-05-09, ADR-0353)
 
 **Files changed**:
+
 - `core/src/feature/vulkan/ssim_vulkan.c`
 - `core/src/feature/vulkan/ciede_vulkan.c`
 - `core/src/feature/vulkan/ms_ssim_vulkan.c`
@@ -34709,8 +35111,8 @@ MUST be called before `vmaf_vulkan_kernel_pipeline_destroy` in every migrated
 kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
 §"Submit-pool ordering invariant"`.
 
-
 ### 0354 — Vulkan submit-pool PR-C: submit_pool_destroy-before-pipeline ordering
+
 - **Touches**: `core/src/feature/vulkan/cambi_vulkan.c`,
   `core/src/feature/vulkan/ssimulacra2_vulkan.c`,
   `core/src/feature/vulkan/float_ansnr_vulkan.c`,
@@ -34723,9 +35125,10 @@ kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
   shows `places=4` for all four extractors on all three target devices
   (RTX 4090, Arc A380, RADV iGPU).
 
-
 ### 0231 — Vulkan submit-pool migration PR A: adm + motion + psnr (ADR-0291)
+
 ### 0231 — Vulkan submit-pool migration PR A: adm + motion + psnr (ADR-0352)
+
 - **Touches**: `core/src/feature/vulkan/adm_vulkan.c`,
   `core/src/feature/vulkan/motion_vulkan.c`,
   `core/src/feature/vulkan/psnr_vulkan.c` (all fork-local
@@ -34750,6 +35153,7 @@ kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
 - **On upstream sync**: zero interaction. Upstream cannot conflict with
   this PR's paths. The Vulkan backend is entirely fork-introduced.
 - **Re-test on rebase**:
+
   ```bash
   meson test -C build --suite=fast
   # Cross-backend parity gate (places=4):
@@ -34761,9 +35165,10 @@ kernel's `close_fex()`. See `core/src/feature/vulkan/AGENTS.md
               testdata/yuv/src01_hrc01_576x324.yuv
   ```
 
-
 ## ADR-0350 — FFmpeg `libvmaf` filter CUDA backend selector (`0010` patch)
+
 **Patch**: [`ffmpeg-patches/0010-libvmaf-wire-cuda-backend-selector.patch`](../ffmpeg-patches/0010-libvmaf-wire-cuda-backend-selector.patch).
+
 - `libavfilter/vf_libvmaf.c` — adds `cuda` AVOption + state field +
   init / cleanup / picture-pool wiring under
   `CONFIG_LIBVMAF_CUDA && !CONFIG_LIBVMAF_CUDA_FILTER`.
@@ -34803,7 +35208,6 @@ init time per `#else` branch) and `CONFIG_LIBVMAF_CUDA=1 &&
 !CONFIG_LIBVMAF_CUDA_FILTER` (selector active, picture-pool wiring
 compiles).
 
-
 ### 0320 — Vulkan instance / VMA `apiVersion` bump to 1.4 (Step B)
 
 - **Touches**: `core/src/vulkan/common.c`,
@@ -34835,12 +35239,13 @@ compiles).
   # All 0/N mismatches at places=4 once Phase 3c (PR #512) has landed.
   ```
 
-
 ## ADR-0332 v2 runtime (T5-2c) — Embedded MCP server UDS + real `compute_vmaf` (2026-05-09)
+
 - **Touches**: `core/src/mcp/{mcp.c,dispatcher.c,mcp_internal.h,meson.build,compute_vmaf.c,transport_uds.c}`, `core/test/test_mcp_smoke.c`. All paths are fork-local. No new third-party vendor drop in v2 — mongoose vendoring stays deferred to v3 with the SSE transport.
 - **Invariant**: same as ADR-0209 v1 — the entire `core/src/mcp/` subtree is fork-local; the public ABI in `core/include/libvmaf/libvmaf_mcp.h` is unchanged (only function bodies flipped — `vmaf_mcp_start_uds` from `-ENOSYS` to a working AF_UNIX listener; `compute_vmaf` from a `{"status":"deferred_to_v2"}` placeholder to a real `vmaf_score_pooled` binding). Per ADR-0128 § operational guardrails the UDS socket file is created mode 0700; that `chmod` happens in `vmaf_mcp_start_uds` after `bind` and is a load-bearing security invariant — do NOT relax it on rebase. `compute_vmaf` runs on a per-call ephemeral `VmafContext` so the host's main scoring run is unperturbed; do NOT rewire it to reuse `server->ctx` because `vmaf_score_pooled` commits the model destructively to the context.
 - **On upstream sync**: no action required. Netflix/vmaf upstream has no embedded MCP surface. If upstream adds one, expect a port-only sync since names will collide.
 - **Re-test on rebase**:
+
   ```bash
   cd libvmaf && meson setup build -Denable_cuda=false -Denable_sycl=false \
                                   -Denable_mcp=true -Denable_mcp_stdio=true \
@@ -34849,12 +35254,6 @@ compiles).
   # Real-score smoke (single 576x324 pair):
   build/test/test_mcp_smoke 2>&1 | tail -3   # expects "16 tests run, 16 passed"
   ```
-
-
-
-
-
-
 
 ## ADR-0332 v3 runtime (T5-2d) — Embedded MCP server SSE transport (2026-05-09)
 
@@ -34872,8 +35271,8 @@ compiles).
   build/test/test_mcp_smoke 2>&1 | tail -3   # expects "17 tests run, 17 passed"
   ```
 
-
 ### Status update 2026-05-09 — placeholder-ref hardening
+
 - **Additional touches**: same set as the 2026-05-08 ADR-0334 entry,
   no new files. The hardening adds a `git diff -U0 ... -- docs/state.md`
   call inside `scripts/ci/state-md-touch-check.sh` (case 4a) plus 10
@@ -34889,8 +35288,8 @@ compiles).
   run as the 2026-05-08 entry; the harness now reports
   `18/18 passed` (was `8/8 passed`).
 
-
 ### 0347 — Sanitizer matrix test-set scope (ADR-0347)
+
 - **Touches**: [`.github/workflows/tests-and-quality-gates.yml`](../.github/workflows/tests-and-quality-gates.yml)
   job `sanitizers` (build + test step), [`core/test/meson.build`](../core/test/meson.build)
   (no edits — the absence of any `suite: 'unit'` tag is the upstream
@@ -34939,8 +35338,8 @@ compiles).
             | sed 's/^libvmaf://')
     meson test -C "build-$SAN" --print-errorlogs $TESTS
 
-
 ## CodeQL bulk mechanical sweep — Python tree (2026-05-09)
+
 - **Why this matters on rebase**: no rebase impact. The diff lives entirely
   in `python/vmaf/` and one fork-local helper (`core/src/vulkan/spv_embed.py`).
   None of the touched Python modules have been changed by Netflix upstream
@@ -34957,8 +35356,8 @@ compiles).
   for f in (...)]"` over the touched files; `ruff check` over the same set
   must produce no NEW errors versus master baseline.
 
-
 ### 0345 — cambi × {CUDA, SYCL, HIP} GPU port planning (ADR-0345, docs-only)
+
 - **Touches**: `docs/research/0091-cambi-gpu-port-planning-2026-05-09.md`
   (new), `docs/adr/0345-cambi-gpu-port-strategy.md` (new),
   `docs/adr/_index_fragments/0345-cambi-gpu-port-strategy.md` (new
@@ -34990,10 +35389,8 @@ compiles).
   Strategy III v2 follow-up (parked per ADR-0205 §Out of scope) gets
   its own ADR + rebase-notes entry when profile data lands.
 
-
-
-
 ### 0320 — Vulkan VIF API-1.4 NVIDIA residual Phase 3b (deferral)
+
 - **Touches**: `core/src/feature/vulkan/shaders/vif.comp`
   (comment-only update at the Phase-4 reduction site —
   documents the Phase-3b candidate-fix experiments and the
@@ -35031,7 +35428,9 @@ compiles).
 - **Re-test on rebase** (assumes a multi-GPU CI workstation with
   NVIDIA + Arc + RADV; lavapipe-only CI lanes are a no-op for
   the API-1.4 residual since lavapipe never reproduced the bug):
+
   # Local API-1.4 bump (off-master reproducer; do NOT commit).
+
   sed -i 's/VK_API_VERSION_1_3/VK_API_VERSION_1_4/g' \
       core/src/vulkan/common.c
   sed -i 's/VMA_VULKAN_VERSION 1003000/VMA_VULKAN_VERSION 1004000/' \
@@ -35039,22 +35438,29 @@ compiles).
   cd libvmaf && meson setup build -Denable_vulkan=enabled \
       -Denable_cuda=false -Denable_sycl=false && ninja -C build
   cd ..
+
   # NVIDIA lane — expected 45/48 FAIL scale 2 until either the
+
   # manual int64 subgroup-reduction patch lands or NVIDIA fixes
+
   # the driver. Arc + RADV expected 0/48.
+
   python3 scripts/ci/cross_backend_vif_diff.py \
       --vmaf-binary core/build/tools/vmaf \
       --reference testdata/ref_576x324_48f.yuv \
       --distorted testdata/dis_576x324_48f.yuv \
       --width 576 --height 324 \
       --feature vif --backend vulkan --device <NVIDIA-index>
+
   # Revert local bump after testing.
+
   sed -i 's/VK_API_VERSION_1_4/VK_API_VERSION_1_3/g' \
       core/src/vulkan/common.c
   sed -i 's/VMA_VULKAN_VERSION 1004000/VMA_VULKAN_VERSION 1003000/' \
       core/src/vulkan/vma_impl.cpp
 
 ### Upstream-port-later batch — Research-0090 18-commit triage close-out (2026-05-09)
+
 - **Touches**: `docs/state.md` (one row in "Deferred (waiting on
   external trigger)"), this file, `changelog.d/changed/upstream-port-later-batch-2026-05-09.md`.
   No code touched. Companion to PR #446 (Research-0090) and the
@@ -35062,6 +35468,7 @@ compiles).
   duplicate pair).
 - **Per-commit classification (input set: 18 PORT_LATER SHAs from
   Research-0090)**:
+
   | # | Upstream SHA | Subject (truncated) | Verdict | Reopen / forward path |
   | --- | --- | --- | --- | --- |
   | 1 | `38e905d1` | adopt MyTestCase + reformat BD-rate test data | PORT_DEFERRED | Subsumed by PR #497 commit `e1dbdc09`; close out when #497 merges |
@@ -35082,6 +35489,7 @@ compiles).
   | 16 | `d93495f5` | reduce tolerance for VMAF scores in quality_runner tests | PORT_DEFERRED **w/ Netflix-golden guard** | PR #497 — Netflix-golden tolerance guard same as row 3 |
   | 17 | `7d1ad54b` | port feature extractor tests for aim/adm3/motion3 | PORT_DEFERRED | Subsumed by PR #497 commit `44b9e626`; close out when #497 merges |
   | 18 | `721569bc` | resource/doc: cambi_high_res_speedup + motion2 score | PORT_DEFERRED → DEDUP | Already in flight on TWO branches (PR #443 + PR #444). Maintainer picks one and abandons the other per Research-0090 §Recommended action #4. No third port-PR opened. |
+
 - **Invariant**: after PR #497 merges, the Research-0090 PORT_LATER
   bucket reduces to exactly two follow-up cherry-picks against
   post-#497 master:
@@ -35115,15 +35523,17 @@ compiles).
   meson test -C build --suite=fast
   make test-netflix-golden  # 3/3 CPU goldens still pass
 
-
 ---
+
 ## ADR-0357 — Vulkan readback buffer VMA flag separation (PR pending)
+
 **What changed**: `picture_vulkan.{c,h}` now exposes two sibling allocation
 functions: `vmaf_vulkan_buffer_alloc` (UPLOAD, unchanged) and
 `vmaf_vulkan_buffer_alloc_readback` (READBACK, `HOST_ACCESS_RANDOM`). A new
 `vmaf_vulkan_buffer_invalidate` wraps `vmaInvalidateAllocation`. All 17
 feature kernel files under `core/src/feature/vulkan/` are updated to use
 the readback variant for accumulator and partial-sum buffers.
+
 - `core/src/vulkan/picture_vulkan.c` — two new functions + shared helper.
 - `core/src/vulkan/picture_vulkan.h` — two new declarations.
 - All 17 `core/src/feature/vulkan/*.c` files — alloc and invalidate call
@@ -35134,9 +35544,11 @@ upstream Netflix counterpart. If an upstream sync adds new files to
 in those files must be classified (UPLOAD vs READBACK) and use the correct
 allocator per the table in ADR-0350. Conflict risk on the 17 feature files is
 zero (upstream doesn't touch them).
+
 ## ADR-0356 — ffmpeg-patches surface-sync CI gate (2026-05-09)
 
 **Files added**:
+
 - `scripts/ci/ffmpeg-patches-surface-check.sh` (new gate script).
 - `.github/workflows/rule-enforcement.yml` (new
   `ffmpeg-patches-surface-check` job).
@@ -35157,6 +35569,7 @@ immediately rather than at the *next* sync.
 benefit: the gate hardens `ffmpeg-patches/` against silent drift, so
 the patch-stack invariants tracked elsewhere in this file (entries
 referencing `ffmpeg-patches/0001…0009`) are now machine-defended.
+
 ### 0320 — HIP CI lane apt-installs ROCm runtime (ADR-0212 status update)
 
 - **Touches**:
@@ -35214,7 +35627,6 @@ referencing `ffmpeg-patches/0001…0009`) are now machine-defended.
   # Optional GPU-parity gate when available:
   # ./scripts/cross-backend-diff.sh --feature cambi
   ```
-
 
 ## ADR-0336 — KonViD MOS head v1 (2026-05-08)
 
@@ -35306,7 +35718,6 @@ referencing `ffmpeg-patches/0001…0009`) are now machine-defended.
   The smoke test self-skips the device-resident assertions when
   `vmaf_hip_device_count() == 0`, so it stays portable across CI
   runners that don't expose an AMD GPU.
-
 
 ### `saliency_student_v2` — Resize-decoder ablation (ADR-0364, 2026-05-09)
 
@@ -35414,8 +35825,6 @@ referencing `ffmpeg-patches/0001…0009`) are now machine-defended.
   bash -n tools/external-bench/*/run.sh
   ```
 
-
-
 ### 0361 — Metal (Apple Silicon) backend scaffold (ADR-0361)
 
 - **Touches**:
@@ -35492,21 +35901,21 @@ referencing `ffmpeg-patches/0001…0009`) are now machine-defended.
     flags at `VMAF_FEATURE_EXTRACTOR_TEMPORAL` only until T8-1b.
 - **Re-test** (on macOS only — Linux dev sessions cannot run this
   lane locally):
+
   ```bash
   meson setup build -Denable_metal=enabled
   ninja -C build
   meson test -C build test_metal_smoke
   ```
+
   And on every host (Linux / Windows included): the default-build
   gate must stay green — the auto-probe resolves to disabled on
   non-macOS hosts so `meson setup build && ninja -C build` runs
   unchanged.
 
-
 ## ADR-0325 — `vmaf-tune auto` Phase F.1 + F.2 short-circuits (2026-05-08)
 
 ### 0327 — Conformal-VQA prediction surface for `vmaf-tune` (ADR-0279)
-
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/conformal.py` (new),
   `tools/vmaf-tune/src/vmaftune/predictor.py`
@@ -35539,6 +35948,7 @@ referencing `ffmpeg-patches/0001…0009`) are now machine-defended.
 ## ADR-0364 — `vmaf-tune auto` Phase F.1 + F.2 short-circuits (2026-05-08)
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/auto.py` (new), `tools/vmaf-tune/src/vmaftune/cli.py` (added `auto` subparser + dispatcher), `tools/vmaf-tune/tests/test_auto_short_circuits.py` (new), `tools/vmaf-tune/AGENTS.md` (invariant row), `docs/usage/vmaf-tune.md` (`## auto` section), `docs/adr/0364-vmaf-tune-phase-f-auto.md` (status update — already-accepted body untouched per ADR-0028; appended a `### Status update` block under `## References`). No upstream-shared paths.
+
 ## ADR-0325 — `vmaf-tune auto` Phase F.1 + F.2 short-circuits (2026-05-08)
 
 ## ADR-0371 — Shared `CorpusIngestBase` (2026-05-10)
@@ -35560,8 +35970,6 @@ but the risk is negligible (Netflix/vmaf does not carry an `ai/` subtree).
       --src /dev/null --target-vmaf 93 --max-budget-bitrate 5000 \
       --allow-codecs libx264 --sample-clip-seconds 10 --smoke
   ```
-
-
 
 ## ADR-0325 — `vmaf-tune auto` Phase F.3 confidence-aware fallbacks (2026-05-08)
 
@@ -35704,7 +36112,6 @@ but the risk is negligible (Netflix/vmaf does not carry an `ai/` subtree).
     --max-rows 10000
   ```
 
-
 ## ADR-0335 — Hardware-capability priors (2026-05-08)
 
 - **Touches**: `ai/data/hardware_caps.csv` (new),
@@ -35765,7 +36172,6 @@ but the risk is negligible (Netflix/vmaf does not carry an `ai/` subtree).
   ```bash
   pytest ai/tests/test_lsvq.py -v
   ```
-
 
 ## ADR-0325 — Local sidecar training scaffold (2026-05-08)
 
@@ -35867,7 +36273,6 @@ but the risk is negligible (Netflix/vmaf does not carry an `ai/` subtree).
 
 ## ADR-0326 — vmaf-tune Phase B target-VMAF bisect (2026-05-08)
 
-
 - **Touches**: `tools/vmaf-tune/src/vmaftune/bisect.py` (new),
   `tools/vmaf-tune/src/vmaftune/compare.py` (default-predicate error
   string), `tools/vmaf-tune/tests/test_bisect.py` (new),
@@ -35946,8 +36351,6 @@ build-system paths changed; no new symbols were added.
 - **Re-test on rebase**: run the reproducer —
   `./build/tools/vmaf --feature float_adm --no_prediction ...` — and
   confirm it no longer prints "problem loading feature extractor".
-
-
 
 ## ADR-0326 — MyTestCase upstream migration (partial port, Batch E, 2026-05-08)
 
@@ -36090,7 +36493,6 @@ build-system paths changed; no new symbols were added.
 
       --feature ssimulacra2 --backend cuda --places 4
 
-
 ## ADR-0372 — HIP batch-1: integer_psnr_hip + float_ansnr_hip real kernels (2026-05-10)
 
 - **Touches**: `core/src/feature/hip/integer_psnr_hip.c` (full rewrite),
@@ -36146,7 +36548,6 @@ build-system paths changed; no new symbols were added.
   meson test -C build_hip_full --suite=hip-parity
   ```
 
-
 ## ADR-0373 — HIP batch-2: float_motion_hip real kernel (2026-05-10)
 
 - **Touches**: `core/src/feature/hip/float_motion_hip.c` (full rewrite to
@@ -36187,7 +36588,6 @@ build-system paths changed; no new symbols were added.
   # Cross-backend numeric gate (requires AMD GPU)
   meson test -C build_hip_full --suite=hip-parity
   ```
-
 
 ## ADR-0375 — HIP batch-3: float_moment_hip + float_ssim_hip real kernels (2026-05-10)
 
@@ -36243,10 +36643,10 @@ build-system paths changed; no new symbols were added.
   meson test -C build_hip_full --suite=hip-parity
   ```
 
-
 ## feat/hip-float-psnr-first-real — T7-10b: `float_psnr_hip` first real kernel (ADR-0254)
 
 **Touches**:
+
 - `core/src/feature/hip/float_psnr_hip.c` — complete rewrite from
   scaffold stub to functional kernel consumer (HIP Module API pattern:
   `hipModuleLoadData` + `hipModuleLaunchKernel`).
@@ -36308,9 +36708,7 @@ ninja -C build
 # Confirm kernel launches on device by running vmaf with --feature float_psnr_hip
 ```
 
-
 ---
-
 
 ## HIP batch-4 -- `ciede_hip` and `integer_motion_v2_hip` real kernels (ADR-0377)
 
@@ -36349,9 +36747,7 @@ ninja -C build
 meson test -C build  # 54/54 pass including test_hip_smoke
 ```
 
-
 ---
-
 
 ## `speed_qa` -- real SpEED-QA implementation (ADR-0253)
 
@@ -36383,7 +36779,6 @@ upstream has no `speed_qa.c`. The `speed.c` file (upstream port) is unmodified.
 compiled unconditionally (no float dependency). If a rebase lands a Netflix
 `speed_qa.c`, audit for algorithm conflicts before merging.
 
-
 **Re-test on rebase:**
 
 ```bash
@@ -36405,6 +36800,7 @@ touches `vmaf_cuda_picture_alloc` and reverts the stream flag, the performance
 regression returns silently.
 
 **Re-test**:
+
 ```bash
 meson setup build-cuda libvmaf -Denable_cuda=true -Denable_sycl=false
 ninja -C build-cuda
@@ -37028,6 +37424,7 @@ standalone `vmaf` tool. No libvmaf public C API symbols changed; no
 The `libvmaf_metal.h` change is docstring-only (no API surface delta).
 
 **Invariants to preserve on rebase**:
+
 - `CLISettings` in `cli_parse.h` has `no_hip`, `hip_device`, `no_metal`,
   `metal_device` fields. If upstream adds its own HIP/Metal CLI flags in the
   same struct, resolve the merge by keeping the fork's field names (they match
@@ -38201,7 +38598,6 @@ host glue; Netflix upstream does not maintain GPU ADM CM kernels.
 kernel's constants are ever changed, the fused kernel's constants must be updated
 in lockstep.
 
-
 **Smoke-test after rebase**:
 
 ```bash
@@ -38215,6 +38611,7 @@ python3 scripts/ci/cross_backend_parity_gate.py \
 ---
 
 python3 scripts/ci/cross_backend_parity_gate.py --features adm --backends cpu cuda --places 4
+
 ```
 
 
@@ -38256,6 +38653,7 @@ meson setup build -Denable_cuda=true -Denable_sycl=false
 ninja -C build src/liblibvmaf.a.p/libvmaf_src_libvmaf.c.o
 # Expected: compiles without error or warning
 ```
+
 ---
 
 ### PR #1067 clobbered four GPU feature options (fix/enable-chroma-pr1067-regression)
@@ -38363,7 +38761,6 @@ No rebase impact: doc-only addition. If upstream Netflix adds a motion
 extractor or renames existing ones, update `docs/metrics/motion.md` to
 match — no code change required.
 
-
 ---
 
 ## fix/vulkan-vif-shader-fp64-for-bit-exact
@@ -38381,7 +38778,6 @@ re-verify that the double-precision GLSL block still mirrors the CPU
 reference exactly (especially the eps constant and the int32 truncation
 order for sv_sq).  The `common.c` shaderFloat64 probe must stay in sync
 with any new device-feature guards added to the same function.
-
 
 ---
 
@@ -38734,6 +39130,7 @@ backend; the entire `core/src/hip/` tree is fork-local
 (ADR-0212). No ffmpeg-patches file consumes
 `vmaf_hip_import_state` directly today — `vf_libvmaf` reaches
 HIP only through the CPU-path fallback for now.
+
 ## 2026-05-18 — `--tiny-codec` / `--tiny-preset` / `--tiny-crf` populate codec block (ADR-0522, PR #TBD)
 
 Fork-local. Adds three CLI flags + one public C-API
@@ -38786,6 +39183,7 @@ calls). On a future upstream sync, expect a merge conflict on
 keep the fork's `if (!found) usage(…); return;` + `snprintf` shape and
 drop the `<assert.h>` include. No public API surface changes; the
 ffmpeg-patches stack is untouched.
+
 ## 2026-05-18 — HIP `integer_motion` flag promotion + HIP_DEVICE buffer enum (ADR-0530, PR #TBD)
 
 Extends ADR-0519. Promotes `VMAF_FEATURE_EXTRACTOR_HIP` on
@@ -38974,6 +39372,7 @@ variant added. The new exit code is a CLI-level contract observed
 by wrappers (`vmaf-tune`, MCP) — FFmpeg's `libvmaf` filter consumes
 libvmaf via the C API and is not impacted. CLAUDE.md §12 r14 does
 not apply.
+
 ## fix/feature-extractor-list-dedup (ADR-0544)
 
 Removes 61 duplicate `&vmaf_fex_*` entries from
@@ -39007,6 +39406,7 @@ Touched files: `core/src/feature/feature_extractor.{c,h}`,
 `docs/rebase-notes.md`, `changelog.d/fixed/0541-*.md`.
 No `ffmpeg-patches/`, `meson_options.txt`, or `meson.build` change
 (test is exercised by an existing `test_feature_extractor` target).
+
 ## chore/wire-or-delete-dead-extractor-files (ADR-0545)
 
 Deletes 18 dead Vulkan / Metal feature-extractor source files plus
@@ -39056,6 +39456,7 @@ removed. The probe block at the top of `_run_tune_per_shot` only
 executes when `args.width is None or args.height is None or
 args.framerate is None` — callers that pass explicit geometry are
 unaffected. No upstream Netflix/vmaf path is touched.
+
 ## ADR-0539 — HIP `hip_cu_extra_flags` dispatch + `ssimulacra2_blur` `-ffp-contract=off`
 
 **No rebase impact**: the change is entirely additive in
@@ -39070,6 +39471,7 @@ CUDA kernel that lists flags in `cuda_cu_extra_flags`, mirror the entry
 in `hip_cu_extra_flags` per `core/src/feature/hip/AGENTS.md`. No
 public API surface, no `meson_options.txt` entry, no ffmpeg-patches
 entry. On a future upstream sync, expect zero conflicts.
+
 ## ADR-0539 — integer ADM HIP kernels (real impl, removes ADR-0536 weak stubs)
 
 **No rebase impact**: every touched file is fork-local — the four
@@ -39107,7 +39509,6 @@ Touched files:
 `docs/state.md` (Recently-closed row),
 `changelog.d/added/0546-codec-adapter-two-pass-real.md`,
 `docs/rebase-notes.md` (this entry).
-
 
 ## chore/ai-tooling-env-overrides-split (ADR-0547)
 
@@ -39188,7 +39589,6 @@ source, no public header, no `meson_options.txt`, no `ffmpeg-patches/`
 entry. No numerical-correctness risk: this is a read-only audit that produces
 only documentation artefacts.
 
-
 ## ADR-0561 — HIP gfx_targets fallback widening
 
 **Branch**: `fix/hip-gfx-targets-fallback-widening`
@@ -39229,6 +39629,7 @@ Touched files:
 `docs/state.md` (Recently-closed row),
 `changelog.d/fixed/vcq-223-local-explainer-hang.md`,
 `docs/rebase-notes.md` (this entry).
+
 ## ADR-0559 — Feature coverage audit: speed_chroma + speed_temporal in extraction scripts
 
 **Rebase impact**: minimal. Changes are entirely fork-local — all modified
@@ -39272,7 +39673,6 @@ Touched files:
 `changelog.d/fixed/0566-hip-vif-per-feature-places4-gate.md`,
 `docs/rebase-notes.md` (this entry).
 
-
 ## ADR-0552 — HIP VIF deterministic wavefront reduction
 
 **Branch**: `fix/hip-vif-deterministic-reduce`
@@ -39287,6 +39687,7 @@ in the accumulator.
 
 **Conflict scenario**: If a rebase brings in a change to `vif_statistics.hip` from
 the CUDA parity sweep or a `vif_hori_16_body` template refactor, verify that:
+
 1. The outer `if (x < w && y < h)` guard is preserved (not replaced by early return).
 2. `wavefront_reduce_accums(thr)` is called before the `atomicAdd` block.
 3. The `atomicAdd` block is inside `if ((threadIdx.x % AMD_WAVEFRONT_SIZE) == 0)`.
@@ -39344,7 +39745,6 @@ Touched files:
 `docs/adr/README.md` (one index row),
 `changelog.d/perf/0567-upstream-port-direct-read.md`,
 
-
 ## ADR-0568 — `sycl_icpx_aot_targets` default
 
 **Rebase impact**: low. Adds a new `sycl_icpx_aot_targets` string option to
@@ -39373,6 +39773,7 @@ No rebase-sensitive invariants. All changes are version-string edits in
 `python/requirements.txt` ceiling. No API changes, no C/Python logic changes.
 
 **Conflict scenarios**:
+
 - `dev/Containerfile`: The Ubuntu 26.04 base-image PR (in-flight) touches
   different ARG blocks. If a rebase conflict occurs, keep both sets of
   version edits — they are in disjoint sections of the file.
@@ -39388,6 +39789,7 @@ Touched files: `dev/Containerfile`, `.pre-commit-config.yaml`,
 `docs/adr/README.md` (one index row),
 `changelog.d/changed/0569-sdk-version-bumps-2026-05-18.md`,
 `dev/AGENTS.md` (invariant notes), `docs/development/dev-mcp.md` (version table),
+
 ## ADR-0574 — CUDA twins for HDR-model aim and adm3 sub-features (Phase 1)
 
 **Branch**: `feat/hdr-features-cuda-twins`
@@ -39441,6 +39843,7 @@ Touched files:
 `docs/rebase-notes.md` (this entry).
 
 ## ADR-0612 — vmaf-tune compare: decode reference YUV once (shared-ref fix)
+
 ## ADR-0607 — vmaf-tune compare: decode reference YUV once (shared-ref fix)
 
 **No rebase impact**: all touched files are fork-local Python harness files.
@@ -39455,6 +39858,7 @@ Touched files:
 `docs/adr/0607-vmaftune-shared-ref-yuv-decode-once.md`,
 `docs/adr/README.md` (one index row),
 `changelog.d/fixed/0607-vmaftune-shared-ref-yuv-decode-once.md`,
+
 ## ADR-0612 — Tiny-AI Netflix corpus training scaffold (2026-05-19 iteration)
 
 **No rebase-sensitive invariants introduced by this PR** — all changes are
@@ -39518,6 +39922,7 @@ Touched files:
 `docs/adr/0628-adr-allocator-remote-aware.md`,
 `docs/adr/README.md` (one index row),
 `changelog.d/fixed/0628-adr-allocator-remote-aware.md`,
+
 ## ADR-0608 — MCP P0 fixes: isError, probe_backend, vmaf_version, vmaf_score_encoded
 
 **No rebase impact**: all touched files are fork-local MCP server Python files and docs.
@@ -40574,6 +40979,7 @@ Touched files:
 `docs/research/0674-phase3-subset-report-provenance.md`,
 `changelog.d/added/0674-phase3-subset-report-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
 ## ADR-0661 follow-up — Quantisation report provenance
 
 **Quantisation provenance impact.** This widens ADR-0661 adoption to the int8
@@ -40950,10 +41356,12 @@ Touched files:
 `docs/rebase-notes.md` (this entry).
 
 ## ADR-0682 — Tiny-AI Netflix corpus training scaffold — 2026-05-22 prep scope
+
 - **ADR**: [ADR-0682](adr/0682-tiny-ai-netflix-training-scaffold-2026-05-22.md).
 - **Upstream source**: fork-local. Netflix/vmaf has no tiny-AI training surface.
 - **Branch**: `ai/tiny-netflix-training-scaffold`.
 **Key invariants**:
+
 1. **Data path is local-only.** `.workingdir2/netflix/` is gitignored; YUV files are
    never committed. Every training script must accept `--data-root` (or the
    `VMAF_DATA_ROOT` environment variable) as the sole corpus entry point.
@@ -41043,12 +41451,15 @@ Touched files:
 `changelog.d/changed/0708-cpp23-internals-pilot.md`,
 `docs/state.md` (this entry),
 `docs/rebase-notes.md` (this entry).
+
 ## ADR-0707 — TAD Rust pilot (cbindgen integration) — 2026-05-28
+
 - **ADR**: [ADR-0707](adr/0707-vmafx-rust-pilot-feature.md).
 - **Upstream source**: fork-local. Netflix/vmaf has no Rust feature extractors.
 - **Branch**: `feat/tad-rust-pilot`
 
 **Key rebase invariants**:
+
 1. `core/src/feature/feature_extractor.c` gains `#if HAVE_RUST_TAD` guards around
    the `vmaf_fex_tad` extern and list entry. On upstream sync, ensure these guards
    are preserved; do not merge the upstream version of this file without re-applying
@@ -41224,9 +41635,11 @@ Fork-local files added:
 ## Research-0734 — CUDA VIF filter1d ncu hotpath (no rebase impact)
 
 no rebase impact: pure research digest; no source files modified.
+
 ## Research-0744 cross-backend baseline (2026-05-28) — no rebase impact
 
 This PR adds only `docs/research/0744-cuda-cross-backend-baseline-pre-ncu-perf.md`, `changelog.d/perf/cuda-cross-backend-baseline.md`, and a `docs/state.md` row. No C, header, Python, or build files are modified. No upstream sync action is required.
+
 ## `docs/research/0734–0738` — CUDA ADM/motion/SSIM/MS-SSIM ncu hotpath profiles (2026-05-28)
 
 No rebase impact: research-only documents, no source code changes. The profiling findings
@@ -41234,6 +41647,7 @@ No rebase impact: research-only documents, no source code changes. The profiling
 When a follow-up PR implements the `integer_ssim_score.cu` `extern "C"` fix (Research-0736
 recommendation 1), that PR must also update `ssim_cuda.c` host glue and verify bit-exact
 parity against the CPU integer_ssim extractor on the Netflix golden fixture.
+
 ## C++23 wave adversarial review (2026-05-28)
 
 Read-only review of PRs #41, #43, #44, #45, #48, #51, #54, #56, #58.
@@ -41241,12 +41655,14 @@ No files were modified by this review. The review digest is in
 `docs/research/cpp23-wave-adversarial-review-20260528.md`.
 
 Critical issues that must be fixed before merge:
+
 - PR #43 `opt.cpp`: `strtol`/`strtod` on potentially non-NUL-terminated `string_view::data()`
 - PR #48 `dict.cpp`: `strtof` (float) assigned to `double` — precision loss on option values
 - PR #54 `model.cpp`: `strlen(model->name) - 5U` unsigned underflow → heap overflow
 - PR #58 `ref.cpp`: `make_unique` / C-caller `free()` allocator mismatch
 
 No rebase impact from the review itself; all findings are fixes required in those PRs.
+
 ## `core/src/feature/cuda/integer_ssim/` — `extern "C"` on new kernels (ADR-0747)
 
 Any upstream or fork PR that adds a new `__global__` kernel to a `.cu`
@@ -41265,6 +41681,7 @@ This invariant was formalised after the audit that found
 breaking `--feature ssim --backend cuda` since introduction (PR #77
 fixed the analogous break in `ssim_score.cu`; ADR-0747 fixes
 `integer_ssim_score.cu`).
+
 ## `core/src/feature/cuda/integer_vif/filter1d.cu` — ADR-0743 __launch_bounds__ + __ldg
 
 **No rebase-sensitive invariants for downstream callers** — the changes are
@@ -41292,6 +41709,7 @@ No new rebase-sensitive invariants beyond those already documented in the
 `ADR-0743 __launch_bounds__ + __ldg` entry above. The register budget (48 regs/thread)
 and `__ldg` annotations must be preserved on any upstream sync that touches
 `filter1d.cu` per the existing note.
+
 ## One-off container SYCL device-access pattern (`--device /dev/dri --group-add 988`)
 
 **No rebase impact** on upstream C/Python code.
@@ -41320,6 +41738,7 @@ Fork-local files:
 **No rebase impact** on upstream C/Python code.
 
 New fork-local files only:
+
 - `scripts/perf/bench-multi-resolution.sh` — benchmark harness
 - `testdata/perf_multi_resolution.json` — baseline snapshot (schema_version=1)
 - `docs/development/perf.md` — usage docs
@@ -41371,6 +41790,7 @@ All files modified are fork-local:
 
 No source files were modified (audit-only).  No Netflix upstream commit
 will collide with these additions on `sync-upstream`.
+
 ## research/cuda-f3-struct-by-value-audit-20260529 (2026-05-29)
 
 No rebase impact: this PR adds documentation-only files (research digest, ADR,
@@ -41384,6 +41804,7 @@ Fork-local files added/modified:
 `docs/adr/README.md` (new row),
 `changelog.d/perf/cuda-f3-struct-by-value-audit.md` (new),
 `docs/state.md` (new row),
+
 ## ADR-0755: C++23 Wave 7 — activate `cpu.cpp` (PR on 2026-05-29)
 
 **No rebase impact** on upstream C/Python code.
@@ -41399,6 +41820,7 @@ Fork-local files modified:
 `docs/adr/README.md` (new row),
 `changelog.d/changed/0755-cpp23-wave7-cpu-cpp.md` (new),
 `docs/rebase-notes.md` (this entry).
+
 ## research/cuda-motion-ncu-profile-20260529
 
 No rebase impact: research-only commit. No source files modified.
@@ -41406,7 +41828,6 @@ Files added: `docs/research/0760-cuda-motion-ncu-multi-resolution-20260529.md`,
 `changelog.d/perf/cuda-motion-ncu-multi-resolution.md`,
 `docs/adr/0760-cuda-motion-ncu-multi-resolution.md` (research ADR).
 No upstream collision risk.
-
 
 ## HIP ADM buffer-by-pointer refactor (ADR-0759, 2026-05-29)
 
@@ -41530,6 +41951,7 @@ read-only from these tests. On upstream sync, conflicts are restricted
 to the `meson.build` insertion points; reapply the seven
 `test_*_coverage = executable(...)` blocks and the matching
 `test('test_*_coverage', ...)` rows post-rebase.
+
 ## Feature-extractor coverage round 3 (ADR-0948, 2026-05-31)
 
 no rebase impact: REASON — additions are confined to fork-local test
@@ -41541,6 +41963,7 @@ sync the new tests apply cleanly regardless of what Netflix does to
 the underlying production files because the tests link against the
 existing `libvmaf` static target and import public + internal
 headers that already existed before round 3.
+
 ## SYCL kernel coverage round 2 (ADR-0884, 2026-05-30)
 
 no rebase impact: REASON — all changes are confined to fork-added test
@@ -41554,6 +41977,7 @@ files in `core/test/meson.build`, and docs / changelog /
 Netflix/vmaf C source is touched. The SYCL backend itself is
 fork-original (Netflix/vmaf has no SYCL path), so there is no
 upstream rebase surface for these tests at all.
+
 ## CUDA kernel parity tests — round 2 (ADR-0886, 2026-05-30)
 
 no rebase impact: REASON — adds five new fork-local test files under
@@ -41627,6 +42051,7 @@ The fix adds a file-scope `#pragma clang fp contract(off)` block to
 scalar reference functions out into a helper header, the pragma block must
 move with them or the icx FMA contraction returns and `test_xyb` fails
 under the all-backends matrix leg.
+
 ## test_gpu_picture_pool.c Round 27 D.3 + D.4 cleanup (ADR-0970, 2026-05-31)
 
 no rebase impact: REASON — `core/test/test_gpu_picture_pool.c` is a fork-local
@@ -41656,6 +42081,7 @@ Upstream Netflix/vmaf has no coverage gate, so on sync there is nothing to
 reconcile. The per-PR delta gate's `fetch-depth: 0` checkout requirement is
 worth flagging if the workflow ever gets restructured: a shallow checkout
 breaks `git merge-base HEAD "$BASE_REF"`.
+
 ## Metal kernel coverage round 4 — closeout (2026-05-31, ADR-0959)
 
 no rebase impact: REASON — every new file path is fork-local Metal-only
@@ -41674,6 +42100,7 @@ Fork-local additions (no rebase impact):
 `changelog.d/added/metal-kernel-coverage-round4.md`, the new audit row in
 `docs/adr/README.md`, the `T-METAL-KERNEL-PARITY-ROUND4-2026-05-31` row in
 `docs/state.md`.
+
 ## CUDA kernel parity coverage — round 4 (ADR-0956, 2026-05-31)
 
 no rebase impact: REASON — all five new files
@@ -41691,6 +42118,7 @@ binaries in the same `enable_cuda` block the conflict is a trivial
 append-vs-append three-way merge (no shared lines change). Fork-local
 documentation files (ADR-0956, the round 4 research digest, the
 changelog fragment, this rebase-notes row) are never authored upstream.
+
 ## speed_internal.c + SpEED GPU twin wiring (ADR-0964, 2026-05-31)
 
 **Will bite a rebase.** This PR adds `core/src/feature/speed_internal.c`
@@ -41705,6 +42133,7 @@ change must be mirrored into `speed_internal.c`.  Symptom of drift:
 flag a places=4 violation between CPU and SYCL on Intel Arc.
 
 Also fork-local:
+
 - `core/src/feature/hip/speed_{chroma,temporal}_hip.c` (already in tree,
   newly wired into `core/src/hip/meson.build`).
 - `core/src/feature/sycl/speed_{chroma,temporal}_sycl.cpp` (already in
@@ -41744,11 +42173,13 @@ rebase-note from ADR-0964 above covers the `speed_internal.c` drift risk
 (mirror fixes between `speed.c` and `speed_internal.c`).
 
 New additions:
+
 - `core/src/feature/feature_extractor.c` externs + registry rows for
   `vmaf_fex_speed_chroma_cuda` / `vmaf_fex_speed_temporal_cuda` under
   `#if HAVE_CUDA`.
 - `core/test/test_cuda_speed_chroma_parity.c` +
   `core/test/test_cuda_speed_temporal_parity.c`.
+
 ---
 
 ## Go `errors.Join` cleanup paths + `slog` key standardisation (ADR-0935, 2026-05-31)
@@ -41761,6 +42192,7 @@ cannot conflict here. The `cmd/vmafx-tune/AGENTS.md` invariant addition
 is also fork-original. If a follow-up port-PR introduces upstream Go
 code, the `errors.Join` discipline documented in
 `cmd/vmafx-tune/AGENTS.md` §7 applies on entry.
+
 ## Generic registry for vmafx-controller (ADR-0925, 2026-05-31)
 
 no rebase impact: REASON — touched files are 100 % fork-only Go sources
@@ -41801,6 +42233,7 @@ own before cycle N+3, reconcile by adopting upstream's naming
 (`VmafPicture2` is intentionally generic) and remap our converters;
 otherwise the cycle-N+3 v1-removal commit is the natural ABI break
 window.
+
 ## pathlib sweep + ruff PTH guard (ADR-0936, 2026-05-31)
 
 no rebase impact: changes are confined to fork-owned Python — the two
@@ -41812,6 +42245,7 @@ per-file ignores for the upstream-mirror trees (`python/**`,
 `compat/python-vmaf/**`, `testdata/**`). Upstream Netflix Python is
 covered by those ignores; an upstream sync will not see the `PTH` rule
 applied to their files.
+
 ## iter.Seq[T] companion APIs for Go packages (ADR-0932, 2026-05-31)
 
 no rebase impact: REASON — every touched file is fork-original Go code
@@ -41823,6 +42257,7 @@ the new `IterSamples` / `IterCloud` / `IterHull` / `AllSeq` /
 `Registry.ListModels` shims are likewise fork-local. If a future Netflix
 upstream adds Go bindings, the conflict is resolution-only at the
 package-tree level (different directory layout, no symbol overlap).
+
 ## Skills library expansion — `/add-mcp-tool`, `/add-k8s-resource`, `/audit-modernization`, bisect-common (ADR-0939, 2026-05-31)
 
 no rebase impact: all new files land under `.claude/skills/`, which is
@@ -41837,6 +42272,7 @@ If upstream Netflix ever adopts `.claude/` skills (unlikely — different
 agent tooling), revisit whether the three new scaffolds should be promoted
 or stay fork-only. The bisect-common library has no upstream analogue
 either, so the merge surface is zero.
+
 ## ai/ dataclass → pydantic v2 migration (ADR-0934, 2026-05-31)
 
 no rebase impact: REASON — touched files are entirely fork-local. Upstream
@@ -41849,6 +42285,7 @@ JSON layout byte-identical (`ModelMetadata.to_json()` uses
 `model_dump(mode="json")` + `json.dumps(indent=2, sort_keys=True)`). On
 upstream sync the diff cannot conflict — Netflix has no equivalent file
 to merge into.
+
 ## Vendored libsvm + IQA test-coverage uplift (2026-05-31, ADR-0952)
 
 `core/test/test_svm_api.c` and `core/test/test_iqa_helpers.c` are pure
@@ -41881,6 +42318,7 @@ upstream code is the alphabetical position in the test list.
 
 PR companion to ADR-0889 (PR #381, libsvm parser audit) — the two
 PRs can land in either order without conflict.
+
 ## external-bench test coverage backfill (ADR-0332 follow-up, 2026-05-31)
 
 no rebase impact: REASON — changes are confined to fork-only files
@@ -41890,6 +42328,7 @@ ADR-0332 (no upstream counterpart); coverage backfill (14 new tests for
 BVI-DVC discovery edge cases, Netflix discovery edge cases, validator
 rejection paths, `run_wrapper` missing-output guard, and `main()`
 `--limit` + per-item skip flow) cannot conflict on upstream sync.
+
 ## HIP motion3 parity test ENOSYS-skip (ADR-0949, 2026-05-31)
 
 no rebase impact: REASON — the only file touched in the libvmaf source
@@ -41900,6 +42339,7 @@ inside the test's HIP-path helper; CPU baseline, tolerance, fixture
 geometry, and end-of-stream handling are unchanged. Upstream sync
 cannot conflict because no upstream file touches this test path or
 the `motion_hip` extractor's scaffold-vs-runtime split.
+
 ## GitHub Actions custom-action + reusable-workflow audit (ADR-0951, 2026-05-31)
 
 no rebase impact: REASON — audit-only PR. No code under `core/`, `python/`,
@@ -41919,6 +42359,7 @@ research digest to confirm.
 Replaces a local variable assignment in `_run_vmaf_score`. No C surface, no public
 API, no upstream-mirrored file touched. On rebase against upstream Netflix/vmaf,
 this change applies cleanly to the MCP server layer which is entirely fork-local.
+
 ## ADR-0945 — HIP kernel parity coverage round 3 — 2026-05-31
 
 no rebase impact: REASON — the 4 new test files
@@ -41936,6 +42377,7 @@ The only non-test files touched are `docs/adr/README.md` (index row),
 `changelog.d/added/hip-kernel-coverage-round3.md` fragment, and the
 companion `docs/research/hip-kernel-coverage-round3-2026-05-31.md`
 audit — all fork-only.
+
 ## ADR-0918 — LLVM IR diff harness — 2026-05-31
 
 no rebase impact: harness is fork-local tooling
@@ -41951,6 +42393,7 @@ ir-diff-update`) is a normal part of the port — same discipline as
 the score JSON snapshots under `/regen-snapshots`. The new
 [`core/src/feature/x86/AGENTS.md`](../core/src/feature/x86/AGENTS.md)
 invariant note flags this for the next sync agent.
+
 ## vmafx-operator functional test coverage uplift (2026-05-31)
 
 no rebase impact: REASON — all four new test files live under
@@ -41964,6 +42407,7 @@ Fork-local files:
 `cmd/vmafx-operator/internal/controller/vmafxmodeltraining_controller_branch_test.go` (new),
 `cmd/vmafx-operator/internal/controller/setup_with_manager_test.go` (new),
 `changelog.d/added/operator-functional-coverage.md` (new).
+
 ## ADR-0913 — CHANGELOG.md renderer splice contract + 44 k-line drift sweep — 2026-05-31
 
 no rebase impact (upstream): REASON — fork-local infrastructure only. The
@@ -41984,6 +42428,7 @@ ADR-0892 introduces). On rebase the renderer's new stderr WARNING
 surfaces the wrong directory immediately; `bash
 scripts/release/concat-changelog-fragments.sh --check` then verifies
 the fix.
+
 ## `__init__.py` export-completeness audit (ADR-0911, 2026-05-31)
 
 no rebase impact: REASON — all eight modified `__init__.py` files are
@@ -41996,11 +42441,13 @@ Upstream-mirror packages (`compat/python-vmaf/**`,
 `python/test/__init__.py`) were deliberately left byte-identical per the
 upstream-mirror rebase-hygiene rule. No upstream Netflix/vmaf file is
 touched.
+
 ## ADR-0907 — Wall-clock perf regression gate (2026-05-30)
 
 **No rebase impact** on upstream C/Python code.
 
 New fork-local files only:
+
 - `scripts/perf/check-regression.py` — gate script (stdlib-only)
 - `scripts/perf/test_check_regression.py` — smoke tests
 - `docs/adr/0907-perf-regression-gate-wall-clock.md` (new)
@@ -42013,6 +42460,7 @@ New fork-local files only:
 
 No upstream Netflix collision risk — the gate consumes only the fork-added
 `testdata/perf_multi_resolution.json` baseline (ADR-0752, fork-local).
+
 ## Slow-test audit (ADR-0908, 2026-05-30)
 
 no rebase impact: REASON — all touched files are fork-local. A new ADR
@@ -42024,6 +42472,7 @@ marker (`tools/vmaf-tune/pyproject.toml`, `ai/pyproject.toml`,
 (`tools/vmaf-tune/tests/test_bbb_e2e_v5_bug_cluster.py`,
 `tools/vmaf-tune/tests/test_bbb_e2e_v14_bug_cluster.py`). None are
 mirrored from upstream Netflix/vmaf.
+
 ## ADR status-field drift sweep (2026-05-30)
 
 no rebase impact: changes are confined to fork-local ADR markdown files
@@ -42033,6 +42482,7 @@ ADR-0738) and Status normalisation on ADR-0105 / ADR-0106 / ADR-0107
 upstream has no `docs/adr/` tree; nothing to reconcile on sync. Audit
 methodology and the full decision matrix live in
 `docs/research/adr-status-drift-audit-2026-05-30.md`.
+
 ## ADR-0903 — Codecov upload wiring (2026-05-30)
 
 no rebase impact: REASON — all changes are confined to fork-only files:
@@ -42044,6 +42494,7 @@ fragment per ADR-0221. The added `codecov/codecov-action` steps depend
 only on the Cobertura XML the existing gcovr step already produces;
 upstream sync cannot break this wiring because the gcovr job itself is
 fork-only.
+
 ## ADR-0904 — cargo-machete build-dep ignores (2026-05-30)
 
 no rebase impact: REASON — Netflix/vmaf upstream has no Rust workspace.
@@ -42052,6 +42503,7 @@ Both touched `Cargo.toml` files (`bindings/rust/vmafx-sys/Cargo.toml`,
 (ADR-0702, ADR-0707). The `[package.metadata.cargo-machete]` blocks add
 no-op metadata (`cargo` ignores keys it doesn't know) and cannot conflict
 with anything upstream might add later.
+
 ## Signing and attestation audit (ADR-0902, 2026-05-30)
 
 no rebase impact: REASON — changes are confined to fork-local CI
@@ -42062,6 +42514,7 @@ infrastructure (`.github/workflows/docker-publish-production.yml`,
 workflow (`supply-chain.yml`) is itself fork-additive (Netflix upstream
 does not ship a Sigstore + SLSA + SBOM release channel); upstream syncs
 never touch any of these files.
+
 ## Doxygen public-API clean (ADR-0953, 2026-05-31)
 
 **Low rebase impact**: every edit lands as additional doxygen comments
@@ -42077,6 +42530,7 @@ no upstream counterpart. The new `core/doc/Doxyfile.public-api`,
 `.github/workflows/doxygen-public-api.yml`, ADR-0953, research
 digest, changelog fragment, and AGENTS.md invariant note are
 fork-local — zero rebase exposure.: warning-clean doxygen build for libvmaf public C API (recovery of #457)): warning-clean doxygen build for libvmaf public C API (recovery of #457))
+
 ## governance-audit (2026-05-30, ADR-0901)
 
 No rebase impact — all changes are fork-local governance files that upstream
@@ -42100,6 +42554,7 @@ On upstream sync, no conflict is expected. If CODEOWNERS shows a textual
 conflict because PR #321 landed in-between, the resolution is trivial:
 keep PR #321's renamed `/core/...` rows AND keep this PR's new append-only
 rows. Both edits are non-overlapping at the line level.
+
 ## ADR-0893 — Pre-commit config audit — 2026-05-30
 
 no rebase impact: REASON — `.pre-commit-config.yaml` is a fork-local config
@@ -42108,6 +42563,7 @@ revisions and hooks listed are fork-owned. Touches one fork-owned Python
 file via isort 6.0.1 auto-fix
 (`tools/vmaf-tune/tests/test_codec_adapter_av1_videotoolbox.py`), which is
 itself outside the upstream tree.
+
 ## libsvm vendored audit — extend SAN-MODEL-MALLOC-OOB to row-ordering (ADR-0889, 2026-05-30)
 
 Touches the vendored libsvm parser `core/src/svm.cpp`, which is wrapped in a
@@ -42135,6 +42591,7 @@ that must be re-applied:
 Regression coverage at `core/test/test_svm_parser.c` (suite `fast`). On
 sync, re-run that test plus `test_predict` and `test_model` before merging.
 See `core/src/AGENTS.md` §10 for the full invariant list.
+
 ## CI concurrency + cost audit (ADR-0890, 2026-05-30)
 
 no rebase impact: REASON — CI-only changes to `.github/workflows/` files
@@ -42144,6 +42601,7 @@ file with a different name and structure; the five files modified here
 `lint-and-format.yml`, plus the ADR / changelog / state.md surface) have no
 upstream counterpart. No source / header / patch surface touched; the
 `ffmpeg-patches/` series is unaffected.
+
 ## ADR-0883 — HIP kernel parity coverage round 2 — 2026-05-30
 
 no rebase impact: REASON — the 5 new test files
@@ -42157,6 +42615,7 @@ was added by the HIP scaffold landing in ADR-0212).  Wiring lives
 strictly inside that block.  The only non-test file touched is
 `docs/adr/README.md` (index row) and
 `docs/adr/_index_fragments/_order.txt` — both fork-only.
+
 ## ADR-0876 — printf-format portability sweep (CERT FIO47-C) — 2026-05-30
 
 Low rebase impact, scoped to fork-added log / debug call sites. The four
@@ -42176,6 +42635,7 @@ were intentionally not changed — see
 Class C for the rationale. Future upstream syncs that touch the same
 lines will conflict trivially; resolve in favour of the PRI-macro form
 for fixed-width types.
+
 ## ADR-0877 — error-code consistency audit (MS-SSIM decimate) — 2026-05-30
 
 no rebase impact: the four touched TUs (`core/src/feature/ms_ssim_decimate.{c,h}`,
@@ -42186,6 +42646,7 @@ they have no upstream Netflix/vmaf counterpart. The change converts the
 the header docstring to match — no logic change on the hot path. Bit-exactness
 across scalar / AVX2 / AVX-512 / NEON is preserved (only the cold malloc-failure
 branch is touched).
+
 ## ADR-0875 — GitHub Actions hardening audit — 2026-05-30
 
 no rebase impact: REASON — all changes are confined to fork-local CI
@@ -42204,6 +42665,7 @@ Fork-local files:
 `docs/adr/0875-github-actions-audit-2026-05-30.md`,
 `docs/research/github-actions-audit-2026-05-30.md`,
 `changelog.d/security/github-actions-audit-2026-05-30.md`.
+
 ## ADR-0873 — ARM64 NEON bit-exactness audit — 2026-05-30
 
 Rebase impact: **low, limited to build system and one test file**.
@@ -42234,6 +42696,7 @@ Fork-local files:
 `core/test/test_motion_v2_simd.c` (NEON test arm),
 `docs/adr/0873-arm64-neon-bit-exactness-audit.md`,
 `changelog.d/fixed/arm64-neon-bit-exactness-audit.md`.
+
 ## Logging consistency audit — 2026-05-30
 
 No rebase impact on upstream. All routed sites are fork-local:
@@ -42251,6 +42714,7 @@ Fork-local files:
 `core/src/sycl/common.cpp`,
 `docs/research/logging-consistency-audit-2026-05-30.md`,
 `changelog.d/changed/logging-consistency-audit.md`.
+
 ## ADR-0870 — Helm `values.schema.json` + dev-MCP path drift — 2026-05-30
 
 no rebase impact: all touched files are fork-additions (`deploy/helm/`,
@@ -42265,6 +42729,7 @@ The Containerfile path fixes (`libvmaf/` → `core/`) are the downstream of
 ADR-0700's repo rename; future rebases against a hypothetical upstream
 that re-introduced a `libvmaf/` directory at the repo root would need
 their own audit, but no such state exists or is planned.
+
 ## ADR-0868 — GPU backend kernel coverage gap-fill — 2026-05-30
 
 No rebase impact: all changes are net-new fork-local test files under
@@ -42287,6 +42752,7 @@ Fork-local files:
 `docs/adr/0868-gpu-backend-kernel-coverage.md`,
 `docs/research/gpu-backend-kernel-coverage-audit-2026-05-30.md`,
 `changelog.d/added/0868-gpu-backend-kernel-coverage.md`.
+
 ## test/feature-extractor-coverage-push — 2026-05-30
 
 no rebase impact: REASON — test-only changes confined to fork-local files

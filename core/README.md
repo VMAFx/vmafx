@@ -11,6 +11,7 @@ For building, you need the following:
 - `xxd`
 
 Follow the steps below to set up a clean virtual environment and install the tools:
+
 ```
 python3 -m pip install virtualenv
 python3 -m virtualenv .venv
@@ -18,6 +19,7 @@ source .venv/bin/activate
 pip install meson
 sudo [package-manager] install nasm ninja-build doxygen xxd
 ```
+
 You need to invoke `[package-manager]` depending on which system you are on: `apt-get` for Ubuntu and Debian, `yum` for CentOS and RHEL, `dnf` for Fedora, `zypper` for openSUSE, `brew` for MacOS (no `sudo`).
 
 Ninja package name might be `ninja` or `ninja-build`, depending on your system. Check [the pre-built ninja packages](https://github.com/ninja-build/ninja/wiki/Pre-built-Ninja-packages) before running the install command.
@@ -31,6 +33,7 @@ meson setup build --buildtype release
 ```
 
 Special cases:
+
 - add `-Denable_float=true` flag in the rare case if you want to use the floating-point feature extractors.
 - add `-Denable_avx512=true` to support wider SIMD instructions to achieve the fastest processing on supported CPUs
 - add `-Denable_cuda=true` to build with CUDA support, which requires `nvcc` for compilation (tested with CUDA >= 11)
@@ -138,7 +141,6 @@ int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cfg,
 
 void vmaf_model_destroy(VmafModel *model);
 ```
-
 
 A VMAF score is a fusion of several elementary features which are specified by a model file. The next step is to register all feature extractors required by your model or models with `vmaf_use_features_from_model()`. If there are auxillary metrics (i.e. `PSNR`) you would also like to extract use `vmaf_use_feature()` to register it directly.
 

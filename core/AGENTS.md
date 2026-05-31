@@ -371,10 +371,12 @@ core/
   `src/dnn/model_loader.h` → `vmaf_dnn_verify_signature`), apply
   `VMAF_EXPORT` to the internal declaration instead. Verify after any
   structural change with:
+
   ```bash
   nm -D --defined-only build/src/libvmaf.so.3.0.0 | grep ' [TW] ' | grep -v ' vmaf_' | wc -l
   # Must print 0
   ```
+
   On upstream sync: any new `vmaf_*` entry point added upstream that
   the fork's headers re-export needs `VMAF_EXPORT` added in the same
   merge commit; missing it will silently hide the symbol.

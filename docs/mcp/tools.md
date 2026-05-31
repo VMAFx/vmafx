@@ -179,6 +179,7 @@ verify that a backend can actually run a score.
   "sycl": false,
   "hip":  false
 }
+
 ```
 
 The server runs `vmaf --version` with a 5-second timeout and grep's the
@@ -578,6 +579,7 @@ implicitly `False`, causing clients to misclassify errors as successes.
 | Subprocess non-zero (`vmaf_score`)    | Raises `RuntimeError`; mcp sets `isError=True`          |
 | Missing optional extras               | Raises `RuntimeError`; mcp sets `isError=True`          |
 | `probe_backend` unhealthy backend     | Returns success result with `runtime_healthy: false`    |
+
 ## Cross-tool error conventions
 
 | Situation                               | Shape                                                   |
@@ -776,4 +778,5 @@ The server sends two progress events per tool call:
 No finer-grained progress is available because the tools delegate to a subprocess.
 Clients without a token receive no progress events (per MCP spec — the server
 must not send unsolicited progress).
+
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).

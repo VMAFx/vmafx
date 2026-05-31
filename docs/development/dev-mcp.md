@@ -344,6 +344,7 @@ docker exec vmaf-dev-mcp bash -c '
 Encoders that are not runtime-available on the host produce per-row
 `ok=false` entries with the diagnostic strings above; the sweep does
 not abort.
+
 ### Host-kernel ↔ container-userspace UAPI version pins (ADR-0543)
 
 Intel NEO compute-runtime and ROCm KFD userspace are version-pinned via

@@ -22,6 +22,7 @@ Different content types require different encoding strategies:
   handling.
 
 A content classifier that runs once per clip (10 seconds → tag dict) enables:
+
 - Routing to per-content-type VMAF priors and ladder defaults.
 - Selecting encoder `tune` params automatically.
 - Adjusting per-shot bisect thresholds (e.g. tighter NR uncertainty zone for

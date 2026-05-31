@@ -4,6 +4,7 @@
 
 A local `-Db_sanitize=address,undefined` build of `core/` on master tip
 `bbcaa8d127` was run against the full unit-test suite (49 fast + 12 dnn
+
 + 2 slow = **63 tests, all OK**) plus the vmaf CLI binary against the
 Netflix golden YUVs across 4:2:0 8-bit, 4:2:2 10-bit, and 4:2:0 12-bit
 inputs and the full feature set.
@@ -89,6 +90,7 @@ typedef struct CambiState {
 
 `set_option_int` in `core/src/opt.c` writes `*(int *)data = value;`,
 which:
+
 * on `window_size`: writes 4 bytes starting at a 4-byte-aligned address,
   overwriting `src_window_size`. `init()` later sets `s->src_window_size
   = s->window_size`, so the corruption is masked at runtime — but the

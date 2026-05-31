@@ -66,6 +66,7 @@ errors or warnings against the modified kernel.
 
 Numerical verification (to be run in the vmaf-dev-mcp container per the scope
 specification):
+
 ```bash
 docker exec vmaf-dev-mcp /workspace/build-hip/core/tools/vmaf \
   --backend hip \

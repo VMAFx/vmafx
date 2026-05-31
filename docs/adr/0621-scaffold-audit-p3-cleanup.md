@@ -28,6 +28,7 @@ into a single housekeeping PR without touching any functional path:
    Fixing them would diverge from upstream cJSON; the correct action is to exclude the file.
 
 State drift gaps:
+
 - **SD-1** — `T-VULKAN-MOTION-LAVAPIPE-INIT` was referenced in two CI YAML comments and
   two `continue-on-error: true` steps but had no Open-bugs row in `docs/state.md`.
 - **SD-2** — `T-PYTHON-PERMUTATION-IMPORTANCE-HARDCODED-PATH` was in the Open-bugs table

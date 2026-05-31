@@ -37,6 +37,7 @@ only the in-bounds tap weights.
 
 Separating horizontal and vertical passes avoids large shared-memory tiles. Each
 pass processes one 16×8 block:
+
 - Pass 1 writes six `int64_t` arrays of size `W×H` (one per moment: mux, muy, x2, xy, y2, w).
 - Pass 2 reads those arrays, applies the 9-tap vertical kernel, computes the SSIM formula
   in `double`, and accumulates per-block double partial sums.
@@ -56,6 +57,7 @@ which packs hi/lo into paired int32 shuffles — analogous to the CUDA paired-sh
 approach.
 
 The host glue rewrite (`integer_ssim_hip.c`) changes:
+
 - 5 `float *` buffers → 6 `int64_t *` device buffers
 - Readback: two slots (double partials, int64 weights)
 - `collect`: `ssim = total_ssim / (double)total_wgt`

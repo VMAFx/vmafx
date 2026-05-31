@@ -123,9 +123,11 @@ The loader only fingerprints hardware encoders (`*_nvenc`,
    missing `codec=WxH` pairs, non-vendor source domains, and
    non-ISO `verified_date`.
 4. Run the round-trip test:
+
    ```bash
    pytest ai/tests/test_hardware_caps.py
    ```
+
 5. Bump the row's `verified_date` to the date you read the source
    doc, not the date you opened the PR.
 

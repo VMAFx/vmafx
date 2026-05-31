@@ -27,6 +27,7 @@ Build flags: `meson setup -Denable_cuda=true -Dbuildtype=release -Db_ndebug=true
 -Dcpp_args='-g -fno-omit-frame-pointer'`; `ninja -C`.
 
 Workloads:
+
 - WL1: `src01_hrc00_576x324.yuv` / `src01_hrc01_576x324.yuv`, 576x324 8bpc,
   48 frames. Feature: `float_ssim_cuda` (regex `.*ssim.*`).
 - WL2: `checkerboard_1920_1080_10_3_0_0.yuv` / `..._10_0.yuv`, 1920x1080 8bpc,

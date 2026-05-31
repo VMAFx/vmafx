@@ -38,6 +38,7 @@ together take ~40% of the non-IIR frame time.
 ### Axis 1 — bit-exactness strategy for `cbrtf`
 
 Options:
+
 1. **Per-lane scalar libm inside SIMD loop** (picked). Spill
    vector to aligned scratch, apply scalar `cbrtf`, reload.
    Byte-identical to scalar by construction. Cost: a few loads /

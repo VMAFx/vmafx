@@ -381,6 +381,7 @@ All within places=4 of CPU (in fact bit-exact: delta=0.000000).
 After this PR no weak HSACO stubs back any of the three integer-domain
 PSNR / PSNR-HVS / moment extractors — only the four ADM kernels remain
 on the ADR-0536 stub path pending their own CUDA-helper-macro port.
+
 ## Per-kernel hipcc flag dispatch (ADR-0539)
 
 `core/src/meson.build` defines a `hip_cu_extra_flags` dict alongside
@@ -396,6 +397,7 @@ the prior command line for any kernel not listed.
 Mirrors the established `cuda_cu_extra_flags` dict in the same meson
 file (used by `float_adm_score` and `ssimulacra2_blur` on the CUDA side).
 When porting `float_adm` device code to HIP, add a matching entry.
+
 ## ADR-0539: integer ADM HIP kernels — real implementation (2026-05-18)
 
 The four ADM kernels (`adm_dwt2`, `adm_csf`, `adm_csf_den`, `adm_cm`)

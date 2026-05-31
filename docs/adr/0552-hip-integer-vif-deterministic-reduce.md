@@ -76,6 +76,7 @@ Replace the per-thread `atomicAdd` pattern in both horizontal-pass kernels
 ## Consequences
 
 **Positive:**
+
 - HIP VIF per-feature values are now deterministic and bit-identical to CPU
   within the places=4 gate required by ADR-0214.
 - VMAF-score divergence vs CPU on the BBB testdata fixture drops from 0.031
@@ -84,12 +85,14 @@ Replace the per-thread `atomicAdd` pattern in both horizontal-pass kernels
   field to 2 — a 64× reduction — improving kernel throughput.
 
 **Negative:**
+
 - Horizontal kernels no longer early-exit for out-of-bounds threads; those
   threads still execute the wavefront reduce (with zero-initialised structs).
   For 576×324 frames the overhead is negligible (the last block has at most
   ~64 padding threads out of 128).
 
 **Neutral / follow-ups:**
+
 - Port the CUDA twin's shared-memory tiling for full throughput parity (separate ADR).
 - Run the cross-backend parity gate (`cross_backend_parity_gate.py --features vif
   --backends cpu hip --places 4`) in CI to prevent regression.

@@ -45,6 +45,7 @@ Two YUV fixtures, both already checked in under
    terminates early (fewer than 6 scales).
 
 Per fixture: pooled `mean` / `min` / `max` / `harmonic_mean` + frame 0
+
 + frame 47. 6 asserts × 2 fixtures = 12 asserts. Tolerance: 4 decimal
 places (well within the ADR-0161 bit-exact contract's 0 ulp drift).
 

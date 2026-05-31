@@ -33,11 +33,13 @@ repos, webhook-driven, hosted by Mend).
 ## Consequences
 
 **Positive:**
+
 - No infra to maintain (no `RENOVATE_TOKEN`, no ARC runner-set, no cron).
 - Webhook-driven response to dashboard ticks (vs polling).
 - Free for public repos.
 
 **Negative:**
+
 - External SaaS dependency (Mend); rollback path documented in
   `docs/development/dependency-bot.md`.
 

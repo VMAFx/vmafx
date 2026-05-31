@@ -113,6 +113,7 @@ guards that allow `feature_collector.c` (a plain C file) to include the header
 and call the three functions without a link-name-mangling mismatch.
 
 Do not:
+
 - Remove the `extern "C"` guards from `metadata_handler.h`.
 - Rename the three public symbols (`vmaf_metadata_init`, `vmaf_metadata_append`,
   `vmaf_metadata_destroy`).
@@ -138,6 +139,7 @@ walker's per-iteration high-water mark. The contract checked by
   inside every walker.
 
 Do not:
+
 - Reintroduce unconditional `model->n_features++` in `parse_feature_names`
   (the prior shape double-counted on fuzzer-mangled JSON with repeated
   `feature_names` keys; ADR-0887 reproducer).
@@ -182,6 +184,7 @@ vendored libsvm or IQA bodies, the test files do not need to follow
 the upstream change; they observe public-API contracts that survive
 across versions. A test failure post-port is the signal — investigate
 the API drift before relaxing the assertion.
+
 ### 10. `.cpp` files lint-clean to `modernize-*` profile (ADR-0915)
 
 `.clang-tidy` enables the full `modernize-*` family minus four explicit
@@ -198,6 +201,7 @@ a keyword), and use `auto*` for `static_cast<T*>(malloc(...))`-style
 initialisers where the cast already spells the type. These match the
 checks enabled by ADR-0915; deviating reintroduces warnings that the
 touched-file rule (ADR-0141) requires you to discharge in the same PR.
+
 ### 10. Vendored libsvm — three fork patches must not regress on sync (ADR-0889)
 
 `core/src/svm.cpp` + `core/src/svm.h` are a verbatim vendored copy of
@@ -241,6 +245,7 @@ Additionally:
   `core/test/test_svm_parser.c` + `core/test/test_predict` +
   `core/test/test_model`. See ADR-0889 for the deferral rationale on
   the upstream 3.36 sync.
+
 ### 10. Fork-added diagnostics route through `vmaf_log`, not `fprintf(stderr, …)`
 
 libvmaf exposes a user-installable log callback via
@@ -257,6 +262,7 @@ declared in [`log.h`](log.h). C++ TUs include the header inside an
 `core/src/sycl/dispatch_strategy.cpp` for the pattern.
 
 Exceptions — direct stream writes are correct in these cases:
+
 - `core/src/log.{c,cpp}` — the log implementation itself.
 - CLI tools under `core/tools/` — stdout score / JSON output is the
   contract.

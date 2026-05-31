@@ -52,6 +52,7 @@ package-level module exporting:
 
 Each of the six scripts is refactored to a `~80-150 LOC` file
 containing only:
+
 * Corpus-specific constants and CSV column aliases
 * A `parse_manifest_csv` function (the only legitimately different
   logic per script)

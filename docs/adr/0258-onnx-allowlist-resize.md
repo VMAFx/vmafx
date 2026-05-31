@@ -58,6 +58,7 @@ new entry automatically.
 ## Consequences
 
 **Positive:**
+
 - Unblocks PR #341 (U-2-Net) and the wider saliency / segmentation
   surface (mobilesal, BASNet, PiDiNet, FPN-style detectors) on the
   fork's tiny-AI pipeline.
@@ -70,6 +71,7 @@ new entry automatically.
   additional plumbing.
 
 **Negative:**
+
 - Models that ship `mode="cubic"` will load and run at the
   fork's tiny-AI surface. Per ADR D39 / ADR-0169 the scanner
   is op-type-only; mode-level filtering would either expand the
@@ -82,6 +84,7 @@ new entry automatically.
   cross-reference. No mechanical enforcement.
 
 **Neutral / follow-ups:**
+
 - If a future fork model needs `Loop`-style attribute gating
   symmetric to ADR-0171 (bounded-iteration guard), the precedent
   exists — but `Resize` does not need it.

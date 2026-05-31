@@ -51,6 +51,7 @@ grep -qE "(Lusoris and Claude|Copyright [0-9]+ Lusoris)"
 ```
 
 Pattern analysis:
+
 - `Lusoris and Claude` — matches legacy headers (`Copyright 2025 Lusoris and Claude (Anthropic)`)
 - `Copyright [0-9]+ Lusoris` — matches new headers (`Copyright 2026 Lusoris`)
 - Netflix-only headers (`Copyright 2016-2024 Netflix, Inc.`) match neither
@@ -62,6 +63,7 @@ Pattern analysis:
 ### Verification
 
 Six tests added in `scripts/ci/tests/test-assertion-density.sh`:
+
 - T1: legacy header matched
 - T2: new-format header matched (was the failing case before the fix)
 - T3: Netflix-only header skipped
@@ -116,6 +118,7 @@ single cleanup point.
 ### Verification
 
 Four tests added in `scripts/release/tests/test-concat-changelog-fragments.sh`:
+
 - T1: static check — EXIT trap present in script source
 - T2: static check — only one `rm -f "$tmp_body"` reference (trap only)
 - T3: dynamic check — awk failure via `PATH` shim; verified no new

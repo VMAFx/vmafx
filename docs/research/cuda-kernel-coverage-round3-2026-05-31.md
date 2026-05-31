@@ -72,6 +72,7 @@ high-impact gap: the **float-path twins** and the new
 ## Test design
 
 ### Fixture
+
 - **Geometry**: 256×144 YUV420P 8-bpc — large enough for every kernel's
   smallest scale (`float_vif` 4-scale pyramid → 32×18 at scale 3;
   `float_ms_ssim` 5-scale → 16×9 at scale 4; `ssimulacra2` 6-scale →
@@ -86,10 +87,12 @@ high-impact gap: the **float-path twins** and the new
   steady-state paths).
 
 ### Tolerance
+
 ADR-0214 places=4 (1e-4) — matches every other CPU-vs-CUDA parity
 gate on the fork.
 
 ### Skip behaviour
+
 `vmaf_cuda_state_init` returns non-zero → `[skip: no CUDA device]`
 emitted to stderr, test returns success. Mirrors
 `test_cuda_motion3_parity.c` / `test_cuda_buffer_alloc_oom.c`.

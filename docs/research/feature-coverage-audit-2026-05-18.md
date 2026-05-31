@@ -118,6 +118,7 @@ them to CUDA/HIP; those stubs are tracked in ADR-0557 and ADR-0558.
 ### `ai/scripts/chug_extract_features.py`
 
 Uses `FEATURE_SETS` dict from `ai/data/feature_extractor.py`:
+
 - `"canonical"` → DEFAULT_FEATURES (6 features: adm2, vif_scale0–3, motion2)
 - `"full"` → FULL_FEATURES (22 features; see below)
 - **`speed_chroma` / `speed_temporal`: NOT PRESENT in either set**
@@ -151,6 +152,7 @@ compatibility but UGC cells outside canonical-6 are NaN.
 
 This script IS already updated (2026-05-15, per inline comment citing
 "Lawrence's HDR recipe"). It has:
+
 - `CUDA_CPU_RESIDUAL_EXTRACTOR_NAMES` includes `"speed_temporal"` and
   `"speed_chroma"`.
 - `FEATURE_NAMES` (25 cols) includes `speed_temporal`, `speed_chroma_u`,
@@ -294,6 +296,7 @@ released?") was CLOSED 2025-07-25 per research-0089.
 | vmaf_tiny_v1 | No card | Feature contract undocumented | **MISSING CARD** |
 
 **Stale / gap flags:**
+
 1. `konvid_mos_head_v1` card does not mention that `speed_chroma` /
    `speed_temporal` are absent from its training feature set. This is
    relevant for future HDR model evaluation.

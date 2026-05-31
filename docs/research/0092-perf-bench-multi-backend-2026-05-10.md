@@ -330,6 +330,7 @@ Full-model `vmaf_v0.6.1.json` fps, 48 frames, 3 runs each. Median reported.
 *CPU AVX-512 baselines from §3: 648.6 fps (576×324), 55.6 fps (1080p). No 4K CPU baseline in this session.*
 
 **Observations:**
+
 - Run 1 at 576×324 is 8% slower than runs 2/3. Likely pipeline-state-object (PSO) cache warm-up on the first run.
 - At 1080p the RTX 4090 delivers 16× AVX-512 throughput — substantially better than CUDA (250 fps / 4.5× at 1080p from §3). This is unexpected. Key difference: Vulkan full-model runs include adm + vif + motion + ssim + ms_ssim through the Vulkan shader pipeline, whereas the CUDA bench in §3 does not have CUDA kernels for ssim/ms_ssim and runs those CPU-side (bottlenecked at ~37 ms/frame for ms_ssim). The Vulkan backend dispatches all features through GPU shaders, avoiding the ms_ssim CPU bottleneck.
 - 4K Vulkan throughput at 188.6 fps vs 1080p at 905.3 fps is a 4.8× ratio; the expected ratio for a 4× pixel-count increase would be 4× — the extra 20% overhead is consistent with larger memory-transfer costs at 4K (12 MB/frame vs 3 MB/frame for yuv420p).
@@ -345,6 +346,7 @@ Full-model `vmaf_v0.6.1.json` fps, 48 frames, 3 runs each. Median reported.
 | 3840×2160 | 222.6 | 239.7 | 234.4 | **234.4** | 1.24× |
 
 **Observations:**
+
 - **Arc A380 outperforms the RTX 4090 at every resolution via Vulkan.** At 4K: 234 fps vs 189 fps (1.24×). This is consistent with the T7-18 backlog finding (PR #120, 2026-04-26) that per-dispatch overhead on NVIDIA's proprietary Vulkan driver is much higher than on Mesa ANV; the VMAF Vulkan workload is dispatch-overhead-dominated at sub-4K and memory-bandwidth-dominated at 4K. Arc's ANV driver batches pipeline barriers more efficiently.
 - Run 1 for Arc A380 at 576×324 shows a severe cold-start penalty: 1,676 fps vs 6,952 fps steady-state (4.1× slower). This is PSO cache population on first dispatch. Intel's DG2 Vulkan driver has a notably larger PSO compilation cost on cold start than NVIDIA. At 1080p and 4K the warm-up cost is amortized over more frames (and higher per-frame work) so it disappears.
 - **Arc A380 (Vulkan) vs Arc A380 (SYCL baseline from `testdata/netflix_benchmark_results.json`):** The SYCL baseline records 252.3 fps at 576×324 full model with `--threads 1`. Vulkan achieves 6,952 fps at 576×324 — a 27.6× gap. Methodology differs (threads and fixture size) but the qualitative message is: the Vulkan backend architecture (shader-only, no host-side SYCL dispatch overhead) scales substantially better on Arc than SYCL. This validates the T5-1 Vulkan design decision.
@@ -362,6 +364,7 @@ Full-model `vmaf_v0.6.1.json` fps, 48 frames, 3 runs each. Median reported.
 | 3840×2160 | 239.1 | 210.1 | 236.6 | **236.6** | 1.25× |
 
 **Observations:**
+
 - **The Granite Ridge iGPU outperforms the RTX 4090 at 576×324 and 4K via Vulkan.** At 576×324: 7,481 fps vs 6,362 fps (1.18×). At 4K: 237 fps vs 189 fps (1.25×).
 - At 1080p the iGPU falls slightly behind: 815 fps vs 905 fps (0.90×). This is the regime where the iGPU's shared memory bandwidth (it shares system DRAM with the CPU) becomes a bottleneck relative to the RTX 4090's dedicated GDDR6X bandwidth. At sub-1080p, the workload fits comfortably in the iGPU's L2 cache and the dispatch overhead dominates — where RADV's low-overhead driver wins. At 4K the iGPU's advantage resurfaces, which suggests the bottleneck profile re-shifts at extreme pixel counts (possibly related to NVIDIA's driver serializing Vulkan submissions at high frame sizes).
 - Run 1 at 576×324 is slower (5,118 fps) than steady-state (7,481–7,671 fps) — PSO warm-up, consistent with the other GPUs.
@@ -379,6 +382,7 @@ Full-model `vmaf_v0.6.1.json` fps, 48 frames, 3 runs each. Median reported.
 | **CPU AVX-512** (Zen 5) | — | 649 | 56 | — |
 
 Key findings:
+
 1. **Every GPU beats AVX-512 CPU by 10–27× at 1080p via Vulkan.** The Vulkan backend closes the ms_ssim CPU bottleneck that limited CUDA to 4.5× at 1080p.
 2. **Arc A380 and AMD iGPU both outperform RTX 4090 at every tested resolution via Vulkan.** The NVIDIA proprietary Vulkan driver has higher per-dispatch overhead than Mesa ANV or RADV; this is consistent with the T7-18 finding and with the known architecture difference (NVIDIA Vulkan driver is designed for graphics-heavy workloads, not compute-dispatch-heavy ones).
 3. **Vulkan vs CUDA on NVIDIA at 1080p: 905 vs 250 fps (3.6×).** The main reason is that the CUDA bench in §3 had ms_ssim running CPU-side (no CUDA kernel), whereas the Vulkan backend runs all features on-device. If ms_ssim is excluded from the CUDA bench, the comparison would narrow substantially.

@@ -126,6 +126,7 @@ single most likely fix and adds maybe ~10 lines to
 ### Phase-3c — wider MLP / more epochs
 
 If 3b still doesn't beat canonical6, sweep:
+
 * `mlp_medium` (`Linear(N→64) → ReLU → Linear(64→32) → ReLU → Linear(32→1)`)
 * 60 and 100 epochs (vs canonical 30)
 * `lr` ∈ `{1e-3, 3e-4, 1e-4}`

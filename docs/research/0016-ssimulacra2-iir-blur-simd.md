@@ -50,6 +50,7 @@ row's data, identical to scalar. Summation order `(o0 + o1) + o2`
 at output time preserves scalar's `o0 + o1 + o2`.
 
 Tested with `test_blur` in `test_ssimulacra2_simd.c`:
+
 - W=33, H=21 (deliberately non-multiples of 4/8/16 → exercises tails)
 - xorshift32-seeded random input in `[-0.5, 0.5]`
 - Realistic sigma=1.5 IIR coefficients

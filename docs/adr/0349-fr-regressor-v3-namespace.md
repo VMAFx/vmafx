@@ -17,6 +17,7 @@ that checkpoint immutable in-place.
 
 A separate workstream wants to introduce a second axis of variation on the
 same regressor lineage: the canonical-6 + `encoder_internal` + shot-boundary
+
 + `hwcap` feature-set superset (driven by ADR-0235's codec-aware extension
 plus the TransNet shot-boundary surface and the hardware-capability fingerprint
 from the vmaf-tune corpus). That work was originally referred to as

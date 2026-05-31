@@ -28,6 +28,7 @@ Scalar `read_plane` handles:
 - Bounds clamping at plane edges.
 
 Options:
+
 1. **Per-lane scalar reads** (chosen): every pixel read goes through
    the scalar helper; fills a float[N] scratch; SIMD loads that.
    Handles all formats uniformly. Limits speedup on reads but keeps
@@ -42,6 +43,7 @@ Given only 2 calls/frame, option 1 is the right trade-off.
 ### Axis 2 — sRGB EOTF
 
 Scalar:
+
 ```c
 if (v <= 0.04045f)
     return v / 12.92f;
@@ -49,6 +51,7 @@ return powf((v + 0.055f) / 1.055f, 2.4f);
 ```
 
 Options:
+
 1. **Per-lane scalar** (chosen): spill SIMD vector to scratch,
    branch per lane, reload. Bit-exact by construction.
 2. **Vector polynomial `powf` approximation**: 1–2 ulp drift from

@@ -34,6 +34,7 @@ files. No MCP tool decoded encoded video before scoring. Operators had to pre-de
 manually or use the CLI directly.
 
 Additionally, two documentation correctness issues from the audit:
+
 - `README.md:L12` listed only 4 backends (omitting vulkan, metal).
 - `tools.md:L170` described the `--version`-grep probe, which was replaced with the
   `--help`-flag probe in ADR-0511.
@@ -66,6 +67,7 @@ Four fixes shipped in one PR:
    and 4:4:4.
 
 Two stale documentation corrections:
+
 - `README.md` tools table updated to all ten tools and six backends.
 - `tools.md` `list_backends` description corrected from `--version` to `--help` probe;
   response body updated to show all six backends; `isError` conventions updated to

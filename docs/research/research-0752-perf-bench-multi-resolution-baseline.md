@@ -67,6 +67,7 @@ Uses the same flag semantics as `testdata/bench_all.sh` (ADR-0513):
 ### 2.5 Container
 
 One-off `docker run` against `vmaf-dev-mcp:cuda13.3` with:
+
 ```
 --gpus all --device /dev/dri --group-add 988 -v /dev/dri/by-path:/dev/dri/by-path:ro
 ```
@@ -100,6 +101,7 @@ For any PR that claims a performance improvement:
 
 1. Re-run the script with the same `--backends` and `--resolutions` flags.
 2. Diff the two JSONs:
+
    ```bash
    python3 - old.json new.json <<'PYEOF'
    import json, sys
@@ -112,6 +114,7 @@ For any PR that claims a performance improvement:
            print(f"{key[0]:>5}p/{key[1]:6}/{key[2]:8} {o['fps']:7.1f} -> {n['fps']:7.1f} fps  {delta:+.1f}%")
    PYEOF
    ```
+
 3. Include the diff table in the PR description under "Performance delta".
 4. Update `testdata/perf_multi_resolution.json` in the PR if the improvement is
    intentional (or document regression if it is a trade-off).

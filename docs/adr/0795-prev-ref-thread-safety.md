@@ -82,6 +82,7 @@ invariant.
 ## Consequences
 
 **Positive**:
+
 - The `assert` in `threaded_extract_batch_func` fires in debug builds if
   `vmaf_feature_extractor_context_create` ever returns a context sharing its `fex`
   pointer with the registered object.
@@ -90,9 +91,11 @@ invariant.
 - Comments reduce re-investigation cost when future engineers audit threading.
 
 **Negative**:
+
 - None.  This is a documentation + assertion change only.
 
 **Neutral follow-ups**:
+
 - The fuller recommendation #4 (move `prev_ref` into `BatchThreadData` as a staged
   slot) remains open as a future refactor once the extractor API is versioned
   (VMAFX Phase 4 / ADR-0709).

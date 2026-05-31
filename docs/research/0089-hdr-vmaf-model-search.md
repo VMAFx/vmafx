@@ -73,6 +73,7 @@ URL: <https://www.csimagazine.com/csi/netflix-reveals-hdrvmaf-solution.php>
 No download URL, no license declaration, no estimated release date.
 
 ### Netflix Tech Blog — "All of Netflix's HDR video streaming is now
+
 dynamically optimized" (2023-11-29)
 
 URLs (access date 2026-05-09):

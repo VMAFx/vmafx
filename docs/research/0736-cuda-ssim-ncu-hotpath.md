@@ -22,6 +22,7 @@ and what are the top optimization candidates?
   profiled as a proxy; the structural properties (small grid, low occupancy) are
   expected to generalize to the int64 path.
 - Reproducer (triggers via float VMAF model which includes float_ssim):
+
   ```
   docker run --rm --gpus all --privileged --entrypoint bash \
     -v <worktree>:/workspace -v <repo>/python:/workspace/python:ro \

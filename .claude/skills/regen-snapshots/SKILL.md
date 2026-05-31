@@ -25,6 +25,7 @@ description: Regenerate fork-added test snapshot JSONs under testdata/ (scores_c
    - Otherwise, replace.
 4. Emit a diff summary: file, frames affected, max delta observed.
 5. Prepare a commit message draft:
+
    ```
    test(snapshots): regenerate <files>
 
@@ -32,6 +33,7 @@ description: Regenerate fork-added test snapshot JSONs under testdata/ (scores_c
 
    Affected: <summary>
    ```
+
    Print it; do NOT auto-commit.
 
 ## Guardrails

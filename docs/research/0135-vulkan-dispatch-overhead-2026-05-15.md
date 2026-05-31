@@ -156,6 +156,7 @@ contributing phases, ordered by estimated magnitude:
 ### (a) `vkCreateComputePipelines` with no pipeline cache — PRIMARY driver
 
 `kernel_template.h:300`:
+
 ```c
 vkCreateComputePipelines(ctx->device, VK_NULL_HANDLE, 1, &cpci, NULL, &out->pipeline);
 ```
@@ -228,6 +229,7 @@ compile amortized across all subsequent runs; typical savings 80–120 ms on an
 NVIDIA discrete GPU.
 
 **Mechanism:**
+
 - Create one `VkPipelineCache` in `vmaf_vulkan_context_new` and store it on
   `VmafVulkanContext`. Pass it to every `vkCreateComputePipelines` call in
   `kernel_template.h` instead of `VK_NULL_HANDLE`.
@@ -238,6 +240,7 @@ NVIDIA discrete GPU.
   against a header embedded in the file; invalidate on mismatch.
 
 **Implementation sites:**
+
 - `core/src/vulkan/common.c`: create/load/save cache in `vmaf_vulkan_context_new`
   / `vmaf_vulkan_context_destroy`.
 - `core/src/vulkan/kernel_template.h:300,689`: replace `VK_NULL_HANDLE` with

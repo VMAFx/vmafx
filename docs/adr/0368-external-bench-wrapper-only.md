@@ -59,6 +59,7 @@ We will land a benchmark harness at `tools/external-bench/` under a
   being installed.
 
 The fork redistributes only the wrapper scripts + comparison logic
+
 + documentation. **No GPL'd code is vendored, linked, or copied
 into this fork.** Side-by-side benchmarking is permissible because
 the harness invokes the external binary as a subprocess and reads

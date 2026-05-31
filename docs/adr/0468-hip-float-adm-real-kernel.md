@@ -23,6 +23,7 @@ HSACO compilation target into `src/meson.build`'s `hip_kernel_sources` dict and 
 `vmaf_fex_float_adm_hip` in the `#if HAVE_HIP` block of `feature_extractor.c`.
 
 Key HIP adaptations from the CUDA twin:
+
 - Warp size 64 (GCN/RDNA): `__shfl_down` without mask; shared-mem warp-partial arrays
   sized at `FADM_WARPS_PER_BLOCK = 4` (vs. 8 on CUDA).
 - Buffer alloc: `hipMalloc` / `hipMemsetAsync` / `hipMemcpyAsync` replace

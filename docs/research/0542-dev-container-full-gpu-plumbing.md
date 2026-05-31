@@ -97,6 +97,7 @@ even though the kernel module + DRI nodes are visible.
 ### Backend 3: HIP — `gfx1036` blocked by ROCm 6.x allowlist
 
 `libhsa-runtime64.so` reads `/sys/class/kfd/kfd/topology/nodes/*/gpu_id`
+
 + `name` at `hsa_init()` time and rejects any device whose GFX IP
 version is not on the hardcoded allowlist (see ROCm's
 `HSAKMT_STATUS_NOT_SUPPORTED` path in

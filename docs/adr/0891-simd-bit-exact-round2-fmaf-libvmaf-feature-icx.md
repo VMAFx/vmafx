@@ -113,16 +113,21 @@ cross-arch divergence that is distinct from the colour-matrix FMA issue
 fixed in this ADR:
 
 **Root cause**: the Gaussian IIR blur recurrence in `ssimulacra2.c`:
+
 ```
 out_k = n2_k * sum - d1_k * prev1_k - prev2_k
 ```
+
 is implemented in the SIMD paths as:
+
 ```c
 // NEON example
 float32x4_t o0 = vsubq_f32(vmulq_f32(vn2_0, sum), vmulq_f32(vd1_0, prev1_0));
 o0 = vsubq_f32(o0, prev2_0);
 ```
+
 and in the scalar path (with `#pragma STDC FP_CONTRACT OFF`) as:
+
 ```c
 const float o0 = n2_0 * sum - d1_0 * prev1_0[x] - prev2_0[x];
 ```

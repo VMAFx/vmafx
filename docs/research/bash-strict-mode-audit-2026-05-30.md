@@ -89,6 +89,7 @@ bash tools/ensemble-training-kit/tests/test_platform_detect.sh  # 16 assertions 
 shellcheck was not run because it is not installed on the dev
 container or in CI (verified: `which shellcheck` returns
 not-found). Queued as a follow-up: land shellcheck in `make lint`
+
 + CI gate to prevent regression.
 
 ## Reproducer

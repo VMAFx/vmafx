@@ -57,6 +57,7 @@ and the gather — comfortably within the L2 miss latency (100–250
 cycles on Zen 4 / Skylake-X).
 
 The implementation prefetches into T1 (L2) not T0 (L1) because:
+
 - The 48 cache lines (3 bands × 16 elements) per iteration will
   immediately be evicted from L1 by the dense band-buffer loads that
   follow.

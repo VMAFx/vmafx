@@ -148,6 +148,7 @@ has fired. The real spatial and temporal entropic-difference algorithm has
 replaced the placeholder scaffold in `core/src/feature/speed_qa.c`.
 
 Implementation summary:
+
 - Non-overlapping 7x7 luma blocks; separable Gaussian window (sigma=1.166, Q16).
 - Per-block entropy: H = 0.5 * log2(2*pi*e*(sigma^2 + 1.0)).
 - Spatial score S: mean(H) over all blocks of the distorted luma frame.
