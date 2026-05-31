@@ -24,7 +24,13 @@ __all__ = ["FrameMOSDataset", "PairedFrameDataset"]
 
 
 def _load_frame(path: str | Path) -> torch.Tensor:
-    arr = np.load(path).astype(np.float32) / 255.0
+    # ``allow_pickle=False`` refuses object-array .npy files, which is the
+    # only ``np.load`` code path that can execute arbitrary code on load.
+    # The training pipeline writes plain uint8 luma arrays, so this is a
+    # tightening rather than a behaviour change for trusted inputs; for
+    # untrusted .npy under VMAF_DATA_ROOT it closes a pickled-class
+    # remote-code-execution gap.
+    arr = np.load(path, allow_pickle=False).astype(np.float32) / 255.0
     return torch.from_numpy(arr).unsqueeze(0)  # (1, H, W)
 
 

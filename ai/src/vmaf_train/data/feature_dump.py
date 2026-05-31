@@ -83,7 +83,21 @@ def _extractors_for(metrics: tuple[str, ...]) -> list[str]:
     return seen
 
 
-def _run_vmaf(binary: Path, entry: Entry, features: tuple[str, ...]) -> dict:
+#: Wall-clock cap (seconds) for a single ``vmaf`` invocation under
+#: :func:`_run_vmaf`. Generous because a long clip with all default features
+#: on CPU can legitimately take a couple of minutes; we just need a finite
+#: cap so a wedged vmaf process does not stall the whole feature-dump
+#: pipeline.
+_VMAF_RUN_TIMEOUT_S: float = 600.0
+
+
+def _run_vmaf(
+    binary: Path,
+    entry: Entry,
+    features: tuple[str, ...],
+    *,
+    timeout_s: float = _VMAF_RUN_TIMEOUT_S,
+) -> dict:
     feat_args: list[str] = []
     for f in _extractors_for(features):
         feat_args += ["--feature", f]
@@ -111,8 +125,12 @@ def _run_vmaf(binary: Path, entry: Entry, features: tuple[str, ...]) -> dict:
             str(out_path),
             *feat_args,
         ]
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-        return json.loads(out_path.read_text())
+        # ``timeout=`` so a hung vmaf process (corrupt YUV, deadlocked GPU
+        # backend) cannot wedge the feature-dump worker indefinitely.
+        # Encoding is pinned to UTF-8 so the JSON parse does not depend on
+        # the calling process's locale.
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=timeout_s)
+        return json.loads(out_path.read_text(encoding="utf-8"))
     finally:
         out_path.unlink(missing_ok=True)
 

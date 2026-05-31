@@ -8,7 +8,6 @@ import shutil
 from pathlib import Path
 
 import pytest
-
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -248,99 +247,86 @@ def test_describe_worst_frames_n_zero_returns_empty_list():
     assert srv._pick_worst_frames(score_json, n=0) == []
 
 
-def test_describe_worst_frames_tmpdir_cleared_on_next_call(tmp_path, monkeypatch):
-    """T-ROUND8-MCP-TMPDIR-LEAK: stale PNGs from previous invocations must be
-    purged at the start of the next call, not accumulated indefinitely.
+def test_describe_worst_frames_allocates_unique_tmpdir_per_call(tmp_path, monkeypatch):
+    """Each call to describe_worst_frames allocates its own ``mkdtemp``-backed
+    PNG directory and does NOT touch any other call's output.
 
-    The test drives _describe_worst_frames with a synthetic score JSON and a
-    no-op describe function so no actual ffmpeg/VLM is required. It plants a
-    sentinel file in the tmp_root dir, then calls the helper again and verifies
-    the sentinel has been removed (i.e. the dir was cleared before the new
-    PNGs were generated)."""
+    Replaces the older ``test_describe_worst_frames_tmpdir_cleared_on_next_call``
+    invariant (which enforced a *shared* ``/tmp/vmaf-mcp-worst-<pid>`` dir that
+    each subsequent call ``rmtree``-d at start). That contract was racy under
+    concurrent MCP tool calls: call B's ``rmtree`` would delete the PNGs call
+    A had just emitted but not yet returned to its caller. See the
+    2026-05-31 Python-surfaces bug-audit bundle (Bug 14).
+
+    The new invariant is stricter: each call gets a brand-new directory, so
+    PNGs emitted by call A survive past call B's invocation.
+    """
     import anyio
-
-    # Use a fixed pid-based path that mirrors the production code.
-    pid_root = Path("/tmp") / f"vmaf-mcp-worst-{os.getpid()}"
-
-    # Cleanup any leftover from a previous test run.
-    if pid_root.exists():
-        shutil.rmtree(pid_root)
-
-    # Plant a sentinel file as if left by a previous invocation.
-    pid_root.mkdir(parents=True)
-    sentinel = pid_root / "stale_sentinel.png"
-    sentinel.write_bytes(b"stale")
-    assert sentinel.exists()
 
     # A minimal score JSON that looks like a 1-frame result with a known score.
     fake_score = {
         "frames": [{"frameNum": 0, "metrics": {"vmaf": 10.0}}],
     }
 
+    captured_roots: list[Path] = []
+
     async def run():
-        # Monkey-patch _run_vmaf_score to return our fake score so no binary
-        # is needed.
         async def fake_score_fn(_req):
             return fake_score
 
-        orig = srv._run_vmaf_score
+        async def fake_extract(_yuv, **_kwargs):
+            import struct
+            import zlib
+
+            path = _kwargs["out_png"]
+            captured_roots.append(path.parent)
+
+            def write_chunk(chunk_type, data):
+                crc = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
+                return struct.pack(">I", len(data)) + chunk_type + data + struct.pack(">I", crc)
+
+            raw = (
+                b"\x89PNG\r\n\x1a\n"
+                + write_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+                + write_chunk(b"IDAT", zlib.compress(b"\x00\xff\xff\xff"))
+                + write_chunk(b"IEND", b"")
+            )
+            path.write_bytes(raw)
+
+        orig_score = srv._run_vmaf_score
+        orig_extract = srv._extract_frame_png
         srv._run_vmaf_score = fake_score_fn
+        srv._extract_frame_png = fake_extract
         try:
-            # Use a no-op describe function; _extract_frame_png would normally
-            # be called but we also need to skip it.  Replace the entire
-            # _describe_worst_frames internals by supplying `describe=` and
-            # patching _extract_frame_png.
-            async def fake_extract(_yuv, **_kwargs):
-                # Create a minimal stub PNG so the loop body has a file to
-                # pass to descr_fn.
-                import struct
-                import zlib
-
-                path = _kwargs["out_png"]
-
-                # Write a 1×1 white PNG.
-                def write_chunk(chunk_type, data):
-                    crc = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
-                    return struct.pack(">I", len(data)) + chunk_type + data + struct.pack(">I", crc)
-
-                raw = (
-                    b"\x89PNG\r\n\x1a\n"
-                    + write_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
-                    + write_chunk(b"IDAT", zlib.compress(b"\x00\xff\xff\xff"))
-                    + write_chunk(b"IEND", b"")
-                )
-                path.write_bytes(raw)
-
-            orig_extract = srv._extract_frame_png
-            srv._extract_frame_png = fake_extract
-            try:
-                result = await srv._describe_worst_frames(
-                    # ScoreRequest doesn't matter since _run_vmaf_score is mocked.
-                    srv.ScoreRequest(
-                        ref=Path("/dev/null"),
-                        dis=Path("/dev/null"),
-                        width=1,
-                        height=1,
-                        pixfmt="420",
-                        bitdepth=8,
-                    ),
-                    n=1,
-                    describe=lambda _p: "stub description",
-                )
-            finally:
-                srv._extract_frame_png = orig_extract
+            req = srv.ScoreRequest(
+                ref=Path("/dev/null"),
+                dis=Path("/dev/null"),
+                width=1,
+                height=1,
+                pixfmt="420",
+                bitdepth=8,
+            )
+            # Drive two sequential calls — each must allocate its own dir.
+            r1 = await srv._describe_worst_frames(req, n=1, describe=lambda _p: "stub description")
+            r2 = await srv._describe_worst_frames(req, n=1, describe=lambda _p: "stub description")
+            return r1, r2
         finally:
-            srv._run_vmaf_score = orig
-        return result
+            srv._extract_frame_png = orig_extract
+            srv._run_vmaf_score = orig_score
 
-    result = anyio.run(run)
-    # The sentinel planted before the call must be gone.
-    assert not sentinel.exists(), (
-        "T-ROUND8-MCP-TMPDIR-LEAK: stale PNG from previous invocation was not "
-        "cleared at the start of the next describe_worst_frames call"
+    r1, r2 = anyio.run(run)
+
+    # Each call allocated its own root — that's the stricter contract.
+    unique = {str(r) for r in captured_roots}
+    assert len(unique) == 2, (
+        "Each describe_worst_frames call must allocate its own mkdtemp dir; "
+        "found duplicate roots which is the race the audit fixed."
     )
-    assert len(result["frames"]) == 1
-    assert result["frames"][0]["description"] == "stub description"
+    # Both response payloads survive: call 2 did NOT rmtree call 1's dir.
+    for resp in (r1, r2):
+        assert len(resp["frames"]) == 1
+        assert resp["frames"][0]["description"] == "stub description"
+        assert Path(resp["frames"][0]["png"]).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -409,9 +395,9 @@ def test_score_tempfile_uses_unique_path(tmp_path, monkeypatch):
     anyio.run(run_concurrent)
 
     assert len(captured_paths) == 10, "expected exactly 10 calls"
-    assert (
-        len(set(str(p) for p in captured_paths)) == 10
-    ), "task-name collision: two concurrent calls produced the same output path"
+    assert len(set(str(p) for p in captured_paths)) == 10, (
+        "task-name collision: two concurrent calls produced the same output path"
+    )
     # All temp files must have been cleaned up by the finally block.
     for p in captured_paths:
         assert not p.exists(), f"tempfile not cleaned up: {p}"

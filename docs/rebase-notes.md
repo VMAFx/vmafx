@@ -69,6 +69,29 @@ sync will not encounter conflicts on any of these files.
   `sync.Once`.  Callers that depended on the old "first probe wins
   forever" shape (none in tree as of this PR) will see a re-probe
   on binary-path change.
+## Python-surfaces bug-audit bundle (2026-05-31, fix/python-surfaces-bug-audit)
+
+no rebase impact: REASON — fork-local Python files only. Touches:
+`ai/src/corpus/base.py` (fork-added, ADR-0371),
+`ai/src/vmaf_train/data/{datasets,manifest_scan,feature_dump,frame_dataset,frame_loader}.py`
+(fork-added tiny-AI training surface), and
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py` (fork-added MCP server,
+no upstream equivalent). No `core/src/` or upstream-mirror file is
+touched.
+
+Fork-local files:
+`ai/src/corpus/base.py`,
+`ai/src/vmaf_train/data/datasets.py`,
+`ai/src/vmaf_train/data/manifest_scan.py`,
+`ai/src/vmaf_train/data/feature_dump.py`,
+`ai/src/vmaf_train/data/frame_dataset.py`,
+`ai/src/vmaf_train/data/frame_loader.py`,
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`,
+`mcp-server/vmaf-mcp/tests/test_server.py`,
+`ai/tests/test_python_surfaces_bug_audit.py` (new),
+`mcp-server/vmaf-mcp/tests/test_python_surfaces_bug_audit.py` (new),
+`changelog.d/fixed/python-surfaces-bug-audit-2026-05-31.md` (new),
+`docs/research/python-surfaces-bug-audit-2026-05-31.md` (new).
 
 ---
 

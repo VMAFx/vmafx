@@ -136,20 +136,32 @@ def _parse_framerate(rate: str) -> float:
 # ---------------------------------------------------------------------------
 
 
+#: Wall-clock cap (seconds) for a single ffprobe geometry probe. A wedged
+#: ffprobe (corrupt input demuxer loop, NFS hang) would otherwise stall the
+#: whole ingest run indefinitely. 60 s is generous: a healthy probe is
+#: sub-second; legitimate slow probes (large 4K MOV with cold cache) finish
+#: under 5 s.
+_PROBE_GEOMETRY_TIMEOUT_S: float = 60.0
+
+
 def probe_geometry(
     clip_path: Path,
     *,
     ffprobe_bin: str = "ffprobe",
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    timeout_s: float = _PROBE_GEOMETRY_TIMEOUT_S,
 ) -> dict[str, Any] | None:
     """Return a geometry dict for the first video stream in ``clip_path``.
 
     The dict has keys ``width``, ``height``, ``framerate``,
     ``duration_s``, ``pix_fmt``, and ``encoder_upstream``.  Returns
-    ``None`` on any failure (bad rc, no stream, JSON parse error).
+    ``None`` on any failure (bad rc, no stream, JSON parse error,
+    subprocess timeout).
 
     The ``runner`` kwarg is a test seam; production callers leave it as
-    the default :func:`subprocess.run`.
+    the default :func:`subprocess.run`.  ``timeout_s`` caps the wall-clock
+    for a single ffprobe invocation; on timeout the function logs a
+    warning and returns ``None`` (the clip is treated as broken).
     """
     cmd = [
         ffprobe_bin,
@@ -166,7 +178,10 @@ def probe_geometry(
         str(clip_path),
     ]
     try:
-        proc = runner(cmd, check=False, capture_output=True, text=True)
+        proc = runner(cmd, check=False, capture_output=True, text=True, timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        _LOG.warning("ffprobe timed out after %.1fs for %s", timeout_s, clip_path.name)
+        return None
     except (FileNotFoundError, OSError) as exc:
         _LOG.warning("ffprobe spawn failed for %s: %s", clip_path.name, exc)
         return None
@@ -343,8 +358,18 @@ def download_clip(
         str(part),
         url,
     ]
+    # Cap the runner wall-clock generously above curl's own ``--max-time``
+    # so that ``curl --max-time`` is the authoritative timeout for a healthy
+    # process, but a wedged DNS resolver / process-spawn / signal-handler
+    # path cannot stall the ingest run forever.
     try:
-        proc = runner(cmd, check=False, capture_output=True, text=True)
+        proc = runner(
+            cmd, check=False, capture_output=True, text=True, timeout=float(timeout_s) + 30.0
+        )
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(OSError):
+            part.unlink()
+        return False, f"curl-spawn-timeout: exceeded {timeout_s}s+30s"
     except (FileNotFoundError, OSError) as exc:
         return False, f"curl-spawn-failed: {exc}"
 

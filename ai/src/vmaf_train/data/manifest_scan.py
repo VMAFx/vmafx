@@ -50,7 +50,10 @@ class ScanEntry:
 
 def load_mos_csv(csv_path: Path) -> dict[str, float]:
     mos: dict[str, float] = {}
-    with csv_path.open() as fh:
+    # Explicit UTF-8 + newline="" so DictReader sees consistent line endings
+    # regardless of the operator's locale / line-ending convention (see PEP
+    # 3101 / csv module docs).
+    with csv_path.open(encoding="utf-8", newline="") as fh:
         reader = csv.DictReader(fh)
         if (
             reader.fieldnames is None
@@ -104,6 +107,6 @@ def write_manifest(dataset: str, entries: list[ScanEntry]) -> Path:
             {"key": e.key, "path": e.path, "sha256": e.sha256, "mos": e.mos} for e in entries
         ],
     }
-    with dst.open("w") as fh:
-        yaml.safe_dump(doc, fh, sort_keys=False)
+    with dst.open("w", encoding="utf-8") as fh:
+        yaml.safe_dump(doc, fh, sort_keys=False, allow_unicode=True)
     return dst

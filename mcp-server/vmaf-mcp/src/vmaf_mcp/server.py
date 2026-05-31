@@ -389,7 +389,11 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
         _stdout, stderr = await _communicate_with_timeout(proc)
         if proc.returncode != 0:
             raise RuntimeError(f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace')}")
-        payload = json.loads(output.read_text())
+        # Pin UTF-8 explicitly so the parse does not pick up the server
+        # process's locale (LC_ALL may differ between MCP-stdio launches
+        # and CI runners, and a non-UTF-8 default decoder would crash on
+        # legitimate accented filenames in the vmaf JSON payload).
+        payload = json.loads(output.read_text(encoding="utf-8"))
         # Bug #1 (echo): tell the caller which backend actually ran, so
         # downstream parity tests can assert it instead of trusting the
         # request silently.
@@ -721,7 +725,18 @@ async def _extract_frame_png(
 
 def _pick_worst_frames(score_json: dict[str, Any], n: int) -> list[tuple[int, float]]:
     """Walk the per-frame array in @p score_json and return the @p n
-    frames with lowest VMAF, sorted ascending by score."""
+    frames with lowest VMAF, sorted ascending by score.
+
+    NaN-valued VMAF scores are skipped instead of being sorted: Python's
+    ``list.sort`` is *not* a total order over NaN (NaN < x and NaN > x are
+    both false), so including NaNs produced non-deterministic ranking on
+    pathological inputs (e.g. a backend that emitted NaN for a partially
+    decoded frame). Skipping them mirrors how a healthy VMAF run would
+    treat that frame anyway: the artefact-triage caller wants real low-
+    scoring frames, not undefined ones.
+    """
+    import math
+
     frames = score_json.get("frames") or []
     scored: list[tuple[int, float]] = []
     for f in frames:
@@ -732,9 +747,13 @@ def _pick_worst_frames(score_json: dict[str, Any], n: int) -> list[tuple[int, fl
         score = None
         for key in ("vmaf", "vmaf_v0.6.1", "vmaf_v0.6.1neg", "vmaf_4k_v0.6.1"):
             if key in metrics:
-                score = float(metrics[key])
+                raw = metrics[key]
+                try:
+                    score = float(raw)
+                except (TypeError, ValueError):
+                    score = None
                 break
-        if idx is None or score is None:
+        if idx is None or score is None or not math.isfinite(score):
             continue
         scored.append((int(idx), score))
     scored.sort(key=lambda kv: kv[1])
@@ -754,15 +773,18 @@ async def _describe_worst_frames(
 
     descr_fn = describe if describe is not None else _describe_image_with_vlm
     out_frames: list[dict[str, Any]] = []
-    tmp_root = Path("/tmp") / f"vmaf-mcp-worst-{os.getpid()}"
-    # Clear stale PNGs left by any previous invocation — the comment in the
-    # original code said "clear the dir on next invocation" but never
-    # implemented it, causing unbounded disk accumulation on long-running
-    # servers (T-ROUND8-MCP-TMPDIR-LEAK). PNGs are only useful for the
-    # duration of this response, so purge-before-generate is safe.
-    if tmp_root.exists():
-        shutil.rmtree(tmp_root)
-    tmp_root.mkdir(parents=True)
+    # ADR-0608 follow-up: use a per-call unique directory rather than the
+    # previous shared ``/tmp/vmaf-mcp-worst-<pid>``. Concurrent MCP tool
+    # calls (e.g. two clients both asking for describe_worst_frames at the
+    # same time, or one client batching N calls) raced on the shared dir:
+    # the second call's ``shutil.rmtree(tmp_root)`` would delete the PNGs
+    # the first call had just emitted but not yet returned to its caller.
+    # ``mkdtemp`` allocates a fresh atomic-O_EXCL name per call so the two
+    # invocations cannot collide.  We accept the trade-off that PNGs no
+    # longer survive a second call to the same tool — callers that want
+    # persistent paths should copy the file out of the response, not rely
+    # on /tmp lifetime.
+    tmp_root = Path(tempfile.mkdtemp(prefix="vmaf-mcp-worst-"))
     try:
         for frame_idx, vmaf in worst:
             png_path = tmp_root / f"frame_{frame_idx:06d}.png"
@@ -785,11 +807,13 @@ async def _describe_worst_frames(
                 }
             )
     finally:
-        # PNGs remain on disk so that callers who need the file path
-        # (e.g. a downstream tool that opens the PNG directly) can access
-        # them until the next describe_worst_frames call purges the
-        # directory (see rmtree above).  The next call, or process exit,
-        # cleans up automatically.
+        # PNGs remain on disk for the duration of this response so that
+        # downstream tools can re-open the file by path.  Because the
+        # directory is per-call (mkdtemp), unbounded growth is bounded
+        # by an OS-level tmp-cleanup policy (systemd-tmpfiles, /tmp on
+        # tmpfs reset at reboot), not by any internal LRU.  Long-lived
+        # MCP servers in non-volatile-tmp environments can wire in a
+        # cron-driven cleaner if they care.
         pass
     return {
         "model_id": _vlm_state.get("model_id"),
@@ -934,7 +958,11 @@ def _list_extractors() -> list[dict[str, Any]]:
 
     for c_file in sorted(feature_dir.rglob("*.c")):
         try:
-            text = c_file.read_text(errors="replace")
+            # Pin UTF-8 explicitly: the .c sources are ASCII in practice but
+            # the default encoding inherits LC_ALL which can flip the
+            # interpretation of any embedded comment bytes and break the
+            # regex match below on non-UTF-8 hosts.
+            text = c_file.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         for m in _FEX_STRUCT_RE.finditer(text):
@@ -1056,7 +1084,7 @@ def _describe_model_file(path: Path, repo: Path) -> dict[str, Any]:
     # Parse JSON models for richer metadata.
     if ext == "json":
         try:
-            payload = json.loads(path.read_text(errors="replace"))
+            payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
             model_dict = payload.get("model_dict") or {}
             result["model_type"] = model_dict.get("model_type")
             result["feature_names"] = model_dict.get("feature_names")
@@ -1576,7 +1604,7 @@ async def _probe_backend(backend: str) -> dict[str, Any]:
             }
 
         try:
-            payload = json.loads(out_json.read_text())
+            payload = json.loads(out_json.read_text(encoding="utf-8"))
             pooled = payload.get("pooled_metrics") or {}
             vmaf_pool = pooled.get("vmaf") or {}
             score = vmaf_pool.get("mean")

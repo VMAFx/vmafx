@@ -72,7 +72,11 @@ def load_manifest(name: str) -> list[ManifestEntry]:
     p = manifest_path(name)
     if not p.exists():
         return []
-    with p.open() as fh:
+    # Pin UTF-8 explicitly so the parse does not silently drift across hosts
+    # with mismatched LC_ALL / LANG (the open()-default encoding inherits the
+    # process locale, which in CI sub-processes can land on ASCII and choke
+    # on legitimate non-ASCII keys / paths in fork-added corpora).
+    with p.open(encoding="utf-8") as fh:
         doc = yaml.safe_load(fh) or {}
     return [
         ManifestEntry(
