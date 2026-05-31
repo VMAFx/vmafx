@@ -1,0 +1,1 @@
+| [ADR-0939](0939-skills-library-expansion.md) | Add `/add-mcp-tool`, `/add-k8s-resource`, `/audit-modernization` skills + consolidate bisect-* on shared `lib/bisect-common.sh` | Accepted | 2026-05-31 | agents, skills, mcp, k8s, audit, fork-local |

@@ -35,3 +35,12 @@ Predicates:
 - Never commits during bisect.
 - Stashes any local changes first; un-stashes at end.
 - Skips commits that fail to build (exit 125) rather than marking them bad.
+
+## Shared helpers
+
+The driver script (`scaffold.sh`) sources
+[`.claude/skills/lib/bisect-common.sh`](../lib/bisect-common.sh) for the
+operator-tree guards (clean-tree check, auto-stash push/pop, `git bisect reset`
+on exit) and verdict rendering. The companion skill `/bisect-model-quality`
+sources the same library; keep changes to the shared helpers backwards
+compatible so the model-quality flow does not silently regress.

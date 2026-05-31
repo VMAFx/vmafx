@@ -41142,3 +41142,17 @@ the new `IterSamples` / `IterCloud` / `IterHull` / `AllSeq` /
 `Registry.ListModels` shims are likewise fork-local. If a future Netflix
 upstream adds Go bindings, the conflict is resolution-only at the
 package-tree level (different directory layout, no symbol overlap).
+## Skills library expansion — `/add-mcp-tool`, `/add-k8s-resource`, `/audit-modernization`, bisect-common (ADR-0939, 2026-05-31)
+
+no rebase impact: all new files land under `.claude/skills/`, which is
+fork-local infrastructure (the upstream Netflix/vmaf repo does not ship a
+`.claude/` directory). The accompanying ADR, index fragment, changelog
+fragment, and research digest are likewise fork-local. The two existing
+bisect skills (`bisect-regression`, `bisect-model-quality`) gain
+`scaffold.sh` driver scripts that source `.claude/skills/lib/bisect-common.sh`
+— still all fork-local. No upstream files touched.
+
+If upstream Netflix ever adopts `.claude/` skills (unlikely — different
+agent tooling), revisit whether the three new scaffolds should be promoted
+or stay fork-only. The bisect-common library has no upstream analogue
+either, so the merge surface is zero.

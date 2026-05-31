@@ -619,3 +619,4 @@
 0935-go-errors-join-slog-audit
 0936-pathlib-sweep-final
 0932-iter-seq-adapter
+0939-skills-library-expansion

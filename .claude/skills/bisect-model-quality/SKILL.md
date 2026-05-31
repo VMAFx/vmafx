@@ -51,3 +51,11 @@ pass checkpoints in training order.
 - Assumes monotonic quality; if both endpoints are good or both bad, the
   tool emits a verdict and skips the binary search rather than producing
   a nonsense answer.
+
+## Shared helpers
+
+The driver script (`scaffold.sh`) sources
+[`.claude/skills/lib/bisect-common.sh`](../lib/bisect-common.sh) for the
+clean-tree gate, verdict rendering, and structured-log helpers. The companion
+skill `/bisect-regression` sources the same library — keep changes backwards
+compatible so the code-commit bisect flow does not silently regress.
