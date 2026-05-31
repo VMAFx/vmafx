@@ -118,6 +118,17 @@ coupling to upstream files. Safe to carry through any upstream sync.
 
 ---
 
+## GPU runtime error-path leak fixes (ADR-0960, 2026-05-31)
+
+no rebase impact: REASON — all changes are in fork-local error paths of
+`core/src/cuda/common.c` (new `fail_after_stream` label between two existing
+labels) and `core/src/picture_pool.c` (one `pthread_cond_signal` call and two
+`pic->priv = NULL` assignments). No upstream Netflix/vmaf logic is altered.
+The new test file `core/test/test_picture_pool_error_paths.c` is wholly
+fork-added with no upstream counterpart.
+
+---
+
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
 
 **Files touched:**

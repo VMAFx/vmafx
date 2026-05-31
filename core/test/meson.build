@@ -828,6 +828,19 @@ test_pic_preallocation = executable('test_pic_preallocation',
 )
 test('test_pic_preallocation', test_pic_preallocation, suite : ['fast'])
 
+# ADR-0960 (round-25 audit A.2 + A.3) — picture_pool.c error-path fixes:
+# missing pthread_cond_signal on return_to_pool and dangling pic->priv after
+# free(priv). Compiles against the internal picture_pool.c so it can call the
+# vmaf_picture_pool_{init,fetch,close} symbols directly without going through
+# the high-level vmaf_preallocate_pictures API.
+test_picture_pool_error_paths = executable('test_picture_pool_error_paths',
+    ['test.c', 'test_picture_pool_error_paths.c',
+     '../src/picture_pool.c', '../src/picture.c', '../src/mem.c', '../src/ref.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies: [stdatomic_dependency, pthread_dependency, thread_lib],
+)
+test('test_picture_pool_error_paths', test_picture_pool_error_paths, suite : ['fast'])
+
 # ADR-0152 — monotonic-index guard on vmaf_read_pictures (Netflix#910).
 test_read_pictures_monotonic = executable('test_read_pictures_monotonic',
     ['test.c', 'test_read_pictures_monotonic.c'],

@@ -235,6 +235,10 @@ int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
     err = vmaf_picture_set_release_callback(pic, NULL, pooled_picture_release);
     if (err) {
         free(priv);
+        /* ADR-0960 (round-25 audit A.3) — null pic->priv after free so
+         * any caller that inspects it after a failed fetch does not read
+         * freed memory. */
+        pic->priv = NULL;
         goto return_to_pool;
     }
 
@@ -242,6 +246,8 @@ int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
     err = vmaf_ref_init(&pic->ref);
     if (err) {
         free(priv);
+        /* ADR-0960 (round-25 audit A.3) — same dangling-priv guard. */
+        pic->priv = NULL;
         goto return_to_pool;
     }
 
@@ -251,6 +257,13 @@ return_to_pool:
     // If we failed after popping from free list, return the picture
     pthread_mutex_lock(&pool->lock);
     pool->free_list[pool->free_list_top++] = idx;
+    /* ADR-0960 (round-25 audit A.2) — signal waiters; without this a
+     * thread blocked in pthread_cond_wait (pool exhausted) would not
+     * wake after an index is pushed back on a fetch-error path.
+     * See feedback_shared_resource_outlive_worker_scope (PR #1415,
+     * ADR-0607) for the canonical "shared resource must outlive its
+     * owner" pattern this mirrors. */
+    pthread_cond_signal(&pool->available);
     pthread_mutex_unlock(&pool->lock);
     return err;
 }

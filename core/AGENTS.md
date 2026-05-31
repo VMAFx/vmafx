@@ -160,6 +160,20 @@ libvmaf/
   See [ADR-0147](../docs/adr/0147-thread-pool-job-pool.md) and
   [rebase-notes 0040](../docs/rebase-notes.md).
 
+- **`vmaf_picture_pool_fetch` error paths must always signal `pool->available`
+  before unlocking** (fork-local, ADR-0960, round-25 audit A.2):
+  [`src/picture_pool.c`](src/picture_pool.c) `return_to_pool` block
+  must call `pthread_cond_signal(&pool->available)` every time an index is
+  pushed back to `pool->free_list`, regardless of whether the push is from
+  a normal `vmaf_picture_unref` or from a fetch error path. Omitting the
+  signal on the error path creates a deadlock: a thread already in
+  `pthread_cond_wait` (pool exhausted) will never wake. The invariant
+  mirrors ADR-0607 (`feedback_shared_resource_outlive_worker_scope`):
+  returning a resource to a pool must always notify waiters. Any rebase or
+  refactor that adds a new `return_to_pool`-equivalent block must preserve
+  the signal. Covered by
+  `test/test_picture_pool_error_paths.c::test_pool_waiter_woken_on_unref`.
+
 - **`integer_vif` is luma-only across every backend** (fork-local,
   [ADR-0541](../docs/adr/0541-integer-vif-luma-only-clarification.md)).
   CPU [`src/feature/integer_vif.c`](src/feature/integer_vif.c) reads
