@@ -40809,3 +40809,21 @@ Upstream Netflix/vmaf has no coverage gate, so on sync there is nothing to
 reconcile. The per-PR delta gate's `fetch-depth: 0` checkout requirement is
 worth flagging if the workflow ever gets restructured: a shallow checkout
 breaks `git merge-base HEAD "$BASE_REF"`.
+## Metal kernel coverage round 4 — closeout (2026-05-31, ADR-0959)
+
+no rebase impact: REASON — every new file path is fork-local Metal-only
+(Netflix upstream has no Metal backend at all per `rebase-notes.md`
+§"feat/libvmaf-metal-filter-iosurface" lineage). The single existing-file
+edit, `core/test/meson.build`, appends one `executable()` + `test()` block
+inside the existing `enable_metal` guard introduced by ADR-0361 (no
+boundary change, no upstream-mirrored line touched). Upstream sync
+resolution is trivially "keep theirs" everywhere except inside the
+`if metal_test_opt.enabled() …` block, which is fork-only by construction.
+
+Fork-local additions (no rebase impact):
+`core/test/test_metal_kernel_coverage_audit.c`,
+`docs/adr/0959-metal-kernel-coverage-round4-closeout.md`,
+`docs/research/0959-metal-kernel-coverage-round4-closeout.md`,
+`changelog.d/added/metal-kernel-coverage-round4.md`, the new audit row in
+`docs/adr/README.md`, the `T-METAL-KERNEL-PARITY-ROUND4-2026-05-31` row in
+`docs/state.md`.

@@ -1101,6 +1101,7 @@ test_metal_install_header = executable('test_metal_install_header',
 test('test_metal_install_header', test_metal_install_header, suite : ['fast', 'gpu'])
 endif
 
+<<<<<<< ours
 # Metal kernel coverage round 3 — per-extractor parity tests for the four
 # extractors not covered by round 2 (PR #379): integer_motion, float_motion,
 # float_moment, float_ms_ssim. Same pattern as round 2 — synthetic YUV420P
@@ -1144,6 +1145,24 @@ test_metal_float_ms_ssim_parity = executable('test_metal_float_ms_ssim_parity',
     c_args: ['-DHAVE_METAL=1']
 )
 test('test_metal_float_ms_ssim_parity', test_metal_float_ms_ssim_parity, suite : ['fast', 'gpu'])
+=======
+# Metal kernel coverage round 4 (closeout) — meta-audit regression guard
+# (ADR-0959). Enumerates the 8 .mm kernel basenames under
+# core/src/feature/metal/ and asserts each has a registered
+# `<basename>_metal` extractor plus a row in the dispatch strategy
+# table. CPU-side registration probe runs on every host; the dispatch
+# probe skips with -ENODEV on non-Apple-Family-7 runners. Coverage
+# closeout for PR #351 (round 1) + PR #379 (round 2) + PR #447 (round
+# 3).
+test_metal_kernel_coverage_audit = executable('test_metal_kernel_coverage_audit',
+    ['test.c', 'test_metal_kernel_coverage_audit.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_kernel_coverage_audit', test_metal_kernel_coverage_audit, suite : ['fast', 'gpu'])
+>>>>>>> theirs
 endif
 
 test('test_picture', test_picture, suite : ['fast'])
