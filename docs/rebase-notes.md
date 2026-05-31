@@ -41409,3 +41409,20 @@ research digest to confirm.
 Replaces a local variable assignment in `_run_vmaf_score`. No C surface, no public
 API, no upstream-mirrored file touched. On rebase against upstream Netflix/vmaf,
 this change applies cleanly to the MCP server layer which is entirely fork-local.
+## ADR-0945 — HIP kernel parity coverage round 3 — 2026-05-31
+
+no rebase impact: REASON — the 4 new test files
+(`core/test/test_hip_cambi_parity.c`,
+`core/test/test_hip_float_adm_parity.c`,
+`core/test/test_hip_float_motion_parity.c`,
+`core/test/test_hip_float_psnr_parity.c`) live entirely under the
+fork-only HIP backend tree.  Upstream Netflix/vmaf has no HIP
+backend, no parity tests, and no `test_hip_*` files; the
+`if get_option('enable_hip') == true` block in
+`core/test/meson.build` is fork-local (added by the HIP scaffold
+landing in ADR-0212).  Wiring lives strictly inside that block.
+The only non-test files touched are `docs/adr/README.md` (index row),
+`docs/adr/_index_fragments/_order.txt`, the
+`changelog.d/added/hip-kernel-coverage-round3.md` fragment, and the
+companion `docs/research/hip-kernel-coverage-round3-2026-05-31.md`
+audit — all fork-only.

@@ -629,3 +629,4 @@
 0951-github-actions-custom-audit
 0947-cuda-kernel-coverage-round3
 0948-feature-extractor-coverage-round3
+0945-hip-kernel-coverage-round3

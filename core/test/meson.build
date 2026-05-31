@@ -1341,6 +1341,7 @@ test('test_hip_adm_parity', test_hip_adm_parity,
     suite : ['gpu'],
     timeout : 60)
 
+<<<<<<< ours
 # ADR-0958 round-4 — HIP kernel parity gap-fill (2 extractors).
 # Closes the next batch after round-3 (PR #443 / ADR-0945): ssimulacra2_hip,
 # float_ssim_hip.  Each test follows the same template as the round-1/2/3
@@ -1363,23 +1364,72 @@ test('test_hip_adm_parity', test_hip_adm_parity,
 
 test_hip_ssimulacra2_parity = executable('test_hip_ssimulacra2_parity',
     ['test.c', 'test_hip_ssimulacra2_parity.c'],
+=======
+# ADR-0945 round-3 — HIP kernel parity gap-fill (4 extractors).
+# Closes the next batch after round-2 (PR #372 / ADR-0883): cambi_hip,
+# float_adm_hip, float_motion_hip, float_psnr_hip.  Each test follows
+# the same template as the round-1 / round-2 parity tests: CPU
+# reference vs. HIP score on a synthetic fixture, places=4 (1e-4) for
+# unfiltered reductions (float_psnr, float_motion, float_adm scales)
+# and places=3 (1e-3) for cambi (multi-scale pooling).  HIP-gated:
+# skips cleanly when no AMD GPU is visible OR when the HIP scaffold
+# returns -ENOSYS (enable_hipcc=false).
+
+test_hip_cambi_parity = executable('test_hip_cambi_parity',
+    ['test.c', 'test_hip_cambi_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
     c_args: ['-DHAVE_HIP=1']
 )
+<<<<<<< ours
 test('test_hip_ssimulacra2_parity', test_hip_ssimulacra2_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 
 test_hip_float_ssim_parity = executable('test_hip_float_ssim_parity',
     ['test.c', 'test_hip_float_ssim_parity.c'],
+=======
+test('test_hip_cambi_parity', test_hip_cambi_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+test_hip_float_adm_parity = executable('test_hip_float_adm_parity',
+    ['test.c', 'test_hip_float_adm_parity.c'],
+>>>>>>> theirs
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, hip_deps, math_lib],
     c_args: ['-DHAVE_HIP=1']
 )
+<<<<<<< ours
 test('test_hip_float_ssim_parity', test_hip_float_ssim_parity,
+=======
+test('test_hip_float_adm_parity', test_hip_float_adm_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+test_hip_float_motion_parity = executable('test_hip_float_motion_parity',
+    ['test.c', 'test_hip_float_motion_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_float_motion_parity', test_hip_float_motion_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+test_hip_float_psnr_parity = executable('test_hip_float_psnr_parity',
+    ['test.c', 'test_hip_float_psnr_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_float_psnr_parity', test_hip_float_psnr_parity,
+>>>>>>> theirs
     suite : ['fast', 'gpu'],
     timeout : 60)
 endif
