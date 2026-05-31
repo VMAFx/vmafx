@@ -41912,3 +41912,16 @@ file with a different name and structure; the five files modified here
 `lint-and-format.yml`, plus the ADR / changelog / state.md surface) have no
 upstream counterpart. No source / header / patch surface touched; the
 `ffmpeg-patches/` series is unaffected.
+## ADR-0883 — HIP kernel parity coverage round 2 — 2026-05-30
+
+no rebase impact: REASON — the 5 new test files
+(`core/test/test_hip_ciede_parity.c`, `test_hip_psnr_hvs_parity.c`,
+`test_hip_motion_parity.c`, `test_hip_ssim_parity.c`,
+`test_hip_ms_ssim_parity.c`) live entirely under the fork-only HIP
+backend tree.  Upstream Netflix/vmaf has no HIP backend, no parity
+tests, and no `test_hip_*` files; the `if get_option('enable_hip') ==
+true` block in `core/test/meson.build` is fork-local (`enable_hip`
+was added by the HIP scaffold landing in ADR-0212).  Wiring lives
+strictly inside that block.  The only non-test file touched is
+`docs/adr/README.md` (index row) and
+`docs/adr/_index_fragments/_order.txt` — both fork-only.
