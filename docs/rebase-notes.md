@@ -41662,3 +41662,14 @@ ADR-0738) and Status normalisation on ADR-0105 / ADR-0106 / ADR-0107
 upstream has no `docs/adr/` tree; nothing to reconcile on sync. Audit
 methodology and the full decision matrix live in
 `docs/research/adr-status-drift-audit-2026-05-30.md`.
+## ADR-0903 — Codecov upload wiring (2026-05-30)
+
+no rebase impact: REASON — all changes are confined to fork-only files:
+`.github/workflows/tests-and-quality-gates.yml` is a fork-added CI workflow
+(upstream Netflix/vmaf has no equivalent gcovr-based Coverage Gate),
+`docs/adr/0903-wire-codecov-upload.md` is fork-only documentation, and
+`changelog.d/added/wire-codecov-upload.md` is a fork-only changelog
+fragment per ADR-0221. The added `codecov/codecov-action` steps depend
+only on the Cobertura XML the existing gcovr step already produces;
+upstream sync cannot break this wiring because the gcovr job itself is
+fork-only.

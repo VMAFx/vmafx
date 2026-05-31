@@ -524,6 +524,13 @@ jobs:
     name: "Coverage Gate (70% Overall / 90% Critical — ADR-0922)"
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      # Codecov OIDC upload (ADR-0903) requires `id-token: write` so
+      # codecov-action can mint a short-lived OIDC token instead of a
+      # static CODECOV_TOKEN secret. `contents: read` re-inherits the
+      # workflow-level default that this job-level block overrides.
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -792,6 +799,24 @@ jobs:
             core/build-coverage/coverage.json
             core/build-coverage/coverage.txt
           retention-days: 14
+      - name: Upload coverage to Codecov
+        # ADR-0903 — render coverage trend as an external dashboard /
+        # PR-comment surface, complementing the in-tree gcovr Coverage
+        # Gate (ADR-0114 / ADR-0117 / ADR-0637 — which remains the
+        # blocking threshold gate, see PR #338). Fork-aware OIDC: since
+        # 2024, codecov-action v4+ uses GitHub Actions OIDC tokens for
+        # public repos; no CODECOV_TOKEN secret needed. fail_ci_if_error
+        # is false because the threshold enforcement already lives in
+        # the gcovr step above — Codecov upload is informational only.
+        if: always()
+        uses: codecov/codecov-action@cddd853df119a48c5be31a973f8cd97e12e35e16  # v6.0.1
+        with:
+          files: ./core/build-coverage/coverage.xml
+          flags: cpu
+          name: coverage-cpu
+          fail_ci_if_error: false
+          verbose: true
+          use_oidc: true
 
   # ===== GPU coverage (self-hosted) =====
   # Exercises fork-added CUDA / SYCL / HIP kernels, GPU runtime glue, and
@@ -810,6 +835,10 @@ jobs:
     if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     continue-on-error: true
     timeout-minutes: 45
+    permissions:
+      # Codecov OIDC upload (ADR-0903) — see CPU coverage job above.
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -887,6 +916,19 @@ jobs:
             core/build-coverage-gpu/coverage.json
             core/build-coverage-gpu/coverage.txt
           retention-days: 14
+      - name: Upload coverage to Codecov (GPU)
+        # See CPU coverage job above for rationale (ADR-0903). Tagged with
+        # the `gpu` flag so Codecov's flag-aware UI can separate CPU- vs
+        # GPU-backend coverage, mirroring the two-flavour Coverage Gate.
+        if: always()
+        uses: codecov/codecov-action@cddd853df119a48c5be31a973f8cd97e12e35e16  # v6.0.1
+        with:
+          files: ./core/build-coverage-gpu/coverage.xml
+          flags: gpu
+          name: coverage-gpu
+          fail_ci_if_error: false
+          verbose: true
+          use_oidc: true
 
   # ===== Power of 10 rule 5 — assertion density =====
   # Every fork-added (non-trivial) function must contain ≥1 assert().
