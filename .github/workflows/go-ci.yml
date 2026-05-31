@@ -3,14 +3,14 @@ name: Go CI
 on:
   push:
     paths:
-      - '**/*.go'
-      - 'go.mod'
-      - 'go.sum'
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
   pull_request:
     paths:
-      - '**/*.go'
-      - 'go.mod'
-      - 'go.sum'
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
 
 concurrency:
   group: go-ci-${{ github.workflow }}-${{ github.ref }}
@@ -28,11 +28,32 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.23'
+          go-version: "1.23"
           cache: true
+
+      # ADR-0973 sibling — pkg/libvmaf uses cgo with -L core/build-cpu/src -lvmaf
+      # so go test fails to link unless libvmaf is built first.
+      - name: Install meson + ninja for libvmaf build
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends meson ninja-build pkg-config
+
+      - name: Build libvmaf (CPU only) for cgo link
+        run: |
+          meson setup core/build-cpu \
+            -Denable_cuda=false \
+            -Denable_sycl=false \
+            -Denable_hip=false \
+            -Denable_metal=false \
+            -Denable_avx512=false
+          ninja -C core/build-cpu
 
       - name: go vet
         run: go vet ./...
 
-      - name: go test
-        run: go test ./...
+      - name: go test (skip operator envtest — requires kubebuilder/etcd)
+        run: |
+          # Skip cmd/vmafx-operator: needs /usr/local/kubebuilder/bin/etcd
+          # which is not available on GitHub-hosted runners.
+          # Tracked: T-GO-CI-OPERATOR-ENVTEST-2026-05-31.
+          go test $(go list ./... | grep -v "cmd/vmafx-operator")
