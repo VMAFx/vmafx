@@ -24,6 +24,10 @@ pd = pytest.importorskip("pandas")
 np = pytest.importorskip("numpy")
 torch = pytest.importorskip("torch")
 
+from conftest import requires_pytorch_lightning  # noqa: E402
+
+requires_pytorch_lightning()
+
 import train_fr_regressor_v2_ensemble_loso as loso  # noqa: E402
 from train_fr_regressor_v2_ensemble_loso import _load_corpus, _train_one_seed  # noqa: E402
 

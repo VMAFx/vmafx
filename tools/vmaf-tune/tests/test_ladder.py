@@ -202,15 +202,21 @@ def test_build_ladder_default_sampler_uses_corpus_and_recommend(monkeypatch):
     pt = ladder_module._default_sampler(Path("dummy.yuv"), "libx264", 640, 360, target_vmaf=92.0)
     assert isinstance(pt, LadderPoint)
     assert pt.width == 640 and pt.height == 360
-    # Expected cells = (18, 23, 28, 33, 38) at preset "medium".
-    assert {c for _p, c in captured_cells} == {18, 23, 28, 33, 38}
+    # Expected cells = (20, 25, 30, 35, 40) at preset "medium".  The sweep
+    # starts at 20 (not 18) so the same sweep is valid for every shipped
+    # adapter — libsvtav1's Phase A lower bound is 20, so 18 raised
+    # ``ValueError`` from ``adapter.validate`` before any encode ran.
+    # See ``tests/test_ladder_svtav1_default_crf.py`` (Bug N-2 regression).
+    assert {c for _p, c in captured_cells} == {20, 25, 30, 35, 40}
     assert all(p == "medium" for p, _c in captured_cells)
     # ``pick_target_vmaf`` returns the smallest CRF whose VMAF clears
-    # the target. With target=92.0 and the synthetic curve the rows
-    # CRF=18 (vmaf=100.0) and CRF=23 (vmaf=92.5) both clear; smallest
-    # CRF wins -> CRF=18, VMAF=100.0.
-    assert pt.crf == 18
-    assert pt.vmaf == pytest.approx(100.0)
+    # the target. With target=92.0 and the synthetic curve
+    # ``vmaf = 100.0 - (crf - 18) * 1.5``:
+    #   CRF=20 -> vmaf=97.0  (clears 92.0)
+    #   CRF=25 -> vmaf=89.5  (misses)
+    # so the smallest-CRF clearing row wins: CRF=20, VMAF=97.0.
+    assert pt.crf == 20
+    assert pt.vmaf == pytest.approx(97.0)
 
 
 def test_build_ladder_default_sampler_no_longer_raises(monkeypatch):

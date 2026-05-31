@@ -25,7 +25,6 @@ aiohttp = pytest.importorskip("aiohttp")
 pytest.importorskip("prometheus_client")
 
 from aiohttp.test_utils import TestClient  # noqa: E402
-
 from vmaf_mcp import http_transport as ht  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -216,6 +215,37 @@ async def test_metrics_body_is_text(test_client: TestClient) -> None:
     # Prometheus exposition always has lines starting with # or a metric name.
     # An empty registry is valid; just check it round-trips as text.
     assert isinstance(text, str)
+
+
+@pytest.mark.asyncio
+async def test_metrics_full_content_type_header_preserved(test_client: TestClient) -> None:
+    """The full ``CONTENT_TYPE_LATEST`` value — including ``charset=...`` —
+    must reach the wire verbatim.
+
+    Regression: aiohttp 3.13.5 added strict validation that rejects a
+    ``charset=...`` fragment inside the ``content_type=`` kwarg of
+    ``web.Response``, raising
+    ``ValueError("charset must not be in content_type argument")`` at
+    response construction.  ``prometheus_client`` ships
+    ``CONTENT_TYPE_LATEST`` as the full RFC 1341 value
+    (``text/plain; version=1.0.0; charset=utf-8``) and the Prometheus
+    scrape contract expects this exact string — so the handler must
+    write it via ``headers=`` rather than ``content_type=``.
+
+    Pin the wire-level invariant: the raw ``Content-Type`` header on the
+    response equals ``CONTENT_TYPE_LATEST`` byte-for-byte.
+    """
+    import prometheus_client as pc  # type: ignore[import-untyped]
+
+    resp = await test_client.get("/metrics")
+    assert resp.status == 200
+    raw_header = resp.headers["Content-Type"]
+    assert raw_header == pc.CONTENT_TYPE_LATEST, (
+        f"Content-Type header drifted from CONTENT_TYPE_LATEST. "
+        f"Expected {pc.CONTENT_TYPE_LATEST!r}, got {raw_header!r}. "
+        f"If aiohttp now strips the charset fragment, the Prometheus "
+        f"scrape contract is broken and the handler must be updated."
+    )
 
 
 # ---------------------------------------------------------------------------

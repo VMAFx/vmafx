@@ -17,6 +17,10 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from conftest import requires_pytorch_lightning  # noqa: E402
+
+requires_pytorch_lightning()
+
 import numpy as np  # noqa: E402
 
 

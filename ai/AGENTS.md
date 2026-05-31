@@ -126,6 +126,20 @@ runnable Netflix-corpus prep stack:
 **Rebase-sensitive invariants** (track when upstream Netflix/vmaf adds
 its own training surface):
 
+- **`ai/tests/conftest.py::requires_pytorch_lightning()` is the canonical
+  guard for tests that import `vmaf_train.models` (transitively
+  `pytorch_lightning` → `torchmetrics` → `torchvision`).** Plain
+  `pytest.importorskip("pytorch_lightning")` is NOT sufficient — it
+  only catches `ImportError`, while torchvision/torch ABI mismatches
+  raise `RuntimeError("operator torchvision::nms does not exist")` at
+  module load. New tests pulling lightning must call
+  `requires_pytorch_lightning()` at module level (or use the
+  `_PYTORCH_LIGHTNING_ERROR` constant with `pytest.mark.skipif` for
+  per-function gating). The guard is intentionally broad
+  (`except Exception`) so future torch/torchvision/torchmetrics drift
+  also routes to a clean skip with the actual error string. Behavior
+  contract pinned by `ai/tests/test_conftest_pytorch_lightning_guard.py`.
+
 - The `iter_pairs` filename regex is fork-specific. If upstream adds a
   loader with a different ladder convention, do NOT merge them — keep
   ours under `ai/data/` and theirs under whatever path they pick.

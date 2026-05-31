@@ -33,6 +33,10 @@ pytest.importorskip("onnx")
 pytest.importorskip("onnxruntime")
 pytest.importorskip("yaml")
 
+from conftest import requires_pytorch_lightning
+
+requires_pytorch_lightning()
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 QAT_SCRIPT = REPO_ROOT / "ai" / "scripts" / "qat_train.py"
 QAT_CONFIG = REPO_ROOT / "ai" / "configs" / "learned_filter_v1_qat.yaml"

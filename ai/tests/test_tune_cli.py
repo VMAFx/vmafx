@@ -9,9 +9,16 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+from conftest import _PYTORCH_LIGHTNING_ERROR
 from typer.testing import CliRunner
 
 from ai.src.vmaf_train import cli
+
+requires_lightning = pytest.mark.skipif(
+    _PYTORCH_LIGHTNING_ERROR is not None,
+    reason=f"pytorch_lightning unavailable: {_PYTORCH_LIGHTNING_ERROR}",
+)
 
 
 def test_parse_tune_param_specs_accepts_supported_kinds() -> None:
@@ -52,6 +59,7 @@ def test_make_tune_suggest_dispatches_to_trial_methods() -> None:
     ]
 
 
+@requires_lightning
 def test_tune_cli_invokes_sweep(monkeypatch, tmp_path: Path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(

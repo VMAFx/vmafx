@@ -384,14 +384,25 @@ async def _handle_readyz(request: Any) -> Any:
 
 
 async def _handle_metrics(request: Any) -> Any:
-    """GET /metrics — Prometheus exposition format."""
+    """GET /metrics — Prometheus exposition format.
+
+    aiohttp 3.13.5 added strict validation that rejects a ``charset=...``
+    fragment inside the ``content_type=`` kwarg (it expects a bare MIME
+    type and a separate ``charset=`` argument).  ``prometheus_client``'s
+    ``CONTENT_TYPE_LATEST`` is the full RFC 1341 value
+    ``text/plain; version=1.0.0; charset=utf-8`` — passing it via
+    ``content_type=`` raises ``ValueError("charset must not be in
+    content_type argument")``.  Set the header directly via ``headers=``
+    so the verbatim Prometheus exposition Content-Type lands on the
+    response without aiohttp re-parsing it.
+    """
     pc = _require_prometheus()
     aiohttp = _require_aiohttp()
     output = pc.generate_latest()
     return aiohttp.web.Response(
         status=200,
-        content_type=pc.CONTENT_TYPE_LATEST,
         body=output,
+        headers={"Content-Type": pc.CONTENT_TYPE_LATEST},
     )
 
 

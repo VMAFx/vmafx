@@ -83,6 +83,19 @@ for the option-space digest.
   single dict entry; codecs not in the table fall back to
   `adapter.crf_min/crf_max` then `quality_range`.
 
+- **`DEFAULT_SAMPLER_CRF_SWEEP` must stay inside every shipped
+  adapter's `quality_range`.** The canonical 5-point sweep
+  `(20, 25, 30, 35, 40)` is used by `_default_sampler` (called when
+  `build_ladder(sampler=None)`); `corpus.iter_rows` runs
+  `adapter.validate(preset, crf)` on every cell before encoding
+  starts, so a sweep point below any adapter's lower bound (e.g.
+  `SvtAv1Adapter.quality_range = (20, 50)`) raises `ValueError`
+  pre-encode and the ladder exits 2. The lower bound 20 is the
+  *maximum* of every shipped adapter's lower bound — bumping it
+  further is fine; lowering it requires either widening every
+  adapter's `quality_range` or per-adapter default sweeps. Bug N-2
+  regression is covered by `tests/test_ladder_svtav1_default_crf.py`.
+
 - **Hardware-encoder availability probing is opt-in by codec, not by
   flag.** `probe_encoder_available()` only runs the 1-frame lavfi
   dummy encode when the codec is in `HARDWARE_ENCODERS`. Adding a new

@@ -166,11 +166,21 @@ def build_ladder(
 
 
 # Canonical 5-point CRF sweep used by the default sampler (ADR-0307).
-# Spans the perceptually-informative range for libx264; non-x264
-# adapters validate the points against their own ``quality_range``
-# inside ``corpus.iter_rows``. Callers needing a finer grid pass an
-# explicit ``sampler=`` to ``build_ladder``.
-DEFAULT_SAMPLER_CRF_SWEEP: tuple[int, ...] = (18, 23, 28, 33, 38)
+# Spans the perceptually-informative range across every shipped adapter;
+# each non-x264 adapter validates the points against its own
+# ``quality_range`` inside ``corpus.iter_rows``. Callers needing a finer
+# grid pass an explicit ``sampler=`` to ``build_ladder``.
+#
+# Bug N-2 (regression covered by ``tests/test_ladder_svtav1_default_crf.py``):
+# the earlier ``(18, 23, 28, 33, 38)`` sweep started at CRF 18, which is
+# below the libsvtav1 Phase A lower bound (``SvtAv1Adapter.quality_range
+# = (20, 50)``).  ``adapter.validate(preset, 18)`` raised ``ValueError``
+# and the ladder exited 2 before any encode could run.  The current
+# starting point is 20 — the maximum of every shipped adapter's lower
+# bound — so the sweep is valid for **every** adapter without needing
+# an explicit ``--crf-sweep`` override.  Step size is preserved at 5 so
+# the sweep still spans 20 CRF points of operating-region coverage.
+DEFAULT_SAMPLER_CRF_SWEEP: tuple[int, ...] = (20, 25, 30, 35, 40)
 
 
 def _default_sampler_preset(encoder: str) -> str:

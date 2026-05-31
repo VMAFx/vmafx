@@ -532,6 +532,41 @@ The `vmaf` user uid/gid is now explicitly pinned to 1000 in
 `dev/Containerfile` so BuildKit `--mount=...,uid=1000,gid=1000`
 directives resolve to the same identity that runs the build —
 preserve that pin on rebase.
+## Pre-existing test failures across ai/, vmaf-tune, mcp-server (2026-05-30)
+
+**Files touched:**
+`ai/tests/conftest.py`,
+`ai/tests/test_codec_aware_fr.py`,
+`ai/tests/test_dnn_exporter_run_provenance.py`,
+`ai/tests/test_export_roundtrip.py`,
+`ai/tests/test_qat_smoke.py`,
+`ai/tests/test_registry.py`,
+`ai/tests/test_train_fr_regressor_v2_ensemble_loso_train.py`,
+`ai/tests/test_train_fr_regressor_v3.py`,
+`ai/tests/test_tune_cli.py`,
+`ai/tests/test_variance_mode.py`,
+`ai/tests/test_conftest_pytorch_lightning_guard.py` (new),
+`ai/pyproject.toml`,
+`tools/vmaf-tune/src/vmaftune/ladder.py`,
+`tools/vmaf-tune/tests/test_ladder.py`,
+`mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py`,
+`mcp-server/vmaf-mcp/tests/test_http_transport.py`.
+
+**Rebase impact:** None. All three touched subsystems are fork-local:
+
+* `ai/` — entirely fork-added (tiny-AI training); upstream Netflix/vmaf
+  has no Python training package.
+* `tools/vmaf-tune/` — fork-added recommendation tool; upstream has
+  no equivalent.
+* `mcp-server/vmaf-mcp/` — fork-added MCP JSON-RPC server; upstream
+  has no equivalent.
+
+No cross-repo conflict possible. The
+`requires_pytorch_lightning()` helper in `ai/tests/conftest.py` is a
+generic environment-probe pattern that will keep working unchanged for
+any future torch / torchvision / torchmetrics ABI drift; the only knob
+to revisit is whether to widen the broad `except Exception` if some
+future failure mode warrants more specific handling.
 
 ---
 

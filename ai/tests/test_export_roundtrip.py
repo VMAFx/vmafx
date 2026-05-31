@@ -10,6 +10,10 @@ torch = pytest.importorskip("torch")
 onnx = pytest.importorskip("onnx")
 onnxruntime = pytest.importorskip("onnxruntime")
 
+from conftest import requires_pytorch_lightning  # noqa: E402
+
+requires_pytorch_lightning()
+
 import numpy as np  # noqa: E402
 
 from vmaf_train.models import FRRegressor, LearnedFilter, NRMetric, export_to_onnx  # noqa: E402

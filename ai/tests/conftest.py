@@ -22,6 +22,66 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+# Make this conftest.py importable as ``conftest`` from individual test
+# files (the pytest harness adds tests-dir to sys.path normally, but only
+# *after* rootdir resolution — ensure the import works deterministically
+# from any invocation directory so module-level ``from conftest import
+# requires_pytorch_lightning`` succeeds).
+_TESTS_DIR = Path(__file__).resolve().parent
+if str(_TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TESTS_DIR))
+
+
+def _probe_pytorch_lightning() -> str | None:
+    """Try importing pytorch_lightning. Return None on success, error str on failure.
+
+    Importing pytorch_lightning eagerly pulls torchmetrics → torchvision.
+    When the installed torchvision wheel was built against a different torch
+    ABI than the one currently loaded, the import raises a ``RuntimeError``
+    (``operator torchvision::nms does not exist``) at module-load time.
+
+    ``pytest.importorskip`` only catches ``ImportError``, so a plain
+    ``importorskip("pytorch_lightning")`` re-raises the RuntimeError and
+    surfaces as a hard failure instead of a clean skip.
+
+    This helper catches the broader ``Exception`` so tests can be skipped
+    cleanly when the wheel pair is incompatible (e.g. torchvision 0.26.0
+    against torch 2.12.0 — the matched pair is torchvision 0.27.0). The
+    fix on the deployment side is ``pip install -U torchvision`` to pick
+    up the wheel that matches the installed torch.
+    """
+    try:
+        import pytorch_lightning  # noqa: F401
+    except Exception as exc:  # pragma: no cover - depends on env
+        return f"{type(exc).__name__}: {exc}"
+    return None
+
+
+# Memoise the probe — pytorch_lightning's import side-effects are global; if
+# it fails once it will keep failing for the rest of the pytest session.
+_PYTORCH_LIGHTNING_ERROR: str | None = _probe_pytorch_lightning()
+
+
+def requires_pytorch_lightning() -> None:
+    """Module-level guard for tests that need ``pytorch_lightning``.
+
+    Call at the top of a test file (after the ``pytest`` import). If
+    pytorch_lightning is unimportable for any reason — missing wheel,
+    torch/torchvision ABI mismatch, etc. — the test module is skipped
+    with a clear message instead of erroring at collection time.
+
+    Usage::
+
+        from conftest import requires_pytorch_lightning
+
+        requires_pytorch_lightning()
+    """
+    if _PYTORCH_LIGHTNING_ERROR is not None:
+        pytest.skip(
+            f"pytorch_lightning unavailable: {_PYTORCH_LIGHTNING_ERROR}",
+            allow_module_level=True,
+        )
+
 
 # Synthetic 16x16 yuv420p 8-bit frames keep the corpus tiny (384 B / frame).
 SYNTH_W = 16

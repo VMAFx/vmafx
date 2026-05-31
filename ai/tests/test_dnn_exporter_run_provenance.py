@@ -12,9 +12,16 @@ import pytest
 
 pytest.importorskip("torch")
 
+# Place repo root on sys.path BEFORE importing the conftest helper, since
+# conftest.py lives next to this file and `from conftest import ...` works
+# only when the tests dir is on the path (pytest sets this automatically).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
+
+from conftest import requires_pytorch_lightning  # noqa: E402
+
+requires_pytorch_lightning()
 
 import export_fastdvdnet_pre as fastdvdnet_real  # noqa: E402
 import export_fastdvdnet_pre_placeholder as fastdvdnet_placeholder  # noqa: E402
