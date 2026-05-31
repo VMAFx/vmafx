@@ -675,6 +675,21 @@ should conflict, since the inserted block is immediately adjacent to
 fork-only neighbours.
 
 ADR-0912.
+## ADR README drift sweep (2026-05-31)
+
+**Files touched:**
+`docs/adr/README.md`,
+`docs/adr/_index_fragments/_order.txt`,
+35 new + 7 rewritten files under `docs/adr/_index_fragments/[0-9]*.md`,
+3 orphan fragments removed under `docs/adr/_index_fragments/`,
+`changelog.d/fixed/adr-readme-regen.md`.
+
+**Rebase impact:** None. The fragment tree and `README.md` are entirely
+fork-local (upstream Netflix/vmaf has no ADR directory). The sweep only
+re-aligns three fork-local index sources against the
+already-authoritative `docs/adr/[0-9]*-*.md` ADR file set, with no
+content changes to any ADR body. Future regenerations are mechanical via
+`scripts/docs/concat-adr-index.sh --write`.
 
 ---
 

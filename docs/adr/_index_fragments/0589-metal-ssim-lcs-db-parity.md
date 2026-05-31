@@ -1,1 +1,1 @@
-| [ADR-0589](0484-metal-ssim-lcs-db-parity.md) | Metal `float_ssim` option parity — `enable_lcs`, `enable_db`, `clip_db`, `scale` (full CPU parity) | Accepted | metal, ssim, option-parity, apple-silicon, kernel, fork-local |
+| [ADR-0589](0589-metal-ssim-lcs-db-parity.md) | Metal `float_ssim` option parity — `enable_lcs`, `enable_db`, `clip_db`, `scale` | Accepted | metal, ssim, option-parity, apple-silicon, kernel, fork-local |

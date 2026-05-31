@@ -1,0 +1,1 @@
+| [ADR-0750](0750-cuda-ms-ssim-decimate-adm-cm-measure.md) | Hardware Measurement Verdict for PR perf/cuda-ms-ssim-decimate-adm-cm-ncu-driven | Accepted | cuda, performance, ms_ssim, adm_cm, measurement |

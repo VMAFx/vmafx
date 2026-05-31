@@ -1,1 +1,1 @@
-| [0657](0657-second-opinion-feature-materializer.md) | Second-opinion feature materializer | Accepted | 2026-05-20 |
+| [ADR-0657](0657-second-opinion-feature-materializer.md) | Second-Opinion Feature Materializer | Accepted | ai, signal-mix, mos, external-bench |
