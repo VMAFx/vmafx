@@ -324,6 +324,24 @@ ADR-0949 (motion3 sibling); both tests now follow the same two-axis
 (`enable_hip` × `enable_hipcc`) skip predicate. Companion docs:
 `docs/adr/0950-hip-adm-parity-feature-name-and-enosys-skip.md`,
 `changelog.d/fixed/0950-test-hip-adm-parity-feature-name-and-enosys-skip.md`.
+## go-services-coverage-round2 (2026-05-31)
+
+**Files touched:**
+`cmd/vmafx-tune/cmd/unit_internal_test.go`,
+`cmd/vmafx-tune/cmd/unit_internal_fixtures_test.go`,
+`cmd/vmafx-controller/grpc_server_test.go`,
+`cmd/vmafx-controller/queue/queue_extra_test.go`,
+`pkg/encoder/version_extract_test.go`,
+`changelog.d/added/go-services-coverage-round2.md`.
+
+**Rebase impact:** None. The Go `cmd/` and `pkg/` trees are wholly
+fork-added — upstream Netflix/vmaf has no Go layer. All new files are
+test-only and never enter the libvmaf C build, the Python harness, or
+the FFmpeg patch stack. No production code is touched, so the upstream
+rebase boundary is unaffected. The cmd/vmafx-controller grpc_server
+tests carry the `//go:build cgo` tag mirroring the production source
+file, so they compile only when cgo is enabled (matching the existing
+`main_test.go` invariant).
 
 ---
 
