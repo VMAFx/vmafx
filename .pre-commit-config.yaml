@@ -182,7 +182,29 @@ repos:
 
       - id: semgrep-local
         name: semgrep (.semgrep.yml — local rules, error-gated)
-        entry: semgrep scan --config=.semgrep.yml --error --quiet
+        # `--jobs 1` + `require_serial: true` together prevent the
+        # io_uring queue-init failure observed on the dev box and in
+        # contributor reports (blocked commit on PR #481 / #457 /
+        # #484). semgrep-core (the OCaml engine behind `semgrep scan`)
+        # uses Eio, which spawns one io_uring submission queue per
+        # worker. On `pre-commit run --all-files` pre-commit batches
+        # the 1.2k matched targets into chunks and runs the chunks in
+        # parallel (one process per CPU by default). Each chunk's
+        # OCaml runtime starts its own pool of io_uring queues, and
+        # the combined per-process memlock charge exceeds
+        # `ulimit -l` (8 MB default on Arch / CachyOS) — semgrep-core
+        # dies with `Unix_error: Cannot allocate memory
+        # io_uring_queue_init`. The Python wrapper surfaces this as
+        # exit 2 — silently, because `--quiet` swallows the stderr
+        # trace. The bug blocked PR #481 (ISO header guards) and
+        # nuked PR #457 (doxygen) when a blocked commit let a push
+        # through. `require_serial: true` collapses pre-commit's
+        # parallel batches into a single sequential invocation;
+        # `--jobs 1` collapses semgrep-core's intra-process
+        # parallelism. Cost on the staged-files commit path is
+        # negligible (≈2 s → ≈4 s) and the all-files path goes from
+        # "always fails" to "works".
+        entry: semgrep scan --config=.semgrep.yml --error --quiet --jobs 1
         # `language: python` so pre-commit creates its own isolated
         # venv and pip-installs semgrep there. The CI `pre-commit` job
         # doesn't ship semgrep on PATH; with `language: system` the
@@ -190,6 +212,7 @@ repos:
         # every CI run.
         language: python
         additional_dependencies: ["semgrep>=1.78,<2.0"]
+        require_serial: true
         types_or: [c, c++, cuda, python]
         # Mirror `check-copyright`'s exclude list — same upstream /
         # vendored paths that ship with their own hygiene contract:
