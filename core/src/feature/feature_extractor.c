@@ -513,8 +513,14 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
     f->opts_dict = opts_dict;
     if (f->fex->options && f->fex->priv) {
         int err = vmaf_fex_ctx_parse_options(f);
-        if (err)
+        if (err) {
+            /* parse_options failure leaks f->fex->priv (which is `priv`)
+             * + f->fex (which is `x`) + f without this cleanup chain. */
+            free(f->fex->priv);
+            free(x);
+            free(f);
             return err;
+        }
     }
 
     return 0;
@@ -788,7 +794,11 @@ static struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool
     if (!entry.ctx_list)
         goto fail;
     memset(entry.ctx_list, 0, ctx_array_sz);
-    vmaf_dictionary_copy(&opts_dict, &entry.opts_dict);
+    /* vmaf_dictionary_copy returns -ENOMEM on alloc failure; the
+     * caller must check, otherwise entry.opts_dict ends up
+     * partially-constructed and the comparison at line 750 lies. */
+    if (vmaf_dictionary_copy(&opts_dict, &entry.opts_dict) != 0)
+        goto free_ctx_list;
 
     if (pool->cnt >= pool->capacity) {
         assert(pool->capacity > 0);
@@ -796,7 +806,7 @@ static struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool
         struct fex_list_entry *fex_list =
             realloc(pool->fex_list, sizeof(*(pool->fex_list)) * capacity);
         if (!fex_list)
-            goto free_ctx_list;
+            goto free_opts_dict;
         pool->fex_list = fex_list;
         pool->capacity = capacity;
     }
@@ -804,6 +814,11 @@ static struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool
     pool->fex_list[pool->cnt] = entry;
     return &pool->fex_list[pool->cnt++];
 
+free_opts_dict:
+    /* opts_dict is owned by entry once vmaf_dictionary_copy succeeded;
+     * realloc failure leaves us holding both. Free in reverse-init
+     * order. */
+    vmaf_dictionary_free(&entry.opts_dict);
 free_ctx_list:
     free(entry.ctx_list);
 fail:
@@ -966,8 +981,13 @@ int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool)
                 continue;
             vmaf_feature_extractor_context_close(fex_ctx);
             vmaf_feature_extractor_context_destroy(fex_ctx);
-            vmaf_dictionary_free(&pool->fex_list[i].opts_dict);
         }
+        /* opts_dict is held once per entry (not per ctx slot). Free
+         * outside the j loop to avoid the previous double-free on
+         * pools where n_threads > 1 (vmaf_dictionary_free nulls the
+         * pointer, so subsequent calls were free(NULL) no-ops, but
+         * the intent was clearly per-entry). */
+        vmaf_dictionary_free(&pool->fex_list[i].opts_dict);
         free(pool->fex_list[i].ctx_list);
     }
     free(pool->fex_list);
