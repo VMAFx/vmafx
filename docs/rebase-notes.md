@@ -6,6 +6,31 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## SYCL kernel coverage round 3 (ADR-0946, 2026-05-31)
+
+**Files touched:**
+`core/test/test_sycl_float_psnr_parity.c`,
+`core/test/test_sycl_float_adm_parity.c`,
+`core/test/test_sycl_float_vif_parity.c`,
+`core/test/test_sycl_float_motion_parity.c`,
+`core/test/test_sycl_psnr_hvs_parity.c`,
+`core/test/meson.build`,
+`core/src/feature/sycl/AGENTS.md`,
+`docs/adr/0946-sycl-kernel-coverage-round3.md` (+ index fragment),
+`docs/research/0946-sycl-kernel-coverage-round3-2026-05-31.md`,
+`changelog.d/added/0946-sycl-kernel-coverage-round3.md`.
+
+**Rebase impact:** None. All five test files and the meson wiring
+block are fork-original (upstream Netflix/vmaf has no SYCL backend).
+The AGENTS.md table row additions are append-only. The only file
+that overlaps with parallel fork PRs is `core/test/meson.build` —
+the round-3 block is appended immediately after the round-2 block
+(PR #376) inside the `if get_option('enable_sycl')` guard; if #376
+merges first, this PR's block appends cleanly; if this PR merges
+first, #376 must insert its block before the round-3 block.
+
+---
+
 ## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
 
 **Files touched:**

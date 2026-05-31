@@ -931,6 +931,62 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
 )
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
     suite : ['fast', 'gpu'])
+
+# ADR-0946 — SYCL kernel coverage round 3. Five new CPU vs. SYCL
+# parity gates filling the float-family + PSNR-HVS gaps left after
+# rounds 1 (#351: integer psnr / vif) and 2 (#376: integer adm /
+# ciede / ssim / ms_ssim / motion_v2). Each test mirrors the
+# round-1 / round-2 pattern: 256x144 synthetic YUV420P fixture,
+# places=4 (1e-4) ADR-0214 tolerance, skip-on-no-device.
+test_sycl_float_psnr_parity = executable('test_sycl_float_psnr_parity',
+    ['test.c', 'test_sycl_float_psnr_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_float_psnr_parity', test_sycl_float_psnr_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_float_adm_parity = executable('test_sycl_float_adm_parity',
+    ['test.c', 'test_sycl_float_adm_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_float_adm_parity', test_sycl_float_adm_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_float_vif_parity = executable('test_sycl_float_vif_parity',
+    ['test.c', 'test_sycl_float_vif_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_float_vif_parity', test_sycl_float_vif_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_float_motion_parity = executable('test_sycl_float_motion_parity',
+    ['test.c', 'test_sycl_float_motion_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_float_motion_parity', test_sycl_float_motion_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
+    ['test.c', 'test_sycl_psnr_hvs_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_psnr_hvs_parity', test_sycl_psnr_hvs_parity,
+    suite : ['fast', 'gpu'])
 endif
 
 # ADR-0209 / T5-2: embedded MCP scaffold smoke. Pins the -ENOSYS

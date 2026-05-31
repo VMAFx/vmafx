@@ -1,0 +1,1 @@
+| [ADR-0946](0946-sycl-kernel-coverage-round3.md) | SYCL kernel coverage round 3 — 5 CPU vs. SYCL parity gates for `float_psnr_sycl`, `float_adm_sycl`, `float_vif_sycl`, `float_motion_sycl`, `psnr_hvs_sycl` at ADR-0214 places=4 (1e-4) | Accepted | 2026-05-31 | sycl, test, gpu, parity, kernel-coverage |
