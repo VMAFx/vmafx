@@ -948,22 +948,14 @@ jobs:
         if: matrix.backend == 'cuda'
         shell: cmd
         run: |
-<<<<<<< HEAD
           ninja -v -C core\build install
-=======
-          ninja -v -C libvmaf\build install
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
       - name: Build libvmaf (SYCL)
         if: matrix.backend == 'sycl'
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
-<<<<<<< HEAD
           ninja -v -C core\build install
-=======
-          ninja -v -C libvmaf\build install
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
 
       # No test step — windows-2025 has no GPU. The whole point of
       # this job is exercising the MSVC + CUDA / MSVC + oneAPI link
