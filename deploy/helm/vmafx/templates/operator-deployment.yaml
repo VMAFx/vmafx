@@ -35,10 +35,7 @@ spec:
     spec:
       serviceAccountName: {{ include "vmafx.serviceAccountName" . }}-operator
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65534
-        runAsGroup: 65534
-        fsGroup: 65534
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: operator
           image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag | default .Chart.AppVersion }}"
