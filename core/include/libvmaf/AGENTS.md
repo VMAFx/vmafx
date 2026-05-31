@@ -90,3 +90,11 @@ backend-agnostic `gpu_picture_pool.{c,h}` round-robin
   `AUTO_PREFER_HOST` isn't pinned in the CUDA sense). New backends
   follow the SYCL/Vulkan three-method shape; do not introduce a
   fourth method without an ADR.
+- **`picture.h` v1 is frozen for the v2 deprecation window**
+  ([ADR-0928](../../../docs/adr/0928-vmaf-picture-v2-explicit-backend-state.md)).
+  Do not add fields to `VmafPicture` v1 — additive growth lands on
+  `VmafPicture2` (`picture_v2.h`) instead. The v1 struct is a
+  museum piece for ~12 months and is removed when SONAME bumps
+  from `libvmaf.so.3` to `.4` at VMAFX v4.0.0. `picture_v2.h` is
+  declared but not yet linked in cycle N; entry points return
+  `-ENOSYS` until the cycle-N+1 implementation PR lands.

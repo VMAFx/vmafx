@@ -41046,3 +41046,36 @@ no rebase impact: REASON — touched files are 100 % fork-only Go sources
 `cmd/vmafx-controller/nodes/registry.go`, `pkg/observability/observability.go`).
 Netflix upstream is a pure C / Python tree; the `cmd/` and `pkg/` Go
 trees do not exist there.
+---
+
+## VmafPicture v2 design scaffold (ADR-0928, 2026-05-31)
+
+**Files touched:** `core/include/libvmaf/picture_v2.h` (new),
+`docs/adr/0928-vmaf-picture-v2-explicit-backend-state.md` (new),
+`docs/architecture/vmaf-picture-v2-migration.md` (new),
+`docs/adr/README.md` + `docs/adr/_index_fragments/` (index row),
+`changelog.d/added/vmaf-picture-v2-design.md` (fragment).
+
+**Rebase impact:** None for this PR. The new header is declared but
+not yet wired into `meson.build`, and v1 (`core/include/libvmaf/picture.h`)
+is preserved bit-for-bit — every existing consumer (FFmpeg patches
+0002–0006, MCP server, Rust binding scaffold, Python wheels) still
+sees the v1 surface unchanged. Upstream Netflix/vmaf has no v2
+counterpart on the deprecation horizon, so no sync conflict is
+expected.
+
+**Lifecycle (per ADR-0928):**
+
+- Cycle N (this PR): header declared, design + scaffold only.
+- Cycle N+1: header wired into meson, converters implemented in
+  `core/src/picture.c`, v1 marked `__attribute__((deprecated))`.
+- Cycle N+2: in-tree backends + `ffmpeg-patches/0002-0006`
+  switched to v2 (coordinated per CLAUDE.md §12 r14).
+- Cycle N+3 (≈ 12 months, target VMAFX v4.0.0): v1 removed,
+  SONAME bump `libvmaf.so.3 → .4`.
+
+If upstream Netflix independently adds a `VmafPicture` v2 of their
+own before cycle N+3, reconcile by adopting upstream's naming
+(`VmafPicture2` is intentionally generic) and remap our converters;
+otherwise the cycle-N+3 v1-removal commit is the natural ABI break
+window.
