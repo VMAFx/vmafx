@@ -11,12 +11,17 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 **Files touched:**
 `core/test/test_metal_kernel_coverage_audit.c` (basename list correction),
-`ai/tests/test_data_datasets_branches.py` (sha256 fixture constants),
-`ai/tests/test_frame_loader.py` (fake Popen signature + _FakeProcess.stderr),
+`ai/tests/test_data_datasets_branches.py` (sha256 fixture constants + pydantic ValidationError fix),
+`ai/tests/test_frame_loader.py` (fake Popen signature + _FakeProcess.stderr + timeout parameter),
 `ai/tests/test_parquet_utils.py` (failure injection via monkeypatch),
-`.github/workflows/go-ci.yml` (meson setup source-dir argument).
+`.github/workflows/go-ci.yml` (meson setup source-dir argument),
+`.github/workflows/sanitizers.yml` (exclude `test_y4m_alloc_failure` from ASan/TSan runs),
+`.github/workflows/tests-and-quality-gates.yml` (exclude `test_y4m_alloc_failure` from all sanitizer matrix variants),
+`.github/workflows/lint-and-format.yml` (exclude `core/src/compat/win32/` from clang-tidy changed-files scan),
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py` (remove dead old `_run_benchmark()` function),
+`mcp-server/vmaf-mcp/tests/test_probe_findings_2026_05_17.py` (update test_bug3 to expect RuntimeError).
 
-**Rebase impact:** no rebase impact — all changes are test files and a CI workflow.
+**Rebase impact:** no rebase impact — all changes are test files and CI workflows.
 None of these files have upstream counterparts in Netflix/vmaf.
 
 ---
