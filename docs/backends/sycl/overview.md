@@ -365,6 +365,19 @@ the deviation:
 - **HIP / ROCm via SYCL** — requires building DPC++ with the HIP plugin;
   the shipped Intel oneAPI binaries only include the Level Zero +
   OpenCL CPU + CUDA plugins.
+- **`close_fex_sycl` forward declaration (SY-2a).** Each `init_fex_sycl`
+  in `core/src/feature/sycl/` calls `close_fex_sycl(fex)` from its
+  USM-allocation error paths so that partial allocations and
+  `feature_name_dict` are released on init failure. Because the
+  definition of `close_fex_sycl` lives at the bottom of every
+  translation unit (next to the extractor's `VmafFeatureExtractor`
+  registration struct), each TU adds a `static int
+  close_fex_sycl(VmafFeatureExtractor *fex);` forward declaration just
+  before the corresponding `init_fex_sycl` to keep strict C++ modes
+  (icpx, msvc, clang `-Werror=implicit-function-declaration`)
+  happy. The same pattern applies to `close_chroma_sycl` /
+  `close_temporal_sycl` in `speed_chroma_sycl.cpp` and
+  `speed_temporal_sycl.cpp`.
 
 See [metrics/features.md](../../metrics/features.md) for the
 per-extractor coverage matrix and [api/gpu.md](../../api/gpu.md#sycl)
