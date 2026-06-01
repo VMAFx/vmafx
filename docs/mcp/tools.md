@@ -215,6 +215,12 @@ CPU and each GPU backend. See [usage/bench.md](../usage/bench.md) for more detai
 > stdin EOF before the benchmark completes. Use a persistent pipe (`sleep 120 |`)
 > when testing from the command line. See [Finding 9 in the E2E test matrix](../../.workingdir/bbb_reports/E2E_TEST_MATRIX_v9.md).
 
+> **Error contract**: `run_benchmark` raises `RuntimeError("benchmark failed — no
+> output line containing pooled score / Pearson correlation")` on partial / silent
+> pipe failures (ADR-0608). A second legacy implementation that swallowed the
+> failure and returned a partial dict was removed in PR #517 (Layer-5); MCP clients
+> should now branch on `isError=True` per the [MCP error contract](../../docs/mcp/index.md).
+
 ### Input schema
 
 Takes no arguments.
