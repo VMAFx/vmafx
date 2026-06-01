@@ -288,7 +288,8 @@ jobs:
               # after confirming it passes cleanly under ASAN_OPTIONS=
               # detect_leaks=1 (the invoke_init helper already calls
               # fex->close() + free(priv) on every code path).
-              EXCLUDE='test_model$'
+              # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with ASan shadow-memory mmap.
+              EXCLUDE='test_model$|test_y4m_alloc_failure$'
               ;;
             undefined)
               # UBSan deselects: test_model (NULL-to-nonnull memcpy
@@ -300,7 +301,8 @@ jobs:
               # AVX2 gate to test_calculate_c_values_scalar_avx2_parity,
               # eliminating the SIGILL on non-AVX2 CI runners; confirmed
               # clean under UBSan on current master.
-              EXCLUDE='test_model$'
+              # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with UBSan runtime allocation.
+              EXCLUDE='test_model$|test_y4m_alloc_failure$'
               ;;
             thread)
               # TSan deselects: test_model (same defect as ASan/UBSan
@@ -309,7 +311,8 @@ jobs:
               # (merged 2026-05-09) fixed the SAN-FRAMESYNC-MUTEX-DOMAIN
               # mutex-domain mismatch; nightly TSan job was green on
               # 2026-05-09 and 2026-05-10 (state.md entry).
-              EXCLUDE='test_model$'
+              # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with TSan internal allocator.
+              EXCLUDE='test_model$|test_y4m_alloc_failure$'
               ;;
             *)
               echo "::error::ADR-0347 deselect list is not defined for sanitizer=${{ matrix.sanitizer }}" >&2

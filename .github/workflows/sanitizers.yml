@@ -111,9 +111,16 @@ jobs:
           # Exclude test_model: svm.cpp parser alloc-too-big on malformed JSON
           # is a pre-existing defect tracked in docs/state.md as
           # T-SANITIZER-DEFECTS-REVEALED-758.
+          # Exclude test_y4m_alloc_failure: the test uses RLIMIT_AS to
+          # restrict the process address space to 256 MiB. ASan/UBSan
+          # runtimes require large shadow-memory mmap regions that cannot
+          # be established under that cap; the sanitizer "Failed to mmap"
+          # abort fires before the test logic runs. The bug this test
+          # guards is exercised by the unsanitized meson test suite on
+          # every run. Tracked as T-Y4M-ALLOC-RLIMIT-AS-SANITIZER-INCOMPATIBLE.
           TESTS=$(meson introspect build --tests 2>&1 \
                   | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
-                  | grep -vE 'test_model$' || true)
+                  | grep -vE 'test_model$|test_y4m_alloc_failure$' || true)
           echo "test count: $(echo "$TESTS" | wc -l)"
           if [ -z "$TESTS" ]; then
             echo "::error::Test enumeration produced empty list" >&2
@@ -174,9 +181,11 @@ jobs:
       - name: Run tests (TSan)
         working-directory: core
         run: |
+          # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with
+          # TSan internal allocator (same reason as ASan exclusion above).
           TESTS=$(meson introspect build --tests 2>&1 \
                   | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
-                  | grep -vE 'test_model$' || true)
+                  | grep -vE 'test_model$|test_y4m_alloc_failure$' || true)
           echo "test count: $(echo "$TESTS" | wc -l)"
           if [ -z "$TESTS" ]; then
             echo "::error::Test enumeration produced empty list" >&2
