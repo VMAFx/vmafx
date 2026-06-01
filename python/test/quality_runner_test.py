@@ -10,6 +10,8 @@ from test.testutil import (
     set_default_flat_1920_1080_videos_for_testing,
 )
 
+import pytest
+
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset, NorefAsset
 from vmaf.core.quality_runner import (
@@ -55,6 +57,11 @@ class QualityRunnerTest(MyTestCase):
     # `test_run_vmaf_runner` (below) uses VmafQualityRunner and is untouched.
 
     def test_run_vmaf_runner_v1_model(self):
+        pytest.skip(
+            "sunset per ADR-0709 / PR #38: float_ansnr dropped from C library; "
+            "v1 model + dis1st training paths depend on it. Tests cannot run "
+            "without restoring the dropped feature."
+        )
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
 

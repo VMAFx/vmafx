@@ -4,6 +4,7 @@ import shutil
 import unittest
 
 import numpy as np
+import pytest
 from sureal.subjective_model import MosModel, SubjectiveModel
 
 from vmaf.config import DisplayConfig, VmafConfig
@@ -263,6 +264,11 @@ class TestTrainOnDatasetJsonFormat(unittest.TestCase):
             os.remove(self.output_model_filepath)
 
     def test_train_test_on_dataset_with_dis1st_thr(self):
+        pytest.skip(
+            "sunset per ADR-0709 / PR #38: float_ansnr dropped from C library; "
+            "v1 model + dis1st training paths depend on it. Tests cannot run "
+            "without restoring the dropped feature."
+        )
         from vmaf.routine import train_test_vmaf_on_dataset
 
         train_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
@@ -301,6 +307,11 @@ class TestTrainOnDataset(unittest.TestCase):
             os.remove(self.output_model_filepath)
 
     def test_train_test_on_dataset_with_dis1st_thr(self):
+        pytest.skip(
+            "sunset per ADR-0709 / PR #38: float_ansnr dropped from C library; "
+            "v1 model + dis1st training paths depend on it. Tests cannot run "
+            "without restoring the dropped feature."
+        )
         from vmaf.routine import train_test_vmaf_on_dataset
 
         train_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
@@ -345,6 +356,11 @@ class TestTrainOnDataset(unittest.TestCase):
         self.assertAlmostEqual(results[3]["VMAF_score"], 89.27013895870179, places=4)
 
     def test_train_test_on_raw_dataset_with_dis1st_thr(self):
+        pytest.skip(
+            "sunset per ADR-0709 / PR #38: float_ansnr dropped from C library; "
+            "v1 model + dis1st training paths depend on it. Tests cannot run "
+            "without restoring the dropped feature."
+        )
         from vmaf.routine import train_test_vmaf_on_dataset
 
         train_dataset = import_python_file(VmafConfig.test_resource_path("raw_dataset_sample.py"))
@@ -626,6 +642,11 @@ class TestTrainOnDataset(unittest.TestCase):
             )
 
     def test_train_test_on_dataset_with_dis1st_thr_with_feature_optional_dict_good(self):
+        pytest.skip(
+            "sunset per ADR-0709 / PR #38: float_ansnr dropped from C library; "
+            "v1 model + dis1st training paths depend on it. Tests cannot run "
+            "without restoring the dropped feature."
+        )
         from vmaf.routine import train_test_vmaf_on_dataset
 
         train_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
