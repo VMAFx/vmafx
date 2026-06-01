@@ -24,3 +24,14 @@
   `error: use of undeclared identifier 'close_fex_sycl'`. Matches the pattern
   already used by `float_*_sycl.cpp`. Restores Linux GCC (all backends),
   Ubuntu SYCL, Ubuntu SYCL + CUDA, and macOS SYCL builds.
+- **CUDA SpEED kernel embed (`core/src/meson.build`)**: register
+  `core/src/feature/cuda/speed/speed_score.cu` in the `cuda_cu_sources`
+  dict so it is compiled to PTX and embedded as the `speed_score_ptx`
+  C string. Both `speed_chroma_cuda.c` and `speed_temporal_cuda.c`
+  declare `extern const char speed_score_ptx[]` and call
+  `cuModuleLoadData(&module, speed_score_ptx, ...)`, but the kernel
+  source was orphaned in the meson dict (added by ADR-0567 but never
+  wired). Without this entry the link fails with `undefined reference
+  to 'speed_score_ptx'`. Restores Docker Image Build, Linux GCC (all
+  backends), Ubuntu CUDA, Ubuntu CUDA Static, Ubuntu SYCL + CUDA, and
+  Windows MSVC + CUDA build legs.
