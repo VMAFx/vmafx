@@ -49,3 +49,15 @@
   with `dispatch_strategy.c`, `test_metal_kernel_registration.c`,
   `test_metal_motion_v2_parity.c`, and `test_metal_smoke.c`. Restores
   the macOS Clang (CPU + Metal) and Metal (T8-1 scaffold) test legs.
+- **Windows MSVC pthread_once (`core/src/compat/win32/pthread.h`)**:
+  add `pthread_once_t` / `PTHREAD_ONCE_INIT` / `pthread_once()` to the
+  Win32 pthread shim. `iqa/ssim_simd.h` declares
+  `iqa_ssim_install_dispatch_once(pthread_once_t *guard, void (*installer)(void))`
+  and `float_ssim.c` / `float_ms_ssim.c` use a static
+  `pthread_once_t s_dispatch_guard = PTHREAD_ONCE_INIT` for the SIMD
+  dispatch install (TSan race audit 2026-05-30). MSVC fails the whole
+  Windows + CUDA leg because the existing win32 shim only provides
+  mutex / cond / thread, not once-init. Backs onto
+  `InitOnceExecuteOnce` (Windows Vista+, which is the documented
+  floor for this shim). Restores the MSVC + CUDA and MSVC + oneAPI SYCL
+  build-only legs.
