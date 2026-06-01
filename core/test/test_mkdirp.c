@@ -37,6 +37,12 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <direct.h> /* _rmdir */
+/* MSVC / MinGW's <sys/stat.h> ships _S_IFMT / _S_IFDIR but not the POSIX
+ * S_ISDIR macro that this test uses to introspect mode bits. Define it
+ * here so the cross-platform stat()-result check below compiles. */
+#ifndef S_ISDIR
+#define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+#endif
 #else
 #include <unistd.h>
 #endif
