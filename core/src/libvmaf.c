@@ -1634,8 +1634,12 @@ static void threaded_extract_batch_func(void *e, void **thread_data)
         if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)
             continue;
 
-        if ((f->n_subsample > 1) && (f->index % f->n_subsample))
-            continue;
+        const uint64_t no_subsample_flags =
+            VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_PREV_REF;
+        if (!(shared_fex->flags & no_subsample_flags)) {
+            if ((f->n_subsample > 1) && (f->index % f->n_subsample))
+                continue;
+        }
 
         if (!td->fex_ctx[i]) {
             VmafDictionary *opts_dict = f->registered_fex->fex_ctx[i]->opts_dict;
@@ -2208,9 +2212,13 @@ static int read_pictures_sycl_prep(VmafContext *vmaf, VmafPicture *ref, VmafPict
 static bool read_pictures_should_skip(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
                                       unsigned index)
 {
-    if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)) {
-        if ((vmaf->cfg.n_subsample > 1) && (index % vmaf->cfg.n_subsample))
-            return true;
+    {
+        const uint64_t no_subsample_flags =
+            VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_PREV_REF;
+        if (!(fex_ctx->fex->flags & no_subsample_flags)) {
+            if ((vmaf->cfg.n_subsample > 1) && (index % vmaf->cfg.n_subsample))
+                return true;
+        }
     }
 
     if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) &&

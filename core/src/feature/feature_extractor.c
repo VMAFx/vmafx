@@ -49,7 +49,8 @@ extern VmafFeatureExtractor vmaf_fex_psnr;
 extern VmafFeatureExtractor vmaf_fex_psnr_hvs;
 extern VmafFeatureExtractor vmaf_fex_integer_adm;
 extern VmafFeatureExtractor vmaf_fex_integer_motion;
-extern VmafFeatureExtractor vmaf_fex_integer_motion_v2;
+/* vmaf_fex_integer_motion_v2 (CPU) removed — merged into vmaf_fex_integer_motion
+ * by upstream a4a1492d3. GPU variants (_cuda, _sycl, _hip, _metal) are kept. */
 extern VmafFeatureExtractor vmaf_fex_integer_vif;
 extern VmafFeatureExtractor vmaf_fex_cambi;
 #if HAVE_CUDA
@@ -229,7 +230,7 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
 #endif
     &vmaf_fex_float_ms_ssim, &vmaf_fex_float_ssim, &vmaf_fex_ssim, &vmaf_fex_ssimulacra2,
     &vmaf_fex_ciede, &vmaf_fex_psnr, &vmaf_fex_psnr_hvs, &vmaf_fex_integer_adm,
-    &vmaf_fex_integer_motion, &vmaf_fex_integer_motion_v2, &vmaf_fex_integer_vif, &vmaf_fex_cambi,
+    &vmaf_fex_integer_motion, &vmaf_fex_integer_vif, &vmaf_fex_cambi,
 #if HAVE_SYCL
     /* SYCL before CUDA: when multiple GPU backends are compiled in,
      * the first matching extractor wins.  SYCL is the preferred backend
