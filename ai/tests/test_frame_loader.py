@@ -13,6 +13,10 @@ from vmaf_train.data.frame_loader import FrameSource, iter_frames
 class _FakeProcess:
     def __init__(self, payload: bytes) -> None:
         self.stdout = io.BytesIO(payload)
+        # iter_frames now reads proc.stderr after the ffmpeg subprocess exits.
+        # The fake process has no real stderr pipe; set to None so the
+        # "if proc.stderr is not None" guard in iter_frames skips the read.
+        self.stderr: io.BytesIO | None = None
         self.wait_called = False
 
     def wait(self) -> int:
@@ -21,9 +25,10 @@ class _FakeProcess:
 
 
 def _popen_factory(payload: bytes, captured: dict[str, Any]):
-    def fake_popen(argv: list[str], *, stdout: int) -> _FakeProcess:
+    def fake_popen(argv: list[str], *, stdout: int, stderr: int | None = None) -> _FakeProcess:
         captured["argv"] = argv
         captured["stdout"] = stdout
+        captured["stderr"] = stderr
         proc = _FakeProcess(payload)
         captured["proc"] = proc
         return proc
