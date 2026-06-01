@@ -185,7 +185,6 @@ class BasicResult(object):
                  'VMAF_feature_adm_num_scale3_scores': [317.582733], \
                  'VMAF_feature_adm_num_scores': [700.625778], \
                  'VMAF_feature_adm_scores': [0.939274], \
-                 'VMAF_feature_anpsnr_scores': [41.921087], \
                  'VMAF_feature_ansnr_scores': [30.230282], \
                  'VMAF_feature_motion2_scores': [0.0], \
                  'VMAF_feature_motion_scores': [0.0], \
@@ -217,7 +216,6 @@ class BasicResult(object):
                  'VMAF_feature_adm_num_scale2_egl_1_scores': [80.061874], \
                  'VMAF_feature_adm_num_scale3_egl_1_scores': [107.635399], \
                  'VMAF_feature_adm_scale0_egl_1_scores': [0.979438], \
-                 'VMAF_feature_anpsnr_scores': [24.463257], \
                  'VMAF_feature_ansnr_scores': [11.619336], \
                  'VMAF_feature_motion2_scores': [0.0], \
                  'VMAF_feature_motion_scores': [0.0], \

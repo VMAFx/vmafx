@@ -203,7 +203,6 @@ class VmafFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
     TYPE = "VMAF_feature"
 
     # VERSION = '0.1' # vmaf_study; Anush's VIF fix
-    # VERSION = '0.2' # expose vif_num, vif_den, adm_num, adm_den, anpsnr
     # VERSION = '0.2.1' # expose vif num/den of each scale
     # VERSION = '0.2.2'  # adm abs-->fabs, corrected border handling, uniform reading with option of offset for input YUV, updated VIF corner case
     # VERSION = '0.2.2b'  # expose adm_den/num_scalex

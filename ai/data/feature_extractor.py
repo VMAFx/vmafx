@@ -155,7 +155,6 @@ _METRIC_TO_EXTRACTOR: dict[str, str] = {
     # ANSNR / ANPSNR (float variants only — fork has GPU twins under
     # ADR-0192, useful for cross-backend feature consistency).
     "float_ansnr": "float_ansnr",
-    "float_anpsnr": "float_ansnr",
     # SpEED chroma/temporal — CPU-only (ADR-0559; GPU twins in ADR-0557/0558).
     # Short alias names registered in core/src/feature/alias.c.
     "speed_temporal": "speed_temporal",
