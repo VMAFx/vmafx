@@ -163,30 +163,32 @@ def test_bug3_run_benchmark_surfaces_silent_pipefail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When bench_all.sh exits non-zero with empty stdout AND stderr
-    (the classic `set -euo pipefail` silent-abort), the wrapper must
-    populate an `error` field — not return a success-shaped envelope."""
-    # Stub script existence — the wrapper File-exists-checks it before exec.
-    fake_script = tmp_path / "bench_all.sh"
-    fake_script.write_text("#!/bin/sh\nexit 1\n")
-    fake_script.chmod(0o755)
-    monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
+    (the classic `set -euo pipefail` silent-abort), _run_benchmark must
+    raise RuntimeError with a diagnostic that includes "no output" —
+    so the MCP layer can mark the call as isError=True (ADR-0608 E-1).
+
+    The OLD _run_benchmark (pre-ADR-0608) returned a success-shaped dict
+    with an ``error`` key, which the MCP layer could not distinguish from
+    a healthy result.  The new implementation raises RuntimeError so the
+    MCP surface correctly sets isError=True.
+    """
+    # Stub script existence — the wrapper file-existence-checks it before exec.
     (tmp_path / "testdata").mkdir()
-    (tmp_path / "testdata" / "bench_all.sh").write_bytes(fake_script.read_bytes())
-    (tmp_path / "testdata" / "bench_all.sh").chmod(0o755)
+    bench_script = tmp_path / "testdata" / "bench_all.sh"
+    bench_script.write_text("#!/bin/sh\nexit 1\n")
+    bench_script.chmod(0o755)
+    monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
 
-    async def _fake_communicate(*args, **kwargs):
-        return (b"", b"")
+    class _FakeProc:
+        returncode = 1
 
-    fake_proc = AsyncMock()
-    fake_proc.communicate = _fake_communicate
-    fake_proc.returncode = 1
+        async def communicate(self):
+            return b"", b""
 
-    with patch.object(srv.asyncio, "create_subprocess_exec", AsyncMock(return_value=fake_proc)):
-        result = asyncio.run(srv._run_benchmark())
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=_FakeProc()))
 
-    assert result["exit_code"] == 1
-    assert "error" in result, f"expected error key, got {result}"
-    assert "no output" in result["error"]
+    with pytest.raises(RuntimeError, match="benchmark failed.*no output"):
+        asyncio.run(srv._run_benchmark())
 
 
 # ---------------------------------------------------------------------------
