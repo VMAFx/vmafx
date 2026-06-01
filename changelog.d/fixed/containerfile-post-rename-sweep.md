@@ -87,3 +87,16 @@
   call returns NULL when `/tmp/` isn't where the runtime expects;
   MSVCRT lacks the function entirely. Restores `test_mkdirp` on the
   Windows MinGW64 (CPU) leg.
+- **Tiny AI `iter_frames` test fixture (`ai/tests/test_frame_loader.py`)**:
+  `_popen_factory`'s `fake_popen` now accepts the `stderr` keyword that
+  `iter_frames` passes in production (captured for ffmpeg diagnostics
+  surfacing). Pre-fix every `iter_frames(..., popen=_popen_factory(...))`
+  test failed with `TypeError: fake_popen() got an unexpected keyword
+  argument 'stderr'`.
+- **Tiny AI parquet rollback test (`ai/tests/test_parquet_utils.py`)**:
+  monkey-patch `parquet_utils._write_v2` to raise instead of subclass-
+  overriding `DataFrame.to_parquet`. The v2 write path goes through
+  `pq.write_table`, not the DataFrame method, so the old subclass mock
+  was a no-op and `pytest.raises(RuntimeError)` never tripped (`DID NOT
+  RAISE`). The rollback semantics being tested (temp file cleanup on
+  serialiser exception) are now properly exercised.
