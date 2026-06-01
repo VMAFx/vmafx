@@ -32,6 +32,9 @@ paths:
   - compat/python-vmaf
   - mcp-server
   - ai/src
+  - cmd
+  - pkg
+  - api
 
 paths-ignore:
   - subprojects
@@ -42,3 +45,4 @@ paths-ignore:
   - testdata
   - "**/third_party/**"
   - "**/*.generated.*"
+  - gen/go

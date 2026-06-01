@@ -43132,3 +43132,19 @@ Fork-local files:
 `go.mod`, `go.sum`,
 `changelog.d/security/dependency-audit-2026-05-30.md`,
 `docs/research/dependency-audit-2026-05-30.md`.
+
+## CodeQL Go coverage + config conflict resolution (ADR-0811, 2026-05-29)
+
+no rebase impact: CI-config-only change; no public API surface affected.
+All changes are confined to `.github/codeql-config.yml` (Go paths addition
++ gen/go exclusion), `.github/workflows/security-scans.yml` (new codeql-go
+job), `docs/adr/0811-security-codeql-go-pvr.md`, and the changelog fragment.
+No upstream Netflix/vmaf files are touched; no C/Python/Go production code is
+modified. On upstream sync, the CodeQL workflow additions apply cleanly
+regardless of upstream changes.
+
+Fork-local files:
+`.github/codeql-config.yml`,
+`.github/workflows/security-scans.yml`,
+`docs/adr/0811-security-codeql-go-pvr.md`,
+`changelog.d/security/0811-codeql-go-config-fix.md`.

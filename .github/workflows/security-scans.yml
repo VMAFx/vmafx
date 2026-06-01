@@ -227,6 +227,35 @@ jobs:
           sarif_file: gitleaks.sarif
           category: gitleaks
 
+  # ADR-0811: Go surface (cmd/, pkg/, api/) added in Phase 4 language
+  # modernization. CodeQL Go job covers the vmafx-controller, vmafx-mcp,
+  # vmafx-node binaries and pkg/* libraries. gen/go is excluded (generated
+  # protobuf stubs — not hand-authored security surface).
+  codeql-go:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: CodeQL (Go)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        with:
+          languages: go
+          queries: security-and-quality
+          config-file: ./.github/codeql-config.yml
+      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        with:
+          category: "/language:go"
+
   dependency-review:
     name: Dependency Review (PR Diff)
     if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'pull_request')
