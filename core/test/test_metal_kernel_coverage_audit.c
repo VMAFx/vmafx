@@ -82,10 +82,16 @@
  * To extend: when a new .mm lands (round 5+), add the basename here AND
  * land a per-kernel parity test in the same PR. This list size grows
  * together with the kernel set; the audit makes the grow-together
- * contract enforceable. */
+ * contract enforceable.
+ *
+ * NOTE: entries here are the registered extractor name prefix, i.e. the
+ * part BEFORE the "_metal" suffix — NOT necessarily the .mm filename stem.
+ * In particular, integer_motion_v2_metal.mm registers as "motion_v2_metal"
+ * (the short alias chosen in ADR-0421 / T8-1c), so the entry is "motion_v2",
+ * not "integer_motion_v2". */
 static const char *const g_metal_kernel_basenames[] = {
-    "float_moment",   "float_motion",      "float_ms_ssim", "float_psnr", "float_ssim",
-    "integer_motion", "integer_motion_v2", "integer_psnr",  NULL,
+    "float_moment",   "float_motion", "float_ms_ssim", "float_psnr", "float_ssim",
+    "integer_motion", "integer_psnr", "motion_v2",     NULL,
 };
 
 #define EXPECTED_KERNEL_COUNT 8u
