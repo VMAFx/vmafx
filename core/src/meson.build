@@ -857,6 +857,11 @@ if is_cuda_enabled
         'float_adm_score' : [feature_src_dir + 'cuda/float_adm/float_adm_score.cu'],
         # T3-15 / ADR-0360: cambi CUDA twin (Strategy II hybrid — three integer kernels).
         'cambi_score' : [feature_src_dir + 'cuda/integer_cambi/cambi_score.cu'],
+        # ADR-0965: speed_chroma_cuda + speed_temporal_cuda share a single kernel
+        # (speed_score.cu) that computes means, covariance, and per-channel
+        # scores.  Both C wrappers extern the symbol `speed_score_ptx`; the PTX
+        # array is generated here via the standard bin2c pipeline.
+        'speed_score' : [feature_src_dir + 'cuda/speed/speed_score.cu'],
     }
     # Per-kernel extra nvcc flags.
     #
