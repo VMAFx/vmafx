@@ -45,7 +45,7 @@ jobs:
 
       - name: Build libvmaf (CPU only) for cgo link
         run: |
-          meson setup core/build-cpu \
+          meson setup core core/build-cpu \
             -Denable_cuda=false \
             -Denable_sycl=false \
             -Denable_hip=false \

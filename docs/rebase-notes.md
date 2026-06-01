@@ -7,6 +7,20 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## Pre-existing macOS / Tiny-AI / Go-CI failures (2026-06-01, fix/preexisting-macos-python-tinyai-failures)
+
+**Files touched:**
+`core/test/test_metal_kernel_coverage_audit.c` (basename list correction),
+`ai/tests/test_data_datasets_branches.py` (sha256 fixture constants),
+`ai/tests/test_frame_loader.py` (fake Popen signature + _FakeProcess.stderr),
+`ai/tests/test_parquet_utils.py` (failure injection via monkeypatch),
+`.github/workflows/go-ci.yml` (meson setup source-dir argument).
+
+**Rebase impact:** no rebase impact — all changes are test files and a CI workflow.
+None of these files have upstream counterparts in Netflix/vmaf.
+
+---
+
 ## libvmaf.Score / ScoreDirect ctx.Context plumbing (2026-05-31, fix/libvmaf-score-ctx)
 
 **Files touched:**

@@ -1,0 +1,5 @@
+- fix(test): `test_metal_kernel_coverage_audit` — correct `g_metal_kernel_basenames[]` entry from `"integer_motion_v2"` to `"motion_v2"` to match the registered extractor alias; resolves macOS CI failures across all three macOS build jobs
+- fix(ai/test): update `test_data_datasets_branches.py` to use valid 64-char hex sha256 fixtures required by the `ManifestEntry._sha256_shape` pydantic validator added in PR #506
+- fix(ai/test): update `test_frame_loader.py` fake Popen stub to accept `stderr` keyword argument and expose `stderr=None` on `_FakeProcess`, matching the updated `iter_frames` signature that now captures stderr for diagnostic reporting
+- fix(ai/test): fix `test_parquet_utils.py::test_write_parquet_atomic_cleans_up_temp_on_failure` to monkeypatch `_write_v2` instead of subclassing `DataFrame.to_parquet`, which `write_parquet_atomic` no longer calls
+- fix(ci): correct `meson setup core/build-cpu` to `meson setup core core/build-cpu` in `.github/workflows/go-ci.yml`; the missing source-directory argument caused every Go CI run to fail with `no meson.build found`
