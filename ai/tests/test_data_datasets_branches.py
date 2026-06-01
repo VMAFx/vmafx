@@ -8,10 +8,10 @@ direct test file before this; coverage came incidentally through importers.
 
 from __future__ import annotations
 
-import dataclasses
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from vmaf_train.data import datasets
 
@@ -111,8 +111,14 @@ def test_load_manifest_handles_yaml_missing_entries_key(
 
 def test_manifest_entry_is_frozen() -> None:
     entry = datasets.ManifestEntry(key="k", path="p", sha256=_SHA256_K)
-    # @dataclass(frozen=True) raises FrozenInstanceError on attribute assignment.
-    with pytest.raises(dataclasses.FrozenInstanceError):
+    # ManifestEntry uses pydantic.BaseModel with frozen=True (ConfigDict).
+    # Pydantic raises ValidationError (not dataclasses.FrozenInstanceError)
+    # when a frozen field is reassigned — pydantic's __setattr__ calls
+    # _check_frozen which raises ValidationError.from_exception_data with
+    # type='frozen_instance'.  dataclasses.FrozenInstanceError is an
+    # AttributeError subclass and was the right check before the migration
+    # to pydantic in PR #506 (ADR-0934).
+    with pytest.raises(ValidationError):
         entry.key = "other"  # type: ignore[misc]
 
 

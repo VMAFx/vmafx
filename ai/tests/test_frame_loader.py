@@ -19,7 +19,7 @@ class _FakeProcess:
         self.stderr: io.BytesIO | None = None
         self.wait_called = False
 
-    def wait(self) -> int:
+    def wait(self, timeout: float | None = None) -> int:
         self.wait_called = True
         return 0
 
