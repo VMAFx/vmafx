@@ -1282,6 +1282,9 @@ static void enqueue_adm_work(void *queue_ptr, void *priv, void *shared_ref, void
 static void adm_pre_graph(void *queue_ptr, void *priv);
 static void adm_post_graph(void *queue_ptr, void *priv);
 
+static int
+close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init-failure cleanup — SY-2a */
+
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
