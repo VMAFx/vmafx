@@ -442,7 +442,7 @@ extern "C" {
  * first-kernel motion_v2; ADR-0278 cite form). */
 // NOLINTNEXTLINE(misc-use-internal-linkage) — ADR-0421 / ADR-0278
 VmafFeatureExtractor vmaf_fex_integer_motion_v2_metal = {
-    .name = "motion_v2_metal",
+    .name = "integer_motion_v2_metal",
     .init = init_fex_metal,
     .submit = submit_fex_metal,
     .collect = collect_fex_metal,

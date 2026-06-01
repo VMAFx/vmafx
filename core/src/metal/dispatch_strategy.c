@@ -32,7 +32,7 @@
  * entry is removed entirely.
  */
 static const char *const g_metal_features[] = {
-    "motion_v2_metal",
+    "integer_motion_v2_metal",
     "VMAF_integer_feature_motion_v2_sad_score",
     "VMAF_integer_feature_motion2_v2_score",
     "float_psnr_metal",

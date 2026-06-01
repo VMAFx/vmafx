@@ -42978,3 +42978,32 @@ Fork-local files:
 `core/src/feature/arm64/float_adm_neon.c`,
 `core/src/feature/arm64/ssimulacra2_host_neon.c`,
 `changelog.d/fixed/simd-float-adm-dwt2-unchecked-aligned-malloc.md`.
+
+## fix/master-platform-breakages-2026-06-01 — 2026-06-01
+
+no rebase impact: all four changes are platform-portability fixes to
+fork-local or fork-extended files with no upstream equivalent.
+
+- `core/src/compat/win32/pthread.h` — fork-added Win32 pthread shim;
+  upstream Netflix/vmaf has no Windows support layer.
+- `core/test/test_gpu_dispatch_runtime.c` — fork-added GPU-runtime
+  test; upstream has no equivalent test.
+- `core/src/meson.build` — the `cuda_cu_sources` dict addition is a
+  fork-local CUDA feature entry; upstream has no speed CUDA kernel.
+- `core/src/feature/metal/integer_motion_v2_metal.mm`,
+  `core/src/metal/dispatch_strategy.c`,
+  `core/test/test_metal_smoke.c`,
+  `core/test/test_metal_kernel_registration.c`,
+  `core/test/test_metal_motion_v2_parity.c` — all Metal backend files
+  are wholly fork-added; upstream Netflix/vmaf has no Metal backend.
+
+Fork-local files:
+`core/src/compat/win32/pthread.h`,
+`core/test/test_gpu_dispatch_runtime.c`,
+`core/src/meson.build`,
+`core/src/feature/metal/integer_motion_v2_metal.mm`,
+`core/src/metal/dispatch_strategy.c`,
+`core/test/test_metal_smoke.c`,
+`core/test/test_metal_kernel_registration.c`,
+`core/test/test_metal_motion_v2_parity.c`,
+`changelog.d/fixed/master-platform-breakages.md`.
