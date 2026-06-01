@@ -105,6 +105,7 @@ static void iqa_ssim_dispatch_trampoline(void)
         installer();
 }
 
+/* NOLINTNEXTLINE(readability-non-const-parameter) — POSIX pthread_once mutates *guard. */
 void iqa_ssim_install_dispatch_once(pthread_once_t *guard, void (*installer)(void))
 {
     /* `guard` parameter is retained for API symmetry with the

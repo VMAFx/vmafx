@@ -100,3 +100,17 @@
   was a no-op and `pytest.raises(RuntimeError)` never tripped (`DID NOT
   RAISE`). The rollback semantics being tested (temp file cleanup on
   serialiser exception) are now properly exercised.
+- **MCP smoke `_run_benchmark` test (`mcp-server/vmaf-mcp/tests/test_probe_findings_2026_05_17.py`)**:
+  align `test_bug3_run_benchmark_surfaces_silent_pipefail` with ADR-0608 E-1
+  contract (raise `RuntimeError` so MCP marks `isError=True`); test was
+  still asserting the pre-ADR-0608 dict-with-`error` shape.
+- **Tiny AI `_FakeProcess.wait()` (`ai/tests/test_frame_loader.py`)**: accept
+  the `timeout` keyword that `iter_frames` passes per the ADR-0608 progress
+  watchdog.
+- **Tiny AI manifest tests (`ai/tests/test_data_datasets_branches.py`)**:
+  use deterministic 64-char hex digests; pydantic validator on
+  `ManifestEntry.sha256` now rejects the old 8-char shorthand.
+- **Clang-Tidy NOLINTs**: inline justifications on three findings on files
+  touched by this PR — `concurrency-mt-unsafe` (getenv in single-threaded
+  test), `bugprone-reserved-identifier` (`_POSIX_C_SOURCE` feature-test
+  macro), `readability-non-const-parameter` (POSIX pthread_once_t guard).
