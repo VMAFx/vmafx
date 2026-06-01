@@ -1,0 +1,5 @@
+- **#141 / ADR-0793** — nightly workflow audit: remove redundant TSan job (already covered by `sanitizers.yml`), add explicit artifact retention (14 d clang-tidy, 30 d benchmarks), fix Python version `3.14.5` → `3.12` in `nightly-bisect.yml`.
+- **#165 / ADR-0802** — pin `ubuntu-latest` → `ubuntu-24.04` across all non-Docker workflow runners; prevents silent runner image upgrades from breaking the build matrix.
+- **#173 / ADR-0812** — Renovate grouping and scheduling: consolidate Go and Cargo dependencies into weekly batches, add off-hours schedule, set PR cap to 5.
+- **#183** — `release-please` draft mode: set `draft: true` so release PRs require manual approval before merging.
+- _(#179 / sigstore SBOM gaps — superseded PR had pre-existing conflict markers; deferred to separate PR)_
