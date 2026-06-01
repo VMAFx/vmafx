@@ -185,6 +185,7 @@ jobs:
               | grep -v '^core/src/feature/hip/' \
               | grep -v '^core/test/test_hip' \
               | grep -v '^core/test/fuzz/' \
+              | grep -v '^core/src/compat/win32/' \
               | tr '\n' ' ')
           elif [ "$GH_EVENT_NAME" = "push" ]; then
             before="$PUSH_BEFORE_SHA"
@@ -211,6 +212,7 @@ jobs:
               | grep -v '^core/src/feature/hip/' \
               | grep -v '^core/test/test_hip' \
               | grep -v '^core/test/fuzz/' \
+              | grep -v '^core/src/compat/win32/' \
               | tr '\n' ' ')
               else
                 files=""
@@ -234,6 +236,7 @@ jobs:
               | grep -v '^core/src/feature/hip/' \
               | grep -v '^core/test/test_hip' \
               | grep -v '^core/test/fuzz/' \
+              | grep -v '^core/src/compat/win32/' \
               | tr '\n' ' ')
             fi
           else
@@ -257,6 +260,7 @@ jobs:
               | grep -v '^core/src/feature/hip/' \
               | grep -v '^core/test/test_hip' \
               | grep -v '^core/test/fuzz/' \
+              | grep -v '^core/src/compat/win32/' \
               | tr '\n' ' ')
           fi
           [ -z "$files" ] && { echo "no C/C++ changes"; exit 0; }
