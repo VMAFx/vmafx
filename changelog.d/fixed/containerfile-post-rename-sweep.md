@@ -9,3 +9,9 @@
 - **vmaf-tune docs**: update `docs/usage/vmaf-tune-score-backend.md` to reflect
   the `cuda → sycl → hip → cpu` fallback chain and remove the Vulkan row from
   the accepted-values table.
+- **Go CI (`.github/workflows/go-ci.yml`)**: post-ADR-0700 sweep miss — the
+  cgo-link build step ran `meson setup core/build-cpu` from repo root, which
+  fails with `Neither source directory 'core/build-cpu' nor build directory
+  None contain a build file meson.build.` since the rename moved `meson.build`
+  into `core/`. Pass the source dir explicitly (`meson setup core/build-cpu
+  core ...`). Restores Go CI green on master.

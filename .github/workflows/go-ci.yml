@@ -44,8 +44,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends meson ninja-build pkg-config
 
       - name: Build libvmaf (CPU only) for cgo link
+        # Post-ADR-0700: meson.build lives at core/meson.build, so the
+        # source dir must be passed explicitly (or run from core/). Pre-rename
+        # `meson setup core/build-cpu` worked because root had meson.build.
         run: |
-          meson setup core core/build-cpu \
+          meson setup core/build-cpu core \
             -Denable_cuda=false \
             -Denable_sycl=false \
             -Denable_hip=false \
