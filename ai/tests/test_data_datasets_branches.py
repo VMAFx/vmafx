@@ -62,23 +62,30 @@ def test_load_manifest_returns_empty_when_no_yaml(
     assert datasets.load_manifest("nflx") == []
 
 
+# Valid 64-char lowercase hex sha256 digests for test fixtures.
+# ManifestEntry._sha256_shape enforces the 64-char hex contract (added in PR #506).
+_SHA256_A = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+_SHA256_B = "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe"
+_SHA256_K = "0" * 64
+
+
 def test_load_manifest_parses_entries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     dst = tmp_path / "nflx.yaml"
     dst.write_text(
         "entries:\n"
         "  - key: a\n"
         "    path: a.yuv\n"
-        "    sha256: deadbeef\n"
+        f"    sha256: {_SHA256_A}\n"
         "    mos: 50.5\n"
         "  - key: b\n"
         "    path: b.yuv\n"
-        "    sha256: cafebabe\n"
+        f"    sha256: {_SHA256_B}\n"
         # mos omitted → defaults to None
     )
     monkeypatch.setattr(datasets, "manifest_path", lambda name: dst)
     entries = datasets.load_manifest("nflx")
     assert len(entries) == 2
-    assert entries[0] == datasets.ManifestEntry(key="a", path="a.yuv", sha256="deadbeef", mos=50.5)
+    assert entries[0] == datasets.ManifestEntry(key="a", path="a.yuv", sha256=_SHA256_A, mos=50.5)
     assert entries[1].mos is None
 
 
@@ -103,11 +110,11 @@ def test_load_manifest_handles_yaml_missing_entries_key(
 
 
 def test_manifest_entry_is_frozen() -> None:
-    entry = datasets.ManifestEntry(key="k", path="p", sha256="s")
+    entry = datasets.ManifestEntry(key="k", path="p", sha256=_SHA256_K)
     # @dataclass(frozen=True) raises FrozenInstanceError on attribute assignment.
     with pytest.raises(dataclasses.FrozenInstanceError):
         entry.key = "other"  # type: ignore[misc]
 
 
 def test_manifest_entry_mos_defaults_to_none() -> None:
-    assert datasets.ManifestEntry(key="k", path="p", sha256="s").mos is None
+    assert datasets.ManifestEntry(key="k", path="p", sha256=_SHA256_K).mos is None

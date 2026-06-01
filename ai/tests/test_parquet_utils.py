@@ -42,14 +42,23 @@ def test_write_parquet_atomic_replaces_existing_file(tmp_path: Path) -> None:
     assert round_tripped["a"].tolist() == [1, 2]
 
 
-def test_write_parquet_atomic_cleans_up_temp_on_failure(tmp_path: Path) -> None:
-    """Serialisation exception leaves no temp/output artefact behind."""
+def test_write_parquet_atomic_cleans_up_temp_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Serialisation exception leaves no temp/output artefact behind.
 
-    class _Boom(pd.DataFrame):
-        def to_parquet(self, *args: object, **kwargs: object) -> None:  # type: ignore[override]
-            raise RuntimeError("parquet writer exploded")
+    write_parquet_atomic delegates the actual write to _write_v2 (which uses
+    pyarrow directly, not df.to_parquet).  Inject the failure via monkeypatch
+    so the atomic-rename + cleanup path is exercised.
+    """
+    import aiutils.parquet_utils as _pqu
 
-    df = _Boom({"a": [1]})
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("parquet writer exploded")
+
+    monkeypatch.setattr(_pqu, "_write_v2", _boom)
+
+    df = pd.DataFrame({"a": [1]})
     out = tmp_path / "should_not_exist.parquet"
 
     with pytest.raises(RuntimeError, match="parquet writer exploded"):
