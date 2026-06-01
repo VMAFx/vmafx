@@ -44,7 +44,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h> /* _close */
+#else
 #include <unistd.h>
+#endif
 
 #include "svm.h"
 #include "test.h"
@@ -488,16 +493,49 @@ static int models_inspector_equal(const struct svm_model *a, const struct svm_mo
     return svm_predict(a, q) == svm_predict(b, q);
 }
 
+/* Portable temp-path helper: MSYS2/MinGW64 on GitHub Actions does not expose
+ * a usable /tmp from the MINGW64 shell; hardcoded /tmp/... templates fail with
+ * ENOENT.  On _WIN32 query GetTempPathA() + embed the PID for uniqueness.
+ * Returns 0 on success, -1 on failure. */
+static int make_svm_temp_path(char *out, size_t out_len)
+{
+#ifdef _WIN32
+    char tmpdir[MAX_PATH];
+    DWORD tmplen = GetTempPathA((DWORD)sizeof(tmpdir), tmpdir);
+    if (tmplen == 0 || tmplen >= (DWORD)sizeof(tmpdir))
+        return -1;
+    int n =
+        snprintf(out, out_len, "%svmaf_svm_test_%lu", tmpdir, (unsigned long)GetCurrentProcessId());
+    if (n <= 0 || (size_t)n >= out_len)
+        return -1;
+    /* Pre-create so svm_save_model can open it. */
+    FILE *f = fopen(out, "w");
+    if (!f)
+        return -1;
+    (void)fclose(f);
+    return 0;
+#else
+    const char tmpl[] = "/tmp/vmaf-test-svm-XXXXXX";
+    if (sizeof(tmpl) > out_len)
+        return -1;
+    memcpy(out, tmpl, sizeof(tmpl));
+    int fd = mkstemp(out);
+    if (fd < 0)
+        return -1;
+    (void)close(fd);
+    return 0;
+#endif
+}
+
 static char *test_save_load_roundtrip(void)
 {
     struct binary_fixture fx = {0};
     struct svm_model *m = train_default_csvc(&fx);
     mu_assert("model trained", m != NULL);
 
-    char path[] = "/tmp/vmaf-test-svm-XXXXXX";
-    int fd = mkstemp(path);
-    mu_assert("mkstemp ok", fd >= 0);
-    close(fd);
+    char path[260];
+    int rc_tmp = make_svm_temp_path(path, sizeof(path));
+    mu_assert("temp path creation ok", rc_tmp == 0);
 
     int rc = svm_save_model(path, m);
     mu_assert("svm_save_model returns 0", rc == 0);
@@ -508,7 +546,7 @@ static char *test_save_load_roundtrip(void)
 
     svm_free_and_destroy_model(&m);
     svm_free_and_destroy_model(&m2);
-    unlink(path);
+    (void)remove(path);
     free_binary_problem(&fx);
     mu_assert("reloaded model inspector + predict match original", eq);
     return NULL;
