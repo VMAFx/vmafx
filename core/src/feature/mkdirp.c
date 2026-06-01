@@ -29,13 +29,28 @@ static char *path_normalize(const char *path)
     char *ptr = copy;
 
     for (int i = 0; copy[i]; i++) {
-        *ptr++ = path[i];
-        if ('/' == path[i]) {
+        char c = path[i];
+#ifdef _WIN32
+        /* Treat POSIX '/' as the native '\\' so callers can mix separators
+         * (e.g. WIN tmpdir + "/a/b/c" suffix from cross-platform tests). */
+        if ('/' == c)
+            c = '\\';
+        *ptr++ = c;
+        if ('\\' == c) {
+            i++;
+            while ('/' == path[i] || '\\' == path[i])
+                i++;
+            i--;
+        }
+#else
+        *ptr++ = c;
+        if ('/' == c) {
             i++;
             while ('/' == path[i])
                 i++;
             i--;
         }
+#endif
     }
 
     *ptr = '\0';
