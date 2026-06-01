@@ -1,6 +1,6 @@
 feature_dict = {
 
-    'VMAF_feature': ['vif', 'adm', 'motion', 'ansnr'],
+    'VMAF_feature': ['vif', 'adm', 'motion'],
 
 }
 

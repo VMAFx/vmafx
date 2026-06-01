@@ -185,7 +185,6 @@ class BasicResult(object):
                  'VMAF_feature_adm_num_scale3_scores': [317.582733], \
                  'VMAF_feature_adm_num_scores': [700.625778], \
                  'VMAF_feature_adm_scores': [0.939274], \
-                 'VMAF_feature_ansnr_scores': [30.230282], \
                  'VMAF_feature_motion2_scores': [0.0], \
                  'VMAF_feature_motion_scores': [0.0], \
                  'VMAF_feature_vif_den_scale0_scores': [30884050.0], \
@@ -216,7 +215,6 @@ class BasicResult(object):
                  'VMAF_feature_adm_num_scale2_egl_1_scores': [80.061874], \
                  'VMAF_feature_adm_num_scale3_egl_1_scores': [107.635399], \
                  'VMAF_feature_adm_scale0_egl_1_scores': [0.979438], \
-                 'VMAF_feature_ansnr_scores': [11.619336], \
                  'VMAF_feature_motion2_scores': [0.0], \
                  'VMAF_feature_motion_scores': [0.0], \
                  'VMAF_feature_vif_den_egl_1_scores': [584014.634277], \
@@ -623,7 +621,6 @@ class Result(BasicResult):
 
                                                   scores          scores_key
         0                  [0.798588, 0.84287, 0.800122]     VMAF_adm_scores
-        1               [12.420815, 12.41775, 12.416308]   VMAF_ansnr_scores
         2                    [0.0, 18.489031, 18.542355]  VMAF_motion_scores
         3  [42.1117149479, 47.6544689539, 40.6168118533]         VMAF_scores
         4                 [0.156106, 0.156163, 0.156119]     VMAF_vif_scores

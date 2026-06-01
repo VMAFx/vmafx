@@ -274,7 +274,7 @@ class VmafQualityRunner(VmafQualityRunnerModelMixin, QualityRunner):
     DEFAULT_MODEL_FILEPATH = vmaf.model_path("vmaf_v0.6.1.json")
 
     DEFAULT_FEATURE_DICT = {
-        "VMAF_feature": ["vif", "adm", "motion", "ansnr"]
+        "VMAF_feature": ["vif", "adm", "motion"]
     }  # for backward-compatible with older model only
 
     def _get_quality_scores(self, asset):
@@ -544,8 +544,8 @@ class EnsembleVmafQualityRunner(VmafQualityRunner):
 
     # this now needs to become a list
     DEFAULT_FEATURE_DICT = [
-        {"VMAF_feature": ["vif", "adm", "motion", "ansnr"]},
-        {"VMAF_feature": ["vif", "adm", "motion", "ansnr"]},
+        {"VMAF_feature": ["vif", "adm", "motion"]},
+        {"VMAF_feature": ["vif", "adm", "motion"]},
     ]
 
     def _populate_result_dict(self, feature_result, pred_result, result_dict):

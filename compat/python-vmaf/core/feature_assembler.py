@@ -32,7 +32,7 @@ class FeatureAssembler(object):
         {FeatureExtractor_type:[atom_features,], ...}.
         For example, the below are valid feature dicts:
         {'VMAF_feature':'all', 'BRISQUE_feature':'all'},
-        {'VMAF_feature':['vif', 'ansnr'], 'BRISQUE_feature':'all'}
+        {'VMAF_feature':['vif'], 'BRISQUE_feature':'all'}
         :param feature_option_dict: contains options to extract a particular
         feature, for example:
         {'VMAF_feature':{'force_extraction':True}, 'BRISQUE_feature':{}},

@@ -115,10 +115,6 @@ class FeatureAssemblerTest(unittest.TestCase):
         self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 4.0488208125, places=4)
 
         with self.assertRaises(KeyError):
-            _ = results[0]["VMAF_feature_ansnr_scores"]
-        with self.assertRaises(KeyError):
-            _ = results[0]["VMAF_feature_ansnr_score"]
-        with self.assertRaises(KeyError):
             _ = results[0]["VMAF_feature_adm_scores"]
         with self.assertRaises(KeyError):
             _ = results[0]["VMAF_feature_adm_score"]
