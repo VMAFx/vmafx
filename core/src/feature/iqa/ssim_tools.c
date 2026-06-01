@@ -92,7 +92,10 @@ void iqa_convolve_set_dispatch(iqa_convolve_fn convolve)
  * dispatch globals through pthread_once's full barrier. */
 #include <stdatomic.h>
 static pthread_once_t g_ssim_dispatch_once = PTHREAD_ONCE_INIT;
-static _Atomic(void (*)(void)) g_ssim_dispatch_installer = ATOMIC_VAR_INIT(NULL);
+/* ATOMIC_VAR_INIT was deprecated in C17 and is absent from MSVC's <stdatomic.h>;
+ * plain NULL initialisation is semantically identical per C11 §7.17.2.1 p3 and
+ * is accepted by GCC, Clang, and MSVC. */
+static _Atomic(void (*)(void)) g_ssim_dispatch_installer = NULL;
 
 static void iqa_ssim_dispatch_trampoline(void)
 {
