@@ -58,6 +58,34 @@ typedef void *pthread_condattr_t;
 #define PTHREAD_MUTEX_INITIALIZER SRWLOCK_INIT
 #define PTHREAD_COND_INITIALIZER CONDITION_VARIABLE_INIT
 
+/* pthread_once — maps to Win32 INIT_ONCE / InitOnceExecuteOnce.
+ * Used by iqa/ssim_tools.c (ADR-0871), float_ssim.c / float_ms_ssim.c,
+ * cuda/dispatch_strategy.c (ADR-0181), and feature/integer_adm.h.
+ * The POSIX contract: the callback runs exactly once across all threads;
+ * losing threads block until it completes, then observe the full store-
+ * barrier before proceeding.  InitOnceExecuteOnce provides the same
+ * guarantee via the Windows kernel executive. */
+typedef INIT_ONCE pthread_once_t;
+#define PTHREAD_ONCE_INIT INIT_ONCE_STATIC_INIT
+
+typedef struct vmaf_w32_pthread_once_ctx {
+    void (*fn)(void);
+} vmaf_w32_pthread_once_ctx_t;
+
+static BOOL CALLBACK vmaf_w32_pthread_once_cb(PINIT_ONCE once, PVOID param, PVOID *ctx)
+{
+    (void)once;
+    (void)ctx;
+    ((vmaf_w32_pthread_once_ctx_t *)param)->fn();
+    return TRUE;
+}
+
+static inline int pthread_once(pthread_once_t *once, void (*init_routine)(void))
+{
+    vmaf_w32_pthread_once_ctx_t ctx = {init_routine};
+    return InitOnceExecuteOnce(once, vmaf_w32_pthread_once_cb, &ctx, NULL) ? 0 : EINVAL;
+}
+
 typedef struct vmaf_w32_pthread_trampoline {
     void *(*start)(void *);
     void *arg;
