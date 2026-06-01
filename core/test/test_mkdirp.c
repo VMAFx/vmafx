@@ -47,11 +47,14 @@
 /* Portable mkdtemp replacement: MSYS2/MinGW64 in GitHub Actions does not
  * expose a usable /tmp from the MINGW64 shell.  On _WIN32 we query
  * GetTempPathA() and create a uniquely-named subdirectory with
- * CreateDirectoryA(); the caller must remove it via rmdir / _rmdir when done.
- * On POSIX we delegate to mkdtemp(3). */
-#ifdef _WIN32
+ * CreateDirectoryA().  On POSIX we initialise the buffer with a
+ * /tmp/vmaf_mkdirp_XXXXXX template and delegate to mkdtemp(3).
+ * The caller passes an uninitialised char buffer + its size; the helper
+ * fills it and returns a pointer to it on success (NULL on failure).
+ * The caller must remove the resulting directory via rmdir / _rmdir. */
 static char *portable_mkdtemp(char *tmpl, size_t tmpl_len)
 {
+#ifdef _WIN32
     char base[MAX_PATH];
     DWORD baselen = GetTempPathA((DWORD)sizeof(base), base);
     if (baselen == 0 || baselen >= (DWORD)sizeof(base))
@@ -63,11 +66,17 @@ static char *portable_mkdtemp(char *tmpl, size_t tmpl_len)
     if (!CreateDirectoryA(tmpl, NULL))
         return NULL;
     return tmpl;
+#else
+    int n = snprintf(tmpl, tmpl_len, "/tmp/vmaf_mkdirp_XXXXXX");
+    if (n <= 0 || (size_t)n >= tmpl_len)
+        return NULL;
+    return mkdtemp(tmpl);
+#endif
 }
 #define MKDTEMP(tmpl, len) portable_mkdtemp(tmpl, len)
+#ifdef _WIN32
 #define RMDIR(p) (void)_rmdir(p)
 #else
-#define MKDTEMP(tmpl, len) mkdtemp(tmpl)
 #define RMDIR(p) (void)rmdir(p)
 #endif
 
