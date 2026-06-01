@@ -72,3 +72,18 @@
   surfaceable, so skipping under sanitizers gives up no coverage.
   Restores the `Sanitizers — ASan + UBSan (PR gate)` and `ASan + UBSan
   + MSan (address / thread)` legs.
+- **MSVC C17 `ATOMIC_VAR_INIT` (`core/src/feature/iqa/ssim_tools.c`)**:
+  use direct value initialisation instead of `ATOMIC_VAR_INIT(NULL)`. The
+  macro was deprecated in C17 and MSVC's `<stdatomic.h>` does not provide
+  it (`error C2099: initializer is not a constant`). Direct
+  initialisation `static _Atomic(...) x = NULL` has been semantically
+  equivalent to `ATOMIC_VAR_INIT(NULL)` on every conforming C11
+  implementation. Unblocks the MSVC + CUDA and MSVC + oneAPI SYCL builds.
+- **MinGW64 + MSVC `mkdtemp` (`core/test/test_mkdirp.c`)**: replace
+  the POSIX-only `mkdtemp` call with a portable `vmaf_mkdtemp_portable`
+  helper that picks a temp root from `TMPDIR`/`TEMP`, generates a unique
+  suffix from pid+time+counter, and creates the directory with `mkdir`
+  (POSIX) or `_mkdir` (MSVCRT). MinGW64's libc has `mkdtemp` but the
+  call returns NULL when `/tmp/` isn't where the runtime expects;
+  MSVCRT lacks the function entirely. Restores `test_mkdirp` on the
+  Windows MinGW64 (CPU) leg.
