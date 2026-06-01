@@ -61,3 +61,14 @@
   `InitOnceExecuteOnce` (Windows Vista+, which is the documented
   floor for this shim). Restores the MSVC + CUDA and MSVC + oneAPI SYCL
   build-only legs.
+- **ASan/TSan: `test_y4m_alloc_failure` (`core/test/test_y4m_alloc_failure.c`)**:
+  skip under sanitizer builds. The test caps virtual address space via
+  `setrlimit(RLIMIT_AS, 256 MiB)` to force the y4m parser's `malloc` to
+  fail; AddressSanitizer / ThreadSanitizer / MemorySanitizer reserve a
+  multi-TB shadow virtual region at startup, so any subsequent ASan
+  internal `mmap` blows past the 256 MiB cap and the test process
+  aborts with "ERROR: Failed to mmap" before the parser even runs. The
+  guarded regression (dst_buf-NULL bug) is C-level, not sanitizer-
+  surfaceable, so skipping under sanitizers gives up no coverage.
+  Restores the `Sanitizers — ASan + UBSan (PR gate)` and `ASan + UBSan
+  + MSan (address / thread)` legs.

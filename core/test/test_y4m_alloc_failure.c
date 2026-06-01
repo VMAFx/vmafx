@@ -56,8 +56,35 @@
  * payload is needed — the test exercises the open path only. */
 static const char kY4mAbsurdHeader[] = "YUV4MPEG2 W65535 H65535 F30:1 Ip C444p12\nFRAME\n";
 
+/* AddressSanitizer / ThreadSanitizer / MemorySanitizer reserve a multi-TB
+ * shadow virtual region on process startup. Setting RLIMIT_AS=256 MiB after
+ * that causes every subsequent ASan internal mmap to fail with "Failed to
+ * mmap" — the test process aborts before the y4m parser even runs. The
+ * regression this test guards (dst_buf-NULL bug) is C-level, not sanitizer-
+ * surfaceable, so a clean skip under sanitizers preserves coverage on the
+ * non-sanitised legs without false positives on the ASan leg. */
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define VMAF_TEST_SANITIZER_BUILD 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
+    __has_feature(memory_sanitizer)
+#define VMAF_TEST_SANITIZER_BUILD 1
+#endif
+#endif
+#ifndef VMAF_TEST_SANITIZER_BUILD
+#define VMAF_TEST_SANITIZER_BUILD 0
+#endif
+
 static char *test_y4m_open_returns_error_on_oom(void)
 {
+#if VMAF_TEST_SANITIZER_BUILD
+    /* See comment above: setrlimit(RLIMIT_AS) is incompatible with sanitizer
+     * shadow reservations. The pre-fix bug this test guards is not sanitizer-
+     * detectable, so skipping under sanitizers gives up no coverage. */
+    (void)fprintf(stderr, "(sanitizer build; skipping RLIMIT_AS test) ");
+    return NULL;
+#endif
+
     /* Cap virtual address space at 256 MiB.  The header demands ≈ 25 GiB
      * which the y4m parser will try to malloc — must fail under this cap.
      * Skip the test (passing) if setrlimit isn't permitted (some sandboxed
