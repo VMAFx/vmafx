@@ -15,3 +15,12 @@
   None contain a build file meson.build.` since the rename moved `meson.build`
   into `core/`. Pass the source dir explicitly (`meson setup core/build-cpu
   core ...`). Restores Go CI green on master.
+- **SYCL integer extractors (`core/src/feature/sycl/integer_adm_sycl.cpp`,
+  `integer_vif_sycl.cpp`)**: add the missing `close_fex_sycl` forward
+  declaration. The init-failure cleanup paths added by ADR-0784 (sycl-init-
+  failure-cleanup-leaks) call `close_fex_sycl(fex)` from within
+  `init_fex_sycl`, but the function is defined later in the file as
+  `static int` without a forward decl, so SYCL builds fail with
+  `error: use of undeclared identifier 'close_fex_sycl'`. Matches the pattern
+  already used by `float_*_sycl.cpp`. Restores Linux GCC (all backends),
+  Ubuntu SYCL, Ubuntu SYCL + CUDA, and macOS SYCL builds.

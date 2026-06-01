@@ -1281,6 +1281,7 @@ static void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale,
 static void enqueue_adm_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis);
 static void adm_pre_graph(void *queue_ptr, void *priv);
 static void adm_post_graph(void *queue_ptr, void *priv);
+static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 
 static int
 close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init-failure cleanup — SY-2a */

@@ -1373,6 +1373,7 @@ static sycl::event launch_vif_fused(sycl::queue &q, const void *ref_data, const 
 static void enqueue_vif_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis);
 static void vif_pre_graph(void *queue_ptr, void *priv);
 static void vif_post_graph(void *queue_ptr, void *priv);
+static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 
 static int
 close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init-failure cleanup — SY-2a */
