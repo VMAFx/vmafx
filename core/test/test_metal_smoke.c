@@ -224,16 +224,15 @@ static char *test_kernel_buffer_free_zero_handles_is_noop(void)
 
 static char *test_motion_v2_metal_extractor_registered(void)
 {
-    /* The first-consumer scaffold registers `integer_motion_v2_metal` so
+    /* The first-consumer scaffold registers `motion_v2_metal` so
      * callers asking by name get a clean "found but kernel not ready"
      * surface rather than "no such extractor". The kernel itself
      * arrives in T8-1c; this test stays "extractor is registered" and
      * does NOT yet tighten to "init returns 0 with a real device". */
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("integer_motion_v2_metal");
-    mu_assert("integer_motion_v2_metal extractor must be registered", fex != NULL);
-    mu_assert("integer_motion_v2_metal extractor name matches",
-              strcmp(fex->name, "integer_motion_v2_metal") == 0);
-    mu_assert("integer_motion_v2_metal extractor must carry the TEMPORAL flag",
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2_metal");
+    mu_assert("motion_v2_metal extractor must be registered", fex != NULL);
+    mu_assert("motion_v2_metal extractor name matches", strcmp(fex->name, "motion_v2_metal") == 0);
+    mu_assert("motion_v2_metal extractor must carry the TEMPORAL flag",
               (fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL) != 0);
     return NULL;
 }
@@ -268,8 +267,8 @@ static char *test_dispatch_strategy_supports_landed_kernels_or_skips(void)
               vmaf_metal_dispatch_supports(ctx, "float_psnr_metal") == 1);
     mu_assert("provided feature key is supported",
               vmaf_metal_dispatch_supports(ctx, "psnr_y") == 1);
-    mu_assert("integer_motion_v2 extractor is supported",
-              vmaf_metal_dispatch_supports(ctx, "integer_motion_v2_metal") == 1);
+    mu_assert("motion_v2 extractor is supported",
+              vmaf_metal_dispatch_supports(ctx, "motion_v2_metal") == 1);
     mu_assert("ms-ssim provided feature key is supported",
               vmaf_metal_dispatch_supports(ctx, "float_ms_ssim") == 1);
     vmaf_metal_context_destroy(ctx);

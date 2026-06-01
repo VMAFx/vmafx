@@ -46,8 +46,8 @@
 /* The 8 Metal extractor names registered at link time on a build with
  * `-Denable_metal=enabled`. Listed in T8-1c → T8-1d order. */
 static const char *const kRegisteredMetalExtractors[] = {
-    "float_psnr_metal",        "integer_psnr_metal", "float_motion_metal",  "integer_motion_metal",
-    "integer_motion_v2_metal", "float_ssim_metal",   "float_ms_ssim_metal", "float_moment_metal",
+    "float_psnr_metal", "integer_psnr_metal", "float_motion_metal",  "integer_motion_metal",
+    "motion_v2_metal",  "float_ssim_metal",   "float_ms_ssim_metal", "float_moment_metal",
 };
 
 static const size_t kRegisteredMetalCount =
@@ -72,7 +72,7 @@ static char *test_metal_temporal_flag_present(void)
     static const char *const kTemporal[] = {
         "float_motion_metal",
         "integer_motion_metal",
-        "integer_motion_v2_metal",
+        "motion_v2_metal",
     };
     for (size_t i = 0; i < sizeof(kTemporal) / sizeof(kTemporal[0]); ++i) {
         VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(kTemporal[i]);

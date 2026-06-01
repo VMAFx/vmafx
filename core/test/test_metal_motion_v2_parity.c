@@ -147,8 +147,8 @@ static char *run_metal_motion_v2(double *out_score)
     err = vmaf_metal_import_state(vmaf, mstate);
     mu_assert("Metal: vmaf_metal_import_state failed", !err);
 
-    err = vmaf_use_feature(vmaf, "integer_motion_v2_metal", NULL);
-    mu_assert("Metal: vmaf_use_feature(integer_motion_v2_metal) failed", !err);
+    err = vmaf_use_feature(vmaf, "motion_v2_metal", NULL);
+    mu_assert("Metal: vmaf_use_feature(motion_v2_metal) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref, dist;
