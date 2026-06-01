@@ -1486,6 +1486,8 @@ void adm_decouple_s123_avx512(AdmBuffer *buf, int w, int h, int stride, double a
                 _mm512_cmp_epi32_mask(abs_oh_epi32, const_32768_epi32, _MM_CMPINT_LT);
             __m512i kh_msb_epi32 =
                 _mm512_mask_blend_epi32(mask_kh_msb, tmp_kh_msb_epi32, abs_oh_epi32);
+            kh_shift_epi32 =
+                _mm512_mask_blend_epi32(mask_kh_msb, kh_shift_epi32, _mm512_setzero_si512());
 
             __m512i kv_shift_epi32 =
                 _mm512_sub_epi32(_mm512_set1_epi32(17), _mm512_lzcnt_epi32(abs_ov_epi32));
@@ -1498,6 +1500,8 @@ void adm_decouple_s123_avx512(AdmBuffer *buf, int w, int h, int stride, double a
                 _mm512_cmp_epi32_mask(abs_ov_epi32, const_32768_epi32, _MM_CMPINT_LT);
             __m512i kv_msb_epi32 =
                 _mm512_mask_blend_epi32(mask_kv_msb, tmp_kv_msb_epi32, abs_ov_epi32);
+            kv_shift_epi32 =
+                _mm512_mask_blend_epi32(mask_kv_msb, kv_shift_epi32, _mm512_setzero_si512());
 
             __m512i kd_shift_epi32 =
                 _mm512_sub_epi32(_mm512_set1_epi32(17), _mm512_lzcnt_epi32(abs_od_epi32));
@@ -1510,6 +1514,8 @@ void adm_decouple_s123_avx512(AdmBuffer *buf, int w, int h, int stride, double a
                 _mm512_cmp_epi32_mask(abs_od_epi32, const_32768_epi32, _MM_CMPINT_LT);
             __m512i kd_msb_epi32 =
                 _mm512_mask_blend_epi32(mask_kd_msb, tmp_kd_msb_epi32, abs_od_epi32);
+            kd_shift_epi32 =
+                _mm512_mask_blend_epi32(mask_kd_msb, kd_shift_epi32, _mm512_setzero_si512());
 
             // tmp_kh as int64
             __m512i div_lookup_kh_epi32 = _mm512_i32gather_epi32(
