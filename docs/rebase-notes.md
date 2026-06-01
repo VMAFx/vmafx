@@ -43336,3 +43336,34 @@ the fast suite),
 `opt.h`. Any upstream commit that adds new declarations to these headers
 must include the guard-wrapped declaration for correctness. Flag in the
 port if upstream adds a declaration outside the guard block.
+
+## port/upstream-netflix-may-jun-2026 — 2026-06-01
+
+Five Netflix upstream commits ported. Each reduces the diff against upstream
+and therefore reduces future rebase friction.
+
+1. **e4b93c6ed** (`fetch_picture` direct-read): `core/tools/vmaf.c` no longer
+   has a `#ifdef USE_DIRECT_READ` branch. Future upstreams that touch `vmaf.c`
+   will now merge cleanly without the compile-guard conflict.
+
+2. **a4a1492d3** (integer_motion rename): `core/src/feature/integer_motion.c`
+   and `core/src/feature/x86/motion_avx2.{c,h}` / `motion_avx512.{c,h}` are
+   now at upstream parity. `integer_motion_v2.c` and `motion_v2_avx2/512` are
+   fork-local (GPU build paths); any future upstream touch of those names
+   should check whether the GPU backends have been updated to the renamed API.
+
+3. **c2155d6cd** (2160p CSF): `core/src/feature/barten_csf_tools.h` is now
+   at upstream parity. `core/test/test_barten_csf.c` has new upstream tests.
+
+4. **9a078011c** (ADM SIMD fix): `core/src/feature/integer_adm.c` and
+   `core/src/feature/x86/adm_avx2.c` + `adm_avx512.c` at upstream parity.
+
+5. **30f472b14** (Speed_chroma AVX): `core/src/feature/speed.c`,
+   `core/src/feature/x86/speed_avx2.{c,h}`, `core/src/feature/x86/speed_avx512.{c,h}`
+   are new upstream-mirror files. Future upstream touches to speed.c may need
+   to propagate `compute_cov_kernel` into the GPU speed_chroma extractors.
+
+Fork-local files touched:
+`core/tools/vmaf.c` (commit #1 — call-site updates for signature change),
+`core/src/feature/feature_extractor.c` (commit #2 — remove CPU v2),
+`core/src/meson.build` (commits #2, #5 — add speed_avx2/512, remove motion_v2 CPU build).

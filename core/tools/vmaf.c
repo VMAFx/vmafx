@@ -214,126 +214,23 @@ static int validate_videos(video_input *vid1, video_input *vid2, bool common_bit
     return err_cnt;
 }
 
-/* Copy video input data to picture buffer. The four bit-depth × component
- * branches (8-bit Y/U/V, 10-bit Y/U/V, 16-bit packed) duplicate the per-row
- * loop with different per-sample casts; folding them through a function
- * pointer would cost a per-row indirect call on every frame, so the
- * branches stay inline. The nesting-level warning is structural to YUV
- * (plane × row × column) — splitting wouldn't reduce it
- * (ADR-0141 §2 load-bearing invariant: per-frame indirect-call cost;
- * T7-5 sweep closeout — ADR-0278).
+/* Direct read is the only supported mode since upstream e4b93c6ed (2026-05-08).
+ * The legacy copy_picture_data() / video_input_fetch_frame() path is removed;
+ * fetch_picture() always uses video_input_fetch_into_vmaf_picture().
  */
-// NOLINTNEXTLINE(readability-function-size,google-readability-function-size)
-static void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_input_info *info,
-                              int depth)
+static int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic)
 {
-    if (info->depth == depth) {
-        if (info->depth == 8) {
-            for (unsigned i = 0; i < 3; i++) {
-                int xdec = i && !(info->pixel_fmt & 1);
-                int ydec = i && !(info->pixel_fmt & 2);
-                uint8_t *ycbcr_data = ycbcr[i].data +
-                                      (size_t)(info->pic_y >> ydec) * ycbcr[i].stride +
-                                      (info->pic_x >> xdec);
-                uint8_t *pic_data = pic->data[i];
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    memcpy(pic_data, ycbcr_data, sizeof(*pic_data) * pic->w[i]);
-                    pic_data += pic->stride[i];
-                    ycbcr_data += ycbcr[i].stride;
-                }
-            }
-        } else {
-            for (unsigned i = 0; i < 3; i++) {
-                int xdec = i && !(info->pixel_fmt & 1);
-                int ydec = i && !(info->pixel_fmt & 2);
-                uint16_t *ycbcr_data = (uint16_t *)ycbcr[i].data +
-                                       (size_t)(info->pic_y >> ydec) * (ycbcr[i].stride / 2) +
-                                       (info->pic_x >> xdec);
-                uint16_t *pic_data = pic->data[i];
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    memcpy(pic_data, ycbcr_data, sizeof(*pic_data) * pic->w[i]);
-                    pic_data += pic->stride[i] / 2;
-                    ycbcr_data += ycbcr[i].stride / 2;
-                }
-            }
-        }
-    } else if (depth > 8) {
-        // unequal bit-depth
-        // therefore depth must be > 8 since we do not support depth < 8
-        int left_shift = depth - info->depth;
-        if (info->depth == 8) {
-            for (unsigned i = 0; i < 3; i++) {
-                int xdec = i && !(info->pixel_fmt & 1);
-                int ydec = i && !(info->pixel_fmt & 2);
-                uint8_t *ycbcr_data = ycbcr[i].data +
-                                      (size_t)(info->pic_y >> ydec) * ycbcr[i].stride +
-                                      (info->pic_x >> xdec);
-                uint16_t *pic_data = (uint16_t *)pic->data[i];
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    for (unsigned k = 0; k < pic->w[i]; k++) {
-                        pic_data[k] = ycbcr_data[k] << left_shift;
-                    }
-                    pic_data += pic->stride[i] / 2;
-                    ycbcr_data += ycbcr[i].stride;
-                }
-            }
-        } else {
-            for (unsigned i = 0; i < 3; i++) {
-                int xdec = i && !(info->pixel_fmt & 1);
-                int ydec = i && !(info->pixel_fmt & 2);
-                uint16_t *ycbcr_data = (uint16_t *)ycbcr[i].data +
-                                       (size_t)(info->pic_y >> ydec) * (ycbcr[i].stride / 2) +
-                                       (info->pic_x >> xdec);
-                uint16_t *pic_data = pic->data[i];
-
-                for (unsigned j = 0; j < pic->h[i]; j++) {
-                    for (unsigned k = 0; k < pic->w[i]; k++) {
-                        pic_data[k] = ycbcr_data[k] << left_shift;
-                    }
-                    pic_data += pic->stride[i] / 2;
-                    ycbcr_data += ycbcr[i].stride / 2;
-                }
-            }
-        }
-    }
-}
-
-static int finish_unread_picture(VmafPicture *pic, int fetch_ret)
-{
-    const int err_unref = vmaf_picture_unref(pic);
-    if (err_unref)
-        (void)fprintf(stderr, "\nproblem during vmaf_picture_unref (unread)\n");
-    return fetch_ret == 0 ? 1 : -1;
-}
-
-static int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic, int depth)
-{
-    int ret;
-    video_input_info info;
-
-    video_input_get_info(vid, &info);
-
-    ret = vmaf_fetch_preallocated_picture(vmaf, pic);
+    int ret = vmaf_fetch_preallocated_picture(vmaf, pic);
     if (ret) {
         (void)fprintf(stderr, "problem fetching picture from pool.\n");
         return -1;
     }
 
-#ifdef USE_DIRECT_READ
-    (void)depth;
     ret = video_input_fetch_into_vmaf_picture(vid, pic);
-    if (ret < 1)
-        return finish_unread_picture(pic, ret);
-#else
-    video_input_ycbcr ycbcr;
-    ret = video_input_fetch_frame(vid, ycbcr, NULL);
-    if (ret < 1)
-        return finish_unread_picture(pic, ret);
-    copy_picture_data(pic, ycbcr, &info, depth);
-#endif
+    if (ret < 1) {
+        (void)vmaf_picture_unref(pic);
+        return ret == 0 ? 1 : -1;
+    }
     return 0;
 }
 
@@ -951,14 +848,14 @@ static void skip_initial_frames(VmafContext *vmaf, video_input *vid_ref, video_i
     VmafPicture pic_dist_skip;
 
     for (unsigned i = 0; i < c->frame_skip_ref; i++) {
-        if (fetch_picture(vmaf, vid_ref, &pic_ref_skip, common_bitdepth))
+        if (fetch_picture(vmaf, vid_ref, &pic_ref_skip))
             break;
         if (vmaf_picture_unref(&pic_ref_skip))
             (void)fprintf(stderr, "\nproblem during vmaf_picture_unref (skip ref)\n");
     }
 
     for (unsigned i = 0; i < c->frame_skip_dist; i++) {
-        if (fetch_picture(vmaf, vid_dist, &pic_dist_skip, common_bitdepth))
+        if (fetch_picture(vmaf, vid_dist, &pic_dist_skip))
             break;
         if (vmaf_picture_unref(&pic_dist_skip))
             (void)fprintf(stderr, "\nproblem during vmaf_picture_unref (skip dist)\n");
@@ -983,8 +880,8 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
 
         VmafPicture pic_ref;
         VmafPicture pic_dist;
-        int ret1 = fetch_picture(vmaf, vid_ref, &pic_ref, common_bitdepth);
-        int ret2 = fetch_picture(vmaf, vid_dist, &pic_dist, common_bitdepth);
+        int ret1 = fetch_picture(vmaf, vid_ref, &pic_ref);
+        int ret2 = fetch_picture(vmaf, vid_dist, &pic_dist);
 
         if (ret1 || ret2) {
             if (!ret1) {
