@@ -35,3 +35,17 @@
   to 'speed_score_ptx'`. Restores Docker Image Build, Linux GCC (all
   backends), Ubuntu CUDA, Ubuntu CUDA Static, Ubuntu SYCL + CUDA, and
   Windows MSVC + CUDA build legs.
+- **Windows MinGW64 test (`core/test/test_gpu_dispatch_runtime.c`)**: map
+  POSIX `setenv` / `unsetenv` to `_putenv_s` on `_WIN32 && !__CYGWIN__`.
+  MinGW's libc doesn't expose POSIX env routines so the build failed with
+  `implicit declaration of function 'setenv'`. Restores the Windows
+  MinGW64 (CPU) leg.
+- **Metal kernel coverage audit (`core/test/test_metal_kernel_coverage_audit.c`)**:
+  update the kernel-basename list to use the *registered extractor name*
+  (`motion_v2`, matching `integer_motion_v2_metal.mm`'s actual `.name =
+  "motion_v2_metal"`), not the `.mm` filename. The audit asserted
+  `integer_motion_v2_metal` existed and failed because that name is
+  never registered — the established name is the short form, consistent
+  with `dispatch_strategy.c`, `test_metal_kernel_registration.c`,
+  `test_metal_motion_v2_parity.c`, and `test_metal_smoke.c`. Restores
+  the macOS Clang (CPU + Metal) and Metal (T8-1 scaffold) test legs.
