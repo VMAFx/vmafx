@@ -27,6 +27,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* setenv / unsetenv are POSIX and not available on Windows (MinGW64 or
+ * MSVC). Provide portable wrappers that delegate to _putenv_s / _putenv
+ * on Windows and to the POSIX originals everywhere else. */
+#ifdef _WIN32
+#include <stdio.h> /* snprintf */
+static int test_setenv(const char *name, const char *value, int overwrite)
+{
+    (void)overwrite; /* _putenv_s always overwrites */
+    return _putenv_s(name, value);
+}
+static int test_unsetenv(const char *name)
+{
+    /* Setting the variable to the empty string is the _putenv_s idiom
+     * for removal on Windows; _putenv("NAME=") would also work. */
+    return _putenv_s(name, "");
+}
+#define setenv(name, value, overwrite) test_setenv(name, value, overwrite)
+#define unsetenv(name) test_unsetenv(name)
+#endif /* _WIN32 */
+
 #include "test.h"
 
 #include "gpu_dispatch_env.h"
