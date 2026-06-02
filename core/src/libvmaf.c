@@ -2208,8 +2208,16 @@ static bool read_pictures_should_skip(VmafContext *vmaf, VmafFeatureExtractorCon
 static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
                                       VmafPicture *ref, VmafPicture *dist, unsigned index)
 {
+    /* ADR-0778 Fix-A: use vmaf_picture_ref, not a bare struct copy, so
+     * the synchronous non-GPU dispatch holds its own counted reference to
+     * the previous-frame buffer.  The threaded path (threaded_extract_func)
+     * and the CUDA batch path already use vmaf_picture_ref here; this aligns
+     * the remaining code path.  Without the ref, vmaf->prev_ref can be
+     * decremented by read_pictures_update_prev_ref on the next frame while
+     * the extractor is still reading its data, opening a use-after-free
+     * window when the refcount hits zero and the pool reuses the buffer. */
     if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_ref.ref) {
-        fex_ctx->fex->prev_ref = vmaf->prev_ref;
+        vmaf_picture_ref(&fex_ctx->fex->prev_ref, &vmaf->prev_ref);
     }
 
     // Double-buffer: collect previous frame, then submit current frame.
@@ -2223,23 +2231,39 @@ static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorCon
             err = vmaf_feature_extractor_context_collect(fex_ctx, fex_ctx->gpu_pending_index,
                                                          vmaf->feature_collector);
             fex_ctx->gpu_pending = false;
-            if (err)
+            if (err) {
+                if (fex_ctx->fex->prev_ref.ref) {
+                    (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
+                    memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
+                }
                 return err;
+            }
         }
         // Submit current frame (non-blocking GPU work)
         err = vmaf_feature_extractor_context_submit(fex_ctx, ref, NULL, dist, NULL, index);
-        if (err)
+        if (err) {
+            if (fex_ctx->fex->prev_ref.ref) {
+                (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
+                memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
+            }
             return err;
+        }
         fex_ctx->gpu_pending = true;
         fex_ctx->gpu_pending_index = index;
+        /* prev_ref ownership transferred into the submitted work; the
+         * extractor's collect() path is responsible for cleaning up.
+         * Leave the ref live until collect() returns on the next frame. */
         return 0;
     }
 
     int err = vmaf_feature_extractor_context_extract(fex_ctx, ref, NULL, dist, NULL, index,
                                                      vmaf->feature_collector);
 
-    if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF)
+    if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
+        if (fex_ctx->fex->prev_ref.ref)
+            (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
         memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
+    }
 
     return err;
 }

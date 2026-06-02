@@ -114,7 +114,7 @@ test_model_collection_api = executable('test_model_collection_api',
 
 test_predict = executable('test_predict',
     ['test.c', 'test_predict.c', '../src/dict.c', '../src/metadata_handler.cpp',
-     '../src/feature/feature_collector.cpp', '../src/feature/alias.c', '../src/model.c', '../src/log.c',
+     '../src/feature/feature_collector.c', '../src/feature/alias.c', '../src/model.c', '../src/log.c',
      '../src/read_json_model.c', '../src/pdjson.c', json_model_c_sources, '../src/feature/feature_name.c', '../src/feature/feature_extractor.c',],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
@@ -861,6 +861,18 @@ test_locale_handling = executable('test_locale_handling',
     dependencies : [pthread_dependency],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
 )
+
+# CPU-only regression test for the vmaf_gpu_picture_pool_init() UAF
+# (caller's *pool was left dangling on failure paths). Built on every
+# matrix entry — not gated by enable_cuda — so a future regression on
+# the pure-C init shape is caught even when no GPU backend is in scope.
+test_gpu_picture_pool_uaf = executable('test_gpu_picture_pool_uaf',
+    ['test.c', 'test_gpu_picture_pool_uaf.c', '../src/gpu_picture_pool.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+)
+test('test_gpu_picture_pool_uaf', test_gpu_picture_pool_uaf, suite : ['fast'])
 
 if get_option('enable_cuda')
 test_gpu_picture_pool = executable('test_gpu_picture_pool',

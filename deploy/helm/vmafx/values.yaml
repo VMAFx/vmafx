@@ -128,9 +128,6 @@ ingress:
 # ADR-0726: Vulkan backend removed. See docs/backends/README.md.
 # See docs/development/gpu-scheduling.md for vendor-to-backend mapping.
 #
-# NVIDIA nodes require driver R610.43.02 or later (CUDA 13.3 minimum).
-# See docs/backends/cuda/overview.md and ADR-0738.
-#
 # The chart also sets VMAFX_BACKEND automatically from vendor (see env below).
 gpu:
   enabled: true
@@ -299,27 +296,6 @@ monitoring:
 # ---------------------------------------------------------------------------
 pushgateway:
   enabled: false
-
-# ---------------------------------------------------------------------------
-# Storage — rclone integration for vmafx-node remote asset resolution.
-# ADR-0719: vmafx-node rclone integration.
-# ---------------------------------------------------------------------------
-storage:
-  # mode controls how vmafx-node fetches input assets.
-  # http-serve — assets served from the controller's HTTP endpoint (default).
-  # rclone     — assets fetched directly from a remote (S3, GCS, Azure, etc.)
-  #              via the rclone config below.
-  mode: http-serve
-
-  rclone:
-    # config holds the rclone.conf contents.  Provide via --set-file or a
-    # sealed-secret / Vault injection; never commit credentials to this file.
-    # When non-empty, a Secret is created and mounted at /etc/vmafx/rclone.conf
-    # inside each vmafx-node container.
-    # Example (override at install time):
-    #   helm upgrade --install vmafx deploy/helm/vmafx/ \
-    #     --set-file storage.rclone.config=./rclone.conf
-    config: ""
 
 # ---------------------------------------------------------------------------
 # Node — vmafx-node worker pool (Deployment)

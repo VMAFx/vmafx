@@ -22,7 +22,7 @@ Pattern to follow: staged init with teardown of already-initialised
 primitives on failure (see `vmaf_thread_pool_create` in
 [`thread_pool.c`](thread_pool.c)).
 
-### 2. Every `aligned_malloc` / `malloc` call must NULL-check before use (finding #8)
+### 2. Every `aligned_malloc` / `malloc` must NULL-check before use (#8)
 
 A missing NULL check after `aligned_malloc` causes a null-pointer dereference
 on OOM (ASan-detected). In hot-path functions such as `adm_dwt2_*` in
@@ -31,7 +31,7 @@ NULL-checked and the function must return an error, or the buffer must be
 pre-allocated in the extractor `init` callback so the per-frame path stays
 allocation-free. See Power of 10 rule 3 and CERT MEM30-C.
 
-### 3. Size-computing functions that accept external `unsigned w` / `h` must bound-check first (finding #10)
+### 3. Size-computing functions must bound-check `w`/`h` first (#10)
 
 When `w` is large enough that `(w + ALIGN - 1u)` wraps on `unsigned`
 arithmetic, the resulting aligned size is 0. The allocator succeeds, and any
@@ -59,7 +59,7 @@ results and downstream SIGSEGV under Apple Clang's UB optimizations.
 If an upstream sync or cherry-pick replaces any of the 7 capacity-check
 sites with `>`, revert back to `>=` in the same commit.
 
-### 5. Comma-tracking in JSON writers must use explicit `bool first` flags (ADR-0606)
+### 5. JSON writers must use explicit `bool first` flags (ADR-0606)
 
 `json_write_pool_score` and `json_write_frames` in [`output.c`](output.c)
 track whether a comma separator is needed via explicit `bool first` /
@@ -106,7 +106,7 @@ temporary C numeric locale lifetime. Path-based `vmaf_write_output()` uses
 locale has been restored/freed; that is the macOS-only SIGSEGV shape for
 `test_output` and `test_public_api_score`.
 
-### 9. `metadata_handler.cpp` — C++20 pilot; extern "C" guard must not be removed (ADR-0708)
+### 9. `metadata_handler.cpp` — C++20 pilot; keep `extern "C"` (ADR-0708)
 
 `core/src/metadata_handler.cpp` (previously `metadata_handler.c`) is the first
 C++20 internal implementation TU. `metadata_handler.h` carries `extern "C"`
@@ -247,7 +247,7 @@ Additionally:
   `core/test/test_model`. See ADR-0889 for the deferral rationale on
   the upstream 3.36 sync.
 
-### 10. Fork-added diagnostics route through `vmaf_log`, not `fprintf(stderr, …)`
+### 10. Fork diagnostics route through `vmaf_log`, not `fprintf(stderr)`
 
 libvmaf exposes a user-installable log callback via
 `vmaf_set_log_callback` and a level filter via `vmaf_set_log_level`.
@@ -279,3 +279,24 @@ Exceptions — direct stream writes are correct in these cases:
 
 See `docs/research/logging-consistency-audit-2026-05-30.md` for the
 audit that established this invariant.
+
+### Out-parameter init functions must clear the handle on every failure
+
+Functions with the shape `int X_init(X **out, ...)` that publish the
+allocation via the caller's `*out` must guarantee `*out == NULL` on any
+non-success return — including failure paths that take an internal `goto`
+and free the object before returning. The trap is the combined-assignment
+idiom `X *const p = *out = malloc(...);` which publishes the pointer to
+the caller *before* later `goto free_*` paths free it.
+
+If the caller stores the handle in a long-lived context (e.g.
+`VmafContext.cuda.ring_buffer`), the natural teardown (`vmaf_close()` →
+`X_close(*out)`) will then UAF on the freed object. The fix is mechanical:
+set `*out = NULL` after every `free()` in the failure-cleanup chain (and
+explicitly on the early-malloc-failure path even though the assignment
+already stored NULL there). The contract this pins is: "caller may inspect
+`*out` only on success; a non-zero return guarantees `*out == NULL`."
+
+Pattern: see `vmaf_gpu_picture_pool_init` in
+[`gpu_picture_pool.c`](gpu_picture_pool.c). Regression test:
+`core/test/test_gpu_picture_pool_uaf.c`.

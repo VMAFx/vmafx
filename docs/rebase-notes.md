@@ -1371,6 +1371,24 @@ production code is touched, so the upstream rebase boundary is unaffected.
 
 ---
 
+## gpu-picture-pool-uaf-on-init-failure (2026-05-30)
+
+**Files touched:** `core/src/gpu_picture_pool.c`, `core/test/test_gpu_picture_pool_uaf.c`, `core/test/meson.build`
+
+**Rebase impact:** Minor. The fix touches `gpu_picture_pool.c`, which is
+fork-added by ADR-0239 (promotion of upstream's `cuda/ring_buffer.c` into a
+backend-agnostic helper). Upstream Netflix/vmaf still ships the original
+`cuda/ring_buffer.c`; if a future upstream sync ports the same UAF guard
+to their file, the change there will be in a different TU and won't
+conflict. The fork-local test (`test_gpu_picture_pool_uaf.c`) is wholly
+new and CPU-only — no upstream collision possible.
+
+The shape of the fix (`*pool = NULL` on every goto-free label) is
+mechanically replayable; if upstream later refactors `ring_buffer_init`
+the same way, the diffs will be parallel rather than colliding.
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
@@ -42048,20 +42066,6 @@ part of any public API.
 
 ---
 
-### go-workspace-audit — Go dependency + test fixes (2026-05-29)
-
-No rebase impact. All changes are Go workspace files entirely fork-local:
-`go.mod` / `go.sum` (added `modernc.org/sqlite` and transitive deps),
-`pkg/observability/observability.go` (added controller metrics fields + `SetControllerSources`),
-`cmd/vmafx-node/executor_test.go`, `cmd/vmafx-node/main_test.go` (test alignment to current API),
-`cmd/vmafx-tune/cmd/root.go` (wire `newLadderCmd`),
-`cmd/vmafx-tune/cmd/compare_test.go` (remove stale stub assertion),
-`changelog.d/fixed/0529-go-workspace-audit.md` (new).
-
-None of these files are touched by Netflix upstream.
-
----
-
 ### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
 
 No rebase impact on upstream C/Python code.
@@ -42997,3 +43001,17 @@ Fork-local files:
 `core/src/feature/arm64/float_adm_neon.c`,
 `core/src/feature/arm64/ssimulacra2_host_neon.c`,
 `changelog.d/fixed/simd-float-adm-dwt2-unchecked-aligned-malloc.md`.
+
+## `core/src/libvmaf.c` — `prev_ref` UAF fix in `read_pictures_dispatch_one` (ADR-0778)
+
+The synchronous non-GPU dispatch path now calls `vmaf_picture_ref` /
+`vmaf_picture_unref` around `fex->prev_ref` (previously a bare struct
+copy). If upstream Netflix/vmaf also touches `read_pictures_dispatch_one`
+or the `prev_ref` plumbing, verify the ref-counting contract is preserved
+in the merge.
+
+## `core/src/picture_pool.c` — `pool_preallocate_pictures` error-unwind fix (ADR-0778)
+
+The two-pass restructuring (allocate all, then strip `priv`/`ref`)
+avoids a buffer leak on partial allocation failure. No ABI change; no
+conflict risk unless upstream also restructures this function.

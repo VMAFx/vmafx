@@ -70,11 +70,12 @@ static void launch_means(sycl::queue &q, const float *plane, float *means, uint3
                 const uint32_t ec = elem % SP_BLOCK_SIZE;
                 const uint32_t sr = tile_y * SP_BLOCK_SIZE + er;
                 const uint32_t sc_col = tile_x * SP_BLOCK_SIZE + ec;
-                float acc = 0.0f; /* SY-3b: fp32 — no fp64 emulation on Intel Arc (ADR-0220) */
+                double acc = 0.0;
                 for (uint32_t i = 0; i < submatrix_h; ++i)
                     for (uint32_t j = 0; j < submatrix_w; ++j)
-                        acc += plane[(sr + i) * stride_px + (sc_col + j)];
-                means[elem * num_blocks + tile_idx] = acc / (float)(submatrix_w * submatrix_h);
+                        acc += (double)plane[(sr + i) * stride_px + (sc_col + j)];
+                means[elem * num_blocks + tile_idx] =
+                    (float)(acc / (double)(submatrix_w * submatrix_h));
             }
             (void)op_w;
         });
@@ -87,13 +88,12 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
 {
     const size_t total_wg = SP_ELEMENTS * SP_ELEMENTS;
     q.submit([&](sycl::handler &cgh) {
-        sycl::local_accessor<float, 1> s_partial(sycl::range<1>(COV_WG),
-                                                 cgh); /* SY-3b: fp32 (ADR-0220) */
+        sycl::local_accessor<double, 1> s_partial(sycl::range<1>(COV_WG), cgh);
         cgh.parallel_for(sycl::nd_range<1>(total_wg * COV_WG, COV_WG), [=](sycl::nd_item<1> it) {
             const uint32_t x_index = (uint32_t)(it.get_group(0) / SP_ELEMENTS);
             const uint32_t y_index = (uint32_t)(it.get_group(0) % SP_ELEMENTS);
             const uint32_t tid = (uint32_t)it.get_local_id(0);
-            s_partial[tid] = 0.0f;
+            s_partial[tid] = 0.0;
             it.barrier(sycl::access::fence_space::local_space);
 
             const uint32_t xr = x_index / SP_BLOCK_SIZE;
@@ -101,24 +101,24 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
             const uint32_t yr = y_index / SP_BLOCK_SIZE;
             const uint32_t yc = y_index % SP_BLOCK_SIZE;
 
-            float local_sum = 0.0f;
+            double local_sum = 0.0;
             for (uint32_t tile = tid; tile < num_blocks; tile += COV_WG) {
                 const uint32_t tx = tile % num_blocks_h;
                 const uint32_t ty = tile / num_blocks_h;
-                const float mx = means[x_index * num_blocks + tile];
-                const float my = means[y_index * num_blocks + tile];
+                const double mx = (double)means[x_index * num_blocks + tile];
+                const double my = (double)means[y_index * num_blocks + tile];
                 const uint32_t srx = ty * SP_BLOCK_SIZE + xr;
                 const uint32_t scx = tx * SP_BLOCK_SIZE + xc;
                 const uint32_t sry = ty * SP_BLOCK_SIZE + yr;
                 const uint32_t scy = tx * SP_BLOCK_SIZE + yc;
-                float cov = 0.0f;
+                double cov = 0.0;
                 for (uint32_t i = 0; i < submatrix_h; ++i)
                     for (uint32_t j = 0; j < submatrix_w; ++j) {
-                        float vx = plane[(srx + i) * stride_px + (scx + j)];
-                        float vy = plane[(sry + i) * stride_px + (scy + j)];
+                        double vx = (double)plane[(srx + i) * stride_px + (scx + j)];
+                        double vy = (double)plane[(sry + i) * stride_px + (scy + j)];
                         cov += (vx - mx) * (vy - my);
                     }
-                local_sum += cov / (float)(submatrix_w * submatrix_h);
+                local_sum += cov / (double)(submatrix_w * submatrix_h);
             }
             s_partial[tid] = local_sum;
             it.barrier(sycl::access::fence_space::local_space);
@@ -283,7 +283,7 @@ struct SpeedTemporalSyclState {
 
 static void free_sycl_state_st(SpeedTemporalSyclState *s)
 {
-    sycl::queue *q = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    sycl::queue *q = (sycl::queue *)s->sycl_state->queue;
 #define FREE_D(p)                                                                                  \
     do {                                                                                           \
         if ((p)) {                                                                                 \
@@ -349,7 +349,7 @@ static void subtract_plane(float *a, const float *b, int w, int h, size_t stride
 static int run_channel_st(SpeedTemporalSyclState *s, float *h_plane, float *h_indterm,
                           float *d_indterm, float *d_sol)
 {
-    sycl::queue &q = *static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    sycl::queue &q = *(sycl::queue *)s->sycl_state->queue;
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
     const uint32_t op_w = (uint32_t)s->dim.truncated_width;
@@ -399,7 +399,7 @@ static int run_channel_st(SpeedTemporalSyclState *s, float *h_plane, float *h_in
 
 static int score_aggregate_st(SpeedTemporalSyclState *s, float *score_out)
 {
-    sycl::queue &q = *static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    sycl::queue &q = *(sycl::queue *)s->sycl_state->queue;
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const float sigma_nn = (float)s->opt.speed_sigma_nn;
 
@@ -542,7 +542,7 @@ static int init_temporal_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
         return err;
     s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
 
-    sycl::queue &q = *static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
+    sycl::queue &q = *(sycl::queue *)s->sycl_state->queue;
     const size_t stride_px = s->float_stride / sizeof(float);
     const size_t nb = s->dim.num_blocks;
     const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);

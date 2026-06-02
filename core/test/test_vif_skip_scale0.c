@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -94,10 +94,14 @@ static char *test_vif_skip_scale0_true(void)
     err = vmaf_feature_dictionary_set(&opts, "vif_skip_scale0", "true");
     mu_assert("dictionary_set vif_skip_scale0 should succeed", err == 0);
 
+    /* vmaf_use_feature() takes ownership of opts and frees it internally,
+     * regardless of success or failure.  Do NOT call
+     * vmaf_feature_dictionary_free() on opts after this call — that would be a
+     * double-free (CWE-415).  See ADR-0806. */
     err = vmaf_use_feature(vmaf, "vif", opts);
+    opts = NULL; /* consumed by vmaf_use_feature */
     mu_assert("vmaf_use_feature(vif) with vif_skip_scale0 should succeed", err == 0);
     if (err) {
-        (void)vmaf_feature_dictionary_free(&opts);
         (void)vmaf_close(vmaf);
         return NULL;
     }

@@ -81,21 +81,31 @@ static int pooled_picture_release(VmafPicture *pic, void *cookie)
 
 static int pool_preallocate_pictures(VmafPicturePool *p, VmafPicturePoolConfig cfg)
 {
+    /* ADR-0778 Fix-E: strip priv/ref only after the full allocation loop
+     * succeeds.  The original code stripped immediately after each
+     * vmaf_picture_alloc, leaving the unwind-path vmaf_picture_unref calls
+     * with pic->ref == NULL, so they returned -EINVAL and leaked the buffer.
+     * Now: allocate all pictures first, then strip priv/ref in a second
+     * pass; the error unwind uses vmaf_picture_unref on intact pictures
+     * since the strip pass has not run yet. */
     for (unsigned i = 0; i < cfg.pic_cnt; i++) {
         int err = vmaf_picture_alloc(&p->pictures[i], cfg.pix_fmt, cfg.bpc, cfg.w, cfg.h);
         if (err) {
-            /* Free pictures already detached from the refcount machinery
-             * (priv/ref cleared below) — vmaf_picture_unref short-circuits on
-             * priv==NULL || ref==NULL and would leak the data buffer.  Each
-             * earlier slot owns a single aligned_malloc'd data[0]; free that
-             * explicitly here so the caller does not inherit a partial leak.
-             * Adversarial audit 2026-05-31, fix/core-lifecycle-memory-audit. */
+            /* Free any pictures we've already fully allocated (priv/ref still
+             * intact on these since the strip pass has not run yet).
+             * ADR-0778 Fix-E: two-pass approach; vmaf_picture_unref is safe
+             * here because priv/ref have not yet been cleared. */
             for (unsigned j = 0; j < i; j++) {
-                aligned_free(p->pictures[j].data[0]);
+                (void)vmaf_picture_unref(&p->pictures[j]);
             }
             return err;
         }
+    }
 
+    /* All pictures allocated successfully — now strip priv and ref so that
+     * pool_fetch can (re-)initialise them on every fetch without leaking the
+     * originals. */
+    for (unsigned i = 0; i < cfg.pic_cnt; i++) {
         // Clear priv and ref - we'll recreate them on each fetch
         free(p->pictures[i].priv);
         vmaf_ref_close(p->pictures[i].ref);

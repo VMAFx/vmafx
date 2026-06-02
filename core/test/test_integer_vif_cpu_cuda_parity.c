@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -181,6 +181,11 @@ static char *run_cuda_vif(double scores_out[NUM_VIF_SCALES], VmafFeatureDictiona
     VmafCudaConfiguration cuda_cfg = {0};
     err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err != 0 || cu_state == NULL) {
+        /* No CUDA device: free the caller-supplied opts dict before returning so
+         * it is not leaked (vmaf_use_feature(), which normally takes ownership,
+         * will not be reached).  vmaf_feature_dictionary_free() is a no-op when
+         * opts is NULL, so NULL-passing callers are safe.  See ADR-0806. */
+        (void)vmaf_feature_dictionary_free(&opts);
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         return NULL;
     }
