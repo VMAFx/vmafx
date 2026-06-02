@@ -89,6 +89,10 @@ typedef struct IssimStateCuda {
     unsigned block_count;
 
     unsigned index;
+    /* PTX module backing the SSIM kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
+    CUmodule module;
     VmafDictionary *feature_name_dict;
 } IssimStateCuda;
 
@@ -117,14 +121,15 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail_lc);
     ctx_pushed = 1;
 
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, integer_ssim_score_ptx), fail_ctx);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_horiz_8, module, "integer_ssim_horiz_8bpc"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, integer_ssim_score_ptx), fail_ctx);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_horiz_8, s->module, "integer_ssim_horiz_8bpc"),
+                    fail_ctx);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_horiz_16, s->module, "integer_ssim_horiz_16bpc"),
                     fail_ctx);
     CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_horiz_16, module, "integer_ssim_horiz_16bpc"), fail_ctx);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_vert, module, "integer_ssim_vert_combine"),
-                    fail_ctx);
+        cu_f, cuModuleGetFunction(&s->func_vert, s->module, "integer_ssim_vert_combine"), fail_ctx);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_ctx);
     ctx_pushed = 0;
 
@@ -368,6 +373,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
         if (rc == 0)
             rc = e2;
     }
+    const VmafCudaFunctions *cu_f = fex->cu_state->f;
+    if (cu_f && s->module)
+        (void)cu_f->cuModuleUnload(s->module);
     return rc;
 }
 

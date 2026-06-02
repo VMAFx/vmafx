@@ -541,6 +541,9 @@ static const VmafOption options_chroma[] = {
     {0},
 };
 
+/* forward decl for init failure cleanup — SY-2a */
+static int close_chroma_sycl(VmafFeatureExtractor *fex);
+
 static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                             unsigned w, unsigned h)
 {
@@ -625,14 +628,14 @@ static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
 #undef ALLOC_A
 
     if (!s->d_plane || !s->h_plane_ref || !s->h_eigenvalues || !s->h_Q || !s->h_R) {
-        free_sycl_state(s);
+        close_chroma_sycl(fex);
         return -ENOMEM;
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
-        free_sycl_state(s);
+        close_chroma_sycl(fex);
         return -ENOMEM;
     }
 

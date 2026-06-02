@@ -158,6 +158,11 @@ typedef struct CambiStateCuda {
     VmafCudaKernelReadback rb_image;
     VmafCudaKernelReadback rb_mask;
 
+    /* PTX module backing the CAMBI kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
+    CUmodule module;
+
     VmafDictionary *feature_name_dict;
 } CambiStateCuda;
 
@@ -434,15 +439,16 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail_cuda);
     ctx_pushed = 1;
 
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, cambi_score_ptx), fail_cuda);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_mask, module, "cambi_spatial_mask_kernel"),
-                    fail_cuda);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_decimate, module, "cambi_decimate_kernel"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, cambi_score_ptx), fail_cuda);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_mask, s->module, "cambi_spatial_mask_kernel"),
                     fail_cuda);
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_filter_mode, module, "cambi_filter_mode_kernel"),
+                    cuModuleGetFunction(&s->func_decimate, s->module, "cambi_decimate_kernel"),
                     fail_cuda);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->func_filter_mode, s->module, "cambi_filter_mode_kernel"),
+        fail_cuda);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
     ctx_pushed = 0;
 
@@ -1021,6 +1027,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
         if (e && rc == 0)
             rc = e;
     }
+    const VmafCudaFunctions *cu_f = fex->cu_state->f;
+    if (cu_f && s->module)
+        (void)cu_f->cuModuleUnload(s->module);
     return rc;
 }
 

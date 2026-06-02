@@ -74,6 +74,10 @@ typedef struct MotionStateCuda {
                                   unsigned width, unsigned height, ptrdiff_t src_stride,
                                   ptrdiff_t blurred_stride, unsigned src_bpc, CUfunction funcbpc8,
                                   CUfunction funcbpc16, CudaFunctions *cu_f, CUstream stream);
+    /* PTX module backing the motion kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
+    CUmodule module;
     VmafDictionary *feature_name_dict;
 } MotionStateCuda;
 
@@ -276,15 +280,14 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail);
 
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, motion_score_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, motion_score_ptx), fail);
 
     CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->funcbpc16, module, "calculate_motion_score_kernel_16bpc"),
+        cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_motion_score_kernel_16bpc"),
         fail);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->funcbpc8, module, "calculate_motion_score_kernel_8bpc"),
-                    fail);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "calculate_motion_score_kernel_8bpc"),
+        fail);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
@@ -558,6 +561,8 @@ after_event2_destroy:;
         s->sad_host = NULL;
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
+    if (cu_f && s->module)
+        (void)cu_f->cuModuleUnload(s->module);
 
     return ret;
 }

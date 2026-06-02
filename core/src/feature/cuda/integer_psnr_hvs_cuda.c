@@ -97,6 +97,10 @@ typedef struct PsnrHvsStateCuda {
     unsigned n_planes;
 
     unsigned index;
+    /* PTX module backing the PSNR-HVS kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
+    CUmodule module;
     VmafDictionary *feature_name_dict;
 } PsnrHvsStateCuda;
 
@@ -195,9 +199,8 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->upload_done, CU_EVENT_DISABLE_TIMING), fail);
 
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, psnr_hvs_score_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_psnr_hvs, module, "psnr_hvs"), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, psnr_hvs_score_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_psnr_hvs, s->module, "psnr_hvs"), fail);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
@@ -512,6 +515,8 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
             (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->h_uint_dist[p]);
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
+    if (cu_f && s->module)
+        (void)cu_f->cuModuleUnload(s->module);
     return ret;
 }
 

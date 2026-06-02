@@ -148,6 +148,10 @@ typedef struct MsSsimStateCuda {
      * float_ms_ssim.c options. At defaults (both false) output is bit-identical. */
     bool enable_db; /* return dB-domain score: -10*log10(1 - ms_ssim) */
     bool clip_db;   /* clip linear ms_ssim to [0, 1] before dB conversion */
+    /* PTX module backing the MS-SSIM kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
+    CUmodule module;
 } MsSsimStateCuda;
 
 static const VmafOption options[] = {
@@ -228,11 +232,12 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
 
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, ms_ssim_score_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_decimate, module, "ms_ssim_decimate"), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_horiz, module, "ms_ssim_horiz"), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_vert_lcs, module, "ms_ssim_vert_lcs"), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, ms_ssim_score_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_decimate, s->module, "ms_ssim_decimate"),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_horiz, s->module, "ms_ssim_horiz"), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_vert_lcs, s->module, "ms_ssim_vert_lcs"),
+                    fail);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
@@ -569,6 +574,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
         }
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
+    const VmafCudaFunctions *cu_f = fex->cu_state->f;
+    if (cu_f && s->module)
+        (void)cu_f->cuModuleUnload(s->module);
     return ret;
 }
 

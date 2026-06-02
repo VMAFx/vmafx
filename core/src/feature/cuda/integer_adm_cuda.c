@@ -87,6 +87,14 @@ typedef struct AdmStateCuda {
         /* AIM CM kernels (ADR-0746): */
         func_adm_cm_aim_line_kernel_8, func_i4_adm_cm_aim_line_kernel_fused;
 
+    /* PTX modules backing DWT/CSF/CSF_den/CM kernels — owned here so
+     * `close_fex_cuda` can unload them. Skipping unload leaks
+     * ~200-500 KB per module per vmaf_close() cycle. */
+    CUmodule adm_dwt_module;
+    CUmodule adm_csf_module;
+    CUmodule adm_csf_den_module;
+    CUmodule adm_cm_module;
+
 } AdmStateCuda;
 
 /*
@@ -1316,59 +1324,61 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->ref_event, CU_EVENT_DEFAULT), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->dis_event, CU_EVENT_DEFAULT), fail);
 
-    CUmodule adm_cm_module, adm_csf_den_module, adm_csf_module, adm_dwt_module;
-
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&adm_dwt_module, adm_dwt2_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&adm_csf_module, adm_csf_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&adm_csf_den_module, adm_csf_den_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&adm_cm_module, adm_cm_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_dwt_module, adm_dwt2_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_csf_module, adm_csf_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_csf_den_module, adm_csf_den_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_cm_module, adm_cm_ptx), fail);
 
     // Get DWT kernel function pointers check adm_dwt2.cu for __global__ templated kernels
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_vert_kernel_0_0_int32_t,
-                                        adm_dwt_module,
+                                        s->adm_dwt_module,
                                         "dwt_s123_combined_vert_kernel_0_0_int32_t"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_vert_kernel_32768_16_int32_t,
-                                        adm_dwt_module,
+                                        s->adm_dwt_module,
                                         "dwt_s123_combined_vert_kernel_32768_16_int32_t"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_hori_kernel_16384_15,
-                                        adm_dwt_module, "dwt_s123_combined_hori_kernel_16384_15"),
+                                        s->adm_dwt_module,
+                                        "dwt_s123_combined_hori_kernel_16384_15"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_hori_kernel_32768_16,
-                                        adm_dwt_module, "dwt_s123_combined_hori_kernel_32768_16"),
+                                        s->adm_dwt_module,
+                                        "dwt_s123_combined_hori_kernel_32768_16"),
                     fail);
-    CHECK_CUDA_GOTO(
-        cu_f,
-        cuModuleGetFunction(&s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t,
-                            adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t"),
-        fail);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(
+                        &s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t,
+                        s->adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t"),
+                    fail);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(
                         &s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t,
-                        adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t"),
+                        s->adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t"),
                     fail);
 
     // Get csf kernel function pointers check adm_csf.cu for __global__ templated kernels
     CHECK_CUDA_GOTO(
         cu_f,
-        cuModuleGetFunction(&s->func_adm_csf_kernel_1_4, adm_csf_module, "adm_csf_kernel_1_4"),
+        cuModuleGetFunction(&s->func_adm_csf_kernel_1_4, s->adm_csf_module, "adm_csf_kernel_1_4"),
         fail);
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_i4_adm_csf_kernel_1_4, adm_csf_module,
+                    cuModuleGetFunction(&s->func_i4_adm_csf_kernel_1_4, s->adm_csf_module,
                                         "i4_adm_csf_kernel_1_4"),
                     fail);
 
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_csf_den_scale_line_kernel, adm_csf_den_module,
+                    cuModuleGetFunction(&s->func_adm_csf_den_scale_line_kernel,
+                                        s->adm_csf_den_module,
                                         "adm_csf_den_scale_line_kernel_8_128"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_csf_den_s123_line_kernel, adm_csf_den_module,
+                    cuModuleGetFunction(&s->func_adm_csf_den_s123_line_kernel,
+                                        s->adm_csf_den_module,
                                         "adm_csf_den_s123_line_kernel_8_128"),
                     fail);
 
@@ -1597,6 +1607,14 @@ after_ev3:;
     }
 
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
+    if (cu_f && s->adm_dwt_module)
+        (void)cu_f->cuModuleUnload(s->adm_dwt_module);
+    if (cu_f && s->adm_csf_module)
+        (void)cu_f->cuModuleUnload(s->adm_csf_module);
+    if (cu_f && s->adm_csf_den_module)
+        (void)cu_f->cuModuleUnload(s->adm_csf_den_module);
+    if (cu_f && s->adm_cm_module)
+        (void)cu_f->cuModuleUnload(s->adm_cm_module);
     return ret;
 }
 

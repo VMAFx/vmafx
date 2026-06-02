@@ -151,6 +151,10 @@ typedef struct SpeedChromaCudaState {
     double speed_chroma_max_val;
     int speed_weight_var_mode;
 
+    /* PTX module backing the SpEED chroma kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
+    CUmodule module;
     VmafDictionary *feature_name_dict;
 } SpeedChromaCudaState;
 
@@ -680,16 +684,16 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     /* Load PTX and get kernel function handles. */
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, speed_score_ptx), fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_means, module, "speed_means_kernel"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, speed_score_ptx), fail_pop);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_means, s->module, "speed_means_kernel"),
                     fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_cov, module, "speed_cov_kernel"), fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_indterm, module, "speed_indterm_kernel"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_cov, s->module, "speed_cov_kernel"),
                     fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_solve, module, "speed_solve_kernel"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_indterm, s->module, "speed_indterm_kernel"),
                     fail_pop);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_score, module, "speed_score_kernel"),
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_solve, s->module, "speed_solve_kernel"),
+                    fail_pop);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_score, s->module, "speed_score_kernel"),
                     fail_pop);
     CHECK_CUDA_GOTO(cu_f, cuStreamCreate(&s->stream, CU_STREAM_NON_BLOCKING), fail_pop);
 
@@ -837,6 +841,8 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
         vmaf_dictionary_free(&s->feature_name_dict);
     if (s->stream && fex->cu_state && fex->cu_state->f)
         (void)fex->cu_state->f->cuStreamDestroy(s->stream);
+    if (fex->cu_state && fex->cu_state->f && s->module)
+        (void)fex->cu_state->f->cuModuleUnload(s->module);
     return 0;
 }
 

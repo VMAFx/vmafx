@@ -43,6 +43,10 @@ typedef struct CiedeStateCuda {
 
     CUfunction funcbpc8;
     CUfunction funcbpc16;
+    /* PTX module backing the CIEDE kernels — owned here so
+     * `close_fex_cuda` can unload it. Skipping the unload leaks
+     * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
+    CUmodule module;
     unsigned partials_capacity;
     unsigned partials_count;
     unsigned index;
@@ -95,12 +99,11 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
 
-    CUmodule module;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&module, ciede_score_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->funcbpc8, module, "calculate_ciede_kernel_8bpc"),
-                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, ciede_score_ptx), fail);
     CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->funcbpc16, module, "calculate_ciede_kernel_16bpc"), fail);
+        cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "calculate_ciede_kernel_8bpc"), fail);
+    CHECK_CUDA_GOTO(
+        cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_ciede_kernel_16bpc"), fail);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
@@ -217,6 +220,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
     if (rc == 0)
         rc = dict_rc;
+    const VmafCudaFunctions *cu_f = fex->cu_state->f;
+    if (cu_f && s->module)
+        (void)cu_f->cuModuleUnload(s->module);
     return rc;
 }
 
