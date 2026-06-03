@@ -2011,15 +2011,11 @@ test('test_hip_adm_parity', test_hip_adm_parity,
 # (enable_hipcc=false).
 #
 # Note: speed_chroma_hip / speed_temporal_hip parity gates were planned
-# for this round but discovered to be blocked on a pre-existing latent
-# link defect — `speed_internal_init_dimensions` and
-# `speed_internal_float_stride` are declared in
-# `core/src/feature/speed_internal.h` but have no .c implementation.
-# Wiring `speed_chroma_hip.c` / `speed_temporal_hip.c` into the HIP
-# archive surfaces the undefined references at link time. Deferred to
-# a follow-up PR that adds the missing impl file. See ADR-0958
-# "Alternatives considered" + the T-HIP-SPEED-INTERNAL-IMPL-MISSING-2026-05-31
-# row in docs/state.md.
+# for round 4 (ADR-0958) but deferred due to a latent link defect —
+# `speed_internal_init_dimensions` / `speed_internal_float_stride` were
+# declared in `speed_internal.h` but lacked an implementation.  That
+# defect was resolved by ADR-0964 / PR #465 (`core/src/feature/speed_internal.c`).
+# The gates are now shipped in round 5 (ADR-1004) below.
 
 test_hip_ssimulacra2_parity = executable('test_hip_ssimulacra2_parity',
     ['test.c', 'test_hip_ssimulacra2_parity.c'],
@@ -2187,6 +2183,38 @@ test_hip_vif_parity = executable('test_hip_vif_parity',
     c_args: ['-DHAVE_HIP=1']
 )
 test('test_hip_vif_parity', test_hip_vif_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+# ADR-1004 round 5 — speed_chroma + speed_temporal HIP parity gates.
+# Deferred from round 4 (ADR-0958) because `speed_internal_init_dimensions`
+# and `speed_internal_float_stride` had no .c implementation at the time.
+# ADR-0964 / PR #465 introduced `core/src/feature/speed_internal.c`,
+# unblocking these tests.  Both tests link against libvmaf (which compiles
+# speed_internal.c via src/meson.build `speed_internal` entry) and follow
+# the round-1/2/3/4 template: synthetic fixture, CPU reference vs. HIP
+# score, skip cleanly on `[skip: no HIP device]` or
+# `[skip: HIP scaffold ENOSYS]`.  Tolerance: places=4 (1e-4) per ADR-0214
+# — SpEED's QR / eigensolver runs on CPU for both backends.
+test_hip_speed_chroma_parity = executable('test_hip_speed_chroma_parity',
+    ['test.c', 'test_hip_speed_chroma_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_speed_chroma_parity', test_hip_speed_chroma_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 60)
+
+test_hip_speed_temporal_parity = executable('test_hip_speed_temporal_parity',
+    ['test.c', 'test_hip_speed_temporal_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_speed_temporal_parity', test_hip_speed_temporal_parity,
     suite : ['fast', 'gpu'],
     timeout : 60)
 endif

@@ -431,6 +431,21 @@ No rebase impact: doc-only edit to `README.md` badge lines; no C source,
 public header, Netflix golden assertion, or upstream-mirrored symbol is
 affected.
 
+## test(hip): parity coverage round 5 — speed_chroma + speed_temporal (2026-06-04, ADR-1004)
+
+**Files touched:**
+`core/test/test_hip_speed_chroma_parity.c`,
+`core/test/test_hip_speed_temporal_parity.c`,
+`core/test/meson.build`,
+`docs/adr/1004-hip-kernel-coverage-round5.md`,
+`docs/adr/README.md`,
+`docs/state.md`,
+`changelog.d/added/1004-hip-kernel-coverage-round5.md`
+
+no rebase impact: the two new test TUs are fork-local additions with no upstream analogue. The
+meson.build additions are append-only within the `if hip_enabled` block. No C source, public
+header, Netflix golden assertion, or upstream-mirrored Python file is modified.
+
 ---
 
 ## chore/build-cpp-std-c23-bump (2026-06-04, ADR-1003)
