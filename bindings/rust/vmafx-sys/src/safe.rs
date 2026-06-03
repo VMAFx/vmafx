@@ -69,6 +69,17 @@ pub struct VmafContext {
 // Safety: libvmaf contexts are self-contained; no thread-local state is accessed.
 unsafe impl Send for VmafContext {}
 
+impl Default for VmafContext {
+    /// Create a context with sensible defaults via [`VmafContext::new`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `libvmaf` fails to initialise (e.g., memory allocation failure).
+    fn default() -> Self {
+        Self::new().expect("VmafContext::default: vmaf_init failed")
+    }
+}
+
 impl VmafContext {
     /// Allocate and open a new VMAF context with sensible defaults.
     ///

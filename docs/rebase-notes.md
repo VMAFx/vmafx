@@ -43847,3 +43847,13 @@ golden-assertion file is touched. The new module-level constants
 (`CALIBRATION_PLACEHOLDER_PATHS`, `CLOSED_SECTION_HEADINGS_RE`,
 `CLOSED_ROW_RE`) and the updated `scan_state_files` / `_marker_suppressed`
 functions have no upstream analogue; there is no merge conflict possible.
+
+---
+
+### fix(rust): vmafx-sys Default trait + Rust CI re-trigger
+
+**Branch**: fix/rust-ci-vmafx-sys-build-dep
+
+no rebase impact: adds `impl Default for VmafContext` in `bindings/rust/vmafx-sys/src/safe.rs`.
+Fork-local Rust crate with no upstream analogue; no C source, public header, or
+Python file is touched.
