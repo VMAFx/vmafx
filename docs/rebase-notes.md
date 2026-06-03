@@ -44044,3 +44044,16 @@ no rebase impact: adds four new test-only `.c` files under `core/test/` and wire
 `core/test/meson.build`. No C source, public header, upstream-mirrored Python, or Netflix
 golden-assertion file is touched. The new tests exercise existing extractor paths; no
 new symbols are introduced.
+
+---
+
+## chore(cppcheck): audit + cite all cppcheck-suppress comments
+
+**Files touched**: `core/src/feature/vif.c`,
+`changelog.d/chore/cppcheck-suppress-cite-audit.md`,
+`docs/rebase-notes.md`.
+
+No rebase impact: comment-only edit to `vif.c`; adds `[MISRA-C:2012-11.3/EXP36-C]`
+citations to 10 bare `cppcheck-suppress invalidPointerCast` annotations.
+No logic changed; no public header, Netflix golden assertion, or upstream-mirrored
+symbol is affected.

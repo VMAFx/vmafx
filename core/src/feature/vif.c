@@ -128,27 +128,43 @@ int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride
      * char* cursor into aligned_malloc() storage; the sub-region base is
      * always buf_sz_one-aligned (buf_sz_one is a multiple of sizeof(float)),
      * so every cast below is safe.
-     * cppcheck-suppress invalidPointerCast [misra-c2012-11.3 / SEI CERT EXP36-C]
+     * MISRA-C:2012 Rule 11.3 / SEI CERT EXP36-C: the cast from char* to
+     * float* is safe because aligned_malloc() guarantees MAX_ALIGN (32-byte)
+     * alignment and buf_sz_one = ALIGN_CEIL(w*sizeof(float))*h is always a
+     * multiple of sizeof(float), so each sub-region base satisfies float's
+     * alignment requirement.  The cppcheck suppressions below are required
+     * because cppcheck cannot see through the aligned_malloc + ALIGN_CEIL
+     * invariants at static-analysis time.
      */
-    ref_scale = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
+    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    ref_scale = (float *)data_top;
     data_top += buf_sz_one;
-    dis_scale = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
+    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    dis_scale = (float *)data_top;
     data_top += buf_sz_one;
-    mu1 = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
+    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    mu1 = (float *)data_top;
     data_top += buf_sz_one;
-    mu2 = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
+    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    mu2 = (float *)data_top;
     data_top += buf_sz_one;
-    ref_sq_filt = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
+    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    ref_sq_filt = (float *)data_top;
     data_top += buf_sz_one;
-    dis_sq_filt = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
+    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    dis_sq_filt = (float *)data_top;
     data_top += buf_sz_one;
-    ref_dis_filt = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
+    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    ref_dis_filt = (float *)data_top;
     data_top += buf_sz_one;
-    num_array = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
+    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    num_array = (float *)data_top;
     data_top += buf_sz_one;
-    den_array = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
+    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    den_array = (float *)data_top;
     data_top += buf_sz_one;
-    tmpbuf = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
+    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    tmpbuf = (float *)data_top;
     data_top += buf_sz_one;
 
     unsigned scale_start = 0;
