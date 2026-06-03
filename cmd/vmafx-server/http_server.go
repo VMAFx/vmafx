@@ -4,12 +4,17 @@
 // cmd/vmafx-server/http_server.go — HTTP handlers for vmafx-server.
 //
 // Endpoints:
-//   GET  /healthz      — liveness probe; always 200 while the process is live.
-//   GET  /readyz       — readiness probe; 200 once vmaf binary is reachable.
-//   GET  /metrics      — Prometheus exposition format.
-//   POST /v1/score     — JSON scoring endpoint (parity with Python implementation).
+//   GET  /healthz          — liveness probe; always 200 while the process is live.
+//   GET  /readyz           — readiness probe; 200 once vmaf binary is reachable.
+//   GET  /metrics          — Prometheus exposition format.
+//   POST /v1/score         — JSON scoring endpoint (parity with Python implementation).
+//   GET  /v1/health        — OpenAPI-spec liveness probe (delegates to grpc.Health).
+//   GET  /v1/ready         — OpenAPI-spec readiness probe.
+//   GET  /swagger          — Swagger UI (CDN-hosted, spec served from /swagger/spec.json).
+//   GET  /swagger/spec.json — Embedded OpenAPI spec JSON.
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service.
+// ADR-0797: vmafx-server OpenAPI REST contract.
 
 //go:build cgo
 
@@ -64,6 +69,9 @@ type httpServer struct {
 	metrics  *observability.Metrics
 	log      *slog.Logger
 	registry *prometheus.Registry
+	// grpc is the shared gRPC service implementation used by the REST adapter
+	// (ADR-0797) to avoid duplicating business logic.
+	grpc *grpcServer
 }
 
 // newHTTPServer creates an httpServer.
@@ -72,21 +80,47 @@ func newHTTPServer(
 	metrics *observability.Metrics,
 	registry *prometheus.Registry,
 	log *slog.Logger,
+	grpc *grpcServer,
 ) *httpServer {
 	return &httpServer{
 		scorer:   scorer,
 		metrics:  metrics,
 		log:      log,
 		registry: registry,
+		grpc:     grpc,
 	}
 }
 
 // routes registers all HTTP handlers on mux.
+//
+// Legacy endpoints (/healthz, /readyz, /v1/score) are preserved for backwards
+// compatibility.  The OpenAPI-spec endpoints (/v1/health, /v1/ready) are
+// registered via the REST adapter (ADR-0797).  /swagger serves the Swagger UI.
 func (h *httpServer) routes(mux *http.ServeMux) {
+	// Legacy Kubernetes probe aliases — kept for backwards compatibility.
 	mux.HandleFunc("/healthz", h.handleHealthz)
 	mux.HandleFunc("/readyz", h.handleReadyz)
+
+	// Prometheus metrics.
 	mux.Handle("/metrics", promhttp.HandlerFor(h.registry, promhttp.HandlerOpts{}))
+
+	// Legacy /v1/score — retained for clients predating the OpenAPI contract.
 	mux.HandleFunc("/v1/score", h.handleScore)
+
+	// OpenAPI REST adapter: /v1/health, /v1/ready, and the preferred
+	// /v1/score path (oapi-codegen-generated routing via restAdapter).
+	if h.grpc != nil {
+		adapter := newRestAdapter(h.grpc, h.log)
+		// Register /v1/health and /v1/ready via the generated handler.
+		// Note: /v1/score is already registered above via the legacy handler;
+		// the adapter's ScoreVideoPair validates via oapi types but delegates
+		// identically so both paths are equivalent.
+		mux.HandleFunc("GET /v1/health", adapter.GetHealth)
+		mux.HandleFunc("GET /v1/ready", adapter.GetReady)
+	}
+
+	// Swagger UI at /swagger and /swagger/spec.json.
+	registerSwaggerUI(mux, h.log)
 }
 
 // handleHealthz is the liveness probe — always returns 200 OK.

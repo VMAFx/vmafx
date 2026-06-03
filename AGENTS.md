@@ -370,7 +370,7 @@ linked AGENTS.md before resolving conflicts.
   `libvmaf_mcp.h`, audit-first `-ENOSYS` stubs in
   `core/src/mcp/mcp.c`, `enable_mcp` + 3 transport sub-flags. T5-2b
   (cJSON + mongoose + transport bodies) is open. See
-  [libvmaf/AGENTS.md §Rebase-sensitive invariants](libvmaf/AGENTS.md).
+  [core/AGENTS.md §Rebase-sensitive invariants](core/AGENTS.md).
 - **HIP scaffold (T7-10, ADR-0212 placeholder, PR #200)** —
   audit-first AMD HIP backend scaffold mirroring Vulkan T5-1 /
   ADR-0175. Public `libvmaf_hip.h`, stub kernels, `enable_hip` meson
@@ -386,7 +386,7 @@ linked AGENTS.md before resolving conflicts.
   requires (1) `FEATURE_METRICS` entry, (2) `FEATURE_TOLERANCE` entry
   if it relaxes places=4, (3) row in
   `docs/development/cross-backend-gate.md`. See
-  [libvmaf/AGENTS.md](libvmaf/AGENTS.md).
+  [core/AGENTS.md](core/AGENTS.md).
 - **FastDVDnet temporal pre-filter (T6-7, ADR-0215 placeholder,
   PR #203)** — 5-frame window pre-filter feeding ssim/ms_ssim.
 - **psnr chroma Vulkan (T3-15(b), ADR-0216 placeholder, PR #204)**
@@ -450,15 +450,6 @@ linked AGENTS.md before resolving conflicts.
   `host_id`, `backend_results`, `mcp_results`) are an internal format;
   update `docs/development/dev-mcp.md` if the schema changes. This
   directory does not affect the libvmaf C build or any CI gate.
-- **VMAFX repo-layout rename (`libvmaf/` → `core/`, PR #1571, ADR-0700)**:
-  The C library and build root was renamed from `libvmaf/` to `core/` as
-  part of the VMAFX rebrand (ADR-0686). `libvmaf.so`, `libvmaf.pc`, and
-  `<libvmaf/…>` install-path headers are unchanged. Any in-flight branch
-  that still references paths under `libvmaf/` must be rebased; the
-  recommended recipe is:
-  `git format-patch <base>..<tip> --stdout | sed 's|libvmaf/|core/|g' | git am --3way`
-  The full recipe lives in `docs/rebase-notes.md` §`refactor/meta/vmafx-repo-layout`.
-  Do not introduce new references to `libvmaf/` in any new file.
 - **Top-level `noxfile.py` is a local-dev affordance, not a CI gate (ADR-0914)**:
   The repo-root `noxfile.py` exposes one session per Python package
   (`ai`, `mcp`, `vmaf_tune`, `dev_llm`, `roi_score`, `ensemble_kit`,
@@ -472,13 +463,8 @@ linked AGENTS.md before resolving conflicts.
   The `python_harness` session intentionally delegates to `tox -c
   python` rather than duplicating the Cython + Netflix golden-data
   setup that lives in `python/tox.ini`; do not collapse them.
-- **vmafx-server HTTP transport (`[http]` optional dep, PR #1583, ADR-0701)**:
-  `mcp-server/vmaf-mcp/pyproject.toml` gained an `[http]` optional
-  dependency group (`aiohttp`, `prometheus-client`). Any rebase that
-  modifies `pyproject.toml` must preserve this group. The `--transport http`
-  flag in `server.py::main()` dispatches to `http_transport.py`; do not
-  reorder the transport dispatch block. See
-  [mcp-server/AGENTS.md](mcp-server/AGENTS.md).## 14. Interaction style — prefer structured popup questions
+
+## 14. Interaction style — prefer structured popup questions
 
 When your host agent exposes a structured-question UI (Claude Code's `AskUserQuestion`,
 Cursor's choice prompt, Aider's multi-choice, etc.), **use it instead of posting a

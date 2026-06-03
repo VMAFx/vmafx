@@ -1601,6 +1601,26 @@ dead-code duplicate `_run_benchmark()` definition in
 `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`; the deleted copy was
 silently shadowed at import time by the progress-token-aware
 implementation 575 lines later, so removal is behaviour-preserving.
+## openapi-rest-schema (2026-05-29, ADR-0797)
+
+**Files touched:**
+`api/openapi/vmafx-server-v1.yaml`,
+`api/openapi/oapi-codegen.yaml`,
+`gen/go/oapi/vmafx_server_v1.gen.go`,
+`cmd/vmafx-server/rest_adapter.go`,
+`cmd/vmafx-server/swagger_ui.go`,
+`cmd/vmafx-server/http_server.go`,
+`cmd/vmafx-server/grpc_server.go`,
+`cmd/vmafx-server/main.go`,
+`docs/server/rest.md`
+
+**Rebase impact:** None. All touched files are fork-local additions in the Go
+server layer (`cmd/vmafx-server/`, `api/`, `gen/go/`) that do not exist in
+upstream Netflix/vmaf. No rebase conflicts are possible.
+
+The `newHTTPServer` signature gained a `*grpcServer` parameter; any
+fork-local branch that calls `newHTTPServer` with the old 4-argument form
+will fail to compile and must add the grpcServer argument.
 
 ---
 
@@ -42271,20 +42291,6 @@ is possible with upstream syncs.
 
 The changed kernel signatures are internal to the HIP dispatch path and are not
 part of any public API.
-
----
-
-### go-workspace-audit — Go dependency + test fixes (2026-05-29)
-
-No rebase impact. All changes are Go workspace files entirely fork-local:
-`go.mod` / `go.sum` (added `modernc.org/sqlite` and transitive deps),
-`pkg/observability/observability.go` (added controller metrics fields + `SetControllerSources`),
-`cmd/vmafx-node/executor_test.go`, `cmd/vmafx-node/main_test.go` (test alignment to current API),
-`cmd/vmafx-tune/cmd/root.go` (wire `newLadderCmd`),
-`cmd/vmafx-tune/cmd/compare_test.go` (remove stale stub assertion),
-`changelog.d/fixed/0529-go-workspace-audit.md` (new).
-
-None of these files are touched by Netflix upstream.
 
 ---
 

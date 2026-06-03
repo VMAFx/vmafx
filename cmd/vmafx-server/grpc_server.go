@@ -142,13 +142,27 @@ func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) 
 }
 
 // runGRPC starts the gRPC listener on addr (e.g. ":50051") and blocks
-// until ctx is cancelled.
+// until ctx is cancelled.  It creates a new grpcServer internally.
+//
+// Deprecated: prefer runGRPCWithServer when a shared grpcServer instance is
+// needed (e.g. to wire the REST adapter per ADR-0797).
 func runGRPC(
 	ctx context.Context,
 	addr string,
 	scorer *libvmaf.Scorer,
 	metrics *observability.Metrics,
 	log *slog.Logger,
+) error {
+	return runGRPCWithServer(ctx, addr, newGRPCServer(scorer, metrics, log))
+}
+
+// runGRPCWithServer starts the gRPC listener on addr using a pre-constructed
+// grpcServer.  This allows the same grpcServer instance to be shared with the
+// HTTP REST adapter (ADR-0797) so business logic is not duplicated.
+func runGRPCWithServer(
+	ctx context.Context,
+	addr string,
+	impl *grpcServer,
 ) error {
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -165,12 +179,12 @@ func runGRPC(
 	)
 	vmafxv1.RegisterVmafxScoringServer(srv, newGRPCServer(scorer, metrics, log))
 
-	log.Info("gRPC server started", "addr", addr)
+	impl.log.Info("gRPC server started", "addr", addr)
 
 	// Shut down gracefully when ctx is cancelled.
 	go func() {
 		<-ctx.Done()
-		log.Info("gRPC graceful shutdown initiated")
+		impl.log.Info("gRPC graceful shutdown initiated")
 		srv.GracefulStop()
 	}()
 

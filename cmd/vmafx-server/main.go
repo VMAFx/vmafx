@@ -8,11 +8,12 @@
 //
 // 12-factor (§III) environment variables:
 //
-//	VMAFX_PORT           HTTP listen port (default "8080").
-//	VMAFX_GRPC_PORT      gRPC listen port (default "50051").
-//	VMAFX_LOG_LEVEL      slog level string (default "INFO").
-//	VMAFX_VMAF_BINARY    Path to the vmaf CLI binary.
-//	VMAFX_MODEL_DIR      Directory containing VMAF .json model files.
+//	VMAFX_PORT                HTTP listen port (default "8080").
+//	VMAFX_GRPC_PORT           gRPC listen port (default "50051").
+//	VMAFX_LOG_LEVEL           slog level string (default "INFO").
+//	VMAFX_VMAF_BINARY         Path to the vmaf CLI binary.
+//	VMAFX_MODEL_DIR           Directory containing VMAF .json model files.
+//	VMAFX_SWAGGER_TRY_IT_OUT  Set to "1" to enable Swagger UI try-it-out (default: disabled).
 //
 // CLI flags mirror and override the environment variables.
 //
@@ -126,15 +127,19 @@ func main() {
 	// ---------------------------------------------------------------------------
 	grp, grpCtx := errgroup.WithContext(ctx)
 
-	// HTTP server.
+	// Shared gRPC service implementation — also consumed by the REST adapter
+	// (ADR-0797) so scoring + health business logic is not duplicated.
+	grpcSrv := newGRPCServer(scorer, metrics, log)
+
+	// HTTP server — includes legacy endpoints, OpenAPI REST adapter, and Swagger UI.
 	grp.Go(func() error {
-		hs := newHTTPServer(scorer, metrics, registry, log)
+		hs := newHTTPServer(scorer, metrics, registry, log, grpcSrv)
 		return runHTTP(grpCtx, fmt.Sprintf(":%s", *port), hs, log)
 	})
 
 	// gRPC server.
 	grp.Go(func() error {
-		return runGRPC(grpCtx, fmt.Sprintf(":%s", *grpcPort), scorer, metrics, log)
+		return runGRPCWithServer(grpCtx, fmt.Sprintf(":%s", *grpcPort), grpcSrv)
 	})
 
 	if err := grp.Wait(); err != nil {

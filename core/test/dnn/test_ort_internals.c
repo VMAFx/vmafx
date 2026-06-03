@@ -26,13 +26,6 @@
 #include "ort_backend.h"
 #include "ort_backend_internal.h"
 
-/* ONNX TensorElementDataType constants (ONNX spec, stable).
- * We use integer literals to avoid pulling in onnxruntime_c_api.h
- * into test code that runs on stub builds too. */
-#define ELEM_TYPE_UNDEFINED 0
-#define ELEM_TYPE_FLOAT 1    /* fp32 */
-#define ELEM_TYPE_FLOAT16 10 /* fp16 */
-
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
 #define SMOKE_FP16_MODEL "model/tiny/smoke_fp16_v0.onnx"
 #define SMOKE_MULTI_OUTPUT_MODEL "model/tiny/smoke_multi_output_v0.onnx"

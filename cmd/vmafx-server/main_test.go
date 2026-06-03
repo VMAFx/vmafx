@@ -7,6 +7,7 @@
 // net/http/httptest to avoid opening real ports.
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service.
+// ADR-0797: vmafx-server OpenAPI REST contract.
 
 //go:build cgo
 
@@ -80,6 +81,7 @@ func writeModelFile(t *testing.T) (modelDir string) {
 }
 
 // newTestHTTPServer creates a real httpServer backed by the stub scorer and returns it.
+// The grpcServer is also created so that OpenAPI REST adapter routes are wired.
 func newTestHTTPServer(t *testing.T) (*httpServer, *prometheus.Registry) {
 	t.Helper()
 	stub := writeVmafStub(t, vmafGoldenJSON)
@@ -91,7 +93,8 @@ func newTestHTTPServer(t *testing.T) (*httpServer, *prometheus.Registry) {
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 	log := observability.NewLogger("ERROR") // suppress noise in tests
-	return newHTTPServer(scorer, metrics, reg, log), reg
+	grpc := newGRPCServer(scorer, metrics, log)
+	return newHTTPServer(scorer, metrics, reg, log, grpc), reg
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +148,7 @@ func TestReadyEndpointNotReady(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 	log := observability.NewLogger("ERROR")
-	hs := newHTTPServer(nil, metrics, reg, log) // nil scorer → not ready
+	hs := newHTTPServer(nil, metrics, reg, log, nil) // nil scorer + nil grpc → not ready
 	mux := http.NewServeMux()
 	hs.routes(mux)
 	ts := httptest.NewServer(mux)

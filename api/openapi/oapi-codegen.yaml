@@ -1,0 +1,15 @@
+# oapi-codegen configuration for vmafx-server REST API.
+# Regenerate: oapi-codegen --config api/openapi/oapi-codegen.yaml api/openapi/vmafx-server-v1.yaml
+#
+# ADR-0797: vmafx-server OpenAPI REST contract.
+
+package: oapi
+generate:
+  chi-server: false
+  std-http-server: true
+  models: true
+  embedded-spec: true
+output: gen/go/oapi/vmafx_server_v1.gen.go
+output-options:
+  skip-prune: false
+  nullable-type: false
