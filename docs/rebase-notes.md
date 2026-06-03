@@ -53,6 +53,22 @@ and non-breaking. No upstream rebase conflict is possible.
 
 ---
 
+## KoNViD / UGC / BVI-DVC saliency batch manifests (ADR-0993, 2026-06-03)
+
+**Files touched:**
+`ai/batch-manifests/saliency/konvid-150k.json` (new),
+`ai/batch-manifests/saliency/ugc.json` (new),
+`ai/batch-manifests/saliency/bvi-dvc.json` (new),
+`docs/ai/saliency-feature-materializer.md` (corpus-specific manifests section),
+`docs/adr/0993-konvid-ugc-bvi-saliency-batch-launch.md` (new),
+`docs/adr/README.md` (index row),
+`changelog.d/added/konvid-ugc-bvi-saliency-batch-manifests.md` (new).
+
+**Rebase impact:** None on upstream sync (no Netflix file touched). All new
+files are fork-local; no upstream path conflicts.
+
+---
+
 ## Changelog-fragment section hygiene (2026-05-30)
 
 **Files touched:**

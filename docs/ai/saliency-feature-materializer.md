@@ -164,6 +164,57 @@ config and row counters for the table. The batch command exits non-zero if any
 table has failed rows. Use `--allow-row-failures` only for exploratory audits
 where partial saliency coverage is intentionally kept for later filtering.
 
+## Corpus-Specific Manifests
+
+In-tree batch manifests live under `ai/batch-manifests/saliency/` (ADR-0993).
+Each file documents the correct `path_column`, `root`, and any geometry fallback
+for that corpus.
+
+### KoNViD-150K
+
+The `konvid_150k.jsonl` corpus table has `src` (relative clip filename),
+`width`, and `height` columns. Clips live at
+`.corpus/konvid-150k/k150ka_extracted/`. The manifest is fully wired:
+
+```bash
+PYTHONPATH=ai/scripts:ai/src:tools/vmaf-tune/src \
+  python3 ai/scripts/batch_materialize_saliency_features.py \
+  --manifest ai/batch-manifests/saliency/konvid-150k.json \
+  --report-json .workingdir2/saliency-runs/konvid-150k/report.json \
+  --report-md .workingdir2/saliency-runs/konvid-150k/report.md
+```
+
+Smoke run (10 rows only, requires `head -10` truncation of the JSONL input):
+
+```bash
+head -10 .corpus/konvid-150k/konvid_150k.jsonl > /tmp/k150k_smoke.jsonl
+PYTHONPATH=ai/scripts:ai/src:tools/vmaf-tune/src \
+  python3 ai/scripts/materialize_saliency_features.py \
+  --input /tmp/k150k_smoke.jsonl \
+  --output /tmp/k150k_smoke_saliency.jsonl \
+  --root .corpus/konvid-150k/k150ka_extracted \
+  --path-column src --width-column width --height-column height \
+  --model-id saliency_student_v1 --max-frames 4 \
+  --audit-json /tmp/k150k_smoke_saliency.audit.json
+```
+
+### YouTube UGC
+
+The `full_features_ugc_refresh_20260520.parquet` uses a `source` column with
+corpus identifiers (`ugc-Gaming_1080P-223e-cbr`), not file paths. See the
+`_status` / `_resolution` comments in `ai/batch-manifests/saliency/ugc.json`
+for the two unblocking options. The recommended path is to generate a
+`ugc_corpus.jsonl` via `ai/scripts/youtube_ugc_to_corpus_jsonl.py` first.
+
+### BVI-DVC
+
+The `full_features_bvi_dvc_D_refresh_20260520.parquet` uses a `key` column
+with encode parameters (`DAdvertisingMassagesBangkokVidevo_480x272_25fps_10bit_420`).
+Raw reference YUVs at `.corpus/bvi-dvc-raw/` are the natural saliency source.
+The manifest in `ai/batch-manifests/saliency/bvi-dvc.json` documents the
+geometry mapping and `default_width`/`default_height` values needed for the
+3840×2176 raw YUV sources.
+
 ## Reproducer
 
 ```bash

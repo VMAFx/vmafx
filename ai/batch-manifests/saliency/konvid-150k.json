@@ -1,0 +1,28 @@
+{
+  "_comment": "Saliency materializer batch manifest for KoNViD-150K (ADR-0993).",
+  "_prereqs": [
+    "Clips must be present at .corpus/konvid-150k/k150ka_extracted/.",
+    "Run: PYTHONPATH=ai/scripts:ai/src:tools/vmaf-tune/src \\",
+    "      python3 ai/scripts/batch_materialize_saliency_features.py \\",
+    "      --manifest ai/batch-manifests/saliency/konvid-150k.json \\",
+    "      --report-json .workingdir2/saliency-runs/konvid-150k/report.json \\",
+    "      --report-md .workingdir2/saliency-runs/konvid-150k/report.md"
+  ],
+  "defaults": {
+    "model_id": "saliency_student_v1",
+    "max_frames": 4,
+    "frame_samples": 4,
+    "path_column": "src",
+    "root": "../../../.corpus/konvid-150k/k150ka_extracted",
+    "width_column": "width",
+    "height_column": "height"
+  },
+  "tables": [
+    {
+      "id": "konvid-150k-full",
+      "input": "../../../.corpus/konvid-150k/konvid_150k.jsonl",
+      "output": "../../../.workingdir2/saliency-runs/konvid-150k/konvid_150k.saliency.jsonl",
+      "audit_json": "../../../.workingdir2/saliency-runs/konvid-150k/audit.json"
+    }
+  ]
+}
