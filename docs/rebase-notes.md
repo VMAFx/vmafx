@@ -1,6 +1,23 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## chore/tech-stack-badges-go-pin-bump (2026-06-04, ADR-1000)
+
+**Files touched:**
+`README.md`, `go.mod`, `.github/workflows/go-ci.yml`,
+`docs/adr/1000-tech-stack-badges-go-rust-pins.md`,
+`docs/adr/_index_fragments/1000-tech-stack-badges-go-rust-pins.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`changelog.d/changed/tech-stack-badges-go-pin-bump.md`
+
+**Rebase impact:** None for C/SYCL/CUDA/HIP/Vulkan/Rust code.
+`go.mod` minimum version is bumped 1.25.0 → 1.26.4; this only affects builds
+that run `go build` / `go test`. Upstream Netflix/vmaf has no Go code, so no
+upstream cherry-pick will conflict with this change. The README badge block
+change is purely additive; no upstream port touches the README badge section.
+
+---
+
 ## fix/tsan-framesync-stdatomic-cxx (2026-06-04, ADR-0999)
 
 **Files touched:**

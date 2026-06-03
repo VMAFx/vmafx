@@ -1,0 +1,1 @@
+| [ADR-1000](1000-tech-stack-badges-go-rust-pins.md) | Tech-stack badges added to README (version pins, GPU/SIMD, container); Go version bumped go.mod + go-ci.yml 1.23→1.26.4; Rust edition 2024 deferred (bindgen 0.69 extern-block blocker) | Accepted | 2026-06-04 | docs, ci, build, go, rust |

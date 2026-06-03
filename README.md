@@ -1,12 +1,29 @@
 # VMAFx
 
+<!-- Build / test / security CI badges -->
 [![Tests](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
 [![Lint](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
 [![Security](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
 [![Builds](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
 [![FFmpeg](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
-[![Rust](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
-[![Go](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
+[![Rust (CI)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
+[![Go (CI)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
+
+<!-- Version / language stack badges -->
+[![Go 1.26](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev/doc/go1.26)
+[![Rust edition 2024](https://img.shields.io/badge/Rust-edition%202024-CE422B?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/rust-2024/)
+[![Python 3.14+](https://img.shields.io/badge/Python-3.14%2B-3776AB?logo=python&logoColor=white)](https://docs.python.org/3.14/)
+[![C11](https://img.shields.io/badge/C-C11-00599C?logo=c&logoColor=white)](https://en.cppreference.com/w/c/11)
+[![C++11](https://img.shields.io/badge/C%2B%2B-C%2B%2B11-00599C?logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/11)
+[![CUDA 13.2](https://img.shields.io/badge/CUDA-13.2-76B900?logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-downloads)
+[![ROCm 7.2](https://img.shields.io/badge/ROCm-7.2-ED1C24?logo=amd&logoColor=white)](https://rocm.docs.amd.com/)
+
+<!-- GPU / SIMD capability badges -->
+[![GPU: CUDA · SYCL · HIP · Vulkan](https://img.shields.io/badge/GPU-CUDA%20%C2%B7%20SYCL%20%C2%B7%20HIP%20%C2%B7%20Vulkan-76B900?logo=nvidia&logoColor=white)](docs/backends/)
+[![SIMD: AVX2 · AVX-512 · NEON](https://img.shields.io/badge/SIMD-AVX2%20%C2%B7%20AVX--512%20%C2%B7%20NEON-orange?logo=intel&logoColor=white)](docs/backends/)
+
+<!-- Distribution / community badges -->
+[![Container](https://img.shields.io/badge/Container-ghcr.io%2Fvmafx%2Fvmafx-2496ED?logo=docker&logoColor=white)](https://github.com/orgs/VMAFx/packages)
 [![License: BSD-3-Clause+Patent](https://img.shields.io/badge/License-BSD--3--Clause--Plus--Patent-blue.svg)](LICENSE)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/VMAFx/vmafx/badge)](https://securityscorecards.dev/viewer/?uri=github.com/VMAFx/vmafx)
