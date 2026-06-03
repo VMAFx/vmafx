@@ -62,4 +62,41 @@ GPU device-plugin is allocated.  See docs/development/gpu-scheduling.md.
 To verify device-plugin allocations on a node:
   kubectl describe node <node> | grep -E "Capacity|Allocatable" -A 10
 
+----------------------------------------------------------------------
+Pod Security Standards — restricted profile (ADR-0930)
+----------------------------------------------------------------------
+This chart's pods satisfy the Kubernetes
+"pod-security.kubernetes.io/enforce=restricted" admission profile:
+runAsNonRoot, distroless UID 65532, readOnlyRootFilesystem, dropped
+capabilities, seccompProfile=RuntimeDefault, allowPrivilegeEscalation=false.
+
+To enforce the profile at the namespace level, label the install namespace:
+
+  kubectl label --overwrite namespace {{ .Release.Namespace }} \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted
+
+----------------------------------------------------------------------
+NetworkPolicy — default-deny posture (ADR-0930)
+----------------------------------------------------------------------
+{{- if .Values.networkPolicy.enabled }}
+NetworkPolicies are ENABLED for this release.  Every VMAFX pod runs under a
+default-deny posture with explicit allow-rules for the documented
+controller -> node, node -> object-store, operator -> apiserver, and DNS
+egress flows.  Verify the rules with:
+
+  kubectl get networkpolicy -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+Requires a NetworkPolicy-aware CNI (Cilium, Calico, kube-router, etc.).
+{{- else }}
+NetworkPolicies are DISABLED for this release.  Opt in with:
+
+  helm upgrade {{ .Release.Name }} . --reuse-values --set networkPolicy.enabled=true
+
+When enabled, the chart emits a default-deny ingress + egress baseline plus
+explicit allow-rules for controller -> node, node -> object-store, operator
+-> apiserver, and DNS.  Requires a NetworkPolicy-aware CNI.
+{{- end }}
+
 Full operator guide: docs/development/k8s-deployment.md

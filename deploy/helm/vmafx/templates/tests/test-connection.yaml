@@ -12,9 +12,7 @@ metadata:
 spec:
   restartPolicy: Never
   securityContext:
-    runAsNonRoot: true
-    runAsUser: 65534
-    runAsGroup: 65534
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
   containers:
     - name: wget
       image: busybox:1.36
@@ -25,8 +23,4 @@ spec:
         - --timeout=10
         - "http://{{ include "vmafx.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}/healthz"
       securityContext:
-        allowPrivilegeEscalation: false
-        readOnlyRootFilesystem: true
-        capabilities:
-          drop:
-            - ALL
+        {{- toYaml .Values.securityContext | nindent 8 }}

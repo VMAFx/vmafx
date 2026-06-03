@@ -43457,3 +43457,24 @@ collect_fex_cuda. Resolution rules:
 
 `core/src/feature/cuda/AGENTS.md` — new section "Motion SAD batch fencing":
 keep verbatim on rebase.
+## ADR-0930 — Helm NetworkPolicy + PSS baseline — 2026-05-31
+
+no rebase impact: REASON — every touched file lives entirely under
+`deploy/helm/vmafx/` (a fork-local directory; Netflix upstream ships no
+Helm chart), plus fork-local documentation under `docs/development/`,
+`docs/adr/`, `docs/research/`, `docs/state.md`, `docs/rebase-notes.md`
+(this file), and `changelog.d/added/`.  None of the production C, Go,
+Python, FFmpeg-patch, or Meson surfaces are touched.  Future upstream
+syncs cannot conflict with this change.
+
+Fork-local files:
+- `deploy/helm/vmafx/values.yaml` (UID + seccomp + `networkPolicy` block)
+- `deploy/helm/vmafx/templates/networkpolicy.yaml` (new)
+- `deploy/helm/vmafx/templates/operator-deployment.yaml` (inherit from `.Values`)
+- `deploy/helm/vmafx/templates/tests/test-connection.yaml` (inherit from `.Values`)
+- `deploy/helm/vmafx/templates/NOTES.txt` (PSS / NP hints)
+- `docs/development/k8s-deployment.md` (Pod security + NetworkPolicy sections)
+- `docs/adr/0930-helm-networkpolicy-pss.md` and matching `_index_fragments/` entry
+- `docs/research/0930-helm-networkpolicy-pss.md`
+- `changelog.d/added/helm-networkpolicy-pss.md`
+- `docs/state.md` (closed row)
