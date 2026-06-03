@@ -14,7 +14,8 @@ from a feature's `*_dispatch.c` based on `vmaf_get_cpu_flags_arm()`
 ```text
 feature/arm64/
   <feature>_neon.{c,h}      # NEON path (aarch64 baseline; always available on ARCH_AARCH64)
-  ssimulacra2_sve2.{c,h}    # SVE2 path (T7-38 / ADR-0213) — runtime-gated via HWCAP2_SVE2
+  ssimulacra2_sve2.{c,h}    # SVE2 path (ADR-0213) — runtime-gated via HWCAP2_SVE2
+  moment_sve2.{c,h}         # SVE2 path for float_moment (ADR-0584) — VLA f32→f64 reduction
   ms_ssim_decimate_neon.*   # 9-tap LPF SIMD (one of four byte-identical TUs — see parent AGENTS.md)
 ```
 
@@ -70,10 +71,18 @@ with the matching change to the other halves in the **same PR**:
 The complete invariants live in [../AGENTS.md
 §"Rebase-sensitive invariants"](../AGENTS.md).
 
-## SVE2 invariants (T7-38, ADR-0213)
+## SVE2 invariants (ADR-0213, ADR-0584)
 
-`ssimulacra2_sve2.c` is the first SVE2 consumer in the fork. It is
-**not** a free perf knob:
+`ssimulacra2_sve2.c` and `moment_sve2.c` are the SVE2 consumers in this
+directory. They use different VLA strategies:
+
+- `ssimulacra2_sve2.c` — locked to a fixed 4-lane predicate
+  (`svwhilelt_b32(0, 4)`) for ADR-0161 byte-identity.
+- `moment_sve2.c` — fully VLA: steps by `svcntd()` per iteration,
+  widens f32→f64 under `svwhilelt_b64`. Wider registers give real
+  throughput benefit at Neoverse V2 / Cortex-X4 register widths.
+
+`ssimulacra2_sve2.c` is **not** a free perf knob:
 
 - The kernel is locked to a fixed 4-lane predicate
   (`svwhilelt_b32(0, 4)`) so its arithmetic order matches the NEON
@@ -133,3 +142,5 @@ The ones that carve invariants on this directory specifically:
   SSIMULACRA 2 SIMD ports (NEON + SVE2 + host-path).
 - [ADR-0245](../../../../docs/adr/0245-simd-bitexact-test-harness.md) —
   shared bit-exact test harness.
+- [ADR-0584](../../../../docs/adr/0584-moment-sve2-port.md) —
+  `float_moment` SVE2 VLA f32→f64 port.

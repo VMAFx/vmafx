@@ -43373,3 +43373,16 @@ no rebase impact: REASON — changes are: (1) a new test file
 clarifying comment in `integer_ssim_sycl.cpp` (fork-added GPU kernel), and
 (6) state.md / changelog.d fragment updates. No CPU scalar, no public API,
 no Netflix upstream file is touched.
+
+## perf/arm64-float-moment-sve2 (2026-06-03, ADR-0584)
+
+Rebase note: `core/src/feature/float_moment.c` gains an
+`#if HAVE_SVE2` block that selects `compute_1st_moment_sve2` /
+`compute_2nd_moment_sve2` over the NEON fallback when
+`VMAF_ARM_CPU_FLAG_SVE2` is set.  The scalar default and the NEON
+path are unchanged; SVE2 is purely additive.  `core/src/meson.build`
+gains a new `arm64_moment_sve2_lib` static library inside the existing
+`if is_sve2_supported` block.  `core/test/test_moment_simd.c` gains
+four SVE2 test functions guarded by `#if HAVE_SVE2`.  `docs/backends/arm/overview.md`
+updates the per-feature coverage table.  No upstream Netflix/vmaf file is
+touched; no public C API or CLI flag changes.

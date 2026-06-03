@@ -5,4 +5,4 @@
   accumulates into `svfloat64_t`, matching the f64 precision contract of the
   NEON sibling.  NEON remains the fallback when SVE2 is absent; Apple Silicon
   always uses the NEON path (Darwin SVE2 opt-out, ADR-0419).
-  See [ADR-0461](../docs/adr/0461-moment-sve2-port.md).
+  See [ADR-0584](../docs/adr/0584-moment-sve2-port.md).

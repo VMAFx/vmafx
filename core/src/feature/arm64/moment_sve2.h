@@ -2,7 +2,7 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
- *  SVE2 dispatch for `float_moment`.  See ADR-0461.
+ *  SVE2 dispatch for `float_moment`.  See ADR-0584.
  *
  *  Runtime gate: VMAF_ARM_CPU_FLAG_SVE2 (getauxval(AT_HWCAP2) & HWCAP2_SVE2).
  *  Build gate:   HAVE_SVE2 + -march=armv9-a+sve2.

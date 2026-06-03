@@ -3,7 +3,7 @@
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  aarch64 SVE2 port of compute_1st_moment / compute_2nd_moment for the
- *  float_moment feature extractor (ADR-0461).
+ *  float_moment feature extractor (ADR-0584).
  *
  *  Bit-exactness contract (ADR-0138 / ADR-0179):
  *  Per-row accumulation uses svfloat64_t so every f32 sample is widened to
@@ -30,7 +30,7 @@
  *  Darwin opt-out: ADR-0419.  The runtime gate in arm/cpu.c is
  *  `__linux__`-gated so VMAF_ARM_CPU_FLAG_SVE2 is never set on Apple Silicon
  *  regardless of chip capability.  The meson build gate mirrors
- *  `is_sve2_supported` which is forced false on Darwin.
+ *  `is_sve2_supported` which is forced false on Darwin (ADR-0419).
  */
 
 #include <arm_sve.h>

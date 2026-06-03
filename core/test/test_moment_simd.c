@@ -53,6 +53,10 @@
 #endif
 #if ARCH_AARCH64
 #include "feature/arm64/moment_neon.h"
+#if HAVE_SVE2
+#include "feature/arm64/moment_sve2.h"
+#include "cpu.h"
+#endif
 #endif
 
 #define ALIGN_BYTES 32
@@ -174,6 +178,67 @@ static char *test_neon_tiny(void)
     return check_neon(0xfeedface, 5, 1);
 }
 
+#if HAVE_SVE2
+/* SVE2 parity tests (ADR-0584).
+ * Runtime-skipped when VMAF_ARM_CPU_FLAG_SVE2 is not set so a NEON-only
+ * host passes without executing the SVE2 path. */
+static char *check_sve2(uint32_t seed, int w, int h)
+{
+    if (!(vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_SVE2)) {
+        (void)fprintf(stderr, "  skipping SVE2 moment test: HWCAP2_SVE2 not set\n");
+        return NULL;
+    }
+
+    /* Stride aligned to 4 floats — matches the NEON sibling convention.
+     * The SVE2 path handles any stride via predicated loads. */
+    const int stride_floats = (w + 3) & ~3;
+    const size_t bytes = (size_t)stride_floats * (size_t)h * sizeof(float);
+    const int stride_bytes = stride_floats * (int)sizeof(float);
+
+    float *buf = (float *)simd_test_aligned_malloc(bytes, ALIGN_BYTES);
+    if (!buf) {
+        return "aligned_malloc failed";
+    }
+    simd_test_fill_random_f32(buf, (size_t)stride_floats * (size_t)h, MOMENT_FILL_LO,
+                              MOMENT_FILL_HI, seed);
+
+    double s_scalar = 0.0;
+    double s_sve2 = 0.0;
+    (void)compute_1st_moment(buf, w, h, stride_bytes, &s_scalar);
+    (void)compute_1st_moment_sve2(buf, w, h, stride_bytes, &s_sve2);
+
+    double t_scalar = 0.0;
+    double t_sve2 = 0.0;
+    (void)compute_2nd_moment(buf, w, h, stride_bytes, &t_scalar);
+    (void)compute_2nd_moment_sve2(buf, w, h, stride_bytes, &t_sve2);
+
+    simd_test_aligned_free(buf);
+
+    SIMD_BITEXACT_ASSERT_RELATIVE(s_scalar, s_sve2, MOMENT_REL_TOL,
+                                  "compute_1st_moment_sve2 outside relative tolerance");
+    SIMD_BITEXACT_ASSERT_RELATIVE(t_scalar, t_sve2, MOMENT_REL_TOL,
+                                  "compute_2nd_moment_sve2 outside relative tolerance");
+    return NULL;
+}
+
+static char *test_sve2_seed_a(void)
+{
+    return check_sve2(0xdeadbeefu, TEST_W, TEST_H);
+}
+static char *test_sve2_seed_b(void)
+{
+    return check_sve2(0x12345678u, TEST_W, TEST_H);
+}
+static char *test_sve2_aligned_w(void)
+{
+    return check_sve2(0xabcdef01u, 64, 16);
+}
+static char *test_sve2_tiny(void)
+{
+    return check_sve2(0xfeedface, 5, 1);
+}
+#endif /* HAVE_SVE2 */
+
 #endif /* ARCH_AARCH64 */
 
 char *run_tests(void)
@@ -191,6 +256,12 @@ char *run_tests(void)
     mu_run_test(test_neon_seed_b);
     mu_run_test(test_neon_aligned_w);
     mu_run_test(test_neon_tiny);
+#if HAVE_SVE2
+    mu_run_test(test_sve2_seed_a);
+    mu_run_test(test_sve2_seed_b);
+    mu_run_test(test_sve2_aligned_w);
+    mu_run_test(test_sve2_tiny);
+#endif
 #else
     (void)fprintf(stderr, "skipping: arch lacks moment SIMD\n");
 #endif

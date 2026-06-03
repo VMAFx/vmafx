@@ -14,8 +14,9 @@ The SVE2 path is purely additive: when the build-time probe
 TUs compile alongside the NEON ones and the dispatch table picks
 SVE2 if the runtime probe (`getauxval(AT_HWCAP2) & HWCAP2_SVE2`)
 fires. Otherwise the binary keeps the NEON dispatch entries
-unchanged. SVE2 today covers SSIMULACRA 2 only — see
-[ADR-0213](../../adr/0213-ssimulacra2-sve2.md). Adding more SVE2
+unchanged. SVE2 today covers SSIMULACRA 2 and `float_moment` — see
+[ADR-0213](../../adr/0213-ssimulacra2-sve2.md) and
+[ADR-0584](../../adr/0584-moment-sve2-port.md). Adding more SVE2
 ports follows the same pattern; per-extractor coverage is in the
 table below.
 
@@ -59,6 +60,7 @@ matches the `Backends` column in
 | `adm`          | yes         | no          | matches AVX2 path bit-for-bit                                 |
 | `motion`       | yes         | no          | fixed-point legacy `motion`                                   |
 | `motion_v2`    | yes         | no          | pipelined fused-blur variant                                  |
+| `float_moment` | yes         | yes         | 1st/2nd moment reduction; SVE2 VLA f32→f64 path (ADR-0584)   |
 | `float_motion` | yes         | no          | float-pipeline twin                                           |
 | `float_adm`    | yes         | no          | float-pipeline twin                                           |
 | `float_psnr`   | yes         | no          | per-plane float PSNR                                          |

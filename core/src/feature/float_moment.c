@@ -35,6 +35,9 @@
 
 #if ARCH_AARCH64
 #include "arm64/moment_neon.h"
+#if HAVE_SVE2
+#include "arm64/moment_sve2.h"
+#endif
 #endif
 
 typedef struct MomentState {
@@ -78,6 +81,15 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
             s->moment1 = compute_1st_moment_neon;
             s->moment2 = compute_2nd_moment_neon;
         }
+#if HAVE_SVE2
+        /* SVE2 supersedes NEON when available: VLA f32→f64 widening
+         * avoids the fixed-4-lane bottleneck on Neoverse V2 / Cortex-X4.
+         * ADR-0584. */
+        if (cpu_flags & VMAF_ARM_CPU_FLAG_SVE2) {
+            s->moment1 = compute_1st_moment_sve2;
+            s->moment2 = compute_2nd_moment_sve2;
+        }
+#endif
     }
 #endif
 
