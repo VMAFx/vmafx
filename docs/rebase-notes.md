@@ -44033,3 +44033,14 @@ no rebase impact: adds `--advisory` and `--skip-if-no-baseline` flags to
 `scripts/perf/check-regression.py`, updates the CI workflow step comment and
 flags, and adds `docs/development/perf-gate.md`. No C source, public header,
 Netflix golden assertion, or upstream-mirrored Python file is touched.
+
+---
+
+### test(c): CPU feature extractor coverage push — round 3
+
+**Branch**: test/cpu-extractor-coverage-push
+
+no rebase impact: adds four new test-only `.c` files under `core/test/` and wires them into
+`core/test/meson.build`. No C source, public header, upstream-mirrored Python, or Netflix
+golden-assertion file is touched. The new tests exercise existing extractor paths; no
+new symbols are introduced.

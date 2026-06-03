@@ -588,6 +588,90 @@ test_integer_motion_v2_coverage = executable('test_integer_motion_v2_coverage',
     ] + wave8_cpp23_objects
 )
 
+# Coverage round 3 — integer_ssim.c enable_db / clip_db / 10-bit HBD paths.
+# Uses the same link-recipe as test_integer_psnr_coverage.
+test_ssim_coverage = executable('test_ssim_coverage',
+    ['test.c', 'test_ssim_coverage.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_cpp23_objects
+)
+
+# Coverage round 3 — integer_adm.c end-to-end: default, debug=true,
+# 10-bit HBD, and invalid norm_view_dist returning -EINVAL.
+test_adm_coverage = executable('test_adm_coverage',
+    ['test.c', 'test_adm_coverage.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_cpp23_objects
+)
+
+# Coverage round 3 — psnr_hvs.c: bpc>12 rejection, YUV400P chroma-disable,
+# enable_chroma=false option, and 10-bit HBD path.
+test_psnr_hvs_coverage = executable('test_psnr_hvs_coverage',
+    ['test.c', 'test_psnr_hvs_coverage.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_cpp23_objects
+)
+
+# Coverage round 3 — ssimulacra2.c end-to-end: default 8-bit, identical
+# inputs, 10-bit HBD, and YUV444P full-chroma input.
+test_ssimulacra2_coverage = executable('test_ssimulacra2_coverage',
+    ['test.c', 'test_ssimulacra2_coverage.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_cpp23_objects
+)
+
 # Coverage round 2 — integer_vif.h log2_32 / log2_64 helpers exercised
 # directly (otherwise reached only via the AVX-512 hot path).
 test_integer_vif_log2 = executable('test_integer_vif_log2',
@@ -2257,6 +2341,10 @@ test('test_psnr', test_psnr, suite : ['fast'])
 test('test_integer_psnr_coverage', test_integer_psnr_coverage, suite : ['fast'])
 test('test_integer_motion_coverage', test_integer_motion_coverage, suite : ['fast'])
 test('test_integer_motion_v2_coverage', test_integer_motion_v2_coverage, suite : ['fast'])
+test('test_ssim_coverage', test_ssim_coverage, suite : ['fast'])
+test('test_adm_coverage', test_adm_coverage, suite : ['fast'])
+test('test_psnr_hvs_coverage', test_psnr_hvs_coverage, suite : ['fast'])
+test('test_ssimulacra2_coverage', test_ssimulacra2_coverage, suite : ['fast'])
 test('test_integer_vif_log2', test_integer_vif_log2, suite : ['fast'])
 test('test_iqa_convolve_coverage', test_iqa_convolve_coverage, suite : ['fast'])
 test('test_barten_csf_coverage', test_barten_csf_coverage, suite : ['fast'])
