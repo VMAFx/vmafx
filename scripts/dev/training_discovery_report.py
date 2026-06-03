@@ -27,7 +27,6 @@ class PredictorCard:
     plcc: float
     srocc: float
     rmse: float
-    synthetic: bool
     path: Path
 
     @property
@@ -65,6 +64,11 @@ def load_predictor_cards(repo_root: Path) -> list[PredictorCard]:
     cards: list[PredictorCard] = []
     for path in sorted((repo_root / "model").glob("predictor_*_card.md")):
         text = path.read_text(encoding="utf-8")
+        if "synthetic-stub model" in text:
+            raise ValueError(
+                f"{path.name}: synthetic-stub model cards are not allowed; "
+                "train against a real corpus and regenerate the card."
+            )
         cards.append(
             PredictorCard(
                 codec=_extract_bold_field(text, "Codec adapter"),
@@ -72,7 +76,6 @@ def load_predictor_cards(repo_root: Path) -> list[PredictorCard]:
                 plcc=_extract_metric_table_value(text, "PLCC"),
                 srocc=_extract_metric_table_value(text, "SROCC"),
                 rmse=_extract_metric_table_value(text, "RMSE"),
-                synthetic="synthetic-stub model" in text,
                 path=path.relative_to(repo_root),
             )
         )
@@ -150,9 +153,8 @@ def _saliency_rows(repo_root: Path) -> list[list[str]]:
     return rows
 
 
-def _predictor_rows(cards: list[PredictorCard], *, synthetic: bool) -> list[list[str]]:
-    selected = [card for card in cards if card.synthetic is synthetic]
-    selected.sort(key=lambda card: (card.family, card.codec))
+def _predictor_rows(cards: list[PredictorCard]) -> list[list[str]]:
+    sorted_cards = sorted(cards, key=lambda card: (card.family, card.codec))
     return [
         [
             card.codec,
@@ -162,12 +164,12 @@ def _predictor_rows(cards: list[PredictorCard], *, synthetic: bool) -> list[list
             _fmt(card.rmse),
             str(card.path),
         ]
-        for card in selected
+        for card in sorted_cards
     ]
 
 
 def _qsv_nvenc_delta_rows(cards: list[PredictorCard]) -> list[list[str]]:
-    real_cards = {card.codec: card for card in cards if not card.synthetic}
+    real_cards = {card.codec: card for card in cards}
     rows: list[list[str]] = []
     for codec in ("h264", "hevc", "av1"):
         nvenc = real_cards.get(f"{codec}_nvenc")
@@ -212,7 +214,7 @@ def render_report(repo_root: Path) -> str:
         "",
         _markdown_table(
             ["Codec", "Corpus", "PLCC", "SROCC", "RMSE", "Card"],
-            _predictor_rows(cards, synthetic=False),
+            _predictor_rows(cards),
         ),
         "",
         "## QSV vs NVENC Predictor Delta",
@@ -220,16 +222,6 @@ def render_report(repo_root: Path) -> str:
         _markdown_table(
             ["Codec family", "NVENC PLCC", "QSV PLCC", "Delta", "NVENC RMSE", "QSV RMSE"],
             _qsv_nvenc_delta_rows(cards),
-        ),
-        "",
-        "## Synthetic Predictor Cards",
-        "",
-        "These cards are excluded from discovery claims because their targets are analytical "
-        "fallbacks rather than real held-out corpus measurements.",
-        "",
-        _markdown_table(
-            ["Codec", "Corpus", "PLCC", "SROCC", "RMSE", "Card"],
-            _predictor_rows(cards, synthetic=True),
         ),
         "",
     ]
