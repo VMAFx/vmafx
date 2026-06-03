@@ -7,6 +7,22 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## Research-0760 — Rust crate audit (docs + ADR-0707 correction, 2026-05-29)
+
+No rebase impact on upstream C/Python code.
+
+All files modified are fork-local:
+`docs/research/research-0760-rust-crate-audit.md` (new),
+`changelog.d/added/rust-crate-audit-0760.md` (new),
+`docs/adr/0707-vmafx-rust-pilot-feature.md` (corrected `enable_rust_features`
+  default description from "true" to "false"),
+`docs/rebase-notes.md` (this entry).
+
+Neither `core/meson_options.txt`, `core/src/meson.build`, nor any C/Rust source
+is modified. No Netflix upstream file is touched. No rebase conflict is possible.
+
+---
+
 ## fix/helm-node-deployment-deduplicate (2026-05-30, ADR-0713 / ADR-0719)
 
 **Files touched:**
