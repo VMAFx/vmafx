@@ -1594,6 +1594,19 @@ test_sycl_ms_ssim_parity = executable('test_sycl_ms_ssim_parity',
 test('test_sycl_ms_ssim_parity', test_sycl_ms_ssim_parity,
     suite : ['fast', 'gpu'])
 
+# float_ssim SYCL parity — Research-0985. Tolerance is places=3 (5e-04) to
+# accommodate the CPU/GPU formula difference (L×C×S vs combined) and Arc A380
+# class fp32 accumulation drift. See Research-0985 §3.4.
+test_sycl_float_ssim_parity = executable('test_sycl_float_ssim_parity',
+    ['test.c', 'test_sycl_float_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_float_ssim_parity', test_sycl_float_ssim_parity,
+    suite : ['fast', 'gpu'])
+
 test_sycl_motion_v2_parity = executable('test_sycl_motion_v2_parity',
     ['test.c', 'test_sycl_motion_v2_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

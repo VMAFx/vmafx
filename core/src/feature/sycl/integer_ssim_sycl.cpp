@@ -254,6 +254,16 @@ static void launch_vert_combine(sycl::queue &q, const float *d_ref_mu, const flo
                 const float cmp_var = cmp_sq - cmp_mu * cmp_mu;
                 const float covar = refcmp - ref_mu * cmp_mu;
                 const float mu_xy = ref_mu * cmp_mu;
+                /* Wang et al. (2004) Eq.(13) combined SSIM formula.
+                 * NOTE: this differs from the CPU scalar path (float_ssim.c /
+                 * iqa_ssim), which uses the L×C×S decomposition with
+                 * sigma_comb = sqrt(var_ref * var_cmp) for the contrast term.
+                 * Using 2*covar here instead of 2*sqrt(var_ref*var_cmp) is an
+                 * intentional design choice for GPU kernels (avoids a per-pixel
+                 * sqrt). This produces a systematic divergence of ~2–3e-4 from
+                 * the CPU path at 576×324 on Arc A380 (fp64-less hardware) and
+                 * ~1e-5 on fp64-capable hardware. The CUDA and Vulkan twins use
+                 * the same formula. See Research-0985 §3.2 and ADR-0188. */
                 const float num = (2.0f * mu_xy + e_c1) * (2.0f * covar + e_c2);
                 const float den =
                     (ref_mu * ref_mu + cmp_mu * cmp_mu + e_c1) * (ref_var + cmp_var + e_c2);

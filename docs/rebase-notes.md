@@ -3367,7 +3367,6 @@ cover several PRs in one workstream; cross-link from the ID heading.
   meson test -C build 2>&1 | grep -E "Ok|Fail"
   # Confirm 0 failures
 
-
 ### perf/cambi-sycl-event-chain-2026-05-16 — CAMBI SYCL GPU-to-GPU event chains (SY-1)
 
 - **Touches**: `core/src/feature/sycl/integer_cambi_sycl.cpp`,
@@ -14786,7 +14785,6 @@ cover several PRs in one workstream; cross-link from the ID heading.
   cd "$(git -C . rev-parse --show-toplevel)/.claude/worktrees/agent-<id>" && \
     bash $OLDPWD/scripts/ci/check-agent-worktree-drift.sh ; echo "exit=$?"
 
-
 ### 0320 — `psnr_cuda` chroma extension (ADR-0351)
 
 - **Touches**:
@@ -14825,7 +14823,6 @@ cover several PRs in one workstream; cross-link from the ID heading.
     --distorted ../testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 --pixel-format 420 --bitdepth 8 \
     --feature psnr --backend cuda --places 4
-
 
 ## ADR-0337 — motion_v2 public option surface duplication (2026-05-09)
 
@@ -36039,7 +36036,6 @@ referencing `ffmpeg-patches/0001…0009`) are now machine-defended.
   bash -n ai/scripts/run_predictor_v2_training.sh
   python ai/scripts/train_predictor_v2_realcorpus.py --synthetic-smoke --report-out /tmp/p2.json
 
-
 ## ADR-0332 — OpenVINO NPU EP wired into tiny-AI dispatch (2026-05-08)
 
 - **Touches**: `core/include/libvmaf/dnn.h`, `core/src/dnn/ort_backend.{c,h}`, `core/tools/vmaf.c`, `core/tools/cli_parse.{c,h}`, `core/test/dnn/test_ep_fp16.c`, `core/test/dnn/test_cli.sh`, `docs/ai/inference.md`, `docs/usage/cli.md`, `docs/development/oneapi-install.md`, `docs/adr/0332-openvino-npu-ep-wiring.md` (new), `docs/adr/_index_fragments/0332-openvino-npu-ep-wiring.md` (new), `changelog.d/added/openvino-npu-ep.md` (new). The libvmaf `dnn/` and tools surfaces are fork-local additions; upstream Netflix/vmaf has no tiny-AI / ONNX Runtime dispatch layer, so conflict probability on `dnn/` is zero.
@@ -36417,7 +36413,6 @@ but the risk is negligible (Netflix/vmaf does not carry an `ai/` subtree).
   python -m pytest ai/tests/test_hardware_caps.py -v   # must report 23 passed
   python ai/scripts/hardware_caps_loader.py            # JSON dump, 6+ rows
 
-
 ## ADR-0367 — LSVQ corpus ingestion (2026-05-08)
 
 - **Touches**: `ai/scripts/lsvq_to_corpus_jsonl.py` (new),
@@ -36453,8 +36448,6 @@ but the risk is negligible (Netflix/vmaf does not carry an `ai/` subtree).
 
   ```bash
   cd tools/vmaf-tune && python -m pytest tests/test_sidecar.py -v
-
-
 
 ## ADR-0368 — YouTube UGC corpus ingestion (2026-05-08)
 
@@ -36504,8 +36497,6 @@ but the risk is negligible (Netflix/vmaf does not carry an `ai/` subtree).
 
   pytest ai/tests/test_waterloo_ivc.py -v
 
-
-
 ## ADR-0325 — predictor stub-models policy (2026-05-08)
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/predictor_train.py` (new),
@@ -36537,8 +36528,6 @@ but the risk is negligible (Netflix/vmaf does not carry an `ai/` subtree).
   from vmaftune.predictor_train import main
   sys.exit(main(['--output-dir', '/tmp/predictor-rebase', '--epochs', '20']))
   "
-
-
 
 ## ADR-0325 — vmaf-tune Phase B target-VMAF bisect (2026-05-08)
 
@@ -36573,7 +36562,6 @@ but the risk is negligible (Netflix/vmaf does not carry an `ai/` subtree).
   ```bash
   python3 -m pytest tools/vmaf-tune/tests/test_bisect.py -v
   python3 -m pytest tools/vmaf-tune/tests/test_compare.py -v
-
 
   ```
 
@@ -36676,7 +36664,6 @@ build-system paths changed; no new symbols were added.
          python/test/feature_extractor_test.py python/test/result_test.py \
          --collect-only -q   # 173 tests collected, no errors
 
-
 ## ADR-0318 — `fr_regressor_v2` ensemble retrain harness fix (2026-05-06)
 
 - **Touched files**:
@@ -36758,7 +36745,6 @@ build-system paths changed; no new symbols were added.
     assert v['verdict'] == 'PROMOTE'; \
     assert v['gate']['passed'] is True; \
     print('OK: verdict still PROMOTE')"
-
 
   ```
 
@@ -38884,7 +38870,6 @@ python3 scripts/ci/cross_backend_parity_gate.py \
 python3 scripts/ci/cross_backend_parity_gate.py --features adm --backends cpu cuda --places 4
 
 ```text
-
 
 ---
 
@@ -43338,3 +43323,12 @@ through stub gaps, dropped dead Optional comparisons) does not change runtime
 behaviour — all 12 fixes are pure type-checker compliance. The audit's
 companion file `pyrightconfig.audit.json` is intentionally gitignored so this
 PR doesn't introduce a CI gate before the long-tail cleanup is done.
+
+## sycl-float-ssim-ssimulacra2-parity-research (2026-06-03, ADR-0985)
+
+no rebase impact: REASON — changes are: (1) a new test file
+`core/test/test_sycl_float_ssim_parity.c` (fork-added, no upstream equivalent),
+(2) a meson.build test entry, (3) a research document, (4) an ADR, (5) a
+clarifying comment in `integer_ssim_sycl.cpp` (fork-added GPU kernel), and
+(6) state.md / changelog.d fragment updates. No CPU scalar, no public API,
+no Netflix upstream file is touched.
