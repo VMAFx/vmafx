@@ -2192,6 +2192,14 @@ Rebase-sensitive fork invariants:
 - The status column remains row-local and human-readable (`ok`,
   `skipped-existing`, `missing-source`, `missing-geometry`, `decode-failed`,
   `model-failed`) so large local sweeps can be audited without scraping stderr.
+- `SaliencyMaterializeConfig.default_width` / `default_height` (added PR fixing
+  the Netflix refresh materializer): fallback geometry for raw YUV corpora without
+  container headers. Netflix corpus YUVs are always 1920×1080 at rest.
+- For `.yuv` sources, the ffmpeg decode prepends `-f rawvideo -video_size WxH
+  -pix_fmt yuv420p` before `-i`; do not remove this for raw-YUV support.
+- In-process per-file saliency cache in `materialize_rows()` avoids redundant
+  decodes for per-frame tables; the cache is scoped to one `materialize_rows()`
+  call and does not persist across batch table boundaries.
 
 Smoke:
 `PYTHONPATH=. .venv/bin/python -m pytest ai/tests/test_materialize_saliency_features.py -q`

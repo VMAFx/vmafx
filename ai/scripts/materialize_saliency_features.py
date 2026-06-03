@@ -62,6 +62,13 @@ class SaliencyMaterializeConfig:
     model_id_column: str = "saliency_model_id"
     aggregator_column: str = "saliency_aggregator"
     ema_alpha_column: str = "saliency_ema_alpha"
+    # Fallback dimensions used when the row has no width/height columns and
+    # ffprobe cannot determine them (e.g. raw YUV files without a container).
+    # The Netflix corpus ships all distorted YUVs as 1920x1080 regardless of
+    # the encode-ladder height in the filename; set default_width=1920 and
+    # default_height=1080 in the manifest to skip per-row ffprobe probing.
+    default_width: int = 0
+    default_height: int = 0
 
 
 @dataclass(frozen=True)
@@ -121,11 +128,24 @@ def materialize_rows(
     runner: SubprocessRunner = subprocess.run,
     saliency_fn: SaliencyFn | None = None,
 ) -> tuple[list[dict[str, Any]], MaterializeSummary]:
-    """Return rows enriched with saliency aggregates plus a summary."""
+    """Return rows enriched with saliency aggregates plus a summary.
+
+    When multiple rows reference the same source file (common in per-frame
+    feature tables where each row represents one frame of a clip), saliency
+    is computed once per unique resolved path and cached for the duration of
+    the call. This avoids redundant decoding when a table has many rows per
+    clip (e.g. the Netflix refresh parquet has ~160 per-frame rows per clip).
+    """
     out: list[dict[str, Any]] = []
     ok = 0
     skipped = 0
     failed = 0
+    missing_source_count = 0
+    missing_col_warned = False
+    # In-process cache: resolved path string -> (mean, var) | None
+    # None means a previous attempt failed; we propagate the failure for all
+    # rows sharing the same source rather than retrying on every row.
+    _saliency_cache: dict[str, tuple[float, float] | None] = {}
     for row in rows:
         enriched = dict(row)
         if _has_existing_saliency(enriched) and not cfg.overwrite:
@@ -133,9 +153,45 @@ def materialize_rows(
             _set_status(enriched, cfg, "skipped-existing")
             out.append(enriched)
             continue
+        # Emit a one-time warning when the configured path column is absent
+        # from the first row — this almost always means a misconfigured
+        # path_column in the manifest (e.g. "src" when the table uses
+        # "dis_basename").
+        if not missing_col_warned and cfg.path_column not in enriched:
+            available = sorted(enriched.keys())
+            print(
+                f"saliency materialize: WARNING — path_column={cfg.path_column!r} not found in "
+                f"row; available columns: {available}. "
+                f"Set path_column to the correct column name in your manifest.",
+                file=sys.stderr,
+            )
+            missing_col_warned = True
+        # Resolve the source path once to build a cache key.
+        source = _resolve_source(enriched, cfg)
+        cache_key = str(source) if source is not None else ""
+        if cache_key and cache_key in _saliency_cache:
+            cached = _saliency_cache[cache_key]
+            if cached is None:
+                # Previous attempt for this file failed; propagate the same
+                # failure status without re-running the expensive decode.
+                failed += 1
+                out.append(enriched)
+                continue
+            mean, var = cached
+            enriched["saliency_mean"] = mean
+            enriched["saliency_var"] = var
+            _set_output_metadata(enriched, cfg)
+            _set_status(enriched, cfg, "ok")
+            ok += 1
+            out.append(enriched)
+            continue
         result = compute_row_saliency(enriched, cfg, runner=runner, saliency_fn=saliency_fn)
+        if cache_key:
+            _saliency_cache[cache_key] = result
         if result is None:
             failed += 1
+            if enriched.get(cfg.status_column) == "missing-source":
+                missing_source_count += 1
             out.append(enriched)
             continue
         mean, var = result
@@ -145,6 +201,16 @@ def materialize_rows(
         _set_status(enriched, cfg, "ok")
         ok += 1
         out.append(enriched)
+    # Emit a single summary warning when all failures are missing-source —
+    # this is the fingerprint of a wrong path_column or missing root config.
+    if failed > 0 and missing_source_count == failed:
+        print(
+            f"saliency materialize: WARNING — all {failed} failures have status "
+            f"'missing-source'. Check that path_column={cfg.path_column!r} names a "
+            f"column containing valid file paths and that root={cfg.root!r} is set "
+            f"correctly for relative paths.",
+            file=sys.stderr,
+        )
     return out, MaterializeSummary(total=len(out), ok=ok, skipped_existing=skipped, failed=failed)
 
 
@@ -171,12 +237,25 @@ def compute_row_saliency(
     frames = max(1, int(cfg.max_frames))
     with tempfile.TemporaryDirectory(prefix="vmaf-saliency-features-") as tmp:
         raw_path = Path(tmp) / "clip.yuv"
+        # Raw YUV files (.yuv) have no container and need explicit format
+        # flags before the -i argument so ffmpeg can decode them correctly.
+        extra_input_flags: list[str] = []
+        if source.suffix.lower() == ".yuv":
+            extra_input_flags = [
+                "-f",
+                "rawvideo",
+                "-video_size",
+                f"{width}x{height}",
+                "-pix_fmt",
+                "yuv420p",
+            ]
         cmd = [
             cfg.ffmpeg_bin,
             "-hide_banner",
             "-loglevel",
             "error",
             "-y",
+            *extra_input_flags,
             "-i",
             str(source),
             "-frames:v",
@@ -257,7 +336,15 @@ def _resolve_source(row: dict[str, Any], cfg: SaliencyMaterializeConfig) -> Path
 def _row_geometry(row: dict[str, Any], cfg: SaliencyMaterializeConfig) -> tuple[int, int]:
     width = _finite_float(row.get(cfg.width_column))
     height = _finite_float(row.get(cfg.height_column))
-    return (int(width or 0), int(height or 0))
+    w = int(width or 0)
+    h = int(height or 0)
+    # Fall back to the config-level defaults when the row has no geometry columns
+    # (e.g. raw-YUV corpora where width/height were not written to the feature table).
+    if w <= 0 and cfg.default_width > 0:
+        w = cfg.default_width
+    if h <= 0 and cfg.default_height > 0:
+        h = cfg.default_height
+    return (w, h)
 
 
 def _probe_geometry(
@@ -371,6 +458,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="saliency_ema_alpha",
         help="Output metadata column for EMA alpha; pass empty to omit.",
     )
+    parser.add_argument(
+        "--default-width",
+        type=int,
+        default=0,
+        help=(
+            "Fallback frame width used when the row has no width column and ffprobe "
+            "cannot determine it (e.g. raw YUV corpora). 0 = no fallback."
+        ),
+    )
+    parser.add_argument(
+        "--default-height",
+        type=int,
+        default=0,
+        help=(
+            "Fallback frame height used when the row has no height column and ffprobe "
+            "cannot determine it (e.g. raw YUV corpora). 0 = no fallback."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -395,6 +500,8 @@ def main(argv: list[str] | None = None) -> int:
         model_id_column=args.model_id_column,
         aggregator_column=args.aggregator_column,
         ema_alpha_column=args.ema_alpha_column,
+        default_width=args.default_width,
+        default_height=args.default_height,
     )
     rows = read_table(args.input)
     enriched, summary = materialize_rows(rows, cfg)

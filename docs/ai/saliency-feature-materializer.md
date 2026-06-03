@@ -52,9 +52,24 @@ Default input columns:
 
 | Column | Meaning |
 | --- | --- |
-| `src` | Absolute source path, or a path relative to `--root`. |
-| `width` | Source width in pixels. Missing or invalid values fall back to ffprobe. |
-| `height` | Source height in pixels. Missing or invalid values fall back to ffprobe. |
+| `src` | Absolute source path, or a path relative to `--root`. Override with `--path-column`. |
+| `width` | Source width in pixels. Missing or invalid values fall back to ffprobe, then to `--default-width`. |
+| `height` | Source height in pixels. Missing or invalid values fall back to ffprobe, then to `--default-height`. |
+
+**Raw YUV corpora** (`*.yuv`) need two extra flags to decode correctly:
+
+- `--default-width` / `--default-height`: used when the feature table has no
+  geometry columns and ffprobe cannot probe raw YUV files. For the Netflix
+  Public corpus all distorted files are stored at their reference resolution
+  (1920×1080) regardless of the encode-ladder height in the filename; pass
+  `--default-width 1920 --default-height 1080`.
+- When the source extension is `.yuv`, the materializer automatically prepends
+  `-f rawvideo -video_size WxH -pix_fmt yuv420p` before `-i` so ffmpeg can
+  decode the raw bitstream.
+
+**Per-frame tables** (e.g. the Netflix refresh parquet — one row per frame per
+clip) are handled efficiently: saliency is computed once per unique source file
+and re-used for all rows that reference the same file, avoiding redundant decodes.
 
 Output columns:
 
@@ -96,7 +111,7 @@ is stored away from the run directory.
 ```json
 {
   "defaults": {
-    "model_id": "saliency_student_v1",
+    "model_id": "saliency_student_v2",
     "temporal_aggregator": "ema",
     "ema_alpha": 0.6,
     "max_frames": 8,
@@ -114,10 +129,26 @@ is stored away from the run directory.
       "id": "konvid",
       "input": "runs/full_features_konvid_refresh_20260520.parquet",
       "output": "runs/full_features_konvid_refresh_20260520.saliency.parquet"
+    },
+    {
+      "id": "netflix",
+      "input": "runs/full_features_netflix_refresh_20260520.parquet",
+      "output": "runs/full_features_netflix_refresh_20260520.saliency.parquet",
+      "path_column": "dis_basename",
+      "root": ".corpus/netflix/dis",
+      "default_width": 1920,
+      "default_height": 1080
     }
   ]
 }
 ```
+
+**Netflix corpus note**: The Netflix refresh parquet uses `dis_basename`
+(not `src`) as the path column, and its distorted YUVs live under
+`.corpus/netflix/dis/`. All files are 1920×1080 raw YUV regardless of the
+encode-ladder height in the filename, so `default_width: 1920` and
+`default_height: 1080` must be set. The materializer caches saliency per
+unique file, processing each of the 70 unique clips once instead of ~160 times.
 
 ```bash
 PYTHONPATH=. .venv/bin/python ai/scripts/batch_materialize_saliency_features.py \

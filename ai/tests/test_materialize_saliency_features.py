@@ -196,6 +196,120 @@ def test_main_writes_audit_json_with_run_provenance(tmp_path: Path) -> None:
     assert provenance["outputs"]["output"] == str(output_path)
 
 
+def test_materialize_rows_default_geometry_used_when_row_has_none(tmp_path: Path) -> None:
+    """default_width / default_height are used when the row has no geometry columns."""
+    module = _load_module()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"not a real mp4")
+
+    def _geometry_assert_saliency_fn(
+        raw_path: Path,
+        width: int,
+        height: int,
+        **_: Any,
+    ) -> np.ndarray:
+        assert (width, height) == (320, 240), f"expected 320x240, got {width}x{height}"
+        return np.zeros((height, width), dtype=np.float32)
+
+    cfg = module.SaliencyMaterializeConfig(
+        ffmpeg_bin="ffmpeg-test",
+        ffprobe_bin="ffprobe-test",
+        # Row will have no width/height columns; these should be used as fallback.
+        default_width=320,
+        default_height=240,
+        max_frames=1,
+        frame_samples=1,
+    )
+
+    enriched, summary = module.materialize_rows(
+        [{"src": str(source)}],
+        cfg,
+        runner=_runner,
+        saliency_fn=_geometry_assert_saliency_fn,
+    )
+
+    assert summary.ok == 1, f"expected ok=1 but got summary={summary}"
+    assert enriched[0]["saliency_status"] == "ok"
+
+
+def test_materialize_rows_yuv_input_emits_rawvideo_flags(tmp_path: Path) -> None:
+    """For .yuv sources, ffmpeg must receive raw-video format flags before -i."""
+    module = _load_module()
+    source = tmp_path / "clip.yuv"
+    source.write_bytes(b"raw yuv data")
+    captured_cmds: list[list[str]] = []
+
+    def _capturing_runner(cmd: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        captured_cmds.append(cmd)
+        Path(cmd[-1]).write_bytes(b"\x10" * (4 * 4 * 3 // 2))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    cfg = module.SaliencyMaterializeConfig(
+        ffmpeg_bin="ffmpeg",
+        default_width=4,
+        default_height=4,
+        max_frames=1,
+        frame_samples=1,
+    )
+
+    def _stub_saliency(raw_path: Path, w: int, h: int, **_: Any) -> np.ndarray:
+        return np.zeros((h, w), dtype=np.float32)
+
+    module.materialize_rows(
+        [{"src": str(source)}],
+        cfg,
+        runner=_capturing_runner,
+        saliency_fn=_stub_saliency,
+    )
+
+    assert len(captured_cmds) == 1, "expected exactly one ffmpeg call"
+    cmd = captured_cmds[0]
+    # Raw-video input flags must appear before -i.
+    i_idx = cmd.index("-i")
+    pre_i = cmd[:i_idx]
+    assert "-f" in pre_i, f"expected -f rawvideo flag before -i; got cmd={cmd}"
+    f_idx = pre_i.index("-f")
+    assert pre_i[f_idx + 1] == "rawvideo", "expected rawvideo format"
+    assert "-video_size" in pre_i, f"expected -video_size before -i; got cmd={cmd}"
+    vs_idx = pre_i.index("-video_size")
+    assert pre_i[vs_idx + 1] == "4x4", f"expected video_size=4x4; got {pre_i[vs_idx + 1]}"
+
+
+def test_materialize_rows_caches_per_file(tmp_path: Path) -> None:
+    """Saliency is computed once per unique source path, not once per row."""
+    module = _load_module()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"not a real mp4")
+    call_count = 0
+
+    def _counting_saliency_fn(raw_path: Path, w: int, h: int, **_: Any) -> np.ndarray:
+        nonlocal call_count
+        call_count += 1
+        return np.full((h, w), 0.4, dtype=np.float32)
+
+    cfg = module.SaliencyMaterializeConfig(
+        ffmpeg_bin="ffmpeg-test",
+        ffprobe_bin="ffprobe-test",
+        max_frames=1,
+        frame_samples=1,
+    )
+
+    # Three rows all pointing to the same source file.
+    rows = [
+        {"src": str(source), "width": 4, "height": 4},
+        {"src": str(source), "width": 4, "height": 4},
+        {"src": str(source), "width": 4, "height": 4},
+    ]
+    enriched, summary = module.materialize_rows(
+        rows, cfg, runner=_runner, saliency_fn=_counting_saliency_fn
+    )
+
+    assert summary.ok == 3
+    assert call_count == 1, f"expected saliency computed once; got {call_count} calls"
+    for row in enriched:
+        assert row["saliency_mean"] == pytest.approx(0.4)
+
+
 def test_main_records_temporal_config_in_audit_json(tmp_path: Path) -> None:
     module = _load_module()
     input_path = tmp_path / "features.jsonl"
