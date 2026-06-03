@@ -19,12 +19,13 @@
 #ifndef __VMAF_SRC_REF_H__
 #define __VMAF_SRC_REF_H__
 
-/* MSVC's <stdatomic.h> in C++ mode (icpx-cl on Windows) doesn't
- * surface atomic_int in the global namespace; only std::atomic_int.
- * gcc/clang on Linux/macOS surface both as a GNU extension. Bridge
- * the gap on MSVC C++ only — C TUs and non-MSVC C++ keep the existing
- * <stdatomic.h> path so ABI is unchanged on every working platform. */
-#if defined(__cplusplus) && defined(_MSC_VER)
+/* In C++ mode, mixing GCC 14 system headers with Clang-18 causes a
+ * typedef conflict: GCC 14's stdatomic.h wrapper includes <atomic>
+ * (giving atomic<int> as atomic_int), then Clang-18's own stdatomic.h
+ * fires and tries to typedef _Atomic(int) as atomic_int — a clash.
+ * MSVC C++ never exposed atomic_int in the global namespace at all.
+ * Use <atomic> + using-declaration in all C++ TUs to avoid the conflict. */
+#if defined(__cplusplus)
 #include <atomic>
 using std::atomic_int;
 #else

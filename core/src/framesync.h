@@ -20,7 +20,14 @@
 #define __VMAF_FRAME_SYNC_H__
 
 #include <pthread.h>
+/* In C++ translation units <stdatomic.h> conflicts with GCC 14 + Clang-18:
+ * GCC 14's C++ stdatomic.h wrapper includes <atomic>, then Clang's own
+ * stdatomic.h retypedefs atomic_int as _Atomic(int) which conflicts with
+ * the C++ atomic<int> already in scope.  framesync.h uses no atomic_*
+ * types in its declarations — the include here is vestigial. */
+#if !defined(__cplusplus)
 #include <stdatomic.h>
+#endif
 #include <stdint.h>
 #include <stdlib.h>
 #include "libvmaf/libvmaf.h"

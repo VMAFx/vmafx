@@ -1,6 +1,21 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/tsan-framesync-stdatomic-cxx (2026-06-04, ADR-0999)
+
+**Files touched:**
+`core/src/framesync.h`, `core/src/ref.h`
+
+**Rebase impact:** None. Both files are upstream-mirror headers touched only
+in the preprocessor guard section; no function signatures or struct members
+are changed. Upstream Netflix/vmaf does not compile `feature_extractor.cpp` as
+C++ (they use a C-only build), so this guard addition will not conflict with
+any upstream cherry-pick. `ref.h` guard widening from `_MSC_VER` to all C++
+is backward-compatible: non-MSVC C compilers are unchanged (`#if defined(__cplusplus)`
+is false in C mode).
+
+---
+
 ## port/upstream-speed-chroma-simd-30f472b14 (2026-06-03, upstream 30f472b14)
 
 **Files touched:**
