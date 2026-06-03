@@ -1,6 +1,28 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat(vmaf-tune): ADR-0498 follow-up #7 — encoder stats, x264 detection, backend dispatch, codec-list parser
+
+**Files touched:**
+`tools/vmaf-tune/src/vmaftune/encode.py`,
+`tools/vmaf-tune/src/vmaftune/fast.py`,
+`tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py`,
+`tools/vmaf-tune/tests/test_encode_dispatcher_per_adapter.py`,
+`tools/vmaf-tune/tests/test_adr_0498_followup7.py`
+
+**Rebase impact:** None. All changed files are fork-local to
+`tools/vmaf-tune/`; no upstream Netflix/vmaf files are touched.
+The `_VERSION_PROBE_PATTERNS` dict is additive (new keys only).
+The `parse_available_codecs` function is new; no existing symbol
+is renamed or removed. The `_build_production_sample_extractor`
+signature change (new `backend=None` kwarg) is backward-compatible.
+The `test_encode_dispatcher_per_adapter.py` fix (capture first call
+only) resolves a test fragility introduced by the probe-cache
+expansion; no merge conflict expected against Netflix upstream
+since that test is fork-added.
+
+---
+
 ## fix/cuda-duplicate-csf-r-definitions (2026-06-03)
 
 **Files touched:**

@@ -244,11 +244,17 @@ def test_run_encode_passes_codec_correct_argv_to_subprocess(
     captured: dict[str, list[str]] = {}
 
     def fake_runner(cmd: list[str], capture_output: bool, text: bool, check: bool) -> Any:
-        captured["cmd"] = list(cmd)
+        # Capture only the first call — the actual encode argv. The
+        # encoder-version probe (``ffmpeg -version``) may fire as a second
+        # call for codecs in ``_VERSION_PROBE_PATTERNS`` (ADR-0498 follow-
+        # up #7), but we only care about the encode argv here.
+        if "cmd" not in captured:
+            captured["cmd"] = list(cmd)
         # Touch the output so run_encode's size measurement returns >0.
-        out = Path(cmd[-1])
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"\x00")
+        if cmd[-1] not in ("-version", "null"):
+            out = Path(cmd[-1])
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"\x00")
         return type("R", (), {"returncode": 0, "stdout": "", "stderr": "ffmpeg version 7.0\n"})()
 
     out_path = tmp_path / "out.mp4"

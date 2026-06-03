@@ -1039,6 +1039,26 @@ scripts for those local corpora.
   `"<encoder>-enabled"` when the encoder is compiled in; an empty
   string lets the caller keep its `"unknown"` placeholder so
   existing tests that pin that exact value still pass.
+  `_VERSION_PROBE_PATTERNS` now covers `libx264`, `libsvtav1`,
+  `libx265`, and `libvpx-vp9`; tests for any of these codecs that
+  use a fake runner and don't return `--enable-*` text in stdout
+  must capture only the first subprocess call (the encode argv),
+  not the last, since the probe fires a second `ffmpeg -version`
+  call when the encoder banner is absent from the encode stderr.
+  `encode.probe_encoder_info(ffmpeg_bin, encoder)` returns
+  `EncoderInfo(encoder, codec_detected, version_label)` — callers
+  should use this rather than re-parsing the version string.
+- **`fast._build_production_sample_extractor` accepts a `backend` kwarg
+  (ADR-0498 follow-up #7).** Pass `backend=select_backend(...)` so
+  TPE proxy trials score on GPU rather than always defaulting to CPU.
+  `_build_prod_predictor` and `fast_recommend` forward the selected
+  backend automatically; test seams that inject a custom
+  `sample_extractor` callable are unaffected.
+- **`codec_adapters.parse_available_codecs(stdout, *, restrict_to_known)`
+  (ADR-0498 follow-up #7).** Parses `ffmpeg -hide_banner -encoders`
+  output into a frozenset of codec names. Set `restrict_to_known=False`
+  to get the full ffmpeg encoder list; the default restricts to the
+  adapter registry so callers can intersect with `known_codecs()`.
 - **`_maybe_decode_reference` scales the reference YUV to the rung
   target on cross-resolution sweeps (ADR-0501, Bug #V4-B).** When
   `CorpusJob.src_width / src_height` differs from `width / height`,
