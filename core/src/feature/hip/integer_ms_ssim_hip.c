@@ -128,6 +128,10 @@ typedef struct MsSsimStateHip {
     void *d_ref0;
     void *d_cmp0;
 
+    /* Pinned host float buffers for picture_copy → H2D upload (hipHostMalloc). */
+    float *h_ref;
+    float *h_cmp;
+
     /* SSIM intermediates sized for scale 0 (hipMalloc). */
     void *d_ref_mu;
     void *d_cmp_mu;
@@ -262,13 +266,21 @@ static int ms_ssim_hip_bufs_alloc(MsSsimStateHip *s)
     const size_t horiz_max = (size_t)s->scale_w_horiz[0] * s->scale_h_horiz[0] * sizeof(float);
 
     hipError_t hip_rc;
-    /* Level 0 float staging buffers. */
+    /* Level 0 float staging buffers (device). */
     hip_rc = hipMalloc(&s->d_ref0, level0_bytes);
     if (hip_rc != hipSuccess)
         return ms_ssim_hip_rc(hip_rc);
     hip_rc = hipMalloc(&s->d_cmp0, level0_bytes);
     if (hip_rc != hipSuccess)
         goto fail_cmp0;
+
+    /* Pinned host float buffers for picture_copy → H2D upload. */
+    hip_rc = hipHostMalloc((void **)&s->h_ref, level0_bytes, hipHostMallocDefault);
+    if (hip_rc != hipSuccess)
+        goto fail_h_ref;
+    hip_rc = hipHostMalloc((void **)&s->h_cmp, level0_bytes, hipHostMallocDefault);
+    if (hip_rc != hipSuccess)
+        goto fail_h_cmp;
 
     /* Pyramid levels 0..4 for ref and cmp. */
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
@@ -403,6 +415,17 @@ fail_pyramid:
             s->pyramid_ref[i] = NULL;
         }
     }
+    /* Falls through to free h_cmp, h_ref, d_cmp0, d_ref0. */
+    if (s->h_cmp) {
+        (void)hipHostFree(s->h_cmp);
+        s->h_cmp = NULL;
+    }
+fail_h_cmp:
+    if (s->h_ref) {
+        (void)hipHostFree(s->h_ref);
+        s->h_ref = NULL;
+    }
+fail_h_ref:
     (void)hipFree(s->d_cmp0);
     s->d_cmp0 = NULL;
 fail_cmp0:
@@ -468,6 +491,14 @@ static void ms_ssim_hip_bufs_free(MsSsimStateHip *s)
         (void)hipFree(s->d_ref_mu);
         s->d_ref_mu = NULL;
     }
+    if (s->h_cmp) {
+        (void)hipHostFree(s->h_cmp);
+        s->h_cmp = NULL;
+    }
+    if (s->h_ref) {
+        (void)hipHostFree(s->h_ref);
+        s->h_ref = NULL;
+    }
     if (s->d_cmp0) {
         (void)hipFree(s->d_cmp0);
         s->d_cmp0 = NULL;
@@ -478,16 +509,27 @@ static void ms_ssim_hip_bufs_free(MsSsimStateHip *s)
     }
 }
 
-/* Upload normalised uint picture to d_dst float buffer. */
+/* Normalise a uint VmafPicture luma plane into a pinned float host buffer,
+ * then upload asynchronously to the device.
+ *
+ * Mirrors the CUDA path in integer_ms_ssim_cuda.c: picture_copy() converts
+ * uint samples → float [0, 255], then hipMemcpyAsync uploads the contiguous
+ * float buffer.  Commit 681ab99451 originally called hipMemcpy2DAsync with
+ * dpitch = width * bpc_bytes directly into the float device buffer — that
+ * wrote only width*height raw uint bytes into a width*height*sizeof(float)
+ * allocation and left the remaining 3/4 uninitialized, producing garbage in
+ * the decimate + horiz kernels. */
 static int ms_ssim_hip_upload_plane(MsSsimStateHip *s, hipStream_t str, const VmafPicture *pic,
-                                    void *d_dst)
+                                    float *h_staging, void *d_dst)
 {
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const size_t row_w = (size_t)s->width * bpp;
+    /* picture_copy: uint → float [0, 255] into the pinned host staging buffer.
+     * Stride is width * sizeof(float) (contiguous, no padding). */
+    picture_copy(h_staging, (ptrdiff_t)((size_t)s->width * sizeof(float)), (VmafPicture *)pic, 0,
+                 s->bpc, 0);
 
-    /* HtoD copy (pitched source → contiguous device). */
-    hipError_t hip_rc = hipMemcpy2DAsync(d_dst, row_w, pic->data[0], (size_t)pic->stride[0], row_w,
-                                         (size_t)s->height, hipMemcpyHostToDevice, str);
+    /* Async H2D upload of the normalised float plane. */
+    const size_t float_bytes = (size_t)s->width * s->height * sizeof(float);
+    hipError_t hip_rc = hipMemcpyAsync(d_dst, h_staging, float_bytes, hipMemcpyHostToDevice, str);
     return ms_ssim_hip_rc(hip_rc);
 }
 
@@ -678,12 +720,15 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     const hipStream_t str = (hipStream_t)s->lc.str;
 
     /* Normalise + upload both luma planes to float device buffers.
-     * Pictures arrive as CPU VmafPictures (VMAF_FEATURE_EXTRACTOR_HIP
-     * flag cleared, T7-10b posture). */
-    int err = ms_ssim_hip_upload_plane(s, str, ref_pic, s->d_ref0);
+     * picture_copy() converts uint → float [0,255] into the pinned
+     * host staging buffers (h_ref / h_cmp), then hipMemcpyAsync
+     * uploads them to d_ref0 / d_cmp0.  Pictures arrive as CPU
+     * VmafPictures (VMAF_FEATURE_EXTRACTOR_HIP flag cleared, T7-10b
+     * posture). */
+    int err = ms_ssim_hip_upload_plane(s, str, ref_pic, s->h_ref, s->d_ref0);
     if (err != 0)
         return err;
-    err = ms_ssim_hip_upload_plane(s, str, dist_pic, s->d_cmp0);
+    err = ms_ssim_hip_upload_plane(s, str, dist_pic, s->h_cmp, s->d_cmp0);
     if (err != 0)
         return err;
 

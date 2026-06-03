@@ -43501,3 +43501,14 @@ Fork-local files:
 - `docs/research/0930-helm-networkpolicy-pss.md`
 - `changelog.d/added/helm-networkpolicy-pss.md`
 - `docs/state.md` (closed row)
+
+## fix(hip): integer_ms_ssim_hip picture_copy normalization — 2026-06-03
+
+no rebase impact: REASON — changes touch only
+`core/src/feature/hip/integer_ms_ssim_hip.c` (fork-only HIP backend,
+no upstream equivalent in Netflix/vmaf), `docs/state.md` (fork-local
+bug tracker), `changelog.d/fixed/` (fragment), and `docs/rebase-notes.md`
+(this entry). `core/test/test_hip_ms_ssim_parity.c` and the
+corresponding `meson.build` entry were already present on master
+(merged from `gpu-runtime-bug-audit`). No CPU scalar path, no public
+header, no Netflix upstream file is touched.
