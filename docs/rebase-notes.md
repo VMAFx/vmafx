@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## vmafx-title-rebrand (2026-06-03, no ADR)
+
+**Files touched:**
+`README.md`, `mkdocs.yml`, `pyproject.toml`, `CONTRIBUTING.md`
+
+**Rebase impact:** None. All four files are fork-local metadata surfaces
+(project title, site name, package description, contributor heading).
+Upstream Netflix/vmaf does not touch any of these files; no merge conflict
+is possible on rebase.
+
+---
+
 ## feat(vmaf-tune): ADR-0498 follow-up #7 — encoder stats, x264 detection, backend dispatch, codec-list parser
 
 **Files touched:**

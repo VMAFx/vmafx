@@ -5,7 +5,7 @@
 [project]
 name = "vmaf-fork-tooling"
 version = "0.0.0"
-description = "Lusoris fork of Netflix/vmaf — Python tooling and scripts"
+description = "VMAFx — Python tooling and scripts"
 requires-python = ">=3.14.5"
 
 [project.urls]

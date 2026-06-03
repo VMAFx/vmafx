@@ -1,4 +1,4 @@
-# VMAF — Lusoris Fork
+# VMAFx
 
 [![Tests](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
 [![Lint](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml/badge.svg)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
