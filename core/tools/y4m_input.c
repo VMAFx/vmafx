@@ -1016,12 +1016,42 @@ static int y4m_fetch_into_vmaf_picture(y4m_input *_y4m, FILE *_fin, VmafPicture 
     return 1;
 }
 
-OC_EXTERN const video_input_vtbl Y4M_INPUT_VTBL = {
-    (raw_input_open_func)NULL,
-    (video_input_open_func)y4m_input_open,
-    (video_input_get_info_func)y4m_input_get_info,
-    (video_input_fetch_frame_func)y4m_input_fetch_frame,
-    (video_input_close_func)y4m_input_close,
-    (video_input_fetch_into_vmaf_picture_func)y4m_fetch_into_vmaf_picture};
+/*
+ * vtbl-compatible wrapper functions — match the exact function pointer
+ * signatures in vidinput.h to avoid UBSan -fsanitize=function violations.
+ * The concrete y4m_input* implementations remain typed for readability.
+ */
+static void *y4m_vtbl_open(FILE *fin)
+{
+    return y4m_input_open(fin);
+}
+
+static void y4m_vtbl_get_info(void *ctx, video_input_info *info)
+{
+    y4m_input_get_info((y4m_input *)ctx, info);
+}
+
+static int y4m_vtbl_fetch_frame(void *ctx, FILE *fin, video_input_ycbcr ycbcr, char tag[5])
+{
+    return y4m_input_fetch_frame((y4m_input *)ctx, fin, ycbcr, tag);
+}
+
+static void y4m_vtbl_close(void *ctx)
+{
+    y4m_input_close((y4m_input *)ctx);
+}
+
+static int y4m_vtbl_fetch_into_vmaf_picture(void *ctx, FILE *fin, VmafPicture *pic)
+{
+    return y4m_fetch_into_vmaf_picture((y4m_input *)ctx, fin, pic);
+}
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) — extern linkage required: vidinput.c references this symbol via `extern video_input_vtbl Y4M_INPUT_VTBL`
+OC_EXTERN const video_input_vtbl Y4M_INPUT_VTBL = {NULL,
+                                                   y4m_vtbl_open,
+                                                   y4m_vtbl_get_info,
+                                                   y4m_vtbl_fetch_frame,
+                                                   y4m_vtbl_close,
+                                                   y4m_vtbl_fetch_into_vmaf_picture};
 
 // NOLINTEND(bugprone-unchecked-string-to-number-conversion,cert-err34-c)

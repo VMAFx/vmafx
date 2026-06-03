@@ -303,11 +303,40 @@ static int yuv_fetch_into_vmaf_picture(yuv_input *yuv, FILE *fin, VmafPicture *p
     return 1;
 }
 
+/*
+ * vtbl-compatible wrapper functions — each matches the exact function pointer
+ * signature in vidinput.h so the VTBL initializer below requires no C-style
+ * casts.  The casts were previously silencing a type mismatch between the
+ * concrete `yuv_input *` parameter and the erased `void *` in the typedef,
+ * which UBSan's -fsanitize=function detects at runtime as undefined behaviour.
+ * The concrete implementations remain typed for readability and safety.
+ */
+static void *yuv_vtbl_open_raw(FILE *fin, unsigned w, unsigned h, int pix_fmt, unsigned bitdepth)
+{
+    return yuv_input_open(fin, w, h, (enum VmafPixelFormat)pix_fmt, bitdepth);
+}
+
+static void yuv_vtbl_get_info(void *ctx, video_input_info *info)
+{
+    yuv_input_get_info((yuv_input *)ctx, info);
+}
+
+static int yuv_vtbl_fetch_frame(void *ctx, FILE *fin, video_input_ycbcr ycbcr, char tag[5])
+{
+    return yuv_input_fetch_frame((yuv_input *)ctx, fin, ycbcr, tag);
+}
+
+static void yuv_vtbl_close(void *ctx)
+{
+    yuv_input_close((yuv_input *)ctx);
+}
+
+static int yuv_vtbl_fetch_into_vmaf_picture(void *ctx, FILE *fin, VmafPicture *pic)
+{
+    return yuv_fetch_into_vmaf_picture((yuv_input *)ctx, fin, pic);
+}
+
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) — extern linkage required: vidinput.c references this symbol via `extern video_input_vtbl YUV_INPUT_VTBL`
 OC_EXTERN const video_input_vtbl YUV_INPUT_VTBL = {
-    (raw_input_open_func)yuv_input_open,
-    (video_input_open_func)NULL,
-    (video_input_get_info_func)yuv_input_get_info,
-    (video_input_fetch_frame_func)yuv_input_fetch_frame,
-    (video_input_close_func)yuv_input_close,
-    (video_input_fetch_into_vmaf_picture_func)yuv_fetch_into_vmaf_picture};
+    yuv_vtbl_open_raw,    NULL,           yuv_vtbl_get_info,
+    yuv_vtbl_fetch_frame, yuv_vtbl_close, yuv_vtbl_fetch_into_vmaf_picture};
