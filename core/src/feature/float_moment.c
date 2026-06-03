@@ -31,6 +31,9 @@
 
 #if ARCH_X86
 #include "x86/moment_avx2.h"
+#if HAVE_AVX512
+#include "x86/moment_avx512.h"
+#endif
 #endif
 
 #if ARCH_AARCH64
@@ -73,6 +76,12 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
             s->moment1 = compute_1st_moment_avx2;
             s->moment2 = compute_2nd_moment_avx2;
         }
+#if HAVE_AVX512
+        if (cpu_flags & VMAF_X86_CPU_FLAG_AVX512) {
+            s->moment1 = compute_1st_moment_avx512;
+            s->moment2 = compute_2nd_moment_avx512;
+        }
+#endif
     }
 #elif ARCH_AARCH64
     {

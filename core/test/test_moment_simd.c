@@ -50,6 +50,9 @@
 
 #if ARCH_X86
 #include "feature/x86/moment_avx2.h"
+#if HAVE_AVX512
+#include "feature/x86/moment_avx512.h"
+#endif
 #endif
 #if ARCH_AARCH64
 #include "feature/arm64/moment_neon.h"
@@ -124,6 +127,63 @@ static char *test_avx2_tiny(void)
 {
     return check_avx2(0xfeedface, 9, 1);
 }
+
+#if HAVE_AVX512
+/* AVX-512 parity: same fixture logic but compare against scalar via the
+ * 16-lane widened path.  Stride is rounded up to 16 to exercise aligned
+ * ZMM store path.  ADR-0987. */
+static char *check_avx512(uint32_t seed, int w, int h)
+{
+    const int stride_floats = (w + 15) & ~15;
+    const size_t bytes = (size_t)stride_floats * (size_t)h * sizeof(float);
+    const int stride_bytes = stride_floats * (int)sizeof(float);
+
+    float *buf = (float *)simd_test_aligned_malloc(bytes, 64);
+    if (!buf) {
+        return "aligned_malloc failed (avx512)";
+    }
+    simd_test_fill_random_f32(buf, (size_t)stride_floats * (size_t)h, MOMENT_FILL_LO,
+                              MOMENT_FILL_HI, seed);
+
+    double s_scalar = 0.0;
+    double s_avx512 = 0.0;
+    (void)compute_1st_moment(buf, w, h, stride_bytes, &s_scalar);
+    (void)compute_1st_moment_avx512(buf, w, h, stride_bytes, &s_avx512);
+
+    double t_scalar = 0.0;
+    double t_avx512 = 0.0;
+    (void)compute_2nd_moment(buf, w, h, stride_bytes, &t_scalar);
+    (void)compute_2nd_moment_avx512(buf, w, h, stride_bytes, &t_avx512);
+
+    simd_test_aligned_free(buf);
+
+    SIMD_BITEXACT_ASSERT_RELATIVE(s_scalar, s_avx512, MOMENT_REL_TOL,
+                                  "compute_1st_moment_avx512 outside relative tolerance");
+    SIMD_BITEXACT_ASSERT_RELATIVE(t_scalar, t_avx512, MOMENT_REL_TOL,
+                                  "compute_2nd_moment_avx512 outside relative tolerance");
+    return NULL;
+}
+
+static char *test_avx512_seed_a(void)
+{
+    return check_avx512(0xdeadbeefu, TEST_W, TEST_H);
+}
+static char *test_avx512_seed_b(void)
+{
+    return check_avx512(0x12345678u, TEST_W, TEST_H);
+}
+static char *test_avx512_aligned_w(void)
+{
+    /* w=64 is an exact multiple of 16 — exercises the zero-tail branch. */
+    return check_avx512(0xabcdef01u, 64, 16);
+}
+static char *test_avx512_tiny(void)
+{
+    /* w=9 exercises both the 8-lane AVX2-width fallback tail and the
+     * scalar tail inside compute_1st/2nd_moment_avx512. */
+    return check_avx512(0xfeedface, 9, 1);
+}
+#endif /* HAVE_AVX512 */
 
 #endif /* ARCH_X86 */
 
@@ -251,6 +311,14 @@ char *run_tests(void)
     mu_run_test(test_avx2_seed_b);
     mu_run_test(test_avx2_aligned_w);
     mu_run_test(test_avx2_tiny);
+#if HAVE_AVX512
+    if (simd_test_have_avx512()) {
+        mu_run_test(test_avx512_seed_a);
+        mu_run_test(test_avx512_seed_b);
+        mu_run_test(test_avx512_aligned_w);
+        mu_run_test(test_avx512_tiny);
+    }
+#endif /* HAVE_AVX512 */
 #elif ARCH_AARCH64
     mu_run_test(test_neon_seed_a);
     mu_run_test(test_neon_seed_b);

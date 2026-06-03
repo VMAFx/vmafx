@@ -43418,6 +43418,7 @@ no rebase impact: REASON — all touched files are fork-added Python modules
 `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`) with no upstream Netflix/vmaf
 equivalent. The changes are import additions and private-function removals;
 no public API, no C sources, no Netflix golden-data files are touched.
+
 ## sycl-motion-add-uv (2026-06-03, ADR-0989)
 
 no rebase impact: REASON — all changed files are fork-added GPU backends
@@ -43426,3 +43427,14 @@ no rebase impact: REASON — all changed files are fork-added GPU backends
 `integer_motion.c` is not modified. If upstream adds `motion_add_uv` to
 `integer_motion.c` in a future sync, check whether the SYCL per-plane
 normalization formula remains consistent.
+
+## avx512-float-moment (2026-06-03, ADR-0987)
+
+no rebase impact: REASON — all touched files are fork-added x86 SIMD
+sources (`core/src/feature/x86/moment_avx512.c`, `moment_avx512.h`) and
+the dispatch addition inside `float_moment.c` is guarded by `HAVE_AVX512`
+/ `VMAF_X86_CPU_FLAG_AVX512` ifdefs that are invisible on any non-AVX-512
+build path. The four new parity test cases in `test_moment_simd.c` are
+also guarded by `HAVE_AVX512` and do not touch any upstream Netflix file.
+No public C API, no meson_options.txt entry, no CLI flag, no ffmpeg patch
+is changed.
