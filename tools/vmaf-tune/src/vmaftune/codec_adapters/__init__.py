@@ -89,12 +89,14 @@ class CodecAdapter(Protocol):
     # ADR-0332: opt-in to the pass-1 stats-file capture path. True
     # iff the encoder writes a parseable per-frame stats file under
     # ``-pass 1 -passlogfile <prefix>``. Software encoders that
-    # share x264-family rate-distortion tracking (libx264, libx265,
-    # libvpx) set True; hardware encoders (NVENC / AMF / QSV /
-    # VideoToolbox) and any encoder without a stats-file surface
-    # set False. v1 of the parser only handles x264's text format;
-    # libx265 / libvpx flip the flag but their format-specific
-    # parser arrives in a follow-up PR.
+    # share x264-family rate-distortion tracking (libx264, libx265)
+    # set True; hardware encoders (NVENC / AMF / QSV / VideoToolbox)
+    # and any encoder without a text stats-file surface set False.
+    # libvpx-vp9 uses a binary packet layout (``vpx_codec_pkt_t``
+    # / ``VPX_CODEC_STATS_PKT``) and sets False until a binary
+    # packet parser is contributed. The ``encoder_stats`` module
+    # normalises both x264 and x265 text formats via their field
+    # aliases (``q-aq``, ``icu``, ``pcu``, ``scu``).
     supports_encoder_stats: bool
 
     # Phase F (ADR-0333). Adapters that opt into 2-pass encoding set
@@ -175,6 +177,68 @@ def known_codecs() -> tuple[str, ...]:
     return tuple(sorted(_REGISTRY))
 
 
+def parse_available_codecs(
+    ffmpeg_encoders_stdout: str,
+    *,
+    restrict_to_known: bool = True,
+) -> frozenset[str]:
+    """Parse the output of ``ffmpeg -hide_banner -encoders`` into a frozenset.
+
+    ADR-0498 follow-up #7: this is the codec-list parser that was deferred
+    from the initial ``codec_adapters`` scaffolding (line 97: "codec-list
+    parser arrives in a follow-up").  The parser turns the encoder table
+    into a set of available codec names so callers can gate
+    ``supports_encoder_stats`` capture and other codec-specific paths on
+    runtime availability rather than compile-time assumptions.
+
+    Each non-header line in ``ffmpeg -encoders`` output has the form::
+
+        " V..... libx264          H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"
+
+    where the first column is a capability-flags string (``V`` for video,
+    ``.`` for unset flags) and the second is the encoder name.  Header
+    lines (``"Encoders:"``, ``" ------"``, blank) are skipped.
+
+    Parameters
+    ----------
+    ffmpeg_encoders_stdout:
+        Raw stdout from ``ffmpeg -hide_banner -encoders``.
+    restrict_to_known:
+        When ``True`` (the default) only names that appear in the
+        codec-adapter registry (:func:`known_codecs`) are returned.
+        Set to ``False`` to get the full set reported by ffmpeg.
+
+    Returns
+    -------
+    frozenset[str]
+        Codec names available in this ffmpeg build.
+
+    Examples
+    --------
+    >>> out = subprocess.check_output(["ffmpeg", "-hide_banner", "-encoders"], text=True)
+    >>> available = parse_available_codecs(out)
+    >>> "libx264" in available
+    True
+    """
+    found: set[str] = set()
+    for raw in ffmpeg_encoders_stdout.splitlines():
+        line = raw.strip()
+        if not line or "------" in line or line.startswith("Encoders"):
+            continue
+        tokens = line.split()
+        # Encoder lines: first token is capability flags (e.g. ``V.....``),
+        # second is the encoder name.  Skip non-encoder header lines.
+        if len(tokens) < 2:
+            continue
+        flags, name = tokens[0], tokens[1]
+        if len(flags) >= 1 and flags[0] in ("V", "A", "S"):
+            found.add(name)
+    if restrict_to_known:
+        known = set(known_codecs())
+        return frozenset(found & known)
+    return frozenset(found)
+
+
 __all__ = [
     "AV1AMFAdapter",
     "Av1NvencAdapter",
@@ -201,4 +265,5 @@ __all__ = [
     "X265Adapter",
     "get_adapter",
     "known_codecs",
+    "parse_available_codecs",
 ]
