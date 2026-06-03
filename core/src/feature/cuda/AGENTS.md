@@ -645,3 +645,14 @@ kernel variants at runtime. The current policy table is in ADR-0753.
   `adm_cm.cu` via `adm_decouple_inline.cuh`) — rebase on a change to that file
   does NOT affect `adm_decouple.cu`.
   See [ADR-0763](../../../../docs/adr/0763-cuda-adm-decouple-ldg.md).
+
+- **`integer_adm/adm_csf.cu` and `integer_adm/adm_cm.cu` carry the F3 `__ldg()` fix on the
+  active path (ADR-0773).** The six inline `__device__` helpers in `adm_cm.cu`
+  (`inline_i4_csf_a`, `inline_i4_decouple_r`, `inline_s0_csf_a`, `inline_s0_decouple_r`,
+  `inline_i4_csf_r`, `inline_s0_csf_r`) and the two kernel templates in `adm_csf.cu`
+  (`i4_adm_csf_kernel<>`, `adm_csf_kernel<>`) all extract `const T *__restrict__` band
+  pointers from `cuda_*_adm_dwt_band_t` structs before any indexed load. All six per-pixel
+  DWT2 band reads use `__ldg()`. When rebasing or modifying these helpers: preserve the
+  `__restrict__` extraction pattern; do not add writes through these pointers (they are
+  read-only inputs). ADR-0773 completes the ADR-0756 `adm_decouple` dispatch item.
+  See [ADR-0773](../../../../docs/adr/0773-cuda-adm-decouple-inline-ldg.md).

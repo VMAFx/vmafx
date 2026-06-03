@@ -1,6 +1,23 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## cuda-adm-decouple-inline-ldg (2026-05-29, ADR-0773)
+
+**Files touched:**
+`core/src/feature/cuda/integer_adm/adm_csf.cu`,
+`core/src/feature/cuda/integer_adm/adm_cm.cu`
+
+**Rebase impact:** None. Both files are fork-added CUDA kernel translation units
+that do not exist in upstream Netflix/vmaf master (ADM CUDA port is fork-local).
+No rebase conflict is possible.
+
+The change is a pure performance annotation: `const T *__restrict__` pointer
+extraction before hot inner loops and `__ldg()` on all per-pixel DWT2 band reads.
+If upstream Netflix ever adds their own ADM CUDA port, these files will need to be
+re-reviewed against theirs; the F3 pattern should carry forward.
+
+---
+
 ## feat/vmafx-tune-go-stage4-report (ADR-0770)
 
 No rebase impact: pure Go CLI and pkg/report additions.
