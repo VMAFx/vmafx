@@ -1,5 +1,5 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  Dispatch strategy stub for the HIP backend (ADR-0212 / T7-10).

@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Torch → ONNX export with roundtrip validation.
 
 Validates opset 17, dynamic batch axis, and runs the exported graph through

@@ -1,0 +1,99 @@
+/* Copyright 2026 Lusoris
+ * SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *
+ * Vulkan compute shader for cambi's per-pixel preprocessing kernel.
+ *
+ * CPU reference (libvmaf/src/feature/cambi.c):
+ *   - decimate_generic_uint8_and_convert_to_10b
+ *   - decimate_generic_uint16_and_convert_to_10b
+ *   - decimate_generic_9b_and_convert_to_10b
+ *
+ * Algorithm: read source luma at (ori_x, ori_y), bit-shift to 10-bit,
+ * write to dst[i, j]. The "same input/output size" fast-path (in_w == out_w
+ * && in_h == out_h) is what cambi_vulkan uses today since the GPU twin
+ * mirrors the standard CPU path's uniform encoding-resolution preprocess
+ * (no scale-up).
+ *
+ * Status: T7-36 / ADR-0205 — wired into cambi_vulkan.c init/extract.
+ *
+ * Specialisation constants:
+ *   constant_id = 0  WIDTH      output width (pixels)
+ *   constant_id = 1  HEIGHT     output height (pixels)
+ *   constant_id = 2  IN_BPC     source bitdepth (8 .. 16)
+ *
+ * Bindings:
+ *   binding 0: input plane (uint8 packed in uint32 if IN_BPC <= 8;
+ *              uint16 packed in uint32 if IN_BPC > 8)
+ *   binding 1: output plane (uint16 packed in uint32, 10-bit value)
+ *
+ * Push constants:
+ *   width / height  — output geometry (must match WIDTH / HEIGHT).
+ *   in_stride_words — input stride in 32-bit words.
+ *   out_stride_words — output stride in 32-bit words.
+ *
+ * Precision contract: bit-exact — integer shift, no float ops.
+ */
+
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(constant_id = 0) const int WIDTH  = 0;
+layout(constant_id = 1) const int HEIGHT = 0;
+layout(constant_id = 2) const int IN_BPC = 8;
+
+layout(set = 0, binding = 0, std430) readonly buffer In  { uint pixels[]; } src;
+layout(set = 0, binding = 1, std430)          buffer Out { uint pixels[]; } dst;
+
+layout(push_constant) uniform Params {
+    uint width;
+    uint height;
+    uint in_stride_words;
+    uint out_stride_words;
+} pc;
+
+uint read_u8(int y, int x) {
+    /* uint32 holds 4 packed uint8 lanes. */
+    uint word = src.pixels[uint(y) * pc.in_stride_words + (uint(x) >> 2)];
+    return (word >> ((uint(x) & 3u) * 8u)) & 0xFFu;
+}
+
+uint read_u16(int y, int x) {
+    uint word = src.pixels[uint(y) * pc.in_stride_words + (uint(x) >> 1)];
+    return (word >> ((uint(x) & 1u) * 16u)) & 0xFFFFu;
+}
+
+void write_u16(int y, int x, uint v) {
+    uint idx = uint(y) * pc.out_stride_words + (uint(x) >> 1);
+    uint shift = (uint(x) & 1u) * 16u;
+    uint mask = 0xFFFFu << shift;
+    atomicAnd(dst.pixels[idx], ~mask);
+    atomicOr (dst.pixels[idx], (v & 0xFFFFu) << shift);
+}
+
+void main() {
+    int gx = int(gl_GlobalInvocationID.x);
+    int gy = int(gl_GlobalInvocationID.y);
+    if (gx >= int(pc.width) || gy >= int(pc.height))
+        return;
+
+    uint v;
+    if (IN_BPC <= 8) {
+        /* `data << (10 - bpc)` */
+        v = read_u8(gy, gx) << uint(10 - IN_BPC);
+    } else if (IN_BPC == 9) {
+        /* 9-bit storage in uint16 → << 1. */
+        v = read_u16(gy, gx) << 1u;
+    } else {
+        /* IN_BPC >= 10 — round-half-up shift down. */
+        uint x = read_u16(gy, gx);
+        if (IN_BPC == 10) {
+            v = x;
+        } else {
+            uint shift = uint(IN_BPC - 10);
+            uint round = 1u << (shift - 1u);
+            v = (x + round) >> shift;
+        }
+    }
+    write_u16(gy, gx, v);
+}

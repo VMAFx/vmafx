@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Correlation + error metrics for trained FR/NR regressors.
 
 Reports PLCC (Pearson), SROCC (Spearman), and RMSE. Accepts either:

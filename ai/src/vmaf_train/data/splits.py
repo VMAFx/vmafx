@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Deterministic train/val/test splits keyed by stable content hash.
 
 The hash must be stable across runs and across machines — derived from the

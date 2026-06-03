@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Measure fp32-vs-int8 PLCC drop across multiple Execution Providers (T5-3e).
 

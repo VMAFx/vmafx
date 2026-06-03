@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 #
 # Real-corpus LOSO retrain wrapper for the ``fr_regressor_v2`` deep

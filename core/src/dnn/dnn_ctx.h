@@ -1,5 +1,5 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  Internal bridge between the public `dnn.h` surface (dnn_api.c) and the

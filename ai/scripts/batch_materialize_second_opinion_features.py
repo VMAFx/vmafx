@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 """Run second-opinion feature materialization for multiple tables."""
 
 from __future__ import annotations

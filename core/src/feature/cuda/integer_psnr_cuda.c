@@ -1,6 +1,6 @@
 /* Upstream-mirror filename: defines float_psnr symbol despite the integer_ prefix (matches Netflix upstream). See ADR-0549. */
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  PSNR feature extractor on the CUDA backend (T7-23 / ADR-0182,

@@ -33,7 +33,7 @@ core/
 - **Coding standards**: NASA/JPL Power of 10 + JPL-C-STD + SEI CERT C (see
   [../docs/principles.md](../docs/principles.md)). `.clang-tidy` enforces.
 - **License headers**: Netflix-header-preserving for upstream-touched files;
-  `Copyright 2026 Lusoris and Claude (Anthropic)` for wholly-new files.
+  `Copyright 2026 Lusoris` for wholly-new files.
   See [ADR-0025](../docs/adr/0025-copyright-handling-dual-notice.md).
 - **Style**: K&R, 4-space, 100-char columns, `.clang-format` authoritative.
 - **Banned functions** (see `docs/principles.md §1.2 rule 30`): `gets`,
@@ -568,12 +568,12 @@ the corrected methodology.
 - `core/test/test_motion_avx512_parity.c` provides direct bit-exact unit tests
   for all six AVX-512 motion kernels.  If any of the following functions is
   modified, the corresponding test case **must** be re-run and must pass:
-    - `motion_score_pipeline_8_avx512` (motion_v2_avx512.c)
-    - `motion_score_pipeline_16_avx512` (motion_v2_avx512.c)
-    - `sad_avx512` (motion_avx512.c)
-    - `y_convolution_8_avx512` (motion_avx512.c)
-    - `y_convolution_16_avx512` (motion_avx512.c)
-    - `x_convolution_16_avx512` (motion_avx512.c)
+  - `motion_score_pipeline_8_avx512` (motion_v2_avx512.c)
+  - `motion_score_pipeline_16_avx512` (motion_v2_avx512.c)
+  - `sad_avx512` (motion_avx512.c)
+  - `y_convolution_8_avx512` (motion_avx512.c)
+  - `y_convolution_16_avx512` (motion_avx512.c)
+  - `x_convolution_16_avx512` (motion_avx512.c)
 - The scalar reference implementations in the test file are line-for-line
   mirrors of the production scalar paths.  If the scalar production path
   is changed (e.g. rounding bias, filter constants), update the test's

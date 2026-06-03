@@ -1,5 +1,5 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  integer_motion feature extractor on the Metal backend (T8-1i / ADR-0421).

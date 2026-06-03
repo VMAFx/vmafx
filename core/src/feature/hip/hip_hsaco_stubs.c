@@ -1,5 +1,5 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  ADR-0536: weak stubs for HIP HSACO blob symbols whose .hip kernel

@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Unit tests for the MCP P1 surface additions (ADR-0608).
 
 Covers:

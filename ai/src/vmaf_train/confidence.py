@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Heteroscedastic-regression utilities for tiny-AI MOS predictors.
 
 When a model emits (score, logvar) instead of a single scalar it can

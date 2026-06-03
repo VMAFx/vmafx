@@ -1,5 +1,5 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  Smoke test for the CAMBI Vulkan extractor (v2 / ADR-0456).

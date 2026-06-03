@@ -1,5 +1,5 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  Direct unit tests for ort_backend.c internal helpers and NULL-guard
@@ -558,7 +558,8 @@ static char *test_ort_public_accessor_coverage(void)
 
     vmaf_ort_close(sess);
     return NULL;
-}char *run_tests(void)
+}
+char *run_tests(void)
 {
     mu_run_test(test_fp32_to_fp16_normal);
     mu_run_test(test_fp32_to_fp16_inf_nan);
@@ -585,5 +586,6 @@ static char *test_ort_public_accessor_coverage(void)
     mu_run_test(test_ort_open_elem_types_populated);
     mu_run_test(test_ort_open_elem_types_fp16_model);
     mu_run_test(test_ort_run_multi_output_smoke);
-    mu_run_test(test_ort_public_accessor_coverage);    return NULL;
+    mu_run_test(test_ort_public_accessor_coverage);
+    return NULL;
 }

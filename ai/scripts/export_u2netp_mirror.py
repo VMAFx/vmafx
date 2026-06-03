@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Export upstream U-2-Net ``u2netp`` weights into the fork mirror contract.
 

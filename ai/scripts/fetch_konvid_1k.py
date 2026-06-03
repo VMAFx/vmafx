@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Download KoNViD-1k UGC video dataset for tiny-AI training (T6-1 / C2 / C3).
 

@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Tests for ``ai/scripts/enrich_k150k_parquet_metadata.py``."""
 

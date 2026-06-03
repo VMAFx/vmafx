@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Heteroscedastic-regression math used by FRRegressor / NRMetric variance mode."""
 
 from __future__ import annotations

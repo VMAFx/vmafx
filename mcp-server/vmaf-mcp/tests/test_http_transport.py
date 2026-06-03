@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Smoke tests for the vmafx-mcp HTTP transport (ADR-0701, ADR-0967).
 
 Tests use aiohttp's TestClient for lightweight in-process HTTP testing.

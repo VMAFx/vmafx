@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """HTTP transport for the VMAFX MCP server.
 
 Implements an aiohttp-based HTTP server that exposes:

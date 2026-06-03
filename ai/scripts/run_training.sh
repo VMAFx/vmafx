@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 #
 # Convenience wrapper for the Netflix-corpus tiny-AI training entry

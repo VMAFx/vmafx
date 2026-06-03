@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Unit tests for the fr_regressor_v3 trainer (ADR-0323).
 

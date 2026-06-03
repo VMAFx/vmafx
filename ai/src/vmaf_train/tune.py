@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Optional Optuna hyperparameter sweep — imported lazily to keep core deps small."""
 
 from __future__ import annotations

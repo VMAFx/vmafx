@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Feature-cache datamodule for the C1 (FR regressor) path.
 
 Accepts either a numpy .npz cache (legacy) or a parquet file produced by

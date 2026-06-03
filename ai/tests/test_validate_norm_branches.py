@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Branch-coverage top-up for ``vmaf_train.validate_norm``.
 

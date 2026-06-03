@@ -1,3 +1,7 @@
+/* Vendored 3rd-party JSON parser header (pdjson). */
+/* Copyright: pdjson authors (https://github.com/skeeto/pdjson), Unlicense */
+/* Fork integration: Copyright 2026 Lusoris */
+/* SPDX-License-Identifier: Unlicense */
 #ifndef PDJSON_H
 #define PDJSON_H
 

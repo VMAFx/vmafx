@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-#  Copyright 2026 Lusoris and Claude (Anthropic)
+#  Copyright 2026 Lusoris
 #  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 #
 """Export LPIPS-SqueezeNet as a two-input ONNX for libvmaf's tiny-AI surface.

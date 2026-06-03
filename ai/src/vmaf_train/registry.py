@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Model registry — write/read sidecar metadata for shipped tiny models.
 
 Each `.onnx` under `model/tiny/` gets a `<name>.json` sidecar recording:

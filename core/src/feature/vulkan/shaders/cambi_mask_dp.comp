@@ -1,0 +1,170 @@
+/* Copyright 2026 Lusoris
+ * SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *
+ * Vulkan compute shader for cambi's spatial-mask DP. Implements the
+ * 7×7 box-sum-of-derivatives + threshold compare via a separable
+ * summed-area table (SAT). The CPU does the same with a cyclic 9-row
+ * DP buffer to save memory; on GPU we materialise the full 2D SAT
+ * because (a) global memory is cheap, (b) the SAT is O(W*H) and fits
+ * trivially even at 4K, (c) it factors into two trivially parallel
+ * single-axis scans + one per-pixel threshold compare.
+ *
+ * CPU reference:
+ *   libvmaf/src/feature/cambi.c::get_spatial_mask_for_index()
+ *
+ * Three passes selected via PASS spec constant:
+ *
+ *   PASS = 0 — row prefix-sum:
+ *       sat_row[i, j] = sum_{k=0..j} derivative[i, k]
+ *
+ *   PASS = 1 — column prefix-sum on the row-SAT:
+ *       sat[i, j] = sum_{k=0..i} sat_row[k, j]
+ *
+ *   PASS = 2 — per-pixel 7×7 box-sum + threshold compare:
+ *       result = sat[i+pad, j+pad] - sat[i+pad, j-pad-1]
+ *              - sat[i-pad-1, j+pad] + sat[i-pad-1, j-pad-1]
+ *       mask[i, j] = (result > mask_index) ? 1 : 0
+ *
+ *   Out-of-image SAT lookups (j-pad-1 < 0 etc.) are treated as 0,
+ *   matching the CPU's zero-padded DP array (which is `width + 2*pad`
+ *   wide × `2*pad+2` rows tall, initialised to 0 with `memset`).
+ *
+ * PASS 0 / 1 single-WG-per-line strategy:
+ *   - Each workgroup processes one image row (PASS 0) or one image
+ *     column (PASS 1). Sequential prefix-sum within the workgroup is
+ *     bit-exact (integer adds; no float reordering).
+ *   - local_size_x = 1 — one thread per row/column. The DP is integer
+ *     and the per-line work is O(W) or O(H) which is below GPU
+ *     parallelism worth chasing for cambi v1; the heavy lift is the
+ *     per-pixel scale loop (decimate / filter_mode / c_values), not
+ *     the spatial mask. Bit-exactness is the priority.
+ *
+ * PASS 2 per-pixel parallel strategy:
+ *   - 16 × 16 workgroup, one thread per output pixel. Trivially
+ *     parallel.
+ *
+ * Status: T7-36 / ADR-0205 — wired into cambi_vulkan.c.
+ *
+ * Specialisation constants:
+ *   constant_id = 0  WIDTH        image width (pixels)
+ *   constant_id = 1  HEIGHT       image height (pixels)
+ *   constant_id = 2  PASS         0 = row-SAT, 1 = col-SAT, 2 = compare
+ *   constant_id = 3  PAD_SIZE     filter half-width (= 3 for 7×7)
+ *
+ * Bindings:
+ *   binding 0: derivative_in    uint16 packed in uint32 (PASS 0)
+ *              sat_row_in       int32  per pixel       (PASS 1)
+ *              sat_in           int32  per pixel       (PASS 2)
+ *   binding 1: sat_row_out      int32  per pixel       (PASS 0)
+ *              sat_out          int32  per pixel       (PASS 1)
+ *              mask_out         uint16 packed in uint32 (PASS 2)
+ *
+ * Push constants:
+ *   width / height
+ *   in_stride_words   (PASS 0: derivative half-words; PASS 1/2: int32 words)
+ *   out_stride_words
+ *   mask_index        (PASS 2 only)
+ *
+ * Precision contract: bit-exact — all integer arithmetic + compare.
+ */
+
+#version 460
+
+layout(constant_id = 0) const int WIDTH    = 0;
+layout(constant_id = 1) const int HEIGHT   = 0;
+layout(constant_id = 2) const int PASS     = 0;
+layout(constant_id = 3) const int PAD_SIZE = 3;
+
+#if PASS == 2
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+#else
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+#endif
+
+layout(set = 0, binding = 0, std430) readonly buffer In   { uint pixels[]; } src;
+layout(set = 0, binding = 1, std430)          buffer Out  { uint pixels[]; } dst;
+
+layout(push_constant) uniform Params {
+    uint width;
+    uint height;
+    uint in_stride_words;
+    uint out_stride_words;
+    uint mask_index;
+    uint pad_size;
+} pc;
+
+uint read_deriv_u16(int y, int x) {
+    uint word = src.pixels[uint(y) * pc.in_stride_words + (uint(x) >> 1)];
+    return (word >> ((uint(x) & 1u) * 16u)) & 0xFFFFu;
+}
+
+int  read_int_in (int y, int x) {
+    return int(src.pixels[uint(y) * pc.in_stride_words + uint(x)]);
+}
+
+void write_int_out(int y, int x, int v) {
+    dst.pixels[uint(y) * pc.out_stride_words + uint(x)] = uint(v);
+}
+
+void write_mask_u16(int y, int x, uint v) {
+    uint idx = uint(y) * pc.out_stride_words + (uint(x) >> 1);
+    uint shift = (uint(x) & 1u) * 16u;
+    uint mask = 0xFFFFu << shift;
+    atomicAnd(dst.pixels[idx], ~mask);
+    atomicOr (dst.pixels[idx], (v & 0xFFFFu) << shift);
+}
+
+void main() {
+    if (PASS == 0) {
+        /* Row prefix-sum across one image row (gl_WorkGroupID.x = row). */
+        int row = int(gl_WorkGroupID.x);
+        if (row >= int(pc.height))
+            return;
+        int acc = 0;
+        for (int col = 0; col < int(pc.width); col++) {
+            acc += int(read_deriv_u16(row, col));
+            write_int_out(row, col, acc);
+        }
+    } else if (PASS == 1) {
+        /* Column prefix-sum across one image column. */
+        int col = int(gl_WorkGroupID.x);
+        if (col >= int(pc.width))
+            return;
+        int acc = 0;
+        for (int row = 0; row < int(pc.height); row++) {
+            acc += read_int_in(row, col);
+            write_int_out(row, col, acc);
+        }
+    } else {
+        /* PASS == 2: per-pixel 7×7 box-sum (4-corner SAT) + threshold. */
+        int x = int(gl_GlobalInvocationID.x);
+        int y = int(gl_GlobalInvocationID.y);
+        if (x >= int(pc.width) || y >= int(pc.height))
+            return;
+        int pad = int(pc.pad_size);
+        int W = int(pc.width);
+        int H = int(pc.height);
+
+        int x_lo = x - pad - 1;
+        int x_hi = x + pad;
+        int y_lo = y - pad - 1;
+        int y_hi = y + pad;
+
+        /* Clamp x_hi / y_hi to the in-image SAT row/col [W-1] / [H-1]
+         * — the CPU's `width + pad` zero-padded right column and
+         * `height + pad` zero-padded bottom row both equal the last
+         * column/row of the un-padded SAT (since the derivative is 0
+         * outside the image, prefix-sums plateau). */
+        if (x_hi >= W) x_hi = W - 1;
+        if (y_hi >= H) y_hi = H - 1;
+
+        int s_hh = read_int_in(y_hi, x_hi);
+        int s_hl = (x_lo >= 0) ? read_int_in(y_hi, x_lo) : 0;
+        int s_lh = (y_lo >= 0) ? read_int_in(y_lo, x_hi) : 0;
+        int s_ll = (x_lo >= 0 && y_lo >= 0) ? read_int_in(y_lo, x_lo) : 0;
+
+        int box_sum = s_hh - s_hl - s_lh + s_ll;
+        uint v = (box_sum > int(pc.mask_index)) ? 1u : 0u;
+        write_mask_u16(y, x, v);
+    }
+}

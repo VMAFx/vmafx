@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Smoke test for ``ai/scripts/qat_train.py --smoke`` and the
 ``ai.train.qat.run_qat`` Python API.

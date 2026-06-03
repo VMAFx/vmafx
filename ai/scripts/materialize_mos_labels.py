@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 """Join subjective MOS labels onto already-extracted feature tables.
 
 The MOS-head trainers consume feature tables that already carry a ``mos`` or

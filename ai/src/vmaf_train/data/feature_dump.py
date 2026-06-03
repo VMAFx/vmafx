@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Extract libvmaf feature vectors → parquet (C1 training input).
 
 Drives the `vmaf` CLI in JSON mode, collects per-frame features listed in the

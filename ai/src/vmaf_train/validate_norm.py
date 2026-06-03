@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Validate that a shipped sidecar's normalization matches the data it's fed.
 
 A common silent-correctness bug: a C1 model was trained with feature

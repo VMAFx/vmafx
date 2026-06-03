@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """End-to-end: YUV → libvmaf features → ONNX FR model → score.
 
 Stitches the pieces that normally live in different phases of the

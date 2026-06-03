@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Unit tests for the ``--bvi-dir`` input mode of ``bvi_dvc_to_full_features.py``.
 

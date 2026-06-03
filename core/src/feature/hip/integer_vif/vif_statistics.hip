@@ -1,7 +1,7 @@
 /**
  *  Copyright 2016-2023 Netflix, Inc.
  *  Copyright 2021 NVIDIA Corporation.
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  HIP port of the integer VIF filter + statistics kernels.

@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Pre-deploy audit for learned-filter ONNX models.
 
 The audit runs the filter over a corpus of frames and flags four

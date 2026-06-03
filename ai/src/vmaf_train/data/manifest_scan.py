@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Populate a dataset manifest from a local cache.
 
 Each manifest shipped in `manifests/` is empty on purpose — the repo cannot

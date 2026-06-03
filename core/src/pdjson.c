@@ -1,4 +1,7 @@
 /* Vendored 3rd-party JSON parser (pdjson). Suppress lint on the whole file. */
+/* Copyright: pdjson authors (https://github.com/skeeto/pdjson), Unlicense */
+/* Fork integration: Copyright 2026 Lusoris */
+/* SPDX-License-Identifier: Unlicense */
 // NOLINTBEGIN
 
 #ifndef _POSIX_C_SOURCE

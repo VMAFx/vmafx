@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  Toolchain-portable shims for the fork's SYCL feature kernels.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Export the *real* upstream FastDVDnet temporal denoiser into the
 fork's luma-only 5-frame ONNX contract (T6-7b).

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 """Join NR/MOS second-opinion scores onto already-extracted feature tables.
 
 The script is deliberately table-side: it does not invoke external VQA models

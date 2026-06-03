@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Feature-contract audit catches sidecar/graph drift before deploy."""
 
 from __future__ import annotations

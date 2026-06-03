@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Smoke tests for the vmaf-mcp server — no network, no GPU required."""
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Unit tests for :mod:`ai.scripts.konvid_150k_to_corpus_jsonl` (ADR-0325 Phase 2).
 

@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Cross-backend (CPU/CUDA/OpenVINO/...) numerical-parity check for ONNX models.
 
 Mirrors the /cross-backend-diff discipline we apply to VMAF scoring

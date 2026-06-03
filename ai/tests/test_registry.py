@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Round-trip the sidecar metadata through registry.register / registry.load."""
 
 from __future__ import annotations

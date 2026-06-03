@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright 2026 Lusoris and Claude (Anthropic)
+ *  Copyright 2026 Lusoris
  *
  *     Licensed under the BSD+Patent License (the "License");
  *

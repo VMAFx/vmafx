@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """INT8 post-training quantization for shipped FR regressors.
 
 Static PTQ via onnxruntime.quantization using a parquet feature cache as

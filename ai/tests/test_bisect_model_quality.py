@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Bisect-model-quality: binary-search a timeline of ONNX models for the
 first one that trips a PLCC / SROCC / RMSE gate.
 

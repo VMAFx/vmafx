@@ -1,3 +1,5 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """PLCC/SROCC/RMSE sanity checks against synthetic data with known correlation."""
 
 from __future__ import annotations

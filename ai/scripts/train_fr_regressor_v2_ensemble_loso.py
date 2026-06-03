@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """LOSO trainer for the ``fr_regressor_v2`` deep ensemble (ADR-0303 / ADR-0319).
 
