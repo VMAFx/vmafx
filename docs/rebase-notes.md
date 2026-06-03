@@ -7,6 +7,20 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## Second-opinion batch smoke scaffold + pytest path fix (ADR-0991, 2026-06-03)
+
+**Files touched:**
+`ai/pyproject.toml` (add `pythonpath = ["scripts"]` to pytest config),
+`ai/testdata/smoke-second-opinion-batch/` (new: batch.json, fixtures/*.jsonl,
+README.md), `docs/adr/0991-second-opinion-batch-runs.md` (new),
+`docs/research/research-0991-second-opinion-batch-2026-06-03.md` (new),
+`changelog.d/fixed/0991-second-opinion-batch-pytest-path.md` (new).
+
+**Rebase impact:** None on upstream sync (no Netflix/vmaf upstream file
+touched). The `ai/pyproject.toml` addition is additive; no conflict risk.
+
+---
+
 ## Changelog-fragment section hygiene (2026-05-30)
 
 **Files touched:**

@@ -150,6 +150,16 @@ its own training surface):
   also routes to a clean skip with the actual error string. Behavior
   contract pinned by `ai/tests/test_conftest_pytorch_lightning_guard.py`.
 
+- **`ai/pyproject.toml` `pythonpath = ["scripts"]` is required for batch
+  materializer tests.** Tests that load `ai/scripts/batch_materialize_*.py`
+  via `importlib.spec_from_file_location` trigger `_script_bootstrap` at
+  module-load time. Without `ai/scripts/` on `sys.path`, those tests fail
+  with `ModuleNotFoundError: No module named '_script_bootstrap'` when
+  invoked from the repo root. The `pythonpath = ["scripts"]` entry in
+  `[tool.pytest.ini_options]` is the canonical fix (ADR-0991). Do not
+  remove it and do not substitute a `PYTHONPATH=ai/scripts` prefix in CI
+  step definitions — the pyproject config is the single source of truth.
+
 - The `iter_pairs` filename regex is fork-specific. If upstream adds a
   loader with a different ladder convention, do NOT merge them — keep
   ours under `ai/data/` and theirs under whatever path they pick.

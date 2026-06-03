@@ -94,6 +94,25 @@ Each table may override any single-run join option from `defaults`, including
 `key_normalize`, `prefix`, and `overwrite`. The batch report uses schema
 `second-opinion-materializer-batch-v1` and carries ADR-0661 `run_provenance`.
 
+## Smoke-Run Scaffold
+
+A self-contained smoke run with synthetic fixture tables is committed under
+`ai/testdata/smoke-second-opinion-batch/`. Run it from the repo root to verify
+the full pipeline end-to-end before using real corpus data:
+
+```bash
+mkdir -p /tmp/vmafx-smoke-second-opinion
+PYTHONPATH=ai/scripts python ai/scripts/batch_materialize_second_opinion_features.py \
+  --manifest ai/testdata/smoke-second-opinion-batch/batch.json \
+  --base-dir . \
+  --report-json /tmp/vmafx-smoke-second-opinion/smoke.report.json \
+  --report-md   /tmp/vmafx-smoke-second-opinion/smoke.report.md
+```
+
+Expected output: `tables=2 input_rows=5 output_rows=5 failed_tables=0`.
+See `ai/testdata/smoke-second-opinion-batch/README.md` for the full inspection
+checklist.
+
 ## Reading The Columns
 
 Second-opinion columns are advisory evidence, not replacements for reference

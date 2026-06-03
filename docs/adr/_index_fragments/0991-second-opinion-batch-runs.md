@@ -1,0 +1,1 @@
+| [ADR-0991](0991-second-opinion-batch-runs.md) | Fixes the missing `pythonpath = ["scripts"]` in `ai/pyproject.toml` so batch materializer tests pass from the repo root, and commits a smoke-run scaffold under `ai/testdata/smoke-second-opinion-batch/`. | Accepted | ai, second-opinion, materializer, testing, smoke, fork-local |

@@ -1,0 +1,27 @@
+{
+  "_comment": "Smoke-run manifest for batch_materialize_second_opinion_features.py. Paths are relative to --base-dir (the repo root). Run the command in README.md from the repo root.",
+  "defaults": {
+    "key_normalize": "auto",
+    "missing_policy": "mark",
+    "prefix": "second_opinion"
+  },
+  "tables": [
+    {
+      "id": "smoke_table_a",
+      "features": "ai/testdata/smoke-second-opinion-batch/fixtures/features_a.jsonl",
+      "scores": [
+        "fork-nr=ai/testdata/smoke-second-opinion-batch/fixtures/scores_fork_nr_a.jsonl"
+      ],
+      "out": "/tmp/vmafx-smoke-second-opinion/smoke_table_a.jsonl",
+      "audit_json": "/tmp/vmafx-smoke-second-opinion/smoke_table_a.audit.json"
+    },
+    {
+      "id": "smoke_table_b",
+      "features": "ai/testdata/smoke-second-opinion-batch/fixtures/features_b.jsonl",
+      "scores": [
+        "fork-nr=ai/testdata/smoke-second-opinion-batch/fixtures/scores_fork_nr_b.jsonl"
+      ],
+      "out": "/tmp/vmafx-smoke-second-opinion/smoke_table_b.jsonl"
+    }
+  ]
+}
