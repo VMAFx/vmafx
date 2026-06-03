@@ -17,7 +17,7 @@ SRGB_PIECEWISE_THRESHOLD = 0.04045
 
 print("/**")
 print(" *")
-print(" *  Copyright 2026 Lusoris and Claude (Anthropic)")
+print(" *  Copyright 2026 Lusoris")
 print(" *")
 print(' *     Licensed under the BSD+Patent License (the "License");')
 print(" *")

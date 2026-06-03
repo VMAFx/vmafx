@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Empirical bit-equivalence test: polynomial approximation vs the integer-VIF
 log2 lookup table used in `core/src/feature/integer_vif.c`.

@@ -192,7 +192,7 @@ Use `/prep-release` to dry-run locally before merging a release PR.
 6. **Every** commit message is Conventional Commits (`type(scope): subject`). Enforced
    by the `commit-msg` git hook.
 7. **Every** new `.c` / `.h` / `.cpp` / `.cu` starts with the license header. Use
-   `Copyright 2026 Lusoris and Claude (Anthropic)` for wholly-new files, Netflix
+   `Copyright 2026 Lusoris` for wholly-new files, Netflix
    header for upstream-touched files.
 8. **Every** non-trivial architectural, policy, or scope decision gets its own
    ADR file `docs/adr/NNNN-kebab-case.md` following

@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 <!--
   SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
-  Copyright 2026 Lusoris and Claude (Anthropic)
+  Copyright 2026 Lusoris
 -->
 
 # CUDA Profile — 2026-05-03 (Post-Sprint Rerun)

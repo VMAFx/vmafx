@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 """Unit tests for the external-competitor benchmark harness.
 
 Every test here stubs ``subprocess.run`` so the test suite never

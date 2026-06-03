@@ -159,7 +159,7 @@ bash scripts/release/concat-changelog-fragments.sh --check
 # Dry-run release-please (requires release-please CLI installed)
 npx release-please@16 manifest-pr \
   --dry-run \
-  --repo-url=lusoris/vmaf \
+  --repo-url=VMAFx/vmafx \
   --token="$(gh auth token)"
 
 # Verify meson.build version placeholder

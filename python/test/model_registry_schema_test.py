@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Tests for ``model/tiny/registry.json`` and its JSON Schema (T6-9 / ADR-0209).
 

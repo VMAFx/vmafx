@@ -19,7 +19,7 @@ from vmaf.tools.exceptions import (
     MissingLabelStddevError,
 )
 
-__copyright__ = "Copyright 2026 Lusoris and Claude (Anthropic)"
+__copyright__ = "Copyright 2026 Lusoris"
 __license__ = "BSD+Patent"
 
 

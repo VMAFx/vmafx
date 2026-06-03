@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Smoke tests for ``run_plan_per_shot`` and ``run_plan_saliency`` (ADR-0468).
 

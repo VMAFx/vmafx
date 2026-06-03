@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Saliency-aware ROI tests for x265 / SVT-AV1 / libaom / libvvenc adapters.
 
