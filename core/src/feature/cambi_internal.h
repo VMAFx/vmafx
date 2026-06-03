@@ -3,24 +3,25 @@
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  Internal header exposing cambi.c's per-stage helpers to the GPU
- *  twins (cambi_vulkan.c, future cambi_cuda.c / cambi_sycl.c).
+ *  twins (integer_cambi_cuda.c, integer_cambi_hip.c).
+ *  The Vulkan twin (cambi_vulkan.c, T7-36/ADR-0205) was removed per
+ *  ADR-0726 (Vulkan backend dropped).
  *
  *  Background: cambi's pipeline (preprocess → spatial mask → per
  *  scale {decimate → filter_mode → calculate_c_values → pool}) was
- *  internal to cambi.c with everything `static`. The Vulkan twin
- *  (T7-36 / ADR-0205, Strategy II hybrid) needs to call the
- *  precision-sensitive `calculate_c_values` from a different TU,
- *  so we expose a slim subset.
+ *  internal to cambi.c with everything `static`. The GPU twins need
+ *  to call the precision-sensitive `calculate_c_values` from a
+ *  different TU, so we expose a slim subset.
  *
  *  The exposed helpers keep their `VmafPicture *` signatures —
- *  the Vulkan twin reads back GPU-produced buffers into its own
- *  `VmafPicture`-shaped staging plane, then calls these directly.
+ *  GPU twins read back device-produced buffers into a
+ *  `VmafPicture`-shaped staging plane, then call these directly.
  *  This avoids a buffer-pair refactor of cambi.c (which would
  *  ripple through every CPU SIMD callsite) while letting the
  *  GPU twin reuse the exact CPU code path on the host residual.
  *
  *  Anyone modifying cambi.c MUST keep these signatures stable or
- *  update both call-sites in the same PR.
+ *  update all GPU call-sites in the same PR.
  */
 
 #ifndef LIBVMAF_FEATURE_CAMBI_INTERNAL_H_
@@ -47,9 +48,9 @@ typedef void (*VmafCambiDerivativeCalculator)(const uint16_t *image_data,
                                               uint16_t *derivative_buffer, int width, int height,
                                               int row, int stride);
 
-/* Buffer bundle mirror of cambi.c::CambiBuffers. The GPU twin
- * allocates these directly (no aligned_malloc helper — VmafVulkanBuffer
- * memory + plain malloc serve the host residual). */
+/* Buffer bundle mirror of cambi.c::CambiBuffers. The GPU twins
+ * (CUDA, HIP) allocate these directly (no aligned_malloc helper —
+ * device memory + plain malloc serve the host residual). */
 typedef struct VmafCambiHostBuffers {
     float *c_values;
     uint32_t *mask_dp;

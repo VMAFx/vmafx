@@ -3,9 +3,10 @@
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  *
  *  CAMBI banding-detection feature extractor on the CUDA backend
- *  (T3-15 / ADR-0360). CUDA twin of cambi_vulkan.c (ADR-0210).
+ *  (T3-15 / ADR-0360). The Vulkan twin (cambi_vulkan.c, ADR-0210)
+ *  was removed per ADR-0726 (Vulkan backend dropped).
  *
- *  Strategy II hybrid (matches the Vulkan ADR-0205 / ADR-0210 precedent):
+ *  Strategy II hybrid (ADR-0205 / ADR-0210 precedent):
  *
  *    GPU stages (three CUDA kernels in cambi_score.cu):
  *      - cambi_spatial_mask_kernel: derivative + 7×7 box sum + threshold
@@ -1049,7 +1050,8 @@ VmafFeatureExtractor vmaf_fex_cambi_cuda = {
      * is_reduction_only = false (meaningful pixel processing on both GPU +
      * CPU), dispatch_hint = VMAF_FEATURE_DISPATCH_DIRECT — run one frame
      * at a time without batching; the per-frame CPU residual serialises
-     * frames already. DIRECT matches Vulkan cambi_vulkan's posture. */
+     * frames already. DIRECT matches the per-scale synchronous posture
+     * previously established in the (now-removed) Vulkan twin. */
     .chars =
         {
             .n_dispatches_per_frame = 15, /* 5 scales × 3 kernels (mask + filter_H + filter_V) */

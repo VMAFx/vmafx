@@ -8,6 +8,26 @@ the old text described it as a stub.
 
 Rebase impact: NONE — comment-only change; no logic, no ABI delta.
 
+---
+
+## chore/cambi-drop-vulkan-scaffold — remove CAMBI Vulkan scaffolding per ADR-0726 (2026-06-03)
+
+No rebase impact on upstream C/Python code.
+
+Files modified are fork-local:
+`core/src/feature/vulkan/cambi_vulkan.c` (deleted),
+`core/src/feature/vulkan/shaders/cambi_{preprocess,derivative,filter_mode,decimate,mask_dp}.comp`
+(deleted), `core/test/test_cambi_vulkan.c` (deleted),
+`core/src/vulkan/meson.build` (CAMBI source + shader entries removed),
+`core/src/feature/cambi_internal.h` (comment updated),
+`core/src/feature/cuda/integer_cambi_cuda.c` (comments updated),
+`core/src/feature/hip/integer_cambi_hip.c` (comment updated),
+`changelog.d/removed/cambi-vulkan-scaffold.md` (new).
+
+**Rebase impact:** None on upstream sync (no Netflix file touched).
+
+---
+
 ## CI scaffold-comment refresh (2026-06-03)
 
 `.github/workflows/fuzz.yml` — header comment updated: ADR-0882 citation added

@@ -74,12 +74,6 @@ vulkan_shader_sources = [
     'shaders/vif_reduce.comp',
     'shaders/adm_reduce.comp',
     'shaders/motion_reduce.comp',
-    # T7-36 / ADR-0205 — cambi Vulkan integration.
-    'shaders/cambi_preprocess.comp',
-    'shaders/cambi_derivative.comp',
-    'shaders/cambi_filter_mode.comp',
-    'shaders/cambi_decimate.comp',
-    'shaders/cambi_mask_dp.comp',
     # Integer ADM Vulkan extractor (#1035).
     'shaders/integer_adm.comp',
     'shaders/integer_adm_reduce.comp',
@@ -186,7 +180,6 @@ vulkan_sources += files(
     '../feature/vulkan/float_vif_vulkan.c',
     '../feature/vulkan/float_adm_vulkan.c',
     '../feature/vulkan/ssimulacra2_vulkan.c',
-    '../feature/vulkan/cambi_vulkan.c',
     '../feature/vulkan/integer_adm_vulkan.c',
 )
 

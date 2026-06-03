@@ -66,8 +66,8 @@ ADR-0234) catches drift but only after a full GPU run.
   `moment_vulkan.c` (defines `vmaf_fex_float_moment_vulkan`),
   `ms_ssim_vulkan.c` (defines `vmaf_fex_float_ms_ssim_vulkan`),
   `ssim_vulkan.c` (defines `vmaf_fex_float_ssim_vulkan`),
-  `psnr_hvs_vulkan.c` (defines `vmaf_fex_psnr_hvs_vulkan`),
-  `cambi_vulkan.c` (defines `vmaf_fex_cambi_vulkan`). A previous
+  `psnr_hvs_vulkan.c` (defines `vmaf_fex_psnr_hvs_vulkan`).
+  (`cambi_vulkan.c` was removed per ADR-0726.) A previous
   unmerged scaffold pass added `integer_vif_vulkan.c`,
   `float_moment_vulkan.c`, `integer_ms_ssim_vulkan.c`,
   `integer_ssim_vulkan.c`, `integer_psnr_hvs_vulkan.c`,
@@ -155,19 +155,13 @@ ADR-0234) catches drift but only after a full GPU run.
   formula from stale ADR/docs prose; it causes the 2.62e-3 lavapipe
   drift captured in ADR-0662.
 
-- **`cambi_vulkan.c` is hybrid host/GPU**
-  ([ADR-0205](../../../../docs/adr/0205-cambi-gpu-feasibility.md) +
-  [ADR-0210](../../../../docs/adr/0210-cambi-vulkan-integration.md)).
-  The Vulkan kernel offloads only the embarrassingly-parallel phases
-  (preprocessing scaffold + derivative + 7×7 SAT spatial mask + 2×
-  decimate + 3-tap mode filter); the precision-sensitive
-  `calculate_c_values` sliding-histogram pass + top-K spatial pooling
-  stay on the host. The host residual call site
-  (`cambi_vk_extract` → `vmaf_cambi_calculate_c_values`) is
-  intentionally the same C as CPU `cambi.c::calculate_c_values`.
-  Strategy III (fully-on-GPU c-values) is documented in
-  [research digest 0020](../../../../docs/research/0020-cambi-gpu-strategies.md)
-  but **deferred** — do not attempt it inside v1.
+- **`cambi_vulkan.c` was removed per ADR-0726** (Vulkan backend
+  dropped 2026-05-28). CAMBI GPU coverage is provided by
+  `integer_cambi_cuda.c` (CUDA) and `integer_cambi_hip.c` (HIP).
+  The Strategy II hybrid design (ADR-0205 / ADR-0210) is preserved
+  in those twins; Strategy III (fully-on-GPU c-values) remains
+  documented in [research digest 0020](../../../../docs/research/0020-cambi-gpu-strategies.md)
+  but deferred.
 
 - **`ssimulacra2_vulkan.c` calls into the SIMD host-path TUs**
   (ADR-0252). The pyramid-layout XYB conversion + 2x2 downsample
@@ -259,10 +253,10 @@ The umbrella flag pulls in `dependency('vulkan')` + volk + glslc + VMA.
   any `vmaf_vulkan_kernel_pipeline_destroy()` call in `close_fex()`.
   Reversing the order frees the pipeline's descriptor pool + command
   pool before the submit pool drains its command buffers — undefined
-  behaviour. The invariant applies to all 13 migrated extractors (PR-A,
-  PR-B, PR-C). Extractors in scope for PR-C:
-  `cambi_vulkan.c`, `ssimulacra2_vulkan.c`, `float_ansnr_vulkan.c`,
-  `moment_vulkan.c`.
+  behaviour. The invariant applies to all remaining migrated extractors
+  (PR-A, PR-B, PR-C). Extractors in scope for PR-C:
+  `ssimulacra2_vulkan.c`, `float_ansnr_vulkan.c`, `moment_vulkan.c`
+  (`cambi_vulkan.c` was removed per ADR-0726).
 
 ## Governing ADRs
 
@@ -329,7 +323,8 @@ on pre-allocated sets — it is a double-free.
 **Migrated kernels (PR-A + PR-B)**: `adm`, `motion`, `psnr` (PR-A /
 PR #563), `ssim`, `ciede`, `ms_ssim`, `motion_v2`, `float_psnr`,
 `float_motion` (PR-B / ADR-0353). Remaining legacy kernels (`ansnr`,
-`vif`, `ssimulacra2`, `cambi`) are deferred to PR-C.
+`vif`, `ssimulacra2`) are deferred to PR-C (`cambi` was removed per
+ADR-0726).
 
 ## Buffer allocation invariant (ADR-0357)
 

@@ -41,8 +41,8 @@
  *
  *  Lifecycle: mirrors the CUDA twin's synchronous-per-scale approach.
  *  submit() runs all GPU + CPU work per scale synchronously; collect()
- *  emits the pre-computed score. This is correct and matches the Vulkan
- *  precedent (cambi_vulkan::extract is also synchronous per-scale).
+ *  emits the pre-computed score. This is correct and matches the
+ *  per-scale synchronous posture of the CUDA twin.
  */
 
 #include <errno.h>
