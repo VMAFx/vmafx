@@ -22,6 +22,8 @@
 #include <stdlib.h>
 
 #include "feature/integer_motion.h"
+#include "libvmaf/picture.h"
+#include "feature/common/alignment.h"
 
 static inline int mirror(int idx, int size)
 {
@@ -319,4 +321,317 @@ uint64_t motion_score_pipeline_8_avx512(const uint8_t *prev, ptrdiff_t prev_stri
     }
 
     return sad;
+}
+
+/* -----------------------------------------------------------------------
+ * sad_avx512 — pixel-wise absolute difference sum between two pictures.
+ *
+ * Operates on the luma plane (data[0]) only.  Both pictures must have the
+ * same dimensions and bit-depth.  Processes 32 uint16 samples per SIMD
+ * iteration using _mm512_abs_epi16 + widening accumulation.
+ * ----------------------------------------------------------------------- */
+void sad_avx512(VmafPicture *pic_a, VmafPicture *pic_b, uint64_t *sad_out)
+{
+    const unsigned w = pic_a->w[0];
+    const unsigned h = pic_a->h[0];
+    const ptrdiff_t stride_a = pic_a->stride[0] / 2; /* stride in uint16 samples */
+    const ptrdiff_t stride_b = pic_b->stride[0] / 2;
+    const uint16_t *a = (const uint16_t *)pic_a->data[0];
+    const uint16_t *b = (const uint16_t *)pic_b->data[0];
+
+    uint64_t sad = 0;
+
+    for (unsigned i = 0; i < h; i++) {
+        const uint16_t *row_a = a + i * stride_a;
+        const uint16_t *row_b = b + i * stride_b;
+        __m512i acc = _mm512_setzero_si512();
+        unsigned j = 0;
+
+        for (; j + 32 <= w; j += 32) {
+            __m512i va = _mm512_loadu_si512((const __m512i *)(row_a + j));
+            __m512i vb = _mm512_loadu_si512((const __m512i *)(row_b + j));
+            /* Signed subtract, then abs -> |a[k]-b[k]| per int16 lane */
+            __m512i diff = _mm512_sub_epi16(va, vb);
+            __m512i abs_diff = _mm512_abs_epi16(diff);
+            /* Widen uint16 -> uint32 in two halves and accumulate */
+            acc = _mm512_add_epi32(acc, _mm512_cvtepu16_epi32(_mm512_castsi512_si256(abs_diff)));
+            acc = _mm512_add_epi32(acc,
+                                   _mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64(abs_diff, 1)));
+        }
+
+        sad += (uint64_t)(uint32_t)_mm512_reduce_add_epi32(acc);
+
+        /* Scalar tail */
+        for (; j < w; j++) {
+            sad += (uint64_t)(unsigned)abs((int)row_a[j] - (int)row_b[j]);
+        }
+    }
+
+    *sad_out = sad;
+}
+
+/* -----------------------------------------------------------------------
+ * y_convolution_8_avx512 — vertical 5-tap Gaussian on an 8-bit source.
+ *
+ * Signature mirrors integer_motion.c::y_convolution_8 (static).
+ * inp_size_bits is unused (always 8); kept for API symmetry with the
+ * 16-bit variant.
+ * ----------------------------------------------------------------------- */
+void y_convolution_8_avx512(const void *src_void, uint16_t *dst, unsigned width, unsigned height,
+                            ptrdiff_t src_stride, ptrdiff_t dst_stride, unsigned inp_size_bits)
+{
+    (void)inp_size_bits;
+    const uint8_t *src = (const uint8_t *)src_void;
+    const unsigned radius = (unsigned)(filter_width / 2);
+    const unsigned top_edge = vmaf_ceiln(radius, 1);
+    const unsigned bottom_edge = vmaf_floorn(height - (unsigned)(filter_width - (int)radius), 1);
+    const unsigned shift_var = 8u;
+    const unsigned add_before_shift = 1u << (shift_var - 1u);
+
+    const __m512i round_v = _mm512_set1_epi32((int32_t)add_before_shift);
+
+    /* Top edge rows — scalar mirror boundary */
+    for (unsigned i = 0; i < top_edge; i++) {
+        for (unsigned j = 0; j < width; j++) {
+            uint32_t accum = 0;
+            for (int k = 0; k < filter_width; k++) {
+                int i_tap = (int)i - (int)radius + k;
+                if (i_tap < 0)
+                    i_tap = -i_tap;
+                else if (i_tap >= (int)height)
+                    i_tap = (int)height - (i_tap - (int)height + 2);
+                accum += filter[k] * src[(ptrdiff_t)i_tap * src_stride + j];
+            }
+            dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);
+        }
+    }
+
+    /* Interior rows — AVX-512 vectorised, 32 uint8 pixels per iteration */
+    for (unsigned i = top_edge; i < bottom_edge; i++) {
+        const uint8_t *s0 = src + (ptrdiff_t)(i - 2) * src_stride;
+        const uint8_t *s1 = src + (ptrdiff_t)(i - 1) * src_stride;
+        const uint8_t *s2 = src + (ptrdiff_t)i * src_stride;
+        const uint8_t *s3 = src + (ptrdiff_t)(i + 1) * src_stride;
+        const uint8_t *s4 = src + (ptrdiff_t)(i + 2) * src_stride;
+
+        unsigned j = 0;
+        for (; j + 32 <= width; j += 32) {
+            /* Zero-extend 32 uint8 -> 32 uint16 */
+            __m512i v0 = _mm512_cvtepu8_epi16(_mm256_loadu_si256((const __m256i *)(s0 + j)));
+            __m512i v1 = _mm512_cvtepu8_epi16(_mm256_loadu_si256((const __m256i *)(s1 + j)));
+            __m512i v2 = _mm512_cvtepu8_epi16(_mm256_loadu_si256((const __m256i *)(s2 + j)));
+            __m512i v3 = _mm512_cvtepu8_epi16(_mm256_loadu_si256((const __m256i *)(s3 + j)));
+            __m512i v4 = _mm512_cvtepu8_epi16(_mm256_loadu_si256((const __m256i *)(s4 + j)));
+
+            /* Low 16 pixels (indices 0..15): widen uint16->uint32 and filter */
+            __m512i acc_lo = _mm512_mullo_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256(v0)),
+                                                _mm512_set1_epi32(3571));
+            acc_lo = _mm512_add_epi32(
+                acc_lo, _mm512_mullo_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256(v1)),
+                                           _mm512_set1_epi32(16004)));
+            acc_lo = _mm512_add_epi32(
+                acc_lo, _mm512_mullo_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256(v2)),
+                                           _mm512_set1_epi32(26386)));
+            acc_lo = _mm512_add_epi32(
+                acc_lo, _mm512_mullo_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256(v3)),
+                                           _mm512_set1_epi32(16004)));
+            acc_lo = _mm512_add_epi32(
+                acc_lo, _mm512_mullo_epi32(_mm512_cvtepu16_epi32(_mm512_castsi512_si256(v4)),
+                                           _mm512_set1_epi32(3571)));
+            acc_lo = _mm512_srli_epi32(_mm512_add_epi32(acc_lo, round_v), shift_var);
+
+            /* High 16 pixels (indices 16..31) */
+            __m512i acc_hi = _mm512_mullo_epi32(
+                _mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64(v0, 1)), _mm512_set1_epi32(3571));
+            acc_hi = _mm512_add_epi32(
+                acc_hi, _mm512_mullo_epi32(_mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64(v1, 1)),
+                                           _mm512_set1_epi32(16004)));
+            acc_hi = _mm512_add_epi32(
+                acc_hi, _mm512_mullo_epi32(_mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64(v2, 1)),
+                                           _mm512_set1_epi32(26386)));
+            acc_hi = _mm512_add_epi32(
+                acc_hi, _mm512_mullo_epi32(_mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64(v3, 1)),
+                                           _mm512_set1_epi32(16004)));
+            acc_hi = _mm512_add_epi32(
+                acc_hi, _mm512_mullo_epi32(_mm512_cvtepu16_epi32(_mm512_extracti64x4_epi64(v4, 1)),
+                                           _mm512_set1_epi32(3571)));
+            acc_hi = _mm512_srli_epi32(_mm512_add_epi32(acc_hi, round_v), shift_var);
+
+            /* Narrow int32 -> uint16 and store */
+            _mm256_storeu_si256((__m256i *)(dst + i * dst_stride + j),
+                                _mm512_cvtepi32_epi16(acc_lo));
+            _mm256_storeu_si256((__m256i *)(dst + i * dst_stride + j + 16),
+                                _mm512_cvtepi32_epi16(acc_hi));
+        }
+
+        /* Scalar tail */
+        for (; j < width; j++) {
+            uint32_t accum = filter[0] * s0[j] + filter[1] * s1[j] + filter[2] * s2[j] +
+                             filter[3] * s3[j] + filter[4] * s4[j];
+            dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);
+        }
+    }
+
+    /* Bottom edge rows — scalar mirror boundary */
+    for (unsigned i = bottom_edge; i < height; i++) {
+        for (unsigned j = 0; j < width; j++) {
+            uint32_t accum = 0;
+            for (int k = 0; k < filter_width; k++) {
+                int i_tap = (int)i - (int)radius + k;
+                if (i_tap < 0)
+                    i_tap = -i_tap;
+                else if (i_tap >= (int)height)
+                    i_tap = (int)height - (i_tap - (int)height + 2);
+                accum += filter[k] * src[(ptrdiff_t)i_tap * src_stride + j];
+            }
+            dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);
+        }
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * y_convolution_16_avx512 — vertical 5-tap Gaussian on a 16-bit source.
+ *
+ * Signature mirrors integer_motion.c::y_convolution_16 (static).
+ * inp_size_bits is the source bit depth (10, 12, or 16).
+ * ----------------------------------------------------------------------- */
+void y_convolution_16_avx512(const void *src_void, uint16_t *dst, unsigned width, unsigned height,
+                             ptrdiff_t src_stride, ptrdiff_t dst_stride, unsigned inp_size_bits)
+{
+    const uint16_t *src = (const uint16_t *)src_void;
+    const unsigned radius = (unsigned)(filter_width / 2);
+    const unsigned top_edge = vmaf_ceiln(radius, 1);
+    const unsigned bottom_edge = vmaf_floorn(height - (unsigned)(filter_width - (int)radius), 1);
+    const unsigned add_before_shift = 1u << (inp_size_bits - 1u);
+    const unsigned shift_var = inp_size_bits;
+
+    const __m512i round_v = _mm512_set1_epi32((int32_t)add_before_shift);
+
+    /* Top edge rows — scalar mirror boundary */
+    for (unsigned i = 0; i < top_edge; i++) {
+        for (unsigned j = 0; j < width; j++) {
+            dst[i * dst_stride + j] = (uint16_t)((edge_16(false, src, (int)width, (int)height,
+                                                          (int)src_stride, (int)i, (int)j) +
+                                                  add_before_shift) >>
+                                                 shift_var);
+        }
+    }
+
+    /* Interior rows — AVX-512 vectorised, 16 uint16 pixels per iteration */
+    for (unsigned i = top_edge; i < bottom_edge; i++) {
+        const uint16_t *s0 = src + (ptrdiff_t)(i - 2) * src_stride;
+        const uint16_t *s1 = src + (ptrdiff_t)(i - 1) * src_stride;
+        const uint16_t *s2 = src + (ptrdiff_t)i * src_stride;
+        const uint16_t *s3 = src + (ptrdiff_t)(i + 1) * src_stride;
+        const uint16_t *s4 = src + (ptrdiff_t)(i + 2) * src_stride;
+
+        unsigned j = 0;
+        for (; j + 16 <= width; j += 16) {
+            /* Zero-extend 16 uint16 -> 16 uint32 */
+            __m512i v0 = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)(s0 + j)));
+            __m512i v1 = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)(s1 + j)));
+            __m512i v2 = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)(s2 + j)));
+            __m512i v3 = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)(s3 + j)));
+            __m512i v4 = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)(s4 + j)));
+
+            __m512i acc = _mm512_mullo_epi32(v0, _mm512_set1_epi32(3571));
+            acc = _mm512_add_epi32(acc, _mm512_mullo_epi32(v1, _mm512_set1_epi32(16004)));
+            acc = _mm512_add_epi32(acc, _mm512_mullo_epi32(v2, _mm512_set1_epi32(26386)));
+            acc = _mm512_add_epi32(acc, _mm512_mullo_epi32(v3, _mm512_set1_epi32(16004)));
+            acc = _mm512_add_epi32(acc, _mm512_mullo_epi32(v4, _mm512_set1_epi32(3571)));
+            acc = _mm512_srli_epi32(_mm512_add_epi32(acc, round_v), shift_var);
+
+            /* Narrow int32 -> uint16 and store */
+            _mm256_storeu_si256((__m256i *)(dst + i * dst_stride + j), _mm512_cvtepi32_epi16(acc));
+        }
+
+        /* Scalar tail */
+        for (; j < width; j++) {
+            uint32_t accum = filter[0] * s0[j] + filter[1] * s1[j] + filter[2] * s2[j] +
+                             filter[3] * s3[j] + filter[4] * s4[j];
+            dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);
+        }
+    }
+
+    /* Bottom edge rows — scalar mirror boundary */
+    for (unsigned i = bottom_edge; i < height; i++) {
+        for (unsigned j = 0; j < width; j++) {
+            dst[i * dst_stride + j] = (uint16_t)((edge_16(false, src, (int)width, (int)height,
+                                                          (int)src_stride, (int)i, (int)j) +
+                                                  add_before_shift) >>
+                                                 shift_var);
+        }
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * x_convolution_16_avx512 — horizontal 5-tap Gaussian on a 16-bit source.
+ *
+ * Signature mirrors integer_motion.c::x_convolution_16 (static) and
+ * x_convolution_16_neon in arm64/motion_neon.c.
+ * ----------------------------------------------------------------------- */
+void x_convolution_16_avx512(const uint16_t *src, uint16_t *dst, unsigned width, unsigned height,
+                             ptrdiff_t src_stride, ptrdiff_t dst_stride)
+{
+    const unsigned radius = (unsigned)(filter_width / 2);
+    const unsigned left_edge = vmaf_ceiln(radius, 1);
+    const unsigned right_edge = vmaf_floorn(width - (unsigned)(filter_width - (int)radius), 1);
+    const unsigned shift_add_round = 32768u;
+
+    const __m512i round_v = _mm512_set1_epi32((int32_t)shift_add_round);
+
+    /* Left edge columns — scalar mirror boundary */
+    for (unsigned i = 0; i < height; i++) {
+        for (unsigned j = 0; j < left_edge; j++) {
+            dst[i * dst_stride + j] = (uint16_t)((edge_16(true, src, (int)width, (int)height,
+                                                          (int)src_stride, (int)i, (int)j) +
+                                                  shift_add_round) >>
+                                                 16);
+        }
+    }
+
+    /* Interior columns — AVX-512 vectorised, 16 uint16 per iteration */
+    for (unsigned i = 0; i < height; i++) {
+        /* src_row points to src[i][left_edge - radius] */
+        const uint16_t *src_row = src + (ptrdiff_t)i * src_stride + (left_edge - radius);
+        unsigned j = left_edge;
+
+        for (; j + 16 <= right_edge; j += 16) {
+            __m512i v0 = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)(src_row)));
+            __m512i v1 = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)(src_row + 1)));
+            __m512i v2 = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)(src_row + 2)));
+            __m512i v3 = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)(src_row + 3)));
+            __m512i v4 = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *)(src_row + 4)));
+
+            __m512i acc = _mm512_mullo_epi32(v0, _mm512_set1_epi32(3571));
+            acc = _mm512_add_epi32(acc, _mm512_mullo_epi32(v1, _mm512_set1_epi32(16004)));
+            acc = _mm512_add_epi32(acc, _mm512_mullo_epi32(v2, _mm512_set1_epi32(26386)));
+            acc = _mm512_add_epi32(acc, _mm512_mullo_epi32(v3, _mm512_set1_epi32(16004)));
+            acc = _mm512_add_epi32(acc, _mm512_mullo_epi32(v4, _mm512_set1_epi32(3571)));
+            acc = _mm512_srli_epi32(_mm512_add_epi32(acc, round_v), 16);
+
+            _mm256_storeu_si256((__m256i *)(dst + i * dst_stride + j), _mm512_cvtepi32_epi16(acc));
+
+            src_row += 16;
+        }
+
+        /* Scalar tail for remaining interior columns */
+        for (; j < right_edge; j++) {
+            uint32_t accum = filter[0] * src_row[0] + filter[1] * src_row[1] +
+                             filter[2] * src_row[2] + filter[3] * src_row[3] +
+                             filter[4] * src_row[4];
+            dst[i * dst_stride + j] = (uint16_t)((accum + shift_add_round) >> 16);
+            src_row++;
+        }
+    }
+
+    /* Right edge columns — scalar mirror boundary */
+    for (unsigned i = 0; i < height; i++) {
+        for (unsigned j = right_edge; j < width; j++) {
+            dst[i * dst_stride + j] = (uint16_t)((edge_16(true, src, (int)width, (int)height,
+                                                          (int)src_stride, (int)i, (int)j) +
+                                                  shift_add_round) >>
+                                                 16);
+        }
+    }
 }

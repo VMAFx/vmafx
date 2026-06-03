@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix(cppcheck): motion_avx512 missing sub-kernel functions
+
+**Files touched:**
+`core/src/feature/x86/motion_avx512.c`,
+`core/src/feature/x86/motion_avx512.h`
+
+**Rebase impact:** None. Both files are fork-local SIMD additions.
+The four new public symbols (`sad_avx512`, `y_convolution_8_avx512`,
+`y_convolution_16_avx512`, `x_convolution_16_avx512`) are additive
+and have no upstream Netflix/vmaf equivalents. No existing symbol is
+renamed, removed, or ABI-changed.
+
+---
+
 ## chore/tech-stack-badges-go-pin-bump (2026-06-04, ADR-1000)
 
 **Files touched:**

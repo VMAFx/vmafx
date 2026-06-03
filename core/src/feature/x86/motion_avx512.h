@@ -22,6 +22,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "libvmaf/picture.h"
+
 uint64_t motion_score_pipeline_8_avx512(const uint8_t *prev, ptrdiff_t prev_stride,
                                         const uint8_t *cur, ptrdiff_t cur_stride, int32_t *y_row,
                                         unsigned w, unsigned h, unsigned bpc);
@@ -29,5 +31,18 @@ uint64_t motion_score_pipeline_8_avx512(const uint8_t *prev, ptrdiff_t prev_stri
 uint64_t motion_score_pipeline_16_avx512(const uint8_t *prev, ptrdiff_t prev_stride,
                                          const uint8_t *cur, ptrdiff_t cur_stride, int32_t *y_row,
                                          unsigned w, unsigned h, unsigned bpc);
+
+/* Sub-kernel functions used by unit tests (test_motion_avx512_parity.c). */
+
+void sad_avx512(VmafPicture *pic_a, VmafPicture *pic_b, uint64_t *sad);
+
+void y_convolution_8_avx512(const void *src, uint16_t *dst, unsigned width, unsigned height,
+                            ptrdiff_t src_stride, ptrdiff_t dst_stride, unsigned inp_size_bits);
+
+void y_convolution_16_avx512(const void *src, uint16_t *dst, unsigned width, unsigned height,
+                             ptrdiff_t src_stride, ptrdiff_t dst_stride, unsigned inp_size_bits);
+
+void x_convolution_16_avx512(const uint16_t *src, uint16_t *dst, unsigned width, unsigned height,
+                             ptrdiff_t src_stride, ptrdiff_t dst_stride);
 
 #endif /* X86_AVX512_MOTION_H_ */
