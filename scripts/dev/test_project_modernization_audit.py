@@ -546,3 +546,204 @@ def test_main_writes_reports(tmp_path: Path) -> None:
     assert rc == 0
     assert json.loads(out_json.read_text(encoding="utf-8"))["summary"]["total"] >= 1
     assert "Known limitations" in out_md.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# dedupe_findings — duplicate-ID suppression and sort order
+# ---------------------------------------------------------------------------
+
+
+def test_dedupe_findings_removes_duplicates(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "ai" / "scripts" / "train_main.py",
+        "raise NotImplementedError('gap')\n",
+    )
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+    # Repeat the list to simulate duplicates
+    duped = findings + findings
+    deduped = audit.dedupe_findings(duped)
+    assert len(deduped) == len(findings), "dedupe_findings must collapse identical IDs"
+
+
+def test_dedupe_findings_sorts_by_descending_severity(tmp_path: Path) -> None:
+    low = _write(
+        tmp_path / "docs" / "api" / "low.md",
+        "Known limitations: scaffold.\n",
+    )
+    high = _write(
+        tmp_path / "tools" / "vmaf-tune" / "src" / "vmaftune" / "high.py",
+        "raise NotImplementedError('real gap')\n",
+    )
+    findings = audit.scan_marker_findings(
+        tmp_path,
+        [str(low.relative_to(tmp_path)), str(high.relative_to(tmp_path))],
+    )
+    deduped = audit.dedupe_findings(findings)
+    severities = [f.severity for f in deduped]
+    assert severities == sorted(severities, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# summarize_findings — counter aggregation
+# ---------------------------------------------------------------------------
+
+
+def test_summarize_findings_counts_total_and_blocked(tmp_path: Path) -> None:
+    source_blocked = _write(
+        tmp_path / ".workingdir2" / "OPEN.md",
+        "- **T-HDR-VMAF** — blocked on upstream Netflix releases.\n",
+    )
+    source_open = _write(
+        tmp_path / "ai" / "scripts" / "train_main.py",
+        "raise NotImplementedError('real gap')\n",
+    )
+    findings = audit.scan_marker_findings(
+        tmp_path, [str(source_open.relative_to(tmp_path))]
+    ) + audit.scan_state_files(tmp_path, [str(source_blocked.relative_to(tmp_path))])
+
+    summary = audit.summarize_findings(findings)
+    assert summary["total"] == len(findings)
+    assert summary["blocked"] >= 1
+    assert summary["actionable"] == summary["total"] - summary["blocked"]
+    assert isinstance(summary["by_kind"], dict)
+    assert isinstance(summary["by_area"], dict)
+
+
+def test_summarize_findings_empty_returns_zeros() -> None:
+    summary = audit.summarize_findings([])
+    assert summary["total"] == 0
+    assert summary["blocked"] == 0
+    assert summary["actionable"] == 0
+    assert summary["by_kind"] == {}
+    assert summary["by_area"] == {}
+
+
+# ---------------------------------------------------------------------------
+# _area_for — AREA_RULES prefix mapping
+# ---------------------------------------------------------------------------
+
+
+def test_area_for_vmaf_tune_path() -> None:
+    assert audit._area_for("tools/vmaf-tune/src/foo.py") == "vmaf-tune"
+
+
+def test_area_for_tiny_ai_path() -> None:
+    assert audit._area_for("ai/scripts/train.py") == "tiny-ai"
+
+
+def test_area_for_mcp_path() -> None:
+    assert audit._area_for("mcp-server/vmaf-mcp/server.py") == "mcp"
+
+
+def test_area_for_feature_extractor_path() -> None:
+    assert audit._area_for("core/src/feature/vif.c") == "feature-extractors"
+
+
+def test_area_for_ci_path() -> None:
+    assert audit._area_for(".github/workflows/build.yml") == "ci"
+
+
+def test_area_for_docs_path() -> None:
+    assert audit._area_for("docs/usage/cli.md") == "docs"
+
+
+def test_area_for_scripts_path() -> None:
+    assert audit._area_for("scripts/dev/audit.py") == "developer-tools"
+
+
+def test_area_for_unknown_path_returns_repo() -> None:
+    assert audit._area_for("some/unknown/path/file.py") == "repo"
+
+
+def test_area_for_exact_prefix_match() -> None:
+    # "ai" must match "ai" itself (not just "ai/...")
+    assert audit._area_for("ai") == "tiny-ai"
+
+
+# ---------------------------------------------------------------------------
+# render_markdown — clusters and blocked sections
+# ---------------------------------------------------------------------------
+
+
+def test_render_markdown_shows_modernization_clusters(tmp_path: Path) -> None:
+    for idx in range(6):
+        _write(tmp_path / "ai" / "scripts" / f"train_model_{idx}.py", "pass\n")
+    report = audit.run_audit(tmp_path, roots=("ai",), state_files=())
+    rendered = audit.render_markdown(report)
+    assert "Modernization Clusters" in rendered
+
+
+def test_render_markdown_shows_blocked_findings(tmp_path: Path) -> None:
+    state = _write(
+        tmp_path / ".workingdir2" / "OPEN.md",
+        "- **T-HDR-VMAF** — blocked on upstream Netflix releases.\n",
+    )
+    report = audit.run_audit(tmp_path, roots=(), state_files=(str(state.relative_to(tmp_path)),))
+    rendered = audit.render_markdown(report)
+    assert "Blocked Or Deferred" in rendered
+
+
+def test_render_markdown_findings_by_area_table(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "ai" / "scripts" / "extract_gap.py",
+        "raise NotImplementedError('gap')\n",
+    )
+    report = audit.run_audit(tmp_path, roots=("ai",), state_files=())
+    rendered = audit.render_markdown(report)
+    assert "Findings by area" in rendered
+
+
+# ---------------------------------------------------------------------------
+# _skip_path — include_archives branch
+# ---------------------------------------------------------------------------
+
+
+def test_skip_path_includes_archives_when_flag_set(tmp_path: Path) -> None:
+    # The include_archives flag is exercised through the rglob branch of
+    # _iter_files (i.e. when a directory root is passed, not a single file
+    # path — the file-root branch yields directly without calling _skip_path).
+    # Pass the top-level "src" directory so _iter_files uses rglob and
+    # _skip_path is called for the archive/ subtree inside it.
+    _write(
+        tmp_path / "src" / "archive" / "train_enc.py",
+        "raise NotImplementedError('missing encoder path')\n",
+    )
+    # Without include_archives: archive/ is in SKIP_PARTS → no findings.
+    findings_excl = audit.scan_marker_findings(
+        tmp_path,
+        ["src"],
+        include_archives=False,
+    )
+    assert findings_excl == [], "archive paths should be excluded by default"
+
+    # With include_archives=True: archive/ is unblocked → finding fires.
+    findings_incl = audit.scan_marker_findings(
+        tmp_path,
+        ["src"],
+        include_archives=True,
+    )
+    assert len(findings_incl) >= 1, "archive paths should be included when flag is set"
+
+
+# ---------------------------------------------------------------------------
+# main() — stdout path (no --out-json / --out-md)
+# ---------------------------------------------------------------------------
+
+
+def test_main_prints_to_stdout_when_no_output_flags(tmp_path: Path, capsys) -> None:
+    _write(tmp_path / "ai" / "scripts" / "train_main.py", "raise NotImplementedError('gap')\n")
+
+    rc = audit.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--scan-root",
+            "ai",
+            "--state-file",
+            "missing.md",
+        ]
+    )
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "Project modernization audit" in captured.out
