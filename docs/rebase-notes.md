@@ -44068,3 +44068,15 @@ No rebase impact: comment-only edit to `vif.c`; adds `[MISRA-C:2012-11.3/EXP36-C
 citations to 10 bare `cppcheck-suppress invalidPointerCast` annotations.
 No logic changed; no public header, Netflix golden assertion, or upstream-mirrored
 symbol is affected.
+
+---
+
+### test(compat-python-vmaf): coverage push round 2 — Asset + ResultStore + crossval
+
+**Branch**: test/compat-python-vmaf-coverage-push (or equivalent worktree branch)
+
+no rebase impact: all four new test files (`test_asset.py`, `test_result_store.py`,
+`test_cross_validation.py`, `test_tools_misc.py`) live exclusively under
+`compat/python-vmaf/tests/`. No C source, public header, upstream-mirrored Python, or
+Netflix golden-assertion file is touched. The tests exercise existing public APIs only
+and add no new production code paths.
