@@ -15,7 +15,7 @@
 # Netflix golden gate is pinned to this workflow (linux-full runs the full
 # meson test suite that includes the golden assertions).
 
-name: Build — 1 per OS
+name: Build
 
 on:
   push:

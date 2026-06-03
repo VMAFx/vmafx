@@ -422,34 +422,59 @@ def _tail(text: str, n: int) -> str:
 # fresh probe. ADR-0498 follow-up #7 (BBB e2e v2).
 _PROBE_CACHE: dict[tuple[str, str], str] = {}
 
-# Map encoder names to (regex, prefix) for parsing the configure-line
-# / banner that ``ffmpeg -version`` prints. The configure line typically
-# looks like::
+# Map encoder names to configure-line patterns for parsing the
+# ``ffmpeg -version`` output. The configure summary looks like::
 #
 #   configuration: --prefix=/usr ... --enable-libx264 --enable-libsvtav1 ...
 #
-# which carries no version. The libavcodec banner that follows::
-#
-#   libavcodec     60. 31.102 / 60. 31.102
-#
-# also carries no encoder version. For libx264 / libsvtav1 the version
-# is in the per-encoder banner that ffmpeg dumps on init; when that
-# banner is suppressed we settle for an "enabled" marker so consumers
-# at least know the encoder was compiled in.
+# which carries no per-encoder version. The libavcodec banner that
+# follows also carries no encoder version. For these codecs we settle
+# for an ``"<encoder>-enabled"`` marker so consumers at least know the
+# encoder was compiled in. ADR-0498 follow-up #7 extends this set to
+# cover x265 and libvpx so the ``EncoderInfo.codec_detected`` field is
+# populated for all three software encoder families.
 _VERSION_PROBE_PATTERNS: dict[str, re.Pattern] = {
     "libx264": re.compile(r"--enable-libx264"),
     "libsvtav1": re.compile(r"--enable-libsvtav1"),
+    "libx265": re.compile(r"--enable-libx265"),
+    "libvpx-vp9": re.compile(r"--enable-libvpx"),
 }
+
+
+@dataclasses.dataclass(frozen=True)
+class EncoderInfo:
+    """Structured encoder availability record from ``ffmpeg -version``.
+
+    ``encoder`` is the FFmpeg codec name (e.g. ``libx264``).
+    ``codec_detected`` is ``True`` when the configure summary confirms
+    the codec was compiled into the ffmpeg binary (``--enable-<codec>``
+    present in the ``configuration:`` line).  ``version_label`` carries
+    the human-readable token returned by
+    :func:`_probe_encoder_version_from_ffmpeg` (e.g. ``"libx264-enabled"``).
+
+    ADR-0498 follow-up #7: this dataclass replaces the bare string
+    return from the probe so callers can gate codec-stats capture and
+    report generation on ``codec_detected`` without re-parsing the
+    version string.
+    """
+
+    encoder: str
+    codec_detected: bool
+    version_label: str
 
 
 def _probe_encoder_version_from_ffmpeg(ffmpeg_bin: str, encoder: str, runner_fn: object) -> str:
     """Return a best-effort version label, or ``""`` when nothing parseable.
 
-    The CLI returns a short stable label (``libx264-enabled`` /
-    ``libsvtav1-enabled``) when ``ffmpeg -version``'s configuration
-    line confirms the encoder is compiled in. Empty string keeps the
-    caller's previous ``"unknown"`` placeholder so existing tests that
-    pin that exact value still pass.
+    The function returns a short stable label (``libx264-enabled`` /
+    ``libsvtav1-enabled`` / ``libx265-enabled`` / ``libvpx-vp9-enabled``)
+    when ``ffmpeg -version``'s configuration line confirms the encoder is
+    compiled in. Empty string keeps the caller's previous ``"unknown"``
+    placeholder so existing tests that pin that exact value still pass.
+
+    See also :func:`probe_encoder_info` for a structured
+    :class:`EncoderInfo` return when callers need the ``codec_detected``
+    boolean without reparsing the label string.
     """
     pattern = _VERSION_PROBE_PATTERNS.get(encoder)
     if pattern is None:
@@ -471,6 +496,28 @@ def _probe_encoder_version_from_ffmpeg(ffmpeg_bin: str, encoder: str, runner_fn:
         label = ""
     _PROBE_CACHE[key] = label
     return label
+
+
+def probe_encoder_info(
+    ffmpeg_bin: str, encoder: str, runner_fn: object | None = None
+) -> EncoderInfo:
+    """Return structured encoder availability info from ``ffmpeg -version``.
+
+    Wraps :func:`_probe_encoder_version_from_ffmpeg` and returns an
+    :class:`EncoderInfo` with ``codec_detected = True`` when the
+    configure summary confirms the encoder is compiled in. Returns
+    ``codec_detected = False`` for unknown encoders (not in
+    ``_VERSION_PROBE_PATTERNS``) or when the configure line does not
+    include the ``--enable-<codec>`` flag.
+
+    ADR-0498 follow-up #7: callers that previously checked
+    ``version_label != "unknown"`` can now use the boolean
+    ``codec_detected`` field directly.
+    """
+    _runner = runner_fn if runner_fn is not None else subprocess.run
+    label = _probe_encoder_version_from_ffmpeg(ffmpeg_bin, encoder, _runner)
+    detected = bool(label)
+    return EncoderInfo(encoder=encoder, codec_detected=detected, version_label=label or "unknown")
 
 
 def build_pass1_stats_command(
@@ -503,9 +550,6 @@ def build_pass1_stats_command(
         float(req.duration_s) if req.sample_clip_seconds <= 0.0 and req.duration_s > 0.0 else 0.0
     )
     cmd = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "info"]
-    fallback_duration = (
-        float(req.duration_s) if req.sample_clip_seconds <= 0.0 and req.duration_s > 0.0 else 0.0
-    )
     if req.source_is_container:
         if req.sample_clip_seconds > 0.0:
             cmd.extend(["-ss", f"{req.sample_clip_start_s}"])

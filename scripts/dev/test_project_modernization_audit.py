@@ -274,6 +274,211 @@ def test_blocked_state_row_is_classified(tmp_path: Path) -> None:
     assert findings[0].blocked_reason.lower() == "blocked"
 
 
+# ---------------------------------------------------------------------------
+# False-positive category 1: developer-tools placeholder noise
+# The calibration scripts use "placeholder" as a domain STATUS value.
+# ---------------------------------------------------------------------------
+
+
+def test_calibration_scripts_placeholder_is_suppressed(tmp_path: Path) -> None:
+    """placeholder in calibration files should not fire as a gap marker."""
+    # Mirrors the content pattern in scripts/ci/gpu_ulp_calibration.yaml.
+    yaml_content = (
+        "# A placeholder entry uses the gate defaults until calibrated.\n"
+        "- gpu_id_pattern: RTX-4090\n"
+        "  status: placeholder\n"
+        "  tolerance: 1e-5\n"
+    )
+    cal_py_content = (
+        '    status: str  # "calibrated" | "placeholder"\n'
+        '    label_kind = "calibrated" if entry.status == "calibrated" else "placeholder"\n'
+        '    return feature_default, f"placeholder-default:{entry.gpu_id_pattern}"\n'
+    )
+    _write(tmp_path / "scripts" / "ci" / "gpu_ulp_calibration.yaml", yaml_content)
+    _write(tmp_path / "scripts" / "ci" / "cross_backend_calibration.py", cal_py_content)
+    _write(tmp_path / "scripts" / "ci" / "cross_backend_parity_gate.py", cal_py_content)
+
+    findings = audit.scan_marker_findings(
+        tmp_path,
+        ["scripts/ci"],
+        max_per_file=20,
+    )
+    placeholder_findings = [f for f in findings if f.kind == "placeholder"]
+
+    assert placeholder_findings == [], (
+        "placeholder marker should be suppressed in calibration files; "
+        f"got {placeholder_findings}"
+    )
+
+
+def test_calibration_scripts_other_markers_still_fire(tmp_path: Path) -> None:
+    """Other markers (e.g. TODO) should still fire in calibration files."""
+    content = "# TODO: add more placeholder rows once data is collected\n"
+    _write(tmp_path / "scripts" / "ci" / "cross_backend_calibration.py", content)
+
+    findings = audit.scan_marker_findings(tmp_path, ["scripts/ci"])
+    todo_findings = [f for f in findings if f.kind == "todo"]
+
+    assert len(todo_findings) == 1, "TODO should still be reported in calibration files"
+
+
+def test_non_calibration_script_placeholder_still_fires(tmp_path: Path) -> None:
+    """placeholder in a non-calibration script path should still produce a finding."""
+    _write(
+        tmp_path / "scripts" / "dev" / "some_helper.py",
+        "METRIC_TABLE = {'foo': 'placeholder'}  # TODO: real impl\n",
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, ["scripts/dev"])
+    placeholder_findings = [f for f in findings if f.kind == "placeholder"]
+
+    assert (
+        len(placeholder_findings) >= 1
+    ), "placeholder in a non-calibration path should still be reported"
+
+
+# ---------------------------------------------------------------------------
+# False-positive category 2: state.md / BACKLOG / OPEN closed-row noise
+# Rows under "Recently closed", "Resolved", or "Confirmed not-affected"
+# headings and rows with "closed: " markers should be skipped.
+# ---------------------------------------------------------------------------
+
+
+def test_state_recently_closed_section_is_skipped(tmp_path: Path) -> None:
+    """T-* rows under ## Recently closed should not produce findings."""
+    content = (
+        "## Open bugs\n"
+        "\n"
+        "| **T-OPEN-BUG-ACTIVE** | Some description. |\n"
+        "\n"
+        "## Recently closed\n"
+        "\n"
+        "| **T-OLD-BUG-FIXED** | Fixed by PR #42. | (2026-05-01) |\n"
+        "| **T-ANOTHER-CLOSED** | Also resolved. | (2026-05-15) |\n"
+        "\n"
+        "## Deferred (waiting on external trigger)\n"
+        "\n"
+        "| **T-DEFERRED-ITEM** | Blocked on upstream. |\n"
+    )
+    state = _write(tmp_path / "docs" / "state.md", content)
+
+    findings = audit.scan_state_files(tmp_path, [str(state.relative_to(tmp_path))])
+    paths_and_lines = [(f.path, f.evidence) for f in findings]
+
+    closed_findings = [
+        e for _, e in paths_and_lines if "T-OLD-BUG-FIXED" in e or "T-ANOTHER-CLOSED" in e
+    ]
+    assert closed_findings == [], f"closed rows should be skipped; got: {closed_findings}"
+    open_evidence = [e for _, e in paths_and_lines if "T-OPEN-BUG-ACTIVE" in e]
+    assert len(open_evidence) == 1, "open bug should still be reported"
+
+
+def test_state_confirmed_not_affected_section_is_skipped(tmp_path: Path) -> None:
+    """T-* rows under ## Confirmed not-affected should not produce findings."""
+    content = (
+        "## Open bugs\n"
+        "\n"
+        "| **T-REAL-OPEN** | Real open work. |\n"
+        "\n"
+        "## Confirmed not-affected (or already-fixed upstream of the fork's master)\n"
+        "\n"
+        "| **T-CONFIRMED-NOAFFECT** | Upstream already fixed. |\n"
+    )
+    state = _write(tmp_path / "docs" / "state.md", content)
+
+    findings = audit.scan_state_files(tmp_path, [str(state.relative_to(tmp_path))])
+    evidence_list = [f.evidence for f in findings]
+
+    assert not any(
+        "T-CONFIRMED-NOAFFECT" in e for e in evidence_list
+    ), "confirmed-not-affected rows should be suppressed"
+    assert any("T-REAL-OPEN" in e for e in evidence_list), "real open rows should still be reported"
+
+
+def test_state_closed_date_stamp_row_is_skipped(tmp_path: Path) -> None:
+    """Rows with a (YYYY-MM-DD) date stamp at the end should be skipped."""
+    content = (
+        "## Open bugs\n"
+        "\n"
+        "| **T-STILL-OPEN** | Active issue. |\n"
+        "| **T-INLINE-CLOSED** | Was fixed. | (2026-05-30) |\n"
+    )
+    state = _write(tmp_path / ".workingdir2" / "OPEN.md", content)
+
+    findings = audit.scan_state_files(tmp_path, [str(state.relative_to(tmp_path))])
+    evidence_list = [f.evidence for f in findings]
+
+    assert not any(
+        "T-INLINE-CLOSED" in e for e in evidence_list
+    ), "date-stamped closed rows should be suppressed"
+    assert any(
+        "T-STILL-OPEN" in e for e in evidence_list
+    ), "non-stamped open rows should still be reported"
+
+
+def test_state_closed_marker_row_is_skipped(tmp_path: Path) -> None:
+    """Rows with a literal ``closed: `` prefix should be skipped."""
+    content = (
+        "## Open bugs\n"
+        "\n"
+        "- **T-OPEN-ITEM** — active.\n"
+        "- closed: **T-CLOSED-ITEM** — resolved in PR #99.\n"
+    )
+    state = _write(tmp_path / ".workingdir2" / "BACKLOG.md", content)
+
+    findings = audit.scan_state_files(tmp_path, [str(state.relative_to(tmp_path))])
+    evidence_list = [f.evidence for f in findings]
+
+    assert not any("T-CLOSED-ITEM" in e for e in evidence_list)
+    assert any("T-OPEN-ITEM" in e for e in evidence_list)
+
+
+def test_false_positive_rate_reduction_combined(tmp_path: Path) -> None:
+    """Verifies ~100 false-positive findings are suppressed vs the baseline.
+
+    Synthetic state file with 70 closed rows + calibration file with 15
+    placeholder occurrences.  Baseline (no exclusions) would produce >=85
+    false-positive findings; with the two exclude rules the count should
+    drop to zero for those items.
+    """
+    # Build a state file with 35 "Recently closed" rows and 35 rows in
+    # "Confirmed not-affected".
+    closed_rows = "\n".join(
+        f"| **T-CLOSED-{i:03d}** | Some closed item {i}. | (2026-05-{(i % 28) + 1:02d}) |"
+        for i in range(35)
+    )
+    confirmed_rows = "\n".join(
+        f"| **T-NOAFFECT-{i:03d}** | Not affecting the fork. |" for i in range(35)
+    )
+    state_content = (
+        "## Open bugs\n\n"
+        "| **T-REAL-OPEN-001** | The one real open item. |\n\n"
+        "## Recently closed\n\n"
+        f"{closed_rows}\n\n"
+        "## Confirmed not-affected (or already-fixed upstream)\n\n"
+        f"{confirmed_rows}\n"
+    )
+    state = _write(tmp_path / "docs" / "state.md", state_content)
+
+    # Build a calibration file with 15 placeholder occurrences.
+    cal_lines = "\n".join(f"  status: placeholder  # entry {i}" for i in range(15))
+    cal_content = f"# Calibration table\n{cal_lines}\n"
+    _write(tmp_path / "scripts" / "ci" / "gpu_ulp_calibration.yaml", cal_content)
+
+    state_findings = audit.scan_state_files(tmp_path, [str(state.relative_to(tmp_path))])
+    marker_findings = audit.scan_marker_findings(tmp_path, ["scripts/ci"], max_per_file=30)
+
+    # Only the one real open row should survive from the state scan.
+    assert len(state_findings) == 1, (
+        f"expected 1 open state finding, got {len(state_findings)}: "
+        f"{[f.evidence[:60] for f in state_findings]}"
+    )
+    placeholder_findings = [f for f in marker_findings if f.kind == "placeholder"]
+    assert (
+        placeholder_findings == []
+    ), f"expected 0 placeholder findings from calibration yaml, got {len(placeholder_findings)}"
+
+
 def test_smoke_model_registry_rows_are_reported(tmp_path: Path) -> None:
     registry = {
         "models": [

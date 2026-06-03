@@ -1,4 +1,4 @@
-name: Docker Image Build
+name: Docker
 on:
   push:
     branches: [master]
@@ -50,7 +50,7 @@ jobs:
     # rename-class regression surfaces immediately at the job level.
     # T7-DOCKER-SMOKE (a real `docker run vmaf vmaf --version` step)
     # is the right next step — tracked separately.
-    name: Docker Image Build
+    name: Docker
     runs-on: ubuntu-latest
     continue-on-error: false
     steps:

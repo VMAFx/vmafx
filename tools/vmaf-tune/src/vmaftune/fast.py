@@ -200,20 +200,23 @@ def _build_prod_predictor(
     encoder: str,
     crf_range: tuple[int, int],
     sample_extractor: Callable[[Path, int, str], tuple[list[float], float]] | None,
+    backend: str | None = None,
 ) -> Callable[[int], TrialSample]:
     """Construct a CRF→TrialSample predictor backed by the v2 proxy.
 
     ``sample_extractor`` is the seam Phase B/C share for "encode a short
     chunk + extract canonical-6 + observe bitrate". Tests inject a fake;
     production callers leave it default and the harness builds it from
-    the existing :mod:`vmaftune.encode` + libvmaf feature pipeline. When
-    ``sample_extractor`` is ``None`` we raise — the production-loop
-    encode-extract integration ships in a same-PR follow-up that wires
-    the existing :mod:`vmaftune.score_backend` GPU path; until then the
-    test-injection path is the only callable seam.
+    the existing :mod:`vmaftune.encode` + libvmaf feature pipeline.
+
+    ``backend`` is forwarded to :func:`_build_production_sample_extractor`
+    so each TPE trial scores its probe clip on the same GPU backend used
+    by the verify pass. ADR-0498 follow-up #7: wires the
+    :mod:`vmaftune.score_backend` GPU path through to the proxy-encode
+    extractor so all 30 TPE trial scores run on GPU when available.
     """
     if sample_extractor is None:
-        sample_extractor = _build_production_sample_extractor()
+        sample_extractor = _build_production_sample_extractor(backend=backend)
 
     crf_lo, crf_hi = crf_range
     crf_span = max(crf_hi - crf_lo, 1)
@@ -283,8 +286,7 @@ def _gpu_verify(
     if encode_runner is None:
         encode_runner = _build_production_encode_runner()
 
-    backend = score_backend_select(prefer="auto")  # advisory; runner consumes
-    _ = backend  # kept for the diagnostic hook a follow-up adds
+    backend = score_backend_select(prefer="auto")
     _kbps, vmaf = encode_runner(src, encoder, crf, backend)
     return float(vmaf)
 
@@ -341,6 +343,7 @@ def _build_production_sample_extractor(
     vmaf_bin: str = "vmaf",
     pix_fmt: str = "yuv420p",
     preset: str = "medium",
+    backend: str | None = None,
 ) -> Callable[[Path, int, str], tuple[list[float], float]]:
     """Return a ``(src, crf, encoder) → (canonical_6, kbps)`` callable.
 
@@ -351,6 +354,14 @@ def _build_production_sample_extractor(
     3. Scores the encoded clip against the same source window with the
        libvmaf CLI to extract the canonical-6 feature means.
     4. Returns ``(canonical_6_features, observed_kbps)``.
+
+    ``backend`` selects the libvmaf scoring backend (``cpu`` / ``cuda``
+    / ``sycl`` / ``hip`` / ``auto``).  When ``None`` or ``"auto"`` the
+    libvmaf CLI picks the fastest available backend.  ADR-0498 follow-up
+    #7: previously the sample extractor ignored the backend selected by
+    :func:`vmaftune.score_backend.select_backend` so all 30 TPE trials
+    scored on CPU even when a GPU was available; the ``backend`` kwarg
+    wires the GPU path through to each probe-encode score call.
 
     The returned callable is stateless: parallel TPE trials can call it
     concurrently (each gets its own tempdir).
@@ -364,6 +375,7 @@ def _build_production_sample_extractor(
         ffprobe_bin: str = "ffprobe"
 
     cfg = _Cfg()
+    _score_backend: str | None = None if (backend is None or backend == "auto") else backend
 
     def _extract(src: Path, crf: int, encoder: str) -> tuple[list[float], float]:
         with tempfile.TemporaryDirectory(prefix="vmaftune-fast-sample-") as td:
@@ -411,7 +423,7 @@ def _build_production_sample_extractor(
                 ),
                 frame_cnt=int(duration_s * fps),
             )
-            score_result = run_score(score_req, vmaf_bin=vmaf_bin)
+            score_result = run_score(score_req, vmaf_bin=vmaf_bin, backend=_score_backend)
             if score_result.exit_status != 0:
                 raise RuntimeError(
                     f"fast sample_extractor: score failed: {score_result.stderr_tail[-300:]}"
@@ -620,14 +632,25 @@ def fast_recommend(
             "Use smoke=True for the synthetic pipeline."
         )
 
+    # Select the scoring backend once; forward it to both the TPE proxy
+    # extractor and the GPU verify pass so all scoring — proxy trials +
+    # the final verify encode — uses the same backend. ADR-0498 follow-
+    # up #7: previously the sample extractor always defaulted to CPU
+    # even when a GPU was available.
+    from vmaftune.score_backend import select_backend as _select_backend  # noqa: PLC0415
+
+    _prod_backend = _select_backend(prefer="auto")
+
     if predictor is None:
         # Build the v2-proxy-backed predictor from the production
-        # encode-extract sample seam.
+        # encode-extract sample seam, forwarding the selected backend
+        # so each TPE trial scores on GPU when available.
         predictor = _build_prod_predictor(
             src=src,
             encoder=encoder,
             crf_range=crf_range,
             sample_extractor=sample_extractor,
+            backend=_prod_backend,
         )
 
     recommended_crf, predicted_vmaf, predicted_kbps, completed_trials = _run_tpe(

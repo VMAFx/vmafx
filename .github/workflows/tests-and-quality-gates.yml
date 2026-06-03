@@ -3,7 +3,7 @@
 # `libvmaf-build-matrix.yml` handles the cross-platform build matrix; this file
 # owns the *correctness* gate.
 
-name: Tests & Quality Gates — Netflix Golden / Sanitizers / Tiny AI / Coverage
+name: Tests
 on:
   push:
     branches: [master]
@@ -157,7 +157,7 @@ jobs:
   # one release cycle so cross-runner variance data can inform whether the
   # 5% tolerance is right before the step is promoted to a required check.
   perf-regression:
-    name: "Perf regression gate (CPU wall-clock, ADR-0907)"
+    name: "Perf"
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     needs: netflix-golden
@@ -524,7 +524,7 @@ jobs:
   # 70% by master post-ADR-0922 (#420/#412 coverage uplift).
   coverage:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: "Coverage Gate (70% Overall / 90% Critical — ADR-0922)"
+    name: "Coverage"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

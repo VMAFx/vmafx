@@ -1,4 +1,4 @@
-name: Rule Enforcement — ADR-0100 / 0106 / 0108
+name: Rules
 
 # ADR-0124: automated enforcement of the process ADRs.
 # Three jobs — one blocking (deep-dive-checklist, ADR-0108), two

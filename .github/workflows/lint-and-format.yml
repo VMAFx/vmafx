@@ -1,7 +1,7 @@
 # Static-analysis gate. Runs in parallel with the libvmaf Build Matrix so a
 # lint failure doesn't block discovering build breakage and vice versa.
 
-name: Lint & Format — Pre-Commit / Clang-Tidy / Cppcheck / Python / Shell
+name: Lint
 on:
   push:
     branches: [master]
@@ -522,7 +522,7 @@ jobs:
     # broken anchors / missing nav entries from landing silently on master
     # (38 of 50 docs.yml runs were failing before this job was added).
     # The job is intentionally path-filtered so C-only PRs skip it quickly.
-    name: Docs Build — mkdocs strict (PR gate)
+    name: Docs
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
