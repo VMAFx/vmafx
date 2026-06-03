@@ -43410,3 +43410,11 @@ gains a new `arm64_moment_sve2_lib` static library inside the existing
 four SVE2 test functions guarded by `#if HAVE_SVE2`.  `docs/backends/arm/overview.md`
 updates the per-feature coverage table.  No upstream Netflix/vmaf file is
 touched; no public C API or CLI flag changes.
+
+## shared-strict-json-helpers (2026-06-03, ADR-0988)
+
+no rebase impact: REASON — all touched files are fork-added Python modules
+(`tools/vmaf-tune/src/vmaftune/compare.py`, `report.py`, `benchmark.py`;
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`) with no upstream Netflix/vmaf
+equivalent. The changes are import additions and private-function removals;
+no public API, no C sources, no Netflix golden-data files are touched.

@@ -13,11 +13,12 @@ from __future__ import annotations
 import csv
 import dataclasses
 import io
-import json
 import math
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from typing import Any
+
+from .jsonio import dumps_strict
 
 
 @dataclasses.dataclass(frozen=True)
@@ -234,8 +235,8 @@ def summaries_to_dicts(summaries: Sequence[BenchmarkSummary]) -> list[dict[str, 
 
 
 def render_json(summaries: Sequence[BenchmarkSummary]) -> str:
-    """Render benchmark summaries as stable pretty JSON."""
-    return json.dumps(summaries_to_dicts(summaries), indent=2, sort_keys=True) + "\n"
+    """Render benchmark summaries as stable pretty RFC 8259 JSON (ADR-0988)."""
+    return dumps_strict(summaries_to_dicts(summaries)) + "\n"
 
 
 def render_csv(summaries: Sequence[BenchmarkSummary]) -> str:

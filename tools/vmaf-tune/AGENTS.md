@@ -316,6 +316,11 @@ for the option-space digest.
   means stay `NaN` in memory for caller-side math, but serialize as
   `null` so strict JSONL consumers, report renderers, and FFmpeg
   profile readers never ingest JavaScript-only tokens.
+- **All compare / report / benchmark JSON output routes through `vmaftune.jsonio.dumps_strict`
+  (ADR-0988).** Do not add bare `json.dumps` calls without NaN protection in
+  `compare.py`, `report.py`, or `benchmark.py` — import `dumps_strict` instead.
+  Private `_nan_to_none` helpers in those modules were removed in ADR-0988; any
+  reintroduction is a rebase regression.
 - **Ladder uncertainty is post-hull / pre-knee.** `vmaf-tune ladder
   --with-uncertainty` must run the ADR-0279 prune/insert recipe only
   after `convex_hull()` and before `select_knees()`. Preserve corpus

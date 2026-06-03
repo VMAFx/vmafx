@@ -40,7 +40,6 @@ from __future__ import annotations
 import csv
 import dataclasses
 import io
-import json
 import math
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -52,6 +51,7 @@ from . import __version__ as TOOL_VERSION
 from .codec_adapters import known_codecs
 from .encoder_runtime import parse_encoder_runtime_token
 from .hw_devices import AUTO_VAAPI_DEVICE, resolve_vaapi_device
+from .jsonio import dumps_strict
 
 # Keys exposed to programmatic consumers. Mirrors the CORPUS_ROW_KEYS
 # discipline in ``vmaftune/__init__.py``: bumping the list is a
@@ -359,30 +359,10 @@ def _emit_markdown(report: ComparisonReport) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _nan_to_none(value: Any) -> Any:
-    """Recursively substitute ``None`` for ``NaN`` / ``±inf`` floats.
-
-    The compare-report JSON emitter previously relied on Python's
-    default ``json.dumps`` (``allow_nan=True``), which writes bare
-    ``NaN`` / ``Infinity`` tokens. Those tokens are valid only under a
-    JavaScript-extended grammar — RFC 8259 strict parsers (Go's
-    ``encoding/json``, Rust ``serde_json``, ``jq --strict``,
-    ``json.loads(..., parse_constant=...)``) reject them. The fix is to
-    coerce non-finite floats to ``null`` before serialization so the
-    output is portable; downstream readers that need to distinguish a
-    failed row from a missing key can rely on the row-level ``ok`` flag
-    + ``error`` string (Bug #2, BBB e2e 2026-05-17).
-    """
-    if isinstance(value, float):
-        return None if math.isnan(value) or math.isinf(value) else value
-    if isinstance(value, dict):
-        return {k: _nan_to_none(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_nan_to_none(v) for v in value]
-    return value
-
-
 def _emit_json(report: ComparisonReport) -> str:
+    # NaN/±inf coercion + RFC 8259 strictness are handled by dumps_strict
+    # (jsonio.py).  The private _nan_to_none helper that previously lived
+    # here was an exact duplicate; removed per ADR-0988.
     payload = {
         "src": report.src,
         "target_vmaf": report.target_vmaf,
@@ -390,10 +370,7 @@ def _emit_json(report: ComparisonReport) -> str:
         "wall_time_ms": report.wall_time_ms,
         "rows": [r.to_row(report.target_vmaf) for r in report.rows],
     }
-    # ``allow_nan=False`` is a defence in depth — together with
-    # ``_nan_to_none`` it guarantees the emitter never writes bare
-    # ``NaN`` (which is not valid RFC 8259 JSON).
-    return json.dumps(_nan_to_none(payload), indent=2, sort_keys=True, allow_nan=False) + "\n"
+    return dumps_strict(payload) + "\n"
 
 
 def _emit_csv(report: ComparisonReport) -> str:
@@ -871,7 +848,7 @@ def emit_sweep_json(report: SweepReport) -> str:
             r.to_row(target) for target, r in zip(report.row_targets, report.rows, strict=True)
         ],
     }
-    return json.dumps(_nan_to_none(payload), indent=2, sort_keys=True, allow_nan=False) + "\n"
+    return dumps_strict(payload) + "\n"
 
 
 def emit_sweep_csv(report: SweepReport) -> str:

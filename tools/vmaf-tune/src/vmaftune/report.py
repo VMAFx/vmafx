@@ -32,34 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__ as TOOL_VERSION
-
-
-def _nan_to_none(value: Any) -> Any:
-    """Recursively substitute ``None`` for ``NaN`` / ``±inf`` floats.
-
-    The report appendix used to dump ``data.to_dict()`` through the
-    default ``json.dumps`` (``allow_nan=True``), which writes bare
-    ``NaN`` tokens for any in-memory ``float('nan')``. Those tokens
-    are valid only under JavaScript-extended JSON; RFC 8259 strict
-    parsers (Go ``encoding/json``, Rust ``serde_json``, ``jq``)
-    reject them. Failed compare/ladder rows surface as in-memory
-    NaNs even when the upstream JSON files write them as ``null``
-    — the dump round-trips ``null -> float('nan')`` on parse and
-    back to ``NaN`` on emit. Coerce to ``None`` here so the
-    appendix is portable JSON (BBB e2e v2 Bug #v2-D, ADR-0498).
-    """
-    if isinstance(value, float):
-        return None if math.isnan(value) or math.isinf(value) else value
-    if isinstance(value, dict):
-        return {k: _nan_to_none(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_nan_to_none(v) for v in value]
-    return value
-
-
-def _portable_json_dump(data: Any) -> str:
-    """``json.dumps`` with NaN coercion + ``allow_nan=False`` defence."""
-    return json.dumps(_nan_to_none(data), indent=2, sort_keys=True, allow_nan=False)
+from .jsonio import dumps_strict as _portable_json_dump  # ADR-0988: shared helper
 
 
 def _html_escape(value: Any) -> str:

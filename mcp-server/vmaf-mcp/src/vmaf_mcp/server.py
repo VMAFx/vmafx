@@ -45,6 +45,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -113,6 +114,37 @@ async def _communicate_with_timeout(
             f"subprocess timed out after {deadline:.1f}s (set "
             "VMAF_MCP_SUBPROCESS_TIMEOUT_S to override)"
         ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Strict JSON serialisation (ADR-0988)
+# ---------------------------------------------------------------------------
+
+
+def _nan_to_none(value: Any) -> Any:
+    """Recursively replace non-finite floats with ``None``.
+
+    Python's default ``json.dumps`` (``allow_nan=True``) emits bare ``NaN`` /
+    ``Infinity`` tokens that are not valid RFC 8259 JSON.  MCP clients that use
+    strict parsers (Go ``encoding/json``, Rust ``serde_json``, ``jq``) will
+    reject the response.  Coercing to ``null`` is the portable fix.
+
+    The canonical implementation lives in ``vmaftune.jsonio``; this copy is
+    intentionally inlined here because ``vmaf-mcp`` does not declare
+    ``vmaf-tune`` as a dependency (ADR-0988).
+    """
+    if isinstance(value, float):
+        return None if (math.isnan(value) or math.isinf(value)) else value
+    if isinstance(value, dict):
+        return {k: _nan_to_none(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_nan_to_none(v) for v in value]
+    return value
+
+
+def _dumps_strict(data: Any, *, indent: int | None = 2) -> str:
+    """Emit RFC 8259-compliant JSON with non-finite floats rendered as null."""
+    return json.dumps(_nan_to_none(data), indent=indent, sort_keys=True, allow_nan=False)
 
 
 # ---------------------------------------------------------------------------
@@ -735,8 +767,6 @@ def _pick_worst_frames(score_json: dict[str, Any], n: int) -> list[tuple[int, fl
     treat that frame anyway: the artefact-triage caller wants real low-
     scoring frames, not undefined ones.
     """
-    import math
-
     frames = score_json.get("frames") or []
     scored: list[tuple[int, float]] = []
     for f in frames:
@@ -2329,7 +2359,7 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         )
     else:
         raise ValueError(f"unknown tool: {name}")
-    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+    return [TextContent(type="text", text=_dumps_strict(result))]
 
 
 async def _run() -> None:
