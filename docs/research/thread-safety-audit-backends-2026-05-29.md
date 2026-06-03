@@ -8,7 +8,7 @@
 
 ---
 
-## 1. Can two threads safely call `vmaf_init` / `vmaf_close` / `vmaf_read_pictures` concurrently?
+## 1. Can two threads safely call vmaf_init / vmaf_close / vmaf_read_pictures?
 
 **Answer: No — concurrent use on the same `VmafContext *` is unsafe.**
 
@@ -32,7 +32,8 @@ on an independently acquired `VmafFeatureExtractorContext` from the pool.
 
 ## 2. Are per-extractor state structures shared across threads?
 
-**Answer: `VmafFeatureExtractor` (the static descriptor) is shared; `VmafFeatureExtractorContext` and `fex->priv` are per-pool-slot.**
+**Answer: `VmafFeatureExtractor` (the static descriptor) is shared;
+`VmafFeatureExtractorContext` and `fex->priv` are per-pool-slot.**
 
 The `VmafFeatureExtractor` struct (the static registry entry) carries
 `fex->cu_state` and `fex->sycl_state` as mutable pointer fields that are set
@@ -86,7 +87,7 @@ the same lifetime-contract as SYCL/Vulkan.
 Four process-wide statics were identified:
 
 | Location | Variable | Protection |
-|---|---|---|
+| --- | --- | --- |
 | `core/src/log.c:34` | `vmaf_log_level` (enum) | **None** — plain assignment in `vmaf_set_log_level`; concurrent reads from worker threads during `vmaf_log` are technically a data race under C11 (not `_Atomic`). |
 | `core/src/log.c:35` | `istty` (int) | **None** — same issue as `vmaf_log_level`. |
 | `core/src/cuda/dispatch_strategy.c:38-40` | `g_env_once` + `g_env_disp` | Protected by `pthread_once` / `INIT_ONCE`. Safe. |
@@ -118,7 +119,7 @@ makes the same omission.
 ## Summary of risks
 
 | Risk | Severity | Affected backends |
-|---|---|---|
+| --- | --- | --- |
 | Concurrent `vmaf_read_pictures` / `vmaf_close` on same context | High (data race) | All |
 | `fex->prev_ref` written from multiple batch threads on shared descriptor | Medium (latent) | VMAF_BATCH_THREADING CPU path |
 | `vmaf_log_level` / `istty` unprotected concurrent read/write | Low (C11 UB, not crash-inducing in practice) | All |

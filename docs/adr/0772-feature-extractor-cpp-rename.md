@@ -32,7 +32,7 @@ The old `.c` is deleted with `git rm`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep `.c`, add C++ wrappers | No rename | Two files; wrappers drift from definitions | Rejected — extra maintenance burden |
 | Rename only, no extern "C" guard | Simpler header patch | Callers that include the header from C++ TUs would see mangled names for registry functions | Rejected — silent ABI break risk |
 | Full C++23 modernisation in same PR | One pass | Large diff; harder to review; blocks this PR on all modernisations | Rejected — follow-up is better scoped |

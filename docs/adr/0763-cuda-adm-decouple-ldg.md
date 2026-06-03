@@ -1,10 +1,10 @@
 # ADR-0763 — CUDA `adm_decouple` kernels: `__ldg()` F3 fix
 
-| Field  | Value |
+| Field | Value |
 | ------ | ----- |
 | Status | Accepted |
-| Date   | 2026-05-29 |
-| Tags   | cuda, performance, adm, fork-local |
+| Date | 2026-05-29 |
+| Tags | cuda, performance, adm, fork-local |
 
 ## Context
 
@@ -44,7 +44,7 @@ Apply the F3 `__ldg()` fix to both kernels in `adm_decouple.cu`:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | No-op (skip since file is dead) | Zero risk | File drifts from codebase standard; re-integration inherits stale patterns | File is maintained in-tree; consistency matters |
 | Pass `const AdmBufferCuda *buf` by pointer instead | Eliminates struct-copy overhead | Larger signature change; requires caller-side update | F3 pointer-extraction is lower-risk and mirrors ADR-0743 / ADR-0754 precedent |
 | Full pointer-parameter refactor (F1+F3 combined) | Best for active kernels | `adm_decouple.cu` is dead code; the active compute is in `adm_csf.cu` | Out of scope for this targeted maintenance PR |

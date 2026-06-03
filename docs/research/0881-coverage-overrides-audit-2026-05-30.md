@@ -2,14 +2,15 @@
 
 **Author**: Claude (Anthropic) for Lusoris
 **Status**: Final
-**Scope**: `scripts/ci/coverage-check.sh` `PER_FILE_MIN` map; cross-reference each entry against fresh measured coverage; identify new files that should have overrides.
+**Scope**: `scripts/ci/coverage-check.sh` `PER_FILE_MIN` map; cross-reference
+each entry against fresh measured coverage; identify files needing overrides.
 **Companion ADR**: [ADR-0881](../adr/0881-coverage-overrides-audit-2026-05-30.md).
 **Master tip when audited**: `387839eacf`.
 
 ## TL;DR
 
 | File | Override (pre-audit) | Actual | Action |
-|------|----------------------|--------|--------|
+| ------ | ---------------------- | -------- | -------- |
 | `core/src/dnn/ort_backend.c` | 78 % | 77.8 % | **Keep at 78** (PR #338 in flight raises actual to 78.5 % by adding `vmaf_ort_output_name_at` test) |
 | `core/src/dnn/dnn_api.c` | 78 % | 78.0 % | **Keep at 78** (at structural ceiling per ADR-0114) |
 | `core/src/dnn/tiny_extractor_template.h` | **10 %** | **77.4 %** | **Tighten to 75** (67.4 pp slack — silently giving up regression-lock) |
@@ -85,7 +86,7 @@ Overall line coverage: 41.3000% (min 37%)
 ### 1. `core/src/dnn/ort_backend.c` — 78 % → 78 % (keep)
 
 | Signal | Reading |
-|--------|---------|
+| -------- | --------- |
 | Actual coverage | 77.8 % (526 lines, 410 covered) |
 | Slack vs override | -0.2 pp (at cap, currently failing) |
 | Root cause of stuck-at-cap | EP-attach success arms unreachable without OpenVINO/ROCm ORT build (ADR-0113); CreateSession→CPU fallback's nested error paths unreachable in healthy CI (ADR-0114) |
@@ -95,7 +96,7 @@ Overall line coverage: 41.3000% (min 37%)
 ### 2. `core/src/dnn/dnn_api.c` — 78 % → 78 % (keep)
 
 | Signal | Reading |
-|--------|---------|
+| -------- | --------- |
 | Actual coverage | 78.0 % (173 lines, 135 covered) |
 | Slack vs override | 0.0 pp (at cap) |
 | Root cause of stuck-at-cap | EP-attach error categories the CPU EP can't trigger (ADR-0114 §Context); dead `has_norm` branch (`dnn_api.c:141-144`) |
@@ -105,7 +106,7 @@ Overall line coverage: 41.3000% (min 37%)
 ### 3. `core/src/dnn/tiny_extractor_template.h` — 10 % → 75 % (tighten)
 
 | Signal | Reading |
-|--------|---------|
+| -------- | --------- |
 | Actual coverage | 77.4 % (124 lines, 96 covered) |
 | Slack vs override | **67.4 pp** |
 | Root cause of slack | Original 10 % was set when the refactor first landed with one consumer (`feature_lpips.c`). Four extractors now instantiate the helpers (`feature_lpips.c`, `fastdvdnet_pre.c`, `feature_mobilesal.c`, `feature_transnet_v2.c`); cumulative consumption far exceeds the original worst-case projection. |
@@ -118,7 +119,7 @@ Every file matching `*core/src/dnn/*`, plus `opt.c` and `read_json_model.c`
 (the literal cases in `coverage-check.sh`'s critical-file glob):
 
 | File | Coverage | Above global 85 %? | Action |
-|------|----------|--------------------|--------|
+| ------ | ---------- | -------------------- | -------- |
 | `core/src/dnn/dnn_attach_api.c` | 92.0 % (50 lines) | ✓ | None |
 | `core/src/dnn/model_loader.c` | 86.9 % (659 lines) | ✓ | None |
 | `core/src/dnn/onnx_scan.c` | 93.4 % (197 lines) | ✓ | None |

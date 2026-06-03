@@ -47,7 +47,7 @@ The loader uses `github.com/cilium/ebpf` (v0.21.0) as the Go-side BPF library.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | FUSE passthrough mode (kernel 5.15 `FUSE_PASSTHROUGH`) | Zero eBPF complexity; kernel-native | Requires rclone to opt in; rclone upstream does not yet expose `FUSE_PASSTHROUGH` in stable builds | Not available with current rclone |
 | LD_PRELOAD shim intercepting `open`/`read` | No kernel privileges needed | Fragile with static binaries and CGo; does not compose well with Go runtime | Too brittle |
 | io_uring fixed-file registration | Low syscall overhead for bulk reads | Requires rework of all read paths; no FUSE-specific benefit without the FD tracking layer anyway | Larger scope; orthogonal to the FUSE problem |
@@ -71,8 +71,9 @@ The loader uses `github.com/cilium/ebpf` (v0.21.0) as the Go-side BPF library.
   - Helm chart values (`deploy/helm/vmafx-node/values.yaml`) need a
     `ebpfBypass.enabled` flag that sets the env var and adds
     `CAP_BPF` to the container security context.
-  - A container build step (`RUN apt-get install -y clang libbpf-dev linux-headers-$(uname -r)`)
-    must be added to the node Dockerfile when `VMAFX_EBPF_BYPASS` support is
+  - A container build step
+    (`RUN apt-get install -y clang libbpf-dev linux-headers-$(uname -r)`)
+    must be added to the node Dockerfile when `VMAFX_EBPF_BYPASS` is
     promoted from experimental to default.
   - The smoke test (`TestReadLatencyComparison`) should be wired into a manual
     perf-gate job in CI once a privileged runner is available.

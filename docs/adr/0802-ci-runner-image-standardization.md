@@ -43,7 +43,7 @@ image. macOS matrix entries remain `macos-latest` by design.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep `ubuntu-latest` everywhere | No churn today | Silent breakage when GitHub moves the alias to 26.04 | Risk outweighs convenience |
 | Bump directly to `ubuntu-26.04` | Forward-compatible | 26.04 not yet GA on GitHub-hosted runners as of 2026-05-29 | Premature; revisit when GA |
 | Pin only build/test workflows, leave infra workflows floating | Less churn in infra jobs | Inconsistency is confusing | Uniform policy is simpler |

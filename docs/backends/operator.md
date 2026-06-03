@@ -10,7 +10,7 @@ ADR reference: [ADR-0815](../adr/0815-operator-node-distroless-dockerfiles.md),
 ## Image coordinates
 
 | Registry | Image | Default tag | Platforms |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `ghcr.io` | `vmafx/vmafx-operator` | `latest` | `linux/amd64`, `linux/arm64` |
 
 Pull by digest for production deployments:
@@ -61,15 +61,15 @@ docker run --rm \
   ghcr.io/vmafx/vmafx-operator:latest
 ```
 
-In-cluster the operator reads kubeconfig from the service-account token mounted by
-Kubernetes. The RBAC rules are managed by the Helm chart
-([ADR-0699](../adr/0699-vmafx-helm-chart-k8s.md)); the image runs as uid 65532
-(`nonroot`) by default.
+In-cluster the operator reads kubeconfig from the service-account token
+mounted by Kubernetes. The RBAC rules are managed by the Helm chart
+([ADR-0699](../adr/0699-vmafx-helm-chart-k8s.md)); the image runs as
+uid 65532 (`nonroot`) by default.
 
 ## Environment variables
 
 | Variable | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `VMAFX_OPERATOR_METRICS_ADDR` | `:8081` | Prometheus `/metrics` endpoint bind address |
 | `VMAFX_OPERATOR_PROBE_ADDR` | `:8082` | `/healthz` + `/readyz` bind address |
 | `VMAFX_OPERATOR_LEADER_ELECT` | `false` | Enable leader election for HA deployments |
@@ -80,7 +80,7 @@ CLI flags mirror all environment variables and take precedence.
 ## Exposed ports
 
 | Port | Protocol | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | 8081 | TCP | Prometheus metrics |
 | 8082 | TCP | Health and readiness probes (`/healthz`, `/readyz`) |
 

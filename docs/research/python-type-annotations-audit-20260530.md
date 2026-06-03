@@ -46,11 +46,11 @@ the fork — see root `pyproject.toml`).
 
 ## Findings (per package, baseline → after)
 
-| Package                          | Errors baseline | Errors after | Δ    |
-|----------------------------------|----------------:|-------------:|-----:|
-| `ai/src/vmaf_train,corpus,aiutils` | 7             | 0            | -7   |
-| `mcp-server/vmaf-mcp/src/vmaf_mcp` | 16            | 0            | -16  |
-| `tools/vmaf-tune/src/vmaftune`     | 261           | 196          | -65  |
+| Package                            | Errors baseline  | Errors after  | Δ     |
+| ---------------------------------- | ---------------: | ------------: | ----: |
+| `ai/src/vmaf_train,corpus,aiutils` | 7                | 0             | -7    |
+| `mcp-server/vmaf-mcp/src/vmaf_mcp` | 16               | 0             | -16   |
+| `tools/vmaf-tune/src/vmaftune`     | 261              | 196           | -65   |
 
 The `vmaf-tune` residue is dominated by three families that need
 follow-up PRs scoped per-family (this PR does not bundle them to keep

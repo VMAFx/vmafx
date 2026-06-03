@@ -9,7 +9,7 @@ design rationale.
 ## Prerequisites
 
 | Tool | Minimum version | Install |
-|------|----------------|---------|
+| ------ | ---------------- | --------- |
 | Docker | 24.x | <https://docs.docker.com/engine/install/> |
 | kind | 0.23 | `go install sigs.k8s.io/kind@v0.23.0` |
 | kubectl | 1.30 | <https://kubernetes.io/docs/tasks/tools/> |
@@ -48,7 +48,7 @@ TEARDOWN=1 bash test/e2e/kind-cluster.sh
 ## Test cases
 
 | # | Directory | What is exercised |
-|---|-----------|-------------------|
+| --- | ----------- | ------------------- |
 | 01 | `01-operator-installs/` | All three CRDs (`VmafxJob`, `VmafxNode`, `VmafxModelTraining`) reach `Established`. Operator `Deployment` reaches `Available`. |
 | 02 | `02-vmafxjob-creates-pod/` | Submitting a `VmafxJob` causes the operator to create a worker `Pod`. The job transitions `Pending → Running → Succeeded` and `status.score` is populated. |
 | 03 | `03-node-heartbeat/` | A `VmafxNode` CR backed by a stub `/healthz` server receives a `lastHeartbeat` timestamp within 30 s of creation, confirming the operator's health-probe reconciler is wired. |
@@ -93,14 +93,14 @@ attached as workflow artifacts under `kuttl-e2e-results`.
 
 ## Troubleshooting
 
-**Operator Pod not starting**
+### Operator Pod not starting
 
 ```bash
 kubectl describe pod -n vmafx-system -l control-plane=controller-manager
 kubectl logs -n vmafx-system deployment/vmafx-operator
 ```
 
-**CRDs not established after 120 s**
+### CRDs not established after 120 s
 
 Check that cert-manager webhooks are healthy:
 
@@ -109,14 +109,14 @@ kubectl get pods -n cert-manager
 kubectl describe crd vmafxjobs.vmafx.dev
 ```
 
-**VmafxJob stuck in Pending**
+### VmafxJob stuck in Pending
 
 ```bash
 kubectl describe vmafxjob <name> -n vmafx-e2e-test
 kubectl get events -n vmafx-e2e-test --sort-by=.lastTimestamp
 ```
 
-**Fake-device-plugin not advertising GPUs**
+### Fake-device-plugin not advertising GPUs
 
 ```bash
 kubectl describe node | grep -A5 nvidia.com

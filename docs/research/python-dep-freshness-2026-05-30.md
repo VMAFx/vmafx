@@ -37,7 +37,7 @@ curl -s "https://pypi.org/pypi/<pkg>/json" \
 ### At-latest (no action)
 
 | Package | Pinned floor | PyPI latest | Site(s) |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `torch` | `>=2.12.0` | 2.12.0 | ai, mcp, ensemble |
 | `onnx` | `>=1.21.0` | 1.21.0 | ai, mcp, ensemble |
 | `onnxruntime` | `>=1.26.0` | 1.26.0 | ai, mcp, ensemble |
@@ -76,7 +76,7 @@ curl -s "https://pypi.org/pypi/<pkg>/json" \
 ### Bumped (this PR)
 
 | Package | Old floor | New floor | Severity | Site(s) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `optuna` (dev extra) | `>=3.6` | `>=4.8.0` | HIGH (major) | tools/vmaf-tune[dev] |
 | `typer` | `>=0.25.1` | `>=0.26.4` | MEDIUM (minor) | ai, dev-llm |
 | `anthropic` | `>=0.104.1` | `>=0.105.2` | MEDIUM (minor) | dev-llm[cloud] |

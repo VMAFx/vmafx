@@ -34,11 +34,11 @@ Protocol/variance reshapes that would cascade through public APIs.
 
 The first pass targeted ~12 sites and lands them in one PR:
 
-| Package    | Pyright strict baseline | After this PR | Δ      |
-|------------|------------------------:|--------------:|-------:|
-| `ai/src`   |                     370 |           306 |   -64  |
-| `mcp/src`  |                      61 |            61 |   0    |
-| `tune/src` |                   1,257 |         1,236 |   -21  |
+| Package      | Pyright strict baseline  | After this PR  | Δ       |
+| ------------ | -----------------------: | -------------: | ------: |
+| `ai/src`     | 370                      | 306            | -64     |
+| `mcp/src`    | 61                       | 61             | 0       |
+| `tune/src`   | 1,257                    | 1,236          | -21     |
 
 The mcp count is unchanged: every remaining mcp pyright finding is in
 `server.py`, owned by PR #366; this audit deliberately avoids files
@@ -47,7 +47,7 @@ that PR overlaps to preserve a clean rebase merge.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Pyright on every fork-local Python tree | broader coverage | huge cascade with third-party stubs, noisy first PR | scope it to the three trees PR #366 already strict-checks |
 | Wait for PR #366 to merge first | avoids PR-overlap discipline | blocks on review queue; pyright finds real bugs PR #366 misses | run in parallel, skip overlapping files |
 | Fix every pyright finding | maximum cleanliness | several findings are stub bugs (torch.clamp, scipy PearsonRResult.statistic) — the fix is upstream, not in the fork | focus on fork-code bugs; suppress stub-noise with cast/assert |

@@ -1,4 +1,6 @@
-# ADR-0780: NOLINT Cluster Refactor Plan — Slab Allocator, SYCL Stride, and ADM Band-Size
+# ADR-0780: NOLINT Cluster Refactor — Slab Allocator, SYCL Stride, ADM Band-Size
+
+<!-- markdownlint-disable MD013 -- ADR/research body text; pre-existing long lines per ADR-0864 tail -->
 
 - **Status**: Proposed
 - **Date**: 2026-05-29
@@ -44,7 +46,7 @@ ADR-0141 §2 and is not touched.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add citations only (no structural change) | Minimal diff | Leaves 47 annotations in place; doesn't reduce visual noise | Less clean than eliminating or consolidating |
 | Single mega-PR with all changes | One review round | Three unrelated files; harder to bisect if one change regresses | Independent PRs allow staged CI |
 | Suppress at `.clang-tidy` project level | Smallest diff | Hides legitimate future violations | Too broad; defeats the per-site rationale |

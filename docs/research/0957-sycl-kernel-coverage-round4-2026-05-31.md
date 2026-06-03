@@ -12,7 +12,7 @@ under `core/test/`.
 ## Full SYCL kernel inventory (post round-3 base)
 
 | # | TU | Extractor name | Round | Parity test |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 1 | `integer_cambi_sycl.cpp` | `cambi_sycl` | 0 (pre-existing) | `test_integer_cambi_sycl.c` |
 | 2 | `integer_motion_sycl.cpp` | `motion_sycl` (motion3) | 0 (pre-existing) | `test_sycl_motion3_parity.c` |
 | 3 | `integer_psnr_sycl.cpp` | `integer_psnr_sycl` | 1 (#351) | `test_sycl_psnr_parity.c` |
@@ -35,7 +35,7 @@ under `core/test/`.
 ## Coverage trajectory
 
 | Round | Date | Extractors covered | % of 18 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 0 (pre-rounds) | <= 2026-05-29 | 2 (cambi, motion3) | 11 % |
 | 1 (#351) | 2026-05-30 | +2 = 4 (psnr, vif) | 22 % |
 | 2 (#376) | 2026-05-30 | +5 = 9 (adm, ciede, ssim, ms_ssim, motion_v2) | 50 % |
@@ -130,7 +130,7 @@ runners exercise the numerical parity.
 ## Risk register
 
 | Risk | Likelihood | Mitigation |
-|---|---|---|
+| --- | --- | --- |
 | ssimulacra2 SYCL drifts past 5e-3 on Intel-Arc Battlemage | low | Same tolerance as the cross-backend gate; ADR-0206 verified parity through the lavapipe-equivalent gate; if drift surfaces, raise to `1e-2` per ADR-0192 §precision-contracts |
 | speed_temporal frame-0 collector miss | medium | CPU explicitly writes `0.0` at index 0 (see `core/src/feature/speed.c:1505-1509`); SYCL twin mirrors this. Querying index 1 sidesteps the no-op |
 | speed_chroma extractor flag mismatch (SYCL has `EXTRACTOR_SYCL`, CPU has no flag) | low | The flag affects scheduling, not numerics; both extractors emit identical scores from identical inputs |
@@ -156,7 +156,7 @@ round-3 tests. Runtime status observed in the dev container
 (Intel Arc A380 visible to level_zero):
 
 | Test | Registered sub-test | Parity sub-test |
-|---|---|---|
+| --- | --- | --- |
 | `test_sycl_float_moment_parity` | pass | SIGSEGV via level_zero — same pre-existing infra issue noted in PR #446. Tracks as pass on a host with proper Intel-GPU passthrough or on a runner with no SYCL device |
 | `test_sycl_speed_chroma_parity` | pass (skip — `speed_chroma_sycl` not built into libvmaf) | pass (same skip) |
 | `test_sycl_speed_temporal_parity` | pass (skip — `speed_temporal_sycl` not built into libvmaf) | pass (same skip) |

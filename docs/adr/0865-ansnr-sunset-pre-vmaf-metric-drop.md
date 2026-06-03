@@ -1,4 +1,4 @@
-# ADR-0865: Sunset ANSNR (pre-VMAF metric) — drop `ansnr` / `float_ansnr` feature extractors
+# ADR-0865: Sunset ANSNR — drop `ansnr` / `float_ansnr` feature extractors
 
 - **Status**: Accepted
 - **Date**: 2026-05-28
@@ -64,7 +64,7 @@ We sunset ANSNR as a first-class VMAF feature on this fork. Concretely:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Restore `float_ansnr` C implementation | Legacy SVM runner would work again; preserves upstream parity in feature listing | Reinstates a pre-VMAF metric Netflix never shipped in production; directly contradicts PR #38's rationale; saddles every backend with maintenance burden (CUDA kernel, HIP port, AVX2/AVX-512 SIMD paths) for a feature with zero downstream consumers | Rejected — the empirical Research-0733 importance ranking shows zero contribution to any shipped model |
 | Keep extractors, mark deprecated, skip ANSNR in default feature set | Runner callable without crashing; gradual deprecation curve | Ansnr column silently absent or wrong; SVM model expects 4 features and computes garbage when one is missing; deceptive public API; defers the breaking-change cost rather than absorbing it now | Rejected — broken-but-callable API is worse than the explicit removal; per CLAUDE.md §correctness-first, no silent-wrong-result paths |
 | Author dedicated ADR per ADR-0108 rule (this ADR) | Closes the Rule-8 compliance gap from PR #38; gives ADR-0749 a parent to cite; makes the cause/consequence chain searchable; documents the bad `Parent ADR-0709` cite for future readers | Late paperwork; the decision was already enacted by PR #38 | **Accepted** — back-dated to PR #38's merge date (2026-05-28) per the standard "Accepted on the date the decision became binding" convention |
@@ -113,6 +113,7 @@ to PR #38's merge date so the dependency chain is consistent.
 
 Affected PR bodies (cannot be rewritten because they are merged-commit
 history on GitHub):
+
 - PR #38 — original ANSNR-drop C-side change
 - PR #295 — Python `ATOM_FEATURES` cleanup (cites PR #38)
 - PR #324 — FFmpeg-patches alignment (cites PR #38)

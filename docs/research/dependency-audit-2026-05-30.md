@@ -11,13 +11,13 @@ Go govulncheck, container Trivy probe). No new architectural decisions.
 
 Audit ecosystems and the manifests scanned:
 
-| Ecosystem | Tool          | Manifests                                                                                                                                                                                                                                                            |
-|-----------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Python    | `pip-audit 2.10.0` | `docs/requirements.txt`, `python/requirements.txt`, `python/test/requirements.txt`, `tools/ensemble-training-kit/requirements-frozen.txt`, plus `pyproject.toml` for `ai/`, `mcp-server/vmaf-mcp/`, `dev-llm/`, `tools/vmaf-tune/`, `tools/vmaf-roi-score/`, `tools/ensemble-training-kit/`. |
-| Go        | `govulncheck`      | Module-level scan against `./...` (one `go.mod` at repo root, Go 1.25). |
-| Node      | n/a                | No `package.json` / `package-lock.json` in tree.                        |
-| Container | `trivy image`      | `vmafx-dev-mcp:latest` not present locally; deferred to CI image-scan job. |
-| Rust      | (excluded)         | Out of scope for this audit — PR #323 (Cargo.lock regen) covers it.    |
+| Ecosystem | Tool | Manifests |
+| ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Python | `pip-audit 2.10.0` | `docs/requirements.txt`, `python/requirements.txt`, `python/test/requirements.txt`, `tools/ensemble-training-kit/requirements-frozen.txt`, plus `pyproject.toml` for `ai/`, `mcp-server/vmaf-mcp/`, `dev-llm/`, `tools/vmaf-tune/`, `tools/vmaf-roi-score/`, `tools/ensemble-training-kit/`. |
+| Go | `govulncheck` | Module-level scan against `./...` (one `go.mod` at repo root, Go 1.25). |
+| Node | n/a | No `package.json` / `package-lock.json` in tree. |
+| Container | `trivy image` | `vmafx-dev-mcp:latest` not present locally; deferred to CI image-scan job. |
+| Rust | (excluded) | Out of scope for this audit — PR #323 (Cargo.lock regen) covers it. |
 
 ## 2. Findings
 
@@ -35,15 +35,15 @@ manifests under `ai/`, `mcp-server/vmaf-mcp/`, `dev-llm/`,
 `govulncheck ./...` against the pre-fix workspace surfaced one
 symbol-reachable advisory and six module-level findings:
 
-| ID            | Module                        | Symbol path                       | Severity / class          | Reachable on the fork? |
-|---------------|-------------------------------|-----------------------------------|---------------------------|------------------------|
-| GO-2026-5026  | `golang.org/x/net@v0.53.0`    | `idna.ToASCII`                    | Punycode label validation | **Yes** — reached from `cmd/vmafx-operator/internal/controller/vmafxnode_controller.go:111` `controller.VmafxNodeReconciler.probeHealthz` → `http.Client.Do` → `idna.ToASCII`. |
-| GO-2026-5025  | `golang.org/x/net/html`       | namespaced foreign-content parser | HTML parser correctness   | Module-only — no call site reached.                              |
-| GO-2026-5027  | `golang.org/x/net/html`       | foreign-content elements          | HTML parser correctness   | Module-only.                                                     |
-| GO-2026-5028  | `golang.org/x/net/html`       | arbitrary HTML DoS                | DoS                       | Module-only.                                                     |
-| GO-2026-5029  | `golang.org/x/net/html`       | DOCTYPE character references      | HTML parser correctness   | Module-only.                                                     |
-| GO-2026-5030  | `golang.org/x/net/html`       | duplicate attributes              | XSS                       | Module-only.                                                     |
-| GO-2026-5024  | `golang.org/x/sys/windows`    | `NewNTUnicodeString`              | Integer overflow (Windows)| Module-only; Windows-only platform.                              |
+| ID | Module | Symbol path | Severity / class | Reachable on the fork? |
+| --------------- | ------------------------------- | ----------------------------------- | --------------------------- | ------------------------ |
+| GO-2026-5026 | `golang.org/x/net@v0.53.0` | `idna.ToASCII` | Punycode label validation | **Yes** — reached from `cmd/vmafx-operator/internal/controller/vmafxnode_controller.go:111` `controller.VmafxNodeReconciler.probeHealthz` → `http.Client.Do` → `idna.ToASCII`. |
+| GO-2026-5025 | `golang.org/x/net/html` | namespaced foreign-content parser | HTML parser correctness | Module-only — no call site reached. |
+| GO-2026-5027 | `golang.org/x/net/html` | foreign-content elements | HTML parser correctness | Module-only. |
+| GO-2026-5028 | `golang.org/x/net/html` | arbitrary HTML DoS | DoS | Module-only. |
+| GO-2026-5029 | `golang.org/x/net/html` | DOCTYPE character references | HTML parser correctness | Module-only. |
+| GO-2026-5030 | `golang.org/x/net/html` | duplicate attributes | XSS | Module-only. |
+| GO-2026-5024 | `golang.org/x/sys/windows` | `NewNTUnicodeString` | Integer overflow (Windows) | Module-only; Windows-only platform. |
 
 **Reachable advisory triage.** The `idna.ToASCII` hit fires on the
 operator's healthz probe path, which constructs an HTTP request to a
@@ -81,7 +81,7 @@ go mod tidy
 
 Resulting `go.mod` deltas:
 
-```
+```diff
 -       golang.org/x/net v0.53.0 // indirect
 +       golang.org/x/net v0.55.0 // indirect
 -       golang.org/x/sys v0.43.0 // indirect

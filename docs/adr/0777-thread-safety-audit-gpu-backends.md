@@ -1,11 +1,11 @@
 <!-- Copyright 2026 Lusoris — BSD-3-Clause-Plus-Patent -->
 # ADR-0777: Thread-Safety Audit — CUDA / SYCL / HIP Backends
 
-| Field     | Value                                         |
-|-----------|-----------------------------------------------|
-| Status    | Accepted                                      |
-| Date      | 2026-05-29                                    |
-| Tags      | cuda, sycl, hip, thread-safety, audit, research, fork-local |
+| Field | Value |
+| ----------- | ----------------------------------------------- |
+| Status | Accepted |
+| Date | 2026-05-29 |
+| Tags | cuda, sycl, hip, thread-safety, audit, research, fork-local |
 
 ---
 
@@ -76,7 +76,7 @@ contract as SYCL/Vulkan (caller owns state, clears pointer on close).
 ### Q4 — Static globals
 
 | File | Variable | Race-safe? |
-|---|---|---|
+| --- | --- | --- |
 | `core/src/log.c` | `vmaf_log_level`, `istty` | No — plain `int`/`enum`, no `_Atomic`, no lock |
 | `cuda/dispatch_strategy.c` | `g_env_disp` | Yes — `pthread_once` |
 | `gpu_dispatch_env.c` | `g_rows[]` | Yes — `pthread_mutex_t` |
@@ -124,9 +124,11 @@ The following follow-up work items are created (not yet ticketed in BACKLOG):
 - Research digest: `docs/research/thread-safety-audit-backends-2026-05-29.md`
 - `core/src/libvmaf.c` — `VmafContext`, `vmaf_init`, `vmaf_close`, `threaded_extract_func`
 - `core/src/cuda/common.c` — `VmafCudaState` lifecycle
-- `core/src/sycl/common.cpp` — `VmafSyclState`, `vmaf_sycl_shared_frame_upload`, `vmaf_sycl_graph_submit`
+- `core/src/sycl/common.cpp` — `VmafSyclState`,
+  `vmaf_sycl_shared_frame_upload`, `vmaf_sycl_graph_submit`
 - `core/src/hip/dispatch_strategy.c` — HIP stub
 - `core/src/log.c` — unprotected `vmaf_log_level`
 - `core/src/gpu_dispatch_env.c` — mutex-protected dispatch env table
 - `core/src/cuda/dispatch_strategy.c` — `pthread_once`-protected env cache
-- `core/src/feature/feature_extractor.h` — `VmafFeatureExtractor.cu_state`, `.sycl_state`, `.priv`
+- `core/src/feature/feature_extractor.h` — `VmafFeatureExtractor.cu_state`,
+  `.sycl_state`, `.priv`

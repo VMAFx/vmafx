@@ -43,12 +43,12 @@ follow-ups.
 
 ## Baseline (master @ 387839e)
 
-| Package    | errors | warnings |
-|------------|-------:|---------:|
-| `ai/src`   |    370 |        0 |
-| `mcp/src`  |     61 |        0 |
-| `tune/src` |  1,257 |        0 |
-| **Total**  |**1,688** |      0 |
+| Package | errors | warnings |
+| ------------ | -------: | ---------: |
+| `ai/src` | 370 | 0 |
+| `mcp/src` | 61 | 0 |
+| `tune/src` | 1,257 | 0 |
+| **Total** | **1,688** | 0 |
 
 ## Triage — by rule
 
@@ -58,20 +58,20 @@ pyarrow). These are noise: the fix is upstream stubs, not fork-code
 defects. Filtered counts of high-signal rules across all three trees:
 
 | Rule | Count | Class |
-|------|------:|-------|
-| `reportArgumentType`           | 94 | type / overload mismatches |
-| `reportOptionalMemberAccess`   |  9 | Optional access pyright sees, mypy missed |
-| `reportAttributeAccessIssue`   | 15 | attr on union / stub-incomplete class |
-| `reportUnnecessaryComparison`  |  8 | dead `is None` / `is not None` branches |
-| `reportUnnecessaryIsInstance`  |  3 | dead isinstance check |
-| `reportRedeclaration`          |  2 | duplicate def in same scope |
-| `reportReturnType`             |  2 | wrong return annotation |
-| `reportAssignmentType`         |  3 | type narrows wider than declared |
-| `reportUndefinedVariable`      |  4 | forward-ref string not importable |
-| `reportPossiblyUnboundVariable`|  1 | branch-bound name used elsewhere |
-| `reportIncompatibleMethodOverride`| 1 | override signature drift |
-| `reportUnsupportedDunderAll`   |  1 | `__all__` entry missing from module |
-| `reportCallIssue`              |  4 | overload non-match |
+| ------ | ------: | ------- |
+| `reportArgumentType` | 94 | type / overload mismatches |
+| `reportOptionalMemberAccess` | 9 | Optional access pyright sees, mypy missed |
+| `reportAttributeAccessIssue` | 15 | attr on union / stub-incomplete class |
+| `reportUnnecessaryComparison` | 8 | dead `is None` / `is not None` branches |
+| `reportUnnecessaryIsInstance` | 3 | dead isinstance check |
+| `reportRedeclaration` | 2 | duplicate def in same scope |
+| `reportReturnType` | 2 | wrong return annotation |
+| `reportAssignmentType` | 3 | type narrows wider than declared |
+| `reportUndefinedVariable` | 4 | forward-ref string not importable |
+| `reportPossiblyUnboundVariable` | 1 | branch-bound name used elsewhere |
+| `reportIncompatibleMethodOverride` | 1 | override signature drift |
+| `reportUnsupportedDunderAll` | 1 | `__all__` entry missing from module |
+| `reportCallIssue` | 4 | overload non-match |
 
 ## Fix scope (this PR)
 
@@ -82,28 +82,28 @@ Anything that would cascade through the `LadderPoint` union, the
 the package is deferred.
 
 | # | File | Line | Bug | Fix |
-|--:|------|-----:|-----|-----|
-| 1 | `ai/src/vmaf_train/confidence.py`        |  24 | `Tensor` used as forward-ref string but never imported (4 occurrences hidden by `# noqa: F821`) | `TYPE_CHECKING` import from torch |
-| 2 | `ai/src/vmaf_train/cross_backend.py`     | 120,124 | ORT `session.run()` returns union; downstream `.astype` only valid on `ndarray` | `assert isinstance(..., ndarray)` + typed local |
-| 3 | `ai/src/vmaf_train/eval.py`              |  35,36 | scipy `pearsonr`/`spearmanr` return `*RResult` but bundled pyright stubs lack `.statistic` | `cast(Any, ...)` |
-| 4 | `ai/src/aiutils/subprocess_utils.py`     |  20,21,45 | `**kwargs: object` poisons overload resolution; missing generic on `CompletedProcess` | `Any` + `cast` + `CompletedProcess[Any]` |
+| --: | ------ | -----: | ----- | ----- |
+| 1 | `ai/src/vmaf_train/confidence.py` | 24 | `Tensor` used as forward-ref string but never imported (4 occurrences hidden by `# noqa: F821`) | `TYPE_CHECKING` import from torch |
+| 2 | `ai/src/vmaf_train/cross_backend.py` | 120,124 | ORT `session.run()` returns union; downstream `.astype` only valid on `ndarray` | `assert isinstance(..., ndarray)` + typed local |
+| 3 | `ai/src/vmaf_train/eval.py` | 35,36 | scipy `pearsonr`/`spearmanr` return `*RResult` but bundled pyright stubs lack `.statistic` | `cast(Any, ...)` |
+| 4 | `ai/src/aiutils/subprocess_utils.py` | 20,21,45 | `**kwargs: object` poisons overload resolution; missing generic on `CompletedProcess` | `Any` + `cast` + `CompletedProcess[Any]` |
 | 5 | `tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py` | 66 | `presets` declared on every concrete adapter but missing from `CodecAdapter` Protocol; `ladder._default_sampler_preset` fails to typecheck | add `presets: tuple[str, ...]` to Protocol |
 | 6 | `tools/vmaf-tune/src/vmaftune/ladder.py` | 385 | `_ladder_point_from_row` returns either `LadderPoint` or `UncertaintyLadderPoint`; the two are not in a subclass relation per the class docstring | document the controlled widening + `cast`; preserve runtime contract (tests assert `isinstance(p, UncertaintyLadderPoint)`) |
 | 7 | `tools/vmaf-tune/src/vmaftune/bisect.py` | 652 | `workdir_path is not None` always True (bound on both branches above) | drop guard, add comment |
 | 8 | `tools/vmaf-tune/src/vmaftune/bisect.py` | 1270 | `runtime_target_vmaf is None` always False (typed `float`) | drop the `is None` half, keep the NaN branch |
 | 9 | `tools/vmaf-tune/src/vmaftune/executor.py` | 656 | `enc is not None` always True (typed non-Optional) | drop guard |
-|10 | `tools/vmaf-tune/src/vmaftune/fast.py`   | 307 | `optuna` is None when optional extra missing; `_run_tpe` accesses `optuna.logging` directly. Cross-procedural narrowing through `_require_optuna()` invisible to pyright | `assert optuna is not None, "call _require_optuna() first"` |
-|11 | `tools/vmaf-tune/src/vmaftune/cli.py`    |2869 | `warn_stream: object \| None` — `.write(...)` not typecheckable | `TextIO \| None` + `TextIO` import |
-|12 | `tools/vmaf-tune/src/vmaftune/cli.py`    |3478 | `comparison_report` narrowing through `raise` not seen by pyright | `assert comparison_report is not None` after the XOR guard |
+| 10 | `tools/vmaf-tune/src/vmaftune/fast.py` | 307 | `optuna` is None when optional extra missing; `_run_tpe` accesses `optuna.logging` directly. Cross-procedural narrowing through `_require_optuna()` invisible to pyright | `assert optuna is not None, "call _require_optuna() first"` |
+| 11 | `tools/vmaf-tune/src/vmaftune/cli.py` | 2869 | `warn_stream: object \| None` — `.write(...)` not typecheckable | `TextIO \| None` + `TextIO` import |
+| 12 | `tools/vmaf-tune/src/vmaftune/cli.py` | 3478 | `comparison_report` narrowing through `raise` not seen by pyright | `assert comparison_report is not None` after the XOR guard |
 
 ## After-PR deltas
 
-| Package    | Baseline | After | Δ      |
-|------------|---------:|------:|-------:|
-| `ai/src`   |      370 |   306 |   -64  |
-| `mcp/src`  |       61 |    61 |    0   |
-| `tune/src` |    1,257 | 1,236 |   -21  |
-| **Total**  |  **1,688** |**1,603** | **-85** |
+| Package | Baseline | After | Δ |
+| ------------ | ---------: | ------: | -------: |
+| `ai/src` | 370 | 306 | -64 |
+| `mcp/src` | 61 | 61 | 0 |
+| `tune/src` | 1,257 | 1,236 | -21 |
+| **Total** | **1,688** | **1,603** | **-85** |
 
 The mcp delta is zero because every mcp pyright finding lands in
 `server.py`, which PR #366 owns. Re-running the audit after that PR

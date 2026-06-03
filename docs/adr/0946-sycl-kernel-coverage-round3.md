@@ -37,7 +37,7 @@ Add five CPU vs. SYCL parity gates at ADR-0214 places=4 (1e-4)
 tolerance under `core/test/`, gated on `enable_sycl`:
 
 | Kernel | New test | Headline score |
-|---|---|---|
+| --- | --- | --- |
 | `float_psnr_sycl` | `test_sycl_float_psnr_parity.c` | `float_psnr` |
 | `float_adm_sycl` | `test_sycl_float_adm_parity.c` | `VMAF_feature_adm2_score` |
 | `float_vif_sycl` | `test_sycl_float_vif_parity.c` | `VMAF_feature_vif_scale0_score` |
@@ -53,7 +53,7 @@ skip-on-no-device via `[skip: no SYCL device]` printf.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Five per-kernel test files (chosen) | Mirrors round-2 layout; one TU per kernel keeps build parallelism and failure-isolation; reviewers can bisect a single failing kernel | Five new TUs vs. one combined | Round-2 set the precedent; combining hides which kernel regressed |
 | One combined `test_sycl_round3_parity.c` | Single TU = ~250 LOC vs. ~900 LOC across five files | Failure attribution becomes harder; `meson test --run-only` granularity is lost | Loses the round-2 invariant from the AGENTS.md note in `core/src/feature/sycl/AGENTS.md` |
 | Cover only the float-VMAF family (4 tests) | Tighter PR; defer PSNR-HVS to a round 4 | PSNR-HVS is the next-highest-value single gap; bundling it costs ~200 LOC | A 5-test PR still fits in the 200-800 LOC bundle target |

@@ -1,4 +1,4 @@
-# ADR-0881: Coverage-overrides audit (2026-05-30) — tighten `tiny_extractor_template.h` 10 % → 75 %
+# ADR-0881: Coverage-overrides audit — tighten template coverage floor
 
 - **Status**: Accepted
 - **Date**: 2026-05-30
@@ -31,7 +31,7 @@ build flags CI uses (`--buildtype=debug -Db_coverage=true
 -Dc_args=-fprofile-update=atomic`). The findings:
 
 | File | Override (pre-audit) | Actual coverage | Slack |
-|------|----------------------|-----------------|-------|
+| ------ | ---------------------- | ----------------- | ------- |
 | `core/src/dnn/ort_backend.c` | 78 % | 77.8 % | -0.2 pp (at cap) |
 | `core/src/dnn/dnn_api.c` | 78 % | 78.0 % | 0.0 pp (at cap) |
 | `core/src/dnn/tiny_extractor_template.h` | 10 % | **77.4 %** | **67.4 pp** |
@@ -74,7 +74,7 @@ comment block now cites both ADR-0114 (original rationale) and ADR-0881
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Tighten to 77 % (1 pp slack) | Tightest possible regression-lock | Real-world coverage flap risk on minor refactors; ADR-0114 deliberately chose 1.3-1.7 pp for the same reason | Match ADR-0114's risk tolerance — 2.4 pp |
 | Tighten to 70 % (5 pp slack) | More comfortable headroom | Lets ~5 pp of real coverage slide back silently before tripping | Defeats the "lock the gain" goal |
 | Remove the entry entirely (let global 85 % apply) | One fewer override; cleaner map | Actual is 77.4 %, below 85 % — would trip immediately. Either need ~8 pp of new tests or accept the structural ceiling rationale still holds at a tighter point | Premature; ratchet first, remove later only if helpers reach 85 % |
@@ -132,7 +132,8 @@ comment block now cites both ADR-0114 (original rationale) and ADR-0881
   pushes `ort_backend.c` from 77.8 % → 78.5 % by adding a unit test
   on `vmaf_ort_output_name_at`. Demonstrates the "add tests, do not
   lower the bar" pattern this audit reinforces.
-- [docs/research/0881-coverage-overrides-audit-2026-05-30.md](../research/0881-coverage-overrides-audit-2026-05-30.md) —
+- Coverage audit research digest
+  (`docs/research/0881-coverage-overrides-audit-2026-05-30.md`) —
   full audit digest including the per-file CSV, the reusable audit
   procedure, and the gate-output before/after diff.
 - Source: `req` (paraphrased) — user directed "audit per-file overrides

@@ -29,7 +29,7 @@ work is done in this ADR; each gap will be addressed via a dedicated
 ### Full coverage matrix
 
 | Feature | AVX2 | AVX-512 | NEON | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `adm` (integer) | YES | YES | YES | Full dispatch in `integer_adm.c` |
 | `cambi` | YES | YES | YES | |
 | `ciede` | YES | YES | YES | |
@@ -82,7 +82,7 @@ work is done in this ADR; each gap will be addressed via a dedicated
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Add SIMD for float_ssim / float_vif directly | Direct control of the dispatch path | Both already delegate through shared helpers that have SIMD; redundant work | Rejected — delegation is effective |
 | Batch all three gaps into one PR | Fewer PRs | Large diff, hard to review, one failure blocks all | Rejected — each gap gets its own `/add-simd-path` call |
 | No-op / defer indefinitely | Zero effort | ARM64 runtime performance regresses relative to AVX2 parity; integer_ssim on GPU-less servers is fully scalar | Rejected |

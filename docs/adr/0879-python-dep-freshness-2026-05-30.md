@@ -53,7 +53,7 @@ encode known incompatibilities and are not part of this freshness sweep.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Bump floors + add `--hash=sha256:` to every `requirements*.txt` in one PR | Single security touch | Cross-cuts lockfile policy (cadence, CI gate, refresh tooling); turns a 9-line bump into a ~600-line lockfile-and-process PR | Hash pinning is a policy decision worth its own ADR cycle |
 | Switch all `>=` floors to `==` exact pins | Bit-reproducible installs | Pyproject `==` pins fight the user's local environment + conflict with sibling tools; the fork already has `requirements-frozen.txt` for that need | Exact pins are a deployment concern, not a library concern |
 | Skip the sweep, let Renovate file PRs piecemeal | Lower-touch | Renovate already runs but the fork's many small `pyproject.toml` files generate noisy individual PRs; a periodic sweep batches them | Renovate stays valuable for between-sweep coverage; the sweep complements rather than replaces it |

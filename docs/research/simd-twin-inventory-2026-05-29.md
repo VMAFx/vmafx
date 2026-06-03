@@ -80,7 +80,7 @@ Worth doing but not blocking.
 ## Priority recommendation
 
 | Priority | Gap | ISAs to add | Effort estimate |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | `integer_ssim` AVX2 + NEON | AVX2, NEON (AVX-512 stretch goal) | ~2 days |
 | 2 | `integer_motion` NEON completion | NEON only (3 functions) | ~0.5 days |
 | 3 | `moment` AVX-512 | AVX-512 only (2 functions) | ~0.5 days |

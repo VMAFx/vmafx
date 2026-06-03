@@ -1,5 +1,7 @@
 # ADR-0809: C++23 Wave 8 — CLI conversion (`cli_parse.c` → `.cpp`, `vmaf.c` → `.cpp`)
 
+<!-- markdownlint-disable MD013 -- ADR/research body text; pre-existing long lines per ADR-0864 tail -->
+
 - **Status**: Accepted
 - **Date**: 2026-05-29
 - **Deciders**: lusoris
@@ -65,7 +67,7 @@ binary.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Full RAII refactor of goto-cleanup spine | Eliminates all manual cleanup | Requires threading cleanup-relevant pointers through helper signatures; obscures unwind chain | Rejected — load-bearing invariant per ADR-0141 §2 |
 | Use `std::string` instead of `std::string_view` | More familiar | Allocates heap memory for transient comparisons | `std::string_view` is zero-cost and correct here |
 | Bump project `cpp_std` globally to C++23 now | Simpler build config | Potentially affects SYCL/CUDA TUs not yet tested at C++23 | Per-target override is safe; global bump deferred per ADR-0708 policy |
