@@ -72,6 +72,10 @@ type Job struct {
 	Error          string         `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
 	CreatedAt      int64          `protobuf:"varint,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt      int64          `protobuf:"varint,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// FinalScore is the aggregate VMAF score written by the controller when
+	// Status transitions to COMPLETED.  Hand-added in Stage 2; mirrors the
+	// score field from ReportResultRequest for operator-side CR propagation.
+	FinalScore float64 `protobuf:"fixed64,9,opt,name=final_score,json=finalScore,proto3" json:"final_score,omitempty"`
 }
 
 func (x *Job) GetId() string              { return x.Id }
@@ -81,6 +85,7 @@ func (x *Job) GetAssignedNode() string    { return x.AssignedNode }
 func (x *Job) GetError() string           { return x.Error }
 func (x *Job) GetCreatedAt() int64        { return x.CreatedAt }
 func (x *Job) GetUpdatedAt() int64        { return x.UpdatedAt }
+func (x *Job) GetFinalScore() float64     { if x != nil { return x.FinalScore }; return 0 }
 
 // NodeCapability mirrors proto NodeCapability.
 type NodeCapability struct {

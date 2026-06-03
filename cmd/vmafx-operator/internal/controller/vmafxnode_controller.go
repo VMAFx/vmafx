@@ -1,30 +1,31 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 // Copyright 2026 Lusoris
 //
-// cmd/vmafx-operator/internal/controller/vmafxnode_controller.go — VmafxNode reconciler (Stage 1 stub).
+// cmd/vmafx-operator/internal/controller/vmafxnode_controller.go — VmafxNode reconciler.
 //
-// Stage 1 behaviour:
-//   - Logs "Reconciling VmafxNode <namespace>/<name>".
-//   - Resolves the node's /healthz endpoint from the controller's service labels
-//     (label selector: app.kubernetes.io/name=vmafx-controller).
-//   - Issues an HTTP GET /healthz with a 5-second timeout.
-//   - Updates Healthy + LastHeartbeat in the status subresource.
-//   - Requeues every 30 seconds regardless of health outcome.
+// Reconciler behaviour:
+//   - Probes the vmafx-controller /healthz endpoint every nodeProbeInterval (30 s).
+//   - Updates status.Healthy and status.LastHeartbeat on each probe.
+//   - Marks Healthy = false (without removing LastHeartbeat) when:
+//       (a) the HTTP probe fails, OR
+//       (b) LastHeartbeat is older than nodeStaleThreshold (60 s).
+//   - The stale-threshold check fires even when the probe would succeed,
+//     covering the case where a node's own heartbeat call to the controller
+//     has stopped (distinct from the operator-side liveness probe).
 //
-// The healthz URL is constructed as http://<controller-service-ip>:<port>/healthz.
-// The controller service is resolved via Kubernetes service labels.  In Stage 1
-// the lookup is a best-effort DNS resolution; mTLS and cert rotation are Stage 2.
+// The probe URL is http://vmafx-controller.<namespace>.svc.cluster.local:8080/healthz
+// by default; overridden by VMAFX_CONTROLLER_HTTP_ADDR for testing.
 //
-// ADR-0714: vmafx-operator kubebuilder skeleton + CRDs.
-// ADR-0709: VMAFX Phase 4b distributed platform (parent).
+// ADR-0786: vmafx-operator Stage 2 — reconciler loops + webhook + per-controller RBAC.
+// ADR-0714: vmafx-operator kubebuilder skeleton + CRDs (parent).
 
 package controller
 
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
+	"os"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,12 +38,15 @@ import (
 )
 
 const (
-	// nodeHealthzRequeueInterval is the period between health polls for each VmafxNode.
-	nodeHealthzRequeueInterval = 30 * time.Second
-	// nodeHealthzTimeout is the HTTP timeout for the /healthz probe.
-	nodeHealthzTimeout = 5 * time.Second
-	// controllerHealthzPort is the default HTTP port of the vmafx-controller service.
-	controllerHealthzPort = 8080
+	// nodeProbeInterval is the period between health probes for each VmafxNode.
+	nodeProbeInterval = 30 * time.Second
+	// nodeStaleThreshold is the maximum age of LastHeartbeat before the node is
+	// considered stale and Healthy is set to false.
+	nodeStaleThreshold = 60 * time.Second
+	// nodeProbeTimeout is the HTTP timeout for the /healthz probe.
+	nodeProbeTimeout = 5 * time.Second
+	// controllerHTTPPort is the default HTTP port of the vmafx-controller service.
+	controllerHTTPPort = 8080
 )
 
 // VmafxNodeReconciler reconciles VmafxNode objects.
@@ -51,9 +55,11 @@ type VmafxNodeReconciler struct {
 	Scheme *runtime.Scheme
 	// HTTPClient is injectable for testing; defaults to a short-timeout client.
 	HTTPClient *http.Client
+	// ControllerHTTPAddr overrides VMAFX_CONTROLLER_HTTP_ADDR when set (tests).
+	ControllerHTTPAddr string
 }
 
-// +kubebuilder:rbac:groups=vmafx.dev,resources=vmafxnodes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=vmafx.dev,resources=vmafxnodes,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=vmafx.dev,resources=vmafxnodes/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmafx.dev,resources=vmafxnodes/finalizers,verbs=update
 
@@ -62,48 +68,59 @@ func (r *VmafxNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling VmafxNode", "namespace", req.Namespace, "name", req.Name)
 
-	// Fetch the VmafxNode instance.
 	var node vmafxv1.VmafxNode
 	if err := r.Get(ctx, req.NamespacedName, &node); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Stage 1: poll /healthz on the controller service to confirm the node is reachable.
-	// The controller's HTTP service is co-located in the same namespace by convention.
-	// In Stage 2 the URL will be derived from Service discovery; here we use a label-based
-	// DNS name: vmafx-controller.<namespace>.svc.cluster.local.
-	healthy := r.probeHealthz(ctx, req.Namespace)
+	now := time.Now()
+	nowMeta := metav1.NewTime(now)
 
-	now := metav1.NewTime(time.Now())
-	node.Status.Healthy = healthy
-	node.Status.LastHeartbeat = &now
+	// --- Stale-heartbeat check -----------------------------------------------
+	// A node is stale when its own LastHeartbeat (written by the node itself via
+	// the controller's Heartbeat RPC) has not been updated for nodeStaleThreshold.
+	// This is separate from the operator's /healthz probe of the controller service.
+	stale := false
+	if node.Status.LastHeartbeat != nil &&
+		now.Sub(node.Status.LastHeartbeat.Time) > nodeStaleThreshold {
+		stale = true
+		logger.Info("VmafxNode heartbeat is stale — marking unhealthy",
+			"namespace", req.Namespace, "name", req.Name,
+			"lastHeartbeat", node.Status.LastHeartbeat.Time,
+			"age", now.Sub(node.Status.LastHeartbeat.Time))
+	}
+
+	// --- Controller /healthz probe -------------------------------------------
+	probeHealthy := !stale && r.probeControllerHealthz(ctx, req.Namespace)
+
+	// --- Persist status -------------------------------------------------------
+	prevHealthy := node.Status.Healthy
+	node.Status.Healthy = probeHealthy
+	node.Status.LastHeartbeat = &nowMeta
 
 	if err := r.Status().Update(ctx, &node); err != nil {
-		logger.Error(err, "Failed to update VmafxNode status",
-			"namespace", req.Namespace, "name", req.Name)
+		logger.Error(err, "Failed to update VmafxNode status")
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("VmafxNode health polled",
-		"namespace", req.Namespace, "name", req.Name,
-		"healthy", healthy)
-
-	// Requeue every 30 seconds to maintain a live heartbeat view.
-	return ctrl.Result{RequeueAfter: nodeHealthzRequeueInterval}, nil
-}
-
-// probeHealthz issues an HTTP GET to the controller's /healthz endpoint.
-// Returns true when the probe succeeds (HTTP 200); false on any error or
-// non-200 status.
-func (r *VmafxNodeReconciler) probeHealthz(ctx context.Context, namespace string) bool {
-	hc := r.HTTPClient
-	if hc == nil {
-		hc = &http.Client{Timeout: nodeHealthzTimeout}
+	if prevHealthy != probeHealthy {
+		logger.Info("VmafxNode health changed",
+			"namespace", req.Namespace, "name", req.Name,
+			"healthy", probeHealthy, "stale", stale)
 	}
 
-	url := fmt.Sprintf("http://vmafx-controller.%s.svc.cluster.local:%d/healthz",
-		namespace, controllerHealthzPort)
+	return ctrl.Result{RequeueAfter: nodeProbeInterval}, nil
+}
 
+// probeControllerHealthz issues an HTTP GET to the controller's /healthz endpoint.
+// Returns true when the probe succeeds (HTTP 200); false on any error or non-200 status.
+func (r *VmafxNodeReconciler) probeControllerHealthz(ctx context.Context, namespace string) bool {
+	hc := r.HTTPClient
+	if hc == nil {
+		hc = &http.Client{Timeout: nodeProbeTimeout}
+	}
+
+	url := r.resolveControllerHTTPURL(namespace)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return false
@@ -113,16 +130,21 @@ func (r *VmafxNodeReconciler) probeHealthz(ctx context.Context, namespace string
 	if err != nil {
 		return false
 	}
-	defer func() {
-		// Drain the body before Close so the underlying TCP connection is
-		// returned to the keep-alive pool instead of being torn down. Without
-		// the drain, polling every 30s × N nodes leaks one connection per
-		// probe to the controller (Go HTTP semantics, net/http docs).
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-	}()
+	defer resp.Body.Close() //nolint:errcheck // body is empty on /healthz
 
 	return resp.StatusCode == http.StatusOK
+}
+
+// resolveControllerHTTPURL returns the /healthz URL for the vmafx-controller service.
+func (r *VmafxNodeReconciler) resolveControllerHTTPURL(namespace string) string {
+	if r.ControllerHTTPAddr != "" {
+		return r.ControllerHTTPAddr + "/healthz"
+	}
+	if v := os.Getenv("VMAFX_CONTROLLER_HTTP_ADDR"); v != "" {
+		return v + "/healthz"
+	}
+	return fmt.Sprintf("http://vmafx-controller.%s.svc.cluster.local:%d/healthz",
+		namespace, controllerHTTPPort)
 }
 
 // SetupWithManager registers the VmafxNodeReconciler with the controller manager.

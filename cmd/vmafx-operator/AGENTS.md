@@ -1,21 +1,21 @@
 # AGENTS.md — cmd/vmafx-operator
 
-Parent: [../../AGENTS.md](../../AGENTS.md).
-
 ## Package role
 
 vmafx-operator is a Kubernetes Operator built with kubebuilder v4 /
 controller-runtime v0.19+.  It watches `VmafxJob`, `VmafxNode`, and
 `VmafxModelTraining` CRDs in API group `vmafx.dev/v1` and reconciles
-Pods + status subresources.
+status subresources.  Stage 2 adds gRPC poll, stale-heartbeat detection,
+checkpoint event emission, webhook validation, and per-controller RBAC.
 
-See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md) and
+See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md),
+[ADR-0786](../../docs/adr/0786-vmafx-operator-stage2-reconcilers.md), and
 [docs/development/operator.md](../../docs/development/operator.md).
 
 ## Rebase-sensitive invariants
 
 1. **DeepCopyObject is hand-written.**  `api/vmafx/v1/zz_generated_deepcopy.go`
-   is written by hand in Stage 1 (controller-gen codegen is a Stage 2 CI job).
+   is written by hand (controller-gen codegen is a Stage 3 CI job).
    Do not delete or overwrite it without running `controller-gen object:headerFile=...`
    to regenerate it.
 
@@ -23,41 +23,48 @@ See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md) and
    `config/crd/bases/`.  Helm ships copies in `deploy/helm/vmafx/crds/`.
    Keep both in sync whenever a CRD schema changes.
 
-3. **Helm `operator.enabled` defaults to false.**  The operator Deployment
+3. **`api/vmafx/v1/vmafxjob_types.go` has a `ControllerJobID` field.**
+   This is the bridge between the external scheduler (vmafx-controller) and
+   the operator.  The field is set by the scheduler, read by the reconciler.
+   Do not rename it without updating the CRD YAML and the Helm CRD copies.
+
+4. **`gen/go/controller/controller.pb.go` has a hand-added `FinalScore` field.**
+   It was added in Stage 2 to propagate the VMAF score from COMPLETED jobs.
+   When `buf generate` is next run to regenerate from proto, ensure this field
+   is also present in the proto source (`cmd/vmafx-controller/proto/controller.proto`)
+   before regenerating, otherwise it will be silently dropped.
+
+5. **Helm `operator.enabled` defaults to false.**  The operator Deployment
    and RBAC are gated by `operator.enabled`.  Changing the default to `true`
    would affect all existing `helm upgrade` runs.
 
-4. **Reconciler stubs do not create Pods.**  Stage 1 reconcilers only
-   update status subresources.  Pod lifecycle belongs in Stage 2.  Do not
-   add Pod creation logic to Stage 1 reconciler files; open a new file instead.
+6. **Webhooks are opt-in.**  `--webhooks-enabled=false` by default.  Enabling
+   requires a valid TLS certificate.  Do not change the default to `true`
+   without documenting the cert-manager dependency.
 
-5. **No shared state between reconcilers.**  Each reconciler has its own
+7. **No shared state between reconcilers.**  Each reconciler has its own
    `client.Client` and `Scheme`.  Do not add package-level variables.
 
-6. **Logger is `slog` via `logr.FromSlogHandler`, not zap.**  Despite
-   kubebuilder's template defaulting to `sigs.k8s.io/controller-runtime/pkg/log/zap`,
-   this operator deliberately uses the standard-library `log/slog` package
-   so all 25 vmafx Go binaries log uniformly.  `main.go` installs the
-   logger via `ctrl.SetLogger(logr.FromSlogHandler(slog.NewJSONHandler(...)))`
-   and `internal/controller/suite_test.go` uses
-   `slog.NewTextHandler(GinkgoWriter, ...)`.  Do not reintroduce
-   `go.uber.org/zap` as a direct import when porting upstream
-   kubebuilder template updates; keep the slog bridge.
-
-7. **envtest suite must remain skip-safe.**  `internal/controller/suite_test.go`
-   has a top-of-`TestControllers` `t.Skip()` guard plus a nil-`testEnv`
-   bailout in `AfterSuite` so the suite never panics when
-   `KUBEBUILDER_ASSETS` is unset (PRs #330 / #341 / #362 all tripped the
-   nil-pointer deref in `controlplane.(*APIServer).Stop` without these
-   guards). The CI workflow (`go-ci.yml`) and `make setup-envtest` arrange
-   the assets so the suite *does* run for real, but the skip path is the
-   guardrail for ad-hoc `go test` invocations from a fresh checkout. Do
-   not remove either guard without arranging an equivalent fail-loud
-   mechanism elsewhere.
+8. **Per-controller RBAC.** `config/rbac/role_vmafxjob.yaml`,
+   `config/rbac/role_vmafxnode.yaml`, and `config/rbac/role_vmafxmodeltraining.yaml`
+   are the minimum-permission roles.  The combined `config/rbac/role.yaml` is
+   a convenience aggregate.  When adding verbs to a reconciler, update the
+   corresponding per-controller role, not just the aggregate.
 
 ## Test requirements
 
-Run `go test ./cmd/vmafx-operator/internal/controller/...` with
-`KUBEBUILDER_ASSETS` set. The shortest path is `make setup-envtest`
-followed by `eval $(make -s setup-envtest-env)`, then `go test`. See
-`docs/development/operator.md#running-tests` for the manual variant.
+### Controller envtest (requires kubebuilder-envtest binaries)
+
+```bash
+export KUBEBUILDER_ASSETS=$(setup-envtest use 1.31 -p path)
+go test ./cmd/vmafx-operator/internal/controller/... -v
+```
+
+### Webhook unit tests (no envtest needed)
+
+```bash
+go test ./cmd/vmafx-operator/internal/webhook/... -v
+```
+
+See [docs/development/operator.md#running-tests](../../docs/development/operator.md#running-tests)
+for full instructions including CI environment setup.
