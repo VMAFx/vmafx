@@ -43834,6 +43834,21 @@ no rebase impact: pure CI display-name rename; no C/C++/Python source touched.
 
 ---
 
+### fix(dnn): add missing vmaf_ort_internal_input/output_elem_type accessors
+
+**Branch**: fix/dnn-ort-internals-missing-elem-type-accessors
+**Touches**: `core/src/dnn/ort_backend_internal.h`,
+`core/src/dnn/ort_backend.c`,
+`changelog.d/fixed/dnn-ort-internals-elem-type-accessors.md`.
+
+No rebase impact: the added symbols (`VmafOrtElemType`, `vmaf_ort_internal_input_elem_type`,
+`vmaf_ort_internal_output_elem_type`) are fork-local internal-test helpers with no
+upstream Netflix/vmaf analogue. The `VmafOrtSession.input_elem_types` / `.output_elem_types`
+fields and the `VMAF_HAVE_DNN` guard structure they read from are also fork-local.
+Conflict probability on these files with upstream is zero.
+
+---
+
 ### chore(scripts): modernization-audit scanner — reduce false-positive noise
 
 **Branch**: chore/modernization-audit-false-positive-filter

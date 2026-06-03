@@ -21,6 +21,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* Forward declaration — VmafOrtSession is an opaque type defined in
+ * ort_backend.c; the elem_type accessors below only need the pointer. */
+typedef struct VmafOrtSession VmafOrtSession;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -43,6 +47,33 @@ float vmaf_ort_internal_fp16_to_fp32(uint16_t h);
  */
 const char *vmaf_ort_internal_resolve_name(char **table, size_t count, const char *name,
                                            size_t pos);
+
+/**
+ * Tensor element-type token returned by the elem_type accessors below.
+ * Mirrors the subset of ONNXTensorElementDataType values that VMAF
+ * handles; numeric values are intentionally identical so cast-comparisons
+ * against ORT's enum are safe inside ort_backend.c.
+ */
+typedef enum {
+    ELEM_TYPE_UNDEFINED = 0, /**< ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED */
+    ELEM_TYPE_FLOAT = 1,     /**< ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT     */
+    ELEM_TYPE_FLOAT16 = 10   /**< ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16   */
+} VmafOrtElemType;
+
+/**
+ * Return the element type declared for the @p slot-th model input.
+ * Returns ELEM_TYPE_UNDEFINED when @p sess is NULL or @p slot is out of
+ * range. The returned value reflects what the model declared at open
+ * time (populated by vmaf_ort_open), not the wire type chosen by
+ * vmaf_ort_infer/run.
+ */
+VmafOrtElemType vmaf_ort_internal_input_elem_type(const VmafOrtSession *sess, size_t slot);
+
+/**
+ * Return the element type declared for the @p slot-th model output.
+ * Same NULL / OOB semantics as vmaf_ort_internal_input_elem_type.
+ */
+VmafOrtElemType vmaf_ort_internal_output_elem_type(const VmafOrtSession *sess, size_t slot);
 
 #ifdef __cplusplus
 }
