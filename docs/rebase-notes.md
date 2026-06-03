@@ -10,6 +10,22 @@ upstream Netflix/vmaf). No rebase conflict is possible.
 
 ---
 
+## phase-4b8-c-abi-break-scoping (2026-05-29)
+
+**Files touched:** `docs/adr/0767-phase-4b8-c-abi-break-scoping.md`,
+`docs/research/research-0752-phase-4b8-c-abi-break-scoping.md`,
+`docs/adr/README.md`, `changelog.d/changed/0767-phase-4b8-c-abi-break-scoping.md`
+
+**Rebase impact:** No rebase impact. This is a scoping/design document with no source
+changes. The implementation PR (when it lands) will touch `core/include/libvmaf/*.h`
+and every `ffmpeg-patches/` file — that implementation PR will carry its own rebase note
+cataloguing the specific header and patch changes. When upstream Netflix/vmaf adds symbols
+to `libvmaf.h` or `model.h` between now and the v4 implementation, the ADR-0767 removal
+list should be checked against the upstream additions to avoid removing a symbol upstream
+has just added.
+
+---
+
 ## docs/hip-picture-stub-comment-closeout (ADR-0613, 2026-06-03)
 `core/src/picture.h` — comment on `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`
 updated to reflect that `picture_hip.{c,h}` is fully implemented (ADR-0613);
