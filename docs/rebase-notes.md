@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## test/compat-python-vmaf-coverage-push (2026-06-03)
+
+**Files touched:**
+`compat/python-vmaf/tests/` (new directory),
+`pyproject.toml` (`testpaths` + `pythonpath` additions)
+
+**Rebase impact:** None. Pure test addition; no production code changed.
+The `pyproject.toml` diff only appends to `testpaths` and `pythonpath` — if a
+concurrent branch adds entries in the same section a trivial conflict resolution
+is required (keep both entries).
+
+---
+
 ## vmafx-title-rebrand (2026-06-03, no ADR)
 
 **Files touched:**
