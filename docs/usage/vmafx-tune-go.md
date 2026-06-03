@@ -1,10 +1,10 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# vmafx-tune-go — Go port of vmaf-tune (Stage 1)
+# vmafx-tune-go — Go port of vmaf-tune (Stage 4)
 
-`vmafx-tune-go` is the Stage-1 Go port of the `vmaf-tune` rate-quality tuning
-CLI. It ships as a **separate binary** alongside the Python `vmaf-tune` binary
-during the migration. The Python binary is unchanged and should be used for all
-subcommands that are not yet ported.
+`vmafx-tune-go` is the Go port of the `vmaf-tune` rate-quality tuning CLI
+(Stages 1–4). It ships as a **separate binary** alongside the Python `vmaf-tune`
+binary during the migration. The Python binary is unchanged and should be used
+for all subcommands that are not yet ported.
 
 This page documents the Go binary. For the full Python `vmaf-tune` reference, see
 [vmaf-tune.md](vmaf-tune.md).
@@ -102,7 +102,45 @@ Multi-target output uses schema-v2 (adds `schema_version: 2` and
 Non-finite float values (`NaN`, `Inf`) are serialized as `null` — the output is
 RFC 8259 strict JSON, parseable by Go, Rust, and `jq --strict`.
 
-## Not yet ported (Stage 2+)
+## Ported subcommands (Stage 4)
+
+### `report` — Render Markdown or HTML from prior runs
+
+Reads one or more JSON files produced by `compare` or `ladder` and renders a
+human-readable report.
+
+```text
+vmafx-tune-go report <input.json> [input2.json ...] [flags]
+```
+
+The subcommand auto-detects whether each input is a `compare` or `ladder` JSON
+file and renders a unified report.
+
+**Optional flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--output`, `-o` | stdout | Output file path. |
+| `--format` | `markdown` | Output format: `markdown` or `html`. |
+
+**Example — Markdown to stdout:**
+
+```bash
+vmafx-tune-go report results.json
+```
+
+**Example — merge compare + ladder results into one HTML report:**
+
+```bash
+vmafx-tune-go report compare.json ladder.json \
+  --format html \
+  --output report.html
+```
+
+The HTML output is self-contained (inlined CSS, no external dependencies) and
+renders correctly without a network connection.
+
+## Not yet ported (Stage 5+)
 
 The following subcommands are stubs in `vmafx-tune-go`. They print a redirect
 message and exit 1 when invoked. Use the Python `vmaf-tune` binary for these:
@@ -110,10 +148,8 @@ message and exit 1 when invoked. Use the Python `vmaf-tune` binary for these:
 | Subcommand | Python equivalent |
 |------------|-------------------|
 | `tune-per-shot` | `vmaf-tune tune-per-shot` |
-| `ladder` | `vmaf-tune ladder` |
 | `fast` | `vmaf-tune fast` |
 | `corpus` | `vmaf-tune corpus` |
-| `report` | `vmaf-tune report` |
 | `benchmark` | `vmaf-tune benchmark` |
 | `auto` | `vmaf-tune auto` |
 | `sidecar` | `vmaf-tune sidecar` |
@@ -121,25 +157,30 @@ message and exit 1 when invoked. Use the Python `vmaf-tune` binary for these:
 
 ## Migration roadmap
 
-| Stage | Scope | Status |
-|-------|-------|--------|
-| Stage 1 | `compare` subcommand, libx264/libx265, single/multi-target bisect | **This PR** |
-| Stage 2 | Hardware encoders (NVENC, QSV, AMF), `--workers`, `ladder`, `tune-per-shot` | Planned |
-| Stage 3 | Feature parity with Python binary; rename to `vmafx-tune` | Planned |
-| Stage 4 | Remove Python binary | Planned |
+| Stage | Scope | ADR | Status |
+|-------|-------|-----|--------|
+| Stage 1 | `compare` subcommand, libx264/libx265, single/multi-target bisect | ADR-0705 | Merged |
+| Stage 2 | `ladder` subcommand, hardware encoders (NVENC, QSV, AMF), convex hull + knee selection | ADR-0730 | Merged |
+| Stage 3 | `pkg/conformal`, downscale plumbing | — | Merged |
+| Stage 4 | `report` subcommand, Markdown + HTML rendering | ADR-0770 | **This PR** |
+| Stage 5 | `tune-per-shot` subcommand, conformal CLI wiring | Planned | — |
+| Stage 6 | `fast` subcommand (requires ONNX Go binding) | Planned | — |
+| Stage N | Feature parity; rename binary to `vmafx-tune` | Planned | — |
 
 ## Architecture
 
-The Go binary uses an **adapter pattern** with three core packages:
+The Go binary uses an **adapter pattern** with four core packages:
 
-- **`pkg/encoder/`** — `Encoder` interface + software encoder implementations.
-  Each encoder shells out to `ffmpeg` for the actual encode; no `libavcodec` CGo
-  dependency in Stage 1.
+- **`pkg/encoder/`** — `Encoder` interface + software and hardware encoder implementations.
+  Each encoder shells out to `ffmpeg`; no `libavcodec` CGo dependency.
 - **`pkg/bisect/`** — Stateless `Run(src, enc, scoreFunc, params)` function.
   The score function is injectable, enabling unit tests without a live `vmaf` binary.
-- **`pkg/report/`** — `EmitJSON` / `EmitMarkdown` renderers. JSON output is
-  schema-compatible with the Python `compare.py` v1/v2 payloads.
+- **`pkg/ladder/`** — `Build(src, encoder, Params)` function. Convex hull
+  (`upperConvexHull`), knee selection (`selectRenditions`), min-bitrate-gap filter.
+- **`pkg/report/`** — Stage-1: `EmitJSON` / `EmitMarkdown` renderers (single-run emit).
+  Stage-4: `RenderMarkdownMulti` / `RenderHTMLMulti` (multi-file report rendering).
 
-See [ADR-0705](../adr/0705-vmafx-tune-go-stage1.md) for the migration rationale and
-[ADR-0702](../adr/0702-vmafx-phase4-language-modernization.md) for the Phase 4
-umbrella.
+See [ADR-0705](../adr/0705-vmafx-tune-go-stage1.md) for the migration rationale,
+[ADR-0730](../adr/0730-vmafx-tune-go-stage2.md) for Stage-2,
+[ADR-0770](../adr/0770-vmafx-tune-go-stage4-report.md) for Stage-4, and
+[ADR-0702](../adr/0702-vmafx-phase4-language-modernization.md) for the Phase 4 umbrella.

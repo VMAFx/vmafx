@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/vmafx-tune-go-stage4-report (ADR-0770)
+
+No rebase impact: pure Go CLI and pkg/report additions.
+No upstream C/Python files modified.
+Files added: `cmd/vmafx-tune/cmd/report.go`, `pkg/report/multi.go`,
+`pkg/report/multi_test.go`, `docs/adr/0770-vmafx-tune-go-stage4-report.md`,
+`changelog.d/added/vmafx-tune-go-stage4-report.md`.
+Files modified: `cmd/vmafx-tune/cmd/root.go` (register `report` + `ladder`),
+`cmd/vmafx-tune/AGENTS.md` (invariants 8–9),
+`docs/usage/vmafx-tune-go.md` (Stage-4 section),
+`docs/adr/README.md` (new row), `docs/rebase-notes.md` (this entry).
+
 ## doxygen-thread-safety-tags (2026-05-29, ADR-0788)
 
 **Files touched:**
