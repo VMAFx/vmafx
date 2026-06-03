@@ -69,6 +69,25 @@ files are fork-local; no upstream path conflicts.
 
 ---
 
+## ADR-0992 — MOS-label batch-run manifests for KonViD and CHUG
+
+**Files touched:**
+`ai/configs/mos-label-batch-konvid.json` (new),
+`ai/configs/mos-label-batch-chug.json` (new),
+`ai/tests/test_mos_label_batch_runs_smoke.py` (new),
+`ai/tests/test_batch_materialize_mos_labels.py` (sys.path bug fix),
+`docs/ai/mos-label-materializer.md`,
+`docs/adr/0992-mos-label-batch-runs.md` (new),
+`docs/adr/README.md`,
+`changelog.d/added/0992-mos-label-batch-runs.md` (new), and this file.
+
+**Rebase impact:** No rebase impact on upstream sync (all touched files
+are fork-local; no Netflix/vmaf source file is modified). No
+cross-branch impact: the new `ai/configs/*.json` files are independent
+and will not conflict with any in-flight branch.
+
+---
+
 ## Changelog-fragment section hygiene (2026-05-30)
 
 **Files touched:**

@@ -61,6 +61,40 @@ Use `ai/scripts/batch_materialize_mos_labels.py` when several refreshed
 feature tables need the same label-join policy. Paths in the manifest are
 relative to the manifest file unless `--base-dir` is supplied.
 
+### Corpus-specific manifests
+
+The repo ships ready-to-use batch manifests under `ai/configs/`:
+
+| Manifest | Corpora | Key schema |
+|---|---|---|
+| `ai/configs/mos-label-batch-konvid.json` | KonViD-1k, KonViD-150k | `key` (feature) ↔ `src` (label); 6+ digit numeric regex |
+| `ai/configs/mos-label-batch-chug.json` | CHUG UGC-HDR | `chug_video_id` on both sides; `key_normalize: raw` |
+
+Run the KonViD batch (after feature extraction and corpus JSONL ingestion):
+
+```bash
+.venv/bin/python ai/scripts/batch_materialize_mos_labels.py \
+  --manifest ai/configs/mos-label-batch-konvid.json \
+  --report-json .workingdir2/konvid-mos-batch.report.json \
+  --report-md .workingdir2/konvid-mos-batch.report.md
+```
+
+Run the CHUG batch:
+
+```bash
+.venv/bin/python ai/scripts/batch_materialize_mos_labels.py \
+  --manifest ai/configs/mos-label-batch-chug.json \
+  --report-json .workingdir2/chug-mos-batch.report.json \
+  --report-md .workingdir2/chug-mos-batch.report.md
+```
+
+Paths in the shipped manifests follow the default layout from
+`konvid_to_full_features.py` (`runs/`) and `chug_extract_features.py`
+(`.corpus/chug/` for input, `.workingdir2/chug/runs/` for output). Pass
+`--base-dir` to override the relative-path root for non-default layouts.
+
+### Custom manifest
+
 ```json
 {
   "defaults": {
@@ -81,13 +115,6 @@ relative to the manifest file unless `--base-dir` is supplied.
     }
   ]
 }
-```
-
-```bash
-.venv/bin/python ai/scripts/batch_materialize_mos_labels.py \
-  --manifest .workingdir2/mos-labels/batch.json \
-  --report-json .workingdir2/mos-labels/batch.report.json \
-  --report-md .workingdir2/mos-labels/batch.report.md
 ```
 
 Each table may override any single-run join option from `defaults`, including

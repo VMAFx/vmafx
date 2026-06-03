@@ -715,3 +715,4 @@
 0989-sycl-motion-add-uv
 0990-cuda-ms-ssim-double-precision-lcs
 0991-second-opinion-batch-runs
+0992-mos-label-batch-runs

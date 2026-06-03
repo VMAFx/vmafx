@@ -12,10 +12,16 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCRIPT = _REPO_ROOT / "ai" / "scripts" / "batch_materialize_mos_labels.py"
+_SCRIPTS_DIR = _REPO_ROOT / "ai" / "scripts"
+_SCRIPT = _SCRIPTS_DIR / "batch_materialize_mos_labels.py"
 
 
 def _load_module():
+    # ``_script_bootstrap`` lives in ai/scripts/; make it importable before
+    # executing the script module so the bootstrap import does not fail when
+    # pytest is invoked from the repo root without PYTHONPATH=ai/scripts.
+    if str(_SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(_SCRIPTS_DIR))
     spec = importlib.util.spec_from_file_location("batch_materialize_mos_labels", _SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

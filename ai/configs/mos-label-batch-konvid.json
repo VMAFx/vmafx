@@ -1,0 +1,32 @@
+{
+  "_comment": "MOS-label batch manifest for KonViD corpora (ADR-0992).",
+  "_comment2": "Relative paths resolve from the manifest directory (ai/configs/).",
+  "_comment3": "Override with --base-dir for non-default layouts.",
+  "_comment4": "Corpus JSONL drops are local-only under .workingdir2/; they are never committed.",
+  "defaults": {
+    "min_match_rate": 0.95,
+    "key_normalize": "basename",
+    "feature_key_regex": "([0-9]{6,})",
+    "label_key_regex": "([0-9]{6,})"
+  },
+  "tables": [
+    {
+      "id": "konvid-1k",
+      "features": "../../runs/full_features_konvid.parquet",
+      "labels": ["../../.workingdir2/konvid-1k/konvid_1k.jsonl"],
+      "feature_key_column": "key",
+      "label_key_column": "src",
+      "out": "../../runs/full_features_konvid_with_mos.parquet",
+      "audit_json": "../../runs/full_features_konvid_with_mos.audit.json"
+    },
+    {
+      "id": "konvid-150k",
+      "features": "../../runs/full_features_konvid_with_folds.parquet",
+      "labels": ["../../.workingdir2/konvid-150k/konvid_150k.jsonl"],
+      "feature_key_column": "key",
+      "label_key_column": "src",
+      "out": "../../runs/full_features_konvid_150k_with_mos.parquet",
+      "audit_json": "../../runs/full_features_konvid_150k_with_mos.audit.json"
+    }
+  ]
+}
