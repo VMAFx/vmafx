@@ -764,6 +764,30 @@ If upstream renames or removes any of those entry points, update
 
 ---
 
+## OpenTelemetry tracing full roll-out — ADR-0782 (2026-06-03)
+
+**Files touched:**
+`pkg/observability/otel_instruments.go` (new),
+`cmd/vmafx-controller/grpc_server.go`,
+`cmd/vmafx-node/executor.go`,
+`cmd/vmafx-node/main.go`,
+`cmd/vmafx-server/main.go`,
+`cmd/vmafx-mcp/main.go`,
+`cmd/vmafx-controller/queue/queue.go`,
+`deploy/grafana/vmafx-overview.json` (new),
+`deploy/helm/vmafx/templates/otel-collector-sidecar.yaml` (new),
+`docs/observability/otel.md` (new),
+`docs/adr/0782-otel-tracing.md` (new).
+
+**Rebase impact:** None on the Netflix/vmaf C tree. Entirely
+fork-local Go instrumentation. No upstream C surfaces touched.
+The `otel_instruments.go` file is a pure addition; span call-sites
+follow the `StartSpan`/`EndSpan` pattern and do not change function
+signatures. If a future port touches `executor.go` or `grpc_server.go`,
+the span stanzas are additive and do not conflict with upstream semantics.
+
+---
+
 ## OpenTelemetry traces + metrics — Phase 1 (2026-05-31)
 
 **Files touched:**

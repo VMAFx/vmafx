@@ -745,6 +745,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0760](0760-cuda-motion-ncu-multi-resolution.md) | CUDA motion kernel multi-resolution ncu profiling methodology | Accepted | cuda, perf, research |
 | [ADR-0762](0762-cuda-ciede-ldg.md) | CUDA CIEDE2000 8bpc/16bpc — `__ldg()` read-only cache routing (F3 fix) | Accepted | cuda, performance, ciede, fork-local |
 | [ADR-0775](0775-dnn-ort-audit.md) | DNN ORT Backend Audit Findings | Accepted | dnn, onnx, ort, thread-safety, correctness, fork-local, research |
+| [ADR-0782](0782-otel-tracing.md) | OpenTelemetry tracing and metrics schema for the VMAFX platform | Accepted | observability, otel, tracing, metrics, go, fork-local |
 | [ADR-0792](0792-hardcoded-yuv-path-env-overrides.md) | Env-var overrides for hardcoded YUV and testdata paths | Accepted | workspace, ci, testdata |
 | [ADR-0795](0795-prev-ref-thread-safety.md) | Clarify and harden VmafFeatureExtractor.prev_ref thread-safety invariant | Accepted | threading, feature-extractor, batch-threading, correctness |
 | [ADR-0810](0810-adr-0108-compliance-audit-2026-05-29.md) | ADR-0108 Six-Deliverables Compliance Audit (2026-05-29) + D3 Gap Fixes | Accepted | docs, agents, process |

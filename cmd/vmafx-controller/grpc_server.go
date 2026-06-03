@@ -12,6 +12,7 @@
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service (origin).
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
+// ADR-0782: OpenTelemetry tracing.
 
 //go:build cgo
 
@@ -126,6 +127,7 @@ func newControllerServer(
 }
 
 // SubmitJob enqueues a new scoring job.
+// ADR-0782: vmafx.job.submit span traces the full enqueue path.
 func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.SubmitJobRequest) (*controllerv1.SubmitJobResponse, error) {
 	if req.GetScoring() == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "scoring params are required")
@@ -134,6 +136,13 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 	if sp.GetReference() == "" || sp.GetDistorted() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "reference and distorted paths are required")
 	}
+
+	spanCtx, span := observability.StartSpan(ctx, observability.SpanJobSubmit,
+		observability.AttrModel.String(sp.GetModel()),
+		observability.AttrBackend.String(sp.GetBackend()),
+	)
+	var spanErr error
+	defer observability.EndSpan(span, &spanErr)
 
 	j := &queue.Job{
 		Scoring: queue.ScoringParams{
@@ -144,12 +153,14 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 		},
 	}
 
-	id, err := c.queue.Submit(ctx, j)
+	id, err := c.queue.Submit(spanCtx, j)
 	if err != nil {
+		spanErr = err
 		c.log.Error("SubmitJob failed", "error", err)
 		return nil, status.Errorf(codes.Internal, "submit job: %v", err)
 	}
 
+	span.SetAttributes(observability.AttrJobID.String(id))
 	c.metrics.JobsSubmitted.Inc()
 	c.log.Info("job submitted via gRPC", "job_id", id, "reference", sp.GetReference(), "backend", sp.GetBackend())
 	return &controllerv1.SubmitJobResponse{JobId: id}, nil

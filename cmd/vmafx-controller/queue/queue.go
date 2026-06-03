@@ -473,6 +473,10 @@ func (q *SQLiteQueue) RunningCount() int {
 	return len(q.runningSet)
 }
 
+// Depth satisfies observability.QueueDepthProvider (ADR-0782).
+// Returns the current number of PENDING jobs — equivalent to PendingCount.
+func (q *SQLiteQueue) Depth() int { return q.PendingCount() }
+
 // SetGetUnlockedHookForTest installs a function that is called at the start of
 // every getUnlocked call.  When the hook returns a non-nil error, getUnlocked
 // returns that error immediately without hitting SQLite.

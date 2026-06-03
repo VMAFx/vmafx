@@ -25,6 +25,7 @@
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service (origin).
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
+// ADR-0782: OpenTelemetry tracing and metrics.
 // ADR-0962: pass shutdown ctx to NewRegistry so the reaper goroutine stops
 //           cleanly on SIGTERM / SIGINT.
 

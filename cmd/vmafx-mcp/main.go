@@ -48,6 +48,15 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
+	// OpenTelemetry — non-fatal; missing OTLP collector must not block startup.
+	// ADR-0782: OTel tracing wired across all Go binaries.
+	otelShutdown := observability.InitOTel(context.Background(), serverName, logger)
+	defer func() {
+		if err := otelShutdown(context.Background()); err != nil {
+			logger.Warn("otel shutdown error", "error", err)
+		}
+	}()
+
 	srv := buildServer(logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

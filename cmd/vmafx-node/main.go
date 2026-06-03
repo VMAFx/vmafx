@@ -26,6 +26,7 @@ import (
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-node/probe"
 	"github.com/VMAFx/vmafx/cmd/vmafx-node/server"
+	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
 // buildVersion is stamped by the Go linker at build time:
@@ -64,6 +65,15 @@ func run() error {
 	slog.SetDefault(logger)
 
 	slog.Info("vmafx-node starting", "version", buildVersion)
+
+	// OpenTelemetry — non-fatal; missing OTLP collector must not block startup.
+	// ADR-0782: OTel tracing wired across all Go binaries.
+	otelShutdown := observability.InitOTel(context.Background(), "vmafx-node", logger)
+	defer func() {
+		if err := otelShutdown(context.Background()); err != nil {
+			slog.Warn("otel shutdown error", "error", err)
+		}
+	}()
 
 	ffmpegBin := ffmpegPath()
 	slog.Info("ffmpeg discovery", "path", ffmpegBin)

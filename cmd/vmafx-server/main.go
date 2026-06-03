@@ -17,12 +17,14 @@
 // CLI flags mirror and override the environment variables.
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service.
+// ADR-0782: OpenTelemetry tracing and metrics.
 
 //go:build cgo
 
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -72,6 +74,18 @@ func main() {
 	// ---------------------------------------------------------------------------
 	log := observability.NewLogger(*logLevel)
 	slog.SetDefault(log)
+
+	// ---------------------------------------------------------------------------
+	// OpenTelemetry — initialise before other subsystems so spans are active.
+	// Non-fatal: a missing OTLP collector must not prevent the server from starting.
+	// ADR-0782: OTel tracing wired across all Go binaries.
+	// ---------------------------------------------------------------------------
+	otelShutdown := observability.InitOTel(context.Background(), "vmafx-server", log)
+	defer func() {
+		if err := otelShutdown(context.Background()); err != nil {
+			log.Warn("otel shutdown error", "error", err)
+		}
+	}()
 
 	log.Info("vmafx-server starting",
 		"version", version(),

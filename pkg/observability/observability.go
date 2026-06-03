@@ -63,6 +63,13 @@ type Metrics struct {
 	HealthRequests prometheus.Counter
 	// ReadyRequests counts /readyz calls.
 	ReadyRequests prometheus.Counter
+
+	// Controller job lifecycle counters (vmafx-controller only).
+	// Populated by NewMetrics; called via grpc_server.go on submit/complete/fail.
+	// ADR-0782.
+	JobsSubmitted prometheus.Counter
+	JobsCompleted prometheus.Counter
+	JobsFailed    prometheus.Counter
 }
 
 // NewMetrics registers and returns the vmafx-server Prometheus metrics.
