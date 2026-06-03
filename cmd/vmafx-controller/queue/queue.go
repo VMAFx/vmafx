@@ -72,8 +72,11 @@ type Job struct {
 	Score        float64
 	Features     map[string]float64
 	Error        string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// TenantID is the tenant that submitted this job (from the JWT "tid" claim).
+	// All controller queries are scoped to this value (ADR-0794).
+	TenantID  string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // JobResult carries the terminal outcome reported by a vmafx-node.
@@ -229,8 +232,8 @@ func (q *SQLiteQueue) Submit(ctx context.Context, job *Job) (string, error) {
 	// ExecContext propagates the caller's ctx so a cancelled gRPC SubmitJob
 	// can abort the INSERT instead of holding the SQLite write open.
 	_, err = q.db.ExecContext(ctx,
-		"INSERT INTO jobs (id, status, scoring, created_at, updated_at) VALUES (?,?,?,?,?)",
-		job.ID, StatusPending, string(scoringJSON), now.Unix(), now.Unix(),
+		"INSERT INTO jobs (id, status, scoring, tenant_id, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+		job.ID, StatusPending, string(scoringJSON), job.TenantID, now.Unix(), now.Unix(),
 	)
 	if err != nil {
 		return "", fmt.Errorf("queue: insert job %s: %w", job.ID, err)
@@ -240,7 +243,7 @@ func (q *SQLiteQueue) Submit(ctx context.Context, job *Job) (string, error) {
 	q.pendingFIFO = append(q.pendingFIFO, job.ID)
 	q.mu.Unlock()
 
-	q.log.Info("job submitted", "job_id", job.ID, "reference", job.Scoring.Reference, "backend", job.Scoring.Backend)
+	q.log.Info("job submitted", "job_id", job.ID, "tenant_id", job.TenantID, "reference", job.Scoring.Reference, "backend", job.Scoring.Backend)
 	return job.ID, nil
 }
 
@@ -396,7 +399,7 @@ func (q *SQLiteQueue) getUnlocked(jobID string) (*Job, error) {
 		}
 	}
 	row := q.db.QueryRow(
-		"SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), created_at, updated_at FROM jobs WHERE id=?",
+		"SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), COALESCE(tenant_id,''), created_at, updated_at FROM jobs WHERE id=?",
 		jobID,
 	)
 
@@ -409,7 +412,7 @@ func (q *SQLiteQueue) getUnlocked(jobID string) (*Job, error) {
 	)
 	err := row.Scan(
 		&job.ID, &job.Status, &scoringJSON, &job.AssignedNode,
-		&job.Score, &featuresJSON, &job.Error,
+		&job.Score, &featuresJSON, &job.Error, &job.TenantID,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {

@@ -74,10 +74,6 @@ spec:
           resources:
             {{- toYaml (.Values.operator.resources | default dict) | nindent 12 }}
           securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
+            {{- toYaml .Values.securityContext | nindent 12 }}
       terminationGracePeriodSeconds: 10
 {{- end }}

@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## CI scaffold-comment refresh (2026-06-03)
+
+`.github/workflows/fuzz.yml` — header comment updated: ADR-0882 citation added
+alongside ADR-0270/0311.
+`.github/workflows/libvmaf-build-matrix.yml` — Metal matrix lane comment and
+`name:` field updated from "T8-1 scaffold" to "runtime" (ADR-0420 landed).
+
+no rebase impact: comment-only change; no logic or structure altered.
+
 Single ledger of fork-local changes that need attention when this fork
 syncs from `upstream/master` (Netflix/vmaf). Required by
 [ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local
@@ -18,6 +27,29 @@ README.md), `docs/adr/0991-second-opinion-batch-runs.md` (new),
 
 **Rebase impact:** None on upstream sync (no Netflix/vmaf upstream file
 touched). The `ai/pyproject.toml` addition is additive; no conflict risk.
+
+---
+
+## controller-multi-tenant-auth-gateway (2026-05-29, ADR-0794)
+
+**Files touched:**
+`cmd/vmafx-controller/auth/` (new package),
+`cmd/vmafx-controller/main.go`,
+`cmd/vmafx-controller/grpc_server.go`,
+`cmd/vmafx-controller/http_server.go`,
+`cmd/vmafx-controller/queue/queue.go`,
+`cmd/vmafx-controller/queue/schema.sql`,
+`deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml` (new),
+`deploy/helm/vmafx/templates/tenant-crd-config.yaml` (new),
+`deploy/helm/vmafx/templates/deployment.yaml`,
+`deploy/helm/vmafx/values.yaml`,
+`docs/server/auth.md` (new),
+`docs/adr/0794-controller-multi-tenant-auth-gateway.md` (new).
+
+**Rebase impact:** None. All touched files are fork-local additions
+(vmafx-controller, Helm chart, docs) that do not exist in upstream
+Netflix/vmaf. The SQLite schema change (`tenant_id` column) is additive
+and non-breaking. No upstream rebase conflict is possible.
 
 ---
 
@@ -43403,6 +43435,21 @@ behaviour — all 12 fixes are pure type-checker compliance. The audit's
 companion file `pyrightconfig.audit.json` is intentionally gitignored so this
 PR doesn't introduce a CI gate before the long-tail cleanup is done.
 
+## cuda-ms-ssim-double-precision-lcs (2026-06-03, ADR-0990)
+
+no rebase impact: REASON — all touched files are fork-added CUDA
+sources (`core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`,
+`core/src/feature/cuda/integer_ms_ssim_cuda.c`) and docs. Netflix
+upstream does not ship a CUDA ms_ssim kernel. The invariant to
+preserve on any future port of `ssim_accumulate_default_scalar`
+changes from upstream: the `ms_ssim_vert_lcs` kernel must keep
+`double` for `my_l/my_c/my_s`, the shared-memory warp partial
+arrays, and the `c1/c2/c3` parameters — these are load-bearing for
+the places=4 parity gate (ADR-0990 / ADR-0139). If upstream changes
+the scalar `2.0 *` to `2.0f *` (regressing to float), do NOT mirror
+that change into the CUDA kernel without also updating the parity
+test tolerance.
+
 ## sycl-float-ssim-ssimulacra2-parity-research (2026-06-03, ADR-0985)
 
 no rebase impact: REASON — changes are: (1) a new test file
@@ -43471,3 +43518,35 @@ collect_fex_cuda. Resolution rules:
 
 `core/src/feature/cuda/AGENTS.md` — new section "Motion SAD batch fencing":
 keep verbatim on rebase.
+## ADR-0930 — Helm NetworkPolicy + PSS baseline — 2026-05-31
+
+no rebase impact: REASON — every touched file lives entirely under
+`deploy/helm/vmafx/` (a fork-local directory; Netflix upstream ships no
+Helm chart), plus fork-local documentation under `docs/development/`,
+`docs/adr/`, `docs/research/`, `docs/state.md`, `docs/rebase-notes.md`
+(this file), and `changelog.d/added/`.  None of the production C, Go,
+Python, FFmpeg-patch, or Meson surfaces are touched.  Future upstream
+syncs cannot conflict with this change.
+
+Fork-local files:
+- `deploy/helm/vmafx/values.yaml` (UID + seccomp + `networkPolicy` block)
+- `deploy/helm/vmafx/templates/networkpolicy.yaml` (new)
+- `deploy/helm/vmafx/templates/operator-deployment.yaml` (inherit from `.Values`)
+- `deploy/helm/vmafx/templates/tests/test-connection.yaml` (inherit from `.Values`)
+- `deploy/helm/vmafx/templates/NOTES.txt` (PSS / NP hints)
+- `docs/development/k8s-deployment.md` (Pod security + NetworkPolicy sections)
+- `docs/adr/0930-helm-networkpolicy-pss.md` and matching `_index_fragments/` entry
+- `docs/research/0930-helm-networkpolicy-pss.md`
+- `changelog.d/added/helm-networkpolicy-pss.md`
+- `docs/state.md` (closed row)
+
+## fix(hip): integer_ms_ssim_hip picture_copy normalization — 2026-06-03
+
+no rebase impact: REASON — changes touch only
+`core/src/feature/hip/integer_ms_ssim_hip.c` (fork-only HIP backend,
+no upstream equivalent in Netflix/vmaf), `docs/state.md` (fork-local
+bug tracker), `changelog.d/fixed/` (fragment), and `docs/rebase-notes.md`
+(this entry). `core/test/test_hip_ms_ssim_parity.c` and the
+corresponding `meson.build` entry were already present on master
+(merged from `gpu-runtime-bug-audit`). No CPU scalar path, no public
+header, no Netflix upstream file is touched.

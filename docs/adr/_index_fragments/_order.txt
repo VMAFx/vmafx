@@ -599,6 +599,7 @@
 0871-ssim-dispatch-pthread-once
 0869-sanitizer-pass-cleanup
 0887-vmaf-model-slopes-feature-mismatch-validation
+0930-helm-networkpolicy-pss
 0927-opentelemetry-traces-metrics-phase1
 0925-go-generic-registry
 0928-vmaf-picture-v2-explicit-backend-state
@@ -712,4 +713,5 @@
 0957-sycl-kernel-coverage-round4
 0986-ci-docs-pr-trigger
 0989-sycl-motion-add-uv
+0990-cuda-ms-ssim-double-precision-lcs
 0991-second-opinion-batch-runs

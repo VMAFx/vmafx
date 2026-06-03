@@ -1,0 +1,45 @@
+{{- /*
+SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+Copyright 2026 Lusoris
+
+deploy/helm/vmafx/templates/tenant-crd-config.yaml
+Renders a VmafxTenant CR for each entry in .Values.auth.tenants.
+ADR-0794: multi-tenant auth gateway.
+*/ -}}
+{{- if .Values.auth.enabled }}
+{{- range .Values.auth.tenants }}
+---
+apiVersion: vmafx.dev/v1
+kind: VmafxTenant
+metadata:
+  name: {{ .tenantId | quote }}
+  namespace: {{ $.Release.Namespace | quote }}
+  labels:
+    {{- include "vmafx.labels" $ | nindent 4 }}
+spec:
+  tenantId: {{ .tenantId | quote }}
+  enabled: {{ .enabled | default true }}
+  oidc:
+    issuer: {{ .oidc.issuer | quote }}
+    jwksEndpoint: {{ .oidc.jwksEndpoint | quote }}
+    {{- if .oidc.audience }}
+    audience: {{ .oidc.audience | quote }}
+    {{- end }}
+    {{- if .oidc.tenantClaim }}
+    tenantClaim: {{ .oidc.tenantClaim | quote }}
+    {{- end }}
+    {{- if .oidc.rolesClaim }}
+    rolesClaim: {{ .oidc.rolesClaim | quote }}
+    {{- end }}
+  {{- if .rbac }}
+  rbac:
+    {{- if .rbac.defaultRole }}
+    defaultRole: {{ .rbac.defaultRole | quote }}
+    {{- end }}
+    {{- if .rbac.allowedRoles }}
+    allowedRoles:
+      {{- toYaml .rbac.allowedRoles | nindent 6 }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}

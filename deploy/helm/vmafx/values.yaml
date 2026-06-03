@@ -209,13 +209,20 @@ serviceAccount:
 # ---------------------------------------------------------------------------
 # Pod security
 # ---------------------------------------------------------------------------
+# UID/GID 65532 matches the `nonroot` user baked into
+# gcr.io/distroless/cc-debian12, which is the runtime base for every
+# production VMAFX image (see ADR-0878 / PR #367).  Together with the
+# container-level securityContext below, this satisfies the
+# Pod Security Admission "restricted" profile.
+# See docs/development/k8s-deployment.md#pod-security for the full mapping.
+# ---------------------------------------------------------------------------
 podAnnotations: {}
 
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 65534
-  runAsGroup: 65534
-  fsGroup: 65534
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
   # PSA "restricted" profile requires seccompProfile (ADR-0969).
   # RuntimeDefault uses the container runtime's default seccomp profile
   # (typically equivalent to docker/default), which is safe for all
@@ -224,11 +231,77 @@ podSecurityContext:
     type: RuntimeDefault
 
 securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   capabilities:
     drop:
       - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+# ---------------------------------------------------------------------------
+# NetworkPolicy — default-deny posture with explicit controller/node/operator
+# traffic allow-rules (ADR-0930).
+# ---------------------------------------------------------------------------
+# Disabled by default because most clusters either ship their own ingress
+# CNI policies (Cilium, Calico) or run without a NetworkPolicy controller,
+# in which case the manifest is silently a no-op but still surfaces a
+# `lint`-visible footprint.  Operators opt in with `--set
+# networkPolicy.enabled=true`.
+#
+# When enabled, the chart emits:
+#   • a default-deny ingress + egress policy for every VMAFX pod, then
+#   • allow-rules for the documented flows below.
+#
+# Required-flow assumptions (override via the allow.* lists when your
+# topology differs):
+#   • controller → node: gRPC on port 50051 (VMAFX_NODE_GRPC_PORT)
+#   • node       → object-store: HTTPS (443) — S3 / GCS / Azure Blob
+#   • operator   → kube-apiserver: HTTPS (443) inside `kube-system`
+#   • DNS        → kube-dns / CoreDNS on UDP/TCP 53
+networkPolicy:
+  enabled: false
+  # Allow rule scaffolding.  Each entry is rendered into the matching
+  # NetworkPolicy spec block; leave empty to suppress that flow.
+  allow:
+    # controller → node (in-cluster gRPC dispatch)
+    controllerToNode:
+      enabled: true
+      nodePort: 50051
+    # node → object store (rclone egress to S3/GCS/Azure/etc.)
+    nodeEgressObjectStore:
+      enabled: true
+      ports:
+        - 443
+      # cidrs accepts arbitrary IP ranges.  Default 0.0.0.0/0 lets clusters
+      # without an in-cluster mirror egress to public object stores; tighten
+      # to your bucket VPC CIDR (or to the in-cluster mirror's ClusterIP/24)
+      # for stricter blast radius.
+      cidrs:
+        - 0.0.0.0/0
+      # except is rendered as `except:` inside the egress block; useful for
+      # carving out RFC1918 prefixes when defaulting to 0.0.0.0/0.
+      except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    # operator → kube-apiserver (controller-runtime list/watch)
+    operatorToApiserver:
+      enabled: true
+      ports:
+        - 443
+        - 6443
+    # DNS egress for every VMAFX pod (CoreDNS by default).
+    dns:
+      enabled: true
+      namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
 
 # ---------------------------------------------------------------------------
 # Scheduling
@@ -336,6 +409,84 @@ node:
   # volumes / volumeMounts for corpus, output, model PVCs.
   volumes: []
   volumeMounts: []
+
+# ---------------------------------------------------------------------------
+# Auth — multi-tenant JWT / OIDC gateway (ADR-0794)
+# ---------------------------------------------------------------------------
+# When auth.enabled is true the controller validates RS256 bearer tokens from
+# an OIDC provider and enforces tenant isolation + RBAC.
+#
+# For internal / dev deployments set auth.disabled: true (sets
+# VMAFX_AUTH_DISABLED=true env var, bypasses all checks).
+#
+# Tenant configuration can be supplied two ways:
+#   1. Inline below (auth.tenants[]) — creates VmafxTenant CRs via the Helm
+#      template.  Suitable for small fixed tenant sets.
+#   2. Kubectl-apply VmafxTenant CRs directly — suitable for operator-managed
+#      multi-tenant clusters where tenants are managed by an external control
+#      plane.
+#
+# Quick-start (single tenant, Auth0):
+#
+#   auth:
+#     enabled: true
+#     jwksEndpoint: https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
+#     issuer: https://YOUR_DOMAIN.auth0.com/
+#     audience: https://vmafx.example.com/api
+#     tenants:
+#       - tenantId: acme
+#         oidc:
+#           issuer: https://YOUR_DOMAIN.auth0.com/
+#           jwksEndpoint: https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
+#           audience: https://vmafx.example.com/api
+#
+# See docs/server/auth.md for the full OIDC configuration guide.
+auth:
+  # enabled — set to true to activate the auth gateway.
+  # When false the controller starts with auth bypassed (plaintext, no tenant).
+  enabled: false
+
+  # disabled — explicitly bypass auth even when enabled is true.
+  # Useful for dry-run or integration-test pipelines.  Never true in production.
+  disabled: false
+
+  # jwksEndpoint — global fallback JWKS URL used when a tenant does not
+  # override it.  Required when auth.enabled is true.
+  jwksEndpoint: ""
+
+  # issuer — global fallback expected "iss" claim value.
+  issuer: ""
+
+  # audience — global fallback expected "aud" claim value (optional).
+  audience: ""
+
+  # tenantClaim — JWT claim field that holds the tenant identifier.
+  # Auth0: "org_id" | Keycloak: configured custom claim | Dex: "tid" (default).
+  tenantClaim: "tid"
+
+  # rolesClaim — JWT claim field that holds the list of vmafx role strings.
+  rolesClaim: "vmafx_roles"
+
+  # tenants — list of VmafxTenant CRs to create.  Each entry maps to one
+  # VmafxTenant custom resource.  Leave empty to manage tenants out-of-band.
+  tenants: []
+  # Example:
+  # tenants:
+  #   - tenantId: acme
+  #     enabled: true
+  #     oidc:
+  #       issuer: https://acme.auth0.com/
+  #       jwksEndpoint: https://acme.auth0.com/.well-known/jwks.json
+  #       audience: vmafx-api
+  #       tenantClaim: org_id
+  #       rolesClaim: vmafx_roles
+  #     rbac:
+  #       defaultRole: vmafx:reader
+  #       allowedRoles: [vmafx:reader, vmafx:writer]
+  #   - tenantId: rival-corp
+  #     oidc:
+  #       issuer: https://keycloak.rival-corp.example/realms/vmafx
+  #       jwksEndpoint: https://keycloak.rival-corp.example/realms/vmafx/protocol/openid-connect/certs
 
 # ---------------------------------------------------------------------------
 # NOTES.txt / post-install

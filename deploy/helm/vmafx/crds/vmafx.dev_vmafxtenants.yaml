@@ -1,0 +1,152 @@
+---
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml
+# CRD for VmafxTenant — per-tenant OIDC + RBAC configuration (ADR-0794).
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: vmafxtenants.vmafx.dev
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+spec:
+  group: vmafx.dev
+  names:
+    kind: VmafxTenant
+    listKind: VmafxTenantList
+    plural: vmafxtenants
+    singular: vmafxtenant
+    shortNames:
+      - vmtenant
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Issuer
+          type: string
+          jsonPath: .spec.oidc.issuer
+        - name: Enabled
+          type: boolean
+          jsonPath: .spec.enabled
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          description: >
+            VmafxTenant configures a named tenant's OIDC provider and RBAC
+            policy for the vmafx-controller multi-tenant auth gateway (ADR-0794).
+          type: object
+          required: [spec]
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required: [tenantId, oidc]
+              properties:
+                tenantId:
+                  type: string
+                  description: >
+                    Unique, stable identifier for this tenant.  Must match the
+                    "tid" (or configured tenant claim) in the OIDC tokens issued
+                    to this tenant's users.
+                  pattern: '^[a-z0-9][a-z0-9\-]{0,62}[a-z0-9]$'
+                enabled:
+                  type: boolean
+                  default: true
+                  description: >
+                    When false, all requests from this tenant are rejected with
+                    403 even if the token is otherwise valid.  Useful for
+                    emergency suspension without revoking certificates.
+                oidc:
+                  type: object
+                  required: [issuer, jwksEndpoint]
+                  description: OIDC provider configuration for this tenant.
+                  properties:
+                    issuer:
+                      type: string
+                      description: >
+                        Expected "iss" claim value.  Must be the canonical
+                        IdP base URL (Auth0, Keycloak realm URL, Dex, etc.).
+                      format: uri
+                    jwksEndpoint:
+                      type: string
+                      description: >
+                        URL of the IdP's JWKS endpoint from which RS256 public
+                        keys are fetched.
+                      format: uri
+                    audience:
+                      type: string
+                      description: >
+                        Expected "aud" claim value.  Leave empty to skip
+                        audience validation (not recommended for production).
+                    tenantClaim:
+                      type: string
+                      default: "tid"
+                      description: >
+                        JWT claim field containing the tenant identifier.
+                        Auth0 uses "org_id"; Keycloak uses custom claims;
+                        Dex typically uses "tid".
+                    rolesClaim:
+                      type: string
+                      default: "vmafx_roles"
+                      description: >
+                        JWT claim field containing the list of vmafx role
+                        strings (vmafx:reader | vmafx:writer | vmafx:admin).
+                rbac:
+                  type: object
+                  description: >
+                    Per-tenant RBAC policy.  Defines which roles grant which
+                    operations.  Defaults enforce least-privilege.
+                  properties:
+                    defaultRole:
+                      type: string
+                      default: "vmafx:reader"
+                      enum: [vmafx:reader, vmafx:writer, vmafx:admin]
+                      description: >
+                        Role assigned to authenticated users whose token does
+                        not contain an explicit vmafx role claim.
+                    allowedRoles:
+                      type: array
+                      items:
+                        type: string
+                        enum: [vmafx:reader, vmafx:writer, vmafx:admin]
+                      default: [vmafx:reader, vmafx:writer]
+                      description: >
+                        Whitelist of roles this tenant's users may hold.
+                        Roles present in the JWT but not in this list are
+                        silently stripped.
+            status:
+              type: object
+              properties:
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, status]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ["True", "False", Unknown]
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                observedGeneration:
+                  type: integer
+                  format: int64

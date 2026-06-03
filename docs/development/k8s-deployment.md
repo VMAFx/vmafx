@@ -247,12 +247,66 @@ helm uninstall vmafx -n vmafx
 kubectl delete pvc -n vmafx -l app.kubernetes.io/instance=vmafx
 ```
 
-## Security context
+## Pod security {#pod-security}
 
-All pods run as non-root (`runAsUser: 65534`), with a read-only root
-filesystem and all Linux capabilities dropped.  Adjust in `values.yaml`
-under `podSecurityContext` and `securityContext` if your image requires
-write access outside of explicitly mounted volumes.
+Every pod the chart emits — controller `Deployment`, batch `Job`, sticky
+`StatefulSet`, `vmafx-node` worker `Deployment`, and the `vmafx-operator`
+`Deployment` — satisfies the Kubernetes [Pod Security Admission
+"restricted"](https://kubernetes.io/docs/concepts/security/pod-security-admission/)
+profile (ADR-0930):
+
+| Setting                          | Value                              | Why                                                                                          |
+|----------------------------------|------------------------------------|----------------------------------------------------------------------------------------------|
+| `runAsNonRoot`                   | `true`                             | Required by `restricted`; matches the `USER nonroot:nonroot` directive in every production image (ADR-0878). |
+| `runAsUser` / `runAsGroup`       | `65532`                            | Distroless `gcr.io/distroless/cc-debian12` baked-in nonroot UID/GID — keeps file ownership consistent across `emptyDir`, PVCs, and rclone caches. |
+| `readOnlyRootFilesystem`         | `true`                             | Writes are restricted to explicitly-mounted `emptyDir` / PVC volumes (`/tmp`, the StatefulSet's `/var/lib/vmafx`).  Catches privilege-escalation primitives that depend on overwriting on-disk binaries. |
+| `allowPrivilegeEscalation`       | `false`                            | Drops the `no_new_privs` exec bit; covers the SUID and `cap_setuid` escape paths.            |
+| `capabilities.drop`              | `[ALL]`                            | Distroless containers do not need `CAP_NET_BIND_SERVICE` etc.; everything is dropped.        |
+| `seccompProfile.type`            | `RuntimeDefault`                   | Engages the container-runtime default syscall filter (Docker/containerd ship a reasonable allow-list).  Required by `restricted` since k8s 1.25. |
+
+To enforce the profile cluster-side, label your install namespace
+([k8s docs](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-admission-labels-for-namespaces)):
+
+```bash
+kubectl label --overwrite namespace vmafx-prod \
+  pod-security.kubernetes.io/enforce=restricted \
+  pod-security.kubernetes.io/audit=restricted \
+  pod-security.kubernetes.io/warn=restricted
+```
+
+If your image requires write access outside the mounted volumes, override
+`podSecurityContext` / `securityContext` in `values.yaml` — but doing so
+moves the namespace out of the `restricted` profile.
+
+## NetworkPolicy {#networkpolicy}
+
+Disabled by default (`networkPolicy.enabled=false`) because many clusters
+either ship their own CNI-managed policies (Cilium ClusterwideNetworkPolicy,
+Calico GlobalNetworkPolicy) or do not install a NetworkPolicy controller —
+in the latter case the chart's NetworkPolicies render but are inert.
+
+Opt in with `--set networkPolicy.enabled=true`.  The chart then emits a
+default-deny baseline plus four narrow allow-rules:
+
+| Policy                          | Direction | Peer                                            | Ports               | Purpose                                              |
+|---------------------------------|-----------|-------------------------------------------------|---------------------|------------------------------------------------------|
+| `default-deny`                  | both      | _(no allow)_                                    | _(all)_             | Safety net — drops everything that is not explicitly allowed. Emitted per workload component (root / operator / node) so a new component without an allow-rule remains isolated. |
+| `allow-http-ingress`            | ingress   | every pod in the release namespace              | `service.targetPort`| Scoring server reachable from any in-namespace client. |
+| `allow-controller-to-node`      | ingress   | controller pods (selector match)                | `50051` (configurable) | gRPC dispatch from controller to `vmafx-node` workers. |
+| `allow-node-egress-object-store`| egress    | configurable CIDR list (default `0.0.0.0/0` minus RFC1918) | `443`     | rclone egress from worker pods to S3 / GCS / Azure Blob. Tighten `networkPolicy.allow.nodeEgressObjectStore.cidrs` to your bucket VPC CIDR in production. |
+| `allow-operator-to-apiserver`   | egress    | `0.0.0.0/0` (apiserver Service IP is not selectable by a NetworkPolicy peer) | `443`, `6443` | controller-runtime list/watch traffic for the `vmafx-operator`. |
+| `allow-dns-egress`              | egress    | `kube-system` / CoreDNS pods                    | `53/udp`, `53/tcp`  | Cluster DNS resolution — required for the other allow-rules to function. |
+
+Override knobs live under `networkPolicy.allow.*` in `values.yaml`; each
+rule has its own `enabled` switch so you can disable specific flows when
+your topology already covers them.
+
+A NetworkPolicy-aware CNI (Cilium, Calico, kube-router, Antrea, ...) is
+required for the policies to take effect.  Verify with:
+
+```bash
+kubectl get networkpolicy -n vmafx-prod -l app.kubernetes.io/instance=vmafx
+```
 
 ## Related
 
