@@ -44012,3 +44012,14 @@ functions have no upstream analogue; there is no merge conflict possible.
 no rebase impact: adds `impl Default for VmafContext` in `bindings/rust/vmafx-sys/src/safe.rs`.
 Fork-local Rust crate with no upstream analogue; no C source, public header, or
 Python file is touched.
+
+---
+
+### fix(perf): scaffold perf gate baseline + advisory threshold (ADR-1005)
+
+**Branch**: fix/perf-gate-advisory-threshold-adr1005
+
+no rebase impact: adds `--advisory` and `--skip-if-no-baseline` flags to
+`scripts/perf/check-regression.py`, updates the CI workflow step comment and
+flags, and adds `docs/development/perf-gate.md`. No C source, public header,
+Netflix golden assertion, or upstream-mirrored Python file is touched.

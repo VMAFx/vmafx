@@ -172,3 +172,113 @@ def test_main_exits_zero_on_clean_run(tmp_path: Path) -> None:
         ["--baseline", str(baseline_path), "--current", str(current_path)]
     )
     assert exit_code == 0
+
+
+# ===== ADR-1005: --advisory and --skip-if-no-baseline tests =====
+
+
+def test_advisory_flag_exits_zero_despite_regressions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--advisory must exit 0 even when regressions are found."""
+    baseline = _baseline_payload()
+    current = deepcopy(baseline)
+    current["runs"][0]["median_ms"] = 500  # severe regression
+    baseline_path = tmp_path / "baseline.json"
+    current_path = tmp_path / "current.json"
+    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    exit_code = check_regression.main(
+        [
+            "--baseline",
+            str(baseline_path),
+            "--current",
+            str(current_path),
+            "--advisory",
+        ]
+    )
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    # Report is still printed
+    assert "REGRESSIONS" in captured.out
+    # Advisory tag is present
+    assert "ADVISORY" in captured.out
+
+
+def test_advisory_mode_tag_absent_when_not_set() -> None:
+    """render_report must not include the ADVISORY tag when advisory=False."""
+    report = check_regression.render_report([], [], [], tolerance_pct=5.0, advisory=False)
+    assert "ADVISORY" not in report
+
+
+def test_advisory_mode_tag_present_when_set() -> None:
+    """render_report must include the ADVISORY tag when advisory=True."""
+    report = check_regression.render_report([], [], [], tolerance_pct=5.0, advisory=True)
+    assert "ADVISORY" in report
+
+
+def test_skip_if_no_baseline_exits_zero_on_empty_baseline(tmp_path: Path) -> None:
+    """--skip-if-no-baseline exits 0 when the baseline has no ok cells."""
+    # Baseline with no ok cells for any backend
+    baseline: dict[str, Any] = {
+        "schema_version": "1",
+        "runs": [
+            {
+                "resolution": "576",
+                "backend": "cpu",
+                "metric": "vif",
+                "median_ms": None,
+                "status": "skip",
+                "skip_reason": "fixture_unavailable",
+            }
+        ],
+    }
+    current = deepcopy(baseline)
+    baseline_path = tmp_path / "baseline.json"
+    current_path = tmp_path / "current.json"
+    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    exit_code = check_regression.main(
+        [
+            "--baseline",
+            str(baseline_path),
+            "--current",
+            str(current_path),
+            "--skip-if-no-baseline",
+        ]
+    )
+    assert exit_code == 0
+
+
+def test_skip_if_no_baseline_proceeds_when_baseline_has_ok_cells(
+    tmp_path: Path,
+) -> None:
+    """--skip-if-no-baseline must NOT skip when the baseline has ok cells."""
+    baseline = _baseline_payload()
+    current = deepcopy(baseline)
+    current["runs"][0]["median_ms"] = 500  # regression
+    baseline_path = tmp_path / "baseline.json"
+    current_path = tmp_path / "current.json"
+    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    exit_code = check_regression.main(
+        [
+            "--baseline",
+            str(baseline_path),
+            "--current",
+            str(current_path),
+            "--skip-if-no-baseline",
+        ]
+    )
+    # Baseline has ok cells -> comparison runs -> regression found -> exit 1
+    assert exit_code == 1
+
+
+def test_baseline_has_ok_cells_respects_backend_filter() -> None:
+    """_baseline_has_ok_cells must filter by backend when backends is given."""
+    baseline = _baseline_payload()
+    # cpu has ok cells; cuda has one skip cell
+    assert check_regression._baseline_has_ok_cells(baseline, backends=["cpu"]) is True
+    assert check_regression._baseline_has_ok_cells(baseline, backends=["cuda"]) is True
+    # Requesting a backend not present at all
+    assert check_regression._baseline_has_ok_cells(baseline, backends=["sycl"]) is False

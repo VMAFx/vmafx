@@ -185,13 +185,24 @@ jobs:
             --backends cpu \
             --runs 3 \
             --output testdata/perf_multi_resolution.current.json
-      - name: Check regression vs committed baseline (+/- 5%)
+      - name: Check regression vs committed baseline (+/- 5%) [advisory]
+        # ADR-1005: --advisory makes the step exit 0 regardless of regressions
+        # found.  The committed baseline was recorded on an AMD Ryzen 9 9950X3D
+        # workstation; GitHub Actions ubuntu-latest runners are 5–15x slower, so
+        # a hard 5% tolerance will always flag regressions until a
+        # CI-runner-calibrated baseline is committed.  The report is still
+        # printed so reviewers can track timing trends.  To promote to a
+        # blocking check: record a new baseline on a GitHub Actions runner, commit
+        # it to testdata/perf_multi_resolution.json, and remove --advisory.
+        # See docs/development/perf-gate.md for the full refresh procedure.
         run: |
           python3 scripts/perf/check-regression.py \
             --baseline testdata/perf_multi_resolution.json \
             --current testdata/perf_multi_resolution.current.json \
             --tolerance-pct 5.0 \
-            --backend cpu
+            --backend cpu \
+            --advisory \
+            --skip-if-no-baseline
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: always()
         with:

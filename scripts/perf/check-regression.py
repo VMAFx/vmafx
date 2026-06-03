@@ -26,6 +26,9 @@ from typing import Any
 DEFAULT_BASELINE = Path("testdata/perf_multi_resolution.json")
 DEFAULT_TOLERANCE_PCT = 5.0
 
+# Exit code used for regression findings (overridden to 0 in --advisory mode).
+_EXIT_REGRESSION = 1
+
 
 def _cell_key(cell: dict[str, Any]) -> tuple[str, str, str]:
     """Canonical join key: (resolution, backend, metric)."""
@@ -125,15 +128,35 @@ def _format_row(record: dict[str, Any]) -> str:
     )
 
 
+def _baseline_has_ok_cells(
+    payload: dict[str, Any],
+    *,
+    backends: Sequence[str] | None,
+) -> bool:
+    """Return True when the baseline contains at least one ok cell for the given backends."""
+    runs = payload.get("runs", [])
+    if not isinstance(runs, list):
+        return False
+    for cell in runs:
+        if cell.get("status") != "ok":
+            continue
+        if backends and cell.get("backend") not in set(backends):
+            continue
+        return True
+    return False
+
+
 def render_report(
     regressions: list[dict[str, Any]],
     improvements: list[dict[str, Any]],
     skipped: list[dict[str, Any]],
     *,
     tolerance_pct: float,
+    advisory: bool = False,
 ) -> str:
     """Build a human-readable report (stable layout for CI logs)."""
-    lines = [f"== Perf regression gate (tolerance: +/- {tolerance_pct:.1f}%) =="]
+    mode_tag = " [ADVISORY — exit 0 regardless]" if advisory else ""
+    lines = [f"== Perf regression gate (tolerance: +/- {tolerance_pct:.1f}%){mode_tag} =="]
     if regressions:
         lines.append("")
         lines.append(f"REGRESSIONS ({len(regressions)}):")
@@ -182,6 +205,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="restrict comparison to one or more backends; repeatable (default: all)",
     )
+    parser.add_argument(
+        "--advisory",
+        action="store_true",
+        default=False,
+        help=(
+            "print the full regression report but always exit 0 (ADR-1005). "
+            "Use until a CI-runner-calibrated baseline is committed."
+        ),
+    )
+    parser.add_argument(
+        "--skip-if-no-baseline",
+        action="store_true",
+        default=False,
+        dest="skip_if_no_baseline",
+        help=(
+            "exit 0 with an informational message when the baseline file has no "
+            "ok cells for the requested backend(s). "
+            "Prevents false positives on the first run cycle after a new baseline seed is committed."
+        ),
+    )
     args = parser.parse_args(argv)
     if args.tolerance_pct <= 0:
         parser.error("--tolerance-pct must be > 0")
@@ -198,14 +241,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stderr.write(f"perf-regression-gate: failed to read input JSON: {exc}\n")
         return 2
 
+    if args.skip_if_no_baseline and not _baseline_has_ok_cells(baseline, backends=args.backend):
+        print(
+            "perf-regression-gate: baseline has no ok cells for the requested "
+            "backend(s); skipping comparison (--skip-if-no-baseline). "
+            "Commit a calibrated baseline to enable the gate."
+        )
+        return 0
+
     regressions, improvements, skipped = compare_runs(
         baseline,
         current,
         tolerance_pct=args.tolerance_pct,
         backends=args.backend,
     )
-    print(render_report(regressions, improvements, skipped, tolerance_pct=args.tolerance_pct))
-    return 1 if regressions else 0
+    print(
+        render_report(
+            regressions,
+            improvements,
+            skipped,
+            tolerance_pct=args.tolerance_pct,
+            advisory=args.advisory,
+        )
+    )
+    if args.advisory and regressions:
+        print(
+            f"\nperf-regression-gate: {len(regressions)} regression(s) found "
+            "but --advisory mode is active; exiting 0. "
+            "See ADR-1005 for the promotion plan."
+        )
+    return 0 if (args.advisory or not regressions) else _EXIT_REGRESSION
 
 
 if __name__ == "__main__":
