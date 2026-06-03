@@ -43769,3 +43769,11 @@ The dispatch uses function pointers in `IntegerSsimState`; the `integer_ssim_mom
 struct in `integer_ssim_avx2.h` must stay layout-identical to `ssim_moments` in
 `integer_ssim.c`. Any upstream refactor of `ssim_moments` field order requires a
 matching update in the AVX2 header.
+
+---
+
+### chore(ci): ci-workflow-name-shortening (ADR-0995)
+
+**Branch**: chore/ci-shorten-workflow-names
+
+no rebase impact: pure CI display-name rename; no C/C++/Python source touched.

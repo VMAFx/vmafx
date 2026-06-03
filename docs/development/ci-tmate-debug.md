@@ -1,6 +1,6 @@
 # Interactive SSH debugging on CI runners (tmate)
 
-The `libvmaf Build Matrix` workflow includes an SSH debug step on all macOS
+The `Builds` workflow includes an SSH debug step on all macOS
 matrix legs. When a test step fails and the run was triggered manually via
 `workflow_dispatch`, the step opens a tmate session that lets you SSH directly
 into the GitHub-hosted macOS runner to run `lldb` on the crashing binary.
@@ -15,11 +15,11 @@ The step is gated on `github.event_name == 'workflow_dispatch'` — it does
 **not** fire on regular PR pushes. You must trigger the workflow manually:
 
 ```bash
-gh workflow run "libvmaf Build Matrix — Linux/macOS/Windows/ARM × CPU/SYCL/CUDA" \
+gh workflow run "Builds" \
   --ref feat/your-branch-name
 ```
 
-Or from the GitHub UI: **Actions → libvmaf Build Matrix → Run workflow**.
+Or from the GitHub UI: **Actions → Builds → Run workflow**.
 
 ## Finding the tmate URL in the logs
 

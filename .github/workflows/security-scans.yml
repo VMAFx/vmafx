@@ -1,6 +1,6 @@
 # Security scans: SAST (semgrep + CodeQL), secret scanning, dependency review.
 
-name: Security Scans — Semgrep / CodeQL / Gitleaks / Dependency Review
+name: Security
 on:
   push:
     branches: [master]
@@ -152,14 +152,11 @@ jobs:
           languages: python
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
-<<<<<<< HEAD
       # Python analysis does not require a build step; the explicit no-op
       # below suppresses CodeQL's C++-oriented autobuild.sh which would
       # fail trying to build the old libvmaf/ path (post-rename to core/).
       - name: No-op build (Python analysis only)
         run: echo "Python-only CodeQL scan — no C++ build required"
-=======
->>>>>>> 24bb5daf89 (docs: post-merge-train sweep — VMAFx + core/ path refs, ADR index, state.md)
       - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
         with:
           category: "/language:python"

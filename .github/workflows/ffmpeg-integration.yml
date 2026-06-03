@@ -1,4 +1,4 @@
-name: FFmpeg Integration — Linux/macOS × gcc/clang + SYCL + Vulkan
+name: FFmpeg
 on:
   push:
     branches: [master]
