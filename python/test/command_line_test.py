@@ -286,18 +286,5 @@ class VmafexecCommandLineTest(MyTestCase):
             )
 
 
-class VmafossexecCommandLineTest(MyTestCase):
-
-    RC_SUCCESS = 0
-    RC_VMAF_EXCEPTION = 256 - 2
-    RC_RUNTIME_ERROR = 256 - 3
-    RC_LOGIC_ERROR = 256 - 4
-    RC_SEGMENTATION_FAULT = 139
-    RC_ARGUMENT_ISSUE = 1
-    RC_MORE_ARGUMENT_ISSUE = 256 - 1
-    RC_ENOMEM = 244
-    RC_EINVAL = 234
-
-
 if __name__ == "__main__":
     unittest.main(verbosity=2)
