@@ -32,9 +32,17 @@ import torch
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from torch.utils.data import DataLoader, Subset
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 from vmaf_train.data.frame_dataset import FrameMOSDataset, PairedFrameDataset  # noqa: E402
 from vmaf_train.data.splits import split_keys  # noqa: E402
 from vmaf_train.models import LearnedFilter, NRMetric  # noqa: E402
@@ -159,7 +167,8 @@ def train_c3(args: argparse.Namespace) -> Path:
     )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", choices=("c2", "c3", "both"), default="both")
 
@@ -178,14 +187,52 @@ def main() -> int:
     parser.add_argument("--test-frac", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--precision", default="16-mixed")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar (default: <output-c2>/train_konvid.manifest.json "
+            "when --model includes c2, else <output-c3>/train_konvid.manifest.json)."
+        ),
+    )
+    args = parser.parse_args(raw_argv)
 
+    checkpoints: dict[str, Path] = {}
     if args.model in ("c2", "both"):
         ck = train_c2(args)
         print(f"[c2] checkpoint: {ck}")
+        checkpoints["c2_checkpoint"] = ck
     if args.model in ("c3", "both"):
         ck = train_c3(args)
         print(f"[c3] checkpoint: {ck}")
+        checkpoints["c3_checkpoint"] = ck
+
+    # Determine sidecar path and write run-provenance manifest (ADR-0668).
+    if args.manifest_out is None:
+        anchor = args.output_c2 if args.model in ("c2", "both") else args.output_c3
+        args.manifest_out = anchor / "train_konvid.manifest.json"
+    outputs = {k: v for k, v in checkpoints.items()}
+    outputs["manifest"] = args.manifest_out
+    write_manifest_json(
+        args.manifest_out,
+        {
+            "schema": "train-konvid-manifest-v1",
+            "model": args.model,
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={
+                    "c2_parquet": C2_PARQUET if args.model in ("c2", "both") else None,
+                    "c3_parquet": C3_PARQUET if args.model in ("c3", "both") else None,
+                },
+                outputs=outputs,
+            ),
+        },
+    )
+    print(f"[train-konvid] manifest written to {args.manifest_out}", flush=True)
     return 0
 
 

@@ -10,6 +10,13 @@
 merge-order accident (PR #565 admin-merged while master already had the same
 helpers). No upstream file is touched; no public header changes.
 
+## feat/ai-run-manifest-12-scripts (ADR-0668 follow-up)
+
+No rebase impact. Pure Python-only change to `ai/scripts/train_konvid.py`.
+No C/header files modified. No upstream Netflix/vmaf files touched.
+The only observable change is the addition of a `train_konvid.manifest.json`
+sidecar emitted after training completes.
+
 ---
 
 ## cuda-adm-decouple-inline-ldg (2026-05-29, ADR-0773)

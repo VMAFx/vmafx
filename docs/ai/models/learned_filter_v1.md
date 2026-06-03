@@ -95,6 +95,9 @@ extractors.
 .venv/bin/python ai/scripts/fetch_konvid_1k.py
 
 # 2. train the C2/C3 checkpoints
+#    A run-provenance sidecar is written automatically to
+#    runs/c2_konvid/train_konvid.manifest.json (ADR-0668).
+#    Pass --manifest-out <path> to override the sidecar location.
 .venv/bin/python ai/scripts/train_konvid.py \
     --model both \
     --output-c2 runs/c2_konvid \
