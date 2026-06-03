@@ -5,8 +5,9 @@
 # corpus for `MAX_TOTAL_TIME` seconds per night. Crash / OOM /
 # timeout artefacts are uploaded for triage.
 #
-# Tracked under ADR-0270 (initial scaffold) and ADR-0311
-# (yuv_input + cli_parse harness expansion); operator runbook in
+# Tracked under ADR-0270 (fuzzing scaffold), ADR-0311
+# (yuv_input + cli_parse harness expansion), and ADR-0882
+# (fuzz_json_model + seed-corpus audit); operator runbook in
 # docs/development/fuzzing.md.
 
 name: Nightly Fuzz — libFuzzer

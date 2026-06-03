@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## CI scaffold-comment refresh (2026-06-03)
+
+`.github/workflows/fuzz.yml` — header comment updated: ADR-0882 citation added
+alongside ADR-0270/0311.
+`.github/workflows/libvmaf-build-matrix.yml` — Metal matrix lane comment and
+`name:` field updated from "T8-1 scaffold" to "runtime" (ADR-0420 landed).
+
+no rebase impact: comment-only change; no logic or structure altered.
+
 Single ledger of fork-local changes that need attention when this fork
 syncs from `upstream/master` (Netflix/vmaf). Required by
 [ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local
