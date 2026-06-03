@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## ci/promote-gpu-coverage-gate-required (2026-06-04)
+
+**Files touched:**
+`.github/workflows/tests-and-quality-gates.yml`,
+`docs/state.md`,
+`changelog.d/chore/gpu-coverage-gate-promoted.md`
+
+no rebase impact: removes `continue-on-error: true` from the `coverage-gpu`
+CI job. No C source, public header, upstream-mirrored Python, or Netflix
+golden-assertion file is touched. The change is pure CI workflow YAML.
+
+---
+
 ## fix(cppcheck): motion_avx512 missing sub-kernel functions
 
 **Files touched:**
