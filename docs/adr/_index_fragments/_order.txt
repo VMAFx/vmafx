@@ -709,3 +709,4 @@
 0888-pyright-strict-audit
 0946-sycl-kernel-coverage-round3
 0957-sycl-kernel-coverage-round4
+0986-ci-docs-pr-trigger

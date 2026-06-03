@@ -32,6 +32,22 @@ See [ADR-0892](adr/0892-conventional-commits-and-changelog-fragment-hygiene.md).
 
 ---
 
+## fix/ci-docs-pr-trigger — docs.yml PR trigger (2026-06-03, ADR-0986)
+
+No rebase impact on upstream C/Python code.
+
+Files modified are fork-local:
+`.github/workflows/docs.yml` (trigger + permissions update),
+`docs/adr/0986-ci-docs-pr-trigger.md` (new),
+`docs/adr/_index_fragments/0986-ci-docs-pr-trigger.md` (new),
+`docs/adr/_index_fragments/_order.txt` (appended),
+`changelog.d/fixed/ci-docs-pr-trigger-0986.md` (new),
+`docs/rebase-notes.md` (this entry).
+
+Netflix upstream ships no GitHub Actions workflows. No rebase conflict is possible.
+
+---
+
 ## Research-0760 — Rust crate audit (docs + ADR-0707 correction, 2026-05-29)
 
 No rebase impact on upstream C/Python code.
