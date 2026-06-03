@@ -39,16 +39,14 @@ enum VmafPictureBufferType {
      * VMA AUTO_PREFER_HOST). Tagged separately so cross-backend
      * extractors can refuse mixed backings. */
     VMAF_PICTURE_BUFFER_TYPE_VULKAN_DEVICE,
-    /* ADR-0530: HIP-backed picture pool (hipMalloc / hipMallocAsync).
-     * Reserved tag for the future HIP device picture pool — currently
-     * the HIP backend's picture_hip.{c,h} is a stub and pictures
-     * arrive as VMAF_PICTURE_BUFFER_TYPE_HOST, with the HIP feature
-     * extractors performing their own HtoD copy. The tag exists so
-     * the dispatch check at feature_extractor.c can refuse a mixed
-     * (e.g. CUDA-buffer-into-HIP-extractor) backing once a real HIP
-     * picture pool lands, and so callers using a HIP picture pool
-     * outside of libvmaf's tree can already mark their pictures
-     * correctly. */
+    /* ADR-0530 / ADR-0613: HIP-backed picture pool (hipMalloc).
+     * picture_hip.{c,h} is fully implemented as of ADR-0613: the
+     * previous -ENOSYS stub was replaced with a real hipMalloc /
+     * hipFree allocation path.  HIP pictures are now allocated on
+     * the device and no longer arrive as VMAF_PICTURE_BUFFER_TYPE_HOST
+     * with a caller-side HtoD copy.  The tag allows the dispatch check
+     * in feature_extractor.c to reject mixed backings
+     * (e.g. CUDA-buffer-into-HIP-extractor). */
     VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE,
 };
 
