@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cuda-duplicate-csf-r-definitions (2026-06-03)
+
+**Files touched:**
+`core/src/feature/cuda/integer_adm/adm_cm.cu`
+
+**Rebase impact:** None. Purely removes a duplicate code block introduced by a
+merge-order accident (PR #565 admin-merged while master already had the same
+helpers). No upstream file is touched; no public header changes.
+
+---
+
 ## cuda-adm-decouple-inline-ldg (2026-05-29, ADR-0773)
 
 **Files touched:**
