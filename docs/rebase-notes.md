@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs(coverage): ADR-0922 coverage-gate runbook (2026-06-04)
+
+**Files touched:**
+`docs/development/coverage-gate.md` (new), `changelog.d/added/coverage-gate-runbook.md` (new)
+
+**Rebase impact:** None. Documentation-only addition; no source, build,
+or CI files are modified.
+
+---
+
 ## fix(cppcheck): motion_avx512 missing sub-kernel functions
 
 **Files touched:**
