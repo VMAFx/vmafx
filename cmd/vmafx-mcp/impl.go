@@ -138,7 +138,7 @@ func hasArg(args map[string]any, key string) bool {
 // Tool: vmaf_score
 // ---------------------------------------------------------------------------
 
-func handleVmafScore(_ context.Context, args map[string]any) (any, error) {
+func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 	ref, err := libvmaf.ValidatePath(strArg(args, "ref", ""))
 	if err != nil {
 		return nil, fmt.Errorf("ref: %w", err)
@@ -158,6 +158,12 @@ func handleVmafScore(_ context.Context, args map[string]any) (any, error) {
 	backend := strArg(args, "backend", "auto")
 	precision := strArg(args, "precision", "17")
 
+	// When VMAFX_MCP_DIRECT=1, attempt the direct cgo path first.  The cgo
+	// path falls back to the subprocess path transparently for backends /
+	// model types it cannot handle (ADR-0931 Phase 1).
+	if directPathEnabled() {
+		return runVmafScoreDirect(ref, dis, width, height, pixfmt, bitdepth, model, backend)
+	}
 	return runVmafScore(ref, dis, width, height, pixfmt, bitdepth, model, backend, precision)
 }
 
@@ -246,6 +252,11 @@ func runVmafScore(ref, dis string, width, height int, pixfmt string, bitdepth in
 }
 
 // inferBackendFromPayload guesses the backend from the frame metrics count.
+// Heuristic (mirrors empirical metric counts per backend):
+//   - 0 frames → cpu (safe default)
+//   - >= 30 metrics → vulkan (Vulkan backend emits the richest metric set)
+//   - <= 12 metrics → gpu  (generic GPU path; stripped metric set)
+//   - 13–29 metrics → cpu  (standard CPU feature set)
 func inferBackendFromPayload(payload map[string]any) string {
 	frames, _ := payload["frames"].([]any)
 	if len(frames) == 0 {
@@ -254,6 +265,9 @@ func inferBackendFromPayload(payload map[string]any) string {
 	first, _ := frames[0].(map[string]any)
 	metrics, _ := first["metrics"].(map[string]any)
 	n := len(metrics)
+	if n >= 30 {
+		return "vulkan"
+	}
 	if n <= 12 {
 		return "gpu"
 	}
@@ -1030,7 +1044,7 @@ var fexStructRe = regexp.MustCompile(
 
 var backendKeywords = []struct{ suffix, label string }{
 	{"_cuda", "cuda"}, {"_sycl", "sycl"},
-	{"_hip", "hip"}, {"_metal", "metal"},
+	{"_hip", "hip"}, {"_metal", "metal"}, {"_vulkan", "vulkan"},
 }
 
 func inferBackendFromSym(sym string) string {
@@ -1117,6 +1131,11 @@ func handleDescribeModel(_ context.Context, args map[string]any) (any, error) {
 	nameOrPath := strArg(args, "name", "")
 	if nameOrPath == "" {
 		return nil, fmt.Errorf("name is required")
+	}
+	// When VMAFX_MCP_DIRECT=1, augment the base payload with a libvmaf
+	// schema-validation step (ADR-0931 Phase 1).
+	if directPathEnabled() {
+		return describeModelDirect(nameOrPath)
 	}
 	return describeModel(nameOrPath)
 }

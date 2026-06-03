@@ -175,7 +175,7 @@ exit 1
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 	log := observability.NewLogger("ERROR")
-	hs := newHTTPServer(scorer, metrics, reg, log)
+	hs := newHTTPServer(scorer, metrics, reg, nil, log)
 
 	mux := http.NewServeMux()
 	hs.routes(mux)

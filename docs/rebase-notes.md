@@ -1,6 +1,25 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## test/go-coverage-push (2026-06-04)
+
+**Files touched:**
+`cmd/vmafx-controller/{grpc_server.go,grpc_server_test.go,http_cancel_test.go,main_test.go,main_extra_test.go,auth/grpc_interceptor.go,auth/middleware.go,queue/queue_listall_test.go}`,
+`cmd/vmafx-mcp/impl.go`,
+`cmd/vmafx-node/{executor_test.go,main_test.go,online_feedback_pump_test.go}`,
+`cmd/vmafx-operator/internal/controller/{vmafxjob_applystatus_test.go,vmafxmodeltraining_applystatus_test.go,vmafxmodeltraining_controller.go,vmafxnode_controller.go}`,
+`cmd/vmafx-server/{grpc_server.go,http_cancel_test.go,main_extra_test.go}`,
+`pkg/observability/otel_instruments_test.go`,
+`pkg/score/grpc_client_unary_test.go`
+
+**Rebase impact:** Low. All changes are either test files (no rebase conflict
+possible on pure test additions) or targeted bug fixes in production code
+(grpc_server.go undefined-var fix, operator int32 type cast, MCP Vulkan
+backend dispatch). The auth `ContextWithClaims` export and `probeHealthz`
+method are additive. No public header or proto changes.
+
+---
+
 ## test/compat-python-vmaf-coverage-push (2026-06-03)
 
 **Files touched:**
