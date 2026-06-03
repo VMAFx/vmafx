@@ -104,9 +104,11 @@ typedef struct MsSsimStateCuda {
     unsigned scale_grid_y[MS_SSIM_SCALES];
     unsigned scale_block_count[MS_SSIM_SCALES];
 
-    float c1;
-    float c2;
-    float c3;
+    /* ADR-0990: c1/c2/c3 promoted to double so the kernel receives
+     * double arguments matching the scalar reference precision. */
+    double c1;
+    double c2;
+    double c3;
 
     /* Pyramid: 5 levels × ref + cmp, all float. */
     VmafCudaBuffer *pyramid_ref[MS_SSIM_SCALES];
@@ -135,10 +137,12 @@ typedef struct MsSsimStateCuda {
     VmafCudaBuffer *s_partials[MS_SSIM_SCALES];
     /* Pinned host partials for DtoH (per scale; safe to read after
      * the lifecycle's finished event has been waited on, either
-     * via the engine's drain_batch or the legacy per-stream sync). */
-    float *h_l_partials[MS_SSIM_SCALES];
-    float *h_c_partials[MS_SSIM_SCALES];
-    float *h_s_partials[MS_SSIM_SCALES];
+     * via the engine's drain_batch or the legacy per-stream sync).
+     * ADR-0990: double to match the double partials written by the
+     * ms_ssim_vert_lcs kernel. */
+    double *h_l_partials[MS_SSIM_SCALES];
+    double *h_c_partials[MS_SSIM_SCALES];
+    double *h_s_partials[MS_SSIM_SCALES];
 
     unsigned index;
     VmafDictionary *feature_name_dict;
@@ -217,10 +221,11 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->scale_block_count[i] = s->scale_grid_x[i] * s->scale_grid_y[i];
     }
 
-    const float L = 255.0f, K1 = 0.01f, K2 = 0.03f;
+    /* ADR-0990: c1/c2/c3 computed and stored as double. */
+    const double L = 255.0, K1 = 0.01, K2 = 0.03;
     s->c1 = (K1 * L) * (K1 * L);
     s->c2 = (K2 * L) * (K2 * L);
-    s->c3 = s->c2 * 0.5f;
+    s->c3 = s->c2 * 0.5;
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
@@ -258,9 +263,10 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     /* Per-scale partials buffers (T-GPU-OPT-2 / ADR-0271). Each scale
      * sized to its own block_count so the device DtoH copies are
-     * exactly one float per work block; no aliasing across scales. */
+     * exactly one double per work block; no aliasing across scales.
+     * ADR-0990: sizeof(double) — kernel writes double partials. */
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t scale_bytes = (size_t)s->scale_block_count[i] * sizeof(float);
+        const size_t scale_bytes = (size_t)s->scale_block_count[i] * sizeof(double);
         ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->l_partials[i], scale_bytes);
         ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->c_partials[i], scale_bytes);
         ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->s_partials[i], scale_bytes);
@@ -274,8 +280,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     const size_t input_bytes = (size_t)w * h * sizeof(float);
     ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref, input_bytes);
     ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_cmp, input_bytes);
+    /* ADR-0990: sizeof(double) — host partials mirror device doubles. */
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t scale_bytes = (size_t)s->scale_block_count[i] * sizeof(float);
+        const size_t scale_bytes = (size_t)s->scale_block_count[i] * sizeof(double);
         ret |=
             vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_l_partials[i], scale_bytes);
         ret |=
@@ -429,7 +436,8 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                                          1, MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1, 0, s->lc.str,
                                          vert_params, NULL));
 
-        const size_t partials_bytes = (size_t)s->scale_block_count[i] * sizeof(float);
+        /* ADR-0990: sizeof(double) matches the double partials written by vert_lcs. */
+        const size_t partials_bytes = (size_t)s->scale_block_count[i] * sizeof(double);
         CHECK_CUDA_RETURN(cu_f,
                           cuMemcpyDtoHAsync(s->h_l_partials[i], (CUdeviceptr)s->l_partials[i]->data,
                                             partials_bytes, s->lc.str));
@@ -471,10 +479,11 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         const unsigned w_final = s->scale_w_final[i];
         const unsigned h_final = s->scale_h_final[i];
         double total_l = 0.0, total_c = 0.0, total_s = 0.0;
+        /* ADR-0990: h_*_partials are now double arrays; no cast needed. */
         for (unsigned j = 0; j < s->scale_block_count[i]; j++) {
-            total_l += (double)s->h_l_partials[i][j];
-            total_c += (double)s->h_c_partials[i][j];
-            total_s += (double)s->h_s_partials[i][j];
+            total_l += s->h_l_partials[i][j];
+            total_c += s->h_c_partials[i][j];
+            total_s += s->h_s_partials[i][j];
         }
         const double n_pixels = (double)w_final * (double)h_final;
         l_means[i] = total_l / n_pixels;

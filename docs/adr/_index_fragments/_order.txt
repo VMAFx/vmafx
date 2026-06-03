@@ -713,3 +713,4 @@
 0957-sycl-kernel-coverage-round4
 0986-ci-docs-pr-trigger
 0989-sycl-motion-add-uv
+0990-cuda-ms-ssim-double-precision-lcs

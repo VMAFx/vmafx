@@ -26,6 +26,8 @@ _Updated: 2026-05-29 (T-CUDA-READBACK-HOST-PINNED-LEAK-20260529 closed — `vmaf
 _Updated: 2026-05-29 (T-ORT-SILENT-DISCARD-ELEM-TYPE-20260529 closed — `GetTensorElementType` ORT API calls during `vmaf_ort_open` IO-type population were silently swallowed via `ort_discard_status()`, leaving `input_elem_types[i]` / `output_elem_types[i]` at UNDEFINED (0) on failure. The run path would then silently emit fp32 tensors regardless of declared type, accepting a malformed model with no error. Fix: both call sites replaced with a checked path that returns `-EINVAL` + `vmaf_log(WARNING)`. Two regression-lock tests added to `test_ort_internals`. Bug fix; no ADR per CLAUDE §12 r8.)_
 
 <!-- markdownlint-disable MD001 MD013 MD024 MD025 MD026 MD028 MD033 MD036 MD038 MD040 MD041 MD046 MD049 MD050 MD053 MD055 MD056 -->
+_Updated: 2026-06-03 (T-CUDA-MS-SSIM-FLOAT-PRECISION-2026-06-03 closed — `ms_ssim_vert_lcs` kernel used `2.0f` float literals for the L/C/S numerators and `float` warp/block reduction arrays. The CPU scalar reference (`ssim_tools.c` `ssim_accumulate_default_scalar`) uses `2.0 *` (double literal) causing float-to-double promotion. The float accumulation caused approximately 0.004 drift over 33k pixels at scale 0, approximately 40x the places=4 tolerance. Fix: per-pixel L/C/S changed to `double`; warp partial shared arrays changed to `double[…]`; `__shfl_down_sync` operands changed to double; partials device/host buffers resized from `sizeof(float)` to `sizeof(double)`; `c1/c2/c3` in MsSsimStateCuda promoted to `double`. Applies the ADR-0139 pattern (previously fixed for AVX2/AVX-512) to the CUDA backend. ADR-0990. Blamed commit: `8db2715ac2`.)_
+
 # Fork bug-status — `docs/state.md`
 
 <!-- markdownlint-disable MD013 -->

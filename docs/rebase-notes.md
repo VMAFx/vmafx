@@ -43412,6 +43412,21 @@ behaviour — all 12 fixes are pure type-checker compliance. The audit's
 companion file `pyrightconfig.audit.json` is intentionally gitignored so this
 PR doesn't introduce a CI gate before the long-tail cleanup is done.
 
+## cuda-ms-ssim-double-precision-lcs (2026-06-03, ADR-0990)
+
+no rebase impact: REASON — all touched files are fork-added CUDA
+sources (`core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`,
+`core/src/feature/cuda/integer_ms_ssim_cuda.c`) and docs. Netflix
+upstream does not ship a CUDA ms_ssim kernel. The invariant to
+preserve on any future port of `ssim_accumulate_default_scalar`
+changes from upstream: the `ms_ssim_vert_lcs` kernel must keep
+`double` for `my_l/my_c/my_s`, the shared-memory warp partial
+arrays, and the `c1/c2/c3` parameters — these are load-bearing for
+the places=4 parity gate (ADR-0990 / ADR-0139). If upstream changes
+the scalar `2.0 *` to `2.0f *` (regressing to float), do NOT mirror
+that change into the CUDA kernel without also updating the parity
+test tolerance.
+
 ## sycl-float-ssim-ssimulacra2-parity-research (2026-06-03, ADR-0985)
 
 no rebase impact: REASON — changes are: (1) a new test file

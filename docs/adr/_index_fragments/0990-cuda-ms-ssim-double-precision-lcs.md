@@ -1,0 +1,1 @@
+| [ADR-0990](0990-cuda-ms-ssim-double-precision-lcs.md) | Restore double-precision L/C/S accumulation in CUDA ms_ssim_vert_lcs — promotes per-pixel L/C/S and warp/block reductions from float to double (ADR-0139 pattern), fixes test_cuda_float_ms_ssim_parity places=4 gate | Accepted | 2026-06-03 | cuda, precision, ms-ssim, bit-exactness, fork-local |
