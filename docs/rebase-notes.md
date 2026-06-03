@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## containerfile-layer-optimization (ADR-0790, 2026-05-29)
+
+**Files touched:** `dev/Containerfile`
+
+**Rebase impact:** None. `dev/Containerfile` is fork-local (not present in
+upstream Netflix/vmaf). No rebase conflict is possible.
+
+---
+
 ## docs/hip-picture-stub-comment-closeout (ADR-0613, 2026-06-03)
 `core/src/picture.h` — comment on `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`
 updated to reflect that `picture_hip.{c,h}` is fully implemented (ADR-0613);
