@@ -961,6 +961,31 @@ endif
 
 # ADR-0720: test_ansnr_simd removed — ansnr feature was dropped.
 
+# Speed_chroma covariance-sum SIMD parity (AVX2 + AVX-512, upstream 30f472b14).
+# Gated on float_enabled (speed.c is float-only) and x86/x86_64 (no NEON path yet).
+speed_simd_test_archs = ['x86_64', 'x86']
+if float_enabled and speed_simd_test_archs.contains(host_machine.cpu_family())
+test_speed_simd = executable('test_speed_simd',
+    ['test.c', 'test_speed_simd.c',
+     '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_cpp23_objects,
+)
+endif
+
 ms_ssim_decimate_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
 if ms_ssim_decimate_test_archs.contains(host_machine.cpu_family())
 test_ms_ssim_decimate = executable('test_ms_ssim_decimate',
@@ -2248,6 +2273,10 @@ endif
 
 if float_enabled and moment_simd_test_archs.contains(host_machine.cpu_family())
 test('test_moment_simd', test_moment_simd, suite : ['fast', 'simd'])
+endif
+
+if float_enabled and speed_simd_test_archs.contains(host_machine.cpu_family())
+test('test_speed_simd', test_speed_simd, suite : ['fast', 'simd'])
 endif
 
 # (test_ansnr_simd removed — ADR-0720)

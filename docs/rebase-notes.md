@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## port/upstream-speed-chroma-simd-30f472b14 (2026-06-03, upstream 30f472b14)
+
+**Files touched:**
+`core/src/feature/x86/speed_avx2.c`,
+`core/src/feature/x86/speed_avx2.h`,
+`core/src/feature/x86/speed_avx512.c`,
+`core/src/feature/x86/speed_avx512.h`,
+`core/src/feature/speed.c`,
+`core/src/meson.build`,
+`core/test/test_speed_simd.c`,
+`core/test/meson.build`
+
+**Rebase impact:** Reduces delta — this port lands the upstream commit verbatim
+(path-remapped `libvmaf/` → `core/`) so any future sync with Netflix/vmaf master
+that touches `speed.c` or the `x86/speed_*` files will see a clean fast-forward
+rather than a divergence conflict. The `speed.c` refactor (kernel fn-pointer +
+dispatch) is a strict superset of upstream; future upstream changes to those
+functions merge cleanly against this tree.
+
+---
+
 ## cuda-adm-decouple-inline-ldg (2026-05-29, ADR-0773)
 
 **Files touched:**

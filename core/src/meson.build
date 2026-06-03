@@ -718,6 +718,7 @@ if is_asm_enabled
           feature_src_dir + 'x86/vif_statistic_avx2.c',
           feature_src_dir + 'x86/adm_avx2.c',
           feature_src_dir + 'x86/cambi_avx2.c',
+          feature_src_dir + 'x86/speed_avx2.c',
           feature_src_dir + 'x86/psnr_avx2.c',
           # ssim_avx2.c lives in its own carve-out below — keep out of
           # this list. See the x86_ssim_avx2_lib block.
@@ -817,6 +818,7 @@ if is_asm_enabled
             feature_src_dir + 'x86/ssim_avx512.c',
             feature_src_dir + 'x86/adm_avx512.c',
             feature_src_dir + 'x86/cambi_avx512.c',
+            feature_src_dir + 'x86/speed_avx512.c',
             feature_src_dir + 'x86/float_psnr_avx512.c',
             feature_src_dir + 'x86/float_motion_avx512.c',
             feature_src_dir + 'x86/ciede_avx512.c',
