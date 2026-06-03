@@ -27,7 +27,6 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "cuda/integer_motion_cuda.h"
-#include "drain_batch.h"
 #include "log.h"
 #include "mem.h"
 #include "motion_blend_tools.h"
@@ -40,19 +39,36 @@
  * T3-15(c) / ADR-0219. */
 #define MOTION_CUDA_DEFAULT_MAX_VAL (10000.0)
 
+/* Number of kernel launches to pipeline before a single cuStreamSynchronize
+ * drains all pending device-to-host copies (ADR-0845).
+ *
+ * At 576p the kernel takes ~7 µs but the per-frame sync overhead is ~12.7 ms;
+ * batching 8 frames into one sync reduces per-frame host overhead by ~7/8.
+ * Must be a power-of-two and >= 2. Increasing beyond 8 gives diminishing
+ * returns once the sync overhead (fixed ~2 ms) is amortised over > 4 frames.
+ */
+#define MOTION_BATCH_DEPTH 8
+
 typedef struct MotionStateCuda {
-    CUevent event, finished;
+    CUevent event;
     CUfunction funcbpc8, funcbpc16;
     CUstream str;
     VmafCudaBuffer *blur[2];
-    VmafCudaBuffer *sad;
+    /* Per-slot device SAD accumulators (one per batch frame slot,
+     * ADR-0845). Each submit zeroes its slot and the kernel atomic-adds
+     * into it; collect batch-drains all MOTION_BATCH_DEPTH slots in one
+     * cuStreamSynchronize instead of one sync per frame. */
+    VmafCudaBuffer *sad[MOTION_BATCH_DEPTH];
+    /* Single pinned host array of MOTION_BATCH_DEPTH uint64_t values.
+     * Index: sad_host[index % MOTION_BATCH_DEPTH]. Allocated once via
+     * vmaf_cuda_buffer_host_alloc with size = MOTION_BATCH_DEPTH * 8. */
     uint64_t *sad_host;
-    /* Engine-scope fence batching opt-in flag (T-GPU-OPT-1, ADR-0242).
-     * Set by ``vmaf_cuda_drain_batch_flush`` when this submit's
-     * ``finished`` event was waited on as part of the batched drain;
-     * the ``collect()`` path then skips its ``cuStreamSynchronize``
-     * and resets the flag for the next frame. */
-    bool drained;
+    /* Per-slot score ring: holds normalized SAD scores until the batch
+     * boundary collect emits all MOTION_BATCH_DEPTH frames at once. */
+    double score_ring[MOTION_BATCH_DEPTH];
+    /* Index of the last batch-boundary where we synced and emitted scores.
+     * Initialised to -1. Used to avoid re-emitting in flush(). */
+    int last_batch_boundary;
     unsigned index;
     unsigned frame_index;      /* count of frames processed so far (for motion3) */
     unsigned frame_w, frame_h; // stored by submit for collect
@@ -300,7 +316,6 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail);
 
     CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, motion_score_ptx), fail);
 
@@ -329,6 +344,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->score = 0;
     s->frame_index = 0;
     s->prev_motion3_blended = 0.0;
+    s->last_batch_boundary = -1;
+    for (int b = 0; b < MOTION_BATCH_DEPTH; b++)
+        s->score_ring[b] = 0.0;
 
     ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[0], sizeof(uint16_t) * w * h);
     if (ret)
@@ -336,10 +354,16 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->blur[1], sizeof(uint16_t) * w * h);
     if (ret)
         goto free_ref;
-    ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->sad, sizeof(uint64_t));
-    if (ret)
-        goto free_ref;
-    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->sad_host, sizeof(uint64_t));
+    /* Allocate MOTION_BATCH_DEPTH device SAD slots (ADR-0845).
+     * Each slot is 8 bytes; slots are zeroed per-frame in submit(). */
+    for (int b = 0; b < MOTION_BATCH_DEPTH; b++) {
+        ret |= vmaf_cuda_buffer_alloc(fex->cu_state, &s->sad[b], sizeof(uint64_t));
+        if (ret)
+            goto free_ref;
+    }
+    /* Single pinned host buffer — MOTION_BATCH_DEPTH × 8 bytes. */
+    ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->sad_host,
+                                       MOTION_BATCH_DEPTH * sizeof(uint64_t));
     if (ret)
         goto free_ref;
 
@@ -359,9 +383,11 @@ free_ref:
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
         free(s->blur[1]);
     }
-    if (s->sad) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->sad);
-        free(s->sad);
+    for (int b = 0; b < MOTION_BATCH_DEPTH; b++) {
+        if (s->sad[b]) {
+            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->sad[b]);
+            free(s->sad[b]);
+        }
     }
     if (s->sad_host) {
         ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->sad_host);
@@ -392,37 +418,91 @@ static int append_if_unwritten(VmafFeatureCollector *fc, const char *feature, do
     return vmaf_feature_collector_append(fc, feature, value, index);
 }
 
+static inline double normalize_and_scale_sad(uint64_t sad, unsigned w, unsigned h)
+{
+    return (float)(sad / 256.) / (w * h);
+}
+
+static int emit_batch_scores(MotionStateCuda *s, VmafFeatureCollector *fc, unsigned batch_start,
+                             unsigned batch_end, double score_before_batch);
+
 static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     MotionStateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
     int ret = 0;
-    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->str));
 
-    if (s->index > 0) {
-        /* Mirror CPU integer_motion.c:563 — motion2_score is the
-         * weighted-and-clipped value, NOT the raw normalized SAD.
-         * The previous code emitted ``s->score`` (raw) which only
-         * matched CPU when motion_fps_weight=1.0 and the clip never
-         * tripped (cuda-reviewer 2026-05-09). */
-        double const last_motion2 = MIN(s->score * s->motion_fps_weight, s->motion_max_val);
-        ret = append_if_unwritten(feature_collector, "VMAF_integer_feature_motion2_score",
-                                  last_motion2, s->index);
-        if (ret >= 0) {
-            double const motion3_score = motion3_postprocess_cuda(s, last_motion2);
-            int ret_m3 = append_if_unwritten(
-                feature_collector, "VMAF_integer_feature_motion3_score", motion3_score, s->index);
-            if (ret_m3 < 0)
-                ret = ret_m3;
+    /* Flush handles the final partial batch: any frames after the last
+     * batch-boundary collect that have not yet been synced or emitted
+     * (ADR-0845).
+     *
+     * s->last_batch_boundary tracks the highest index for which we
+     * already synced + emitted in a batch-boundary collect().  Any
+     * frames from (last_batch_boundary + 1) to s->index need flushing
+     * now.  When s->index == 0 there is nothing to do.  When the last
+     * frame happened to be exactly a batch boundary, flush() has
+     * nothing pending and only handles the final motion2/motion3
+     * emission (the same as the legacy path). */
+    if (s->index == 0)
+        return 1; /* Return 1 = "no score to append"; matches legacy. */
+
+    const int pending_start = s->last_batch_boundary + 1;
+
+    if ((int)s->index >= pending_start) {
+        /* There are frames in the partial tail batch that were NOT
+         * synced/emitted by a boundary collect(). Drain them now.
+         * flush_start clamps to 1 to skip frame 0, which never
+         * produces a valid SAD (no prev_blurred at index 0). */
+        const unsigned flush_start = ((unsigned)pending_start < 1u) ? 1u : (unsigned)pending_start;
+
+        if (flush_start > s->index) {
+            /* Nothing to flush (only frame 0 was pending). */
+            goto flush_emit_trailing;
         }
+
+        CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->str));
+
+        /* DtoH only the slots that have pending data (frames flush_start..s->index). */
+        for (unsigned i = flush_start; i <= s->index; i++) {
+            const unsigned s_slot = i % MOTION_BATCH_DEPTH;
+            CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(&s->sad_host[s_slot],
+                                                      (CUdeviceptr)s->sad[s_slot]->data,
+                                                      sizeof(uint64_t), s->str));
+        }
+        CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->str));
+
+        for (unsigned i = flush_start; i <= s->index; i++) {
+            const unsigned s_slot = i % MOTION_BATCH_DEPTH;
+            s->score_ring[s_slot] =
+                normalize_and_scale_sad(s->sad_host[s_slot], s->frame_w, s->frame_h);
+        }
+
+        const double score_before =
+            (flush_start > 1u) ? s->score_ring[(flush_start - 1u) % MOTION_BATCH_DEPTH] : 0.0;
+        s->score = s->score_ring[s->index % MOTION_BATCH_DEPTH];
+
+        ret = emit_batch_scores(s, feature_collector, flush_start, s->index, score_before);
+        if (ret < 0)
+            return ret;
+    }
+flush_emit_trailing:;
+
+    /* Emit the trailing motion2/motion3 for the last frame (mirrors the
+     * legacy flush path and CPU integer_motion.c:563). Uses
+     * append_if_unwritten so that if the batch-boundary collect() already
+     * emitted this pair we don't warn about a duplicate write. */
+    double const last_motion2 = MIN(s->score * s->motion_fps_weight, s->motion_max_val);
+    ret = append_if_unwritten(feature_collector, "VMAF_integer_feature_motion2_score", last_motion2,
+                              s->index);
+    if (ret >= 0) {
+        double const motion3_score = motion3_postprocess_cuda(s, last_motion2);
+        int ret_m3 = append_if_unwritten(feature_collector, "VMAF_integer_feature_motion3_score",
+                                         motion3_score, s->index);
+        if (ret_m3 < 0)
+            ret = ret_m3;
     }
 
     return (ret < 0) ? ret : !ret;
-}
-
-static inline double normalize_and_scale_sad(uint64_t sad, unsigned w, unsigned h)
-{
-    return (float)(sad / 256.) / (w * h);
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -449,36 +529,90 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                       cuStreamWaitEvent(pic_stream, vmaf_cuda_picture_get_ready_event(dist_pic),
                                         CU_EVENT_WAIT_DEFAULT));
 
-    /* Reset device SAD on pic_stream (NOT s->str). The kernel below
-     * launches on pic_stream and atomicAdd's into ``s->sad``; running
-     * the memset on a different non-blocking stream (s->str) would
-     * race the kernel because no event pair links them. Mirrors the
-     * pattern in integer_motion_v2_cuda.c (T-GPU-OPT cleanup,
-     * 2026-05-09). */
-    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->sad->data, 0, sizeof(uint64_t), pic_stream));
+    const unsigned slot = index % MOTION_BATCH_DEPTH;
 
-    // Compute motion score (blur + SAD)
+    /* Reset only this frame's SAD slot on pic_stream (ADR-0845).
+     * The kernel atomicAdd's into sad[slot]->data; the memset must run
+     * on the same stream as the kernel so they are strictly ordered.
+     * All MOTION_BATCH_DEPTH slots are allocated independently so
+     * zeroing slot N never races the previous batch's DtoH on slot N. */
+    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->sad[slot]->data, 0, sizeof(uint64_t), pic_stream));
+
+    // Compute motion score (blur + SAD) into the per-slot device accumulator
     int err = s->calculate_motion_score(
-        ref_pic, s->blur[src_blurred_idx], s->blur[prev_blurred_idx], s->sad, ref_pic->w[0],
+        ref_pic, s->blur[src_blurred_idx], s->blur[prev_blurred_idx], s->sad[slot], ref_pic->w[0],
         ref_pic->h[0], ref_pic->stride[0], sizeof(uint16_t) * ref_pic->w[0], ref_pic->bpc,
         s->funcbpc8, s->funcbpc16, cu_f, pic_stream);
     if (err)
         return err;
+
+    /* Record the kernel-finished event on pic_stream, then chain s->str to
+     * wait for it. The DtoH readback is NOT queued here — it happens in
+     * collect() at batch boundaries to amortise sync overhead (ADR-0845). */
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->event, pic_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->str, s->event, CU_EVENT_WAIT_DEFAULT));
-
-    if (index == 0)
-        return 0; // No SAD to download for frame 0
-
-    // Download SAD for collect
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->sad_host, (CUdeviceptr)s->sad->data,
-                                              sizeof(*s->sad_host), s->str));
-    CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->finished, s->str));
-    /* Engine-scope fence batching opt-in (T-GPU-OPT-1, ADR-0242).
-     * Best-effort: registration failure (overflow / no batch open)
-     * silently degrades to the per-stream sync below. */
-    (void)vmaf_cuda_drain_batch_register_event(s->finished, &s->drained);
     return 0;
+}
+
+/* Emit accumulated scores for frames [batch_start .. batch_end] using the
+ * values in s->score_ring[].  This helper is called after a batch-boundary
+ * cuStreamSynchronize has made all DtoH copies visible on the host.
+ *
+ * batch_start / batch_end are INCLUSIVE frame indices (not ring slots).
+ * The caller must have populated s->score_ring[i % MOTION_BATCH_DEPTH]
+ * for every i in [batch_start, batch_end] from the DtoH'd sad_host values.
+ *
+ * score_before_batch is the normalized SAD score for the frame immediately
+ * BEFORE batch_start (i.e. s->score at entry), used to compute motion2 for
+ * index == batch_start when batch_start > 1. It may be 0.0 for batch_start <= 1. */
+static int emit_batch_scores(MotionStateCuda *s, VmafFeatureCollector *fc, unsigned batch_start,
+                             unsigned batch_end, double score_before_batch)
+{
+    int err = 0;
+    /* Snapshot frame_index as it stands at entry so we can restore it
+     * after the loop. During the loop we temporarily set s->frame_index
+     * to the value it would have had at each collect(i) call (i + 1),
+     * so that motion3_postprocess_cuda's moving-average guard fires at
+     * the correct frame boundary. Without this, frames in the middle of
+     * the batch would incorrectly trigger the guard because frame_index
+     * is already at batch_end + 1 when emit_batch_scores is called. */
+    const unsigned saved_frame_index = s->frame_index;
+    for (unsigned i = batch_start; i <= batch_end; i++) {
+        /* Set frame_index to the value it would have had if collect(i)
+         * ran sequentially.  frame_index is incremented at the end of
+         * each collect(); for frame i, it is i + 1 right before the
+         * motion3_postprocess call. */
+        s->frame_index = i + 1;
+
+        const double cur_score = s->score_ring[i % MOTION_BATCH_DEPTH];
+        const double prev_score =
+            (i == batch_start) ? score_before_batch : s->score_ring[(i - 1) % MOTION_BATCH_DEPTH];
+
+        if (s->debug) {
+            err |= vmaf_feature_collector_append(fc, "VMAF_integer_feature_motion_score", cur_score,
+                                                 i);
+        }
+
+        if (i == 1) {
+            /* index 1: back-fill motion3 for index 0 using score[1].
+             * No min(prev,cur) yet — mirrors CPU integer_motion.c. */
+            double const score_clipped = MIN(cur_score * s->motion_fps_weight, s->motion_max_val);
+            double const m3 = motion3_postprocess_cuda(s, score_clipped);
+            err |= vmaf_feature_collector_append(fc, "VMAF_integer_feature_motion3_score", m3, 0);
+        }
+        if (i > 1) {
+            double const motion2 = (prev_score < cur_score) ? prev_score : cur_score;
+            double const motion2_clipped = MIN(motion2 * s->motion_fps_weight, s->motion_max_val);
+            err |= vmaf_feature_collector_append(fc, "VMAF_integer_feature_motion2_score",
+                                                 motion2_clipped, i - 1);
+            double const m3 = motion3_postprocess_cuda(s, motion2_clipped);
+            err |=
+                vmaf_feature_collector_append(fc, "VMAF_integer_feature_motion3_score", m3, i - 1);
+        }
+    }
+    /* Restore frame_index to what the caller set it to (batch_end + 1). */
+    s->frame_index = saved_frame_index;
+    return err;
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
@@ -487,12 +621,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     MotionStateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
 
-    if (s->drained) {
-        s->drained = false;
-    } else {
-        CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->str));
-    }
-
+    /* Frame 0: emit zeros and return — no SAD computed for the first frame. */
     if (index == 0) {
         int err = vmaf_feature_collector_append(feature_collector,
                                                 "VMAF_integer_feature_motion2_score", 0., 0);
@@ -504,43 +633,68 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         return err;
     }
 
-    double score_prev = s->score;
-    s->score = normalize_and_scale_sad(*s->sad_host, s->frame_w, s->frame_h);
+    /* For frames 1 .. MOTION_BATCH_DEPTH-2 (non-boundary, non-first):
+     * record the SAD score in the ring and defer sync + emit to the
+     * batch boundary (ADR-0845). The kernel is already running or
+     * complete on the GPU; s->str carries the chained event. */
+    const unsigned slot = index % MOTION_BATCH_DEPTH;
+    const bool is_boundary = (slot == (MOTION_BATCH_DEPTH - 1));
+
+    if (!is_boundary) {
+        /* Non-boundary collect — nothing to emit yet; the DtoH and sync
+         * happen at the next batch-boundary collect. frame_index is still
+         * incremented so motion3_postprocess_cuda's guard condition stays
+         * correct at the boundary emit. */
+        s->frame_index++;
+        return 0;
+    }
+
+    /* === Batch boundary: sync, DtoH all slots, compute + emit scores === */
+
+    /* Wait for all MOTION_BATCH_DEPTH kernel chained events on s->str.
+     * After this, all device SAD[slot] values are guaranteed stable. */
+    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->str));
+
+    /* Determine which frame indices this batch covers.
+     * The batch runs from (index - MOTION_BATCH_DEPTH + 1) to index,
+     * but frame 0 never contributes a SAD value, so batch_start >= 1. */
+    const unsigned batch_end = index;
+    const unsigned batch_start_raw =
+        (index >= (unsigned)MOTION_BATCH_DEPTH) ? (index - MOTION_BATCH_DEPTH + 1) : 1u;
+
+    /* Queue all DtoH copies on s->str (in slot order for coalescing). */
+    for (unsigned i = batch_start_raw; i <= batch_end; i++) {
+        const unsigned s_slot = i % MOTION_BATCH_DEPTH;
+        CHECK_CUDA_RETURN(cu_f,
+                          cuMemcpyDtoHAsync(&s->sad_host[s_slot], (CUdeviceptr)s->sad[s_slot]->data,
+                                            sizeof(uint64_t), s->str));
+    }
+    /* Single sync to drain all queued DtoH copies. */
+    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->str));
+
+    /* Populate score_ring[] from the freshly-read host values. */
+    for (unsigned i = batch_start_raw; i <= batch_end; i++) {
+        const unsigned s_slot = i % MOTION_BATCH_DEPTH;
+        s->score_ring[s_slot] =
+            normalize_and_scale_sad(s->sad_host[s_slot], s->frame_w, s->frame_h);
+    }
+
+    /* score_before_batch: the normalized SAD from the frame just before
+     * this batch.  s->score was set to score_ring[(batch_start - 1) % BATCH]
+     * at the previous batch boundary (or 0 for the very first batch). */
+    const double score_before = s->score;
+
+    /* Update s->score to the last frame's value for use by flush() and
+     * by the next batch's score_before. */
+    s->score = s->score_ring[batch_end % MOTION_BATCH_DEPTH];
+
+    /* Advance frame_index for the boundary frame itself (non-boundary
+     * frames already incremented it in their collect() calls above). */
     s->frame_index++;
 
-    int err = 0;
-    if (s->debug) {
-        err |= vmaf_feature_collector_append(feature_collector, "VMAF_integer_feature_motion_score",
-                                             s->score, index);
-    }
+    s->last_batch_boundary = (int)index;
 
-    /* Match CPU integer_motion.c: at index == 1 the framework
-     * back-fills motion3_score for index 0 using the just-arrived
-     * motion (no prev to take min with yet). At index >= 2 emit
-     * motion2/motion3 at index-1 using min(prev, cur). */
-    if (index == 1) {
-        double const score_clipped = MIN(s->score * s->motion_fps_weight, s->motion_max_val);
-        double const motion3_score = motion3_postprocess_cuda(s, score_clipped);
-        err |= vmaf_feature_collector_append(
-            feature_collector, "VMAF_integer_feature_motion3_score", motion3_score, index - 1);
-    }
-
-    if (index > 1) {
-        double const motion2 = score_prev < s->score ? score_prev : s->score;
-        /* Mirror CPU integer_motion.c:563 — motion2_score is the
-         * weighted-and-clipped value, not the raw min(prev, cur).
-         * The previous code emitted ``motion2`` raw which only
-         * matched CPU when motion_fps_weight=1.0 (cuda-reviewer
-         * 2026-05-09). */
-        double const motion2_clipped = MIN(motion2 * s->motion_fps_weight, s->motion_max_val);
-        err |= vmaf_feature_collector_append(
-            feature_collector, "VMAF_integer_feature_motion2_score", motion2_clipped, index - 1);
-        double const motion3_score = motion3_postprocess_cuda(s, motion2_clipped);
-        err |= vmaf_feature_collector_append(
-            feature_collector, "VMAF_integer_feature_motion3_score", motion3_score, index - 1);
-    }
-
-    return err;
+    return emit_batch_scores(s, feature_collector, batch_start_raw, batch_end, score_before);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)
@@ -556,9 +710,7 @@ after_stream_sync:
     CHECK_CUDA_GOTO(cu_f, cuStreamDestroy(s->str), after_stream_destroy);
 after_stream_destroy:
     CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->event), after_event1_destroy);
-after_event1_destroy:
-    CHECK_CUDA_GOTO(cu_f, cuEventDestroy(s->finished), after_event2_destroy);
-after_event2_destroy:;
+after_event1_destroy:;
 
     int ret = _cuda_err;
 
@@ -570,14 +722,15 @@ after_event2_destroy:;
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->blur[1]);
         free(s->blur[1]);
     }
-    if (s->sad) {
-        ret |= vmaf_cuda_buffer_free(fex->cu_state, s->sad);
-        free(s->sad);
+    /* Free all MOTION_BATCH_DEPTH device SAD slots (ADR-0845). */
+    for (int b = 0; b < MOTION_BATCH_DEPTH; b++) {
+        if (s->sad[b]) {
+            ret |= vmaf_cuda_buffer_free(fex->cu_state, s->sad[b]);
+            free(s->sad[b]);
+        }
     }
-    /* Free the pinned host-side mirror of the SAD accumulator allocated
-     * via vmaf_cuda_buffer_host_alloc() in init_fex_cuda(). Missing this
-     * leaked one page-locked uint64 per init/close cycle (cuda-reviewer
-     * 2026-05-09). */
+    /* Free the pinned host buffer (MOTION_BATCH_DEPTH × 8 bytes).
+     * Allocated via vmaf_cuda_buffer_host_alloc() in init_fex_cuda(). */
     if (s->sad_host) {
         ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->sad_host);
         s->sad_host = NULL;

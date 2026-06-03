@@ -43438,3 +43438,22 @@ build path. The four new parity test cases in `test_moment_simd.c` are
 also guarded by `HAVE_AVX512` and do not touch any upstream Netflix file.
 No public C API, no meson_options.txt entry, no CLI flag, no ffmpeg patch
 is changed.
+
+## CUDA motion 8-frame SAD batching (ADR-0845, 2026-05-29)
+
+`core/src/feature/cuda/integer_motion_cuda.c` — structural change to
+`MotionStateCuda` (sad ring, score_ring, last_batch_boundary fields) and
+rewrite of submit/collect/flush.
+
+Rebase impact: MEDIUM. If an upstream Netflix commit touches
+`integer_motion_cuda.c`, expect a conflict in submit_fex_cuda and
+collect_fex_cuda. Resolution rules:
+1. Keep the batching structure (sad[] ring, batch-boundary sync in collect).
+2. Apply upstream logic changes (e.g., score normalization formula, new options)
+   to the batch-emit paths rather than the old per-frame paths.
+3. Verify the ADR-0358 invariant: cuMemsetD8Async is always on pic_stream, NOT s->str.
+4. The `emit_batch_scores()` frame_index save/restore must survive; dropping it
+   breaks motion3 moving-average correctness.
+
+`core/src/feature/cuda/AGENTS.md` — new section "Motion SAD batch fencing":
+keep verbatim on rebase.

@@ -529,6 +529,35 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
   multi-frame SAD batching (accumulate N frames before readback synchronization).
   See [Research-0760](../../../../docs/research/0760-cuda-motion-ncu-multi-resolution-20260529.md).
 
+## Motion SAD batch fencing — MOTION_BATCH_DEPTH invariants (ADR-0845)
+
+- **`integer_motion_cuda.c` uses MOTION_BATCH_DEPTH=8 per-slot SAD buffers to
+  reduce cuStreamSynchronize from once-per-frame to once-per-8-frames (ADR-0845).**
+  Key invariants that must be preserved on rebase:
+
+  1. `sad[MOTION_BATCH_DEPTH]` is a ring of independent device buffers (not a single
+     shared accumulator). Each submit() zeroes `sad[index % MOTION_BATCH_DEPTH]` on
+     pic_stream BEFORE the kernel launch so the memset and the atomicAdd are on the
+     same stream (per ADR-0358 / AGENTS.md "integer_motion_cuda.c::submit_fex_cuda
+     runs the SAD cuMemsetD8Async on pic_stream" invariant).
+  2. `s->str` is the readback drain stream. Every submit() chains its kernel-complete
+     event from pic_stream to s->str via `cuStreamWaitEvent`. The DtoH copies are
+     NOT queued in submit(); they are queued in batch-boundary collect() calls.
+  3. Non-boundary collect() calls (where `index % MOTION_BATCH_DEPTH != MOTION_BATCH_DEPTH-1`)
+     increment frame_index and return 0 without emitting scores or touching s->str.
+     Emitting from non-boundary collects would break the batch fence.
+  4. `emit_batch_scores()` temporarily overrides `s->frame_index` to `i + 1` for
+     each frame `i` in the batch before calling `motion3_postprocess_cuda()`. This
+     preserves the moving-average guard semantics (ADR-0219). Removing or bypassing
+     this frame_index override produces incorrect motion3 scores when
+     `motion_moving_average=true`.
+  5. The drain_batch engine-scope optimization (ADR-0242) is NOT used by
+     integer_motion_cuda after ADR-0845. Do not re-add `vmaf_cuda_drain_batch_register_event`
+     calls to submit() — they would conflict with the batch fence logic.
+  6. flush() handles the final partial batch for frame counts that are not a
+     multiple of MOTION_BATCH_DEPTH. The `flush_start` clamp to 1 skips frame 0
+     (which has no valid SAD — the kernel runs but prev_blurred is uninitialized).
+
 ## Resolution-aware kernel variant dispatch (ADR-0753)
 
 `resolution_dispatch.h` / `resolution_dispatch.c` in this directory provide a

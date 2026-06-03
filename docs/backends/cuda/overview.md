@@ -145,7 +145,7 @@ Adding a new CUDA extractor: see [`/add-feature-extractor`](../../../.claude/ski
   and collect phases. A frame's per-extractor `collect()` calls then become
   host-side buffer reads only — the per-stream sync is short-circuited via
   `vmaf_cuda_kernel_collect_wait`'s `lc->drained` fast path. Participating
-  extractors at time of writing: `psnr_cuda`, `motion_cuda`, `adm_cuda`,
+  extractors at time of writing: `psnr_cuda`, `adm_cuda`,
   `vif_cuda`, `ssimulacra2_cuda`, `integer_ms_ssim_cuda`, and
   `integer_psnr_hvs_cuda`. MS-SSIM's 5-scale pyramid required allocating
   per-scale partials buffers so all DtoH copies could enqueue back-to-back
@@ -154,6 +154,10 @@ Adding a new CUDA extractor: see [`/add-feature-extractor`](../../../.claude/ski
   pattern for its three plane partial buffers.
   Bit-exactness is preserved (same kernels, same stream order — only the
   host wait point moves).
+  **Note**: `motion_cuda` no longer participates in the drain batch (ADR-0845).
+  It uses its own per-extractor 8-frame SAD batching (`MOTION_BATCH_DEPTH=8`)
+  that amortises `cuStreamSynchronize` over 8 frames rather than 1, superseding
+  the engine-level optimization for this extractor.
 
 ## Profiling
 
