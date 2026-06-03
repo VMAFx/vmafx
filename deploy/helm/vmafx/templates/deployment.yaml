@@ -56,6 +56,30 @@ spec:
           env:
             - name: VMAFX_BACKEND
               value: {{ include "vmafx.backendEnvValue" . | quote }}
+            {{- if .Values.auth.enabled }}
+            - name: VMAFX_AUTH_DISABLED
+              value: {{ .Values.auth.disabled | toString | quote }}
+            {{- if .Values.auth.jwksEndpoint }}
+            - name: VMAFX_JWKS_ENDPOINT
+              value: {{ .Values.auth.jwksEndpoint | quote }}
+            {{- end }}
+            {{- if .Values.auth.issuer }}
+            - name: VMAFX_AUTH_ISSUER
+              value: {{ .Values.auth.issuer | quote }}
+            {{- end }}
+            {{- if .Values.auth.audience }}
+            - name: VMAFX_AUTH_AUDIENCE
+              value: {{ .Values.auth.audience | quote }}
+            {{- end }}
+            {{- if .Values.auth.tenantClaim }}
+            - name: VMAFX_AUTH_TENANT_CLAIM
+              value: {{ .Values.auth.tenantClaim | quote }}
+            {{- end }}
+            {{- if .Values.auth.rolesClaim }}
+            - name: VMAFX_AUTH_ROLES_CLAIM
+              value: {{ .Values.auth.rolesClaim | quote }}
+            {{- end }}
+            {{- end }}
           {{- range $k, $v := .Values.env }}
             - name: {{ $k | quote }}
               value: {{ $v | quote }}

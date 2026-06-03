@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
@@ -55,6 +56,7 @@ type httpServer struct {
 	metrics  *observability.Metrics
 	log      *slog.Logger
 	registry *prometheus.Registry
+	authMW   *auth.Middleware
 }
 
 // newHTTPServer creates an httpServer.
@@ -62,6 +64,7 @@ func newHTTPServer(
 	scorer *libvmaf.Scorer,
 	metrics *observability.Metrics,
 	registry *prometheus.Registry,
+	authMW *auth.Middleware,
 	log *slog.Logger,
 ) *httpServer {
 	return &httpServer{
@@ -69,15 +72,26 @@ func newHTTPServer(
 		metrics:  metrics,
 		log:      log,
 		registry: registry,
+		authMW:   authMW,
 	}
 }
 
 // routes registers all HTTP handlers on mux.
+// The auth middleware wraps all handlers; /healthz, /readyz, and /metrics
+// are exempted inside the middleware (ADR-0794).
 func (h *httpServer) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/healthz", h.handleHealthz)
 	mux.HandleFunc("/readyz", h.handleReadyz)
 	mux.Handle("/metrics", promhttp.HandlerFor(h.registry, promhttp.HandlerOpts{}))
-	mux.HandleFunc("/v1/score", h.handleScore)
+
+	// /v1/score requires at least vmafx:writer (or vmafx:admin).
+	scoreHandler := http.HandlerFunc(h.handleScore)
+	if h.authMW != nil {
+		requireWriter := h.authMW.RequireRole(auth.RoleWriter, auth.RoleAdmin)
+		mux.Handle("/v1/score", h.authMW.HTTPHandler(requireWriter(scoreHandler)))
+	} else {
+		mux.HandleFunc("/v1/score", h.handleScore)
+	}
 }
 
 // handleHealthz is the liveness probe — always returns 200 OK.

@@ -7,6 +7,29 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## controller-multi-tenant-auth-gateway (2026-05-29, ADR-0794)
+
+**Files touched:**
+`cmd/vmafx-controller/auth/` (new package),
+`cmd/vmafx-controller/main.go`,
+`cmd/vmafx-controller/grpc_server.go`,
+`cmd/vmafx-controller/http_server.go`,
+`cmd/vmafx-controller/queue/queue.go`,
+`cmd/vmafx-controller/queue/schema.sql`,
+`deploy/helm/vmafx/crds/vmafx.dev_vmafxtenants.yaml` (new),
+`deploy/helm/vmafx/templates/tenant-crd-config.yaml` (new),
+`deploy/helm/vmafx/templates/deployment.yaml`,
+`deploy/helm/vmafx/values.yaml`,
+`docs/server/auth.md` (new),
+`docs/adr/0794-controller-multi-tenant-auth-gateway.md` (new).
+
+**Rebase impact:** None. All touched files are fork-local additions
+(vmafx-controller, Helm chart, docs) that do not exist in upstream
+Netflix/vmaf. The SQLite schema change (`tenant_id` column) is additive
+and non-breaking. No upstream rebase conflict is possible.
+
+---
+
 ## Changelog-fragment section hygiene (2026-05-30)
 
 **Files touched:**

@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
@@ -137,6 +138,12 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 		return nil, status.Errorf(codes.InvalidArgument, "reference and distorted paths are required")
 	}
 
+	// Extract tenant_id from the auth context (ADR-0794).
+	tenantID := auth.TenantIDFromCtx(ctx)
+	if tenantID == "" {
+		return nil, status.Errorf(codes.Unauthenticated, "tenant_id not found in token")
+	}
+
 	spanCtx, span := observability.StartSpan(ctx, observability.SpanJobSubmit,
 		observability.AttrModel.String(sp.GetModel()),
 		observability.AttrBackend.String(sp.GetBackend()),
@@ -145,6 +152,7 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 	defer observability.EndSpan(span, &spanErr)
 
 	j := &queue.Job{
+		TenantID: tenantID,
 		Scoring: queue.ScoringParams{
 			Reference: sp.GetReference(),
 			Distorted: sp.GetDistorted(),
@@ -162,11 +170,11 @@ func (c *controllerServer) SubmitJob(ctx context.Context, req *controllerv1.Subm
 
 	span.SetAttributes(observability.AttrJobID.String(id))
 	c.metrics.JobsSubmitted.Inc()
-	c.log.Info("job submitted via gRPC", "job_id", id, "reference", sp.GetReference(), "backend", sp.GetBackend())
+	c.log.Info("job submitted via gRPC", "job_id", id, "tenant_id", tenantID, "reference", sp.GetReference(), "backend", sp.GetBackend())
 	return &controllerv1.SubmitJobResponse{JobId: id}, nil
 }
 
-// GetJob retrieves the current state of a job.
+// GetJob retrieves the current state of a job, scoped to the caller's tenant.
 func (c *controllerServer) GetJob(ctx context.Context, req *controllerv1.GetJobRequest) (*controllerv1.Job, error) {
 	if req.GetJobId() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "job_id is required")
@@ -175,13 +183,25 @@ func (c *controllerServer) GetJob(ctx context.Context, req *controllerv1.GetJobR
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "job %q not found: %v", req.GetJobId(), err)
 	}
+	// Enforce tenant isolation: callers may not read jobs from other tenants (ADR-0794).
+	if err := auth.AssertTenantOwns(ctx, j.TenantID); err != nil {
+		return nil, err
+	}
 	return queueJobToProto(j), nil
 }
 
-// CancelJob requests cancellation of a pending or running job.
+// CancelJob requests cancellation of a pending or running job, scoped to caller's tenant.
 func (c *controllerServer) CancelJob(ctx context.Context, req *controllerv1.CancelJobRequest) (*controllerv1.CancelJobResponse, error) {
 	if req.GetJobId() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "job_id is required")
+	}
+	// Fetch first so we can enforce tenant ownership before mutation (ADR-0794).
+	j, err := c.queue.Get(ctx, req.GetJobId())
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "job %q not found: %v", req.GetJobId(), err)
+	}
+	if err := auth.AssertTenantOwns(ctx, j.TenantID); err != nil {
+		return nil, err
 	}
 	if err := c.queue.Cancel(ctx, req.GetJobId()); err != nil {
 		return nil, status.Errorf(codes.Internal, "cancel job %q: %v", req.GetJobId(), err)
@@ -364,6 +384,8 @@ func protoCapToNodes(cap *controllerv1.NodeCapability) nodes.Capability {
 // ---------------------------------------------------------------------------
 
 // runGRPC starts the gRPC listener on addr and blocks until ctx is cancelled.
+// authMW is applied as a unary + stream interceptor; pass nil to disable auth
+// (e.g. internal-only deployments or tests).
 func runGRPC(
 	ctx context.Context,
 	addr string,
@@ -372,6 +394,7 @@ func runGRPC(
 	nodeRegistry *nodes.Registry,
 	sched *scheduler.Scheduler,
 	metrics *observability.Metrics,
+	authMW *auth.Middleware,
 	log *slog.Logger,
 ) error {
 	lis, err := net.Listen("tcp", addr)
@@ -382,9 +405,17 @@ func runGRPC(
 	// ADR-0927: OTel stats handler instruments every gRPC RPC with a
 	// server span + propagates the W3C traceparent header from the
 	// client context. No-op when InitOTel installed no-op providers.
-	srv := grpc.NewServer(
+	// ADR-0794: auth interceptors enforce tenant isolation when authMW is non-nil.
+	serverOpts := []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-	)
+	}
+	if authMW != nil {
+		serverOpts = append(serverOpts,
+			grpc.ChainUnaryInterceptor(authMW.GRPCUnaryInterceptor()),
+			grpc.ChainStreamInterceptor(authMW.GRPCStreamInterceptor()),
+		)
+	}
+	srv := grpc.NewServer(serverOpts...)
 
 	// Phase 4a: direct scoring service.
 	vmafxv1.RegisterVmafxScoringServer(srv, newScoringServer(scorer, metrics, log))

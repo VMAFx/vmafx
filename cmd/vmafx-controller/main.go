@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
@@ -70,6 +71,20 @@ func main() {
 	vmafBinary := flag.String("vmaf-binary", envOr("VMAFX_VMAF_BINARY", ""), "path to vmaf CLI binary (default: PATH lookup)")
 	modelDir := flag.String("model-dir", envOr("VMAFX_MODEL_DIR", ""), "directory containing VMAF .json model files")
 	dbPath := flag.String("db", envOr("VMAFX_DB_PATH", "vmafx-controller.db"), "path to the SQLite database for job + node persistence")
+
+	// Auth flags (ADR-0794): set VMAFX_AUTH_DISABLED=true for internal/dev deployments.
+	authDisabled := flag.Bool("auth-disabled", envOr("VMAFX_AUTH_DISABLED", "") == "true",
+		"disable JWT auth (dev/internal only — never in production)")
+	jwksEndpoint := flag.String("jwks-endpoint", envOr("VMAFX_JWKS_ENDPOINT", ""),
+		"JWKS endpoint URL, e.g. https://idp.example.com/.well-known/jwks.json")
+	authIssuer := flag.String("auth-issuer", envOr("VMAFX_AUTH_ISSUER", ""),
+		"expected JWT issuer (iss) claim value")
+	authAudience := flag.String("auth-audience", envOr("VMAFX_AUTH_AUDIENCE", ""),
+		"expected JWT audience (aud) claim value (optional)")
+	authTenantClaim := flag.String("auth-tenant-claim", envOr("VMAFX_AUTH_TENANT_CLAIM", "tid"),
+		"JWT claim field carrying the tenant identifier")
+	authRolesClaim := flag.String("auth-roles-claim", envOr("VMAFX_AUTH_ROLES_CLAIM", "vmafx_roles"),
+		"JWT claim field carrying the roles list")
 	flag.Parse()
 
 	// ---------------------------------------------------------------------------
@@ -85,6 +100,9 @@ func main() {
 		"vmaf_binary", *vmafBinary,
 		"model_dir", *modelDir,
 		"db_path", *dbPath,
+		"auth_disabled", *authDisabled,
+		"jwks_endpoint", *jwksEndpoint,
+		"auth_issuer", *authIssuer,
 	)
 
 	// ---------------------------------------------------------------------------
@@ -125,7 +143,24 @@ func main() {
 	metrics := observability.NewMetrics(registry)
 
 	// ---------------------------------------------------------------------------
-	// Job queue.
+	// Auth middleware (ADR-0794).
+	// ---------------------------------------------------------------------------
+	authMW, err := auth.New(auth.Config{
+		JWKSEndpoint: *jwksEndpoint,
+		Issuer:       *authIssuer,
+		Audience:     *authAudience,
+		TenantClaim:  *authTenantClaim,
+		RolesClaim:   *authRolesClaim,
+		Disabled:     *authDisabled,
+		Logger:       log,
+	})
+	if err != nil {
+		log.Error("failed to initialise auth middleware", "error", err)
+		os.Exit(1)
+	}
+
+	// ---------------------------------------------------------------------------
+	// Controller subsystems: job queue, node registry, scheduler.
 	// ---------------------------------------------------------------------------
 	jobQueue, err := queue.New(*dbPath, log)
 	if err != nil {
@@ -158,13 +193,13 @@ func main() {
 
 	// HTTP server.
 	grp.Go(func() error {
-		hs := newHTTPServer(scorer, metrics, registry, log)
+		hs := newHTTPServer(scorer, metrics, registry, authMW, log)
 		return runHTTP(grpCtx, fmt.Sprintf(":%s", *port), hs, log)
 	})
 
 	// gRPC server — registers both VmafxScoring and VmafxController services.
 	grp.Go(func() error {
-		return runGRPC(grpCtx, fmt.Sprintf(":%s", *grpcPort), scorer, jobQueue, nodeRegistry, sched, metrics, log)
+		return runGRPC(grpCtx, fmt.Sprintf(":%s", *grpcPort), scorer, jobQueue, nodeRegistry, sched, metrics, authMW, log)
 	})
 
 	if err := grp.Wait(); err != nil {

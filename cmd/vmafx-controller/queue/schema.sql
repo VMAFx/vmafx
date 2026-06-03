@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- Latest error message, populated when status = 'failed'.
     error       TEXT,
 
+    -- Tenant identifier extracted from the submitter's JWT "tid" claim.
+    -- All reads are scoped to this value (ADR-0794).
+    tenant_id   TEXT NOT NULL DEFAULT '',
+
     -- Unix epoch seconds.
     created_at  INTEGER NOT NULL,
     updated_at  INTEGER NOT NULL
@@ -41,3 +45,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 -- matches a given backend capability.
 CREATE INDEX IF NOT EXISTS idx_jobs_status_created
     ON jobs (status, created_at);
+
+-- Index for tenant-scoped queries (ADR-0794).
+CREATE INDEX IF NOT EXISTS idx_jobs_tenant_status
+    ON jobs (tenant_id, status, created_at);

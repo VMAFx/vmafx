@@ -338,6 +338,84 @@ node:
   volumeMounts: []
 
 # ---------------------------------------------------------------------------
+# Auth — multi-tenant JWT / OIDC gateway (ADR-0794)
+# ---------------------------------------------------------------------------
+# When auth.enabled is true the controller validates RS256 bearer tokens from
+# an OIDC provider and enforces tenant isolation + RBAC.
+#
+# For internal / dev deployments set auth.disabled: true (sets
+# VMAFX_AUTH_DISABLED=true env var, bypasses all checks).
+#
+# Tenant configuration can be supplied two ways:
+#   1. Inline below (auth.tenants[]) — creates VmafxTenant CRs via the Helm
+#      template.  Suitable for small fixed tenant sets.
+#   2. Kubectl-apply VmafxTenant CRs directly — suitable for operator-managed
+#      multi-tenant clusters where tenants are managed by an external control
+#      plane.
+#
+# Quick-start (single tenant, Auth0):
+#
+#   auth:
+#     enabled: true
+#     jwksEndpoint: https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
+#     issuer: https://YOUR_DOMAIN.auth0.com/
+#     audience: https://vmafx.example.com/api
+#     tenants:
+#       - tenantId: acme
+#         oidc:
+#           issuer: https://YOUR_DOMAIN.auth0.com/
+#           jwksEndpoint: https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
+#           audience: https://vmafx.example.com/api
+#
+# See docs/server/auth.md for the full OIDC configuration guide.
+auth:
+  # enabled — set to true to activate the auth gateway.
+  # When false the controller starts with auth bypassed (plaintext, no tenant).
+  enabled: false
+
+  # disabled — explicitly bypass auth even when enabled is true.
+  # Useful for dry-run or integration-test pipelines.  Never true in production.
+  disabled: false
+
+  # jwksEndpoint — global fallback JWKS URL used when a tenant does not
+  # override it.  Required when auth.enabled is true.
+  jwksEndpoint: ""
+
+  # issuer — global fallback expected "iss" claim value.
+  issuer: ""
+
+  # audience — global fallback expected "aud" claim value (optional).
+  audience: ""
+
+  # tenantClaim — JWT claim field that holds the tenant identifier.
+  # Auth0: "org_id" | Keycloak: configured custom claim | Dex: "tid" (default).
+  tenantClaim: "tid"
+
+  # rolesClaim — JWT claim field that holds the list of vmafx role strings.
+  rolesClaim: "vmafx_roles"
+
+  # tenants — list of VmafxTenant CRs to create.  Each entry maps to one
+  # VmafxTenant custom resource.  Leave empty to manage tenants out-of-band.
+  tenants: []
+  # Example:
+  # tenants:
+  #   - tenantId: acme
+  #     enabled: true
+  #     oidc:
+  #       issuer: https://acme.auth0.com/
+  #       jwksEndpoint: https://acme.auth0.com/.well-known/jwks.json
+  #       audience: vmafx-api
+  #       tenantClaim: org_id
+  #       rolesClaim: vmafx_roles
+  #     rbac:
+  #       defaultRole: vmafx:reader
+  #       allowedRoles: [vmafx:reader, vmafx:writer]
+  #   - tenantId: rival-corp
+  #     oidc:
+  #       issuer: https://keycloak.rival-corp.example/realms/vmafx
+  #       jwksEndpoint: https://keycloak.rival-corp.example/realms/vmafx/protocol/openid-connect/certs
+
+# ---------------------------------------------------------------------------
 # NOTES.txt / post-install
 # ---------------------------------------------------------------------------
 # No user-facing knobs here; see templates/NOTES.txt.

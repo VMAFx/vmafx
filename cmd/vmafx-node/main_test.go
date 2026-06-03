@@ -14,24 +14,160 @@ package main
 import (
 	"context"
 	"log/slog"
-
+	"net"
+	"os"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 	"github.com/VMAFx/vmafx/pkg/ai"
 	"github.com/VMAFx/vmafx/pkg/gpu"
 )
 
 // ---------------------------------------------------------------------------
+// Mock controller server
+// ---------------------------------------------------------------------------
 
+// mockController implements a minimal controllerv1.VmafxControllerServer for
+// testing the node lifecycle.
+type mockController struct {
+	controllerv1.UnimplementedVmafxControllerServer
+
+	// registered tracks whether RegisterNode was called.
+	registered chan struct{}
+	// heartbeats counts received heartbeats.
+	heartbeats chan struct{}
+	// pullCount tracks PullWork calls.
+	pullCount int
+	// jobToReturn is the job returned on the first PullWork call.
+	jobToReturn *controllerv1.Job
+	// reportedResult holds the last ReportResult call.
+	reportedResult chan *controllerv1.ReportResultRequest
+}
+
+func newMockController() *mockController {
+	return &mockController{
+		registered:     make(chan struct{}, 1),
+		heartbeats:     make(chan struct{}, 10),
+		reportedResult: make(chan *controllerv1.ReportResultRequest, 1),
+	}
+}
+
+func (m *mockController) RegisterNode(_ context.Context, req *controllerv1.RegisterNodeRequest) (*controllerv1.RegisterNodeResponse, error) {
+	select {
+	case m.registered <- struct{}{}:
+	default:
+	}
+	return &controllerv1.RegisterNodeResponse{
+		NodeId:       req.GetName() + "-assigned",
+		SessionToken: "test-token",
+	}, nil
+}
+
+func (m *mockController) Heartbeat(_ context.Context, _ *controllerv1.HeartbeatRequest) (*controllerv1.HeartbeatResponse, error) {
+	select {
+	case m.heartbeats <- struct{}{}:
+	default:
+	}
+	return &controllerv1.HeartbeatResponse{Ok: true}, nil
+}
+
+func (m *mockController) PullWork(_ context.Context, _ *controllerv1.PullWorkRequest) (*controllerv1.PullWorkResponse, error) {
+	m.pullCount++
+	if m.pullCount == 1 && m.jobToReturn != nil {
+		return &controllerv1.PullWorkResponse{Job: m.jobToReturn}, nil
+	}
+	return &controllerv1.PullWorkResponse{}, nil
+}
+
+func (m *mockController) ReportResult(_ context.Context, req *controllerv1.ReportResultRequest) (*controllerv1.ReportResultResponse, error) {
+	select {
+	case m.reportedResult <- req:
+	default:
+	}
+	return &controllerv1.ReportResultResponse{Ok: true}, nil
+}
+
+// startMockController starts the mock server on a random port and returns
+// (server, address, cleanup).
+func startMockController(t *testing.T, mc *mockController) (*grpc.Server, string) {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	srv := grpc.NewServer()
+	controllerv1.RegisterVmafxControllerServer(srv, mc)
+	go func() {
+		if serveErr := srv.Serve(lis); serveErr != nil {
+			// Expect ErrServerStopped on test teardown.
+		}
+	}()
+	t.Cleanup(srv.GracefulStop)
+	return srv, lis.Addr().String()
+}
+
+// ---------------------------------------------------------------------------
+// Config tests
+// ---------------------------------------------------------------------------
+
+func TestLoadConfig_MissingAddr(t *testing.T) {
+	// t.Setenv is incompatible with t.Parallel()
+	t.Setenv("VMAFX_CONTROLLER_ADDR", "")
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("expected error when VMAFX_CONTROLLER_ADDR is not set")
+	}
+}
+
+func TestLoadConfig_Defaults(t *testing.T) {
+	// t.Setenv is incompatible with t.Parallel()
+	t.Setenv("VMAFX_CONTROLLER_ADDR", "localhost:8080")
+	t.Setenv("VMAFX_NODE_ID", "test-node")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.controllerAddr != "localhost:8080" {
+		t.Errorf("controllerAddr = %q, want %q", cfg.controllerAddr, "localhost:8080")
+	}
+	if cfg.nodeID != "test-node" {
+		t.Errorf("nodeID = %q, want %q", cfg.nodeID, "test-node")
+	}
+	if cfg.logLevel != slog.LevelInfo {
+		t.Errorf("logLevel = %v, want info", cfg.logLevel)
+	}
+}
+
+func TestLoadConfig_LogLevelDebug(t *testing.T) {
+	// t.Setenv is incompatible with t.Parallel()
+	t.Setenv("VMAFX_CONTROLLER_ADDR", "localhost:8080")
+	t.Setenv("VMAFX_LOG_LEVEL", "debug")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.logLevel != slog.LevelDebug {
+		t.Errorf("logLevel = %v, want debug", cfg.logLevel)
+	}
+}
+
+func TestLoadConfig_InvalidLogLevel(t *testing.T) {
+	// t.Setenv is incompatible with t.Parallel()
+	t.Setenv("VMAFX_CONTROLLER_ADDR", "localhost:8080")
+	t.Setenv("VMAFX_LOG_LEVEL", "TURBO")
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid VMAFX_LOG_LEVEL")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Executor tests
 // ---------------------------------------------------------------------------
-//
-// The previous mockController scaffolding (RegisterNode / Heartbeat /
-// PullWork / ReportResult) was removed in the go-nilness audit (2026-05-30,
-// staticcheck U1000) — it was orphaned when the controller-registration path
-// was replaced by the ffmpeg-probe / gRPC server model documented in the
-// header above. The remaining tests exercise the Executor directly.
 
 func TestExecutor_NilScorer(t *testing.T) {
 	t.Parallel()
