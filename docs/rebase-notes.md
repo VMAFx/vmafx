@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## port/upstream-speed-chroma-simd-30f472b14 (2026-06-03, upstream 30f472b14)
+
+**Files touched:**
+`core/src/feature/x86/speed_avx2.c`,
+`core/src/feature/x86/speed_avx2.h`,
+`core/src/feature/x86/speed_avx512.c`,
+`core/src/feature/x86/speed_avx512.h`,
+`core/src/feature/speed.c`,
+`core/src/meson.build`,
+`core/test/test_speed_simd.c`,
+`core/test/meson.build`
+
+**Rebase impact:** Reduces delta — this port lands the upstream commit verbatim
+(new AVX2 + AVX-512 covariance-sum kernels, function-pointer dispatch). Future
+`/sync-upstream` passes that touch `speed.c` will see a smaller diff because the
+kernel dispatch pattern is now present on both sides. The `compute_cov_kernel_fn`
+typedef and `SpeedState::compute_cov_kernel` field are fork additions; any upstream
+change to the `compute_covariance` signature must also update the typedef here.
+
+---
+
 ## test/go-coverage-push (2026-06-04)
 
 **Files touched:**
