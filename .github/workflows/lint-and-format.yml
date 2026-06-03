@@ -537,6 +537,42 @@ jobs:
       - name: Build docs (strict — fail on any warning)
         run: mkdocs build --strict
 
+  check-conflict-markers:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # Fast, pre-commit-independent gate that fails immediately if git conflict
+    # markers (<<<<<<< / ======= / >>>>>>>) are found committed in any text
+    # file. This is intentionally redundant with pre-commit's check-merge-conflict
+    # hook — the hook only fires on local `git commit`, whereas this step fires
+    # on every push and PR, catching markers that sneak in via direct pushes,
+    # GitHub UI merges, or --no-verify bypasses.
+    # Excludes: binary extensions, LICENSES/ vendored texts, and the
+    # .pre-commit-config.yaml itself (which references hook IDs that contain
+    # the string "conflict").
+    name: Check — No committed conflict markers
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Fail if conflict markers are committed
+        run: |
+          set +e
+          hits=$(git grep -In --untracked=false \
+            -e '^<<<<<<< ' -e '^=======$' -e '^>>>>>>> ' \
+            -- \
+            ':(exclude)LICENSES/**' \
+            ':(exclude)*.yuv' ':(exclude)*.pkl' ':(exclude)*.onnx' \
+            ':(exclude)*.bin' ':(exclude)*.mexa64' ':(exclude)*.mexw64' \
+            ':(exclude)*.mexmaci64' ':(exclude)*.npy' \
+            ':(exclude)*.so' ':(exclude)*.a' ':(exclude)*.dylib' \
+            ':(exclude)*.dll' ':(exclude)*.onnx.data' \
+            2>/dev/null)
+          if [ -n "$hits" ]; then
+            echo "::error::Committed conflict markers found — resolve before merging:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "No conflict markers found."
+
   shellcheck:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # T7-CI-DEDUP — body collapsed to a no-op proxy that depends on the
