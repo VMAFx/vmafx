@@ -205,6 +205,8 @@ fi
 # so the rendered text never has to fit in an argv variable.
 tmp_body="$(mktemp)"
 tmp_out="$(mktemp)"
+# Clean up scratch files on any exit path (including interrupts) so we never
+# leak temp files in $TMPDIR if the awk pipeline below trips set -e.
 trap 'rm -f "$tmp_body" "$tmp_out"' EXIT
 # Command substitution strips trailing newlines from "$rendered". The legacy
 # archive ends with one blank line (separator before the next release header)
@@ -230,6 +232,15 @@ awk -v boundary="$BOUNDARY_REGEX" '
     }
     {print}
 ' >"$tmp_out"
+
+# Sanity check: the awk pipeline keys off the "## [Unreleased]" header. If the
+# header is absent in $CHANGELOG (template drift, accidental deletion), the
+# pipeline produces an unchanged copy and the in-place mv silently leaves the
+# file untouched — caller has no signal. Refuse to overwrite in that case.
+if ! grep -q '^## \[Unreleased\]' "$tmp_out"; then
+  printf 'ERROR: rendered CHANGELOG.md missing "## [Unreleased]" header — aborting overwrite\n' >&2
+  exit 1
+fi
 
 mv "$tmp_out" "$CHANGELOG"
 printf 'CHANGELOG.md Unreleased block rewritten from changelog.d/.\n' >&2

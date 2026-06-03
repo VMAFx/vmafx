@@ -145,12 +145,28 @@ if [[ -n "${CUDA_HOME_RESOLVED}" && ":${PATH}:" != *":${CUDA_HOME_RESOLVED}/bin:
 fi
 
 # ─── oneAPI / SYCL setup ──────────────────────────────────────────────────────
+# Resolution order, highest priority first:
+#   1. VMAF_ONEAPI_SETVARS  — explicit override (CI pin / dev override)
+#   2. $ONEAPI_ROOT/setvars.sh — environment-supplied install root
+#   3. /opt/intel/oneapi/setvars.sh — canonical un-versioned symlink
+#   4. Newest /opt/intel/oneapi-*/setvars.sh in lexical order — last-resort
+#      fallback for hosts that only ship the versioned install dir.
+# The previous code hardcoded /opt/intel/oneapi-2025.3/setvars.sh, which
+# silently stops working on every oneAPI upgrade.
 SYCL_AVAILABLE=0
 ONEAPI_CANDIDATES=(
   "${VMAF_ONEAPI_SETVARS:-}"
-  /opt/intel/oneapi-2025.3/setvars.sh
+  "${ONEAPI_ROOT:-/opt/intel/oneapi}/setvars.sh"
   /opt/intel/oneapi/setvars.sh
 )
+# Append any versioned /opt/intel/oneapi-*/setvars.sh in reverse-lexical
+# order (newest first). Glob expansion may produce zero matches; suppress
+# unmatched-glob errors by checking each path's existence below.
+shopt -s nullglob
+for versioned in $(printf '%s\n' /opt/intel/oneapi-*/setvars.sh | sort -r); do
+  ONEAPI_CANDIDATES+=("${versioned}")
+done
+shopt -u nullglob
 for cand in "${ONEAPI_CANDIDATES[@]}"; do
   if [[ -n "${cand}" && -f "${cand}" ]]; then
     set +u
@@ -161,6 +177,10 @@ for cand in "${ONEAPI_CANDIDATES[@]}"; do
     break
   fi
 done
+if [[ ${SYCL_AVAILABLE} -eq 0 ]]; then
+  echo "  [bench] WARNING: no oneAPI setvars.sh found; SYCL backend will be unavailable." >&2
+  echo "  [bench]          Set ONEAPI_ROOT or VMAF_ONEAPI_SETVARS to enable." >&2
+fi
 
 # ─── vmaf binary ─────────────────────────────────────────────────────────────
 VMAF="${VMAF_BIN:-${WORKSPACE}/core/build/tools/vmaf}"
@@ -184,6 +204,15 @@ if [[ ! -f "${MODEL}" ]]; then
 fi
 
 NCU_BIN="${VMAF_NCU:-ncu}"
+
+# ─── scratch dir (honour $TMPDIR, trap-cleaned) ──────────────────────────────
+# Use $TMPDIR when set (CI runners, containers); fall back to /tmp on hosts
+# without it. Everything below mktemps inside SCRATCH_DIR so a single trap
+# cleans up — no stale /tmp/vmaf-bench-*.json or /tmp/vmaf-ncu-*.csv leaks.
+SCRATCH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/vmaf-bench-XXXXXX")"
+LOG_DIR="${SCRATCH_DIR}/logs"
+mkdir -p "${LOG_DIR}"
+trap 'rm -rf "${SCRATCH_DIR}"' EXIT
 
 # ─── resolution catalogue ─────────────────────────────────────────────────────
 # Maps resolution height → (width height bitdepth nframes src_description
@@ -330,10 +359,14 @@ run_ncu_cell() {
     echo "{\"error\": \"ncu not on PATH\"}"
     return 0
   fi
-  local ncu_out
-  ncu_out=$(mktemp /tmp/vmaf-ncu-XXXXX.csv)
+  local ncu_out ncu_err ncu_error=""
+  ncu_out=$(mktemp "${SCRATCH_DIR}/vmaf-ncu-XXXXX.csv")
+  ncu_err=$(mktemp "${SCRATCH_DIR}/vmaf-ncu-XXXXX.err")
+  # Capture ncu stderr instead of `|| true`-discarding it. ncu permission
+  # errors (ERR_NVGPUCTRPERM), missing driver counters, and similar setup
+  # failures are otherwise reported as a silent empty CSV downstream.
   # shellcheck disable=SC2086
-  "${NCU_BIN}" --csv --metrics \
+  if ! "${NCU_BIN}" --csv --metrics \
     "sm__throughput.avg.pct_of_peak_sustained_elapsed,l1tex__t_sector_hit_rate.pct,lts__t_sector_hit_rate.pct,gpu__time_duration.sum" \
     "${VMAF}" \
     --reference "${ref}" --distorted "${dis}" \
@@ -342,10 +375,17 @@ run_ncu_cell() {
     --feature "${feature_flag}" \
     --model "path=${MODEL}" --threads 1 \
     --output "${out_json}" --json -q \
-    ${BACKEND_FLAGS[cuda]} 2>/dev/null || true
-  python3 - "${ncu_out}" <<'PYEOF'
+    ${BACKEND_FLAGS[cuda]} 2>"${ncu_err}"; then
+    if [[ -s "${ncu_err}" ]]; then
+      ncu_error="$(head -c 4096 "${ncu_err}")"
+    else
+      ncu_error="ncu exited non-zero with no stderr"
+    fi
+  fi
+  python3 - "${ncu_out}" "${ncu_error}" <<'PYEOF'
 import csv, json, sys
 path = sys.argv[1]
+ncu_error = sys.argv[2] if len(sys.argv) > 2 else ""
 try:
     rows = list(csv.DictReader(open(path)))
     # aggregate: mean sm throughput, mean L1 hit, mean L2 hit, total gpu time
@@ -360,11 +400,15 @@ try:
         "gpu_time_us_total": round(sum(gpu)/1000,2)   if gpu else None,
         "kernel_count":      len(rows),
     }
+    if ncu_error:
+        result["ncu_error"] = ncu_error
     print(json.dumps(result))
 except Exception as e:
-    print(json.dumps({"error": str(e)}))
+    err = {"error": str(e)}
+    if ncu_error:
+        err["ncu_error"] = ncu_error
+    print(json.dumps(err))
 PYEOF
-  rm -f "${ncu_out}"
 }
 
 # Run one (resolution × backend × metric) cell, return timing and score JSON
@@ -380,7 +424,7 @@ run_cell() {
   # shellcheck disable=SC2086
   local flags="${BACKEND_FLAGS[$backend]}"
   local out_json
-  out_json=$(mktemp /tmp/vmaf-bench-XXXXX.json)
+  out_json=$(mktemp "${SCRATCH_DIR}/vmaf-bench-XXXXX.json")
 
   local times=()
   local vmaf_score feature_score
@@ -389,10 +433,16 @@ run_cell() {
 
   local run_ok=0
   local skip_reason=""
+  local vmaf_error=""
 
   for ((i = 0; i < RUNS; i++)); do
-    local t_start t_end elapsed_ms rc
+    local t_start t_end elapsed_ms rc err_file
+    err_file="${LOG_DIR}/vmaf-${res_key}-${backend}-${metric}-$(date +%s%N).err"
     t_start=$(date +%s%N)
+    # Capture stderr instead of discarding it — without this, OOM, missing
+    # model, GPU init failures and the like silently emit null scores and
+    # the user has no signal. The per-call err file is read on rc != 0 and
+    # surfaced in the cell JSON as "vmaf_error".
     # shellcheck disable=SC2086
     "${VMAF}" \
       --reference "${ref}" --distorted "${dis}" \
@@ -401,12 +451,17 @@ run_cell() {
       --feature "${feature}" \
       --model "path=${MODEL}" --threads 1 \
       --output "${out_json}" --json -q \
-      ${flags} 2>/dev/null
+      ${flags} 2>"${err_file}"
     rc=$?
     t_end=$(date +%s%N)
     elapsed_ms=$(((t_end - t_start) / 1000000))
     if [[ ${rc} -ne 0 ]]; then
       skip_reason="vmaf exited ${rc}"
+      # Read stderr (cap at 4 KiB to keep the JSON manageable; the full log
+      # stays on disk for the duration of the run via SCRATCH_DIR).
+      if [[ -s "${err_file}" ]]; then
+        vmaf_error="$(head -c 4096 "${err_file}")"
+      fi
       break
     fi
     if [[ ! -f "${out_json}" ]]; then
@@ -470,9 +525,8 @@ print(m)
   local ncu_json="{}"
   if [[ ${USE_NCU} -eq 1 && "${backend}" == "cuda" && ${run_ok} -eq 1 ]]; then
     local ncu_out
-    ncu_out=$(mktemp /tmp/vmaf-bench-ncu-XXXXX.json)
+    ncu_out=$(mktemp "${SCRATCH_DIR}/vmaf-bench-ncu-XXXXX.json")
     ncu_json=$(run_ncu_cell "${ref}" "${dis}" "${w}" "${h}" "${bd}" "${feature}" "${ncu_out}")
-    rm -f "${ncu_out}"
   fi
 
   python3 - \
@@ -483,10 +537,12 @@ print(m)
     "${run_ok}" "${skip_reason:-}" \
     "${ncu_json}" \
     "${RES_SRC[$res_key]}" \
+    "${vmaf_error:-}" \
     <<'PYEOF'
 import json, sys
 a = sys.argv
 skip = (a[12] == "0")
+vmaf_err = a[16] if len(a) > 16 else ""
 obj = {
     "resolution": a[1],
     "backend":    a[2],
@@ -502,6 +558,7 @@ obj = {
     "feature_score": None if a[11] == "null" else float(a[11]),
     "status":     "skip" if skip else "ok",
     "skip_reason": a[13] if skip else None,
+    "vmaf_error": vmaf_err if vmaf_err else None,
     "ncu": json.loads(a[14]),
 }
 print(json.dumps(obj))
