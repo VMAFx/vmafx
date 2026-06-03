@@ -7,6 +7,25 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## fix/helm-node-deployment-deduplicate (2026-05-30, ADR-0713 / ADR-0719)
+
+**Files touched:**
+`deploy/helm/vmafx/templates/node.yaml` (modified),
+`deploy/helm/vmafx/templates/node-deployment.yaml` (deleted).
+
+**Rebase impact:** None. The deploy/helm/ tree is fork-only —
+Netflix upstream ships no Helm chart. The duplicate-Deployment
+collision and its fix live entirely within fork-added templates.
+
+The two templates both rendered a Deployment named
+`{{ include "vmafx.fullname" . }}-node` under `.Values.node.enabled`,
+which made `helm install` fail with a duplicate-resource error and
+left Phase 4b distributed scoring uninstallable. The richer
+`node.yaml` (liveness/readiness probes, GPU resource injection,
+metrics port + Service, `VMAFX_NODE_ID` per ADR-0713) is kept; the
+rclone Secret mount + storage-mode / model-dir env vars from the
+deleted `node-deployment.yaml` were folded into `node.yaml`.
+
 ## libvmaf.Score / ScoreDirect ctx.Context plumbing (2026-05-31, fix/libvmaf-score-ctx)
 
 **Files touched:**
