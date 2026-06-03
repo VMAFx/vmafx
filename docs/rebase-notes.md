@@ -43802,3 +43802,19 @@ matching update in the AVX2 header.
 **Branch**: chore/ci-shorten-workflow-names
 
 no rebase impact: pure CI display-name rename; no C/C++/Python source touched.
+
+---
+
+### chore(scripts): modernization-audit scanner — reduce false-positive noise
+
+**Branch**: chore/modernization-audit-false-positive-filter
+**Touches**: `scripts/dev/project_modernization_audit.py`,
+`scripts/dev/test_project_modernization_audit.py`,
+`changelog.d/fixed/modernization-audit-calibration-and-closed-row-noise.md`.
+
+No rebase impact: changes are confined to the developer-tools scanner and its
+test file. No C source, public header, upstream-mirrored Python, or Netflix
+golden-assertion file is touched. The new module-level constants
+(`CALIBRATION_PLACEHOLDER_PATHS`, `CLOSED_SECTION_HEADINGS_RE`,
+`CLOSED_ROW_RE`) and the updated `scan_state_files` / `_marker_suppressed`
+functions have no upstream analogue; there is no merge conflict possible.

@@ -82,6 +82,38 @@ SKIP_PARTS: frozenset[str] = frozenset(
     }
 )
 
+# Paths where "placeholder" is calibration-framework domain vocabulary (a
+# documented STATUS value: "calibrated" | "placeholder"), not a code-gap
+# marker.  False-positive category: developer-tools placeholder noise (~30
+# findings prior to this exclude rule).
+CALIBRATION_PLACEHOLDER_PATHS: frozenset[str] = frozenset(
+    {
+        "scripts/ci/cross_backend_calibration.py",
+        "scripts/ci/cross_backend_parity_gate.py",
+        "scripts/ci/gpu_ulp_calibration.yaml",
+    }
+)
+
+# H2 headings in state files that denote resolved rows.  The scanner skips
+# all T-* matches that fall under one of these headings (until the next H2).
+# False-positive category: state.md / BACKLOG / OPEN closed-row noise (~70
+# findings prior to this exclude rule).
+CLOSED_SECTION_HEADINGS_RE = re.compile(
+    r"^##\s+(Recently closed|Resolved|Confirmed not-affected)",
+    re.IGNORECASE,
+)
+
+# Line-level marker for explicitly closed rows.  Two forms:
+#   1. A "(YYYY-MM-DD)" date stamp at end of line (possibly followed by
+#      whitespace or a Markdown table-cell "|" before the real EOL) — used
+#      by docs/state.md table rows in the "Recently closed" section that have
+#      been moved but still appear in the Open section during authoring.
+#   2. A literal "closed: " prefix — used in BACKLOG/OPEN inline-close rows.
+CLOSED_ROW_RE = re.compile(
+    r"\bclosed:\s|\(\d{4}-\d{2}-\d{2}\)\s*\|?\s*$",
+    re.IGNORECASE,
+)
+
 BLOCKED_RE = re.compile(
     r"\b(blocked|waiting on|external trigger|manual access|redistribution|"
     r"legal|licen[cs]e|upstream|netflix releases|stability window|"
@@ -289,8 +321,18 @@ def _marker_suppressed(kind: str, path: str, line: str, context: str) -> bool:
     gap used to exist. Keep source-code ``raise NotImplementedError`` rows, but
     drop docstrings such as "replaces the NotImplementedError scaffold" and
     catch/exception-class lines that are part of normal error handling.
+
+    Also suppresses ``placeholder`` matches in the calibration-framework scripts
+    where ``placeholder`` is domain vocabulary for a STATUS value, not a gap
+    marker (CALIBRATION_PLACEHOLDER_PATHS exclude rule).
     """
-    if HISTORICAL_CONTEXT_RE.search(line):
+    # Cross-cutting early exits: historical prose and calibration-path vocabulary.
+    # Developer-tools placeholder noise: "placeholder" in calibration scripts is
+    # a documented STATUS enum value ("calibrated" | "placeholder"), not a code
+    # gap.  Suppress only the placeholder marker; other markers still fire.
+    if HISTORICAL_CONTEXT_RE.search(line) or (
+        kind == "placeholder" and path in CALIBRATION_PLACEHOLDER_PATHS
+    ):
         return True
     if kind == "not_implemented":
         if Path(path).suffix != ".py":
@@ -388,13 +430,30 @@ def scan_marker_findings(
 def scan_state_files(repo_root: Path, state_files: Sequence[str]) -> list[Finding]:
     findings: list[Finding] = []
     row_re = re.compile(r"\bT-[A-Z0-9][A-Z0-9_-]*|\bT[0-9][A-Z0-9_-]*")
+    h2_re = re.compile(r"^##\s+")
     for state_name in state_files:
         path = repo_root / state_name
         if not path.is_file():
             continue
         rel = _relative(repo_root, path)
+        # Track whether the current H2 section is a closed / resolved section.
+        # False-positive category: state.md closed-row noise (~70 findings).
+        # Rows under "Recently closed", "Resolved", or "Confirmed not-affected"
+        # headings are historical audit records, not open action items.
+        in_closed_section = False
         for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            # Update section tracking on every H2 boundary.
+            if h2_re.match(line):
+                in_closed_section = bool(CLOSED_SECTION_HEADINGS_RE.match(line))
+                continue
+            if in_closed_section:
+                continue
             if row_re.search(line) is None:
+                continue
+            # Skip rows that carry an explicit closed-date stamp or "closed: "
+            # marker — these are closed items that haven't yet moved to a
+            # dedicated section (BACKLOG/OPEN inline-close pattern).
+            if CLOSED_ROW_RE.search(line):
                 continue
             blocked, reason = _blocked_reason(line)
             severity = 66 if not blocked else 38
