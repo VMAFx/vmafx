@@ -1,0 +1,1 @@
+| [ADR-1003](1003-cpp-std-c23-bump.md) | Bump project-wide C++ standard from c++11 to c++23 in core/meson.build — lands the ADR-0727 decision that was never applied to the default_options entry; fixes pre-existing test_feature_collector_coverage linker failure | Accepted | 2026-06-04 | build, c++, cpp23, meson, standards, fork-local, vmafx-rebrand |

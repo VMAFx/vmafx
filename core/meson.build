@@ -1,7 +1,7 @@
 project('libvmaf', ['c', 'cpp'],
     version : '3.0.0', # x-release-please-version
     default_options : ['c_std=c11',
-                       'cpp_std=c++11',
+                       'cpp_std=c++23',
                        'warning_level=2',
                        'buildtype=release',
                        'default_library=both',

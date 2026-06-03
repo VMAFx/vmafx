@@ -2468,8 +2468,15 @@ test('test_adm_csf_tools_coverage', test_adm_csf_tools_coverage, suite : ['fast'
 # Coverage round 3 — core/src/feature/feature_collector.cpp branch
 # coverage push (62.5 % -> 80 %+).  Hits NULL guards, duplicate-key
 # rejects, and unmount-not-found paths via the internal header.
+# feature_collector.cpp is compiled directly into this test so the
+# non-static internal helpers (aggregate_vector_*, feature_vector_*)
+# declared in feature_collector_internal.h are resolvable at link time.
+# libvmaf includes only feature_collector.c (static helpers); the
+# duplicate-free compilation here is safe — see test_predict for the
+# same pattern.
 test_feature_collector_coverage = executable('test_feature_collector_coverage',
-    ['test.c', 'test_feature_collector_coverage.c'],
+    ['test.c', 'test_feature_collector_coverage.c',
+     '../src/feature/feature_collector.cpp'],
     include_directories : [libvmaf_inc, test_inc,
                            include_directories('../src/feature/'),
                            include_directories('../src/')],

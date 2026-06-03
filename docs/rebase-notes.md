@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## chore/build-cpp-std-c23-bump (2026-06-04, ADR-1003)
+
+**Files touched:**
+`core/meson.build`, `core/AGENTS.md`, `core/test/meson.build`,
+`docs/adr/1003-cpp-std-c23-bump.md`, `docs/adr/README.md`,
+`changelog.d/changed/cpp-std-c23-bump.md`
+
+**Rebase impact:** Low. The `cpp_std=c++11` → `cpp_std=c++23` change in
+`core/meson.build` may conflict with any upstream Netflix/vmaf PR that also
+touches `default_options`. Netflix upstream still uses `c++11`; on conflict,
+keep `c++23` (the fork's stated standard). The `core/test/meson.build` fix
+for `test_feature_collector_coverage` is fork-local; take the fork side on
+any conflict.
+
+---
+
 ## test(mcp-server): coverage push round 4
 
 **Files touched:** `mcp-server/vmaf-mcp/tests/test_coverage_round4.py`,
