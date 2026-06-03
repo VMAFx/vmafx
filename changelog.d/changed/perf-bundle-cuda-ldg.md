@@ -1,6 +1,4 @@
-### perf(cuda): __ldg() bundle — #106 adm_decouple F3 fix (ADR-0763)
-
-- **#106 APPLIED-CLEAN** — `adm_decouple_kernel` (scale-0, `int16_t`) and
+- **perf(cuda): __ldg() bundle — #106 adm_decouple F3 fix (ADR-0763)** — `adm_decouple_kernel` (scale-0, `int16_t`) and
   `adm_decouple_s123_kernel` (scales 1-3, `int32_t`) in
   `core/src/feature/cuda/integer_adm/adm_decouple.cu`: extract
   `const T *__restrict__` band pointers from `AdmBufferCuda` before the

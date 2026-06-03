@@ -1,0 +1,1 @@
+| [ADR-0892](0892-conventional-commits-and-changelog-fragment-hygiene.md) | Conventional-Commits coverage + Changelog-fragment section hygiene — extend release-please root section list, move `perf/` + `performance/` fragments to `changed/perf-*` | Accepted | 2026-05-30 | process, release, changelog, ci, fork-local |

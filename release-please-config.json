@@ -24,6 +24,9 @@
         { "type": "build", "section": "Build System" },
         { "type": "ci", "section": "CI / Infrastructure" },
         { "type": "chore", "section": "Miscellaneous", "hidden": false },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "security", "section": "Security" },
+        { "type": "style", "section": "Style" },
         { "type": "port", "section": "Ports from upstream Netflix/vmaf" },
         { "type": "sycl", "section": "SYCL Backend" },
         { "type": "cuda", "section": "CUDA Backend" },
@@ -54,7 +57,10 @@
         { "type": "test", "section": "Tests" },
         { "type": "build", "section": "Build System" },
         { "type": "ci", "section": "CI / Infrastructure" },
-        { "type": "chore", "section": "Miscellaneous", "hidden": false }
+        { "type": "chore", "section": "Miscellaneous", "hidden": false },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "security", "section": "Security" },
+        { "type": "style", "section": "Style" }
       ],
       "extra-files": [
         { "type": "generic", "path": "pyproject.toml" }

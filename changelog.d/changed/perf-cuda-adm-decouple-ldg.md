@@ -1,4 +1,4 @@
-### perf(cuda): adm_decouple — `__ldg()` F3 fix (ADR-0763)
+- **perf(cuda): adm_decouple — `__ldg()` F3 fix (ADR-0763)**
 
 Extract `const T *__restrict__` band pointers from `AdmBufferCuda` before the
 per-pixel body in `adm_decouple_kernel` (scale-0, `int16_t`) and

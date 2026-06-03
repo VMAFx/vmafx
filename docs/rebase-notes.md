@@ -7,6 +7,31 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## Changelog-fragment section hygiene (2026-05-30)
+
+**Files touched:**
+`changelog.d/perf/*.md` → `changelog.d/changed/perf-*.md` (27 renames),
+`changelog.d/performance/*.md` → `changelog.d/changed/perf-*.md`
+(5 renames), `changelog.d/README.md`, `release-please-config.json`,
+`docs/adr/0892-conventional-commits-and-changelog-fragment-hygiene.md`
+(new), `docs/research/0892-conventional-commits-audit-2026-05-30.md`
+(new), `changelog.d/fixed/conventional-commits-audit.md` (new).
+
+**Rebase impact:** None on upstream sync (no Netflix file touched).
+Cross-branch impact on fork: any in-flight feature branch holding a
+`changelog.d/perf/*.md` or `changelog.d/performance/*.md` file will
+hit a rename-detection conflict on rebase. `git rebase` with default
+`-X` settings detects the rename cleanly; if a conflict surfaces, the
+fix is to drop the in-flight branch's copy of the file and re-add the
+content under `changelog.d/changed/perf-<topic>.md`. The migrated
+files had their leading `### Performance` / `## perf(…)` headings
+stripped (renderer adds `### Changed` itself); in-flight branches
+that added a new `perf/` fragment should follow the same pattern.
+
+See [ADR-0892](adr/0892-conventional-commits-and-changelog-fragment-hygiene.md).
+
+---
+
 ## Research-0760 — Rust crate audit (docs + ADR-0707 correction, 2026-05-29)
 
 No rebase impact on upstream C/Python code.
