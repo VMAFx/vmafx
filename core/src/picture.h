@@ -64,11 +64,19 @@ typedef struct VmafPicturePrivate {
     enum VmafPictureBufferType buf_type;
 } VmafPicturePrivate;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int vmaf_picture_priv_init(VmafPicture *pic);
 
 int vmaf_picture_ref(VmafPicture *dst, VmafPicture *src);
 
 int vmaf_picture_set_release_callback(VmafPicture *pic, void *cookie,
                                       int (*release_picture)(VmafPicture *pic, void *cookie));
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* VMAF_SRC_PICTURE_INCLUDED */

@@ -944,7 +944,7 @@ if is_cuda_enabled
         'float_adm_score' : ['-Xcompiler=-ffp-contract=off', '--fmad=false'],
     }
     message(cuda_cu_sources)
-    # gpu_picture_pool.c moved to libvmaf_sources (always-compiled) per
+    # gpu_picture_pool.cpp moved to libvmaf_sources (always-compiled) per
     # ADR-0239 — SYCL + Vulkan also link against it.
     cuda_sources = [
         cuda_dir + 'common.c',
@@ -1173,7 +1173,7 @@ if is_cuda_enabled
         c_args : vmaf_cflags_common,
         # pthread_dependency is a no-op on POSIX (empty list) and on Windows
         # MSVC routes <pthread.h> to the header-only Win32 shim at
-        # src/compat/win32/pthread.h. gpu_picture_pool.c in this lib still uses
+        # src/compat/win32/pthread.h. gpu_picture_pool.cpp in this lib still uses
         # pthread directly (even though Netflix#1472 removed it from
         # common.h), so the dependency must be threaded in here.
         dependencies : [pthread_dependency],
@@ -1718,6 +1718,27 @@ opt_cpp23_lib = static_library(
     install : false,
 )
 
+# ADR-0768: picture_pool.cpp compiled as an isolated C++23 static lib
+# (same isolation pattern as metadata_handler_cpp20_lib / ADR-0708).
+picture_pool_cpp23_lib = static_library(
+    'picture_pool_cpp23',
+    src_dir + 'picture_pool.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++23'],
+    pic : true,
+    install : false,
+)
+
+# ADR-0768: gpu_picture_pool.cpp compiled as an isolated C++23 static lib.
+gpu_picture_pool_cpp23_lib = static_library(
+    'gpu_picture_pool_cpp23',
+    src_dir + 'gpu_picture_pool.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++23'],
+    pic : true,
+    install : false,
+)
+
 # ADR-0858: gpu_dispatch_env.cpp is compiled as an isolated C++23 static lib
 # so its cpp_std override (c++23) does not propagate to any other TU — same
 # isolation pattern as metadata_handler_cpp20_lib (ADR-0708).  The public C
@@ -1758,9 +1779,9 @@ libvmaf_sources = [
     # log.cpp is compiled as log_cpp23_lib (ADR-0708 Wave 1 pilot)
     src_dir + 'framesync.c',
     # metadata_handler.cpp is compiled as metadata_handler_cpp20_lib (ADR-0708)
-    src_dir + 'picture_pool.c',
+    # picture_pool.cpp compiled as picture_pool_cpp23_lib (ADR-0768)
     src_dir + 'thread_locale.c',
-    src_dir + 'gpu_picture_pool.c',
+    # gpu_picture_pool.cpp compiled as gpu_picture_pool_cpp23_lib (ADR-0768)
     # gpu_dispatch_env.cpp is compiled as gpu_dispatch_env_cpp23_lib (ADR-0858)
     # ADR-0707: TAD Rust extractor C wrapper — compiled directly into
     # the libvmaf library() target so it is not included in the static
@@ -1844,6 +1865,9 @@ libvmaf = library(
         log_cpp23_lib.extract_all_objects(recursive: true),
         # ADR-0858: C++23 gpu_dispatch_env TU compiled as isolated static lib.
         gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true),
+        # ADR-0768: C++23 Wave 9 isolated static libs.
+        picture_pool_cpp23_lib.extract_all_objects(recursive: true),
+        gpu_picture_pool_cpp23_lib.extract_all_objects(recursive: true),
         # ADR-0761: C++23 Wave 8 isolated static libs.
         opt_cpp23_lib.extract_all_objects(recursive: true),
         read_json_model_cpp23_lib.extract_all_objects(recursive: true),

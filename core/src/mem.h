@@ -26,8 +26,16 @@
 #define ALIGN_FLOOR(x) ((x) - (x) % MAX_ALIGN)
 #define ALIGN_CEIL(x) ((x) + ((x) % MAX_ALIGN ? MAX_ALIGN - (x) % MAX_ALIGN : 0))
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void *aligned_malloc(size_t size, size_t alignment);
 
 void aligned_free(void *ptr);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __VMAF_MEM_H__ */

@@ -21,6 +21,10 @@
 
 #include "picture.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct VmafPicturePoolConfig {
     unsigned pic_cnt;
     unsigned w;
@@ -36,5 +40,9 @@ int vmaf_picture_pool_init(VmafPicturePool **pool, VmafPicturePoolConfig cfg);
 int vmaf_picture_pool_close(VmafPicturePool *pool);
 
 int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __VMAF_SRC_PICTURE_POOL_H__ */
