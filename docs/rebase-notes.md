@@ -16,6 +16,25 @@ is false in C mode).
 
 ---
 
+## fix(metal): hoist feature_extractor.h above extern "C" in Metal .mm files
+
+**Files touched:**
+`core/src/feature/metal/float_moment_metal.mm`,
+`core/src/feature/metal/float_motion_metal.mm`,
+`core/src/feature/metal/float_ms_ssim_metal.mm`,
+`core/src/feature/metal/float_psnr_metal.mm`,
+`core/src/feature/metal/float_ssim_metal.mm`,
+`core/src/feature/metal/integer_motion_metal.mm`,
+`core/src/feature/metal/integer_motion_v2_metal.mm`,
+`core/src/feature/metal/integer_psnr_metal.mm`
+
+**Rebase impact:** None. All changed files are fork-local Metal backend
+sources. No upstream Netflix/vmaf files are touched. The change is purely
+an include-order fix (moves `feature_extractor.h` above its enclosing
+`extern "C"` block); no API, ABI, or algorithm change.
+
+---
+
 ## port/upstream-speed-chroma-simd-30f472b14 (2026-06-03, upstream 30f472b14)
 
 **Files touched:**

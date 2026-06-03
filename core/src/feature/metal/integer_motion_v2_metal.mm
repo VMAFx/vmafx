@@ -30,10 +30,14 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
+/* feature_extractor.h uses `#if defined(__cplusplus)` to include <atomic>
+ * (Xcode 16.4 / macOS 15 libc++ emits "templates must have C++ linkage"
+ * when that header is pulled into an extern "C" block — ADR-fix macOS-Metal). */
+#include "feature_extractor.h"
+
 extern "C" {
 #include "dict.h"
 #include "feature_collector.h"
-#include "feature_extractor.h"
 #include "feature_name.h"
 #include "libvmaf/picture.h"
 
