@@ -137,7 +137,8 @@ typedef struct VmafFeatureExtractor {
      * flag values (notably _HIP and _METAL). */
 
     VmafFrameSyncContext *framesync;
-    VmafPicture prev_ref; ///< Previous reference picture, set by framework.
+    VmafPicture prev_ref;      ///< Previous reference picture (n-1), set by framework.
+    VmafPicture prev_prev_ref; ///< Reference picture from two frames ago (n-2), set by framework.
 
     /**
      * Per-feature characteristics descriptor — drives the per-backend

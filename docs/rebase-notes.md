@@ -1,6 +1,23 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## integer-motion-prev-prev-ref-pr532-fallout (2026-06-03)
+
+**Files touched:**
+`core/src/feature/feature_extractor.h`,
+`core/src/libvmaf.c`
+
+**Rebase impact:** Moderate. Any in-flight branch that touches `VmafFeatureExtractor`
+(adding a new field, modifying the struct layout) or any branch that touches the
+`threaded_extract_func`, `threaded_extract_batch_func`, `threaded_enqueue_one`,
+`threaded_read_pictures`, `threaded_read_pictures_batch`, `read_pictures_dispatch_one`,
+or `read_pictures_update_prev_ref` functions in `libvmaf.c` will see a conflict.
+Resolution: take the new `prev_prev_ref` field and its wiring into whichever
+dispatch path the in-flight branch touches. The pattern is symmetric with `prev_ref`:
+ref at enqueue time, assign at dispatch time, unref/memset after extract/collect.
+
+---
+
 ## cuda-adm-decouple-inline-ldg (2026-05-29, ADR-0773)
 
 **Files touched:**

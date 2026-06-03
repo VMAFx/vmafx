@@ -163,7 +163,8 @@ typedef struct VmafContext {
      * is fine — `have_last_index` guards the first call. */
     unsigned last_index;
     bool have_last_index;
-    VmafPicture prev_ref; // previous ref pic for PREV_REF extractors (in-order only)
+    VmafPicture prev_ref;      // n-1 ref pic for PREV_REF extractors (in-order only)
+    VmafPicture prev_prev_ref; // n-2 ref pic for PREV_REF extractors (in-order only)
     struct {
         VmafOrtSession *sess;
         VmafModelSidecar meta;
@@ -1350,6 +1351,8 @@ int vmaf_close(VmafContext *vmaf)
     int close_err = vmaf->thread_pool ? vmaf_thread_pool_wait(vmaf->thread_pool) : 0;
     if (vmaf->prev_ref.ref)
         vmaf_picture_unref(&vmaf->prev_ref);
+    if (vmaf->prev_prev_ref.ref)
+        vmaf_picture_unref(&vmaf->prev_prev_ref);
     const int framesync_err = vmaf_framesync_destroy(vmaf->framesync);
     if (!close_err)
         close_err = framesync_err;
@@ -1555,7 +1558,7 @@ int vmaf_use_features_from_model_collection(VmafContext *vmaf,
 
 struct ThreadData {
     VmafFeatureExtractorContext *fex_ctx;
-    VmafPicture ref, dist, prev_ref;
+    VmafPicture ref, dist, prev_ref, prev_prev_ref;
     unsigned index;
     VmafFeatureCollector *feature_collector;
     VmafFeatureExtractorContextPool *fex_ctx_pool;
@@ -1575,6 +1578,8 @@ static void threaded_extract_func(void *e, void **thread_data)
      * own memory — no aliasing with other pool slots or the registered context. */
     if (f->prev_ref.ref)
         f->fex_ctx->fex->prev_ref = f->prev_ref;
+    if (f->prev_prev_ref.ref)
+        f->fex_ctx->fex->prev_prev_ref = f->prev_prev_ref;
 
     f->err = vmaf_feature_extractor_context_extract(f->fex_ctx, &f->ref, NULL, &f->dist, NULL,
                                                     f->index, f->feature_collector);
@@ -1582,6 +1587,10 @@ static void threaded_extract_func(void *e, void **thread_data)
     if (f->prev_ref.ref) {
         memset(&f->fex_ctx->fex->prev_ref, 0, sizeof(f->fex_ctx->fex->prev_ref));
         vmaf_picture_unref(&f->prev_ref);
+    }
+    if (f->prev_prev_ref.ref) {
+        memset(&f->fex_ctx->fex->prev_prev_ref, 0, sizeof(f->fex_ctx->fex->prev_prev_ref));
+        vmaf_picture_unref(&f->prev_prev_ref);
     }
 
     f->err = vmaf_fex_ctx_pool_release(f->fex_ctx_pool, f->fex_ctx);
@@ -1591,7 +1600,7 @@ static void threaded_extract_func(void *e, void **thread_data)
 
 #ifdef VMAF_BATCH_THREADING
 struct ThreadDataBatch {
-    VmafPicture ref, dist, prev_ref;
+    VmafPicture ref, dist, prev_ref, prev_prev_ref;
     unsigned index;
     VmafFeatureCollector *feature_collector;
     RegisteredFeatureExtractors *registered_fex;
@@ -1672,13 +1681,18 @@ static void threaded_extract_batch_func(void *e, void **thread_data)
         if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
             if (f->prev_ref.ref)
                 td->fex_ctx[i]->fex->prev_ref = f->prev_ref;
+            if (f->prev_prev_ref.ref)
+                td->fex_ctx[i]->fex->prev_prev_ref = f->prev_prev_ref;
         }
 
         int err = vmaf_feature_extractor_context_extract(td->fex_ctx[i], &f->ref, NULL, &f->dist,
                                                          NULL, f->index, f->feature_collector);
 
-        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF)
+        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
             memset(&td->fex_ctx[i]->fex->prev_ref, 0, sizeof(td->fex_ctx[i]->fex->prev_ref));
+            memset(&td->fex_ctx[i]->fex->prev_prev_ref, 0,
+                   sizeof(td->fex_ctx[i]->fex->prev_prev_ref));
+        }
 
         if (err) {
             f->err = err;
@@ -1689,6 +1703,8 @@ static void threaded_extract_batch_func(void *e, void **thread_data)
 unref:
     if (f->prev_ref.ref)
         vmaf_picture_unref(&f->prev_ref);
+    if (f->prev_prev_ref.ref)
+        vmaf_picture_unref(&f->prev_prev_ref);
     vmaf_picture_unref(&f->ref);
     vmaf_picture_unref(&f->dist);
 }
@@ -1707,11 +1723,15 @@ static int threaded_enqueue_one(VmafContext *vmaf, VmafFeatureExtractor *fex,
     VmafPicture pic_a;
     VmafPicture pic_b;
     VmafPicture prev_ref = {0};
+    VmafPicture prev_prev_ref = {0};
     vmaf_picture_ref(&pic_a, ref);
     vmaf_picture_ref(&pic_b, dist);
 
     if ((fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_ref.ref) {
         vmaf_picture_ref(&prev_ref, &vmaf->prev_ref);
+    }
+    if ((fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_prev_ref.ref) {
+        vmaf_picture_ref(&prev_prev_ref, &vmaf->prev_prev_ref);
     }
 
     struct ThreadData data = {
@@ -1719,6 +1739,7 @@ static int threaded_enqueue_one(VmafContext *vmaf, VmafFeatureExtractor *fex,
         .ref = pic_a,
         .dist = pic_b,
         .prev_ref = prev_ref,
+        .prev_prev_ref = prev_prev_ref,
         .index = index,
         .feature_collector = vmaf->feature_collector,
         .fex_ctx_pool = vmaf->fex_ctx_pool,
@@ -1731,6 +1752,8 @@ static int threaded_enqueue_one(VmafContext *vmaf, VmafFeatureExtractor *fex,
         vmaf_picture_unref(&pic_b);
         if (prev_ref.ref)
             vmaf_picture_unref(&prev_ref);
+        if (prev_prev_ref.ref)
+            vmaf_picture_unref(&prev_prev_ref);
     }
     return err;
 }
@@ -1763,8 +1786,12 @@ static int threaded_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPictu
             return err;
     }
 
-    if (vmaf->prev_ref.ref)
-        vmaf_picture_unref(&vmaf->prev_ref);
+    if (vmaf->prev_prev_ref.ref)
+        vmaf_picture_unref(&vmaf->prev_prev_ref);
+    if (vmaf->prev_ref.ref) {
+        vmaf->prev_prev_ref = vmaf->prev_ref;
+        vmaf->prev_ref = (VmafPicture){0};
+    }
     if (ref && ref->ref)
         vmaf_picture_ref(&vmaf->prev_ref, ref);
 
@@ -1784,17 +1811,20 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
 
     int err = 0;
 
-    VmafPicture pic_a, pic_b, prev_ref = {0};
+    VmafPicture pic_a, pic_b, prev_ref = {0}, prev_prev_ref = {0};
     vmaf_picture_ref(&pic_a, ref);
     vmaf_picture_ref(&pic_b, dist);
 
     if (vmaf->prev_ref.ref)
         vmaf_picture_ref(&prev_ref, &vmaf->prev_ref);
+    if (vmaf->prev_prev_ref.ref)
+        vmaf_picture_ref(&prev_prev_ref, &vmaf->prev_prev_ref);
 
     struct ThreadDataBatch data = {
         .ref = pic_a,
         .dist = pic_b,
         .prev_ref = prev_ref,
+        .prev_prev_ref = prev_prev_ref,
         .index = index,
         .feature_collector = vmaf->feature_collector,
         .registered_fex = &vmaf->registered_feature_extractors,
@@ -1809,11 +1839,17 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
         vmaf_picture_unref(&pic_b);
         if (prev_ref.ref)
             vmaf_picture_unref(&prev_ref);
+        if (prev_prev_ref.ref)
+            vmaf_picture_unref(&prev_prev_ref);
         return err;
     }
 
-    if (vmaf->prev_ref.ref)
-        vmaf_picture_unref(&vmaf->prev_ref);
+    if (vmaf->prev_prev_ref.ref)
+        vmaf_picture_unref(&vmaf->prev_prev_ref);
+    if (vmaf->prev_ref.ref) {
+        vmaf->prev_prev_ref = vmaf->prev_ref;
+        vmaf->prev_ref = (VmafPicture){0};
+    }
     if (ref && ref->ref)
         vmaf_picture_ref(&vmaf->prev_ref, ref);
 
@@ -2245,6 +2281,9 @@ static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorCon
     if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_ref.ref) {
         vmaf_picture_ref(&fex_ctx->fex->prev_ref, &vmaf->prev_ref);
     }
+    if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_prev_ref.ref) {
+        vmaf_picture_ref(&fex_ctx->fex->prev_prev_ref, &vmaf->prev_prev_ref);
+    }
 
     // Double-buffer: collect previous frame, then submit current frame.
     // This overlaps GPU compute of the previous frame with CPU-side
@@ -2262,6 +2301,10 @@ static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorCon
                     (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
                     memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
                 }
+                if (fex_ctx->fex->prev_prev_ref.ref) {
+                    (void)vmaf_picture_unref(&fex_ctx->fex->prev_prev_ref);
+                    memset(&fex_ctx->fex->prev_prev_ref, 0, sizeof(fex_ctx->fex->prev_prev_ref));
+                }
                 return err;
             }
         }
@@ -2272,13 +2315,17 @@ static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorCon
                 (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
                 memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
             }
+            if (fex_ctx->fex->prev_prev_ref.ref) {
+                (void)vmaf_picture_unref(&fex_ctx->fex->prev_prev_ref);
+                memset(&fex_ctx->fex->prev_prev_ref, 0, sizeof(fex_ctx->fex->prev_prev_ref));
+            }
             return err;
         }
         fex_ctx->gpu_pending = true;
         fex_ctx->gpu_pending_index = index;
-        /* prev_ref ownership transferred into the submitted work; the
+        /* prev_ref / prev_prev_ref ownership transferred into the submitted work; the
          * extractor's collect() path is responsible for cleaning up.
-         * Leave the ref live until collect() returns on the next frame. */
+         * Leave the refs live until collect() returns on the next frame. */
         return 0;
     }
 
@@ -2289,6 +2336,9 @@ static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorCon
         if (fex_ctx->fex->prev_ref.ref)
             (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
         memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
+        if (fex_ctx->fex->prev_prev_ref.ref)
+            (void)vmaf_picture_unref(&fex_ctx->fex->prev_prev_ref);
+        memset(&fex_ctx->fex->prev_prev_ref, 0, sizeof(fex_ctx->fex->prev_prev_ref));
     }
 
     return err;
@@ -2396,6 +2446,9 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
         if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_ref.ref) {
             fex_ctx->fex->prev_ref = vmaf->prev_ref;
         }
+        if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_prev_ref.ref) {
+            fex_ctx->fex->prev_prev_ref = vmaf->prev_prev_ref;
+        }
         err = vmaf_feature_extractor_context_submit(fex_ctx, ref_device, NULL, dist_device, NULL,
                                                     index);
         if (err) {
@@ -2458,13 +2511,17 @@ static int read_pictures_extractor_loop(VmafContext *vmaf, VmafPicture *ref, Vma
  * VMAF_FEATURE_EXTRACTOR_CUDA (rfe_hw_flags returns HW_FLAG_DEVICE only,
  * so translate_picture_device early-returns and never downloads). Deref
  * of ref_host.ref == NULL crashes vmaf_ref_fetch_increment. The only
- * PREV_REF consumer is CPU integer_motion_v2, which is never registered
+ * PREV_REF consumer is CPU integer_motion (v1/v2), which is never registered
  * alongside a pure CUDA extractor set — skipping the prev_ref update here
  * is safe. ADR-0123. */
 static void read_pictures_update_prev_ref(VmafContext *vmaf, VmafPicture *ref)
 {
-    if (vmaf->prev_ref.ref)
-        vmaf_picture_unref(&vmaf->prev_ref);
+    if (vmaf->prev_prev_ref.ref)
+        vmaf_picture_unref(&vmaf->prev_prev_ref);
+    if (vmaf->prev_ref.ref) {
+        vmaf->prev_prev_ref = vmaf->prev_ref;
+        vmaf->prev_ref = (VmafPicture){0};
+    }
     if (ref && ref->ref)
         vmaf_picture_ref(&vmaf->prev_ref, ref);
 }

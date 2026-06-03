@@ -75,6 +75,21 @@ core/
 
 ## Rebase-sensitive invariants
 
+- **`VmafFeatureExtractor.prev_ref` and `prev_prev_ref` are a managed pair.**
+  Both fields are set by the framework (not by extractors). The framework tracks
+  both as a rolling two-frame window in `VmafContext` (`prev_ref` = n-1,
+  `prev_prev_ref` = n-2) and propagates them into pool slots under
+  `VMAF_FEATURE_EXTRACTOR_PREV_REF`. Any upstream sync or fork-local change that
+  touches `libvmaf.c`'s dispatch paths (`threaded_extract_func`,
+  `threaded_extract_batch_func`, `threaded_enqueue_one`,
+  `read_pictures_dispatch_one`, `read_pictures_update_prev_ref`) or
+  `feature_extractor.h`'s struct layout must keep both fields populated
+  symmetrically. The PR #532 port fallout (build-break `no member prev_prev_ref`)
+  was caused by adding the `integer_motion.c` reference without completing the
+  framework wiring; the fix is in `fix/integer-motion-prev-prev-ref` (2026-06-03).
+  See [docs/rebase-notes.md](../docs/rebase-notes.md)
+  §integer-motion-prev-prev-ref-pr532-fallout.
+
 - **`feature_extractor_vector_append()` deduplicates by provided-feature
   names, not extractor name** (fork-local, ADR-0385 / T-CUDA-FEATURE-EXTRACTOR-DOUBLE-WRITE):
   [`src/fex_ctx_vector.c`](src/fex_ctx_vector.c) uses
