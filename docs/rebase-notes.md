@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix(dnn): restore missing ORT internal elem-type accessors (2026-06-03)
+
+**Files touched:**
+`core/src/dnn/ort_backend_internal.h`,
+`core/src/dnn/ort_backend.c`
+
+**Rebase impact:** No rebase impact. The two files are fork-local additions
+to the DNN/tiny-AI layer; no upstream Netflix/vmaf files are touched.
+The `VmafOrtElemType` enum and the two accessor functions
+(`vmaf_ort_internal_input_elem_type`, `vmaf_ort_internal_output_elem_type`)
+are purely internal-test surfaces and do not appear in any public header or
+ABI. If a future rebase brings another removal of these symbols from
+ort_backend.c, re-apply this patch.
+
+---
+
 ## feat(vmaf-tune): ADR-0498 follow-up #7 — encoder stats, x264 detection, backend dispatch, codec-list parser
 
 **Files touched:**
