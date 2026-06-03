@@ -52,6 +52,16 @@ an include-order fix (moves `feature_extractor.h` above its enclosing
 
 ---
 
+## fix(arm64): guard framesync.h stdatomic include for C++ mode
+
+**Branch**: fix/arm64-clang-stdatomic-cxx-conflict
+
+**Files touched**: `changelog.d/fixed/arm64-clang-stdatomic-cxx-framesync.md`, `docs/state.md`, `docs/rebase-notes.md`.
+
+no rebase impact: The framesync.h guard is already present via ADR-0999 (fix/tsan-framesync-stdatomic-cxx); this PR adds the ARM64-specific changelog fragment and state.md tracking row.
+
+---
+
 ## port/upstream-speed-chroma-simd-30f472b14 (2026-06-03, upstream 30f472b14)
 
 **Files touched:**
