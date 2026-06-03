@@ -42372,6 +42372,26 @@ __ldg() pattern. The `integer_vif_cuda.c` conflict resolution keeps the HEAD sid
 
 ---
 
+### ADR-0764 — psnr_hvs CUDA kernel F3 __ldg() + __launch_bounds__(64) (2026-05-29)
+
+No rebase impact on upstream C/Python code: `psnr_hvs_score.cu` is entirely
+fork-local. `integer_psnr_hvs_cuda.c` is unchanged.
+
+If an upstream sync changes the `psnr_hvs` CPU reference in
+`core/src/feature/third_party/xiph/psnr_hvs.c`, verify the CUDA kernel's
+cooperative tile load and reduction order in `psnr_hvs_score.cu` are still
+byte-for-byte equivalent to the CPU's `calc_psnrhvs` computation pattern.
+
+All files modified are fork-local:
+`core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu` (pointer extraction + `__ldg()` + `__launch_bounds__(64)`),
+`docs/adr/0764-psnr-hvs-ldg-launch-bounds.md` (new),
+`docs/research/0764-cuda-psnr-hvs-ldg-launch-bounds-2026-05-29.md` (new),
+`changelog.d/perf/cuda-psnr-hvs-ldg-launch-bounds.md` (new),
+`docs/rebase-notes.md` (this entry),
+`docs/state.md` (new row).
+
+---
+
 ### ADR-0787 — libvmaf API error-path audit (2026-05-29)
 
 No rebase impact: this PR adds only documentation files (research digest, ADR, changelog

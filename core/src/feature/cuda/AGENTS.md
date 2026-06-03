@@ -181,6 +181,17 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   reductions without a new numeric-contract ADR and a refreshed
   cross-backend tolerance row.
 
+- **`integer_psnr_hvs/psnr_hvs_score.cu` uses `__ldg()` for tile loads**
+  (ADR-0764). `const float *__restrict__ ref_buf` and `dist_buf` are
+  extracted from the `VmafCudaBuffer` struct arguments once before the
+  cooperative tile load; `__ldg(&ref_buf[src_idx])` and
+  `__ldg(&dist_buf[src_idx])` route the 128 per-block reads through
+  the L1 read-only texture cache. `__launch_bounds__(64)` is set to
+  match the actual 8x8 block dispatch. Do not revert to plain
+  `ref_buf[src_idx]` or pass VmafCudaBuffer by-value reads without
+  first verifying the compiler still emits LDG.E.CONSTANT in SASS
+  (via `cuobjdump --dump-sass`).
+
 - **`integer_cambi_cuda.c` + `integer_cambi/cambi_score.cu` are
   Strategy II hybrid** (ADR-0360 / T3-15a). The GPU kernels
   (`cambi_spatial_mask_kernel`, `cambi_decimate_kernel`,

@@ -1,0 +1,1 @@
+| [ADR-0764](0764-psnr-hvs-ldg-launch-bounds.md) | psnr_hvs CUDA kernel: F3 __ldg() + __restrict__ pointer extraction + __launch_bounds__(64) (PR #96 candidate #5, mirrors ADR-0754) | Accepted | cuda, perf, psnr_hvs, fork-local |
