@@ -38,7 +38,11 @@ func (m *Middleware) GRPCUnaryInterceptor() grpc.UnaryServerInterceptor {
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (any, error) {
-		ctx, err := m.authenticateGRPC(ctx, info.FullMethod)
+		method := ""
+		if info != nil {
+			method = info.FullMethod
+		}
+		ctx, err := m.authenticateGRPC(ctx, method)
 		if err != nil {
 			return nil, err
 		}

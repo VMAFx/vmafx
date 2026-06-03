@@ -92,7 +92,7 @@ func newTestHTTPServer(t *testing.T) (*httpServer, *prometheus.Registry) {
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 	log := observability.NewLogger("ERROR") // suppress noise in tests
-	return newHTTPServer(scorer, metrics, reg, log), reg
+	return newHTTPServer(scorer, metrics, reg, nil, log), reg
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ func TestReadyEndpointNotReady(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	metrics := observability.NewMetrics(reg)
 	log := observability.NewLogger("ERROR")
-	hs := newHTTPServer(nil, metrics, reg, log) // nil scorer → not ready
+	hs := newHTTPServer(nil, metrics, reg, nil, log) // nil scorer → not ready
 	mux := http.NewServeMux()
 	hs.routes(mux)
 	ts := httptest.NewServer(mux)

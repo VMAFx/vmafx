@@ -1,4 +1,6 @@
-# ADR-0815: Distroless Dockerfiles for vmafx-operator and vmafx-node — multi-arch, release-wired
+# ADR-0815: Distroless Dockerfiles for vmafx-operator and vmafx-node
+
+<!-- markdownlint-disable MD013 -- ADR/research body text; pre-existing long lines per ADR-0864 tail -->
 
 - **Status**: Accepted
 - **Date**: 2026-05-29
@@ -49,15 +51,15 @@ We will add `docker/Dockerfile.operator` and the CI workflow
 
 Tag matrix for operator:
 
-| Tag suffix       | Platforms     | Description         |
-|------------------|---------------|---------------------|
-| *(none)*         | amd64, arm64  | vmafx-operator      |
+| Tag suffix         | Platforms       | Description           |
+| ------------------ | --------------- | --------------------- |
+| *(none)*           | amd64, arm64    | vmafx-operator        |
 
 Tag matrix for node:
 
-| Tag suffix       | Platforms     | Description         |
-|------------------|---------------|---------------------|
-| *(none)*         | amd64, arm64  | vmafx-node (CPU)    |
+| Tag suffix         | Platforms       | Description           |
+| ------------------ | --------------- | --------------------- |
+| *(none)*           | amd64, arm64    | vmafx-node (CPU)      |
 
 GPU node variants (`-cuda12`, `-rocm6`, `-sycl`) are out of scope for this ADR;
 they are amd64-only and will be wired in a follow-on.
@@ -65,7 +67,7 @@ they are amd64-only and will be wired in a follow-on.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `distroless/cc-debian12` for operator | Same base as node | Includes glibc — unnecessary for a CGO_ENABLED=0 binary; ~2 MB larger; wider libc attack surface | `distroless/static-debian12` is correct for static binaries |
 | Inline operator build inside the node Dockerfile | Fewer Dockerfiles | Couples operator build time to the heavy ffmpeg/vmaf build stages; harder to cache | Separate file, faster CI, independent caching |
 | Helm chart OCI artifact (no separate Dockerfile) | All-in-one | Helm OCI does not replace container images; the operator Deployment spec still needs an image reference | Must have a separate image |

@@ -607,6 +607,13 @@ func withClaims(ctx context.Context, c Claims) context.Context {
 	return ctx
 }
 
+// ContextWithClaims returns a context enriched with the supplied Claims.
+// Intended for use in unit tests that call gRPC handler methods directly
+// (bypassing the auth interceptor) and need a valid tenant context.
+func ContextWithClaims(ctx context.Context, c Claims) context.Context {
+	return withClaims(ctx, c)
+}
+
 // writeJSONError writes a JSON error body.
 func writeJSONError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")

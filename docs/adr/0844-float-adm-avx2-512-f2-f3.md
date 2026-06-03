@@ -1,4 +1,4 @@
-# ADR-0844: float_adm AVX2/AVX-512 F2+F3 — double-precision reduction and FP-contraction isolation
+# ADR-0844: float_adm AVX2/AVX-512 F2+F3 — double-precision and FP-contraction
 
 - **Status**: Accepted
 - **Date**: 2026-05-29
@@ -96,7 +96,7 @@ established for `ssimulacra2` in the same meson.build file.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep store-to-temp loop, document the difference | Zero code delta | Contradicts ADR-0139 bit-exactness contract; visible divergence at `--precision max` | Rejected — once identified, leaving a known bit-exact violation is a regression of the stated invariant |
 | Per-lane scalar double reduction (ADR-0139 pattern) | Matches scalar C promotions exactly; proven in SSIM SIMD | Adds ~40 LoC of aligned temp buffers + scalar inner loops per TU; two levels of indirection | Rejected for F2 — `_mm256_cvtps_pd` widening is simpler and avoids the stack alloc entirely; for F3, the `-ffp-contract=off` carve-out is a cleaner build-system fix than restructuring the inner loop |
 | Disable SIMD dispatch for `float_adm`, fall back to scalar | Guaranteed bit-exact, zero residual risk | Reverts a performance gain; upstream ports of `float_adm` SIMD additions would need to re-enable dispatch | Rejected — the defects are structural (precision model, FP contraction) and fixable without disabling the path |
@@ -125,6 +125,7 @@ established for `ssimulacra2` in the same meson.build file.
     a header compiled with neither `mavx2` nor `mavx512f` individually,
     which is unsupported by the current build model.
   - Reproducer (for PR description):
+
     ```bash
     vmaf --cpumask 255 --reference REF --distorted DIST \
          --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
@@ -137,9 +138,13 @@ established for `ssimulacra2` in the same meson.build file.
 
 ## References
 
-- [ADR-0139](0139-ssim-simd-bitexact-double.md) — SIMD float paths must match scalar bit-for-bit; per-lane double reduction contract.
+- [ADR-0139](0139-ssim-simd-bitexact-double.md) — SIMD float paths must match scalar
+  bit-for-bit; per-lane double reduction contract.
 - [ADR-0108](0108-deep-dive-deliverables-rule.md) — six deep-dive deliverables rule.
-- [ADR-0594](0594-hip-ssimulacra2-blur-fp-contract-off.md) — ssimulacra2 `-ffp-contract=off` carve-out precedent (HIP analogue).
-- [Research-0110](../research/0110-adm-avx2-clz-ubsan-2026-05-15.md) — prior ADM AVX2 audit (UBSan / CLZ fix); this ADR addresses the separate F2/F3 precision defects.
+- [ADR-0594](0594-hip-ssimulacra2-blur-fp-contract-off.md) — ssimulacra2
+  `-ffp-contract=off` carve-out precedent (HIP analogue).
+- [Research-0110](../research/0110-adm-avx2-clz-ubsan-2026-05-15.md) — prior ADM
+  AVX2 audit (UBSan / CLZ fix); this ADR covers the separate F2/F3 defects.
 - Related PR: `fix/float-adm-avx2-f2-f3-pr116` (PR #142 on VMAFx/vmafx).
-- Source: project decision — AVX2 + AVX-512 SIMD correctness audit of float_adm F2/F3 defects identified during fork ADR-0139 compliance sweep.
+- Source: project decision — AVX2 + AVX-512 SIMD correctness audit of float_adm
+  F2/F3 defects identified during fork ADR-0139 compliance sweep.

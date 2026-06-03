@@ -16,7 +16,7 @@ file-status check that motivated applying the pattern here.
 `core/src/feature/cuda/integer_adm/adm_decouple.cu` contains two kernels:
 
 | Kernel | Band type | Status in build |
-|---|---|---|
+| --- | --- | --- |
 | `adm_decouple_kernel` | `int16_t` (scale 0) | **Dead** — not in meson.build |
 | `adm_decouple_s123_kernel` | `int32_t` (scales 1-3) | **Dead** — not in meson.build |
 
@@ -27,6 +27,7 @@ inlined into `adm_csf.cu` and `adm_cm.cu` (rebase-notes §0031). The standalone
 ## Pattern applied
 
 For each kernel:
+
 - 6 read-only sub-struct band pointers extracted as `const T *__restrict__`
   before the `if (i < bottom && j < right)` block.
 - 6 per-pixel reads converted to `__ldg(&ptr[idx])`.
@@ -39,7 +40,7 @@ Since the file is not compiled, there is no score impact. The correctness gate
 (ADR-0214 places=4) was verified on the active `integer_adm` CUDA path
 (unmodified) to confirm the build was not disturbed:
 
-```
+```text
 # 576×324 Netflix golden pair (CUDA vs CPU):
 integer_adm2 max diff: 1.00e-06  — places=4 PASS
 

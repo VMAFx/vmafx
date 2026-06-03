@@ -5,7 +5,7 @@
 [project]
 name = "vmaf-fork-tooling"
 version = "0.0.0"
-description = "Lusoris fork of Netflix/vmaf — Python tooling and scripts"
+description = "VMAFx — Python tooling and scripts"
 requires-python = ">=3.14.5"
 
 [project.urls]
@@ -123,12 +123,13 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["python/test", "ai/tests"]
+testpaths = ["python/test", "ai/tests", "compat/vmaf/tests"]
 addopts = "-ra --strict-markers"
 # ai/src/ is the aiutils package root; add it so tests can ``import aiutils``
 # without a pip-editable install.  (ai/scripts/ is added by each test file
 # that imports a trainer script directly via sys.path.insert.)
-pythonpath = ["ai/src", "ai/scripts"]
+# python/ exposes the ``vmaf`` shim package (compat/vmaf → compat/python-vmaf).
+pythonpath = ["ai/src", "ai/scripts", "python"]
 markers = [
   "netflix_golden: the 3 Netflix CPU golden test pairs (D24) — must always pass",
   "slow: tests that take more than 30s",

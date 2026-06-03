@@ -24,6 +24,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -115,6 +116,14 @@ func (r *VmafxNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // probeControllerHealthz issues an HTTP GET to the controller's /healthz endpoint.
 // Returns true when the probe succeeds (HTTP 200); false on any error or non-200 status.
 func (r *VmafxNodeReconciler) probeControllerHealthz(ctx context.Context, namespace string) bool {
+	return r.probeHealthz(ctx, namespace)
+}
+
+// probeHealthz performs the HTTP /healthz probe for the named namespace.
+// The body is fully drained before closing so Go's net/http keep-alive pool
+// can reuse the underlying TCP connection — without draining, each call leaks
+// one connection per polled node (ADR-0786 operator audit).
+func (r *VmafxNodeReconciler) probeHealthz(ctx context.Context, namespace string) bool {
 	hc := r.HTTPClient
 	if hc == nil {
 		hc = &http.Client{Timeout: nodeProbeTimeout}
@@ -130,7 +139,11 @@ func (r *VmafxNodeReconciler) probeControllerHealthz(ctx context.Context, namesp
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close() //nolint:errcheck // body is empty on /healthz
+	defer resp.Body.Close() //nolint:errcheck // drain error not actionable
+	// Drain fully before Close so the HTTP/1.1 keep-alive connection can be
+	// returned to the pool. An undrained body causes a new TCP dial on the
+	// next probe, leaking one FD per polled node every 30 s (ADR-0786 audit).
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return resp.StatusCode == http.StatusOK
 }

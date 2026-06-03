@@ -56,7 +56,7 @@ Add four CPU vs. SYCL parity gates under `core/test/`, gated on
 `enable_sycl`:
 
 | Kernel | New test | Headline score(s) | Tolerance | Status |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `float_moment_sycl` | `test_sycl_float_moment_parity.c` | `float_moment_{ref,dis}{1st,2nd}` | `1e-4` (ADR-0214 default) | Active — extractor built + registered |
 | `speed_chroma_sycl` | `test_sycl_speed_chroma_parity.c` | `Speed_chroma_feature_speed_chroma_{u,v,uv}_score` | `1e-4` (ADR-0214 default) | Dormant skip — TU not yet wired into build/registry |
 | `speed_temporal_sycl` | `test_sycl_speed_temporal_parity.c` | `Speed_temporal_feature_speed_temporal_score` @ idx 1 | `1e-4` (ADR-0214 default) | Dormant skip — TU not yet wired into build/registry |
@@ -85,7 +85,7 @@ TUs into `core/src/meson.build` + `core/src/feature/feature_extractor.c`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Four per-kernel test files (chosen) | Mirrors rounds 2 + 3 layout; one TU per kernel keeps build parallelism and failure-isolation; reviewers can bisect a single failing kernel | Four new TUs vs. one combined | Round-2 / round-3 set the precedent; combining hides which kernel regressed |
 | One combined `test_sycl_round4_parity.c` | Single TU = ~250 LOC vs. ~700 LOC across four files | Failure attribution becomes harder; `meson test --run-only` granularity is lost; breaks the AGENTS.md coverage matrix invariant (one row per parity test) | Loses the rounds 1–3 invariant from the AGENTS.md note in `core/src/feature/sycl/AGENTS.md` |
 | Defer ssimulacra2 to round 5 (cover 3 kernels here) | Tighter PR; the ssimulacra2 gate uses a different tolerance, special-cases the fixture, and could land standalone | Leaves the headline SSIMULACRA2 SYCL gap open for another cycle; the per-kernel scaffold cost is the same whether bundled or split | Four kernels still fits comfortably in the 200–800 LOC bundle target |

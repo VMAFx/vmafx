@@ -1,4 +1,4 @@
-# ADR-0793: Nightly Workflow Audit — Remove Redundant TSan, Fix Artifact Retention, Fix Python Version
+# ADR-0793: Nightly Workflow Audit — TSan, Artifact Retention, Python Version
 
 - **Status**: Accepted
 - **Date**: 2026-05-29
@@ -58,7 +58,7 @@ No changes are made to the upstream-watcher workflows, `scorecard.yml`,
 ## Nightly workflow inventory post-fix
 
 | Workflow | Schedule | Purpose | Still needed? |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `nightly.yml` — `clang-tidy-full` | 03:17 UTC daily | Full-tree clang-tidy (too slow for PRs) | Yes |
 | `nightly.yml` — `netflix-benchmark` | 03:17 UTC daily | CPU benchmark throughput baseline | Yes |
 | `nightly-bisect.yml` | 04:37 UTC daily | Bisect-model-quality smoke + sticky-issue update | Yes |
@@ -74,7 +74,7 @@ No changes are made to the upstream-watcher workflows, `scorecard.yml`,
 ## Resource cost (post-fix, estimated per night)
 
 | Job | Runner | Est. duration | Runner-minutes/night |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | clang-tidy-full | ubuntu-24.04 | ~45 min | 45 |
 | netflix-benchmark | ubuntu-24.04 | ~20 min | 20 |
 | nightly-bisect | ubuntu-24.04 | ~5–10 min | 10 |
@@ -100,7 +100,7 @@ The removed TSan job was ~45 min/night → net saving ~45 runner-minutes/night
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep nightly TSan, remove master-push TSan | Always-fresh nightly snapshot | 24-hour lag between commit and detection; duplicates coverage | master-push TSan is strictly better |
 | Keep both TSan jobs | Belt-and-suspenders | ~90 extra runner-minutes/month for zero incremental signal | Redundant |
 | Set fuzz retention to 7 days | Minimal storage | Crash artifacts may need re-download after a weekend; 30 days matches fuzz.yml precedent | 30 days is reasonable |

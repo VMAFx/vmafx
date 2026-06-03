@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD007 MD013 MD059 -->
-# Contributing to VMAF (Lusoris Fork)
+# Contributing to VMAFx
 
 This fork adds SYCL / CUDA / Vulkan GPU backends (HIP planned),
 AVX2 / AVX-512 / NEON SIMD, full-precision CLI output, tiny-AI integration,

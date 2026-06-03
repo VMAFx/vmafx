@@ -156,6 +156,16 @@ Runtime directly.
 
 ## Rebase-sensitive invariants (DNN-side surfaces in flight)
 
+- **`ort_backend_internal.h` elem-type accessors mirror ONNX enum values**
+  (`VmafOrtElemType UNDEFINED=0 / FLOAT=1 / FLOAT16=10`): numeric values
+  are deliberately identical to `ONNXTensorElementDataType` so cast
+  comparisons in `ort_backend.c` are safe. Both the `VMAF_HAVE_DNN` path
+  (reads `sess->input/output_elem_types[slot]`) and the `!VMAF_HAVE_DNN`
+  stub (returns `ELEM_TYPE_UNDEFINED`) must provide `vmaf_ort_internal_input_elem_type`
+  and `vmaf_ort_internal_output_elem_type`; removing either breaks the
+  `test_ort_internals.c` link on no-ORT builds and blocks the Netflix CPU
+  Golden Tests (D24) CI job at the build step. See PR
+  `fix/dnn-ort-internals-missing-elem-type-accessors` (2026-06-03).
 - **`f16_to_f32_one` subnormal path uses `int32_t exp_adj`, not
   `uint32_t exp`** (fork-local, round-5 `-fsanitize=integer` sweep,
   PR fix/picture-align-unsigned-narrowing): the normalisation loop in

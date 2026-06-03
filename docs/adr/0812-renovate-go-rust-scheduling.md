@@ -1,4 +1,6 @@
-# ADR-0812: Renovate — Go/Cargo grouping, off-hours schedule, and concurrent-PR cap
+# ADR-0812: Renovate — Go/Cargo grouping, schedule, and concurrent-PR cap
+
+<!-- markdownlint-disable MD013 -- ADR/research body text; pre-existing long lines per ADR-0864 tail -->
 
 - **Status**: Accepted
 - **Date**: 2026-05-29
@@ -44,7 +46,7 @@ We will apply three changes to `renovate.json`:
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Leave schedule as `"at any time"` | Bumps land fastest | Noisy during work hours; competes with feature PRs for CI slots | Off-hours batching is net cheaper in CI minutes |
 | Auto-merge Go _major_ bumps | Fewer queue items | k8s and grpc major bumps break APIs; human sign-off needed | Too risky for production infrastructure deps |
 | One group for all Go + Cargo | Maximum compression | Mixed-language bundle obscures what changed | Separate groups give clearer PR titles and blame history |

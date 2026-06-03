@@ -1,5 +1,7 @@
 # NOLINT Cluster Audit — 2026-05-29
 
+<!-- markdownlint-disable MD013 -- ADR/research body text; pre-existing long lines per ADR-0864 tail -->
+
 **Scope**: all `NOLINT` / `NOLINTNEXTLINE` / `NOLINTBEGIN`…`NOLINTEND` annotations
 under `core/src/` with five or more occurrences of the same suppression category in a
 single file or closely related group of files.
@@ -143,7 +145,7 @@ annotations. Alternatively, add inline citations to each existing annotation.
 ## Summary table
 
 | Cluster | File(s) | Count | Root cause | Refactorable? | Priority |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | SYCL misc-const-correctness | `sycl/integer_{vif,adm}_sycl.cpp` | 14 | Analyser blind to atomic_ref writes | Extend NOLINTBEGIN block | Medium |
 | SYCL bugprone-implicit-widening | `sycl/integer_{adm,vif}_sycl.cpp` | 12 | Stride mult without explicit cast | Replace with explicit cast (remove NOLINT) | High |
 | SYCL readability-function-size | `sycl/integer_{adm,vif}_sycl.cpp` | 11 | SYCL kernel-launch pattern (load-bearing, ADR-0141) | No — justified | None |

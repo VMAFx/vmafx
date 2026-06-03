@@ -1,6 +1,71 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## port/upstream-speed-chroma-simd-30f472b14 (2026-06-03, upstream 30f472b14)
+
+**Files touched:**
+`core/src/feature/x86/speed_avx2.c`,
+`core/src/feature/x86/speed_avx2.h`,
+`core/src/feature/x86/speed_avx512.c`,
+`core/src/feature/x86/speed_avx512.h`,
+`core/src/feature/speed.c`,
+`core/src/meson.build`,
+`core/test/test_speed_simd.c`,
+`core/test/meson.build`
+
+**Rebase impact:** Reduces delta — this port lands the upstream commit verbatim
+(new AVX2 + AVX-512 covariance-sum kernels, function-pointer dispatch). Future
+`/sync-upstream` passes that touch `speed.c` will see a smaller diff because the
+kernel dispatch pattern is now present on both sides. The `compute_cov_kernel_fn`
+typedef and `SpeedState::compute_cov_kernel` field are fork additions; any upstream
+change to the `compute_covariance` signature must also update the typedef here.
+
+---
+
+## test/go-coverage-push (2026-06-04)
+
+**Files touched:**
+`cmd/vmafx-controller/{grpc_server.go,grpc_server_test.go,http_cancel_test.go,main_test.go,main_extra_test.go,auth/grpc_interceptor.go,auth/middleware.go,queue/queue_listall_test.go}`,
+`cmd/vmafx-mcp/impl.go`,
+`cmd/vmafx-node/{executor_test.go,main_test.go,online_feedback_pump_test.go}`,
+`cmd/vmafx-operator/internal/controller/{vmafxjob_applystatus_test.go,vmafxmodeltraining_applystatus_test.go,vmafxmodeltraining_controller.go,vmafxnode_controller.go}`,
+`cmd/vmafx-server/{grpc_server.go,http_cancel_test.go,main_extra_test.go}`,
+`pkg/observability/otel_instruments_test.go`,
+`pkg/score/grpc_client_unary_test.go`
+
+**Rebase impact:** Low. All changes are either test files (no rebase conflict
+possible on pure test additions) or targeted bug fixes in production code
+(grpc_server.go undefined-var fix, operator int32 type cast, MCP Vulkan
+backend dispatch). The auth `ContextWithClaims` export and `probeHealthz`
+method are additive. No public header or proto changes.
+
+---
+
+## test/compat-python-vmaf-coverage-push (2026-06-03)
+
+**Files touched:**
+`compat/python-vmaf/tests/` (new directory),
+`pyproject.toml` (`testpaths` + `pythonpath` additions)
+
+**Rebase impact:** None. Pure test addition; no production code changed.
+The `pyproject.toml` diff only appends to `testpaths` and `pythonpath` — if a
+concurrent branch adds entries in the same section a trivial conflict resolution
+is required (keep both entries).
+
+---
+
+## vmafx-title-rebrand (2026-06-03, no ADR)
+
+**Files touched:**
+`README.md`, `mkdocs.yml`, `pyproject.toml`, `CONTRIBUTING.md`
+
+**Rebase impact:** None. All four files are fork-local metadata surfaces
+(project title, site name, package description, contributor heading).
+Upstream Netflix/vmaf does not touch any of these files; no merge conflict
+is possible on rebase.
+
+---
+
 ## feat(vmaf-tune): ADR-0498 follow-up #7 — encoder stats, x264 detection, backend dispatch, codec-list parser
 
 **Files touched:**
@@ -43831,6 +43896,21 @@ matching update in the AVX2 header.
 **Branch**: chore/ci-shorten-workflow-names
 
 no rebase impact: pure CI display-name rename; no C/C++/Python source touched.
+
+---
+
+### fix(dnn): add missing vmaf_ort_internal_input/output_elem_type accessors
+
+**Branch**: fix/dnn-ort-internals-missing-elem-type-accessors
+**Touches**: `core/src/dnn/ort_backend_internal.h`,
+`core/src/dnn/ort_backend.c`,
+`changelog.d/fixed/dnn-ort-internals-elem-type-accessors.md`.
+
+No rebase impact: the added symbols (`VmafOrtElemType`, `vmaf_ort_internal_input_elem_type`,
+`vmaf_ort_internal_output_elem_type`) are fork-local internal-test helpers with no
+upstream Netflix/vmaf analogue. The `VmafOrtSession.input_elem_types` / `.output_elem_types`
+fields and the `VMAF_HAVE_DNN` guard structure they read from are also fork-local.
+Conflict probability on these files with upstream is zero.
 
 ---
 

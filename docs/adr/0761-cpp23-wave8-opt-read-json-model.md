@@ -50,7 +50,7 @@ preserved unchanged.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Convert `predict.c` instead of `read_json_model.c` | Directly exercises the score-prediction path | Requires `extern "C"` guards on `feature_extractor.h`, `feature_collector.h`, `feature_name.h`, `alias.h` — a larger footprint; the task brief's "hidden complexity" exclusion applies | Deferred to a later wave that specifically handles the feature-layer headers |
 | Bump project-wide `cpp_std` to `c++23` | Eliminates per-file isolation overhead | Risk of compile failures in unreviewed C TUs that mix C and C++ token rules; contra ADR-0708's incremental isolation policy | ADR-0708 established the per-file pattern |
 | Keep opt.c as primary, delete opt.cpp | Zero new complexity | Discards working C++23 code already in tree; adds technical debt | The `.cpp` is already correct; activation is the right move |

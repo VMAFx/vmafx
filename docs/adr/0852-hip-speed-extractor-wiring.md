@@ -31,7 +31,7 @@ extractors' `init()` returns `-ENOSYS`, matching every prior HIP consumer's cont
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Wire all three simultaneously (chosen) | Closes the gap atomically; consistent with ADR-0533 pattern | Slightly larger changeset than wiring only one side | Wiring only host wrappers without the kernel blob gives a guaranteed -ENOSYS on `hipModuleLoadData` — no user benefit |
 | Add a weak HSACO stub and defer kernel wiring | Keeps link green, mirrors the pre-ADR-0539 ADM pattern | Users get -ENOSYS on the kernel load, same as without the stub | The real kernel source already exists; there is no reason to defer it |
 
@@ -46,7 +46,7 @@ extractors' `init()` returns `-ENOSYS`, matching every prior HIP consumer's cont
 
 ## References
 
-- ADR-0567 (`0567-speed-chroma-temporal-real-gpu.md`) — original implementation decision.
-- ADR-0533 (`0533-hip-extractor-registration-sweep.md`) — pattern for wiring HIP extractors.
-- ADR-0539 (`0539-integer-adm-hip-kernels.md`) — prior art for `hip_kernel_sources` additions.
-- `core/src/feature/hip/AGENTS.md` — documents the `hip_hsaco_stubs.c` fallback pattern.
+- ADR-0567 (`0567-speed-chroma-temporal-real-gpu.md`) — original implementation.
+- ADR-0533 (`0533-hip-extractor-registration-sweep.md`) — HIP extractor wiring pattern.
+- ADR-0539 (`0539-integer-adm-hip-kernels.md`) — prior art for `hip_kernel_sources`.
+- `core/src/feature/hip/AGENTS.md` — `hip_hsaco_stubs.c` fallback pattern.

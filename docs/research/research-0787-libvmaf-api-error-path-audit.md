@@ -1,5 +1,7 @@
 # Research-0787 — libvmaf Public API Error-Path Consistency Audit
 
+<!-- markdownlint-disable MD013 -- ADR/research body text; pre-existing long lines per ADR-0864 tail -->
+
 **Date:** 2026-05-29
 **Author:** Claude Sonnet 4.6 (automated research agent)
 **Scope:** All VMAF_EXPORT functions across `core/include/libvmaf/*.h` and their implementations
@@ -10,6 +12,7 @@
 ## 1. Convention
 
 All `VMAF_EXPORT int` functions uniformly document and implement:
+
 - `0` on success
 - `< 0` (negative errno code) on failure
 
@@ -52,6 +55,7 @@ indistinguishable from a bad-argument error to callers.
 ### 2e. CUDA state_init conflates driver-missing with bad-argument (BUG)
 
 `vmaf_cuda_state_init()` returns `-EINVAL` for both:
+
 - driver library load failure (`cuda_load_functions` fails — should be `-ENODEV` or `-ENOSYS`)
 - `cuInit()` failure indicating no visible CUDA device (should be `-ENODEV`)
 
@@ -87,7 +91,7 @@ for a registry bug, that would be silently converted to `-ENOMEM`.
 The following `VMAF_EXPORT void` functions exist across backends:
 
 | Function | Notes |
-|---|---|
+| --- | --- |
 | `vmaf_model_destroy()` | Correct: destructor, NULL-safe |
 | `vmaf_model_collection_destroy()` | Correct: destructor, NULL-safe |
 | `vmaf_dnn_session_close()` | Correct: destructor, NULL-safe |
@@ -111,7 +115,7 @@ None of these silently mask a fatal condition. All destructors are NULL-safe.
 `vmaf_cuda_state_free()` has a different signature from all other backend `state_free` functions:
 
 | Backend | Signature |
-|---|---|
+| --- | --- |
 | CUDA | `int vmaf_cuda_state_free(VmafCudaState *cu_state)` — returns `int`, takes single pointer |
 | SYCL | `void vmaf_sycl_state_free(VmafSyclState **sycl_state)` — returns `void`, takes double pointer |
 | HIP | `void vmaf_hip_state_free(VmafHipState **state)` — returns `void`, takes double pointer |

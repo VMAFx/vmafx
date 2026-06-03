@@ -927,6 +927,20 @@ const char *vmaf_ort_internal_resolve_name(char **table, size_t count, const cha
     return resolve_name(table, count, name, pos);
 }
 
+VmafOrtElemType vmaf_ort_internal_input_elem_type(const VmafOrtSession *sess, size_t slot)
+{
+    if (!sess || slot >= sess->n_inputs)
+        return ELEM_TYPE_UNDEFINED;
+    return (VmafOrtElemType)sess->input_elem_types[slot];
+}
+
+VmafOrtElemType vmaf_ort_internal_output_elem_type(const VmafOrtSession *sess, size_t slot)
+{
+    if (!sess || slot >= sess->n_outputs)
+        return ELEM_TYPE_UNDEFINED;
+    return (VmafOrtElemType)sess->output_elem_types[slot];
+}
+
 #else /* !VMAF_HAVE_DNN */
 
 struct VmafOrtSession {
@@ -1038,6 +1052,20 @@ const char *vmaf_ort_internal_resolve_name(char **table, size_t count, const cha
     (void)name;
     (void)pos;
     return NULL;
+}
+
+VmafOrtElemType vmaf_ort_internal_input_elem_type(const VmafOrtSession *sess, size_t slot)
+{
+    (void)sess;
+    (void)slot;
+    return ELEM_TYPE_UNDEFINED;
+}
+
+VmafOrtElemType vmaf_ort_internal_output_elem_type(const VmafOrtSession *sess, size_t slot)
+{
+    (void)sess;
+    (void)slot;
+    return ELEM_TYPE_UNDEFINED;
 }
 
 #endif /* VMAF_HAVE_DNN */

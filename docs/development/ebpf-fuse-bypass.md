@@ -69,7 +69,7 @@ go test -v -run TestReadLatencyComparison -timeout 120s \
 
 Expected output:
 
-```
+```text
 baseline p50 read latency (no bypass): 370ms
 bypass p50 read latency:               10ms
 speedup ratio (baseline/bypass):       37.0x
@@ -97,7 +97,7 @@ Commit both the updated `.c` file and the newly generated `rcloneBypass_bpf*.go`
 ## Risks and mitigations
 
 | Risk | Mitigation |
-|---|---|
+| --- | --- |
 | Kernel version < 5.15 | `Start()` returns a clear error; bypass is skipped gracefully |
 | Missing `CAP_BPF` | Same — error logged, node continues without bypass |
 | BPF verifier rejects program after kernel upgrade | `VMAFX_EBPF_BYPASS` off by default; upgrade testing required before enabling |
@@ -107,6 +107,7 @@ Commit both the updated `.c` file and the newly generated `rcloneBypass_bpf*.go`
 ## See also
 
 - [ADR-0779](../adr/0779-ebpf-fuse-bypass.md) — design rationale and alternatives.
-- [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) — Phase 4b platform overview.
+- [ADR-0709](../adr/0709-vmafx-phase4b-distributed-platform.md) —
+  Phase 4b platform overview.
 - [ADR-0713](../adr/0713-vmafx-node-impl.md) — vmafx-node worker binary.
 - Research-0733 — rclone FUSE overhead profiling (37× p50 measurement).

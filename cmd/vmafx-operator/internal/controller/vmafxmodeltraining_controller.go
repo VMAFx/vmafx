@@ -200,8 +200,8 @@ func (r *VmafxModelTrainingReconciler) applySidecarStatus(
 		changed = true
 	}
 
-	if cr.Status.CurrentSamples != s.CurrentSamples {
-		cr.Status.CurrentSamples = s.CurrentSamples
+	if cr.Status.CurrentSamples != int32(s.CurrentSamples) {
+		cr.Status.CurrentSamples = int32(s.CurrentSamples)
 		changed = true
 	}
 

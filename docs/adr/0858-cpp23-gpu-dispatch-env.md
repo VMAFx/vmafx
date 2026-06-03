@@ -40,7 +40,7 @@ exactly. Remove the `.c` entry from `libvmaf_sources`.
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Keep `.c`, patch Windows path separately | Zero risk | Platform-branch boilerplate stays; missed RAII opportunity | The C++23 path is strictly simpler and already validated by ADR-0708 |
 | Inline into each GPU backend dispatch_strategy.c | Eliminates a TU | Duplication; defeats ADR-0461 centralised-snapshot rationale | Contradicts ADR-0461 design |
 | Use C11 `_Generic` + `pthread_once` refactor | Stays in C | No `std::optional`, no `string_view`, Windows shim remains | C cannot express the RAII semantics that make the conversion worthwhile |
@@ -57,6 +57,7 @@ exactly. Remove the `.c` entry from `libvmaf_sources`.
 
 ## References
 
-- [ADR-0461](0461-gpu-dispatch-env-centralised-snapshot.md) — original C implementation contract.
-- [ADR-0708](0708-vmafx-cpp23-internals-pilot.md) — C++23 internals pilot and isolation pattern.
+- [ADR-0461](0461-gpu-dispatch-env-centralised-snapshot.md) — original C
+  implementation contract.
+- [ADR-0708](0708-vmafx-cpp23-internals-pilot.md) — C++23 internals pilot.
 - Source: user direction (task brief 2026-05-29).

@@ -32,12 +32,24 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/VMAFx/vmafx/cmd/vmafx-controller/auth"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/nodes"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/queue"
 	"github.com/VMAFx/vmafx/cmd/vmafx-controller/scheduler"
 	controllerv1 "github.com/VMAFx/vmafx/gen/go/controller"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
+
+// testTenantCtx returns a context with a "test-tenant" auth context injected.
+// Used by tests that call gRPC handler methods directly (bypassing the
+// interceptor) so SubmitJob / GetJob / CancelJob can find a tenant_id.
+func testTenantCtx() context.Context {
+	return auth.ContextWithClaims(context.Background(), auth.Claims{
+		Subject:  "test-user",
+		TenantID: "test-tenant",
+		Roles:    []string{auth.RoleAdmin},
+	})
+}
 
 // ---------------------------------------------------------------------------
 // In-process mock stream — exercises StreamJobs and captures sent messages.
@@ -227,7 +239,7 @@ func TestSubmitJob_HappyPath(t *testing.T) {
 			Backend:   "cpu",
 		},
 	}
-	resp, err := f.srv.SubmitJob(context.Background(), req)
+	resp, err := f.srv.SubmitJob(testTenantCtx(), req)
 	if err != nil {
 		t.Fatalf("SubmitJob: %v", err)
 	}
@@ -270,13 +282,14 @@ func TestSubmitJob_MissingPathsRejected(t *testing.T) {
 
 func TestGetJob_HappyPath(t *testing.T) {
 	f := newGRPCFixture(t)
-	subResp, err := f.srv.SubmitJob(context.Background(), &controllerv1.SubmitJobRequest{
+	ctx := testTenantCtx()
+	subResp, err := f.srv.SubmitJob(ctx, &controllerv1.SubmitJobRequest{
 		Scoring: &controllerv1.ScoringParams{Reference: "/r.yuv", Distorted: "/d.yuv", Backend: "cuda"},
 	})
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
-	got, err := f.srv.GetJob(context.Background(), &controllerv1.GetJobRequest{JobId: subResp.GetJobId()})
+	got, err := f.srv.GetJob(ctx, &controllerv1.GetJobRequest{JobId: subResp.GetJobId()})
 	if err != nil {
 		t.Fatalf("GetJob: %v", err)
 	}
@@ -313,10 +326,14 @@ func TestGetJob_MissingReturnsNotFound(t *testing.T) {
 
 func TestCancelJob_HappyPath(t *testing.T) {
 	f := newGRPCFixture(t)
-	sub, _ := f.srv.SubmitJob(context.Background(), &controllerv1.SubmitJobRequest{
+	ctx := testTenantCtx()
+	sub, err := f.srv.SubmitJob(ctx, &controllerv1.SubmitJobRequest{
 		Scoring: &controllerv1.ScoringParams{Reference: "/r.yuv", Distorted: "/d.yuv"},
 	})
-	resp, err := f.srv.CancelJob(context.Background(), &controllerv1.CancelJobRequest{JobId: sub.GetJobId()})
+	if err != nil {
+		t.Fatalf("SubmitJob: %v", err)
+	}
+	resp, err := f.srv.CancelJob(ctx, &controllerv1.CancelJobRequest{JobId: sub.GetJobId()})
 	if err != nil {
 		t.Fatalf("CancelJob: %v", err)
 	}
@@ -452,7 +469,7 @@ func TestPullWork_NoJobReturnsEmpty(t *testing.T) {
 
 func TestPullWork_HappyPath(t *testing.T) {
 	f := newGRPCFixture(t)
-	_, err := f.srv.SubmitJob(context.Background(), &controllerv1.SubmitJobRequest{
+	_, err := f.srv.SubmitJob(testTenantCtx(), &controllerv1.SubmitJobRequest{
 		Scoring: &controllerv1.ScoringParams{Reference: "/r.yuv", Distorted: "/d.yuv"},
 	})
 	if err != nil {
@@ -496,9 +513,13 @@ func TestPullWork_InvalidSessionRejected(t *testing.T) {
 
 func TestReportResult_FinalSuccess(t *testing.T) {
 	f := newGRPCFixture(t)
-	sub, _ := f.srv.SubmitJob(context.Background(), &controllerv1.SubmitJobRequest{
+	ctx := testTenantCtx()
+	sub, err := f.srv.SubmitJob(ctx, &controllerv1.SubmitJobRequest{
 		Scoring: &controllerv1.ScoringParams{Reference: "/r.yuv", Distorted: "/d.yuv"},
 	})
+	if err != nil {
+		t.Fatalf("SubmitJob: %v", err)
+	}
 	reg, _ := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{
 		Name:       "rr-node",
 		Capability: &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
@@ -524,7 +545,7 @@ func TestReportResult_FinalSuccess(t *testing.T) {
 	if !resp.GetOk() {
 		t.Error("ok: got false, want true")
 	}
-	job, _ := f.srv.GetJob(context.Background(), &controllerv1.GetJobRequest{JobId: sub.GetJobId()})
+	job, _ := f.srv.GetJob(ctx, &controllerv1.GetJobRequest{JobId: sub.GetJobId()})
 	if job.GetStatus() != controllerv1.JobStatus_COMPLETED {
 		t.Errorf("status: got %v, want COMPLETED", job.GetStatus())
 	}
@@ -532,9 +553,13 @@ func TestReportResult_FinalSuccess(t *testing.T) {
 
 func TestReportResult_FinalWithError(t *testing.T) {
 	f := newGRPCFixture(t)
-	sub, _ := f.srv.SubmitJob(context.Background(), &controllerv1.SubmitJobRequest{
+	ctx := testTenantCtx()
+	sub, err := f.srv.SubmitJob(ctx, &controllerv1.SubmitJobRequest{
 		Scoring: &controllerv1.ScoringParams{Reference: "/r.yuv", Distorted: "/d.yuv"},
 	})
+	if err != nil {
+		t.Fatalf("SubmitJob: %v", err)
+	}
 	reg, _ := f.srv.RegisterNode(context.Background(), &controllerv1.RegisterNodeRequest{
 		Name:       "rr-node",
 		Capability: &controllerv1.NodeCapability{Backends: []string{"cpu"}, Concurrency: 1},
@@ -554,7 +579,7 @@ func TestReportResult_FinalWithError(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ReportResult: %v", err)
 	}
-	job, _ := f.srv.GetJob(context.Background(), &controllerv1.GetJobRequest{JobId: sub.GetJobId()})
+	job, _ := f.srv.GetJob(ctx, &controllerv1.GetJobRequest{JobId: sub.GetJobId()})
 	if job.GetStatus() != controllerv1.JobStatus_FAILED {
 		t.Errorf("status: got %v, want FAILED", job.GetStatus())
 	}

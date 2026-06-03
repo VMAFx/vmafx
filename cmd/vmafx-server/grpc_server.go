@@ -174,10 +174,10 @@ func runGRPCWithServer(
 	// codes.Internal status to the offending client instead of crashing the
 	// whole server process and dropping every in-flight stream. ADR-0978.
 	srv := grpc.NewServer(
-		grpc.UnaryInterceptor(recoveryUnaryInterceptor(log)),
-		grpc.StreamInterceptor(recoveryStreamInterceptor(log)),
+		grpc.UnaryInterceptor(recoveryUnaryInterceptor(impl.log)),
+		grpc.StreamInterceptor(recoveryStreamInterceptor(impl.log)),
 	)
-	vmafxv1.RegisterVmafxScoringServer(srv, newGRPCServer(scorer, metrics, log))
+	vmafxv1.RegisterVmafxScoringServer(srv, impl)
 
 	impl.log.Info("gRPC server started", "addr", addr)
 

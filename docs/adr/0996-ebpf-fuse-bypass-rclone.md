@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# ADR-0779: eBPF FUSE bypass for rclone zero-copy path in vmafx-node
+# ADR-0996: eBPF FUSE bypass for rclone zero-copy path in vmafx-node
 
 - **Status**: Proposed
 - **Date**: 2026-06-03

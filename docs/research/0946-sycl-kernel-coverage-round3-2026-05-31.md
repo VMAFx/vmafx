@@ -9,7 +9,7 @@ highest-value 5 remaining kernels that fit in a 200-800 LOC bundle.
 ## Full SYCL kernel inventory (as of `origin/master` 2026-05-31)
 
 | # | File | Extractor | Round | Test |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 1 | `integer_cambi_sycl.cpp` | `cambi_sycl` | 0 (pre-existing) | `test_integer_cambi_sycl.c` |
 | 2 | `integer_motion_sycl.cpp` | `motion_sycl` (motion3 path) | 0 (pre-existing) | `test_sycl_motion3_parity.c` |
 | 3 | `integer_psnr_sycl.cpp` | `integer_psnr_sycl` | 1 (#351) | `test_sycl_psnr_parity.c` |
@@ -32,7 +32,7 @@ highest-value 5 remaining kernels that fit in a 200-800 LOC bundle.
 ## Coverage trajectory
 
 | Round | Date | Extractors covered | % of 18 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 0 (pre-rounds) | <= 2026-05-29 | 2 (cambi, motion3) | 11 % |
 | 1 (#351) | 2026-05-30 | +2 = 4 (psnr, vif) | 22 % |
 | 2 (#376) | 2026-05-30 | +5 = 9 (adm, ciede, ssim, ms_ssim, motion_v2) | 50 % |
@@ -107,7 +107,7 @@ All five new tests use **256x144 YUV420P 8 bpc**. Justifications:
   Gaussian pyramid (the smallest scale halves the spatial
   dimensions four times).
 - **≥ 32x32** — required by `float_adm_sycl`'s 4-scale DWT2
-  + CSF footprint.
+  CSF footprint.
 - **fits in the fast-suite time budget** — single-frame tests
   finish in < 100 ms each on Intel-Arc; the two-frame motion
   test finishes in < 200 ms.
@@ -124,7 +124,7 @@ gates on the same threshold the cross-backend CI gate uses.
 ## PR overlap audit
 
 | Other PR | File overlap with this PR | Notes |
-|---|---|---|
+| --- | --- | --- |
 | **#293** (SYCL init-failure cleanup leaks) | none | #293 touches `integer_adm_sycl.cpp`, `integer_vif_sycl.cpp`, `speed_chroma_sycl.cpp`, `speed_temporal_sycl.cpp` — all kernel sources, no test files |
 | **#351** (SYCL round 1) | none | #351 adds `test_sycl_psnr_parity.c` + `test_sycl_vif_parity.c` — different kernels |
 | **#376** (SYCL round 2) | `core/test/meson.build` (additive) | #376 adds blocks for 5 integer-family tests; this PR adds 5 float-family + psnr_hvs blocks at a different insertion point; rebase requires accepting both blocks |
@@ -136,7 +136,7 @@ must be inserted before the round-3 block.
 
 ## Container build evidence
 
-```
+```bash
 docker exec vmaf-dev-mcp bash -lc '
   source /opt/intel/oneapi/setvars.sh --force >/dev/null 2>&1 && \
   cd /tmp/wt-sycl-r3 && \
