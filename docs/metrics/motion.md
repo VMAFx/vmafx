@@ -177,6 +177,7 @@ additional options for chroma channels and a half-resolution scale-1 SAD term.
 | `motion_blend_offset`| `mbo`     | double | `40.0`    | `0.0–1000.0`  | Blend offset for `motion3_score`                                          |
 | `motion_add_scale1`  | —         | bool   | `false`   | —             | Add half-resolution SAD term on top of full-resolution Y-plane SAD        |
 | `motion_add_uv`      | —         | bool   | `false`   | —             | Sum U and V plane SADs into the score (CPU only)                          |
+| `motion_add_uv`      | `mau`     | bool   | `false`   | —             | Sum U and V plane SADs into the score (CPU + SYCL; other GPU backends return -ENOTSUP) |
 | `motion_filter_size` | —         | int    | `5`       | `1, 3, 5`     | Gaussian blur kernel size; `5` = original Motion2, `3` = cheaper variant  |
 | `motion_max_val`     | `mmxv`    | double | `10000.0` | `0.0–10000.0` | Upper clamp applied to emitted scores                                     |
 
@@ -184,6 +185,9 @@ additional options for chroma channels and a half-resolution scale-1 SAD term.
 were ported from Netflix/vmaf commit `b949cebf`. With default settings the output
 is bit-identical to the pre-port baseline on the Y-plane SIMD fast path.
 `motion_add_uv=true` is CPU-only; GPU paths score the Y plane only.
+`motion_add_uv=true` is supported on the SYCL backend (`motion_sycl`, ADR-0989)
+and the CPU `float_motion` extractor; passing it to CUDA, Vulkan, HIP, or Metal
+returns `-ENOTSUP` with a warning until per-backend kernel ports land.
 
 ### Backend coverage
 

@@ -1495,6 +1495,21 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
     suite : ['fast', 'gpu'])
 
+# ADR-0989 — motion_add_uv SYCL parity test.
+# Asserts (1) UV contribution is positive (UV-enabled score > Y-only)
+# and (2) SYCL motion_sycl(motion_add_uv=true) matches CPU
+# float_motion(motion_add_uv=true) within places=4 (1e-4).
+# Skips cleanly when no SYCL device is visible.
+test_sycl_motion_add_uv_parity = executable('test_sycl_motion_add_uv_parity',
+    ['test.c', 'test_sycl_motion_add_uv_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_motion_add_uv_parity', test_sycl_motion_add_uv_parity,
+    suite : ['fast', 'gpu'])
+
 # ADR-0946 — SYCL kernel coverage round 3. Five new CPU vs. SYCL
 # parity gates filling the float-family + PSNR-HVS gaps left after
 # rounds 1 (#351: integer psnr / vif) and 2 (#376: integer adm /

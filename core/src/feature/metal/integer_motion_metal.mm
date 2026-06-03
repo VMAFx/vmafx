@@ -29,6 +29,7 @@ extern "C" {
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "libvmaf/picture.h"
+#include "log.h"
 
 #include "../../metal/common.h"
 #include "../../metal/kernel_template.h"
@@ -59,9 +60,20 @@ typedef struct IntegerMotionStateMetal {
     unsigned bpc;
 
     VmafDictionary *feature_name_dict;
+    bool motion_add_uv; /* rejected with -ENOTSUP — see init(); ADR-0989 */
 } IntegerMotionStateMetal;
 
-static const VmafOption options[] = {{0}};
+static const VmafOption options[] = {
+    {
+        .name = "motion_add_uv",
+        .alias = "mau",
+        .help = "include U and V plane SADs (NOT YET SUPPORTED on Metal — ADR-0989 deferred)",
+        .offset = offsetof(IntegerMotionStateMetal, motion_add_uv),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {nullptr}};
 
 static int build_pipelines(IntegerMotionStateMetal *s, id<MTLDevice> device)
 {
@@ -96,6 +108,15 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 {
     (void)pix_fmt;
     IntegerMotionStateMetal *s = (IntegerMotionStateMetal *)fex->priv;
+
+    /* motion_add_uv kernel port deferred — ADR-0989. SYCL is the lead
+     * backend; Metal will follow in a subsequent PR. */
+    if (s->motion_add_uv) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "motion_metal: motion_add_uv=true is not yet supported on Metal "
+                 "(ADR-0989 deferred). Use the SYCL extractor `motion_sycl` instead.\n");
+        return -ENOTSUP;
+    }
 
     s->frame_w           = w;
     s->frame_h           = h;

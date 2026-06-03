@@ -1,0 +1,1 @@
+| [ADR-0989](0989-sycl-motion-add-uv.md) | Wire motion_add_uv through integer_motion_sycl (UV blur+SAD on device, per-plane normalization on host); add motion_add_uv ENOTSUP stub to CUDA/Vulkan/HIP/Metal; upgrade motion_five_frame_window rejections to WARNING | Accepted | 2026-06-03 | sycl, motion, feature-extractor, gpu |

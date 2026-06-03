@@ -109,6 +109,7 @@ typedef struct MotionStateHip {
     bool debug;
     bool motion_force_zero;
     bool motion_five_frame_window;
+    bool motion_add_uv; /* rejected with -ENOTSUP — see init(); ADR-0989 */
     bool motion_moving_average;
     double motion_blend_factor;
     double motion_blend_offset;
@@ -192,6 +193,15 @@ static const VmafOption options[] = {
         .alias = "mma",
         .help = "use moving average for motion3 scores after first frame",
         .offset = offsetof(MotionStateHip, motion_moving_average),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "motion_add_uv",
+        .alias = "mau",
+        .help = "include U and V plane SADs (NOT YET SUPPORTED on HIP — ADR-0989 deferred)",
+        .offset = offsetof(MotionStateHip, motion_add_uv),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -447,6 +457,18 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 
     /* Reject 5-frame window: same as CUDA twin (ADR-0219). */
     if (s->motion_five_frame_window) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "motion_hip: motion_five_frame_window=true is not yet supported on HIP "
+                 "(T3-15(c) deferred). Use the CPU extractor `motion` instead.\n");
+        return -ENOTSUP;
+    }
+
+    /* motion_add_uv kernel port deferred — ADR-0989. SYCL is the lead
+     * backend; HIP will follow in a subsequent PR. */
+    if (s->motion_add_uv) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "motion_hip: motion_add_uv=true is not yet supported on HIP "
+                 "(ADR-0989 deferred). Use the SYCL extractor `motion_sycl` instead.\n");
         return -ENOTSUP;
     }
 

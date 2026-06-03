@@ -91,6 +91,7 @@ struct MotionStateSycl {
     bool motion_force_zero;
     bool motion_five_frame_window; // rejected with -ENOTSUP — see init()
     bool motion_moving_average;
+    bool motion_add_uv; // include U + V plane SAD — ADR-0989
     double motion_blend_factor;
     double motion_blend_offset;
     double motion_fps_weight;
@@ -106,16 +107,32 @@ struct MotionStateSycl {
     // MotionState.previous_score. T3-15(c) / ADR-0219.
     double prev_motion3_blended;
 
-    // Ping-pong blur buffers (device)
+    // Ping-pong blur buffers for Y plane (device)
     int32_t *d_blur[2]; // alternating current / previous
     int cur_blur;       // index into d_blur for current frame
 
-    // Vertical intermediate buffer
+    // Vertical intermediate buffer (Y only; UV uses same kernel in-kernel)
     int32_t *d_blur_tmp; // vertical pass output
 
-    // SAD accumulator (device + host)
+    // Y-plane SAD accumulator (device + host)
     int64_t *d_sad_accum;
     int64_t *h_sad_accum;
+
+    // UV plane support — ADR-0989.
+    // When motion_add_uv=true, two additional ping-pong pairs hold the
+    // raw input U/V pixels (copied H2D in submit) and the blurred U/V
+    // pixels (written by the kernel).  Separate SAD accumulators allow
+    // per-plane normalization on the host (UV planes are smaller than Y
+    // for YUV420P).
+    unsigned chroma_w, chroma_h; // U/V plane dimensions
+    void *d_ref_u[2];            // raw U-plane ping-pong (device, void* for bpc agnostic)
+    void *d_ref_v[2];            // raw V-plane ping-pong (device)
+    int32_t *d_blur_u[2];        // blurred U ping-pong (device, int32)
+    int32_t *d_blur_v[2];        // blurred V ping-pong (device, int32)
+    int64_t *d_sad_u;            // U-plane SAD accumulator (device)
+    int64_t *h_sad_u;            // U-plane SAD readback (host-mapped)
+    int64_t *d_sad_v;            // V-plane SAD accumulator (device)
+    int64_t *h_sad_v;            // V-plane SAD readback (host-mapped)
 
     // Deferred state
     unsigned pending_index;
@@ -202,6 +219,15 @@ static const VmafOption options[] = {
         .alias = "mma",
         .help = "use moving average for motion3 scores after first frame",
         .offset = offsetof(MotionStateSycl, motion_moving_average),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val = {.b = false},
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "motion_add_uv",
+        .alias = "mau",
+        .help = "include U and V plane SADs in the motion score (ADR-0989)",
+        .offset = offsetof(MotionStateSycl, motion_add_uv),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -398,7 +424,6 @@ static void config_motion_slot(void *priv, int slot);
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
-    (void)pix_fmt;
     auto *s = static_cast<MotionStateSycl *>(fex->priv);
 
     /* Reject the 5-frame window mode explicitly. CPU mode keeps a
@@ -407,9 +432,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
      * with -ENOTSUP keeps callers off a silent-wrong-answer path.
      * See ADR-0219. */
     if (s->motion_five_frame_window) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "motion_sycl: motion_five_frame_window=true is not yet supported (T3-15(c) "
-                 "deferred). Use the CPU extractor `motion` instead.\n");
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "motion_sycl: motion_five_frame_window=true is not yet supported on SYCL "
+                 "(T3-15(c) deferred). Use the CPU extractor `motion` instead.\n");
         return -ENOTSUP;
     }
 
@@ -448,20 +473,86 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     size_t const buf_size = (size_t)w * h * sizeof(int32_t);
 
-    // Two blur buffers for ping-pong
+    // Two blur buffers for ping-pong (Y plane)
     s->d_blur[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, buf_size));
     s->d_blur[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, buf_size));
 
     // Vertical intermediate
     s->d_blur_tmp = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, buf_size));
 
-    // SAD accumulator
+    // Y-plane SAD accumulator
     s->d_sad_accum = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
     s->h_sad_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
 
     if (!s->d_blur[0] || !s->d_blur[1] || !s->d_blur_tmp || !s->d_sad_accum || !s->h_sad_accum) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: device memory allocation failed\n");
         return -ENOMEM;
+    }
+
+    // UV plane support — ADR-0989.
+    // YUV420P: chroma planes are ceil(W/2) × ceil(H/2).  The kernel
+    // reuses `launch_blur_sad_fused` — bpc-agnostic, only width/height
+    // differ.  Raw UV input is uploaded H2D in submit_fex_sycl before
+    // the graph fires; d_ref_u/v[slot] are captured in the graph.
+    s->d_ref_u[0] = nullptr;
+    s->d_ref_u[1] = nullptr;
+    s->d_ref_v[0] = nullptr;
+    s->d_ref_v[1] = nullptr;
+    s->d_blur_u[0] = nullptr;
+    s->d_blur_u[1] = nullptr;
+    s->d_blur_v[0] = nullptr;
+    s->d_blur_v[1] = nullptr;
+    s->d_sad_u = nullptr;
+    s->h_sad_u = nullptr;
+    s->d_sad_v = nullptr;
+    s->h_sad_v = nullptr;
+    s->chroma_w = 0;
+    s->chroma_h = 0;
+
+    if (s->motion_add_uv) {
+        if (pix_fmt == VMAF_PIX_FMT_YUV400P || pix_fmt == VMAF_PIX_FMT_UNKNOWN) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "motion_sycl: motion_add_uv=true requires a YUV format with chroma "
+                     "planes (got %d)\n",
+                     (int)pix_fmt);
+            return -EINVAL;
+        }
+        // Ceiling division — matches integer_psnr_sycl.cpp chroma geometry
+        // (PR #878 Vulkan twin fix, AGENTS.md).
+        unsigned const cw = (w + 1U) >> 1U;
+        unsigned const ch = (h + 1U) >> 1U;
+        s->chroma_w = cw;
+        s->chroma_h = ch;
+
+        // Bytes per raw pixel: 1 byte (8-bpc) or 2 bytes (10/12/16-bpc)
+        size_t const bpp = (bpc <= 8) ? 1U : 2U;
+        size_t const uv_raw_size = (size_t)cw * ch * bpp;
+        size_t const uv_blur_size = (size_t)cw * ch * sizeof(int32_t);
+
+        // Raw UV input ping-pong (void* to be bpc-agnostic; cast in kernel)
+        s->d_ref_u[0] = vmaf_sycl_malloc_device(state, uv_raw_size);
+        s->d_ref_u[1] = vmaf_sycl_malloc_device(state, uv_raw_size);
+        s->d_ref_v[0] = vmaf_sycl_malloc_device(state, uv_raw_size);
+        s->d_ref_v[1] = vmaf_sycl_malloc_device(state, uv_raw_size);
+
+        // Blurred UV ping-pong
+        s->d_blur_u[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
+        s->d_blur_u[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
+        s->d_blur_v[0] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
+        s->d_blur_v[1] = static_cast<int32_t *>(vmaf_sycl_malloc_device(state, uv_blur_size));
+
+        // UV SAD accumulators
+        s->d_sad_u = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
+        s->h_sad_u = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
+        s->d_sad_v = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, sizeof(int64_t)));
+        s->h_sad_v = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, sizeof(int64_t)));
+
+        if (!s->d_ref_u[0] || !s->d_ref_u[1] || !s->d_ref_v[0] || !s->d_ref_v[1] ||
+            !s->d_blur_u[0] || !s->d_blur_u[1] || !s->d_blur_v[0] || !s->d_blur_v[1] ||
+            !s->d_sad_u || !s->h_sad_u || !s->d_sad_v || !s->h_sad_v) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: UV device memory allocation failed\n");
+            return -ENOMEM;
+        }
     }
 
     s->feature_name_dict =
@@ -529,17 +620,21 @@ static double motion3_postprocess_sycl(MotionStateSycl *s, double score2)
 /* C-compatible callbacks for combined command graph                    */
 /* ------------------------------------------------------------------ */
 
-// Pre-graph: zero SAD accumulator (direct enqueue, outside graph)
+// Pre-graph: zero SAD accumulators (direct enqueue, outside graph)
 static void motion_pre_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<MotionStateSycl *>(priv);
     if (s->frame_index > 0) {
         q.memset(s->d_sad_accum, 0, sizeof(int64_t));
+        if (s->motion_add_uv) {
+            q.memset(s->d_sad_u, 0, sizeof(int64_t));
+            q.memset(s->d_sad_v, 0, sizeof(int64_t));
+        }
     }
 }
 
-// Graph-recorded: compute kernels only
+// Graph-recorded: compute kernels only (Y plane + optional UV planes)
 static void enqueue_motion_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis)
 {
     (void)shared_dis; // Motion only uses ref
@@ -550,8 +645,20 @@ static void enqueue_motion_work(void *queue_ptr, void *priv, void *shared_ref, v
     int const cur = s->cur_blur;
     int const prev = 1 - cur;
 
+    // Y-plane kernel (always)
     launch_blur_sad_fused(q, shared_ref, s->d_blur[cur], s->d_blur[prev], s->d_sad_accum, s->width,
                           s->height, s->bpc, compute_sad);
+
+    // UV-plane kernels — ADR-0989.
+    // d_ref_u[cur] / d_ref_v[cur] were uploaded H2D in submit_fex_sycl
+    // before the graph fires; the pointer values are stable across graph
+    // replays (ping-pong captured per slot via config_fn).
+    if (s->motion_add_uv) {
+        launch_blur_sad_fused(q, s->d_ref_u[cur], s->d_blur_u[cur], s->d_blur_u[prev], s->d_sad_u,
+                              s->chroma_w, s->chroma_h, s->bpc, compute_sad);
+        launch_blur_sad_fused(q, s->d_ref_v[cur], s->d_blur_v[cur], s->d_blur_v[prev], s->d_sad_v,
+                              s->chroma_w, s->chroma_h, s->bpc, compute_sad);
+    }
 }
 
 // Post-graph: D2H SAD accumulator download (direct enqueue, outside graph)
@@ -564,6 +671,10 @@ static void motion_post_graph(void *queue_ptr, void *priv)
     auto *s = static_cast<MotionStateSycl *>(priv);
     if (s->frame_index > 0) {
         q.memcpy(s->h_sad_accum, s->d_sad_accum, sizeof(int64_t));
+        if (s->motion_add_uv) {
+            q.memcpy(s->h_sad_u, s->d_sad_u, sizeof(int64_t));
+            q.memcpy(s->h_sad_v, s->d_sad_v, sizeof(int64_t));
+        }
     }
 }
 
@@ -580,13 +691,50 @@ static void config_motion_slot(void *priv, int slot)
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
-    (void)ref_pic;
     (void)ref_pic_90;
     (void)dist_pic;
     (void)dist_pic_90;
 
     auto *s = static_cast<MotionStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
+
+    // Upload UV planes H2D before the graph fires so that enqueue_motion_work
+    // reads the current frame's U/V data from d_ref_u[cur_blur] / d_ref_v[cur_blur].
+    // ADR-0989: the graph captures these device pointers by value (one
+    // capture per slot via config_fn), so the H2D must happen before
+    // vmaf_sycl_graph_submit() launches the recorded graph.
+    if (s->motion_add_uv && ref_pic != nullptr) {
+        int const cur = s->cur_blur;
+        size_t const bpp = (s->bpc <= 8) ? 1U : 2U;
+        size_t const uv_raw_bytes = (size_t)s->chroma_w * s->chroma_h * bpp;
+
+        // ref_pic->data[1] / data[2] point to U / V luma-adjacent planes;
+        // stride[1] / stride[2] are in bytes.  We copy row-by-row to device
+        // (contiguous) because the host stride may be padded.
+        const uint8_t *u_src = static_cast<const uint8_t *>(ref_pic->data[1]);
+        const uint8_t *v_src = static_cast<const uint8_t *>(ref_pic->data[2]);
+        uint8_t *u_dst = static_cast<uint8_t *>(s->d_ref_u[cur]);
+        uint8_t *v_dst = static_cast<uint8_t *>(s->d_ref_v[cur]);
+
+        if (ref_pic->stride[1] == (ptrdiff_t)(s->chroma_w * bpp)) {
+            // Contiguous — single H2D copy
+            int const eu = vmaf_sycl_memcpy_h2d_async(state, u_dst, u_src, uv_raw_bytes);
+            int const ev = vmaf_sycl_memcpy_h2d_async(state, v_dst, v_src, uv_raw_bytes);
+            if (eu || ev)
+                return eu ? eu : ev;
+        } else {
+            // Strided — copy one row at a time
+            size_t const row_bytes = s->chroma_w * bpp;
+            for (unsigned row = 0; row < s->chroma_h; row++) {
+                int eu = vmaf_sycl_memcpy_h2d_async(state, u_dst + row * row_bytes,
+                                                    u_src + row * ref_pic->stride[1], row_bytes);
+                int ev = vmaf_sycl_memcpy_h2d_async(state, v_dst + row * row_bytes,
+                                                    v_src + row * ref_pic->stride[2], row_bytes);
+                if (eu || ev)
+                    return eu ? eu : ev;
+            }
+        }
+    }
 
     // Combined graph submit (idempotent per frame — first extractor wins)
     int const err = vmaf_sycl_graph_submit(state);
@@ -612,8 +760,17 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     double motion_score = 0.0;
 
     if (s->frame_index > 0) {
-        int64_t const sad = *s->h_sad_accum;
-        motion_score = (double)sad / 256.0 / ((double)s->width * s->height);
+        int64_t const sad_y = *s->h_sad_accum;
+        motion_score = (double)sad_y / 256.0 / ((double)s->width * s->height);
+
+        // ADR-0989: add U and V plane contributions (normalized per plane)
+        if (s->motion_add_uv) {
+            int64_t const sad_u = *s->h_sad_u;
+            int64_t const sad_v = *s->h_sad_v;
+            double const uv_area = (double)s->chroma_w * s->chroma_h;
+            motion_score += (double)sad_u / 256.0 / uv_area;
+            motion_score += (double)sad_v / 256.0 / uv_area;
+        }
     }
 
     int err = 0;
@@ -750,6 +907,32 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
             vmaf_sycl_free(state, s->d_sad_accum);
         if (s->h_sad_accum)
             vmaf_sycl_free(state, s->h_sad_accum);
+
+        // UV plane resources — ADR-0989
+        if (s->d_ref_u[0])
+            vmaf_sycl_free(state, s->d_ref_u[0]);
+        if (s->d_ref_u[1])
+            vmaf_sycl_free(state, s->d_ref_u[1]);
+        if (s->d_ref_v[0])
+            vmaf_sycl_free(state, s->d_ref_v[0]);
+        if (s->d_ref_v[1])
+            vmaf_sycl_free(state, s->d_ref_v[1]);
+        if (s->d_blur_u[0])
+            vmaf_sycl_free(state, s->d_blur_u[0]);
+        if (s->d_blur_u[1])
+            vmaf_sycl_free(state, s->d_blur_u[1]);
+        if (s->d_blur_v[0])
+            vmaf_sycl_free(state, s->d_blur_v[0]);
+        if (s->d_blur_v[1])
+            vmaf_sycl_free(state, s->d_blur_v[1]);
+        if (s->d_sad_u)
+            vmaf_sycl_free(state, s->d_sad_u);
+        if (s->h_sad_u)
+            vmaf_sycl_free(state, s->h_sad_u);
+        if (s->d_sad_v)
+            vmaf_sycl_free(state, s->d_sad_v);
+        if (s->h_sad_v)
+            vmaf_sycl_free(state, s->h_sad_v);
     }
 
     if (s->feature_name_dict)

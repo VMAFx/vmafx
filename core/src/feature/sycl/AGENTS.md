@@ -72,8 +72,22 @@ HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
 - **`integer_motion_sycl.cpp::motion3_postprocess_*` honours the
   motion3 GPU contract** (ADR-0219). Applies CPU's host-side
   post-process to motion2 with no device-side state.
-  `motion_five_frame_window=true` returns `-ENOTSUP` at `init()`.
-  See [../../AGENTS.md §"motion3_score GPU contract"](../../AGENTS.md).
+  `motion_five_frame_window=true` returns `-ENOTSUP` at `init()` with
+  a `WARNING` log. See [../../AGENTS.md §"motion3_score GPU contract"](../../AGENTS.md).
+
+- **`integer_motion_sycl.cpp::motion_add_uv` GPU contract** (ADR-0989).
+  When `motion_add_uv=true`, `submit_fex_sycl` uploads U and V plane data
+  H2D to `d_ref_u[cur_blur]` / `d_ref_v[cur_blur]` before calling
+  `vmaf_sycl_graph_submit`. `enqueue_motion_work` launches additional
+  `launch_blur_sad_fused` kernels for U and V, each writing to
+  `d_blur_u/v[cur]` and accumulating into `d_sad_u` / `d_sad_v`.
+  `collect_fex_sycl` sums Y + U + V contributions, each normalized by
+  the respective plane area (`chroma_w × chroma_h` for UV in YUV420P),
+  matching `float_motion(motion_add_uv=true)` CPU parity at places=4.
+  The CUDA, Vulkan, HIP, and Metal twins expose the option but return
+  `-ENOTSUP` with a `WARNING` until their kernel ports land. On rebase:
+  if upstream Netflix adds `motion_add_uv` to `integer_motion.c`, verify
+  that the per-plane normalization formula remains consistent.
 
 - **`integer_psnr_sycl.cpp` honours `enable_chroma` option parity**
   (ADR-0453). The `enable_chroma` option (default `true`) clamps `n_planes`
@@ -230,6 +244,7 @@ ADR-0884 / ADR-0946 backlog must be updated in the same PR.
 |---|---|---|---|
 | `integer_cambi_sycl.cpp` | `cambi.c` | `test_integer_cambi_sycl.c` | pre-existing |
 | `integer_motion_sycl.cpp` (motion3) | `integer_motion.c` | `test_sycl_motion3_parity.c` | ADR-0219 |
+| `integer_motion_sycl.cpp` (motion_add_uv) | `float_motion.c` | `test_sycl_motion_add_uv_parity.c` | ADR-0989 |
 | `integer_psnr_sycl.cpp` | `integer_psnr.c` | `test_sycl_psnr_parity.c` | ADR-0868 (round 1) |
 | `integer_vif_sycl.cpp` | `integer_vif.c` | `test_sycl_vif_parity.c` | ADR-0868 (round 1) |
 | `integer_adm_sycl.cpp` | `integer_adm.c` | `test_sycl_adm_parity.c` | ADR-0884 (round 2) |
@@ -299,6 +314,7 @@ Coverage matrix:
 | `integer_ms_ssim_sycl.cpp` | `test_sycl_ms_ssim_parity.c` | ADR-0884 |
 | `integer_motion_v2_sycl.cpp` | `test_sycl_motion_v2_parity.c` | ADR-0884 |
 | `integer_motion_sycl.cpp` | `test_sycl_motion3_parity.c` | [ADR-0219](../../../../docs/adr/0219-motion3-gpu-contract.md) |
+| `integer_motion_sycl.cpp` (motion_add_uv) | `test_sycl_motion_add_uv_parity.c` | [ADR-0989](../../../../docs/adr/0989-sycl-motion-add-uv.md) |
 | `integer_cambi_sycl.cpp` | `test_integer_cambi_sycl.c` (smoke + score sanity) | [ADR-0371](../../../../docs/adr/0371-sycl-cambi-port.md) |
 | `float_*_sycl.cpp`, `speed_*_sycl.cpp`, `ssimulacra2_sycl.cpp`, `integer_moment_sycl.cpp`, `integer_psnr_hvs_sycl.cpp` | (round 3 backlog — see ADR-0884) | — |
 

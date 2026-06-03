@@ -65,6 +65,7 @@ typedef struct MotionStateCuda {
     bool motion_force_zero;
     bool motion_five_frame_window; /* rejected with -ENOTSUP — see init() */
     bool motion_moving_average;
+    bool motion_add_uv; /* rejected with -ENOTSUP — see init(); ADR-0989 */
     double motion_blend_factor;
     double motion_blend_offset;
     double motion_fps_weight;
@@ -158,6 +159,15 @@ static const VmafOption options[] = {
         .alias = "mma",
         .help = "use moving average for motion3 scores after first frame",
         .offset = offsetof(MotionStateCuda, motion_moving_average),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "motion_add_uv",
+        .alias = "mau",
+        .help = "include U and V plane SADs (NOT YET SUPPORTED on CUDA — ADR-0989 deferred)",
+        .offset = offsetof(MotionStateCuda, motion_add_uv),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
@@ -257,6 +267,18 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
      * -ENOTSUP keeps callers off a silent-wrong-answer code path.
      * See ADR-0219. */
     if (s->motion_five_frame_window) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "motion_cuda: motion_five_frame_window=true is not yet supported on CUDA "
+                 "(T3-15(c) deferred). Use the CPU extractor `motion` instead.\n");
+        return -ENOTSUP;
+    }
+
+    /* motion_add_uv kernel port deferred — ADR-0989. SYCL is the lead
+     * backend; CUDA / Vulkan / HIP / Metal will follow. */
+    if (s->motion_add_uv) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "motion_cuda: motion_add_uv=true is not yet supported on CUDA "
+                 "(ADR-0989 deferred). Use the SYCL extractor `motion_sycl` instead.\n");
         return -ENOTSUP;
     }
 

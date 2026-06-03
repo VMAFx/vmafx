@@ -43418,3 +43418,11 @@ no rebase impact: REASON — all touched files are fork-added Python modules
 `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`) with no upstream Netflix/vmaf
 equivalent. The changes are import additions and private-function removals;
 no public API, no C sources, no Netflix golden-data files are touched.
+## sycl-motion-add-uv (2026-06-03, ADR-0989)
+
+no rebase impact: REASON — all changed files are fork-added GPU backends
+(`integer_motion_sycl.cpp`, `integer_motion_cuda.c`, `motion_vulkan.c`,
+`integer_motion_hip.c`, `integer_motion_metal.mm`). The upstream Netflix
+`integer_motion.c` is not modified. If upstream adds `motion_add_uv` to
+`integer_motion.c` in a future sync, check whether the SYCL per-plane
+normalization formula remains consistent.
