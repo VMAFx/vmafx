@@ -149,26 +149,20 @@ variable that overrides it.
 | `--no_cuda` | off | Forbid CUDA dispatch even if the CUDA backend is built in. |
 | `--no_sycl` | off | Forbid SYCL dispatch even if the SYCL backend is built in. |
 | `--sycl_device <N>` | auto (first GPU) | Pick SYCL device by ordinal from the oneAPI device list. |
-| `--no_vulkan` | off | Forbid Vulkan dispatch even if the Vulkan backend is built in. |
-| `--vulkan_device <N>` | disabled (opt-in) | Pick Vulkan device by ordinal. Pass `0` for the first compute-capable device, `-1` for auto-pick (prefers discrete > integrated > virtual > cpu). Without this flag, Vulkan is never used. |
 | `--no_hip` | off | Forbid HIP/ROCm dispatch even if the HIP backend is built in. |
-| `--hip_device <N>` | disabled (opt-in) | Pick HIP/ROCm device by ordinal. Pass `0` for the first AMD GPU. Without this flag the HIP backend is never used, even when the binary was built with `-Denable_hip=true`. Mirrors `--vulkan_device` semantics. See [../backends/hip/overview.md](../backends/hip/overview.md). |
+| `--hip_device <N>` | disabled (opt-in) | Pick HIP/ROCm device by ordinal. Pass `0` for the first AMD GPU. Without this flag the HIP backend is never used, even when the binary was built with `-Denable_hip=true`. See [../backends/hip/overview.md](../backends/hip/overview.md). |
 | `--no_metal` | off | Forbid Metal dispatch even if the Metal backend is built in (macOS only). |
-| `--metal_device <N>` | disabled (opt-in) | Pick Metal GPU by ordinal (macOS only). Pass `0` for the first Metal device (typically the integrated Apple GPU on Apple Silicon). Without this flag the Metal backend is never used, even on macOS builds. Mirrors `--vulkan_device` semantics. See [../backends/metal/overview.md](../backends/metal/overview.md). |
-| `--backend <name>` | `auto` | Exclusive backend selector — `auto` (default; whichever backends are built compete by registry order), `cpu`, `cuda`, `sycl`, `vulkan`, `hip`, `metal`. Setting a specific backend disables the others via the matching `--no_X` flags BEFORE dispatch and pins the device index for the chosen backend (`gpumask=0` for CUDA, `sycl_device=0` for SYCL, `vulkan_device=0` for Vulkan, `hip_device=0` for HIP, `metal_device=0` for Metal). Closes the multi-backend dispatcher conflict in which `vmaf_get_feature_extractor_by_feature_name`'s first-match-wins rule silently routed Vulkan-flagged work to CUDA when both backends had state imported. |
+| `--metal_device <N>` | disabled (opt-in) | Pick Metal GPU by ordinal (macOS only). Pass `0` for the first Metal device (typically the integrated Apple GPU on Apple Silicon). Without this flag the Metal backend is never used, even on macOS builds. See [../backends/metal/overview.md](../backends/metal/overview.md). |
+| `--backend <name>` | `auto` | Exclusive backend selector — `auto` (default; whichever backends are built compete by registry order), `cpu`, `cuda`, `sycl`, `hip`, `metal`. Setting a specific backend disables the others via the matching `--no_X` flags BEFORE dispatch and pins the device index for the chosen backend (`gpumask=0` for CUDA, `sycl_device=0` for SYCL, `hip_device=0` for HIP, `metal_device=0` for Metal). (The `vulkan` token and `--no_vulkan` / `--vulkan_device` flags were removed in ADR-0726.) |
 | `--cpumask <bitmask>` (`-c`) | all ISAs enabled | Mask out specific CPU ISAs (e.g. force scalar, disable AVX-512). Values are fork-internal — see `core/src/cpu.h`. |
 | `--gpumask <bitmask>` | all GPU ops enabled | Mask out specific GPU ops. |
 | `--threads <N>` | host `nproc` | CPU-side worker thread count. |
 
-> **Vulkan is opt-in**, unlike CUDA/SYCL — `--vulkan_device <N>` (or
-> `--backend vulkan`) must be passed explicitly even when the backend
-> is built. As of T5-1c (PR #120) `vif_vulkan`, `motion_vulkan`, and
-> `adm_vulkan` are wired and the default `vmaf_v0.6.1` model runs
-> end-to-end on Vulkan. See
-> [../backends/vulkan/overview.md](../backends/vulkan/overview.md) and
-> [ADR-0176](../adr/0176-vulkan-vif-cross-backend-gate.md) /
-> [ADR-0177](../adr/0177-vulkan-motion-kernel.md) /
-> [ADR-0178](../adr/0178-vulkan-adm-kernel.md).
+> **Vulkan backend removed (ADR-0726):** The `--no_vulkan`, `--vulkan_device`,
+> and `--backend vulkan` flags no longer exist. Passing them produces an
+> unrecognised-option error. See
+> [../backends/vulkan/overview.md](../backends/vulkan/overview.md) for
+> historical context.
 
 If neither backend is built in, these flags are silently inert. See
 [../backends/index.md](../backends/index.md) for the runtime-dispatch rules and

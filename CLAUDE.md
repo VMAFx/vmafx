@@ -60,9 +60,10 @@ clangd / VS Code C/C++ extension reads from
 ([`.vscode/c_cpp_properties.json`](.vscode/c_cpp_properties.json)).
 Configure it with every backend you have a toolchain for —
 otherwise `compile_commands.json` won't contain include paths
-for `volk.h` / CUDA / SYCL headers and clangd lights up every
-backend file with "undeclared identifier" errors. See
-[docs/development/ide-setup.md](docs/development/ide-setup.md).
+for CUDA / SYCL headers and clangd lights up every
+backend file with "undeclared identifier" errors. (Vulkan removed
+per ADR-0726; `volk.h` / `vk_mem_alloc.h` are no longer needed.)
+See [docs/development/ide-setup.md](docs/development/ide-setup.md).
 
 ## 3. How to test
 
@@ -328,12 +329,12 @@ Use `/prep-release` to dry-run locally before merging a release PR.
 15. **Default to the `vmaf-dev-mcp` container for vmaf / vmaf-tune /
     ai / MCP-probing work.** The container at
     [`dev/Containerfile`](dev/Containerfile) bakes in every backend
-    (CUDA + SYCL + Vulkan + HIP + Metal scaffolds), oneAPI, the
+    (CUDA + SYCL + HIP + Metal scaffolds), oneAPI, the
     NVIDIA Container Toolkit runtime, ffmpeg with libvmaf, the MCP
     server, and the workspace mount. Host-side `meson setup build`
-    chases moving toolchain targets (icpx missing, Vulkan SDK gaps,
-    libsvm wheel drift, locale leaks); the container eliminates that
-    entire class of yak shave. The rule:
+    chases moving toolchain targets (icpx missing, libsvm wheel drift,
+    locale leaks); the container eliminates that entire class of yak
+    shave. (The Vulkan backend was removed in ADR-0726.) The rule:
     - **Before any non-trivial vmaf / vmaf-tune / ai / MCP run**:
       rebuild the container if its image predates the last `master`
       sync that touched anything under `core/`, `mcp-server/`,
@@ -360,13 +361,12 @@ Use `/prep-release` to dry-run locally before merging a release PR.
       a long-running job (CHUG re-extract, BVI-DVC sweep) is pinned to
       one device (e.g. CUDA / RTX 4090), schedule sibling parallel
       work on a *different* device: Intel Arc via SYCL, AMD via HIP,
-      Vulkan on a non-NVIDIA adapter, or CPU. The fork's
-      `--backend $name` selector forces exclusive backend choice; use
-      it (or `--no_cuda` / `--no_sycl` / etc. for negative selection)
-      to pin each parallel run to its own silicon. The dev machine
-      has at least CUDA (RTX 4090), Intel Arc (SYCL + Vulkan), and
-      CPU — three independent lanes for cross-backend parity sweeps
-      while CHUG keeps CUDA hot.
+      or CPU. The fork's `--backend $name` selector forces exclusive
+      backend choice; use it (or `--no_cuda` / `--no_sycl` / etc. for
+      negative selection) to pin each parallel run to its own silicon.
+      The dev machine has at least CUDA (RTX 4090), Intel Arc (SYCL),
+      and CPU — three independent lanes for cross-backend parity sweeps
+      while CHUG keeps CUDA hot. (Vulkan backend removed per ADR-0726.)
 
     See [docs/development/dev-mcp.md](docs/development/dev-mcp.md) for
     the operator guide, including the cross-backend probe harness and

@@ -1,11 +1,26 @@
 <!-- markdownlint-disable MD060 -->
-# Vulkan compute backend
+# Vulkan compute backend (removed — historical reference)
 
-> **Status: T5-1c closed — full default-model coverage (vif + motion + adm).**
-> `vmaf_vulkan_state_init` / `_import_state` / `_state_free` plumb
-> the public state-level API; the CLI flags `--vulkan_device <N>`,
-> `--no_vulkan`, and `--backend {auto,cpu,cuda,sycl,vulkan}` drive
-> end-to-end execution on a real Vulkan ICD. Live extractors:
+> **Status: REMOVED per [ADR-0726](../../adr/0726-drop-vulkan-backend.md)
+> (2026-05-28).** The Vulkan backend, all associated source files
+> (`core/src/vulkan/`, `core/src/feature/vulkan/`), the public header
+> (`libvmaf_vulkan.h`), and the `enable_vulkan` meson option have been deleted.
+> The CLI flags `--vulkan_device`, `--no_vulkan`, and `--backend vulkan` are
+> no longer accepted. This page is preserved as a historical reference for
+> what was implemented. For active GPU backends see
+> [CUDA](../cuda/overview.md), [SYCL](../sycl/overview.md),
+> [HIP](../hip/overview.md), and [Metal](../metal/index.md).
+
+The content below describes the backend as it existed immediately before
+removal.
+
+---
+
+> ~~**Status: T5-1c closed — full default-model coverage (vif + motion + adm).**~~
+> ~~`vmaf_vulkan_state_init` / `_import_state` / `_state_free` plumb~~
+> ~~the public state-level API; the CLI flags `--vulkan_device <N>`,~~
+> ~~`--no_vulkan`, and `--backend {auto,cpu,cuda,sycl,vulkan}` drive~~
+> ~~end-to-end execution on a real Vulkan ICD.~~ Live extractors:
 > `vif_vulkan` (4-scale VIF), `integer_motion_vulkan` (canonical
 > motion + motion2; `motion_vulkan` remains an explicit compatibility
 > name), and `adm_vulkan` (4-scale ADM + adm2). All three are gated

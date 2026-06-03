@@ -1,8 +1,16 @@
 <!-- markdownlint-disable MD012 MD013 MD024 MD060 -->
-# AGENTS.md — libvmaf/src/vulkan
+# AGENTS.md — libvmaf/src/vulkan (REMOVED — historical reference)
+
+> **The Vulkan backend was removed per [ADR-0726](../../../docs/adr/0726-drop-vulkan-backend.md)
+> (2026-05-28).** The source files in this directory are orphan code no longer
+> compiled by any meson target. The `enable_vulkan` meson option, the public
+> header `libvmaf_vulkan.h`, and the CI lanes have been removed. Do not add
+> new code here. The content below is preserved for historical context.
+
+---
 
 Orientation for agents working on the Vulkan compute backend
-runtime. Parent: [../../AGENTS.md](../../AGENTS.md).
+runtime (historical). Parent: [../../AGENTS.md](../../AGENTS.md).
 
 ## Scope
 
@@ -397,28 +405,17 @@ vulkan/
   **On rebase**: do not introduce per-frame map/unmap; the
   persistent mapping is the contract.
 
-## Build
+## Build (historical — no longer functional)
+
+> The `enable_vulkan` meson option was removed in ADR-0726. The commands
+> below are preserved for reference only; running them will fail with
+> "Unknown option enable_vulkan".
 
 ```bash
-meson setup build -Denable_vulkan=enabled
-ninja -C build
+# HISTORICAL ONLY — will fail with current meson_options.txt:
+# meson setup build -Denable_vulkan=enabled
+# ninja -C build
 ```
-
-Requires `dependency('vulkan')`, `glslc` (Vulkan SDK or shaderc
-package), and the bundled volk + VMA subprojects. The lavapipe
-software rasteriser (Mesa) is sufficient for the cross-backend
-gate; physical GPUs (Arc A380, RTX 4090) cover the advisory lanes.
-
-
-For a CPU-only host build (no CUDA / SYCL toolchains required):
-
-```bash
-meson setup build -Denable_vulkan=enabled -Denable_cuda=false -Denable_sycl=false
-ninja -C build
-```
-
-Requires the Vulkan SDK or system Vulkan loader + `glslc` (or
-`glslangValidator` as a fallback) on PATH.
 
 
 ## Governing ADRs

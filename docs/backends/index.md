@@ -40,7 +40,8 @@ Dispatch precedence inside `libvmaf` (highest first):
 ### Explicit-backend semantics (`--backend NAME`)
 
 The `--backend` exclusive selector accepts `auto | cpu | cuda | sycl
-| vulkan | hip | metal`. Per ADR-0498 (2026-05-18):
+| hip | metal`. (The `vulkan` token was accepted prior to ADR-0726;
+it now returns exit 1 with an unsupported-backend error.) Per ADR-0498 (2026-05-18):
 
 - `--backend auto` (default) keeps the soft-fallback chain — an init
   failure for the priority backend silently demotes to CPU with a
@@ -48,7 +49,7 @@ The `--backend` exclusive selector accepts `auto | cpu | cuda | sycl
 - `--backend NAME` for any *explicit* GPU backend turns init failure
   into a **non-zero exit** with a clear stderr error. CI gates that
   depend on backend-specific scoring no longer silently regress
-  when, e.g., the Vulkan ICD fails to load in a container.
+  when, e.g., a GPU ICD fails to load in a container.
 - Per ADR-0543 (extends ADR-0498), the exit code for an explicit-
   backend init failure is a dedicated **`100`** (`VMAF_EXIT_BACKEND_INIT_FAILED`)
   rather than the generic non-zero `255` (`int -1` truncated to
@@ -61,35 +62,39 @@ The `--backend` exclusive selector accepts `auto | cpu | cuda | sycl
   wrappers can decode the failure structurally instead of falling
   back to stderr parsing (ADR-0543).
 - Per-feature symmetry (ADR-0543): a feature name ending in
-  `_cuda` / `_sycl` / `_vulkan` / `_hip` / `_metal` is a GPU-pinned
-  variant. If the matching backend isn't active in this run
-  (not compiled in, not requested, or failed to init), the CLI
+  `_cuda` / `_sycl` / `_hip` / `_metal` is a GPU-pinned
+  variant. (The `_vulkan` suffix was retired with ADR-0726 — any
+  remaining `_vulkan` feature names are effectively dead code with
+  no backing extractor.) If the matching backend isn't active in this
+  run (not compiled in, not requested, or failed to init), the CLI
   hard-fails with the same exit `100` + JSON descriptor instead of
   silently registering the CPU twin.
 - The JSON output gains a top-level `"backend_used": "NAME"` key
-  echoing what actually ran (cpu / cuda / sycl / vulkan / hip /
-  metal). Downstream consumers can confirm dispatch independently
-  of stderr; mirrors the MCP-layer echo added by PR #1251.
+  echoing what actually ran (cpu / cuda / sycl / hip / metal).
+  Downstream consumers can confirm dispatch independently of stderr;
+  mirrors the MCP-layer echo added by PR #1251.
 
 Example:
 
 ```bash
-# Explicit Vulkan; errors out hard if the Vulkan ICD can't load.
+# Explicit HIP; errors out hard if no AMD GPU is available.
 vmaf --reference ref.yuv --distorted dist.yuv \
      --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
-     --model version=vmaf_v0.6.1 --backend vulkan \
+     --model version=vmaf_v0.6.1 --backend hip \
      --json --output /tmp/s.json
 # stdout silent on success; /tmp/s.json carries:
-#   { ..., "backend_used": "vulkan" }
+#   { ..., "backend_used": "hip" }
 # On init failure: exit = 100 (ADR-0543), stderr:
-#   problem during vmaf_vulkan_state_init (-19), using CPU
-#   vmaf: --backend vulkan requested but init failed; refusing to
+#   vmaf: --backend hip requested but init failed; refusing to
 #   silently fall back to CPU (ADR-0498)
 # AND /tmp/s.json is overwritten with a structured error descriptor:
-#   {"error": "vmaf_vulkan_state_init failed",
-#    "backend_requested": "vulkan", "errno": -19,
+#   {"error": "vmaf_hip_state_init failed",
+#    "backend_requested": "hip", "errno": -19,
 #    "adr": "ADR-0498", "exit_code": 100}
 ```
+
+> **Note:** `--backend vulkan` was removed in ADR-0726. Passing it returns
+> a non-zero exit with an unsupported-backend error.
 
 Not every feature has every twin — the coverage matrix is in
 [../metrics/features.md](../metrics/features.md) per feature and in each
@@ -105,8 +110,8 @@ per-backend page below.
 - [SYCL / oneAPI](sycl/overview.md) — Intel GPU backend + build / invocation
 - [SYCL bundling](sycl/bundling.md) — self-contained deployment without oneAPI
   runtime
-- [Vulkan](vulkan/overview.md) — opt-in backend; vif + motion + adm live
-  (T5-1c), full default-model coverage
+- [Vulkan](vulkan/overview.md) — **removed in ADR-0726**; historical
+  reference only
 - [HIP / AMD ROCm](hip/overview.md) — opt-in backend; 7/10 real
   kernels (psnr, integer_psnr, float_motion, float_moment, float_ssim,
   ciede, integer_motion_v2); 3 stubs pending. The original 11th kernel

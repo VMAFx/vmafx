@@ -12,25 +12,24 @@ which **meson generates automatically** during `meson setup`.
 
 `compile_commands.json` only contains entries for files that
 were actually compiled. If `build/` was set up CPU-only, clangd
-has no include paths for `volk.h` / `vk_mem_alloc.h` / CUDA /
-SYCL headers and lights up every `VkInstance` / `VmafCudaBuffer`
-/ `sycl::queue` symbol as "undeclared identifier".
+has no include paths for CUDA / SYCL headers and lights up every
+`VmafCudaBuffer` / `sycl::queue` symbol as "undeclared identifier".
+
+> **Vulkan removed (ADR-0726):** The `enable_vulkan` option no longer exists.
+> Do not pass `-Denable_vulkan=enabled`; meson will reject it as an unknown
+> option. The `volk.h` / `vk_mem_alloc.h` / `VkInstance` / `VkDevice`
+> warnings in old `build/` directories are resolved by reconfiguring without
+> that flag.
 
 Fix: configure the IDE build with every backend you have a
-toolchain for. The minimum useful setup for working on
-`core/src/feature/vulkan/`:
+toolchain for:
 
 ```bash
-meson setup build -Denable_vulkan=enabled -Denable_float=true
-```
-
-For CUDA + SYCL contributors:
-
-```bash
+# CUDA + SYCL (full GPU IDE build):
 source /opt/intel/oneapi/setvars.sh
 CC=icx CXX=icpx meson setup build \
     -Denable_cuda=true -Denable_sycl=true \
-    -Denable_vulkan=enabled -Denable_float=true
+    -Denable_float=true
 ```
 
 Then **restart clangd** in VS Code (Ctrl+Shift+P → "Restart
@@ -48,9 +47,6 @@ meson setup build  -D…all-backends-on…
 # CUDA-only test build:
 meson setup build-cuda-test -Denable_cuda=true -Denable_float=true
 
-# Vulkan-only test build:
-meson setup build-vulkan-test -Denable_vulkan=enabled -Denable_float=true
-
 # SYCL-only test build (icx/icpx required):
 meson setup build-sycl-test -Denable_sycl=true -Denable_float=true
 ```
@@ -60,9 +56,6 @@ of these via `--vmaf-binary`.
 
 ## Symptoms of a misconfigured `build/`
 
-- `unknown type name 'VkInstance'` (or `VkDevice`, `VkPipeline`,
-  `VkCommandBuffer`, …) on every file under
-  `core/src/feature/vulkan/` or `core/src/vulkan/`.
 - `unknown type name 'VmafCudaBuffer'` / `VmafCudaState'` on
   files under `core/src/feature/cuda/`.
 - `'sycl/sycl.hpp' file not found` on files under

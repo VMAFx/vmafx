@@ -3,20 +3,20 @@
 
 Status: templates introduced 2026-04-29
 ([ADR-0246](../adr/0246-gpu-kernel-template.md)); HIP and Metal sections added
-per [ADR-0484](../adr/0484-kernel-scaffolding-hip-metal-doc.md). All four
-backends (CUDA, Vulkan, HIP, Metal) are wired. Migration coverage: **16/20
-CUDA kernels** and **22/22 Vulkan kernels** use the template; **14 HIP
-kernels** and **8 Metal kernels** likewise. The four remaining CUDA kernels
-(`integer_adm_cuda`, `integer_motion_cuda`, `integer_vif_cuda`,
-`ssimulacra2_cuda`) use bespoke lifecycle code and remain future migration
-candidates.
+per [ADR-0484](../adr/0484-kernel-scaffolding-hip-metal-doc.md). Active
+backends: CUDA, HIP, Metal. The Vulkan backend (previously 22/22 kernels
+migrated) was removed per ADR-0726. Migration coverage: **16/20 CUDA kernels**
+use the template; **14 HIP kernels** and **8 Metal kernels** likewise. The four
+remaining CUDA kernels (`integer_adm_cuda`, `integer_motion_cuda`,
+`integer_vif_cuda`, `ssimulacra2_cuda`) use bespoke lifecycle code and remain
+future migration candidates.
 
 This page documents the **per-backend kernel scaffolding templates** that
-sit alongside the CUDA, Vulkan, HIP, and Metal backend runtimes:
+sit alongside the CUDA, HIP, and Metal backend runtimes. (The Vulkan template
+at `core/src/vulkan/kernel_template.h` was deleted with ADR-0726; its historical
+design is preserved below for reference.)
 
 - [`core/src/cuda/kernel_template.h`](../../core/src/cuda/kernel_template.h)
-  — inline helpers
-- [`core/src/vulkan/kernel_template.h`](../../core/src/vulkan/kernel_template.h)
   — inline helpers
 - [`core/src/hip/kernel_template.h`](../../core/src/hip/kernel_template.h) +
   [`core/src/hip/kernel_template.c`](../../core/src/hip/kernel_template.c) —
@@ -138,12 +138,16 @@ The before/after diff for `integer_psnr_cuda.c` is roughly **−6 LOC of
 host-side scaffolding** per kernel — small, but the win is mostly in the
 shared error-handling and partial-init unwind paths, not the line count.
 
-## Vulkan template
+## Vulkan template (historical — backend removed in ADR-0726)
 
-The Vulkan template captures the descriptor-pool + pipeline + per-WG int64
-partials shape every Vulkan SSBO-only reduction kernel uses today. The
-reference implementation is
-[`psnr_vulkan.c`](../../core/src/feature/vulkan/psnr_vulkan.c).
+> The Vulkan backend was removed per ADR-0726 (2026-05-28). The template
+> source (`core/src/vulkan/kernel_template.h`) no longer exists. The
+> description below is preserved for historical context only.
+
+The Vulkan template captured the descriptor-pool + pipeline + per-WG int64
+partials shape that every Vulkan SSBO-only reduction kernel used. The
+reference implementation was
+[`psnr_vulkan.c`](../../core/src/feature/vulkan/psnr_vulkan.c) (deleted).
 
 ### Surface
 

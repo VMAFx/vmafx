@@ -18,8 +18,9 @@ PR that updates this file alongside the commit that motivates the rerun.
 
 The `ryzen-4090-arc` profile is the canonical fork bench host: a single
 machine that exposes CUDA (RTX 4090), SYCL (Arc A380 via oneAPI 2025.3
-Level Zero), and Vulkan (both GPUs visible as separate `vulkan_device`
-indices) so all four backends can run back-to-back from one shell.
+Level Zero), and HIP so all active backends can run back-to-back from one
+shell. (Vulkan backend removed per ADR-0726; historical Vulkan bench rows
+are preserved below for reference.)
 
 ## Backend comparison (Netflix normal pair, 576×324, 48 frames)
 
@@ -34,11 +35,11 @@ deviation in parentheses. Commit `41301496` on `ryzen-4090-arc`.
 |`cpu` (full ISA, AVX-512)|598 (±21)|80.3|`76.667828`|15|0 (reference)|
 |`cuda` (RTX 4090)|278 (±52)|177.5|`76.667828`|12|0.0 — pool match to 6 dp; per-frame max ULP diff 1.8×10⁻⁵|
 |`sycl` (Arc A380)|315 (±0.9)|152.3|`76.667767`|34|-6.1×10⁻⁵ pool; per-frame max diff 1.11×10⁻³|
-|`vulkan` (RTX 4090)|171 (±3.8)|280.6|`76.667758`|34|-7.0×10⁻⁵ pool; per-frame max diff 1.11×10⁻³|
+|~~`vulkan`~~ (removed ADR-0726)|(historical: 171 fps)|(historical: 280.6ms)|`76.667758`|34|historical reference only|
 
 **Key-count check.** Each backend emits a different `frames[0].metrics`
 key set (CPU=15 with `integer_aim`/`integer_motion3`/`integer_adm3`,
-CUDA=12, SYCL/Vulkan=34 with raw `_num`/`_den` intermediates). Identical
+CUDA=12, SYCL=34 with raw `_num`/`_den` intermediates). Identical
 key counts across two rows would indicate a silent-fallback to CPU; the
 counts above confirm each backend actually engaged. See
 [`libvmaf/AGENTS.md` §"Backend-engagement foot-guns"](../libvmaf/AGENTS.md).
@@ -53,7 +54,7 @@ Same setup as 576×324.
 |`cpu`|45.6 (±1.0)|109.7|`35.815478`|15|
 |`cuda`|33.6 (±1.1)|148.8|`35.815478`|12|
 |`sycl`|41.1 (±0.7)|121.7|`35.815404`|34|
-|`vulkan`|21.8 (±0.6)|229.5|`35.815399`|34|
+|~~`vulkan`~~ (removed ADR-0726)|(historical: 21.8 fps)|(historical: 229.5ms)|`35.815399`|34|
 
 CPU outpaces CUDA at 1080p × 5 frames because dispatch overhead
 dominates the workload — only 5 frames doesn't amortise the CUDA
@@ -71,7 +72,7 @@ master, ffmpeg-encoded ref + libx264 CRF=35 round-trip distortion; see
 |`cpu`|13.9 (±0.5)|14.43|`36.343813`|1.0× (baseline)|
 |`cuda` (RTX 4090)|**227.6** (±11.3)|0.88|`36.343815`|**16.4×**|
 |`sycl` (Arc A380)|32.1 (±0.1)|6.23|`36.343780`|2.3×|
-|`vulkan` (RTX 4090)|14.1 (±0.4)|14.16|`36.343774`|1.0×|
+|~~`vulkan`~~ (removed ADR-0726)|(historical: 14.1 fps)|(historical: 14.16s)|`36.343774`|historical|
 
 Notes:
 
@@ -82,10 +83,9 @@ Notes:
   without native fp64). The 2.3× headline understates the SIMD path's
   potential on a fp64-native dGPU; revisit when an Arc B-series or
   Battlemage host lands. See backlog T7-17.
-- **Vulkan on NVIDIA** is currently dispatch-overhead-bound — 14 fps
-  matches CPU because the per-tile descriptor-set churn dominates. The
-  Vulkan path is correct (per-frame max diff 1.36×10⁻³ vs CPU on 200
-  frames) but not yet performance-tuned. See backlog T7-18.
+- **Vulkan rows** are historical; the backend was removed in ADR-0726.
+  The performance bottleneck (dispatch-overhead-bound on NVIDIA, 14 fps
+  matching CPU) contributed to the removal rationale.
 
 ## CPU SIMD-ISA breakdown (576×324)
 
@@ -126,8 +126,9 @@ matters.
 # 1. Build with all backends (oneAPI 2025.3 sourced for icx/icpx + Arc visibility)
 source /opt/intel/oneapi-2025.3/setvars.sh
 CC=icx CXX=icpx meson setup core/build libvmaf \
-    -Denable_cuda=true -Denable_sycl=true -Denable_vulkan=enabled \
+    -Denable_cuda=true -Denable_sycl=true \
     -Db_lto=false --buildtype=release
+# Note: -Denable_vulkan=enabled removed per ADR-0726
 ninja -C core/build
 
 # 2. Acquire fixtures (gitignored — don't commit)
@@ -150,7 +151,7 @@ ffmpeg -y -i /tmp/bbb4k.mp4 -frames:v 200 -c:v libx264 -crf 35 -preset veryfast 
 VMAF_BIN="$(pwd)/core/build/tools/vmaf" bash testdata/bench_all.sh
 
 # 4. Verify each backend engaged via per-row metrics-key counts in the
-#    bench output ("CPU 15 keys, CUDA 12 keys, SYCL/Vulkan 34 keys").
+#    bench output ("CPU 15 keys, CUDA 12 keys, SYCL 34 keys").
 #    Identical key counts across two rows = silent CPU fallback.
 ```
 

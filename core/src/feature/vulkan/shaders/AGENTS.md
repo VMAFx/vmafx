@@ -1,8 +1,13 @@
-# AGENTS.md — libvmaf/src/feature/vulkan/shaders
+# AGENTS.md — libvmaf/src/feature/vulkan/shaders (REMOVED — historical)
 
-Orientation for agents working on the GLSL compute shaders that back
-the Vulkan feature kernels. Parent: [../AGENTS.md](../AGENTS.md). The
-host glue that drives these shaders lives in the parent directory
+> **Vulkan backend removed per ADR-0726 (2026-05-28).** These GLSL shaders
+> are no longer compiled. Do not add new code here.
+
+---
+
+Orientation for agents working on the GLSL compute shaders that backed
+the Vulkan feature kernels (historical). Parent: [../AGENTS.md](../AGENTS.md).
+The host glue that drove these shaders lived in the parent directory
 (`<feature>_vulkan.c`).
 
 ## Scope

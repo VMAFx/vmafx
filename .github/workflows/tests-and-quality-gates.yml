@@ -468,10 +468,10 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          # libav*-dev pulled in for parity with the netflix-golden /
-          # vulkan-vif-cross-backend lanes — keeps the libvmaf build
-          # graph identical so the MCP smoke exercises the same
-          # configuration the rest of the matrix sees.
+          # libav*-dev pulled in for parity with the netflix-golden lane —
+          # keeps the libvmaf build graph identical so the MCP smoke
+          # exercises the same configuration the rest of the matrix sees.
+          # (Vulkan lanes removed per ADR-0726.)
           sudo apt-get install -y meson ninja-build nasm pkg-config \
             python3-pip python3-venv \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev

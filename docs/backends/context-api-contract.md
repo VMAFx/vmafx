@@ -13,9 +13,10 @@ decision record.
 
 ## Required functions
 
-Every backend named `<backend>` (e.g., `hip`, `metal`, `vulkan`) **must** expose
+Every backend named `<backend>` (e.g., `hip`, `metal`) **must** expose
 exactly these three functions in its public header
-`core/src/<backend>/common.h`:
+`core/src/<backend>/common.h`. (The `vulkan` backend previously followed this
+contract; it was removed in ADR-0726.)
 
 ```c
 /* Allocate and initialise a new context bound to device_index.

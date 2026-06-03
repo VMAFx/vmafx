@@ -1,7 +1,14 @@
-# AGENTS.md — libvmaf/src/feature/vulkan
+# AGENTS.md — libvmaf/src/feature/vulkan (REMOVED — historical reference)
+
+> **The Vulkan backend was removed per [ADR-0726](../../../../docs/adr/0726-drop-vulkan-backend.md)
+> (2026-05-28).** The source files in this directory are orphan code no longer
+> compiled by any meson target. Do not add new code here. The content below is
+> preserved for historical context only.
+
+---
 
 Orientation for agents working on per-feature Vulkan host-glue (`.c`
-TUs that drive compute shaders). Parent: [../AGENTS.md](../AGENTS.md).
+TUs that drive compute shaders) — historical. Parent: [../AGENTS.md](../AGENTS.md).
 The backend runtime (instance, device, VMA, picture, image-import)
 lives one level up in
 [`../../vulkan/AGENTS.md`](../../vulkan/AGENTS.md). The GLSL compute
@@ -242,8 +249,8 @@ ADR-0234) catches drift but only after a full GPU run.
 
 ## Build
 
-Vulkan feature TUs compile only when `meson setup -Denable_vulkan=true`.
-The umbrella flag pulls in `dependency('vulkan')` + volk + glslc + VMA.
+Vulkan feature TUs no longer compile — the `enable_vulkan` meson option
+was removed in ADR-0726. These source files are orphan code in the tree.
 
 - **Submit-pool destroy-before-pipeline ordering**
   ([ADR-0256](../../../../docs/adr/0256-vulkan-submit-pool-template.md) /

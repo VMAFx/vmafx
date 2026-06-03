@@ -80,8 +80,9 @@ The filter publishes the final pooled score to FFmpeg's log as
 
 The fork's `ffmpeg-patches/` series (0001–0011) adds options to
 the `libvmaf` filter beyond the upstream surface — tiny-AI ONNX
-inference, backend selectors for SYCL / Vulkan / CUDA / HIP, and
-dedicated `libvmaf_sycl` / `libvmaf_vulkan` filters. The options
+inference, backend selectors for SYCL / CUDA / HIP, and a dedicated
+`libvmaf_sycl` filter. (The `libvmaf_vulkan` filter and `vulkan_device`
+option were removed in ADR-0726.) The options
 below are from patches 0001–0003:
 
 | Option | Default | Notes |
@@ -92,7 +93,7 @@ below are from patches 0001–0003:
 | `tiny_fp16=0\|1` | `0` | Request fp16 I/O when the device supports it. |
 | `sycl_device=N` | `-1` | SYCL device index, `-1` = system default (`ffmpeg-patches/0003-...`). |
 | `sycl_profile=0\|1` | `0` | Enable SYCL queue profiling (`ffmpeg-patches/0003-...`). |
-| `vulkan_device=N` | `-1` | Vulkan device index, `-1` = system default (`ffmpeg-patches/0004-...`). |
+| ~~`vulkan_device=N`~~ | removed | Removed in ADR-0726. The `ffmpeg-patches/0004-...` patch is now a no-op shim per ADR-0860. |
 | `cuda=0\|1` | `0` | Enable the CUDA backend on the libvmaf filter (`ffmpeg-patches/0010-...`). |
 | `hip_device=N` | `-1` | HIP device index, `-1` = system default (`ffmpeg-patches/0011-...`). |
 | `metal_device=N` | `-2` | Metal device index, `-2` = disabled, `-1` = system default, `≥0` = explicit (`ffmpeg-patches/0012-...`). The `-2` default is a fork-local convention because Metal is auto-disabled on Linux; an unset value should not enable the backend. |
@@ -205,9 +206,10 @@ The final command line will depend on what shell you are running `ffmpeg` throug
 
 One ready-to-paste invocation per backend. All examples use the same
 input pair (`reference.mp4`, `distorted.mp4`); each routes the work to a
-different compute path. The fork-added `sycl_device=` / `vulkan_device=`
-/ `cuda=` / `hip_device=` options come from patches `0003`, `0004`,
-`0010`, and `0011`.
+different compute path. The fork-added `sycl_device=`, `cuda=`, and
+`hip_device=` options come from patches `0003`, `0010`, and `0011`.
+(The `vulkan_device=` option from patch `0004` was removed in ADR-0726;
+patch `0004` is retained as a no-op shim per ADR-0860.)
 
 **CPU (default — no hwaccel, no GPU build needed):**
 
@@ -243,9 +245,9 @@ primary context on the default device, imports it into the
 `VmafContext`, and dispenses `VmafPicture`s from a `HOST_PINNED`
 preallocation pool so the existing copy loop fills pinned-host memory
 the CUDA feature kernels DMA from without a staging copy. Mirrors
-the `sycl_device=N` / `vulkan_device=N` selectors below; device
-selection is via `CUDA_VISIBLE_DEVICES` at process scope (the
-upstream `VmafCudaConfiguration` C-API has no `device_index` field).
+the `sycl_device=N` selector; device selection is via
+`CUDA_VISIBLE_DEVICES` at process scope (the upstream
+`VmafCudaConfiguration` C-API has no `device_index` field).
 
 **SYCL (Intel / Arc — built with `-Denable_sycl=true`; uses the
 fork-added `sycl_device=N` selector on the regular `libvmaf` filter,
@@ -257,25 +259,11 @@ ffmpeg -i reference.mp4 -i distorted.mp4 \
        -f null -
 ```
 
-**Vulkan (any compute-capable Vulkan ICD — built with
-`-Denable_vulkan=enabled`; uses the fork-added `vulkan_device=N`
-selector on the regular `libvmaf` filter):**
-
-```bash
-ffmpeg -i reference.mp4 -i distorted.mp4 \
-       -filter_complex "[0:v][1:v]libvmaf=vulkan_device=0:log_fmt=json:log_path=/dev/stdout" \
-       -f null -
-```
-
-When `vulkan_device >= 0` the filter routes its per-frame picture
-allocation through the Vulkan picture-preallocation pool (ADR-0238) —
-buffers are dispensed round-robin from a depth-2 pool initialised on
-the first frame instead of allocating a fresh `VmafPicture` every
-frame. Today the pool uses the HOST method (matches the existing
-3-plane copy contract); a follow-up PR switches to the DEVICE method
-once the Vulkan kernel set covers chroma. See
-[`docs/api/gpu.md`](../api/gpu.md) and
-[ADR-0238](../adr/0238-vulkan-picture-preallocation.md).
+**Vulkan — removed (ADR-0726):** The `vulkan_device=N` filter option and
+the `-Denable_vulkan=enabled` build flag no longer exist. Historical
+examples are preserved in git history. The `libvmaf` filter patch
+(`ffmpeg-patches/0004-...`) is now a no-op shim per ADR-0860; it contributes
+no linked code but is kept so downstream patches' context lines stay intact.
 
 To list the full set of options the locally-installed `libvmaf` filter
 exposes (useful when an option in this doc has drifted from the binary):
@@ -332,29 +320,12 @@ ffmpeg -hwaccel vaapi -hwaccel_output_format vaapi -i reference.mp4 \
        -f null -
 ```
 
-**Vulkan decode (where supported by the ICD) → Vulkan compute
-(same readback caveat — the libvmaf filter reads software
-frames):**
-
-```bash
-ffmpeg -hwaccel vulkan -hwaccel_output_format vulkan -i reference.mp4 \
-       -hwaccel vulkan -hwaccel_output_format vulkan -i distorted.mp4 \
-       -filter_complex "[0:v]hwdownload,format=yuv420p[r]; \
-                        [1:v]hwdownload,format=yuv420p[d]; \
-                        [r][d]libvmaf=vulkan_device=0:log_fmt=json:log_path=/dev/stdout" \
-       -f null -
-```
-
-All four GPU backends now ship a dedicated filter that consumes
-hwdec frames directly without the `hwdownload,format=yuv420p`
-round-trip:
+Active GPU backends that ship a dedicated filter consuming hwdec frames
+directly without the `hwdownload,format=yuv420p` round-trip:
 
 - `libvmaf_cuda` — CUDA frames.
 - `libvmaf_sycl` — QSV / oneVPL frames (T7-28,
   `ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch`).
-- `libvmaf_vulkan` — `AV_PIX_FMT_VULKAN` frames (T7-29 parts
-  2 + 3, closed by
-  `ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch`).
 - `libvmaf_metal` — `AV_PIX_FMT_VIDEOTOOLBOX` frames (T8-IOS,
   `ffmpeg-patches/0013-libvmaf-add-libvmaf-metal-filter.patch`).
   Routes through the `vmaf_metal_picture_import` C API; on hosts
@@ -362,26 +333,9 @@ round-trip:
   `config_props` with `AVERROR(ENODEV)`. See
   [ADR-0423](../adr/0423-metal-iosurface-import-scaffold.md).
 
-**With `libvmaf_vulkan` (drops the bridge entirely):**
-
-```bash
-ffmpeg -hwaccel vulkan -hwaccel_output_format vulkan -i reference.mp4 \
-       -hwaccel vulkan -hwaccel_output_format vulkan -i distorted.mp4 \
-       -filter_complex "[0:v][1:v]libvmaf_vulkan=log_fmt=json:log_path=/dev/stdout" \
-       -f null -
-```
-
-Build FFmpeg with `--enable-libvmaf-vulkan` (in addition to
-`--enable-libvmaf`). The filter pulls the `VkImage` Y-plane
-out of `AVFrame->data[0]` (`AVVkFrame *`), waits the decoder's
-timeline semaphore on the GPU, runs `vkCmdCopyImageToBuffer`
-into the libvmaf-internal staging buffer, and routes through
-the standard scoring pipeline. Synchronous v1 design (per-frame
-fence wait); async overlap is a follow-up. Same-device
-requirement: libvmaf compute runs on the FFmpeg decoder's
-`VkInstance` / `VkDevice` via the new
-`vmaf_vulkan_state_init_external` C-API. See
-[ADR-0186](../adr/0186-vulkan-image-import-impl.md).
+> **`libvmaf_vulkan` removed (ADR-0726):** The `libvmaf_vulkan` filter
+> (`ffmpeg-patches/0006-...`) and `--enable-libvmaf-vulkan` configure flag
+> are gone. Patch `0006` is retained as a no-op shim per ADR-0860.
 
 **With `libvmaf_metal` (VideoToolbox hwdec):**
 

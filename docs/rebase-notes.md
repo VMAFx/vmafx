@@ -44090,3 +44090,16 @@ no rebase impact: all four new test files (`test_asset.py`, `test_result_store.p
 `compat/python-vmaf/tests/`. No C source, public header, upstream-mirrored Python, or
 Netflix golden-assertion file is touched. The tests exercise existing public APIs only
 and add no new production code paths.
+
+---
+
+### chore(adr-0726): final Vulkan residual scrub — config flags + Docker + comments
+
+**Branch**: chore/adr-0726-vulkan-residual-scrub
+
+no rebase impact: removes dead Vulkan build-matrix rows and updates stale
+Vulkan references in docs, CLAUDE.md, and AGENTS.md files to past tense.
+No C source files changed. No public headers changed. No upstream-mirrored
+Python files changed. No Netflix golden assertions touched. The only
+structural change is removing two dead CI matrix rows that would fail anyway
+(meson rejects the unknown `enable_vulkan` option).
