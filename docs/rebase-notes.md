@@ -43457,3 +43457,11 @@ collect_fex_cuda. Resolution rules:
 
 `core/src/feature/cuda/AGENTS.md` — new section "Motion SAD batch fencing":
 keep verbatim on rebase.
+
+## docs/hip-picture-stub-comment-closeout (ADR-0613, 2026-06-03)
+
+`core/src/picture.h` — comment on `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`
+updated to reflect that `picture_hip.{c,h}` is fully implemented (ADR-0613);
+the old text described it as a stub.
+
+Rebase impact: NONE — comment-only change; no logic, no ABI delta.
