@@ -30,9 +30,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stddef.h>
 #include <string.h>
 
+#include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "opt.h"
+
+#if ARCH_X86
+#include "x86/integer_ssim_avx2.h"
+#endif
 
 #define KERNEL_SHIFT (8)
 #define KERNEL_WEIGHT (1 << KERNEL_SHIFT)
@@ -145,6 +150,55 @@ static void ssim_accumulate_row(const unsigned char *src, const unsigned char *d
     }
 }
 
+/*
+ * Function pointer type for the horizontal moment accumulation pass.
+ * The scalar reference and the AVX2 variant share the same signature
+ * (except the scalar also carries `depth` for 16-bit support, while the
+ * AVX2 variants are split by depth at dispatch time).
+ *
+ * For the dispatch wrapper we use a unified typedef that passes both
+ * 8-bit and 16-bit parameters; the depth-specific branching happens
+ * inside calc_ssim before calling the pointer.
+ */
+typedef void (*ssim_accum_row_fn_8)(const uint8_t *src, const uint8_t *dst, int w,
+                                    const unsigned *hkernel, int hkernel_sz, int hkernel_offs,
+                                    integer_ssim_moments_t *buf);
+
+typedef void (*ssim_accum_row_fn_16)(const uint16_t *src, const uint16_t *dst, int w,
+                                     const unsigned *hkernel, int hkernel_sz, int hkernel_offs,
+                                     integer_ssim_moments_t *buf);
+
+/*
+ * Scalar 8-bit wrapper matching the ssim_accum_row_fn_8 prototype.
+ * Thin adaptor: converts integer_ssim_moments_t back to ssim_moments
+ * and calls the original scalar accumulate function.
+ * Because integer_ssim_moments_t and ssim_moments are layout-identical
+ * (both are six consecutive int64_t fields), we can cast directly.
+ */
+static void accum_row_scalar_8(const uint8_t *src, const uint8_t *dst, int w,
+                               const unsigned *hkernel, int hkernel_sz, int hkernel_offs,
+                               integer_ssim_moments_t *buf)
+{
+    /* Cast is safe: both structs are 6 × int64_t in the same order. */
+    ssim_accumulate_row(src, dst, w, 8, hkernel, hkernel_sz, hkernel_offs, (ssim_moments *)buf);
+}
+
+/*
+ * Scalar 16-bit wrapper matching the ssim_accum_row_fn_16 prototype.
+ */
+static void accum_row_scalar_16(const uint16_t *src, const uint16_t *dst, int w,
+                                const unsigned *hkernel, int hkernel_sz, int hkernel_offs,
+                                integer_ssim_moments_t *buf)
+{
+    /* The scalar path encodes 16-bit pixels as two consecutive bytes:
+     * s = src_bytes[off*2] + (src_bytes[off*2+1] << 8).
+     * The 16-bit SIMD wrapper takes uint16_t* directly, so the scalar
+     * wrapper must re-encode via the byte-pointer path.
+     */
+    ssim_accumulate_row((const unsigned char *)src, (const unsigned char *)dst, w, 16, hkernel,
+                        hkernel_sz, hkernel_offs, (ssim_moments *)buf);
+}
+
 /* Vertical 1-D accumulation + SSIM term for one output row. */
 static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int y, int w,
                                   int vkernel_sz, const unsigned *vkernel, int samplemax, int k_min,
@@ -189,7 +243,8 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
 }
 
 static double calc_ssim(const unsigned char *_src, int _systride, const unsigned char *_dst,
-                        int _dystride, double _par, int depth, int _w, int _h)
+                        int _dystride, double _par, int depth, int _w, int _h,
+                        ssim_accum_row_fn_8 accum8, ssim_accum_row_fn_16 accum16)
 {
     (void)_par;
     ssim_moments *line_buf;
@@ -221,8 +276,14 @@ static double calc_ssim(const unsigned char *_src, int _systride, const unsigned
     ssimw = 0;
     for (y = 0; y < _h + vkernel_offs; y++) {
         if (y < _h) {
-            ssim_accumulate_row(_src, _dst, _w, depth, hkernel, hkernel_sz, hkernel_offs,
-                                lines[y & line_mask]);
+            /* Dispatch to SIMD or scalar horizontal pass. */
+            if (depth > 8) {
+                accum16((const uint16_t *)_src, (const uint16_t *)_dst, _w, hkernel, hkernel_sz,
+                        hkernel_offs, (integer_ssim_moments_t *)lines[y & line_mask]);
+            } else {
+                accum8(_src, _dst, _w, hkernel, hkernel_sz, hkernel_offs,
+                       (integer_ssim_moments_t *)lines[y & line_mask]);
+            }
             _src += _systride;
             _dst += _dystride;
         }
@@ -244,6 +305,9 @@ typedef struct IntegerSsimState {
     bool enable_db;
     bool clip_db;
     double max_db;
+    /* Dispatched horizontal moment accumulation functions (set in init). */
+    ssim_accum_row_fn_8 accum8;
+    ssim_accum_row_fn_16 accum16;
 } IntegerSsimState;
 
 static const VmafOption options[] = {{
@@ -277,6 +341,21 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         s->max_db = INFINITY;
     }
 
+    /* Default to scalar paths. */
+    s->accum8 = accum_row_scalar_8;
+    s->accum16 = accum_row_scalar_16;
+
+    /* Runtime dispatch: select AVX2 paths when available (ADR-0784). */
+#if ARCH_X86
+    {
+        const unsigned flags = vmaf_get_cpu_flags();
+        if (flags & VMAF_X86_CPU_FLAG_AVX2) {
+            s->accum8 = integer_ssim_accumulate_row_avx2;
+            s->accum16 = integer_ssim_accumulate_row_16_avx2;
+        }
+    }
+#endif
+
     return 0;
 }
 
@@ -292,8 +371,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     (void)ref_pic_90;
     (void)dist_pic_90;
 
-    double score = calc_ssim(ref_pic->data[0], ref_pic->stride[0], dist_pic->data[0],
-                             dist_pic->stride[0], 1.0, ref_pic->bpc, ref_pic->w[0], ref_pic->h[0]);
+    double score =
+        calc_ssim(ref_pic->data[0], ref_pic->stride[0], dist_pic->data[0], dist_pic->stride[0], 1.0,
+                  ref_pic->bpc, ref_pic->w[0], ref_pic->h[0], s->accum8, s->accum16);
 
     if (s->enable_db)
         score = MIN(-10. * log10(1. - score), s->max_db);

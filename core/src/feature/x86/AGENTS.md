@@ -151,6 +151,20 @@ The ones that carve invariants on this directory specifically:
   SSIMULACRA 2 SIMD ports.
 - [ADR-0245](../../../../docs/adr/0245-simd-bitexact-test-harness.md) —
   shared bit-exact test harness.
+- [ADR-0784](../../../../docs/adr/0784-integer-ssim-avx2.md) —
+  integer SSIM AVX2 horizontal moment accumulation.
+
+## integer_ssim_avx2 — rebase-sensitive invariant (ADR-0784)
+
+`integer_ssim_avx2.c` exports `integer_ssim_accumulate_row_avx2` (8bpc)
+and `integer_ssim_accumulate_row_16_avx2` (16bpc), dispatched from
+`integer_ssim.c::init()` via function pointers in `IntegerSsimState`.
+The layout of `integer_ssim_moments_t` (six consecutive `int64_t` fields
+in the same order as `ssim_moments`) is a cross-TU invariant: changing
+field order or inserting padding breaks the cast in `calc_ssim()`.
+Any upstream change to `ssim_moments` in `integer_ssim.c` must be
+mirrored in `integer_ssim_avx2.h`.
+
 - [ADR-0918](../../../../docs/adr/0918-llvm-ir-diff-harness.md) —
   LLVM IR diff harness. **Rebase-sensitive invariant**: any compiler
   bump (`dev/Containerfile` clang version, GitHub Actions runner image,

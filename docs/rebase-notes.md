@@ -43702,3 +43702,21 @@ bug tracker), `changelog.d/fixed/` (fragment), and `docs/rebase-notes.md`
 corresponding `meson.build` entry were already present on master
 (merged from `gpu-runtime-bug-audit`). No CPU scalar path, no public
 header, no Netflix upstream file is touched.
+
+---
+
+### feat(simd): integer-ssim-avx2 (ADR-0784)
+
+**Branch**: feat/integer-ssim-avx2
+**Touches**: `core/src/feature/integer_ssim.c`,
+`core/src/feature/x86/integer_ssim_avx2.{c,h}`,
+`core/src/meson.build` (x86_avx2_sources),
+`core/test/test_integer_ssim_simd.c`,
+`docs/adr/0784-integer-ssim-avx2.md`,
+`docs/backends/x86/integer-ssim-avx2.md`.
+
+Adds AVX2 dispatch for the horizontal moment accumulation pass in `integer_ssim.c`.
+The dispatch uses function pointers in `IntegerSsimState`; the `integer_ssim_moments_t`
+struct in `integer_ssim_avx2.h` must stay layout-identical to `ssim_moments` in
+`integer_ssim.c`. Any upstream refactor of `ssim_moments` field order requires a
+matching update in the AVX2 header.

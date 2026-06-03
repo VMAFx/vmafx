@@ -726,6 +726,7 @@ if is_asm_enabled
           feature_src_dir + 'x86/ciede_avx2.c',
           feature_src_dir + 'x86/convolve_avx2.c',
           feature_src_dir + 'x86/moment_avx2.c',
+          feature_src_dir + 'x86/integer_ssim_avx2.c',
       ]
 
       x86_avx2_static_lib = static_library(
