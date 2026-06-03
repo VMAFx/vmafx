@@ -777,11 +777,15 @@ static struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool
 
     slot->fex = fex;
     const unsigned n_threads = (fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL ? 1 : pool->n_threads);
-    atomic_init(&slot->capacity, n_threads);
-    atomic_init(&slot->in_use, 0);
+    /* In C++ TUs atomic_init() is not valid on std::atomic<T> (clang rejects
+     * it with "address argument must be a pointer to _Atomic type").
+     * Use .store() for initialisation and .load() for reads instead
+     * (ADR-0772).  The C twin (feature_extractor.c) keeps the C11 free
+     * functions, which are correct in that translation unit. */
+    slot->capacity.store(n_threads, std::memory_order_relaxed);
+    slot->in_use.store(0, std::memory_order_relaxed);
     pthread_cond_init(&(slot->full), NULL);
-    size_t ctx_array_sz =
-        sizeof(slot->ctx_list[0]) * static_cast<unsigned>(atomic_load(&slot->capacity));
+    size_t ctx_array_sz = sizeof(slot->ctx_list[0]) * static_cast<unsigned>(slot->capacity.load());
     slot->ctx_list = static_cast<decltype(slot->ctx_list)>(malloc(ctx_array_sz));
     if (!slot->ctx_list)
         return NULL;
@@ -821,7 +825,7 @@ static int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFea
 static int ctx_pool_claim_slot(struct fex_list_entry *entry, VmafFeatureExtractor *fex,
                                VmafDictionary *opts_dict, VmafFeatureExtractorContext **fex_ctx)
 {
-    for (int i = 0; i < atomic_load(&entry->capacity); i++) {
+    for (int i = 0; i < entry->capacity.load(); i++) {
         int err = ctx_pool_ensure_slot_ctx(entry, i, fex, opts_dict);
         if (err)
             return err;
@@ -831,7 +835,7 @@ static int ctx_pool_claim_slot(struct fex_list_entry *entry, VmafFeatureExtracto
             break;
         }
     }
-    atomic_fetch_add(&entry->in_use, 1);
+    entry->in_use.fetch_add(1);
     return 0;
 }
 
@@ -854,7 +858,7 @@ int vmaf_fex_ctx_pool_aquire(VmafFeatureExtractorContextPool *pool, VmafFeatureE
         goto unlock;
     }
 
-    while (atomic_load(&entry->capacity) == atomic_load(&entry->in_use))
+    while (entry->capacity.load() == entry->in_use.load())
         pthread_cond_wait(&(entry->full), &(pool->lock));
 
     err = ctx_pool_claim_slot(entry, fex, opts_dict, fex_ctx);
@@ -890,10 +894,10 @@ int vmaf_fex_ctx_pool_release(VmafFeatureExtractorContextPool *pool,
         goto unlock;
     }
 
-    for (int i = 0; i < atomic_load(&entry->capacity); i++) {
+    for (int i = 0; i < entry->capacity.load(); i++) {
         if (fex_ctx == entry->ctx_list[i].fex_ctx) {
             entry->ctx_list[i].in_use = false;
-            atomic_fetch_sub(&entry->in_use, 1);
+            entry->in_use.fetch_sub(1);
             pthread_cond_signal(&(entry->full));
             goto unlock;
         }
@@ -918,7 +922,7 @@ int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
         VmafFeatureExtractor *fex = pool->fex_list[i].fex;
         if (!(fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))
             continue;
-        for (int j = 0; j < atomic_load(&pool->fex_list[i].capacity); j++) {
+        for (int j = 0; j < pool->fex_list[i].capacity.load(); j++) {
             VmafFeatureExtractorContext *fex_ctx = pool->fex_list[i].ctx_list[j].fex_ctx;
             if (!fex_ctx)
                 continue;
@@ -941,7 +945,7 @@ int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool)
     for (unsigned i = 0; i < pool->cnt; i++) {
         if (!pool->fex_list[i].ctx_list)
             continue;
-        for (int j = 0; j < atomic_load(&pool->fex_list[i].capacity); j++) {
+        for (int j = 0; j < pool->fex_list[i].capacity.load(); j++) {
             VmafFeatureExtractorContext *fex_ctx = pool->fex_list[i].ctx_list[j].fex_ctx;
             if (!fex_ctx)
                 continue;
