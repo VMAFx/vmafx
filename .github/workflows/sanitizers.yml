@@ -16,7 +16,7 @@
 # its schedule block is kept there; this file adds the PR-gate sanitizer
 # jobs that were previously embedded in tests-and-quality-gates.yml.
 
-name: Sanitizers + Fuzz
+name: Sanitizers
 
 on:
   push:

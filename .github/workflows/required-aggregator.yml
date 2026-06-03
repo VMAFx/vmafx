@@ -1,4 +1,4 @@
-name: Required Checks Aggregator
+name: CI
 
 # ADR-0313 — Permanent fix for the doc/Python-only-PR vs C-build-required-checks
 # structural deadlock. This single workflow runs on every PR (no path filter)
@@ -64,7 +64,7 @@ jobs:
               'Cppcheck (Whole Project)',
               'Dependency Review (PR Diff)',
               'Gitleaks (Secret Scan)',
-              'Docs Build — mkdocs strict (PR gate)',
+              'Docs',
               'ShellCheck + shfmt (All *.sh)',
               'Netflix CPU Golden Tests (D24)',
               'Sanitizers — ASan + UBSan + MSan (address)',

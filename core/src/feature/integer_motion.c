@@ -27,6 +27,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "integer_motion.h"
+#include "log.h"
 #include "motion_blend_tools.h"
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
@@ -254,6 +255,24 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     (void)pix_fmt;
     MotionState *s = fex->priv;
 
+    /* ADR-0337: motion_five_frame_window=true is rejected at init() with
+     * -ENOTSUP. The 5-frame mode requires a prev_prev_ref field on
+     * VmafFeatureExtractor + matching picture-pool sizing in
+     * vmaf_read_pictures (n_threads * 2 + 2) that upstream a2b59b77
+     * adds. The fork's read_pictures decomposition (ADR-0152) diverges
+     * from upstream's layout; the picture-pool refactor will land as
+     * its own PR. Until then, motion's 5-frame mode is unsupported,
+     * mirroring the motion_v2 + GPU motion3 -ENOTSUP precedent in ADR-0219.
+     * The 3-frame default mode is fully supported.
+     */
+    if (s->motion_five_frame_window) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "motion: motion_five_frame_window=true is not supported; "
+                 "see ADR-0337. The prev_prev_ref field required for this mode "
+                 "is not yet plumbed into the framework.\n");
+        return -ENOTSUP;
+    }
+
     s->w = w;
     s->h = h;
     s->bpc = bpc;
@@ -318,10 +337,14 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     if (s->motion_force_zero)
         goto write_score;
 
+    /* motion_five_frame_window=true is rejected in init() (ADR-0337);
+     * by the time extract() runs, motion_five_frame_window is always false.
+     * The min_idx / prev_ref selection below retains the 5-frame branching
+     * skeleton so the flush() path compiles cleanly and the deferral is
+     * reversible once prev_prev_ref is plumbed into the framework. */
     const unsigned min_idx = s->motion_five_frame_window ? 2 : 1;
     if (index >= min_idx) {
-        const VmafPicture *prev =
-            s->motion_five_frame_window ? &fex->prev_prev_ref : &fex->prev_ref;
+        const VmafPicture *prev = &fex->prev_ref;
         if (!prev->ref)
             return -EINVAL;
 

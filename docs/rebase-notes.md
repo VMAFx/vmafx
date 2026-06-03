@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cuda-duplicate-csf-r-definitions (2026-06-03)
+
+**Files touched:**
+`core/src/feature/cuda/integer_adm/adm_cm.cu`
+
+**Rebase impact:** None. Purely removes a duplicate code block introduced by a
+merge-order accident (PR #565 admin-merged while master already had the same
+helpers). No upstream file is touched; no public header changes.
+
+---
+
 ## cuda-adm-decouple-inline-ldg (2026-05-29, ADR-0773)
 
 **Files touched:**
@@ -15104,6 +15115,20 @@ cover several PRs in one workstream; cross-link from the ID heading.
     --distorted ../testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 --pixel-format 420 --bitdepth 8 \
     --feature psnr --backend cuda --places 4
+
+## ADR-0994 — coverage build-break fix: remove `vmaf_fex_integer_motion_v2` from `feature_extractor.cpp` + guard `motion_five_frame_window` in `integer_motion.c` (2026-06-03)
+
+- **Touches**: `core/src/feature/integer_motion.c`,
+  `core/src/feature/feature_extractor.cpp`,
+  `docs/adr/0994-coverage-build-fix-motion-v2-ref.md` (new),
+  `docs/adr/README.md`, `docs/state.md`, `docs/rebase-notes.md`,
+  `changelog.d/fixed/0994-coverage-build-fix-motion-v2-ref.md` (new).
+- **No rebase-sensitive invariants**: bug fix only. Both files touched are
+  production C/C++ sources; no option table or ABI surface changed.
+- **Relation to ADR-0337**: when the `prev_prev_ref` picture-pool refactor
+  (ADR-0337 deferred hunk) lands, flip the `-ENOTSUP` guard in `integer_motion.c::init()`
+  and restore the `fex->prev_prev_ref` reference in `extract()`, then
+  remove the `motion_five_frame_window` comment block added here.
 
 ## ADR-0337 — motion_v2 public option surface duplication (2026-05-09)
 
@@ -43769,3 +43794,11 @@ The dispatch uses function pointers in `IntegerSsimState`; the `integer_ssim_mom
 struct in `integer_ssim_avx2.h` must stay layout-identical to `ssim_moments` in
 `integer_ssim.c`. Any upstream refactor of `ssim_moments` field order requires a
 matching update in the AVX2 header.
+
+---
+
+### chore(ci): ci-workflow-name-shortening (ADR-0995)
+
+**Branch**: chore/ci-shorten-workflow-names
+
+no rebase impact: pure CI display-name rename; no C/C++/Python source touched.
