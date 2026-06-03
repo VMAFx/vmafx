@@ -63,6 +63,15 @@ and teardown.
   `test_cuda_buffer_alloc_oom.c` and `test_cuda_pic_preallocation.c` for
   reference. **Rebase-sensitive**: any new GPU test that lacks this guard will
   SIGSEGV on CPU-only CI runners.
+- **`test_integer_cambi_sycl.c` is a smoke test; `test_sycl_cambi_parity.c` is the
+  parity gate.** Both exist intentionally. The smoke test (ADR-0371) verifies
+  registration + finite/non-negative output on a flat frame. The parity test
+  (ADR-1001, round 5) asserts the headline `Cambi_feature_cambi_score` matches the
+  CPU path within places=4 on a banding fixture. Do not merge the two files — they
+  serve different audit purposes. Do not remove `test_integer_cambi_sycl.c` in the
+  belief that the parity test supersedes it; the registration + format contract it
+  pins is a separate invariant. **Rebase-sensitive**: if `integer_cambi_sycl.cpp`
+  gains a new feature-name key or option, update both tests.
 - **GPU-only extractors get a smoke gate, not a parity gate.** When a CUDA /
   HIP / SYCL feature extractor has no CPU twin emitting the same feature name
   (e.g. `speed_chroma_cuda`, `speed_temporal_cuda` — emit

@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## test(sycl): parity coverage round 5 — CAMBI parity gate
+
+**Branch**: test/sycl-parity-round5-cambi
+
+no rebase impact: adds `core/test/test_sycl_cambi_parity.c` (new file, no
+upstream analogue), one meson.build registration block, ADR-1001, and a
+changelog fragment. No C source, public header, feature extractor
+implementation, or Netflix golden-assertion file is touched.
+
+---
+
 ## docs(coverage): ADR-0922 coverage-gate runbook (2026-06-04)
 
 **Files touched:**

@@ -1852,6 +1852,20 @@ test_sycl_ssimulacra2_parity = executable('test_sycl_ssimulacra2_parity',
 )
 test('test_sycl_ssimulacra2_parity', test_sycl_ssimulacra2_parity,
     suite : ['fast', 'gpu'])
+
+# ADR-1001 — CAMBI CPU vs. SYCL parity (round 5). Fills the gap left by
+# test_integer_cambi_sycl.c which is explicitly a smoke test, not a
+# numerical-correctness gate. Uses a 256×256 quantised-gradient fixture
+# (above the 216×216 CAMBI_MIN_WIDTH_HEIGHT threshold) at places=4 (1e-4).
+test_sycl_cambi_parity = executable('test_sycl_cambi_parity',
+    ['test.c', 'test_sycl_cambi_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_cambi_parity', test_sycl_cambi_parity,
+    suite : ['fast', 'gpu'])
 endif
 
 # ADR-0209 / T5-2: embedded MCP scaffold smoke. Pins the -ENOSYS
