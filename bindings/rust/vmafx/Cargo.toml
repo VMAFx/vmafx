@@ -1,7 +1,7 @@
 [package]
 name = "vmafx"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 description = "Safe, idiomatic Rust bindings to libvmaf (VMAFX fork) — Phase 1 scaffold (ADR-0929)"
 license = "BSD-3-Clause-Plus-Patent"
 authors = ["Lusoris <lusoris@pm.me>"]

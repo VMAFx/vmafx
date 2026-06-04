@@ -19,7 +19,7 @@ resolver = "2"
 # is impossible — touch this block once, every member inherits.
 [workspace.package]
 authors = ["Lusoris <lusoris@pm.me>"]
-edition = "2021"
+edition = "2024"
 license = "BSD-3-Clause-Plus-Patent"
 repository = "https://github.com/VMAFx/vmafx"
 homepage = "https://github.com/VMAFx/vmafx"

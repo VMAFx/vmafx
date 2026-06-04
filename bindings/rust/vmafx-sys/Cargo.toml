@@ -16,7 +16,7 @@ links = "vmaf"
 build = "build.rs"
 
 [build-dependencies]
-bindgen = "0.69"
+bindgen = "0.72"
 
 [dev-dependencies]
 

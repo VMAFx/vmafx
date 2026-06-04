@@ -73,7 +73,7 @@ pub struct VmafFeatureCollector {
 // FFI declaration for the one libvmaf function we call back into.
 // ---------------------------------------------------------------------------
 
-extern "C" {
+unsafe extern "C" {
     /// Append a named feature score for a given frame index.
     /// Returns 0 on success, negative errno on failure.
     fn vmaf_feature_collector_append(
@@ -114,7 +114,7 @@ struct TadState {
 /// # Safety
 /// `state_out` must be a valid pointer to a `*mut c_void` that the C wrapper
 /// will store as `fex->priv`.  `bpc` must be in [1..32].
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn vmafx_tad_init(state_out: *mut *mut c_void, bpc: c_uint) -> c_int {
     if state_out.is_null() {
         return -22; /* EINVAL */
@@ -127,7 +127,7 @@ pub unsafe extern "C" fn vmafx_tad_init(state_out: *mut *mut c_void, bpc: c_uint
 
     let state = Box::new(TadState { peak });
     // SAFETY: we leak the Box intentionally; vmafx_tad_close reclaims it.
-    *state_out = Box::into_raw(state) as *mut c_void;
+    unsafe { *state_out = Box::into_raw(state) as *mut c_void };
     0
 }
 
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn vmafx_tad_init(state_out: *mut *mut c_void, bpc: c_uint
 /// - `ref_pic` and `dis_pic` must be valid, fully initialised `VmafPicture`
 ///   structs with `data[0]` pointing to `bpc`-wide luma sample buffers.
 /// - `feature_collector` must be a live `VmafFeatureCollector`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn vmafx_tad_extract(
     state_ptr: *mut c_void,
     ref_pic: *const VmafPicture,
@@ -152,9 +152,7 @@ pub unsafe extern "C" fn vmafx_tad_extract(
         return -22; /* EINVAL */
     }
 
-    let state = &*(state_ptr as *const TadState);
-    let ref_p = &*ref_pic;
-    let dis_p = &*dis_pic;
+    let (state, ref_p, dis_p) = unsafe { (&*(state_ptr as *const TadState), &*ref_pic, &*dis_pic) };
 
     let w = ref_p.w[0] as usize;
     let h = ref_p.h[0] as usize;
@@ -164,28 +162,32 @@ pub unsafe extern "C" fn vmafx_tad_extract(
         return -22;
     }
 
-    let sad: u64 = compute_sad(ref_p, dis_p, w, h, peak);
+    let sad: u64 = unsafe { compute_sad(ref_p, dis_p, w, h, peak) };
 
     // Normalise to [0.0, 1.0].
     let n_pixels = (w * h) as f64;
     let tad: f64 = sad as f64 / (n_pixels * peak as f64);
 
-    let mut err = vmaf_feature_collector_append(
-        feature_collector,
-        FEATURE_TAD.as_ptr() as *const c_char,
-        tad,
-        index,
-    );
+    let mut err = unsafe {
+        vmaf_feature_collector_append(
+            feature_collector,
+            FEATURE_TAD.as_ptr() as *const c_char,
+            tad,
+            index,
+        )
+    };
     if err != 0 {
         return err;
     }
 
-    err = vmaf_feature_collector_append(
-        feature_collector,
-        FEATURE_TAD_SAD.as_ptr() as *const c_char,
-        sad as f64,
-        index,
-    );
+    err = unsafe {
+        vmaf_feature_collector_append(
+            feature_collector,
+            FEATURE_TAD_SAD.as_ptr() as *const c_char,
+            sad as f64,
+            index,
+        )
+    };
     err
 }
 
@@ -194,13 +196,13 @@ pub unsafe extern "C" fn vmafx_tad_extract(
 /// # Safety
 /// `state_ptr` must be the value set by `vmafx_tad_init`, and must not be
 /// used after this call.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn vmafx_tad_close(state_ptr: *mut c_void) -> c_int {
     if state_ptr.is_null() {
         return 0; /* nothing to do */
     }
     // SAFETY: reconstructs the Box from the raw pointer produced in init.
-    drop(Box::from_raw(state_ptr as *mut TadState));
+    unsafe { drop(Box::from_raw(state_ptr as *mut TadState)) };
     0
 }
 
@@ -234,8 +236,8 @@ unsafe fn compute_sad(
 
         for row in 0..h {
             for col in 0..w {
-                let r = *ref_data.add(row * ref_stride + col) as i32;
-                let d = *dis_data.add(row * dis_stride + col) as i32;
+                let r = unsafe { *ref_data.add(row * ref_stride + col) } as i32;
+                let d = unsafe { *dis_data.add(row * dis_stride + col) } as i32;
                 sad += (r - d).unsigned_abs() as u64;
             }
         }
@@ -248,8 +250,8 @@ unsafe fn compute_sad(
 
         for row in 0..h {
             for col in 0..w {
-                let r = *ref_data.add(row * ref_stride + col) as i32;
-                let d = *dis_data.add(row * dis_stride + col) as i32;
+                let r = unsafe { *ref_data.add(row * ref_stride + col) } as i32;
+                let d = unsafe { *dis_data.add(row * dis_stride + col) } as i32;
                 sad += (r - d).unsigned_abs() as u64;
             }
         }

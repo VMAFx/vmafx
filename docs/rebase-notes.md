@@ -176,6 +176,26 @@ implementation, or Netflix golden-assertion file is touched.
 
 ---
 
+## chore(rust): bump bindgen 0.69 → 0.72 + workspace edition 2021 → 2024 (ADR-1002)
+
+**Branch**: chore/rust-edition-2024-bindgen-072
+
+**Touches**: `Cargo.toml`, `Cargo.lock`, `bindings/rust/vmafx/Cargo.toml`,
+`bindings/rust/vmafx-sys/Cargo.toml`, `core/src/feature/rust/tad/src/lib.rs`,
+`docs/adr/1002-rust-edition-2024-bindgen-072.md`,
+`changelog.d/chore/rust-edition-2024-bindgen-072.md`.
+
+No rebase impact on upstream Netflix/vmaf code. All changed files are fork-local
+Rust crates (`vmafx-sys`, `vmafx`, `vmafx-tad`) with no upstream analogue.
+No C source, public header, upstream-mirrored Python, or Netflix golden-assertion
+file is touched. A future upstream port cannot conflict with Rust workspace
+settings since Netflix/vmaf has no Rust code. The `bindgen`-consumed header paths
+consumed by `bindgen` remain at `core/include/libvmaf/` (ADR-0700 path); any
+future upstream header change that adds or removes a symbol is handled
+automatically by re-running `cargo build` (bindgen regenerates on every build).
+
+---
+
 ## fix(cppcheck): resolve Whole-Project warnings
 
 **Files touched:**
