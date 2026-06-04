@@ -44254,6 +44254,13 @@ same translation unit. No public headers changed.
 No rebase impact. Error-handling only — wraps two json.loads calls. No protocol,
 API, or tool-schema changes. Output format on the success path is unchanged.
 
+## ADR-1012 — Go queue state-machine guards (2026-06-04)
+
+No rebase impact. Both changes affect only the internal SQLite write path of the
+controller queue. No public proto/gRPC API change. Callers that receive the new
+'job was cancelled before assignment' error from PullWork should retry — the
+controller's own retry loop already does this.
+
 ## ADR-1009 — Go shutdown goroutine fixes (2026-06-04)
 
 No rebase impact. WaitForShutdown drain-window change only affects shutdown timing

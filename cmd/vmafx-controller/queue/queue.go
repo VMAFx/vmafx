@@ -292,17 +292,26 @@ func (q *SQLiteQueue) PullWork(ctx context.Context, nodeID string, capacity Node
 	// Remove from FIFO.
 	q.pendingFIFO = append(q.pendingFIFO[:matchIdx], q.pendingFIFO[matchIdx+1:]...)
 
-	// Transition to RUNNING in SQLite. ExecContext propagates the caller's
-	// ctx so an aborted PullWork RPC does not leave the UPDATE in flight.
+	// Transition to RUNNING in SQLite.  The AND status=? guard prevents a
+	// concurrent Cancel from being silently overwritten between the FIFO scan
+	// above (under q.mu) and this write (r3-concurrency finding).
+	// ExecContext propagates the caller's ctx so an aborted PullWork RPC
+	// does not leave the UPDATE in flight.
 	now := time.Now().Unix()
-	_, err := q.db.ExecContext(ctx,
-		"UPDATE jobs SET status=?, assigned_node=?, updated_at=? WHERE id=?",
-		StatusRunning, nodeID, now, matchID,
+	res, err := q.db.ExecContext(ctx,
+		"UPDATE jobs SET status=?, assigned_node=?, updated_at=? WHERE id=? AND status=?",
+		StatusRunning, nodeID, now, matchID, StatusPending,
 	)
 	if err != nil {
 		// Roll back in-memory assignment.
 		q.pendingFIFO = append([]string{matchID}, q.pendingFIFO...)
 		return nil, fmt.Errorf("queue: assign job %s: %w", matchID, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// A concurrent Cancel beat us: the job is no longer PENDING.
+		// Re-prepend to FIFO so a retry loop can skip it.
+		q.pendingFIFO = append([]string{matchID}, q.pendingFIFO...)
+		return nil, fmt.Errorf("queue: job %s was cancelled before assignment; retry", matchID)
 	}
 
 	q.runningSet[matchID] = struct{}{}
@@ -364,13 +373,23 @@ func (q *SQLiteQueue) ReportResult(ctx context.Context, jobID string, result *Jo
 
 	// ExecContext propagates the caller's ctx so the node's ReportResult RPC
 	// deadline / cancellation aborts the UPDATE cleanly.
+	// The AND status NOT IN guard makes ReportResult idempotent: a node that
+	// retries after a transient gRPC error will not overwrite an already-terminal
+	// row, and a Cancel that races with ReportResult cannot be silently undone
+	// (r4-retry-idempotency finding).
 	now := time.Now().Unix()
-	_, err = q.db.ExecContext(ctx,
-		"UPDATE jobs SET status=?, score=?, features=?, error=?, updated_at=? WHERE id=?",
+	res, err := q.db.ExecContext(ctx,
+		"UPDATE jobs SET status=?, score=?, features=?, error=?, updated_at=? WHERE id=? AND status NOT IN (?,?,?)",
 		status, result.Score, string(featuresJSON), result.Err, now, jobID,
+		StatusCompleted, StatusFailed, StatusCancelled,
 	)
 	if err != nil {
 		return fmt.Errorf("queue: report result for job %s: %w", jobID, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// Already in a terminal state (completed, failed, or cancelled by the
+		// time this call arrived) — treat as idempotent success.
+		q.log.Info("ReportResult: job already in terminal state, ignoring", "job_id", jobID)
 	}
 
 	q.mu.Lock()
