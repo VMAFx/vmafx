@@ -6,6 +6,14 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 
 ---
 
+## test/go-coverage-mcp-node (2026-06-04)
+
+no rebase impact: adds test files only (`cmd/vmafx-mcp/impl_test.go`,
+`cmd/vmafx-node/executor_test.go`). Test files have no upstream counterparts
+and no interaction with the C/GPU/SIMD surfaces.
+
+---
+
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
 
 If an upstream Netflix/vmaf sync or cherry-pick brings new CI references to
