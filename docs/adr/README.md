@@ -747,6 +747,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0775](0775-dnn-ort-audit.md) | DNN ORT Backend Audit Findings | Accepted | dnn, onnx, ort, thread-safety, correctness, fork-local, research |
 | [ADR-0792](0792-hardcoded-yuv-path-env-overrides.md) | Env-var overrides for hardcoded YUV and testdata paths | Accepted | workspace, ci, testdata |
 | [ADR-0795](0795-prev-ref-thread-safety.md) | Clarify and harden VmafFeatureExtractor.prev_ref thread-safety invariant | Accepted | threading, feature-extractor, batch-threading, correctness |
+| [ADR-0804](0804-vmaf-context-get-backend.md) | Add `vmaf_context_get_backend` — additive ABI introspection | Accepted | api, abi, backend, gpu, fork-local |
 | [ADR-0810](0810-adr-0108-compliance-audit-2026-05-29.md) | ADR-0108 Six-Deliverables Compliance Audit (2026-05-29) + D3 Gap Fixes | Accepted | docs, agents, process |
 | [ADR-0839](0839-cpp23-shadow-const-fixes.md) | C++23 wave — shadow-identifier and implicit-cast cleanup | Accepted | cpp23, lint, core, sycl, fork-local |
 | [ADR-0840](0840-gpu-dispatch-toctou-fence.md) | Fix cu_state leak on import failure and gpu_dispatch_env TOCTOU | Accepted | cuda, security, framework, ci |

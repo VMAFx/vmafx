@@ -44729,3 +44729,11 @@ no rebase impact: CI configuration change (go-ci.yml) and test/meson.build build
 Neither touches public API or upstream-mirrored C code.
 
 ---
+
+## feat/0804-vmaf-context-get-backend
+
+no rebase impact: purely additive public C API addition (new enum `VmafBackend`
+and new function `vmaf_context_get_backend()`). No upstream-mirrored code is
+modified; no existing entry points are changed. ADR-0804.
+
+---

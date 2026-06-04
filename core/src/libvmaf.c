@@ -154,6 +154,9 @@ typedef struct VmafContext {
     } pic_params;
     unsigned pic_cnt;
     bool flushed;
+    /* Active compute backend — set by vmaf_<backend>_import_state().
+     * Zero-initialised (VMAF_BACKEND_UNKNOWN) for CPU-only contexts. */
+    enum VmafBackend active_backend;
     /* Track the most recent index accepted by vmaf_read_pictures so
      * subsequent calls can enforce a monotonically-increasing index.
      * Several feature extractors (integer_motion's 3-frame blur
@@ -345,6 +348,7 @@ int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state)
         return -EINVAL;
 
     vmaf->cuda.state = *cu_state;
+    vmaf->active_backend = VMAF_BACKEND_CUDA;
 
     return 0;
 }
@@ -502,6 +506,7 @@ int vmaf_sycl_import_state(VmafContext *vmaf, VmafSyclState *sycl_state)
         return -EINVAL;
 
     vmaf->sycl.state = sycl_state;
+    vmaf->active_backend = VMAF_BACKEND_SYCL;
 
     return 0;
 }
@@ -619,6 +624,7 @@ int vmaf_metal_import_state(VmafContext *vmaf, VmafMetalState *state)
         return -EINVAL;
 
     vmaf->metal.state = state;
+    vmaf->active_backend = VMAF_BACKEND_METAL;
     return 0;
 }
 
@@ -662,6 +668,7 @@ int vmaf_hip_import_state(VmafContext *vmaf, VmafHipState *hip_state)
         return -EINVAL;
 
     vmaf->hip.state = hip_state;
+    vmaf->active_backend = VMAF_BACKEND_HIP;
     return 0;
 }
 #endif
@@ -2874,6 +2881,17 @@ int vmaf_score_pooled_model_collection(VmafContext *vmaf, VmafModelCollection *m
 
     free(name);
     return err;
+}
+
+int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out)
+{
+    if (!vmaf)
+        return -EINVAL;
+    if (!out)
+        return -EINVAL;
+
+    *out = vmaf->active_backend;
+    return 0;
 }
 
 const char *vmaf_version(void)

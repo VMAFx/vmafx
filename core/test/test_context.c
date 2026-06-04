@@ -93,10 +93,55 @@ static char *test_vmaf_init_double_init_guard()
     return NULL;
 }
 
+/* vmaf_context_get_backend — CPU-only path: freshly init'd context returns
+ * VMAF_BACKEND_UNKNOWN because no GPU import_state was called. */
+static char *test_get_backend_cpu_returns_unknown()
+{
+    VmafContext *vmaf = NULL;
+    VmafConfiguration cfg = {0};
+
+    int err = vmaf_init(&vmaf, cfg);
+    mu_assert("vmaf_init failed in test_get_backend_cpu_returns_unknown", !err);
+
+    enum VmafBackend backend = VMAF_BACKEND_CUDA; /* intentionally non-zero */
+    err = vmaf_context_get_backend(vmaf, &backend);
+    mu_assert("vmaf_context_get_backend failed on CPU context", !err);
+    mu_assert("CPU-only context must report VMAF_BACKEND_UNKNOWN", backend == VMAF_BACKEND_UNKNOWN);
+
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close failed in test_get_backend_cpu_returns_unknown", !err);
+
+    return NULL;
+}
+
+/* vmaf_context_get_backend — null-pointer guard: both vmaf=NULL and out=NULL
+ * must return -EINVAL without crashing. */
+static char *test_get_backend_null_guard()
+{
+    enum VmafBackend backend = VMAF_BACKEND_UNKNOWN;
+    int err = vmaf_context_get_backend(NULL, &backend);
+    mu_assert("vmaf_context_get_backend(NULL, out) must return -EINVAL", err == -EINVAL);
+
+    VmafContext *vmaf = NULL;
+    VmafConfiguration cfg = {0};
+    err = vmaf_init(&vmaf, cfg);
+    mu_assert("vmaf_init failed in test_get_backend_null_guard", !err);
+
+    err = vmaf_context_get_backend(vmaf, NULL);
+    mu_assert("vmaf_context_get_backend(vmaf, NULL) must return -EINVAL", err == -EINVAL);
+
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close failed in test_get_backend_null_guard", !err);
+
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_context_init_and_close);
     mu_run_test(test_get_feature_score);
     mu_run_test(test_vmaf_init_double_init_guard);
+    mu_run_test(test_get_backend_cpu_returns_unknown);
+    mu_run_test(test_get_backend_null_guard);
     return NULL;
 }

@@ -501,6 +501,34 @@ Run against the Netflix golden pair:
 Note: this example reads `1920x1080` — change `W`, `H` when running against
 the 576×324 fixture.
 
+## Backend introspection — `vmaf_context_get_backend()`
+
+```c
+#include "libvmaf/libvmaf.h"
+
+enum VmafBackend backend;
+int err = vmaf_context_get_backend(vmaf, &backend);
+```
+
+Returns the compute backend that was imported into `vmaf` via a
+`vmaf_<backend>_import_state()` call. For CPU-only contexts (no GPU state
+imported) the value is `VMAF_BACKEND_UNKNOWN` (0).
+
+| `enum VmafBackend` value | Integer | Meaning |
+| --- | --- | --- |
+| `VMAF_BACKEND_UNKNOWN` | 0 | CPU-only — no GPU backend imported |
+| `VMAF_BACKEND_CUDA` | 1 | CUDA backend (`vmaf_cuda_import_state`) |
+| `VMAF_BACKEND_SYCL` | 2 | SYCL backend (`vmaf_sycl_import_state`) |
+| `VMAF_BACKEND_METAL` | 3 | Metal backend (`vmaf_metal_import_state`) |
+| `VMAF_BACKEND_HIP` | 4 | HIP/ROCm backend (`vmaf_hip_import_state`) |
+| `VMAF_BACKEND_VULKAN` | 5 | Reserved — Vulkan removed in ADR-0726 |
+
+Returns `0` on success; `-EINVAL` if `vmaf` or `out` is `NULL`.
+
+New enum values may be appended in future releases. Callers should treat
+unknown values as `VMAF_BACKEND_UNKNOWN` (i.e. use a `default:` branch in
+any `switch`). See [ADR-0804](../adr/0804-vmaf-context-get-backend.md).
+
 ## Doxygen reference (auto-generated)
 
 For browsable per-symbol HTML, run the standalone doxygen build the fork

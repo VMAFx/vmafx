@@ -59,6 +59,24 @@ enum VmafLogLevel {
 };
 
 /**
+ * @enum VmafBackend
+ * @brief Compute backend active in a `VmafContext`.
+ *
+ * Returned by `vmaf_context_get_backend()` to allow callers to introspect
+ * which compute backend was imported into a context at run time.  New values
+ * may be appended in future releases; callers must treat unknown values as
+ * `VMAF_BACKEND_UNKNOWN`.
+ */
+enum VmafBackend {
+    VMAF_BACKEND_UNKNOWN = 0, /**< No GPU state imported; CPU-only context. */
+    VMAF_BACKEND_CUDA = 1,    /**< CUDA backend (vmaf_cuda_import_state()). */
+    VMAF_BACKEND_SYCL = 2,    /**< SYCL backend (vmaf_sycl_import_state()). */
+    VMAF_BACKEND_METAL = 3,   /**< Metal backend (vmaf_metal_import_state()). */
+    VMAF_BACKEND_HIP = 4,     /**< HIP/ROCm backend (vmaf_hip_import_state()). */
+    VMAF_BACKEND_VULKAN = 5,  /**< Vulkan backend (reserved; ADR-0726 removed Vulkan). */
+};
+
+/**
  * @enum  VmafOutputFormat
  * @brief Output serialisation format for @ref vmaf_write_output and
  *        @ref vmaf_write_output_with_format.
@@ -563,6 +581,21 @@ VMAF_EXPORT int vmaf_write_output(VmafContext *vmaf, const char *output_path,
  */
 VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
                                               enum VmafOutputFormat fmt, const char *score_format);
+
+/**
+ * @brief Introspect the compute backend active in a `VmafContext`.
+ *
+ * Returns the backend that was imported into @vmaf via one of the
+ * `vmaf_<backend>_import_state()` family of functions.  Returns
+ * `VMAF_BACKEND_UNKNOWN` (0) for CPU-only contexts where no GPU state has
+ * been imported.
+ *
+ * @param vmaf  The VMAF context allocated with `vmaf_init()`.
+ * @param out   Receives the active backend.  Must not be NULL.
+ *
+ * @return 0 on success, or -EINVAL when @vmaf or @out is NULL.
+ */
+VMAF_EXPORT int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out);
 
 /**
  * @brief Return the libvmaf version string (e.g. "3.0.0-lusoris.12").

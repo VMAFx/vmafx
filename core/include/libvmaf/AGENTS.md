@@ -133,3 +133,16 @@ backend-agnostic `gpu_picture_pool.{c,h}` round-robin
   - **Multi-name declarations** (`unsigned w[3], h[3];`) attach the
     inline doc to one symbol only — split into one declaration per
     line so each symbol carries its own doc.
+
+## `enum VmafBackend` / `vmaf_context_get_backend` rebase invariant
+
+([ADR-0804](../../../docs/adr/0804-vmaf-context-get-backend.md))
+
+The `VMAF_BACKEND_*` enumerator values are **stable and append-only**.
+Do not renumber existing values; do not reuse a retired value; only
+append new members at the end (before a possible future sentinel).
+
+Each `vmaf_<backend>_import_state()` implementation must set
+`vmaf->active_backend` to the matching `VMAF_BACKEND_*` constant.
+If a new backend is added, both the enum member **and** the
+`import_state` assignment must land in the same PR.
