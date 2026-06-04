@@ -20,6 +20,7 @@ jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       security-events: write     # upload SARIF to the Security tab
       id-token: write             # Sigstore attestation for the public dashboard

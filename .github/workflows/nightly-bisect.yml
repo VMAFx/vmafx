@@ -12,6 +12,10 @@ on:
     - cron: "37 4 * * *"  # 04:37 UTC, after nightly.yml's 03:17 jobs settle
   workflow_dispatch:
 
+concurrency:
+  group: nightly-bisect-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   issues: write  # for sticky-comment editing on #40

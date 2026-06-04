@@ -101,17 +101,17 @@ jobs:
           submodules: recursive
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5fb029f  # v3.10.0
 
       - name: Cache Docker layers
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: /tmp/.buildx-cache
           key: buildx-e2e-${{ runner.os }}-${{ hashFiles('cmd/**', 'pkg/**', 'go.sum', 'Dockerfile.*') }}
           restore-keys: buildx-e2e-${{ runner.os }}-
 
       - name: Build vmafx-operator image (e2e tag)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1  # v6.16.0
         with:
           context: .
           file: Dockerfile.operator
@@ -125,7 +125,7 @@ jobs:
             GIT_SHA=${{ github.sha }}
 
       - name: Build vmafx-node image (cpu variant, e2e tag)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1  # v6.16.0
         with:
           context: .
           file: Dockerfile.node
@@ -220,7 +220,7 @@ jobs:
 
       # ---- Restore artifacts ----
       - name: Download e2e images
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: vmafx-e2e-images
           path: /tmp/
@@ -229,7 +229,7 @@ jobs:
         run: docker load -i /tmp/vmafx-e2e-images.tar
 
       - name: Download YUV fixtures
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: yuv-fixtures
           path: test/e2e/fixtures/
