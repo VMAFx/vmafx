@@ -1,11 +1,14 @@
 <!-- markdownlint-disable MD013 -->
-# GPU backends C API — `libvmaf_cuda.h` / `libvmaf_sycl.h` / `libvmaf_vulkan.h` / `libvmaf_hip.h` / `libvmaf_metal.h`
+# GPU backends C API — `libvmaf_cuda.h` / `libvmaf_sycl.h` / `libvmaf_hip.h` / `libvmaf_metal.h`
 
 Each GPU backend adds its own small API on top of the core
 `libvmaf.h` surface — a state object, picture preallocation helpers, and
-(SYCL / Vulkan / Metal) zero-copy import paths. This page is the reference for
-all five backends; HIP still has three unported feature kernels, while Metal
-has a live Apple-Silicon runtime and first kernel batch.
+(SYCL / Metal) zero-copy import paths. This page is the reference for
+the four active backends (CUDA, SYCL, HIP, Metal); the Vulkan backend was
+removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md) — historical
+notes are preserved below in the [Vulkan](#vulkan) section. HIP still has
+three unported feature kernels, while Metal has a live Apple-Silicon runtime
+and first kernel batch.
 
 Core API primer: [index.md](index.md). CLI equivalents:
 [../usage/cli.md#backend-selection](../usage/cli.md#backend-selection).
@@ -19,8 +22,9 @@ Backend dispatch rules + runtime precedence:
   are absent and calls won't link.
 - The SYCL header is only useful in a build with `-Denable_sycl=true`
   (linking oneAPI / Level Zero). Same rule.
-- The Vulkan header requires `-Denable_vulkan=true` (linking volk + the
-  compute-shader feature kernels). Same rule.
+- ~~The Vulkan header requires `-Denable_vulkan=enabled` (linking volk + the
+  compute-shader feature kernels).~~ **Vulkan was removed in ADR-0726.** The
+  header, source files, and `enable_vulkan` Meson option no longer exist.
 - The HIP header requires `-Denable_hip=true -Denable_hipcc=true` (linking
   ROCm). 8 of 11 feature kernels are real; 3 stubs (`adm`, `vif`,
   `integer_motion`) return `-ENOSYS`.
@@ -29,8 +33,9 @@ Backend dispatch rules + runtime precedence:
   return `-ENODEV`. Eight feature kernels are currently wired.
 - To write portable code that compiles against any libvmaf build, wrap
   GPU-specific sections in `#ifdef HAVE_CUDA` / `#ifdef HAVE_SYCL` /
-  `#ifdef HAVE_VULKAN` / `#ifdef HAVE_HIP` / `#ifdef HAVE_METAL`, which
+  `#ifdef HAVE_HIP` / `#ifdef HAVE_METAL`, which
   `pkg-config --cflags libvmaf` surfaces automatically.
+  (`HAVE_VULKAN` is no longer defined — Vulkan was removed in ADR-0726.)
 
 ## CUDA
 
@@ -389,32 +394,23 @@ the enable/disable pair to gate which frame ranges get timed.
 
 ## Vulkan
 
-> **Status: T5-1c closed — full default-model coverage on Vulkan.**
-> The state-level entry points (`vmaf_vulkan_state_init` /
-> `_import_state` / `_state_free` / `_list_devices` /
-> `_available`) plumb a real volk-backed VkInstance + VkDevice +
-> compute queue. Live extractors: `vif_vulkan`, `integer_motion_vulkan`
-> (canonical motion path; `motion_vulkan` is the legacy explicit
-> compatibility name), `motion_v2_vulkan`, `adm_vulkan`, `float_adm_vulkan`,
-> `float_vif_vulkan`, `float_motion_vulkan`, `psnr_vulkan` (luma;
-> chroma via T3-15(b) PR #204), `psnr_hvs_vulkan`, `ciede_vulkan`,
-> `float_ssim_vulkan`, `float_ms_ssim_vulkan`, `float_ansnr_vulkan`,
-> `float_moment_vulkan`, `ssimulacra2_vulkan`, `cambi_vulkan`. The
-> default `vmaf_v0.6.1` model runs end-to-end on Vulkan against a
-> real ICD. Image-import zero-copy entry points
-> (`vmaf_vulkan_state_init_external` / `_import_image` /
-> `_wait_compute` / `_read_imported_pictures`) landed via T7-29 /
-> [ADR-0186](../adr/0186-vulkan-image-import-impl.md) for FFmpeg
-> AVVulkanDeviceContext interop. Build with
-> `-Denable_vulkan=enabled`; the build picks up `volk` and
-> `dependency('vulkan')` automatically. See
-> [ADR-0127](../adr/0127-vulkan-compute-backend.md),
-> [ADR-0175](../adr/0175-vulkan-backend-scaffold.md),
-> [ADR-0176](../adr/0176-vulkan-vif-cross-backend-gate.md),
-> [ADR-0177](../adr/0177-vulkan-motion-kernel.md),
-> [ADR-0178](../adr/0178-vulkan-adm-kernel.md),
-> [ADR-0186](../adr/0186-vulkan-image-import-impl.md),
-> [ADR-0210](../adr/0210-cambi-vulkan-integration.md).
+> **Status: REMOVED — [ADR-0726](../adr/0726-drop-vulkan-backend.md) (2026-05-28).**
+> The Vulkan backend, all source files (`core/src/vulkan/`,
+> `core/src/feature/vulkan/`), the public header (`libvmaf_vulkan.h`), and the
+> `enable_vulkan` Meson option were deleted. The CLI flags `--vulkan_device`,
+> `--no_vulkan`, and `--backend vulkan` are no longer accepted. The sections
+> below are preserved as a historical reference for what was implemented;
+> none of the entry points listed exist in current builds. For active GPU
+> backends see [CUDA](#cuda), [SYCL](#sycl), [HIP](#hip), and [Metal](#metal).
+
+Historical note: at the time of removal, the backend had reached T5-1c
+(full default-model coverage). The state-level API, all feature extractors,
+image-import zero-copy paths, and FFmpeg `AVVulkanDeviceContext` interop
+described below are **no longer present**. ADR references:
+[ADR-0127](../adr/0127-vulkan-compute-backend.md),
+[ADR-0175](../adr/0175-vulkan-backend-scaffold.md),
+[ADR-0186](../adr/0186-vulkan-image-import-impl.md),
+[ADR-0726](../adr/0726-drop-vulkan-backend.md).
 
 ### Header
 

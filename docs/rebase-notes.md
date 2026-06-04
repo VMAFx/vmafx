@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs(post-vulkan-drop): residual scrub + fix -Denable_vulkan=true (invalid Meson) → =enabled
+
+**Branch**: docs/post-vulkan-drop-residual-scrub
+
+no rebase impact: docs-only change. Fixes stale Vulkan references in
+`docs/ai/datasets/k150k.md`, `docs/mcp/tools.md`, `docs/api/index.md`, and
+`docs/api/gpu.md`. No C source, public header, upstream-mirrored Python, or
+Netflix golden-assertion file is touched.
+
+---
+
 ## docs(rebrand): scrub residual Lusoris-fork references
 
 **Files touched**: `docs/usage/cli.md`, `docs/ai/mos-corpora.md`,

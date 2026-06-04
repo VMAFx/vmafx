@@ -195,14 +195,14 @@ output; `cpu` is reported `true` whenever the binary exists.
 ## run_benchmark
 
 Run the full multi-fixture benchmark suite (`testdata/bench_all.sh`) against all
-available backends — CPU, CUDA, SYCL, and Vulkan — on three canonical YUV fixture
-pairs built into the harness:
+available compiled-in backends (CPU, CUDA, SYCL, HIP, Metal — Vulkan removed in
+ADR-0726) on three canonical YUV fixture pairs built into the harness:
 
 1. **576×324, 48 frames, 8-bit** — the Netflix golden pair `src01_hrc00 / src01_hrc01`
 2. **1920×1080, 5 frames, 8-bit** — the 5-frame 1080p pair
 3. **3840×2160, 200 frames, 8-bit** — the 4K BBB excerpt (`testdata/bbb/`)
 
-For each fixture the harness scores all four backends, prints per-backend VMAF means
+For each fixture the harness scores all compiled-in backends, prints per-backend VMAF means
 and wall times, and prints a comparison table showing max per-frame diff between
 CPU and each GPU backend. See [usage/bench.md](../usage/bench.md) for more detail.
 
