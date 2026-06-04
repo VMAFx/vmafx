@@ -548,7 +548,7 @@ static int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_st
     VmafModel *const m = *model = static_cast<VmafModel *>(malloc(sizeof(*m)));
     if (!m)
         return -ENOMEM;
-    memset(m, 0, sizeof(*m));
+    *m = VmafModel{};
 
     int err = -EINVAL;
     m->name = vmaf_model_generate_name(cfg);
@@ -643,7 +643,7 @@ static int model_collection_parse_loop(json_stream *s, VmafModel **model,
             return -EINVAL;
 
         const char *key = json_get_string(s, nullptr);
-        (void)snprintf(generated_key, sizeof(generated_key), "%d", i);
+        (void)snprintf(generated_key, sizeof(generated_key), "%u", i);
 
         if (strcmp(key, generated_key) != 0) {
             json_skip(s);
@@ -656,7 +656,7 @@ static int model_collection_parse_loop(json_stream *s, VmafModel **model,
 
         if (i == 0)
             c->name = cfg_name;
-        (void)snprintf(cfg_name, cfg_name_sz, "%s_%04d", name, ++i);
+        (void)snprintf(cfg_name, cfg_name_sz, "%s_%04u", name, ++i);
     }
 
     if (!(*model_collection))

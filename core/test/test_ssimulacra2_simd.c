@@ -1083,6 +1083,13 @@ static char *test_host_xyb(void)
     float *lin = calloc(HOST_BUF_SZ, sizeof(float));
     float *out_ref = calloc(HOST_BUF_SZ, sizeof(float));
     float *out_simd = calloc(HOST_BUF_SZ, sizeof(float));
+    if (!lin || !out_ref || !out_simd) {
+        free(lin);
+        free(out_ref);
+        free(out_simd);
+        mu_assert("test_host_xyb: calloc failed", 0);
+        return NULL;
+    }
     /* Fill only the active pixel region of each plane. */
     for (int c = 0; c < 3; c++) {
         uint32_t seed = 0xdeadbeefu ^ (uint32_t)(c * 0x1234u);
@@ -1117,6 +1124,13 @@ static char *test_host_downsample(void)
     float *in = calloc(HOST_BUF_SZ, sizeof(float));
     float *out_ref = calloc(HOST_BUF_SZ, sizeof(float));
     float *out_simd = calloc(HOST_BUF_SZ, sizeof(float));
+    if (!in || !out_ref || !out_simd) {
+        free(in);
+        free(out_ref);
+        free(out_simd);
+        mu_assert("test_host_downsample: calloc failed", 0);
+        return NULL;
+    }
     for (int c = 0; c < 3; c++) {
         uint32_t seed = 0x5a5a5a5au ^ (uint32_t)(c * 0x789u);
         fill_random(in + (size_t)c * HOST_PLANE_SZ, (size_t)HOST_W * HOST_H, -1.0f, 1.0f, seed);

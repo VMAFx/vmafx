@@ -78,7 +78,7 @@ static int pooled_picture_release(VmafPicture *pic, void *cookie)
     return 0;
 }
 
-static int pool_preallocate_pictures(VmafPicturePool *p, VmafPicturePoolConfig cfg)
+static int pool_preallocate_pictures(VmafPicturePool *p, const VmafPicturePoolConfig &cfg)
 {
     for (unsigned i = 0; i < cfg.pic_cnt; i++) {
         int err = vmaf_picture_alloc(&p->pictures[i], cfg.pix_fmt, cfg.bpc, cfg.w, cfg.h);

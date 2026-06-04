@@ -1060,7 +1060,7 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
                 fps = (picture_index + 1) / (static_cast<float>(clock() - t0) / CLOCKS_PER_SEC);
             }
 
-            (void)fprintf(stderr, "\r%d frame%s %s %.2f FPS\033[K", picture_index + 1,
+            (void)fprintf(stderr, "\r%u frame%s %s %.2f FPS\033[K", picture_index + 1,
                           picture_index ? "s" : " ", spinner[picture_index % spinner_length], fps);
             (void)fflush(stderr);
         }
@@ -1381,7 +1381,7 @@ int main(int argc, char *argv[])
         }
 
         if (istty && !c.quiet) {
-            (void)fprintf(stderr, "picture pool: %d pictures pre-allocated\n", pic_cfg.pic_cnt);
+            (void)fprintf(stderr, "picture pool: %u pictures pre-allocated\n", pic_cfg.pic_cnt);
         }
 
         if (arrays.allocate(c.model_cnt)) {

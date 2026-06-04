@@ -72,6 +72,8 @@ static int gaussian_filter_init(unsigned **iqa_kernel, double _sigma, int _max_l
     kernel_len = len >= _max_len ? _max_len - 1 : (int)len;
     kernel_sz = kernel_len << 1 | 1;
     kernel = (unsigned *)malloc(kernel_sz * sizeof(*kernel));
+    if (!kernel)
+        return -ENOMEM;
     sum = 0;
     for (ci = kernel_len; ci > 0; ci--) {
         kernel[kernel_len - ci] = kernel[kernel_len + ci] =
@@ -263,14 +265,32 @@ static double calc_ssim(const unsigned char *_src, int _systride, const unsigned
     int samplemax;
     samplemax = (1 << depth) - 1;
     vkernel_sz = gaussian_filter_init(&vkernel, 1.5, 5);
+    if (vkernel_sz < 0)
+        return 0.0;
     vkernel_offs = vkernel_sz >> 1;
     line_sz = ssim_line_buffer_size(vkernel_sz);
     line_mask = line_sz - 1;
     lines = (ssim_moments **)malloc((size_t)line_sz * sizeof(*lines));
-    lines[0] = line_buf = (ssim_moments *)malloc((size_t)line_sz * (size_t)_w * sizeof(*line_buf));
+    if (!lines) {
+        free(vkernel);
+        return 0.0;
+    }
+    line_buf = (ssim_moments *)malloc((size_t)line_sz * (size_t)_w * sizeof(*line_buf));
+    if (!line_buf) {
+        free((void *)lines);
+        free(vkernel);
+        return 0.0;
+    }
+    lines[0] = line_buf;
     for (y = 1; y < line_sz; y++)
         lines[y] = lines[y - 1] + _w;
     hkernel_sz = gaussian_filter_init(&hkernel, 1.5, 5);
+    if (hkernel_sz < 0) {
+        free(line_buf);
+        free((void *)lines);
+        free(vkernel);
+        return 0.0;
+    }
     hkernel_offs = hkernel_sz >> 1;
     ssim = 0;
     ssimw = 0;

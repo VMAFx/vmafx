@@ -161,6 +161,25 @@ implementation, or Netflix golden-assertion file is touched.
 
 ---
 
+## fix(cppcheck): resolve Whole-Project warnings
+
+**Files touched:**
+`core/src/feature/integer_ssim.c`, `core/src/picture_pool.cpp`,
+`core/src/read_json_model.cpp`, `core/tools/vmaf.cpp`,
+`core/test/test_ssimulacra2_simd.c`, `core/test/dnn/test_tensor_io.c`,
+`.cppcheck-suppressions.txt`,
+`changelog.d/fixed/cppcheck-whole-project-warnings.md`
+
+**Rebase impact:** None for upstream Netflix/vmaf cherry-picks.
+All changes are either fork-local files (`picture_pool.cpp`, `opt.cpp`
+suppression) or minimal defensive additions (null checks, format-specifier
+corrections, struct-member initialisation) that do not alter external
+behaviour. The `%d` → `%u` format fixes in `vmaf.cpp` and
+`read_json_model.cpp` are cosmetic; the `VmafModel{}` initialisation is
+semantically equivalent to `memset(m, 0, …)` on any IEEE-754 platform.
+
+---
+
 ## docs(coverage): ADR-0922 coverage-gate runbook (2026-06-04)
 
 **Files touched:**

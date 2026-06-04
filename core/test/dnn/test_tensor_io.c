@@ -62,7 +62,7 @@ static char *test_luma_roundtrip(void)
 
 static char *test_rejects_bad_args(void)
 {
-    uint8_t src[4];
+    uint8_t src[4] = {0};
     float dst[4];
     int err = vmaf_tensor_from_luma(NULL, 2, 2, 2, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32,
                                     NULL, NULL, dst);

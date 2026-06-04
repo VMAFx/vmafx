@@ -31,6 +31,7 @@ invalidPrintfArgType_sint:core/tools/vmaf.c
 uninitvar:core/src/predict.c
 arithOperationsOnVoidPointer:core/src/feature/integer_vif.c
 invalidPointerCast:core/src/opt.c
+invalidPointerCast:core/src/opt.cpp
 invalidPointerCast:core/src/feature/x86/float_adm_avx2.c
 duplicateAssignExpression:core/src/feature/integer_adm.c
 duplicateAssignExpression:core/src/feature/x86/adm_avx2.c
