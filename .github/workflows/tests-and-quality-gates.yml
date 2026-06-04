@@ -838,16 +838,15 @@ jobs:
   # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL + AMD iGPU +
   # AVX-512 CPU). See docs/development/self-hosted-runner.md for setup.
   #
-  # Advisory-only (continue-on-error) for now: merges are gated on the
-  # CPU coverage job above. Will be promoted to required once the runner
-  # has been stable for two weeks.
+  # Promoted to required (T-GPU-COVERAGE-STABLE-WEEKS, 2026-06-04): the
+  # two-week stability window (2026-05-19 → 2026-06-02) elapsed with no
+  # advisory-fail runs on the self-hosted runner. continue-on-error removed.
   coverage-gpu:
-    name: "Coverage Gate — GPU Backends (Advisory)"
+    name: "Coverage Gate — GPU Backends"
     runs-on: [self-hosted, linux, gpu-full]
     # ADR-0331: also gate on draft PR status. Self-hosted runners are
     # scarce — drafts must not contend for them.
     if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
-    continue-on-error: true
     timeout-minutes: 45
     permissions:
       # Codecov OIDC upload (ADR-0903) — see CPU coverage job above.
