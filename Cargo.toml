@@ -20,7 +20,7 @@ resolver = "2"
 [workspace.package]
 authors = ["Lusoris <lusoris@pm.me>"]
 edition = "2024"
-license = "BSD-3-Clause-Plus-Patent"
+license = "BSD-2-Clause-Patent"
 repository = "https://github.com/VMAFx/vmafx"
 homepage = "https://github.com/VMAFx/vmafx"
 documentation = "https://vmafx.github.io/vmafx/"
