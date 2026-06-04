@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/arm-motion-v2-re-register-and-test-order
+
+**Files touched:**
+`core/src/meson.build`, `core/src/feature/feature_extractor.c`,
+`core/test/test_integer_motion_coverage.c`
+
+**Rebase impact:** no rebase impact from other branches expected. If a
+concurrent PR touches `feature_extractor_list[]` or `meson.build`'s CPU
+source list, preserve `integer_motion_v2.c` registration and the
+`&vmaf_fex_integer_motion_v2` list entry — removing them breaks all
+`"motion_v2"` lookups on CPU-only builds.
+
+---
+
 ## ci/promote-gpu-coverage-gate-required
 
 no rebase impact: changes are isolated to the CI workflow file and docs.

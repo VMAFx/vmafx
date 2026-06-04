@@ -145,14 +145,16 @@ static char *test_motion_three_frame_extract_emits_scores(void)
         mu_assert("extract frame", err == 0);
     }
 
-    /* index 2 has a real SAD2 (second-SAD branch at line 552-578). */
+    err = vmaf_feature_extractor_context_flush(ctx, fc);
+    mu_assert("flush ok", err >= 0);
+
+    /* index 2 has a real SAD2 (second-SAD branch at line 552-578).
+     * motion2_score is emitted during flush(), not during extract(), so
+     * vmaf_feature_collector_get_score must be called after flush(). */
     double m2 = NAN;
     err = vmaf_feature_collector_get_score(fc, "VMAF_integer_feature_motion2_score", &m2, 2);
     mu_assert("get motion2 frame2", err == 0);
     mu_assert("motion2 finite", isfinite(m2));
-
-    err = vmaf_feature_extractor_context_flush(ctx, fc);
-    mu_assert("flush ok", err >= 0);
 
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
