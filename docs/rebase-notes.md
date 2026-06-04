@@ -44553,3 +44553,20 @@ following invariants before accepting:
   the unlock; if upstream refactors the fetch function, preserve that ordering.
 
 ---
+
+## fix/integer-ssim-moments-type-non-x86 (2026-06-04, ADR-1040)
+
+**Files touched:**
+`core/src/feature/integer_ssim.h` (new),
+`core/src/feature/integer_ssim.c`,
+`core/src/feature/x86/integer_ssim_avx2.h`
+
+If an upstream Netflix commit adds or renames fields in the SSIM
+accumulation buffer, the shared header `integer_ssim.h` must be updated
+to match. The layout invariant (six consecutive `int64_t` fields,
+identical to the private `ssim_moments` struct) is documented in
+ADR-0784 and ADR-1040; any upstream layout change that breaks the direct
+cast in `accum_row_scalar_8` / `accum_row_scalar_16` requires a
+coordinated update to both the typedef and the cast sites.
+
+---
