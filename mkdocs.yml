@@ -166,6 +166,10 @@ nav:
       - Per-shot scoring: usage/vmaf-perShot.md
       - ROI scoring: usage/vmaf-roi.md
       - ROI score output: usage/vmaf-roi-score.md
+      - Storage / rclone: usage/storage.md
+      - vmafx CLI: usage/vmafx-cli.md
+      - vmaf-train CLI: usage/vmaf-train.md
+      - VPL pipeline: usage/vmaf-vpl.md
       - External resources: usage/external-resources.md
       - Environment variables: usage/env-vars.md
       - vmaf-tune:
@@ -184,6 +188,7 @@ nav:
           - FFmpeg wiring: usage/vmaf-tune-ffmpeg.md
           - Cache: usage/vmaf-tune-cache.md
           - Bisect: usage/vmaf-tune-bisect.md
+          - Fast NR pre-scoring: usage/vmaf-tune-fast-nr.md
   - C API:
       - api/index.md
       - DNN sessions: api/dnn.md
@@ -222,6 +227,7 @@ nav:
       - SYCL bundling: backends/sycl/bundling.md
       - HIP (AMD ROCm): backends/hip/overview.md
       - Metal (Apple Silicon): backends/metal/index.md
+      - Context API contract: backends/context-api-contract.md
   - MCP:
       - mcp/index.md
       - Tool reference: mcp/tools.md
@@ -261,6 +267,11 @@ nav:
       - Extractor template: ai/extractor-template.md
       - Roadmap: ai/roadmap.md
       - Scripts env vars: ai/scripts-env-vars.md
+      - Per-PR doc bar: ai/per-pr-doc-bar.md
+      - CHUG ingestion: ai/chug-ingestion.md
+      - Saliency feature materializer: ai/saliency-feature-materializer.md
+      - Tiny blob storage: ai/tiny-blob-storage.md
+      - CHUG HDR validator: ai/chug-hdr-held-out-validator.md
       - Corpus ingestion:
           - KonViD-1k: ai/konvid-1k-ingestion.md
           - KonViD-150k: ai/konvid-150k-ingestion.md
@@ -269,13 +280,34 @@ nav:
           - BVI-DVC: ai/bvi-dvc-corpus-ingestion.md
           - YouTube-UGC: ai/youtube-ugc-ingestion.md
           - Waterloo IVC 4K: ai/waterloo-ivc-4k-ingestion.md
+          - K150K dataset: ai/datasets/k150k.md
       - Model cards:
           - KonViD MOS head v1: ai/models/konvid_mos_head_v1.md
+          - DISTS-SQ: ai/models/dists_sq.md
+          - FastDVDNet pre: ai/models/fastdvdnet_pre.md
+          - FR regressor v1: ai/models/fr_regressor_v1.md
+          - FR regressor v2: ai/models/fr_regressor_v2.md
+          - FR regressor v2 (codec-aware): ai/models/fr_regressor_v2_codec_aware.md
+          - FR regressor v2 (probabilistic): ai/models/fr_regressor_v2_probabilistic.md
+          - FR regressor v3: ai/models/fr_regressor_v3.md
+          - Learned filter v1: ai/models/learned_filter_v1.md
+          - LPIPS-SQ: ai/models/lpips_sq.md
+          - LPIPS-SQ v1: ai/models/lpips_sq_v1.md
+          - MobileSAL: ai/models/mobilesal.md
+          - NR metric v1: ai/models/nr_metric_v1.md
+          - Saliency student v1: ai/models/saliency_student_v1.md
+          - Saliency student v2: ai/models/saliency_student_v2.md
+          - TransNet v2: ai/models/transnet_v2.md
+          - U2Net-P mirror card: ai/models/u2netp_mirror_card.md
+          - VMAF tiny v2: ai/models/vmaf_tiny_v2.md
+          - VMAF tiny v3: ai/models/vmaf_tiny_v3.md
+          - VMAF tiny v4: ai/models/vmaf_tiny_v4.md
   - Architecture:
       - architecture/index.md
       - C4 context: architecture/c4-context.md
       - C4 container: architecture/c4-container.md
       - Workspace layout: architecture/workspace.md
+      - Phase 4b distributed platform: architecture/phase4b-distributed-platform.md
   - Development:
       - Engineering principles: principles.md
       - Build flags: development/build-flags.md
@@ -302,6 +334,24 @@ nav:
       - Automated rule enforcement: development/automated-rule-enforcement.md
       - PR body validator: development/pr-body-validator.md
       - mkdocs strict pre-push hook: development/pre-push-mkdocs-strict.md
+      - Dev MCP container: development/dev-mcp.md
+      - Kubernetes deployment: development/k8s-deployment.md
+      - Operator: development/operator.md
+      - Languages: development/languages.md
+      - Production Docker: development/docker-production.md
+      - Rust guide: development/rust.md
+      - GPU scheduling: development/gpu-scheduling.md
+      - Performance benchmarking: development/perf.md
+      - Deprecations: development/deprecations.md
+      - vmafx-node: development/vmafx-node.md
+      - ADR workflow: development/adr-workflow.md
+      - PR body sentinel guide: development/pr-body-sentinel-guide.md
+      - Test fixtures: development/test-fixtures.md
+      - CI tmate debug: development/ci-tmate-debug.md
+  - Server:
+      - Controller: server/controller.md
+      - gRPC service: server/grpc.md
+      - Worker node: server/node.md
   - ADRs:
       # >>> ADR-NAV-GENERATED — do not hand-edit; regenerate with
       - Overview: adr/README.md
@@ -1399,3 +1449,6 @@ nav:
   - Reference:
       - FAQ: reference/faq.md
       - References: reference/references.md
+      - Bug state tracker: state.md
+      - Rebase notes: rebase-notes.md
+      - Benchmarks: benchmarks.md

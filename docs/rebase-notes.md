@@ -20,6 +20,12 @@ no rebase impact: adds `.github/workflows/dev-container-build.yml` and
 upstream-mirrored Python, Netflix golden-assertion file, or
 ffmpeg-patches file is touched.
 
+## docs/mkdocs-strict-nav-conformance
+
+no rebase impact: changes are isolated to mkdocs.yml nav entries and a
+changelog fragment. No C source, public C API, upstream-mirrored Python,
+Netflix golden-assertion file, or ffmpeg-patches file is touched.
+
 ---
 
 ## ci/promote-gpu-coverage-gate-required
