@@ -125,6 +125,9 @@ func (r *VmafxNodeReconciler) probeControllerHealthz(ctx context.Context, namesp
 // one connection per polled node (ADR-0786 operator audit).
 func (r *VmafxNodeReconciler) probeHealthz(ctx context.Context, namespace string) bool {
 	hc := r.HTTPClient
+	// HTTPClient is always initialised by SetupWithManager; the nil fallback is
+	// only reached in tests that construct the reconciler directly without calling
+	// SetupWithManager (r5-scheduler-timer, ADR-1017).
 	if hc == nil {
 		hc = &http.Client{Timeout: nodeProbeTimeout}
 	}
@@ -161,7 +164,14 @@ func (r *VmafxNodeReconciler) resolveControllerHTTPURL(namespace string) string 
 }
 
 // SetupWithManager registers the VmafxNodeReconciler with the controller manager.
+// It also initialises the default HTTP client when the caller has not injected
+// one (production path), so Reconcile always uses a shared client that benefits
+// from keep-alive connection pooling instead of allocating a fresh one per call
+// (r5-scheduler-timer, ADR-1017).
 func (r *VmafxNodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.HTTPClient == nil {
+		r.HTTPClient = &http.Client{Timeout: nodeProbeTimeout}
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&vmafxv1.VmafxNode{}).
 		Complete(r)

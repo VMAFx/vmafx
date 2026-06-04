@@ -139,6 +139,9 @@ func (r *VmafxModelTrainingReconciler) pollTrainerStatus(
 	namespace, name string,
 ) (*trainerStatusResponse, error) {
 	hc := r.HTTPClient
+	// HTTPClient is always initialised by SetupWithManager; the nil fallback is
+	// only reached in tests that construct the reconciler directly without calling
+	// SetupWithManager (r5-scheduler-timer, ADR-1017).
 	if hc == nil {
 		hc = &http.Client{Timeout: trainerHTTPTimeout}
 	}
@@ -225,9 +228,15 @@ func (r *VmafxModelTrainingReconciler) applySidecarStatus(
 }
 
 // SetupWithManager registers the VmafxModelTrainingReconciler with the controller manager.
+// It initialises the default HTTP client when not injected, so production
+// reconcile calls share a single connection-pooled client (r5-scheduler-timer,
+// ADR-1017).
 func (r *VmafxModelTrainingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Recorder == nil {
 		r.Recorder = mgr.GetEventRecorderFor("vmafx-model-training-controller")
+	}
+	if r.HTTPClient == nil {
+		r.HTTPClient = &http.Client{Timeout: trainerHTTPTimeout}
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&vmafxv1.VmafxModelTraining{}).

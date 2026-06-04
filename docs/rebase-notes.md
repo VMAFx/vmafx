@@ -44347,3 +44347,15 @@ file is touched. The struct gains two private fields (`reg prometheus.Registerer
 needs updating. The `WaitForShutdown` `time.After` → `time.NewTimer` + `defer Stop()`
 change is behaviour-equivalent; the only observable difference is the timer being
 released promptly on early return rather than at GC time.
+
+---
+
+### fix(operator): Go operator resource-allocation — http.Client + gRPC dial (ADR-1017)
+
+**Branch**: fix/r5-go-timer-ctx
+
+no rebase impact: all changes are in
+`cmd/vmafx-operator/internal/controller/`. No public Go API, CRD schema,
+RBAC manifest, Helm template, or C source is touched. The `SetupWithManager`
+change is additive (adds an `if r.HTTPClient == nil` guard). No Netflix golden
+assertions touched.

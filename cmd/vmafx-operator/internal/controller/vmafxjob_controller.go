@@ -138,11 +138,15 @@ func (r *VmafxJobReconciler) getRemoteJob(
 	dialCtx, cancel := context.WithTimeout(ctx, grpcDialTimeout)
 	defer cancel()
 
+	// grpc.WithBlock() is intentionally absent: for a Kubernetes reconciler,
+	// a non-blocking dial lets controller-runtime continue scheduling other
+	// objects while the background connection resolves.  The per-call overhead
+	// from creating a new connection each Reconcile is accepted; a shared cached
+	// conn is out-of-scope for this PR (r5-scheduler-timer, ADR-1017).
 	conn, err := grpc.DialContext( //nolint:staticcheck // grpc.DialContext is the stable API in grpc v1.x
 		dialCtx,
 		addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", addr, err)
@@ -150,7 +154,10 @@ func (r *VmafxJobReconciler) getRemoteJob(
 	defer conn.Close() //nolint:errcheck // connection close errors are not actionable
 
 	c := controllerv1.NewVmafxControllerClient(conn)
-	job, err := c.GetJob(ctx, &controllerv1.GetJobRequest{JobId: jobID})
+	// Pass dialCtx so the RPC inherits the same deadline as the dial; without
+	// this the parent ctx (no deadline) would allow GetJob to block indefinitely
+	// (r5-scheduler-timer finding :153, ADR-1017).
+	job, err := c.GetJob(dialCtx, &controllerv1.GetJobRequest{JobId: jobID})
 	if err != nil {
 		if s, ok := grpcstatus.FromError(err); ok && s.Code() == codes.NotFound {
 			return nil, fmt.Errorf("job %s not found on controller", jobID)
