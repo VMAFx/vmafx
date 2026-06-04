@@ -701,8 +701,21 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     {
         int v_lo_signed = (int)s->vlt_luma - 3 * (int)num_diffs + 1;
         s->buffers.v_band_base = v_lo_signed > 0 ? (uint16_t)v_lo_signed : 0;
-        s->buffers.v_band_size =
-            s->buffers.tvi_for_diff[num_diffs - 1] + 1 - s->buffers.v_band_base;
+        /* Compute in signed int to detect the pathological case where a low
+         * cambi_vis_lum_threshold pushes v_band_base above the upper bound.
+         * Unchecked uint16_t subtraction wraps to ~65535, triggering a
+         * massive over-alloc and subsequent OOB writes.                      */
+        int v_band_size_signed =
+            (int)s->buffers.tvi_for_diff[num_diffs - 1] + 1 - (int)s->buffers.v_band_base;
+        if (v_band_size_signed <= 0) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "cambi: v_band_size underflow (tvi_max=%u v_band_base=%u); "
+                     "cambi_vis_lum_threshold may be too low\n",
+                     (unsigned)s->buffers.tvi_for_diff[num_diffs - 1],
+                     (unsigned)s->buffers.v_band_base);
+            return -EINVAL;
+        }
+        s->buffers.v_band_size = (uint16_t)v_band_size_signed;
     }
     s->buffers.c_values_histograms =
         aligned_malloc(ALIGN_CEIL(alloc_w * s->buffers.v_band_size * sizeof(uint16_t)), 32);

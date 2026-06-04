@@ -37,7 +37,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include <stddef.h>
-#include <assert.h> /* zli-nflx */
+/* assert.h intentionally omitted: the assert(!args) guard was removed in
+ * favour of a runtime INFINITY return in iqa_ssim (see ADR-1033). */
 #include <pthread.h>
 
 #include "iqa.h"
@@ -261,9 +262,8 @@ static void ssim_accumulate_default_scalar(const float *ref_mu, const float *cmp
 }
 
 /* Scalar path for the user-tweaked (alpha/beta/gamma) branch. Reached only
- * when the caller passes non-NULL args; gated by `assert(!args)` in the
- * default path. Returns INFINITY if mr->map signals abort, otherwise the
- * reduced score. */
+ * when the caller passes non-NULL args. Returns INFINITY if mr->map signals
+ * abort, otherwise the reduced score. */
 static float ssim_accumulate_user_args_scalar(float *ref_sigma_sqd, float *cmp_sigma_sqd,
                                               float *sigma_both, const float *ref_mu,
                                               const float *cmp_mu, int w, int h, float C1, float C2,
@@ -385,8 +385,11 @@ float iqa_ssim(float *ref, float *cmp, int w, int h, const struct iqa_kernel *k,
     float K1 = 0.01f;
     float K2 = 0.03f;
 
-    assert(!args); /* zli-nflx: for now only works for default case */
-
+    /* The assert(!args) that was here fired when iqa_ssim was called with a
+     * non-NULL args pointer (the Rouse MS-SSIM path passes its own struct).
+     * Replace with a runtime guard: non-default args require a map-reduce
+     * context (mr), otherwise the reduction step has no place to store
+     * per-pixel contributions.  No abort() in production paths.            */
     if (args && !mr)
         return INFINITY;
     ssim_init_args(args, &alpha, &beta, &gamma, &L, &K1, &K2);

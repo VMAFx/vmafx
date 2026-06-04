@@ -377,9 +377,15 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
                                                    "VMAF_feature_aim_score", score_aim, index);
 
     if (s->adm_adm3_apply_hm) {
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_adm3_score",
-            MAX(2 * score * score_aim / (score + score_aim), s->adm_min_val), index);
+        /* Harmonic mean of score and score_aim.  When both are 0 the formula
+         * yields 0/0 = NaN which propagates silently through MAX().  Return 0
+         * explicitly for the all-zero case (score=0, score_aim=0 corresponds
+         * to maximum distortion; harmonic mean is 0 by definition).         */
+        const double hm =
+            (score + score_aim == 0.0) ? 0.0 : 2.0 * score * score_aim / (score + score_aim);
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       "VMAF_feature_adm3_score",
+                                                       MAX(hm, s->adm_min_val), index);
     } else {
         err |= vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "VMAF_feature_adm3_score",
@@ -388,9 +394,17 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
             index);
     }
 
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_feature_adm_scale0_score",
-                                                   scores[0] / scores[1], index);
+    /* When adm_skip_scale0 is set the scale-0 DWT is skipped; scores[0..1]
+     * hold a 0/1e-10 sentinel.  Mirror the float_vif.c:296 pattern and emit
+     * an explicit 0 rather than relying on the sentinel arithmetic.         */
+    if (s->adm_skip_scale0) {
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       "VMAF_feature_adm_scale0_score", 0.0, index);
+    } else {
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       "VMAF_feature_adm_scale0_score",
+                                                       scores[0] / scores[1], index);
+    }
 
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "VMAF_feature_adm_scale1_score",

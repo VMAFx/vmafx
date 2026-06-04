@@ -3229,9 +3229,13 @@ static void integer_compute_adm(AdmState *s, VmafPicture *ref_pic, VmafPicture *
     den = den < numden_limit ? 0 : den;
 
     if (den == 0.0) {
+        /* Flat/black frame: no distortion energy — both scores are perfect.
+         * *score_aim MUST be initialised here; the caller reads it
+         * unconditionally and the else-branch would be skipped.           */
         *score = 1.0f;
+        *score_aim = 1.0f;
     } else {
-        // normalize AIM score by the DLM denominator
+        /* Normalize AIM score by the DLM denominator. */
         *score_aim = aim_num / den;
         *score = num / den;
     }

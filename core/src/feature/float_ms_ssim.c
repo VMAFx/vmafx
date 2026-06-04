@@ -177,7 +177,11 @@ fail:
 
 static double convert_to_db(double score, double max_db)
 {
-    return MIN(-10. * log10(1 - score), max_db);
+    /* score >= 1.0 makes log10(1-score) undefined (log10 of zero or negative)
+     * yielding -Inf / NaN.  Return max_db directly for perfect similarity.  */
+    if (score >= 1.0)
+        return max_db;
+    return MIN(-10. * log10(1.0 - score), max_db);
 }
 
 static const char *const ms_ssim_feature_names[3] = {

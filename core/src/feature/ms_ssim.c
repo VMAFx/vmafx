@@ -73,7 +73,9 @@ static int ms_ssim_map_fn(const struct iqa_ssim_int *si, void *ctx)
 /* Called to calculate the final result */
 static float ms_ssim_reduce_fn(int w, int h, void *ctx)
 {
-    double size = (double)(w * h);
+    /* Cast before multiply: w*h overflows int32 for widths > 46340.  Cast
+     * each operand so the multiplication is done in double precision.       */
+    double size = (double)w * (double)h;
     struct ms_ssim_context *ms_ctx = (struct ms_ssim_context *)ctx;
     ms_ctx->l = pow(ms_ctx->l / size, (double)ms_ctx->alpha);
     ms_ctx->c = pow(ms_ctx->c / size, (double)ms_ctx->beta);
@@ -266,8 +268,13 @@ static int ms_ssim_score_scales(float **ref_imgs, float **cmp_imgs, int w, int h
         ms_ssim_run_scale(ref_imgs[idx], cmp_imgs[idx], cur_w, cur_h, window, mr, &ms_ctx, wang, &l,
                           &c, &s);
 
-        msssim *= pow((double)l, (double)alphas[idx]) * pow((double)c, (double)betas[idx]) *
-                  pow((double)s, (double)gammas[idx]);
+        /* Guard pow(negative, fractional_exponent) which yields NaN for l or
+         * c < 0 (can occur on heavily distorted synthetic frames).  fabs()
+         * mirrors the same guard already present in ms_ssim_reduce_fn for s
+         * (see Rouse path at line ~80).                                    */
+        msssim *= pow(fabs((double)l), (double)alphas[idx]) *
+                  pow(fabs((double)c), (double)betas[idx]) *
+                  pow(fabs((double)s), (double)gammas[idx]);
         l_scores[idx] = l;
         c_scores[idx] = c;
         s_scores[idx] = s;

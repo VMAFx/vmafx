@@ -111,15 +111,24 @@ float vmaf_image_sad_c(const float *img1, const float *img2, int width, int heig
         float accum_scale1 = (float)0.0;
         int scaled_width = (int)(width * 0.5 + 0.5);
         int scaled_height = (int)(height * 0.5 + 0.5);
-        int float_stride = ALIGN_CEIL(width * sizeof(float));
         int scaled_float_stride = ALIGN_CEIL(scaled_width * sizeof(float));
         float *img1_scaled = aligned_malloc((size_t)scaled_float_stride * scaled_height, 32);
         float *img2_scaled = aligned_malloc((size_t)scaled_float_stride * scaled_height, 32);
+        /* Guard OOM: aligned_malloc may return NULL. */
+        if (!img1_scaled || !img2_scaled) {
+            aligned_free(img1_scaled);
+            aligned_free(img2_scaled);
+            return motion_scale0;
+        }
 
-        motion_scale_bilinear(img1, img1_scaled, width, height, float_stride / sizeof(float),
-                              scaled_width, scaled_height, scaled_float_stride / sizeof(float));
-        motion_scale_bilinear(img2, img2_scaled, width, height, float_stride / sizeof(float),
-                              scaled_width, scaled_height, scaled_float_stride / sizeof(float));
+        /* Pass the actual caller-supplied strides (already in element units,
+         * per the function contract at line 90) rather than recomputing from
+         * width.  The caller's strides may include alignment padding that
+         * ALIGN_CEIL(width*sizeof(float))/sizeof(float) does not match.    */
+        motion_scale_bilinear(img1, img1_scaled, width, height, img1_stride, scaled_width,
+                              scaled_height, scaled_float_stride / sizeof(float));
+        motion_scale_bilinear(img2, img2_scaled, width, height, img2_stride, scaled_width,
+                              scaled_height, scaled_float_stride / sizeof(float));
 
         for (int i = 0; i < scaled_height; ++i) {
             float accum_line = (float)0.0;

@@ -348,9 +348,13 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
     den = den < numden_limit ? 0 : den;
 
     if (den == 0.0) {
+        /* Flat/black frame: no distortion energy — both scores are perfect.
+         * *score_aim MUST be initialised here; the caller reads it
+         * unconditionally and the else-branch would be skipped.           */
         *score = 1.0f;
+        *score_aim = 1.0f;
     } else {
-        // normalize AIM score by the DLM denominator and clip values larger than 1
+        /* Normalize AIM score by the DLM denominator; clip to [0, 1]. */
         *score_aim = MIN(aim_num / aim_den, 1.0f);
         *score = num / den;
     }

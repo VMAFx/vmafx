@@ -17,6 +17,32 @@ preserved in the scalar tail if the upstream change modifies it.
 
 ---
 
+## fix/r6-cpu-scoring-nan-ub-guards (2026-06-04)
+
+**Files touched:**
+`core/src/feature/integer_psnr.c`,
+`core/src/feature/ms_ssim.c`,
+`core/src/feature/float_ssim.c`,
+`core/src/feature/float_ms_ssim.c`,
+`core/src/feature/iqa/ssim_tools.c`,
+`core/src/feature/adm.c`,
+`core/src/feature/integer_adm.c`,
+`core/src/feature/float_adm.c`,
+`core/src/feature/motion.c`,
+`core/src/feature/cambi.c`,
+`docs/adr/1033-cpu-scoring-nan-ub-guards.md`,
+`changelog.d/fixed/1033-cpu-scoring-nan-ub-guards.md`
+
+no rebase impact: all changes are internal correctness fixes inside
+CPU-path scoring functions. No public C API headers, no `meson_options.txt`
+entries, no `ffmpeg-patches/` series entries, and no Netflix golden-assertion
+files are touched. Rebasing on top of any upstream commit that modifies
+these same source files may produce minor context conflicts in the guard
+blocks; resolve by keeping both the upstream change and the NaN guard.
+ADR-1033.
+
+---
+
 ## docs/vulkan-overview-mark-removed-adr0726 (2026-06-04)
 
 **Files touched:**
