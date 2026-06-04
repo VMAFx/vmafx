@@ -238,7 +238,16 @@ int Cache::get_data(const int index, Qfloat **data, int len)
         }
 
         // allocate new space
-        h->data = (Qfloat *)realloc(h->data, sizeof(Qfloat) * len);
+        {
+            // CERT MEM04-C: never overwrite pointer with realloc return —
+            // on OOM realloc returns NULL and the original allocation is lost.
+            Qfloat *tmp = (Qfloat *)realloc(h->data, sizeof(Qfloat) * len);
+            if (!tmp) {
+                fprintf(stderr, "libsvm: realloc failed (cache get_data)\n");
+                abort(); /* OOM in a hot scoring path — no recovery model */
+            }
+            h->data = tmp;
+        }
         size -= more;
         swap(h->len, len);
     }
@@ -1979,8 +1988,19 @@ static void svm_group_classes(const svm_problem *prob, int *nr_class_ret, int **
         if (j == nr_class) {
             if (nr_class == max_nr_class) {
                 max_nr_class *= 2;
-                label = (int *)realloc(label, max_nr_class * sizeof(int));
-                count = (int *)realloc(count, max_nr_class * sizeof(int));
+                {
+                    // CERT MEM04-C: safe realloc pattern — save ptr, check, free old on failure
+                    int *tmp_label = (int *)realloc(label, max_nr_class * sizeof(int));
+                    int *tmp_count = (int *)realloc(count, max_nr_class * sizeof(int));
+                    if (!tmp_label || !tmp_count) {
+                        free(label);
+                        free(count);
+                        fprintf(stderr, "libsvm: realloc failed (svm_group_classes)\n");
+                        abort();
+                    }
+                    label = tmp_label;
+                    count = tmp_count;
+                }
             }
             label[nr_class] = this_label;
             count[nr_class] = 1;
@@ -2762,8 +2782,19 @@ const char *svm_check_parameter(const svm_problem *prob, const svm_parameter *pa
             if (j == nr_class) {
                 if (nr_class == max_nr_class) {
                     max_nr_class *= 2;
-                    label = (int *)realloc(label, max_nr_class * sizeof(int));
-                    count = (int *)realloc(count, max_nr_class * sizeof(int));
+                    {
+                        // CERT MEM04-C: safe realloc pattern
+                        int *tmp_label = (int *)realloc(label, max_nr_class * sizeof(int));
+                        int *tmp_count = (int *)realloc(count, max_nr_class * sizeof(int));
+                        if (!tmp_label || !tmp_count) {
+                            free(label);
+                            free(count);
+                            fprintf(stderr, "libsvm: realloc failed (svm_check_parameter)\n");
+                            abort();
+                        }
+                        label = tmp_label;
+                        count = tmp_count;
+                    }
                 }
                 label[nr_class] = this_label;
                 count[nr_class] = 1;
