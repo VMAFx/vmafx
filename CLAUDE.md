@@ -28,7 +28,7 @@ Non-Claude agents: see [AGENTS.md](AGENTS.md) (same content, tool-agnostic).
   - `--precision` CLI flag (default `%.6f` matching upstream golden gate; `--precision=max` opts in to `%.17g` IEEE-754 round-trip lossless — ADR-0119 supersedes ADR-0006).
   - Tiny-AI (ONNX Runtime) model surface — see `ai/`, `core/src/dnn/`.
   - MCP server — see `mcp-server/vmaf-mcp/`.
-- License: BSD-3-Clause-Plus-Patent (upstream license preserved). See [LICENSE](LICENSE).
+- License: BSD-2-Clause-Patent (upstream license preserved). See [LICENSE](LICENSE).
 - Default branch on this fork: `master`. Upstream is tracked as remote `upstream`.
 
 ## 2. How to build

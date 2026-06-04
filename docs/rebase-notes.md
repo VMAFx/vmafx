@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/spdx-license-identifier (2026-06-04)
+
+**Files touched:** `CLAUDE.md`, `AGENTS.md`
+
+no rebase impact: documentation-only correction of the SPDX license identifier
+string in §1 of both orientation files. No public C API, headers, upstream-mirrored
+Python, or Netflix golden-assertion files are touched. When porting upstream commits
+that modify CLAUDE.md or AGENTS.md, verify that the identifier remains
+`BSD-2-Clause-Patent`.
+
+---
+
 ## fix/simd-psnr-16bit-scalar-tail-overflow (2026-06-04)
 
 **Files touched:**
