@@ -4,6 +4,18 @@ Single ledger of fork-local changes that need attention when this fork
 syncs from `upstream/master` (Netflix/vmaf). Required by
 [ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local
 
+## fix/r6-sycl-kernel-correctness (2026-06-04)
+
+**Files touched:**
+`core/src/feature/sycl/integer_vif_sycl.cpp`,
+`core/src/feature/sycl/integer_motion_sycl.cpp`,
+`core/src/feature/sycl/integer_adm_sycl.cpp`
+
+**Rebase impact:** no rebase impact — all files are fork-local SYCL paths
+with no upstream counterparts.
+
+---
+
 ---
 
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)

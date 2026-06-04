@@ -819,7 +819,10 @@ launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height, float vif_
                         uint32_t const dis_rd_val = (uint32_t)((h_dis_rd + 32768) >> 16);
                         unsigned rd_x = gx / 2;
                         unsigned rd_y = gy / 2;
-                        unsigned const rd_stride = e_w / 2;
+                        /* Round up the stride to match the allocation size
+                         * (e_w+1)/2 used by the caller — truncating e_w/2 for
+                         * odd e_w causes an OOB write into the next row.      */
+                        unsigned const rd_stride = (e_w + 1u) / 2u;
                         rd_ref[rd_y * rd_stride + rd_x] = ref_rd_val & 0xFFFF;
                         rd_dis[rd_y * rd_stride + rd_x] = dis_rd_val & 0xFFFF;
                     }
@@ -1310,8 +1313,9 @@ launch_vif_fused_impl(sycl::queue &q, const void *ref_data, const void *dis_data
                         uint32_t const dis_rd_val = (uint32_t)((h_dis_rd + 32768) >> 16);
                         unsigned rd_x = gx / 2;
                         unsigned rd_y = gy / 2;
-                        rd_ref[rd_y * (e_w / 2) + rd_x] = ref_rd_val & 0xFFFF;
-                        rd_dis[rd_y * (e_w / 2) + rd_x] = dis_rd_val & 0xFFFF;
+                        /* Use rounded-up stride (e_w+1)/2 for odd widths. */
+                        rd_ref[rd_y * ((e_w + 1u) / 2u) + rd_x] = ref_rd_val & 0xFFFF;
+                        rd_dis[rd_y * ((e_w + 1u) / 2u) + rd_x] = dis_rd_val & 0xFFFF;
                     }
                 }
             });
@@ -1628,7 +1632,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     VmafSyclState *state = fex->sycl_state;
 
     // Combined graph wait (idempotent per frame — first extractor wins)
-    vmaf_sycl_graph_wait(state);
+    int const wait_err = vmaf_sycl_graph_wait(state);
+    if (wait_err)
+        return wait_err;
 
     // Read back per-scale accumulators
     struct vif_accums accums[VIF_NUM_SCALES];

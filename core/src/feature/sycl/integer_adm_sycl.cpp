@@ -1555,7 +1555,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     VmafSyclState *state = fex->sycl_state;
 
     // Combined graph wait (idempotent per frame — first extractor wins)
-    vmaf_sycl_graph_wait(state);
+    int const wait_err = vmaf_sycl_graph_wait(state);
+    if (wait_err)
+        return wait_err;
 
     // Read back accumulators
     int64_t cm_results[ADM_NUM_SCALES][ADM_NUM_BANDS];

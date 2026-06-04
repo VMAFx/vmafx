@@ -607,7 +607,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     VmafSyclState *state = fex->sycl_state;
 
     // Combined graph wait (idempotent per frame — first extractor wins)
-    vmaf_sycl_graph_wait(state);
+    int const wait_err = vmaf_sycl_graph_wait(state);
+    if (wait_err)
+        return wait_err;
 
     double motion_score = 0.0;
 
