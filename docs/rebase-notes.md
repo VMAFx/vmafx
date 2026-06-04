@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix(rebrand): correct C++ badge (c++11→c++23) + drop Vulkan from GPU badge
+
+**Files touched**: `README.md`,
+`changelog.d/fixed/readme-badges-cpp23-drop-vulkan.md`,
+`docs/rebase-notes.md`.
+
+No rebase impact: doc-only edit to `README.md` badge lines; no C source,
+public header, Netflix golden assertion, or upstream-mirrored symbol is
+affected.
+
+---
+
 ## chore/build-cpp-std-c23-bump (2026-06-04, ADR-1003)
 
 **Files touched:**

@@ -14,12 +14,12 @@
 [![Rust edition 2024](https://img.shields.io/badge/Rust-edition%202024-CE422B?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/rust-2024/)
 [![Python 3.14+](https://img.shields.io/badge/Python-3.14%2B-3776AB?logo=python&logoColor=white)](https://docs.python.org/3.14/)
 [![C11](https://img.shields.io/badge/C-C11-00599C?logo=c&logoColor=white)](https://en.cppreference.com/w/c/11)
-[![C++11](https://img.shields.io/badge/C%2B%2B-C%2B%2B11-00599C?logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/11)
+[![C++23](https://img.shields.io/badge/C%2B%2B-C%2B%2B23-00599C?logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/23)
 [![CUDA 13.2](https://img.shields.io/badge/CUDA-13.2-76B900?logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-downloads)
 [![ROCm 7.2](https://img.shields.io/badge/ROCm-7.2-ED1C24?logo=amd&logoColor=white)](https://rocm.docs.amd.com/)
 
 <!-- GPU / SIMD capability badges -->
-[![GPU: CUDA · SYCL · HIP · Vulkan](https://img.shields.io/badge/GPU-CUDA%20%C2%B7%20SYCL%20%C2%B7%20HIP%20%C2%B7%20Vulkan-76B900?logo=nvidia&logoColor=white)](docs/backends/)
+[![GPU: CUDA · SYCL · HIP · Metal](https://img.shields.io/badge/GPU-CUDA%20%C2%B7%20SYCL%20%C2%B7%20HIP%20%C2%B7%20Metal-76B900?logo=nvidia&logoColor=white)](docs/backends/)
 [![SIMD: AVX2 · AVX-512 · NEON](https://img.shields.io/badge/SIMD-AVX2%20%C2%B7%20AVX--512%20%C2%B7%20NEON-orange?logo=intel&logoColor=white)](docs/backends/)
 
 <!-- Distribution / community badges -->
