@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs(usage,api): correct backend auto-priority + Doxygen drift in public headers
+
+**Files touched**: `docs/usage/vmafx-cli.md`, `docs/usage/vmaf-tune-score-backend.md`,
+`docs/usage/vmaf-tune.md`, `docs/usage/bench.md`, `docs/usage/ffmpeg.md`,
+`core/include/libvmaf/libvmaf.h`, `core/include/libvmaf/libvmaf_hip.h`,
+`core/include/libvmaf/AGENTS.md`, `core/include/libvmaf/model.h`,
+`changelog.d/changed/backend-autopriority-doxygen-drift.md`,
+`docs/rebase-notes.md`.
+
+No rebase impact: doc-only and Doxygen-only edits. No C source, public C symbol,
+ABI surface, Netflix golden assertion, or upstream-mirrored implementation is
+affected. The `model.h` change replaces a `@field` block with per-member inline
+comments — comment-only; no struct layout change.
+
+---
+
 ## docs/mcp-tools-audit-fixes
 
 **Files touched**: `docs/mcp/index.md`, `docs/mcp/tools.md`,

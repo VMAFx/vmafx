@@ -16,13 +16,14 @@ behavior accordingly (ADR-0690).
 | Behavior | `vmaf` default | `vmafx` default |
 |---|---|---|
 | Output precision | `%.6f` (6 decimal places, matches upstream Netflix) | `%.17g` (IEEE-754 round-trip lossless, `--precision=max`) |
-| Backend selection | auto (CUDA > Vulkan > SYCL > CPU) | same — auto is the default for both |
+| Backend selection | auto (SYCL > CUDA > HIP > CPU) | same — auto is the default for both |
 | Startup banner | `VMAF version <V>` | `VMAFX version <V> (precision=max)` |
 | `--version` output | `<version string>` | `VMAFX <version string> (auto-backend, precision=max)` |
 
-The backend auto-selection priority (CUDA > Vulkan > SYCL > CPU) applies to
-both `vmaf` and `vmafx` and was established by ADR-0498. No difference exists
-at the backend level.
+The backend auto-selection priority (SYCL > CUDA > HIP > CPU) applies to
+both `vmaf` and `vmafx` and reflects the libvmaf registry order established
+after ADR-0726 dropped Vulkan. No difference exists at the backend level
+between the two binaries.
 
 ## Why `--precision=max` is the vmafx default
 

@@ -82,22 +82,24 @@ enum VmafModelFlags {
 };
 
 /**
- * @brief Configuration passed to @ref vmaf_model_load / @ref vmaf_model_load_from_path.
+ * @brief Configuration passed to `vmaf_model_load` / `vmaf_model_load_from_path`.
  *
  * Safe to zero-initialise — both fields are optional.
- *
- * @field name   Optional display name for the loaded model. When NULL the
- *               loader uses the default `"vmaf"` for built-in models and the
- *               model file's `model_name` field for path-loaded models.
- *               When non-NULL the string is copied; the caller retains
- *               ownership and may free it after the load call returns.
- * @field flags  Bitwise-OR of @ref VmafModelFlags values; controls clipping
- *               and score-transform application. Pass `VMAF_MODEL_FLAGS_DEFAULT`
- *               (0) to honour the model file's defaults.
  */
 typedef struct VmafModelConfig {
-    const char *name; /**< Caller-supplied tag exposed in scoring output. */
-    uint64_t flags;   /**< Bitwise OR of `VmafModelFlags` values. */
+    /**
+     * Optional display name for the loaded model. When NULL the loader uses
+     * `"vmaf"` for built-in models and the model file's `model_name` field
+     * for path-loaded models. When non-NULL the string is copied; the caller
+     * retains ownership and may free it after the load call returns.
+     */
+    const char *name;
+    /**
+     * Bitwise-OR of `VmafModelFlags` values; controls score clipping and
+     * transform application. Pass `VMAF_MODEL_FLAGS_DEFAULT` (0) to honour
+     * the model file's defaults.
+     */
+    uint64_t flags;
 } VmafModelConfig;
 
 /**

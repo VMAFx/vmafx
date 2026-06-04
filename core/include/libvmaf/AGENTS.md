@@ -18,6 +18,8 @@ core/include/libvmaf/
   libvmaf_cuda.h         # CUDA backend
   libvmaf_sycl.h         # SYCL backend
   libvmaf_hip.h          # HIP / AMD-ROCm backend (scaffold only)
+  libvmaf_metal.h        # Metal backend (Apple Silicon / macOS; scaffold only)
+  libvmaf_mcp.h          # MCP server C-API bridge (query scores over JSON-RPC)
   # libvmaf_vulkan.h removed per ADR-0726 (Vulkan backend dropped)
 ```
 

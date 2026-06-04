@@ -54,6 +54,16 @@ binary's `--help` *and* probe-confirmed via the appropriate vendor
 tool. The probe results print to stderr at log-level INFO so a
 post-hoc reader can see which backend was selected.
 
+> **Note**: The `vmaf-tune` probe order (`cuda → sycl → hip → cpu`) differs
+> from the libvmaf internal registry order (`sycl → cuda → hip → cpu`). The
+> vmaf-tune ordering was set by
+> [ADR-0667](../adr/0667-vmaf-tune-score-backend-native-priority.md) to probe
+> CUDA first because it has the strongest vendor tooling for availability
+> detection (`nvidia-smi`). The libvmaf registry prioritises SYCL first
+> because Intel Arc is the primary continuous-integration GPU. When comparing
+> timing results across backends, be aware that `auto` may select different
+> backends in vmaf-tune versus a direct `vmaf --backend auto` invocation.
+
 ## Cross-backend numeric drift
 
 Per the project's GPU-parity gate ([ADR-0214](../adr/0214-gpu-parity-ci-gate.md)),

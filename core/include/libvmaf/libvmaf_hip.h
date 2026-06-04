@@ -87,12 +87,12 @@ VMAF_EXPORT int vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg
  * @ref vmaf_hip_state_free after vmaf_close(). Same lifetime model as
  * the SYCL + Vulkan backends.
  *
- * @param ctx    live VmafContext (from vmaf_init()).
+ * @param ctx    live VmafContext (from `vmaf_init()`).
  * @param state  state handle previously allocated via
  *               @ref vmaf_hip_state_init.
  *
- * @return 0 on success, -EINVAL on bad arguments, -ENOSYS when built
- *         without HIP.
+ * @return 0 on success, -EINVAL when @p ctx or @p state is NULL,
+ *         -ENOSYS when built without HIP.
  */
 VMAF_EXPORT int vmaf_hip_import_state(VmafContext *ctx, VmafHipState *state);
 

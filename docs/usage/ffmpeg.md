@@ -15,14 +15,16 @@ We provide a few examples how you can construct the FFmpeg command line and use 
 
 Below is an example on how you can run FFmpeg+libvmaf on a pair of YUV files. First, download the reference video [`src01_hrc00_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc00_576x324.yuv) and the distorted video [`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv). `-r 24` sets the frame rate (note that it needs to be before `-i`), and `PTS-STARTPTS` synchronizes the PTS (presentation timestamp) of the two videos (this is crucial if one of your videos does not start at PTS 0, for example, if you cut your video out of a long video stream). It is important to set the frame rate and the PTS right, since FFmpeg filters synchronize based on timestamps instead of frames.
 
-The `log_path` is set to standard output `/dev/stdout`. It uses the `model_path` at location `/usr/local/share/model/vmaf_float_v0.6.1.json` (which is the default and can be omitted).
+The `log_path` is set to standard output `/dev/stdout`. The model is specified
+using the preferred `model=version=` form (the older `model_path=` option is
+legacy and still accepted but not recommended for new scripts).
 
 ```bash
 ffmpeg -video_size 576x324 -r 24 -pixel_format yuv420p -i src01_hrc00_576x324.yuv \
     -video_size 576x324 -r 24 -pixel_format yuv420p -i src01_hrc01_576x324.yuv \
     -lavfi "[0:v]setpts=PTS-STARTPTS[reference]; \
             [1:v]setpts=PTS-STARTPTS[distorted]; \
-            [distorted][reference]libvmaf=log_fmt=xml:log_path=/dev/stdout:model_path={your_vmaf_dir}/model/vmaf_v0.6.1.json:n_threads=4" \
+            [distorted][reference]libvmaf=log_fmt=xml:log_path=/dev/stdout:model=version=vmaf_v0.6.1:n_threads=4" \
     -f null -
 ```
 
@@ -40,7 +42,7 @@ ffmpeg \
     -r 24 -i Seeking_10_288_375.mp4 \
     -lavfi "[0:v]setpts=PTS-STARTPTS[reference]; \
             [1:v]scale=720:480:flags=bicubic,setpts=PTS-STARTPTS[distorted]; \
-            [distorted][reference]libvmaf=log_fmt=xml:log_path=/dev/stdout:model_path={your_vmaf_dir}/model/vmaf_v0.6.1.json:n_threads=4" \
+            [distorted][reference]libvmaf=log_fmt=xml:log_path=/dev/stdout:model=version=vmaf_v0.6.1:n_threads=4" \
     -f null -
 ```
 
@@ -366,34 +368,30 @@ with `AVERROR(ENODEV)` and a pointer to
 
 When `libvmaf` is built with `-Denable_cuda=true`, FFmpeg exposes the
 `libvmaf_cuda` filter, which keeps frames on the GPU end-to-end when the
-decoder is also CUDA-backed (e.g. `-hwaccel cuda`). The CPU / SYCL /
-Vulkan examples in the first section all use the regular `libvmaf`
-filter; only the selector option (`sycl_device=N` / `vulkan_device=N`)
-changes which compute path libvmaf takes internally. Decoded frames
-are software-decoded in those cases and copied into device memory
-by libvmaf itself.
+decoder is also CUDA-backed (e.g. `-hwaccel cuda`). The CPU / SYCL / HIP
+examples in the first section all use the regular `libvmaf` filter; only
+the selector option (`sycl_device=N` / `hip_device=N`) changes which compute
+path libvmaf takes internally. Decoded frames are software-decoded in those
+cases and copied into device memory by libvmaf itself.
 
 For SYCL specifically: `sycl_device=-1` keeps the CPU path. Setting
 `sycl_device=N` (any non-negative ordinal) opts in. See
 [backends/sycl/overview.md](../backends/sycl/overview.md) for device
-enumeration. Vulkan: `vulkan_device=N` is fully wired in libvmaf 3.0
-([ADR-0175](../adr/0175-vulkan-backend-scaffold.md) +
-[ADR-0177](../adr/0177-vulkan-motion-kernel.md) +
-[ADR-0178](../adr/0178-vulkan-adm-kernel.md) for vif/motion/adm,
-[ADR-0182](../adr/0182-gpu-long-tail-batch-1.md) for psnr).
+enumeration.
 
 ### Selector option reference
 
-The same fork-added selector pattern exists for SYCL and Vulkan on the
+The same fork-added selector pattern exists for SYCL, CUDA, and HIP on the
 `libvmaf` filter itself, contributed by
-`ffmpeg-patches/0003-libvmaf-wire-sycl-backend-selector.patch` and
-`0004-libvmaf-wire-vulkan-backend-selector.patch`:
+`ffmpeg-patches/0003-libvmaf-wire-sycl-backend-selector.patch`,
+`0010-libvmaf-wire-cuda-backend-selector.patch`, and
+`0011-libvmaf-wire-hip-backend-selector.patch`. The Vulkan selector
+(`0004`) was removed in ADR-0726 (retained as a no-op shim per ADR-0860):
 
 | Option | Default | Notes |
 |---|---|---|
 | `sycl_device=N` | `-1` (disabled) | Pick SYCL device ordinal; `-1` keeps the CPU path. Errors out if libvmaf was built without `-Denable_sycl=true`. Patch `0003`. |
 | `sycl_profile=0\|1` | `0` | Enable SYCL queue profiling. Patch `0003`. |
-| `vulkan_device=N` | `-1` (disabled) | Pick Vulkan device ordinal; `-1` keeps the CPU path. Vulkan compute covers the full default-model surface (vif/motion/adm/psnr/cambi/ssimulacra2 and more). Errors out if libvmaf was built without `-Denable_vulkan=enabled`. Patch `0004`. |
 | `cuda=0\|1` | `0` | Enable CUDA compute path on software-decoded input. Patch `0010`. |
 | `hip_device=N` | `-1` (disabled) | Pick HIP device ordinal; `-1` keeps the CPU path. Errors out if libvmaf was built without `-Denable_hip=true`. Patch `0011` ([ADR-0380](../adr/0380-ffmpeg-hip-backend-selector.md)). |
 

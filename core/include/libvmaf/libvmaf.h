@@ -159,7 +159,7 @@ typedef struct VmafConfiguration {
  *
  * Allocated by @ref vmaf_init, released by @ref vmaf_close. A single context
  * pins one set of registered feature extractors, one optional GPU backend
- * state (CUDA / SYCL / HIP / Metal / Vulkan, imported via the corresponding
+ * state (CUDA / SYCL / HIP / Metal, imported via the corresponding
  * `vmaf_*_import_state` entry point), zero or more attached models / model
  * collections / tiny-AI ONNX sessions, and the per-frame score table.
  *
@@ -523,19 +523,25 @@ VMAF_EXPORT int vmaf_write_output(VmafContext *vmaf, const char *output_path,
                                   enum VmafOutputFormat fmt);
 
 /**
- * Write VMAF stats to an output file with a caller-controlled score format.
+ * @brief Write VMAF stats to an output file with a caller-controlled score format.
  *
  * Identical to `vmaf_write_output()`, but lets the caller specify the printf
  * format string used for every score value emitted to the file (XML / JSON /
- * CSV / SUB). Pass NULL to use the default format ("%.17g" — shortest IEEE-754
- * round-trip lossless double). The format string must accept exactly one
- * `double` argument (e.g. "%.17g", "%.10f", "%.6f") and is not validated; an
- * invalid format will produce undefined output. The string is read each time
- * a score is written; callers must keep it valid for the duration of the call.
+ * CSV / SUB). Pass NULL to use the default format (`"%.6f"` — 6 decimal
+ * places, matching the Netflix upstream default). The format string must
+ * accept exactly one `double` argument (e.g. `"%.6f"`, `"%.10f"`, `"%.17g"`)
+ * and is not validated; an invalid format will produce undefined output. The
+ * string is read each time a score is written; callers must keep it valid for
+ * the duration of the call.
  *
- * The pre-fork Netflix output format (a value-magnitude-dependent
- * "%.6f" / "%.16f" heuristic) is no longer available — to approximate it,
- * pass "%.6f".
+ * To opt into IEEE-754 round-trip lossless output pass `"%.17g"` (this is
+ * what the CLI's `--precision=max` flag does internally).
+ *
+ * @param vmaf          The VMAF context allocated with `vmaf_init()`.
+ * @param output_path   Output file path.
+ * @param fmt           Output file format (see `enum VmafOutputFormat`).
+ * @param score_format  printf format string for score values, or NULL to use
+ *                      the default `"%.6f"`.
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
  *

@@ -6,7 +6,7 @@ pre-staged YUV data and optionally cross-validates GPU output against CPU. It is
 **not** a score-producing tool — use the `vmaf` CLI ([cli.md](cli.md)) for
 quality assessment. `vmaf_bench` exists purely to:
 
-- compare CPU vs CUDA vs SYCL timings per feature,
+- compare CPU vs CUDA vs SYCL vs HIP timings per feature,
 - validate GPU↔CPU numerical agreement before merging a backend change,
 - profile GPU shader breakdowns (SYCL only).
 

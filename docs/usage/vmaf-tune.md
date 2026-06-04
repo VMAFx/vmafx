@@ -390,25 +390,33 @@ CUDA / SYCL / HIP / Vulkan backends shipped with this fork
 
 | Value | Behaviour |
 | --- | --- |
-| `auto` (default) | Detect what the local `vmaf` binary supports + what the host hardware advertises, then pick the fastest available backend in native-first order: `cuda → sycl → hip → vulkan → cpu`. Falls back to CPU silently only because no GPU was found. |
-| `cuda` / `sycl` / `hip` / `vulkan` | Strict mode. Errors out with `BackendUnavailableError` if the local `vmaf` binary does not support the requested backend or the host hardware is missing. **No silent downgrade to CPU** — that would mask hardware/build mismatches and lie about wall-clock expectations. |
+| `auto` (default) | Detect what the local `vmaf` binary supports + what the host hardware advertises, then pick the fastest available backend in vmaf-tune probe order: `cuda → sycl → hip → cpu`. Falls back to CPU silently only because no GPU was found. |
+| `cuda` / `sycl` / `hip` | Strict mode. Errors out with `BackendUnavailableError` if the local `vmaf` binary does not support the requested backend or the host hardware is missing. **No silent downgrade to CPU** — that would mask hardware/build mismatches and lie about wall-clock expectations. |
 | `cpu` | Force the CPU path. Useful for reproducibility against the Netflix golden-data gate or to bypass a known-bad GPU driver day. |
 
 ### Detection heuristics
 
 `vmaf-tune` inspects the `vmaf --help` output to learn which backends
 the binary advertises (the CLI prints a line of the form
-`--backend $name: ...auto|cpu|cuda|sycl|vulkan|hip|metal`), then runs cheap
+`--backend $name: ...auto|cpu|cuda|sycl|hip|metal`), then runs cheap
 hardware probes:
 
 - **CUDA**: `nvidia-smi -L` returns at least one `GPU` line.
 - **SYCL**: `sycl-ls` lists at least one `:gpu` device.
 - **HIP/ROCm**: `rocminfo` reports a `gfx*` agent, or `rocm-smi` reports a GPU.
-- **Vulkan**: `vulkaninfo --summary` reports a `deviceName`.
 
 Missing tools degrade to "backend not available" — they never raise
 hard errors. CPU is always considered available even if the help line
 is missing.
+
+> **Probe order vs. libvmaf registry order**: vmaf-tune's `auto` probe order
+> (`cuda → sycl → hip → cpu`) differs from the libvmaf internal registry
+> order (`sycl → cuda → hip → cpu`). vmaf-tune probes CUDA first because
+> `nvidia-smi` provides the most reliable availability detection.
+> The libvmaf registry prioritises SYCL first as the primary
+> continuous-integration GPU target. When comparing timing results,
+> be aware that `auto` may select different backends in vmaf-tune versus
+> a direct `vmaf --backend auto` invocation.
 
 ### Wall-clock expectation (60 s 1080p source, indicative)
 
@@ -418,7 +426,6 @@ is missing.
 | `cuda` | RTX 30/40-class GPU | ~50–120 s | ~12–30 fps |
 | `sycl` | Intel Arc / Iris Xe | ~80–180 s | ~8–18 fps |
 | `hip` | RDNA2 / RDNA3 ROCm host | ~80–180 s | ~8–18 fps |
-| `vulkan` | RTX 30/40 / RDNA3 / Arc / MoltenVK | ~60–180 s | ~8–25 fps |
 
 Numbers are order-of-magnitude only; exact figures depend on the
 specific feature extractors enabled by the model
