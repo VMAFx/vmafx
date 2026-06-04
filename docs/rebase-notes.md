@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/float-adm-simd-dispatch (2026-06-04, no ADR — perf bug fix)
+
+**Files touched:**
+`core/src/feature/adm_tools.c`, `core/src/feature/adm_tools.h`,
+`core/src/feature/float_adm.c`, `core/test/meson.build`,
+`core/test/test_float_adm_simd.c`
+
+**Rebase impact:** `adm_tools.h` gains `adm_prime_simd_dispatch()`. Any
+branch that touches `float_adm.c` `init()` must preserve the
+`adm_prime_simd_dispatch()` call added at line 340; removing it silently
+reverts to the scalar path. The `AdmSimdDispatch` static table in
+`adm_tools.c` is module-local; it is safe for upstream ports to add
+adjacent dispatch tables without conflict.
+
+---
+
 ## fix/legacy-runner-import-stub-adr0749 (2026-06-04, no ADR — bug fix)
 
 **Files touched:**
