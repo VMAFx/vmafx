@@ -104,10 +104,11 @@ uint64_t psnr_sse_line_16_avx512(const uint16_t *ref, const uint16_t *dis, unsig
     /* Reduce 8+8 uint64 → scalar */
     uint64_t result = _mm512_reduce_add_epi64(_mm512_add_epi64(sum0, sum1));
 
-    /* Scalar tail */
+    /* Scalar tail — cast to uint32_t before squaring to avoid signed
+     * integer overflow UB: max diff 65535, 65535*65535 > INT32_MAX.  */
     for (; j < w; j++) {
-        const int32_t e = (int32_t)ref[j] - (int32_t)dis[j];
-        result += (uint64_t)((uint32_t)(e * e));
+        const uint32_t e = (uint32_t)((int32_t)ref[j] - (int32_t)dis[j]);
+        result += (uint64_t)(e * e);
     }
 
     return result;

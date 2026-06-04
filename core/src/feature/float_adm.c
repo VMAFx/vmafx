@@ -377,9 +377,14 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
                                                    "VMAF_feature_aim_score", score_aim, index);
 
     if (s->adm_adm3_apply_hm) {
-        err |= vmaf_feature_collector_append_with_dict(
-            feature_collector, s->feature_name_dict, "VMAF_feature_adm3_score",
-            MAX(2 * score * score_aim / (score + score_aim), s->adm_min_val), index);
+        /* Guard the harmonic-mean denominator: when both score and score_aim
+         * are exactly 0 (fully suppressed distortion / black-vs-black),
+         * score+score_aim == 0 produces NaN which MAX() cannot handle.     */
+        const double hm =
+            (score + score_aim == 0.0) ? 0.0 : 2 * score * score_aim / (score + score_aim);
+        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                       "VMAF_feature_adm3_score",
+                                                       MAX(hm, s->adm_min_val), index);
     } else {
         err |= vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict, "VMAF_feature_adm3_score",

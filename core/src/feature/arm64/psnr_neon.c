@@ -91,10 +91,11 @@ uint64_t psnr_sse_line_16_neon(const uint16_t *ref, const uint16_t *dis, unsigne
     uint64x2_t total = vaddq_u64(sum0, sum1);
     uint64_t result = vaddvq_u64(total);
 
-    /* Scalar tail */
+    /* Scalar tail — cast to uint32_t before squaring to avoid signed
+     * integer overflow UB: max diff 65535, 65535*65535 > INT32_MAX.  */
     for (; j < w; j++) {
-        const int32_t e = (int32_t)ref[j] - (int32_t)dis[j];
-        result += (uint64_t)((uint32_t)(e * e));
+        const uint32_t e = (uint32_t)((int32_t)ref[j] - (int32_t)dis[j]);
+        result += (uint64_t)(e * e);
     }
 
     return result;

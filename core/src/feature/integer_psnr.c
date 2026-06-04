@@ -276,13 +276,24 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
 
     int err = 0;
     if (s->enable_apsnr) {
-        for (unsigned i = 0; i < 3; i++) {
+        /* When chroma is disabled only luma (i=0) is accumulated; iterating
+         * over disabled planes would invoke log10(0) yielding -inf / NaN.   */
+        const unsigned n_planes = s->enable_chroma ? 3u : 1u;
+        for (unsigned i = 0; i < n_planes; i++) {
+            /* Guard identical-frame case where SSE accumulates to zero:
+             * log10(0) = -inf.  Clamp to the per-channel theoretical max.   */
+            if (s->apsnr.sse[i] == 0) {
+                err |= vmaf_feature_collector_set_aggregate(feature_collector, apsnr_name[i],
+                                                            s->psnr_max[i]);
+                continue;
+            }
 
             double apsnr = 10 * (log10(s->peak * s->peak) + log10(s->apsnr.n_pixels[i]) -
                                  log10(s->apsnr.sse[i]));
 
-            double max_apsnr =
-                ceil(10 * log10((uint64_t)s->peak * s->peak * s->apsnr.n_pixels[i] * 2));
+            /* Cap: 10*log10(peak^2 * n_pixels). The "* 2" factor in the
+             * original inflated the theoretical ceiling by one PSNR unit. */
+            double max_apsnr = ceil(10 * log10((double)s->peak * s->peak * s->apsnr.n_pixels[i]));
 
             err |= vmaf_feature_collector_set_aggregate(feature_collector, apsnr_name[i],
                                                         MIN(apsnr, max_apsnr));

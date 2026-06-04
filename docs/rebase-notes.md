@@ -1,6 +1,24 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/r6-metric-scoring-guards (2026-06-04)
+
+**Files touched:**
+`core/src/feature/integer_psnr.c`,
+`core/src/feature/x86/psnr_avx2.c`,
+`core/src/feature/x86/psnr_avx512.c`,
+`core/src/feature/arm64/psnr_neon.c`,
+`core/src/feature/adm.c`,
+`core/src/feature/integer_adm.c`,
+`core/src/feature/float_adm.c`
+
+**Rebase impact:** no rebase impact — all fixes are in error-path / edge-case
+branches that upstream has not touched since the fork.  The APSNR cap formula
+change (`* 2` removed) only affects scores on nearly-perfect sequences; it is
+not a Netflix golden-data assertion value.
+
+---
+
 ## docs/vulkan-overview-mark-removed-adr0726 (2026-06-04)
 
 **Files touched:**
