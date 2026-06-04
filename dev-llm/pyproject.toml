@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Local LLM dev helpers for the Lusoris VMAF fork (Ollama-first)."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "BSD-3-Clause-Plus-Patent" }
+license = { text = "BSD-2-Clause-Patent" }
 authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
   { name = "Claude (Anthropic)", email = "noreply@anthropic.com" },

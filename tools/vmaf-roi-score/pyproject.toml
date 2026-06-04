@@ -6,7 +6,7 @@ version = "0.0.1"
 description = "Region-of-interest VMAF score (Option C): saliency-weighted full-frame VMAF combo."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
-license = { text = "BSD-3-Clause-Plus-Patent" }
+license = { text = "BSD-2-Clause-Patent" }
 authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
   { name = "Claude (Anthropic)", email = "noreply@anthropic.com" },

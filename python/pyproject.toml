@@ -7,7 +7,7 @@ name = "vmaf"
 dynamic = ["version"]
 description = "VMAF — Video Multimethod Assessment Fusion (Lusoris fork)"
 readme = "README.rst"
-license = { text = "BSD-3-Clause-Plus-Patent" }
+license = { text = "BSD-2-Clause-Patent" }
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.0",

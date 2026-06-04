@@ -1,6 +1,21 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/r7-licensing-spdx-svm-copyright (2026-06-04)
+
+**Files touched:**
+`Cargo.toml`, `bindings/rust/vmafx/Cargo.toml`, `ai/pyproject.toml`,
+`mcp-server/vmaf-mcp/pyproject.toml`, `dev-llm/pyproject.toml`,
+`python/pyproject.toml`, `tools/ensemble-training-kit/pyproject.toml`,
+`tools/vmaf-roi-score/pyproject.toml`, `tools/vmaf-tune/pyproject.toml`,
+`core/src/svm.cpp`
+
+No rebase impact: license field corrections and copyright header additions have no
+effect on build or test outputs. Upstream Netflix/vmaf does not carry `Cargo.toml`
+or any of these `pyproject.toml` files.
+
+---
+
 ## fix/sycl-speed-incomplete-type-access (2026-06-04)
 
 **Files touched:**

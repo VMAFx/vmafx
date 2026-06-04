@@ -1,6 +1,6 @@
 # VMAFX Rust workspace root
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# SPDX-License-Identifier: BSD-2-Clause-Patent OR MIT
 #
 # Members are filled in by per-sweep PRs. The vmafx-sys FFI crate is the
 # first member (ADR-0702). Feature-extractor Rust pilots (TAD, ADR-0707)
@@ -20,7 +20,7 @@ resolver = "2"
 [workspace.package]
 authors = ["Lusoris <lusoris@pm.me>"]
 edition = "2024"
-license = "BSD-3-Clause-Plus-Patent"
+license = "BSD-2-Clause-Patent"
 repository = "https://github.com/VMAFx/vmafx"
 homepage = "https://github.com/VMAFx/vmafx"
 documentation = "https://vmafx.github.io/vmafx/"
