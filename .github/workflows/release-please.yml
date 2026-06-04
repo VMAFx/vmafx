@@ -10,12 +10,21 @@ on:
     branches: [master]
   workflow_dispatch:
 
+# Serialize release-please runs; back-to-back master merges must not race
+# to create duplicate release PRs or label conflicts. cancel-in-progress:
+# false because cancelling a run mid-way would leave the release PR in an
+# inconsistent state. (ADR-1035)
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     # Scoped to the one job that creates release PRs / tags; the workflow
     # default stays `contents: read` so any step added later starts from
     # least-privilege (Scorecard TokenPermissionsID). `issues: write` is

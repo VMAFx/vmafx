@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/r7-ci-wf-concurrency-timeout (2026-06-04, ADR-1035)
+
+**Files touched:**
+`.github/workflows/nightly.yml`, `.github/workflows/nightly-bisect.yml`,
+`.github/workflows/supply-chain.yml`, `.github/workflows/release-please.yml`,
+`.github/workflows/scorecard.yml`, `.github/workflows/rust-ci.yml`,
+`.github/workflows/go-ci.yml`, `.github/workflows/e2e-k8s.yml`
+
+No rebase impact: pure CI configuration changes with no code-path dependencies.
+Upstream Netflix/vmaf does not carry these workflows.
+
+---
+
 ## fix/r7-docs-broken-links-mkdocs-nav (2026-06-04)
 
 **Files touched:** `docs/development/build-flags.md`, `docs/metrics/features.md`, `mkdocs.yml`

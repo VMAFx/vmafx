@@ -13,6 +13,13 @@ on:
         description: "Tag to build provenance for"
         required: true
 
+# Prevent duplicate signing runs for the same tag. cancel-in-progress: false
+# because an in-flight signing job must complete — cancelling it would produce
+# a partial attestation. (ADR-1035)
+concurrency:
+  group: supply-chain-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
 # Default to least-privilege at the workflow level; individual jobs that
 # need `id-token: write` (Sigstore OIDC), `contents: write` (upload release
 # assets), or `attestations: write` (provenance) opt in per-job so a newly
