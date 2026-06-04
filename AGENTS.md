@@ -28,7 +28,7 @@ opened in this repo. For Claude Code–specific tooling (skills, hooks), see
   a `--precision` CLI flag (default `%.6f` Netflix-compat; `--precision=max` opts in
   to `%.17g` round-trip lossless — ADR-0119 supersedes ADR-0006), tiny-AI surface
   (ONNX Runtime), MCP server.
-- License: BSD-3-Clause-Plus-Patent (upstream license preserved — see [LICENSE](LICENSE)).
+- License: BSD-2-Clause-Patent (upstream license preserved — see [LICENSE](LICENSE)).
 - Default branch: `master`. Upstream tracked as remote `upstream`.
 
 ## 2. Build
