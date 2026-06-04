@@ -211,7 +211,14 @@ __device__ __forceinline__ static int clamp_i(int v, int lo, int hi)
 
 __device__ __forceinline__ static int64_t wavefront_reduce_i64(int64_t x)
 {
-    /* Low 32 bits and high 32 bits shuffled independently. */
+    /* Low 32 bits and high 32 bits shuffled independently.
+     *
+     * Reassemble with integer addition, NOT bitwise OR.  When the
+     * per-lane sum of `lo` overflows uint32 (e.g. sigma2_sq ~2^31
+     * across 64 lanes gives ~2^37), the carry into the upper word
+     * must be propagated.  Bitwise OR silently discards that carry,
+     * producing wrong accumulated VIF scores.  Using addition after
+     * the reduces gives the correct 64-bit total.                   */
     uint32_t lo = (uint32_t)(x & 0xffffffffLL);
     uint32_t hi = (uint32_t)((uint64_t)x >> 32);
 #pragma unroll
@@ -219,7 +226,7 @@ __device__ __forceinline__ static int64_t wavefront_reduce_i64(int64_t x)
         lo += __shfl_xor(lo, stride);
         hi += __shfl_xor(hi, stride);
     }
-    return (int64_t)lo | ((int64_t)hi << 32);
+    return (int64_t)((uint64_t)lo + ((uint64_t)hi << 32));
 }
 
 /* Reduce all 7 fields of a vif_accums_hip across the wavefront.

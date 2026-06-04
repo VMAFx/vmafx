@@ -24,12 +24,16 @@
 #include "hip/integer_adm_hip.h"
 #include "common.h"
 
+/* Restored function signature lost during HIP port.  The body was present
+ * but the __device__ __forceinline__ declaration was dropped, leaving a
+ * bare block at file scope (invalid C++).  Matches CUDA twin verbatim. */
+__device__ __forceinline__ uint16_t get_best15_from32(uint32_t temp, int *x)
 {
-    int k = __clz(temp); // built in for cuda
+    int k = __clz(temp); // built in for hip (__clz is available in HIP)
     k = 17 - k;
     temp = (temp + (1 << (k - 1))) >> k;
     *x = k;
-    return temp;
+    return (uint16_t)temp;
 }
 
 // cos(pi/180)^2 precomputed — avoids per-thread cosf() calls

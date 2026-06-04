@@ -541,7 +541,7 @@ filter1d_16_vertical_kernel(VifBufferCuda buf, uint16_t *ref_in, uint16_t *dis_i
                     accum_dis[off] += img_coeff_dis * (uint64_t)imgcoeff_dis;
                     accum_ref_dis[off] += img_coeff_ref * (uint64_t)imgcoeff_dis;
                     if (fi >= (fwidth - fwidth_rd) / 2 &&
-                        fi < (fwidth - (fwidth_rd - fwidth_rd) / 2) && fwidth_rd > 0) {
+                        fi < (fwidth - (fwidth - fwidth_rd) / 2) && fwidth_rd > 0) {
                         const uint16_t fcoeff_rd =
                             vif_filt.filter[scale + 1][fi - ((fwidth - fwidth_rd) / 2)];
                         accum_ref_rd[off] += fcoeff_rd * imgcoeff_ref;

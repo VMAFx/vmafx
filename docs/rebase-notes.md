@@ -4,6 +4,20 @@ Single ledger of fork-local changes that need attention when this fork
 syncs from `upstream/master` (Netflix/vmaf). Required by
 [ADR-0108](adr/0108-deep-dive-deliverables-rule.md): every fork-local
 
+## fix/r6-cuda-hip-kernel-correctness (2026-06-04)
+
+**Files touched:**
+`core/src/feature/cuda/integer_vif/filter1d.cu`,
+`core/src/feature/cuda/integer_adm/adm_cm.cu`,
+`core/src/feature/hip/integer_adm/adm_decouple.hip`,
+`core/src/feature/hip/integer_vif/vif_statistics.hip`
+
+**Rebase impact:** no rebase impact — all four files are fork-local GPU paths
+with no upstream counterparts.  The CUDA files are in `feature/cuda/` which
+Netflix upstream does not ship; the HIP files are fully fork-added.
+
+---
+
 ---
 
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)

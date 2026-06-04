@@ -340,8 +340,10 @@ adm_cm_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int lef
     // accumulate per thread
     for (int row = 0; row < rows_per_thread; ++row) {
         int32_t accum_thread = accum_thread_reg[row];
+        /* Parenthesise explicitly: operator precedence makes
+         * "+ X >> N" parse as "+ (X >> N), not "(+ X) >> N".   */
         const int32_t x_sq =
-            (int32_t)((((int64_t)accum_thread * accum_thread) + add_shift_sq >> shift_sq));
+            (int32_t)((((int64_t)accum_thread * accum_thread + add_shift_sq) >> shift_sq));
         accum += (((int64_t)x_sq * accum_thread) + add_shift_cub) >> shift_cub;
     }
 
