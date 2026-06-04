@@ -370,7 +370,7 @@ adm_cm_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int lef
     for (int row = 0; row < rows_per_thread; ++row) {
         int32_t accum_thread = accum_thread_reg[row];
         const int32_t x_sq =
-            (int32_t)((((int64_t)accum_thread * accum_thread) + add_shift_sq >> shift_sq));
+            (int32_t)(((((int64_t)accum_thread * accum_thread) + add_shift_sq) >> shift_sq));
         accum += (((int64_t)x_sq * accum_thread) + add_shift_cub) >> shift_cub;
     }
 
@@ -708,8 +708,8 @@ adm_cm_aim_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int
 
     for (int row = 0; row < rows_per_thread; ++row) {
         int32_t accum_thread_val = accum_thread_reg[row];
-        const int32_t x_sq =
-            (int32_t)((((int64_t)accum_thread_val * accum_thread_val) + add_shift_sq >> shift_sq));
+        const int32_t x_sq = (int32_t)((
+            (((int64_t)accum_thread_val * accum_thread_val) + add_shift_sq) >> shift_sq));
         accum += (((int64_t)x_sq * accum_thread_val) + add_shift_cub) >> shift_cub;
     }
 

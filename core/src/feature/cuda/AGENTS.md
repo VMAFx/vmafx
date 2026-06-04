@@ -647,6 +647,24 @@ kernel variants at runtime. The current policy table is in ADR-0753.
   does NOT affect `adm_decouple.cu`.
   See [ADR-0763](../../../../docs/adr/0763-cuda-adm-decouple-ldg.md).
 
+- **`integer_adm/adm_cm.cu` `x_sq` reduction requires explicit parentheses around
+  `add_shift_sq` before the right-shift (r6-cuda-kernel / 2026-06-04).** The expression
+  `(int64_t)accum * accum + add_shift_sq >> shift_sq` is parsed by C++ as
+  `+ (add_shift_sq >> shift_sq)` = `+ 0` because `>>` binds tighter than `+`. The
+  correct form is `((int64_t)accum * accum + add_shift_sq) >> shift_sq`, which matches
+  the CPU reference macro `I4_ADM_CM_ACCUM_ROUND` in `integer_adm.c:743` and the fused
+  kernel at `adm_cm.cu:259`. This defect affected two reduction loops in the file
+  (lines 373 and 712). On rebase: if either loop is modified, verify the parenthesisation
+  of the `x_sq` computation before pushing.
+
+- **`integer_vif/filter1d.cu` 16-bit rd-filter upper-bound guard must use
+  `(fwidth - fwidth_rd)`, not `(fwidth_rd - fwidth_rd)` (r6-cuda-kernel / 2026-06-04).**
+  The correct guard is `fi < (fwidth - (fwidth - fwidth_rd) / 2)`, matching the 8-bit
+  form at line 183. Writing `(fwidth_rd - fwidth_rd)` (always zero) widens the tap
+  window to all `fwidth` taps and causes OOB reads into `vif_filt.filter[scale+1]`.
+  On rebase: if the vertical-pass loop in the 16-bit path is modified, verify the
+  upper-bound guard expression before pushing.
+
 - **`integer_adm/adm_csf.cu` and `integer_adm/adm_cm.cu` carry the F3 `__ldg()` fix on the
   active path (ADR-0773).** The six inline `__device__` helpers in `adm_cm.cu`
   (`inline_i4_csf_a`, `inline_i4_decouple_r`, `inline_s0_csf_a`, `inline_s0_decouple_r`,

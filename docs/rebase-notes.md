@@ -59,6 +59,21 @@ upstream. No Netflix golden assertions or upstream-mirrored Python are touched.
 
 ---
 
+## fix/cuda-vif-filter1d-adm-cm-opprec (2026-06-04)
+
+**Files touched:**
+`core/src/feature/cuda/integer_vif/filter1d.cu`,
+`core/src/feature/cuda/integer_adm/adm_cm.cu`
+
+no rebase impact: pure kernel arithmetic fixes. No public C API header, no
+meson build option, no FFmpeg patch surface, and no upstream-mirrored Python
+file is touched. The fixes correct two silent arithmetic defects (a typo in
+the rd-filter upper-bound guard in `filter1d.cu` and a missing parenthesis
+pair in two `x_sq` reduction loops in `adm_cm.cu`). Cross-backend SYCL/HIP/
+Vulkan ADM and VIF twins do not carry the same expressions and are unaffected.
+
+---
+
 ## docs/vulkan-overview-mark-removed-adr0726 (2026-06-04)
 
 **Files touched:**
