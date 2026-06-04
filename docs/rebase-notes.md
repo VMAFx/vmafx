@@ -74,6 +74,24 @@ Vulkan ADM and VIF twins do not carry the same expressions and are unaffected.
 
 ---
 
+## fix/sycl-vif-rd-stride-motion-uv-sync (2026-06-04)
+
+**Files touched:**
+`core/src/feature/sycl/integer_vif_sycl.cpp`,
+`core/src/feature/sycl/integer_motion_sycl.cpp`,
+`docs/adr/1034-sycl-vif-rd-stride-motion-uv-sync.md`,
+`changelog.d/fixed/sycl-vif-rd-stride-motion-uv-sync.md`
+
+If this branch rebounds onto a commit that changes the rd_stride or rd_size
+allocation in `integer_vif_sycl.cpp`, re-verify that both the scalar (SIMD-32)
+and SIMD-16 kernel variants use `(e_w + 1U) / 2U` as the stride and that the
+allocation uses `((w + 1U) / 2U) * ((h + 1U) / 2U)`. If a future PR routes
+UV H2D copies through `copy_queue` and updates `last_upload_event`, the
+`vmaf_sycl_queue_wait(state)` added in `submit_fex_sycl` can be removed in
+favour of the GPU-side barrier — track this as a follow-up optimization.
+
+---
+
 ## docs/vulkan-overview-mark-removed-adr0726 (2026-06-04)
 
 **Files touched:**

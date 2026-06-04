@@ -734,6 +734,17 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                     return eu ? eu : ev;
             }
         }
+
+        // Flush the primary queue before graph_submit.
+        // vmaf_sycl_memcpy_h2d_async() submits to state->queue (primary queue),
+        // but vmaf_sycl_graph_submit() only barriers combined_queue on
+        // last_upload_event from copy_queue.  Without this wait the UV H2D
+        // transfers may still be in-flight on the primary queue when the compute
+        // graph launches on combined_queue — producing wrong UV motion scores.
+        // Bug: r6-sycl (integer_motion UV queue sync gap).
+        int const ewait = vmaf_sycl_queue_wait(state);
+        if (ewait)
+            return ewait;
     }
 
     // Combined graph submit (idempotent per frame — first extractor wins)

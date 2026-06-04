@@ -819,7 +819,11 @@ launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height, float vif_
                         uint32_t const dis_rd_val = (uint32_t)((h_dis_rd + 32768) >> 16);
                         unsigned rd_x = gx / 2;
                         unsigned rd_y = gy / 2;
-                        unsigned const rd_stride = e_w / 2;
+                        // Use ceiling division for rd_stride to match the rounded-up
+                        // allocation size (w+1)/2 — fixes OOB write when e_w is odd
+                        // (e.g. width=5: last even gx=4 maps to rd_x=2, which is in
+                        // bounds for stride=3 but not for stride=2). Bug: r6-sycl.
+                        unsigned const rd_stride = (e_w + 1U) / 2U;
                         rd_ref[rd_y * rd_stride + rd_x] = ref_rd_val & 0xFFFF;
                         rd_dis[rd_y * rd_stride + rd_x] = dis_rd_val & 0xFFFF;
                     }
@@ -1310,8 +1314,11 @@ launch_vif_fused_impl(sycl::queue &q, const void *ref_data, const void *dis_data
                         uint32_t const dis_rd_val = (uint32_t)((h_dis_rd + 32768) >> 16);
                         unsigned rd_x = gx / 2;
                         unsigned rd_y = gy / 2;
-                        rd_ref[rd_y * (e_w / 2) + rd_x] = ref_rd_val & 0xFFFF;
-                        rd_dis[rd_y * (e_w / 2) + rd_x] = dis_rd_val & 0xFFFF;
+                        // Ceiling division for rd_stride — same fix as scalar variant
+                        // (SIMD-16 path). Prevents OOB write for odd e_w. Bug: r6-sycl.
+                        unsigned const rd_stride = (e_w + 1U) / 2U;
+                        rd_ref[rd_y * rd_stride + rd_x] = ref_rd_val & 0xFFFF;
+                        rd_dis[rd_y * rd_stride + rd_x] = dis_rd_val & 0xFFFF;
                     }
                 }
             });
@@ -1419,8 +1426,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->d_tmp_ref_convol = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, tmp_size));
         s->d_tmp_dis_convol = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, tmp_size));
     }
-    // Downsampled buffers only need quarter-frame: (w/2)*(h/2) elements
-    size_t const rd_size = (size_t)(w / 2) * (h / 2) * sizeof(uint32_t);
+    // Downsampled buffers: ceiling-division so odd frame dimensions don't
+    // underallocate. For even w/h the result is identical to (w/2)*(h/2).
+    // Matches the rd_stride fix in launch_vif_hori_impl / launch_vif_fused_impl.
+    size_t const rd_size = (size_t)((w + 1U) / 2U) * ((h + 1U) / 2U) * sizeof(uint32_t);
     s->d_rd_ref = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, rd_size));
     s->d_rd_dis = static_cast<uint32_t *>(vmaf_sycl_malloc_device(state, rd_size));
 

@@ -88,6 +88,23 @@ HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
   `-ENOTSUP` with a `WARNING` until their kernel ports land. On rebase:
   if upstream Netflix adds `motion_add_uv` to `integer_motion.c`, verify
   that the per-plane normalization formula remains consistent.
+  **Queue-sync invariant (ADR-1034)**: `vmaf_sycl_memcpy_h2d_async` submits
+  UV H2D copies to `state->queue` (primary queue), which is NOT the same as
+  `copy_queue` (the DMA engine used for Y-plane uploads). `vmaf_sycl_graph_submit`
+  barriers `combined_queue` only on `last_upload_event` from `copy_queue`.
+  Therefore `submit_fex_sycl` calls `vmaf_sycl_queue_wait(state)` after UV copies
+  to flush the primary queue before graph submission. If a future PR routes UV H2D
+  through `copy_queue` and updates `last_upload_event`, the `vmaf_sycl_queue_wait`
+  call can be removed in favour of the GPU-side barrier — update this note then.
+
+- **`integer_vif_sycl.cpp` rd_stride uses ceiling division for odd widths** (ADR-1034).
+  Both `launch_vif_hori_impl` (scalar/SIMD-32) and `launch_vif_fused_impl` (SIMD-16)
+  compute the downsampled row stride as `(e_w + 1U) / 2U`, not `e_w / 2U`. The
+  `rd_ref`/`rd_dis` allocation in `init_fex_sycl` uses `((w+1U)/2U) * ((h+1U)/2U)`
+  elements. These must stay in sync. On rebase: if a future PR modifies the
+  downsampling path, ensure all three sites (two kernel variants + allocation) use
+  the same ceiling formula. For even widths/heights the result is identical to
+  truncating division.
 
 - **`integer_psnr_sycl.cpp` honours `enable_chroma` option parity**
   (ADR-0453). The `enable_chroma` option (default `true`) clamps `n_planes`
