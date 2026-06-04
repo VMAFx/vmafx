@@ -1,6 +1,30 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/drop-vulkan-source-files-adr0726 (2026-06-04, ADR-0726 follow-up)
+
+**Files touched:**
+`core/src/vulkan/` (15 files deleted),
+`core/src/feature/vulkan/` (57 files deleted — 28 TUs + 29 shaders),
+`core/include/libvmaf/libvmaf_vulkan.h` (deleted),
+`core/test/test_vulkan_*.c` + `test_integer_motion_vulkan_smoke.c` + `test_psnr_vulkan_chroma_geom.c` (7 files deleted),
+`.claude/agents/vulkan-reviewer.md` (deleted),
+`core/meson_options.txt` (comment updated),
+`docs/state.md`, `docs/rebase-notes.md`,
+`changelog.d/removed/vulkan-source-file-scrub-adr0726.md` (added)
+
+**Rebase impact:** No rebase-sensitive invariants. All deleted files were dead
+code — no build rule referenced them since PR #47 (ADR-0726). The ABI
+tombstones (`VMAF_PICTURE_BUFFER_TYPE_VULKAN_DEVICE` = enum 4,
+`VMAF_FEATURE_EXTRACTOR_VULKAN` = bit 5) live in `core/include/libvmaf/picture.h`
+and `core/include/libvmaf/feature.h` respectively and are intentionally
+preserved per ADR-0726 §Consequences. If an upstream sync ever adds a file named
+`core/src/vulkan/…`, the conflict is intentional — do not accept it.
+`ffmpeg-patches/0004` and `0006` are intentionally kept as chain shims (ADR-0860)
+and were not touched by this PR.
+
+---
+
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
 
 **Files touched:**

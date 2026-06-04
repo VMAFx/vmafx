@@ -74,8 +74,10 @@ option('enable_dnn',
     description: 'Build DNN runtime (ONNX Runtime) for tiny-model inference')
 
 # enable_vulkan option removed per ADR-0726 — Vulkan backend dropped.
-# core/src/vulkan/ + core/src/feature/vulkan/ + libvmaf_vulkan.h are gone;
-# subprojects/packagefiles/volk/ + vk-mem-alloc/ remain for follow-up cleanup.
+# core/src/vulkan/, core/src/feature/vulkan/, and libvmaf_vulkan.h
+# deleted per ADR-0726 follow-up (source-file scrub). The volk and
+# vk-mem-alloc subproject wrappers under subprojects/packagefiles/
+# remain for follow-up cleanup.
 
 option('enable_mcp',
     type: 'boolean',
