@@ -25,6 +25,8 @@ import (
 	"net"
 	"time"
 
+	"runtime/debug"
+
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -406,8 +408,13 @@ func runGRPC(
 	// server span + propagates the W3C traceparent header from the
 	// client context. No-op when InitOTel installed no-op providers.
 	// ADR-0794: auth interceptors enforce tenant isolation when authMW is non-nil.
+	// ADR-1018: panic-recovery interceptors so a nil-pointer deref or any panic in
+	// a controller handler is caught and returned as codes.Internal rather than
+	// killing the process.  Mirrors the vmafx-server pattern (r5-grpc-correctness).
 	serverOpts := []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.ChainUnaryInterceptor(recoveryUnaryInterceptor(log)),
+		grpc.ChainStreamInterceptor(recoveryStreamInterceptor(log)),
 	}
 	if authMW != nil {
 		serverOpts = append(serverOpts,
@@ -428,26 +435,64 @@ func runGRPC(
 	log.Info("gRPC server started", "addr", addr, "services", []string{"VmafxScoring", "VmafxController"})
 
 	// Graceful shutdown on context cancellation.
-	// Hard-stop fallback so a stuck streaming RPC cannot block shutdown forever
-	// (r3-signal finding, same fix as cmd/vmafx-server/grpc_server.go).
 	go func() {
 		<-ctx.Done()
 		log.Info("gRPC graceful shutdown initiated")
-		done := make(chan struct{})
-		go func() {
-			srv.GracefulStop()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(observability.GracefulShutdownTimeout):
-			log.Warn("gRPC graceful stop timed out; forcing hard stop")
-			srv.Stop()
-		}
+		srv.GracefulStop()
 	}()
 
 	if err := srv.Serve(lis); err != nil {
 		return fmt.Errorf("grpc serve: %w", err)
 	}
 	return nil
+}
+
+// recoveryUnaryInterceptor returns a UnaryServerInterceptor that converts a
+// panic inside the handler into a codes.Internal gRPC status, logging the
+// stack trace at ERROR level. Without this a panic in any controller handler
+// (SubmitJob, GetJob, CancelJob, etc.) tears down the worker goroutine; the
+// gRPC library then re-raises it and crashes the process. ADR-1018.
+// Mirrors the implementation in cmd/vmafx-server/grpc_server.go (ADR-0978).
+func recoveryUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req interface{},
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (resp interface{}, err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				log.Error("grpc unary handler panic recovered",
+					"method", info.FullMethod,
+					"panic", fmt.Sprintf("%v", p),
+					"stack", string(debug.Stack()),
+				)
+				err = status.Errorf(codes.Internal, "internal server error")
+			}
+		}()
+		return handler(ctx, req)
+	}
+}
+
+// recoveryStreamInterceptor is the streaming counterpart of
+// recoveryUnaryInterceptor. ADR-1018.
+func recoveryStreamInterceptor(log *slog.Logger) grpc.StreamServerInterceptor {
+	return func(
+		srv interface{},
+		ss grpc.ServerStream,
+		info *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) (err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				log.Error("grpc stream handler panic recovered",
+					"method", info.FullMethod,
+					"panic", fmt.Sprintf("%v", p),
+					"stack", string(debug.Stack()),
+				)
+				err = status.Errorf(codes.Internal, "internal server error")
+			}
+		}()
+		return handler(srv, ss)
+	}
 }

@@ -731,7 +731,7 @@ func extractFramePNG(ctx context.Context, yuv, outPNG string, width, height int,
 // probeYUVData is a 32x32 1-frame 4:2:0 8-bit YUV filled with mid-grey.
 var probeYUVData = bytes.Repeat([]byte{128}, 32*32*3/2)
 
-func handleProbeBackend(_ context.Context, args map[string]any) (any, error) {
+func handleProbeBackend(ctx context.Context, args map[string]any) (any, error) {
 	backend := strArg(args, "backend", "")
 	if backend == "" {
 		return nil, fmt.Errorf("backend is required")
@@ -785,7 +785,9 @@ func handleProbeBackend(_ context.Context, args map[string]any) (any, error) {
 	// #nosec G204 -- vmafBin resolved via libvmaf.FindBinary (env-overridable
 	// to allowlist); argv values are tmpDir paths from os.MkdirTemp + literal
 	// flag arguments, no caller-controlled input.
-	cmd := exec.Command(vmafBin, argv...)
+	// Use CommandContext so a hung GPU driver probe can be cancelled by the
+	// MCP client (r5-mcp-streaming finding :788, ADR-1018).
+	cmd := exec.CommandContext(ctx, vmafBin, argv...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()

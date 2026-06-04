@@ -44359,3 +44359,15 @@ no rebase impact: all changes are in
 RBAC manifest, Helm template, or C source is touched. The `SetupWithManager`
 change is additive (adds an `if r.HTTPClient == nil` guard). No Netflix golden
 assertions touched.
+
+---
+
+### fix(mcp,controller): exec.CommandContext + gRPC panic recovery (ADR-1018)
+
+**Branch**: fix/r5-mcp-exec-ctx
+
+no rebase impact: changes are in `cmd/vmafx-mcp/impl.go` and
+`cmd/vmafx-controller/grpc_server.go`. The `runVmafScore` Go signature change
+is internal to `cmd/vmafx-mcp` (all three callers are in the same file). No
+public MCP tool schema, JSON-RPC protocol, or gRPC proto file changes. No C
+source, public header, or Netflix golden assertions touched.
