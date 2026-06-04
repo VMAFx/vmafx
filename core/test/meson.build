@@ -36,6 +36,15 @@ wave8_cpp23_objects = [
     read_json_model_cpp23_lib.extract_all_objects(recursive: true),
 ]
 
+# Subset of wave8_cpp23_objects for tests that only need opt.cpp (no model
+# loading, no pdjson).  wave8_cpp23_objects always pulls in
+# read_json_model_cpp23_lib which references vmaf_model_generate_name /
+# vmaf_model_destroy from model.c; tests that don't link model.c must use
+# this lighter variant to avoid spurious undefined-reference errors.
+wave8_opt_only_objects = [
+    opt_cpp23_lib.extract_all_objects(recursive: true),
+]
+
 # SIMD bit-exactness tests: suppress FP contraction in the test TU so
 # the inline scalar reference functions match the SIMD libs (which are
 # compiled with -ffp-contract=off via the carve-out static libraries).
@@ -212,7 +221,7 @@ test_iqa_helpers = executable('test_iqa_helpers',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ],
+    ] + wave8_opt_only_objects,
 )
 
 
@@ -239,7 +248,7 @@ test_feature_extractor = executable('test_feature_extractor',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 test_dict = executable('test_dict',
@@ -252,7 +261,10 @@ test_opt = executable('test_opt',
     ['test.c', 'test_opt.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     dependencies: [math_lib, pthread_dependency, sycl_dependency],
-    objects : wave8_cpp23_objects,
+    # wave8_opt_only_objects: test_opt only exercises opt.cpp (vmaf_option_set);
+    # full wave8_cpp23_objects would pull in read_json_model_cpp23_lib which
+    # references pdjson symbols not present in this test's link recipe.
+    objects : wave8_opt_only_objects,
 )
 
 test_cpu = executable('test_cpu',
