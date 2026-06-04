@@ -191,9 +191,18 @@ nav:
       - MCP C API: api/mcp.md
   - Metrics:
       - Features: metrics/features.md
+      - ANSNR (removed): metrics/ansnr.md
       - CAMBI: metrics/cambi.md
-      - SSIMULACRA 2: metrics/ssimulacra2.md
       - DISTS: metrics/dists.md
+      - Motion: metrics/motion.md
+      - MS-SSIM: metrics/ms-ssim.md
+      - PSNR-HVS: metrics/psnr-hvs.md
+      - SpeedQA: metrics/speed_qa.md
+      - SSIM: metrics/ssim.md
+      - SSIMULACRA 2: metrics/ssimulacra2.md
+      - TAD: metrics/tad.md
+      - VIF: metrics/vif.md
+      - VMAF-NEG: metrics/vmaf-neg.md
       - Confidence Interval: metrics/confidence-interval.md
       - Bad cases: metrics/bad-cases.md
       - CTC:
@@ -216,6 +225,8 @@ nav:
   - MCP:
       - mcp/index.md
       - Tool reference: mcp/tools.md
+      - Backend discovery: mcp/backends.md
+      - HTTP transport: mcp/http-transport.md
       - Embedded server: mcp/embedded.md
       - Release channel: mcp/release-channel.md
   - Tiny AI:

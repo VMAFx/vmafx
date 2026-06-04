@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/r7-mcp-precision-subsample-drift (2026-06-04, ADR-1038)
+
+**Files touched:**
+`cmd/vmafx-mcp/impl.go`, `cmd/vmafx-mcp/tools.go`,
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`
+
+No rebase impact: pure default-value changes. No C library, public header,
+upstream Python harness, or Netflix golden-assertion file is touched.
+
+---
+
 ## fix/r7-vendored-svm-realloc-oom (2026-06-04, ADR-1039)
 
 **Files touched:** `core/src/svm.cpp`

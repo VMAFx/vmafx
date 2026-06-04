@@ -244,7 +244,7 @@ class ScoreRequest:
     bitdepth: int
     model: str = "version=vmaf_v0.6.1"
     backend: str = "auto"  # "cpu" | "cuda" | "sycl" | "auto"
-    precision: str = "17"
+    precision: str = "legacy"  # "legacy" = %.6f; matches C CLI default per ADR-0119
     subsample: int = 1  # score every Nth frame; passed as --subsample to the CLI
 
 
@@ -1561,7 +1561,7 @@ async def _probe_backend(backend: str) -> dict[str, Any]:
             "-m",
             "version=vmaf_v0.6.1",
             "--precision",
-            "6",
+            "legacy",  # %.6f — matches C CLI default (ADR-0119)
             "-q",
             "-o",
             str(out_json),
@@ -1838,7 +1838,7 @@ async def _run_vmaf_score_encoded(
     model: str = "version=vmaf_v0.6.1",
     backend: str = "auto",
     subsample: int = 1,
-    precision: str = "17",
+    precision: str = "legacy"  # "legacy" = %.6f; matches C CLI default per ADR-0119,
 ) -> dict[str, Any]:
     """Decode both encoded inputs to temp raw YUV, then delegate to
     :func:`_run_vmaf_score`.
@@ -1931,7 +1931,7 @@ async def _list_tools() -> list[Tool]:
                         "enum": ["auto", "cpu", "cuda", "sycl", "hip", "metal"],
                         "default": "auto",
                     },
-                    "precision": {"type": "string", "default": "17"},
+                    "precision": {"type": "string", "default": "legacy"},
                 },
             },
         ),
@@ -2108,7 +2108,7 @@ async def _list_tools() -> list[Tool]:
                         "default": 1,
                         "description": "Score every Nth frame (1 = every frame).",
                     },
-                    "precision": {"type": "string", "default": "17"},
+                    "precision": {"type": "string", "default": "legacy"},
                 },
             },
         ),
@@ -2319,7 +2319,7 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             bitdepth=int(arguments["bitdepth"]),
             model=str(arguments.get("model", "version=vmaf_v0.6.1")),
             backend=str(arguments.get("backend", "auto")),
-            precision=str(arguments.get("precision", "17")),
+            precision=str(arguments.get("precision", "legacy")),
         )
         result = await _run_vmaf_score(req)
     elif name == "list_models":
@@ -2368,7 +2368,7 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             model=str(arguments.get("model", "version=vmaf_v0.6.1")),
             backend=str(arguments.get("backend", "auto")),
             subsample=int(arguments.get("subsample", 1)),
-            precision=str(arguments.get("precision", "17")),
+            precision=str(arguments.get("precision", "legacy")),
         )
     # ── P1 tools (ADR-0608) ─────────────────────────────────────────────
     elif name == "list_extractors":
