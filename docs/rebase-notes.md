@@ -44371,3 +44371,20 @@ no rebase impact: changes are in `cmd/vmafx-mcp/impl.go` and
 is internal to `cmd/vmafx-mcp` (all three callers are in the same file). No
 public MCP tool schema, JSON-RPC protocol, or gRPC proto file changes. No C
 source, public header, or Netflix golden assertions touched.
+
+---
+
+## fix/y4m-dst-buf-read-sz-overflow (2026-06-04)
+
+**Files touched:**
+`core/tools/y4m_input.c`,
+`docs/adr/1022-y4m-dst-buf-read-sz-overflow.md`,
+`changelog.d/fixed/1022-y4m-dst-buf-read-sz-overflow.md`
+
+no rebase impact: the fix adds `(size_t)` casts to five arithmetic expressions in
+`y4m_input_open_impl()`. No public header is changed. No API surface changes. The
+upstream `y4m_input.c` source differs from this fork's copy (earlier ADR-0977 fixes are
+already in tree); cherry-picks of upstream Y4M changes will need to re-apply the same
+cast pattern to any newly introduced chroma branches.
+
+---
