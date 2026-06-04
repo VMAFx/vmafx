@@ -25,6 +25,7 @@
 #include "libvmaf/dnn.h"
 #include "libvmaf/vmaf_assert.h"
 
+#include "log.h"
 #include "model_loader.h"
 #include "ort_backend.h"
 #include "tensor_io.h"
@@ -105,14 +106,20 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
         memcpy(int8_path + base_len, ".int8.onnx", sizeof(".int8.onnx"));
         rc = vmaf_dnn_validate_onnx(int8_path, max_bytes);
         if (rc < 0) {
-            /* int8 file missing or fails the allowlist — fall back to
-             * fp32 with a debug log; better degraded than dead. */
-            if (s->has_sidecar)
-                vmaf_dnn_sidecar_free(&s->meta);
-            free(s);
-            return rc;
+            /* int8 file missing or fails the allowlist — fall back to fp32;
+             * better degraded than dead.  Keep has_sidecar / meta intact so
+             * the caller can still read quant_mode; only the load_path stays
+             * as the fp32 baseline. */
+            vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                     "dnn: int8 sidecar unavailable (%s, rc=%d); "
+                     "falling back to fp32 path\n",
+                     int8_path, rc);
+            /* load_path already equals onnx_path — no assignment needed;
+             * fall through to vmaf_ort_open below. */
+            rc = 0;
+        } else {
+            load_path = int8_path;
         }
-        load_path = int8_path;
     }
 
     rc = vmaf_ort_open(&s->ort, load_path, cfg);

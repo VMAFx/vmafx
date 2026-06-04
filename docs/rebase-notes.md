@@ -43,6 +43,22 @@ ADR-1033.
 
 ---
 
+## fix/vmaf-init-double-init-guard-vmaf-close-pointer-contract (2026-06-04, ADR-1032)
+
+**Files touched:**
+`core/src/libvmaf.c`,
+`core/src/dnn/dnn_api.c`,
+`core/include/libvmaf/libvmaf.h`,
+`core/test/test_context.c`
+
+no rebase impact: all changes are fork-local bug-fixes with no upstream
+equivalents. `vmaf_init` guard is a new branch (no upstream logic removed),
+`vmaf_close` header change is documentation-only, and the DNN fallback path
+touches a fork-added sidecar-loading block that does not exist in Netflix
+upstream. No Netflix golden assertions or upstream-mirrored Python are touched.
+
+---
+
 ## docs/vulkan-overview-mark-removed-adr0726 (2026-06-04)
 
 **Files touched:**

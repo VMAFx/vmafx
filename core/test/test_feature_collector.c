@@ -27,7 +27,7 @@ static char *test_model_mount_with_use_features()
 
     VmafConfiguration vmaf_cfg = {0};
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", vmaf);
 

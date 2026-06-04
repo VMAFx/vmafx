@@ -173,7 +173,7 @@ static int seed_normal(VmafContext **out_vmaf)
 
 static char *test_csv_basic()
 {
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -205,7 +205,7 @@ static char *test_csv_basic()
 
 static char *test_csv_subsample_and_custom_format()
 {
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -236,7 +236,7 @@ static char *test_csv_subsample_and_custom_format()
 
 static char *test_sub_basic()
 {
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -267,7 +267,7 @@ static char *test_sub_basic()
 static char *test_xml_einval_guards()
 {
     /* All three guards live at the head of vmaf_write_output_xml. */
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -295,7 +295,7 @@ static char *test_xml_einval_guards()
  * SIGSEGV on the very first fprintf instead of returning -EINVAL. */
 static char *test_csv_sub_einval_guards()
 {
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -328,7 +328,7 @@ static char *test_xml_basic()
      * index. Use a dense 2-frame x 2-feature collector here. The
      * count_written_at skip branch is already covered by test_csv_basic /
      * test_sub_basic (which use seed_normal). */
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {0};
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
@@ -377,7 +377,7 @@ static char *test_json_basic_and_format()
     /* Dense 2x2 collector so json_write_pooled_entry / json_write_pool_score
      * produce per-method numbers (otherwise vmaf_feature_score_pooled
      * returns -EAGAIN and the writer emits an empty per-feature block). */
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {0};
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
@@ -437,7 +437,7 @@ static char *test_json_nan_and_inf()
     /* Force NaN / +Inf into both frame metrics, pooled (via mean over the
      * frame values), and aggregates / fps. The writers route every numeric
      * branch through fpclassify(); NaN + Inf must serialize as JSON null. */
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {0};
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
@@ -482,7 +482,7 @@ static char *test_json_empty_collector()
     /* Zero features, zero frames — exercises the "no frames" branch where
      * max_capacity returns 0 and the for-loop body never executes. The
      * writer must still emit valid JSON skeleton. */
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {0};
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
@@ -543,7 +543,7 @@ static char *test_write_output_json_path()
 {
     /* vmaf_write_output() — public path-based dispatcher — must produce a
      * well-formed JSON file for VMAF_OUTPUT_FORMAT_JSON. */
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -570,7 +570,7 @@ static char *test_write_output_with_format_custom()
     /* vmaf_write_output_with_format() must honour a caller-supplied printf
      * format string.  "%.3f" of 80.0 yields "80.000"; the default "%.17g"
      * would yield "80" or "80.000000000000000" — never "80.000" exactly. */
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
@@ -658,7 +658,7 @@ static char *test_write_output_pic_cnt_zero_xml(VmafContext *vmaf)
 /* Top-level ADR-0602 regression entry point. */
 static char *test_write_output_pic_cnt_zero()
 {
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     int err = make_pic_cnt_zero_ctx(&vmaf);
     mu_assert("make_pic_cnt_zero_ctx failed", !err);
 

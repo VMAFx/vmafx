@@ -119,7 +119,7 @@ static char *test_output_xml_with_comma_locale(void)
     }
 
     int err;
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {
         .log_level = VMAF_LOG_LEVEL_NONE,
         .n_threads = 0,
@@ -174,7 +174,7 @@ static char *test_output_json_with_comma_locale(void)
     }
 
     int err;
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {
         .log_level = VMAF_LOG_LEVEL_NONE,
         .n_threads = 0,

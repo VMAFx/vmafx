@@ -226,6 +226,12 @@ int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)
 {
     if (!vmaf)
         return -EINVAL;
+    /* Guard against double-init: if the caller passes a non-NULL *vmaf the
+     * old context would be silently overwritten and leak.  Returning -EINVAL
+     * surfaces the bug immediately instead of leaking memory on every
+     * subsequent initialisation path. */
+    if (*vmaf)
+        return -EINVAL;
     int err = 0;
 
     VmafContext *const v = *vmaf = malloc(sizeof(*v));

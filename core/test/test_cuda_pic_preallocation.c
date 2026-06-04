@@ -29,7 +29,7 @@ static char *test_cuda_no_init()
 
     VmafConfiguration vmaf_cfg = {0};
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", vmaf);
 
@@ -68,7 +68,7 @@ static char *test_cuda_picture_preallocation_method_none()
 
     VmafConfiguration vmaf_cfg = {0};
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", vmaf);
 
@@ -120,7 +120,7 @@ static char *test_cuda_picture_preallocation_method_host()
 
     VmafConfiguration vmaf_cfg = {0};
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", vmaf);
 
@@ -186,7 +186,7 @@ static char *test_cuda_picture_preallocation_method_host_pinned()
 
     VmafConfiguration vmaf_cfg = {0};
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", vmaf);
 
@@ -252,7 +252,7 @@ static char *test_cuda_picture_preallocation_method_device()
 
     VmafConfiguration vmaf_cfg = {0};
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", vmaf);
 

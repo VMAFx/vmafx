@@ -40,7 +40,7 @@ static char *test_picture_pool_basic()
         .n_threads = 4,
     };
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", !err);
 
@@ -98,7 +98,7 @@ static char *test_picture_pool_small()
         .n_threads = 2,
     };
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", !err);
 
@@ -157,7 +157,7 @@ static char *test_picture_pool_fetch_unref_cycle()
         .n_threads = 4,
     };
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", !err);
 
@@ -207,7 +207,7 @@ static char *test_picture_pool_yuv444()
         .n_threads = 4,
     };
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", !err);
 
@@ -270,7 +270,7 @@ static char *test_picture_pool_exhaustion()
         .n_threads = 4,
     };
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", !err);
 
@@ -376,7 +376,7 @@ static char *test_picture_pool_multithreaded()
         .n_threads = 8,
     };
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", !err);
 
@@ -452,7 +452,7 @@ static char *test_picture_pool_close_waits()
         .n_threads = 2,
     };
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", !err);
 
@@ -500,7 +500,7 @@ static char *test_picture_pool_stress()
         .n_threads = 16,
     };
 
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     err = vmaf_init(&vmaf, vmaf_cfg);
     mu_assert("problem during vmaf_init", !err);
 

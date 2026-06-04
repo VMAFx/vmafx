@@ -16,13 +16,15 @@
  *
  */
 
+#include <errno.h>
+
 #include "test.h"
 #include "libvmaf/libvmaf.h"
 
 static char *test_context_init_and_close()
 {
     int err = 0;
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {0};
 
     err = vmaf_init(&vmaf, cfg);
@@ -36,7 +38,7 @@ static char *test_context_init_and_close()
 static char *test_get_feature_score()
 {
     int err = 0;
-    VmafContext *vmaf;
+    VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {0};
 
     err = vmaf_init(&vmaf, cfg);
@@ -68,9 +70,33 @@ static char *test_get_feature_score()
     return NULL;
 }
 
+static char *test_vmaf_init_double_init_guard()
+{
+    /* vmaf_init on an already-initialised (non-NULL) pointer must return
+     * -EINVAL without leaking the existing context.  This exercises the
+     * double-init guard added in ADR-1032. */
+    VmafContext *vmaf = NULL;
+    VmafConfiguration cfg = {0};
+
+    int err = vmaf_init(&vmaf, cfg);
+    mu_assert("first vmaf_init failed unexpectedly", !err);
+    mu_assert("vmaf pointer still NULL after successful init", vmaf != NULL);
+
+    /* Second call on the same (non-NULL) pointer must fail. */
+    int err2 = vmaf_init(&vmaf, cfg);
+    mu_assert("vmaf_init on non-NULL pointer must return -EINVAL", err2 == -EINVAL);
+
+    /* The original context must still be valid and closeable. */
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close after rejected double-init failed", !err);
+
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_context_init_and_close);
     mu_run_test(test_get_feature_score);
+    mu_run_test(test_vmaf_init_double_init_guard);
     return NULL;
 }

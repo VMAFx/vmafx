@@ -496,6 +496,20 @@ VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *
  * Close a VMAF instance and free all associated memory.
  *
  * @param vmaf The VMAF instance to close.
+ *             The pointer becomes invalid after this call returns.
+ *             Callers must not dereference or pass @p vmaf to any libvmaf
+ *             function after `vmaf_close()` returns.  To guard against
+ *             accidental use-after-free, set the pointer to NULL immediately
+ *             after calling this function:
+ *
+ *             @code
+ *               vmaf_close(ctx);
+ *               ctx = NULL;
+ *             @endcode
+ *
+ *             Calling `vmaf_close(NULL)` returns `-EINVAL` harmlessly;
+ *             however passing a dangling (already-freed) pointer is
+ *             undefined behaviour and is **not** detected.
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
