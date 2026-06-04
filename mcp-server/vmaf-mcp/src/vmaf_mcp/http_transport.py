@@ -57,6 +57,7 @@ ADR-0967: MCP HTTP transport security hardening (auth + body limit + bind defaul
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -272,10 +273,8 @@ def _make_security_middleware() -> Any:
       every request with 401.  No-token-configured means the operator has not
       set up auth; refusing all traffic is safer than silently accepting it.
     - Otherwise, the ``Authorization: Bearer <token>`` header must match
-      ``VMAFX_MCP_HTTP_TOKEN`` exactly (constant-time comparison is not required
-      here because the token is not a cryptographic secret used for signing —
-      it is a shared bearer token; timing attacks require a much more targeted
-      setup than this deployment model exposes).
+      ``VMAFX_MCP_HTTP_TOKEN`` exactly via ``hmac.compare_digest`` (constant-time
+      comparison prevents token enumeration via wall-clock timing side-channels).
 
     Health probes (``/healthz``, ``/readyz``) and ``/metrics`` are **not** exempt
     from auth because Kubernetes health-check source IPs should already be inside
@@ -325,9 +324,8 @@ def _make_security_middleware() -> Any:
                     ),
                 )
             auth_header = request.headers.get("Authorization", "")
-            if (
-                not auth_header.startswith("Bearer ")
-                or auth_header[len("Bearer ") :] != expected_token
+            if not auth_header.startswith("Bearer ") or not hmac.compare_digest(
+                auth_header[len("Bearer ") :], expected_token
             ):
                 return aiohttp.web.Response(
                     status=401,

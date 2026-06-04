@@ -390,6 +390,7 @@ func verifyJWT(token string, cache *jwksCache, issuer, audience string) (map[str
 		Sub string          `json:"sub"`
 		Aud json.RawMessage `json:"aud"`
 		Exp int64           `json:"exp"`
+		Nbf int64           `json:"nbf"`
 	}
 	if err = json.Unmarshal(payloadJSON, &payload); err != nil {
 		return nil, fmt.Errorf("jwt: parse payload: %w", err)
@@ -398,8 +399,12 @@ func verifyJWT(token string, cache *jwksCache, issuer, audience string) (map[str
 	if payload.Iss != issuer {
 		return nil, fmt.Errorf("jwt: issuer mismatch (got %q, want %q)", payload.Iss, issuer)
 	}
-	if time.Now().Unix() > payload.Exp {
+	now := time.Now().Unix()
+	if now > payload.Exp {
 		return nil, fmt.Errorf("jwt: token expired at %d", payload.Exp)
+	}
+	if payload.Nbf != 0 && now < payload.Nbf {
+		return nil, fmt.Errorf("jwt: token not yet valid (nbf=%d, now=%d)", payload.Nbf, now)
 	}
 	if audience != "" {
 		if err = checkAudience(payload.Aud, audience); err != nil {

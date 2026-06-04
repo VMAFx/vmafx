@@ -44388,3 +44388,21 @@ already in tree); cherry-picks of upstream Y4M changes will need to re-apply the
 cast pattern to any newly introduced chroma branches.
 
 ---
+
+## fix(auth,nodes): constant-time session-token compare + JWT nbf validation (ADR-1021, 2026-06-04)
+
+**Files touched:**
+`cmd/vmafx-controller/nodes/registry.go`,
+`cmd/vmafx-controller/auth/middleware.go`,
+`mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py`,
+`cmd/vmafx-controller/nodes/registry_test.go`,
+`cmd/vmafx-controller/auth/middleware_test.go`,
+`docs/adr/1021-session-token-const-time-compare.md`,
+`changelog.d/fixed/r5-crypto-const-time-session-token.md`
+
+no rebase impact: security-only bug-fix with no public API changes. All
+modified symbols are internal (non-exported comparison logic, JWT payload
+struct field). No C source, public C API header, upstream-mirrored Python,
+Netflix golden assertion, or ffmpeg-patches file is touched.
+
+---

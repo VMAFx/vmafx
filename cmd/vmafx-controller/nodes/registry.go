@@ -23,6 +23,7 @@ package nodes
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"iter"
@@ -130,7 +131,7 @@ func (r *Registry) Heartbeat(nodeID, sessionToken string, jobsRunning int) bool 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n, ok := r.nodes[nodeID]
-	if !ok || n.SessionToken != sessionToken {
+	if !ok || subtle.ConstantTimeCompare([]byte(n.SessionToken), []byte(sessionToken)) != 1 {
 		return false
 	}
 	n.LastHeartbeat = time.Now()
@@ -159,7 +160,7 @@ func (r *Registry) ValidateSession(nodeID, sessionToken string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	n, ok := r.nodes[nodeID]
-	return ok && n.SessionToken == sessionToken
+	return ok && subtle.ConstantTimeCompare([]byte(n.SessionToken), []byte(sessionToken)) == 1
 }
 
 // All returns a snapshot of all live nodes.

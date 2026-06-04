@@ -109,14 +109,17 @@ func (fi *fakeIssuer) MakeToken(t *testing.T, opts tokenOpts) string {
 	hdrB64 := base64.RawURLEncoding.EncodeToString(hdrJSON)
 
 	payload := map[string]any{
-		"iss":           opts.issuer,
-		"sub":           "user123",
-		"tid":           opts.tenantID,
-		"vmafx_roles":   opts.roles,
-		"exp":           opts.exp,
+		"iss":         opts.issuer,
+		"sub":         "user123",
+		"tid":         opts.tenantID,
+		"vmafx_roles": opts.roles,
+		"exp":         opts.exp,
 	}
 	if opts.audience != "" {
 		payload["aud"] = opts.audience
+	}
+	if opts.nbf != 0 {
+		payload["nbf"] = opts.nbf
 	}
 	payloadJSON, _ := json.Marshal(payload)
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
@@ -138,6 +141,7 @@ type tokenOpts struct {
 	tenantID string
 	roles    []string
 	exp      int64
+	nbf      int64 // 0 means omit the claim
 	alg      string
 	kid      string
 }
@@ -447,5 +451,52 @@ func TestAudienceValidation(t *testing.T) {
 	})).ServeHTTP(rr2, req2)
 	if rr2.Code != http.StatusOK {
 		t.Errorf("correct-aud token: expected 200, got %d; body=%s", rr2.Code, rr2.Body)
+	}
+}
+
+// TestVerifyToken_NbfRejected verifies that a token whose "nbf" (not-before)
+// claim is set to a future time is rejected with 401 even if the signature
+// and all other claims are valid.
+func TestVerifyToken_NbfRejected(t *testing.T) {
+	fi := newFakeIssuer(t)
+	mw := newTestMiddleware(t, fi)
+
+	// nbf = now + 1 hour — token is not yet valid.
+	futureNbf := time.Now().Add(time.Hour).Unix()
+	token := fi.MakeToken(t, tokenOpts{nbf: futureNbf})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/score", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	rr := httptest.NewRecorder()
+	mw.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for future-nbf token, got %d; body=%s", rr.Code, rr.Body)
+	}
+}
+
+// TestVerifyToken_NbfInPastAccepted verifies that a token whose "nbf" claim
+// is in the past is accepted normally (past nbf is not a rejection reason).
+func TestVerifyToken_NbfInPastAccepted(t *testing.T) {
+	fi := newFakeIssuer(t)
+	mw := newTestMiddleware(t, fi)
+
+	// nbf = now - 1 hour — token is already valid.
+	pastNbf := time.Now().Add(-time.Hour).Unix()
+	token := fi.MakeToken(t, tokenOpts{nbf: pastNbf})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/score", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	rr := httptest.NewRecorder()
+	mw.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for past-nbf token, got %d; body=%s", rr.Code, rr.Body)
 	}
 }
