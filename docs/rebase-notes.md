@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/legacy-runner-import-stub-adr0749 (2026-06-04, no ADR — bug fix)
+
+**Files touched:**
+`compat/python-vmaf/core/quality_runner.py`,
+`docs/state.md`,
+`changelog.d/fixed/legacy-runner-import-stub-adr0749.md`
+
+**Rebase impact:** The `VmafLegacyQualityRunner` stub is fork-local and does
+not conflict with upstream Netflix/vmaf (which never had this class). No
+upstream sync will touch `compat/python-vmaf/core/quality_runner.py` in a way
+that removes the stub; if upstream adds a class with the same name, the stub
+must be removed rather than overwritten.
+
 ## fix/arm-motion-v2-re-register-and-test-order
 
 **Files touched:**
