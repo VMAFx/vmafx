@@ -9,6 +9,9 @@
 //          latency histogram for both gRPC and HTTP transports.
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service.
+// ADR-1014: Prometheus registry isolation — SetControllerSources must register
+//           against the isolated registry passed to NewMetrics, not the global
+//           DefaultRegisterer.
 
 package observability
 
@@ -17,6 +20,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -38,7 +42,9 @@ const GracefulShutdownTimeout = 30 * time.Second
 type jobQueueSource interface {
 	PendingCount() int
 	RunningCount() int
-}// NewLogger creates a JSON-structured slog.Logger writing to stdout.
+}
+
+// NewLogger creates a JSON-structured slog.Logger writing to stdout.
 // levelStr is a slog.Level string (e.g. "DEBUG", "INFO", "WARN", "ERROR").
 // Unrecognised strings default to INFO.
 func NewLogger(levelStr string) *slog.Logger {
@@ -70,6 +76,19 @@ type Metrics struct {
 	JobsSubmitted prometheus.Counter
 	JobsCompleted prometheus.Counter
 	JobsFailed    prometheus.Counter
+
+	// reg is the isolated Prometheus registry supplied to NewMetrics.  Stored
+	// here so that SetControllerSources can register the live-gauge GaugeFuncs
+	// against the same registry rather than the global DefaultRegisterer.
+	// Fixes the ADR-1014 isolation bug: metrics were invisible on the /metrics
+	// endpoint (which serves the isolated registry) and would panic on any
+	// second call to SetControllerSources (AlreadyRegistered from the global).
+	reg prometheus.Registerer
+
+	// sourcesOnce ensures SetControllerSources is idempotent: a second call
+	// (e.g. from a test or a supervisor restart) is a no-op rather than a
+	// panic.  ADR-1014.
+	sourcesOnce sync.Once
 }
 
 // NewMetrics registers and returns the vmafx-server Prometheus metrics.
@@ -78,6 +97,7 @@ type Metrics struct {
 func NewMetrics(reg prometheus.Registerer) *Metrics {
 	factory := promauto.With(reg)
 	return &Metrics{
+		reg: reg,
 		ScoreRequests: factory.NewCounter(prometheus.CounterOpts{
 			Namespace: "vmafx",
 			Subsystem: "server",
@@ -147,30 +167,37 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 // between pkg/observability and the cmd/vmafx-controller sub-packages
 // while folding the prior nodeRegistrySource narrow interface into the
 // reusable registry.Counter (ADR-0925).
+//
+// The method is idempotent: a second call is a no-op (ADR-1014).
 func (m *Metrics) SetControllerSources(q jobQueueSource, r registry.Counter) {
-	if q != nil {
-		prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Namespace: "vmafx",
-			Subsystem: "controller",
-			Name:      "jobs_pending",
-			Help:      "Current number of PENDING jobs in the queue.",
-		}, func() float64 { return float64(q.PendingCount()) }))
+	m.sourcesOnce.Do(func() {
+		factory := promauto.With(m.reg)
+		if q != nil {
+			factory.NewGaugeFunc(prometheus.GaugeOpts{
+				Namespace: "vmafx",
+				Subsystem: "controller",
+				Name:      "jobs_pending",
+				Help:      "Current number of PENDING jobs in the queue.",
+			}, func() float64 { return float64(q.PendingCount()) })
 
-		prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Namespace: "vmafx",
-			Subsystem: "controller",
-			Name:      "jobs_running",
-			Help:      "Current number of RUNNING jobs in the queue.",
-		}, func() float64 { return float64(q.RunningCount()) }))
-	}
+			factory.NewGaugeFunc(prometheus.GaugeOpts{
+				Namespace: "vmafx",
+				Subsystem: "controller",
+				Name:      "jobs_running",
+				Help:      "Current number of RUNNING jobs in the queue.",
+			}, func() float64 { return float64(q.RunningCount()) })
+		}
 
-	if r != nil {
-		prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Namespace: "vmafx",
-			Subsystem: "controller",
-			Name:      "nodes_live",
-			Help:      "Current number of registered (live) vmafx-node instances.",
-		}, func() float64 { return float64(r.Count()) }))	}}
+		if r != nil {
+			factory.NewGaugeFunc(prometheus.GaugeOpts{
+				Namespace: "vmafx",
+				Subsystem: "controller",
+				Name:      "nodes_live",
+				Help:      "Current number of registered (live) vmafx-node instances.",
+			}, func() float64 { return float64(r.Count()) })
+		}
+	})
+}
 
 // WaitForShutdown blocks until SIGTERM or SIGINT is received, then cancels
 // the context returned by NewShutdownContext and waits up to timeout for the
@@ -194,15 +221,13 @@ func WaitForShutdown(ctx context.Context, log *slog.Logger, timeout time.Duratio
 		log.Info("context cancelled; initiating shutdown")
 	}
 
-	// Allow callers timeout to finish gracefully, but return early if the
-	// context is already done (servers stopped before the deadline expires).
-	// Previously this was an unconditional <-deadline which stalled every
-	// clean shutdown for the full GracefulShutdownTimeout regardless of
-	// whether all in-flight work had already completed (r3-signal finding).
-	select {
-	case <-time.After(timeout):
-	case <-ctx.Done():
-	}
+	// Allow callers timeout to finish gracefully.
+	// Use time.NewTimer so the timer is stopped if we return early (e.g. via
+	// context cancellation on the outer ctx), preventing a goroutine-timer
+	// leak.  ADR-1017.
+	t := time.NewTimer(timeout)
+	defer t.Stop()
+	<-t.C
 }
 
 // NewShutdownContext returns a context that is cancelled on SIGTERM / SIGINT.

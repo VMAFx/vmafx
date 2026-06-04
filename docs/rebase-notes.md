@@ -44333,3 +44333,17 @@ controller's own retry loop already does this.
 No rebase impact. WaitForShutdown drain-window change only affects shutdown timing
 (returns up to 30s earlier on clean shutdown). GracefulStop hard-stop fallback only
 fires on stuck streaming RPCs. No public API, ABI, or golden assertion touched.
+
+---
+
+### fix(observability): Prometheus registry isolation + timer leak (ADR-1014)
+
+**Branch**: fix/r5-prometheus-registry
+
+no rebase impact: all changes are in `pkg/observability/observability.go` and its test
+file. No C source, public header, upstream-mirrored Python, or Netflix golden-assertion
+file is touched. The struct gains two private fields (`reg prometheus.Registerer`,
+`sourcesOnce sync.Once`) which are zero-valued before `NewMetrics` is called — no caller
+needs updating. The `WaitForShutdown` `time.After` → `time.NewTimer` + `defer Stop()`
+change is behaviour-equivalent; the only observable difference is the timer being
+released promptly on early return rather than at GC time.

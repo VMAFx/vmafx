@@ -158,67 +158,67 @@ type mockNodeRegistry struct{ n int }
 func (m *mockNodeRegistry) Count() int { return m.n }
 
 // TestSetControllerSources_RegistersGauges verifies the three gauge funcs
-// (jobs_pending, jobs_running, nodes_live) register against the default
-// registry and report the mock-supplied values.
-//
-// We can't easily swap the global prometheus.DefaultRegisterer; instead
-// we exercise the code path and confirm no panic + the gauges are visible
-// from the default gatherer.  To avoid duplicate-registration panics on
-// repeat runs we wrap the call in defer/recover and treat AlreadyRegistered
-// as benign — the test environment runs serially per package.
+// (jobs_pending, jobs_running, nodes_live) register against the ISOLATED
+// registry that was passed to NewMetrics (not the global DefaultRegisterer),
+// and report the mock-supplied values.  ADR-1014.
 func TestSetControllerSources_RegistersGauges(t *testing.T) {
-	// Cannot mark Parallel — global prometheus registry has process-scope.
+	t.Parallel()
 	q := &mockJobQueue{pending: 3, running: 1}
 	r := &mockNodeRegistry{n: 5}
 
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
-
-	defer func() {
-		// Recover any AlreadyRegistered panic that comes from a prior
-		// run leaving gauges in the default registerer.
-		if rec := recover(); rec != nil {
-			t.Logf("SetControllerSources recovered: %v (benign if repeat run)", rec)
-		}
-	}()
 	m.SetControllerSources(q, r)
 
-	// The gauges register on prometheus.DefaultGatherer.  Look them up.
-	families, err := prometheus.DefaultGatherer.Gather()
+	// Gauges must be visible on the ISOLATED registry, not DefaultGatherer.
+	families, err := reg.Gather()
 	if err != nil {
 		t.Fatalf("Gather: %v", err)
 	}
 	gotMetrics := map[string]float64{}
 	for _, fam := range families {
-		for _, m := range fam.GetMetric() {
-			if g := m.GetGauge(); g != nil {
+		for _, metric := range fam.GetMetric() {
+			if g := metric.GetGauge(); g != nil {
 				gotMetrics[fam.GetName()] = g.GetValue()
 			}
 		}
 	}
-	if v, ok := gotMetrics["vmafx_controller_jobs_pending"]; ok && v != 3 {
+	if v, ok := gotMetrics["vmafx_controller_jobs_pending"]; !ok {
+		t.Error("vmafx_controller_jobs_pending missing from isolated registry")
+	} else if v != 3 {
 		t.Errorf("jobs_pending = %v, want 3", v)
 	}
-	if v, ok := gotMetrics["vmafx_controller_jobs_running"]; ok && v != 1 {
+	if v, ok := gotMetrics["vmafx_controller_jobs_running"]; !ok {
+		t.Error("vmafx_controller_jobs_running missing from isolated registry")
+	} else if v != 1 {
 		t.Errorf("jobs_running = %v, want 1", v)
 	}
-	if v, ok := gotMetrics["vmafx_controller_nodes_live"]; ok && v != 5 {
+	if v, ok := gotMetrics["vmafx_controller_nodes_live"]; !ok {
+		t.Error("vmafx_controller_nodes_live missing from isolated registry")
+	} else if v != 5 {
 		t.Errorf("nodes_live = %v, want 5", v)
 	}
+}
+
+// TestSetControllerSources_Idempotent verifies a second call is a no-op
+// rather than a panic (sync.Once guard, ADR-1014).
+func TestSetControllerSources_Idempotent(t *testing.T) {
+	t.Parallel()
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg)
+	q := &mockJobQueue{pending: 1}
+	r := &mockNodeRegistry{n: 2}
+	m.SetControllerSources(q, r) // first call — registers gauges
+	m.SetControllerSources(q, r) // second call — must not panic or double-register
 }
 
 // TestSetControllerSources_NilSources verifies the function safely handles
 // nil queue and registry sources (no panic, no registration).
 func TestSetControllerSources_NilSources(t *testing.T) {
-	// Cannot mark Parallel — touches global registry.
+	t.Parallel()
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
-	defer func() {
-		if rec := recover(); rec != nil {
-			t.Errorf("SetControllerSources(nil, nil) panicked: %v", rec)
-		}
-	}()
-	m.SetControllerSources(nil, nil)
+	m.SetControllerSources(nil, nil) // must not panic
 }
 
 // TestNewShutdownContext_CancelsCleanly verifies the context is cancellable
