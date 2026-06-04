@@ -44793,3 +44793,11 @@ and new function `vmaf_context_get_backend()`). No upstream-mirrored code is
 modified; no existing entry points are changed. ADR-0804.
 
 ---
+
+## fix/dev-cuda-gpu-passthrough
+
+no rebase impact: dev/docker-compose.yml only; changes default `runtime:` and
+expands `capabilities` for the NVIDIA passthrough. No C sources, public API, or
+upstream-mirrored files are touched. ADR-1053.
+
+---

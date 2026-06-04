@@ -128,7 +128,8 @@ services:
 
     # NVIDIA Container Toolkit runtime — requires nvidia runtime configured on host.
     # See: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
-    runtime: ${CONTAINER_RUNTIME:-runc}
+    # Hosts without the NVIDIA Container Toolkit can override: CONTAINER_RUNTIME=runc docker compose up -d
+    runtime: ${CONTAINER_RUNTIME:-nvidia}
 
     deploy:
       resources:
@@ -136,7 +137,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [gpu, compute, utility, video, graphics]
 
     # Intel Arc (SYCL via DRI) + AMD ROCm (HIP via /dev/kfd).
     #
@@ -236,7 +237,16 @@ services:
         target: /dev/dri
         read_only: true
 
-    runtime: ${CONTAINER_RUNTIME:-runc}
+    # Hosts without the NVIDIA Container Toolkit can override: CONTAINER_RUNTIME=runc docker compose up -d
+    runtime: ${CONTAINER_RUNTIME:-nvidia}
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility, video, graphics]
 
     # See dev-mcp service above (ADR-0541) for the /dev/dri cgroup +
     # /dev/kfd rationale.
