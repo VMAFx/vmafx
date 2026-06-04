@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/r7-vendored-svm-realloc-oom (2026-06-04)
+
+**Files touched:**
+`core/src/svm.cpp`
+
+No rebase impact on upstream Netflix/vmaf: the three call sites are in the libsvm
+vendored code that Netflix also vendors verbatim. If Netflix ever updates their
+libsvm copy, the realloc fix must be re-applied to the new version.
+
+Rebase invariant: when porting any upstream libsvm update, grep for
+`realloc(label,\|realloc(count,\|realloc(h->data,` and apply the safe-realloc idiom.
+
+---
+
 ## fix/r7-mcp-precision-subsample-drift (2026-06-04)
 
 **Files touched:**
