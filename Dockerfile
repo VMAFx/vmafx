@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1.7
-# Base: NVIDIA CUDA ≥13.2 devel on Ubuntu 24.04. Non-conservative pin per ADR D27 —
+# Base: NVIDIA CUDA ≥13.3 devel on Ubuntu 24.04. Non-conservative pin per ADR D27 —
 # we follow latest-stable CUDA aggressively because the fork's value is GPU perf on
 # current hardware; being one release behind costs ~10-30% on kernel-bound stages.
-# Digest-pinned for reproducibility of *this* snapshot; bump both tag + digest on
-# every stable CUDA release. Gives us nvcc + cudart-dev without Ubuntu's stale
-# 'nvidia-cuda-toolkit' apt package (24.04 still ships CUDA 12.x).
-FROM nvidia/cuda:13.2.1-devel-ubuntu24.04@sha256:44a9504c6dfb50b1241464241b02a93871928f373de6f5a644cf5fe9f080aa63
+# Tag-pinned to the latest stable CUDA release; add a @sha256 digest once the
+# 13.3.0 manifest digest stabilises. Gives us nvcc + cudart-dev without Ubuntu's
+# stale 'nvidia-cuda-toolkit' apt package (24.04 still ships CUDA 12.x).
+FROM nvidia/cuda:13.3.0-devel-ubuntu24.04
 
 ARG NV_CODEC_TAG="876af32a202d0de83bd1d36fe74ee0f7fcf86b0d"
 ARG FFMPEG_TAG=n8.1
@@ -127,7 +127,7 @@ RUN set -e; \
 # `--enable-libnpp` is omitted: FFmpeg n8.1's libnpp probe carries an
 # explicit `die "ERROR: libnpp support is deprecated, version 13.0 and up
 # are not supported"` (configure:7335-7336) that fires on the base image's
-# CUDA 13.2 libnpp. The npp_*_filter set (scale_npp, transpose_npp, etc.)
+# CUDA 13.x libnpp. The npp_*_filter set (scale_npp, transpose_npp, etc.)
 # is unrelated to VMAF; cuvid + nvdec + nvenc + libvmaf-cuda are what we
 # actually use here. Revisit once we move to an FFmpeg release that
 # supports CUDA 13 libnpp upstream.

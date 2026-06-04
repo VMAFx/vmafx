@@ -357,19 +357,18 @@ jobs:
           sudo ldconfig
 
       # ---------- CUDA toolkit ----------
-      # Bumped to CUDA 13.2.0 (ADR-0603). Ubuntu 26.04 (Resolute Raccoon)
+      # Bumped to CUDA 13.3.0 (originally 13.2.0 per ADR-0603). Ubuntu 26.04
       # ships glibc 2.43 whose bits/mathcalls.h declares rsqrt(double) with
       # noexcept(true). CUDA 13.0/13.1 crt/math_functions.h redeclares it
       # without noexcept, causing a C2059/C2085 cascade from NVCC. CUDA 13.2
-      # aligns its noexcept annotation with glibc 2.43 and resolves the
-      # conflict. 13.2 still drops sm_50/60/70 (Maxwell/Pascal/Volta);
-      # meson.build already guards the sm_50 gencode with a `<13` version
-      # check. Minimum driver for 13.x is >= 580.
+      # fixed that; 13.3 retains the fix. sm_50/60/70 still absent (dropped
+      # from 13.x); meson.build guards sm_50 gencode with a `<13` check.
+      # Minimum driver for 13.x is >= 580.
       - name: Install CUDA toolkit
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@3d45d157f327c09c04b50ee6ccdea2d9d017ec76  # v0.2.35
         with:
-          cuda: '13.2.0'
+          cuda: '13.3.0'
           method: network
           sub-packages: '["nvcc", "cudart-dev"]'
 
@@ -716,7 +715,7 @@ jobs:
   # on Node.js 20 — see ADR-0635). Functionally identical: runs
   # vcvarsall.bat and exports PATH/INCLUDE/LIB for cl.exe.
   # CUDA toolkit is installed directly from NVIDIA's Windows network
-  # installer, pinned to the same 13.2.0 release as the Linux CUDA
+  # installer, pinned to the same 13.3.0 release as the Linux CUDA
   # legs. The Linux legs still use Jimver/cuda-toolkit; the Windows
   # leg avoids that action because v0.2.35 can exit before setup on
   # current windows-2025 images (ADR-0664).
@@ -785,9 +784,9 @@ jobs:
           arch: x64
 
       # ---------- CUDA toolkit (CUDA leg only) ----------
-      # Same pin as the Linux CUDA legs: CUDA 13.2.0, Maxwell/Pascal/Volta
+      # Same pin as the Linux CUDA legs: CUDA 13.3.0, Maxwell/Pascal/Volta
       # gencodes dropped (meson.build already guards the sm_50 emit on
-      # `version < 13`). Bumped from 13.0.0 per ADR-0603.
+      # `version < 13`). Originally bumped from 13.0.0 per ADR-0603.
       - name: Install CUDA toolkit (windows)
         if: matrix.backend == 'cuda'
         shell: pwsh
@@ -795,8 +794,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $ProgressPreference = 'SilentlyContinue'
 
-          $cudaVersion = '13.2.0'
-          $cudaMajorMinor = '13.2'
+          $cudaVersion = '13.3.0'
+          $cudaMajorMinor = '13.3'
           $url = "https://developer.download.nvidia.com/compute/cuda/$cudaVersion/network_installers/cuda_${cudaVersion}_windows_network.exe"
           $installer = Join-Path $env:RUNNER_TEMP "cuda_${cudaVersion}_windows_network.exe"
 
