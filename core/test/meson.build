@@ -946,7 +946,11 @@ endif
 # test itself also gates on simd_test_have_avx512() at runtime so it
 # skips cleanly on hosts without AVX-512.
 motion_avx512_parity_test_archs = ['x86_64', 'x86']
-if motion_avx512_parity_test_archs.contains(host_machine.cpu_family())
+# Also guard on is_avx512_enabled: when enable_avx512=false the AVX-512
+# kernel objects are absent from platform_specific_cpu_objects, so
+# linking test_motion_avx512_parity would fail with unresolved symbols.
+# is_avx512_enabled is defined in src/meson.build (subdir called first).
+if motion_avx512_parity_test_archs.contains(host_machine.cpu_family()) and is_avx512_enabled
 test_motion_avx512_parity = executable('test_motion_avx512_parity',
     ['test.c', 'test_motion_avx512_parity.c',
      '../src/mem.c', '../src/picture.c', '../src/ref.c',
@@ -2415,7 +2419,7 @@ if motion_v2_simd_test_archs.contains(host_machine.cpu_family())
 test('test_motion_v2_simd', test_motion_v2_simd, suite : ['fast', 'simd'])
 endif
 
-if motion_avx512_parity_test_archs.contains(host_machine.cpu_family())
+if motion_avx512_parity_test_archs.contains(host_machine.cpu_family()) and is_avx512_enabled
 test('test_motion_avx512_parity', test_motion_avx512_parity, suite : ['fast', 'simd'])
 endif
 

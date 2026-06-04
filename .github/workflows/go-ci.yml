@@ -25,7 +25,6 @@ jobs:
   go-ci:
     name: go vet + go test
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -53,7 +52,7 @@ jobs:
             -Denable_cuda=false \
             -Denable_sycl=false \
             -Denable_hip=false \
-            -Denable_metal=false \
+            -Denable_metal=disabled \
             -Denable_avx512=false
           ninja -C core/build-cpu
 

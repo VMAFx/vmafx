@@ -44663,3 +44663,10 @@ cast in `accum_row_scalar_8` / `accum_row_scalar_16` requires a
 coordinated update to both the typedef and the cast sites.
 
 ---
+
+## fix/ci-go-rust-red-adr1041
+
+no rebase impact: CI configuration change (go-ci.yml) and test/meson.build build guard.
+Neither touches public API or upstream-mirrored C code.
+
+---
