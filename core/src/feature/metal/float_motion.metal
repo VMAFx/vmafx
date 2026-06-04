@@ -41,10 +41,9 @@ constant float FILT[5] = {
 };
 
 #define HALF_FW 2
-#define TILE_W  20   /* 16 + 2*2 */
-#define TILE_H  16
-/* Vertical filter output needs full tile width but only WG height rows. */
-/* s_vert: TILE_H × TILE_W (no extra pitch needed — TILE_W = 20 is even). */
+#define TILE_W  20   /* 16 + 2*HALF_FW */
+#define TILE_H  20   /* 16 + 2*HALF_FW: vertical halo required for 5-tap filter */
+/* s_vert: TILE_H × TILE_W. */
 #define TILE_PITCH_V 20
 
 static inline int skip_mirror(int idx, int sup) {
@@ -76,11 +75,11 @@ kernel void float_motion_kernel_8bpc(
     const int height      = (int)dim.y;
     const int compute_sad = (int)strides.w;
 
-    /* --- Phase 1: load 20×16 ref tile into shared (vertical halo on y). */
+    /* --- Phase 1: load 20×20 ref tile into shared (halo on x and y). */
     threadgroup float s_tile[TILE_H * TILE_PITCH_V];
     {
         const int wg_ox = (int)bid.x * 16 - HALF_FW;
-        const int wg_oy = (int)bid.y * 16;  /* no y halo for vertical-first */
+        const int wg_oy = (int)bid.y * 16 - HALF_FW;  /* 2-row halo for 5-tap vertical filter */
         const int n_elems = TILE_W * TILE_H;
         const int wg_size = 16 * 16;
         for (int i = (int)lid; i < n_elems; i += wg_size) {
@@ -98,16 +97,15 @@ kernel void float_motion_kernel_8bpc(
     threadgroup float s_vert[TILE_H * TILE_PITCH_V];
     {
         const int col = (int)lid2.x;  /* 0..15 */
-        const int wg_oy = (int)bid.y * 16;
-        /* Iterate over rows 0..TILE_H-1 in the tile (all 16 rows). */
+        const int wg_oy = (int)bid.y * 16 - HALF_FW;  /* halo origin, same as tile load */
+        /* Iterate over all TILE_H rows (output rows HALF_FW..TILE_H-1-HALF_FW are the
+         * 16 WG rows needed for Phase 3; halo rows are consumed here but not written out). */
         for (int row = (int)lid2.y; row < TILE_H; row += 16) {
             const int tile_col = col + HALF_FW;  /* offset into tile */
             float acc = 0.0f;
             for (int k = 0; k < 5; ++k) {
                 const int src_row = skip_mirror(wg_oy + row + (k - 2), height);
-                /* src_row is absolute; map back to tile-relative. */
-                /* The tile only covers TILE_H rows from wg_oy,
-                 * so we must read s_tile relative to wg_oy. */
+                /* src_row is absolute; map back to tile-relative (wg_oy is halo origin). */
                 const int tile_row = src_row - wg_oy;
                 /* Clamp to tile bounds. */
                 const int tr = max(0, min(tile_row, TILE_H - 1));
@@ -118,10 +116,14 @@ kernel void float_motion_kernel_8bpc(
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-    /* --- Phase 3: horizontal filter, write blurred, accumulate SAD. */
+    /* --- Phase 3: horizontal filter, write blurred, accumulate SAD.
+     * The 16 output rows within the WG tile correspond to s_vert rows
+     * HALF_FW .. TILE_H-1-HALF_FW (== 2..17); lid2.y addresses these as
+     * ty = lid2.y + HALF_FW so that the horizontal pass reads from the
+     * vertically-filtered rows that align with gid.y. */
     float my_sad = 0.0f;
     if ((int)gid.x < width && (int)gid.y < height) {
-        const int ty = (int)lid2.y;
+        const int ty = (int)lid2.y + HALF_FW;
         const int tx = (int)lid2.x + HALF_FW;
         float blurred = 0.0f;
         for (int k = 0; k < 5; ++k) {
@@ -172,7 +174,7 @@ kernel void float_motion_kernel_16bpc(
     threadgroup float s_tile[TILE_H * TILE_PITCH_V];
     {
         const int wg_ox = (int)bid.x * 16 - HALF_FW;
-        const int wg_oy = (int)bid.y * 16;
+        const int wg_oy = (int)bid.y * 16 - HALF_FW;  /* 2-row halo for 5-tap vertical filter */
         const int n_elems = TILE_W * TILE_H;
         const int wg_size = 16 * 16;
         for (int i = (int)lid; i < n_elems; i += wg_size) {
@@ -190,7 +192,7 @@ kernel void float_motion_kernel_16bpc(
     threadgroup float s_vert[TILE_H * TILE_PITCH_V];
     {
         const int col = (int)lid2.x;
-        const int wg_oy = (int)bid.y * 16;
+        const int wg_oy = (int)bid.y * 16 - HALF_FW;  /* halo origin, same as tile load */
         for (int row = (int)lid2.y; row < TILE_H; row += 16) {
             const int tile_col = col + HALF_FW;
             float acc = 0.0f;
@@ -207,7 +209,7 @@ kernel void float_motion_kernel_16bpc(
 
     float my_sad = 0.0f;
     if ((int)gid.x < width && (int)gid.y < height) {
-        const int ty = (int)lid2.y;
+        const int ty = (int)lid2.y + HALF_FW;  /* offset by halo to reach WG output rows */
         const int tx = (int)lid2.x + HALF_FW;
         float blurred = 0.0f;
         for (int k = 0; k < 5; ++k) {

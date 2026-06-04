@@ -23,17 +23,7 @@
 #include <hip/hip_runtime.h>
 #include "hip/integer_adm_hip.h"
 #include "common.h"
-
-{
-    int k = __clz(temp); // built in for cuda
-    k = 17 - k;
-    temp = (temp + (1 << (k - 1))) >> k;
-    *x = k;
-    return temp;
-}
-
-// cos(pi/180)^2 precomputed — avoids per-thread cosf() calls
-static constexpr float COS_1DEG_SQ = 0.99969541f; // cosf(M_PI/180)^2
+#include "adm_decouple_inline.hip"
 
 extern "C" {
 

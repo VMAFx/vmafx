@@ -92,6 +92,26 @@ favour of the GPU-side barrier — track this as a follow-up optimization.
 
 ---
 
+## fix(hip,metal): HIP adm_decouple dangling body + VIF wavefront carry + Metal motion vertical halo (ADR-1030, 2026-06-04)
+
+**Files touched:**
+`core/src/feature/hip/integer_adm/adm_decouple.hip`,
+`core/src/feature/hip/integer_vif/vif_statistics.hip`,
+`core/src/feature/metal/float_motion.metal`,
+`docs/adr/1030-hip-metal-kernel-correctness.md`,
+`changelog.d/fixed/hip-metal-kernel-correctness-1030.md`
+
+Rebase impact: low. These are self-contained correctness fixes inside GPU-only
+kernel files. No public C API, no CPU feature extractor, no CLI flag, and no
+Netflix golden assertion is touched. Any branch that also modifies
+`adm_decouple.hip` will need to re-apply the dangling-body removal; branches
+touching `vif_statistics.hip` wavefront_reduce_i64 will need to keep the
+integer-addition reassembly. Metal `float_motion.metal` conflicts are
+straightforward to resolve by preserving `TILE_H=20` and the
+`- HALF_FW` origin offsets.
+
+---
+
 ## docs/vulkan-overview-mark-removed-adr0726 (2026-06-04)
 
 **Files touched:**
