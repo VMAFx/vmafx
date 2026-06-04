@@ -38,7 +38,7 @@ export PATH="$(brew --prefix llvm)/bin:$PATH"
 ## Build
 
 ```bash
-cd libvmaf
+cd core
 meson setup ../build
 ninja -C ../build
 ```

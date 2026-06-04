@@ -91,7 +91,7 @@ vulkaninfo --summary | head -40
 ## Building libvmaf
 
 ```bash
-meson setup libvmaf core/build --buildtype release \
+meson setup core core/build --buildtype release \
   -Denable_vulkan=enabled \
   -Denable_cuda=false -Denable_sycl=false
 ninja -C core/build

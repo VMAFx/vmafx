@@ -24,7 +24,7 @@
  *
  * When libvmaf was built without `-Denable_mcp=true`, every entry
  * point still returns -ENOSYS unconditionally; the linker resolves
- * the symbols against the same stub TU at libvmaf/src/mcp/mcp.c.
+ * the symbols against the same stub TU at core/src/mcp/mcp.c.
  *
  * Threading model (per ADR-0128 + Research-0005):
  *   - The host calls `vmaf_mcp_init` after `vmaf_init` and before

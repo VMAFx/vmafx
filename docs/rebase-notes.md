@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs(post-rename): scrub residual libvmaf/ paths (ADR-0700)
+
+no rebase impact: doc-only path corrections. All changed files are under
+`docs/`, `AGENTS.md`, `CONTRIBUTING.md`, and one comment in
+`core/include/libvmaf/libvmaf_mcp.h`. No C source files changed. No public
+headers changed (the comment in libvmaf_mcp.h is prose, not an include
+path). No Netflix golden assertions touched.
+
+---
+
 ## docs(usage,api): correct backend auto-priority + Doxygen drift in public headers
 
 **Files touched**: `docs/usage/vmafx-cli.md`, `docs/usage/vmaf-tune-score-backend.md`,

@@ -224,7 +224,7 @@ To create a subclass of `FeatureExtractor` in native Python code, a minimalist e
 
 #### Python Calling `libvmaf` in C
 
-Very often the feature extractor implementation is in the C library `libvmaf`. In this case we simply create a thin Python `FeatureExtractor` subclass to call the `vmaf` command line executable. For more information on implementing a new feature extractor in `libvmaf`, refer to [this section](libvmaf/README.md#contributing-a-new-vmaffeatureextractor). An example to follow is the PSNR-HVS feature extractor (see the [code diff](https://github.com/Netflix/vmaf/commit/ce2ad1af0b1ba8dd1fbae3e03da0329f078e6bc6)). The following steps discuss the implementation strategy.
+Very often the feature extractor implementation is in the C library `libvmaf`. In this case we simply create a thin Python `FeatureExtractor` subclass to call the `vmaf` command line executable. For more information on implementing a new feature extractor in `libvmaf`, refer to [this section](core/README.md#contributing-a-new-vmaffeatureextractor). An example to follow is the PSNR-HVS feature extractor (see the [code diff](https://github.com/Netflix/vmaf/commit/ce2ad1af0b1ba8dd1fbae3e03da0329f078e6bc6)). The following steps discuss the implementation strategy.
 
   - Add a new feature extractor implementation `vmaf_fex_psnr_hvs` in file `core/src/feature/third_party/xiph/psnr_hvs.c`. It is recommended to put the code under directory `third_party/[org]`.
   - In `core/src/feature/feature_extractor.c`:

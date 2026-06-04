@@ -7,7 +7,7 @@ Map of the repository, from the top down.
 
 ```text
 vmaf/
-├── libvmaf/            # The C library + CLI. The product.
+├── core/               # The C library + CLI. The product. (was libvmaf/, ADR-0700)
 │   ├── src/            # metric engine, feature extractors
 │   │   ├── feature/    # per-feature CPU kernels
 │   │   │   ├── x86/    # AVX2 / AVX-512 SIMD paths
@@ -58,7 +58,7 @@ vmaf/
 | Concern                                | Home                                          |
 | -------------------------------------- | --------------------------------------------- |
 | Add a SIMD path                        | `core/src/feature/<isa>/`                  |
-| Add a GPU backend                      | `core/src/<backend>/` + `src/feature/<backend>/` |
+| Add a GPU backend                      | `core/src/<backend>/` + `core/src/feature/<backend>/` |
 | Add a feature extractor                | `core/src/feature/`                        |
 | Ship a new VMAF model                  | `model/` (JSON/pkl) or `model/tiny/` (ONNX)   |
 | Train a new tiny model                 | `ai/src/vmaf_train/models/`                   |

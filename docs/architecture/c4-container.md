@@ -54,13 +54,13 @@ Rel(gh, testdata, "CI validates snapshot JSONs against backends")
 
 | Container | Language | Responsibility | AGENTS.md |
 | --- | --- | --- | --- |
-| libvmaf | C11 | Metric engine, feature extractors, backend dispatch, public API | [../../libvmaf/AGENTS.md](../../libvmaf/AGENTS.md) |
+| libvmaf | C11 | Metric engine, feature extractors, backend dispatch, public API | [../../core/AGENTS.md](../../core/AGENTS.md) |
 | core/src/dnn | C11 | Tiny-AI inference layer (loader + op-allowlist + ORT session) | [../../core/src/dnn/AGENTS.md](../../core/src/dnn/AGENTS.md) |
 | core/src/feature | C11 + SIMD + CUDA + SYCL | Per-feature scalar + vector + GPU kernels | [../../core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md) |
 | core/src/cuda | C + CUDA | CUDA backend runtime (picture, stream, ring buffer) | [../../core/src/cuda/AGENTS.md](../../core/src/cuda/AGENTS.md) |
 | core/src/sycl | C++ + SYCL/DPC++ | SYCL backend runtime (USM, dmabuf) | [../../core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) |
-| libvmaf/tools | C11 | `vmaf` + `vmaf_bench` CLI binaries | [../../core/tools/AGENTS.md](../../core/tools/AGENTS.md) |
-| libvmaf/test | C11 | C unit tests (µnit-style) | [../../core/test/AGENTS.md](../../core/test/AGENTS.md) |
+| core/tools | C11 | `vmaf` + `vmaf_bench` CLI binaries | [../../core/tools/AGENTS.md](../../core/tools/AGENTS.md) |
+| core/test | C11 | C unit tests (µnit-style) | [../../core/test/AGENTS.md](../../core/test/AGENTS.md) |
 | ai/ | Python + PyTorch + Lightning | Tiny-AI training + ONNX export (`vmaf-train` CLI) | [../../ai/AGENTS.md](../../ai/AGENTS.md) |
 | mcp-server/vmaf-mcp | Python JSON-RPC | MCP tool surface | [../../mcp-server/AGENTS.md](../../mcp-server/AGENTS.md) |
 | python/vmaf | Python | Classic SVM harness + bindings + golden-data tests | [../../python/vmaf/AGENTS.md](../../python/vmaf/AGENTS.md) |

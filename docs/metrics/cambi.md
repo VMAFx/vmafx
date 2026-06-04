@@ -176,7 +176,7 @@ top-K spatial pool stay on the host. Cross-backend gate runs at `places=4`.
 
 ```bash
 # Build with CUDA enabled
-meson setup build-cuda libvmaf -Denable_cuda=true
+meson setup build-cuda core -Denable_cuda=true
 ninja -C build-cuda
 
 # Run with --backend cuda
@@ -198,7 +198,7 @@ versus CPU `cambi` is verified at `places=4` per ADR-0214.
 
 ```bash
 # Build with Vulkan enabled
-meson setup build-vulkan libvmaf -Denable_vulkan=enabled
+meson setup build-vulkan core -Denable_vulkan=enabled
 ninja -C build-vulkan
 
 # Run with --backend vulkan

@@ -16,15 +16,15 @@ Choose your platform below, or see [Building on Windows](building-on-windows.md)
 
 ```bash
 # CPU only
-meson setup build libvmaf -Denable_cuda=false -Denable_sycl=false
+meson setup build core -Denable_cuda=false -Denable_sycl=false
 ninja -C build
 
 # With CUDA
-meson setup build libvmaf -Denable_cuda=true -Denable_sycl=false
+meson setup build core -Denable_cuda=true -Denable_sycl=false
 ninja -C build
 
 # With SYCL (Intel oneAPI)
-meson setup build libvmaf -Denable_cuda=false -Denable_sycl=true
+meson setup build core -Denable_cuda=false -Denable_sycl=true
 ninja -C build
 ```
 

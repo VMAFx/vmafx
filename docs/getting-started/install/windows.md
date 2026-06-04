@@ -19,7 +19,7 @@ After install, open a **x64 Native Tools Command Prompt for VS 2022** so
 that `cl.exe` and the Windows SDK are on `PATH`. From there:
 
 ```cmd
-cd libvmaf
+cd core
 meson setup ..\build --buildtype=release
 ninja -C ..\build
 ```

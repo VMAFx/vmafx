@@ -34,7 +34,7 @@ Assumes you want the installed artefacts at `C:/vmaf-install` — change the
 ```bash
 cd <vmaf-repo-root>
 mkdir C:/vmaf-install
-meson setup libvmaf core/build \
+meson setup core core\build \
   --buildtype release \
   --default-library static \
   --prefix C:/vmaf-install

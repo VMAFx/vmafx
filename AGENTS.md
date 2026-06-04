@@ -255,7 +255,7 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
     drift, locale leaks); the container eliminates that whole class.
     - **Before any non-trivial vmaf / vmaf-tune / ai / MCP run**:
       rebuild the container if its image predates the last `master`
-      sync that touched anything under `libvmaf/`, `mcp-server/`,
+      sync that touched anything under `core/`, `mcp-server/`,
       `ai/`, `tools/vmaf-tune/`, or `dev/`. One-liner:
       `docker compose --project-directory $(git rev-parse --show-toplevel)
       -f dev/docker-compose.yml build dev-mcp && docker compose
@@ -370,7 +370,7 @@ linked AGENTS.md before resolving conflicts.
   `libvmaf_mcp.h`, audit-first `-ENOSYS` stubs in
   `core/src/mcp/mcp.c`, `enable_mcp` + 3 transport sub-flags. T5-2b
   (cJSON + mongoose + transport bodies) is open. See
-  [libvmaf/AGENTS.md §Rebase-sensitive invariants](libvmaf/AGENTS.md).
+  [core/AGENTS.md §Rebase-sensitive invariants](core/AGENTS.md).
 - **HIP scaffold (T7-10, ADR-0212 placeholder, PR #200)** —
   audit-first AMD HIP backend scaffold mirroring Vulkan T5-1 /
   ADR-0175. Public `libvmaf_hip.h`, stub kernels, `enable_hip` meson
@@ -386,7 +386,7 @@ linked AGENTS.md before resolving conflicts.
   requires (1) `FEATURE_METRICS` entry, (2) `FEATURE_TOLERANCE` entry
   if it relaxes places=4, (3) row in
   `docs/development/cross-backend-gate.md`. See
-  [libvmaf/AGENTS.md](libvmaf/AGENTS.md).
+  [core/AGENTS.md](core/AGENTS.md).
 - **FastDVDnet temporal pre-filter (T6-7, ADR-0215 placeholder,
   PR #203)** — 5-frame window pre-filter feeding ssim/ms_ssim.
 - **psnr chroma Vulkan (T3-15(b), ADR-0216 placeholder, PR #204)**

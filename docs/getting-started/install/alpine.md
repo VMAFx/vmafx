@@ -20,7 +20,7 @@ apk add --no-cache \
 ## Build
 
 ```bash
-cd libvmaf
+cd core
 meson setup ../build
 ninja -C ../build
 ```

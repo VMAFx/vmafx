@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Using VMAF with FFmpeg
 
-After [installing](../../libvmaf/README.md#install) `libvmaf`, you can use it with [FFmpeg](http://ffmpeg.org/). Under the FFmpeg directory, configure, build and install FFmpeg with:
+After [installing](../../core/README.md#install) `libvmaf`, you can use it with [FFmpeg](http://ffmpeg.org/). Under the FFmpeg directory, configure, build and install FFmpeg with:
 
 ```bash
 ./configure --enable-libvmaf

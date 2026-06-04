@@ -74,7 +74,7 @@ requires Ice Lake or newer.
 ## Build
 
 ```bash
-cd libvmaf
+cd core
 meson setup ../build -Denable_cuda=true -Denable_sycl=true
 ninja -C ../build
 ```
