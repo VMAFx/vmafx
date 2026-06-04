@@ -1,10 +1,13 @@
 # MCP Server Release Channel
 
-The fork ships **two** MCP server flavours:
+The fork ships **three** MCP server flavours:
 
 1. The standalone Python server under `mcp-server/vmaf-mcp/`
    ([`docs/mcp/tools.md`](tools.md)).
-2. The embedded server inside `libvmaf` itself, exposed via the
+2. The standalone Go binary `vmafx-mcp` under `cmd/vmafx-mcp/` —
+   same 15 tools, byte-for-byte schema parity with the Python server.
+   ([`docs/mcp/index.md#go-implementation-vmafx-mcp`](index.md#go-implementation-vmafx-mcp)).
+3. The embedded server inside `libvmaf` itself, exposed via the
    `libvmaf_mcp.h` C surface
    ([`docs/mcp/embedded.md`](embedded.md)).
 
@@ -60,6 +63,16 @@ For a `vmaf-mcp` Python package release:
   `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`.
 - Publish and sign through the same release workflow used for the
   rest of the fork.
+
+For the `vmafx-mcp` Go binary release:
+
+- Build from `cmd/vmafx-mcp/` with `go build -o vmafx-mcp ./cmd/vmafx-mcp`.
+- Run `TestVmafScoreTool` and `TestGoVsPythonOutputParity` to confirm
+  byte-for-byte schema parity with the Python server.
+- Confirm tool count is 15 (matching the Python surface) before tagging.
+- Binary artifact is published via the same goreleaser step as the rest
+  of the Go toolchain; see
+  [`docs/development/release.md`](../development/release.md).
 
 ## See also
 

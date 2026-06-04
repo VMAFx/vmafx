@@ -217,7 +217,7 @@ CPU and each GPU backend. See [usage/bench.md](../usage/bench.md) for more detai
 
 > **Error contract**: `run_benchmark` raises `RuntimeError("benchmark failed — no
 > output line containing pooled score / Pearson correlation")` on partial / silent
-> pipe failures (ADR-0608). A second legacy implementation that swallowed the
+> pipe failures (ADR-0638). A second legacy implementation that swallowed the
 > failure and returned a partial dict was removed in PR #517 (Layer-5); MCP clients
 > should now branch on `isError=True` per the [MCP error contract](../../docs/mcp/index.md).
 
@@ -587,20 +587,6 @@ implicitly `False`, causing clients to misclassify errors as successes.
 | Missing optional extras               | Raises `RuntimeError`; mcp sets `isError=True`          |
 | `probe_backend` unhealthy backend     | Returns success result with `runtime_healthy: false`    |
 
-## Cross-tool error conventions
-
-| Situation                               | Shape                                                   |
-|-----------------------------------------|---------------------------------------------------------|
-| Unknown tool name                       | `{"error": "unknown tool: <name>"}`                     |
-| Path outside allowlist                  | `{"error": "path ... not under an allowlisted root"}`   |
-| Path does not exist                     | `{"error": "<resolved-abs-path>"}`                      |
-| Subprocess non-zero (vmaf_score only)   | `{"error": "vmaf exited <rc>: <stderr>"}`               |
-| Missing optional extras                 | `{"error": "... requires the 'eval' extra: ..."}`       |
-
-All exceptions raised inside a tool handler are caught and serialised
-into the `error` shape above — the JSON-RPC channel itself never
-returns a non-200.
-
 ## Related
 
 - [MCP server overview](index.md) — install, security model, env vars.
@@ -610,13 +596,12 @@ returns a non-200.
   `eval_model_on_split` / `compare_models` are scoring.
 - [ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md) — P0 fixes.
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
-- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
 
 ## `list_extractors`
 
 Enumerate all `VmafFeatureExtractor` implementations found in the local
 `core/src/feature/` C source tree.  No binary required — the server
-parses the C source directly.  Added in [ADR-0608](../adr/0638-mcp-p1-vmaftune-extractors-models-progress.md).
+parses the C source directly.  Added in [ADR-0638](../adr/0638-mcp-p1-vmaftune-extractors-models-progress.md).
 
 ### Input schema — no arguments.
 
@@ -641,7 +626,7 @@ parses the C source directly.  Added in [ADR-0608](../adr/0638-mcp-p1-vmaftune-e
 ## `describe_model`
 
 Return metadata for a VMAF model by name or path.  Fixes the `Path.stem` bug
-(ADR-0608): `vmaf_v0.6.1` is matched against `vmaf_v0.6.1.json` correctly —
+(ADR-0638): `vmaf_v0.6.1` is matched against `vmaf_v0.6.1.json` correctly —
 not incorrectly trimmed to `vmaf_v0.6` as Python's `Path.stem` would do.
 
 ### Input schema
@@ -677,7 +662,7 @@ not incorrectly trimmed to `vmaf_v0.6` as Python's `Path.stem` would do.
 Wrap `vmaf-tune compare`: compare codec adapters at one or more target VMAF
 scores and return a ranked report.  Requires `vmaf-tune` to be installed
 (`pip install -e tools/vmaf-tune` or set `VMAF_TUNE_BIN`).  Emits MCP progress
-notifications when `params._meta.progressToken` is set.  ADR-0608.
+notifications when `params._meta.progressToken` is set.  ADR-0638.
 
 ### Input schema
 
@@ -707,7 +692,7 @@ Shape is the v1 (single-target) or v2 (multi-target) schema from ADR-0513.
 
 Wrap `vmaf-tune ladder`: build a per-title bitrate ladder via convex-hull sweep
 and emit an HLS / DASH / JSON manifest.  Requires `vmaf-tune`.  Emits progress
-notifications.  ADR-0608.
+notifications.  ADR-0638.
 
 ### Input schema
 
@@ -736,7 +721,7 @@ For `format="hls"` or `"dash"`, `manifest` is a raw string (the M3U8 / MPD text)
 
 Wrap `vmaf-tune tune-per-shot`: detect scene cuts and return per-shot CRF
 recommendations targeting a VMAF score.  Requires `vmaf-tune`.  Emits progress
-notifications.  ADR-0608.
+notifications.  ADR-0638.
 
 ### Input schema
 

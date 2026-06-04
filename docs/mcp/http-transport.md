@@ -91,7 +91,7 @@ over the `vmaf_score` MCP tool.
 | `width` | integer | yes | Frame width in pixels |
 | `height` | integer | yes | Frame height in pixels |
 | `pixfmt` | string | yes | Pixel format: `"420"`, `"422"`, or `"444"` |
-| `bitdepth` | integer | yes | Bit depth: `8` or `10` |
+| `bitdepth` | integer | yes | Bit depth: `8` \| `10` \| `12` \| `16` |
 | `model` | string | no | Model specifier (default: `"version=vmaf_v0.6.1"`) |
 | `backend` | string | no | Backend: `"cpu"`, `"cuda"`, `"sycl"`, or `"auto"` (default: `"auto"`) |
 | `precision` | string | no | Output precision digits (default: `"17"`) |
