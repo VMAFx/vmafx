@@ -12,11 +12,11 @@ in or out for public sharing:
 
 - [Bad-case submission form](https://docs.google.com/forms/d/e/1FAIpQLSdJntNoBuucMSiYoK3SDWoY1QN0yiFAi5LyEXuOyXEWJbQBtQ/viewform?usp=sf_link)
 
-## Fork channel (Lusoris/vmaf)
+## Fork channel (VMAFx/vmafx)
 
 For bad cases that are specific to fork-added surfaces — SYCL / CUDA / HIP
 numerical divergence, `--precision` output correctness, tiny-AI model
-drift — open an issue on [Lusoris/vmaf](https://github.com/Lusoris/vmaf/issues)
+drift — open an issue on [VMAFx/vmafx](https://github.com/VMAFx/vmafx/issues)
 with reproducer inputs and, if possible, the backend that produced the
 anomalous result.
 

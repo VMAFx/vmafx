@@ -2,7 +2,7 @@
 
 The KonViD-150k dataset (Götz-Hahn et al., IEEE Access 2021 / ICIP 2019)
 is a ~150 000-clip user-generated-video corpus with crowdsourced
-subjective Mean Opinion Scores. The lusoris fork uses it as **Phase 2**
+subjective Mean Opinion Scores. The VMAFx fork uses it as **Phase 2**
 of the ADR-0325 KonViD ingestion plan: the full-scale follow-on to the
 1 200-clip Phase 1 predecessor (see
 [`konvid-1k-ingestion.md`](konvid-1k-ingestion.md)). At ~120–200 GB of

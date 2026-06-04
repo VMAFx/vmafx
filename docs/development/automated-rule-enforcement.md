@@ -45,7 +45,7 @@ A **ticked box** mentioning the item:
 
 ```markdown
 - [x] Research digest under docs/research/ (or "no digest needed: trivial")
-- [x] CHANGELOG.md "lusoris fork" entry
+- [x] CHANGELOG.md "VMAFX" entry
 ```
 
 An **opt-out line** using the ADR-0108 opt-out syntax:

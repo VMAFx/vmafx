@@ -2,7 +2,7 @@
 
 The KonViD-1k dataset (Hosu et al., QoMEX 2017) is a 1,200-clip
 user-generated-video corpus with crowdsourced subjective Mean Opinion
-Scores. The lusoris fork uses it as **Phase 1** of the ADR-0325
+Scores. The VMAFx fork uses it as **Phase 1** of the ADR-0325
 KonViD-150k ingestion plan: a small, fast-to-iterate predecessor that
 validates the JSONL conversion shape before scaling to the full ~150 k
 corpus in Phase 2.

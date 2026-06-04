@@ -1,6 +1,6 @@
 # C4 Level 1 — System context
 
-> **Status.** Stub. Scaffolded 2026-04-17 as part of the golusoris-alignment
+> **Status.** Stub. Scaffolded 2026-04-17 as part of the VMAFx alignment
 > sweep. Fill in actors, external systems, and data flows as the fork's user
 > surfaces stabilise. See [index.md](index.md) for the repository map and
 > [c4-container.md](c4-container.md) for Level 2.
@@ -17,12 +17,12 @@ deeper levels live in sibling files as the system grows.
 @startuml vmaf-c4-context
 !include <C4/C4_Context>
 
-title VMAF (Lusoris fork) — System Context
+title VMAFx — System Context
 
 Person(user, "Video engineer", "Uses vmaf to score encodes, compare backends, or train tiny models")
 Person(agent, "Coding agent", "Claude Code / Cursor / Copilot, runs inside the repo")
 
-System(vmaf, "VMAF (Lusoris fork)", "Perceptual video quality assessment: CPU + GPU backends, SIMD paths, tiny-AI models, MCP server")
+System(vmaf, "VMAFx", "Perceptual video quality assessment: CPU + GPU backends, SIMD paths, tiny-AI models, MCP server")
 
 System_Ext(upstream, "Netflix/vmaf", "Upstream project, periodically synced")
 System_Ext(ort, "ONNX Runtime", "Tiny-AI inference runtime, bundled at build time")

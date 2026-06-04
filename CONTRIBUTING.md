@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD007 MD013 MD059 -->
 # Contributing to VMAFx
 
-This fork adds SYCL / CUDA / Vulkan GPU backends (HIP planned),
+This fork adds SYCL / CUDA / HIP (AMD ROCm, partially live) GPU backends,
 AVX2 / AVX-512 / NEON SIMD, full-precision CLI output, tiny-AI integration,
 and embedded + standalone MCP servers. Below is the fork-specific
 contribution guide. The **Netflix upstream contribution guide** follows

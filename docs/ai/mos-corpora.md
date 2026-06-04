@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # MOS-corpus ingestion family
 
-The lusoris fork trains no-reference and mixed-reference VQA models against
+The VMAFx fork trains no-reference and mixed-reference VQA models against
 human Mean Opinion Score labels. Several public video-quality corpora are
 supported. Each corpus ships its own adapter script that produces a
 **corpus JSONL** shard; the shards are then unified via

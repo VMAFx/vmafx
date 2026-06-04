@@ -7,7 +7,7 @@ extractors), and writes per-frame + pooled scores to an XML / JSON / CSV /
 subtitle log.
 
 > **Scope.** This page is the canonical flag reference for the `vmaf` binary
-> in the Lusoris fork. It supersedes the abbreviated help string in
+> in the VMAFx fork. It supersedes the abbreviated help string in
 > [`core/tools/README.md`](../../core/tools/README.md) — the code's
 > `--help` is authoritative for the *set* of flags at any given commit; this
 > page adds defaults, interactions, and runnable examples per

@@ -1,6 +1,23 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs(rebrand): scrub residual Lusoris-fork references
+
+**Files touched**: `docs/usage/cli.md`, `docs/ai/mos-corpora.md`,
+`docs/ai/konvid-1k-ingestion.md`, `docs/ai/konvid-150k-ingestion.md`,
+`docs/development/release.md`, `docs/development/automated-rule-enforcement.md`,
+`docs/mcp/index.md`, `docs/architecture/c4-context.md`,
+`docs/architecture/c4-container.md`, `docs/metrics/bad-cases.md`,
+`CONTRIBUTING.md`, `AGENTS.md`,
+`changelog.d/changed/scrub-lusoris-fork-refs.md`,
+`docs/rebase-notes.md`.
+
+No rebase impact: doc-only text substitutions (branding strings, fork issue
+URL, HIP status text). No C source, public header, Netflix golden assertion,
+upstream-mirrored symbol, version string, or copyright header was modified.
+
+---
+
 ## docs(versions): bump stale Go + required-checks-count + Python pins
 
 **Files touched**: `CLAUDE.md`, `docs/development/languages.md`,

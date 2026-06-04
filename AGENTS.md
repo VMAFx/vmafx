@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 -->
-# AGENTS.md — VMAF Fork (Lusoris)
+# AGENTS.md — VMAFx
 
 > **CORRECT REPO: `VMAFx/vmafx` (active) — NOT `lusoris/vmaf` (archived)**
 > The fork was renamed and transferred. All new work, PRs, and gh commands must

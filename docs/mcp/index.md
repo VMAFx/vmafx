@@ -23,7 +23,7 @@ All three surfaces are additive; running any combination at once is fine.
 This document covers surfaces 1 and 2. See [embedded.md](embedded.md) for surface 3.
 
 `vmaf-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
-server that exposes the Lusoris VMAF fork's scoring CLI to LLM tooling
+server that exposes the VMAFx fork's scoring CLI to LLM tooling
 (Claude Desktop, Cursor, custom MCP clients) over JSON-RPC on stdio.
 It lives in [mcp-server/vmaf-mcp/](../../mcp-server/vmaf-mcp/).
 
