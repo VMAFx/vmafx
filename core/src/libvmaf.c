@@ -2504,10 +2504,12 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
     if (!ref && !dist)
         return flush_context(vmaf);
 
-    vmaf->pic_cnt++;
     int err = read_pictures_validate_and_prep(vmaf, ref, dist, index);
     if (err)
         return err;
+    /* Increment only after successful validation so a retry on transient
+     * -ENOMEM does not double-count the frame and corrupt FPS / end-index. */
+    vmaf->pic_cnt++;
 
 #ifdef HAVE_CUDA
     if (vmaf->rfe_hw_flags_dirty) {
@@ -2571,7 +2573,6 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
         return -EINVAL;
 
     int err = 0;
-    vmaf->pic_cnt++;
 
     // Ensure de-tile kernels on the primary queue have finished reading from
     // imported VA surface memory.  After this function returns, the caller
@@ -2581,6 +2582,9 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
     err = vmaf_sycl_queue_wait(vmaf->sycl.state);
     if (err)
         return err;
+    /* Increment only after queue_wait succeeds so a retry on error does not
+     * double-count the frame (mirrors the fix to vmaf_read_pictures, ADR-1008). */
+    vmaf->pic_cnt++;
 
     // Advance frame counter for the zero-copy VA import path.
     // The host upload path (vmaf_sycl_shared_frame_upload) does this
@@ -2755,6 +2759,12 @@ int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
             max = s;
     }
 
+    /* When n_subsample skips every frame in [index_low, index_high],
+     * pic_cnt stays 0 and the MEAN / HARMONIC_MEAN cases would divide
+     * by zero.  Reject cleanly. */
+    if (pic_cnt == 0)
+        return -EINVAL;
+
     switch (pool_method) {
     case VMAF_POOL_METHOD_MEAN:
         *score = sum / pic_cnt;
@@ -2766,7 +2776,7 @@ int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
         *score = max;
         break;
     case VMAF_POOL_METHOD_HARMONIC_MEAN:
-        *score = pic_cnt / i_sum - 1.0;
+        *score = (i_sum > 0.) ? ((double)pic_cnt / i_sum - 1.0) : 0.;
         break;
     default:
         return -EINVAL;

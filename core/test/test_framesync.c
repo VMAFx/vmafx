@@ -17,6 +17,8 @@
  */
 
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -74,8 +76,18 @@ static void my_worker(void *data, void **tpool_thread_data)
                                         thread_data->index - 1);
 
     for (ctr = 0; ctr < FRAME_BUF_LEN; ctr++) {
-        if (dependent_buf[ctr] != (thread_data->ref[ctr] + thread_data->dist[ctr])) {
-            (void)fprintf(stderr, "verification error in frame index %d\n", thread_data->index);
+        /* The writer stored ref[ctr]+dist[ctr]+2 (see line 56 above).
+         * The previous check compared against ref+dist (off by 2) and used
+         * fprintf — so every non-zero-seeded frame silently "failed" with no
+         * test-harness visibility.  Fixed: match the written value exactly and
+         * abort() so a data-corruption regression terminates the test process. */
+        if (dependent_buf[ctr] != (uint8_t)(thread_data->ref[ctr] + thread_data->dist[ctr] + 2)) {
+            (void)fprintf(stderr,
+                          "framesync verification error at frame %d byte %d: "
+                          "got %u expected %u\n",
+                          thread_data->index, ctr, dependent_buf[ctr],
+                          (uint8_t)(thread_data->ref[ctr] + thread_data->dist[ctr] + 2));
+            abort(); /* fail the test process — mu_assert cannot be used in void workers */
         }
     }
 

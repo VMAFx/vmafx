@@ -44254,6 +44254,13 @@ same translation unit. No public headers changed.
 No rebase impact. Error-handling only — wraps two json.loads calls. No protocol,
 API, or tool-schema changes. Output format on the success path is unchanged.
 
+## ADR-1008 — C lifecycle + test correctness fixes (2026-06-04)
+
+No rebase impact. pic_cnt increment timing change only affects error-retry callers
+(extremely uncommon path). Div-by-zero guard only fires when n_subsample covers
+all frames in range (degenerate caller). Test fixes in test_feature_collector.c and
+test_framesync.c are test-only with no production code change.
+
 ## ADR-1007 — C string/numeric UB fixes (2026-06-04)
 
 No rebase impact. All changes are guarded code paths that only fire for unusual

@@ -233,10 +233,10 @@ static char *test_feature_collector_init_append_get_and_destroy()
 
     err = vmaf_feature_collector_get_aggregate(feature_collector, "aggregate5", &score);
     mu_assert("problem during vmaf_feature_collector_get_aggregate", !err);
-    mu_assert("unexpected aggreggate_score", score = 105.);
+    mu_assert("unexpected aggreggate_score", score == 105.);
     err = vmaf_feature_collector_get_aggregate(feature_collector, "aggregate9", &score);
     mu_assert("problem during vmaf_feature_collector_get_aggregate", !err);
-    mu_assert("unexpected aggreggate_score", score = 109.);
+    mu_assert("unexpected aggreggate_score", score == 109.);
 
     vmaf_feature_collector_destroy(feature_collector);
     return NULL;
