@@ -145,6 +145,26 @@ untouched; the functions remain compiled and linkable for a future re-dispatch P
 
 ---
 
+## fix/core-test-regressions-pr-train (2026-06-04, no ADR — bug fixes)
+
+**Files touched:**
+`core/src/gpu_picture_pool.cpp`,
+`core/src/feature/feature_extractor.cpp`,
+`core/src/feature/integer_motion.c`,
+`core/src/predict.c`,
+`core/test/test_framesync.c`,
+`core/test/test_integer_motion_coverage.c`,
+`core/test/test_score_pooled_eagain.c`
+
+**Rebase impact:** Any concurrent branch that also edits `feature_extractor_list[]`
+must preserve the `&vmaf_fex_integer_motion_v2` entry. Any branch that adds a
+new motion extractor with `VMAF_FEATURE_EXTRACTOR_PREV_REF` flag benefits from
+the `context_extract` prev_ref management added here. Branches modifying
+`predict_load_feature_score` must not regress the `-EAGAIN` vs `-EINVAL`
+distinction for unwritten feature vectors (Netflix#755 / ADR-0154).
+
+---
+
 ## fix/legacy-runner-import-stub-adr0749 (2026-06-04, no ADR — bug fix)
 
 **Files touched:**

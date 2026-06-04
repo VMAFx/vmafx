@@ -49,11 +49,10 @@ extern VmafFeatureExtractor vmaf_fex_psnr;
 extern VmafFeatureExtractor vmaf_fex_psnr_hvs;
 extern VmafFeatureExtractor vmaf_fex_integer_adm;
 extern VmafFeatureExtractor vmaf_fex_integer_motion;
-/* vmaf_fex_integer_motion_v2 (CPU): pipelined variant registered alongside
- * vmaf_fex_integer_motion. Tests look up "motion_v2" by name; both CPU
- * extractors coexist — motion handles the 3-frame default mode,
- * motion_v2 handles the pipelined fused-SAD path. GPU variants
- * (_cuda, _sycl, _hip, _metal) are separate TUs already present below. */
+/* vmaf_fex_integer_motion_v2 is the pipelined motion extractor (ADR-0337);
+ * it lives in feature/integer_motion_v2.c and is distinct from the v1
+ * extractor in feature/integer_motion.c. GPU backend variants
+ * (_cuda, _sycl, _hip, _metal) each have their own registration below. */
 extern VmafFeatureExtractor vmaf_fex_integer_motion_v2;
 extern VmafFeatureExtractor vmaf_fex_integer_vif;
 extern VmafFeatureExtractor vmaf_fex_cambi;
@@ -598,6 +597,17 @@ int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx,
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING, "problem with feature extractor \"%s\" at index %d\n",
                  fex_ctx->fex->name, pic_index);
+    } else if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
+        /* Mirror what libvmaf.c does for PREV_REF extractors: store the
+         * current ref picture as prev_ref so the next extract() call can
+         * access the previous frame via fex->prev_ref.  Called only on
+         * success so a failing frame does not clobber the valid prev_ref.
+         * The previous prev_ref (if any) is released before we take the new
+         * reference so ref-counts stay balanced.  vmaf_feature_extractor_context_destroy()
+         * calls vmaf_picture_unref() on the final prev_ref. */
+        if (fex_ctx->fex->prev_ref.ref)
+            vmaf_picture_unref(&fex_ctx->fex->prev_ref);
+        vmaf_picture_ref(&fex_ctx->fex->prev_ref, ref);
     }
 
 #ifdef HAVE_NVTX
@@ -697,6 +707,10 @@ int vmaf_feature_extractor_context_destroy(VmafFeatureExtractorContext *fex_ctx)
         return -EINVAL;
 
     if (fex_ctx->fex) {
+        /* Release any prev_ref picture reference taken by
+         * vmaf_feature_extractor_context_extract() for PREV_REF extractors. */
+        if (fex_ctx->fex->prev_ref.ref)
+            vmaf_picture_unref(&fex_ctx->fex->prev_ref);
         /* free(NULL) is well-defined per C99 §7.20.3.2 / POSIX free(3);
      * the NULL guard is redundant. CodeQL cpp/guarded-free. */
         free(fex_ctx->fex->priv);

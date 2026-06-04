@@ -76,6 +76,11 @@ static char *test_score_pooled_returns_eagain_on_pending(void)
 
 static char *test_score_pooled_streaming_pattern(void)
 {
+    /* integer_motion (v1) computes motion2_score in flush() for all frames at
+     * once rather than retroactively per-frame.  Pooling is therefore only
+     * valid after the sentinel flush (vmaf_read_pictures NULL/NULL).  The
+     * pattern exercised here is: read N frames, flush, then pool any range
+     * inside [0, N-1].  vmaf_score_pooled must return 0 with a finite score. */
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
     mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);

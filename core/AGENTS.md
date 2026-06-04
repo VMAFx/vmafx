@@ -616,3 +616,26 @@ the corrected methodology.
   intentional and correct.  CI must run on an AVX-512-capable host (see
   `.github/workflows/build.yml` x86_64 runner) for the tests to be
   meaningful.
+
+## Rebase-sensitive invariants (2026-06-04)
+
+- **`vmaf_fex_integer_motion_v2` registration**: the CPU extractor
+  `vmaf_fex_integer_motion_v2` (from `feature/integer_motion_v2.c`) MUST
+  appear in `feature_extractor_list[]` in `feature_extractor.cpp`.  Removing
+  it breaks `vmaf_get_feature_extractor_by_name("motion_v2")` on all CPU
+  builds.  The comment that claimed this symbol was "merged into v1" in
+  `feature_extractor.cpp` was incorrect and has been removed.
+
+- **`context_extract` prev_ref management**: `vmaf_feature_extractor_context_extract()`
+  updates `fex->prev_ref` after a successful extract when the extractor
+  carries `VMAF_FEATURE_EXTRACTOR_PREV_REF`.  `vmaf_feature_extractor_context_destroy()`
+  releases the held reference.  Any refactor of these functions must preserve
+  this pairing so direct callers (unit tests, pool code) observe the same
+  prev_ref semantics as `vmaf_read_pictures()`.
+
+- **`predict_load_feature_score` EAGAIN vs EINVAL**: when the feature vector
+  is absent from the collector (i.e., `fv == NULL` and
+  `vmaf_feature_collector_get_score` returns `-EINVAL`), `predict_load_feature_score`
+  must return `-EAGAIN`, not `-EINVAL`.  This preserves Netflix#755 / ADR-0154:
+  "score not yet written" is transient; only genuine programmer error
+  (bad range, NULL pointer) returns `-EINVAL` from `vmaf_score_pooled`.

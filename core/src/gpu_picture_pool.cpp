@@ -54,10 +54,16 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
 
     int err = 0;
 
+    /* Publish to caller's *pool before any later failure path.  Set *pool = NULL
+     * at every failure label so the caller can treat a non-zero return as
+     * "pool not constructed" — prevents UAF via vmaf_gpu_picture_pool_close()
+     * on a freed pointer (Netflix#UAF-001 / ADR-0239). */
     VmafGpuPicturePool *const p = *pool =
         static_cast<VmafGpuPicturePool *>(std::malloc(sizeof(*p)));
-    if (!p)
+    if (!p) {
+        *pool = nullptr;
         goto fail;
+    }
     std::memset(p, 0, sizeof(*p));
     p->cfg = cfg;
 

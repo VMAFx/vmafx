@@ -241,15 +241,32 @@ static char *test_motion_moving_average_branch(void)
 
 static char *test_motion_five_frame_under_min(void)
 {
+    /* ADR-0337: motion_five_frame_window=true is rejected at init() with
+     * -ENOTSUP.  Verify that, then exercise the flush(n<=min_idx) short-
+     * circuit path (lines 403-415 of integer_motion.c) by running a
+     * default-mode extractor with a single frame and flushing immediately.
+     * Default mode: min_idx=1, so flush with n=1 hits the n<=min_idx arm. */
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion");
     mu_assert("motion extractor missing", fex != NULL);
 
-    VmafDictionary *opts = NULL;
-    int err = vmaf_dictionary_set(&opts, "motion_five_frame_window", "true", 0);
-    mu_assert("set motion_five_frame_window", err == 0);
+    /* Part A: five_frame_window rejected at init */
+    {
+        VmafDictionary *opts = NULL;
+        int err = vmaf_dictionary_set(&opts, "motion_five_frame_window", "true", 0);
+        mu_assert("set motion_five_frame_window", err == 0);
 
+        VmafFeatureExtractorContext *ctx_rej = NULL;
+        err = vmaf_feature_extractor_context_create(&ctx_rej, fex, opts);
+        mu_assert("context_create (rej)", err == 0);
+        err = vmaf_feature_extractor_context_init(ctx_rej, VMAF_PIX_FMT_YUV420P, 8u, MOT_W, MOT_H);
+        mu_assert("init must return -ENOTSUP for five_frame_window", err == -ENOTSUP);
+        (void)vmaf_feature_extractor_context_close(ctx_rej);
+        (void)vmaf_feature_extractor_context_destroy(ctx_rej);
+    }
+
+    /* Part B: default mode, single frame → flush exercises n<=min_idx arm */
     VmafFeatureExtractorContext *ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
     mu_assert("context_create", err == 0);
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MOT_W, MOT_H);
     mu_assert("context_init", err == 0);
@@ -258,8 +275,6 @@ static char *test_motion_five_frame_under_min(void)
     err = vmaf_feature_collector_init(&fc);
     mu_assert("collector_init", err == 0);
 
-    /* Drive a single extract at index 0, then flush — exercising the
-     * minimum_past_frames_needed=2 + index<2 flush branch (line 441-455). */
     VmafPicture ref;
     VmafPicture dist;
     mu_assert("alloc ref", alloc_random(&ref, 0x500u) == 0);
@@ -268,14 +283,13 @@ static char *test_motion_five_frame_under_min(void)
     err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
     mu_assert("extract frame0", err == 0);
     err = vmaf_feature_extractor_context_flush(ctx, fc);
-    mu_assert("flush five-frame under min", err >= 0);
+    mu_assert("flush single-frame default mode", err >= 0);
 
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
-    /* opts ownership transferred to ctx and freed by context_destroy. */
     return NULL;
 }
 

@@ -75,6 +75,13 @@ static void my_worker(void *data, void **tpool_thread_data)
     vmaf_framesync_retrieve_filled_data(thread_data->fs_ctx, (void *)&dependent_buf,
                                         thread_data->index - 1);
 
+    /* The writer stored ref[ctr]+dist[ctr]+2 for the frame it acquired
+     * (frame index-1).  Both pic_a and pic_b are memset to frame_index,
+     * so frame index-1 had value (index-1) in every byte.  The retrieved
+     * buffer therefore contains (index-1)+(index-1)+2 = 2*(index-1)+2 in
+     * every byte.  Compare against that value, not against the current
+     * frame's ref/dist which would give 2*index+2 (off by 2). */
+    const uint8_t prev_val = (uint8_t)((thread_data->index - 1u) + (thread_data->index - 1u) + 2u);
     for (ctr = 0; ctr < FRAME_BUF_LEN; ctr++) {
         /* The writer at frame N stored (seed_N + seed_N + 2) where both
          * ref and dist were memset to seed_N = N.  Frame N+1's worker
