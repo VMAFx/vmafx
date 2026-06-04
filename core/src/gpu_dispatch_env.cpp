@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  C++23 implementation of the once-snapshotted GPU dispatch env helper.
  *  See gpu_dispatch_env.h for the public contract and ADR-0461 for rationale.
@@ -21,7 +21,8 @@
  *    - std::optional<std::string> value storage — encodes "unset at
  *      snapshot time" without a nullable raw pointer.
  *    - Platform-specific lock bootstrap (INIT_ONCE / pthread_mutex_t)
- *      replaced by a constinit std::mutex.
+ *      replaced by a std::mutex (constinit not applicable; non-constexpr
+ *      constructor on GCC/MinGW libstdc++; static-duration zero-init suffices).
  *    - EnvRow is a proper aggregate with a constructor guard.
  */
 #include "gpu_dispatch_env.h"
@@ -46,9 +47,11 @@ struct EnvRow {
     std::optional<std::string> value{};
 };
 
-/* constinit ensures zero-initialisation at compile time; no dynamic
- * constructor race at program start. */
-constinit std::mutex g_lock;
+/* std::array is aggregate-initialised (constinit-compatible on all compilers).
+ * std::mutex has a non-constexpr constructor on GCC/MinGW libstdc++, so
+ * constinit cannot be applied to it; static-duration zero-init already
+ * prevents any dynamic-init race. */
+std::mutex g_lock;
 constinit std::array<EnvRow, kTableCap> g_rows{};
 
 } /* anonymous namespace */

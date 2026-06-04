@@ -1,4 +1,4 @@
-fix(build): add `<string_view>` include in vmaf.cpp (macOS / FFmpeg-macOS build fix)
+fix(build): add `<string_view>` include in vmaf.cpp; fix MinGW64 constinit mutex build failure
 
 Apple Clang does not pull `std::string_view` transitively through `<string>` machinery;
 Linux GCC/Clang do. Adding the explicit include unblocks the macOS Clang and
