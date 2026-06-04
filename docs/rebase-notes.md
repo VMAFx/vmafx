@@ -2542,8 +2542,15 @@ or `python/vmaf/` directory references outside ADR bodies and
 `.github/codeql-config.yml`, IDE settings, skill scripts, and any
 newly-added utility under `scripts/`. See changelog fragment
 `changelog.d/fixed/post-rename-drift-sweep.md` for the full inventory
-commands.
+commands.## port/upstream-batch-threading-picture-pool (2026-06-04)
 
+**Files touched:**
+`core/src/libvmaf.c`, `core/src/meson.build`
+
+**Rebase impact:** if a future upstream commit adds more `#ifdef VMAF_BATCH_THREADING`
+blocks, those blocks must be removed in the same port PR — the fork no longer uses the
+flag. The non-batch `threaded_read_pictures` path was removed; it is not recoverable
+from the fork without re-introducing the old per-extractor thread pool enqueue pattern.
 ---
 
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)

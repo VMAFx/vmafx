@@ -1038,10 +1038,9 @@ if is_cuda_enabled
         #
         # Scope note: this fix addresses the cubin/PTX coverage surface
         # only. It does NOT fix every CUDA crash reported against the
-        # upstream tree; upstream commit 32b115df (experimental
-        # VMAF_BATCH_THREADING / VMAF_PICTURE_POOL threading modes) is
-        # tracked as a separate post-cubin-load regression under
-        # ADR-0123.
+        # upstream tree; upstream commits dff4082b (batch threading) and
+        # 46d3a154 (picture pool) are now ported (ADR-1051); this comment
+        # was updated from the old experimental-flag framing.
         gencode = [
             '--fatbin',
             '-gencode=arch=compute_75,code=sm_75',
