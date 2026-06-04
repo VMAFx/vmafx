@@ -28,7 +28,7 @@ ARG NVCC_FLAGS="-gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,cod
 ARG FFMPEG_NVCC_FLAGS="-gencode arch=compute_75,code=sm_75 -O2"
 ARG ENABLE_SYCL=false
 
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # pipefail for RUNs that use `|` (DL4006).
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

@@ -44663,3 +44663,10 @@ cast in `accum_row_scalar_8` / `accum_row_scalar_16` requires a
 coordinated update to both the typedef and the cast sites.
 
 ---
+
+## fix/containerfile-user-hardening-adr1042
+
+no rebase impact: container hardening changes only (USER directive and
+ARG/ENV scoping). No public API or upstream-mirrored C code touched.
+
+---
