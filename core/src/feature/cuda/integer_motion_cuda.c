@@ -244,11 +244,11 @@ static double motion3_postprocess_cuda(MotionStateCuda *s, double score2)
     return clipped;
 }
 
-int calculate_motion_score(const VmafPicture *src, VmafCudaBuffer *src_blurred,
-                           const VmafCudaBuffer *prev_blurred, VmafCudaBuffer *sad, unsigned width,
-                           unsigned height, ptrdiff_t src_stride, ptrdiff_t blurred_stride,
-                           unsigned src_bpc, CUfunction funcbpc8, CUfunction funcbpc16,
-                           CudaFunctions *cu_f, CUstream stream)
+static int calculate_motion_score(const VmafPicture *src, VmafCudaBuffer *src_blurred,
+                                  const VmafCudaBuffer *prev_blurred, VmafCudaBuffer *sad,
+                                  unsigned width, unsigned height, ptrdiff_t src_stride,
+                                  ptrdiff_t blurred_stride, unsigned src_bpc, CUfunction funcbpc8,
+                                  CUfunction funcbpc16, CudaFunctions *cu_f, CUstream stream)
 {
     int block_dim_x = 16;
     int block_dim_y = 16;

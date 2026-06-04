@@ -328,8 +328,8 @@ fail_after_pop:
     return _cuda_err;
 }
 
-int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *dis_in, int w, int h,
-               double vif_enhn_gain_limit, CudaFunctions *cu_f, CUstream stream)
+static int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *dis_in, int w,
+                      int h, double vif_enhn_gain_limit, CudaFunctions *cu_f, CUstream stream)
 {
     {
 
@@ -359,9 +359,9 @@ int filter1d_8(VifStateCuda *s, VifBufferCuda *buf, uint8_t *ref_in, uint8_t *di
     return 0;
 }
 
-int filter1d_16(VifStateCuda *s, VifBufferCuda *buf, uint16_t *ref_in, uint16_t *dis_in, int w,
-                int h, int scale, int bpc, double vif_enhn_gain_limit, CudaFunctions *cu_f,
-                CUstream stream)
+static int filter1d_16(VifStateCuda *s, VifBufferCuda *buf, uint16_t *ref_in, uint16_t *dis_in,
+                       int w, int h, int scale, int bpc, double vif_enhn_gain_limit,
+                       CudaFunctions *cu_f, CUstream stream)
 {
 
     int32_t add_shift_round_HP, shift_HP;

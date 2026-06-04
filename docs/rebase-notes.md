@@ -44199,3 +44199,9 @@ No C source files changed. No public headers changed. No upstream-mirrored
 Python files changed. No Netflix golden assertions touched. The only
 structural change is removing two dead CI matrix rows that would fail anyway
 (meson rejects the unknown `enable_vulkan` option).
+
+## ADR-1011 — CUDA symbol visibility (2026-06-04)
+
+No rebase impact. Adding static to TU-internal functions has no ABI or
+behaviour effect — all call sites are function-pointer assignments within the
+same translation unit. No public headers changed.

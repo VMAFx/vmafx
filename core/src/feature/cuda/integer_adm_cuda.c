@@ -115,9 +115,10 @@ static inline float dwt_quant_step(const struct dwt_model_params *params, int la
     return Q;
 }
 
-int dwt2_8_device(AdmStateCuda *s, const uint8_t *d_picture, cuda_adm_dwt_band_t *d_dst,
-                  cuda_i4_adm_dwt_band_t i4_dwt_dst, int w, int h, int src_stride, int dst_stride,
-                  AdmFixedParametersCuda *p, CudaFunctions *cu_f, CUstream c_stream)
+static int dwt2_8_device(AdmStateCuda *s, const uint8_t *d_picture, cuda_adm_dwt_band_t *d_dst,
+                         cuda_i4_adm_dwt_band_t i4_dwt_dst, int w, int h, int src_stride,
+                         int dst_stride, AdmFixedParametersCuda *p, CudaFunctions *cu_f,
+                         CUstream c_stream)
 {
     int rows_per_thread = 4;
 
@@ -140,10 +141,11 @@ int dwt2_8_device(AdmStateCuda *s, const uint8_t *d_picture, cuda_adm_dwt_band_t
     return 0;
 }
 
-int adm_dwt2_s123_combined_device(AdmStateCuda *s, const int32_t *d_i4_scale, int32_t *tmp_buf,
-                                  cuda_i4_adm_dwt_band_t i4_dwt, int w, int h, int img_stride,
-                                  int dst_stride, int scale, AdmFixedParametersCuda *p,
-                                  CudaFunctions *cu_f, CUstream cu_stream)
+static int adm_dwt2_s123_combined_device(AdmStateCuda *s, const int32_t *d_i4_scale,
+                                         int32_t *tmp_buf, cuda_i4_adm_dwt_band_t i4_dwt, int w,
+                                         int h, int img_stride, int dst_stride, int scale,
+                                         AdmFixedParametersCuda *p, CudaFunctions *cu_f,
+                                         CUstream cu_stream)
 {
     const int BLOCK_Y = (h + 1) / 2;
 
@@ -193,10 +195,10 @@ int adm_dwt2_s123_combined_device(AdmStateCuda *s, const int32_t *d_i4_scale, in
     return 0;
 }
 
-int adm_dwt2_16_device(AdmStateCuda *s, const uint16_t *d_picture, cuda_adm_dwt_band_t *d_dst,
-                       cuda_i4_adm_dwt_band_t i4_dwt_dst, int w, int h, int src_stride,
-                       int dst_stride, int inp_size_bits, AdmFixedParametersCuda *p,
-                       CudaFunctions *cu_f, CUstream c_stream)
+static int adm_dwt2_16_device(AdmStateCuda *s, const uint16_t *d_picture,
+                              cuda_adm_dwt_band_t *d_dst, cuda_i4_adm_dwt_band_t i4_dwt_dst, int w,
+                              int h, int src_stride, int dst_stride, int inp_size_bits,
+                              AdmFixedParametersCuda *p, CudaFunctions *cu_f, CUstream c_stream)
 {
     int rows_per_thread = 4;
 
@@ -219,8 +221,8 @@ int adm_dwt2_16_device(AdmStateCuda *s, const uint16_t *d_picture, cuda_adm_dwt_
     return 0;
 }
 
-int adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int stride,
-                   AdmFixedParametersCuda *p, CudaFunctions *cu_f, CUstream c_stream)
+static int adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int stride,
+                          AdmFixedParametersCuda *p, CudaFunctions *cu_f, CUstream c_stream)
 {
     // ensure that csf_f pointers are aligned to 16 bytes for vectorized memory access
     for (int band = 0; band < 3; ++band) {
@@ -266,8 +268,9 @@ int adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int stride
     return 0;
 }
 
-int i4_adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int w, int h, int stride,
-                      AdmFixedParametersCuda *p, CudaFunctions *cu_f, CUstream c_stream)
+static int i4_adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int w, int h,
+                             int stride, AdmFixedParametersCuda *p, CudaFunctions *cu_f,
+                             CUstream c_stream)
 {
     // ensure that csf_f pointers are aligned to 16 bytes for vectorized memory access
     for (int band = 0; band < 3; ++band) {
@@ -313,9 +316,10 @@ int i4_adm_csf_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int w, int
     return 0;
 }
 
-int adm_csf_den_s123_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int w, int h,
-                            int src_stride, double adm_norm_view_dist, int adm_ref_display_height,
-                            CudaFunctions *cu_f, CUstream c_stream)
+static int adm_csf_den_s123_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int w, int h,
+                                   int src_stride, double adm_norm_view_dist,
+                                   int adm_ref_display_height, CudaFunctions *cu_f,
+                                   CUstream c_stream)
 {
     /* The computation of the denominator scales is not required for the regions
      * which lie outside the frame borders
@@ -352,9 +356,10 @@ int adm_csf_den_s123_device(AdmStateCuda *s, AdmBufferCuda *buf, int scale, int 
     return 0;
 }
 
-int adm_csf_den_scale_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int src_stride,
-                             double adm_norm_view_dist, int adm_ref_display_height,
-                             CudaFunctions *cu_f, CUstream c_stream)
+static int adm_csf_den_scale_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h,
+                                    int src_stride, double adm_norm_view_dist,
+                                    int adm_ref_display_height, CudaFunctions *cu_f,
+                                    CUstream c_stream)
 {
     /* The computation of the denominator scales is not required for the regions
      * which lie outside the frame borders
@@ -381,9 +386,9 @@ int adm_csf_den_scale_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, 
     return 0;
 }
 
-int i4_adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int src_stride,
-                     int csf_a_stride, int scale, AdmFixedParametersCuda *p, CudaFunctions *cu_f,
-                     CUstream c_stream)
+static int i4_adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int src_stride,
+                            int csf_a_stride, int scale, AdmFixedParametersCuda *p,
+                            CudaFunctions *cu_f, CUstream c_stream)
 {
     int left = w * (float)(ADM_BORDER_FACTOR)-0.5f;
     int top = h * (float)(ADM_BORDER_FACTOR)-0.5f;
@@ -429,9 +434,9 @@ int i4_adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int src_
     return 0;
 }
 
-int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int src_stride,
-                  int csf_a_stride, AdmFixedParametersCuda *p, CudaFunctions *cu_f,
-                  CUstream c_stream)
+static int adm_cm_device(AdmStateCuda *s, AdmBufferCuda *buf, int w, int h, int src_stride,
+                         int csf_a_stride, AdmFixedParametersCuda *p, CudaFunctions *cu_f,
+                         CUstream c_stream)
 {
 
     int scale = 0;
