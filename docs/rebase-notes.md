@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/r6-cuda-hip-kernel-correctness (2026-06-04)
+
+**Files touched:**
+`core/src/feature/cuda/integer_vif/filter1d.cu`,
+`core/src/feature/cuda/integer_adm/adm_cm.cu`,
+`core/src/feature/hip/integer_adm/adm_decouple.hip`,
+`core/src/feature/hip/integer_vif/vif_statistics.hip`
+
+**Rebase impact:** no rebase impact — all four files are fork-local GPU paths
+with no upstream counterparts.  The CUDA files are in `feature/cuda/` which
+Netflix upstream does not ship; the HIP files are fully fork-added.
+
+---
+
 ## fix/r6-metric-scoring-guards (2026-06-04)
 
 **Files touched:**
