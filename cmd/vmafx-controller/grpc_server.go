@@ -428,10 +428,22 @@ func runGRPC(
 	log.Info("gRPC server started", "addr", addr, "services", []string{"VmafxScoring", "VmafxController"})
 
 	// Graceful shutdown on context cancellation.
+	// Hard-stop fallback so a stuck streaming RPC cannot block shutdown forever
+	// (r3-signal finding, same fix as cmd/vmafx-server/grpc_server.go).
 	go func() {
 		<-ctx.Done()
 		log.Info("gRPC graceful shutdown initiated")
-		srv.GracefulStop()
+		done := make(chan struct{})
+		go func() {
+			srv.GracefulStop()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(observability.GracefulShutdownTimeout):
+			log.Warn("gRPC graceful stop timed out; forcing hard stop")
+			srv.Stop()
+		}
 	}()
 
 	if err := srv.Serve(lis); err != nil {

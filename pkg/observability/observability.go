@@ -194,9 +194,15 @@ func WaitForShutdown(ctx context.Context, log *slog.Logger, timeout time.Duratio
 		log.Info("context cancelled; initiating shutdown")
 	}
 
-	// Allow callers timeout to finish gracefully.
-	deadline := time.After(timeout)
-	<-deadline
+	// Allow callers timeout to finish gracefully, but return early if the
+	// context is already done (servers stopped before the deadline expires).
+	// Previously this was an unconditional <-deadline which stalled every
+	// clean shutdown for the full GracefulShutdownTimeout regardless of
+	// whether all in-flight work had already completed (r3-signal finding).
+	select {
+	case <-time.After(timeout):
+	case <-ctx.Done():
+	}
 }
 
 // NewShutdownContext returns a context that is cancelled on SIGTERM / SIGINT.

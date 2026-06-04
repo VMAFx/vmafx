@@ -182,10 +182,22 @@ func runGRPCWithServer(
 	impl.log.Info("gRPC server started", "addr", addr)
 
 	// Shut down gracefully when ctx is cancelled.
+	// GracefulStop waits for all in-flight RPCs; add a hard-stop fallback so a
+	// stuck streaming RPC cannot block shutdown forever (r3-signal finding).
 	go func() {
 		<-ctx.Done()
 		impl.log.Info("gRPC graceful shutdown initiated")
-		srv.GracefulStop()
+		done := make(chan struct{})
+		go func() {
+			srv.GracefulStop()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(observability.GracefulShutdownTimeout):
+			impl.log.Warn("gRPC graceful stop timed out; forcing hard stop")
+			srv.Stop()
+		}
 	}()
 
 	if err := srv.Serve(lis); err != nil {

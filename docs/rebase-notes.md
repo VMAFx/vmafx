@@ -44253,3 +44253,9 @@ same translation unit. No public headers changed.
 
 No rebase impact. Error-handling only — wraps two json.loads calls. No protocol,
 API, or tool-schema changes. Output format on the success path is unchanged.
+
+## ADR-1009 — Go shutdown goroutine fixes (2026-06-04)
+
+No rebase impact. WaitForShutdown drain-window change only affects shutdown timing
+(returns up to 30s earlier on clean shutdown). GracefulStop hard-stop fallback only
+fires on stuck streaming RPCs. No public API, ABI, or golden assertion touched.
