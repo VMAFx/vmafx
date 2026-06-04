@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/r7-mcp-precision-subsample-drift (2026-06-04)
+
+**Files touched:**
+`cmd/vmafx-mcp/impl.go`, `cmd/vmafx-mcp/tools.go`,
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`
+
+No rebase impact: precision-default changes are fork-local MCP code, not upstream Netflix/vmaf.
+The default value change is backward-compatible for callers who pass precision explicitly.
+
+---
+
 ## fix/r7-docs-broken-links-mkdocs-nav (2026-06-04)
 
 **Files touched:**

@@ -156,7 +156,7 @@ func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 	bitdepth := intArg(args, "bitdepth", 8)
 	model := strArg(args, "model", "version=vmaf_v0.6.1")
 	backend := strArg(args, "backend", "auto")
-	precision := strArg(args, "precision", "17")
+	precision := strArg(args, "precision", "legacy") // "legacy"=%.6f matches C CLI default (ADR-0119)
 
 	// When VMAFX_MCP_DIRECT=1, attempt the direct cgo path first.  The cgo
 	// path falls back to the subprocess path transparently for backends /
@@ -606,7 +606,7 @@ func handleDescribeWorstFrames(ctx context.Context, args map[string]any) (any, e
 	backend := strArg(args, "backend", "auto")
 	n := intArg(args, "n", 5)
 
-	score, err := runVmafScore(ref, dis, width, height, pixfmt, bitdepth, model, backend, "17")
+	score, err := runVmafScore(ref, dis, width, height, pixfmt, bitdepth, model, backend, "legacy") // %.6f per ADR-0119
 	if err != nil {
 		return nil, err
 	}
@@ -772,7 +772,7 @@ func handleProbeBackend(ctx context.Context, args map[string]any) (any, error) {
 		"--width", "32", "--height", "32",
 		"-p", "420", "-b", "8",
 		"-m", "version=vmaf_v0.6.1",
-		"--precision", "6",
+		"--precision", "legacy", // %.6f — matches C CLI default (ADR-0119)
 		"-q", "-o", outJSON, "--json",
 	}
 	if siblings, ok := backendDisable[backend]; ok {
@@ -918,7 +918,7 @@ func handleVmafScoreEncoded(ctx context.Context, args map[string]any) (any, erro
 	}
 	model := strArg(args, "model", "version=vmaf_v0.6.1")
 	backend := strArg(args, "backend", "auto")
-	precision := strArg(args, "precision", "17")
+	precision := strArg(args, "precision", "legacy") // "legacy"=%.6f matches C CLI default (ADR-0119)
 
 	width, height, pixfmt, bitdepth, err := ffprobeGeometry(refPath)
 	if err != nil {

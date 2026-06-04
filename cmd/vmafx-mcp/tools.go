@@ -48,7 +48,8 @@ func registerTools(srv *mcp.Server) {
 					"enum":    []string{"auto", "cpu", "cuda", "sycl", "hip", "metal"},
 					"default": "auto",
 				},
-				"precision": schemaObj{"type": "string", "default": "17"},
+				// "legacy" = %.6f, matching C CLI default per ADR-0119; use "max" for lossless.
+				"precision": schemaObj{"type": "string", "default": "legacy"},
 			},
 		}),
 	}, handleVmafScore)
@@ -217,7 +218,8 @@ func registerTools(srv *mcp.Server) {
 					"default":     1,
 					"description": "Score every Nth frame (1 = every frame).",
 				},
-				"precision": schemaObj{"type": "string", "default": "17"},
+				// "legacy" = %.6f, matching C CLI default per ADR-0119; use "max" for lossless.
+				"precision": schemaObj{"type": "string", "default": "legacy"},
 			},
 		}),
 	}, handleVmafScoreEncoded)
