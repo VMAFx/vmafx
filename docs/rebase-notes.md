@@ -44406,3 +44406,19 @@ struct field). No C source, public C API header, upstream-mirrored Python,
 Netflix golden assertion, or ffmpeg-patches file is touched.
 
 ---
+
+## fix/mcp-asyncio-adr1023 (2026-06-04)
+
+**Files touched:**
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`,
+`docs/adr/1023-mcp-asyncio-correctness.md`,
+`docs/adr/README.md`,
+`changelog.d/fixed/mcp-asyncio-correctness.md`
+
+no rebase impact: changes are isolated to the MCP server Python module
+and docs. No C source, public C header, Netflix golden-assertion file,
+or upstream-mirrored Python harness is touched. The changes are pure
+async-safety fixes inside coroutines that already existed; no public API
+or tool schema changes.
+
+---

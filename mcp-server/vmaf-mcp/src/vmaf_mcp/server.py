@@ -328,6 +328,11 @@ def _probe_backends(vmaf: Path) -> frozenset[str]:
 
     Result is cached for the lifetime of the server process so we don't
     fork a subprocess per `vmaf_score` call.
+
+    **Blocking note**: this function is synchronous and calls
+    ``subprocess.run``.  Async callers must use the companion
+    :func:`_probe_backends_async` wrapper so the first-call subprocess
+    does not stall the event loop (ADR-1023).
     """
     key = str(vmaf)
     cached = _BACKEND_PROBE_CACHE.get(key)
@@ -359,6 +364,21 @@ def _probe_backends(vmaf: Path) -> frozenset[str]:
     return probe
 
 
+async def _probe_backends_async(vmaf: Path) -> frozenset[str]:
+    """Async-safe wrapper around :func:`_probe_backends`.
+
+    Returns the cached result immediately on a cache hit (no thread
+    hop needed).  On a cache miss — i.e. the first call for @p vmaf —
+    delegates to a thread pool via ``asyncio.to_thread`` so that the
+    blocking ``subprocess.run`` inside :func:`_probe_backends` does not
+    stall the event loop (ADR-1023).
+    """
+    key = str(vmaf)
+    if key in _BACKEND_PROBE_CACHE:
+        return _BACKEND_PROBE_CACHE[key]
+    return await asyncio.to_thread(_probe_backends, vmaf)
+
+
 async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
     vmaf = _vmaf_binary()
     if not vmaf.exists():
@@ -367,8 +387,9 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
     # Bug #1 from the 2026-05-17 MCP probe: caller-requested backend
     # silently fell through to CPU when the binary lacked the runtime.
     # Refuse explicitly (and let auto pass through unchanged).
+    # ADR-1023: use the async wrapper to avoid blocking the event loop.
     if req.backend != "auto":
-        advertised = _probe_backends(vmaf)
+        advertised = await _probe_backends_async(vmaf)
         if req.backend not in advertised:
             raise RuntimeError(
                 f"backend {req.backend!r} requested but the local vmaf binary "
@@ -487,10 +508,10 @@ def _list_models() -> list[dict[str, Any]]:
     return out
 
 
-def _list_backends() -> dict[str, bool]:
+async def _list_backends() -> dict[str, bool]:
     """Return which backends the local vmaf binary was compiled with.
 
-    Delegates to :func:`_probe_backends`, which reads ``vmaf --help``
+    Delegates to :func:`_probe_backends_async`, which reads ``vmaf --help``
     and looks for ``--no_<backend>`` flags (presence = compiled in).
     This correctly identifies live CUDA/SYCL/HIP/Metal support
     even on hosts where the ``--version`` banner does not mention GPU
@@ -502,6 +523,9 @@ def _list_backends() -> dict[str, bool]:
     for keyword substrings which may be absent despite the backend being
     compiled in (e.g. CUDA enabled but no "CUDA" token in the banner).
     ``--help`` always lists ``--no_<backend>`` for every compiled backend.
+
+    ADR-1023: made async so the ``subprocess.run`` inside
+    :func:`_probe_backends` does not stall the event loop.
     """
     vmaf = _vmaf_binary()
     if not vmaf.exists():
@@ -514,7 +538,7 @@ def _list_backends() -> dict[str, bool]:
             "hip": False,
             "metal": False,
         }
-    advertised = _probe_backends(vmaf)
+    advertised = await _probe_backends_async(vmaf)
     return {
         "cpu": True,
         "cuda": "cuda" in advertised,
@@ -1496,7 +1520,8 @@ async def _probe_backend(backend: str) -> dict[str, Any]:
     failure, etc.).
     """
     vmaf = _vmaf_binary()
-    compiled_in = backend == "cpu" or backend in _probe_backends(vmaf)
+    # ADR-1023: use async wrapper to avoid blocking the event loop on first probe.
+    compiled_in = backend == "cpu" or backend in await _probe_backends_async(vmaf)
 
     if not compiled_in:
         return {
@@ -1604,13 +1629,17 @@ async def _probe_backend(backend: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _vmaf_version() -> dict[str, Any]:
+async def _vmaf_version() -> dict[str, Any]:
     """Return the local vmaf binary's version string and compiled backends.
 
     Runs ``vmaf --version`` (for the version string) and ``vmaf --help``
     (for the backend compile-in flags, same probe used by ``_probe_backends``).
     The ``--version`` banner does not reliably list backends (Bug A, ADR-0511),
     so we derive ``build_flags`` from ``--help`` instead.
+
+    ADR-1023: this function is async so the blocking ``subprocess.run``
+    (``--version``) and ``_probe_backends_async`` (``--help``) do not stall
+    the event loop when called from the async ``_call_tool`` handler.
     """
     vmaf = _vmaf_binary()
     binary_path = str(vmaf)
@@ -1629,26 +1658,28 @@ def _vmaf_version() -> dict[str, Any]:
             "error": f"vmaf binary not found at {binary_path}",
         }
 
-    # --- version string ---
-    version_str: str | None = None
-    try:
-        result = subprocess.run(
-            [str(vmaf), "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        blob = (result.stdout or "") + (result.stderr or "")
-        # The banner looks like "vmaf 3.0.0-lusoris.5" or just "3.0.0".
-        m = re.search(r"(\d+\.\d+[\w.\-]*)", blob)
-        version_str = m.group(1) if m else blob.strip().splitlines()[0] if blob.strip() else None
-    except (subprocess.TimeoutExpired, OSError):
-        pass  # Binary present but --version timed out; still return build_flags below.
+    # --- version string (blocking subprocess.run, run in thread) ---
+    def _get_version() -> str | None:
+        try:
+            result = subprocess.run(
+                [str(vmaf), "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            blob = (result.stdout or "") + (result.stderr or "")
+            # The banner looks like "vmaf 3.0.0-lusoris.5" or just "3.0.0".
+            m = re.search(r"(\d+\.\d+[\w.\-]*)", blob)
+            return m.group(1) if m else blob.strip().splitlines()[0] if blob.strip() else None
+        except (subprocess.TimeoutExpired, OSError):
+            return None  # Binary present but --version timed out; fall through.
+
+    version_str = await asyncio.to_thread(_get_version)
 
     # --- build flags from --help (same as _probe_backends but we don't use the cache
     #     so callers always get a fresh view even when the binary changes after startup) ---
-    advertised = _probe_backends(vmaf)
+    advertised = await _probe_backends_async(vmaf)
     build_flags = {
         "cpu": True,  # CPU is always compiled in when the binary exists.
         "cuda": "cuda" in advertised,
@@ -1758,6 +1789,16 @@ def _ffprobe_geometry(path: Path) -> tuple[int, int, str, int]:
     return width, height, pixfmt, bitdepth
 
 
+async def _ffprobe_geometry_async(path: Path) -> tuple[int, int, str, int]:
+    """Async-safe wrapper around :func:`_ffprobe_geometry` (ADR-1023).
+
+    Runs the blocking ``subprocess.run`` inside :func:`_ffprobe_geometry`
+    in a thread-pool worker so the event loop is not stalled while
+    waiting for ffprobe to complete.
+    """
+    return await asyncio.to_thread(_ffprobe_geometry, path)
+
+
 async def _decode_to_yuv(src: Path, dst: Path, *, pix_fmt: str) -> None:
     """Decode the encoded video at @p src to a raw YUV file at @p dst via
     ffmpeg.  @p pix_fmt is the ``yuv420p``-style ffmpeg format string.
@@ -1811,7 +1852,9 @@ async def _run_vmaf_score_encoded(
     if not shutil.which("ffprobe"):
         raise RuntimeError("ffprobe not on PATH; install ffmpeg to use vmaf_score_encoded")
 
-    width, height, pixfmt, bitdepth = _ffprobe_geometry(ref_path)
+    # ADR-1023: use the async wrapper so the blocking subprocess.run inside
+    # _ffprobe_geometry does not stall the event loop.
+    width, height, pixfmt, bitdepth = await _ffprobe_geometry_async(ref_path)
     ffmpeg_pix_fmt = _PIXFMT_TO_FFMPEG.get((pixfmt, bitdepth))
     if ffmpeg_pix_fmt is None:
         raise ValueError(f"unsupported pixfmt/bitdepth combination: {pixfmt}/{bitdepth}")
@@ -1822,10 +1865,17 @@ async def _run_vmaf_score_encoded(
         dis_yuv = tmp_p / "dis.yuv"
 
         # Decode both inputs in parallel for speed.
-        await asyncio.gather(
+        # ADR-1023: return_exceptions=True so one failing decode does not
+        # silently swallow the other's error.  We inspect both results and
+        # re-raise the first exception found so the caller gets a clear message.
+        decode_results = await asyncio.gather(
             _decode_to_yuv(ref_path, ref_yuv, pix_fmt=ffmpeg_pix_fmt),
             _decode_to_yuv(dis_path, dis_yuv, pix_fmt=ffmpeg_pix_fmt),
+            return_exceptions=True,
         )
+        for _res in decode_results:
+            if isinstance(_res, BaseException):
+                raise _res
 
         req = ScoreRequest(
             ref=ref_yuv,
@@ -2275,7 +2325,7 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     elif name == "list_models":
         result = {"models": _list_models()}
     elif name == "list_backends":
-        result = _list_backends()
+        result = await _list_backends()
     elif name == "run_benchmark":
         result = await _run_benchmark(progress_token=progress_token)
     elif name == "eval_model_on_split":
@@ -2310,7 +2360,7 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     elif name == "probe_backend":
         result = await _probe_backend(str(arguments["backend"]))
     elif name == "vmaf_version":
-        result = _vmaf_version()
+        result = await _vmaf_version()
     elif name == "vmaf_score_encoded":
         result = await _run_vmaf_score_encoded(
             ref_path=_validate_path(arguments["reference_encoded"]),
@@ -2378,13 +2428,24 @@ async def _run() -> None:
 
 
 def main() -> None:
-    anyio_impl = os.environ.get("VMAF_MCP_ASYNC", "asyncio")
-    if anyio_impl == "asyncio":
+    # ADR-1023: VMAF_MCP_ASYNC truthy-string guard.
+    # Accept only the well-defined anyio backend names ("asyncio", "trio")
+    # or the canonical truthy tokens ("1", "true", "yes", case-insensitive)
+    # as a synonym for "trio" (the most common non-asyncio anyio backend).
+    # Reject ambiguous strings that would otherwise be passed verbatim to
+    # anyio.run() and produce a confusing "unknown backend" RuntimeError.
+    _raw_async = os.environ.get("VMAF_MCP_ASYNC", "").strip().lower()
+    if _raw_async in ("", "asyncio", "0", "false", "no"):
         asyncio.run(_run())
-    else:
+    elif _raw_async in ("1", "true", "yes", "trio"):
         import anyio
 
-        anyio.run(_run, backend=anyio_impl)
+        anyio.run(_run, backend="trio")
+    else:
+        # Treat the value as an explicit anyio backend name (e.g. "uvloop").
+        import anyio
+
+        anyio.run(_run, backend=_raw_async)
 
 
 if __name__ == "__main__":
