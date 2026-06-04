@@ -18,6 +18,7 @@
 
 #include <immintrin.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "psnr_avx2.h"
 
@@ -100,10 +101,11 @@ uint64_t psnr_sse_line_16_avx2(const uint16_t *ref, const uint16_t *dis, unsigne
     t128 = _mm_add_epi64(t128, _mm_shuffle_epi32(t128, 0x4E));
     uint64_t result = (uint64_t)_mm_cvtsi128_si64(t128);
 
-    /* Scalar tail */
+    /* Scalar tail — use unsigned abs-diff to avoid signed-int overflow UB
+     * (65535^2 > INT32_MAX); mirrors sse_line_16_c in integer_psnr.c. */
     for (; j < w; j++) {
-        const int32_t e = (int32_t)ref[j] - (int32_t)dis[j];
-        result += (uint64_t)((uint32_t)(e * e));
+        const uint32_t e = (uint32_t)abs((int32_t)ref[j] - (int32_t)dis[j]);
+        result += (uint64_t)e * e;
     }
 
     return result;

@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/simd-psnr-16bit-scalar-tail-overflow (2026-06-04)
+
+**Files touched:**
+`core/src/feature/x86/psnr_avx2.c`,
+`core/src/feature/x86/psnr_avx512.c`,
+`core/src/feature/arm64/psnr_neon.c`
+
+no rebase impact: internal arithmetic fix in scalar tail loops. No public C API,
+public header, upstream-mirrored Python, or Netflix golden-assertion file is
+touched. The change affects only the three SIMD backends' scalar-remainder path
+for 16-bit PSNR; the SIMD main loop is unchanged. Port of any upstream commit
+touching these files should verify that the `(uint32_t)abs(...)` pattern is
+preserved in the scalar tail if the upstream change modifies it.
+
+---
+
 ## docs/vulkan-overview-mark-removed-adr0726 (2026-06-04)
 
 **Files touched:**

@@ -18,6 +18,7 @@
 
 #include <arm_neon.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "psnr_neon.h"
 
@@ -91,10 +92,11 @@ uint64_t psnr_sse_line_16_neon(const uint16_t *ref, const uint16_t *dis, unsigne
     uint64x2_t total = vaddq_u64(sum0, sum1);
     uint64_t result = vaddvq_u64(total);
 
-    /* Scalar tail */
+    /* Scalar tail — use unsigned abs-diff to avoid signed-int overflow UB
+     * (65535^2 > INT32_MAX); mirrors sse_line_16_c in integer_psnr.c. */
     for (; j < w; j++) {
-        const int32_t e = (int32_t)ref[j] - (int32_t)dis[j];
-        result += (uint64_t)((uint32_t)(e * e));
+        const uint32_t e = (uint32_t)abs((int32_t)ref[j] - (int32_t)dis[j]);
+        result += (uint64_t)e * e;
     }
 
     return result;
