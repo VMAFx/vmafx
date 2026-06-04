@@ -61,7 +61,6 @@
         { "type": "revert", "section": "Reverts" },
         { "type": "security", "section": "Security" },
         { "type": "style", "section": "Style" }
-        { "type": "chore", "section": "Miscellaneous", "hidden": false }
       ],
       "extra-files": [
         { "type": "generic", "path": "pyproject.toml" }
