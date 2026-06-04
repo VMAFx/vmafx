@@ -1,6 +1,21 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs/vulkan-overview-mark-removed-adr0726 (2026-06-04)
+
+**Files touched:**
+`docs/backends/vulkan/overview.md`,
+`docs/api/vulkan-image-import.md`,
+`docs/state.md`,
+`changelog.d/chore/vulkan-docs-mark-removed.md`
+
+no rebase impact: docs-only changes. No C source, public header,
+upstream-mirrored Python, or Netflix golden-assertion file is touched.
+The changes add removal notices to two Vulkan documentation files that
+still described the backend as active after ADR-0726 removed it.
+
+---
+
 ## docs(post-rename): scrub residual libvmaf/ paths (ADR-0700)
 
 no rebase impact: doc-only path corrections. All changed files are under

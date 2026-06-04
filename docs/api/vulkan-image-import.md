@@ -1,8 +1,22 @@
 # Vulkan image-import C API
 
-The Vulkan backend exposes a zero-copy import surface so callers
-that already have decoded frames sitting in a `VkImage` can score
-them in libvmaf without round-tripping through the host. This is
+> **Status: REMOVED — [ADR-0726](../adr/0726-drop-vulkan-backend.md) (2026-05-28)**
+>
+> The Vulkan backend and its image-import API were removed from the fork in
+> ADR-0726. `core/include/libvmaf/libvmaf_vulkan.h` no longer exists.
+> The `vf_libvmaf_vulkan` FFmpeg filter was replaced with a no-op shim per
+> [ADR-0860](../adr/0860-ffmpeg-patch-chain-no-op-vulkan-shim.md).
+> For zero-copy frame import, see the SYCL D3D11/dmabuf import path in
+> [`docs/development/windows-d3d11-import.md`](../development/windows-d3d11-import.md).
+>
+> **This page is historical documentation** describing the Vulkan image-import
+> design that was implemented before removal.
+
+---
+
+The Vulkan backend exposed a zero-copy import surface so callers
+that already had decoded frames sitting in a `VkImage` could score
+them in libvmaf without round-tripping through the host. This was
 the Vulkan analogue of the SYCL D3D11 / dmabuf import path
 documented in
 [`docs/development/windows-d3d11-import.md`](../development/windows-d3d11-import.md);
@@ -11,9 +25,9 @@ the design background lives in
 and [ADR-0186](../adr/0186-vulkan-image-import-impl.md) (impl +
 ffmpeg-patch wiring).
 
-The public header is
-[`core/include/libvmaf/libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h).
-The Vulkan backend overview lives in
+The public header was
+`core/include/libvmaf/libvmaf_vulkan.h` (now removed).
+The Vulkan backend historical overview lives in
 [`docs/backends/vulkan/overview.md`](../backends/vulkan/overview.md).
 
 ## Use cases
