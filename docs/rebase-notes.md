@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## test(mcp-server): coverage push round 4
+
+**Files touched:** `mcp-server/vmaf-mcp/tests/test_coverage_round4.py`,
+`changelog.d/added/mcp-server-coverage-round4.md`, `docs/rebase-notes.md`.
+
+**Rebase impact:** None. Fork-local Python test file with no upstream analogue;
+no C source, public header, or Netflix golden-assertion file is touched.
+
+---
+
 ## test(sycl): parity coverage round 5 — CAMBI parity gate
 
 **Branch**: test/sycl-parity-round5-cambi
