@@ -13,6 +13,13 @@ source list, preserve `integer_motion_v2.c` registration and the
 `&vmaf_fex_integer_motion_v2` list entry — removing them breaks all
 `"motion_v2"` lookups on CPU-only builds.
 
+## ci/dev-container-gate-adr0819 (2026-06-04, ADR-0819)
+
+no rebase impact: adds `.github/workflows/dev-container-build.yml` and
+`docs/adr/0819-dev-container-ci-gate.md`. No C source, public C API,
+upstream-mirrored Python, Netflix golden-assertion file, or
+ffmpeg-patches file is touched.
+
 ---
 
 ## ci/promote-gpu-coverage-gate-required
