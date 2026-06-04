@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/sycl-speed-incomplete-type-access (2026-06-04)
+
+**Files touched:**
+`core/src/feature/sycl/speed_chroma_sycl.cpp`,
+`core/src/feature/sycl/speed_temporal_sycl.cpp`
+
+no rebase impact: internal build-fix replacing direct struct member dereferences
+with the existing public API call `vmaf_sycl_get_queue_ptr()`. No public C API,
+public header, upstream-mirrored Python, or Netflix golden-assertion file is
+touched. If an upstream commit adds a SYCL speed extractor, ensure it also uses
+`vmaf_sycl_get_queue_ptr()` rather than direct struct access.
+
+---
+
 ## fix/cli-narrowing-casts-vmaf-cpp (2026-06-04)
 
 **Files touched:** `core/tools/vmaf.cpp`

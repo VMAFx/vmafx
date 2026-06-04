@@ -282,7 +282,7 @@ struct SpeedChromaSyclState {
 
 static void free_sycl_state(SpeedChromaSyclState *s)
 {
-    sycl::queue *q = (sycl::queue *)s->sycl_state->queue;
+    sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
 #define FREE_D(p)                                                                                  \
     do {                                                                                           \
         if ((p)) {                                                                                 \
@@ -338,7 +338,7 @@ static void free_sycl_state(SpeedChromaSyclState *s)
 static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm, float *d_indterm,
                        float *d_sol)
 {
-    sycl::queue &q = *(sycl::queue *)s->sycl_state->queue;
+    sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
     const uint32_t op_w = (uint32_t)s->dim.truncated_width;
@@ -398,7 +398,7 @@ static int run_channel(SpeedChromaSyclState *s, float *h_plane, float *h_indterm
 
 static int score_aggregate(SpeedChromaSyclState *s, float *score_out)
 {
-    sycl::queue &q = *(sycl::queue *)s->sycl_state->queue;
+    sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const float sigma_nn = (float)s->opt.speed_sigma_nn;
 
@@ -582,7 +582,7 @@ static int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
         return err;
     s->float_stride = speed_internal_float_stride(s->dim.alloc_width);
 
-    sycl::queue &q = *(sycl::queue *)s->sycl_state->queue;
+    sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
     const size_t stride_px = s->float_stride / sizeof(float);
     const size_t nb = s->dim.num_blocks;
     const size_t plane_bytes = s->dim.alloc_height * stride_px * sizeof(float);
