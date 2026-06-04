@@ -732,8 +732,13 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         int scaled_w = s->enc_width;
         int scaled_h = s->enc_height;
         for (int scale = 0; scale < NUM_SCALES; scale++) {
-            (void)snprintf(path, sizeof(path), "%s%ccambi_heatmap_scale_%d_%dx%d_16b.gray",
-                           s->heatmaps_path, PATH_SEPARATOR, scale, scaled_w, scaled_h);
+            {
+                int snp_ret =
+                    snprintf(path, sizeof(path), "%s%ccambi_heatmap_scale_%d_%dx%d_16b.gray",
+                             s->heatmaps_path, PATH_SEPARATOR, scale, scaled_w, scaled_h);
+                if (snp_ret < 0 || (size_t)snp_ret >= sizeof(path))
+                    return -ENAMETOOLONG;
+            }
             /* Mode 0644: owner-rw, group-r, other-r. Pinning the mode at
              * open(2) avoids the world-writable surface fopen(3) inherits
              * from a permissive umask. CodeQL cpp/world-writable-file-creation. */

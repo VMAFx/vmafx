@@ -250,6 +250,11 @@ int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafMod
         memset((void *)mc->model, 0, initial_sz);
         mc->size = 8;
         mc->type = model->type;
+        /* Guard against size_t underflow when name is shorter than the
+         * ".json" suffix we strip (5 chars).  An empty or very short
+         * model name is a caller error; reject it cleanly. */
+        if (strlen(model->name) < 5)
+            goto fail_mc;
         const size_t name_sz = strlen(model->name) - 5 + 1;
         mc->name = malloc(name_sz);
         if (!mc->name)

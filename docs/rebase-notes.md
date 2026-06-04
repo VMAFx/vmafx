@@ -44254,6 +44254,12 @@ same translation unit. No public headers changed.
 No rebase impact. Error-handling only — wraps two json.loads calls. No protocol,
 API, or tool-schema changes. Output format on the success path is unchanged.
 
+## ADR-1007 — C string/numeric UB fixes (2026-06-04)
+
+No rebase impact. All changes are guarded code paths that only fire for unusual
+caller-supplied values (NULL string defaults, model names shorter than 5 chars,
+tiny ADM frame dimensions). No public API, golden assertions, or ABI touched.
+
 ## ADR-1012 — Go queue state-machine guards (2026-06-04)
 
 No rebase impact. Both changes affect only the internal SQLite write path of the

@@ -1108,20 +1108,23 @@ static void adm_decouple_s123(AdmBuffer *buf, int w, int h, int stride, double a
             uint16_t kv_msb = (abs_ov < (32768) ? abs_ov : get_best15_from32(abs_ov, &kv_shift));
             uint16_t kd_msb = (abs_od < (32768) ? abs_od : get_best15_from32(abs_od, &kd_shift));
 
+            /* Use 1u to avoid signed-integer left-shift UB when kh/kv/kd_shift
+             * is large (shift amount can reach 17, making 1<<31 overflow signed int).
+             * The result is immediately widened into the int64_t expression. */
             int64_t tmp_kh = (oh == 0) ?
                                  32768 :
                                  (((int64_t)adm_div_lookup[kh_msb + 32768] * th) * (kh_sign) +
-                                  (1 << (14 + kh_shift))) >>
+                                  (int64_t)(1u << (14 + kh_shift))) >>
                                      (15 + kh_shift);
             int64_t tmp_kv = (ov == 0) ?
                                  32768 :
                                  (((int64_t)adm_div_lookup[kv_msb + 32768] * tv) * (kv_sign) +
-                                  (1 << (14 + kv_shift))) >>
+                                  (int64_t)(1u << (14 + kv_shift))) >>
                                      (15 + kv_shift);
             int64_t tmp_kd = (od == 0) ?
                                  32768 :
                                  (((int64_t)adm_div_lookup[kd_msb + 32768] * td) * (kd_sign) +
-                                  (1 << (14 + kd_shift))) >>
+                                  (int64_t)(1u << (14 + kd_shift))) >>
                                      (15 + kd_shift);
 
             int64_t kh = tmp_kh < 0 ? 0 : (tmp_kh > 32768 ? 32768 : tmp_kh);
@@ -1558,9 +1561,12 @@ static float adm_csf_den_s123(const i4_adm_dwt_band_t *src, int scale, int w, in
     const int bottom = h - top;
 
     uint32_t shift_cub = (uint32_t)ceil(log2(right - left));
-    uint32_t add_shift_cub = (uint32_t)pow(2, (shift_cub - 1));
+    /* Guard against uint32_t underflow: when (right-left)==1, log2==0, shift==0,
+     * and shift-1 would wrap to UINT32_MAX causing pow(2,UINT32_MAX)==+Inf→UB cast. */
+    uint32_t add_shift_cub = (shift_cub > 0u) ? (uint32_t)pow(2.0, (double)(shift_cub - 1u)) : 0u;
     uint32_t shift_accum = (uint32_t)ceil(log2(bottom - top));
-    uint32_t add_shift_accum = (uint32_t)pow(2, (shift_accum - 1));
+    uint32_t add_shift_accum =
+        (shift_accum > 0u) ? (uint32_t)pow(2.0, (double)(shift_accum - 1u)) : 0u;
 
     int32_t *src_h = src->band_h + (ptrdiff_t)top * src_stride;
     int32_t *src_v = src->band_v + (ptrdiff_t)top * src_stride;
@@ -2096,7 +2102,7 @@ static float i4_adm_cm(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
     }
 
     uint32_t shift_cub = (uint32_t)ceil(log2(w));
-    uint32_t add_shift_cub = (uint32_t)pow(2, (shift_cub - 1));
+    uint32_t add_shift_cub = (shift_cub > 0u) ? (uint32_t)pow(2.0, (double)(shift_cub - 1u)) : 0u;
 
     uint32_t shift_inner_accum = (uint32_t)ceil(log2(h));
     uint32_t add_shift_inner_accum = (uint32_t)pow(2, (shift_inner_accum - 1));
