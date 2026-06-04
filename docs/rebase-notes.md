@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/r6-sycl-kernel-correctness (2026-06-04)
+
+**Files touched:**
+`core/src/feature/sycl/integer_vif_sycl.cpp`,
+`core/src/feature/sycl/integer_motion_sycl.cpp`,
+`core/src/feature/sycl/integer_adm_sycl.cpp`
+
+**Rebase impact:** no rebase impact — all files are fork-local SYCL paths
+with no upstream counterparts.
+
+---
+
 ## fix/r6-cuda-hip-kernel-correctness (2026-06-04)
 
 **Files touched:**
