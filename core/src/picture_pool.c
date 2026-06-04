@@ -230,10 +230,18 @@ int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic)
     // Pop picture index from free list - O(1) operation
     unsigned idx = pool->free_list[--pool->free_list_top];
 
+    /* Copy the pre-allocated picture slot to a local while still holding the
+     * lock.  Although a popped index cannot be re-issued (it is off the free
+     * list until explicitly pushed back), pool->pictures[idx] is a shared
+     * array element: another thread calling pool_close could free the array
+     * between our unlock and the read.  Copying under the lock makes the
+     * read race-free and keeps the critical section small (one struct copy). */
+    VmafPicture pic_snapshot = pool->pictures[idx];
+
     pthread_mutex_unlock(&pool->lock);
 
-    // Copy the pre-allocated picture (includes all metadata + data pointers)
-    *pic = pool->pictures[idx];
+    // Apply the pre-allocated picture snapshot (all metadata + data pointers)
+    *pic = pic_snapshot;
 
     // Set up extended priv with pool information
     PooledPicturePriv *priv = malloc(sizeof(*priv));

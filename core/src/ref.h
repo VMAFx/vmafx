@@ -28,6 +28,14 @@
 #if defined(__cplusplus)
 #include <atomic>
 using std::atomic_int;
+/* Pull in the memory-order constants so C++ TUs can write
+ * memory_order_acq_rel / memory_order_relaxed etc. without a std::
+ * prefix — mirroring the bare C11 macros visible in the C branch. */
+using std::memory_order_acq_rel;
+using std::memory_order_acquire;
+using std::memory_order_relaxed;
+using std::memory_order_release;
+using std::memory_order_seq_cst;
 #else
 #include <stdatomic.h>
 #endif

@@ -126,6 +126,10 @@ int vmaf_feature_collector_set_aggregate(VmafFeatureCollector *feature_collector
         return -EINVAL;
 
     pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
     int err = aggregate_vector_append(&feature_collector->aggregate_vector, feature_name, score);
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
@@ -142,6 +146,10 @@ int vmaf_feature_collector_get_aggregate(VmafFeatureCollector *feature_collector
         return -EINVAL;
 
     pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
     int err = 0;
 
     double *s = nullptr;
@@ -367,6 +375,10 @@ FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *fc, const char 
         return nullptr;
 
     pthread_mutex_lock(&fc->lock);
+    if (fc->destroyed) {
+        pthread_mutex_unlock(&fc->lock);
+        return nullptr;
+    }
     FeatureVector *fv = find_feature_vector(fc, feature_name);
     pthread_mutex_unlock(&fc->lock);
     return fv;
@@ -468,6 +480,10 @@ int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const
         return -EINVAL;
 
     pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
     int err = 0;
 
     if (!feature_collector->timer.begin)
@@ -514,6 +530,10 @@ int vmaf_feature_collector_get_score(VmafFeatureCollector *feature_collector,
         return -EINVAL;
 
     pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
     int err = 0;
 
     FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
@@ -560,6 +580,14 @@ void vmaf_feature_collector_destroy(VmafFeatureCollector *feature_collector)
     }
     vmaf_metadata_destroy(feature_collector->metadata);
     free(static_cast<void *>(feature_collector->feature_vector));
+    /* Set destroyed flag under the lock before releasing it.  Any thread
+     * already blocked on pthread_mutex_lock will acquire the mutex, see
+     * destroyed == true, release immediately, and return -ENODEV — preventing
+     * it from operating on a half-freed struct.  This closes the
+     * mutex-destroy-after-unlock race: pthread_mutex_destroy is not called
+     * until after the unlock, but by then no new critical-section body can
+     * run because the destroyed guard redirects all lockers. */
+    feature_collector->destroyed = true;
     pthread_mutex_unlock(&(feature_collector->lock));
     pthread_mutex_destroy(&(feature_collector->lock));
     free(feature_collector);

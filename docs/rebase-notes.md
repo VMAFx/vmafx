@@ -44422,3 +44422,23 @@ async-safety fixes inside coroutines that already existed; no public API
 or tool schema changes.
 
 ---
+
+## fix/r5-memory-ordering (2026-06-04, ADR-1020)
+
+**Files touched:**
+`core/src/ref.c`, `core/src/ref.cpp`, `core/src/ref.h`,
+`core/src/feature/feature_collector.h`, `core/src/feature/feature_collector.cpp`,
+`core/src/picture_pool.c`
+
+If an upstream Netflix commit touches any of these files, review the
+following invariants before accepting:
+
+- `ref.c` / `ref.cpp`: the decrement must remain `memory_order_acq_rel`; any
+  upstream change that reverts to bare `atomic_fetch_sub` must be re-annotated.
+- `feature_collector.h`: the `destroyed` field must survive struct layout
+  changes; all new public entry points that lock `feature_collector->lock` must
+  add the destroyed-guard pattern immediately after the lock call.
+- `picture_pool.c` fetch path: the `pool->pictures[idx]` copy must happen before
+  the unlock; if upstream refactors the fetch function, preserve that ordering.
+
+---

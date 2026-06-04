@@ -60,6 +60,13 @@ typedef struct VmafFeatureCollector {
         clock_t begin, end;
     } timer;
     pthread_mutex_t lock;
+    /* Set to true under lock inside vmaf_feature_collector_destroy() before
+     * the final unlock.  All public entry points that acquire lock must test
+     * this flag immediately after locking; if true they must release the lock
+     * and return -ENODEV.  This prevents the mutex-destroy-after-unlock race
+     * where a thread blocked on pthread_mutex_lock would acquire a mutex that
+     * has already been destroyed (UB). */
+    bool destroyed;
 } VmafFeatureCollector;
 
 int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector);

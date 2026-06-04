@@ -39,7 +39,14 @@ void vmaf_ref_fetch_increment(VmafRef *ref)
 
 long vmaf_ref_fetch_decrement(VmafRef *ref)
 {
-    return atomic_fetch_sub(&ref->cnt, 1);
+    /* acq_rel ordering for the last-decrementer pattern: the release side
+     * ensures the decrementing thread's prior stores are visible to other
+     * threads, and the acquire side ensures the last decrementer (the one
+     * that sees old_cnt == 1) loads the most recent writes before it runs
+     * the destructor (e.g. picture.c:230-233 dereferencing priv).
+     * Using the default seq_cst form is safe but unnecessarily strong; this
+     * matches the standard reference-counting idiom in C11 §7.17. */
+    return atomic_fetch_sub_explicit(&ref->cnt, 1, memory_order_acq_rel);
 }
 
 long vmaf_ref_load(VmafRef *ref)
