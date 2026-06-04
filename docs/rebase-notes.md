@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/macos-docker-platform-unblock (2026-06-04, no ADR — build bug fix)
+
+no rebase impact: adds `<string_view>` include to `core/tools/vmaf.cpp` (no logic
+change) and replaces `VmafCudaFunctions` with `CudaFunctions` in 13 CUDA close
+callbacks (correct type name, no ABI/API change). Neither modification touches
+upstream-mirrored code paths or public API signatures.
+
+---
+
 ## fix/float-adm-simd-dispatch (2026-06-04, no ADR — perf bug fix)
 
 **Files touched:**

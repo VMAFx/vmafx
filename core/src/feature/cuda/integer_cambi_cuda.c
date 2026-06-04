@@ -1028,7 +1028,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
         if (e && rc == 0)
             rc = e;
     }
-    const VmafCudaFunctions *cu_f = fex->cu_state->f;
+    const CudaFunctions *cu_f = fex->cu_state->f;
     if (cu_f && s->module)
         (void)cu_f->cuModuleUnload(s->module);
     return rc;

@@ -914,7 +914,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
         }
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const VmafCudaFunctions *cu_f = fex->cu_state->f;
+    const CudaFunctions *cu_f = fex->cu_state->f;
     if (cu_f && s->module)
         (void)cu_f->cuModuleUnload(s->module);
     return ret;

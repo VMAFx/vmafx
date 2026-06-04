@@ -30,6 +30,7 @@
 #include <cstring>
 #include <ctime>
 #include <memory>
+#include <string_view>
 #ifdef _WIN32
 /* MSVC/UCRT provides isatty / fileno via <io.h> under the MSVC-prefixed
  * names _isatty / _fileno; the POSIX-style aliases stay available for

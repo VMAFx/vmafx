@@ -682,7 +682,7 @@ after_ev2:;
         ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->buf.accum_host);
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
-    const VmafCudaFunctions *cu_f_close = fex->cu_state->f;
+    const CudaFunctions *cu_f_close = fex->cu_state->f;
     if (cu_f_close && s->filter1d_module)
         (void)cu_f_close->cuModuleUnload(s->filter1d_module);
     return ret;
