@@ -141,10 +141,12 @@ def _stamp_tracked_default_sentinels(args: argparse.Namespace) -> None:
     sentinel that isn't already set to ``False`` (i.e. the user did not
     pass the flag) to ``True``.
     """
-    # Iterate only the names the compare subparser registers as tracked.
+    # Iterate only the names the compare/ladder subparsers register as tracked.
     # Hardcoded so the sentinel-stamp pass stays cheap; add to this
     # tuple when wiring a new ``_TrackedDefaultAction`` flag.
-    for dest in ("framerate", "duration", "target_vmafs", "target_vmaf"):
+    # NOTE: ladder stores --duration to dest="duration_s" (not "duration"), so
+    # both keys are listed here so the stamp covers both sub-commands (ADR-1048).
+    for dest in ("framerate", "duration", "duration_s", "target_vmafs", "target_vmaf"):
         sentinel = f"_{dest}_was_default"
         if not hasattr(args, sentinel):
             setattr(args, sentinel, True)

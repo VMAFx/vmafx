@@ -1274,3 +1274,12 @@ scripts for those local corpora.
   `convex_hull`). If a future change does promote the union into the
   public surface, lift the `cast` and audit every `Ladder.points`
   consumer for `isinstance` discriminators.
+
+## _stamp_tracked_default_sentinels tuple invariant (ADR-1048)
+
+The hard-coded tuple in `_stamp_tracked_default_sentinels` (cli.py ~line 147) must
+contain the `dest=` value of every `_TrackedDefaultAction` flag, not the flag name.
+`ladder --duration` uses `dest="duration_s"`, so both `"duration"` (corpus) and
+`"duration_s"` (ladder) must be in the tuple. When adding a new
+`_TrackedDefaultAction` flag with a non-standard `dest=` argument, add the dest
+to the tuple at the same time or the sentinel will never be set.

@@ -26,8 +26,12 @@ file, or ffmpeg-patches file is touched.
 ## fix/containerfile-user-hardening-adr1042
 
 no rebase impact: container hardening changes only (USER directive and
-ARG/ENV scoping). No public API or upstream-mirrored C code touched.
+ARG/ENV scoping). No public API or upstream-mirrored C code touched.## fix/r9-helm-vmaftune-grpc-bugs (2026-06-04)
 
+no rebase impact: changes are confined to `deploy/helm/vmafx/` (Helm chart
+config only), `tools/vmaf-tune/src/vmaftune/cli.py` (Python), and
+`cmd/vmafx-node/online_feedback.go` (fork-local Go binary). None of these
+files has an upstream Netflix/vmaf counterpart.
 ---
 
 ## fix/r6-sycl-kernel-correctness (2026-06-04)

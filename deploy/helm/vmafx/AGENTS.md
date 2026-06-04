@@ -44,8 +44,20 @@ PR #439 (ADR-0930) will change `runAsUser`/`runAsGroup` from `65534` to
 `seccompProfile`. When that PR merges, update this note to reflect the
 final UID and that container-scope seccompProfile is also set.
 
+## Invariants (ADR-1047)
+
+- `storage` must remain in `values.yaml` with `mode: "http-serve"` as the default;
+  the schema defines the key as non-required but `additionalProperties: false` means
+  any user-supplied `storage.*` key must match the schema definition.
+- `gpu.count` minimum is 1; do not lower it back to 0 — 0 GPUs with a vendor device
+  plugin is a silent no-op.
+- `networkPolicy`, `auth`, and `otelCollector` use `additionalProperties: true` in
+  the schema intentionally — their sub-keys are too numerous and user-extensible to
+  enumerate exhaustively.
+
 ## References
 
 - [ADR-0699](../../../docs/adr/0699-vmafx-helm-chart-k8s.md) — original chart ADR
 - [ADR-0930](../../../docs/adr/0930-helm-networkpolicy-pss.md) — PSS + NetworkPolicy
 - [ADR-0969](../../../docs/adr/0969-helm-seccomp-default-plus-node-image-helper.md) — seccompProfile default + node image helper fix
+- [ADR-1047](../../../docs/adr/1047-helm-schema-bug-fixes.md) — R9 schema correctness fixes

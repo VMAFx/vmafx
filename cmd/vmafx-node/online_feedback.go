@@ -55,9 +55,14 @@ const (
 	// feedbackWriteTimeout is the per-message write deadline on the socket.
 	feedbackWriteTimeout = 2 * time.Second
 
-	// feedbackRetryInterval is how long the drainer waits after a failed
-	// dial before retrying.
-	feedbackRetryInterval = 10 * time.Second
+	// feedbackRetryBase is the initial backoff after the first failed dial.
+	// The interval doubles on each consecutive failure up to feedbackRetryMax
+	// (ADR-1049 — replaces the old fixed feedbackRetryInterval constant).
+	feedbackRetryBase = 2 * time.Second
+
+	// feedbackRetryMax caps the exponential backoff to avoid log noise during
+	// extended sidecar outages (e.g. rolling restarts).
+	feedbackRetryMax = 2 * time.Minute
 )
 
 // FeedbackMessage is the JSON envelope sent to the sidecar.
@@ -163,9 +168,12 @@ func (fc *FeedbackClient) Dropped() int64 { return fc.dropped.Load() }
 func (fc *FeedbackClient) Delivered() int64 { return fc.delivered.Load() }
 
 // drainLoop connects to the sidecar and forwards queued messages.
-// On connection failure it waits feedbackRetryInterval and retries.
+// On connection failure it waits with exponential backoff (feedbackRetryBase …
+// feedbackRetryMax) before retrying.  A successful connection resets the
+// backoff to the base interval (ADR-1049).
 // It exits when ctx is cancelled.
 func (fc *FeedbackClient) drainLoop(ctx context.Context) {
+	backoff := feedbackRetryBase
 	for {
 		if ctx.Err() != nil {
 			return
@@ -178,15 +186,22 @@ func (fc *FeedbackClient) drainLoop(ctx context.Context) {
 			fc.log.Warn("sidecar not reachable — retrying",
 				slog.String("socket", fc.socketPath),
 				slog.String("err", err.Error()),
-				slog.Duration("retry_in", feedbackRetryInterval),
+				slog.Duration("retry_in", backoff),
 			)
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(feedbackRetryInterval):
+			case <-time.After(backoff):
+			}
+			// Double backoff, cap at feedbackRetryMax.
+			backoff *= 2
+			if backoff > feedbackRetryMax {
+				backoff = feedbackRetryMax
 			}
 			continue
 		}
+		// Successful connection — reset backoff.
+		backoff = feedbackRetryBase
 		fc.log.Info("sidecar connected", slog.String("socket", fc.socketPath))
 		if err := fc.pump(ctx, conn); err != nil {
 			if ctx.Err() != nil {

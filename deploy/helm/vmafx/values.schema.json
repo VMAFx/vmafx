@@ -96,7 +96,7 @@
     "gpu": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["vendor"],
+      "required": ["vendor", "enabled"],
       "properties": {
         "enabled": { "type": "boolean" },
         "vendor": {
@@ -104,7 +104,11 @@
           "enum": ["nvidia", "amd", "intel", "cpu"],
           "description": "Maps to the matching device-plugin resource key. nvidia → nvidia.com/gpu, amd → amd.com/gpu, intel → gpu.intel.com/i915, cpu → no device plugin. Vulkan removed per ADR-0726."
         },
-        "count": { "type": "integer", "minimum": 0 }
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of GPU units to request from the device plugin. Must be ≥1 when gpu.enabled is true; requesting 0 is a silent no-op on every vendor device plugin (ADR-1047)."
+        }
       }
     },
     "resources": { "$ref": "#/$defs/resourceSpec" },
@@ -209,6 +213,42 @@
         "tolerations": { "type": "array" },
         "volumes": { "type": "array" },
         "volumeMounts": { "type": "array" }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "NetworkPolicy default-deny posture with allow-rules (ADR-0930). additionalProperties:true so nested allow.* lists pass without exhaustive enumeration.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "allow": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Multi-tenant JWT/OIDC gateway (ADR-0794). additionalProperties:true to accommodate per-tenant oidc and rbac sub-keys without exhaustive enumeration.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "disabled": { "type": "boolean" },
+        "jwksEndpoint": { "type": "string" },
+        "issuer": { "type": "string" },
+        "audience": { "type": "string" },
+        "tenantClaim": { "type": "string" },
+        "rolesClaim": { "type": "string" },
+        "tenants": { "type": "array" }
+      }
+    },
+    "otelCollector": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "OpenTelemetry collector sidecar (ADR-0782). additionalProperties:true to allow arbitrary receiver/exporter config blocks.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/$defs/imageSpec" },
+        "otlpGRPCPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "config": { "type": "string" },
+        "resources": { "$ref": "#/$defs/resourceSpec" }
       }
     }
   },

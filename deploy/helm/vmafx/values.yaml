@@ -371,6 +371,18 @@ pushgateway:
   enabled: false
 
 # ---------------------------------------------------------------------------
+# Storage — vmafx-node asset-fetch mode (ADR-1047)
+# ---------------------------------------------------------------------------
+# mode selects how nodes pull scored assets: http-serve (default) fetches from
+# the controller HTTP endpoint; rclone fetches directly from an object store
+# configured via storage.rclone.config (rclone TOML).
+# ---------------------------------------------------------------------------
+storage:
+  mode: "http-serve"   # http-serve | rclone
+  rclone:
+    config: ""         # rclone TOML config string; used only when mode=rclone
+
+# ---------------------------------------------------------------------------
 # Node — vmafx-node worker pool (Deployment)
 # Enabled separately from the controller.
 # ---------------------------------------------------------------------------
