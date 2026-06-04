@@ -341,7 +341,8 @@ linked AGENTS.md before resolving conflicts.
   ciede / moment), [ADR-0188](docs/adr/0188-gpu-long-tail-batch-2.md)
   (batch 2: ssim / ms_ssim / psnr_hvs),
   [ADR-0192](docs/adr/0192-gpu-long-tail-batch-3.md) (batch 3:
-  motion_v2 / float_ansnr / float-twins / ssimulacra2 / cambi).
+  motion_v2 / float-twins / ssimulacra2 / cambi; `float_ansnr` removed
+  in commit 70ed8b3ce3 / PR #38).
   See [core/src/feature/AGENTS.md](core/src/feature/AGENTS.md).
 - **Vulkan backend (scaffold + image import)**:
   [ADR-0175](docs/adr/0175-vulkan-backend-scaffold.md) +

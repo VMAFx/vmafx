@@ -610,8 +610,8 @@ parses the C source directly.  Added in [ADR-0638](../adr/0638-mcp-p1-vmaftune-e
 ```json
 {
   "extractors": [
-    { "name": "float_ansnr",      "backend": "cpu",    "source": "core/src/feature/float_ansnr.c" },
-    { "name": "float_ansnr_cuda", "backend": "cuda",   "source": "core/src/feature/cuda/float_ansnr_cuda.c" },
+    { "name": "float_adm",        "backend": "cpu",    "source": "core/src/feature/float_adm.c" },
+    { "name": "float_vif",        "backend": "cpu",    "source": "core/src/feature/float_vif.c" },
     { "name": "float_ssim_hip",   "backend": "hip",    "source": "core/src/feature/hip/float_ssim_hip.c" }
   ]
 }

@@ -49,10 +49,11 @@ ADR-0372 (batch-1, this PR).
    `ciede_hip` (`submit_pre_launch` bypass shape) and
    `float_moment_hip` (four-uint64 atomic-counter readback shape).
 5. **T7-10b fifth + sixth consumers** (ADR-0266 / ADR-0267, PR #340) —
-   `feature/hip/float_ansnr_hip.{c,h}` and
-   `feature/hip/integer_motion_v2_hip.{c,h}`. Pin (a) interleaved
-   `(sig, noise)` per-block float partials, (b) the temporal-extractor
-   shape with `flush()` callback + ping-pong buffer carry.
+   `feature/hip/integer_motion_v2_hip.{c,h}`. (`float_ansnr_hip.{c,h}`
+   was the fifth consumer per ADR-0266 but was removed in commit 70ed8b3ce3
+   / PR #38; only `integer_motion_v2_hip` remains from this batch.)
+   Pin (b) the temporal-extractor shape with `flush()` callback +
+   ping-pong buffer carry.
 6. **T7-10b seventh + eighth consumers** (ADR-0273 / ADR-0274) —
    `feature/hip/float_motion_hip.{c,h}` and
    `feature/hip/float_ssim_hip.{c,h}`. Pin (a) the three-buffer
@@ -71,11 +72,12 @@ ADR-0372 (batch-1, this PR).
    the stub body has been removed from `common.c`. Remaining
    feature-kernel ports follow as their own PRs gated by the
    `places=4` cross-backend-diff lane (ADR-0214).
-8. **Batch-1 real kernels** (ADR-0372) — `integer_psnr_hip`
-   and `float_ansnr_hip` promoted from `-ENOSYS` scaffolds to real
-   `hipModuleLoadData` + `hipModuleLaunchKernel` consumers under
-   `#ifdef HAVE_HIPCC`. Without `HAVE_HIPCC`, the scaffold `-ENOSYS`
-   contract is preserved.
+8. **Batch-1 real kernels** (ADR-0372) — `integer_psnr_hip` promoted
+   from `-ENOSYS` scaffold to a real `hipModuleLoadData` +
+   `hipModuleLaunchKernel` consumer under `#ifdef HAVE_HIPCC`. Without
+   `HAVE_HIPCC`, the scaffold `-ENOSYS` contract is preserved.
+   (`float_ansnr_hip` was also promoted in ADR-0372 but subsequently
+   removed in commit 70ed8b3ce3 / PR #38.)
 9. **Batch-2 real kernel** (ADR-0373, this PR) — `float_motion_hip`
    promoted from `-ENOSYS` scaffold to a real HIP module-API consumer.
    Adds `blur[2]` ping-pong + `ref_in` staging (`hipMalloc`) inside
@@ -139,7 +141,7 @@ ADR-0372 (batch-1, this PR).
   IS now set on extractors that have a verified-working real HIP
   kernel — currently only `vmaf_fex_integer_motion_hip` qualifies.
   `vmaf_fex_psnr_hip`, `vmaf_fex_ciede_hip`,
-  `vmaf_fex_float_moment_hip`, `vmaf_fex_float_ansnr_hip`,
+  `vmaf_fex_float_moment_hip`,
   `vmaf_fex_integer_motion_v2_hip`, `vmaf_fex_float_motion_hip`,
   `vmaf_fex_float_ssim_hip`, `vmaf_fex_float_psnr_hip`,
   `vmaf_fex_float_adm_hip`, `vmaf_fex_cambi_hip`,
@@ -190,17 +192,12 @@ ADR-0372 (batch-1, this PR).
 
 ## Rebase-sensitive invariants (fifth + sixth consumers)
 
-- **`float_ansnr_hip.c` mirrors `float_ansnr_cuda.c`
-  call-graph-for-call-graph** (fork-local, ADR-0266). The submit
-  path **intentionally does not call
-  `vmaf_hip_kernel_submit_pre_launch`** — same bypass as `ciede_hip`
-  (ADR-0259) — because the kernel writes per-block (sig, noise)
-  interleaved float partials directly (no atomic, no memset). The
-  partials buffer is sized `wg_count * 2u * sizeof(float)`; any
-  drift in the CUDA twin's partial shape requires a paired update
-  here. **On rebase**: if a future PR adds a `submit_pre_launch`
-  call to `float_ansnr_cuda.c`'s submit path, the HIP twin must
-  follow in the same PR.
+- **`float_ansnr_hip.c` (removed)**: the fifth consumer per ADR-0266 was
+  `float_ansnr_hip.c`, which mirrored `float_ansnr_cuda.c`. Both were
+  removed in commit 70ed8b3ce3 (PR #38). The no-memset bypass invariant
+  (`submit_pre_launch` not called; per-block `(sig, noise)` float partials)
+  applied to that TU — see [ADR-0266](../../../docs/adr/0266-hip-fifth-consumer-float-ansnr.md)
+  for the historical rationale. On rebase, ignore `float_ansnr`-related hunks.
 
 - **`integer_motion_v2_hip.c` mirrors `integer_motion_v2_cuda.c`
   call-graph-for-call-graph** (fork-local, ADR-0267). Carries the
@@ -216,26 +213,18 @@ ADR-0372 (batch-1, this PR).
 
 ## Rebase-sensitive invariants (batch-1 real kernels — ADR-0372)
 
-The following invariants apply once `integer_psnr_hip.c` and
-`float_ansnr_hip.c` are promoted from `-ENOSYS` scaffolds to real
-HIP Module API consumers (this PR, ADR-0372). They add to — and
+The following invariants apply to `integer_psnr_hip.c`, which was
+promoted from a `-ENOSYS` scaffold to a real HIP Module API consumer
+in ADR-0372. (`float_ansnr_hip.c` was also promoted in ADR-0372 but
+was removed in commit 70ed8b3ce3 / PR #38.) These add to — and
 do not replace — the scaffold invariants already documented above.
 
 - **`HAVE_HIPCC` dual-path**: all `hipModule_t` / `hipFunction_t`
-  state and the `psnr_hip_module_load` / `ansnr_hip_module_load`
-  helpers live under `#ifdef HAVE_HIPCC`. Without this flag the host
-  TU compiles without ROCm SDK headers and `init()` returns `-ENOSYS`
-  (scaffold posture preserved). Never move device-state fields outside
-  the guard — it breaks the CPU-only CI lane.
-
-- **`float_ansnr_hip` no-memset bypass**: the `submit()` path does
-  not call `vmaf_hip_kernel_submit_pre_launch`. The kernel writes
-  per-block `(sig, noise)` interleaved float partials directly into
-  the output buffer (`partials[2*block_idx+0]` / `[+1]`); there is
-  no atomic accumulation and no prior memset. If a future PR adds a
-  `submit_pre_launch` call to `float_ansnr_cuda.c`, the HIP twin
-  must follow in the same PR. This is the same bypass shape as
-  `ciede_hip` (ADR-0259).
+  state and the `psnr_hip_module_load` helpers live under
+  `#ifdef HAVE_HIPCC`. Without this flag the host TU compiles without
+  ROCm SDK headers and `init()` returns `-ENOSYS` (scaffold posture
+  preserved). Never move device-state fields outside the guard — it
+  breaks the CPU-only CI lane.
 
 - **`integer_psnr_hip` uint64 split-shuffle**: the PSNR device kernel
   splits each uint64 warp-reduction into two uint32 `__shfl_down`
@@ -348,8 +337,8 @@ do not replace — the scaffold invariants already documented above.
   fourth consumer (`float_moment_hip`); pins the multi-counter
   uint64 readback shape.
 - [ADR-0266](../../../docs/adr/0266-hip-fifth-consumer-float-ansnr.md) —
-  fifth consumer (`float_ansnr_hip`); pins the interleaved
-  (sig, noise) per-block float-partial readback shape.
+  fifth consumer (`float_ansnr_hip`); historical reference only — kernel
+  and CPU twin removed in commit 70ed8b3ce3 (PR #38).
 - [ADR-0267](../../../docs/adr/0267-hip-sixth-consumer-motion-v2.md) —
   sixth consumer (`motion_v2_hip`); pins the temporal-extractor
   `flush()` callback + ping-pong buffer carry shape.
@@ -369,13 +358,14 @@ do not replace — the scaffold invariants already documented above.
 - [ADR-0260](../../../docs/adr/0260-hip-fourth-consumer-float-moment.md)
   — fourth consumer (`float_moment_hip`).
 - [ADR-0266](../../../docs/adr/0266-hip-fifth-consumer-float-ansnr.md)
-  — fifth consumer (`float_ansnr_hip`, this PR).
+  — fifth consumer (`float_ansnr_hip`); historical reference only —
+  kernel removed in commit 70ed8b3ce3 (PR #38).
 - [ADR-0267](../../../docs/adr/0267-hip-sixth-consumer-motion-v2.md)
   — sixth consumer (`motion_v2_hip`, this PR).
 - [ADR-0372](../../../docs/adr/0372-hip-batch1-integer-psnr-float-ansnr.md) —
-  batch-1 real kernels (`integer_psnr_hip` + `float_ansnr_hip`); pins
-  the `HAVE_HIPCC` dual-path, the `float_ansnr` no-memset bypass, and
-  the uint64 split-shuffle pattern.
+  batch-1 real kernels (`integer_psnr_hip`; `float_ansnr_hip` was also
+  promoted here but removed in commit 70ed8b3ce3 / PR #38); pins the
+  `HAVE_HIPCC` dual-path and the uint64 split-shuffle pattern.
 - [ADR-0246](../../../docs/adr/0246-gpu-kernel-template.md) — GPU
   kernel-template decision; the source the HIP mirror tracks.
 - [ADR-0214](../../../docs/adr/0214-gpu-parity-ci-gate.md) — `places=4`

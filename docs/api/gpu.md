@@ -26,8 +26,9 @@ Backend dispatch rules + runtime precedence:
   compute-shader feature kernels).~~ **Vulkan was removed in ADR-0726.** The
   header, source files, and `enable_vulkan` Meson option no longer exist.
 - The HIP header requires `-Denable_hip=true -Denable_hipcc=true` (linking
-  ROCm). 8 of 11 feature kernels are real; 3 stubs (`adm`, `vif`,
-  `integer_motion`) return `-ENOSYS`.
+  ROCm). All feature kernels are real; 3 legacy stubs (`adm_hip`, `vif_hip`,
+  `motion_hip`) return `-ENOSYS` (older `_init/_run/_destroy` API, not
+  registered extractors).
 - The Metal header requires `-Denable_metal=auto/enabled` on macOS.
   Runtime entry points are live on Apple Silicon; unsupported devices
   return `-ENODEV`. Eight feature kernels are currently wired.
@@ -546,8 +547,9 @@ back to a host-backed picture if the caller skipped
   `ffmpeg-patches/0004-libvmaf-wire-vulkan-backend-selector.patch`
   on top of T7-29's `_state_init_external` API.
 - HIP / AMD-ROCm support: `libvmaf_hip.h` is shipping (T7-10 scaffold,
-  ADR-0212; runtime + 8/11 real feature kernels via PRs #686/#695/#696/#710/#712).
-  3 kernels remain `-ENOSYS` stubs (adm/vif/integer_motion). FFmpeg
+  ADR-0212; runtime + all registered feature kernels real). 3 legacy stubs
+  (`adm_hip`/`vif_hip`/`motion_hip`) use an older `_init/_run/_destroy` API
+  and are not registered extractors. FFmpeg
   integration is wired by `ffmpeg-patches/0011-libvmaf-wire-hip-backend-selector.patch`
   (`--enable-libvmaf-hip` + `hip_device=N`, ADR-0380).
 
@@ -568,9 +570,10 @@ The HIP backend is compile-time gated behind `-Denable_hip=true` and the HIP
 compiler option used by this fork's build matrix. Runtime support depends on a
 ROCm-capable AMD GPU and a matching driver stack. The public API is stable, but
 the feature set is still narrower than CUDA/SYCL/Vulkan: PSNR, CIEDE, float
-PSNR, float ANSNR, float moment, SSIM, MS-SSIM, PSNR-HVS, CAMBI, and
+PSNR, float PSNR, float moment, SSIM, MS-SSIM, PSNR-HVS, CAMBI, and
 SSIMULACRA 2 are wired; ADM, VIF, and integer motion remain the known
-follow-up kernels.
+follow-up kernels. The `float_ansnr` extractor was removed in commit
+70ed8b3ce3 (PR #38); it is no longer registered on any backend.
 
 ## Metal
 

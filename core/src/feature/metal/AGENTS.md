@@ -23,8 +23,9 @@ a real kernel lands; they are removed from `metal_sources` in
   Metal feature directory no longer carries scaffold `.mm` files for
   extractors that lack a wired meson entry and a registry slot in
   `feature_extractor.c`. The wired set is: `integer_motion_v2`,
-  `float_psnr`, `float_moment`, `float_ansnr`, `integer_psnr`,
+  `float_psnr`, `float_moment`, `integer_psnr`,
   `float_motion`, `integer_motion`, `float_ssim`, `float_ms_ssim`.
+  (`float_ansnr` was removed from the wired set in commit 70ed8b3ce3 / PR #38.)
   A previous scaffold pass left 11 dead `.mm` files (`float_adm_metal`,
   `float_vif_metal`, `integer_adm_metal`, `integer_cambi_metal`,
   `integer_ciede_metal`, `integer_moment_metal`, `integer_ms_ssim_metal`,
@@ -58,9 +59,10 @@ a real kernel lands; they are removed from `metal_sources` in
      into the global `partials[bid.y * grid_groups.x + bid.x]` slot.
 
 - **8×16 threadgroup / 20×20 shared tile (radius-2 kernels)**:
-  `integer_motion_v2`, `float_ansnr`, `float_motion`, `integer_motion`,
+  `integer_motion_v2`, `float_motion`, `integer_motion`,
   and `float_ssim` all use a 16×16 threadgroup with a 20×20 shared
-  tile (4-element halo radius-2). Tile pitch is 21 (not 20) to avoid
+  tile (4-element halo radius-2). (`float_ansnr` used the same
+  tile layout but was removed in commit 70ed8b3ce3 / PR #38.) Tile pitch is 21 (not 20) to avoid
   bank conflicts on Apple GPU 32-bank threadgroup memory.
 
 - **Per-WG partials buffer**: each `.mm` allocates a Shared-storage
@@ -92,8 +94,6 @@ a real kernel lands; they are removed from `metal_sources` in
 | `float_psnr_metal.mm`              | Done (T8-1d) | host dispatch                                                           |
 | `float_moment.metal`               | Done (T8-1e) | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd` |
 | `float_moment_metal.mm`            | Done (T8-1e) | host dispatch (fixes provided_features)                                 |
-| `float_ansnr.metal`                | Done (T8-1f) | `float_ansnr`                                                           |
-| `float_ansnr_metal.mm`             | Done (T8-1f) | host dispatch                                                           |
 | `integer_psnr.metal`               | Done (T8-1g) | `psnr_y`, `psnr_cb`, `psnr_cr`                                          |
 | `integer_psnr_metal.mm`            | Done (T8-1g) | host dispatch                                                           |
 | `float_motion.metal`               | Done (T8-1h) | `float_motion`                                                          |

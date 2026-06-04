@@ -72,14 +72,15 @@ the same PR:
 | **ms_ssim** | `integer_ms_ssim_cuda.c` ↔ `../sycl/integer_ms_ssim_sycl.cpp` ↔ `../vulkan/ms_ssim_vulkan.c` (+ `ms_ssim.comp`) |
 | **psnr_hvs** | `integer_psnr_hvs_cuda.c` ↔ `../sycl/integer_psnr_hvs_sycl.cpp` ↔ `../vulkan/psnr_hvs_vulkan.c` (+ `psnr_hvs.comp`) |
 | **ssimulacra2** | `ssimulacra2_cuda.c` (+ `ssimulacra2/*.cu`) ↔ `../sycl/ssimulacra2_sycl.cpp` ↔ `../vulkan/ssimulacra2_vulkan.c` (+ `ssimulacra2_*.comp`) |
-| **float_*** | `float_adm_cuda.c` / `float_ansnr_cuda.c` / `float_motion_cuda.c` / `float_psnr_cuda.c` / `float_vif_cuda.c` ↔ matching `../sycl/float_*_sycl.cpp` ↔ `../vulkan/float_*_vulkan.c` ↔ partial `../hip/float_*_hip.c` |
+| **float_*** | `float_adm_cuda.c` / `float_motion_cuda.c` / `float_psnr_cuda.c` / `float_vif_cuda.c` ↔ matching `../sycl/float_*_sycl.cpp` ↔ partial `../hip/float_*_hip.c` (`float_ansnr_cuda.c` and its twins removed in commit 70ed8b3ce3 / PR #38) |
 | **cambi** | `integer_cambi_cuda.c` (+ `integer_cambi/cambi_score.cu`) ↔ `../vulkan/cambi_vulkan.c` (+ `cambi_*.comp`) — Strategy II hybrid twin. SYCL twin pending (T3-15b). |
 
 The full GPU twin matrix is governed by the GPU long-tail batches:
 [ADR-0182](../../../../docs/adr/0182-gpu-long-tail-batch-1.md) (psnr /
 ciede / moment), [ADR-0188](../../../../docs/adr/0188-gpu-long-tail-batch-2.md)
 (ssim / ms_ssim / psnr_hvs), [ADR-0192](../../../../docs/adr/0192-gpu-long-tail-batch-3.md)
-(motion_v2 / float_ansnr / float-twins / ssimulacra2 / cambi).
+(motion_v2 / float-twins / ssimulacra2 / cambi; `float_ansnr` removed
+in commit 70ed8b3ce3 / PR #38).
 
 ## Parity invariant — motion3 CPU and CUDA moving-average paths
 

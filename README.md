@@ -37,9 +37,11 @@ assessment, Emmy-winning, now with:
   with a fp64-less device fallback path for Intel Arc / iGPU silicon.
 - **CUDA** GPU backend (optimized ADM decouple fusion, VIF rd_stride,
   memory-efficient scoring).
-- **HIP (AMD ROCm)** GPU backend — 8 of 11 feature extractors have real device
-  kernels (PSNR, float-PSNR, ANSNR, motion, motion\_v2, moment, SSIM,
-  CIEDE2000); ADM and VIF pending a low-level API redesign. Requires
+- **HIP (AMD ROCm)** GPU backend — 21 registered feature extractors have real
+  device kernels (PSNR, float-PSNR, motion, motion\_v2, moment, SSIM, MS-SSIM,
+  CIEDE2000, ADM, VIF, and more — see [backends/hip](docs/backends/hip/overview.md));
+  3 legacy API stubs (`adm_hip`, `vif_hip`, `motion_hip`) are not registered.
+  `float_ansnr_hip` was removed in PR #38. Requires
   `-Denable_hip=true -Denable_hipcc=true` and ROCm ≥ 7.
 - **AVX2 / AVX-512 / NEON** SIMD paths for every hot kernel.
 - **`--precision`** CLI flag — default `%.6f` matches upstream Netflix output
@@ -92,13 +94,15 @@ MCP server lands behind `-Denable_mcp=true` (scaffold currently returns
 
 ## Backends at a glance
 
-| Backend | Status | Notes                                                                                                                  |
-| ------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
-| CPU     | ✅     | Scalar + AVX2 + AVX-512 + NEON. Golden-data truth.                                                                     |
-| CUDA    | ✅     | `/opt/cuda`, `nvcc`. Works on RTX 20xx and newer. `CU_STREAM_NON_BLOCKING` motion speedup (PR #702).                   |
-| SYCL    | ✅     | oneAPI DPC++; Intel/NVIDIA/AMD via Codeplay; fp64-less device fallback for Arc / iGPU.                                 |
-| HIP     | 🔶     | 8/11 feature kernels real (`-Denable_hip=true -Denable_hipcc=true`); ADM + VIF pending low-level API redesign.         |
-| Metal   | 💭     | Apple Silicon scaffold (8/17 real); `-Denable_metal=auto/enabled`; not prioritized, PRs welcome.                       |
+<!-- markdownlint-disable MD060 -->
+| Backend | Status | Notes |
+| ------- | ------ | ----- |
+| CPU     | ✅     | Scalar + AVX2 + AVX-512 + NEON. Golden-data truth. |
+| CUDA    | ✅     | `/opt/cuda`, `nvcc`. Works on RTX 20xx and newer. `CU_STREAM_NON_BLOCKING` motion speedup (PR #702). |
+| SYCL    | ✅     | oneAPI DPC++; Intel/NVIDIA/AMD via Codeplay; fp64-less device fallback for Arc / iGPU. |
+| HIP     | 🔶     | 21 registered kernels (`-Denable_hip=true -Denable_hipcc=true`); 3 legacy API stubs not registered; `float_ansnr_hip` removed PR #38. |
+| Metal   | 💭     | Apple Silicon scaffold (8/17 real); `-Denable_metal=auto/enabled`; not prioritized, PRs welcome. |
+<!-- markdownlint-enable MD060 -->
 
 Cross-backend numerical divergence is held to ≤ 2 ULP in double precision; see
 [`/cross-backend-diff`](.claude/skills/cross-backend-diff/SKILL.md) for the

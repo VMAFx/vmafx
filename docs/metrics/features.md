@@ -47,7 +47,7 @@ limitations in the same PR as the code.
 | SSIM (fixed)       | `ssim`          | No            | `ssim`                                                                                         | —                         | —                  |
 | SSIM (float)       | `float_ssim`    | No            | `float_ssim` (+ L/C/S if enabled)                                                              | AVX2, AVX-512, NEON       | CUDA, SYCL |
 | MS-SSIM            | `float_ms_ssim` | No            | `float_ms_ssim` (+ per-scale L/C/S if enabled)                                                 | AVX2, AVX-512, NEON       | CUDA, SYCL |
-| ANSNR              | `float_ansnr`   | No            | `float_ansnr`, `float_anpsnr`                                                                  | —                         | CUDA, SYCL |
+| ANSNR              | `float_ansnr`   | No            | `float_ansnr`, `float_anpsnr`                                                                  | —                         | Vulkan only (backend removed ADR-0726; CPU/CUDA/SYCL/HIP/Metal removed PR #38) |
 | SSIMULACRA 2       | `ssimulacra2`   | No            | `ssimulacra2`                                                                                  | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL |
 | Float moment       | `float_moment`  | No            | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd`     | AVX2, NEON                | CUDA, SYCL |
 | LPIPS (tiny-AI)    | `lpips`         | No            | `lpips`                                                                                        | —                         | via ORT EP³        |
@@ -93,14 +93,11 @@ Depending on your build configuration not every backend is available — see
 [`backends/`](../backends/index.md) for the runtime dispatch rules.
 
 ⁵ HIP backend (T7-10b) — `psnr_hip` (ADR-0241), `ciede_hip` /
-`float_moment_hip` (ADR-0257 / ADR-0258), the fifth/sixth
-host-scaffolded consumers `float_ansnr_hip` / `motion_v2_hip`
-(ADR-0266 / ADR-0267), and the seventh/eighth consumers
-`float_motion_hip` / `float_ssim_hip` (ADR-0273 / ADR-0274)
+`float_moment_hip` (ADR-0257 / ADR-0258), `motion_v2_hip`
+(ADR-0267), and `float_motion_hip` / `float_ssim_hip` (ADR-0273 / ADR-0274)
 all register at the extractor level under
-`#if HAVE_HIP` so callers asking by name get the cleaner
-"extractor found, runtime not ready (`-ENOSYS`)" surface; kernels
-go live once the runtime PR (T7-10b) lands. See
+`#if HAVE_HIP`. `float_ansnr_hip` (formerly ADR-0266 fifth consumer) was
+removed in commit 70ed8b3ce3 (PR #38). See
 [`backends/hip/overview.md`](../backends/hip/overview.md).
 
 ⁶ `aim_score` and `adm3_score` are emitted by the `float_adm`
@@ -585,29 +582,18 @@ and scalar-fallback borders). The contract is verified by
 
 ### ANSNR — Adjusted Noise SNR
 
+> **Removed.** The CPU implementation and all GPU twins (CUDA, SYCL, HIP,
+> Metal) were removed in commit 70ed8b3ce3 (PR #38). Only the Vulkan
+> kernel source (`float_ansnr_vulkan.c`) remains in tree as historical
+> dead code; the Vulkan backend itself was removed in ADR-0726. Requesting
+> `--feature float_ansnr` will produce a feature-not-found error on any
+> current build. The historical GPU kernel design
+> ([ADR-0194](../adr/0194-float-ansnr-gpu.md)) is preserved for reference
+> only.
+
 SNR after a noise-shaping Wiener filter. Historical VMAF input that no
-shipped model still consumes; kept for back-compat with external callers.
-
-**Invocation** — `--feature float_ansnr`.
-
-**Output metrics** — `float_ansnr`, `float_anpsnr`.
-
-**Output range** — dB, saturated at `6 × bpc + 12` (same as PSNR).
-
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
-
-**Options** — none.
-
-**Backends** — scalar (CPU) plus CUDA, SYCL
-([ADR-0194](../adr/0194-float-ansnr-gpu.md)). All three GPU
-kernels are single-dispatch — they apply the CPU's 3x3 ref filter
-and 5x5 dis filter inline from a 20×20 shared/SLM tile, accumulate
-per-pixel `sig = ref_filtr²` and `noise = (ref_filtr − filtd)²`
-into per-WG float partials, and let the host reduce in `double`
-before applying the `10·log10` transforms. Empirical floor on the
-cross-backend gate fixture: `max_abs_diff = 6e-6` on 8-bit and
-`2e-6` on 10-bit, identical across Vulkan / CUDA / SYCL — well
-below the `places=4` threshold.
+shipped model consumed; the CPU implementation was removed in commit
+70ed8b3ce3 (PR #38) — not kept for back-compat.
 
 ### SSIMULACRA 2 — perceptual similarity in XYB space
 

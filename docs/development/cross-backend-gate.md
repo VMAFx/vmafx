@@ -24,7 +24,7 @@ The gate is enforced on every PR as the CI job
   | Feature | Tolerance | Contract source |
   |---|---:|---|
   | `vif`, `motion`, `motion_v2`, `adm`, `psnr`, `float_moment` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 |
-  | `float_ssim`, `float_ms_ssim`, `float_ansnr`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 |
+  | `float_ssim`, `float_ms_ssim`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `psnr_hvs` | `5e-4` | ADR-0191 (DCT + per-block float reduction) |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root + IIR blur) |

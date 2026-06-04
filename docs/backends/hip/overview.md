@@ -76,7 +76,9 @@
 > | `speed_chroma_hip` | `speed_chroma_hip` | ADR-0567 / ADR-0852 |
 > | `speed_temporal_hip` | `speed_temporal_hip` | ADR-0567 / ADR-0852 |
 >
-> All 22 real kernels require `enable_hip=true` + `enable_hipcc=true`.
+> All 21 real kernels require `enable_hip=true` + `enable_hipcc=true`.
+> (`float_ansnr_hip` was removed together with the CPU extractor in commit
+> 70ed8b3ce3 / PR #38; it no longer appears in this table.)
 > Without `enable_hipcc`, the scaffold `-ENOSYS` posture is preserved.
 > The three stubs (`adm_hip`, `vif_hip`, `motion_hip`) use an older
 > `_init/_run/_destroy` API shape that predates the HSACO kernel template;

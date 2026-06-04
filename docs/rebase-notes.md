@@ -95,6 +95,23 @@ assertion, upstream-mirrored symbol, or build system touched.
 
 ---
 
+## docs(post-ansnr): scrub residual ANSNR references (PR #38 follow-up)
+
+**Files touched**: `docs/api/gpu.md`, `docs/backends/hip/overview.md`,
+`docs/backends/index.md`, `docs/backends/arm/overview.md`,
+`docs/backends/metal/index.md`, `docs/development/build-flags.md`,
+`docs/development/cross-backend-gate.md`, `docs/metrics/features.md`,
+`docs/mcp/tools.md`, `README.md`, `core/src/feature/metal/AGENTS.md`,
+`core/src/hip/AGENTS.md`, `core/src/feature/cuda/AGENTS.md`, `AGENTS.md`,
+`changelog.d/changed/post-ansnr-doc-scrub.md`.
+
+No rebase impact: doc-only changes (no C source, public header, Netflix
+golden assertions, or upstream-mirrored symbols affected). If an upstream
+Netflix/vmaf PR adds `float_ansnr` back, take the upstream side only in the
+C sources; the fork's doc changes apply only to fork-specific backend docs.
+
+---
+
 ## fix(rebrand): correct C++ badge (c++11→c++23) + drop Vulkan from GPU badge
 
 **Files touched**: `README.md`,

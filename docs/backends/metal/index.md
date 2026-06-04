@@ -3,10 +3,12 @@
 
 > **Status: runtime + first and second kernel batches.** The Metal
 > backend now has a real Apple-Silicon runtime, shared-memory `MTLBuffer`
-> picture storage, metallib embedding, and nine wired feature extractors:
-> `float_ansnr_metal`, `float_moment_metal`, `float_motion_metal`,
+> picture storage, metallib embedding, and eight wired feature extractors:
+> `float_moment_metal`, `float_motion_metal`,
 > `float_ms_ssim_metal`, `float_psnr_metal`, `float_ssim_metal`,
 > `integer_motion_metal`, `integer_psnr_metal`, and `motion_v2_metal`.
+> (`float_ansnr_metal` was removed in commit 70ed8b3ce3 / PR #38 together
+> with the CPU and HIP twins.)
 >
 > The dispatch support predicate recognises both those extractor names
 > and their provided feature keys (`psnr_y`, `psnr_cb`, `psnr_cr`,

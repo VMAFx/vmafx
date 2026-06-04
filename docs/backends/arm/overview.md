@@ -71,7 +71,6 @@ matches the `Backends` column in
 | `float_ms_ssim`| yes         | no          | 9-tap 9/7 wavelet decimate via `ms_ssim_decimate_neon`        |
 | `ssimulacra2`  | yes         | yes         | bit-identical to scalar (NEON and SVE2 produce byte-equal output); see [ADR-0161](../../adr/0161-ssimulacra2-simd-bitexact.md), [ADR-0162](../../adr/0162-ssimulacra2-iir-blur-simd.md), [ADR-0163](../../adr/0163-ssimulacra2-ptlr-simd.md), [ADR-0213](../../adr/0213-ssimulacra2-sve2.md) |
 | `cambi`        | yes         | no          | scalar fallback also retained                                 |
-| `ansnr` / `float_ansnr` | yes | no         | NEON via shared `ansnr_neon`                                  |
 
 ## Bit-exactness
 
