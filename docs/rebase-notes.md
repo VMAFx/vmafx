@@ -44248,3 +44248,8 @@ structural change is removing two dead CI matrix rows that would fail anyway
 No rebase impact. Adding static to TU-internal functions has no ABI or
 behaviour effect — all call sites are function-pointer assignments within the
 same translation unit. No public headers changed.
+
+## ADR-1010 — MCP server JSON parse guards (2026-06-04)
+
+No rebase impact. Error-handling only — wraps two json.loads calls. No protocol,
+API, or tool-schema changes. Output format on the success path is unchanged.

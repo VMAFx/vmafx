@@ -429,7 +429,10 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
         # process's locale (LC_ALL may differ between MCP-stdio launches
         # and CI runners, and a non-UTF-8 default decoder would crash on
         # legitimate accented filenames in the vmaf JSON payload).
-        payload: dict[str, Any] = json.loads(output.read_text(encoding="utf-8"))
+        try:
+            payload: dict[str, Any] = json.loads(output.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"vmaf output unreadable (disk-full or OOM kill?): {exc}") from exc
         # Bug #1 (echo): tell the caller which backend actually ran, so
         # downstream parity tests can assert it instead of trusting the
         # request silently.
@@ -1713,7 +1716,12 @@ def _ffprobe_geometry(path: Path) -> tuple[int, int, str, int]:
         raise RuntimeError(
             f"ffprobe failed (rc={result.returncode}): {result.stderr.strip()[:300]}"
         )
-    info = json.loads(result.stdout)
+    try:
+        info = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"ffprobe output malformed (empty stdout or no video track?): {exc}"
+        ) from exc
     streams = info.get("streams") or []
     if not streams:
         raise ValueError(f"no video stream found in {path}")
