@@ -1357,9 +1357,9 @@ int main(int argc, char *argv[])
         VmafPictureConfiguration pic_cfg = {
             .pic_params =
                 {
-                    .w = info.pic_w,
-                    .h = info.pic_h,
-                    .bpc = common_bitdepth,
+                    .w = static_cast<unsigned>(info.pic_w),
+                    .h = static_cast<unsigned>(info.pic_h),
+                    .bpc = static_cast<unsigned>(common_bitdepth),
                     .pix_fmt = pix_fmt_map(info.pixel_fmt),
                 },
             /* Liveness budget per frame:
