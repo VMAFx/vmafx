@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs(copyright): drop "and Claude (Anthropic)" from fork headers — residual sweep
+
+**Files touched**: `README.md`, `dev-llm/src/vmaf_dev_llm/__init__.py`,
+`scripts/lib/__init__.py`,
+`changelog.d/changed/copyright-drop-anthropic-residuals.md`,
+`docs/rebase-notes.md`.
+
+No rebase impact: text-only copyright-line change in three files missed by
+the ADR-0861 / ADR-0776 sweeps. No C source, public header, Netflix golden
+assertion, upstream-mirrored symbol, or build system touched.
+
+---
+
 ## fix(rebrand): correct C++ badge (c++11→c++23) + drop Vulkan from GPU badge
 
 **Files touched**: `README.md`,
