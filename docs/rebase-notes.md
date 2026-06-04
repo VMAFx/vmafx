@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cli-narrowing-casts-vmaf-cpp (2026-06-04)
+
+**Files touched:** `core/tools/vmaf.cpp`
+
+no rebase impact: three `static_cast<unsigned>(...)` wrappers added to the
+`VmafPictureConfiguration` initializer at line ~1360. No public C API, public
+header, upstream-mirrored Python, or Netflix golden-assertion file is touched.
+If an upstream commit modifies the `VmafPictureConfiguration` initializer or
+adds new `pic_params` fields, verify the cast pattern is preserved.
+
+---
+
 ## fix/release-please-config-json-parse-error (2026-06-04)
 
 no rebase impact: removes a duplicate array element from `release-please-config.json`.
