@@ -186,7 +186,7 @@ Use `/prep-release` to dry-run locally before merging a release PR.
    [ADR-0037](docs/adr/0037-master-branch-protection.md) /
    [release.md](docs/development/release.md#master-branch-protection).)*
 3. **Never** commit to `master` directly — branch + PR, merge via squash or ff only.
-   *(Also host-enforced: `required_linear_history: true` and 19 required status checks.)*
+   *(Also host-enforced: `required_linear_history: true` and 25 required status checks.)*
 4. **Never** skip `make lint` before pushing.
 5. **Never** commit benchmark output files (`testdata/netflix_benchmark_results.json`
    is usually noise from an ad-hoc run; stash it unless the run is formal).

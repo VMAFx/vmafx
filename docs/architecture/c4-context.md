@@ -33,7 +33,7 @@ Rel(user, vmaf, "Invokes vmaf CLI, ffmpeg filter, or C API")
 Rel(agent, vmaf, "Reads / edits sources per .claude/skills/")
 Rel(vmaf, ort, "Loads .onnx checkpoints for tiny-AI features")
 Rel(vmaf, upstream, "git fetch upstream; port-upstream-commit skill")
-Rel(vmaf, gh, "CI runs 19 required checks; release-please publishes tagged builds")
+Rel(vmaf, gh, "CI runs 25 required checks; release-please publishes tagged builds")
 Rel(gh, sigstore, "Signs release artefacts keyless (OIDC)")
 
 @enduml

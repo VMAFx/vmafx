@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs(versions): bump stale Go + required-checks-count + Python pins
+
+**Files touched**: `CLAUDE.md`, `docs/development/languages.md`,
+`docs/development/release.md`, `docs/architecture/c4-context.md`,
+`docs/mcp/index.md`, `docs/getting-started/install/windows.md`,
+`docs/ai/training.md`,
+`changelog.d/changed/bump-stale-docs-go-checks-python-pins.md`,
+`docs/rebase-notes.md`.
+
+No rebase impact: docs-only scrub; no C source, public header,
+Netflix golden assertion, or upstream-mirrored symbol is affected.
+
+---
+
 ## docs(copyright): drop "and Claude (Anthropic)" from fork headers — residual sweep
 
 **Files touched**: `README.md`, `dev-llm/src/vmaf_dev_llm/__init__.py`,

@@ -9,7 +9,8 @@ powershell -ExecutionPolicy Bypass -File scripts\setup\windows.ps1
 The script uses **winget** (falling back to **Chocolatey**) to install:
 
 - Visual Studio 2022 Build Tools (with the Desktop C++ workload)
-- `meson`, `ninja`, `nasm`, `python` (3.11+), `llvm`
+- `meson`, `ninja`, `nasm`, `python` (3.11+ for core use;
+  3.14.5+ required for `ai/`), `llvm`
 - Optional: `CUDA 12.6`, `Intel oneAPI Base Toolkit`
 
 ## Environment

@@ -32,7 +32,7 @@ brew install llvm
 
 **Used in:** `cmd/` (future: `cmd/vmafx-server`, `cmd/vmafx-mcp`, `cmd/vmafx-tune`)
 
-**Minimum version:** Go 1.23
+**Minimum version:** Go 1.25 (go.mod: `go 1.26.4`; toolchain 1.26.4)
 
 **Install:**
 
@@ -42,13 +42,13 @@ brew install llvm
 # or via mise / asdf / homebrew
 
 brew install go          # macOS
-sudo apt install golang  # Ubuntu (may not be 1.23 yet — prefer upstream)
+sudo apt install golang  # Ubuntu (may not be 1.25 yet — prefer upstream)
 ```
 
 **Verify:**
 
 ```bash
-go version  # must be >= go1.23
+go version  # must be >= go1.25
 ```
 
 **Workspace quick-start:**

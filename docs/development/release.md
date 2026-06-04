@@ -234,10 +234,15 @@ summary and the `/prep-release` skill definition for the full checklist.
 [CLAUDE.md §12](../../CLAUDE.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md)
 is enforced at the host, not just honored by convention.
 
-- **Required status checks (19):** pre-commit, ruff+mypy+black, semgrep,
-  Netflix CPU golden (D24), ASan/UBSan/MSan ×3, Assertion density,
-  CodeQL ×4, clang-tidy, cppcheck, Tiny AI, MINGW build, dependency-review,
-  gitleaks, shellcheck+shfmt.
+- **Required status checks (25):** Build — Ubuntu gcc (CPU) + DNN,
+  Build — Ubuntu clang (CPU) + DNN, Build — Windows MinGW64 (CPU),
+  Build — Windows MSVC + CUDA, Build — Windows MSVC + oneAPI SYCL,
+  Build — Ubuntu HIP (T7-10b runtime), CodeQL ×4, Pre-Commit (Formatters),
+  Python Lint (Ruff + Black + isort + mypy), Semgrep, Clang-Tidy, Cppcheck,
+  Dependency Review, Gitleaks, Docs, ShellCheck + shfmt, Netflix CPU golden (D24),
+  ASan/UBSan/MSan ×3, Assertion Density, Tiny AI (DNN Suite + ai/ Pytests).
+  Enforced via the Required Checks Aggregator
+  (`.github/workflows/required-aggregator.yml`).
 - **Linear history required** — merges are squash-or-ff-only.
 - **Force-push and deletion disabled.**
 - **Admin bypass kept on** (owner can land emergency fixes that skip required

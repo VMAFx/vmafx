@@ -169,7 +169,7 @@ environment.
 ### Build
 
 ```bash
-# From the repository root (Go 1.23+)
+# From the repository root (Go 1.25+)
 go build -o vmafx-mcp ./cmd/vmafx-mcp/
 ```
 

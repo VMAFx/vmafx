@@ -13,9 +13,10 @@ pip install -e ai
 pip install -e 'ai[tune,viz]'
 ```
 
-This pulls `torch>=2.4,<2.6` + `lightning>=2.4,<2.5`. If you have a
-GPU-capable PyTorch wheel installed separately, the extras will not
-reinstall it.
+This pulls `torch>=2.12.0,<3.0` + `pytorch-lightning>=2.6.5,<3.0` (the
+`lightning` PyPI package was renamed to `pytorch-lightning` on 2026-04-30).
+If you have a GPU-capable PyTorch wheel installed separately, the extras will
+not reinstall it.
 
 ## Dataset acquisition
 
