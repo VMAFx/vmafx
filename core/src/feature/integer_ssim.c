@@ -33,6 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cpu.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
+#include "integer_ssim.h"
 #include "opt.h"
 
 #if ARCH_X86

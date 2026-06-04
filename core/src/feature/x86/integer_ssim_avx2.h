@@ -34,7 +34,11 @@
 #ifndef X86_AVX2_INTEGER_SSIM_H_
 #define X86_AVX2_INTEGER_SSIM_H_
 
-#include <stdint.h>
+/* integer_ssim_moments_t is defined in the shared header so non-x86 builds
+ * (macOS arm64, Windows arm64) can compile integer_ssim.c without pulling in
+ * x86 intrinsics.  Include it here so this header remains self-contained for
+ * callers that only include integer_ssim_avx2.h directly. */
+#include "../integer_ssim.h"
 
 /*
  * integer_ssim_accumulate_row_avx2 — 8bpc horizontal moment pass.
@@ -50,14 +54,6 @@
  * variants are provided.  `src` and `dst` must point to the beginning of the
  * row; the function handles boundary clamping identically to the scalar.
  */
-typedef struct integer_ssim_moments {
-    int64_t mux;
-    int64_t muy;
-    int64_t x2;
-    int64_t xy;
-    int64_t y2;
-    int64_t w;
-} integer_ssim_moments_t;
 
 void integer_ssim_accumulate_row_avx2(const uint8_t *src, const uint8_t *dst, int width,
                                       const unsigned *hkernel, int hkernel_sz, int hkernel_offs,
