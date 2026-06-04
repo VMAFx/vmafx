@@ -138,4 +138,7 @@ ENV VMAFX_MODEL_DIR="/usr/local/share/vmafx/model"
 EXPOSE 8080
 EXPOSE 50051
 
+# Run as non-root user; distroless provides nonroot (uid 65532).
+USER nonroot
+
 ENTRYPOINT ["/usr/local/bin/vmafx-server"]

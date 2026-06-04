@@ -986,5 +986,9 @@ EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD vmaf --version || exit 1
 
+# Drop back to vmaf user for runtime (USER root was needed only for
+# the pip-install RUN above).
+USER vmaf
+
 ENTRYPOINT ["/build/vmaf/dev/scripts/dev-mcp-entrypoint.sh"]
 CMD []
