@@ -31,7 +31,7 @@ ninja -C build
 | `enable_asm` | bool | `true` | Compile any `*.asm` source files (nasm); disables all SIMD paths when `false` |
 | `enable_avx512` | bool | `true` | Build the AVX-512 kernels (requires nasm ≥ 2.14); auto-disabled on hosts without AVX-512 headers |
 | `built_in_models` | bool | `true` | Compile the default `.json` VMAF models into the library (`version=vmaf_v0.6.1` etc. resolve without disk I/O) |
-| `enable_float` | bool | `true` | Compile the `float_*` feature extractors (`float_psnr`, `float_ssim`, `float_ms_ssim`, `float_vif`, `float_adm`, `float_motion`). `float_ansnr` was removed per [ADR-0720](../adr/0720-sunset-float-ansnr.md). On by default so that `--feature float_adm` and related CLI flags work without extra configure flags. |
+| `enable_float` | bool | `true` | Compile the `float_*` feature extractors (`float_psnr`, `float_ssim`, `float_ms_ssim`, `float_vif`, `float_adm`, `float_motion`). `float_ansnr` was removed per [ADR-0865](../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md). On by default so that `--feature float_adm` and related CLI flags work without extra configure flags. |
 | `enable_cuda` | bool | `false` | Compile the CUDA backend + `.cu` kernels; requires CUDA toolkit (`nvcc`) |
 | `enable_nvtx` | bool | `false` | Instrument CUDA kernels with NVTX ranges for Nsight Systems — see [backends/nvtx/profiling.md](../backends/nvtx/profiling.md) |
 | `enable_nvcc` | bool | `true` | Use `nvcc` to compile the CUDA kernel objects (the alternative is the clang CUDA driver); only takes effect when `enable_cuda=true` |

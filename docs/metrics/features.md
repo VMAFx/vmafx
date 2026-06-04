@@ -28,7 +28,7 @@ limitations in the same PR as the code.
 > The **Vulkan** column was removed per [ADR-0726](../adr/0726-drop-vulkan-backend.md)
 > (2026-05-28). Footnotes below referencing "Vulkan" / "Vulkan stub" describe
 > historical state and are retained for traceability against earlier ADRs.
-> `float_ansnr` was removed per [ADR-0720](../adr/0720-sunset-float-ansnr.md).
+> `float_ansnr` was removed per [ADR-0865](../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md).
 
 | Feature name       | Invocation name | Core feature? | Output metrics                                                                                 | SIMD                      | GPU                |
 |--------------------|-----------------|---------------|------------------------------------------------------------------------------------------------|---------------------------|--------------------|
