@@ -1,6 +1,26 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/core-test-regressions-pr-train (2026-06-04, no ADR — bug fixes)
+
+**Files touched:**
+`core/src/libvmaf.c`,
+`core/test/meson.build`,
+`core/AGENTS.md`
+
+**Rebase impact:** Any branch touching the `PREV_REF` block in
+`threaded_extract_batch_func` must preserve the `vmaf_picture_unref` +
+`memset(f->prev_ref)` sequence: a bare `memset` leaks one pool picture per
+frame and deadlocks `vmaf_fetch_preallocated_picture` after `pool_size` frames.
+See `core/AGENTS.md` "Batch-path PREV_REF picture refcount protocol".
+The three motion-test executables (`test_integer_motion_coverage`,
+`test_integer_motion_v2_coverage`, `test_motion_min_dim`) use
+`wave8_opt_only_objects` (not `wave8_cpp23_objects`); any branch that adds
+new link objects to these targets must not revert to the heavier variant
+which pulls in `read_json_model_cpp23_lib` and its pdjson dependency.
+
+---
+
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
 
 **Files touched:**

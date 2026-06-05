@@ -601,3 +601,21 @@ the corrected methodology.
   intentional and correct.  CI must run on an AVX-512-capable host (see
   `.github/workflows/build.yml` x86_64 runner) for the tests to be
   meaningful.
+
+- **Batch-path PREV_REF picture refcount protocol** (fork-local, PR #688 Fix
+  #7): `threaded_extract_batch_func()` in [`src/libvmaf.c`](src/libvmaf.c)
+  must call `vmaf_picture_unref(&fex->prev_ref)` **before** clearing the field
+  with `memset` after calling `vmaf_feature_extractor_context_extract()` for
+  any extractor with `VMAF_FEATURE_EXTRACTOR_PREV_REF`.
+  Rationale: `feature_extractor.cpp`'s PREV_REF SWAP increments the current
+  frame's refcount (success path) or leaves the frame N-1 struct copy in
+  `fex->prev_ref` (error path); in both cases the field holds a live,
+  counted reference.  A bare `memset` discards the count without triggering
+  the pool-release callback, leaking one pool picture per processed frame
+  and exhausting a preallocated picture pool after `pool_size` frames.
+  After calling `vmaf_picture_unref(&fex->prev_ref)` the implementation MUST
+  also zero `f->prev_ref` (the `ThreadDataBatch` copy) to prevent the
+  `goto:unref` cleanup block from calling `vmaf_picture_unref` on the
+  already-freed `VmafRef` object (the struct copy and the local alias share
+  the same `VmafRef*` pointer; the first unref frees it).  Covered by
+  `test/test_pic_preallocation.c`.
