@@ -406,6 +406,22 @@ core/
   yet wired — it can be added later once at least 5 parsers carry
   harnesses.
 
+- **`meson.build` C++ standard is injected via `add_project_arguments`, not
+  `default_options`** (ADR-1056, 2026-06-04): `cpp_std=c++23` was removed
+  from `default_options` because meson's MSVC backend rejects `c++23` (it
+  only accepts `c++11/14/17/20/vc++latest`). The standard is now set by an
+  `if get_option('cpp_std') == 'none'` block that injects `/std:c++latest`
+  on MSVC and `-std=c++23` on everything else. Three invariants that must
+  survive any rebase:
+  (1) the guard condition `get_option('cpp_std') == 'none'` must be
+  preserved — removing it causes the SYCL leg's `-Dcpp_std=c++14` override
+  to conflict with the injected `-std=c++23` flag;
+  (2) the block must remain between `cxx = meson.get_compiler('cpp')` and
+  the first `cc.check_header` call so the compiler is defined before the
+  branch;
+  (3) do not re-add `cpp_std=c++23` to `default_options` — the meson
+  configure step will fail on any Windows + MSVC matrix leg.
+
 Backend-specific orientation:
 
 - [src/cuda/AGENTS.md](src/cuda/AGENTS.md) — CUDA backend runtime

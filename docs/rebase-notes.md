@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
+
+**Files touched:**
+`core/meson.build`, `core/AGENTS.md`
+
+**Rebase impact:** `core/meson.build` no longer carries `cpp_std=c++23` in
+`default_options`. Any branch that adds `cpp_std=...` to `default_options`
+will conflict with this change. The `add_project_arguments('-std=c++23')`
+block must remain beneath the `cxx = meson.get_compiler('cpp')` line and above
+the first `cc.check_header` call. The `get_option('cpp_std') == 'none'`
+guard must be preserved; removing it would cause the SYCL leg to receive
+both `-Dcpp_std=c++14` (from the workflow) and `-std=c++23` (from the else
+branch), which is a compile error.
+
+---
+
 ## fix/ci-pin-cuda-132-jimver (2026-06-06, no ADR — CI configuration pin fix)
 
 no rebase impact: CI-only change (`.github/workflows/build.yml`,
