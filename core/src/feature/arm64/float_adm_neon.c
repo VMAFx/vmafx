@@ -64,7 +64,17 @@ void float_adm_dwt2_neon(const float *src, const adm_dwt_band_t_s *dst, int **in
         const float *row2 = src + ind_y[2][i] * src_px_stride;
         const float *row3 = src + ind_y[3][i] * src_px_stride;
 
-        /* Vertical pass: process 4 columns at a time with NEON. */
+        /* Vertical pass: process 4 columns at a time with NEON.
+         * Use vmulq_laneq_f32 + vaddq_f32 (two separate IEEE-754 operations)
+         * instead of vmlaq_laneq_f32 (single-rounding FMA / fmla instruction).
+         * The scalar reference (adm_dwt2_s in adm_tools.c) computes
+         *   accum += filter[N] * sN
+         * as a multiply followed by a separate add — two roundings.
+         * vmlaq_laneq_f32 maps to the ARM `fmla` instruction which is one
+         * rounding, producing a 1-ULP divergence from the scalar path.
+         * Replacing with explicit mul+add preserves the two-rounding semantics
+         * and restores bit-exactness.  Tracked in the fix(neon) PR that closes
+         * the regression introduced by PR #685 (dispatch wiring). */
         j = 0;
         for (; j + 3 < w; j += 4) {
             float32x4_t s0 = vld1q_f32(row0 + j);
@@ -73,33 +83,44 @@ void float_adm_dwt2_neon(const float *src, const adm_dwt_band_t_s *dst, int **in
             float32x4_t s3 = vld1q_f32(row3 + j);
 
             /* lo = filter_lo[0]*s0 + filter_lo[1]*s1
-             *    + filter_lo[2]*s2 + filter_lo[3]*s3 */
+             *    + filter_lo[2]*s2 + filter_lo[3]*s3
+             * Explicit mul then add — two roundings each, matching scalar. */
             float32x4_t lo = vmulq_laneq_f32(s0, flo, 0);
-            lo = vmlaq_laneq_f32(lo, s1, flo, 1);
-            lo = vmlaq_laneq_f32(lo, s2, flo, 2);
-            lo = vmlaq_laneq_f32(lo, s3, flo, 3);
+            lo = vaddq_f32(lo, vmulq_laneq_f32(s1, flo, 1));
+            lo = vaddq_f32(lo, vmulq_laneq_f32(s2, flo, 2));
+            lo = vaddq_f32(lo, vmulq_laneq_f32(s3, flo, 3));
             vst1q_f32(tmplo + j, lo);
 
             /* hi = filter_hi[0]*s0 + filter_hi[1]*s1
              *    + filter_hi[2]*s2 + filter_hi[3]*s3 */
             float32x4_t hi = vmulq_laneq_f32(s0, fhi, 0);
-            hi = vmlaq_laneq_f32(hi, s1, fhi, 1);
-            hi = vmlaq_laneq_f32(hi, s2, fhi, 2);
-            hi = vmlaq_laneq_f32(hi, s3, fhi, 3);
+            hi = vaddq_f32(hi, vmulq_laneq_f32(s1, fhi, 1));
+            hi = vaddq_f32(hi, vmulq_laneq_f32(s2, fhi, 2));
+            hi = vaddq_f32(hi, vmulq_laneq_f32(s3, fhi, 3));
             vst1q_f32(tmphi + j, hi);
         }
 
-        /* Scalar tail for remaining columns. */
+        /* Scalar tail for remaining columns.
+         * Sequential accum += f*s pattern mirrors adm_dwt2_s exactly
+         * (same addition order, two separate roundings per term). */
         for (; j < w; ++j) {
             float s0 = row0[j];
             float s1 = row1[j];
             float s2 = row2[j];
             float s3 = row3[j];
+            float accum;
 
-            tmplo[j] =
-                filter_lo[0] * s0 + filter_lo[1] * s1 + filter_lo[2] * s2 + filter_lo[3] * s3;
-            tmphi[j] =
-                filter_hi[0] * s0 + filter_hi[1] * s1 + filter_hi[2] * s2 + filter_hi[3] * s3;
+            accum = filter_lo[0] * s0;
+            accum += filter_lo[1] * s1;
+            accum += filter_lo[2] * s2;
+            accum += filter_lo[3] * s3;
+            tmplo[j] = accum;
+
+            accum = filter_hi[0] * s0;
+            accum += filter_hi[1] * s1;
+            accum += filter_hi[2] * s2;
+            accum += filter_hi[3] * s3;
+            tmphi[j] = accum;
         }
 
         /* Horizontal pass (lo and hi): scalar due to indirect indexing. */

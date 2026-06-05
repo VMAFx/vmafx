@@ -1,6 +1,24 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/neon-float-adm-dwt2-fma-carveout (2026-06-04, ADR-1055)
+
+**Files touched:**
+`core/src/feature/arm64/float_adm_neon.c`,
+`core/src/feature/arm64/AGENTS.md`,
+`docs/adr/1055-neon-float-adm-dwt2-fma-carveout.md`,
+`docs/adr/README.md`,
+`changelog.d/fixed/neon-float-adm-dwt2-fma-carveout.md`,
+`docs/rebase-notes.md`, `docs/state.md`
+
+**Rebase impact:** The `float_adm_dwt2_neon` vertical-pass loop now uses
+`vmulq_laneq_f32` + `vaddq_f32` instead of `vmlaq_laneq_f32`. Any branch
+that modifies `float_adm_neon.c` must preserve the two-separate-ops form
+(see AGENTS.md invariant note). Restoring `vmlaq_laneq_f32` silently
+re-introduces the 1-ULP bit-exactness failure fixed here.
+
+---
+
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
 
 **Files touched:**

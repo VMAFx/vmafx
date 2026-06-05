@@ -48,6 +48,14 @@ feature/arm64/
   `arm64_v8` is a bit-exactness regression waiting to happen.
   Conversely, moving an integer-only TU to `arm64_v8_fp` is
   harmless but unnecessary.
+- **`float_adm_dwt2_neon` uses `vmulq_laneq_f32` + `vaddq_f32` (NOT
+  `vmlaq_laneq_f32`) in the vertical-pass vectorized loop.**
+  `vmlaq_laneq_f32` emits ARM `fmla` (single-rounding FMA) and diverges
+  from the scalar reference `adm_dwt2_s` by 1 ULP. The scalar reference
+  uses sequential `accum += f[N]*sN` (two separate roundings per term).
+  `-ffp-contract=off` in `arm64_v8_fp` suppresses implicit compiler
+  contraction in plain C arithmetic, but has NO effect on explicit NEON
+  intrinsics. **Do not restore `vmlaq_laneq_f32` here.** ADR-1055.
 - **`accumulate_error()` and similar reductions thread accumulators
   by pointer** — do NOT introduce a local-float accumulator inside a
   helper. ADR-0159 burned this lesson into `psnr_hvs_neon.c`: a
