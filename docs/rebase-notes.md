@@ -1,6 +1,14 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/ci-pin-cuda-132-jimver (2026-06-06, no ADR — CI configuration pin fix)
+
+no rebase impact: CI-only change (`.github/workflows/build.yml`,
+`.github/workflows/libvmaf-build-matrix.yml`). No C sources, public API, or
+upstream-mirrored files are touched.
+
+---
+
 ## fix/macos-docker-platform-unblock (2026-06-04, no ADR — build bug fix)
 
 no rebase impact: adds `<string_view>` include to `core/tools/vmaf.cpp` (no logic
