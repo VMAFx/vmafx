@@ -253,6 +253,8 @@ int vmaf_hip_kernel_submit_post_record(VmafHipKernelLifecycle *lc, VmafHipContex
     if (lc->str == 0 || lc->finished == 0) {
         return -EINVAL;
     }
+    /* Both handles must be set before we record — caller owns lifecycle setup. */
+    assert(lc->str != 0 && lc->finished != 0);
     /* Record the `finished` event on the private readback stream
      * (`lc->str`) after the DtoH copy is enqueued. `collect_wait`
      * calls `hipStreamSynchronize(lc->str)` which waits for this

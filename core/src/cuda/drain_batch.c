@@ -193,6 +193,7 @@ void vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state)
         return;
     }
     CudaFunctions *cu_f = cu_state->f;
+    assert(cu_f != NULL);
     int ctx_pushed = 0;
     if (cu_f->cuCtxPushCurrent(cu_state->ctx) == CUDA_SUCCESS) {
         ctx_pushed = 1;
@@ -203,4 +204,6 @@ void vmaf_cuda_drain_batch_thread_destroy(VmafCudaState *cu_state)
     if (ctx_pushed) {
         (void)cu_f->cuCtxPopCurrent(NULL);
     }
+    /* Post-condition: drain stream is always cleared. */
+    assert(g_drain_batch.drain_str == NULL);
 }

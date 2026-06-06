@@ -171,6 +171,7 @@ int vmaf_hip_list_devices(void)
     if (rc != hipSuccess) {
         return 0;
     }
+    assert(n >= 0);
     for (int i = 0; i < n; ++i) {
         hipDeviceProp_t prop;
         rc = hipGetDeviceProperties(&prop, i);
@@ -180,5 +181,6 @@ int vmaf_hip_list_devices(void)
         vmaf_log(VMAF_LOG_LEVEL_INFO, "HIP device %d: %s (arch %s)\n", i, prop.name,
                  prop.gcnArchName);
     }
+    assert(n >= 0);
     return n;
 }

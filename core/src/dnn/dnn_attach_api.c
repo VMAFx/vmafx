@@ -124,6 +124,8 @@ int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode)
         mode != VMAF_DNN_RESIZE_BICUBIC && mode != VMAF_DNN_RESIZE_DISABLED) {
         return -EINVAL;
     }
+    /* ctx is non-NULL and mode is a valid enum value at this point. */
+    assert(ctx != NULL);
     return vmaf_ctx_dnn_set_resize_mode(ctx, (int)mode);
 #else
     (void)ctx;

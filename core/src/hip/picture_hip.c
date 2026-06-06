@@ -32,6 +32,7 @@
  * translation units include this file through `hip/meson.build`'s
  * `hip_sources` list, which is only activated when HAVE_HIPCC is set. */
 #ifdef HAVE_HIPCC
+#include <assert.h>
 #include <errno.h>
 #include <hip/hip_runtime_api.h>
 
@@ -73,6 +74,8 @@ int vmaf_hip_picture_alloc(VmafHipContext *ctx, void **out, size_t size)
     if (rc != hipSuccess)
         return hip_pic_rc_to_errno(rc);
 
+    /* hipMalloc succeeded: device pointer must be non-NULL. */
+    assert(device != NULL);
     *out = device;
     return 0;
 }

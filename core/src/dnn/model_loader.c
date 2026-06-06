@@ -741,6 +741,10 @@ void vmaf_dnn_sidecar_free(VmafModelSidecar *s)
 {
     if (!s)
         return;
+    /* Array-count fields must not exceed their compile-time maximums. */
+    assert(s->n_output_names <= VMAF_DNN_MAX_OUTPUT_NAMES);
+    assert(s->n_features <= VMAF_DNN_MAX_FEATURE_NAMES);
+    assert(s->n_encoder_vocab <= VMAF_DNN_MAX_ENCODER_VOCAB);
     free(s->name);
     free(s->input_name);
     free(s->output_name);
