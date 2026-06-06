@@ -28,7 +28,6 @@
 
 #include "adm.h"
 #include "adm_options.h"
-#include "adm_tools.h"
 #include "mem.h"
 #include "picture_copy.h"
 
@@ -332,12 +331,6 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
         goto fail;
-
-    /* PR #116 F1: prime the SIMD dispatch table at extractor init time so
-     * that all subsequent compute_adm() calls use the SIMD kernels without
-     * a per-call cpu-flag check.  Follows the pattern in
-     * integer_motion_v2.c:311-333 (vmaf_get_cpu_flags()-gated dispatch). */
-    adm_prime_simd_dispatch();
 
     return 0;
 

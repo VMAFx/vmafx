@@ -34,19 +34,16 @@ upstream-mirrored code paths or public API signatures.
 
 ---
 
-## fix/float-adm-simd-dispatch (2026-06-04, no ADR — perf bug fix)
+## revert/float-adm-simd-dispatch-neon-fma (2026-06-06, ADR-1057)
 
-**Files touched:**
-`core/src/feature/adm_tools.c`, `core/src/feature/adm_tools.h`,
-`core/src/feature/float_adm.c`, `core/test/meson.build`,
-`core/test/test_float_adm_simd.c`
-
-**Rebase impact:** `adm_tools.h` gains `adm_prime_simd_dispatch()`. Any
-branch that touches `float_adm.c` `init()` must preserve the
-`adm_prime_simd_dispatch()` call added at line 340; removing it silently
-reverts to the scalar path. The `AdmSimdDispatch` static table in
-`adm_tools.c` is module-local; it is safe for upstream ports to add
-adjacent dispatch tables without conflict.
+no rebase impact: removes `adm_prime_simd_dispatch()` from `adm_tools.h` and
+`adm_tools.c`; removes the call site added to `float_adm.c::init()` by PR #685;
+deletes `core/test/test_float_adm_simd.c` and its `meson.build` entries. Any
+in-flight branch that rebases onto a version of `adm_tools.h` that still contains
+`adm_prime_simd_dispatch()` will see a merge conflict at the declaration — resolve
+by simply not including the declaration (the function no longer exists after this
+revert). The SIMD kernel files (`adm_tools_avx2.c`, `adm_tools_neon.c`, etc.) are
+untouched; the functions remain compiled and linkable for a future re-dispatch PR.
 
 ---
 

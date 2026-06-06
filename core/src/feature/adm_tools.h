@@ -310,11 +310,6 @@ int adm_dwt2_lo_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, in
 int adm_dwt2_d(const double *src, const adm_dwt_band_t_d *dst, int **ind_y, int **ind_x, int w,
                int h, int src_stride, int dst_stride);
 
-/* PR #116 F1: prime the SIMD dispatch table at extractor init time.
- * Call from VmafFeatureExtractor.init() so all subsequent compute_adm()
- * calls use the SIMD path without a per-call cpu-flag check. */
-void adm_prime_simd_dispatch(void);
-
 /* ================= */
 /* Noise floor model */
 /* ================= */
