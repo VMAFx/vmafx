@@ -1,0 +1,3 @@
+Delete the 80 orphan Vulkan source files (15 in `core/src/vulkan/`, 35 in `core/src/feature/vulkan/` covering GLSL + .c TUs + AGENTS.md, 1 public header `libvmaf_vulkan.h`, 7 test files, and `.claude/agents/vulkan-reviewer.md`). Completes ADR-0726 by removing the dead-code tree that was bypassed by all build rules but still cluttered the source layout. Net `-80` files / `-9000+` LOC.
+
+No build/test/runtime impact — the `enable_vulkan` meson option was already removed and the kernel registration entries (`vmaf_fex_*_vulkan`) were already dropped from `feature_extractor.cpp`. ADR-0726 is the design rationale; this PR is the cleanup.
