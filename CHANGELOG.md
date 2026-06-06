@@ -3981,6 +3981,28 @@ places=4–5. (ADR-0564.)
   (ADR-0574)
 
 
+### Go test coverage round 2
+
+Added targeted test files across five Go packages to push statement coverage
+significantly above the round-1 baseline:
+
+- `cmd/vmafx-server`: gRPC handler matrix (Score, Health, ScoreStream Phase-1
+  stub validation, runGRPC/runGRPCWithServer lifecycle); REST adapter
+  ScoreVideoPair happy + sad paths; Swagger UI try-it-out toggle +
+  method-not-allowed guards. Coverage 52% → 78%.
+- `cmd/vmafx-tune/cmd`: report subcommand (runReport Markdown + HTML,
+  loadReportFile compare + ladder schemas, error paths, newReportCmd args
+  validation). Coverage 63% → 73%.
+- `pkg/libvmaf`: PATH fallback in New(), resolveModel absolute-path and
+  .json-suffix branches, parseOutput corrupt-file, nil-context fast path,
+  repeated Close(). Coverage 78% → 82%.
+- `pkg/observability`: logInfo with non-nil logger, noopShutdown, InitOTel
+  non-numeric sampler-arg, composite shutdown with cancelled context.
+  Coverage 87% → 88%.
+- `cmd/vmafx-operator/internal/controller`: coverage already at 74% via
+  the existing envtest Ginkgo suite (KUBEBUILDER_ASSETS required).
+
+
 ### MCP P1 surface: vmaf-tune integration, list_extractors, describe_model, progress notifications (ADR-0608)
 
 Five new MCP tools added to `vmaf-mcp`:
@@ -4391,6 +4413,23 @@ Four follow-up items enumerated in ADR-0777.
 
 **Added**
 
+- **`vmaf_context_get_backend()`** (`core/include/libvmaf/libvmaf.h`,
+  `core/src/libvmaf.c`): new public C API function that returns the active
+  compute backend of a `VmafContext` as a `enum VmafBackend` value.
+  Returns `VMAF_BACKEND_UNKNOWN` (0) for CPU-only contexts; returns
+  `VMAF_BACKEND_CUDA`, `VMAF_BACKEND_SYCL`, `VMAF_BACKEND_METAL`, or
+  `VMAF_BACKEND_HIP` after the corresponding `vmaf_<backend>_import_state()`
+  call. Fully additive — no existing API is changed. ADR-0804.
+- **`enum VmafBackend`** (`core/include/libvmaf/libvmaf.h`): new public enum
+  with values `UNKNOWN=0`, `CUDA=1`, `SYCL=2`, `METAL=3`, `HIP=4`,
+  `VULKAN=5` (reserved; Vulkan backend removed in ADR-0726).
+- **Unit tests** (`core/test/test_context.c`): two new test cases —
+  CPU-only context returns `VMAF_BACKEND_UNKNOWN`; null-pointer guards return
+  `-EINVAL`.
+
+
+**Added**
+
 - **`docker/Dockerfile.operator`**: multi-stage distroless image for the vmafx-operator
   Kubernetes controller. Builder: `golang:1.23-bookworm` (CGO_ENABLED=0); runtime:
   `gcr.io/distroless/static-debian12` running as `nonroot` (uid 65532). Exposes
@@ -4718,6 +4757,24 @@ Key areas covered:
 - `http_transport._build_metrics` construction contract
 - `http_transport.make_score_handler` coroutine binding
 - `http_transport._handle_score` 400 on missing fields, 500 on scorer error
+
+
+**Added**
+
+- **HIP kernel parity-test coverage round 5** (`core/test/`): adds 2
+  new parity tests closing the speed-family HIP-vs-CPU gaps deferred
+  from round 4 (ADR-0958) — `test_hip_speed_chroma_parity` and
+  `test_hip_speed_temporal_parity` (ADR-1004). Both tests follow the
+  round-1/2/3/4 template: synthetic 768x432 YUV420P fixture (matching
+  the CUDA speed-family gates for cross-backend comparability), CPU
+  reference vs. HIP score, skip cleanly with `[skip: no HIP device]`
+  or `[skip: HIP scaffold ENOSYS]` on hosts lacking an AMD GPU /
+  `enable_hipcc=true`. Tolerance places=4 (1e-4) — SpEED's QR /
+  eigensolver runs on CPU for both backends. The round-4 link-defect
+  blocker (`speed_internal_init_dimensions` / `speed_internal_float_stride`
+  missing `.c` implementation) was resolved by ADR-0964 / PR #465.
+  Lifts HIP backend parity coverage from 15/17 → 17/17 extractors
+  (88% → 100%) for all non-deferred kernels.
 
 
 - **Tiny-AI training scaffold for the Netflix VMAF corpus (ADR-0242).**
@@ -5198,6 +5255,33 @@ the deterministic synthetic default used by CI.
   suite runs in <2 s and needs no extra system dependencies.
 
 
+### test(ai/scripts): coverage push round 2 — argv + helpers + happy paths
+
+Added 129 new unit tests in `ai/tests/test_scripts_coverage_round2.py` covering
+helper functions and argv parsing for the highest-LOC `ai/scripts/` targets:
+
+- `extract_k150k_features.py` — geometry sidecar parsing, FPS parsing, HDR
+  detection, motion FPS weight, `_feature_arg` option filtering, metric alias
+  lookup, frame aggregation (NaN suppression), staging JSONL roundtrip,
+  checkpoint helpers, content split determinism, parquet dedup, vmaf cmd
+  builder, merge frame metrics.
+- `calibrate_nr_threshold.py` — linear regression, delta_fast (2σ), Pearson r,
+  calibration quality gate, YUV geometry detection, pixel-format/bitdepth
+  mapping, and CLI argument validation.
+- `materialize_mos_labels.py` — key normalisation modes (raw/basename/stem/auto),
+  MOS payload edge cases, column auto-detection, table format support (CSV, JSONL,
+  JSON list/rows-dict), extra-name normalisation, CLI `--key-normalize` flag.
+- `batch_materialize_saliency_features.py` — manifest loading error paths,
+  Markdown report generation, `BatchRunOptions` defaults.
+- `batch_materialize_second_opinion_features.py` — manifest loading error paths,
+  score-spec resolution (with/without label prefix), Markdown report generation,
+  `SecondOpinionBatchOptions` defaults.
+- `aggregate_corpora.py` — CLI multi-input end-to-end, `--corpus-source-override`
+  flag, `transform_row` per-corpus identity paths, `_resolve_corpus_source` logic.
+
+All tests run without GPU, corpus downloads, or model artifacts.
+
+
 ### test(ai): coverage push — online_trainer and feature_extractor unit tests
 
 Added two new test files lifting two previously untested modules from 0% to
@@ -5229,6 +5313,25 @@ high coverage:
   - `vmaf_train/data/manifest_scan.py`: **94% → 100%** (CSV / scan edges).
   - `vmaf_train/bisect_model_quality.py`: **90% → 99%** (gate / `to_dict`).
   - `vmaf_train/registry.py`: **62% → 82%** (pure-Python paths, no ONNX).
+
+
+**Added**
+
+- **`ai/tests/test_aiutils_misc.py`**: covers `aiutils.time_utils.now_iso_8601`
+  and the `aiutils.__getattr__` lazy-import shim for `write_parquet_atomic`.
+- **`ai/tests/test_run_manifest_branches.py`**: branch-coverage top-up for
+  `aiutils.run_manifest` — opaque-type fallback in `normalise_manifest_value`,
+  directory and missing-path variants in `describe_path`, `None` and sequence
+  entries in `describe_paths`, and the `repo_relative_path` out-of-repo fallback.
+- **`ai/tests/test_subprocess_utils.py`**: covers all branches of
+  `aiutils.subprocess_utils.run_cmd` (capture mode, check=False, timeout,
+  kwargs forwarding).
+- **`ai/tests/test_parquet_utils.py`**: round-trip write/read, overwrite, atomic
+  cleanup on exception, and kwargs forwarding for `aiutils.parquet_utils.write_parquet_atomic`.
+- **`ai/tests/test_jsonl_utils.py`** (fix): replaced import of
+  `dumps_jsonl_row` (absent on master) with tests that match the actual
+  `aiutils.jsonl_utils` API (`iter_jsonl` only).
+- Overall `aiutils` statement coverage: 73% → 100%.
 
 
 test(ansnr): add AVX2/AVX-512/NEON MSE line parity unit test
@@ -5469,6 +5572,26 @@ ADR: [ADR-0422](../../docs/adr/0422-cli-hip-metal-backend-selectors.md).
 - **vmaf-tune compare multi-target rate-quality sweep** (ADR-0516): `vmaf-tune compare` now accepts `--target-vmafs 85,90,92,95` and emits a v2 JSON schema (`schema_version: 2`, `target_vmafs: [...]`, rows keyed by (codec, target_vmaf)). `vmaf-tune report` detects the new schema and renders a per-codec rate-quality line chart (log-bitrate / VMAF axes) with the pareto frontier highlighted as a dashed overlay, plus a per-codec / per-target summary table. Hardware encoders (NVENC / QSV / AMF) are availability-probed via `ffmpeg -encoders` + a 1-frame dummy encode and surface as visually-flagged skip rows when unavailable; missing-encoder rows no longer abort the sweep. Default `--encoders` is now the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`. `--target-vmaf` (singular) is preserved as a back-compat alias; existing v1 compare JSONs continue to render the legacy bar+dot chart. New API: `compare_codecs_sweep()`, `probe_encoder_available()`, `compute_pareto_frontier()`, `CodecSweepPoint`. PR: feat/compare-rate-quality-sweep.
 
 
+- **`compat/python-vmaf/tests/test_asset.py`** (75 tests): covers `Asset` and
+  `NorefAsset` — path generation, YUV type handling, dimension properties,
+  start/end frame logic, duration computation, repr/hash/equality, filter
+  command accessors, copy(), workfile/procfile paths, and bitrate helpers.
+- **`compat/python-vmaf/tests/test_result_store.py`** (32 tests): covers
+  `FileSystemResultStore` save/load/delete/workfile round-trips,
+  `_to_python_natives` numpy-scalar coercion, and static `save_result` /
+  `load_result` helpers.
+- **`compat/python-vmaf/tests/test_cross_validation.py`** (33 tests): covers
+  `ModelCrossValidation.run_cross_validation`, integer and list-based k-fold
+  splitters (LOSO-style), `_find_most_frequent_dict`, `_sample_model_param_list`,
+  grid/random search assertors, `format_stats`, and `print_output`.
+- **`compat/python-vmaf/tests/test_tools_misc.py`** (61 tests): covers
+  `tools/misc.py` pure-Python utilities (path helpers, dict helpers,
+  `map_yuv_type_to_bitdepth`, `indices`, `unroll_dict_of_lists`, `neg_if_even`)
+  and `tools/decorator.py` utilities (`deprecated`, `dummy`, `memoized`,
+  `override`, `persist`). Coverage round 2; brings the `compat/vmaf/tests/`
+  suite from 175 to 376 tests.
+
+
 - **`compat/python-vmaf/` coverage uplift — 55 focused unit tests for
   fork-touched config plumbing and previously-untested leaf
   utilities.** New file
@@ -5668,6 +5791,14 @@ No binary invocation; all I/O paths mocked.
   every push.
 
 
+- **`docs/development/coverage-gate.md`**: new document covering the
+  ADR-0922 ratchet semantics, how the per-PR delta gate is wired into CI
+  (merge-base comparison, lean base build, `coverage-delta-check.sh`),
+  a floor-history table (37 % → 70 %), per-file override rationale,
+  and a runbook for raising or lowering floors (including the ADR requirement
+  for any lowering).
+
+
 ### Added
 
 - **Tests — coverage push above ADR-0922 ratchet floors.** Added 31 targeted
@@ -5680,6 +5811,13 @@ No binary invocation; all I/O paths mocked.
   ceiling on CPU-only ORT builds and needs either ORT-API mock injection or
   a working CUDA / OpenVINO EP on the CI runner — flagged in the PR for
   follow-up. No production code changed.
+
+
+- Add CPU feature extractor coverage tests (round 3): `test_ssim_coverage.c`,
+  `test_adm_coverage.c`, `test_psnr_hvs_coverage.c`, `test_ssimulacra2_coverage.c`;
+  18 new test cases covering enable_db/clip_db branches, ADM debug mode,
+  psnr_hvs bpc-rejection and chroma-disable paths, ssimulacra2 multi-format
+  and HBD pipelines — all wired into `suite=fast`.
 
 
 `integer_adm_cuda` (the default CUDA ADM extractor) now emits
@@ -5785,6 +5923,9 @@ First consumer: `integer_adm_cuda.c::adm_cm_device()` selects
   stashes (on `master`, detached HEAD, or branches that still exist locally).
   Supports `--dry-run` to preview changes without modifying repository state.
   See `docs/development/agent-worktree-discipline.md` for usage context.
+
+
+- **CI gate for `dev/Containerfile`**: new `.github/workflows/dev-container-build.yml` builds the dev container up to the `libvmaf-build` stage and smoke-tests `vmaf --version` + CPU backend scoring on every PR that touches `dev/Containerfile` or `dev/scripts/`. Catches path-stale and SDK-pin regressions at PR time instead of user runtime (ADR-0819).
 
 
 - Add the `dists_sq` tiny-AI full-reference feature extractor with an in-tree
@@ -6090,6 +6231,32 @@ matching the CUDA/SYCL/Vulkan PSNR twins (ADR-0469). Passing
   this corpus drop and is deferred to a multi-codec retrain.
 
 
+**Added**
+
+- **`fuzz_json_model` libFuzzer harness** (`core/test/fuzz/fuzz_json_model.c`):
+  wraps `vmaf_read_json_model_from_buffer` and
+  `vmaf_read_json_model_collection_from_buffer` (libvmaf SVM model JSON
+  parser, `core/src/read_json_model.c`). Seed corpus under
+  `json_model_corpus/`; wired into `.github/workflows/fuzz.yml` matrix.
+  Closes deferred target #3 ("fuzz_model_load") from
+  `docs/research/0083-libfuzzer-harness-expansion-target-survey.md`.
+  First run surfaced
+  T-JSON-MODEL-SLOPES-FEATURE-CAP-OOB-2026-05-30 — a heap-buffer-overflow
+  in `vmaf_model_destroy` when `parse_slopes` outruns `feature_names`;
+  reproducer committed under `json_model_known_crashes/` per the ADR-0404
+  "keep gates running" policy.
+- **`fuzz_dnn_sidecar` libFuzzer harness** (`core/test/fuzz/fuzz_dnn_sidecar.c`):
+  wraps `vmaf_dnn_sidecar_load` (tiny-AI sidecar JSON parser,
+  `core/src/dnn/model_loader.c`). The loader's `extract_string` /
+  `extract_string_array` / `extract_float_array` / `extract_int` helpers
+  are hand-rolled `strstr` / `strchr` walkers; the harness writes a
+  per-process tempfile pair (`/tmp/vmaf-fuzz-sidecar-<pid>.json`) each
+  iteration and exercises the public entry point. Seed corpus under
+  `dnn_sidecar_corpus/`; wired into the nightly CI matrix. Closes
+  deferred target #4 ("fuzz_sidecar") from Research-0083. 30 s smoke
+  ran 3.95 M iterations clean.
+
+
 - **Test coverage**: extended Go unit tests for `cmd/vmafx-controller`,
   `cmd/vmafx-controller/nodes`, `cmd/vmafx-server`, and `cmd/vmafx-mcp`.
   No behavior change; closes Section F coverage gaps from the master-tip
@@ -6170,6 +6337,22 @@ matching the CUDA/SYCL/Vulkan PSNR twins (ADR-0469). Passing
   cancel-of-running, FIFO ordering, and cancelled-FIFO-entry skip for
   the SQLite queue; `extractEncoderVersion`, `ffmpegBin`, `outputDir`
   defaulting for the encoder package. No production code touched.
+
+
+**cmd/vmafx-mcp: expand handler test coverage from 35 % to 53 %**
+
+Added `impl_handlers_test.go` with table-driven tests covering the error and
+no-binary-required paths of all 15 tool handlers. New tests cover:
+`handleListModels` (real model-dir walk), `handleListBackends` (binary-absent
+fallback), `handleVmafVersion` (binary-absent early return), `handleRunBenchmark`
+(binary-absent exit-code path), `handleEvalModelOnSplit` / `handleCompareModels` /
+`handleDescribeWorstFrames` (ValidatePath rejection), `handleRunCompare` /
+`handleRunLadder` / `handleRunTunePerShot` (vmaf-tune binary absent),
+`findVmafTune` (env override + fallback), `parseArgs` (nil / valid / invalid
+JSON), `probeBackends` (cache hit + help-output parsing), `describeModel`
+(ambiguous stem + not-found), `describeModelFile` (ONNX and JSON with
+model_dict), `handleListExtractors` (real feature-dir walk), and the
+`addRawTool` closure error-to-IsError conversion. Coverage: 35.3 % → 53.2 %.
 
 
 - **Governance**: added top-level `GOVERNANCE.md` (BDFL model,
@@ -6792,6 +6975,36 @@ annotations required to leave the touched files lint-clean.
 
 ### Added
 - 63 new mcp-server coverage tests in `test_coverage_round2.py` covering `call_tool` dispatch + per-tool handler success/error paths (lifts coverage beyond PR #346).
+
+
+**test(mcp-server): coverage push round 4 — describe + compare + ladder + edge cases**
+
+Added 69 new pytest cases in `mcp-server/vmaf-mcp/tests/test_coverage_round4.py`
+targeting residual gaps in `server.py` and `http_transport.py`:
+
+- `_describe_model`: not-found ValueError, direct-path resolution, stem-name
+  lookup, onnx/pkl format labels.
+- `_run_compare` / `_run_ladder` / `_run_tune_per_shot`: binary-not-found and
+  non-zero-exit error paths; non-JSON format passthrough for ladder.
+- `_eval_model_on_split`: invalid split, 'all' split, key-column train/val/test
+  split, partial-failure path in `_compare_models`.
+- `_run_benchmark`: non-zero exit raises RuntimeError (current behavior).
+- `_list_extractors`: OSError-on-read skip, duplicate deduplication.
+- `_nan_to_none` / `_dumps_strict`: NaN/Inf scalar+dict+list, allow_nan=False.
+- `_subprocess_timeout_s`: default / env override / invalid / negative / zero.
+- `_communicate_with_timeout`: timeout kills process and raises RuntimeError.
+- `_strip_model_ext`, `_model_resolution_class`: branch coverage.
+- `_describe_image_with_vlm`: loaded=True pipeline=None path.
+- `_pick_worst_frames`: n > available returns all.
+- `_call_tool`: unknown tool, eval_model_on_split dispatch, compare_models dispatch.
+- `http_transport`: /healthz, /readyz (503), /metrics, /v1/score success + 400 +
+  500; auth middleware (401 no-token, 401 wrong-token, 200 correct-token, 413
+  oversized body); `_resolve_bind_host`, `_resolve_auth_token`, `_no_auth_mode`,
+  `_build_ssl_context`, `_log_with_rid`.
+
+
+- **mcp-server**: `http_transport.py` branch coverage lifted from 81 % to 100 % (13 new tests in `test_http_transport_round5.py`).
+  Closes previously uncovered lines: TLS-enabled `_build_ssl_context` branch, `_handle_score` path-validation 400 error path, `_serve` startup warning branches and cleanup finally-block, `run_http_server` CancelledError/KeyboardInterrupt/finally paths, and `make_score_handler` factory return.
 
 
 - **Metal (Apple Silicon) compute backend scaffold (T8-1)
@@ -7931,6 +8144,25 @@ multi-plane kernel dispatch is deferred to v2.
   noted in ADR-0312; no new ADR.
 
 
+### SYCL: CAMBI CPU vs. SYCL parity gate (ADR-1001, round 5)
+
+`test_sycl_cambi_parity.c` is a new CI-gated numerical parity test for the
+`cambi_sycl` extractor. It asserts that the SYCL multi-scale banding kernel
+matches the CPU scalar path within places=4 (1e-4) on a 256×256
+quantised-gradient fixture designed to produce a non-trivial CAMBI score.
+
+The pre-existing `test_integer_cambi_sycl.c` was explicitly a smoke test only
+(registration + finite output). ADR-0957 incorrectly counted it as a parity
+gate; this test fills the actual gap, raising the active SYCL parity coverage
+to 17/18 registered extractors (the two remaining dormant SpEED twins activate
+automatically once their build wiring lands per ADR-0957).
+
+The test skips gracefully when no SYCL device is present, matching the pattern
+from all prior parity rounds.
+
+References: ADR-1001, ADR-0957, ADR-0214.
+
+
 - **test(sycl)**: Add `test_sycl_float_ssim_parity` — covers
   `vmaf_fex_float_ssim_sycl` registration and CPU-vs-SYCL parity at
   places=3 tolerance (Research-0985: accounts for the CPU/GPU formula
@@ -8232,6 +8464,16 @@ before full encode execution lands.
   `vmaf-tune compare --sample-clip-seconds`, aligning FFmpeg `-ss` /
   `-t` with libvmaf `--frame_skip_ref` / `--frame_cnt` and bitrate
   normalisation.
+
+
+- `tools/vmaf-tune`: add 33 parametrized subprocess-mock CLI tests for
+  `encode-profile`, `compare`, and `report` sub-commands
+  (`tests/test_cli_subcommands.py`). Covers dry-run and live-encode paths,
+  all text-based format variants (markdown/json/csv/html/both), schema-v1 and
+  schema-v2 compare-JSON ingestion, ladder-JSON and per-shot-JSON ingestion,
+  and every documented error path (missing geometry, empty encoder list,
+  bad JSON files, unavailable-encoder vs real-failure `ok`/`degraded` flags).
+  No real ffmpeg or vmaf binary is invoked.
 
 
 Added `vmaf-tune benchmark`, a read-only Phase-G report over existing
@@ -9446,6 +9688,18 @@ See [ADR-0790](../docs/adr/0790-containerfile-layer-optimization.md).
   update `required-aggregator.yml` and README badges accordingly. (ADR-0995)
 
 
+- **feat(ffmpeg-patches):** Add `score_fmt` AVOption to all four vmaf FFmpeg
+  filters (`libvmaf`, `libvmaf_sycl`, `libvmaf_vulkan`, `libvmaf_metal`).
+  Replaces hard-coded `vmaf_write_output()` calls with
+  `vmaf_write_output_with_format()`, exposing the fork's `--precision` flag
+  semantics at the FFmpeg integration layer. Users can now write
+  `libvmaf_sycl=log_path=out.xml:score_fmt=%.17g` to get IEEE-754
+  lossless log output, equivalent to `vmaf --precision=max` on the CLI.
+  Default (`score_fmt=NULL`) preserves the existing `%.6f` behaviour.
+  New series patch: `0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch`.
+  (ADR-1064)
+
+
 - **SHA-pin every GitHub Actions reference in `.github/workflows/*.yml`
   (OSSF Scorecard `Pinned-Dependencies` remediation).** Every
   `uses: <owner>/<repo>@<tag>` reference in the 13 fork workflows is
@@ -10078,6 +10332,32 @@ upstream cause; it now has a real parent ADR to chain through.
 No code changes — docs-only.
 
 
+**docs(usage,api): correct backend auto-priority + Doxygen drift in public headers**
+
+- `docs/usage/vmafx-cli.md`: corrected backend auto-priority table from stale
+  `CUDA > Vulkan > SYCL > CPU` to the libvmaf registry order `SYCL > CUDA > HIP > CPU`
+  (Vulkan dropped per ADR-0726).
+- `docs/usage/vmaf-tune-score-backend.md`: added callout explaining that vmaf-tune's
+  `auto` probe order (`cuda → sycl → hip → cpu`) differs from the libvmaf registry
+  order (`sycl → cuda → hip → cpu`).
+- `docs/usage/vmaf-tune.md`: same callout; removed stale `vulkan` backend from the
+  mode table, detection heuristics list, and wall-clock table; removed `vulkan` from
+  the `--backend` help-line example.
+- `core/include/libvmaf/libvmaf.h`: fixed `vmaf_write_output_with_format` @brief —
+  the default format for a NULL `score_format` is `"%.6f"` (not `"%.17g"`); added
+  `@param` tags to that function; removed stale `Vulkan` from `VmafContext` typedef doc.
+- `core/include/libvmaf/libvmaf_hip.h`: improved `@return` doc on
+  `vmaf_hip_import_state` to enumerate all error codes.
+- `core/include/libvmaf/AGENTS.md`: added `libvmaf_metal.h` and `libvmaf_mcp.h`
+  rows to the Scope table.
+- `core/include/libvmaf/model.h`: replaced the non-Doxygen `@field` pattern in
+  `VmafModelConfig` with per-member block comments (per ADR-0953 / AGENTS.md rule).
+- `docs/usage/bench.md`: added HIP to the backend-comparison sentence in the intro.
+- `docs/usage/ffmpeg.md`: updated quick-start examples to use `model=version=` form
+  (preferred) over legacy `model_path=`; noted `model_path` as legacy; removed stale
+  Vulkan references from the Background section and Selector option reference table.
+
+
 - **refactor(predict,libvmaf)**: extract bootstrap score-name suffix constants
   and `BOOTSTRAP_NAME_BUF_SZ()` macro into shared `bootstrap_names.h`; remove
   two `//TODO: dedupe` markers that referenced each other (ADR-0480).
@@ -10112,6 +10392,22 @@ No code changes — docs-only.
   CI GitHub Actions Jimver pin remains on `13.2.0` pending action-level support
   for 13.3 (tracked follow-up). NVCR image bump also deferred (no `13.3.x-devel`
   tag published yet). [ADR-0738](../docs/adr/0738-bump-cuda-133-r610-local.md).
+
+
+### docs(versions): bump stale Go version, required-checks count, and Python/AI dep pins
+
+- `docs/development/languages.md`: Go minimum version updated from 1.23 to 1.25
+  (go.mod declares `go 1.26.4`; toolchain 1.26.4).
+- `docs/mcp/index.md`: build comment updated from "Go 1.23+" to "Go 1.25+".
+- `docs/development/release.md`: required-status-checks count updated from 19 to 25
+  with full enumeration matching `.github/workflows/required-aggregator.yml`.
+- `docs/architecture/c4-context.md`: "CI runs 19 required checks" updated to 25.
+- `CLAUDE.md` §12 rule 3: "19 required status checks" updated to 25.
+- `docs/getting-started/install/windows.md`: Python version note split to clarify
+  3.11+ for core use and 3.14.5+ required for `ai/`.
+- `docs/ai/training.md`: PyTorch/Lightning pins corrected to `torch>=2.12.0,<3.0`
+  + `pytorch-lightning>=2.6.5,<3.0`; notes the `lightning` → `pytorch-lightning`
+  PyPI rename from 2026-04-30.
 
 
 - **#141 / ADR-0793** — nightly workflow audit: remove redundant TSan job (already covered by `sanitizers.yml`), add explicit artifact retention (14 d clang-tidy, 30 d benchmarks), fix Python version `3.14.5` → `3.12` in `nightly-bisect.yml`.
@@ -10577,6 +10873,12 @@ LOC before → after (non-blank, non-comment):
   container-side re-run (see digest §Follow-ups).
 
 
+**Copyright headers (residual sweep)**: removed "and Claude (Anthropic)" from three remaining
+in-tree locations missed by the ADR-0861 / ADR-0776 sweeps: `README.md` prose copyright notice,
+`dev-llm/src/vmaf_dev_llm/__init__.py`, and `scripts/lib/__init__.py`. All in-tree source files
+and docs now carry `Copyright 2026 Lusoris` (single notice) per ADR-0861.
+
+
 **Copyright headers**: removed "and Claude (Anthropic)" from all `Copyright 2026 Lusoris` notices across `core/`, `ai/`, and `mcp-server/`; added missing headers to 52 Python files in `ai/` and `mcp-server/`; added vendor attribution to vendored `pdjson.c`/`.h`. See ADR-0776.
 
 
@@ -10608,6 +10910,21 @@ LOC before → after (non-blank, non-comment):
   comparator lambda in `dict.cpp` as `noexcept`. No behavioural change; no
   ABI change (extern "C" entry points untouched). Surfaces ignored-return
   bugs at compile time and enables tighter codegen on the no-throw paths.
+
+
+- **C++ standard bumped to C++23** in `core/meson.build` `default_options`
+  (`cpp_std=c++11` → `cpp_std=c++23`, ADR-1003). The project-wide default was
+  inconsistent with the many files already compiled at C++23 via per-target
+  `override_options` (Wave 1–9 C++ migration, ADR-0708/0727). Any new `.cpp`
+  file added directly to `libvmaf_sources` now compiles at C++23 by default,
+  removing the need for boilerplate isolated static libs. Pre-existing
+  `override_options: ['cpp_std=c++23']` on isolated libs are redundant but
+  harmless; cleanup is deferred to a follow-up sweep PR.
+- **Fix**: `test_feature_collector_coverage` (fast suite) had been
+  link-failing since introduction — its internal-helper calls required
+  `feature_collector.cpp` to be compiled directly into the test, not just
+  linked through `libvmaf` (which contains `feature_collector.c` with static
+  helpers). Fixed using the same pattern as `test_predict`.
 
 
 Convert `core/src/fex_ctx_vector.c` to C++23 (`fex_ctx_vector.cpp`), Wave 2 of the ADR-0708
@@ -11491,6 +11808,22 @@ retired scaffold / TBD wording.
   what `mcp.c`, `dispatcher.c`, and `compute_vmaf.c` already do.
 
 
+**`docs/mcp`: tools catalogue completeness + duplicate-section cleanup + ADR-ref fixes**
+
+- `docs/mcp/index.md`: tool catalogue expanded from 7 to 15 entries — added
+  `vmaf_score_encoded`, `probe_backend`, `vmaf_version`, `run_compare`,
+  `run_ladder`, `run_tune_per_shot`, `list_extractors`, and `describe_model`.
+- `docs/mcp/tools.md`: removed duplicate `## Cross-tool error conventions`
+  section (stale legacy `TextContent` shape superseded by ADR-0613).
+- `docs/mcp/tools.md`: removed duplicate `[ADR-0100]` link in `## Related`.
+- `docs/mcp/tools.md`: corrected seven `ADR-0608` references to `ADR-0638`
+  (ADR-0608 is the Zed editor config; ADR-0638 is the MCP P1 surface decision).
+- `docs/mcp/http-transport.md`: `/v1/score` `bitdepth` field updated from
+  `8 or 10` to `8 | 10 | 12 | 16` to match the canonical `vmaf_score` tool docs.
+- `docs/mcp/release-channel.md`: "two MCP server flavours" corrected to
+  "three"; Go binary (`vmafx-mcp`) entry and release checklist added.
+
+
 - **Metal (Apple Silicon) compute backend runtime (T8-1b)
   ([ADR-0420](../docs/adr/0420-metal-backend-runtime-t8-1b.md))**.
   Replaces the pure-C scaffold TUs from T8-1
@@ -11579,6 +11912,18 @@ retired scaffold / TBD wording.
   strict-build went from `EXIT=1` with 1276 emitted WARNINGs (after
   promoting validation to `warn`) to `EXIT=0` with the actionable
   classes still gated.
+
+
+Add 51 orphan pages to the mkdocs.yml nav that were reachable on disk but
+invisible in the built site: usage (storage, vmafx-cli, vmaf-train, vmaf-vpl,
+vmaf-tune-fast-nr), backends (context-api-contract), ai (per-pr-doc-bar,
+chug-ingestion, saliency-feature-materializer, tiny-blob-storage,
+chug-hdr-held-out-validator, datasets/k150k, 20 model-card pages),
+architecture (phase4b-distributed-platform), development (dev-mcp,
+k8s-deployment, operator, languages, docker-production, rust, gpu-scheduling,
+perf, deprecations, vmafx-node, adr-workflow, pr-body-sentinel-guide,
+test-fixtures, ci-tmate-debug), server section (controller, grpc, node),
+reference (state, rebase-notes, benchmarks).
 
 
 - **docs(models)**: Refresh the human-facing model overview and FAQ so
@@ -12185,11 +12530,48 @@ is now the only input path. The `copy_picture_data()` / `video_input_fetch_frame
 legacy path is removed. `fetch_picture()` no longer accepts a `depth` argument.
 
 
+**docs: scrub residual ANSNR references following PR #38 CPU-implementation removal**
+
+Audited all documentation for stale references to `float_ansnr`,
+`float_ansnr_hip`, `float_ansnr_cuda`, `float_ansnr_metal`, and related
+counts/claims that were not updated when the CPU implementation and its
+GPU twins were removed in commit 70ed8b3ce3 (PR #38).
+
+Files updated: `docs/api/gpu.md`, `docs/backends/hip/overview.md`,
+`docs/backends/index.md`, `docs/backends/arm/overview.md`,
+`docs/backends/metal/index.md`, `docs/development/build-flags.md`,
+`docs/development/cross-backend-gate.md`, `docs/metrics/features.md`,
+`docs/mcp/tools.md`, `README.md`, `core/src/feature/metal/AGENTS.md`,
+`core/src/hip/AGENTS.md`, `core/src/feature/cuda/AGENTS.md`, `AGENTS.md`.
+
+The Vulkan kernel (`float_ansnr_vulkan.c`) remains in tree as historical
+dead code; the Vulkan backend itself was removed in ADR-0726.
+
+
 - All in-tree references to `lusoris/vmaf` (GitHub URLs, repository slugs, GHCR
   registry paths, OCI labels) updated to `VMAFx/vmafx` following the GitHub
   organization cutover. GHCR image paths use lowercase `vmafx/vmafx` per OCI
   registry convention. 113 files updated, 279 occurrences replaced. PR:
   chore/post-cutover-url-sweep.
+
+
+### docs: scrub residual `libvmaf/` paths after ADR-0700 rename
+
+All doc and AGENTS.md references to the old `libvmaf/` source directory
+have been updated to `core/` following the ADR-0700 rename. Affected
+surfaces: `docs/usage/`, `docs/metrics/`, `docs/ai/`, `docs/backends/`,
+`docs/getting-started/` (install guides + build-from-source),
+`docs/architecture/`, `AGENTS.md`, `CONTRIBUTING.md`, and the comment in
+`core/include/libvmaf/libvmaf_mcp.h`. The `compat/python-vmaf/` workspace
+and config paths are also updated in `docs/architecture/workspace.md`.
+
+
+- **docs:** Post-ADR-0726 residual scrub — remove stale Vulkan references from
+  `docs/ai/datasets/k150k.md` (`--no_vulkan` flag drop), `docs/mcp/tools.md`
+  (run_benchmark backend list), `docs/api/index.md` (Vulkan header row), and
+  `docs/api/gpu.md` (Vulkan section status + `-Denable_vulkan=true` invalid
+  Meson syntax). Backends/index.md, vulkan/overview.md, and
+  context-api-contract.md were already correct post-#607.
 
 
 - **pre-commit**: add `no-conflict-markers` shell hook (`scripts/ci/check-conflict-markers.sh`) as a belt-and-suspenders companion to the existing `check-merge-conflict` entry. The new hook uses `git grep` (git's C binary, < 5ms) and fires on every commit regardless of file type. Closes the coverage gap illustrated by PR #50, which shipped unresolved conflict markers into 70 files.
@@ -12396,6 +12778,19 @@ templates); add HIP and Metal template sections with surface tables and
 lifecycle-contract prose (ADR-0484). Restore deleted
 `docs/ai/models/u2netp_mirror_card.md` (exporter-ready / binary-pending
 status, 5-point ADR-0042 bar) referenced by `docs/ai/u2netp-mirror.md`.
+
+
+**Scrub residual "Lusoris fork" text references across docs**
+
+Replace remaining "Lusoris fork" / "lusoris fork" branding text in
+`docs/`, `CONTRIBUTING.md`, and `AGENTS.md` with "VMAFx" / "VMAFx fork".
+Also updates fork issue URL in `docs/metrics/bad-cases.md` from
+`Lusoris/vmaf` to `VMAFx/vmafx`, drops the `golusoris-alignment`
+internal codename from C4 architecture stubs, and corrects
+`CONTRIBUTING.md` HIP status from "planned" to "partially live".
+
+No version strings, copyright headers, ADRs, changelog fragments, or
+`docs/state.md` were modified.
 
 
 ### Research-0733: VMAFX Sidecar Online Training Architecture
@@ -13335,6 +13730,27 @@ See [ADR-0356](docs/adr/0356-vulkan-two-level-gpu-reduction.md) and
   schema) remain in place. (ADR-0880)
 
 
+Delete the 80 orphan Vulkan source files (15 in `core/src/vulkan/`, 35 in `core/src/feature/vulkan/` covering GLSL + .c TUs + AGENTS.md, 1 public header `libvmaf_vulkan.h`, 7 test files, and `.claude/agents/vulkan-reviewer.md`). Completes ADR-0726 by removing the dead-code tree that was bypassed by all build rules but still cluttered the source layout. Net `-80` files / `-9000+` LOC.
+
+No build/test/runtime impact — the `enable_vulkan` meson option was already removed and the kernel registration entries (`vmaf_fex_*_vulkan`) were already dropped from `feature_extractor.cpp`. ADR-0726 is the design rationale; this PR is the cleanup.
+
+
+**Removed**
+
+- **Vulkan residual config switches and stale doc claims scrubbed (ADR-0726
+  follow-up):** Removed the two remaining live `-Denable_vulkan=enabled` matrix
+  rows from `.github/workflows/libvmaf-build-matrix.yml` (Ubuntu Vulkan T5-1b
+  and macOS MoltenVK lanes). Updated `docs/backends/index.md`,
+  `docs/usage/cli.md`, `docs/usage/ffmpeg.md`, `docs/benchmarks.md`,
+  `docs/development/ide-setup.md`, and `docs/backends/kernel-scaffolding.md` to
+  reflect the removal. Marked `docs/backends/vulkan/overview.md` and all Vulkan
+  source `AGENTS.md` files as historical-reference-only. Updated `CLAUDE.md`
+  section 15 to remove Vulkan from the active backend list and parallel-lane
+  guidance. Removed stale `-Denable_vulkan=disabled` flags from closed-bug
+  reproducer commands in `docs/state.md` (the option no longer exists in
+  `meson_options.txt`).
+
+
 ### Removed
 
 - **CAMBI Vulkan scaffolding** (`core/src/feature/vulkan/cambi_vulkan.c`,
@@ -13394,6 +13810,17 @@ The following CI build configurations have been removed from
 and `sanitizers.yml`. `Cppcheck (Whole Project)` removed (clang-tidy superset).
 
 Implements ADR-0691 + ADR-0710. No functional change to the C library or CLI.
+
+
+### Removed
+
+- Reverted float-ADM SIMD dispatch wiring (PR #685, commit `b1a6c0d62`): the
+  `AdmSimdDispatch` table and `adm_prime_simd_dispatch()` call are removed from
+  `adm_tools.c`/`.h`/`float_adm.c`. The NEON DWT2 kernel produced a 1-ULP FMA
+  divergence on ARM CI that could not be suppressed reliably via
+  `#pragma clang fp contract(off)`. The float-ADM SIMD kernels remain compiled
+  but are no longer dispatched, restoring pre-PR-#685 behaviour. A follow-up PR
+  will rewire the dispatch with an FMA-safe NEON DWT2 path. (ADR-1057)
 
 
 **BREAKING: Remove VmafLegacyQualityRunner (float-path runner)**
@@ -14546,6 +14973,15 @@ path). Help text is now printed to stdout rather than stderr when invoked via
   sync). CPU-only build + all 49 fast tests pass.
 
 
+- `vmaf_model_destroy` no longer triggers a heap-buffer-overflow read when
+  fed a JSON model whose per-feature arrays (`slopes`, `intercepts`,
+  `feature_opts_dicts`) disagree in length with `feature_names`, or when
+  the JSON contains repeated `feature_names` keys. The parser now rejects
+  such models with `-EINVAL` at load time via `validate_feature_arrays`,
+  and the destructor walks `min(feature_cap, n_features)` defensively.
+  Surfaced by `fuzz_json_model` nightly run (ADR-0887).
+
+
 - SIMD bit-exactness round-2 fix (follow-up to PR #339):
   unify on FMA-based computation across both the SSIMULACRA 2
   AVX2/AVX-512 main-loop kernels and their scalar tails plus
@@ -14958,6 +15394,276 @@ coverage report instead of failing with a compile error.
   + Clang-18's own `stdatomic.h` re-firing in the same TU. (ADR-0999)
 
 
+**Fixed**
+
+- **Perf gate (ADR-0907)**: the `check-regression.py` step was always exiting
+  non-zero because the committed baseline was recorded on a developer
+  workstation that is 5–15x faster than GitHub Actions runners (ADR-1005).
+  Added `--advisory` (exit 0, full report still printed) and
+  `--skip-if-no-baseline` (skip cleanly when no comparable baseline data
+  exists) flags to `scripts/perf/check-regression.py`.  The CI workflow now
+  passes `--advisory --skip-if-no-baseline` until a CI-runner-calibrated
+  baseline is committed.  Added `docs/development/perf-gate.md` with the
+  baseline refresh procedure.
+
+
+- **Prometheus registry isolation** (`pkg/observability`): `SetControllerSources` now
+  registers the three controller live-gauge metrics (`jobs_pending`, `jobs_running`,
+  `nodes_live`) against the isolated `*prometheus.Registry` supplied to `NewMetrics`,
+  not the global `DefaultRegisterer`. Fixes gauges being invisible on the `/metrics`
+  endpoint and eliminates an `AlreadyRegistered` panic on any second call. A `sync.Once`
+  guard makes the method idempotent (ADR-1014).
+- **`WaitForShutdown` timer leak** (`pkg/observability`): replaced `time.After(timeout)`
+  with `time.NewTimer` + `defer t.Stop()` so the timer is released when the shutdown
+  completes rather than lingering for the full 30 s (ADR-1017 fix bundled here).
+
+
+- **k8s operator resource-allocation fixes** (`cmd/vmafx-operator`):
+  two per-call resource leaks corrected (ADR-1017, r5-scheduler-timer):
+  - `VmafxNodeReconciler.SetupWithManager` and
+    `VmafxModelTrainingReconciler.SetupWithManager` now initialise
+    `r.HTTPClient` once so all Reconcile calls share a connection-pooled
+    client instead of creating a new TCP connection per probe.
+  - `getRemoteJob` in `VmafxJobReconciler`: removed `grpc.WithBlock()` so
+    the reconciler goroutine is not frozen during TCP handshake; the `GetJob`
+    RPC now uses `dialCtx` (with the `grpcDialTimeout` deadline) instead of
+    the root context to prevent indefinitely-blocking RPCs.
+
+
+- **MCP subprocess cancellation** (`cmd/vmafx-mcp/impl.go`): three
+  `exec.Command` (no context) calls replaced with `exec.CommandContext(ctx,
+  ...)` so MCP client disconnection / timeout terminates the vmaf scoring
+  subprocess, Python ONNX evaluator, and GPU backend probe — rather than
+  letting them run to completion indefinitely (ADR-1018, r5-mcp-streaming
+  findings :224, :527, :788).
+- **Controller gRPC panic recovery** (`cmd/vmafx-controller/grpc_server.go`):
+  `recoveryUnaryInterceptor` and `recoveryStreamInterceptor` added to the
+  controller's `grpc.NewServer` options, mirroring the vmafx-server pattern
+  (ADR-0978). A panic in any controller handler (SubmitJob, GetJob, CancelJob,
+  PullWork, ReportResult, StreamJobs) is now caught and returned as
+  `codes.Internal` instead of crashing the process (ADR-1018,
+  r5-grpc-correctness finding grpc_server.go:418).
+
+
+### fix(y4m): cast `dst_buf_read_sz` operands to `size_t` to prevent signed overflow and heap underallocation (ADR-1022)
+
+Five `dst_buf_read_sz` arithmetic expressions in `core/tools/y4m_input.c` used bare
+`int * int` multiplication for the 420/420jpeg/420mpeg2, 420p10, 420p12, 422p10, and
+422p12 chroma branches. A crafted Y4M header with `pic_w` / `pic_h` near `INT_MAX/2`
+triggered signed-integer overflow, underallocating `dst_buf_read_sz` relative to the
+malloc'd `dst_buf_sz`; the subsequent `fread` at line 931 could read past the heap
+buffer. Added `(size_t)` casts to mirror the pattern already applied to `dst_buf_sz`
+and to all other `dst_buf_read_sz` branches in the same function.
+
+
+- **PSNR**: guard `log10(0)` NaN in APSNR flush for identical-frame sequences
+  and when `enable_chroma=false`; fix theoretical cap inflation (`* 2` removed)
+  (ADR-1024, `r6-psnr-correctness`)
+- **PSNR SIMD**: fix signed integer overflow UB in 16-bit scalar tail of
+  AVX2 / AVX512 / NEON paths — `int32_t e * e` overflows for max-diff 16-bit
+  samples; cast to `uint32_t` before squaring (ADR-1024, `r6-psnr-correctness`)
+- **ADM**: initialise `*score_aim = 1.0f` in the `den==0` (flat-frame) branch
+  of `adm.c` and `integer_adm.c`; previously left uninitialised, emitting
+  garbage AIM scores on black frames (ADR-1024, `r6-vif-adm-correctness`)
+- **ADM**: guard harmonic-mean denominator in `float_adm.c` — when both
+  `score` and `score_aim` are zero the `0/0` NaN is now replaced with `0.0`
+  (ADR-1024, `r6-vif-adm-correctness`)
+
+
+- **CUDA VIF**: fix copy-paste typo in 16-bit vertical filter1d rd-filter
+  upper bound — `fwidth_rd - fwidth_rd` (always 0) → `fwidth - fwidth_rd`;
+  previously caused OOB reads into `vif_filt.filter[scale+1]` producing
+  wrong VIF scores at scales 0-2 (ADR-1025, `r6-cuda-kernel`)
+- **CUDA ADM CM**: fix operator-precedence bug — `+ add_shift_sq >> shift_sq`
+  was parsed as `+ 0`, dropping the normalisation shift on `accum_thread²`;
+  add explicit parentheses matching the CPU reference macro (ADR-1025,
+  `r6-cuda-kernel`)
+- **HIP ADM decouple**: restore missing `__device__ __forceinline__ uint16_t
+  get_best15_from32(uint32_t, int*)` function signature dropped during the
+  CUDA→HIP port — bare body block was invalid C++ (ADR-1025, `r6-hip-kernel`)
+- **HIP VIF statistics**: fix `wavefront_reduce_i64` carry propagation — change
+  bitwise OR reassembly to integer addition so `lo` overflow carries into the
+  upper 32 bits correctly (ADR-1025, `r6-hip-kernel`)
+
+
+- **SYCL VIF**: fix rd-downsample stride truncation for odd frame widths —
+  `e_w / 2` → `(e_w + 1) / 2`; both the scalar and SIMD-16 kernel variants
+  are fixed; previously caused OOB writes into the next row for any odd-width
+  input (ADR-1026, `r6-sycl-kernel`)
+- **SYCL motion/VIF/ADM collect**: propagate `vmaf_sycl_graph_wait()` return
+  value in all three collect functions; previously discarded, causing stale
+  accumulator reads and wrong scores on device fault/reset (ADR-1026,
+  `r6-sycl-kernel`)
+
+
+### Fixed
+
+- **integer_psnr.c APSNR flush**: guard `log10(0)` NaN when SSE == 0
+  (identical frames) by emitting `psnr_max[i]` as the clamped ceiling; bound
+  loop to `1` plane when `enable_chroma=false`; remove accidental `* 2`
+  inflation in the `max_apsnr` cap formula (ADR-1033).
+- **ms_ssim.c**: wrap `l` and `c` in `fabs()` before `pow()` to prevent
+  `pow(negative, fractional)` NaN on heavily distorted frames; cast each
+  `w * h` operand to `double` before multiply to prevent signed int32 overflow
+  for images wider than 46340 pixels (ADR-1033).
+- **float_ssim.c / float_ms_ssim.c `convert_to_db`**: guard `score >= 1.0`
+  before `log10(1 - score)` to return `max_db` rather than NaN/-Inf
+  (ADR-1033).
+- **iqa/ssim_tools.c**: replace `assert(!args)` with a runtime
+  `if (args && !mr) return INFINITY` guard so non-default `args` callers
+  (the Rouse MS-SSIM path) do not abort the process (ADR-1033).
+- **adm.c / integer_adm.c**: initialise `*score_aim = 1.0f` in the
+  `den == 0` flat/black frame branch; previously uninitialized, causing
+  garbage AIM scores for all-black sequences (ADR-1033).
+- **float_adm.c harmonic mean**: guard `score + score_aim == 0.0` to return
+  `0.0` instead of `0/0` NaN which `MAX()` silently propagates (ADR-1033).
+- **float_adm.c `adm_skip_scale0`**: emit an explicit `0.0` for scale-0 when
+  the skip flag is set, mirroring the `float_vif.c` guard (ADR-1033).
+- **motion.c bilinear stride**: pass the caller-supplied `img1_stride` /
+  `img2_stride` to `motion_scale_bilinear` instead of recomputing from
+  `width`; the recalculated value ignored any alignment padding in the
+  original allocation and read incorrect rows (ADR-1033).
+- **motion.c OOM**: add NULL guards after both `aligned_malloc` calls for the
+  scale-1 downsampled buffers; on OOM return the already-computed
+  `motion_scale0` gracefully (ADR-1033).
+- **cambi.c `v_band_size` overflow**: compute band size in signed int and
+  return `-EINVAL` with a diagnostic when the result is non-positive, preventing
+  `uint16_t` wrap-to-~65535 and the resulting massive over-alloc + OOB writes
+  (ADR-1033).
+
+
+- Fix Go CI RED: `-Denable_metal=false` changed to `-Denable_metal=disabled`
+  (meson `feature` options require string values `enabled`/`disabled`/`auto`, not
+  booleans). Fixes the libvmaf meson-setup step that generates CGo bindings (ADR-1041).
+- Fix Rust CI RED: `test_motion_avx512_parity` build and test registration now gated
+  on `is_avx512_enabled` so the test is skipped when `enable_avx512=false`, preventing
+  unresolved-symbol linker failures (ADR-1041).
+
+
+- `dev/Containerfile`: add `USER vmaf` after the final pip-install `RUN` block
+  and before `ENTRYPOINT`; the container no longer runs as root at runtime
+  (ADR-1042).
+- `Dockerfile.go-server`: add `USER nonroot` (uid 65532) before `ENTRYPOINT`
+  in the distroless final stage; eliminates root-at-runtime for the Go server
+  image (ADR-1042).
+- `Dockerfile`: change `ENV DEBIAN_FRONTEND=noninteractive` to `ARG` so the
+  value is scoped to the build context only and does not persist into the
+  runtime image layer (ADR-1042).
+
+
+- Helm chart: add missing `storage` key to `values.yaml` so `storage.mode=rclone`
+  deployments are not silently undefined (ADR-1047).
+- Helm schema: add `networkPolicy`, `auth`, and `otelCollector` to
+  `values.schema.json` so typos in those blocks surface at `helm lint` time
+  rather than being silently accepted (ADR-1047).
+- Helm schema: raise `gpu.count` minimum from 0 to 1 and add `gpu.enabled`
+  to the `gpu` object's `required` array; requesting 0 GPU units with a
+  vendor device plugin is a silent no-op (ADR-1047).
+- vmaf-tune: add `"duration_s"` to `_stamp_tracked_default_sentinels` so the
+  `ladder` sub-command's `--duration` flag (dest=`duration_s`) is correctly
+  detected as user-provided vs default (ADR-1048).
+- vmafx-node: replace fixed 10s retry interval in the online-feedback
+  `drainLoop` with exponential backoff (base 2s → cap 2m, reset on successful
+  connection) to reduce log noise during extended sidecar outages (ADR-1049).
+
+
+- Port upstream Netflix commits `dff4082b` and `46d3a154`: make batch-threaded
+  execution the unconditional default in `core/src/libvmaf.c` by removing all
+  `#ifdef VMAF_BATCH_THREADING` guards. The fork now matches upstream threading
+  semantics; the old per-extractor non-batch thread pool path is removed (ADR-1051).
+
+
+- **fix(core):** Re-register CPU `motion_v2` feature extractor in `meson.build` and
+  `feature_extractor_list[]`; `vmaf_get_feature_extractor_by_name("motion_v2")` now returns
+  a valid extractor on CPU-only builds (ARM64 and x86-64). Fixes `test_motion_v2_missing`
+  and related ARM64 CI failures introduced by PR #532. Fix `test_motion_three_frame` test
+  ordering: `get_score(motion2_score)` must be called after `flush()` because the
+  pipelined-rename port defers motion2 emission to flush time. ([ADR-1052](../docs/adr/1052-arm-motion-v2-re-register.md))
+
+
+- **feature_extractor.cpp**: fix three-way memory leak in
+  `vmaf_feature_extractor_context_create` when option parsing fails
+  (`f->fex->priv`, `f->fex`, `f` are now freed before returning the error).
+- **feature_extractor.cpp**: check `pthread_mutex_init` return in
+  `vmaf_fex_ctx_pool_create`; add `free_fex_list` label so `fex_list` is also
+  freed on failure (was leaked via the old `free_p` path).
+- **feature_extractor.cpp**: check `pthread_cond_init` and
+  `vmaf_dictionary_copy` returns in `get_fex_list_entry`; clean up the partial
+  slot (`ctx_list` + cond) on failure instead of silently returning NULL.
+- **feature_extractor.cpp**: propagate the first non-zero error code from
+  `vmaf_feature_extractor_context_flush` in `vmaf_fex_ctx_pool_flush` instead
+  of always returning 0.
+- **read_json_model.cpp**: `model_parse` now checks `json_get_error` after the
+  key loop and returns `-EINVAL` when the stream is in an error state, preventing
+  a malformed JSON file from being accepted as valid after a successful
+  `model_dict` parse (ADR-1060).
+
+
+**fix(vendored): pdjson depth limit + integer overflow + cJSON banned functions (ADR-1061)**
+
+- **pdjson**: define `PDJSON_STACK_MAX 512` unconditionally — the previous
+  `#ifdef` guard was never activated, allowing unbounded heap growth on
+  deeply-nested JSON inputs.
+- **pdjson `push()`**: add explicit addition-overflow and multiply-overflow
+  guards before the `realloc` size calculation (CERT-C INT30-C).
+- **pdjson `pushchar()`**: guard the `* 2` string-buffer doubling against
+  `size_t` wrap when `string_size >= SIZE_MAX / 2` (CERT-C INT30-C).
+- **cJSON**: complete ADR-0683 remediation — replace all 12 banned-function
+  call sites (`sprintf` → `snprintf`, `strcpy` → `memcpy`) that prior PRs
+  #890 and #891 left unmerged.
+- **cJSON `cJSON_GetArraySize`**: clamp the `size_t`-to-`int` cast to
+  `INT_MAX` instead of wrapping (CERT-C INT31-C); addresses upstream FIXME.
+
+
+- **Rust (vmafx-sys, vmafx, vmafx-tad)**: Remove panicking `Default` impl from
+  `VmafContext` (library code must not hide abort paths behind trait impls);
+  scope `#![allow(clippy::all)]` to the machine-generated bindgen output only
+  (hand-written `safe.rs` is now covered by the full clippy suite);
+  add `#![deny(unsafe_op_in_unsafe_fn)]` to `vmafx-sys/src/safe.rs` and
+  `vmafx-tad/src/lib.rs`; add `#![warn(clippy::expect_used, clippy::unwrap_used)]`
+  to the `vmafx` library crate.  Test modules opt-in with a local `#[allow(...)]`.
+  (ADR-1063)
+
+
+- **Go: poll-loop timer leak** (`pkg/storage`) — `waitForHTTP` and `waitForPath`
+  called `time.After(interval)` inside a `for`/`select` loop, allocating a new
+  `*time.Timer` on each iteration; the timer leaked until it fired when the
+  `ctx.Done()` arm won the select.  Replaced with a single `time.NewTicker` per
+  call (ADR-1065).
+- **Go: missing `MaxBytesReader` on controller `/v1/score`** — the
+  `vmafx-controller` score handler read the JSON body without a size cap, allowing
+  a caller to push an arbitrarily large body.  Added `MaxBytesReader(1 MiB)` and
+  HTTP 413 mapping, matching the guard already present in `vmafx-server` (ADR-1065).
+- **Go: missing `ReadTimeout` on both HTTP servers** — `ReadHeaderTimeout` was set
+  but `ReadTimeout` (which covers the body-read phase) was absent.  Added
+  `ReadTimeout: 30s` to both `vmafx-controller` and `vmafx-server` (ADR-1065).
+
+
+**Fixed**
+
+- **PREV_REF refcount leak in threaded batch dispatch** (ADR-1072): calling
+  `vmaf_picture_unref` before `memset` on `fex->prev_ref` after `extract()`
+  in `threaded_extract_batch_func` and `threaded_extract_func` balances the
+  refcount bump that `feature_extractor.cpp`'s PREV_REF SWAP places on the
+  current frame.  The prior bare `memset` discarded that counted reference
+  without triggering the picture-pool release callback, exhausting the pool
+  after ~pool_size frames and causing `vmaf_picture_pool_fetch` to deadlock
+  in `pthread_cond_wait`.  `f->prev_ref` is now zeroed after the unref to
+  prevent the `unref:` block from double-freeing the consumed VmafRef.
+  Fixes `test_picture_pool_basic` deadlock when using PREV_REF extractors
+  (e.g. `integer_motion` via `vmaf_v0.6.1` model) with n_threads > 0.
+
+- **MS-SSIM parity test fixture size** (ADR-1072): `test_hip_ms_ssim_parity`
+  and `test_cuda_float_ms_ssim_parity` used 256x144 fixtures; `float_ms_ssim`
+  requires `min(w,h) >= 176` for its 5-level 11-tap Gaussian pyramid.  Raised
+  fixture height to 192 to satisfy the constraint.
+
+- **Motion parity test score channel** (ADR-1072): `test_hip_motion_parity`
+  queried `VMAF_integer_feature_motion_score`, which `integer_motion` only
+  emits when `debug=true`.  Added `vmaf_feature_dictionary_set("debug","1")`
+  to the CPU run so the same named channel is available on both paths.
+
+
 - `cmd/vmafx-controller/scheduler/` + `cmd/vmafx-node/` bug audit
   round 1 (2026-05-31): four reachable defects found and fixed
   across the Phase 4b distributed scheduling core. (1)
@@ -15051,6 +15757,13 @@ Wire `adm_skip_scale0` and `adm_min_val` into `integer_adm_sycl`,
 accepted by the CPU, CUDA, and Vulkan extractors but silently ignored
 by the three remaining GPU paths; scale-0 was always accumulated and
 no score floor was applied.
+
+
+- Skip 9 Python `feature_extractor_test` cases that exercise `motion_five_frame_window=True`
+  on `VmafIntegerFeatureExtractor`; the C layer returns `-ENOTSUP` (ADR-0337) and the vmaf
+  binary exits 234, causing spurious CI failures. Tests are marked
+  `@unittest.skip("ADR-0337: ...")` so they remain visible and can be re-enabled once the
+  feature is plumbed through the C integer-motion path.
 
 
 - **Vulkan-01**: `vmaf_get_feature_extractor_by_name("integer_motion_vulkan")` now
@@ -15237,6 +15950,20 @@ without a pip-editable install.
   still runs and reports normally.
 
 
+- **`Build — Ubuntu ARM clang (CPU)` CI failure: typedef redefinition
+  `atomic_int` (`_Atomic(int)` vs `atomic<int>`) on aarch64 clang-18 +
+  GCC-14 headers.** `framesync.h` included `<stdatomic.h>` unconditionally.
+  In C++ mode, GCC-14's `<atomic>` already defines `atomic_int` as
+  `atomic<int>` (via its internal `<stdatomic.h>` wrapper); clang-18's
+  independent `<stdatomic.h>` then attempted to redefine it as
+  `_Atomic(int)`, producing 12 errors in `feature_extractor.cpp`.
+  Fix: guard the `<stdatomic.h>` include in `framesync.h` with
+  `#if !defined(__cplusplus)` — the header's public interface exposes
+  no atomic types (the `VmafFrameSyncContext` struct is opaque); C TUs
+  that include `framesync.h` directly still receive `<stdatomic.h>` via
+  the unguarded C path.
+
+
 ### Fixed
 
 - **ARM64 NEON float TUs now compiled with `-ffp-contract=off`** (`arm64_v8_fp` static lib).
@@ -15334,6 +16061,12 @@ Bundle of four core C bugfixes applied via PR #148, #307, #308, and #316:
   unresolvable conflicts. Requires rebase before re-application.
 
 
+Schwerwiegend: mehrdeutiges Argument '7a4cbf3914335b46630ed03679f79e86b8e1ea42hangelog.d/fixed/c-lifecycle-test-bugs-1008.md': unbekannter Commit oder Pfad existiert nicht
+im Arbeitsverzeichnis
+Benutzen Sie '--', um Pfade und Commits zu trennen, ähnlich wie:
+'git <Befehl> [<Commit>...] -- [<Datei>...]'
+
+
 **fix(core):** C memory-safety bundle — three UAF / double-free / leak fixes
 bundled from PRs #317, #133, and #187.
 
@@ -15351,6 +16084,13 @@ bundled from PRs #317, #133, and #187.
 - `core/test/test_vif_skip_scale0.c`, `core/test/test_integer_vif_cpu_cuda_parity.c`:
   `VmafFeatureDictionary` callers now let `vmaf_use_feature` / `vmaf_model_feature_overload`
   own the dictionary, eliminating double-free and leak (PR #187, ADR-0806).
+
+
+- **fix(core)**: eliminate five C UB sources in `feature_name.c`, `model.c`,
+  `integer_adm.c`, and `cambi.c` — NULL `strcmp` guard, `size_t` underflow guard
+  on model-name subtraction, signed-integer left-shift literals changed to `1u`,
+  `uint32_t` underflow guard on `pow(2, shift-1)`, and `snprintf` truncation check
+  for `heatmaps_path` (ADR-1007).
 
 
 Fix missing `#include <stddef.h>` in `core/src/feature/x86/cambi_avx512.c`;
@@ -15546,6 +16286,13 @@ that blocked all merges. Also enables repository dependency graph and replaces
 `gitleaks-action` (requires org license) with the free gitleaks CLI binary.
 
 
+- **CI**: pin Jimver/cuda-toolkit action CUDA version back to 13.2.0 in `build.yml` and
+  `libvmaf-build-matrix.yml`. The 13.3.0 bump in PR #664 is valid for apt-based
+  installs (dev/Containerfile, Dockerfile stay at 13.3) but the Jimver action v0.2.35
+  does not carry 13.3.0 in its installer index, causing "Version not available: 13.3.0"
+  on every GitHub-hosted Linux and Windows CUDA runner.
+
+
 **Fixed: CI required-check failures blocking merge train (round 3)**
 
 Resolved 8 pre-existing required-aggregator failures that blocked every PR post-#60:
@@ -15575,6 +16322,12 @@ Resolved 8 pre-existing required-aggregator failures that blocked every PR post-
 Research digest: `docs/research/0735-ci-required-failures-round-3-2026-05-28.md`
 
 
+Add concurrency guards to nightly, nightly-bisect, supply-chain, and release-please
+workflows to prevent double-trigger races; add timeout-minutes to rust-ci (x2),
+go-ci, release-please, and scorecard jobs to cap the 6-hour GitHub Actions default;
+SHA-pin four mutable Docker/artifact action tags in e2e-k8s.yml (ADR-1035).
+
+
 - Removed committed merge-conflict markers from `.github/workflows/libvmaf-build-matrix.yml`
   (CUDA and SYCL Windows build steps) and `.github/workflows/security-scans.yml` (CodeQL
   Python no-op build step). Both were introduced by commit `0c494cca05` (post-merge-train
@@ -15602,6 +16355,14 @@ root). Public install-path references (`core/include/libvmaf/...`,
 
 Closes the residual gap that `T-POST-RENAME-DRIFT-SWEEP-2026-05-28` (docs/state.md
 row) recorded as fixed but missed inside the scaffold script itself.
+
+
+- **cli:** Fix `-Wc++11-narrowing` errors in `VmafPictureConfiguration` initializer list
+  (`core/tools/vmaf.cpp`). Three `int` to `unsigned` implicit conversions in the
+  `pic_params` designated initializer (`.w`, `.h`, `.bpc`) are replaced with explicit
+  `static_cast<unsigned>(...)`. Clang with `-std=c++11` strict mode treated these as
+  hard errors; GCC silently accepted them. No functional change — values and semantics
+  are identical.
 
 
 - **`vmaf` CLI assertion crash on bad `--threads` / `--subsample` /
@@ -15904,6 +16665,32 @@ Batch 6 mechanical defect fixes. No user-visible behaviour change.
   [Research-0892](../docs/research/0892-conventional-commits-audit-2026-05-30.md).
 
 
+Fix 6 reproducible test failures introduced by the recent PR train:
+
+- `test_gpu_picture_pool_uaf`: `gpu_picture_pool.cpp` `free_p`/`fail` labels
+  now set `*pool = NULL` so callers cannot UAF through a dangling handle.
+- `test_motion_min_dim`: `integer_motion.c::init()` now rejects frames smaller
+  than 3x3 with -EINVAL (mirrors the existing guard in `integer_motion_v2.c`).
+- `test_integer_motion_coverage`: `vmaf_feature_extractor_context_extract()`
+  now updates `fex->prev_ref` after a successful extract for
+  `VMAF_FEATURE_EXTRACTOR_PREV_REF` extractors, matching the behaviour of
+  `vmaf_read_pictures()`.  `context_destroy()` releases the held reference.
+  Test corrected: `motion_five_frame_window=true` is rejected at init
+  (-ENOTSUP per ADR-0337); the flush coverage is now driven without that flag.
+- `test_integer_motion_v2_coverage`: `vmaf_fex_integer_motion_v2` extern
+  declaration and `feature_extractor_list[]` entry restored in
+  `feature_extractor.cpp` (the comment claiming it was merged into v1 was
+  incorrect; the symbol lives in `integer_motion_v2.c`).
+- `test_score_pooled_eagain`: `predict_load_feature_score()` now returns
+  `-EAGAIN` instead of `-EINVAL` when the feature vector has not been
+  created yet (e.g. `motion2_score` is only written at flush).  The test's
+  streaming-pattern sub-case is corrected to flush before pooling, which
+  matches the v1 implementation's batch-flush design.
+- `test_framesync`: framesync verification expression fixed to compare against
+  the previous frame's stored value (`2*(index-1)+2`) rather than the current
+  frame's value (`2*index+2`).
+
+
 - `ai/scripts/calibrate_nr_threshold.py`: `_DEFAULT_CORPUS` now reads the
   `VMAF_CORPUS_DIR` environment variable (falling back to `.corpus/netflix`),
   matching the pattern already used by `validate_ensemble_seeds.py`. Added
@@ -16006,11 +16793,90 @@ Rollup PR targeting master; rebases trivially after the cpp23 PRs land.
     values, and TSan only runs on Linux).
 
 
+**Fix build failure in Cppcheck CI gate caused by missing AVX-512 motion sub-kernel functions.**
+
+`test_motion_avx512_parity.c` called `sad_avx512`, `y_convolution_8_avx512`,
+`y_convolution_16_avx512`, and `x_convolution_16_avx512`, which were never
+implemented in `motion_avx512.c`.  The compiler emitted implicit-function-declaration
+errors that caused `meson compile -C build` to exit with code 1, preventing
+cppcheck from running at all.
+
+The fix adds AVX-512 implementations of these four sub-kernels:
+
+- `sad_avx512` — luma-plane pixel-wise SAD between two `VmafPicture`s
+- `y_convolution_8_avx512` — vertical 5-tap Gaussian on 8-bit source
+- `y_convolution_16_avx512` — vertical 5-tap Gaussian on 16-bit source
+- `x_convolution_16_avx512` — horizontal 5-tap Gaussian on 16-bit source
+
+All four functions are declared in `motion_avx512.h` and use scalar fallback paths
+for edge pixels, with AVX-512 SIMD for interior pixels.
+
+
+- `core/src/feature/vif.c`: corrected 10 `cppcheck-suppress
+  invalidPointerCast` comments from bracket syntax
+  `[MISRA-C:2012-11.3/EXP36-C: ...]` to semicolon-delimited syntax
+  `; MISRA-C:2012-11.3/EXP36-C: ...`. Bracket syntax is not
+  recognised by cppcheck and caused `preprocessorErrorDirective`
+  warnings; semicolon is the correct inline-comment delimiter per
+  the cppcheck documentation.
+
+
+Fix all Cppcheck (Whole Project) CI warnings on master:
+
+- `integer_ssim.c` — add null-check after `malloc` in `gaussian_filter_init` (returns
+  `-ENOMEM`), and guard `lines`/`line_buf` allocations in `calc_ssim` with early-exit
+  paths that free already-allocated memory before returning.
+- `picture_pool.cpp` — pass `VmafPicturePoolConfig` by `const &` in the static helper
+  `pool_preallocate_pictures` (removes a struct copy on every call).
+- `read_json_model.cpp` — replace `memset(m, 0, …)` with `*m = VmafModel{}` to avoid
+  the `memsetClassFloat` portability warning; fix two `%d` format specifiers that
+  accepted `unsigned int` to `%u`.
+- `vmaf.cpp` — fix two `%d` format specifiers that accepted `unsigned int` to `%u`.
+- `test_ssimulacra2_simd.c` — add null-checks after `calloc` in `test_host_xyb` and
+  `test_host_downsample`; fail the test immediately rather than dereferencing NULL.
+- `test_tensor_io.c` — initialize `src[4]` to `{0}` (was uninitialised stack memory).
+- `.cppcheck-suppressions.txt` — add `invalidPointerCast` entry for `opt.cpp` to match
+  the existing entry for `opt.c` (same intentional cast by design, ADR-0772).
+
+
+Fix five Ubuntu clang (CPU) + DNN CI test failures caused by `.c`/`.cpp` divergence
+and missing protocol enforcement:
+
+- `gpu_picture_pool.cpp`: set `*pool = nullptr` after OOM failure at `free_p` label
+  (`.c` twin had it; `.cpp` twin used by tests did not — UAF regression).
+- `feature_extractor.cpp`: guard `vmaf_dictionary_copy` with `opts_dict != nullptr`
+  in `get_fex_list_entry()` (`.c` twin had the guard; `.cpp` twin did not).
+- `integer_motion.c`: reject frames smaller than 3×3 in `init()` — the 5-tap Gaussian
+  requires dim ≥ filter_width/2+1=3; `integer_motion_v2.c` and `float_motion.c` already
+  had this check.
+- `test_integer_motion_coverage.c`: replicate the `VMAF_FEATURE_EXTRACTOR_PREV_REF`
+  protocol in direct `extract()` loops (set/clear `fex->prev_ref` around each call,
+  mirroring `read_pictures_dispatch_one` in `libvmaf.c`).
+- `predict.c`: return `-EAGAIN` (not `-EINVAL`) when a model-registered feature vector
+  is not yet in the collector — the feature will be written retroactively on flush
+  (e.g. motion2/motion3). Corrects `test_score_pooled_streaming_pattern` to match
+  actual extractor semantics.
+
+
 Apply `-fvisibility=hidden` to `libvmaf_cpu_static_lib` in `src/meson.build`
 so the internal CPU-dispatch helpers (`vmaf_get_cpu_flags`, `vmaf_init_cpu`,
 `vmaf_set_cpu_flags_mask`, `vmaf_get_cpu_flags_x86`) are no longer exported
 as T symbols in the final `libvmaf.so`. Previously they leaked into the ABI
 despite having no public header declaration or `VMAF_EXPORT` annotation.
+
+
+**CUDA `integer_adm_cuda.c` `adm_cm_module` undeclared identifier** — PR #516
+(GPU resource-leak bundle, commit `aa177510d`) added `cuModuleUnload` teardown
+via `s->adm_cm_module` correctly in `close()`, and loaded it correctly via
+`cuModuleLoadData(&s->adm_cm_module, ...)` in `init()`. However, four
+`cuModuleGetFunction` call-sites in the same `init()` block referenced the bare
+symbol `adm_cm_module` (without `s->` prefix), which is not a local variable or
+parameter — only a struct member. GCC emitted `error: use of undeclared
+identifier 'adm_cm_module'` on CUDA-enabled builds. PR #693 fixed the distinct
+`VmafCudaFunctions` typo in the same file but missed these four sites. Fix:
+prefix all four occurrences with `s->` to match the struct-member access pattern
+used consistently for `s->adm_csf_module`, `s->adm_csf_den_module`, and
+`s->adm_dwt_module` in the same function.
 
 
 - **CUDA `dispatch_strategy.c` `getenv()` thread-safety (round-5 clang-tidy
@@ -16215,6 +17081,13 @@ uses the kernel-template readback pair: `integer_psnr_cuda`, `integer_ssim_cuda`
 `integer_cambi_cuda`. PR #93 follow-up sweep (2026-05-29).
 
 
+- **fix(cuda)**: add `static` to 12 TU-internal helper functions across
+  `integer_vif_cuda.c`, `integer_adm_cuda.c`, and `integer_motion_cuda.c` —
+  eliminates ODR name-clash risk in static-lib builds; restores parity with
+  the HIP twin (`integer_adm_hip.c`) which already marks these `static`
+  (ADR-1011).
+
+
 - Fixed inverted ternary in `vmaf_cuda_buffer_upload_async` and
   `vmaf_cuda_buffer_download_async` (`core/src/cuda/common.c:388,416`):
   the condition `c_stream == 0 ? c_stream : cu_state->str` silently
@@ -16225,6 +17098,29 @@ uses the kernel-template readback pair: `integer_psnr_cuda`, `integer_ssim_cuda`
   were affected (both functions are currently uncalled), but any new caller
   passing a custom stream would have had its choice silently discarded
   (flagged in cuda-reviewer pass for PR #702, deferred to this PR).
+
+
+### Fixed
+
+- **CUDA VIF `filter1d.cu` 16-bit vertical rd-filter upper-bound typo** — the
+  upper-bound guard in the 16-bit vertical kernel wrote `fwidth_rd - fwidth_rd`
+  (always zero) instead of `fwidth - fwidth_rd`, causing the rd-filter window
+  to span all `fwidth` taps and index `vif_filt.filter[scale+1]` 1–4 entries
+  beyond allocation. Result: OOB reads and wrong VIF scores at scales 0–2 on
+  the CUDA backend. Fix mirrors the correct 8-bit form at line 183
+  (`fi < (fwidth - (fwidth - fwidth_rd) / 2)`).
+  File: `core/src/feature/cuda/integer_vif/filter1d.cu`.
+
+- **CUDA integer ADM CM operator-precedence bug (×2)** — two reduction loops in
+  `integer_adm/adm_cm.cu` (lines 373 and 712) computed `x_sq` as
+  `+ add_shift_sq >> shift_sq` (parsed as `+ (add_shift_sq >> shift_sq)` = `+ 0`
+  because `>>` binds tighter than `+`), silently dropping the shift normalisation.
+  `x_sq` carried an un-normalised squared value (~10^6 instead of ~0–1), causing
+  int32 overflow and wrong ADM scale-0 and AIM scores on the CUDA backend.
+  Fix adds the required parentheses: `((int64_t)accum * accum + add_shift_sq) >> shift_sq`,
+  matching the CPU reference macro `I4_ADM_CM_ACCUM_ROUND` at `integer_adm.c:743`
+  and the correct fused kernel at line 259.
+  File: `core/src/feature/cuda/integer_adm/adm_cm.cu`.
 
 
 Replace fragile `/dev/dri/by-path` bind with whole `/dev/dri` directory bind in
@@ -16279,6 +17175,18 @@ discover Arc GPUs. ADR-0528.
   character device when it is present (non-NVIDIA hosts skip this check via
   `|| true` short-circuit) and raising `start_period` from 20 s to 45 s to
   accommodate slower host CUDA-init sequences.
+
+
+### Fixed
+
+- `dev/docker-compose.yml`: default container runtime changed from `runc` to `nvidia`
+  for both `dev-mcp` and `smoke-probe-cron` services, enabling CUDA passthrough on
+  NVIDIA Container Toolkit hosts without any manual override. Non-NVIDIA hosts can
+  restore the previous behaviour with `CONTAINER_RUNTIME=runc`. GPU capability list
+  expanded from `[gpu]` to `[gpu, compute, utility, video, graphics]` so `libcuda.so`,
+  `nvidia-smi`/NVML, NVDEC/NVENC, and the CUDA+NVTX interop paths are all injected.
+  `smoke-probe-cron` also gains its own `deploy.resources.reservations.devices` block.
+  (ADR-1053)
 
 
 **fix(dev): resolve dev-MCP container stage-3 EACCES + bundle earlier package fixes**
@@ -16417,6 +17325,12 @@ behaviour instead of the retired CPU/CUDA-only status.
   `docker run vmaf vmaf --version`) tracked as a follow-up.
 
 
+Fix two broken intra-doc links pointing to nonexistent docs/adr/0720-sunset-float-ansnr.md
+(correct target is ADR-0865); add 9 orphaned metric pages and 2 orphaned MCP pages to
+the mkdocs.yml nav (ansnr, motion, ms-ssim, psnr-hvs, speed_qa, ssim, tad, vif, vmaf-neg,
+mcp/backends, mcp/http-transport).
+
+
 Fixed the MkDocs strict-mode anchor warnings that blocked the GitHub Pages
 deployment after recent documentation merges.
 
@@ -16433,6 +17347,19 @@ is already accepted, proposed, or explicitly deferred, including the
 
 
 **docs(metrics):** Add missing `vif_skip_scale0` option (`ssclz` alias) to the VIF options table in `docs/metrics/features.md`. The option was shipped in `integer_vif.c` and `float_vif.c` but absent from the per-extractor reference page.
+
+
+- Repaired Doxygen drift in three public C API headers
+  (`libvmaf_cuda.h`, `libvmaf_vulkan.h`, `libvmaf_sycl.h`):
+  added missing `@thread-safety` tags to all five CUDA entry
+  points, added `@param` and `@thread-safety` to four Vulkan
+  entry points (`vmaf_vulkan_state_init`, `vmaf_vulkan_import_state`,
+  `vmaf_vulkan_state_free`, `vmaf_vulkan_list_devices`), clarified
+  the `vmaf_cuda_state_free` single-pointer vs double-pointer
+  asymmetry (unlike HIP/Metal/SYCL it takes `*` not `**` and does
+  not null the caller's handle), and expanded
+  `VmafSyclPicturePreallocationMethod` from a two-word stub to a
+  fully documented enum matching the CUDA counterpart.
 
 
 - Drop the broken `filter=lfs diff=lfs merge=lfs -text` declaration on
@@ -16573,6 +17500,16 @@ Restore `integer_ms_ssim_hip` (ninth HIP consumer, ADR-0285, batch-5) to
 footnote 5 in `docs/metrics/features.md`. The entry was added by PR #1084
 but clobbered when PR #1088 merged from a stale base; the code fix in
 PR #1123 restored `feature_extractor.c` but did not restore the doc line.
+
+
+- **fix(core):** Restore `vmaf_fex_integer_motion_v2` CPU registration in
+  `feature_extractor.cpp` — the compiled translation unit. PR #673 (ADR-1052)
+  correctly updated `feature_extractor.c` but `meson.build` compiles
+  `feature_extractor.cpp`; the `.cpp` file still carried the stale
+  "removed" comment and omitted `extern vmaf_fex_integer_motion_v2` and
+  `&vmaf_fex_integer_motion_v2` from `feature_extractor_list[]`. Result:
+  `vmaf_get_feature_extractor_by_name("motion_v2")` returned `NULL` on
+  every CPU-only static build, failing `test_integer_motion_v2_coverage`.
 
 
 fix(fex): restore 61 deduplicated entries + integer_ms_ssim_hip + integer_vif_metal clobbered by PR #1088
@@ -16778,6 +17715,23 @@ in the score aggregation. The suppression logic now matches `float_vif_cuda`.
   being cancelled). Final scoreboard: nilness 0, staticcheck 0, gosec 0.
 
 
+- **fix(controller)**: `PullWork` UPDATE now includes `AND status=?` with
+  `StatusPending` — prevents a concurrent `Cancel` from being silently
+  overwritten when it races with the job assignment (ADR-1012).
+- **fix(controller)**: `ReportResult` UPDATE now includes `AND status NOT IN
+  (completed,failed,cancelled)` — makes the call idempotent on gRPC retries
+  and prevents a `Cancel` from being reinstated by a late retry (ADR-1012).
+
+
+- **fix(server,controller)**: `WaitForShutdown` no longer blocks the full
+  `GracefulShutdownTimeout` on clean shutdown — drain window now exits early
+  when `ctx.Done()` fires (ADR-1009).
+- **fix(server,controller)**: `GracefulStop()` on both vmafx-server and
+  vmafx-controller gRPC listeners now has a `GracefulShutdownTimeout` hard-stop
+  fallback; a stuck streaming RPC can no longer prevent process exit after
+  SIGTERM (ADR-1009).
+
+
 - `VMAF_<BACKEND>_DISPATCH` strategy-name matcher now requires a
   token boundary (`'\0'`, `','`, `'\n'`, space, or tab) after the
   matched strategy name. Previously the `strncmp(v, name, slen)`
@@ -16807,6 +17761,16 @@ in the score aggregation. The suppression logic now matches `float_vif_cuda`.
   NaN/inf while SYCL and Vulkan already returned 1.0. Added the same
   zero-guard to CUDA's `write_scores` to achieve GPU-parity across all
   three backends.
+
+
+**gpu_picture_pool.cpp: clear `*pool` to `nullptr` on all failure paths in `vmaf_gpu_picture_pool_init`.**
+The C++ translation of the GPU picture pool init function omitted the `*pool = nullptr`
+assignment at the `free_p` label (reached when the pic-array `malloc` fails or
+`pthread_mutex_init` fails). When the struct-level `malloc` succeeded but a subsequent
+step failed, the caller's handle was left pointing to the now-freed pool struct, causing
+a use-after-free on the next `vmaf_close()` call. The companion C stub (`gpu_picture_pool.c`)
+already carried the null-clear; this aligns the C++ implementation. Caught by
+`test_gpu_picture_pool_uaf` (exit status 1 in Ubuntu gcc static + Ubuntu clang CI jobs).
 
 
 - `vmaf_gpu_picture_pool_init()` use-after-free on failure paths.
@@ -16940,6 +17904,31 @@ each TU into `libvmaf_feature_static_lib` via `hip_sources` /
 `metal_sources` only when the backend is disabled. The stubs return
 `-ENOSYS`, set out-params to NULL on the pointer-returning entry points,
 and `vmaf_hip_available()` / `vmaf_metal_available()` correctly return 0.
+
+
+### HIP + Metal kernel correctness fixes (ADR-1030)
+
+Three HIGH-severity GPU backend correctness defects fixed:
+
+- **HIP adm_decouple**: `#include "adm_decouple_inline.hip"` added after
+  `common.h`; removes a bare dangling function body that made the TU
+  invalid C++ and left `get_best15_from32` undefined for the scale-1..3
+  decouple path
+  (`core/src/feature/hip/integer_adm/adm_decouple.hip`).
+
+- **HIP wavefront_reduce_i64**: reassembly changed from bitwise OR to integer
+  addition — `(int64_t)((uint64_t)lo + ((uint64_t)hi << 32))` — so carry
+  from the lo-half lane-sum is preserved when `num_non_log` or other large
+  VIF accumulators exceed 2^32 total across 64 wavefront lanes
+  (`core/src/feature/hip/integer_vif/vif_statistics.hip`).
+
+- **Metal float_motion vertical halo**: `TILE_H` increased from 16 to 20 and
+  `wg_oy` changed to `bid.y * 16 - HALF_FW` in both the tile-load and
+  vertical-filter phases for the 8bpc and 16bpc kernels; horizontal-filter
+  `ty` offset corrected to `lid2.y + HALF_FW`. Mirrors the already-correct
+  pattern in `integer_motion.metal`. Without the halo, every workgroup except
+  the first row had 2 corrupted blurred rows per frame, producing wrong SAD
+  scores (`core/src/feature/metal/float_motion.metal`).
 
 
 **HIP ms_ssim: add `picture_copy()` uint→float normalization** —
@@ -17077,6 +18066,14 @@ Also restores `CUmodule` to the state struct (enabling `cuModuleUnload` in
 close) and adds the missing `<math.h>` / `<stdbool.h>` includes.
 
 
+- **build:** Restore `integer_ssim_moments_t` typedef for non-x86 platforms. The type was
+  defined only in `core/src/feature/x86/integer_ssim_avx2.h` (included under `#if ARCH_X86`),
+  but used unconditionally in `integer_ssim.c` for scalar wrapper functions and function
+  pointer typedefs. macOS arm64 / Windows arm64 builds failed with eight "unknown type name"
+  errors. Fix: promote the typedef to a new shared `core/src/feature/integer_ssim.h` header
+  included unconditionally; update the x86 header to pull from the shared header. (ADR-1040)
+
+
 - **`integer_vif_metal` `vif_skip_scale0` option gap** (`integer_vif_metal.mm`):
   `integer_vif_metal` had no `vif_skip_scale0` option registration and no
   suppression logic in `collect_fex_metal`, so scale-0 was always included in
@@ -17152,6 +18149,15 @@ from the payload instead of rejecting otherwise valid models at the old fixed
 - **V8-A part 2**: PR #1266 documented the `build_pass1_stats_command` fix but the diff didn't actually contain it — the inner block was unchanged, only sample_clip_seconds was still being checked. This patch adds the missing duration_s fallback to mirror `build_ffmpeg_command` so a ladder `--duration 10` actually clips the pass-1 stats sweep too.
 
 
+- `from vmaf.core.quality_runner import VmafLegacyQualityRunner` no longer
+  raises `ImportError`. A `NotImplementedError`-raising stub class is now
+  exported from `compat/python-vmaf/core/quality_runner.py`; any attempt to
+  instantiate it raises `NotImplementedError` with a migration pointer to
+  `VmafQualityRunner`. The underlying runner was sunset in ADR-0749 / PR #87;
+  this stub closes the T-LEGACY-RUNNER-STUB-MISSING-2026-05-29 import-failure
+  gap that PR #213 surfaced but did not merge.
+
+
 - **`core/src/svm.cpp` parser now rejects header rows that depend on
   `nr_class` if they appear before the `nr_class` row itself.** Five
   affected rows (`rho`, `label`, `probA`, `probB`, `nr_sv`) gain a
@@ -17169,6 +18175,85 @@ from the payload instead of rejecting otherwise valid models at the old fixed
   deferred `vmaf_close` clean up. Fixes
   T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31: previously a dropped HTTP /
   gRPC request left the subprocess running to completion.
+
+
+Correct SPDX license identifier BSD-3-Clause-Plus-Patent to BSD-2-Clause-Patent
+in all 8 package manifests (workspace Cargo.toml, bindings/rust/vmafx/Cargo.toml,
+and 6 Python pyproject.toml files); add missing upstream libsvm BSD-3-Clause
+copyright notice to core/src/svm.cpp per BSD-3-Clause clause 1 (ADR-1036).
+
+
+**fix(test,core): 6 macOS/DNN CI failures — gpu_pool UAF, EAGAIN masking, motion min-dim, fex pool NULL, framesync seed, prev_ref**
+
+- `gpu_picture_pool.cpp`: Missing `*pool = nullptr` on `free_p:` label left caller
+  with a dangling pointer on malloc failure (UAF via `vmaf_close()` teardown).
+  Also missing `goto free_pic` when `alloc_picture_callback` returns an error,
+  causing partial construction to remain live. The `.c` twin already had the
+  `*pool = NULL` fix; the `.cpp` mirror was never updated.
+
+- `libvmaf.c` (`vmaf_score_at_index`): `-EAGAIN` returned by
+  `vmaf_feature_collector_get_score` ("score not yet available") was silently
+  converted to `-EINVAL` by an unconditional fallthrough to
+  `vmaf_predict_score_at_index`. Added `err != -EAGAIN` guard so transient
+  "not yet ready" propagates correctly to `vmaf_score_pooled` callers.
+
+- `integer_motion.c` (`init`): No minimum-dimension check. The 3-frame SAD
+  kernel requires at least a 3x3 luma plane. Added `if (w < 3 || h < 3) return
+  -EINVAL` to match the contract expected by `test_motion_min_dim`.
+
+- `feature_extractor.cpp` (`get_fex_list_entry`): Unconditional call to
+  `vmaf_dictionary_copy(&opts_dict, &slot->opts_dict)` when `opts_dict == NULL`
+  returns `-EINVAL`, causing `vmaf_fex_ctx_pool_aquire` to fail for every
+  no-options extractor context. The `.c` twin has `if (opts_dict != NULL)`
+  guard; the `.cpp` mirror was missing it.
+
+- `test_framesync.c`: Verification used the CURRENT frame's seed values
+  (`ref[ctr] + dist[ctr] + 2`) to check the PREVIOUS frame's buffer, which
+  was written with `seed_{N-1} + seed_{N-1} + 2 = 2*N`. The check produced
+  `2*N+2` instead, failing at every non-zero index. Corrected to
+  `(uint8_t)(2u * thread_data->index)`.
+
+- `test_integer_motion_coverage.c`: Direct `vmaf_feature_extractor_context_extract`
+  loop for the motion extractor did not set `ctx->fex->prev_ref` after each
+  call. Production path (`vmaf_read_pictures`) does this automatically for
+  `VMAF_FEATURE_EXTRACTOR_PREV_REF` extractors; the test must do so explicitly.
+
+
+fix(build): add `<string_view>` include in vmaf.cpp; fix MinGW64 constinit mutex build failure
+
+Apple Clang does not pull `std::string_view` transitively through `<string>` machinery;
+Linux GCC/Clang do. Adding the explicit include unblocks the macOS Clang and
+FFmpeg-macOS-clang CI jobs.
+
+fix(cuda): replace fabricated `VmafCudaFunctions` type with correct `CudaFunctions` in
+13 CUDA feature-extractor `close` callbacks
+
+PR #516 introduced `cuModuleUnload` teardown calls using a non-existent type alias
+`VmafCudaFunctions`. The actual type defined in `core/src/cuda/common.h` is
+`CudaFunctions`. This caused build failures in any CUDA-enabled build (Docker,
+Linux-GCC-all-backends, Build-Windows-MSVC+CUDA). Affected files:
+float_adm_cuda.c, float_motion_cuda.c, float_psnr_cuda.c, float_vif_cuda.c,
+integer_cambi_cuda.c, integer_ciede_cuda.c, integer_moment_cuda.c,
+integer_motion_v2_cuda.c, integer_ms_ssim_cuda.c, integer_psnr_cuda.c,
+integer_ssim_cuda.c, integer_vif_cuda.c, ssim_cuda.c.
+
+
+**fix(metal): hoist `feature_extractor.h` out of `extern "C"` in Metal `.mm` files**
+
+Xcode 16.4 / macOS 15 (runner image `macos-15-arm64/20260527`) tightened
+libc++ so that `<atomic>` — pulled in by `feature_extractor.h` via its
+`#if defined(__cplusplus)` branch — emits a fatal "templates must have C++
+linkage" error when encountered inside an `extern "C" {}` block.
+
+All eight `core/src/feature/metal/*_metal.mm` files had `feature_extractor.h`
+inside their opening `extern "C"` block. Moving it above that block (at
+pure C++ file scope, where `__cplusplus` is defined and templates are legal)
+restores the build on all macOS CI legs.
+
+Affected files: `float_moment_metal.mm`, `float_motion_metal.mm`,
+`float_ms_ssim_metal.mm`, `float_psnr_metal.mm`, `float_ssim_metal.mm`,
+`integer_motion_metal.mm`, `integer_motion_v2_metal.mm`,
+`integer_psnr_metal.mm`.
 
 
 - Fixed master CI regressions in the DNN coverage gate, MCP smoke test, and
@@ -17255,12 +18340,43 @@ from the payload instead of rejecting otherwise valid models at the old fixed
   documented inline. (ADR-0509, Bug C)
 
 
+**fix(mcp-server): asyncio correctness — async wrappers + gather return_exceptions + VMAF_MCP_ASYNC guard (ADR-1023)**
+
+- `_probe_backends`, `_ffprobe_geometry`, and `_vmaf_version` called
+  blocking `subprocess.run` from async coroutines, stalling the event
+  loop. Added `_probe_backends_async` and `_ffprobe_geometry_async`
+  wrappers via `asyncio.to_thread`; made `_vmaf_version` and
+  `_list_backends` async.
+- `asyncio.gather` in `_run_vmaf_score_encoded` lacked
+  `return_exceptions=True`, silently masking one decode failure when
+  two concurrent decodes ran. Added inspection loop that re-raises the
+  first exception.
+- `VMAF_MCP_ASYNC` env-var accepted arbitrary strings as anyio backend
+  names; `"true"` or `"1"` produced a cryptic anyio `RuntimeError`.
+  Restricted to well-defined tokens with `"trio"` as the non-asyncio
+  canonical.
+
+
 - MCP server backend selector reaches parity with libvmaf CLI (ADR-0436).
   `vmaf_score` and `describe_worst_frames` now accept `vulkan`, `hip`,
   and `metal` in addition to the existing `cpu`/`cuda`/`sycl`/`auto`;
   `_list_backends()` reports all six as a host-probe of `vmaf --version`.
   Pre-PR, MCP clients passing `backend="vulkan"` (etc.) silently fell
   through to `auto`. Tests cover every backend selector.
+
+
+- **fix(mcp)**: wrap `json.loads(output.read_text())` in `_run_vmaf_score` with
+  a `JSONDecodeError` guard — partial/empty vmaf JSON (disk-full, OOM kill) now
+  surfaces a clear `RuntimeError` instead of a raw traceback (ADR-1010).
+- **fix(mcp)**: wrap `json.loads(result.stdout)` in `_ffprobe_geometry` with a
+  `JSONDecodeError` guard — audio-only or corrupt container inputs now raise a
+  descriptive `RuntimeError` instead of crashing `vmaf_score_encoded` (ADR-1010).
+
+
+Fix MCP precision-default drift: change probe --precision 6 (to %.6g) and schema
+default "17" (to %.17g) to "legacy" (to %.6f) in both Go (cmd/vmafx-mcp) and Python
+(mcp-server/vmaf-mcp) MCP surfaces, matching the C CLI default per ADR-0119
+so that MCP output is Netflix-compatible without explicit precision argument (ADR-1038).
 
 
 - MCP server probe bug-fix cluster (5 defects found by the
@@ -17520,6 +18636,14 @@ correct symbol names and the complete IOSurface zero-copy import sub-API
 `vmaf_metal_read_imported_pictures`). ADR-0437.
 
 
+Removed duplicate `setenv`/`unsetenv` shim block in
+`core/test/test_gpu_dispatch_runtime.c` that caused MinGW64 builds to fail
+with `error: redefinition of 'test_setenv'`. The second `#if defined(_WIN32)`
+block was redundant; the first `#ifdef _WIN32` block already installed
+`test_setenv`/`test_unsetenv` wrappers and mapped the POSIX names to them via
+preprocessor macros. (PR #744)
+
+
 - **`Build — Windows MinGW64 (CPU)` upload-artifact path fix.** The
   `stage` step computed `$(cygpath -m "$PWD/artifact/vmaf.exe")` and
   passed the result as the upload-artifact `path`. `upload-artifact@v7`
@@ -17714,6 +18838,19 @@ The SYCL twin was silently dropping both options; it now emits per-scale
 `float_ms_ssim_{l,c,s}_scale{0..4}` intermediates when `enable_lcs=true`,
 matching the CUDA twin's behaviour. `enable_chroma` is accepted for symmetry
 (MS-SSIM is luma-only by construction).
+
+
+### Fixed
+
+`Build — Windows MSVC + CUDA` CI leg failed at configure time with meson error
+"None of values ['c++23'] are supported by the CPP compiler" because meson's
+MSVC backend does not include `c++23` in its accepted cpp_std values list.
+
+Fix (ADR-1056): remove `cpp_std=c++23` from `default_options` in
+`core/meson.build` and instead select the standard via
+`add_project_arguments`, guarded by `get_option('cpp_std') == 'none'`.  MSVC
+receives `/std:c++latest`; all other compilers receive `-std=c++23`.  The SYCL
+leg's existing `-Dcpp_std=c++14` override is unaffected by the guard.
 
 
 `Build — Windows MSVC + CUDA` and `Build — Windows MSVC + oneAPI SYCL` matrix
@@ -18112,6 +19249,52 @@ default path is bit-for-bit unchanged. (ADR-0453 / Research-0136)
 - Loosen over-pinned `numpy>=2.4.6,<2.4.7` to `numpy>=2.4.6` and `libsvm-official>=3.37.0,<=3.37` to `libsvm-official>=3.37` in `requirements.txt`.
 
 
+### Fixed
+
+- **security**: Replace plain `==`/`!=` session-token comparisons in
+  `cmd/vmafx-controller/nodes/registry.go` (`Heartbeat`, `ValidateSession`) with
+  `crypto/subtle.ConstantTimeCompare` to eliminate timing-oracle side-channels
+  (r5-crypto HIGH).
+- **security**: Replace `!=` Bearer-token comparison in
+  `mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py` with `hmac.compare_digest`
+  (r5-crypto MEDIUM).
+- **security**: Validate JWT `nbf` (not-before) claim in
+  `cmd/vmafx-controller/auth/middleware.go`; tokens with a future `nbf` are now
+  rejected with "token not yet valid" (r5-crypto MEDIUM).
+
+ADR: [ADR-1021](docs/adr/1021-session-token-const-time-compare.md)
+
+
+### Fixed
+
+- **core/ref**: Use `atomic_fetch_sub_explicit(..., memory_order_acq_rel)` in
+  both `ref.c` and `ref.cpp` for the reference-count decrement. This makes the
+  last-decrementer acquire ordering explicit, ensuring the destructor path sees
+  all prior writes from other reference holders (fixes r5-memory-ordering finding 1;
+  ADR-1020).
+
+- **core/feature_collector**: Add a `destroyed` flag to `VmafFeatureCollector`
+  set under the mutex before the final unlock in `vmaf_feature_collector_destroy`.
+  All five public entry points that acquire the lock now test the flag immediately
+  after locking and return `-ENODEV` if set, closing the mutex-destroy-after-unlock
+  race where a concurrent locker could acquire a destroyed mutex (fixes
+  r5-memory-ordering finding 2; ADR-1020).
+
+- **core/picture_pool**: Copy `pool->pictures[idx]` to a stack-local while still
+  holding the pool lock in `vmaf_picture_pool_fetch`, then unlock before assigning
+  to the caller's `*pic`. This prevents a use-after-free if `vmaf_picture_pool_close`
+  frees the pictures array in the window between unlock and the slot read (fixes
+  r5-memory-ordering finding 3; ADR-1020).
+
+
+### Fixed
+
+- Correct two stale README badges: C++ standard badge now reads `C++23`
+  (was `C++11`, reflecting the ADR-1003 / PR #608 bump); GPU capabilities
+  badge now reads `CUDA · SYCL · HIP · Metal` (removes `Vulkan`, dropped per
+  ADR-0726 / PR #607; adds `Metal`, Stage 1 live in `core/src/metal/`).
+
+
 - **README badge audit + Cargo / pyproject repo-metadata sweep.** Added
   Rust CI and Go CI workflow badges to `README.md` (both workflows ship
   on master but were not surfaced in the badge row). Backfilled
@@ -18166,6 +19349,10 @@ default path is bit-for-bit unchanged. (ADR-0453 / Research-0136)
   Closes the `test_every_entry_has_license_metadata` gap in
   `python/test/model_registry_schema_test.py` — the suite is now
   green for the first time (10/10 passing).
+
+
+Remove duplicate `chore` entry in `ai` package `changelog-sections` array that caused a
+JSON parse error at line 64 column 9, breaking every release-please workflow run.
 
 
 - **vmaf-tune report per-shot ingester schema fix**: `tune-per-shot` emits shots with `shot_id`, `predicted_crf` (not `best_crf`), `predicted_vmaf`, no `bitrate_kbps`/`duration_s`/`frames`. The report ingester defaulted missing fields to 0.0, producing misleading "0 kbps / 0 / 0s" rows. Fix: map both shapes, compute duration from frame count + source fps, mark missing numerics as NaN so the renderer shows "—" (V4-C pattern). v9 BBB report now renders 23 shots with real VMAF (93.3-95.3) and Best CRF (26/33).
@@ -18483,6 +19670,23 @@ fails on Apple Clang and Ubuntu ARM Clang with "unknown type name
 `cambi_*.h` headers. Added `#include <stddef.h>` to each header.
 
 
+### fix(simd): 16-bit PSNR scalar-tail signed-integer overflow in AVX2, AVX-512, and NEON
+
+The scalar-tail loops in `psnr_sse_line_16_avx2`, `psnr_sse_line_16_avx512`, and
+`psnr_sse_line_16_neon` computed the squared error as `(int32_t)e * (int32_t)e` where
+`e` can reach ±65535. The product 65535² = 4 294 836 225 exceeds INT32_MAX, invoking
+signed-integer overflow — undefined behaviour under C99/C11 that UBSan flags and that
+can produce wrong SSE values on optimising compilers.
+
+Fix: replace the signed multiply with `(uint64_t)e * e` using unsigned `abs`-diff,
+mirroring the `sse_line_16_c` reference in `core/src/feature/integer_psnr.c`.
+
+
+- CLAUDE.md section 1 and AGENTS.md section 1 corrected: `BSD-3-Clause-Plus-Patent` to
+  `BSD-2-Clause-Patent` to match the SPDX short identifier on line 2 of `LICENSE`.
+  No code or behavior change; documentation only.
+
+
 - **`vmaf --feature ssim` could not resolve.** The fixed-point SSIM
   extractor `vmaf_fex_ssim` was defined in
   `core/src/feature/integer_ssim.c` but the source file was not
@@ -18596,6 +19800,19 @@ phantom extra columns. Fixed by rewriting as prose or using bare pipes inside
 backtick code spans.
 
 
+- **test(svm):** Add `test_svm_multiclass` — 17-class and 32-class C_SVC fixtures
+  plus a 17-class NU_SVC fixture to exercise the `max_nr_class=16→32` realloc
+  doubling in `svm_group_classes()` and `svm_check_parameter()`.  Under
+  ASan/UBSan any regression to the double-free fixed in PR #708 aborts
+  immediately.  The 2-class fixture in `test_svm_api.c` never crossed the
+  16-class threshold so the fixed path had zero coverage.  (ADR-1066)
+- **ci(dev):** Add `scripts/ci/check-compose-dri-writable.sh` — a bash lint gate
+  that asserts every `/dev/dri` bind-mount in `dev/docker-compose.yml` has
+  `read_only: false`.  Wired into `dev-container-build.yml` as a pre-build
+  step to prevent re-introduction of the bug fixed by PR #707 (ADR-0529,
+  ADR-1066).
+
+
 - **SYCL float_ssim `enable_db` / `clip_db` option parity** (`integer_ssim_sycl.cpp`):
   the SYCL backend silently dropped the `enable_db` and `clip_db` options
   present on the CPU extractor and the HIP/Vulkan twins. Added both options
@@ -18658,10 +19875,37 @@ preallocation so it no longer describes the live
   odd-width or odd-height YUV420 inputs.
 
 
+- **sycl:** Fix SYCL build failure in `speed_chroma_sycl.cpp` and `speed_temporal_sycl.cpp`
+  where `VmafSyclState::queue` was accessed directly through an incomplete type.
+  Replace all 8 direct `s->sycl_state->queue` member accesses with the public API
+  `vmaf_sycl_get_queue_ptr(s->sycl_state)` from `sycl/common.h`, which was already
+  included but unused for queue access. Restores the Linux GCC SYCL build.
+
+
 **fix(sycl):** restore `enable_chroma` option, `n_planes` field, and suppression comment
 in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it added the
 `enable_db`/`clip_db` dB-domain options. The v2 multi-plane dispatch path depends on
 `enable_chroma` being present in the options table and `n_planes` being clamped to 1 in v1.
+
+
+### Fixed
+
+- **SYCL integer_vif rd_stride OOB on odd widths** (HIGH): Both the
+  scalar (SIMD-32, `launch_vif_hori_impl`) and SIMD-16 (`launch_vif_fused_impl`)
+  downsampling paths used truncating `e_w / 2` as the row stride for the
+  `rd_ref`/`rd_dis` downsampled buffers. For odd frame widths the last even column
+  thread wrote one element past the row boundary, corrupting adjacent device memory
+  and producing wrong VIF scores at subsequent scales. Fix: ceiling division
+  `(e_w + 1U) / 2U` for stride; allocation changed from `(w/2) * (h/2)` to
+  `((w+1)/2) * ((h+1)/2)` to match. (ADR-1034)
+
+- **SYCL integer_motion UV queue sync gap** (HIGH): When `motion_add_uv=true`,
+  UV H2D copies via `vmaf_sycl_memcpy_h2d_async()` were submitted to the primary
+  queue (`state->queue`), but `vmaf_sycl_graph_submit()` only barriers the compute
+  queue on `last_upload_event` from the DMA copy queue. UV data could be in-flight
+  on the primary queue when compute kernels launched, producing wrong motion scores
+  for UV planes. Fix: `vmaf_sycl_queue_wait(state)` flushes the primary queue
+  after UV copies and before graph submission. (ADR-1034)
 
 
 - Resolved two stale `TODO: add check for confidence interval` comments in
@@ -18832,6 +20076,12 @@ legs. (ADR-0603, triggered by Renovate PR #1402)
   `@unittest.skip("[VCQ-223]")` removed from
   `QualityRunnerTest::test_run_vmaf_runner_local_explainer_with_bootstrap_model`.
   ([ADR-0562](docs/adr/0562-local-explainer-hang-fix.md))
+
+
+Fix three CERT MEM04-C realloc OOM defects in vendored libsvm (core/src/svm.cpp):
+Cache::get_data, svm_group_classes, and svm_check_parameter all overwrote the source
+pointer with the realloc return value; replaced with save-temp/check-NULL/abort idiom
+consistent with existing Malloc behaviour in the file (ADR-1039).
 
 
 - **Vulkan `integer_vif` API-1.4 residual: Phase 3b stronger-fence
@@ -19014,6 +20264,22 @@ score-suppression wiring.
   - Independent of PR #304 (vmaf.c / vmaf_bench.c CUDA/SYCL
     state-leak fix); no overlapping hunks. No behavior change on
     success paths.
+
+
+**vmaf_init double-init guard + vmaf_close pointer-contract + DNN fp32 fallback** (ADR-1032)
+
+- `vmaf_init` now returns `-EINVAL` immediately when `*vmaf` is non-NULL,
+  preventing silent context leaks caused by accidental double-initialisation.
+- `vmaf_close` pointer-invalidity contract documented in
+  `core/include/libvmaf/libvmaf.h` with a `@code` example showing the
+  recommended null-after-close pattern.
+- DNN `vmaf_dnn_session_open`: when the `.int8.onnx` sidecar is absent or
+  fails validation, the session now falls through to the fp32 baseline model
+  instead of returning an error, matching the stated "better degraded than
+  dead" design intent.  A `VMAF_LOG_LEVEL_DEBUG` message makes the degradation
+  observable.
+- Unit test `test_vmaf_init_double_init_guard` added to the `fast` suite in
+  `core/test/test_context.c`.
 
 
 Standardize `vmaf_log()` call sites: add missing trailing `\n` in
@@ -19466,6 +20732,17 @@ Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
   Optional TLS: set `VMAFX_MCP_HTTP_TLS_CERT` + `VMAFX_MCP_HTTP_TLS_KEY` to enable.
   **Breaking change**: any deployment relying on the `0.0.0.0` default must add
   `VMAFX_MCP_HTTP_BIND=0.0.0.0`.  The stdio/UDS transport is unaffected.
+
+
+- Helm chart security hardening (ADR-1058): add PodDisruptionBudget template
+  for controller/node/operator pools; split operator RBAC from a single
+  cluster-wide ClusterRole into a CRD-only ClusterRole plus a namespace-scoped
+  Role for pods/events/leases; add missing VmafxTenant RBAC rules that
+  previously caused silent controller-runtime watch failures; add NetworkPolicy
+  allow-rule for Prometheus scraping of vmafx-node metrics port 9090; tighten
+  `networkPolicy.allow` JSON Schema from `additionalProperties: true` to
+  exhaustively enumerated sub-keys; add `podDisruptionBudget` to
+  `values.schema.json`.
 
 
 - **libvmaf symbol visibility** — `libvmaf.so.3` no longer exports 207 internal

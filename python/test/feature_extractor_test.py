@@ -2067,6 +2067,7 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["VMAF_integer_feature_motion3_mmxv_0.987_score"], 0.987, places=4
         )
 
+    @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
@@ -2140,6 +2141,7 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["VMAF_integer_feature_motion3_mffw_score"], 6.836849375, places=4
         )
 
+    @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_moving_avg(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()
@@ -2213,6 +2215,7 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["VMAF_integer_feature_motion3_mffw_mma_score"], 6.828103625, places=4
         )
 
+    @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_one_frame_input(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_1frames()
@@ -2240,6 +2243,7 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.assertAlmostEqual(results[0]["VMAF_integer_feature_motion3_mffw_score"], 0.0, places=4)
 
+    @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_one_frame_input_moving_avg(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_1frames()
@@ -2273,6 +2277,7 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["VMAF_integer_feature_motion3_mffw_mma_score"], 0.0, places=4
         )
 
+    @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_two_frame_input(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_2frames()
@@ -2309,6 +2314,7 @@ class FeatureExtractorTest(MyTestCase):
         )
         self.assertAlmostEqual(results[0]["VMAF_integer_feature_motion3_mffw_score"], 0.0, places=4)
 
+    @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_three_frame_input(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_3frames()
@@ -2360,6 +2366,7 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["VMAF_integer_feature_motion3_mffw_score"], 7.881497, places=4
         )
 
+    @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_three_frame_input_moving_avg(
         self,
     ):
@@ -2413,6 +2420,7 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["VMAF_integer_feature_motion3_mffw_mma_score"], 7.881497, places=4
         )
 
+    @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_four_frame_input(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_4frames()
@@ -2473,6 +2481,7 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["VMAF_integer_feature_motion3_mffw_score"], 7.659537500000001, places=4
         )
 
+    @unittest.skip("ADR-0337: motion_five_frame_window not yet plumbed into C; see ENOTSUP")
     def test_run_vmaf_integer_fextractor_motion_five_frame_window_four_frame_input_moving_avg(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing_4frames()

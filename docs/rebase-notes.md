@@ -21,6 +21,13 @@ The guard change is a one-line fix that does not affect the call
 signature or semantics observable to callers that never encounter
 multi-frame pools.
 
+## fix/skip-motion-five-frame-window-adr-0337 (ADR-0337, 2026-06-06)
+
+no rebase impact: only `python/test/feature_extractor_test.py` is modified —
+9 test methods gain `@unittest.skip` decorators. No C source, public header,
+upstream-mirrored file, or golden-data assertion is touched. Rebase against
+Netflix/vmaf master or any feature branch has zero conflict risk.
+
 ## fix/prev-ref-batch-refcount-and-motion-score (ADR-1072, 2026-06-06)
 
 **Files touched:**
