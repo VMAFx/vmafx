@@ -160,6 +160,17 @@ no rebase impact: changes are confined to `deploy/helm/vmafx/values.yaml`,
 `templates/networkpolicy.yaml`). No C source, public header, upstream-mirrored
 file, Python test, or golden-data assertion is touched. Conflict risk exists
 only if another branch edits those same Helm files concurrently.
+
+## test/coverage-pkg-observability (2026-06-06)
+
+no rebase impact: changes are confined to
+`pkg/observability/coverage_gaps_test.go` (new test file),
+`pkg/observability/AGENTS.md` (invariant notes), and
+`changelog.d/added/observability-coverage-gaps.md` (fragment).
+No production source, public header, or build file is modified.
+Conflicts only if another branch edits the same lines in AGENTS.md or
+rebase-notes.md.
+
 ## fix/sanitizer-deselect-tests-and-quality-gates (2026-06-06)
 
 no rebase impact: CI-only change to `.github/workflows/tests-and-quality-gates.yml`
