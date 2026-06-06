@@ -52,16 +52,21 @@ static inline int mirror(int idx, int size)
     return idx;
 }
 
-/* Horizontal sum of 4×int32 → scalar int32. */
-static inline int32_t neon_hadd_s32(int32x4_t v)
-{
-    return vaddvq_s32(v);
-}
-
 /* Horizontal sum of 4×uint32 → scalar uint32. */
 static inline uint32_t neon_hadd_u32(uint32x4_t v)
 {
     return vaddvq_u32(v);
+}
+
+/* Non-zero test across 4×int32 lanes: returns non-zero iff any bit is set
+ * in any lane.  Uses bitwise OR-fold rather than arithmetic sum so that
+ * positive and negative signed values cannot cancel each other to give a
+ * false zero (e.g. checkerboard frames trigger this on the signed-sum path).
+ */
+static inline uint32_t neon_any_nonzero_s32(int32x4_t v)
+{
+    const uint64x2_t u64 = vreinterpretq_u64_s32(v);
+    return (uint32_t)(vgetq_lane_u64(u64, 0) | vgetq_lane_u64(u64, 1));
 }
 
 /* Compute abs(x_conv) for 4 int32 lanes starting at y_row[j] using
@@ -231,7 +236,7 @@ uint64_t motion_score_pipeline_16_neon(const uint8_t *prev_u8, ptrdiff_t prev_st
             nz_tail |= y_conv_col_scalar16(pp, cp, j, bpc, y_row);
         }
 
-        if (!(neon_hadd_s32(nz_acc) | nz_tail))
+        if (!(neon_any_nonzero_s32(nz_acc) | (uint32_t)nz_tail))
             continue;
 
         sad += x_conv_row_sad_neon(y_row, w);
@@ -323,7 +328,7 @@ uint64_t motion_score_pipeline_8_neon(const uint8_t *prev, ptrdiff_t prev_stride
             nz_tail |= y_conv_col_scalar8(p, c, j, y_row);
         }
 
-        if (!(neon_hadd_s32(nz_acc) | nz_tail))
+        if (!(neon_any_nonzero_s32(nz_acc) | (uint32_t)nz_tail))
             continue;
 
         sad += x_conv_row_sad_neon(y_row, w);

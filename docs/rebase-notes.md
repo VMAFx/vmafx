@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/neon-motion-zero-skip (2026-06-06)
+
+no rebase impact: single-file change to
+`core/src/feature/arm64/motion_v2_neon.c`.  Replaces the `neon_hadd_s32`
+(signed horizontal sum) early-exit check with `neon_any_nonzero_s32`
+(bitwise OR-fold) in both `motion_score_pipeline_8_neon` and
+`motion_score_pipeline_16_neon`.  No public API, no header, no test data,
+no upstream-mirrored file is modified.  Conflicts only if another branch
+edits the same static helper region of that file.
+
 ## fix/sanitizer-deselect-tests-and-quality-gates (2026-06-06)
 
 no rebase impact: CI-only change to `.github/workflows/tests-and-quality-gates.yml`
