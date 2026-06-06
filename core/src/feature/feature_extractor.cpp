@@ -804,12 +804,19 @@ static struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool
         return NULL;
     }
     memset(slot->ctx_list, 0, ctx_array_sz);
-    int dict_err = vmaf_dictionary_copy(&opts_dict, &slot->opts_dict);
-    if (dict_err) {
-        free(slot->ctx_list);
-        slot->ctx_list = NULL;
-        pthread_cond_destroy(&(slot->full));
-        return NULL;
+    /* Mirror the NULL guard from feature_extractor.c: vmaf_dictionary_copy
+     * returns -EINVAL when *src is NULL, so skip the copy for the common
+     * case where no options are provided.  Without this guard, every call
+     * to vmaf_fex_ctx_pool_aquire(..., NULL, ...) caused get_fex_list_entry
+     * to return NULL, which the caller converted to -EINVAL. */
+    if (opts_dict != NULL) {
+        int dict_err = vmaf_dictionary_copy(&opts_dict, &slot->opts_dict);
+        if (dict_err) {
+            free(slot->ctx_list);
+            slot->ctx_list = NULL;
+            pthread_cond_destroy(&(slot->full));
+            return NULL;
+        }
     }
 
     return &pool->fex_list[pool->cnt++];

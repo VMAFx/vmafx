@@ -273,6 +273,14 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -ENOTSUP;
     }
 
+    /* The 3-frame SAD kernel requires at least a 3x3 luma plane to have a
+     * meaningful central row.  Reject undersized frames early so that
+     * test_motion_min_dim and downstream callers get a clear -EINVAL instead
+     * of a silent divide-by-zero or zero-length malloc.  Mirrors the minimum-
+     * dimension guards already present in float_motion and motion_v2. */
+    if (w < 3 || h < 3)
+        return -EINVAL;
+
     s->w = w;
     s->h = h;
     s->bpc = bpc;

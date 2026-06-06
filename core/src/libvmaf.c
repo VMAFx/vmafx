@@ -2701,7 +2701,12 @@ int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsi
         return -EINVAL;
 
     int err = vmaf_feature_collector_get_score(vmaf->feature_collector, model->name, score, index);
-    if (err) {
+    /* Netflix#755 / ADR-0154: -EAGAIN means "score not yet available" (a
+     * retroactive-write extractor like integer_motion has not emitted it yet).
+     * Calling vmaf_predict_score_at_index in this case replaces the transient
+     * -EAGAIN with a fatal -EINVAL, making the error indistinguishable from a
+     * programmer error.  Propagate -EAGAIN directly so callers can retry. */
+    if (err && err != -EAGAIN) {
         err = vmaf_predict_score_at_index(model, vmaf->feature_collector, index, score, true, false,
                                           0);
     }

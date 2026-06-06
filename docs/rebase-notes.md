@@ -1,6 +1,26 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/test-failures-macos-dnn (2026-06-06, no ADR — bug fixes)
+
+**Files touched:**
+`core/src/gpu_picture_pool.{c,cpp}`, `core/src/libvmaf.c`,
+`core/src/feature/integer_motion.c`, `core/src/feature/feature_extractor.cpp`,
+`core/test/test_framesync.c`, `core/test/test_integer_motion_coverage.c`,
+`changelog.d/fixed/macos-dnn-test-failures-6-fixes.md`, `docs/rebase-notes.md`.
+
+**Rebase impact:** All changes are internal bug fixes with no public-API or
+ABI changes. If a concurrent branch modifies `vmaf_score_at_index` (libvmaf.c),
+`vmaf_gpu_picture_pool_init` (gpu_picture_pool.{c,cpp}), or `integer_motion.c
+init()`, resolve conflicts by keeping both the concurrent change and the
+`err != -EAGAIN` / `*pool = NULL` / `w < 3 || h < 3` guards from this branch.
+The test fixes in `test_framesync.c` and `test_integer_motion_coverage.c` are
+self-contained; no invariants span other branches.
+
+no rebase impact on public API, build flags, or upstream-mirrored files.
+
+---
+
 ## docs/doxygen-public-header-drift (2026-06-06, no ADR — doc-only fix)
 
 no rebase impact: comment-only changes to `core/include/libvmaf/libvmaf_cuda.h`,
@@ -78,7 +98,6 @@ that adds a bare unsafe operation inside an `unsafe fn` without an explicit
 `unsafe {}` block.
 
 ---
-
 
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
 
@@ -3783,7 +3802,6 @@ ship `ffmpeg-patches/`; no rebase conflict surface.
   point, all four uninit paths in patch 0016 must be updated.
 - Patch 0016 requires `git am --3way` replay against all 15 preceding patches
   before verifying clean apply against n8.1.1 (the patch series is cumulative).
-
 
 **Re-test on rebase**:
 

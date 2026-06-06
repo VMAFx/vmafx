@@ -74,12 +74,24 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
     for (unsigned i = 0; i < p->cfg.pic_cnt; i++)
         err |= p->cfg.alloc_picture_callback(&p->pic[i], p->cfg.cookie);
 
-    return err;
+    /* If any alloc_picture_callback call failed the pool is partially
+     * constructed and unusable.  Tear it down so the caller can safely treat
+     * a non-zero return as "pool not constructed" — same contract as the
+     * malloc-failure paths below. */
+    if (err)
+        goto free_pic;
+
+    return 0;
 
 free_pic:
     std::free(p->pic);
 free_p:
     std::free(p);
+    /* Mirror the fix from gpu_picture_pool.c: clear *pool so the caller
+     * cannot see a dangling pointer on any failure path. The pre-fix code
+     * left *pool pointing at freed memory, causing a double-free via
+     * vmaf_gpu_picture_pool_close() in the normal vmaf_close() teardown. */
+    *pool = nullptr;
 fail:
     return err;
 }

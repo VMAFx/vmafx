@@ -76,17 +76,24 @@ static void my_worker(void *data, void **tpool_thread_data)
                                         thread_data->index - 1);
 
     for (ctr = 0; ctr < FRAME_BUF_LEN; ctr++) {
-        /* The writer stored ref[ctr]+dist[ctr]+2 (see line 56 above).
-         * The previous check compared against ref+dist (off by 2) and used
-         * fprintf — so every non-zero-seeded frame silently "failed" with no
-         * test-harness visibility.  Fixed: match the written value exactly and
-         * abort() so a data-corruption regression terminates the test process. */
-        if (dependent_buf[ctr] != (uint8_t)(thread_data->ref[ctr] + thread_data->dist[ctr] + 2)) {
+        /* The writer at frame N stored (seed_N + seed_N + 2) where both
+         * ref and dist were memset to seed_N = N.  Frame N+1's worker
+         * retrieves frame N's buffer and must verify against seed_N, NOT
+         * seed_{N+1}.  Since seed_N = thread_data->index - 1:
+         *
+         *   expected = (seed_N) + (seed_N) + 2
+         *            = 2 * (index - 1) + 2
+         *            = 2 * index            (modulo 256 via uint8_t cast)
+         *
+         * The previous check used thread_data->ref[ctr] + thread_data->dist[ctr]
+         * + 2, which are both the CURRENT frame's seed (index), giving
+         * 2*index+2 instead of 2*index — off by two for every non-zero index. */
+        const uint8_t expected = (uint8_t)(2u * thread_data->index);
+        if (dependent_buf[ctr] != expected) {
             (void)fprintf(stderr,
                           "framesync verification error at frame %d byte %d: "
                           "got %u expected %u\n",
-                          thread_data->index, ctr, dependent_buf[ctr],
-                          (uint8_t)(thread_data->ref[ctr] + thread_data->dist[ctr] + 2));
+                          thread_data->index, ctr, dependent_buf[ctr], (unsigned)expected);
             abort(); /* fail the test process — mu_assert cannot be used in void workers */
         }
     }
