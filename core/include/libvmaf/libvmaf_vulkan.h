@@ -81,8 +81,18 @@ typedef struct VmafVulkanConfiguration {
  * Allocate a VmafVulkanState. Picks the device by index; -1 selects the
  * first device that exposes a compute queue family.
  *
+ * @param out  Out: receives the allocated state handle on success. Caller
+ *             owns the allocation; pair with @ref vmaf_vulkan_state_free
+ *             after @ref vmaf_close returns.
+ * @param cfg  Device selection and feature flags. Safe to zero-initialise
+ *             (yields device_index = -1, no validation layer, default ring
+ *             depth, fp64 fallback allowed).
+ *
  * @return 0 on success, -ENOSYS when built without Vulkan, -ENODEV when
  *         no compatible device is found, -EINVAL on bad arguments.
+ *
+ * @thread-safety Not thread-safe. Call from a single driver thread before
+ *               importing into a VmafContext.
  */
 VMAF_EXPORT int vmaf_vulkan_state_init(VmafVulkanState **out, VmafVulkanConfiguration cfg);
 
@@ -143,6 +153,17 @@ VMAF_EXPORT unsigned vmaf_vulkan_state_max_outstanding_frames(const VmafVulkanSt
  * state pointer for the duration of its lifetime; the caller still
  * owns the state and must free it with @ref vmaf_vulkan_state_free
  * after vmaf_close(). Same lifetime model as the SYCL backend.
+ *
+ * @param ctx    Live VmafContext (from `vmaf_init()`).
+ * @param state  State handle previously allocated via
+ *               @ref vmaf_vulkan_state_init or
+ *               @ref vmaf_vulkan_state_init_external. Must not be NULL.
+ *
+ * @return 0 on success, -EINVAL on NULL arguments, -ENOSYS when built
+ *         without Vulkan.
+ *
+ * @thread-safety Not thread-safe. Must be called before the first
+ *               @ref vmaf_read_pictures call on @p ctx.
  */
 VMAF_EXPORT int vmaf_vulkan_import_state(VmafContext *ctx, VmafVulkanState *state);
 
@@ -210,13 +231,24 @@ VMAF_EXPORT int vmaf_vulkan_picture_fetch(VmafContext *vmaf, VmafPicture *pic);
  * Safe to pass `NULL` or a state that was never imported. After import
  * the caller is still responsible for freeing — call this after
  * vmaf_close() to avoid using a state the context still references.
+ * On success @p *state is set to NULL so the handle cannot be reused.
+ *
+ * @param state  Address of the state handle to release. NULL is a no-op;
+ *               on a non-NULL @p state, @p *state is reset to NULL.
+ *
+ * @thread-safety Not thread-safe. Must not be called while any VmafContext
+ *               that imported this state is still open.
  */
 VMAF_EXPORT void vmaf_vulkan_state_free(VmafVulkanState **state);
 
 /**
  * Enumerate compute-capable Vulkan devices visible to the runtime.
  * Prints one line per device with its ordinal, name, and API version.
- * Returns the device count or -ENOSYS when built without Vulkan.
+ *
+ * @return The number of Vulkan compute-capable devices found, or
+ *         -ENOSYS when built without Vulkan.
+ *
+ * @thread-safety Safe to call from any thread.
  */
 VMAF_EXPORT int vmaf_vulkan_list_devices(void);
 
