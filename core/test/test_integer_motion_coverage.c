@@ -35,6 +35,7 @@
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
+#include "picture.h" /* internal: vmaf_picture_ref() */
 
 #define MOT_W (16u)
 #define MOT_H (16u)
