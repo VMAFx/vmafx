@@ -1,0 +1,2 @@
+- **mcp-server**: `http_transport.py` branch coverage lifted from 81 % to 100 % (13 new tests in `test_http_transport_round5.py`).
+  Closes previously uncovered lines: TLS-enabled `_build_ssl_context` branch, `_handle_score` path-validation 400 error path, `_serve` startup warning branches and cleanup finally-block, `run_http_server` CancelledError/KeyboardInterrupt/finally paths, and `make_score_handler` factory return.
