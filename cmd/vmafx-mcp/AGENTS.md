@@ -64,3 +64,12 @@ path (default) and the direct cgo path introduced by ADR-0931 (opt-in via
    pins the `describeModel` allowlist; equivalent regressions for new
    tools belong next to it. See
    [ADR-0983](../../docs/adr/0983-gosec-findings-fix-sweep.md).
+
+8. **Handler test coverage** (`impl_handlers_test.go`): the file covers the
+   "binary not found" fast-fail branches of every tool handler, the
+   `findVmafTune` env-override, `parseArgs` nil/valid/invalid, the ambiguous
+   model-stem path in `describeModel`, and the real filesystem walks for
+   `handleListModels` and `handleListExtractors`. When adding a new tool
+   handler: add at least one error-path test that does not require an external
+   binary (use `t.Setenv("VMAF_BIN", "/nonexistent/...")` or similar).
+   Statement coverage target: 50 %+ on the `cmd/vmafx-mcp` package.

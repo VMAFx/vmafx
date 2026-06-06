@@ -15,6 +15,19 @@ or upstream-mirrored files are touched.
 
 ---
 
+## test/go-vmafx-mcp-handler-coverage (2026-06-06, no ADR — test-only)
+
+**Files touched:**
+`cmd/vmafx-mcp/impl_handlers_test.go` (new), `cmd/vmafx-mcp/AGENTS.md`,
+`changelog.d/added/go-vmafx-mcp-handler-coverage.md`, `docs/rebase-notes.md`.
+
+**Rebase impact:** test-only addition; no production code changed. If a
+concurrent branch adds a new tool handler to `impl.go`, add a corresponding
+error-path test to `impl_handlers_test.go` following the established pattern
+(`t.Setenv("VMAF_BIN", "/nonexistent/...")` for binary-dependent handlers).
+
+---
+
 
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
 
