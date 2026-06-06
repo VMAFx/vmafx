@@ -768,6 +768,40 @@ extern "C" void *vmaf_sycl_get_combined_queue(VmafSyclState *state)
     return state->combined_queue;
 }
 
+extern "C" int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv)
+{
+    if (!state || !priv)
+        return -EINVAL;
+
+    /* Find the matching entry by priv pointer. */
+    int found = -1;
+    for (int i = 0; i < state->num_graph_extractors; i++) {
+        if (state->graph_extractors[i].priv == priv) {
+            found = i;
+            break;
+        }
+    }
+    if (found < 0)
+        return -EINVAL;
+
+    /* Compact the array: shift remaining entries left. */
+    for (int i = found; i < state->num_graph_extractors - 1; i++)
+        state->graph_extractors[i] = state->graph_extractors[i + 1];
+    state->num_graph_extractors--;
+
+    /* Invalidate any recorded graphs — they captured the old extractor set.
+     * record_combined_graphs() will re-record on the next graph_submit(). */
+    for (int i = 0; i < 2; i++) {
+        if (state->combined_exec_graph[i]) {
+            delete state->combined_exec_graph[i];
+            state->combined_exec_graph[i] = nullptr;
+        }
+    }
+    state->combined_graphs_recorded = false;
+
+    return 0;
+}
+
 static void record_combined_graphs(VmafSyclState *state)
 {
     sycl::queue &q = *state->combined_queue;

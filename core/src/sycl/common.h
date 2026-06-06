@@ -362,6 +362,19 @@ int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnqueueFn enqueu
                              VmafSyclGraphConfigFn config_fn, void *priv, const char *name);
 
 /**
+ * Unregister an extractor from the combined command graph.
+ * Must be called from close_fex_sycl before the extractor's priv is freed.
+ * Invalidates any recorded graphs so they are re-recorded on the next
+ * vmaf_sycl_graph_submit() call with the remaining extractors.
+ *
+ * @param state  The SYCL state.
+ * @param priv   The extractor private-state pointer used at registration time.
+ *
+ * @return 0 on success, -EINVAL if state is NULL or priv not found.
+ */
+int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv);
+
+/**
  * Get the combined compute queue for direct submission.
  * All registered extractors share this single queue.
  *

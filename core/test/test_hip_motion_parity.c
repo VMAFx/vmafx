@@ -104,7 +104,7 @@ static char *run_cpu_motion(double *score)
      * debug=true; without it only motion_sad_score is emitted.  Enable debug
      * so the same named channel is available on both the CPU and HIP paths. */
     VmafFeatureDictionary *opts = NULL;
-    err = vmaf_feature_dictionary_set(&opts, "debug", "1");
+    err = vmaf_feature_dictionary_set(&opts, "debug", "true");
     mu_assert("CPU: vmaf_feature_dictionary_set(debug) failed", !err);
     err = vmaf_use_feature(vmaf, "motion", opts);
     mu_assert("CPU: vmaf_use_feature(motion) failed", !err);
