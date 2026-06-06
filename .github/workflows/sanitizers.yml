@@ -235,10 +235,14 @@ jobs:
           sudo pip3 install --break-system-packages meson
       - name: Configure (clang + ASan + libFuzzer)
         run: |
+          # b_lto=false is required: ASan + LTO together cause the linker
+          # to discard asan.module_dtor sections, producing a link error
+          # (same issue documented in fuzz.yml under ADR-0882).
           meson setup build-fuzz core \
             --buildtype=debug \
             -Db_sanitize=address \
             -Db_lundef=false \
+            -Db_lto=false \
             -Dfuzz=true \
             -Denable_cuda=false \
             -Denable_sycl=false \
