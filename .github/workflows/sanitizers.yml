@@ -183,9 +183,15 @@ jobs:
         run: |
           # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with
           # TSan internal allocator (same reason as ASan exclusion above).
+          # Exclude test_gpu_picture_pool_uaf: the test intentionally tries
+          # to malloc ~32 GiB to exercise the OOM failure path. The TSan
+          # allocator aborts with "out of memory" instead of returning NULL,
+          # causing a spurious failure. The bug this test guards is covered
+          # by the unsanitized meson test suite on every run. Tracked as
+          # T-GPU-POOL-UAF-OOM-TSAN-ABORT.
           TESTS=$(meson introspect build --tests 2>&1 \
                   | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
-                  | grep -vE 'test_model$|test_y4m_alloc_failure$' || true)
+                  | grep -vE 'test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$' || true)
           echo "test count: $(echo "$TESTS" | wc -l)"
           if [ -z "$TESTS" ]; then
             echo "::error::Test enumeration produced empty list" >&2
@@ -239,6 +245,7 @@ jobs:
             --buildtype=debug \
             -Db_sanitize=address \
             -Db_lundef=false \
+            -Db_lto=false \
             -Dfuzz=true \
             -Denable_cuda=false \
             -Denable_sycl=false \
