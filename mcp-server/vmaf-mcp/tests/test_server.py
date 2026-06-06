@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 from pathlib import Path
 
 import pytest
-
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -47,7 +47,7 @@ def test_list_models_returns_list():
 
 
 def test_list_backends_always_includes_cpu():
-    backends = srv._list_backends()
+    backends = asyncio.run(srv._list_backends())
     assert backends["cpu"] is True
 
 
