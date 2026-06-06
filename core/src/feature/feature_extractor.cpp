@@ -489,8 +489,12 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
     f->opts_dict = opts_dict;
     if (f->fex->options && f->fex->priv) {
         int err = vmaf_fex_ctx_parse_options(f);
-        if (err)
-            return err;
+        if (err) {
+            /* Free all allocations made so far before returning.
+             * goto-free_x would skip freeing priv, so tear down manually. */
+            free(f->fex->priv);
+            goto free_x;
+        }
     }
 
     return 0;
@@ -733,9 +737,12 @@ int vmaf_fex_ctx_pool_create(VmafFeatureExtractorContextPool **pool, unsigned n_
     for (unsigned k = 0; k < p->capacity; k++)
         new (&p->fex_list[k]) fex_list_entry();
 
-    pthread_mutex_init(&(p->lock), NULL);
+    if (pthread_mutex_init(&(p->lock), NULL) != 0)
+        goto free_fex_list;
     return 0;
 
+free_fex_list:
+    free(p->fex_list);
 free_p:
     free(p);
 fail:
@@ -788,13 +795,22 @@ static struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool
      * functions, which are correct in that translation unit. */
     slot->capacity.store(n_threads, std::memory_order_relaxed);
     slot->in_use.store(0, std::memory_order_relaxed);
-    pthread_cond_init(&(slot->full), NULL);
+    if (pthread_cond_init(&(slot->full), NULL) != 0)
+        return NULL;
     size_t ctx_array_sz = sizeof(slot->ctx_list[0]) * static_cast<unsigned>(slot->capacity.load());
     slot->ctx_list = static_cast<decltype(slot->ctx_list)>(malloc(ctx_array_sz));
-    if (!slot->ctx_list)
+    if (!slot->ctx_list) {
+        pthread_cond_destroy(&(slot->full));
         return NULL;
+    }
     memset(slot->ctx_list, 0, ctx_array_sz);
-    vmaf_dictionary_copy(&opts_dict, &slot->opts_dict);
+    int dict_err = vmaf_dictionary_copy(&opts_dict, &slot->opts_dict);
+    if (dict_err) {
+        free(slot->ctx_list);
+        slot->ctx_list = NULL;
+        pthread_cond_destroy(&(slot->full));
+        return NULL;
+    }
 
     return &pool->fex_list[pool->cnt++];
 }
@@ -922,6 +938,7 @@ int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
         return -EINVAL;
     pthread_mutex_lock(&(pool->lock));
 
+    int first_err = 0;
     for (unsigned i = 0; i < pool->cnt; i++) {
         VmafFeatureExtractor *fex = pool->fex_list[i].fex;
         if (!(fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))
@@ -930,12 +947,14 @@ int vmaf_fex_ctx_pool_flush(VmafFeatureExtractorContextPool *pool,
             VmafFeatureExtractorContext *fex_ctx = pool->fex_list[i].ctx_list[j].fex_ctx;
             if (!fex_ctx)
                 continue;
-            vmaf_feature_extractor_context_flush(fex_ctx, feature_collector);
+            int err = vmaf_feature_extractor_context_flush(fex_ctx, feature_collector);
+            if (err && !first_err)
+                first_err = err;
         }
     }
 
     pthread_mutex_unlock(&(pool->lock));
-    return 0;
+    return first_err;
 }
 
 int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool)

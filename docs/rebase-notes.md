@@ -28,6 +28,18 @@ error-path test to `impl_handlers_test.go` following the established pattern
 
 ---
 
+## fix/r10-cpp23-wave-error-paths (2026-06-06, ADR-1060)
+
+**Files touched:**
+`core/src/feature/feature_extractor.cpp`, `core/src/read_json_model.cpp`
+
+**Rebase impact:** no rebase impact. All changes are internal to existing
+functions with no public-API or header changes. Branches that also touch
+`feature_extractor.cpp` should verify the `free_fex_list` label and the
+context-create parse-options error path merge cleanly.
+
+---
+
 
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
 

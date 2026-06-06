@@ -185,6 +185,21 @@ core/
   the signal. Covered by
   `test/test_picture_pool_error_paths.c::test_pool_waiter_woken_on_unref`.
 
+- **`vmaf_fex_ctx_pool_create` has a three-label cleanup chain**
+  (fork-local, ADR-1060, r10 audit): `fail` → `free_p` → `free_fex_list`
+  in `src/feature/feature_extractor.cpp`. If you add more allocations between
+  `malloc(fex_list_sz)` and `pthread_mutex_init`, add a corresponding label
+  and goto. The prior two-label chain (`free_p` / `fail`) leaked `fex_list`
+  on mutex-init failure.
+
+- **`get_fex_list_entry` slot init is all-or-nothing** (fork-local,
+  ADR-1060, r10 audit): `pthread_cond_init`, `ctx_list` malloc, and
+  `vmaf_dictionary_copy` are all checked; any failure destroys the cond and
+  frees `ctx_list` before returning NULL. `pool->cnt` is NOT incremented on
+  failure so the partial slot is effectively invisible but still zeroed.
+  Any rebase that adds new resources to the slot init sequence must add a
+  matching cleanup on the early-return path.
+
 - **`integer_vif` is luma-only across every backend** (fork-local,
   [ADR-0541](../docs/adr/0541-integer-vif-luma-only-clarification.md)).
   CPU [`src/feature/integer_vif.c`](src/feature/integer_vif.c) reads

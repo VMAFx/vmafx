@@ -540,6 +540,12 @@ static int model_parse(json_stream *s, VmafModel *model, enum VmafModelFlags fla
     }
 
     json_skip_until(s, JSON_OBJECT_END);
+    /* If the JSON stream entered an error state during unknown-key skipping,
+     * report it even if model_dict was successfully parsed (err == 0).
+     * Without this check a truncated or malformed JSON file after the
+     * model_dict block would silently return success. */
+    if (json_get_error(s))
+        return -EINVAL;
     return err;
 }
 
