@@ -1744,7 +1744,9 @@ opt_cpp23_lib = static_library(
     'opt_cpp23',
     src_dir + 'opt.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    override_options : ['cpp_std=c++23'],
+    # libvmaf_cpu_cpp_std: 'vc++latest' on MSVC, 'c++latest' on clang-cl/icx-cl,
+    # 'c++23' elsewhere — same compiler-aware token as log_cpp23_lib (ADR-0860).
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
 )
@@ -1755,7 +1757,8 @@ picture_pool_cpp23_lib = static_library(
     'picture_pool_cpp23',
     src_dir + 'picture_pool.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    override_options : ['cpp_std=c++23'],
+    # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
 )
@@ -1765,7 +1768,8 @@ gpu_picture_pool_cpp23_lib = static_library(
     'gpu_picture_pool_cpp23',
     src_dir + 'gpu_picture_pool.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    override_options : ['cpp_std=c++23'],
+    # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
 )
@@ -1779,7 +1783,8 @@ gpu_dispatch_env_cpp23_lib = static_library(
     'gpu_dispatch_env_cpp23',
     src_dir + 'gpu_dispatch_env.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    override_options : ['cpp_std=c++23'],
+    # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
 )
@@ -1788,7 +1793,8 @@ read_json_model_cpp23_lib = static_library(
     'read_json_model_cpp23',
     src_dir + 'read_json_model.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
-    override_options : ['cpp_std=c++23'],
+    # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
 )

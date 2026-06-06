@@ -38,8 +38,10 @@ if get_option('default_library') == 'both'
 endif
 
 # ADR-0809: vmaf.c and cli_parse.c converted to C++23 (vmaf.cpp, cli_parse.cpp).
-# The two C++ TUs use override_options to pin cpp_std=c++23 independently of the
+# The two C++ TUs use override_options to pin cpp_std independently of the
 # project-level default, matching the per-target pattern established in ADR-0708.
+# libvmaf_cpu_cpp_std is defined in src/meson.build (ADR-0860 follow-up):
+#   'vc++latest' on MSVC, 'c++latest' on clang-cl/icx-cl, 'c++23' elsewhere.
 # y4m_input.c / vidinput.c / yuv_input.c remain C23; they are compiled under the
 # project default (c_args only) and linked together with the C++ TUs.
 vmaf = executable(
@@ -51,7 +53,7 @@ vmaf = executable(
     cpp_args : vmaf_tool_cflags,
     link_args : vmaf_tool_link_args,
     link_with : vmaf_tool_link_target,
-    override_options : ['cpp_std=c++23'],
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     install : true,
 )
 
