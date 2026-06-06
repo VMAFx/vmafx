@@ -55,20 +55,6 @@ static int test_unsetenv(const char *name)
 #include "cuda/dispatch_strategy.h"
 #include "hip/dispatch_strategy.h"
 
-/* MinGW64 / MSVC libc lacks POSIX setenv/unsetenv; map to _putenv_s + the
- * "VAR=" form for unset. Keeps the test source uniform across libcs. */
-#if defined(_WIN32) && !defined(__CYGWIN__)
-static int setenv(const char *name, const char *value, int overwrite)
-{
-    (void)overwrite;
-    return _putenv_s(name, value);
-}
-static int unsetenv(const char *name)
-{
-    return _putenv_s(name, "");
-}
-#endif
-
 /* ---- gpu_dispatch_parse.h — header-only static-inline parser ---- */
 
 static char *test_parse_null_inputs_decline(void)
