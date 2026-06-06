@@ -75,18 +75,18 @@ static void my_worker(void *data, void **tpool_thread_data)
     vmaf_framesync_retrieve_filled_data(thread_data->fs_ctx, (void *)&dependent_buf,
                                         thread_data->index - 1);
 
+    /* The dependent buffer was written by frame (index-1).  Both ref and dist
+     * were memset to (index-1), so each byte stored is (index-1)+(index-1)+2.
+     * Use the previous frame's seed value — NOT the current frame's ref/dist
+     * which carry (index) — to compute the expected byte. */
+    const uint8_t prev_seed = (uint8_t)(thread_data->index - 1u);
+    const uint8_t expected = (uint8_t)(prev_seed + prev_seed + 2u);
     for (ctr = 0; ctr < FRAME_BUF_LEN; ctr++) {
-        /* The writer stored ref[ctr]+dist[ctr]+2 (see line 56 above).
-         * The previous check compared against ref+dist (off by 2) and used
-         * fprintf — so every non-zero-seeded frame silently "failed" with no
-         * test-harness visibility.  Fixed: match the written value exactly and
-         * abort() so a data-corruption regression terminates the test process. */
-        if (dependent_buf[ctr] != (uint8_t)(thread_data->ref[ctr] + thread_data->dist[ctr] + 2)) {
+        if (dependent_buf[ctr] != expected) {
             (void)fprintf(stderr,
                           "framesync verification error at frame %d byte %d: "
                           "got %u expected %u\n",
-                          thread_data->index, ctr, dependent_buf[ctr],
-                          (uint8_t)(thread_data->ref[ctr] + thread_data->dist[ctr] + 2));
+                          thread_data->index, ctr, dependent_buf[ctr], (unsigned)expected);
             abort(); /* fail the test process — mu_assert cannot be used in void workers */
         }
     }
