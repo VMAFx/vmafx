@@ -10545,6 +10545,9 @@ upstream string used in cached-result directory names.
   fragment-pattern ecosystem ADR-0221 establishes.
 
 
+- **chore(changelog): Migrate 23 fragments from invalid sections to Keep-a-Changelog sections** (ADR-0892 follow-up): `perf/` (6 files) and `performance/` (2 files) moved to `changed/perf-<name>.md`; `chore/` (12 files) and `refactor/` (3 files) moved to `changed/`; 2 already-migrated duplicates in `perf/` removed; duplicate `libsvm-vendored-audit.md` basename across `fixed/` and `security/` disambiguated. Invalid directories are now empty and removed. The renderer produces no `WARNING: … is not a Keep-a-Changelog section; fragments here are SKIPPED` lines.
+
+
 **CHUG vmaf column: compute via vmaf_v0.6.1 SDR baseline (supersedes PR #898)**
 
 The `vmaf` column in CHUG/K150K feature parquets was always NaN because the
@@ -10679,6 +10682,11 @@ Estimated per-PR runner-time reduction: ~70% versus the pre-ADR-0689 baseline.
     the backend loop. The existing `[[ ! -d "$src_dir" ]]` short-circuit
     already silently skipped it; dropping the token removes a stale
     tombstone.
+
+
+- **ci: SHA-pin `EnricoMi/publish-unit-test-result-action` in `e2e-k8s.yml`** (was `@v2`; pinned to `c950f6fb` / v2.23.0), consistent with every other action in the repository.
+- **ci: Remove permanently-disabled `clang-tidy-sycl` job** from `lint-and-format.yml` (~150 lines of dead YAML gated by `if: (false)`); add tombstone comment referencing ADR-0217.
+- **ci: Correct stale `fuzz.yml` comment** citing ADR-0882 and a `fuzz_json_model` harness that do not yet exist; replaced with a forward note.
 
 
 - **NVIDIA-Vulkan ciede2000 places=4 5/48 mismatch root-caused as f32/f64 fork debt (ADR-0273)** —
@@ -10959,6 +10967,9 @@ Read-only adversarial review of the cpp23 conversion wave. Found 4 CRITICAL, 2 H
 See `docs/research/cpp23-wave-adversarial-review-20260528.md` for the full findings table.
 
 
+- **refactor(core): C++23 Wave bundle** (#319 log.c→.cpp, #232 gpu_dispatch_env.c→.cpp, #136 opt.cpp+read_json_model.cpp, #154 feature_extractor.c→.cpp, #198 cli_parse.c+vmaf.c→.cpp): five sequential file-rename conversions bundled into a single PR. Each TU compiles in an isolated C++23 static library; public C ABI is preserved throughout via `extern "C"` guards. ADRs: 0708, 0858, 0761, 0772, 0809.
+
+
 ### C++23 Wave 2: project-wide `cpp_std=c++23` + `dict.c` → `dict.cpp` (ADR-0727)
 
 - The Meson project default is now `cpp_std=c++23` (was `c++11`). New C++ source
@@ -11055,6 +11066,12 @@ Public C ABI preserved unchanged. Each file compiled as an isolated
   `extern "C"` guards added to `opt.h`, `log.h`, `model.h`, `read_json_model.h`.
 
 
+- **refactor(core): Convert `picture_pool.c` and `gpu_picture_pool.c` to C++23** (ADR-0768): isolated static-lib pattern, `nullptr`, `<c…>` headers, `static_cast`/`reinterpret_cast`. Add `extern "C"` guards to `picture.h`, `mem.h`, `ref.h`, and `picture_pool.h`.
+
+
+- **chore(lint): Audit all `cppcheck-suppress` comments in `core/`**; add inline citations (`[MISRA-C:2012-11.3/EXP36-C: see block comment above]`) to 10 bare `invalidPointerCast` suppressions in `core/src/feature/vif.c` and expand the prose justification in the block comment above them. Enforces CLAUDE.md §12 r12 — every suppression must cite the ADR / standard that forces it.
+
+
 <!--
   Copyright 2026 Lusoris
   SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
@@ -11112,6 +11129,9 @@ from `cuda-toolkit-13-2` to `cuda-toolkit-13-3` to eliminate the risk of stale r
 values in divergent-branch kernels. The 25 `.cu` files with nested `if`-divergence —
 `float_adm_score.cu`, `adm_decouple.cu`, `filter1d.cu`, `adm_dwt2.cu`, and others — are
 all candidates for silent score corruption under the 13.2 toolchain.
+
+
+- **chore(deps): Bump pinned CUDA version from 13.2.0 to 13.3.0** across Dockerfile, `dev/Containerfile`, and CI workflow files (`build.yml`, `libvmaf-build-matrix.yml`).
 
 
 - The K150K/CHUG feature extractor now routes `float_ssim` through
@@ -11606,6 +11626,12 @@ No code changes in this PR — research only.
   canonical key. (ADR-0935)
 
 
+- **chore(test): Extend Go test coverage for `cmd/vmafx-node`**: add `executor_extra_test.go` covering `executeScoring` (non-nil scorer with failing stub binary, cancelled context, nil ScoringParams) and `executeAI` (non-nil registry Stage 1 body, empty model name, nil ScoringParams), raising `executeAI` to 100% and `executeScoring` to 89.5%. Add `bpf/bypass_unit_test.go` covering `Loader.Stop`, `Loader.closeLinks`, `Loader.drainLoop` context-cancel exit, stub `Close` helpers, and `loadRcloneBypassObjects` sentinel, raising bpf package coverage from 14.6% to 33.0%. Overall `cmd/vmafx-node` package coverage improves from 46% to 61%.
+
+
+- **ci: Promote `coverage-gpu` CI job from advisory to required**: the two-week stability window (2026-05-19 → 2026-06-02) elapsed with no advisory-fail runs on the self-hosted `gpu-full` runner. Removed `continue-on-error: true` and renamed the job display name from `(Advisory)` to required. Closes T-GPU-COVERAGE-STABLE-WEEKS.
+
+
 - **GPU dispatch env thread safety** (ADR-0461): introduce
   `core/src/gpu_dispatch_env.{h,c}` — a single once-snapshot helper for
   `VMAF_*_DISPATCH` env variables. The Vulkan and SYCL `dispatch_strategy`
@@ -11771,6 +11797,9 @@ is present.
   embed libsvm independently. No score / output / ABI change.
 
 
+- **chore(docs): Close T-MACOS-SIGSEGV-UNRESOLVED-2026-05-19** — investigation confirmed the macOS CI red was a compile error (missing `integer_ssim_moments_t` on non-x86), not a SIGSEGV. Fixed in PR #654 (ADR-1040). `docs/state.md` updated; investigation doc added at `docs/development/macos-sigsegv-investigation.md`.
+
+
 - **Internal**: name 20+ magic-number literals across fork-added C surfaces
   (CERT INT07-C / MISRA C 4.10 closeout pass 1). Adds `VMAF_MCP_*` constants
   for MCP listener backlog, transport bitmask range, drain cap, SSE
@@ -11822,6 +11851,9 @@ retired scaffold / TBD wording.
   `8 or 10` to `8 | 10 | 12 | 16` to match the canonical `vmaf_score` tool docs.
 - `docs/mcp/release-channel.md`: "two MCP server flavours" corrected to
   "three"; Go binary (`vmafx-mcp`) entry and release checklist added.
+
+
+- **chore(docs): Bulk-fix 212 MD060/table-column-style violations** across 37 ADR and research digest files; restores the Pre-Commit markdownlint gate to green (#577).
 
 
 - **Metal (Apple Silicon) compute backend runtime (T8-1b)
@@ -12166,6 +12198,14 @@ See Research-0431 and ADR-0431 for decision matrix and alternatives considered.
   to override auto-selection.
 
 
+- **perf(cuda): CUDA ADM decouple-inline — `__ldg()` read-only cache routing on active path (ADR-0773)** — Apply F3 fix to the live CSF / CM kernel path that executes every ADM frame dispatch:
+  - `adm_csf.cu`: extract `const T *__restrict__` band pointers before the inner loops in `i4_adm_csf_kernel<>` (int32) and `adm_csf_kernel<>` (int16); replace all 6 indexed reads with `__ldg()`.
+  - `adm_cm.cu`: same extraction in all six inline device helpers: `inline_i4_csf_a`, `inline_i4_decouple_r`, `inline_s0_csf_a`, `inline_s0_decouple_r`, `inline_i4_csf_r`, `inline_s0_csf_r`.
+  - Routes DWT2 band loads through L1 read-only texture cache, reducing L2 pressure at resolutions where the planes exceed L1 capacity (1080p and above).
+  - CUDA vs CPU correctness: places=4 PASS; max diff ≤ 1.00e-06 on Netflix 576×324 reference pair, 0.00e+00 on 1080p checkerboard.
+  - `adm_decouple.cu` (dead code, ADR-0763) was addressed separately in PR #106; this PR addresses the active inline path.
+
+
 - **perf(cuda): adm_decouple — `__ldg()` F3 fix (ADR-0763)**
 
 Extract `const T *__restrict__` band pointers from `AdmBufferCuda` before the
@@ -12210,6 +12250,11 @@ prevents `ld.global.nc` emission. Severity-ranked by measured DRAM throughput
 from PR #77 ncu profiles. Top-5 dispatch PRs defined; `ms_ssim_vert_lcs` is
 priority-1 (structurally identical to the already-fixed `ssim_vert_combine`,
 expected -4 to -6% duration at 1080p).
+
+
+- **perf(cuda): CUDA motion — 8-frame SAD batching to amortise per-launch overhead (ADR-0845)** — The CUDA `integer_motion` feature extractor previously issued one `cuStreamSynchronize` per frame, making it dispatch-bottlenecked at all resolutions below 4K (Research-0760: 0.22× CPU at 576p). Kernel execution was only 0.1% of total wall time.
+  `submit()` now queues kernel launches into per-slot device SAD buffers without triggering a device-to-host readback. `collect()` defers the readback and score emission to every 8th frame (MOTION_BATCH_DEPTH=8), issuing a single `cuStreamSynchronize` to drain all 8 pending copies at once. `flush()` handles the final partial batch. The change is transparent to callers; correctness is preserved at ADR-0214 places=4 tolerance.
+  Expected throughput improvement: 576p from ~79 fps to ~800 fps (CUDA/CPU ratio 0.22× → >2×); 1080p comparable; 4K unchanged.
 
 
 - **perf(cuda/motion)**: multi-resolution ncu profile of `calculate_motion_score_kernel_8bpc`
@@ -12258,6 +12303,13 @@ Second application of the F3 pattern established in ADR-0754 for
 (memory-bound regime where combined intermediate footprint exceeds L2 capacity).
 
 ADR: [ADR-0757](../docs/adr/0757-cuda-ms-ssim-vert-lcs-horiz-ldg.md)
+
+
+- **perf(cuda): psnr_hvs — `__ldg()` + `__launch_bounds__(64)` (ADR-0764)** — Apply the F3 `__ldg()` / `__restrict__` pointer-extraction pattern (established in ADR-0754 for `calculate_ssim_vert_combine`, PR #93) to the `psnr_hvs` CUDA kernel (PR #96 candidate #5):
+  - Extract `const float *__restrict__ ref_buf` and `const float *__restrict__ dist_buf` from the `VmafCudaBuffer` struct arguments before the cooperative tile load.
+  - Use `__ldg()` on both element reads, routing them through the L1 read-only texture cache (LDG.E.CONSTANT).
+  - Add `__launch_bounds__(64)` matching the actual 8x8 block launch.
+  - Predicted -3 to -5% kernel duration at 1080p. Bit-identical scores (ADR-0214 places=4). No API or ABI change.
 
 
 **perf(cuda): SSIM vert_combine — __ldg() + __launch_bounds__ + pinned-host leak fix**
@@ -12310,6 +12362,9 @@ pressure (56 regs/thread → 75 % theoretical occupancy), L2 imbalance
 (+46 % hot-slice). Report: `docs/research/0734-cuda-vif-filter1d-ncu-hotpath-20260528.md`.
 
 
+- **perf(vmafx-node): eBPF FUSE bypass** (`cmd/vmafx-node/bpf/`): probe-only eBPF tracepoint program that tracks file descriptors opened under the rclone FUSE mount prefix and marks them bypass-eligible in a BPF hash map. The Go-side loader (cilium/ebpf v0.21.0) drains a ring-buffer event stream to keep an in-process FD cache warm. Bypass cuts p50 read latency for warm-cache clips from ~370 ms to ~10 ms (37×, Research-0733). Gated behind `VMAFX_EBPF_BYPASS=1` (default off); requires Linux 5.15+ and `CAP_BPF`. ADR-0779.
+
+
 ### Performance
 
 - **Float VIF convolution: AVX-512F port** (`core/src/feature/common/convolution_avx512.c`, ADR-0504)
@@ -12335,6 +12390,9 @@ Impact: reduced per-launch argument-buffer overhead on all four ADM kernels
 `adm_cm_line_kernel_8`) on every AMD GPU target. Numerically transparent.
 
 Mirrors the CUDA F3 fix (PR #93 / PR #96). ADR-0759.
+
+
+- **perf(simd): Add AVX2 SIMD path for integer SSIM horizontal moment accumulation** (`integer_ssim_avx2`). The 8bpc path processes 8 output pixels per AVX2 iteration; the 16bpc path processes 4. Bit-exact with the scalar reference (int64 accumulation, no float). Projected 4–6x hot-path speedup on AVX2 hosts. Runtime-dispatched; scalar hosts are unaffected. (ADR-0784)
 
 
 **MCP server: cache ORT `InferenceSession` instances across calls**
@@ -12369,6 +12427,9 @@ the multi-input inference hot path (audit item F3-B).
   1500 heap alloc/free pairs with no correctness risk — the
   `n_inputs ≤ VMAF_ORT_MAX_IO` guard is enforced at runtime before the arrays
   are touched. (Audit finding F3-B from perf-audit-pipeline-2026-05-16.)
+
+
+- **perf(simd): Speed_chroma vectorize compute_covariance (AVX2 + AVX-512, upstream 30f472b14)** — UPSTREAM PORT — `core/src/feature/x86/speed_avx2.c` + `speed_avx2.h`: AVX2 4-wide-double FMA accumulator with dual parallel chains for FMA latency hiding; processes 8 elements/iteration, then 4-lane tail, then scalar tail. `core/src/feature/x86/speed_avx512.c` + `speed_avx512.h`: AVX-512 8-wide-double FMA accumulator; processes 16 elements/iteration, then 8-lane tail, then scalar tail. `core/src/feature/speed.c`: added `compute_cov_kernel_fn` typedef, `compute_cov_kernel_scalar` reference kernel, kernel fn-pointer field on `SpeedState`, dispatch in `speed_init()` (AVX-512 > AVX2 > scalar). `core/src/meson.build`: `speed_avx2.c` wired into `x86_avx2_sources`; `speed_avx512.c` into `x86_avx512_sources`. `core/test/test_speed_simd.c`: numerical-parity test (4 AVX2 + 4 AVX-512 fixtures); tolerance 1e-9 relative.
 
 
 **Cache rfe_hw_flags bitmask across frames (F2-B)**
@@ -12631,6 +12692,9 @@ and config paths are also updated in `docs/architecture/workspace.md`.
   261 → 196. No behaviour changes — all targeted package tests pass.
 
 
+- **chore(python): Modernize Python type hints** in `compat/python-vmaf` and `ai/src/vmaf_train/cli.py`: replace `Optional[X]` with `X | None`, `List[X]`/`Tuple[X]` with built-in `list[X]`/`tuple[X]`, and `from typing import Iterable` with `from collections.abc import Iterable`. No functional change; requires Python >= 3.10 (already the project minimum).
+
+
 - **docs(getting-started)**: Backfill Intel QSV install matrix across
   the six per-OS install pages (Arch / Fedora / Ubuntu / macOS /
   Windows / Alpine — Alpine inherits the CPU-only carve-out, macOS
@@ -12727,6 +12791,9 @@ scoring.
   rather than at call time.
 
 
+- **chore(rust): Bump bindgen 0.69 → 0.72 and workspace edition 2021 → 2024** (ADR-1000 deferral resolved): `Cargo.toml` workspace root `edition` → `"2024"`; `bindings/rust/vmafx/Cargo.toml` uses `edition.workspace = true`; `bindings/rust/vmafx-sys/Cargo.toml` bumps `bindgen = "0.72"`; `core/src/feature/rust/tad/src/lib.rs` edition-2024 migration (`extern "C"` → `unsafe extern "C"`, `#[no_mangle]` → `#[unsafe(no_mangle)]`, explicit `unsafe {}` blocks). All 21 workspace tests pass; `cargo clippy -- -D warnings` is clean.
+
+
 **saliency_student_v2 promoted to production default (ADR-0444)**
 
 `saliency_student_v2` is now the production-default saliency model for
@@ -12748,6 +12815,9 @@ Removed stale sanitizer deselect patterns from CI workflow. All three sanitizer-
 - **TSan**: `test_model` and `test_framesync` — fixed by PR #548 (SAN-FRAMESYNC-MUTEX-DOMAIN lock ordering + SAN-MODEL-MALLOC-OOB)
 
 Verified locally via sanitizer builds (ASan, UBSan, TSan) confirming all tests pass without excluding any test cases.
+
+
+- **ci: Add `test_gpu_picture_pool_uaf`, `test_integer_motion_v2_coverage`, and `test_pic_preallocation` to the ASan+UBSan exclusion list** in `sanitizers.yml`. All three tests intentionally trigger huge allocations (up to ~192 GiB) to exercise OOM cleanup paths; the ASan/UBSan and TSan allocators abort with SIGABRT instead of returning NULL, producing spurious failures. The OOM paths these tests guard are covered by the unsanitized meson test suite on every run. `test_gpu_picture_pool_uaf` was already excluded from TSan (PR #735) but was missing from the ASan+UBSan job; this PR closes that gap.
 
 
 - Sanitizer matrix (ASan / UBSan / TSan in
@@ -12791,6 +12861,9 @@ internal codename from C4 architecture stubs, and corrects
 
 No version strings, copyright headers, ADRs, changelog fragments, or
 `docs/state.md` were modified.
+
+
+- **refactor(vmaf-tune,mcp): Route strict-JSON helpers through `vmaftune.jsonio`** (ADR-0988): removed private `_nan_to_none` / `_portable_json_dump` / `_emit_json` copies from `vmaftune.compare`, `vmaftune.report`, and `vmaftune.benchmark`; all three now import `dumps_strict` from the canonical `vmaftune.jsonio` module. Added a small `_nan_to_none` / `_dumps_strict` helper pair to `vmaf_mcp.server` so the MCP server's final tool-result serialization is RFC 8259-clean even when a backend emits `NaN` metrics.
 
 
 ### Research-0733: VMAFX Sidecar Online Training Architecture
@@ -13026,6 +13099,9 @@ upstream wording matters for rebase parity.
   fork's no-test-weakening rule). See
   [Research-0090](../docs/research/0090-state-md-row-audit-2026-05-09.md)
   and [ADR-0165 Status update 2026-05-09](../docs/adr/0165-state-md-bug-tracking.md#status-update-2026-05-09-comprehensive-verify-every-row-audit-landed).
+
+
+- **chore(docs): Remove 2 stale Open rows from `docs/state.md`** that were already present in the Recently Closed section (T-CUDA-FILTER1D-RES-DISPATCH-CONFLICT-2026-05-29 closed by PR #680; T-CPP23-READ-JSON-MODEL-PENDING-2026-05-29 stale duplicate citing "PR #215 (OPEN)" removed). Update T-DOC-LEGACY-RUNNER-MISSING-DEPRECATION-2026-05-29 to reflect PR #216 closed without merging. Fix T-GPU-COVERAGE-STABLE-WEEKS duplicate row in the Recently Closed section.
 
 
 - `docs/state.md` staleness sweep 2026-05-08. Bumped header date
@@ -13512,6 +13588,9 @@ Rename product title from "VMAF — Lusoris Fork" to "VMAFx" in README, mkdocs, 
   overhead with no correctness purpose.  Mirrors the existing
   `psnr_vulkan.c` / `ssim_vulkan.c` / `ciede_vulkan.c` pattern.
   Fixes VK-6 from the 2026-05-16 Vulkan perf-audit.
+
+
+- **chore(docs): Mark `docs/backends/vulkan/overview.md` and `docs/api/vulkan-image-import.md` as historical**: add removal banners citing ADR-0726 (2026-05-28) and redirect operators to the active CUDA and SYCL backends. Closes T-DOC-VULKAN-STALE-POST-ADR0726 (#216 closed without these files updated).
 
 
 - Renamed `moment_vulkan.c` → `float_moment_vulkan.c` and `shaders/moment.comp` →
@@ -15664,6 +15743,50 @@ and to all other `dst_buf_read_sz` branches in the same function.
   to the CPU run so the same named channel is available on both paths.
 
 
+### Fixed
+
+- `test_pic_preallocation` ASan leak: `flush_context_threaded` called
+  `fex->flush()` directly on the shared (never-initialized) extractor context
+  in batch-threaded mode. For extractors like `integer_motion` that lazily
+  allocate `s->feature_name_dict` in their flush path, the resulting
+  allocation was never freed because `vmaf_feature_extractor_context_close`
+  returned early when it found `is_initialized == false`. Fix: set
+  `fex_ctx->is_initialized = true` before the flush loop so that teardown
+  (`feature_extractor_vector_destroy`) correctly invokes `fex->close` and
+  releases the dict. Detected by ASan `detect_leaks=1` in CI; passes all 8
+  subtests under ASan + UBSan locally.
+
+
+- **`vmaf_score_at_index` incorrectly suppressed model prediction for all
+  frames after the first in multi-frame sequences.** The `-EAGAIN` guard
+  added by ADR-0154 (Netflix#755) was intended to prevent
+  `vmaf_predict_score_at_index` from being called before retroactive-write
+  input features (e.g. `integer_motion` motion2/motion3) are flushed. The
+  guard was correctly placed for the *input* feature case but was also applied
+  to the *model output* score slot: after frame 0 prediction creates the
+  "vmaf" feature vector (allocating capacity > 1 and writing slot 0), any
+  subsequent call to `vmaf_score_at_index` for frames 1+ found slot N with
+  `written=false`, which returned `-EAGAIN`; the guard then blocked the
+  predict call entirely, propagating `-EAGAIN` through `vmaf_score_pooled`
+  for the whole sequence. Fix: change `if (err && err != -EAGAIN)` to
+  `if (err)` in `vmaf_score_at_index`. Retroactive-write input features are
+  already fully written by the time scoring begins (flush precedes pool), so
+  no `-EAGAIN` propagates from the input side. The MCP `compute_vmaf`
+  handler's JSON-RPC error on 10-bit multi-frame input is resolved.
+  `test_mcp_smoke::test_compute_vmaf_10bit` fixture dimensions bumped 64→192
+  as a defensive alignment with the broader test convention. ADR-1073.
+
+
+**Fixed**
+
+- **UBSan enum-invalid-value in `vmaf_log` and `vmaf_option_set`** (ADR-1080): cast
+  enum parameters to `int` before comparisons in `vmaf_log` (`log.cpp`) and before
+  the `switch` in `vmaf_option_set` (`opt.cpp`). Eliminates UBSan `enum-invalid-value`
+  runtime errors when callers pass out-of-range values (e.g. `VMAF_LOG_LEVEL_NONE-1`
+  or `(VmafOptionType)9999`). Fixes `test_log` and `test_opt` under the
+  ASan+UBSan PR gate.
+
+
 - `cmd/vmafx-controller/scheduler/` + `cmd/vmafx-node/` bug audit
   round 1 (2026-05-31): four reachable defects found and fixed
   across the Phase 4b distributed scheduling core. (1)
@@ -16718,6 +16841,9 @@ Fix 6 reproducible test failures introduced by the recent PR train:
   413 / 526 ≈ 78.5 % and clearing the gate with ~0.5 pp safety
   margin. ADR-0114's `PER_FILE_MIN["core/src/dnn/ort_backend.c"]=78`
   override stays in place.
+
+
+Deselect `test_run_vmaf_runner_float_vifks360o97` from the coverage-job pytest run to stop the test from timing out (vif_kernelscale=3.71 exceeds the 60 s per-test limit on GitHub-hosted runners) and truncating the suite at 61%, which dropped overall coverage from 70% to 56.4%. The test is retained in the Netflix golden gate where no per-test timeout applies.
 
 
 Remove orphan `core/src/metadata_handler.c` left behind after the cpp23
@@ -18891,6 +19017,20 @@ ADR-0519.
   added.
 
 
+### Fixed
+
+- **NEON motion pipeline false-zero early exit** (`core/src/feature/arm64/motion_v2_neon.c`):
+  `motion_score_pipeline_8_neon` and `motion_score_pipeline_16_neon` used `vaddvq_s32`
+  (signed horizontal sum) to check whether the phase-1 y-convolution row was all-zero.
+  On checkerboard and other highly alternating inputs, positive and negative lane values
+  cancelled each other to produce a sum of zero even when individual lanes were non-zero,
+  causing the `x_conv_row_sad_neon` phase to be skipped for those rows.
+  The result was `motion_score = 0.0` on macOS ARM64 for checkerboard test fixtures,
+  and incorrectly low motion scores for other inputs.
+  Fixed by replacing `neon_hadd_s32` with `neon_any_nonzero_s32`, which OR-folds the
+  reinterpreted uint64 lanes so that any set bit in any lane produces a non-zero result.
+
+
 - **Netflix CPU Golden Tests (D24) — master-tip regression cleared.**
   PR #276 (ADR-0749 / ADR-0720 ansnr-assertion sunset) deleted the
   `self.assertAlmostEqual(results[1]["VMAF_*_ansnr_*"], ...)` line that
@@ -19493,6 +19633,16 @@ Both tests now run under their respective sanitizer lanes on every push.
 
 Retire the stale sanitizer deselect for `test_cli_parse` after re-verifying the
 test binary under ASan+LSan, UBSan, and TSan.
+
+
+### Fixed
+
+- Apply `test_gpu_picture_pool_uaf`, `test_integer_motion_v2_coverage`, and
+  `test_pic_preallocation` sanitizer deselects to the `tests-and-quality-gates.yml`
+  matrix job (ASan + UBSan + TSan). PR #767 added the exclusions to
+  `sanitizers.yml` only; this companion fix closes the gap in the original
+  ADR-0347 `case`-based deselect mechanism so the matrix job no longer
+  SIGABRT on the intentional 192 GiB OOM allocation paths.
 
 
 Retire the stale sanitizer deselect for `test_feature_collector` after
@@ -20690,6 +20840,14 @@ and `cambi_mask_dp.comp` PASS 0/1 revert to `local_size_x = 32` (from the errone
 and the matching host dispatch in `ssimulacra2_vulkan.c` / `cambi_vulkan.c` reverts to
 `ceil(lines/32)` groups along X (from the erroneous `(h,1,1)` / `(1,lines,1)` forms).
 Restores the VK-1 + VK-2 perf fix originally landed in PR #879.
+
+
+### Fixed
+
+- `core/src/compat/win32/pthread.h`: remove duplicate `pthread_once_t` typedef,
+  `PTHREAD_ONCE_INIT` macro, and `pthread_once()` definition that caused
+  `error: redefinition of pthread_once` on Windows MSVC + CUDA and
+  Windows MSVC + oneAPI SYCL builds.
 
 
 - **`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow on
