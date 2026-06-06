@@ -321,7 +321,7 @@ test_lpips = executable('test_lpips',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # DISTS-Sq registration tests — mirrors test_lpips and verifies the
@@ -341,7 +341,7 @@ test_dists = executable('test_dists',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # FastDVDnet temporal pre-filter (T6-7) — same registration-only test
@@ -363,7 +363,7 @@ test_fastdvdnet_pre = executable('test_fastdvdnet_pre',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # MobileSal saliency registration tests (T6-2a) — same pattern as
@@ -385,7 +385,7 @@ test_mobilesal = executable('test_mobilesal',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # TransNet V2 shot-boundary detector — structural test, no real ORT
@@ -406,7 +406,7 @@ test_transnet_v2 = executable('test_transnet_v2',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 test_cambi = executable('test_cambi',
