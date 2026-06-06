@@ -1,0 +1,137 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Fri, 6 Jun 2026 12:00:00 +0200
+Subject: [PATCH] libvmaf: wire score_fmt option on all vmaf filters
+
+The fork added vmaf_write_output_with_format() to expose the
+--precision flag semantics via the C API (ADR-0119 / commit 695d29626).
+The FFmpeg filter side never adopted it: all four vmaf filters
+(libvmaf, libvmaf_sycl, libvmaf_vulkan, libvmaf_metal) still call
+the old vmaf_write_output() which always formats scores as %.6f.
+
+This patch closes that gap:
+
+  1. Adds char *score_fmt to LIBVMAFContext (next to cpumask/gpumask).
+  2. Exposes score_fmt as an AVOption (string, default NULL = %.6f)
+     on all four filters, symmetric with cpumask/gpumask from ADR-0576.
+  3. Replaces every vmaf_write_output() call with
+     vmaf_write_output_with_format(... s->score_fmt), passing NULL
+     for the default %.6f behaviour and "%.17g" for IEEE-754
+     lossless output (equivalent to --precision=max on the libvmaf CLI).
+
+Usage examples:
+
+  # Default (%.6f, matches upstream):
+  ffmpeg ... -lavfi "libvmaf_sycl=log_path=out.xml"
+
+  # Full precision (%.17g, IEEE-754 round-trip lossless):
+  ffmpeg ... -lavfi "libvmaf_sycl=log_path=out.xml:score_fmt=%.17g"
+  ffmpeg ... -lavfi "libvmaf=log_path=out.xml:score_fmt=%.17g"
+
+The score_fmt string is passed verbatim to vmaf_write_output_with_format();
+callers are responsible for using a valid double printf format string.
+Passing an invalid format produces undefined output per the libvmaf API
+contract (libvmaf.h).
+
+Covers:
+  - main libvmaf filter (uninit, libvmaf_options)
+  - libvmaf_sycl filter  (uninit_sycl, libvmaf_sycl_options)
+  - libvmaf_vulkan filter (uninit_vulkan, libvmaf_vulkan_options)
+  - libvmaf_metal filter  (uninit_metal, libvmaf_metal_options)
+---
+ libavfilter/vf_libvmaf.c | 36 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 8dabe15..4e7f321 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -120,6 +120,13 @@ typedef struct LIBVMAFContext {
+ #if CONFIG_LIBVMAF_METAL
+     VmafMetalState *metal_state;        /* owned by the libvmaf filter when metal_device >= -1 + !default-disabled */
+ #endif
++    /* ADR-0119: printf format string for vmaf_write_output_with_format().
++     * NULL (default) produces "%.6f" matching upstream Netflix/vmaf behaviour.
++     * Pass "%.17g" to get IEEE-754 round-trip lossless output (equivalent to
++     * --precision=max on the libvmaf CLI). Any valid double printf format
++     * string is accepted; invalid formats produce undefined output per the
++     * vmaf_write_output_with_format() API contract. */
++    char *score_fmt;
+     /* ADR-0576: VmafConfiguration.cpumask / gpumask exposed as AVOptions.
+      * cpumask bits selectively disable SIMD ISAs (SSE2/NEON=1, SSE3=2,
+      * SSE4.1=4, AVX2=8, AVX512=16, AVX512ICL=32).  gpumask bit 1 disables
+@@ -164,6 +171,8 @@ static const AVOption libvmaf_options[] = {
+     {"cpumask",      "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).", OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
+     {"gpumask",      "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).", OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
++    {"score_fmt",    "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).", OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS},
+     { NULL }
+ };
+
+@@ -608,7 +617,9 @@ static av_cold void uninit(AVFilterContext *ctx)
+     if (s->vmaf) {
+         if (s->log_path && !err)
+-            vmaf_write_output(s->vmaf, s->log_path, log_fmt_map(s->log_fmt));
++            vmaf_write_output_with_format(s->vmaf, s->log_path,
++                                          log_fmt_map(s->log_fmt),
++                                          s->score_fmt);
+         vmaf_close(s->vmaf);
+     }
+
+@@ -1243,6 +1254,8 @@ static const AVOption libvmaf_sycl_options[] = {
+     {"cpumask",   "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).",
+                   OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, SYCL_FLAGS},
+     {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
+                   OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, SYCL_FLAGS},
++    {"score_fmt", "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).",
++                  OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, SYCL_FLAGS},
+     { NULL }
+ };
+ #undef SYCL_FLAGS
+@@ -1328,7 +1341,9 @@ static av_cold void uninit_sycl(AVFilterContext *ctx)
+
+     if (s->vmaf) {
+         if (s->log_path && !err)
+-            vmaf_write_output(s->vmaf, s->log_path, log_fmt_map(s->log_fmt));
++            vmaf_write_output_with_format(s->vmaf, s->log_path,
++                                          log_fmt_map(s->log_fmt),
++                                          s->score_fmt);
+     }
+
+@@ -1524,6 +1539,8 @@ static const AVOption libvmaf_vulkan_options[] = {
+     {"cpumask",   "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).",
+                   OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
+     {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
+                   OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
++    {"score_fmt", "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).",
++                  OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, VK_FLAGS},
+     { NULL }
+ };
+ #undef VK_FLAGS
+@@ -1623,7 +1640,9 @@ static av_cold void uninit_vulkan(AVFilterContext *ctx)
+
+     if (s->vmaf && s->log_path && !err)
+-        vmaf_write_output(s->vmaf, s->log_path, log_fmt_map(s->log_fmt));
++        vmaf_write_output_with_format(s->vmaf, s->log_path,
++                                      log_fmt_map(s->log_fmt),
++                                      s->score_fmt);
+
+@@ -1809,6 +1828,8 @@ static const AVOption libvmaf_metal_options[] = {
+     {"cpumask",   "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).",
+                   OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, MTL_FLAGS},
+     {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
+                   OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, MTL_FLAGS},
++    {"score_fmt", "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).",
++                  OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, MTL_FLAGS},
+     { NULL }
+ };
+ #undef MTL_FLAGS
+@@ -1917,7 +1938,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
+
+     if (s->vmaf && s->log_path && !err)
+-        vmaf_write_output(s->vmaf, s->log_path, log_fmt_map(s->log_fmt));
++        vmaf_write_output_with_format(s->vmaf, s->log_path,
++                                      log_fmt_map(s->log_fmt),
++                                      s->score_fmt);
+
+--
+2.54.0

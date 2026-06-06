@@ -64,6 +64,17 @@ Local patches against FFmpeg **n8.1.1** for integrating this VMAF fork into
   `libvmaf=metal_device=N` (software AVFrame input + Metal compute)
   and `libvmaf_metal=...` (VideoToolbox hwdec + zero-copy import). See
   [ADR-0423](../docs/adr/0423-metal-iosurface-import-scaffold.md).
+- **`0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch`** — adds a
+  `score_fmt` AVOption (string, default `NULL` = `"%.6f"`) to all four
+  vmaf filters (`libvmaf`, `libvmaf_sycl`, `libvmaf_vulkan`,
+  `libvmaf_metal`). Replaces `vmaf_write_output()` with
+  `vmaf_write_output_with_format()` so callers can request full-precision
+  IEEE-754 lossless output (`score_fmt=%.17g`), equivalent to the
+  `--precision=max` CLI flag. Wires the fork-added
+  `vmaf_write_output_with_format()` C API (ADR-0119 / commit 695d29626).
+  Symmetric with the `cpumask`/`gpumask` options added in ADR-0576 (patch
+  0014).
+
 Every patch is guarded by `check_pkg_config` so it degrades gracefully when
 libvmaf was built without the relevant feature (`-Denable_dnn`, `-Denable_sycl`,
 `-Denable_vulkan`, `-Denable_cuda`, `-Denable_hip`).
@@ -120,7 +131,11 @@ Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
 > `n8.1.1` checkout (cumulative `git am --3way`), NOT a per-patch
 > `git apply --check`. The latter rejects `0002+` because they
 > reference cumulative-state hunks that don't exist in pristine
-> `n8.1.1`. The most recent no-drift verification is
+> `n8.1.1`. **Pending verification for patch 0016 (score_fmt, 2026-06-06)**:
+> patches 0001-0015 were last verified against n8.1.1 on 2026-05-20
+> (ADR-0643); patch 0016 has not yet been replay-verified — a series replay
+> of all 16 patches against pristine n8.1.1 is required before merge. The
+> most recent full no-drift verification is
 > the encoder-profile hand-off (ADR-0643, 2026-05-20): all 15 patches
 > (0001-0015) apply cleanly against pristine `n8.1.1`, the latest
 > released FFmpeg 8.x.x tag verified on 2026-05-20, with zero conflicts.

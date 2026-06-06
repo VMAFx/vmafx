@@ -3746,6 +3746,25 @@ ship `ffmpeg-patches/`; no rebase conflict surface.
   new extractor additions unless they require a dedicated C-API init call
   (e.g., a new `vmaf_<backend>_state_init()` entry point).
 
+## fix/ffmpeg-patches-score-fmt-gap (ADR-1064)
+
+**Rebase impact**: `ffmpeg-patches/` only — adds patch 0016 and updates
+`series.txt` and `README.md`. No libvmaf C sources, public headers, or
+`meson_options.txt` touched.
+
+**Rebase-sensitive invariants**:
+
+- Patch 0016 must come after patch 0014 (which adds `cpumask`/`gpumask` to
+  `LIBVMAFContext`). Patch 0016 adds `score_fmt` immediately after the
+  `int64_t gpumask` field; if 0014 is reordered or the struct layout changes,
+  the context lines in 0016's struct hunk must be updated.
+- The `vmaf_write_output_with_format` symbol must be present in the libvmaf
+  version checked by `pkg-config`. If a future refactor renames this entry
+  point, all four uninit paths in patch 0016 must be updated.
+- Patch 0016 requires `git am --3way` replay against all 15 preceding patches
+  before verifying clean apply against n8.1.1 (the patch series is cumulative).
+
+
 **Re-test on rebase**:
 
 ```bash

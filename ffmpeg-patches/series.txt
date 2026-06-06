@@ -24,3 +24,4 @@
 0013-libvmaf-add-libvmaf-metal-filter.patch
 0014-libvmaf-expose-cpumask-and-gpumask-on-all-vmaf-filte.patch
 0015-vmaf-tune-profile-cli-glue.patch
+0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch
