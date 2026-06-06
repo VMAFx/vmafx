@@ -48,6 +48,15 @@
 #include "simd_bitexact_test.h"
 /* clang-format on */
 
+/* integer_ssim_moments_t must be available unconditionally: the scalar
+ * reference functions (scalar_accumulate_row_8 / _16) use it regardless
+ * of architecture.  The shared header is at core/src/feature/integer_ssim.h;
+ * the test build includes -I../src/feature, so it resolves without a
+ * path prefix.  On no-asm i686 builds ARCH_X86 is not set (enable_asm=false
+ * gates that define in src/meson.build), so the conditional include below
+ * would not bring in the type — this unconditional include fixes that. */
+#include "integer_ssim.h"
+
 #if ARCH_X86
 #include "feature/x86/integer_ssim_avx2.h"
 #endif
