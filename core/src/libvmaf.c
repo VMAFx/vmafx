@@ -1902,13 +1902,25 @@ static int flush_context_threaded(VmafContext *vmaf)
     {
         RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
         for (unsigned i = 0; i < rfe.cnt; i++) {
-            VmafFeatureExtractor *fex = rfe.fex_ctx[i]->fex;
+            VmafFeatureExtractorContext *fex_ctx = rfe.fex_ctx[i];
+            VmafFeatureExtractor *fex = fex_ctx->fex;
             if (fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)
                 continue;
             if (fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
                 continue;
             if (!fex->flush)
                 continue;
+            /* flush() is called directly on the shared fex (not a per-thread
+             * deep copy) and may lazily allocate state in fex->priv (e.g.
+             * integer_motion::flush allocates s->feature_name_dict when it
+             * was never set by init).  Mark the shared context as initialised
+             * so that vmaf_feature_extractor_context_close — called from
+             * feature_extractor_vector_destroy at teardown — actually invokes
+             * fex->close and frees whatever flush allocated.  Without this,
+             * is_initialized == false causes close to return -EINVAL early,
+             * leaking the dict (detected as a memory leak by ASan with
+             * detect_leaks=1; root cause of ADR-1073 residual failure). */
+            fex_ctx->is_initialized = true;
             int flush_err = 0;
             while (!(flush_err = fex->flush(fex, vmaf->feature_collector)))
                 ;
