@@ -46,6 +46,22 @@ static int grow_count(unsigned current, unsigned needed, unsigned *out)
     return 0;
 }
 
+/* Keep `model->n_features` in sync with the highest per-feature slot any
+ * walker has populated. Without this, a JSON model whose `slopes` /
+ * `intercepts` / `feature_opts_dicts` arrays are longer than its
+ * `feature_names` array would grow `feature_cap` via
+ * `ensure_feature_capacity()` while leaving `n_features` behind. The
+ * mismatch is later read by `vmaf_model_destroy()` and (per ADR-0887)
+ * any downstream consumer that walks `[0, n_features)`; leaving
+ * `n_features` stale lets the destroy walk one bound while the rest of
+ * the API sees a smaller count, hiding bad models from the final
+ * cross-key validation in `parse_model_dict()`. */
+static void sync_n_features(VmafModel *model, unsigned count)
+{
+    if (count > model->n_features)
+        model->n_features = count;
+}
+
 static int ensure_feature_capacity(VmafModel *model, unsigned needed)
 {
     if (needed <= model->feature_cap)
@@ -151,6 +167,7 @@ static int parse_feature_opts_dicts(json_stream *s, VmafModel *model)
         i++;
         json_skip_until(s, JSON_OBJECT_END);
     }
+    sync_n_features(model, i);
     json_skip_until(s, JSON_ARRAY_END);
 
     return 0;
@@ -171,6 +188,7 @@ static int parse_intercepts(json_stream *s, VmafModel *model)
             return err;
         model->feature[i++].intercept = json_get_number(s);
     }
+    sync_n_features(model, i);
 
     return 0;
 }
@@ -190,6 +208,7 @@ static int parse_slopes(json_stream *s, VmafModel *model)
             return err;
         model->feature[i++].slope = json_get_number(s);
     }
+    sync_n_features(model, i);
 
     return 0;
 }
@@ -256,7 +275,12 @@ static int parse_feature_names(json_stream *s, VmafModel *model)
         err = append_feature_name(model, name, i++);
         if (err)
             return err;
-        model->n_features++;
+        /* Use sync_n_features (max-merge) rather than an unconditional
+         * increment. Unconditional n_features++ double-counted on fuzzer-
+         * mangled JSON with repeated feature_names keys, pushing n_features
+         * past feature_cap and causing a heap-buffer-overflow in
+         * vmaf_model_destroy. Per ADR-0887. */
+        sync_n_features(model, i);
     }
 
     json_skip_until(s, JSON_ARRAY_END);
@@ -498,6 +522,27 @@ static int parse_model_dict_entry(json_stream *s, VmafModel *model, enum VmafMod
     return 0;
 }
 
+/* Cross-key validation: every per-feature slot we touched (via slopes /
+ * intercepts / feature_opts_dicts) must have a name populated by
+ * parse_feature_names. A missing name means the JSON's per-feature arrays
+ * disagree on length — a malformed model. Reject at parse time (per
+ * ADR-0887) so downstream consumers don't have to defend against
+ * partially-populated feature[] ranges. */
+static int validate_feature_arrays(VmafModel *model)
+{
+    for (unsigned i = 0; i < model->n_features; i++) {
+        if (!model->feature[i].name) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "read_json_model: per-feature arrays disagree on length "
+                     "(slot %u missing a feature_names entry — slopes / "
+                     "intercepts / feature_opts_dicts longer than feature_names)\n",
+                     i);
+            return -EINVAL;
+        }
+    }
+    return 0;
+}
+
 static int parse_model_dict(json_stream *s, VmafModel *model, enum VmafModelFlags flags)
 {
     if (json_next(s) != JSON_OBJECT)
@@ -511,6 +556,10 @@ static int parse_model_dict(json_stream *s, VmafModel *model, enum VmafModelFlag
         if (err)
             return err;
     }
+
+    int err = validate_feature_arrays(model);
+    if (err)
+        return err;
 
     json_skip_until(s, JSON_OBJECT_END);
     return 0;
