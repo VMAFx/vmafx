@@ -285,7 +285,7 @@ for the complete table.
   pinned downsample scratch in place of a per-scale `malloc`,
   per-plane H2D/D2H byte counts shrunk to the valid sub-region,
   `__launch_bounds__(64, 32)` on the blur kernels) — see
-  [ADR-0356](../../adr/0356-ssimulacra2-cuda-leaks-perf.md). The
+  [ADR-0356](../../adr/0410-ssimulacra2-cuda-leaks-perf.md). The
   H-pass non-coalesced reads and V-pass L1 pressure remain known
   architectural ceilings (require a shared-memory tile-transpose
   rewrite).

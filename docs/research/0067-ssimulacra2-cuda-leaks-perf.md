@@ -1,6 +1,6 @@
 # Research-0067: `ssimulacra2_cuda` cuda-reviewer follow-up (2026-05-09)
 
-Companion to [ADR-0356](../adr/0356-ssimulacra2-cuda-leaks-perf.md).
+Companion to [ADR-0356](../adr/0410-ssimulacra2-cuda-leaks-perf.md).
 
 ## Scope
 
@@ -172,7 +172,7 @@ tracking.
 - PR #162 — original `ssimulacra2_cuda` landing.
 - [ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md) —
   `ssimulacra2_cuda` precision contract.
-- [ADR-0356](../adr/0356-ssimulacra2-cuda-leaks-perf.md) — this PR's
+- [ADR-0356](../adr/0410-ssimulacra2-cuda-leaks-perf.md) — this PR's
   decision record.
 - CUDA Driver API reference,
   [`cuModuleUnload`](https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__MODULE.html#group__CUDA__MODULE_1g8ea3d716524369de3763104ced4ea57b)

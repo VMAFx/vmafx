@@ -173,7 +173,7 @@ follow-up backlog candidate.
 - [x] OpenVINO EP version bump — newer ORT bundled with the basekit
   exposes the NPU plugin via `device_type=NPU` on the existing
   `OpenVINOExecutionProvider`. **Done 2026-05-08** in
-  [ADR-0332](../adr/0332-openvino-npu-ep-wiring.md): adds
+  [ADR-0332](../adr/0405-openvino-npu-ep-wiring.md): adds
   `--tiny-device=openvino-npu` (plus `openvino-cpu` / `openvino-gpu`
   for explicit OpenVINO device-type pinning). End-to-end NPU
   silicon validation still pending a contributor with Meteor /

@@ -107,7 +107,7 @@ fallback path on every push.
   auto-routes to ANE / GPU / CPU based on the op set."
 - [ADR-0102](0102-dnn-ep-selection-and-fp16-io.md) — base EP
   selection and graceful-fallback design.
-- [ADR-0332](0332-openvino-npu-ep-wiring.md) — OpenVINO NPU EP
+- [ADR-0332](0405-openvino-npu-ep-wiring.md) — OpenVINO NPU EP
   wiring (Apple-side parallel; same shape).
 - [ADR-0042](0042-tinyai-docs-required-per-pr.md) — tiny-AI docs
   required-per-PR rule.

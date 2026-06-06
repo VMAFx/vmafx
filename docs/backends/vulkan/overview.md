@@ -342,7 +342,7 @@ is documented in `core/src/feature/vulkan/AGENTS.md`.
   `ciede.c::get_lab_color` runs the BT.709 → linear-RGB → XYZ →
   Lab chain in `double` while every Vulkan kernel runs in
   `float`. See
-  [ADR-0273](../../adr/0273-ciede-vulkan-nvidia-f32-f64-precision-gap.md)
+  [ADR-0391](../../adr/0391-ciede-vulkan-nvidia-f32-f64-precision-gap.md)
   +
   [research-0055](../../research/0055-ciede-vulkan-nvidia-f32-f64-root-cause.md).
   The CI lavapipe parity gate (places=4, 0/48) remains

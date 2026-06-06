@@ -19,7 +19,7 @@ Round 1 added `psnr_sycl` + `integer_vif_sycl`. That leaves the high-value
 kernels — `adm_sycl` (the dominant feature in every shipping VMAF model),
 `ciede_sycl` (Intel-Arc colour-difference path that the Vulkan backend
 cannot reach at places=4 per [T-VK-CIEDE-F32-F64](../state.md) /
-[ADR-0273](0273-ciede-vulkan-nvidia-f32-f64-precision-gap.md)),
+[ADR-0391](0391-ciede-vulkan-nvidia-f32-f64-precision-gap.md)),
 `integer_ssim_sycl`, `float_ms_ssim_sycl` (the 5-scale exponent stack —
 most numerically delicate in the SYCL SSIM family), and
 `motion_v2_sycl` (the SAD-based motion energy refinement, a separate

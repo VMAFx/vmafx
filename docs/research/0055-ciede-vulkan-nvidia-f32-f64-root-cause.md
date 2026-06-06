@@ -112,7 +112,7 @@ FMA-fold issue, not a missing `precise` decoration. PR #346's
 decorations are at the high-water mark of what f32 shader-level
 mitigation can achieve.
 
-Possible mitigations (all rejected — see [ADR-0273](../adr/0273-ciede-vulkan-nvidia-f32-f64-precision-gap.md)):
+Possible mitigations (all rejected — see [ADR-0391](../adr/0391-ciede-vulkan-nvidia-f32-f64-precision-gap.md)):
 
 1. **Promote shader to f64 (`shaderFloat64`)**: optional Vulkan
    feature; RTX 4090 supports it but at 1/64 fp32 throughput. Would

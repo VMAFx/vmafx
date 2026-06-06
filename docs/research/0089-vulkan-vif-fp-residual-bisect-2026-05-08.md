@@ -37,7 +37,7 @@ re-running the gate against the live NVIDIA lane) is recorded as
 - [research-0056](0056-vif-ciede-precise-step-a-implementation.md) —
   Step A implementation findings (SPIR-V emission audit + numbers
   table).
-- [ADR-0273](../adr/0273-ciede-vulkan-nvidia-f32-f64-precision-gap.md)
+- [ADR-0391](../adr/0391-ciede-vulkan-nvidia-f32-f64-precision-gap.md)
   [research-0055](0055-ciede-vulkan-nvidia-f32-f64-root-cause.md) —
   ciede2000 sibling investigation that proved the structural
   f32-vs-f64 hypothesis on the chained colour-space chain.

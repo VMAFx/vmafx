@@ -38,7 +38,7 @@ Rationale note: treating "document new features" as implicit has already failed 
 
 ### Status update 2026-05-08: OpenVINO EP enabled for explicit NPU / CPU / GPU device-type selection
 
-[ADR-0332](0332-openvino-npu-ep-wiring.md) extended the tiny-AI
+[ADR-0332](0405-openvino-npu-ep-wiring.md) extended the tiny-AI
 dispatch surface with three new `--tiny-device` keywords —
 `openvino-npu` / `openvino-cpu` / `openvino-gpu` — pinning the
 OpenVINO EP to a single `device_type` with no fallback. The NPU

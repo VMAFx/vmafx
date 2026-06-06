@@ -83,4 +83,4 @@ rg -n 'every entry point currently returns|Stub-only until T5-2b|all `libvmaf_me
 - `req`: user asked to keep finding backlog/open/scaffold/stub/doc gaps
   now that the previous train had merged.
 - [ADR-0209](../adr/0209-mcp-embedded-scaffold.md)
-- [ADR-0332](../adr/0332-mcp-runtime-v2.md)
+- [ADR-0332](../adr/0402-mcp-runtime-v2.md)

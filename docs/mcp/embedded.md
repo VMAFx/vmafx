@@ -11,7 +11,7 @@
 > `vmaf_read_pictures` + `vmaf_score_pooled`). UDS transport
 > listens on a mode-0700 socket file. SSE transport listens on
 > 127.0.0.1 only and serves a minimal HTTP/1.1 surface (no
-> mongoose — see [ADR-0332](../adr/0332-mcp-runtime-v2.md) §
+> mongoose — see [ADR-0332](../adr/0402-mcp-runtime-v2.md) §
 > "Status update 2026-05-09 (v3 SSE)" for the license-driven
 > decision to roll our own ~500 LOC HTTP+SSE in plain POSIX
 > sockets). The standalone Python MCP server under
@@ -218,8 +218,8 @@ These invariants are documented in the public header
 | Build flags + per-transport sub-flags | Landed (default off) | T5-2 |
 | Smoke + protocol test (15 sub-tests, real round-trip) | Landed | T5-2b |
 | stdio transport body | Landed (line-delimited JSON-RPC; LSP `Content-Length:` framing remains a v4 roadmap item) | T5-2b |
-| UDS transport body | Landed (line-delimited JSON-RPC; mode-0700 socket file) | T5-2c / [ADR-0332](../adr/0332-mcp-runtime-v2.md) |
-| SSE transport body | Landed (loopback HTTP/1.1 + `text/event-stream`; no third-party HTTP library — see ADR-0332 § "v3 SSE" for the license-driven mongoose pivot) | T5-2d / [ADR-0332](../adr/0332-mcp-runtime-v2.md) § "Status update 2026-05-09 (v3 SSE)" |
+| UDS transport body | Landed (line-delimited JSON-RPC; mode-0700 socket file) | T5-2c / [ADR-0332](../adr/0402-mcp-runtime-v2.md) |
+| SSE transport body | Landed (loopback HTTP/1.1 + `text/event-stream`; no third-party HTTP library — see ADR-0332 § "v3 SSE" for the license-driven mongoose pivot) | T5-2d / [ADR-0332](../adr/0402-mcp-runtime-v2.md) § "Status update 2026-05-09 (v3 SSE)" |
 | Tool: `list_features` (read-only) | Landed | T5-2b |
 | Tool: `compute_vmaf` (real libvmaf scoring binding, YUV420p 8/10/12/16-bit) | Landed | T5-2c + high-bit-depth follow-up |
 | Tool: `vmaf.request_model_swap` (mutating, separate ADR) | Future | post-v3 |
