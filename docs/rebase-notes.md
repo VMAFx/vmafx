@@ -44897,3 +44897,12 @@ cppcheck suppression delimiter from `[...]` to `; ...` in 10 inline comments.
 No logic, no public API, no upstream-mirrored code changed.
 
 ---
+
+## chore/state-md-stale-open-rows-sweep-20260606
+
+no rebase impact: `docs/state.md` only — removes 2 stale Open rows already
+in Recently Closed, updates 1 Open row's owner reference, and fixes a
+duplicate Recently Closed row. No C sources, public API, or
+upstream-mirrored files are touched.
+
+---
