@@ -155,14 +155,6 @@ static char *test_motion_three_frame_extract_emits_scores(void)
             memset(&ctx->fex->prev_ref, 0, sizeof(ctx->fex->prev_ref));
         }
         mu_assert("extract frame", err == 0);
-        /* The motion extractor has VMAF_FEATURE_EXTRACTOR_PREV_REF set: it reads
-         * ctx->fex->prev_ref for index >= 1.  In production this is wired by
-         * vmaf_read_pictures(); in a bare context_extract loop it must be
-         * written manually.  Assign without vmaf_picture_ref to avoid bumping
-         * the refcount — the caller owns the pics[] array for the duration of
-         * the test, so the borrow is safe. */
-        if (ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF)
-            ctx->fex->prev_ref = refs[i];
     }
 
     err = vmaf_feature_extractor_context_flush(ctx, fc);
