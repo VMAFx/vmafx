@@ -53,6 +53,7 @@ surfaced for immediate action.
 until Issue A is resolved.
 
 **Neutral follow-ups**:
+
 - Open GitHub issues for Issue A (Vulkan removal docs cleanup) and Issue B
   (VmafLegacyQualityRunner deprecations.md entry).
 - ADR citation correction: `docs/metrics/features.md` footnote 6 cites
@@ -61,7 +62,8 @@ until Issue A is resolved.
 
 ## References
 
-- Research-0848: `docs/research/research-0848-per-surface-doc-compliance-audit-20260529.md`
+- Research-0848:
+  `docs/research/research-0848-per-surface-doc-compliance-audit-20260529.md`
 - CLAUDE.md §12 r10 (per-surface doc bar)
 - ADR-0100: project-wide doc substance rule
 - ADR-0726: Vulkan backend removal (PR #47)

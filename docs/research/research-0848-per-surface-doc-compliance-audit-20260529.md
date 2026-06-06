@@ -90,14 +90,22 @@ log-format note in `docs/backends/cuda/overview.md` should note the removed
 
 **PR**: `e9d265657` `feat(core)!: drop Vulkan backend (BREAKING, ADR-0726)`
 **Surfaces removed**:
+
 - Public header `core/include/libvmaf/libvmaf_vulkan.h`
-- CLI flags `--backend vulkan`, `--vulkan_device <N>`, `--vulkan-require-fp64`
+- CLI flags `--backend vulkan`, `--vulkan_device <N>`,
+  `--vulkan-require-fp64`
 - Meson option `enable_vulkan`
 
 **Missing doc updates**:
-1. `/home/kilian/dev/vmaf/.claude/worktrees/agent-a29d1011065d0eb5e/docs/backends/vulkan/overview.md` — still describes Vulkan as a working backend with full kernel coverage; should be replaced with a removal notice.
-2. `/home/kilian/dev/vmaf/.claude/worktrees/agent-a29d1011065d0eb5e/docs/metrics/features.md` — every extractor row lists "Vulkan" in the backends column; should be struck or annotated as removed.
-3. `/home/kilian/dev/vmaf/.claude/worktrees/agent-a29d1011065d0eb5e/docs/development/build-flags.md` — `enable_vulkan` row describes the backend as functional when enabled; should show "Removed (ADR-0726)".
+
+1. `docs/backends/vulkan/overview.md` — still describes Vulkan as a
+   working backend with full kernel coverage; should be replaced with a
+   removal notice.
+2. `docs/metrics/features.md` — every extractor row lists "Vulkan" in
+   the backends column; should be struck or annotated as removed.
+3. `docs/development/build-flags.md` — `enable_vulkan` row describes
+   the backend as functional when enabled; should show
+   "Removed (ADR-0726)".
 
 **Note**: PR #123 partially addressed this by updating Helm chart docs and
 adding a removal notice to `docs/development/gpu-scheduling.md` and
@@ -111,8 +119,12 @@ errors or runtime failures).
 **Surface**: `VmafLegacyQualityRunner` Python quality runner removed from
 `compat/python-vmaf/core/quality_runner.py` (BREAKING).
 **Missing**:
-1. No entry in `/home/kilian/dev/vmaf/.claude/worktrees/agent-a29d1011065d0eb5e/docs/development/deprecations.md` — the deprecations file has a structured format for removals (see the "Legacy native build modes" entry); `VmafLegacyQualityRunner` should appear there.
-2. No migration notice in `docs/usage/python.md` or `docs/api/` pointing users to `VmafQualityRunner`.
+
+1. No entry in `docs/development/deprecations.md` — the deprecations file
+   has a structured format for removals (see the "Legacy native build
+   modes" entry); `VmafLegacyQualityRunner` should appear there.
+2. No migration notice in `docs/usage/python.md` or `docs/api/` pointing
+   users to `VmafQualityRunner`.
 **Note**: ADR-0749 documents the decision and migration path (`VmafQualityRunner`),
 but ADRs are not user-facing docs.
 **Severity**: Medium (BREAKING Python API removal; affects users who import
@@ -125,10 +137,14 @@ but ADRs are not user-facing docs.
 ### Issue A — Update Vulkan removal docs (post-PR #47 debt)
 
 Files to update:
-- `docs/backends/vulkan/overview.md` — replace body with removal notice + pointer to ADR-0726
+
+- `docs/backends/vulkan/overview.md` — replace body with removal notice +
+  pointer to ADR-0726
 - `docs/backends/vulkan/moltenvk.md` — same
-- `docs/metrics/features.md` — remove "Vulkan" from every backend column; add footnote "Vulkan backend removed in ADR-0726"
-- `docs/development/build-flags.md` — replace `enable_vulkan` row with "Removed (ADR-0726)"
+- `docs/metrics/features.md` — remove "Vulkan" from every backend column;
+  add footnote "Vulkan backend removed in ADR-0726"
+- `docs/development/build-flags.md` — replace `enable_vulkan` row with
+  "Removed (ADR-0726)"
 
 ### Issue B — Add VmafLegacyQualityRunner to deprecations.md (post-PR #87 debt)
 

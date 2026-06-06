@@ -1,4 +1,4 @@
-# ADR-0788: Doxygen @brief/@param/@return and @thread-safety tags on all public C-API functions
+# ADR-0788: Doxygen doc-comment and @thread-safety tags on public C-API
 
 | Field    | Value                             |
 |----------|-----------------------------------|
@@ -14,17 +14,22 @@ found that several public functions were missing Doxygen `@brief`, `@param`, and
 which forced readers to hunt through implementation code to determine whether
 concurrent use was safe. The rule adopted here is: one VmafContext per thread —
 a VmafContext is not thread-safe because the internal feature-extractor pipeline
-shares per-context state (scheduler queue, score cache, picture pool) that is not
-protected by fine-grained locking. Callers that want parallel scoring create
+shares per-context state (scheduler queue, score cache, picture pool) that is
+not protected by fine-grained locking. Callers that want parallel scoring
+create
 independent VmafContexts.
 
 The gaps existed in:
-- `picture.h` — `vmaf_picture_alloc`, `vmaf_picture_unref` (no Doxygen at all)
-- `feature.h` — `vmaf_feature_dictionary_set`, `vmaf_feature_dictionary_free` (no Doxygen)
-- `model.h`   — all eight model/collection load/destroy/overload functions (no Doxygen)
-- `libvmaf.h` — `vmaf_version` (thin comment, no `@brief`/`@return`); all other functions
-                 had Doxygen but no `@thread-safety` tag
-- `dnn.h`     — `vmaf_dnn_session_close` (no Doxygen block)
+
+- `picture.h` — `vmaf_picture_alloc`, `vmaf_picture_unref` (no Doxygen at
+  all)
+- `feature.h` — `vmaf_feature_dictionary_set`,
+  `vmaf_feature_dictionary_free` (no Doxygen)
+- `model.h` — all eight model/collection load/destroy/overload functions
+  (no Doxygen)
+- `libvmaf.h` — `vmaf_version` (thin comment, no `@brief`/`@return`); all
+  other functions had Doxygen but no `@thread-safety` tag
+- `dnn.h` — `vmaf_dnn_session_close` (no Doxygen block)
 
 The GPU-backend headers (`libvmaf_cuda.h`, `libvmaf_sycl.h`, `libvmaf_hip.h`,
 `libvmaf_vulkan.h`, `libvmaf_metal.h`, `libvmaf_mcp.h`) were already adequately
@@ -48,6 +53,7 @@ is safe to call from any thread.
 
 ## References
 
-- req: "Sweep `core/include/libvmaf/*.h` for missing Doxygen comments on public
-  functions. Per PR #115 thread-safety audit: also add `@thread-safety` tags noting
-  'not thread-safe; one VmafContext per thread' per ADR-0777 follow-up #1."
+- req: "Sweep `core/include/libvmaf/*.h` for missing Doxygen comments on
+  public functions. Per PR #115 thread-safety audit: also add
+  `@thread-safety` tags noting 'not thread-safe; one VmafContext per
+  thread' per ADR-0777 follow-up #1."

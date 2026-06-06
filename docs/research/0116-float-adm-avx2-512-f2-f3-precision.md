@@ -62,9 +62,9 @@ per-TU carve-out with `-ffp-contract=off` already present in
 
 ## Fix summary
 
-- **F2**: Replace store-to-temp loops with `_mm256_cvtps_pd` +
-  `hadd_pd4()` (AVX2) and `_mm512_extractf32x4_ps` + `_mm256_cvtps_pd`
-  + `hadd_pd4()` (AVX-512).  No float-precision intermediate stores
+- **F2**: Replace store-to-temp loops with `_mm256_cvtps_pd` plus
+  `hadd_pd4()` (AVX2) and `_mm512_extractf32x4_ps` plus `_mm256_cvtps_pd`
+  plus `hadd_pd4()` (AVX-512). No float-precision intermediate stores
   anywhere in the reduction paths.
 - **F3**: Move both TUs to isolated `x86_float_adm_avx2_lib` /
   `x86_float_adm_avx512_lib` static libraries in `core/src/meson.build`
@@ -78,6 +78,7 @@ is structurally identical to the AVX2 fix and compiles clean under
 `-mavx512f`.
 
 Cross-backend reproducer:
+
 ```bash
 vmaf --cpumask 255 --reference src01_hrc00_576x324.yuv \
      --distorted src01_hrc01_576x324.yuv \

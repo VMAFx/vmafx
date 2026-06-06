@@ -35,7 +35,6 @@ until master is fixed.
 
 | `coverage-check.sh` | `tests-and-quality-gates.yml` — `Enforce coverage thresholds` step on both `coverage-cpu` and `coverage-gpu` (advisory) jobs | The CLI shape (`coverage-check.sh <gcovr-summary.json> <overall_min%> <critical_min%>`) and the in-script `PER_FILE_MIN` map are the gate definition. Every entry in `PER_FILE_MIN` must cite the ADR that justifies the lower bar ([ADR-0114](../../docs/adr/0114-coverage-gate-per-file-overrides.md)). Audit cadence + tighten/keep/remove rule codified in [ADR-0881](../../docs/adr/0881-coverage-overrides-audit-2026-05-30.md). Gcovr's emit-path format (currently `core/src/...` relative to repo root) is the join-key with `PER_FILE_MIN`; if a future gcovr upgrade changes that format, the override silently stops applying and the global 85 % gate kicks in — the per-line "min XX%" output is the canary. |
 
-
 ## Calibration table contract (ADR-0234)
 
 `gpu_ulp_calibration.yaml` is the single source of truth for
