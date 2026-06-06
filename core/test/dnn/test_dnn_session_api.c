@@ -253,8 +253,9 @@ static int write_sidecar_dynamic(const char *path)
 }
 
 /* sidecar declares quant_mode=dynamic but no .int8.onnx sibling →
- * vmaf_dnn_session_open must surface a negative error. */
-static char *test_session_open_int8_missing_returns_error(void)
+ * vmaf_dnn_session_open must fall back to the fp32 baseline and succeed
+ * (ADR-1032: fp32-fallback policy introduced in PR #642). */
+static char *test_session_open_int8_missing_falls_back_to_fp32(void)
 {
     if (!vmaf_dnn_available())
         return NULL;
@@ -276,8 +277,11 @@ static char *test_session_open_int8_missing_returns_error(void)
 
     VmafDnnSession *sess = NULL;
     int rc = vmaf_dnn_session_open(&sess, onnx, NULL);
-    mu_assert("missing .int8.onnx must return negative", rc < 0);
-    mu_assert("session must remain NULL on error", sess == NULL);
+    /* ADR-1032: missing .int8.onnx is no longer a hard error; the runtime
+     * falls back to the fp32 baseline transparently. */
+    mu_assert("missing .int8.onnx falls back to fp32 (rc == 0)", rc == 0);
+    mu_assert("session populated on fp32 fallback", sess != NULL);
+    vmaf_dnn_session_close(sess);
 
     (void)unlink(sidecar);
     (void)unlink(onnx);
@@ -741,7 +745,7 @@ char *run_tests(void)
     mu_run_test(test_session_run_plane16_size_mismatch);
     mu_run_test(test_session_run_plane16_happy_path);
 #ifndef _WIN32
-    mu_run_test(test_session_open_int8_missing_returns_error);
+    mu_run_test(test_session_open_int8_missing_falls_back_to_fp32);
     mu_run_test(test_session_open_int8_redirect_succeeds);
 #endif
     mu_run_test(test_session_run_heap_path_for_many_inputs);
