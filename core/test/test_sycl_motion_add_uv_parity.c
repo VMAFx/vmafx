@@ -56,6 +56,10 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
+/* Internal header — VmafDictionary, vmaf_dictionary_set/free.
+ * dict.h is on the include path via meson include_directories('../src/'). */
+#include "dict.h"
+
 /* Fixture geometry — large enough for the 5-tap Gaussian. */
 #define FIXTURE_W 256u
 #define FIXTURE_H 144u
