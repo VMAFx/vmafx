@@ -19,6 +19,10 @@
 #ifndef VMAF_FEATURE_COLLECTOR_INCLUDED
 #define VMAF_FEATURE_COLLECTOR_INCLUDED
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -108,5 +112,9 @@ int vmaf_feature_collector_get_aggregate(VmafFeatureCollector *feature_collector
                                          const char *feature_name, double *score);
 
 void vmaf_feature_collector_destroy(VmafFeatureCollector *feature_collector);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* VMAF_FEATURE_COLLECTOR_INCLUDED */
