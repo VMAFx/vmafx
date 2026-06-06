@@ -195,34 +195,4 @@ static inline int pthread_cond_broadcast(pthread_cond_t *cond)
     return 0;
 }
 
-/* pthread_once shim — backs onto INIT_ONCE / InitOnceExecuteOnce (Vista+).
- * Used by ssim_simd.h / float_ssim.c / float_ms_ssim.c to install the
- * ISA-best dispatch exactly once per process across the libvmaf thread
- * pool. Spec: the init routine takes no argument and returns void —
- * matches the (void(*)(void)) callbacks used by iqa_ssim_install_dispatch_once.
- */
-typedef INIT_ONCE pthread_once_t;
-#define PTHREAD_ONCE_INIT INIT_ONCE_STATIC_INIT
-
-static BOOL CALLBACK vmaf_pthread_once_trampoline(PINIT_ONCE InitOnce, PVOID Parameter,
-                                                  PVOID *Context)
-{
-    (void)InitOnce;
-    (void)Context;
-    void (*init_routine)(void) = (void (*)(void))Parameter;
-    if (init_routine)
-        init_routine();
-    return TRUE;
-}
-
-static inline int pthread_once(pthread_once_t *once_control, void (*init_routine)(void))
-{
-    if (!once_control || !init_routine)
-        return EINVAL;
-    if (!InitOnceExecuteOnce(once_control, vmaf_pthread_once_trampoline,
-                             (PVOID)(uintptr_t)init_routine, NULL))
-        return EINVAL;
-    return 0;
-}
-
 #endif /* VMAF_COMPAT_WIN32_PTHREAD_H_ */

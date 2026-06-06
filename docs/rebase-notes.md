@@ -45139,3 +45139,12 @@ no rebase impact: single-line change in `core/src/libvmaf.c` setting
 `vmaf_feature_extractor_context_close` teardown path to run correctly on
 shared (never-initialized) contexts. No upstream-mirrored file is modified,
 no public API is affected, no test fixtures change.
+
+---
+
+## fix/win32-pthread-once-redefinition (2026-06-06)
+
+no rebase impact: removes a duplicate block from
+`core/src/compat/win32/pthread.h` (typedef, macro, BOOL CALLBACK, and inline
+function). The surviving first definition is unchanged. No upstream-mirrored
+file is modified, no public API is affected, no test fixtures change.
