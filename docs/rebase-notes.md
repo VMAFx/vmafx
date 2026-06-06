@@ -1,6 +1,14 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## test/ai-scripts-coverage-round3 (2026-06-06, no ADR — test-only)
+
+no rebase impact: adds two new test files
+(`ai/tests/test_calibrate_phase_f_recipes_unit.py` and
+`ai/tests/test_analyze_knob_sweep_unit.py`) and one changelog fragment. No
+existing C source, public API, upstream-mirrored Python, or golden assertion
+is modified.
+
 ## docs/r12-c-api-doc-completeness (2026-06-06, no ADR — doc-only)
 
 no rebase impact: comment-only changes to `core/include/libvmaf/libvmaf_cuda.h`,
