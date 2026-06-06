@@ -44875,3 +44875,11 @@ expands `capabilities` for the NVIDIA passthrough. No C sources, public API, or
 upstream-mirrored files are touched. ADR-1053.
 
 ---
+
+## fix/cppcheck-vif-suppression-syntax
+
+no rebase impact: comment-only change in `core/src/feature/vif.c`. Corrects
+cppcheck suppression delimiter from `[...]` to `; ...` in 10 inline comments.
+No logic, no public API, no upstream-mirrored code changed.
+
+---

@@ -136,34 +136,34 @@ int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride
      * because cppcheck cannot see through the aligned_malloc + ALIGN_CEIL
      * invariants at static-analysis time.
      */
-    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    /* cppcheck-suppress invalidPointerCast ; MISRA-C:2012-11.3/EXP36-C: see block comment above */
     ref_scale = (float *)data_top;
     data_top += buf_sz_one;
-    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    /* cppcheck-suppress invalidPointerCast ; MISRA-C:2012-11.3/EXP36-C: see block comment above */
     dis_scale = (float *)data_top;
     data_top += buf_sz_one;
-    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    /* cppcheck-suppress invalidPointerCast ; MISRA-C:2012-11.3/EXP36-C: see block comment above */
     mu1 = (float *)data_top;
     data_top += buf_sz_one;
-    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    /* cppcheck-suppress invalidPointerCast ; MISRA-C:2012-11.3/EXP36-C: see block comment above */
     mu2 = (float *)data_top;
     data_top += buf_sz_one;
-    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    /* cppcheck-suppress invalidPointerCast ; MISRA-C:2012-11.3/EXP36-C: see block comment above */
     ref_sq_filt = (float *)data_top;
     data_top += buf_sz_one;
-    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    /* cppcheck-suppress invalidPointerCast ; MISRA-C:2012-11.3/EXP36-C: see block comment above */
     dis_sq_filt = (float *)data_top;
     data_top += buf_sz_one;
-    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    /* cppcheck-suppress invalidPointerCast ; MISRA-C:2012-11.3/EXP36-C: see block comment above */
     ref_dis_filt = (float *)data_top;
     data_top += buf_sz_one;
-    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    /* cppcheck-suppress invalidPointerCast ; MISRA-C:2012-11.3/EXP36-C: see block comment above */
     num_array = (float *)data_top;
     data_top += buf_sz_one;
-    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    /* cppcheck-suppress invalidPointerCast ; MISRA-C:2012-11.3/EXP36-C: see block comment above */
     den_array = (float *)data_top;
     data_top += buf_sz_one;
-    /* cppcheck-suppress invalidPointerCast [MISRA-C:2012-11.3/EXP36-C: see block comment above] */
+    /* cppcheck-suppress invalidPointerCast ; MISRA-C:2012-11.3/EXP36-C: see block comment above */
     tmpbuf = (float *)data_top;
     data_top += buf_sz_one;
 
