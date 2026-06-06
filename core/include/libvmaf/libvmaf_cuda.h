@@ -64,19 +64,12 @@ typedef struct VmafCudaConfiguration {
  * Initialize VmafCudaState.
  * VmafCudaState can optionally be configured with VmafCudaConfiguration.
  *
- * @param cu_state Out: receives the allocated CUDA state handle on success.
- *                 Caller owns the allocation; pair with
- *                 @ref vmaf_cuda_state_free after @ref vmaf_close.
+ * @param cu_state The CUDA state to open.
  *
- * @param cfg      Optional configuration parameters. Pass a zero-initialised
- *                 struct to let libvmaf create a fresh CUDA context on the
- *                 current device.
+ * @param cfg      Optional configuration parameters.
+ *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
- *
- * @thread-safety Not thread-safe. Call from a single driver thread; the
- *               state pointer may be shared across threads once fully
- *               initialised and imported.
  */
 VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg);
 
@@ -89,36 +82,21 @@ VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfigura
  * `vmaf_cuda_state_free()` first would leave `vmaf_close()` with a
  * dangling state.
  *
- * **Single-pointer convention.** Unlike the HIP / Metal / SYCL
- * `_free` family (which take a `**` and NULL the caller's handle on
- * return), this function takes a plain `*` and does NOT zero the
- * caller's variable after freeing. Callers should set the pointer to
- * NULL manually after the call to guard against accidental reuse.
- *
- * @param cu_state CUDA state to free. Safe to pass NULL (no-op).
+ * @param cu_state CUDA state to free. Safe to pass NULL.
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
- *
- * @thread-safety Not thread-safe. Must not be called while any thread
- *               holds a reference to this state (i.e., while a
- *               VmafContext that imported it is still open).
  */
 VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
 
 /**
  * Import VmafCudaState for use during CUDA feature extraction.
  *
- * The context borrows the state pointer for its lifetime; the caller still
- * owns the allocation and must call @ref vmaf_cuda_state_free after
- * @ref vmaf_close returns.
+ * @param vmaf VMAF context allocated with `vmaf_init()`.
  *
- * @param vmaf     VMAF context allocated with `vmaf_init()`.
  * @param cu_state CUDA state allocated with `vmaf_cuda_state_init()`.
  *
- * @return 0 on success, or < 0 (a negative errno code) on error.
  *
- * @thread-safety Not thread-safe. Must be called before the first
- *               @ref vmaf_read_pictures call on @p vmaf.
+ * @return 0 on success, or < 0 (a negative errno code) on error.
  */
 VMAF_EXPORT int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state);
 
@@ -180,34 +158,29 @@ typedef struct VmafCudaPictureConfiguration {
 /**
  * Config and preallocate VmafPictures for use during CUDA feature extraction.
  * The preallocated VmafPicture data buffers are set according to
- * cfg.pic_prealloc_method. Must be called after @ref vmaf_cuda_import_state
- * and before the first @ref vmaf_read_pictures.
+ * cfg.pic_prealloc_method.
  *
- * @param vmaf VMAF context allocated with `vmaf_init()` and initialised with
- *             `vmaf_cuda_import_state()`.
- * @param cfg  Picture pool geometry and storage-tier configuration.
+ * @param vmaf VMAF context allocated with `vmaf_init()`.
+ *
+ * @param cfg VmafPicture parameter configuration.
+ *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
- *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictureConfiguration cfg);
 
 /**
  * Fetch a preallocated VmafPicture for use during CUDA feature extraction.
- * Pictures are allocated during `vmaf_cuda_preallocate_pictures` and data
- * buffers are placed according to `cfg.pic_prealloc_method`. The returned
- * picture must be filled and then handed to @ref vmaf_read_pictures, which
- * returns it to the pool when feature extraction completes.
+ * pictures are allocated during `vmaf_cuda_preallocate_pictures` and data
+ * buffers are set according to cfg.pic_prealloc_method.
  *
  * @param vmaf VMAF context allocated with `vmaf_init()` and
- *             configured with `vmaf_cuda_preallocate_pictures()`.
- * @param pic  Out: receives the next available preallocated picture.
- *             Must not be NULL.
+ *             initialized with `vmaf_cuda_preallocate_pictures()`.
+ *
+ * @param pic Preallocated picture.
+ *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
- *
- * @thread-safety Not thread-safe. Use one VmafContext per thread.
  */
 VMAF_EXPORT int vmaf_cuda_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
 

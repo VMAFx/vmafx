@@ -71,26 +71,12 @@ VMAF_EXPORT int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigu
 VMAF_EXPORT int vmaf_sycl_import_state(VmafContext *vmaf, VmafSyclState *sycl_state);
 
 /**
- * @enum  VmafSyclPicturePreallocationMethod
- * @brief Storage tier for SYCL picture pool buffers.
- *
- * Mirrors @ref VmafCudaPicturePreallocationMethod — picks where the
- * per-picture sample buffers live:
- *
- *   - `NONE`   — no preallocation; each frame is allocated individually.
- *                Use only for diagnostic builds.
- *   - `DEVICE` — SYCL USM device memory. Lowest H2D transfer cost; not
- *                directly accessible from the host.
- *   - `HOST`   — SYCL USM host (shared) memory. CPU-visible; suitable for
- *                builds where the decode path runs on the CPU side and
- *                uploads to the device in the SYCL kernel.
- *
- * Stable enumerator values — append-only across libvmaf releases.
+ * Picture pre-allocation method.
  */
 enum VmafSyclPicturePreallocationMethod {
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_NONE = 0,   /**< No preallocation (per-frame alloc). */
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_DEVICE = 1, /**< SYCL USM device memory. */
-    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_HOST = 2,   /**< SYCL USM host (shared) memory. */
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_NONE = 0,
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_DEVICE,
+    VMAF_SYCL_PICTURE_PREALLOCATION_METHOD_HOST,
 };
 
 /**

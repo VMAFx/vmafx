@@ -7,6 +7,12 @@ no rebase impact: comment-only changes to `core/include/libvmaf/libvmaf_cuda.h`,
 `core/include/libvmaf/libvmaf_vulkan.h`, and `core/include/libvmaf/libvmaf_sycl.h`.
 No C sources, build files, or public API signatures touched.
 
+## chore/ci-workflow-audit-sha-pin-dead-jobs (2026-06-06, no ADR — workflow hygiene)
+
+no rebase impact: changes are entirely in `.github/workflows/` (SHA pin,
+dead-job removal, comment correction). No C sources, public API, build flags,
+or upstream-mirrored files are touched.
+
 ---
 
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
