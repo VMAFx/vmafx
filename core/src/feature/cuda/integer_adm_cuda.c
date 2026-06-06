@@ -1388,21 +1388,21 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
 
     /* adm_cm_reduce_line_kernel_4 removed: fused into i4_adm_cm_line_kernel_fused. */
-    CHECK_CUDA_GOTO(
-        cu_f,
-        cuModuleGetFunction(&s->func_adm_cm_line_kernel_8, adm_cm_module, "adm_cm_line_kernel_8"),
-        fail);
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_i4_adm_cm_line_kernel_fused, adm_cm_module,
+                    cuModuleGetFunction(&s->func_adm_cm_line_kernel_8, s->adm_cm_module,
+                                        "adm_cm_line_kernel_8"),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_i4_adm_cm_line_kernel_fused, s->adm_cm_module,
                                         "i4_adm_cm_line_kernel_fused"),
                     fail);
     /* AIM CM kernel function pointers (ADR-0746). */
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_adm_cm_aim_line_kernel_8, adm_cm_module,
+                    cuModuleGetFunction(&s->func_adm_cm_aim_line_kernel_8, s->adm_cm_module,
                                         "adm_cm_aim_line_kernel_8"),
                     fail);
     CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_i4_adm_cm_aim_line_kernel_fused, adm_cm_module,
+                    cuModuleGetFunction(&s->func_i4_adm_cm_aim_line_kernel_fused, s->adm_cm_module,
                                         "i4_adm_cm_aim_line_kernel_fused"),
                     fail);
 
