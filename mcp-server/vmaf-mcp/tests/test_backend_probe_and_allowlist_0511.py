@@ -22,6 +22,7 @@ B. Default allowlist excluded the container-side absolute path
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -127,7 +128,7 @@ def test_list_backends_reports_cuda_true_when_help_advertises_it(
         ),
     )
 
-    result = srv._list_backends()
+    result = asyncio.run(srv._list_backends())
     assert result["cpu"] is True
     assert result["cuda"] is True, f"Bug A regression: {result}"
     assert result["sycl"] is True, result

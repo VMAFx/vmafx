@@ -217,7 +217,7 @@ def test_vmaf_version_returns_expected_keys(monkeypatch, tmp_path):
     monkeypatch.setattr(_subprocess, "run", fake_run)
     monkeypatch.setattr(srv, "_probe_backends", lambda _: frozenset({"cpu", "cuda"}))
 
-    result = srv._vmaf_version()
+    result = asyncio.run(srv._vmaf_version())
 
     assert "binary_path" in result
     assert "version" in result
@@ -237,7 +237,7 @@ def test_vmaf_version_missing_binary_returns_error(monkeypatch, tmp_path):
 
     monkeypatch.setattr(srv, "_vmaf_binary", lambda: tmp_path / "nonexistent_vmaf")
 
-    result = srv._vmaf_version()
+    result = asyncio.run(srv._vmaf_version())
 
     assert result["error"] is not None
     assert result["version"] is None

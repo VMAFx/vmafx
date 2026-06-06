@@ -112,7 +112,7 @@ def test_list_backends_includes_hip_metal_keys(monkeypatch: pytest.MonkeyPatch) 
     False when the binary is absent (we cannot probe capabilities).
     """
     monkeypatch.setattr(srv, "_vmaf_binary", lambda: Path("/does/not/exist/vmaf"))
-    result = srv._list_backends()
+    result = asyncio.run(srv._list_backends())
     assert set(result.keys()) == {"cpu", "cuda", "sycl", "hip", "metal"}
     # CPU must be True regardless of binary presence.
     assert result["cpu"] is True, result

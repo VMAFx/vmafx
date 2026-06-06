@@ -175,21 +175,24 @@ def test_probe_backends_os_error_returns_cpu_only(monkeypatch, tmp_path):
     assert result == frozenset({"cpu"})
 
 
-def test_probe_backends_parses_vulkan_flag(monkeypatch, tmp_path):
-    """When --help output contains '--no_vulkan', vulkan is included."""
+def test_probe_backends_parses_hip_metal_flags(monkeypatch, tmp_path):
+    """When --help output contains '--no_hip' and '--no_metal', both are included.
+    Vulkan was removed per ADR-0726 and is no longer probed."""
     fake_vmaf = tmp_path / "vmaf"
     fake_vmaf.write_bytes(b"")
     fake_vmaf.chmod(0o755)
 
     r = MagicMock()
-    r.stdout = "--no_cuda\n--no_sycl\n--no_vulkan\n--no_hip\n--no_metal\n"
+    r.stdout = "--no_cuda\n--no_sycl\n--no_hip\n--no_metal\n"
     r.stderr = ""
 
     monkeypatch.setattr(srv.subprocess, "run", lambda *_a, **_k: r)
     result = srv._probe_backends(fake_vmaf)
-    assert "vulkan" in result
+    assert "hip" in result
+    assert "metal" in result
     assert "cuda" in result
     assert "cpu" in result
+    assert "vulkan" not in result
 
 
 def test_probe_backends_returns_cached_on_second_call(monkeypatch, tmp_path):
@@ -244,18 +247,19 @@ def test_infer_backend_from_payload_cpu_branch():
     assert srv._infer_backend_from_payload(payload) == "cpu"
 
 
-def test_infer_backend_from_payload_vulkan_branch():
-    """30+ metric keys (nkeys >= 30) returns 'vulkan'."""
+def test_infer_backend_from_payload_many_keys_returns_cpu():
+    """30+ metric keys defaults to 'cpu' — the Vulkan branch was removed with
+    ADR-0726; any key count above the GPU threshold now falls through to cpu."""
     metrics = {f"metric_{i}": 1.0 for i in range(30)}
     payload = {"frames": [{"frameNum": 0, "metrics": metrics}]}
-    assert srv._infer_backend_from_payload(payload) == "vulkan"
+    assert srv._infer_backend_from_payload(payload) == "cpu"
 
 
-def test_infer_backend_from_payload_vulkan_edge_exactly_30():
-    """Exactly 30 keys is the Vulkan threshold (>= 30)."""
+def test_infer_backend_from_payload_exactly_30_keys_returns_cpu():
+    """Exactly 30 metric keys returns 'cpu' (post-ADR-0726; Vulkan branch gone)."""
     metrics = {f"m_{i}": 0.0 for i in range(30)}
     payload = {"frames": [{"frameNum": 0, "metrics": metrics}]}
-    assert srv._infer_backend_from_payload(payload) == "vulkan"
+    assert srv._infer_backend_from_payload(payload) == "cpu"
 
 
 # ---------------------------------------------------------------------------
@@ -516,9 +520,9 @@ def test_run_benchmark_script_missing_raises(monkeypatch, tmp_path):
         asyncio.run(run())
 
 
-def test_run_benchmark_nonzero_empty_output_adds_error_key(monkeypatch, tmp_path):
-    """A non-zero rc with no output must add an 'error' explanation key to the
-    payload (not raise, since older installed version uses non-raising pattern)."""
+def test_run_benchmark_nonzero_empty_output_raises_runtime_error(monkeypatch, tmp_path):
+    """A non-zero rc with no output must raise RuntimeError (ADR-0608 E-1: _run_benchmark
+    was changed to raise on non-zero exit so MCP marks the call as isError=True)."""
     # Create fake bench_all.sh so exists() passes.
     fake_script = tmp_path / "testdata" / "bench_all.sh"
     fake_script.parent.mkdir(parents=True)
@@ -540,10 +544,8 @@ def test_run_benchmark_nonzero_empty_output_adds_error_key(monkeypatch, tmp_path
     async def run():
         return await srv._run_benchmark()
 
-    result = asyncio.run(run())
-    assert result["exit_code"] == 1
-    # The installed version adds an "error" key explaining the failure.
-    assert "error" in result or result["stderr"] == "" and result["stdout"] == ""
+    with pytest.raises(RuntimeError, match="benchmark failed"):
+        asyncio.run(run())
 
 
 # ---------------------------------------------------------------------------
@@ -561,13 +563,15 @@ def test_list_extractors_returns_empty_when_feature_dir_absent(monkeypatch, tmp_
 def test_list_extractors_parses_synthetic_c_file(monkeypatch, tmp_path):
     """_list_extractors matches VmafFeatureExtractor struct definitions in C source."""
     # Determine which subpath the installed version uses for feature_dir.
-    # Older versions use libvmaf/src/feature, newer use core/src/feature.
+    # Probe for the literal path assignment to disambiguate — the docstring
+    # mentions "libvmaf" by name so a plain ``"libvmaf" in src`` check
+    # was a false-positive on the current codebase (ADR-0700 renamed to core/).
     import inspect
 
     import vmaf_mcp.server as _srv_mod
 
     src = inspect.getsource(_srv_mod._list_extractors)
-    if "libvmaf" in src:
+    if '"libvmaf/src/feature"' in src or "'libvmaf/src/feature'" in src:
         feature_dir = tmp_path / "libvmaf" / "src" / "feature"
     else:
         feature_dir = tmp_path / "core" / "src" / "feature"
@@ -702,7 +706,7 @@ def test_list_backends_binary_missing_returns_all_false(monkeypatch, tmp_path):
     """When the vmaf binary doesn't exist, list_backends returns cpu=True and
     all GPU backends False — it must not raise."""
     monkeypatch.setattr(srv, "_vmaf_binary", lambda: tmp_path / "no_such_vmaf_binary")
-    result = srv._list_backends()
+    result = asyncio.run(srv._list_backends())
     assert result["cpu"] is True
     assert result["cuda"] is False
     assert result["sycl"] is False

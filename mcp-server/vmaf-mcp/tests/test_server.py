@@ -49,7 +49,7 @@ def test_list_models_returns_list():
 
 
 def test_list_backends_always_includes_cpu():
-    backends = srv._list_backends()
+    backends = asyncio.run(srv._list_backends())
     assert backends["cpu"] is True
 
 
