@@ -40,6 +40,25 @@ context-create parse-options error path merge cleanly.
 
 ---
 
+## fix/helm-chart-security-hardening (2026-06-06, ADR-1058)
+
+**Files touched:**
+`deploy/helm/vmafx/templates/pdb.yaml` (new),
+`deploy/helm/vmafx/templates/operator-rbac.yaml`,
+`deploy/helm/vmafx/templates/networkpolicy.yaml`,
+`deploy/helm/vmafx/values.yaml`,
+`deploy/helm/vmafx/values.schema.json`
+
+**Rebase impact:** The operator RBAC resource names changed:
+`*-operator-role` (ClusterRole) is replaced by `*-operator-crds` (ClusterRole)
++ `*-operator-ns` (Role). Any branch that patches `operator-rbac.yaml` will
+conflict on the resource name. Run `helm upgrade` (not in-place patch) when
+applying to existing operator installs. The `networkPolicy.allow` schema is now
+`additionalProperties: false`; any branch that adds a new `allow.*` key must
+also enumerate it in `values.schema.json`.
+
+---
+
 
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
 

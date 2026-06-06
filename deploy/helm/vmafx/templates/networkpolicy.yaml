@@ -217,6 +217,45 @@ spec:
 {{- end }}
 
 # ----------------------------------------------------------------------------
+# Allow rule: Prometheus scraping on the node metrics port (9090).  When the
+# ServiceMonitor is enabled, the Prometheus operator scrapes vmafx-node pods
+# on port 9090.  The default-deny policy blocks this unless we add an explicit
+# ingress allow-rule.  The podSelector {} matches any pod in the namespace
+# (typically the Prometheus server pod); tighten via
+# networkPolicy.allow.nodeMetrics.fromPodSelector if needed (ADR-1058).
+# ----------------------------------------------------------------------------
+{{- if and .Values.node.enabled .Values.networkPolicy.allow.nodeMetrics.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-allow-node-metrics-ingress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  podSelector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: node
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- if .Values.networkPolicy.allow.nodeMetrics.fromPodSelector }}
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.allow.nodeMetrics.fromPodSelector | nindent 14 }}
+        {{- else }}
+        - podSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 9090
+{{- end }}
+
+# ----------------------------------------------------------------------------
 # Allow rule: DNS egress.  Every VMAFX pod must be able to resolve names
 # via the cluster DNS service (CoreDNS / kube-dns in `kube-system`).
 # ----------------------------------------------------------------------------

@@ -293,6 +293,18 @@ networkPolicy:
       ports:
         - 443
         - 6443
+    # Prometheus scraping of node metrics port 9090 (vmafx-node).
+    # When monitoring.enabled is true, the Prometheus operator scrapes the
+    # node metrics endpoint; the default-deny ingress policy blocks this
+    # without an explicit allow-rule.  fromPodSelector narrows which pods
+    # may scrape; leave empty to allow any in-namespace pod.
+    nodeMetrics:
+      enabled: true
+      # fromPodSelector restricts which pods may reach the metrics port.
+      # Example (Prometheus operator):
+      #   fromPodSelector:
+      #     app.kubernetes.io/name: prometheus
+      fromPodSelector: {}
     # DNS egress for every VMAFX pod (CoreDNS by default).
     dns:
       enabled: true
@@ -499,6 +511,20 @@ auth:
   #     oidc:
   #       issuer: https://keycloak.rival-corp.example/realms/vmafx
   #       jwksEndpoint: https://keycloak.rival-corp.example/realms/vmafx/protocol/openid-connect/certs
+
+# ---------------------------------------------------------------------------
+# PodDisruptionBudget
+# Prevents Kubernetes from evicting all pods simultaneously during voluntary
+# disruptions (node drains, cluster upgrades).
+# Recommended when replicaCount >= 2.  Disabled by default for single-replica
+# dev deployments where a PDB would block node-drain operations.
+# Set minAvailable: 1 or maxUnavailable: 1 (mutually exclusive).
+# ---------------------------------------------------------------------------
+podDisruptionBudget:
+  enabled: false
+  # minAvailable is the default strategy — keeps at least N pods running.
+  minAvailable: 1
+  # maxUnavailable: 1  # Uncomment to switch to maxUnavailable strategy.
 
 # ---------------------------------------------------------------------------
 # NOTES.txt / post-install

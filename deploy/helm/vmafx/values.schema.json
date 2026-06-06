@@ -215,13 +215,84 @@
         "volumeMounts": { "type": "array" }
       }
     },
-    "networkPolicy": {
+    "podDisruptionBudget": {
       "type": "object",
-      "additionalProperties": true,
-      "description": "NetworkPolicy default-deny posture with allow-rules (ADR-0930). additionalProperties:true so nested allow.* lists pass without exhaustive enumeration.",
+      "additionalProperties": false,
+      "description": "PodDisruptionBudget prevents simultaneous eviction of all pods during voluntary disruptions (ADR-1058). Recommended when replicaCount >= 2.",
       "properties": {
         "enabled": { "type": "boolean" },
-        "allow": { "type": "object", "additionalProperties": true }
+        "minAvailable": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "string", "pattern": "^[0-9]+%$" }
+          ],
+          "description": "Minimum number (or percentage) of pods that must remain available. Mutually exclusive with maxUnavailable."
+        },
+        "maxUnavailable": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "string", "pattern": "^[0-9]+%$" }
+          ],
+          "description": "Maximum number (or percentage) of pods that may be unavailable. Mutually exclusive with minAvailable."
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "NetworkPolicy default-deny posture with allow-rules (ADR-0930). See values.yaml for the full allow.* matrix.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "allow": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "controllerToNode": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "nodePort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+              }
+            },
+            "nodeEgressObjectStore": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+                "cidrs": { "type": "array", "items": { "type": "string" } },
+                "except": { "type": "array", "items": { "type": "string" } }
+              }
+            },
+            "operatorToApiserver": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } }
+              }
+            },
+            "nodeMetrics": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Allow Prometheus to scrape vmafx-node metrics port 9090 (ADR-1058).",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "fromPodSelector": { "type": "object", "additionalProperties": true }
+              }
+            },
+            "dns": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "namespaceSelector": { "type": "object", "additionalProperties": true },
+                "podSelector": { "type": "object", "additionalProperties": true }
+              }
+            }
+          }
+        }
       }
     },
     "auth": {

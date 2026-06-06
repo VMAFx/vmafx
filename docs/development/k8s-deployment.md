@@ -295,6 +295,7 @@ default-deny baseline plus four narrow allow-rules:
 | `allow-controller-to-node`      | ingress   | controller pods (selector match)                | `50051` (configurable) | gRPC dispatch from controller to `vmafx-node` workers. |
 | `allow-node-egress-object-store`| egress    | configurable CIDR list (default `0.0.0.0/0` minus RFC1918) | `443`     | rclone egress from worker pods to S3 / GCS / Azure Blob. Tighten `networkPolicy.allow.nodeEgressObjectStore.cidrs` to your bucket VPC CIDR in production. |
 | `allow-operator-to-apiserver`   | egress    | `0.0.0.0/0` (apiserver Service IP is not selectable by a NetworkPolicy peer) | `443`, `6443` | controller-runtime list/watch traffic for the `vmafx-operator`. |
+| `allow-node-metrics-ingress`    | ingress   | any in-namespace pod (or a narrower `fromPodSelector`) | `9090` | Prometheus scraping of the vmafx-node metrics endpoint. Tighten `networkPolicy.allow.nodeMetrics.fromPodSelector` to `{app.kubernetes.io/name: prometheus}` in production. |
 | `allow-dns-egress`              | egress    | `kube-system` / CoreDNS pods                    | `53/udp`, `53/tcp`  | Cluster DNS resolution — required for the other allow-rules to function. |
 
 Override knobs live under `networkPolicy.allow.*` in `values.yaml`; each
@@ -308,9 +309,30 @@ required for the policies to take effect.  Verify with:
 kubectl get networkpolicy -n vmafx-prod -l app.kubernetes.io/instance=vmafx
 ```
 
+## PodDisruptionBudget {#pod-disruption-budget}
+
+Disabled by default (`podDisruptionBudget.enabled=false`). Enable for HA
+deployments with `replicaCount >= 2` to prevent Kubernetes from evicting all
+pods simultaneously during node drains, cluster upgrades, or voluntary
+disruptions.
+
+```yaml
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1   # or maxUnavailable: 1
+```
+
+When enabled, the chart creates a `policy/v1 PodDisruptionBudget` for each
+active pool (controller, node, operator). `minAvailable: 1` is the recommended
+setting for a 2-replica deployment; for larger deployments consider a
+percentage (`minAvailable: "50%"`).
+
+Requires Kubernetes >= 1.21 (for `policy/v1`). See ADR-1058.
+
 ## Related
 
 - [GPU scheduling guide](gpu-scheduling.md)
 - [Production Dockerfile](../../deploy/Dockerfile) — ADR-0698
 - [Cloud-native redesign](../../docs/adr/0697-vmafx-cloud-native-redesign.md) — ADR-0697
 - [Helm chart ADR](../../docs/adr/0699-vmafx-helm-chart-k8s.md) — ADR-0699
+- [Security hardening ADR](../../docs/adr/1058-helm-chart-security-hardening.md) — ADR-1058

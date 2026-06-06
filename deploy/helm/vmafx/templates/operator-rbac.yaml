@@ -3,11 +3,22 @@
   Copyright 2026 Lusoris
 
   deploy/helm/vmafx/templates/operator-rbac.yaml
-  ServiceAccount, ClusterRole, and ClusterRoleBinding for the vmafx-operator.
+  RBAC resources for the vmafx-operator.
 
   Rendered only when operator.enabled == true.
 
+  Split into two bindings per the principle of least privilege:
+  1. ClusterRole + ClusterRoleBinding — CRD access only (vmafxjobs,
+     vmafxnodes, vmafxmodeltrainings, vmafxtenants).  CRDs are cluster-scoped
+     resources and require a ClusterRole to watch across namespaces.
+  2. Role + RoleBinding (namespace-scoped) — pods, events, leader-election
+     leases.  These resources are namespaced; restricting them to the release
+     namespace prevents the operator from accidentally touching pods in other
+     namespaces on multi-tenant clusters.
+
   ADR-0714: vmafx-operator kubebuilder skeleton + CRDs.
+  ADR-1058: Helm chart security hardening — RBAC split ClusterRole → Role for
+  namespaced resources, VmafxTenant rules added.
 */ -}}
 {{- if .Values.operator.enabled }}
 ---
@@ -19,11 +30,17 @@ metadata:
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
     app.kubernetes.io/component: operator
+
+# ---------------------------------------------------------------------------
+# ClusterRole: CRD access (cluster-scoped resources)
+# VmafxJob, VmafxNode, VmafxModelTraining, VmafxTenant are cluster-scoped
+# CRD objects that the operator reconciles across all instances.
+# ---------------------------------------------------------------------------
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "vmafx.fullname" . }}-operator-role
+  name: {{ include "vmafx.fullname" . }}-operator-crds
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
     app.kubernetes.io/component: operator
@@ -58,30 +75,72 @@ rules:
   - apiGroups: [vmafx.dev]
     resources: [vmafxmodeltrainings/finalizers]
     verbs: [update]
-  # Worker Pods
-  - apiGroups: [""]
-    resources: [pods]
-    verbs: [get, list, watch, create, update, patch, delete]
-  # Events
-  - apiGroups: [""]
-    resources: [events]
-    verbs: [create, patch]
-  # Leader election
-  - apiGroups: [coordination.k8s.io]
-    resources: [leases]
-    verbs: [get, list, watch, create, update, patch, delete]
+  # VmafxTenant CRD — operator watches tenant CRs to enforce per-tenant auth
+  # policy (ADR-0794).  The RBAC rule was previously absent, causing the
+  # reconciler to silently fail watch setup at startup (ADR-1058).
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxtenants]
+    verbs: [get, list, watch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxtenants/status]
+    verbs: [get, update, patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "vmafx.fullname" . }}-operator-rolebinding
+  name: {{ include "vmafx.fullname" . }}-operator-crds-binding
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
     app.kubernetes.io/component: operator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "vmafx.fullname" . }}-operator-role
+  name: {{ include "vmafx.fullname" . }}-operator-crds
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "vmafx.serviceAccountName" . }}-operator
+    namespace: {{ .Release.Namespace }}
+
+# ---------------------------------------------------------------------------
+# Role: namespaced resources (pods, events, leader-election leases)
+# Scoped to the release namespace — the operator must not create/delete pods
+# in other namespaces on a shared cluster.
+# ---------------------------------------------------------------------------
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "vmafx.fullname" . }}-operator-ns
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+rules:
+  # Worker Pods (namespace-scoped)
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Events (namespace-scoped)
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  # Leader election (namespace-scoped in coordination.k8s.io)
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "vmafx.fullname" . }}-operator-ns-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "vmafx.fullname" . }}-operator-ns
 subjects:
   - kind: ServiceAccount
     name: {{ include "vmafx.serviceAccountName" . }}-operator

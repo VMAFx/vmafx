@@ -51,9 +51,26 @@ final UID and that container-scope seccompProfile is also set.
   any user-supplied `storage.*` key must match the schema definition.
 - `gpu.count` minimum is 1; do not lower it back to 0 — 0 GPUs with a vendor device
   plugin is a silent no-op.
-- `networkPolicy`, `auth`, and `otelCollector` use `additionalProperties: true` in
-  the schema intentionally — their sub-keys are too numerous and user-extensible to
-  enumerate exhaustively.
+- `auth` and `otelCollector` use `additionalProperties: true` in the schema
+  intentionally — their sub-keys are user-extensible (per-tenant oidc/rbac configs,
+  arbitrary otel exporter blocks).
+- `networkPolicy.allow` uses `additionalProperties: false` (changed in ADR-1058) —
+  any new allow-rule must be enumerated in `values.schema.json` under the `allow`
+  object properties. Do not revert this to `additionalProperties: true` without a
+  corresponding ADR.
+
+## Invariants (ADR-1058)
+
+- **RBAC split**: the operator ClusterRole (`*-operator-crds`) covers CRD resources
+  only. Namespaced resources (pods, events, leases) are in the namespace-scoped Role
+  (`*-operator-ns`). Do not merge them back into a single ClusterRole.
+- **VmafxTenant in ClusterRole**: the `vmafxtenants` rule must remain in the CRD
+  ClusterRole; removing it causes the controller-runtime watch setup to silently fail.
+- **PDB template**: `templates/pdb.yaml` uses `policy/v1` (requires k8s >= 1.21).
+  If you need to support older clusters, add a `capabilities.apiVersions.has` guard.
+- **Metrics NetworkPolicy**: `networkPolicy.allow.nodeMetrics` must remain enumerated
+  in the schema. Its default `fromPodSelector: {}` allows any in-namespace pod to
+  scrape; production clusters should narrow this to the Prometheus pod selector.
 
 ## References
 
@@ -61,3 +78,4 @@ final UID and that container-scope seccompProfile is also set.
 - [ADR-0930](../../../docs/adr/0930-helm-networkpolicy-pss.md) — PSS + NetworkPolicy
 - [ADR-0969](../../../docs/adr/0969-helm-seccomp-default-plus-node-image-helper.md) — seccompProfile default + node image helper fix
 - [ADR-1047](../../../docs/adr/1047-helm-schema-bug-fixes.md) — R9 schema correctness fixes
+- [ADR-1058](../../../docs/adr/1058-helm-chart-security-hardening.md) — PDB, RBAC split, metrics NetworkPolicy, schema tightening
