@@ -1989,16 +1989,24 @@ static void svm_group_classes(const svm_problem *prob, int *nr_class_ret, int **
             if (nr_class == max_nr_class) {
                 max_nr_class *= 2;
                 {
-                    // CERT MEM04-C: safe realloc pattern — save ptr, check, free old on failure
+                    // CERT MEM04-C: sequential realloc — check each allocation before
+                    // proceeding so we never double-free a pointer already consumed by
+                    // a successful realloc (libc frees the old block on success).
                     int *tmp_label = (int *)realloc(label, max_nr_class * sizeof(int));
-                    int *tmp_count = (int *)realloc(count, max_nr_class * sizeof(int));
-                    if (!tmp_label || !tmp_count) {
+                    if (!tmp_label) {
                         free(label);
                         free(count);
-                        fprintf(stderr, "libsvm: realloc failed (svm_group_classes)\n");
+                        fprintf(stderr, "libsvm: realloc failed (svm_group_classes label)\n");
                         abort();
                     }
                     label = tmp_label;
+                    int *tmp_count = (int *)realloc(count, max_nr_class * sizeof(int));
+                    if (!tmp_count) {
+                        free(label);
+                        free(count);
+                        fprintf(stderr, "libsvm: realloc failed (svm_group_classes count)\n");
+                        abort();
+                    }
                     count = tmp_count;
                 }
             }
@@ -2783,16 +2791,24 @@ const char *svm_check_parameter(const svm_problem *prob, const svm_parameter *pa
                 if (nr_class == max_nr_class) {
                     max_nr_class *= 2;
                     {
-                        // CERT MEM04-C: safe realloc pattern
+                        // CERT MEM04-C: sequential realloc — check each allocation before
+                        // proceeding so we never double-free a pointer already consumed by
+                        // a successful realloc (libc frees the old block on success).
                         int *tmp_label = (int *)realloc(label, max_nr_class * sizeof(int));
-                        int *tmp_count = (int *)realloc(count, max_nr_class * sizeof(int));
-                        if (!tmp_label || !tmp_count) {
+                        if (!tmp_label) {
                             free(label);
                             free(count);
-                            fprintf(stderr, "libsvm: realloc failed (svm_check_parameter)\n");
+                            fprintf(stderr, "libsvm: realloc failed (svm_check_parameter label)\n");
                             abort();
                         }
                         label = tmp_label;
+                        int *tmp_count = (int *)realloc(count, max_nr_class * sizeof(int));
+                        if (!tmp_count) {
+                            free(label);
+                            free(count);
+                            fprintf(stderr, "libsvm: realloc failed (svm_check_parameter count)\n");
+                            abort();
+                        }
                         count = tmp_count;
                     }
                 }
