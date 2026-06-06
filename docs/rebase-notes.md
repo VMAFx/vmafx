@@ -45148,3 +45148,12 @@ no rebase impact: removes a duplicate block from
 `core/src/compat/win32/pthread.h` (typedef, macro, BOOL CALLBACK, and inline
 function). The surviving first definition is unchanged. No upstream-mirrored
 file is modified, no public API is affected, no test fixtures change.
+
+---
+
+## fix/ubsan-enum-invalid-value-log-opt (2026-06-06)
+
+no rebase impact: both changes are one-liner casts (`static_cast<int>`) in
+`core/src/log.cpp` and `core/src/opt.cpp`. Neither file is upstream-mirrored
+(both are C++23 rewrites of upstream C originals — ADR-0708 and ADR-0772),
+no public API is affected, and no test fixtures change.

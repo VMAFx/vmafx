@@ -102,7 +102,14 @@ extern "C" [[nodiscard]] int vmaf_option_set(const VmafOption *opt, void *obj, c
 
     uint8_t *base = static_cast<uint8_t *>(obj) + opt->offset;
 
-    switch (opt->type) {
+    /* Cast to int before switching: test_dispatch_unknown_type passes 9999 as
+     * the opt->type field to verify -EINVAL is returned for unknown types.
+     * A switch on an enum whose value is not one of its named enumerators
+     * triggers UBSan's enum-invalid-value check.  Switching on int is
+     * semantically identical — the case labels are integer constants — and
+     * makes the dispatch UBSan-clean without changing behaviour.
+     * See ADR-1080 (UBSan enum-invalid-value in vmaf_log / vmaf_option_set). */
+    switch (static_cast<int>(opt->type)) {
     case VMAF_OPT_TYPE_BOOL: {
         bool *dst = reinterpret_cast<bool *>(base);
         *dst = opt->default_val.b;

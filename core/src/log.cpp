@@ -117,13 +117,21 @@ void vmaf_set_log_level(enum VmafLogLevel level)
 
 void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
 {
-    if (level <= VMAF_LOG_LEVEL_NONE)
+    /* Cast to int before comparing: an out-of-range enum value (e.g. the
+     * sentinel VMAF_LOG_LEVEL_NONE-1 used by test_log to verify silent discard)
+     * is not a representable VmafLogLevel enumerator.  Reading it through the
+     * enum type in a comparison expression triggers UBSan's enum-invalid-value
+     * check.  Casting to int first is value-preserving for all inputs and makes
+     * the guard UBSan-clean without changing observable semantics.
+     * See ADR-1080 (UBSan enum-invalid-value in vmaf_log / vmaf_option_set). */
+    const int level_int = static_cast<int>(level);
+    if (level_int <= static_cast<int>(VMAF_LOG_LEVEL_NONE))
         return;
-    if (level > vmaf_log_level)
+    if (level_int > static_cast<int>(vmaf_log_level))
         return;
 
     /* level is in [1, 4] here; map to zero-based array index. */
-    const std::size_t idx = static_cast<std::size_t>(level) - 1u;
+    const std::size_t idx = static_cast<std::size_t>(level_int) - 1u;
 
     /* Enforce NUL-termination invariant: string_view::data() is safe to pass
      * to fprintf's %s only when the underlying storage is NUL-terminated.
