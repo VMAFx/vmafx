@@ -4,7 +4,6 @@ import os
 import shlex
 import shutil
 from abc import ABCMeta, abstractmethod
-from typing import List, Optional, Tuple
 
 from vmaf.config import VmafExternalConfig
 from vmaf.core.asset import Asset
@@ -692,12 +691,12 @@ class Executor(TypeVersionEnabled):
         workfile_path,
         yuv_type,
         workfile_yuv_type,
-        decoder_type: Optional[str],
-        preresampling_filterchain: Optional[List[str]],
+        decoder_type: str | None,
+        preresampling_filterchain: list[str] | None,
         resampling_type: str,
-        postresampling_filterchain: Optional[List[str]],
-        width_height: Optional[Tuple[int, int]],
-        quality_width_height: Tuple[int, int],
+        postresampling_filterchain: list[str] | None,
+        width_height: tuple[int, int] | None,
+        quality_width_height: tuple[int, int],
         ref_or_dis,
         use_path_as_workpath,
         fifo_mode,
@@ -911,7 +910,7 @@ class Executor(TypeVersionEnabled):
         )
 
     @staticmethod
-    def _get_vframes_cmd(start_end_frame: Optional[list]):
+    def _get_vframes_cmd(start_end_frame: list | None):
         if start_end_frame is None:
             return "", ""
         else:

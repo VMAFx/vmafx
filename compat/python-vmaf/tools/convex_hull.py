@@ -1,4 +1,4 @@
-from typing import Iterable
+from collections.abc import Iterable
 
 from .typing_utils import RdPoint
 

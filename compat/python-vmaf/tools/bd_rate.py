@@ -8,7 +8,8 @@ __copyright__ = "Copyright 2016-2024, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 import math
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 from scipy.integrate import trapezoid

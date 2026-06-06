@@ -1,10 +1,9 @@
 import re
-from typing import List, Optional
 
 from vmaf.tools.misc import MyTestCase
 
 
-def get_tidy_mock_call_args_list(mockProcessRunner_run) -> List[str]:
+def get_tidy_mock_call_args_list(mockProcessRunner_run) -> list[str]:
     l = list()
     for i in range(len(mockProcessRunner_run.call_args_list)):
         e = mockProcessRunner_run.call_args_list[i][0][0]
@@ -107,13 +106,13 @@ def remove_elements_containing_substring(command_line: str, sub_str: str) -> str
 
 def assert_equivalent_commands(
     self,
-    cmds: List[str],
-    cmds_expected: List[str],
+    cmds: list[str],
+    cmds_expected: list[str],
     root: str,
     root_expected: str,
     do_replace_uuid: bool = True,
-    options_to_remove: Optional[List[str]] = None,
-    substrings_to_remove: Optional[List[str]] = None,
+    options_to_remove: list[str] | None = None,
+    substrings_to_remove: list[str] | None = None,
 ):
     """
     >>> self = MyTestCase()

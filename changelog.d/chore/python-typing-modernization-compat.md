@@ -1,0 +1,6 @@
+### Chore
+
+- Modernize Python type hints in `compat/python-vmaf` and `ai/src/vmaf_train/cli.py`:
+  replace `Optional[X]` with `X | None`, `List[X]`/`Tuple[X]` with built-in `list[X]`/`tuple[X]`,
+  and `from typing import Iterable` with `from collections.abc import Iterable`.
+  No functional change; requires Python >= 3.10 (already the project minimum).

@@ -15,7 +15,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -88,10 +88,10 @@ def extract_features_cmd(
 @app.command("fit")
 def fit_cmd(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="YAML config path"),
-    cache: Optional[Path] = typer.Option(None, help="Override features cache (.parquet / .npz)"),
-    output: Optional[Path] = typer.Option(None, help="Override output run directory"),
-    epochs: Optional[int] = typer.Option(None),
-    seed: Optional[int] = typer.Option(None),
+    cache: Path | None = typer.Option(None, help="Override features cache (.parquet / .npz)"),
+    output: Path | None = typer.Option(None, help="Override output run directory"),
+    epochs: int | None = typer.Option(None),
+    seed: int | None = typer.Option(None),
 ) -> None:
     """Train a model from a YAML config."""
     from .train import load_config, train
@@ -193,7 +193,7 @@ def _make_tune_suggest(
 @app.command("tune")
 def tune_cmd(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="Base YAML config path"),
-    param: Optional[list[str]] = typer.Option(
+    param: list[str] | None = typer.Option(
         None,
         "--param",
         "-p",
@@ -204,11 +204,11 @@ def tune_cmd(
     ),
     trials: int = typer.Option(20, "--trials", min=1, help="Number of Optuna trials"),
     study_name: str = typer.Option("vmaf-train-sweep", help="Optuna study name"),
-    storage: Optional[str] = typer.Option(None, help="Optional Optuna storage URL"),
-    cache: Optional[Path] = typer.Option(None, help="Override features cache (.parquet / .npz)"),
-    output: Optional[Path] = typer.Option(None, help="Override sweep output root"),
-    epochs: Optional[int] = typer.Option(None, help="Override epochs per trial"),
-    seed: Optional[int] = typer.Option(None, help="Override base seed"),
+    storage: str | None = typer.Option(None, help="Optional Optuna storage URL"),
+    cache: Path | None = typer.Option(None, help="Override features cache (.parquet / .npz)"),
+    output: Path | None = typer.Option(None, help="Override sweep output root"),
+    epochs: int | None = typer.Option(None, help="Override epochs per trial"),
+    seed: int | None = typer.Option(None, help="Override base seed"),
 ) -> None:
     """Run an Optuna sweep over model_args from a base YAML config."""
     from .train import load_config
@@ -309,7 +309,7 @@ def eval_cmd(
 def manifest_scan_cmd(
     dataset: str = typer.Option(..., help="Dataset name (nflx, konvid-1k, ...)"),
     root: Path = typer.Option(..., exists=True, file_okay=False, help="Local dataset root"),
-    mos_csv: Optional[Path] = typer.Option(
+    mos_csv: Path | None = typer.Option(
         None,
         "--mos-csv",
         exists=True,
@@ -343,7 +343,7 @@ def validate_norm_cmd(
     fail_on_warning: bool = typer.Option(
         False, "--fail-on-warning", help="Exit 2 if any drift exceeds threshold"
     ),
-    json_out: Optional[Path] = typer.Option(None, "--json", help="Write JSON report"),
+    json_out: Path | None = typer.Option(None, "--json", help="Write JSON report"),
 ) -> None:
     """Compare a sidecar's declared feature normalization against real data.
 
@@ -375,19 +375,19 @@ def validate_norm_cmd(
 @app.command("profile")
 def profile_cmd(
     model: Path = typer.Option(..., exists=True, help="ONNX model to profile"),
-    shape: Optional[list[str]] = typer.Option(
+    shape: list[str] | None = typer.Option(
         None,
         "--shape",
         help='Input shape as "N,C,H,W" (repeatable). Defaults to graph shape.',
     ),
-    provider: Optional[list[str]] = typer.Option(
+    provider: list[str] | None = typer.Option(
         None,
         "--provider",
         help="ORT provider (repeatable). Defaults to all available.",
     ),
     warmup: int = typer.Option(5, help="Warmup iterations"),
     iters: int = typer.Option(100, help="Timed iterations"),
-    json_out: Optional[Path] = typer.Option(None, "--json", help="Write JSON report"),
+    json_out: Path | None = typer.Option(None, "--json", help="Write JSON report"),
 ) -> None:
     """Measure latency + peak RSS delta for a model across providers.
 
@@ -493,7 +493,7 @@ def audit_learned_filter_cmd(
     mean_shift_max: float = typer.Option(0.05),
     std_ratio_max: float = typer.Option(2.0),
     clip_fraction_max: float = typer.Option(0.01),
-    json_out: Optional[Path] = typer.Option(None, "--json", help="Write JSON report"),
+    json_out: Path | None = typer.Option(None, "--json", help="Write JSON report"),
     fail_on_warning: bool = typer.Option(False, "--fail-on-warning"),
 ) -> None:
     """Pre-deploy audit for a learned-filter (C3) ONNX model.
@@ -563,7 +563,7 @@ def quantize_int8_cmd(
         1.0,
         help="Exit 2 if the INT8-vs-fp32 RMSE on held-out samples exceeds this",
     ),
-    json_out: Optional[Path] = typer.Option(None, "--json", help="Write JSON report"),
+    json_out: Path | None = typer.Option(None, "--json", help="Write JSON report"),
 ) -> None:
     """Post-training quantize a fp32 ONNX model to INT8 (static PTQ, QDQ format).
 
@@ -610,22 +610,22 @@ def quantize_int8_cmd(
 @app.command("cross-backend")
 def cross_backend_cmd(
     model: Path = typer.Option(..., exists=True, help="ONNX model to check"),
-    features: Optional[Path] = typer.Option(
+    features: Path | None = typer.Option(
         None, exists=True, help="Feature parquet (if omitted, synthetic input is used)"
     ),
-    provider: Optional[list[str]] = typer.Option(
+    provider: list[str] | None = typer.Option(
         None,
         "--provider",
         help="ORT provider (repeatable). Defaults to every non-CPU available provider.",
     ),
-    shape: Optional[str] = typer.Option(
+    shape: str | None = typer.Option(
         None, help='Synthetic input shape as "N,C,H,W" (ignored when --features is given)'
     ),
     n_rows: int = typer.Option(256, help="Max rows to pull from features parquet"),
     atol: float = typer.Option(
         1e-3, help="Absolute-error threshold — exits 2 on any provider above this"
     ),
-    json_out: Optional[Path] = typer.Option(None, "--json", help="Write JSON report"),
+    json_out: Path | None = typer.Option(None, "--json", help="Write JSON report"),
     fail_on_mismatch: bool = typer.Option(
         False, "--fail-on-mismatch", help="Exit 2 when any provider exceeds atol"
     ),
@@ -682,11 +682,11 @@ def bisect_model_quality_cmd(
     features: Path = typer.Option(
         ..., exists=True, help="Held-out features parquet with a `mos` column"
     ),
-    min_plcc: Optional[float] = typer.Option(None, help="PLCC lower bound"),
-    min_srocc: Optional[float] = typer.Option(None, help="SROCC lower bound"),
-    max_rmse: Optional[float] = typer.Option(None, help="RMSE upper bound"),
+    min_plcc: float | None = typer.Option(None, help="PLCC lower bound"),
+    min_srocc: float | None = typer.Option(None, help="SROCC lower bound"),
+    max_rmse: float | None = typer.Option(None, help="RMSE upper bound"),
     input_name: str = typer.Option("input", help="ONNX model input tensor name"),
-    json_out: Optional[Path] = typer.Option(None, "--json", help="Write JSON report"),
+    json_out: Path | None = typer.Option(None, "--json", help="Write JSON report"),
     fail_on_first_bad: bool = typer.Option(
         False, "--fail-on-first-bad", help="Exit 2 when a regression is localized"
     ),
@@ -752,11 +752,11 @@ def bisect_model_quality_cmd(
 def register_cmd(
     model: Path = typer.Option(..., exists=True, help="ONNX model to register"),
     kind: str = typer.Option(..., help="fr|nr|filter"),
-    dataset: Optional[str] = typer.Option(None),
-    license: Optional[str] = typer.Option(None, "--license"),
-    train_commit: Optional[str] = typer.Option(None),
-    train_config: Optional[Path] = typer.Option(None, exists=True),
-    manifest: Optional[Path] = typer.Option(None, exists=True),
+    dataset: str | None = typer.Option(None),
+    license: str | None = typer.Option(None, "--license"),
+    train_commit: str | None = typer.Option(None),
+    train_config: Path | None = typer.Option(None, exists=True),
+    manifest: Path | None = typer.Option(None, exists=True),
 ) -> None:
     """Write the sidecar metadata JSON alongside a shipped ONNX model."""
     from .registry import register

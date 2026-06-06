@@ -1,6 +1,5 @@
 import os
 import subprocess
-from typing import List, Optional
 
 import numpy as np
 
@@ -15,7 +14,7 @@ __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
 
 
-def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: Optional[str] = None) -> None:
+def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: str | None = None) -> None:
     """Invoke MATLAB safely with a single -r script argument.
 
     Replaces the historical ``run_process(' '.join(cmd), shell=True)``
@@ -28,7 +27,7 @@ def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: Optional[str
     Stderr is folded into stdout so the captured/redirected log
     matches the prior behaviour for MATLAB error diagnostics.
     """
-    argv: List[str] = [
+    argv: list[str] = [
         matlab_bin,
         "-nodisplay",
         "-nosplash",
