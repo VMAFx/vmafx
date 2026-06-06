@@ -189,6 +189,21 @@ exit 1
 	}
 }
 
+// TestRunHTTP_BadAddress verifies that runHTTP returns a non-nil error when
+// the TCP listen address is invalid.  Mirrors TestRunGRPCWithServer_BadAddress
+// which tests the same invariant for the gRPC listener.
+func TestRunHTTP_BadAddress(t *testing.T) {
+	t.Parallel()
+	hs, _ := newTestHTTPServer(t)
+	log := observability.NewLogger("ERROR")
+
+	ctx := context.Background()
+	err := runHTTP(ctx, "invalid-addr-not-bindable", hs, log)
+	if err == nil {
+		t.Fatal("expected error for invalid listen address, got nil")
+	}
+}
+
 // TestRunHTTPGracefulShutdown verifies runHTTP honours ctx cancellation and
 // returns nil within GracefulShutdownTimeout. Mirrors the PR #300 invariant.
 func TestRunHTTPGracefulShutdown(t *testing.T) {

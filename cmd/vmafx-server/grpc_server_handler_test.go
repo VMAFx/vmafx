@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -479,5 +480,73 @@ func TestRunGRPCWithServer_BadAddress(t *testing.T) {
 	ctx := context.Background()
 	if err := runGRPCWithServer(ctx, "invalid-addr-not-bindable", impl); err == nil {
 		t.Fatal("expected error for invalid address, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Score handler — scorer-failure path
+// ---------------------------------------------------------------------------
+
+// TestGRPCScore_ScorerError verifies that when the libvmaf scorer returns an
+// error (e.g. the vmaf subprocess exits non-zero), the Score handler returns
+// codes.Internal to the caller. This covers grpc_server.go:74-78, the branch
+// that was previously exercised only for the HTTP path (TestScoreInternalServerError)
+// and the REST adapter (TestRestAdapter_ScoreVideoPair_ScorerError) but not for
+// the gRPC handler itself.
+func TestGRPCScore_ScorerError(t *testing.T) {
+	t.Parallel()
+
+	// Build a stub vmaf binary that always exits non-zero so scorer.Score fails.
+	dir := t.TempDir()
+	stub := dir + "/vmaf"
+	const failScript = "#!/bin/sh\necho 'stub: deliberate scorer failure' >&2\nexit 1\n"
+	if err := os.WriteFile(stub, []byte(failScript), 0o700); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+	modelDir := writeModelFile(t)
+	scorer, err := libvmaf.New(stub, modelDir)
+	if err != nil {
+		t.Fatalf("libvmaf.New: %v", err)
+	}
+
+	reg := prometheus.NewRegistry()
+	metrics := observability.NewMetrics(reg)
+	log := observability.NewLogger("ERROR")
+	impl := newGRPCServer(scorer, metrics, log)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	srv := grpc.NewServer(
+		grpc.UnaryInterceptor(recoveryUnaryInterceptor(log)),
+		grpc.StreamInterceptor(recoveryStreamInterceptor(log)),
+	)
+	vmafxv1.RegisterVmafxScoringServer(srv, impl)
+	go func() { _ = srv.Serve(lis) }()
+	defer srv.GracefulStop()
+
+	conn, err := grpc.NewClient(lis.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		srv.Stop()
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	client := vmafxv1.NewVmafxScoringClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err = client.Score(ctx, &vmafxv1.ScoreRequest{
+		Reference: "/tmp/ref.yuv",
+		Distorted: "/tmp/dis.yuv",
+		Model:     "vmaf_v0.6.1",
+	})
+	if err == nil {
+		t.Fatal("expected codes.Internal when scorer fails, got nil")
+	}
+	if got := status.Code(err); got != codes.Internal {
+		t.Errorf("expected codes.Internal, got %v (err: %v)", got, err)
 	}
 }
