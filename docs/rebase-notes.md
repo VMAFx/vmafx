@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/mcp-score-at-index-eagain-guard (ADR-1073, 2026-06-06)
+
+no rebase impact: changes are confined to `core/src/libvmaf.c`
+(`vmaf_score_at_index` guard condition), `core/src/mcp/compute_vmaf.c`
+(n_threads restored to 1u, debug code removed), and
+`core/test/test_mcp_smoke.c` (fixture dimensions 64→192, debug print
+removed). No public API surface, no upstream-mirrored file is modified.
+The guard change is a one-line fix that does not affect the call
+signature or semantics observable to callers that never encounter
+multi-frame pools.
+
 ## fix/prev-ref-batch-refcount-and-motion-score (ADR-1072, 2026-06-06)
 
 **Files touched:**

@@ -328,7 +328,6 @@ static int score_yuv_pair(const ComputeArgs *args, double *score_out, unsigned *
         rc = set_err(err_owned, "vmaf_read_pictures(flush) failed") == 0 ? flush_rc : -ENOMEM;
         goto cleanup;
     }
-
     double pooled = 0.0;
     int srcc = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, &pooled, 0u,
                                  frames_scored > 0u ? frames_scored - 1u : 0u);

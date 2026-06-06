@@ -2732,12 +2732,19 @@ int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score, unsi
         return -EINVAL;
 
     int err = vmaf_feature_collector_get_score(vmaf->feature_collector, model->name, score, index);
-    /* Netflix#755 / ADR-0154: -EAGAIN means "score not yet available" (a
-     * retroactive-write extractor like integer_motion has not emitted it yet).
-     * Calling vmaf_predict_score_at_index in this case replaces the transient
-     * -EAGAIN with a fatal -EINVAL, making the error indistinguishable from a
-     * programmer error.  Propagate -EAGAIN directly so callers can retry. */
-    if (err && err != -EAGAIN) {
+    /* Netflix#755 / ADR-0154: -EAGAIN from the *model* score vector means the
+     * model prediction at this index has not been computed yet — the "vmaf"
+     * feature vector was created when a prior index was scored (frame 0), so
+     * frame 1+ slots exist in the vector but are unwritten (written=false).
+     * We MUST call vmaf_predict_score_at_index to compute and write the score.
+     *
+     * The original guard `err != -EAGAIN` was intended to propagate -EAGAIN
+     * from retroactive-write *input* features (integer_motion motion2/motion3),
+     * not from the *output* model score itself.  Applying it to the model
+     * score incorrectly short-circuits prediction for all frames after the
+     * first, causing vmaf_score_pooled to return -EAGAIN for multi-frame
+     * sequences.  ADR-1073. */
+    if (err) {
         err = vmaf_predict_score_at_index(model, vmaf->feature_collector, index, score, true, false,
                                           0);
     }

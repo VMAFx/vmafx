@@ -450,8 +450,10 @@ static char *test_compute_vmaf_yuv420p10_score(void)
     int dn = snprintf(dis_path, sizeof(dis_path), "/tmp/vmaf-mcp-dis-10b-%d.yuv", (int)getpid());
     mu_assert("ref path snprintf", rn > 0 && (size_t)rn < sizeof(ref_path));
     mu_assert("dis path snprintf", dn > 0 && (size_t)dn < sizeof(dis_path));
-    mu_assert("write ref 10-bit fixture", write_yuv420p10_fixture(ref_path, 64u, 64u, 2u) == 0);
-    mu_assert("write dis 10-bit fixture", write_yuv420p10_fixture(dis_path, 64u, 64u, 2u) == 0);
+    /* 192x192: float_ms_ssim needs min 176px per side (11-tap Gaussian × 5 levels).
+     * 64x64 caused feed_frame failure → no score → mu_assert trip. */
+    mu_assert("write ref 10-bit fixture", write_yuv420p10_fixture(ref_path, 192u, 192u, 2u) == 0);
+    mu_assert("write dis 10-bit fixture", write_yuv420p10_fixture(dis_path, 192u, 192u, 2u) == 0);
 
     McpHarness h;
     mu_assert("harness init", harness_init(&h) == 0);
@@ -462,7 +464,7 @@ static char *test_compute_vmaf_yuv420p10_score(void)
                      "\"params\":{\"name\":\"compute_vmaf\",\"arguments\":{"
                      "\"reference_path\":\"%s\","
                      "\"distorted_path\":\"%s\","
-                     "\"width\":64,\"height\":64,\"bitdepth\":10,"
+                     "\"width\":192,\"height\":192,\"bitdepth\":10,"
                      "\"model_version\":\"vmaf_v0.6.1\"}}}\n",
                      ref_path, dis_path);
     mu_assert("req snprintf", n > 0 && (size_t)n < sizeof(req));
