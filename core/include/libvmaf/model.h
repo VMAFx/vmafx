@@ -396,6 +396,9 @@ VMAF_EXPORT void vmaf_model_collection_destroy(VmafModelCollection *model_collec
  *                a non-NULL return. Not modified on end-of-iteration.
  *                May itself be NULL if the caller only needs the handle.
  * @return opaque handle to the next model, or NULL after the last model.
+ *
+ * @thread-safety Safe to call from any thread; the built-in model table is
+ *               read-only after library init.
  */
 VMAF_EXPORT const void *vmaf_model_version_next(const void *prev, const char **version);
 

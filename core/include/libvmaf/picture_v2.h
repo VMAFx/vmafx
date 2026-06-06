@@ -132,8 +132,18 @@ typedef struct VmafPicture2 {
  *
  * Not yet implemented — see ADR-0928 §Consequences (cycle N+1).
  *
+ * @param pic     Out: receives the populated picture descriptor. Must not be NULL.
+ * @param pix_fmt Planar pixel format. `VMAF_PIX_FMT_UNKNOWN` is rejected.
+ * @param bpc     Bits per component (8, 10, 12, or 16).
+ * @param w       Luma width in samples. Must be > 0.
+ * @param h       Luma height in samples. Must be > 0.
+ *
  * @return 0 on success, negative errno on failure.
  *         `-ENOSYS` until the cycle-N+1 implementation PR lands.
+ *         `-EINVAL` for NULL pointer or unknown format.
+ *         `-ENOMEM` on allocation failure.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
 VMAF_EXPORT int vmaf_picture2_alloc(VmafPicture2 *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
                                     unsigned w, unsigned h);
@@ -145,8 +155,12 @@ VMAF_EXPORT int vmaf_picture2_alloc(VmafPicture2 *pic, enum VmafPixelFormat pix_
  *
  * Not yet implemented — see ADR-0928 §Consequences (cycle N+1).
  *
+ * @param pic Picture descriptor to unref. NULL is a no-op.
+ *
  * @return 0 on success, negative errno on failure.
  *         `-ENOSYS` until the cycle-N+1 implementation PR lands.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
 VMAF_EXPORT int vmaf_picture2_unref(VmafPicture2 *pic);
 
@@ -162,8 +176,14 @@ VMAF_EXPORT int vmaf_picture2_unref(VmafPicture2 *pic);
  *
  * Not yet implemented — see ADR-0928 §Consequences (cycle N+1).
  *
+ * @param src Source v1 picture. Must not be NULL.
+ * @param dst Out: receives the populated v2 descriptor. Must not be NULL.
+ *
  * @return 0 on success, negative errno on failure.
  *         `-ENOSYS` until the cycle-N+1 implementation PR lands.
+ *         `-EINVAL` on NULL arguments.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
 VMAF_EXPORT int vmaf_picture_v1_to_v2(const VmafPicture *src, VmafPicture2 *dst);
 
@@ -179,8 +199,14 @@ VMAF_EXPORT int vmaf_picture_v1_to_v2(const VmafPicture *src, VmafPicture2 *dst)
  *
  * Not yet implemented — see ADR-0928 §Consequences (cycle N+1).
  *
+ * @param src Source v2 picture. Must not be NULL.
+ * @param dst Out: receives the populated v1 descriptor. Must not be NULL.
+ *
  * @return 0 on success, negative errno on failure.
  *         `-ENOSYS` until the cycle-N+1 implementation PR lands.
+ *         `-EINVAL` on NULL arguments.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
 VMAF_EXPORT int vmaf_picture_v2_to_v1(const VmafPicture2 *src, VmafPicture *dst);
 
@@ -193,6 +219,12 @@ VMAF_EXPORT int vmaf_picture_v2_to_v1(const VmafPicture2 *src, VmafPicture *dst)
  * Returns `"unknown"` for values outside the enum range.
  *
  * Not yet implemented — see ADR-0928 §Consequences (cycle N+1).
+ *
+ * @param backend Backend discriminator value to name.
+ *
+ * @return NUL-terminated static string. Never NULL. Do not free.
+ *
+ * @thread-safety Safe to call from any thread; reads only static data.
  */
 VMAF_EXPORT const char *vmaf_backend_handle_name(VmafBackendHandle backend);
 

@@ -70,6 +70,8 @@ typedef struct VmafCudaConfiguration {
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @thread-safety Not thread-safe. Allocate one VmafCudaState per driver thread.
  */
 VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg);
 
@@ -85,6 +87,9 @@ VMAF_EXPORT int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfigura
  * @param cu_state CUDA state to free. Safe to pass NULL.
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @thread-safety Not thread-safe. Call after vmaf_close() on every
+ *               context that imported this state.
  */
 VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
 
@@ -95,8 +100,10 @@ VMAF_EXPORT int vmaf_cuda_state_free(VmafCudaState *cu_state);
  *
  * @param cu_state CUDA state allocated with `vmaf_cuda_state_init()`.
  *
- *
  * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @thread-safety Not thread-safe. Call before vmaf_use_features_from_model()
+ *               and vmaf_read_pictures() on the same context.
  */
 VMAF_EXPORT int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state);
 
@@ -164,8 +171,10 @@ typedef struct VmafCudaPictureConfiguration {
  *
  * @param cfg VmafPicture parameter configuration.
  *
- *
  * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @thread-safety Not thread-safe. Call before vmaf_read_pictures() on the
+ *               same context.
  */
 VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictureConfiguration cfg);
 
@@ -177,10 +186,11 @@ VMAF_EXPORT int vmaf_cuda_preallocate_pictures(VmafContext *vmaf, VmafCudaPictur
  * @param vmaf VMAF context allocated with `vmaf_init()` and
  *             initialized with `vmaf_cuda_preallocate_pictures()`.
  *
- * @param pic Preallocated picture.
- *
+ * @param pic Preallocated picture. Must not be NULL.
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per driver thread.
  */
 VMAF_EXPORT int vmaf_cuda_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
 
