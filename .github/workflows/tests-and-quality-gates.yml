@@ -305,10 +305,11 @@ jobs:
               # allocator aborts with SIGABRT instead of returning NULL.
               # Exclude test_integer_motion_v2_coverage: intentional
               # huge-allocation pattern triggers SIGABRT under ASan.
-              # Exclude test_pic_preallocation: SIGABRT under ASan from
-              # intentional huge-alloc; OOM path covered by unsanitized suite.
-              # (PR #767 added these to sanitizers.yml but missed this job.)
-              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$'
+              # test_pic_preallocation was removed from this list after PRs #765
+              # and #769 fixed the PREV_REF refcount leak and the dict leak in
+              # flush_context_threaded; all 8 sub-tests now pass under ASan+LSan
+              # (verified 2026-06-06).
+              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$'
               ;;
             undefined)
               # UBSan deselects: test_model (NULL-to-nonnull memcpy
@@ -321,10 +322,13 @@ jobs:
               # eliminating the SIGILL on non-AVX2 CI runners; confirmed
               # clean under UBSan on current master.
               # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with UBSan runtime allocation.
-              # Exclude test_gpu_picture_pool_uaf, test_integer_motion_v2_coverage,
-              # test_pic_preallocation: same intentional huge-alloc / SIGABRT
-              # reason as ASan exclusions above. (PR #767 gap — see sanitizers.yml.)
-              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$'
+              # Exclude test_gpu_picture_pool_uaf, test_integer_motion_v2_coverage:
+              # same intentional huge-alloc / SIGABRT reason as ASan exclusions above.
+              # test_pic_preallocation was removed from this list after PRs #765 and
+              # #769 fixed the PREV_REF refcount leak and the dict leak in
+              # flush_context_threaded; all 8 sub-tests now pass under UBSan
+              # (verified 2026-06-06).
+              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$'
               ;;
             thread)
               # TSan deselects: test_model (same defect as ASan/UBSan
@@ -334,10 +338,13 @@ jobs:
               # mutex-domain mismatch; nightly TSan job was green on
               # 2026-05-09 and 2026-05-10 (state.md entry).
               # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with TSan internal allocator.
-              # Exclude test_gpu_picture_pool_uaf, test_integer_motion_v2_coverage,
-              # test_pic_preallocation: intentional huge-alloc / SIGABRT under
-              # TSan allocator. (PR #767 gap — see sanitizers.yml and TSan job there.)
-              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$'
+              # Exclude test_gpu_picture_pool_uaf, test_integer_motion_v2_coverage:
+              # intentional huge-alloc / SIGABRT under TSan allocator.
+              # test_pic_preallocation was removed from this list after PRs #765 and
+              # #769 fixed the PREV_REF refcount leak and the dict leak in
+              # flush_context_threaded; all 8 sub-tests now pass under TSan
+              # (verified 2026-06-06).
+              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$'
               ;;
             *)
               echo "::error::ADR-0347 deselect list is not defined for sanitizer=${{ matrix.sanitizer }}" >&2
