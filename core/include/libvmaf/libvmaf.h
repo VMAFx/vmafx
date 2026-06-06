@@ -104,6 +104,26 @@ enum VmafOutputFormat {
     VMAF_OUTPUT_FORMAT_SUB,
 };
 
+/**
+ * @enum  VmafPoolingMethod
+ * @brief Temporal pooling strategy applied over a frame interval.
+ *
+ * Passed to @ref vmaf_score_pooled, @ref vmaf_score_pooled_model_collection,
+ * and @ref vmaf_feature_score_pooled to select how per-frame scores are
+ * reduced to a single summary value.
+ *
+ *   - `VMAF_POOL_METHOD_UNKNOWN`        — sentinel; rejected by pooling functions.
+ *   - `VMAF_POOL_METHOD_MIN`            — minimum per-frame score over the interval.
+ *   - `VMAF_POOL_METHOD_MAX`            — maximum per-frame score over the interval.
+ *   - `VMAF_POOL_METHOD_MEAN`           — arithmetic mean.
+ *   - `VMAF_POOL_METHOD_HARMONIC_MEAN`  — harmonic mean (penalises outlier lows more
+ *                                        than the arithmetic mean; typical for VMAF
+ *                                        "phone" / 4K display reporting).
+ *
+ * Stable enumerator values — append-only across libvmaf releases for ABI
+ * compatibility. `VMAF_POOL_METHOD_NB` is a count sentinel and NOT a stable
+ * value; see its inline doc.
+ */
 enum VmafPoolingMethod {
     VMAF_POOL_METHOD_UNKNOWN = 0,
     VMAF_POOL_METHOD_MIN,

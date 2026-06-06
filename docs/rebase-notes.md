@@ -1,6 +1,14 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs/r12-c-api-doc-completeness (2026-06-06, no ADR — doc-only)
+
+no rebase impact: comment-only changes to `core/include/libvmaf/libvmaf_cuda.h`,
+`core/include/libvmaf/libvmaf_sycl.h`, `core/include/libvmaf/dnn.h`,
+`core/include/libvmaf/picture_v2.h`, `core/include/libvmaf/libvmaf.h`, and
+`core/include/libvmaf/model.h`. No C sources, build files, or public API
+signatures touched — Doxygen comment additions only.
+
 ## docs/doxygen-private-headers-r4 (2026-06-07)
 
 no rebase impact: purely additive Doxygen comment blocks inserted into 10

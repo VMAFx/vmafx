@@ -55,6 +55,8 @@ typedef struct VmafSyclConfiguration {
  * @param[in]  cfg         Device index and profiling flag.
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Allocate one VmafSyclState per driver thread.
  */
 VMAF_EXPORT int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfiguration cfg);
 
@@ -67,6 +69,9 @@ VMAF_EXPORT int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigu
  * @param sycl_state  Previously initialised state (ownership is NOT transferred).
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Call before vmaf_use_features_from_model()
+ *               and vmaf_read_pictures() on the same context.
  */
 VMAF_EXPORT int vmaf_sycl_import_state(VmafContext *vmaf, VmafSyclState *sycl_state);
 
@@ -101,6 +106,9 @@ typedef struct VmafSyclPictureConfiguration {
  * @param cfg   Picture configuration (width, height, pixel format).
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Call before vmaf_read_pictures() on the
+ *               same context.
  */
 VMAF_EXPORT int vmaf_sycl_preallocate_pictures(VmafContext *vmaf, VmafSyclPictureConfiguration cfg);
 
@@ -112,6 +120,8 @@ VMAF_EXPORT int vmaf_sycl_preallocate_pictures(VmafContext *vmaf, VmafSyclPictur
  * @param[out] pic  Receives the pre-allocated picture.
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per driver thread.
  */
 VMAF_EXPORT int vmaf_sycl_picture_fetch(VmafContext *vmaf, VmafPicture *pic);
 
@@ -134,6 +144,9 @@ VMAF_EXPORT int vmaf_sycl_picture_fetch(VmafContext *vmaf, VmafPicture *pic);
  * @param bpc   Bits per component (8 or 10).
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Call before vmaf_read_pictures_sycl() on
+ *               the same context.
  */
 VMAF_EXPORT int vmaf_sycl_init_frame_buffers(VmafContext *vmaf, unsigned w, unsigned h,
                                              unsigned bpc);
@@ -148,6 +161,8 @@ VMAF_EXPORT int vmaf_sycl_init_frame_buffers(VmafContext *vmaf, unsigned w, unsi
  * @param[out] dis  Pointer to the distorted Y-plane device buffer.
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per driver thread.
  */
 VMAF_EXPORT int vmaf_sycl_get_frame_buffers(VmafContext *vmaf, void **ref, void **dis);
 
@@ -159,6 +174,8 @@ VMAF_EXPORT int vmaf_sycl_get_frame_buffers(VmafContext *vmaf, void **ref, void 
  * @param vmaf  The VMAF context.
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per driver thread.
  */
 VMAF_EXPORT int vmaf_sycl_wait_compute(VmafContext *vmaf);
 
@@ -171,6 +188,8 @@ VMAF_EXPORT int vmaf_sycl_wait_compute(VmafContext *vmaf);
  * @param index  Frame index (0-based, sequential).
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per driver thread.
  */
 VMAF_EXPORT int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index);
 
@@ -181,6 +200,8 @@ VMAF_EXPORT int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index);
  * @param vmaf  The VMAF context.
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Use one VmafContext per driver thread.
  */
 VMAF_EXPORT int vmaf_flush_sycl(VmafContext *vmaf);
 
@@ -205,6 +226,9 @@ VMAF_EXPORT int vmaf_flush_sycl(VmafContext *vmaf);
  * @param[out] ptr    Receives the device pointer.
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Each VmafSyclState must be owned by one
+ *               thread at a time.
  */
 VMAF_EXPORT int vmaf_sycl_dmabuf_import(VmafSyclState *sycl_state, int fd, size_t size, void **ptr);
 
@@ -212,7 +236,10 @@ VMAF_EXPORT int vmaf_sycl_dmabuf_import(VmafSyclState *sycl_state, int fd, size_
  * Free a pointer returned by vmaf_sycl_dmabuf_import().
  *
  * @param sycl_state  The SYCL state.
- * @param ptr         Pointer to free.
+ * @param ptr         Pointer to free. NULL is a no-op.
+ *
+ * @thread-safety Not thread-safe. Each VmafSyclState must be owned by one
+ *               thread at a time.
  */
 VMAF_EXPORT void vmaf_sycl_dmabuf_free(VmafSyclState *sycl_state, void *ptr);
 
@@ -233,6 +260,9 @@ VMAF_EXPORT void vmaf_sycl_dmabuf_free(VmafSyclState *sycl_state, void *ptr);
  * @param bpc          Bits per component (8 or 10).
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Each VmafSyclState must be owned by one
+ *               thread at a time.
  */
 VMAF_EXPORT int vmaf_sycl_import_va_surface(VmafSyclState *sycl_state, void *va_display,
                                             unsigned int va_surface, int is_ref, unsigned w,
@@ -252,6 +282,9 @@ VMAF_EXPORT int vmaf_sycl_import_va_surface(VmafSyclState *sycl_state, void *va_
  * @param bpc          Bits per component (8 or 10).
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Each VmafSyclState must be owned by one
+ *               thread at a time.
  */
 VMAF_EXPORT int vmaf_sycl_upload_plane(VmafSyclState *sycl_state, const void *src, unsigned pitch,
                                        int is_ref, unsigned w, unsigned h, unsigned bpc);
@@ -273,6 +306,9 @@ VMAF_EXPORT int vmaf_sycl_upload_plane(VmafSyclState *sycl_state, const void *sr
  * @param bpc            Bits per component (8 or 10).
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Each VmafSyclState must be owned by one
+ *               thread at a time.
  */
 VMAF_EXPORT int vmaf_sycl_import_d3d11_surface(VmafSyclState *sycl_state, void *d3d11_device,
                                                void *d3d11_texture, unsigned subresource,
@@ -290,6 +326,9 @@ VMAF_EXPORT int vmaf_sycl_import_d3d11_surface(VmafSyclState *sycl_state, void *
  * @param sycl_state  The SYCL state.
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Call before submitting any frames on the
+ *               same state.
  */
 VMAF_EXPORT int vmaf_sycl_profiling_enable(VmafSyclState *sycl_state);
 
@@ -297,6 +336,9 @@ VMAF_EXPORT int vmaf_sycl_profiling_enable(VmafSyclState *sycl_state);
  * Disable profiling and discard accumulated timing data.
  *
  * @param sycl_state  The SYCL state.
+ *
+ * @thread-safety Not thread-safe. Each VmafSyclState must be owned by one
+ *               thread at a time.
  */
 VMAF_EXPORT void vmaf_sycl_profiling_disable(VmafSyclState *sycl_state);
 
@@ -305,6 +347,9 @@ VMAF_EXPORT void vmaf_sycl_profiling_disable(VmafSyclState *sycl_state);
  * Call after vmaf_sycl_wait_compute() or vmaf_flush_sycl().
  *
  * @param sycl_state  The SYCL state.
+ *
+ * @thread-safety Not thread-safe. Each VmafSyclState must be owned by one
+ *               thread at a time.
  */
 VMAF_EXPORT void vmaf_sycl_profiling_print(VmafSyclState *sycl_state);
 
@@ -316,6 +361,9 @@ VMAF_EXPORT void vmaf_sycl_profiling_print(VmafSyclState *sycl_state);
  * @param[out] output Receives the allocated string (NULL on error).
  *
  * @return 0 on success, negative errno on failure.
+ *
+ * @thread-safety Not thread-safe. Each VmafSyclState must be owned by one
+ *               thread at a time.
  */
 VMAF_EXPORT int vmaf_sycl_profiling_get_string(VmafSyclState *sycl_state, char **output);
 
@@ -324,7 +372,10 @@ VMAF_EXPORT int vmaf_sycl_profiling_get_string(VmafSyclState *sycl_state, char *
  * and reset the pointer. The state must not be imported in any
  * VmafContext when this is called (call vmaf_close() first).
  *
- * @param sycl_state  The SYCL state (freed and set to NULL).
+ * @param sycl_state  The SYCL state (freed and set to NULL). NULL is a no-op.
+ *
+ * @thread-safety Not thread-safe. Call after vmaf_close() on every context
+ *               that imported this state.
  */
 VMAF_EXPORT void vmaf_sycl_state_free(VmafSyclState **sycl_state);
 
@@ -336,6 +387,8 @@ VMAF_EXPORT void vmaf_sycl_state_free(VmafSyclState **sycl_state);
  * CLI path.
  *
  * @return Number of GPU devices enumerated, or negative errno on failure.
+ *
+ * @thread-safety Safe to call from any thread; does not touch a VmafContext.
  */
 VMAF_EXPORT int vmaf_sycl_list_devices(void);
 
