@@ -34,6 +34,12 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
+// In library code, callers should receive a `Result` rather than a panic.
+// `expect` / `unwrap` in non-test lib code is disallowed by default so that
+// hidden panic paths are caught at review time.  Test modules and examples
+// may opt back in with `#[allow(clippy::expect_used)]`.
+#![warn(clippy::expect_used)]
+#![warn(clippy::unwrap_used)]
 
 //! # vmafx — safe Rust bindings to libvmaf
 //!

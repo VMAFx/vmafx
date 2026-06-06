@@ -59,6 +59,26 @@ also enumerate it in `values.schema.json`.
 
 ---
 
+## fix/rust-clippy-library-strictness (2026-06-06, ADR-1063)
+
+**Files touched:**
+`bindings/rust/vmafx-sys/src/lib.rs`, `bindings/rust/vmafx-sys/src/safe.rs`,
+`bindings/rust/vmafx/src/lib.rs`, `bindings/rust/vmafx/src/picture.rs`,
+`bindings/rust/vmafx/src/error.rs`,
+`core/src/feature/rust/tad/src/lib.rs`
+
+**Rebase impact:** `vmafx-sys/src/lib.rs` no longer uses crate-level
+`#![allow(clippy::all)]`; the generated bindings are now in a private `mod bindings`
+with the allow scoped to that module.  Any branch that adds new hand-written code
+to `vmafx-sys/src/lib.rs` or `safe.rs` must write clippy-clean code.
+The `VmafContext::default()` call is gone — branches that depend on it must
+use `VmafContext::new()` instead.  The `#![deny(unsafe_op_in_unsafe_fn)]` in
+`safe.rs` and `tad/src/lib.rs` will cause a compile error on any in-flight branch
+that adds a bare unsafe operation inside an `unsafe fn` without an explicit
+`unsafe {}` block.
+
+---
+
 
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
 

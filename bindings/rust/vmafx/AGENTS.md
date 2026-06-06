@@ -24,6 +24,12 @@
   re-export raw FFI symbols. If a user needs the escape hatch, they
   add `vmafx-sys` as a direct dep.
 
+- **`clippy::expect_used` and `clippy::unwrap_used` are warned** (ADR-1063):
+  `src/lib.rs` carries `#![warn(clippy::expect_used, clippy::unwrap_used)]`.
+  Library code must return `Result` rather than panic. Test modules opt back in
+  with `#[allow(clippy::expect_used, clippy::unwrap_used)]` on the `mod tests`
+  block. Do not add `.expect()` or `.unwrap()` to non-test library functions.
+
 ## Phase scope (Phase 1, ADR-0929)
 
 In scope: `Context`, `Model`, `Picture`, `Score`, `Error`, lifecycle +

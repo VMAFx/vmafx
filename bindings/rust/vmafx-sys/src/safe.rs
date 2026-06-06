@@ -9,6 +9,11 @@
 //   - Ownership follows RAII: `VmafContext` closes the underlying context on drop.
 //   - `VmafModel` destroys the C model on drop.
 
+// This module is hand-written (not generated); enforce the unsafe-op lint so
+// every unsafe operation inside a safe function body must be explicitly wrapped
+// in its own `unsafe {}` block.
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use std::ffi::{CStr, CString};
 use std::ptr;
 
@@ -69,16 +74,11 @@ pub struct VmafContext {
 // Safety: libvmaf contexts are self-contained; no thread-local state is accessed.
 unsafe impl Send for VmafContext {}
 
-impl Default for VmafContext {
-    /// Create a context with sensible defaults via [`VmafContext::new`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if `libvmaf` fails to initialise (e.g., memory allocation failure).
-    fn default() -> Self {
-        Self::new().expect("VmafContext::default: vmaf_init failed")
-    }
-}
+// NOTE: `Default` is intentionally NOT implemented for `VmafContext`.
+// A panicking `Default` impl (i.e. `Self::new().unwrap()`) would hide
+// allocation failures behind a generic trait call with no ergonomic error
+// path.  Callers that want a context with default settings should call
+// `VmafContext::new()` directly and handle the `Result`.
 
 impl VmafContext {
     /// Allocate and open a new VMAF context with sensible defaults.

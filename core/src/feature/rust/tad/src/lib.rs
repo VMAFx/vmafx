@@ -32,6 +32,10 @@
 // The C wrapper `tad_rust.c` registers these as a VmafFeatureExtractor
 // so users can invoke the feature via `--feature tad`.
 
+// Every `unsafe fn` must wrap each individual unsafe operation in its own
+// `unsafe {}` block so future readers can audit each operation individually.
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use std::os::raw::{c_char, c_double, c_int, c_uint, c_void};
 
 // ---------------------------------------------------------------------------

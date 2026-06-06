@@ -3,14 +3,18 @@
 //
 // vmafx-sys/src/lib.rs — raw FFI bindings to libvmaf.
 //
-// Generated at build time from the installed libvmaf public headers via bindgen.
-// C symbols use C naming conventions; Rust lints for those are suppressed here.
+// The low-level bindgen output lives inside the `bindings` module, which carries
+// blanket lint suppressions appropriate for machine-generated C-naming FFI code.
+// Hand-written modules (`safe`) carry their own, stricter lint profiles and are
+// NOT covered by the generated-bindings suppressions.
 
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
-#![allow(non_upper_case_globals)]
-#![allow(clippy::all)]
+// Re-export everything from the generated bindings at the crate root so
+// existing callers continue to work without a path change.
+#[allow(non_camel_case_types, non_snake_case, non_upper_case_globals, clippy::all)]
+mod bindings {
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
 
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+pub use bindings::*;
 
 pub mod safe;
