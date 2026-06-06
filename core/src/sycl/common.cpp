@@ -789,6 +789,22 @@ extern "C" int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv)
         state->graph_extractors[i] = state->graph_extractors[i + 1];
     state->num_graph_extractors--;
 
+    /* Drain combined_queue before destroying the recorded exec-graphs.
+     * The exec_graph_t destructor (Level Zero command-list release) is
+     * undefined if the queue still holds in-flight replays of that graph.
+     * In the normal teardown path collect() → graph_wait() already drained
+     * the queue, but close_fex_sycl() only waits the PRIMARY queue via
+     * vmaf_sycl_queue_wait().  An explicit wait here makes the invariant
+     * hold regardless of caller ordering and prevents a SIGSEGV when the
+     * Level Zero runtime tries to release the executable command-list while
+     * the GPU is still referencing it. */
+    if (state->combined_queue) {
+        try {
+            state->combined_queue->wait_and_throw();
+        } catch (...) {
+        }
+    }
+
     /* Invalidate any recorded graphs — they captured the old extractor set.
      * record_combined_graphs() will re-record on the next graph_submit(). */
     for (int i = 0; i < 2; i++) {
@@ -798,6 +814,10 @@ extern "C" int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv)
         }
     }
     state->combined_graphs_recorded = false;
+
+    /* Zero out the now-vacated slot so stale function pointers and priv
+     * are not visible if a bug ever bypasses the num_graph_extractors guard. */
+    state->graph_extractors[state->num_graph_extractors] = {};
 
     return 0;
 }

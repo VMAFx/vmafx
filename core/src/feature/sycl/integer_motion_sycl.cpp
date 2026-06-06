@@ -911,7 +911,10 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
         /* Unregister from the combined command graph before freeing priv.
          * Without this, a second VmafContext sharing the same sycl_state
          * would inherit a dangling priv pointer in the graph registry,
-         * causing a SIGSEGV when the graph is re-recorded. ADR-0989. */
+         * causing a SIGSEGV when the graph is re-recorded. ADR-0989.
+         * vmaf_sycl_graph_unregister() now also drains combined_queue
+         * before destroying any recorded exec-graphs (Level Zero
+         * command-list release races against in-flight GPU work). */
         (void)vmaf_sycl_graph_unregister(state, s);
 
         if (s->d_blur[0])

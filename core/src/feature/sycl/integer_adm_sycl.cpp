@@ -1685,6 +1685,13 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
     if (state) {
         vmaf_sycl_queue_wait(state);
 
+        /* Unregister from the combined command graph before freeing priv.
+         * Mirrors the fix in integer_motion_sycl.cpp (ADR-0989):
+         * vmaf_sycl_graph_unregister() drains combined_queue and removes
+         * this extractor's entry so a subsequent VmafContext sharing the
+         * same sycl_state does not inherit a dangling priv pointer. */
+        (void)vmaf_sycl_graph_unregister(state, s);
+
         if (s->d_dwt_tmp_ref)
             vmaf_sycl_free(state, s->d_dwt_tmp_ref);
         if (s->d_dwt_tmp_dis)

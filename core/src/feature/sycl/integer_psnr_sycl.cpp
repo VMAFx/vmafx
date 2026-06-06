@@ -402,6 +402,13 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<PsnrStateSycl *>(fex->priv);
     if (s->sycl_state) {
+        /* Unregister from the combined command graph before freeing priv.
+         * Mirrors the fix in integer_motion_sycl.cpp (ADR-0989):
+         * vmaf_sycl_graph_unregister() drains combined_queue and removes
+         * this extractor's entry so a subsequent VmafContext sharing the
+         * same sycl_state does not inherit a dangling priv pointer. */
+        (void)vmaf_sycl_graph_unregister(s->sycl_state, s);
+
         for (unsigned p = 0; p < PSNR_NUM_PLANES; p++) {
             if (s->d_sse[p])
                 vmaf_sycl_free(s->sycl_state, s->d_sse[p]);
