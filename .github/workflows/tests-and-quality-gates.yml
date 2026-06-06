@@ -300,7 +300,15 @@ jobs:
               # detect_leaks=1 (the invoke_init helper already calls
               # fex->close() + free(priv) on every code path).
               # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with ASan shadow-memory mmap.
-              EXCLUDE='test_model$|test_y4m_alloc_failure$'
+              # Exclude test_gpu_picture_pool_uaf: intentionally allocates
+              # ~192 GiB to exercise the OOM cleanup path; the ASan
+              # allocator aborts with SIGABRT instead of returning NULL.
+              # Exclude test_integer_motion_v2_coverage: intentional
+              # huge-allocation pattern triggers SIGABRT under ASan.
+              # Exclude test_pic_preallocation: SIGABRT under ASan from
+              # intentional huge-alloc; OOM path covered by unsanitized suite.
+              # (PR #767 added these to sanitizers.yml but missed this job.)
+              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$'
               ;;
             undefined)
               # UBSan deselects: test_model (NULL-to-nonnull memcpy
@@ -313,7 +321,10 @@ jobs:
               # eliminating the SIGILL on non-AVX2 CI runners; confirmed
               # clean under UBSan on current master.
               # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with UBSan runtime allocation.
-              EXCLUDE='test_model$|test_y4m_alloc_failure$'
+              # Exclude test_gpu_picture_pool_uaf, test_integer_motion_v2_coverage,
+              # test_pic_preallocation: same intentional huge-alloc / SIGABRT
+              # reason as ASan exclusions above. (PR #767 gap — see sanitizers.yml.)
+              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$'
               ;;
             thread)
               # TSan deselects: test_model (same defect as ASan/UBSan
@@ -323,7 +334,10 @@ jobs:
               # mutex-domain mismatch; nightly TSan job was green on
               # 2026-05-09 and 2026-05-10 (state.md entry).
               # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with TSan internal allocator.
-              EXCLUDE='test_model$|test_y4m_alloc_failure$'
+              # Exclude test_gpu_picture_pool_uaf, test_integer_motion_v2_coverage,
+              # test_pic_preallocation: intentional huge-alloc / SIGABRT under
+              # TSan allocator. (PR #767 gap — see sanitizers.yml and TSan job there.)
+              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$'
               ;;
             *)
               echo "::error::ADR-0347 deselect list is not defined for sanitizer=${{ matrix.sanitizer }}" >&2

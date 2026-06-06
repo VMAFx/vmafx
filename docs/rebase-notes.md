@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/sanitizer-deselect-tests-and-quality-gates (2026-06-06)
+
+no rebase impact: CI-only change to `.github/workflows/tests-and-quality-gates.yml`
+adding `test_gpu_picture_pool_uaf`, `test_integer_motion_v2_coverage`, and
+`test_pic_preallocation` to the ADR-0347 per-sanitizer EXCLUDE patterns for
+address, undefined, and thread. No source, header, test, or build file is
+modified. Conflicts only if another branch edits the same `case` block in
+that workflow file.
+
 ## fix/mcp-score-at-index-eagain-guard (ADR-1073, 2026-06-06)
 
 no rebase impact: changes are confined to `core/src/libvmaf.c`
