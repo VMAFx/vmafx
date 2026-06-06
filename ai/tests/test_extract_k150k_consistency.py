@@ -35,7 +35,19 @@ _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "extract_k150k_features.py"
 
 
 def _load_script_module():
-    """Import ``extract_k150k_features.py`` as a module despite its dashed dir."""
+    """Import ``extract_k150k_features.py`` as a module despite its dashed dir.
+
+    Returns the cached entry from sys.modules when the module was already loaded
+    by an earlier test file (e.g. test_extract_k150k_hdr_hfr_options.py or
+    test_extract_k150k_perf.py).  Replacing the cached entry with a freshly
+    exec_module()-d copy breaks unittest.mock patches in sibling tests: those
+    tests import _process_clip at collection time from the *old* module object,
+    so patching sys.modules["extract_k150k_features"] (the *new* object) is
+    invisible to the already-bound function reference — causing real ffmpeg/
+    ffprobe subprocess calls despite the mock.
+    """
+    if "extract_k150k_features" in sys.modules:
+        return sys.modules["extract_k150k_features"]
     spec = importlib.util.spec_from_file_location("extract_k150k_features", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

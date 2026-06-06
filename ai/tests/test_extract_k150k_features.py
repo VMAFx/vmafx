@@ -15,6 +15,16 @@ _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "extract_k150k_features.py"
 
 
 def _load_module():
+    # Return the cached module if it is already registered under this name.
+    # Without this guard, re-executing exec_module() at collection time replaces
+    # sys.modules["extract_k150k_features"] with a new module object.  Any test
+    # in a sibling file (e.g. test_extract_k150k_perf.py) that imported
+    # _process_clip earlier holds a reference into the *old* object's globals,
+    # so unittest.mock patches applied to sys.modules["extract_k150k_features"]
+    # (the new object) are invisible to those already-bound function references
+    # — causing real ffmpeg/ffprobe calls despite the mock.
+    if "extract_k150k_features" in sys.modules:
+        return sys.modules["extract_k150k_features"]
     spec = importlib.util.spec_from_file_location("extract_k150k_features", _SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

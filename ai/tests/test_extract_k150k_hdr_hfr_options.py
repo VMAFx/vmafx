@@ -21,11 +21,17 @@ REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "ai" / "scripts" / "extract_k150k_features.py"
 
 # ai/scripts/ is not a package; load the module by path.
-spec = importlib.util.spec_from_file_location("extract_k150k_features", SCRIPT)
-assert spec is not None and spec.loader is not None
-ek = importlib.util.module_from_spec(spec)
-sys.modules["extract_k150k_features"] = ek
-spec.loader.exec_module(ek)
+# Return the cached instance if already in sys.modules so that module-level
+# imports in sibling test files (e.g. test_extract_k150k_perf.py) always
+# patch the same object that _process_clip references as its globals.
+if "extract_k150k_features" in sys.modules:
+    ek = sys.modules["extract_k150k_features"]
+else:
+    spec = importlib.util.spec_from_file_location("extract_k150k_features", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    ek = importlib.util.module_from_spec(spec)
+    sys.modules["extract_k150k_features"] = ek
+    spec.loader.exec_module(ek)
 
 
 # ---------------------------------------------------------------------------
