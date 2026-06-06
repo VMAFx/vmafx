@@ -186,6 +186,19 @@ test_svm_api = executable('test_svm_api',
     objects : libsvm_static_lib.extract_all_objects(recursive: true),
 )
 
+# Regression test for the sequential-realloc double-free fixed in PR #708.
+# Exercises svm_group_classes() and svm_check_parameter() with 17- and
+# 32-class fixtures, crossing the max_nr_class=16 realloc threshold.
+# Under ASan/UBSan any double-free aborts immediately; the test is most
+# valuable in sanitised build configurations.
+test_svm_multiclass = executable('test_svm_multiclass',
+    ['test.c', 'test_svm_multiclass.c', '../src/thread_locale.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    dependencies : [pthread_dependency, thread_lib],
+    objects : libsvm_static_lib.extract_all_objects(recursive: true),
+)
+
 # SAN-MODEL-MALLOC-OOB regression suite (ADR-0889). Covers the vendored
 # libsvm text-format parser hardening — crafted-model rejection paths
 # that pre-empt oob Malloc sizes and read-before-write defects in the
@@ -2400,6 +2413,7 @@ test('test_model_collection_api', test_model_collection_api, suite : ['fast'])
 test('test_predict', test_predict, suite : ['fast'])
 test('test_svm_api', test_svm_api, suite : ['fast'])
 test('test_svm_parser', test_svm_parser, suite : ['fast'])
+test('test_svm_multiclass', test_svm_multiclass, suite : ['fast'])
 test('test_iqa_helpers', test_iqa_helpers, suite : ['fast'])
 test('test_feature_extractor', test_feature_extractor, suite : ['fast'])
 test('test_dict', test_dict, suite : ['fast'])

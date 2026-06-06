@@ -47,6 +47,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
+      # Regression guard for PR #707 / ADR-0529: assert that every /dev/dri
+      # bind-mount in docker-compose.yml is writable (read_only: false).
+      # The NVIDIA Container Toolkit OCI hook writes symlinks into
+      # /dev/dri/by-path at container init; read_only:true breaks any NVIDIA
+      # host.  This step runs before the expensive Docker build so the lint
+      # fails fast.
+      - name: Lint docker-compose.yml — /dev/dri mounts must be writable
+        run: bash scripts/ci/check-compose-dri-writable.sh dev/docker-compose.yml
+
       # Build only up to the `libvmaf-build` stage (skips the heavy FFmpeg
       # stage and the final `dev-mcp` assembly) so the gate stays under 45 min
       # on a free-tier runner.  The GPU SDK layers (CUDA, oneAPI, ROCm) are the

@@ -160,10 +160,17 @@ bound in destroy; re-apply the fork's hunks on top of any upstream changes.
 
 ### 11. Vendored libsvm + IQA test files are observation-only (ADR-0952)
 
-`core/test/test_svm_api.c` and `core/test/test_iqa_helpers.c` were added
-to lift coverage of the vendored bodies (`core/src/svm.cpp`,
-`core/src/feature/iqa/*.c`) from ≈14% to 74% without modifying any
-vendored source. The invariant is symmetric to the ADR-0889 cordon:
+`core/test/test_svm_api.c`, `core/test/test_svm_multiclass.c`, and
+`core/test/test_iqa_helpers.c` were added to lift coverage of the vendored
+bodies (`core/src/svm.cpp`, `core/src/feature/iqa/*.c`) without modifying
+any vendored source. The invariant is symmetric to the ADR-0889 cordon:
+
+`test_svm_multiclass.c` specifically exercises the sequential-realloc
+double-free path fixed in PR #708 — 17-class and 32-class C_SVC fixtures
+force the `max_nr_class=16→32` realloc doubling in `svm_group_classes()`,
+and a 17-class NU_SVC fixture triggers the same path in
+`svm_check_parameter()`. Under ASan/UBSan any regression to the double-free
+pattern aborts immediately. (ADR-1066)
 
 - These test files **must not** import any private vendored header,
   call any static-internal helper, or rely on any vendored macro

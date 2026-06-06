@@ -45001,4 +45001,11 @@ The `PDJSON_STACK_MAX` constant added to `pdjson.c` is a `#define` at the
 top of the file; any future vendor sync that replaces the file will need to
 re-apply the same define or find a better integration point.
 
+## test/svm-multiclass-realloc-and-compose-dri-lint (PR #TBD, 2026-06-06, ADR-1066)
+
+no rebase impact: adds new test file `core/test/test_svm_multiclass.c`, new
+lint script `scripts/ci/check-compose-dri-writable.sh`, and a step in
+`.github/workflows/dev-container-build.yml`. No existing C source, public API,
+or upstream-mirrored file is modified.
+
 ---
