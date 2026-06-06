@@ -15,6 +15,7 @@ or upstream-mirrored files are touched.
 
 ---
 
+
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
 
 **Files touched:**
@@ -44904,5 +44905,11 @@ no rebase impact: `docs/state.md` only — removes 2 stale Open rows already
 in Recently Closed, updates 1 Open row's owner reference, and fixes a
 duplicate Recently Closed row. No C sources, public API, or
 upstream-mirrored files are touched.
+
+## test/go-vmafx-node-coverage-r6
+
+no rebase impact: test-only additions to `cmd/vmafx-node/executor_extra_test.go`
+and `cmd/vmafx-node/bpf/bypass_unit_test.go`. No C sources, public API,
+upstream-mirrored files, or production Go code is changed.
 
 ---
