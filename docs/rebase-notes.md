@@ -45096,4 +45096,10 @@ Python code affected.  The `time.NewTicker` refactor is a semantic no-op for
 rebases; the `MaxBytesReader` + `ReadTimeout` additions are internal to the HTTP
 handler and do not touch any public API surface.
 
+## fix/sanitizer-exclusions-huge-alloc-tests
+
+no rebase impact: only `.github/workflows/sanitizers.yml` and a changelog
+fragment are modified. No C source, public API, or upstream-mirrored file is
+touched.
+
 ---
