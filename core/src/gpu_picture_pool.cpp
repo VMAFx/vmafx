@@ -80,6 +80,8 @@ free_pic:
     std::free(p->pic);
 free_p:
     std::free(p);
+    *pool = nullptr; /* ADR-0154 / test_gpu_picture_pool_uaf: clear caller handle on every
+                      * failure path so vmaf_close() teardown does not double-free. */
 fail:
     return err;
 }

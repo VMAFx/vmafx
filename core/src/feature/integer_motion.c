@@ -273,6 +273,14 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -ENOTSUP;
     }
 
+    /* Research-0094: the 5-tap separable Gaussian uses reflect-101 mirror-
+     * padding with radius 2; frames narrower or shorter than 3 px produce a
+     * negative reflected index (UB / ASan SEGV). Reject early. */
+    if (w < 3 || h < 3) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion: frame %ux%u too small (minimum 3x3)\n", w, h);
+        return -EINVAL;
+    }
+
     s->w = w;
     s->h = h;
     s->bpc = bpc;

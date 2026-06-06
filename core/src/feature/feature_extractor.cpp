@@ -804,12 +804,19 @@ static struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool
         return NULL;
     }
     memset(slot->ctx_list, 0, ctx_array_sz);
-    int dict_err = vmaf_dictionary_copy(&opts_dict, &slot->opts_dict);
-    if (dict_err) {
-        free(slot->ctx_list);
-        slot->ctx_list = NULL;
-        pthread_cond_destroy(&(slot->full));
-        return NULL;
+    /* NULL opts_dict is the common case (no per-feature options) — match
+     * the C twin (feature_extractor.c lines 813-814) by skipping the copy
+     * and leaving slot->opts_dict at its zero-initialised NULL value.
+     * vmaf_dictionary_copy returns -EINVAL when *src is NULL, so the
+     * unconditional call was erroneously rejecting every NULL-opts acquire. */
+    if (opts_dict) {
+        int dict_err = vmaf_dictionary_copy(&opts_dict, &slot->opts_dict);
+        if (dict_err) {
+            free(slot->ctx_list);
+            slot->ctx_list = NULL;
+            pthread_cond_destroy(&(slot->full));
+            return NULL;
+        }
     }
 
     return &pool->fex_list[pool->cnt++];

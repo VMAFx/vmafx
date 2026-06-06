@@ -387,17 +387,25 @@ static int predict_load_feature_score(VmafModel *model, VmafFeatureCollector *fe
     if (fv) {
         err = vmaf_feature_vector_get_score(fv, feature_score, index);
     } else {
-        // Fallback: feature not yet registered, try normal lookup
+        /* Fallback: feature not yet registered — try the collector. */
         err = vmaf_feature_collector_get_score(feature_collector, model->predict_feature_names[i],
                                                feature_score, index);
         if (!err) {
-            // Cache for future calls
+            /* Cache the vector pointer for future calls. */
             model->predict_feature_vectors[i] =
                 vmaf_feature_collector_find(feature_collector, model->predict_feature_names[i]);
+        } else if (err == -EINVAL) {
+            /* The feature vector has never been created (the extractor that
+             * writes it uses retroactive/flush writes and has not yet done
+             * so for this index).  From the caller's view this is transient
+             * ("not yet available") rather than a programmer error; return
+             * -EAGAIN so vmaf_score_pooled propagates the correct sentinel
+             * (Netflix#755 / ADR-0154). */
+            err = -EAGAIN;
         }
     }
 
-    if (err) {
+    if (err && err != -EAGAIN) {
         if (!propagate_metadata) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR,
                      "vmaf_predict_score_at_index(): no feature '%s' "
