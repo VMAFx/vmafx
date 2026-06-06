@@ -265,6 +265,19 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
      * mirroring the motion_v2 + GPU motion3 -ENOTSUP precedent in ADR-0219.
      * The 3-frame default mode is fully supported.
      */
+    /* The 5-tap separable Gaussian uses reflect-101 mirror padding; the
+     * mirror() helper requires dim >= radius + 1 = 3 in each axis.
+     * Reject smaller frames up front to prevent out-of-bounds reads.
+     * Mirrors the check in integer_motion_v2.c and float_motion.c. */
+    const unsigned min_dim = (unsigned)(filter_width / 2 + 1); /* = 3 */
+    if (h < min_dim || w < min_dim) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "motion: frame %ux%u is below the 5-tap filter minimum %ux%u; "
+                 "refusing to avoid out-of-bounds mirror reads\n",
+                 w, h, min_dim, min_dim);
+        return -EINVAL;
+    }
+
     if (s->motion_five_frame_window) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "motion: motion_five_frame_window=true is not supported; "

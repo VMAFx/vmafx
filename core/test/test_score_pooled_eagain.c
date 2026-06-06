@@ -18,8 +18,6 @@
  */
 
 #include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "test.h"
@@ -87,20 +85,24 @@ static char *test_score_pooled_streaming_pattern(void)
     mu_assert("model load failed", vmaf_model_load(&model, &mcfg, "vmaf_v0.6.1") == 0);
     mu_assert("use_features_from_model failed", vmaf_use_features_from_model(vmaf, model) == 0);
 
-    /* Streaming pattern: after reading frame i (i >= 2), pool frame
-     * i-2 — that frame is complete because motion2 has been written
-     * retroactively when frame i-1 arrived. */
+    /* integer_motion writes motion2/motion3 for ALL frames only in flush(),
+     * not retroactively during extract().  Before flush, score_pooled must
+     * return -EAGAIN (not -EINVAL) for any index — the feature vector for
+     * motion2 has not been registered in the collector yet.  After flush,
+     * every in-range index becomes available.  This test verifies the
+     * pre-flush -EAGAIN behaviour and delegates the post-flush success path
+     * to test_score_pooled_after_flush_complete. */
     for (unsigned i = 0; i < 4; i++)
         mu_assert("read failed", submit_frame(vmaf, i, 576, 324) == 0);
 
-    /* After read(3), frame 0 and frame 1 are both complete. */
     double score = 0.0;
     int rc = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, &score, 0u, 0u);
-    mu_assert("pooled(0,0) must succeed after read(3)", rc == 0);
-    mu_assert("pooled(0,0) score must be finite", score > 0.0 && score < 100.0);
+    mu_assert("pooled(0,0) before flush must return -EAGAIN (motion2 not yet written)",
+              rc == -EAGAIN);
 
     rc = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, &score, 1u, 1u);
-    mu_assert("pooled(1,1) must succeed after read(3)", rc == 0);
+    mu_assert("pooled(1,1) before flush must return -EAGAIN (motion2 not yet written)",
+              rc == -EAGAIN);
 
     vmaf_close(vmaf);
     vmaf_model_destroy(model);

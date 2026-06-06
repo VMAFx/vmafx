@@ -387,17 +387,30 @@ static int predict_load_feature_score(VmafModel *model, VmafFeatureCollector *fe
     if (fv) {
         err = vmaf_feature_vector_get_score(fv, feature_score, index);
     } else {
-        // Fallback: feature not yet registered, try normal lookup
-        err = vmaf_feature_collector_get_score(feature_collector, model->predict_feature_names[i],
-                                               feature_score, index);
-        if (!err) {
-            // Cache for future calls
-            model->predict_feature_vectors[i] =
-                vmaf_feature_collector_find(feature_collector, model->predict_feature_names[i]);
+        /* Netflix#755 / ADR-0154 — feature not yet in the collector.
+         * Try the normal lookup path; if the vector exists, cache it and
+         * delegate to vmaf_feature_vector_get_score (which already returns
+         * -EAGAIN for unwritten slots).  If the vector does not exist yet
+         * in the collector (find returns NULL), the extractor has been
+         * registered by vmaf_use_features_from_model but has not emitted
+         * a score for this index yet — return -EAGAIN, not -EINVAL.
+         * Several extractors (integer_motion motion2/motion3, five-frame-
+         * window variants) write frame-N scores retroactively when frame
+         * N+1 or N+2 arrives; callers may see a transient absence before
+         * flush. -EINVAL here would be indistinguishable from genuine
+         * programmer error. */
+        FeatureVector *found =
+            vmaf_feature_collector_find(feature_collector, model->predict_feature_names[i]);
+        if (found) {
+            model->predict_feature_vectors[i] = found;
+            err = vmaf_feature_vector_get_score(found, feature_score, index);
+        } else {
+            /* Feature vector not yet registered in the collector — transient. */
+            err = -EAGAIN;
         }
     }
 
-    if (err) {
+    if (err && err != -EAGAIN) {
         if (!propagate_metadata) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR,
                      "vmaf_predict_score_at_index(): no feature '%s' "

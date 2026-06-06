@@ -140,8 +140,20 @@ static char *test_motion_three_frame_extract_emits_scores(void)
         mu_assert("alloc dist", alloc_random(&dists[i], 0x200u + i * 23u) == 0);
     }
 
+    /* integer_motion has VMAF_FEATURE_EXTRACTOR_PREV_REF: in the normal
+     * vmaf_read_pictures() pipeline, libvmaf.c sets fex->prev_ref before
+     * calling extract() and clears it afterwards.  When driving the extractor
+     * directly (as this coverage test does), we must replicate that protocol
+     * or extract() returns -EINVAL at index >= 1 because prev->ref is NULL.
+     * Pattern mirrors read_pictures_dispatch_one() in libvmaf.c. */
     for (unsigned i = 0; i < 4; ++i) {
+        if (i > 0)
+            vmaf_picture_ref(&ctx->fex->prev_ref, &refs[i - 1]);
         err = vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
+        if (ctx->fex->prev_ref.ref) {
+            (void)vmaf_picture_unref(&ctx->fex->prev_ref);
+            memset(&ctx->fex->prev_ref, 0, sizeof(ctx->fex->prev_ref));
+        }
         mu_assert("extract frame", err == 0);
         /* The motion extractor has VMAF_FEATURE_EXTRACTOR_PREV_REF set: it reads
          * ctx->fex->prev_ref for index >= 1.  In production this is wired by
@@ -203,8 +215,17 @@ static char *test_motion_moving_average_branch(void)
         mu_assert("alloc ref", alloc_random(&refs[i], 0x300u + i * 11u) == 0);
         mu_assert("alloc dist", alloc_random(&dists[i], 0x400u + i * 13u) == 0);
     }
+    /* Same VMAF_FEATURE_EXTRACTOR_PREV_REF protocol as
+     * test_motion_three_frame_extract_emits_scores — set prev_ref before
+     * each extract call at index > 0 and clear it afterwards. */
     for (unsigned i = 0; i < 3; ++i) {
+        if (i > 0)
+            vmaf_picture_ref(&ctx->fex->prev_ref, &refs[i - 1]);
         err = vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
+        if (ctx->fex->prev_ref.ref) {
+            (void)vmaf_picture_unref(&ctx->fex->prev_ref);
+            memset(&ctx->fex->prev_ref, 0, sizeof(ctx->fex->prev_ref));
+        }
         mu_assert("extract frame", err == 0);
     }
 
