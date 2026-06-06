@@ -87,7 +87,10 @@ func AllowedRoots() []string {
 		"/workspace/python/test/resource",
 	}
 	if extra := os.Getenv("VMAF_MCP_ALLOW"); extra != "" {
-		for _, p := range strings.Split(extra, ":") {
+		// filepath.SplitList uses the OS path-list separator (':' on Unix,
+		// ';' on Windows), which correctly handles Windows drive letters
+		// such as C:\foo that would be mis-split by a hardcoded ':'.
+		for _, p := range filepath.SplitList(extra) {
 			if p != "" {
 				abs, err := filepath.Abs(p)
 				if err == nil {

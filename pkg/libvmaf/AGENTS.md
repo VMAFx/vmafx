@@ -57,3 +57,9 @@ Go wrapper around the libvmaf C ABI. Provides two scoring surfaces:
    `LD_LIBRARY_PATH=$(pwd)/core/build-cpu/src` invocation in
    `docs/architecture/mcp-cgo-direct-migration.md`'s reproducer block
    and in any agent skill that builds the Go tree.
+
+7. **`VMAF_MCP_ALLOW` uses `filepath.SplitList`** (`paths.go::AllowedRoots`,
+   ADR-1084): the env-var path list is split with `filepath.SplitList` so
+   both Unix (`":"` separator) and Windows (`";"` separator) are handled
+   correctly. Do not replace this with `strings.Split(extra, ":")` — that
+   silently mis-splits Windows drive-letter paths.
