@@ -321,7 +321,7 @@ test_lpips = executable('test_lpips',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # DISTS-Sq registration tests — mirrors test_lpips and verifies the
@@ -341,7 +341,7 @@ test_dists = executable('test_dists',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # FastDVDnet temporal pre-filter (T6-7) — same registration-only test
@@ -363,7 +363,7 @@ test_fastdvdnet_pre = executable('test_fastdvdnet_pre',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # MobileSal saliency registration tests (T6-2a) — same pattern as
@@ -385,7 +385,7 @@ test_mobilesal = executable('test_mobilesal',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # TransNet V2 shot-boundary detector — structural test, no real ORT
@@ -406,7 +406,7 @@ test_transnet_v2 = executable('test_transnet_v2',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 test_cambi = executable('test_cambi',
@@ -435,7 +435,7 @@ test_cambi_simd = executable('test_cambi_simd',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -463,7 +463,7 @@ test_speed = executable('test_speed',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 endif
 # SpEED-QA extractor tests -- unconditional (speed_qa.c is not float-gated).
@@ -483,7 +483,7 @@ test_speed_qa = executable('test_speed_qa',
       log_cpp23_test_objects,
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 test_luminance_tools = executable('test_luminance_tools',
@@ -570,7 +570,7 @@ test_integer_psnr_coverage = executable('test_integer_psnr_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # Coverage round 2 — drives integer_motion (v1) motion_force_zero +
@@ -591,7 +591,7 @@ test_integer_motion_coverage = executable('test_integer_motion_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # Coverage round 2 — drives integer_motion_v2 pipelined extractor:
@@ -613,7 +613,7 @@ test_integer_motion_v2_coverage = executable('test_integer_motion_v2_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # Coverage round 3 — integer_ssim.c enable_db / clip_db / 10-bit HBD paths.
@@ -634,7 +634,7 @@ test_ssim_coverage = executable('test_ssim_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # Coverage round 3 — integer_adm.c end-to-end: default, debug=true,
@@ -655,7 +655,7 @@ test_adm_coverage = executable('test_adm_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # Coverage round 3 — psnr_hvs.c: bpc>12 rejection, YUV400P chroma-disable,
@@ -676,7 +676,7 @@ test_psnr_hvs_coverage = executable('test_psnr_hvs_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # Coverage round 3 — ssimulacra2.c end-to-end: default 8-bit, identical
@@ -697,7 +697,7 @@ test_ssimulacra2_coverage = executable('test_ssimulacra2_coverage',
         libvmaf_feature_static_lib.extract_all_objects(recursive: true),
         libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
         libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 
 # Coverage round 2 — integer_vif.h log2_32 / log2_64 helpers exercised
@@ -799,7 +799,7 @@ test_iqa_convolve = executable('test_iqa_convolve',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -822,7 +822,7 @@ test_psnr_hvs_avx2 = executable('test_psnr_hvs_avx2',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -845,7 +845,7 @@ test_vif_simd = executable('test_vif_simd',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -868,7 +868,7 @@ test_psnr_hvs_simd = executable('test_psnr_hvs_simd',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -891,7 +891,7 @@ test_integer_adm_simd = executable('test_integer_adm_simd',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -917,7 +917,7 @@ test_integer_ssim_simd = executable('test_integer_ssim_simd',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -940,7 +940,7 @@ test_ciede_simd_parity = executable('test_ciede_simd_parity',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -963,7 +963,7 @@ test_motion_v2_simd = executable('test_motion_v2_simd',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -1044,7 +1044,7 @@ test_ssimulacra2_simd = executable('test_ssimulacra2_simd',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -1067,7 +1067,7 @@ test_psnr_hvs_neon = executable('test_psnr_hvs_neon',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -1090,7 +1090,7 @@ test_moment_simd = executable('test_moment_simd',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -1117,7 +1117,7 @@ test_speed_simd = executable('test_speed_simd',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -1140,7 +1140,7 @@ test_ms_ssim_decimate = executable('test_ms_ssim_decimate',
       libvmaf_feature_static_lib.extract_all_objects(recursive: true),
       log_cpp23_test_objects,
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects,
+    ] + wave8_opt_only_objects,
 )
 endif
 
@@ -1561,7 +1561,7 @@ test_float_ms_ssim_min_dim = executable('test_float_ms_ssim_min_dim',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 test('test_float_ms_ssim_min_dim', test_float_ms_ssim_min_dim, suite : ['fast'])
 
@@ -1582,7 +1582,7 @@ test_motion_min_dim = executable('test_motion_min_dim',
       log_cpp23_test_objects,
       libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
       libsvm_static_lib.extract_all_objects(recursive: true),
-    ] + wave8_cpp23_objects
+    ] + wave8_opt_only_objects
 )
 test('test_motion_min_dim', test_motion_min_dim, suite : ['fast'])
 
