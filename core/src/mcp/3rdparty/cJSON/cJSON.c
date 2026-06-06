@@ -122,7 +122,9 @@ CJSON_PUBLIC(double) cJSON_GetNumberValue(const cJSON *const item)
 CJSON_PUBLIC(const char *) cJSON_Version(void)
 {
     static char version[15];
-    sprintf(version, "%i.%i.%i", CJSON_VERSION_MAJOR, CJSON_VERSION_MINOR, CJSON_VERSION_PATCH);
+    /* ADR-0683 / ADR-1061: replaced banned sprintf with snprintf. */
+    (void)snprintf(version, sizeof(version), "%i.%i.%i", CJSON_VERSION_MAJOR, CJSON_VERSION_MINOR,
+                   CJSON_VERSION_PATCH);
 
     return version;
 }
@@ -380,7 +382,10 @@ CJSON_PUBLIC(char *) cJSON_SetValuestring(cJSON *object, const char *valuestring
         return NULL;
     }
     if (strlen(valuestring) <= strlen(object->valuestring)) {
-        strcpy(object->valuestring, valuestring);
+        /* ADR-0683 / ADR-1061: replaced banned strcpy with memcpy.
+         * The length check above guarantees the destination is large enough. */
+        size_t src_len = strlen(valuestring) + 1u; /* include NUL */
+        memcpy(object->valuestring, valuestring, src_len);
         return object->valuestring;
     }
     copy = (char *)cJSON_strdup((const unsigned char *)valuestring, &global_hooks);
@@ -511,23 +516,24 @@ static cJSON_bool print_number(const cJSON *const item, printbuffer *const outpu
     }
 
     /* This checks for NaN and Infinity */
+    /* ADR-0683 / ADR-1061: replaced banned sprintf with snprintf. */
     if (isnan(d) || isinf(d)) {
-        length = sprintf((char *)number_buffer, "null");
+        length = snprintf((char *)number_buffer, sizeof(number_buffer), "null");
     } else if (d == (double)item->valueint) {
-        length = sprintf((char *)number_buffer, "%d", item->valueint);
+        length = snprintf((char *)number_buffer, sizeof(number_buffer), "%d", item->valueint);
     } else {
         /* Try 15 decimal places of precision to avoid nonsignificant nonzero digits */
-        length = sprintf((char *)number_buffer, "%1.15g", d);
+        length = snprintf((char *)number_buffer, sizeof(number_buffer), "%1.15g", d);
 
         /* Check whether the original double can be recovered */
         if ((sscanf((char *)number_buffer, "%lg", &test) != 1) ||
             !compare_double((double)test, d)) {
             /* If not, print with 17 decimal places of precision */
-            length = sprintf((char *)number_buffer, "%1.17g", d);
+            length = snprintf((char *)number_buffer, sizeof(number_buffer), "%1.17g", d);
         }
     }
 
-    /* sprintf failed or buffer overrun occurred */
+    /* snprintf failed or buffer overrun occurred */
     if ((length < 0) || (length > (int)(sizeof(number_buffer) - 1))) {
         return false;
     }
@@ -824,7 +830,9 @@ static cJSON_bool print_string_ptr(const unsigned char *const input,
         if (output == NULL) {
             return false;
         }
-        strcpy((char *)output, "\"\"");
+        /* ADR-0683 / ADR-1061: replaced banned strcpy with memcpy.
+         * sizeof("\"\"") == 3 (two quotes + NUL); ensure() guarantees that space. */
+        memcpy((char *)output, "\"\"", sizeof("\"\""));
 
         return true;
     }
@@ -901,7 +909,11 @@ static cJSON_bool print_string_ptr(const unsigned char *const input,
                 break;
             default:
                 /* escape and print as unicode codepoint */
-                sprintf((char *)output_pointer, "u%04x", *input_pointer);
+                /* ADR-0683 / ADR-1061: replaced banned sprintf with snprintf.
+                 * ensure() allocated output_length + sizeof("\"\"") bytes;
+                 * each control character consumes exactly 6 bytes (\uXXXX),
+                 * so there is always room for the 5-byte "uXXXX" body here. */
+                (void)snprintf((char *)output_pointer, 6, "u%04x", *input_pointer);
                 output_pointer += 4;
                 break;
             }
@@ -1251,7 +1263,9 @@ static cJSON_bool print_value(const cJSON *const item, printbuffer *const output
         if (output == NULL) {
             return false;
         }
-        strcpy((char *)output, "null");
+        /* ADR-0683 / ADR-1061: replaced banned strcpy with memcpy; ensure()
+         * allocated exactly the required bytes including the NUL terminator. */
+        memcpy((char *)output, "null", sizeof("null"));
         return true;
 
     case cJSON_False:
@@ -1259,7 +1273,7 @@ static cJSON_bool print_value(const cJSON *const item, printbuffer *const output
         if (output == NULL) {
             return false;
         }
-        strcpy((char *)output, "false");
+        memcpy((char *)output, "false", sizeof("false")); /* ADR-0683 / ADR-1061 */
         return true;
 
     case cJSON_True:
@@ -1267,7 +1281,7 @@ static cJSON_bool print_value(const cJSON *const item, printbuffer *const output
         if (output == NULL) {
             return false;
         }
-        strcpy((char *)output, "true");
+        memcpy((char *)output, "true", sizeof("true")); /* ADR-0683 / ADR-1061 */
         return true;
 
     case cJSON_Number:
@@ -1657,7 +1671,13 @@ CJSON_PUBLIC(int) cJSON_GetArraySize(const cJSON *array)
         child = child->next;
     }
 
-    /* FIXME: Can overflow here. Cannot be fixed without breaking the API */
+    /* ADR-1061: clamp to INT_MAX rather than wrapping — the API returns int
+     * and we cannot change the signature without breaking callers, but we can
+     * at least guarantee a non-negative result. Arrays larger than INT_MAX
+     * elements are not a realistic VMAF/MCP use case. */
+    if (size > (size_t)INT_MAX) {
+        return INT_MAX;
+    }
 
     return (int)size;
 }

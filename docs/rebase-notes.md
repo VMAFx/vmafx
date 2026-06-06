@@ -44925,4 +44925,15 @@ no rebase impact: test-only additions to `cmd/vmafx-node/executor_extra_test.go`
 and `cmd/vmafx-node/bpf/bypass_unit_test.go`. No C sources, public API,
 upstream-mirrored files, or production Go code is changed.
 
+## fix/vendored-cjson-pdjson-depth-overflow (ADR-1061, 2026-06-06)
+
+Touches two vendored sources: `core/src/pdjson.c` and
+`core/src/mcp/3rdparty/cJSON/cJSON.c`. Neither file exists in the Netflix
+upstream tree (pdjson and cJSON are fork-local additions). Rebase against
+Netflix/vmaf master has zero conflict risk from this change.
+
+The `PDJSON_STACK_MAX` constant added to `pdjson.c` is a `#define` at the
+top of the file; any future vendor sync that replaces the file will need to
+re-apply the same define or find a better integration point.
+
 ---

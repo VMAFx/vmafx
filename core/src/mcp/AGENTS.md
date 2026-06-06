@@ -165,6 +165,30 @@ meson setup build -Denable_mcp=true \
 # transport is plain POSIX sockets — no third-party vendor probe.
 ```
 
+## Invariant: pdjson depth limit (ADR-1061)
+
+`PDJSON_STACK_MAX` is defined to `512` at the top of
+`core/src/pdjson.c` (before the `#ifdef` guard). This definition
+must survive any future vendor sync. If you replace `pdjson.c` with
+a newer upstream release, check that `PDJSON_STACK_MAX` is either
+defined by the build system or re-added at the top of the file.
+512 levels is well beyond any VMAF model or MCP message depth.
+
+## Invariant: cJSON banned-function-free (ADR-0683 / ADR-1061)
+
+`3rdparty/cJSON/cJSON.c` must remain free of `sprintf`, `strcpy`,
+`strcat`, `strtok`, `atoi`, `atof`, `gets`, `rand`, `system`.
+Verify with:
+
+```bash
+grep -n '\bsprintf\b\|\bstrcpy\b\|\bstrcat\b' core/src/mcp/3rdparty/cJSON/cJSON.c
+```
+
+The expected output is empty (only comments mentioning these names
+are allowed). A future cJSON version sync must re-validate and
+re-apply the replacements documented in ADR-0683 / ADR-1061 if the
+upstream has not addressed them.
+
 ## Smoke test
 
 ```text

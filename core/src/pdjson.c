@@ -21,6 +21,15 @@
 #define JSON_FLAG_ERROR (1u << 0)
 #define JSON_FLAG_STREAMING (1u << 1)
 
+/*
+ * ADR-1061: cap pdjson nesting depth to prevent unbounded stack/heap growth
+ * on adversarially crafted JSON.  512 levels is far beyond any legitimate
+ * VMAF model or MCP message structure.
+ */
+#ifndef PDJSON_STACK_MAX
+#define PDJSON_STACK_MAX 512u
+#endif
+
 #if defined(_MSC_VER) && (_MSC_VER < 1900)
 
 #define json_error(json, format, ...)                                                              \
@@ -53,16 +62,30 @@ static enum json_type push(json_stream *json, enum json_type type)
 {
     json->stack_top++;
 
-#ifdef PDJSON_STACK_MAX
+    /* ADR-1061: depth guard — PDJSON_STACK_MAX is always defined above.
+     * Check before the realloc path so we never grow the stack beyond the
+     * limit even if stack_size happens to be below it. */
     if (json->stack_top > PDJSON_STACK_MAX) {
         json_error(json, "%s", "maximum depth of nesting reached");
         return JSON_ERROR;
     }
-#endif
 
     if (json->stack_top >= json->stack_size) {
         struct json_stack *stack;
-        size_t size = (json->stack_size + PDJSON_STACK_INC) * sizeof(*json->stack);
+        /* ADR-1061: guard against size_t wrap before the multiply.
+         * PDJSON_STACK_INC is 4 and PDJSON_STACK_MAX <= 512 so the cap
+         * above prevents any realistic overflow, but an explicit check is
+         * required for CERT-C INT30-C compliance. */
+        size_t new_count = json->stack_size + PDJSON_STACK_INC;
+        if (new_count < json->stack_size) { /* overflow */
+            json_error(json, "%s", "out of memory");
+            return JSON_ERROR;
+        }
+        if (new_count > (size_t)-1 / sizeof(*json->stack)) { /* multiply overflow */
+            json_error(json, "%s", "out of memory");
+            return JSON_ERROR;
+        }
+        size_t size = new_count * sizeof(*json->stack);
         stack = (struct json_stack *)json->alloc.realloc(json->stack, size);
         if (stack == NULL) {
             json_error(json, "%s", "out of memory");
@@ -154,6 +177,14 @@ static enum json_type is_match(json_stream *json, const char *pattern, enum json
 static int pushchar(json_stream *json, int c)
 {
     if (json->data.string_fill == json->data.string_size) {
+        /* ADR-1061: guard the x2 doubling against size_t wrap (CERT-C INT30-C).
+         * When string_size >= SIZE_MAX/2 the multiply would overflow to a value
+         * smaller than the current allocation, causing realloc to shrink the
+         * buffer and the subsequent write to go out of bounds. */
+        if (json->data.string_size > (size_t)-1 / 2u) {
+            json_error(json, "%s", "out of memory");
+            return -1;
+        }
         size_t size = json->data.string_size * 2;
         char *buffer = (char *)json->alloc.realloc(json->data.string, size);
         if (buffer == NULL) {
