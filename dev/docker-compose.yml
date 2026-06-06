@@ -232,10 +232,14 @@ services:
         target: /probes
         read_only: false
       # Whole /dev/dri bind-mount — see dev-mcp service above. ADR-0529.
+      # NOTE: must be writable (not read_only) — the NVIDIA Container Toolkit
+      # OCI hook writes PCI-bus-address symlinks into /dev/dri/by-path at
+      # container init; read_only:true causes the hook to fail with
+      # "read-only file system" on any NVIDIA host.
       - type: bind
         source: /dev/dri
         target: /dev/dri
-        read_only: true
+        read_only: false
 
     # Hosts without the NVIDIA Container Toolkit can override: CONTAINER_RUNTIME=runc docker compose up -d
     runtime: ${CONTAINER_RUNTIME:-nvidia}
