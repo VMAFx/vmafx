@@ -45028,4 +45028,12 @@ lint script `scripts/ci/check-compose-dri-writable.sh`, and a step in
 `.github/workflows/dev-container-build.yml`. No existing C source, public API,
 or upstream-mirrored file is modified.
 
+## fix/go-staticcheck-r10-timer-body (ADR-1065)
+
+no rebase impact: all changes are fork-local Go files (`pkg/storage/`,
+`cmd/vmafx-controller/`, `cmd/vmafx-server/`) with no upstream-mirrored C or
+Python code affected.  The `time.NewTicker` refactor is a semantic no-op for
+rebases; the `MaxBytesReader` + `ReadTimeout` additions are internal to the HTTP
+handler and do not touch any public API surface.
+
 ---

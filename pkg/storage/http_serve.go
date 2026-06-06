@@ -171,9 +171,15 @@ func splitRemotePath(remotePath string) (root, asset string) {
 }
 
 // waitForHTTP polls addr until rclone's HTTP server is reachable or timeout.
+//
+// The poll ticker is created once before the loop so each iteration reuses the
+// same runtime timer — avoiding the per-iteration *time.Timer allocation that
+// time.After() would create (SA1015 / ADR-1065).
 func waitForHTTP(ctx context.Context, addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 2 * time.Second}
+	tick := time.NewTicker(serveReadyPollInterval)
+	defer tick.Stop()
 	for {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out after %v waiting for http://%s/", timeout, addr)
@@ -192,7 +198,7 @@ func waitForHTTP(ctx context.Context, addr string, timeout time.Duration) error 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(serveReadyPollInterval):
+		case <-tick.C:
 		}
 	}
 }

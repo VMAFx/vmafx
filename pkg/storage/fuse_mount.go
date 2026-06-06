@@ -191,8 +191,14 @@ func (s *FUSEMountStorage) unmount(mountDir string) error {
 }
 
 // waitForPath polls until path is stat-able or timeout elapses.
+//
+// The poll ticker is created once before the loop so each iteration reuses the
+// same runtime timer — avoiding the per-iteration *time.Timer allocation that
+// time.After() would create (SA1015 / ADR-1065).
 func waitForPath(ctx context.Context, assetPath string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	tick := time.NewTicker(mountReadyPollInterval)
+	defer tick.Stop()
 	for {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out after %v waiting for %s", timeout, assetPath)
@@ -203,7 +209,7 @@ func waitForPath(ctx context.Context, assetPath string, timeout time.Duration) e
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(mountReadyPollInterval):
+		case <-tick.C:
 		}
 	}
 }

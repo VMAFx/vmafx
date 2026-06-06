@@ -721,3 +721,4 @@
 1003-cpp-std-c23-bump
 1004-hip-kernel-coverage-round5
 1005-perf-gate-advisory-threshold
+1065-go-staticcheck-timer-body

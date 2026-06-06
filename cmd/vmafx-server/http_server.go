@@ -232,8 +232,12 @@ func runHTTP(
 		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		// ReadTimeout covers the full request-body read. MaxBytesReader in
+		// handleScore() bounds body size; ReadTimeout adds a wall-clock guard
+		// against slow-body attacks (SA1016-class / ADR-1065).
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	log.Info("HTTP server started", "addr", addr)

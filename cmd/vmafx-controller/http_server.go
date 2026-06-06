@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -31,6 +32,10 @@ import (
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
+
+// maxScoreRequestBodyBytes caps the request body for POST /v1/score.
+// Mirrors the same limit in cmd/vmafx-server/http_server.go (ADR-1065).
+const maxScoreRequestBodyBytes = 1 << 20 // 1 MiB
 
 // scoreRequest mirrors the /v1/score JSON body.
 type scoreRequest struct {
@@ -133,9 +138,22 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 	h.metrics.ScoreRequests.Inc()
 	start := time.Now()
 
+	// Cap the request body at maxScoreRequestBodyBytes. http.MaxBytesReader
+	// closes the underlying body when the limit trips and surfaces the cause
+	// to the decoder as *http.MaxBytesError, which we map to 413 below.
+	// ADR-1065: mirrors the same guard in cmd/vmafx-server/http_server.go.
+	r.Body = http.MaxBytesReader(w, r.Body, maxScoreRequestBodyBytes)
+
 	var req scoreRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.metrics.ScoreErrors.Inc()
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{
+				Error: fmt.Sprintf("request body exceeds %d bytes", maxScoreRequestBodyBytes),
+			})
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: fmt.Sprintf("invalid JSON body: %v", err)})
 		return
 	}
@@ -191,8 +209,12 @@ func runHTTP(
 		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		// ReadTimeout covers the full request-body read. MaxBytesReader in
+		// handleScore() bounds body size; ReadTimeout adds a wall-clock guard
+		// against slow-body attacks (SA1016-class / ADR-1065).
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	log.Info("HTTP server started", "addr", addr)
