@@ -79,7 +79,6 @@ that adds a bare unsafe operation inside an `unsafe fn` without an explicit
 
 ---
 
-
 ## fix/msvc-cpp-std-vc-latest-1056 (2026-06-06, ADR-1056)
 
 **Files touched:**
@@ -3783,7 +3782,6 @@ ship `ffmpeg-patches/`; no rebase conflict surface.
   point, all four uninit paths in patch 0016 must be updated.
 - Patch 0016 requires `git am --3way` replay against all 15 preceding patches
   before verifying clean apply against n8.1.1 (the patch series is cumulative).
-
 
 **Re-test on rebase**:
 
