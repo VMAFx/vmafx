@@ -80,6 +80,9 @@ free_pic:
     std::free(p->pic);
 free_p:
     std::free(p);
+    /* Prevent UAF: *pool was set to p above; zero it so the caller cannot
+     * dereference the freed pointer after a failed init(). */
+    *pool = nullptr;
 fail:
     return err;
 }

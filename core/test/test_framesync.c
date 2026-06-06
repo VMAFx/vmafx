@@ -75,18 +75,19 @@ static void my_worker(void *data, void **tpool_thread_data)
     vmaf_framesync_retrieve_filled_data(thread_data->fs_ctx, (void *)&dependent_buf,
                                         thread_data->index - 1);
 
+    /* Each worker for frame N fills the shared buffer with (ref[ctr] +
+     * dist[ctr] + 2).  The seed is memset(frame_index, FRAME_BUF_LEN) for
+     * both ref and dist, so every byte in frame N's buffer equals
+     * N + N + 2 = 2N + 2.  Frame N retrieves frame N-1's buffer, which was
+     * written as 2*(N-1) + 2.  Compare against the PREVIOUS frame's value,
+     * not the current frame's data (which was the original off-by-one bug). */
+    const uint8_t expected_prev = (uint8_t)(2 * (thread_data->index - 1) + 2);
     for (ctr = 0; ctr < FRAME_BUF_LEN; ctr++) {
-        /* The writer stored ref[ctr]+dist[ctr]+2 (see line 56 above).
-         * The previous check compared against ref+dist (off by 2) and used
-         * fprintf — so every non-zero-seeded frame silently "failed" with no
-         * test-harness visibility.  Fixed: match the written value exactly and
-         * abort() so a data-corruption regression terminates the test process. */
-        if (dependent_buf[ctr] != (uint8_t)(thread_data->ref[ctr] + thread_data->dist[ctr] + 2)) {
+        if (dependent_buf[ctr] != expected_prev) {
             (void)fprintf(stderr,
                           "framesync verification error at frame %d byte %d: "
                           "got %u expected %u\n",
-                          thread_data->index, ctr, dependent_buf[ctr],
-                          (uint8_t)(thread_data->ref[ctr] + thread_data->dist[ctr] + 2));
+                          thread_data->index, ctr, dependent_buf[ctr], expected_prev);
             abort(); /* fail the test process — mu_assert cannot be used in void workers */
         }
     }

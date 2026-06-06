@@ -265,6 +265,18 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
      * mirroring the motion_v2 + GPU motion3 -ENOTSUP precedent in ADR-0219.
      * The 3-frame default mode is fully supported.
      */
+    /* Research-0094: the 5-tap separable Gaussian uses a reflect-101 mirror
+     * formula that produces a negative index for height < 3 or width < 3,
+     * reading uninitialised memory (UB; ASan SEGV or garbage VMAF scores).
+     * Reject under-minimum dimensions at init() time with -EINVAL. */
+    if (h < 3 || w < 3) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "motion: frame dimensions %ux%u are too small; "
+                 "minimum 3x3 required (Research-0094).\n",
+                 w, h);
+        return -EINVAL;
+    }
+
     if (s->motion_five_frame_window) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "motion: motion_five_frame_window=true is not supported; "

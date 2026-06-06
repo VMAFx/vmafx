@@ -596,6 +596,24 @@ int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx,
                  fex_ctx->fex->name, pic_index);
     }
 
+    /* PREV_REF SWAP (ADR-0795 / Research-0094): for extractors that carry the
+     * previous reference frame across calls (VMAF_FEATURE_EXTRACTOR_PREV_REF
+     * flag), update fex->prev_ref to the current frame's ref picture so the
+     * next call sees it.  The old prev_ref (frame N-1) is unreffed; the new
+     * one (current frame N) is ref-bumped.  We perform the swap whether or
+     * not extract() succeeded so that an error on frame N does not leave a
+     * stale frame N-1 pointer that the next call would use incorrectly. */
+    if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
+        if (fex_ctx->fex->prev_ref.ref)
+            (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
+        VmafPicture new_prev;
+        (void)std::memset(&new_prev, 0, sizeof(new_prev));
+        if (vmaf_picture_ref(&new_prev, ref) == 0)
+            fex_ctx->fex->prev_ref = new_prev;
+        else
+            (void)std::memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
+    }
+
 #ifdef HAVE_NVTX
     nvtxRangePop();
 #endif

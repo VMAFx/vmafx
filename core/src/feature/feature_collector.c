@@ -498,7 +498,17 @@ int vmaf_feature_collector_get_score(VmafFeatureCollector *feature_collector,
 
     FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
 
-    if (!feature_vector || index >= feature_vector->capacity) {
+    /* Netflix#755 / ADR-0154: when the feature vector has not been created
+     * yet (extractor has not yet extracted frame 0), return -EAGAIN to
+     * distinguish "not yet" from "genuinely invalid" (-EINVAL).  The vector
+     * is created lazily on the first vmaf_feature_collector_set_score call;
+     * in streaming mode a caller may attempt vmaf_score_pooled() before the
+     * first extraction has completed. */
+    if (!feature_vector) {
+        err = -EAGAIN;
+        goto unlock;
+    }
+    if (index >= feature_vector->capacity) {
         err = -EINVAL;
         goto unlock;
     }

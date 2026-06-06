@@ -1583,23 +1583,21 @@ static void threaded_extract_func(void *e, void **thread_data)
      * at pool-slot allocation time (vmaf_feature_extractor_context_create /
      * memcpy).  Therefore writing fex->prev_ref here touches only this thread's
      * own memory — no aliasing with other pool slots or the registered context. */
+    /* ADR-0795: the PREV_REF SWAP is now performed inside
+     * vmaf_feature_extractor_context_extract() (feature_extractor.cpp).
+     * Pre-seed fex->prev_ref with a ref-bumped copy of f->prev_ref so the
+     * extractor can read it during extract(); context_extract will then
+     * unref fex->prev_ref (consuming the bump added here) and store a bumped
+     * copy of the current ref frame.  f->prev_ref retains its own vmaf-owned
+     * refcount which is released below after the extract call. */
     if (f->prev_ref.ref)
-        f->fex_ctx->fex->prev_ref = f->prev_ref;
+        (void)vmaf_picture_ref(&f->fex_ctx->fex->prev_ref, &f->prev_ref);
 
     f->err = vmaf_feature_extractor_context_extract(f->fex_ctx, &f->ref, NULL, &f->dist, NULL,
                                                     f->index, f->feature_collector);
 
-    if (f->prev_ref.ref) {
-        /* On success the PREV_REF SWAP in context_extract replaced
-         * fex->prev_ref (old frame) with the current frame's picture
-         * (refcount bumped).  Unref before clearing to balance that
-         * bump; on error fex->prev_ref still holds the old frame's
-         * struct-copy and the same unref releases it. */
-        if (f->fex_ctx->fex->prev_ref.ref)
-            (void)vmaf_picture_unref(&f->fex_ctx->fex->prev_ref);
-        memset(&f->fex_ctx->fex->prev_ref, 0, sizeof(f->fex_ctx->fex->prev_ref));
+    if (f->prev_ref.ref)
         vmaf_picture_unref(&f->prev_ref);
-    }
 
     f->err = vmaf_fex_ctx_pool_release(f->fex_ctx_pool, f->fex_ctx);
     vmaf_picture_unref(&f->ref);
@@ -1685,42 +1683,20 @@ static void threaded_extract_batch_func(void *e, void **thread_data)
          * by the thread pool.  The write/extract/clear sequence is fully contained
          * within this thread's execution of the extractor loop. */
         assert(td->fex_ctx[i]->fex != shared_fex);
-        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
-            if (f->prev_ref.ref)
-                td->fex_ctx[i]->fex->prev_ref = f->prev_ref;
+        if ((shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && f->prev_ref.ref) {
+            /* Bump the refcount before seeding fex->prev_ref so that:
+             *   - context_extract's SWAP unrefs fex->prev_ref (consuming this bump), and
+             *   - f->prev_ref retains its own counted reference, released at goto:unref.
+             * This mirrors the identical pattern in threaded_extract_func (ADR-0795). */
+            (void)vmaf_picture_ref(&td->fex_ctx[i]->fex->prev_ref, &f->prev_ref);
         }
 
         int err = vmaf_feature_extractor_context_extract(td->fex_ctx[i], &f->ref, NULL, &f->dist,
                                                          NULL, f->index, f->feature_collector);
-
-        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
-            /* vmaf_feature_extractor_context_extract() runs the PREV_REF SWAP
-             * (feature_extractor.cpp) which:
-             *   SUCCESS: unrefs the old fex->prev_ref (= struct-copy of f->prev_ref,
-             *            so the frame N-1 VmafRef counter drops to 0 and the pool
-             *            reclaim fires), then stores frame N in fex->prev_ref with
-             *            one extra refcount bump.
-             *   ERROR:   fex->prev_ref is unchanged (still frame N-1 struct copy).
-             *
-             * In both cases fex->prev_ref now holds a non-zero ref pointer that
-             * needs to be released before we clear the field (bare memset leaks
-             * the counted reference, exhausting a preallocated picture pool after
-             * ~pool_size frames).  After we call vmaf_picture_unref here:
-             *   SUCCESS: frame N drops one count (remains live in vmaf->prev_ref).
-             *   ERROR:   frame N-1 drops to 0 → pool_release fires.
-             *
-             * In both cases the VmafRef that f->prev_ref.ref pointed to has already
-             * been freed (SUCCESS: by the SWAP inside extract; ERROR: by our unref
-             * just above).  The goto:unref block below must NOT call
-             * vmaf_picture_unref(&f->prev_ref) again — zero the struct now to
-             * prevent a double-free of the freed VmafRef. */
-            if (td->fex_ctx[i]->fex->prev_ref.ref)
-                (void)vmaf_picture_unref(&td->fex_ctx[i]->fex->prev_ref);
-            memset(&td->fex_ctx[i]->fex->prev_ref, 0, sizeof(td->fex_ctx[i]->fex->prev_ref));
-            /* Signal that the frame N-1 VmafRef is consumed so goto:unref
-             * skips the vmaf_picture_unref(&f->prev_ref) call. */
-            memset(&f->prev_ref, 0, sizeof(f->prev_ref));
-        }
+        /* fex->prev_ref is now managed by context_extract's SWAP: it was unreffed
+         * (consuming the bump added above) and replaced with a bumped ref to the
+         * current frame.  No additional cleanup of fex->prev_ref is needed here;
+         * f->prev_ref retains its independent counted reference for goto:unref. */
 
         if (err) {
             f->err = err;
