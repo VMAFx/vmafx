@@ -8,12 +8,15 @@
 //   - A failing probe → Healthy = false.
 //   - A stale heartbeat (LastHeartbeat > 60 s ago) → Healthy = false even when the
 //     probe would otherwise succeed.
+//   - The operator does NOT overwrite LastHeartbeat; that field is owned exclusively
+//     by the node agent via the controller's Heartbeat RPC (ADR-1069).
 //
 // A real HTTP server is spun up per test to simulate the vmafx-controller /healthz
 // endpoint; the reconciler's ControllerHTTPAddr field is injected to override DNS.
 //
 // ADR-0786: vmafx-operator Stage 2 — envtest suite.
 // ADR-0714: vmafx-operator kubebuilder skeleton + CRDs (parent).
+// ADR-1069: VmafxNode LastHeartbeat ownership — node agent only.
 
 package controller_test
 
@@ -74,7 +77,10 @@ var _ = Describe("VmafxNode controller", func() {
 			_ = k8sClient.Get(ctx, nn, &updated)
 			return updated.Status.Healthy
 		}, timeout, interval).Should(BeTrue())
-		Expect(updated.Status.LastHeartbeat).NotTo(BeNil())
+		// The operator does NOT write LastHeartbeat — that field is owned by the
+		// node agent (ADR-1069).  A newly-created node without a pre-set
+		// LastHeartbeat must have nil here.
+		Expect(updated.Status.LastHeartbeat).To(BeNil())
 	})
 
 	It("sets Healthy = false when the controller /healthz returns non-200", func() {
@@ -108,10 +114,12 @@ var _ = Describe("VmafxNode controller", func() {
 		var updated vmafxv1.VmafxNode
 		Eventually(func() bool {
 			_ = k8sClient.Get(ctx, nn, &updated)
-			// Initially Healthy defaults to false — check LastHeartbeat was set.
-			return updated.Status.LastHeartbeat != nil
-		}, timeout, interval).Should(BeTrue())
-		Expect(updated.Status.Healthy).To(BeFalse())
+			return !updated.Status.Healthy
+		}, timeout, interval).Should(BeTrue(),
+			"node with failing /healthz probe should be marked unhealthy")
+		// The operator does NOT write LastHeartbeat (ADR-1069); it remains nil
+		// for a node that has never had a heartbeat from its agent.
+		Expect(updated.Status.LastHeartbeat).To(BeNil())
 	})
 
 	It("sets Healthy = false when LastHeartbeat is stale (>60 s)", func() {
@@ -148,11 +156,14 @@ var _ = Describe("VmafxNode controller", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		var updated vmafxv1.VmafxNode
-		Eventually(func() *metav1.Time {
+		// The operator does NOT modify LastHeartbeat (ADR-1069); it must remain
+		// unchanged at the stale value set by the node agent.
+		Eventually(func() bool {
 			_ = k8sClient.Get(ctx, nn, &updated)
-			return updated.Status.LastHeartbeat
-		}, timeout, interval).ShouldNot(Equal(staleTime))
-		Expect(updated.Status.Healthy).To(BeFalse(),
+			return !updated.Status.Healthy
+		}, timeout, interval).Should(BeTrue(),
 			"node should be unhealthy because the stored heartbeat was stale")
+		Expect(updated.Status.LastHeartbeat).To(Equal(&staleTime),
+			"LastHeartbeat must not be overwritten by the operator — it is owned by the node agent (ADR-1069)")
 	})
 })

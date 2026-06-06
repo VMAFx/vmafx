@@ -5,8 +5,10 @@
 //
 // Reconciler behaviour:
 //   - Probes the vmafx-controller /healthz endpoint every nodeProbeInterval (30 s).
-//   - Updates status.Healthy and status.LastHeartbeat on each probe.
-//   - Marks Healthy = false (without removing LastHeartbeat) when:
+//   - Updates status.Healthy on each probe; does NOT overwrite status.LastHeartbeat.
+//   - status.LastHeartbeat is written exclusively by the node agent via the
+//     controller's Heartbeat RPC; overwriting it here would defeat stale detection.
+//   - Marks Healthy = false (without touching LastHeartbeat) when:
 //       (a) the HTTP probe fails, OR
 //       (b) LastHeartbeat is older than nodeStaleThreshold (60 s).
 //   - The stale-threshold check fires even when the probe would succeed,
@@ -18,6 +20,7 @@
 //
 // ADR-0786: vmafx-operator Stage 2 — reconciler loops + webhook + per-controller RBAC.
 // ADR-0714: vmafx-operator kubebuilder skeleton + CRDs (parent).
+// ADR-1069: VmafxNode LastHeartbeat ownership — node agent only.
 
 package controller
 
@@ -29,7 +32,6 @@ import (
 	"os"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -75,12 +77,13 @@ func (r *VmafxNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	now := time.Now()
-	nowMeta := metav1.NewTime(now)
 
 	// --- Stale-heartbeat check -----------------------------------------------
-	// A node is stale when its own LastHeartbeat (written by the node itself via
+	// A node is stale when its own LastHeartbeat (written by the node agent via
 	// the controller's Heartbeat RPC) has not been updated for nodeStaleThreshold.
 	// This is separate from the operator's /healthz probe of the controller service.
+	// IMPORTANT: Do NOT overwrite node.Status.LastHeartbeat here.  It is owned
+	// exclusively by the node agent; overwriting it defeats stale detection (ADR-1069).
 	stale := false
 	if node.Status.LastHeartbeat != nil &&
 		now.Sub(node.Status.LastHeartbeat.Time) > nodeStaleThreshold {
@@ -95,9 +98,9 @@ func (r *VmafxNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	probeHealthy := !stale && r.probeControllerHealthz(ctx, req.Namespace)
 
 	// --- Persist status -------------------------------------------------------
+	// Only update Healthy; LastHeartbeat is set by the node agent, not the operator (ADR-1069).
 	prevHealthy := node.Status.Healthy
 	node.Status.Healthy = probeHealthy
-	node.Status.LastHeartbeat = &nowMeta
 
 	if err := r.Status().Update(ctx, &node); err != nil {
 		logger.Error(err, "Failed to update VmafxNode status")

@@ -45179,3 +45179,14 @@ no rebase impact: both changes are one-liner casts (`static_cast<int>`) in
 `core/src/log.cpp` and `core/src/opt.cpp`. Neither file is upstream-mirrored
 (both are C++23 rewrites of upstream C originals — ADR-0708 and ADR-0772),
 no public API is affected, and no test fixtures change.
+
+---
+
+## test/operator-controller-coverage (2026-06-06)
+
+no rebase impact: all changes are confined to
+`cmd/vmafx-operator/internal/controller/` test files and the fix to
+`vmafxnode_controller.go` (removes the `status.lastHeartbeat` write — additive
+correctness only). No public API is affected, no upstream-mirrored file is
+touched, no test fixtures change. Depends on PR #759 (ADR-1069 CRD schema fix)
+for the envtest assertions to pass end-to-end with a real API server.
