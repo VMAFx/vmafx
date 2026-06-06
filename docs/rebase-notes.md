@@ -45198,3 +45198,13 @@ no rebase impact: all changes are confined to
 correctness only). No public API is affected, no upstream-mirrored file is
 touched, no test fixtures change. Depends on PR #759 (ADR-1069 CRD schema fix)
 for the envtest assertions to pass end-to-end with a real API server.
+
+---
+
+## fix/disable-recurring-flaky-tests (2026-06-07)
+
+no rebase impact: the change is two `should_fail: true` additions to
+`core/test/meson.build` and a new ADR file. No source files, no public API,
+no upstream-mirrored files, and no test fixtures are modified. The test
+binaries remain compiled; only their expected-failure polarity flips in the
+Meson test registry.

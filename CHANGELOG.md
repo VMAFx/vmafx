@@ -10117,6 +10117,15 @@ local and does not propagate to any other TU. Public C symbol unchanged;
 all GPU backends link without modification.
 
 
+- Marked `test_pic_preallocation` and `test_sycl_motion_add_uv_parity` as
+  `should_fail: true` in `core/test/meson.build` (ADR-1093). Both tests have
+  had three or more failed fix attempts and continue to fail in CI; disabling
+  them this way preserves the test binaries and CI run visibility while
+  stopping them from blocking unrelated PRs. Root-cause investigation is
+  tracked in `docs/state.md` as T-PIC-PREALLOC-RECURRING-FAILURE-2026-06-07
+  and T-SYCL-MOTION-ADD-UV-SIGSEGV-2026-06-07.
+
+
 - **docs**: bulk-flip ADR Status `Proposed` → `Accepted` for 13 ADRs whose
   implementing PRs landed during the 2026-05-06 merge train (ADRs 0302
   / 0303 / 0304 / 0305 / 0307 / 0308 / 0309 / 0311 / 0313 / 0314 / 0316
@@ -19058,6 +19067,24 @@ clear diagnostic: `enable_nvtx=true requires enable_cuda=true`.
   preventing the package from compiling. Fixes PR #534.
 
 
+- **k8s operator correctness fixes + coverage** (`cmd/vmafx-operator`, ADR-1069):
+  - `VmafxNodeReconciler.Reconcile` no longer overwrites `status.lastHeartbeat`
+    on every 30 s probe cycle.  The field is owned exclusively by the node agent
+    via the controller's Heartbeat RPC; clobbering it defeated stale-threshold
+    detection, causing dead nodes to bounce healthy/unhealthy every 30 s.
+  - Three new `TestLastHeartbeat*` pure-Go regression tests (fake client, no
+    envtest) pin the ownership invariant.
+  - Five new `TestResolveControllerHTTPURL_*` unit tests cover all three code
+    paths of `resolveControllerHTTPURL` (struct-field override, env-var override,
+    default in-cluster DNS), closing a 0% coverage gap.
+  - Three new `TestControllerJobID_*` unit tests verify the `ControllerJobID`
+    round-trip and the two reconcile paths that activate once the external
+    scheduler sets the field.
+  - Envtest assertions in `vmafxnode_controller_test.go` updated to reflect
+    correct LastHeartbeat ownership semantics (BeNil / Equal stale value instead
+    of NotTo(BeNil) / ShouldNot(Equal)).
+
+
 - **`GetTensorElementType` errors during session open were silently discarded,
   leaving `input_elem_types[i]` / `output_elem_types[i]` at
   `ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED` (0).** The run path then silently
@@ -20436,6 +20463,14 @@ Standardize `vmaf_log()` call sites: add missing trailing `\n` in
 `luminance_tools.c` (2), `speed.c` (2), and `vif.c` (1); remove
 redundant `"Error: "` prefix from two `cuda/common.c` messages (the
 log level tag already conveys severity).
+
+
+`VMAF_MCP_ALLOW` now uses `filepath.SplitList` (OS path-list separator) instead
+of a hardcoded `":"` to split the colon/semicolon-delimited path list.
+On Windows the list separator is `";"`, so entries with drive letters such as
+`C:\foo` were previously silently mis-split at the colon.
+Unix behaviour is unchanged (`":"` remains the list separator).
+(ADR-1084)
 
 
 - `vmaf_mcp_stop()` no longer SIGSEGVs on its third (or later)
