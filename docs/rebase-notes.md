@@ -2823,8 +2823,20 @@ commands.## port/upstream-batch-threading-picture-pool (2026-06-04)
 blocks, those blocks must be removed in the same port PR — the fork no longer uses the
 flag. The non-batch `threaded_read_pictures` path was removed; it is not recoverable
 from the fork without re-introducing the old per-extractor thread pool enqueue pattern.
+
 ---
 
+## `.github/workflows/tests-and-quality-gates.yml` — coverage job deselects slow vifks360 test
+
+The coverage job's `--deselect` list includes
+`python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_float_vifks360o97`
+because the test exceeds the 60 s per-test limit on GitHub-hosted runners and
+truncates the suite. If upstream Netflix/vmaf adds a test with a similar name in
+a future sync, verify it does not also use a very large `vif_kernelscale` before
+removing the deselect. The deselect is CI-only; the test runs in the Netflix golden
+gate without a per-test timeout.
+
+---
 ## `.github/workflows/` — post-ADR-0700 path rename (`libvmaf/` → `core/`)
 
 If an upstream Netflix/vmaf sync or cherry-pick brings new CI references to

@@ -692,13 +692,26 @@ jobs:
           # alphabetically-later suites execute and contribute coverage.
           # The CommandLineTest scenarios are covered by the full Python test
           # suite in the Netflix golden gate (which has no per-test timeout).
+          #
+          # test_run_vmaf_runner_float_vifks360o97 uses vif_kernelscale=3.71
+          # (360/97 ratio) — a large kernel that makes each frame's VIF
+          # convolution substantially slower than the default scale. On
+          # GitHub-hosted ubuntu-24.04 runners the test consistently exceeds
+          # the 60 s per-test limit and kills the entire remaining pytest run
+          # at ~61%, dropping overall coverage from 70% to 56%. The test
+          # exercises the same VIF code path as the other vifks variants
+          # already in the suite; its correctness is also verified by the
+          # Netflix golden gate (no per-test timeout). Deselect it here to
+          # prevent the coverage run from being truncated mid-suite.
           timeout --kill-after=30s 20m python3 -m pytest python/test/ -v \
             -m "not slow" --tb=short \
             --timeout=60 --timeout-method=thread \
             --ignore=python/test/resource \
             --ignore=python/test/cy_test.py \
             --ignore=python/test/cambi_test.py \
-            --deselect python/test/command_line_test.py::CommandLineTest || true
+            --deselect python/test/command_line_test.py::CommandLineTest \
+            --deselect "python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_float_vifks360o97" \
+            || true
       - name: Gather coverage report (gcovr)
         working-directory: core
         run: |
