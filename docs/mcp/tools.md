@@ -175,16 +175,6 @@ The server probes `vmaf --help` and looks for `--no_<backend>` flags;
 reports **compiled-in** backends only — a backend may be compiled in but
 its driver missing or non-functional at runtime. Use `probe_backend` to
 verify that a backend can actually run a score.
-  "cpu":  true,
-  "cuda": true,
-  "sycl": false,
-  "hip":  false
-}
-
-```text
-
-The server runs `vmaf --version` with a 5-second timeout and grep's the
-output; `cpu` is reported `true` whenever the binary exists.
 
 ### Errors
 
@@ -208,13 +198,13 @@ CPU and each GPU backend. See [usage/bench.md](../usage/bench.md) for more detai
 
 > **This tool does not accept per-call `ref`/`dis` arguments.** Per-pair scoring is
 > the job of `vmaf_score`. `bench_all.sh` is a fixed-fixture harness. (ADR-0517)
-
+>
 > **Protocol note**: `run_benchmark` runs the full 4K test which takes 30–60 seconds
 > on a modern GPU. Real MCP clients hold the connection open. The heredoc test pattern
 > (`docker exec -i ... vmaf-mcp << EOF ... EOF`) causes the server to shut down on
 > stdin EOF before the benchmark completes. Use a persistent pipe (`sleep 120 |`)
 > when testing from the command line. See [Finding 9 in the E2E test matrix](../../.workingdir/bbb_reports/E2E_TEST_MATRIX_v9.md).
-
+>
 > **Error contract**: `run_benchmark` raises `RuntimeError("benchmark failed — no
 > output line containing pooled score / Pearson correlation")` on partial / silent
 > pipe failures (ADR-0638). A second legacy implementation that swallowed the
