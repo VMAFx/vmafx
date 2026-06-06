@@ -46,8 +46,10 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* The 5-level 11-tap MS-SSIM pyramid requires min(w,h) >= 11<<4 = 176.
+ * 256x192 keeps both axes above the floor with a clean 16-px multiple. */
 #define FIXTURE_W 256u
-#define FIXTURE_H 144u
+#define FIXTURE_H 192u
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 3u
 

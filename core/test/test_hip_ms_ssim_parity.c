@@ -46,10 +46,13 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
-/* MS-SSIM has a 5-level Gaussian pyramid; each downscale halves the
- * dimensions.  256x144 keeps the smallest scale >= 16x9 with margin. */
+/* MS-SSIM has a 5-level 11-tap Gaussian pyramid; each downscale halves the
+ * dimensions.  The minimum admissible dimension is GAUSSIAN_LEN << (SCALES-1)
+ * = 11 << 4 = 176 (float_ms_ssim.c:131).  256x192 satisfies both axes with
+ * margin and keeps the smallest scale at 16x12 — above the 11x11 window.
+ * A fixture shorter than 176 px returns -EINVAL from vmaf_read_pictures. */
 #define FIXTURE_W 256u
-#define FIXTURE_H 144u
+#define FIXTURE_H 192u
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-3
 

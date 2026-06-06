@@ -43,6 +43,7 @@
 #include "test.h"
 
 #include "feature/feature_extractor.h"
+#include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
@@ -99,7 +100,13 @@ static char *run_cpu_motion(double *score)
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "motion", NULL);
+    /* integer_motion only writes VMAF_integer_feature_motion_score when
+     * debug=true; without it only motion_sad_score is emitted.  Enable debug
+     * so the same named channel is available on both the CPU and HIP paths. */
+    VmafFeatureDictionary *opts = NULL;
+    err = vmaf_feature_dictionary_set(&opts, "debug", "1");
+    mu_assert("CPU: vmaf_feature_dictionary_set(debug) failed", !err);
+    err = vmaf_use_feature(vmaf, "motion", opts);
     mu_assert("CPU: vmaf_use_feature(motion) failed", !err);
     err = feed_two_frames(vmaf);
     mu_assert("CPU: feed_two_frames failed", !err);

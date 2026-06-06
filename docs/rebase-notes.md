@@ -1,6 +1,28 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/prev-ref-batch-refcount-and-motion-score (ADR-1072, 2026-06-06)
+
+**Files touched:**
+`core/src/libvmaf.c` (two sites in `threaded_extract_batch_func` and one in
+`threaded_extract_func`), `core/test/test_hip_ms_ssim_parity.c` (FIXTURE_H
+144→192), `core/test/test_cuda_float_ms_ssim_parity.c` (FIXTURE_H 144→192),
+`core/test/test_hip_motion_parity.c` (add `debug=1` opts, add feature.h
+include), `docs/adr/1072-prev-ref-batch-refcount-leak.md`,
+`docs/adr/README.md`, `docs/state.md`, `docs/rebase-notes.md`,
+`changelog.d/fixed/1072-prev-ref-batch-refcount-leak.md`.
+
+**Rebase impact:** The `libvmaf.c` hunks add `vmaf_picture_unref` +
+`memset` + `memset(f->prev_ref)` inside the `VMAF_FEATURE_EXTRACTOR_PREV_REF`
+block in `threaded_extract_batch_func`. If a concurrent branch modifies the
+same block or the `unref:` label region, resolve by keeping both the
+concurrent change and the new unref-before-memset + zero-f->prev_ref logic
+from this branch. The test fixture changes (144→192) and the debug-flag
+addition are self-contained with no shared invariants. No public-API, ABI, or
+upstream-mirrored file changes.
+
+---
+
 ## fix/test-failures-macos-dnn (2026-06-06, no ADR — bug fixes)
 
 **Files touched:**

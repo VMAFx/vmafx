@@ -1590,6 +1590,15 @@ static void threaded_extract_func(void *e, void **thread_data)
                                                     f->index, f->feature_collector);
 
     if (f->prev_ref.ref) {
+        /* On success the PREV_REF SWAP in context_extract replaced fex->prev_ref
+         * (struct-copy of f->prev_ref, shared VmafRef*) with the current frame's
+         * picture (refcount bumped by one).  Unref before clearing to balance that
+         * bump; on error fex->prev_ref still holds the old frame's struct-copy and
+         * the same unref releases one count from it.  f->prev_ref is then unref'd
+         * separately below (it was acquired via vmaf_picture_ref in the caller and
+         * holds its own independent counted reference). */
+        if (f->fex_ctx->fex->prev_ref.ref)
+            (void)vmaf_picture_unref(&f->fex_ctx->fex->prev_ref);
         memset(&f->fex_ctx->fex->prev_ref, 0, sizeof(f->fex_ctx->fex->prev_ref));
         vmaf_picture_unref(&f->prev_ref);
     }
@@ -1686,8 +1695,30 @@ static void threaded_extract_batch_func(void *e, void **thread_data)
         int err = vmaf_feature_extractor_context_extract(td->fex_ctx[i], &f->ref, NULL, &f->dist,
                                                          NULL, f->index, f->feature_collector);
 
-        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF)
+        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
+            /* vmaf_feature_extractor_context_extract() runs the PREV_REF SWAP
+             * (feature_extractor.cpp) on SUCCESS:
+             *   1. unrefs the old fex->prev_ref (= struct-copy of f->prev_ref,
+             *      shared VmafRef* — frame N-1 count drops to 0, pool reclaim fires)
+             *   2. bumps frame N into fex->prev_ref with one extra refcount.
+             * On ERROR fex->prev_ref is unchanged (still the frame N-1 struct-copy).
+             *
+             * In both cases fex->prev_ref holds a counted reference that must be
+             * released before clearing the field.  A bare memset leaks that count,
+             * exhausting the picture pool after ~pool_size frames (ADR-1051).
+             *
+             * After vmaf_picture_unref():
+             *   SUCCESS: frame N drops one count (stays live in vmaf->prev_ref).
+             *   ERROR:   frame N-1 drops to 0 → pool reclaim fires.
+             *
+             * In both cases the VmafRef that f->prev_ref.ref pointed to is now
+             * freed.  Zero f->prev_ref so the goto:unref block below does not
+             * double-free the freed VmafRef. */
+            if (td->fex_ctx[i]->fex->prev_ref.ref)
+                (void)vmaf_picture_unref(&td->fex_ctx[i]->fex->prev_ref);
             memset(&td->fex_ctx[i]->fex->prev_ref, 0, sizeof(td->fex_ctx[i]->fex->prev_ref));
+            memset(&f->prev_ref, 0, sizeof(f->prev_ref));
+        }
 
         if (err) {
             f->err = err;

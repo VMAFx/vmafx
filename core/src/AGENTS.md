@@ -307,3 +307,32 @@ already stored NULL there). The contract this pins is: "caller may inspect
 Pattern: see `vmaf_gpu_picture_pool_init` in
 [`gpu_picture_pool.c`](gpu_picture_pool.c). Regression test:
 `core/test/test_gpu_picture_pool_uaf.c`.
+
+### PREV_REF batch dispatch: unref before memset, zero f->prev_ref (ADR-1072)
+
+`threaded_extract_batch_func` in `libvmaf.c` feeds PREV_REF extractors by
+copying `f->prev_ref` into `fex->prev_ref` via a bare struct copy (no
+`vmaf_picture_ref` — the VmafRef* is shared, not reference-counted
+separately).  After `vmaf_feature_extractor_context_extract()`:
+
+- **SUCCESS**: the PREV_REF SWAP in `feature_extractor.cpp` has decremented
+  the old-frame VmafRef (via the struct-copy alias) and bumped the current
+  frame into `fex->prev_ref` with an extra refcount.
+- **ERROR**: `fex->prev_ref` is unchanged (still the struct-copy alias).
+
+**In both cases**: call `vmaf_picture_unref(&fex->prev_ref)` before
+`memset(&fex->prev_ref, 0, ...)` to release that counted reference.  Then
+call `memset(&f->prev_ref, 0, ...)` to prevent the `unref:` block at the
+bottom of the function from double-freeing the now-consumed VmafRef.
+
+A bare `memset` without the prior unref leaks one picture-pool slot per
+PREV_REF frame, exhausting the pool and deadlocking
+`vmaf_picture_pool_fetch` in `pthread_cond_wait` after ~pool_size frames.
+
+The serial path (`read_pictures_dispatch_one`) uses `vmaf_picture_ref` for
+the copy (ADR-0778) and already calls `vmaf_picture_unref` before the memset;
+these two paths must stay consistent.
+
+**Rebase-sensitive**: any branch that re-opens or modifies the
+`VMAF_FEATURE_EXTRACTOR_PREV_REF` block in `threaded_extract_batch_func`
+must preserve both the unref-before-memset and the zero-f->prev_ref.
