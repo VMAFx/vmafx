@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## test/coverage-pkg-observability (2026-06-06)
+
+no rebase impact: changes are confined to
+`pkg/observability/coverage_gaps_test.go` (new test file),
+`pkg/observability/AGENTS.md` (invariant notes), and
+`changelog.d/added/observability-coverage-gaps.md` (fragment).
+No production source, public header, or build file is modified.
+Conflicts only if another branch edits the same lines in AGENTS.md or
+rebase-notes.md.
+
 ## fix/sanitizer-deselect-tests-and-quality-gates (2026-06-06)
 
 no rebase impact: CI-only change to `.github/workflows/tests-and-quality-gates.yml`

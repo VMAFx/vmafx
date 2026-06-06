@@ -53,6 +53,18 @@ Tests must not require a live OTel collector. Use a bogus endpoint
 (`http://127.0.0.1:14318`) — the OTLP HTTP exporter is constructed
 lazily and `shutdown` is bounded by the test context.
 
+Additional invariants locked in by `coverage_gaps_test.go`:
+
+- `WaitForShutdown` must return after receiving SIGTERM (not only on context
+  cancel). `TestWaitForShutdown_SIGTERMDelivery` sends a real SIGTERM to
+  `os.Getpid()`; do not run that test with `t.Parallel()`.
+- `SetControllerSources` must register only the queue gauges when `r == nil`,
+  and only the node gauge when `q == nil`. The half-nil branches are tested
+  independently of the both-nil and both-non-nil cases.
+- `AttrJobID`, `AttrModel`, `AttrBackend`, `AttrNodeID`, `AttrVendor`,
+  `AttrStatus` key strings are schema-locked to the values in ADR-0782.
+  Any rename is a breaking OTLP consumer change — update the ADR first.
+
 ## OTel rollout discipline
 
 When wiring OTel into a new service (Phase 2+), the call site is **always**:
