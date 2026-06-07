@@ -48,8 +48,8 @@ index 61f2747..8dabe15 100644
  #endif
 +    /* ADR-0576: VmafConfiguration.cpumask / gpumask exposed as AVOptions.
 +     * cpumask bits selectively disable SIMD ISAs (SSE2/NEON=1, SSE3=2,
-+     * SSE4.1=4, AVX2=8, AVX512=16, AVX512ICL=32).  gpumask bit 1 disables
-+     * CUDA; zero (default) leaves all ISAs/GPU paths enabled. */
++     * SSE4.1=4, AVX2=8, AVX512=16, AVX512ICL=32).  gpumask bit 0 (value 1)
++     * disables CUDA; zero (default) leaves all ISAs/GPU paths enabled. */
 +    int64_t cpumask;
 +    int64_t gpumask;
  

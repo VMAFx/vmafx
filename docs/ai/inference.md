@@ -327,6 +327,12 @@ ffmpeg -i in.mp4 \
     out.mp4
 ```
 
+The `vmaf_pre` filter's `device=` option accepts the same twelve device
+strings as `tiny_device=` in the `libvmaf` filter — `auto`, `cpu`, `cuda`,
+`openvino`, `openvino-npu`, `openvino-cpu`, `openvino-gpu`, `coreml`,
+`coreml-ane`, `coreml-gpu`, `coreml-cpu`, and `rocm` — all mapping to the
+corresponding `VmafDnnDevice` enum values (ADR-0482).
+
 ## Execution-provider matrix
 
 | Backend flag | ORT EP | Notes |

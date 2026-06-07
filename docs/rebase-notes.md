@@ -45355,3 +45355,7 @@ no rebase impact: changes confined to `core/tools/vmaf_per_shot.c` and
 no rebase impact: changes confined to `compat/python-vmaf/__init__.py`,
 `compat/python-vmaf/config.py`, and `compat/python-vmaf/core/matlab_feature_extractor.py`.
 No C source, public header, or ABI change.
+
+## fix/ffmpeg-vmaf-pre-device-full-enum (2026-06-07)
+no rebase impact: changes confined to `ffmpeg-patches/0002-*.patch` and
+`ffmpeg-patches/0014-*.patch`. No C source or public header in-tree is modified.
