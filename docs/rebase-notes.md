@@ -144,7 +144,14 @@ no rebase impact: single-file change to
 `motion_score_pipeline_16_neon`.  No public API, no header, no test data,
 no upstream-mirrored file is modified.  Conflicts only if another branch
 edits the same static helper region of that file.
+## fix/helm-values-completeness-adr-1074 (ADR-1074, 2026-06-06)
 
+no rebase impact: changes are confined to `deploy/helm/vmafx/values.yaml`,
+`deploy/helm/vmafx/values.schema.json`, and three templates
+(`templates/statefulset.yaml`, `templates/node.yaml`,
+`templates/networkpolicy.yaml`). No C source, public header, upstream-mirrored
+file, Python test, or golden-data assertion is touched. Conflict risk exists
+only if another branch edits those same Helm files concurrently.
 ## fix/sanitizer-deselect-tests-and-quality-gates (2026-06-06)
 
 no rebase impact: CI-only change to `.github/workflows/tests-and-quality-gates.yml`

@@ -103,4 +103,5 @@ final UID and that container-scope seccompProfile is also set.
 - [ADR-0969](../../../docs/adr/0969-helm-seccomp-default-plus-node-image-helper.md) — seccompProfile default + node image helper fix
 - [ADR-1047](../../../docs/adr/1047-helm-schema-bug-fixes.md) — R9 schema correctness fixes
 - [ADR-1058](../../../docs/adr/1058-helm-chart-security-hardening.md) — PDB, RBAC split, metrics NetworkPolicy, schema tightening
+- [ADR-1074](../../../docs/adr/1074-helm-values-completeness.md) — nameOverride/fullnameOverride, statePVCSize, node.metricsPort, extraPorts items schema
 - [ADR-1094](../../../docs/adr/1094-helm-rolling-update-correctness.md) — rolling-update strategy, probe fix, PDB default, grace period

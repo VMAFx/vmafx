@@ -9,6 +9,15 @@
 # =============================================================================
 
 # ---------------------------------------------------------------------------
+# Name overrides (standard Helm convention)
+# ---------------------------------------------------------------------------
+# nameOverride replaces only the chart name component of resource names.
+# fullnameOverride replaces the entire resource name prefix.
+# Both are optional; default behaviour is <release>-vmafx.
+nameOverride: ""
+fullnameOverride: ""
+
+# ---------------------------------------------------------------------------
 # Operator — vmafx-operator kubebuilder controller (ADR-0714)
 # Disabled by default in Stage 1; enable after CRDs are installed.
 # ---------------------------------------------------------------------------
@@ -96,6 +105,10 @@ statefulSet:
       maxUnavailable: 1
       partition: 0
   podManagementPolicy: OrderedReady
+  # statePVCSize controls the PersistentVolumeClaim created by the StatefulSet
+  # volumeClaimTemplate for sticky session state (/var/lib/vmafx).
+  # Size this to fit the MCP server's session state on your storage class.
+  statePVCSize: 1Gi
 
 # ---------------------------------------------------------------------------
 # Pod termination grace period
@@ -454,6 +467,12 @@ node:
   # controllerAddr overrides the VMAFX_CONTROLLER_ADDR env var.
   # Defaults to the in-cluster controller Service at <release>-controller:8080.
   controllerAddr: ""
+
+  # metricsPort is the Prometheus scrape port exposed by vmafx-node.
+  # Changing this value updates the node Deployment containerPort, the
+  # node-metrics Service port, and the NetworkPolicy allow rule together.
+  # The default (9090) matches the vmafx-node binary default.
+  metricsPort: 9090
 
   # resources overrides for the node pods.
   # Falls back to .Values.resources when empty.

@@ -89,6 +89,9 @@ spec:
             - name: grpc
               containerPort: {{ .Values.node.grpcPort | default 50052 }}
               protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.node.metricsPort | default 9090 }}
+              protocol: TCP
           env:
             - name: VMAFX_CONTROLLER_ADDR
               value: {{ include "vmafx.controllerAddr" . | quote }}
@@ -204,5 +207,9 @@ spec:
     - name: grpc
       port: {{ .Values.node.grpcPort | default 50052 }}
       targetPort: grpc
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.node.metricsPort | default 9090 }}
+      targetPort: metrics
       protocol: TCP
 {{- end }}
