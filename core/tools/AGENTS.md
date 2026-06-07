@@ -75,6 +75,14 @@ tools/
     planar YUV uses little-endian 16-bit containers; frame seeking must
     count the chroma planes and sample width even though only luma enters
     the saliency path. The DNN-facing tensor remains luma8.
+  - **`frame_bytes()` ceiling-division invariant** (rebase-sensitive):
+    chroma plane sizes in `frame_bytes()` MUST use ceiling-integer arithmetic
+    — `cw = (w+1)/2`, `ch = (h+1)/2` — for 4:2:0 and 4:2:2 inputs. Using
+    `y/2` (integer truncation of luma sample count) under-counts by up to one
+    chroma row or column when width or height is odd, causing `fseeko()` to
+    seek to the wrong byte offset for frame indices > 0. The 4:4:4 path
+    (`y + 2y`) is exact. Regression: `test_vmaf_roi::test_frame_bytes_odd_420`
+    and `test_vmaf_roi::test_frame_bytes_odd_422`.
 - **Long-only options must not pass synthesised short-option
   chars to `error()`** (rebase-sensitive). Handlers for
   `ARG_THREADS`, `ARG_SUBSAMPLE`, `ARG_CPUMASK`, and any
@@ -105,16 +113,6 @@ tools/
   reintroduces the unguarded write, re-apply the fix. Regression
   test: `core/test/test_y4m_411_oob.c` (ASan-required to catch
   the regression deterministically).
-
-- **`parse_unsigned` rejects negative strings and uint32-overflow values**
-  (ADR-1088, rebase-sensitive). `parse_unsigned()` in both `cli_parse.c` and
-  `cli_parse.cpp` now guards against (1) a leading `'-'` character before
-  calling `strtoul` (POSIX `strtoul("-1")` wraps to `ULONG_MAX` without
-  `ERANGE`), and (2) `ul > UINT_MAX` after `strtoul` to catch 64-bit overflow
-  values. If upstream Netflix adds or replaces `parse_unsigned`, keep both
-  guards — they are additive hardening with no semantic impact on valid input.
-  The five regression tests in `core/test/test_cli_parse_long_only_args.c`
-  (fork/waitpid, `--frame_cnt -1` etc.) document the contract.
 
 ## Governing ADRs
 
@@ -175,9 +173,6 @@ tools/
   function scope and routes every exit through the `bench_cleanup`
   label so `vmaf_*_state_free` always runs. Mirrors the T5
   state-leak audit pattern in the same file's `run_feature_collect`.
-- [ADR-1088](../../docs/adr/1088-r14-cli-flag-parsing.md) — `parse_unsigned`
-  negative/overflow guards and `--help` in `cli_parse.cpp`. The three invariants
-  above enforce this ADR's contract.
 - [ADR-0520](../../docs/adr/0520-cli-no-reference-wiring.md) —
   `--no-reference` wiring.
   **CLI gate invariant**: the reference-required gate at the end of

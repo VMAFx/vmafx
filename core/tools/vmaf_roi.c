@@ -176,20 +176,34 @@ static size_t sample_bytes_for_bitdepth(int bitdepth)
 /* Frame size in bytes for planar YUV, used to seek to the requested frame.
  * We ignore chroma content (saliency is luma-only) but we must still skip
  * past it in the file. High-bit-depth YUV is interpreted as little-endian
- * 16-bit containers, matching this fork's CLI conventions. */
+ * 16-bit containers, matching this fork's CLI conventions.
+ *
+ * Chroma plane dimensions use ceiling division because YUV subsampling
+ * truncates to integer plane sizes regardless of luma parity:
+ *   4:2:0  Cb/Cr: ceil(w/2) * ceil(h/2)  each
+ *   4:2:2  Cb/Cr: ceil(w/2) * h          each
+ *   4:4:4  Cb/Cr: w * h                  each
+ *
+ * Using y/2 (integer truncation) instead of 2*ceil(w/2)*ceil(h/2) would
+ * under-count by up to one chroma row/column for odd-dimension inputs,
+ * causing fseeko() to land at the wrong byte offset for frame indices > 0.
+ */
 static size_t frame_bytes(int w, int h, enum vmaf_roi_pixfmt pf, int bitdepth)
 {
-    size_t y = luma_plane_size(w, h);
+    const size_t y = luma_plane_size(w, h);
+    /* Ceiling-divide width/height to get subsampled chroma plane dimensions. */
+    const size_t cw = ((size_t)w + 1U) / 2U; /* ceil(w/2) */
+    const size_t ch = ((size_t)h + 1U) / 2U; /* ceil(h/2) */
     size_t samples = 0U;
     switch (pf) {
     case VMAF_ROI_PIXFMT_420:
-        samples = y + (y / 2U); /* 1 + 0.5 */
+        samples = y + 2U * cw * ch; /* Y + Cb + Cr, each cw*ch */
         break;
     case VMAF_ROI_PIXFMT_422:
-        samples = y + y; /* 1 + 1   */
+        samples = y + 2U * cw * (size_t)h; /* Y + Cb + Cr, each cw*h */
         break;
     case VMAF_ROI_PIXFMT_444:
-        samples = y + (y * 2U); /* 1 + 2   */
+        samples = y + 2U * y; /* Y + Cb + Cr, each w*h */
         break;
     }
     return samples * sample_bytes_for_bitdepth(bitdepth);

@@ -45342,3 +45342,7 @@ no rebase impact: changes confined to `core/tools/vmaf.c` and
 no rebase impact: dead code removal in `core/src/dnn/model_loader.c` and
 `core/src/feature/x86/vif_avx2.c` / `vif_avx512.c`. No public header,
 ABI, or numeric change.
+
+## fix/roi-frame-bytes-odd-dims (2026-06-07)
+no rebase impact: changes confined to `core/tools/vmaf_roi.c` and
+`core/test/test_vmaf_roi.c`. No public header or ABI change.

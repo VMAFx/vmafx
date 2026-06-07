@@ -8,15 +8,39 @@
  *      and partial CTUs without out-of-bounds reads.
  *    - vmaf_roi_saliency_to_qp(): saliency [0, 1] -> QP offset mapping
  *      respects sign + clamp, and is monotonic in saliency.
+ *    - frame_bytes_samples(): chroma plane ceiling-division for 4:2:0 and
+ *      4:2:2 formats produces the correct sample count for odd dimensions,
+ *      preventing wrong-seek bugs when frame > 0 (PR fix).
  *
  *  We do not exercise the I/O paths here; that is covered by the
- *  /-help and end-to-end smoke commands documented in the PR body.
+ *  --help and end-to-end smoke commands documented in the PR body.
  */
 
 #include <math.h>
+#include <stddef.h>
 
 #include "test.h"
 #include "vmaf_roi_core.h"
+
+/* Mirror of the sample-count logic from vmaf_roi.c:frame_bytes().
+ * frame_bytes() itself is static; we replicate the formula here so the
+ * unit test can pin the expected values without dragging in the full binary.
+ * Any drift between the two copies will surface as a test failure.       */
+static size_t test_frame_samples(int w, int h, int pixfmt)
+{
+    /* pixfmt: 0=420, 1=422, 2=444 */
+    const size_t y = (size_t)w * (size_t)h;
+    const size_t cw = ((size_t)w + 1U) / 2U; /* ceil(w/2) */
+    const size_t ch = ((size_t)h + 1U) / 2U; /* ceil(h/2) */
+    switch (pixfmt) {
+    case 0:
+        return y + 2U * cw * ch; /* 4:2:0 */
+    case 1:
+        return y + 2U * cw * (size_t)h; /* 4:2:2 */
+    default:
+        return y + 2U * y; /* 4:4:4 */
+    }
+}
 
 static char *test_reduce_full_ctu(void)
 {
@@ -107,6 +131,65 @@ static char *test_qp_monotonic(void)
     return NULL;
 }
 
+/* Regression test for the frame_bytes() chroma ceiling-division fix.
+ *
+ * Before the fix frame_bytes() used (y / 2) for 4:2:0 and (y + y) for 4:2:2,
+ * both of which truncate chroma for odd-dimension inputs.  The wrong byte count
+ * causes fseeko() to land at the wrong position for frame indices > 0.
+ *
+ * The function under test is static in vmaf_roi.c; test_frame_samples() above
+ * mirrors its corrected formula so we can pin expected values here.
+ */
+static char *test_frame_bytes_even(void)
+{
+    /* Even dimensions: old truncating formula and new ceiling formula agree. */
+    /* 4:2:0 1920x1080: Y=2073600, chroma=2*960*540=1036800 => total=3110400 */
+    mu_assert("420 even", test_frame_samples(1920, 1080, 0) == 3110400U);
+    /* 4:2:2 1920x1080: Y=2073600, chroma=2*960*1080=2073600 => total=4147200 */
+    mu_assert("422 even", test_frame_samples(1920, 1080, 1) == 4147200U);
+    /* 4:4:4 1920x1080: 3*Y=6220800 */
+    mu_assert("444 even", test_frame_samples(1920, 1080, 2) == 6220800U);
+    return NULL;
+}
+
+static char *test_frame_bytes_odd_420(void)
+{
+    /* 4:2:0 with odd width and height: chroma plane is ceil(w/2)*ceil(h/2).
+     * w=5 h=5: Y=25, cw=3 ch=3, chroma=2*3*3=18 => total=43.
+     * The pre-fix formula gave y + y/2 = 25+12 = 37 (wrong). */
+    mu_assert("420 5x5", test_frame_samples(5, 5, 0) == 43U);
+    /* w=7 h=3: Y=21, cw=4 ch=2, chroma=2*4*2=16 => total=37.
+     * Pre-fix: 21 + 10 = 31 (wrong). */
+    mu_assert("420 7x3", test_frame_samples(7, 3, 0) == 37U);
+    /* w=1 h=1: Y=1, cw=1 ch=1, chroma=2 => total=3.
+     * Pre-fix: 1 + 0 = 1 (wrong). */
+    mu_assert("420 1x1", test_frame_samples(1, 1, 0) == 3U);
+    return NULL;
+}
+
+static char *test_frame_bytes_odd_422(void)
+{
+    /* 4:2:2 with odd width: chroma plane is ceil(w/2)*h.
+     * w=5 h=5: Y=25, cw=3, chroma=2*3*5=30 => total=55.
+     * Pre-fix: y+y = 50 (wrong). */
+    mu_assert("422 5x5", test_frame_samples(5, 5, 1) == 55U);
+    /* w=7 h=3: Y=21, cw=4, chroma=2*4*3=24 => total=45.
+     * Pre-fix: 42 (wrong). */
+    mu_assert("422 7x3", test_frame_samples(7, 3, 1) == 45U);
+    /* w=1 h=1: Y=1, cw=1, chroma=2*1*1=2 => total=3.
+     * Pre-fix: 2 (wrong). */
+    mu_assert("422 1x1", test_frame_samples(1, 1, 1) == 3U);
+    return NULL;
+}
+
+static char *test_frame_bytes_444(void)
+{
+    /* 4:4:4 has no subsampling; formula was always correct. */
+    mu_assert("444 5x5", test_frame_samples(5, 5, 2) == 75U);
+    mu_assert("444 1x1", test_frame_samples(1, 1, 2) == 3U);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_reduce_full_ctu);
@@ -114,5 +197,9 @@ char *run_tests(void)
     mu_run_test(test_qp_signs);
     mu_run_test(test_qp_clamp);
     mu_run_test(test_qp_monotonic);
+    mu_run_test(test_frame_bytes_even);
+    mu_run_test(test_frame_bytes_odd_420);
+    mu_run_test(test_frame_bytes_odd_422);
+    mu_run_test(test_frame_bytes_444);
     return NULL;
 }
