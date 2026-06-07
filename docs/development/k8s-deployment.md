@@ -173,8 +173,17 @@ kubectl set image -n vmafx deployment/vmafx \
   vmafx=ghcr.io/vmafx/vmafx:3.1.0
 ```
 
-The chart uses `RollingUpdate` strategy with `maxUnavailable=0` by default,
-ensuring zero-downtime updates.
+The controller Deployment and the vmafx-node worker Deployment both use
+`RollingUpdate` with `maxUnavailable: 0` and `maxSurge: 1` by default,
+ensuring zero-downtime updates and preventing GPU pod eviction before
+replacements are ready (ADR-1094). The grace period defaults to 60 s
+(`terminationGracePeriodSeconds: 60`), giving in-flight scoring jobs time
+to finish before SIGKILL. Raise this to 300 s or more for long CHUG
+extractions:
+
+```yaml
+terminationGracePeriodSeconds: 300
+```
 
 ## Monitoring
 
@@ -312,22 +321,33 @@ kubectl get networkpolicy -n vmafx-prod -l app.kubernetes.io/instance=vmafx
 ## PodDisruptionBudget {#pod-disruption-budget}
 
 Disabled by default (`podDisruptionBudget.enabled=false`). Enable for HA
-deployments with `replicaCount >= 2` to prevent Kubernetes from evicting all
-pods simultaneously during node drains, cluster upgrades, or voluntary
-disruptions.
+deployments to prevent Kubernetes from evicting all pods simultaneously during
+node drains, cluster upgrades, or voluntary disruptions.
 
 ```yaml
 podDisruptionBudget:
   enabled: true
-  minAvailable: 1   # or maxUnavailable: 1
+  # maxUnavailable: 1  — default: allows one voluntary disruption at a time.
+  # Use this for all replica counts, including single-replica dev deployments.
+  maxUnavailable: 1
+```
+
+The default strategy is `maxUnavailable: 1`. Do **not** use `minAvailable: 1`
+with a single-replica Deployment — Kubernetes cannot satisfy `minAvailable: 1`
+while draining the only pod, permanently blocking node drain operations. Switch
+to `minAvailable` only when `replicaCount >= 2` and you need a hard lower-bound
+on serving capacity:
+
+```yaml
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2   # requires replicaCount >= 3
 ```
 
 When enabled, the chart creates a `policy/v1 PodDisruptionBudget` for each
-active pool (controller, node, operator). `minAvailable: 1` is the recommended
-setting for a 2-replica deployment; for larger deployments consider a
-percentage (`minAvailable: "50%"`).
+active pool (controller, node, operator).
 
-Requires Kubernetes >= 1.21 (for `policy/v1`). See ADR-1058.
+Requires Kubernetes >= 1.21 (for `policy/v1`). See ADR-1058, ADR-1094.
 
 ## Related
 
@@ -336,3 +356,4 @@ Requires Kubernetes >= 1.21 (for `policy/v1`). See ADR-1058.
 - [Cloud-native redesign](../../docs/adr/0697-vmafx-cloud-native-redesign.md) — ADR-0697
 - [Helm chart ADR](../../docs/adr/0699-vmafx-helm-chart-k8s.md) — ADR-0699
 - [Security hardening ADR](../../docs/adr/1058-helm-chart-security-hardening.md) — ADR-1058
+- [Rolling-update correctness ADR](../../docs/adr/1094-helm-rolling-update-correctness.md) — ADR-1094

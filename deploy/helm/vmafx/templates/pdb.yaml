@@ -30,10 +30,10 @@ spec:
   selector:
     matchLabels:
       {{- $selector | nindent 6 }}
-  {{- if .Values.podDisruptionBudget.maxUnavailable }}
-  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   {{- else }}
-  minAvailable: {{ .Values.podDisruptionBudget.minAvailable | default 1 }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable | default 1 }}
   {{- end }}
 {{- end }}
 {{- if .Values.node.enabled }}
@@ -51,10 +51,10 @@ spec:
     matchLabels:
       {{- $selector | nindent 6 }}
       app.kubernetes.io/component: node
-  {{- if .Values.podDisruptionBudget.maxUnavailable }}
-  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   {{- else }}
-  minAvailable: {{ .Values.podDisruptionBudget.minAvailable | default 1 }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable | default 1 }}
   {{- end }}
 {{- end }}
 {{- if .Values.operator.enabled }}
@@ -72,10 +72,10 @@ spec:
     matchLabels:
       {{- $selector | nindent 6 }}
       app.kubernetes.io/component: operator
-  {{- if .Values.podDisruptionBudget.maxUnavailable }}
-  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   {{- else }}
-  minAvailable: {{ .Values.podDisruptionBudget.minAvailable | default 1 }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable | default 1 }}
   {{- end }}
 {{- end }}
 {{- end }}

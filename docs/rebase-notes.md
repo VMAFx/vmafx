@@ -45369,3 +45369,7 @@ No C source, public header, or ABI change.
 no rebase impact: changes confined to `ai/src/aiutils/file_utils.py`,
 `ai/src/aiutils/run_manifest.py`, and five AI scripts. No C source, public
 header, or build file is modified.
+
+## fix/helm-rolling-update-correctness (2026-06-07)
+no rebase impact: changes confined to `deploy/helm/vmafx/` Helm chart templates
+and values. No C source, public header, or Go source is modified.

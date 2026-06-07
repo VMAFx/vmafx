@@ -38,6 +38,13 @@ spec:
     matchLabels:
       {{- include "vmafx.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: node
+  # Explicit zero-disruption rolling-update strategy for GPU worker pods.
+  # maxUnavailable: 0 ensures no in-flight scoring job is SIGKILL'd before
+  # its replacement is healthy; maxSurge: 1 permits one extra pod during
+  # the rollout so capacity is never reduced.  Without this, Kubernetes
+  # defaults to 25%/25% which can evict pods that hold live GPU work.
+  strategy:
+    {{- toYaml .Values.node.strategy | nindent 4 }}
   template:
     metadata:
       labels:
@@ -49,6 +56,7 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ include "vmafx.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 60 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
@@ -78,8 +86,8 @@ spec:
           image: {{ include "vmafx.nodeImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            - name: metrics
-              containerPort: 9090
+            - name: grpc
+              containerPort: {{ .Values.node.grpcPort | default 50052 }}
               protocol: TCP
           env:
             - name: VMAFX_CONTROLLER_ADDR
@@ -121,20 +129,24 @@ spec:
               {{- toYaml $nodeResources.requests | nindent 14 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          # tcpSocket probes verify the gRPC listener is accepting connections.
+          # The node binary exposes no HTTP endpoint; httpGet on the old
+          # "metrics" port (9090) always returned ECONNREFUSED, leaving the
+          # pod permanently unready.  A tcpSocket probe on the gRPC port is
+          # the correct readiness signal: the listener is up iff gRPC is up.
           livenessProbe:
-            httpGet:
-              path: /metrics
-              port: metrics
+            tcpSocket:
+              port: grpc
             initialDelaySeconds: 15
             periodSeconds: 30
             failureThreshold: 3
           readinessProbe:
-            httpGet:
-              path: /metrics
-              port: metrics
+            tcpSocket:
+              port: grpc
             initialDelaySeconds: 5
             periodSeconds: 10
             failureThreshold: 3
+            successThreshold: 1
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -170,10 +182,15 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
 ---
+# ClusterIP Service for controller → node gRPC dispatch (ADR-0713).
+# The node binary exposes no HTTP metrics endpoint; the former "metrics"
+# Service on 9090 was referencing a phantom port (ECONNREFUSED).
+# When a Prometheus metrics endpoint is added to the node binary, add a
+# second Service on the metrics port and wire up the ServiceMonitor there.
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "vmafx.fullname" . }}-node-metrics
+  name: {{ include "vmafx.fullname" . }}-node
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
@@ -184,8 +201,8 @@ spec:
     {{- include "vmafx.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: node
   ports:
-    - name: metrics
-      port: 9090
-      targetPort: metrics
+    - name: grpc
+      port: {{ .Values.node.grpcPort | default 50052 }}
+      targetPort: grpc
       protocol: TCP
 {{- end }}

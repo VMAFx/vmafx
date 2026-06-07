@@ -59,6 +59,9 @@ deployment:
   strategy:
     type: RollingUpdate
     rollingUpdate:
+      # maxUnavailable: 0 prevents capacity reduction during rollout.
+      # Kubernetes default (25%) would allow pod evictions before replacements
+      # are ready, which drops in-flight scoring requests on GPU workloads.
       maxSurge: 1
       maxUnavailable: 0
 
@@ -85,7 +88,27 @@ statefulSet:
   replicaCount: 1
   updateStrategy:
     type: RollingUpdate
+    rollingUpdate:
+      # maxUnavailable: 1 is Kubernetes default for StatefulSet RollingUpdate.
+      # Explicit declaration here prevents silent default drift and documents
+      # the intent.  Set partition: N for canary-style staged rollouts (only
+      # pods with ordinal >= N are updated; 0 means update all).
+      maxUnavailable: 1
+      partition: 0
   podManagementPolicy: OrderedReady
+
+# ---------------------------------------------------------------------------
+# Pod termination grace period
+# ---------------------------------------------------------------------------
+# How long Kubernetes waits for the container to exit after SIGTERM before
+# sending SIGKILL.  Kubernetes default is 30 s, which is too short for
+# long-running GPU scoring jobs that cannot be checkpointed mid-frame.
+# 60 s covers the worst-case vmaf-tune encode + score pass on a single
+# segment.  Operators running full-feature CHUG extractions should raise
+# this to 300 s or more to avoid SIGKILL on in-flight frames.
+# Applies to: Deployment (controller / scoring server) and StatefulSet.
+# The node Deployment uses the same value via templates/node.yaml.
+terminationGracePeriodSeconds: 60
 
 # ---------------------------------------------------------------------------
 # Service
@@ -405,6 +428,23 @@ node:
   # replicaCount is the number of worker replicas.
   replicaCount: 1
 
+  # strategy controls the rolling-update behaviour of the node Deployment.
+  # maxUnavailable: 0 prevents GPU pod eviction before a replacement is ready;
+  # Kubernetes default (25%) would drop in-flight scoring jobs on rolling
+  # upgrades.  maxSurge: 1 allows one extra pod during the rollout so node
+  # capacity is never reduced below replicaCount.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  # grpcPort is the port the vmafx-node gRPC server listens on.
+  # Must match VMAFX_NODE_ADDR (env default :50052).  The liveness and
+  # readiness probes use tcpSocket on this port — it is the only listener
+  # the node binary exposes.
+  grpcPort: 50052
+
   # image overrides for the node binary.
   # Defaults to <image.repository>-node:<Chart.AppVersion>.
   image:
@@ -522,9 +562,16 @@ auth:
 # ---------------------------------------------------------------------------
 podDisruptionBudget:
   enabled: false
-  # minAvailable is the default strategy — keeps at least N pods running.
-  minAvailable: 1
-  # maxUnavailable: 1  # Uncomment to switch to maxUnavailable strategy.
+  # maxUnavailable: 1 allows exactly one voluntary disruption at a time
+  # (node drain, cluster upgrade) while keeping the rest of the replicas
+  # serving.  This is the correct default for both single-replica dev
+  # deployments and multi-replica production — minAvailable: 1 with a
+  # single-replica Deployment would permanently block node drain operations
+  # (Kubernetes cannot evict the only replica and still satisfy minAvailable).
+  # Switch to minAvailable when you need a hard lower-bound on serving capacity
+  # (e.g., minAvailable: 2 with replicaCount: 3).
+  maxUnavailable: 1
+  # minAvailable: 1  # Uncomment to switch to minAvailable strategy (requires replicaCount >= 2).
 
 # ---------------------------------------------------------------------------
 # NOTES.txt / post-install

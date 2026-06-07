@@ -146,6 +146,11 @@
     "tolerations": { "type": "array" },
     "nodeSelector": { "type": "object" },
     "topologySpreadConstraints": { "type": "array" },
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How long Kubernetes waits after SIGTERM before sending SIGKILL. Default 60 s. GPU scoring jobs that cannot checkpoint mid-frame should set 300+ s."
+    },
     "livenessProbe": { "type": "object" },
     "readinessProbe": { "type": "object" },
     "monitoring": {
@@ -199,6 +204,16 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "replicaCount": { "type": "integer", "minimum": 0 },
+        "strategy": {
+          "type": "object",
+          "description": "Rolling-update strategy for the node Deployment. Default: maxUnavailable:0, maxSurge:1 (zero-disruption, GPU-safe)."
+        },
+        "grpcPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "gRPC listen port for the vmafx-node server. Must match VMAFX_NODE_ADDR env var (default 50052). Used for tcpSocket liveness/readiness probes and the node ClusterIP Service."
+        },
         "image": {
           "type": "object",
           "additionalProperties": false,
