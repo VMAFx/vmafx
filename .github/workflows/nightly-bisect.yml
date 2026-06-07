@@ -1,11 +1,11 @@
 name: nightly-bisect
 
-# Nightly bisect-model-quality smoke (issue #4).
+# Nightly bisect-model-quality smoke.
 # Runs the binary-search regression detector against the committed
 # fixture timeline. A red run means the bisect wiring broke or — once
 # real models replace the synthetic placeholder — a real model quality
 # regression was localised. Latest verdict + per-step table are mirrored
-# to the sticky comment on issue #40.
+# to the sticky comment on issue #827 (tracking: nightly bisect-model-quality results).
 
 on:
   schedule:
@@ -14,14 +14,14 @@ on:
 
 permissions:
   contents: read
-  issues: write  # for sticky-comment editing on #40
+  issues: write  # for sticky-comment editing on #827
 
 concurrency:
   group: nightly-bisect-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  BISECT_TRACKER_ISSUE: "40"
+  BISECT_TRACKER_ISSUE: "827"
   BISECT_GATE_PLCC: "0.85"
 
 jobs:
@@ -47,7 +47,7 @@ jobs:
         run: |
           mkdir -p bisect-out
           # Don't fail the job here — the wiring step below posts a
-          # "wiring broke" sticky-comment update to issue #40 when
+          # "wiring broke" sticky-comment update to the tracking issue when
           # --check fails, then exits non-zero so the run is still red.
           # See ADR-0262.
           if python ai/scripts/build_bisect_cache.py --check 2>bisect-out/cache-check.err; then

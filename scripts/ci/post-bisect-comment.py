@@ -169,13 +169,19 @@ def _gh_with_stdin(args: list[str], body: str) -> None:
     cmd = ["gh", *args]
     # S603/S607: trusted args (caller-controlled, not user input);
     # `gh` resolved from $PATH is the GitHub-Actions convention.
-    subprocess.run(  # noqa: S603
+    result = subprocess.run(  # noqa: S603
         cmd,
-        check=True,
+        check=False,
         input=payload,
         capture_output=True,
         text=True,
     )
+    if result.returncode != 0:
+        print(f"gh stderr: {result.stderr.strip()}", file=sys.stderr)
+        print(f"gh stdout: {result.stdout.strip()}", file=sys.stderr)
+        raise subprocess.CalledProcessError(
+            result.returncode, cmd, output=result.stdout, stderr=result.stderr
+        )
 
 
 def main() -> int:
