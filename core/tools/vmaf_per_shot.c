@@ -114,7 +114,7 @@ static const struct option per_shot_long_opts[] = {
     {"crf-max",         required_argument, NULL, 'M'},
     {"diff-threshold",  required_argument, NULL, 'd'},
     {"format",          required_argument, NULL, 'f'},
-    {"help",            no_argument,       NULL, '?'},
+    {"help",            no_argument,       NULL, 'H'},
     {NULL, 0, NULL, 0},
 };
 /* clang-format on */
@@ -138,7 +138,7 @@ static void per_shot_print_usage(FILE *stream)
                           "  -M, --crf-max N            maximum CRF clamp [default 35]\n"
                           "  -d, --diff-threshold X     shot-detector frame-diff cutoff\n"
                           "  -f, --format csv|json      output format [default csv]\n"
-                          "      --help                 print this message\n");
+                          "  -H, --help                 print this message\n");
 }
 
 /* Parse an unsigned integer with strict bounds. Bans atoi (banned by
@@ -320,11 +320,17 @@ static int per_shot_parse_args(int argc, char **argv, struct vmaf_per_shot_setti
      * baseline applies in libvmaf/tools/cli_parse.c — every C CLI
      * uses it, and the binary is single-threaded by construction. */
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    while ((c = getopt_long(argc, argv, "r:w:h:p:b:o:t:m:M:d:f:?", per_shot_long_opts, &idx)) !=
+    while ((c = getopt_long(argc, argv, "r:w:h:p:b:o:t:m:M:d:f:H", per_shot_long_opts, &idx)) !=
            -1) {
-        if (c == '?') {
+        if (c == 'H') {
             per_shot_print_usage(stdout);
             return 1; /* sentinel — caller treats as success-with-help */
+        }
+        /* getopt returns '?' for an unrecognised option; treat as parse error
+         * (distinct from 'H' which is the --help short-option). */
+        if (c == '?') {
+            (void)fprintf(stderr, "vmaf-perShot: unrecognised option\n");
+            return -EINVAL;
         }
         if (per_shot_apply_opt(c, optarg, s) != 0) {
             (void)fprintf(stderr, "vmaf-perShot: invalid value for -%c\n", c);
@@ -517,7 +523,16 @@ static int per_shot_read_luma(FILE *fin, uint8_t *luma, size_t luma_bytes, size_
     if (got != luma_bytes)
         return -1;
     if (chroma_bytes > 0U) {
-        if (fseek(fin, (long)chroma_bytes, SEEK_CUR) != 0) {
+        /* Use fseeko / _fseeki64 so the offset is 64-bit on all platforms —
+         * the plain fseek (long) cast silently truncates on 32-bit targets
+         * for frames >2 GiB (e.g. 65535x65535 4:4:4 16-bit).  Pattern from
+         * vmaf_roi.c. Fall back to read-and-drop on unseekable streams. */
+#if defined(_WIN32)
+        int seek_rc = _fseeki64(fin, (long long)chroma_bytes, SEEK_CUR);
+#else
+        int seek_rc = fseeko(fin, (off_t)chroma_bytes, SEEK_CUR);
+#endif
+        if (seek_rc != 0) {
             /* fall back to read-and-drop if seek isn't permitted
              * (e.g. piped input) */
             size_t remaining = chroma_bytes;

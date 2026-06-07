@@ -118,4 +118,11 @@ if "${BIN}" --reference "${WORK}/two_frames_422.yuv" --width 16 --height 16 \
   exit 1
 fi
 
+# 6. Unknown / unrecognised options must fail, not silently trigger --help.
+#    Before the fix, --typo-option returned 1 (success-with-help), masking typos.
+if "${BIN}" --typo-option 2>/dev/null; then
+  echo "test_vmaf_per_shot: expected failure on unrecognised option --typo-option" >&2
+  exit 1
+fi
+
 echo "test_vmaf_per_shot: PASS (${ROWS} shot rows)"

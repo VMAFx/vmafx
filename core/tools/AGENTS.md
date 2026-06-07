@@ -75,14 +75,6 @@ tools/
     planar YUV uses little-endian 16-bit containers; frame seeking must
     count the chroma planes and sample width even though only luma enters
     the saliency path. The DNN-facing tensor remains luma8.
-  - **`frame_bytes()` ceiling-division invariant** (rebase-sensitive):
-    chroma plane sizes in `frame_bytes()` MUST use ceiling-integer arithmetic
-    — `cw = (w+1)/2`, `ch = (h+1)/2` — for 4:2:0 and 4:2:2 inputs. Using
-    `y/2` (integer truncation of luma sample count) under-counts by up to one
-    chroma row or column when width or height is odd, causing `fseeko()` to
-    seek to the wrong byte offset for frame indices > 0. The 4:4:4 path
-    (`y + 2y`) is exact. Regression: `test_vmaf_roi::test_frame_bytes_odd_420`
-    and `test_vmaf_roi::test_frame_bytes_odd_422`.
 - **Long-only options must not pass synthesised short-option
   chars to `error()`** (rebase-sensitive). Handlers for
   `ARG_THREADS`, `ARG_SUBSAMPLE`, `ARG_CPUMASK`, and any
@@ -139,6 +131,17 @@ tools/
     planar chroma-byte skipping. The per-shot detector and predictor
     remain luma-only, and high-bit-depth inputs use little-endian
     16-bit sample containers for `--bitdepth 10|12|16`.
+  - **`--help` short-option is `-H`, NOT `-?`** (rebase-sensitive).
+    getopt returns `'?'` for any unrecognised option; if `--help` maps
+    to `'?'` the two cases become indistinguishable and unknown flags
+    silently succeed. The `per_shot_long_opts` table maps `--help` to
+    `'H'`; `per_shot_parse_args` handles `'H'` for help and `'?'` for
+    the error path. Do not change the short-option value.
+  - **Chroma skip uses `fseeko` / `_fseeki64`** (rebase-sensitive).
+    `per_shot_read_luma` skips chroma bytes via `fseeko` (POSIX) or
+    `_fseeki64` (WIN32). Do not revert to `fseek((long)...)` — the
+    `long` cast silently truncates on 32-bit targets for frames
+    larger than 2 GiB, seeking to the wrong position without error.
 - [ADR-0104](../../docs/adr/0104-picture-pool-always-on.md) — picture
   pool is always compiled in and sized for the live-picture set; this
   is what makes the `--frame_skip_*` unref invariant load-bearing.
