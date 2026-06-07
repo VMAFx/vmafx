@@ -868,9 +868,11 @@ int vmaf_dnn_validate_onnx(const char *path, size_t max_bytes)
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#endif
-
+/* environ is a POSIX extension; the variable is only accessed in the
+ * POSIX (non-Windows) build path via posix_spawnp().  Confine the
+ * extern declaration here to match the actual usage site. */
 extern char **environ;
+#endif
 
 /* Find the sigstore_bundle path for the model entry whose onnx basename
  * matches `onnx_basename`. Writes a registry-relative path into `out`

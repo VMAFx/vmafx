@@ -45337,3 +45337,8 @@ public header or ABI change.
 ## fix/bench-clock-unchecked-returns (2026-06-07)
 no rebase impact: changes confined to `core/tools/vmaf.c` and
 `core/tools/vmaf_bench.c`. No public header or ABI change.
+
+## fix/msvc-windows-portability-hygiene (2026-06-07)
+no rebase impact: dead code removal in `core/src/dnn/model_loader.c` and
+`core/src/feature/x86/vif_avx2.c` / `vif_avx512.c`. No public header,
+ABI, or numeric change.

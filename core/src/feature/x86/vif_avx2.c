@@ -28,9 +28,9 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
-#if defined __GNUC__
+#if defined(__GNUC__)
 #define ALIGNED(x) __attribute__((aligned(x)))
-#elif defined(_MSC_VER) && (!defined UNDER_CE)
+#elif defined(_MSC_VER)
 #define ALIGNED(x) __declspec(align(x))
 #else
 #define ALIGNED(x)

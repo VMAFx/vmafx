@@ -201,14 +201,6 @@ void vif_statistic_8_avx512(struct VifPublicState *s, float *num, float *den, un
     const uint16_t *log2_table = s->log2_table;
     double vif_enhn_gain_limit = s->vif_enhn_gain_limit;
 
-#if defined __GNUC__
-#define ALIGNED(x) __attribute__((aligned(x)))
-#elif defined(_MSC_VER) && (!defined UNDER_CE)
-#define ALIGNED(x) __declspec(align(x))
-#else
-#define ALIGNED(x)
-#endif
-
     int64_t accum_num_log = 0;
     int64_t accum_den_log = 0;
     int64_t accum_num_non_log = 0;
