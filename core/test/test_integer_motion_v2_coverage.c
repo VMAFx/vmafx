@@ -32,6 +32,7 @@
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
 #include "libvmaf/picture.h"
+#include "picture.h"
 
 #define MV2_W (16u)
 #define MV2_H (16u)
@@ -146,6 +147,9 @@ static char *test_motion_v2_index_zero_emits_zero(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
+    /* Drain pooled picture buffers so LSan sees no false-positive leaks
+     * from the global pic_pool static (picture.c). */
+    vmaf_picture_pool_flush();
     return NULL;
 }
 
@@ -190,6 +194,8 @@ static char *test_motion_v2_force_zero(void)
     vmaf_feature_collector_destroy(fc);
     vmaf_picture_unref(&ref);
     vmaf_picture_unref(&dist);
+    /* Drain pooled picture buffers so LSan sees no false-positive leaks. */
+    vmaf_picture_pool_flush();
     /* opts ownership transferred to ctx and freed by context_destroy. */
     return NULL;
 }
@@ -198,10 +204,11 @@ static char *test_motion_v2_force_zero(void)
 /* Multi-frame extract + flush — drives the pipeline + motion3 blend */
 /* ----------------------------------------------------------------- */
 
-/* Drive the motion_v2 pipeline directly.  libvmaf's read_pictures loop
- * normally populates `fex->prev_ref` between extract calls (libvmaf.c
- * line 1543); a unit test that calls extract directly has to manage
- * that field by hand. */
+/* Drive the motion_v2 pipeline directly.  The PREV_REF wrapper in
+ * feature_extractor.cpp automatically manages fex->prev_ref: after each
+ * successful extract call it releases the old reference and takes a new
+ * counted reference on the current ref frame.  context_destroy() releases
+ * the final reference.  Do not set prev_ref manually in unit tests. */
 static char *test_motion_v2_three_frame_flow(void)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
@@ -224,18 +231,16 @@ static char *test_motion_v2_three_frame_flow(void)
         mu_assert("alloc dist", alloc_random8(&dists[i], 0x800u + i * 23u) == 0);
     }
 
-    /* index 0: extract short-circuits and emits 0; prev_ref not consulted. */
-    err = vmaf_feature_extractor_context_extract(ctx, &refs[0], NULL, &dists[0], NULL, 0, fc);
-    mu_assert("extract motion_v2 frame 0", err == 0);
-
-    /* indices >= 1: prev_ref must be the previous-frame ref pic. */
-    for (unsigned i = 1; i < 3; ++i) {
-        ctx->fex->prev_ref = refs[i - 1];
+    /* The PREV_REF wrapper in feature_extractor.cpp automatically manages
+     * prev_ref: after each successful extract it unrefs the old prev_ref,
+     * then calls vmaf_picture_ref() to take a counted reference on the
+     * current ref frame.  context_destroy() releases the final prev_ref.
+     * Do NOT set ctx->fex->prev_ref manually — that bypasses the ref-count
+     * accounting and causes either dangling-pointer unrefs or leaks. */
+    for (unsigned i = 0; i < 3; ++i) {
         err = vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
         mu_assert("extract motion_v2 frame", err == 0);
     }
-    /* Reset prev_ref so context_destroy doesn't try to free a refs[] alias. */
-    memset(&ctx->fex->prev_ref, 0, sizeof(ctx->fex->prev_ref));
 
     err = vmaf_feature_extractor_context_flush(ctx, fc);
     mu_assert("flush motion_v2", err >= 0);
@@ -251,6 +256,8 @@ static char *test_motion_v2_three_frame_flow(void)
         vmaf_picture_unref(&refs[i]);
         vmaf_picture_unref(&dists[i]);
     }
+    /* Drain pooled picture buffers so LSan sees no false-positive leaks. */
+    vmaf_picture_pool_flush();
     return NULL;
 }
 
@@ -284,14 +291,11 @@ static char *test_motion_v2_moving_average_branch(void)
         mu_assert("alloc ref", alloc_random8(&refs[i], 0x900u + i * 11u) == 0);
         mu_assert("alloc dist", alloc_random8(&dists[i], 0xA00u + i * 13u) == 0);
     }
-    err = vmaf_feature_extractor_context_extract(ctx, &refs[0], NULL, &dists[0], NULL, 0, fc);
-    mu_assert("extract motion_v2 ma frame 0", err == 0);
-    for (unsigned i = 1; i < 4; ++i) {
-        ctx->fex->prev_ref = refs[i - 1];
+    /* Let the PREV_REF wrapper manage prev_ref automatically. */
+    for (unsigned i = 0; i < 4; ++i) {
         err = vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
         mu_assert("extract motion_v2 ma frame", err == 0);
     }
-    memset(&ctx->fex->prev_ref, 0, sizeof(ctx->fex->prev_ref));
     err = vmaf_feature_extractor_context_flush(ctx, fc);
     mu_assert("flush motion_v2 moving_average", err >= 0);
 
@@ -302,6 +306,8 @@ static char *test_motion_v2_moving_average_branch(void)
         vmaf_picture_unref(&refs[i]);
         vmaf_picture_unref(&dists[i]);
     }
+    /* Drain pooled picture buffers so LSan sees no false-positive leaks. */
+    vmaf_picture_pool_flush();
     /* opts ownership transferred to ctx and freed by context_destroy. */
     return NULL;
 }
@@ -331,12 +337,11 @@ static char *test_motion_v2_10bit_extract(void)
         mu_assert("alloc ref10", alloc_random10(&refs[i], 0xB00u + i * 7u) == 0);
         mu_assert("alloc dist10", alloc_random10(&dists[i], 0xC00u + i * 9u) == 0);
     }
-    err = vmaf_feature_extractor_context_extract(ctx, &refs[0], NULL, &dists[0], NULL, 0, fc);
-    mu_assert("extract motion_v2 10bit frame 0", err == 0);
-    ctx->fex->prev_ref = refs[0];
-    err = vmaf_feature_extractor_context_extract(ctx, &refs[1], NULL, &dists[1], NULL, 1, fc);
-    mu_assert("extract motion_v2 10bit frame 1", err == 0);
-    memset(&ctx->fex->prev_ref, 0, sizeof(ctx->fex->prev_ref));
+    /* Let the PREV_REF wrapper manage prev_ref automatically. */
+    for (unsigned i = 0; i < 2; ++i) {
+        err = vmaf_feature_extractor_context_extract(ctx, &refs[i], NULL, &dists[i], NULL, i, fc);
+        mu_assert("extract motion_v2 10bit frame", err == 0);
+    }
 
     err = vmaf_feature_extractor_context_flush(ctx, fc);
     mu_assert("flush motion_v2 10bit", err >= 0);
@@ -348,6 +353,8 @@ static char *test_motion_v2_10bit_extract(void)
         vmaf_picture_unref(&refs[i]);
         vmaf_picture_unref(&dists[i]);
     }
+    /* Drain pooled picture buffers so LSan sees no false-positive leaks. */
+    vmaf_picture_pool_flush();
     return NULL;
 }
 

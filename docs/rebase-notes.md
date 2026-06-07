@@ -45418,3 +45418,16 @@ public header or ABI change.
 ## fix/motion-coverage-picture-ref-include (2026-06-07)
 no rebase impact: changes confined to `core/test/test_integer_motion_coverage.c`.
 Test-only change. No production source or public header modified.
+
+## fix/state-sweep-fix — CI build-matrix + ASan + motion_v2 coverage (2026-06-07)
+`libvmaf-build-matrix.yml`: four meson setup / ninja invocations updated from
+`libvmaf` to `core` — ADR-0700 rename follow-up. Conflicts possible if another
+branch also edits those four lines; resolve by keeping `core` as the source dir.
+`tests-and-quality-gates.yml`: `ASAN_OPTIONS: allocator_may_return_null=1` added
+to the sanitizer step env; no conflict risk.
+`core/src/picture.c` and `core/src/picture.h`: `vmaf_picture_pool_flush()` added;
+no conflict risk (new symbol).
+`core/test/test_integer_motion_v2_coverage.c`: manual `prev_ref` assignments and
+`memset` calls removed; tests now call extract in a plain loop. Conflicts possible
+if another branch edits the same test functions; resolve by keeping the
+wrapper-managed approach (no manual `prev_ref` assignment).

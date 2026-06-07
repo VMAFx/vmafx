@@ -526,6 +526,15 @@ jobs:
         # defect tracked in `docs/state.md` and removed from the list
         # when the underlying bug-fix PR lands. Companion research
         # digest: `docs/research/0090-sanitizer-matrix-test-scope.md`.
+        # ASAN_OPTIONS=allocator_may_return_null=1: ASan's malloc
+        # interceptor aborts by default on allocations it cannot fulfil
+        # (e.g. the intentionally-oversized alloc in
+        # test_gpu_picture_pool_uaf which exercises the NULL-return
+        # failure path of vmaf_gpu_picture_pool_init). With this flag
+        # ASan returns NULL instead of aborting, matching the POSIX
+        # malloc contract the test relies on.
+        env:
+          ASAN_OPTIONS: allocator_may_return_null=1
         working-directory: core
         shell: bash
         run: |

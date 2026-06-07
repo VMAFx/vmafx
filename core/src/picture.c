@@ -86,6 +86,21 @@ static void pic_pool_release(void *data, size_t size)
     aligned_free(data); // pool full, discard
 }
 
+/* Drain all entries from the global picture buffer pool, freeing each
+ * buffer via aligned_free().  Intended for use at session teardown
+ * (vmaf_close) and in unit tests to prevent LSan false-positive reports:
+ * pooled buffers reachable only through the global pic_pool static are
+ * indistinguishable from true leaks when the process exits with count > 0.
+ * Thread-safe; takes the pool lock. */
+void vmaf_picture_pool_flush(void)
+{
+    pthread_mutex_lock(&pic_pool.lock);
+    for (unsigned i = 0; i < pic_pool.count; i++)
+        aligned_free(pic_pool.entries[i].data);
+    pic_pool.count = 0;
+    pthread_mutex_unlock(&pic_pool.lock);
+}
+
 // Release callback that returns buffer to pool instead of freeing
 static int pool_release_picture(VmafPicture *pic, void *cookie)
 {

@@ -72,6 +72,11 @@ int vmaf_picture_priv_init(VmafPicture *pic);
 
 int vmaf_picture_ref(VmafPicture *dst, VmafPicture *src);
 
+/* Drain all picture-buffer pool entries, freeing each via aligned_free().
+ * Call at session teardown or from unit tests to prevent LSan
+ * false-positive reports from pooled buffers held in the global pic_pool. */
+void vmaf_picture_pool_flush(void);
+
 int vmaf_picture_set_release_callback(VmafPicture *pic, void *cookie,
                                       int (*release_picture)(VmafPicture *pic, void *cookie));
 
