@@ -899,6 +899,27 @@ if is_nvtx_enabled
         include_directories: include_directories('/usr/local/cuda/include'))
 endif
 
+# ODR fix (follow-up to PR #840): propagate HAVE_CUDA / HAVE_NVTX / HAVE_SYCL
+# into vmaf_cflags_common HERE — before any static_library target captures it —
+# so that cuda_static_lib (line ~1178), libvmaf_feature_static_lib (line ~1700),
+# and every other lib that uses `c_args: vmaf_cflags_common` sees the defines.
+# Previously these three lines appeared after the libvmaf sources list (line ~1856),
+# which meant every static-lib target built before that point compiled without the
+# defines, producing an ODR violation: VmafPicturePrivate had different sizes in
+# the allocator TU vs the consumer TU.  Moving the block here (before
+# `if is_cuda_enabled`) fixes cuda_static_lib and libvmaf_feature_static_lib.
+# gpu_picture_pool_cpp23_lib carries an explicit cpp_args below (it never uses
+# vmaf_cflags_common directly).
+if is_cuda_enabled
+    vmaf_cflags_common += '-DHAVE_CUDA'
+endif
+if is_nvtx_enabled
+    vmaf_cflags_common += '-DHAVE_NVTX'
+endif
+if is_sycl_enabled
+    vmaf_cflags_common += '-DHAVE_SYCL'
+endif
+
 if is_cuda_enabled
     # Check for required CUDA headers
     if not cc.has_header('ffnvcodec/dynlink_cuda.h')
@@ -1796,6 +1817,15 @@ gpu_picture_pool_cpp23_lib = static_library(
     include_directories : [vmaf_base_include, libvmaf_include],
     # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
     override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
+    # ODR fix (follow-up to PR #840): gpu_picture_pool.cpp includes picture.h
+    # (line 30) and gpu_picture_pool.h (line 31, which re-includes picture.h).
+    # VmafPicturePrivate's cuda sub-struct changes size when HAVE_CUDA is absent,
+    # shifting buf_type and other fields.  This lib does not inherit vmaf_cflags_common
+    # (it carries no c_args at all), so the defines must be passed explicitly —
+    # mirroring the same fix applied to picture_pool_cpp23_lib in PR #840.
+    cpp_args : (is_cuda_enabled ? ['-DHAVE_CUDA'] : []) +
+               (is_nvtx_enabled ? ['-DHAVE_NVTX'] : []) +
+               (is_sycl_enabled ? ['-DHAVE_SYCL'] : []),
     dependencies : [pthread_dependency],
     pic : true,
     install : false,
@@ -1852,16 +1882,6 @@ libvmaf_sources = [
     # intermediate libs (avoids unresolved vmafx_tad_* refs in test
     # binaries that link against libvmaf.a without rust_tad_dep).
 ] + rust_tad_direct_sources
-
-if is_cuda_enabled
-    vmaf_cflags_common += '-DHAVE_CUDA'
-endif
-if is_nvtx_enabled
-    vmaf_cflags_common += '-DHAVE_NVTX'
-endif
-if is_sycl_enabled
-    vmaf_cflags_common += '-DHAVE_SYCL'
-endif
 
 # `-fsycl` is embedded in sycl_dependency.link_args (see the
 # declare_dependency block above) so every consumer — libvmaf.so and all
