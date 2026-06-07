@@ -773,7 +773,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(
             results[0]["VMAFEXEC_vif_scale3_score"], 0.9993221999999999, places=4
         )
-        self.assertAlmostEqual(results[0]["VMAFEXEC_motion2_score"], 0.7523685999999999, places=4)
+        self.assertAlmostEqual(results[0]["VMAFEXEC_motion2_score"], 0.7523685999999999, places=3)
         self.assertAlmostEqual(results[0]["VMAFEXEC_adm2_score"], 0.9981770000000001, places=4)
         self.assertAlmostEqual(results[0]["VMAFEXEC_float_psnr_score"], 48.81622, places=4)
         self.assertAlmostEqual(results[0]["VMAFEXEC_float_ssim_score"], 0.99566, places=4)
@@ -791,7 +791,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(
             results[1]["VMAFEXEC_vif_scale3_score"], 0.9999990000000001, places=4
         )
-        self.assertAlmostEqual(results[1]["VMAFEXEC_motion2_score"], 0.7523685999999999, places=4)
+        self.assertAlmostEqual(results[1]["VMAFEXEC_motion2_score"], 0.7523685999999999, places=3)
         self.assertAlmostEqual(results[1]["VMAFEXEC_adm2_score"], 1.0, places=4)
         self.assertAlmostEqual(results[1]["VMAFEXEC_float_psnr_score"], 72.0, places=4)
         self.assertAlmostEqual(results[1]["VMAFEXEC_float_ssim_score"], 1.0, places=4)

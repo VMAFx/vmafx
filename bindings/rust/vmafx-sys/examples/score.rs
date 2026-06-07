@@ -125,6 +125,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Distorted:  {yuv_dist_path}");
     println!("Model:      {model_path}");
 
+    // Graceful skip when YUV fixtures are absent (CI without full test resources).
+    // Pattern mirrors integration_test.rs: print SKIP and return Ok(()) so the
+    // example exits 0 rather than failing with a misleading file-not-found error.
+    if !std::path::Path::new(&yuv_ref_path).exists() {
+        eprintln!("SKIP: reference YUV not found at {yuv_ref_path} — test fixtures absent");
+        return Ok(());
+    }
+    if !std::path::Path::new(&yuv_dist_path).exists() {
+        eprintln!("SKIP: distorted YUV not found at {yuv_dist_path} — test fixtures absent");
+        return Ok(());
+    }
+    if !std::path::Path::new(&model_path).exists() {
+        eprintln!("SKIP: model not found at {model_path} — model files absent");
+        return Ok(());
+    }
+
     let mut ctx = VmafContext::new()?;
     let mut model = VmafModel::from_path(&model_path)?;
 
