@@ -218,3 +218,60 @@ func TestListAll_ScoringFieldsRoundTrip(t *testing.T) {
 		t.Errorf("Model: got %q", j.Scoring.Model)
 	}
 }
+
+// TestListAll_TenantIDRoundTrip verifies that a job submitted with a non-empty
+// TenantID has that field preserved through the ListAll SELECT.
+//
+// Regression guard for the bug where ListAll omitted tenant_id from its SELECT
+// and Scan, causing Job.TenantID to be "" in every result — which broke the
+// StreamJobs gRPC handler's ability to surface the submitter's tenant.
+func TestListAll_TenantIDRoundTrip(t *testing.T) {
+	t.Parallel()
+	q := newListTestQueue(t)
+
+	id, err := q.Submit(context.Background(), &queue.Job{
+		TenantID: "acme-corp",
+		Scoring:  queue.ScoringParams{Reference: "/r.yuv", Distorted: "/d.yuv", Backend: "cpu"},
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	jobs, err := q.ListAll(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("got %d jobs, want 1", len(jobs))
+	}
+	j := jobs[0]
+	if j.ID != id {
+		t.Errorf("ID: got %q, want %q", j.ID, id)
+	}
+	if j.TenantID != "acme-corp" {
+		t.Errorf("TenantID: got %q, want %q", j.TenantID, "acme-corp")
+	}
+}
+
+// TestSubmit_TenantIDRoundTrip verifies that a job submitted with TenantID
+// has that field preserved through Get as well (covering the getUnlocked path).
+func TestSubmit_TenantIDRoundTrip(t *testing.T) {
+	t.Parallel()
+	q := newListTestQueue(t)
+
+	id, err := q.Submit(context.Background(), &queue.Job{
+		TenantID: "tenant-x",
+		Scoring:  queue.ScoringParams{Reference: "/r.yuv", Distorted: "/d.yuv"},
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	got, err := q.Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.TenantID != "tenant-x" {
+		t.Errorf("TenantID after Get: got %q, want %q", got.TenantID, "tenant-x")
+	}
+}

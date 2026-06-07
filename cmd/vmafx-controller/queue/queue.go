@@ -532,7 +532,7 @@ func (q *SQLiteQueue) ListAll(_ context.Context, statuses []string) ([]*Job, err
 
 	if len(statuses) == 0 {
 		rows, err = q.db.Query(
-			"SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), created_at, updated_at FROM jobs ORDER BY created_at ASC",
+			"SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), COALESCE(tenant_id,''), created_at, updated_at FROM jobs ORDER BY created_at ASC",
 		)
 	} else {
 		// Build a parameterised IN clause.  We limit statuses to the known set
@@ -545,7 +545,7 @@ func (q *SQLiteQueue) ListAll(_ context.Context, statuses []string) ([]*Job, err
 		// pure ",?,?,..." placeholder string of length len(statuses)-1; no
 		// user data enters the SQL text. Status values bind through
 		// `placeholders...` as parameterised arguments.
-		query := "SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), created_at, updated_at FROM jobs WHERE status IN (?" + repeatCommaQ(len(statuses)-1) + ") ORDER BY created_at ASC"
+		query := "SELECT id, status, scoring, COALESCE(assigned_node,''), COALESCE(score,0), COALESCE(features,'{}'), COALESCE(error,''), COALESCE(tenant_id,''), created_at, updated_at FROM jobs WHERE status IN (?" + repeatCommaQ(len(statuses)-1) + ") ORDER BY created_at ASC"
 		rows, err = q.db.Query(query, placeholders...)
 	}
 	if err != nil {
@@ -564,7 +564,7 @@ func (q *SQLiteQueue) ListAll(_ context.Context, statuses []string) ([]*Job, err
 		)
 		if err = rows.Scan(
 			&job.ID, &job.Status, &scoringJSON, &job.AssignedNode,
-			&job.Score, &featuresJSON, &job.Error,
+			&job.Score, &featuresJSON, &job.Error, &job.TenantID,
 			&createdAt, &updatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("queue: scan job row in ListAll: %w", err)

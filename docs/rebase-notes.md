@@ -45264,3 +45264,7 @@ No source, header, or build file is modified.
 ## fix/ci-workflow-permissions-least-privilege (2026-06-07)
 no rebase impact: changes confined to two `.github/workflows/` files.
 No source, header, or build file is modified.
+
+## cov/vmafx-controller-queue-nodes-auth (2026-06-07)
+no rebase impact: changes confined to `cmd/vmafx-controller/queue/queue.go`
+and test files. No public API or ABI change.

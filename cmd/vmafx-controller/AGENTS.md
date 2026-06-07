@@ -42,6 +42,16 @@ Per-package invariants for automated agents working in this subtree.
    this contract.  Do not change the semantics (e.g. change empty-slice
    meaning to "no jobs") without updating `StreamJobs` and its tests.
 
+5. **`ListAll` must include `tenant_id` in its SELECT** (`queue/queue.go`):
+   Both SQL queries in `ListAll` (the unfiltered and the status-filtered paths)
+   must select `COALESCE(tenant_id,'')` and scan it into `job.TenantID`.
+   Omitting `tenant_id` from the SELECT was a confirmed regression: `Job.TenantID`
+   was always `""` in every `ListAll` result, which made it impossible for
+   `StreamJobs` to surface the submitter's tenant.  Any schema migration that
+   adds new columns must also be reflected in both SELECT clauses and the
+   matching `rows.Scan` call.  See `queue_listall_test.go:TestListAll_TenantIDRoundTrip`
+   as the regression guard.
+
 ### scheduler package
 
 - No additional invariants yet.  Update this file when scheduler behaviour is
