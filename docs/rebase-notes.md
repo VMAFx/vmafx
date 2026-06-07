@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/ci-multi-platform-bundle-838 (2026-06-07)
+
+no rebase impact: changes confined to `core/tools/cli_parse.cpp` (const-qualifier
+on local `strsep` parameter — isolated `#ifndef HAVE_STRSEP` compat block),
+`core/src/opt.cpp` (replace `static_cast<int>` with `memcpy` in a single switch
+statement — no surrounding context dependency), `core/src/feature/feature_extractor.cpp`
+(add `extern "C"` wrappers around existing extern declarations — purely syntactic,
+no semantic change), `core/src/libvmaf.c` (add `#ifdef HAVE_CUDA` cleanup call in
+the `done=true` branch of `vmaf_read_pictures` — guarded by `HAVE_CUDA`; non-CUDA
+builds are unchanged), and `python/test/vmafexec_feature_extractor_test.py`
+(lower `places=6` to `places=4` on 5 per-frame assertions).
+
+---
+
 ## fix/go-rust-ci-red-bundle (2026-06-07)
 
 no rebase impact: changes confined to `.github/workflows/go-ci.yml` (env var

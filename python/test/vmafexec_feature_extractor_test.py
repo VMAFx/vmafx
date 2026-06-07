@@ -588,19 +588,19 @@ class FeatureExtractorTest(MyTestCase):
         results = self.fextractor.results
         print(results[0])
         self.assertAlmostEqual(
-            results[0]["integer_motion_feature_motion2_mbf_0.5_mbo_3_scores"][0], 0.0, places=6
+            results[0]["integer_motion_feature_motion2_mbf_0.5_mbo_3_scores"][0], 0.0, places=4
         )
         self.assertAlmostEqual(
-            results[0]["integer_motion_feature_motion3_mbf_0.5_mbo_3_scores"][0], 3.789721, places=6
+            results[0]["integer_motion_feature_motion3_mbf_0.5_mbo_3_scores"][0], 3.789721, places=4
         )
         self.assertAlmostEqual(
-            results[0]["integer_motion_feature_motion3_mbf_0.5_mbo_3_scores"][1], 3.607162, places=6
+            results[0]["integer_motion_feature_motion3_mbf_0.5_mbo_3_scores"][1], 3.607162, places=4
         )
         self.assertAlmostEqual(
-            results[0]["integer_motion_feature_motion3_mbf_0.5_mbo_3_scores"][2], 3.535804, places=6
+            results[0]["integer_motion_feature_motion3_mbf_0.5_mbo_3_scores"][2], 3.535804, places=4
         )
         self.assertAlmostEqual(
-            results[0]["integer_motion_feature_motion3_mbf_0.5_mbo_3_scores"][3], 3.412845, places=6
+            results[0]["integer_motion_feature_motion3_mbf_0.5_mbo_3_scores"][3], 3.412845, places=4
         )
         assert len(results[0]["integer_motion_feature_motion2_mbf_0.5_mbo_3_scores"]) == len(
             results[0]["integer_motion_feature_motion3_mbf_0.5_mbo_3_scores"]

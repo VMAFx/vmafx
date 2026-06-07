@@ -2581,8 +2581,15 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
 
     bool done = false;
     err = read_pictures_post_extractor(vmaf, ref, dist, index, &done);
-    if (done)
+    if (done) {
+#ifdef HAVE_CUDA
+        /* done=true early-return must still unref the host/device pictures
+         * allocated by read_pictures_cuda_translate; skipping cleanup causes
+         * pool-slot exhaustion on the next vmaf_picture_pool_fetch call. */
+        err |= read_pictures_cuda_cleanup(vmaf, &ref_host, &ref_device, &dist_host, &dist_device);
+#endif
         return err;
+    }
     if (err)
         goto cleanup;
 

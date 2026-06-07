@@ -31,6 +31,13 @@
 #include <nvtx3/nvToolsExt.h>
 #endif
 
+/* All vmaf_fex_* symbols are defined in C-compiled TUs (.c files).
+ * Wrap every extern declaration in extern "C" so MSVC (and strictly-
+ * conforming C++ compilers) emit unmangled C linkage names rather than
+ * C++-mangled ones, preventing LNK2019 / LNK2001 on Windows SYCL builds.
+ * GCC/Clang accept bare C++ extern for POD globals, but MSVC does not. */
+extern "C" {
+
 #if VMAF_FLOAT_FEATURES
 extern VmafFeatureExtractor vmaf_fex_float_psnr;
 extern VmafFeatureExtractor vmaf_fex_float_adm;
@@ -210,6 +217,8 @@ extern VmafFeatureExtractor vmaf_fex_null;
  * (enable_rust_features=true). */
 extern VmafFeatureExtractor vmaf_fex_tad;
 #endif
+
+} /* extern "C" */
 
 static VmafFeatureExtractor *feature_extractor_list[] = {
 #if VMAF_FLOAT_FEATURES

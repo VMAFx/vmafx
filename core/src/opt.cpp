@@ -102,14 +102,17 @@ extern "C" [[nodiscard]] int vmaf_option_set(const VmafOption *opt, void *obj, c
 
     uint8_t *base = static_cast<uint8_t *>(obj) + opt->offset;
 
-    /* Cast to int before switching: test_dispatch_unknown_type passes 9999 as
-     * the opt->type field to verify -EINVAL is returned for unknown types.
-     * A switch on an enum whose value is not one of its named enumerators
-     * triggers UBSan's enum-invalid-value check.  Switching on int is
-     * semantically identical — the case labels are integer constants — and
-     * makes the dispatch UBSan-clean without changing behaviour.
+    /* memcpy bypasses the enum lvalue: reading opt->type through the
+     * enum VmafOptionType type when the stored value (e.g. 9999) is not a
+     * named enumerator triggers UBSan enum-invalid-value on the load itself,
+     * before any cast can help.  static_cast<int> was insufficient because
+     * UBSan fires at the lvalue-to-rvalue conversion (the load), not at the
+     * cast expression.  memcpy reads raw bytes into a plain int, eliminating
+     * the typed load entirely and making the dispatch UBSan-clean.
      * See ADR-1080 (UBSan enum-invalid-value in vmaf_log / vmaf_option_set). */
-    switch (static_cast<int>(opt->type)) {
+    int type_raw;
+    memcpy(&type_raw, &opt->type, sizeof(type_raw));
+    switch (type_raw) {
     case VMAF_OPT_TYPE_BOOL: {
         bool *dst = reinterpret_cast<bool *>(base);
         *dst = opt->default_val.b;

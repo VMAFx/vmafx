@@ -397,7 +397,7 @@ static void error(const char *const app, const char *const optarg, const int opt
 }
 
 #ifndef HAVE_STRSEP
-static char *strsep(char **sp, char *sep)
+static char *strsep(char **sp, const char *sep)
 {
     char *p;
     char *s;
