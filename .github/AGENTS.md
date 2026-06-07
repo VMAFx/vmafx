@@ -176,7 +176,10 @@ applies a per-sanitizer regex deselect:
   suppress the K&R-prototype harness UB across ~50 test files
   (`core/test/test.h` callers).
 - `thread` — excludes `test_model`, `test_pic_preallocation`,
-  `test_framesync`.
+  `test_framesync`. Note: `test_thread_safety_batch` is the TSan-eligible
+  counterpart of `test_pic_preallocation` (covers the same
+  threaded_extract_batch_func paths via ADR-1072/ADR-1073 without
+  vmaf_preallocate_pictures) and is intentionally NOT excluded.
 
 Every deselected entry corresponds to a real defect tracked in
 [`../docs/state.md`](../docs/state.md) Open-bugs. As fixes land

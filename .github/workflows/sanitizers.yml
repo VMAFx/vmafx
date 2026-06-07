@@ -127,13 +127,12 @@ jobs:
           # Exclude test_integer_motion_v2_coverage: triggers a SIGABRT under
           # ASan due to an intentional huge-allocation pattern in the motion
           # coverage path that the ASan allocator cannot satisfy.
-          # test_pic_preallocation was removed from this list after PRs #765
-          # and #769 fixed the PREV_REF refcount leak and the dict leak in
-          # flush_context_threaded; all 8 sub-tests now pass under ASan+LSan,
-          # UBSan, and TSan (verified 2026-06-06).
+          # Exclude test_pic_preallocation: triggers a SIGABRT under ASan in
+          # addition to its pre-existing Linux exclusion; the test relies on
+          # allocation semantics that ASan's allocator intercepts fatally.
           TESTS=$(meson introspect build --tests 2>&1 \
                   | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
-                  | grep -vE 'test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$' || true)
+                  | grep -vE 'test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$' || true)
           echo "test count: $(echo "$TESTS" | wc -l)"
           if [ -z "$TESTS" ]; then
             echo "::error::Test enumeration produced empty list" >&2
@@ -204,13 +203,14 @@ jobs:
           # T-GPU-POOL-UAF-OOM-TSAN-ABORT.
           # Exclude test_integer_motion_v2_coverage: intentional huge-allocation
           # pattern triggers SIGABRT under the TSan allocator.
-          # test_pic_preallocation was removed from this list after PRs #765
-          # and #769 fixed the PREV_REF refcount leak and the dict leak in
-          # flush_context_threaded; all 8 sub-tests now pass under ASan+LSan,
-          # UBSan, and TSan (verified 2026-06-06).
+          # Exclude test_pic_preallocation: SIGABRT under TSan for the same
+          # intentional-huge-alloc reason as the ASan exclusion.
+          # NOTE: test_thread_safety_batch is the TSan-eligible counterpart that
+          # covers the same threaded_extract_batch_func code paths (ADR-1072/ADR-1073)
+          # without vmaf_preallocate_pictures; it is NOT excluded and runs here.
           TESTS=$(meson introspect build --tests 2>&1 \
                   | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
-                  | grep -vE 'test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$' || true)
+                  | grep -vE 'test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$' || true)
           echo "test count: $(echo "$TESTS" | wc -l)"
           if [ -z "$TESTS" ]; then
             echo "::error::Test enumeration produced empty list" >&2

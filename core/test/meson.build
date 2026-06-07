@@ -1524,11 +1524,18 @@ test_pic_preallocation = executable('test_pic_preallocation',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, thread_lib],
 )
-# ADR-1093: should_fail was set while the preallocation + PREV_REF lifecycle
-# defect was under investigation (PRs #765, #769, #797). CI now shows
-# UNEXPECTEDPASS on all CPU lanes (Ubuntu x86-64, ARM, macOS) — the
-# underlying defect is confirmed fixed. Flag removed.
 test('test_pic_preallocation', test_pic_preallocation, suite : ['fast'])
+
+# ADR-1072/ADR-1073 thread-safety regression tests for threaded_extract_batch_func.
+# Uses vmaf_picture_alloc (not vmaf_preallocate_pictures) and 64x64 frames so
+# TSan shadow overhead is trivial. Eligible for all sanitizer runs: ASan, UBSan, TSan.
+test_thread_safety_batch = executable('test_thread_safety_batch',
+    ['test.c', 'test_thread_safety_batch.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, thread_lib],
+)
+test('test_thread_safety_batch', test_thread_safety_batch, suite : ['fast'])
 
 # ADR-0960 (round-25 audit A.2 + A.3) — picture_pool.c error-path fixes:
 # missing pthread_cond_signal on return_to_pool and dangling pic->priv after
@@ -1710,11 +1717,6 @@ test_sycl_motion_add_uv_parity = executable('test_sycl_motion_add_uv_parity',
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1']
 )
-# should_fail was removed (2026-06-07): the ADR-1093 suppression is lifted so
-# CI red surfaces the SIGSEGV root cause directly rather than inverting the
-# signal.  Both prior fix attempts (PRs #768, #796) left the defect in place;
-# the test now runs unconditionally and fails loudly to trigger proper
-# investigation.
 test('test_sycl_motion_add_uv_parity', test_sycl_motion_add_uv_parity,
     suite : ['fast', 'gpu'])
 

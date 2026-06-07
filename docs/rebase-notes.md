@@ -45298,3 +45298,8 @@ production source or public header change.
 no rebase impact: changes confined to `cmd/vmafx-mcp/impl*.go` and
 `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`. No C API or public
 header change.
+
+## test/r12-thread-safety-batch-tsan (2026-06-07)
+no rebase impact: adds new test file `core/test/test_thread_safety_batch.c`
+and updates `core/test/meson.build`. No production source or public
+header change.
