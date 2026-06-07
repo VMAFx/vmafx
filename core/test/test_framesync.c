@@ -75,12 +75,6 @@ static void my_worker(void *data, void **tpool_thread_data)
     vmaf_framesync_retrieve_filled_data(thread_data->fs_ctx, (void *)&dependent_buf,
                                         thread_data->index - 1);
 
-    /* The writer stored ref[ctr]+dist[ctr]+2 for the frame it acquired
-     * (frame index-1).  Both pic_a and pic_b are memset to frame_index,
-     * so frame index-1 had value (index-1) in every byte.  The retrieved
-     * buffer therefore contains (index-1)+(index-1)+2 = 2*(index-1)+2 in
-     * every byte.  Compare against that value, not against the current
-     * frame's ref/dist which would give 2*index+2 (off by 2). */
     for (ctr = 0; ctr < FRAME_BUF_LEN; ctr++) {
         /* The writer at frame N stored (seed_N + seed_N + 2) where both
          * ref and dist were memset to seed_N = N.  Frame N+1's worker
@@ -132,11 +126,7 @@ static char *test_framesync_create_process_and_destroy(void)
     for (frame_index = 0; frame_index < NUM_TEST_FRAMES; frame_index++) {
         uint8_t *pic_a = malloc(FRAME_BUF_LEN);
         uint8_t *pic_b = malloc(FRAME_BUF_LEN);
-        if (!pic_a || !pic_b) {
-            free(pic_a);
-            free(pic_b);
-            mu_assert("malloc failed for pic_a/pic_b", 0);
-        }
+        mu_assert("malloc failed for pic_a/pic_b", pic_a && pic_b);
 
         (void)fprintf(stderr, "processing frame %d\r", frame_index);
 
@@ -152,12 +142,8 @@ static char *test_framesync_create_process_and_destroy(void)
         };
 
         err = vmaf_thread_pool_enqueue(pool, my_worker, &data, sizeof(ThreadData));
-        if (err) {
-            /* Worker won't run; free buffers that were not transferred. */
-            free(pic_a);
-            free(pic_b);
-            mu_assert("problem during vmaf_thread_pool_enqueue with data", 0);
-        }
+
+        mu_assert("problem during vmaf_thread_pool_enqueue with data", !err);
 
         //wait once in 2 frames
         if ((frame_index >= 1) && (frame_index & 1)) {

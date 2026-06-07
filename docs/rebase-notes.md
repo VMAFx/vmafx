@@ -45373,3 +45373,8 @@ header, or build file is modified.
 ## fix/helm-rolling-update-correctness (2026-06-07)
 no rebase impact: changes confined to `deploy/helm/vmafx/` Helm chart templates
 and values. No C source, public header, or Go source is modified.
+
+## fix/r12-dead-code-and-unused-var-after-pr-train (2026-06-07)
+no rebase impact: removes dead code and unused variables from
+`core/src/feature/integer_motion.c` and `core/test/test_framesync.c`. No
+public header or ABI change.
