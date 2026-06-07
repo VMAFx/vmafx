@@ -78,7 +78,7 @@ var _ = Describe("VmafxNode controller", func() {
 			return updated.Status.Healthy
 		}, timeout, interval).Should(BeTrue())
 		// The operator does NOT write LastHeartbeat — that field is owned by the
-		// node agent (ADR-1069).  A newly-created node without a pre-set
+		// node agent (ADR-1069). A newly-created node without a pre-set
 		// LastHeartbeat must have nil here.
 		Expect(updated.Status.LastHeartbeat).To(BeNil())
 	})

@@ -45268,3 +45268,7 @@ No source, header, or build file is modified.
 ## cov/vmafx-controller-queue-nodes-auth (2026-06-07)
 no rebase impact: changes confined to `cmd/vmafx-controller/queue/queue.go`
 and test files. No public API or ABI change.
+
+## fix/operator-crd-status-schema-gaps (2026-06-07)
+no rebase impact: changes confined to `cmd/vmafx-operator/` and CRD YAML files.
+No C API or libvmaf surface changed.

@@ -95,6 +95,9 @@ spec:
                 assignedNode:
                   description: Name of the VmafxNode executing this job.
                   type: string
+                controllerJobID:
+                  description: UUID assigned by the vmafx-controller when the job is dispatched. Used by the reconciler to poll GetJob on the controller gRPC API. Empty until the job is accepted.
+                  type: string
                 startedAt:
                   description: Time the job Pod began running.
                   type: string

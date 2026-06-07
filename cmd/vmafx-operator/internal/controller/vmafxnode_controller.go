@@ -20,7 +20,6 @@
 //
 // ADR-0786: vmafx-operator Stage 2 — reconciler loops + webhook + per-controller RBAC.
 // ADR-0714: vmafx-operator kubebuilder skeleton + CRDs (parent).
-// ADR-1069: VmafxNode LastHeartbeat ownership — node agent only.
 
 package controller
 
@@ -82,8 +81,11 @@ func (r *VmafxNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// A node is stale when its own LastHeartbeat (written by the node agent via
 	// the controller's Heartbeat RPC) has not been updated for nodeStaleThreshold.
 	// This is separate from the operator's /healthz probe of the controller service.
+	//
 	// IMPORTANT: Do NOT overwrite node.Status.LastHeartbeat here.  It is owned
-	// exclusively by the node agent; overwriting it defeats stale detection (ADR-1069).
+	// exclusively by the node agent; resetting it to now() on every reconcile
+	// would prevent the stale-threshold from ever firing after the first cycle
+	// (the field would always appear fresh). (ADR-1069)
 	stale := false
 	if node.Status.LastHeartbeat != nil &&
 		now.Sub(node.Status.LastHeartbeat.Time) > nodeStaleThreshold {
@@ -98,7 +100,7 @@ func (r *VmafxNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	probeHealthy := !stale && r.probeControllerHealthz(ctx, req.Namespace)
 
 	// --- Persist status -------------------------------------------------------
-	// Only update Healthy; LastHeartbeat is set by the node agent, not the operator (ADR-1069).
+	// Only update Healthy; LastHeartbeat is set by the node agent, not the operator.
 	prevHealthy := node.Status.Healthy
 	node.Status.Healthy = probeHealthy
 

@@ -37,8 +37,7 @@ See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md),
    written exclusively by the vmafx-node agent via the controller's Heartbeat
    RPC.  The operator reads it for stale-threshold detection (ADR-1069).
    Introducing any write to that field in the reconciler defeats the staleness
-   guard.  Regression tests: `TestLastHeartbeat*` in
-   `cmd/vmafx-operator/internal/controller/vmafxnode_lastheartbeat_test.go`.
+   guard.
 
 5. **`gen/go/controller/controller.pb.go` has a hand-added `FinalScore` field.**
    It was added in Stage 2 to propagate the VMAF score from COMPLETED jobs.
