@@ -156,13 +156,11 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
     *out = NULL;
 
     id<MTLDevice> device = nil;
-    int device_owned_externally = 0;
     if (handles.device != 0u) {
         device = (__bridge id<MTLDevice>)(void *)handles.device;
         if (device == nil) {
             return -EINVAL;
         }
-        device_owned_externally = 1;
     } else {
         /* Fallback: pick the system default Metal device. FFmpeg
          * n8.1.1 does not expose an AVMetalDeviceContext, so the
@@ -180,7 +178,6 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
     }
 
     id<MTLCommandQueue> queue = nil;
-    int queue_owned_externally = 0;
     if (handles.command_queue != 0u) {
         queue = (__bridge id<MTLCommandQueue>)(void *)handles.command_queue;
         if (queue == nil) {
@@ -189,7 +186,6 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
         if (queue.device != device) {
             return -EINVAL;
         }
-        queue_owned_externally = 1;
     } else {
         queue = [device newCommandQueue];
         if (queue == nil) {
@@ -203,19 +199,15 @@ int vmaf_metal_state_init_external(VmafMetalState **out,
     }
     state->ctx.device_index = -1; /* external; no -d N enumeration */
 
-    /* Device: bridge-retain so we balance the bridge_transfer in
-     * vmaf_metal_state_free. When caller-owned, retain ours
-     * explicitly so we drop only our own reference on teardown. */
-    if (device_owned_externally) {
-        CFRetain((__bridge CFTypeRef)device);
-    }
+    /* Device: __bridge_retained takes one +1 retain that vmaf_metal_state_free
+     * balances with __bridge_transfer. Both caller-owned and library-created
+     * devices go through the same path; the caller retains its own reference
+     * independently so dropping ours on teardown is safe either way. */
     state->ctx.device = (__bridge_retained void *)device;
-    if (queue_owned_externally) {
-        CFRetain((__bridge CFTypeRef)queue);
-        state->ctx.command_queue = (__bridge_retained void *)queue;
-    } else {
-        state->ctx.command_queue = (__bridge_retained void *)queue;
-    }
+    /* Queue: same ownership contract — one __bridge_retained matched by one
+     * __bridge_transfer in vmaf_metal_state_free, regardless of whether the
+     * queue was caller-supplied or created here. */
+    state->ctx.command_queue = (__bridge_retained void *)queue;
     state->import_ring = NULL;
 
     *out = state;

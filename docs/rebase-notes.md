@@ -45243,3 +45243,8 @@ The new function is internal to libvmaf; no public header change.
 no rebase impact: changes confined to `core/src/cuda/picture_cuda.c` and
 four CUDA feature extractors. Graduated cleanup labels only; no new
 public API or ABI change.
+
+## fix/metal-buffer-ownership-leaks (2026-06-07)
+no rebase impact: changes confined to `core/src/feature/metal/float_ms_ssim_metal.mm`
+and `core/src/metal/picture_import.mm`. MTLBuffer retain-count fixes only;
+no public header or ABI change.

@@ -218,7 +218,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
                                                    options:MTLResourceStorageModeShared];
             id<MTLBuffer> bc = [device newBufferWithLength:bytes
                                                    options:MTLResourceStorageModeShared];
-            if (br == nil || bc == nil) { err = -ENOMEM; goto fail_lc; }
+            if (br == nil || bc == nil) { err = -ENOMEM; goto fail_bufs; }
             s->pyramid_ref[i] = (__bridge_retained void *)br;
             s->pyramid_cmp[i] = (__bridge_retained void *)bc;
         }
@@ -229,7 +229,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
                 5u * (size_t)s->scale_w_h[0] * s->scale_h[0] * sizeof(float);
             id<MTLBuffer> hb = [device newBufferWithLength:hbuf_bytes
                                                    options:MTLResourceStorageModeShared];
-            if (hb == nil) { err = -ENOMEM; goto fail_lc; }
+            if (hb == nil) { err = -ENOMEM; goto fail_bufs; }
             s->hbuf = (__bridge_retained void *)hb;
         }
 
@@ -242,7 +242,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
                                                     options:MTLResourceStorageModeShared];
             id<MTLBuffer> bs = [device newBufferWithLength:pb
                                                    options:MTLResourceStorageModeShared];
-            if (bl == nil || bc2 == nil || bs == nil) { err = -ENOMEM; goto fail_lc; }
+            if (bl == nil || bc2 == nil || bs == nil) { err = -ENOMEM; goto fail_bufs; }
             s->l_partials[i] = (__bridge_retained void *)bl;
             s->c_partials[i] = (__bridge_retained void *)bc2;
             s->s_partials[i] = (__bridge_retained void *)bs;
@@ -250,7 +250,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
 
         err = build_pipelines(s, device);
     }
-    if (err != 0) { goto fail_lc; }
+    if (err != 0) { goto fail_pso; }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
@@ -270,6 +270,34 @@ fail_pso:
     if (s->pso_decimate) {
         (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_decimate;
         s->pso_decimate = NULL;
+    }
+    /* fall through: release any partially-allocated pyramid/partials/hbuf. */
+fail_bufs:
+    for (int i = 0; i < MS_SSIM_SCALES; ++i) {
+        if (s->s_partials[i]) {
+            (void)(__bridge_transfer id<MTLBuffer>)s->s_partials[i];
+            s->s_partials[i] = NULL;
+        }
+        if (s->c_partials[i]) {
+            (void)(__bridge_transfer id<MTLBuffer>)s->c_partials[i];
+            s->c_partials[i] = NULL;
+        }
+        if (s->l_partials[i]) {
+            (void)(__bridge_transfer id<MTLBuffer>)s->l_partials[i];
+            s->l_partials[i] = NULL;
+        }
+        if (s->pyramid_cmp[i]) {
+            (void)(__bridge_transfer id<MTLBuffer>)s->pyramid_cmp[i];
+            s->pyramid_cmp[i] = NULL;
+        }
+        if (s->pyramid_ref[i]) {
+            (void)(__bridge_transfer id<MTLBuffer>)s->pyramid_ref[i];
+            s->pyramid_ref[i] = NULL;
+        }
+    }
+    if (s->hbuf) {
+        (void)(__bridge_transfer id<MTLBuffer>)s->hbuf;
+        s->hbuf = NULL;
     }
 fail_lc:
     (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
