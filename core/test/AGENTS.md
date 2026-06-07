@@ -190,10 +190,10 @@ and teardown.
   the portable POSIX/MinGW/MSVC aligned allocator, the x86 AVX2 CPUID
   gate, and the `SIMD_BITEXACT_ASSERT_MEMCMP` /
   `SIMD_BITEXACT_ASSERT_RELATIVE` assertion macros. Do not re-implement
-  these inline. **Include-order invariant**: `#include "test.h"` MUST
-  precede `#include "simd_bitexact_test.h"` because `test.h` has no
-  header guard and would redefine the `mu_report` `static inline` on a
-  double include. Existing migrated tests
+  these inline. `#include "test.h"` must precede `#include
+  "simd_bitexact_test.h"` (conventional order; the previous
+  double-include risk was removed when `test.h` gained an include guard
+  in this PR). Existing migrated tests
   (`test_psnr_hvs_avx2.c`, `test_psnr_hvs_neon.c`, `test_moment_simd.c`,
   `test_motion_v2_simd.c`) are reference templates;
   `test_ssimulacra2_simd.c` is an intentional non-migrated example

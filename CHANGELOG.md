@@ -20085,6 +20085,16 @@ in `integer_ssim_sycl.cpp` that were accidentally dropped by PR #1095 when it ad
   after UV copies and before graph submission. (ADR-1034)
 
 
+- `core/test/test.h` (`mu_report`): missing `\n` after the red
+  `fail` label caused the failure summary line to print on the same
+  terminal row. Newline added.
+- `core/test/test.c` (`main`): stray leading `, ` in the failure
+  summary `fprintf` format string removed.
+- `core/test/test.h`: added `#ifndef LIBVMAF_TEST_H` include guard,
+  resolving the double-include risk noted in ADR-0245 and removing
+  the mandatory include-order constraint for `simd_bitexact_test.h`.
+
+
 - Resolved two stale `TODO: add check for confidence interval` comments in
   `test_model.c`. Added `test_model_collection_bootstrap_type` which loads
   `vmaf_b_v0.6.3.json`, asserts the collection parsed as a bootstrap variant

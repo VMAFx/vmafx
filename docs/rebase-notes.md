@@ -45320,3 +45320,8 @@ no rebase impact: changes confined to `core/tools/cli_parse.c` and
 no rebase impact: test-only changes to free malloc'd buffers on early
 exit in `test_framesync.c` and `test_pic_preallocation.c`. No
 production source touched.
+
+## fix/test-framework-mu-assert-stderr-output (2026-06-07)
+no rebase impact: changes confined to `core/test/test.c` and
+`core/test/test.h`. Fix mu_report writing to stdout instead of
+stderr; add missing include guard.

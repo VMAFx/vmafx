@@ -16,6 +16,9 @@
  *
  */
 
+#ifndef LIBVMAF_TEST_H
+#define LIBVMAF_TEST_H
+
 #include <stdio.h>
 
 // http://www.jera.com/techinfo/jtns/jtn002.html
@@ -39,7 +42,7 @@ static inline char *mu_report(const char *name, char *(*test)(void))
     (void)fprintf(stderr, "%s: ", name);
     char *message = test();
     mu_tests_run++;
-    (void)fprintf(stderr, message ? "\033[31mfail\033[0m" : "\033[32mpass\033[0m\n");
+    (void)fprintf(stderr, message ? "\033[31mfail\033[0m\n" : "\033[32mpass\033[0m\n");
     return message;
 }
 
@@ -49,3 +52,5 @@ static inline char *mu_report(const char *name, char *(*test)(void))
         if (mu_msg)                                                                                \
             return mu_msg;                                                                         \
     } while (0)
+
+#endif /* LIBVMAF_TEST_H */
