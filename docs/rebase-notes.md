@@ -1,6 +1,14 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/feature-extractor-flags-zero-skip-gpu (2026-06-07)
+
+no rebase impact: the change is confined to a single function body in
+`core/src/feature/feature_extractor.c` (lines 443–473). No header changes, no
+meson.build changes, no new files except the ADR and changelog fragment. The only
+other file touched is `core/test/test_picture.c` (missing `<string.h>` include added).
+Neither file is a high-contention rebase target.
+
 ## fix/sycl-fsycl-link-propagation (2026-06-07)
 
 **Rebase-sensitive**: modifies `core/src/meson.build` and

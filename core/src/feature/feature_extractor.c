@@ -441,12 +441,30 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *nam
     VmafFeatureExtractor *fex = NULL;
 
     /* First pass: prefer an extractor that matches one of the requested
-   * backend flags. */
+     * backend flags.
+     *
+     * When flags == 0 (no GPU context — CPU-only caller path such as
+     * vmaf_use_features_from_model without a GPU state), we must NOT
+     * return a GPU-flagged extractor even though the old "flags && ..."
+     * guard was always false for flags=0 and let every extractor through.
+     * In an all-backends build, GPU-flagged twins sort before the CPU twin
+     * in feature_extractor_list (e.g. integer_adm_sycl before integer_adm),
+     * so the SYCL variant was being returned; its init guard
+     * (!fex->sycl_state) then rejected every frame with -EINVAL.
+     * Fix (ADR-1100): when flags == 0, skip any GPU-flagged extractor so
+     * the CPU twin is selected instead.  When flags != 0, preserve the
+     * existing exact-match semantics. */
+    const unsigned gpu_mask =
+        VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL | VMAF_FEATURE_EXTRACTOR_HIP;
     for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
         if (!fex->provided_features)
             continue;
-        if (flags && !(fex->flags & flags))
+        if (flags == 0) {
+            if (fex->flags & gpu_mask)
+                continue;
+        } else if (!(fex->flags & flags)) {
             continue;
+        }
         const char *fname = NULL;
         for (unsigned j = 0; (fname = fex->provided_features[j]); j++) {
             if (!strcmp(name, fname))
