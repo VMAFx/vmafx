@@ -39,9 +39,9 @@ pub enum VmafxError {
 impl std::fmt::Display for VmafxError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            VmafxError::LibvmafError(code) => write!(f, "libvmaf error: {code}"),
-            VmafxError::NulError(e) => write!(f, "nul error in string: {e}"),
-            VmafxError::InvalidState(msg) => write!(f, "invalid state: {msg}"),
+            Self::LibvmafError(code) => write!(f, "libvmaf error: {code}"),
+            Self::NulError(e) => write!(f, "nul error in string: {e}"),
+            Self::InvalidState(msg) => write!(f, "invalid state: {msg}"),
         }
     }
 }
@@ -50,11 +50,11 @@ impl std::error::Error for VmafxError {}
 
 impl From<std::ffi::NulError> for VmafxError {
     fn from(e: std::ffi::NulError) -> Self {
-        VmafxError::NulError(e)
+        Self::NulError(e)
     }
 }
 
-fn check(rc: i32) -> Result<(), VmafxError> {
+const fn check(rc: i32) -> Result<(), VmafxError> {
     if rc >= 0 {
         Ok(())
     } else {
@@ -85,6 +85,9 @@ impl VmafContext {
     ///
     /// - `n_threads = 0` lets libvmaf choose the number of threads.
     /// - Log level is `WARNING` to suppress per-frame debug spam.
+    ///
+    /// # Errors
+    /// Returns [`VmafxError::LibvmafError`] if libvmaf fails to initialise.
     pub fn new() -> Result<Self, VmafxError> {
         let cfg = VmafConfiguration {
             log_level: VmafLogLevel_VMAF_LOG_LEVEL_WARNING,
@@ -95,16 +98,20 @@ impl VmafContext {
         };
         let mut ctx: *mut RawVmafContext = ptr::null_mut();
         // SAFETY: `cfg` is fully initialised; `ctx` is a valid out-pointer.
-        check(unsafe { vmaf_init(&mut ctx, cfg) })?;
-        Ok(VmafContext { inner: ctx })
+        check(unsafe { vmaf_init(&raw mut ctx, cfg) })?;
+        Ok(Self { inner: ctx })
     }
 
     /// Return the raw pointer. For use in advanced FFI scenarios.
-    pub fn as_ptr(&mut self) -> *mut RawVmafContext {
+    #[must_use]
+    pub const fn as_ptr(&mut self) -> *mut RawVmafContext {
         self.inner
     }
 
     /// Register all feature extractors required by `model`.
+    ///
+    /// # Errors
+    /// Returns [`VmafxError::LibvmafError`] if libvmaf rejects the model.
     pub fn use_features_from_model(&mut self, model: &mut VmafModel) -> Result<(), VmafxError> {
         // SAFETY: both pointers are valid for the duration of the call.
         check(unsafe { vmaf_use_features_from_model(self.inner, model.inner) })
@@ -114,6 +121,9 @@ impl VmafContext {
     ///
     /// Ownership of both pictures is transferred to the context; they will be
     /// unref'd by libvmaf internally.
+    ///
+    /// # Errors
+    /// Returns [`VmafxError::LibvmafError`] if libvmaf fails to enqueue the frame.
     pub fn read_pictures(
         &mut self,
         ref_pic: &mut VmafPicture,
@@ -125,6 +135,9 @@ impl VmafContext {
     }
 
     /// Flush the feature extraction pipeline (call after all frames are queued).
+    ///
+    /// # Errors
+    /// Returns [`VmafxError::LibvmafError`] if libvmaf fails during flush.
     pub fn flush(&mut self) -> Result<(), VmafxError> {
         // Passing NULL, NULL signals EOF to the feature extractor.
         // SAFETY: NULL is the documented sentinel for "flush".
@@ -132,6 +145,9 @@ impl VmafContext {
     }
 
     /// Compute the mean-pooled VMAF score over `index_low..=index_high`.
+    ///
+    /// # Errors
+    /// Returns [`VmafxError::LibvmafError`] if libvmaf fails to compute the score.
     pub fn score_pooled(
         &mut self,
         model: &mut VmafModel,
@@ -145,7 +161,7 @@ impl VmafContext {
                 self.inner,
                 model.inner,
                 VmafPoolingMethod_VMAF_POOL_METHOD_MEAN,
-                &mut score,
+                &raw mut score,
                 index_low,
                 index_high,
             )
@@ -178,6 +194,10 @@ unsafe impl Send for VmafModel {}
 
 impl VmafModel {
     /// Load a VMAF model from the filesystem.
+    ///
+    /// # Errors
+    /// Returns [`VmafxError::NulError`] if `path` contains an interior NUL byte,
+    /// or [`VmafxError::LibvmafError`] if libvmaf fails to load the model file.
     pub fn from_path(path: &str) -> Result<Self, VmafxError> {
         let c_path = CString::new(path)?;
         let mut cfg = VmafModelConfig {
@@ -185,9 +205,10 @@ impl VmafModel {
             flags: 0,
         };
         let mut model: *mut RawVmafModel = ptr::null_mut();
-        // SAFETY: `c_path` lives for the duration of the call.
-        check(unsafe { vmaf_model_load_from_path(&mut model, &mut cfg, c_path.as_ptr()) })?;
-        Ok(VmafModel { inner: model })
+        // SAFETY: `c_path` lives for the duration of the call; both out-pointers
+        // are in scope for the duration of the call.
+        check(unsafe { vmaf_model_load_from_path(&raw mut model, &raw mut cfg, c_path.as_ptr()) })?;
+        Ok(Self { inner: model })
     }
 }
 
@@ -206,14 +227,21 @@ impl Drop for VmafModel {
 // ---------------------------------------------------------------------------
 
 /// Allocate an 8-bit YUV 4:2:0 picture of the given dimensions.
+///
+/// # Errors
+/// Returns [`VmafxError::LibvmafError`] if libvmaf fails to allocate the picture.
 pub fn alloc_yuv420p_8bit(w: u32, h: u32) -> Result<VmafPicture, VmafxError> {
+    // SAFETY: zeroed is the documented starting state for VmafPicture before alloc.
     let mut pic = unsafe { std::mem::zeroed::<VmafPicture>() };
     // SAFETY: `pic` is a zero-initialised struct; all params are valid.
-    check(unsafe { vmaf_picture_alloc(&mut pic, VmafPixelFormat_VMAF_PIX_FMT_YUV420P, 8, w, h) })?;
+    check(unsafe { vmaf_picture_alloc(&raw mut pic, VmafPixelFormat_VMAF_PIX_FMT_YUV420P, 8, w, h) })?;
     Ok(pic)
 }
 
 /// Release a picture's memory.
+///
+/// # Errors
+/// Returns [`VmafxError::LibvmafError`] if libvmaf returns a non-zero code.
 pub fn unref_picture(pic: &mut VmafPicture) -> Result<(), VmafxError> {
     // SAFETY: `pic` was allocated by vmaf_picture_alloc.
     check(unsafe { vmaf_picture_unref(pic) })
@@ -224,6 +252,7 @@ pub fn unref_picture(pic: &mut VmafPicture) -> Result<(), VmafxError> {
 // ---------------------------------------------------------------------------
 
 /// Return the libvmaf version string.
+#[must_use]
 pub fn version() -> &'static str {
     // SAFETY: vmaf_version returns a pointer to a static C string.
     unsafe { CStr::from_ptr(crate::vmaf_version()) }

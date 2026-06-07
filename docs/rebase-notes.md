@@ -45284,3 +45284,7 @@ No public header or ABI change.
 ## fix/cargo-deny-bsd2-patent-allowlist (2026-06-07)
 no rebase impact: changes confined to `deny.toml`. No source, header, or build
 file is modified.
+
+## fix/rust-pilot-clippy (2026-06-07)
+no rebase impact: changes confined to `bindings/rust/` and
+`core/src/feature/rust/tad/`. No C API or public header change.

@@ -55,7 +55,7 @@ impl Error {
     /// Returns `Ok(())` for non-negative codes and `Err(Error::...)` for
     /// negatives. The variant chosen follows POSIX errno conventions where
     /// libvmaf is known to honour them.
-    pub(crate) fn from_libvmaf_rc(rc: i32) -> Result<()> {
+    pub(crate) const fn from_libvmaf_rc(rc: i32) -> Result<()> {
         if rc >= 0 {
             return Ok(());
         }
@@ -66,12 +66,12 @@ impl Error {
         // Linux/macOS, which match POSIX. These are stable; libvmaf's CI
         // covers these same platforms.
         Err(match positive {
-            12 => Error::OutOfMemory,       // ENOMEM
-            22 => Error::InvalidArgument,   // EINVAL
-            38 | 95 => Error::NotSupported, // ENOSYS / ENOTSUP (Linux: 95)
-            13 => Error::PermissionDenied,  // EACCES
-            2 => Error::NotFound,           // ENOENT
-            _ => Error::Libvmaf { code: rc },
+            12 => Self::OutOfMemory,       // ENOMEM
+            22 => Self::InvalidArgument,   // EINVAL
+            38 | 95 => Self::NotSupported, // ENOSYS / ENOTSUP (Linux: 95)
+            13 => Self::PermissionDenied,  // EACCES
+            2 => Self::NotFound,           // ENOENT
+            _ => Self::Libvmaf { code: rc },
         })
     }
 }
@@ -79,15 +79,15 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::OutOfMemory => f.write_str("libvmaf: out of memory"),
-            Error::InvalidArgument => f.write_str("libvmaf: invalid argument"),
-            Error::NotSupported => f.write_str("libvmaf: operation not supported"),
-            Error::PermissionDenied => f.write_str("libvmaf: permission denied"),
-            Error::NotFound => f.write_str("libvmaf: not found"),
-            Error::Libvmaf { code } => write!(f, "libvmaf: error code {code}"),
-            Error::Nul(e) => write!(f, "string contained interior NUL byte: {e}"),
-            Error::InvalidState(msg) => write!(f, "invalid state: {msg}"),
-            Error::Io(e) => write!(f, "I/O error: {e}"),
+            Self::OutOfMemory => f.write_str("libvmaf: out of memory"),
+            Self::InvalidArgument => f.write_str("libvmaf: invalid argument"),
+            Self::NotSupported => f.write_str("libvmaf: operation not supported"),
+            Self::PermissionDenied => f.write_str("libvmaf: permission denied"),
+            Self::NotFound => f.write_str("libvmaf: not found"),
+            Self::Libvmaf { code } => write!(f, "libvmaf: error code {code}"),
+            Self::Nul(e) => write!(f, "string contained interior NUL byte: {e}"),
+            Self::InvalidState(msg) => write!(f, "invalid state: {msg}"),
+            Self::Io(e) => write!(f, "I/O error: {e}"),
         }
     }
 }
@@ -95,8 +95,8 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Nul(e) => Some(e),
-            Error::Io(e) => Some(e),
+            Self::Nul(e) => Some(e),
+            Self::Io(e) => Some(e),
             _ => None,
         }
     }
@@ -104,13 +104,13 @@ impl std::error::Error for Error {
 
 impl From<NulError> for Error {
     fn from(e: NulError) -> Self {
-        Error::Nul(e)
+        Self::Nul(e)
     }
 }
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
-        Error::Io(e)
+        Self::Io(e)
     }
 }
 

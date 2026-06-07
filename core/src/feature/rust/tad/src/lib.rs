@@ -42,12 +42,12 @@ use std::os::raw::{c_char, c_double, c_int, c_uint, c_void};
 // Opaque C types forwarded by pointer — we never dereference them in Rust.
 // ---------------------------------------------------------------------------
 
-/// Opaque handle for the libvmaf picture buffer (VmafPicture).
+/// Opaque handle for the libvmaf picture buffer (`VmafPicture`).
 /// We only read width, height, stride, bpc, and data[0] (luma plane).
 /// The layout must match `libvmaf/include/libvmaf/picture.h`.
 #[repr(C)]
 pub struct VmafPicture {
-    /// pix_fmt enum (ignored by TAD — we only touch luma plane 0)
+    /// `pix_fmt` enum (ignored by TAD — we only touch luma plane 0)
     pub pix_fmt: c_int,
     /// bits per component (8 or 10 typically)
     pub bpc: c_uint,
@@ -65,7 +65,7 @@ pub struct VmafPicture {
     pub priv_: *mut c_void,
 }
 
-/// Opaque handle for the libvmaf feature collector (VmafFeatureCollector).
+/// Opaque handle for the libvmaf feature collector (`VmafFeatureCollector`).
 /// The only operation performed on it from Rust is passing it through to
 /// `vmaf_feature_collector_append`.
 #[repr(C)]
@@ -131,7 +131,7 @@ pub unsafe extern "C" fn vmafx_tad_init(state_out: *mut *mut c_void, bpc: c_uint
 
     let state = Box::new(TadState { peak });
     // SAFETY: we leak the Box intentionally; vmafx_tad_close reclaims it.
-    unsafe { *state_out = Box::into_raw(state) as *mut c_void };
+    unsafe { *state_out = Box::into_raw(state).cast::<c_void>() };
     0
 }
 
@@ -156,7 +156,7 @@ pub unsafe extern "C" fn vmafx_tad_extract(
         return -22; /* EINVAL */
     }
 
-    let (state, ref_p, dis_p) = unsafe { (&*(state_ptr as *const TadState), &*ref_pic, &*dis_pic) };
+    let (state, ref_p, dis_p) = unsafe { (&*state_ptr.cast::<TadState>(), &*ref_pic, &*dis_pic) };
 
     let w = ref_p.w[0] as usize;
     let h = ref_p.h[0] as usize;
@@ -169,13 +169,18 @@ pub unsafe extern "C" fn vmafx_tad_extract(
     let sad: u64 = unsafe { compute_sad(ref_p, dis_p, w, h, peak) };
 
     // Normalise to [0.0, 1.0].
+    // cast_precision_loss: w*h and sad can exceed f64's 52-bit mantissa for
+    // very large frames (> 4 Mpx), but sub-ULP rounding in a perceptual metric
+    // is acceptable — the physical range of the result is [0.0, 1.0].
+    #[allow(clippy::cast_precision_loss)]
     let n_pixels = (w * h) as f64;
-    let tad: f64 = sad as f64 / (n_pixels * peak as f64);
+    #[allow(clippy::cast_precision_loss)]
+    let tad: f64 = sad as f64 / (n_pixels * f64::from(peak));
 
     let mut err = unsafe {
         vmaf_feature_collector_append(
             feature_collector,
-            FEATURE_TAD.as_ptr() as *const c_char,
+            FEATURE_TAD.as_ptr().cast::<c_char>(),
             tad,
             index,
         )
@@ -184,11 +189,15 @@ pub unsafe extern "C" fn vmafx_tad_extract(
         return err;
     }
 
+    // cast_precision_loss: raw SAD as f64 for the sub-score; same tolerance
+    // as above — sub-ULP rounding is acceptable for a debug signal.
+    #[allow(clippy::cast_precision_loss)]
+    let sad_f64 = sad as f64;
     err = unsafe {
         vmaf_feature_collector_append(
             feature_collector,
-            FEATURE_TAD_SAD.as_ptr() as *const c_char,
-            sad as f64,
+            FEATURE_TAD_SAD.as_ptr().cast::<c_char>(),
+            sad_f64,
             index,
         )
     };
@@ -206,7 +215,7 @@ pub unsafe extern "C" fn vmafx_tad_close(state_ptr: *mut c_void) -> c_int {
         return 0; /* nothing to do */
     }
     // SAFETY: reconstructs the Box from the raw pointer produced in init.
-    unsafe { drop(Box::from_raw(state_ptr as *mut TadState)) };
+    unsafe { drop(Box::from_raw(state_ptr.cast::<TadState>())) };
     0
 }
 
@@ -233,30 +242,36 @@ unsafe fn compute_sad(
 
     if peak <= 255 {
         // 8-bit path: samples are u8.
+        // cast_sign_loss: stride is always non-negative in a valid VmafPicture.
+        #[allow(clippy::cast_sign_loss)]
         let ref_stride = ref_pic.stride[0] as usize;
+        #[allow(clippy::cast_sign_loss)]
         let dis_stride = dis_pic.stride[0] as usize;
-        let ref_data = ref_pic.data[0] as *const u8;
-        let dis_data = dis_pic.data[0] as *const u8;
+        let ref_data = ref_pic.data[0].cast::<u8>();
+        let dis_data = dis_pic.data[0].cast::<u8>();
 
         for row in 0..h {
             for col in 0..w {
-                let r = unsafe { *ref_data.add(row * ref_stride + col) } as i32;
-                let d = unsafe { *dis_data.add(row * dis_stride + col) } as i32;
-                sad += (r - d).unsigned_abs() as u64;
+                let r = i32::from(unsafe { *ref_data.add(row * ref_stride + col) });
+                let d = i32::from(unsafe { *dis_data.add(row * dis_stride + col) });
+                sad += u64::from((r - d).unsigned_abs());
             }
         }
     } else {
         // High-bit-depth path: samples are u16 (stride is in bytes).
+        // cast_sign_loss: stride is always non-negative in a valid VmafPicture.
+        #[allow(clippy::cast_sign_loss)]
         let ref_stride = ref_pic.stride[0] as usize / std::mem::size_of::<u16>();
+        #[allow(clippy::cast_sign_loss)]
         let dis_stride = dis_pic.stride[0] as usize / std::mem::size_of::<u16>();
-        let ref_data = ref_pic.data[0] as *const u16;
-        let dis_data = dis_pic.data[0] as *const u16;
+        let ref_data = ref_pic.data[0].cast::<u16>();
+        let dis_data = dis_pic.data[0].cast::<u16>();
 
         for row in 0..h {
             for col in 0..w {
-                let r = unsafe { *ref_data.add(row * ref_stride + col) } as i32;
-                let d = unsafe { *dis_data.add(row * dis_stride + col) } as i32;
-                sad += (r - d).unsigned_abs() as u64;
+                let r = i32::from(unsafe { *ref_data.add(row * ref_stride + col) });
+                let d = i32::from(unsafe { *dis_data.add(row * dis_stride + col) });
+                sad += u64::from((r - d).unsigned_abs());
             }
         }
     }
@@ -269,12 +284,22 @@ unsafe fn compute_sad(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+// cast_precision_loss: test values are tiny constants; sub-ULP rounding is
+// irrelevant in unit-test assertions.
+#[allow(clippy::cast_precision_loss)]
 mod tests {
     use super::*;
 
     /// Build a synthetic VmafPicture backed by a Vec<u8> luma plane.
     fn make_pic_8bit(w: usize, h: usize, fill: u8) -> (VmafPicture, Vec<u8>) {
-        let buf: Vec<u8> = vec![fill; w * h];
+        let mut buf: Vec<u8> = vec![fill; w * h];
+        // cast_possible_truncation/wrap: test dimensions are small constants,
+        // fits in u32/isize.
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_possible_wrap,
+            clippy::cast_sign_loss
+        )]
         let pic = VmafPicture {
             pix_fmt: 1, /* YUV420P */
             bpc: 8,
@@ -282,7 +307,7 @@ mod tests {
             h: [h as c_uint, (h / 2) as c_uint, (h / 2) as c_uint],
             stride: [w as isize, (w / 2) as isize, (w / 2) as isize],
             data: [
-                buf.as_ptr() as *mut c_void,
+                buf.as_mut_ptr().cast::<c_void>(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
             ],

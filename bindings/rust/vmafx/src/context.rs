@@ -39,13 +39,13 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    fn to_raw(self) -> u32 {
+    const fn to_raw(self) -> u32 {
         match self {
-            LogLevel::None => VmafLogLevel_VMAF_LOG_LEVEL_NONE,
-            LogLevel::Error => VmafLogLevel_VMAF_LOG_LEVEL_ERROR,
-            LogLevel::Warning => VmafLogLevel_VMAF_LOG_LEVEL_WARNING,
-            LogLevel::Info => VmafLogLevel_VMAF_LOG_LEVEL_INFO,
-            LogLevel::Debug => VmafLogLevel_VMAF_LOG_LEVEL_DEBUG,
+            Self::None => VmafLogLevel_VMAF_LOG_LEVEL_NONE,
+            Self::Error => VmafLogLevel_VMAF_LOG_LEVEL_ERROR,
+            Self::Warning => VmafLogLevel_VMAF_LOG_LEVEL_WARNING,
+            Self::Info => VmafLogLevel_VMAF_LOG_LEVEL_INFO,
+            Self::Debug => VmafLogLevel_VMAF_LOG_LEVEL_DEBUG,
         }
     }
 }
@@ -81,14 +81,14 @@ impl ContextBuilder {
 
     /// Set the log verbosity. Default is [`LogLevel::Warning`].
     #[must_use]
-    pub fn log_level(mut self, level: LogLevel) -> Self {
+    pub const fn log_level(mut self, level: LogLevel) -> Self {
         self.log_level = level;
         self
     }
 
     /// Set the number of worker threads (0 = libvmaf chooses).
     #[must_use]
-    pub fn n_threads(mut self, n: u32) -> Self {
+    pub const fn n_threads(mut self, n: u32) -> Self {
         self.n_threads = n;
         self
     }
@@ -96,18 +96,24 @@ impl ContextBuilder {
     /// Set the frame subsampling stride (1 = every frame).
     #[must_use]
     pub fn n_subsample(mut self, n: u32) -> Self {
+        // `u32::max` is not `const fn` in stable yet, so this setter stays non-const.
         self.n_subsample = n.max(1);
         self
     }
 
     /// Set the CPU feature mask (advanced; usually leave as 0).
     #[must_use]
-    pub fn cpumask(mut self, mask: u64) -> Self {
+    pub const fn cpumask(mut self, mask: u64) -> Self {
         self.cpumask = mask;
         self
     }
 
     /// Build the context.
+    ///
+    /// # Errors
+    /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf fails to
+    /// initialise the context, or [`Error::InvalidState`] if libvmaf reports
+    /// success but returns a null pointer.
     pub fn build(self) -> Result<Context> {
         let cfg = VmafConfiguration {
             log_level: self.log_level.to_raw(),
@@ -118,7 +124,7 @@ impl ContextBuilder {
         };
         let mut ctx: *mut RawContext = ptr::null_mut();
         // SAFETY: `cfg` is fully initialised; `ctx` is a valid out-pointer.
-        let rc = unsafe { vmaf_init(&mut ctx, cfg) };
+        let rc = unsafe { vmaf_init(&raw mut ctx, cfg) };
         Error::from_libvmaf_rc(rc)?;
         if ctx.is_null() {
             return Err(Error::InvalidState(
@@ -143,6 +149,10 @@ impl Context {
     /// Build a [`Context`] with libvmaf defaults.
     ///
     /// Equivalent to `ContextBuilder::new().build()`.
+    ///
+    /// # Errors
+    /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf fails to
+    /// initialise the context.
     pub fn new() -> Result<Self> {
         ContextBuilder::new().build()
     }
@@ -156,6 +166,9 @@ impl Context {
     /// Register every feature extractor required by `model`.
     ///
     /// Must be called once per model before [`Self::read_pictures`].
+    ///
+    /// # Errors
+    /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf rejects the model.
     pub fn use_features_from_model(&mut self, model: &mut Model) -> Result<()> {
         // SAFETY: both pointers are non-null and valid for the call's duration.
         let rc = unsafe { vmaf_use_features_from_model(self.inner, model.as_mut_ptr()) };
@@ -167,6 +180,9 @@ impl Context {
     /// Ownership of both pictures is transferred to libvmaf; the picture
     /// buffers will be unref'd internally and **must not** be touched after
     /// this call.
+    ///
+    /// # Errors
+    /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf fails to enqueue the frame.
     pub fn read_pictures(&mut self, ref_pic: Picture, dist_pic: Picture, index: u32) -> Result<()> {
         // Take ownership of the raw structs; the `Picture` wrappers' `Drop`
         // will no-op because `into_raw_owned` cleared the `owned` flag.
@@ -174,7 +190,7 @@ impl Context {
         let mut d_raw = dist_pic.into_raw_owned();
         // SAFETY: both pointers are non-null and the structs are
         // fully-initialised owners of allocated planes.
-        let rc = unsafe { vmaf_read_pictures(self.inner, &mut r_raw, &mut d_raw, index) };
+        let rc = unsafe { vmaf_read_pictures(self.inner, &raw mut r_raw, &raw mut d_raw, index) };
         Error::from_libvmaf_rc(rc)
     }
 
@@ -182,6 +198,9 @@ impl Context {
     ///
     /// Call exactly once after the final [`Self::read_pictures`] and before
     /// any score-readout.
+    ///
+    /// # Errors
+    /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf fails during flush.
     pub fn flush(&mut self) -> Result<()> {
         // libvmaf treats (NULL, NULL) as EOF.
         // SAFETY: NULL is the documented sentinel for the flush call.
@@ -193,6 +212,9 @@ impl Context {
     ///
     /// `index_low` must be ≤ `index_high` and both must refer to frames
     /// already pushed via [`Self::read_pictures`].
+    ///
+    /// # Errors
+    /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf fails to compute the score.
     pub fn score_pooled(
         &mut self,
         model: &mut Model,
@@ -207,7 +229,7 @@ impl Context {
                 self.inner,
                 model.as_mut_ptr(),
                 method.to_raw(),
-                &mut score,
+                &raw mut score,
                 index_low,
                 index_high,
             )
@@ -218,7 +240,7 @@ impl Context {
 
     /// Borrow the raw `*mut VmafContext`. Escape hatch for advanced callers.
     #[must_use]
-    pub fn as_ptr(&mut self) -> *mut RawContext {
+    pub const fn as_ptr(&mut self) -> *mut RawContext {
         self.inner
     }
 }

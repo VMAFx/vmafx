@@ -24,6 +24,18 @@
   re-export raw FFI symbols. If a user needs the escape hatch, they
   add `vmafx-sys` as a direct dep.
 
+- **`&raw mut` for FFI out-pointers**: all `*mut T` out-pointer arguments
+  to C functions use `&raw mut foo` (not `&mut foo as *mut _`) to satisfy
+  `clippy::borrow_as_ptr`. The `clippy::pedantic` profile is run in CI;
+  new FFI call sites must follow this pattern.
+- **`Self::Variant` in `match self`**: all `match self { ... }` arms in
+  `impl Foo` blocks use `Self::` (not the struct/enum name) to satisfy
+  `clippy::use_self`. The same applies to `Self { field }` struct literals
+  inside constructors.
+- **`const fn` for pure accessor functions**: functions that only return a
+  field value or do an arithmetic match with no heap allocation should be
+  `const fn`.
+
 - **`clippy::expect_used` and `clippy::unwrap_used` are warned** (ADR-1063):
   `src/lib.rs` carries `#![warn(clippy::expect_used, clippy::unwrap_used)]`.
   Library code must return `Result` rather than panic. Test modules opt back in

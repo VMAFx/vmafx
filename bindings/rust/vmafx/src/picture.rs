@@ -39,12 +39,12 @@ pub enum PixelFormat {
 }
 
 impl PixelFormat {
-    fn to_raw(self) -> u32 {
+    const fn to_raw(self) -> u32 {
         match self {
-            PixelFormat::Yuv400p => VmafPixelFormat_VMAF_PIX_FMT_YUV400P,
-            PixelFormat::Yuv420p => VmafPixelFormat_VMAF_PIX_FMT_YUV420P,
-            PixelFormat::Yuv422p => VmafPixelFormat_VMAF_PIX_FMT_YUV422P,
-            PixelFormat::Yuv444p => VmafPixelFormat_VMAF_PIX_FMT_YUV444P,
+            Self::Yuv400p => VmafPixelFormat_VMAF_PIX_FMT_YUV400P,
+            Self::Yuv420p => VmafPixelFormat_VMAF_PIX_FMT_YUV420P,
+            Self::Yuv422p => VmafPixelFormat_VMAF_PIX_FMT_YUV422P,
+            Self::Yuv444p => VmafPixelFormat_VMAF_PIX_FMT_YUV444P,
         }
     }
 }
@@ -74,6 +74,9 @@ impl Picture {
     ///
     /// Convenience for the most common SDR case. Equivalent to
     /// `Picture::new(PixelFormat::Yuv420p, 8, w, h)`.
+    ///
+    /// # Errors
+    /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf fails to allocate.
     pub fn new_yuv420p_8bit(w: u32, h: u32) -> Result<Self> {
         Self::new(PixelFormat::Yuv420p, 8, w, h)
     }
@@ -82,6 +85,10 @@ impl Picture {
     ///
     /// `bpc` must be in `8..=16`. libvmaf rejects out-of-range values with
     /// `EINVAL`, which surfaces as [`Error::InvalidArgument`].
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidArgument`] for unsupported `bpc`, or
+    /// [`Error::Libvmaf`] (or a mapped variant) for other libvmaf failures.
     pub fn new(format: PixelFormat, bpc: u32, w: u32, h: u32) -> Result<Self> {
         // Zero-init via MaybeUninit so we don't read uninitialised memory
         // even momentarily; `vmaf_picture_alloc` populates every field on
@@ -152,7 +159,7 @@ impl Drop for Picture {
         // `vmaf_picture_alloc` and has not been handed to libvmaf via
         // `vmaf_read_pictures`. Calling `vmaf_picture_unref` here is the
         // documented free.
-        let _ = unsafe { vmaf_picture_unref(&mut self.raw) };
+        let _ = unsafe { vmaf_picture_unref(&raw mut self.raw) };
         self.owned = false;
     }
 }

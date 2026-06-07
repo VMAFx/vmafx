@@ -26,12 +26,12 @@ pub enum PoolingMethod {
 }
 
 impl PoolingMethod {
-    pub(crate) fn to_raw(self) -> u32 {
+    pub(crate) const fn to_raw(self) -> u32 {
         match self {
-            PoolingMethod::Mean => VmafPoolingMethod_VMAF_POOL_METHOD_MEAN,
-            PoolingMethod::Min => VmafPoolingMethod_VMAF_POOL_METHOD_MIN,
-            PoolingMethod::Max => VmafPoolingMethod_VMAF_POOL_METHOD_MAX,
-            PoolingMethod::HarmonicMean => VmafPoolingMethod_VMAF_POOL_METHOD_HARMONIC_MEAN,
+            Self::Mean => VmafPoolingMethod_VMAF_POOL_METHOD_MEAN,
+            Self::Min => VmafPoolingMethod_VMAF_POOL_METHOD_MIN,
+            Self::Max => VmafPoolingMethod_VMAF_POOL_METHOD_MAX,
+            Self::HarmonicMean => VmafPoolingMethod_VMAF_POOL_METHOD_HARMONIC_MEAN,
         }
     }
 }

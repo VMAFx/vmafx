@@ -45,6 +45,9 @@ fn repo_root() -> PathBuf {
     PathBuf::from(".")
 }
 
+// similar_names: cb_plane/cr_plane and src_cb/src_cr are standard YUV
+// chroma-plane naming; renaming would obscure the domain meaning.
+#[allow(clippy::similar_names)]
 fn read_yuv_frame(file: &mut File, pic: &mut vmafx_sys::VmafPicture) -> std::io::Result<bool> {
     let w = WIDTH as usize;
     let h = HEIGHT as usize;
@@ -70,21 +73,27 @@ fn read_yuv_frame(file: &mut File, pic: &mut vmafx_sys::VmafPicture) -> std::io:
     file.read_exact(&mut cr)?;
 
     // Copy into the VmafPicture planes.
+    // cast_sign_loss: libvmaf strides are always non-negative for a valid picture.
+    #[allow(clippy::cast_sign_loss)]
     unsafe {
-        let luma_plane = pic.data[0] as *mut u8;
-        let cb_plane = pic.data[1] as *mut u8;
-        let cr_plane = pic.data[2] as *mut u8;
+        let luma_plane = pic.data[0].cast::<u8>();
+        let cb_plane = pic.data[1].cast::<u8>();
+        let cr_plane = pic.data[2].cast::<u8>();
+
+        let luma_stride = pic.stride[0] as usize;
+        let cb_stride = pic.stride[1] as usize;
+        let cr_stride = pic.stride[2] as usize;
 
         for row in 0..h {
             let src = &luma[(row * w)..((row + 1) * w)];
-            let dst = luma_plane.add(row * (pic.stride[0] as usize));
+            let dst = luma_plane.add(row * luma_stride);
             std::ptr::copy_nonoverlapping(src.as_ptr(), dst, w);
         }
         for row in 0..chroma_h {
             let src_cb = &cb[(row * chroma_w)..((row + 1) * chroma_w)];
             let src_cr = &cr[(row * chroma_w)..((row + 1) * chroma_w)];
-            let dst_cb = cb_plane.add(row * (pic.stride[1] as usize));
-            let dst_cr = cr_plane.add(row * (pic.stride[2] as usize));
+            let dst_cb = cb_plane.add(row * cb_stride);
+            let dst_cr = cr_plane.add(row * cr_stride);
             std::ptr::copy_nonoverlapping(src_cb.as_ptr(), dst_cb, chroma_w);
             std::ptr::copy_nonoverlapping(src_cr.as_ptr(), dst_cr, chroma_w);
         }
