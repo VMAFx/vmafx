@@ -1,10 +1,10 @@
-name: FFmpeg Integration — Linux/macOS × gcc/clang + SYCL + Vulkan
+name: FFmpeg Integration — Linux/macOS × gcc/clang + SYCL
 on:
   push:
     branches: [master]
     paths:
       # Path-filter introduced in ADR-0317. The FFmpeg-integration matrix
-      # (gcc / clang / SYCL / Vulkan) only needs to fire when the inputs
+      # (gcc / clang / SYCL) only needs to fire when the inputs
       # it actually consumes change: the libvmaf sources it builds, the
       # ffmpeg-patches/ series it applies, the meson options that gate
       # the build, or this workflow file itself. Doc-only / Python-only
@@ -175,145 +175,10 @@ jobs:
           sudo make --quiet -j $(nproc) install
           echo "FFmpeg with SYCL support built successfully"
 
-  # Build-only: FFmpeg with Vulkan patch series (lavapipe, no GPU on runners).
-  #
-  # Why this lane exists: PR #234 was a build break in `vf_libvmaf.c` caused
-  # by `-DVK_NO_PROTOTYPES` propagating from `libvmaf.pc` Cflags (via
-  # core/subprojects/volk-vulkan-sdk-1.4.341.0/meson.build's
-  # `compile_args : ['-DVK_NO_PROTOTYPES']`) into FFmpeg's compile of the
-  # libvmaf filter. The fork had zero CI coverage of FFmpeg + Vulkan, so the
-  # break was first reported by an external user. This lane closes that gap:
-  # any future leak that prevents `vf_libvmaf.c` from compiling against a
-  # Vulkan-enabled libvmaf install will fail this job before merge.
-  #
-  # lavapipe (mesa-vulkan-drivers) is the software ICD that lets the headless
-  # runner enumerate a compute-capable VkPhysicalDevice — same approach as
-  # the libvmaf-build-matrix Vulkan lane (T5-1b, ADR-0175). Pairs with the
-  # symbol-presence assertion below; we don't actually run a Vulkan pipeline
-  # because patch 0006 only needs to compile + link, not execute.
-  ffmpeg-vulkan:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: FFmpeg — Vulkan (Build Only, lavapipe)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      CC: gcc
-      CXX: g++
-      DEBIAN_FRONTEND: noninteractive
-    steps:
-      - name: Setup python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
-        with:
-          python-version: 3.14.5
-      - name: Install meson, ninja, and dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install meson
-          # FFmpeg release/8.1's configure requires Vulkan headers
-          # >= 1.3.277. Ubuntu 24.04 ships libvulkan-dev 1.3.275 in
-          # the default archive — one patch short. Add LunarG's
-          # official Vulkan SDK repo so headers + glslc + validation
-          # layers come from a current snapshot.
-          wget -qO /tmp/lunarg-key.asc \
-            https://packages.lunarg.com/lunarg-signing-key-pub.asc
-          sudo install -d /etc/apt/keyrings
-          sudo install -m 0644 /tmp/lunarg-key.asc \
-            /etc/apt/keyrings/lunarg.asc
-          echo "deb [signed-by=/etc/apt/keyrings/lunarg.asc] https://packages.lunarg.com/vulkan/ noble main" \
-            | sudo tee /etc/apt/sources.list.d/lunarg-vulkan.list
-          sudo apt-get update
-          # Build toolchain + Vulkan SDK + glslc shader compiler.
-          # `vulkan-sdk` is LunarG's meta-package — pulls
-          # vulkan-headers, libvulkan-dev, glslc, vulkan-tools, the
-          # validation layers — everything FFmpeg configure +
-          # libvmaf's volk/VMA wraps expect. mesa-vulkan-drivers
-          # ships lavapipe as the runtime ICD.
-          sudo -E apt-get -yq install ninja-build gcc g++ gobjc nasm pkg-config \
-            vulkan-sdk mesa-vulkan-drivers \
-            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
-            libavfilter-dev
-          glslc --version | head -2
-          pkg-config --modversion vulkan
-          vulkaninfo --summary || true
-
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-
-      - name: Build vmaf with Vulkan
-        run: |
-          # -Denable_vulkan=enabled wires in the Vulkan compute backend
-          # (volk + VMA + glslc shaders). -Denable_float=true keeps fp32 paths
-          # alongside the default fixed-point so `enabled libvmaf` users get
-          # the full feature set. CUDA + SYCL disabled: this lane only
-          # exercises the Vulkan + FFmpeg integration surface.
-          #
-          # Temp prefix ($PWD/install) per task brief: avoids `sudo install`
-          # to /usr/local and lets the FFmpeg configure step pin
-          # PKG_CONFIG_PATH at the temp tree, which is the exact scenario
-          # PR #234 broke under (libvmaf.pc Cflags leaking -DVK_NO_PROTOTYPES
-          # into vf_libvmaf.c's compile).
-          meson setup core core/build --buildtype release \
-            --prefix "$PWD/install" \
-            -Denable_float=true \
-            -Denable_vulkan=enabled \
-            -Denable_cuda=false \
-            -Denable_sycl=false
-          ninja -vC core/build install
-
-      - name: Build FFmpeg with Vulkan patch series
-        run: |
-          # series.txt baseline is `n8.1`; the existing gcc/clang and SYCL
-          # lanes both use `release/8.1` (FFmpeg's release branch tracks the
-          # n8.1 tag) — keep the same ref here for consistency across lanes.
-          git clone -q --branch release/8.1 --depth=1 \
-            "https://github.com/FFmpeg/FFmpeg" ffmpeg
-          cd ffmpeg
-          # Apply all 6 patches in series.txt order. Patches 0004 (vulkan
-          # backend selector) and 0006 (libvmaf_vulkan dedicated filter)
-          # depend on fields and configure-script lines added by earlier
-          # patches; out-of-order application breaks the build.
-          while IFS= read -r line; do
-            case "$line" in '' | \#*) continue ;; esac
-            echo "Applying ffmpeg-patches/$line"
-            git apply "../ffmpeg-patches/$line" \
-              || patch -p1 < "../ffmpeg-patches/$line"
-          done < ../ffmpeg-patches/series.txt
-          # Point pkg-config at the temp prefix so FFmpeg's configure picks
-          # up the Vulkan-enabled libvmaf.pc. --enable-libvmaf-vulkan is the
-          # gate added by patch 0006 (the dedicated `libvmaf_vulkan` filter
-          # with zero-copy VkImage import); --enable-vulkan + --enable-gpl
-          # pull in FFmpeg's own Vulkan hwcontext that the filter consumes.
-          export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/install/lib/pkgconfig:$GITHUB_WORKSPACE/install/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH"
-          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/install/lib:$GITHUB_WORKSPACE/install/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
-          ./configure --enable-version3 --enable-gpl \
-            --enable-libvmaf --enable-libvmaf-vulkan \
-            --enable-vulkan --disable-indevs \
-            --cc="$CC" --cxx="$CXX" \
-            || { tail -80 ffbuild/config.log; exit 1; }
-          # Build only the filter object we care about. The dedicated
-          # `libvmaf_vulkan` filter from patch 0006 lives inside the
-          # same `vf_libvmaf.c` (gated by `#if CONFIG_LIBVMAF_VULKAN_FILTER`,
-          # see the patch's Makefile hunk: both `LIBVMAF_VULKAN_FILTER`
-          # and `LIBVMAF_FILTER` map to `vf_libvmaf.o`). A full FFmpeg
-          # link is ~5 minutes of CI time we don't need — PR #234's
-          # failure mode was a compile error in `vf_libvmaf.c` triggered
-          # by `-DVK_NO_PROTOTYPES` Cflag leakage, and this narrower
-          # target reproduces it in seconds.
-          make -j"$(nproc)" libavfilter/vf_libvmaf.o
-
-      - name: Assert Vulkan symbols are wired through
-        run: |
-          cd ffmpeg
-          # The single `vf_libvmaf.o` carries both filter variants:
-          #   - patch 0004 routes vmaf_vulkan_state_init() into the
-          #     `libvmaf` filter when the user passes `vulkan_device >= 0`.
-          #   - patch 0006 adds the dedicated `libvmaf_vulkan` filter that
-          #     adopts FFmpeg's VkInstance/VkDevice via
-          #     vmaf_vulkan_state_init_external (zero-copy VkImage import).
-          # Both symbols must appear in the compiled object. If
-          # libvmaf.pc Cflags broke vf_libvmaf.c's compile (PR #234), the
-          # object would not exist; if Vulkan was silently disabled at
-          # configure time, neither symbol would be referenced.
-          test -f libavfilter/vf_libvmaf.o
-          nm libavfilter/vf_libvmaf.o | grep -q vmaf_vulkan_state_init
-          nm libavfilter/vf_libvmaf.o | grep -q vmaf_vulkan_state_init_external
-          echo "FFmpeg with Vulkan support built successfully"
+  # ffmpeg-vulkan job removed per ADR-0726: the Vulkan backend was dropped from
+  # the fork entirely (core/src/vulkan/, feature/vulkan/, libvmaf_vulkan.h all
+  # deleted). The meson `enable_vulkan` option no longer exists, so any attempt
+  # to pass -Denable_vulkan=enabled to meson setup fails with
+  # "Unknown option: enable_vulkan". The patches 0004 + 0006 remain in the
+  # series.txt chain as no-op compatibility shims (see series.txt comment and
+  # ADR-0860) but produce zero linked code at FFmpeg configure time.

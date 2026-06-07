@@ -45431,3 +45431,8 @@ no conflict risk (new symbol).
 `memset` calls removed; tests now call extract in a plain loop. Conflicts possible
 if another branch edits the same test functions; resolve by keeping the
 wrapper-managed approach (no manual `prev_ref` assignment).
+
+## fix/ffmpeg-vulkan-ci-job-removal (2026-06-07)
+no rebase impact: only `.github/workflows/ffmpeg-integration.yml` modified (dead
+job removed) and `docs/state.md` + `changelog.d/fixed/ffmpeg-vulkan-ci-job-removal.md`
+added. No production source, public header, or meson build files touched.
