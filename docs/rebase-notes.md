@@ -45288,3 +45288,8 @@ file is modified.
 ## fix/rust-pilot-clippy (2026-06-07)
 no rebase impact: changes confined to `bindings/rust/` and
 `core/src/feature/rust/tad/`. No C API or public header change.
+
+## fix/coverage-pkg-storage (2026-06-07)
+no rebase impact: new test files only (`pkg/storage/coverage_test.go`,
+`cmd/vmafx-node/bpf/coverage_test.go`) + changelog fragments. No
+production source or public header change.
