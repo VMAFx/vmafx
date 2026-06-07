@@ -336,3 +336,25 @@ these two paths must stay consistent.
 **Rebase-sensitive**: any branch that re-opens or modifies the
 `VMAF_FEATURE_EXTRACTOR_PREV_REF` block in `threaded_extract_batch_func`
 must preserve both the unref-before-memset and the zero-f->prev_ref.
+
+### framesync producer-error paths must call vmaf_framesync_abort (ADR-1092)
+
+`retrieve_filled_data` waits in `pthread_cond_wait` until a matching
+BUF_FILLED entry appears.  If the producer thread exits without calling
+`submit_filled_data` for an index the consumer is waiting on, the consumer
+hangs forever.
+
+Any code path that acquires a framesync buffer (via
+`vmaf_framesync_acquire_new_buf`) and then returns an error before calling
+`vmaf_framesync_submit_filled_data` for that index **must** call
+`vmaf_framesync_abort(fs_ctx)` first.  This sets the `aborted` flag and
+broadcasts on the condvar, causing all blocked `retrieve_filled_data` callers
+to return `-ECANCELED`.
+
+`vmaf_framesync_destroy` calls `vmaf_framesync_abort` as a safety net, but
+relying on that alone delays the wake-up until destroy time, which is after
+`vmaf_thread_pool_wait` — meaning the thread pool wait would still hang.
+
+**Rebase-sensitive**: any branch adding new framesync producer paths (feature
+extractors, GPU dispatch loops) must include a `vmaf_framesync_abort` call on
+all error exits from `extract()` or equivalent before returning.

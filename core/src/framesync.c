@@ -23,6 +23,10 @@
 #include <stdlib.h>
 #include "framesync.h"
 
+/* POSIX guarantees that pthread_mutex_lock / pthread_cond_wait always see
+ * writes to plain int that were made while the mutex was held, so no
+ * C11 _Atomic is required for the aborted flag. */
+
 enum {
     BUF_FREE = 0,
     BUF_ACQUIRED,
@@ -43,6 +47,9 @@ typedef struct VmafFrameSyncContext {
     pthread_mutex_t retrieve_lock;
     pthread_cond_t retrieve;
     unsigned buf_cnt;
+    /* Set to 1 by vmaf_framesync_abort(); causes retrieve_filled_data to
+     * return -ECANCELED instead of waiting forever when a producer dies. */
+    int aborted;
 } VmafFrameSyncContext;
 
 int vmaf_framesync_init(VmafFrameSyncContext **fs_ctx)
@@ -234,12 +241,26 @@ int vmaf_framesync_retrieve_filled_data(VmafFrameSyncContext *fs_ctx, void **dat
         }
 
         if (*data == NULL) {
+            // Check abort flag (under M1) before sleeping; a producer that
+            // died after calling vmaf_framesync_abort() may have broadcast
+            // before we entered cond_wait, but the flag is persistent.
+            if (fs_ctx->aborted) {
+                (void)pthread_mutex_unlock(&(fs_ctx->retrieve_lock));
+                (void)pthread_mutex_unlock(&(fs_ctx->acquire_lock));
+                return -ECANCELED;
+            }
             // Release M0 before waiting so producers can
             // acquire/append. M1 is released atomically by
             // pthread_cond_wait and re-acquired on wake-up; we then
             // re-take M0 at the top of the loop in canonical order.
             (void)pthread_mutex_unlock(&(fs_ctx->acquire_lock));
             (void)pthread_cond_wait(&(fs_ctx->retrieve), &(fs_ctx->retrieve_lock));
+            // Re-check abort flag after waking: the broadcast may have been
+            // fired by abort() rather than by a real submit_filled_data().
+            if (fs_ctx->aborted) {
+                (void)pthread_mutex_unlock(&(fs_ctx->retrieve_lock));
+                return -ECANCELED;
+            }
             (void)pthread_mutex_unlock(&(fs_ctx->retrieve_lock));
         } else {
             (void)pthread_mutex_unlock(&(fs_ctx->retrieve_lock));
@@ -283,9 +304,38 @@ int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, void *data, unsigne
     return ret;
 }
 
+/*
+ * vmaf_framesync_abort — signal all consumers to stop waiting and return
+ * -ECANCELED.  Call this on any producer error path so that a consumer
+ * blocked in retrieve_filled_data does not hang indefinitely.
+ *
+ * The broadcast is sent while holding retrieve_lock (M1) so it is not
+ * lost against a concurrent retrieve_filled_data that holds M1 up to
+ * the pthread_cond_wait call.  acquire_lock (M0) is NOT taken here so
+ * that a producer that holds M0 during acquire_new_buf can still reach
+ * this abort path without deadlocking.
+ */
+int vmaf_framesync_abort(VmafFrameSyncContext *fs_ctx)
+{
+    int rc = pthread_mutex_lock(&(fs_ctx->retrieve_lock));
+    if (rc != 0)
+        return -rc;
+    fs_ctx->aborted = 1;
+    (void)pthread_cond_broadcast(&(fs_ctx->retrieve));
+    (void)pthread_mutex_unlock(&(fs_ctx->retrieve_lock));
+    return 0;
+}
+
 int vmaf_framesync_destroy(VmafFrameSyncContext *fs_ctx)
 {
     VmafFrameSyncBuf *buf_que = fs_ctx->buf_que;
+
+    /* Safety net: abort any consumer still in retrieve_filled_data so the
+     * cond_wait has a chance to wake and exit before we destroy the condvar.
+     * POSIX defines pthread_cond_destroy while there are waiters as UB.
+     * The caller must still drain all threads (e.g. via vmaf_thread_pool_wait)
+     * before calling destroy, but this broadcast provides defence-in-depth. */
+    (void)vmaf_framesync_abort(fs_ctx);
 
     pthread_mutex_destroy(&(fs_ctx->acquire_lock));
     pthread_mutex_destroy(&(fs_ctx->retrieve_lock));

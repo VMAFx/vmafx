@@ -45233,3 +45233,8 @@ no rebase impact: changes confined to `core/src/gpu_dispatch_env.cpp`.
 Adds `std::atomic<bool> ready` per-slot publication flag. No public
 header or ABI change; the AtomicBool type is internal to the translation
 unit.
+
+## worktree-wf_b08e0c22-717-2 / fix/framesync-producer-death-deadlock (2026-06-07)
+no rebase impact: changes confined to `core/src/framesync.c` and
+`core/src/framesync.h`. Adds `vmaf_framesync_abort()` and `aborted` flag.
+The new function is internal to libvmaf; no public header change.

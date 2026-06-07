@@ -45,6 +45,13 @@ int vmaf_framesync_retrieve_filled_data(VmafFrameSyncContext *fs_ctx, void **dat
 
 int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, void *data, unsigned index);
 
+/**
+ * vmaf_framesync_abort - wake all retrieve_filled_data waiters and make them
+ * return -ECANCELED.  Call on any producer error path before joining threads.
+ * Idempotent: safe to call more than once or concurrently.
+ */
+int vmaf_framesync_abort(VmafFrameSyncContext *fs_ctx);
+
 int vmaf_framesync_destroy(VmafFrameSyncContext *fs_ctx);
 
 #endif /* __VMAF_FRAME_SYNC_H__ */
