@@ -441,6 +441,11 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
 
     try:
         body = await request.json()
+    except aiohttp.web.HTTPRequestEntityTooLarge:
+        # Chunked body exceeded client_max_size — re-raise so aiohttp converts it
+        # to the correct 413 response.  The bare ``except Exception`` below would
+        # catch this and mis-report it as 400 "invalid JSON" (ADR-1075 bug A).
+        raise
     except Exception as exc:
         _log_with_rid(logging.WARNING, f"invalid JSON body: {exc}", request_id)
         metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="400").inc()
@@ -448,6 +453,31 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
             status=400,
             content_type="application/json",
             text=json.dumps({"error": f"invalid JSON: {exc}", "request_id": request_id}),
+        )
+
+    # Reject non-object JSON payloads (null, arrays, scalars).  ``request.json()``
+    # succeeds for any valid JSON type; a non-dict body would cause a TypeError
+    # on the ``f not in body`` membership check below — uncaught and thus an
+    # uncontrolled 500 (ADR-1075 bug B).
+    if not isinstance(body, dict):
+        _log_with_rid(
+            logging.WARNING,
+            f"expected JSON object, got {type(body).__name__}",
+            request_id,
+        )
+        metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="400").inc()
+        return aiohttp.web.Response(
+            status=400,
+            content_type="application/json",
+            text=json.dumps(
+                {
+                    "error": (
+                        f"expected JSON object, got {type(body).__name__}; "
+                        "request body must be a JSON object"
+                    ),
+                    "request_id": request_id,
+                }
+            ),
         )
 
     # Validate required fields.

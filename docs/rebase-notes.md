@@ -45248,3 +45248,7 @@ public API or ABI change.
 no rebase impact: changes confined to `core/src/feature/metal/float_ms_ssim_metal.mm`
 and `core/src/metal/picture_import.mm`. MTLBuffer retain-count fixes only;
 no public header or ABI change.
+
+## fix/mcp-http-edge-cases (2026-06-07)
+no rebase impact: changes confined to `mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py`
+and a new test file. No C API or public header change.

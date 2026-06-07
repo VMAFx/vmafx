@@ -128,7 +128,9 @@ The vmaf JSON payload plus a `request_id` field:
 
 | Status | Condition |
 |---|---|
-| `400` | Missing required fields, invalid JSON body, or path outside allowlisted roots |
+| `400` | Missing required fields, invalid JSON body (including non-object JSON values such as `null`, arrays, or integers), or path outside allowlisted roots |
+| `401` | Missing or invalid `Authorization: Bearer` token (when auth is enabled) |
+| `413` | Request body exceeds 4 MiB (enforced by both `Content-Length` pre-flight and `client_max_size` for chunked bodies) |
 | `500` | Scoring subprocess failed |
 
 ---
