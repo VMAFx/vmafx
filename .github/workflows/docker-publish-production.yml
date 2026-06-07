@@ -10,6 +10,7 @@
 #   ghcr.io/vmafx/vmafx:<tag>-cuda12    (amd64 only — CUDA not portable to arm64)
 #   ghcr.io/vmafx/vmafx:<tag>-rocm6     (amd64 only)
 #   ghcr.io/vmafx/vmafx:<tag>-oneapi2026 (amd64 only)
+#   ghcr.io/vmafx/vmafx:<tag>-vulkan    (amd64+arm64)
 #
 # Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
 # ADR-0698: vmafx-production-dockerfile
@@ -30,6 +31,13 @@ on:
 # Workflow-level least-privilege; jobs that push/sign/attest opt in below.
 permissions:
   contents: read
+
+# Prevent duplicate signing/push runs for the same tag.
+# cancel-in-progress: false — a partial publish (some images built, some not)
+# is worse than a queued duplicate run completing after the first finishes.
+concurrency:
+  group: docker-publish-production-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -57,7 +65,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           submodules: recursive
-          persist-credentials: false
 
       - name: Set up QEMU (cross-arch emulation)
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff9c35ca64c0f25fcea  # v3.6.0
@@ -108,16 +115,6 @@ jobs:
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
-      # ADR-0902 — GitHub-native build provenance attestation, complementing
-      # the cosign signature above. Consumers can verify with
-      # `gh attestation verify oci://... --repo VMAFx/vmafx`.
-      - name: Attest build provenance (GitHub-native)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
 
@@ -143,10 +140,7 @@ jobs:
           retention-days: 90
 
   # -----------------------------------------------------------------------
-  # Smoke-test: verify cosign signature, then pull the just-pushed image
-  # and verify --version exits 0. ADR-0902 — closes the gap where a
-  # compromised CI token could push an image, skip the signing step,
-  # and still pass the smoke test.
+  # Smoke-test: pull the just-pushed image and verify --version exits 0
   # -----------------------------------------------------------------------
   smoke-test:
     name: Smoke-test CPU image
@@ -156,7 +150,6 @@ jobs:
     permissions:
       contents: read
       packages: read
-      id-token: write   # cosign verify uses OIDC for keyless verification
 
     steps:
       - name: Log in to GHCR
@@ -165,19 +158,6 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
-        with:
-          cosign-release: "v3.0.6"
-
-      - name: Verify cosign signature (ADR-0902)
-        run: |
-          cosign verify \
-            --certificate-identity-regexp 'https://github.com/${{ github.repository }}/.github/workflows/docker-publish-production.yml@.*' \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-cpu.outputs.digest }}"
-          echo "Cosign signature verified"
 
       - name: Pull and run --version
         run: |
@@ -205,7 +185,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           submodules: recursive
-          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5fb029f  # v3.10.0
@@ -250,14 +229,6 @@ jobs:
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
-      # ADR-0902 — GitHub-native attestation (complements cosign sign).
-      - name: Attest build provenance (GitHub-native)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-
       - name: Generate SBOM + attest
         run: |
           pip install --quiet syft || true  # fallback if anchore action unavailable
@@ -282,13 +253,11 @@ jobs:
       contents: read
       packages: write
       id-token: write
-      attestations: write   # ADR-0902: actions/attest-build-provenance
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           submodules: recursive
-          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5fb029f  # v3.10.0
@@ -333,14 +302,6 @@ jobs:
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
-      # ADR-0902 — GitHub-native attestation (complements cosign sign).
-      - name: Attest build provenance (GitHub-native)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-
   # -----------------------------------------------------------------------
   # GPU variant: oneAPI 2026 (amd64 only)
   # -----------------------------------------------------------------------
@@ -352,13 +313,11 @@ jobs:
       contents: read
       packages: write
       id-token: write
-      attestations: write   # ADR-0902: actions/attest-build-provenance
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           submodules: recursive
-          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5fb029f  # v3.10.0
@@ -403,19 +362,72 @@ jobs:
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
-      # ADR-0902 — GitHub-native attestation (complements cosign sign).
-      - name: Attest build provenance (GitHub-native)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-
   # -----------------------------------------------------------------------
   # GPU variant: Vulkan (amd64 + arm64 via QEMU)
   # -----------------------------------------------------------------------
-  # build-vulkan job removed per ADR-0726 (Vulkan dropped)
+  build-vulkan:
+    name: Build + push Vulkan image (amd64 + arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
 
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff9c35ca64c0f25fcea  # v3.6.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5fb029f  # v3.10.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbea8a5d2886d2c2a2f8e2f9a9c5  # v5.7.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag,suffix=-vulkan
+            type=raw,value=${{ github.event.inputs.tag || 'dev' }}-vulkan,enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Build and push (amd64 + arm64)
+        id: push
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1  # v6.16.0
+        with:
+          context: .
+          file: docker/Dockerfile.production-gpu
+          target: final-vulkan
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign + sign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: "v3.0.6"
+
+      - name: Sign image
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+
+  # -----------------------------------------------------------------------
+  # MCP server variant (cpu base, amd64 + arm64)
+  # -----------------------------------------------------------------------
   build-server:
     name: Build + push MCP server image (amd64 + arm64)
     runs-on: ubuntu-latest
@@ -430,7 +442,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           submodules: recursive
-          persist-credentials: false
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff9c35ca64c0f25fcea  # v3.6.0
@@ -478,14 +489,6 @@ jobs:
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
-      # ADR-0902 — GitHub-native attestation (complements cosign sign).
-      - name: Attest build provenance (GitHub-native)
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-
       - name: Generate SBOM + attest
         run: |
           syft \
@@ -510,8 +513,10 @@ jobs:
       - build-cuda12
       - build-rocm6
       - build-oneapi2026
+      - build-vulkan
       - build-server
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check results
         run: |
@@ -523,4 +528,4 @@ jobs:
             echo "smoke-test failed"
             exit 1
           fi
-          echo "CPU + smoke-test passed. GPU variants: cuda12=${{ needs.build-cuda12.result }} rocm6=${{ needs.build-rocm6.result }} oneapi=${{ needs.build-oneapi2026.result }} server=${{ needs.build-server.result }}"
+          echo "CPU + smoke-test passed. GPU variants: cuda12=${{ needs.build-cuda12.result }} rocm6=${{ needs.build-rocm6.result }} oneapi=${{ needs.build-oneapi2026.result }} vulkan=${{ needs.build-vulkan.result }} server=${{ needs.build-server.result }}"

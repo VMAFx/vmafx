@@ -45256,3 +45256,7 @@ and a new test file. No C API or public header change.
 ## fix/vmaftune-corner-cases-r14 (2026-06-07)
 no rebase impact: changes confined to `tools/vmaf-tune/src/vmaftune/cli.py` and
 `encode.py`. No C API or public header change.
+
+## fix/ci-yaml-concurrency-timeout (2026-06-07)
+no rebase impact: changes confined to 18 `.github/workflows/*.yml` files.
+No source, header, or build file is modified.

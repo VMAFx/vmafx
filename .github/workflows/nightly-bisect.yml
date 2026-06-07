@@ -12,13 +12,13 @@ on:
     - cron: "37 4 * * *"  # 04:37 UTC, after nightly.yml's 03:17 jobs settle
   workflow_dispatch:
 
-concurrency:
-  group: nightly-bisect-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
   issues: write  # for sticky-comment editing on #40
+
+concurrency:
+  group: nightly-bisect-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   BISECT_TRACKER_ISSUE: "40"
@@ -31,13 +31,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
 
       - name: Set up Python 3.12
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
-          python-version: "3.12"
+          python-version: "3.14.5"
 
       - name: Install ai/ + onnxruntime
         run: |

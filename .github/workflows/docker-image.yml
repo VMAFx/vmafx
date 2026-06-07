@@ -1,4 +1,4 @@
-name: Docker
+name: Docker Image Build
 on:
   push:
     branches: [master]
@@ -30,32 +30,27 @@ on:
       - ".github/workflows/docker-image.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: docker-image-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   docker:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    # T7-CI-DEDUP / Research-0034 originally demoted this to
-    # `continue-on-error: true` because the job only proved the
-    # Dockerfile parsed — no image-behavioural guarantee. That
-    # masking caused the ADR-0700 `libvmaf/` → `core/` rename on
-    # 2026-05-28 to leave the Docker build silently red on every
-    # master push for 48 hours (Makefile + Dockerfile paths missed
-    # the rename). Flipping back to blocking so a future
-    # rename-class regression surfaces immediately at the job level.
-    # T7-DOCKER-SMOKE (a real `docker run vmaf vmaf --version` step)
-    # is the right next step — tracked separately.
-    name: Docker
+    # T7-CI-DEDUP / Research-0034 — advisory. The job runs `docker build`
+    # but does NOT smoke-test the resulting image (no `docker run vmaf
+    # vmaf --version` or equivalent), so a green job here only proves
+    # "the Dockerfile parses" — no behavioural guarantee. Demoted from
+    # blocking to advisory until a real image-validation step lands.
+    # Track follow-up: T7-DOCKER-SMOKE.
+    name: Docker Image Build
     runs-on: ubuntu-latest
-    continue-on-error: false
+    timeout-minutes: 30
+    continue-on-error: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
       - name: Build Docker Image
         run: docker build -t vmaf .

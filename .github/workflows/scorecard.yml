@@ -16,10 +16,16 @@ on:
 
 permissions: read-all
 
+# Prevent duplicate scorecard uploads for the same push/schedule fire.
+# cancel-in-progress: false preserves the in-flight attestation publish step.
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   analysis:
     name: Scorecard analysis
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       security-events: write     # upload SARIF to the Security tab

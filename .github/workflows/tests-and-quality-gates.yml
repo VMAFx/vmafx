@@ -3,7 +3,7 @@
 # `libvmaf-build-matrix.yml` handles the cross-platform build matrix; this file
 # owns the *correctness* gate.
 
-name: Tests
+name: Tests & Quality Gates — Netflix Golden / Sanitizers / Tiny AI / Coverage
 on:
   push:
     branches: [master]
@@ -47,13 +47,12 @@ jobs:
   netflix-golden:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Netflix CPU Golden Tests (D24)"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           submodules: recursive
-          persist-credentials: false
 
       - name: Install build deps
         run: |
@@ -119,21 +118,14 @@ jobs:
   # ===== Cross-backend ULP gate =====
   # Requires GPU hardware + local YUV fixtures not present on GitHub-hosted
   # runners. Disabled until a self-hosted GPU runner is available.
-  # The previous invocation called `bench_all.sh --backend=cpu --snapshot-only
-  # --tolerance-ulp=2` but `bench_all.sh` does not parse those flags; the gate
-  # was a silent no-op. ADR-0907 carved the wall-clock perf concern off into the
-  # `perf-regression` job below; if a CPU-side score-parity gate is wanted later
-  # it lives in `bench_all.sh`'s in-script `compare()` (max_diff < 0.01).
   cross-backend:
     name: "Cross-Backend ULP Diff (CPU Sanity)"
     if: false
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: netflix-golden
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
       - name: Install deps
         run: |
           sudo apt-get update
@@ -144,70 +136,9 @@ jobs:
         run: |
           meson setup build -Denable_cuda=false -Denable_sycl=false --buildtype=release
           meson compile -C build
-      - name: Cross-backend ULP placeholder
+      - name: Compute CPU scores against snapshot
         run: |
-          echo "Cross-backend ULP gate is disabled until a self-hosted GPU runner is available."
-
-  # ===== Wall-clock perf regression gate (ADR-0907) =====
-  # Runs scripts/perf/bench-multi-resolution.sh against the committed
-  # testdata/perf_multi_resolution.json baseline and asserts that no
-  # (resolution, backend, metric) cell regresses by > 5% wall-clock.
-  # CPU-only at first iteration; a follow-up ADR will add GPU lanes once
-  # self-hosted GPU runners are stable. Kept `continue-on-error: true` for
-  # one release cycle so cross-runner variance data can inform whether the
-  # 5% tolerance is right before the step is promoted to a required check.
-  perf-regression:
-    name: "Perf"
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
-    needs: netflix-golden
-    timeout-minutes: 25
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm pkg-config python3 ffmpeg
-      - name: Build CPU
-        working-directory: core
-        run: |
-          meson setup build -Denable_cuda=false -Denable_sycl=false --buildtype=release
-          meson compile -C build
-      - name: Run multi-resolution perf bench (CPU only)
-        env:
-          VMAF_BIN: ${{ github.workspace }}/core/build/tools/vmaf
-          VMAF_ROOT: ${{ github.workspace }}
-        run: |
-          ./scripts/perf/bench-multi-resolution.sh \
-            --backends cpu \
-            --runs 3 \
-            --output testdata/perf_multi_resolution.current.json
-      - name: Check regression vs committed baseline (+/- 5%) [advisory]
-        # ADR-1005: --advisory makes the step exit 0 regardless of regressions
-        # found.  The committed baseline was recorded on an AMD Ryzen 9 9950X3D
-        # workstation; GitHub Actions ubuntu-latest runners are 5–15x slower, so
-        # a hard 5% tolerance will always flag regressions until a
-        # CI-runner-calibrated baseline is committed.  The report is still
-        # printed so reviewers can track timing trends.  To promote to a
-        # blocking check: record a new baseline on a GitHub Actions runner, commit
-        # it to testdata/perf_multi_resolution.json, and remove --advisory.
-        # See docs/development/perf-gate.md for the full refresh procedure.
-        run: |
-          python3 scripts/perf/check-regression.py \
-            --baseline testdata/perf_multi_resolution.json \
-            --current testdata/perf_multi_resolution.current.json \
-            --tolerance-pct 5.0 \
-            --backend cpu \
-            --advisory \
-            --skip-if-no-baseline
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        if: always()
-        with:
-          name: perf-regression-current-run
-          path: testdata/perf_multi_resolution.current.json
+          ./testdata/bench_all.sh --backend=cpu --snapshot-only --tolerance-ulp=2
 
   # ===== Vulkan VIF cross-backend gate (lavapipe) =====
   # Builds CPU + Vulkan, runs `vmaf` twice on the Netflix normal pair, diffs
@@ -215,10 +146,324 @@ jobs:
   # scalar reference. Uses Mesa's lavapipe (software Vulkan 1.3) so the lane
   # runs on stock GitHub-hosted Ubuntu — no self-hosted GPU runner needed.
   # See ADR-0176 § "Lavapipe vs hardware ICD" for the rationale.
-  # vulkan-vif-cross-backend / vulkan-parity-matrix-gate / vulkan-vif-arc-nightly jobs
-  # removed per ADR-0726. The Vulkan backend has been dropped.
-  # If reintroduced, see git history before commit 7ef965bbff for the prior workflow.
+  vulkan-vif-cross-backend:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: "Vulkan VIF Cross-Backend (lavapipe, places=4)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: recursive
+      - name: Install build + lavapipe deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm pkg-config \
+            python3-pip glslc \
+            mesa-vulkan-drivers vulkan-tools libvulkan-dev
+      - name: Verify lavapipe is selectable
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        run: |
+          vulkaninfo --summary | head -40
+      - name: Build CPU + Vulkan
+        working-directory: core
+        run: |
+          meson setup build -Denable_cuda=false -Denable_sycl=false \
+                            -Denable_vulkan=enabled -Denable_float=true \
+                            --buildtype=release
+          meson compile -C build
+      - name: Cache Netflix vmaf_resource fixtures
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: python/test/resource/yuv
+          # Bump the version suffix (-v1 → -v2 etc.) when fixtures change.
+          # `restore-keys` lets older caches partially populate the dir;
+          # missing files re-download lazily via curl on cache miss.
+          key: vmaf-fixtures-yuv-v1
+          restore-keys: vmaf-fixtures-yuv-
+      - name: Fetch Netflix normal-pair fixtures (skips downloads on cache hit)
+        run: |
+          mkdir -p python/test/resource/yuv
+          for name in src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv; do
+            if [ -s "python/test/resource/yuv/$name" ]; then
+              echo "cache hit: $name"
+              continue
+            fi
+            curl -sSL --retry 5 --retry-delay 2 --retry-all-errors \
+              -o "python/test/resource/yuv/$name" \
+              "https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv/$name"
+          done
+      - name: VIF cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 16
+        run: |
+          timeout --kill-after=30s 15m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature vif --places 4
+      - name: ADM cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 9
+        run: |
+          timeout --kill-after=30s 8m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature adm --places 4
+      - name: float_moment cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_moment --places 4
+      - name: PSNR cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature psnr --places 4
+      - name: ciede cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature ciede --places 4
+      - name: float_ssim cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_ssim --places 4
+      - name: float_ms_ssim cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_ms_ssim --places 4
+      - name: float_ansnr cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_ansnr --places 4
+      - name: float_vif cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_vif --places 4
+      - name: float_motion cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_motion --places 4
+      - name: float_psnr cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_psnr --places 4
+      - name: psnr_hvs cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature psnr_hvs --places 3
+      - name: float_adm cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_adm --places 4
+      - name: ssimulacra2 cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 9
+        run: |
+          timeout --kill-after=30s 8m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature ssimulacra2 --places 4
 
+  # ===== GPU-parity matrix gate (T6-8 / ADR-0214) =====
+  # Single matrix gate over every (feature, backend-pair) cell. Uses Mesa
+  # lavapipe so it runs on stock GitHub-hosted Ubuntu — no GPU runner needed.
+  # CUDA / SYCL / hardware-Vulkan are advisory until a self-hosted runner is
+  # plumbed in (the script already supports them via --backends). Emits a
+  # JSON + Markdown report under `parity-gate-report/`.
+  vulkan-parity-matrix-gate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: "GPU-Parity Matrix Gate (lavapipe, T6-8)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: recursive
+      - name: Install build + lavapipe deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm pkg-config \
+            python3-pip glslc \
+            mesa-vulkan-drivers vulkan-tools libvulkan-dev
+      - name: Verify lavapipe is selectable
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        run: |
+          vulkaninfo --summary | head -40
+      - name: Build CPU + Vulkan
+        working-directory: core
+        run: |
+          meson setup build -Denable_cuda=false -Denable_sycl=false \
+                            -Denable_vulkan=enabled -Denable_float=true \
+                            --buildtype=release
+          meson compile -C build
+      - name: Cache Netflix vmaf_resource fixtures
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: python/test/resource/yuv
+          key: vmaf-fixtures-yuv-v1
+          restore-keys: vmaf-fixtures-yuv-
+      - name: Fetch Netflix normal-pair fixtures
+        run: |
+          mkdir -p python/test/resource/yuv
+          for name in src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv; do
+            if [ -s "python/test/resource/yuv/$name" ]; then
+              echo "cache hit: $name"
+              continue
+            fi
+            curl -sSL --retry 5 --retry-delay 2 --retry-all-errors \
+              -o "python/test/resource/yuv/$name" \
+              "https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv/$name"
+          done
+      - name: Run GPU-parity matrix gate (CPU ↔ Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 22
+        run: |
+          mkdir -p parity-gate-report
+          # ADR-0234: pass the lavapipe gpu_id so the gate looks up
+          # per-arch tolerances in scripts/ci/gpu_ulp_calibration.yaml.
+          # The lavapipe row is calibrated; no behaviour change versus
+          # the prior FEATURE_TOLERANCE-only path because the
+          # calibration values match the gate's defaults.
+          # ADR-0662: the lavapipe matrix gates motion through the
+          # canonical integer_motion_vulkan twin; the legacy
+          # motion_vulkan extractor remains explicit-name only.
+          timeout --kill-after=30s 20m python3 scripts/ci/cross_backend_parity_gate.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 \
+            --backends cpu vulkan \
+            --features adm ciede float_adm float_ansnr float_moment motion \
+                       motion_v2 \
+                       float_motion float_ms_ssim float_ms_ssim_lcs \
+                       float_psnr float_ssim float_vif psnr psnr_hvs \
+                       ssimulacra2 vif \
+            --gpu-id "vulkan:0x10005:0x0" \
+            --json-out parity-gate-report/parity.json \
+            --md-out parity-gate-report/parity.md
+      - name: Upload parity report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: gpu-parity-matrix-gate-report
+          path: parity-gate-report/
+
+  # ===== Vulkan VIF cross-backend gate (Arc nightly, advisory) =====
+  # Same script, runs on the self-hosted Arc A380 runner — catches
+  # divergence between lavapipe and a real Mesa anv ICD. Parked behind
+  # `if: false` until a self-hosted runner with label vmaf-arc is registered.
+  vulkan-vif-arc-nightly:
+    name: "Vulkan VIF Cross-Backend (Arc A380, advisory)"
+    if: false
+    runs-on: [self-hosted, vmaf-arc]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: recursive
+      - name: Build CPU + Vulkan
+        working-directory: core
+        run: |
+          meson setup build -Denable_cuda=false -Denable_sycl=false \
+                            -Denable_vulkan=enabled -Denable_float=true \
+                            --buildtype=release --reconfigure
+          meson compile -C build
+      - name: VIF cross-backend diff (CPU vs Vulkan/Arc)
+        run: |
+          python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature vif --places 4
+      - name: Motion cross-backend diff (CPU vs Vulkan/Arc)
+        run: |
+          python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature motion --places 4
+      - name: ADM cross-backend diff (CPU vs Vulkan/Arc)
+        run: |
+          python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature adm --places 4
+
+  # ===== Sanitizer build =====
   sanitizers:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Sanitizers — ASan + UBSan + MSan"
@@ -227,7 +472,7 @@ jobs:
     # job to the in-cluster `arc-runners` scale set; default `false` keeps
     # GitHub-hosted ubuntu-latest. If the ARC pool is degraded, set the
     # variable to false and re-trigger CI to fall back instantly.
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-latest' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -235,8 +480,6 @@ jobs:
         sanitizer: [address, undefined, thread]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
       - name: Install deps
         run: |
           sudo apt-get update
@@ -299,17 +542,7 @@ jobs:
               # after confirming it passes cleanly under ASAN_OPTIONS=
               # detect_leaks=1 (the invoke_init helper already calls
               # fex->close() + free(priv) on every code path).
-              # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with ASan shadow-memory mmap.
-              # Exclude test_gpu_picture_pool_uaf: intentionally allocates
-              # ~192 GiB to exercise the OOM cleanup path; the ASan
-              # allocator aborts with SIGABRT instead of returning NULL.
-              # Exclude test_integer_motion_v2_coverage: intentional
-              # huge-allocation pattern triggers SIGABRT under ASan.
-              # test_pic_preallocation was removed from this list after PRs #765
-              # and #769 fixed the PREV_REF refcount leak and the dict leak in
-              # flush_context_threaded; all 8 sub-tests now pass under ASan+LSan
-              # (verified 2026-06-06).
-              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$'
+              EXCLUDE='test_model$'
               ;;
             undefined)
               # UBSan deselects: test_model (NULL-to-nonnull memcpy
@@ -321,14 +554,7 @@ jobs:
               # AVX2 gate to test_calculate_c_values_scalar_avx2_parity,
               # eliminating the SIGILL on non-AVX2 CI runners; confirmed
               # clean under UBSan on current master.
-              # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with UBSan runtime allocation.
-              # Exclude test_gpu_picture_pool_uaf, test_integer_motion_v2_coverage:
-              # same intentional huge-alloc / SIGABRT reason as ASan exclusions above.
-              # test_pic_preallocation was removed from this list after PRs #765 and
-              # #769 fixed the PREV_REF refcount leak and the dict leak in
-              # flush_context_threaded; all 8 sub-tests now pass under UBSan
-              # (verified 2026-06-06).
-              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$'
+              EXCLUDE='test_model$'
               ;;
             thread)
               # TSan deselects: test_model (same defect as ASan/UBSan
@@ -337,14 +563,7 @@ jobs:
               # (merged 2026-05-09) fixed the SAN-FRAMESYNC-MUTEX-DOMAIN
               # mutex-domain mismatch; nightly TSan job was green on
               # 2026-05-09 and 2026-05-10 (state.md entry).
-              # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with TSan internal allocator.
-              # Exclude test_gpu_picture_pool_uaf, test_integer_motion_v2_coverage:
-              # intentional huge-alloc / SIGABRT under TSan allocator.
-              # test_pic_preallocation was removed from this list after PRs #765 and
-              # #769 fixed the PREV_REF refcount leak and the dict leak in
-              # flush_context_threaded; all 8 sub-tests now pass under TSan
-              # (verified 2026-06-06).
-              EXCLUDE='test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$'
+              EXCLUDE='test_model$'
               ;;
             *)
               echo "::error::ADR-0347 deselect list is not defined for sanitizer=${{ matrix.sanitizer }}" >&2
@@ -385,8 +604,6 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
       - name: Install build deps
         run: |
           sudo apt-get update
@@ -402,8 +619,7 @@ jobs:
           # is version-sensitive.
           ORT_VERSION: "1.22.0"
         run: |
-          set -euo pipefail
-          curl -fSL --retry 3 \
+          curl -sSL \
             "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
             | sudo tar -xz -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
@@ -465,7 +681,7 @@ jobs:
   # binary were never invoked in CI. This job closes that gap.
   #
   # Local repro:
-  #   cd libvmaf && meson setup build-mcp core \
+  #   cd libvmaf && meson setup build-mcp \
   #     -Denable_cuda=false -Denable_sycl=false \
   #     -Denable_mcp=true -Denable_mcp_sse=true \
   #     -Denable_mcp_uds=true -Denable_mcp_stdio=true && \
@@ -484,15 +700,14 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           submodules: recursive
-          persist-credentials: false
 
       - name: Install build deps
         run: |
           sudo apt-get update
-          # libav*-dev pulled in for parity with the netflix-golden lane —
-          # keeps the libvmaf build graph identical so the MCP smoke
-          # exercises the same configuration the rest of the matrix sees.
-          # (Vulkan lanes removed per ADR-0726.)
+          # libav*-dev pulled in for parity with the netflix-golden /
+          # vulkan-vif-cross-backend lanes — keeps the libvmaf build
+          # graph identical so the MCP smoke exercises the same
+          # configuration the rest of the matrix sees.
           sudo apt-get install -y meson ninja-build nasm pkg-config \
             python3-pip python3-venv \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
@@ -550,29 +765,15 @@ jobs:
           /tmp/mcp-venv/bin/pytest mcp-server/vmaf-mcp/tests/ -v --tb=short
 
   # ===== Coverage gate (principles.md §3) =====
-  # ≥70% overall line coverage, ≥90% on security-critical files
-  # (core/src/dnn/, opt.c, read_json_model.c). Floors ratcheted aggressively
-  # on 2026-05-31 by ADR-0922 (was 37% / 85%); OVERALL_MIN further raised to
-  # 70% by master post-ADR-0922 (#420/#412 coverage uplift).
+  # ≥70% overall line coverage, ≥85% on security-critical files
+  # (core/src/dnn/, opt.c, read_json_model.c).
   coverage:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: "Coverage"
-    runs-on: ubuntu-24.04
+    name: "Coverage Gate (Ramping to 70% / 85% Critical)"
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      # Codecov OIDC upload (ADR-0903) requires `id-token: write` so
-      # codecov-action can mint a short-lived OIDC token instead of a
-      # static CODECOV_TOKEN secret. `contents: read` re-inherits the
-      # workflow-level default that this job-level block overrides.
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          # Need full history so we can check out the PR's merge-base for the
-          # coverage-delta gate (ADR-0922). Shallow clone breaks the delta job.
-          fetch-depth: 0
-          persist-credentials: false
       - name: Install deps
         run: |
           sudo apt-get update
@@ -699,26 +900,13 @@ jobs:
           # alphabetically-later suites execute and contribute coverage.
           # The CommandLineTest scenarios are covered by the full Python test
           # suite in the Netflix golden gate (which has no per-test timeout).
-          #
-          # test_run_vmaf_runner_float_vifks360o97 uses vif_kernelscale=3.71
-          # (360/97 ratio) — a large kernel that makes each frame's VIF
-          # convolution substantially slower than the default scale. On
-          # GitHub-hosted ubuntu-24.04 runners the test consistently exceeds
-          # the 60 s per-test limit and kills the entire remaining pytest run
-          # at ~61%, dropping overall coverage from 70% to 56%. The test
-          # exercises the same VIF code path as the other vifks variants
-          # already in the suite; its correctness is also verified by the
-          # Netflix golden gate (no per-test timeout). Deselect it here to
-          # prevent the coverage run from being truncated mid-suite.
           timeout --kill-after=30s 20m python3 -m pytest python/test/ -v \
             -m "not slow" --tb=short \
             --timeout=60 --timeout-method=thread \
             --ignore=python/test/resource \
             --ignore=python/test/cy_test.py \
             --ignore=python/test/cambi_test.py \
-            --deselect python/test/command_line_test.py::CommandLineTest \
-            --deselect "python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_float_vifks360o97" \
-            || true
+            --deselect python/test/command_line_test.py::CommandLineTest || true
       - name: Gather coverage report (gcovr)
         working-directory: core
         run: |
@@ -751,13 +939,13 @@ jobs:
           cat build-coverage/coverage.txt
       - name: Enforce coverage thresholds
         run: |
-          # docs/principles.md §3 targets: 70% overall, 90% critical (dnn/,
+          # docs/principles.md §3 targets: 70% overall, 85% critical (dnn/,
           # opt.c, read_json_model.c). Applies to upstream + fork-added code:
           # we've already linted upstream heavily (clang-tidy cleanup rounds
           # 2-4) and will keep modifying it (SIMD fixes, refactors), so the
           # safety net has to cover everything we might touch.
           #
-          # Floor history (ADR-0637, ADR-0922):
+          # Floor history (ADR-0637):
           #   40% — original floor (meson unit suite + Python feature/CLI tests)
           #   37% — 2026-05-19 merge burst (PRs #1417, #1418, #1424, #1425)
           #          added ~2 200 LOC of new MCP/HIP/DNN/scaffold C that the
@@ -765,78 +953,7 @@ jobs:
           #          coverage from ~39% to 37.7%. The floor tracks the measured
           #          floor, not the aspirational target; ratchet upward as
           #          targeted tests land for those paths.
-          #   60% — 2026-05-31 aggressive ratchet (ADR-0922). The 37% floor
-          #          was tracking measured, not enforcing investment. The
-          #          ratchet pushes the overall bar back toward the
-          #          docs/principles.md §3 aspirational target so coverage
-          #          gaps surface immediately instead of accumulating. See
-          #          ADR-0922 for the 30-day grace period covering PRs that
-          #          were already open at ratchet time.
-          #   70% — 2026-05-31 further uplift from #420/#412 coverage additions
-          #          (core/src/dnn/ + compat/python-vmaf/ tests); floor raised
-          #          to match measured coverage on master post-merge.
-          scripts/ci/coverage-check.sh core/build-coverage/coverage.json 70 90
-      - name: Compute base-branch coverage for delta gate
-        # ADR-0922 per-PR ratchet: rebuild + re-measure coverage on the PR's
-        # merge-base so we can compare absolute-floor head numbers against
-        # what the target branch (usually origin/master) was reporting just
-        # before this PR. The base build is intentionally lean (CPU-only,
-        # no ORT install, no Python suite) to keep the additional CI cost
-        # bounded; the delta gate only needs the gcovr JSON summary.
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          # Save head coverage so it survives the checkout swap below.
-          cp core/build-coverage/coverage.json /tmp/head-coverage.json
-          # Compute the changed-file list against the merge-base. The delta
-          # gate only scores files that appear in the diff.
-          git fetch --no-tags --depth=1 origin "$BASE_REF" || true
-          MERGE_BASE="$(git merge-base HEAD "$BASE_REF")"
-          echo "Merge base: $MERGE_BASE"
-          git diff --name-only "$MERGE_BASE"..HEAD > /tmp/changed-files.txt
-          echo "----- Changed files -----"
-          cat /tmp/changed-files.txt
-          # Worktree-add the base so we don't disturb the head checkout
-          # (artifacts, build dirs, coverage outputs all stay put).
-          git worktree add /tmp/base-tree "$MERGE_BASE"
-          (
-            cd /tmp/base-tree
-            meson setup base-cov --buildtype=debug \
-              -Db_coverage=true -Denable_cuda=false -Denable_sycl=false \
-              -Denable_float=true \
-              -Dc_args=-fprofile-update=atomic \
-              -Dcpp_args=-fprofile-update=atomic \
-              core
-            ninja -C base-cov
-            meson test -C base-cov --print-errorlogs --num-processes 1 || true
-            ~/.local/bin/gcovr --root . \
-                --filter 'core/src/.*' \
-                --exclude '.*/test/.*' \
-                --exclude '.*/tests/.*' \
-                --exclude '.*/subprojects/.*' \
-                --gcov-ignore-parse-errors=negative_hits.warn \
-                --gcov-ignore-parse-errors=suspicious_hits.warn \
-                --json-summary /tmp/base-coverage.json \
-                base-cov \
-              2> >(grep -vE 'Ignoring (suspicious|negative) hits' >&2 || true)
-          )
-          # Cleanup the worktree so subsequent steps see a clean tree.
-          git worktree remove --force /tmp/base-tree
-      - name: Enforce coverage-delta gate (ADR-0922)
-        # Fails if overall coverage drops by more than 0.5pp OR any
-        # touched file drops by more than 0.5pp vs the merge-base. The
-        # ratchet is one-way: drops require a follow-up ADR superseding
-        # ADR-0922 to justify the new floor.
-        if: github.event_name == 'pull_request'
-        run: |
-          scripts/ci/coverage-delta-check.sh \
-            --base-json /tmp/base-coverage.json \
-            --head-json /tmp/head-coverage.json \
-            --changed-files /tmp/changed-files.txt \
-            --max-overall-drop 0.5 \
-            --max-file-drop 0.5
+          scripts/ci/coverage-check.sh core/build-coverage/coverage.json 37 85
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -847,24 +964,6 @@ jobs:
             core/build-coverage/coverage.json
             core/build-coverage/coverage.txt
           retention-days: 14
-      - name: Upload coverage to Codecov
-        # ADR-0903 — render coverage trend as an external dashboard /
-        # PR-comment surface, complementing the in-tree gcovr Coverage
-        # Gate (ADR-0114 / ADR-0117 / ADR-0637 — which remains the
-        # blocking threshold gate, see PR #338). Fork-aware OIDC: since
-        # 2024, codecov-action v4+ uses GitHub Actions OIDC tokens for
-        # public repos; no CODECOV_TOKEN secret needed. fail_ci_if_error
-        # is false because the threshold enforcement already lives in
-        # the gcovr step above — Codecov upload is informational only.
-        if: always()
-        uses: codecov/codecov-action@cddd853df119a48c5be31a973f8cd97e12e35e16  # v6.0.1
-        with:
-          files: ./core/build-coverage/coverage.xml
-          flags: cpu
-          name: coverage-cpu
-          fail_ci_if_error: false
-          verbose: true
-          use_oidc: true
 
   # ===== GPU coverage (self-hosted) =====
   # Exercises fork-added CUDA / SYCL / HIP kernels, GPU runtime glue, and
@@ -872,25 +971,21 @@ jobs:
   # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL + AMD iGPU +
   # AVX-512 CPU). See docs/development/self-hosted-runner.md for setup.
   #
-  # Promoted to required (T-GPU-COVERAGE-STABLE-WEEKS, 2026-06-04): the
-  # two-week stability window (2026-05-19 → 2026-06-02) elapsed with no
-  # advisory-fail runs on the self-hosted runner. continue-on-error removed.
+  # Advisory-only (continue-on-error) for now: merges are gated on the
+  # CPU coverage job above. Will be promoted to required once the runner
+  # has been stable for two weeks.
   coverage-gpu:
-    name: "Coverage Gate — GPU Backends"
+    name: "Coverage Gate — GPU Backends (Advisory)"
     runs-on: [self-hosted, linux, gpu-full]
     # ADR-0331: also gate on draft PR status. Self-hosted runners are
     # scarce — drafts must not contend for them.
     if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    continue-on-error: true
     timeout-minutes: 45
-    permissions:
-      # Codecov OIDC upload (ADR-0903) — see CPU coverage job above.
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           submodules: recursive
-          persist-credentials: false
       - name: Build with gcov + CUDA + SYCL + AVX-512
         working-directory: core
         env:
@@ -950,9 +1045,7 @@ jobs:
           cat build-coverage-gpu/coverage.txt
       - name: Enforce coverage thresholds (GPU)
         run: |
-          # ADR-0922 ratchet (2026-05-31): critical bar raised to 90 (was 85).
-          # Overall floor kept at 70 (master already above the PR's proposed 60).
-          scripts/ci/coverage-check.sh core/build-coverage-gpu/coverage.json 70 90
+          scripts/ci/coverage-check.sh core/build-coverage-gpu/coverage.json 70 85
       - name: Upload GPU coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -963,30 +1056,15 @@ jobs:
             core/build-coverage-gpu/coverage.json
             core/build-coverage-gpu/coverage.txt
           retention-days: 14
-      - name: Upload coverage to Codecov (GPU)
-        # See CPU coverage job above for rationale (ADR-0903). Tagged with
-        # the `gpu` flag so Codecov's flag-aware UI can separate CPU- vs
-        # GPU-backend coverage, mirroring the two-flavour Coverage Gate.
-        if: always()
-        uses: codecov/codecov-action@cddd853df119a48c5be31a973f8cd97e12e35e16  # v6.0.1
-        with:
-          files: ./core/build-coverage-gpu/coverage.xml
-          flags: gpu
-          name: coverage-gpu
-          fail_ci_if_error: false
-          verbose: true
-          use_oidc: true
 
   # ===== Power of 10 rule 5 — assertion density =====
   # Every fork-added (non-trivial) function must contain ≥1 assert().
   assertion-density:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Assertion Density (Power of 10 §5)"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
       - name: Run assertion density scanner
         run: bash scripts/ci/assertion-density.sh

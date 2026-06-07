@@ -18,10 +18,15 @@ on:
 
 permissions: read-all
 
+concurrency:
+  group: upstream-watcher-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ffmpeg-av1-videotoolbox:
     name: FFmpeg av1_videotoolbox encoder
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write

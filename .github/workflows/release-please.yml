@@ -10,32 +10,26 @@ on:
     branches: [master]
   workflow_dispatch:
 
-# Serialize release-please runs; back-to-back master merges must not race
-# to create duplicate release PRs or label conflicts. cancel-in-progress:
-# false because cancelling a run mid-way would leave the release PR in an
-# inconsistent state. (ADR-1035)
+permissions:
+  contents: read
+
+# Prevent duplicate release PRs for the same push. cancel-in-progress: false
+# preserves the in-flight run that may already have created or updated the
+# release PR; the queue drains naturally.
 concurrency:
   group: release-please
   cancel-in-progress: false
 
-permissions:
-  contents: read
-
 jobs:
   release-please:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     # Scoped to the one job that creates release PRs / tags; the workflow
     # default stays `contents: read` so any step added later starts from
-    # least-privilege (Scorecard TokenPermissionsID). `issues: write` is
-    # required per the release-please-action README — without it, the
-    # action fails with "Resource not accessible by integration" because
-    # release-please touches the labels API on the release PR's issue
-    # thread (label add/remove on `autorelease: pending` -> `tagged`).
+    # least-privilege (Scorecard TokenPermissionsID).
     permissions:
       contents: write
       pull-requests: write
-      issues: write
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
         id: release

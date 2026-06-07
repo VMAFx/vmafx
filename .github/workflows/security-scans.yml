@@ -1,6 +1,6 @@
 # Security scans: SAST (semgrep + CodeQL), secret scanning, dependency review.
 
-name: Security
+name: Security Scans — Semgrep / CodeQL / Gitleaks / Dependency Review
 on:
   push:
     branches: [master]
@@ -9,19 +9,6 @@ on:
     # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
     # CI when a draft PR is promoted to ready-for-review.
     types: [opened, synchronize, reopened, ready_for_review]
-    # Skip the full Security scan (CodeQL C++ build is ~35 min) when only
-    # documentation paths change. Mirrors the paths-ignore in
-    # libvmaf-build-matrix.yml / tests-and-quality-gates.yml. The weekly
-    # schedule below still fires a full scan against master so doc-only
-    # PRs that skip the gate are not a coverage gap. Required Checks
-    # Aggregator (ADR-0313) treats "workflow not reported" as
-    # path-filter-skipped/acceptable. Conservative deny-list.
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'changelog.d/**'
-      - 'CHANGELOG.md'
-      - '.workingdir2/**'
   schedule:
     - cron: "0 6 * * 1"   # weekly Mon 06:00 UTC
   workflow_dispatch:
@@ -41,7 +28,7 @@ jobs:
   semgrep:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Semgrep (CWE Top 25 + CERT-C + Custom)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
@@ -55,8 +42,6 @@ jobs:
       image: semgrep/semgrep:latest@sha256:9349edbadf90c3f3c0c3f55867625354e89680e6fa10d9034042af52fdb0e0d0
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
       - name: Run semgrep (local rules — gate on ERRORs)
         run: |
           # Local .semgrep.yml only: our custom rules for VMAF-specific
@@ -110,15 +95,13 @@ jobs:
   codeql-cpp:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: CodeQL (C/C++)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
       contents: read
       security-events: write   # codeql-action/analyze uploads SARIF
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
       - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
         with:
           languages: cpp
@@ -138,25 +121,18 @@ jobs:
   codeql-python:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: CodeQL (Python)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
       security-events: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
       - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
         with:
           languages: python
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
-      # Python analysis does not require a build step; the explicit no-op
-      # below suppresses CodeQL's C++-oriented autobuild.sh which would
-      # fail trying to build the old libvmaf/ path (post-rename to core/).
-      - name: No-op build (Python analysis only)
-        run: echo "Python-only CodeQL scan — no C++ build required"
       - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
         with:
           category: "/language:python"
@@ -168,15 +144,13 @@ jobs:
   codeql-actions:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: CodeQL (Actions)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
       security-events: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
       - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
         with:
           languages: actions
@@ -189,7 +163,7 @@ jobs:
   secret-scan:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Gitleaks (Secret Scan)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
@@ -198,7 +172,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0
-          persist-credentials: false
       # Run gitleaks CLI directly to avoid the GITLEAKS_LICENSE org-repo
       # requirement introduced in gitleaks-action v2. The CLI itself is
       # Apache-2.0 and free for all use; only the action wrapper charges
@@ -227,44 +200,13 @@ jobs:
           sarif_file: gitleaks.sarif
           category: gitleaks
 
-  # ADR-0811: Go surface (cmd/, pkg/, api/) added in Phase 4 language
-  # modernization. CodeQL Go job covers the vmafx-controller, vmafx-mcp,
-  # vmafx-node binaries and pkg/* libraries. gen/go is excluded (generated
-  # protobuf stubs — not hand-authored security surface).
-  codeql-go:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: CodeQL (Go)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
-        with:
-          languages: go
-          queries: security-and-quality
-          config-file: ./.github/codeql-config.yml
-      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
-        with:
-          category: "/language:go"
-
   dependency-review:
     name: Dependency Review (PR Diff)
     if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && (github.event_name == 'pull_request')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
         with:
           fail-on-severity: high

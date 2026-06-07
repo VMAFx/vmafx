@@ -13,13 +13,6 @@ on:
         description: "Tag to build provenance for"
         required: true
 
-# Prevent duplicate signing runs for the same tag. cancel-in-progress: false
-# because an in-flight signing job must complete — cancelling it would produce
-# a partial attestation. (ADR-1035)
-concurrency:
-  group: supply-chain-${{ github.event.inputs.tag || github.ref }}
-  cancel-in-progress: false
-
 # Default to least-privilege at the workflow level; individual jobs that
 # need `id-token: write` (Sigstore OIDC), `contents: write` (upload release
 # assets), or `attestations: write` (provenance) opt in per-job so a newly
@@ -28,10 +21,16 @@ concurrency:
 permissions:
   contents: read
 
+# Prevent duplicate signing runs for the same tag.
+# cancel-in-progress: false — a partial sign/SBOM run is worse than queuing.
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-artifacts:
     name: Build release artifacts (libvmaf.so, vmaf CLI, models)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: read
@@ -42,12 +41,6 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
           submodules: recursive
-          # build-artifacts builds binaries + uploads to actions/upload-artifact;
-          # it does not push back to git, so drop the GITHUB_TOKEN persist
-          # (ADR-0875). The downstream `sign` / `slsa-provenance` /
-          # `attach-to-release` jobs that actually write to the repo run in
-          # separate jobs and re-checkout there.
-          persist-credentials: false
       - name: Install build deps
         run: |
           sudo apt-get update
@@ -60,7 +53,7 @@ jobs:
       - name: Stage artifacts
         run: |
           mkdir -p artifacts
-          cp build/src/libvmaf.so* artifacts/
+          cp build/libvmaf/libvmaf.so* artifacts/
           cp build/tools/vmaf artifacts/
           tar czf artifacts/models.tar.gz model/
 
@@ -105,7 +98,7 @@ jobs:
   sbom:
     name: Generate SBOM (SPDX + CycloneDX)
     needs: build-artifacts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
@@ -113,8 +106,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
-          # SBOM job consumes the artifact already produced upstream; no git push.
-          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with: { name: release-artifacts, path: artifacts/ }
       - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
@@ -135,7 +126,7 @@ jobs:
   sign:
     name: Sigstore keyless sign (cosign)
     needs: build-artifacts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       id-token: write   # Sigstore keyless OIDC
@@ -183,7 +174,7 @@ jobs:
 
   mcp-build:
     name: Build vmaf-mcp wheel + sdist
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
@@ -193,8 +184,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
-          # mcp-build packages a wheel; no git push, so drop GITHUB_TOKEN.
-          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: "3.14.5"
@@ -217,7 +206,7 @@ jobs:
   mcp-sign:
     name: Sigstore keyless sign — vmaf-mcp
     needs: mcp-build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       id-token: write   # Sigstore keyless OIDC
@@ -244,7 +233,7 @@ jobs:
     name: Publish vmaf-mcp to PyPI (Trusted Publishing)
     if: github.event_name == 'release'
     needs: [mcp-build, mcp-sign]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi-publish    # user binds this to PyPI Trusted Publisher
     permissions:
@@ -263,7 +252,8 @@ jobs:
     name: Attach SBOM + signatures to GitHub Release
     if: github.event_name == 'release'
     needs: [build-artifacts, sbom, sign, slsa-provenance, mcp-build, mcp-sign]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write   # upload files to the GitHub Release
     steps:

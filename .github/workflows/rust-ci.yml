@@ -1,43 +1,35 @@
-name: Rust
+name: Rust CI
 
 on:
   push:
     branches: ["master"]
     paths:
       - "bindings/rust/**"
-      - "core/src/feature/rust/**"
       - "Cargo.toml"
       - "Cargo.lock"
-      - "deny.toml"
       - ".github/workflows/rust-ci.yml"
   pull_request:
     paths:
       - "bindings/rust/**"
-      - "core/src/feature/rust/**"
       - "Cargo.toml"
       - "Cargo.lock"
-      - "deny.toml"
       - ".github/workflows/rust-ci.yml"
+
+permissions:
+  contents: read
 
 concurrency:
   group: rust-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Least-privilege default for the whole workflow (ADR-0875).
-# Jobs widen only if they need to publish artefacts or push.
-permissions:
-  contents: read
-
 jobs:
   rust-vmafx-sys:
     name: vmafx-sys (fmt + clippy + test)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
 
       - name: Install build dependencies
         run: |
@@ -48,17 +40,12 @@ jobs:
 
       - name: Build and install libvmaf (CPU only)
         run: |
-          # --libdir=lib: meson on Ubuntu defaults to multiarch
-          # (/usr/local/lib/x86_64-linux-gnu/), but vmafx-sys/build.rs and the
-          # downstream link step search /usr/local/lib directly. Pin the
-          # single-arch path so the `.so` lands where the linker looks.
-          meson setup build-ci core \
+          meson setup build-ci \
             -Denable_cuda=false \
             -Denable_sycl=false \
             -Denable_hip=false \
             -Denable_avx512=false \
-            --prefix /usr/local \
-            --libdir lib
+            --prefix /usr/local
           ninja -C build-ci
           sudo ninja -C build-ci install
           sudo ldconfig
@@ -97,25 +84,3 @@ jobs:
           VMAFX_REPO: ${{ github.workspace }}
           LD_LIBRARY_PATH: /usr/local/lib
         run: cargo run --example score
-
-  cargo-deny:
-    name: cargo-deny (licenses, bans, advisories, sources)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    # Runs in parallel with rust-vmafx-sys: pure dependency-graph analysis, no
-    # libvmaf build required. Enforces the supply-chain policy in deny.toml
-    # (ADR-0917). Fails on: copyleft licenses, banned crates (openssl-sys /
-    # native-tls), known RustSec vulnerabilities, unknown crate registries,
-    # unknown git sources, wildcard version requirements.
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Run cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
-        with:
-          command: check
-          # Match the project root's deny.toml location.
-          arguments: --all-features

@@ -16,6 +16,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: upstream-netflix-645-hdr-model-watcher-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   poll:
     runs-on: ubuntu-24.04

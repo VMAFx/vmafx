@@ -1,4 +1,4 @@
-name: Builds
+name: libvmaf Build Matrix — Linux/macOS/Windows/ARM × CPU/SYCL/CUDA
 on:
   push:
     branches: [master]
@@ -46,11 +46,11 @@ jobs:
       matrix:
         include:
           # --- CPU-only builds ---
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: ccache gcc
             CXX: ccache g++
             name: Build — Ubuntu gcc (CPU)
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: ccache clang
             CXX: ccache clang++
             name: Build — Ubuntu clang (CPU)
@@ -73,7 +73,7 @@ jobs:
           # the matrix. Tests are skipped (meson cross-build marks
           # them SKIP 77 — host can run i686 binaries natively but
           # meson doesn't know that). See ADR-0151.
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: ccache gcc
             CXX: ccache g++
             i686: true
@@ -87,13 +87,13 @@ jobs:
           # (Linux: MS tarball pinned to 1.22.0; macOS: Homebrew) and runs
           # the meson dnn suite. macOS leg stays `experimental: true` so a
           # Homebrew ORT bump that breaks ABI doesn't block merge.
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: ccache gcc
             CXX: ccache g++
             dnn: true
             meson_extra: -Denable_dnn=enabled
             name: Build — Ubuntu gcc (CPU) + DNN
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: ccache clang
             CXX: ccache clang++
             dnn: true
@@ -107,10 +107,46 @@ jobs:
             name: Build — macOS clang (CPU) + DNN
             experimental: true
 
-          # Vulkan build-matrix rows (Ubuntu T5-1b + macOS MoltenVK) removed per
-          # ADR-0726. The enable_vulkan meson option no longer exists; these rows
-          # would fail with "Unknown option enable_vulkan". See git history before
-          # this commit for the original ADR-0175 / ADR-0338 lane definitions.
+          # --- Vulkan T5-1b runtime (ADR-0175) ---
+          # Real volk + VMA + glslc + compute dispatch. Needs the
+          # Vulkan loader + headers + glslc shader compiler before
+          # meson setup; lavapipe is the software ICD that exposes
+          # a compute-capable VkPhysicalDevice on headless runners
+          # so the smoke test can run end-to-end. Wraps for volk +
+          # VMA are sha256-pinned in core/subprojects/.
+          - os: ubuntu-latest
+            CC: ccache gcc
+            CXX: ccache g++
+            vulkan: true
+            meson_extra: -Denable_vulkan=enabled
+            name: Build — Ubuntu Vulkan (T5-1b runtime)
+
+          # --- macOS Vulkan via MoltenVK (ADR-0338, advisory) ---
+          # Validates the MoltenVK passthrough route on Apple
+          # Silicon: brew installs `molten-vk` (the Vulkan-on-Metal
+          # translation layer ICD) plus the Khronos `vulkan-loader`
+          # and `vulkan-headers`. `VK_ICD_FILENAMES` points the
+          # loader at MoltenVK's `MoltenVK_icd.json` so the loader
+          # enumerates exactly one ICD (Apple GPU via Metal). The
+          # smoke test pins the runtime contract; the cross-backend
+          # gate runs at `places=4` to confirm shader correctness.
+          #
+          # `experimental: true` + `continue-on-error` mark the lane
+          # advisory until one green run on master, per ADR-0338.
+          # Primary risk: `moment.comp` uses
+          # `GL_EXT_shader_atomic_int64` (atomicAdd on int64), which
+          # MoltenVK maps to Metal Tier-2 argument buffers — well-
+          # supported on M1+ but the most fragile dependency. Other
+          # shaders only use non-atomic int64 arithmetic
+          # (`GL_EXT_shader_explicit_arithmetic_types_int64`) which
+          # lowers to native Metal `long` and should pass.
+          - os: macos-latest
+            CC: ccache clang
+            CXX: ccache clang++
+            moltenvk: true
+            meson_extra: -Denable_vulkan=enabled
+            experimental: true
+            name: Build — macOS Vulkan via MoltenVK (advisory)
 
           # --- HIP T7-10b runtime (ADR-0212) ---
           # Real HIP runtime build — compiles + links against
@@ -122,31 +158,34 @@ jobs:
           # device-resident smoke assertions, mirroring the
           # Vulkan-on-lavapipe-less-CI pattern from ADR-0175). See
           # ADR-0212 §"Status update 2026-05-09: CI lane enabled".
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: ccache gcc
             CXX: ccache g++
             hip: true
             meson_extra: -Denable_hip=true
             name: Build — Ubuntu HIP (T7-10b runtime)
 
-          # --- Metal runtime (ADR-0361 scaffold + ADR-0420 runtime) ---
-          # Full Objective-C++ runtime build — common.mm / picture_metal.mm /
-          # kernel_template.mm drive Metal.framework directly with ARC.
-          # The runtime PR (T8-1b, ADR-0420) replaced every -ENOSYS stub;
-          # vmaf_metal_context_new now initialises MTLDevice + MTLCommandQueue
-          # and gates on Apple GPU Family 7+ (M1+). macos-latest ships
-          # Metal.framework as part of the system framework set so
-          # `dependency('Metal', required: false)` resolves cleanly.
-          # The smoke test exercises the real init / destroy path on Apple
-          # Silicon and the -ENODEV guard on x86_64 / pre-M1 hosts.
+          # --- Metal T8-1 scaffold (ADR-0361) ---
+          # Stub-only build — every Metal entry point returns -ENOSYS
+          # until the runtime PR (T8-1b) lands. macos-latest ships the
+          # Metal SDK as part of the system framework set
+          # (`/System/Library/Frameworks/Metal.framework` is guaranteed
+          # to exist), so the scaffold's
+          # `dependency('Metal', required: false)` /
+          # `dependency('MetalKit', required: false)` probes resolve
+          # cleanly. The smoke test runs (no real GPU work needed —
+          # every assertion checks the -ENOSYS / -EINVAL contract).
+          # Apple Silicon (M1+ / GPU Family Apple 7+) is the runtime
+          # target; the scaffold lane builds on whichever macos-latest
+          # arch GitHub provides today (Apple Silicon as of 2026).
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
             meson_extra: -Denable_metal=enabled
-            name: Build — macOS Metal (runtime)
+            name: Build — macOS Metal (T8-1 scaffold)
 
           # --- Static library builds ---
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: ccache gcc
             CXX: ccache g++
             meson_extra: --default-library static
@@ -159,7 +198,7 @@ jobs:
           # could catch shows up first on the dynamic lane). The
           # CUDA Static lane stays because it exercises a distinct
           # NVCC-static interaction not covered by the dynamic build.
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: ccache gcc
             CXX: ccache g++
             cuda: true
@@ -169,7 +208,7 @@ jobs:
           # --- SYCL build (icpx for both host + SYCL sources so the device
           #     image is registered at the .so link step; see post-T7-8
           #     SYCL revival in core/src/meson.build) ---
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: icx
             CXX: icpx
             sycl: true
@@ -177,7 +216,7 @@ jobs:
             name: Build — Ubuntu SYCL
 
           # --- CUDA build (gcc + nvcc) ---
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: ccache gcc
             CXX: ccache g++
             cuda: true
@@ -186,7 +225,7 @@ jobs:
 
           # --- SYCL + CUDA combined (icpx host so SYCL link works; nvcc
           #     handles the CUDA TUs separately via -Denable_nvcc=true) ---
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             CC: icx
             CXX: icpx
             sycl: true
@@ -196,18 +235,17 @@ jobs:
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    # ADR-0726 dropped the Vulkan backend (including the macOS
-    # MoltenVK lane). `matrix.experimental` still flags the macOS
-    # CPU + DNN legs as advisory so a homebrew ORT bump that breaks
-    # ABI doesn't block merge; no other matrix row sets it.
-    continue-on-error: ${{ matrix.experimental == true }}
+    timeout-minutes: 75
+    # ADR-0338: macOS Vulkan-via-MoltenVK lane is advisory until one
+    # green run on master. Other matrix entries default to
+    # `continue-on-error: false`. The `|| false` coalesce keeps any
+    # non-`moltenvk` row strict.
+    continue-on-error: ${{ matrix.experimental == true && matrix.moltenvk == true }}
     env:
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
 
       # ---------- ccache persistence (Research-0089 §3.1) ----------
       # Linux + macOS build legs all wrap their host compiler in `ccache`
@@ -282,8 +320,7 @@ jobs:
         env:
           ORT_VERSION: "1.22.0"
         run: |
-          set -euo pipefail
-          curl -fSL --retry 3 \
+          curl -sSL \
             "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
             | sudo tar -xz -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
@@ -357,16 +394,14 @@ jobs:
           sudo ldconfig
 
       # ---------- CUDA toolkit ----------
-      # Pinned to CUDA 13.2.0 (ADR-0603). Ubuntu 26.04 ships glibc 2.43 whose
-      # bits/mathcalls.h declares rsqrt(double) with noexcept(true). CUDA
-      # 13.0/13.1 crt/math_functions.h redeclares it without noexcept, causing
-      # a C2059/C2085 cascade from NVCC. CUDA 13.2 fixed that.
-      # 13.3.0 is available via apt but NOT in the Jimver/cuda-toolkit action
-      # installer index (v0.2.35); using 13.3 here causes "Version not
-      # available: 13.3.0" on GitHub-hosted runners. Keep at 13.2.0 until
-      # a new Jimver action release adds 13.3 support.
-      # sm_50/60/70 absent (dropped from 13.x); meson.build guards sm_50 with
-      # a `<13` check. Minimum driver for 13.x is >= 580.
+      # Bumped to CUDA 13.2.0 (ADR-0603). Ubuntu 26.04 (Resolute Raccoon)
+      # ships glibc 2.43 whose bits/mathcalls.h declares rsqrt(double) with
+      # noexcept(true). CUDA 13.0/13.1 crt/math_functions.h redeclares it
+      # without noexcept, causing a C2059/C2085 cascade from NVCC. CUDA 13.2
+      # aligns its noexcept annotation with glibc 2.43 and resolves the
+      # conflict. 13.2 still drops sm_50/60/70 (Maxwell/Pascal/Volta);
+      # meson.build already guards the sm_50 gencode with a `<13` version
+      # check. Minimum driver for 13.x is >= 580.
       - name: Install CUDA toolkit
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@3d45d157f327c09c04b50ee6ccdea2d9d017ec76  # v0.2.35
@@ -387,15 +422,106 @@ jobs:
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
 
-      # Vulkan SDK + MoltenVK install steps removed per ADR-0726 (Vulkan
-      # backend dropped). The matrix never carried a `vulkan: true` or
-      # `moltenvk: true` row after that landed, so the steps were
-      # unreachable. See git history before this commit for the full
-      # `libvulkan-dev` / `molten-vk` install recipes.
+      # ---------- Vulkan SDK (T5-1b runtime) ----------
+      # libvulkan.so + vulkan-headers + glslc + lavapipe (software
+      # ICD so the headless runner can enumerate a compute-capable
+      # VkPhysicalDevice). volk + VMA come via meson wraps in
+      # core/subprojects/ — no apt package needed.
+      #
+      # Cache the meson `subprojects/packagecache/` so volk + VMA wrap
+      # archives (sha256-pinned, fetched from GitHub releases on every
+      # run today) are restored from the GHA cache instead. Key is the
+      # `.wrap` file hashes — wrap revisions are sha256-pinned, so the
+      # cached archives are immutable per (volk-version, vma-version)
+      # pair. Per Research-0089 (PR #525) §2, Vulkan build p50 is
+      # 10.43 min; the wrap fetches contribute ~15–30 s of that on a
+      # cold runner.
+      - name: Cache meson subprojects (Vulkan wraps)
+        if: matrix.vulkan
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: core/subprojects/packagecache
+          key: meson-packagecache-vulkan-${{ hashFiles('core/subprojects/*.wrap') }}
+          restore-keys: |
+            meson-packagecache-vulkan-
+      - name: Install Vulkan SDK
+        if: matrix.vulkan
+        run: |
+          sudo apt-get update
+          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ \
+            libvulkan-dev vulkan-tools glslang-tools mesa-vulkan-drivers
+          # `glslang-tools` ships glslangValidator; the wrap pipeline
+          # uses `glslc` from `glslc` package or shaderc-compiler.
+          # Try shaderc; fall back to a build-from-source path if the
+          # apt name has changed.
+          if ! command -v glslc >/dev/null; then
+            sudo -E apt-get -yq install glslc || \
+              sudo -E apt-get -yq install vulkan-sdk
+          fi
+          glslc --version | head -2
+          vulkaninfo --summary || true
+
+      # ---------- MoltenVK + Vulkan loader/headers (macOS lane) ----------
+      # Apple Silicon GHA runners (`macos-latest`) ship with no Vulkan
+      # ICD by default — Metal is the native API. This step installs:
+      #   - `molten-vk`     — Vulkan-on-Metal translation ICD; lays
+      #                       MoltenVK_icd.json under
+      #                       /opt/homebrew/etc/vulkan/icd.d/ per the
+      #                       homebrew formula's install layout
+      #                       (see ADR-0338 and docs/backends/vulkan/moltenvk.md).
+      #   - `vulkan-loader` — Khronos `libvulkan.dylib`; volk dlopen()s
+      #                       this at runtime.
+      #   - `vulkan-headers`— `vulkan/vulkan.h` etc., consumed by the
+      #                       libvmaf build's wrap-fallback path.
+      #   - `glslc`         — GLSL → SPIR-V compiler (ships with
+      #                       `shaderc`).
+      # `VK_ICD_FILENAMES` pins the loader to MoltenVK so the lane is
+      # deterministic regardless of any future homebrew default-ICD
+      # changes. `vulkaninfo --summary` proves the Apple GPU is the
+      # device the loader sees (output captured to stdout for triage).
+      - name: Install MoltenVK + Vulkan loader/headers (macOS)
+        if: matrix.moltenvk
+        run: |
+          brew install -q molten-vk vulkan-loader vulkan-headers shaderc
+          BREW_PREFIX=$(brew --prefix)
+          ICD_JSON="${BREW_PREFIX}/etc/vulkan/icd.d/MoltenVK_icd.json"
+          if [ ! -f "${ICD_JSON}" ]; then
+            echo "::error::MoltenVK_icd.json not found at ${ICD_JSON}"
+            ls -la "${BREW_PREFIX}/etc/vulkan/icd.d/" || true
+            ls -la "${BREW_PREFIX}/share/vulkan/icd.d/" || true
+            exit 1
+          fi
+          echo "VK_ICD_FILENAMES=${ICD_JSON}" >> $GITHUB_ENV
+          # Make libvulkan.dylib + glslc visible to meson / volk dlopen.
+          echo "DYLD_LIBRARY_PATH=${BREW_PREFIX}/lib:${DYLD_LIBRARY_PATH:-}" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> $GITHUB_ENV
+          # brew's `vulkan-headers` is keg-only on macOS — install does
+          # not symlink `<vulkan/vk_platform.h>` etc. into
+          # ${BREW_PREFIX}/include, so the volk subproject fails with
+          # `fatal error: 'vulkan/vk_platform.h' file not found`. The
+          # headers live at $(brew --prefix vulkan-headers)/include;
+          # surface that path via CPATH so clang finds them without
+          # touching the meson cross-file. (PR #760 round 4)
+          VK_HEADERS_INCLUDE="$(brew --prefix vulkan-headers)/include"
+          echo "CPATH=${VK_HEADERS_INCLUDE}:${CPATH:-}" >> $GITHUB_ENV
+          echo "CPLUS_INCLUDE_PATH=${VK_HEADERS_INCLUDE}:${CPLUS_INCLUDE_PATH:-}" >> $GITHUB_ENV
+          # Sanity: confirm MoltenVK is the loaded ICD. `|| true`
+          # because vulkaninfo non-zero-exits on some macOS warning
+          # paths even when enumeration succeeds; the grep below is
+          # the actual gate.
+          # Stderr redirected to /dev/null: hosted macOS runners emit
+          # GPU-capability warnings (no bare-metal GPU access) that
+          # appear as CI annotations even though enumeration succeeds.
+          # The tee of stdout is the real diagnostic (ADR-0635).
+          vulkaninfo --summary 2>/dev/null | tee /tmp/vulkaninfo.txt || true
+          if ! grep -qi 'MoltenVK\|Apple' /tmp/vulkaninfo.txt; then
+            echo "::debug::vulkaninfo did not report MoltenVK/Apple GPU — see /tmp/vulkaninfo.txt (expected on hosted runners without bare-metal GPU)"
+          fi
+          glslc --version | head -2
 
       # ---------- ROCm / HIP runtime (T7-10b) ----------
       # Installs `rocm-hip-runtime-dev` from the official AMD apt repo
-      # at `repo.radeon.com/rocm/apt/<ver>`. ROCm 7.2.4 matches the
+      # at `repo.radeon.com/rocm/apt/<ver>`. ROCm 7.2.3 matches the
       # version under test on the maintainer's local box; the apt URL
       # carries the version path component, so bumping ROCm here is a
       # one-line change. `noble` is the codename for `ubuntu-24.04`,
@@ -410,7 +536,7 @@ jobs:
       - name: Install ROCm / HIP runtime
         if: matrix.hip
         env:
-          ROCM_VERSION: "7.2.4"
+          ROCM_VERSION: "7.2.3"
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev \
@@ -461,7 +587,7 @@ jobs:
           if [ "${{ matrix.sycl }}" = "true" ]; then
             source /opt/intel/oneapi/setvars.sh
           fi
-          meson setup core core/build --buildtype release \
+          meson setup libvmaf core/build --buildtype release \
             --prefix $PWD/install \
             -Denable_float=true \
             ${{ matrix.meson_extra }}
@@ -514,7 +640,7 @@ jobs:
       # whether the host can actually run them; the build itself is
       # what Netflix#1481 needs to pin).
       - name: Run tests
-        if: "!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686"
+        if: "!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686 && !matrix.moltenvk"
         run: sudo ninja -vC core/build test
 
       # ---------- SSH debug session (macOS × workflow_dispatch only) ----------
@@ -541,14 +667,48 @@ jobs:
           # within that window the step unblocks and the job completes.
           connect-timeout-seconds: 1800
 
-      # Vulkan smoke-test step removed per ADR-0726. The
-      # `test_vulkan_*` binaries no longer exist in the build tree.
+      # ---------- Vulkan smoke test (macOS MoltenVK lane) ----------
+      # Runs ONLY the Vulkan-tagged smoke binaries and captures the
+      # ICD enumeration output for triage. Per ADR-0338 the lane is
+      # advisory: a kernel-pipeline failure (e.g. a SPIR-V capability
+      # MoltenVK rejects) is a known limitation, not a merge blocker.
+      # The failure mode + suspected MoltenVK gap are documented in
+      # docs/backends/vulkan/moltenvk.md "Known limitations".
+      #
+      # No `sudo` here — macOS brew installs run as the runner user,
+      # so the build artifacts are user-owned. `meson test --suite`
+      # filters to the Vulkan suite (registered in
+      # core/test/meson.build alongside the other suite labels).
+      - name: Run Vulkan smoke tests (macOS MoltenVK)
+        if: matrix.moltenvk
+        run: |
+          set +e
+          echo "=== Loaded ICD ==="
+          vulkaninfo --summary 2>&1 | head -80 || true
+          echo ""
+          echo "=== test_vulkan_smoke ==="
+          ./core/build/test/test_vulkan_smoke
+          smoke_rc=$?
+          echo "=== test_vulkan_pic_preallocation ==="
+          ./core/build/test/test_vulkan_pic_preallocation
+          prealloc_rc=$?
+          echo "=== test_vulkan_async_pending_fence ==="
+          ./core/build/test/test_vulkan_async_pending_fence
+          fence_rc=$?
+          echo ""
+          echo "smoke_rc=${smoke_rc} prealloc_rc=${prealloc_rc} fence_rc=${fence_rc}"
+          # Report any non-zero rc as advisory failure (lane is
+          # `continue-on-error: true` until one green run on master).
+          if [ ${smoke_rc} -ne 0 ] || [ ${prealloc_rc} -ne 0 ] || [ ${fence_rc} -ne 0 ]; then
+            echo "::warning::MoltenVK Vulkan smoke surfaced failures — see docs/backends/vulkan/moltenvk.md for the known-limitations matrix."
+            exit 1
+          fi
 
       - name: Cache Netflix vmaf_resource fixtures
         # Insulates the tox lanes from the recurring HTTP-502s on
         # raw.githubusercontent.com when fetching python/test/resource/
         # fixtures via download_reactively (compat/python-vmaf/config.py).
-        if: "(startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest'"
+        if: "((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && !matrix.moltenvk"
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: python/test/resource
@@ -565,7 +725,7 @@ jobs:
           tox -c python
 
       - name: Run tox tests (mac)
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' && !matrix.moltenvk
         run: |
           mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
           pip install tox
@@ -642,7 +802,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Cache ccache files
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
@@ -672,7 +831,7 @@ jobs:
 
       - name: Configure vmaf
         run: |
-          meson setup core core/build --buildtype release \
+          meson setup libvmaf core/build --buildtype release \
             --default-library static --prefix "$MINGW_PREFIX" \
             -Denable_cuda=false -Denable_sycl=false -Denable_float=true
 
@@ -688,22 +847,18 @@ jobs:
         run: meson test -C core/build --num-processes $(nproc) --print-errorlogs
 
       - name: Show binary info and stage artifact
+        id: stage
         run: |
           ldd "$MINGW_PREFIX/bin/vmaf.exe" || true
           mkdir -p artifact
           cp "$MINGW_PREFIX/bin/vmaf.exe" artifact/vmaf.exe
+          echo "path=$(cygpath -m "$PWD/artifact/vmaf.exe")" >> "$GITHUB_OUTPUT"
 
       - name: Upload vmaf.exe artifact
-        # upload-artifact v7 resolves `path` relative to GITHUB_WORKSPACE
-        # and does not honour the cygpath-translated absolute path the
-        # previous `stage` step wrote to GITHUB_OUTPUT (the upload step
-        # reported "no files found" while the stage step succeeded —
-        # master CI run 26683038580). Pass the repo-relative path
-        # directly; the action handles platform translation internally.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: ${{ matrix.msystem }}-vmaf
-          path: artifact/vmaf.exe
+          path: ${{ steps.stage.outputs.path }}
           if-no-files-found: error
 
   # ===== Windows GPU build-only (MSVC + CUDA, MSVC + oneAPI SYCL) =====
@@ -761,7 +916,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 1
-          persist-credentials: false
 
       - name: Setup python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
@@ -789,10 +943,7 @@ jobs:
       # ---------- CUDA toolkit (CUDA leg only) ----------
       # Same pin as the Linux CUDA legs: CUDA 13.2.0, Maxwell/Pascal/Volta
       # gencodes dropped (meson.build already guards the sm_50 emit on
-      # `version < 13`). Originally bumped from 13.0.0 per ADR-0603.
-      # 13.3.0 is NOT in the Jimver action index; Windows installs directly
-      # from NVIDIA's network installer so the version is unrestricted, but
-      # kept at 13.2.0 to stay in sync with the Linux legs.
+      # `version < 13`). Bumped from 13.0.0 per ADR-0603.
       - name: Install CUDA toolkit (windows)
         if: matrix.backend == 'cuda'
         shell: pwsh
@@ -905,7 +1056,7 @@ jobs:
           CFLAGS: /experimental:c11atomics
           CXXFLAGS: /experimental:c11atomics
         run: |
-          meson setup core core\build --buildtype release ^
+          meson setup libvmaf libvmaf\build --buildtype release ^
             --prefix %CD%\install ^
             -Denable_float=true ^
             ${{ matrix.meson_extra }}
@@ -945,7 +1096,7 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           set CC=icx-cl
           set CXX=icx-cl
-          meson setup core core\build --buildtype release ^
+          meson setup libvmaf libvmaf\build --buildtype release ^
             --prefix %CD%\install ^
             -Denable_float=true ^
             -Dcpp_std=c++14 ^
@@ -955,14 +1106,14 @@ jobs:
         if: matrix.backend == 'cuda'
         shell: cmd
         run: |
-          ninja -v -C core\build install
+          ninja -v -C libvmaf\build install
 
       - name: Build libvmaf (SYCL)
         if: matrix.backend == 'sycl'
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
-          ninja -v -C core\build install
+          ninja -v -C libvmaf\build install
 
       # No test step — windows-2025 has no GPU. The whole point of
       # this job is exercising the MSVC + CUDA / MSVC + oneAPI link

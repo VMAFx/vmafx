@@ -18,6 +18,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: upstream-ffmpeg-hip-hwdec-watcher-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   poll:
     runs-on: ubuntu-24.04
