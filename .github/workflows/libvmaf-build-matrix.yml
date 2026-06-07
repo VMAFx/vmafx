@@ -587,7 +587,7 @@ jobs:
           if [ "${{ matrix.sycl }}" = "true" ]; then
             source /opt/intel/oneapi/setvars.sh
           fi
-          meson setup libvmaf core/build --buildtype release \
+          meson setup core core/build --buildtype release \
             --prefix $PWD/install \
             -Denable_float=true \
             ${{ matrix.meson_extra }}
@@ -831,7 +831,7 @@ jobs:
 
       - name: Configure vmaf
         run: |
-          meson setup libvmaf core/build --buildtype release \
+          meson setup core core/build --buildtype release \
             --default-library static --prefix "$MINGW_PREFIX" \
             -Denable_cuda=false -Denable_sycl=false -Denable_float=true
 
@@ -1056,7 +1056,7 @@ jobs:
           CFLAGS: /experimental:c11atomics
           CXXFLAGS: /experimental:c11atomics
         run: |
-          meson setup libvmaf libvmaf\build --buildtype release ^
+          meson setup core core\build --buildtype release ^
             --prefix %CD%\install ^
             -Denable_float=true ^
             ${{ matrix.meson_extra }}
@@ -1096,7 +1096,7 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           set CC=icx-cl
           set CXX=icx-cl
-          meson setup libvmaf libvmaf\build --buildtype release ^
+          meson setup core core\build --buildtype release ^
             --prefix %CD%\install ^
             -Denable_float=true ^
             -Dcpp_std=c++14 ^
@@ -1106,14 +1106,14 @@ jobs:
         if: matrix.backend == 'cuda'
         shell: cmd
         run: |
-          ninja -v -C libvmaf\build install
+          ninja -v -C core\build install
 
       - name: Build libvmaf (SYCL)
         if: matrix.backend == 'sycl'
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
-          ninja -v -C libvmaf\build install
+          ninja -v -C core\build install
 
       # No test step — windows-2025 has no GPU. The whole point of
       # this job is exercising the MSVC + CUDA / MSVC + oneAPI link

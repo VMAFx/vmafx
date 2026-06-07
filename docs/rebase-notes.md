@@ -45418,3 +45418,9 @@ public header or ABI change.
 ## fix/motion-coverage-picture-ref-include (2026-06-07)
 no rebase impact: changes confined to `core/test/test_integer_motion_coverage.c`.
 Test-only change. No production source or public header modified.
+
+## fix/ci-motion2-mau-name-and-build-matrix-core (2026-06-07)
+no rebase impact: changes confined to `.github/workflows/libvmaf-build-matrix.yml`
+(source-path fix, CI config only) and `core/test/test_sycl_motion_add_uv_parity.c`
+(feature-name query string correction in test). No production source, public header,
+or ABI change.

@@ -39,7 +39,7 @@
  * feature-name system appends "_mau" (the option alias) to the base
  * aliased name.  Scores must therefore be queried with the suffixed
  * name, not the raw VMAF_*_score name:
- *   float_motion  → "float_motion2_mau"   (VMAF_feature_motion2_score + _mau)
+ *   float_motion  → "motion2_mau"         (VMAF_feature_motion2_score alias "motion2" + _mau)
  *   motion_sycl   → "integer_motion2_mau" (VMAF_integer_feature_motion2_score + _mau)
  * See feature_name.c:vmaf_feature_name_from_opts_dict for the naming rule.
  *
@@ -143,12 +143,12 @@ static char *run_cpu_float_motion_uv(double *out_score)
     mu_assert("CPU: EOS failed", !err);
 
     /* float_motion with motion_add_uv=true stores scores under the aliased
-     * name with the _mau suffix: float_motion2_mau.  The feature-name
-     * system aliases VMAF_feature_motion2_score → float_motion2 and then
-     * appends _mau for the non-default motion_add_uv bool option
+     * name with the _mau suffix: motion2_mau.  The feature-name system
+     * aliases VMAF_feature_motion2_score → "motion2" (see alias.c) and then
+     * appends "_mau" for the non-default motion_add_uv bool option
      * (alias "mau") — see feature_name.c:vmaf_feature_name_from_opts_dict. */
-    err = vmaf_feature_score_at_index(vmaf, "float_motion2_mau", out_score, 1u);
-    mu_assert("CPU: vmaf_feature_score_at_index(float_motion2_mau, idx=1) failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "motion2_mau", out_score, 1u);
+    mu_assert("CPU: vmaf_feature_score_at_index(motion2_mau, idx=1) failed", !err);
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
