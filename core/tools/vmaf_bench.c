@@ -495,11 +495,24 @@ static int bench_feature(const BenchTarget *target, unsigned w, unsigned h, unsi
     /* Warm up: first frame also triggers init */
     VmafPicture ref;
     VmafPicture dist;
-    vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
-    vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+    /* ADR-1081: vmaf_picture_alloc return was previously discarded; a
+     * failed alloc leaves the VmafPicture zeroed, so the subsequent
+     * yuv_pair_read_frame write to ref.data[0] is a null-deref.
+     * Propagate the error through the bench_cleanup unwind path. */
+    err = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+    if (err) {
+        (void)fprintf(stderr, "vmaf_picture_alloc(ref) failed (err=%d)\n", err);
+        goto bench_cleanup;
+    }
+    err = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+    if (err) {
+        (void)fprintf(stderr, "vmaf_picture_alloc(dist) failed (err=%d)\n", err);
+        (void)vmaf_picture_unref(&ref);
+        goto bench_cleanup;
+    }
     if (yuv_pair_read_frame(&yp, 0, &ref, &dist)) {
-        vmaf_picture_unref(&ref);
-        vmaf_picture_unref(&dist);
+        (void)vmaf_picture_unref(&ref);
+        (void)vmaf_picture_unref(&dist);
         err = -1;
         goto bench_cleanup;
     }
@@ -514,11 +527,21 @@ static int bench_feature(const BenchTarget *target, unsigned w, unsigned h, unsi
     for (unsigned i = 1; i < n_frames; i++) {
         VmafPicture r;
         VmafPicture d;
-        vmaf_picture_alloc(&r, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
-        vmaf_picture_alloc(&d, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+        /* ADR-1081: same alloc-check fix as the warm-up block above. */
+        err = vmaf_picture_alloc(&r, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+        if (err) {
+            (void)fprintf(stderr, "vmaf_picture_alloc(r) failed at frame %u (err=%d)\n", i, err);
+            break;
+        }
+        err = vmaf_picture_alloc(&d, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+        if (err) {
+            (void)fprintf(stderr, "vmaf_picture_alloc(d) failed at frame %u (err=%d)\n", i, err);
+            (void)vmaf_picture_unref(&r);
+            break;
+        }
         if (yuv_pair_read_frame(&yp, i, &r, &d)) {
-            vmaf_picture_unref(&r);
-            vmaf_picture_unref(&d);
+            (void)vmaf_picture_unref(&r);
+            (void)vmaf_picture_unref(&d);
             break;
         }
         err = vmaf_read_pictures(vmaf, &r, &d, i);
@@ -530,8 +553,11 @@ static int bench_feature(const BenchTarget *target, unsigned w, unsigned h, unsi
     *out_total_ms = t1 - t0;
     *out_avg_ms = *out_total_ms / (n_frames - 1);
 
-    /* Flush */
-    vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    /* Flush — ADR-1081: capture the return so a pooling/aggregation
+     * failure surfaces instead of being silently swallowed. */
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    if (err)
+        (void)fprintf(stderr, "vmaf_read_pictures(flush) failed (err=%d)\n", err);
 
 bench_cleanup:
     if (yp_open)
@@ -712,11 +738,42 @@ static int run_feature_collect(const char *feature, enum Backend backend, unsign
 
     for (unsigned i = 0; i < n_frames; i++) {
         VmafPicture r, d;
-        vmaf_picture_alloc(&r, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
-        vmaf_picture_alloc(&d, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+        /* ADR-1081: check alloc returns; a zeroed VmafPicture on failure
+         * causes a null-deref in yuv_pair_read_frame. */
+        err = vmaf_picture_alloc(&r, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+        if (err) {
+            (void)fprintf(stderr, "vmaf_picture_alloc(r) failed at frame %u (err=%d)\n", i, err);
+            yuv_pair_close(&yp);
+            vmaf_close(vmaf);
+#ifdef HAVE_CUDA
+            if (cu_state)
+                (void)vmaf_cuda_state_free(cu_state);
+#endif
+#ifdef HAVE_SYCL
+            if (sycl_state)
+                vmaf_sycl_state_free(&sycl_state);
+#endif
+            return err;
+        }
+        err = vmaf_picture_alloc(&d, VMAF_PIX_FMT_YUV420P, g_bpc, w, h);
+        if (err) {
+            (void)fprintf(stderr, "vmaf_picture_alloc(d) failed at frame %u (err=%d)\n", i, err);
+            (void)vmaf_picture_unref(&r);
+            yuv_pair_close(&yp);
+            vmaf_close(vmaf);
+#ifdef HAVE_CUDA
+            if (cu_state)
+                (void)vmaf_cuda_state_free(cu_state);
+#endif
+#ifdef HAVE_SYCL
+            if (sycl_state)
+                vmaf_sycl_state_free(&sycl_state);
+#endif
+            return err;
+        }
         if (yuv_pair_read_frame(&yp, i, &r, &d)) {
-            vmaf_picture_unref(&r);
-            vmaf_picture_unref(&d);
+            (void)vmaf_picture_unref(&r);
+            (void)vmaf_picture_unref(&d);
             yuv_pair_close(&yp);
             vmaf_close(vmaf);
 #ifdef HAVE_CUDA
@@ -745,7 +802,11 @@ static int run_feature_collect(const char *feature, enum Backend backend, unsign
         }
     }
     yuv_pair_close(&yp);
-    vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    /* ADR-1081: capture flush return; a silent discard here masks
+     * aggregation/pooling errors in validation mode. */
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    if (err)
+        (void)fprintf(stderr, "vmaf_read_pictures(flush) failed (err=%d)\n", err);
 
     /* Collect scores */
     for (unsigned i = 0; i < n_frames; i++) {

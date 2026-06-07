@@ -26,6 +26,7 @@
  * source portability. MinGW ships <unistd.h>, so this split is strictly
  * MSVC / clang-cl. */
 #include <io.h>
+#include <windows.h> /* QueryPerformanceCounter for wall_time_s() */
 #define isatty _isatty
 #define fileno _fileno
 #else
@@ -862,6 +863,28 @@ static void skip_initial_frames(VmafContext *vmaf, video_input *vid_ref, video_i
     }
 }
 
+/* ADR-1081: wall-clock timer for the FPS spinner in run_frame_loop.
+ * clock() / CLOCKS_PER_SEC measures aggregate CPU process time — under a
+ * multi-threaded run each worker thread contributes, so the result
+ * over-counts by up to n_threads.  CLOCK_MONOTONIC / QPC give wall time.
+ */
+#ifdef _WIN32
+static double wall_time_s(void)
+{
+    LARGE_INTEGER freq, cnt;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&cnt);
+    return (double)cnt.QuadPart / (double)freq.QuadPart;
+}
+#else
+static double wall_time_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
+#endif
+
 /* Drive the main per-frame fetch + process loop. Returns the number of frames
  * successfully consumed (the post-increment `picture_index` value the original
  * inline loop used to compute `picture_index - 1` in pooling). Stops at EOF
@@ -871,7 +894,7 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
                                const CLISettings *c, int common_bitdepth, int istty)
 {
     float fps = 0.;
-    const time_t t0 = clock();
+    const double t0 = wall_time_s();
     unsigned picture_index;
     for (picture_index = 0;; picture_index++) {
 
@@ -911,7 +934,8 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
 
         if (istty && !c->quiet) {
             if (picture_index > 0 && !(picture_index % 10)) {
-                fps = (picture_index + 1) / (((float)clock() - t0) / CLOCKS_PER_SEC);
+                double elapsed = wall_time_s() - t0;
+                fps = elapsed > 0.0 ? (float)((picture_index + 1) / elapsed) : 0.f;
             }
 
             (void)fprintf(stderr, "\r%d frame%s %s %.2f FPS\033[K", picture_index + 1,

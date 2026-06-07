@@ -45333,3 +45333,7 @@ and rust-ci workflows. No source, header, or build file is modified.
 ## fix/ort-error-message-logging (2026-06-07)
 no rebase impact: changes confined to `core/src/dnn/ort_backend.c`. No
 public header or ABI change.
+
+## fix/bench-clock-unchecked-returns (2026-06-07)
+no rebase impact: changes confined to `core/tools/vmaf.c` and
+`core/tools/vmaf_bench.c`. No public header or ABI change.
