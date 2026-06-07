@@ -114,12 +114,16 @@ func runVmafScoreDirect(ref, dis string, width, height int, pixfmt string, bitde
 // absolute path on disk.  The MCP schema's accepted forms are:
 //
 //   - "version=vmaf_v0.6.1"  → repoRoot/model/vmaf_v0.6.1.json
-//   - "path=/abs/path.json"  → /abs/path.json
+//   - "path=/abs/path.json"  → /abs/path.json (validated against AllowedRoots)
 //   - "vmaf_v0.6.1"          → repoRoot/model/vmaf_v0.6.1.json (bare stem)
-//   - "/abs/path.json"       → /abs/path.json
+//   - "/abs/path.json"       → /abs/path.json (validated against AllowedRoots)
 //
-// Returns an error when no candidate file exists; the caller then falls back
-// to the subprocess path so the legacy resolver inside vmaf.c gets a chance.
+// Every resolved path is validated via libvmaf.ValidatePath before being
+// returned so callers cannot reach files outside the allowlisted roots.
+//
+// Returns an error when no candidate file exists or the path escapes the
+// allowlist; the caller then falls back to the subprocess path so the legacy
+// resolver inside vmaf.c gets a chance.
 func resolveModelArgToPath(modelArg string) (string, error) {
 	root := libvmaf.RepoRoot()
 	modelsDir := filepath.Join(root, "model")
@@ -132,26 +136,27 @@ func resolveModelArgToPath(modelArg string) (string, error) {
 		stripped = after
 	}
 
-	// Absolute / relative path that exists?
+	// Absolute path: validate against AllowedRoots before returning.
 	if filepath.IsAbs(stripped) {
-		if _, err := os.Stat(stripped); err == nil {
-			return stripped, nil
-		}
-	} else if _, err := os.Stat(filepath.Join(root, stripped)); err == nil {
-		return filepath.Join(root, stripped), nil
+		return libvmaf.ValidatePath(stripped)
+	}
+
+	// Relative path rooted at repo root.
+	if _, err := os.Stat(filepath.Join(root, stripped)); err == nil {
+		return libvmaf.ValidatePath(filepath.Join(root, stripped))
 	}
 
 	// Bare stem → look in model/.
 	for _, ext := range []string{".json", ".pkl"} {
 		candidate := filepath.Join(modelsDir, stripped+ext)
 		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+			return libvmaf.ValidatePath(candidate)
 		}
 		// Already has the extension?
 		if strings.HasSuffix(strings.ToLower(stripped), ext) {
 			candidate = filepath.Join(modelsDir, stripped)
 			if _, err := os.Stat(candidate); err == nil {
-				return candidate, nil
+				return libvmaf.ValidatePath(candidate)
 			}
 		}
 	}

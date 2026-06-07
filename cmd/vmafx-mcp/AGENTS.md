@@ -43,10 +43,16 @@ path (default) and the direct cgo path introduced by ADR-0931 (opt-in via
    `backend_requested`, `mismatched_model_warning`) MUST remain
    identical to the subprocess output.
 
-6. **Model arg compatibility** (`impl_direct.go::resolveModelArgToPath`):
-   accepts the four MCP-level model forms (`version=NAME`, `path=ABS`,
-   bare stem, abs/rel path). New forms require a coordinated update to
-   the Python server's resolver (`mcp-server/vmaf-mcp/src/vmaf_mcp/`).
+6. **Model arg compatibility + allowlist enforcement**
+   (`impl_direct.go::resolveModelArgToPath`): accepts the four MCP-level
+   model forms (`version=NAME`, `path=ABS`, bare stem, abs/rel path).
+   Every resolved path — including those supplied via `path=<abs>` or a
+   bare absolute path — MUST be passed through `libvmaf.ValidatePath`
+   before being returned.  Bypassing `ValidatePath` for absolute inputs
+   allows an MCP caller to read arbitrary host files.  New forms require a
+   coordinated update to the Python server's resolver
+   (`mcp-server/vmaf-mcp/src/vmaf_mcp/`).  Regression test:
+   `TestResolveModelArgToPath_AllowlistEnforced`.
 
 7. **gosec G304 / G204 contract** (every `os.ReadFile` / `os.Open` /
    `exec.Command*` in `impl.go`): any path or command variable consumed

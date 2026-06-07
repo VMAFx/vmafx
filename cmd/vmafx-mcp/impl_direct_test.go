@@ -81,6 +81,32 @@ func TestResolveModelArgToPath(t *testing.T) {
 	}
 }
 
+// TestResolveModelArgToPath_AllowlistEnforced verifies that resolveModelArgToPath
+// rejects paths outside the allowlisted roots, even when path= or an absolute path
+// is supplied directly.  This is the regression test for the bypass where an absolute
+// path was returned without ValidatePath validation.
+func TestResolveModelArgToPath_AllowlistEnforced(t *testing.T) {
+	// Create a file outside any allowed root (in a temp dir).
+	tmpDir := t.TempDir()
+	outsideFile := filepath.Join(tmpDir, "evil_model.json")
+	if err := os.WriteFile(outsideFile, []byte(`{"model_dict":{}}`), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Ensure the temp dir is NOT in VMAF_MCP_ALLOW.
+	t.Setenv("VMAF_MCP_ALLOW", "")
+
+	// Absolute path form — must be rejected.
+	if got, err := resolveModelArgToPath(outsideFile); err == nil {
+		t.Errorf("resolveModelArgToPath(%q) succeeded with path=%q; expected allowlist rejection", outsideFile, got)
+	}
+
+	// path= prefix form — must also be rejected.
+	if got, err := resolveModelArgToPath("path=" + outsideFile); err == nil {
+		t.Errorf("resolveModelArgToPath(%q) succeeded with path=%q; expected allowlist rejection", "path="+outsideFile, got)
+	}
+}
+
 // TestHandleVmafScore_RoutesToDirect verifies that flipping VMAFX_MCP_DIRECT
 // changes the code path taken — the subprocess path fails fast when the
 // vmaf binary is absent (no VMAF_BIN, no /usr/local/bin/vmaf), while the
