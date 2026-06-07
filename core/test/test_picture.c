@@ -157,11 +157,72 @@ static char *test_picture_alloc_rejects_overflow_dimensions()
     return NULL;
 }
 
+/*
+ * Error-path coverage for vmaf_picture_ref and vmaf_picture_unref.
+ *
+ * vmaf_picture_ref:
+ *   - NULL dst → must return -EINVAL without touching *src.
+ *   - NULL src → must return -EINVAL without touching *dst.
+ *
+ * vmaf_picture_unref:
+ *   - NULL pic → must return -EINVAL.
+ *   - zeroed pic (pic->ref == NULL) → must return -EINVAL.
+ *
+ * These paths were added as part of the 2026-06 error-path coverage
+ * audit (r12) triggered by PR #765 (ADR-1072) and PR #766 (ADR-1073).
+ */
+static char *test_picture_ref_null_error_paths()
+{
+    int err;
+    VmafPicture src;
+    VmafPicture dst;
+
+    err = vmaf_picture_alloc(&src, VMAF_PIX_FMT_YUV420P, 8, 64, 64);
+    mu_assert("setup: vmaf_picture_alloc failed", !err);
+
+    /* NULL dst: ref count on src must not change. */
+    err = vmaf_picture_ref(NULL, &src);
+    mu_assert("vmaf_picture_ref(NULL, src) must return -EINVAL", err == -EINVAL);
+
+    /* NULL src: dst must remain untouched (unmodified zero-init). */
+    memset(&dst, 0, sizeof(dst));
+    err = vmaf_picture_ref(&dst, NULL);
+    mu_assert("vmaf_picture_ref(dst, NULL) must return -EINVAL", err == -EINVAL);
+    mu_assert("vmaf_picture_ref(dst, NULL) must not write to dst", dst.ref == NULL);
+
+    err = vmaf_picture_unref(&src);
+    mu_assert("vmaf_picture_unref (cleanup) failed", !err);
+
+    return NULL;
+}
+
+static char *test_picture_unref_null_error_paths()
+{
+    int err;
+
+    /* NULL pic pointer → must return -EINVAL without crashing. */
+    err = vmaf_picture_unref(NULL);
+    mu_assert("vmaf_picture_unref(NULL) must return -EINVAL", err == -EINVAL);
+
+    /* Zeroed VmafPicture (pic->ref == NULL) → must return -EINVAL.
+     * This covers the second guard in vmaf_picture_unref and mirrors the
+     * real scenario triggered when prev_ref is memset'd to zero before
+     * an unref call (ADR-1072 fix pattern). */
+    VmafPicture zeroed;
+    memset(&zeroed, 0, sizeof(zeroed));
+    err = vmaf_picture_unref(&zeroed);
+    mu_assert("vmaf_picture_unref(zeroed pic) must return -EINVAL", err == -EINVAL);
+
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_picture_alloc_ref_and_unref);
     mu_run_test(test_picture_data_alignment);
     mu_run_test(test_picture_odd_dim_chroma_ceiling);
     mu_run_test(test_picture_alloc_rejects_overflow_dimensions);
+    mu_run_test(test_picture_ref_null_error_paths);
+    mu_run_test(test_picture_unref_null_error_paths);
     return NULL;
 }

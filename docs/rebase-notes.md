@@ -45303,3 +45303,7 @@ header change.
 no rebase impact: adds new test file `core/test/test_thread_safety_batch.c`
 and updates `core/test/meson.build`. No production source or public
 header change.
+
+## fix/r12-picture-ref-unref-error-path-coverage (2026-06-07)
+no rebase impact: adds test coverage to `core/test/test_picture.c` only.
+No production source or public header change.
