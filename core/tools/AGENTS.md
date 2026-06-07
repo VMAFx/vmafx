@@ -106,6 +106,16 @@ tools/
   test: `core/test/test_y4m_411_oob.c` (ASan-required to catch
   the regression deterministically).
 
+- **`parse_unsigned` rejects negative strings and uint32-overflow values**
+  (ADR-1088, rebase-sensitive). `parse_unsigned()` in both `cli_parse.c` and
+  `cli_parse.cpp` now guards against (1) a leading `'-'` character before
+  calling `strtoul` (POSIX `strtoul("-1")` wraps to `ULONG_MAX` without
+  `ERANGE`), and (2) `ul > UINT_MAX` after `strtoul` to catch 64-bit overflow
+  values. If upstream Netflix adds or replaces `parse_unsigned`, keep both
+  guards — they are additive hardening with no semantic impact on valid input.
+  The five regression tests in `core/test/test_cli_parse_long_only_args.c`
+  (fork/waitpid, `--frame_cnt -1` etc.) document the contract.
+
 ## Governing ADRs
 
 - [ADR-0119](../../docs/adr/0119-cli-precision-default-revert.md) — `%.6f`
@@ -165,6 +175,9 @@ tools/
   function scope and routes every exit through the `bench_cleanup`
   label so `vmaf_*_state_free` always runs. Mirrors the T5
   state-leak audit pattern in the same file's `run_feature_collect`.
+- [ADR-1088](../../docs/adr/1088-r14-cli-flag-parsing.md) — `parse_unsigned`
+  negative/overflow guards and `--help` in `cli_parse.cpp`. The three invariants
+  above enforce this ADR's contract.
 - [ADR-0520](../../docs/adr/0520-cli-no-reference-wiring.md) —
   `--no-reference` wiring.
   **CLI gate invariant**: the reference-required gate at the end of

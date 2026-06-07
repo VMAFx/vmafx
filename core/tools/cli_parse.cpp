@@ -28,6 +28,8 @@
 #else
 #include <getopt.h>
 #endif
+#include <cerrno>
+#include <climits>
 #include <cstdarg>
 #include <cstdlib>
 #include <cstdio>
@@ -51,6 +53,7 @@ enum {
     ARG_THREADS,
     ARG_FEATURE,
     ARG_SUBSAMPLE,
+    ARG_HELP,
     ARG_CPUMASK,
     ARG_GPUMASK,
     ARG_AOM_CTC,
@@ -133,6 +136,7 @@ static const struct option long_opts[] = {
     {"json", 0, nullptr, ARG_OUTPUT_JSON},
     {"csv", 0, nullptr, ARG_OUTPUT_CSV},
     {"sub", 0, nullptr, ARG_OUTPUT_SUB},
+    {"help", 0, nullptr, ARG_HELP},
     {"threads", 1, nullptr, ARG_THREADS},
     {"feature", 1, nullptr, ARG_FEATURE},
     {"subsample", 1, nullptr, ARG_SUBSAMPLE},
@@ -201,6 +205,7 @@ static void usage(const char *const app, const char *const reason, ...)
     (void)fprintf(stderr, "Usage: %s [options]\n\n", app);
     (void)fprintf(stderr,
                   "Supported options:\n"
+                  " --help:                      print this message and exit\n"
                   " --reference/-r $path:        path to reference .y4m or .yuv\n"
                   " --distorted/-d $path:        path to distorted .y4m or .yuv\n"
                   " --width/-w $unsigned:        width\n"
@@ -346,11 +351,17 @@ static void error(const char *const app, const char *const optarg, const int opt
 [[nodiscard]] static unsigned parse_unsigned(const char *const optarg, const int option,
                                              const char *const app)
 {
+    /* Reject negative strings before calling strtoul: POSIX strtoul silently
+     * converts "-1" to ULONG_MAX via unsigned wrapping, which would then be
+     * truncated to UINT_MAX and silently accepted. */
+    if (optarg[0] == '-')
+        error(app, optarg, option, "a non-negative integer");
     char *end;
-    const unsigned res = static_cast<unsigned>(strtoul(optarg, &end, 0));
-    if (*end || end == optarg)
-        error(app, optarg, option, "an integer");
-    return res;
+    errno = 0;
+    const unsigned long ul = strtoul(optarg, &end, 0);
+    if (*end || end == optarg || errno == ERANGE || ul > UINT_MAX)
+        error(app, optarg, option, "an integer in [0, 2^32-1]");
+    return static_cast<unsigned>(ul);
 }
 
 [[nodiscard]] static unsigned parse_bitdepth(const char *const optarg, const int option,
@@ -871,6 +882,9 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
             settings->tiny_resize = optarg;
             break;
         }
+        case ARG_HELP:
+            usage(argv[0], nullptr);
+            break; /* unreachable — usage() is [[noreturn]] */
         case 'n':
             settings->no_prediction = true;
             break;

@@ -178,11 +178,70 @@ static char *test_threads_abbrev_does_not_assert()
     return NULL;
 }
 
+/* ADR-1088: parse_unsigned must reject negative strings.
+ * Before the fix, strtoul("-1") returned ULONG_MAX (unsigned wrapping) and the
+ * '*end == 0' check passed, so --frame_cnt -1 silently set frame_cnt = UINT_MAX.
+ * The fix adds an explicit leading-'-' guard before strtoul. */
+static char *test_frame_cnt_negative_is_rejected()
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--frame_cnt", "-1"};
+    const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
+    const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
+    mu_assert("ADR-1088: --frame_cnt -1 must exit(1) with usage error (was silently UINT_MAX)",
+              rc == 0);
+    return NULL;
+}
+
+static char *test_frame_skip_ref_negative_is_rejected()
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--frame_skip_ref", "-5"};
+    const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
+    const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
+    mu_assert("ADR-1088: --frame_skip_ref -5 must exit(1) with usage error", rc == 0);
+    return NULL;
+}
+
+static char *test_frame_skip_dist_negative_is_rejected()
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--frame_skip_dist", "-1"};
+    const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
+    const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
+    mu_assert("ADR-1088: --frame_skip_dist -1 must exit(1) with usage error", rc == 0);
+    return NULL;
+}
+
+/* ADR-1088: parse_unsigned must reject values that overflow uint32.
+ * On 64-bit hosts, strtoul("5000000000") = 5000000000 which is > UINT_MAX;
+ * the overflow check ul > UINT_MAX catches it and emits a usage error. */
+static char *test_frame_cnt_overflow_is_rejected()
+{
+    /* 5 * 10^9 exceeds UINT_MAX (4294967295) on any platform. */
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--frame_cnt", "5000000000"};
+    const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
+    const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
+    mu_assert("ADR-1088: --frame_cnt 5000000000 must exit(1) (overflows uint32)", rc == 0);
+    return NULL;
+}
+
+static char *test_threads_negative_is_rejected()
+{
+    char *argv[] = {"vmaf", "-r", "ref.y4m", "-d", "dis.y4m", "--threads", "-1"};
+    const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
+    const int rc = run_parse_expect_usage_error(argc, argv, "Invalid argument");
+    mu_assert("ADR-1088: --threads -1 must exit(1) with usage error", rc == 0);
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_threads_invalid_optarg_does_not_assert);
     mu_run_test(test_subsample_invalid_optarg_does_not_assert);
     mu_run_test(test_cpumask_invalid_optarg_does_not_assert);
     mu_run_test(test_threads_abbrev_does_not_assert);
+    mu_run_test(test_frame_cnt_negative_is_rejected);
+    mu_run_test(test_frame_skip_ref_negative_is_rejected);
+    mu_run_test(test_frame_skip_dist_negative_is_rejected);
+    mu_run_test(test_frame_cnt_overflow_is_rejected);
+    mu_run_test(test_threads_negative_is_rejected);
     return NULL;
 }

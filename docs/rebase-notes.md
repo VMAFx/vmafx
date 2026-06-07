@@ -45311,3 +45311,7 @@ No production source or public header change.
 ## fix/r14-yuv-input-edge-cases (2026-06-07)
 no rebase impact: changes confined to `core/tools/y4m_input.c`. No
 public header or ABI change.
+
+## fix/r14-cli-flag-parsing (2026-06-07)
+no rebase impact: changes confined to `core/tools/cli_parse.c` and
+`cli_parse.cpp`. No public header or ABI change.

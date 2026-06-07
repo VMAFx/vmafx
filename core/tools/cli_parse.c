@@ -21,6 +21,8 @@
 #else
 #include <getopt.h>
 #endif
+#include <errno.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -342,11 +344,17 @@ static void error(const char *const app, const char *const optarg, const int opt
 
 static unsigned parse_unsigned(const char *const optarg, const int option, const char *const app)
 {
+    /* Reject negative strings before calling strtoul: POSIX strtoul silently
+     * converts "-1" to ULONG_MAX via unsigned wrapping, which would then be
+     * truncated to UINT_MAX and silently accepted. */
+    if (optarg[0] == '-')
+        error(app, optarg, option, "a non-negative integer");
     char *end;
-    const unsigned res = (unsigned)strtoul(optarg, &end, 0);
-    if (*end || end == optarg)
-        error(app, optarg, option, "an integer");
-    return res;
+    errno = 0;
+    const unsigned long ul = strtoul(optarg, &end, 0);
+    if (*end || end == optarg || errno == ERANGE || ul > UINT_MAX)
+        error(app, optarg, option, "an integer in [0, 2^32-1]");
+    return (unsigned)ul;
 }
 
 static unsigned parse_bitdepth(const char *const optarg, const int option, const char *const app)
