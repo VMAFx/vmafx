@@ -399,29 +399,37 @@ static char *test_picture_pool_multithreaded()
     thread_test_data thread_data[num_threads];
 
     // Start threads
+    int threads_created = 0;
     for (int i = 0; i < num_threads; i++) {
         thread_data[i].vmaf = vmaf;
         thread_data[i].thread_id = i;
         thread_data[i].fetch_count = fetches_per_thread;
         thread_data[i].error = 0;
         thread_data[i].data_ptrs = malloc(sizeof(void *) * fetches_per_thread);
-        mu_assert("malloc failed for data_ptrs", thread_data[i].data_ptrs);
+        if (!thread_data[i].data_ptrs) {
+            for (int j = 0; j < i; j++)
+                free(thread_data[j].data_ptrs);
+            mu_assert("malloc failed for data_ptrs", 0);
+        }
 
         err = pthread_create(&threads[i], NULL, thread_fetch_worker, &thread_data[i]);
-        mu_assert("problem creating thread", !err);
+        if (err) {
+            for (int j = 0; j <= i; j++)
+                free(thread_data[j].data_ptrs);
+            mu_assert("problem creating thread", 0);
+        }
+        threads_created++;
     }
 
     // Wait for all threads
-    for (int i = 0; i < num_threads; i++) {
+    int thread_err = 0;
+    for (int i = 0; i < threads_created; i++) {
         pthread_join(threads[i], NULL);
-        mu_assert("thread encountered error", thread_data[i].error == 0);
-    }
-
-    // Verify no two threads got the same picture at the same time
-    // (This is a statistical check - not foolproof but catches obvious bugs)
-    for (int i = 0; i < num_threads; i++) {
+        if (thread_data[i].error != 0)
+            thread_err = thread_data[i].error;
         free(thread_data[i].data_ptrs);
     }
+    mu_assert("thread encountered error", thread_err == 0);
 
     err = vmaf_close(vmaf);
     mu_assert("problem during vmaf_close", !err);
@@ -524,24 +532,37 @@ static char *test_picture_pool_stress()
     thread_test_data thread_data[num_threads];
 
     // Start threads - high contention for limited pool
+    int threads_created_s = 0;
     for (int i = 0; i < num_threads; i++) {
         thread_data[i].vmaf = vmaf;
         thread_data[i].thread_id = i;
         thread_data[i].fetch_count = fetches_per_thread;
         thread_data[i].error = 0;
         thread_data[i].data_ptrs = malloc(sizeof(void *) * fetches_per_thread);
-        mu_assert("malloc failed for data_ptrs", thread_data[i].data_ptrs);
+        if (!thread_data[i].data_ptrs) {
+            for (int j = 0; j < i; j++)
+                free(thread_data[j].data_ptrs);
+            mu_assert("malloc failed for data_ptrs", 0);
+        }
 
         err = pthread_create(&threads[i], NULL, thread_fetch_worker, &thread_data[i]);
-        mu_assert("problem creating thread", !err);
+        if (err) {
+            for (int j = 0; j <= i; j++)
+                free(thread_data[j].data_ptrs);
+            mu_assert("problem creating thread", 0);
+        }
+        threads_created_s++;
     }
 
     // Wait for all threads
-    for (int i = 0; i < num_threads; i++) {
+    int thread_err_s = 0;
+    for (int i = 0; i < threads_created_s; i++) {
         pthread_join(threads[i], NULL);
-        mu_assert("thread encountered error", thread_data[i].error == 0);
+        if (thread_data[i].error != 0)
+            thread_err_s = thread_data[i].error;
         free(thread_data[i].data_ptrs);
     }
+    mu_assert("thread encountered error", thread_err_s == 0);
 
     err = vmaf_close(vmaf);
     mu_assert("problem during vmaf_close", !err);

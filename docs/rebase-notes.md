@@ -45315,3 +45315,8 @@ public header or ABI change.
 ## fix/r14-cli-flag-parsing (2026-06-07)
 no rebase impact: changes confined to `core/tools/cli_parse.c` and
 `cli_parse.cpp`. No public header or ABI change.
+
+## fix/test-malloc-leak-r12 (2026-06-07)
+no rebase impact: test-only changes to free malloc'd buffers on early
+exit in `test_framesync.c` and `test_pic_preallocation.c`. No
+production source touched.
