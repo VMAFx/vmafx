@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/pic-pool-odr-cuda-gpumask-cov-floor (2026-06-08)
+`core/src/meson.build`: adds `cpp_args` to `picture_pool_cpp23_lib`. Conflicts
+possible if another branch modifies the same `static_library()` block; resolve
+by keeping both the `cpp_args` line and the other change.
+`core/tools/test/test_vmaf_cuda_gpumask.sh` and
+`core/tools/test/meson.build`: shell guard + timeout added; low conflict risk.
+`scripts/ci/coverage-check.sh` and
+`.github/workflows/tests-and-quality-gates.yml`: per-file floor and pytest
+timeout changed; low conflict risk (numeric/string values only).
+
 ## fix/cuda-done-path-double-unref-ort-coverage (2026-06-07)
 
 no rebase impact: changes confined to `core/src/libvmaf.c` (split

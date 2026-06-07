@@ -1774,6 +1774,15 @@ picture_pool_cpp23_lib = static_library(
     include_directories : [vmaf_base_include, libvmaf_include],
     # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
     override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
+    # ODR fix: picture_pool.cpp must see the same HAVE_CUDA / HAVE_SYCL defines
+    # as libvmaf.c so that VmafPicturePrivate has an identical layout in both
+    # the pool allocator TU and every consumer TU.  Without this, the 40-byte
+    # CUDA sub-struct inside VmafPicturePrivate shifts buf_type from offset 16
+    # (no-CUDA layout) to offset 56 (CUDA layout); validate_pic_params then
+    # reads garbage at the wrong offset and returns -EINVAL on every
+    # vmaf_read_pictures call.  See test_pic_preallocation failure analysis.
+    cpp_args : (is_cuda_enabled ? ['-DHAVE_CUDA'] : []) +
+               (is_sycl_enabled ? ['-DHAVE_SYCL'] : []),
     dependencies : [pthread_dependency],
     pic : true,
     install : false,
