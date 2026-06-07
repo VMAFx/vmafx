@@ -5,13 +5,14 @@
  *  C++23 implementation of the once-snapshotted GPU dispatch env helper.
  *  See gpu_dispatch_env.h for the public contract and ADR-0461 for rationale.
  *  ADR-0858 records the .c → .cpp conversion decision.
+ *  ADR-1068 records the fast-path data-race fix.
  *
  *  Design: a fixed-capacity table of (var_name, value) pairs protected by a
  *  single mutex.  On the first call for a given var_name the entry is
  *  populated under the lock; subsequent calls read the cached value
- *  lock-free after a pointer match.  The table holds at most
- *  GPU_DISPATCH_ENV_TABLE_CAP entries; 8 is generous for the current
- *  3 backends (CUDA, Vulkan, SYCL) plus anticipated Metal/HIP.
+ *  lock-free after a ready-flag acquire load.  The table holds at most
+ *  kTableCap entries; 8 is generous for the current 3 backends (CUDA, SYCL,
+ *  HIP) plus anticipated Metal.
  *
  *  C++23 improvements over the original .c:
  *    - std::string_view for O(1) sized comparisons — no null-pointer UB.
@@ -23,11 +24,20 @@
  *    - Platform-specific lock bootstrap (INIT_ONCE / pthread_mutex_t)
  *      replaced by a std::mutex (constinit not applicable; non-constexpr
  *      constructor on GCC/MinGW libstdc++; static-duration zero-init suffices).
+ *    - std::atomic<bool> ready flag per slot: the slow-path writer stores
+ *      var_name and value under the mutex, then releases the ready flag
+ *      (store release); the fast-path reader acquires the ready flag first
+ *      and only then reads var_name and value. This satisfies the C++
+ *      publication idiom ([atomics.order]) and eliminates the data race that
+ *      existed in ADR-0858's first revision, where the fast path read
+ *      std::string_view and std::optional<std::string> without any
+ *      synchronisation while the slow path wrote them. (ADR-1068.)
  *    - EnvRow is a proper aggregate with a constructor guard.
  */
 #include "gpu_dispatch_env.h"
 
 #include <array>
+#include <atomic>
 #include <cstdlib> /* std::getenv */
 #include <mutex>
 #include <optional>
@@ -40,7 +50,12 @@ namespace
 constexpr std::size_t kTableCap = 8;
 
 struct EnvRow {
-    /* Empty var_name means the slot is free. */
+    /* ready is the publication flag.  The slow-path writer sets it last with
+     * memory_order_release; the fast-path reader checks it first with
+     * memory_order_acquire.  All accesses to var_name and value are
+     * sequenced after the acquire load of ready (C++ [atomics.order] §3). */
+    std::atomic<bool> ready{false};
+    /* Non-empty only when ready == true (published under lock). */
     std::string_view var_name{};
     /* nullopt  ↔ variable was unset at snapshot time.
      * has_value ↔ snapshotted copy of the value string. */
@@ -67,11 +82,16 @@ extern "C" {
 
     const std::string_view key{var_name};
 
-    /* Fast path: scan without the lock.  A slot whose var_name field is
-     * non-empty is effectively immutable after insertion, so reading it
-     * without holding the lock is safe on all coherent ISAs.  The worst
-     * outcome is a false miss that falls through to the slow path. */
+    /* Fast path: scan without the mutex.  Each slot's ready flag is loaded
+     * with memory_order_acquire, which synchronises-with the corresponding
+     * release store in the slow path (C++ publication idiom).  Only after a
+     * true acquire load are var_name and value safe to read.  The worst
+     * outcome of a false-negative (seeing ready==false for a slot that is
+     * concurrently being published) is a harmless fall-through to the slow
+     * path, which re-checks under the mutex. */
     for (const auto &row : g_rows) {
+        if (!row.ready.load(std::memory_order_acquire))
+            continue;
         if (row.var_name == key)
             return row.value ? row.value->c_str() : nullptr;
     }
@@ -79,16 +99,18 @@ extern "C" {
     /* Slow path: snapshot the variable under the lock. */
     const std::lock_guard<std::mutex> guard{g_lock};
 
-    /* Re-check under lock to guard against a concurrent insert. */
+    /* Re-check under lock to guard against a concurrent insert.  The mutex
+     * provides the necessary happens-before so plain (non-atomic) reads of
+     * var_name/value are safe here. */
     for (const auto &row : g_rows) {
-        if (row.var_name == key)
+        if (row.ready.load(std::memory_order_relaxed) && row.var_name == key)
             return row.value ? row.value->c_str() : nullptr;
     }
 
     /* Find a free slot. */
     EnvRow *slot = nullptr;
     for (auto &row : g_rows) {
-        if (row.var_name.empty()) {
+        if (!row.ready.load(std::memory_order_relaxed)) {
             slot = &row;
             break;
         }
@@ -108,9 +130,13 @@ extern "C" {
      * hypothetical concurrent setenv from user code. */
     /* NOLINT(concurrency-mt-unsafe): see ADR-0461 contract above. */
     const char *const val = std::getenv(var_name); /* NOLINT(concurrency-mt-unsafe) */
+    /* Write var_name and value while still under the mutex, then publish
+     * with a release store so the fast-path acquire load synchronises-with
+     * this write (C++ publication idiom, ADR-1068). */
     slot->var_name = key;
     if (val)
         slot->value.emplace(val);
+    slot->ready.store(true, std::memory_order_release);
     return slot->value ? slot->value->c_str() : nullptr;
 }
 

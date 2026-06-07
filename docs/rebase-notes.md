@@ -45227,3 +45227,9 @@ no upstream-mirrored file is touched. The scanner's internal `enum` gains
 `read_domain()` helper is added. No public API or CLI surface changes.
 
 Re-test: `meson test -C build test_onnx_scan` (26/26 pass).
+
+## fix/r13-gpu-dispatch-env-fast-path-data-race (2026-06-06)
+no rebase impact: changes confined to `core/src/gpu_dispatch_env.cpp`.
+Adds `std::atomic<bool> ready` per-slot publication flag. No public
+header or ABI change; the AtomicBool type is internal to the translation
+unit.
