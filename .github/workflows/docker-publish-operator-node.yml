@@ -62,6 +62,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           submodules: recursive
+          persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5fb029f  # v3.10.0
@@ -152,6 +153,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           submodules: recursive
+          persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
 
       - name: Set up QEMU (arm64 cross-emulation for CGO + ffmpeg stages)
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff9c35ca64c0f25fcea  # v3.6.0

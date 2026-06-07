@@ -45260,3 +45260,7 @@ no rebase impact: changes confined to `tools/vmaf-tune/src/vmaftune/cli.py` and
 ## fix/ci-yaml-concurrency-timeout (2026-06-07)
 no rebase impact: changes confined to 18 `.github/workflows/*.yml` files.
 No source, header, or build file is modified.
+
+## fix/ci-workflow-permissions-least-privilege (2026-06-07)
+no rebase impact: changes confined to two `.github/workflows/` files.
+No source, header, or build file is modified.

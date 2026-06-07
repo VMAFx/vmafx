@@ -16,17 +16,13 @@ on:
     - cron: '0 8 * * 1'
   workflow_dispatch:
 
-permissions: read-all
-
-concurrency:
-  group: upstream-watcher-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: read  # jobs opt in to issues: write per-job (ADR-1086)
 
 jobs:
   ffmpeg-av1-videotoolbox:
     name: FFmpeg av1_videotoolbox encoder
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       issues: write
