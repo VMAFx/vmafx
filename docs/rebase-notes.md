@@ -45272,3 +45272,7 @@ and test files. No public API or ABI change.
 ## fix/operator-crd-status-schema-gaps (2026-06-07)
 no rebase impact: changes confined to `cmd/vmafx-operator/` and CRD YAML files.
 No C API or libvmaf surface changed.
+
+## fix/ms-ssim-hip-adr0990-precision-parity (2026-06-07)
+no rebase impact: changes confined to `core/src/feature/hip/integer_ms_ssim_hip.c`
+and `ms_ssim_score.hip`. No public header or ABI change.

@@ -308,6 +308,33 @@ The same rule applies to `AdmFixedParametersHip` (~244 bytes) once that follow-u
 is scoped; see ADR-0759 alternatives table. Do not add new by-value large struct
 parameters to ADM kernels without an explicit ADR justification.
 
+## ms_ssim_vert_lcs kernel and host partials must both be `double` (ADR-1071)
+
+The `ms_ssim_score.hip` kernel's `ms_ssim_vert_lcs` function and the host extractor
+`integer_ms_ssim_hip.c` share a pair of allocation / DtoH-copy contracts that are
+**rebase-sensitive**: if one side is updated without the other, the allocation sizes
+mismatch and the HIP runtime silently writes `float` values into a `double`-sized
+buffer (or vice versa), producing numerical garbage.
+
+**The invariant:**
+
+1. Kernel (`ms_ssim_vert_lcs`) writes `double *l_partials`, `double *c_partials`,
+   `double *s_partials` — one `double` per HIP block.
+2. Host (`MsSsimStateHip`) allocates device and pinned-host partial arrays as
+   `sizeof(double)` per block slot (across all 5 MS-SSIM scales).
+3. DtoH copy: `hipMemcpyAsync(..., sizeof(double) * num_blocks, ...)`.
+4. Host accumulator: `double *h_{l,c,s}_partials[MS_SSIM_SCALES]`.
+5. `c1`, `c2`, `c3` are `double` in both kernel params and `MsSsimStateHip`.
+
+This was established by ADR-1071 as a direct port of the CUDA ADR-0990 fix.
+If a future refactor reverts any of these to `float`, cross-backend parity will
+regress by ~0.004 per MS-SSIM scale (failing the ADR-0214 places=4 gate on AMD
+hardware).
+
+**`enable_db` / `clip_db` options** are also wired into the HIP extractor's
+`options[]` array and `collect_fex_hip()`. Do not remove them — they are required
+for parity with the CPU (`float_ms_ssim`) and CUDA (`float_ms_ssim_cuda`) paths.
+
 ## Wiring a new HIP extractor into the build (ADR-0852 lesson)
 
 Three files must be updated together — omitting any one silently leaves the

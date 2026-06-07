@@ -116,9 +116,11 @@ typedef struct MsSsimStateHip {
     unsigned scale_grid_y[MS_SSIM_SCALES];
     unsigned scale_block_count[MS_SSIM_SCALES];
 
-    float c1;
-    float c2;
-    float c3;
+    /* ADR-0990: c1/c2/c3 promoted to double so the kernel receives
+     * double arguments matching the scalar reference precision. */
+    double c1;
+    double c2;
+    double c3;
 
     /* Pyramid: 5 levels × ref + cmp, all float (hipMalloc). */
     void *pyramid_ref[MS_SSIM_SCALES];
@@ -144,10 +146,12 @@ typedef struct MsSsimStateHip {
     void *c_partials[MS_SSIM_SCALES];
     void *s_partials[MS_SSIM_SCALES];
 
-    /* Per-scale pinned host partials for async DtoH (hipHostMalloc). */
-    float *h_l_partials[MS_SSIM_SCALES];
-    float *h_c_partials[MS_SSIM_SCALES];
-    float *h_s_partials[MS_SSIM_SCALES];
+    /* Per-scale pinned host partials for async DtoH (hipHostMalloc).
+     * ADR-0990: double to match the double partials written by the
+     * ms_ssim_vert_lcs kernel. */
+    double *h_l_partials[MS_SSIM_SCALES];
+    double *h_c_partials[MS_SSIM_SCALES];
+    double *h_s_partials[MS_SSIM_SCALES];
 
     /* HIP module + three kernel handles. */
     hipModule_t module;
@@ -159,6 +163,8 @@ typedef struct MsSsimStateHip {
     VmafDictionary *feature_name_dict;
 
     bool enable_lcs;
+    bool enable_db;     /* return dB-domain score: -10*log10(1 - ms_ssim) */
+    bool clip_db;       /* clip linear ms_ssim to [0, 1] before dB conversion */
     bool enable_chroma; /* accepted but clamps n_planes to 1; luma-only. */
     unsigned n_planes;
 } MsSsimStateHip;
@@ -168,6 +174,20 @@ static const VmafOption options[] = {
         .name = "enable_lcs",
         .help = "enable luminance, contrast and structure intermediate output",
         .offset = offsetof(MsSsimStateHip, enable_lcs),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "enable_db",
+        .help = "return dB-domain MS-SSIM score: -10*log10(1 - ms_ssim)",
+        .offset = offsetof(MsSsimStateHip, enable_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "clip_db",
+        .help = "clip linear ms_ssim to [0, 1] before dB conversion",
+        .offset = offsetof(MsSsimStateHip, clip_db),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
@@ -222,10 +242,12 @@ static void ms_ssim_hip_init_dims(MsSsimStateHip *s, unsigned w, unsigned h, uns
         s->scale_block_count[i] = s->scale_grid_x[i] * s->scale_grid_y[i];
     }
 
-    const float L = 255.0f, K1 = 0.01f, K2 = 0.03f;
+    /* ADR-0990: c1/c2/c3 computed and stored as double to match the
+     * scalar reference precision and the double partials the kernel writes. */
+    const double L = 255.0, K1 = 0.01, K2 = 0.03;
     s->c1 = (K1 * L) * (K1 * L);
     s->c2 = (K2 * L) * (K2 * L);
-    s->c3 = s->c2 * 0.5f;
+    s->c3 = s->c2 * 0.5;
 }
 
 /* ------------------------------------------------------------------ */
@@ -313,9 +335,10 @@ static int ms_ssim_hip_bufs_alloc(MsSsimStateHip *s)
     if (hip_rc != hipSuccess)
         goto fail_refcmp;
 
-    /* Per-scale device partials. */
+    /* Per-scale device partials.
+     * ADR-0990: sizeof(double) — kernel writes double partials. */
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t pb = (size_t)s->scale_block_count[i] * sizeof(float);
+        const size_t pb = (size_t)s->scale_block_count[i] * sizeof(double);
         hip_rc = hipMalloc(&s->l_partials[i], pb);
         if (hip_rc != hipSuccess)
             goto fail_partials;
@@ -335,9 +358,10 @@ static int ms_ssim_hip_bufs_alloc(MsSsimStateHip *s)
         }
     }
 
-    /* Pinned host partials for async DtoH (write-combined). */
+    /* Pinned host partials for async DtoH (write-combined).
+     * ADR-0990: sizeof(double) — host partials mirror device doubles. */
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t pb = (size_t)s->scale_block_count[i] * sizeof(float);
+        const size_t pb = (size_t)s->scale_block_count[i] * sizeof(double);
         hip_rc = hipHostMalloc((void **)&s->h_l_partials[i], pb, hipHostMallocWriteCombined);
         if (hip_rc != hipSuccess)
             goto fail_pinned;
@@ -585,7 +609,8 @@ static int ms_ssim_hip_launch_scale(MsSsimStateHip *s, hipStream_t str, int i)
     if (hip_rc != hipSuccess)
         return ms_ssim_hip_rc(hip_rc);
 
-    const size_t pb = (size_t)s->scale_block_count[i] * sizeof(float);
+    /* ADR-0990: sizeof(double) matches the double partials written by vert_lcs. */
+    const size_t pb = (size_t)s->scale_block_count[i] * sizeof(double);
     hip_rc = hipMemcpyAsync(s->h_l_partials[i], s->l_partials[i], pb, hipMemcpyDeviceToHost, str);
     if (hip_rc != hipSuccess)
         return ms_ssim_hip_rc(hip_rc);
@@ -812,8 +837,17 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                   pow(fabs(s_means[i]), (double)g_gammas[i]);
     }
 
+    /* dB conversion — mirrors CPU float_ms_ssim.c and CUDA twin behaviour. */
+    double score = msssim;
+    if (s->enable_db) {
+        if (s->clip_db) {
+            score = score < 0.0 ? 0.0 : (score > 1.0 ? 1.0 : score);
+        }
+        score = -10.0 * log10(1.0 - score);
+    }
+
     err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                  "float_ms_ssim", msssim, index);
+                                                  "float_ms_ssim", score, index);
     if (s->enable_lcs) {
         static const char *const l_names[MS_SSIM_SCALES] = {
             "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",

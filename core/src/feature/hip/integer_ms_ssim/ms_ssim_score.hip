@@ -68,6 +68,10 @@ __device__ static inline int mirror_idx(int idx, int n)
     return r;
 }
 
+/* ms_ssim_warp_reduce is no longer called after the ADR-0990 double
+ * promotion; the inline reduction loop in ms_ssim_vert_lcs operates
+ * directly on double wl/wc/ws.  Kept as a dead helper to avoid a diff
+ * hunk that would conflict during a Netflix upstream sync. */
 __device__ __forceinline__ float ms_ssim_warp_reduce(float v)
 {
     for (int off = WARP_SIZE / 2; off > 0; off >>= 1)
@@ -154,27 +158,36 @@ __global__ void ms_ssim_horiz(const float *__restrict__ ref_in,
  * Grid sized over (W-10) × (H-10) = w_final × h_final.
  * Each block writes one (l, c, s) triple into l_partials / c_partials /
  * s_partials at [blockIdx.y * gridDim.x + blockIdx.x].
+ *
+ * ADR-0139 / ADR-0990 double-precision fix: L/C/S are computed in
+ * double to match the CPU scalar reference in ssim_tools.c which uses
+ * `2.0 * ref_mu * cmp_mu` (double literal promoting the expression).
+ * The warp and block reductions also run in double so accumulated
+ * rounding over 33k pixels at scale 0 stays within the places=4 gate.
+ * GCN/RDNA supports native fp64 __shfl_down; WARPS_PER_BLOCK=2 (warp=64).
  */
 __global__ void ms_ssim_vert_lcs(const float *__restrict__ h_ref_mu_buf,
                                   const float *__restrict__ h_cmp_mu_buf,
                                   const float *__restrict__ h_ref_sq_buf,
                                   const float *__restrict__ h_cmp_sq_buf,
                                   const float *__restrict__ h_refcmp_buf,
-                                  float *__restrict__ l_partials,
-                                  float *__restrict__ c_partials,
-                                  float *__restrict__ s_partials,
+                                  double *__restrict__ l_partials,
+                                  double *__restrict__ c_partials,
+                                  double *__restrict__ s_partials,
                                   unsigned w_horiz,
                                   unsigned w_final,
                                   unsigned h_final,
-                                  float c1,
-                                  float c2,
-                                  float c3)
+                                  double c1,
+                                  double c2,
+                                  double c3)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
 
-    float my_l = 0.0f, my_c = 0.0f, my_s = 0.0f;
+    /* L/C/S in double — matches ssim_tools.c scalar reference which
+     * uses `2.0 *` (double literal) for the numerators. */
+    double my_l = 0.0, my_c = 0.0, my_s = 0.0;
     if (x < w_final && y < h_final) {
         float ref_mu = 0.0f, cmp_mu = 0.0f;
         float ref_sq = 0.0f, cmp_sq = 0.0f, refcmp = 0.0f;
@@ -198,21 +211,27 @@ __global__ void ms_ssim_vert_lcs(const float *__restrict__ h_ref_mu_buf,
         const float clamped_covar =
             (covar < 0.0f && sigma_xy_geom <= 0.0f) ? 0.0f : covar;
 
-        my_l = (2.0f * ref_mu * cmp_mu + c1)
-             / (ref_mu * ref_mu + cmp_mu * cmp_mu + c1);
-        my_c = (2.0f * sigma_xy_geom + c2) / (ref_var + cmp_var + c2);
-        my_s = (clamped_covar + c3) / (sigma_xy_geom + c3);
+        /* Double literals match the CPU scalar: `2.0 *` promotes the
+         * float operands to double before the multiply (ADR-0139). */
+        my_l = (2.0 * (double)ref_mu * (double)cmp_mu + c1) /
+               ((double)ref_mu * (double)ref_mu + (double)cmp_mu * (double)cmp_mu + c1);
+        my_c = (2.0 * (double)sigma_xy_geom + c2) / ((double)ref_var + (double)cmp_var + c2);
+        my_s = ((double)clamped_covar + c3) / ((double)sigma_xy_geom + c3);
     }
 
     /* 3-output per-block tree reduction using shared warp partials.
-     * Warp size = 64 on GCN/RDNA; BLOCK_SIZE=128 → WARPS_PER_BLOCK=2. */
-    __shared__ float s_l_warp[WARPS_PER_BLOCK];
-    __shared__ float s_c_warp[WARPS_PER_BLOCK];
-    __shared__ float s_s_warp[WARPS_PER_BLOCK];
+     * Warp size = 64 on GCN/RDNA; BLOCK_SIZE=128 → WARPS_PER_BLOCK=2.
+     * Shared arrays hold double so warp-reduction precision is preserved. */
+    __shared__ double s_l_warp[WARPS_PER_BLOCK];
+    __shared__ double s_c_warp[WARPS_PER_BLOCK];
+    __shared__ double s_s_warp[WARPS_PER_BLOCK];
 
-    const float wl = ms_ssim_warp_reduce(my_l);
-    const float wc = ms_ssim_warp_reduce(my_c);
-    const float ws = ms_ssim_warp_reduce(my_s);
+    double wl = my_l, wc = my_c, ws = my_s;
+    for (int off = WARP_SIZE / 2; off > 0; off >>= 1) {
+        wl += __shfl_down(wl, off);
+        wc += __shfl_down(wc, off);
+        ws += __shfl_down(ws, off);
+    }
 
     const unsigned lane    = lid % WARP_SIZE;
     const unsigned warp_id = lid / WARP_SIZE;
@@ -224,7 +243,7 @@ __global__ void ms_ssim_vert_lcs(const float *__restrict__ h_ref_mu_buf,
     __syncthreads();
 
     if (lid == 0) {
-        float bl = 0.0f, bc = 0.0f, bs = 0.0f;
+        double bl = 0.0, bc = 0.0, bs = 0.0;
 #pragma unroll
         for (int i = 0; i < WARPS_PER_BLOCK; i++) {
             bl += s_l_warp[i];
