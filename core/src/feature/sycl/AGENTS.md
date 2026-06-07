@@ -129,11 +129,16 @@ HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
   keep default `false` and the clamp logic aligned with the Vulkan and CUDA
   MS-SSIM twins; all three backends must agree on the default and dispatch.
 
-- **`integer_ms_ssim_sycl.cpp` honours the `enable_lcs` GPU
-  contract** (ADR-0243). Emits 15 extra metrics
-  (`float_ms_ssim_{l,c,s}_scale{0..4}`) when `enable_lcs=true`.
-  Metric ordering and `places=4` cross-backend contract are part of
-  the public API surface. See
+- **`integer_ms_ssim_sycl.cpp` honours the `enable_lcs`, `enable_db`,
+  and `clip_db` GPU option parity** (ADR-0243, ADR-1078). When
+  `enable_lcs=true`, emits 15 extra metrics
+  (`float_ms_ssim_{l,c,s}_scale{0..4}`). When `enable_db=true`,
+  returns `-10*log10(1 - ms_ssim)` instead of the raw linear score;
+  `clip_db` clamps the linear value to `[0, 1]` before conversion.
+  All three options default to `false` — output at default settings
+  is numerically identical to the pre-ADR-1078 binary.  Metric ordering
+  and `places=4` cross-backend contract are part of the public API
+  surface. See
   [../../AGENTS.md §"MS-SSIM `enable_lcs` GPU contract"](../../AGENTS.md).
 
 - **`integer_ssim_sycl.cpp` and `integer_ms_ssim_sycl.cpp` are

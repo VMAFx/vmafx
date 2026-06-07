@@ -506,8 +506,10 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         score = -10.0 * log10(1.0 - score);
     }
 
+    /* Append the (possibly dB-converted) score, not the raw msssim.
+     * Mirrors CPU float_ms_ssim.c:extract() which converts before appending. */
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                      "float_ms_ssim", msssim, index);
+                                                      "float_ms_ssim", score, index);
     if (s->enable_lcs) {
         static const char *const l_names[MS_SSIM_SCALES] = {
             "float_ms_ssim_l_scale0", "float_ms_ssim_l_scale1", "float_ms_ssim_l_scale2",

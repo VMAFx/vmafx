@@ -45276,3 +45276,7 @@ No C API or libvmaf surface changed.
 ## fix/ms-ssim-hip-adr0990-precision-parity (2026-06-07)
 no rebase impact: changes confined to `core/src/feature/hip/integer_ms_ssim_hip.c`
 and `ms_ssim_score.hip`. No public header or ABI change.
+
+## fix/ms-ssim-option-parity-hip-sycl (2026-06-07)
+no rebase impact: changes confined to CUDA/HIP/SYCL ms-ssim extractors.
+No public header or ABI change.
