@@ -122,6 +122,30 @@ test('test_vmaf_use_tiny_model', test_vmaf_use_tiny_model,
      workdir : meson.project_source_root() / '..',
      suite : 'dnn')
 
+# ORT error-injection tests (ADR-0112 internal-test-seam pattern).
+# Compiles ort_backend.c directly into the test binary so the test's own
+# OrtGetApiBase() definition wins over the shared-library symbol at link
+# time, giving controlled injection of every ORT API failure path without
+# requiring real hardware or a real ONNX model file.  Only built when
+# dnn_have_ort=true (i.e. ORT was found by pkg-config); in stub builds
+# the target is absent.  op_allowlist.c is intentionally excluded: the
+# header is included by ort_backend.c but vmaf_dnn_op_allowed() is never
+# called from within that TU so there is no undefined-reference at link
+# time.
+if dnn_have_ort
+    test_ort_error_injection = executable('test_ort_error_injection',
+        ['../test.c', 'test_ort_error_injection.c',
+         '../../src/dnn/ort_backend.c',
+         '../../src/log.c'],
+        include_directories : dnn_test_inc,
+        c_args : dnn_defines,
+        dependencies : [math_lib, ort_dep],
+    )
+    test('test_ort_error_injection', test_ort_error_injection,
+         workdir : meson.project_source_root() / '..',
+         suite : 'dnn')
+endif
+
 bash_prog = find_program('bash', required : false)
 if bash_prog.found()
     # test_cli shells out to the built `vmaf` CLI binary, which only
