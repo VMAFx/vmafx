@@ -513,6 +513,201 @@ static char *test_ort_run_multi_output_smoke(void)
     return NULL;
 }
 
+/* -----------------------------------------------------------------------
+ * EP-device fallback coverage (ADR-0113 two-stage path).
+ *
+ * On the coverage runner (GPU ORT build, no real GPU):
+ *   CUDA / OpenVINO / ROCm / CoreML — try_append_<EP> either succeeds
+ *   (CUDA EP registered in the GPU ORT) or returns -ENOSYS (EP absent).
+ *   If the EP registered, CreateSession fails because no real hardware is
+ *   present, triggering the two-stage CPU fallback.  The resulting session
+ *   has ep_name == "CPU" via vmaf_ort_attached_ep().
+ *
+ * Covers: try_append_cuda, try_append_openvino, try_append_rocm,
+ *         try_append_coreml (null + non-null compute_units),
+ *         two-stage CreateSession fallback (ADR-0113),
+ *         VMAF_DNN_DEVICE_COREML_ANE/GPU/CPU/NPU device enum arms.
+ * ----------------------------------------------------------------------- */
+
+static char *test_ort_open_cuda_device_falls_back_to_cpu(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CUDA, .device_index = 0};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    /* The session must open (CPU fallback) and report ep_name "CPU"
+     * when CUDA hardware is absent from the runner. */
+    mu_assert("cuda device: open succeeds with CPU fallback", rc == 0);
+    const char *ep = vmaf_ort_attached_ep(sess);
+    mu_assert("cuda device: ep is non-NULL", ep != NULL);
+    /* May be "CUDA" on a real CUDA machine or "CPU" after fallback — either
+     * is a valid outcome.  The important invariant is that open returns 0. */
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_openvino_device_falls_back_to_cpu(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO, .fp16_io = false};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("openvino device: open succeeds (EP absent → CPU fallback)", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_openvino_cpu_device(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO_CPU};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("openvino-cpu device: open succeeds (EP absent → CPU fallback)", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_openvino_gpu_device(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO_GPU};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("openvino-gpu device: open succeeds (EP absent → CPU fallback)", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_openvino_npu_device(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO_NPU};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("openvino-npu device: open succeeds (EP absent → CPU fallback)", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_rocm_device_falls_back_to_cpu(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_ROCM};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("rocm device: open succeeds (EP absent → CPU fallback)", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_coreml_device_falls_back_to_cpu(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("coreml device: open succeeds (EP absent → CPU fallback)", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_coreml_ane_device(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML_ANE};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("coreml-ane device: open succeeds (EP absent → CPU fallback)", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_coreml_gpu_device(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML_GPU};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("coreml-gpu device: open succeeds (EP absent → CPU fallback)", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_coreml_cpu_device(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML_CPU};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("coreml-cpu device: open succeeds (EP absent → CPU fallback)", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_threads_config(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    /* threads > 0 exercises the SetIntraOpNumThreads branch in vmaf_ort_open.
+     * Both CUDA path (two-stage, threads set on retry) and CPU path (direct). */
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .threads = 2};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("threads config: open succeeds", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_open_cuda_device_with_threads_hits_retry_path(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafOrtSession *sess = NULL;
+    /* CUDA + threads > 0: on a CPU-only runner the two-stage fallback fires
+     * and the retry path re-creates SessionOptions + calls SetIntraOpNumThreads
+     * (the intra_retry > 0 branch in vmaf_ort_open). */
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CUDA, .threads = 2, .device_index = 0};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("cuda+threads: open succeeds (CPU fallback)", rc == 0);
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
 /* Public accessor coverage for vmaf_ort_output_name_at. Lines 792-798 were
  * entirely uncovered at master tip bbcaa8d127. Combined with the +16 LOC
  * GetTensorElementType hard-error path landed in PR #129 (b8a51866e7), the
@@ -581,5 +776,18 @@ char *run_tests(void)
     mu_run_test(test_ort_open_elem_types_fp16_model);
     mu_run_test(test_ort_run_multi_output_smoke);
     mu_run_test(test_ort_public_accessor_coverage);
+    /* EP-device fallback tests (ADR-0113 two-stage path). */
+    mu_run_test(test_ort_open_cuda_device_falls_back_to_cpu);
+    mu_run_test(test_ort_open_openvino_device_falls_back_to_cpu);
+    mu_run_test(test_ort_open_openvino_cpu_device);
+    mu_run_test(test_ort_open_openvino_gpu_device);
+    mu_run_test(test_ort_open_openvino_npu_device);
+    mu_run_test(test_ort_open_rocm_device_falls_back_to_cpu);
+    mu_run_test(test_ort_open_coreml_device_falls_back_to_cpu);
+    mu_run_test(test_ort_open_coreml_ane_device);
+    mu_run_test(test_ort_open_coreml_gpu_device);
+    mu_run_test(test_ort_open_coreml_cpu_device);
+    mu_run_test(test_ort_open_threads_config);
+    mu_run_test(test_ort_open_cuda_device_with_threads_hits_retry_path);
     return NULL;
 }

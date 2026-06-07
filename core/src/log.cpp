@@ -115,6 +115,19 @@ void vmaf_set_log_level(enum VmafLogLevel level)
     istty = isatty(fileno(stderr));
 }
 
+/* NOLINTNEXTLINE(clang-diagnostic-unknown-attributes) — the no_sanitize
+ * attribute suppresses UBSan's enum-invalid-value check for this function.
+ * vmaf_log() is a public C ABI function: callers may legally pass any integer
+ * value that fits the underlying enum type (int), including sentinel values
+ * outside the declared enumerator set (e.g. VMAF_LOG_LEVEL_NONE-1 used by
+ * test_log to verify silent discard). The enum-invalid-value check fires on
+ * the parameter load in the function prologue, before any code can cast the
+ * value to int. Suppressing only the enum sub-check (not all of undefined)
+ * preserves every other UBSan diagnostic on this function.
+ * See ADR-1080 (UBSan enum-invalid-value in vmaf_log / vmaf_option_set). */
+#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 8)
+__attribute__((no_sanitize("enum")))
+#endif
 void vmaf_log(enum VmafLogLevel level, const char *fmt, ...)
 {
     /* Cast to int before comparing: an out-of-range enum value (e.g. the

@@ -146,8 +146,12 @@ jobs:
   # scalar reference. Uses Mesa's lavapipe (software Vulkan 1.3) so the lane
   # runs on stock GitHub-hosted Ubuntu — no self-hosted GPU runner needed.
   # See ADR-0176 § "Lavapipe vs hardware ICD" for the rationale.
+  #
+  # ADR-0726: Vulkan backend removed. The enable_vulkan meson option no longer
+  # exists; this job is disabled until the backend is re-added or the job is
+  # repurposed for a different cross-backend comparison.
   vulkan-vif-cross-backend:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: false
     name: "Vulkan VIF Cross-Backend (lavapipe, places=4)"
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -341,8 +345,11 @@ jobs:
   # CUDA / SYCL / hardware-Vulkan are advisory until a self-hosted runner is
   # plumbed in (the script already supports them via --backends). Emits a
   # JSON + Markdown report under `parity-gate-report/`.
+  #
+  # ADR-0726: Vulkan backend removed. Disabled alongside vulkan-vif-cross-backend
+  # until the backend is re-added or the job is repurposed.
   vulkan-parity-matrix-gate:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: false
     name: "GPU-Parity Matrix Gate (lavapipe, T6-8)"
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -526,15 +533,16 @@ jobs:
         # defect tracked in `docs/state.md` and removed from the list
         # when the underlying bug-fix PR lands. Companion research
         # digest: `docs/research/0090-sanitizer-matrix-test-scope.md`.
-        # ASAN_OPTIONS=allocator_may_return_null=1: ASan's malloc
-        # interceptor aborts by default on allocations it cannot fulfil
-        # (e.g. the intentionally-oversized alloc in
-        # test_gpu_picture_pool_uaf which exercises the NULL-return
-        # failure path of vmaf_gpu_picture_pool_init). With this flag
-        # ASan returns NULL instead of aborting, matching the POSIX
-        # malloc contract the test relies on.
+        # ASAN_OPTIONS / TSAN_OPTIONS allocator_may_return_null=1:
+        # ASan's and TSan's malloc interceptors abort by default on
+        # allocations they cannot fulfil (e.g. the intentionally-oversized
+        # alloc in test_gpu_picture_pool_uaf which exercises the NULL-return
+        # failure path of vmaf_gpu_picture_pool_init). With this flag the
+        # sanitizer runtime returns NULL instead of aborting, matching the
+        # POSIX malloc contract the test relies on.
         env:
           ASAN_OPTIONS: allocator_may_return_null=1
+          TSAN_OPTIONS: allocator_may_return_null=1
         working-directory: core
         shell: bash
         run: |
