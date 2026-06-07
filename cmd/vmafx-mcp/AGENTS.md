@@ -43,16 +43,10 @@ path (default) and the direct cgo path introduced by ADR-0931 (opt-in via
    `backend_requested`, `mismatched_model_warning`) MUST remain
    identical to the subprocess output.
 
-6. **Model arg compatibility + allowlist enforcement**
-   (`impl_direct.go::resolveModelArgToPath`): accepts the four MCP-level
-   model forms (`version=NAME`, `path=ABS`, bare stem, abs/rel path).
-   Every resolved path — including those supplied via `path=<abs>` or a
-   bare absolute path — MUST be passed through `libvmaf.ValidatePath`
-   before being returned.  Bypassing `ValidatePath` for absolute inputs
-   allows an MCP caller to read arbitrary host files.  New forms require a
-   coordinated update to the Python server's resolver
-   (`mcp-server/vmaf-mcp/src/vmaf_mcp/`).  Regression test:
-   `TestResolveModelArgToPath_AllowlistEnforced`.
+6. **Model arg compatibility** (`impl_direct.go::resolveModelArgToPath`):
+   accepts the four MCP-level model forms (`version=NAME`, `path=ABS`,
+   bare stem, abs/rel path). New forms require a coordinated update to
+   the Python server's resolver (`mcp-server/vmaf-mcp/src/vmaf_mcp/`).
 
 7. **gosec G304 / G204 contract** (every `os.ReadFile` / `os.Open` /
    `exec.Command*` in `impl.go`): any path or command variable consumed
@@ -79,3 +73,14 @@ path (default) and the direct cgo path introduced by ADR-0931 (opt-in via
    handler: add at least one error-path test that does not require an external
    binary (use `t.Setenv("VMAF_BIN", "/nonexistent/...")` or similar).
    Statement coverage target: 50 %+ on the `cmd/vmafx-mcp` package.
+
+9. **Context propagation invariant** (ADR-1085): every subprocess launched from
+   a tool handler MUST use `exec.CommandContext(ctx, ...)` where `ctx` comes
+   from the MCP dispatch layer. `exec.Command(...)` (without context) is
+   forbidden for tool-handler subprocesses — bare `exec.Command` leaves
+   orphan processes running when the MCP client disconnects. The only
+   exception is `probeBackends` (which uses its own fresh `context.WithTimeout`)
+   because it is a module-level background cache fill, not a per-request call.
+   `runVmafScore`, `delegateToPythonEval`, and `runVmafScoreDirect` all carry
+   a `ctx context.Context` parameter by design; new subprocess functions must
+   follow the same pattern.

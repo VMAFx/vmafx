@@ -162,12 +162,12 @@ func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 	// path falls back to the subprocess path transparently for backends /
 	// model types it cannot handle (ADR-0931 Phase 1).
 	if directPathEnabled() {
-		return runVmafScoreDirect(ref, dis, width, height, pixfmt, bitdepth, model, backend)
+		return runVmafScoreDirect(ctx, ref, dis, width, height, pixfmt, bitdepth, model, backend)
 	}
-	return runVmafScore(ref, dis, width, height, pixfmt, bitdepth, model, backend, precision)
+	return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, model, backend, precision)
 }
 
-func runVmafScore(ref, dis string, width, height int, pixfmt string, bitdepth int, model, backend, precision string) (map[string]any, error) {
+func runVmafScore(ctx context.Context, ref, dis string, width, height int, pixfmt string, bitdepth int, model, backend, precision string) (map[string]any, error) {
 	vmafBin := libvmaf.FindBinary()
 	if _, err := os.Stat(vmafBin); err != nil {
 		return nil, fmt.Errorf("vmaf binary not found at %s. Build first: meson compile -C build", vmafBin)
@@ -221,7 +221,10 @@ func runVmafScore(ref, dis string, width, height int, pixfmt string, bitdepth in
 	// #nosec G204 -- vmafBin resolved via libvmaf.FindBinary (env-overridable to
 	// a fixed allowlist of paths) and `ref`/`dis` are already libvmaf.ValidatePath-
 	// filtered in the calling handlers (handleVmafScore + handleVmafScoreEncoded).
-	cmd := exec.Command(vmafBin, argv...)
+	// CommandContext propagates client-disconnect cancellation so that the vmaf
+	// subprocess is killed when the MCP client disconnects mid-run rather than
+	// running to completion as an orphan (ADR-1085).
+	cmd := exec.CommandContext(ctx, vmafBin, argv...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -453,7 +456,7 @@ func handleRunBenchmark(ctx context.Context, _ map[string]any) (any, error) {
 // (onnxruntime, pandas, scipy). This matches the Python server's own lazy-
 // import approach: the tool is available in the tool list (for IDE clients)
 // but returns a clear error when the Python env is not available.
-func handleEvalModelOnSplit(_ context.Context, args map[string]any) (any, error) {
+func handleEvalModelOnSplit(ctx context.Context, args map[string]any) (any, error) {
 	modelPath, err := libvmaf.ValidatePath(strArg(args, "model", ""))
 	if err != nil {
 		return nil, fmt.Errorf("model: %w", err)
@@ -465,11 +468,11 @@ func handleEvalModelOnSplit(_ context.Context, args map[string]any) (any, error)
 	split := strArg(args, "split", "test")
 	inputName := strArg(args, "input_name", "features")
 
-	return delegateToPythonEval(modelPath, featuresPath, split, inputName)
+	return delegateToPythonEval(ctx, modelPath, featuresPath, split, inputName)
 }
 
 // delegateToPythonEval invokes the Python helper script for ONNX evaluation.
-func delegateToPythonEval(modelPath, featuresPath, split, inputName string) (any, error) {
+func delegateToPythonEval(ctx context.Context, modelPath, featuresPath, split, inputName string) (any, error) {
 	// Inline Python script: avoids an on-disk helper file dependency.
 	script := `
 import sys, json, hashlib
@@ -524,7 +527,9 @@ print(json.dumps({"model":model_path,"features":features_path,"split":split,"n":
 	// libvmaf.ValidatePath by the caller (handleEvalModelOnSplit), split is
 	// constrained to {train,val,test,all} server-side, inputName is a JSON
 	// schema-validated identifier.
-	cmd := exec.Command("python3", "-c", script, modelPath, featuresPath, split, inputName)
+	// CommandContext ensures the Python subprocess is killed if the MCP client
+	// disconnects before evaluation completes (ADR-1085).
+	cmd := exec.CommandContext(ctx, "python3", "-c", script, modelPath, featuresPath, split, inputName)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -564,7 +569,7 @@ func handleCompareModels(ctx context.Context, args map[string]any) (any, error) 
 			modelErrors = append(modelErrors, map[string]any{"model": mStr, "error": err.Error()})
 			continue
 		}
-		r, err := delegateToPythonEval(mp, featuresPath, split, inputName)
+		r, err := delegateToPythonEval(ctx, mp, featuresPath, split, inputName)
 		if err != nil {
 			modelErrors = append(modelErrors, map[string]any{"model": mStr, "error": err.Error()})
 			continue
@@ -606,7 +611,7 @@ func handleDescribeWorstFrames(ctx context.Context, args map[string]any) (any, e
 	backend := strArg(args, "backend", "auto")
 	n := intArg(args, "n", 5)
 
-	score, err := runVmafScore(ref, dis, width, height, pixfmt, bitdepth, model, backend, "legacy") // %.6f per ADR-0119
+	score, err := runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, model, backend, "legacy") // %.6f per ADR-0119
 	if err != nil {
 		return nil, err
 	}
@@ -949,7 +954,7 @@ func handleVmafScoreEncoded(ctx context.Context, args map[string]any) (any, erro
 		}
 	}
 
-	result, err := runVmafScore(refYUV, disYUV, width, height, pixfmt, bitdepth, model, backend, precision)
+	result, err := runVmafScore(ctx, refYUV, disYUV, width, height, pixfmt, bitdepth, model, backend, precision)
 	if err != nil {
 		return nil, err
 	}

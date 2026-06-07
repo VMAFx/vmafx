@@ -94,11 +94,14 @@ async def _communicate_with_timeout(
     """Await ``proc.communicate()`` with a wall-clock @p timeout.
 
     On :class:`asyncio.TimeoutError` the child process is killed (after a
-    best-effort drain) and a :class:`RuntimeError` is raised. The default
-    timeout comes from :func:`_subprocess_timeout_s` (see ``VMAF_MCP_
-    SUBPROCESS_TIMEOUT_S``).  Mirrors the existing per-call timeouts on
-    the synchronous ``subprocess.run`` sites so async and sync paths
-    have symmetric hang protection.
+    best-effort drain) and a :class:`RuntimeError` is raised.  On
+    :class:`asyncio.CancelledError` (client disconnected mid-stream) the
+    child process is also killed so it does not linger as an orphan consuming
+    CPU or GPU resources after the MCP tool coroutine is cancelled (ADR-1085).
+    The default timeout comes from :func:`_subprocess_timeout_s` (see
+    ``VMAF_MCP_SUBPROCESS_TIMEOUT_S``).  Mirrors the existing per-call
+    timeouts on the synchronous ``subprocess.run`` sites so async and sync
+    paths have symmetric hang protection.
     """
     deadline = timeout if timeout is not None else _subprocess_timeout_s()
     try:
@@ -114,6 +117,16 @@ async def _communicate_with_timeout(
             f"subprocess timed out after {deadline:.1f}s (set "
             "VMAF_MCP_SUBPROCESS_TIMEOUT_S to override)"
         ) from exc
+    except asyncio.CancelledError:
+        # The MCP tool coroutine was cancelled (e.g. client disconnected).
+        # Kill the child process so it does not run to completion as an orphan.
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        # Best-effort drain so the OS releases the pipes.
+        with contextlib.suppress(asyncio.TimeoutError, ProcessLookupError):
+            await asyncio.wait_for(proc.communicate(), timeout=5.0)
+        # Re-raise so asyncio can properly propagate the cancellation.
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -1838,7 +1851,7 @@ async def _run_vmaf_score_encoded(
     model: str = "version=vmaf_v0.6.1",
     backend: str = "auto",
     subsample: int = 1,
-    precision: str = "legacy"  # "legacy" = %.6f; matches C CLI default per ADR-0119,
+    precision: str = "legacy",  # "legacy" = %.6f; matches C CLI default per ADR-0119,
 ) -> dict[str, Any]:
     """Decode both encoded inputs to temp raw YUV, then delegate to
     :func:`_run_vmaf_score`.

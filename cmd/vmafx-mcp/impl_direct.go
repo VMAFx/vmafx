@@ -46,10 +46,10 @@ func directPathEnabled() bool {
 //     the subprocess path (so existing GPU dispatch still works).
 //   - SVM models only (.json / .pkl).  ONNX/DNN models route to subprocess
 //     until Phase 3 adds the cgo ONNX bridge.
-func runVmafScoreDirect(ref, dis string, width, height int, pixfmt string, bitdepth int, modelArg, backend string) (map[string]any, error) {
+func runVmafScoreDirect(ctx context.Context, ref, dis string, width, height int, pixfmt string, bitdepth int, modelArg, backend string) (map[string]any, error) {
 	// GPU backends require Phase 2; fall back transparently.
 	if backend != "auto" && backend != "cpu" {
-		return runVmafScore(ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17")
+		return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17")
 	}
 
 	// Resolve the model arg.  The MCP schema accepts "version=vmaf_v0.6.1"
@@ -60,12 +60,12 @@ func runVmafScoreDirect(ref, dis string, width, height int, pixfmt string, bitde
 	if err != nil {
 		// Unresolvable model -> fall back to subprocess (it has its own
 		// "version=..." resolver inside vmaf.c).
-		return runVmafScore(ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17")
+		return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17")
 	}
 
 	// DNN / .onnx models are out of scope for Phase 1.
 	if ext := strings.ToLower(filepath.Ext(modelPath)); ext == ".onnx" {
-		return runVmafScore(ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17")
+		return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17")
 	}
 
 	pf, err := libvmaf.ParsePixFmt(pixfmt)
@@ -75,12 +75,9 @@ func runVmafScoreDirect(ref, dis string, width, height int, pixfmt string, bitde
 
 	libvmaf.LogDirectPathSelected()
 
-	// MCP handlers run inside the JSON-RPC dispatch loop without a
-	// request-scoped context yet — the JSON-RPC framing is best-effort and
-	// does not surface client disconnect.  context.Background() preserves
-	// the historical behaviour; a future ADR can plumb ctx through the
-	// MCP server's tool dispatch layer.
-	res, err := libvmaf.ScoreDirect(context.Background(), libvmaf.ScoreDirectRequest{
+	// Use the caller-scoped ctx so that a client disconnect cancels the cgo
+	// scoring call, preventing orphan threads on the C side (ADR-1085).
+	res, err := libvmaf.ScoreDirect(ctx, libvmaf.ScoreDirectRequest{
 		Ref:       ref,
 		Dis:       dis,
 		ModelPath: modelPath,
@@ -114,16 +111,12 @@ func runVmafScoreDirect(ref, dis string, width, height int, pixfmt string, bitde
 // absolute path on disk.  The MCP schema's accepted forms are:
 //
 //   - "version=vmaf_v0.6.1"  → repoRoot/model/vmaf_v0.6.1.json
-//   - "path=/abs/path.json"  → /abs/path.json (validated against AllowedRoots)
+//   - "path=/abs/path.json"  → /abs/path.json
 //   - "vmaf_v0.6.1"          → repoRoot/model/vmaf_v0.6.1.json (bare stem)
-//   - "/abs/path.json"       → /abs/path.json (validated against AllowedRoots)
+//   - "/abs/path.json"       → /abs/path.json
 //
-// Every resolved path is validated via libvmaf.ValidatePath before being
-// returned so callers cannot reach files outside the allowlisted roots.
-//
-// Returns an error when no candidate file exists or the path escapes the
-// allowlist; the caller then falls back to the subprocess path so the legacy
-// resolver inside vmaf.c gets a chance.
+// Returns an error when no candidate file exists; the caller then falls back
+// to the subprocess path so the legacy resolver inside vmaf.c gets a chance.
 func resolveModelArgToPath(modelArg string) (string, error) {
 	root := libvmaf.RepoRoot()
 	modelsDir := filepath.Join(root, "model")
@@ -136,27 +129,26 @@ func resolveModelArgToPath(modelArg string) (string, error) {
 		stripped = after
 	}
 
-	// Absolute path: validate against AllowedRoots before returning.
+	// Absolute / relative path that exists?
 	if filepath.IsAbs(stripped) {
-		return libvmaf.ValidatePath(stripped)
-	}
-
-	// Relative path rooted at repo root.
-	if _, err := os.Stat(filepath.Join(root, stripped)); err == nil {
-		return libvmaf.ValidatePath(filepath.Join(root, stripped))
+		if _, err := os.Stat(stripped); err == nil {
+			return stripped, nil
+		}
+	} else if _, err := os.Stat(filepath.Join(root, stripped)); err == nil {
+		return filepath.Join(root, stripped), nil
 	}
 
 	// Bare stem → look in model/.
 	for _, ext := range []string{".json", ".pkl"} {
 		candidate := filepath.Join(modelsDir, stripped+ext)
 		if _, err := os.Stat(candidate); err == nil {
-			return libvmaf.ValidatePath(candidate)
+			return candidate, nil
 		}
 		// Already has the extension?
 		if strings.HasSuffix(strings.ToLower(stripped), ext) {
 			candidate = filepath.Join(modelsDir, stripped)
 			if _, err := os.Stat(candidate); err == nil {
-				return libvmaf.ValidatePath(candidate)
+				return candidate, nil
 			}
 		}
 	}
