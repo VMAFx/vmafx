@@ -1040,11 +1040,12 @@ scripts for those local corpora.
   string lets the caller keep its `"unknown"` placeholder so
   existing tests that pin that exact value still pass.
   `_VERSION_PROBE_PATTERNS` now covers `libx264`, `libsvtav1`,
-  `libx265`, and `libvpx-vp9`; tests for any of these codecs that
-  use a fake runner and don't return `--enable-*` text in stdout
-  must capture only the first subprocess call (the encode argv),
-  not the last, since the probe fires a second `ffmpeg -version`
-  call when the encoder banner is absent from the encode stderr.
+  `libx265`, `libvpx-vp9`, `libaom-av1`, and `libvvenc` (ADR-1077);
+  tests for any of these codecs that use a fake runner and don't
+  return `--enable-*` text in stdout must capture only the first
+  subprocess call (the encode argv), not the last, since the probe
+  fires a second `ffmpeg -version` call when the encoder banner is
+  absent from the encode stderr.
   `encode.probe_encoder_info(ffmpeg_bin, encoder)` returns
   `EncoderInfo(encoder, codec_detected, version_label)` — callers
   should use this rather than re-parsing the version string.

@@ -386,7 +386,7 @@ def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
         "framerate": 24.0,
         "duration_s": 10.0,
         "sample_clip_seconds": 4.0,
-        "preset": None,
+        "preset": "medium",  # ADR-1077: default changed from None to "medium"
         "crf_range": (15, 40),
         "max_iterations": 8,
         "vmaf_model": "vmaf_v0.6.1",

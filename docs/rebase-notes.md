@@ -45252,3 +45252,7 @@ no public header or ABI change.
 ## fix/mcp-http-edge-cases (2026-06-07)
 no rebase impact: changes confined to `mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py`
 and a new test file. No C API or public header change.
+
+## fix/vmaftune-corner-cases-r14 (2026-06-07)
+no rebase impact: changes confined to `tools/vmaf-tune/src/vmaftune/cli.py` and
+`encode.py`. No C API or public header change.

@@ -290,6 +290,18 @@ _LIBVPX_VP9_VERSION_RE = re.compile(r"\[libvpx-vp9 @ [^\]]+\]\s+v(\S+)")
 #   newer: "Svt[info]:SVT-AV1 Encoder Lib v2.1.0"
 #   v1.x: "SVT [info]: SVT-AV1 Encoder Lib v1.7.0"
 _SVTAV1_VERSION_RE = re.compile(r"SVT-AV1 Encoder(?:\s+Lib)?\s+v(\S+)", re.IGNORECASE)
+# libaom-av1: FFmpeg emits "[libaom-av1 @ 0x...] libaom-av1 v3.x.y" or
+#   "[libaom @ 0x...] AOM version: 3.x.y" depending on FFmpeg vintage.
+_LIBAOM_VERSION_RE = re.compile(
+    r"\[libaom(?:-av1)?\s*@\s*[^\]]+\]\s+(?:libaom-av1\s+v|AOM version:\s*)(\S+)",
+    re.IGNORECASE,
+)
+# VVenC: FFmpeg emits "[libvvenc @ 0x...] VVenC v1.14.0" or
+#   "[libvvenc @ 0x...] Fraunhofer VVC/H.266 Encoder VVenC v1.14.0"
+_LIBVVENC_VERSION_RE = re.compile(
+    r"\[libvvenc\s*@\s*[^\]]+\]\s+(?:Fraunhofer\s+VVC/H\.266\s+Encoder\s+)?VVenC\s+v(\S+)",
+    re.IGNORECASE,
+)
 
 
 def parse_versions(stderr: str, encoder: str = "libx264") -> tuple[str, str]:
@@ -297,10 +309,13 @@ def parse_versions(stderr: str, encoder: str = "libx264") -> tuple[str, str]:
 
     ``encoder`` selects the per-codec version regex. Supported values
     match the codec_adapters registry: ``libx264`` (default), ``libx265``,
-    ``libsvtav1``, ``libvpx-vp9``, any HW encoder token
-    (h264_nvenc, hevc_amf, …).
+    ``libsvtav1``, ``libvpx-vp9``, ``libaom-av1``, ``libvvenc``, and any
+    HW encoder token (h264_nvenc, hevc_amf, …).
     HW encoders don't advertise a version in stderr; the encoder token
     string is returned verbatim so corpus rows carry a stable identifier.
+    ``libaom-av1`` and ``libvvenc`` emit a version banner when available;
+    the encoder name is used as the stable fallback when the banner is
+    absent (e.g. builds that suppress per-encoder output).
 
     Returns ``("unknown", "unknown")`` for missing matches rather than
     raising — corpus rows record what we can detect and move on.
@@ -334,6 +349,17 @@ def parse_versions(stderr: str, encoder: str = "libx264") -> tuple[str, str]:
     elif encoder == "libvpx-vp9":
         m = _LIBVPX_VP9_VERSION_RE.search(stderr)
         enc_str = f"libvpx-vp9-{m.group(1)}" if m else "unknown"
+    elif encoder == "libaom-av1":
+        # libaom emits a version banner in the per-run stderr when FFmpeg
+        # is built with verbose encoder logging. Fall back to the stable
+        # adapter name when the banner is absent (quiet builds).
+        m = _LIBAOM_VERSION_RE.search(stderr)
+        enc_str = f"libaom-av1-{m.group(1)}" if m else "libaom-av1"
+    elif encoder == "libvvenc":
+        # VVenC emits "VVenC v<version>" via the FFmpeg libvvenc wrapper.
+        # Fall back to the stable adapter name when the banner is absent.
+        m = _LIBVVENC_VERSION_RE.search(stderr)
+        enc_str = f"libvvenc-{m.group(1)}" if m else "libvvenc"
     else:
         # Known HW encoder tokens (nvenc/amf/qsv/videotoolbox): no version
         # string in stderr; return the token as the stable identifier.
@@ -438,6 +464,9 @@ _VERSION_PROBE_PATTERNS: dict[str, re.Pattern] = {
     "libsvtav1": re.compile(r"--enable-libsvtav1"),
     "libx265": re.compile(r"--enable-libx265"),
     "libvpx-vp9": re.compile(r"--enable-libvpx"),
+    # libaom and VVenC configure flags (ADR-1077).
+    "libaom-av1": re.compile(r"--enable-libaom"),
+    "libvvenc": re.compile(r"--enable-libvvenc"),
 }
 
 

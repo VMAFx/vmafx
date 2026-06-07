@@ -194,7 +194,8 @@ class TestBuildFfmpegCommandTwoPass:
         # Pass 1 must write to -f null -
         assert "-f" in cmd
         null_idx = next(
-            (i for i in range(len(cmd) - 1) if cmd[i] == "-f" and cmd[i + 1] == "null"), None
+            (i for i in range(len(cmd) - 1) if cmd[i] == "-f" and cmd[i + 1] == "null"),
+            None,
         )
         assert null_idx is not None, "expected -f null in pass-1 command"
         assert cmd[-1] == "-"
@@ -356,6 +357,55 @@ class TestParseVersionsExtended:
         _, enc = parse_versions(stderr)
         assert enc == "unknown"
 
+    # --- libaom-av1 (ADR-1077) ---
+
+    def test_libaom_av1_with_version_banner(self) -> None:
+        # Older FFmpeg: "[libaom-av1 @ 0xabc] libaom-av1 v3.6.0"
+        stderr = "ffmpeg version 7.1\n[libaom-av1 @ 0xabc123] libaom-av1 v3.6.0\n"
+        ffm, enc = parse_versions(stderr, encoder="libaom-av1")
+        assert ffm == "7.1"
+        assert enc == "libaom-av1-3.6.0"
+
+    def test_libaom_av1_aom_version_format(self) -> None:
+        # Alternate format: "[libaom @ 0xabc] AOM version: 3.7.1"
+        stderr = "ffmpeg version 7.1\n[libaom @ 0xabc123] AOM version: 3.7.1\n"
+        ffm, enc = parse_versions(stderr, encoder="libaom-av1")
+        assert ffm == "7.1"
+        assert enc == "libaom-av1-3.7.1"
+
+    def test_libaom_av1_no_banner_returns_stable_name(self) -> None:
+        # Quiet build: no per-encoder banner — must return stable adapter name,
+        # not "unknown" (regression guard for the pre-ADR-1077 bug).
+        stderr = "ffmpeg version 7.1\n"
+        _, enc = parse_versions(stderr, encoder="libaom-av1")
+        assert enc == "libaom-av1"
+
+    # --- libvvenc (ADR-1077) ---
+
+    def test_libvvenc_with_version_banner(self) -> None:
+        # FFmpeg libvvenc wrapper: "[libvvenc @ 0xabc] VVenC v1.14.0"
+        stderr = "ffmpeg version 7.1\n[libvvenc @ 0xabc123] VVenC v1.14.0\n"
+        ffm, enc = parse_versions(stderr, encoder="libvvenc")
+        assert ffm == "7.1"
+        assert enc == "libvvenc-1.14.0"
+
+    def test_libvvenc_fraunhofer_prefix_variant(self) -> None:
+        # Alternate format: "[libvvenc @ 0xabc] Fraunhofer VVC/H.266 Encoder VVenC v1.14.0"
+        stderr = (
+            "ffmpeg version 7.1\n"
+            "[libvvenc @ 0xabc123] Fraunhofer VVC/H.266 Encoder VVenC v1.14.0\n"
+        )
+        ffm, enc = parse_versions(stderr, encoder="libvvenc")
+        assert ffm == "7.1"
+        assert enc == "libvvenc-1.14.0"
+
+    def test_libvvenc_no_banner_returns_stable_name(self) -> None:
+        # Quiet build: no per-encoder banner — must return stable adapter name,
+        # not "unknown" (regression guard for the pre-ADR-1077 bug).
+        stderr = "ffmpeg version 7.1\n"
+        _, enc = parse_versions(stderr, encoder="libvvenc")
+        assert enc == "libvvenc"
+
 
 # ---------------------------------------------------------------------------
 # bitrate_kbps
@@ -428,7 +478,13 @@ class TestRunEncode:
 
         def bad_runner(cmd: list[str], capture_output: bool, text: bool, check: bool) -> Any:
             return type(
-                "R", (), {"returncode": 1, "stderr": "ffmpeg version 6.0\nerror\n", "stdout": ""}
+                "R",
+                (),
+                {
+                    "returncode": 1,
+                    "stderr": "ffmpeg version 6.0\nerror\n",
+                    "stdout": "",
+                },
             )()
 
         result = run_encode(req, runner=bad_runner)
@@ -445,7 +501,9 @@ class TestRunEncode:
 
         def ok_runner(cmd: list[str], capture_output: bool, text: bool, check: bool) -> Any:
             return type(
-                "R", (), {"returncode": 0, "stderr": "ffmpeg version 6.0\n", "stdout": ""}
+                "R",
+                (),
+                {"returncode": 0, "stderr": "ffmpeg version 6.0\n", "stdout": ""},
             )()
 
         result = run_encode(req, runner=ok_runner)
@@ -500,7 +558,9 @@ class TestRunEncode:
             out.write_bytes(b"\x00" * 64)
             # Return stderr without x264 banner so version is "unknown"
             return type(
-                "R", (), {"returncode": 0, "stderr": "ffmpeg version 6.0\n", "stdout": ""}
+                "R",
+                (),
+                {"returncode": 0, "stderr": "ffmpeg version 6.0\n", "stdout": ""},
             )()
 
         result = run_encode(req, runner=runner)
@@ -523,7 +583,11 @@ class TestProbeEncoderVersion:
             return type(
                 "R",
                 (),
-                {"returncode": 0, "stdout": "--enable-libsvtav1 --enable-libx264", "stderr": ""},
+                {
+                    "returncode": 0,
+                    "stdout": "--enable-libsvtav1 --enable-libx264",
+                    "stderr": "",
+                },
             )()
 
         result = _probe_encoder_version_from_ffmpeg("ffmpeg", "libsvtav1", runner)
@@ -615,7 +679,9 @@ class TestRunEncodeWithStats:
                 except OSError:
                     pass
             return type(
-                "R", (), {"returncode": 0, "stderr": "ffmpeg version 6.0\n", "stdout": ""}
+                "R",
+                (),
+                {"returncode": 0, "stderr": "ffmpeg version 6.0\n", "stdout": ""},
             )()
 
         result = run_encode_with_stats(
@@ -673,7 +739,9 @@ class TestRunTwoPassEncode:
             # First call = pass-1, make it fail
             if call_count["n"] == 1:
                 return type(
-                    "R", (), {"returncode": 1, "stderr": "ffmpeg: pass 1 error\n", "stdout": ""}
+                    "R",
+                    (),
+                    {"returncode": 1, "stderr": "ffmpeg: pass 1 error\n", "stdout": ""},
                 )()
             # Should never reach pass 2
             raise AssertionError("pass 2 should not be called after pass 1 failure")
@@ -692,7 +760,9 @@ class TestRunTwoPassEncode:
             if cmd[-1] == "-":
                 # Pass 1 — null muxer
                 return type(
-                    "R", (), {"returncode": 0, "stderr": "ffmpeg version 6.0\n", "stdout": ""}
+                    "R",
+                    (),
+                    {"returncode": 0, "stderr": "ffmpeg version 6.0\n", "stdout": ""},
                 )()
             # Pass 2 — touch output
             out = tmp_path / "out.mp4"

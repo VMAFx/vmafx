@@ -267,7 +267,10 @@ def test_no_bisect_unavailable_encoder_gets_error_rows(monkeypatch, tmp_path):
 
     def _probe(enc, **kw):
         if enc == "h264_nvenc":
-            return (False, "hardware encoder not available: h264_nvenc not compiled into ffmpeg")
+            return (
+                False,
+                "hardware encoder not available: h264_nvenc not compiled into ffmpeg",
+            )
         return (True, "")
 
     monkeypatch.setattr(_cmp, "probe_encoder_available", _probe)
@@ -340,3 +343,40 @@ def test_no_bisect_runtime_variant_uses_bound_ffmpeg(monkeypatch, tmp_path):
     assert by_codec["libsvtav1@svt-av1-hdr"]["adapter"] == "libsvtav1"
     assert by_codec["libsvtav1@svt-av1-hdr"]["runtime_variant"] == "svt-av1-hdr"
     assert by_codec["libsvtav1@svt-av1-hdr"]["ffmpeg_bin"] == "/opt/ffmpeg-hdr"
+
+
+def test_no_bisect_without_explicit_preset_uses_medium(monkeypatch, tmp_path):
+    """Regression: compare --no-bisect --crf-sweep without --preset must not silently fail.
+
+    Before ADR-1077 the --preset argparse default was None, which caused
+    _encode_and_score to reject every encode (``None not in presets`` is
+    always True) and return ok=False rows.  The fix sets default='medium'.
+    This test drives the full CLI parse path to verify the default value
+    is 'medium' when the flag is omitted.
+    """
+    from vmaftune import cli as _cli  # noqa: PLC0415
+
+    # Build a parser instance and parse a minimal compare invocation that
+    # omits --preset, then assert the default is 'medium', not None.
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"\x00" * 100)
+    args = _cli._build_parser().parse_args(
+        [
+            "compare",
+            "--src",
+            str(src),
+            "--encoders",
+            "libx264",
+            "--no-bisect",
+            "--crf-sweep",
+            "23",
+            "--width",
+            "320",
+            "--height",
+            "240",
+        ]
+    )
+    assert args.preset == "medium", (
+        "compare --preset must default to 'medium' so that --no-bisect "
+        "--crf-sweep does not silently produce all-failed rows (ADR-1077)"
+    )

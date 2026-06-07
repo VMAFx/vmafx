@@ -25,7 +25,13 @@ from typing import Any, TextIO
 from . import __version__
 from .bisect import bisect_target_vmaf
 from .codec_adapters import get_adapter, known_codecs
-from .corpus import CorpusJob, CorpusOptions, coarse_to_fine_search, iter_rows, write_jsonl
+from .corpus import (
+    CorpusJob,
+    CorpusOptions,
+    coarse_to_fine_search,
+    iter_rows,
+    write_jsonl,
+)
 from .encode import iter_grid
 from .fast import (
     DEFAULT_CRF_HI,
@@ -1067,7 +1073,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "(ADR-0301). 0 = full source."
         ),
     )
-    compare.add_argument("--preset", default=None, help="codec preset for the bisect backend")
+    compare.add_argument(
+        "--preset",
+        default="medium",
+        help=(
+            "codec preset for the bisect backend (default: medium). "
+            "Each adapter maps this onto its native preset vocabulary. "
+            "Use this flag when all codecs under comparison should run at "
+            "the same preset level; omit it to accept the per-adapter default."
+        ),
+    )
     compare.add_argument("--crf-min", type=int, default=None, help="inclusive lower CRF bound")
     compare.add_argument("--crf-max", type=int, default=None, help="inclusive upper CRF bound")
     compare.add_argument(
@@ -1902,7 +1917,10 @@ def _run_recommend(args: argparse.Namespace) -> int:
 
     write_jsonl(_capture(), opts.output)
     if getattr(args, "with_uncertainty", False):
-        from .recommend import UncertaintyAwareRequest, pick_target_vmaf_with_uncertainty
+        from .recommend import (
+            UncertaintyAwareRequest,
+            pick_target_vmaf_with_uncertainty,
+        )
         from .uncertainty import load_confidence_thresholds
 
         thresholds = load_confidence_thresholds(getattr(args, "uncertainty_sidecar", None))
@@ -2003,7 +2021,11 @@ def _run_predict(args: argparse.Namespace) -> int:
     from .encode import EncodeRequest, run_encode
     from .per_shot import detect_shots
     from .predictor import Predictor
-    from .predictor_features import FeatureExtractorConfig, _probe_video_geometry, extract_features
+    from .predictor_features import (
+        FeatureExtractorConfig,
+        _probe_video_geometry,
+        extract_features,
+    )
     from .predictor_validate import Verdict, validate_predictor
     from .score import ScoreRequest, run_score
 
@@ -4831,7 +4853,11 @@ def _run_report(args: argparse.Namespace) -> int:
 def _run_encode_profile(args: argparse.Namespace) -> int:
     """Encode one recommendation from an embedded vmaf-tune profile."""
     from .encode import build_ffmpeg_command, run_encode
-    from .encoder_profile import build_encode_request, load_profile_payload, select_recommendation
+    from .encoder_profile import (
+        build_encode_request,
+        load_profile_payload,
+        select_recommendation,
+    )
 
     try:
         profile = load_profile_payload(args.profile)
