@@ -22,6 +22,7 @@
 
 #include <onnxruntime_c_api.h>
 
+#include "../log.h"
 #include "op_allowlist.h"
 
 /* Maximum number of model inputs or outputs supported by vmaf_ort_run().
@@ -147,6 +148,9 @@ static int try_append_ep_generic(struct VmafOrtSession *sess, const char *name,
     OrtStatus *st =
         sess->api->SessionOptionsAppendExecutionProvider(sess->opts, name, keys, values, nk);
     if (st != NULL) {
+        const char *msg = sess->api->GetErrorMessage(st);
+        if (msg && msg[0] != '\0')
+            vmaf_log(VMAF_LOG_LEVEL_DEBUG, "libvmaf dnn: EP '%s' unavailable: %s\n", name, msg);
         sess->api->ReleaseStatus(st);
         return -ENOSYS;
     }
@@ -159,6 +163,9 @@ static int try_append_cuda(struct VmafOrtSession *sess, int device_index)
     cuda.device_id = device_index;
     OrtStatus *st = sess->api->SessionOptionsAppendExecutionProvider_CUDA(sess->opts, &cuda);
     if (st != NULL) {
+        const char *msg = sess->api->GetErrorMessage(st);
+        if (msg && msg[0] != '\0')
+            vmaf_log(VMAF_LOG_LEVEL_DEBUG, "libvmaf dnn: CUDA EP unavailable: %s\n", msg);
         sess->api->ReleaseStatus(st);
         return -ENOSYS;
     }
@@ -228,11 +235,26 @@ static void ort_discard_status(const OrtApi *api, OrtStatus *st)
         api->ReleaseStatus(st);
 }
 
+/* Log the ORT error message at WARNING level, then release the status. */
+static void ort_log_and_release_status(const OrtApi *api, OrtStatus *st, const char *ctx)
+{
+    if (st == NULL)
+        return;
+    const char *msg = api->GetErrorMessage(st);
+    if (msg && msg[0] != '\0') {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "libvmaf dnn %s: %s\n", ctx ? ctx : "ORT error", msg);
+    } else {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "libvmaf dnn %s: (no ORT error message)\n",
+                 ctx ? ctx : "ORT error");
+    }
+    api->ReleaseStatus(st);
+}
+
 #define ORT_TRY(call)                                                                              \
     do {                                                                                           \
         OrtStatus *st__ = (call);                                                                  \
         if (st__ != NULL) {                                                                        \
-            sess->api->ReleaseStatus(st__);                                                        \
+            ort_log_and_release_status(sess->api, st__, #call);                                    \
             vmaf_ort_close(sess);                                                                  \
             return -EIO;                                                                           \
         }                                                                                          \
@@ -383,14 +405,17 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
     OrtStatus *create_st =
         sess->api->CreateSession(sess->env, onnx_path, sess->opts, &sess->session);
     if (create_st != NULL) {
-        sess->api->ReleaseStatus(create_st);
         if (strcmp(sess->ep_name, "CPU") != 0) {
+            /* Log the primary-EP failure at DEBUG level (hardware absent is expected in
+             * CPU-only containers; the caller sees the result via vmaf_ort_attached_ep()). */
+            ort_log_and_release_status(sess->api, create_st, "CreateSession (non-CPU EP)");
+            create_st = NULL;
             /* Recreate session_options with no non-CPU EPs and retry. */
             sess->api->ReleaseSessionOptions(sess->opts);
             sess->opts = NULL;
             OrtStatus *opts_st = sess->api->CreateSessionOptions(&sess->opts);
             if (opts_st != NULL) {
-                sess->api->ReleaseStatus(opts_st);
+                ort_log_and_release_status(sess->api, opts_st, "CreateSessionOptions (CPU retry)");
                 vmaf_ort_close(sess);
                 return -EIO;
             }
@@ -398,17 +423,19 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
             if (intra_retry > 0) {
                 OrtStatus *t_st = sess->api->SetIntraOpNumThreads(sess->opts, intra_retry);
                 if (t_st != NULL)
-                    sess->api->ReleaseStatus(t_st);
+                    ort_discard_status(sess->api, t_st); /* best-effort; not fatal */
             }
             sess->ep_name = "CPU";
             OrtStatus *retry_st =
                 sess->api->CreateSession(sess->env, onnx_path, sess->opts, &sess->session);
             if (retry_st != NULL) {
-                sess->api->ReleaseStatus(retry_st);
+                ort_log_and_release_status(sess->api, retry_st, "CreateSession (CPU fallback)");
                 vmaf_ort_close(sess);
                 return -EIO;
             }
         } else {
+            ort_log_and_release_status(sess->api, create_st, "CreateSession");
+            create_st = NULL;
             vmaf_ort_close(sess);
             return -EIO;
         }
@@ -457,10 +484,16 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
         OrtStatus *cst = sess->api->CastTypeInfoToTensorInfo(ti, &tinfo);
         if (cst == NULL && tinfo != NULL) {
             ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
-            ort_discard_status(sess->api, sess->api->GetTensorElementType(tinfo, &et));
+            OrtStatus *et_st = sess->api->GetTensorElementType(tinfo, &et);
+            if (et_st != NULL) {
+                ort_log_and_release_status(sess->api, et_st, "GetTensorElementType (input)");
+                sess->api->ReleaseTypeInfo(ti);
+                vmaf_ort_close(sess);
+                return -EINVAL;
+            }
             sess->input_elem_types[i] = (int)et;
         } else if (cst != NULL) {
-            sess->api->ReleaseStatus(cst);
+            ort_log_and_release_status(sess->api, cst, "CastTypeInfoToTensorInfo (input)");
         }
         sess->api->ReleaseTypeInfo(ti);
     }
@@ -471,10 +504,16 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
         OrtStatus *cst = sess->api->CastTypeInfoToTensorInfo(ti, &tinfo);
         if (cst == NULL && tinfo != NULL) {
             ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
-            ort_discard_status(sess->api, sess->api->GetTensorElementType(tinfo, &et));
+            OrtStatus *et_st = sess->api->GetTensorElementType(tinfo, &et);
+            if (et_st != NULL) {
+                ort_log_and_release_status(sess->api, et_st, "GetTensorElementType (output)");
+                sess->api->ReleaseTypeInfo(ti);
+                vmaf_ort_close(sess);
+                return -EINVAL;
+            }
             sess->output_elem_types[i] = (int)et;
         } else if (cst != NULL) {
-            sess->api->ReleaseStatus(cst);
+            ort_log_and_release_status(sess->api, cst, "CastTypeInfoToTensorInfo (output)");
         }
         sess->api->ReleaseTypeInfo(ti);
     }
@@ -484,7 +523,7 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
     OrtStatus *mi_st =
         sess->api->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &sess->cpu_mem_info);
     if (mi_st != NULL) {
-        sess->api->ReleaseStatus(mi_st);
+        ort_log_and_release_status(sess->api, mi_st, "CreateCpuMemoryInfo");
         vmaf_ort_close(sess);
         return -EIO;
     }
@@ -519,7 +558,7 @@ static int build_input_tensor(VmafOrtSession *sess, OrtMemoryInfo *mem, size_t s
             mem, half, n * sizeof(uint16_t), shape, rank, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16,
             tensor_out);
         if (st) {
-            sess->api->ReleaseStatus(st);
+            ort_log_and_release_status(sess->api, st, "CreateTensorWithDataAsOrtValue (fp16)");
             free(half);
             return -EIO;
         }
@@ -531,7 +570,7 @@ static int build_input_tensor(VmafOrtSession *sess, OrtMemoryInfo *mem, size_t s
         sess->api->CreateTensorWithDataAsOrtValue(mem, (void *)data, n * sizeof(float), shape, rank,
                                                   ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, tensor_out);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "CreateTensorWithDataAsOrtValue (fp32)");
         return -EIO;
     }
     *scratch_out = NULL;
@@ -546,20 +585,20 @@ static int copy_output_tensor(VmafOrtSession *sess, OrtValue *tensor, float *dst
     OrtTensorTypeAndShapeInfo *info = NULL;
     OrtStatus *st = sess->api->GetTensorTypeAndShape(tensor, &info);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "GetTensorTypeAndShape");
         return -EIO;
     }
     size_t out_n = 0;
     st = sess->api->GetTensorShapeElementCount(info, &out_n);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "GetTensorShapeElementCount");
         sess->api->ReleaseTensorTypeAndShapeInfo(info);
         return -EIO;
     }
     ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
     st = sess->api->GetTensorElementType(info, &et);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "GetTensorElementType (output tensor)");
         sess->api->ReleaseTensorTypeAndShapeInfo(info);
         return -EIO;
     }
@@ -573,7 +612,7 @@ static int copy_output_tensor(VmafOrtSession *sess, OrtValue *tensor, float *dst
     void *raw = NULL;
     st = sess->api->GetTensorMutableData(tensor, &raw);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "GetTensorMutableData");
         return -EIO;
     }
     if (et == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
@@ -615,7 +654,7 @@ int vmaf_ort_infer(VmafOrtSession *sess, const float *input, const int64_t *inpu
     sess->api->ReleaseValue(in_tensor);
     free(in_scratch);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "Run (infer)");
         return -EIO;
     }
 
@@ -638,14 +677,14 @@ int vmaf_ort_input_shape_at(VmafOrtSession *sess, size_t slot, int64_t *out_shap
     OrtTypeInfo *type_info = NULL;
     OrtStatus *st = sess->api->SessionGetInputTypeInfo(sess->session, slot, &type_info);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "SessionGetInputTypeInfo");
         return -EIO;
     }
 
     const OrtTensorTypeAndShapeInfo *tinfo = NULL;
     st = sess->api->CastTypeInfoToTensorInfo(type_info, &tinfo);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "CastTypeInfoToTensorInfo");
         sess->api->ReleaseTypeInfo(type_info);
         return -EIO;
     }
@@ -653,7 +692,7 @@ int vmaf_ort_input_shape_at(VmafOrtSession *sess, size_t slot, int64_t *out_shap
     size_t rank = 0;
     st = sess->api->GetDimensionsCount(tinfo, &rank);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "GetDimensionsCount");
         sess->api->ReleaseTypeInfo(type_info);
         return -EIO;
     }
@@ -665,7 +704,7 @@ int vmaf_ort_input_shape_at(VmafOrtSession *sess, size_t slot, int64_t *out_shap
     st = sess->api->GetDimensions(tinfo, out_shape, rank);
     sess->api->ReleaseTypeInfo(type_info);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "GetDimensions");
         return -EIO;
     }
 
@@ -682,14 +721,14 @@ int vmaf_ort_input_shape(VmafOrtSession *sess, int64_t *out_shape, size_t max_ra
     OrtTypeInfo *type_info = NULL;
     OrtStatus *st = sess->api->SessionGetInputTypeInfo(sess->session, 0, &type_info);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "SessionGetInputTypeInfo");
         return -EIO;
     }
 
     const OrtTensorTypeAndShapeInfo *tinfo = NULL;
     st = sess->api->CastTypeInfoToTensorInfo(type_info, &tinfo);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "CastTypeInfoToTensorInfo");
         sess->api->ReleaseTypeInfo(type_info);
         return -EIO;
     }
@@ -697,7 +736,7 @@ int vmaf_ort_input_shape(VmafOrtSession *sess, int64_t *out_shape, size_t max_ra
     size_t rank = 0;
     st = sess->api->GetDimensionsCount(tinfo, &rank);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "GetDimensionsCount");
         sess->api->ReleaseTypeInfo(type_info);
         return -EIO;
     }
@@ -709,7 +748,7 @@ int vmaf_ort_input_shape(VmafOrtSession *sess, int64_t *out_shape, size_t max_ra
     st = sess->api->GetDimensions(tinfo, out_shape, rank);
     sess->api->ReleaseTypeInfo(type_info);
     if (st) {
-        sess->api->ReleaseStatus(st);
+        ort_log_and_release_status(sess->api, st, "GetDimensions");
         return -EIO;
     }
 
@@ -872,7 +911,7 @@ int vmaf_ort_run(VmafOrtSession *sess, const VmafOrtTensorIn *inputs, size_t n_i
         sess->api->Run(sess->session, NULL, in_names, (const OrtValue *const *)in_vals, n_inputs,
                        out_names, n_outputs, out_vals);
     if (st_run) {
-        sess->api->ReleaseStatus(st_run);
+        ort_log_and_release_status(sess->api, st_run, "Run");
         rc = -EIO;
         goto cleanup;
     }

@@ -45329,3 +45329,7 @@ stderr; add missing include guard.
 ## worktree-wf_392e91a3-897-12 / fix/ci-action-sha-consistency (2026-06-07)
 no rebase impact: corrects inconsistent action SHAs in e2e-k8s, go-ci,
 and rust-ci workflows. No source, header, or build file is modified.
+
+## fix/ort-error-message-logging (2026-06-07)
+no rebase impact: changes confined to `core/src/dnn/ort_backend.c`. No
+public header or ABI change.
