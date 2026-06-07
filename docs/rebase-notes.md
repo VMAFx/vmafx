@@ -45208,3 +45208,14 @@ no rebase impact: the change is two `should_fail: true` additions to
 no upstream-mirrored files, and no test fixtures are modified. The test
 binaries remain compiled; only their expected-failure polarity flips in the
 Meson test registry.
+
+## fix/dnn-onnx-domain-bypass (2026-06-07, ADR-1089)
+
+no rebase impact: all changes are confined to fork-local files
+(`core/src/dnn/onnx_scan.c`, `core/src/dnn/onnx_scan.h`,
+`core/test/dnn/test_onnx_scan.c`). Netflix/vmaf has no ONNX DNN surface;
+no upstream-mirrored file is touched. The scanner's internal `enum` gains
+`NODE_DOMAIN_FIELD = 7`; the `scan_node` loop gains a new branch; a 50-line
+`read_domain()` helper is added. No public API or CLI surface changes.
+
+Re-test: `meson test -C build test_onnx_scan` (26/26 pass).

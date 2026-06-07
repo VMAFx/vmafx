@@ -97,10 +97,13 @@ Runtime directly.
   `Loop` + `If` admitted with bounded trip-count guard
   (`VMAF_DNN_MAX_LOOP_NODES = 16`); `Scan` stays rejected.
 - [ADR-0258](../../../docs/adr/0258-onnx-allowlist-resize.md) —
-  `Resize` admitted (op-type-only gate) for U-2-Net / mobilesal /
-  saliency / segmentation models. Wire scanner stays op-type-only
-  per ADR D39; consumers shipping their own ONNX should keep
+  `Resize` admitted for U-2-Net / mobilesal / saliency / segmentation
+  models. Consumers shipping their own ONNX should keep
   `mode in ("nearest", "linear")` (`cubic` not exercised in-tree).
+- [ADR-1089](../../../docs/adr/1089-dnn-onnx-domain-bypass.md) —
+  `NodeProto.domain` (field 7) validated in addition to `op_type`;
+  only `""` and `"ai.onnx"` are permitted (custom/vendor domains
+  rejected). Closes the `(domain, op_type)` tuple bypass.
 - [ADR-0207](../../../docs/adr/0207-tinyai-qat-design.md) +
   [ADR-0208](../../../docs/adr/0208-learned-filter-v1-qat-impl.md)
   — QAT pipeline (PyTorch QAT → fp32 ONNX → ORT static-quantize
@@ -201,6 +204,15 @@ Runtime directly.
   other taking 8..11). The OpenVINO + CoreML AUTO-chain ordering
   (CUDA → OpenVINO-GPU → ROCm → CoreML → CPU) is
   ADR-0365-Decision-load-bearing.
+
+- **Domain check is load-bearing (ADR-1089)**: `onnx_scan.c` now gates the
+  full `(domain, op_type)` tuple, not op_type alone. `read_domain()` rejects
+  any `NodeProto.domain` that is neither `""` nor `"ai.onnx"`. Do NOT remove
+  this check or widen the allowed-domain set without a new ADR: ORT dispatches
+  via `(domain, op_type)` and a non-standard domain can shadow an allowlisted
+  op_type with arbitrary custom-op code. If a future consumer requires ONNX-ML
+  ops (`"ai.onnx.ml"`) a separate ADR must audit the full ONNX-ML op set and
+  justify the expansion.
 
 - **Op-allowlist additions for TransNet V2 (ADR-0257)**:
   `BitShift`, `GatherND`, `Pad`, `Reciprocal`, `ReduceProd`,

@@ -34,6 +34,15 @@ enum {
     GRAPH_NODE_FIELD = 1,     /* GraphProto.node (repeated NodeProto) */
     NODE_OP_TYPE_FIELD = 4,   /* NodeProto.op_type (string) */
     NODE_ATTRIBUTE_FIELD = 5, /* NodeProto.attribute (repeated AttributeProto) */
+    /* NodeProto.domain (field 7, string): identifies the operator set.
+     * Standard built-in ops use the empty string "" (equivalent to
+     * "ai.onnx"). Any non-empty, non-"ai.onnx" domain means a custom
+     * op set — rejected unconditionally regardless of op_type, because
+     * the (domain, op_type) tuple determines ORT dispatch, so an
+     * adversarial model could shadow an allowlisted name with a
+     * custom-domain op that executes arbitrary code.
+     * ADR-1089 (fix/dnn-onnx-domain-bypass). */
+    NODE_DOMAIN_FIELD = 7,
     /* AttributeProto fields with embedded subgraphs — the bodies of
      * control-flow ops (Loop.body, If.then_branch, If.else_branch).
      * Recursive scan covers ADR-0169 / T6-5: forbidden ops cannot hide
@@ -201,6 +210,60 @@ static int read_op_type(const unsigned char *buf, size_t len, size_t *off, char 
     return 0;
 }
 
+/* Check a NodeProto.domain string extracted from a node field whose tag was
+ * already consumed.  Advances *off past the string.  The only permitted
+ * domain values are the empty string "" (standard ONNX built-in ops) and
+ * "ai.onnx" (explicit standard domain).  Any other domain — including every
+ * third-party / custom domain — is rejected with -EPERM because ORT
+ * dispatches via (domain, op_type) and a non-standard domain can shadow an
+ * allowlisted op_type name with arbitrary custom-op code.
+ * ADR-1089 / fix/dnn-onnx-domain-bypass. */
+static int read_domain(const unsigned char *buf, size_t len, size_t *off, char **first_bad)
+{
+    uint64_t slen = 0;
+    const int err = pb_read_varint(buf, len, off, &slen);
+    if (err != 0) {
+        return err;
+    }
+    if (slen > (uint64_t)(len - *off)) {
+        return -EBADMSG;
+    }
+    /* Empty-string domain == standard "ai.onnx" domain: always allowed. */
+    if (slen == 0u) {
+        return 0;
+    }
+    /* Reject pathologically long names before touching them. */
+    if (slen > 127u) {
+        if (first_bad && *first_bad == NULL) {
+            char *copy = (char *)malloc(sizeof("<custom-domain>"));
+            if (copy) {
+                memcpy(copy, "<custom-domain>", sizeof("<custom-domain>"));
+                *first_bad = copy;
+            }
+        }
+        *off += (size_t)slen;
+        return -EPERM;
+    }
+    char domain[128];
+    memcpy(domain, buf + *off, (size_t)slen);
+    domain[slen] = '\0';
+    *off += (size_t)slen;
+    /* "ai.onnx" is the explicit standard domain name for built-in ops. */
+    if (strcmp(domain, "ai.onnx") == 0) {
+        return 0;
+    }
+    /* Any other domain is a custom / third-party op set: reject. */
+    if (first_bad && *first_bad == NULL) {
+        char *copy = (char *)malloc(slen + 1u);
+        if (!copy) {
+            return -ENOMEM;
+        }
+        memcpy(copy, domain, slen + 1u);
+        *first_bad = copy;
+    }
+    return -EPERM;
+}
+
 /* Forward decl — scan_node and scan_attribute mutually recurse via
  * scan_graph for control-flow op subgraphs (Loop.body, If.then_branch,
  * If.else_branch). The shared `loop_count` counter (ADR-0171 / T6-5b)
@@ -267,6 +330,10 @@ static int scan_node(const unsigned char *buf, size_t len, char **first_bad, uns
 
         if (field == NODE_OP_TYPE_FIELD && wire == PB_WIRE_LEN) {
             err = read_op_type(buf, len, &off, first_bad, loop_count);
+        } else if (field == NODE_DOMAIN_FIELD && wire == PB_WIRE_LEN) {
+            /* ADR-1089: reject any non-standard domain so a custom op
+             * cannot shadow an allowlisted op_type name. */
+            err = read_domain(buf, len, &off, first_bad);
         } else if (field == NODE_ATTRIBUTE_FIELD && wire == PB_WIRE_LEN) {
             uint64_t alen = 0;
             err = pb_read_varint(buf, len, &off, &alen);

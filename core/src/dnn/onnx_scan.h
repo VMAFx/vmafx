@@ -12,11 +12,17 @@
  *   ONNX Runtime 1.22's public C API does not expose per-node op-type
  *   iteration. Pulling in `libprotobuf-c` for one field scan is
  *   disproportionate. This scanner walks the wire format directly for the
- *   three fields that matter:
+ *   four fields that matter:
  *
  *       ModelProto.graph    = 7 (wire 2, length-delimited)
  *       GraphProto.node     = 1 (wire 2, length-delimited, repeated)
  *       NodeProto.op_type   = 4 (wire 2, length-delimited string)
+ *       NodeProto.domain    = 7 (wire 2, length-delimited string)
+ *
+ * The domain field must be the empty string or "ai.onnx" (both denote the
+ * standard built-in op set). Any other domain is rejected because ORT
+ * dispatches via the (domain, op_type) tuple — a custom domain can shadow
+ * an allowlisted op_type name with arbitrary custom-op code (ADR-1089).
  *
  * Everything else is skipped by wire-type. No recursive message parsing is
  * performed beyond the fixed three-level descent above, keeping the scanner
