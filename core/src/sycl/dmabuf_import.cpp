@@ -70,11 +70,9 @@
 #include <va/va_drmcommon.h>
 #endif
 
-extern "C" {
 #include "dmabuf_import.h"
 #include "common.h"
 #include "log.h"
-}
 
 /* ------------------------------------------------------------------ */
 /* DMA-BUF → Level Zero → SYCL device pointer                         */

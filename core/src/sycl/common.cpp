@@ -49,12 +49,10 @@ static double monotonic_ms()
     return duration<double, std::milli>(now).count();
 }
 
-extern "C" {
 #include "common.h"
 #include "dispatch_strategy.h"
 #include "feature/feature_extractor.h"
 #include "log.h"
-}
 
 namespace syclex = sycl::ext::oneapi::experimental;
 using exec_graph_t = syclex::command_graph<syclex::graph_state::executable>;

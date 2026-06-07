@@ -45,14 +45,12 @@
 #include <cstring>
 #include <cstdio>
 
-extern "C" {
 #include "config.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "sycl/common.h"
 #include "log.h"
-}
 
 // NOLINTBEGIN(misc-use-anonymous-namespace, misc-use-internal-linkage): see
 // integer_motion_sycl.cpp for the rationale — C-style `static` is required

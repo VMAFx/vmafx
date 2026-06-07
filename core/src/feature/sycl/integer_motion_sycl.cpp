@@ -44,7 +44,6 @@
 #include <cstdlib>
 #include <cstring>
 
-extern "C" {
 #include "config.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -52,7 +51,6 @@ extern "C" {
 #include "motion_blend_tools.h"
 #include "sycl/common.h"
 #include "log.h"
-}
 
 /* Default upper clamp on motion / motion2 / motion3 — mirrors
  * DEFAULT_MOTION_MAX_VAL in libvmaf/src/feature/integer_motion.c.

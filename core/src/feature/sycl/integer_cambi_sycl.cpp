@@ -81,7 +81,6 @@
 #include <cstdlib>
 #include <cstring>
 
-extern "C" {
 #include "config.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -91,7 +90,6 @@ extern "C" {
 #include "picture.h"
 #include "sycl/common.h"
 #include "feature/cambi_internal.h"
-}
 
 /* ------------------------------------------------------------------ */
 /* Constants (mirroring integer_cambi_cuda.c). */

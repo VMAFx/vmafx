@@ -75,6 +75,29 @@ sycl/
   Public surface change touches the patch file too — see
   CLAUDE.md §12 r14.
 
+## Rebase-sensitive build invariants
+
+- **`-fsycl` must be present at every link step that pulls SYCL `.o`
+  files from a static archive.** This is enforced by embedding `-fsycl`
+  in `sycl_dependency.link_args` in `core/src/meson.build` (ADR-1099).
+  Without `-fsycl` at link time, `icpx` skips `clang-offload-wrapper`,
+  the SYCL runtime's `ProgramManager` never registers device kernels,
+  and the first `queue.submit()` crashes with a null-dereference inside
+  `getDeviceKernelInfo`. **On rebase**: if a branch splits `sycl_dependency`
+  into compile-time and link-time halves, or introduces a new `declare_dependency`
+  block for a SYCL sub-target, ensure `-fsycl` remains in the link-time
+  `link_args` of every dependency that SYCL consumers inherit.
+
+- **Feature-name aliasing when querying scores from non-default SYCL extractors.**
+  When any `VMAF_OPT_FLAG_FEATURE_PARAM` option is set to a non-default
+  value, `vmaf_feature_name_from_opts_dict` stores scores under an aliased
+  name (not the raw `VMAF_*_score` name). The aliased name is:
+  `<alias_of_raw_name>_<opt1_alias>_<opt2_alias>...` in alphabetical option
+  order. Example: `motion_sycl` with `motion_add_uv=true` stores
+  `VMAF_integer_feature_motion2_score` as `integer_motion2_mau`. Test code
+  querying `vmaf_feature_score_at_index` must use the aliased name, not
+  the raw name. (ADR-1099)
+
 ## Rebase-sensitive invariants per kernel
 
 - **`feature/sycl/integer_psnr_sycl.cpp` chroma planes ride on per-

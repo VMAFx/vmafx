@@ -35,6 +35,14 @@
  * motion_add_uv; the canonical CPU reference for UV blending is
  * `float_motion` with the same option set.
  *
+ * Feature-name aliasing: when motion_add_uv=true (non-default), the
+ * feature-name system appends "_mau" (the option alias) to the base
+ * aliased name.  Scores must therefore be queried with the suffixed
+ * name, not the raw VMAF_*_score name:
+ *   float_motion  → "float_motion2_mau"   (VMAF_feature_motion2_score + _mau)
+ *   motion_sycl   → "integer_motion2_mau" (VMAF_integer_feature_motion2_score + _mau)
+ * See feature_name.c:vmaf_feature_name_from_opts_dict for the naming rule.
+ *
  * Fixture: 256x144 YUV420P 8-bpc synthetic data where Y, U, and V
  * planes all contain frame-dependent ramps so chroma motion is
  * non-zero and the UV contribution is measurable.
@@ -43,22 +51,16 @@
  * "[skip: no SYCL device]" and passes cleanly.
  */
 
-#include <errno.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "test.h"
 
+#include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
-
-/* Internal header — VmafDictionary, vmaf_dictionary_set/free.
- * dict.h is on the include path via meson include_directories('../src/'). */
-#include "dict.h"
 
 /* Fixture geometry — large enough for the 5-tap Gaussian. */
 #define FIXTURE_W 256u
@@ -102,6 +104,9 @@ static int fill_yuv_fixture(VmafPicture *pic, unsigned frame_idx)
 /* ------------------------------------------------------------------ */
 /* CPU reference path — float_motion extractor with motion_add_uv=true */
 /* ------------------------------------------------------------------ */
+/* NOLINTNEXTLINE(readability-function-size): test harness — setup +
+ * per-frame loop + teardown; splitting would obscure the single linear
+ * pipeline under test.  ADR-0141 §2 load-bearing test invariant. */
 static char *run_cpu_float_motion_uv(double *out_score)
 {
     int err = 0;
@@ -112,16 +117,19 @@ static char *run_cpu_float_motion_uv(double *out_score)
     mu_assert("CPU: vmaf_init failed", !err);
 
     /* Pass motion_add_uv=true to float_motion. */
-    VmafDictionary *opts = NULL;
-    err = vmaf_dictionary_set(&opts, "motion_add_uv", "true", 0);
-    mu_assert("CPU: vmaf_dictionary_set(motion_add_uv) failed", !err);
+    VmafFeatureDictionary *opts = NULL;
+    err = vmaf_feature_dictionary_set(&opts, "motion_add_uv", "true");
+    mu_assert("CPU: vmaf_feature_dictionary_set(motion_add_uv) failed", !err);
 
     err = vmaf_use_feature(vmaf, "float_motion", opts);
-    vmaf_dictionary_free(&opts);
+    /* On success ownership transfers to vmaf — do not free. On failure free it. */
+    if (err)
+        (void)vmaf_feature_dictionary_free(&opts);
     mu_assert("CPU: vmaf_use_feature(float_motion) failed", !err);
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
+        VmafPicture ref;
+        VmafPicture dist;
         err = fill_yuv_fixture(&ref, i);
         mu_assert("CPU: fill_yuv_fixture(ref) failed", !err);
         err = fill_yuv_fixture(&dist, i);
@@ -134,10 +142,13 @@ static char *run_cpu_float_motion_uv(double *out_score)
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: EOS failed", !err);
 
-    /* float_motion emits VMAF_feature_motion2_score — use that as the
-     * reference score at index 1. */
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_feature_motion2_score", out_score, 1u);
-    mu_assert("CPU: vmaf_feature_score_at_index(motion2, idx=1) failed", !err);
+    /* float_motion with motion_add_uv=true stores scores under the aliased
+     * name with the _mau suffix: float_motion2_mau.  The feature-name
+     * system aliases VMAF_feature_motion2_score → float_motion2 and then
+     * appends _mau for the non-default motion_add_uv bool option
+     * (alias "mau") — see feature_name.c:vmaf_feature_name_from_opts_dict. */
+    err = vmaf_feature_score_at_index(vmaf, "float_motion2_mau", out_score, 1u);
+    mu_assert("CPU: vmaf_feature_score_at_index(float_motion2_mau, idx=1) failed", !err);
 
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
@@ -147,6 +158,12 @@ static char *run_cpu_float_motion_uv(double *out_score)
 /* ------------------------------------------------------------------ */
 /* SYCL path — motion_sycl with motion_add_uv=true                    */
 /* ------------------------------------------------------------------ */
+/* NOLINTNEXTLINE(readability-function-size): test harness — two SYCL
+ * context passes (UV-on, UV-off) must share one sycl_state lifetime;
+ * splitting the passes into helpers would require passing the opaque
+ * sycl_state pointer through the mu_assert return-by-pointer protocol,
+ * obscuring the ownership model.  ADR-0141 §2 load-bearing test
+ * invariant. */
 static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
 {
     *out_score = NAN;
@@ -171,16 +188,19 @@ static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
         err = vmaf_sycl_import_state(vmaf, sycl_state);
         mu_assert("SYCL+UV: vmaf_sycl_import_state failed", !err);
 
-        VmafDictionary *opts = NULL;
-        err = vmaf_dictionary_set(&opts, "motion_add_uv", "true", 0);
-        mu_assert("SYCL+UV: vmaf_dictionary_set failed", !err);
+        VmafFeatureDictionary *opts = NULL;
+        err = vmaf_feature_dictionary_set(&opts, "motion_add_uv", "true");
+        mu_assert("SYCL+UV: vmaf_feature_dictionary_set failed", !err);
 
         err = vmaf_use_feature(vmaf, "motion_sycl", opts);
-        vmaf_dictionary_free(&opts);
+        /* On success ownership transfers to vmaf — do not free. On failure free it. */
+        if (err)
+            (void)vmaf_feature_dictionary_free(&opts);
         mu_assert("SYCL+UV: vmaf_use_feature failed", !err);
 
         for (unsigned i = 0; i < NUM_FRAMES; i++) {
-            VmafPicture ref, dist;
+            VmafPicture ref;
+            VmafPicture dist;
             err = fill_yuv_fixture(&ref, i);
             mu_assert("SYCL+UV: fill_yuv_fixture(ref) failed", !err);
             err = fill_yuv_fixture(&dist, i);
@@ -193,9 +213,12 @@ static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
         err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
         mu_assert("SYCL+UV: EOS failed", !err);
 
-        err =
-            vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion2_score", out_score, 1u);
-        mu_assert("SYCL+UV: vmaf_feature_score_at_index failed", !err);
+        /* motion_sycl with motion_add_uv=true stores scores under the aliased
+         * name: integer_motion2_mau (VMAF_integer_feature_motion2_score aliased
+         * to integer_motion2, with _mau appended for the non-default bool
+         * option).  See feature_name.c:vmaf_feature_name_from_opts_dict. */
+        err = vmaf_feature_score_at_index(vmaf, "integer_motion2_mau", out_score, 1u);
+        mu_assert("SYCL+UV: vmaf_feature_score_at_index(integer_motion2_mau, idx=1) failed", !err);
 
         err = vmaf_close(vmaf);
         mu_assert("SYCL+UV: vmaf_close failed", !err);
@@ -215,7 +238,8 @@ static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
         mu_assert("SYCL-Y: vmaf_use_feature failed", !err);
 
         for (unsigned i = 0; i < NUM_FRAMES; i++) {
-            VmafPicture ref, dist;
+            VmafPicture ref;
+            VmafPicture dist;
             err = fill_yuv_fixture(&ref, i);
             mu_assert("SYCL-Y: fill_yuv_fixture(ref) failed", !err);
             err = fill_yuv_fixture(&dist, i);
@@ -228,9 +252,12 @@ static char *run_sycl_motion_uv(double *out_score, double *out_score_y_only)
         err = vmaf_read_pictures(vmaf2, NULL, NULL, 0);
         mu_assert("SYCL-Y: EOS failed", !err);
 
+        /* motion_sycl with default options (motion_add_uv=false) has no
+         * non-default FEATURE_PARAM options, so the feature-name system uses
+         * the raw name (no aliasing, no suffix). */
         err = vmaf_feature_score_at_index(vmaf2, "VMAF_integer_feature_motion2_score",
                                           out_score_y_only, 1u);
-        mu_assert("SYCL-Y: vmaf_feature_score_at_index failed", !err);
+        mu_assert("SYCL-Y: vmaf_feature_score_at_index(motion2, idx=1) failed", !err);
 
         err = vmaf_close(vmaf2);
         mu_assert("SYCL-Y: vmaf_close failed", !err);

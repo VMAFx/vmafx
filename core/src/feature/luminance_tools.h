@@ -19,6 +19,10 @@
 #ifndef VMAF_LUMINANCE_TOOLS_H_
 #define VMAF_LUMINANCE_TOOLS_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef double (*VmafEOTF)(double V);
 
 /*
@@ -67,5 +71,9 @@ double vmaf_luminance_pq_eotf(double V);
  * to return a luminance value.
  */
 double vmaf_luminance_get_luminance(int sample, VmafLumaRange luma_range, VmafEOTF eotf);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -51,9 +51,7 @@
  * Wrapped in extern "C" because log.h has no __cplusplus guard
  * (upstream Netflix header) and vmaf_log must resolve to the
  * C-linkage symbol produced by log.c. */
-extern "C" {
 #include "log.h"
-}
 
 /* libvmaf_sycl.h declares these with C linkage already. Just forward them
  * so this TU doesn't need the internal common.h. */

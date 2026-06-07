@@ -37,12 +37,10 @@
 
 #include <sycl/sycl.hpp>
 
-extern "C" {
 #include "picture.h"
 #include "common.h"
 #include "ref.h"
 #include "gpu_picture_pool.h"
-}
 #include "picture_sycl.h"
 
 /* ------------------------------------------------------------------ */

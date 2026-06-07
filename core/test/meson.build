@@ -1717,6 +1717,14 @@ test_sycl_motion_add_uv_parity = executable('test_sycl_motion_add_uv_parity',
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1']
 )
+# Root cause fixed (ADR-1099): the SIGSEGV was caused by missing -fsycl at
+# link time for test executables linking libvmaf.a.  Without -fsycl, icpx
+# skips clang-offload-wrapper and ProgramManager::getDeviceKernelInfo
+# null-dereferences at the first q.submit().  Fix: -fsycl is now embedded
+# in sycl_dependency.link_args so every SYCL consumer gets it automatically.
+# The feature-name aliasing bug (scores stored as integer_motion2_mau but
+# queried as VMAF_integer_feature_motion2_score) was also corrected in the
+# test source.  should_fail removed — the test must now pass.
 test('test_sycl_motion_add_uv_parity', test_sycl_motion_add_uv_parity,
     suite : ['fast', 'gpu'])
 

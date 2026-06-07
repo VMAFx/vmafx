@@ -1389,8 +1389,20 @@ if is_sycl_enabled
         endif
     endif
 
+    # `-fsycl` must be present at every link step that pulls in SYCL `.o`
+    # files from a static archive (e.g. libvmaf.a linked into test
+    # executables).  Without it icpx skips clang-offload-wrapper and the
+    # SYCL runtime's ProgramManager never registers the device kernels,
+    # causing a null-dereference SIGSEGV in
+    # ProgramManager::getDeviceKernelInfo at the first q.submit() call.
+    # Embedding the flag in sycl_dependency propagates it automatically to
+    # every target that declares this dependency — libvmaf.so and all SYCL
+    # test executables — so no per-target duplication is needed.
+    # Root-cause investigation: docs/research/sycl-fsycl-link-flag.md
+    # (companion to ADR-NNNN-sycl-fsycl-link-propagation).
     sycl_dependency += declare_dependency(
         dependencies : [sycl_lib, libze_dep] + sycl_extra_runtime_deps + sycl_surface_deps,
+        link_args : ['-fsycl'],
     )
 endif
 
@@ -1836,20 +1848,11 @@ if is_sycl_enabled
     vmaf_cflags_common += '-DHAVE_SYCL'
 endif
 
-# SYCL device-image registration requires `-fsycl` at the *link* step so
-# that icpx invokes clang-offload-wrapper and embeds the SPIR-V device
-# code into the final .so. Without it, the SYCL runtime cannot find
-# the kernels by mangled name and every `q.submit(...)` raises
-# `No kernel named ... was found` at the first dispatch.
-#
-# `-fsycl` is icpx-only — passing it to gcc/clang/msvc is a hard error
-# (`error: unrecognized command-line option '-fsycl'`). The project's
-# C++ compiler must therefore be icpx whenever `enable_sycl=true`. The
-# previous comment block here claimed that the SYCL device images were
-# already embedded in the icpx-compiled .o files and that gcc could
-# link them transparently; that assumption is wrong with modern SYCL
-# (icpx 2025.x and probably earlier — see the post-T7-8 SYCL revival
-# notes in docs/development/oneapi-install.md).
+# `-fsycl` is embedded in sycl_dependency.link_args (see the
+# declare_dependency block above) so every consumer — libvmaf.so and all
+# SYCL test executables — gets it automatically without per-target
+# repetition.  vmaf_link_args is kept as an empty list for any future
+# link-time flags that apply only to the library target and not to tests.
 vmaf_link_args = []
 
 if is_sycl_enabled
@@ -1869,7 +1872,6 @@ if is_sycl_enabled
               '\'' + cpp_id + '\'. See docs/development/oneapi-install.md ' +
               'for details.')
     endif
-    vmaf_link_args += ['-fsycl']
 endif
 
 libvmaf = library(

@@ -1,6 +1,28 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/sycl-fsycl-link-propagation (2026-06-07)
+
+**Rebase-sensitive**: modifies `core/src/meson.build` and
+`core/test/meson.build` — two high-contention build files that accumulate edits
+from most GPU-backend PRs.
+
+In `core/src/meson.build`:
+- The `sycl_dependency` `declare_dependency` block gains `link_args: ['-fsycl']`.
+- The `vmaf_link_args += ['-fsycl']` line and its surrounding comment block are
+  replaced with a shorter comment referencing `sycl_dependency`. If a concurrent
+  branch adds entries to `vmaf_link_args`, take that branch's additions and keep
+  the updated comment.
+
+In `core/test/meson.build`:
+- The `test('test_sycl_motion_add_uv_parity', ...)` call loses `should_fail: true`
+  and its accompanying ADR-1093 comment block. If a concurrent branch adds
+  new SYCL test executables nearby, no conflict is expected; `should_fail` on
+  other tests is unaffected.
+
+In `core/test/test_sycl_motion_add_uv_parity.c`:
+- Feature-name queries updated (`integer_motion2_mau`, `float_motion2_mau`).
+  Conflicts only if another branch edits the same query lines.
 ## fix/mcp-resource-uri-validation (2026-06-07)
 
 no rebase impact: single-function change in `cmd/vmafx-mcp/impl_direct.go`

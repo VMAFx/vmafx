@@ -39,7 +39,6 @@
 #include <cstdint>
 #include <cstring>
 
-extern "C" {
 #include "config.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -48,7 +47,6 @@ extern "C" {
 #include "sycl/common.h"
 
 #include "feature/ssimulacra2_math.h"
-}
 
 namespace
 {

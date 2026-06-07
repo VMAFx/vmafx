@@ -15,7 +15,6 @@
 #include <cstdint>
 #include <cstring>
 
-extern "C" {
 #include "config.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -23,7 +22,6 @@ extern "C" {
 #include "log.h"
 #include "picture.h"
 #include "sycl/common.h"
-}
 
 namespace
 {

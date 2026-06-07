@@ -11,9 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-extern "C" {
 #include "../log.h"
-}
 
 /* Backend default: SYCL graph replay wins above 720p frame area on
  * Intel Arc A380 / oneAPI 2025.3 (empirical sweep documented in

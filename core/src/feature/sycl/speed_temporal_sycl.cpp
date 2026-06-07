@@ -25,7 +25,6 @@
 #include <cmath>
 #include <cstring>
 
-extern "C" {
 #include "config.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -36,7 +35,6 @@ extern "C" {
 #include "picture_copy.h"
 #include "sycl/common.h"
 #include "feature/speed_internal.h"
-}
 
 namespace
 {

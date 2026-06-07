@@ -23,7 +23,6 @@
 #include <cstdint>
 #include <cstring>
 
-extern "C" {
 #include "config.h"
 #include "feature/adm_options.h"
 #include "feature_collector.h"
@@ -32,7 +31,6 @@ extern "C" {
 #include "log.h"
 #include "picture.h"
 #include "sycl/common.h"
-}
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
