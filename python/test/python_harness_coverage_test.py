@@ -220,8 +220,12 @@ class ProcessRunnerTest(unittest.TestCase):
         with mock.patch("vmaf.subprocess.check_output", side_effect=fake_check_output):
             runner.run(["true"], {"env": user_env})
 
-        # User-supplied env wins; runner's setdefault() must not clobber it.
-        self.assertEqual(captured["env"], user_env)
+        # ProcessRunner unconditionally stamps LC_ALL=C and LANG=C on the
+        # caller env to ensure deterministic English error messages regardless
+        # of the host locale.  The caller's own keys are preserved; the locale
+        # keys are additive, not replacements.
+        expected_env = {"FOO": "bar", "LC_ALL": "C", "LANG": "C"}
+        self.assertEqual(captured["env"], expected_env)
 
 
 class ExternalProgramCallerVmafexecTest(unittest.TestCase):
@@ -298,7 +302,10 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
         kw = self._base_kwargs()
         kw["disable_avx"] = True
         cmd = self._capture(**kw)
-        self.assertIn("--cpumask -1", cmd)
+        # 4294967295 == 0xFFFFFFFF: all ISA-extension bits masked.
+        # parse_unsigned() rejects "-1" (ADR-1088); the harness now emits
+        # the unsigned equivalent so the CLI accepts it.
+        self.assertIn("--cpumask 4294967295", cmd)
 
     def test_subsample_and_threads_emitted_when_nontrivial(self):
         kw = self._base_kwargs()

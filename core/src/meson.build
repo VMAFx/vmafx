@@ -1765,23 +1765,29 @@ opt_cpp23_lib = static_library(
 
 # ADR-0768: picture_pool.cpp compiled as an isolated C++23 static lib
 # (same isolation pattern as metadata_handler_cpp20_lib / ADR-0708).
+# pthread_dependency: on Windows MSVC (no pthread.h in system headers) this
+# adds src/compat/win32/ to the include path so the win32 pthreads shim is
+# found.  On POSIX it is an empty list and has no effect.
 picture_pool_cpp23_lib = static_library(
     'picture_pool_cpp23',
     src_dir + 'picture_pool.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
     # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
     override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
+    dependencies : [pthread_dependency],
     pic : true,
     install : false,
 )
 
 # ADR-0768: gpu_picture_pool.cpp compiled as an isolated C++23 static lib.
+# pthread_dependency: same win32 shim rationale as picture_pool_cpp23_lib above.
 gpu_picture_pool_cpp23_lib = static_library(
     'gpu_picture_pool_cpp23',
     src_dir + 'gpu_picture_pool.cpp',
     include_directories : [vmaf_base_include, libvmaf_include],
     # libvmaf_cpu_cpp_std: compiler-aware token (ADR-0860 follow-up, PR #692 fix).
     override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
+    dependencies : [pthread_dependency],
     pic : true,
     install : false,
 )

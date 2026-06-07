@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/build-matrix-macos-windows-fixes (2026-06-07)
+
+**Rebase-sensitive (meson.build):** `core/src/meson.build` gains
+`dependencies : [pthread_dependency]` on both `picture_pool_cpp23_lib` and
+`gpu_picture_pool_cpp23_lib` static library targets (~lines 1768–1788). If a
+concurrent branch adds other fields to those `static_library()` calls, merge
+both sets of fields.
+
+Other changes are not rebase-sensitive:
+- `core/src/feature/arm64/motion_v2_neon.c`: rewrite of `neon_any_nonzero_s32`
+  (isolated function, no surrounding context).
+- `compat/python-vmaf/__init__.py`: two call-sites of `--cpumask` changed from
+  `"-1"` to `"4294967295"`.
+- `.github/workflows/libvmaf-build-matrix.yml`: two Vulkan matrix rows removed;
+  if a concurrent branch also removes the Vulkan step bodies (`Install Vulkan SDK`,
+  `Cache meson subprojects (Vulkan wraps)`, `Run Vulkan smoke tests (macOS
+  MoltenVK)`, etc.), take both removals.
+- `python/test/python_harness_coverage_test.py`: test expectation update
+  (`--cpumask -1` → `--cpumask 4294967295`; `test_run_preserves_user_env`
+  expected dict gains `LC_ALL`/`LANG`).
+
 ## fix/nightly-bisect-tracker-issue (2026-06-07)
 no rebase impact: changes confined to `.github/workflows/nightly-bisect.yml`,
 `scripts/ci/post-bisect-comment.py`, `docs/state.md`, and

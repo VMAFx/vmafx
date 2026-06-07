@@ -58,15 +58,26 @@ static inline uint32_t neon_hadd_u32(uint32x4_t v)
     return vaddvq_u32(v);
 }
 
-/* Non-zero test across 4×int32 lanes: returns non-zero iff any bit is set
- * in any lane.  Uses bitwise OR-fold rather than arithmetic sum so that
- * positive and negative signed values cannot cancel each other to give a
- * false zero (e.g. checkerboard frames trigger this on the signed-sum path).
+/* Non-zero test across 4×int32 lanes: returns non-zero iff any lane is
+ * non-zero.  Folds all four uint32 values with bitwise OR so that positive
+ * and negative signed values cannot cancel each other to give a false zero.
+ *
+ * The previous implementation reinterpreted int32x4 as uint64x2 and then
+ * cast the OR of the two uint64 lanes to uint32.  That loses the upper 32
+ * bits of each uint64 lane: if lane-0 = (int32[0] | int32[1]<<32) and
+ * int32[0]==0 while int32[1]!=0, the uint64 is non-zero but the uint32
+ * cast truncates it to 0.  On checkerboard frames — where every other
+ * y_row entry is zero — this false-zero caused the x_conv phase to be
+ * skipped for every row, yielding a motion SAD of 0.0.  Fix: OR all four
+ * uint32 lanes directly at uint32 width; no truncation possible.
  */
 static inline uint32_t neon_any_nonzero_s32(int32x4_t v)
 {
-    const uint64x2_t u64 = vreinterpretq_u64_s32(v);
-    return (uint32_t)(vgetq_lane_u64(u64, 0) | vgetq_lane_u64(u64, 1));
+    const uint32x4_t u32 = vreinterpretq_u32_s32(v);
+    const uint32x2_t lo = vget_low_u32(u32);
+    const uint32x2_t hi = vget_high_u32(u32);
+    const uint32x2_t folded = vorr_u32(lo, hi);
+    return vget_lane_u32(folded, 0) | vget_lane_u32(folded, 1);
 }
 
 /* Compute abs(x_conv) for 4 int32 lanes starting at y_row[j] using

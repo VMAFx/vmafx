@@ -107,46 +107,12 @@ jobs:
             name: Build — macOS clang (CPU) + DNN
             experimental: true
 
-          # --- Vulkan T5-1b runtime (ADR-0175) ---
-          # Real volk + VMA + glslc + compute dispatch. Needs the
-          # Vulkan loader + headers + glslc shader compiler before
-          # meson setup; lavapipe is the software ICD that exposes
-          # a compute-capable VkPhysicalDevice on headless runners
-          # so the smoke test can run end-to-end. Wraps for volk +
-          # VMA are sha256-pinned in core/subprojects/.
-          - os: ubuntu-latest
-            CC: ccache gcc
-            CXX: ccache g++
-            vulkan: true
-            meson_extra: -Denable_vulkan=enabled
-            name: Build — Ubuntu Vulkan (T5-1b runtime)
-
-          # --- macOS Vulkan via MoltenVK (ADR-0338, advisory) ---
-          # Validates the MoltenVK passthrough route on Apple
-          # Silicon: brew installs `molten-vk` (the Vulkan-on-Metal
-          # translation layer ICD) plus the Khronos `vulkan-loader`
-          # and `vulkan-headers`. `VK_ICD_FILENAMES` points the
-          # loader at MoltenVK's `MoltenVK_icd.json` so the loader
-          # enumerates exactly one ICD (Apple GPU via Metal). The
-          # smoke test pins the runtime contract; the cross-backend
-          # gate runs at `places=4` to confirm shader correctness.
-          #
-          # `experimental: true` + `continue-on-error` mark the lane
-          # advisory until one green run on master, per ADR-0338.
-          # Primary risk: `moment.comp` uses
-          # `GL_EXT_shader_atomic_int64` (atomicAdd on int64), which
-          # MoltenVK maps to Metal Tier-2 argument buffers — well-
-          # supported on M1+ but the most fragile dependency. Other
-          # shaders only use non-atomic int64 arithmetic
-          # (`GL_EXT_shader_explicit_arithmetic_types_int64`) which
-          # lowers to native Metal `long` and should pass.
-          - os: macos-latest
-            CC: ccache clang
-            CXX: ccache clang++
-            moltenvk: true
-            meson_extra: -Denable_vulkan=enabled
-            experimental: true
-            name: Build — macOS Vulkan via MoltenVK (advisory)
+          # --- Vulkan backend removed (ADR-0726) ---
+          # The Vulkan backend was removed in ADR-0726; the Ubuntu Vulkan
+          # (T5-1b runtime) and macOS MoltenVK (advisory) matrix rows that
+          # passed -Denable_vulkan=enabled have been dropped.  meson.build
+          # no longer exports that option and configure would fail with
+          # "Unknown option: enable_vulkan".
 
           # --- HIP T7-10b runtime (ADR-0212) ---
           # Real HIP runtime build — compiles + links against

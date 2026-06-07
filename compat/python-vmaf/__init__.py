@@ -230,7 +230,10 @@ class ExternalProgramCaller(object):
         if options is not None and "disable_avx" in options:
             assert isinstance(options["disable_avx"], bool)
             if options["disable_avx"] is True:
-                cmd += ["--cpumask", "-1"]
+                # 0xFFFFFFFF disables all CPU ISA extensions (all mask bits set).
+                # parse_unsigned() now rejects negative strings such as "-1"
+                # (ADR-1088); pass the unsigned equivalent instead.
+                cmd += ["--cpumask", "4294967295"]
 
         if options is not None and "n_threads" in options:
             assert isinstance(options["n_threads"], int) and options["n_threads"] >= 1
@@ -373,7 +376,9 @@ class ExternalProgramCaller(object):
             vmafexec_cmd += " --threads {}".format(n_threads)
 
         if disable_avx:
-            vmafexec_cmd += " --cpumask -1"
+            # 0xFFFFFFFF disables all CPU ISA extensions (all mask bits set).
+            # parse_unsigned() rejects negative strings (ADR-1088).
+            vmafexec_cmd += " --cpumask 4294967295"
 
         if logger:
             logger.info(vmafexec_cmd)
