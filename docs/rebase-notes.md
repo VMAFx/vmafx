@@ -45378,3 +45378,7 @@ and values. No C source, public header, or Go source is modified.
 no rebase impact: removes dead code and unused variables from
 `core/src/feature/integer_motion.c` and `core/test/test_framesync.c`. No
 public header or ABI change.
+
+## fix/motion-coverage-picture-ref-include (2026-06-07)
+no rebase impact: changes confined to `core/test/test_integer_motion_coverage.c`.
+Test-only change. No production source or public header modified.
