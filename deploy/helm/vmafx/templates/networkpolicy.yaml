@@ -252,7 +252,7 @@ spec:
         {{- end }}
       ports:
         - protocol: TCP
-          port: 9090
+          port: {{ .Values.node.metricsPort | default 9090 }}
 {{- end }}
 
 # ----------------------------------------------------------------------------

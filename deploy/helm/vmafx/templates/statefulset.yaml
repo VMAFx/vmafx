@@ -144,7 +144,7 @@ spec:
         {{- end }}
         resources:
           requests:
-            storage: 1Gi
+            storage: {{ .Values.statefulSet.statePVCSize | default "1Gi" }}
 ---
 # Headless Service required for StatefulSet DNS.
 apiVersion: v1

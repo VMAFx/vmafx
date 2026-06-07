@@ -6,6 +6,14 @@
   "additionalProperties": false,
   "required": ["workload", "image", "gpu"],
   "properties": {
+    "nameOverride": {
+      "type": "string",
+      "description": "Replaces only the chart-name component of resource names. Default: chart name."
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "description": "Replaces the entire resource-name prefix. Default: <release>-<chartName>."
+    },
     "operator": {
       "type": "object",
       "additionalProperties": false,
@@ -61,6 +69,11 @@
         "podManagementPolicy": {
           "type": "string",
           "enum": ["OrderedReady", "Parallel"]
+        },
+        "statePVCSize": {
+          "type": "string",
+          "description": "Size of the per-replica PersistentVolumeClaim for MCP session state (/var/lib/vmafx). Standard Kubernetes quantity string (e.g. 1Gi, 500Mi).",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E|m)?$"
         }
       }
     },
@@ -79,7 +92,25 @@
             { "type": "string" }
           ]
         },
-        "extraPorts": { "type": "array" }
+        "extraPorts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "port"],
+            "properties": {
+              "name": { "type": "string" },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+              "targetPort": {
+                "oneOf": [
+                  { "type": "integer", "minimum": 1, "maximum": 65535 },
+                  { "type": "string" }
+                ]
+              },
+              "protocol": { "type": "string", "enum": ["TCP", "UDP", "SCTP"] }
+            }
+          },
+          "description": "Additional named Service ports beyond the primary HTTP port."
+        }
       }
     },
     "ingress": {
@@ -223,6 +254,12 @@
           }
         },
         "controllerAddr": { "type": "string" },
+        "metricsPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Prometheus scrape port exposed by vmafx-node. Updates the Deployment containerPort, the node-metrics Service port, and the NetworkPolicy allow rule. Default: 9090."
+        },
         "resources": { "$ref": "#/$defs/resourceSpec" },
         "nodeSelector": { "type": "object" },
         "tolerations": { "type": "array" },
