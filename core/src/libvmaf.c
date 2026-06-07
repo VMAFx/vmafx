@@ -2187,16 +2187,15 @@ static int read_pictures_cuda_translate(VmafContext *vmaf, VmafPicture *ref, Vma
     return 0;
 }
 
-static int read_pictures_cuda_cleanup(VmafContext *vmaf, VmafPicture *ref_host,
-                                      VmafPicture *ref_device, VmafPicture *dist_host,
-                                      VmafPicture *dist_device)
+/* Unref only the device-side pictures (ref_device, dist_device).
+ * Called from the done=true early-return path where threaded_read_pictures_batch
+ * has already called vmaf_picture_unref on ref_host and dist_host (PR #838
+ * regression: the original read_pictures_cuda_cleanup also freed the host
+ * pictures, causing a double-unref that corrupted the pool free-list). */
+static int read_pictures_cuda_cleanup_device_only(VmafContext *vmaf, VmafPicture *ref_device,
+                                                  VmafPicture *dist_device)
 {
     int err = 0;
-    if (ref_host->priv)
-        err |= vmaf_picture_unref(ref_host);
-    if (dist_host->priv)
-        err |= vmaf_picture_unref(dist_host);
-
     CudaFunctions *cu_f = vmaf->cuda.state.f;
     int _cuda_err = 0;
     if (ref_device->priv) {
@@ -2225,6 +2224,19 @@ static int read_pictures_cuda_cleanup(VmafContext *vmaf, VmafPicture *ref_host,
     }
     if (_cuda_err && !err)
         err = _cuda_err;
+    return err;
+}
+
+static int read_pictures_cuda_cleanup(VmafContext *vmaf, VmafPicture *ref_host,
+                                      VmafPicture *ref_device, VmafPicture *dist_host,
+                                      VmafPicture *dist_device)
+{
+    int err = 0;
+    if (ref_host->priv)
+        err |= vmaf_picture_unref(ref_host);
+    if (dist_host->priv)
+        err |= vmaf_picture_unref(dist_host);
+    err |= read_pictures_cuda_cleanup_device_only(vmaf, ref_device, dist_device);
     return err;
 }
 #endif
@@ -2583,10 +2595,12 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
     err = read_pictures_post_extractor(vmaf, ref, dist, index, &done);
     if (done) {
 #ifdef HAVE_CUDA
-        /* done=true early-return must still unref the host/device pictures
-         * allocated by read_pictures_cuda_translate; skipping cleanup causes
-         * pool-slot exhaustion on the next vmaf_picture_pool_fetch call. */
-        err |= read_pictures_cuda_cleanup(vmaf, &ref_host, &ref_device, &dist_host, &dist_device);
+        /* done=true means threaded_read_pictures_batch already called
+         * vmaf_picture_unref on ref_host/dist_host at line 1858.  Calling
+         * the full read_pictures_cuda_cleanup here would double-unref those
+         * host pictures and corrupt the pool free-list (PR #838 regression).
+         * Use the device-only variant to release only ref_device/dist_device. */
+        err |= read_pictures_cuda_cleanup_device_only(vmaf, &ref_device, &dist_device);
 #endif
         return err;
     }

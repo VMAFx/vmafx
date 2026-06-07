@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cuda-done-path-double-unref-ort-coverage (2026-06-07)
+
+no rebase impact: changes confined to `core/src/libvmaf.c` (split
+`read_pictures_cuda_cleanup` into full and `_device_only` variants inside the
+existing `#ifdef HAVE_CUDA` block — non-CUDA builds are unchanged; the call site
+at the `done=true` branch is guarded by the same `#ifdef HAVE_CUDA`) and
+`core/src/dnn/ort_backend.c` (collapse a dead `else` branch into a single-line
+ternary in `ort_log_and_release_status` — no behaviour change on any exercised
+code path, coverage-only impact).
+
+---
+
 ## fix/ci-multi-platform-bundle-838 (2026-06-07)
 
 no rebase impact: changes confined to `core/tools/cli_parse.cpp` (const-qualifier
