@@ -1710,14 +1710,13 @@ test_sycl_motion_add_uv_parity = executable('test_sycl_motion_add_uv_parity',
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1']
 )
-# ADR-1093: should_fail=true — two fix attempts (PRs #768, #796) left CI
-# failing with SIGSEGV on the sycl_motion_add_uv path.  The test binary is
-# preserved so the regression surface stays visible; should_fail inverts the
-# signal so CI stays green while the root cause is under investigation.
-# Remove this flag when the underlying defect is confirmed fixed.
+# should_fail was removed (2026-06-07): the ADR-1093 suppression is lifted so
+# CI red surfaces the SIGSEGV root cause directly rather than inverting the
+# signal.  Both prior fix attempts (PRs #768, #796) left the defect in place;
+# the test now runs unconditionally and fails loudly to trigger proper
+# investigation.
 test('test_sycl_motion_add_uv_parity', test_sycl_motion_add_uv_parity,
-    suite : ['fast', 'gpu'],
-    should_fail : true)
+    suite : ['fast', 'gpu'])
 
 # ADR-0946 — SYCL kernel coverage round 3. Five new CPU vs. SYCL
 # parity gates filling the float-family + PSNR-HVS gaps left after
