@@ -45350,3 +45350,8 @@ no rebase impact: changes confined to `core/tools/vmaf_roi.c` and
 ## fix/vmaf-per-shot-correctness (2026-06-07)
 no rebase impact: changes confined to `core/tools/vmaf_per_shot.c` and
 `core/tools/test/test_vmaf_per_shot.sh`. No public header or ABI change.
+
+## fix/compat-python-vmaf-mode-shim (2026-06-07)
+no rebase impact: changes confined to `compat/python-vmaf/__init__.py`,
+`compat/python-vmaf/config.py`, and `compat/python-vmaf/core/matlab_feature_extractor.py`.
+No C source, public header, or ABI change.

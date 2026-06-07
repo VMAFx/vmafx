@@ -241,7 +241,7 @@ class VmafConfig(object):
     def workspace_path(cls, *components):
         """Root of the Python harness workspace (datasets, models, encodes,
         outputs, per-run scratch). Fork moved this from ROOT/workspace to
-        python/vmaf/workspace; override via VMAF_WORKSPACE env var. See
+        compat/python-vmaf/workspace; override via VMAF_WORKSPACE env var. See
         docs/architecture/workspace.md for the subdirectory contract.
         """
         return os.path.join(WORKSPACE, *components)
@@ -258,7 +258,7 @@ class VmafConfig(object):
     def resource_path(cls, *components):
         """Root of the static resource tree (example datasets, param files,
         model-training params, tutorial images). Fork moved this from
-        ROOT/resource to python/vmaf/resource; override via VMAF_RESOURCE env
+        ROOT/resource to compat/python-vmaf/resource; override via VMAF_RESOURCE env
         var. See docs/architecture/index.md for the rationale.
         """
         return os.path.join(RESOURCE, *components)

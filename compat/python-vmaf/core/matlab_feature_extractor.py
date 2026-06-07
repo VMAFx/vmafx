@@ -37,9 +37,11 @@ def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: str | None =
     ]
     # Force a deterministic C locale (mirrors ProcessRunner) so any
     # AssertionError text raised on a non-English host stays English.
+    # Unconditional assignment: setdefault() would leave a host-set
+    # LANG=de_DE.UTF-8 in place, defeating the intent.
     env = dict(os.environ)
-    env.setdefault("LC_ALL", "C")
-    env.setdefault("LANG", "C")
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
     try:
         if log_file_path is None:
             subprocess.check_output(argv, stderr=subprocess.STDOUT, env=env, shell=False)
