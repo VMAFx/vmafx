@@ -8,7 +8,7 @@ directory and establish standard interfaces for new scripts.
 """
 
 from aiutils.cli_helpers import add_batch_manifest_arguments, collect_cli_argv, make_argument_parser
-from aiutils.file_utils import sha256
+from aiutils.file_utils import sha256, write_text_atomic
 from aiutils.jsonl_utils import iter_jsonl
 from aiutils.run_manifest import (
     build_run_manifest_payload,
@@ -35,6 +35,7 @@ __all__ = [
     "write_manifest_json",
     "write_parquet_atomic",
     "write_run_manifest",
+    "write_text_atomic",
 ]
 
 

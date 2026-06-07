@@ -58,6 +58,8 @@ from ai.data.scores import teacher_scores  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.file_utils import write_text_atomic  # noqa: E402
+from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
@@ -96,8 +98,7 @@ def _load_or_compute(
         "per_frame": feats.per_frame.tolist(),
         "teacher_per_frame": teacher.per_frame.tolist(),
     }
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(json.dumps(payload))
+    write_text_atomic(cache_path, json.dumps(payload))
     return payload
 
 
@@ -229,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
 
     df = pd.DataFrame(rows)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(args.out)
+    write_parquet_atomic(df, args.out)
     elapsed_s = time.time() - t0
     _write_manifest(
         args.manifest_out,

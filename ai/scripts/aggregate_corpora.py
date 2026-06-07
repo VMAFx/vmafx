@@ -158,7 +158,9 @@ import argparse
 import json
 import logging
 import math
+import os
 import sys
+import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -472,16 +474,25 @@ def aggregate(
         )
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("w", encoding="utf-8") as out_fp:
-        # Stable sort by (corpus_source, src_sha256) so the output is
-        # bytewise-deterministic given a fixed input set, which makes
-        # diffing across runs trivial in CI.
-        for key in sorted(
-            keyed,
-            key=lambda k: (keyed[k]["corpus_source"], keyed[k]["src_sha256"], k),
-        ):
-            out_fp.write(json.dumps(keyed[key], sort_keys=True) + "\n")
-            counters["rows_out"] += 1
+    # Write to a temp file in the same directory then rename atomically so
+    # a crash mid-write never leaves a partially-truncated output JSONL.
+    fd, tmp_str = tempfile.mkstemp(dir=output.parent)
+    tmp = Path(tmp_str)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as out_fp:
+            # Stable sort by (corpus_source, src_sha256) so the output is
+            # bytewise-deterministic given a fixed input set, which makes
+            # diffing across runs trivial in CI.
+            for key in sorted(
+                keyed,
+                key=lambda k: (keyed[k]["corpus_source"], keyed[k]["src_sha256"], k),
+            ):
+                out_fp.write(json.dumps(keyed[key], sort_keys=True) + "\n")
+                counters["rows_out"] += 1
+        os.replace(tmp_str, output)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
 
     return counters
 

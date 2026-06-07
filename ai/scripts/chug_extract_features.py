@@ -52,6 +52,7 @@ from ai.data.feature_extractor import (  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.file_utils import write_text_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance  # noqa: E402
 
 # Default working directory for CHUG feature extraction; override with
@@ -650,9 +651,9 @@ def _extract_pair_payload(
                 pix_fmt="420",
                 bitdepth=10,
             )
-            cache_path.write_text(
+            write_text_atomic(
+                cache_path,
                 json.dumps(result.to_jsonable(), sort_keys=True),
-                encoding="utf-8",
             )
         visual_payload = {
             "ref": compute_visual_signals_from_yuv10(
@@ -666,9 +667,9 @@ def _extract_pair_payload(
                 height=pair.height,
             ),
         }
-        visual_cache_path.write_text(
+        write_text_atomic(
+            visual_cache_path,
             json.dumps(visual_payload, sort_keys=True),
-            encoding="utf-8",
         )
 
     return ExtractedPairPayload(

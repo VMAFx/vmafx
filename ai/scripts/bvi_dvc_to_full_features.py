@@ -86,6 +86,8 @@ from ai.data.feature_extractor import FULL_FEATURES, _extractors_for  # noqa: E4
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.file_utils import write_text_atomic  # noqa: E402
+from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 EXTRACTORS = tuple(_extractors_for(FULL_FEATURES))
@@ -305,7 +307,7 @@ def _process_clip(
         rows = _frames_to_rows(key, vmaf_json, codec)
         if cache_dir is not None:
             cache_dir.mkdir(parents=True, exist_ok=True)
-            (cache_dir / f"{key}.json").write_text(vmaf_json.read_text())
+            write_text_atomic(cache_dir / f"{key}.json", vmaf_json.read_text())
         return rows
     finally:
         for p in (ref_yuv, dis_yuv, vmaf_json):
@@ -355,7 +357,7 @@ def _process_clip_yuv(
         rows = _frames_to_rows(key, vmaf_json, codec)
         if cache_dir is not None:
             cache_dir.mkdir(parents=True, exist_ok=True)
-            (cache_dir / f"{key}.json").write_text(vmaf_json.read_text())
+            write_text_atomic(cache_dir / f"{key}.json", vmaf_json.read_text())
         return rows
     finally:
         for p in (dis_yuv, vmaf_json):
@@ -599,7 +601,7 @@ def _run_dir_mode(
 def _write_parquet(rows: list[dict], n_clips: int, out_path: Path) -> dict[str, object]:
     df = pd.DataFrame(rows)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(out_path)
+    write_parquet_atomic(df, out_path)
     print(
         f"[bvi-dvc-full] wrote {out_path} ({len(df)} frames, "
         f"{n_clips} clips, {len(df.columns)} cols)",

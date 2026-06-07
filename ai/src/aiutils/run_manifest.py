@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from aiutils.file_utils import sha256
+from aiutils.file_utils import sha256, write_text_atomic
 
 JsonScalar = str | int | float | bool | None
 JsonValue = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
@@ -174,6 +174,9 @@ def write_run_manifest(
 
 
 def write_manifest_json(path: Path, payload: Mapping[str, Any]) -> None:
-    """Write a deterministic JSON manifest with a trailing newline."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    """Write a deterministic JSON manifest atomically with a trailing newline.
+
+    Uses :func:`aiutils.file_utils.write_text_atomic` so a crash during
+    the write never leaves a partially-truncated manifest on disk.
+    """
+    write_text_atomic(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")

@@ -45364,3 +45364,8 @@ no rebase impact: changes confined to `ffmpeg-patches/0002-*.patch` and
 no rebase impact: changes confined to `cmd/vmafx-server/grpc_server.go`,
 `pkg/observability/otel_instruments.go`, and `pkg/score/grpc_client.go`.
 No C source, public header, or ABI change.
+
+## worktree-wf_392e91a3-897-1 / fix/ai-atomic-writes (2026-06-07)
+no rebase impact: changes confined to `ai/src/aiutils/file_utils.py`,
+`ai/src/aiutils/run_manifest.py`, and five AI scripts. No C source, public
+header, or build file is modified.

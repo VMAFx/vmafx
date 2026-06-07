@@ -51,6 +51,8 @@ from ai.data.feature_extractor import (  # noqa: E402
 
 # isort: split
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.file_utils import write_text_atomic  # noqa: E402
+from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
@@ -271,7 +273,7 @@ def _process_clip(
         if cache_dir is not None:
             cache_path = _cache_path(cache_dir, key, crf)
             cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cache_path.write_text(vmaf_json.read_text())
+            write_text_atomic(cache_path, vmaf_json.read_text())
         return rows
     finally:
         ref_yuv.unlink(missing_ok=True)
@@ -294,7 +296,7 @@ def _write_outputs(
 ) -> None:
     df = pd.DataFrame(rows)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(out_path, index=False)
+    write_parquet_atomic(df, out_path)
     print(
         f"[konvid-full] wrote {out_path} ({len(df)} frames, "
         f"{df['key'].nunique() if 'key' in df.columns else 0} clips, {len(df.columns)} cols)",
@@ -304,7 +306,7 @@ def _write_outputs(
         return
     if df.empty:
         folds_out.parent.mkdir(parents=True, exist_ok=True)
-        df.assign(source=pd.Series(dtype=str)).to_parquet(folds_out, index=False)
+        write_parquet_atomic(df.assign(source=pd.Series(dtype=str)), folds_out)
         print(f"[konvid-full] wrote {folds_out} (empty folded output)", flush=True)
         return
     keys = sorted(str(k) for k in df["key"].dropna().unique())
@@ -312,7 +314,7 @@ def _write_outputs(
     folded = df.copy()
     folded["source"] = folded["key"].map(fold_by_key)
     folds_out.parent.mkdir(parents=True, exist_ok=True)
-    folded.to_parquet(folds_out, index=False)
+    write_parquet_atomic(folded, folds_out)
     print(
         f"[konvid-full] wrote {folds_out} "
         f"(folds={folded['source'].value_counts().sort_index().to_dict()})",
