@@ -14,9 +14,11 @@ site_dir: build-docs/site
 # never rendered as standalone pages, so exclude them from the site build.
 # Same for changelog fragments under `changelog.d/` (which live in repo
 # root, not docs/, but listed here defensively if a future reorg moves
-# them under docs/).
+# them under docs/). One fragment was placed under docs/changelog.d/ and
+# is explicitly excluded here.
 exclude_docs: |
   adr/_index_fragments/*
+  changelog.d/**
 
 theme:
   name: material
@@ -256,6 +258,7 @@ nav:
       - MOS label materializer: ai/mos-label-materializer.md
       - LOSO evaluation: ai/loso-eval.md
       - Local sidecar training: ai/local-sidecar-training.md
+      - Sidecar online training (k8s): ai/sidecar-online-training.md
       - Ensemble training kit: ai/ensemble-training-kit.md
       - Ensemble v2 runbook: ai/ensemble-v2-real-corpus-retrain-runbook.md
       - FR-from-NR adapter: ai/fr-from-nr-adapter.md
@@ -348,10 +351,20 @@ nav:
       - PR body sentinel guide: development/pr-body-sentinel-guide.md
       - Test fixtures: development/test-fixtures.md
       - CI tmate debug: development/ci-tmate-debug.md
+      - eBPF FUSE bypass: development/ebpf-fuse-bypass.md
+      - Performance claims (May 2026): development/perf-claims-2026-05-10.md
+      - Upstream sync reports:
+          - 2026-05-02: sync-upstream/2026-05-02-sync-report.md
+          - 2026-05-03: sync-upstream/2026-05-03-sync-report.md
+      - Upstream ports:
+          - "1b08bb4d (needs manual port)": upstream-ports/1b08bb4d-needs-manual-port.md
   - Server:
       - Controller: server/controller.md
       - gRPC service: server/grpc.md
       - Worker node: server/node.md
+      - Auth gateway: server/auth.md
+      - Operator: server/operator.md
+      - REST API: server/rest.md
   - ADRs:
       # >>> ADR-NAV-GENERATED — do not hand-edit; regenerate with
       - Overview: adr/README.md
