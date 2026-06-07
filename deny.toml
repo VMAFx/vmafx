@@ -4,7 +4,7 @@
 # core/src/feature/rust/tad, and any future pilot crates).
 #
 # Policy summary (ADR-0917):
-#   * Licenses  — allow permissive + the fork's BSD-3-Clause-Plus-Patent.
+#   * Licenses  — allow permissive + the fork's BSD-2-Clause-Patent.
 #                 Deny copyleft (GPL/AGPL/LGPL/MPL/SSPL/CDDL/EPL).
 #   * Bans      — deny `openssl-sys`/`native-tls` (prefer rustls); flag
 #                 multiple-versions as warn so the duplicate-dep surface is
@@ -15,7 +15,7 @@
 #
 # Documentation: docs/development/cargo-deny.md
 #
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# SPDX-License-Identifier: BSD-2-Clause-Patent OR MIT
 
 [graph]
 # Run the same checks for every host we ship Rust artifacts on (vmafx-sys
@@ -64,7 +64,8 @@ version = 2
 allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
-    "BSD-3-Clause",                     # fork crates (vmafx-sys); transitive deps
+    "BSD-2-Clause-Patent",              # fork crates (vmafx, vmafx-sys, vmafx-tad); ADR-1036
+    "BSD-3-Clause",                     # transitive deps
     "ISC",
     "MIT",
     "Unicode-3.0",                      # icu_* (pulled in by unicode-ident etc.)
@@ -84,9 +85,10 @@ exceptions = [
 ]
 
 [licenses.private]
-# Workspace crates without `publish = false` still pass through the license
-# check; once `vmafx-sys` and `vmafx-tad` add `publish = false`, this block
-# alone will cover the workspace's own SPDX strings.
+# BSD-2-Clause-Patent is now in the allowlist (ADR-1036 SPDX correction),
+# so the private-ignore block is a secondary safety net. Once vmafx, vmafx-sys,
+# and vmafx-tad set `publish = false`, this block alone will cover the
+# workspace's own SPDX strings and the explicit allowlist entry can be removed.
 ignore = true
 registries = []
 
