@@ -217,7 +217,7 @@ static void y4m_convert_42xmpeg2_42xjpeg(y4m_input *_y4m, unsigned char *_dst, u
     int y;
     int x;
     /*Skip past the luma data.*/
-    _dst += _y4m->pic_w * _y4m->pic_h;
+    _dst += (size_t)_y4m->pic_w * _y4m->pic_h;
     /*Compute the size of each chroma plane.*/
     c_w = (_y4m->pic_w + _y4m->dst_c_dec_h - 1) / _y4m->dst_c_dec_h;
     c_h = (_y4m->pic_h + _y4m->dst_c_dec_v - 1) / _y4m->dst_c_dec_v;
@@ -305,20 +305,24 @@ static void y4m_convert_42xpaldv_42xjpeg(y4m_input *_y4m, unsigned char *_dst, u
     unsigned char *tmp;
     int c_w;
     int c_h;
-    int c_sz;
+    size_t c_sz;
     int pli;
     int y;
     int x;
-    /*Skip past the luma data.*/
-    _dst += _y4m->pic_w * _y4m->pic_h;
+    /*Skip past the luma data.
+     * Cast to size_t to avoid signed-integer overflow for large frames
+     * (pic_w * pic_h overflows int when each dimension exceeds ~46340). */
+    _dst += (size_t)_y4m->pic_w * _y4m->pic_h;
     /*Compute the size of each chroma plane.*/
     c_w = (_y4m->pic_w + 1) / 2;
     c_h = (_y4m->pic_h + _y4m->dst_c_dec_h - 1) / _y4m->dst_c_dec_h;
-    c_sz = c_w * c_h;
+    /* Use size_t for c_sz: c_w*c_h can overflow int when each of pic_w/pic_h
+     * exceeds ~65535 (c_w ~ 32767, c_h ~ 32767, product ~ 1 GiB). */
+    c_sz = (size_t)c_w * c_h;
     /*First do the horizontal re-sampling.
     This is the same as the mpeg2 case, except that after the horizontal case,
      we need to apply a second vertical filter.*/
-    tmp = _aux + 2 * c_sz;
+    tmp = _aux + 2U * c_sz;
     for (pli = 1; pli < 3; pli++) {
         for (y = 0; y < c_h; y++) {
             /*Filter: [4 -17 114 35 -9 1]/128, derived from a 6-tap Lanczos
@@ -552,12 +556,14 @@ static void y4m_convert_411_422jpeg(y4m_input *_y4m, unsigned char *_dst, unsign
   This costs about 17 bits a frame to code.*/
 static void y4m_convert_mono_420jpeg(y4m_input *_y4m, unsigned char *_dst, unsigned char *_aux)
 {
-    int c_sz;
+    size_t c_sz;
     (void)_aux;
-    _dst += _y4m->pic_w * _y4m->pic_h;
-    c_sz = ((_y4m->pic_w + _y4m->dst_c_dec_h - 1) / _y4m->dst_c_dec_h) *
-           ((_y4m->pic_h + _y4m->dst_c_dec_v - 1) / _y4m->dst_c_dec_v);
-    memset(_dst, 128, c_sz * 2);
+    /* Cast operands to size_t: pic_w * pic_h and the chroma-plane product both
+     * overflow signed int for frames with dimensions beyond ~46340. */
+    _dst += (size_t)_y4m->pic_w * _y4m->pic_h;
+    c_sz = (size_t)((_y4m->pic_w + _y4m->dst_c_dec_h - 1) / _y4m->dst_c_dec_h) *
+           (size_t)((_y4m->pic_h + _y4m->dst_c_dec_v - 1) / _y4m->dst_c_dec_v);
+    memset(_dst, 128, c_sz * 2U);
 }
 
 #if 0
@@ -896,21 +902,25 @@ static int y4m_input_fetch_frame(y4m_input *_y4m, FILE *_fin, video_input_ycbcr 
                                  char _tag[5])
 {
     char frame[6];
-    int pic_sz;
+    size_t pic_sz;
     int frame_c_w;
     int frame_c_h;
     int c_w;
     int c_h;
-    int c_sz;
+    size_t c_sz;
     int ret;
     int xstride;
     xstride = (_y4m->depth > 8) ? 2 : 1;
-    pic_sz = _y4m->pic_w * _y4m->pic_h * xstride;
+    /* Use size_t for pic_sz and c_sz: the signed-int products overflow for
+     * frames larger than ~46340x46340 (e.g. 8K frames are 7680x4320 — safe,
+     * but adversarial headers near INT_MAX cause wrapping to negative values
+     * that then produce UB pointer arithmetic at _y4m->dst_buf + pic_sz). */
+    pic_sz = (size_t)_y4m->pic_w * (size_t)_y4m->pic_h * (size_t)xstride;
     frame_c_w = _y4m->frame_w / _y4m->dst_c_dec_h;
     frame_c_h = _y4m->frame_h / _y4m->dst_c_dec_v;
     c_w = (_y4m->pic_w + _y4m->dst_c_dec_h - 1) / _y4m->dst_c_dec_h;
     c_h = (_y4m->pic_h + _y4m->dst_c_dec_v - 1) / _y4m->dst_c_dec_v;
-    c_sz = c_w * c_h * xstride;
+    c_sz = (size_t)c_w * (size_t)c_h * (size_t)xstride;
     /*Read and skip the frame header.*/
     ret = fread(frame, 1, 6, _fin);
     if (ret < 6)
@@ -934,10 +944,15 @@ static int y4m_input_fetch_frame(y4m_input *_y4m, FILE *_fin, video_input_ycbcr 
         (void)fprintf(stderr, "Error reading YUV frame data.\n");
         return -1;
     }
-    /*Read the frame data that does need conversion.*/
-    if (fread(_y4m->aux_buf, 1, _y4m->aux_buf_read_sz, _fin) != _y4m->aux_buf_read_sz) {
-        (void)fprintf(stderr, "Error reading YUV frame data.\n");
-        return -1;
+    /*Read the frame data that does need conversion.
+     * Guard against fread(NULL, 1, 0, fp): C11 §7.21.1 does not grant a
+     * NULL-pointer exemption even when nmemb is zero.  When aux_buf is NULL
+     * (aux_buf_read_sz == 0, no-conversion formats), skip the call entirely. */
+    if (_y4m->aux_buf_read_sz > 0) {
+        if (fread(_y4m->aux_buf, 1, _y4m->aux_buf_read_sz, _fin) != _y4m->aux_buf_read_sz) {
+            (void)fprintf(stderr, "Error reading YUV frame data.\n");
+            return -1;
+        }
     }
     /*Now convert the just read frame.*/
     (*_y4m->convert)(_y4m, _y4m->dst_buf, _y4m->aux_buf);
