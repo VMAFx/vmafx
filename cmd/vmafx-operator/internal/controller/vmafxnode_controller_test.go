@@ -129,7 +129,12 @@ var _ = Describe("VmafxNode controller", func() {
 		}))
 		DeferCleanup(srv.Close)
 
-		staleTime := metav1.NewTime(time.Now().Add(-90 * time.Second))
+		// Truncate to second precision: the Kubernetes API server stores
+		// metav1.Time as RFC3339 (second granularity), so a sub-second value
+		// written via Status().Update() is rounded on read-back.  Without
+		// the truncation the Gomega Equal() assertion fails because the
+		// in-memory staleTime carries nanoseconds that the API server drops.
+		staleTime := metav1.NewTime(time.Now().Add(-90 * time.Second).Truncate(time.Second))
 		node := &vmafxv1.VmafxNode{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-node-stale",

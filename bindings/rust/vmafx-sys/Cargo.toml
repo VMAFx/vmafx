@@ -15,6 +15,14 @@ readme.workspace = true
 links = "vmaf"
 build = "build.rs"
 
+[lib]
+# Doc-tests are disabled for this *-sys crate because the generated
+# bindings.rs is produced by bindgen from libvmaf.h C comments verbatim.
+# Those comments contain C idioms ("On x86 / x86_64:", backtick-wrapped
+# code references) that are not valid Rust doc-test code.  Unit tests and
+# integration tests run normally; only doc-tests are suppressed here.
+doctest = false
+
 [build-dependencies]
 bindgen = "0.72"
 

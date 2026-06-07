@@ -84,4 +84,12 @@ jobs:
           echo "KUBEBUILDER_ASSETS=${ASSETS}" >> "${GITHUB_ENV}"
 
       - name: go test
+        env:
+          # cgo packages (vmafx-controller, vmafx-mcp, vmafx-node, vmafx-server,
+          # pkg/libvmaf) link against libvmaf.so.3 which is built in
+          # core/build-cpu/src but not installed system-wide.  Without this
+          # variable the dynamic linker cannot locate libvmaf.so.3 at test
+          # run-time and the test binary exits with "cannot open shared object
+          # file" before running a single test case.
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-cpu/src
         run: go test ./...
