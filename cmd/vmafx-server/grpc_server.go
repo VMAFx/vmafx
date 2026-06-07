@@ -22,6 +22,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -169,11 +170,14 @@ func runGRPCWithServer(
 		return fmt.Errorf("grpc listen %s: %w", addr, err)
 	}
 
-	// Install panic-recovery interceptors so a single misbehaving handler
-	// (e.g. a nil-pointer deref inside the cgo libvmaf path) surfaces as a
-	// codes.Internal status to the offending client instead of crashing the
-	// whole server process and dropping every in-flight stream. ADR-0978.
+	// ADR-0927: OTel stats handler instruments every gRPC RPC with a server
+	// span and extracts the W3C traceparent / tracestate headers from the
+	// incoming request metadata so server spans appear as children of the
+	// calling trace.  No-op when InitOTel installed no-op providers.
+	// ADR-0978: panic-recovery interceptors so a misbehaving handler surfaces
+	// as codes.Internal rather than crashing the process.
 	srv := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.UnaryInterceptor(recoveryUnaryInterceptor(impl.log)),
 		grpc.StreamInterceptor(recoveryStreamInterceptor(impl.log)),
 	)

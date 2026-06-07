@@ -31,7 +31,14 @@ for the streaming surface.
    EOF semantics stable if a future gRPC release wraps the sentinel
    inside a status.
 
-4. **Send-EOF translation** (`grpc_client.go`, ADR-0978): both
+4. **OTel client handler on `Dial`** (`grpc_client.go`, ADR-1095): `grpc.NewClient`
+   must always include `grpc.WithStatsHandler(otelgrpc.NewClientHandler())`. Without
+   this the outgoing RPCs carry no `traceparent` header and the controller/server
+   spans cannot be linked into the same distributed trace. The handler is a no-op
+   when `InitOTel` installed no-op providers (i.e. `OTEL_EXPORTER_OTLP_ENDPOINT`
+   is unset), so it is safe to keep unconditionally.
+
+5. **Send-EOF translation** (`grpc_client.go`, ADR-0978): both
    `OpenScoreStream` and `PushFrame` route Send errors through
    `recvStatusOnEOF`, which detects an `io.EOF` from Send (gRPC's
    "stream already done from the server's perspective" signal) and

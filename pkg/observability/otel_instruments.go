@@ -140,10 +140,14 @@ func EndSpan(span trace.Span, errp *error) {
 
 // ObserveScoreLatency records elapsed time (in ms) against the ScoreLatency
 // histogram with the given attribute set.
-func ObserveScoreLatency(om *OTelMetrics, start time.Time, attrs ...attribute.KeyValue) {
+//
+// ctx is the request context — passing the caller's context rather than
+// context.Background() preserves baggage and allows exemplar linking when
+// the OTel SDK attaches trace IDs to histogram data points.
+func ObserveScoreLatency(ctx context.Context, om *OTelMetrics, start time.Time, attrs ...attribute.KeyValue) {
 	if om == nil {
 		return
 	}
 	ms := float64(time.Since(start).Milliseconds())
-	om.ScoreLatency.Record(context.Background(), ms, metric.WithAttributes(attrs...))
+	om.ScoreLatency.Record(ctx, ms, metric.WithAttributes(attrs...))
 }

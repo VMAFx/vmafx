@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -40,8 +41,16 @@ type Client struct {
 //
 // The connection uses insecure transport by default. Production deployments
 // should wrap this with TLS credentials (follow-up ADR after Phase 2).
+//
+// ADR-0927: the OTel client stats handler injects the W3C traceparent /
+// tracestate headers into every outgoing RPC so the server-side span is
+// linked as a child of the caller's trace.  No-op when InitOTel installed
+// no-op providers (i.e. OTEL_EXPORTER_OTLP_ENDPOINT is unset).
 func Dial(addr string) (*Client, error) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("score: dial %s: %w", addr, err)
 	}

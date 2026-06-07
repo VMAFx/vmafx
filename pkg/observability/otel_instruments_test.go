@@ -167,7 +167,7 @@ func TestEndSpan_WithError(t *testing.T) {
 func TestObserveScoreLatency_NilOmDoesNotPanic(t *testing.T) {
 	t.Parallel()
 	// Must not panic.
-	ObserveScoreLatency(nil, time.Now(), AttrBackend.String("cpu"))
+	ObserveScoreLatency(context.Background(), nil, time.Now(), AttrBackend.String("cpu"))
 }
 
 // TestObserveScoreLatency_RecordsElapsed verifies the recording path with a
@@ -182,7 +182,7 @@ func TestObserveScoreLatency_RecordsElapsed(t *testing.T) {
 	start := time.Now().Add(-100 * time.Millisecond) // simulate 100 ms elapsed
 
 	// Must not panic; we can't assert the exact value without reading the reader.
-	ObserveScoreLatency(om, start, AttrBackend.String("cpu"), AttrModel.String("vmaf_v0.6.1"))
+	ObserveScoreLatency(context.Background(), om, start, AttrBackend.String("cpu"), AttrModel.String("vmaf_v0.6.1"))
 }
 
 // TestSpanNameConstants verifies that the span-name constants are non-empty

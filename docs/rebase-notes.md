@@ -45359,3 +45359,8 @@ No C source, public header, or ABI change.
 ## fix/ffmpeg-vmaf-pre-device-full-enum (2026-06-07)
 no rebase impact: changes confined to `ffmpeg-patches/0002-*.patch` and
 `ffmpeg-patches/0014-*.patch`. No C source or public header in-tree is modified.
+
+## fix/observability-otel-trace-context (2026-06-07)
+no rebase impact: changes confined to `cmd/vmafx-server/grpc_server.go`,
+`pkg/observability/otel_instruments.go`, and `pkg/score/grpc_client.go`.
+No C source, public header, or ABI change.

@@ -70,3 +70,11 @@ defer func() {
 
 The 5 s bound is mandatory — without it, a misconfigured collector
 hangs process exit forever.
+
+## `ObserveScoreLatency` context requirement (ADR-1095)
+
+`ObserveScoreLatency(ctx, om, start, attrs...)` takes the caller's request
+context as its first argument.  Pass the handler `ctx`, not
+`context.Background()` — the SDK reads the active span ID from the context
+to attach trace exemplars to histogram data points.  Using
+`context.Background()` silently discards baggage and breaks exemplar linking.
