@@ -17,5 +17,4 @@ with the Python server from PR #1583.
   `VMAFX_VMAF_BINARY`, `VMAFX_MODEL_DIR`.
 - **Multi-stage Dockerfile** (`Dockerfile.go-server`): `golang:1.23-bookworm` builder
   + `gcr.io/distroless/cc-debian12` runtime; EXPOSE 8080 + 50051.
-- Python implementation from PR #1583 retained as a compat layer pending Stage-3
-  cleanup PR.
+- Python implementation retained as a compat layer pending Stage-3 cleanup PR.

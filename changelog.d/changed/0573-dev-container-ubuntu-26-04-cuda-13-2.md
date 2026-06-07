@@ -18,4 +18,4 @@
   `.github/workflows/libvmaf-build-matrix.yml` (Linux and Windows legs).
 - Intel oneAPI, Intel NEO compute-runtime (26.18.38308.1), and Level Zero
   (1.28.6) are unchanged.
-- Closes PR #1330 (prior failed attempt at the 26.04 bump).
+- Supersedes an earlier failed attempt at the 26.04 bump.

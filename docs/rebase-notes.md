@@ -1695,10 +1695,10 @@ PR #379 (round-2 parity: motion_v2, integer_psnr, float_psnr, float_ssim).
 All four new files live under the existing fork-local `enable_metal` block
 in `core/test/meson.build` (the entire Metal backend is fork-added —
 ADR-0361 / ADR-0421 / ADR-0589 / T8-2a — and absent from upstream
-Netflix/vmaf). The block edit appends four new `executable()` + `test()`
-pairs immediately after the round-2 block (or after
-`test_metal_install_header` if round-2 is not yet merged); the surrounding
-`endif` boundaries are untouched so upstream syncs cannot conflict here.
+Netflix/vmaf). The block edit appended four new `executable()` + `test()`
+pairs immediately after the round-2 block (PR #379 has since merged);
+the surrounding `endif` boundaries are untouched so upstream syncs
+cannot conflict here.
 
 If upstream ever ports a Metal backend, the test files would need
 re-pointing at the upstream kernel names; the synthetic-fixture +
@@ -1793,9 +1793,9 @@ coupling.
 no rebase impact: REASON — both changes are entirely within
 `deploy/helm/vmafx/` which is fork-added infrastructure with no upstream
 counterpart in Netflix/vmaf. Netflix upstream does not ship a Helm chart;
-upstream syncs never touch this directory. PR #439 (ADR-0930) will rebase
-cleanly on top (it modifies `values.yaml` in a non-conflicting block and
-does not touch `node-deployment.yaml`).
+upstream syncs never touch this directory. PR #439 (ADR-0930) has since
+merged cleanly on top (it modified `values.yaml` in a non-conflicting
+block and did not touch `node-deployment.yaml`).
 
 ## MCP HTTP transport security hardening (2026-05-31, ADR-0967)
 
@@ -2008,10 +2008,9 @@ files near `test_integer_vif_cpu_cuda_parity` (the closest neighbour
 in meson.build) the additive blocks may need re-anchoring — trivial
 3-way merge.
 
-The only **in-flight** conflict surface is `core/test/meson.build`
-against PR #351 (round 1) and PR #374 (round 2), both of which insert
-under the same `enable_cuda` guard. PRs land sequentially → each
-rebase resolves one trivial three-way merge per landing.
+PRs #351 (round 1) and #374 (round 2) both inserted test entries under
+the same `enable_cuda` guard in `core/test/meson.build` and have since
+merged; the sequential three-way merges resolved cleanly at landing time.
 
 ---
 
@@ -3268,9 +3267,9 @@ backend-selection code, docs, tests, AGENTS notes, and ADR/research notes.
 Upstream Netflix/vmaf does not ship the fork `vmaf-tune` automation harness.
 
 Invariant: `tools/vmaf-tune/src/vmaftune/score_backend.py` keeps
-`DEFAULT_FALLBACKS = ("cuda", "sycl", "hip", "vulkan", "cpu")`. Do not move
-Vulkan before SYCL or HIP during backend-selector rebases; Vulkan is the broad
-fallback, not the native-first winner.
+`DEFAULT_FALLBACKS = ("cuda", "sycl", "hip", "cpu")`. The Vulkan entry was
+removed when ADR-0726 dropped the Vulkan backend; do not re-add it during
+backend-selector rebases. CPU remains the final fallback.
 
 Smoke:
 `.venv/bin/python -m pytest tools/vmaf-tune/tests/test_score_backend.py -q`
@@ -3584,7 +3583,7 @@ Rebase-sensitive fork invariants:
   use `vmaf_dnn_session_run()` until a future ADR defines feature-name flattening.
 
 Smoke:
-`docker exec vmaf-dev-mcp bash -lc 'cd /workspace && rm -rf /tmp/vmaf-dnn-multi-output-build && meson setup /tmp/vmaf-dnn-multi-output-build libvmaf -Denable_dnn=enabled -Denable_cuda=false -Denable_sycl=false -Denable_vulkan=disabled -Denable_hip=false -Denable_metal=disabled && meson test -C /tmp/vmaf-dnn-multi-output-build --suite=dnn --print-errorlogs'`
+`docker exec vmaf-dev-mcp bash -lc 'cd /workspace && rm -rf /tmp/vmaf-dnn-multi-output-build && meson setup /tmp/vmaf-dnn-multi-output-build core -Denable_dnn=enabled -Denable_cuda=false -Denable_sycl=false -Denable_vulkan=disabled -Denable_hip=false -Denable_metal=disabled && meson test -C /tmp/vmaf-dnn-multi-output-build --suite=dnn --print-errorlogs'`
 
 Touched files: `core/src/libvmaf.c`, `core/src/dnn/model_loader.*`,
 `core/src/dnn/ort_backend.*`, `core/test/dnn/*`,
