@@ -40,6 +40,11 @@ using std::memory_order_seq_cst;
 #include <stdatomic.h>
 #endif
 
+/**
+ * @brief Atomic reference counter used by VmafPicture and similar objects.
+ *
+ * All operations are sequentially consistent unless noted otherwise.
+ */
 typedef struct VmafRef {
     atomic_int cnt;
 } VmafRef;
@@ -48,10 +53,48 @@ typedef struct VmafRef {
 extern "C" {
 #endif
 
+/**
+ * @brief Allocate a VmafRef with an initial count of 1.
+ *
+ * @param[out] ref  Receives the newly-allocated ref on success.
+ * @return 0 on success, -ENOMEM on allocation failure.
+ */
 int vmaf_ref_init(VmafRef **ref);
+
+/**
+ * @brief Atomically increment the reference count.
+ *
+ * @param ref  Reference counter to increment (must not be NULL).
+ */
 void vmaf_ref_fetch_increment(VmafRef *ref);
+
+/**
+ * @brief Atomically decrement the reference count and return the new value.
+ *
+ * When the returned value reaches 0 the caller is responsible for destroying
+ * the owning object.
+ *
+ * @param ref  Reference counter to decrement (must not be NULL).
+ * @return New reference count after decrement.
+ */
 long vmaf_ref_fetch_decrement(VmafRef *ref);
+
+/**
+ * @brief Load the current reference count without modifying it.
+ *
+ * @param ref  Reference counter to read.
+ * @return Current reference count.
+ */
 long vmaf_ref_load(VmafRef *ref);
+
+/**
+ * @brief Free a VmafRef allocated by vmaf_ref_init().
+ *
+ * The caller must ensure the count has reached 0 before calling this.
+ *
+ * @param ref  Ref to free.  May be NULL (no-op).
+ * @return 0 on success, negative errno on failure.
+ */
 int vmaf_ref_close(VmafRef *ref);
 
 #ifdef __cplusplus

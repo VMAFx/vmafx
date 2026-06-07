@@ -25,6 +25,15 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Configuration for a CPU-side picture pool.
+ *
+ * @var VmafPicturePoolConfig::pic_cnt  Number of pre-allocated picture slots.
+ * @var VmafPicturePoolConfig::w        Picture width in pixels.
+ * @var VmafPicturePoolConfig::h        Picture height in pixels.
+ * @var VmafPicturePoolConfig::pix_fmt  Pixel format for all slots.
+ * @var VmafPicturePoolConfig::bpc      Bits per component (8 or 10).
+ */
 typedef struct VmafPicturePoolConfig {
     unsigned pic_cnt;
     unsigned w;
@@ -33,12 +42,36 @@ typedef struct VmafPicturePoolConfig {
     unsigned bpc;
 } VmafPicturePoolConfig;
 
+/** @brief Opaque CPU picture pool handle. */
 typedef struct VmafPicturePool VmafPicturePool;
 
+/**
+ * @brief Allocate and initialise a picture pool.
+ *
+ * @param[out] pool  Receives the pool on success.
+ * @param cfg        Pool configuration (copied by value).
+ * @return 0 on success, negative errno on failure.
+ */
 int vmaf_picture_pool_init(VmafPicturePool **pool, VmafPicturePoolConfig cfg);
 
+/**
+ * @brief Destroy a picture pool and free all picture memory.
+ *
+ * @param pool  Pool to close.  May be NULL (no-op).
+ * @return 0 on success, negative errno on failure.
+ */
 int vmaf_picture_pool_close(VmafPicturePool *pool);
 
+/**
+ * @brief Fetch the next available picture slot, blocking until one is free.
+ *
+ * The returned picture is reference-counted; the caller must call
+ * vmaf_picture_unref() when done to return it to the pool.
+ *
+ * @param pool      Picture pool.
+ * @param[out] pic  Populated with the fetched picture on success.
+ * @return 0 on success, negative errno on failure.
+ */
 int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic);
 
 #ifdef __cplusplus
