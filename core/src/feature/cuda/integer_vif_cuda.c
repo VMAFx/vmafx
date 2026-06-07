@@ -137,58 +137,61 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->filter1d_module, filter1d_ptx), fail);
+    /* ADR-1090 — graduated labels so each earlier allocation is freed when a
+     * later one fails; previously all paths jumped to `fail` which only popped
+     * the context, leaking the stream and any events already created. */
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail_after_stream);
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail_after_event);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->filter1d_module, filter1d_ptx), fail_after_finished);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_8_vertical_kernel_uint32_t_17_9,
                                         s->filter1d_module,
                                         "filter1d_8_vertical_kernel_uint32_t_17_9"),
-                    fail);
+                    fail_after_module);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_8_horizontal_kernel_2_17_9,
                                         s->filter1d_module, "filter1d_8_horizontal_kernel_2_17_9"),
-                    fail);
+                    fail_after_module);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_17_9_0,
                                         s->filter1d_module,
                                         "filter1d_16_vertical_kernel_uint2_17_9_0"),
-                    fail);
+                    fail_after_module);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_9_5_1,
                                         s->filter1d_module,
                                         "filter1d_16_vertical_kernel_uint2_9_5_1"),
-                    fail);
+                    fail_after_module);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_5_3_2,
                                         s->filter1d_module,
                                         "filter1d_16_vertical_kernel_uint2_5_3_2"),
-                    fail);
+                    fail_after_module);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_vertical_kernel_uint2_3_0_3,
                                         s->filter1d_module,
                                         "filter1d_16_vertical_kernel_uint2_3_0_3"),
-                    fail);
+                    fail_after_module);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_17_9_0,
                                         s->filter1d_module,
                                         "filter1d_16_horizontal_kernel_2_17_9_0"),
-                    fail);
+                    fail_after_module);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_9_5_1,
                                         s->filter1d_module,
                                         "filter1d_16_horizontal_kernel_2_9_5_1"),
-                    fail);
+                    fail_after_module);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_5_3_2,
                                         s->filter1d_module,
                                         "filter1d_16_horizontal_kernel_2_5_3_2"),
-                    fail);
+                    fail_after_module);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_filter1d_16_horizontal_kernel_2_3_0_3,
                                         s->filter1d_module,
                                         "filter1d_16_horizontal_kernel_2_3_0_3"),
-                    fail);
+                    fail_after_module);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
@@ -321,6 +324,20 @@ free_ref:
 
     return -ENOMEM;
 
+fail_after_module:
+    /* cuModuleGetFunction failed — unload the module before releasing stream
+     * and events.  cuModuleUnload is safe even if no kernels were resolved. */
+    (void)cu_f->cuModuleUnload(s->filter1d_module);
+    s->filter1d_module = NULL;
+fail_after_finished:
+    (void)cu_f->cuEventDestroy(s->finished);
+    s->finished = 0;
+fail_after_event:
+    (void)cu_f->cuEventDestroy(s->event);
+    s->event = 0;
+fail_after_stream:
+    (void)cu_f->cuStreamDestroy(s->str);
+    s->str = 0;
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);

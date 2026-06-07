@@ -1325,86 +1325,90 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->ref_event, CU_EVENT_DEFAULT), fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->dis_event, CU_EVENT_DEFAULT), fail);
+    /* ADR-1090 — graduated labels so earlier allocations are freed when a
+     * later step fails; previously all paths jumped to `fail` which only
+     * popped the context, leaking the stream and events. */
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail_after_stream);
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->ref_event, CU_EVENT_DEFAULT), fail_after_finished);
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->dis_event, CU_EVENT_DEFAULT), fail_after_ref_event);
 
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_dwt_module, adm_dwt2_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_csf_module, adm_csf_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_csf_den_module, adm_csf_den_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_cm_module, adm_cm_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_dwt_module, adm_dwt2_ptx), fail_after_events);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_csf_module, adm_csf_ptx), fail_after_events);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_csf_den_module, adm_csf_den_ptx),
+                    fail_after_events);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->adm_cm_module, adm_cm_ptx), fail_after_events);
 
     // Get DWT kernel function pointers check adm_dwt2.cu for __global__ templated kernels
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_vert_kernel_0_0_int32_t,
                                         s->adm_dwt_module,
                                         "dwt_s123_combined_vert_kernel_0_0_int32_t"),
-                    fail);
+                    fail_after_events);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_vert_kernel_32768_16_int32_t,
                                         s->adm_dwt_module,
                                         "dwt_s123_combined_vert_kernel_32768_16_int32_t"),
-                    fail);
+                    fail_after_events);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_hori_kernel_16384_15,
                                         s->adm_dwt_module,
                                         "dwt_s123_combined_hori_kernel_16384_15"),
-                    fail);
+                    fail_after_events);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_dwt_s123_combined_hori_kernel_32768_16,
                                         s->adm_dwt_module,
                                         "dwt_s123_combined_hori_kernel_32768_16"),
-                    fail);
+                    fail_after_events);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(
                         &s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t,
                         s->adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint8_t"),
-                    fail);
+                    fail_after_events);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(
                         &s->func_adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t,
                         s->adm_dwt_module, "adm_dwt2_8_vert_hori_kernel_4_16_32768_128_8_uint16_t"),
-                    fail);
+                    fail_after_events);
 
     // Get csf kernel function pointers check adm_csf.cu for __global__ templated kernels
     CHECK_CUDA_GOTO(
         cu_f,
         cuModuleGetFunction(&s->func_adm_csf_kernel_1_4, s->adm_csf_module, "adm_csf_kernel_1_4"),
-        fail);
+        fail_after_events);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_i4_adm_csf_kernel_1_4, s->adm_csf_module,
                                         "i4_adm_csf_kernel_1_4"),
-                    fail);
+                    fail_after_events);
 
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_adm_csf_den_scale_line_kernel,
                                         s->adm_csf_den_module,
                                         "adm_csf_den_scale_line_kernel_8_128"),
-                    fail);
+                    fail_after_events);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_adm_csf_den_s123_line_kernel,
                                         s->adm_csf_den_module,
                                         "adm_csf_den_s123_line_kernel_8_128"),
-                    fail);
+                    fail_after_events);
 
     /* adm_cm_reduce_line_kernel_4 removed: fused into i4_adm_cm_line_kernel_fused. */
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_adm_cm_line_kernel_8, s->adm_cm_module,
                                         "adm_cm_line_kernel_8"),
-                    fail);
+                    fail_after_events);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_i4_adm_cm_line_kernel_fused, s->adm_cm_module,
                                         "i4_adm_cm_line_kernel_fused"),
-                    fail);
+                    fail_after_events);
     /* AIM CM kernel function pointers (ADR-0746). */
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_adm_cm_aim_line_kernel_8, s->adm_cm_module,
                                         "adm_cm_aim_line_kernel_8"),
-                    fail);
+                    fail_after_events);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_i4_adm_cm_aim_line_kernel_fused, s->adm_cm_module,
                                         "i4_adm_cm_aim_line_kernel_fused"),
-                    fail);
+                    fail_after_events);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
@@ -1509,6 +1513,30 @@ free_ref:
 
     return -ENOMEM;
 
+fail_after_events:
+    /* One or more cuModuleLoadData / cuModuleGetFunction calls failed.
+     * Unload any modules that were successfully loaded before releasing
+     * stream and events (cuModuleUnload is a no-op on a NULL handle). */
+    if (s->adm_cm_module)
+        (void)cu_f->cuModuleUnload(s->adm_cm_module);
+    if (s->adm_csf_den_module)
+        (void)cu_f->cuModuleUnload(s->adm_csf_den_module);
+    if (s->adm_csf_module)
+        (void)cu_f->cuModuleUnload(s->adm_csf_module);
+    if (s->adm_dwt_module)
+        (void)cu_f->cuModuleUnload(s->adm_dwt_module);
+    s->adm_cm_module = s->adm_csf_den_module = s->adm_csf_module = s->adm_dwt_module = NULL;
+fail_after_ref_event:
+    (void)cu_f->cuEventDestroy(s->dis_event);
+    s->dis_event = 0;
+fail_after_finished:
+    (void)cu_f->cuEventDestroy(s->ref_event);
+    s->ref_event = 0;
+fail_after_stream:
+    (void)cu_f->cuEventDestroy(s->finished);
+    s->finished = 0;
+    (void)cu_f->cuStreamDestroy(s->str);
+    s->str = 0;
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);

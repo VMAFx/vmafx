@@ -45238,3 +45238,8 @@ unit.
 no rebase impact: changes confined to `core/src/framesync.c` and
 `core/src/framesync.h`. Adds `vmaf_framesync_abort()` and `aborted` flag.
 The new function is internal to libvmaf; no public header change.
+
+## fix/cuda-stream-event-leak-paths (2026-06-07)
+no rebase impact: changes confined to `core/src/cuda/picture_cuda.c` and
+four CUDA feature extractors. Graduated cleanup labels only; no new
+public API or ABI change.

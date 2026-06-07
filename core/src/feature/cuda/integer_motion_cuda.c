@@ -315,16 +315,19 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail);
+    /* ADR-1090 — graduated labels so earlier allocations are freed when a
+     * later step fails; previously all paths jumped to `fail` which only
+     * popped the context, leaking the stream and event. */
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->event, CU_EVENT_DEFAULT), fail_after_stream);
 
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, motion_score_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, motion_score_ptx), fail_after_event);
 
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_motion_score_kernel_16bpc"),
-        fail);
+        fail_after_module);
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "calculate_motion_score_kernel_8bpc"),
-        fail);
+        fail_after_module);
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
@@ -398,6 +401,15 @@ free_ref:
 
     return -ENOMEM;
 
+fail_after_module:
+    (void)cu_f->cuModuleUnload(s->module);
+    s->module = NULL;
+fail_after_event:
+    (void)cu_f->cuEventDestroy(s->event);
+    s->event = 0;
+fail_after_stream:
+    (void)cu_f->cuStreamDestroy(s->str);
+    s->str = 0;
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);

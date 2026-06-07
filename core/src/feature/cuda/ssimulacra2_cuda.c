@@ -617,24 +617,31 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
     ctx_pushed = 1;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module_blur, ssimulacra2_blur_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module_mul, ssimulacra2_mul_ptx), fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_blur_h, s->module_blur, "ssimulacra2_blur_h"), fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_blur_v, s->module_blur, "ssimulacra2_blur_v"), fail);
+    /* ADR-1090 — all module/function failures redirect to fail_after_stream
+     * so the stream is destroyed before we return; previously `fail` only
+     * popped the context, leaking s->str and any loaded modules. */
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module_blur, ssimulacra2_blur_ptx),
+                    fail_after_stream);
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module_mul, ssimulacra2_mul_ptx), fail_after_stream);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_blur_h, s->module_blur, "ssimulacra2_blur_h"),
+                    fail_after_stream);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_blur_v, s->module_blur, "ssimulacra2_blur_v"),
+                    fail_after_stream);
     /* ADR-0456: fused 3-channel H + transpose + fused 3-channel V. */
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->func_blur_h3, s->module_blur, "ssimulacra2_blur_h3"), fail);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuModuleGetFunction(&s->func_blur_h3, s->module_blur, "ssimulacra2_blur_h3"),
+                    fail_after_stream);
     CHECK_CUDA_GOTO(
         cu_f, cuModuleGetFunction(&s->func_transpose, s->module_blur, "ssimulacra2_transpose"),
-        fail);
+        fail_after_stream);
     CHECK_CUDA_GOTO(cu_f,
                     cuModuleGetFunction(&s->func_blur_v3_transposed, s->module_blur,
                                         "ssimulacra2_blur_v3_transposed"),
-                    fail);
+                    fail_after_stream);
     CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_mul3, s->module_mul, "ssimulacra2_mul3"),
-                    fail);
+                    fail_after_stream);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
     int ret = ss2c_alloc_buffers(fex, s);
@@ -642,6 +649,15 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return ret;
     return 0;
 
+fail_after_stream:
+    /* Unload any modules already loaded before destroying the stream. */
+    if (s->module_mul)
+        (void)cu_f->cuModuleUnload(s->module_mul);
+    if (s->module_blur)
+        (void)cu_f->cuModuleUnload(s->module_blur);
+    s->module_mul = s->module_blur = NULL;
+    (void)cu_f->cuStreamDestroy(s->str);
+    s->str = 0;
 fail:
     if (ctx_pushed)
         (void)cu_f->cuCtxPopCurrent(NULL);

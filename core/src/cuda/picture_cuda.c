@@ -248,9 +248,13 @@ int vmaf_cuda_picture_alloc(VmafPicture *pic, void *cookie)
      * ADR-0378. */
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&priv->cuda.str, CU_STREAM_NON_BLOCKING, 0),
                     fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&priv->cuda.ready, CU_EVENT_DEFAULT), fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&priv->cuda.finished, CU_EVENT_DEFAULT), fail);
-    CHECK_CUDA_GOTO(cu_f, cuEventRecord(priv->cuda.finished, priv->cuda.str), fail);
+    /* ADR-1090 — use graduated labels so each earlier allocation is freed
+     * when a later one fails.  Previously all failure paths jumped to
+     * `fail`, which only freed `priv` without destroying the stream or
+     * events already created above it. */
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&priv->cuda.ready, CU_EVENT_DEFAULT), fail_after_stream);
+    CHECK_CUDA_GOTO(cu_f, cuEventCreate(&priv->cuda.finished, CU_EVENT_DEFAULT), fail_after_ready);
+    CHECK_CUDA_GOTO(cu_f, cuEventRecord(priv->cuda.finished, priv->cuda.str), fail_after_finished);
     priv->buf_type = VMAF_PICTURE_BUFFER_TYPE_CUDA_DEVICE;
 
     const int hbd = pic->bpc > 8;
@@ -264,20 +268,61 @@ int vmaf_cuda_picture_alloc(VmafPicture *pic, void *cookie)
                         cuMemAllocPitch((CUdeviceptr *)&pic->data[i], (size_t *)&pic->stride[i],
                                         (size_t)pic->w[i] * ((pic->bpc + 7) / 8), pic->h[i],
                                         8 << hbd),
-                        fail);
+                        fail_after_finished);
     }
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
-    int err = vmaf_ref_init(&pic->ref);
-    if (err)
-        return err;
-
+    /* ADR-1090 — cuCtxPopCurrent failure leaves the context on the stack;
+     * fall through to fail_after_data which frees device memory while the
+     * context is still current, then pops. */
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_data);
+    {
+        int err = vmaf_ref_init(&pic->ref);
+        if (err) {
+            /* Context already popped — free device memory without pushing it
+             * again by re-pushing here (vmaf_ref_init is a plain malloc-like
+             * call that does not touch the CUDA context). */
+            int push_err = cu_f->cuCtxPushCurrent(priv->cuda.ctx);
+            if (!push_err) {
+                for (int i = 0; i < 3; i++) {
+                    if (pic->data[i])
+                        (void)cu_f->cuMemFree((CUdeviceptr)pic->data[i]);
+                    pic->data[i] = NULL;
+                }
+                (void)cu_f->cuCtxPopCurrent(NULL);
+            }
+            (void)cu_f->cuEventDestroy(priv->cuda.finished);
+            (void)cu_f->cuEventDestroy(priv->cuda.ready);
+            (void)cu_f->cuStreamDestroy(priv->cuda.str);
+            free(priv);
+            pic->priv = NULL;
+            return err;
+        }
+    }
     return 0;
 
+fail_after_data:
+    /* Free any device planes already allocated in the loop above.
+     * Context is still current (cuCtxPopCurrent failed or we jumped here
+     * from the cuMemAllocPitch loop with ctx_pushed==1). */
+    for (int i = 0; i < 3; i++) {
+        if (pic->data[i])
+            (void)cu_f->cuMemFree((CUdeviceptr)pic->data[i]);
+    }
+    /* Pop the context once here; set ctx_pushed=0 so the fall-through
+     * through fail_after_finished → fail does not pop a second time. */
+    if (ctx_pushed) {
+        (void)cuda_cookie->state->f->cuCtxPopCurrent(NULL);
+        ctx_pushed = 0;
+    }
+fail_after_finished:
+    (void)cu_f->cuEventDestroy(priv->cuda.finished);
+fail_after_ready:
+    (void)cu_f->cuEventDestroy(priv->cuda.ready);
+fail_after_stream:
+    (void)cu_f->cuStreamDestroy(priv->cuda.str);
 fail:
     if (ctx_pushed)
         (void)cuda_cookie->state->f->cuCtxPopCurrent(NULL);
-fail_after_pop:
     free(priv);
     pic->priv = NULL;
     return _cuda_err;
