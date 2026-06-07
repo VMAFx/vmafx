@@ -358,3 +358,17 @@ relying on that alone delays the wake-up until destroy time, which is after
 **Rebase-sensitive**: any branch adding new framesync producer paths (feature
 extractors, GPU dispatch loops) must include a `vmaf_framesync_abort` call on
 all error exits from `extract()` or equivalent before returning.
+
+## Doxygen comment invariant (ADR-1096)
+
+The following `core/src/*.h` internal headers now carry Doxygen `@brief`,
+`@param`, and `@return` annotations: `framesync.h`, `thread_pool.h`,
+`picture_pool.h`, `predict.h`, `fex_ctx_vector.h`, `ref.h`, `mem.h`,
+`log.h`, `opt.h`, `dict.h`.
+
+**Invariant for rebases and follow-up branches**: when adding, renaming, or
+removing function signatures in these headers, update the corresponding
+Doxygen block in the same commit. A dangling `@param` for a deleted argument
+or a missing `@param` for a new one is a docs regression. Run
+`doxygen Doxyfile 2>&1 | grep warning` to check — zero new warnings is the
+bar.

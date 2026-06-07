@@ -32,17 +32,65 @@
 #include <stdlib.h>
 #include "libvmaf/libvmaf.h"
 
+/**
+ * @brief Opaque context that synchronises producer/consumer frame data across
+ *        feature-extractor threads.
+ *
+ * Each frame slot is reference-counted through acquire / submit / retrieve /
+ * release.  A slot may be reused once every consumer has called
+ * vmaf_framesync_release_buf() for that index.
+ */
 typedef struct VmafFrameSyncContext VmafFrameSyncContext;
 
+/**
+ * @brief Allocate and initialise a new VmafFrameSyncContext.
+ *
+ * @param[out] fs_ctx  Receives the newly-allocated context on success.
+ * @return 0 on success, negative errno on failure.
+ */
 int vmaf_framesync_init(VmafFrameSyncContext **fs_ctx);
 
+/**
+ * @brief Acquire a buffer slot for @p index, blocking until one is free.
+ *
+ * @param fs_ctx   Frame-sync context.
+ * @param[out] data    Set to the allocated buffer on success.
+ * @param data_sz  Size in bytes of the buffer to allocate.
+ * @param index    Frame index this buffer is associated with.
+ * @return 0 on success, negative errno on failure.
+ */
 int vmaf_framesync_acquire_new_buf(VmafFrameSyncContext *fs_ctx, void **data, unsigned data_sz,
                                    unsigned index);
 
+/**
+ * @brief Mark a filled buffer as ready for retrieval.
+ *
+ * @param fs_ctx  Frame-sync context.
+ * @param data    Buffer previously obtained via vmaf_framesync_acquire_new_buf().
+ * @param index   Frame index associated with @p data.
+ * @return 0 on success, negative errno on failure.
+ */
 int vmaf_framesync_submit_filled_data(VmafFrameSyncContext *fs_ctx, void *data, unsigned index);
 
+/**
+ * @brief Retrieve the buffer that was submitted for @p index, blocking until
+ *        it is available.
+ *
+ * @param fs_ctx    Frame-sync context.
+ * @param[out] data Set to the submitted buffer pointer on success.
+ * @param index     Frame index to retrieve.
+ * @return 0 on success, negative errno on failure.
+ */
 int vmaf_framesync_retrieve_filled_data(VmafFrameSyncContext *fs_ctx, void **data, unsigned index);
 
+/**
+ * @brief Release a buffer slot, allowing it to be reused.
+ *
+ * @param fs_ctx  Frame-sync context.
+ * @param data    Buffer to release (must have been retrieved first).
+ * @param index   Frame index associated with @p data.
+ * @return 0 on success, negative errno on failure.
+ */
 int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, void *data, unsigned index);
 
 /**
@@ -52,6 +100,12 @@ int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, void *data, unsigne
  */
 int vmaf_framesync_abort(VmafFrameSyncContext *fs_ctx);
 
+/**
+ * @brief Destroy a VmafFrameSyncContext and free all associated resources.
+ *
+ * @param fs_ctx  Context to destroy.  May be NULL (no-op).
+ * @return 0 on success, negative errno on failure.
+ */
 int vmaf_framesync_destroy(VmafFrameSyncContext *fs_ctx);
 
 #endif /* __VMAF_FRAME_SYNC_H__ */

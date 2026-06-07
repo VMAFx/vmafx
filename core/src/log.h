@@ -25,7 +25,25 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Set the minimum log level for vmaf_log() output.
+ *
+ * Messages below @p log_level are silently discarded.
+ *
+ * @param log_level  Minimum level to emit (e.g. VMAF_LOG_LEVEL_INFO).
+ */
 void vmaf_set_log_level(enum VmafLogLevel log_level);
+
+/**
+ * @brief Emit a formatted log message at the given level.
+ *
+ * The message is suppressed if @p log_level is below the level set by
+ * vmaf_set_log_level().
+ *
+ * @param log_level  Severity level of this message.
+ * @param fmt        printf-style format string.
+ * @param ...        Format arguments.
+ */
 void vmaf_log(enum VmafLogLevel log_level, const char *fmt, ...);
 
 #ifdef __cplusplus

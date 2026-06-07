@@ -1,6 +1,13 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## docs/doxygen-private-headers-r4 (2026-06-07)
+
+no rebase impact: purely additive Doxygen comment blocks inserted into 10
+internal headers under `core/src/`. No include paths, struct layouts, or
+function signatures are changed. Conflicts only if another branch inserts
+text at the same line positions in these headers.
+
 ## fix/pic-pool-odr-cuda-gpumask-cov-floor (2026-06-08)
 `core/src/meson.build`: adds `cpp_args` to `picture_pool_cpp23_lib`. Conflicts
 possible if another branch modifies the same `static_library()` block; resolve
