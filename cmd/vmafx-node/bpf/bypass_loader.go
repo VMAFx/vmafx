@@ -188,7 +188,7 @@ func (l *Loader) writeMountPrefix() error {
 		prefix = prefix[:maxPathLen-1]
 	}
 	copy(mp.Prefix[:], prefix)
-	mp.PrefixLen = uint32(len(prefix))
+	mp.PrefixLen = uint32(len(prefix)) // #nosec G115 -- len(prefix) is bounded to maxPathLen-1 (≤255) above
 
 	key := uint32(0)
 	// Serialize to bytes for map update (cilium/ebpf needs []byte for structs
@@ -222,7 +222,7 @@ func (l *Loader) drainLoop(ctx context.Context) {
 		if len(rec.RawSample) < int(unsafe.Sizeof(ev)) {
 			continue
 		}
-		copy((*[unsafe.Sizeof(ev)]byte)(unsafe.Pointer(&ev))[:], rec.RawSample)
+		copy((*[unsafe.Sizeof(ev)]byte)(unsafe.Pointer(&ev))[:], rec.RawSample) // #nosec G103 -- unsafe.Pointer required for BPF ring-buffer struct deserialisation; bounds checked above
 
 		// Null-terminate path string.
 		pathEnd := 0

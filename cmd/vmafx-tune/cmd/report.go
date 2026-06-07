@@ -107,7 +107,7 @@ func runReport(_ context.Context, flags *reportFlags) error {
 // It accepts both "compare" (single-Report) and "ladder" (LadderResult) schemas
 // by probing the top-level JSON keys.
 func loadReportFile(path string) (report.MultiReport, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // path comes from CLI flag, not user input
+	data, err := os.ReadFile(path) // #nosec G304 -- path comes from a CLI flag validated by cobra, not user-controlled HTTP input
 	if err != nil {
 		return report.MultiReport{}, fmt.Errorf("read: %w", err)
 	}

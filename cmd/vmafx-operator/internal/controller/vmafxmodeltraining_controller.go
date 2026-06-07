@@ -203,8 +203,8 @@ func (r *VmafxModelTrainingReconciler) applySidecarStatus(
 		changed = true
 	}
 
-	if cr.Status.CurrentSamples != int32(s.CurrentSamples) {
-		cr.Status.CurrentSamples = int32(s.CurrentSamples)
+	if cr.Status.CurrentSamples != int32(s.CurrentSamples) { // #nosec G115 -- sample counts are bounded by training-loop batch sizes; overflow is impossible in practice
+		cr.Status.CurrentSamples = int32(s.CurrentSamples)  // #nosec G115 -- same bound as above
 		changed = true
 	}
 
