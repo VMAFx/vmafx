@@ -17,9 +17,9 @@
 use std::mem::MaybeUninit;
 
 use vmafx_sys::{
-    vmaf_picture_alloc, vmaf_picture_unref, VmafPicture as RawPicture,
-    VmafPixelFormat_VMAF_PIX_FMT_YUV400P, VmafPixelFormat_VMAF_PIX_FMT_YUV420P,
-    VmafPixelFormat_VMAF_PIX_FMT_YUV422P, VmafPixelFormat_VMAF_PIX_FMT_YUV444P,
+    VmafPicture as RawPicture, VmafPixelFormat_VMAF_PIX_FMT_YUV400P,
+    VmafPixelFormat_VMAF_PIX_FMT_YUV420P, VmafPixelFormat_VMAF_PIX_FMT_YUV422P,
+    VmafPixelFormat_VMAF_PIX_FMT_YUV444P, vmaf_picture_alloc, vmaf_picture_unref,
 };
 
 use crate::error::{Error, Result};

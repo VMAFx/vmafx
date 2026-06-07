@@ -18,7 +18,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
-use vmafx_sys::safe::{alloc_yuv420p_8bit, unref_picture, version, VmafContext, VmafModel};
+use vmafx_sys::safe::{VmafContext, VmafModel, alloc_yuv420p_8bit, unref_picture, version};
 
 const WIDTH: u32 = 576;
 const HEIGHT: u32 = 324;

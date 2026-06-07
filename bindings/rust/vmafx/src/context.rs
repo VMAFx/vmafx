@@ -10,10 +10,10 @@
 use std::ptr;
 
 use vmafx_sys::{
-    vmaf_close, vmaf_init, vmaf_read_pictures, vmaf_score_pooled, vmaf_use_features_from_model,
     VmafConfiguration, VmafContext as RawContext, VmafLogLevel_VMAF_LOG_LEVEL_DEBUG,
     VmafLogLevel_VMAF_LOG_LEVEL_ERROR, VmafLogLevel_VMAF_LOG_LEVEL_INFO,
-    VmafLogLevel_VMAF_LOG_LEVEL_NONE, VmafLogLevel_VMAF_LOG_LEVEL_WARNING,
+    VmafLogLevel_VMAF_LOG_LEVEL_NONE, VmafLogLevel_VMAF_LOG_LEVEL_WARNING, vmaf_close, vmaf_init,
+    vmaf_read_pictures, vmaf_score_pooled, vmaf_use_features_from_model,
 };
 
 use crate::error::{Error, Result};

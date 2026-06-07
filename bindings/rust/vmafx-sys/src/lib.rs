@@ -10,7 +10,12 @@
 
 // Re-export everything from the generated bindings at the crate root so
 // existing callers continue to work without a path change.
-#[allow(non_camel_case_types, non_snake_case, non_upper_case_globals, clippy::all)]
+#[allow(
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals,
+    clippy::all
+)]
 mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }

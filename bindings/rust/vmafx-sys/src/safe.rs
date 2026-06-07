@@ -18,11 +18,11 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 
 use crate::{
-    vmaf_close, vmaf_init, vmaf_model_destroy, vmaf_model_load_from_path, vmaf_picture_alloc,
-    vmaf_picture_unref, vmaf_read_pictures, vmaf_score_pooled, vmaf_use_features_from_model,
     VmafConfiguration, VmafContext as RawVmafContext, VmafLogLevel_VMAF_LOG_LEVEL_WARNING,
     VmafModel as RawVmafModel, VmafModelConfig, VmafPicture, VmafPixelFormat_VMAF_PIX_FMT_YUV420P,
-    VmafPoolingMethod_VMAF_POOL_METHOD_MEAN,
+    VmafPoolingMethod_VMAF_POOL_METHOD_MEAN, vmaf_close, vmaf_init, vmaf_model_destroy,
+    vmaf_model_load_from_path, vmaf_picture_alloc, vmaf_picture_unref, vmaf_read_pictures,
+    vmaf_score_pooled, vmaf_use_features_from_model,
 };
 
 /// Errors returned by the safe wrapper.
@@ -234,7 +234,9 @@ pub fn alloc_yuv420p_8bit(w: u32, h: u32) -> Result<VmafPicture, VmafxError> {
     // SAFETY: zeroed is the documented starting state for VmafPicture before alloc.
     let mut pic = unsafe { std::mem::zeroed::<VmafPicture>() };
     // SAFETY: `pic` is a zero-initialised struct; all params are valid.
-    check(unsafe { vmaf_picture_alloc(&raw mut pic, VmafPixelFormat_VMAF_PIX_FMT_YUV420P, 8, w, h) })?;
+    check(unsafe {
+        vmaf_picture_alloc(&raw mut pic, VmafPixelFormat_VMAF_PIX_FMT_YUV420P, 8, w, h)
+    })?;
     Ok(pic)
 }
 
