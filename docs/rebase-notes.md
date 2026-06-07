@@ -45325,3 +45325,7 @@ production source touched.
 no rebase impact: changes confined to `core/test/test.c` and
 `core/test/test.h`. Fix mu_report writing to stdout instead of
 stderr; add missing include guard.
+
+## worktree-wf_392e91a3-897-12 / fix/ci-action-sha-consistency (2026-06-07)
+no rebase impact: corrects inconsistent action SHAs in e2e-k8s, go-ci,
+and rust-ci workflows. No source, header, or build file is modified.
