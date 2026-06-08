@@ -35,10 +35,14 @@
 
 /* Hard cap on input size: a real Y4M frame can be enormous, but
  * the fuzzer only needs the *header* + one short frame's worth of
- * bytes to exercise the parser's branches. Cap at 64 KiB to keep
- * each iteration fast and to bound peak RSS independent of
- * libFuzzer's `-rss_limit_mb` setting. */
-#define FUZZ_MAX_INPUT_BYTES 65536u
+ * bytes to exercise the parser's branches. 256 KiB gives the fuzzer
+ * enough room to construct a minimal 4:2:0 frame at modest
+ * dimensions while still bounding peak RSS independent of
+ * libFuzzer's `-rss_limit_mb` setting. (Raised from 64 KiB; at
+ * 64 KiB the largest dimension the filter passes — 99999 px wide —
+ * was unreachable because even a 1-row 4:2:0 frame needs more bytes
+ * than the old cap allowed, so the overflow path was dead code.) */
+#define FUZZ_MAX_INPUT_BYTES 262144u
 
 /* The y4m parser computes `dst_buf_sz = pic_w * pic_h * <up to 6>`
  * and `malloc`s it. Without a sanity cap the fuzzer will burn most
@@ -52,8 +56,15 @@
  * arbitrary dimensions. Real overflow / oversize bugs reachable
  * through this path remain in scope: we only filter the trivially
  * unbounded inputs that would otherwise mask interesting finds
- * behind allocator timeouts. */
-#define FUZZ_MAX_DIM_DIGITS 6 /* up to "999999" — well past 4K */
+ * behind allocator timeouts.
+ *
+ * 5 digits (max "99999") keeps the upper bound consistent with
+ * FUZZ_MAX_INPUT_BYTES: a 99999-wide × 1-tall 4:2:0 frame needs
+ * ~150 KiB of luma+chroma payload, which fits comfortably inside
+ * 256 KiB. The old 6-digit limit ("999999") was dead: 65536 bytes
+ * was too small to deliver even a single-row frame at that width,
+ * so the overflow-path was unreachable during fuzzing. */
+#define FUZZ_MAX_DIM_DIGITS 5 /* up to "99999" — well past 4K, fits in 256 KiB */
 
 static int header_dimensions_in_bounds(const uint8_t *data, size_t size)
 {
