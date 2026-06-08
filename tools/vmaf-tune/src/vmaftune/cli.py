@@ -2741,23 +2741,28 @@ def _run_recommend_saliency(args: argparse.Namespace) -> int:
         crf=crf,
         output=args.output,
     )
-    cfg = (
-        SaliencyConfig(
+    if not args.saliency_aware:
+        # --saliency-aware was not set; run a plain encode without touching
+        # the saliency model.  Calling saliency_aware_encode with config=None
+        # would silently create a default SaliencyConfig() and run the model
+        # anyway — guard here to enforce the intent.
+        from .encode import run_encode
+
+        result = run_encode(request, ffmpeg_bin=args.ffmpeg_bin)
+    else:
+        cfg = SaliencyConfig(
             foreground_offset=args.saliency_offset,
             temporal_aggregator=args.saliency_aggregator,
             ema_alpha=args.saliency_ema_alpha,
             allow_unsupported_encoder_fallback=args.saliency_fallback_plain,
         )
-        if args.saliency_aware
-        else None
-    )
-    result = saliency_aware_encode(
-        request,
-        duration_frames=args.duration_frames,
-        model_path=args.saliency_model,
-        config=cfg,
-        ffmpeg_bin=args.ffmpeg_bin,
-    )
+        result = saliency_aware_encode(
+            request,
+            duration_frames=args.duration_frames,
+            model_path=args.saliency_model,
+            config=cfg,
+            ffmpeg_bin=args.ffmpeg_bin,
+        )
     payload = {
         "encoder": result.request.encoder,
         "preset": result.request.preset,

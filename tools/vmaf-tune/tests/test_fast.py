@@ -277,21 +277,30 @@ def test_proxy_module_uses_lazy_import_seam() -> None:
     Tests should be able to inject a fake InferenceSession-shaped
     object without ever importing onnxruntime. This confirms the
     ADR-0304 single-seam discipline.
+
+    The v2 ONNX graph is exported with two *separate* named inputs —
+    "features" (shape [N, 6]) and "codec" (shape [N, 14]) — matching the
+    FRRegressor.forward(features, codec_onehot) signature in
+    ai/src/vmaf_train/models/fr_regressor.py.  The session_factory seam
+    must expose both inputs so run_proxy can wire them individually.
     """
     proxy_module = pytest.importorskip("vmaftune.proxy")
-    np = pytest.importorskip("numpy")  # noqa: F841 — proxy needs numpy
+    pytest.importorskip("numpy")  # proxy needs numpy
 
     captured_inputs: list = []
 
     class _FakeSession:
+        """Two-input fake that mirrors the real fr_regressor_v2 ONNX graph."""
+
         def get_inputs(self) -> list:
-            inp = MagicMock()
-            inp.name = "input"
-            return [inp]
+            feat_inp = MagicMock()
+            feat_inp.name = "features"
+            codec_inp = MagicMock()
+            codec_inp.name = "codec"
+            return [feat_inp, codec_inp]
 
         def run(self, output_names, input_feed):
             captured_inputs.append(input_feed)
-            # Return one scalar VMAF.
             import numpy as _np
 
             return [_np.asarray([[88.5]], dtype=_np.float32)]
@@ -307,7 +316,18 @@ def test_proxy_module_uses_lazy_import_seam() -> None:
         session_factory=_factory,
     )
     assert score == pytest.approx(88.5)
-    # Confirm the input was the 20-D combined feature + codec block.
+    # The corrected behaviour: two *separate* tensors, not one concatenated 20-D blob.
     assert len(captured_inputs) == 1
-    fed = list(captured_inputs[0].values())[0]
-    assert fed.shape == (1, 20)
+    feed = captured_inputs[0]
+    assert set(feed.keys()) == {"features", "codec"}, (
+        "run_proxy must pass two named tensors to the two-input v2 graph; "
+        f"got keys: {set(feed.keys())}"
+    )
+    assert feed["features"].shape == (
+        1,
+        6,
+    ), f"features tensor must be (1, 6); got {feed['features'].shape}"
+    assert feed["codec"].shape == (
+        1,
+        14,
+    ), f"codec tensor must be (1, 14); got {feed['codec'].shape}"

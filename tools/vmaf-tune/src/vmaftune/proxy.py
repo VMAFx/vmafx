@@ -180,18 +180,29 @@ def run_proxy(
 
     feat = np.asarray(features, dtype=np.float32).reshape(1, 6)
     codec_block = encode_codec_block(encoder, preset_norm, crf_norm).reshape(1, 14)
-    # Match the v2 graph input layout: features and codec block are
-    # concatenated to a 20-D vector before the first dense layer.
-    combined = np.concatenate([feat, codec_block], axis=1)
-
+    # The v2 ONNX graph was exported with two *separate* named inputs —
+    # "features" (shape [N, 6]) and "codec" (shape [N, 14]) — matching the
+    # FRRegressor.forward(features, codec_onehot) signature in
+    # ai/src/vmaf_train/models/fr_regressor.py.  Concatenating them into a
+    # single 20-D tensor and feeding it as input[0] was wrong: the first
+    # linear layer of the exported graph reads the 6-D "features" port only,
+    # so the 14 codec dims were silently interpreted as batch padding and the
+    # "codec" port received nothing, breaking fast-path production mode.
     if session_factory is None:
         model_path = _resolve_model_path(model_id)
         session = _load_session(model_id, str(model_path))
     else:
         session = session_factory(_resolve_model_path(model_id))
 
-    input_name = session.get_inputs()[0].name
-    outputs = session.run(None, {input_name: combined})
+    input_names = [inp.name for inp in session.get_inputs()]
+    if len(input_names) == 2:  # noqa: PLR2004 — 2 is the expected v2 input count
+        # Two-input graph: "features" + "codec" (standard v2 export).
+        features_name, codec_name = input_names
+        outputs = session.run(None, {features_name: feat, codec_name: codec_block})
+    else:
+        # Fallback: single-input graph (legacy smoke or future merged export).
+        combined = np.concatenate([feat, codec_block], axis=1)
+        outputs = session.run(None, {input_names[0]: combined})
     score = float(np.asarray(outputs[0]).reshape(-1)[0])
     return score
 

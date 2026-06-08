@@ -158,7 +158,14 @@ def build_encode_request(
     extra_params: tuple[str, ...] = (),
 ) -> EncodeRequest:
     """Build an :class:`EncodeRequest` from one selected profile row."""
-    source_meta = profile.get("source") or {}
+    _source_field = profile.get("source") or {}
+    # Profiles written by older vmaf-tune versions may store "source" as a
+    # plain path string rather than a metadata dict.  Normalise before use so
+    # callers get an AttributeError-free dict regardless of the stored type.
+    if isinstance(_source_field, str):
+        source_meta: dict = {"path": _source_field}
+    else:
+        source_meta = dict(_source_field) if _source_field else {}
     run_meta = profile.get("run") or {}
     source = source_override or Path(str(source_meta.get("path") or ""))
     if not str(source):
