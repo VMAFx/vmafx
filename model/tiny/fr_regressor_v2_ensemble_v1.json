@@ -51,31 +51,31 @@
       "id": "fr_regressor_v2_ensemble_v1_seed0",
       "onnx": "fr_regressor_v2_ensemble_v1_seed0.onnx",
       "seed": 0,
-      "sha256": "fa89df1b2567184b301a7e0bc116d85de7c9c3e48cd3247e56060a8adb776b69"
+      "sha256": "08ab1aedab2337c458387f0961c14837fa972635e5d5b0cf6a3839976593dde4"
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed1",
       "onnx": "fr_regressor_v2_ensemble_v1_seed1.onnx",
       "seed": 1,
-      "sha256": "48b0b9f386fde1e601d6984ed8ddb3c4fae603b4650ce060c432b88c43935e55"
+      "sha256": "42d86249d41aaff5d93547a744bb251d89085475e6e10197815a612c44894f5a"
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed2",
       "onnx": "fr_regressor_v2_ensemble_v1_seed2.onnx",
       "seed": 2,
-      "sha256": "927a23fe14aa70f4136a57ae006ebdf727712a16234fce7dbae1c6941f5629cc"
+      "sha256": "0f1d8a81d5ffc4b76223fd1f1993e3baf177536819e10ecc4c732f81067dd150"
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed3",
       "onnx": "fr_regressor_v2_ensemble_v1_seed3.onnx",
       "seed": 3,
-      "sha256": "1be056b08df322515724c874caedbe09728ae5e8a311bbb72a9dd7ad4fa5490e"
+      "sha256": "ed5e926037922b9b65903265f22702a61ca1c6fdee7da2418cfb5bed01072719"
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed4",
       "onnx": "fr_regressor_v2_ensemble_v1_seed4.onnx",
       "seed": 4,
-      "sha256": "584ad69bfbdb9250faef824af5c73eaf94b258fab51d38fbc167665a9a262d9c"
+      "sha256": "036c622401529b04d48a04cc06c65018126d2970a1139e2c89e18d8b12fa4c84"
     }
   ],
   "smoke": true
