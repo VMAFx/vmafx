@@ -32,11 +32,19 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 YUV_DIR="${REPO_ROOT}/python/test/resource/yuv"
 BASE_URL="https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv"
 
-# Canonical files + expected md5 (verified 2026-05-17 against vmaf_resource HEAD).
+# Canonical files + expected md5 (verified 2026-06-08 against vmaf_resource HEAD).
 # Format: "filename md5"
+#
+# The 3 golden-gate test pairs (CLAUDE.md §8):
+#   1. Normal:               src01_hrc00 ↔ src01_hrc01           (576×324)
+#   2. Checkerboard 1-px:   checkerboard_…0_0 ↔ checkerboard_…1_0   (1920×1080)
+#   3. Checkerboard 10-px:  checkerboard_…0_0 ↔ checkerboard_…10_0  (1920×1080)
 FIXTURES=(
   "src01_hrc00_576x324.yuv b16f67d34de8535d45fa5ed80586747f"
   "src01_hrc01_576x324.yuv 2e02bed10fa706c17a0b1b026ac05807"
+  "checkerboard_1920_1080_10_3_0_0.yuv ad14c75d1897e7f2bc72a882c32e49a6"
+  "checkerboard_1920_1080_10_3_1_0.yuv 0e290566458d800c534ab18103619d43"
+  "checkerboard_1920_1080_10_3_10_0.yuv 289119e1168ab656ac79487df8d307b9"
 )
 
 mkdir -p "${YUV_DIR}"
