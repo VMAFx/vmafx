@@ -1649,6 +1649,14 @@ static void threaded_extract_batch_func(void *e, void **thread_data)
         if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
             continue;
 
+        /* SYCL extractors are dispatched via the SYCL command-graph path in
+         * read_pictures_dispatch_one(); the CPU thread pool must skip them
+         * symmetrically with CUDA to prevent double-dispatch.  Without this
+         * guard, every SYCL extractor runs once via the SYCL path and once
+         * via this pool, corrupting the feature-collector state. */
+        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)
+            continue;
+
         if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)
             continue;
 
