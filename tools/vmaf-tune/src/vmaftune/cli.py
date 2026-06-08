@@ -1847,6 +1847,59 @@ def _run_recommend_from_corpus(args: argparse.Namespace) -> int:
         sys.stderr.write("recommend: --target-vmaf and --target-bitrate are mutually exclusive\n")
         return 2
 
+    with_uncertainty: bool = getattr(args, "with_uncertainty", False)
+
+    # --with-uncertainty is only meaningful for --target-vmaf; emit a
+    # diagnostic and fall through to the point-estimate path when combined
+    # with --target-bitrate (no interval-aware bitrate predicate exists).
+    if with_uncertainty and target_bitrate is not None:
+        sys.stderr.write(
+            "recommend: --with-uncertainty is not supported with --target-bitrate; "
+            "falling back to point-estimate\n"
+        )
+        with_uncertainty = False
+
+    if with_uncertainty and target_vmaf is not None:
+        from .recommend import (  # noqa: PLC0415
+            UncertaintyAwareRequest,
+            pick_target_vmaf_with_uncertainty,
+        )
+        from .uncertainty import load_confidence_thresholds  # noqa: PLC0415
+
+        thresholds = load_confidence_thresholds(getattr(args, "uncertainty_sidecar", None))
+        preset_filter = args.preset[0] if args.preset else None
+        try:
+            ua_result = pick_target_vmaf_with_uncertainty(
+                rows,
+                UncertaintyAwareRequest(
+                    target_vmaf=target_vmaf,
+                    thresholds=thresholds,
+                    encoder=args.encoder,
+                    preset=preset_filter,
+                ),
+            )
+        except ValueError as exc:
+            sys.stderr.write(f"recommend: {exc}\n")
+            return 2
+
+        json_output: bool = getattr(args, "json_output", False)
+        if json_output:
+            sys.stdout.write(_json.dumps(ua_result.row) + "\n")
+        else:
+            row = ua_result.row
+            crf = row.get("crf", "?")
+            vmaf = row.get("vmaf_score", float("nan"))
+            kbps = row.get("bitrate_kbps", float("nan"))
+            status = "UNMET" if ua_result.margin < 0 else "OK"
+            sys.stdout.write(
+                f"crf={crf}  vmaf={vmaf:.3f}  kbps={kbps:.0f}"
+                f"  predicate={ua_result.predicate}"
+                f"  decision={ua_result.decision.value}"
+                f"  visited={ua_result.visited}/{len(rows)}"
+                f"  [{status}]\n"
+            )
+        return 0
+
     try:
         pick = recommend(
             rows,
@@ -1861,7 +1914,7 @@ def _run_recommend_from_corpus(args: argparse.Namespace) -> int:
         sys.stderr.write(f"recommend: {exc}\n")
         return 2
 
-    json_output: bool = getattr(args, "json_output", False)
+    json_output = getattr(args, "json_output", False)
     if json_output:
         sys.stdout.write(_json.dumps(pick.row) + "\n")
     else:
