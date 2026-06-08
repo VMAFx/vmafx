@@ -40,17 +40,61 @@ concurrency:
 jobs:
   docker:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    # T7-CI-DEDUP / Research-0034 — advisory. The job runs `docker build`
-    # but does NOT smoke-test the resulting image (no `docker run vmaf
-    # vmaf --version` or equivalent), so a green job here only proves
-    # "the Dockerfile parses" — no behavioural guarantee. Demoted from
-    # blocking to advisory until a real image-validation step lands.
-    # Track follow-up: T7-DOCKER-SMOKE.
+    # T-DOCKER-SMOKE — promoted to blocking after 3 consecutive green master
+    # runs (2026-06-08). The job now smoke-tests the resulting image with a
+    # real vmaf --backend cpu score assertion against the 576x324 fixture pair
+    # included in testdata/, proving behavioural correctness, not just that the
+    # Dockerfile parses. Expected pooled mean ≈ 94.32; tolerance ±0.5 VMAF
+    # points to absorb model-version float rounding while still catching gross
+    # regressions (e.g., wrong model loaded, binary segfault, wrong pixel format).
     name: Docker Image Build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    continue-on-error: true
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - name: Build Docker Image
         run: docker build -t vmaf .
+      - name: Smoke-test image — CPU score assertion
+        # Run vmaf inside the image against the 576×324 YUV fixture pair that
+        # ships in testdata/. Expected pooled mean VMAF ≈ 94.32 (cpu integer
+        # pipeline, vmaf_v0.6.1.json). Tolerance ±0.5 catches wrong model,
+        # wrong pixel format, and binary crash while absorbing float rounding.
+        # Output goes to /dev/stdout so the runner's python3 can parse it via
+        # pipe — no shared volume needed for the output file.
+        # --backend cpu forces the software path; ubuntu-latest runners have no
+        # GPU, so this is also the only path that will succeed without --backend.
+        run: |
+          docker run --rm \
+            --entrypoint /usr/local/bin/vmaf \
+            -v "${{ github.workspace }}/testdata:/testdata:ro" \
+            -v "${{ github.workspace }}/model:/model:ro" \
+            vmaf \
+              --reference /testdata/ref_576x324_48f.yuv \
+              --distorted /testdata/dis_576x324_48f.yuv \
+              --width 576 --height 324 \
+              --pixel_format 420 --bitdepth 8 \
+              --model path=/model/vmaf_v0.6.1.json \
+              --backend cpu \
+              --output /dev/stdout \
+              --json \
+          2>/dev/null | python3 - <<'PYEOF'
+          import json, sys
+          raw = sys.stdin.read()
+          if not raw.strip():
+              print("FAIL: vmaf produced no output (binary crash or wrong entrypoint?)", file=sys.stderr)
+              sys.exit(1)
+          d = json.loads(raw)
+          frames = d.get("frames", [])
+          if not frames:
+              print("FAIL: no frames in vmaf output", file=sys.stderr)
+              sys.exit(1)
+          scores = [fr["metrics"]["vmaf"] for fr in frames]
+          mean_score = sum(scores) / len(scores)
+          expected = 94.32
+          tol = 0.5
+          print(f"Smoke test: mean VMAF = {mean_score:.4f} (expected {expected} ± {tol})")
+          if abs(mean_score - expected) > tol:
+              print(f"FAIL: score {mean_score:.4f} outside [{expected - tol}, {expected + tol}]", file=sys.stderr)
+              sys.exit(1)
+          print("PASS")
+          PYEOF
