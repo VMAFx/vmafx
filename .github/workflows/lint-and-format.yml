@@ -272,12 +272,132 @@ jobs:
             | parallel -j$(nproc) "clang-tidy -p build --quiet {} || touch /tmp/tidy.fail"
           [ -f /tmp/tidy.fail ] && exit 1 || exit 0
 
-  # NOTE: clang-tidy-sycl job was removed 2026-06-06. Stock LLVM clang-tidy
-  # cannot resolve icpx-internal intrinsics (__ocl_event_t,
-  # __spirv_ControlBarrier) so the job was permanently disabled via
-  # `if: (false)`. Dead code removed; SYCL parse is validated by the
-  # libvmaf-build-matrix SYCL job via icpx. Re-add when an icpx-built
-  # clang-tidy variant becomes available. See ADR-0217.
+  clang-tidy-sycl:
+    # T7-13(b) / T-SYCL-CLANG-TIDY-DISABLED — icpx-aware clang-tidy lane for
+    # SYCL TUs that the main `clang-tidy` job above explicitly excludes (no
+    # SYCL TUs in the CPU-only compile_commands.json).
+    #
+    # The two-step approach that unblocks stock LLVM clang-tidy:
+    #  1. scripts/ci/gen-sycl-compile-commands.py parses build.ninja and
+    #     synthesises compile_commands.json entries for the SYCL .cpp files
+    #     that meson compiles via CUSTOM_COMMAND (icpx -fsycl). The script
+    #     replaces icpx with clang++ and drops -fsycl so the entry is
+    #     consumable by stock clang-tidy.
+    #  2. scripts/ci/clang-tidy-sycl.sh injects -isystem<sycl/sycl.hpp path>
+    #     + -D__SYCL_DEVICE_ONLY__=0 (guards __spirv_ControlBarrier / ocl_event)
+    #     + -Wno-unknown-warning-option + -Wno-unknown-pragmas.
+    #
+    # Advisory (continue-on-error: true) until one green master run confirms
+    # the wrapper holds across all current SYCL TUs; gate tightens after that.
+    # See ADR-0217 for the design rationale and alternatives matrix.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Clang-Tidy SYCL (Changed Files, Advisory)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect changed SYCL files
+        id: detect
+        run: |
+          # Mirrors the main clang-tidy job's PR/push/dispatch fan-out but
+          # keeps only SYCL TUs (the inverse of the exclusion list there).
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files=$(git diff --name-only --diff-filter=d \
+              origin/${{ github.base_ref }}...HEAD \
+              -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                 'core/src/feature/sycl/*.cpp' \
+                 'core/src/feature/sycl/*.hpp' \
+                 'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+              | tr '\n' ' ')
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            before="${{ github.event.before }}"
+            zero="0000000000000000000000000000000000000000"
+            if [ -z "$before" ] || [ "$before" = "$zero" ]; then
+              if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD \
+                  -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                     'core/src/feature/sycl/*.cpp' \
+                     'core/src/feature/sycl/*.hpp' \
+                     'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+                  | tr '\n' ' ')
+              else
+                files=""
+              fi
+            else
+              files=$(git diff --name-only --diff-filter=d "$before"..HEAD \
+                -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                   'core/src/feature/sycl/*.cpp' \
+                   'core/src/feature/sycl/*.hpp' \
+                   'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+                | tr '\n' ' ')
+            fi
+          else
+            files=$(git ls-files \
+              'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+              'core/src/feature/sycl/*.cpp' \
+              'core/src/feature/sycl/*.hpp' \
+              'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+              | tr '\n' ' ')
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          if [ -z "$files" ]; then
+            echo "no SYCL files changed — skipping job body"
+          fi
+      - name: Install oneAPI DPC++ compiler + clang-tidy
+        if: steps.detect.outputs.files != ''
+        run: |
+          # Minimal oneAPI install — only the DPC++/C++ compiler component.
+          # The full base toolkit (~3 GiB) is unnecessary; we only need
+          # <sycl/sycl.hpp> on disk for clang-tidy path resolution.
+          wget -qO- \
+            https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | sudo gpg --dearmor \
+                -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] \
+            https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y \
+            intel-oneapi-compiler-dpcpp-cpp \
+            meson ninja-build nasm clang-tidy-18 jq parallel
+          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy \
+            /usr/bin/clang-tidy-18 100
+      - name: Generate SYCL compile_commands.json
+        if: steps.detect.outputs.files != ''
+        run: |
+          # Source oneAPI env and configure a SYCL build tree. icpx is the
+          # required compiler under -Denable_sycl=true.
+          set +u
+          # shellcheck disable=SC1091
+          source /opt/intel/oneapi/setvars.sh --force
+          set -u
+          CC=icx CXX=icpx meson setup build-sycl core \
+            -Denable_sycl=true -Denable_cuda=false
+          # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
+          # exist on disk before clang-tidy parses TUs.
+          meson compile -C build-sycl
+          # Synthesise compile_commands.json entries for the SYCL .cpp TUs
+          # that meson emits as CUSTOM_COMMAND rules (icpx -fsycl) rather
+          # than standard cpp_COMPILER rules. Without these entries clang-tidy
+          # falls back to default flags and cannot resolve project headers.
+          python3 scripts/ci/gen-sycl-compile-commands.py build-sycl
+      - name: Run clang-tidy-sycl wrapper on changed files
+        if: steps.detect.outputs.files != ''
+        run: |
+          set +u
+          # shellcheck disable=SC1091
+          source /opt/intel/oneapi/setvars.sh --force
+          set -u
+          files="${{ steps.detect.outputs.files }}"
+          echo "$files" | tr ' ' '\n' | grep -v '^$' \
+            | parallel -j"$(nproc)" \
+                "scripts/ci/clang-tidy-sycl.sh -p build-sycl --quiet {} \
+                  || touch /tmp/tidy-sycl.fail"
+          [ -f /tmp/tidy-sycl.fail ] && exit 1 || exit 0
 
   cppcheck:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
