@@ -42,5 +42,6 @@
   "quant_mode": "dynamic",
   "int8_sha256": "203a25905a3797b1cc3e3f347f4f6f491b491000d4424017beef64219767a9e9",
   "quant_accuracy_budget_plcc": 0.01,
+  "onnx_has_scaler": true,
   "notes": "vmaf_tiny_v4 \u2014 canonical-6 + StandardScaler + mlp_large (3073 params), 90 epochs Adam @ lr=1e-3, MSE. Scaler (mean, std) baked into the ONNX graph as Constant nodes so the runtime feeds raw feature values. Same recipe as vmaf_tiny_v2/v3 but with ~3.5x hidden capacity over v3 (6 \u2192 64 \u2192 32 \u2192 16 \u2192 1). Dynamic-PTQ int8 sidecar via ai/scripts/ptq_dynamic.py (ADR-0275); measured drop=0.000145 vs 0.01 budget on Netflix features."
 }

@@ -96,6 +96,12 @@ typedef struct VmafModelSidecar {
     float feature_mean[VMAF_DNN_MAX_FEATURE_NAMES];
     float feature_std[VMAF_DNN_MAX_FEATURE_NAMES];
     bool has_feature_scaler; /**< true iff feature_mean / feature_std parsed */
+    /** True when the sidecar declares "onnx_has_scaler": true — the ONNX
+     *  graph already applies StandardScaler as baked Constant nodes (ADR-0244
+     *  / vmaf_tiny_v2..v4 pattern). When set, the C runtime must NOT apply
+     *  the feature scaler a second time; has_feature_scaler then only serves
+     *  downstream tooling (e.g. training diagnostics). */
+    bool onnx_has_scaler;
 
     /** Codec-aware models (ADR-0519). When the sidecar carries an
      *  `encoder_vocab` JSON array, the loader populates these fields so

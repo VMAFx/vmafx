@@ -938,6 +938,84 @@ static char *test_sidecar_feature_vector_no_scaler(void)
     return NULL;
 }
 
+/* vmaf_tiny_v2/v3/v4 pattern: sidecar with features + input_mean/std
+ * AND "onnx_has_scaler": true.  The loader must set has_feature_scaler
+ * (for tooling) AND onnx_has_scaler (so the C runtime skips the
+ * redundant second application of the scaler). */
+static char *test_sidecar_onnx_has_scaler_flag(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-ons-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fprintf(s, "{\n"
+                     "  \"kind\": \"fr\",\n"
+                     "  \"features\": [\"adm2\", \"vif_scale0\"],\n"
+                     "  \"input_mean\": [0.9, 0.5],\n"
+                     "  \"input_std\":  [0.03, 0.15],\n"
+                     "  \"onnx_has_scaler\": true\n"
+                     "}\n");
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("sidecar_load onnx_has_scaler failed", err == 0);
+    mu_assert("n_features == 2", meta.n_features == 2u);
+    mu_assert("has_feature_scaler still set for tooling", meta.has_feature_scaler);
+    mu_assert("onnx_has_scaler flag set", meta.onnx_has_scaler);
+    vmaf_dnn_sidecar_free(&meta);
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* Absence of onnx_has_scaler must leave the flag false (backwards
+ * compatibility: fr_regressor_v1 etc. rely on the C-side scaler). */
+static char *test_sidecar_onnx_has_scaler_absent(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-ons2-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fprintf(s, "{\n"
+                     "  \"kind\": \"fr\",\n"
+                     "  \"feature_order\": [\"adm2\", \"vif_scale0\"],\n"
+                     "  \"feature_mean\": [0.8, 0.4],\n"
+                     "  \"feature_std\":  [0.1, 0.1]\n"
+                     "}\n");
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("sidecar_load no-onnx-scaler failed", err == 0);
+    mu_assert("has_feature_scaler true", meta.has_feature_scaler);
+    mu_assert("onnx_has_scaler false when absent", meta.onnx_has_scaler == false);
+    vmaf_dnn_sidecar_free(&meta);
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
 /* ADR-0519: sidecar carrying an encoder_vocab array populates
  * VmafModelSidecar.encoder_vocab / n_encoder_vocab and flips
  * codec_aware. Models without it stay codec_aware == false. */
@@ -1794,6 +1872,8 @@ char *run_tests(void)
     mu_run_test(test_sidecar_feature_vector_canonical6);
     mu_run_test(test_sidecar_feature_vector_vmaf_tiny_field_names);
     mu_run_test(test_sidecar_feature_vector_no_scaler);
+    mu_run_test(test_sidecar_onnx_has_scaler_flag);
+    mu_run_test(test_sidecar_onnx_has_scaler_absent);
     mu_run_test(test_sidecar_encoder_vocab_v2);
     mu_run_test(test_sidecar_no_encoder_vocab);
     mu_run_test(test_sidecar_encoder_vocab_malformed_no_leak);

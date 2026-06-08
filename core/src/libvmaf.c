@@ -1325,7 +1325,14 @@ static int vmaf_ctx_dnn_run_frame_feature_vector(VmafContext *vmaf, unsigned ind
         }
         const double raw = dnn_lookup_feature(vmaf->feature_collector, short_name, index);
         float v = (float)raw;
-        if (meta && meta->has_feature_scaler && meta->feature_std[i] > 0.f) {
+        /* Apply the C-side StandardScaler only when the model sidecar carries
+         * mean/std values (has_feature_scaler) AND the scaler is NOT already
+         * baked into the ONNX graph as Constant nodes (onnx_has_scaler).
+         * vmaf_tiny_v2/v3/v4 set onnx_has_scaler=true in their sidecars
+         * (ADR-0244); applying the scaler here for those models would
+         * double-scale every feature and corrupt scores. */
+        if (meta && meta->has_feature_scaler && !meta->onnx_has_scaler &&
+            meta->feature_std[i] > 0.f) {
             v = (v - meta->feature_mean[i]) / meta->feature_std[i];
         }
         vmaf->dnn.in_buf[i] = v;

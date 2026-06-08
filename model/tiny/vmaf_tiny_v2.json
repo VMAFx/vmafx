@@ -37,5 +37,6 @@
     0.05259210477314612,
     7.320738307667759
   ],
+  "onnx_has_scaler": true,
   "notes": "vmaf_tiny_v2 \u2014 canonical-6 + StandardScaler + mlp_small (257 params), 90 epochs Adam @ lr=1e-3, MSE. Scaler (mean, std) baked into the ONNX graph as Constant nodes so the runtime feeds raw feature values. Validated PLCC 0.9978 \u00b1 0.0021 on Netflix LOSO; 0.9998 on KoNViD 5-fold."
 }

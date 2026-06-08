@@ -458,6 +458,7 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
      * the rank-4 contract. */
     out->n_features = 0u;
     out->has_feature_scaler = false;
+    out->onnx_has_scaler = false;
     size_t n_names = 0u;
     int frc = extract_string_array(buf, "feature_order", out->feature_names,
                                    VMAF_DNN_MAX_FEATURE_NAMES, &n_names);
@@ -492,6 +493,26 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
             out->feature_names[i] = NULL;
         }
         out->n_features = 0u;
+    }
+
+    /* "onnx_has_scaler": true — the ONNX graph already applies the
+     * StandardScaler as baked Constant nodes (ADR-0244 / vmaf_tiny_v2..v4).
+     * When present, the C runtime must skip re-applying has_feature_scaler to
+     * avoid double-scaling. The field is parsed as a bare JSON boolean; any
+     * non-"false" token in the value position is treated as true (the only
+     * value the trainers ever write is "true"). */
+    {
+        const char *p_os = strstr(buf, "\"onnx_has_scaler\"");
+        if (p_os) {
+            const char *colon_os = strchr(p_os, ':');
+            if (colon_os) {
+                const char *v_os = colon_os + 1;
+                while (*v_os && json_is_space(*v_os))
+                    v_os++;
+                if (strncmp(v_os, "true", 4) == 0)
+                    out->onnx_has_scaler = true;
+            }
+        }
     }
 
     /* ADR-0519: codec-aware models carry an encoder vocabulary in the
