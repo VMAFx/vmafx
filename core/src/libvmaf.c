@@ -1473,8 +1473,10 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
             return err;
     }
 
-    VmafFeatureExtractorContext *fex_ctx;
+    VmafFeatureExtractorContext *fex_ctx = NULL;
     err = vmaf_feature_extractor_context_create(&fex_ctx, fex, d);
+    if (err)
+        return err;
 #ifdef HAVE_CUDA
     err |= set_fex_cuda_state(fex_ctx, vmaf);
 #endif
@@ -1482,8 +1484,10 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
     err |= set_fex_sycl_state(fex_ctx, vmaf);
 #endif
     err |= set_fex_framesync(fex_ctx, vmaf);
-    if (err)
+    if (err) {
+        (void)vmaf_feature_extractor_context_destroy(fex_ctx);
         return err;
+    }
 
     RegisteredFeatureExtractors *rfe = &(vmaf->registered_feature_extractors);
     err = feature_extractor_vector_append(rfe, fex_ctx, 0);
@@ -1547,7 +1551,7 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
             return -EINVAL;
         }
 
-        VmafFeatureExtractorContext *fex_ctx;
+        VmafFeatureExtractorContext *fex_ctx = NULL;
         VmafDictionary *d = NULL;
         if (model->feature[i].opts_dict) {
             err = vmaf_dictionary_copy(&model->feature[i].opts_dict, &d);
@@ -1555,6 +1559,8 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
                 return err;
         }
         err = vmaf_feature_extractor_context_create(&fex_ctx, fex, d);
+        if (err)
+            return err;
 #ifdef HAVE_CUDA
         err |= set_fex_cuda_state(fex_ctx, vmaf);
 #endif
@@ -1562,8 +1568,10 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
         err |= set_fex_sycl_state(fex_ctx, vmaf);
 #endif
         err |= set_fex_framesync(fex_ctx, vmaf);
-        if (err)
+        if (err) {
+            (void)vmaf_feature_extractor_context_destroy(fex_ctx);
             return err;
+        }
         err = feature_extractor_vector_append(rfe, fex_ctx, 0);
         if (err) {
             err |= vmaf_feature_extractor_context_destroy(fex_ctx);

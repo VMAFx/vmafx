@@ -537,8 +537,8 @@ int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
     if (f->fex->options && f->fex->priv) {
         int err = vmaf_fex_ctx_parse_options(f);
         if (err) {
-            /* parse_options failure leaks f->fex->priv (which is `priv`)
-             * + f->fex (which is `x`) + f without this cleanup chain. */
+            /* parse_options failure: tear down all allocations and NULL the
+             * out-parameter so callers cannot dereference a freed pointer. */
             free(f->fex->priv);
             free(x);
             free(f);
