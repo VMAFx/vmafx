@@ -689,11 +689,11 @@ if is_asm_enabled
           c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-ffp-contract=off'],
         )
 
-        platform_specific_cpu_objects += arm64_static_lib.extract_all_objects()
-        platform_specific_cpu_objects += arm64_fp_lib.extract_all_objects()
-        platform_specific_cpu_objects += arm64_adm_dwt2_neon_lib.extract_all_objects()
-        platform_specific_cpu_objects += arm64_ssimulacra2_lib.extract_all_objects()
-        platform_specific_cpu_objects += arm64_ssim_neon_lib.extract_all_objects()
+        platform_specific_cpu_objects += arm64_static_lib.extract_all_objects(recursive: false)
+        platform_specific_cpu_objects += arm64_fp_lib.extract_all_objects(recursive: false)
+        platform_specific_cpu_objects += arm64_adm_dwt2_neon_lib.extract_all_objects(recursive: false)
+        platform_specific_cpu_objects += arm64_ssimulacra2_lib.extract_all_objects(recursive: false)
+        platform_specific_cpu_objects += arm64_ssim_neon_lib.extract_all_objects(recursive: false)
 
         # T7-38: SSIMULACRA 2 SVE2 sister TU. Only built when the
         # compiler accepts `-march=armv9-a+sve2`; gated by HAVE_SVE2.
@@ -708,7 +708,7 @@ if is_asm_enabled
                 include_directories : vmaf_base_include,
                 c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-march=armv9-a+sve2', '-ffp-contract=off'],
             )
-            platform_specific_cpu_objects += arm64_ssimulacra2_sve2_lib.extract_all_objects()
+            platform_specific_cpu_objects += arm64_ssimulacra2_sve2_lib.extract_all_objects(recursive: false)
 
             # ADR-0584: float_moment SVE2 sister TU. VLA f32→f64 widening
             # avoids the fixed 4-lane bottleneck of the NEON path on
@@ -721,7 +721,7 @@ if is_asm_enabled
                 include_directories : vmaf_base_include,
                 c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-march=armv9-a+sve2', '-ffp-contract=off'],
             )
-            platform_specific_cpu_objects += arm64_moment_sve2_lib.extract_all_objects()
+            platform_specific_cpu_objects += arm64_moment_sve2_lib.extract_all_objects(recursive: false)
         endif
     endif
 
@@ -1232,7 +1232,7 @@ if is_cuda_enabled
         cuda_args: cuda_flags + nvcc_ccbin_flags + nvcc_host_includes
     )
 
-    common_cuda_objects += cuda_static_lib.extract_all_objects()
+    common_cuda_objects += cuda_static_lib.extract_all_objects(recursive: false)
 endif
 
 sycl_dependency = []
