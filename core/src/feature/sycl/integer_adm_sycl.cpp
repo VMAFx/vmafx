@@ -1670,8 +1670,11 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
     if (!fex)
         return -EINVAL;
     VmafSyclState *state = fex->sycl_state;
-    if (state)
-        vmaf_sycl_queue_wait(state);
+    if (state) {
+        int wait_err = vmaf_sycl_queue_wait(state);
+        if (wait_err)
+            return wait_err;
+    }
     return 1; // done — collect already consumed pending work
 }
 
@@ -1681,7 +1684,7 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
     VmafSyclState *state = fex->sycl_state;
 
     if (state) {
-        vmaf_sycl_queue_wait(state);
+        (void)vmaf_sycl_queue_wait(state);
 
         /* Unregister from the combined command graph before freeing priv.
          * Mirrors the fix in integer_motion_sycl.cpp (ADR-0989):

@@ -304,8 +304,10 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
             motion2 = score_cur;
         }
 
-        vmaf_feature_collector_append(feature_collector, "VMAF_integer_feature_motion2_v2_score",
-                                      motion2, i);
+        int append_err = vmaf_feature_collector_append(
+            feature_collector, "VMAF_integer_feature_motion2_v2_score", motion2, i);
+        if (append_err)
+            return append_err;
     }
 
     return 1;

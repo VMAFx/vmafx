@@ -453,8 +453,11 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
             }
         }
 
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "VMAF_integer_feature_motion2_score", motion2, i);
+        int append_err = vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", motion2,
+            i);
+        if (append_err)
+            return append_err;
 
         double motion3;
         if (i < min_idx) {
@@ -468,8 +471,11 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
             prev_processed = processed;
         }
 
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "VMAF_integer_feature_motion3_score", motion3, i);
+        append_err = vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion3_score", motion3,
+            i);
+        if (append_err)
+            return append_err;
     }
 
     return 1;

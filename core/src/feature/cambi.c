@@ -475,12 +475,20 @@ static int set_contrast_arrays(const uint16_t num_diffs, uint16_t **diffs_to_con
         return -ENOMEM;
 
     *diffs_weights = aligned_malloc(ALIGN_CEIL(sizeof(int)) * num_diffs, 32);
-    if (!(*diffs_weights))
+    if (!(*diffs_weights)) {
+        aligned_free(*diffs_to_consider);
+        *diffs_to_consider = NULL;
         return -ENOMEM;
+    }
 
     *all_diffs = aligned_malloc(ALIGN_CEIL(sizeof(int)) * (2 * num_diffs + 1), 32);
-    if (!(*all_diffs))
+    if (!(*all_diffs)) {
+        aligned_free(*diffs_to_consider);
+        *diffs_to_consider = NULL;
+        aligned_free(*diffs_weights);
+        *diffs_weights = NULL;
         return -ENOMEM;
+    }
 
     for (int d = 0; d < num_diffs; d++) {
         (*diffs_to_consider)[d] = d + 1;
@@ -648,8 +656,10 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
     const int num_diffs = 1 << s->max_log_contrast;
 
-    set_contrast_arrays(num_diffs, &s->buffers.diffs_to_consider, &s->buffers.diff_weights,
-                        &s->buffers.all_diffs);
+    err = set_contrast_arrays(num_diffs, &s->buffers.diffs_to_consider, &s->buffers.diff_weights,
+                              &s->buffers.all_diffs);
+    if (err)
+        return err;
 
     VmafLumaRange luma_range;
     err = vmaf_luminance_init_luma_range(&luma_range, 10, VMAF_PIXEL_RANGE_LIMITED);
