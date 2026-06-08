@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_vif feature extractor on the HIP backend — ninth
  *  kernel-template consumer (T7-10b batch-5 / ADR-0379).

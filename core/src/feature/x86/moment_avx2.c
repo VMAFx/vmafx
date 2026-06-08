@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  AVX2 implementations of compute_1st_moment / compute_2nd_moment for
  *  the float_moment feature extractor.  Closes the only remaining

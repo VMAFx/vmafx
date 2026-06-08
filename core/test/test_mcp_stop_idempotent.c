@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Regression test for the `vmaf_mcp_stop()` double-join SIGSEGV
  *  flagged in PR #460 (audit follow-up #5).

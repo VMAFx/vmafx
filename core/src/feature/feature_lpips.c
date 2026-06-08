@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  LPIPS (Learned Perceptual Image Patch Similarity) full-reference
  *  extractor. Backed by a two-input ONNX model (SqueezeNet backbone) that

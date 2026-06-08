@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP host glue for the integer_ms_ssim feature extractor — ninth
  *  kernel-template consumer (ADR-0285).

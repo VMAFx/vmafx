@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Metal per-feature kernel scaffolding template — first-consumer
  *  mirror of `libvmaf/src/hip/kernel_template.h` (ADR-0241) which in

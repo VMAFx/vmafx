@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_motion feature kernel on the CUDA backend (T7-23 / batch 3
  *  part 4b — ADR-0192 / ADR-0196). CUDA twin of float_motion_vulkan.

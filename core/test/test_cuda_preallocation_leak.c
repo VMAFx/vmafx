@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Netflix#1300 / ADR-0157 — loop-reducer that does 10x init/preallocate/
  *  fetch/close cycles and confirms no framework-side memory leak.

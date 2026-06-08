@@ -78,7 +78,7 @@ index 0000000000..5a7e1d8c2c
 +++ b/libavfilter/vf_libvmaf_tune.c
 @@ -0,0 +1,410 @@
 +/*
-+ * Copyright 2026 Lusoris and Claude (Anthropic)
++ * Copyright 2026 Lusoris
 + *
 + * This file is part of FFmpeg.
 + *

@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA compute kernels for the float_ms_ssim feature extractor
  *  (T7-23 / batch 2 part 2b / ADR-0190). Mirror of the GLSL

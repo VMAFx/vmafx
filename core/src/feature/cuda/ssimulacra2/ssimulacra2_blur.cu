@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA kernel for the ssimulacra2 separable FastGaussian IIR blur.
  *  Mirrors the libjxl Charalampidis 2016 3-pole recursive Gaussian

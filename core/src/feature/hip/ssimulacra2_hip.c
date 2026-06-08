@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  ssimulacra2 feature extractor on the HIP backend.
  *  Ninth consumer of the HIP feature surface; direct port of

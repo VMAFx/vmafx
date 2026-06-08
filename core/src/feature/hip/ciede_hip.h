@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP host glue for the ciede2000 feature extractor — third
  *  kernel-template consumer (T7-10b follow-up / ADR-0259).

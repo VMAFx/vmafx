@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  ciede2000 feature extractor on the HIP backend — third consumer of
  *  `libvmaf/src/hip/kernel_template.h` (T7-10b follow-up / ADR-0259).

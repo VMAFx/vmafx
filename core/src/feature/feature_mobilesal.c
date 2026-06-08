@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  MobileSal saliency feature extractor (T6-2a). No-reference scoring-side
  *  surface that runs a tiny ONNX saliency model over the distorted frame

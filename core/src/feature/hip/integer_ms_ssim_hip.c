@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  integer_ms_ssim feature extractor on the HIP backend — ninth
  *  kernel-template consumer (ADR-0285).

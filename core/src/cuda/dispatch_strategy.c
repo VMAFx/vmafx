@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA dispatch_strategy stub. Today every extractor returns
  *  DIRECT; this TU exists to expose the registry-aware decision

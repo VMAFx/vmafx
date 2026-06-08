@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Regression test — float_vif must reject frames smaller than 7x7 at
  *  init() time with -EINVAL instead of proceeding into the scale-0

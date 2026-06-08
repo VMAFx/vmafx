@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  ONNX Runtime C-API wrapper. Selects CPU / CUDA / OpenVINO / ROCm execution
  *  providers per VmafDnnConfig, validates ops against op_allowlist.c, and

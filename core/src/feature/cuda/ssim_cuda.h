@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA host glue for the real integer_ssim feature extractor
  *  (ADR-0553). The `integer_ssim_score_ptx` symbol is the PTX

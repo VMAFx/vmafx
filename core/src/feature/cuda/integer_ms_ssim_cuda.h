@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA host glue for the float_ms_ssim feature extractor
  *  (T7-23 / batch 2 part 2b). See ADR-0188 / ADR-0190 for the

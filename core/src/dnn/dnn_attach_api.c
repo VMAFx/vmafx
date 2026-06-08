@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  `vmaf_use_tiny_model` — public entry point that opens an ORT session
  *  via ort_backend.c and hands ownership to libvmaf.c via the `dnn_ctx`

@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Implementation of the SpEED internal API declared in speed_internal.h.
  *  Provides the CPU-side helpers that the GPU twins

@@ -1,5 +1,5 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+// SPDX-License-Identifier: BSD-2-Clause-Patent OR MIT
 
 // rclone_bypass.bpf.c — eBPF program for FUSE read-path bypass.
 //

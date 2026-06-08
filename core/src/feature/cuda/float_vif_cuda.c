@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_vif feature kernel on the CUDA backend (T7-23 / batch 3
  *  part 5b — ADR-0192 / ADR-0197). CUDA twin of float_vif_vulkan.

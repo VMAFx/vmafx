@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  SYCL dispatch_strategy — translates a per-feature descriptor into a
  *  SYCL submission strategy (direct submit vs graph replay). Consumed

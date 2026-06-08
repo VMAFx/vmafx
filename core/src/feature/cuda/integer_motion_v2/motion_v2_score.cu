@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA compute kernel for the integer_motion_v2 feature extractor
  *  (T7-23 / batch 3 part 1b — ADR-0192 / ADR-0193). CUDA twin of the

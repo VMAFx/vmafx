@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA compute kernel for the float_motion feature extractor
  *  (T7-23 / batch 3 part 4b — ADR-0192 / ADR-0196). CUDA twin of

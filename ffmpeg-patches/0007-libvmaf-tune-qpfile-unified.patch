@@ -789,7 +789,7 @@ index 0000000000..cf781305ac
 +++ b/libavcodec/qpfile_parser.c
 @@ -0,0 +1,302 @@
 +/*
-+ * Copyright 2026 Lusoris and Claude (Anthropic)
++ * Copyright 2026 Lusoris
 + *
 + * This file is part of FFmpeg.
 + *
@@ -1097,7 +1097,7 @@ index 0000000000..bfc4af0cc8
 +++ b/libavcodec/qpfile_parser.h
 @@ -0,0 +1,55 @@
 +/*
-+ * Copyright 2026 Lusoris and Claude (Anthropic)
++ * Copyright 2026 Lusoris
 + *
 + * This file is part of FFmpeg.
 + *

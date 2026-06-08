@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP host glue for the PSNR feature extractor (T7-10 first
  *  consumer / ADR-0241; real kernel: T7-10b batch-1 / ADR-0372).

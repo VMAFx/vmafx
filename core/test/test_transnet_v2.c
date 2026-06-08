@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  TransNet V2 shot-boundary detector (T6-3a) — structural + stub-path
  *  tests. The four standard tiny-AI registration tests come from the

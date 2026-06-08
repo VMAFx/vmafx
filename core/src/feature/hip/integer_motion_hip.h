@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP host header for the integer_motion feature extractor.
  *  Mirrors `libvmaf/src/feature/cuda/integer_motion_cuda.h`.

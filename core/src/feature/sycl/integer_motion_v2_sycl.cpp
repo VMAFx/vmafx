@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  motion_v2 feature kernel on the SYCL backend (T7-23 / batch 3 part
  *  1c — ADR-0192 / ADR-0193). SYCL twin of motion_v2_vulkan (PR #146)

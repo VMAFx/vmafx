@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  T6-9 / ADR-0211 — exercise the failure modes of
  *  vmaf_dnn_verify_signature() without requiring `cosign` on the test

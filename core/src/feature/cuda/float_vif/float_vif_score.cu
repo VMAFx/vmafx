@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA compute kernel for the float_vif feature extractor
  *  (T7-23 / batch 3 part 5b — ADR-0192 / ADR-0197). CUDA twin of

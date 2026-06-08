@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  stdio transport for the embedded MCP server. Reads
  *  newline-delimited JSON-RPC requests from `cfg->fd_in`, writes

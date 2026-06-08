@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  AVX2 dispatch for `float_moment`.
  *  See ADR-0179 — closes the only remaining fully-scalar SIMD-matrix

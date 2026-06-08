@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_psnr feature extractor on the HIP backend — first real kernel
  *  (T7-10b / ADR-0254). Second kernel-template consumer.

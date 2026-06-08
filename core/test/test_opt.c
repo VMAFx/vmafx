@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Exhaustive branch coverage for libvmaf/src/opt.c. The TU has four
  *  static type-specific helpers (bool / int / double / string) and a

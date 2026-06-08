@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Direct unit tests for ort_backend.c internal helpers and NULL-guard
  *  branches. Exists because many of ort_backend.c's branches are

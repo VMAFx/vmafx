@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  FastDVDnet temporal pre-filter (T6-7) — structural + stub-path tests.
  *  Body delegated to `tiny_ai_test_template.h`. Full end-to-end

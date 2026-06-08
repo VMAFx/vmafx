@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  HIP host glue for the float_moment feature extractor — fourth
  *  kernel-template consumer (T7-10b batch-3 / ADR-0374).

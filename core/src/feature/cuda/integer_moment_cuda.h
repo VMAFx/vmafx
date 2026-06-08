@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA host glue for the float_moment feature extractor
  *  (T7-23 / batch 1d part 2). See ADR-0182 for the bundle scope.

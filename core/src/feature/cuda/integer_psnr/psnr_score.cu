@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA compute kernel for the PSNR feature extractor (T7-23 / batch 1b).
  *  Per-pixel squared-error reduction with int64 accumulation on the

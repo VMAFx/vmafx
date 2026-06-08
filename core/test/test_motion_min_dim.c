@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Research-0094 regression test — motion feature extractors must reject frames
  *  smaller than 3x3 at init() time with -EINVAL instead of reading

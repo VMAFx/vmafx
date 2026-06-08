@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Internal MCP runtime types — not part of the public ABI. The
  *  public header (`libvmaf/include/libvmaf/libvmaf_mcp.h`) only

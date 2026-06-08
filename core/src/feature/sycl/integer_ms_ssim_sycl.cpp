@@ -1,7 +1,7 @@
 /* Upstream-mirror filename: defines float_ms_ssim symbol despite the integer_ prefix (matches Netflix upstream). See ADR-0549. */
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_ms_ssim feature extractor on the SYCL backend
  *  (T7-23 / ADR-0188 / ADR-0190, GPU long-tail batch 2 part 2c).

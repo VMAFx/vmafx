@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  ciede2000 feature extractor on the SYCL backend (T7-23 /
  *  ADR-0182, GPU long-tail batch 1c part 3). SYCL twin of

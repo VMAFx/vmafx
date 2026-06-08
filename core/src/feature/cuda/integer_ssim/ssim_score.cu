@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  CUDA compute kernels for the float_ssim feature extractor
  *  (T7-23 / batch 2 part 1b / ADR-0188 / ADR-0189). CUDA twin of
