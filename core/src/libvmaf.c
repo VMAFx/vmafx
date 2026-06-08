@@ -2312,6 +2312,11 @@ static bool read_pictures_should_skip(VmafContext *vmaf, VmafFeatureExtractorCon
         }
     }
 
+    /* CPU extractors with a thread pool go to the threaded batch path.
+     * CUDA + SYCL extractors run serially via their respective dispatch loops.
+     * Skipping them in the threaded batch and skipping them ALSO from the serial
+     * loop here would leak — be careful to keep these in sync with the changes
+     * to threaded_extract_batch_func. */
     if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) &&
         !(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL) && vmaf->thread_pool) {
         if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))
