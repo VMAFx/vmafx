@@ -1567,6 +1567,7 @@ _HTML_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vmaf-tune report — {source_name}</title>
 <style>
 :root {{
@@ -1577,6 +1578,7 @@ _HTML_TEMPLATE = """<!doctype html>
     :root {{
         --bg: #fbfbfd; --panel: #fff; --text: #1d2433;
         --muted: #51607a; --accent: #ee5a24; --link: #005bbb;
+        --ok: #2e7d32; --bad: #c62828;
     }}
 }}
 body {{ background: var(--bg); color: var(--text); font: 16px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
@@ -1589,11 +1591,12 @@ h3 {{ margin-bottom: .35rem; }}
 .guide p {{ margin: .25rem 0 .5rem; color: var(--muted); }}
 .guide ul {{ margin: .5rem 0 0; padding-left: 1.1rem; }}
 .note {{ color: var(--muted); margin: .25rem 0 1rem; }}
-.table-scroll {{ overflow-x: auto; }}
+.table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
 table {{ width: 100%; border-collapse: collapse; margin: .5rem 0; }}
 th, td {{ padding: .4rem .6rem; text-align: left; border-bottom: 1px solid #2d3142; }}
 th {{ color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: uppercase; letter-spacing: .03em; }}
-td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+td.num, th.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+tr.failed {{ opacity: .7; }}
 .codec-chip {{ --codec-colour: var(--accent); display: inline-flex; align-items: center; gap: .35rem;
     color: var(--text); text-decoration: none; white-space: nowrap; }}
 .codec-logo {{ background: var(--codec-colour); color: #fff; border-radius: 4px; padding: .08rem .32rem;
@@ -1602,13 +1605,16 @@ td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
 .tag {{ display: inline-block; padding: .15em .5em; border-radius: 3px; font-size: .85em; }}
 .tag.ok {{ background: rgba(76,175,80,.18); color: var(--ok); }}
 .tag.bad {{ background: rgba(239,83,80,.18); color: var(--bad); }}
-.chart {{ background: var(--panel); border-radius: 8px; padding: .5rem; overflow-x: auto; }}
-.chart svg {{ max-width: 100%; height: auto; display: block; margin: 0 auto; }}
+.chart {{ background: var(--panel); border-radius: 8px; padding: .5rem; overflow-x: auto;
+          -webkit-overflow-scrolling: touch; min-width: 0; }}
+.chart svg {{ max-width: 100%; height: auto; display: block; margin: 0 auto; min-width: 320px; }}
 .meta {{ color: var(--muted); font-size: .9rem; margin-bottom: 1.5rem; }}
 details {{ background: var(--panel); padding: .8rem 1.2rem; border-radius: 8px; margin-top: 2rem; }}
 details summary {{ cursor: pointer; color: var(--muted); }}
-pre {{ background: #000; color: #ddd; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 12px; }}
+pre {{ background: #000; color: #ddd; padding: 1rem; border-radius: 6px; overflow-x: auto;
+       overflow-y: auto; max-height: 28rem; font-size: .75rem; }}
 .kv {{ display: grid; grid-template-columns: 12rem 1fr; gap: .3rem 1rem; }}
+@media (max-width: 480px) {{ .kv {{ grid-template-columns: 8rem 1fr; }} }}
 .kv .key {{ color: var(--muted); }}
 .target {{ color: var(--accent); font-size: 1.1em; font-weight: 600; }}
 </style>
@@ -1651,8 +1657,12 @@ def _row_html(row: CodecRow) -> str:
         if row.ok
         else f'<span class="tag bad">{_html_escape(row.error or "fail")}</span>'
     )
+    # Apply the 'failed' CSS class so failed rows are visually dimmed in the
+    # table even when no chart is present. The class sets opacity to 0.7 so
+    # the row remains readable but is clearly de-emphasised.
+    row_class = "" if row.ok else " class='failed'"
     return (
-        f"<tr><td>{_codec_chip_html(row.codec)}</td>"
+        f"<tr{row_class}><td>{_codec_chip_html(row.codec)}</td>"
         f"<td>{_html_escape(row.encoder_version or '—')}</td>"
         f"<td class='num'>{_fmt_crf(row.best_crf)}</td>"
         f"<td class='num'>{_fmt_kbps(row.bitrate_kbps)}</td>"
@@ -1670,7 +1680,17 @@ def _sweep_summary_table_html(data: ReportData) -> str:
     head_cells = ["Codec", "Encoder"]
     head_cells.extend(f"@ VMAF {t:g}" for t in targets)
     head_cells.extend(["CRF picks", "Encode time", "Status"])
-    head = "".join(f"<th>{_html_escape(c)}</th>" for c in head_cells)
+    # Apply th.num to numeric columns: per-target bitrate columns (index 2
+    # through 2+len(targets)-1) and "Encode time" (second-to-last column).
+    _num_head_indices: set[int] = set(range(2, 2 + len(targets))) | {len(head_cells) - 2}
+    head = "".join(
+        (
+            f"<th class='num'>{_html_escape(c)}</th>"
+            if i in _num_head_indices
+            else f"<th>{_html_escape(c)}</th>"
+        )
+        for i, c in enumerate(head_cells)
+    )
 
     body_rows: list[str] = []
     for codec in sorted(by_codec):
@@ -1697,7 +1717,10 @@ def _sweep_summary_table_html(data: ReportData) -> str:
         status = _sweep_row_status(list(per_target.values()), targets)
         tag_class = "ok" if status == "OK" else "bad"
         cells.append(f"<td><span class='tag {tag_class}'>{_html_escape(status)}</span></td>")
-        body_rows.append("<tr>" + "".join(cells) + "</tr>")
+        # Dim the entire row when the codec has at least one failure so the
+        # reader's eye is not pulled to failed rows as potential winners.
+        row_class = " class='failed'" if tag_class == "bad" else ""
+        body_rows.append(f"<tr{row_class}>" + "".join(cells) + "</tr>")
 
     table = (
         "<div class='table-scroll'><table><thead><tr>"
@@ -1750,8 +1773,9 @@ def render_html(data: ReportData) -> str:
             f"<div class='panel'><h2 style='margin-top:0'>Codec comparison</h2>"
             f"<p class='note'>{_html_escape(_SECTION_GUIDANCE['codec'])}</p>"
             f"{_render_codec_guide_html(data)}"
-            f"<div class='table-scroll'><table><thead><tr><th>Codec</th><th>Encoder</th><th>CRF</th>"
-            f"<th>Bitrate</th><th>Encode time</th><th>VMAF</th><th>Status</th></tr></thead>"
+            f"<div class='table-scroll'><table><thead><tr><th>Codec</th><th>Encoder</th>"
+            f"<th class='num'>CRF</th><th class='num'>Bitrate</th>"
+            f"<th class='num'>Encode time</th><th class='num'>VMAF</th><th>Status</th></tr></thead>"
             f"<tbody>{rows}</tbody></table></div>"
             f"<div class='chart'>{chart}</div></div>"
         )
