@@ -3344,6 +3344,12 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     (void)pix_fmt;
     (void)bpc;
 
+    if (w < 17u || h < 17u) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "integer_adm requires width >= 17 and height >= 17 (got %ux%u)\n", w, h);
+        return -EINVAL;
+    }
+
     s->dwt2_8 = adm_dwt2_8;
     s->dwt2_16 = adm_dwt2_16;
     s->adm_decouple = adm_decouple;

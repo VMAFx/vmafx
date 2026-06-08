@@ -1618,6 +1618,27 @@ test_float_ms_ssim_min_dim = executable('test_float_ms_ssim_min_dim',
 )
 test('test_float_ms_ssim_min_dim', test_float_ms_ssim_min_dim, suite : ['fast'])
 
+# integer_adm init() must reject min(w,h) <= 16 with -EINVAL (SIGSEGV guard):
+# the 4-level DWT2 pyramid requires at least 17 pixels in each dimension.
+test_integer_adm_min_dim = executable('test_integer_adm_min_dim',
+    ['test.c', 'test_integer_adm_min_dim.c', '../src/mem.c', '../src/picture.c',
+     '../src/ref.c', '../src/dict.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_integer_adm_min_dim', test_integer_adm_min_dim, suite : ['fast'])
+
 # Research-0094 regression: motion init() must reject frames < 3x3 with -EINVAL
 # instead of reading out-of-bounds via the reflect-101 mirror-padding formula.
 test_motion_min_dim = executable('test_motion_min_dim',
