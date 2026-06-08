@@ -268,13 +268,20 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        # Scores calibrated with neighbor_samples=100 (VCQ-223 / ADR-0562).
+        # Scores calibrated post-NEON uint64-truncation fix (PR #834 / commit 43cf4c9aa).
         # The VMAF_LE_score is determined by the libvmaf binary, not the
         # local-explainer sampling, so the values differ slightly from the
         # original 5000-sample run due to floating-point non-determinism in
         # the SVM prediction path.
-        self.assertAlmostEqual(results[0]["VMAF_LE_score"], 75.40980306756497, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_LE_score"], 99.95804823471536, places=4)
+        # macOS Apple libm produces a slightly different result (~6e-5 delta) vs
+        # Linux libm for this SVM prediction; places=3 accommodates both.
+        # ADR-0418 macOS-libm Δ relax: tolerance relaxed to places=3 for cross-platform CI.
+        self.assertAlmostEqual(
+            results[0]["VMAF_LE_score"], 75.40974269371469, places=3
+        )  # ADR-0418 macOS-libm Δ relax
+        self.assertAlmostEqual(
+            results[1]["VMAF_LE_score"], 99.95804823471536, places=3
+        )  # ADR-0418 macOS-libm Δ relax
 
 
 if __name__ == "__main__":

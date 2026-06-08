@@ -103,6 +103,12 @@ ENV PATH=/vmaf:/vmaf/core/build/tools:$PATH
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
     CCACHE_DIR=/root/.cache/ccache \
     make clean && make ENABLE_NVCC=true && make install
+# Register /usr/local/lib/x86_64-linux-gnu in the dynamic linker cache so the
+# installed vmaf binary can find libvmaf.so.3 at runtime. The NVIDIA CUDA
+# Ubuntu 24.04 base image does not include the arch-specific subdir in its
+# default ld.so.conf; meson strips RPATH on install, so without ldconfig the
+# binary exits with a dynamic linker error (vmaf smoke test sees zero stdout).
+RUN ldconfig
 
 # ---------- build FFmpeg ----------
 RUN wget -q "https://github.com/FFmpeg/FFmpeg/archive/${FFMPEG_TAG}.zip" && \
