@@ -121,7 +121,7 @@ detector hasn't seen enough context to make a confident decision.
 
 ```bash
 # 1. Build libvmaf with DNN support enabled.
-meson setup core/build-cpu -Denable_dnn=true
+meson setup core/build-cpu -Denable_dnn=enabled
 ninja -C core/build-cpu
 
 # 2. Run the extractor against a clip, supplying the model path.

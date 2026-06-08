@@ -50,7 +50,7 @@ boundary is the `.onnx` + sidecar JSON pair on disk.
 
 Tiny-AI extractors (`lpips`, `dists_sq`, `fastdvdnet_pre`, `mobilesal`,
 and `transnet_v2`) require a libvmaf build with ONNX Runtime support. On a
-build compiled with `-Denable_dnn=false`, extractor `init` returns
+build compiled with `-Denable_dnn=disabled`, extractor `init` returns
 `-ENOSYS` before probing `model_path` or the extractor-specific environment
 variable. On DNN-enabled builds, a missing model path remains a normal
 configuration error and returns `-EINVAL`.

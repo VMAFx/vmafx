@@ -106,7 +106,7 @@ Every non-void function returns `int` with these conventions:
   - `-ENOMEM` — allocation failed.
   - `-ENOENT` — file not found (`vmaf_model_load_from_path` etc).
   - `-ENOSYS` — entry point compiled out (e.g. `vmaf_dnn_*` on a
-    `-Denable_dnn=false` build).
+    `-Denable_dnn=disabled` build).
   - `-EIO` — downstream library error (ONNX Runtime, libav, …).
 
 `libvmaf` does not populate a thread-local last-error; the return code is the

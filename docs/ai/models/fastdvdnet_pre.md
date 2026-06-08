@@ -145,7 +145,7 @@ five-slot ring buffer of the most recent normalised luma planes. Each
 
 ```bash
 # 1. Build libvmaf with DNN support enabled.
-meson setup core/build-cpu -Denable_dnn=true
+meson setup core/build-cpu -Denable_dnn=enabled
 ninja -C core/build-cpu
 
 # 2. Run the extractor against a clip, supplying the model path.

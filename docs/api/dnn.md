@@ -18,7 +18,7 @@ surfaces: CLI, C API, ffmpeg, training).
 int vmaf_dnn_available(void);
 ```
 
-Returns `1` if libvmaf was built with `-Denable_dnn=true` and ONNX Runtime is
+Returns `1` if libvmaf was built with `-Denable_dnn=enabled` and ONNX Runtime is
 linked, `0` otherwise. When `0`, every other entry point in `dnn.h` returns
 `-ENOSYS`. This is the cheap way to branch between DNN and classic-only
 build configs at runtime without wrapping every call in its own check.
@@ -390,7 +390,7 @@ Build:
 cc filter.c -o filter $(pkg-config --cflags --libs libvmaf)
 ```
 
-Only works when libvmaf was built with `-Denable_dnn=true`.
+Only works when libvmaf was built with `-Denable_dnn=enabled`.
 
 ## Sigstore signature verification — `vmaf_dnn_verify_signature`
 
