@@ -24,6 +24,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "log.h"
 #include "mem.h"
 
 #include "vif.h"
@@ -192,6 +193,22 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
     VifState *s = fex->priv;
 
+    /*
+     * The scale-0 Gaussian uses a 17-tap separable filter.  The reflect-101
+     * mirror-padding formula `ii = 2*h - ii - 2` requires the dimension to be
+     * >= 9 to stay in-bounds for every filter position (half-width = 8,
+     * worst-case index = dim + 7, mirrored = dim - 9 >= 0).
+     * Guard on the raw input dimensions first (before any string-option access)
+     * to provide a fast, unconditional early exit.  A second guard after
+     * computing scaled_w / scaled_h covers the case where a prescale < 1.0
+     * shrinks a larger frame below the minimum.
+     */
+    if (w < 9 || h < 9) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "float_vif requires width >= 9 and height >= 9 (got %ux%u)\n", w, h);
+        return -EINVAL;
+    }
+
     enum vif_scaling_method scaling_method;
     if (vif_get_scaling_method(s->vif_prescale_method, &scaling_method)) {
         return -EINVAL;
@@ -199,6 +216,13 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
     s->scaled_w = (int)(w * s->vif_prescale + 0.5);
     s->scaled_h = (int)(h * s->vif_prescale + 0.5);
+
+    if (s->scaled_w < 9 || s->scaled_h < 9) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "float_vif requires scaled width >= 9 and height >= 9 (got %dx%d)\n", s->scaled_w,
+                 s->scaled_h);
+        return -EINVAL;
+    }
     s->float_stride = ALIGN_CEIL(w * sizeof(float));
     s->scaled_float_stride = ALIGN_CEIL(s->scaled_w * sizeof(float));
     s->ref = aligned_malloc(s->float_stride * h, 32);
