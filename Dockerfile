@@ -2,10 +2,10 @@
 # Base: NVIDIA CUDA ≥13.3 devel on Ubuntu 24.04. Non-conservative pin per ADR D27 —
 # we follow latest-stable CUDA aggressively because the fork's value is GPU perf on
 # current hardware; being one release behind costs ~10-30% on kernel-bound stages.
-# Tag-pinned to the latest stable CUDA release; add a @sha256 digest once the
-# 13.3.0 manifest digest stabilises. Gives us nvcc + cudart-dev without Ubuntu's
-# stale 'nvidia-cuda-toolkit' apt package (24.04 still ships CUDA 12.x).
-FROM nvidia/cuda:13.3.0-devel-ubuntu24.04
+# Digest-pinned (sha256) for supply-chain reproducibility; update when upgrading the
+# CUDA tag. Gives us nvcc + cudart-dev without Ubuntu's stale 'nvidia-cuda-toolkit'
+# apt package (24.04 still ships CUDA 12.x).
+FROM nvidia/cuda:13.3.0-devel-ubuntu24.04@sha256:ef2203909e80b8b976cfc672f7e2ae2b00bc0e25c404ee86d89e10a3802f1c52
 
 ARG NV_CODEC_TAG="876af32a202d0de83bd1d36fe74ee0f7fcf86b0d"
 ARG FFMPEG_TAG=n8.1
