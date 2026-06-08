@@ -195,4 +195,22 @@ mod tests {
         let p = Picture::new(PixelFormat::Yuv420p, 10, 32, 32).expect("alloc");
         assert_eq!(p.bpc(), 10);
     }
+
+    /// Verify that `into_raw_owned` transfers ownership cleanly — the Rust
+    /// `Drop` must become a no-op once the owned flag is cleared, so the
+    /// caller becomes responsible for freeing the raw struct.  This test
+    /// exercises the same manual-unref path that `Context::read_pictures`
+    /// takes on the error branch (fix for vmaf_read_pictures early-error leak).
+    #[test]
+    fn into_raw_owned_clears_owned_flag_and_caller_frees() {
+        let p = Picture::new_yuv420p_8bit(32, 32).expect("alloc");
+        let mut raw = p.into_raw_owned();
+        // `p` is consumed and its Drop is a no-op; we are now responsible for
+        // freeing `raw` with vmaf_picture_unref — exactly what the error path
+        // in `Context::read_pictures` does.
+        // SAFETY: `raw` was allocated by vmaf_picture_alloc and not yet
+        // passed to any other libvmaf call.
+        let rc = unsafe { vmaf_picture_unref(&raw mut raw) };
+        assert!(rc >= 0, "vmaf_picture_unref failed with code {rc}");
+    }
 }

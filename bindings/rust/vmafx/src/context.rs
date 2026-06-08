@@ -28,7 +28,7 @@ use vmafx_sys::{
     VmafConfiguration, VmafContext as RawContext, VmafLogLevel_VMAF_LOG_LEVEL_DEBUG,
     VmafLogLevel_VMAF_LOG_LEVEL_ERROR, VmafLogLevel_VMAF_LOG_LEVEL_INFO,
     VmafLogLevel_VMAF_LOG_LEVEL_NONE, VmafLogLevel_VMAF_LOG_LEVEL_WARNING, vmaf_close, vmaf_init,
-    vmaf_read_pictures, vmaf_score_pooled, vmaf_use_features_from_model,
+    vmaf_picture_unref, vmaf_read_pictures, vmaf_score_pooled, vmaf_use_features_from_model,
 };
 
 use crate::error::{Error, Result};
@@ -218,6 +218,8 @@ impl<'a> Context<'a> {
     ///
     /// # Errors
     /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf fails to enqueue the frame.
+    /// On error the picture plane buffers are freed before returning; the caller
+    /// must not use the pictures after this call regardless of the outcome.
     pub fn read_pictures(&mut self, ref_pic: Picture, dist_pic: Picture, index: u32) -> Result<()> {
         // Take ownership of the raw structs; the `Picture` wrappers' `Drop`
         // will no-op because `into_raw_owned` cleared the `owned` flag.
@@ -226,6 +228,17 @@ impl<'a> Context<'a> {
         // SAFETY: both pointers are non-null and the structs are
         // fully-initialised owners of allocated planes.
         let rc = unsafe { vmaf_read_pictures(self.inner, &raw mut r_raw, &raw mut d_raw, index) };
+        if rc < 0 {
+            // libvmaf rejected the frame and did not take ownership of the
+            // plane buffers. Free them here to prevent a memory leak; the
+            // `RawPicture` struct has no `Drop` implementation of its own.
+            // SAFETY: both structs were allocated by `vmaf_picture_alloc` and
+            // have not been handed to — or consumed by — the C library.
+            unsafe {
+                let _ = vmaf_picture_unref(&raw mut r_raw);
+                let _ = vmaf_picture_unref(&raw mut d_raw);
+            }
+        }
         Error::from_libvmaf_rc(rc)
     }
 
