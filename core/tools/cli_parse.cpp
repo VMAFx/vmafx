@@ -25,8 +25,10 @@
 
 #ifdef _WIN32
 #include "compat/win32/getopt.h"
+#include <windows.h>
 #else
 #include <getopt.h>
+#include <unistd.h>
 #endif
 #include <cerrno>
 #include <climits>
@@ -763,6 +765,27 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
          * ARG_TINY_DEVICE / ARG_DNN_EP alias pattern already in this switch. */
         case ARG_THREADS:
             settings->thread_cnt = parse_unsigned(optarg, ARG_THREADS, argv[0]);
+            {
+                /* Cap thread count to the number of online hardware cores to
+                 * prevent OOM from absurdly large --threads values (e.g.
+                 * --threads 10000 on a 16-core host).  sysconf returns -1 on
+                 * error; in that case we leave the user-supplied value intact
+                 * and trust the thread pool to handle it gracefully. */
+#ifdef _WIN32
+                SYSTEM_INFO si;
+                GetSystemInfo(&si);
+                unsigned hw_threads = static_cast<unsigned>(si.dwNumberOfProcessors);
+#else
+                long nproc = sysconf(_SC_NPROCESSORS_ONLN);
+                unsigned hw_threads = (nproc > 0) ? static_cast<unsigned>(nproc) : 0u;
+#endif
+                if (hw_threads > 0u && settings->thread_cnt > hw_threads) {
+                    (void)std::fprintf(stderr,
+                                       "warning: --threads %u capped to %u (hardware cores)\n",
+                                       settings->thread_cnt, hw_threads);
+                    settings->thread_cnt = hw_threads;
+                }
+            }
             break;
         case ARG_SUBSAMPLE:
             settings->subsample = parse_unsigned(optarg, ARG_SUBSAMPLE, argv[0]);
