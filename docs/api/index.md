@@ -221,8 +221,8 @@ typedef struct VmafPicture {
     unsigned  w[3], h[3];           /* per-plane dimensions */
     ptrdiff_t stride[3];            /* per-plane row stride in bytes */
     void     *data[3];              /* per-plane pixel buffer */
-    VmafRef  *ref;                  /* opaque refcount */
-    void     *priv;                 /* reserved; do not touch */
+    VmafRef  *ref;                  /* INTERNAL — opaque refcount; do not access */
+    void     *priv;                 /* INTERNAL — opaque private slot; do not access */
 } VmafPicture;
 ```
 
