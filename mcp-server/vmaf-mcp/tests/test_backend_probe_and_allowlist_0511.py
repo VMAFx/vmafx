@@ -183,3 +183,85 @@ def test_vmaf_mcp_allow_env_extends_defaults_not_replaces(
     assert Path("/workspace/python/test/resource").resolve() in roots, roots
     # Override entry also present (additive).
     assert extra.resolve() in roots, roots
+
+
+# ---------------------------------------------------------------------------
+# TOCTOU fix — _probe_backends_async must not launch N subprocesses when
+# N coroutines race on a cold cache (per-key asyncio.Lock guard).
+# ---------------------------------------------------------------------------
+
+
+def test_probe_backends_async_no_toctou_concurrent_waiters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TOCTOU regression: when N coroutines call _probe_backends_async
+    simultaneously against a cold cache, the underlying subprocess must
+    run exactly once, not N times.
+
+    Without the per-key asyncio.Lock all N coroutines can see a cache
+    miss before any of them populate it, then each dispatches a thread
+    and the subprocess is invoked N times (and the last writer wins).
+    """
+    fake = tmp_path / "vmaf_toctou"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    key = str(fake)
+    # Clear any state left by other tests (including the per-key lock so the
+    # test exercises the full cold-start code path).
+    srv._BACKEND_PROBE_CACHE.pop(key, None)
+    srv._BACKEND_PROBE_LOCKS.pop(key, None)
+    # Reset the dict-level lock so it is freshly created on the current loop.
+    srv._BACKEND_PROBE_LOCK_DICT_LOCK = None
+
+    call_count = {"n": 0}
+
+    class _SlowResult:
+        stdout = "--no_cuda    disable CUDA\n"
+        stderr = ""
+
+    def _slow_runner(*_args, **_kwargs):
+        # Simulate a moderately slow probe so the race window is visible when
+        # the lock is absent — in practice asyncio.to_thread is the boundary.
+        call_count["n"] += 1
+        return _SlowResult()
+
+    monkeypatch.setattr(srv.subprocess, "run", _slow_runner)
+
+    async def _run_concurrent() -> list[frozenset[str]]:
+        # Fire 8 concurrent coroutines at the same cold-cache key.
+        return await asyncio.gather(*[srv._probe_backends_async(fake) for _ in range(8)])
+
+    results = asyncio.run(_run_concurrent())
+
+    # Every coroutine must return the same frozenset.
+    assert len(set(results)) == 1, f"Inconsistent results across coroutines: {results}"
+    expected = frozenset({"cpu", "cuda"})
+    assert results[0] == expected, results[0]
+
+    # The subprocess must have been invoked exactly once.
+    assert call_count["n"] == 1, (
+        f"TOCTOU regression: subprocess invoked {call_count['n']} times; "
+        "expected 1. The per-key asyncio.Lock in _probe_backends_async is "
+        "missing or ineffective."
+    )
+
+
+def test_probe_backends_async_warm_cache_skips_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fast-path: if the cache is already warm, _probe_backends_async must
+    return immediately without acquiring any lock or spawning a thread."""
+    fake = tmp_path / "vmaf_warm"
+    key = str(fake)
+    expected = frozenset({"cpu", "sycl"})
+    srv._BACKEND_PROBE_CACHE[key] = expected
+
+    # subprocess.run must never be called on the warm path.
+    monkeypatch.setattr(
+        srv.subprocess,
+        "run",
+        lambda *_a, **_kw: (_ for _ in ()).throw(AssertionError("subprocess called on warm cache")),
+    )
+
+    result = asyncio.run(srv._probe_backends_async(fake))
+    assert result == expected
