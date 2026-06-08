@@ -45569,3 +45569,9 @@ wrapper-managed approach (no manual `prev_ref` assignment).
 no rebase impact: only `.github/workflows/ffmpeg-integration.yml` modified (dead
 job removed) and `docs/state.md` + `changelog.d/fixed/ffmpeg-vulkan-ci-job-removal.md`
 added. No production source, public header, or meson build files touched.
+
+## docs/phase4b9-container-only-publishing (2026-06-08)
+no rebase impact: docs-only change. `CLAUDE.md` §15 updated with a new publishing
+bullet; `docs/development/publishing.md` and `docs/adr/1102-*.md` added;
+`docs/adr/README.md` gets one new index row; `changelog.d/added/1102-*.md` added.
+No production source, public header, meson build files, or test files touched.

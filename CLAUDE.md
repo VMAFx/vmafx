@@ -357,6 +357,14 @@ Use `/prep-release` to dry-run locally before merging a release PR.
       build-flag soup. Host-side builds remain available
       (`build/`, `core/build-cuda`, `core/build-all`) but are
       no longer the default mental model.
+    - **Container is canonical for published artifacts (Phase 4b.9,
+      ADR-1102).** Release binaries, published container images
+      (`ghcr.io/vmafx/vmafx:*`), and CI benchmark/snapshot artifacts
+      used downstream must be produced inside the container. Host-side
+      builds are diagnostic-only (IDE/clangd, debugger, sanitizer
+      sweeps). Never publish a host-built binary as a release artifact.
+      See [docs/development/publishing.md](docs/development/publishing.md)
+      for rebuild trigger conditions and approved host-side use cases.
     - **Don't multiplex the same device across parallel jobs.** When
       a long-running job (CHUG re-extract, BVI-DVC sweep) is pinned to
       one device (e.g. CUDA / RTX 4090), schedule sibling parallel
