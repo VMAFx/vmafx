@@ -69,7 +69,7 @@ endif
 is_avx512_enabled = get_option('enable_avx512') == true
 is_nvtx_enabled = get_option('enable_nvtx') == true
 if is_avx512_enabled and not is_asm_enabled
-    warning('enable_avx512=true has no effect when enable_asm=false')
+    error('enable_avx512=true requires enable_asm=true; AVX-512 is an assembly path and cannot be compiled without it')
 endif
 if is_nvtx_enabled and host_machine.system() == 'windows'
     warning('NVTX is not supported on Windows, disabling.')
