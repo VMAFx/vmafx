@@ -33,7 +33,20 @@ sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
-from vmaf_train.models import LearnedFilter, NRMetric  # noqa: E402
+
+# Guard the pytorch_lightning → torchmetrics → torchvision import chain.
+# A stale venv with torchvision 0.26.0 against torch 2.12.0 raises
+# ``RuntimeError: operator torchvision::nms does not exist`` here (not an
+# ImportError), so a plain try/except ImportError is insufficient.  Upgrade:
+# ``pip install -U 'torchvision>=0.27.0,<0.28.0'`` to fix the venv.
+try:
+    from vmaf_train.models import LearnedFilter, NRMetric
+except Exception as _torchvision_err:  # pragma: no cover
+    sys.exit(
+        f"Failed to import vmaf_train.models: {_torchvision_err}\n"
+        "This is usually a torch/torchvision ABI mismatch.  "
+        "Run: pip install -U 'torchvision>=0.27.0,<0.28.0'"
+    )
 
 TINY_DIR = REPO_ROOT / "model" / "tiny"
 REGISTRY = TINY_DIR / "registry.json"

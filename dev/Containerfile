@@ -979,6 +979,12 @@ RUN python3.14 -m venv /opt/vmaf-venv \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir matplotlib \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/mcp-server/vmaf-mcp \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/ai \
+    # Pin torchvision to the ABI-compatible wheel for torch 2.12.x.
+    # Without this pin, pip may resolve torchvision 0.26.0 (built against
+    # torch 2.11) which raises ``RuntimeError: operator torchvision::nms does
+    # not exist`` when pytorch-lightning → torchmetrics eagerly imports
+    # torchvision at import time (see ai/pyproject.toml and ai/AGENTS.md).
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir 'torchvision>=0.27.0,<0.28.0' \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/tools/vmaf-tune
 
 ENV PATH=/opt/vmaf-venv/bin:${PATH}

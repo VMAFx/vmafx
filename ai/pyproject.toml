@@ -11,17 +11,16 @@ authors = [
 ]
 dependencies = [
   "torch>=2.12.0,<3.0",
-  # NOTE on torchvision: not a direct dep here, but pytorch-lightning
-  # (below) pulls torchmetrics, and torchmetrics 1.9+ eagerly imports
-  # `torchvision.transforms` for its arniqa metric.  The installed
-  # torchvision wheel must be ABI-compatible with the installed torch
-  # — torchvision 0.27.0 pairs with torch 2.12.0; an older 0.26.0
-  # wheel against torch 2.12.0 raises ``RuntimeError: operator
-  # torchvision::nms does not exist`` at import time.  When that ABI
-  # mismatch is detected, ``ai/tests/conftest.py`` skips the affected
-  # tests cleanly via ``requires_pytorch_lightning()`` instead of
-  # surfacing a hard collection error.  Fix on the deployment side is
-  # ``pip install -U torchvision`` to pull the matching wheel.
+  # torchvision must be pinned as a direct dep to enforce ABI compatibility with
+  # the torch floor declared above.  pytorch-lightning → torchmetrics 1.9+
+  # eagerly imports `torchvision.transforms` for its arniqa metric; an older
+  # torchvision 0.26.0 wheel against torch 2.12.0 raises
+  # ``RuntimeError: operator torchvision::nms does not exist`` at module-load
+  # time.  torchvision 0.27.0 is the wheel that pairs with torch 2.12.x.
+  # When that ABI mismatch is detected at run-time (e.g. in a pre-existing
+  # venv), ``ai/tests/conftest.py`` skips the affected tests cleanly via
+  # ``requires_pytorch_lightning()`` — see AGENTS.md invariant note.
+  "torchvision>=0.27.0,<0.28.0",
   # Lightning AI un-published the `lightning` distribution from PyPI on
   # 2026-04-30 (yesterday's PR #229 still resolved `lightning-2.6.1`;
   # today the name returns 404). The functionally-identical wheel is
