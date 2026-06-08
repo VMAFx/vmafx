@@ -688,14 +688,37 @@ adm_cm_aim_line_kernel(AdmBufferCuda buf, int h, int w, int top, int bottom, int
 
     int32_t shift_sub_block = shift_sub[blockIdx.z];
     int32_t accum_thread_reg[rows_per_thread] = {0};
+
+    /* Pre-load dis band pointers for a_val computation (mirrors DLM signal path). */
+    const int16_t *__restrict__ dh_aim = dis->band_h;
+    const int16_t *__restrict__ dv_aim = dis->band_v;
+    const int16_t *__restrict__ dd_aim = dis->band_d;
+
     for (int row = 0; row < rows_per_thread; ++row) {
-        /* Signal: CSF of decouple_a = rfactor * a_val. */
-        int16_t sa = 0;
+        /* Signal: rfactor * a_val where a_val = t_val - decouple_r.
+         * Use inline_s0_decouple_r + unshifted rfactor multiplication to match the
+         * signal scale expected by conclude_adm_cm (constant_offset calibrated for
+         * the unshifted product, not the >>15-pre-shifted inline_s0_csf_a result).
+         * Bug: the old path called inline_s0_csf_a which applies >>15 before abs(),
+         * producing a signal ~32768x smaller than the threshold, yielding near-zero
+         * AIM scores. Fix mirrors the DLM kernel pattern (lines 349-355). */
+        int32_t aim_signal = 0;
         if ((y + row) < end_row && x < end_col) {
-            sa = inline_s0_csf_a(ref, dis, (y + row) * src_stride + x, (int)blockIdx.z, i_rfactor,
-                                 adm_enhn_gain_limit);
+            int aim_idx = (y + row) * src_stride + x;
+            int16_t r_val =
+                inline_s0_decouple_r(ref, dis, aim_idx, (int)blockIdx.z, adm_enhn_gain_limit);
+            /* Select distorted band value for this theta (blockIdx.z = 0:h, 1:v, 2:d). */
+            int16_t t_val;
+            if (blockIdx.z == 0)
+                t_val = __ldg(&dh_aim[aim_idx]);
+            else if (blockIdx.z == 1)
+                t_val = __ldg(&dv_aim[aim_idx]);
+            else
+                t_val = __ldg(&dd_aim[aim_idx]);
+            int16_t a_val = t_val - r_val;
+            aim_signal = abs(int32_t(i_rfactor[blockIdx.z] * (uint32_t)a_val));
         }
-        int32_t val = abs((int32_t)sa) - (thr[row] << shift_sub_block);
+        int32_t val = aim_signal - (thr[row] << shift_sub_block);
         accum_thread_reg[row] = max(0, val);
     }
 
