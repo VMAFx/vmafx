@@ -17,6 +17,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -1234,6 +1235,17 @@ int main(int argc, char *argv[])
     // Preallocate picture pool to avoid allocation overhead
     video_input_info info;
     video_input_get_info(&vid_ref, &info);
+
+    /* Belt-and-suspenders guard: 2 * (thread_cnt + 1) + 1 wraps on
+     * unsigned arithmetic when thread_cnt >= (UINT_MAX - 3) / 2.
+     * Any value this large is nonsensical — reject early with a clear
+     * diagnostic rather than allocating a pathologically large pool or
+     * hitting an integer wrap that deadlocks the picture pool. */
+    if (c.thread_cnt > (UINT_MAX - 3U) / 2U) {
+        (void)fprintf(stderr, "--threads %u exceeds picture-pool capacity\n", c.thread_cnt);
+        ret = -1;
+        goto cleanup;
+    }
 
     VmafPictureConfiguration pic_cfg = {
         .pic_params =
