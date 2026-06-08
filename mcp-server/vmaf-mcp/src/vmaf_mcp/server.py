@@ -352,6 +352,24 @@ def _resolution_mismatch_warning(model: str, width: int, height: int) -> str | N
 # Cache of the host vmaf binary's advertised backends, indexed by absolute
 # binary path. Populated lazily on first `_probe_backends` call.
 _BACKEND_PROBE_CACHE: dict[str, frozenset[str]] = {}
+# Round-5 race fix (finding #7): guards _probe_backends_async against TOCTOU —
+# multiple concurrent coroutines all seeing a cache miss and each dispatching
+# a blocking subprocess to the thread pool.  A single asyncio.Lock is sufficient
+# because the event loop is single-threaded; the double-checked pattern inside
+# _probe_backends_async ensures only one subprocess fires per key.
+_BACKEND_PROBE_LOCK: asyncio.Lock | None = None
+
+
+def _get_backend_probe_lock() -> asyncio.Lock:
+    """Return (creating on first call) the module-level asyncio.Lock.
+
+    Deferred creation avoids constructing the Lock before the event loop
+    is running (e.g. during import-time module initialisation).
+    """
+    global _BACKEND_PROBE_LOCK  # noqa: PLW0603 — intentional module singleton
+    if _BACKEND_PROBE_LOCK is None:
+        _BACKEND_PROBE_LOCK = asyncio.Lock()
+    return _BACKEND_PROBE_LOCK
 
 
 def _probe_backends(vmaf: Path) -> frozenset[str]:
@@ -407,11 +425,24 @@ async def _probe_backends_async(vmaf: Path) -> frozenset[str]:
     delegates to a thread pool via ``asyncio.to_thread`` so that the
     blocking ``subprocess.run`` inside :func:`_probe_backends` does not
     stall the event loop (ADR-1023).
+
+    Round-5 race fix (finding #7): uses an asyncio.Lock + double-checked
+    pattern so concurrent coroutines that all see a cache miss do not each
+    dispatch a redundant subprocess call.  The inner re-check after lock
+    acquisition is the authoritative guard.
     """
     key = str(vmaf)
-    if key in _BACKEND_PROBE_CACHE:
-        return _BACKEND_PROBE_CACHE[key]
-    return await asyncio.to_thread(_probe_backends, vmaf)
+    # Fast path — no lock needed for a read after the value is published.
+    cached = _BACKEND_PROBE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    async with _get_backend_probe_lock():
+        # Re-check under lock: a sibling coroutine may have filled the cache
+        # while we were waiting.
+        cached = _BACKEND_PROBE_CACHE.get(key)
+        if cached is not None:
+            return cached
+        return await asyncio.to_thread(_probe_backends, vmaf)
 
 
 async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:

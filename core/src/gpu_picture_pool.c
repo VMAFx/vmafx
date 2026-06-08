@@ -24,6 +24,7 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -166,8 +167,13 @@ int vmaf_gpu_picture_pool_fetch(VmafGpuPicturePool *pool, VmafPicture *pic)
 
 #ifdef HAVE_NVTX
     char n[40];
-    static unsigned glob = 0;
-    snprintf(n, sizeof(n), "fetch idx %d %d", pic_idx, glob++);
+    /* Round-5 race fix: plain `static unsigned` incremented by concurrent
+     * worker threads is a C11 data race.  Use _Atomic with relaxed ordering —
+     * the NVTX label is a diagnostic annotation; we only need atomicity, not
+     * inter-thread ordering. */
+    static _Atomic unsigned glob = 0;
+    snprintf(n, sizeof(n), "fetch idx %d %u", pic_idx,
+             atomic_fetch_add_explicit(&glob, 1u, memory_order_relaxed));
     nvtxRangePushA(n);
 #endif
 

@@ -19,6 +19,7 @@
 #ifndef __VMAF_SRC_MODEL_H__
 #define __VMAF_SRC_MODEL_H__
 
+#include <pthread.h>
 #include <stdbool.h>
 
 #include "dict.h"
@@ -86,6 +87,10 @@ typedef struct VmafModel {
     struct svm_node *predict_nodes; // n_features + 1 entries
     char **predict_feature_names;   // n_features cached name strings
     void **predict_feature_vectors; // cached FeatureVector* pointers (opaque)
+    /* Round-5 race fix (finding #3): guards the three lazy-init blocks in
+     * predict_ensure_caches().  Initialized in vmaf_read_json_model(),
+     * destroyed in vmaf_model_destroy(). */
+    pthread_mutex_t predict_cache_lock;
 } VmafModel;
 
 typedef struct VmafModelCollection {

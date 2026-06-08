@@ -100,6 +100,11 @@ int vmaf_feature_collector_get_score(VmafFeatureCollector *feature_collector,
 FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *feature_collector,
                                            const char *feature_name);
 
+/* Round-5 race fix (finding #4): this inline must only be called while the
+ * caller holds the VmafFeatureCollector lock.  predict_load_feature_score
+ * previously called it after dropping the lock; that call site was moved to
+ * use vmaf_feature_collector_get_score (which acquires the lock internally)
+ * so the read of .written / .value is always protected.  See predict.c. */
 static inline int vmaf_feature_vector_get_score(FeatureVector *fv, double *score, unsigned index)
 {
     if (!fv || index >= fv->capacity)

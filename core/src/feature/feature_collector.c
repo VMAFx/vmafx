@@ -264,13 +264,15 @@ fail:
     return -ENOMEM;
 }
 
-int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
-{
-    if (!feature_collector)
-        return -EINVAL;
-    if (!model)
-        return -EINVAL;
+/* Round-5 race fix (findings #2 and #5): mount_model, unmount_model, and the
+ * destroy path all mutate/traverse feature_collector->models.  Factor the
+ * actual list manipulation into lock-free helpers and add lock acquire/release
+ * in every public entry point.  destroy() already holds the lock, so it calls
+ * the _unlocked variant directly. */
 
+static int feature_collector_mount_model_unlocked(VmafFeatureCollector *feature_collector,
+                                                  VmafModel *model)
+{
     VmafPredictModel *m = malloc(sizeof(VmafPredictModel));
     if (!m)
         return -ENOMEM;
@@ -290,13 +292,9 @@ int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, 
     return 0;
 }
 
-int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
+static int feature_collector_unmount_model_unlocked(VmafFeatureCollector *feature_collector,
+                                                    VmafModel *model)
 {
-    if (!feature_collector)
-        return -EINVAL;
-    if (!model)
-        return -EINVAL;
-
     VmafPredictModel *head = feature_collector->models;
     VmafPredictModel *prev = NULL;
 
@@ -317,6 +315,32 @@ int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector
     return -ENOENT;
 }
 
+int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
+{
+    if (!feature_collector)
+        return -EINVAL;
+    if (!model)
+        return -EINVAL;
+
+    pthread_mutex_lock(&(feature_collector->lock));
+    int err = feature_collector_mount_model_unlocked(feature_collector, model);
+    pthread_mutex_unlock(&(feature_collector->lock));
+    return err;
+}
+
+int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector, VmafModel *model)
+{
+    if (!feature_collector)
+        return -EINVAL;
+    if (!model)
+        return -EINVAL;
+
+    pthread_mutex_lock(&(feature_collector->lock));
+    int err = feature_collector_unmount_model_unlocked(feature_collector, model);
+    pthread_mutex_unlock(&(feature_collector->lock));
+    return err;
+}
+
 int vmaf_feature_collector_register_metadata(VmafFeatureCollector *feature_collector,
                                              VmafMetadataConfiguration metadata_cfg)
 {
@@ -327,12 +351,15 @@ int vmaf_feature_collector_register_metadata(VmafFeatureCollector *feature_colle
     if (!metadata_cfg.callback)
         return -EINVAL;
 
+    /* Round-5 race fix (finding #8): metadata->head list is read concurrently
+     * by feature_collector_dispatch_metadata inside vmaf_feature_collector_append
+     * (which holds the lock).  Hold the lock here so the append is not
+     * interleaved with an in-progress traversal. */
+    pthread_mutex_lock(&(feature_collector->lock));
     VmafCallbackList *metadata = feature_collector->metadata;
     int err = vmaf_metadata_append(metadata, metadata_cfg);
-    if (err)
-        return err;
-
-    return 0;
+    pthread_mutex_unlock(&(feature_collector->lock));
+    return err;
 }
 
 static FeatureVector *find_feature_vector(VmafFeatureCollector *fc, const char *feature_name)
@@ -401,9 +428,14 @@ static int feature_collector_ensure_vector(VmafFeatureCollector *feature_collect
 static void feature_collector_run_model_predict(VmafFeatureCollector *feature_collector,
                                                 unsigned picture_index, double *score)
 {
+    /* Round-5 race fix (finding #5): model_iter->next was read after
+     * lock-drop, allowing a concurrent unmount_model to free the node
+     * between the drop and the next-pointer dereference.  Snapshot ->next
+     * while the lock is still held at the top of each iteration. */
     VmafPredictModel *model_iter = feature_collector->models;
     while (model_iter) {
         VmafModel *model = model_iter->model;
+        VmafPredictModel *model_next = model_iter->next; /* read under lock */
 
         pthread_mutex_unlock(&(feature_collector->lock));
         int res =
@@ -416,7 +448,7 @@ static void feature_collector_run_model_predict(VmafFeatureCollector *feature_co
                                               true, 0);
             pthread_mutex_lock(&(feature_collector->lock));
         }
-        model_iter = model_iter->next;
+        model_iter = model_next;
     }
 }
 
@@ -541,8 +573,10 @@ void vmaf_feature_collector_destroy(VmafFeatureCollector *feature_collector)
     for (unsigned i = 0; i < feature_collector->cnt; i++) {
         feature_vector_destroy(feature_collector->feature_vector[i]);
     }
+    /* Lock is already held; use the unlocked variant to avoid self-deadlock. */
     while (feature_collector->models) {
-        vmaf_feature_collector_unmount_model(feature_collector, feature_collector->models->model);
+        (void)feature_collector_unmount_model_unlocked(feature_collector,
+                                                       feature_collector->models->model);
     }
     vmaf_metadata_destroy(feature_collector->metadata);
     free((void *)feature_collector->feature_vector);

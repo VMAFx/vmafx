@@ -598,6 +598,14 @@ static int vmaf_read_json_model(VmafModel **model, VmafModelConfig *cfg, json_st
     if (!m)
         return -ENOMEM;
     memset(m, 0, sizeof(*m));
+    /* Round-5 race fix (finding #3): initialize the per-model predict-cache
+     * mutex immediately after allocation so predict_ensure_caches() can
+     * protect the lazy-init blocks safely on concurrent calls. */
+    if (pthread_mutex_init(&m->predict_cache_lock, NULL) != 0) {
+        free(m);
+        *model = NULL;
+        return -ENOMEM;
+    }
 
     m->name = vmaf_model_generate_name(cfg);
     if (!m->name) {

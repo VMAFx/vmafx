@@ -116,7 +116,10 @@ static void *vmaf_thread_pool_runner(void *p)
 
     for (;;) {
         pthread_mutex_lock(&(pool->queue.lock));
-        /* Use while to guard against spurious wakeups per POSIX cond_wait semantics. */
+        /* Round-5 race fix (finding #6): POSIX allows pthread_cond_wait to
+         * return spuriously.  Use while instead of if so a spurious wakeup
+         * re-checks the predicate rather than falling through to fetch a NULL
+         * job. */
         while (!pool->queue.head && !pool->stop)
             pthread_cond_wait(&(pool->queue.empty), &(pool->queue.lock));
         if (pool->stop)

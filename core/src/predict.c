@@ -329,83 +329,109 @@ static int predict_resolve_feature_name(VmafModel *model, unsigned i)
     return 0;
 }
 
+/* Helpers called under model->predict_cache_lock — no lock operations inside. */
+
+static int predict_init_feature_names(VmafModel *model)
+{
+    assert(model->n_features > 0);
+    char **names = calloc(model->n_features, sizeof(*names));
+    if (!names)
+        return -ENOMEM;
+    model->predict_feature_names = names;
+    for (unsigned i = 0; i < model->n_features; i++) {
+        int err = predict_resolve_feature_name(model, i);
+        if (err) {
+            /* Roll back partial table so next call can retry from scratch.
+             * Without rollback, a non-NULL pointer with NULL holes bypasses the
+             * re-init branch and later dereferences NULL. Adversarial audit
+             * 2026-05-31. */
+            for (unsigned k = 0; k < i; k++)
+                free(model->predict_feature_names[k]);
+            free(model->predict_feature_names);
+            model->predict_feature_names = NULL;
+            return err;
+        }
+    }
+    return 0;
+}
+
+static int predict_init_feature_vectors(VmafModel *model, VmafFeatureCollector *fc)
+{
+    assert(model->n_features > 0);
+    model->predict_feature_vectors = (void **)calloc(model->n_features, sizeof(void *));
+    if (!model->predict_feature_vectors)
+        return -ENOMEM;
+    for (unsigned i = 0; i < model->n_features; i++) {
+        model->predict_feature_vectors[i] =
+            vmaf_feature_collector_find(fc, model->predict_feature_names[i]);
+    }
+    return 0;
+}
+
+/* Round-5 race fix (finding #3): serialise the three lazy-init blocks with
+ * model->predict_cache_lock (initialised in vmaf_read_json_model()).  The lock
+ * is held only during the one-time init, not during SVM inference. */
 static int predict_ensure_caches(VmafModel *model, VmafFeatureCollector *feature_collector)
 {
-    // Lazily build the cached feature name lookup table
-    if (!model->predict_feature_names) {
-        assert(model->n_features > 0);
-        model->predict_feature_names = (char **)calloc(model->n_features, sizeof(char *));
-        if (!model->predict_feature_names)
-            return -ENOMEM;
+    pthread_mutex_lock(&model->predict_cache_lock);
+    int err = 0;
 
-        for (unsigned i = 0; i < model->n_features; i++) {
-            int err = predict_resolve_feature_name(model, i);
-            if (err) {
-                /* Roll back the partial table so a retry path can rebuild
-                 * from scratch.  Without this rollback, the next call sees a
-                 * non-NULL predict_feature_names with NULL holes and skips
-                 * the re-init branch entirely — later reads dereference NULL.
-                 * Adversarial audit 2026-05-31. */
-                for (unsigned k = 0; k < i; k++)
-                    free(model->predict_feature_names[k]);
-                free(model->predict_feature_names);
-                model->predict_feature_names = NULL;
-                return err;
-            }
-        }
+    if (!model->predict_feature_names) {
+        err = predict_init_feature_names(model);
+        if (err)
+            goto unlock;
     }
 
-    // Use pre-allocated node array, or allocate on first call
     if (!model->predict_nodes) {
         model->predict_nodes = malloc(sizeof(struct svm_node) * (model->n_features + 1));
-        if (!model->predict_nodes)
-            return -ENOMEM;
-    }
-
-    // Lazily cache FeatureVector pointers for direct score access
-    if (!model->predict_feature_vectors) {
-        assert(model->n_features > 0);
-        model->predict_feature_vectors = (void **)calloc(model->n_features, sizeof(void *));
-        if (!model->predict_feature_vectors)
-            return -ENOMEM;
-        for (unsigned i = 0; i < model->n_features; i++) {
-            model->predict_feature_vectors[i] =
-                vmaf_feature_collector_find(feature_collector, model->predict_feature_names[i]);
+        if (!model->predict_nodes) {
+            err = -ENOMEM;
+            goto unlock;
         }
     }
 
-    return 0;
+    if (!model->predict_feature_vectors)
+        err = predict_init_feature_vectors(model, feature_collector);
+
+unlock:
+    pthread_mutex_unlock(&model->predict_cache_lock);
+    return err;
 }
 
 static int predict_load_feature_score(VmafModel *model, VmafFeatureCollector *feature_collector,
                                       unsigned i, unsigned index, bool propagate_metadata,
                                       double *feature_score)
 {
-    FeatureVector *fv = model->predict_feature_vectors[i];
-    int err;
+    /* Round-5 race fix (finding #4): this function is called from
+     * predict_build_svm_nodes -> vmaf_predict_score_at_index, which runs
+     * outside the feature_collector lock.  The previous direct calls to the
+     * unlocked vmaf_feature_vector_get_score inline raced with concurrent
+     * vmaf_feature_collector_append writes to .written / .value.
+     *
+     * Fix: use vmaf_feature_collector_get_score for all score reads here.
+     * It acquires the collector lock internally, so reads are always
+     * protected.  The cached FeatureVector* pointer in predict_feature_vectors
+     * is still used as a hint via vmaf_feature_collector_find on first miss,
+     * but score reads always go through the lock-safe public API.
+     *
+     * Netflix#755 / ADR-0154 semantics preserved: -EAGAIN is returned for a
+     * valid feature whose score has not yet been written (retroactive-write
+     * extractors), which is distinct from -EINVAL (feature not found at all). */
+    int err = vmaf_feature_collector_get_score(feature_collector, model->predict_feature_names[i],
+                                               feature_score, index);
 
-    if (fv) {
-        err = vmaf_feature_vector_get_score(fv, feature_score, index);
-    } else {
-        /* Netflix#755 / ADR-0154 — feature not yet in the collector.
-         * Try the normal lookup path; if the vector exists, cache it and
-         * delegate to vmaf_feature_vector_get_score (which already returns
-         * -EAGAIN for unwritten slots).  If the vector does not exist yet
-         * in the collector (find returns NULL), the extractor has been
-         * registered by vmaf_use_features_from_model but has not emitted
-         * a score for this index yet — return -EAGAIN, not -EINVAL.
-         * Several extractors (integer_motion motion2/motion3, five-frame-
-         * window variants) write frame-N scores retroactively when frame
-         * N+1 or N+2 arrives; callers may see a transient absence before
-         * flush. -EINVAL here would be indistinguishable from genuine
-         * programmer error. */
+    if (err == -EINVAL && !model->predict_feature_vectors[i]) {
+        /* Feature vector may not be registered yet — transient absence for
+         * retroactive-write extractors.  Probe whether it now exists so the
+         * pointer cache can be populated for future calls. */
         FeatureVector *found =
             vmaf_feature_collector_find(feature_collector, model->predict_feature_names[i]);
         if (found) {
             model->predict_feature_vectors[i] = found;
-            err = vmaf_feature_vector_get_score(found, feature_score, index);
+            /* Re-try through the lock-safe path. */
+            err = vmaf_feature_collector_get_score(
+                feature_collector, model->predict_feature_names[i], feature_score, index);
         } else {
-            /* Feature vector not yet registered in the collector — transient. */
             err = -EAGAIN;
         }
     }

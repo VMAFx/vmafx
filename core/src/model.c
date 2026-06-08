@@ -238,6 +238,9 @@ void vmaf_model_destroy(VmafModel *model)
         free((void *)model->predict_feature_names);
     }
     free((void *)model->predict_feature_vectors);
+    /* Round-5 race fix (finding #3): destroy the predict-cache mutex that was
+     * initialized in vmaf_read_json_model(). */
+    pthread_mutex_destroy(&model->predict_cache_lock);
     free(model);
 }
 
