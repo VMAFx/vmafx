@@ -15,9 +15,10 @@
  *  global uint64 counter. Bit-exact SSE with scalar reference.
  *
  *  HIP adaptation from CUDA:
- *  - Warp size is 64 on GCN/RDNA; the uint64 shuffle is split into two
- *    32-bit `__shfl_down` calls (HIP does not expose a native uint64
- *    shuffle). CUDA uses `__shfl_down_sync(0xffffffff, lo/hi, off)`.
+ *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
+ *    Runtime `warpSize` is used in all reduction loops. The uint64 shuffle
+ *    is split into two 32-bit `__shfl_down` calls (HIP does not expose a
+ *    native uint64 shuffle). CUDA uses `__shfl_down_sync(0xffffffff, lo/hi, off)`.
  *  - `VmafPicture` / `VmafCudaBuffer` types replaced by plain byte
  *    pointers + explicit stride/plane parameters — the HIP host copies
  *    the luma plane into a tightly-pitched device buffer at submit time,
@@ -35,8 +36,10 @@
 #define BLOCK_X 16
 #define BLOCK_Y 16
 
-/* HIP warp size is 64 on GCN/RDNA. */
-#define WARP_SIZE 64
+/* Runtime `warpSize` is used in all reduction loops and lane-detection
+ * expressions below so the same binary runs on wave64 (GCN/RDNA1) and
+ * wave32 (RDNA2+). This constant is kept only for documentation. */
+/* #define WARP_SIZE 64  -- replaced by runtime warpSize */
 
 extern "C" {
 
@@ -64,10 +67,11 @@ __global__ void calculate_psnr_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
         my_se = (uint64_t)(diff * diff);
     }
 
-    /* Warp-reduce my_se via two uint32 shuffles (HIP warp-64 convention). */
+    /* Warp-reduce my_se via two uint32 shuffles — uses runtime warpSize
+     * to handle wave64 (GCN/RDNA1) and wave32 (RDNA2+). */
     uint32_t lo = (uint32_t)my_se;
     uint32_t hi = (uint32_t)(my_se >> 32);
-    for (int off = WARP_SIZE / 2; off > 0; off >>= 1) {
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1) {
         const uint32_t tlo = __shfl_down(lo, off);
         const uint32_t thi = __shfl_down(hi, off);
         const uint64_t other = ((uint64_t)thi << 32) | tlo;
@@ -78,7 +82,7 @@ __global__ void calculate_psnr_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
     }
 
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
-    const unsigned lane = lid % WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
     if (lane == 0) {
         const uint64_t warp_sum = ((uint64_t)hi << 32) | lo;
         atomicAdd(sse, (unsigned long long)warp_sum);
@@ -112,7 +116,7 @@ __global__ void calculate_psnr_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
 
     uint32_t lo = (uint32_t)my_se;
     uint32_t hi = (uint32_t)(my_se >> 32);
-    for (int off = WARP_SIZE / 2; off > 0; off >>= 1) {
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1) {
         const uint32_t tlo = __shfl_down(lo, off);
         const uint32_t thi = __shfl_down(hi, off);
         const uint64_t other = ((uint64_t)thi << 32) | tlo;
@@ -123,7 +127,7 @@ __global__ void calculate_psnr_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
     }
 
     const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
-    const unsigned lane = lid % WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
     if (lane == 0) {
         const uint64_t warp_sum = ((uint64_t)hi << 32) | lo;
         atomicAdd(sse, (unsigned long long)warp_sum);

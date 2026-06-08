@@ -30,7 +30,9 @@
  *  motion_v2 references (see CUDA twin comments in motion_v2_score.cu).
  *
  *  HIP adaptation from CUDA:
- *  - Warp size 64 on GCN/RDNA; warp reduction uses `__shfl_down` (no mask).
+ *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
+ *    Runtime `warpSize` is used in reduction loops and lane detection.
+ *    Warp reduction uses `__shfl_down` (no mask).
  *  - `sad` accumulator is a plain `uint64_t *` (not VmafCudaBuffer).
  *  - TILE_PITCH = TILE_W + 1 retained (bank-conflict padding, same as CUDA).
  *  - Shift operations on int32/int64 are arithmetic (signed), matching
@@ -50,8 +52,10 @@ __constant__ int32_t mv2_filter_d[5] = {3571, 16004, 26386, 16004, 3571};
 /* Pad inner stride to break shared-memory bank conflicts (same as CUDA twin). */
 #define MV2_TILE_PITCH (MV2_TILE_W + 1)                /* 21 */
 
-/* HIP warp size on GCN/RDNA. */
-#define MV2_WARP_SIZE 64
+/* Runtime `warpSize` is used in all reduction loops and lane-detection
+ * expressions below so the same binary runs on wave64 (GCN/RDNA1) and
+ * wave32 (RDNA2+). This constant is kept only for documentation. */
+/* #define MV2_WARP_SIZE 64  -- replaced by runtime warpSize */
 
 __device__ __forceinline__ int mv2_mirror(int idx, int sup)
 {
@@ -124,10 +128,11 @@ __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
         abs_h = h < 0 ? -h : h;
     }
 
-    /* Warp reduction (64 lanes on GCN/RDNA). Lane 0 carries warp partial. */
-    for (int off = MV2_WARP_SIZE / 2; off > 0; off >>= 1)
+    /* Warp reduction — uses runtime warpSize to handle wave64 (GCN/RDNA1)
+     * and wave32 (RDNA2+). Lane 0 carries the warp partial. */
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         abs_h += __shfl_down(abs_h, off);
-    const unsigned lane = lid % MV2_WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
     if (lane == 0) {
         atomicAdd(reinterpret_cast<unsigned long long *>(sad),
                   static_cast<unsigned long long>(abs_h));
@@ -196,10 +201,11 @@ __launch_bounds__(MV2_BLOCK_X *MV2_BLOCK_Y, 8) __global__
         abs_h = h < 0 ? -h : h;
     }
 
-    /* Warp reduction (64 lanes on GCN/RDNA). */
-    for (int off = MV2_WARP_SIZE / 2; off > 0; off >>= 1)
+    /* Warp reduction — uses runtime warpSize to handle wave64 (GCN/RDNA1)
+     * and wave32 (RDNA2+). */
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         abs_h += __shfl_down(abs_h, off);
-    const unsigned lane = lid % MV2_WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
     if (lane == 0) {
         atomicAdd(reinterpret_cast<unsigned long long *>(sad),
                   static_cast<unsigned long long>(abs_h));

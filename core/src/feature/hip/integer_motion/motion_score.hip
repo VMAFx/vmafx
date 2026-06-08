@@ -22,7 +22,9 @@
  *  and matches the CPU integer_motion.c edge_8/edge_16 functions.
  *
  *  HIP adaptation from CUDA:
- *  - Warp size 64 on GCN/RDNA; warp reduction uses `__shfl_down` (no mask).
+ *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
+ *    Runtime `warpSize` is used in all reduction loops.
+ *    Warp reduction uses `__shfl_down` (no mask).
  *  - Blurred buffer is a plain `uint16_t *` device pointer (not VmafCudaBuffer).
  *  - SAD accumulator is a plain `uint64_t *` device pointer.
  *  - TILE_PITCH = TILE_W + 1 retained (bank-conflict padding, same as CUDA).
@@ -46,8 +48,10 @@ __constant__ uint16_t ms_filter_d[5] = {3571, 16004, 26386, 16004, 3571};
 /* Pad inner stride to break shared-memory bank conflicts (same as CUDA twin). */
 #define MS_TILE_PITCH (MS_TILE_W + 1)              /* 21 */
 
-/* HIP warp size on GCN/RDNA. */
-#define MS_WARP_SIZE 64
+/* Runtime `warpSize` is used in all reduction loops and lane-detection
+ * expressions below so the same binary runs on wave64 (GCN/RDNA1) and
+ * wave32 (RDNA2+). This constant is kept only for documentation. */
+/* #define MS_WARP_SIZE 64  -- replaced by runtime warpSize */
 
 /*
  * Skip-boundary mirror (reflect-101): matches CPU edge_8/edge_16.
@@ -135,11 +139,12 @@ __launch_bounds__(MS_BLOCK_X *MS_BLOCK_Y, 8) __global__
                                   (int)prev_blurred[y * blurred_pitch + x]);
     }
 
-    /* --- Phase 3: warp reduction (64 lanes on GCN/RDNA) --- */
-    for (int off = MS_WARP_SIZE / 2; off > 0; off >>= 1)
+    /* --- Phase 3: warp reduction — uses runtime warpSize to handle wave64
+     * (GCN/RDNA1) and wave32 (RDNA2+). --- */
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         abs_dist += __shfl_down(abs_dist, off);
 
-    const unsigned lane = lid % MS_WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
     if (lane == 0)
         atomicAdd(reinterpret_cast<unsigned long long *>(sad),
                   (unsigned long long)abs_dist);
@@ -208,10 +213,10 @@ __launch_bounds__(MS_BLOCK_X *MS_BLOCK_Y, 8) __global__
                                   (int)prev_blurred[y * blurred_pitch + x]);
     }
 
-    for (int off = MS_WARP_SIZE / 2; off > 0; off >>= 1)
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         abs_dist += __shfl_down(abs_dist, off);
 
-    const unsigned lane = lid % MS_WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
     if (lane == 0)
         atomicAdd(reinterpret_cast<unsigned long long *>(sad),
                   (unsigned long long)abs_dist);

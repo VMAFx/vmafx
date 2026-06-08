@@ -22,8 +22,10 @@
  *       (W-10) × (H-10). One triple (l, c, s) per block.
  *
  *  HIP adaptation from CUDA:
- *  - Warp size is 64 on GCN/RDNA. Shared-memory arrays are sized for
- *    64-lane warps: BLOCK_SIZE / WARP_SIZE = 128 / 64 = 2 slots.
+ *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
+ *    `warpSize` is read at runtime; shared-memory is sized for the minimum
+ *    warp size (32) so it fits the maximum warps per block on wave32:
+ *    BLOCK_SIZE / MIN_WARP_SIZE = 128 / 32 = 4 slots.
  *  - Raw pointer parameters instead of VmafCudaBuffer wrappers.
  *  - `__shfl_down` without mask (HIP convention).
  *  - No `reinterpret_cast` on VmafCudaBuffer — raw float* args.
@@ -41,9 +43,12 @@
 #define LPF_LEN 9
 #define LPF_HALF 4
 
-/* HIP warp size is 64 on GCN/RDNA. */
-#define WARP_SIZE        64
-#define WARPS_PER_BLOCK  (BLOCK_SIZE / WARP_SIZE)
+/* Minimum HIP warp size across supported targets (32 on RDNA2+, 64 on GCN/RDNA1).
+ * Shared memory is sized for the worst case (wave32 = most warps per block).
+ * The runtime `warpSize` device variable is used in reduction loops and lane
+ * detection so the same binary runs correctly on both wave32 and wave64. */
+#define MIN_WARP_SIZE    32
+#define WARPS_PER_BLOCK  (BLOCK_SIZE / MIN_WARP_SIZE)
 
 __device__ static const float G[K] = {
     0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
@@ -71,10 +76,11 @@ __device__ static inline int mirror_idx(int idx, int n)
 /* ms_ssim_warp_reduce is no longer called after the ADR-0990 double
  * promotion; the inline reduction loop in ms_ssim_vert_lcs operates
  * directly on double wl/wc/ws.  Kept as a dead helper to avoid a diff
- * hunk that would conflict during a Netflix upstream sync. */
+ * hunk that would conflict during a Netflix upstream sync.
+ * Updated to use runtime warpSize for wave32/wave64 portability. */
 __device__ __forceinline__ float ms_ssim_warp_reduce(float v)
 {
-    for (int off = WARP_SIZE / 2; off > 0; off >>= 1)
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         v += __shfl_down(v, off);
     return v;
 }
@@ -164,7 +170,8 @@ __global__ void ms_ssim_horiz(const float *__restrict__ ref_in,
  * `2.0 * ref_mu * cmp_mu` (double literal promoting the expression).
  * The warp and block reductions also run in double so accumulated
  * rounding over 33k pixels at scale 0 stays within the places=4 gate.
- * GCN/RDNA supports native fp64 __shfl_down; WARPS_PER_BLOCK=2 (warp=64).
+ * GCN/RDNA supports native fp64 __shfl_down; WARPS_PER_BLOCK=4 (wave32
+ * worst case — over-allocated on wave64 where only 2 slots are used).
  */
 __global__ void ms_ssim_vert_lcs(const float *__restrict__ h_ref_mu_buf,
                                   const float *__restrict__ h_cmp_mu_buf,
@@ -227,14 +234,14 @@ __global__ void ms_ssim_vert_lcs(const float *__restrict__ h_ref_mu_buf,
     __shared__ double s_s_warp[WARPS_PER_BLOCK];
 
     double wl = my_l, wc = my_c, ws = my_s;
-    for (int off = WARP_SIZE / 2; off > 0; off >>= 1) {
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1) {
         wl += __shfl_down(wl, off);
         wc += __shfl_down(wc, off);
         ws += __shfl_down(ws, off);
     }
 
-    const unsigned lane    = lid % WARP_SIZE;
-    const unsigned warp_id = lid / WARP_SIZE;
+    const unsigned lane    = lid % (unsigned)warpSize;
+    const unsigned warp_id = lid / (unsigned)warpSize;
     if (lane == 0) {
         s_l_warp[warp_id] = wl;
         s_c_warp[warp_id] = wc;
@@ -244,8 +251,8 @@ __global__ void ms_ssim_vert_lcs(const float *__restrict__ h_ref_mu_buf,
 
     if (lid == 0) {
         double bl = 0.0, bc = 0.0, bs = 0.0;
-#pragma unroll
-        for (int i = 0; i < WARPS_PER_BLOCK; i++) {
+        const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
+        for (int i = 0; i < nwarps; i++) {
             bl += s_l_warp[i];
             bc += s_c_warp[i];
             bs += s_s_warp[i];

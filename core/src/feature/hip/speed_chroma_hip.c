@@ -13,12 +13,13 @@
  *  CPU: filter_and_downscale, 25×25 eigendecomp, QR factorize, Qt×B.
  *
  *  HIP adaptation vs CUDA twin:
- *  - Wavefront size 64 (GCN/RDNA); covariance kernel launched with
- *    256 threads and 256*sizeof(double) shared memory for the tree
- *    reduction.
- *  - Solve kernel: one wavefront (64 threads) per column;
- *    threads 25-63 idle; __builtin_amdgcn_wave_barrier() replaces
- *    __syncwarp().
+ *  - Wavefront size varies: 64 on GCN/RDNA1, 32 on RDNA2+.  The solve
+ *    kernel is launched with blockDim.x = device wavefront size (queried
+ *    via hipDeviceProp_t.warpSize at init time, stored in state->solve_warp).
+ *    Threads >= SP_ELEMENTS are idle (25 active out of 32 or 64).
+ *    __builtin_amdgcn_wave_barrier() replaces __syncwarp().
+ *  - Covariance kernel launched with 256 threads and 256*sizeof(double)
+ *    shared memory for the tree reduction (not warp-size dependent).
  *  - hipMalloc/hipFree/hipMemcpyAsync for device memory.
  *  - hipMemAllocHost replaced by hipHostMalloc for pinned host memory.
  *  - hipModuleLoadData / hipModuleLaunchKernel for kernel dispatch.
@@ -58,7 +59,10 @@ extern const unsigned int speed_score_hsaco_len;
 #define SC_MEANS_BLOCK (256u)
 #define SC_INDTERM_BLOCK (256u)
 #define SC_SCORE_BLOCK (256u)
-#define SC_SOLVE_WARP (64u) /* HIP wavefront */
+/* SC_SOLVE_WARP is no longer a compile-time constant; the actual wavefront
+ * size is queried at init time from hipDeviceProp_t.warpSize and stored in
+ * SpeedChromaHipState.solve_warp.  This default covers GCN/RDNA1. */
+#define SC_SOLVE_WARP_DEFAULT (64u)
 
 #define SC_DEFAULT_SIGMA_NN (0.29)
 #define SC_DEFAULT_MAX_VAL (1000.0)
@@ -80,6 +84,7 @@ typedef struct SpeedChromaHipState {
     hipFunction_t func_solve;
     hipFunction_t func_score;
     hipStream_t stream;
+    unsigned solve_warp; /* actual device wavefront size (32 or 64) */
 #endif
 
     SpeedInternalDimensions dim;
@@ -443,10 +448,11 @@ static int run_cpu_linalg_sc(SpeedChromaHipState *s, float *h_indterm, void *d_s
     if (rc != hipSuccess)
         return hip_rc(rc);
 
-    /* K4: backward substitution — one wavefront (64 threads) per column. */
+    /* K4: backward substitution — one wavefront per column.
+     * blockDim.x = s->solve_warp (32 on RDNA2+, 64 on GCN/RDNA1). */
     const uint32_t u_nb = (uint32_t)nb;
     void *args[] = {&s->d_R, &d_sol, &u_nb};
-    rc = hipModuleLaunchKernel(s->func_solve, u_nb, 1u, 1u, SC_SOLVE_WARP, 1u, 1u, 0u, s->stream,
+    rc = hipModuleLaunchKernel(s->func_solve, u_nb, 1u, 1u, s->solve_warp, 1u, 1u, 0u, s->stream,
                                args, NULL);
     if (rc != hipSuccess)
         return hip_rc(rc);
@@ -615,6 +621,17 @@ static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_f
     if (err != hipSuccess) {
         err = -EIO;
         goto free_module;
+    }
+
+    /* Query actual wavefront size — 64 on GCN/RDNA1, 32 on RDNA2+.
+     * Used as blockDim.x for speed_solve_hip_kernel. */
+    {
+        int dev = 0;
+        hipDeviceProp_t prop;
+        (void)hipGetDevice(&dev);
+        s->solve_warp = (hipGetDeviceProperties(&prop, dev) == hipSuccess) ?
+                            (unsigned)prop.warpSize :
+                            SC_SOLVE_WARP_DEFAULT;
     }
 
     err = sc_hip_bufs_alloc(s);

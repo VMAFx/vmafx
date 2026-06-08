@@ -20,10 +20,12 @@
  *  the places=4 contract.
  *
  *  HIP adaptation notes vs. the CUDA twin:
- *  - Warp size is 64 on GCN/RDNA. `__shfl_down` used without mask
- *    (HIP convention; CUDA uses `__shfl_down_sync(0xffffffff, ...)`).
- *  - Shared-memory warp-partial slots are sized for 64-lane warps
- *    (FADM_BX * FADM_BY / FADM_WARP_SIZE = 256/64 = 4 slots).
+ *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
+ *    `__shfl_down` used without mask (HIP convention; CUDA uses
+ *    `__shfl_down_sync(0xffffffff, ...)`). `warpSize` is read at runtime.
+ *  - Shared-memory warp-partial slots are sized for the minimum warp size
+ *    (32) so the array fits the maximum warps per block on wave32 hardware
+ *    (FADM_BX * FADM_BY / FADM_MIN_WARP_SIZE = 256/32 = 8 slots).
  *  - The `precise{}` decouple semantics (CUDA `--fmad=false` parenthesis
  *    trick) translate 1-for-1; HIP `hipcc` does not auto-enable FMA
  *    across parentheses by default, so the explicit parenthesisation
@@ -40,9 +42,12 @@
 #define FADM_NUM_BANDS 3
 #define FADM_ACCUM_SLOTS 6
 
-/* HIP warp size is 64 on GCN/RDNA (vs. 32 on CUDA). */
-#define FADM_WARP_SIZE 64
-#define FADM_WARPS_PER_BLOCK (FADM_BX * FADM_BY / FADM_WARP_SIZE)
+/* Minimum HIP warp size across supported targets (32 on RDNA2+, 64 on GCN/RDNA1).
+ * Shared memory is sized for the worst case (wave32 = most warps per block).
+ * The runtime `warpSize` device variable is used in reduction loops and lane
+ * detection so the same binary runs correctly on both wave32 and wave64. */
+#define FADM_MIN_WARP_SIZE 32
+#define FADM_WARPS_PER_BLOCK (FADM_BX * FADM_BY / FADM_MIN_WARP_SIZE)
 
 #define FADM_LO0 (0.482962913144690f)
 #define FADM_LO1 (0.836516303737469f)
@@ -99,10 +104,11 @@ __device__ static __forceinline__ float fadm_read_band_a(const float *band_buf, 
     return band_buf[y * buf_stride + x];
 }
 
-/* HIP warp-level reduction using __shfl_down (no mask needed on HIP). */
+/* HIP warp-level reduction using __shfl_down (no mask needed on HIP).
+ * Uses runtime `warpSize` to handle wave64 (GCN/RDNA1) and wave32 (RDNA2+). */
 __device__ static __forceinline__ float fadm_warp_reduce(float v)
 {
-    for (int off = FADM_WARP_SIZE / 2; off > 0; off >>= 1)
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         v += __shfl_down(v, off);
     return v;
 }
@@ -284,8 +290,8 @@ __global__ void float_adm_decouple_csf(const float *ref_band, const float *dis_b
  *
  * Output: 6 floats per WG: [csf_h][csf_v][csf_d][cm_h][cm_v][cm_d].
  *
- * Warp reduction uses FADM_WARP_SIZE=64 (GCN/RDNA) — the shared-mem
- * warp-partial array has FADM_WARPS_PER_BLOCK=4 slots (vs. 8 on CUDA).
+ * Warp reduction uses runtime `warpSize` — the shared-mem warp-partial
+ * array has FADM_WARPS_PER_BLOCK=8 slots (sized for wave32 worst case).
  * ------------------------------------------------------------------ */
 __device__ static __forceinline__ float fadm_read_csf_f_at(const float *csf_f_buf, int band, int y,
                                                            int x, int half_w, int half_h,
@@ -423,8 +429,8 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
     __shared__ float s_cm[FADM_WARPS_PER_BLOCK];
     const float wn_csf = fadm_warp_reduce(local_csf_sum);
     const float wn_cm = fadm_warp_reduce(local_cm_sum);
-    const unsigned lane = lid % FADM_WARP_SIZE;
-    const unsigned warp_id = lid / FADM_WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
+    const unsigned warp_id = lid / (unsigned)warpSize;
     if (lane == 0u) {
         s_csf[warp_id] = wn_csf;
         s_cm[warp_id] = wn_cm;
@@ -433,8 +439,8 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
     if (lid == 0u) {
         float total_csf = 0.0f;
         float total_cm = 0.0f;
-#pragma unroll
-        for (unsigned i = 0u; i < FADM_WARPS_PER_BLOCK; i++) {
+        const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
+        for (int i = 0; i < nwarps; i++) {
             total_csf += s_csf[i];
             total_cm += s_cm[i];
         }

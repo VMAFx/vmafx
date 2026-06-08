@@ -12,8 +12,10 @@
  *  applies `45 - 20 * log10(mean_dE)`.
  *
  *  HIP adaptation from CUDA:
- *  - Warp size 64 on GCN/RDNA; `__shfl_down` (no mask argument).
- *  - `s_warp_sums` shared array sized BLOCK_X * BLOCK_Y / WARP_SIZE = 4.
+ *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
+ *    `warpSize` is read at runtime; `__shfl_down` (no mask argument).
+ *  - `s_warp_sums` shared array sized BLOCK_X * BLOCK_Y / CIEDE_MIN_WARP_SIZE
+ *    = 256/32 = 8 (worst case for wave32, safely over-allocated for wave64).
  *  - `partials` is a plain `float *` (not VmafCudaBuffer).
  *  - No `cuda_helper.cuh`; include `<hip/hip_runtime.h>` directly.
  *
@@ -26,10 +28,13 @@
 
 #define BLOCK_X 16
 #define BLOCK_Y 16
-/* HIP warp size on GCN/RDNA. */
-#define CIEDE_WARP_SIZE 64
-/* Warps per block = 256 / 64 = 4. */
-#define CIEDE_WARPS_PER_BLOCK (BLOCK_X * BLOCK_Y / CIEDE_WARP_SIZE)
+/* Minimum HIP warp size across supported targets (32 on RDNA2+, 64 on GCN/RDNA1).
+ * Shared memory is sized for the worst case (wave32 = most warps per block).
+ * The runtime `warpSize` device variable is used in reduction loops and lane
+ * detection so the same binary runs correctly on both wave32 and wave64. */
+#define CIEDE_MIN_WARP_SIZE 32
+/* Warps per block = 256 / 32 = 8 (wave32 worst case). */
+#define CIEDE_WARPS_PER_BLOCK (BLOCK_X * BLOCK_Y / CIEDE_MIN_WARP_SIZE)
 
 __device__ __forceinline__ float pow_pos_2_4(float x)
 {
@@ -169,8 +174,9 @@ __device__ __forceinline__ float ciede2000_dev(float l1, float a1, float b1, flo
 
 __device__ __forceinline__ float ciede_warp_reduce(float v)
 {
-    /* HIP __shfl_down — mask not needed; GCN/RDNA warp is 64 lanes. */
-    for (int off = CIEDE_WARP_SIZE / 2; off > 0; off >>= 1)
+    /* HIP __shfl_down — mask not needed. Uses runtime warpSize to handle
+     * wave64 (GCN/RDNA1, warpSize=64) and wave32 (RDNA2+, warpSize=32). */
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         v += __shfl_down(v, off);
     return v;
 }
@@ -216,14 +222,15 @@ __global__ void calculate_ciede_kernel_8bpc(
      * (ADR-0187). Warp-64 reduction then block aggregation. */
     __shared__ float s_warp_sums[CIEDE_WARPS_PER_BLOCK];
     float warp_sum = ciede_warp_reduce(my_de);
-    const unsigned lane = lid % CIEDE_WARP_SIZE;
-    const unsigned warp_id = lid / CIEDE_WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
+    const unsigned warp_id = lid / (unsigned)warpSize;
     if (lane == 0)
         s_warp_sums[warp_id] = warp_sum;
     __syncthreads();
     if (lid == 0) {
         float block_sum = 0.0f;
-        for (int i = 0; i < CIEDE_WARPS_PER_BLOCK; i++)
+        const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
+        for (int i = 0; i < nwarps; i++)
             block_sum += s_warp_sums[i];
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
         partials[block_idx] = block_sum;
@@ -266,14 +273,15 @@ __global__ void calculate_ciede_kernel_16bpc(
 
     __shared__ float s_warp_sums[CIEDE_WARPS_PER_BLOCK];
     float warp_sum = ciede_warp_reduce(my_de);
-    const unsigned lane = lid % CIEDE_WARP_SIZE;
-    const unsigned warp_id = lid / CIEDE_WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
+    const unsigned warp_id = lid / (unsigned)warpSize;
     if (lane == 0)
         s_warp_sums[warp_id] = warp_sum;
     __syncthreads();
     if (lid == 0) {
         float block_sum = 0.0f;
-        for (int i = 0; i < CIEDE_WARPS_PER_BLOCK; i++)
+        const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
+        for (int i = 0; i < nwarps; i++)
             block_sum += s_warp_sums[i];
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
         partials[block_idx] = block_sum;

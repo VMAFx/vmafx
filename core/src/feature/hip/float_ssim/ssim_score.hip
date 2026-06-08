@@ -20,9 +20,11 @@
  *  Host accumulates partials in double, divides by (W-10)*(H-10).
  *
  *  HIP adaptation from CUDA:
- *  - Warp size is 64 on GCN/RDNA. The shared-memory array for warp
- *    partial sums in Pass 2 is sized for 64-lane warps:
- *    BLOCK_SIZE / WARP_SIZE = 128 / 64 = 2 slots.
+ *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
+ *    `warpSize` is read at runtime so the same binary runs on both.
+ *    Shared-memory is sized for the minimum warp size (32) so it fits
+ *    the maximum warps-per-block on wave32 hardware:
+ *    BLOCK_SIZE / SSIM_MIN_WARP_SIZE = 128 / 32 = 4 slots.
  *  - VmafCudaBuffer / VmafPicture replaced by raw pointer parameters.
  *  - `__shfl_down` without mask (HIP convention).
  *
@@ -38,9 +40,12 @@
 #define SSIM_K  11
 #define SSIM_BLOCK_SIZE (SSIM_BX * SSIM_BY)
 
-/* HIP warp size is 64 on GCN/RDNA. */
-#define SSIM_WARP_SIZE        64
-#define SSIM_WARPS_PER_BLOCK  (SSIM_BLOCK_SIZE / SSIM_WARP_SIZE)
+/* Minimum HIP warp size across supported targets (32 on RDNA2+, 64 on GCN/RDNA1).
+ * Shared memory is sized for the worst case (wave32 = most warps per block).
+ * The runtime `warpSize` device variable is used in reduction loops and lane
+ * detection so the same binary runs correctly on both wave32 and wave64. */
+#define SSIM_MIN_WARP_SIZE    32
+#define SSIM_WARPS_PER_BLOCK  (SSIM_BLOCK_SIZE / SSIM_MIN_WARP_SIZE)
 
 /* 11-tap Gaussian kernel (same constants as the CUDA twin). */
 __device__ static const float SSIM_G[SSIM_K] = {
@@ -50,7 +55,7 @@ __device__ static const float SSIM_G[SSIM_K] = {
 
 __device__ __forceinline__ float ssim_warp_reduce(float v)
 {
-    for (int off = SSIM_WARP_SIZE / 2; off > 0; off >>= 1)
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         v += __shfl_down(v, off);
     return v;
 }
@@ -210,16 +215,16 @@ __global__ void calculate_ssim_hip_vert_combine(const float *__restrict__ h_ref_
     /* Per-block tree reduction into shared warp partials. */
     __shared__ float s_warp_sums[SSIM_WARPS_PER_BLOCK];
     const float warp_sum = ssim_warp_reduce(my_ssim);
-    const unsigned lane    = lid % SSIM_WARP_SIZE;
-    const unsigned warp_id = lid / SSIM_WARP_SIZE;
+    const unsigned lane    = lid % (unsigned)warpSize;
+    const unsigned warp_id = lid / (unsigned)warpSize;
     if (lane == 0)
         s_warp_sums[warp_id] = warp_sum;
     __syncthreads();
 
     if (lid == 0) {
         float block_sum = 0.0f;
-#pragma unroll
-        for (int i = 0; i < SSIM_WARPS_PER_BLOCK; i++)
+        const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
+        for (int i = 0; i < nwarps; i++)
             block_sum += s_warp_sums[i];
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
         partials[block_idx] = block_sum;

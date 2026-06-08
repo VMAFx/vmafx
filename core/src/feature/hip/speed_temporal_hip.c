@@ -48,7 +48,10 @@ extern const unsigned int speed_score_hsaco_len;
 #define ST_MEANS_BLOCK (256u)
 #define ST_INDTERM_BLOCK (256u)
 #define ST_SCORE_BLOCK (256u)
-#define ST_SOLVE_WARP (64u)
+/* ST_SOLVE_WARP is no longer a compile-time constant; the actual wavefront
+ * size is queried at init time from hipDeviceProp_t.warpSize and stored in
+ * SpeedTemporalHipState.solve_warp.  This default covers GCN/RDNA1. */
+#define ST_SOLVE_WARP_DEFAULT (64u)
 
 #define ST_DEFAULT_SIGMA_NN (0.29)
 #define ST_DEFAULT_MAX_VAL (1000.0)
@@ -70,6 +73,7 @@ typedef struct SpeedTemporalHipState {
     hipFunction_t func_solve;
     hipFunction_t func_score;
     hipStream_t stream;
+    unsigned solve_warp; /* actual device wavefront size (32 or 64) */
 #endif
 
     SpeedInternalDimensions dim;
@@ -430,9 +434,11 @@ static int run_cpu_linalg_st(SpeedTemporalHipState *s, float *h_indterm, void *d
     if (rc != hipSuccess)
         return hip_rc_st(rc);
 
+    /* K4: backward substitution — one wavefront per column.
+     * blockDim.x = s->solve_warp (32 on RDNA2+, 64 on GCN/RDNA1). */
     const uint32_t u_nb = (uint32_t)nb;
     void *args[] = {&s->d_R, &d_sol, &u_nb};
-    rc = hipModuleLaunchKernel(s->func_solve, u_nb, 1u, 1u, ST_SOLVE_WARP, 1u, 1u, 0u, s->stream,
+    rc = hipModuleLaunchKernel(s->func_solve, u_nb, 1u, 1u, s->solve_warp, 1u, 1u, 0u, s->stream,
                                args, NULL);
     if (rc != hipSuccess)
         return hip_rc_st(rc);
@@ -558,6 +564,17 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
     if (hipStreamCreate(&s->stream) != hipSuccess) {
         err = -EIO;
         goto free_module;
+    }
+
+    /* Query actual wavefront size — 64 on GCN/RDNA1, 32 on RDNA2+.
+     * Used as blockDim.x for speed_solve_hip_kernel. */
+    {
+        int dev = 0;
+        hipDeviceProp_t prop;
+        (void)hipGetDevice(&dev);
+        s->solve_warp = (hipGetDeviceProperties(&prop, dev) == hipSuccess) ?
+                            (unsigned)prop.warpSize :
+                            ST_SOLVE_WARP_DEFAULT;
     }
 
     err = st_hip_bufs_alloc(s);

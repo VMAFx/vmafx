@@ -15,12 +15,14 @@
  *  work at 28–312 tiles per frame).
  *
  *  HIP adaptation from CUDA twin:
- *  - Warp size is 64 on GCN/RDNA (vs 32 in CUDA); shared-memory warp
- *    partial arrays are sized accordingly.
+ *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
+ *    The `speed_solve_hip_kernel` is launched with blockDim.x = wavefront
+ *    size (HIP_WARP_SIZE) by the host; on RDNA2+ the host must query
+ *    wavefront size at runtime and pass 32 instead of 64.
  *  - `__shfl_down` used without mask (HIP convention).
  *  - `extern "C"` linkage preserved for Module API lookup.
  *  - `__syncwarp()` replaced by `__builtin_amdgcn_wave_barrier()` inside
- *    the solve kernel (wavefront size = 64).
+ *    the solve kernel (one wavefront per column).
  *  - Entry-point names are `speed_*_hip_kernel` (vs `speed_*_kernel` in
  *    CUDA) so host-side hipModuleGetFunction calls resolve correctly.
  *
@@ -38,7 +40,13 @@
 
 #define SP_BLOCK_SIZE 5u
 #define SP_ELEMENTS   25u   /* SP_BLOCK_SIZE * SP_BLOCK_SIZE */
-#define HIP_WARP_SIZE 64u   /* GCN/RDNA wavefront */
+/* HIP_WARP_SIZE is the launch-time blockDim.x passed by the host to
+ * speed_solve_hip_kernel.  It must equal the device's actual wavefront
+ * size (64 on GCN/RDNA1, 32 on RDNA2+).  The host queries this via
+ * hipDeviceGetAttribute(HIP_DEVICE_ATTRIBUTE_WARP_SIZE) before launch.
+ * The kernel guard `lane >= SP_ELEMENTS` ensures correctness for both
+ * sizes (25 active threads out of 32 or 64 per wavefront). */
+#define HIP_WARP_SIZE 64u   /* default for GCN/RDNA1; host overrides on RDNA2+ */
 
 /* ------------------------------------------------------------------ */
 /* Kernel 1: per-tile means[SP_ELEMENTS × num_blocks]                 */
@@ -169,19 +177,21 @@ extern "C" __global__ void speed_indterm_hip_kernel(
 /* Kernel 4: backward substitution (one wavefront per column)         */
 /* ------------------------------------------------------------------ */
 /*
- * HIP adaptation: wavefront size is 64 (GCN/RDNA); threads 25-63 are
- * idle per wavefront.  Serial dependency between rows is enforced via
+ * HIP adaptation: wavefront size is 64 on GCN/RDNA1 or 32 on RDNA2+.
+ * Threads >= SP_ELEMENTS are idle per wavefront (25 active out of 32/64).
+ * Serial dependency between rows is enforced via
  * __builtin_amdgcn_wave_barrier() — the AMD equivalent of __syncwarp().
  * Layout: num_blocks columns distributed across wavefronts.
- * blockDim.x = HIP_WARP_SIZE (64), gridDim.x = ceil(num_blocks/1).
+ * blockDim.x = device wavefront size (host queries and passes at launch),
+ * gridDim.x = num_blocks.
  */
 extern "C" __global__ void speed_solve_hip_kernel(
     const float *__restrict__ R,
     float *__restrict__ rhs,
     uint32_t num_blocks)
 {
-    /* Each wavefront (64 threads) processes one column.  The grid is
-     * launched as (num_blocks × 1 × 1) blocks of 64 threads. */
+    /* Each wavefront processes one column.  The grid is launched as
+     * (num_blocks × 1 × 1) blocks of warpSize threads. */
     const uint32_t col = blockIdx.x;
     const uint32_t lane = threadIdx.x;
 

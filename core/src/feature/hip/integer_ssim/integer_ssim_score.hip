@@ -18,9 +18,10 @@
  *  Host accumulates partials in double, divides by (W-10)*(H-10).
  *
  *  HIP adaptations from CUDA:
- *  - Warp size is 64 on GCN/RDNA. Shared-memory array for warp partial
- *    sums in Pass 2 is sized for 64-lane warps:
- *    BLOCK_SIZE / WARP_SIZE = 128 / 64 = 2 slots.
+ *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
+ *    `warpSize` is read at runtime. Shared-memory array for warp partial
+ *    sums in Pass 2 is sized for the minimum warp size (32):
+ *    BLOCK_SIZE / ISSIM_MIN_WARP_SIZE = 128 / 32 = 4 slots.
  *  - VmafCudaBuffer / VmafPicture replaced by raw pointer parameters.
  *  - `__shfl_down` without mask (HIP convention).
  *  - Pictures arrive as CPU VmafPictures; luma planes are copied HtoD
@@ -39,9 +40,12 @@
 #define ISSIM_K          11
 #define ISSIM_BLOCK_SIZE (ISSIM_BX * ISSIM_BY)
 
-/* HIP warp size is 64 on GCN/RDNA. */
-#define ISSIM_WARP_SIZE       64
-#define ISSIM_WARPS_PER_BLOCK (ISSIM_BLOCK_SIZE / ISSIM_WARP_SIZE)
+/* Minimum HIP warp size across supported targets (32 on RDNA2+, 64 on GCN/RDNA1).
+ * Shared memory is sized for the worst case (wave32 = most warps per block).
+ * The runtime `warpSize` device variable is used in reduction loops and lane
+ * detection so the same binary runs correctly on both wave32 and wave64. */
+#define ISSIM_MIN_WARP_SIZE    32
+#define ISSIM_WARPS_PER_BLOCK (ISSIM_BLOCK_SIZE / ISSIM_MIN_WARP_SIZE)
 
 /* 11-tap Gaussian kernel — same coefficients as the CUDA twin and
  * float_ssim_hip (ssim_score.hip). */
@@ -52,7 +56,7 @@ __device__ static const float ISSIM_G[ISSIM_K] = {
 
 __device__ __forceinline__ float issim_warp_reduce(float v)
 {
-    for (int off = ISSIM_WARP_SIZE / 2; off > 0; off >>= 1)
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         v += __shfl_down(v, off);
     return v;
 }
@@ -213,16 +217,16 @@ calculate_integer_ssim_hip_vert_combine(const float *__restrict__ h_ref_mu,
     /* Per-block tree reduction into shared warp partials. */
     __shared__ float s_warp_sums[ISSIM_WARPS_PER_BLOCK];
     const float warp_sum = issim_warp_reduce(my_ssim);
-    const unsigned lane    = lid % ISSIM_WARP_SIZE;
-    const unsigned warp_id = lid / ISSIM_WARP_SIZE;
+    const unsigned lane    = lid % (unsigned)warpSize;
+    const unsigned warp_id = lid / (unsigned)warpSize;
     if (lane == 0)
         s_warp_sums[warp_id] = warp_sum;
     __syncthreads();
 
     if (lid == 0) {
         float block_sum = 0.0f;
-#pragma unroll
-        for (int i = 0; i < ISSIM_WARPS_PER_BLOCK; i++)
+        const int nwarps = (int)(blockDim.x * blockDim.y) / (int)warpSize;
+        for (int i = 0; i < nwarps; i++)
             block_sum += s_warp_sums[i];
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
         partials[block_idx] = block_sum;
