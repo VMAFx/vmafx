@@ -206,7 +206,7 @@ int vmaf_dnn_session_run_plane16(VmafDnnSession *sess, const uint16_t *in, size_
 {
     if (!sess || !in || !out)
         return -EINVAL;
-    if (bpc < 9 || bpc > 16)
+    if (bpc < DNN_MIN_BIT_DEPTH || bpc > 16)
         return -EINVAL;
     if (!sess->in_buf || !sess->out_buf || sess->w == 0 || sess->h == 0)
         return -ENOTSUP;

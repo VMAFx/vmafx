@@ -24,6 +24,13 @@ extern "C" {
  *  use case genuinely needs a larger envelope. */
 #define VMAF_DNN_DEFAULT_MAX_BYTES ((size_t)50u * 1024u * 1024u)
 
+/** Compile-time cap for the companion JSON sidecar file (1 MiB = 2^20 bytes).
+ *  The sidecar carries only metadata (kind, opset, feature_order, etc.);
+ *  a 1 MiB limit is already very generous.  All three guard points in
+ *  model_loader.c use this single constant so a future bump only needs one
+ *  edit here. */
+#define DNN_SIDECAR_JSON_MAX ((size_t)(1u << 20u))
+
 /** Post-training quantisation mode (ADR-0129 / ADR-0173). Tracks the
  *  per-model registry field of the same name; FP32 means the loader
  *  uses the .onnx file as shipped, the other three modes mean the

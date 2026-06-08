@@ -28,6 +28,7 @@
 #include <unistd.h>
 #endif
 
+#include "cambi_internal.h"
 #include "common/macros.h"
 #include "cpu.h"
 #include "feature_collector.h"
@@ -73,7 +74,7 @@
 #define CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_1440p (2560 * 1440)
 #define CAMBI_HIGH_RES_SPEEDUP_THRESHOLD_2160p (3840 * 2160)
 
-#define CAMBI_MIN_WIDTH_HEIGHT (216)
+/* CAMBI_MIN_WIDTH_HEIGHT and CAMBI_WINDOW_DIVISOR are defined in cambi_internal.h */
 #define CAMBI_4K_WIDTH (3840)
 #define CAMBI_4K_HEIGHT (2160)
 
@@ -459,7 +460,7 @@ static FORCE_INLINE void adjust_window_size(uint16_t *window_size, unsigned inpu
                                             unsigned input_height, bool cambi_high_res_speedup)
 {
     // Adjustment weight: (input_width + input_height) / (CAMBI_4K_WIDTH + CAMBI_4K_HEIGHT)
-    (*window_size) = (((*window_size) * (input_width + input_height)) / 375) >> 4;
+    (*window_size) = (((*window_size) * (input_width + input_height)) / CAMBI_WINDOW_DIVISOR) >> 4;
     if (cambi_high_res_speedup) {
         (*window_size) = ((*window_size) + 1) >> 1;
     }

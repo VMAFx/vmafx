@@ -359,7 +359,7 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
     if (stat(sidecar, &st) == 0) {
         if (!S_ISREG(st.st_mode))
             return -EINVAL;
-        if ((size_t)st.st_size > (size_t)(1u << 20))
+        if ((size_t)st.st_size > DNN_SIDECAR_JSON_MAX)
             return -EFBIG;
     }
 
@@ -371,7 +371,7 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
         return -EIO;
     }
     long sz_raw = ftell(f);
-    if (sz_raw < 0 || sz_raw > (1 << 20)) {
+    if (sz_raw < 0 || (size_t)sz_raw > DNN_SIDECAR_JSON_MAX) {
         (void)fclose(f);
         return -EFBIG;
     }
@@ -391,7 +391,7 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
         free(buf);
         return -EIO;
     }
-    assert(sz <= (size_t)(1 << 20));
+    assert(sz <= DNN_SIDECAR_JSON_MAX);
     /* buf was allocated as sz + 1u bytes (line ~115), so buf[sz] is valid. The
      * analyzer loses this relationship across the fread path. */
     buf[sz] = '\0'; // NOLINT(clang-analyzer-security.ArrayBound)

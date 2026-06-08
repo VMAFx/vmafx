@@ -76,8 +76,8 @@
 #include "feature/cambi_internal.h"
 
 /* --- Constants matching cambi.c --- */
+/* CAMBI_MIN_WIDTH_HEIGHT and CAMBI_WINDOW_DIVISOR come from cambi_internal.h */
 #define CAMBI_HIP_NUM_SCALES 5
-#define CAMBI_HIP_MIN_WIDTH_HEIGHT 216
 #define CAMBI_HIP_MASK_FILTER_SIZE 7
 #define CAMBI_HIP_DEFAULT_MAX_VAL 1000.0
 #define CAMBI_HIP_DEFAULT_WINDOW_SIZE 65
@@ -293,7 +293,7 @@ static const VmafOption options[] = {
 /* ------------------------------------------------------------------ */
 static uint16_t cambi_hip_adjust_window(int window_size, unsigned w, unsigned h)
 {
-    unsigned adjusted = (unsigned)(window_size) * (w + h) / 375u;
+    unsigned adjusted = (unsigned)(window_size) * (w + h) / (unsigned)CAMBI_WINDOW_DIVISOR;
     adjusted >>= 4;
     if (adjusted < 1u)
         adjusted = 1u;
@@ -526,10 +526,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         s->enc_width = (int)w;
         s->enc_height = (int)h;
     }
-    if (s->enc_width < CAMBI_HIP_MIN_WIDTH_HEIGHT && s->enc_height < CAMBI_HIP_MIN_WIDTH_HEIGHT) {
+    if (s->enc_width < CAMBI_MIN_WIDTH_HEIGHT && s->enc_height < CAMBI_MIN_WIDTH_HEIGHT) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_hip: encoded resolution %dx%d below minimum %d×%d.\n",
-                 s->enc_width, s->enc_height, CAMBI_HIP_MIN_WIDTH_HEIGHT,
-                 CAMBI_HIP_MIN_WIDTH_HEIGHT);
+                 s->enc_width, s->enc_height, CAMBI_MIN_WIDTH_HEIGHT, CAMBI_MIN_WIDTH_HEIGHT);
         return -EINVAL;
     }
 

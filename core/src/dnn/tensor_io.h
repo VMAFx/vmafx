@@ -13,6 +13,15 @@
 extern "C" {
 #endif
 
+/** Minimum bits-per-component accepted by the 16-bit tensor conversion
+ *  functions (vmaf_tensor_from_plane16 / vmaf_tensor_to_plane16 /
+ *  vmaf_dnn_session_run_plane16).  Values below this floor cannot be
+ *  meaningfully represented in a uint16_t plane and indicate a caller
+ *  bug (8-bit paths use the uint8_t API instead).  The constant is
+ *  shared between tensor_io.c and dnn_api.c so both guard points stay
+ *  in sync automatically. */
+#define DNN_MIN_BIT_DEPTH 9
+
 typedef enum VmafTensorLayout {
     VMAF_TENSOR_LAYOUT_NCHW = 0,
     VMAF_TENSOR_LAYOUT_NHWC = 1,

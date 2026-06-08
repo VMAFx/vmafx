@@ -37,13 +37,13 @@ static int aggregate_vector_init(AggregateVector *aggregate_vector)
     if (!aggregate_vector)
         return -EINVAL;
     memset(aggregate_vector, 0, sizeof(*aggregate_vector));
-    const unsigned initial_capacity = 8;
-    const size_t metric_vector_sz = sizeof(aggregate_vector->metric[0]) * initial_capacity;
+    const size_t metric_vector_sz =
+        sizeof(aggregate_vector->metric[0]) * FEATURE_VECTOR_INITIAL_CAPACITY;
     aggregate_vector->metric = malloc(metric_vector_sz);
     if (!aggregate_vector->metric)
         return -ENOMEM;
     memset(aggregate_vector->metric, 0, metric_vector_sz);
-    aggregate_vector->capacity = initial_capacity;
+    aggregate_vector->capacity = FEATURE_VECTOR_INITIAL_CAPACITY;
 
     return 0;
 }
@@ -167,7 +167,7 @@ static int feature_vector_init(FeatureVector **const feature_vector, const char 
     if (!fv->name)
         goto free_fv;
     memcpy(fv->name, name, name_sz + 1);
-    fv->capacity = 8;
+    fv->capacity = FEATURE_VECTOR_INITIAL_CAPACITY;
     fv->score = malloc(sizeof(fv->score[0]) * fv->capacity);
     if (!fv->score)
         goto free_name;
@@ -232,7 +232,7 @@ int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector)
     if (!fc)
         goto fail;
     memset(fc, 0, sizeof(*fc));
-    fc->capacity = 8;
+    fc->capacity = FEATURE_VECTOR_INITIAL_CAPACITY;
     const size_t fv_sz = sizeof(FeatureVector *) * fc->capacity;
     fc->feature_vector = (FeatureVector **)malloc(fv_sz);
     if (!fc->feature_vector)

@@ -356,7 +356,7 @@ int vmaf_tensor_from_plane16(const uint16_t *src, size_t stride_src, int width, 
                              VmafTensorLayout layout, VmafTensorDType dtype, const float *mean,
                              const float *std, void *dst)
 {
-    if (!src || !dst || width <= 0 || height <= 0 || bpc < 9 || bpc > 16 ||
+    if (!src || !dst || width <= 0 || height <= 0 || bpc < DNN_MIN_BIT_DEPTH || bpc > 16 ||
         stride_src < (size_t)width * sizeof(uint16_t)) {
         return -EINVAL;
     }
@@ -398,7 +398,7 @@ int vmaf_tensor_to_plane16(const void *src, VmafTensorLayout layout, VmafTensorD
                            int width, int height, int bpc, const float *mean, const float *std,
                            uint16_t *dst, size_t stride_dst)
 {
-    if (!src || !dst || width <= 0 || height <= 0 || bpc < 9 || bpc > 16 ||
+    if (!src || !dst || width <= 0 || height <= 0 || bpc < DNN_MIN_BIT_DEPTH || bpc > 16 ||
         stride_dst < (size_t)width * sizeof(uint16_t)) {
         return -EINVAL;
     }

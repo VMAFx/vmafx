@@ -82,8 +82,8 @@
 #include "feature/cambi_internal.h"
 
 /* --- Constants matching cambi.c --- */
+/* CAMBI_MIN_WIDTH_HEIGHT and CAMBI_WINDOW_DIVISOR come from cambi_internal.h */
 #define CAMBI_CUDA_NUM_SCALES 5
-#define CAMBI_CUDA_MIN_WIDTH_HEIGHT 216
 #define CAMBI_CUDA_MASK_FILTER_SIZE 7
 #define CAMBI_CUDA_DEFAULT_MAX_VAL 1000.0
 #define CAMBI_CUDA_DEFAULT_WINDOW_SIZE 65
@@ -305,7 +305,7 @@ static uint16_t cambi_cuda_adjust_window(int window_size, unsigned w, unsigned h
 {
     /* cambi.c::adjust_window_size formula:
      *   window = window * (w + h) / (4K_W + 4K_H) / 16, rounded up to odd. */
-    unsigned adjusted = (unsigned)(window_size) * (w + h) / 375u;
+    unsigned adjusted = (unsigned)(window_size) * (w + h) / (unsigned)CAMBI_WINDOW_DIVISOR;
     adjusted >>= 4;
     if (adjusted < 1u)
         adjusted = 1u;
@@ -414,10 +414,10 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         s->enc_width = (int)w;
         s->enc_height = (int)h;
     }
-    if (s->enc_width < CAMBI_CUDA_MIN_WIDTH_HEIGHT && s->enc_height < CAMBI_CUDA_MIN_WIDTH_HEIGHT) {
+    if (s->enc_width < CAMBI_MIN_WIDTH_HEIGHT && s->enc_height < CAMBI_MIN_WIDTH_HEIGHT) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "cambi_cuda: encoded resolution %dx%d below minimum %d×%d.\n", s->enc_width,
-                 s->enc_height, CAMBI_CUDA_MIN_WIDTH_HEIGHT, CAMBI_CUDA_MIN_WIDTH_HEIGHT);
+                 s->enc_height, CAMBI_MIN_WIDTH_HEIGHT, CAMBI_MIN_WIDTH_HEIGHT);
         return -EINVAL;
     }
 

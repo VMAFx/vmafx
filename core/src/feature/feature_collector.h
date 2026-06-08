@@ -32,6 +32,12 @@ extern "C" {
 #include "model.h"
 #include "metadata_handler.h"
 
+/** Initial allocation size for FeatureVector::score[], AggregateVector::metric[],
+ *  and VmafFeatureCollector::feature_vector[].  All three grow by doubling so
+ *  this controls only the first malloc; 8 covers typical per-frame feature
+ *  counts without over-allocating for single-feature runs. */
+#define FEATURE_VECTOR_INITIAL_CAPACITY 8u
+
 typedef struct {
     char *name;
     struct {
