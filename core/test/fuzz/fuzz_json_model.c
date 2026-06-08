@@ -55,22 +55,24 @@
 #define FUZZ_MAX_INPUT_BYTES 65536u
 
 /* AddressSanitizer override: keep heap-use-after-free / overflow
- * detection ON (the entire point of the harness) but disable
- * leak-only reports. The libvmaf JSON parser's error-path
- * cleanup is mostly correct, but a fuzzer-induced partial parse
- * can land in a state where a feature-array slot was allocated
- * before `realloc` failure and the rollback path leaks the
- * stale pointer. Real heap-overflow / use-after-free bugs are
- * still caught — only leak-only reports are silenced.
+ * detection ON (the entire point of the harness) and enable leak
+ * detection. The JSON parser's single-model error path calls
+ * `vmaf_model_destroy` on partial state, so all per-model
+ * allocations (feature[], knots.list, name, opts_dict) are freed
+ * before returning an error. The harness fixes the collection
+ * variant's partial-parse oversight: it now frees `model_c` and
+ * `collection` even on non-zero return from
+ * `vmaf_read_json_model_collection_from_buffer`, eliminating the
+ * residual leak that forced `detect_leaks=0` previously.
  * Environment-side `ASAN_OPTIONS` overrides this if a CI operator
- * wants leak detection on. The `__` prefix is mandated by the
- * AddressSanitizer weak-symbol ABI (compiler-rt). */
+ * needs to suppress leaks temporarily. The `__` prefix is
+ * mandated by the AddressSanitizer weak-symbol ABI (compiler-rt). */
 /* NOLINTNEXTLINE(misc-use-internal-linkage,bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI */
 const char *__asan_default_options(void);
 /* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ASan weak-symbol ABI */
 const char *__asan_default_options(void)
 {
-    return "detect_leaks=0:allocator_may_return_null=1";
+    return "detect_leaks=1:allocator_may_return_null=1";
 }
 
 /* libFuzzer's contract requires `LLVMFuzzerTestOneInput` to have
@@ -102,14 +104,17 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     VmafModel *model_c = NULL;
     VmafModelCollection *collection = NULL;
     VmafModelConfig cfg_c = {0};
-    const int rc_c = vmaf_read_json_model_collection_from_buffer(&model_c, &collection, &cfg_c,
-                                                                 (const char *)data, (int)size);
-    if (rc_c == 0) {
-        if (model_c != NULL)
-            vmaf_model_destroy(model_c);
-        if (collection != NULL)
-            vmaf_model_collection_destroy(collection);
-    }
+    (void)vmaf_read_json_model_collection_from_buffer(&model_c, &collection, &cfg_c,
+                                                      (const char *)data, (int)size);
+    /* Always clean up regardless of return code: a partial parse can
+     * populate *model_c (key "0" succeeded) or *collection (keys "1"+
+     * succeeded) before the parse of a later key fails. Freeing on
+     * error prevents the residual leak that previously forced
+     * detect_leaks=0 in __asan_default_options. */
+    if (model_c != NULL)
+        vmaf_model_destroy(model_c);
+    if (collection != NULL)
+        vmaf_model_collection_destroy(collection);
 
     return 0;
 }

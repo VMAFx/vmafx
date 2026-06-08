@@ -50,6 +50,13 @@ jobs:
             corpus: core/test/fuzz/cli_parse_corpus
           - target: fuzz_json_model
             corpus: core/test/fuzz/json_model_corpus
+            # Tighter RSS cap for fuzz_json_model: the harness reached
+            # 1.1 GB peak RSS in 180-second nightly runs, suggesting
+            # the libsvm embedded-string sub-parser accumulates state.
+            # 512 MB matches the largest shipped model (≈23 KiB JSON)
+            # with generous overhead and catches runaway growth early.
+            # Other harnesses keep the default 2048 MB.
+            rss_limit_mb: 512
           - target: fuzz_dnn_sidecar
             corpus: core/test/fuzz/dnn_sidecar_corpus
     env:
@@ -114,7 +121,7 @@ jobs:
           set +e
           ./build-fuzz/test/fuzz/${{ matrix.target }} \
               -max_total_time=${MAX_TOTAL_TIME} \
-              -rss_limit_mb=2048 \
+              -rss_limit_mb=${{ matrix.rss_limit_mb || 2048 }} \
               -malloc_limit_mb=1024 \
               -timeout=10 \
               -print_final_stats=1 \
