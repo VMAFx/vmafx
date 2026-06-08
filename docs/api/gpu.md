@@ -219,10 +219,6 @@ int main(void) {
   `vmaf_cuda_state_init()` (via `cuCtxSetCurrent` or `cudaSetDevice`).
 - No stream parameter. libvmaf runs its own streams internally; interop with
   an external stream is not exposed in v1.
-- No HIP path in this header. The HIP / AMD-ROCm backend is being
-  scaffolded under T7-10 (PR #200, in flight) — a future
-  `libvmaf_hip.h` will mirror this surface. See
-  [backends/index.md](../backends/index.md).
 
 ## SYCL
 
@@ -567,25 +563,86 @@ back to a host-backed picture if the caller skipped
 
 ## HIP
 
-`libvmaf_hip.h` exposes the AMD ROCm/HIP lifecycle surface. It follows the
-CUDA header shape closely:
+### Header
 
-- `vmaf_hip_state_init` creates a backend state for a selected HIP device.
-- `vmaf_hip_import_state` hands the state to a `VmafContext`. Note:
-  `vmaf_hip_import_state` currently returns `-ENOSYS` — it remains a stub
-  until the first real HIP feature extractor wires HIP dispatch
-  (`vmaf_hip_state_init` and `vmaf_hip_list_devices` are fully implemented).
-- `vmaf_hip_state_free` releases the state and any backend-owned resources.
-- `vmaf_hip_list_devices` enumerates visible ROCm devices.
+[`core/include/libvmaf/libvmaf_hip.h`](../../core/include/libvmaf/libvmaf_hip.h)
 
-The HIP backend is compile-time gated behind `-Denable_hip=true` and the HIP
-compiler option used by this fork's build matrix. Runtime support depends on a
-ROCm-capable AMD GPU and a matching driver stack. The public API is stable, but
-the feature set is still narrower than CUDA/SYCL/Vulkan: PSNR, CIEDE, float
-PSNR, float PSNR, float moment, SSIM, MS-SSIM, PSNR-HVS, CAMBI, and
-SSIMULACRA 2 are wired; ADM, VIF, and integer motion remain the known
-follow-up kernels. The `float_ansnr` extractor was removed in commit
-70ed8b3ce3 (PR #38); it is no longer registered on any backend.
+`libvmaf_hip.h` exposes the AMD ROCm/HIP lifecycle surface. It is available
+only in builds with `-Denable_hip=true -Denable_hipcc=true`; without those
+flags the symbols are absent and calls will not link. HIP runtime types
+(`hipDevice_t`, `hipStream_t`) cross the public ABI as `uintptr_t` to keep
+the header free of `<hip/hip_runtime.h>` — cast on the caller side.
+
+### Core lifecycle API
+
+| Symbol | Description |
+| --- | --- |
+| `vmaf_hip_available` | Returns 1 if libvmaf was built with `-Denable_hip=true`, 0 otherwise. Cheap to call; no HIP runtime is touched until `vmaf_hip_state_init()`. |
+| `vmaf_hip_state_init` | Allocates a `VmafHipState` pinned to a HIP device. `device_index = -1` selects the first compute-capable HIP device; 0+ selects a specific ordinal. Returns `-ENODEV` when no compatible device is found. |
+| `vmaf_hip_import_state` | Hands an allocated `VmafHipState` to a `VmafContext`. The caller retains ownership and must call `vmaf_hip_state_free` after `vmaf_close`. Returns `-EINVAL` when `ctx` or `state` is `NULL`. |
+| `vmaf_hip_state_free` | Releases a state allocated via `vmaf_hip_state_init`. Safe to pass `NULL` or a state that was never imported. Sets the pointer to `NULL` on return. |
+| `vmaf_hip_list_devices` | Enumerates compute-capable HIP devices visible to the runtime. Prints one line per device with its ordinal, name, and compute capability. Returns device count or `-ENOSYS` when built without HIP. |
+
+### State
+
+```c
+typedef struct VmafHipState VmafHipState;
+
+typedef struct VmafHipConfiguration {
+    int device_index; /**< -1 = first HIP device with compute capability */
+    int flags;        /**< reserved for future use; pass 0 */
+} VmafHipConfiguration;
+
+int  vmaf_hip_available(void);
+int  vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg);
+int  vmaf_hip_import_state(VmafContext *ctx, VmafHipState *state);
+void vmaf_hip_state_free(VmafHipState **state);
+int  vmaf_hip_list_devices(void);
+```
+
+### Ownership
+
+The HIP backend follows the same caller-owned-state model as SYCL: after
+`vmaf_hip_import_state(ctx, state)` the **caller still owns the state** and
+must call `vmaf_hip_state_free(&state)` after `vmaf_close(ctx)`. This differs
+from the CUDA model (where the context takes ownership post-import). The
+rationale mirrors SYCL: HIP state may outlive a single scoring session when
+the caller manages a multi-pass workflow against the same device.
+
+### Typical call sequence
+
+```text
+vmaf_init()
+vmaf_hip_state_init(&state, cfg)     ← allocate state for device N
+vmaf_hip_import_state(vmaf, state)   ← hands state to ctx; caller still owns it
+loop:
+  vmaf_read_pictures(vmaf, &ref, &dist, i)
+vmaf_score_pooled(vmaf, ...)
+vmaf_close(vmaf)
+vmaf_hip_state_free(&state)          ← caller frees after vmaf_close
+```
+
+### Limitations and current feature coverage
+
+The HIP backend is compile-time gated behind `-Denable_hip=true` and requires
+ROCm 7.0+ at runtime. As of ADR-0533 / ADR-0539, 21 feature extractors are
+registered and end-to-end verified on AMD gfx hardware:
+
+PSNR, float-PSNR, CIEDE, float-moment, integer-moment, float-SSIM,
+MS-SSIM, PSNR-HVS, CAMBI, SSIMULACRA2, integer-motion, integer-motion-v2,
+float-motion, float-VIF, integer-VIF, integer-ADM, float-ADM,
+integer-SSIM, speed-chroma, speed-temporal, integer-CIEDE.
+
+Three legacy-API stubs (`adm_hip`, `vif_hip`, `motion_hip`) exist in tree but
+use an older `_init/_run/_destroy` API shape that is not compatible with the
+`VmafFeatureExtractor` registration system; they return `-ENOSYS` at `init()`
+and are not selectable via `--feature`. The `float_ansnr` extractor was
+removed in commit 70ed8b3ce3 (PR #38); it is no longer registered on any
+backend.
+
+See [../backends/hip/overview.md](../backends/hip/overview.md) for the
+complete extractor table, build flags, HSACO fat-binary target selection,
+FFmpeg integration (`hip_device=N` — ADR-0380), and per-kernel notes.
 
 ## Metal
 
@@ -648,8 +705,9 @@ Metal runtime contract for those devices.
 - [dnn.md](dnn.md) — tiny-AI session API (separate from classic GPU dispatch)
 - [../usage/cli.md#backend-selection](../usage/cli.md#backend-selection) —
   `--no_cuda` / `--no_sycl` / `--sycl_device` flags
-- [../backends/cuda/overview.md](../backends/cuda/overview.md) and
-  [../backends/sycl/overview.md](../backends/sycl/overview.md) —
+- [../backends/cuda/overview.md](../backends/cuda/overview.md),
+  [../backends/sycl/overview.md](../backends/sycl/overview.md), and
+  [../backends/hip/overview.md](../backends/hip/overview.md) —
   user-facing backend pages
 - [../usage/bench.md](../usage/bench.md) — `vmaf_bench`, which consumes
   these APIs to produce the perf + validation tables
