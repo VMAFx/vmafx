@@ -319,7 +319,7 @@ def _ugc_tight_interval_width(rows: Sequence[CorpusRow]) -> float:
     gate uses width directly; the calibration emits a value in
     the same units the F.4 placeholder used (1.5..3.0 VMAF).
     """
-    if not rows:
+    if len(rows) < 2:
         return 3.0
     proxies = [mos_to_vmaf_proxy(r.mos) for r in rows]
     quartiles = statistics.quantiles(proxies, n=4)
