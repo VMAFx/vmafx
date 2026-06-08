@@ -673,10 +673,10 @@ jobs:
           /tmp/vmaf-train-venv/bin/pip install --upgrade pip
           # pytest is a test-time dep, not runtime, so install it explicitly
           # rather than relying on ai/pyproject.toml extras.
-          /tmp/vmaf-train-venv/bin/pip install pytest
+          /tmp/vmaf-train-venv/bin/pip install pytest pytest-timeout
           /tmp/vmaf-train-venv/bin/pip install -e ai
       - name: Run ai/ pytests
-        run: /tmp/vmaf-train-venv/bin/pytest ai/tests/ -v
+        run: /tmp/vmaf-train-venv/bin/pytest ai/tests/ -v --timeout=60 --timeout-method=signal
 
       # ADR-0174 / T5-3b: enforce that every quantised model in the
       # registry stays inside its per-model PLCC drop budget. Skips
@@ -762,6 +762,7 @@ jobs:
           python3 -m venv /tmp/mcp-venv
           /tmp/mcp-venv/bin/pip install --upgrade pip
           /tmp/mcp-venv/bin/pip install -e mcp-server/vmaf-mcp[dev]
+          /tmp/mcp-venv/bin/pip install pytest-timeout
 
       - name: Run Python MCP server pytests
         # The MCP server's `_vmaf_binary()` defaults to
@@ -779,7 +780,8 @@ jobs:
             ls -la "$(dirname "$VMAF_BIN")" >&2 || true
             exit 1
           }
-          /tmp/mcp-venv/bin/pytest mcp-server/vmaf-mcp/tests/ -v --tb=short
+          /tmp/mcp-venv/bin/pytest mcp-server/vmaf-mcp/tests/ -v --tb=short \
+            --timeout=60 --timeout-method=signal
 
   # ===== Coverage gate (principles.md §3) =====
   # ≥70% overall line coverage, ≥85% on security-critical files
@@ -1040,11 +1042,13 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage-gpu/src
         run: |
           export PATH="${{ github.workspace }}/core/build-coverage-gpu/tools:$PATH"
-          python3 -m pip install --user -r python/requirements.txt pytest
+          python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
           VMAF_FORCE_BACKEND=cuda python3 -m pytest python/test/ -v \
-            -m "not slow" --tb=short --ignore=python/test/resource || true
+            -m "not slow" --tb=short --ignore=python/test/resource \
+            --timeout=300 --timeout-method=signal || true
           VMAF_FORCE_BACKEND=sycl python3 -m pytest python/test/ -v \
-            -m "not slow" --tb=short --ignore=python/test/resource || true
+            -m "not slow" --tb=short --ignore=python/test/resource \
+            --timeout=300 --timeout-method=signal || true
       - name: Gather coverage report (gcovr)
         working-directory: core
         run: |
