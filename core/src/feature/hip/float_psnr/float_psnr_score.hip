@@ -29,16 +29,17 @@
 #define FPSNR_BX 16
 #define FPSNR_BY 16
 
-/* HIP warp size is 64 on GCN/RDNA; 32 on NVIDIA targets (hipCUDA).
- * Use the runtime constant so the kernel is portable between both. */
-#define FPSNR_WARP_SIZE 64
-/* Number of warps per block = (BX * BY) / WARP_SIZE = 256 / 64 = 4. */
-#define FPSNR_WARPS_PER_BLOCK (FPSNR_BX * FPSNR_BY / FPSNR_WARP_SIZE)
+/* Array sized for the minimum AMD warp size (wave32 = RDNA2+, 32 lanes) so
+ * it is large enough on wave32 hardware: BX*BY/32 = 8 slots needed.
+ * On wave64 hardware only BX*BY/64 = 4 of the 8 slots are populated. */
+#define FPSNR_MIN_WARP_SIZE 32
+/* Number of warps per block at minimum warp size = (BX * BY) / MIN_WARP_SIZE = 8. */
+#define FPSNR_WARPS_PER_BLOCK (FPSNR_BX * FPSNR_BY / FPSNR_MIN_WARP_SIZE)
 
 __device__ __forceinline__ float fpsnr_warp_reduce(float v)
 {
-    /* HIP __shfl_down_sync equivalent: mask = 0xffffffffffffffff (64-bit). */
-    for (int off = FPSNR_WARP_SIZE / 2; off > 0; off >>= 1)
+    /* Use warpSize at runtime to handle wave64 (GCN/RDNA1) and wave32 (RDNA2+). */
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         v += __shfl_down(v, off);
     return v;
 }
@@ -73,8 +74,9 @@ __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
     /* Warp-level reduction. */
     __shared__ float s_warps[FPSNR_WARPS_PER_BLOCK];
     const float w = fpsnr_warp_reduce(my_noise);
-    const unsigned lane = lid % FPSNR_WARP_SIZE;
-    const unsigned warp_id = lid / FPSNR_WARP_SIZE;
+    const unsigned ws      = (unsigned)warpSize;
+    const unsigned lane    = lid % ws;
+    const unsigned warp_id = lid / ws;
     if (lane == 0)
         s_warps[warp_id] = w;
     __syncthreads();
@@ -82,8 +84,8 @@ __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
     /* Thread 0 aggregates warp partials and stores the block result. */
     if (lid == 0) {
         float total = 0.0f;
-#pragma unroll
-        for (int i = 0; i < FPSNR_WARPS_PER_BLOCK; i++)
+        const unsigned warps_active = (FPSNR_BX * FPSNR_BY) / ws;
+        for (unsigned i = 0; i < warps_active; i++)
             total += s_warps[i];
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
         partials[block_idx] = total;
@@ -134,16 +136,17 @@ __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
 
     __shared__ float s_warps[FPSNR_WARPS_PER_BLOCK];
     const float w = fpsnr_warp_reduce(my_noise);
-    const unsigned lane = lid % FPSNR_WARP_SIZE;
-    const unsigned warp_id = lid / FPSNR_WARP_SIZE;
+    const unsigned ws      = (unsigned)warpSize;
+    const unsigned lane    = lid % ws;
+    const unsigned warp_id = lid / ws;
     if (lane == 0)
         s_warps[warp_id] = w;
     __syncthreads();
 
     if (lid == 0) {
         float total = 0.0f;
-#pragma unroll
-        for (int i = 0; i < FPSNR_WARPS_PER_BLOCK; i++)
+        const unsigned warps_active = (FPSNR_BX * FPSNR_BY) / ws;
+        for (unsigned i = 0; i < warps_active; i++)
             total += s_warps[i];
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
         partials[block_idx] = total;

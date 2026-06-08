@@ -17,9 +17,10 @@
  *  Host accumulates partials in `double` and divides by (w*h).
  *
  *  HIP adaptation from CUDA:
- *  - Warp size is 64 on GCN/RDNA (vs 32 in CUDA). The shared-memory
- *    array for warp partial sums is sized accordingly:
- *    FM_BX * FM_BY / FM_WARP_SIZE = 16*16/64 = 4 slots.
+ *  - GCN/RDNA1 warp size is 64; RDNA2+ (gfx1030/gfx1100/gfx1101) is 32.
+ *    The shared-memory array for warp partial sums is sized for the minimum
+ *    warp size (32) so it is large enough on wave32: FM_BX*FM_BY/32 = 8 slots.
+ *    At runtime `warpSize` is used for lane/warp_id and loop bounds.
  *  - `__shfl_down` used without mask (HIP convention; CUDA uses
  *    `__shfl_down_sync(0xffffffff, ...)`).
  *  - `VmafCudaBuffer sad` replaced by plain `float *partials` since the
@@ -38,9 +39,11 @@
 #define FM_TILE_W (FM_BX + 2 * FM_RADIUS)
 #define FM_TILE_H (FM_BY + 2 * FM_RADIUS)
 
-/* HIP warp size is 64 on GCN/RDNA. */
-#define FM_WARP_SIZE      64
-#define FM_WARPS_PER_BLOCK (FM_BX * FM_BY / FM_WARP_SIZE)
+/* Minimum HIP warp size across supported AMD targets (wave32 = RDNA2+).
+ * Array sized for the minimum so it is large enough on wave32 hardware.
+ * Runtime `warpSize` is used for the reduction loop and lane/warp_id. */
+#define FM_MIN_WARP_SIZE   32
+#define FM_WARPS_PER_BLOCK (FM_BX * FM_BY / FM_MIN_WARP_SIZE)
 
 /* 5-tap Gaussian filter (same constants as the CUDA twin). */
 __device__ static const float FM_FILT[5] = {
@@ -57,10 +60,11 @@ __device__ __forceinline__ int fm_mirror(int idx, int sup)
     return idx;
 }
 
-/* HIP warp-level float reduction (64-lane). */
+/* HIP warp-level float reduction — uses warpSize at runtime to handle
+ * both wave64 (GCN/RDNA1, warpSize=64) and wave32 (RDNA2+, warpSize=32). */
 __device__ __forceinline__ float fm_warp_reduce(float v)
 {
-    for (int off = FM_WARP_SIZE / 2; off > 0; off >>= 1)
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         v += __shfl_down(v, off);
     return v;
 }
@@ -134,15 +138,16 @@ __global__ void float_motion_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
         /* Warp reduce, then accumulate warp sums in shared memory. */
         __shared__ float s_warp[FM_WARPS_PER_BLOCK];
         const float w = fm_warp_reduce(abs_diff);
-        const unsigned lane    = lid % FM_WARP_SIZE;
-        const unsigned warp_id = lid / FM_WARP_SIZE;
+        const unsigned ws      = (unsigned)warpSize;
+        const unsigned lane    = lid % ws;
+        const unsigned warp_id = lid / ws;
         if (lane == 0)
             s_warp[warp_id] = w;
         __syncthreads();
         if (lid == 0) {
             float total = 0.0f;
-#pragma unroll
-            for (int i = 0; i < FM_WARPS_PER_BLOCK; i++)
+            const unsigned warps_active = (FM_BX * FM_BY) / ws;
+            for (unsigned i = 0; i < warps_active; i++)
                 total += s_warp[i];
             const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
             partials[block_idx] = total;
@@ -227,15 +232,16 @@ __global__ void float_motion_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
     if (compute_sad != 0u) {
         __shared__ float s_warp[FM_WARPS_PER_BLOCK];
         const float w = fm_warp_reduce(abs_diff);
-        const unsigned lane    = lid % FM_WARP_SIZE;
-        const unsigned warp_id = lid / FM_WARP_SIZE;
+        const unsigned ws      = (unsigned)warpSize;
+        const unsigned lane    = lid % ws;
+        const unsigned warp_id = lid / ws;
         if (lane == 0)
             s_warp[warp_id] = w;
         __syncthreads();
         if (lid == 0) {
             float total = 0.0f;
-#pragma unroll
-            for (int i = 0; i < FM_WARPS_PER_BLOCK; i++)
+            const unsigned warps_active = (FM_BX * FM_BY) / ws;
+            for (unsigned i = 0; i < warps_active; i++)
                 total += s_warp[i];
             const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
             partials[block_idx] = total;

@@ -9,6 +9,24 @@ No production C source, public header, meson build files, or Python package
 modified. If a concurrent branch also edits `dev/Containerfile`, the only
 conflict will be in the groupadd/useradd lines; resolve by keeping GID/UID 2000.
 
+## fix/matrix-5-real-bugs (2026-06-08, no ADR — 5 correctness bug fixes)
+`core/src/feature/hip/integer_vif/vif_statistics.hip`: removed `#define AMD_WAVEFRONT_SIZE 64`;
+reduction loop and lane guards now use `warpSize` device variable. Conflicts possible if another
+branch edits the same wavefront-reduce section; resolve by keeping the `warpSize`-based version.
+`core/src/feature/hip/float_vif/float_vif_score.hip`, `float_motion/float_motion_score.hip`,
+`float_psnr/float_psnr_score.hip`, `float_moment/moment_score.hip`: similar pattern — shared-memory
+arrays resized for minimum warp size (32); runtime `warpSize` used for loops. Conflict risk is low
+(only these wavefront-size definitions changed); keep the `warpSize`-based version.
+`core/src/libvmaf.c`: `ref = &ref_host; dist = &dist_host` guarded by `if (hw_flags & HW_FLAG_HOST)`.
+Conflicts possible if another branch modifies the same `#ifdef HAVE_CUDA` block; resolve by
+keeping the `HW_FLAG_HOST` guard.
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`: `_PROBE_YUV_WIDTH/HEIGHT` bumped from 32 to 64;
+`runtime_healthy` set to `score is not None`. Low conflict risk.
+`ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch`: `FILTER_SINGLE_PIXFMT` replaced by
+`FILTER_PIXFMTS`; `do_vmaf_sycl` and `config_props_sycl` split on `AV_PIX_FMT_QSV`. Conflicts
+possible if another branch edits patch 0005; apply this version first, then rebase the other.
+`dev/Containerfile`: `RUN bash .../fetch-test-yuvs.sh` layer added. Low conflict risk.
+
 ## test/ai-scripts-coverage-round3 (2026-06-06, no ADR — test-only)
 
 no rebase impact: adds two new test files

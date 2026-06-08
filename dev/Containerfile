@@ -596,11 +596,22 @@ RUN cd core && ninja -C build install \
 # `docker exec vmaf-dev-mcp /build/vmaf/dev/scripts/dev-mcp-probe.sh`
 # repeats the same probe with real devices and writes results to /probes/.
 USER vmaf
+
+# ---------- Netflix golden-pair YUV fixtures ----------------------------------
+# Fetch the canonical src01 / checkerboard YUV pairs used by
+# python/test/quality_runner_test.py and feature_extractor_test.py so that
+# `pytest python/test/` passes inside the container without any host-side
+# manual provisioning.  Uses the same script and md5 pinning as CI
+# (scripts/test/fetch-test-yuvs.sh, ADR-0493).  Download failures are fatal
+# here to catch network-policy regressions at build time; if GitHub is
+# unreachable in a CI sandbox the build fails loudly rather than silently
+# producing a container whose Python test suite always errors.
+RUN bash /build/vmaf/scripts/test/fetch-test-yuvs.sh
+
 # Use the 48-frame `testdata/{ref,dis}_576x324_48f.yuv` fixtures (always
 # present in the build context per testdata/) rather than the Netflix
 # golden CPU pair under python/test/resource/yuv/ which is fetched
-# separately via scripts/test/fetch-test-yuvs.sh per ADR-0493 and is
-# not part of the build context.
+# above, for the backend smoke probe.
 RUN for B in cpu cuda sycl hip; do \
       echo "--- probe: backend=$B ---" ; \
       LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH} \

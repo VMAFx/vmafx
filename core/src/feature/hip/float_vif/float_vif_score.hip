@@ -23,8 +23,11 @@
  *  constant-folded per scale.
  *
  *  HIP adaptation from CUDA:
- *  - Warp size is 64 on GCN/RDNA (vs 32 in CUDA). The per-block warp
- *    partial array is sized FVIF_BX * FVIF_BY / FVIF_WARP_SIZE = 4 slots.
+ *  - GCN/RDNA1 warp size is 64; RDNA2+ (gfx1030/gfx1100/gfx1101) is 32.
+ *    The per-block warp partial array is sized for the minimum warp size (32)
+ *    so it is large enough on wave32 hardware (256/32 = 8 warps needed).
+ *    On wave64 hardware only 4 of the 8 slots are populated — no overflow.
+ *    `warpSize` is used at runtime for the reduction loop and lane detection.
  *  - `__shfl_down` used without mask (HIP convention).
  *  - Entry-point names match the CUDA twin so the host Module API lookup
  *    in `float_vif_hip.c` resolves correctly without a name change.
@@ -40,9 +43,12 @@
 #define FVIF_MAX_FW        17
 #define FVIF_MAX_HFW        8
 
-/* HIP warp size is 64 on GCN/RDNA. */
-#define FVIF_WARP_SIZE        64
-#define FVIF_WARPS_PER_BLOCK  (FVIF_BX * FVIF_BY / FVIF_WARP_SIZE)
+/* Minimum HIP warp size across supported AMD targets (wave32 = RDNA2+).
+ * The warp partial array is sized for the minimum (32) so it is large enough
+ * on wave32 hardware (BX*BY/32 = 8 slots).  At runtime `warpSize` is used
+ * for the reduction loop and lane/warp_id calculation. */
+#define FVIF_MIN_WARP_SIZE    32
+#define FVIF_WARPS_PER_BLOCK  (FVIF_BX * FVIF_BY / FVIF_MIN_WARP_SIZE)
 
 __device__ static const float FVIF_COEFF_S0[FVIF_MAX_FW] = {
     0.00745626912f, 0.0142655009f, 0.0250313189f, 0.0402820669f, 0.0594526194f, 0.0804751068f,
@@ -94,10 +100,11 @@ __device__ __forceinline__ int fvif_mirror_h(int idx, int sup)
     return idx;
 }
 
-/* HIP warp-level float reduction (64-lane). */
+/* HIP warp-level float reduction — uses warpSize at runtime to handle
+ * both wave64 (GCN/RDNA1, warpSize=64) and wave32 (RDNA2+, warpSize=32). */
 __device__ __forceinline__ float fvif_warp_reduce(float v)
 {
-    for (int off = FVIF_WARP_SIZE / 2; off > 0; off >>= 1)
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
         v += __shfl_down(v, off);
     return v;
 }
@@ -262,10 +269,12 @@ __global__ void float_vif_compute(int scale, const uint8_t *ref_raw, const uint8
     /* Phase 4: warp + cross-warp reduction. */
     __shared__ float s_num_warps[FVIF_WARPS_PER_BLOCK];
     __shared__ float s_den_warps[FVIF_WARPS_PER_BLOCK];
-    const float wn          = fvif_warp_reduce(my_num);
-    const float wd          = fvif_warp_reduce(my_den);
-    const unsigned lane     = lid % FVIF_WARP_SIZE;
-    const unsigned warp_id  = lid / FVIF_WARP_SIZE;
+    const float wn              = fvif_warp_reduce(my_num);
+    const float wd              = fvif_warp_reduce(my_den);
+    const unsigned ws           = (unsigned)warpSize;
+    const unsigned lane         = lid % ws;
+    const unsigned warp_id      = lid / ws;
+    const unsigned warps_active = (FVIF_BX * FVIF_BY) / ws;
     if (lane == 0) {
         s_num_warps[warp_id] = wn;
         s_den_warps[warp_id] = wd;
@@ -273,7 +282,7 @@ __global__ void float_vif_compute(int scale, const uint8_t *ref_raw, const uint8
     __syncthreads();
     if (lid == 0) {
         float total_num = 0.0f, total_den = 0.0f;
-        for (int i = 0; i < FVIF_WARPS_PER_BLOCK; i++) {
+        for (unsigned i = 0; i < warps_active; i++) {
             total_num += s_num_warps[i];
             total_den += s_den_warps[i];
         }

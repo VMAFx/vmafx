@@ -169,43 +169,84 @@ index f0ec23605c..d9dab0bdd9 100644
 +        return AVERROR_EXTERNAL;
 +    }
 +
-+    // Extract surface handle from QSV frames via oneVPL structures:
-+    // data[3] -> mfxFrameSurface1*, Data.MemId -> mfxHDLPair*,
-+    // pair->first -> surface handle (unsigned int on Linux)
-+    mfxFrameSurface1 *ref_mfx  = (mfxFrameSurface1 *)ref->data[3];
-+    mfxFrameSurface1 *dist_mfx = (mfxFrameSurface1 *)dist->data[3];
-+    mfxHDLPair *ref_pair  = (mfxHDLPair *)ref_mfx->Data.MemId;
-+    mfxHDLPair *dist_pair = (mfxHDLPair *)dist_mfx->Data.MemId;
-+    unsigned int ref_surface  = *(unsigned int *)ref_pair->first;
-+    unsigned int dist_surface = *(unsigned int *)dist_pair->first;
++    if (ref->format == AV_PIX_FMT_QSV) {
++        // Zero-copy path: extract VA surface handle from QSV frames via oneVPL.
++        // data[3] -> mfxFrameSurface1*, Data.MemId -> mfxHDLPair*,
++        // pair->first -> surface handle (unsigned int on Linux).
++        mfxFrameSurface1 *ref_mfx  = (mfxFrameSurface1 *)ref->data[3];
++        mfxFrameSurface1 *dist_mfx = (mfxFrameSurface1 *)dist->data[3];
++        mfxHDLPair *ref_pair  = (mfxHDLPair *)ref_mfx->Data.MemId;
++        mfxHDLPair *dist_pair = (mfxHDLPair *)dist_mfx->Data.MemId;
++        unsigned int ref_surface  = *(unsigned int *)ref_pair->first;
++        unsigned int dist_surface = *(unsigned int *)dist_pair->first;
 +
-+    // Zero-copy import: VA surface -> DMA-BUF -> Level Zero -> SYCL de-tile
-+    ret = vmaf_sycl_import_va_surface(s->sycl_state, s->va_display,
-+                                       ref_surface, 1,
-+                                       ref->width, ref->height, s->bpc);
-+    if (ret) {
-+        av_log(ctx, AV_LOG_WARNING,
-+               "vmaf_sycl_import_va_surface (ref) failed: %d "
-+               "(VA surface may have been freed by decoder) — skipping frame\n", ret);
-+        return ff_filter_frame(ctx->outputs[0], dist);
-+    }
++        ret = vmaf_sycl_import_va_surface(s->sycl_state, s->va_display,
++                                           ref_surface, 1,
++                                           ref->width, ref->height, s->bpc);
++        if (ret) {
++            av_log(ctx, AV_LOG_WARNING,
++                   "vmaf_sycl_import_va_surface (ref) failed: %d "
++                   "(VA surface may have been freed by decoder) — skipping frame\n", ret);
++            return ff_filter_frame(ctx->outputs[0], dist);
++        }
 +
-+    ret = vmaf_sycl_import_va_surface(s->sycl_state, s->va_display,
-+                                       dist_surface, 0,
-+                                       dist->width, dist->height, s->bpc);
-+    if (ret) {
-+        av_log(ctx, AV_LOG_WARNING,
-+               "vmaf_sycl_import_va_surface (dist) failed: %d "
-+               "(VA surface may have been freed by decoder) — skipping frame\n", ret);
-+        return ff_filter_frame(ctx->outputs[0], dist);
-+    }
++        ret = vmaf_sycl_import_va_surface(s->sycl_state, s->va_display,
++                                           dist_surface, 0,
++                                           dist->width, dist->height, s->bpc);
++        if (ret) {
++            av_log(ctx, AV_LOG_WARNING,
++                   "vmaf_sycl_import_va_surface (dist) failed: %d "
++                   "(VA surface may have been freed by decoder) — skipping frame\n", ret);
++            return ff_filter_frame(ctx->outputs[0], dist);
++        }
 +
-+    // Submit frame for SYCL VMAF compute (non-blocking)
-+    ret = vmaf_read_pictures_sycl(s->vmaf, s->frame_cnt++);
-+    if (ret) {
-+        av_log(ctx, AV_LOG_ERROR,
-+               "vmaf_read_pictures_sycl failed: %d\n", ret);
-+        return AVERROR_EXTERNAL;
++        // Submit frame for SYCL VMAF compute (non-blocking)
++        ret = vmaf_read_pictures_sycl(s->vmaf, s->frame_cnt++);
++        if (ret) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_read_pictures_sycl failed: %d\n", ret);
++            return AVERROR_EXTERNAL;
++        }
++    } else {
++        // Software path: YUV420P / YUV420P10LE frames — copy via vmaf_picture_alloc.
++        VmafPicture ref_pic = {0}, dist_pic = {0};
++        ret = vmaf_picture_alloc(&ref_pic, VMAF_PIX_FMT_YUV420P,
++                                  s->bpc, ref->width, ref->height);
++        if (ret) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_picture_alloc (ref) failed: %d\n", ret);
++            return AVERROR(ENOMEM);
++        }
++        ret = vmaf_picture_alloc(&dist_pic, VMAF_PIX_FMT_YUV420P,
++                                  s->bpc, dist->width, dist->height);
++        if (ret) {
++            vmaf_picture_unref(&ref_pic);
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_picture_alloc (dist) failed: %d\n", ret);
++            return AVERROR(ENOMEM);
++        }
++        // Copy luma and chroma planes from AVFrame to VmafPicture.
++        for (int p = 0; p < 3; p++) {
++            const int h = p == 0 ? ref->height : ref->height / 2;
++            const uint8_t *src_r = ref->data[p];
++            const uint8_t *src_d = dist->data[p];
++            uint8_t *dst_r = (uint8_t *)ref_pic.data[p];
++            uint8_t *dst_d = (uint8_t *)dist_pic.data[p];
++            const int stride_r = (int)ref_pic.stride[p];
++            const int stride_d = (int)dist_pic.stride[p];
++            for (int row = 0; row < h; row++) {
++                memcpy(dst_r + row * stride_r, src_r + row * ref->linesize[p],
++                       (size_t)stride_r);
++                memcpy(dst_d + row * stride_d, src_d + row * dist->linesize[p],
++                       (size_t)stride_d);
++            }
++        }
++        ret = vmaf_read_pictures(s->vmaf, &ref_pic, &dist_pic, s->frame_cnt++);
++        if (ret) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_read_pictures (sw path) failed: %d\n", ret);
++            return AVERROR_EXTERNAL;
++        }
 +    }
 +
 +    return ff_filter_frame(ctx->outputs[0], dist);
@@ -281,44 +322,47 @@ index f0ec23605c..d9dab0bdd9 100644
 +    LIBVMAFContext *s = ctx->priv;
 +    AVFilterLink *inlink = ctx->inputs[0];
 +    FilterLink *inl = ff_filter_link(inlink);
-+    AVHWFramesContext *frames_ctx;
 +    const AVPixFmtDescriptor *desc;
 +
-+    if (!inl->hw_frames_ctx) {
-+        av_log(ctx, AV_LOG_ERROR,
-+               "No QSV hw_frames_ctx on input. Use -hwaccel qsv.\n");
-+        return AVERROR(EINVAL);
-+    }
-+
-+    frames_ctx = (AVHWFramesContext *)inl->hw_frames_ctx->data;
-+    if (frames_ctx->device_ctx->type != AV_HWDEVICE_TYPE_QSV) {
-+        av_log(ctx, AV_LOG_ERROR,
-+               "Expected QSV frames, got type %d\n",
-+               frames_ctx->device_ctx->type);
-+        return AVERROR(EINVAL);
-+    }
-+
-+    // Get display handle from the QSV session via oneVPL
-+    {
-+        AVQSVDeviceContext *qsv_hwctx = frames_ctx->device_ctx->hwctx;
-+        mfxHDL display_handle = NULL;
-+        mfxStatus sts = MFXVideoCORE_GetHandle(qsv_hwctx->session,
-+                                                MFX_HANDLE_VA_DISPLAY,
-+                                                &display_handle);
-+        if (sts != MFX_ERR_NONE || !display_handle) {
++    if (inl->hw_frames_ctx) {
++        // QSV / hardware path: extract VA display handle for zero-copy import.
++        AVHWFramesContext *frames_ctx = (AVHWFramesContext *)inl->hw_frames_ctx->data;
++        if (frames_ctx->device_ctx->type != AV_HWDEVICE_TYPE_QSV) {
 +            av_log(ctx, AV_LOG_ERROR,
-+                   "MFXVideoCORE_GetHandle(VA_DISPLAY) failed: %d\n", sts);
-+            return AVERROR_EXTERNAL;
++                   "libvmaf_sycl: hw_frames_ctx present but device type is not QSV (%d)\n",
++                   frames_ctx->device_ctx->type);
++            return AVERROR(EINVAL);
 +        }
-+        s->va_display = display_handle;
++
++        // Get display handle from the QSV session via oneVPL
++        {
++            AVQSVDeviceContext *qsv_hwctx = frames_ctx->device_ctx->hwctx;
++            mfxHDL display_handle = NULL;
++            mfxStatus sts = MFXVideoCORE_GetHandle(qsv_hwctx->session,
++                                                    MFX_HANDLE_VA_DISPLAY,
++                                                    &display_handle);
++            if (sts != MFX_ERR_NONE || !display_handle) {
++                av_log(ctx, AV_LOG_ERROR,
++                       "MFXVideoCORE_GetHandle(VA_DISPLAY) failed: %d\n", sts);
++                return AVERROR_EXTERNAL;
++            }
++            s->va_display = display_handle;
++        }
++
++        desc = av_pix_fmt_desc_get(frames_ctx->sw_format);
++        s->bpc = desc->comp[0].depth;
++        av_log(ctx, AV_LOG_INFO,
++               "libvmaf_sycl: QSV zero-copy path, sw_format=%s bpc=%u %dx%d\n",
++               desc->name, s->bpc, inlink->w, inlink->h);
++    } else {
++        // Software path: YUV420P or YUV420P10LE frames.
++        desc = av_pix_fmt_desc_get(inlink->format);
++        s->bpc = desc->comp[0].depth;
++        s->va_display = NULL;
++        av_log(ctx, AV_LOG_INFO,
++               "libvmaf_sycl: software path, format=%s bpc=%u %dx%d\n",
++               desc->name, s->bpc, inlink->w, inlink->h);
 +    }
-+
-+    desc = av_pix_fmt_desc_get(frames_ctx->sw_format);
-+    s->bpc = desc->comp[0].depth;
-+
-+    av_log(ctx, AV_LOG_INFO,
-+           "libvmaf_sycl: sw_format=%s bpc=%u %dx%d\n",
-+           desc->name, s->bpc, inlink->w, inlink->h);
 +
 +    // Initialise SYCL state
 +    VmafSyclConfiguration sycl_cfg = {
@@ -396,7 +440,7 @@ index f0ec23605c..d9dab0bdd9 100644
 +    .priv_size      = sizeof(LIBVMAFContext),
 +    FILTER_INPUTS(libvmaf_inputs),
 +    FILTER_OUTPUTS(libvmaf_outputs_sycl),
-+    FILTER_SINGLE_PIXFMT(AV_PIX_FMT_QSV),
++    FILTER_PIXFMTS(AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_QSV),
 +    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 +};
 +#endif

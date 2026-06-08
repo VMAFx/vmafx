@@ -2587,8 +2587,19 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
         goto cleanup;
 
 #ifdef HAVE_CUDA
-    ref = &ref_host;
-    dist = &dist_host;
+    /* When every registered extractor is CUDA-only (hw_flags == HW_FLAG_DEVICE,
+     * no HW_FLAG_HOST bit set), translate_picture_host() early-returns without
+     * populating ref_host/dist_host, leaving them zero-initialised.
+     * Reassigning ref/dist to point at the zeroed structs and then passing them
+     * to threaded_read_pictures_batch → vmaf_picture_ref → vmaf_ref_fetch_increment
+     * dereferences a NULL pointer.  Guard: only reassign when at least one
+     * host extractor is registered (HW_FLAG_HOST set). */
+    if (hw_flags & HW_FLAG_HOST) {
+        ref = &ref_host;
+        dist = &dist_host;
+    }
+    /* Device-only path: ref/dist remain the hwupload-uploaded pictures provided
+     * by the caller.  vmaf_read_pictures validates these are non-NULL above. */
 #endif
 
     bool done = false;

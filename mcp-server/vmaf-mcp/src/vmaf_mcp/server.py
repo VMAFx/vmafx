@@ -1515,11 +1515,14 @@ async def _run_benchmark(
 # probe_backend — runtime health check (ADR-0608 / C-P0-1)
 # ---------------------------------------------------------------------------
 
-# Minimal 32×32 1-frame 4:2:0 8-bit YUV filled with mid-grey (Y=128, Cb=Cr=128).
-# 32×32 × 1.5 = 1536 bytes.  Tiny enough to decode in milliseconds on any backend.
-_PROBE_YUV_WIDTH = 32
-_PROBE_YUV_HEIGHT = 32
-_PROBE_YUV_BYTES = _PROBE_YUV_WIDTH * _PROBE_YUV_HEIGHT * 3 // 2  # 1536 for 4:2:0 8-bit
+# Minimal 64×64 1-frame 4:2:0 8-bit YUV filled with mid-grey (Y=128, Cb=Cr=128).
+# 64×64 × 1.5 = 6144 bytes.  Tiny enough to decode in milliseconds on any backend.
+# 32×32 was insufficient for CUDA ADM which requires at least 36px in each
+# dimension; a 32px frame silently returned a null score from the ADM kernel,
+# which the old code misreported as runtime_healthy=True (ADR-0608 follow-up).
+_PROBE_YUV_WIDTH = 64
+_PROBE_YUV_HEIGHT = 64
+_PROBE_YUV_BYTES = _PROBE_YUV_WIDTH * _PROBE_YUV_HEIGHT * 3 // 2  # 6144 for 4:2:0 8-bit
 _PROBE_YUV_DATA = bytes([128]) * _PROBE_YUV_BYTES
 
 
@@ -1627,13 +1630,16 @@ async def _probe_backend(backend: str) -> dict[str, Any]:
                 "error": f"failed to parse vmaf output: {exc}",
             }
 
+        # runtime_healthy requires a non-null score: a null score indicates
+        # the backend kernel failed silently (e.g. ADM sub-minimum resolution,
+        # driver absent) even though the process returned exit code 0.
         return {
             "backend": backend,
             "compiled_in": compiled_in,
-            "runtime_healthy": True,
+            "runtime_healthy": score is not None,
             "latency_ms": round(latency_ms, 1),
             "score": score,
-            "error": None,
+            "error": None if score is not None else "vmaf returned exit 0 but score was null",
         }
 
 

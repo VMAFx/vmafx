@@ -38,18 +38,16 @@
 #define MOMENT_BX 16
 #define MOMENT_BY 16
 
-/* HIP warp size is 64 on GCN/RDNA. */
-#define MOMENT_WARP_SIZE   64
-#define MOMENT_WARPS_PER_BLOCK (MOMENT_BX * MOMENT_BY / MOMENT_WARP_SIZE)
-
 /* uint64 warp reduction via two uint32 shuffles — same technique as
  * the CUDA twin (moment_score.cu::warp_reduce_u64). HIP __shfl_down
- * has the same signature as CUDA __shfl_down_sync without the mask. */
+ * has the same signature as CUDA __shfl_down_sync without the mask.
+ * Uses `warpSize` at runtime to support both wave64 (GCN/RDNA1) and
+ * wave32 (RDNA2+: gfx1030/gfx1100/gfx1101) hardware. */
 __device__ __forceinline__ uint64_t moment_warp_reduce_u64(uint64_t v)
 {
     uint32_t lo = (uint32_t)v;
     uint32_t hi = (uint32_t)(v >> 32);
-    for (int off = MOMENT_WARP_SIZE / 2; off > 0; off >>= 1) {
+    for (int off = (int)warpSize / 2; off > 0; off >>= 1) {
         const uint32_t tlo = __shfl_down(lo, off);
         const uint32_t thi = __shfl_down(hi, off);
         const uint64_t other = ((uint64_t)thi << 32) | tlo;
@@ -95,7 +93,7 @@ __global__ void calculate_moment_hip_kernel_8bpc(const uint8_t *__restrict__ ref
     d1 = moment_warp_reduce_u64(d1);
     d2 = moment_warp_reduce_u64(d2);
 
-    const unsigned lane = lid % MOMENT_WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
     if (lane == 0) {
         atomicAdd(&sums[0], (unsigned long long)r1);
         atomicAdd(&sums[1], (unsigned long long)d1);
@@ -138,7 +136,7 @@ __global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ re
     d1 = moment_warp_reduce_u64(d1);
     d2 = moment_warp_reduce_u64(d2);
 
-    const unsigned lane = lid % MOMENT_WARP_SIZE;
+    const unsigned lane = lid % (unsigned)warpSize;
     if (lane == 0) {
         atomicAdd(&sums[0], (unsigned long long)r1);
         atomicAdd(&sums[1], (unsigned long long)d1);
