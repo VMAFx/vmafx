@@ -646,6 +646,20 @@ if is_asm_enabled
           c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-ffp-contract=off'],
         )
 
+        # float-ADM DWT2 NEON carve-out (ADR-1057).
+        # float_adm_dwt2_neon.c replaces the vmlaq_laneq_f32 FMA intrinsics
+        # in the original DWT2 kernel with explicit vmulq_laneq_f32 + vaddq_f32
+        # pairs to match the scalar reference rounding.  The TU also carries
+        # `#pragma clang fp contract(off)` / GCC optimize attribute guards for
+        # the scalar tail.  Building in a dedicated static library keeps the
+        # contraction guard isolated from other TUs in arm64_v8_fp.
+        arm64_adm_dwt2_neon_lib = static_library(
+          'arm64_adm_dwt2_neon',
+          feature_src_dir + 'arm64/float_adm_dwt2_neon.c',
+          include_directories : vmaf_base_include,
+          c_args : vmaf_cflags_common + ['-DARCH_AARCH64', '-ffp-contract=off'],
+        )
+
         # ssim_neon carve-out (mirror of ssimulacra2_neon and x86 ssim_avx2).
         # Rationale: ssim_accumulate_neon at line ~105 contains the
         # `vaddq_f32(vaddq_f32(vmulq_f32(rm,rm), vmulq_f32(cm,cm)), vC1)`
@@ -677,6 +691,7 @@ if is_asm_enabled
 
         platform_specific_cpu_objects += arm64_static_lib.extract_all_objects()
         platform_specific_cpu_objects += arm64_fp_lib.extract_all_objects()
+        platform_specific_cpu_objects += arm64_adm_dwt2_neon_lib.extract_all_objects()
         platform_specific_cpu_objects += arm64_ssimulacra2_lib.extract_all_objects()
         platform_specific_cpu_objects += arm64_ssim_neon_lib.extract_all_objects()
 

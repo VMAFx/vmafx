@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1057: Revert float-ADM SIMD dispatch wiring (PR #685) — NEON FMA divergence unfixable in scope
 
-- **Status**: Accepted
+- **Status**: Superseded by fix/neon-fma-safe-float-adm-dwt2 (float_adm_dwt2_neon.c)
 - **Date**: 2026-06-06
 - **Deciders**: Lusoris
 - **Tags**: `simd`, `neon`, `float-adm`, `revert`, `correctness`
