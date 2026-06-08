@@ -161,6 +161,23 @@ VMAF_EXPORT int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_n
                                            const char *preset, int crf);
 
 /**
+ * Returns 1 if the tiny model attached to @p ctx requires a codec context
+ * (i.e. the sidecar declares `"codec_aware": true` and the model was loaded
+ * with a `codec_block` second input). Returns 0 if no model is attached, if
+ * the model has no codec block, or if libvmaf was built without DNN support.
+ *
+ * Intended for CLI / wrapper validation: callers can use this function after
+ * vmaf_use_tiny_model() to detect that --tiny-codec / codec-block conditioning
+ * is required and emit a clear error before inference starts.
+ *
+ * @param ctx  live VmafContext (may be NULL — returns 0 safely).
+ * @return 1 if a codec-aware model with a codec block is attached, 0 otherwise.
+ *
+ * @thread-safety Safe to call before vmaf_read_pictures() on the same context.
+ */
+VMAF_EXPORT int vmaf_dnn_is_codec_aware(const VmafContext *ctx);
+
+/**
  * Resize filter selector for the NCHW tiny-model dispatch (ADR-0550).
  * When a tiny model's expected input dims (e.g. 224x224 for the
  * `nr_metric_v1` NR scorer) do not match the user-supplied frame

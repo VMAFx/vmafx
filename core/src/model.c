@@ -159,7 +159,12 @@ int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cfg, const cha
 {
     int err = vmaf_read_json_model_from_path(model, cfg, path);
     if (err) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "could not read model from path: \"%s\"\n", path);
+        /* Demote to WARNING: the CLI falls back to vmaf_model_collection_load_from_path
+         * when this call fails, so a bootstrap/collection JSON (e.g. vmaf_b_v0.6.3.json)
+         * is not an error — it simply has a different top-level structure. The caller
+         * emits a fatal error if the collection fallback also fails. A .pkl-specific
+         * follow-up stays at ERROR because pkl is permanently unsupported. */
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "could not read model from path: \"%s\"\n", path);
         const char *ext = strrchr(path, '.');
         if (ext && !strcmp(ext, ".pkl")) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR,

@@ -67,6 +67,14 @@ int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, con
  */
 int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode);
 
+/**
+ * Bridge for the public `vmaf_dnn_is_codec_aware` query (dnn.h).
+ * Returns 1 if the attached tiny model has a sidecar with codec_aware=true
+ * and a non-zero codec block (extra_in_buf / extra_in_width allocated).
+ * Returns 0 if no model is attached, no sidecar, or no codec block.
+ */
+int vmaf_ctx_dnn_is_codec_aware(const VmafContext *ctx);
+
 #ifdef __cplusplus
 }
 #endif

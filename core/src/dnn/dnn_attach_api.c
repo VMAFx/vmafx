@@ -112,6 +112,20 @@ int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, const c
 #endif
 }
 
+/* Public query for codec-awareness of the attached tiny model. The context
+ * state lives in libvmaf.c; delegate to the bridge in dnn_ctx.h. When built
+ * without DNN support the function always returns 0 (no session, no codec
+ * block) so callers do not need an #ifdef guard. */
+int vmaf_dnn_is_codec_aware(const VmafContext *ctx)
+{
+#if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
+    return vmaf_ctx_dnn_is_codec_aware(ctx);
+#else
+    (void)ctx;
+    return 0;
+#endif
+}
+
 /* ADR-0550 — public setter for the NCHW dispatch auto-resize filter.
  * The on-context state lives in libvmaf.c (the only TU that sees the
  * VmafContext layout); this stub validates the enum and delegates. */

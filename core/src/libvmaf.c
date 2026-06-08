@@ -758,6 +758,24 @@ int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode)
     return 0;
 }
 
+/* Bridge for vmaf_dnn_is_codec_aware (dnn.h public API).
+ * A model is "codec-aware" iff:
+ *   - a session is attached (sess != NULL),
+ *   - the sidecar is present and declares codec_aware=true, AND
+ *   - the codec block buffer was allocated at attach time (extra_in_width > 0).
+ * All three conditions must hold; any mismatch indicates a model that either
+ * has no codec block or whose sidecar was absent at load time. */
+int vmaf_ctx_dnn_is_codec_aware(const VmafContext *ctx)
+{
+    if (!ctx || !ctx->dnn.sess)
+        return 0;
+    if (!ctx->dnn.has_sidecar || !ctx->dnn.meta.codec_aware)
+        return 0;
+    if (ctx->dnn.extra_in_width == 0u || ctx->dnn.extra_in_buf == NULL)
+        return 0;
+    return 1;
+}
+
 static bool dnn_feature_name_char_ok(char c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';

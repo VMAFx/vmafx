@@ -743,6 +743,9 @@ static VmafDnnDevice resolve_tiny_device(const char *name)
  * load and never touches ORT. Returns 0 on success, -1 on any failure
  * (caller should treat as fatal and `goto cleanup`).
  */
+// NOLINTNEXTLINE(readability-function-size) — sequential guard chain; refactoring into helpers would
+//   require threading CLISettings through multiple callees with no real clarity gain. Upstream parity
+//   structure for all tiny-model checks is load-bearing for rebase continuity (ADR-0108 §rebase-notes).
 static int configure_tiny_model(VmafContext *vmaf, const CLISettings *c)
 {
     if (!c->tiny_model_path)
@@ -755,6 +758,30 @@ static int configure_tiny_model(VmafContext *vmaf, const CLISettings *c)
                       c->tiny_model_path);
         return -1;
     }
+
+    /* Reject non-.onnx paths early with a clear diagnostic.  Passing a
+     * sidecar .json (or a classic SVM .json) to --tiny-model would reach
+     * vmaf_dnn_validate_onnx, which tries to scan the file as protobuf and
+     * returns -EBADMSG — an opaque code that gives the user no hint about
+     * what went wrong.  Catch the common mistake here instead. */
+    {
+        const char *p = c->tiny_model_path;
+        const size_t len = strlen(p);
+        const bool has_onnx = len >= 5u && strcmp(p + len - 5u, ".onnx") == 0;
+        if (!has_onnx) {
+            (void)fprintf(stderr,
+                          "--tiny-model: \"%s\" does not end in \".onnx\".\n"
+                          "  --tiny-model accepts ONNX model files only "
+                          "(e.g. model/tiny/vmaf_tiny_v2.onnx).\n"
+                          "  For classic SVM models use --model path=<...> instead.\n"
+                          "  Sidecar metadata (.json companion files) are loaded "
+                          "automatically alongside the .onnx — do not pass them "
+                          "directly to --tiny-model.\n",
+                          c->tiny_model_path);
+            return -1;
+        }
+    }
+
     /* T6-9 / ADR-0211 — Sigstore-bundle verification. Runs *before*
      * the model is opened so a verification failure short-circuits
      * load and never touches ORT. Fails closed: missing registry,
@@ -804,6 +831,32 @@ static int configure_tiny_model(VmafContext *vmaf, const CLISettings *c)
                           -rerr);
             return -1;
         }
+    }
+
+    /* Codec-aware guard: if the loaded model requires a codec block (e.g.
+     * fr_regressor_v3) but the user did not supply --tiny-codec, the model
+     * would run with a zeroed or "unknown"-seeded codec input and produce
+     * out-of-range VMAF scores without any diagnostic.  Reject up front with
+     * a clear message so the problem is visible at startup rather than
+     * silently corrupting output.
+     *
+     * fr_regressor_v2 (and earlier codec-aware models) relied on the
+     * "unknown" pre-seed from ADR-0518 as a valid no-op fallback, so we
+     * only error when the sidecar explicitly declares codec_aware=true (which
+     * vmaf_dnn_is_codec_aware() checks) AND neither --tiny-codec nor
+     * --tiny-preset nor --tiny-crf was given. */
+    if (vmaf_dnn_is_codec_aware(vmaf) && !c->tiny_codec && !c->tiny_preset && c->tiny_crf < 0) {
+        (void)fprintf(stderr,
+                      "--tiny-model: \"%s\" is a codec-aware model (sidecar declares "
+                      "\"codec_aware\": true) but no --tiny-codec was supplied.\n"
+                      "  Without a codec context the model's conditioning block contains "
+                      "only a fallback \"unknown\" slot, which produces out-of-range or "
+                      "meaningless VMAF scores.\n"
+                      "  Supply --tiny-codec <name> (e.g. --tiny-codec libx264) and "
+                      "optionally --tiny-preset / --tiny-crf to condition the model "
+                      "correctly.  Use --help to see the accepted encoder names.\n",
+                      c->tiny_model_path);
+        return -1;
     }
 
     /* ADR-0519: populate the codec one-hot block for codec-aware
