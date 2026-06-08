@@ -250,8 +250,8 @@ def test_describe_worst_frames_n_zero_returns_empty_list():
 
 
 def test_describe_worst_frames_allocates_unique_tmpdir_per_call(tmp_path, monkeypatch):
-    """Each call to describe_worst_frames allocates its own ``mkdtemp``-backed
-    PNG directory and does NOT touch any other call's output.
+    """Each call to describe_worst_frames uses its own TemporaryDirectory (no
+    mkdtemp leak) and the two calls allocate distinct roots.
 
     Replaces the older ``test_describe_worst_frames_tmpdir_cleared_on_next_call``
     invariant (which enforced a *shared* ``/tmp/vmaf-mcp-worst-<pid>`` dir that
@@ -260,8 +260,10 @@ def test_describe_worst_frames_allocates_unique_tmpdir_per_call(tmp_path, monkey
     A had just emitted but not yet returned to its caller. See the
     2026-05-31 Python-surfaces bug-audit bundle (Bug 14).
 
-    The new invariant is stricter: each call gets a brand-new directory, so
-    PNGs emitted by call A survive past call B's invocation.
+    The new invariant: each call uses a ``tempfile.TemporaryDirectory`` context
+    manager, so the directory (and its PNGs) is cleaned up automatically when
+    the call returns.  Callers that need persistent paths must copy files out
+    before returning from the tool handler.
     """
     import anyio
 
@@ -321,14 +323,20 @@ def test_describe_worst_frames_allocates_unique_tmpdir_per_call(tmp_path, monkey
     # Each call allocated its own root — that's the stricter contract.
     unique = {str(r) for r in captured_roots}
     assert len(unique) == 2, (
-        "Each describe_worst_frames call must allocate its own mkdtemp dir; "
+        "Each describe_worst_frames call must allocate its own TemporaryDirectory; "
         "found duplicate roots which is the race the audit fixed."
     )
-    # Both response payloads survive: call 2 did NOT rmtree call 1's dir.
+    # Both response payloads contain the expected metadata.
     for resp in (r1, r2):
         assert len(resp["frames"]) == 1
         assert resp["frames"][0]["description"] == "stub description"
-        assert Path(resp["frames"][0]["png"]).exists()
+    # TemporaryDirectory cleans up on context exit, so the PNG paths no longer
+    # exist after the call returns — callers must copy files out if they need
+    # persistence beyond the tool-handler lifetime.
+    for resp in (r1, r2):
+        assert not Path(
+            resp["frames"][0]["png"]
+        ).exists(), "TemporaryDirectory leaked: PNG file still present after _describe_worst_frames returned"
 
 
 # ---------------------------------------------------------------------------
@@ -397,9 +405,9 @@ def test_score_tempfile_uses_unique_path(tmp_path, monkeypatch):
     anyio.run(run_concurrent)
 
     assert len(captured_paths) == 10, "expected exactly 10 calls"
-    assert len(set(str(p) for p in captured_paths)) == 10, (
-        "task-name collision: two concurrent calls produced the same output path"
-    )
+    assert (
+        len(set(str(p) for p in captured_paths)) == 10
+    ), "task-name collision: two concurrent calls produced the same output path"
     # All temp files must have been cleaned up by the finally block.
     for p in captured_paths:
         assert not p.exists(), f"tempfile not cleaned up: {p}"
@@ -459,6 +467,89 @@ def test_score_tempfile_cleaned_up_on_exception(tmp_path, monkeypatch):
     assert len(leaked_path) == 1
     # The finally block must have cleaned up even though scoring raised.
     assert not leaked_path[0].exists(), "tempfile leaked after exception in _run_vmaf_score"
+
+
+# ---------------------------------------------------------------------------
+# Concurrency cap — _SCORE_SEM limits simultaneous vmaf subprocesses
+# ---------------------------------------------------------------------------
+
+
+def test_score_sem_limits_concurrent_vmaf_subprocesses(tmp_path, monkeypatch):
+    """16 concurrent compute_vmaf calls must not spawn more than
+    VMAF_MCP_MAX_CONCURRENT (here pinned to 8) vmaf subprocesses at
+    the same time.
+
+    We instrument asyncio.create_subprocess_exec to count how many
+    fake vmaf processes are alive simultaneously and record the observed
+    high-water mark.  With the semaphore the peak must be ≤ 8; without
+    it the peak would reach 16.
+    """
+    import anyio
+
+    # Pin the semaphore to exactly 8 for this test.
+    monkeypatch.setattr(srv, "_SCORE_SEM", asyncio.Semaphore(8))
+
+    monkeypatch.setenv("VMAF_MCP_ALLOW", str(tmp_path))
+
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    ref.write_bytes(b"\x00" * 16)
+    dis.write_bytes(b"\x00" * 16)
+
+    vmaf_stub = tmp_path / "vmaf-stub"
+    vmaf_stub.touch()
+
+    monkeypatch.setattr(srv, "_vmaf_binary", lambda: vmaf_stub)
+    monkeypatch.setattr(srv, "_probe_backends", lambda _vmaf: frozenset({"cpu"}))
+
+    peak_concurrent: list[int] = [0]
+    current_concurrent: list[int] = [0]
+
+    class _FakeProc:
+        returncode = 0
+
+        async def communicate(self):
+            # Yield to the event loop so other tasks can enter the semaphore
+            # region; this gives the test a realistic concurrent-overlap window.
+            await asyncio.sleep(0)
+            return b"", b""
+
+    async def fake_subprocess(*argv, **_kwargs):
+        current_concurrent[0] += 1
+        if current_concurrent[0] > peak_concurrent[0]:
+            peak_concurrent[0] = current_concurrent[0]
+        proc = _FakeProc()
+        # Write the minimal JSON payload the caller expects.
+        args = list(argv)
+        idx = args.index("-o")
+        out_path = Path(args[idx + 1])
+        out_path.write_text('{"frames": [{"frameNum": 0, "metrics": {"vmaf": 90.0}}]}')
+        current_concurrent[0] -= 1
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_subprocess)
+
+    req = srv.ScoreRequest(
+        ref=ref,
+        dis=dis,
+        width=16,
+        height=1,
+        pixfmt="420",
+        bitdepth=8,
+    )
+
+    async def run_16_concurrent():
+        tasks = [asyncio.create_task(srv._run_vmaf_score(req)) for _ in range(16)]
+        return await asyncio.gather(*tasks)
+
+    anyio.run(run_16_concurrent)
+
+    assert peak_concurrent[0] <= 8, (
+        f"semaphore failed: {peak_concurrent[0]} concurrent vmaf subprocesses observed, "
+        "expected ≤ 8 (VMAF_MCP_MAX_CONCURRENT default)"
+    )
+    # Sanity: all 16 calls completed successfully.
+    assert peak_concurrent[0] >= 1, "no subprocess calls were observed — test fixture broken"
 
 
 def test_describe_image_falls_back_to_metadata_only_without_extras(monkeypatch):

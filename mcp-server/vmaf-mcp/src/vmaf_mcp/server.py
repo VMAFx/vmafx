@@ -62,6 +62,14 @@ from mcp.types import TextContent, Tool
 
 _logger = logging.getLogger(__name__)
 
+# Concurrency cap for vmaf subprocess spawning.  Unbounded concurrent requests
+# exhaust memory (each vmaf process loads the model + allocates frame buffers).
+# The default of 8 is a safe upper bound on a single GPU or a 16-core CPU host;
+# operators can raise it via VMAF_MCP_MAX_CONCURRENT when running on larger
+# hardware.  Reads the env var at import time so the value is fixed for the
+# lifetime of the server process.
+_SCORE_SEM: asyncio.Semaphore = asyncio.Semaphore(int(os.environ.get("VMAF_MCP_MAX_CONCURRENT", 8)))
+
 
 # Default per-tool wall-clock timeout (seconds) for any awaited subprocess
 # `communicate()` call. Each async subprocess site below funnels through
@@ -411,77 +419,87 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
                 "vmaf pick, or rebuild with the requested backend enabled."
             )
 
-    # Round 26 A.2: use NamedTemporaryFile to guarantee a unique path.
-    # The task-name approach (asyncio.current_task().get_name()) was vulnerable
-    # to collision if tasks were renamed, and the name space is small under
-    # high concurrency.  delete=False hands ownership to the finally block so
-    # the vmaf subprocess can reopen the path by name; the try/finally below
-    # unlinks unconditionally.
-    with tempfile.NamedTemporaryFile(
-        prefix="vmaf-mcp-",
-        suffix=".json",
-        delete=False,
-    ) as _tmp:
-        output = Path(_tmp.name)
-    try:
-        argv = [
-            str(vmaf),
-            "-r",
-            str(req.ref),
-            "-d",
-            str(req.dis),
-            "--width",
-            str(req.width),
-            "--height",
-            str(req.height),
-            "-p",
-            req.pixfmt,
-            "-b",
-            str(req.bitdepth),
-            "-m",
-            req.model,
-            "--precision",
-            req.precision,
-            "-q",
-            "-o",
-            str(output),
-            "--json",
-        ]
-        if req.subsample > 1:
-            argv += ["--subsample", str(req.subsample)]
-        if req.backend in _BACKEND_DISABLE:
-            for sibling in _BACKEND_DISABLE[req.backend]:
-                argv.append(f"--no_{sibling}")
-
-        proc = await asyncio.create_subprocess_exec(
-            *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        _stdout, stderr = await _communicate_with_timeout(proc)
-        if proc.returncode != 0:
-            raise RuntimeError(f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace')}")
-        # Pin UTF-8 explicitly so the parse does not pick up the server
-        # process's locale (LC_ALL may differ between MCP-stdio launches
-        # and CI runners, and a non-UTF-8 default decoder would crash on
-        # legitimate accented filenames in the vmaf JSON payload).
+    # Concurrency cap: acquire _SCORE_SEM before spawning the vmaf subprocess.
+    # Each vmaf process loads the model and allocates per-frame buffers; unbounded
+    # concurrency exhausts memory on every host configuration.  Binary validation
+    # and backend checks run before acquisition so we fail fast without holding a
+    # slot (VMAF_MCP_MAX_CONCURRENT controls the cap, default 8).
+    async with _SCORE_SEM:
+        # Round 26 A.2: use NamedTemporaryFile to guarantee a unique path.
+        # The task-name approach (asyncio.current_task().get_name()) was vulnerable
+        # to collision if tasks were renamed, and the name space is small under
+        # high concurrency.  delete=False hands ownership to the finally block so
+        # the vmaf subprocess can reopen the path by name; the try/finally below
+        # unlinks unconditionally.
+        with tempfile.NamedTemporaryFile(
+            prefix="vmaf-mcp-",
+            suffix=".json",
+            delete=False,
+        ) as _tmp:
+            output = Path(_tmp.name)
         try:
-            payload: dict[str, Any] = json.loads(output.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"vmaf output unreadable (disk-full or OOM kill?): {exc}") from exc
-        # Bug #1 (echo): tell the caller which backend actually ran, so
-        # downstream parity tests can assert it instead of trusting the
-        # request silently.
-        payload["backend_requested"] = req.backend
-        payload["backend_used"] = (
-            req.backend if req.backend != "auto" else _infer_backend_from_payload(payload)
-        )
-        # Bug #5: surface a resolution-mismatch warning when the model's
-        # training resolution preset disagrees with the source frame size.
-        warning = _resolution_mismatch_warning(req.model, req.width, req.height)
-        if warning is not None:
-            payload["mismatched_model_warning"] = warning
-        return payload
-    finally:
-        output.unlink(missing_ok=True)
+            argv = [
+                str(vmaf),
+                "-r",
+                str(req.ref),
+                "-d",
+                str(req.dis),
+                "--width",
+                str(req.width),
+                "--height",
+                str(req.height),
+                "-p",
+                req.pixfmt,
+                "-b",
+                str(req.bitdepth),
+                "-m",
+                req.model,
+                "--precision",
+                req.precision,
+                "-q",
+                "-o",
+                str(output),
+                "--json",
+            ]
+            if req.subsample > 1:
+                argv += ["--subsample", str(req.subsample)]
+            if req.backend in _BACKEND_DISABLE:
+                for sibling in _BACKEND_DISABLE[req.backend]:
+                    argv.append(f"--no_{sibling}")
+
+            proc = await asyncio.create_subprocess_exec(
+                *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            _stdout, stderr = await _communicate_with_timeout(proc)
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace')}"
+                )
+            # Pin UTF-8 explicitly so the parse does not pick up the server
+            # process's locale (LC_ALL may differ between MCP-stdio launches
+            # and CI runners, and a non-UTF-8 default decoder would crash on
+            # legitimate accented filenames in the vmaf JSON payload).
+            try:
+                payload: dict[str, Any] = json.loads(output.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    f"vmaf output unreadable (disk-full or OOM kill?): {exc}"
+                ) from exc
+            # Bug #1 (echo): tell the caller which backend actually ran, so
+            # downstream parity tests can assert it instead of trusting the
+            # request silently.
+            payload["backend_requested"] = req.backend
+            payload["backend_used"] = (
+                req.backend if req.backend != "auto" else _infer_backend_from_payload(payload)
+            )
+            # Bug #5: surface a resolution-mismatch warning when the model's
+            # training resolution preset disagrees with the source frame size.
+            warning = _resolution_mismatch_warning(req.model, req.width, req.height)
+            if warning is not None:
+                payload["mismatched_model_warning"] = warning
+            return payload
+        finally:
+            output.unlink(missing_ok=True)
 
 
 def _infer_backend_from_payload(payload: dict[str, Any]) -> str:
@@ -849,13 +867,13 @@ async def _describe_worst_frames(
     # same time, or one client batching N calls) raced on the shared dir:
     # the second call's ``shutil.rmtree(tmp_root)`` would delete the PNGs
     # the first call had just emitted but not yet returned to its caller.
-    # ``mkdtemp`` allocates a fresh atomic-O_EXCL name per call so the two
-    # invocations cannot collide.  We accept the trade-off that PNGs no
-    # longer survive a second call to the same tool — callers that want
-    # persistent paths should copy the file out of the response, not rely
-    # on /tmp lifetime.
-    tmp_root = Path(tempfile.mkdtemp(prefix="vmaf-mcp-worst-"))
-    try:
+    # ``TemporaryDirectory`` allocates a fresh atomic-O_EXCL name per call
+    # (replacing the previous raw ``mkdtemp`` + ``finally: pass`` which leaked
+    # the directory on every call) and cleans up automatically on context exit,
+    # so callers that want persistent paths should copy the file out of the
+    # response before returning.
+    with tempfile.TemporaryDirectory(prefix="vmaf-mcp-worst-") as _tmp_str:
+        tmp_root = Path(_tmp_str)
         for frame_idx, vmaf in worst:
             png_path = tmp_root / f"frame_{frame_idx:06d}.png"
             await _extract_frame_png(
@@ -876,15 +894,6 @@ async def _describe_worst_frames(
                     "description": description,
                 }
             )
-    finally:
-        # PNGs remain on disk for the duration of this response so that
-        # downstream tools can re-open the file by path.  Because the
-        # directory is per-call (mkdtemp), unbounded growth is bounded
-        # by an OS-level tmp-cleanup policy (systemd-tmpfiles, /tmp on
-        # tmpfs reset at reboot), not by any internal LRU.  Long-lived
-        # MCP servers in non-volatile-tmp environments can wire in a
-        # cron-driven cleaner if they care.
-        pass
     return {
         "model_id": _vlm_state.get("model_id"),
         "frames": out_frames,
