@@ -529,6 +529,9 @@ free_x:
     free(x);
 free_f:
     free(f);
+    /* NULL the caller's handle so it cannot be dereferenced after a failed
+     * create call. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
+    *fex_ctx = NULL;
     return -ENOMEM;
 }
 
@@ -787,6 +790,9 @@ free_fex_list:
 free_p:
     free(p);
 fail:
+    /* NULL the caller's handle so it cannot be dereferenced after a failed
+     * pool create. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
+    *pool = NULL;
     return -ENOMEM;
 }
 
@@ -1027,6 +1033,13 @@ int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool)
         free(pool->fex_list[i].ctx_list);
     }
     free(pool->fex_list);
+    /* POSIX requires unlock + destroy before free; freeing a locked or
+     * un-destroyed mutex is undefined behaviour. Unlock first (we hold
+     * the lock from the pthread_mutex_lock above), then destroy.
+     * ASan/LeakSan: mutex state is embedded in pool — freeing the pool
+     * before destroying the mutex leaks POSIX TSD resources on glibc. */
+    (void)pthread_mutex_unlock(&(pool->lock));
+    (void)pthread_mutex_destroy(&(pool->lock));
 
 free_pool:
     free(pool);

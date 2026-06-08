@@ -201,6 +201,9 @@ free_name:
 free_fv:
     free(fv);
 fail:
+    /* NULL the caller's handle so it cannot be dereferenced after a failed
+     * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
+    *feature_vector = nullptr;
     return -ENOMEM;
 }
 
@@ -281,6 +284,9 @@ free_feature_vector:
 free_fc:
     free(fc);
 fail:
+    /* NULL the caller's handle so it cannot be dereferenced after a failed
+     * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
+    *feature_collector = nullptr;
     return -ENOMEM;
 }
 

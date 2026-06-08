@@ -298,6 +298,11 @@ free_framesync:
 free_v:
     free(v);
 fail:
+    /* NULL the caller's handle so it cannot be passed to vmaf_close()
+     * or dereferenced after a failed vmaf_init(). ASan/LeakSan: avoids
+     * a dangling-pointer UAF if the caller checks the return code but
+     * still reads *vmaf. CERT MEM30-C. */
+    *vmaf = NULL;
     /* Return the actual error code from the failing sub-init rather than
      * a hardcoded -ENOMEM (which is only correct when the malloc fails).
      * CERT ERR33-C: callers must be able to distinguish OOM from a
