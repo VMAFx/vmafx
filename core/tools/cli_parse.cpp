@@ -1022,6 +1022,21 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     }
     if (!settings->path_dist)
         usage(argv[0], "Distorted .y4m or .yuv (-d/--distorted) is required");
+    /* Catch explicit zero dimensions before the generic "required options"
+     * check below; otherwise --width 0 with all other YUV args set produces
+     * the misleading "required options missing" message instead of a specific
+     * error.  Only fire when at least one sibling YUV field was also supplied
+     * so that the case where only --width 0 is given (with no height/pix_fmt/
+     * bitdepth) still falls through to the more helpful "all four required"
+     * message. */
+    if (settings->use_yuv && settings->width == 0 &&
+        (settings->height || settings->pix_fmt || settings->bitdepth)) {
+        usage(argv[0], "--width must be > 0");
+    }
+    if (settings->use_yuv && settings->height == 0 &&
+        (settings->width || settings->pix_fmt || settings->bitdepth)) {
+        usage(argv[0], "--height must be > 0");
+    }
     if (settings->use_yuv &&
         !(settings->width && settings->height && settings->pix_fmt && settings->bitdepth)) {
         usage(argv[0], "The following options are required for .yuv input:\n"
