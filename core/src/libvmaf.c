@@ -1988,12 +1988,24 @@ static int flush_context_cuda(VmafContext *vmaf)
     RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
     for (unsigned i = 0; i < rfe.cnt; i++) {
         if (rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) {
-            // Collect any pending double-buffered CUDA work
+            /* Collect any pending double-buffered CUDA work.  The thread pool
+             * path (flush_context_threaded) does not drain gpu_pending for
+             * CUDA extractors, so this collect must run regardless. */
             if (rfe.fex_ctx[i]->gpu_pending) {
                 err |= vmaf_feature_extractor_context_collect(
                     rfe.fex_ctx[i], rfe.fex_ctx[i]->gpu_pending_index, vmaf->feature_collector);
                 rfe.fex_ctx[i]->gpu_pending = false;
             }
+            /* flush_context_threaded already called
+             * vmaf_feature_extractor_context_flush() on every TEMPORAL
+             * extractor (including those also flagged CUDA) via its first
+             * loop (lines ~1896-1899).  Calling flush a second time on the
+             * same feature_collector index produces a duplicate-write
+             * -EINVAL and leaves cuCtxSynchronize in an error state.
+             * Skip the flush here for temporal-CUDA extractors when the
+             * thread pool was active. */
+            if (vmaf->thread_pool && (rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))
+                continue;
             err |= vmaf_feature_extractor_context_flush(rfe.fex_ctx[i], vmaf->feature_collector);
         }
     }
