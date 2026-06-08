@@ -3610,6 +3610,15 @@ def _write_compare_profile_report(
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
+    if fmt == "both":
+        # Write the raw JSON artifact alongside HTML and MD so that
+        # downstream tools can re-render or diff two reports without
+        # re-running the encode pipeline.
+        import json as _json  # noqa: PLC0415
+
+        json_path = output.with_suffix(".json")
+        json_path.write_text(_json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
+        outputs.append(json_path)
     if fmt in ("html", "both"):
         html_path = output if fmt == "html" else output.with_suffix(".html")
         html_path.write_text(render_html(data), encoding="utf-8")

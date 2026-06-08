@@ -825,12 +825,19 @@ def test_load_vlm_returns_none_when_dependencies_absent(
 # ===========================================================================
 
 
-def test_vmaf_version_handles_version_timeout(
+@pytest.mark.asyncio
+async def test_vmaf_version_handles_version_timeout(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Lines 1555-1556: when ``vmaf --version`` itself times out (or OSError)
     the helper must still return a payload with ``version=None`` and
     ``build_flags`` derived from ``--help``.
+
+    ``_vmaf_version`` is an async coroutine; the test uses
+    ``@pytest.mark.asyncio`` so that pytest-asyncio drives the event loop
+    rather than calling the coroutine synchronously (which would return a
+    coroutine object instead of the dict, causing the assertions to fail or
+    raise ``AttributeError`` on Python 3.14+).
     """
     fake_vmaf = tmp_path / "vmaf"
     fake_vmaf.write_bytes(b"#!/bin/sh\nexit 0\n")
@@ -845,7 +852,7 @@ def test_vmaf_version_handles_version_timeout(
         raise AssertionError(f"unexpected argv: {argv}")
 
     monkeypatch.setattr(srv.subprocess, "run", _fake_run)
-    result = srv._vmaf_version()
+    result = await srv._vmaf_version()
     assert result["version"] is None
     assert result["build_flags"]["cuda"] is True
     assert result["build_flags"]["cpu"] is True

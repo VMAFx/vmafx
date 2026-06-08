@@ -193,14 +193,17 @@ def import_python_file(filepath: str, override: dict = None):
     """
     if override is None:
         filename = get_file_name_without_extension(filepath)
-        try:
-            from importlib.machinery import SourceFileLoader
+        # SourceFileLoader.load_module() was deprecated in Python 3.4 and
+        # scheduled for removal in Python 3.15.  imp.load_source() was
+        # removed in Python 3.12.  Use the modern importlib.util path that
+        # works on all supported Python versions (3.8+).
+        import importlib.util  # noqa: PLC0415
+        import sys  # noqa: PLC0415
 
-            ret = SourceFileLoader(filename, filepath).load_module()
-        except ImportError:
-            import imp
-
-            ret = imp.load_source(filename, filepath)
+        spec = importlib.util.spec_from_file_location(filename, filepath)
+        ret = importlib.util.module_from_spec(spec)
+        sys.modules[filename] = ret
+        spec.loader.exec_module(ret)
         return ret
     else:
         override_ = override.copy()

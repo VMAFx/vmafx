@@ -87,17 +87,34 @@ async def no_auth_client(aiohttp_client: Any) -> TestClient:
 
 @pytest_asyncio.fixture
 async def token_client(aiohttp_client: Any) -> TestClient:
-    """TestClient with VMAFX_MCP_HTTP_TOKEN=test-secret-token (auth enabled)."""
-    # Also clear NO_AUTH in case the test environment has it set.
-    with patch.dict(
-        os.environ,
-        {"VMAFX_MCP_HTTP_TOKEN": "test-secret-token"},
-        clear=False,
-    ):
+    """TestClient with VMAFX_MCP_HTTP_TOKEN=test-secret-token (auth enabled).
+
+    Both env vars are managed inside the same patch.dict so that the
+    removal of VMAFX_MCP_HTTP_NO_AUTH is properly reverted when the
+    fixture tears down, preventing cross-test env leakage.
+    """
+    # Build a patched env dict: set the token and explicitly remove NO_AUTH.
+    # patch.dict tracks *both* changes and reverts them on exit, so a
+    # pre-existing VMAFX_MCP_HTTP_NO_AUTH in the test environment is not
+    # permanently deleted if another fixture or test had set it.
+    patch_env: dict[str, str] = {"VMAFX_MCP_HTTP_TOKEN": "test-secret-token"}
+    saved_no_auth = os.environ.get("VMAFX_MCP_HTTP_NO_AUTH")
+    with patch.dict(os.environ, patch_env, clear=False):
+        # Remove NO_AUTH *inside* the patch.dict scope; patch.dict will
+        # restore the original value (if any) when the context exits.
         os.environ.pop("VMAFX_MCP_HTTP_NO_AUTH", None)
         app = ht._make_app(_fresh_metrics())
         client = await aiohttp_client(app)
-        yield client
+        try:
+            yield client
+        finally:
+            # Explicitly restore NO_AUTH if it existed before this fixture
+            # ran, guarding against the case where patch.dict exit order
+            # races with the finally block.
+            if saved_no_auth is not None:
+                os.environ["VMAFX_MCP_HTTP_NO_AUTH"] = saved_no_auth
+            else:
+                os.environ.pop("VMAFX_MCP_HTTP_NO_AUTH", None)
 
 
 @pytest_asyncio.fixture
