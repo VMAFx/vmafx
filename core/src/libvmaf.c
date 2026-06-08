@@ -2136,6 +2136,18 @@ static int translate_picture_device(VmafContext *vmaf, VmafPicture *pic, VmafPic
         return err;
     }
 
+    /* Synchronize the per-picture stream so the async D-to-H copy is complete
+     * before CPU-side feature extractors read pic_host->data[].  Without this
+     * barrier the host buffer is still being written by the DMA engine when
+     * the first CPU extractor (e.g. motion) dereferences it, producing
+     * incorrect scores (~69–71 instead of ~100 on identical inputs). */
+    CudaFunctions *cu_f = vmaf->cuda.state.f;
+    int sync_err = cu_f->cuStreamSynchronize(vmaf_cuda_picture_get_stream(pic));
+    if (sync_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "problem synchronizing cuda stream after download\n");
+        return sync_err;
+    }
+
     return err;
 }
 
