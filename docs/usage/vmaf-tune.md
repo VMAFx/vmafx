@@ -301,7 +301,7 @@ The mapping is closed and order-stable; see
 | `--ffmpeg-bin PATH` | `ffmpeg` | Override the ffmpeg binary. |
 | `--ffprobe-bin PATH` | `ffprobe` | Override the ffprobe binary (used for HDR detection). |
 | `--vmaf-bin PATH` | `vmaf` | Override the vmaf binary. |
-| `--score-backend NAME` | `auto` | libvmaf scoring backend — `auto\|cpu\|cuda\|sycl\|hip\|vulkan`. See below. |
+| `--score-backend NAME` | `auto` | libvmaf scoring backend — `auto\|cpu\|cuda\|sycl\|hip`. See below. (`vulkan` was removed in ADR-0726.) |
 | `--no-source-hash` | off | Skip `src_sha256` (faster on large YUVs; loses provenance). |
 | `--auto-hdr` | (default) | Probe each source via ffprobe; inject HDR flags + HDR model when PQ / HLG signaling is detected. |
 | `--force-sdr` | off | Treat all sources as SDR; skip HDR detection. |
@@ -379,12 +379,11 @@ full rationale.
 Per [ADR-0299](../adr/0299-vmaf-tune-gpu-score.md), `vmaf-tune corpus`
 forwards a `--backend NAME` argument to the libvmaf CLI so scoring runs
 on a GPU when one is present. CPU VMAF runs at ~1–2 fps on 1080p; the
-CUDA / SYCL / HIP / Vulkan backends shipped with this fork
-([ADR-0127](../adr/0127-vulkan-compute-backend.md),
-[ADR-0175](../adr/0175-vulkan-backend-scaffold.md),
-[ADR-0186](../adr/0186-vulkan-image-import-impl.md),
-[ADR-0667](../adr/0667-vmaf-tune-score-backend-native-priority.md)) deliver
-**10–30× speedup** on the score axis.
+CUDA / SYCL / HIP backends shipped with this fork
+([ADR-0667](../adr/0667-vmaf-tune-score-backend-native-priority.md)) deliver
+**10–30× speedup** on the score axis. (The Vulkan backend was removed in
+[ADR-0726](../adr/0726-drop-vulkan-backend.md); use HIP for vendor-neutral
+AMD / Intel Arc GPU scoring.)
 
 ### Modes
 
@@ -453,10 +452,18 @@ vmaf-tune corpus --source ref.yuv --width 1920 --height 1080 \
 
 ### Vulkan score backend (`--score-backend=vulkan`)
 
-Per [ADR-0314](../adr/0314-vmaf-tune-score-backend-vulkan.md), the
-`vulkan` value of `--score-backend` is the **vendor-neutral** GPU
-score path. Use it whenever the host is not an NVIDIA box (or when
-the NVIDIA box has no CUDA toolkit installed).
+> **Status: REMOVED — [ADR-0726](../adr/0726-drop-vulkan-backend.md) (2026-05-28).**
+> The Vulkan backend was removed from libvmaf. `--score-backend=vulkan` is no
+> longer a valid value — passing it returns a non-zero exit code with an
+> "unsupported backend" error. Use `--score-backend=hip` for vendor-neutral
+> GPU scoring on AMD or Intel Arc hosts. The sections below are preserved for
+> historical reference only; none of the workflows described are functional in
+> current builds.
+
+Per [ADR-0314](../adr/0314-vmaf-tune-score-backend-vulkan.md) (now superseded
+by [ADR-0726](../adr/0726-drop-vulkan-backend.md)), the
+`vulkan` value of `--score-backend` was the **vendor-neutral** GPU
+score path. Use `--score-backend=hip` for AMD/Intel Arc hosts going forward.
 
 #### Supported platforms
 
@@ -903,7 +910,7 @@ the fast-path is not confident.
 | `--proxy-tolerance` | `1.5` | Max abs proxy/verify gap before exit code `3`. |
 | `--sample-chunk-seconds` | `5.0` | Probe-slice duration per TPE trial. |
 | `--smoke` | off | Synthetic curve; no ffmpeg / ONNX / GPU. |
-| `--score-backend` | `auto` | Verify-pass backend (`auto`/`cpu`/`cuda`/`sycl`/`hip`/`vulkan`). |
+| `--score-backend` | `auto` | Verify-pass backend (`auto`/`cpu`/`cuda`/`sycl`/`hip`). (`vulkan` removed in ADR-0726.) |
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Tool paths. |
 | `--vmaf-model` | `vmaf_v0.6.1` | libvmaf model for the verify pass. |
 | `--encode-dir` | `.workingdir2/fast` | Scratch dir for probe + verify encodes. |
@@ -1701,7 +1708,7 @@ from the ADR-0641 profile-report path (`--format both`) and list
 | `--crf-min / --crf-max` | adapter range | Inclusive CRF search window. Pass both or neither. |
 | `--max-iterations` | `8` | Encode+score round-trip cap per codec. |
 | `--vmaf-model` | `vmaf_v0.6.1` | VMAF model forwarded to the scorer. |
-| `--score-backend` | scorer default | `cpu`, `cuda`, `sycl`, `hip`, `vulkan`, or `auto`. |
+| `--score-backend` | scorer default | `cpu`, `cuda`, `sycl`, `hip`, or `auto`. (`vulkan` removed in ADR-0726.) |
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Binary overrides. |
 | `--encoder-ffmpeg-bin ENCODER=PATH` | off | Bind one compare token to a specific FFmpeg binary. Use with `ADAPTER@VARIANT` labels such as `libsvtav1@svt-av1-hdr=/opt/ffmpeg-8.1.1-svtav1-hdr/bin/ffmpeg`; unbound tokens use `--ffmpeg-bin`. |
 | `--format` | `markdown` | One of `markdown`, `json`, `csv`, `html`, `both`. `html` and `both` render the profile-card report directly; `both` writes `.html` and `.md` next to `--output` and therefore requires `--output`. |
@@ -1976,7 +1983,7 @@ vmaf-tune recommend \
 
 Numbers below are illustrative — actual encode + score wall time per
 point varies with source resolution, preset, and the libvmaf backend
-(`cpu`/`cuda`/`sycl`/`hip`/`vulkan`). The relevant ratio is **points
+(`cpu`/`cuda`/`sycl`/`hip`). The relevant ratio is **points
 visited**, not seconds:
 
 | Mode | Points visited | Relative wall time |
@@ -2137,7 +2144,7 @@ accepted as a legacy alias for `vmaf`.
 | `--output PATH` | stdout | Manifest destination. |
 | `--src-width INT` | largest `--resolutions` entry | Actual source width for raw YUV cross-resolution ladders. When the source is a higher resolution than the smallest rung, this is the demuxer-side `-s W:H`; the encode pipe scales to each rung target via `-vf scale=W:H`. Container sources auto-detect geometry and ignore this flag. Added 2026-05-18 per ADR-0498 / Bug #v2-B. |
 | `--src-height INT` | largest `--resolutions` entry | Companion to `--src-width`. Default picks the tallest entry in `--resolutions` so a `--resolutions 1920x1080,1280x720,854x480` ladder against a 1080p raw YUV "just works". |
-| `--score-backend NAME` | `auto` | libvmaf scoring backend used by the default corpus sampler. Accepts `auto\|cpu\|cuda\|sycl\|hip\|vulkan` (same enum as `corpus --score-backend` / `compare --score-backend`). `auto` picks the fastest available in native-first order (`cuda > sycl > hip > vulkan > cpu`); a specific name is honoured strictly and the run errors out with RC=2 before any encodes start if the local `vmaf` binary does not advertise it. Use `cpu` to force bit-exact CPU scoring for verification against the Netflix golden gate. Added 2026-05-18 per ADR-0511 / Bug C; HIP and native-first order added by ADR-0667. |
+| `--score-backend NAME` | `auto` | libvmaf scoring backend used by the default corpus sampler. Accepts `auto\|cpu\|cuda\|sycl\|hip` (`vulkan` was removed in ADR-0726 — same enum as `corpus --score-backend` / `compare --score-backend`). `auto` picks the fastest available in native-first order (`cuda > sycl > hip > cpu`); a specific name is honoured strictly and the run errors out with RC=2 before any encodes start if the local `vmaf` binary does not advertise it. Use `cpu` to force bit-exact CPU scoring for verification against the Netflix golden gate. Added 2026-05-18 per ADR-0511 / Bug C; HIP and native-first order added by ADR-0667. |
 | `--vmaf-bin PATH` | `vmaf` | Path to the `vmaf` binary used to probe backend availability for `--score-backend`. Added 2026-05-18 per ADR-0511 / Bug C. |
 | `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0598](../adr/0598-vmaftune-workdir-relocation.md)) |
 | `--max-concurrent-decodes N` | `1` | Accepted for consistency with `compare` and `tune-per-shot` (ADR-0577). Currently a no-op for `ladder` because the corpus sampler does not use the bisect decode path; effective when the ladder sampler is updated to bisect in a future PR. |
@@ -2650,7 +2657,7 @@ shell script of the per-segment + concat commands.
 | `--crf-min / --crf-max` | adapter range | Optional inclusive CRF search bounds; pass both or neither. |
 | `--max-iterations N` | `8` | Maximum encode+score iterations per detected shot. |
 | `--vmaf-model NAME` | `vmaf_v0.6.1` | VMAF model forwarded to the per-shot scorer. |
-| `--score-backend NAME` | `auto` | libvmaf scoring backend for the per-shot scorer (`auto`, `cpu`, `cuda`, `sycl`, `hip`, `vulkan`). |
+| `--score-backend NAME` | `auto` | libvmaf scoring backend for the per-shot scorer (`auto`, `cpu`, `cuda`, `sycl`, `hip`). (`vulkan` removed in ADR-0726.) |
 | `--predicate-module SPEC` | — | Advanced hook `MODULE:CALLABLE` matching `(shot, target_vmaf, encoder) -> (crf, measured_vmaf)`; bypasses real bisect. |
 | `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0598](../adr/0598-vmaftune-workdir-relocation.md)) |
 | `--max-concurrent-decodes N` | `1` | Maximum number of simultaneous reference-YUV decode operations across all per-shot bisect threads. Default `1` (serial decodes). See `compare --max-concurrent-decodes` for full semantics. ([ADR-0577](../adr/0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md)) |

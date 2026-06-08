@@ -11,17 +11,19 @@
 
 /**
  * @file libvmaf_hip.h
- * @brief HIP (AMD ROCm) backend public API — scaffolded by ADR-0212 / T7-10.
+ * @brief HIP (AMD ROCm) backend public API — ADR-0212 / T7-10.
  *
- * **Status: scaffold only.** Every entry point currently returns -ENOSYS
- * pending a real implementation. The header lands so downstream consumers
- * can compile against the API surface; the kernels (ADM, VIF, motion)
- * arrive in follow-up PRs. Mirrors the Vulkan scaffold (ADR-0175) — see
- * ADR-0212 for the audit-first decision and rollout sequence.
+ * The HIP backend is fully implemented. All 21 registered feature extractors
+ * have real ROCm HIP kernels verified on AMD gfx hardware (ADR-0533 /
+ * ADR-0539). Three legacy-API stubs (`adm_hip`, `vif_hip`, `motion_hip`)
+ * use an older `_init/_run/_destroy` shape incompatible with the
+ * `VmafFeatureExtractor` registration system; they return `-ENOSYS` at
+ * `init()` and are not selectable via `--feature`.
  *
- * When libvmaf was built without `-Denable_hip=true`, every entry point
- * returns -ENOSYS unconditionally and the runtime treats HIP as
- * disabled.
+ * When libvmaf was built without `-Denable_hip=true`, every public entry
+ * point in this header returns `-ENOSYS` unconditionally (stubs compiled
+ * into libvmaf.so by `core/src/hip/stubs.c`) and the runtime treats HIP
+ * as disabled.
  *
  * Header purity: the HIP runtime types (`hipDevice_t`, `hipStream_t`)
  * cross the ABI as `uintptr_t` to keep this header free of

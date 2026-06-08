@@ -579,7 +579,7 @@ the header free of `<hip/hip_runtime.h>` — cast on the caller side.
 | --- | --- |
 | `vmaf_hip_available` | Returns 1 if libvmaf was built with `-Denable_hip=true`, 0 otherwise. Cheap to call; no HIP runtime is touched until `vmaf_hip_state_init()`. |
 | `vmaf_hip_state_init` | Allocates a `VmafHipState` pinned to a HIP device. `device_index = -1` selects the first compute-capable HIP device; 0+ selects a specific ordinal. Returns `-ENODEV` when no compatible device is found. |
-| `vmaf_hip_import_state` | Hands an allocated `VmafHipState` to a `VmafContext`. The caller retains ownership and must call `vmaf_hip_state_free` after `vmaf_close`. Returns `-EINVAL` when `ctx` or `state` is `NULL`. |
+| `vmaf_hip_import_state` | Hands an allocated `VmafHipState` to a `VmafContext`. The caller retains ownership and must call `vmaf_hip_state_free` after `vmaf_close`. Returns `0` on success, `-EINVAL` when `ctx` or `state` is `NULL`, `-ENOSYS` when built without HIP. |
 | `vmaf_hip_state_free` | Releases a state allocated via `vmaf_hip_state_init`. Safe to pass `NULL` or a state that was never imported. Sets the pointer to `NULL` on return. |
 | `vmaf_hip_list_devices` | Enumerates compute-capable HIP devices visible to the runtime. Prints one line per device with its ordinal, name, and compute capability. Returns device count or `-ENOSYS` when built without HIP. |
 
