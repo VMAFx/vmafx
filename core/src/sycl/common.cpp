@@ -118,7 +118,10 @@ struct VmafSyclState {
     int submit_count = 0;                     // submits received for submit_frame
     uint64_t graph_waited_frame = UINT64_MAX; // last frame waited
 
-    static constexpr int MAX_GRAPH_EXTRACTORS = 8;
+    /* 16 slots cover vmaf_v0.6.1 (6 extractors) + debug/extended options
+     * that push the total to ~12.  The original limit of 8 was too low for
+     * real production runs with all features enabled. */
+    static constexpr int MAX_GRAPH_EXTRACTORS = 16;
 
     struct GraphExtractor {
         VmafSyclGraphEnqueueFn enqueue_fn = nullptr;
@@ -735,9 +738,10 @@ extern "C" int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnque
     if (!state || !enqueue_fn)
         return -EINVAL;
     if (state->num_graph_extractors >= state->MAX_GRAPH_EXTRACTORS) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL: too many graph extractors (max %d)\n",
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "SYCL: too many graph extractors (max %d); increase MAX_GRAPH_EXTRACTORS\n",
                  state->MAX_GRAPH_EXTRACTORS);
-        return -ENOSPC;
+        return -ENOMEM;
     }
 
     auto &ge = state->graph_extractors[state->num_graph_extractors++];
