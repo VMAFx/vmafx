@@ -466,8 +466,9 @@ void y_convolution_8_avx512(const void *src_void, uint16_t *dst, unsigned width,
 
         /* Scalar tail */
         for (; j < width; j++) {
-            uint32_t accum = filter[0] * s0[j] + filter[1] * s1[j] + filter[2] * s2[j] +
-                             filter[3] * s3[j] + filter[4] * s4[j];
+            uint32_t accum = (uint32_t)filter[0] * s0[j] + (uint32_t)filter[1] * s1[j] +
+                             (uint32_t)filter[2] * s2[j] + (uint32_t)filter[3] * s3[j] +
+                             (uint32_t)filter[4] * s4[j];
             dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);
         }
     }
@@ -547,8 +548,9 @@ void y_convolution_16_avx512(const void *src_void, uint16_t *dst, unsigned width
 
         /* Scalar tail */
         for (; j < width; j++) {
-            uint32_t accum = filter[0] * s0[j] + filter[1] * s1[j] + filter[2] * s2[j] +
-                             filter[3] * s3[j] + filter[4] * s4[j];
+            uint32_t accum = (uint32_t)filter[0] * s0[j] + (uint32_t)filter[1] * s1[j] +
+                             (uint32_t)filter[2] * s2[j] + (uint32_t)filter[3] * s3[j] +
+                             (uint32_t)filter[4] * s4[j];
             dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);
         }
     }
@@ -617,9 +619,9 @@ void x_convolution_16_avx512(const uint16_t *src, uint16_t *dst, unsigned width,
 
         /* Scalar tail for remaining interior columns */
         for (; j < right_edge; j++) {
-            uint32_t accum = filter[0] * src_row[0] + filter[1] * src_row[1] +
-                             filter[2] * src_row[2] + filter[3] * src_row[3] +
-                             filter[4] * src_row[4];
+            uint32_t accum = (uint32_t)filter[0] * src_row[0] + (uint32_t)filter[1] * src_row[1] +
+                             (uint32_t)filter[2] * src_row[2] + (uint32_t)filter[3] * src_row[3] +
+                             (uint32_t)filter[4] * src_row[4];
             dst[i * dst_stride + j] = (uint16_t)((accum + shift_add_round) >> 16);
             src_row++;
         }

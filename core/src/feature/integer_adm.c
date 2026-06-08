@@ -1361,8 +1361,16 @@ static void i4_adm_csf(AdmBuffer *buf, int scale, int w, int h, int stride,
      * or `int64_t` without a coordinated Netflix-side golden-number
      * update. See docs/adr/0155-adm-i4-rounding-deferred-netflix-955.md. */
     for (unsigned idx = 0; idx < 3; ++idx) {
-        add_bef_shift_dst[idx] = (1u << (shift_dst[idx] - 1));
-        add_bef_shift_flt[idx] = (1u << (shift_flt[idx] - 1));
+        /* UBSan: cast unsigned shift result to int32_t explicitly; the wrap
+         * for shift_flt[idx]==32 is intentional per ADR-0155 (Netflix#955). */
+        add_bef_shift_dst[idx] =
+            (int32_t)(1u
+                      << (shift_dst[idx] -
+                          1)); /* NOLINT(hicpp-signed-bitwise) -- ADR-0155: intentional unsigned-to-signed cast to match Netflix golden arithmetic */
+        add_bef_shift_flt[idx] =
+            (int32_t)(1u
+                      << (shift_flt[idx] -
+                          1)); /* NOLINT(hicpp-signed-bitwise) -- ADR-0155: 1u<<31 wraps to INT32_MIN on cast; sign-negated rounding baked into Netflix golden assertions */
     }
 
     /* The computation of the csf values is not required for the regions
@@ -2097,8 +2105,16 @@ static float i4_adm_cm(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
      * see note at the earlier `add_bef_shift_flt[]` initialiser loop.
      * Preserved for Netflix-golden bit-exactness. */
     for (unsigned idx = 0; idx < 3; ++idx) {
-        add_bef_shift_dst[idx] = (1u << (shift_dst[idx] - 1));
-        add_bef_shift_flt[idx] = (1u << (shift_flt[idx] - 1));
+        /* UBSan: cast unsigned shift result to int32_t explicitly; the wrap
+         * for shift_flt[idx]==32 is intentional per ADR-0155 (Netflix#955). */
+        add_bef_shift_dst[idx] =
+            (int32_t)(1u
+                      << (shift_dst[idx] -
+                          1)); /* NOLINT(hicpp-signed-bitwise) -- ADR-0155: intentional unsigned-to-signed cast to match Netflix golden arithmetic */
+        add_bef_shift_flt[idx] =
+            (int32_t)(1u
+                      << (shift_flt[idx] -
+                          1)); /* NOLINT(hicpp-signed-bitwise) -- ADR-0155: 1u<<31 wraps to INT32_MIN on cast; sign-negated rounding baked into Netflix golden assertions */
     }
 
     uint32_t shift_cub = (uint32_t)ceil(log2(w));

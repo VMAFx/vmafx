@@ -65,12 +65,12 @@ static enum json_type push(json_stream *json, enum json_type type)
     /* ADR-1061: depth guard — PDJSON_STACK_MAX is always defined above.
      * Check before the realloc path so we never grow the stack beyond the
      * limit even if stack_size happens to be below it. */
-    if (json->stack_top > PDJSON_STACK_MAX) {
+    if (json->stack_top > (ptrdiff_t)PDJSON_STACK_MAX) {
         json_error(json, "%s", "maximum depth of nesting reached");
         return JSON_ERROR;
     }
 
-    if (json->stack_top >= json->stack_size) {
+    if ((size_t)json->stack_top >= json->stack_size) {
         struct json_stack *stack;
         /* ADR-1061: guard against size_t wrap before the multiply.
          * PDJSON_STACK_INC is 4 and PDJSON_STACK_MAX <= 512 so the cap
@@ -717,7 +717,7 @@ enum json_type json_next(json_stream *json)
         json->next = (enum json_type)0;
         return next;
     }
-    if (json->ntokens > 0 && json->stack_top == (size_t)-1) {
+    if (json->ntokens > 0 && json->stack_top == -1) {
 
         /* In the streaming mode leave any trailing whitespaces in the stream.
          * This allows the user to validate any desired separation between
@@ -743,7 +743,7 @@ enum json_type json_next(json_stream *json)
         return JSON_DONE;
     }
     int c = next(json);
-    if (json->stack_top == (size_t)-1) {
+    if (json->stack_top == -1) {
         if (c == EOF && (json->flags & JSON_FLAG_STREAMING))
             return JSON_DONE;
 
@@ -911,7 +911,7 @@ size_t json_get_depth(json_stream *json)
 */
 enum json_type json_get_context(json_stream *json, size_t *count)
 {
-    if (json->stack_top == (size_t)-1)
+    if (json->stack_top == -1)
         return JSON_DONE;
 
     if (count != NULL)

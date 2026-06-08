@@ -23,6 +23,7 @@ extern "C" {
 #endif /* __STDC_VERSION__ */
 #endif /* __cplusplus */
 
+#include <stddef.h>
 #include <stdio.h>
 
 enum json_type {
@@ -105,7 +106,7 @@ struct json_stream {
     size_t lineno;
 
     struct json_stack *stack;
-    size_t stack_top;
+    ptrdiff_t stack_top;
     size_t stack_size;
     enum json_type next;
     unsigned flags;

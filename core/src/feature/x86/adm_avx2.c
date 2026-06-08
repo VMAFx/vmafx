@@ -272,8 +272,7 @@
         sum0 = _mm256_add_epi32(sum0, _mm256_permutevar8x32_epi32(src01, perm1));                  \
         sum1 = _mm256_add_epi32(sum1, _mm256_permutevar8x32_epi32(src11, perm1));                  \
         sum2 = _mm256_add_epi32(sum2, _mm256_permutevar8x32_epi32(src21, perm1));                  \
-        __m256i mask_end =                                                                         \
-            _mm256_set_epi64x(0x0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF);    \
+        __m256i mask_end = _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL);                               \
         sum0 = _mm256_add_epi32(sum0, sum1);                                                       \
         sum0 = _mm256_add_epi32(sum0, sum2);                                                       \
         sum0 = _mm256_and_si256(mask_end, sum0);                                                   \
@@ -578,7 +577,7 @@
         sum0 = _mm256_add_epi64(sum0, _mm256_permute4x64_epi64(src01, 0x39));                      \
         sum1 = _mm256_add_epi64(sum1, _mm256_permute4x64_epi64(src11, 0x39));                      \
         sum2 = _mm256_add_epi64(sum2, _mm256_permute4x64_epi64(src21, 0x39));                      \
-        __m256i mask_end = _mm256_set_epi64x(0x0, 0x0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF);    \
+        __m256i mask_end = _mm256_set_epi64x(0x0, 0x0, -1LL, -1LL);                                \
         sum0 = _mm256_add_epi64(sum0, sum1);                                                       \
         sum0 = _mm256_add_epi64(sum0, sum2);                                                       \
         sum0 = _mm256_and_si256(mask_end, sum0);                                                   \
@@ -2464,15 +2463,12 @@ float adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride
 
     if ((left > 0) && (right <= (w - 1))) /* Completely within frame */
     {
-        __m256i i_rfactor0 = _mm256_and_si256(
-            _mm256_set1_epi32(i_rfactor[0]),
-            _mm256_set_epi64x(0x0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF));
-        __m256i i_rfactor1 = _mm256_and_si256(
-            _mm256_set1_epi32(i_rfactor[1]),
-            _mm256_set_epi64x(0x0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF));
-        __m256i i_rfactor2 = _mm256_and_si256(
-            _mm256_set1_epi32(i_rfactor[2]),
-            _mm256_set_epi64x(0x0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF));
+        __m256i i_rfactor0 = _mm256_and_si256(_mm256_set1_epi32(i_rfactor[0]),
+                                              _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL));
+        __m256i i_rfactor1 = _mm256_and_si256(_mm256_set1_epi32(i_rfactor[1]),
+                                              _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL));
+        __m256i i_rfactor2 = _mm256_and_si256(_mm256_set1_epi32(i_rfactor[2]),
+                                              _mm256_set_epi64x(0x0, -1LL, -1LL, -1LL));
 
         for (i = start_row; i < end_row; ++i) {
             accum_inner_h = 0;
@@ -2946,15 +2942,12 @@ float i4_adm_cm_avx2(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_str
 
     if ((left > 0) && (right <= (w - 1))) /* Completely within frame */
     {
-        __m256i rfactor_v0 =
-            _mm256_and_si256(_mm256_set1_epi32(rfactor[0]),
-                             _mm256_set_epi64x(0x0, 0x0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF));
-        __m256i rfactor_v1 =
-            _mm256_and_si256(_mm256_set1_epi32(rfactor[1]),
-                             _mm256_set_epi64x(0x0, 0x0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF));
-        __m256i rfactor_v2 =
-            _mm256_and_si256(_mm256_set1_epi32(rfactor[2]),
-                             _mm256_set_epi64x(0x0, 0x0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF));
+        __m256i rfactor_v0 = _mm256_and_si256(_mm256_set1_epi32(rfactor[0]),
+                                              _mm256_set_epi64x(0x0, 0x0, -1LL, -1LL));
+        __m256i rfactor_v1 = _mm256_and_si256(_mm256_set1_epi32(rfactor[1]),
+                                              _mm256_set_epi64x(0x0, 0x0, -1LL, -1LL));
+        __m256i rfactor_v2 = _mm256_and_si256(_mm256_set1_epi32(rfactor[2]),
+                                              _mm256_set_epi64x(0x0, 0x0, -1LL, -1LL));
 
         for (i = start_row; i < end_row; ++i) {
             accum_inner_h = 0;
@@ -3603,12 +3596,10 @@ void adm_dwt2_s123_combined_avx2(const int32_t *i4_ref_scale, const int32_t *i4_
     int add_bef_shift_VP = add_bef_shift_round_VP[scale - 1];
     int add_bef_shift_HP = add_bef_shift_round_HP[scale - 1];
 
-    __m256i mask_msb_shift_VP =
-        _mm256_andnot_si256(_mm256_srli_epi64(_mm256_set1_epi64x(0xFFFFFFFFFFFFFFFF), shift_VP),
-                            _mm256_set1_epi8((char)0xFF));
-    __m256i mask_msb_shift_HP =
-        _mm256_andnot_si256(_mm256_srli_epi64(_mm256_set1_epi64x(0xFFFFFFFFFFFFFFFF), shift_HP),
-                            _mm256_set1_epi8((char)0xFF));
+    __m256i mask_msb_shift_VP = _mm256_andnot_si256(
+        _mm256_srli_epi64(_mm256_set1_epi64x(-1LL), shift_VP), _mm256_set1_epi8((char)0xFF));
+    __m256i mask_msb_shift_HP = _mm256_andnot_si256(
+        _mm256_srli_epi64(_mm256_set1_epi64x(-1LL), shift_HP), _mm256_set1_epi8((char)0xFF));
 
     __m256i accum_ref_lo_256;
     __m256i accum_ref_hi_256;
