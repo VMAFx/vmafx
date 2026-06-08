@@ -56,10 +56,8 @@ Backend dispatch rules + runtime precedence:
     ...                                     write into .data[i]
     vmaf_read_pictures()
   vmaf_score_pooled()
-  vmaf_close()
-  /* state is owned by VmafContext after import; freed with vmaf_close().
-   * Use vmaf_cuda_state_free() only when the import never happened —
-   * see "Explicit free" below. */
+  vmaf_close()              /* destroys the by-value copy of CUDA state */
+  vmaf_cuda_state_free()    /* always required — frees the original allocation */
 ```
 
 ### State
@@ -71,9 +69,9 @@ typedef struct VmafCudaConfiguration {
     void *cu_ctx;   /* CUcontext; NULL → libvmaf creates one on device 0 */
 } VmafCudaConfiguration;
 
-int vmaf_cuda_state_init(VmafCudaState **out, VmafCudaConfiguration cfg);
-int vmaf_cuda_import_state(VmafContext *ctx, VmafCudaState *state);
-void vmaf_cuda_state_free(VmafCudaState **state);
+int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg);
+int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state);
+int vmaf_cuda_state_free(VmafCudaState *cu_state);
 ```
 
 - `cu_ctx = NULL` — libvmaf creates a fresh CUDA context on CUDA device 0.
@@ -84,17 +82,25 @@ void vmaf_cuda_state_free(VmafCudaState **state);
 
 ### Ownership and explicit free
 
-After `vmaf_cuda_import_state(ctx, state)`, the **context owns the
-state** — `vmaf_close(ctx)` frees it. Do not import the same state into
-two contexts.
+`vmaf_cuda_import_state(vmaf, cu_state)` copies the `VmafCudaState`
+**by value** into the `VmafContext` — it does not transfer ownership of
+the original heap allocation. `vmaf_close(vmaf)` tears down the
+**embedded copy** (destroying the CUDA stream and, if libvmaf created
+the context, releasing the primary context). After `vmaf_close()`
+returns, the caller **must** call `vmaf_cuda_state_free(cu_state)` to
+release the original heap allocation. Skipping this call leaks the
+allocation. Do not import the same state into two contexts.
 
-`vmaf_cuda_state_free(VmafCudaState **state)` (added in [ADR-0157](../adr/0157-cuda-preallocation-leak-netflix-1300.md))
-is the **escape hatch for the pre-import path**: the caller built a
-`VmafCudaState` via `vmaf_cuda_state_init()` but never handed it to a
-context (e.g. early `vmaf_init()` failure, or a benchmark harness that
-constructs and tears down a state without scoring). It tears down the
-ring buffer + mutex and releases the cold-start primary context. After
-the call the pointer is set to `NULL`.
+`vmaf_cuda_state_free(VmafCudaState *cu_state)` (added in
+[ADR-0157](../adr/0157-cuda-preallocation-leak-netflix-1300.md))
+is a NULL-safe `free()` wrapper for the original pointer returned by
+`vmaf_cuda_state_init()`. At the time of the call, `vmaf_close()` has
+already run `vmaf_cuda_release()` on the embedded copy (destroying the
+stream and context), so `vmaf_cuda_state_free()` only needs to `free()`
+the struct. It also serves as the escape hatch when the state was built
+via `vmaf_cuda_state_init()` but never imported (e.g. an early
+`vmaf_init()` failure), in which case it additionally tears down the
+stream and context before freeing.
 
 ```c
 VmafCudaState *cuda = NULL;
@@ -102,21 +108,26 @@ int err = vmaf_cuda_state_init(&cuda, (VmafCudaConfiguration){ .cu_ctx = NULL })
 if (err) { return err; }
 
 if (some_unrelated_setup_failed()) {
-    vmaf_cuda_state_free(&cuda);   /* not yet imported — caller frees */
+    vmaf_cuda_state_free(cuda);   /* not yet imported — also destroys stream/ctx */
     return -1;
 }
 
 err = vmaf_cuda_import_state(ctx, cuda);
-/* From here on, ctx owns cuda; vmaf_close(ctx) handles the free.
- * Calling vmaf_cuda_state_free(&cuda) AFTER a successful import is
- * undefined behaviour — the context will double-free at vmaf_close. */
+/* ctx now holds a by-value copy of the state.
+ * vmaf_close(ctx) destroys that copy (stream + context).
+ * vmaf_cuda_state_free(cuda) must still be called afterwards to
+ * release the original heap allocation from vmaf_cuda_state_init(). */
+vmaf_close(ctx);
+vmaf_cuda_state_free(cuda);  /* always required after import + vmaf_close */
 ```
 
-The asymmetry with the SYCL flavour (`vmaf_sycl_state_free` — see
-below — is **always** required) is deliberate: CUDA state is
-context-owned post-import; SYCL state outlives a single scoring session
-because the queue is queue-scoped. Match the API to the lifetime model
-of the underlying runtime.
+The CUDA and SYCL lifetime models differ deliberately: CUDA state is
+copied by value into the context; the caller still owns the heap pointer.
+SYCL state is also always caller-freed after `vmaf_close()` (the queue is
+queue-scoped and survives a scoring session boundary). Both require an
+explicit free after `vmaf_close()` — CUDA via `vmaf_cuda_state_free`,
+SYCL via `vmaf_sycl_state_free`. Match the API to the lifetime model of
+the underlying runtime.
 
 ### Picture preallocation
 
@@ -195,7 +206,8 @@ int main(void) {
     printf("VMAF: %.17g\n", score);
 
     vmaf_model_destroy(model);
-    vmaf_close(vmaf);  /* also frees the CUDA state */
+    vmaf_close(vmaf);         /* tears down the by-value copy of CUDA state */
+    vmaf_cuda_state_free(cuda); /* releases the original heap allocation */
     return 0;
 }
 ```
