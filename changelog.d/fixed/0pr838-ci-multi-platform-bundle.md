@@ -1,0 +1,1 @@
+- Fixed: bundled five multi-platform CI failures: Windows C2664 const-cast, macOS ARM64 motion `places=6` precision, UBSan enum-invalid `memcpy` in log-opt path, SYCL `LNK2019` `extern C` linkage, and CUDA picture-pool ref-count leak. (PR #838)

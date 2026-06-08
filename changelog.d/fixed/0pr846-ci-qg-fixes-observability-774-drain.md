@@ -1,0 +1,1 @@
+- Fixed: bundled CI/quality-gate fixes with the PR #774 observability drain; resolves required-check failures introduced by the otelgrpc stats-handler wiring and updates the observability test suite. (PR #846)

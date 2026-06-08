@@ -1,0 +1,1 @@
+- Fixed: resolved four `tests-quality` CI gate failures: stale Vulkan build option, UBSan enum-invalid-value in log-option path, TSan OOM in fuzz/LTO build, and `ort_backend` per-file coverage floor overshoot. (PR #835)
