@@ -491,8 +491,10 @@ static void y4m_convert_411_422jpeg(y4m_input *_y4m, unsigned char *_dst, unsign
     int pli;
     int y;
     int x;
-    /*Skip past the luma data.*/
-    _dst += _y4m->pic_w * _y4m->pic_h;
+    /*Skip past the luma data.
+     * Cast to size_t to avoid signed-integer overflow for large frames
+     * (pic_w * pic_h overflows int when each dimension exceeds ~46340). */
+    _dst += (size_t)_y4m->pic_w * _y4m->pic_h;
     /*Compute the size of each chroma plane.*/
     c_w = (_y4m->pic_w + _y4m->src_c_dec_h - 1) / _y4m->src_c_dec_h;
     dst_c_w = (_y4m->pic_w + _y4m->dst_c_dec_h - 1) / _y4m->dst_c_dec_h;
