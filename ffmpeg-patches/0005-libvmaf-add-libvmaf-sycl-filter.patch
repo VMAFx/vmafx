@@ -119,7 +119,7 @@ index f0ec23605c..d9dab0bdd9 100644
  #endif
      int   vulkan_device;
  #if CONFIG_LIBVMAF_VULKAN
-@@ -969,3 +977,280 @@ const FFFilter ff_vf_libvmaf_cuda = {
+@@ -969,3 +977,324 @@ const FFFilter ff_vf_libvmaf_cuda = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
