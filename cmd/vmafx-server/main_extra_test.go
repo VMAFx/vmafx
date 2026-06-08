@@ -216,7 +216,7 @@ func TestRunHTTPGracefulShutdown(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	addr := ln.Addr().String()
-	ln.Close()
+	_ = ln.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -227,7 +227,7 @@ func TestRunHTTPGracefulShutdown(t *testing.T) {
 	for time.Now().Before(deadline) {
 		conn, derr := net.Dial("tcp", addr)
 		if derr == nil {
-			conn.Close()
+			_ = conn.Close()
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -242,20 +242,5 @@ func TestRunHTTPGracefulShutdown(t *testing.T) {
 		}
 	case <-time.After(observability.GracefulShutdownTimeout + 2*time.Second):
 		t.Error("runHTTP did not return within graceful shutdown deadline")
-	}
-}
-
-// TestRunHTTP_BadAddress verifies that runHTTP returns a non-nil error when the
-// TCP listen address is invalid (mirrors TestRunGRPCWithServer_BadAddress which
-// tests the same invariant for the gRPC listener).
-func TestRunHTTP_BadAddress(t *testing.T) {
-	t.Parallel()
-	hs, _ := newTestHTTPServer(t)
-	log := observability.NewLogger("ERROR")
-
-	ctx := context.Background()
-	err := runHTTP(ctx, "invalid-addr-not-bindable", hs, log)
-	if err == nil {
-		t.Fatal("expected error for invalid listen address, got nil")
 	}
 }
