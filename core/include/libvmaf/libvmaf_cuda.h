@@ -19,8 +19,8 @@
 #ifndef LIBVMAF_LIBVMAF_CUDA_H
 #define LIBVMAF_LIBVMAF_CUDA_H
 
-#include "libvmaf/libvmaf.h"
-#include "libvmaf/macros.h"
+#include <libvmaf/libvmaf.h>
+#include <libvmaf/macros.h>
 
 #ifdef __cplusplus
 extern "C" {

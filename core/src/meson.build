@@ -17,6 +17,10 @@ vmaf_cflags_common = [
     # in the final libvmaf.so. This eliminates the 207-symbol leak
     # found by Research-0092 (libsvm C API, pdjson, SIMD internals, etc.)
     '-fvisibility=hidden',
+    # Suppresses the VMAF_POOL_METHOD_NB deprecation attribute for internal
+    # translation units that legitimately iterate over all pool methods (e.g.
+    # output.c). External consumers without this flag will see the warning.
+    '-DVMAF_BUILDING_LIBVMAF',
 ]
 
 

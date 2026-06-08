@@ -19,7 +19,7 @@
 #ifndef LIBVMAF_FEATURE_H
 #define LIBVMAF_FEATURE_H
 
-#include "libvmaf/macros.h"
+#include <libvmaf/macros.h>
 
 #ifdef __cplusplus
 extern "C" {

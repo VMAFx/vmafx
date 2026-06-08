@@ -22,10 +22,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "libvmaf/macros.h"
-#include "libvmaf/model.h"
-#include "libvmaf/picture.h"
-#include "libvmaf/feature.h"
+#include <libvmaf/macros.h>
+#include <libvmaf/model.h>
+#include <libvmaf/picture.h>
+#include <libvmaf/feature.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -130,16 +130,23 @@ enum VmafPoolingMethod {
     VMAF_POOL_METHOD_MAX,
     VMAF_POOL_METHOD_MEAN,
     VMAF_POOL_METHOD_HARMONIC_MEAN,
-    /**
-     * Count sentinel — exposed for backwards compatibility with callers
-     * that historically iterated `[0, VMAF_POOL_METHOD_NB)`. NOT a stable
-     * API value: its numeric value increases whenever a new pooling
-     * method is appended below it, so do not switch on it, persist it,
-     * or pass it across an ABI boundary. New code should switch on the
-     * named values and treat any unknown discriminant as
-     * `VMAF_POOL_METHOD_UNKNOWN`.
+/**
+     * Count sentinel — retained for backwards compatibility only.
+     *
+     * NOT a stable API value: its numeric value increases whenever a new
+     * pooling method is appended, so do not switch on it, persist it, or
+     * pass it across an ABI boundary. New code should switch on the named
+     * values and treat unknown discriminants as `VMAF_POOL_METHOD_UNKNOWN`.
+     *
+     * @deprecated Use the named VMAF_POOL_METHOD_* enumerators. This
+     *             sentinel will be removed in a future major release.
      */
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(VMAF_BUILDING_LIBVMAF)
+    VMAF_POOL_METHOD_NB __attribute__((deprecated("use named VMAF_POOL_METHOD_* values; "
+                                                  "NB is not a stable count sentinel")))
+#else
     VMAF_POOL_METHOD_NB
+#endif
 };
 
 /**

@@ -20,6 +20,14 @@
 #define LIBVMAF_VMAF_ASSERT_H
 
 /*
+ * INTERNAL HEADER — not installed; not part of the public libvmaf API.
+ *
+ * This header is used exclusively by libvmaf's own translation units.
+ * External consumers must not include or depend on it; its contents
+ * (particularly the VMAF_DEBUG flag) are build-system internals.
+ */
+
+/*
  * VMAF_ASSERT_DEBUG(expr)
  *
  * Invariant assertion that is cheap to enable in development but zero-cost in

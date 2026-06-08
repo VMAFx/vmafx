@@ -50,14 +50,14 @@
  *   - [docs/architecture/vmaf-picture-v2-migration.md](../../docs/architecture/vmaf-picture-v2-migration.md)
  */
 
-#ifndef __VMAF_PICTURE_V2_H__
-#define __VMAF_PICTURE_V2_H__
+#ifndef LIBVMAF_PICTURE_V2_H_
+#define LIBVMAF_PICTURE_V2_H_
 
 #include <stddef.h>
 #include <stdint.h>
 
-#include "libvmaf/macros.h"
-#include "libvmaf/picture.h"
+#include <libvmaf/macros.h>
+#include <libvmaf/picture.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -232,4 +232,4 @@ VMAF_EXPORT const char *vmaf_backend_handle_name(VmafBackendHandle backend);
 }
 #endif
 
-#endif /* __VMAF_PICTURE_V2_H__ */
+#endif /* LIBVMAF_PICTURE_V2_H_ */

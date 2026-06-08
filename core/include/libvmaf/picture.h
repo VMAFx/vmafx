@@ -21,7 +21,7 @@
 
 #include <stddef.h>
 
-#include "libvmaf/macros.h"
+#include <libvmaf/macros.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -85,8 +85,9 @@ typedef struct VmafPicture {
     unsigned h[3];                /**< per-plane height in samples; same indexing as @ref w. */
     ptrdiff_t stride[3];          /**< per-plane row stride in **bytes** (>= w * sample_size). */
     void *data[3]; /**< per-plane sample buffer; uint8_t* when bpc <= 8, uint16_t* otherwise. */
-    VmafRef *ref;  /**< opaque refcount handle owned by libvmaf — do not touch. */
-    void *priv;    /**< opaque per-picture private slot owned by libvmaf — do not touch. */
+    /* INTERNAL — do not access; layout and semantics may change without notice. */
+    VmafRef *ref; /**< INTERNAL: opaque refcount handle managed by libvmaf — do not touch. */
+    void *priv; /**< INTERNAL: opaque per-picture private slot managed by libvmaf — do not touch. */
 } VmafPicture;
 
 /**

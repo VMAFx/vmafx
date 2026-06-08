@@ -19,8 +19,8 @@
 #ifndef LIBVMAF_LIBVMAF_SYCL_H
 #define LIBVMAF_LIBVMAF_SYCL_H
 
-#include "libvmaf.h"
-#include "libvmaf/macros.h"
+#include <libvmaf/libvmaf.h>
+#include <libvmaf/macros.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -59,12 +59,16 @@ endif
 # macros.h is always installed — it defines VMAF_EXPORT which every public
 # header includes, so downstream consumers building against the installed
 # tree must be able to find it. ADR-0377.
+#
+# vmaf_assert.h is intentionally NOT installed: it exposes the VMAF_ASSERT_DEBUG
+# macro which is gated on the internal VMAF_DEBUG build flag and has no useful
+# semantics for external consumers. Internal TUs include it from the source tree
+# via their build-root include path; pkg-config consumers have no need for it.
 install_headers(['libvmaf.h',
                 'feature.h',
                 'macros.h',
                 'model.h',
-                'picture.h',
-                'vmaf_assert.h'],
+                'picture.h'],
                 version_h_target,
                 platform_specific_headers,
                 subdir : 'libvmaf')

@@ -34,8 +34,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "libvmaf.h"
-#include "picture.h"
+#include <libvmaf/libvmaf.h>
+#include <libvmaf/picture.h>
 
 #ifdef __cplusplus
 extern "C" {

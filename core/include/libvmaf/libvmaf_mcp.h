@@ -60,7 +60,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "libvmaf.h"
+#include <libvmaf/libvmaf.h>
 
 #ifdef __cplusplus
 extern "C" {

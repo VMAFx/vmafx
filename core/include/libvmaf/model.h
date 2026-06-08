@@ -21,8 +21,8 @@
 
 #include <stdint.h>
 
-#include "feature.h"
-#include "libvmaf/macros.h"
+#include <libvmaf/feature.h>
+#include <libvmaf/macros.h>
 
 #ifdef __cplusplus
 extern "C" {
