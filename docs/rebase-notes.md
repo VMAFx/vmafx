@@ -1,6 +1,14 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/containerfile-gid-and-stale-rename — GID/UID 1000 → 2000 (2026-06-08, ADR-1101)
+no rebase impact: changes confined to `dev/Containerfile` (GID/UID values),
+`docs/adr/1101-containerfile-gid-uid-2000.md` (new ADR), and
+`changelog.d/fixed/1101-containerfile-gid-uid-2000.md` (new fragment).
+No production C source, public header, meson build files, or Python package
+modified. If a concurrent branch also edits `dev/Containerfile`, the only
+conflict will be in the groupadd/useradd lines; resolve by keeping GID/UID 2000.
+
 ## test/ai-scripts-coverage-round3 (2026-06-06, no ADR — test-only)
 
 no rebase impact: adds two new test files

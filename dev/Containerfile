@@ -123,10 +123,14 @@ RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
     && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 100
 
 # Create a non-root build user (CERT C ENV32 — do not run builds as root).
-# uid/gid 1000 are pinned so BuildKit `--mount=type=cache,uid=1000,gid=1000`
+# uid/gid 2000 are pinned so BuildKit `--mount=type=cache,uid=2000,gid=2000`
 # directives below resolve to the same identity that runs the build.
-RUN groupadd --gid 1000 vmaf \
-    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash vmaf \
+# GID/UID 1000 are reserved by Ubuntu 26.04 (Resolute Raccoon) for the
+# built-in `ubuntu` group / user that ships in the base image; using 1000
+# causes `groupadd` to exit 4 (GID in use). GID/UID 2000 is safe on all
+# Ubuntu LTS releases up to and including 26.04. ADR-0603.
+RUN groupadd --gid 2000 vmaf \
+    && useradd --uid 2000 --gid 2000 --create-home --shell /bin/bash vmaf \
     && mkdir -p /home/vmaf/.cache/ccache \
     && chown -R vmaf:vmaf /home/vmaf/.cache
 
@@ -542,7 +546,7 @@ USER vmaf
 # touch-once-build-everywhere cycle doesn't pay the full nvcc/icpx/hipcc compile
 # cost again. Meson auto-detects ccache when it's on PATH; passing the
 # environment hint keeps the cache scoped to the dev-mcp image.
-RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=1000,gid=1000,id=ccache-dev-mcp-vmaf \
+RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
     CCACHE_DIR=/home/vmaf/.cache/ccache \
     cd core && CC=icx CXX=icpx meson setup build \
         -Denable_cuda=true \
@@ -883,7 +887,7 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 # also passes it through to its own pkg-config invocations which lose the
 # implicit defaults. Listing the multiarch path explicitly is the
 # robust fix (verified post-ADR-0541 SvtAv1Enc-not-found regression).
-RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=1000,gid=1000,id=ccache-dev-mcp-vmaf \
+RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,gid=2000,id=ccache-dev-mcp-vmaf \
     CCACHE_DIR=/home/vmaf/.cache/ccache \
     PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
     ./configure \
