@@ -142,8 +142,8 @@ async def _communicate_with_timeout(
 # ---------------------------------------------------------------------------
 
 
-def _nan_to_none(value: Any) -> Any:
-    """Recursively replace non-finite floats with ``None``.
+def _nan_to_none(value: Any, *, _max_depth: int = 100) -> Any:
+    """Replace non-finite floats with ``None``, capped at ``_max_depth`` levels.
 
     Python's default ``json.dumps`` (``allow_nan=True``) emits bare ``NaN`` /
     ``Infinity`` tokens that are not valid RFC 8259 JSON.  MCP clients that use
@@ -153,13 +153,27 @@ def _nan_to_none(value: Any) -> Any:
     The canonical implementation lives in ``vmaftune.jsonio``; this copy is
     intentionally inlined here because ``vmaf-mcp`` does not declare
     ``vmaf-tune`` as a dependency (ADR-0988).
+
+    The previous recursive implementation triggered ``RecursionError`` on deeply
+    nested JSON payloads (e.g. per-frame metadata with more than a few hundred
+    levels of nesting).  This version uses a depth counter to enforce a hard cap
+    of ``_max_depth`` (default 100) — any subtree rooted deeper than that is
+    replaced wholesale with ``None`` instead of being traversed, which prevents
+    unbounded call-stack growth while preserving all practical payloads.
     """
+    return _nan_to_none_depth(value, depth=0, max_depth=_max_depth)
+
+
+def _nan_to_none_depth(value: Any, depth: int, max_depth: int) -> Any:
+    """Internal helper for :func:`_nan_to_none` that carries the depth counter."""
+    if depth > max_depth:
+        return None
     if isinstance(value, float):
         return None if (math.isnan(value) or math.isinf(value)) else value
     if isinstance(value, dict):
-        return {k: _nan_to_none(v) for k, v in value.items()}
+        return {k: _nan_to_none_depth(v, depth + 1, max_depth) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_nan_to_none(v) for v in value]
+        return [_nan_to_none_depth(v, depth + 1, max_depth) for v in value]
     return value
 
 
@@ -843,7 +857,18 @@ def _pick_worst_frames(score_json: dict[str, Any], n: int) -> list[tuple[int, fl
                 break
         if idx is None or score is None or not math.isfinite(score):
             continue
-        scored.append((int(idx), score))
+        try:
+            frame_num = int(idx)
+        except (TypeError, ValueError):
+            # Non-numeric frameNum in the vmaf JSON output — skip this frame
+            # rather than propagating a TypeError that would abort the entire
+            # describe_worst_frames call.
+            _logger.warning(
+                "_pick_worst_frames: skipping frame with non-numeric frameNum %r",
+                idx,
+            )
+            continue
+        scored.append((frame_num, score))
     scored.sort(key=lambda kv: kv[1])
     return scored[: max(0, int(n))]
 
@@ -2337,6 +2362,27 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     # conformant MCP clients (mcp/client/session.py:L394) to treat tool errors
     # as successful responses, then fail later when trying to parse the error
     # JSON as a score result.
+    #
+    # KeyError conversion: a missing required argument raises a raw KeyError
+    # which is opaque to the caller ("KeyError: 'ref'" gives no tool context).
+    # We wrap the dispatch body with a targeted try/except that converts KeyError
+    # to ValueError so the mcp library surfaces it as a readable validation error
+    # (isError=True, message includes the tool name and the missing key).  The
+    # outer try/except does NOT swallow the error — it just translates it.
+    try:
+        return await _call_tool_dispatch(name, arguments, progress_token)
+    except KeyError as _ke:
+        raise ValueError(f"tool {name!r} missing required argument: {_ke.args[0]!r}") from _ke
+
+
+async def _call_tool_dispatch(
+    name: str, arguments: dict[str, Any], progress_token: str | int | None
+) -> list[TextContent]:
+    """Inner dispatch for :func:`_call_tool`.
+
+    Separated so ``_call_tool`` can wrap it with a single KeyError-to-ValueError
+    converter without duplicating the dispatch logic.
+    """
     if name == "vmaf_score":
         req = ScoreRequest(
             ref=_validate_path(arguments["ref"]),
@@ -2384,7 +2430,10 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             model=str(arguments.get("model", "version=vmaf_v0.6.1")),
             backend=str(arguments.get("backend", "auto")),
         )
-        result = await _describe_worst_frames(req, n=int(arguments.get("n", 5)))
+        n_raw = int(arguments.get("n", 5))
+        if n_raw < 1 or n_raw > 32:
+            raise ValueError(f"'n' must be between 1 and 32 (schema maximum); got {n_raw}")
+        result = await _describe_worst_frames(req, n=n_raw)
     elif name == "probe_backend":
         result = await _probe_backend(str(arguments["backend"]))
     elif name == "vmaf_version":

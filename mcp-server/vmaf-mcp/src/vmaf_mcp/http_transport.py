@@ -519,7 +519,10 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
             backend=str(body.get("backend", "auto")),
             precision=str(body.get("precision", "17")),
         )
-    except (ValueError, FileNotFoundError) as exc:
+    except (TypeError, ValueError, FileNotFoundError) as exc:
+        # TypeError covers int(None) / int([...]) when the caller sends a
+        # non-integer JSON value for width/height/bitdepth (e.g. null or an
+        # array); ValueError covers int("abc") and path-validation failures.
         _log_with_rid(logging.WARNING, f"bad request parameters: {exc}", request_id)
         metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="400").inc()
         return aiohttp.web.Response(
