@@ -75,7 +75,7 @@ func startGRPCTestServer(t *testing.T) (vmafxv1.VmafxScoringClient, func()) {
 	}
 
 	stop := func() {
-		conn.Close() //nolint:errcheck
+		_ = conn.Close()
 		srv.GracefulStop()
 	}
 	return vmafxv1.NewVmafxScoringClient(conn), stop
@@ -384,7 +384,7 @@ func TestRunGRPCWithServer_StartsAndStops(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	addr := lis.Addr().String()
-	lis.Close() //nolint:errcheck
+	_ = lis.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -395,7 +395,7 @@ func TestRunGRPCWithServer_StartsAndStops(t *testing.T) {
 	for time.Now().Before(deadline) {
 		conn, derr := net.Dial("tcp", addr)
 		if derr == nil {
-			conn.Close() //nolint:errcheck
+			_ = conn.Close()
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -433,7 +433,7 @@ func TestRunGRPC_StartsAndStops(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	addr := lis.Addr().String()
-	lis.Close() //nolint:errcheck
+	_ = lis.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -443,7 +443,7 @@ func TestRunGRPC_StartsAndStops(t *testing.T) {
 	for time.Now().Before(deadline) {
 		conn, derr := net.Dial("tcp", addr)
 		if derr == nil {
-			conn.Close() //nolint:errcheck
+			_ = conn.Close()
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -532,7 +532,7 @@ func TestGRPCScore_ScorerError(t *testing.T) {
 		srv.Stop()
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close() //nolint:errcheck
+	defer func() { _ = conn.Close() }()
 
 	client := vmafxv1.NewVmafxScoringClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

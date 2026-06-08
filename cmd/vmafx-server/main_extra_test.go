@@ -216,7 +216,7 @@ func TestRunHTTPGracefulShutdown(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	addr := ln.Addr().String()
-	ln.Close()
+	_ = ln.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -227,7 +227,7 @@ func TestRunHTTPGracefulShutdown(t *testing.T) {
 	for time.Now().Before(deadline) {
 		conn, derr := net.Dial("tcp", addr)
 		if derr == nil {
-			conn.Close()
+			_ = conn.Close()
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
