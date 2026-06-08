@@ -61,6 +61,19 @@ if _cc_id == 'intel-llvm' or _cc_id == 'intel-llvm-cl'
     _simd_strict_fp_args += ['-fp-model=precise']
 endif
 
+# PR #850 regression — HIP wavefront warpSize fix.
+# Pure host-side tree-reduce logic: verifies the shared-memory warp-partial
+# accumulation produces the correct sum for both wave32 (warpSize=32) and
+# wave64 (warpSize=64) scenarios without requiring an AMD GPU.  CPU-only,
+# no HIP dependency.
+test_hip_wavefront_reduce = executable('test_hip_wavefront_reduce',
+    ['test.c', 'test_hip_wavefront_reduce.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_hip_wavefront_reduce', test_hip_wavefront_reduce, suite : ['fast'])
+
 test_context = executable('test_context',
     ['test.c', 'test_context.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -1215,6 +1228,22 @@ test_cuda_buffer_alloc_oom = executable('test_cuda_buffer_alloc_oom',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_buffer_alloc_oom', test_cuda_buffer_alloc_oom, suite : ['fast', 'gpu'])
+
+# PR #850 — libvmaf.c CUDA-only NULL deref guard.
+# Before the fix, in CUDA-only mode (HW_FLAG_HOST not set) the
+# unconditional `ref = &ref_host` reassignment passed a zero-initialised
+# picture to the thread pool → NULL dereference.  The fix gates the
+# reassignment behind `if (hw_flags & HW_FLAG_HOST)`.
+# GPU-gated: skips cleanly when no CUDA device is visible.
+test_libvmaf_cuda_only_no_host = executable('test_libvmaf_cuda_only_no_host',
+    ['test.c', 'test_libvmaf_cuda_only_no_host.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_libvmaf_cuda_only_no_host', test_libvmaf_cuda_only_no_host,
+    suite : ['fast', 'gpu'])
 
 # Netflix#1300 / ADR-0157 — preallocation-leak reducer. Runs N
 # init/preallocate/fetch/close cycles with FULL cleanup on each cycle
