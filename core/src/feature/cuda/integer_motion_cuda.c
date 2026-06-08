@@ -107,7 +107,7 @@ static const VmafOption options[] = {
         .help = "debug mode: enable additional output",
         .offset = offsetof(MotionStateCuda, debug),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val.b = true,
+        .default_val.b = false,
     },
     {
         .name = "motion_force_zero",
