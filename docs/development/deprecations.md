@@ -6,6 +6,28 @@ deprecated or removed. Entries are ordered newest-first.
 
 ---
 
+## 2026-05-28 — `VmafLegacyQualityRunner` (ADR-0749)
+
+**Status**: Removed (stub retained for import compatibility)
+
+`VmafLegacyQualityRunner` drove the `VmafFeatureExtractor` float-path via the
+`vmafexec` binary, collecting the four legacy SVM features (vif, adm, ansnr,
+motion) and scoring them with `model_V8a.model`. It became broken when PR #38
+dropped the `float_ansnr` feature from the C backend: the runner silently
+returned no ansnr scores or raised `KeyError` during SVM scoring.
+
+**Migration**: Replace all uses of `VmafLegacyQualityRunner` with
+[`VmafQualityRunner`](../../compat/python-vmaf/core/quality_runner.py) and a
+current `.json` model (e.g. `vmaf_v0.6.1.json`) or `vmaf_float_v0.6.1.pkl`.
+The class stub is retained in `compat/python-vmaf/core/quality_runner.py` so
+existing `import` statements do not raise `ImportError`; instantiation raises
+`NotImplementedError` with the same migration pointer.
+
+**References**: [ADR-0749](../adr/0749-sunset-legacy-vmaf-feature-extractor.md),
+PR #87
+
+---
+
 ## 2026-05-28 — Legacy native build modes (ADR-0728)
 
 **Status**: Removed
