@@ -73,6 +73,7 @@ jobs:
               'Assertion Density (Power of 10 §5)',
               'Tiny AI (DNN Suite + ai/ Pytests)',
               'Build — Ubuntu HIP (T7-10b runtime)',
+              'SYCL float_ssim Parity (Arc DG2-G10)',
             ];
             const sha = context.eventName === 'pull_request'
               ? context.payload.pull_request.head.sha

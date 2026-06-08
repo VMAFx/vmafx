@@ -203,6 +203,39 @@ gpus:
     features: {}
 
   # ---------------------------------------------------------------
+  # SYCL — Intel Arc A380 / A770 / A750 (DG2-G10 die class).
+  # Used when the parity gate is called with
+  # ``--gpu-id arc:dg2-g10`` (per Research-0730 §6.3).
+  #
+  # Status: calibrated for float_ssim.
+  # ``float_ssim`` diverges from CPU at places=4 (5e-5) on DG2-G10
+  # due to two stacked causes:
+  #   (1) The CPU path (float_ssim.c / iqa_ssim) uses the L×C×S
+  #       decomposition with a sqrt(var_ref*var_cmp) contrast term,
+  #       while the SYCL kernel (integer_ssim_sycl.cpp::float_ssim_sycl)
+  #       uses the Wang 2004 Eq.(13) combined formula (2*covar directly).
+  #       This is intentional design, not a bug.
+  #   (2) DG2-G10 has shaderFloat64=false; fp32 accumulation drift over
+  #       177 K pixel SSIM values compounds to ~2.7e-4 at the mean level.
+  #       RTX 4090 (native fp64 in SYCL) passes at places=4.
+  # Empirical max_abs_diff observed on Arc A380: 2.68e-4.
+  # places=3 (5e-4) accommodates both effects; see Research-0985 §3.
+  # ---------------------------------------------------------------
+  - id: "arc:dg2-g10"
+    label: "Intel Arc A380 / A770 / A750 (DG2-G10 die, SYCL)"
+    status: calibrated
+    notes: >-
+      float_ssim tolerance relaxed to 5e-4 (places=3) for DG2-G10
+      class Arc devices. Two stacked causes: CPU L×C×S formula vs.
+      GPU Wang-2004 combined formula (intentional), plus fp32
+      accumulation drift from lack of native fp64 on DG2-G10
+      (max_abs_diff=2.68e-4 observed on Arc A380).
+      RTX 4090 and lavapipe pass at places=4 (5e-5).
+      See Research-0985 §3 and Research-0730 §6.1.
+    features:
+      float_ssim: 5.0e-4
+
+  # ---------------------------------------------------------------
   # SYCL — Intel Compute Runtime on Arc. The driver_version is the
   # discriminating signal per ADR-0220 (different runtimes on the
   # same silicon emit different residuals).

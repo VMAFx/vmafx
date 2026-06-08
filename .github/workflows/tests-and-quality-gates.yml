@@ -1083,6 +1083,42 @@ jobs:
             core/build-coverage-gpu/coverage.txt
           retention-days: 14
 
+  # ===== SYCL float_ssim parity gate (Arc DG2-G10 calibrated) =====
+  # Runs test_sycl_float_ssim_parity on the self-hosted SYCL runner.
+  # Requires the dg2-g10 calibration entry in gpu_ulp_calibration.yaml
+  # (places=3 / 5e-4 tolerance) to be present — see ADR-0234 and
+  # Research-0985 §3. Promoted to the required-status list once the
+  # calibration entry landed; the Required Checks Aggregator treats
+  # "not reported" (no GPU runner available) as path-filter-skip/OK,
+  # so the required gate degrades gracefully when the Arc runner is
+  # offline.
+  sycl-float-ssim-parity:
+    name: "SYCL float_ssim Parity (Arc DG2-G10)"
+    runs-on: [self-hosted, linux, gpu-full]
+    if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: recursive
+      - name: Build SYCL (float enabled)
+        working-directory: core
+        env:
+          CC: icx
+          CXX: icpx
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          meson setup build-sycl-parity --buildtype=release \
+            -Denable_cuda=false -Denable_sycl=true \
+            -Denable_float=true
+          ninja -C build-sycl-parity test_sycl_float_ssim_parity
+      - name: Run test_sycl_float_ssim_parity
+        working-directory: core
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          meson test -C build-sycl-parity test_sycl_float_ssim_parity \
+            --print-errorlogs
+
   # ===== Power of 10 rule 5 — assertion density =====
   # Every fork-added (non-trivial) function must contain ≥1 assert().
   assertion-density:
