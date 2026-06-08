@@ -40,6 +40,31 @@ typedef struct VmafGpuPicturePool {
     VmafPicture *pic;
 } VmafGpuPicturePool;
 
+/* Allocate all pic_cnt slots; on failure roll back any slots that succeeded.
+ * Returns 0 on full success, or the first non-zero error from
+ * alloc_picture_callback with all partial allocations freed. */
+static int alloc_pictures(VmafGpuPicturePool *p)
+{
+    unsigned alloc_cnt = 0;
+    int err = 0;
+
+    for (unsigned i = 0; i < p->cfg.pic_cnt; i++) {
+        err = p->cfg.alloc_picture_callback(&p->pic[i], p->cfg.cookie);
+        if (err)
+            break;
+        alloc_cnt++;
+    }
+
+    if (err) {
+        /* Free pictures 0..alloc_cnt-1 that were successfully allocated.
+         * Without this rollback the caller leaks one GPU buffer per slot. */
+        for (unsigned i = 0; i < alloc_cnt; i++)
+            (void)p->cfg.free_picture_callback(&p->pic[i], p->cfg.cookie);
+    }
+
+    return err;
+}
+
 int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConfig cfg)
 {
     if (!pool)
@@ -56,12 +81,11 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
     /* The combined assignment `*const p = *pool = malloc(...)` publishes the
      * pointer to the caller's *pool argument *before* any later failure
      * path. If a subsequent step (pthread_mutex_init / pic-array malloc /
-     * alloc_picture_callback) fails we free(p), but unless we also clear
-     * *pool the caller is left with a dangling pointer that the natural
-     * vmaf_close() teardown then double-frees via
-     * vmaf_gpu_picture_pool_close(). Set *pool = NULL on every failure
-     * label so the caller can safely treat a non-zero return as
-     * "pool not constructed". */
+     * alloc_pictures) fails we free(p), but unless we also clear *pool the
+     * caller is left with a dangling pointer that the natural vmaf_close()
+     * teardown then double-frees via vmaf_gpu_picture_pool_close(). Set
+     * *pool = NULL on every failure label so the caller can safely treat a
+     * non-zero return as "pool not constructed". */
     VmafGpuPicturePool *const p = *pool = malloc(sizeof(*p));
     if (!p) {
         *pool = NULL;
@@ -80,15 +104,11 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
     if (err)
         goto free_pic;
 
-    for (unsigned i = 0; i < p->cfg.pic_cnt; i++)
-        err |= p->cfg.alloc_picture_callback(&p->pic[i], p->cfg.cookie);
-
-    /* If any alloc_picture_callback call failed the pool is partially
-     * constructed and unusable.  Tear it down so the caller can safely treat
-     * a non-zero return as "pool not constructed" — same contract as the
-     * malloc-failure paths below. */
-    if (err)
+    err = alloc_pictures(p);
+    if (err) {
+        (void)pthread_mutex_destroy(&p->busy);
         goto free_pic;
+    }
 
     return 0;
 
