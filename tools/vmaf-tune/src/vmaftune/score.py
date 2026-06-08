@@ -21,6 +21,29 @@ from typing import Any
 
 from . import CANONICAL6_FEATURES
 
+# Modern libvmaf wraps the integer-pipeline feature results under
+# ``pooled_metrics`` keys prefixed with ``integer_``.  The canonical-6
+# bare names used in CANONICAL6_FEATURES map to these prefixed keys:
+#
+#   adm2       → integer_adm2
+#   vif_scale0 → integer_vif_scale0
+#   vif_scale1 → integer_vif_scale1
+#   vif_scale2 → integer_vif_scale2
+#   vif_scale3 → integer_vif_scale3
+#   motion2    → integer_motion2
+#
+# The mapping is consulted by ``parse_feature_aggregates``.  Any
+# canonical name absent from this dict is looked up by the bare name
+# (covers non-integer features such as ``cambi`` or future additions).
+_CANONICAL_TO_POOLED_KEY: dict[str, str] = {
+    "adm2": "integer_adm2",
+    "vif_scale0": "integer_vif_scale0",
+    "vif_scale1": "integer_vif_scale1",
+    "vif_scale2": "integer_vif_scale2",
+    "vif_scale3": "integer_vif_scale3",
+    "motion2": "integer_motion2",
+}
+
 
 @dataclasses.dataclass(frozen=True)
 class ScoreRequest:
@@ -181,13 +204,24 @@ def parse_feature_aggregates(
 ) -> tuple[dict[str, float], dict[str, float]]:
     """Pull per-feature ``mean`` / ``stddev`` aggregates from libvmaf JSON.
 
-    Modern libvmaf emits ``pooled_metrics.<feature> = {"min", "max",
-    "mean", "stddev"}`` for every registered feature extractor. We
-    surface ``mean`` and ``stddev`` because the canonical-6 trainers
-    (``train_fr_regressor_v[23].py``) consume both. Features not
-    present in ``pooled_metrics`` (model-dependent — e.g. a cambi-only
-    fixture won't carry ``adm2``) are simply absent from the returned
-    dicts; the corpus row writer translates absence into ``NaN``.
+    Modern libvmaf emits ``pooled_metrics.<key> = {"min", "max",
+    "mean", "harmonic_mean"}`` for every registered feature extractor,
+    where ``<key>`` is the ``integer_``-prefixed pipeline name for the
+    canonical-6 features (e.g. ``integer_adm2``, ``integer_vif_scale0``).
+    We resolve each canonical bare name (``adm2``, ``vif_scale0``, …)
+    to its ``integer_*`` pooled key via ``_CANONICAL_TO_POOLED_KEY``,
+    falling back to the bare name for features without a prefix mapping
+    (e.g. ``cambi``).
+
+    We surface ``mean`` and ``stddev`` because the canonical-6 trainers
+    (``train_fr_regressor_v[23].py``) consume both; ``stddev`` is absent
+    from real integer-pipeline blocks (libvmaf emits ``harmonic_mean``
+    instead) but is present in some older / synthetic fixtures, so the
+    lookup is guarded.
+
+    Features not present in ``pooled_metrics`` (model-dependent — e.g. a
+    cambi-only fixture won't carry ``adm2``) are simply absent from the
+    returned dicts; the corpus row writer translates absence into ``NaN``.
 
     The legacy top-level ``VMAF score`` shape predates per-feature
     pooling and is silently treated as an empty aggregate set.
@@ -196,7 +230,15 @@ def parse_feature_aggregates(
     means: dict[str, float] = {}
     stds: dict[str, float] = {}
     for name in feature_names:
-        block = pooled.get(name)
+        # Prefer the integer_* key that modern libvmaf emits; fall back
+        # to the bare name so non-integer features (cambi, …) and
+        # synthetic test fixtures that use bare keys still resolve.
+        pooled_key = _CANONICAL_TO_POOLED_KEY.get(name, name)
+        block = pooled.get(pooled_key)
+        if not isinstance(block, dict):
+            # Also attempt the bare name in case the caller passed a
+            # synthetic payload that does not use integer_* prefixes.
+            block = pooled.get(name)
         if not isinstance(block, dict):
             continue
         if "mean" in block:
