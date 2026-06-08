@@ -100,7 +100,12 @@ func intArg(args map[string]any, key string, def int) int {
 		case int:
 			return n
 		case json.Number:
-			i, _ := n.Int64()
+			// Return def (not 0) on parse failure so callers don't silently
+			// pass --width 0 / --bitdepth 0 to the vmaf subprocess.
+			i, err := n.Int64()
+			if err != nil {
+				return def
+			}
 			return int(i)
 		}
 	}
@@ -113,7 +118,12 @@ func floatArg(args map[string]any, key string, def float64) float64 {
 		case float64:
 			return n
 		case json.Number:
-			f, _ := n.Float64()
+			// Return def (not 0) on parse failure so callers don't silently
+			// pass malformed numeric args to the vmaf subprocess.
+			f, err := n.Float64()
+			if err != nil {
+				return def
+			}
 			return f
 		}
 	}

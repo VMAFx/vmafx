@@ -121,11 +121,10 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
                 double adm_f1s1, double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1,
                 double adm_f2s2, double adm_f2s3, int adm_skip_aim_scale, bool adm_skip_scale0)
 {
-#ifdef ADM_OPT_SINGLE_PRECISION
-    double numden_limit = 1e-2 * (w * h) / (1920.0 * 1080.0);
-#else
+    /* ADM_OPT_SINGLE_PRECISION branch removed: the symbol was never defined
+     * anywhere in the build system, making the 1e-2 threshold permanently
+     * dead code. Keep only the validated 1e-10 path. */
     double numden_limit = 1e-10 * (w * h) / (1920.0 * 1080.0);
-#endif
     float *data_buf = 0;
     char *data_top;
 

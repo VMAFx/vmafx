@@ -45,17 +45,18 @@
 #define VMAF_SRC_FEATURE_SYCL_SYCL_COMPAT_H_
 
 #if defined(__INTEL_LLVM_COMPILER)
-/* icpx / DPC++ — emit the Intel-specific attribute verbatim. */
-#define VMAF_SYCL_REQD_SG_SIZE(N) [[intel::reqd_sub_group_size(N)]]
+/* icpx / DPC++ — use the SYCL 2020 standard attribute.
+ * [[intel::reqd_sub_group_size(N)]] was deprecated in oneAPI 2026.0 in
+ * favour of [[sycl::reqd_sub_group_size(N)]] (supported since 2023.0). */
+#define VMAF_SYCL_REQD_SG_SIZE(N) [[sycl::reqd_sub_group_size(N)]]
 #elif defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL)
 /* AdaptiveCpp — Intel sub-group-size attribute not supported; the
  * runtime picks the sub-group size per backend at JIT time. */
 #define VMAF_SYCL_REQD_SG_SIZE(N) /* AdaptiveCpp: no-op */
 #else
-/* Unknown SYCL implementation — assume the Intel attribute is
- * harmless to emit; if it isn't, the new toolchain owner adds a
- * branch above. */
-#define VMAF_SYCL_REQD_SG_SIZE(N) [[intel::reqd_sub_group_size(N)]]
+/* Unknown SYCL implementation — use the SYCL 2020 standard attribute;
+ * if the toolchain doesn't support it, add a branch above. */
+#define VMAF_SYCL_REQD_SG_SIZE(N) [[sycl::reqd_sub_group_size(N)]]
 #endif
 
 #endif /* VMAF_SRC_FEATURE_SYCL_SYCL_COMPAT_H_ */

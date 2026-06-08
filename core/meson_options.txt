@@ -46,7 +46,7 @@ option('enable_nvtx',
 option('enable_nvcc',
     type: 'boolean',
     value: true,
-    description: 'Use clang to compile CUDA code.')
+    description: 'Use nvcc to compile CUDA kernel objects; when false, the clang CUDA driver is used instead (experimental). Takes effect only when enable_cuda=true.')
 
 option('enable_sycl',
     type: 'boolean',

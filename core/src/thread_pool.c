@@ -116,7 +116,8 @@ static void *vmaf_thread_pool_runner(void *p)
 
     for (;;) {
         pthread_mutex_lock(&(pool->queue.lock));
-        if (!pool->queue.head && !pool->stop)
+        /* Use while to guard against spurious wakeups per POSIX cond_wait semantics. */
+        while (!pool->queue.head && !pool->stop)
             pthread_cond_wait(&(pool->queue.empty), &(pool->queue.lock));
         if (pool->stop)
             break;
@@ -221,6 +222,7 @@ int vmaf_thread_pool_create(VmafThreadPool **pool, VmafThreadPoolConfig cfg)
     p->workers = malloc(sizeof(*p->workers) * cfg.n_threads);
     if (!p->workers) {
         free(p);
+        *pool = NULL; /* prevent dangling pointer in caller after failure */
         return -ENOMEM;
     }
     memset(p->workers, 0, sizeof(*p->workers) * cfg.n_threads);

@@ -67,7 +67,7 @@ typedef struct VmafOption {
         bool b;
         int i;
         double d;
-        char *s;
+        const char *s; /* string literal; must not be written — icpx -Wwritable-strings */
     } default_val;
     double min, max;
     uint64_t flags;

@@ -149,7 +149,7 @@ static void init(json_stream *json)
     json->next = (enum json_type)0;
 
     json->stack = NULL;
-    json->stack_top = -1;
+    json->stack_top = (size_t)-1; /* sentinel; matches comparisons at lines 720 and 746 */
     json->stack_size = 0;
 
     json->data.string = NULL;
@@ -816,7 +816,7 @@ enum json_type json_next(json_stream *json)
 
 void json_reset(json_stream *json)
 {
-    json->stack_top = -1;
+    json->stack_top = (size_t)-1; /* sentinel; matches comparisons at lines 720 and 746 */
     json->ntokens = 0;
     json->flags &= ~JSON_FLAG_ERROR;
     json->errmsg[0] = '\0';

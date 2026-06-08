@@ -54,7 +54,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -136,8 +138,14 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 	if err != nil {
 		return 0, nil, fmt.Errorf("libvmaf: create temp output: %w", err)
 	}
-	tmpOut.Close()
-	defer os.Remove(tmpOut.Name())
+	if closeErr := tmpOut.Close(); closeErr != nil {
+		return 0, nil, fmt.Errorf("libvmaf: close temp output: %w", closeErr)
+	}
+	defer func() {
+		if rmErr := os.Remove(tmpOut.Name()); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			slog.Warn("libvmaf: remove temp output", "error", rmErr)
+		}
+	}()
 
 	args := []string{
 		"-r", ref,

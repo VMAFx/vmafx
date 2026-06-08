@@ -794,6 +794,9 @@ free_fex_list:
     free(p->fex_list);
 free_p:
     free(p);
+    *pool = NULL; /* prevent dangling pointer — matches gpu_picture_pool.c:99 pattern */
+    /* Note: pthread_mutex_init is placed AFTER the last fallible malloc intentionally,
+     * so free_p: does not need to call pthread_mutex_destroy. */
 fail:
     /* NULL the caller's handle so it cannot be dereferenced after a failed
      * pool create. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */

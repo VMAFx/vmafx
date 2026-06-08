@@ -61,6 +61,14 @@ fn read_frame(file: &mut File, pic: &mut vmafx_sys::VmafPicture) -> bool {
         return false;
     }
 
+    // libvmaf strides are always non-negative for a valid picture allocation;
+    // assert here so a cast_sign_loss bug would panic in debug builds rather
+    // than silently producing out-of-bounds pointer arithmetic.
+    debug_assert!(
+        pic.stride[0] >= 0 && pic.stride[1] >= 0 && pic.stride[2] >= 0,
+        "libvmaf produced negative stride"
+    );
+    #[allow(clippy::cast_sign_loss)]
     unsafe {
         for row in 0..h {
             let src = &luma[row * w..(row + 1) * w];

@@ -297,6 +297,7 @@ free_framesync:
     vmaf_framesync_destroy(v->framesync);
 free_v:
     free(v);
+    *vmaf = NULL; /* prevent dangling pointer — matches gpu_picture_pool.c:99 pattern */
 fail:
     /* NULL the caller's handle so it cannot be passed to vmaf_close()
      * or dereferenced after a failed vmaf_init(). ASan/LeakSan: avoids

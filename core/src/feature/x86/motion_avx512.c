@@ -465,11 +465,14 @@ void y_convolution_8_avx512(const void *src_void, uint16_t *dst, unsigned width,
                                 _mm512_cvtepi32_epi16(acc_hi));
         }
 
-        /* Scalar tail */
+        /* Scalar tail — cast to uint32_t before multiply to avoid signed int overflow
+         * (uint16_t * uint16_t promotes to signed int in C; at UINT16_MAX the product
+         * can exceed INT32_MAX, triggering UBSan). */
         for (; j < width; j++) {
-            uint32_t accum = (uint32_t)filter[0] * s0[j] + (uint32_t)filter[1] * s1[j] +
-                             (uint32_t)filter[2] * s2[j] + (uint32_t)filter[3] * s3[j] +
-                             (uint32_t)filter[4] * s4[j];
+            uint32_t accum =
+                (uint32_t)filter[0] * (uint32_t)s0[j] + (uint32_t)filter[1] * (uint32_t)s1[j] +
+                (uint32_t)filter[2] * (uint32_t)s2[j] + (uint32_t)filter[3] * (uint32_t)s3[j] +
+                (uint32_t)filter[4] * (uint32_t)s4[j];
             dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);
         }
     }
@@ -484,7 +487,7 @@ void y_convolution_8_avx512(const void *src_void, uint16_t *dst, unsigned width,
                     i_tap = -i_tap;
                 else if (i_tap >= (int)height)
                     i_tap = (int)height - (i_tap - (int)height + 2);
-                accum += filter[k] * src[(ptrdiff_t)i_tap * src_stride + j];
+                accum += (uint32_t)filter[k] * (uint32_t)src[(ptrdiff_t)i_tap * src_stride + j];
             }
             dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);
         }
@@ -547,11 +550,12 @@ void y_convolution_16_avx512(const void *src_void, uint16_t *dst, unsigned width
             _mm256_storeu_si256((__m256i *)(dst + i * dst_stride + j), _mm512_cvtepi32_epi16(acc));
         }
 
-        /* Scalar tail */
+        /* Scalar tail — cast to uint32_t before multiply; see y_convolution_8 comment. */
         for (; j < width; j++) {
-            uint32_t accum = (uint32_t)filter[0] * s0[j] + (uint32_t)filter[1] * s1[j] +
-                             (uint32_t)filter[2] * s2[j] + (uint32_t)filter[3] * s3[j] +
-                             (uint32_t)filter[4] * s4[j];
+            uint32_t accum =
+                (uint32_t)filter[0] * (uint32_t)s0[j] + (uint32_t)filter[1] * (uint32_t)s1[j] +
+                (uint32_t)filter[2] * (uint32_t)s2[j] + (uint32_t)filter[3] * (uint32_t)s3[j] +
+                (uint32_t)filter[4] * (uint32_t)s4[j];
             dst[i * dst_stride + j] = (uint16_t)((accum + add_before_shift) >> shift_var);
         }
     }
@@ -619,10 +623,13 @@ void x_convolution_16_avx512(const uint16_t *src, uint16_t *dst, unsigned width,
         }
 
         /* Scalar tail for remaining interior columns */
+        /* Scalar tail — cast to uint32_t before multiply; see y_convolution_8 comment. */
         for (; j < right_edge; j++) {
-            uint32_t accum = (uint32_t)filter[0] * src_row[0] + (uint32_t)filter[1] * src_row[1] +
-                             (uint32_t)filter[2] * src_row[2] + (uint32_t)filter[3] * src_row[3] +
-                             (uint32_t)filter[4] * src_row[4];
+            uint32_t accum = (uint32_t)filter[0] * (uint32_t)src_row[0] +
+                             (uint32_t)filter[1] * (uint32_t)src_row[1] +
+                             (uint32_t)filter[2] * (uint32_t)src_row[2] +
+                             (uint32_t)filter[3] * (uint32_t)src_row[3] +
+                             (uint32_t)filter[4] * (uint32_t)src_row[4];
             dst[i * dst_stride + j] = (uint16_t)((accum + shift_add_round) >> 16);
             src_row++;
         }

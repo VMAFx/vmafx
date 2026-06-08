@@ -368,7 +368,9 @@ func (q *SQLiteQueue) ReportResult(ctx context.Context, jobID string, result *Jo
 
 	featuresJSON, err := json.Marshal(result.Features)
 	if err != nil {
-		featuresJSON = []byte("{}")
+		// map[string]float64 marshal can only fail on non-finite floats (NaN/Inf);
+		// surface the error rather than silently discarding per-feature scores.
+		return fmt.Errorf("queue: marshal features for job %s: %w", jobID, err)
 	}
 
 	// ExecContext propagates the caller's ctx so the node's ReportResult RPC
@@ -551,7 +553,11 @@ func (q *SQLiteQueue) ListAll(_ context.Context, statuses []string) ([]*Job, err
 	if err != nil {
 		return nil, fmt.Errorf("queue: list all jobs: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			q.log.Warn("queue: close ListAll rows", "error", closeErr)
+		}
+	}()
 
 	var out []*Job
 	for rows.Next() {

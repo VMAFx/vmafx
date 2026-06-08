@@ -90,12 +90,12 @@ static int set_option_double(double *dst, double default_val, const char *val, d
     return 0;
 }
 
-static int set_option_string(char **dst, char *default_val, const char *val)
+static int set_option_string(const char **dst, const char *default_val, const char *val)
 {
     *dst = default_val;
     if (!val)
         return 0;
-    *dst = (char *)val;
+    *dst = val;
     return 0;
 }
 
@@ -116,7 +116,7 @@ int vmaf_option_set(const VmafOption *opt, void *obj, const char *val)
     case VMAF_OPT_TYPE_DOUBLE:
         return set_option_double((double *)base, opt->default_val.d, val, opt->min, opt->max);
     case VMAF_OPT_TYPE_STRING:
-        return set_option_string((char **)base, opt->default_val.s, val);
+        return set_option_string((const char **)base, opt->default_val.s, val);
     default:
         return -EINVAL;
     }

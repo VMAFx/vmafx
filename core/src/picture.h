@@ -35,10 +35,9 @@ enum VmafPictureBufferType {
     VMAF_PICTURE_BUFFER_TYPE_CUDA_HOST_PINNED,
     VMAF_PICTURE_BUFFER_TYPE_CUDA_DEVICE,
     VMAF_PICTURE_BUFFER_TYPE_SYCL_DEVICE,
-    /* ADR-0238: Vulkan-backed picture pool (host-visible VkBuffer via
-     * VMA AUTO_PREFER_HOST). Tagged separately so cross-backend
-     * extractors can refuse mixed backings. */
-    VMAF_PICTURE_BUFFER_TYPE_VULKAN_DEVICE,
+    /* ADR-0726: Vulkan backend removed. Enum value deleted — no source file
+     * referenced VMAF_PICTURE_BUFFER_TYPE_VULKAN_DEVICE after ADR-0726.
+     * Any future Vulkan revival must use a new ADR and a new value. */
     /* ADR-0530 / ADR-0613: HIP-backed picture pool (hipMalloc).
      * picture_hip.{c,h} is fully implemented as of ADR-0613: the
      * previous -ENOSYS stub was replaced with a real hipMalloc /
