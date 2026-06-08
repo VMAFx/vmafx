@@ -129,16 +129,21 @@ async def test_describe_worst_frames_uses_unique_tempdir_per_call(
     # Each call must have produced its own root, and the two roots must
     # differ (mkdtemp guarantees uniqueness).
     unique_roots = {str(r) for r in captured_roots}
-    assert len(unique_roots) >= 2, (
-        "Both concurrent calls allocated the same /tmp dir — that's the race the audit fixed"
-    )
+    assert (
+        len(unique_roots) >= 2
+    ), "Both concurrent calls allocated the same /tmp dir — that's the race the audit fixed"
 
-    # Both calls must return two PNG paths and they must still exist on
-    # disk at response time (no peer-call rmtree ate them).
+    # Both calls must return two PNG paths.  With TemporaryDirectory semantics
+    # (ADR-Bug-14 fix) the temp dir is cleaned up when the call returns, so the
+    # PNGs no longer exist on disk after _describe_worst_frames returns.
+    # Callers that need persistence must copy files out before the call returns.
     for resp in results:
         assert len(resp["frames"]) == 2
         for frame in resp["frames"]:
-            assert Path(frame["png"]).exists()
+            assert not Path(frame["png"]).exists(), (
+                "TemporaryDirectory leaked: PNG file still present after "
+                "_describe_worst_frames returned (expected cleanup on context exit)"
+            )
 
 
 # ---------------------------------------------------------------------------

@@ -1154,23 +1154,24 @@ async def test_score_400_on_missing_distorted(aiohttp_client: Any, monkeypatch: 
         ),
     }
 
+    # VMAFX_MCP_HTTP_NO_AUTH must span the full test: the security middleware
+    # reads _no_auth_mode() at request-dispatch time, not at app-creation time.
     with patch.dict(__import__("os").environ, {"VMAFX_MCP_HTTP_NO_AUTH": "1"}, clear=False):
         app = ht._make_app(metrics_r3)
         client = await aiohttp_client(app)
-
-    resp = await client.post(
-        "/v1/score",
-        json={
-            "reference": "/tmp/r.yuv",
-            "width": 1920,
-            "height": 1080,
-            "pixfmt": "420",
-            "bitdepth": 8,
-        },
-    )
-    assert resp.status == 400
-    body = await resp.json()
-    assert "error" in body
+        resp = await client.post(
+            "/v1/score",
+            json={
+                "reference": "/tmp/r.yuv",
+                "width": 1920,
+                "height": 1080,
+                "pixfmt": "420",
+                "bitdepth": 8,
+            },
+        )
+        assert resp.status == 400
+        body = await resp.json()
+        assert "error" in body
 
 
 @ht_skip
@@ -1193,24 +1194,25 @@ async def test_score_400_on_missing_width(aiohttp_client: Any) -> None:
         ),
     }
 
+    # VMAFX_MCP_HTTP_NO_AUTH must span the full test: the security middleware
+    # reads _no_auth_mode() at request-dispatch time, not at app-creation time.
     with patch.dict(__import__("os").environ, {"VMAFX_MCP_HTTP_NO_AUTH": "1"}, clear=False):
         app = ht._make_app(metrics_r3b)
         client = await aiohttp_client(app)
-
-    resp = await client.post(
-        "/v1/score",
-        json={
-            "reference": "/tmp/r.yuv",
-            "distorted": "/tmp/d.yuv",
-            # width intentionally omitted
-            "height": 1080,
-            "pixfmt": "420",
-            "bitdepth": 8,
-        },
-    )
-    assert resp.status == 400
-    body = await resp.json()
-    assert "error" in body
+        resp = await client.post(
+            "/v1/score",
+            json={
+                "reference": "/tmp/r.yuv",
+                "distorted": "/tmp/d.yuv",
+                # width intentionally omitted
+                "height": 1080,
+                "pixfmt": "420",
+                "bitdepth": 8,
+            },
+        )
+        assert resp.status == 400
+        body = await resp.json()
+        assert "error" in body
 
 
 @ht_skip
@@ -1234,37 +1236,39 @@ async def test_score_500_on_scorer_error(aiohttp_client: Any) -> None:
         ),
     }
 
-    with patch.dict(__import__("os").environ, {"VMAFX_MCP_HTTP_NO_AUTH": "1"}, clear=False):
-        app = ht._make_app(metrics_r3c)
-        client = await aiohttp_client(app)
-
     async def _boom(_req):
         raise RuntimeError("synthetic scorer failure r3c")
 
     import os
     import tempfile
 
-    with tempfile.TemporaryDirectory() as td:
-        ref = os.path.join(td, "r.yuv")
-        dis = os.path.join(td, "d.yuv")
-        open(ref, "wb").write(b"\x00" * 16)  # noqa: WPS515
-        open(dis, "wb").write(b"\x00" * 16)  # noqa: WPS515
+    # VMAFX_MCP_HTTP_NO_AUTH must span the full test: the security middleware
+    # reads _no_auth_mode() at request-dispatch time, not at app-creation time.
+    with patch.dict(__import__("os").environ, {"VMAFX_MCP_HTTP_NO_AUTH": "1"}, clear=False):
+        app = ht._make_app(metrics_r3c)
+        client = await aiohttp_client(app)
 
-        with (
-            patch.object(srv_mod, "_validate_path", side_effect=lambda p: Path(p)),
-            patch.object(srv_mod, "_run_vmaf_score", new=AsyncMock(side_effect=_boom)),
-        ):
-            resp = await client.post(
-                "/v1/score",
-                json={
-                    "reference": ref,
-                    "distorted": dis,
-                    "width": 1920,
-                    "height": 1080,
-                    "pixfmt": "420",
-                    "bitdepth": 8,
-                },
-            )
+        with tempfile.TemporaryDirectory() as td:
+            ref = os.path.join(td, "r.yuv")
+            dis = os.path.join(td, "d.yuv")
+            open(ref, "wb").write(b"\x00" * 16)  # noqa: WPS515
+            open(dis, "wb").write(b"\x00" * 16)  # noqa: WPS515
+
+            with (
+                patch.object(srv_mod, "_validate_path", side_effect=lambda p: Path(p)),
+                patch.object(srv_mod, "_run_vmaf_score", new=AsyncMock(side_effect=_boom)),
+            ):
+                resp = await client.post(
+                    "/v1/score",
+                    json={
+                        "reference": ref,
+                        "distorted": dis,
+                        "width": 1920,
+                        "height": 1080,
+                        "pixfmt": "420",
+                        "bitdepth": 8,
+                    },
+                )
     assert resp.status == 500
     body = await resp.json()
     assert "synthetic scorer failure r3c" in body["error"]

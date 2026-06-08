@@ -413,9 +413,15 @@ def _fresh_metrics_for_round2() -> dict[str, Any]:
 
 @pytest_asyncio.fixture
 async def round2_client(aiohttp_client: Any) -> TestClient:
-    metrics = _fresh_metrics_for_round2()
-    app = ht._make_app(metrics)
-    return await aiohttp_client(app)
+    # VMAFX_MCP_HTTP_NO_AUTH must remain set for the full test duration;
+    # the security middleware reads _no_auth_mode() at request time, not at
+    # app-creation time.  Use a yield-fixture with patch.dict so the env var
+    # stays alive while the test body makes HTTP requests.
+    with patch.dict(os.environ, {"VMAFX_MCP_HTTP_NO_AUTH": "1"}, clear=False):
+        metrics = _fresh_metrics_for_round2()
+        app = ht._make_app(metrics)
+        client = await aiohttp_client(app)
+        yield client
 
 
 @pytest.mark.asyncio

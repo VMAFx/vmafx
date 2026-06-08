@@ -172,16 +172,18 @@ def test_describe_model_unknown_raises():
 
 def test_describe_model_onnx_no_metadata(tmp_path, monkeypatch):
     """ONNX models return model_type=None and feature_names=None."""
-    # Create a tiny fake ONNX file under the model dir.
-    fake_model = REPO / "model" / "_mcp_test_fake.onnx"
-    try:
-        fake_model.write_bytes(b"\x00" * 4)
-        result = srv._describe_model("_mcp_test_fake")
-        assert result["format"] == "onnx"
-        assert result["model_type"] is None
-        assert result["feature_names"] is None
-    finally:
-        fake_model.unlink(missing_ok=True)
+    # Redirect _repo_root to tmp_path so the test is decoupled from the
+    # physical install layout (the installed package's _repo_root() resolves
+    # to its own worktree root, which differs from REPO).
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    fake_model = model_dir / "_mcp_test_fake.onnx"
+    fake_model.write_bytes(b"\x00" * 4)
+    monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
+    result = srv._describe_model("_mcp_test_fake")
+    assert result["format"] == "onnx"
+    assert result["model_type"] is None
+    assert result["feature_names"] is None
 
 
 def test_describe_model_size_bytes():
