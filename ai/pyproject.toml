@@ -43,19 +43,19 @@ dependencies = [
   "scikit-learn>=1.8.0",
   "pydantic>=2.13.4",
   "pyyaml>=6.0.3",
-  "typer>=0.26.4",
+  "typer>=0.26.7",
   "rich>=15.0.0",
-  "tqdm>=4.67.3",
+  "tqdm>=4.68.2",
 ]
 
 [project.optional-dependencies]
-tune = ["optuna>=4.8.0", "ray[tune]>=2.55.1"]
+tune = ["optuna>=4.9.0", "ray[tune]>=2.55.1"]
 gpu  = []
 viz  = ["matplotlib>=3.10.9", "seaborn>=0.13.2"]
 dev  = [
   "pytest>=9.0.3",
   "pytest-timeout>=0.5",
-  "ruff>=0.15.15",
+  "ruff>=0.15.17",
   "mypy>=2.1.0",
   "types-PyYAML>=6.0.12.20260518",
   "pandas-stubs>=3.0.3.260530",

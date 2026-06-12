@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0.3", "pytest-asyncio>=1.4.0", "pytest-aiohttp>=1.1.0", "ruff>=0.15.15", "mypy>=2.1.0"]
+dev = ["pytest>=9.0.3", "pytest-asyncio>=1.4.0", "pytest-aiohttp>=1.1.1", "ruff>=0.15.17", "mypy>=2.1.0"]
 # Optional: enables `eval_model_on_split` + `compare_models`. Pulls in the
 # ONNX / pandas / scipy stack, so it's off by default to keep the base MCP
 # install light for callers that only want `vmaf_score`.
@@ -35,7 +35,7 @@ vlm = [
   "transformers>=5.9.0",
   "torch>=2.12.0",
   "Pillow>=12.2.0",
-  "accelerate>=1.13.0",
+  "accelerate>=1.14.0",
 ]
 
 [project.scripts]
