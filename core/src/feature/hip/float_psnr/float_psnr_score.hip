@@ -10,11 +10,14 @@
  *  written to a contiguous float buffer; host accumulates in `double`
  *  and applies the CPU log10 formula.
  *
- *  HIP warp size is 64 on GCN/RDNA (vs CUDA's 32). The `__shfl_down`
- *  intrinsic is available under HIP's `<hip/hip_runtime.h>` with the
- *  same signature as CUDA's `__shfl_down_sync` (HIP masks are 64-bit on
- *  RDNA). The shared memory array for warp partial sums is sized for the
- *  HIP warp size (64).
+ *  HIP warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
+ *  The `__shfl_down` intrinsic is available under HIP's `<hip/hip_runtime.h>`
+ *  with the same signature as CUDA's `__shfl_down_sync` (HIP masks are
+ *  64-bit on GCN/RDNA1, 32-bit on RDNA2+). The shared memory array for warp
+ *  partial sums is sized for the minimum warp size (32 = FPSNR_MIN_WARP_SIZE)
+ *  so it is large enough on wave32 hardware (8 slots) and wave64 uses only
+ *  the first 4 of those slots. Runtime `warpSize` is used in all reduction
+ *  loops and lane detection so the same binary runs correctly on both.
  *
  *  Compilation: `hipcc --offload-arch=gfx90a --emit-llvm -S` (or
  *  equivalent `--genco` for HSACO fat binary). The meson.build
