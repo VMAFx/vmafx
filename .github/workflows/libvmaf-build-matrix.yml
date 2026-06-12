@@ -202,11 +202,9 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
-    # ADR-0338: macOS Vulkan-via-MoltenVK lane is advisory until one
-    # green run on master. Other matrix entries default to
-    # `continue-on-error: false`. The `|| false` coalesce keeps any
-    # non-`moltenvk` row strict.
-    continue-on-error: ${{ matrix.experimental == true && matrix.moltenvk == true }}
+    # ADR-0726: Vulkan backend removed. continue-on-error now depends only on
+    # matrix.experimental (no matrix row has moltenvk:true).
+    continue-on-error: ${{ matrix.experimental == true }}
     env:
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
@@ -388,103 +386,6 @@ jobs:
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
 
-      # ---------- Vulkan SDK (T5-1b runtime) ----------
-      # libvulkan.so + vulkan-headers + glslc + lavapipe (software
-      # ICD so the headless runner can enumerate a compute-capable
-      # VkPhysicalDevice). volk + VMA come via meson wraps in
-      # core/subprojects/ — no apt package needed.
-      #
-      # Cache the meson `subprojects/packagecache/` so volk + VMA wrap
-      # archives (sha256-pinned, fetched from GitHub releases on every
-      # run today) are restored from the GHA cache instead. Key is the
-      # `.wrap` file hashes — wrap revisions are sha256-pinned, so the
-      # cached archives are immutable per (volk-version, vma-version)
-      # pair. Per Research-0089 (PR #525) §2, Vulkan build p50 is
-      # 10.43 min; the wrap fetches contribute ~15–30 s of that on a
-      # cold runner.
-      - name: Cache meson subprojects (Vulkan wraps)
-        if: matrix.vulkan
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
-        with:
-          path: core/subprojects/packagecache
-          key: meson-packagecache-vulkan-${{ hashFiles('core/subprojects/*.wrap') }}
-          restore-keys: |
-            meson-packagecache-vulkan-
-      - name: Install Vulkan SDK
-        if: matrix.vulkan
-        run: |
-          sudo apt-get update
-          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ \
-            libvulkan-dev vulkan-tools glslang-tools mesa-vulkan-drivers
-          # `glslang-tools` ships glslangValidator; the wrap pipeline
-          # uses `glslc` from `glslc` package or shaderc-compiler.
-          # Try shaderc; fall back to a build-from-source path if the
-          # apt name has changed.
-          if ! command -v glslc >/dev/null; then
-            sudo -E apt-get -yq install glslc || \
-              sudo -E apt-get -yq install vulkan-sdk
-          fi
-          glslc --version | head -2
-          vulkaninfo --summary || true
-
-      # ---------- MoltenVK + Vulkan loader/headers (macOS lane) ----------
-      # Apple Silicon GHA runners (`macos-latest`) ship with no Vulkan
-      # ICD by default — Metal is the native API. This step installs:
-      #   - `molten-vk`     — Vulkan-on-Metal translation ICD; lays
-      #                       MoltenVK_icd.json under
-      #                       /opt/homebrew/etc/vulkan/icd.d/ per the
-      #                       homebrew formula's install layout
-      #                       (see ADR-0338 and docs/backends/vulkan/moltenvk.md).
-      #   - `vulkan-loader` — Khronos `libvulkan.dylib`; volk dlopen()s
-      #                       this at runtime.
-      #   - `vulkan-headers`— `vulkan/vulkan.h` etc., consumed by the
-      #                       libvmaf build's wrap-fallback path.
-      #   - `glslc`         — GLSL → SPIR-V compiler (ships with
-      #                       `shaderc`).
-      # `VK_ICD_FILENAMES` pins the loader to MoltenVK so the lane is
-      # deterministic regardless of any future homebrew default-ICD
-      # changes. `vulkaninfo --summary` proves the Apple GPU is the
-      # device the loader sees (output captured to stdout for triage).
-      - name: Install MoltenVK + Vulkan loader/headers (macOS)
-        if: matrix.moltenvk
-        run: |
-          brew install -q molten-vk vulkan-loader vulkan-headers shaderc
-          BREW_PREFIX=$(brew --prefix)
-          ICD_JSON="${BREW_PREFIX}/etc/vulkan/icd.d/MoltenVK_icd.json"
-          if [ ! -f "${ICD_JSON}" ]; then
-            echo "::error::MoltenVK_icd.json not found at ${ICD_JSON}"
-            ls -la "${BREW_PREFIX}/etc/vulkan/icd.d/" || true
-            ls -la "${BREW_PREFIX}/share/vulkan/icd.d/" || true
-            exit 1
-          fi
-          echo "VK_ICD_FILENAMES=${ICD_JSON}" >> $GITHUB_ENV
-          # Make libvulkan.dylib + glslc visible to meson / volk dlopen.
-          echo "DYLD_LIBRARY_PATH=${BREW_PREFIX}/lib:${DYLD_LIBRARY_PATH:-}" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> $GITHUB_ENV
-          # brew's `vulkan-headers` is keg-only on macOS — install does
-          # not symlink `<vulkan/vk_platform.h>` etc. into
-          # ${BREW_PREFIX}/include, so the volk subproject fails with
-          # `fatal error: 'vulkan/vk_platform.h' file not found`. The
-          # headers live at $(brew --prefix vulkan-headers)/include;
-          # surface that path via CPATH so clang finds them without
-          # touching the meson cross-file. (PR #760 round 4)
-          VK_HEADERS_INCLUDE="$(brew --prefix vulkan-headers)/include"
-          echo "CPATH=${VK_HEADERS_INCLUDE}:${CPATH:-}" >> $GITHUB_ENV
-          echo "CPLUS_INCLUDE_PATH=${VK_HEADERS_INCLUDE}:${CPLUS_INCLUDE_PATH:-}" >> $GITHUB_ENV
-          # Sanity: confirm MoltenVK is the loaded ICD. `|| true`
-          # because vulkaninfo non-zero-exits on some macOS warning
-          # paths even when enumeration succeeds; the grep below is
-          # the actual gate.
-          # Stderr redirected to /dev/null: hosted macOS runners emit
-          # GPU-capability warnings (no bare-metal GPU access) that
-          # appear as CI annotations even though enumeration succeeds.
-          # The tee of stdout is the real diagnostic (ADR-0635).
-          vulkaninfo --summary 2>/dev/null | tee /tmp/vulkaninfo.txt || true
-          if ! grep -qi 'MoltenVK\|Apple' /tmp/vulkaninfo.txt; then
-            echo "::debug::vulkaninfo did not report MoltenVK/Apple GPU — see /tmp/vulkaninfo.txt (expected on hosted runners without bare-metal GPU)"
-          fi
-          glslc --version | head -2
-
       # ---------- ROCm / HIP runtime (T7-10b) ----------
       # Installs `rocm-hip-runtime-dev` from the official AMD apt repo
       # at `repo.radeon.com/rocm/apt/<ver>`. ROCm 7.2.3 matches the
@@ -606,7 +507,7 @@ jobs:
       # whether the host can actually run them; the build itself is
       # what Netflix#1481 needs to pin).
       - name: Run tests
-        if: "!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686 && !matrix.moltenvk"
+        if: "!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686"
         run: sudo ninja -vC core/build test
 
       # ---------- SSH debug session (macOS × workflow_dispatch only) ----------
@@ -633,48 +534,13 @@ jobs:
           # within that window the step unblocks and the job completes.
           connect-timeout-seconds: 1800
 
-      # ---------- Vulkan smoke test (macOS MoltenVK lane) ----------
-      # Runs ONLY the Vulkan-tagged smoke binaries and captures the
-      # ICD enumeration output for triage. Per ADR-0338 the lane is
-      # advisory: a kernel-pipeline failure (e.g. a SPIR-V capability
-      # MoltenVK rejects) is a known limitation, not a merge blocker.
-      # The failure mode + suspected MoltenVK gap are documented in
-      # docs/backends/vulkan/moltenvk.md "Known limitations".
-      #
-      # No `sudo` here — macOS brew installs run as the runner user,
-      # so the build artifacts are user-owned. `meson test --suite`
-      # filters to the Vulkan suite (registered in
-      # core/test/meson.build alongside the other suite labels).
-      - name: Run Vulkan smoke tests (macOS MoltenVK)
-        if: matrix.moltenvk
-        run: |
-          set +e
-          echo "=== Loaded ICD ==="
-          vulkaninfo --summary 2>&1 | head -80 || true
-          echo ""
-          echo "=== test_vulkan_smoke ==="
-          ./core/build/test/test_vulkan_smoke
-          smoke_rc=$?
-          echo "=== test_vulkan_pic_preallocation ==="
-          ./core/build/test/test_vulkan_pic_preallocation
-          prealloc_rc=$?
-          echo "=== test_vulkan_async_pending_fence ==="
-          ./core/build/test/test_vulkan_async_pending_fence
-          fence_rc=$?
-          echo ""
-          echo "smoke_rc=${smoke_rc} prealloc_rc=${prealloc_rc} fence_rc=${fence_rc}"
-          # Report any non-zero rc as advisory failure (lane is
-          # `continue-on-error: true` until one green run on master).
-          if [ ${smoke_rc} -ne 0 ] || [ ${prealloc_rc} -ne 0 ] || [ ${fence_rc} -ne 0 ]; then
-            echo "::warning::MoltenVK Vulkan smoke surfaced failures — see docs/backends/vulkan/moltenvk.md for the known-limitations matrix."
-            exit 1
-          fi
+      # (ADR-0726: Vulkan removed — MoltenVK install + smoke test steps deleted)
 
       - name: Cache Netflix vmaf_resource fixtures
         # Insulates the tox lanes from the recurring HTTP-502s on
         # raw.githubusercontent.com when fetching python/test/resource/
         # fixtures via download_reactively (compat/python-vmaf/config.py).
-        if: "((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && !matrix.moltenvk"
+        if: "(startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest'"
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: python/test/resource
@@ -691,7 +557,7 @@ jobs:
           tox -c python
 
       - name: Run tox tests (mac)
-        if: matrix.os == 'macos-latest' && !matrix.moltenvk
+        if: matrix.os == 'macos-latest'
         run: |
           mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
           pip install tox

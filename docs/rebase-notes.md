@@ -45667,3 +45667,6 @@ Rebase impact: low. `picture_v2.c` is a new file; no upstream file was modified.
 If upstream ever adds its own `picture_v2.c` (unlikely given it is a fork-local concept),
 resolve by keeping the fork's implementation. The `ai/scripts` exit-code fix is
 purely script-internal; no C or build system conflict possible with upstream.
+
+## chore/remove-vulkan-moltenvk-dead-leftovers (2026-06-13)
+no rebase impact: deletions only (subproject wraps, Docker stages, CI job bodies, moltenvk.md). No shared function signatures changed, no symbols renamed, no upstream-mirrored C paths modified. ABI-reserved enum gaps preserved.

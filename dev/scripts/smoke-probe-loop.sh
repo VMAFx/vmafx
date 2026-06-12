@@ -9,7 +9,8 @@
 #
 # For each probe iteration:
 #   1. Runs the golden pair (ref_576x324_48f.yuv / dis_576x324_48f.yuv)
-#      through all 4 backends (cpu, cuda, sycl, vulkan).
+#      through the 3 active backends (cpu, cuda, sycl) and hip.
+#      (ADR-0726: Vulkan backend removed.)
 #   2. Sends an MCP list_features request via stdio.
 #   3. Sends an MCP compute_vmaf HBD (10-bit simulated) request via stdio.
 #   4. Writes a JSON probe record to ${PROBE_OUTPUT_DIR}/probe-${ts}.json
@@ -19,10 +20,10 @@
 #     "ts": "ISO-8601",
 #     "host_id": "hostname:container-id",
 #     "backend_results": {
-#       "cpu":    { "score": float, "duration_ms": int, "error": str|null },
-#       "cuda":   { "score": float, "duration_ms": int, "error": str|null },
-#       "sycl":   { "score": float, "duration_ms": int, "error": str|null },
-#       "vulkan": { "score": float, "duration_ms": int, "error": str|null }
+#       "cpu":  { "score": float, "duration_ms": int, "error": str|null },
+#       "cuda": { "score": float, "duration_ms": int, "error": str|null },
+#       "sycl": { "score": float, "duration_ms": int, "error": str|null },
+#       "hip":  { "score": float, "duration_ms": int, "error": str|null }
 #     },
 #     "mcp_results": {
 #       "list_features": { "feature_count": int, "duration_ms": int, "error": str|null },
@@ -106,7 +107,7 @@ probe_backend() {
     cpu) backend_flag="" ;;
     cuda) backend_flag="--cuda" ;;
     sycl) backend_flag="--sycl" ;;
-    vulkan) backend_flag="--vulkan" ;;
+    hip) backend_flag="--hip" ;;
     *)
       printf 'null\t0\t%s' "unknown backend: ${backend}"
       return
@@ -239,7 +240,7 @@ run_probe() {
 
   # Backend probes
   declare -A scores durations errors
-  for backend in cpu cuda sycl vulkan; do
+  for backend in cpu cuda sycl hip; do
     echo "[smoke-probe]   backend=${backend}…" >&2
     IFS=$'\t' read -r score dur err <<<"$(probe_backend "${backend}" 2>/dev/null || echo "null	0	\"probe failed\"")"
     scores[${backend}]="$(json_num "${score}")"
@@ -260,10 +261,10 @@ run_probe() {
   "ts": "$(json_str "${ts}" | tr -d '"')",
   "host_id": "$(json_str "${host_id}" | tr -d '"')",
   "backend_results": {
-    "cpu":    { "score": ${scores[cpu]},    "duration_ms": ${durations[cpu]},    "error": ${errors[cpu]} },
-    "cuda":   { "score": ${scores[cuda]},   "duration_ms": ${durations[cuda]},   "error": ${errors[cuda]} },
-    "sycl":   { "score": ${scores[sycl]},   "duration_ms": ${durations[sycl]},   "error": ${errors[sycl]} },
-    "vulkan": { "score": ${scores[vulkan]}, "duration_ms": ${durations[vulkan]}, "error": ${errors[vulkan]} }
+    "cpu":  { "score": ${scores[cpu]},  "duration_ms": ${durations[cpu]},  "error": ${errors[cpu]} },
+    "cuda": { "score": ${scores[cuda]}, "duration_ms": ${durations[cuda]}, "error": ${errors[cuda]} },
+    "sycl": { "score": ${scores[sycl]}, "duration_ms": ${durations[sycl]}, "error": ${errors[sycl]} },
+    "hip":  { "score": ${scores[hip]},  "duration_ms": ${durations[hip]},  "error": ${errors[hip]} }
   },
   "mcp_results": {
     "list_features": { "feature_count": ${mcp_fc_count:-null}, "duration_ms": ${mcp_fc_dur:-0}, "error": ${mcp_fc_err:-null} },

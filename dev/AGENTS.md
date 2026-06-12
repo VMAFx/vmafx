@@ -141,7 +141,7 @@ a real container-side regression that hid a host GPU from libvmaf:
 4. **The build-time backend probe loop in stage 3 must stay green for
    `cpu` + `cuda` and `WARN`-but-not-`built without X support` for the
    GPU backends.** The probe runs vmaf against the Netflix golden CPU
-   pair with `--backend cpu cuda sycl vulkan hip` and `|| echo WARN`s
+   pair with `--backend cpu cuda sycl hip` and `|| echo WARN`s
    on missing devices. The signal we care about is the precise
    `built without X support` string — that means a meson flag silently
    flipped off and a real backend disappeared from libvmaf entirely

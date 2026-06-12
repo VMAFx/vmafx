@@ -13,9 +13,9 @@
 # Build args (all optional):
 #   VMAF_BUILD_JOBS   — ninja parallelism (default: 4)
 #   PYTHON_VERSION    — Python version for venv stage (default: 3.13)
-#   GPU_RUNTIME       — cpu | cuda12 | rocm6 | oneapi2026 | vulkan
+#   GPU_RUNTIME       — cpu | cuda12 | rocm6 | oneapi2026
 #                       (default: cpu; GPU variants require a matching
-#                        FROM override — use Dockerfile.production-gpu-* instead)
+#                        FROM override — use Dockerfile.production-gpu instead)
 
 # ---------------------------------------------------------------------------
 # Stage 1 — builder: compile libvmaf + vmaf CLI

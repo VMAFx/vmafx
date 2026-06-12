@@ -9,14 +9,12 @@
 #   cuda12     — adds CUDA 12 runtime libs (libcuda.so stub + libcudart.so)
 #   rocm6      — adds ROCm 6 HIP runtime (libamdhip64.so + libhsa-runtime64.so)
 #   oneapi2026 — adds Intel oneAPI 2026 Level Zero runtime (libze1 + libze_intel_gpu1)
-#   vulkan     — adds Vulkan runtime ICD loader (libvulkan.so + lavapipe ICD JSON)
 #
 # Tag matrix (built by CI):
 #   ghcr.io/vmafx/vmafx:<tag>          (cpu default, same as Dockerfile.production)
 #   ghcr.io/vmafx/vmafx:<tag>-cuda12
 #   ghcr.io/vmafx/vmafx:<tag>-rocm6
 #   ghcr.io/vmafx/vmafx:<tag>-oneapi2026
-#   ghcr.io/vmafx/vmafx:<tag>-vulkan
 #
 # ADR-0698: vmafx-production-dockerfile
 
@@ -151,33 +149,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-oneap
     && cp /build/tools/vmaf /dist/bin/ \
     && cp -r model/ /dist/model/
 
-# --- vulkan build ---
-FROM builder-base AS builder-vulkan
-
-# hadolint ignore=DL3008,DL3009
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
-    && apt-get install -y --no-install-recommends \
-        libvulkan-dev \
-        glslang-tools \
-        spirv-tools
-
-RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-vulkan \
-    CCACHE_DIR=/root/.cache/ccache \
-    meson setup /build libvmaf \
-        --buildtype=release \
-        --strip \
-        -Denable_cuda=false \
-        -Denable_sycl=false \
-        -Denable_vulkan=true \
-        -Denable_dnn=disabled \
-        -Denable_avx512=true \
-    && ninja -C /build -j4 \
-    && mkdir -p /dist/lib /dist/bin /dist/model \
-    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
-    && cp /build/tools/vmaf /dist/bin/ \
-    && cp -r model/ /dist/model/
+# (ADR-0726: Vulkan backend removed; builder-vulkan stage deleted)
 
 # ---------------------------------------------------------------------------
 # Runtime base — distroless cc-debian12
@@ -243,12 +215,4 @@ COPY --from=builder-oneapi2026 /dist/model/ /usr/local/share/vmafx/model/
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
-FROM runtime-base AS final-vulkan
-# Vulkan ICD loader + lavapipe JSON
-COPY --from=builder-vulkan /dist/lib/   /usr/local/lib/
-COPY --from=builder-vulkan /dist/bin/   /usr/local/bin/
-COPY --from=builder-vulkan /dist/model/ /usr/local/share/vmafx/model/
-# Drop privileges. Lavapipe is a CPU rasterizer (no /dev/dri requirement);
-# hardware Vulkan needs `--group-add render` like the oneapi variant.
-USER nonroot:nonroot
-ENTRYPOINT ["/usr/local/bin/vmaf"]
+# (ADR-0726: final-vulkan stage removed)

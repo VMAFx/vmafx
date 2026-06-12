@@ -10,8 +10,8 @@
 #   ghcr.io/vmafx/vmafx:<tag>-cuda12    (amd64 only — CUDA not portable to arm64)
 #   ghcr.io/vmafx/vmafx:<tag>-rocm6     (amd64 only)
 #   ghcr.io/vmafx/vmafx:<tag>-oneapi2026 (amd64 only)
-#   ghcr.io/vmafx/vmafx:<tag>-vulkan    (amd64+arm64)
 #
+
 # Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
 # ADR-0698: vmafx-production-dockerfile
 
@@ -362,68 +362,7 @@ jobs:
           cosign sign --yes \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
 
-  # -----------------------------------------------------------------------
-  # GPU variant: Vulkan (amd64 + arm64 via QEMU)
-  # -----------------------------------------------------------------------
-  build-vulkan:
-    name: Build + push Vulkan image (amd64 + arm64)
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-        with:
-          submodules: recursive
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff9c35ca64c0f25fcea  # v3.6.0
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5fb029f  # v3.10.0
-
-      - name: Log in to GHCR
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@902fa8ec7d6ecbea8a5d2886d2c2a2f8e2f9a9c5  # v5.7.0
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=tag,suffix=-vulkan
-            type=raw,value=${{ github.event.inputs.tag || 'dev' }}-vulkan,enable=${{ github.event_name == 'workflow_dispatch' }}
-
-      - name: Build and push (amd64 + arm64)
-        id: push
-        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1  # v6.16.0
-        with:
-          context: .
-          file: docker/Dockerfile.production-gpu
-          target: final-vulkan
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Install cosign + sign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
-        with:
-          cosign-release: "v3.0.6"
-
-      - name: Sign image
-        run: |
-          cosign sign --yes \
-            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+  # (ADR-0726: Vulkan backend removed; build-vulkan job deleted)
 
   # -----------------------------------------------------------------------
   # MCP server variant (cpu base, amd64 + arm64)
@@ -513,7 +452,6 @@ jobs:
       - build-cuda12
       - build-rocm6
       - build-oneapi2026
-      - build-vulkan
       - build-server
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -528,4 +466,4 @@ jobs:
             echo "smoke-test failed"
             exit 1
           fi
-          echo "CPU + smoke-test passed. GPU variants: cuda12=${{ needs.build-cuda12.result }} rocm6=${{ needs.build-rocm6.result }} oneapi=${{ needs.build-oneapi2026.result }} vulkan=${{ needs.build-vulkan.result }} server=${{ needs.build-server.result }}"
+          echo "CPU + smoke-test passed. GPU variants: cuda12=${{ needs.build-cuda12.result }} rocm6=${{ needs.build-rocm6.result }} oneapi=${{ needs.build-oneapi2026.result }} server=${{ needs.build-server.result }}"
