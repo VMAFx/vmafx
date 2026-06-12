@@ -238,6 +238,43 @@ static char *test_integer_ssim_accumulate_row_avx2_16bpc(void)
     return NULL;
 }
 
+/*
+ * Regression test for integer-ssim-avx2-16bit-overflow.
+ *
+ * Pixels >= 46341 produce s*s >= 2^31, which sets bit 31 of the low 32-bit
+ * lane used by _mm256_mul_epi32.  That makes the intermediate appear negative
+ * (signed), corrupting the w*(s*s) product.  This test feeds full 16-bit
+ * bright pixels (p = 65535 / 65534 alternating) and asserts AVX2 == scalar.
+ *
+ * The old code accumulated x2 as _mm256_mul_epi32(wv, _mm256_mul_epi32(sv,sv));
+ * s*s = 65535^2 = 4,294,836,225 > 2^31 so bit 31 was set, sign-extending the
+ * intermediate and producing a wrong (negative) partial product for x2/xy/y2.
+ * The fix computes (w*s)*s instead; w*s <= 256*65535 = 16,776,960 < 2^24.
+ */
+static char *test_integer_ssim_avx2_16bpc_bright(void)
+{
+    uint16_t src_row[TEST_ROW_WIDTH];
+    uint16_t dst_row[TEST_ROW_WIDTH];
+    integer_ssim_moments_t scalar_buf[TEST_ROW_WIDTH];
+    integer_ssim_moments_t simd_buf[TEST_ROW_WIDTH];
+
+    /* Fill with alternating full-range 16-bit values that cause s*s >= 2^31. */
+    for (int i = 0; i < TEST_ROW_WIDTH; i++) {
+        src_row[i] = (uint16_t)(65535 - (i & 1)); /* 65535, 65534, 65535, ... */
+        dst_row[i] = (uint16_t)(65535 - ((i + 1) & 1));
+    }
+
+    scalar_accumulate_row_16(src_row, dst_row, TEST_ROW_WIDTH, test_hkernel, TEST_KERNEL_SZ,
+                             TEST_KERNEL_OFFS, scalar_buf);
+    integer_ssim_accumulate_row_16_avx2(src_row, dst_row, TEST_ROW_WIDTH, test_hkernel,
+                                        TEST_KERNEL_SZ, TEST_KERNEL_OFFS, simd_buf);
+
+    SIMD_BITEXACT_ASSERT_MEMCMP(scalar_buf, simd_buf,
+                                TEST_ROW_WIDTH * sizeof(integer_ssim_moments_t),
+                                "integer_ssim_avx2 16bpc bright-pixel overflow");
+    return NULL;
+}
+
 /* Adversarial: full-white / full-black rows (all-same pixels). */
 static char *test_integer_ssim_avx2_uniform(void)
 {
@@ -291,6 +328,7 @@ char *run_tests(void)
     mu_run_test(test_integer_ssim_accumulate_row_avx2_16bpc);
     mu_run_test(test_integer_ssim_avx2_uniform);
     mu_run_test(test_integer_ssim_avx2_narrow);
+    mu_run_test(test_integer_ssim_avx2_16bpc_bright);
 #else
     (void)fprintf(stderr, "skipping integer_ssim SIMD: non-x86 arch\n");
 #endif

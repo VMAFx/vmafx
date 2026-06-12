@@ -258,19 +258,27 @@ void integer_ssim_accumulate_row_16_avx2(const uint16_t *src, const uint16_t *ds
 {
     /*
      * 16-bit path: pixel values up to 65535.
-     * w * s ≤ 256 * 65535 = 16,776,960 — fits int32.
+     * w * s ≤ 256 * 65535 = 16,776,960 < 2^24 — fits signed int32.
      * w * s^2 ≤ 256 * 65535^2 = 1.099e12 — DOES NOT fit int32.
      *
-     * Therefore for x2/xy/y2 we must widen intermediate products to int64.
-     * Strategy: accumulate mux/muy in int32 (safe), widen to int64 at the end.
-     *           accumulate x2/xy/y2 in int64 per-tap using 64-bit ops.
+     * Accumulation strategy for all five moments: int64 per-tap.
+     * All accumulators (acc_mux, acc_muy, acc_x2, acc_xy, acc_y2) are 4 x
+     * int64 packed in a 256-bit register.
      *
-     * Since AVX2 lacks native 64-bit multiply, we perform the 64-bit
-     * accumulation on the lower/upper 128-bit halves via SSE4 _mm_mul_epi32
-     * (true signed 64-bit product of lower 32 bits of each 64-bit lane).
+     * Since AVX2 lacks native 64-bit multiply, we use _mm256_mul_epi32, which
+     * computes the true signed 64-bit product of the low 32 bits of each
+     * 64-bit lane.  This is ONLY safe when both operands' low 32 bits have
+     * bit 31 clear (i.e., the signed 32-bit interpretation is non-negative).
      *
-     * Overflow: pixels are unsigned, so we zero-extend to 64-bit before
-     * multiplying.  The products are always non-negative (wv * sv >= 0).
+     * Key invariant: w*s is computed FIRST (w <= 256, s <= 65535,
+     * w*s <= 16,776,960 < 2^24 — bit 31 always clear), and that result is
+     * then multiplied by s or d to obtain x2/xy/y2.  This avoids the
+     * s*s intermediate (s*s can reach 65535^2 = 4,294,836,225 > 2^31,
+     * which sets bit 31 and causes _mm256_mul_epi32 to sign-extend
+     * incorrectly).  See fix for integer-ssim-avx2-16bit-overflow.
+     *
+     * Pixels are zero-extended from uint16 to 64-bit lanes before any
+     * multiply, so all operands are non-negative.
      */
     const int x_int_first = hkernel_offs;
     const int x_int_last = width - 1 - hkernel_offs;
@@ -308,18 +316,36 @@ void integer_ssim_accumulate_row_16_avx2(const uint16_t *src, const uint16_t *ds
             const int64_t w_scalar = (int64_t)hkernel[k];
             const __m256i wv = _mm256_set1_epi64x(w_scalar);
 
-            /* mux += w * s  (64-bit mul: use _mm256_mul_epi32 on low dwords) */
-            acc_mux = _mm256_add_epi64(acc_mux, _mm256_mul_epi32(wv, sv));
-            acc_muy = _mm256_add_epi64(acc_muy, _mm256_mul_epi32(wv, dv));
-            /* x2  += w * s * s */
-            __m256i sv_sq = _mm256_mul_epi32(sv, sv);
-            acc_x2 = _mm256_add_epi64(acc_x2, _mm256_mul_epi32(wv, sv_sq));
-            /* xy  += w * s * d */
-            __m256i sd = _mm256_mul_epi32(sv, dv);
-            acc_xy = _mm256_add_epi64(acc_xy, _mm256_mul_epi32(wv, sd));
-            /* y2  += w * d * d */
-            __m256i dv_sq = _mm256_mul_epi32(dv, dv);
-            acc_y2 = _mm256_add_epi64(acc_y2, _mm256_mul_epi32(wv, dv_sq));
+            /*
+             * Compute w*s and w*d first.
+             *
+             * Overflow note for 16-bit content: s and d are zero-extended from
+             * uint16, so the low 32 bits of each 64-bit lane hold a value in
+             * [0, 65535].  w (= hkernel[k]) <= 256.
+             *
+             *   w*s <= 256 * 65535 = 16,776,960 < 2^24  — fits signed int32,
+             *   bit 31 clear.  _mm256_mul_epi32 is safe.
+             *
+             * Computing s*s FIRST and then w*(s*s) is WRONG: s*s can reach
+             * 65535^2 = 4,294,836,225 > 2^31, setting bit 31 and making the
+             * value appear negative when _mm256_mul_epi32 reads it as a signed
+             * 32-bit operand, producing a corrupted 64-bit product.
+             *
+             * Reordering to (w*s)*s avoids both multiplies ever seeing a value
+             * >= 2^31.  See fix for integer-ssim-avx2-16bit-overflow.
+             */
+            /* ws = w*s  (< 2^24, safe signed 32-bit low dword) */
+            __m256i ws = _mm256_mul_epi32(wv, sv);
+            acc_mux = _mm256_add_epi64(acc_mux, ws);
+            /* x2 += ws * s  (= w*s*s; ws low-dword < 2^24, safe) */
+            acc_x2 = _mm256_add_epi64(acc_x2, _mm256_mul_epi32(ws, sv));
+            /* xy += ws * d  (= w*s*d) */
+            acc_xy = _mm256_add_epi64(acc_xy, _mm256_mul_epi32(ws, dv));
+            /* wd = w*d */
+            __m256i wd = _mm256_mul_epi32(wv, dv);
+            acc_muy = _mm256_add_epi64(acc_muy, wd);
+            /* y2 += wd * d  (= w*d*d) */
+            acc_y2 = _mm256_add_epi64(acc_y2, _mm256_mul_epi32(wd, dv));
             wsum += w_scalar;
         }
 
