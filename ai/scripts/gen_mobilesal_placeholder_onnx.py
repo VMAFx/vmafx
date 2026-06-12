@@ -31,4 +31,4 @@ print(
     "See docs/adr/0218-mobilesal-saliency-extractor.md.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

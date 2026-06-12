@@ -24,4 +24,4 @@ print(
     "konvid_1k_to_corpus_jsonl.py.  See docs/ai/mos-corpora.md.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

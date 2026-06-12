@@ -22,4 +22,4 @@ print(
     "Implement following the pattern in export_fastdvdnet_pre_placeholder.py.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

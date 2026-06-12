@@ -23,4 +23,4 @@ print(
     "for the benchmark design and expected outcome metrics.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

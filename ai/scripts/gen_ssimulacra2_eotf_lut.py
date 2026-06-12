@@ -24,4 +24,4 @@ print(
     "generation procedure and ADR context.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

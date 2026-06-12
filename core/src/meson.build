@@ -1881,6 +1881,7 @@ libvmaf_sources = [
     src_dir + 'predict.c',
     src_dir + 'model.c',
     src_dir + 'picture.c',
+    src_dir + 'picture_v2.c', # ADR-0928 cycle N+1: v2 allocator / converter implementation
     src_dir + 'mem.c',
     src_dir + 'output.c',
     src_dir + 'fex_ctx_vector.c',

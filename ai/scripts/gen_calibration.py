@@ -25,4 +25,4 @@ print(
     "Implement following the pattern in build_bisect_cache.py or ptq_static.py.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

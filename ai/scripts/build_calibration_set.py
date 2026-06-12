@@ -24,4 +24,4 @@ print(
     "for the corpus-iteration side and ptq_static.py for the quantization side.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

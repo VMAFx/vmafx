@@ -23,4 +23,4 @@ print(
     "Implement following the pattern in chug_to_corpus_jsonl.py.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

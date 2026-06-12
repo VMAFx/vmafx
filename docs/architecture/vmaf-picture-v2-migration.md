@@ -1,9 +1,10 @@
 <!-- markdownlint-disable MD060 -->
 # `VmafPicture` v2 — consumer migration guide
 
-> **Status:** Design + scaffold only. v2 is declared in
-> `core/include/libvmaf/picture_v2.h` but not yet linked into
-> `libvmaf.so`. See [ADR-0928](../adr/0928-vmaf-picture-v2-explicit-backend-state.md)
+> **Status:** Implemented (cycle N+1). v2 is declared in
+> `core/include/libvmaf/picture_v2.h` and linked into `libvmaf.so`
+> via `core/src/picture_v2.c`. See
+> [ADR-0928](../adr/0928-vmaf-picture-v2-explicit-backend-state.md)
 > for the decision record and the four-cycle migration plan.
 
 ## Why v2 exists
@@ -36,8 +37,8 @@ cast (`CUstream s = (CUstream)pic.backend_handle;`).
 
 | Cycle | Window | What ships | SONAME | v1 status |
 |---|---|---|---|---|
-| **N** (this PR) | 2026-05-31 | `picture_v2.h` declared; ADR-0928; this doc; changelog fragment | 3 | live default |
-| **N+1** | next minor | `picture_v2.h` wired into meson; converters in `core/src/picture.c`; v1 marked `__attribute__((deprecated))` | 3 (additive) | live default + `deprecated` warnings |
+| **N** | 2026-05-31 | `picture_v2.h` declared; ADR-0928; this doc; changelog fragment | 3 | live default |
+| **N+1** (this RC) | 2026-06-13 | `picture_v2.c` implemented; header installed; unit tests; `picture_v2.h` wired into meson | 3 (additive) | live default |
 | **N+2** | ≈ 6 months | In-tree backends + tools + `ffmpeg-patches/0002-0006` switched to v2 | 3 | callable but unused in-tree |
 | **N+3** | ≈ 12 months (target VMAFX v4.0.0) | v1 entry points removed; `typedef VmafPicture2 VmafPicture;` | **3 → 4** | removed |
 

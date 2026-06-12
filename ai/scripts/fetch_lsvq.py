@@ -23,4 +23,4 @@ print(
     "fetch_konvid_1k.py and pair with lsvq_to_corpus_jsonl.py.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

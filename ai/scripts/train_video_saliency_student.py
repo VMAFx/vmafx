@@ -24,4 +24,4 @@ print(
     "See docs/adr/0396-video-saliency-extension.md for the full roadmap.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

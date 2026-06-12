@@ -45651,3 +45651,19 @@ no rebase impact: docs-only removal of a stale list item; no code or nav structu
 
 ## fix/functional-matrix-broken-17 (2026-06-12)
 no rebase impact: all changes are bug fixes in independent files (bench_all.sh, bisect.py, server.py, cli.py, op_allowlist.c, float_adm_cuda.c, dnn_api.c, Containerfile) with no shared function-signature changes, no renamed symbols, and no upstream-mirrored path modifications.
+
+## rc/scaffold-stub-completion — picture_v2 implementation + ai/scripts exit-code fix
+
+**Files touched:** `core/src/picture_v2.c` (new), `core/test/test_picture_v2.c` (new),
+`core/include/libvmaf/picture_v2.h`, `core/src/meson.build`,
+`core/include/libvmaf/meson.build`, `core/test/meson.build`,
+`docs/architecture/vmaf-picture-v2-migration.md`,
+`ai/scripts/{gen_calibration,quantize_int8,build_calibration_set,eval_loso_fr_regressor_v2,
+external_benchmark_pvmaf,fetch_lsvq,gen_dists_sq_placeholder_onnx,
+gen_mobilesal_placeholder_onnx,gen_ssimulacra2_eotf_lut,hdrsdr_vqa_to_corpus_jsonl,
+my_corpus_to_corpus_jsonl,train_fr_regressor_v4,train_video_saliency_student}.py`.
+
+Rebase impact: low. `picture_v2.c` is a new file; no upstream file was modified.
+If upstream ever adds its own `picture_v2.c` (unlikely given it is a fork-local concept),
+resolve by keeping the fork's implementation. The `ai/scripts` exit-code fix is
+purely script-internal; no C or build system conflict possible with upstream.

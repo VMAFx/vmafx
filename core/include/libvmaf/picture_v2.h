@@ -21,12 +21,8 @@
  *
  * VmafPicture v2 — explicit per-backend GPU-state carrier.
  *
- * @warning DESIGN HEADER. The symbols declared here are NOT yet linked
- *          into libvmaf.so. This header ships in the source tree to
- *          establish the v2 surface for downstream consumers (FFmpeg
- *          patches, Rust binding, MCP server, controller/node protocol)
- *          to review and plan against. Implementation lands in a
- *          follow-up PR (see ADR-0928 §Consequences, "Cycle N+1").
+ * Implemented in `core/src/picture_v2.c` (ADR-0928 cycle N+1).
+ * All five entry points are fully linked into libvmaf.so as of this PR.
  *
  * Differences from v1 (`picture.h`):
  *   - Explicit `backend` enum discriminator — answers "which backend
@@ -40,8 +36,7 @@
  * Migration:
  *   - v1 (`VmafPicture`) is preserved unchanged for the 12-month
  *     deprecation window (see ADR-0928).
- *   - Convert v1 ↔ v2 via `vmaf_picture_v1_to_v2` / `vmaf_picture_v2_to_v1`
- *     (implementations land in cycle N+1).
+ *   - Convert v1 ↔ v2 via `vmaf_picture_v1_to_v2` / `vmaf_picture_v2_to_v1`.
  *   - The SONAME bump from libvmaf.so.3 → libvmaf.so.4 is scheduled
  *     for VMAFX v4.0.0 (cycle N+3), not this PR.
  *
@@ -130,8 +125,6 @@ typedef struct VmafPicture2 {
  * `backend = VMAF_BACKEND_HANDLE_NONE` and
  * `backend_handle = 0`.
  *
- * Not yet implemented — see ADR-0928 §Consequences (cycle N+1).
- *
  * @param pic     Out: receives the populated picture descriptor. Must not be NULL.
  * @param pix_fmt Planar pixel format. `VMAF_PIX_FMT_UNKNOWN` is rejected.
  * @param bpc     Bits per component (8, 10, 12, or 16).
@@ -139,7 +132,6 @@ typedef struct VmafPicture2 {
  * @param h       Luma height in samples. Must be > 0.
  *
  * @return 0 on success, negative errno on failure.
- *         `-ENOSYS` until the cycle-N+1 implementation PR lands.
  *         `-EINVAL` for NULL pointer or unknown format.
  *         `-ENOMEM` on allocation failure.
  *
@@ -153,12 +145,9 @@ VMAF_EXPORT int vmaf_picture2_alloc(VmafPicture2 *pic, enum VmafPixelFormat pix_
  * plane buffers when it reaches zero. Does not touch `backend_handle`
  * (the backend owns its stream/queue lifecycle).
  *
- * Not yet implemented — see ADR-0928 §Consequences (cycle N+1).
- *
  * @param pic Picture descriptor to unref. NULL is a no-op.
  *
  * @return 0 on success, negative errno on failure.
- *         `-ENOSYS` until the cycle-N+1 implementation PR lands.
  *
  * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
  */
@@ -174,13 +163,10 @@ VMAF_EXPORT int vmaf_picture2_unref(VmafPicture2 *pic);
  * The v1 source picture's `ref` is incremented; the caller still
  * owns `src` and must `vmaf_picture_unref` it independently.
  *
- * Not yet implemented — see ADR-0928 §Consequences (cycle N+1).
- *
  * @param src Source v1 picture. Must not be NULL.
  * @param dst Out: receives the populated v2 descriptor. Must not be NULL.
  *
  * @return 0 on success, negative errno on failure.
- *         `-ENOSYS` until the cycle-N+1 implementation PR lands.
  *         `-EINVAL` on NULL arguments.
  *
  * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
@@ -197,13 +183,10 @@ VMAF_EXPORT int vmaf_picture_v1_to_v2(const VmafPicture *src, VmafPicture2 *dst)
  * The v2 source picture's `ref` is incremented; the caller still
  * owns `src` and must `vmaf_picture2_unref` it independently.
  *
- * Not yet implemented — see ADR-0928 §Consequences (cycle N+1).
- *
  * @param src Source v2 picture. Must not be NULL.
  * @param dst Out: receives the populated v1 descriptor. Must not be NULL.
  *
  * @return 0 on success, negative errno on failure.
- *         `-ENOSYS` until the cycle-N+1 implementation PR lands.
  *         `-EINVAL` on NULL arguments.
  *
  * @thread-safety Not thread-safe. Use one VmafContext (and its pictures) per thread.
@@ -217,8 +200,6 @@ VMAF_EXPORT int vmaf_picture_v2_to_v1(const VmafPicture2 *src, VmafPicture *dst)
  * must not be freed.
  *
  * Returns `"unknown"` for values outside the enum range.
- *
- * Not yet implemented — see ADR-0928 §Consequences (cycle N+1).
  *
  * @param backend Backend discriminator value to name.
  *

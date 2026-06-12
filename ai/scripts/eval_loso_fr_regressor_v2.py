@@ -23,4 +23,4 @@ print(
     "Implement following the pattern of eval_loso_vmaf_tiny_v3.py.",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

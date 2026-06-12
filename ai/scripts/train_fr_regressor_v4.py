@@ -24,4 +24,4 @@ print(
     "train_fr_regressor_v3.py (ADR-0235).",
     file=sys.stderr,
 )
-sys.exit(0)
+sys.exit(1)

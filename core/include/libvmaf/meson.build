@@ -68,7 +68,8 @@ install_headers(['libvmaf.h',
                 'feature.h',
                 'macros.h',
                 'model.h',
-                'picture.h'],
+                'picture.h',
+                'picture_v2.h'], # ADR-0928 cycle N+1: v2 picture header now linked
                 version_h_target,
                 platform_specific_headers,
                 subdir : 'libvmaf')

@@ -87,6 +87,15 @@ test_picture = executable('test_picture',
     dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
 )
 
+# ADR-0928 cycle N+1: picture_v2 unit tests
+test_picture_v2 = executable('test_picture_v2',
+    ['test.c', 'test_picture_v2.c',
+     '../src/picture.c', '../src/picture_v2.c',
+     '../src/mem.c', '../src/ref.c', '../src/thread_pool.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    dependencies:[stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps],
+)
+
 test_propagate_metadata = executable('test_propagate_metadata',
     ['test.c', 'test_propagate_metadata.c', '../src/metadata_handler.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -2503,6 +2512,7 @@ endif
 test('test_context', test_context, suite : ['fast'])
 test('test_log', test_log, suite : ['fast'])
 test('test_picture', test_picture, suite : ['fast'])
+test('test_picture_v2', test_picture_v2, suite : ['fast'])
 test('test_feature_collector', test_feature_collector, suite : ['fast'])
 test('test_output', test_output, suite : ['fast'])
 # ADR-0708 Wave 1: test_log registered as part of the log.c → log.cpp pilot

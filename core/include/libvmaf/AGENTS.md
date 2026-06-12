@@ -113,8 +113,8 @@ backend-agnostic `gpu_picture_pool.{c,h}` round-robin
   `VmafPicture2` (`picture_v2.h`) instead. The v1 struct is a
   museum piece for ~12 months and is removed when SONAME bumps
   from `libvmaf.so.3` to `.4` at VMAFX v4.0.0. `picture_v2.h` is
-  declared but not yet linked in cycle N; entry points return
-  `-ENOSYS` until the cycle-N+1 implementation PR lands.
+  implemented and linked as of cycle N+1 (`core/src/picture_v2.c`);
+  all five entry points are live in libvmaf.so.
 
 - **Doxygen-clean public API** ([ADR-0953](../../../docs/adr/0953-doxygen-public-api-clean.md)):
   every header in this directory must produce **zero warnings** when
