@@ -65,6 +65,8 @@ def download_reactively(local_path, remote_path):
                 try:
                     os.remove(tmp_path)
                 except OSError:
+                    # Ignore errors removing the partial download; the
+                    # original exception is re-raised immediately below.
                     pass
                 raise
         except urllib.error.HTTPError as e:

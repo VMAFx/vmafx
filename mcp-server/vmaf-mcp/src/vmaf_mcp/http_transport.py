@@ -694,8 +694,13 @@ def run_http_server(port: int = 8080, log_level: str = "INFO") -> None:
     try:
         loop.run_until_complete(asyncio.wait_for(_serve(port, metrics), timeout=None))
     except asyncio.CancelledError:
+        # Normal shutdown path: the event loop was cancelled (e.g. SIGTERM
+        # handler called loop.stop()).  Nothing to do; the finally block below
+        # closes the loop.
         pass
     except KeyboardInterrupt:
+        # Normal shutdown path: user pressed Ctrl-C.  Nothing to do; the
+        # finally block below closes the loop.
         pass
     finally:
         _log.info("event loop closed", extra={"request_id": "-"})

@@ -57,6 +57,7 @@ ADR-0108 deliverables for this PR are captured in:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import json
 import logging
@@ -69,6 +70,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from vmaf_mcp import http_transport as ht
 from vmaf_mcp import server as srv
 
@@ -1096,10 +1098,9 @@ def test_main_uses_asyncio_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     def _capture_and_close(coro: Any, *_a: Any, **_k: Any) -> None:
         captured.append(coro)
         # Close the coroutine to suppress unawaited-coroutine warnings.
-        try:
+        # Suppress all errors: coro may already be closed or not a real coroutine.
+        with contextlib.suppress(Exception):
             coro.close()
-        except Exception:
-            pass
 
     monkeypatch.setattr(srv.asyncio, "run", _capture_and_close)
     srv.main()
