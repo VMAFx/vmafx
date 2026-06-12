@@ -168,7 +168,6 @@ def _run_vmaf(
             str(n_threads),
             "--no_cuda",
             "--no_sycl",
-            "--no_vulkan",
             "--output",
             str(out),
             "--json",

@@ -198,10 +198,10 @@ def main(argv: list[str] | None = None) -> None:
     raw_argv = collect_cli_argv(argv)
     args = parser.parse_args(raw_argv)
 
-    _export(args.output, args.opset)
-    print(f"[export] wrote {args.output} ({args.output.stat().st_size} bytes)")
     if args.no_registry:
         return
+    _export(args.output, args.opset)
+    print(f"[export] wrote {args.output} ({args.output.stat().st_size} bytes)")
     sidecar = _write_sidecar(
         args.output,
         run_provenance=build_run_provenance(

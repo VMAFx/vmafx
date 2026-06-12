@@ -242,7 +242,6 @@ def _run_vmaf_full(
             "1",
             "--no_cuda",
             "--no_sycl",
-            "--no_vulkan",
             "--output",
             str(out_json),
             "--json",

@@ -12,8 +12,8 @@ proposed GPU-generation calibration head (`ADR-0234`_,
 
 Usage modes:
 
-* ``--smoke``: 100 frames × 5 features × Vulkan-only (lavapipe-friendly)
-  — verifies the pipeline end-to-end on hosted CI without GPU hardware.
+* ``--smoke``: 100 frames × 5 features × CUDA only (Vulkan removed per ADR-0726)
+  — verifies the pipeline end-to-end on hosted CI with a CUDA device.
 * full (no flag): caller-controlled feature / backend / frame selection.
 
 Output: a parquet at ``--output`` with columns

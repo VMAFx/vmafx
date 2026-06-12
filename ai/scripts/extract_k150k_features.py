@@ -599,7 +599,7 @@ def _run_feature_passes(
             out_json,
             threads,
             EXTRACTOR_NAMES,
-            ["--no_cuda", "--no_sycl", "--no_vulkan", *_MODEL_ARGS],
+            ["--no_cuda", "--no_sycl", *_MODEL_ARGS],
             is_hdr=is_hdr,
             motion_fps_weight_value=motion_fps_weight_value,
         )
@@ -635,7 +635,7 @@ def _run_feature_passes(
                 cpu_json,
                 threads,
                 CUDA_CPU_RESIDUAL_EXTRACTOR_NAMES,
-                ["--no_cuda", "--no_sycl", "--no_vulkan"],
+                ["--no_cuda", "--no_sycl"],
                 is_hdr=is_hdr,
                 motion_fps_weight_value=motion_fps_weight_value,
             )
