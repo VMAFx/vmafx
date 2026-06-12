@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -62,6 +63,8 @@ func main() {
 	logLevel := flag.String("log-level", envOr("VMAFX_LOG_LEVEL", "INFO"), "log level (DEBUG|INFO|WARN|ERROR)")
 	vmafBinary := flag.String("vmaf-binary", envOr("VMAFX_VMAF_BINARY", ""), "path to vmaf CLI binary (default: PATH lookup)")
 	modelDir := flag.String("model-dir", envOr("VMAFX_MODEL_DIR", ""), "directory containing VMAF .json model files")
+	maxConcurrentScores := flag.Int("max-concurrent-scores", runtime.NumCPU(),
+		"maximum number of simultaneous Scorer.Score calls (HTTP 429 / gRPC ResourceExhausted when exceeded)")
 	helpFlag := flag.Bool("help", false, "print usage and exit")
 	flag.Parse()
 
@@ -94,6 +97,7 @@ func main() {
 		"grpc_port", *grpcPort,
 		"vmaf_binary", *vmafBinary,
 		"model_dir", *modelDir,
+		"max_concurrent_scores", *maxConcurrentScores,
 	)
 
 	// ---------------------------------------------------------------------------
@@ -123,17 +127,28 @@ func main() {
 	defer stop()
 
 	// ---------------------------------------------------------------------------
+	// Concurrency limiter — shared across HTTP and gRPC so the cap is
+	// enforced system-wide (not per-protocol).
+	// ---------------------------------------------------------------------------
+	limiter, err := NewScoreLimiter(*maxConcurrentScores)
+	if err != nil {
+		log.Error("failed to create concurrency limiter", "error", err)
+		os.Exit(1)
+	}
+	log.Info("concurrency cap configured", "max_concurrent_scores", limiter.Max())
+
+	// ---------------------------------------------------------------------------
 	// Start HTTP + gRPC servers concurrently.
 	// ---------------------------------------------------------------------------
 	grp, grpCtx := errgroup.WithContext(ctx)
 
 	// Shared gRPC service implementation — also consumed by the REST adapter
 	// (ADR-0797) so scoring + health business logic is not duplicated.
-	grpcSrv := newGRPCServer(scorer, metrics, log)
+	grpcSrv := newGRPCServerWithLimiter(scorer, metrics, log, limiter)
 
 	// HTTP server — includes legacy endpoints, OpenAPI REST adapter, and Swagger UI.
 	grp.Go(func() error {
-		hs := newHTTPServer(scorer, metrics, registry, log, grpcSrv)
+		hs := newHTTPServerWithLimiter(scorer, metrics, registry, log, grpcSrv, limiter)
 		return runHTTP(grpCtx, fmt.Sprintf(":%s", *port), hs, log)
 	})
 

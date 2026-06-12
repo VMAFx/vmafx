@@ -72,9 +72,17 @@ type httpServer struct {
 	// grpc is the shared gRPC service implementation used by the REST adapter
 	// (ADR-0797) to avoid duplicating business logic.
 	grpc *grpcServer
+	// limiter caps concurrent in-flight Scorer.Score calls on the HTTP path.
+	// Must be the same ScoreLimiter instance as grpcServer.limiter so the cap is
+	// enforced system-wide across both protocols.  nil means uncapped (test
+	// compatibility: existing tests that call newHTTPServer directly without a
+	// limiter retain old behaviour; production always sets one via
+	// newHTTPServerWithLimiter).
+	limiter *ScoreLimiter
 }
 
-// newHTTPServer creates an httpServer.
+// newHTTPServer creates an httpServer without a concurrency limiter.
+// Kept for test compatibility. Production code should use newHTTPServerWithLimiter.
 func newHTTPServer(
 	scorer *libvmaf.Scorer,
 	metrics *observability.Metrics,
@@ -88,6 +96,27 @@ func newHTTPServer(
 		log:      log,
 		registry: registry,
 		grpc:     grpc,
+	}
+}
+
+// newHTTPServerWithLimiter creates an httpServer with the given concurrency
+// limiter.  Pass the same ScoreLimiter instance used by grpcServer so the cap
+// is enforced across both protocols.
+func newHTTPServerWithLimiter(
+	scorer *libvmaf.Scorer,
+	metrics *observability.Metrics,
+	registry *prometheus.Registry,
+	log *slog.Logger,
+	grpc *grpcServer,
+	limiter *ScoreLimiter,
+) *httpServer {
+	return &httpServer{
+		scorer:   scorer,
+		metrics:  metrics,
+		log:      log,
+		registry: registry,
+		grpc:     grpc,
+		limiter:  limiter,
 	}
 }
 
@@ -185,6 +214,27 @@ func (h *httpServer) handleScore(w http.ResponseWriter, r *http.Request) {
 		h.metrics.ScoreErrors.Inc()
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "reference and distorted are required"})
 		return
+	}
+
+	// Enforce the concurrency cap before forking a vmaf subprocess.
+	// We use a non-blocking TryAcquire pattern here: if the semaphore is full
+	// we return 429 immediately so the client can back off. We do NOT use
+	// Acquire(ctx) in the HTTP path because the HTTP write deadline would
+	// expire before the client sees the response body.  The gRPC path uses
+	// Acquire(ctx) because gRPC backpressure handles the wait correctly.
+	if h.limiter != nil {
+		// Use context-aware Acquire so a cancelled request does not park in
+		// the queue and waste a slot after the client has gone away.
+		if err := h.limiter.Acquire(r.Context()); err != nil {
+			h.metrics.ScoreErrors.Inc()
+			h.log.Warn("http Score rejected: concurrency cap reached",
+				"max", h.limiter.Max(), "error", err)
+			writeJSON(w, http.StatusTooManyRequests, errorResponse{
+				Error: fmt.Sprintf("too many concurrent scoring requests (max %d); try again later", h.limiter.Max()),
+			})
+			return
+		}
+		defer h.limiter.Release()
 	}
 
 	// Pass the request-scoped context so a client disconnect (or the

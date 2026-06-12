@@ -38,6 +38,11 @@ type grpcServer struct {
 	scorer  *libvmaf.Scorer
 	metrics *observability.Metrics
 	log     *slog.Logger
+	// limiter caps concurrent in-flight Scorer.Score calls to prevent
+	// unbounded subprocess forking under load (unauthenticated DoS fix).
+	// nil means uncapped (tests that construct grpcServer directly without
+	// a limiter retain the old behaviour; production always sets one).
+	limiter *ScoreLimiter
 }
 
 // newGRPCServer wires up the gRPC service.
@@ -47,6 +52,18 @@ func newGRPCServer(
 	log *slog.Logger,
 ) *grpcServer {
 	return &grpcServer{scorer: scorer, metrics: metrics, log: log}
+}
+
+// newGRPCServerWithLimiter wires up the gRPC service with a concurrency cap.
+// Prefer this constructor in production; newGRPCServer is kept for test
+// compatibility.
+func newGRPCServerWithLimiter(
+	scorer *libvmaf.Scorer,
+	metrics *observability.Metrics,
+	log *slog.Logger,
+	limiter *ScoreLimiter,
+) *grpcServer {
+	return &grpcServer{scorer: scorer, metrics: metrics, log: log, limiter: limiter}
 }
 
 // Score implements VmafxScoring.Score.
@@ -63,6 +80,21 @@ func (s *grpcServer) Score(ctx context.Context, req *vmafxv1.ScoreRequest) (*vma
 	if req.GetReference() == "" || req.GetDistorted() == "" {
 		s.metrics.ScoreErrors.Inc()
 		return nil, status.Errorf(codes.InvalidArgument, "reference and distorted paths are required")
+	}
+
+	// Enforce the concurrency cap before forking a vmaf subprocess.
+	// Acquire blocks until a slot is free or ctx is cancelled; a cancelled ctx
+	// means the client already gave up, so we reject immediately rather than
+	// wasting a slot on a dead request.
+	if s.limiter != nil {
+		if err := s.limiter.Acquire(ctx); err != nil {
+			s.metrics.ScoreErrors.Inc()
+			s.log.Warn("grpc Score rejected: concurrency cap reached",
+				"max", s.limiter.Max(), "error", err)
+			return nil, status.Errorf(codes.ResourceExhausted,
+				"too many concurrent scoring requests (max %d); try again later", s.limiter.Max())
+		}
+		defer s.limiter.Release()
 	}
 
 	// Pass the gRPC handler context so a client disconnect or RPC
