@@ -66,6 +66,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -1138,6 +1139,7 @@ async def test_score_400_on_missing_distorted(aiohttp_client: Any, monkeypatch: 
     from unittest.mock import patch
 
     import prometheus_client as pc  # type: ignore[import-untyped]
+
     from vmaf_mcp import http_transport as ht
 
     registry = pc.CollectorRegistry(auto_describe=False)
@@ -1178,6 +1180,7 @@ async def test_score_400_on_missing_width(aiohttp_client: Any) -> None:
     from unittest.mock import patch
 
     import prometheus_client as pc  # type: ignore[import-untyped]
+
     from vmaf_mcp import http_transport as ht
 
     registry = pc.CollectorRegistry(auto_describe=False)
@@ -1219,6 +1222,7 @@ async def test_score_500_on_scorer_error(aiohttp_client: Any) -> None:
     from unittest.mock import AsyncMock, patch
 
     import prometheus_client as pc  # type: ignore[import-untyped]
+
     import vmaf_mcp.server as srv_mod
     from vmaf_mcp import http_transport as ht
 

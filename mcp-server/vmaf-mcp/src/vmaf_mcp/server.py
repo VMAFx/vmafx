@@ -366,7 +366,7 @@ def _get_backend_probe_lock() -> asyncio.Lock:
     Deferred creation avoids constructing the Lock before the event loop
     is running (e.g. during import-time module initialisation).
     """
-    global _BACKEND_PROBE_LOCK  # noqa: PLW0603 — intentional module singleton
+    global _BACKEND_PROBE_LOCK
     if _BACKEND_PROBE_LOCK is None:
         _BACKEND_PROBE_LOCK = asyncio.Lock()
     return _BACKEND_PROBE_LOCK
@@ -391,7 +391,7 @@ def _get_probe_lock_dict_lock() -> asyncio.Lock:
     causing "attached to a different loop" errors in tests that spin up their
     own loops.
     """
-    global _BACKEND_PROBE_LOCK_DICT_LOCK  # noqa: PLW0603
+    global _BACKEND_PROBE_LOCK_DICT_LOCK
     if _BACKEND_PROBE_LOCK_DICT_LOCK is None:
         _BACKEND_PROBE_LOCK_DICT_LOCK = asyncio.Lock()
     return _BACKEND_PROBE_LOCK_DICT_LOCK
