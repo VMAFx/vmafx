@@ -32,6 +32,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -102,6 +103,11 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"input must end with .onnx: {src}")
     dst = args.output or src.with_name(src.stem + ".int8.onnx")
     dst.parent.mkdir(parents=True, exist_ok=True)
+    if not os.access(dst.parent, os.W_OK):
+        sys.exit(
+            f"error: destination directory is not writable: {dst.parent}\n"
+            f"hint: pass --output /path/to/writable/dir/{dst.name}"
+        )
 
     print(f"[ptq_dynamic] {src}  ->  {dst}  per-channel={args.per_channel}")
     with tempfile.TemporaryDirectory(prefix="ptq_dynamic_") as tmp:

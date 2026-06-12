@@ -27,6 +27,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -73,6 +74,12 @@ def main(argv: list[str] | None = None) -> int:
     if not cal.is_file():
         sys.exit(f"calibration set not found: {cal}")
     dst = args.output or src.with_name(src.stem + ".int8.onnx")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if not os.access(dst.parent, os.W_OK):
+        sys.exit(
+            f"error: destination directory is not writable: {dst.parent}\n"
+            f"hint: pass --output /path/to/writable/dir/{dst.name}"
+        )
 
     print(f"[ptq_static] {src}  ->  {dst}  cal={cal}  per-channel={args.per_channel}")
 

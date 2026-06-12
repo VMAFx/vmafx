@@ -274,6 +274,7 @@ def _build_manifest(
     standardisation: dict[str, list[float]],
     codec_vocab: tuple[str, ...],
     codec_vocab_version: int,
+    encoder_vocab: tuple[str, ...],
     nominal_coverage: float,
     conformal_q: float | None,
     smoke: bool,
@@ -281,6 +282,13 @@ def _build_manifest(
     run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     method = "ensemble+conformal" if conformal_q is not None else "ensemble"
+    # codec_block_dim records the exact width of the codec_onehot ONNX input.
+    # Storing it alongside the vocab lets the eval script and the libvmaf C
+    # loader cross-check against the live ONNX input shape without having to
+    # re-derive it from the vocabulary list, preventing silent dim-mismatch
+    # crashes when the vocab and the trained weights drift.
+    codec_block_dim = len(encoder_vocab)
+    codec_block_layout = [f"encoder_onehot[{e}]" for e in encoder_vocab]
     manifest = {
         "id": ensemble_id,
         "kind": "fr_ensemble",
@@ -291,6 +299,8 @@ def _build_manifest(
         "feature_std": standardisation["feature_std"],
         "codec_vocab": list(codec_vocab),
         "codec_vocab_version": codec_vocab_version,
+        "codec_block_dim": codec_block_dim,
+        "codec_block_layout": codec_block_layout,
         "confidence": {
             "method": method,
             "nominal_coverage": nominal_coverage,
@@ -589,6 +599,7 @@ def main(argv: list[str] | None = None) -> int:
         standardisation=standardisation,
         codec_vocab=CODEC_VOCAB,
         codec_vocab_version=CODEC_VOCAB_VERSION,
+        encoder_vocab=CODEC_VOCAB,
         nominal_coverage=args.nominal_coverage,
         conformal_q=conformal_q,
         smoke=args.smoke,

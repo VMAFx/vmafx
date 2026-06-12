@@ -1,4 +1,13 @@
 {
+  "codec_block_dim": 6,
+  "codec_block_layout": [
+    "encoder_onehot[x264]",
+    "encoder_onehot[x265]",
+    "encoder_onehot[libsvtav1]",
+    "encoder_onehot[libvvenc]",
+    "encoder_onehot[libvpx-vp9]",
+    "encoder_onehot[unknown]"
+  ],
   "codec_vocab": [
     "x264",
     "x265",

@@ -269,9 +269,18 @@ def main(argv: list[str] | None = None) -> int:
     manifest, sessions = _load_ensemble(args.manifest)
     feature_mean = np.asarray(manifest["feature_mean"], dtype=np.float32)
     feature_std = np.asarray(manifest["feature_std"], dtype=np.float32)
-    codec_vocab = tuple(manifest["codec_vocab"])
-    num_codecs = len(codec_vocab)
     conformal_q = manifest.get("confidence", {}).get("conformal_q_residual")
+
+    # Ground truth: read codec dim from the first member's ONNX model.
+    # Using the manifest's codec_vocab length would silently mismatch if the
+    # vocab list and the trained model weight dimensions drift (e.g. the
+    # manifest records 6 codecs but the ONNX was trained with 14). Deriving
+    # the dimension from the live ONNX input shape is authoritative.
+    codec_input = next((i for i in sessions[0].get_inputs() if i.name == "codec_onehot"), None)
+    if codec_input is None:
+        print("error: ONNX missing codec_onehot input", file=sys.stderr)
+        return 2
+    num_codecs = codec_input.shape[1]
 
     if args.smoke or args.parquet is None:
         features, codec_onehot, target = _synthesize_smoke_corpus(num_codecs=num_codecs)
