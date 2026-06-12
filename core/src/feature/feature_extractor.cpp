@@ -1057,6 +1057,10 @@ int vmaf_fex_ctx_pool_destroy(VmafFeatureExtractorContextPool *pool)
             vmaf_dictionary_free(&pool->fex_list[i].opts_dict);
         }
         free(pool->fex_list[i].ctx_list);
+        /* Destroy the per-entry condvar initialised by ctx_pool_alloc_slot().
+         * POSIX requires destroy before the memory is freed; omitting it
+         * leaks POSIX TSD resources on glibc and is flagged by ASan/LeakSan. */
+        (void)pthread_cond_destroy(&pool->fex_list[i].full);
     }
     free(pool->fex_list);
     /* POSIX requires unlock + destroy before free; freeing a locked or
