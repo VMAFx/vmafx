@@ -1784,7 +1784,13 @@ static int threaded_enqueue_one(VmafContext *vmaf, VmafFeatureExtractor *fex,
                                 VmafDictionary *opts_dict, VmafPicture *ref, VmafPicture *dist,
                                 unsigned index)
 {
-    fex->framesync = vmaf->framesync;
+    /* Do NOT write fex->framesync here.  fex is the *shared* registered
+     * VmafFeatureExtractor object — worker threads from previous frames may
+     * concurrently be reading its fields (TSAN: iter6-tsan-race-deep finding
+     * #1).  framesync is already propagated to every pool-slot copy by
+     * set_fex_framesync() at registration time (libvmaf.c:682) and by
+     * ctx_pool_ensure_slot_ctx() when the slot is first created
+     * (feature_extractor.c:899).  The redundant write here is unsafe. */
     VmafFeatureExtractorContext *fex_ctx;
     int err = vmaf_fex_ctx_pool_aquire(vmaf->fex_ctx_pool, fex, opts_dict, &fex_ctx);
     if (err)
@@ -1837,8 +1843,26 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
     vmaf_picture_ref(&pic_a, ref);
     vmaf_picture_ref(&pic_b, dist);
 
+    /* Take a refcounted snapshot of prev_ref for the worker.  The snapshot
+     * is stored in data.prev_ref (a struct copy) so the worker owns an
+     * independent ref and never touches vmaf->prev_ref directly. */
     if (vmaf->prev_ref.ref)
         vmaf_picture_ref(&prev_ref, &vmaf->prev_ref);
+
+    /* Advance vmaf->prev_ref to the current frame BEFORE enqueuing the batch
+     * job.  Before vmaf_thread_pool_enqueue() returns no worker thread is yet
+     * running for this frame, so there is no concurrent read of vmaf->prev_ref
+     * at this point.  After enqueue the worker uses data.prev_ref (the
+     * snapshot above) exclusively and never re-reads vmaf->prev_ref, so the
+     * update here races with nothing.  Moving the update to after enqueue
+     * (the old order) created a TSAN race: the worker's unref of data.prev_ref
+     * and the main thread's unref of vmaf->prev_ref both operated on the same
+     * underlying VmafRef* concurrently without synchronisation
+     * (iter6-tsan-race-deep finding #2). */
+    if (vmaf->prev_ref.ref)
+        vmaf_picture_unref(&vmaf->prev_ref);
+    if (ref && ref->ref)
+        vmaf_picture_ref(&vmaf->prev_ref, ref);
 
     struct ThreadDataBatch data = {
         .ref = pic_a,
@@ -1860,11 +1884,6 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
             vmaf_picture_unref(&prev_ref);
         return err;
     }
-
-    if (vmaf->prev_ref.ref)
-        vmaf_picture_unref(&vmaf->prev_ref);
-    if (ref && ref->ref)
-        vmaf_picture_ref(&vmaf->prev_ref, ref);
 
     return vmaf_picture_unref(ref) | vmaf_picture_unref(dist);
 }
