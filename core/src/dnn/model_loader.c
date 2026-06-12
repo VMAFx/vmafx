@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -308,6 +309,8 @@ static int extract_float_array(const char *doc, const char *key, float *out, siz
         const double v = strtod(p, &endp);
         if (endp == p)
             return -EINVAL;
+        if (errno == ERANGE || !isfinite(v))
+            return -ERANGE;
         if (cnt >= max)
             return -ERANGE;
         out[cnt++] = (float)v;
