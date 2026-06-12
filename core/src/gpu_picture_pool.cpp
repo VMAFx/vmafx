@@ -20,7 +20,7 @@
 
 /* ADR-0239: backend-agnostic GPU picture pool. Promoted from
  * `cuda/ring_buffer.c` — same callback-based round-robin shape, now
- * shared between CUDA, SYCL, and (after PR #264 lands) Vulkan. */
+ * shared between CUDA, SYCL, HIP, and Metal backends. */
 
 #include <cerrno>
 #include <cstdlib>
@@ -31,6 +31,7 @@
 #include "gpu_picture_pool.h"
 
 #ifdef HAVE_NVTX
+#include <atomic>
 #include "nvtx3/nvToolsExt.h"
 #endif
 
@@ -40,6 +41,36 @@ struct VmafGpuPicturePool {
     pthread_mutex_t busy;
     VmafPicture *pic;
 };
+
+namespace
+{
+
+/* Allocate all pic_cnt slots; on failure roll back any slots that succeeded.
+ * Returns 0 on full success, or the first non-zero error from
+ * alloc_picture_callback with all partial allocations freed. */
+int alloc_pictures(VmafGpuPicturePool *p)
+{
+    unsigned alloc_cnt = 0;
+    int err = 0;
+
+    for (unsigned i = 0; i < p->cfg.pic_cnt; i++) {
+        err = p->cfg.alloc_picture_callback(&p->pic[i], p->cfg.cookie);
+        if (err)
+            break;
+        alloc_cnt++;
+    }
+
+    if (err) {
+        /* Free pictures 0..alloc_cnt-1 that were successfully allocated.
+         * Without this rollback the caller leaks one GPU buffer per slot. */
+        for (unsigned i = 0; i < alloc_cnt; i++)
+            (void)p->cfg.free_picture_callback(&p->pic[i], p->cfg.cookie);
+    }
+
+    return err;
+}
+
+} // namespace
 
 int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConfig cfg)
 {
@@ -77,15 +108,14 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
     if (err)
         goto free_pic;
 
-    for (unsigned i = 0; i < p->cfg.pic_cnt; i++)
-        err |= p->cfg.alloc_picture_callback(&p->pic[i], p->cfg.cookie);
-
-    /* If any alloc_picture_callback call failed the pool is partially
-     * constructed and unusable.  Tear it down so the caller can safely treat
-     * a non-zero return as "pool not constructed" — same contract as the
-     * malloc-failure paths below. */
-    if (err)
+    err = alloc_pictures(p);
+    if (err) {
+        /* alloc_pictures already freed any successfully-allocated prior slots.
+         * Destroy the mutex before falling through to free_pic so we do not
+         * leak the mutex's kernel-side state. */
+        (void)pthread_mutex_destroy(&p->busy);
         goto free_pic;
+    }
 
     return 0;
 
@@ -93,10 +123,6 @@ free_pic:
     std::free(p->pic);
 free_p:
     std::free(p);
-    /* Mirror the fix from gpu_picture_pool.c: clear *pool so the caller
-     * cannot see a dangling pointer on any failure path. The pre-fix code
-     * left *pool pointing at freed memory, causing a double-free via
-     * vmaf_gpu_picture_pool_close() in the normal vmaf_close() teardown. */
     *pool = nullptr;
 fail:
     return err;
@@ -147,8 +173,13 @@ int vmaf_gpu_picture_pool_fetch(VmafGpuPicturePool *pool, VmafPicture *pic)
 
 #ifdef HAVE_NVTX
     char n[40];
-    static unsigned glob = 0;
-    snprintf(n, sizeof(n), "fetch idx %d %d", pic_idx, glob++);
+    /* Round-5 race fix: plain `static unsigned` incremented by concurrent
+     * worker threads is a C++ data race.  Use std::atomic with relaxed
+     * ordering — the NVTX label is a diagnostic annotation; we only need
+     * atomicity, not inter-thread ordering. */
+    static std::atomic<unsigned> glob{0};
+    snprintf(n, sizeof(n), "fetch idx %u %u", pic_idx,
+             glob.fetch_add(1u, std::memory_order_relaxed));
     nvtxRangePushA(n);
 #endif
 
