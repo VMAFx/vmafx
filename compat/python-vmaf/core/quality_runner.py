@@ -1,8 +1,8 @@
 import os
 import re
 from abc import ABC, ABCMeta, abstractmethod
-from xml.etree import ElementTree
 
+import defusedxml.ElementTree as ElementTree
 import numpy as np
 from libsvm import svmutil
 
@@ -548,7 +548,9 @@ class EnsembleVmafQualityRunner(VmafQualityRunner):
         {"VMAF_feature": ["vif", "adm", "motion"]},
     ]
 
-    def _populate_result_dict(self, feature_result, pred_result, result_dict):
+    def _populate_result_dict(self, feature_result, pred_result, result_dict=None):
+        if result_dict is None:
+            result_dict = {}
         result_dict.update(feature_result.result_dict)  # add feature result
         result_dict[self.get_scores_key()] = pred_result["ys_pred"]  # add quality score
         return result_dict
@@ -1377,11 +1379,6 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
         # the scores in a dictionary format.
 
         log_file_path = self._get_log_file_path(asset)
-        # `log_file_path` is the harness's own log file just written by the
-        # libvmaf C tool (we control both the path and the writer). No XXE
-        # surface — there is no untrusted XML in this flow. See
-        # Research-0090, F18–F19.
-        # nosemgrep: python.lang.security.use-defused-xml-parse.use-defused-xml-parse
         tree = ElementTree.parse(log_file_path)
         root = tree.getroot()
         scores_dict = {}

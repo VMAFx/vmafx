@@ -19,37 +19,54 @@ from aiutils.run_manifest import (
 )
 from aiutils.time_utils import now_iso_8601
 
+# Optional heavy parquet helpers — only importable when pyarrow is installed.
+# Imported eagerly here so that they appear in __all__ as defined names;
+# the try/except ensures the rest of the package remains usable without pyarrow.
+try:
+    from aiutils.parquet_utils import (
+        apply_standard_column_order,
+        detect_schema_version,
+        read_parquet_with_schema,
+        write_parquet_atomic,
+    )
+
+    _PARQUET_AVAILABLE = True
+except ImportError:
+    _PARQUET_AVAILABLE = False
+
 __all__ = [
     "add_batch_manifest_arguments",
-    "apply_standard_column_order",
     "build_run_manifest_payload",
     "build_run_provenance",
     "collect_cli_argv",
     "describe_path",
-    "detect_schema_version",
     "iter_jsonl",
     "make_argument_parser",
     "now_iso_8601",
-    "read_parquet_with_schema",
     "sha256",
     "write_manifest_json",
-    "write_parquet_atomic",
     "write_run_manifest",
     "write_text_atomic",
 ]
 
-
-_LAZY_PARQUET_EXPORTS = {
-    "apply_standard_column_order",
-    "detect_schema_version",
-    "read_parquet_with_schema",
-    "write_parquet_atomic",
-}
+if _PARQUET_AVAILABLE:
+    __all__ += [
+        "apply_standard_column_order",
+        "detect_schema_version",
+        "read_parquet_with_schema",
+        "write_parquet_atomic",
+    ]
 
 
 def __getattr__(name: str) -> object:
-    """Import optional heavy helpers only when the caller asks for them."""
-    if name in _LAZY_PARQUET_EXPORTS:
+    """Lazy-load parquet helpers when pyarrow was not importable at init time."""
+    _lazy = {
+        "apply_standard_column_order",
+        "detect_schema_version",
+        "read_parquet_with_schema",
+        "write_parquet_atomic",
+    }
+    if name in _lazy:
         import aiutils.parquet_utils as _pq
 
         return getattr(_pq, name)

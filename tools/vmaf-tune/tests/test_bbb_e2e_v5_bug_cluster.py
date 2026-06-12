@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -506,9 +507,10 @@ def test_ladder_against_bbb_container_yields_plausible_vmaf() -> None:
             # (`23,33`) to halve docker e2e wall (~13 s -> ~7 s). The
             # `len(samples) >= 4` floor is preserved: 2 resolutions x 2
             # CRFs = 4, and 2 s of BBB sunflower still clears `vmaf >= 50`.
-            f"ladder --src {src} --target-vmafs 88,92 "
+            # shlex.quote guards against shell injection from env-var-sourced paths.
+            f"ladder --src {shlex.quote(src)} --target-vmafs 88,92 "
             "--resolutions 1920x1080,1280x720 --framerate 30 --duration 2 "
-            f"--crf-sweep 23,33 --format json --output {out_json}"
+            f"--crf-sweep 23,33 --format json --output {shlex.quote(out_json)}"
         ),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)

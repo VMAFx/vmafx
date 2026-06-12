@@ -10,3 +10,4 @@ dill>=0.4.1
 PyWavelets>=1.9.0
 python-slugify>=8.0.4
 libsvm-official>=3.37
+defusedxml>=0.7.1

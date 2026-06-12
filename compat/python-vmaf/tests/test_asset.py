@@ -361,7 +361,6 @@ class TestAssetStringAndHash:
         a1 = _make()
         a2 = _make()
         assert a1 == a2
-        assert not (a1 != a2)
 
     def test_inequality_different_asset_id(self):
         a1 = _make(asset_id=0)

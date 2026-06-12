@@ -692,7 +692,6 @@ def run_test_on_dataset(
         ax.grid()
         ax.set_title(
             "{runner}{num_models}\n{stats}".format(
-                dataset=test_assets[0].dataset,
                 runner=runner_class.TYPE,
                 stats=model_type.format_stats_for_plot(stats),
                 num_models=", {} models".format(num_models) if num_models > 1 else "",

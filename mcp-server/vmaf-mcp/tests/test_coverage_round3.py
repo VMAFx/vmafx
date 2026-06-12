@@ -66,6 +66,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -1089,10 +1090,7 @@ def test_build_metrics_creates_counter_and_histogram():
     """_build_metrics must return a dict with all three expected keys and
     working prometheus Counter/Histogram objects.  Uses an isolated registry
     to avoid duplicate-metric errors."""
-    import prometheus_client as pc  # type: ignore[import-untyped]
     from vmaf_mcp import http_transport as ht
-
-    registry = pc.CollectorRegistry(auto_describe=False)
 
     class _FakePC:
         class Counter:
@@ -1138,9 +1136,9 @@ def test_make_score_handler_returns_coroutine():
 @pytest.mark.asyncio
 async def test_score_400_on_missing_distorted(aiohttp_client: Any, monkeypatch: Any) -> None:
     """POST /v1/score with only 'reference' (missing 'distorted') must return 400."""
-    from unittest.mock import patch
 
     import prometheus_client as pc  # type: ignore[import-untyped]
+
     from vmaf_mcp import http_transport as ht
 
     registry = pc.CollectorRegistry(auto_describe=False)
@@ -1178,9 +1176,9 @@ async def test_score_400_on_missing_distorted(aiohttp_client: Any, monkeypatch: 
 @pytest.mark.asyncio
 async def test_score_400_on_missing_width(aiohttp_client: Any) -> None:
     """POST /v1/score with missing 'width' must return 400."""
-    from unittest.mock import patch
 
     import prometheus_client as pc  # type: ignore[import-untyped]
+
     from vmaf_mcp import http_transport as ht
 
     registry = pc.CollectorRegistry(auto_describe=False)
@@ -1219,9 +1217,9 @@ async def test_score_400_on_missing_width(aiohttp_client: Any) -> None:
 @pytest.mark.asyncio
 async def test_score_500_on_scorer_error(aiohttp_client: Any) -> None:
     """POST /v1/score must return 500 when _run_vmaf_score raises."""
-    from unittest.mock import AsyncMock, patch
 
     import prometheus_client as pc  # type: ignore[import-untyped]
+
     import vmaf_mcp.server as srv_mod
     from vmaf_mcp import http_transport as ht
 
@@ -1251,8 +1249,10 @@ async def test_score_500_on_scorer_error(aiohttp_client: Any) -> None:
         with tempfile.TemporaryDirectory() as td:
             ref = os.path.join(td, "r.yuv")
             dis = os.path.join(td, "d.yuv")
-            open(ref, "wb").write(b"\x00" * 16)  # noqa: WPS515
-            open(dis, "wb").write(b"\x00" * 16)  # noqa: WPS515
+            with open(ref, "wb") as _f:
+                _f.write(b"\x00" * 16)
+            with open(dis, "wb") as _f:
+                _f.write(b"\x00" * 16)
 
             with (
                 patch.object(srv_mod, "_validate_path", side_effect=lambda p: Path(p)),

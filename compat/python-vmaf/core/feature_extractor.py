@@ -1,5 +1,6 @@
 from abc import ABCMeta, abstractmethod
-from xml.etree import ElementTree
+
+import defusedxml.ElementTree as ElementTree
 
 from vmaf.tools.decorator import deprecated, override
 
@@ -112,11 +113,6 @@ class VmafexecFeatureExtractorMixin(object):
         assert hasattr(self, "get_scores_key")
 
         log_file_path = self._get_log_file_path(asset)
-        # `log_file_path` is the harness's own log file just written by the
-        # libvmaf C tool (we control both the path and the writer). No XXE
-        # surface — there is no untrusted XML in this flow. See
-        # Research-0090, F18–F19.
-        # nosemgrep: python.lang.security.use-defused-xml-parse.use-defused-xml-parse
         tree = ElementTree.parse(log_file_path)
         root = tree.getroot()
 
@@ -134,8 +130,10 @@ class VmafexecFeatureExtractorMixin(object):
                 if feature_found:
                     continue
 
-                # wildcard discovery: look for xxx features
-                feature_found = self._discover_feature_wildcard(
+                # wildcard discovery: look for xxx features; result is not
+                # checked here since _discover_feature_wildcard mutates
+                # feature_scores/feature_nicknames as a side effect.
+                self._discover_feature_wildcard(
                     frame, i_feature, feature, feature_scores, feature_nicknames
                 )
 
@@ -1083,8 +1081,6 @@ class MsSsimFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):
             logger,
             options={"enable_lcs": True, **optional_dict2},
         )
-
-
 
 
 class SpeedChromaFeatureExtractor(VmafexecFeatureExtractorMixin, FeatureExtractor):

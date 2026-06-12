@@ -452,7 +452,7 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
         return aiohttp.web.Response(
             status=400,
             content_type="application/json",
-            text=json.dumps({"error": f"invalid JSON: {exc}", "request_id": request_id}),
+            text=json.dumps({"error": "invalid JSON body", "request_id": request_id}),
         )
 
     # Reject non-object JSON payloads (null, arrays, scalars).  ``request.json()``
@@ -523,12 +523,14 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
         # TypeError covers int(None) / int([...]) when the caller sends a
         # non-integer JSON value for width/height/bitdepth (e.g. null or an
         # array); ValueError covers int("abc") and path-validation failures.
+        # Log full detail server-side; return generic message to the client to
+        # avoid leaking internal paths or exception text (stack-trace exposure).
         _log_with_rid(logging.WARNING, f"bad request parameters: {exc}", request_id)
         metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="400").inc()
         return aiohttp.web.Response(
             status=400,
             content_type="application/json",
-            text=json.dumps({"error": str(exc), "request_id": request_id}),
+            text=json.dumps({"error": "invalid request parameters", "request_id": request_id}),
         )
 
     # Run the scorer.
@@ -537,13 +539,15 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
             result = await _run_vmaf_score(score_req)
     except Exception as exc:
         elapsed = (time.monotonic() - t0) * 1000
+        # Log full exception detail server-side; return generic message to the
+        # client to avoid leaking internal exception text (stack-trace exposure).
         _log_with_rid(logging.ERROR, f"scoring failed in {elapsed:.0f}ms: {exc}", request_id)
         metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="500").inc()
         metrics["scoring_errors_total"].inc()
         return aiohttp.web.Response(
             status=500,
             content_type="application/json",
-            text=json.dumps({"error": str(exc), "request_id": request_id}),
+            text=json.dumps({"error": "scoring failed; see server logs", "request_id": request_id}),
         )
 
     elapsed = (time.monotonic() - t0) * 1000

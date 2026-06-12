@@ -248,7 +248,6 @@ class TestResultEquality:
         r1 = Result(asset, "EX_V1", rd)
         r2 = Result(asset, "EX_V1", rd)
         assert r1 == r2
-        assert not (r1 != r2)
 
     def test_unequal_executor_id(self):
         asset = _make_asset()

@@ -302,19 +302,25 @@ jobs:
           persist-credentials: false
       - name: Detect changed SYCL files
         id: detect
+        env:
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_BASE_REF: ${{ github.base_ref }}
+          GH_EVENT_BEFORE: ${{ github.event.before }}
         run: |
           # Mirrors the main clang-tidy job's PR/push/dispatch fan-out but
           # keeps only SYCL TUs (the inverse of the exclusion list there).
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          # Context values are passed through env vars (not inline ${{...}})
+          # to prevent shell injection (github-actions shell-injection rule).
+          if [ "$GH_EVENT_NAME" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d \
-              origin/${{ github.base_ref }}...HEAD \
+              "origin/${GH_BASE_REF}...HEAD" \
               -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
                  'core/src/feature/sycl/*.cpp' \
                  'core/src/feature/sycl/*.hpp' \
                  'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
               | tr '\n' ' ')
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            before="${{ github.event.before }}"
+          elif [ "$GH_EVENT_NAME" = "push" ]; then
+            before="$GH_EVENT_BEFORE"
             zero="0000000000000000000000000000000000000000"
             if [ -z "$before" ] || [ "$before" = "$zero" ]; then
               if git rev-parse HEAD~1 >/dev/null 2>&1; then

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -161,7 +162,7 @@ def _run_vmaf(
             "-b",
             "8",
             "-m",
-            f"path={model}",
+            "path=" + shlex.quote(str(model)),
             *feature_args,
             "--threads",
             str(n_threads),
