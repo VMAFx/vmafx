@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## chore/bundle-fable-5-findings — 4 Fable deep-hunt fixes (2026-06-12)
+`core/src/feature/x86/integer_ssim_avx2.c`: reorder `w*(s*s)` to `(w*s)*s` for the
+16-bit accumulation; only affects integer_ssim AVX2 16-bit path. No conflict risk on
+other branches unless they also modify `integer_ssim_avx2.c` accumulation order.
+`core/src/libvmaf.c`: three separate hunks — bpc `&&`→`||` in `validate_pic_params`;
+Phase 2 CUDA PREV_REF `vmaf_picture_ref` instead of bare copy; dist translate
+error-propagation in `read_pictures_cuda_translate`. If a concurrent branch edits
+`libvmaf.c` in those functions, resolve by keeping all three fixes; they are independent.
+`core/test/test_validate_pic_params_bpc.c` and `core/test/meson.build`: new test file
+and meson registration. No conflict risk unless another branch adds a test with the same
+name.
+`cmd/vmafx-server/concurrency.go`, `concurrency_test.go`, `grpc_server.go`,
+`http_server.go`, `main.go`: ScoreLimiter addition. If a concurrent branch also modifies
+`main.go` flag parsing or `grpc_server.go`/`http_server.go` handler signatures, resolve
+by preserving the `WithLimiter` constructors and the `--max-concurrent-scores` flag.
+
 ## fix/master-855-tip-3-reds — bootstrap-test recal + Dockerfile ldconfig (2026-06-08, no ADR)
 no rebase impact: `python/test/local_explainer_test.py` line 276 expected value and
 `places` argument changed (fork-local test, not Netflix golden data); `Dockerfile`
