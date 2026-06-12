@@ -52,62 +52,47 @@
     {
       "id": "fr_regressor_v2_ensemble_v1_seed0",
       "kind": "fr",
-      "license": "BSD-3-Clause-Plus-Patent",
-      "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
-      "notes": "Production ensemble member of fr_regressor_v2_ensemble_v1 (seed=0). Full-corpus fit after PROMOTE gate; see docs/ai/models/fr_regressor_v2_probabilistic.md and fr_regressor_v2_ensemble_v1_seed0.json.",
+      "notes": "Ensemble member of fr_regressor_v2_ensemble_v1 (seed=0). See docs/ai/models/fr_regressor_v2_probabilistic.md and fr_regressor_v2_ensemble_v1.json manifest.",
       "onnx": "fr_regressor_v2_ensemble_v1_seed0.onnx",
       "opset": 17,
-      "sha256": "08ab1aedab2337c458387f0961c14837fa972635e5d5b0cf6a3839976593dde4",
-      "sigstore_bundle": "fr_regressor_v2_ensemble_v1_seed0.onnx.sigstore.json",
-      "smoke": false
+      "sha256": "98e4b08cc23e4941d4c839a5c734bd33efbb083f3cf7923a04c0d22351185444",
+      "smoke": true
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed1",
       "kind": "fr",
-      "license": "BSD-3-Clause-Plus-Patent",
-      "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
-      "notes": "Production ensemble member of fr_regressor_v2_ensemble_v1 (seed=1). Full-corpus fit after PROMOTE gate; see docs/ai/models/fr_regressor_v2_probabilistic.md and fr_regressor_v2_ensemble_v1_seed1.json.",
+      "notes": "Ensemble member of fr_regressor_v2_ensemble_v1 (seed=1). See docs/ai/models/fr_regressor_v2_probabilistic.md and fr_regressor_v2_ensemble_v1.json manifest.",
       "onnx": "fr_regressor_v2_ensemble_v1_seed1.onnx",
       "opset": 17,
-      "sha256": "42d86249d41aaff5d93547a744bb251d89085475e6e10197815a612c44894f5a",
-      "sigstore_bundle": "fr_regressor_v2_ensemble_v1_seed1.onnx.sigstore.json",
-      "smoke": false
+      "sha256": "4d6824fafceb6e3f1fdb6b2306167e0951b5eac8f54318c7cb4eb82284c3025b",
+      "smoke": true
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed2",
       "kind": "fr",
-      "license": "BSD-3-Clause-Plus-Patent",
-      "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
-      "notes": "Production ensemble member of fr_regressor_v2_ensemble_v1 (seed=2). Full-corpus fit after PROMOTE gate; see docs/ai/models/fr_regressor_v2_probabilistic.md and fr_regressor_v2_ensemble_v1_seed2.json.",
+      "notes": "Ensemble member of fr_regressor_v2_ensemble_v1 (seed=2). See docs/ai/models/fr_regressor_v2_probabilistic.md and fr_regressor_v2_ensemble_v1.json manifest.",
       "onnx": "fr_regressor_v2_ensemble_v1_seed2.onnx",
       "opset": 17,
-      "sha256": "0f1d8a81d5ffc4b76223fd1f1993e3baf177536819e10ecc4c732f81067dd150",
-      "sigstore_bundle": "fr_regressor_v2_ensemble_v1_seed2.onnx.sigstore.json",
-      "smoke": false
+      "sha256": "1a0d0561fba4955b986d623446edd38d4eb0d1bd6e079fb6a2142a6033aa9f13",
+      "smoke": true
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed3",
       "kind": "fr",
-      "license": "BSD-3-Clause-Plus-Patent",
-      "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
-      "notes": "Production ensemble member of fr_regressor_v2_ensemble_v1 (seed=3). Full-corpus fit after PROMOTE gate; see docs/ai/models/fr_regressor_v2_probabilistic.md and fr_regressor_v2_ensemble_v1_seed3.json.",
+      "notes": "Ensemble member of fr_regressor_v2_ensemble_v1 (seed=3). See docs/ai/models/fr_regressor_v2_probabilistic.md and fr_regressor_v2_ensemble_v1.json manifest.",
       "onnx": "fr_regressor_v2_ensemble_v1_seed3.onnx",
       "opset": 17,
-      "sha256": "ed5e926037922b9b65903265f22702a61ca1c6fdee7da2418cfb5bed01072719",
-      "sigstore_bundle": "fr_regressor_v2_ensemble_v1_seed3.onnx.sigstore.json",
-      "smoke": false
+      "sha256": "ba623fa4cbaff325aa3f3bb50ecc1b7edffd288e2c463cd2bcceb87f33894ec5",
+      "smoke": true
     },
     {
       "id": "fr_regressor_v2_ensemble_v1_seed4",
       "kind": "fr",
-      "license": "BSD-3-Clause-Plus-Patent",
-      "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
-      "notes": "Production ensemble member of fr_regressor_v2_ensemble_v1 (seed=4). Full-corpus fit after PROMOTE gate; see docs/ai/models/fr_regressor_v2_probabilistic.md and fr_regressor_v2_ensemble_v1_seed4.json.",
+      "notes": "Ensemble member of fr_regressor_v2_ensemble_v1 (seed=4). See docs/ai/models/fr_regressor_v2_probabilistic.md and fr_regressor_v2_ensemble_v1.json manifest.",
       "onnx": "fr_regressor_v2_ensemble_v1_seed4.onnx",
       "opset": 17,
-      "sha256": "036c622401529b04d48a04cc06c65018126d2970a1139e2c89e18d8b12fa4c84",
-      "sigstore_bundle": "fr_regressor_v2_ensemble_v1_seed4.onnx.sigstore.json",
-      "smoke": false
+      "sha256": "af727669a6dec5a36906ab7dd06f2a83e9a00c2706d6e0b2f3200c4af4409a43",
+      "smoke": true
     },
     {
       "id": "fr_regressor_v3",
@@ -202,32 +187,6 @@
       "smoke": false
     },
     {
-      "description": "CI attached multi-output probe — two scalar outputs (mean_score, peak_score).",
-      "id": "smoke_multi_output_v0",
-      "kind": "fr",
-      "license": "BSD-3-Clause-Plus-Patent",
-      "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
-      "notes": "CI attached multi-output fixture used by test_vmaf_use_tiny_model.c (SMOKE_MULTI_OUTPUT_MODEL). Exercises the DNN multi-output + attached-output path; not a quality model. Generated by scripts/gen_multi_output_smoke_onnx.py.",
-      "onnx": "smoke_multi_output_v0.onnx",
-      "opset": 17,
-      "sha256": "e5f353d65d6766b9beac0e59ea586c419308c0e24a6316a7714b7a5e4aef30e9",
-      "sigstore_bundle": "smoke_multi_output_v0.onnx.sigstore.json",
-      "smoke": true
-    },
-    {
-      "description": "CI symbolic-batch probe — dynamic first dimension to exercise batch-agnostic load path.",
-      "id": "smoke_v0_symbolic_batch",
-      "kind": "fr",
-      "license": "BSD-3-Clause-Plus-Patent",
-      "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
-      "notes": "CI symbolic-batch fixture used by test_vmaf_use_tiny_model.c (SMOKE_SYMBATCH_MODEL). Exercises the DNN dynamic/symbolic first-dim load path; not a quality model. See comment block above SMOKE_SYMBATCH_MODEL in test_vmaf_use_tiny_model.c.",
-      "onnx": "smoke_v0_symbolic_batch.onnx",
-      "opset": 17,
-      "sha256": "cc1a75a7518b27cdfc9df481bb1282950cc51fe7ef6f62c5dbccb106b73cc509",
-      "sigstore_bundle": "smoke_v0_symbolic_batch.onnx.sigstore.json",
-      "smoke": true
-    },
-    {
       "description": "fp16 I/O round-trip CI probe (Identity op).",
       "id": "smoke_fp16_v0",
       "kind": "fr",
@@ -241,6 +200,19 @@
       "smoke": true
     },
     {
+      "description": "CI attached multi-output probe \u2014 two scalar outputs (mean_score, peak_score).",
+      "id": "smoke_multi_output_v0",
+      "kind": "fr",
+      "license": "BSD-3-Clause-Plus-Patent",
+      "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
+      "notes": "CI attached multi-output fixture used by test_vmaf_use_tiny_model.c (SMOKE_MULTI_OUTPUT_MODEL). Exercises the DNN multi-output + attached-output path; not a quality model. Generated by scripts/gen_multi_output_smoke_onnx.py.",
+      "onnx": "smoke_multi_output_v0.onnx",
+      "opset": 17,
+      "sha256": "e5f353d65d6766b9beac0e59ea586c419308c0e24a6316a7714b7a5e4aef30e9",
+      "sigstore_bundle": "smoke_multi_output_v0.onnx.sigstore.json",
+      "smoke": true
+    },
+    {
       "description": "CI load-path probe (Conv + Identity).",
       "id": "smoke_v0",
       "kind": "fr",
@@ -251,6 +223,19 @@
       "opset": 17,
       "sha256": "c83a5f217fa3736bf575c52f7f4c187a6201951e8ddccb51bdcdcc136108fbe0",
       "sigstore_bundle": "smoke_v0.onnx.sigstore.json",
+      "smoke": true
+    },
+    {
+      "description": "CI symbolic-batch probe \u2014 dynamic first dimension to exercise batch-agnostic load path.",
+      "id": "smoke_v0_symbolic_batch",
+      "kind": "fr",
+      "license": "BSD-3-Clause-Plus-Patent",
+      "license_url": "https://github.com/VMAFx/vmafx/blob/master/LICENSE",
+      "notes": "CI symbolic-batch fixture used by test_vmaf_use_tiny_model.c (SMOKE_SYMBATCH_MODEL). Exercises the DNN dynamic/symbolic first-dim load path; not a quality model. See comment block above SMOKE_SYMBATCH_MODEL in test_vmaf_use_tiny_model.c.",
+      "onnx": "smoke_v0_symbolic_batch.onnx",
+      "opset": 17,
+      "sha256": "cc1a75a7518b27cdfc9df481bb1282950cc51fe7ef6f62c5dbccb106b73cc509",
+      "sigstore_bundle": "smoke_v0_symbolic_batch.onnx.sigstore.json",
       "smoke": true
     },
     {

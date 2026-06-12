@@ -24,7 +24,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import onnx
 import onnxruntime as ort
 import torch
 
@@ -63,48 +62,44 @@ def _check_parity(
     rng = np.random.RandomState(seed)
     x = rng.randn(1, 3, h, w).astype(np.float32)
 
-    # Build PyTorch model from the same architecture; load weights from
-    # the ONNX initialisers via the trainer's exported state if no PT
-    # state was passed in. The simplest robust approach: trust that the
-    # user just exported, so do an inference-time forward pass on
-    # whichever PT model holds the trained weights.
-    if pt_state is None:
-        # Re-build TinyUNet and copy weights from the ONNX initialisers.
-        # Easier path: ask the user to point us at the .onnx and infer
-        # via ORT only, then compare against a *re-imported* TinyUNet
-        # whose weights we restored from the ONNX graph.
-        m = onnx.load(str(onnx_path))
-        weights = {init.name: onnx.numpy_helper.to_array(init) for init in m.graph.initializer}
-        pt = TinyUNet().eval()
-
-        # Map from ONNX initializer names to PT state-dict keys. For
-        # this network the export uses identical names, so we just walk
-        # the PT state_dict and pull each tensor by its ONNX name when
-        # present.
-        new_state = {}
-        for k, v in pt.state_dict().items():
-            if k in weights:
-                new_state[k] = torch.from_numpy(weights[k]).to(v.dtype)
-            else:
-                # BatchNorm running stats fold into the conv weights at
-                # export time, so they may not be present as named
-                # initializers — that's fine, leave the default.
-                new_state[k] = v
-        pt.load_state_dict(new_state, strict=False)
-        pt.eval()
-    else:
-        pt = TinyUNet().eval()
-        pt.load_state_dict(pt_state)
-
-    with torch.no_grad():
-        y_pt = pt(torch.from_numpy(x)).numpy()
-
     sess = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
     y_ort = sess.run(["saliency_map"], {"input": x})[0]
 
-    diff = float(np.max(np.abs(y_pt - y_ort)))
-    print(f"[2/3] PT vs ORT max-abs-diff: {diff:.3e}  (threshold {threshold:.0e})")
-    return 0 if diff < threshold else 1
+    if pt_state is not None:
+        # Full PT <-> ORT parity: a live PT state_dict was provided
+        # (e.g. called from the trainer immediately after export).
+        pt = TinyUNet().eval()
+        pt.load_state_dict(pt_state)
+        with torch.no_grad():
+            y_pt = pt(torch.from_numpy(x)).numpy()
+        diff = float(np.max(np.abs(y_pt - y_ort)))
+        print(f"[2/3] PT vs ORT max-abs-diff: {diff:.3e}  (threshold {threshold:.0e})")
+        return 0 if diff < threshold else 1
+
+    # No PT state available — the export used do_constant_folding=True with
+    # TrainingMode.EVAL, which folds BatchNorm statistics into the preceding
+    # conv weights.  The resulting ONNX initializer names no longer match the
+    # PT state_dict keys, so reconstructing the PT model from ONNX initializers
+    # silently leaves 60 of 65 weights at their random default values and the
+    # parity check always fails (ADR-0726 residual, iter6 finding #2).
+    # Instead, perform an ORT-only sanity check: verify the model loads,
+    # produces the expected output shape (1, 1, H, W), and contains no
+    # NaN / Inf values.
+    expected_shape = (1, 1, h, w)
+    if y_ort.shape != expected_shape:
+        print(f"[2/3] ORT output shape mismatch: got {y_ort.shape}, expected {expected_shape}")
+        return 1
+    if not np.all(np.isfinite(y_ort)):
+        n_bad = int(np.sum(~np.isfinite(y_ort)))
+        print(f"[2/3] ORT output contains {n_bad} NaN/Inf values")
+        return 1
+    print(
+        f"[2/3] ORT sanity check passed: shape={y_ort.shape} "
+        f"range=[{y_ort.min():.3f}, {y_ort.max():.3f}] no NaN/Inf  "
+        f"(PT state not provided; BN folded at export; full PT<->ORT parity "
+        f"requires a companion .pt checkpoint)"
+    )
+    return 0
 
 
 def _check_registry() -> int:

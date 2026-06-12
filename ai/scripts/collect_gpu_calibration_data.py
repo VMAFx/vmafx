@@ -100,8 +100,8 @@ BACKEND_DEVICE_FLAG: dict[str, str] = {
 
 # ``--smoke`` mode: smallest viable training set per Research-0041
 # § "Smallest viable training set (proof-of-concept)". 5 features
-# covering integer pipeline + float pipeline + DCT-heavy, Vulkan-only
-# (lavapipe-friendly), 100 frames.
+# covering integer pipeline + float pipeline + DCT-heavy, CUDA only
+# (Vulkan removed per ADR-0726), 100 frames.
 
 SMOKE_FEATURES: tuple[str, ...] = (
     "vif",
@@ -422,8 +422,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--smoke",
         action="store_true",
         help=(
-            "shortcut: 5 features × Vulkan only × 100 frames "
-            "(per Research-0041 smallest-viable-training-set)"
+            "shortcut: 5 features × CUDA only × 100 frames "
+            "(per Research-0041 smallest-viable-training-set; "
+            "Vulkan removed per ADR-0726)"
         ),
     )
     ap.add_argument(
@@ -461,10 +462,10 @@ def main(argv: list[str] | None = None) -> int:
         frame_limit = args.frame_limit
 
     args.workdir.mkdir(parents=True, exist_ok=True)
+    # Vulkan backend was removed per ADR-0726; only cuda and sycl are valid.
     devices = {
         "cuda": args.cuda_device,
         "sycl": args.sycl_device,
-        "vulkan": args.vulkan_device,
     }
 
     all_rows: list[Row] = []
