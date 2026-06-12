@@ -577,6 +577,10 @@ static void y4m_convert_null(y4m_input *_y4m, unsigned char *_dst, unsigned char
 }
 
 #define Y4M_HEADER_BUFSIZE 256
+/* Maximum luma pixel count accepted from a Y4M header.  64 Mpixels comfortably
+ * exceeds 8K (7680×4320 = 33.2 M) while staying well below the threshold at
+ * which size_t arithmetic would overflow on 32-bit targets. */
+#define Y4M_MAX_FRAME_PIXELS ((size_t)8192u * 8192u)
 
 static int y4m_input_open_impl(y4m_input *_y4m, FILE *_fin)
 {
@@ -613,6 +617,16 @@ static int y4m_input_open_impl(y4m_input *_y4m, FILE *_fin)
     if (_y4m->pic_w <= 0 || _y4m->pic_h <= 0) {
         (void)fprintf(stderr, "Invalid YUV4MPEG2 dimensions: W=%d H=%d (must be > 0).\n",
                       _y4m->pic_w, _y4m->pic_h);
+        return -1;
+    }
+    /*Reject attacker-controlled frame sizes that would cause unbounded malloc.
+     * Y4M_MAX_FRAME_PIXELS (64 Mpixels) exceeds 8K resolution; anything larger
+     * is almost certainly a malformed or adversarial header (T-FUZZ-Y4M-OOM).
+     * This guard also prevents the signed-integer overflow in
+     * y4m_convert_411_422jpeg for oversized dimensions. */
+    if ((size_t)_y4m->pic_w * (size_t)_y4m->pic_h > Y4M_MAX_FRAME_PIXELS) {
+        (void)fprintf(stderr, "Y4M frame dimensions %dx%d exceed maximum (%dx%d).\n", _y4m->pic_w,
+                      _y4m->pic_h, 8192, 8192);
         return -1;
     }
     if (_y4m->interlace == '?') {
