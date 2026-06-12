@@ -137,24 +137,41 @@ __device__ __forceinline__ static void vif_statistic_one(
     int32_t sigma2_sq = (int32_t)(yy_filt - mu2_sq);
     int32_t sigma12   = (int32_t)(xy_filt - mu1_mu2);
 
+    /* Clamp both sigmas to 0 — matches the CUDA twin's max(sigma1_sq, 0) /
+     * max(sigma2_sq, 0) (vif_statistics.cuh lines 96-97).  Without the
+     * sigma1_sq clamp, a negative sigma1_sq could pass the sigma_nsq threshold
+     * test below and produce an invalid log_den_stage1 value. */
+    if (sigma1_sq < 0) sigma1_sq = 0;
     if (sigma2_sq < 0) sigma2_sq = 0;
+
+    /* Compute g and sv_sq unconditionally, mirroring the CUDA twin's
+     * lines 102-116.  g defaults to 0, sv_sq defaults to sigma2_sq; g is
+     * assigned only when sigma12 > 0, sigma1_sq != 0, and sigma2_sq != 0
+     * (matching the CUDA twin's guard), then sv_sq is updated and clamped,
+     * and g is clamped to vif_enhn_gain_limit. */
+    const double eps = 65536 * 1.0e-10;
+    double g = 0.0;
+    int32_t sv_sq = sigma2_sq;
+
+    if (sigma12 > 0 && sigma1_sq != 0 && sigma2_sq != 0)
+        g = sigma12 / ((double)sigma1_sq + eps);
+    sv_sq = (int32_t)(sigma2_sq - g * sigma12);
+    if (sv_sq < (int32_t)eps) sv_sq = (int32_t)eps;
+    if (g > vif_enhn_gain_limit) g = vif_enhn_gain_limit;
 
     if (sigma1_sq >= sigma_nsq) {
         uint32_t log_den_stage1 = (uint32_t)(sigma_nsq + sigma1_sq);
         int x;
         uint16_t log_den1 = get_best16_from32(log_den_stage1, &x);
 
-        acc->num_x  += 1;
-        acc->x      += x;
+        acc->num_x += 1;
+        acc->x     += x;
         int32_t den_val = log_generate(log_den1);
 
-        if (sigma12 > 0 && sigma2_sq > 0) {
-            const double eps = 65536 * 1.0e-10;
-            double g = sigma12 / ((double)sigma1_sq + eps);
-            int32_t sv_sq = (int32_t)(sigma2_sq - g * sigma12);
-            if (sv_sq < 0) sv_sq = 0;
-            if (g > vif_enhn_gain_limit) g = vif_enhn_gain_limit;
-
+        /* Use sigma12 >= 0 (not > 0 && sigma2_sq > 0) — matches the CUDA twin's
+         * line 136.  sv_sq >= 0 and sigma_nsq > 0, so numer1 > 0 always; the
+         * get_best16_from64 call cannot receive 0. */
+        if (sigma12 >= 0) {
             uint32_t numer1     = (uint32_t)(sv_sq + sigma_nsq);
             int64_t  numer1_tmp = (int64_t)(g * g * sigma1_sq) + (int64_t)numer1;
 
@@ -166,6 +183,7 @@ __device__ __forceinline__ static void vif_statistic_one(
             acc->num_log += num_val;
             acc->den_log += den_val;
         } else {
+            acc->num_log += 0;
             acc->den_log += den_val;
         }
     } else {
