@@ -41,7 +41,6 @@ This is an overview of the available documentation in the VMAF repository.
 - [DNN sessions](api/dnn.md) – tiny-AI `dnn.h`: standalone ONNX sessions (luma filter + multi-input named binding), device config, error codes
 - [GPU (CUDA / SYCL)](api/gpu.md) – `libvmaf_cuda.h` + `libvmaf_sycl.h`: zero-copy frame buffers, dmabuf / VA / D3D11 import, profiling
 - [MCP C API](api/mcp.md) – `libvmaf_mcp.h`: embedded in-process MCP server (stdio / UDS / SSE transports)
-- [Vulkan image import](api/vulkan-image-import.md) – zero-copy `VkImage` import for Vulkan backend callers
 
 ## Metrics
 

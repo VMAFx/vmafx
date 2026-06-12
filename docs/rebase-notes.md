@@ -45637,3 +45637,7 @@ Rebase-sensitive: function signatures changed across VIF, SpEED, and CAMBI.
   Call site passes `&s->buffers`.
 Conflicts possible if upstream or another branch edits these function signatures
 or adds new call sites; resolve by carrying the `const *` form forward.
+
+## docs/index.md — Vulkan image-import list item removed (docs/remove-stale-vulkan-image-import-ref)
+
+no rebase impact: docs-only removal of a stale list item; no code or nav structure changed.
