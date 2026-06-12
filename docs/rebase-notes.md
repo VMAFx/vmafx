@@ -1,6 +1,13 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/hip-meson-speed-tus-dedup — Remove duplicate HIP speed TU entries (2026-06-12)
+no rebase impact: change confined to `core/src/hip/meson.build` (build config only).
+Removes the duplicate `speed_chroma_hip.c` / `speed_temporal_hip.c` wiring block
+that ADR-0852 introduced when ADR-0964 had already included those TUs earlier in the
+same `hip_sources` list. If a concurrent branch also edits `core/src/hip/meson.build`,
+keep both sets of changes; the resolved file must contain each speed TU exactly once.
+
 ## fix/docker-ffmpeg-tag-n811-pin — Docker FFMPEG_TAG n8.1 → n8.1.1 + patch 0016 context (2026-06-12)
 no rebase impact: `Dockerfile` and `Dockerfile.ffmpeg` pin changes are build-config
 only; patch 0016 context line fix is an ffmpeg-patches-internal correction with no

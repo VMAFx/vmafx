@@ -133,14 +133,9 @@ hip_sources += files(
     # committed alongside this reference (PR #1297 removed a dangling
     # version of this entry; this PR adds the actual file).
     '../feature/hip/hip_hsaco_stubs.c',
-    # ADR-0852: wire speed_chroma_hip + speed_temporal_hip into the
-    # HIP archive.  Both TUs exist per ADR-0567 (real SpEED GPU kernels)
-    # and declare vmaf_fex_speed_{chroma,temporal}_hip; only the meson
-    # + registry wiring was missing.  With enable_hipcc=true the
-    # speed_score HSACO runs on device; without it init() returns -ENOSYS
-    # (same scaffold posture as every prior HIP consumer).
-    '../feature/hip/speed_chroma_hip.c',
-    '../feature/hip/speed_temporal_hip.c',
+    # Note: speed_chroma_hip.c and speed_temporal_hip.c are already included
+    # above (ADR-0964 block, lines ~120-126). The ADR-0852 duplicate wiring
+    # has been removed to prevent duplicate-symbol link errors.
 )
 
 # T7-10b runtime linkage. ROCm ships `hip_runtime_api.h` under
