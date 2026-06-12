@@ -123,6 +123,36 @@ int vmaf_dnn_sniff_kind(const char *path)
     return -1;
 }
 
+/* Locate the first occurrence of "key" that is a JSON key (i.e. followed by
+ * ':' with optional whitespace) rather than a JSON value.  Returns a pointer
+ * to the character immediately after the ':' on success, or NULL when no
+ * matching key is found.
+ *
+ * A plain strstr(doc, needle) false-positives when a JSON *value* string
+ * equals the key name (e.g. {"kind": "name", "name": "actual"} — searching
+ * for key "name" would land on the value "name" first).  The fix: after each
+ * strstr hit, skip whitespace past the needle and check that the next
+ * non-space character is ':'.  If not, advance past this occurrence and
+ * retry. */
+static const char *find_key_in_doc(const char *doc, const char *needle, size_t needle_len)
+{
+    const char *cursor = doc;
+    while ((cursor = strstr(cursor, needle)) != NULL) {
+        const char *after = cursor + needle_len;
+        /* Skip whitespace after the needle. */
+        while (*after && json_is_space(*after))
+            after++;
+        if (*after == ':') {
+            /* Confirmed: this is a key occurrence.  Return the position
+             * just after the ':' so the caller can parse the value. */
+            return after + 1;
+        }
+        /* This occurrence is inside a value string — skip past it. */
+        cursor++;
+    }
+    return NULL;
+}
+
 /* Ultra-small JSON-value extractor: supports "key": "value" and "key": number.
  * Sidecars are written by vmaf-train so we know the exact shape and can avoid
  * pulling a JSON dependency into libvmaf. */
@@ -132,13 +162,9 @@ static char *extract_string(const char *doc, const char *key)
     int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
     if (n < 0 || (size_t)n >= sizeof(needle))
         return NULL;
-    const char *p = strstr(doc, needle);
+    const char *p = find_key_in_doc(doc, needle, (size_t)n);
     if (!p)
         return NULL;
-    p = strchr(p + (size_t)n, ':');
-    if (!p)
-        return NULL;
-    p++;
     while (*p && json_is_space(*p))
         p++;
     if (*p != '"')
@@ -190,13 +216,9 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
     int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
     if (n < 0 || (size_t)n >= sizeof(needle))
         return -EINVAL;
-    const char *p = strstr(doc, needle);
+    const char *p = find_key_in_doc(doc, needle, (size_t)n);
     if (!p)
         return -ENOENT;
-    p = strchr(p + (size_t)n, ':');
-    if (!p)
-        return -ENOENT;
-    p++;
     while (*p && json_is_space(*p))
         p++;
     if (*p != '[')
@@ -264,13 +286,9 @@ static int extract_float_array(const char *doc, const char *key, float *out, siz
     int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
     if (n < 0 || (size_t)n >= sizeof(needle))
         return -EINVAL;
-    const char *p = strstr(doc, needle);
+    const char *p = find_key_in_doc(doc, needle, (size_t)n);
     if (!p)
         return -ENOENT;
-    p = strchr(p + (size_t)n, ':');
-    if (!p)
-        return -ENOENT;
-    p++;
     while (*p && json_is_space(*p))
         p++;
     if (*p != '[')
@@ -315,13 +333,9 @@ static int extract_int(const char *doc, const char *key, int *out)
     int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
     if (n < 0 || (size_t)n >= sizeof(needle))
         return -EINVAL;
-    const char *p = strstr(doc, needle);
+    const char *p = find_key_in_doc(doc, needle, (size_t)n);
     if (!p)
         return -ENOENT;
-    p = strchr(p + (size_t)n, ':');
-    if (!p)
-        return -ENOENT;
-    p++;
     while (*p && json_is_space(*p))
         p++;
     errno = 0;

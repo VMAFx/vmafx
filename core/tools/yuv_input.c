@@ -240,13 +240,20 @@ static int yuv_input_fetch_frame(yuv_input *yuv, FILE *fin, video_input_ycbcr _y
 
     (void)_tag;
 
-    unsigned xstride = (yuv->bitdepth > 8) ? 2 : 1;
-    ptrdiff_t pic_sz = (ptrdiff_t)yuv->width * yuv->height * xstride;
+    /* Promote all geometry values to size_t before multiplication to prevent
+     * unsigned 32-bit wraparound for large YUV444P / HBD frames.  For example,
+     * a 46341x46341 10-bit YUV444P frame has c_w * c_h * xstride =
+     * 46341 * 46341 * 2 = 4,294,976,562 which exceeds UINT32_MAX (4,294,967,295)
+     * and would wrap to 9,267 in plain unsigned arithmetic, producing a buffer
+     * pointer far past the end of dst_buf.  The same promotion is already
+     * applied to dst_buf_sz in yuv_input_open() and must be mirrored here. */
+    size_t xstride = (yuv->bitdepth > 8) ? 2u : 1u;
+    size_t pic_sz = (size_t)yuv->width * (size_t)yuv->height * xstride;
     unsigned frame_c_w = yuv->width / yuv->dst_c_dec_h;
     unsigned frame_c_h = yuv->height / yuv->dst_c_dec_v;
-    unsigned c_w = (yuv->width + yuv->dst_c_dec_h - 1) / yuv->dst_c_dec_h;
-    unsigned c_h = (yuv->height + yuv->dst_c_dec_v - 1) / yuv->dst_c_dec_v;
-    unsigned c_sz = c_w * c_h * xstride;
+    size_t c_w = ((size_t)yuv->width + (size_t)yuv->dst_c_dec_h - 1u) / (size_t)yuv->dst_c_dec_h;
+    size_t c_h = ((size_t)yuv->height + (size_t)yuv->dst_c_dec_v - 1u) / (size_t)yuv->dst_c_dec_v;
+    size_t c_sz = c_w * c_h * xstride;
 
     _ycbcr[0].width = yuv->width;
     _ycbcr[0].height = yuv->height;
