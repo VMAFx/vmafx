@@ -373,8 +373,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     }
 
 write_score:
-    err = vmaf_feature_collector_append(feature_collector, "VMAF_integer_feature_motion_sad_score",
-                                        score, index);
+    err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                  "VMAF_integer_feature_motion_sad_score", score,
+                                                  index);
     if (err)
         return err;
 
@@ -405,7 +406,11 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
             return -ENOMEM;
     }
 
-    const char *sad_name = "VMAF_integer_feature_motion_sad_score";
+    const VmafDictionaryEntry *sad_entry =
+        vmaf_dictionary_get(&s->feature_name_dict, "VMAF_integer_feature_motion_sad_score", 0);
+    if (!sad_entry)
+        return -EINVAL;
+    const char *sad_name = sad_entry->val;
 
     unsigned n = 0;
     double score;
@@ -413,8 +418,10 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
         n++;
     const unsigned stride = s->motion_five_frame_window ? 2 : 1;
     const unsigned min_idx = s->motion_five_frame_window ? 2 : 1;
-    if (!n)
+    if (!n) {
+        vmaf_dictionary_free(&s->feature_name_dict);
         return 1;
+    }
 
     double stamp_value = 0.;
     if (n > min_idx) {
@@ -478,12 +485,17 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
             return append_err;
     }
 
+    vmaf_dictionary_free(&s->feature_name_dict);
     return 1;
 }
 
-static const char *provided_features[] = {"VMAF_integer_feature_motion_score",
-                                          "VMAF_integer_feature_motion2_score",
-                                          "VMAF_integer_feature_motion3_score", NULL};
+static const char *provided_features[] = {
+    "VMAF_integer_feature_motion_sad_score",
+    "VMAF_integer_feature_motion_score",
+    "VMAF_integer_feature_motion2_score",
+    "VMAF_integer_feature_motion3_score",
+    NULL,
+};
 
 VmafFeatureExtractor vmaf_fex_integer_motion = {
     .name = "motion",
