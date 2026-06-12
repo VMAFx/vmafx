@@ -2456,6 +2456,14 @@ async def _call_tool_dispatch(
     Separated so ``_call_tool`` can wrap it with a single KeyError-to-ValueError
     converter without duplicating the dispatch logic.
     """
+    # Depth guard: reject pathologically nested payloads before the pydantic
+    # parser recurses into them.  500-level deep dicts hit Python's recursion
+    # limit inside pydantic, producing an exception that the mcp transport
+    # cannot convert to a well-formed JSON-RPC error response (it silently
+    # drops the response).  Raising ValueError here lets the mcp library's
+    # _make_error_result wrapper return a proper isError=True tool result.
+    _check_depth(arguments)
+
     if name == "vmaf_score":
         req = ScoreRequest(
             ref=_validate_path(arguments["ref"]),
@@ -2570,10 +2578,143 @@ async def _call_tool_dispatch(
     return [TextContent(type="text", text=_dumps_strict(result))]
 
 
+def _check_depth(obj: Any, max_depth: int = 50, depth: int = 0) -> None:
+    """Validate that a JSON-deserialised object does not exceed *max_depth* levels.
+
+    A payload with 500+ levels of nested dicts can push the pydantic / json
+    validator past Python's recursion limit, causing an unhandled exception
+    that the transport layer cannot convert to a well-formed JSON-RPC error
+    response.  Checking eagerly here lets us raise a plain ``ValueError``
+    (which the mcp library wraps into an isError=True tool result) before we
+    ever reach the recursive parser.
+
+    Only ``dict`` and ``list`` containers contribute to nesting depth;
+    scalar leaves are counted at the same level as their parent container.
+    """
+    if depth > max_depth:
+        raise ValueError(
+            f"argument nesting exceeds maximum depth ({max_depth}); "
+            "reduce payload nesting and retry"
+        )
+    if isinstance(obj, dict):
+        for v in obj.values():
+            _check_depth(v, max_depth, depth + 1)
+    elif isinstance(obj, list):
+        for item in obj:
+            _check_depth(item, max_depth, depth + 1)
+
+
+def _emit_parse_error(raw_line: str, exc: Exception) -> None:
+    """Write a conformant JSON-RPC parse-error response to stdout.
+
+    Called when the server's stdin reader encounters a line that is not valid
+    JSON-RPC.  JSON-RPC 2.0 §5 requires:
+
+    .. code-block:: json
+
+        {"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": "Parse error"}}
+
+    We attempt to recover the ``id`` field from the raw bytes in case the
+    payload was valid JSON but not a valid JSON-RPC message (e.g. missing
+    ``jsonrpc`` field) — the spec says ``id`` MUST be ``null`` when the
+    message cannot be parsed, but recovering it when possible improves
+    debuggability without violating conformance.
+
+    The write is intentionally synchronous (``sys.stdout.write``) because
+    the caller operates in a context where the mcp library's async stdout
+    writer may not have been set up yet, and because parse errors should be
+    acknowledged immediately rather than queued behind in-flight tool results.
+    """
+    _id: str | int | None = None
+    try:
+        _partial = json.loads(raw_line)
+        _raw_id = _partial.get("id") if isinstance(_partial, dict) else None
+        if isinstance(_raw_id, (str, int)):
+            _id = _raw_id
+    except Exception:  # noqa: BLE001
+        pass
+
+    _err_payload = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": _id,
+            "error": {
+                "code": -32700,
+                "message": "Parse error",
+                "data": str(exc),
+            },
+        }
+    )
+    sys.stdout.write(_err_payload + "\n")
+    sys.stdout.flush()
+    _logger.debug("JSON-RPC parse error on stdin (id=%r): %s", _id, exc)
+
+
+class _ParseErrorFilteredStdin:
+    """Async-iterable stdin wrapper that intercepts JSON-RPC parse errors.
+
+    The mcp library's ``stdio_server`` iterates over the supplied *stdin*
+    object with ``async for line in stdin`` and passes each line to
+    ``types.JSONRPCMessage.model_validate_json(line)``.  When that call
+    raises, the library forwards the bare ``Exception`` onto the read stream;
+    the low-level server then emits a ``notifications/message`` notification
+    instead of the spec-required JSON-RPC error response (JSON-RPC 2.0 §5).
+
+    By pre-validating each line here and writing the conformant error response
+    directly to stdout before the mcp library sees the line, we ensure that
+    malformed-JSON inputs are acknowledged correctly.  Lines that do not
+    survive pre-validation are dropped (the mcp library never sees them),
+    which prevents the notification path from running at all.
+
+    ``sys.stdout.write`` is intentionally synchronous: it is safe from async
+    context and pytest's capsys fixture captures it correctly.
+    """
+
+    def __init__(self) -> None:
+        # Inner stream is created lazily in __anext__ so that instantiation
+        # (which happens before the async event loop processes any messages)
+        # does not create file objects that would conflict with pytest's
+        # stdout/stdin capture fixtures.
+        self._inner: Any = None
+
+    def _make_inner(self) -> Any:
+        """Construct the underlying async stdin reader on first use."""
+        from io import TextIOWrapper
+
+        import anyio
+
+        # Wrap the real stdin binary buffer for async line-by-line reading.
+        # Guard with hasattr in case the runtime (pytest pseudofile) does not
+        # expose a binary buffer.
+        if hasattr(sys.stdin, "buffer"):
+            return anyio.wrap_file(
+                TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
+            )
+        return sys.stdin  # type: ignore[return-value]
+
+    def __aiter__(self) -> "_ParseErrorFilteredStdin":
+        return self
+
+    async def __anext__(self) -> str:
+        import mcp.types as _mcp_types
+
+        if self._inner is None:
+            self._inner = self._make_inner()
+
+        async for raw_line in self._inner:
+            try:
+                _mcp_types.JSONRPCMessage.model_validate_json(raw_line)
+            except Exception as exc:
+                _emit_parse_error(raw_line, exc)
+                continue  # drop invalid line; do not forward to mcp library
+            return raw_line
+        raise StopAsyncIteration
+
+
 async def _run() -> None:
     if not shutil.which("meson"):
         print("warning: meson not on PATH — benchmark tool may fail.", file=sys.stderr)
-    async with stdio_server() as (read_stream, write_stream):
+    async with stdio_server(stdin=_ParseErrorFilteredStdin()) as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 

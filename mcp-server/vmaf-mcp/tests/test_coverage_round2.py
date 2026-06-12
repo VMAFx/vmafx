@@ -1151,7 +1151,7 @@ def test_run_invokes_stdio_server_and_server_run(
         async def __aexit__(self, *_a: Any) -> None:
             return None
 
-    def _stdio_factory() -> _StdioCm:
+    def _stdio_factory(**_kwargs: Any) -> _StdioCm:
         return _StdioCm()
 
     monkeypatch.setattr(srv, "stdio_server", _stdio_factory)
@@ -1188,7 +1188,7 @@ def test_run_warns_when_meson_missing(
         async def __aexit__(self, *_a: Any) -> None:
             return None
 
-    monkeypatch.setattr(srv, "stdio_server", lambda: _StdioCm())
+    monkeypatch.setattr(srv, "stdio_server", lambda **_kw: _StdioCm())
     monkeypatch.setattr(srv.shutil, "which", lambda _n: None)
 
     async def _noop(*_a: Any, **_k: Any) -> None:
