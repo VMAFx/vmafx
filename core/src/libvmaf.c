@@ -1602,51 +1602,6 @@ int vmaf_use_features_from_model_collection(VmafContext *vmaf,
     return err;
 }
 
-struct ThreadData {
-    VmafFeatureExtractorContext *fex_ctx;
-    VmafPicture ref, dist, prev_ref;
-    unsigned index;
-    VmafFeatureCollector *feature_collector;
-    VmafFeatureExtractorContextPool *fex_ctx_pool;
-    int err;
-};
-
-static void threaded_extract_func(void *e, void **thread_data)
-{
-    (void)thread_data;
-    struct ThreadData *f = e;
-
-    /* Thread safety (ADR-0795): f->fex_ctx is a pool slot acquired exclusively
-     * by this thread (vmaf_fex_ctx_pool_aquire sets in_use=true under the pool
-     * lock).  f->fex_ctx->fex is a deep copy of the registered extractor created
-     * at pool-slot allocation time (vmaf_feature_extractor_context_create /
-     * memcpy).  Therefore writing fex->prev_ref here touches only this thread's
-     * own memory — no aliasing with other pool slots or the registered context. */
-    if (f->prev_ref.ref)
-        f->fex_ctx->fex->prev_ref = f->prev_ref;
-
-    f->err = vmaf_feature_extractor_context_extract(f->fex_ctx, &f->ref, NULL, &f->dist, NULL,
-                                                    f->index, f->feature_collector);
-
-    if (f->prev_ref.ref) {
-        /* On success the PREV_REF SWAP in context_extract replaced fex->prev_ref
-         * (struct-copy of f->prev_ref, shared VmafRef*) with the current frame's
-         * picture (refcount bumped by one).  Unref before clearing to balance that
-         * bump; on error fex->prev_ref still holds the old frame's struct-copy and
-         * the same unref releases one count from it.  f->prev_ref is then unref'd
-         * separately below (it was acquired via vmaf_picture_ref in the caller and
-         * holds its own independent counted reference). */
-        if (f->fex_ctx->fex->prev_ref.ref)
-            (void)vmaf_picture_unref(&f->fex_ctx->fex->prev_ref);
-        memset(&f->fex_ctx->fex->prev_ref, 0, sizeof(f->fex_ctx->fex->prev_ref));
-        vmaf_picture_unref(&f->prev_ref);
-    }
-
-    f->err = vmaf_fex_ctx_pool_release(f->fex_ctx_pool, f->fex_ctx);
-    vmaf_picture_unref(&f->ref);
-    vmaf_picture_unref(&f->dist);
-}
-
 struct ThreadDataBatch {
     VmafPicture ref, dist, prev_ref;
     unsigned index;
@@ -1778,53 +1733,6 @@ unref:
         vmaf_picture_unref(&f->prev_ref);
     vmaf_picture_unref(&f->ref);
     vmaf_picture_unref(&f->dist);
-}
-
-static int threaded_enqueue_one(VmafContext *vmaf, VmafFeatureExtractor *fex,
-                                VmafDictionary *opts_dict, VmafPicture *ref, VmafPicture *dist,
-                                unsigned index)
-{
-    /* Do NOT write fex->framesync here.  fex is the *shared* registered
-     * VmafFeatureExtractor object — worker threads from previous frames may
-     * concurrently be reading its fields (TSAN: iter6-tsan-race-deep finding
-     * #1).  framesync is already propagated to every pool-slot copy by
-     * set_fex_framesync() at registration time (libvmaf.c:682) and by
-     * ctx_pool_ensure_slot_ctx() when the slot is first created
-     * (feature_extractor.c:899).  The redundant write here is unsafe. */
-    VmafFeatureExtractorContext *fex_ctx;
-    int err = vmaf_fex_ctx_pool_aquire(vmaf->fex_ctx_pool, fex, opts_dict, &fex_ctx);
-    if (err)
-        return err;
-
-    VmafPicture pic_a;
-    VmafPicture pic_b;
-    VmafPicture prev_ref = {0};
-    vmaf_picture_ref(&pic_a, ref);
-    vmaf_picture_ref(&pic_b, dist);
-
-    if ((fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_ref.ref) {
-        vmaf_picture_ref(&prev_ref, &vmaf->prev_ref);
-    }
-
-    struct ThreadData data = {
-        .fex_ctx = fex_ctx,
-        .ref = pic_a,
-        .dist = pic_b,
-        .prev_ref = prev_ref,
-        .index = index,
-        .feature_collector = vmaf->feature_collector,
-        .fex_ctx_pool = vmaf->fex_ctx_pool,
-        .err = 0,
-    };
-
-    err = vmaf_thread_pool_enqueue(vmaf->thread_pool, threaded_extract_func, &data, sizeof(data));
-    if (err) {
-        vmaf_picture_unref(&pic_a);
-        vmaf_picture_unref(&pic_b);
-        if (prev_ref.ref)
-            vmaf_picture_unref(&prev_ref);
-    }
-    return err;
 }
 
 static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
@@ -2357,12 +2265,12 @@ static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorCon
 {
     /* ADR-0778 Fix-A: use vmaf_picture_ref, not a bare struct copy, so
      * the synchronous non-GPU dispatch holds its own counted reference to
-     * the previous-frame buffer.  The threaded path (threaded_extract_func)
-     * and the CUDA batch path already use vmaf_picture_ref here; this aligns
-     * the remaining code path.  Without the ref, vmaf->prev_ref can be
-     * decremented by read_pictures_update_prev_ref on the next frame while
-     * the extractor is still reading its data, opening a use-after-free
-     * window when the refcount hits zero and the pool reuses the buffer. */
+     * the previous-frame buffer.  The CUDA batch path already uses
+     * vmaf_picture_ref here; this aligns the remaining code path.  Without
+     * the ref, vmaf->prev_ref can be decremented by
+     * read_pictures_update_prev_ref on the next frame while the extractor is
+     * still reading its data, opening a use-after-free window when the
+     * refcount hits zero and the pool reuses the buffer. */
     if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_ref.ref) {
         vmaf_picture_ref(&fex_ctx->fex->prev_ref, &vmaf->prev_ref);
     }

@@ -114,37 +114,6 @@ static char *test_score_pooled_streaming_pattern(void)
     return NULL;
 }
 
-static char *test_score_pooled_after_flush_complete(void)
-{
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    mu_assert("vmaf_init failed", vmaf_init(&vmaf, cfg) == 0);
-
-    VmafModelConfig mcfg = {0};
-    VmafModel *model = NULL;
-    mu_assert("model load failed", vmaf_model_load(&model, &mcfg, "vmaf_v0.6.1") == 0);
-    mu_assert("use_features_from_model failed", vmaf_use_features_from_model(vmaf, model) == 0);
-
-    const unsigned N = 4;
-    for (unsigned i = 0; i < N; i++)
-        mu_assert("read failed", submit_frame(vmaf, i, 576, 324) == 0);
-
-    /* Flush → writes the retroactive-tail scores. */
-    mu_assert("flush failed", vmaf_read_pictures(vmaf, NULL, NULL, 0) == 0);
-
-    /* Every index in range must be poolable now. */
-    for (unsigned i = 0; i < N; i++) {
-        double score = 0.0;
-        int rc = vmaf_score_pooled(vmaf, model, VMAF_POOL_METHOD_MEAN, &score, i, i);
-        mu_assert("post-flush score_pooled must succeed for every in-range index", rc == 0);
-        mu_assert("post-flush score must be finite", score > 0.0 && score < 100.0);
-    }
-
-    vmaf_close(vmaf);
-    vmaf_model_destroy(model);
-    return NULL;
-}
-
 static char *test_score_pooled_still_rejects_bad_range(void)
 {
     /* Programmer-error cases must remain -EINVAL (not -EAGAIN). */

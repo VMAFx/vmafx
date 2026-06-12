@@ -4168,31 +4168,31 @@ float adm_csf_den_scale_avx2(const adm_dwt_band_t *src, int w, int h, int src_st
             accum_inner_d_lo = accum_inner_d_hi = _mm256_setzero_si256();
 
         for (int j = left; j < right_mod_8; j += 8) {
-            __m256i h =
+            __m256i vh =
                 _mm256_cvtepu16_epi32(_mm_abs_epi16(_mm_loadu_si128((__m128i *)(src_h + j))));
-            __m256i v =
+            __m256i vv =
                 _mm256_cvtepu16_epi32(_mm_abs_epi16(_mm_loadu_si128((__m128i *)(src_v + j))));
-            __m256i d =
+            __m256i vd =
                 _mm256_cvtepu16_epi32(_mm_abs_epi16(_mm_loadu_si128((__m128i *)(src_d + j))));
 
-            __m256i h_sq = _mm256_mullo_epi32(h, h);
-            __m256i h_cu_lo = _mm256_mul_epu32(h_sq, h);
+            __m256i h_sq = _mm256_mullo_epi32(vh, vh);
+            __m256i h_cu_lo = _mm256_mul_epu32(h_sq, vh);
             __m256i h_cu_hi =
-                _mm256_mul_epu32(_mm256_srli_epi64(h_sq, 32), _mm256_srli_epi64(h, 32));
+                _mm256_mul_epu32(_mm256_srli_epi64(h_sq, 32), _mm256_srli_epi64(vh, 32));
             accum_inner_h_lo = _mm256_add_epi64(accum_inner_h_lo, h_cu_lo);
             accum_inner_h_hi = _mm256_add_epi64(accum_inner_h_hi, h_cu_hi);
 
-            __m256i v_sq = _mm256_mullo_epi32(v, v);
-            __m256i v_cu_lo = _mm256_mul_epu32(v_sq, v);
+            __m256i v_sq = _mm256_mullo_epi32(vv, vv);
+            __m256i v_cu_lo = _mm256_mul_epu32(v_sq, vv);
             __m256i v_cu_hi =
-                _mm256_mul_epu32(_mm256_srli_epi64(v_sq, 32), _mm256_srli_epi64(v, 32));
+                _mm256_mul_epu32(_mm256_srli_epi64(v_sq, 32), _mm256_srli_epi64(vv, 32));
             accum_inner_v_lo = _mm256_add_epi64(accum_inner_v_lo, v_cu_lo);
             accum_inner_v_hi = _mm256_add_epi64(accum_inner_v_hi, v_cu_hi);
 
-            __m256i d_sq = _mm256_mullo_epi32(d, d);
-            __m256i d_cu_lo = _mm256_mul_epu32(d_sq, d);
+            __m256i d_sq = _mm256_mullo_epi32(vd, vd);
+            __m256i d_cu_lo = _mm256_mul_epu32(d_sq, vd);
             __m256i d_cu_hi =
-                _mm256_mul_epu32(_mm256_srli_epi64(d_sq, 32), _mm256_srli_epi64(d, 32));
+                _mm256_mul_epu32(_mm256_srli_epi64(d_sq, 32), _mm256_srli_epi64(vd, 32));
             accum_inner_d_lo = _mm256_add_epi64(accum_inner_d_lo, d_cu_lo);
             accum_inner_d_hi = _mm256_add_epi64(accum_inner_d_hi, d_cu_hi);
         }
@@ -4213,15 +4213,15 @@ float adm_csf_den_scale_avx2(const adm_dwt_band_t *src, int w, int h, int src_st
         uint64_t d_r1 = (uint64_t)_mm_extract_epi64(d_r2, 0) + (uint64_t)_mm_extract_epi64(d_r2, 1);
 
         for (int j = right_mod_8; j < right; ++j) {
-            uint16_t h = (uint16_t)abs(src_h[j]);
-            uint16_t v = (uint16_t)abs(src_v[j]);
-            uint16_t d = (uint16_t)abs(src_d[j]);
+            uint16_t h_abs = (uint16_t)abs(src_h[j]);
+            uint16_t v_abs = (uint16_t)abs(src_v[j]);
+            uint16_t d_abs = (uint16_t)abs(src_d[j]);
 
-            uint64_t val = ((uint64_t)h * h) * h;
+            uint64_t val = ((uint64_t)h_abs * h_abs) * h_abs;
             accum_inner_h += val;
-            val = ((uint64_t)v * v) * v;
+            val = ((uint64_t)v_abs * v_abs) * v_abs;
             accum_inner_v += val;
-            val = ((uint64_t)d * d) * d;
+            val = ((uint64_t)d_abs * d_abs) * d_abs;
             accum_inner_d += val;
         }
 
@@ -4723,34 +4723,34 @@ float adm_csf_den_s123_avx2(const i4_adm_dwt_band_t *src, int scale, int w, int 
         __m256i accum_inner_d_256;
         accum_inner_h_256 = accum_inner_v_256 = accum_inner_d_256 = _mm256_setzero_si256();
         for (int j = left; j < right_mod_4; j += 4) {
-            __m256i h =
+            __m256i vh =
                 _mm256_cvtepu32_epi64(_mm_abs_epi32(_mm_loadu_si128((__m128i *)(src_h + j))));
-            __m256i v =
+            __m256i vv =
                 _mm256_cvtepu32_epi64(_mm_abs_epi32(_mm_loadu_si128((__m128i *)(src_v + j))));
-            __m256i d =
+            __m256i vd =
                 _mm256_cvtepu32_epi64(_mm_abs_epi32(_mm_loadu_si128((__m128i *)(src_d + j))));
 
-            __m256i h_sq = _mm256_add_epi64(_mm256_mul_epu32(h, h),
+            __m256i h_sq = _mm256_add_epi64(_mm256_mul_epu32(vh, vh),
                                             _mm256_set1_epi64x(add_shift_sq[scale - 1]));
             h_sq = _mm256_srli_epi64(h_sq, shift_sq[scale - 1]);
             __m256i h_cu =
-                _mm256_add_epi64(_mm256_mul_epu32(h_sq, h), _mm256_set1_epi64x(add_shift_cub));
+                _mm256_add_epi64(_mm256_mul_epu32(h_sq, vh), _mm256_set1_epi64x(add_shift_cub));
             h_cu = _mm256_srli_epi64(h_cu, shift_cub);
             accum_inner_h_256 = _mm256_add_epi64(accum_inner_h_256, h_cu);
 
-            __m256i v_sq = _mm256_add_epi64(_mm256_mul_epu32(v, v),
+            __m256i v_sq = _mm256_add_epi64(_mm256_mul_epu32(vv, vv),
                                             _mm256_set1_epi64x(add_shift_sq[scale - 1]));
             v_sq = _mm256_srli_epi64(v_sq, shift_sq[scale - 1]);
             __m256i v_cu =
-                _mm256_add_epi64(_mm256_mul_epu32(v_sq, v), _mm256_set1_epi64x(add_shift_cub));
+                _mm256_add_epi64(_mm256_mul_epu32(v_sq, vv), _mm256_set1_epi64x(add_shift_cub));
             v_cu = _mm256_srli_epi64(v_cu, shift_cub);
             accum_inner_v_256 = _mm256_add_epi64(accum_inner_v_256, v_cu);
 
-            __m256i d_sq = _mm256_add_epi64(_mm256_mul_epu32(d, d),
+            __m256i d_sq = _mm256_add_epi64(_mm256_mul_epu32(vd, vd),
                                             _mm256_set1_epi64x(add_shift_sq[scale - 1]));
             d_sq = _mm256_srli_epi64(d_sq, shift_sq[scale - 1]);
             __m256i d_cu =
-                _mm256_add_epi64(_mm256_mul_epu32(d_sq, d), _mm256_set1_epi64x(add_shift_cub));
+                _mm256_add_epi64(_mm256_mul_epu32(d_sq, vd), _mm256_set1_epi64x(add_shift_cub));
             d_cu = _mm256_srli_epi64(d_cu, shift_cub);
             accum_inner_d_256 = _mm256_add_epi64(accum_inner_d_256, d_cu);
         }
@@ -4767,23 +4767,26 @@ float adm_csf_den_s123_avx2(const i4_adm_dwt_band_t *src, int scale, int w, int 
         uint64_t v_r1 = (uint64_t)_mm_extract_epi64(v_r2, 0) + (uint64_t)_mm_extract_epi64(v_r2, 1);
 
         for (int j = right_mod_4; j < right; ++j) {
-            uint32_t h = (uint32_t)abs(src_h[j]);
-            uint32_t v = (uint32_t)abs(src_v[j]);
-            uint32_t d = (uint32_t)abs(src_d[j]);
+            uint32_t h_abs = (uint32_t)abs(src_h[j]);
+            uint32_t v_abs = (uint32_t)abs(src_v[j]);
+            uint32_t d_abs = (uint32_t)abs(src_d[j]);
 
             uint64_t val =
-                ((((((uint64_t)h * h) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) * h) +
+                ((((((uint64_t)h_abs * h_abs) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) *
+                  h_abs) +
                  add_shift_cub) >>
                 shift_cub;
 
             accum_inner_h += val;
 
-            val = ((((((uint64_t)v * v) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) * v) +
+            val = ((((((uint64_t)v_abs * v_abs) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) *
+                    v_abs) +
                    add_shift_cub) >>
                   shift_cub;
             accum_inner_v += val;
 
-            val = ((((((uint64_t)d * d) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) * d) +
+            val = ((((((uint64_t)d_abs * d_abs) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) *
+                    d_abs) +
                    add_shift_cub) >>
                   shift_cub;
             accum_inner_d += val;

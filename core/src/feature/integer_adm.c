@@ -1477,15 +1477,15 @@ static float adm_csf_den_scale(const adm_dwt_band_t *src, int w, int h, int src_
         uint64_t accum_inner_v = 0;
         uint64_t accum_inner_d = 0;
         for (int j = left; j < right; ++j) {
-            uint16_t h = (uint16_t)abs(src_h[j]);
-            uint16_t v = (uint16_t)abs(src_v[j]);
-            uint16_t d = (uint16_t)abs(src_d[j]);
+            uint16_t h_abs = (uint16_t)abs(src_h[j]);
+            uint16_t v_abs = (uint16_t)abs(src_v[j]);
+            uint16_t d_abs = (uint16_t)abs(src_d[j]);
 
-            uint64_t val = ((uint64_t)h * h) * h;
+            uint64_t val = ((uint64_t)h_abs * h_abs) * h_abs;
             accum_inner_h += val;
-            val = ((uint64_t)v * v) * v;
+            val = ((uint64_t)v_abs * v_abs) * v_abs;
             accum_inner_v += val;
-            val = ((uint64_t)d * d) * d;
+            val = ((uint64_t)d_abs * d_abs) * d_abs;
             accum_inner_d += val;
         }
         /**
@@ -1584,23 +1584,26 @@ static float adm_csf_den_s123(const i4_adm_dwt_band_t *src, int scale, int w, in
         uint64_t accum_inner_v = 0;
         uint64_t accum_inner_d = 0;
         for (int j = left; j < right; ++j) {
-            uint32_t h = (uint32_t)abs(src_h[j]);
-            uint32_t v = (uint32_t)abs(src_v[j]);
-            uint32_t d = (uint32_t)abs(src_d[j]);
+            uint32_t h_abs = (uint32_t)abs(src_h[j]);
+            uint32_t v_abs = (uint32_t)abs(src_v[j]);
+            uint32_t d_abs = (uint32_t)abs(src_d[j]);
 
             uint64_t val =
-                ((((((uint64_t)h * h) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) * h) +
+                ((((((uint64_t)h_abs * h_abs) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) *
+                  h_abs) +
                  add_shift_cub) >>
                 shift_cub;
 
             accum_inner_h += val;
 
-            val = ((((((uint64_t)v * v) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) * v) +
+            val = ((((((uint64_t)v_abs * v_abs) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) *
+                    v_abs) +
                    add_shift_cub) >>
                   shift_cub;
             accum_inner_v += val;
 
-            val = ((((((uint64_t)d * d) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) * d) +
+            val = ((((((uint64_t)d_abs * d_abs) + add_shift_sq[scale - 1]) >> shift_sq[scale - 1]) *
+                    d_abs) +
                    add_shift_cub) >>
                   shift_cub;
             accum_inner_d += val;

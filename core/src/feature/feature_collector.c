@@ -202,11 +202,11 @@ static int feature_vector_append(FeatureVector *feature_vector, unsigned index, 
     while (index >= feature_vector->capacity) {
         assert(feature_vector->capacity > 0);
         const size_t initial_size = sizeof(feature_vector->score[0]) * feature_vector->capacity;
-        void *score = realloc(feature_vector->score, initial_size * 2);
-        if (!score)
+        void *new_buf = realloc(feature_vector->score, initial_size * 2);
+        if (!new_buf)
             return -ENOMEM;
-        memset((char *)score + initial_size, 0, initial_size);
-        feature_vector->score = score;
+        memset((char *)new_buf + initial_size, 0, initial_size);
+        feature_vector->score = new_buf;
         feature_vector->capacity *= 2;
     }
 
