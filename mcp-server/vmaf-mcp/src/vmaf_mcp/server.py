@@ -1232,6 +1232,15 @@ def _describe_model(name_or_path: str) -> dict[str, Any]:
         candidate = repo / candidate
     candidate = candidate.resolve()
     if candidate.is_file() and candidate.suffix.lower() in _MODEL_EXTENSIONS:
+        # Explicit allowlist guard — mirrors _validate_path() to make the
+        # security invariant unconditional rather than relying on the model/
+        # directory being under an allowlisted root by construction.
+        allowed = _allowed_roots()
+        if not any(candidate.is_relative_to(r) for r in allowed):
+            raise ValueError(
+                f"model path {candidate} not under an allowlisted root; "
+                "set VMAF_MCP_ALLOW to extend."
+            )
         return _describe_model_file(candidate, repo)
 
     # --- Step 2: search by filename match (full name, no extension) ---

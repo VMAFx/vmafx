@@ -433,7 +433,7 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
     inside ``request.json()``).
     """
     aiohttp = _require_aiohttp()
-    from vmaf_mcp.server import ScoreRequest, _run_vmaf_score, _validate_path
+    from vmaf_mcp.server import ScoreRequest, _dumps_strict, _run_vmaf_score, _validate_path
 
     request_id = str(uuid.uuid4())[:8]
     t0 = time.monotonic()
@@ -554,10 +554,13 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
     _log_with_rid(logging.INFO, f"POST /v1/score done in {elapsed:.0f}ms", request_id)
     metrics["scoring_requests_total"].labels(endpoint="/v1/score", status="200").inc()
     result["request_id"] = request_id
+    # Use _dumps_strict (NaN/Infinity → null) to produce RFC 8259-compliant
+    # JSON; bare json.dumps() with allow_nan=True emits bare NaN/Infinity
+    # tokens which are not valid JSON per RFC 8259.
     return aiohttp.web.Response(
         status=200,
         content_type="application/json",
-        text=json.dumps(result),
+        text=_dumps_strict(result),
     )
 
 
