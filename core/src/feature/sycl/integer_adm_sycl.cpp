@@ -1196,7 +1196,7 @@ static sycl::event launch_csf_den_cm_3band(
 /* ------------------------------------------------------------------ */
 
 static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float noise_weight,
-                            float *result)
+                            double *result)
 {
     int const left = (int)(w * ADM_BORDER_FACTOR - 0.5);
     int const top = (int)(h * ADM_BORDER_FACTOR - 0.5);
@@ -1205,33 +1205,39 @@ static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale, float
 
     const uint32_t shift_inner_accum = (uint32_t)std::ceil(std::log2(h));
 
-    float const powf_add =
-        powf((float)((bottom - top) * (right - left)) * noise_weight, 1.0f / 3.0f);
+    /* Promote powf_add to double to avoid fp32 precision loss on Arc A380
+     * (no native fp64 device, but this function is host-side — no device impact). */
+    double const powf_add =
+        std::pow((double)((bottom - top) * (right - left)) * (double)noise_weight, 1.0 / 3.0);
 
     *result = 0;
     for (int i = 0; i < 3; i++) {
-        float f_accum;
+        /* Promote f_accum to double: on fp32-only devices the per-scale
+         * normalization intermediate is computed host-side and fed directly into
+         * SVM; fp32 rounding here amplifies to >5e-5 final-score error (iter10
+         * cross-backend-parity finding). */
+        double f_accum;
         if (scale == 0) {
             // CPU uses w (full band width) for shift_xcub, not active_w
             const uint32_t shift_xcub[3] = {(uint32_t)(std::ceil(std::log2((double)w)) - 4),
                                             (uint32_t)(std::ceil(std::log2((double)w)) - 4),
                                             (uint32_t)(std::ceil(std::log2((double)w)) - 3)};
             int const constant_offset[3] = {52, 52, 57};
-            f_accum = (float)(accum[i] / std::pow(2.0, constant_offset[i] - shift_xcub[i] -
-                                                           shift_inner_accum));
+            f_accum =
+                accum[i] / std::pow(2.0, constant_offset[i] - shift_xcub[i] - shift_inner_accum);
         } else {
             // CPU uses w (full band width) for shift_cub, not active_w
             uint32_t const shift_cub = (uint32_t)std::ceil(std::log2((double)w));
-            float final_shift[3] = {powf(2.0f, 45.0f - shift_cub - shift_inner_accum),
-                                    powf(2.0f, 39.0f - shift_cub - shift_inner_accum),
-                                    powf(2.0f, 36.0f - shift_cub - shift_inner_accum)};
-            f_accum = (float)(accum[i] / final_shift[scale - 1]);
+            double final_shift[3] = {std::pow(2.0, 45.0 - shift_cub - shift_inner_accum),
+                                     std::pow(2.0, 39.0 - shift_cub - shift_inner_accum),
+                                     std::pow(2.0, 36.0 - shift_cub - shift_inner_accum)};
+            f_accum = (double)accum[i] / final_shift[scale - 1];
         }
-        *result += powf(f_accum, 1.0f / 3.0f) + powf_add;
+        *result += std::pow(f_accum, 1.0 / 3.0) + powf_add;
     }
 }
 
-static void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale, float *result,
+static void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale, double *result,
                                  float view_dist, float display_h, float adm_csf_scale,
                                  float adm_csf_diag_scale, float noise_weight)
 {
@@ -1574,8 +1580,11 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         score_w = (score_w + 1) / 2;
         score_h = (score_h + 1) / 2;
 
-        float num_scale;
-        float den_scale;
+        /* Promote to double — fp32 rounding in per-scale normalization amplifies
+         * to >5e-5 final-score error on devices without native fp64 (Arc A380).
+         * Both conclude_* functions are host-side; no device-kernel impact. */
+        double num_scale;
+        double den_scale;
         conclude_adm_cm(cm_results[scale], score_h, score_w, scale, (float)s->adm_noise_weight,
                         &num_scale);
         conclude_adm_csf_den((uint64_t *)csf_den_results[scale], score_h, score_w, scale,
