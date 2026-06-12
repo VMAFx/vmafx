@@ -424,7 +424,7 @@ __global__ void float_adm_csf_cm(const float *ref_band, const float *dis_band, c
         local_cm_sum += xa * xa * xa;
     }
 
-    /* Warp + cross-warp reduction. FADM_WARPS_PER_BLOCK = 4 (64-lane warps). */
+    /* Warp + cross-warp reduction. FADM_WARPS_PER_BLOCK = 8 (wave32 worst case). */
     __shared__ float s_csf[FADM_WARPS_PER_BLOCK];
     __shared__ float s_cm[FADM_WARPS_PER_BLOCK];
     const float wn_csf = fadm_warp_reduce(local_csf_sum);

@@ -527,6 +527,13 @@ sycl::event launch_blur(sycl::queue &q, const float *in_buf, float *out_buf, uns
 
                            float prev1_0 = 0.f, prev1_1 = 0.f, prev1_2 = 0.f;
                            float prev2_0 = 0.f, prev2_1 = 0.f, prev2_2 = 0.f;
+                           /* Kahan (compensated) summation for the IIR recurrence state.
+                            * The 3-pole recursive IIR accumulates O(eps) rounding error per
+                            * step; over tall frames (e.g. 4K height) this can exceed the
+                            * 5e-5 cross-backend parity contract vs the CPU reference.
+                            * Tracking one float compensation term per pole bounds the
+                            * per-iteration round-off to O(eps^2) with no fp64 (ADR-0220). */
+                           float comp_0 = 0.f, comp_1 = 0.f, comp_2 = 0.f;
 
                            const int xsize = (PASS == 0) ? (int)e_w : (int)e_h;
                            /* base addresses depend on pass */
@@ -557,19 +564,31 @@ sycl::event launch_blur(sycl::queue &q, const float *in_buf, float *out_buf, uns
 
                                /* Bit-identical CPU expression order. The icpx
                      * -fp-model=precise flag (set in
-                     * libvmaf/src/meson.build) blocks contraction. */
+                     * libvmaf/src/meson.build) blocks contraction.
+                     *
+                     * Kahan-corrected IIR state update: y_k subtracts the
+                     * existing compensation from the raw recurrence output so
+                     * the round-off that fell below the floating-point
+                     * resolution of prev1_k is fed back next iteration.
+                     * fp64-free (ADR-0220). */
                                const float ns0 = c_n2_0 * sum;
                                const float dp0 = c_d1_0 * prev1_0;
                                const float t0 = ns0 - dp0;
-                               const float o0 = t0 - prev2_0;
+                               const float y0 = (t0 - prev2_0) - comp_0;
+                               const float o0 = prev1_0 + y0;
+                               comp_0 = (o0 - prev1_0) - y0;
                                const float ns1 = c_n2_1 * sum;
                                const float dp1 = c_d1_1 * prev1_1;
                                const float t1 = ns1 - dp1;
-                               const float o1 = t1 - prev2_1;
+                               const float y1 = (t1 - prev2_1) - comp_1;
+                               const float o1 = prev1_1 + y1;
+                               comp_1 = (o1 - prev1_1) - y1;
                                const float ns2 = c_n2_2 * sum;
                                const float dp2 = c_d1_2 * prev1_2;
                                const float t2 = ns2 - dp2;
-                               const float o2 = t2 - prev2_2;
+                               const float y2 = (t2 - prev2_2) - comp_2;
+                               const float o2 = prev1_2 + y2;
+                               comp_2 = (o2 - prev1_2) - y2;
                                prev2_0 = prev1_0;
                                prev2_1 = prev1_1;
                                prev2_2 = prev1_2;
