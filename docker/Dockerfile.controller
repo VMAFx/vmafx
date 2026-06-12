@@ -4,7 +4,7 @@
 # docker/Dockerfile.controller — multi-stage build for the vmafx-controller Go binary.
 #
 # Stages:
-#   go-builder  : compiles cmd/vmafx-controller using golang:1.23-bookworm
+#   go-builder  : compiles cmd/vmafx-controller using golang:1.26-bookworm@sha256:5f68ec6805843bd3981a951ffada82a26a0bd2631045c8f7dba483fa868f5ec5
 #   vmaf-builder: compiles libvmaf + vmaf CLI (mirrors docker/Dockerfile.production)
 #   controller  : distroless runtime carrying both the Go binary and libvmaf.so
 #
@@ -33,7 +33,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — go-builder: compile the controller binary
 # ---------------------------------------------------------------------------
-FROM golang:1.23-bookworm@sha256:167053a2bb901972bf2c1611f8f52c44d5fe7e762e5cab213708d82c421614db AS go-builder
+FROM golang:1.26-bookworm@sha256:5f68ec6805843bd3981a951ffada82a26a0bd2631045c8f7dba483fa868f5ec5 AS go-builder
 
 ARG CGO_ENABLED=1
 ARG DEBIAN_FRONTEND=noninteractive

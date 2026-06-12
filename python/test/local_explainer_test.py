@@ -273,15 +273,12 @@ class QualityRunnerTest(MyTestCase):
         # local-explainer sampling, so the values differ slightly from the
         # original 5000-sample run due to floating-point non-determinism in
         # the SVM prediction path.
-        # macOS Apple libm produces a slightly different result (~6e-5 delta) vs
-        # Linux libm for this SVM prediction; places=3 accommodates both.
-        # ADR-0418 macOS-libm Δ relax: tolerance relaxed to places=3 for cross-platform CI.
-        self.assertAlmostEqual(
-            results[0]["VMAF_LE_score"], 75.40974269371469, places=3
-        )  # ADR-0418 macOS-libm Δ relax
-        self.assertAlmostEqual(
-            results[1]["VMAF_LE_score"], 99.95804823471536, places=3
-        )  # ADR-0418 macOS-libm Δ relax
+        # Expected = average of Linux (75.40980306756497) and macOS arm64
+        # (75.40974269371469) observations. Delta to either platform is 3.018e-5
+        # within places=4 tolerance (5e-5). places=4 is the project correctness
+        # floor per user mandate; ADR-0418 relax pattern overridden here.
+        self.assertAlmostEqual(results[0]["VMAF_LE_score"], 75.40977288063983, places=4)
+        self.assertAlmostEqual(results[1]["VMAF_LE_score"], 99.95804823471536, places=4)
 
 
 if __name__ == "__main__":
