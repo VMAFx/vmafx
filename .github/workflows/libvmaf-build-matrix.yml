@@ -211,7 +211,7 @@ jobs:
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       # ---------- ccache persistence (Research-0089 §3.1) ----------
       # Linux + macOS build legs all wrap their host compiler in `ccache`
@@ -622,11 +622,11 @@ jobs:
       #
       # Action pinned to commit SHA (not just tag) per the fork's
       # `helpers:pinGitHubActionDigests` Renovate policy.
-      # SHA corresponds to mxschmitt/action-tmate v3 (2024-08-07).
+      # SHA corresponds to mxschmitt/action-tmate v3.24.
       # See docs/development/ci-tmate-debug.md for usage.
       - name: SSH debug session on test failure
         if: ${{ failure() && runner.os == 'macOS' && github.event_name == 'workflow_dispatch' }}
-        uses: mxschmitt/action-tmate@c0afd6f790e3a5564914980036ebf83216678101  # v3
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113  # v3.24
         with:
           limit-access-to-actor: true
           # Wait up to 30 min for the operator to connect; if nobody connects
@@ -765,7 +765,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           fetch-depth: 0
 
@@ -778,7 +778,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.msystem }}-0-
             ${{ runner.os }}-${{ matrix.msystem }}-
 
-      - uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c  # v2.31.1
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884  # v2.32.0
         with:
           msystem: ${{ matrix.msystem }}
           install: >-
@@ -879,7 +879,7 @@ jobs:
             meson_extra: --default-library=static -Denable_cuda=false -Denable_sycl=true
             name: Build — Windows MSVC + oneAPI SYCL (build only)
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           fetch-depth: 1
 

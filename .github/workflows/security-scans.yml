@@ -41,7 +41,7 @@ jobs:
       # banner on the repo Security tab.
       image: semgrep/semgrep:latest@sha256:9349edbadf90c3f3c0c3f55867625354e89680e6fa10d9034042af52fdb0e0d0
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       - name: Run semgrep (local rules — gate on ERRORs)
         run: |
           # Local .semgrep.yml only: our custom rules for VMAF-specific
@@ -78,13 +78,13 @@ jobs:
             --sarif --output=semgrep-registry.sarif || true
       - name: Upload local-rules SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
         with:
           sarif_file: semgrep-local.sarif
           category: semgrep-local
       - name: Upload registry-rules SARIF
         if: always() && hashFiles('semgrep-registry.sarif') != ''
-        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
         with:
           sarif_file: semgrep-registry.sarif
           category: semgrep-registry
@@ -101,8 +101,8 @@ jobs:
       contents: read
       security-events: write   # codeql-action/analyze uploads SARIF
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
         with:
           languages: cpp
           queries: security-and-quality
@@ -114,7 +114,7 @@ jobs:
           sudo apt-get install -y meson ninja-build nasm
           meson setup build -Denable_cuda=false -Denable_sycl=false
           meson compile -C build
-      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
         with:
           category: "/language:cpp"
 
@@ -127,13 +127,13 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
         with:
           languages: python
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
-      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
         with:
           category: "/language:python"
 
@@ -150,13 +150,13 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
         with:
           languages: actions
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
-      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
         with:
           category: "/language:actions"
 
@@ -169,7 +169,7 @@ jobs:
       contents: read
       security-events: write   # upload-sarif to Security tab
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           fetch-depth: 0
       # Run gitleaks CLI directly to avoid the GITLEAKS_LICENSE org-repo
@@ -195,7 +195,7 @@ jobs:
             --exit-code 1
       - name: Upload SARIF to Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
         with:
           sarif_file: gitleaks.sarif
           category: gitleaks
@@ -206,7 +206,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
         with:
           fail-on-severity: high
