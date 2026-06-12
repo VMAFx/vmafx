@@ -162,6 +162,20 @@ its own training surface):
   remove it and do not substitute a `PYTHONPATH=ai/scripts` prefix in CI
   step definitions — the pyproject config is the single source of truth.
 
+- **`importlib.util` callers must pre-register the module in `sys.modules`.**
+  Python 3.14 introduced a regression in `dataclasses._is_type()`
+  (CPython gh-129861): it calls `sys.modules.get(cls.__module__).__dict__`
+  which raises `AttributeError: 'NoneType' …` when the module is not yet
+  in `sys.modules` at `exec_module()` time. Any caller that loads an
+  `ai/scripts/` module via `importlib.util.spec_from_file_location` +
+  `module_from_spec()` + `exec_module()` **must** insert
+  `sys.modules[spec.name] = module` between `module_from_spec()` and
+  `exec_module()`. This invariant applies to all such loaders in the test
+  suite and any automation harness. `_script_bootstrap.py` itself avoids
+  the crash by not using `from __future__ import annotations` (which delays
+  annotation evaluation and can trigger the bug in dataclass field
+  resolution).
+
 - The `iter_pairs` filename regex is fork-specific. If upstream adds a
   loader with a different ladder convention, do NOT merge them — keep
   ours under `ai/data/` and theirs under whatever path they pick.

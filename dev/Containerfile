@@ -978,7 +978,7 @@ RUN python3.14 -m venv /opt/vmaf-venv \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir --upgrade pip \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir matplotlib \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/mcp-server/vmaf-mcp \
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/ai \
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/ai[dev]' \
     # Pin torchvision to the ABI-compatible wheel for torch 2.12.x.
     # Without this pin, pip may resolve torchvision 0.26.0 (built against
     # torch 2.11) which raises ``RuntimeError: operator torchvision::nms does

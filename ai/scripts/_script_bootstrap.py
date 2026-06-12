@@ -3,8 +3,6 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Shared direct-invocation bootstrap for ``ai/scripts`` modules."""
 
-from __future__ import annotations
-
 import sys
 from dataclasses import dataclass
 from pathlib import Path

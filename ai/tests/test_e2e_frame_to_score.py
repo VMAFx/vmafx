@@ -37,8 +37,10 @@ from vmaf_train.data.feature_dump import DEFAULT_FEATURES, Entry, dump_features 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # Honour VMAF_BIN so any worktree / CI run can point at a freshly-built binary.
 # Default follows the post-ADR-0700 rename: libvmaf/ → core/.
-VMAF_BIN = Path(os.environ.get("VMAF_BIN", "")) or (
-    REPO_ROOT / "core" / "build-cpu" / "tools" / "vmaf"
+# Use None as sentinel: Path('') == Path('.'), which would execute CWD as binary.
+_vmaf_bin_env = os.environ.get("VMAF_BIN")  # None when unset; VMAF_BIN='' means unset
+VMAF_BIN = (
+    Path(_vmaf_bin_env) if _vmaf_bin_env else (REPO_ROOT / "core" / "build-cpu" / "tools" / "vmaf")
 )
 # Honour VMAF_YUVDIR for worktrees where python/test/resource/ isn't checked out.
 YUV_DIR = Path(
