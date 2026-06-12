@@ -46,7 +46,7 @@ def persist(original_func):
         # SHA-1 used as a memoization cache key (not security). Input is
         # the function name + repr(args). See Research-0090, F4–F12.
         # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-        h = hashlib.sha1(str(original_func.__name__) + str(args)).hexdigest()
+        h = hashlib.sha1((str(original_func.__name__) + str(args)).encode()).hexdigest()
         if h not in cache:
             cache[h] = original_func(*args)
         return cache[h]
@@ -76,18 +76,20 @@ class memoized(object):
         self.cache = {}
 
     def __call__(self, *args):
-        if not isinstance(args, Hashable):
+        try:
+            if args in self.cache:
+                return self.cache[args]
+        except TypeError:
+            # args contains an unhashable element (e.g. a list); skip the cache
+            # and call through directly on every invocation.
             return self.func(*args)
-        if args in self.cache:
-            return self.cache[args]
-        else:
-            value = self.func(*args)
-            self.cache[args] = value
-            return value
+        value = self.func(*args)
+        self.cache[args] = value
+        return value
 
     def __repr__(self):
-        """Return the function's docstring."""
-        return self.func.__doc__
+        """Return the function's docstring, or an empty string if none."""
+        return self.func.__doc__ or ""
 
     def __get__(self, obj, objtype):
         """Support instance methods."""
@@ -114,7 +116,7 @@ def persist_to_file(file_name):
             # SHA-1 used as a memoization cache key (not security). Input is
             # the function name + repr(args). See Research-0090, F4–F12.
             # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            h = hashlib.sha1(str(original_func.__name__) + str(args)).hexdigest()
+            h = hashlib.sha1((str(original_func.__name__) + str(args)).encode()).hexdigest()
             if h not in cache:
                 cache[h] = original_func(*args)
                 file_dir = os.path.dirname(file_name)
@@ -139,7 +141,7 @@ def persist_to_dir(dir_name):
             # SHA-1 used as a memoization cache key (not security). Input is
             # the function name + repr(args). See Research-0090, F4–F12.
             # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
-            h = hashlib.sha1(str(original_func.__name__) + str(args)).hexdigest()
+            h = hashlib.sha1((str(original_func.__name__) + str(args)).encode()).hexdigest()
             file_name = os.path.join(dir_name, h)
             if not os.path.exists(file_name):
                 os.makedirs(dir_name, exist_ok=True)

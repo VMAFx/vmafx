@@ -43,8 +43,10 @@
 
 //! # vmafx — safe Rust bindings to libvmaf
 //!
+//! Query the libvmaf version and open a context with custom settings:
+//!
 //! ```no_run
-//! use vmafx::{Context, Model, Picture, PoolingMethod};
+//! use vmafx::{ContextBuilder, LogLevel};
 //!
 //! # fn main() -> vmafx::Result<()> {
 //! // Declare `model` before `ctx` so that drop order is ctx → model
@@ -66,6 +68,10 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! For a full scoring loop (model load → picture push → score readout) see the
+//! integration tests in `bindings/rust/vmafx/tests/` and the C-level example in
+//! `docs/api/rust-bindings.md`.
 
 mod context;
 mod error;
@@ -87,4 +93,122 @@ pub use score::{PoolingMethod, Score};
 pub fn version() -> &'static str {
     // Delegates to the safe wrapper already shipped in vmafx-sys.
     vmafx_sys::safe::version()
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod lib_tests {
+    use super::*;
+
+    // ---- Error Display + source (exercise paths not covered in error::tests) ----
+
+    #[test]
+    fn error_display_all_variants_exhaustive() {
+        use std::ffi::CString;
+        let nul = CString::new("ab\0cd").unwrap_err();
+        let cases: Vec<Box<dyn std::fmt::Display>> = vec![
+            Box::new(Error::OutOfMemory),
+            Box::new(Error::InvalidArgument),
+            Box::new(Error::NotSupported),
+            Box::new(Error::PermissionDenied),
+            Box::new(Error::NotFound),
+            Box::new(Error::Libvmaf { code: -42 }),
+            Box::new(Error::Nul(nul)),
+            Box::new(Error::InvalidState("test state")),
+            Box::new(Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "io"))),
+        ];
+        for case in &cases {
+            let s = format!("{case}");
+            assert!(!s.is_empty(), "Display impl must not return empty string");
+        }
+    }
+
+    #[test]
+    fn error_source_nul_and_io_have_source() {
+        use std::error::Error as StdError;
+        use std::ffi::CString;
+
+        let nul = CString::new("ab\0cd").unwrap_err();
+        let e_nul = Error::Nul(nul);
+        assert!(e_nul.source().is_some(), "Nul error should have a source");
+
+        let e_io = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "io error"));
+        assert!(e_io.source().is_some(), "Io error should have a source");
+
+        // Other variants have no source.
+        assert!(Error::OutOfMemory.source().is_none());
+        assert!(Error::NotSupported.source().is_none());
+        assert!(Error::InvalidState("s").source().is_none());
+    }
+
+    #[test]
+    fn error_from_nul_conversion() {
+        use std::ffi::CString;
+        let nul = CString::new("ab\0cd").unwrap_err();
+        let e: Error = nul.into();
+        assert!(matches!(e, Error::Nul(_)));
+    }
+
+    #[test]
+    fn error_from_io_conversion() {
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+        let e: Error = io.into();
+        assert!(matches!(e, Error::Io(_)));
+    }
+
+    #[test]
+    fn error_not_supported_enosys_and_enotsup() {
+        // ENOSYS (38) and ENOTSUP/EOPNOTSUPP (95) both map to NotSupported.
+        assert!(matches!(
+            Error::from_libvmaf_rc(-38).unwrap_err(),
+            Error::NotSupported
+        ));
+        assert!(matches!(
+            Error::from_libvmaf_rc(-95).unwrap_err(),
+            Error::NotSupported
+        ));
+    }
+
+    #[test]
+    fn error_permission_denied() {
+        assert!(matches!(
+            Error::from_libvmaf_rc(-13).unwrap_err(),
+            Error::PermissionDenied
+        ));
+    }
+
+    // ---- LogLevel ----
+
+    #[test]
+    fn log_level_all_variants_debug_format() {
+        let variants = [
+            LogLevel::None,
+            LogLevel::Error,
+            LogLevel::Warning,
+            LogLevel::Info,
+            LogLevel::Debug,
+        ];
+        for lv in &variants {
+            // Exercises Debug, Clone, Copy, PartialEq, Eq derived impls.
+            let cloned = *lv;
+            assert_eq!(cloned, *lv);
+            assert!(!format!("{lv:?}").is_empty());
+        }
+    }
+
+    // ---- Score ----
+
+    #[test]
+    fn score_struct_fields_accessible() {
+        let s = score::Score::new(7, 83.2);
+        assert_eq!(s.index, 7);
+        assert!((s.value - 83.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn score_clone_and_copy() {
+        let s = score::Score::new(0, 50.0);
+        let s2 = s; // Copy
+        assert_eq!(s, s2);
+    }
 }
