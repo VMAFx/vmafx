@@ -1,6 +1,13 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/docker-ffmpeg-tag-n811-pin — Docker FFMPEG_TAG n8.1 → n8.1.1 + patch 0016 context (2026-06-12)
+no rebase impact: `Dockerfile` and `Dockerfile.ffmpeg` pin changes are build-config
+only; patch 0016 context line fix is an ffmpeg-patches-internal correction with no
+effect on C API, ABI, or libvmaf source. Files touched: `Dockerfile`,
+`Dockerfile.ffmpeg`, `.pre-commit-config.yaml`,
+`ffmpeg-patches/0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch`.
+
 ## chore/codeql-cpp-cleanup-bundle — CodeQL C++ note-level cleanup (2026-06-12)
 no rebase impact: all changes are local variable renames, dead-code removals, and
 comment additions. Files touched: `adm_avx2.c`, `adm_avx512.c`, `integer_adm.c`,

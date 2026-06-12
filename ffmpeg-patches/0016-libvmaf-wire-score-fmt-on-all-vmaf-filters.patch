@@ -44,7 +44,7 @@ index 1bc430dcaa..b654eb7aae 100644
 +    char *score_fmt;
      /* ADR-0576: VmafConfiguration.cpumask / gpumask exposed as AVOptions.
       * cpumask bits selectively disable SIMD ISAs (SSE2/NEON=1, SSE3=2,
-      * SSE4.1=4, AVX2=8, AVX512=16, AVX512ICL=32).  gpumask bit 1 disables
+      * SSE4.1=4, AVX2=8, AVX512=16, AVX512ICL=32).  gpumask bit 0 (value 1)
 @@ -162,6 +169,7 @@ static const AVOption libvmaf_options[] = {
      {"metal_device", "Metal device index (-2 = disabled, -1 = system default, 0+ = MTLCopyAllDevices ordinal).", OFFSET(metal_device), AV_OPT_TYPE_INT, {.i64=-2}, -2, INT_MAX, FLAGS},
      {"cpumask",      "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).", OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},

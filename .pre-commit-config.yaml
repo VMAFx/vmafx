@@ -293,7 +293,7 @@ repos:
         # without an explicit file list, picking up .semgrepignore).
 
       - id: ffmpeg-patches-apply-check
-        name: ffmpeg-patches apply --check (n8.1)
+        name: ffmpeg-patches apply --check (n8.1.1)
         entry: scripts/ci/ffmpeg-patches-check.sh
         language: script
         files: '^ffmpeg-patches/.*\.patch$'
