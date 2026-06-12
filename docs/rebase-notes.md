@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## chore/codeql-cpp-cleanup-bundle — CodeQL C++ note-level cleanup (2026-06-12)
+no rebase impact: all changes are local variable renames, dead-code removals, and
+comment additions. Files touched: `adm_avx2.c`, `adm_avx512.c`, `integer_adm.c`,
+`feature_collector.c`, `feature_collector.cpp`, `feature_name.c`, `libvmaf.c`,
+`mkdirp.c`, `speed.c`, `vif_tools.c`, `pdjson.c`, `predict.c`, `svm.cpp`,
+`test_score_pooled_eagain.c`, `test_tensor_io.c`, `test_cambi.c`,
+`test_integer_adm_simd.c`, `test_svm_api.c`. No API or ABI changes; no semantic
+changes to score computation. If a concurrent branch modifies any of these files,
+resolve by keeping both sets of changes — variable renames are local and non-conflicting.
+
 ## chore/bundle-fable-5-findings — 4 Fable deep-hunt fixes (2026-06-12)
 `core/src/feature/x86/integer_ssim_avx2.c`: reorder `w*(s*s)` to `(w*s)*s` for the
 16-bit accumulation; only affects integer_ssim AVX2 16-bit path. No conflict risk on
