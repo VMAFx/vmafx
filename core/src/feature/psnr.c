@@ -48,7 +48,7 @@ int compute_psnr(const float *ref, const float *dis, int w, int h, int ref_strid
             noise_ += diff * diff;
         }
     }
-    noise_ /= (w * h);
+    noise_ /= ((double)w * h);
 
     double eps = 1e-10;
     *score = MIN(10 * log10(peak * peak / MAX(noise_, eps)), psnr_max);

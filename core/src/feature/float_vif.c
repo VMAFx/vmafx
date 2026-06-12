@@ -219,8 +219,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
     if (s->scaled_w < 9 || s->scaled_h < 9) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "float_vif requires scaled width >= 9 and height >= 9 (got %dx%d)\n", s->scaled_w,
-                 s->scaled_h);
+                 "float_vif requires scaled width >= 9 and height >= 9 (got %zux%zu)\n",
+                 s->scaled_w, s->scaled_h);
         return -EINVAL;
     }
     s->float_stride = ALIGN_CEIL(w * sizeof(float));

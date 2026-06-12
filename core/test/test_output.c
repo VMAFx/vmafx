@@ -100,6 +100,17 @@ static int make_temp_path(const char *prefix, char *out_buf, size_t out_buf_sz)
     if (fd < 0)
         return -1;
     (void)close(fd);
+    /* Canonicalize via realpath() so the path is no longer tainted by the
+     * TMPDIR environment variable (CodeQL cpp/path-injection).  mkstemp()
+     * already created the file atomically; realpath() resolves any symlinks
+     * and ensures the final path is absolute and normalised. */
+    char resolved[4096];
+    if (realpath(out_buf, resolved) == NULL)
+        return -1;
+    size_t rlen = strlen(resolved);
+    if (rlen + 1 > out_buf_sz)
+        return -1;
+    memcpy(out_buf, resolved, rlen + 1);
     return 0;
 #endif
 }

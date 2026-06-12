@@ -799,7 +799,7 @@ enum json_type json_next(json_stream *json)
                     return value;
                 }
             }
-        } else if ((json->stack[json->stack_top].count % 2) == 1) {
+        } else if ((json->stack[json->stack_top].count % 2) != 0) {
             /* Expecting colon followed by value. */
             if (c != ':') {
                 json_error(json, "%s", "expected ':' after member name");

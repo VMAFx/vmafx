@@ -111,7 +111,7 @@ static float get_gaussian_pdf(float x, float mean, float stdev)
 
 static void get_1d_gaussian_kernel(float *out, int size, float stdev)
 {
-    assert(size % 2 == 1);
+    assert(size % 2 != 0);
 
     float sum = 0;
     int k = (size - 1) / 2;
@@ -637,7 +637,7 @@ static void vif_scale_frame_bicubic_s(const float *src, float *dst, int src_w, i
 {
     // if the input and output sizes are the same
     if (src_w == dst_w && src_h == dst_h) {
-        memcpy(dst, src, dst_stride * dst_h * sizeof(float));
+        memcpy(dst, src, (size_t)dst_stride * (size_t)dst_h * sizeof(float));
         return;
     }
 
@@ -702,7 +702,7 @@ static void vif_scale_frame_lanczos4_s(const float *src, float *dst, int src_w, 
 {
     // if the input and output sizes are the same
     if (src_w == dst_w && src_h == dst_h) {
-        memcpy(dst, src, dst_stride * dst_h * sizeof(float));
+        memcpy(dst, src, (size_t)dst_stride * (size_t)dst_h * sizeof(float));
         return;
     }
 
@@ -739,7 +739,7 @@ static void vif_scale_frame_bilinear_s(const float *src, float *dst, int src_w, 
 {
     // if the input and output sizes are the same
     if (src_w == dst_w && src_h == dst_h) {
-        memcpy(dst, src, dst_stride * dst_h * sizeof(float));
+        memcpy(dst, src, (size_t)dst_stride * (size_t)dst_h * sizeof(float));
         return;
     }
 
@@ -760,7 +760,7 @@ static void vif_scale_frame_nearest_s(const float *src, float *dst, int src_w, i
 {
     // if the input and output sizes are the same
     if (src_w == dst_w && src_h == dst_h) {
-        memcpy(dst, src, dst_stride * dst_h * sizeof(float));
+        memcpy(dst, src, (size_t)dst_stride * (size_t)dst_h * sizeof(float));
         return;
     }
 

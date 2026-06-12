@@ -41,7 +41,7 @@ int compute_1st_moment(const float *pic, int w, int h, int stride, double *score
             cum += pic_;
         }
     }
-    cum /= (w * h);
+    cum /= ((double)w * h);
 
     *score = cum;
 
@@ -61,7 +61,7 @@ int compute_2nd_moment(const float *pic, int w, int h, int stride, double *score
             cum += pic_ * pic_;
         }
     }
-    cum /= (w * h);
+    cum /= ((double)w * h);
 
     *score = cum;
 

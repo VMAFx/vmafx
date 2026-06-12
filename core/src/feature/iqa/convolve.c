@@ -33,6 +33,7 @@
  * (06/10/2016) Updated by zli-nflx (zli@netflix.com) to optimize iqa_convolve.
  */
 
+#include <stddef.h>
 #include <stdlib.h>
 #include "convolve.h"
 #include "iqa_options.h"
@@ -128,7 +129,7 @@ static void iqa_convolve_horizontal_pass(const float *img, int w, const struct i
             int k_offset = 0;
             const int ky = y + vc;
             const int kx = x + uc;
-            const int img_offset = ky * w + kx;
+            const ptrdiff_t img_offset = (ptrdiff_t)ky * w + kx;
             for (int u = -uc; u <= uc - kw_even; ++u, ++k_offset) {
                 sum += img[img_offset + u] * k->kernel_h[k_offset];
             }
@@ -149,9 +150,9 @@ static void iqa_convolve_vertical_pass(const float *img_cache, int w, const stru
             int k_offset = 0;
             const int ky = y + vc;
             const int kx = x + uc;
-            const int img_offset = ky * w + kx;
+            const ptrdiff_t img_offset = (ptrdiff_t)ky * w + kx;
             for (int v = -vc; v <= vc - kh_even; ++v, ++k_offset) {
-                sum += img_cache[img_offset + v * w] * k->kernel_v[k_offset];
+                sum += img_cache[img_offset + (ptrdiff_t)v * w] * k->kernel_v[k_offset];
             }
             dst[y * dst_w + x] = (float)(sum * scale);
         }
@@ -288,7 +289,7 @@ float iqa_filter_pixel(const float *img, int w, int h, int x, int y, const struc
     double sum = 0.0;
     int k_offset = 0;
     for (int v = -vc; v <= vc - kh_even; ++v) {
-        const int img_offset = (y + v) * w + x;
+        const ptrdiff_t img_offset = (ptrdiff_t)(y + v) * w + x;
         for (int u = -uc; u <= uc - kw_even; ++u, ++k_offset) {
             if (!edge) {
                 sum += img[img_offset + u] * k->kernel[k_offset];

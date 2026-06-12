@@ -40,6 +40,7 @@
 #define isatty _isatty
 #define fileno _fileno
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -129,7 +130,16 @@ static void write_backend_error_json(const char *output_path, enum VmafOutputFor
     if (fmt != VMAF_OUTPUT_FORMAT_JSON)
         return;
 
+    /* Use open()+fdopen() with explicit 0644 mode so the created file is never
+     * world-writable regardless of the caller's umask (CodeQL cpp/world-writable-file-creation). */
+#ifdef _WIN32
     FILE *fp = fopen(output_path, "wb");
+#else
+    int raw_fd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    FILE *fp = (raw_fd >= 0) ? fdopen(raw_fd, "wb") : nullptr;
+    if (!fp && raw_fd >= 0)
+        (void)close(raw_fd);
+#endif
     if (!fp)
         return;
     /* Keep the JSON compact + single line — every consumer in the tree

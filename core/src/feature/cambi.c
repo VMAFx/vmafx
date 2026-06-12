@@ -729,7 +729,7 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         s->buffers.v_band_size = (uint16_t)v_band_size_signed;
     }
     s->buffers.c_values_histograms =
-        aligned_malloc(ALIGN_CEIL(alloc_w * s->buffers.v_band_size * sizeof(uint16_t)), 32);
+        aligned_malloc(ALIGN_CEIL((size_t)alloc_w * s->buffers.v_band_size * sizeof(uint16_t)), 32);
     if (!s->buffers.c_values_histograms)
         return -ENOMEM;
 
