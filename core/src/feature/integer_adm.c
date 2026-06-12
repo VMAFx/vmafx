@@ -3615,7 +3615,7 @@ static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
 
 // Registration struct consumed by libvmaf/src/feature/feature_extractor.c
 // (via the fex-registry table); must retain external linkage.
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_adm = {
     .name = "adm",
     .init = init,

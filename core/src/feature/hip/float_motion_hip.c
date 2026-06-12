@@ -591,7 +591,7 @@ static const char *provided_features[] = {"VMAF_feature_motion_score", "VMAF_fea
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_float_motion_cuda` in
  * `libvmaf/src/feature/cuda/float_motion_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_motion_hip = {
     .name = "float_motion_hip",
     .init = init_fex_hip,

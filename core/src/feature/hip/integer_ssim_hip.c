@@ -587,7 +587,7 @@ static const char *provided_features[] = {"ssim", NULL};
 
 /* Real integer_ssim HIP extractor (ADR-0564). Load-bearing: declared
  * via extern in feature_extractor.c. */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_ssim_hip = {
     .name = "integer_ssim_hip",
     .init = init_fex_hip,

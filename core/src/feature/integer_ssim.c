@@ -419,7 +419,7 @@ static const char *provided_features[] = {"ssim", NULL};
  * `float_ssim` name. The cross-TU reference from
  * `feature_extractor.c` is invisible to clang-tidy's per-TU
  * analysis, so the linkage check fires a false positive here. */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_ssim = {
     .name = "ssim",
     .init = init,

@@ -571,7 +571,7 @@ static const char *provided_features[] = {"psnr_hvs_y", "psnr_hvs_cb", "psnr_hvs
 /* Load-bearing: registered in feature_extractor.c's feature_extractor_list[].
  * Making this static would unlink the extractor from the registry. Same
  * pattern as every other HIP consumer (see integer_psnr_hip.c). */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr_hvs_hip = {
     .name = "psnr_hvs_hip",
     .init = init_fex_hip,

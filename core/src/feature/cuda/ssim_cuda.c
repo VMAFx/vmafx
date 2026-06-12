@@ -386,7 +386,7 @@ static const char *provided_features[] = {"ssim", NULL};
  * truncation matching the CPU's ring-buffer algorithm.
  * Named `integer_ssim_cuda` to distinguish it from the CPU `ssim`
  * and from `float_ssim_cuda` which uses floating-point Gaussian weights. */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_ssim_cuda = {
     .name = "integer_ssim_cuda",
     .init = init_fex_cuda,

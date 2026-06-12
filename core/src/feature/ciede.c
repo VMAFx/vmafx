@@ -489,8 +489,8 @@ static int close(VmafFeatureExtractor *fex)
 {
     CiedeState *s = fex->priv;
     if (s->ref.data[0] && s->dist.data[0]) {
-        vmaf_picture_unref(&s->ref);
-        vmaf_picture_unref(&s->dist);
+        (void)vmaf_picture_unref(&s->ref);
+        (void)vmaf_picture_unref(&s->dist);
     }
     for (int i = 0; i < 6; i++) {
         if (s->tmp[i])

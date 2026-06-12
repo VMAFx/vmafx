@@ -994,7 +994,7 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
 }
 
 /* NOLINTBEGIN(readability-non-const-parameter)
- * Stub signatures must match the real-ORT path declared in the header. */
+ * Stub signatures must match the real-ORT path declared in the header (ADR-0040). */
 int vmaf_ort_infer(VmafOrtSession *sess, const float *input, const int64_t *input_shape,
                    size_t input_rank, float *output, size_t output_capacity, size_t *output_written)
 {

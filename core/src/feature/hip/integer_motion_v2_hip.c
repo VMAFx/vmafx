@@ -457,7 +457,7 @@ static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_sc
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_integer_motion_v2_cuda` in
  * `libvmaf/src/feature/cuda/integer_motion_v2_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip = {
     .name = "motion_v2_hip",
     .init = init_fex_hip,

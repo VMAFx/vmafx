@@ -440,7 +440,7 @@ static const char *provided_features[] = {
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_float_moment_cuda` in
  * `libvmaf/src/feature/cuda/integer_moment_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_moment_hip = {
     .name = "float_moment_hip",
     .init = init_fex_hip,

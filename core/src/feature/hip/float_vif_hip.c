@@ -673,7 +673,7 @@ static const char *provided_features[] = {
  * feature_extractor_list[].  Making this static would unlink the
  * extractor from the registry — same rule as every other HIP consumer
  * (e.g. vmaf_fex_float_motion_hip). */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_vif_hip = {
     .name = "float_vif_hip",
     .init = init_fex_hip,

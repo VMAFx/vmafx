@@ -211,8 +211,7 @@ static int close(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"float_ssim", NULL};
 
-// extern-registered in feature_extractor.c registry
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_ssim = {
     .name = "float_ssim",
     .init = init,

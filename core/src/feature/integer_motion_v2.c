@@ -459,9 +459,9 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
             motion2 = score_cur;
         }
 
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "VMAF_integer_feature_motion2_v2_score", motion2,
-                                                i);
+        (void)vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      "VMAF_integer_feature_motion2_v2_score",
+                                                      motion2, i);
 
         /* motion3_v2_score: per-frame blend + clip + optional moving-average. */
         double motion3;
@@ -476,9 +476,9 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
             prev_processed = processed;
         }
 
-        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                "VMAF_integer_feature_motion3_v2_score", motion3,
-                                                i);
+        (void)vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      "VMAF_integer_feature_motion3_v2_score",
+                                                      motion3, i);
     }
 
     if (dict_locally_owned)
@@ -491,7 +491,7 @@ static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_sc
                                           "VMAF_integer_feature_motion2_v2_score",
                                           "VMAF_integer_feature_motion3_v2_score", NULL};
 
-// NOLINTNEXTLINE(misc-use-internal-linkage): extern symbol referenced by feature_extractor.c registry.
+// NOLINTNEXTLINE(misc-use-internal-linkage): extern symbol referenced by feature_extractor.c registry — cross-TU rebase invariant (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_motion_v2 = {
     .name = "motion_v2",
     .options = options,

@@ -1821,42 +1821,6 @@ static int threaded_enqueue_one(VmafContext *vmaf, VmafFeatureExtractor *fex,
     return err;
 }
 
-static int threaded_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
-                                  unsigned index)
-{
-    if (!vmaf)
-        return -EINVAL;
-    if (!ref)
-        return -EINVAL;
-    if (!dist)
-        return -EINVAL;
-
-    for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
-        VmafFeatureExtractor *fex = vmaf->registered_feature_extractors.fex_ctx[i]->fex;
-        if (fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
-            continue;
-        if (fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)
-            continue;
-        VmafDictionary *opts_dict = vmaf->registered_feature_extractors.fex_ctx[i]->opts_dict;
-
-        if ((vmaf->cfg.n_subsample > 1) && (index % vmaf->cfg.n_subsample) &&
-            !(fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)) {
-            continue;
-        }
-
-        int err = threaded_enqueue_one(vmaf, fex, opts_dict, ref, dist, index);
-        if (err)
-            return err;
-    }
-
-    if (vmaf->prev_ref.ref)
-        vmaf_picture_unref(&vmaf->prev_ref);
-    if (ref && ref->ref)
-        vmaf_picture_ref(&vmaf->prev_ref, ref);
-
-    return vmaf_picture_unref(ref) | vmaf_picture_unref(dist);
-}
-
 static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
                                         unsigned index)
 {

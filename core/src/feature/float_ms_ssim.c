@@ -280,7 +280,7 @@ static const char *provided_features[] = {
 };
 
 // extern-registered in feature_extractor.c registry
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_ms_ssim = {
     .name = "float_ms_ssim",
     .init = init,

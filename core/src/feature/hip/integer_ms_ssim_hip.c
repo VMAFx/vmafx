@@ -875,7 +875,7 @@ static const char *provided_features[] = {"float_ms_ssim", NULL};
  * extractor from the registry and fail every name lookup. Same
  * pattern every CUDA / HIP feature extractor uses (see e.g.
  * `vmaf_fex_float_ssim_hip` in float_ssim_hip.c). */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_ms_ssim_hip = {
     .name = "integer_ms_ssim_hip",
     .init = init_fex_hip,

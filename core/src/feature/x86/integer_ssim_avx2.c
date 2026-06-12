@@ -141,21 +141,6 @@ static void accumulate_pixel_16(int x, const uint16_t *src, const uint16_t *dst,
 }
 
 /*
- * Horizontal sum of 8 x int32 lanes in a __m256i to a scalar int32.
- * Used for the w-accumulator (kernel weight sum, same for all output pixels
- * in the interior, but we still compute per call for correctness).
- */
-static inline int32_t hsum_epi32(__m256i v)
-{
-    __m128i lo = _mm256_castsi256_si128(v);
-    __m128i hi = _mm256_extracti128_si256(v, 1);
-    __m128i s = _mm_add_epi32(lo, hi);
-    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, 0x4E));
-    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, 0xB1));
-    return _mm_cvtsi128_si32(s);
-}
-
-/*
  * Widen lower 4 int32 lanes of a 256i to 4 x int64 in a 256i.
  * (_mm256_cvtepi32_epi64 takes __m128i input.)
  */

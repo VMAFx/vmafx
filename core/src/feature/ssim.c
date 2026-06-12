@@ -103,7 +103,7 @@ static int ssim_decimate_pair(float *ref_f, float *cmp_f, int *w, int *h, int sc
 
 /* Cross-TU: declared in ssim.h, called from float_ssim.c. clang-tidy
  * misc-use-internal-linkage runs per-TU and can't see the header bridge. */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_stride, int cmp_stride,
                  double *score, double *l_score, double *c_score, double *s_score,
                  int scale_override)

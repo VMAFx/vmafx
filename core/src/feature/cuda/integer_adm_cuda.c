@@ -1297,18 +1297,6 @@ static CUdeviceptr init_res_aim_cm_cuda(struct VmafCudaState *cu_state, int64_t 
     return data_top;
 }
 
-static inline CUdeviceptr init_index_cuda(int32_t **index, CUdeviceptr data_top, size_t stride)
-{
-    index[0] = (int32_t *)data_top;
-    data_top += stride;
-    index[1] = (int32_t *)data_top;
-    data_top += stride;
-    index[2] = (int32_t *)data_top;
-    data_top += stride;
-    index[3] = (int32_t *)data_top;
-    data_top += stride;
-    return data_top;
-}
 // NOLINTEND(performance-no-int-to-ptr)
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,

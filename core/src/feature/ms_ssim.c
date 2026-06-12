@@ -293,8 +293,8 @@ static int ms_ssim_score_scales(float **ref_imgs, float **cmp_imgs, int w, int h
 
 /* Cross-TU: declared in ms_ssim.h, called from float_ms_ssim.c.
  * clang-tidy misc-use-internal-linkage runs per-TU and can't see the
- * header bridge. */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+ * header bridge. Suppression is a rebase-invariant per ADR-0278. */
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 int compute_ms_ssim(const float *ref, const float *cmp, int w, int h, int ref_stride,
                     int cmp_stride, double *score, double *l_scores, double *c_scores,
                     double *s_scores)

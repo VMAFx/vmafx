@@ -479,7 +479,7 @@ static const char *provided_features[] = {"psnr_y", "psnr_cb", "psnr_cr", NULL};
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_psnr_cuda` in
  * `libvmaf/src/feature/cuda/integer_psnr_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_psnr_hip = {
     .name = "psnr_hip",
     .init = init_fex_hip,

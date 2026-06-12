@@ -437,7 +437,7 @@ static const char *provided_features[] = {"float_psnr", NULL};
  * `feature_extractor_list[]` under `#if HAVE_HIP`. Making this static
  * would unlink the extractor from the registry. Same pattern as every
  * CUDA / SYCL / Vulkan extractor (see vmaf_fex_float_psnr_cuda). */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_psnr_hip = {
     .name = "float_psnr_hip",
     .init = init_fex_hip,

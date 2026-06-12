@@ -432,22 +432,6 @@ static int hip_rc(hipError_t rc)
     }
 }
 
-/* Helper: load one HSACO module and get one function. */
-static int load_module_fn(hipModule_t *mod, hipFunction_t *fn, const unsigned char *hsaco,
-                          const char *fn_name)
-{
-    hipError_t rc = hipModuleLoadData(mod, (const void *)hsaco);
-    if (rc != hipSuccess)
-        return hip_rc(rc);
-    rc = hipModuleGetFunction(fn, *mod, fn_name);
-    if (rc != hipSuccess) {
-        (void)hipModuleUnload(*mod);
-        *mod = NULL;
-        return hip_rc(rc);
-    }
-    return 0;
-}
-
 /* ------------------------------------------------------------------ */
 /* Device-dispatch helpers (mirror integer_adm_cuda.c functions)      */
 /* ------------------------------------------------------------------ */
@@ -1386,7 +1370,7 @@ static const char *provided_features[] = {"VMAF_integer_feature_adm2_score",
  * the registry. Same pattern as every other GPU feature extractor in this
  * tree (e.g. `vmaf_fex_integer_adm_cuda` in integer_adm_cuda.c).
  */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_adm_hip = {
     .name = "adm_hip",
     .init = init_fex_hip,

@@ -445,7 +445,7 @@ static const char *provided_features[] = {"ciede2000", NULL};
  * pattern every CUDA / SYCL / Vulkan feature extractor uses (see
  * e.g. `vmaf_fex_ciede_cuda` in
  * `libvmaf/src/feature/cuda/integer_ciede_cuda.c`). */
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_ciede_hip = {
     .name = "ciede_hip",
     .init = init_fex_hip,
