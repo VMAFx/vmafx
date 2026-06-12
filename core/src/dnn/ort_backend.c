@@ -11,6 +11,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,7 +33,6 @@
 
 struct VmafOrtSession {
     const OrtApi *api;
-    OrtEnv *env;
     OrtSession *session;
     OrtSessionOptions *opts;
     OrtAllocator *alloc;
@@ -229,6 +229,34 @@ static int try_append_coreml(struct VmafOrtSession *sess, const char *compute_un
     return try_append_ep_generic(sess, "CoreMLExecutionProvider", keys, values, nk);
 }
 
+/* Process-wide OrtEnv singleton (iter10 TSan fix).
+ *
+ * ORT's documentation states that OrtEnv is a process-wide resource that
+ * spawns internal background threads during CreateEnv.  Creating a fresh
+ * OrtEnv per session causes TSan data races inside ORT's thread-pool
+ * initialisation code.  The singleton is initialised exactly once via
+ * pthread_once and lives for the process lifetime — ORT's own recommended
+ * usage pattern.  It is intentionally never released (process exit cleans
+ * up ORT's internal state implicitly). */
+static OrtEnv *g_ort_env = NULL;
+static pthread_once_t g_ort_env_once = PTHREAD_ONCE_INIT;
+
+static void ort_env_init(void)
+{
+    const OrtApi *api = OrtGetApiBase()->GetApi(ORT_API_VERSION);
+    if (!api)
+        return;
+    OrtStatus *st = api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "libvmaf-dnn", &g_ort_env);
+    if (st != NULL) {
+        /* Best-effort: log and leave g_ort_env NULL; vmaf_ort_open will
+         * detect the NULL and return -ENOSYS. */
+        const char *msg = api->GetErrorMessage(st);
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "libvmaf dnn: OrtEnv singleton init failed: %s\n",
+                 (msg && msg[0] != '\0') ? msg : "(no message)");
+        api->ReleaseStatus(st);
+    }
+}
+
 static void ort_discard_status(const OrtApi *api, OrtStatus *st)
 {
     if (st != NULL)
@@ -276,7 +304,14 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
         return -ENOSYS;
     }
 
-    ORT_TRY(sess->api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "libvmaf-dnn", &sess->env));
+    /* Initialise the process-wide OrtEnv singleton on first call (iter10
+     * TSan fix): per-session CreateEnv races inside ORT's thread-pool. */
+    (void)pthread_once(&g_ort_env_once, ort_env_init);
+    if (!g_ort_env) {
+        free(sess);
+        return -ENOSYS;
+    }
+
     ORT_TRY(sess->api->CreateSessionOptions(&sess->opts));
 
     const int intra = (cfg && cfg->threads > 0) ? cfg->threads : 0;
@@ -402,7 +437,7 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
      * check vmaf_ort_attached_ep() — it now returns "CPU" after fallback.
      * See ADR-0113. */
     OrtStatus *create_st =
-        sess->api->CreateSession(sess->env, onnx_path, sess->opts, &sess->session);
+        sess->api->CreateSession(g_ort_env, onnx_path, sess->opts, &sess->session);
     if (create_st != NULL) {
         if (strcmp(sess->ep_name, "CPU") != 0) {
             /* Log the primary-EP failure at DEBUG level (hardware absent is expected in
@@ -426,7 +461,7 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
             }
             sess->ep_name = "CPU";
             OrtStatus *retry_st =
-                sess->api->CreateSession(sess->env, onnx_path, sess->opts, &sess->session);
+                sess->api->CreateSession(g_ort_env, onnx_path, sess->opts, &sess->session);
             if (retry_st != NULL) {
                 ort_log_and_release_status(sess->api, retry_st, "CreateSession (CPU fallback)");
                 vmaf_ort_close(sess);
@@ -784,8 +819,7 @@ void vmaf_ort_close(VmafOrtSession *sess)
             sess->api->ReleaseSession(sess->session);
         if (sess->opts)
             sess->api->ReleaseSessionOptions(sess->opts);
-        if (sess->env)
-            sess->api->ReleaseEnv(sess->env);
+        /* g_ort_env is a process-wide singleton; never released here. */
     }
     free(sess->input_names);
     free(sess->output_names);

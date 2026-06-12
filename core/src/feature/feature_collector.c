@@ -118,6 +118,10 @@ int vmaf_feature_collector_set_aggregate(VmafFeatureCollector *feature_collector
         return -EINVAL;
 
     pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
     int err = aggregate_vector_append(&feature_collector->aggregate_vector, feature_name, score);
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
@@ -134,6 +138,10 @@ int vmaf_feature_collector_get_aggregate(VmafFeatureCollector *feature_collector
         return -EINVAL;
 
     pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
     int err = 0;
 
     double *s = NULL;
@@ -329,6 +337,10 @@ int vmaf_feature_collector_mount_model(VmafFeatureCollector *feature_collector, 
         return -EINVAL;
 
     pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
     int err = feature_collector_mount_model_unlocked(feature_collector, model);
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
@@ -342,6 +354,10 @@ int vmaf_feature_collector_unmount_model(VmafFeatureCollector *feature_collector
         return -EINVAL;
 
     pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
     int err = feature_collector_unmount_model_unlocked(feature_collector, model);
     pthread_mutex_unlock(&(feature_collector->lock));
     return err;
@@ -435,17 +451,35 @@ static int feature_collector_ensure_vector(VmafFeatureCollector *feature_collect
     return 0;
 }
 
+/* Maximum number of mounted models supported in one predict pass.
+ * Stack-allocated snapshot avoids heap allocation on the hot path and
+ * eliminates the dangling-pointer race that arises when iterating a
+ * linked list across lock-drop/re-acquire cycles (iter10 TSan finding). */
+#define FEATURE_COLLECTOR_MAX_MODELS 32u
+
 static void feature_collector_run_model_predict(VmafFeatureCollector *feature_collector,
                                                 unsigned picture_index, double *score)
 {
-    /* Round-5 race fix (finding #5): model_iter->next was read after
-     * lock-drop, allowing a concurrent unmount_model to free the node
-     * between the drop and the next-pointer dereference.  Snapshot ->next
-     * while the lock is still held at the top of each iteration. */
-    VmafPredictModel *model_iter = feature_collector->models;
-    while (model_iter) {
-        VmafModel *model = model_iter->model;
-        VmafPredictModel *model_next = model_iter->next; /* read under lock */
+    /* iter10 TSan race fix: snapshot the entire model list into a local
+     * stack array while the lock is held, then release the lock and
+     * iterate the snapshot.  Snapshotting only ->next (round-5 fix) is
+     * insufficient: a concurrent unmount_model may free the node that the
+     * pre-snapshotted next pointer resolves to before the next iteration
+     * re-acquires the lock.  Snapshotting the full VmafModel* list avoids
+     * all such dangling references; VmafModel lifetime is caller-managed
+     * and outlives the predict pass. */
+    VmafModel *model_snapshot[FEATURE_COLLECTOR_MAX_MODELS];
+    unsigned model_count = 0u;
+
+    VmafPredictModel *node = feature_collector->models;
+    while (node && model_count < FEATURE_COLLECTOR_MAX_MODELS) {
+        model_snapshot[model_count++] = node->model;
+        node = node->next;
+    }
+    /* Lock is dropped here; the snapshot is independent of the list. */
+
+    for (unsigned i = 0u; i < model_count; i++) {
+        VmafModel *model = model_snapshot[i];
 
         pthread_mutex_unlock(&(feature_collector->lock));
         int res =
@@ -458,7 +492,6 @@ static void feature_collector_run_model_predict(VmafFeatureCollector *feature_co
                                               true, 0);
             pthread_mutex_lock(&(feature_collector->lock));
         }
-        model_iter = model_next;
     }
 }
 
