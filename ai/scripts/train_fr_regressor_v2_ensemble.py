@@ -67,6 +67,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -395,7 +396,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--out-dir",
         type=Path,
-        default=REPO_ROOT / "model" / "tiny",
+        default=None,
+        help="Output directory for ONNX members + manifest. "
+        "Defaults to model/tiny/ in production mode, or a temp directory in --smoke mode.",
     )
     ap.add_argument(
         "--registry",
@@ -415,6 +418,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.smoke and args.corpus is not None:
         print("warning: --smoke overrides --corpus; using synthetic data", file=sys.stderr)
+
+    # Resolve out_dir: smoke defaults to a temp directory so read-only
+    # workspaces (e.g. the container /workspace mount) are not written to
+    # inadvertently. Production defaults to model/tiny/.
+    if args.out_dir is None:
+        if args.smoke:
+            args.out_dir = Path(tempfile.mkdtemp(prefix="ens_smoke_"))
+        else:
+            args.out_dir = REPO_ROOT / "model" / "tiny"
 
     from vmaf_train.codec import CODEC_VOCAB, CODEC_VOCAB_VERSION, NUM_CODECS
 
@@ -609,13 +621,19 @@ def main(argv: list[str] | None = None) -> int:
     write_manifest_json(manifest_path, manifest)
     print(f"[fr-v2-ens] wrote manifest to {manifest_path}")
 
-    _update_registry(
-        args.registry,
-        ensemble_id=args.ensemble_id,
-        members=member_records,
-        smoke=args.smoke,
-    )
-    print(f"[fr-v2-ens] updated registry {args.registry.name} ({len(member_records)} members)")
+    if not args.smoke:
+        _update_registry(
+            args.registry,
+            ensemble_id=args.ensemble_id,
+            members=member_records,
+            smoke=args.smoke,
+        )
+        print(f"[fr-v2-ens] updated registry {args.registry.name} ({len(member_records)} members)")
+    else:
+        print(
+            f"[fr-v2-ens] smoke mode: skipping registry update "
+            f"(manifest written to {manifest_path})"
+        )
     return 0
 
 

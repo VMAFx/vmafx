@@ -419,11 +419,20 @@ def main() -> int:
         default="GPU.0",
         help="OpenVINO device string (default: GPU.0 = first dGPU).",
     )
+    _runs_root = (
+        Path(os.environ.get("VMAFX_RUNS_DIR", "")) if os.environ.get("VMAFX_RUNS_DIR") else None
+    )
+    _out_default = (
+        _runs_root / f"quant-eps-{time.strftime('%Y-%m-%d')}"
+        if _runs_root is not None
+        else Path(tempfile.gettempdir()) / f"quant-eps-{time.strftime('%Y-%m-%d')}"
+    )
     parser.add_argument(
         "--out",
         type=Path,
-        default=REPO_ROOT / "runs" / f"quant-eps-{time.strftime('%Y-%m-%d')}",
-        help="Output directory for results.{json,md}.",
+        default=_out_default,
+        help="Output directory for results.{json,md}. "
+        "(default: $VMAFX_RUNS_DIR/quant-eps-<date> or /tmp/quant-eps-<date>)",
     )
     parser.add_argument(
         "--hw",

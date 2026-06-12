@@ -65,7 +65,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -697,7 +699,11 @@ def main() -> int:
     ap.add_argument(
         "--metrics-out",
         type=Path,
-        default=REPO_ROOT / "runs" / "fr_regressor_v2_metrics.json",
+        default=None,
+        help="Path for the metrics JSON output. "
+        "Defaults to $VMAFX_RUNS_DIR/fr_regressor_v2_metrics.json "
+        "(or <repo>/runs/fr_regressor_v2_metrics.json if $VMAFX_RUNS_DIR is unset). "
+        "In --smoke mode defaults to a temp file unless explicitly overridden.",
     )
     ap.add_argument(
         "--no-export", action="store_true", help="Skip ONNX export + registry update (dev mode)."
@@ -710,6 +716,16 @@ def main() -> int:
     if not args.smoke and args.corpus is None:
         print("error: provide --corpus PATH or use --smoke", file=sys.stderr)
         return 2
+
+    # Resolve --metrics-out: smoke mode writes to a temp file so read-only
+    # workspaces (e.g. the container /workspace mount) are not written to.
+    # Production mode respects $VMAFX_RUNS_DIR or falls back to <repo>/runs/.
+    if args.metrics_out is None:
+        if args.smoke:
+            args.metrics_out = Path(tempfile.gettempdir()) / "fr_regressor_v2_smoke_metrics.json"
+        else:
+            _runs_root = Path(os.environ.get("VMAFX_RUNS_DIR", str(REPO_ROOT / "runs")))
+            args.metrics_out = _runs_root / "fr_regressor_v2_metrics.json"
 
     run_provenance = build_run_provenance(
         entrypoint=SCRIPT_PATH,
