@@ -2718,6 +2718,13 @@ def _emit_parse_error(raw_line: str, exc: Exception) -> None:
 
         {"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": "Parse error"}}
 
+    Special case: if ``raw_line`` is valid JSON but is a JSON array (a batch
+    request), the mcp library does not support batching.  Per JSON-RPC 2.0 §6
+    servers that do not support batch requests SHOULD respond with error code
+    ``-32600`` (Invalid Request) rather than ``-32700`` (Parse error), because
+    the payload is syntactically valid JSON — it is the *request* that is
+    invalid, not the encoding.
+
     We attempt to recover the ``id`` field from the raw bytes in case the
     payload was valid JSON but not a valid JSON-RPC message (e.g. missing
     ``jsonrpc`` field) — the spec says ``id`` MUST be ``null`` when the
@@ -2730,11 +2737,21 @@ def _emit_parse_error(raw_line: str, exc: Exception) -> None:
     acknowledged immediately rather than queued behind in-flight tool results.
     """
     _id: str | int | None = None
+    _error_code = -32700
+    _error_message = "Parse error"
     try:
         _partial = json.loads(raw_line)
-        _raw_id = _partial.get("id") if isinstance(_partial, dict) else None
-        if isinstance(_raw_id, (str, int)):
-            _id = _raw_id
+        if isinstance(_partial, list):
+            # Valid JSON array: this is a batch request.  The mcp library does
+            # not implement JSON-RPC 2.0 batching; respond with -32600
+            # (Invalid Request) because the payload is syntactically correct
+            # JSON — it is the request structure that is not supported.
+            _error_code = -32600
+            _error_message = "Invalid Request"
+        else:
+            _raw_id = _partial.get("id") if isinstance(_partial, dict) else None
+            if isinstance(_raw_id, (str, int)):
+                _id = _raw_id
     except Exception:
         # raw_line is not valid JSON (or not a dict); _id stays None and the
         # JSON-RPC error response will carry id=null, which is spec-conformant.
@@ -2745,15 +2762,15 @@ def _emit_parse_error(raw_line: str, exc: Exception) -> None:
             "jsonrpc": "2.0",
             "id": _id,
             "error": {
-                "code": -32700,
-                "message": "Parse error",
+                "code": _error_code,
+                "message": _error_message,
                 "data": str(exc),
             },
         }
     )
     sys.stdout.write(_err_payload + "\n")
     sys.stdout.flush()
-    _logger.debug("JSON-RPC parse error on stdin (id=%r): %s", _id, exc)
+    _logger.debug("JSON-RPC %s on stdin (id=%r): %s", _error_message, _id, exc)
 
 
 class _ParseErrorFilteredStdin:
