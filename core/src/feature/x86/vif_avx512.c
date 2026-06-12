@@ -1420,7 +1420,7 @@ void vif_subsample_rd_8_avx512(VifBuffer buf, unsigned w, unsigned h)
         for (unsigned j = n << 4; j < w; ++j) {
             uint32_t accum_ref = 0;
             uint32_t accum_dis = 0;
-            int jj = j - fwidth_half;
+            int jj = (int)j - fwidth_half;
             int jj_check = jj;
             for (unsigned fj = 0; fj < fwidth; ++fj, jj_check = jj + fj) {
                 const uint16_t fcoeff_scalar = vif_filt_s1[fj];
@@ -1586,7 +1586,7 @@ void vif_subsample_rd_16_avx512(VifBuffer buf, unsigned w, unsigned h, int scale
         for (unsigned j = n << 4; j < w; ++j) {
             uint32_t accum_ref = 0;
             uint32_t accum_dis = 0;
-            int jj = j - fwidth_half;
+            int jj = (int)j - fwidth_half;
             int jj_check = jj;
             for (unsigned fj = 0; fj < fwidth; ++fj, jj_check = jj + fj) {
                 const uint16_t fcoeff = vif_filt[fj];
