@@ -53,14 +53,21 @@ int vmaf_thread_pool_create(VmafThreadPool **tpool, VmafThreadPoolConfig cfg);
  * @p data is copied internally (up to @p data_sz bytes), so the caller's
  * buffer may be reused or freed immediately after this call returns.
  *
+ * The worker function returns an int error code (0 = success, negative errno =
+ * failure).  Non-zero return values are OR-accumulated into the pool's
+ * @c last_error field, which is returned by the next call to
+ * vmaf_thread_pool_wait().  This allows callers to detect that at least one
+ * job failed without needing to share a separate out-parameter.
+ *
  * @param pool      Thread pool.
  * @param func      Work function; receives a copy of @p data and a pointer to
  *                  this thread's private state slot (set to NULL on first use).
+ *                  Must return 0 on success or a negative errno on failure.
  * @param data      Input data for @p func.
  * @param data_sz   Size of @p data in bytes.
  * @return 0 on success, negative errno on failure.
  */
-int vmaf_thread_pool_enqueue(VmafThreadPool *pool, void (*func)(void *data, void **thread_data),
+int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void **thread_data),
                              void *data, size_t data_sz);
 
 /**

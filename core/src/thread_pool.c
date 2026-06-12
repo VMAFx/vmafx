@@ -32,7 +32,7 @@
 #define JOB_INLINE_DATA_SIZE 64
 
 typedef struct VmafThreadPoolJob {
-    void (*func)(void *data, void **thread_data);
+    int (*func)(void *data, void **thread_data);
     void *data;
     char inline_data[JOB_INLINE_DATA_SIZE];
     struct VmafThreadPoolJob *next;
@@ -61,6 +61,10 @@ typedef struct VmafThreadPool {
     void (*thread_data_free)(void *thread_data);
     /* Recycled job objects for reuse, keyed off the pool's lock. */
     VmafThreadPoolJob *free_jobs;
+    /* OR-accumulation of all non-zero int return values from worker funcs.
+     * Protected by queue.lock.  Cleared to 0 after each vmaf_thread_pool_wait()
+     * so the next batch starts clean. */
+    int last_error;
 } VmafThreadPool;
 
 static VmafThreadPoolJob *vmaf_thread_pool_fetch_job(VmafThreadPool *pool)
@@ -127,10 +131,13 @@ static void *vmaf_thread_pool_runner(void *p)
         VmafThreadPoolJob *job = vmaf_thread_pool_fetch_job(pool);
         pool->n_working++;
         pthread_mutex_unlock(&(pool->queue.lock));
+        int job_err = 0;
         if (job) {
-            job->func(job->data, &worker->data);
+            job_err = job->func(job->data, &worker->data);
         }
         pthread_mutex_lock(&(pool->queue.lock));
+        if (job_err)
+            pool->last_error |= job_err;
         pool->n_working--;
         if (job)
             vmaf_thread_pool_job_recycle(pool, job);
@@ -237,7 +244,7 @@ int vmaf_thread_pool_create(VmafThreadPool **pool, VmafThreadPoolConfig cfg)
     return pool_spawn_workers(p, cfg, pool);
 }
 
-int vmaf_thread_pool_enqueue(VmafThreadPool *pool, void (*func)(void *data, void **thread_data),
+int vmaf_thread_pool_enqueue(VmafThreadPool *pool, int (*func)(void *data, void **thread_data),
                              void *data, size_t data_sz)
 {
     if (!pool)
@@ -304,8 +311,13 @@ int vmaf_thread_pool_wait(VmafThreadPool *pool)
     while ((!pool->stop && (pool->n_working || pool->queue.head)) ||
            (pool->stop && pool->n_threads))
         pthread_cond_wait(&(pool->working), &(pool->queue.lock));
+    /* Harvest and clear the accumulated worker-error flags.  Clearing here
+     * means each vmaf_thread_pool_wait() call reports errors from the batch
+     * that just drained, not from all prior batches. */
+    const int err = pool->last_error;
+    pool->last_error = 0;
     pthread_mutex_unlock(&(pool->queue.lock));
-    return 0;
+    return err;
 }
 int vmaf_thread_pool_destroy(VmafThreadPool *pool)
 {

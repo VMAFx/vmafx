@@ -387,6 +387,10 @@ FeatureVector *vmaf_feature_collector_find(VmafFeatureCollector *fc, const char 
         return NULL;
 
     pthread_mutex_lock(&fc->lock);
+    if (fc->destroyed) {
+        pthread_mutex_unlock(&fc->lock);
+        return NULL;
+    }
     FeatureVector *fv = find_feature_vector(fc, feature_name);
     pthread_mutex_unlock(&fc->lock);
     return fv;
@@ -492,6 +496,10 @@ int vmaf_feature_collector_append(VmafFeatureCollector *feature_collector, const
         return -EINVAL;
 
     pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
     int err = 0;
 
     if (!feature_collector->timer.begin)
@@ -538,6 +546,10 @@ int vmaf_feature_collector_get_score(VmafFeatureCollector *feature_collector,
         return -EINVAL;
 
     pthread_mutex_lock(&(feature_collector->lock));
+    if (feature_collector->destroyed) {
+        pthread_mutex_unlock(&(feature_collector->lock));
+        return -ENODEV;
+    }
     int err = 0;
 
     FeatureVector *feature_vector = find_feature_vector(feature_collector, feature_name);
@@ -586,6 +598,11 @@ void vmaf_feature_collector_destroy(VmafFeatureCollector *feature_collector)
     }
     vmaf_metadata_destroy(feature_collector->metadata);
     free((void *)feature_collector->feature_vector);
+    /* Signal all threads blocked on the lock that the collector is dead.
+     * Any thread that acquires the lock after this point will see
+     * destroyed == true and return -ENODEV, preventing use-after-free
+     * on the mutex itself (pthread_mutex_destroy immediately follows). */
+    feature_collector->destroyed = true;
     pthread_mutex_unlock(&(feature_collector->lock));
     pthread_mutex_destroy(&(feature_collector->lock));
     free(feature_collector);

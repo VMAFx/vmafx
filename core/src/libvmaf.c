@@ -1611,7 +1611,7 @@ struct ThreadDataBatch {
     int err;
 };
 
-static void threaded_extract_batch_func(void *e, void **thread_data)
+static int threaded_extract_batch_func(void *e, void **thread_data)
 {
     struct ThreadDataBatch *f = e;
     f->err = 0;
@@ -1733,6 +1733,7 @@ unref:
         vmaf_picture_unref(&f->prev_ref);
     vmaf_picture_unref(&f->ref);
     vmaf_picture_unref(&f->dist);
+    return f->err;
 }
 
 static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,

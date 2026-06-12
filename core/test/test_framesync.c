@@ -41,7 +41,7 @@ typedef struct ThreadData {
     int err;
 } ThreadData;
 
-static void my_worker(void *data, void **tpool_thread_data)
+static int my_worker(void *data, void **tpool_thread_data)
 {
     (void)tpool_thread_data;
     int ctr;
@@ -104,6 +104,7 @@ static void my_worker(void *data, void **tpool_thread_data)
 cleanup:
     free(thread_data->ref);
     free(thread_data->dist);
+    return thread_data->err;
 }
 
 static char *test_framesync_create_process_and_destroy(void)

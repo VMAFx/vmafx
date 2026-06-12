@@ -22,36 +22,40 @@
 #include "test.h"
 #include "thread_pool.h"
 
-static void fn_a(void *data, void **thread_data)
+static int fn_a(void *data, void **thread_data)
 {
     (void)data;
     (void)thread_data;
     printf("thread ");
+    return 0;
 }
 
-static void fn_b(void *data, void **thread_data)
+static int fn_b(void *data, void **thread_data)
 {
     (void)data;
     (void)thread_data;
     printf("pool ");
+    return 0;
 }
 
-static void fn_c(void *data, void **thread_data)
+static int fn_c(void *data, void **thread_data)
 {
     (void)data;
     (void)thread_data;
     printf("test ");
+    return 0;
 }
 
 typedef struct Fps {
     unsigned num, den;
 } Fps;
 
-static void fn_d(void *data, void **thread_data)
+static int fn_d(void *data, void **thread_data)
 {
     (void)thread_data;
     Fps *fps = data;
     printf("FPS: %d/%d ", fps->num, fps->den);
+    return 0;
 }
 
 static char *test_thread_pool_create_enqueue_wait_and_destroy()
