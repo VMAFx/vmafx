@@ -2967,7 +2967,10 @@ class SVMModelParserBufferSource
  * `SAN-MODEL-MALLOC-OOB` (alloc-too-big + null `memcpy` on a crafted
  * model file).
  */
-#define VMAF_SVM_MAX_AXIS_COUNT (1 << 24)
+/* Tightened to floor(sqrt(INT_MAX)) = 46340 so that the
+ * nr_class*(nr_class-1)/2 permutation product cannot overflow a signed 32-bit
+ * int even before any size_t cast is applied (UBSan finding, iter9-fuzz-extended). */
+#define VMAF_SVM_MAX_AXIS_COUNT 46340
 
 template <typename TSource> class SVMModelParser
 {
@@ -3039,7 +3042,10 @@ template <typename TSource> class SVMModelParser
                 exceptAssert(model_source.get(model->nr_class), "Failed to read nr_class.");
                 exceptAssert(model->nr_class > 0 && model->nr_class <= VMAF_SVM_MAX_AXIS_COUNT,
                              "nr_class out of range");
-                nr_class_permutations = model->nr_class * (model->nr_class - 1) / 2;
+                /* Cast before multiply to keep arithmetic in size_t and avoid
+                 * signed 32-bit overflow (UBSan finding, iter9-fuzz-extended). */
+                nr_class_permutations =
+                    (size_t)model->nr_class * (size_t)(model->nr_class - 1) / 2u;
             } else if (buffer == "total_sv") {
                 exceptAssert(model_source.get(model->l), "Failed to read total_sv.");
                 exceptAssert(model->l > 0 && model->l <= VMAF_SVM_MAX_AXIS_COUNT,
