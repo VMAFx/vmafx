@@ -289,6 +289,8 @@ free_feature_vector:
     free(static_cast<void *>(fc->feature_vector));
 free_fc:
     free(fc);
+    *feature_collector =
+        nullptr; /* prevent dangling pointer — mirrors feature_collector.c:265 pattern */
 fail:
     /* NULL the caller's handle so it cannot be dereferenced after a failed
      * init. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */

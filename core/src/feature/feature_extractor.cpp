@@ -789,6 +789,7 @@ free_fex_list:
     free(p->fex_list);
 free_p:
     free(p);
+    *pool = NULL; /* prevent dangling pointer — mirrors feature_extractor.c:797 pattern */
 fail:
     /* NULL the caller's handle so it cannot be dereferenced after a failed
      * pool create. ASan/LeakSan: avoids dangling-pointer UAF. CERT MEM30-C. */
