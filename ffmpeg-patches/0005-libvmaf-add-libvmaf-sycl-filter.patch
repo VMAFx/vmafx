@@ -235,10 +235,10 @@ index f0ec23605c..d9dab0bdd9 100644
 +            const int stride_r = (int)ref_pic.stride[p];
 +            const int stride_d = (int)dist_pic.stride[p];
 +            for (int row = 0; row < h; row++) {
-+                memcpy(dst_r + row * stride_r, src_r + row * ref->linesize[p],
-+                       (size_t)stride_r);
-+                memcpy(dst_d + row * stride_d, src_d + row * dist->linesize[p],
-+                       (size_t)stride_d);
++                const size_t copy_r = (size_t)(stride_r < ref->linesize[p] ? stride_r : ref->linesize[p]);
++                const size_t copy_d = (size_t)(stride_d < dist->linesize[p] ? stride_d : dist->linesize[p]);
++                memcpy(dst_r + row * stride_r, src_r + row * ref->linesize[p], copy_r);
++                memcpy(dst_d + row * stride_d, src_d + row * dist->linesize[p], copy_d);
 +            }
 +        }
 +        ret = vmaf_read_pictures(s->vmaf, &ref_pic, &dist_pic, s->frame_cnt++);

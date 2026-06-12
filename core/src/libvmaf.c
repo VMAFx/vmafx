@@ -2697,8 +2697,12 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
          * vmaf_picture_unref on ref_host/dist_host at line 1858.  Calling
          * the full read_pictures_cuda_cleanup here would double-unref those
          * host pictures and corrupt the pool free-list (PR #838 regression).
-         * Use the device-only variant to release only ref_device/dist_device. */
-        err |= read_pictures_cuda_cleanup_device_only(vmaf, &ref_device, &dist_device);
+         * Use the device-only variant to release only ref_device/dist_device.
+         * Guard: device-only path (no HW_FLAG_HOST) means ref_device is a
+         * struct copy of the caller's picture, not a fresh ring-buffer
+         * allocation — the caller owns its lifetime, so no cleanup needed. */
+        if (hw_flags & HW_FLAG_HOST)
+            err |= read_pictures_cuda_cleanup_device_only(vmaf, &ref_device, &dist_device);
 #endif
         return err;
     }
@@ -2713,7 +2717,12 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
      * pthread_cond_wait once the pool drains. */
 cleanup:
 #ifdef HAVE_CUDA
-    err |= read_pictures_cuda_cleanup(vmaf, &ref_host, &ref_device, &dist_host, &dist_device);
+    if (hw_flags & HW_FLAG_HOST) {
+        err |= read_pictures_cuda_cleanup(vmaf, &ref_host, &ref_device, &dist_host, &dist_device);
+    } else {
+        err |= vmaf_picture_unref(ref);
+        err |= vmaf_picture_unref(dist);
+    }
 #else
     err |= vmaf_picture_unref(ref);
     err |= vmaf_picture_unref(dist);
