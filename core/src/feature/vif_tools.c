@@ -622,8 +622,8 @@ static float bicubic_interpolation(const float *src, int width, int height, int 
     float interp_val = 0.0;
     for (int j = -1; j <= 2; j++) {
         for (int i = -1; i <= 2; i++) {
-            int x_index = mirror(x0 + i, 0, width - 1);
-            int y_index = mirror(y0 + j, 0, height - 1);
+            int x_index = (int)mirror(x0 + i, 0, width - 1);
+            int y_index = (int)mirror(y0 + j, 0, height - 1);
             float weight = weights_x[i + 1] * weights_y[j + 1];
             interp_val += src[y_index * src_stride + x_index] * weight;
         }
@@ -688,8 +688,8 @@ static float lanczos4_interpolation(const float *src, int width, int height, int
             float weight = weights_x[ix + a] * weights_y[iy + a];
             weight_sum += weight;
 
-            int x_index = mirror(x0 + ix, 0, width - 1);
-            int y_index = mirror(y0 + iy, 0, height - 1);
+            int x_index = (int)mirror(x0 + ix, 0, width - 1);
+            int y_index = (int)mirror(y0 + iy, 0, height - 1);
             value += src[y_index * src_stride + x_index] * weight;
         }
     }
@@ -721,10 +721,10 @@ static void vif_scale_frame_lanczos4_s(const float *src, float *dst, int src_w, 
 static float bilinear_interpolation(const float *src, int width, int height, int src_stride,
                                     float x, float y)
 {
-    int x1 = mirror(floor(x), 0, width - 1);
-    int x2 = mirror(ceil(x), 0, width - 1);
-    int y1 = mirror(floor(y), 0, height - 1);
-    int y2 = mirror(ceil(y), 0, height - 1);
+    int x1 = (int)mirror(floorf(x), 0, (float)(width - 1));
+    int x2 = (int)mirror(ceilf(x), 0, (float)(width - 1));
+    int y1 = (int)mirror(floorf(y), 0, (float)(height - 1));
+    int y2 = (int)mirror(ceilf(y), 0, (float)(height - 1));
 
     float dx = x - x1;
     float dy = y - y1;

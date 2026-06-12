@@ -103,7 +103,11 @@ static int option_is_default(const VmafOption *opt, const void *data)
     case VMAF_OPT_TYPE_INT:
         return opt->default_val.i == *((int *)data);
     case VMAF_OPT_TYPE_DOUBLE:
-        return opt->default_val.d == *((double *)data);
+        /* Intentional exact equality: checks whether the caller stored exactly
+         * the default value (bit-for-bit). An epsilon here would incorrectly
+         * suppress non-default values that are "close" to the default from the
+         * generated feature name, changing observable output. */
+        return opt->default_val.d == *((double *)data); /* stored default vs stored option */
     case VMAF_OPT_TYPE_STRING: {
         const char *ds = opt->default_val.s;
         const char *dv = *((const char **)data);

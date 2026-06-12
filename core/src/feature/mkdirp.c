@@ -28,6 +28,11 @@ static char *path_normalize(const char *path)
         return NULL;
     char *ptr = copy;
 
+    /* Loop variable 'i' is intentionally modified inside the body to skip
+     * runs of consecutive path separators (e.g. "a//b" → "a/b"). The
+     * ++i / --i pairs advance past duplicates then back up one so the
+     * outer i++ lands on the character after the separator run.
+     * CodeQL cpp/loop-variable-changed: accepted, intentional. */
     for (int i = 0; copy[i]; i++) {
         char c = path[i];
 #ifdef _WIN32

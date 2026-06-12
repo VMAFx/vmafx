@@ -70,7 +70,13 @@ int aggregate_vector_append(AggregateVector *aggregate_vector, const char *featu
 
     for (unsigned i = 0; i < aggregate_vector->cnt; i++) {
         if (!strcmp(feature_name, aggregate_vector->metric[i].name)) {
-            if (aggregate_vector->metric[i].value == score) {
+            /* Idempotency check: compare the already-stored value to the
+             * incoming value bit-for-bit. This is intentional exact equality —
+             * we are checking whether the same frame index wrote the same
+             * floating-point bits twice (idempotent re-submission is OK),
+             * vs. two different scores for the same feature+frame (error).
+             * An epsilon here would silently accept conflicting scores. */
+            if (aggregate_vector->metric[i].value == score) { /* stored-value sentinel */
                 return 0;
             } else {
                 return -EINVAL;

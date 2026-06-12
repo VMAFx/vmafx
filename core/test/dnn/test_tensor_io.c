@@ -441,7 +441,9 @@ static char *test_resize_identity_matches_legacy(void)
     mu_assert("identity legacy call failed", e1 == 0);
     mu_assert("identity resize call failed", e2 == 0);
     for (int i = 0; i < 16; ++i) {
-        mu_assert("identity path must be bit-identical", legacy[i] == resized[i]);
+        /* Intentional exact float equality: the identity-resize path must
+         * produce bit-identical output to the legacy path. */
+        mu_assert("identity path must be bit-identical", legacy[i] == resized[i]); /* bit-exact */
     }
     return NULL;
 }

@@ -1298,8 +1298,8 @@ static int init_chroma(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     return 0;
 }
 
-static float extract_channel(SpeedChromaState *s, VmafPicture *ref_pic, VmafPicture *dist_pic,
-                             int channel, float *score)
+static int extract_channel(SpeedChromaState *s, VmafPicture *ref_pic, VmafPicture *dist_pic,
+                           int channel, float *score)
 {
     picture_copy(s->frame_buffer_ref, s->speed_state.float_stride, ref_pic, -128, ref_pic->bpc,
                  channel);

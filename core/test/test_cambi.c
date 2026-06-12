@@ -949,8 +949,10 @@ static char *test_calculate_c_values_scalar_avx2_parity()
         calculate_c_values_avx2(&input_avx2, &mask_avx2, c_avx2, histograms_a, window_size,
                                 num_diffs, tvi_for_diff, vlt_luma, diff_weights, all_diffs, 8, 8);
         for (int i = 0; i < 64; i++) {
+            /* Intentional bit-exact compare: AVX2 and scalar paths must produce
+             * identical float results per the CAMBI parity contract. */
             mu_assert("scalar vs avx2 calculate_c_values parity (bit-exact)",
-                      c_scalar[i] == c_avx2[i]);
+                      c_scalar[i] == c_avx2[i]); /* bit-exact SIMD parity assertion */
         }
     }
 #endif

@@ -1451,7 +1451,11 @@ static void solve_c_svc(const svm_problem *prob, const svm_parameter *param, dou
     for (i = 0; i < l; i++)
         sum_alpha += alpha[i];
 
-    if (Cp == Cn)
+    /* Upstream libsvm: Cp and Cn are cost parameters set by the caller to
+     * equal values when using the symmetric nu-SVC formulation. This is an
+     * intentional exact comparison of two caller-supplied parameters, not
+     * two independently computed floats. */
+    if (Cp == Cn) /* sentinel: symmetric cost parameters */
         info("nu = %f\n", sum_alpha / (Cp * prob->l));
 
     for (i = 0; i < l; i++)

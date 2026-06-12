@@ -416,7 +416,10 @@ static int utf8_seq_length(char byte)
     if (u < 0x80)
         return 1;
 
-    if (0x80 <= u && u <= 0xBF) {
+    if (u <= 0xBF) {
+        /* u >= 0x80 is guaranteed by the early return above; the lower bound
+         * is redundant and was flagged as a constant comparison (CodeQL
+         * cpp/constant-comparison). */
         // second, third or fourth byte of a multi-byte
         // sequence, i.e. a "continuation byte"
         return 0;

@@ -371,11 +371,13 @@ static char *test_train_csvc_predict(void)
     struct svm_node q_pos[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
     double dec[1] = {0.0};
     double y_pos = svm_predict_values(m, q_pos, dec);
-    int pos_ok = (svm_predict(m, q_pos) == y_pos) && (y_pos == 1.0);
+    /* SVM predict returns exact integer class labels (+1.0 / -1.0); these are
+     * sentinel comparisons, not computed-float equality. */
+    int pos_ok = (svm_predict(m, q_pos) == y_pos) && (y_pos == 1.0); /* sentinel: SVM label */
 
     /* - side */
     struct svm_node q_neg[3] = {{1, -2.5}, {2, -2.5}, {-1, 0.0}};
-    int neg_ok = svm_predict(m, q_neg) == -1.0;
+    int neg_ok = svm_predict(m, q_neg) == -1.0; /* sentinel: SVM label */
 
     svm_free_and_destroy_model(&m);
     int model_nulled = m == NULL;
@@ -490,7 +492,10 @@ static int models_inspector_equal(const struct svm_model *a, const struct svm_mo
     if (svm_get_nr_sv(a) != svm_get_nr_sv(b))
         return 0;
     struct svm_node q[3] = {{1, 2.5}, {2, 2.5}, {-1, 0.0}};
-    return svm_predict(a, q) == svm_predict(b, q);
+    /* SVM predict returns an exact integer class label; comparing two calls
+     * on the same input verifies that the serialised model round-trips
+     * identically. Intentional exact float equality. */
+    return svm_predict(a, q) == svm_predict(b, q); /* model round-trip identity */
 }
 
 /* Portable temp-path helper: MSYS2/MinGW64 on GitHub Actions does not expose
