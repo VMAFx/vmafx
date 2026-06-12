@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import math
 import os
 import tempfile
 from collections.abc import Sequence
@@ -249,6 +250,31 @@ def _motion_weight(prev_y: "np.ndarray | None", y: "np.ndarray") -> float:
     return max(float(delta.mean() / 255.0), 1.0e-6)
 
 
+def _pad_to_multiple(tensor: "np.ndarray", multiple: int = 32) -> "tuple[np.ndarray, int, int]":
+    """Pad a ``[1, 3, H, W]`` float32 tensor to the next multiple of ``multiple``.
+
+    The ``saliency_student_v1`` UNet encoder-decoder uses skip connections
+    that require both spatial dimensions to be exact multiples of 32.
+    Sources whose height or width are not multiples of 32 cause a shape
+    mismatch inside onnxruntime (encoder feature map cannot be concatenated
+    with the decoder up-sampled tensor).
+
+    Returns ``(padded_tensor, orig_H, orig_W)`` so the caller can crop the
+    model output back to ``[:, :, :orig_H, :orig_W]`` after inference.
+    When no padding is needed (both dims already multiples of ``multiple``),
+    the original tensor is returned unchanged with its actual H/W.
+    """
+    np = _import_numpy()
+    _, _, H, W = tensor.shape
+    pH = math.ceil(H / multiple) * multiple
+    pW = math.ceil(W / multiple) * multiple
+    if pH == H and pW == W:
+        return tensor, H, W
+    padded = np.zeros((1, 3, pH, pW), dtype=np.float32)
+    padded[:, :, :H, :W] = tensor
+    return padded, H, W
+
+
 def compute_saliency_map(
     video_path: Path,
     width: int,
@@ -282,18 +308,6 @@ def compute_saliency_map(
     np = _import_numpy()
     _validate_temporal_aggregator(temporal_aggregator, ema_alpha)
 
-    # The saliency_student_v1 model uses 8x downsampling in its encoder
-    # path; heights not divisible by 8 produce off-by-one tensor shapes
-    # that cause a runtime crash inside onnxruntime.  Reject early with a
-    # clear message rather than surfacing a cryptic internal error.
-    if height % 8 != 0:
-        raise ValueError(
-            f"compute_saliency_map: height {height} is not divisible by 8. "
-            f"The saliency_student_v1 encoder path requires height % 8 == 0. "
-            f"Pad or crop the source to the next multiple of 8 (e.g. {((height + 7) // 8) * 8}) "
-            f"before calling this function."
-        )
-
     if model_path is None:
         model_path = DEFAULT_SALIENCY_MODEL_RELPATH
     if not Path(model_path).exists():
@@ -322,9 +336,14 @@ def compute_saliency_map(
     for fi in indices:
         y, u, v = _read_yuv420p_planes(video_path, fi, width, height)
         tensor = _yuv420p_to_rgb_imagenet(y, u, v)
-        outputs = session.run(None, {"input": tensor})
-        # saliency_student_v1 returns NCHW [1, 1, H, W] in [0, 1].
-        mask = np.asarray(outputs[0]).reshape(height, width)
+        # saliency_student_v1 uses a UNet encoder-decoder with skip
+        # connections that require H and W to be exact multiples of 32.
+        # Pad to the next multiple-of-32 boundary before inference and
+        # crop the output mask back to the original spatial dimensions.
+        tensor_padded, orig_h, orig_w = _pad_to_multiple(tensor, 32)
+        outputs = session.run(None, {"input": tensor_padded})
+        # saliency_student_v1 returns NCHW [1, 1, H_pad, W_pad] in [0, 1].
+        mask = np.asarray(outputs[0])[0, 0, :orig_h, :orig_w]
         mask = mask.astype(np.float32)
         if temporal_aggregator == "mean":
             accum += mask
@@ -948,4 +967,6 @@ __all__ = [
     "write_x265_zones_arg",
     # Dispatch table — exported so test stubs can assert the encoder is wired.
     "_SALIENCY_DISPATCH",
+    # Padding helper — exported so tests can verify round-trip crop correctness.
+    "_pad_to_multiple",
 ]

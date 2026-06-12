@@ -90,7 +90,11 @@ mkdir -p /tmp && chmod 1777 /tmp
 # bind-mount). /probes itself is created by the docker-compose bind
 # and may not exist yet on a fresh host if the compose file never ran.
 # Guard with || true so the entrypoint does not abort on read-only hosts.
+# The chown ensures the vmaf user owns the directory even when the host
+# bind-mount source is owned by root:root (mode 755), which would otherwise
+# cause PermissionError for every bisect worker writing into the workdir.
 mkdir -p "${VMAFTUNE_WORKDIR:-/probes/vmaftune-work}" 2>/dev/null || true
+chown vmaf:vmaf "${VMAFTUNE_WORKDIR:-/probes/vmaftune-work}" 2>/dev/null || true
 
 LOG_FILE="${VMAF_MCP_LOG:-/tmp/vmaf-mcp.log}"
 MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
