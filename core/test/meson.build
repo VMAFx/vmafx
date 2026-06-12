@@ -1588,6 +1588,17 @@ test_read_pictures_monotonic = executable('test_read_pictures_monotonic',
 )
 test('test_read_pictures_monotonic', test_read_pictures_monotonic, suite : ['fast'])
 
+# Regression: validate_pic_params bpc check used && instead of || — ref/dist
+# bpc mismatch was silently accepted on frame 0 (Fable finding
+# libvmaf-bpc-validation-and-or).
+test_validate_pic_params_bpc = executable('test_validate_pic_params_bpc',
+    ['test.c', 'test_validate_pic_params_bpc.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, thread_lib],
+)
+test('test_validate_pic_params_bpc', test_validate_pic_params_bpc, suite : ['fast'])
+
 # ADR-0154 — score_pooled returns -EAGAIN instead of -EINVAL for
 # not-yet-written features (Netflix#755).
 test_score_pooled_eagain = executable('test_score_pooled_eagain',
