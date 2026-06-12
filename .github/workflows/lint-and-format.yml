@@ -309,7 +309,7 @@ jobs:
         run: |
           # Mirrors the main clang-tidy job's PR/push/dispatch fan-out but
           # keeps only SYCL TUs (the inverse of the exclusion list there).
-          # Context values are passed through env vars (not inline ${{...}})
+          # Context values are passed through env vars (not inline expressions)
           # to prevent shell injection (github-actions shell-injection rule).
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d \
