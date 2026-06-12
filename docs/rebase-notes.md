@@ -7,6 +7,9 @@ from Open to Recently Closed) and `docs/metrics/cambi.md` (remove stale Vulkan
 section, doc-only). Conflicts with a concurrent branch that also edits state.md:
 keep both state-update rows; the row order within Recently Closed does not matter.
 
+## test/float-extractor-cpu-coverage — Float extractor CPU-path unit tests (2026-06-13)
+no rebase impact: test-only addition. New files: `core/test/test_float_{psnr,moment,ssim,ms_ssim,vif,adm,motion}_coverage.c`. Edit to `core/test/meson.build` adds 7 new executable targets after line 1705 (`test_float_vif_min_dim`). No conflict risk unless a concurrent branch also adds tests immediately after that same line; in that case, append both blocks in source order.
+
 ## fix/hip-meson-speed-tus-dedup — Remove duplicate HIP speed TU entries (2026-06-12)
 no rebase impact: change confined to `core/src/hip/meson.build` (build config only).
 Removes the duplicate `speed_chroma_hip.c` / `speed_temporal_hip.c` wiring block

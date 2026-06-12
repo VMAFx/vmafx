@@ -1704,6 +1704,143 @@ test_float_vif_min_dim = executable('test_float_vif_min_dim',
 )
 test('test_float_vif_min_dim', test_float_vif_min_dim, suite : ['fast'])
 
+# Coverage round 4 — float extractor CPU-path gap-fill.
+# All float_* extractors previously had tests only in GPU-gated CUDA/SYCL
+# parity suites, meaning CPU coverage was 0% in non-GPU CI. These tests
+# add end-to-end init→extract→close coverage on the CPU path (fast suite).
+# Each test uses the same link recipe as test_motion_min_dim / test_float_vif_min_dim.
+_float_fex_test_sources_common = [
+    '../src/mem.c', '../src/picture.c', '../src/ref.c',
+    '../src/dict.c', '../src/predict.c',
+    '../src/metadata_handler.cpp', '../src/thread_locale.c',
+    '../src/gpu_picture_pool.cpp',
+]
+
+# float_ssim and float_ms_ssim are compiled unconditionally (no enable_float gate
+# in src/meson.build lines 1545-1546), so their tests build without the flag.
+test_float_ssim_coverage = executable('test_float_ssim_coverage',
+    ['test.c', 'test_float_ssim_coverage.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_float_ssim_coverage', test_float_ssim_coverage, suite : ['fast'])
+
+test_float_ms_ssim_coverage = executable('test_float_ms_ssim_coverage',
+    ['test.c', 'test_float_ms_ssim_coverage.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_float_ms_ssim_coverage', test_float_ms_ssim_coverage, suite : ['fast'])
+
+if get_option('enable_float')
+# float_psnr, float_moment, float_vif, float_adm, float_motion are all compiled
+# only when enable_float=true (src/meson.build:1583). Gate their tests identically.
+test_float_psnr_coverage = executable('test_float_psnr_coverage',
+    ['test.c', 'test_float_psnr_coverage.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_float_psnr_coverage', test_float_psnr_coverage, suite : ['fast'])
+
+test_float_moment_coverage = executable('test_float_moment_coverage',
+    ['test.c', 'test_float_moment_coverage.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_float_moment_coverage', test_float_moment_coverage, suite : ['fast'])
+
+test_float_vif_coverage = executable('test_float_vif_coverage',
+    ['test.c', 'test_float_vif_coverage.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_float_vif_coverage', test_float_vif_coverage, suite : ['fast'])
+
+test_float_adm_coverage = executable('test_float_adm_coverage',
+    ['test.c', 'test_float_adm_coverage.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_float_adm_coverage', test_float_adm_coverage, suite : ['fast'])
+
+test_float_motion_coverage = executable('test_float_motion_coverage',
+    ['test.c', 'test_float_motion_coverage.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_float_motion_coverage', test_float_motion_coverage, suite : ['fast'])
+endif
+
 # GPU dispatch-runtime coverage (host-only). Targets the shared
 # `gpu_dispatch_env.c` + `gpu_dispatch_parse.h` helpers and the
 # host-buildable subset of the per-backend dispatch_strategy TUs
