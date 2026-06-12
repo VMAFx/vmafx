@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -19,7 +19,6 @@ from vmaf.core.quality_runner import (
     QualityRunner,
     VmafQualityRunner,
 )
-from vmaf.core.result import Result
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -63,10 +63,9 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -1136,9 +1135,9 @@ def test_make_score_handler_returns_coroutine():
 @pytest.mark.asyncio
 async def test_score_400_on_missing_distorted(aiohttp_client: Any, monkeypatch: Any) -> None:
     """POST /v1/score with only 'reference' (missing 'distorted') must return 400."""
+    from unittest.mock import patch
 
     import prometheus_client as pc  # type: ignore[import-untyped]
-
     from vmaf_mcp import http_transport as ht
 
     registry = pc.CollectorRegistry(auto_describe=False)
@@ -1176,9 +1175,9 @@ async def test_score_400_on_missing_distorted(aiohttp_client: Any, monkeypatch: 
 @pytest.mark.asyncio
 async def test_score_400_on_missing_width(aiohttp_client: Any) -> None:
     """POST /v1/score with missing 'width' must return 400."""
+    from unittest.mock import patch
 
     import prometheus_client as pc  # type: ignore[import-untyped]
-
     from vmaf_mcp import http_transport as ht
 
     registry = pc.CollectorRegistry(auto_describe=False)
@@ -1217,9 +1216,9 @@ async def test_score_400_on_missing_width(aiohttp_client: Any) -> None:
 @pytest.mark.asyncio
 async def test_score_500_on_scorer_error(aiohttp_client: Any) -> None:
     """POST /v1/score must return 500 when _run_vmaf_score raises."""
+    from unittest.mock import AsyncMock, patch
 
     import prometheus_client as pc  # type: ignore[import-untyped]
-
     import vmaf_mcp.server as srv_mod
     from vmaf_mcp import http_transport as ht
 
@@ -1255,7 +1254,7 @@ async def test_score_500_on_scorer_error(aiohttp_client: Any) -> None:
                 _f.write(b"\x00" * 16)
 
             with (
-                patch.object(srv_mod, "_validate_path", side_effect=lambda p: Path(p)),
+                patch.object(srv_mod, "_validate_path", side_effect=Path),
                 patch.object(srv_mod, "_run_vmaf_score", new=AsyncMock(side_effect=_boom)),
             ):
                 resp = await client.post(

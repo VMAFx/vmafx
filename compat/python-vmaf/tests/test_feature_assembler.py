@@ -12,11 +12,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 
 from vmaf.core.feature_assembler import FeatureAssembler
-from vmaf.core.feature_extractor import FeatureExtractor, VmafFeatureExtractor
+from vmaf.core.feature_extractor import VmafFeatureExtractor
 from vmaf.core.result import BasicResult
 
 # ---------------------------------------------------------------------------

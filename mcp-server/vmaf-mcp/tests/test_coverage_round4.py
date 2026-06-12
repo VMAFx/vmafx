@@ -977,7 +977,7 @@ def test_call_tool_compare_models_dispatch(monkeypatch: pytest.MonkeyPatch, tmp_
     ) -> dict[str, Any]:
         return {"ranked": [{"plcc": 0.9}], "errors": []}
 
-    monkeypatch.setattr(srv, "_validate_path", lambda p: Path(p))
+    monkeypatch.setattr(srv, "_validate_path", Path)
     monkeypatch.setattr(srv, "_compare_models", _fake_compare)
     contents = asyncio.run(
         srv._call_tool(
@@ -1000,7 +1000,6 @@ def test_call_tool_compare_models_dispatch(monkeypatch: pytest.MonkeyPatch, tmp_
 if _HAS_HTTP:
     import pytest_asyncio
     from aiohttp.test_utils import TestClient
-
     from vmaf_mcp import http_transport as ht
 
     # -----------------------------------------------------------------------
@@ -1108,7 +1107,7 @@ if _HAS_HTTP:
         dis.write_bytes(b"\x00" * 16)
 
         with (
-            patch.object(_srv, "_validate_path", side_effect=lambda p: Path(p)),
+            patch.object(_srv, "_validate_path", side_effect=Path),
             patch.object(
                 _srv,
                 "_run_vmaf_score",
@@ -1143,7 +1142,7 @@ if _HAS_HTTP:
         fake_result = {"vmaf": 95.0, "pooled_metrics": {"vmaf": {"mean": 95.0}}, "frames": []}
 
         with (
-            patch.object(_srv, "_validate_path", side_effect=lambda p: Path(p)),
+            patch.object(_srv, "_validate_path", side_effect=Path),
             patch.object(_srv, "_run_vmaf_score", new=AsyncMock(return_value=fake_result)),
         ):
             resp = await no_auth_r4_client.post(

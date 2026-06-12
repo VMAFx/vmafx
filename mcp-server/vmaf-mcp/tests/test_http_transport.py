@@ -296,7 +296,7 @@ async def test_score_returns_200_on_valid_request(test_client: TestClient, tmp_p
     import vmaf_mcp.server as srv
 
     with (
-        patch.object(srv, "_validate_path", side_effect=lambda p: Path(p)),
+        patch.object(srv, "_validate_path", side_effect=Path),
         patch.object(srv, "_run_vmaf_score", new=AsyncMock(side_effect=_mock_run)),
     ):
         resp = await test_client.post(

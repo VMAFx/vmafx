@@ -44,7 +44,6 @@ pytest.importorskip("prometheus_client")
 
 import pytest_asyncio  # noqa: E402
 from aiohttp.test_utils import TestClient  # noqa: E402
-
 from vmaf_mcp import http_transport as ht  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -279,10 +278,6 @@ async def test_serve_logs_warning_when_token_unset_and_no_auth_not_set(
     class _FakeSite:
         async def start(self) -> None:
             started.append(True)
-
-    # Interrupt the "forever" wait immediately after the warning is logged.
-    async def _fake_event_wait() -> None:
-        raise asyncio.CancelledError
 
     unique = id(test_serve_logs_warning_when_token_unset_and_no_auth_not_set)
     metrics = _fresh_metrics(f"r5_serve_warn_{unique}")
@@ -524,7 +519,7 @@ async def test_make_score_handler_delegates_to_handle_score(
     fake_result = {"vmaf": 77.7, "pooled_metrics": {}, "frames": []}
 
     with (
-        patch.object(_srv, "_validate_path", side_effect=lambda p: Path(p)),
+        patch.object(_srv, "_validate_path", side_effect=Path),
         patch.object(_srv, "_run_vmaf_score", new=AsyncMock(return_value=fake_result)),
     ):
         # Build a fresh app using the factory handler directly.

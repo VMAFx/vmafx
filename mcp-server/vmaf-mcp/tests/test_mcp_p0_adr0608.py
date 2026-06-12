@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from vmaf_mcp import server as srv
@@ -68,9 +68,6 @@ def test_call_tool_raises_on_bad_path():
 def test_probe_backend_cpu_always_compiled_in(monkeypatch):
     """CPU backend is always compiled in; the probe should run a real (mocked)
     vmaf invocation and return runtime_healthy=True on success."""
-
-    # Synthesise a minimal vmaf JSON output that _probe_backend expects.
-    fake_payload = json.dumps({"pooled_metrics": {"vmaf": {"mean": 100.0}}}).encode()
 
     async def fake_exec(*args, **kwargs):
         proc = AsyncMock()

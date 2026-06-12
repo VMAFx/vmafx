@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from vmaf.core.cross_validation import ModelCrossValidation

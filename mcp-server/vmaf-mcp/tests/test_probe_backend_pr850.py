@@ -43,7 +43,6 @@ def test_probe_backend_null_score_yields_runtime_healthy_false(
     runtime_healthy=True.
     """
     import json
-    import subprocess
     from pathlib import Path
 
     def _fake_run(*_args, **_kwargs):
@@ -60,7 +59,6 @@ def test_probe_backend_null_score_yields_runtime_healthy_false(
     null_payload = json.dumps({"pooled_metrics": {"vmaf": {"mean": None}}}).encode()
 
     async def _run():
-        import asyncio
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:

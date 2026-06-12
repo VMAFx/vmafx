@@ -4,10 +4,8 @@ from abc import ABC, ABCMeta, abstractmethod
 
 import defusedxml.ElementTree as ElementTree
 import numpy as np
-from libsvm import svmutil
 
-import vmaf
-from vmaf import ExternalProgramCaller, convert_pixel_format_ffmpeg2vmafexec
+from vmaf import ExternalProgramCaller, convert_pixel_format_ffmpeg2vmafexec, model_path
 from vmaf.config import VmafConfig
 from vmaf.core.executor import Executor
 from vmaf.core.feature_assembler import FeatureAssembler
@@ -271,7 +269,7 @@ class VmafQualityRunner(VmafQualityRunnerModelMixin, QualityRunner):
 
     # trained with resource/param/vmaf_v6.py on private/user/zli/resource/dataset/dataset/derived/vmafplusstudy_laptop_raw_generalandcornercase.py, MLER, y=x+17
     # modified from vmaf_float_v0.6.1.pkl to use integer features
-    DEFAULT_MODEL_FILEPATH = vmaf.model_path("vmaf_v0.6.1.json")
+    DEFAULT_MODEL_FILEPATH = model_path("vmaf_v0.6.1.json")
 
     DEFAULT_FEATURE_DICT = {
         "VMAF_feature": ["vif", "adm", "motion"]
@@ -529,7 +527,7 @@ class VmafQualityRunner(VmafQualityRunnerModelMixin, QualityRunner):
 
 class VmafnegQualityRunner(VmafQualityRunner):
     TYPE = "VMAFNEG"
-    DEFAULT_MODEL_FILEPATH = vmaf.model_path("vmaf_v0.6.1neg.json")
+    DEFAULT_MODEL_FILEPATH = model_path("vmaf_v0.6.1neg.json")
 
 
 class EnsembleVmafQualityRunner(VmafQualityRunner):
@@ -1135,7 +1133,7 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
     VERSION = "F" + VmafFeatureExtractor.VERSION + "-0.6.1"
     ALGO_VERSION = 2
 
-    DEFAULT_MODEL_FILEPATH = vmaf.model_path("vmaf_v0.6.1.json")
+    DEFAULT_MODEL_FILEPATH = model_path("vmaf_v0.6.1.json")
 
     FEATURES = [
         "adm2",

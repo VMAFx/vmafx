@@ -11,7 +11,7 @@ logger = logging.getLogger(os.path.splitext(os.path.basename(__file__))[0])
 logger.setLevel("INFO")
 
 try:
-    from matplotlib import pyplot as plt
+    from matplotlib import pyplot as plt  # noqa: F401  re-exported: `from vmaf import plt`
 except (ImportError, RuntimeError):
     # ImportError: matplotlib (or one of its native deps) not installed.
     # RuntimeError: OSX system-Python framework error described below.
@@ -25,7 +25,7 @@ except (ImportError, RuntimeError):
     #   Please either reinstall Python as a framework, or try one of the other backends.
     #   If you are using (Ana)Conda please install python.app and replace the use of 'python' with 'pythonw'.
     #   See 'Working with Matplotlib on OSX' in the Matplotlib FAQ for more information.
-    plt = None
+    plt = None  # type: ignore[assignment]
 
 from . import config
 
