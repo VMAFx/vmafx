@@ -137,12 +137,14 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
         goto fail;
 
     /* Preserve the legacy luma fast-path when the model's input shape is
-     * NCHW [1,1,H,W]: allocate scratch buffers sized for luma so
-     * vmaf_dnn_session_run_luma8() can avoid reallocating per-frame. For
-     * any other shape we leave in_buf / out_buf NULL and w == h == 0;
+     * NCHW [N,1,H,W] where N == 1 or is a symbolic/dynamic dimension
+     * (ORT returns 0 or -1 for symbolic dims).  Treat any N <= 1 as
+     * single-frame inference so that models exported with a symbolic batch
+     * dim (e.g. ['batch', 1, H, W]) work via the luma fast-path.  For any
+     * other shape we leave in_buf / out_buf NULL and w == h == 0;
      * vmaf_dnn_session_run_luma8() then returns -ENOTSUP, while the
      * generic vmaf_dnn_session_run() path works regardless. */
-    if (rank == 4 && shape[0] == 1 && shape[1] == 1 && shape[2] > 0 && shape[3] > 0) {
+    if (rank == 4 && shape[0] <= 1 && shape[1] == 1 && shape[2] > 0 && shape[3] > 0) {
         s->h = (int)shape[2];
         s->w = (int)shape[3];
         const size_t n = (size_t)s->w * (size_t)s->h;
@@ -168,12 +170,30 @@ int vmaf_dnn_session_run_luma8(VmafDnnSession *sess, const uint8_t *in, size_t i
     if (!sess || !in || !out)
         return -EINVAL;
     /* in_buf / out_buf are only allocated when the model's input shape is
-     * NCHW [1,1,H,W] (see vmaf_dnn_session_open). Models with multi-
+     * NCHW [N,1,H,W] (see vmaf_dnn_session_open). Models with multi-
      * channel or multi-input graphs must use vmaf_dnn_session_run(). */
     if (!sess->in_buf || !sess->out_buf || sess->w == 0 || sess->h == 0)
         return -ENOTSUP;
-    if (w != sess->w || h != sess->h)
-        return -ERANGE;
+    if (w != sess->w || h != sess->h) {
+        /* Scratch buffer was sized for a different resolution (e.g., when the
+         * model was opened with a dynamic batch dim whose H/W came from the
+         * static shape [1,1,H_model,W_model] while the first real frame is
+         * larger).  Reallocate to match the caller's frame dimensions. */
+        const size_t n = (size_t)w * (size_t)h;
+        float *new_in = (float *)calloc(n, sizeof(float));
+        float *new_out = (float *)calloc(n, sizeof(float));
+        if (!new_in || !new_out) {
+            free(new_in);
+            free(new_out);
+            return -ENOMEM;
+        }
+        free(sess->in_buf);
+        free(sess->out_buf);
+        sess->in_buf = new_in;
+        sess->out_buf = new_out;
+        sess->w = w;
+        sess->h = h;
+    }
 
     /* ADR-0976 — sidecar-driven luma normalisation was dead code: the
      * JSON parser never populated `has_norm`, so this branch always

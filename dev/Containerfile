@@ -985,7 +985,7 @@ RUN python3.14 -m venv /opt/vmaf-venv \
     # not exist`` when pytorch-lightning → torchmetrics eagerly imports
     # torchvision at import time (see ai/pyproject.toml and ai/AGENTS.md).
     && /opt/vmaf-venv/bin/pip install --no-cache-dir 'torchvision>=0.27.0,<0.28.0' \
-    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e /build/vmaf/tools/vmaf-tune
+    && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/tools/vmaf-tune[fast]'
 
 ENV PATH=/opt/vmaf-venv/bin:${PATH}
 ENV PYTHONPATH=/build/vmaf/python:${PYTHONPATH}

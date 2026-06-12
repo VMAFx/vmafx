@@ -2737,6 +2737,17 @@ def _run_recommend_saliency(args: argparse.Namespace) -> int:
 
     adapter = get_adapter(args.encoder)
     crf = args.crf if args.crf is not None else adapter.quality_default
+
+    # If --output ends with .json the caller intends the path as a JSON
+    # report destination, not a video container.  Encode to a sibling
+    # <stem>_encoded.mp4 so ffmpeg gets a valid muxer, then write the
+    # result JSON to the original path.
+    output_path = args.output
+    json_report_path: Path | None = None
+    if output_path is not None and output_path.suffix.lower() == ".json":
+        json_report_path = output_path
+        output_path = output_path.with_name(output_path.stem + "_encoded.mp4")
+
     request = EncodeRequest(
         source=args.src,
         width=args.width,
@@ -2746,7 +2757,7 @@ def _run_recommend_saliency(args: argparse.Namespace) -> int:
         encoder=args.encoder,
         preset=args.preset,
         crf=crf,
-        output=args.output,
+        output=output_path,
     )
     if not args.saliency_aware:
         # --saliency-aware was not set; run a plain encode without touching
@@ -2783,7 +2794,15 @@ def _run_recommend_saliency(args: argparse.Namespace) -> int:
         "saliency_aggregator": args.saliency_aggregator,
         "exit_status": result.exit_status,
     }
-    sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    payload_text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    if json_report_path is not None:
+        # The caller asked for a .json report path; write JSON there
+        # and print the path to stdout so the shell can find it.
+        json_report_path.parent.mkdir(parents=True, exist_ok=True)
+        json_report_path.write_text(payload_text, encoding="utf-8")
+        sys.stdout.write(str(json_report_path) + "\n")
+    else:
+        sys.stdout.write(payload_text)
     return result.exit_status
 
 

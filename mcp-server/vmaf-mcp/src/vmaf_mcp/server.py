@@ -1573,6 +1573,10 @@ async def _run_tune_per_shot(
 
     await _send_progress(progress_token, 0.0, 1.0, "starting vmaf-tune tune-per-shot")
 
+    # Note: vmaf-tune tune-per-shot does not accept a ``--format`` flag;
+    # it always writes the JSON plan to stdout.  The ``format`` parameter
+    # is accepted by the MCP tool schema for forward-compatibility but is
+    # ignored here — stdout is always parsed as JSON.
     argv: list[str] = [
         str(vmaftune),
         "tune-per-shot",
@@ -1584,8 +1588,6 @@ async def _run_tune_per_shot(
         encoder,
         "--pix-fmt",
         pix_fmt,
-        "--format",
-        format,
     ]
     if output is not None:
         argv += ["--output", output]
@@ -1606,15 +1608,13 @@ async def _run_tune_per_shot(
     if proc.returncode != 0:
         raise RuntimeError(f"vmaf-tune tune-per-shot exited {proc.returncode}: {stderr_s.strip()}")
 
-    if format == "json":
-        try:
-            parsed: dict[str, Any] = json.loads(stdout_s)
-            return parsed
-        except json.JSONDecodeError:
-            # vmaf-tune unexpectedly emitted non-JSON despite --format json;
-            # fall through and return exit_code / raw stdout / stderr.
-            pass
-    return {"exit_code": proc.returncode, "stdout": stdout_s, "stderr": stderr_s}
+    try:
+        parsed: dict[str, Any] = json.loads(stdout_s)
+        return parsed
+    except json.JSONDecodeError:
+        # vmaf-tune emitted non-JSON stdout; return the raw output so the
+        # caller can inspect it.
+        return {"exit_code": proc.returncode, "stdout": stdout_s, "stderr": stderr_s}
 
 
 # ---------------------------------------------------------------------------

@@ -85,12 +85,24 @@ static const char *const ALLOWED_OPS[] = {
     "Clip",
     /* dropout (no-op in inference) */
     "Dropout",
-    /* INT8 post-training quantization (QDQ format): the underlying
-     * Gemm / Conv / MatMul stay on the list above; these two ops carry
-     * the scale + zero-point tensors that wrap each quantized operator.
+    /* INT8 post-training quantization — two flavours:
+     *
+     * QDQ format (static PTQ): the underlying Gemm / Conv / MatMul stay on
+     * the list above; QuantizeLinear / DequantizeLinear carry the per-channel
+     * scale + zero-point tensors that wrap each quantized operator.
+     *
+     * Dynamic PTQ format: DynamicQuantizeLinear computes per-tensor scale and
+     * zero-point at runtime; MatMulInteger and ConvInteger execute integer
+     * matrix-multiply and integer convolution respectively.  None of these
+     * three ops have filesystem or network side-effects — they are pure
+     * arithmetic on integer tensors.  Required for vmaf_tiny_v3.int8,
+     * vmaf_tiny_v4.int8, and nr_metric_v1.int8 (all dynamic-PTQ exports).
      */
     "QuantizeLinear",
     "DequantizeLinear",
+    "DynamicQuantizeLinear",
+    "MatMulInteger",
+    "ConvInteger",
     /* misc, safe */
     "Constant",
     "ConstantOfShape",

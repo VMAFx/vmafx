@@ -143,17 +143,40 @@ def _workdir_parent() -> Path | None:
     Resolution order (ADR-0549):
 
     1. ``VMAFTUNE_WORKDIR`` environment variable (set by the dev-mcp
-       container to ``/probes/vmaftune-work`` which has ~435 GB free).
+       container to ``/probes/vmaftune-work`` which has ~435 GB free),
+       *provided the path is writable by the current process*.  When
+       ``/probes`` is bind-mounted read-only (e.g. the container user
+       uid=2000 has not been granted write access), the env-var path is
+       silently skipped and the fallback applies.
     2. ``None`` — callers fall back to the OS default (usually
        ``/tmp``, an 8 GB tmpfs inside the dev-mcp container — too
-       small for a full 1080p60 YUV decode of BBB).
+       small for a full 1080p60 YUV decode of BBB, but better than a
+       ``PermissionError``).
 
-    Returns a :class:`Path` when the env var is set (the directory is
-    created on demand by the caller), otherwise ``None``.
+    Returns a :class:`Path` when the env var is set *and writable*
+    (the directory is created on demand by the caller), otherwise
+    ``None``.
     """
     env_val = os.environ.get("VMAFTUNE_WORKDIR", "").strip()
-    if env_val:
-        return Path(env_val)
+    if not env_val:
+        return None
+    candidate = Path(env_val)
+    # Attempt to create the directory so the writability probe below
+    # works even when the path does not yet exist.
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    if os.access(candidate, os.W_OK):
+        return candidate
+    import logging
+
+    logging.getLogger(__name__).warning(
+        "VMAFTUNE_WORKDIR=%s is not writable (uid=%d); "
+        "falling back to OS default temp directory",
+        env_val,
+        os.getuid(),
+    )
     return None
 
 

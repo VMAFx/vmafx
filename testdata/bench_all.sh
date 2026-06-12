@@ -108,14 +108,13 @@ backends = [
     (f"{tag}_cpu", "CPU"),
     (f"{tag}_cuda", "CUDA"),
     (f"{tag}_sycl", "SYCL"),
-    (f"{tag}_vulkan", "Vulkan"),
+    # Vulkan backend removed per ADR-0726; no _vulkan row produced.
 ]
 # Per-backend output key counts diverge — CPU emits 14-15 keys
 # (incl. integer_aim / integer_motion3 / integer_adm3); CUDA / SYCL
-# emit ~12; Vulkan emits ~34 (with raw num/den intermediates). A
-# matching key count between two backends is one signal that they
-# ran the same code path — useful when verifying that flags actually
-# engaged the intended backend.
+# emit ~12. A matching key count between two backends is one signal
+# that they ran the same code path — useful when verifying that flags
+# actually engaged the intended backend.
 cpu_scores = None
 for key, name in backends:
     try:
@@ -167,7 +166,7 @@ run_test() {
   run "${tag}_cpu" "$ref" "$dis" "$w" "$h" "$bd" "$FLAGS_CPU"
   run "${tag}_cuda" "$ref" "$dis" "$w" "$h" "$bd" "$FLAGS_CUDA"
   run "${tag}_sycl" "$ref" "$dis" "$w" "$h" "$bd" "$FLAGS_SYCL"
-  run "${tag}_vulkan" "$ref" "$dis" "$w" "$h" "$bd" "$FLAGS_VULKAN"
+  # Vulkan backend removed per ADR-0726; run_test no longer invokes it.
 }
 
 echo "========================================="

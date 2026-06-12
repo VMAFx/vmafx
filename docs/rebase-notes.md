@@ -45641,3 +45641,6 @@ or adds new call sites; resolve by carrying the `const *` form forward.
 ## docs/index.md — Vulkan image-import list item removed (docs/remove-stale-vulkan-image-import-ref)
 
 no rebase impact: docs-only removal of a stale list item; no code or nav structure changed.
+
+## fix/functional-matrix-broken-17 (2026-06-12)
+no rebase impact: all changes are bug fixes in independent files (bench_all.sh, bisect.py, server.py, cli.py, op_allowlist.c, float_adm_cuda.c, dnn_api.c, Containerfile) with no shared function-signature changes, no renamed symbols, and no upstream-mirrored path modifications.

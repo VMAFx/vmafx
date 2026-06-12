@@ -732,6 +732,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index, VmafFeatureCollector *fc)
 {
     FloatAdmStateCuda *s = fex->priv;
+    CudaFunctions *cu_f = fex->cu_state->f;
     /* Drain via the template helper so engine-scope fence batching
      * (T-GPU-OPT-1, ADR-0242) can short-circuit the per-stream
      * cuStreamSynchronize when the engine has already waited on
@@ -740,6 +741,24 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
     if (sync_err) {
         return sync_err;
     }
+
+    /* Explicit barrier on the D2H stream (s->lc.str) after collect_wait.
+     *
+     * Race condition (reproduced on gfx1030 RDNA2, ~31% of frames):
+     * The D2H copies of accum_host[] execute on s->lc.str.  The batch
+     * drain (ADR-0242) waits on lc.finished (recorded on lc.str AFTER
+     * the D2H), but the drain_stream synchronise does not block the
+     * calling CPU thread until lc.str itself has retired the memcpy —
+     * it only guarantees lc.finished has been signalled from the
+     * driver's perspective.  On AMD GFX and some NVIDIA configs a
+     * visible window exists between the event signal and the host
+     * seeing the DMA data, especially when the next frame's
+     * cuMemsetD8Async on pic_stream races with the D2H on lc.str for
+     * the same device buffer.  An explicit cuStreamSynchronize on
+     * lc.str is the conservative fix: it costs one per-frame CPU stall
+     * (cheap vs. the ~24-kernel compute budget) and eliminates the
+     * window entirely. */
+    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->lc.str));
 
     /* Per-scale double accumulation across WGs, mirroring the Vulkan
      * host wrapper's reduce_and_emit.
