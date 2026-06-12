@@ -196,6 +196,8 @@ nav:
       - DNN sessions: api/dnn.md
       - GPU (CUDA / SYCL): api/gpu.md
       - MCP C API: api/mcp.md
+      - vmaftune.ladder: api/ladder.md
+      - vmaftune.predict: api/predictor.md
   - Metrics:
       - Features: metrics/features.md
       - ANSNR (removed): metrics/ansnr.md

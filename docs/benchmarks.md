@@ -42,7 +42,7 @@ key set (CPU=15 with `integer_aim`/`integer_motion3`/`integer_adm3`,
 CUDA=12, SYCL=34 with raw `_num`/`_den` intermediates). Identical
 key counts across two rows would indicate a silent-fallback to CPU; the
 counts above confirm each backend actually engaged. See
-[`libvmaf/AGENTS.md` §"Backend-engagement foot-guns"](../libvmaf/AGENTS.md).
+[`AGENTS.md` §"Backend-engagement foot-guns"](../AGENTS.md).
 
 ## Backend comparison (1080p, 5 frames)
 
