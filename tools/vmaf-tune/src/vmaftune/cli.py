@@ -1919,8 +1919,14 @@ def _run_recommend_from_corpus(args: argparse.Namespace) -> int:
         sys.stdout.write(_json.dumps(pick.row) + "\n")
     else:
         crf = pick.row.get("crf", "?")
-        vmaf = pick.row.get("vmaf_score", float("nan"))
-        kbps = pick.row.get("bitrate_kbps", float("nan"))
+        try:
+            vmaf = float(pick.row.get("vmaf_score", float("nan")))
+        except (TypeError, ValueError):
+            vmaf = float("nan")
+        try:
+            kbps = float(pick.row.get("bitrate_kbps", float("nan")))
+        except (TypeError, ValueError):
+            kbps = float("nan")
         predicate = pick.predicate
         status = "UNMET" if pick.margin < 0 else "OK"
         sys.stdout.write(

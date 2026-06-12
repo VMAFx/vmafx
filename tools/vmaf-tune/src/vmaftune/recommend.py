@@ -129,7 +129,13 @@ def _filter_rows(rows: Iterable[dict], req: RecommendRequest) -> list[dict]:
         if int(row.get("exit_status", 0)) != 0:
             continue
         v = row.get("vmaf_score")
-        if v is None or (isinstance(v, float) and math.isnan(v)):
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(fv):
             continue
         out.append(row)
     return out
@@ -346,7 +352,13 @@ def pick_target_vmaf_with_uncertainty(
         if int(r.get("exit_status", 0)) != 0:
             continue
         v = r.get("vmaf_score")
-        if v is None or (isinstance(v, float) and math.isnan(v)):
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(fv):
             continue
         eligible.append(r)
     if not eligible:
