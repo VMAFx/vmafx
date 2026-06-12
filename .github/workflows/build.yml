@@ -138,7 +138,7 @@ jobs:
       - name: Install meson and ninja
         run: |
           python -m pip install --upgrade pip
-          pip install meson ninja
+          pip install meson ninja==1.13.2
 
       # ── Linux base deps ──────────────────────────────────────────────
       - name: Install base deps (Linux)
@@ -184,7 +184,7 @@ jobs:
           sudo ldconfig
 
       # ── Intel oneAPI / SYCL (Linux) ──────────────────────────────────
-      # Same pinned recipe as the retired SYCL legs — icpx 2025.3 + Level Zero v1.28.0.
+      # Same pinned recipe as the retired SYCL legs — icpx 2025.3 + Level Zero v1.29.0.
       - name: Install Intel oneAPI (Linux)
         if: matrix.sycl && startsWith(matrix.os, 'ubuntu')
         env:
@@ -199,7 +199,7 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
           sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2025.3
-          git clone --depth=1 --branch v1.28.0 \
+          git clone --depth=1 --branch v1.29.0 \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
           cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
           cmake --build /tmp/level-zero/build -j$(nproc)
