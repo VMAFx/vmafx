@@ -2018,13 +2018,14 @@ def _run_recommend(args: argparse.Namespace) -> int:
 def _smallest_passing_crf(
     rows: list[dict], target_vmaf: float
 ) -> tuple[str, str, int, float] | None:
-    """Return (src, preset, crf, vmaf) for the cheapest passing encode.
+    """Return (src, preset, crf, vmaf) for the highest-quality passing encode.
 
-    "Cheapest" here means the LARGEST CRF whose ``vmaf_score`` still
-    meets ``target_vmaf`` — for libx264 a larger CRF means a smaller
-    bitrate, so the largest passing CRF is the smallest bitrate that
-    clears the quality gate. Grouped per (src, preset); we return the
-    first such (src, preset) pair in the natural row order.
+    Picks the SMALLEST CRF whose ``vmaf_score`` still meets ``target_vmaf``
+    — for libx264 a smaller CRF means higher quality / larger bitrate, so
+    the smallest passing CRF is the highest quality that clears the gate.
+    This matches the CLI help: "find the smallest CRF whose VMAF >= --target-vmaf".
+    Grouped per (src, preset); we return the first such (src, preset) pair
+    in the natural row order.
     """
     best: dict[tuple[str, str], tuple[int, float]] = {}
     for r in rows:
@@ -2037,10 +2038,10 @@ def _smallest_passing_crf(
         key = (str(r["src"]), str(r["preset"]))
         crf = int(r["crf"])
         cur = best.get(key)
-        # We want the LARGEST CRF that still meets the target — that's
-        # the smallest bitrate at acceptable quality. Tie-break on the
+        # We want the SMALLEST CRF that still meets the target — that's
+        # the highest quality at acceptable cost. Tie-break on the
         # higher VMAF score for determinism.
-        if cur is None or crf > cur[0] or (crf == cur[0] and score > cur[1]):
+        if cur is None or crf < cur[0] or (crf == cur[0] and score > cur[1]):
             best[key] = (crf, score)
     if not best:
         return None
