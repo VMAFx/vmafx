@@ -308,6 +308,18 @@ def compute_saliency_map(
     np = _import_numpy()
     _validate_temporal_aggregator(temporal_aggregator, ema_alpha)
 
+    # The saliency_student_v1 model uses 8x downsampling in its encoder
+    # path; heights not divisible by 8 produce off-by-one tensor shapes
+    # that cause a runtime crash inside onnxruntime.  Reject early with a
+    # clear message rather than surfacing a cryptic internal error.
+    if height % 8 != 0:
+        raise ValueError(
+            f"compute_saliency_map: height {height} is not divisible by 8. "
+            f"The saliency_student_v1 encoder path requires height % 8 == 0. "
+            f"Pad or crop the source to the next multiple of 8 (e.g. {((height + 7) // 8) * 8}) "
+            f"before calling this function."
+        )
+
     if model_path is None:
         model_path = DEFAULT_SALIENCY_MODEL_RELPATH
     if not Path(model_path).exists():
