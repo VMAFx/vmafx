@@ -4293,13 +4293,29 @@ def _build_fast_encode_runner(
         encode_result = run_encode(req, ffmpeg_bin=args.ffmpeg_bin)
         if encode_result.exit_status != 0 or not slot.exists():
             return (0.0, float("nan"))
-        # Estimate kbps from size + clip duration; the verify pass has
-        # no slice so we use whatever framerate × frame-count the source
-        # actually produced. Falls back to file-size / 1 second when the
-        # encode metadata is missing — kbps is advisory, not the gate.
+        # Estimate kbps from size ÷ clip duration.
+        # For raw-YUV sources the clip duration is derived from the
+        # source file size and frame geometry (frame_bytes × framerate);
+        # this is exact and does not depend on wall-clock encode time,
+        # which the original code incorrectly used as the denominator.
         size_bytes = encode_result.encode_size_bytes
-        elapsed_s = max(encode_result.encode_time_ms / 1000.0, 1e-3)
-        observed_kbps = size_bytes * 8.0 / 1000.0 / elapsed_s if size_bytes > 0 else 0.0
+        framerate = max(args.framerate, 1e-3)
+        frame_bytes = args.width * args.height * (
+            2 if args.pix_fmt.endswith(("10le", "12le", "16le")) else 1
+        ) + (
+            (args.width // 2)
+            * (args.height // 2)
+            * 2
+            * (2 if args.pix_fmt.endswith(("10le", "12le", "16le")) else 1)
+        )
+        src_size = src.stat().st_size if src.exists() and frame_bytes > 0 else 0
+        total_frames = src_size // frame_bytes if frame_bytes > 0 and src_size > 0 else 0
+        clip_duration_s = total_frames / framerate if total_frames > 0 else 0.0
+        observed_kbps = (
+            size_bytes * 8.0 / 1000.0 / clip_duration_s
+            if size_bytes > 0 and clip_duration_s > 0.0
+            else 0.0
+        )
 
         score_req = ScoreRequest(
             reference=src,
@@ -4770,8 +4786,12 @@ def _run_report(args: argparse.Namespace) -> int:
                 LadderSample(
                     width=int(s.get("width") or 0),
                     height=int(s.get("height") or 0),
-                    bitrate_kbps=float(s.get("bitrate_kbps") or 0.0),
-                    vmaf=float(s.get("vmaf") or 0.0),
+                    bitrate_kbps=(
+                        float(s["bitrate_kbps"])
+                        if s.get("bitrate_kbps") is not None
+                        else float("nan")
+                    ),
+                    vmaf=(float(s["vmaf"]) if s.get("vmaf") is not None else float("nan")),
                     crf=int(s.get("crf") or 0),
                 ),
             )
@@ -4780,8 +4800,12 @@ def _run_report(args: argparse.Namespace) -> int:
                 LadderRung(
                     width=int(r.get("width") or 0),
                     height=int(r.get("height") or 0),
-                    bitrate_kbps=float(r.get("bitrate_kbps") or 0.0),
-                    vmaf=float(r.get("vmaf") or 0.0),
+                    bitrate_kbps=(
+                        float(r["bitrate_kbps"])
+                        if r.get("bitrate_kbps") is not None
+                        else float("nan")
+                    ),
+                    vmaf=(float(r["vmaf"]) if r.get("vmaf") is not None else float("nan")),
                     crf=int(r.get("crf") or 0),
                 ),
             )
