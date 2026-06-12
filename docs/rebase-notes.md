@@ -45610,3 +45610,23 @@ no rebase impact: docs-only change. `CLAUDE.md` §15 updated with a new publishi
 bullet; `docs/development/publishing.md` and `docs/adr/1102-*.md` added;
 `docs/adr/README.md` gets one new index row; `changelog.d/added/1102-*.md` added.
 No production source, public header, meson build files, or test files touched.
+
+## fix/codeql-large-parameter-const-pointer (2026-06-12)
+Rebase-sensitive: function signatures changed across VIF, SpEED, and CAMBI.
+- `VifBuffer`: `PADDING_SQ_DATA`, `PADDING_SQ_DATA_2` (integer_vif.h),
+  `pad_top_and_bottom`, `decimate_and_pad`, `subsample_rd_8/16` (integer_vif.c),
+  `vif_subsample_rd_8/16_avx2` + `vif_filter1d_8/16_avx2` (x86/vif_avx2.h/.c),
+  `vif_subsample_rd_8/16_avx512` (x86/vif_avx512.h/.c),
+  `vif_subsample_rd_8/16_neon` (arm64/vif_neon.h/.c):
+  all now take `const VifBuffer *` instead of `VifBuffer` by value.
+  The function-pointer typedef in `VifState` was updated accordingly.
+  Call sites pass `&buf` or `&s->public.buf` as appropriate.
+- `SpeedDimensions` (speed.c): 11 static functions now take `const SpeedDimensions *`.
+  Call sites in `speed_extract_score` pass `&s->dimensions`.
+- `SpeedInternalDimensions` (speed_internal.h/.c): `speed_internal_filter_and_downscale`
+  and `speed_internal_compute_cov_matrix` now take `const SpeedInternalDimensions *`.
+  All GPU backend call sites (cuda/hip/sycl speed twins) pass `&s->dim`.
+- `CambiBuffers` (cambi.c): `cambi_score` now takes `const CambiBuffers *`.
+  Call site passes `&s->buffers`.
+Conflicts possible if upstream or another branch edits these function signatures
+or adds new call sites; resolve by carrying the `const *` form forward.

@@ -55,33 +55,33 @@
 #define VMAF_NOINLINE_NOCLONE
 #endif
 
-static inline void pad_top_and_bottom(VifBuffer buf, unsigned h, int fwidth)
+static inline void pad_top_and_bottom(const VifBuffer *buf, unsigned h, int fwidth)
 {
     const unsigned fwidth_half = fwidth / 2;
-    unsigned char *ref = buf.ref;
-    unsigned char *dis = buf.dis;
+    unsigned char *ref = buf->ref;
+    unsigned char *dis = buf->dis;
     for (unsigned i = 1; i <= fwidth_half; ++i) {
-        size_t offset = buf.stride * i;
-        memcpy(ref - offset, ref + offset, buf.stride);
-        memcpy(dis - offset, dis + offset, buf.stride);
-        memcpy(ref + buf.stride * (h - 1) + buf.stride * i,
-               ref + buf.stride * (h - 1) - buf.stride * i, buf.stride);
-        memcpy(dis + buf.stride * (h - 1) + buf.stride * i,
-               dis + buf.stride * (h - 1) - buf.stride * i, buf.stride);
+        size_t offset = buf->stride * i;
+        memcpy(ref - offset, ref + offset, buf->stride);
+        memcpy(dis - offset, dis + offset, buf->stride);
+        memcpy(ref + buf->stride * (h - 1) + buf->stride * i,
+               ref + buf->stride * (h - 1) - buf->stride * i, buf->stride);
+        memcpy(dis + buf->stride * (h - 1) + buf->stride * i,
+               dis + buf->stride * (h - 1) - buf->stride * i, buf->stride);
     }
 }
 
-static inline void decimate_and_pad(VifBuffer buf, unsigned w, unsigned h, int scale)
+static inline void decimate_and_pad(const VifBuffer *buf, unsigned w, unsigned h, int scale)
 {
-    uint16_t *ref = buf.ref;
-    uint16_t *dis = buf.dis;
-    const ptrdiff_t stride = buf.stride / sizeof(uint16_t);
-    const ptrdiff_t mu_stride = buf.stride_16 / sizeof(uint16_t);
+    uint16_t *ref = buf->ref;
+    uint16_t *dis = buf->dis;
+    const ptrdiff_t stride = buf->stride / sizeof(uint16_t);
+    const ptrdiff_t mu_stride = buf->stride_16 / sizeof(uint16_t);
 
     for (unsigned i = 0; i < h / 2; ++i) {
         for (unsigned j = 0; j < w / 2; ++j) {
-            ref[i * stride + j] = buf.mu1[(i * 2) * mu_stride + (j * 2)];
-            dis[i * stride + j] = buf.mu2[(i * 2) * mu_stride + (j * 2)];
+            ref[i * stride + j] = buf->mu1[(i * 2) * mu_stride + (j * 2)];
+            dis[i * stride + j] = buf->mu2[(i * 2) * mu_stride + (j * 2)];
         }
     }
     pad_top_and_bottom(buf, h / 2, vif_filter1d_width[scale]);
@@ -415,7 +415,7 @@ void vif_statistic_8_avx512(struct VifPublicState *s, float *num, float *den, un
             buf.tmp.ref_dis[j] = accum_ref_dis;
         }
 
-        PADDING_SQ_DATA(buf, w, fwidth_half);
+        PADDING_SQ_DATA(&buf, w, fwidth_half);
 
         //HORIZONTAL
         for (unsigned j = 0; j < n << 4; j += 16) {
@@ -820,7 +820,7 @@ void vif_statistic_16_avx512(struct VifPublicState *s, float *num, float *den, u
             buf.tmp.ref_dis[j] = (uint32_t)((accum_ref_dis + add_shift_round_VP_sq) >> shift_VP_sq);
         }
 
-        PADDING_SQ_DATA(buf, w, fwidth_half);
+        PADDING_SQ_DATA(&buf, w, fwidth_half);
 
         //HORIZONTAL
         n = w >> 4;
@@ -1342,13 +1342,13 @@ static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_horiz_j(const uint32_t *ref
  * `buf.dis` are 8-bit Y planes, output written half-resolution into
  * `buf.mu*` / `buf.*_sq` / `buf.ref_dis`.
  */
-void vif_subsample_rd_8_avx512(VifBuffer buf, unsigned w, unsigned h)
+void vif_subsample_rd_8_avx512(const VifBuffer *buf, unsigned w, unsigned h)
 {
     const unsigned fwidth = vif_filter1d_width[1];
     const uint16_t *vif_filt_s1 = vif_filter1d_table[1];
-    const uint8_t *ref = (uint8_t *)buf.ref;
-    const uint8_t *dis = (uint8_t *)buf.dis;
-    const ptrdiff_t stride = buf.stride_16 / sizeof(uint16_t);
+    const uint8_t *ref = (uint8_t *)buf->ref;
+    const uint8_t *dis = (uint8_t *)buf->dis;
+    const ptrdiff_t stride = buf->stride_16 / sizeof(uint16_t);
 
     /* ADR-0503: filter constants are collected into two structs so that the
      * noinline per-row helpers (vif_subsample_rd_8_vert_j and
@@ -1390,8 +1390,8 @@ void vif_subsample_rd_8_avx512(VifBuffer buf, unsigned w, unsigned h)
         int n = w >> 5;
         int ii = (int)i - fwidth_half;
         for (int j = 0; j < n << 5; j = j + 32) {
-            vif_subsample_rd_8_vert_j(ref, dis, buf.stride, ii, j, &vc, buf.tmp.ref_convol,
-                                      buf.tmp.dis_convol);
+            vif_subsample_rd_8_vert_j(ref, dis, buf->stride, ii, j, &vc, buf->tmp.ref_convol,
+                                      buf->tmp.dis_convol);
         }
         for (unsigned j = n << 5; j < w; ++j) {
             uint32_t accum_ref = 0;
@@ -1399,11 +1399,11 @@ void vif_subsample_rd_8_avx512(VifBuffer buf, unsigned w, unsigned h)
             for (unsigned fi = 0; fi < fwidth; ++fi) {
                 int ii_check = ii + fi;
                 const uint16_t fcoeff_scalar = vif_filt_s1[fi];
-                accum_ref += fcoeff_scalar * (uint32_t)ref[ii_check * buf.stride + j];
-                accum_dis += fcoeff_scalar * (uint32_t)dis[ii_check * buf.stride + j];
+                accum_ref += fcoeff_scalar * (uint32_t)ref[ii_check * buf->stride + j];
+                accum_dis += fcoeff_scalar * (uint32_t)dis[ii_check * buf->stride + j];
             }
-            buf.tmp.ref_convol[j] = (accum_ref + 128) >> 8;
-            buf.tmp.dis_convol[j] = (accum_dis + 128) >> 8;
+            buf->tmp.ref_convol[j] = (accum_ref + 128) >> 8;
+            buf->tmp.dis_convol[j] = (accum_dis + 128) >> 8;
         }
 
         PADDING_SQ_DATA_2(buf, w, fwidth_half);
@@ -1413,8 +1413,8 @@ void vif_subsample_rd_8_avx512(VifBuffer buf, unsigned w, unsigned h)
         for (int j = 0; j < n << 4; j = j + 16) {
             int jj = j - fwidth_half;
             int jj_check = jj;
-            vif_subsample_rd_8_horiz_j(buf.tmp.ref_convol, buf.tmp.dis_convol, jj_check, &hc,
-                                       buf.mu1 + i * stride + j, buf.mu2 + i * stride + j);
+            vif_subsample_rd_8_horiz_j(buf->tmp.ref_convol, buf->tmp.dis_convol, jj_check, &hc,
+                                       buf->mu1 + i * stride + j, buf->mu2 + i * stride + j);
         }
 
         for (unsigned j = n << 4; j < w; ++j) {
@@ -1424,27 +1424,27 @@ void vif_subsample_rd_8_avx512(VifBuffer buf, unsigned w, unsigned h)
             int jj_check = jj;
             for (unsigned fj = 0; fj < fwidth; ++fj, jj_check = jj + fj) {
                 const uint16_t fcoeff_scalar = vif_filt_s1[fj];
-                accum_ref += fcoeff_scalar * buf.tmp.ref_convol[jj_check];
-                accum_dis += fcoeff_scalar * buf.tmp.dis_convol[jj_check];
+                accum_ref += fcoeff_scalar * buf->tmp.ref_convol[jj_check];
+                accum_dis += fcoeff_scalar * buf->tmp.dis_convol[jj_check];
             }
-            buf.mu1[i * stride + j] = (uint16_t)((accum_ref + 32768) >> 16);
-            buf.mu2[i * stride + j] = (uint16_t)((accum_dis + 32768) >> 16);
+            buf->mu1[i * stride + j] = (uint16_t)((accum_ref + 32768) >> 16);
+            buf->mu2[i * stride + j] = (uint16_t)((accum_dis + 32768) >> 16);
         }
     }
     decimate_and_pad(buf, w, h, 0);
 }
 
-void vif_subsample_rd_16_avx512(VifBuffer buf, unsigned w, unsigned h, int scale, int bpc)
+void vif_subsample_rd_16_avx512(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc)
 {
     const unsigned fwidth = vif_filter1d_width[scale + 1];
     const uint16_t *vif_filt = vif_filter1d_table[scale + 1];
     int32_t add_shift_round_VP;
     int32_t shift_VP;
     int fwidth_half = fwidth >> 1;
-    const ptrdiff_t stride = buf.stride / sizeof(uint16_t);
-    const ptrdiff_t stride16 = buf.stride_16 / sizeof(uint16_t);
-    uint16_t *ref = buf.ref;
-    uint16_t *dis = buf.dis;
+    const ptrdiff_t stride = buf->stride / sizeof(uint16_t);
+    const ptrdiff_t stride16 = buf->stride_16 / sizeof(uint16_t);
+    uint16_t *ref = buf->ref;
+    uint16_t *dis = buf->dis;
 
     if (scale == 0) {
         add_shift_round_VP = 1 << (bpc - 1);
@@ -1500,18 +1500,18 @@ void vif_subsample_rd_16_avx512(VifBuffer buf, unsigned w, unsigned h, int scale
             accumr_lo = _mm512_srli_epi32(accumr_lo, shift_VP);
             accumr_hi = _mm512_srli_epi32(accumr_hi, shift_VP);
 
-            _mm512_storeu_si512((__m512i *)(buf.tmp.ref_convol + j),
+            _mm512_storeu_si512((__m512i *)(buf->tmp.ref_convol + j),
                                 _mm512_permutex2var_epi64(accumr_lo, mask3, accumr_hi));
-            _mm512_storeu_si512((__m512i *)(buf.tmp.ref_convol + j + 16),
+            _mm512_storeu_si512((__m512i *)(buf->tmp.ref_convol + j + 16),
                                 _mm512_permutex2var_epi64(accumr_lo, mask4, accumr_hi));
 
             accumd_lo = _mm512_add_epi32(accumd_lo, addnum);
             accumd_hi = _mm512_add_epi32(accumd_hi, addnum);
             accumd_lo = _mm512_srli_epi32(accumd_lo, shift_VP);
             accumd_hi = _mm512_srli_epi32(accumd_hi, shift_VP);
-            _mm512_storeu_si512((__m512i *)(buf.tmp.dis_convol + j),
+            _mm512_storeu_si512((__m512i *)(buf->tmp.dis_convol + j),
                                 _mm512_permutex2var_epi64(accumd_lo, mask3, accumd_hi));
-            _mm512_storeu_si512((__m512i *)(buf.tmp.dis_convol + j + 16),
+            _mm512_storeu_si512((__m512i *)(buf->tmp.dis_convol + j + 16),
                                 _mm512_permutex2var_epi64(accumd_lo, mask4, accumd_hi));
         }
 
@@ -1525,8 +1525,8 @@ void vif_subsample_rd_16_avx512(VifBuffer buf, unsigned w, unsigned h, int scale
                 accum_ref += fcoeff * ((uint32_t)ref[ii_check * stride + j]);
                 accum_dis += fcoeff * ((uint32_t)dis[ii_check * stride + j]);
             }
-            buf.tmp.ref_convol[j] = (uint16_t)((accum_ref + add_shift_round_VP) >> shift_VP);
-            buf.tmp.dis_convol[j] = (uint16_t)((accum_dis + add_shift_round_VP) >> shift_VP);
+            buf->tmp.ref_convol[j] = (uint16_t)((accum_ref + add_shift_round_VP) >> shift_VP);
+            buf->tmp.dis_convol[j] = (uint16_t)((accum_dis + add_shift_round_VP) >> shift_VP);
         }
 
         PADDING_SQ_DATA_2(buf, w, fwidth_half);
@@ -1543,13 +1543,13 @@ void vif_subsample_rd_16_avx512(VifBuffer buf, unsigned w, unsigned h, int scale
             accumrlo = accumdlo = accumrhi = accumdhi = _mm512_setzero_si512();
             for (unsigned fj = 0; fj < fwidth; ++fj, jj_check = jj + fj) {
 
-                __m512i refconvol = _mm512_loadu_si512((__m512i *)(buf.tmp.ref_convol + jj_check));
+                __m512i refconvol = _mm512_loadu_si512((__m512i *)(buf->tmp.ref_convol + jj_check));
                 __m512i fcoeff = _mm512_set1_epi16(vif_filt[fj]);
                 __m512i result2 = _mm512_mulhi_epu16(refconvol, fcoeff);
                 __m512i result2lo = _mm512_mullo_epi16(refconvol, fcoeff);
                 accumrlo = _mm512_add_epi32(accumrlo, _mm512_unpacklo_epi16(result2lo, result2));
                 accumrhi = _mm512_add_epi32(accumrhi, _mm512_unpackhi_epi16(result2lo, result2));
-                __m512i disconvol = _mm512_loadu_si512((__m512i *)(buf.tmp.dis_convol + jj_check));
+                __m512i disconvol = _mm512_loadu_si512((__m512i *)(buf->tmp.dis_convol + jj_check));
                 result2 = _mm512_mulhi_epu16(disconvol, fcoeff);
                 result2lo = _mm512_mullo_epi16(disconvol, fcoeff);
                 accumdlo = _mm512_add_epi32(accumdlo, _mm512_unpacklo_epi16(result2lo, result2));
@@ -1576,10 +1576,10 @@ void vif_subsample_rd_16_avx512(VifBuffer buf, unsigned w, unsigned h, int scale
                                              44 * M + 40, 12 * M + 8, 36 * M + 32, 4 * M + 0);
 
             _mm256_storeu_si256(
-                (__m256i *)(buf.mu1 + (stride16 * i) + j),
+                (__m256i *)(buf->mu1 + (stride16 * i) + j),
                 _mm512_castsi512_si256(_mm512_permutex2var_epi16(accumrlo, mask2, accumrhi)));
             _mm256_storeu_si256(
-                (__m256i *)(buf.mu2 + (stride16 * i) + j),
+                (__m256i *)(buf->mu2 + (stride16 * i) + j),
                 _mm512_castsi512_si256(_mm512_permutex2var_epi16(accumdlo, mask2, accumdhi)));
         }
 
@@ -1590,11 +1590,11 @@ void vif_subsample_rd_16_avx512(VifBuffer buf, unsigned w, unsigned h, int scale
             int jj_check = jj;
             for (unsigned fj = 0; fj < fwidth; ++fj, jj_check = jj + fj) {
                 const uint16_t fcoeff = vif_filt[fj];
-                accum_ref += fcoeff * ((uint32_t)buf.tmp.ref_convol[jj_check]);
-                accum_dis += fcoeff * ((uint32_t)buf.tmp.dis_convol[jj_check]);
+                accum_ref += fcoeff * ((uint32_t)buf->tmp.ref_convol[jj_check]);
+                accum_dis += fcoeff * ((uint32_t)buf->tmp.dis_convol[jj_check]);
             }
-            buf.mu1[i * stride16 + j] = (uint16_t)((accum_ref + 32768) >> 16);
-            buf.mu2[i * stride16 + j] = (uint16_t)((accum_dis + 32768) >> 16);
+            buf->mu1[i * stride16 + j] = (uint16_t)((accum_ref + 32768) >> 16);
+            buf->mu2[i * stride16 + j] = (uint16_t)((accum_dis + 32768) >> 16);
         }
     }
     decimate_and_pad(buf, w, h, scale);

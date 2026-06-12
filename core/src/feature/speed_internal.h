@@ -110,9 +110,9 @@ size_t speed_internal_float_stride(size_t alloc_width);
  * @param tmp_buffer   Scratch buffer (see size requirement above).
  * @param float_stride Float stride in bytes.
  */
-void speed_internal_filter_and_downscale(SpeedInternalDimensions dim, SpeedInternalOptions *opt,
-                                         float *frame_buffer, float *tmp_buffer,
-                                         size_t float_stride);
+void speed_internal_filter_and_downscale(const SpeedInternalDimensions *dim,
+                                         SpeedInternalOptions *opt, float *frame_buffer,
+                                         float *tmp_buffer, size_t float_stride);
 
 /**
  * Compute the 25×25 covariance matrix from the operating-resolution
@@ -130,7 +130,7 @@ void speed_internal_filter_and_downscale(SpeedInternalDimensions dim, SpeedInter
  * @param tmp_means    Scratch buffer [25] for means.
  * @param stride_px    float_stride / sizeof(float).
  */
-void speed_internal_compute_cov_matrix(SpeedInternalDimensions dim, const float *data,
+void speed_internal_compute_cov_matrix(const SpeedInternalDimensions *dim, const float *data,
                                        float *cov_mat, float *tmp_means, size_t stride_px);
 
 /**

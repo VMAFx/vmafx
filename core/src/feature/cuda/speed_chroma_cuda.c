@@ -580,12 +580,12 @@ static int extract_channel(SpeedChromaCudaState *s, CudaFunctions *cu_f, VmafPic
 
     /* Reference plane: CPU copy + filter + downscale. */
     picture_copy(s->h_plane_ref, s->float_stride, ref_pic, -128, ref_pic->bpc, channel);
-    speed_internal_filter_and_downscale(s->dim, &s->opt, s->h_plane_ref, tmp_filter,
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, tmp_filter,
                                         s->float_stride);
 
     /* Distorted plane: CPU copy + filter + downscale. */
     picture_copy(s->h_plane_dis, s->float_stride, dist_pic, -128, dist_pic->bpc, channel);
-    speed_internal_filter_and_downscale(s->dim, &s->opt, s->h_plane_dis, tmp_filter,
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_dis, tmp_filter,
                                         s->float_stride);
 
     aligned_free(tmp_filter);

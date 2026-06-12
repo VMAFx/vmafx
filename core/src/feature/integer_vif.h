@@ -92,39 +92,39 @@ typedef struct VifPublicState {
     double vif_enhn_gain_limit;
 } VifPublicState;
 
-static inline void PADDING_SQ_DATA(VifBuffer buf, int w, unsigned fwidth_half)
+static inline void PADDING_SQ_DATA(const VifBuffer *buf, int w, unsigned fwidth_half)
 {
     for (unsigned f = 1; f <= fwidth_half; ++f) {
         int left_point = -(int)f;
         int right_point = f;
-        buf.tmp.mu1[left_point] = buf.tmp.mu1[right_point];
-        buf.tmp.mu2[left_point] = buf.tmp.mu2[right_point];
-        buf.tmp.ref[left_point] = buf.tmp.ref[right_point];
-        buf.tmp.dis[left_point] = buf.tmp.dis[right_point];
-        buf.tmp.ref_dis[left_point] = buf.tmp.ref_dis[right_point];
+        buf->tmp.mu1[left_point] = buf->tmp.mu1[right_point];
+        buf->tmp.mu2[left_point] = buf->tmp.mu2[right_point];
+        buf->tmp.ref[left_point] = buf->tmp.ref[right_point];
+        buf->tmp.dis[left_point] = buf->tmp.dis[right_point];
+        buf->tmp.ref_dis[left_point] = buf->tmp.ref_dis[right_point];
 
         left_point = w - 1 - f;
         right_point = w - 1 + f;
-        buf.tmp.mu1[right_point] = buf.tmp.mu1[left_point];
-        buf.tmp.mu2[right_point] = buf.tmp.mu2[left_point];
-        buf.tmp.ref[right_point] = buf.tmp.ref[left_point];
-        buf.tmp.dis[right_point] = buf.tmp.dis[left_point];
-        buf.tmp.ref_dis[right_point] = buf.tmp.ref_dis[left_point];
+        buf->tmp.mu1[right_point] = buf->tmp.mu1[left_point];
+        buf->tmp.mu2[right_point] = buf->tmp.mu2[left_point];
+        buf->tmp.ref[right_point] = buf->tmp.ref[left_point];
+        buf->tmp.dis[right_point] = buf->tmp.dis[left_point];
+        buf->tmp.ref_dis[right_point] = buf->tmp.ref_dis[left_point];
     }
 }
 
-static inline void PADDING_SQ_DATA_2(VifBuffer buf, int w, unsigned fwidth_half)
+static inline void PADDING_SQ_DATA_2(const VifBuffer *buf, int w, unsigned fwidth_half)
 {
     for (unsigned f = 1; f <= fwidth_half; ++f) {
         int left_point = -(int)f;
         int right_point = f;
-        buf.tmp.ref_convol[left_point] = buf.tmp.ref_convol[right_point];
-        buf.tmp.dis_convol[left_point] = buf.tmp.dis_convol[right_point];
+        buf->tmp.ref_convol[left_point] = buf->tmp.ref_convol[right_point];
+        buf->tmp.dis_convol[left_point] = buf->tmp.dis_convol[right_point];
 
         left_point = w - 1 - f;
         right_point = w - 1 + f;
-        buf.tmp.ref_convol[right_point] = buf.tmp.ref_convol[left_point];
-        buf.tmp.dis_convol[right_point] = buf.tmp.dis_convol[left_point];
+        buf->tmp.ref_convol[right_point] = buf->tmp.ref_convol[left_point];
+        buf->tmp.dis_convol[right_point] = buf->tmp.dis_convol[left_point];
     }
 }
 

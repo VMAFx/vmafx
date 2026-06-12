@@ -666,10 +666,10 @@ static int extract_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         float *h_plane_d = (ch == 1) ? s->h_plane_dis : nullptr;
         /* Reuse h_plane_ref/dis for ref/dis of each chroma channel. */
         picture_copy(s->h_plane_ref, s->float_stride, ref_pic, -128, ref_pic->bpc, ch);
-        speed_internal_filter_and_downscale(s->dim, &s->opt, s->h_plane_ref, tmp_filter,
+        speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, tmp_filter,
                                             s->float_stride);
         picture_copy(s->h_plane_dis, s->float_stride, dist_pic, -128, dist_pic->bpc, ch);
-        speed_internal_filter_and_downscale(s->dim, &s->opt, s->h_plane_dis, tmp_filter,
+        speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_dis, tmp_filter,
                                             s->float_stride);
         (void)h_plane;
         (void)h_plane_d;

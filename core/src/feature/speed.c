@@ -683,16 +683,16 @@ static int solve_linear_system(float *A_data, int A_size, float *B_data, int B_c
     return err;
 }
 
-static float compute_mean(SpeedDimensions dim, const float *data, size_t stride_px, int start_row,
-                          int start_col)
+static float compute_mean(const SpeedDimensions *dim, const float *data, size_t stride_px,
+                          int start_row, int start_col)
 {
     float result = 0;
-    for (size_t i = 0; i < dim.submatrix_height; i++) {
-        for (size_t j = 0; j < dim.submatrix_width; j++)
+    for (size_t i = 0; i < dim->submatrix_height; i++) {
+        for (size_t j = 0; j < dim->submatrix_width; j++)
             result += data[(start_row + i) * stride_px + (start_col + j)];
     }
 
-    return result / (dim.submatrix_width * dim.submatrix_height);
+    return result / (dim->submatrix_width * dim->submatrix_height);
 }
 
 // Scalar reference implementation of the covariance-sum kernel.
@@ -715,37 +715,37 @@ static double compute_cov_kernel_scalar(const float *data_x, const float *data_y
 // The arrays are stored as submatrices of the input data, starting at
 // (start_row_x, start_col_x) and (start_row_y, start_col_y)
 // and having dimensions (submatrix_height, submatrix_width)
-static float compute_covariance(SpeedDimensions dim, const float *data, const float *means,
+static float compute_covariance(const SpeedDimensions *dim, const float *data, const float *means,
                                 size_t stride_px, int start_row_x, int start_col_x, int start_row_y,
                                 int start_col_y, compute_cov_kernel_fn kernel)
 {
-    double mean_x = means[start_row_x * dim.block_size + start_col_x];
-    double mean_y = means[start_row_y * dim.block_size + start_col_y];
+    double mean_x = means[start_row_x * dim->block_size + start_col_x];
+    double mean_y = means[start_row_y * dim->block_size + start_col_y];
     const float *data_x = data + start_row_x * stride_px + start_col_x;
     const float *data_y = data + start_row_y * stride_px + start_col_y;
-    double result = kernel(data_x, data_y, stride_px, dim.submatrix_height, dim.submatrix_width,
+    double result = kernel(data_x, data_y, stride_px, dim->submatrix_height, dim->submatrix_width,
                            mean_x, mean_y);
-    return result / (dim.submatrix_width * dim.submatrix_height);
+    return result / (dim->submatrix_width * dim->submatrix_height);
 }
 
-static void compute_covariance_matrix(SpeedDimensions dim, const float *data, float *cov_mat,
+static void compute_covariance_matrix(const SpeedDimensions *dim, const float *data, float *cov_mat,
                                       float *means, size_t stride_px, compute_cov_kernel_fn kernel)
 {
-    assert(dim.block_size > 0);
-    for (size_t start_row = 0; start_row < dim.block_size; start_row++) {
-        for (size_t start_col = 0; start_col < dim.block_size; start_col++) {
-            means[start_row * dim.block_size + start_col] =
+    assert(dim->block_size > 0);
+    for (size_t start_row = 0; start_row < dim->block_size; start_row++) {
+        for (size_t start_col = 0; start_col < dim->block_size; start_col++) {
+            means[start_row * dim->block_size + start_col] =
                 compute_mean(dim, data, stride_px, start_row, start_col);
         }
     }
-    size_t elements_in_block = dim.block_size * dim.block_size;
+    size_t elements_in_block = dim->block_size * dim->block_size;
 
-    for (size_t x_index = 0; x_index < dim.elements_in_block; x_index++) {
+    for (size_t x_index = 0; x_index < dim->elements_in_block; x_index++) {
         for (size_t y_index = 0; y_index <= x_index; y_index++) {
-            size_t start_row_x = x_index / dim.block_size;
-            size_t start_col_x = x_index % dim.block_size;
-            size_t start_row_y = y_index / dim.block_size;
-            size_t start_col_y = y_index % dim.block_size;
+            size_t start_row_x = x_index / dim->block_size;
+            size_t start_col_x = x_index % dim->block_size;
+            size_t start_row_y = y_index / dim->block_size;
+            size_t start_col_y = y_index % dim->block_size;
             float covariance = compute_covariance(dim, data, means, stride_px, start_row_x,
                                                   start_col_x, start_row_y, start_col_y, kernel);
             cov_mat[x_index * elements_in_block + y_index] = covariance;
@@ -754,66 +754,66 @@ static void compute_covariance_matrix(SpeedDimensions dim, const float *data, fl
     }
 }
 
-static void compute_independent_term_for_offset(SpeedDimensions dim, const float *data,
+static void compute_independent_term_for_offset(const SpeedDimensions *dim, const float *data,
                                                 float *independent_term, size_t stride_px,
                                                 size_t start_i, size_t start_j)
 {
-    for (size_t i = start_i; i < dim.truncated_height; i += dim.block_size) {
-        for (size_t j = start_j; j < dim.truncated_width; j += dim.block_size) {
-            size_t out_row = start_i * dim.block_size + start_j;
-            size_t out_col = (((i - start_i) / dim.block_size) * dim.num_blocks_horizontal) +
-                             ((j - start_j) / dim.block_size);
-            independent_term[out_row * dim.num_blocks + out_col] = data[i * stride_px + j];
+    for (size_t i = start_i; i < dim->truncated_height; i += dim->block_size) {
+        for (size_t j = start_j; j < dim->truncated_width; j += dim->block_size) {
+            size_t out_row = start_i * dim->block_size + start_j;
+            size_t out_col = (((i - start_i) / dim->block_size) * dim->num_blocks_horizontal) +
+                             ((j - start_j) / dim->block_size);
+            independent_term[out_row * dim->num_blocks + out_col] = data[i * stride_px + j];
         }
     }
 }
 
-static void compute_independent_term(SpeedDimensions dim, const float *data,
+static void compute_independent_term(const SpeedDimensions *dim, const float *data,
                                      float *independent_term, size_t stride_px)
 {
-    for (size_t start_i = 0; start_i < dim.block_size; start_i++) {
-        for (size_t start_j = 0; start_j < dim.block_size; start_j++) {
+    for (size_t start_i = 0; start_i < dim->block_size; start_i++) {
+        for (size_t start_j = 0; start_j < dim->block_size; start_j++) {
             compute_independent_term_for_offset(dim, data, independent_term, stride_px, start_i,
                                                 start_j);
         }
     }
 }
 
-static void compute_pointwise_product_and_division(SpeedDimensions dim, float *X, const float *Y,
-                                                   float denominator)
+static void compute_pointwise_product_and_division(const SpeedDimensions *dim, float *X,
+                                                   const float *Y, float denominator)
 {
-    for (size_t i = 0; i < dim.elements_in_block; i++) {
-        for (size_t j = 0; j < dim.num_blocks; j++) {
-            X[i * dim.num_blocks + j] =
-                (X[i * dim.num_blocks + j] * Y[i * dim.num_blocks + j]) / denominator;
+    for (size_t i = 0; i < dim->elements_in_block; i++) {
+        for (size_t j = 0; j < dim->num_blocks; j++) {
+            X[i * dim->num_blocks + j] =
+                (X[i * dim->num_blocks + j] * Y[i * dim->num_blocks + j]) / denominator;
         }
     }
 }
 
-static void sum_columns(SpeedDimensions dim, float *X)
+static void sum_columns(const SpeedDimensions *dim, float *X)
 {
-    for (size_t i = 1; i < dim.elements_in_block; i++) {
-        for (size_t j = 0; j < dim.num_blocks; j++) {
-            X[0 * dim.num_blocks + j] += X[i * dim.num_blocks + j];
+    for (size_t i = 1; i < dim->elements_in_block; i++) {
+        for (size_t j = 0; j < dim->num_blocks; j++) {
+            X[0 * dim->num_blocks + j] += X[i * dim->num_blocks + j];
         }
     }
 }
 
-static void update_entropy(SpeedDimensions dim, float *entropy, const float *S, float L,
+static void update_entropy(const SpeedDimensions *dim, float *entropy, const float *S, float L,
                            float sigma_nn)
 {
-    for (size_t i = 0; i < dim.num_blocks_vertical; i++) {
-        for (size_t j = 0; j < dim.num_blocks_horizontal; j++) {
-            entropy[i * dim.num_blocks_horizontal + j] +=
-                log2f(L * S[i * dim.num_blocks_horizontal + j] + sigma_nn) +
+    for (size_t i = 0; i < dim->num_blocks_vertical; i++) {
+        for (size_t j = 0; j < dim->num_blocks_horizontal; j++) {
+            entropy[i * dim->num_blocks_horizontal + j] +=
+                log2f(L * S[i * dim->num_blocks_horizontal + j] + sigma_nn) +
                 log2f(2.0f * (float)M_PI * (float)M_E);
         }
     }
 }
 
-static bool is_matrix_regular(SpeedDimensions dim, const float *eigenvalues)
+static bool is_matrix_regular(const SpeedDimensions *dim, const float *eigenvalues)
 {
-    for (size_t i = 0; i < dim.elements_in_block; i++) {
+    for (size_t i = 0; i < dim->elements_in_block; i++) {
         if (eigenvalues[i] < EIGENVALUE_EPS) {
             return false;
         }
@@ -833,7 +833,7 @@ static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedRes
     // tests that construct SpeedState via struct literal).
     compute_cov_kernel_fn kernel =
         s->compute_cov_kernel ? s->compute_cov_kernel : compute_cov_kernel_scalar;
-    compute_covariance_matrix(dim, data, s->buffers.cov_mat, s->buffers.eigenvalues, stride_px,
+    compute_covariance_matrix(&dim, data, s->buffers.cov_mat, s->buffers.eigenvalues, stride_px,
                               kernel);
 
     // Step 2: Compute the eigenvalues of the covariance matrix
@@ -841,12 +841,12 @@ static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedRes
                         s->buffers.tmp_buffer);
 
     // Step 3: Compute independent term for the linear system
-    compute_independent_term(dim, data, s->buffers.independent_term, stride_px);
+    compute_independent_term(&dim, data, s->buffers.independent_term, stride_px);
 
     // Step 4: Solve the linear equation KX = Y, where K is the covariance
     // matrix and Y is the independent term matrix above
     int err = 0;
-    bool regular = is_matrix_regular(dim, s->buffers.eigenvalues);
+    bool regular = is_matrix_regular(&dim, s->buffers.eigenvalues);
     if (regular) {
         err = solve_linear_system(s->buffers.cov_mat, dim.elements_in_block,
                                   s->buffers.independent_term, dim.num_blocks,
@@ -863,12 +863,12 @@ static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedRes
     // Step 5: Compute the pointwise product Z = (X * Y)/B^2, where X and Y are
     // from the linear system above, and B is the block size.
     // Store the results in s->linear_system_sol
-    compute_pointwise_product_and_division(dim, s->buffers.linear_system_sol,
+    compute_pointwise_product_and_division(&dim, s->buffers.linear_system_sol,
                                            s->buffers.independent_term, dim.elements_in_block);
 
     // Step 6: Sum each column in Z into an array S.
     // Store the results in the first row of s->linear_system_sol
-    sum_columns(dim, s->buffers.linear_system_sol);
+    sum_columns(&dim, s->buffers.linear_system_sol);
 
     // Step 7: Reshape S into a matrix of dimensions (H/B, W/B)
     // This is a no-op, we just need to index it with the right dimensions
@@ -880,7 +880,7 @@ static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedRes
     // Step 9: For each eigenvalue L, update the entropy matrix
     for (size_t k = 0; k < dim.elements_in_block; k++) {
         float L = s->buffers.eigenvalues[k] < 0 ? 0 : s->buffers.eigenvalues[k];
-        update_entropy(dim, output->entropies, s->buffers.linear_system_sol, L, sigma_nn);
+        update_entropy(&dim, output->entropies, s->buffers.linear_system_sol, L, sigma_nn);
     }
 
     // Step 10: Return S, E
@@ -889,14 +889,14 @@ static int est_params(SpeedState *s, const float *data, float sigma_nn, SpeedRes
     return cannot_invert ? -EINVAL : 0;
 }
 
-static float get_speed_score(SpeedDimensions dim, SpeedResultBuffers ref_results,
+static float get_speed_score(const SpeedDimensions *dim, SpeedResultBuffers ref_results,
                              SpeedResultBuffers dis_results, float sigma_nn, float nn_floor,
                              int speed_weight_var_mode)
 {
     float score = 0;
-    float base_entropy = dim.elements_in_block * (log2f((1.0f + nn_floor) * sigma_nn) +
-                                                  log2f(2.0f * (float)M_PI * (float)M_E));
-    for (size_t i = 0; i < dim.num_blocks; i++) {
+    float base_entropy = dim->elements_in_block * (log2f((1.0f + nn_floor) * sigma_nn) +
+                                                   log2f(2.0f * (float)M_PI * (float)M_E));
+    for (size_t i = 0; i < dim->num_blocks; i++) {
         if ((ref_results.entropies[i] < base_entropy) &&
             (dis_results.entropies[i] < base_entropy)) {
             // If both entropies are below the base_entropy,
@@ -943,7 +943,7 @@ static float get_speed_score(SpeedDimensions dim, SpeedResultBuffers ref_results
         }
     }
 
-    return score / dim.num_blocks;
+    return score / dim->num_blocks;
 }
 
 static void subtract_image(float *im1, const float *im2, int w, int h, size_t stride)
@@ -958,12 +958,12 @@ static void subtract_image(float *im1, const float *im2, int w, int h, size_t st
 
 // Filters the image with a Gaussian filter and then performs local
 // mean subtraction
-static void filter_and_downscale(SpeedDimensions dim, SpeedOptions *opt, float *frame_buffer,
+static void filter_and_downscale(const SpeedDimensions *dim, SpeedOptions *opt, float *frame_buffer,
                                  float *tmp_buffer, size_t float_stride)
 {
     size_t stride_px = float_stride / sizeof(float);
 
-    size_t frame_size = stride_px * dim.alloc_height;
+    size_t frame_size = stride_px * dim->alloc_height;
     float *curr_scale = tmp_buffer;
     tmp_buffer += frame_size;
     float *tmpbuf = tmp_buffer;
@@ -973,9 +973,9 @@ static void filter_and_downscale(SpeedDimensions dim, SpeedOptions *opt, float *
     vif_get_scaling_method(opt->speed_prescale_method, &scaling_method);
 
     if (!ALMOST_EQUAL(opt->speed_prescale, 1.0)) {
-        memcpy(tmpbuf, frame_buffer, stride_px * dim.alloc_height * sizeof(float));
-        vif_scale_frame_s(scaling_method, tmpbuf, frame_buffer, dim.original_width,
-                          dim.original_height, stride_px, dim.scaled_width, dim.scaled_height,
+        memcpy(tmpbuf, frame_buffer, stride_px * dim->alloc_height * sizeof(float));
+        vif_scale_frame_s(scaling_method, tmpbuf, frame_buffer, dim->original_width,
+                          dim->original_height, stride_px, dim->scaled_width, dim->scaled_height,
                           stride_px);
     }
 
@@ -983,14 +983,14 @@ static void filter_and_downscale(SpeedDimensions dim, SpeedOptions *opt, float *
     int filter_width_antialias = vif_get_filter_size(1, opt->speed_kernelscale);
     float filter_antialias[128];
     speed_get_antialias_filter(filter_antialias, NUM_SCALES, opt->speed_kernelscale);
-    vif_filter1d_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, dim.scaled_width,
-                   dim.scaled_height, float_stride, float_stride, filter_width_antialias);
+    vif_filter1d_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, dim->scaled_width,
+                   dim->scaled_height, float_stride, float_stride, filter_width_antialias);
 
-    vif_dec16_s(curr_scale, frame_buffer, dim.scaled_width, dim.scaled_height, float_stride,
+    vif_dec16_s(curr_scale, frame_buffer, dim->scaled_width, dim->scaled_height, float_stride,
                 float_stride);
 
-    size_t downscaled_w = dim.scaled_width >> NUM_SCALES;
-    size_t downscaled_h = dim.scaled_height >> NUM_SCALES;
+    size_t downscaled_w = dim->scaled_width >> NUM_SCALES;
+    size_t downscaled_h = dim->scaled_height >> NUM_SCALES;
 
     int filter_width = vif_get_filter_size(NUM_SCALES, opt->speed_kernelscale);
     float filter[128];
@@ -1002,10 +1002,10 @@ static void filter_and_downscale(SpeedDimensions dim, SpeedOptions *opt, float *
 
 int speed_extract_score(SpeedState *s, SpeedOptions *opt, float *ref, float *dis, float *score)
 {
-    filter_and_downscale(s->dimensions, opt, ref, s->buffers.tmp_buffer, s->float_stride);
+    filter_and_downscale(&s->dimensions, opt, ref, s->buffers.tmp_buffer, s->float_stride);
     int err_ref = est_params(s, ref, opt->speed_sigma_nn, &(s->ref_results));
 
-    filter_and_downscale(s->dimensions, opt, dis, s->buffers.tmp_buffer, s->float_stride);
+    filter_and_downscale(&s->dimensions, opt, dis, s->buffers.tmp_buffer, s->float_stride);
 
     int err_dis = est_params(s, dis, opt->speed_sigma_nn, &(s->dis_results));
 
@@ -1014,8 +1014,9 @@ int speed_extract_score(SpeedState *s, SpeedOptions *opt, float *ref, float *dis
     if ((err_ref && !err_dis) || (!err_ref && err_dis)) {
         *score = 0.0f;
     } else {
-        *score = get_speed_score(s->dimensions, s->ref_results, s->dis_results, opt->speed_sigma_nn,
-                                 opt->speed_nn_floor, opt->speed_weight_var_mode);
+        *score =
+            get_speed_score(&s->dimensions, s->ref_results, s->dis_results, opt->speed_sigma_nn,
+                            opt->speed_nn_floor, opt->speed_weight_var_mode);
     }
 
     return err_ref || err_dis;

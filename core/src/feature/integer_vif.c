@@ -46,8 +46,8 @@ typedef struct VifState {
     VifPublicState public;
     bool debug;
     bool vif_skip_scale0;
-    void (*subsample_rd_8)(VifBuffer buf, unsigned w, unsigned h);
-    void (*subsample_rd_16)(VifBuffer buf, unsigned w, unsigned h, int scale, int bpc);
+    void (*subsample_rd_8)(const VifBuffer *buf, unsigned w, unsigned h);
+    void (*subsample_rd_16)(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc);
     void (*vif_statistic_8)(VifPublicState *s, float *num, float *den, unsigned w, unsigned h);
     void (*vif_statistic_16)(VifPublicState *s, float *num, float *den, unsigned w, unsigned h,
                              int bpc, int scale);
@@ -84,39 +84,39 @@ static const VmafOption options[] = {{
                                      },
                                      {0}};
 
-static FORCE_INLINE void pad_top_and_bottom(VifBuffer buf, unsigned h, int fwidth)
+static FORCE_INLINE void pad_top_and_bottom(const VifBuffer *buf, unsigned h, int fwidth)
 {
     const unsigned fwidth_half = fwidth / 2;
-    unsigned char *ref = buf.ref;
-    unsigned char *dis = buf.dis;
+    unsigned char *ref = buf->ref;
+    unsigned char *dis = buf->dis;
     for (unsigned i = 1; i <= fwidth_half; ++i) {
-        size_t offset = buf.stride * i;
-        memcpy(ref - offset, ref + offset, buf.stride);
-        memcpy(dis - offset, dis + offset, buf.stride);
-        memcpy(ref + buf.stride * (h - 1) + buf.stride * i,
-               ref + buf.stride * (h - 1) - buf.stride * i, buf.stride);
-        memcpy(dis + buf.stride * (h - 1) + buf.stride * i,
-               dis + buf.stride * (h - 1) - buf.stride * i, buf.stride);
+        size_t offset = (size_t)buf->stride * i;
+        memcpy(ref - offset, ref + offset, (size_t)buf->stride);
+        memcpy(dis - offset, dis + offset, (size_t)buf->stride);
+        memcpy(ref + (size_t)buf->stride * (h - 1) + (size_t)buf->stride * i,
+               ref + (size_t)buf->stride * (h - 1) - (size_t)buf->stride * i, (size_t)buf->stride);
+        memcpy(dis + (size_t)buf->stride * (h - 1) + (size_t)buf->stride * i,
+               dis + (size_t)buf->stride * (h - 1) - (size_t)buf->stride * i, (size_t)buf->stride);
     }
 }
 
-static FORCE_INLINE void decimate_and_pad(VifBuffer buf, unsigned w, unsigned h, int scale)
+static FORCE_INLINE void decimate_and_pad(const VifBuffer *buf, unsigned w, unsigned h, int scale)
 {
-    uint16_t *ref = buf.ref;
-    uint16_t *dis = buf.dis;
-    const ptrdiff_t stride = buf.stride / sizeof(uint16_t);
-    const ptrdiff_t mu_stride = buf.stride_16 / sizeof(uint16_t);
+    uint16_t *ref = buf->ref;
+    uint16_t *dis = buf->dis;
+    const ptrdiff_t stride = buf->stride / sizeof(uint16_t);
+    const ptrdiff_t mu_stride = buf->stride_16 / sizeof(uint16_t);
 
     for (unsigned i = 0; i < h / 2; ++i) {
         for (unsigned j = 0; j < w / 2; ++j) {
-            ref[i * stride + j] = buf.mu1[(i * 2) * mu_stride + (j * 2)];
-            dis[i * stride + j] = buf.mu2[(i * 2) * mu_stride + (j * 2)];
+            ref[i * stride + j] = buf->mu1[(i * 2) * mu_stride + (j * 2)];
+            dis[i * stride + j] = buf->mu2[(i * 2) * mu_stride + (j * 2)];
         }
     }
     pad_top_and_bottom(buf, h / 2, vif_filter1d_width[scale]);
 }
 
-static void subsample_rd_8(VifBuffer buf, unsigned w, unsigned h)
+static void subsample_rd_8(const VifBuffer *buf, unsigned w, unsigned h)
 {
     const unsigned fwidth = vif_filter1d_width[1];
     const uint16_t *vif_filt_s1 = vif_filter1d_table[1];
@@ -130,13 +130,13 @@ static void subsample_rd_8(VifBuffer buf, unsigned w, unsigned h)
                 int ii = i - fwidth / 2;
                 int ii_check = ii + fi;
                 const uint16_t fcoeff = vif_filt_s1[fi];
-                const uint8_t *ref = (uint8_t *)buf.ref;
-                const uint8_t *dis = (uint8_t *)buf.dis;
-                accum_ref += fcoeff * (uint32_t)ref[ii_check * buf.stride + j];
-                accum_dis += fcoeff * (uint32_t)dis[ii_check * buf.stride + j];
+                const uint8_t *ref = (const uint8_t *)buf->ref;
+                const uint8_t *dis = (const uint8_t *)buf->dis;
+                accum_ref += fcoeff * (uint32_t)ref[ii_check * buf->stride + j];
+                accum_dis += fcoeff * (uint32_t)dis[ii_check * buf->stride + j];
             }
-            buf.tmp.ref_convol[j] = (accum_ref + 128) >> 8;
-            buf.tmp.dis_convol[j] = (accum_dis + 128) >> 8;
+            buf->tmp.ref_convol[j] = (accum_ref + 128) >> 8;
+            buf->tmp.dis_convol[j] = (accum_dis + 128) >> 8;
         }
 
         PADDING_SQ_DATA_2(buf, w, fwidth / 2);
@@ -149,18 +149,18 @@ static void subsample_rd_8(VifBuffer buf, unsigned w, unsigned h)
                 int jj = j - fwidth / 2;
                 int jj_check = jj + fj;
                 const uint16_t fcoeff = vif_filt_s1[fj];
-                accum_ref += fcoeff * buf.tmp.ref_convol[jj_check];
-                accum_dis += fcoeff * buf.tmp.dis_convol[jj_check];
+                accum_ref += fcoeff * buf->tmp.ref_convol[jj_check];
+                accum_dis += fcoeff * buf->tmp.dis_convol[jj_check];
             }
-            const ptrdiff_t stride = buf.stride_16 / sizeof(uint16_t);
-            buf.mu1[i * stride + j] = (uint16_t)((accum_ref + 32768) >> 16);
-            buf.mu2[i * stride + j] = (uint16_t)((accum_dis + 32768) >> 16);
+            const ptrdiff_t stride = buf->stride_16 / sizeof(uint16_t);
+            buf->mu1[i * stride + j] = (uint16_t)((accum_ref + 32768) >> 16);
+            buf->mu2[i * stride + j] = (uint16_t)((accum_dis + 32768) >> 16);
         }
     }
     decimate_and_pad(buf, w, h, 0);
 }
 
-static void subsample_rd_16(VifBuffer buf, unsigned w, unsigned h, int scale, int bpc)
+static void subsample_rd_16(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc)
 {
     const unsigned fwidth = vif_filter1d_width[scale + 1];
     const uint16_t *vif_filt = vif_filter1d_table[scale + 1];
@@ -184,14 +184,14 @@ static void subsample_rd_16(VifBuffer buf, unsigned w, unsigned h, int scale, in
                 int ii = i - fwidth / 2;
                 int ii_check = ii + fi;
                 const uint16_t fcoeff = vif_filt[fi];
-                const ptrdiff_t stride = buf.stride / sizeof(uint16_t);
-                uint16_t *ref = buf.ref;
-                uint16_t *dis = buf.dis;
+                const ptrdiff_t stride = buf->stride / sizeof(uint16_t);
+                const uint16_t *ref = buf->ref;
+                const uint16_t *dis = buf->dis;
                 accum_ref += fcoeff * ((uint32_t)ref[ii_check * stride + j]);
                 accum_dis += fcoeff * ((uint32_t)dis[ii_check * stride + j]);
             }
-            buf.tmp.ref_convol[j] = (uint16_t)((accum_ref + add_shift_round_VP) >> shift_VP);
-            buf.tmp.dis_convol[j] = (uint16_t)((accum_dis + add_shift_round_VP) >> shift_VP);
+            buf->tmp.ref_convol[j] = (uint16_t)((accum_ref + add_shift_round_VP) >> shift_VP);
+            buf->tmp.dis_convol[j] = (uint16_t)((accum_dis + add_shift_round_VP) >> shift_VP);
         }
 
         PADDING_SQ_DATA_2(buf, w, fwidth / 2);
@@ -204,12 +204,12 @@ static void subsample_rd_16(VifBuffer buf, unsigned w, unsigned h, int scale, in
                 int jj = j - fwidth / 2;
                 int jj_check = jj + fj;
                 const uint16_t fcoeff = vif_filt[fj];
-                accum_ref += fcoeff * ((uint32_t)buf.tmp.ref_convol[jj_check]);
-                accum_dis += fcoeff * ((uint32_t)buf.tmp.dis_convol[jj_check]);
+                accum_ref += fcoeff * ((uint32_t)buf->tmp.ref_convol[jj_check]);
+                accum_dis += fcoeff * ((uint32_t)buf->tmp.dis_convol[jj_check]);
             }
-            const ptrdiff_t stride = buf.stride_16 / sizeof(uint16_t);
-            buf.mu1[i * stride + j] = (uint16_t)((accum_ref + 32768) >> 16);
-            buf.mu2[i * stride + j] = (uint16_t)((accum_dis + 32768) >> 16);
+            const ptrdiff_t stride = buf->stride_16 / sizeof(uint16_t);
+            buf->mu1[i * stride + j] = (uint16_t)((accum_ref + 32768) >> 16);
+            buf->mu2[i * stride + j] = (uint16_t)((accum_dis + 32768) >> 16);
         }
     }
     decimate_and_pad(buf, w, h, scale);
@@ -277,7 +277,7 @@ void vif_statistic_8(struct VifPublicState *s, float *num, float *den, unsigned 
             buf.tmp.ref_dis[j] = accum_ref_dis;
         }
 
-        PADDING_SQ_DATA(buf, w, fwidth / 2);
+        PADDING_SQ_DATA(&buf, w, fwidth / 2);
 
         //HORIZONTAL
         for (unsigned j = 0; j < w; ++j) {
@@ -421,7 +421,7 @@ void vif_statistic_16(struct VifPublicState *s, float *num, float *den, unsigned
             buf.tmp.ref_dis[j] = (uint32_t)((accum_ref_dis + add_shift_round_VP_sq) >> shift_VP_sq);
         }
 
-        PADDING_SQ_DATA(buf, w, fwidth / 2);
+        PADDING_SQ_DATA(&buf, w, fwidth / 2);
 
         //HORIZONTAL
         for (unsigned j = 0; j < w; ++j) {
@@ -814,7 +814,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
         ref_out += s->public.buf.stride;
         dis_out += s->public.buf.stride;
     }
-    pad_top_and_bottom(s->public.buf, h, vif_filter1d_width[0]);
+    pad_top_and_bottom(&s->public.buf, h, vif_filter1d_width[0]);
 
     unsigned scale_start = 0;
     if (s->vif_skip_scale0) {
@@ -824,9 +824,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     for (unsigned scale = scale_start; scale < 4; ++scale) {
         if (scale > 0) {
             if (ref_pic->bpc == 8 && scale == 1) {
-                s->subsample_rd_8(s->public.buf, w, h);
+                s->subsample_rd_8(&s->public.buf, w, h);
             } else {
-                s->subsample_rd_16(s->public.buf, w, h, scale - 1, ref_pic->bpc);
+                s->subsample_rd_16(&s->public.buf, w, h, scale - 1, ref_pic->bpc);
             }
 
             w /= 2;

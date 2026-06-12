@@ -37,33 +37,33 @@
 #define ALIGNED(x)
 #endif
 
-static FORCE_INLINE void pad_top_and_bottom(VifBuffer buf, unsigned h, int fwidth)
+static FORCE_INLINE void pad_top_and_bottom(const VifBuffer *buf, unsigned h, int fwidth)
 {
     const unsigned fwidth_half = fwidth / 2;
-    unsigned char *ref = buf.ref;
-    unsigned char *dis = buf.dis;
+    unsigned char *ref = buf->ref;
+    unsigned char *dis = buf->dis;
     for (unsigned i = 1; i <= fwidth_half; ++i) {
-        size_t offset = buf.stride * i;
-        memcpy(ref - offset, ref + offset, buf.stride);
-        memcpy(dis - offset, dis + offset, buf.stride);
-        memcpy(ref + buf.stride * (h - 1) + buf.stride * i,
-               ref + buf.stride * (h - 1) - buf.stride * i, buf.stride);
-        memcpy(dis + buf.stride * (h - 1) + buf.stride * i,
-               dis + buf.stride * (h - 1) - buf.stride * i, buf.stride);
+        size_t offset = (size_t)buf->stride * i;
+        memcpy(ref - offset, ref + offset, (size_t)buf->stride);
+        memcpy(dis - offset, dis + offset, (size_t)buf->stride);
+        memcpy(ref + (size_t)buf->stride * (h - 1) + (size_t)buf->stride * i,
+               ref + (size_t)buf->stride * (h - 1) - (size_t)buf->stride * i, (size_t)buf->stride);
+        memcpy(dis + (size_t)buf->stride * (h - 1) + (size_t)buf->stride * i,
+               dis + (size_t)buf->stride * (h - 1) - (size_t)buf->stride * i, (size_t)buf->stride);
     }
 }
 
-static FORCE_INLINE void copy_and_pad(VifBuffer buf, unsigned w, unsigned h, int scale)
+static FORCE_INLINE void copy_and_pad(const VifBuffer *buf, unsigned w, unsigned h, int scale)
 {
-    uint16_t *ref = buf.ref;
-    uint16_t *dis = buf.dis;
-    const ptrdiff_t stride = buf.stride / sizeof(uint16_t);
-    const ptrdiff_t mu_stride = buf.stride_16 / sizeof(uint16_t);
+    uint16_t *ref = buf->ref;
+    uint16_t *dis = buf->dis;
+    const ptrdiff_t stride = buf->stride / sizeof(uint16_t);
+    const ptrdiff_t mu_stride = buf->stride_16 / sizeof(uint16_t);
 
     for (unsigned i = 0; i < h / 2; ++i) {
         for (unsigned j = 0; j < w / 2; ++j) {
-            ref[i * stride + j] = buf.mu1[i * mu_stride + j];
-            dis[i * stride + j] = buf.mu2[i * mu_stride + j];
+            ref[i * stride + j] = buf->mu1[i * mu_stride + j];
+            dis[i * stride + j] = buf->mu2[i * mu_stride + j];
         }
     }
     pad_top_and_bottom(buf, h / 2, vif_filter1d_width[scale]);
@@ -245,7 +245,7 @@ void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsi
             buf.tmp.ref_dis[j] = accum_ref_dis;
         }
 
-        PADDING_SQ_DATA(buf, w, fwidth / 2);
+        PADDING_SQ_DATA(&buf, w, fwidth / 2);
 
         //HORIZONTAL
         for (unsigned j = 0; j < n << 4; j += 16) {
@@ -923,7 +923,7 @@ void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, uns
             buf.tmp.dis[j] = (uint32_t)((accum_dis + add_shift_round_VP_sq) >> shift_VP_sq);
         }
 
-        PADDING_SQ_DATA(buf, w, fwidth_half);
+        PADDING_SQ_DATA(&buf, w, fwidth_half);
 
         //HORIZONTAL
         for (unsigned jj = 0; jj < n << 4; jj += 16) {
@@ -1409,13 +1409,13 @@ void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, uns
  * filter rounding bias; `vif_filt_s1` is the symmetric 9-tap fixed-
  * point coefficient table for VIF scale 1.
  */
-void vif_subsample_rd_8_avx2(VifBuffer buf, unsigned w, unsigned h)
+void vif_subsample_rd_8_avx2(const VifBuffer *buf, unsigned w, unsigned h)
 {
     const unsigned fwidth = vif_filter1d_width[1];
     const uint16_t *vif_filt_s1 = vif_filter1d_table[1];
-    const uint8_t *ref = (uint8_t *)buf.ref;
-    const uint8_t *dis = (uint8_t *)buf.dis;
-    const ptrdiff_t stride = buf.stride_16 / sizeof(uint16_t);
+    const uint8_t *ref = (uint8_t *)buf->ref;
+    const uint8_t *dis = (uint8_t *)buf->dis;
+    const ptrdiff_t stride = buf->stride_16 / sizeof(uint16_t);
     __m256i addnum = _mm256_set1_epi32(32768);
     __m256i mask1 = _mm256_set_epi32(6, 4, 2, 0, 6, 4, 2, 0);
     __m256i x = _mm256_set1_epi32(128);
@@ -1457,42 +1457,42 @@ void vif_subsample_rd_8_avx2(VifBuffer buf, unsigned w, unsigned h)
             __m256i s8;
 
             g0 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(ref + (buf.stride * ii_check) + j)));
+                _mm_loadu_si128((__m128i *)(ref + (buf->stride * ii_check) + j)));
             g1 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(ref + buf.stride * (ii_check + 1) + j)));
+                _mm_loadu_si128((__m128i *)(ref + buf->stride * (ii_check + 1) + j)));
             g2 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(ref + buf.stride * (ii_check + 2) + j)));
+                _mm_loadu_si128((__m128i *)(ref + buf->stride * (ii_check + 2) + j)));
             g3 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(ref + buf.stride * (ii_check + 3) + j)));
+                _mm_loadu_si128((__m128i *)(ref + buf->stride * (ii_check + 3) + j)));
             g4 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(ref + buf.stride * (ii_check + 4) + j)));
+                _mm_loadu_si128((__m128i *)(ref + buf->stride * (ii_check + 4) + j)));
             g5 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(ref + buf.stride * (ii_check + 5) + j)));
+                _mm_loadu_si128((__m128i *)(ref + buf->stride * (ii_check + 5) + j)));
             g6 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(ref + buf.stride * (ii_check + 6) + j)));
+                _mm_loadu_si128((__m128i *)(ref + buf->stride * (ii_check + 6) + j)));
             g7 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(ref + buf.stride * (ii_check + 7) + j)));
+                _mm_loadu_si128((__m128i *)(ref + buf->stride * (ii_check + 7) + j)));
             g8 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(ref + buf.stride * (ii_check + 8) + j)));
+                _mm_loadu_si128((__m128i *)(ref + buf->stride * (ii_check + 8) + j)));
 
             s0 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(dis + (buf.stride * ii_check) + j)));
+                _mm_loadu_si128((__m128i *)(dis + (buf->stride * ii_check) + j)));
             s1 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(dis + buf.stride * (ii_check + 1) + j)));
+                _mm_loadu_si128((__m128i *)(dis + buf->stride * (ii_check + 1) + j)));
             s2 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(dis + buf.stride * (ii_check + 2) + j)));
+                _mm_loadu_si128((__m128i *)(dis + buf->stride * (ii_check + 2) + j)));
             s3 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(dis + buf.stride * (ii_check + 3) + j)));
+                _mm_loadu_si128((__m128i *)(dis + buf->stride * (ii_check + 3) + j)));
             s4 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(dis + buf.stride * (ii_check + 4) + j)));
+                _mm_loadu_si128((__m128i *)(dis + buf->stride * (ii_check + 4) + j)));
             s5 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(dis + buf.stride * (ii_check + 5) + j)));
+                _mm_loadu_si128((__m128i *)(dis + buf->stride * (ii_check + 5) + j)));
             s6 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(dis + buf.stride * (ii_check + 6) + j)));
+                _mm_loadu_si128((__m128i *)(dis + buf->stride * (ii_check + 6) + j)));
             s7 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(dis + buf.stride * (ii_check + 7) + j)));
+                _mm_loadu_si128((__m128i *)(dis + buf->stride * (ii_check + 7) + j)));
             s8 = _mm256_cvtepu8_epi16(
-                _mm_loadu_si128((__m128i *)(dis + buf.stride * (ii_check + 8) + j)));
+                _mm_loadu_si128((__m128i *)(dis + buf->stride * (ii_check + 8) + j)));
 
             multiply2(accum_mu2_lo, accum_mu2_hi, s4, fcoeff4);
             multiply2_and_accumulate(accum_mu2_lo, accum_mu2_hi, s0, s8, fcoeff0);
@@ -1518,10 +1518,10 @@ void vif_subsample_rd_8_avx2(VifBuffer buf, unsigned w, unsigned h)
             accumu1_hi = _mm256_srli_epi32(accumu1_hi, 0x08);
             accumu2_lo = _mm256_srli_epi32(accumu2_lo, 0x08);
             accumu2_hi = _mm256_srli_epi32(accumu2_hi, 0x08);
-            _mm256_storeu_si256((__m256i *)(buf.tmp.ref_convol + j), accumu1_lo);
-            _mm256_storeu_si256((__m256i *)(buf.tmp.ref_convol + j + 8), accumu1_hi);
-            _mm256_storeu_si256((__m256i *)(buf.tmp.dis_convol + j), accumu2_lo);
-            _mm256_storeu_si256((__m256i *)(buf.tmp.dis_convol + j + 8), accumu2_hi);
+            _mm256_storeu_si256((__m256i *)(buf->tmp.ref_convol + j), accumu1_lo);
+            _mm256_storeu_si256((__m256i *)(buf->tmp.ref_convol + j + 8), accumu1_hi);
+            _mm256_storeu_si256((__m256i *)(buf->tmp.dis_convol + j), accumu2_lo);
+            _mm256_storeu_si256((__m256i *)(buf->tmp.dis_convol + j + 8), accumu2_hi);
         }
         for (unsigned j = n << 4; j < w; ++j) {
             uint32_t accum_ref = 0;
@@ -1530,11 +1530,11 @@ void vif_subsample_rd_8_avx2(VifBuffer buf, unsigned w, unsigned h)
                 int ii = i * 2 - fwidth_half;
                 int ii_check = ii + fi;
                 const uint16_t fcoeff = vif_filt_s1[fi];
-                accum_ref += fcoeff * (uint32_t)ref[ii_check * buf.stride + j];
-                accum_dis += fcoeff * (uint32_t)dis[ii_check * buf.stride + j];
+                accum_ref += fcoeff * (uint32_t)ref[ii_check * buf->stride + j];
+                accum_dis += fcoeff * (uint32_t)dis[ii_check * buf->stride + j];
             }
-            buf.tmp.ref_convol[j] = (accum_ref + 128) >> 8;
-            buf.tmp.dis_convol[j] = (accum_dis + 128) >> 8;
+            buf->tmp.ref_convol[j] = (accum_ref + 128) >> 8;
+            buf->tmp.dis_convol[j] = (accum_dis + 128) >> 8;
         }
 
         PADDING_SQ_DATA_2(buf, w, fwidth_half);
@@ -1549,9 +1549,11 @@ void vif_subsample_rd_8_avx2(VifBuffer buf, unsigned w, unsigned h)
             __m256i accumrhi;
             __m256i accumdhi;
             accumrlo = accumdlo = accumrhi = accumdhi = _mm256_setzero_si256();
-            __m256i refconvol0 = _mm256_loadu_si256((__m256i *)(buf.tmp.ref_convol + jj_check));
-            __m256i refconvol4 = _mm256_loadu_si256((__m256i *)(buf.tmp.ref_convol + jj_check + 4));
-            __m256i refconvol8 = _mm256_loadu_si256((__m256i *)(buf.tmp.ref_convol + jj_check + 8));
+            __m256i refconvol0 = _mm256_loadu_si256((__m256i *)(buf->tmp.ref_convol + jj_check));
+            __m256i refconvol4 =
+                _mm256_loadu_si256((__m256i *)(buf->tmp.ref_convol + jj_check + 4));
+            __m256i refconvol8 =
+                _mm256_loadu_si256((__m256i *)(buf->tmp.ref_convol + jj_check + 8));
             __m256i refconvol1 = _mm256_alignr_epi8(refconvol4, refconvol0, 4);
             __m256i refconvol2 = _mm256_alignr_epi8(refconvol4, refconvol0, 8);
             __m256i refconvol3 = _mm256_alignr_epi8(refconvol4, refconvol0, 12);
@@ -1596,9 +1598,11 @@ void vif_subsample_rd_8_avx2(VifBuffer buf, unsigned w, unsigned h)
             accumrlo = _mm256_add_epi32(accumrlo, _mm256_unpacklo_epi16(result10lo, result10));
             accumrhi = _mm256_add_epi32(accumrhi, _mm256_unpackhi_epi16(result10lo, result10));
 
-            __m256i disconvol0 = _mm256_loadu_si256((__m256i *)(buf.tmp.dis_convol + jj_check));
-            __m256i disconvol4 = _mm256_loadu_si256((__m256i *)(buf.tmp.dis_convol + jj_check + 4));
-            __m256i disconvol8 = _mm256_loadu_si256((__m256i *)(buf.tmp.dis_convol + jj_check + 8));
+            __m256i disconvol0 = _mm256_loadu_si256((__m256i *)(buf->tmp.dis_convol + jj_check));
+            __m256i disconvol4 =
+                _mm256_loadu_si256((__m256i *)(buf->tmp.dis_convol + jj_check + 4));
+            __m256i disconvol8 =
+                _mm256_loadu_si256((__m256i *)(buf->tmp.dis_convol + jj_check + 8));
             __m256i disconvol1 = _mm256_alignr_epi8(disconvol4, disconvol0, 4);
             __m256i disconvol2 = _mm256_alignr_epi8(disconvol4, disconvol0, 8);
             __m256i disconvol3 = _mm256_alignr_epi8(disconvol4, disconvol0, 12);
@@ -1657,9 +1661,9 @@ void vif_subsample_rd_8_avx2(VifBuffer buf, unsigned w, unsigned h)
             result = _mm256_permutevar8x32_epi32(result, mask1);
             resultd = _mm256_packus_epi32(resultd, resultd);
             result = _mm256_packus_epi32(result, result);
-            _mm_storel_epi64((__m128i *)(buf.mu1 + i * stride + (j >> 1)),
+            _mm_storel_epi64((__m128i *)(buf->mu1 + i * stride + (j >> 1)),
                              _mm256_castsi256_si128(resultd));
-            _mm_storel_epi64((__m128i *)(buf.mu2 + i * stride + (j >> 1)),
+            _mm_storel_epi64((__m128i *)(buf->mu2 + i * stride + (j >> 1)),
                              _mm256_castsi256_si128(result));
         }
         for (unsigned j = n << 3; j < w; j += 2) {
@@ -1669,27 +1673,27 @@ void vif_subsample_rd_8_avx2(VifBuffer buf, unsigned w, unsigned h)
             int jj_check = jj;
             for (unsigned fj = 0; fj < fwidth; ++fj, jj_check = jj + fj) {
                 const uint16_t fcoeff = vif_filt_s1[fj];
-                accum_ref += fcoeff * buf.tmp.ref_convol[jj_check];
-                accum_dis += fcoeff * buf.tmp.dis_convol[jj_check];
+                accum_ref += fcoeff * buf->tmp.ref_convol[jj_check];
+                accum_dis += fcoeff * buf->tmp.dis_convol[jj_check];
             }
-            buf.mu1[i * stride + (j >> 1)] = (uint16_t)((accum_ref + 32768) >> 16);
-            buf.mu2[i * stride + (j >> 1)] = (uint16_t)((accum_dis + 32768) >> 16);
+            buf->mu1[i * stride + (j >> 1)] = (uint16_t)((accum_ref + 32768) >> 16);
+            buf->mu2[i * stride + (j >> 1)] = (uint16_t)((accum_dis + 32768) >> 16);
         }
     }
     copy_and_pad(buf, w, h, 0);
 }
 
-void vif_subsample_rd_16_avx2(VifBuffer buf, unsigned w, unsigned h, int scale, int bpc)
+void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc)
 {
     const unsigned fwidth = vif_filter1d_width[scale + 1];
     const uint16_t *vif_filt = vif_filter1d_table[scale + 1];
     int32_t add_shift_round_VP;
     int32_t shift_VP;
     int fwidth_half = fwidth >> 1;
-    const ptrdiff_t stride = buf.stride / sizeof(uint16_t);
-    const ptrdiff_t stride16 = buf.stride_16 / sizeof(uint16_t);
-    uint16_t *ref = buf.ref;
-    uint16_t *dis = buf.dis;
+    const ptrdiff_t stride = buf->stride / sizeof(uint16_t);
+    const ptrdiff_t stride16 = buf->stride_16 / sizeof(uint16_t);
+    uint16_t *ref = buf->ref;
+    uint16_t *dis = buf->dis;
     __m256i mask1 = _mm256_set_epi32(6, 4, 2, 0, 6, 4, 2, 0);
 
     if (scale == 0) {
@@ -1744,8 +1748,8 @@ void vif_subsample_rd_16_avx2(VifBuffer buf, unsigned w, unsigned h, int scale, 
 
             __m256i accumu2_lo = _mm256_permute2x128_si256(accumr_lo, accumr_hi, 0x20);
             __m256i accumu2_hi = _mm256_permute2x128_si256(accumr_lo, accumr_hi, 0x31);
-            _mm256_storeu_si256((__m256i *)(buf.tmp.ref_convol + j), accumu2_lo);
-            _mm256_storeu_si256((__m256i *)(buf.tmp.ref_convol + j + 8), accumu2_hi);
+            _mm256_storeu_si256((__m256i *)(buf->tmp.ref_convol + j), accumu2_lo);
+            _mm256_storeu_si256((__m256i *)(buf->tmp.ref_convol + j + 8), accumu2_hi);
 
             accumd_lo = _mm256_add_epi32(accumd_lo, addnum);
             accumd_hi = _mm256_add_epi32(accumd_hi, addnum);
@@ -1753,8 +1757,8 @@ void vif_subsample_rd_16_avx2(VifBuffer buf, unsigned w, unsigned h, int scale, 
             accumd_hi = _mm256_srli_epi32(accumd_hi, shift_VP);
             accumu2_lo = _mm256_permute2x128_si256(accumd_lo, accumd_hi, 0x20);
             accumu2_hi = _mm256_permute2x128_si256(accumd_lo, accumd_hi, 0x31);
-            _mm256_storeu_si256((__m256i *)(buf.tmp.dis_convol + j), accumu2_lo);
-            _mm256_storeu_si256((__m256i *)(buf.tmp.dis_convol + j + 8), accumu2_hi);
+            _mm256_storeu_si256((__m256i *)(buf->tmp.dis_convol + j), accumu2_lo);
+            _mm256_storeu_si256((__m256i *)(buf->tmp.dis_convol + j + 8), accumu2_hi);
         }
 
         // VERTICAL
@@ -1767,8 +1771,8 @@ void vif_subsample_rd_16_avx2(VifBuffer buf, unsigned w, unsigned h, int scale, 
                 accum_ref += fcoeff * ((uint32_t)ref[ii_check * stride + j]);
                 accum_dis += fcoeff * ((uint32_t)dis[ii_check * stride + j]);
             }
-            buf.tmp.ref_convol[j] = (uint16_t)((accum_ref + add_shift_round_VP) >> shift_VP);
-            buf.tmp.dis_convol[j] = (uint16_t)((accum_dis + add_shift_round_VP) >> shift_VP);
+            buf->tmp.ref_convol[j] = (uint16_t)((accum_ref + add_shift_round_VP) >> shift_VP);
+            buf->tmp.dis_convol[j] = (uint16_t)((accum_dis + add_shift_round_VP) >> shift_VP);
         }
 
         PADDING_SQ_DATA_2(buf, w, fwidth_half);
@@ -1784,13 +1788,13 @@ void vif_subsample_rd_16_avx2(VifBuffer buf, unsigned w, unsigned h, int scale, 
             __m256i accumdhi;
             accumrlo = accumdlo = accumrhi = accumdhi = _mm256_setzero_si256();
             for (unsigned fj = 0; fj < fwidth; ++fj, jj_check = jj + fj) {
-                __m256i refconvol = _mm256_loadu_si256((__m256i *)(buf.tmp.ref_convol + jj_check));
+                __m256i refconvol = _mm256_loadu_si256((__m256i *)(buf->tmp.ref_convol + jj_check));
                 __m256i fcoeff = _mm256_set1_epi16(vif_filt[fj]);
                 __m256i result2 = _mm256_mulhi_epu16(refconvol, fcoeff);
                 __m256i result2lo = _mm256_mullo_epi16(refconvol, fcoeff);
                 accumrlo = _mm256_add_epi32(accumrlo, _mm256_unpacklo_epi16(result2lo, result2));
                 accumrhi = _mm256_add_epi32(accumrhi, _mm256_unpackhi_epi16(result2lo, result2));
-                __m256i disconvol = _mm256_loadu_si256((__m256i *)(buf.tmp.dis_convol + jj_check));
+                __m256i disconvol = _mm256_loadu_si256((__m256i *)(buf->tmp.dis_convol + jj_check));
                 result2 = _mm256_mulhi_epu16(disconvol, fcoeff);
                 result2lo = _mm256_mullo_epi16(disconvol, fcoeff);
                 accumdlo = _mm256_add_epi32(accumdlo, _mm256_unpacklo_epi16(result2lo, result2));
@@ -1812,13 +1816,13 @@ void vif_subsample_rd_16_avx2(VifBuffer buf, unsigned w, unsigned h, int scale, 
             __m256i resulttmp = _mm256_srli_si256(resultd, 2);
             resultd = _mm256_blend_epi16(resultd, resulttmp, 0xAA);
             resultd = _mm256_permutevar8x32_epi32(resultd, mask1);
-            _mm_storeu_si128((__m128i *)(buf.mu1 + i * stride16 + j),
+            _mm_storeu_si128((__m128i *)(buf->mu1 + i * stride16 + j),
                              _mm256_castsi256_si128(resultd));
 
             resulttmp = _mm256_srli_si256(result, 2);
             result = _mm256_blend_epi16(result, resulttmp, 0xAA);
             result = _mm256_permutevar8x32_epi32(result, mask1);
-            _mm_storeu_si128((__m128i *)(buf.mu2 + i * stride16 + j),
+            _mm_storeu_si128((__m128i *)(buf->mu2 + i * stride16 + j),
                              _mm256_castsi256_si128(result));
         }
 
@@ -1829,21 +1833,21 @@ void vif_subsample_rd_16_avx2(VifBuffer buf, unsigned w, unsigned h, int scale, 
             int jj_check = jj;
             for (unsigned fj = 0; fj < fwidth; ++fj, jj_check = jj + fj) {
                 const uint16_t fcoeff = vif_filt[fj];
-                accum_ref += fcoeff * ((uint32_t)buf.tmp.ref_convol[jj_check]);
-                accum_dis += fcoeff * ((uint32_t)buf.tmp.dis_convol[jj_check]);
+                accum_ref += fcoeff * ((uint32_t)buf->tmp.ref_convol[jj_check]);
+                accum_dis += fcoeff * ((uint32_t)buf->tmp.dis_convol[jj_check]);
             }
-            buf.mu1[i * stride16 + j] = (uint16_t)((accum_ref + 32768) >> 16);
-            buf.mu2[i * stride16 + j] = (uint16_t)((accum_dis + 32768) >> 16);
+            buf->mu1[i * stride16 + j] = (uint16_t)((accum_ref + 32768) >> 16);
+            buf->mu2[i * stride16 + j] = (uint16_t)((accum_dis + 32768) >> 16);
         }
     }
 
-    ref = buf.ref;
-    dis = buf.dis;
+    ref = buf->ref;
+    dis = buf->dis;
 
     for (unsigned i = 0; i < h / 2; ++i) {
         for (unsigned j = 0; j < w / 2; ++j) {
-            ref[i * stride + j] = buf.mu1[i * stride16 + (j * 2)];
-            dis[i * stride + j] = buf.mu2[i * stride16 + (j * 2)];
+            ref[i * stride + j] = buf->mu1[i * stride16 + (j * 2)];
+            dis[i * stride + j] = buf->mu2[i * stride16 + (j * 2)];
         }
     }
     pad_top_and_bottom(buf, h / 2, vif_filter1d_width[scale]);

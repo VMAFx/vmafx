@@ -27,33 +27,33 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
-static FORCE_INLINE void pad_top_and_bottom(VifBuffer buf, unsigned h, int fwidth)
+static FORCE_INLINE void pad_top_and_bottom(const VifBuffer *buf, unsigned h, int fwidth)
 {
     const unsigned fwidth_half = fwidth / 2;
-    unsigned char *ref = buf.ref;
-    unsigned char *dis = buf.dis;
+    unsigned char *ref = buf->ref;
+    unsigned char *dis = buf->dis;
     for (unsigned i = 1; i <= fwidth_half; ++i) {
-        size_t offset = buf.stride * i;
-        memcpy(ref - offset, ref + offset, buf.stride);
-        memcpy(dis - offset, dis + offset, buf.stride);
-        memcpy(ref + buf.stride * (h - 1) + buf.stride * i,
-               ref + buf.stride * (h - 1) - buf.stride * i, buf.stride);
-        memcpy(dis + buf.stride * (h - 1) + buf.stride * i,
-               dis + buf.stride * (h - 1) - buf.stride * i, buf.stride);
+        size_t offset = buf->stride * i;
+        memcpy(ref - offset, ref + offset, buf->stride);
+        memcpy(dis - offset, dis + offset, buf->stride);
+        memcpy(ref + buf->stride * (h - 1) + buf->stride * i,
+               ref + buf->stride * (h - 1) - buf->stride * i, buf->stride);
+        memcpy(dis + buf->stride * (h - 1) + buf->stride * i,
+               dis + buf->stride * (h - 1) - buf->stride * i, buf->stride);
     }
 }
 
-static FORCE_INLINE void decimate_and_pad(VifBuffer buf, unsigned w, unsigned h, int scale)
+static FORCE_INLINE void decimate_and_pad(const VifBuffer *buf, unsigned w, unsigned h, int scale)
 {
-    uint16_t *ref = buf.ref;
-    uint16_t *dis = buf.dis;
-    const ptrdiff_t stride = buf.stride / sizeof(uint16_t);
-    const ptrdiff_t mu_stride = buf.stride_16 / sizeof(uint16_t);
+    uint16_t *ref = buf->ref;
+    uint16_t *dis = buf->dis;
+    const ptrdiff_t stride = buf->stride / sizeof(uint16_t);
+    const ptrdiff_t mu_stride = buf->stride_16 / sizeof(uint16_t);
 
     for (unsigned i = 0; i < h / 2; ++i) {
         for (unsigned j = 0; j < w / 2; ++j) {
-            ref[i * stride + j] = buf.mu1[(i * 2) * mu_stride + (j * 2)];
-            dis[i * stride + j] = buf.mu2[(i * 2) * mu_stride + (j * 2)];
+            ref[i * stride + j] = buf->mu1[(i * 2) * mu_stride + (j * 2)];
+            dis[i * stride + j] = buf->mu2[(i * 2) * mu_stride + (j * 2)];
         }
     }
     pad_top_and_bottom(buf, h / 2, vif_filter1d_width[scale]);
@@ -288,17 +288,17 @@ static FORCE_INLINE void decimate_and_pad(VifBuffer buf, unsigned w, unsigned h,
 
 // End of macros
 
-void vif_subsample_rd_8_neon(VifBuffer buf, unsigned int w, unsigned int h)
+void vif_subsample_rd_8_neon(const VifBuffer *buf, unsigned int w, unsigned int h)
 {
-    VMAF_ASSERT_DEBUG(buf.ref != NULL);
-    VMAF_ASSERT_DEBUG(buf.dis != NULL);
+    VMAF_ASSERT_DEBUG(buf->ref != NULL);
+    VMAF_ASSERT_DEBUG(buf->dis != NULL);
     VMAF_ASSERT_DEBUG(w > 0 && h > 0);
     const unsigned int uiw15 = (w > 15 ? w - 15 : 0);
     const unsigned int fwidth = vif_filter1d_width[1];
     const uint16_t *vif_filt_s1 = vif_filter1d_table[1];
-    const uint8_t *ref = (uint8_t *)buf.ref;
-    const uint8_t *dis = (uint8_t *)buf.dis;
-    const ptrdiff_t dst_stride = buf.stride_16 / sizeof(uint16_t);
+    const uint8_t *ref = (uint8_t *)buf->ref;
+    const uint8_t *dis = (uint8_t *)buf->dis;
+    const ptrdiff_t dst_stride = buf->stride_16 / sizeof(uint16_t);
     ptrdiff_t i_dst_stride = 0;
 
     const uint32x4_t offset_vec_v = vdupq_n_u32(128);
@@ -309,8 +309,8 @@ void vif_subsample_rd_8_neon(VifBuffer buf, unsigned int w, unsigned int h)
     for (unsigned int i = 0; i < h; ++i, i_dst_stride += dst_stride) {
 
         int ii = i - fwidth / 2;
-        const uint8_t *p_ref = ref + ii * buf.stride;
-        const uint8_t *p_dis = dis + ii * buf.stride;
+        const uint8_t *p_ref = ref + ii * buf->stride;
+        const uint8_t *p_dis = dis + ii * buf->stride;
 
         // VERTICAL Neon
         unsigned int j = 0;
@@ -329,9 +329,9 @@ void vif_subsample_rd_8_neon(VifBuffer buf, unsigned int w, unsigned int h)
             NEON_FILTER_INSTANCE_U32X4_INIT_MULL_U16X4_WITH_CONST_LO_HI_LU2(
                 accum_f_dis, offset_vec_v, dis_vec_16u, vif_filt_s1[0]);
 
-            const uint8_t *pp_ref = p_ref + buf.stride;
-            const uint8_t *pp_dis = p_dis + buf.stride;
-            for (unsigned fi = 1; fi < fwidth; ++fi, pp_ref += buf.stride, pp_dis += buf.stride) {
+            const uint8_t *pp_ref = p_ref + buf->stride;
+            const uint8_t *pp_dis = p_dis + buf->stride;
+            for (unsigned fi = 1; fi < fwidth; ++fi, pp_ref += buf->stride, pp_dis += buf->stride) {
                 uint8x8_t ref_vec_8u_0 = vld1_u8(pp_ref);
                 uint16x8_t ref_vec_16u_0 = vmovl_u8(ref_vec_8u_0);
                 uint8x8_t ref_vec_8u_1 = vld1_u8(pp_ref + 8);
@@ -349,9 +349,9 @@ void vif_subsample_rd_8_neon(VifBuffer buf, unsigned int w, unsigned int h)
             }
 
             NEON_FILTER_SHIFT_STORE_U32X4_HI_LO_LU2(accum_f_ref, shift_vec_v,
-                                                    buf.tmp.ref_convol + j);
+                                                    buf->tmp.ref_convol + j);
             NEON_FILTER_SHIFT_STORE_U32X4_HI_LO_LU2(accum_f_dis, shift_vec_v,
-                                                    buf.tmp.dis_convol + j);
+                                                    buf->tmp.dis_convol + j);
         }
 
         // Scalar code for Vertical leftover.
@@ -362,20 +362,20 @@ void vif_subsample_rd_8_neon(VifBuffer buf, unsigned int w, unsigned int h)
                 int ii = i - fwidth / 2;
                 int ii_check = ii + fi;
                 const uint16_t fcoeff = vif_filt_s1[fi];
-                const uint8_t *ref = (uint8_t *)buf.ref;
-                const uint8_t *dis = (uint8_t *)buf.dis;
-                accum_ref += fcoeff * (uint32_t)ref[ii_check * buf.stride + j];
-                accum_dis += fcoeff * (uint32_t)dis[ii_check * buf.stride + j];
+                const uint8_t *ref = (uint8_t *)buf->ref;
+                const uint8_t *dis = (uint8_t *)buf->dis;
+                accum_ref += fcoeff * (uint32_t)ref[ii_check * buf->stride + j];
+                accum_dis += fcoeff * (uint32_t)dis[ii_check * buf->stride + j];
             }
-            buf.tmp.ref_convol[j] = accum_ref >> 8;
-            buf.tmp.dis_convol[j] = accum_dis >> 8;
+            buf->tmp.ref_convol[j] = accum_ref >> 8;
+            buf->tmp.dis_convol[j] = accum_dis >> 8;
         }
 
         PADDING_SQ_DATA_2(buf, w, fwidth / 2);
 
         // HORIZONTAL
-        uint32_t *pRefConv = (uint32_t *)buf.tmp.ref_convol - (fwidth / 2);
-        uint32_t *pDisConv = (uint32_t *)buf.tmp.dis_convol - (fwidth / 2);
+        uint32_t *pRefConv = (uint32_t *)buf->tmp.ref_convol - (fwidth / 2);
+        uint32_t *pDisConv = (uint32_t *)buf->tmp.dis_convol - (fwidth / 2);
 
         j = 0;
         for (; j < uiw15; j += 16, pRefConv += 16, pDisConv += 16) {
@@ -398,9 +398,9 @@ void vif_subsample_rd_8_neon(VifBuffer buf, unsigned int w, unsigned int h)
             }
 
             NEON_FILTER_SHIFT_UNZIP_STORE_U32X4_TO_U16X8_LU2(accum_ref_conv, shift_vec_h,
-                                                             buf.mu1 + i_dst_stride + j);
+                                                             buf->mu1 + i_dst_stride + j);
             NEON_FILTER_SHIFT_UNZIP_STORE_U32X4_TO_U16X8_LU2(accum_dis_conv, shift_vec_h,
-                                                             buf.mu2 + i_dst_stride + j)
+                                                             buf->mu2 + i_dst_stride + j)
         }
 
         // Scalar code for Horizontal leftover.
@@ -411,21 +411,22 @@ void vif_subsample_rd_8_neon(VifBuffer buf, unsigned int w, unsigned int h)
                 int jj = j - fwidth / 2;
                 int jj_check = jj + fj;
                 const uint16_t fcoeff = vif_filt_s1[fj];
-                accum_ref += fcoeff * buf.tmp.ref_convol[jj_check];
-                accum_dis += fcoeff * buf.tmp.dis_convol[jj_check];
+                accum_ref += fcoeff * buf->tmp.ref_convol[jj_check];
+                accum_dis += fcoeff * buf->tmp.dis_convol[jj_check];
             }
-            buf.mu1[i_dst_stride + j] = (uint16_t)(accum_ref >> 16);
-            buf.mu2[i_dst_stride + j] = (uint16_t)(accum_dis >> 16);
+            buf->mu1[i_dst_stride + j] = (uint16_t)(accum_ref >> 16);
+            buf->mu2[i_dst_stride + j] = (uint16_t)(accum_dis >> 16);
         }
     }
 
     decimate_and_pad(buf, w, h, 0);
 }
 
-void vif_subsample_rd_16_neon(VifBuffer buf, unsigned int w, unsigned int h, int scale, int bpc)
+void vif_subsample_rd_16_neon(const VifBuffer *buf, unsigned int w, unsigned int h, int scale,
+                              int bpc)
 {
-    VMAF_ASSERT_DEBUG(buf.ref != NULL);
-    VMAF_ASSERT_DEBUG(buf.dis != NULL);
+    VMAF_ASSERT_DEBUG(buf->ref != NULL);
+    VMAF_ASSERT_DEBUG(buf->dis != NULL);
     VMAF_ASSERT_DEBUG(w > 0 && h > 0);
     VMAF_ASSERT_DEBUG(scale >= 0 && scale < 3);
     VMAF_ASSERT_DEBUG(bpc >= 8 && bpc <= 16);
@@ -447,11 +448,11 @@ void vif_subsample_rd_16_neon(VifBuffer buf, unsigned int w, unsigned int h, int
     const uint32x4_t offset_vec_h = vdupq_n_u32(32768);
     int32x4_t shift_vec_h = vdupq_n_s32(-16);
 
-    const uint16_t *ref = (uint16_t *)buf.ref;
-    const uint16_t *dis = (uint16_t *)buf.dis;
+    const uint16_t *ref = (uint16_t *)buf->ref;
+    const uint16_t *dis = (uint16_t *)buf->dis;
 
-    const ptrdiff_t stride_v = buf.stride / sizeof(uint16_t);
-    const ptrdiff_t stride_h = buf.stride_16 / sizeof(uint16_t);
+    const ptrdiff_t stride_v = buf->stride / sizeof(uint16_t);
+    const ptrdiff_t stride_h = buf->stride_16 / sizeof(uint16_t);
     ptrdiff_t i_dst_stride = 0;
 
     for (unsigned i = 0; i < h; ++i, i_dst_stride += stride_h) {
@@ -488,9 +489,9 @@ void vif_subsample_rd_16_neon(VifBuffer buf, unsigned int w, unsigned int h, int
             }
 
             NEON_FILTER_SHIFT_STORE_U32X4_HI_LO_LH(accum_f_ref, shift_VP_vec,
-                                                   buf.tmp.ref_convol + j);
+                                                   buf->tmp.ref_convol + j);
             NEON_FILTER_SHIFT_STORE_U32X4_HI_LO_LH(accum_f_dis, shift_VP_vec,
-                                                   buf.tmp.dis_convol + j);
+                                                   buf->tmp.dis_convol + j);
         }
 
         // Scalar code for Vertical leftover.
@@ -501,20 +502,20 @@ void vif_subsample_rd_16_neon(VifBuffer buf, unsigned int w, unsigned int h, int
                 int ii = i - fwidth / 2;
                 int ii_check = ii + fi;
                 const uint16_t fcoeff = vif_filt_s[fi];
-                uint16_t *ref = (uint16_t *)buf.ref;
-                uint16_t *dis = (uint16_t *)buf.dis;
+                uint16_t *ref = (uint16_t *)buf->ref;
+                uint16_t *dis = (uint16_t *)buf->dis;
                 accum_ref += fcoeff * ((uint32_t)ref[ii_check * stride_v + j]);
                 accum_dis += fcoeff * ((uint32_t)dis[ii_check * stride_v + j]);
             }
-            buf.tmp.ref_convol[j] = (uint16_t)((accum_ref + add_shift_round_VP) >> shift_VP);
-            buf.tmp.dis_convol[j] = (uint16_t)((accum_dis + add_shift_round_VP) >> shift_VP);
+            buf->tmp.ref_convol[j] = (uint16_t)((accum_ref + add_shift_round_VP) >> shift_VP);
+            buf->tmp.dis_convol[j] = (uint16_t)((accum_dis + add_shift_round_VP) >> shift_VP);
         }
 
         PADDING_SQ_DATA_2(buf, w, fwidth / 2);
 
         // HORIZONTAL
-        uint32_t *pRefConv = (uint32_t *)buf.tmp.ref_convol - (fwidth / 2);
-        uint32_t *pDisConv = (uint32_t *)buf.tmp.dis_convol - (fwidth / 2);
+        uint32_t *pRefConv = (uint32_t *)buf->tmp.ref_convol - (fwidth / 2);
+        uint32_t *pDisConv = (uint32_t *)buf->tmp.dis_convol - (fwidth / 2);
 
         j = 0;
         for (; j < uiw15; j += 16, pRefConv += 16, pDisConv += 16) {
@@ -537,9 +538,9 @@ void vif_subsample_rd_16_neon(VifBuffer buf, unsigned int w, unsigned int h, int
             }
 
             NEON_FILTER_SHIFT_UNZIP_STORE_U32X4_TO_U16X8_LU2(accum_ref_conv, shift_vec_h,
-                                                             buf.mu1 + i_dst_stride + j);
+                                                             buf->mu1 + i_dst_stride + j);
             NEON_FILTER_SHIFT_UNZIP_STORE_U32X4_TO_U16X8_LU2(accum_dis_conv, shift_vec_h,
-                                                             buf.mu2 + i_dst_stride + j);
+                                                             buf->mu2 + i_dst_stride + j);
         }
 
         // Scalar code for Horizontal leftover.
@@ -550,11 +551,11 @@ void vif_subsample_rd_16_neon(VifBuffer buf, unsigned int w, unsigned int h, int
                 int jj = j - fwidth / 2;
                 int jj_check = jj + fj;
                 const uint16_t fcoeff = vif_filt_s[fj];
-                accum_ref += fcoeff * buf.tmp.ref_convol[jj_check];
-                accum_dis += fcoeff * buf.tmp.dis_convol[jj_check];
+                accum_ref += fcoeff * buf->tmp.ref_convol[jj_check];
+                accum_dis += fcoeff * buf->tmp.dis_convol[jj_check];
             }
-            buf.mu1[i_dst_stride + j] = (uint16_t)(accum_ref >> 16);
-            buf.mu2[i_dst_stride + j] = (uint16_t)(accum_dis >> 16);
+            buf->mu1[i_dst_stride + j] = (uint16_t)(accum_ref >> 16);
+            buf->mu2[i_dst_stride + j] = (uint16_t)(accum_dis >> 16);
         }
     }
 
@@ -706,7 +707,7 @@ void vif_statistic_8_neon(struct VifPublicState *s, float *num, float *den, unsi
             buf.tmp.ref_dis[j] = accum_ref_dis;
         }
 
-        PADDING_SQ_DATA(buf, w, fwidth / 2);
+        PADDING_SQ_DATA(&buf, w, fwidth / 2);
 
         // HORIZONTAL
         uint32_t *pMul1 = (uint32_t *)buf.tmp.mu1 - (fwidth / 2);
@@ -1027,7 +1028,7 @@ void vif_statistic_16_neon(struct VifPublicState *s, float *num, float *den, uns
             buf.tmp.ref_dis[j] = (uint32_t)(accum_ref_dis >> shift_VP_sq);
         }
 
-        PADDING_SQ_DATA(buf, w, fwidth / 2);
+        PADDING_SQ_DATA(&buf, w, fwidth / 2);
 
         // HORIZONTAL
         uint32_t *pMul1 = (uint32_t *)buf.tmp.mu1 - (fwidth / 2);

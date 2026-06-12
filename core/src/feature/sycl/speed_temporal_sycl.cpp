@@ -643,9 +643,9 @@ static int extract_temporal_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
     if (!tmp_filter)
         return -ENOMEM;
 
-    speed_internal_filter_and_downscale(s->dim, &s->opt, s->h_ref[other], tmp_filter,
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_ref[other], tmp_filter,
                                         s->float_stride);
-    speed_internal_filter_and_downscale(s->dim, &s->opt, s->h_dis[other], tmp_filter,
+    speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_dis[other], tmp_filter,
                                         s->float_stride);
     aligned_free(tmp_filter);
 

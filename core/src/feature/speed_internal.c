@@ -102,16 +102,16 @@ static void si_subtract_image(float *im1, const float *im2, int w, int h, size_t
     }
 }
 
-void speed_internal_filter_and_downscale(SpeedInternalDimensions dim, SpeedInternalOptions *opt,
-                                         float *frame_buffer, float *tmp_buffer,
-                                         size_t float_stride)
+void speed_internal_filter_and_downscale(const SpeedInternalDimensions *dim,
+                                         SpeedInternalOptions *opt, float *frame_buffer,
+                                         float *tmp_buffer, size_t float_stride)
 {
     assert(opt != NULL);
     assert(frame_buffer != NULL);
     assert(tmp_buffer != NULL);
 
     const size_t stride_px = float_stride / sizeof(float);
-    const size_t frame_size = stride_px * dim.alloc_height;
+    const size_t frame_size = stride_px * dim->alloc_height;
     float *curr_scale = tmp_buffer;
     float *tmpbuf = tmp_buffer + frame_size;
 
@@ -120,25 +120,25 @@ void speed_internal_filter_and_downscale(SpeedInternalDimensions dim, SpeedInter
     (void)vif_get_scaling_method(opt->speed_prescale_method, &scaling_method);
 
     if (!SI_ALMOST_EQUAL(opt->speed_prescale, 1.0)) {
-        (void)memcpy(tmpbuf, frame_buffer, stride_px * dim.alloc_height * sizeof(float));
-        vif_scale_frame_s(scaling_method, tmpbuf, frame_buffer, (int)dim.original_width,
-                          (int)dim.original_height, (int)stride_px, (int)dim.scaled_width,
-                          (int)dim.scaled_height, (int)stride_px);
+        (void)memcpy(tmpbuf, frame_buffer, stride_px * dim->alloc_height * sizeof(float));
+        vif_scale_frame_s(scaling_method, tmpbuf, frame_buffer, (int)dim->original_width,
+                          (int)dim->original_height, (int)stride_px, (int)dim->scaled_width,
+                          (int)dim->scaled_height, (int)stride_px);
     }
 
     const float kernelscale = (float)opt->speed_kernelscale;
     const int filter_width_antialias = vif_get_filter_size(1, kernelscale);
     float filter_antialias[128];
     speed_get_antialias_filter(filter_antialias, SPEED_INTERNAL_NUM_SCALES, kernelscale);
-    vif_filter1d_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, (int)dim.scaled_width,
-                   (int)dim.scaled_height, (int)float_stride, (int)float_stride,
+    vif_filter1d_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, (int)dim->scaled_width,
+                   (int)dim->scaled_height, (int)float_stride, (int)float_stride,
                    filter_width_antialias);
 
-    vif_dec16_s(curr_scale, frame_buffer, (int)dim.scaled_width, (int)dim.scaled_height,
+    vif_dec16_s(curr_scale, frame_buffer, (int)dim->scaled_width, (int)dim->scaled_height,
                 (int)float_stride, (int)float_stride);
 
-    const size_t downscaled_w = dim.scaled_width >> SPEED_INTERNAL_NUM_SCALES;
-    const size_t downscaled_h = dim.scaled_height >> SPEED_INTERNAL_NUM_SCALES;
+    const size_t downscaled_w = dim->scaled_width >> SPEED_INTERNAL_NUM_SCALES;
+    const size_t downscaled_h = dim->scaled_height >> SPEED_INTERNAL_NUM_SCALES;
 
     const int filter_width = vif_get_filter_size(SPEED_INTERNAL_NUM_SCALES, kernelscale);
     float filter[128];
@@ -152,59 +152,59 @@ void speed_internal_filter_and_downscale(SpeedInternalDimensions dim, SpeedInter
 /* Covariance matrix (CPU reference; production GPU paths skip this)   */
 /* ------------------------------------------------------------------ */
 
-static float si_compute_mean(SpeedInternalDimensions dim, const float *data, size_t stride_px,
-                             size_t start_row, size_t start_col)
+static float si_compute_mean(const SpeedInternalDimensions *dim, const float *data,
+                             size_t stride_px, size_t start_row, size_t start_col)
 {
     float result = 0.0f;
-    for (size_t i = 0; i < dim.submatrix_height; i++) {
-        for (size_t j = 0; j < dim.submatrix_width; j++) {
+    for (size_t i = 0; i < dim->submatrix_height; i++) {
+        for (size_t j = 0; j < dim->submatrix_width; j++) {
             result += data[(start_row + i) * stride_px + (start_col + j)];
         }
     }
-    const float denom = (float)(dim.submatrix_width * dim.submatrix_height);
+    const float denom = (float)(dim->submatrix_width * dim->submatrix_height);
     return denom > 0.0f ? result / denom : 0.0f;
 }
 
-static float si_compute_covariance(SpeedInternalDimensions dim, const float *data,
+static float si_compute_covariance(const SpeedInternalDimensions *dim, const float *data,
                                    const float *means, size_t stride_px, size_t start_row_x,
                                    size_t start_col_x, size_t start_row_y, size_t start_col_y)
 {
-    const double mean_x = means[start_row_x * dim.block_size + start_col_x];
-    const double mean_y = means[start_row_y * dim.block_size + start_col_y];
+    const double mean_x = means[start_row_x * dim->block_size + start_col_x];
+    const double mean_y = means[start_row_y * dim->block_size + start_col_y];
     double result = 0.0;
-    for (size_t i = 0; i < dim.submatrix_height; i++) {
-        for (size_t j = 0; j < dim.submatrix_width; j++) {
+    for (size_t i = 0; i < dim->submatrix_height; i++) {
+        for (size_t j = 0; j < dim->submatrix_width; j++) {
             const double val_x = data[(start_row_x + i) * stride_px + (start_col_x + j)];
             const double val_y = data[(start_row_y + i) * stride_px + (start_col_y + j)];
             result += (val_x - mean_x) * (val_y - mean_y);
         }
     }
-    const double denom = (double)(dim.submatrix_width * dim.submatrix_height);
+    const double denom = (double)(dim->submatrix_width * dim->submatrix_height);
     return denom > 0.0 ? (float)(result / denom) : 0.0f;
 }
 
-void speed_internal_compute_cov_matrix(SpeedInternalDimensions dim, const float *data,
+void speed_internal_compute_cov_matrix(const SpeedInternalDimensions *dim, const float *data,
                                        float *cov_mat, float *tmp_means, size_t stride_px)
 {
     assert(data != NULL);
     assert(cov_mat != NULL);
     assert(tmp_means != NULL);
-    assert(dim.block_size > 0);
+    assert(dim->block_size > 0);
 
-    for (size_t start_row = 0; start_row < dim.block_size; start_row++) {
-        for (size_t start_col = 0; start_col < dim.block_size; start_col++) {
-            tmp_means[start_row * dim.block_size + start_col] =
+    for (size_t start_row = 0; start_row < dim->block_size; start_row++) {
+        for (size_t start_col = 0; start_col < dim->block_size; start_col++) {
+            tmp_means[start_row * dim->block_size + start_col] =
                 si_compute_mean(dim, data, stride_px, start_row, start_col);
         }
     }
-    const size_t elements_in_block = dim.block_size * dim.block_size;
+    const size_t elements_in_block = dim->block_size * dim->block_size;
 
-    for (size_t x_index = 0; x_index < dim.elements_in_block; x_index++) {
+    for (size_t x_index = 0; x_index < dim->elements_in_block; x_index++) {
         for (size_t y_index = 0; y_index <= x_index; y_index++) {
-            const size_t start_row_x = x_index / dim.block_size;
-            const size_t start_col_x = x_index % dim.block_size;
-            const size_t start_row_y = y_index / dim.block_size;
-            const size_t start_col_y = y_index % dim.block_size;
+            const size_t start_row_x = x_index / dim->block_size;
+            const size_t start_col_x = x_index % dim->block_size;
+            const size_t start_row_y = y_index / dim->block_size;
+            const size_t start_col_y = y_index % dim->block_size;
             const float cov = si_compute_covariance(dim, data, tmp_means, stride_px, start_row_x,
                                                     start_col_x, start_row_y, start_col_y);
             cov_mat[x_index * elements_in_block + y_index] = cov;
