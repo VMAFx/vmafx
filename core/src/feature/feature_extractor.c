@@ -874,8 +874,20 @@ fail:
     return NULL;
 }
 
+/* ctx_pool_ensure_slot_ctx — allocate and initialise the per-thread context
+ * for pool slot [i] if not already present.
+ *
+ * framesync is passed explicitly (extracted from fex->framesync by the caller
+ * while the pool lock is held) rather than being read inside this function.
+ * Reading fex->framesync here would be a data race: fex is the shared
+ * registered VmafFeatureExtractor and its framesync field can be written
+ * concurrently by set_fex_framesync() on the main thread.  By snapshotting
+ * the pointer once under the pool lock and passing it in, we guarantee a
+ * single unsynchronised read at most, which is safe because the assignment
+ * in set_fex_framesync() happens-before any vmaf_read_pictures() call (i.e.
+ * before the pool is acquired for the first time). */
 static int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFeatureExtractor *fex,
-                                    VmafDictionary *opts_dict)
+                                    VmafDictionary *opts_dict, VmafFrameSyncContext *framesync)
 {
     if (entry->ctx_list[i].fex_ctx)
         return 0;
@@ -895,17 +907,21 @@ static int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFea
         return err;
     }
     entry->ctx_list[i].fex_ctx = f;
+    /* Propagate framesync to the per-slot deep copy.  framesync was captured
+     * from fex->framesync by the caller under the pool lock, avoiding any
+     * data race on the shared fex struct (iter9-tsan-race-deep finding #1). */
     if (f->fex->flags & VMAF_FEATURE_FRAME_SYNC) {
-        f->fex->framesync = (fex->framesync);
+        f->fex->framesync = framesync;
     }
     return 0;
 }
 
 static int ctx_pool_claim_slot(struct fex_list_entry *entry, VmafFeatureExtractor *fex,
-                               VmafDictionary *opts_dict, VmafFeatureExtractorContext **fex_ctx)
+                               VmafDictionary *opts_dict, VmafFeatureExtractorContext **fex_ctx,
+                               VmafFrameSyncContext *framesync)
 {
     for (int i = 0; i < atomic_load(&entry->capacity); i++) {
-        int err = ctx_pool_ensure_slot_ctx(entry, i, fex, opts_dict);
+        int err = ctx_pool_ensure_slot_ctx(entry, i, fex, opts_dict, framesync);
         if (err)
             return err;
         if (!entry->ctx_list[i].in_use) {
@@ -940,7 +956,15 @@ int vmaf_fex_ctx_pool_aquire(VmafFeatureExtractorContextPool *pool, VmafFeatureE
     while (atomic_load(&entry->capacity) == atomic_load(&entry->in_use))
         pthread_cond_wait(&(entry->full), &(pool->lock));
 
-    err = ctx_pool_claim_slot(entry, fex, opts_dict, fex_ctx);
+    /* Snapshot fex->framesync once under the lock and pass it to
+     * ctx_pool_claim_slot / ctx_pool_ensure_slot_ctx so neither function
+     * needs to read the shared fex struct directly.  This removes the
+     * data race identified by iter9-tsan-race-deep finding #1 where a
+     * concurrent set_fex_framesync() write on the main thread could race
+     * with the memcpy inside vmaf_feature_extractor_context_create(). */
+    VmafFrameSyncContext *framesync =
+        (fex->flags & VMAF_FEATURE_FRAME_SYNC) ? fex->framesync : NULL;
+    err = ctx_pool_claim_slot(entry, fex, opts_dict, fex_ctx, framesync);
 
 unlock:
     pthread_mutex_unlock(&(pool->lock));

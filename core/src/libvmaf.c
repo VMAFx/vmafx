@@ -1608,26 +1608,37 @@ struct ThreadDataBatch {
     VmafFeatureCollector *feature_collector;
     RegisteredFeatureExtractors *registered_fex;
     unsigned n_subsample;
-    int err;
+    /* _Atomic int err: the worker thread writes this field multiple times as
+     * it iterates over extractors; the thread pool runner reads it once (as
+     * the function return value) to accumulate into pool->last_error.  Making
+     * the field atomic prevents a TSan data-race report if a future code path
+     * reads f->err without going through the function return value, and
+     * documents that the field is written from a worker context
+     * (iter9-tsan-race-deep finding #2). */
+    _Atomic int err;
 };
 
 static int threaded_extract_batch_func(void *e, void **thread_data)
 {
     struct ThreadDataBatch *f = e;
-    f->err = 0;
+    /* f->err is _Atomic int; use atomic_store/atomic_load throughout so that
+     * TSan sees proper sequenced-before edges and does not report a race if a
+     * future caller reads f->err outside the function return value path
+     * (iter9-tsan-race-deep finding #2). */
+    atomic_store(&f->err, 0);
 
     BatchThreadData *td = *thread_data;
     if (!td) {
         td = malloc(sizeof(*td));
         if (!td) {
-            f->err = -ENOMEM;
+            atomic_store(&f->err, -ENOMEM);
             goto unref;
         }
         td->cnt = f->registered_fex->cnt;
         td->fex_ctx = calloc(td->cnt, sizeof(*td->fex_ctx));
         if (!td->fex_ctx) {
             free(td);
-            f->err = -ENOMEM;
+            atomic_store(&f->err, -ENOMEM);
             goto unref;
         }
         *thread_data = td;
@@ -1667,7 +1678,7 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
             if (opts_dict) {
                 int err = vmaf_dictionary_copy(&opts_dict, &d);
                 if (err) {
-                    f->err = err;
+                    atomic_store(&f->err, err);
                     break;
                 }
             }
@@ -1678,7 +1689,7 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
              * thread-private (ADR-0795). */
             int err = vmaf_feature_extractor_context_create(&td->fex_ctx[i], shared_fex, d);
             if (err) {
-                f->err = err;
+                atomic_store(&f->err, err);
                 break;
             }
         }
@@ -1723,7 +1734,7 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
         }
 
         if (err) {
-            f->err = err;
+            atomic_store(&f->err, err);
             break;
         }
     }
@@ -1733,7 +1744,7 @@ unref:
         vmaf_picture_unref(&f->prev_ref);
     vmaf_picture_unref(&f->ref);
     vmaf_picture_unref(&f->dist);
-    return f->err;
+    return atomic_load(&f->err);
 }
 
 static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
