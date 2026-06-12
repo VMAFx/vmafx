@@ -142,8 +142,8 @@ async def _communicate_with_timeout(
 # ---------------------------------------------------------------------------
 
 
-def _nan_to_none(value: Any, *, _max_depth: int = 100) -> Any:
-    """Replace non-finite floats with ``None``, capped at ``_max_depth`` levels.
+def _nan_to_none(value: Any, *, _max_depth: int = 200) -> Any:
+    """Replace non-finite floats with ``None`` using an iterative stack walk.
 
     Python's default ``json.dumps`` (``allow_nan=True``) emits bare ``NaN`` /
     ``Infinity`` tokens that are not valid RFC 8259 JSON.  MCP clients that use
@@ -154,27 +154,59 @@ def _nan_to_none(value: Any, *, _max_depth: int = 100) -> Any:
     intentionally inlined here because ``vmaf-mcp`` does not declare
     ``vmaf-tune`` as a dependency (ADR-0988).
 
-    The previous recursive implementation triggered ``RecursionError`` on deeply
-    nested JSON payloads (e.g. per-frame metadata with more than a few hundred
-    levels of nesting).  This version uses a depth counter to enforce a hard cap
-    of ``_max_depth`` (default 100) — any subtree rooted deeper than that is
-    replaced wholesale with ``None`` instead of being traversed, which prevents
-    unbounded call-stack growth while preserving all practical payloads.
+    This implementation is fully iterative (explicit work-stack, no Python
+    call-stack recursion) so it never triggers ``RecursionError`` regardless of
+    input nesting depth.  Subtrees rooted deeper than ``_max_depth`` (default
+    200) are replaced with ``None`` to bound both memory and traversal time on
+    adversarial inputs.
+
+    Algorithm: the work-stack carries ``(node, depth, parent_out, key)`` tuples.
+    Each pop either (a) writes a scalar directly into the parent container via
+    ``parent_out[key] = coerced``, or (b) allocates a fresh output container,
+    writes it into the parent, then pushes all children onto the stack so they
+    fill the new container on subsequent iterations.  The root result is
+    collected via a sentinel single-element list used as the top-level "parent".
     """
-    return _nan_to_none_depth(value, depth=0, max_depth=_max_depth)
+    # Sentinel single-element list used as the root parent container.
+    # After the loop, root_out[0] holds the transformed tree.
+    root_out: list[Any] = [None]
 
+    # Stack entries: (node, depth, parent_out, key)
+    # parent_out[key] is where this node's result must be written.
+    stack: list[tuple[Any, int, Any, Any]] = [(value, 0, root_out, 0)]
 
-def _nan_to_none_depth(value: Any, depth: int, max_depth: int) -> Any:
-    """Internal helper for :func:`_nan_to_none` that carries the depth counter."""
-    if depth > max_depth:
-        return None
-    if isinstance(value, float):
-        return None if (math.isnan(value) or math.isinf(value)) else value
-    if isinstance(value, dict):
-        return {k: _nan_to_none_depth(v, depth + 1, max_depth) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_nan_to_none_depth(v, depth + 1, max_depth) for v in value]
-    return value
+    while stack:
+        node, depth, parent_out, key = stack.pop()
+
+        # Depth-exceeded or non-container scalars: write result directly.
+        if depth > _max_depth:
+            parent_out[key] = None
+            continue
+
+        if isinstance(node, float):
+            parent_out[key] = None if (math.isnan(node) or math.isinf(node)) else node
+            continue
+
+        if not isinstance(node, (dict, list, tuple)):
+            # int, str, bool, NoneType, etc. — pass through unchanged.
+            parent_out[key] = node
+            continue
+
+        # Container node: allocate output container, link it to parent, then
+        # push all children so they are filled on subsequent iterations.
+        if isinstance(node, dict):
+            out: Any = {}
+            parent_out[key] = out
+            for k, child in node.items():
+                stack.append((child, depth + 1, out, k))
+        else:
+            # list or tuple — always rebuild as list (json.dumps treats both alike).
+            out = [None] * len(node)
+            parent_out[key] = out
+            for i, child in enumerate(node):
+                stack.append((child, depth + 1, out, i))
+
+    return root_out[0]
 
 
 def _dumps_strict(data: Any, *, indent: int | None = 2) -> str:
@@ -262,6 +294,54 @@ def _validate_path(p: str) -> Path:
     if not path.is_file():
         raise FileNotFoundError(str(path))
     return path
+
+
+# Schemes permitted for media source paths passed to vmaf-tune subcommands.
+# Only local file paths are allowed; remote schemes (http, https, rtsp, s3,
+# rclone://, etc.) are rejected to prevent SSRF via ffmpeg's URL demuxer.
+_ALLOWED_MEDIA_SCHEMES: frozenset[str] = frozenset({"file"})
+
+
+def _validate_media_path(p: str) -> str:
+    """Validate a media source path for vmaf-tune subcommands.
+
+    Unlike :func:`_validate_path`, this function does NOT require the path
+    to already exist on disk (vmaf-tune may open a container file that the
+    MCP server cannot stat independently), but it applies the same allowlist
+    and symlink-resolution rules.
+
+    Rejects:
+    - Paths containing null bytes (argv injection vector).
+    - URL schemes other than ``file://`` (blocks SSRF via ffmpeg URL demuxer).
+    - Paths not under any allowlisted root after ``Path.resolve()`` (blocks
+      directory-traversal escape via ``../`` sequences and symlink chains).
+
+    Returns the validated path string suitable for passing to subprocess argv.
+    Raises ``ValueError`` on any violation.
+    """
+    if "\x00" in p:
+        raise ValueError("media path must not contain null bytes")
+
+    # Reject non-file URL schemes (http://, rtsp://, s3://, rclone://, etc.)
+    # that ffmpeg would silently follow as remote sources.
+    colon_pos = p.find("://")
+    if colon_pos != -1:
+        scheme = p[:colon_pos].lower()
+        if scheme not in _ALLOWED_MEDIA_SCHEMES:
+            raise ValueError(
+                f"media path scheme '{scheme}://' is not permitted; "
+                "only local file paths are accepted."
+            )
+        # Strip the file:// prefix so the rest of the checks apply to the path.
+        p = p[len("file://") :]
+
+    resolved = Path(p).resolve()
+    allowed = _allowed_roots()
+    if not any(resolved.is_relative_to(root) for root in allowed):
+        raise ValueError(
+            f"media path {resolved} not under an allowlisted root; " "set VMAF_MCP_ALLOW to extend."
+        )
+    return str(resolved)
 
 
 # ---------------------------------------------------------------------------
@@ -1306,9 +1386,9 @@ async def _run_compare(
 ) -> dict[str, Any]:
     """Run ``vmaf-tune compare`` and return the parsed report.
 
-    @p src may be any path recognised by FFmpeg (container or raw YUV).
-    The path is NOT validated against the MCP allowlist because vmaf-tune
-    handles its own file access; the MCP layer only validates VMAF YUV inputs.
+    @p src must be a local file path under an allowlisted root (validated via
+    :func:`_validate_media_path`).  Remote URL schemes (http, rtsp, s3, etc.)
+    are rejected to prevent SSRF via ffmpeg's URL demuxer.
 
     Progress notifications are emitted at "started" and "done" when
     @p progress_token is set (clients opt in via ``params._meta.progressToken``).
@@ -1316,6 +1396,7 @@ async def _run_compare(
     encoders and the source duration; no finer-grained progress is available
     from the subprocess.
     """
+    src = _validate_media_path(src)
     vmaftune = _vmaftune_binary()
     if not vmaftune.exists():
         raise RuntimeError(
@@ -1387,9 +1468,12 @@ async def _run_ladder(
 ) -> dict[str, Any]:
     """Run ``vmaf-tune ladder`` and return the manifest.
 
+    @p src must be a local file path under an allowlisted root (validated via
+    :func:`_validate_media_path`).
     @p resolutions: comma-separated ``WxH`` list, e.g. ``1920x1080,1280x720``.
     @p target_vmafs: comma-separated VMAF target list, e.g. ``95,90,85``.
     """
+    src = _validate_media_path(src)
     vmaftune = _vmaftune_binary()
     if not vmaftune.exists():
         raise RuntimeError(
@@ -1462,12 +1546,15 @@ async def _run_tune_per_shot(
 ) -> dict[str, Any]:
     """Run ``vmaf-tune tune-per-shot`` and return per-shot recommendations.
 
-    Detects scene cuts in @p src, runs a per-shot CRF bisect targeting
-    @p target_vmaf with @p encoder, and returns the plan.
+    @p src must be a local file path under an allowlisted root (validated via
+    :func:`_validate_media_path`).  Detects scene cuts in the source, runs a
+    per-shot CRF bisect targeting @p target_vmaf with @p encoder, and returns
+    the plan.
 
     Progress notifications: emitted at start and completion (two steps);
     the actual bisect may take minutes for a long clip.
     """
+    src = _validate_media_path(src)
     vmaftune = _vmaftune_binary()
     if not vmaftune.exists():
         raise RuntimeError(
