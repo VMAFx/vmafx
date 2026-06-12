@@ -121,10 +121,19 @@ output pixel from an 18-entry table — out-of-bounds reads.
 
 When porting a CUDA twin to HIP, write the kernel scalar-per-thread first
 (no shared-memory tiling, no warp reductions) and confirm cross-backend
-parity at `places=3` (or better) on the Netflix golden pair *before*
+parity at `places=4` (ADR-0214) on the Netflix golden pair *before*
 porting the perf optimisations.  HIP wavefront sizes differ between
 RDNA (32) and GCN/CDNA (64), so the warp-reduce path needs its own tuning
 even after the scalar kernel is bit-exact.
+
+**Boundary condition invariant (ADR-1103)**: All filter-loop boundary reads
+must use `mirror2_i(idx, dim)` (two-bounce symmetric reflect), **not**
+`clamp_i(idx, 0, dim-1)` (replicate-edge).  The CPU reference uses
+`PADDING_SQ_DATA` (symmetric reflect at 0 and dim-1); `clamp_i` disagrees
+with this for the `filter_half_width` pixels at each edge, producing a
+places~2.75 gap (max |HIP−CPU| ≈ 0.0018) that violates ADR-0214.
+`mirror2_i` is already defined in `integer_vif/vif_statistics.hip`; copy
+or re-derive it in any new HIP filter kernel before adding boundary reads.
 
 Established precedent: ADR-0537 ports `integer_vif/vif_statistics.hip`
 scalar-per-thread (~540 lines vs the CUDA twin's ~850), accepts a

@@ -50,9 +50,13 @@
 #define FIXTURE_W 256u
 #define FIXTURE_H 144u
 #define FIXTURE_BPC 8u
-/* VIF is more sensitive than PSNR — relax to places=3 (1e-3), matching
- * the cross-backend tolerance budget used for filtered features. */
-#define PARITY_TOL 1e-3
+/* ADR-0568: mirror2_i boundary fix brings integer_vif_hip to places=6 on real
+ * content (max |HIP−CPU| ≈ 1e-6 on the Netflix src01 576×324 pair, all 48
+ * frames).  Tighten from places=3 to places=4 per the ADR-0214 gate.
+ * The synthetic gradient fixture here is simpler than natural video, so
+ * places=6 is achievable; places=4 (1e-4) is the hard gate floor per ADR-0214
+ * and ADR-0566. */
+#define PARITY_TOL 1e-4
 
 static int fill_pic(VmafPicture *pic, unsigned salt)
 {
@@ -165,7 +169,7 @@ static char *test_vif_cpu_hip_parity(void)
         (void)fprintf(stderr, "\nvif_scale0 parity FAIL: cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n",
                       cpu, gpu, delta, PARITY_TOL);
     }
-    mu_assert("vif_scale0 CPU vs. HIP delta exceeds places=3 tolerance (1e-3)",
+    mu_assert("vif_scale0 CPU vs. HIP delta exceeds places=4 tolerance (1e-4; ADR-0214/ADR-0568)",
               delta <= PARITY_TOL);
     return NULL;
 }

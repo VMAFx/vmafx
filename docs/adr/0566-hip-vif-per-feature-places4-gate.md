@@ -90,16 +90,20 @@ the upstream per-feature gate that makes the downstream gate achievable.
 - ADR-0537's places=3 follow-up clause is superseded and no longer operative.
   Any HIP VIF kernel that cannot achieve places=4 on the Netflix golden pair is
   not mergeable until it can.
-- ADR-0552's wavefront reduction fix satisfies this gate: the deterministic
-  XOR-shuffle reduction produces per-feature delta < 1e-5 on the BBB testdata
-  fixture (well within places=4).
-- The CI parity test for HIP VIF (once implemented) must assert places=4 per
-  scale per frame, not places=3.
+- ~~ADR-0552's wavefront reduction fix satisfies this gate~~: ADR-0552 was
+  superseded by ADR-0563 (per-thread atomicAdd). ADR-0563 fixed the carry-bit
+  catastrophe but left a residual places~2.75 gap. ADR-1103 closes the gap by
+  fixing the boundary condition (mirror2_i), achieving places~6 on the Netflix
+  src01 pair.
+- The CI parity test for HIP VIF (`test_hip_vif_parity.c`) asserts places=4
+  per scale (PARITY_TOL=1e-4) as of ADR-1103.
 
 ## References
 
 - ADR-0537 — HIP integer VIF kernel crash fixes (the superseded clause)
-- ADR-0552 — Deterministic wavefront reduction in `integer_vif_hip` (the fix
-  that achieves places=4)
+- ADR-0552 — Superseded wavefront reduction (carry-bit bug; superseded by ADR-0563)
+- ADR-0563 — Per-thread atomicAdd fix (carry-bit fix; residual gap remains)
+- ADR-1103 — mirror2_i boundary fix (achieves places=4; supersedes this ADR's
+  "ADR-0552 achieves places=4" claim)
 - ADR-0214 — Cross-backend parity gate (places=4 at VMAF-score level)
 - User direction: "places=3 is not precise [enough]" (paraphrased)

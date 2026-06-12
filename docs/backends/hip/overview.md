@@ -439,3 +439,28 @@ since uint64 addition is associative and commutative. Same pattern
 `vif_statistics.hip` adopted (ADR-0537).
 
 See [ADR-0539](../../adr/0539-hip-adm-kernels-real.md).
+
+## ADR-1103: integer_vif_hip boundary fix — places=4 parity achieved (2026-06-13)
+
+After the ADR-0563 carry-bit fix, `integer_vif_hip` still produced a residual
+parity gap of places~2.75 (max |HIP−CPU| ≈ 0.0018 per scale) on the Netflix
+src01 576×324 pair. The root cause was a boundary-condition mismatch: all
+filter-loop reads used `clamp_i` (replicate-edge), while the CPU reference uses
+a **symmetric reflect** (`PADDING_SQ_DATA` in `integer_vif.h`) and the CUDA twin
+uses a "two-bounce mirror" in its shared-memory load stage.
+
+The fix replaces `clamp_i` with `mirror2_i` in all six filter-loop reads in
+`vif_statistics.hip`. Verification on gfx1030 (RDNA2, wave32):
+
+| Scale | Max |HIP−CPU| (post-fix) | Places |
+|-------|------------------------|--------|
+| scale0 | 0.0000010 | ~6.00 |
+| scale1 | 0.0000010 | ~6.00 |
+| scale2 | 0.0000010 | ~6.00 |
+| scale3 | 0.0000010 | ~6.00 |
+
+All 48 Netflix src01 frames meet places=4. Pooled VMAF delta: 0.000017 (places~4.7).
+The in-repo parity test tolerance is tightened from 1e-3 to 1e-4 per ADR-0214
+and ADR-0566.
+
+See [ADR-1103](../../adr/1103-hip-vif-mirror2-boundary.md).

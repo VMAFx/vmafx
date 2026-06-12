@@ -45670,3 +45670,12 @@ purely script-internal; no C or build system conflict possible with upstream.
 
 ## chore/remove-vulkan-moltenvk-dead-leftovers (2026-06-13)
 no rebase impact: deletions only (subproject wraps, Docker stages, CI job bodies, moltenvk.md). No shared function signatures changed, no symbols renamed, no upstream-mirrored C paths modified. ABI-reserved enum gaps preserved.
+
+## fix/hip-vif-mirror2-boundary (2026-06-13)
+no rebase impact for upstream syncs: touches only fork-local HIP files
+(core/src/feature/hip/integer_vif/vif_statistics.hip) and the fork-local
+HIP VIF parity test (core/test/test_hip_vif_parity.c). Neither file exists in
+upstream Netflix/vmaf. The docs/adr/ and docs/backends/hip/overview.md changes
+are also fork-local. Any future upstream sync that adds upstream files under
+core/src/feature/hip/ would require manual review of boundary semantics, but
+no mechanical conflict is possible.
