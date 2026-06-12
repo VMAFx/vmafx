@@ -1,7 +1,7 @@
 {
-  "name": "vmaf-dev (Ubuntu 24.04)",
+  "name": "vmaf-dev (Ubuntu 26.04)",
   "build": {
-    "dockerfile": "../docker/dev/ubuntu-24.04.Dockerfile",
+    "dockerfile": "../docker/dev/ubuntu-26.04.Dockerfile",
     "context": ".."
   },
   "workspaceFolder": "/src",

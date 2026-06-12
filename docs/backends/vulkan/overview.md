@@ -196,7 +196,7 @@ secondary.
   runs `vmaf` twice on the Netflix normal pair (CPU + Vulkan),
   diffs `integer_vif_scale0..3` at `places=4`. Two CI lanes: the
   `lavapipe` lane runs on every PR (Mesa software ICD on
-  `ubuntu-24.04`); the Arc-A380 lane runs nightly (parked until a
+  `ubuntu-26.04`); the Arc-A380 lane runs nightly (parked until a
   self-hosted runner with label `vmaf-arc` is registered).
 - Smoke test at [`core/test/test_vulkan_smoke.c`][smoke-test] —
   pins the runtime contract (`device_count >= 0`, `context_new`

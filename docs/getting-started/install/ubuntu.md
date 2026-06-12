@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 -->
-# Installing on Ubuntu (22.04 / 24.04)
+# Installing on Ubuntu (22.04 / 24.04 / 26.04)
 
 The [`scripts/setup/ubuntu.sh`](../../scripts/setup/ubuntu.sh) helper does
 everything below in one step:
@@ -55,7 +55,7 @@ and oneVPL is the supported successor.
 
 ```bash
 sudo apt-get install -y libvpl2 libvpl-dev
-# 24.04 noble  -> libvpl2 / libvpl-dev 2023.3.0 (universe).
+# 24.04 noble / 26.04 plucky  -> libvpl2 / libvpl-dev 2023.3.0 (universe).
 # 22.04 jammy  -> libvpl2 / libvpl-dev 2022.1.0 (universe).
 # For pre-Tiger-Lake iGPUs also: `intel-media-va-driver` /
 # `intel-media-va-driver-non-free`.

@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   poll:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Check Netflix/vmaf#645 + scan upstream model/ for vmaf_hdr_*.json

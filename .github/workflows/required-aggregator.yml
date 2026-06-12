@@ -28,7 +28,7 @@ concurrency:
 jobs:
   aggregator:
     name: Required Checks Aggregator
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 100
     steps:
       - name: Block draft PRs from satisfying the required check

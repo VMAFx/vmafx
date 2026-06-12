@@ -117,10 +117,10 @@ in-cluster controller Service name (`<release>-controller:8080`).
 
 | Variant | `GPU_RUNTIME` ARG | Base |
 |---|---|---|
-| `vmafx-node:cpu` | `cpu` (default) | ubuntu:24.04 |
-| `vmafx-node:cuda12` | `cuda12` | ubuntu:24.04 + CUDA 12 runtime |
-| `vmafx-node:rocm6` | `rocm6` | ubuntu:24.04 + ROCm 6 runtime |
-| `vmafx-node:sycl-oneapi2026` | `sycl-oneapi2026` | ubuntu:24.04 + Intel oneAPI 2026 |
+| `vmafx-node:cpu` | `cpu` (default) | ubuntu:26.04 |
+| `vmafx-node:cuda12` | `cuda12` | ubuntu:26.04 + CUDA 12 runtime |
+| `vmafx-node:rocm6` | `rocm6` | ubuntu:26.04 + ROCm 6 runtime |
+| `vmafx-node:sycl-oneapi2026` | `sycl-oneapi2026` | ubuntu:26.04 + Intel oneAPI 2026 |
 
 Build example:
 

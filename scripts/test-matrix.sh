@@ -7,7 +7,7 @@
 #
 # Usage:
 #   bash scripts/test-matrix.sh                 # all images
-#   bash scripts/test-matrix.sh ubuntu-24.04    # single image
+#   bash scripts/test-matrix.sh ubuntu-26.04    # single image
 #   MAKE_TARGET=test-fast bash scripts/test-matrix.sh  # override target
 
 set -euo pipefail
@@ -18,7 +18,7 @@ cd "$REPO_ROOT"
 MAKE_TARGET="${MAKE_TARGET:-ci}"
 
 declare -a IMAGES=(
-  "ubuntu-24.04:docker/dev/ubuntu-24.04.Dockerfile"
+  "ubuntu-26.04:docker/dev/ubuntu-26.04.Dockerfile"
   "arch:docker/dev/arch.Dockerfile"
   "fedora-40:docker/dev/fedora-40.Dockerfile"
   "alpine-3.20:docker/dev/alpine-3.20.Dockerfile"

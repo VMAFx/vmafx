@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ubuntu 24.04 LTS (Noble) — also works on 22.04 LTS, Debian 12, Mint 21, Pop!_OS.
+# Ubuntu 26.04 LTS (Plucky) — also works on 24.04 LTS, 22.04 LTS, Debian 12, Mint 21.
 # Installs the build toolchain, Python dev deps, and (optionally) CUDA / oneAPI.
 set -euo pipefail
 

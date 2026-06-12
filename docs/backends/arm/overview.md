@@ -100,7 +100,7 @@ explicit byte-identity contract. The Netflix golden CPU gate
 
 The `Build — Ubuntu ARM clang (CPU)` job in the libvmaf build matrix
 ([`libvmaf-build-matrix.yml`][libvmaf-build-matrix]) runs on
-`ubuntu-24.04-arm` against clang and exercises the full unit-test + tox
+`ubuntu-26.04-arm` against clang and exercises the full unit-test + tox
 suite on real aarch64 hardware (not qemu).
 
 [libvmaf-build-matrix]: ../../../.github/workflows/libvmaf-build-matrix.yml

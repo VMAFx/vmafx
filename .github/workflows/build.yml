@@ -53,7 +53,7 @@ jobs:
           # Proves the full VMAFX stack compiles. Runs the complete meson
           # test suite (including Netflix golden assertions).
           # ──────────────────────────────────────────────────────────────
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             name: Build — Linux (GCC, all backends)
             CC: ccache gcc
             CXX: ccache g++

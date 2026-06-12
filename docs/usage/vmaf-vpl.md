@@ -17,7 +17,7 @@ debugging the import path itself.
 ## Build prerequisites
 
 1. SYCL toolchain (Intel oneAPI 2025.3+ with `icpx`).
-2. Intel VPL runtime (`libvpl-dev` on Ubuntu 24.04, or oneAPI bundle).
+2. Intel VPL runtime (`libvpl-dev` on Ubuntu 24.04/26.04, or oneAPI bundle).
 3. `libva-dev` + `libva-drm-dev` for the VAAPI surface input path.
 
 If any of the above is missing, meson silently skips the

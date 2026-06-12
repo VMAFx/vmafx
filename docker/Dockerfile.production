@@ -21,7 +21,7 @@
 # Stage 1 — builder: compile libvmaf + vmaf CLI
 # ---------------------------------------------------------------------------
 # Builder on debian:12-slim to match the distroless cc-debian12 runtime glibc (2.36).
-# Ubuntu 24.04 requires glibc >= 2.38 which distroless cc-debian12 does not provide.
+# Ubuntu 26.04 requires glibc >= 2.43 which distroless cc-debian12 does not provide.
 FROM debian:13-slim@sha256:b6e2a152f22a40ff69d92cb397223c906017e1391a73c952b588e51af8883bf8 AS builder
 
 ARG VMAF_BUILD_JOBS=4

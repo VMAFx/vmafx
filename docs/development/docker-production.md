@@ -177,7 +177,7 @@ docker buildx build \
 
 Both Dockerfiles use a multi-stage build:
 
-1. **builder** (`ubuntu:24.04`): compiles libvmaf + vmaf CLI with meson/ninja.
+1. **builder** (`ubuntu:26.04`): compiles libvmaf + vmaf CLI with meson/ninja.
    Release build, stripped, no GPU backends in the default Dockerfile.
 2. **python-deps** (`python:3.13-slim`): installs vmaf-mcp and vmaf-tune into
    `/venv` (server target only).

@@ -25,7 +25,7 @@ jobs:
   deep-dive-checklist:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Deep-Dive Deliverables Checklist (ADR-0108)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -82,7 +82,7 @@ jobs:
   doc-substance-check:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Doc-Substance Gate (ADR-0100 / 0167)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # ADR-0167 (2026-04-25): promoted from advisory to blocking and
     # tightened to require a *path-mapped* docs hit. ADR additions
@@ -203,7 +203,7 @@ jobs:
   state-md-touch-check:
     if: github.event.pull_request.draft == false || github.event_name != 'pull_request'
     name: docs/state.md Touch Gate (ADR-0165)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # ADR-0334 (2026-05-08): promotes CLAUDE.md §12 rule 13 (the
     # docs/state.md update discipline) from reviewer-enforced to
@@ -233,7 +233,7 @@ jobs:
   ffmpeg-patches-surface-check:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: FFmpeg-Patches Surface Sync (CLAUDE.md §12 r14, ADR-0356)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # Blocking gate: every PR that changes a libvmaf public-surface
     # symbol consumed by ffmpeg-patches/*.patch must update at least
@@ -259,7 +259,7 @@ jobs:
   adr-backfill-check:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: ADR-Backfill Advisory (ADR-0106)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     continue-on-error: true
     steps:
@@ -307,7 +307,7 @@ jobs:
   adr-collision-check:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: ADR Number Collision Guard (ADR-0386 / ADR-0628)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # Blocking gate: every ADR file added in this PR must have a 4-digit prefix
     # that does NOT already exist on origin/master AND does NOT collide with any

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 # Non-conservative CUDA pin per ADR D27 — dev Dockerfile tracks the same
 # major.minor as the prod Dockerfile (currently 13.3). Bump together.
-FROM nvidia/cuda:13.3.0-devel-ubuntu24.04@sha256:ef2203909e80b8b976cfc672f7e2ae2b00bc0e25c404ee86d89e10a3802f1c52
+FROM nvidia/cuda:13.3.0-devel-ubuntu26.04@sha256:243be03aa10331842755b7e5c044aefb0c97978e8065d27d40aed4663094c900
 
 ENV DEBIAN_FRONTEND=noninteractive \
     INSTALL_LINTERS=1 \

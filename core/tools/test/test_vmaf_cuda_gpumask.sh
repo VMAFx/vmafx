@@ -14,7 +14,7 @@ fi
 
 # Skip on runners that have the CUDA toolkit installed but no GPU hardware.
 # ldconfig finding libcuda.so is insufficient: the stub library passes even
-# on CPU-only CI runners (e.g. ubuntu-24.04 with the CUDA 13.2 toolkit stub).
+# on CPU-only CI runners (e.g. ubuntu-26.04 with the CUDA 13.3 toolkit stub).
 # nvidia-smi -L enumerates actual GPU devices; exit 77 = meson SKIP so the
 # test is recorded as skipped rather than failed.
 nvidia-smi -L >/dev/null 2>&1 || exit 77

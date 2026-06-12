@@ -59,7 +59,7 @@ jobs:
             CXX: ccache clang++
             name: Build — macOS clang (CPU)
             experimental: true
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-26.04-arm
             CC: ccache clang
             CXX: ccache clang++
             name: Build — Ubuntu ARM clang (CPU)
@@ -490,9 +490,9 @@ jobs:
       # at `repo.radeon.com/rocm/apt/<ver>`. ROCm 7.2.3 matches the
       # version under test on the maintainer's local box; the apt URL
       # carries the version path component, so bumping ROCm here is a
-      # one-line change. `noble` is the codename for `ubuntu-24.04`,
-      # which is what GitHub's `ubuntu-latest` resolves to on this
-      # runner image (`ubuntu-24.04` since 2024-04). Pin priority 600
+      # one-line change. The ROCm install uses `lsb_release -cs` to
+      # detect the codename dynamically (plucky for ubuntu-26.04).
+      # Pin priority 600
       # keeps Ubuntu base packages preferred where versions overlap so
       # the HIP install doesn't drag in a parallel toolchain.
       #
@@ -1037,7 +1037,7 @@ jobs:
       # build the loader from source (cmake build, header-only +
       # one .lib output). Mirror the `oneapi-src/level-zero` README
       # quick-build recipe; pin to v1.18.5 to match the version the
-      # Linux Ubuntu 24.04 runners install via apt.
+      # Linux Ubuntu 26.04 runners install via apt.
       - name: Install Level Zero loader (windows)
         if: matrix.backend == 'sycl'
         shell: cmd

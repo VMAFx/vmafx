@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1.7
-# Base: NVIDIA CUDA ≥13.3 devel on Ubuntu 24.04. Non-conservative pin per ADR D27 —
+# Base: NVIDIA CUDA ≥13.3 devel on Ubuntu 26.04. Non-conservative pin per ADR D27 —
 # we follow latest-stable CUDA aggressively because the fork's value is GPU perf on
 # current hardware; being one release behind costs ~10-30% on kernel-bound stages.
 # Digest-pinned (sha256) for supply-chain reproducibility; update when upgrading the
 # CUDA tag. Gives us nvcc + cudart-dev without Ubuntu's stale 'nvidia-cuda-toolkit'
-# apt package (24.04 still ships CUDA 12.x).
-FROM nvidia/cuda:13.3.0-devel-ubuntu24.04@sha256:ef2203909e80b8b976cfc672f7e2ae2b00bc0e25c404ee86d89e10a3802f1c52
+# apt package.
+FROM nvidia/cuda:13.3.0-devel-ubuntu26.04@sha256:243be03aa10331842755b7e5c044aefb0c97978e8065d27d40aed4663094c900
 
 ARG NV_CODEC_TAG="876af32a202d0de83bd1d36fe74ee0f7fcf86b0d"
 ARG FFMPEG_TAG=n8.1
@@ -36,7 +36,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # ---------- system dependencies ----------
 # CUDA toolkit + cudart are already present in the base image.
 # DL3008: we install tracked security-updated versions from the Ubuntu
-# 24.04 archive; pinning every patch version would break on every
+# 26.04 archive; pinning every patch version would break on every
 # upstream security update. apt-get update + install happens in one
 # layer so the cache stays consistent (DL3009).
 # BuildKit cache mounts (`type=cache,target=/var/cache/apt` + `/var/lib/apt`)
@@ -105,7 +105,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
     make clean && make ENABLE_NVCC=true && make install
 # Register /usr/local/lib/x86_64-linux-gnu in the dynamic linker cache so the
 # installed vmaf binary can find libvmaf.so.3 at runtime. The NVIDIA CUDA
-# Ubuntu 24.04 base image does not include the arch-specific subdir in its
+# Ubuntu 26.04 base image does not include the arch-specific subdir in its
 # default ld.so.conf; meson strips RPATH on install, so without ldconfig the
 # binary exits with a dynamic linker error (vmaf smoke test sees zero stdout).
 RUN ldconfig

@@ -5,7 +5,7 @@ Choose your platform below, or see [Building on Windows](building-on-windows.md)
 
 | Platform | Package manager | Guide |
 |----------|----------------|-------|
-| Ubuntu 22.04 / 24.04 | apt | [Install](install/ubuntu.md) |
+| Ubuntu 22.04 / 24.04 / 26.04 | apt | [Install](install/ubuntu.md) |
 | Fedora | dnf | [Install](install/fedora.md) |
 | Arch Linux | pacman | [Install](install/arch.md) |
 | Alpine | apk | [Install](install/alpine.md) |

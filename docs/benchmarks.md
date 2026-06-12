@@ -13,7 +13,7 @@ PR that updates this file alongside the commit that motivates the rerun.
 |Profile|CPU|GPUs|Memory|OS|
 |---|---|---|---|---|
 |`ryzen-4090-arc`|AMD Ryzen 9 9950X3D (16c/32t, Zen 5, AVX-512)|NVIDIA RTX 4090 (24 GB) + Intel Arc A380 (6 GB, fp64-emulated)|96 GB DDR5-6400|Linux 7.0.x (CachyOS)|
-|`xeon-arc`|Intel Xeon w9-3475X|Intel Arc A770|128 GB DDR5-4800|Ubuntu 24.04|
+|`xeon-arc`|Intel Xeon w9-3475X|Intel Arc A770|128 GB DDR5-4800|Ubuntu 26.04|
 |`m4-pro`|Apple M4 Pro|(integrated)|48 GB unified|macOS 15|
 
 The `ryzen-4090-arc` profile is the canonical fork bench host: a single

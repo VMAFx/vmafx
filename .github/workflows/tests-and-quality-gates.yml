@@ -153,7 +153,7 @@ jobs:
   vulkan-vif-cross-backend:
     if: false
     name: "Vulkan VIF Cross-Backend (lavapipe, places=4)"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -351,7 +351,7 @@ jobs:
   vulkan-parity-matrix-gate:
     if: false
     name: "GPU-Parity Matrix Gate (lavapipe, T6-8)"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -490,7 +490,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          # lld-18 matches ubuntu-24.04's default clang-18; ld.bfd/gold pulls in
+          # lld-18 matches ubuntu-26.04's clang-18; ld.bfd/gold pulls in
           # a system-wide LLVM 16 gold plugin that can't read clang-18 LTO
           # bitcode (Unknown attribute kind 91 in LLVM 16 reader). Using lld
           # keeps the linker in the same LLVM major as the compiler.
@@ -617,7 +617,7 @@ jobs:
   dnn:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Tiny AI (DNN Suite + ai/ Pytests)"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -711,7 +711,7 @@ jobs:
   mcp-smoke:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "MCP Smoke (Embedded C + Python Server)"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
