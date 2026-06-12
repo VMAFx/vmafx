@@ -63,7 +63,8 @@ extern const unsigned int float_adm_score_hsaco_len;
 #define FADM_BX 16
 #define FADM_BY 16
 #define FADM_BORDER_FACTOR 0.1
-#define FADM_ACCUM_SLOTS 6
+/* ADR-0574: slots 0..5 = adm2 csf+cm per band; slots 6..8 = aim_cm per band. */
+#define FADM_ACCUM_SLOTS 9
 
 typedef struct FloatAdmStateHip {
     bool debug;
@@ -74,6 +75,11 @@ typedef struct FloatAdmStateHip {
     double adm_csf_scale;
     double adm_csf_diag_scale;
     double adm_noise_weight;
+    /* ADR-0574: AIM / ADM3 options. */
+    int adm_adm3_apply_hm;
+    double adm_p_norm;
+    double adm_dlm_weight;
+    double adm_min_val;
 
     unsigned width;
     unsigned height;
@@ -91,6 +97,8 @@ typedef struct FloatAdmStateHip {
     hipFunction_t func_dwt_hori;
     hipFunction_t func_decouple_csf;
     hipFunction_t func_csf_cm;
+    hipFunction_t func_csf_r;
+    hipFunction_t func_aim_cm;
 
     void *src_ref;
     void *src_dis;
@@ -100,6 +108,8 @@ typedef struct FloatAdmStateHip {
     void *dis_band[FADM_NUM_SCALES];
     void *csf_a;
     void *csf_f;
+    void *csf_a_aim;
+    void *csf_f_aim;
     void *accum[FADM_NUM_SCALES];
     float *accum_host[FADM_NUM_SCALES];
 #endif /* HAVE_HIPCC */
@@ -182,6 +192,41 @@ static const VmafOption options[] = {
      .min = 0.0,
      .max = 100.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    /* ADR-0574: AIM / ADM3 options — mirrors CUDA twin. */
+    {.name = "adm_adm3_apply_hm",
+     .alias = "aah",
+     .help = "apply harmonic mean for adm3 score (false = linear blend)",
+     .offset = offsetof(FloatAdmStateHip, adm_adm3_apply_hm),
+     .type = VMAF_OPT_TYPE_BOOL,
+     .default_val.b = false,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_p_norm",
+     .alias = "apn",
+     .help = "p-norm exponent for AIM/ADM3 score (default 3.0)",
+     .offset = offsetof(FloatAdmStateHip, adm_p_norm),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 3.0,
+     .min = 1.0,
+     .max = 20.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_dlm_weight",
+     .alias = "dlmw",
+     .help = "DLM weight for linear-blend adm3 score (default 0.5)",
+     .offset = offsetof(FloatAdmStateHip, adm_dlm_weight),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = 0.5,
+     .min = 0.0,
+     .max = 1.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_min_val",
+     .alias = "min",
+     .help = "minimum clamp for adm3 score (default 0.0)",
+     .offset = offsetof(FloatAdmStateHip, adm_min_val),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val.d = DEFAULT_ADM_MIN_VAL,
+     .min = 0.0,
+     .max = 1.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {0}};
 
 /* DB2/CDF-9-7 wavelet noise model — identical to the CUDA twin. */
@@ -262,6 +307,12 @@ static int fadm_hip_module_load(FloatAdmStateHip *s)
     rc = hipModuleGetFunction(&s->func_csf_cm, s->module, "float_adm_csf_cm");
     if (rc != hipSuccess)
         goto fail;
+    rc = hipModuleGetFunction(&s->func_csf_r, s->module, "float_adm_csf_r");
+    if (rc != hipSuccess)
+        goto fail;
+    rc = hipModuleGetFunction(&s->func_aim_cm, s->module, "float_adm_aim_cm");
+    if (rc != hipSuccess)
+        goto fail;
     return 0;
 
 fail:
@@ -293,6 +344,8 @@ static int fadm_hip_launch(FloatAdmStateHip *s, uintptr_t pic_stream_handle)
     float *dwt_dis_d = (float *)s->dwt_tmp_dis;
     float *csf_a_d = (float *)s->csf_a;
     float *csf_f_d = (float *)s->csf_f;
+    float *csf_a_aim_d = (float *)s->csf_a_aim;
+    float *csf_f_aim_d = (float *)s->csf_f_aim;
 
     hipError_t rc;
 
@@ -437,6 +490,64 @@ static int fadm_hip_launch(FloatAdmStateHip *s, uintptr_t pic_stream_handle)
             if (rc != hipSuccess)
                 return fadm_hip_rc(rc);
         }
+
+        /* Stage 2b — CSF on decouple_r (writes csf_a_aim + csf_f_aim). ADR-0574. */
+        {
+            const unsigned gx = ((unsigned)half_w + FADM_BX - 1u) / FADM_BX;
+            const unsigned gy = ((unsigned)half_h + FADM_BY - 1u) / FADM_BY;
+            int half_w_arg = half_w;
+            int half_h_arg = half_h;
+            int buf_stride_arg = (int)s->buf_stride;
+            float rfh = rfactor_h;
+            float rfv = rfactor_v;
+            float rfd = rfactor_d;
+            float gl = gain_limit;
+            void *args[] = {&ref_band_d, &dis_band_d,     &csf_a_aim_d, &csf_f_aim_d, &half_w_arg,
+                            &half_h_arg, &buf_stride_arg, &rfh,         &rfv,         &rfd,
+                            &gl};
+            rc = hipModuleLaunchKernel(s->func_csf_r, gx, gy, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr,
+                                       args, NULL);
+            if (rc != hipSuccess)
+                return fadm_hip_rc(rc);
+        }
+
+        /* Stage 3b — AIM CM numerator (noise_weight=0). ADR-0574. */
+        {
+            const unsigned num_rows = (unsigned)(active_h > 0 ? active_h : 1);
+            const unsigned gx = 3u * num_rows;
+            int half_w_arg = half_w;
+            int half_h_arg = half_h;
+            int buf_stride_arg = (int)s->buf_stride;
+            int active_left_arg = left;
+            int active_top_arg = top;
+            int active_right_arg = right;
+            int active_bottom_arg = bottom;
+            float rfh = rfactor_h;
+            float rfv = rfactor_v;
+            float rfd = rfactor_d;
+            float gl = gain_limit;
+            float *accum_d = (float *)s->accum[scale];
+            void *args[] = {&ref_band_d,
+                            &dis_band_d,
+                            &csf_a_aim_d,
+                            &csf_f_aim_d,
+                            &accum_d,
+                            &half_w_arg,
+                            &half_h_arg,
+                            &buf_stride_arg,
+                            &active_left_arg,
+                            &active_top_arg,
+                            &active_right_arg,
+                            &active_bottom_arg,
+                            &rfh,
+                            &rfv,
+                            &rfd,
+                            &gl};
+            rc = hipModuleLaunchKernel(s->func_aim_cm, gx, 1u, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr,
+                                       args, NULL);
+            if (rc != hipSuccess)
+                return fadm_hip_rc(rc);
+        }
     }
 
     /* Event fence → secondary stream → D2H copy partials. */
@@ -574,6 +685,16 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         err = -ENOMEM;
         goto fail_after_csf_a;
     }
+    rc = hipMalloc(&s->csf_a_aim, csf_bytes);
+    if (rc != hipSuccess) {
+        err = -ENOMEM;
+        goto fail_after_csf_f;
+    }
+    rc = hipMalloc(&s->csf_f_aim, csf_bytes);
+    if (rc != hipSuccess) {
+        err = -ENOMEM;
+        goto fail_after_csf_a_aim;
+    }
 
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const size_t accum_bytes = (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float);
@@ -586,7 +707,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                 (void)hipHostFree(s->accum_host[j]);
                 s->accum_host[j] = NULL;
             }
-            goto fail_after_csf_f;
+            goto fail_after_csf_f_aim;
         }
         rc = hipHostMalloc((void **)&s->accum_host[scale], accum_bytes, hipHostMallocDefault);
         if (rc != hipSuccess) {
@@ -599,7 +720,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                 (void)hipHostFree(s->accum_host[j]);
                 s->accum_host[j] = NULL;
             }
-            goto fail_after_csf_f;
+            goto fail_after_csf_f_aim;
         }
     }
 #endif /* HAVE_HIPCC */
@@ -627,6 +748,16 @@ fail_after_accum:
             (void)hipFree(s->accum[scale]);
             s->accum[scale] = NULL;
         }
+    }
+fail_after_csf_f_aim:
+    if (s->csf_f_aim != NULL) {
+        (void)hipFree(s->csf_f_aim);
+        s->csf_f_aim = NULL;
+    }
+fail_after_csf_a_aim:
+    if (s->csf_a_aim != NULL) {
+        (void)hipFree(s->csf_a_aim);
+        s->csf_a_aim = NULL;
     }
 fail_after_csf_f:
     if (s->csf_f != NULL) {
@@ -726,9 +857,12 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index, VmafFeatur
         return sync_err;
 
 #ifdef HAVE_HIPCC
-    /* Per-scale double accumulation across WGs. */
+    /* Per-scale double accumulation across WGs.
+     * Slots 0..2: csf_den per band; 3..5: cm_num per band;
+     * 6..8: aim_cm per band (ADR-0574). */
     double cm_totals[FADM_NUM_SCALES][FADM_NUM_BANDS] = {{0.0}};
     double csf_totals[FADM_NUM_SCALES][FADM_NUM_BANDS] = {{0.0}};
+    double aim_cm_totals[FADM_NUM_SCALES][FADM_NUM_BANDS] = {{0.0}};
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const float *slots = s->accum_host[scale];
         const unsigned wg_count = s->wg_count[scale];
@@ -737,12 +871,15 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index, VmafFeatur
             for (int b = 0; b < FADM_NUM_BANDS; b++) {
                 csf_totals[scale][b] += (double)p[b];
                 cm_totals[scale][b] += (double)p[3 + b];
+                aim_cm_totals[scale][b] += (double)p[6 + b];
             }
         }
     }
 
     double score_num = 0.0;
     double score_den = 0.0;
+    double aim_num = 0.0;
+    double aim_den = 0.0;
     double scores[8];
     for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
         const int hw = (int)s->scale_half_w[scale];
@@ -767,6 +904,13 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index, VmafFeatur
         scores[2 * scale + 1] = den_scale;
         score_num += num_scale;
         score_den += den_scale;
+
+        /* ADR-0574: AIM accumulation — same CSF denominator as adm2 (den_scale). */
+        float aim_num_scale = 0.0f;
+        for (int b = 0; b < FADM_NUM_BANDS; b++)
+            aim_num_scale += powf((float)aim_cm_totals[scale][b], 1.0f / (float)s->adm_p_norm);
+        aim_den += den_scale;
+        aim_num += aim_num_scale;
     }
 
     const int w = (int)s->scale_w[0];
@@ -777,6 +921,18 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index, VmafFeatur
     if (score_den < numden_limit)
         score_den = 0.0;
     const double score = (score_den == 0.0) ? 1.0 : score_num / score_den;
+
+    /* ADR-0574: AIM score and ADM3 score. */
+    const double score_aim = (aim_den == 0.0) ? 1.0 : fmin(aim_num / aim_den, 1.0);
+    double score_adm3;
+    if (s->adm_adm3_apply_hm) {
+        const double hm_denom = score + score_aim;
+        score_adm3 = (hm_denom > 0.0) ? (2.0 * score * score_aim / hm_denom) : 0.0;
+    } else {
+        score_adm3 = score * s->adm_dlm_weight + (1.0 - score_aim) * (1.0 - s->adm_dlm_weight);
+    }
+    if (score_adm3 < s->adm_min_val)
+        score_adm3 = s->adm_min_val;
 
     int err = 0;
     err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
@@ -789,6 +945,11 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index, VmafFeatur
         fc, s->feature_name_dict, "VMAF_feature_adm_scale2_score", scores[4] / scores[5], index);
     err |= vmaf_feature_collector_append_with_dict(
         fc, s->feature_name_dict, "VMAF_feature_adm_scale3_score", scores[6] / scores[7], index);
+    /* ADR-0574: emit AIM and ADM3 sub-feature scores. */
+    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
+                                                   "VMAF_feature_aim_score", score_aim, index);
+    err |= vmaf_feature_collector_append_with_dict(fc, s->feature_name_dict,
+                                                   "VMAF_feature_adm3_score", score_adm3, index);
 
     if (s->debug && !err) {
         err |=
@@ -829,6 +990,14 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
             (void)hipFree(s->accum[scale]);
             s->accum[scale] = NULL;
         }
+    }
+    if (s->csf_f_aim != NULL) {
+        (void)hipFree(s->csf_f_aim);
+        s->csf_f_aim = NULL;
+    }
+    if (s->csf_a_aim != NULL) {
+        (void)hipFree(s->csf_a_aim);
+        s->csf_a_aim = NULL;
     }
     if (s->csf_f != NULL) {
         (void)hipFree(s->csf_f);
@@ -889,6 +1058,8 @@ static const char *provided_features[] = {"VMAF_feature_adm2_score",
                                           "VMAF_feature_adm_scale1_score",
                                           "VMAF_feature_adm_scale2_score",
                                           "VMAF_feature_adm_scale3_score",
+                                          "VMAF_feature_aim_score",
+                                          "VMAF_feature_adm3_score",
                                           "adm",
                                           "adm_num",
                                           "adm_den",
@@ -922,7 +1093,7 @@ VmafFeatureExtractor vmaf_fex_float_adm_hip = {
     .flags = 0,
     .chars =
         {
-            .n_dispatches_per_frame = 16,
+            .n_dispatches_per_frame = 24, /* 6 stages × 4 scales (ADR-0574) */
             .is_reduction_only = false,
             .min_useful_frame_area = 1920U * 1080U,
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
