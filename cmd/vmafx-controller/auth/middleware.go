@@ -336,15 +336,6 @@ type jwtHeader struct {
 	Kid string `json:"kid"`
 }
 
-// jwtPayload holds the decoded JWT claims we care about.
-type jwtPayload struct {
-	Issuer   string          `json:"iss"`
-	Subject  string          `json:"sub"`
-	Audience json.RawMessage `json:"aud"` // string or []string
-	Exp      int64           `json:"exp"`
-	Extra    map[string]json.RawMessage
-}
-
 // verifyJWT verifies an RS256 JWT against the JWKS cache and returns the raw
 // claims map (the full payload).
 func verifyJWT(token string, cache *jwksCache, issuer, audience string) (map[string]json.RawMessage, error) {

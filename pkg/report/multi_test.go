@@ -10,9 +10,6 @@ import (
 	"github.com/VMAFx/vmafx/pkg/report"
 )
 
-// ptr64 returns a pointer to v — helper for constructing *float64 test literals.
-func ptr64(v float64) *float64 { return &v }
-
 // ---- MultiReportFromCompare ----
 
 func TestMultiReportFromCompare_Kind(t *testing.T) {
