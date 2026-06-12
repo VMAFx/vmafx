@@ -166,12 +166,15 @@ self.assertAlmostEqual(results[0]['Cambi_score'],
 
 ## GPU support
 
-CAMBI has both CUDA (T3-15a / [ADR-0360](../adr/0360-cambi-cuda.md))
-and Vulkan (T7-36 / [ADR-0210](../adr/0210-cambi-vulkan-integration.md))
-backends. Both use the same Strategy II hybrid architecture: the integer
-phases (spatial mask, 2× decimate, 3-tap separable mode filter) run on
-the GPU; the precision-sensitive sliding-histogram `calculate_c_values` +
-top-K spatial pool stay on the host. Cross-backend gate runs at `places=4`.
+CAMBI has a CUDA backend (T3-15a / [ADR-0360](../adr/0360-cambi-cuda.md)).
+It uses the Strategy II hybrid architecture: the integer phases (spatial mask,
+2× decimate, 3-tap separable mode filter) run on the GPU; the
+precision-sensitive sliding-histogram `calculate_c_values` + top-K spatial
+pool stay on the host. Cross-backend gate runs at `places=4`.
+
+> **Note**: The Vulkan backend (formerly T7-36 / ADR-0210) was removed in
+> [ADR-0726](../adr/0726-drop-vulkan-backend.md). CAMBI no longer has a Vulkan
+> path. Use the CUDA backend for GPU-accelerated CAMBI scoring.
 
 ### CUDA
 
@@ -195,18 +198,5 @@ on the picture's private CUDA stream followed by `cuStreamSynchronize`. The host
 copy is unreferenced before `submit_fex_cuda` returns. Cross-backend parity
 versus CPU `cambi` is verified at `places=4` per ADR-0214.
 
-### Vulkan
-
-```bash
-# Build with Vulkan enabled
-meson setup build-vulkan core -Denable_vulkan=enabled
-ninja -C build-vulkan
-
-# Run with --backend vulkan
-./build-vulkan/tools/vmaf -r ref.yuv -d dis.yuv -w W -h H \
-    -p 420 -b 8 --backend vulkan --feature cambi
-```
-
-Companion research digests:
-[Research-0032](../research/0032-cambi-vulkan-integration.md) (Vulkan),
+Companion research digest:
 [Research-0091](../research/0091-cambi-cuda-integration.md) (CUDA).
