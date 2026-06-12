@@ -403,9 +403,7 @@
         sum0 = _mm512_add_epi32(sum0, _mm512_permutexvar_epi32(perm1, src01));                     \
         sum1 = _mm512_add_epi32(sum1, _mm512_permutexvar_epi32(perm1, src11));                     \
         sum2 = _mm512_add_epi32(sum2, _mm512_permutexvar_epi32(perm1, src21));                     \
-        __m512i mask_end = _mm512_set_epi64(                                                       \
-            0x0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF,   \
-            0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF);                           \
+        __m512i mask_end = _mm512_set_epi64(0x0LL, -1LL, -1LL, -1LL, -1LL, -1LL, -1LL, -1LL);      \
         sum0 = _mm512_add_epi32(sum0, sum1);                                                       \
         sum0 = _mm512_add_epi32(sum0, sum2);                                                       \
         sum0 = _mm512_and_si512(mask_end, sum0);                                                   \
@@ -697,9 +695,7 @@
         sum0 = _mm512_add_epi64(sum0, _mm512_permutexvar_epi64(perm1, src01));                     \
         sum1 = _mm512_add_epi64(sum1, _mm512_permutexvar_epi64(perm1, src11));                     \
         sum2 = _mm512_add_epi64(sum2, _mm512_permutexvar_epi64(perm1, src21));                     \
-        __m512i mask_end =                                                                         \
-            _mm512_set_epi64(0x0, 0x0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, \
-                             0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF);          \
+        __m512i mask_end = _mm512_set_epi64(0x0LL, 0x0LL, -1LL, -1LL, -1LL, -1LL, -1LL, -1LL);     \
         sum0 = _mm512_add_epi64(sum0, sum1);                                                       \
         sum0 = _mm512_add_epi64(sum0, sum2);                                                       \
         sum0 = _mm512_and_si512(mask_end, sum0);                                                   \
