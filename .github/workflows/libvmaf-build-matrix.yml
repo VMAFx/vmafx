@@ -59,7 +59,7 @@ jobs:
             CXX: ccache clang++
             name: Build — macOS clang (CPU)
             experimental: true
-          - os: ubuntu-26.04-arm
+          - os: ubuntu-24.04-arm
             CC: ccache clang
             CXX: ccache clang++
             name: Build — Ubuntu ARM clang (CPU)

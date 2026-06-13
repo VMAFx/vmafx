@@ -15,7 +15,7 @@ concurrency:
 jobs:
   tsan:
     name: ThreadSanitizer
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
@@ -38,7 +38,7 @@ jobs:
 
   clang-tidy-full:
     name: Full clang-tidy scan
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
@@ -63,7 +63,7 @@ jobs:
 
   netflix-benchmark:
     name: Netflix benchmark suite
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
