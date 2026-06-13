@@ -40,6 +40,13 @@ jobs:
       # so go test fails to link unless libvmaf is built first.
       - name: Install meson + ninja for libvmaf build
         run: |
+          # The hosted runner ships pre-provisioned Microsoft/Azure apt
+          # sources (packages.microsoft.com) that intermittently 403 /
+          # "no longer signed", failing `apt-get update` with exit 100.
+          # vmaf needs none of them — drop them first. See
+          # T-CI-APT-MS-REPO-FLAKE (same fix as the Coverage Gate).
+          sudo rm -f /etc/apt/sources.list.d/*microsoft* \
+                     /etc/apt/sources.list.d/*azure* || true
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends meson ninja-build pkg-config nasm
 

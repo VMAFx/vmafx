@@ -41,6 +41,11 @@ jobs:
 
       - name: Install build dependencies
         run: |
+          # Drop the hosted runner's pre-provisioned Microsoft/Azure apt
+          # sources before updating; they intermittently 403 and fail
+          # `apt-get update` with exit 100. See T-CI-APT-MS-REPO-FLAKE.
+          sudo rm -f /etc/apt/sources.list.d/*microsoft* \
+                     /etc/apt/sources.list.d/*azure* || true
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
             meson ninja-build nasm libssl-dev \
