@@ -18,6 +18,7 @@
  */
 
 #include <assert.h>
+#include <stddef.h>
 #include <arm_neon.h>
 #include "float_psnr_neon.h"
 

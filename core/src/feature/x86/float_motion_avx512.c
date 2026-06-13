@@ -18,6 +18,7 @@
  */
 
 #include <assert.h>
+#include <stddef.h>
 #include <immintrin.h>
 #include "float_motion_avx512.h"
 
