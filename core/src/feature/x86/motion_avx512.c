@@ -17,6 +17,7 @@
  *
  */
 
+#include <assert.h>
 #include <immintrin.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -333,6 +334,9 @@ uint64_t motion_score_pipeline_8_avx512(const uint8_t *prev, ptrdiff_t prev_stri
  * ----------------------------------------------------------------------- */
 void sad_avx512(VmafPicture *pic_a, VmafPicture *pic_b, uint64_t *sad_out)
 {
+    assert(pic_a != NULL);
+    assert(pic_b != NULL);
+    assert(sad_out != NULL);
     const unsigned w = pic_a->w[0];
     const unsigned h = pic_a->h[0];
     const ptrdiff_t stride_a = pic_a->stride[0] / 2; /* stride in uint16 samples */

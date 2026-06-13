@@ -17,6 +17,7 @@
  *
  */
 
+#include <assert.h>
 #include <immintrin.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -32,6 +33,10 @@
 // in-place operation is safe. Vectorizes via uint32-mask + packus + permute.
 void decimate_avx2(VmafPicture *image, unsigned width, unsigned height)
 {
+    assert(image != NULL);
+    assert(image->data[0] != NULL);
+    assert(width > 0u);
+    assert(height > 0u);
     uint16_t *data = image->data[0];
     ptrdiff_t stride = image->stride[0] >> 1;
     const __m256i mask = _mm256_set1_epi32(0xFFFF);
@@ -83,6 +88,11 @@ static inline uint16_t mode3_scalar(uint16_t a, uint16_t b, uint16_t c)
 
 void filter_mode_avx2(const VmafPicture *image, int width, int height, uint16_t *buffer)
 {
+    assert(image != NULL);
+    assert(image->data[0] != NULL);
+    assert(buffer != NULL);
+    assert(width > 0);
+    assert(height > 0);
     uint16_t *data = image->data[0];
     ptrdiff_t stride = image->stride[0] >> 1;
     int curr_line = 0;

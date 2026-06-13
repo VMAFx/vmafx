@@ -1411,6 +1411,9 @@ void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, uns
  */
 void vif_subsample_rd_8_avx2(const VifBuffer *buf, unsigned w, unsigned h)
 {
+    assert(buf != NULL);
+    assert(w > 0u);
+    assert(h > 0u);
     const unsigned fwidth = vif_filter1d_width[1];
     const uint16_t *vif_filt_s1 = vif_filter1d_table[1];
     const uint8_t *ref = (uint8_t *)buf->ref;
@@ -1685,6 +1688,9 @@ void vif_subsample_rd_8_avx2(const VifBuffer *buf, unsigned w, unsigned h)
 
 void vif_subsample_rd_16_avx2(const VifBuffer *buf, unsigned w, unsigned h, int scale, int bpc)
 {
+    assert(buf != NULL);
+    assert(w > 0u);
+    assert(h > 0u);
     const unsigned fwidth = vif_filter1d_width[scale + 1];
     const uint16_t *vif_filt = vif_filter1d_table[scale + 1];
     int32_t add_shift_round_VP;

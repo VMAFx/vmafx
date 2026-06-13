@@ -154,17 +154,20 @@ impl ContextBuilder {
 ///
 /// The lifetime parameter `'a` encodes that every [`Model`] registered with
 /// [`Context::use_features_from_model`] must outlive this context.  A freshly
-/// constructed `Context<'static>` carries no model borrow.  Callers that need
-/// to pass the context across lifetime boundaries should ensure all registered
-/// models are kept alive for at least as long as the context.
+/// constructed `Context<'static>` carries no model borrow.  All registered
+/// models must be kept alive for at least as long as the context; the Rust
+/// lifetime system enforces this at compile time.
 pub struct Context<'a> {
     inner: *mut RawContext,
     /// Encodes the lifetime of every `Model` that has been registered with
-    /// `use_features_from_model`.  `PhantomData<&'a mut Model>` is invariant
-    /// over `'a` — i.e. `Context<'a>` cannot be coerced to a longer-lived
-    /// `Context<'b>` — which prevents the caller from extending the apparent
-    /// lifetime of the borrow.
-    _models: PhantomData<&'a mut Model>,
+    /// `use_features_from_model`.  `PhantomData<&'a Model>` is covariant over
+    /// `'a` — i.e. a `Context<'long>` can stand in for a `Context<'short>` —
+    /// which is safe because models must *outlive* the context (extending the
+    /// apparent lifetime of the context's view of models only tightens the
+    /// constraint, not loosens it).  The shared reference allows callers to
+    /// hold `&model` simultaneously across `use_features_from_model` and
+    /// `score_pooled` without triggering the double-exclusive-borrow error.
+    _models: PhantomData<&'a Model>,
 }
 
 // SAFETY: a libvmaf context is self-contained heap state; moving it across
@@ -201,12 +204,23 @@ impl<'a> Context<'a> {
     /// encodes this requirement: after this call the context cannot outlive
     /// `model`.
     ///
+    /// A shared reference (`&'a Model`) is sufficient here because libvmaf
+    /// does not mutate the Rust-visible state of the model during registration
+    /// or during later scoring; the `*mut VmafModel` that the C API requires
+    /// is extracted via `Model::as_ptr` (which is `const fn` on `&self`).
+    /// Using a shared reference also allows callers to pass `&model` to both
+    /// `use_features_from_model` and `score_pooled` without conflicting
+    /// exclusive borrows.
+    ///
     /// # Errors
     /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf rejects the model.
-    pub fn use_features_from_model(&mut self, model: &'a mut Model) -> Result<()> {
+    pub fn use_features_from_model(&mut self, model: &'a Model) -> Result<()> {
         // SAFETY: both pointers are non-null and valid for the call's duration.
         // The `'a` bound ensures `model` outlives `self`.
-        let rc = unsafe { vmaf_use_features_from_model(self.inner, model.as_mut_ptr()) };
+        // `Model::as_ptr` returns `*mut RawModel` from `&self`; the cast to
+        // `*mut` is required by the C API and does not violate aliasing rules
+        // because libvmaf stores the pointer for deferred reads only.
+        let rc = unsafe { vmaf_use_features_from_model(self.inner, model.as_ptr()) };
         Error::from_libvmaf_rc(rc)
     }
 
@@ -265,17 +279,19 @@ impl<'a> Context<'a> {
     /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf fails to compute the score.
     pub fn score_pooled(
         &mut self,
-        model: &mut Model,
+        model: &Model,
         method: PoolingMethod,
         index_low: u32,
         index_high: u32,
     ) -> Result<f64> {
         let mut score = 0.0_f64;
         // SAFETY: `score` is a valid out-pointer; the other args are valid.
+        // `Model::as_ptr` returns `*mut RawModel` from `&self`; the C API
+        // requires a non-const pointer but libvmaf only reads the model here.
         let rc = unsafe {
             vmaf_score_pooled(
                 self.inner,
-                model.as_mut_ptr(),
+                model.as_ptr(),
                 method.to_raw(),
                 &raw mut score,
                 index_low,

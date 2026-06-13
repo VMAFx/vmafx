@@ -47,9 +47,13 @@
 //! use vmafx::{Context, Model, Picture, PoolingMethod};
 //!
 //! # fn main() -> vmafx::Result<()> {
+//! // Declare `model` before `ctx` so that drop order is ctx → model
+//! // (variables are dropped in reverse declaration order).  libvmaf stores
+//! // a raw pointer to the model inside the context; the model must therefore
+//! // outlive the context.
+//! let model = Model::from_path("/usr/local/share/model/vmaf_v0.6.1.json")?;
 //! let mut ctx = Context::new()?;
-//! let mut model = Model::from_path("/usr/local/share/model/vmaf_v0.6.1.json")?;
-//! ctx.use_features_from_model(&mut model)?;
+//! ctx.use_features_from_model(&model)?;
 //!
 //! // Push one frame of all-grey YUV420p (W=576, H=324).
 //! let r = Picture::new_yuv420p_8bit(576, 324)?;
@@ -57,7 +61,7 @@
 //! ctx.read_pictures(r, d, 0)?;
 //! ctx.flush()?;
 //!
-//! let score = ctx.score_pooled(&mut model, PoolingMethod::Mean, 0, 0)?;
+//! let score = ctx.score_pooled(&model, PoolingMethod::Mean, 0, 0)?;
 //! println!("VMAF mean = {score}");
 //! # Ok(())
 //! # }

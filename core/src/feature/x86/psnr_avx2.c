@@ -17,6 +17,7 @@
  *
  */
 
+#include <assert.h>
 #include <immintrin.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -25,6 +26,9 @@
 
 uint32_t psnr_sse_line_8_avx2(const uint8_t *ref, const uint8_t *dis, unsigned w)
 {
+    assert(ref != NULL);
+    assert(dis != NULL);
+    assert(w > 0u);
     __m256i sum = _mm256_setzero_si256();
     unsigned j = 0;
 
@@ -67,6 +71,9 @@ uint32_t psnr_sse_line_8_avx2(const uint8_t *ref, const uint8_t *dis, unsigned w
 
 uint64_t psnr_sse_line_16_avx2(const uint16_t *ref, const uint16_t *dis, unsigned w)
 {
+    assert(ref != NULL);
+    assert(dis != NULL);
+    assert(w > 0u);
     __m256i sum0 = _mm256_setzero_si256();
     __m256i sum1 = _mm256_setzero_si256();
     unsigned j = 0;

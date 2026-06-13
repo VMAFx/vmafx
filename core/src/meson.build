@@ -1874,6 +1874,11 @@ read_json_model_cpp23_lib = static_library(
     override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
     pic : true,
     install : false,
+    # read_json_model.cpp includes model.h which carries pthread_mutex_t
+    # (predict_cache_lock, added by the race-fix PR #864).  On Windows MSVC
+    # there is no native pthread.h; pthread_dependency provides the win32
+    # shim header — same rationale as picture_pool_cpp23_lib (PR #838).
+    dependencies : [pthread_dependency],
 )
 
 libvmaf_sources = [

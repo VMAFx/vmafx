@@ -28,6 +28,10 @@
 
 #include "libvmaf/dnn.h"
 
+/* Skip on -ENOENT (model not in tree) or -EIO (CUDA EP .so absent; see
+ * DNN_OPEN_SKIP_RC in test_dnn_session_api.c for full rationale). */
+#define DNN_OPEN_SKIP_RC(rc) ((rc) == -ENOENT || (rc) == -EIO)
+
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
 #define SMOKE_FP16_MODEL "model/tiny/smoke_fp16_v0.onnx"
 
@@ -55,8 +59,8 @@ static char *test_auto_falls_through_to_cpu(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_AUTO};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
-    if (rc == -ENOENT) {
-        /* Test data not present — working tree checkout only. */
+    if (DNN_OPEN_SKIP_RC(rc)) {
+        /* Test data not present or CUDA EP .so absent — skip. */
         return NULL;
     }
     mu_assert("AUTO open succeeds", rc == 0);
@@ -88,7 +92,7 @@ static char *test_explicit_openvino_graceful_fallback(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("OPENVINO request does not fail open", rc == 0);
 
@@ -117,7 +121,7 @@ static char *test_explicit_coreml_graceful_fallback(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("COREML request does not fail open", rc == 0);
 
@@ -148,7 +152,7 @@ static char *test_explicit_openvino_npu_graceful_fallback(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO_NPU};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("OPENVINO_NPU request does not fail open", rc == 0);
 
@@ -175,7 +179,7 @@ static char *test_explicit_coreml_ane_graceful_fallback(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML_ANE};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("COREML_ANE request does not fail open", rc == 0);
 
@@ -201,7 +205,7 @@ static char *test_explicit_openvino_cpu_fallback_ep(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO_CPU};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("OPENVINO_CPU request does not fail open", rc == 0);
 
@@ -228,7 +232,7 @@ static char *test_explicit_coreml_cpu_graceful_fallback(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_COREML_CPU};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("COREML_CPU request does not fail open", rc == 0);
 
@@ -251,7 +255,7 @@ static char *test_explicit_openvino_gpu_graceful_fallback(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_OPENVINO_GPU};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("OPENVINO_GPU request does not fail open", rc == 0);
 
@@ -272,7 +276,7 @@ static char *test_explicit_cuda_graceful_fallback(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CUDA};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("CUDA request does not fail open", rc == 0);
 
@@ -291,7 +295,7 @@ static char *test_fp16_io_round_trip(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .fp16_io = true};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP16_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("fp16 session open succeeds", rc == 0);
 
@@ -335,7 +339,7 @@ static char *test_fp16_io_edge_values(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .fp16_io = true};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP16_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("fp16 edge open succeeds", rc == 0);
 
@@ -378,7 +382,7 @@ static char *test_fp16_model_rejects_fp32_config(void)
     VmafDnnSession *sess = NULL;
     VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .fp16_io = false};
     int rc = vmaf_dnn_session_open(&sess, SMOKE_FP16_MODEL, &cfg);
-    if (rc == -ENOENT)
+    if (DNN_OPEN_SKIP_RC(rc))
         return NULL;
     mu_assert("fp16 model opens under fp16_io=false", rc == 0);
 

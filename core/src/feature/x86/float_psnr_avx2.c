@@ -17,11 +17,15 @@
  *
  */
 
+#include <assert.h>
 #include <immintrin.h>
 #include "float_psnr_avx2.h"
 
 double float_psnr_noise_line_avx2(const float *ref, const float *dis, int w)
 {
+    assert(ref != NULL);
+    assert(dis != NULL);
+    assert(w > 0);
     double result = 0.0;
     int j = 0;
 

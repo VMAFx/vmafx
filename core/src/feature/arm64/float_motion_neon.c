@@ -17,11 +17,15 @@
  *
  */
 
+#include <assert.h>
 #include <arm_neon.h>
 #include "float_motion_neon.h"
 
 float float_sad_line_neon(const float *img1, const float *img2, int w)
 {
+    assert(img1 != NULL);
+    assert(img2 != NULL);
+    assert(w > 0);
     float accum = 0.0f;
     int j = 0;
 

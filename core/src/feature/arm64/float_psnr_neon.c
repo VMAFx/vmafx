@@ -17,11 +17,15 @@
  *
  */
 
+#include <assert.h>
 #include <arm_neon.h>
 #include "float_psnr_neon.h"
 
 double float_psnr_noise_line_neon(const float *ref, const float *dis, int w)
 {
+    assert(ref != NULL);
+    assert(dis != NULL);
+    assert(w > 0);
     /* Accumulate in double to eliminate SIMD lane-reorder precision loss */
     float64x2_t dsum0 = vdupq_n_f64(0.0);
     float64x2_t dsum1 = vdupq_n_f64(0.0);
