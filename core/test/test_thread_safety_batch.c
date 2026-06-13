@@ -330,10 +330,87 @@ static char *test_batch_n_threads_stress(void)
     return NULL;
 }
 
+/*
+ * test_batch_two_prev_ref_extractors
+ * ----------------------------------
+ * Regression test for the multi-PREV_REF starvation bug in
+ * threaded_read_pictures_batch (libvmaf.c).
+ *
+ * The batch loop took a single refcounted snapshot of prev_ref (f->prev_ref)
+ * and struct-copied it into the first PREV_REF extractor's thread-private ctx,
+ * then ZEROED f->prev_ref after that extractor's PREV_REF swap. With TWO
+ * PREV_REF extractors registered (e.g. motion + motion_v2 — and requesting
+ * motion_v2 always co-schedules motion), the second extractor saw
+ * f->prev_ref.ref == NULL and its extract() returned -EINVAL on every frame
+ * ("problem with feature extractor motion_v2"), so vmaf_read_pictures failed
+ * and no motion_v2 scores were produced. This made every threaded K150K
+ * feature extraction (--threads N, motion + motion_v2) fail 100%.
+ *
+ * The fix gives each PREV_REF extractor its own counted reference
+ * (vmaf_picture_ref instead of a struct-copy) and leaves the shared snapshot
+ * live for all extractors until the final unref. This test registers BOTH
+ * motion and motion_v2 under n_threads=4 and asserts that every frame reads
+ * cleanly AND that motion_v2's own feature (motion_v2_sad_score) is present
+ * and finite — which it never was before the fix.
+ */
+static char *test_batch_two_prev_ref_extractors(void)
+{
+    int err = 0;
+
+    VmafConfiguration cfg = {
+        .log_level = VMAF_LOG_LEVEL_NONE,
+        .n_threads = 4,
+    };
+
+    VmafContext *vmaf = NULL;
+    err = vmaf_init(&vmaf, cfg);
+    mu_assert("two-prev-ref: vmaf_init failed", !err);
+
+    /* Two PREV_REF extractors in the same batch — the starvation trigger. */
+    err = vmaf_use_feature(vmaf, "motion", NULL);
+    mu_assert("two-prev-ref: vmaf_use_feature(motion) failed", !err);
+    err = vmaf_use_feature(vmaf, "motion_v2", NULL);
+    mu_assert("two-prev-ref: vmaf_use_feature(motion_v2) failed", !err);
+
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref, dist;
+        err = alloc_frame(&ref, i);
+        mu_assert("two-prev-ref: alloc_frame(ref) failed", !err);
+        err = alloc_frame(&dist, i + 1u);
+        mu_assert("two-prev-ref: alloc_frame(dist) failed", !err);
+
+        /* Pre-fix this returned -EINVAL from frame 1 (motion_v2 starved). */
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("two-prev-ref: vmaf_read_pictures failed (motion_v2 starved?)", !err);
+    }
+
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("two-prev-ref: EOS failed", !err);
+
+    /* BOTH extractors must have produced their own per-frame SAD feature.
+     * motion_v2_sad_score is the one the bug suppressed entirely. */
+    for (unsigned i = 1u; i < 4u; i++) {
+        double m1 = -1.0, m2 = -1.0;
+        err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_sad_score", &m1, i);
+        mu_assert("two-prev-ref: motion_sad_score missing", !err);
+        mu_assert("two-prev-ref: motion_sad_score finite", isfinite(m1) && m1 >= 0.0);
+
+        err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_v2_sad_score", &m2, i);
+        mu_assert("two-prev-ref: motion_v2_sad_score missing (regression!)", !err);
+        mu_assert("two-prev-ref: motion_v2_sad_score finite", isfinite(m2) && m2 >= 0.0);
+    }
+
+    err = vmaf_close(vmaf);
+    mu_assert("two-prev-ref: vmaf_close failed", !err);
+
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_batch_prev_ref_lifecycle);
     mu_run_test(test_batch_flush_initialized_flag);
     mu_run_test(test_batch_n_threads_stress);
+    mu_run_test(test_batch_two_prev_ref_extractors);
     return NULL;
 }

@@ -1701,8 +1701,17 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
          * within this thread's execution of the extractor loop. */
         assert(td->fex_ctx[i]->fex != shared_fex);
         if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
+            /* Take an INDEPENDENT counted reference per PREV_REF extractor.
+             * The old code struct-copied the single snapshot (no extra count);
+             * the first extractor's PREV_REF swap then unref'd that one count
+             * and the shared f->prev_ref was zeroed below, so the 2nd+ PREV_REF
+             * extractor in the same batch saw prev_ref.ref == NULL and returned
+             * -EINVAL on every frame. This starved e.g. motion_v2, which always
+             * co-schedules motion (two PREV_REF extractors). Each extractor now
+             * owns its own count, balanced by its own swap; the snapshot is
+             * released exactly once at `unref:` below. */
             if (f->prev_ref.ref)
-                td->fex_ctx[i]->fex->prev_ref = f->prev_ref;
+                vmaf_picture_ref(&td->fex_ctx[i]->fex->prev_ref, &f->prev_ref);
         }
 
         int err = vmaf_feature_extractor_context_extract(td->fex_ctx[i], &f->ref, NULL, &f->dist,
@@ -1711,26 +1720,26 @@ static int threaded_extract_batch_func(void *e, void **thread_data)
         if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
             /* vmaf_feature_extractor_context_extract() runs the PREV_REF SWAP
              * (feature_extractor.cpp) on SUCCESS:
-             *   1. unrefs the old fex->prev_ref (= struct-copy of f->prev_ref,
-             *      shared VmafRef* — frame N-1 count drops to 0, pool reclaim fires)
+             *   1. unrefs the old fex->prev_ref (this extractor's OWN counted
+             *      reference, taken via vmaf_picture_ref() above), and
              *   2. bumps frame N into fex->prev_ref with one extra refcount.
-             * On ERROR fex->prev_ref is unchanged (still the frame N-1 struct-copy).
+             * On ERROR fex->prev_ref is unchanged (still this extractor's
+             * frame N-1 reference).
              *
-             * In both cases fex->prev_ref holds a counted reference that must be
-             * released before clearing the field.  A bare memset leaks that count,
-             * exhausting the picture pool after ~pool_size frames (ADR-1051).
+             * Either way fex->prev_ref holds a counted reference (frame N on
+             * success, frame N-1 on error) that must be released before the
+             * field is cleared — a bare memset would leak it and exhaust the
+             * picture pool after ~pool_size frames (ADR-1051).
              *
-             * After vmaf_picture_unref():
-             *   SUCCESS: frame N drops one count (stays live in vmaf->prev_ref).
-             *   ERROR:   frame N-1 drops to 0 → pool reclaim fires.
-             *
-             * In both cases the VmafRef that f->prev_ref.ref pointed to is now
-             * freed.  Zero f->prev_ref so the goto:unref block below does not
-             * double-free the freed VmafRef. */
+             * The shared snapshot f->prev_ref is deliberately NOT zeroed here:
+             * each PREV_REF extractor took its own count above, so the snapshot
+             * stays live for the remaining PREV_REF extractors in this batch
+             * and is released exactly once in the `unref:` block below. (The old
+             * code zeroed it after the first extractor, which is the multi-
+             * PREV_REF starvation bug fixed here.) */
             if (td->fex_ctx[i]->fex->prev_ref.ref)
                 (void)vmaf_picture_unref(&td->fex_ctx[i]->fex->prev_ref);
             memset(&td->fex_ctx[i]->fex->prev_ref, 0, sizeof(td->fex_ctx[i]->fex->prev_ref));
-            memset(&f->prev_ref, 0, sizeof(f->prev_ref));
         }
 
         if (err) {
