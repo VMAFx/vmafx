@@ -265,7 +265,7 @@ func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServ
 		if sendErr := stream.Send(&vmafxv1.ScoreStreamResponse{
 			Payload: &vmafxv1.ScoreStreamResponse_FrameScore{
 				FrameScore: &vmafxv1.FrameScore{
-					FrameIndex: uint32(fr.Index),
+					FrameIndex: libvmaf.SafeUint32(fr.Index),
 					Score:      fr.Score,
 					Features:   fr.Features,
 				},
@@ -279,10 +279,10 @@ func (h *scoringHandler) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServ
 	if sendErr := stream.Send(&vmafxv1.ScoreStreamResponse{
 		Payload: &vmafxv1.ScoreStreamResponse_Aggregate{
 			Aggregate: &vmafxv1.AggregateScore{
-				FramesProcessed: uint32(result.FramesProcessed),
+				FramesProcessed: libvmaf.SafeUint32(result.FramesProcessed),
 				Score:           result.Score,
 				Features:        result.Features,
-				ElapsedMs:       uint64(elapsed.Milliseconds()),
+				ElapsedMs:       libvmaf.SafeUint64(elapsed.Milliseconds()),
 			},
 		},
 	}); sendErr != nil {
