@@ -66,6 +66,10 @@ jobs:
       - name: Set up stable Rust
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9  # stable
         with:
+          # Pinned by commit SHA, so the action cannot infer the toolchain from
+          # its git ref — `toolchain` must be given explicitly or setup fails
+          # with "'toolchain' is a required input".
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache Rust artifacts

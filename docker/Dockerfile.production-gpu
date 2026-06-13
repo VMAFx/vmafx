@@ -57,7 +57,7 @@ FROM builder-base AS builder-cpu
 # builder stages; each variant gets its own cache scope via the target path.
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cpu \
     CCACHE_DIR=/root/.cache/ccache \
-    meson setup /build libvmaf \
+    meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \
@@ -82,7 +82,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cuda12 \
     CCACHE_DIR=/root/.cache/ccache \
-    meson setup /build libvmaf \
+    meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=true \
@@ -107,7 +107,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-rocm6 \
     CCACHE_DIR=/root/.cache/ccache \
-    meson setup /build libvmaf \
+    meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \
@@ -136,7 +136,7 @@ ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
 
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-oneapi2026 \
     CCACHE_DIR=/root/.cache/ccache \
-    meson setup /build libvmaf \
+    meson setup /build core \
         --buildtype=release \
         --strip \
         -Denable_cuda=false \

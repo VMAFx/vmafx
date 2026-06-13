@@ -358,14 +358,16 @@ jobs:
           sudo ldconfig
 
       # ---------- CUDA toolkit ----------
-      # Bumped to CUDA 13.2.0 (ADR-0603). Ubuntu 26.04 (Resolute Raccoon)
-      # ships glibc 2.43 whose bits/mathcalls.h declares rsqrt(double) with
-      # noexcept(true). CUDA 13.0/13.1 crt/math_functions.h redeclares it
-      # without noexcept, causing a C2059/C2085 cascade from NVCC. CUDA 13.2
-      # aligns its noexcept annotation with glibc 2.43 and resolves the
-      # conflict. 13.2 still drops sm_50/60/70 (Maxwell/Pascal/Volta);
-      # meson.build already guards the sm_50 gencode with a `<13` version
-      # check. Minimum driver for 13.x is >= 580.
+      # Pinned to CUDA 13.2.0. Two constraints: (1) ADR-0603 — Ubuntu 26.04
+      # (glibc 2.43) needs CUDA >= 13.2 to avoid the rsqrt(double) noexcept
+      # C2059/C2085 NVCC cascade; (2) the CI installer (Jimver/cuda-toolkit)
+      # does NOT yet publish a 13.3.0 build — bumping the CI legs to 13.3.0
+      # fails the "Install CUDA toolkit" step (T-CI-JIMVER-CUDA-133-NOT-
+      # AVAILABLE). The Docker / dev-container images DO use 13.3.0 (the
+      # nvidia/cuda:13.3.0 image exists); this Docker-13.3-vs-CI-13.2 split is
+      # intentional and stays until Jimver ships 13.3.0. 13.x drops sm_50/60/70
+      # (Maxwell/Pascal/Volta); meson.build guards the sm_50 gencode with a
+      # `<13` version check. Minimum driver for 13.x is >= 580.
       - name: Install CUDA toolkit
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@3d45d157f327c09c04b50ee6ccdea2d9d017ec76  # v0.2.35

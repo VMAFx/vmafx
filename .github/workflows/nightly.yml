@@ -34,6 +34,13 @@ jobs:
       - name: Build
         run: ninja -C build-tsan
       - name: Run tests
+        # test_gpu_picture_pool_uaf intentionally forces a ~192 GB allocation
+        # failure; without allocator_may_return_null the TSan/ASan runtime
+        # hard-aborts (out-of-memory) instead of letting the test see NULL.
+        # The required tests-and-quality-gates lane sets the same env.
+        env:
+          ASAN_OPTIONS: allocator_may_return_null=1
+          TSAN_OPTIONS: allocator_may_return_null=1
         run: meson test -C build-tsan --print-errorlogs --timeout-multiplier 3
 
   clang-tidy-full:
