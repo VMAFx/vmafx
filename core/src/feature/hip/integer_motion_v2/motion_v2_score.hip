@@ -23,11 +23,13 @@
  *  motion2_v2_score is the host-side min(cur, next) post-process in
  *  flush(); no GPU work needed.
  *
- *  Mirror padding: edge-replicating reflective mirror
- *  (`2 * size - idx - 1` for idx >= size) -- DIFFERS by one pixel
- *  from motion's HIP kernel (which uses skip-boundary
- *  `2 * size - idx - 2`). This divergence matches the CPU and CUDA
- *  motion_v2 references (see CUDA twin comments in motion_v2_score.cu).
+ *  Mirror padding: reflect-101 (`2 * size - idx - 2` for idx >= size),
+ *  matching the CPU reference (`integer_motion_v2.c::mirror`), the CUDA
+ *  twin (`motion_v2_score.cu::mv2_mirror`), and the SYCL twin. A prior
+ *  version of this kernel used `2 * size - idx - 1`, a one-pixel
+ *  off-by-one at the high boundary that diverged from every other
+ *  backend (and whose comment wrongly claimed parity); corrected to
+ *  `- 2` (cross-backend parity, ADR-0214 places=4).
  *
  *  HIP adaptation from CUDA:
  *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
@@ -62,7 +64,7 @@ __device__ __forceinline__ int mv2_mirror(int idx, int sup)
     if (idx < 0)
         return -idx;
     if (idx >= sup)
-        return 2 * sup - idx - 1;
+        return 2 * sup - idx - 2;
     return idx;
 }
 
