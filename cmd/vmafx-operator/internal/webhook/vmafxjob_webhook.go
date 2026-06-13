@@ -40,9 +40,8 @@ var _ admission.CustomValidator = &VmafxJobValidator{}
 
 // SetupWebhookWithManager registers the webhook with the controller-runtime manager.
 func (v *VmafxJobValidator) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&vmafxv1.VmafxJob{}).
-		WithValidator(v).
+	return ctrl.NewWebhookManagedBy(mgr, &vmafxv1.VmafxJob{}).
+		WithCustomValidator(v).
 		Complete()
 }
 
