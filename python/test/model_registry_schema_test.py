@@ -62,8 +62,28 @@ def test_every_entry_has_license_metadata() -> None:
         assert m["sigstore_bundle"].endswith(".sigstore.json")
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "ADR-1105: ensemble production flip is deferred to the one-shot post-RC "
+        "retrain. The ADR-0321 production weights were LOSO-validated against "
+        "codec_vocab=14; the vocab was later trimmed to 6, so #865 regenerated "
+        "the on-disk ONNX in smoke mode (smoke=true) to keep the load path "
+        "correct. Real production weights at codec_vocab=6 require re-running "
+        "export_ensemble_v2_seeds.py, which is part of the locked one-shot "
+        "retrain. strict=True flips this back to a hard failure the moment the "
+        "retrain lands real weights (smoke=false + matching sidecar sha), "
+        "forcing removal of this marker. See ADR-1105 and ADR-0321 follow-ups."
+    ),
+)
 def test_fr_regressor_v2_ensemble_seed_rows_are_production() -> None:
-    """ADR-0321 flipped the five ensemble seed rows out of smoke mode."""
+    """ADR-0321 production flip; deferred to one-shot retrain per ADR-1105.
+
+    The target contract is asserted verbatim below; the xfail marker tracks
+    the deferral. When the one-shot retrain re-exports real production weights
+    at codec_vocab=6, this test will xpass and strict=True will fail the suite
+    until the marker is removed.
+    """
     reg = _load_registry()
     rows = {m["id"]: m for m in reg["models"]}
     for seed in range(5):

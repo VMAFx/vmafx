@@ -8,27 +8,37 @@ form _"give me the CRF where the **lower** bound of the 95 % interval is
 still ≥ 92"_ — driving the new `vmaf-tune --quality-confidence` flag
 (planned, see [ADR-0237](../../adr/0237-quality-aware-encode-automation.md)).
 
-> **Status — production (per-seed `smoke: false`).** As of 2026-05-06
-> the five `fr_regressor_v2_ensemble_v1_seed{0..4}` rows in
-> `model/tiny/registry.json` carry **production** ONNX weights:
-> trained on the 5,640-row Phase A canonical-6 corpus (9 Netflix
-> sources × `h264_nvenc`) after the 9-fold LOSO ship-gate cleared
-> with mean PLCC 0.997 (spread 0.001) per
-> `runs/ensemble_v2_real/PROMOTE.json`. Each non-smoke ONNX has a
-> matching sidecar `fr_regressor_v2_ensemble_v1_seed{N}.json` with
-> the canonical encoder-vocab-v2 + codec-block layout + training
-> recipe + per-seed gate evidence. Fresh seed exports also include ADR-0661
-> `run_provenance` with the corpus, PROMOTE verdict, argv, output seed
-> sidecars, and optional registry target. The shared
-> `fr_regressor_v2_ensemble_v1.json` manifest is unchanged. See
+> **Status — smoke placeholder for the RC; production flip deferred to
+> the one-shot post-RC retrain ([ADR-1105](../../adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md)).**
+> The five `fr_regressor_v2_ensemble_v1_seed{0..4}` rows in
+> `model/tiny/registry.json` currently carry `smoke: true`. The
+> ADR-0321 production flip (2026-05-06) shipped LOSO-validated weights
+> (mean PLCC 0.997, spread 0.001 per `runs/ensemble_v2_real/PROMOTE.json`)
+> trained against a codec one-hot of width 14. `codec_vocab` was later
+> trimmed to 6, which made those weights' input dimension stale; PR #865
+> regenerated the on-disk ONNX at the correct width but in `--smoke`
+> mode (1 epoch, synthetic corpus) to keep the load path working. Those
+> smoke weights are placeholders, not a production fit. Re-establishing
+> production at `codec_vocab=6` requires re-running
+> `export_ensemble_v2_seeds.py`, which is part of the locked one-shot
+> post-RC retrain (the ensemble is in scope). Until then,
+> `test_fr_regressor_v2_ensemble_seed_rows_are_production` is marked
+> `xfail(strict=True)`; it auto-fails the suite the moment the retrain
+> lands real weights (`smoke: false` + matching sidecar sha), forcing
+> removal of the marker. The per-seed sidecars
+> (`fr_regressor_v2_ensemble_v1_seed{N}.json`) still describe the older
+> production weights and retain their PROMOTE provenance; the one-shot
+> retrain regenerates ONNX + sidecars together. See
 > [ADR-0303](../../adr/0303-fr-regressor-v2-ensemble-prod-flip.md)
 > (gate definition),
 > [ADR-0309](../../adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md)
 > (separate-PR rule),
 > [ADR-0319](../../adr/0319-ensemble-loso-trainer-real-impl.md) (LOSO
-> trainer), and
+> trainer),
 > [ADR-0321](../../adr/0321-fr-regressor-v2-ensemble-full-prod-flip.md)
-> (this flip). The scaffold-era ADR-0279 entry point is preserved
+> (the original production flip), and
+> [ADR-1105](../../adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md)
+> (RC deferral). The scaffold-era ADR-0279 entry point is preserved
 > for history.
 
 ## What the output means
