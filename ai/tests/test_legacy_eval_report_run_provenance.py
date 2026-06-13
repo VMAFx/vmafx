@@ -14,6 +14,8 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from unittest.mock import MagicMock  # noqa: E402
+
 from ai.scripts import eval_loso_3arch as eval_3arch  # noqa: E402
 from ai.scripts import eval_loso_mlp_small as eval_mlp  # noqa: E402
 from ai.scripts import eval_probabilistic_proxy as eval_prob  # noqa: E402
@@ -135,7 +137,19 @@ def test_probabilistic_proxy_report_records_run_provenance(monkeypatch, tmp_path
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     out = tmp_path / "prob.json"
 
-    monkeypatch.setattr(eval_prob, "_load_ensemble", lambda _path: (manifest, [object(), object()]))
+    def _make_session_stub(num_codecs: int = 2):
+        sess = MagicMock()
+        codec_input = MagicMock()
+        codec_input.name = "codec_onehot"
+        codec_input.shape = [None, num_codecs]
+        sess.get_inputs.return_value = [codec_input]
+        return sess
+
+    monkeypatch.setattr(
+        eval_prob,
+        "_load_ensemble",
+        lambda _path: (manifest, [_make_session_stub(), _make_session_stub()]),
+    )
     monkeypatch.setattr(
         eval_prob,
         "_predict_ensemble",

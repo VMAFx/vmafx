@@ -126,7 +126,8 @@ def test_run_vmaf_argv(tmp_path: Path) -> None:
     assert "--width" in cmd and cmd[cmd.index("--width") + 1] == "320"
     assert "--height" in cmd and cmd[cmd.index("--height") + 1] == "240"
     assert "--model" in cmd and cmd[cmd.index("--model") + 1] == f"path={model}"
-    assert "--no_cuda" in cmd and "--no_sycl" in cmd and "--no_vulkan" in cmd
+    # Vulkan backend was removed (ADR-0726); only CUDA and SYCL bypass flags remain.
+    assert "--no_cuda" in cmd and "--no_sycl" in cmd
 
 
 # ---------------------------------------------------------------------------

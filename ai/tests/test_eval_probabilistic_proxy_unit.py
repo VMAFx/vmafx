@@ -205,7 +205,7 @@ def _write_manifest(path: Path, num_codecs: int = 3, conformal_q: float | None =
     path.write_text(json.dumps(payload))
 
 
-def _make_fake_session(bias: float):
+def _make_fake_session(bias: float, num_codecs: int = 3):
     sess = MagicMock()
 
     def _run(_outputs, feeds):
@@ -213,6 +213,11 @@ def _make_fake_session(bias: float):
         return [np.full((n, 1), bias, dtype=np.float32) + feeds["features"][:, :1]]
 
     sess.run.side_effect = _run
+    # The main() path calls sessions[0].get_inputs() to derive codec_onehot dim.
+    codec_input = MagicMock()
+    codec_input.name = "codec_onehot"
+    codec_input.shape = [None, num_codecs]
+    sess.get_inputs.return_value = [codec_input]
     return sess
 
 

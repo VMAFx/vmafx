@@ -86,7 +86,7 @@ packages = ["src/vmaf_train", "src/aiutils"]
 testpaths = ["tests"]
 # ai/scripts/ modules use _script_bootstrap which lives alongside them; add
 # the scripts/ directory so importlib-loaded batch scripts can resolve it.
-pythonpath = ["scripts"]
+pythonpath = ["scripts", "src"]
 markers = [
     # Tests >30 s wall (or that exercise real GPUs / containers and may grow
     # past 30 s). Exclude with `pytest -m 'not slow'` for fast iteration.
