@@ -152,11 +152,22 @@ Do not:
   Surfacing the contract violation as `-EINVAL` at parse time is the
   ADR-0887 invariant that prevents the OOB-read shape from re-emerging in
   `vmaf_model_destroy`.
+- Drop the `free(model->feature[index].name)` that precedes the `strdup`
+  in `append_feature_name` (both `read_json_model.c` and the C++23 twin
+  `read_json_model.cpp`). A duplicate `feature_names` key re-runs
+  `parse_feature_names` from index 0 and overwrites `feature[index].name`;
+  without the free, the prior strdup'd name is orphaned. `vmaf_model_destroy`
+  walks only the current slot occupants, so the orphan is unreachable and
+  leaks on both the validation-error and success paths (nightly
+  `fuzz_json_model` LeakSanitizer lane, `Direct leak of N byte(s)`). Keep the
+  two parser variants in lockstep — the leak is identical in both.
 
 When porting an upstream Netflix/vmaf commit that modifies
 `libvmaf/src/read_json_model.c` or `libvmaf/src/model.c::vmaf_model_destroy`,
 keep both the `sync_n_features` calls and the `min(feature_cap, n_features)`
-bound in destroy; re-apply the fork's hunks on top of any upstream changes.
+bound in destroy, plus the `free`-before-`strdup` guard in
+`append_feature_name`; re-apply the fork's hunks on top of any upstream
+changes.
 
 ### 11. Vendored libsvm + IQA test files are observation-only (ADR-0952)
 
