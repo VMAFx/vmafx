@@ -289,7 +289,8 @@ for the complete table.
   H-pass non-coalesced reads and V-pass L1 pressure remain known
   architectural ceilings (require a shared-memory tile-transpose
   rewrite).
-- **HIP / AMD** — separate backend; 8 of 11 real kernels shipped. See
+- **HIP / AMD** — separate backend; 19 registered feature extractors +
+  3 unregistered legacy stubs. See
   [backends/hip/overview.md](../hip/overview.md) for details.
 
 See [metrics/features.md](../../metrics/features.md) for the

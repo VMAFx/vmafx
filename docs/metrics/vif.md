@@ -6,7 +6,7 @@ model of natural scenes and human visual system sensitivity.
 
 VIF is a **luma-only metric by design** (Sheikh & Bovik, 2006 — defined on a
 single luminance channel). Every libvmaf backend — CPU (AVX2, AVX-512, NEON),
-CUDA, HIP, SYCL, Vulkan, Metal — and upstream Netflix/vmaf reads only the Y
+CUDA, HIP, SYCL, Metal — and upstream Netflix/vmaf reads only the Y
 plane (`data[0]`) of the input picture. There are no per-chroma-plane VIF
 features. See [ADR-0597](../adr/0597-integer-vif-luma-only-clarification.md)
 for the disposition of the 2026-05-18 deep-audit finding that questioned this

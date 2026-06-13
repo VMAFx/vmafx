@@ -63,13 +63,10 @@ temporal activity. No inherent upper bound — clamped to `motion_max_val` (defa
 | NEON (AArch64) | Supported | `arm64/motion_neon.c`                         |
 | CUDA           | Supported | `feature/cuda/integer_motion_cuda.c`          |
 | SYCL           | Supported | `feature/sycl/integer_motion_sycl.cpp`        |
-| Vulkan         | Supported | `feature/vulkan/integer_motion_vulkan.c` (canonical); `motion_vulkan` remains an explicit compatibility name |
 | HIP            | Supported | `feature/hip/integer_motion_hip.c`            |
 | Metal          | Supported | `feature/metal/integer_motion_metal.mm`       |
 
 All GPU backends emit `motion2_score` and `motion3_score` in 3-frame window mode.
-Vulkan model and parity dispatch prefer `integer_motion_vulkan`; callers that
-name `motion_vulkan` directly still get the legacy compatibility extractor.
 The 5-frame window (`motion_five_frame_window=true`) and `motion_moving_average`
 are CPU-only; GPU paths return `-ENOTSUP` at `init()` when these are set.
 
@@ -135,15 +132,13 @@ eliminated.
 | NEON (AArch64) | Supported | `arm64/motion_v2_neon.c` (ADR-0145, bit-exact)                         |
 | CUDA           | Supported | `feature/cuda/integer_motion_v2_cuda.c`                                |
 | SYCL           | Supported | `feature/sycl/integer_motion_v2_sycl.cpp`                              |
-| Vulkan         | Supported | `feature/vulkan/motion_v2_vulkan.c` (ADR-0193 + ADR-0662, bit-exact on lavapipe) |
 | HIP            | Supported | `feature/hip/integer_motion_v2_hip.c`                                  |
 | Metal          | Supported | `feature/metal/integer_motion_v2_metal.mm`                             |
 
 All GPU kernels use the CPU `integer_motion_v2.c::mirror` high-edge formula
-(`2 * size - idx - 2`). The CUDA, SYCL, and Vulkan twins are **bit-exact** vs
-the scalar CPU reference on the cross-backend gate fixture (Vulkan/lavapipe
-`max_abs_diff = 0.0` per ADR-0662). Do not use the stale `-1` formula from the
-original ADR-0193 prose; it creates a measurable CPU/GPU drift.
+(`2 * size - idx - 2`). The CUDA, SYCL, HIP, and Metal twins are **bit-exact**
+vs the scalar CPU reference on the cross-backend gate fixture. (The Vulkan
+backend was removed in ADR-0726.)
 
 ---
 
@@ -186,7 +181,7 @@ were ported from Netflix/vmaf commit `b949cebf`. With default settings the outpu
 is bit-identical to the pre-port baseline on the Y-plane SIMD fast path.
 `motion_add_uv=true` is CPU-only; GPU paths score the Y plane only.
 `motion_add_uv=true` is supported on the SYCL backend (`motion_sycl`, ADR-0989)
-and the CPU `float_motion` extractor; passing it to CUDA, Vulkan, HIP, or Metal
+and the CPU `float_motion` extractor; passing it to CUDA, HIP, or Metal
 returns `-ENOTSUP` with a warning until per-backend kernel ports land.
 
 ### Backend coverage
@@ -199,12 +194,11 @@ returns `-ENOTSUP` with a warning until per-backend kernel ports land.
 | NEON (AArch64) | Supported | `arm64/float_motion_neon.c`                        |
 | CUDA           | Supported | `feature/cuda/float_motion_cuda.c` (ADR-0196)      |
 | SYCL           | Supported | `feature/sycl/float_motion_sycl.cpp` (ADR-0196)   |
-| Vulkan         | Supported | `feature/vulkan/float_motion_vulkan.c` (ADR-0196)  |
 | HIP            | Supported | `feature/hip/float_motion_hip.c` (ADR-0273)        |
 | Metal          | Supported | `feature/metal/float_motion_metal.mm`              |
 
 Empirical GPU parity: max_abs_diff <= 3e-6 (8-bit, 48 frames) across CUDA,
-SYCL, and Vulkan backends (ADR-0196).
+SYCL, and HIP backends (ADR-0196). (The Vulkan backend was removed in ADR-0726.)
 
 ### How to run
 
@@ -241,6 +235,5 @@ All three extractors:
 ## See also
 
 - [Features](features.md) — full feature extractor reference table
-- [ADR-0193](../adr/0193-motion-v2-vulkan.md) — `motion_v2` Vulkan kernel
 - [ADR-0196](../adr/0196-float-motion-gpu.md) — `float_motion` GPU kernels
 - [ADR-0219](../adr/0219-motion3-gpu-coverage.md) — `motion3` GPU coverage

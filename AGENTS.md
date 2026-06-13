@@ -233,10 +233,10 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
     `check_pkg_config` lines) updates the relevant
     `ffmpeg-patches/000*-*.patch` file in the **same PR**. The
     fork ships FFmpeg integration as a patch stack against
-    `n8.1`; libvmaf-side surface drift breaks the patches
+    `n8.1.1`; libvmaf-side surface drift breaks the patches
     silently for the next rebase. Verify with a series replay
-    against a clean `n8.1` checkout
-    (`git -C ffmpeg-8 reset --hard n8.1 && for p in
+    against a clean `n8.1.1` checkout
+    (`git -C ffmpeg-8 reset --hard n8.1.1 && for p in
     ffmpeg-patches/000*-*.patch; do git -C ffmpeg-8 am
     --3way "$p" || break; done`) — per-patch
     `git apply --check` is the wrong gate (patches build on
@@ -248,10 +248,11 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
 12. **Default to the `vmaf-dev-mcp` container for vmaf / vmaf-tune /
     ai / MCP-probing work.** The container at
     [`dev/Containerfile`](dev/Containerfile) bakes in every backend
-    (CUDA + SYCL + Vulkan + HIP + Metal scaffolds), oneAPI, NVIDIA
+    (CUDA + SYCL + HIP + Metal scaffolds), oneAPI, NVIDIA
     Container Toolkit runtime, ffmpeg with libvmaf, MCP server, and
-    workspace mount. Host-side `meson setup build` chases moving
-    toolchain targets (icpx missing, Vulkan SDK gaps, libsvm wheel
+    workspace mount. (The Vulkan backend was removed in ADR-0726.)
+    Host-side `meson setup build` chases moving
+    toolchain targets (icpx missing, libsvm wheel
     drift, locale leaks); the container eliminates that whole class.
     - **Before any non-trivial vmaf / vmaf-tune / ai / MCP run**:
       rebuild the container if its image predates the last `master`
@@ -276,10 +277,10 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
     - **Don't multiplex the same device across parallel jobs.** When
       a long-running job (CHUG re-extract, BVI-DVC sweep) is pinned
       to one device (e.g. CUDA), schedule sibling parallel work on a
-      different device — Intel Arc via SYCL, AMD via HIP, Vulkan on
-      a non-NVIDIA adapter, or CPU. Use `--backend $name` (exclusive)
+      different device — Intel Arc via SYCL, AMD via HIP, Metal on
+      Apple Silicon, or CPU. Use `--backend $name` (exclusive)
       or `--no_<backend>` (negative) to pin each parallel run to its
-      own silicon.
+      own silicon. (The Vulkan backend was removed in ADR-0726.)
 
     See [docs/development/dev-mcp.md](docs/development/dev-mcp.md) for
     the operator guide.
@@ -344,28 +345,12 @@ linked AGENTS.md before resolving conflicts.
   motion_v2 / float-twins / ssimulacra2 / cambi; `float_ansnr` removed
   in commit 70ed8b3ce3 / PR #38).
   See [core/src/feature/AGENTS.md](core/src/feature/AGENTS.md).
-- **Vulkan backend (scaffold + image import)**:
-  [ADR-0175](docs/adr/0175-vulkan-backend-scaffold.md) +
-  [ADR-0184](docs/adr/0184-vulkan-image-import-scaffold.md) +
-  [ADR-0186](docs/adr/0186-vulkan-image-import-impl.md). Public
-  symbols in `libvmaf_vulkan.h`. Volk-symbol hiding via
-  [ADR-0185](docs/adr/0185-vulkan-hide-volk-symbols.md) +
-  [ADR-0198](docs/adr/0198-volk-priv-remap-static-archive.md) +
-  [ADR-0200](docs/adr/0200-volk-priv-remap-pkgconfig-leak-fix.md).
-  See [core/src/vulkan/AGENTS.md](core/src/vulkan/AGENTS.md).
-- **ssim / ms_ssim Vulkan kernels**:
-  [ADR-0188](docs/adr/0188-gpu-long-tail-batch-2.md) +
-  [ADR-0189](docs/adr/0189-ssim-vulkan.md) +
-  [ADR-0190](docs/adr/0190-ms-ssim-vulkan.md). 11-tap Gaussian baked
-  into GLSL byte-for-byte from `iqa/ssim_tools.h::g_gaussian_window_h`.
-- **motion_v2 GPU port (T3-14)**:
-  [ADR-0193](docs/adr/0193-motion-v2-vulkan.md) — single-dispatch GLSL
-  with edge-replicating mirror that diverges from `motion.comp`'s
-  non-replicating variant; bit-exact vs CPU.
-- **cambi Vulkan integration (T7-36, ADR-0210)**:
-  [ADR-0210](docs/adr/0210-cambi-vulkan-integration.md) — Strategy II
-  hybrid host/GPU; closes ADR-0192 long-tail terminus. See
-  [core/src/feature/AGENTS.md](core/src/feature/AGENTS.md).
+- **Vulkan backend removed ([ADR-0726](docs/adr/0726-drop-vulkan-backend.md))** —
+  the Vulkan backend, its `libvmaf_vulkan.h` surface, the `core/src/vulkan/`
+  tree, the Volk-symbol-hiding machinery, and all `*_vulkan` GLSL kernels
+  (ssim / ms_ssim / motion_v2 / cambi / psnr chroma) no longer exist in the
+  tree. No rebase invariant survives. Treat any lingering Vulkan reference as
+  stale.
 - **MCP embedded scaffold (T5-2a, ADR-0209)**:
   [ADR-0209](docs/adr/0209-mcp-embedded-scaffold.md). Public header
   `libvmaf_mcp.h`, audit-first `-ENOSYS` stubs in
@@ -373,9 +358,9 @@ linked AGENTS.md before resolving conflicts.
   (cJSON + mongoose + transport bodies) is open. See
   [core/AGENTS.md §Rebase-sensitive invariants](core/AGENTS.md).
 - **HIP scaffold (T7-10, ADR-0212 placeholder, PR #200)** —
-  audit-first AMD HIP backend scaffold mirroring Vulkan T5-1 /
-  ADR-0175. Public `libvmaf_hip.h`, stub kernels, `enable_hip` meson
-  option default `false`.
+  audit-first AMD HIP backend scaffold. Public `libvmaf_hip.h`,
+  19 registered feature extractors + 3 unregistered legacy stubs,
+  `enable_hip` meson option default `false`.
 - **SVE2 SIMD ports (T7-38, ADR-0213 placeholder, PR #201)** —
   SSIMULACRA 2 PTLR + IIR-blur SVE2 ports developed against
   `qemu-aarch64-static`. Same bit-exact contract as the existing
@@ -390,9 +375,10 @@ linked AGENTS.md before resolving conflicts.
   [core/AGENTS.md](core/AGENTS.md).
 - **FastDVDnet temporal pre-filter (T6-7, ADR-0215 placeholder,
   PR #203)** — 5-frame window pre-filter feeding ssim/ms_ssim.
-- **psnr chroma Vulkan (T3-15(b), ADR-0216 placeholder, PR #204)**
-  — `psnr_cb` / `psnr_cr` Vulkan kernels alongside the existing
-  `psnr_y` from [ADR-0182](docs/adr/0182-gpu-long-tail-batch-1.md).
+- **psnr chroma GPU twins (T3-15(b), PR #204)** — `psnr_cb` /
+  `psnr_cr` device kernels alongside the existing `psnr_y` from
+  [ADR-0182](docs/adr/0182-gpu-long-tail-batch-1.md). (The original
+  Vulkan implementation was removed with the backend in ADR-0726.)
 - **MobileSal saliency extractor (T6-2a, ADR-0218 placeholder,
   PR #208)** — first half of T6-2 (encoder-side ROI bundle).
   Saliency-weighted VMAF, sidecar emit for `tools/vmaf-roi`.
@@ -441,8 +427,10 @@ linked AGENTS.md before resolving conflicts.
 
 - **dev-MCP Docker container**
   ([ADR-0435](docs/adr/0435-local-dev-mcp-container.md)):
-  `dev/Containerfile` pins `cuda-toolkit-12-6`, `intel-basekit-2025.3`,
-  and ROCm 6.x apt repos. If SDK versions are bumped (routine security
+  `dev/Containerfile` pins `cuda-toolkit-13-3`, the unversioned
+  `intel-basekit` meta-package (Intel does not publish a
+  `intel-basekit-2025.3` apt package), and `ROCM_VER=7.2.4` apt
+  repos. If SDK versions are bumped (routine security
   maintenance), update the version pins and the apt repo URL paths in
   `dev/Containerfile` before merging.
   `dev/scripts/smoke-probe-loop.sh` assumes the golden pair lives at

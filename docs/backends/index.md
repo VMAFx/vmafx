@@ -112,7 +112,7 @@ per-backend page below.
   runtime
 - [Vulkan](vulkan/overview.md) — **removed in ADR-0726**; historical
   reference only
-- [HIP / AMD ROCm](hip/overview.md) — opt-in backend; 21 registered
+- [HIP / AMD ROCm](hip/overview.md) — opt-in backend; 19 registered
   feature extractors real (see [hip/overview.md](hip/overview.md) for
   the full table); 3 legacy API stubs (`adm_hip`, `vif_hip`, `motion_hip`)
   are not registered and return `-ENOSYS`. `float_ansnr_hip` was

@@ -47,7 +47,7 @@ limitations in the same PR as the code.
 | SSIM (fixed)       | `ssim`          | No            | `ssim`                                                                                         | —                         | —                  |
 | SSIM (float)       | `float_ssim`    | No            | `float_ssim` (+ L/C/S if enabled)                                                              | AVX2, AVX-512, NEON       | CUDA, SYCL |
 | MS-SSIM            | `float_ms_ssim` | No            | `float_ms_ssim` (+ per-scale L/C/S if enabled)                                                 | AVX2, AVX-512, NEON       | CUDA, SYCL |
-| ANSNR              | `float_ansnr`   | No            | `float_ansnr`, `float_anpsnr`                                                                  | —                         | Vulkan only (backend removed ADR-0726; CPU/CUDA/SYCL/HIP/Metal removed PR #38) |
+| ANSNR              | `float_ansnr`   | No            | removed — `float_ansnr` / `float_anpsnr` no longer emitted                                     | —                         | — (extractor removed PR #38 / ADR-0865) |
 | SSIMULACRA 2       | `ssimulacra2`   | No            | `ssimulacra2`                                                                                  | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL |
 | Float moment       | `float_moment`  | No            | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd`     | AVX2, NEON                | CUDA, SYCL |
 | LPIPS (tiny-AI)    | `lpips`         | No            | `lpips`                                                                                        | —                         | via ORT EP³        |
@@ -61,17 +61,17 @@ limitations in the same PR as the code.
 [models/overview.md](../models/overview.md)); non-core extractors are
 standalone.
 
-¹ All three GPU extractors (`psnr_cuda`, `psnr_sycl`, `psnr_vulkan`) honour
+¹ The GPU PSNR extractors (`psnr_cuda`, `psnr_sycl`) honour
 `enable_chroma` (default `true`) and emit `psnr_cb` / `psnr_cr` alongside
 `psnr_y` when the option is set. When `enable_chroma=false`, only `psnr_y`
 is emitted — matching the CPU extractor's luma-only path. YUV400 sources
 always produce luma-only output regardless of the option. GPU chroma parity
-was added for CUDA + SYCL by ADR-0453; the Vulkan twin gained chroma
-support earlier via ADR-0216.
+was added for CUDA + SYCL by ADR-0453. (The Vulkan backend was removed in
+ADR-0726.)
 
-² SSIM (fixed-point) ships a Vulkan kernel via T7-24 (ADR-pending);
-the CPU integer path is scalar-only by design. The `float_ssim` /
-`float_ms_ssim` paths cover all three GPU backends. The
+² SSIM (fixed-point): the CPU integer path is scalar-only by design.
+The `float_ssim` / `float_ms_ssim` paths cover the CUDA and SYCL GPU
+backends. (The Vulkan backend was removed in ADR-0726.) The
 `ssim_accumulate_avx512` reduction is vectorised (per
 [ADR-0139](../adr/0139-ssim-simd-bitexact-double.md), PR #342) —
 bit-exact vs scalar, ~7-11% wall-clock reduction on the SSIM/MS-SSIM
@@ -83,11 +83,10 @@ OpenVINO / ROCm); libvmaf itself does not own a SIMD or GPU
 specialisation of the pre-/post-processing today. See
 [`docs/ai/inference.md`](../ai/inference.md).
 
-⁴ CAMBI ships a Vulkan kernel via T7-36 ([ADR-0210](../adr/0210-cambi-vulkan-integration.md))
-in a hybrid Strategy II (GPU services preprocess + per-pixel
-derivative + 7×7 spatial-mask SAT, host runs decimation +
-mask DP). CUDA / SYCL CAMBI ports remain optional follow-ups
-under [ADR-0205](../adr/0205-cambi-gpu-feasibility.md).
+⁴ CAMBI ships a HIP kernel (`cambi_hip`). CUDA / SYCL CAMBI ports
+remain optional follow-ups under
+[ADR-0205](../adr/0205-cambi-gpu-feasibility.md). (The original Vulkan
+kernel, T7-36 / ADR-0210, was removed with the backend in ADR-0726.)
 
 Depending on your build configuration not every backend is available — see
 [`backends/`](../backends/index.md) for the runtime dispatch rules.
@@ -103,19 +102,18 @@ removed in commit 70ed8b3ce3 (PR #38). See
 ⁶ `aim_score` and `adm3_score` are emitted by the `float_adm`
 extractor only (not the fixed-point `adm` extractor). The CUDA twin
 (`float_adm_cuda`) gained support for both sub-features in ADR-0574
-(2026-05-18). SYCL and Vulkan `float_adm` twins emit `adm2` /
-`adm_scale*` only; `aim_score` / `adm3_score` Phase 2 (SYCL/Vulkan)
-is tracked as a follow-up.
+(2026-05-18). The SYCL and HIP `float_adm` twins emit `adm2` /
+`adm_scale*` only; `aim_score` / `adm3_score` Phase 2 (SYCL/HIP)
+is tracked as a follow-up. (The Vulkan backend was removed in ADR-0726.)
 
 ## Per-feature GPU dispatch hints (T7-26 / ADR-0181)
 
 Each feature carries a small `VmafFeatureCharacteristics` descriptor
 that drives the per-backend dispatch decision (graph-replay vs
-direct submit on SYCL; graph-capture vs streams on CUDA;
-secondary-cmdbuf reuse vs primary on Vulkan). The descriptor lives
-on the extractor and is consumed by the per-backend
+direct submit on SYCL; graph-capture vs streams on CUDA). The
+descriptor lives on the extractor and is consumed by the per-backend
 `dispatch_strategy` modules under
-[`core/src/{cuda,sycl,vulkan}/dispatch_strategy.{c,h}`](../../core/src/sycl/dispatch_strategy.cpp).
+[`core/src/{cuda,sycl}/dispatch_strategy.{c,h}`](../../core/src/sycl/dispatch_strategy.cpp).
 
 Defaults are calibrated to match pre-T7-26 SYCL behaviour
 byte-for-byte (graph replay above 720p area, direct submit below).
@@ -127,7 +125,6 @@ over the registry default for the named features:
 | --- | --- | --- |
 | `VMAF_SYCL_DISPATCH` | `graph` / `direct` | Per-feature SYCL graph-replay override. |
 | `VMAF_CUDA_DISPATCH` | `graph` / `direct` | Per-feature CUDA graph-capture override (today CUDA stub returns DIRECT for every input; the override surface ships now so future graph-capture work doesn't change the user contract). |
-| `VMAF_VULKAN_DISPATCH` | `reuse` / `primary` | Per-feature Vulkan secondary-cmdbuf-reuse override (today the Vulkan stub returns PRIMARY_CMDBUF for every input; same forward-compat reasoning). |
 
 Examples:
 
@@ -181,9 +178,7 @@ Operates on the Y plane only.
 `egl=1.0` disables the enhancement-gain path entirely (matches pre-v1.3
 behaviour).
 
-**Backends** — `vif`: AVX2, AVX-512, NEON, CUDA, SYCL
-(`vif_vulkan`, T5-1b — see
-[backends/vulkan/overview.md](../backends/vulkan/overview.md)).
+**Backends** — `vif`: AVX2, AVX-512, NEON, CUDA, SYCL, HIP.
 `float_vif`: scalar only.
 
 **Reference** — Sheikh H. R., Bovik A. C., "Image information and visual
@@ -239,8 +234,8 @@ described by `motion_blend_factor` / `motion_blend_offset`) on the second
 frame; the trained VMAF models do not consume `motion3_score` and remain
 unchanged.
 
-**Backends** — AVX2, AVX-512, NEON; CUDA, SYCL, and Vulkan for
-`motion` (fixed-point). All three GPU backends emit `motion`,
+**Backends** — AVX2, AVX-512, NEON; CUDA, SYCL, HIP, and Metal for
+`motion` (fixed-point). All GPU backends emit `motion`,
 `motion2`, **and** `motion3` (the latter as of T3-15(c) /
 [ADR-0219](../adr/0219-motion3-gpu-coverage.md)) in 3-frame window
 mode; the 5-frame window mode (`motion_five_frame_window=true`)
@@ -286,13 +281,13 @@ Y plane only.
 
 **Options** — none.
 
-**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL
-([`motion_v2_vulkan`](../../core/src/feature/vulkan/motion_v2_vulkan.c),
-[`integer_motion_v2_cuda.c`](../../core/src/feature/cuda/integer_motion_v2_cuda.c),
-[`integer_motion_v2_sycl.cpp`](../../core/src/feature/sycl/integer_motion_v2_sycl.cpp)).
+**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP
+([`integer_motion_v2_cuda.c`](../../core/src/feature/cuda/integer_motion_v2_cuda.c),
+[`integer_motion_v2_sycl.cpp`](../../core/src/feature/sycl/integer_motion_v2_sycl.cpp),
+[`integer_motion_v2_hip.c`](../../core/src/feature/hip/integer_motion_v2_hip.c)).
+(The Vulkan backend was removed in ADR-0726.)
 
-All three GPU kernels (per [ADR-0193](../adr/0193-motion-v2-vulkan.md))
-are **bit-exact** vs the CPU scalar reference on 8-bit and 10-bit
+All the GPU kernels are **bit-exact** vs the CPU scalar reference on 8-bit and 10-bit
 inputs (max_abs_diff = 0.0 across the cross-backend gate fixture).
 They share the design: single dispatch / launch over
 `(prev_ref - cur_ref)` exploiting convolution linearity to skip
@@ -333,13 +328,13 @@ to avoid divide-by-zero.
 - `aim_score` (`float_adm` only) — Anchored Impairment Metric (AIM):
   CM of `decouple_a` relative to the CSF of `decouple_r`, with
   `noise_weight = 0`. Range `[0, 1]`. Required by the Netflix HDR
-  VMAF model. Available on CUDA (ADR-0574) and CPU; SYCL/Vulkan
+  VMAF model. Available on CUDA (ADR-0574) and CPU; SYCL/HIP
   pending Phase 2.
 - `adm3_score` (`float_adm` only) — ADM version 3: blends adm2 and
   AIM via harmonic mean (`adm_adm3_apply_hm=true`) or a linear
   combination weighted by `adm_dlm_weight`. Range `[adm_min_val, 1]`.
   Required by the Netflix HDR VMAF model. Available on CUDA
-  (ADR-0574) and CPU; SYCL/Vulkan pending Phase 2.
+  (ADR-0574) and CPU; SYCL/HIP pending Phase 2.
 - With `debug=true`: `adm`, `adm_num`, `adm_den`, and per-scale
   numerator / denominator.
 
@@ -407,11 +402,10 @@ Quick facts:
 - **Output** — `cambi` in `[0, ∞)`; 0 = no banding, larger = more visible
   banding. Typical "bad" content sits in `1–10`.
 - **Input formats** — YUV 4:2:0, 8 / 10 bpc.
-- **Backends** — scalar (CPU) and Vulkan (T7-36 / [ADR-0210](../adr/0210-cambi-vulkan-integration.md));
-  the Vulkan path is a hybrid Strategy II (GPU does preprocess + per-pixel
-  derivative + 7×7 spatial-mask SAT, host runs decimation + mask DP). CUDA
+- **Backends** — scalar (CPU) and HIP (`cambi_hip`). CUDA
   and SYCL ports remain optional follow-ups under
-  [ADR-0205](../adr/0205-cambi-gpu-feasibility.md).
+  [ADR-0205](../adr/0205-cambi-gpu-feasibility.md). (The original Vulkan
+  kernel, T7-36 / ADR-0210, was removed with the backend in ADR-0726.)
 
 ### CIEDE2000 — colour-difference metric
 
@@ -473,11 +467,12 @@ identical (MSE=0): 60 dB for 8 bpc, 72 dB for 10 bpc, 84 dB for 12 bpc,
 | `reduced_hbd_peak` | bool   | `false` | Scale HBD peak to match 8-bit content                                              |
 | `min_sse`          | double | `0.0`   | Clamp the minimum MSE (and so the PSNR ceiling) — useful for identical-frame tests |
 
-**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL. All three GPU
+**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP. The GPU
 extractors honour `enable_chroma` (default `true`) and emit `psnr_cb` /
 `psnr_cr` identically to the CPU path when enabled. Pass
 `enable_chroma=false` for luma-only operation on any backend. `float_psnr`
-adds CUDA / SYCL / Vulkan twins on the float pipeline.
+adds CUDA / SYCL / HIP twins on the float pipeline. (The Vulkan backend was
+removed in ADR-0726.)
 
 **Limitations** — Temporal flag set only because of `apsnr` accumulation;
 per-frame PSNR itself is stateless.
@@ -551,16 +546,16 @@ smaller inputs with `-EINVAL` and a clear log message — see
 | `clip_db`    | bool | `false` | —      | Cap dB values based on the minimum representable MSE                  |
 | `scale`      | int  | `0`     | `0–10` | Downsampling factor for `float_ssim`; `0` = auto per Wang 2003        |
 
-**Backends** — `ssim` (fixed): scalar (CPU) plus the Vulkan twin
-(T7-24); the integer pyramid + SIMD windows stay scalar by design.
-`float_ssim` / `float_ms_ssim`: AVX2, AVX-512, NEON, plus the GPU
+**Backends** — `ssim` (fixed): scalar (CPU) plus the HIP twin
+(`integer_ssim_hip`); the integer pyramid + SIMD windows stay scalar by
+design. `float_ssim` / `float_ms_ssim`: AVX2, AVX-512, NEON, plus the GPU
 twins `float_ms_ssim_cuda`, `float_ms_ssim_sycl` and
-`float_ms_ssim_vulkan`. The `enable_lcs` option ships across **all**
-backends — CPU + CUDA + Vulkan emit the same 15
+`integer_ms_ssim_hip`. The `enable_lcs` option ships across **all**
+backends — CPU + CUDA emit the same 15
 `float_ms_ssim_{l,c,s}_scale{0..4}` metrics on top of the combined
 score (T7-35 / [ADR-0243](../adr/0243-enable-lcs-gpu.md)). The SYCL
 twin does not expose `enable_lcs` at the option level; follow-up
-work tracked under T7-35.
+work tracked under T7-35. (The Vulkan backend was removed in ADR-0726.)
 
 **MS-SSIM decimate (fork-local)** — the 9-tap 9/7 biorthogonal wavelet
 LPF that produces scales 1–4 runs through `ms_ssim_decimate` in
@@ -583,13 +578,12 @@ and scalar-fallback borders). The contract is verified by
 ### ANSNR — Adjusted Noise SNR
 
 > **Removed.** The CPU implementation and all GPU twins (CUDA, SYCL, HIP,
-> Metal) were removed in commit 70ed8b3ce3 (PR #38). Only the Vulkan
-> kernel source (`float_ansnr_vulkan.c`) remains in tree as historical
-> dead code; the Vulkan backend itself was removed in ADR-0726. Requesting
-> `--feature float_ansnr` will produce a feature-not-found error on any
-> current build. The historical GPU kernel design
-> ([ADR-0194](../adr/0194-float-ansnr-gpu.md)) is preserved for reference
-> only.
+> Metal) were removed in commit 70ed8b3ce3 (PR #38); the Vulkan backend and
+> its kernel source were removed in ADR-0726. No `float_ansnr` source remains
+> in tree. Requesting `--feature float_ansnr` will produce a
+> feature-not-found error on any current build. The historical GPU kernel
+> design ([ADR-0194](../adr/0194-float-ansnr-gpu.md)) is preserved for
+> reference only.
 
 SNR after a noise-shaping Wiener filter. Historical VMAF input that no
 shipped model consumed; the CPU implementation was removed in commit
@@ -675,33 +669,30 @@ compiler noise.
 - CUDA + SYCL twins shipped per
   [ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md) (T3-8 closed).
 
-**GPU twins** — `ssimulacra2_vulkan` (T7-23 / batch 3 part 7,
-[ADR-0201](../adr/0201-ssimulacra2-vulkan-kernel.md)),
-`ssimulacra2_cuda`, and `ssimulacra2_sycl`
-([ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md)). All three
+**GPU twins** — `ssimulacra2_cuda`, `ssimulacra2_sycl`
+([ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md)), and
+`ssimulacra2_hip`. (The Vulkan backend was removed in ADR-0726.) All
 backends share a hybrid host/GPU pipeline: host runs YUV →
 linear-RGB, 2×2 pyramid downsample, linear-RGB → XYB (bit-exact
 port of CPU `linear_rgb_to_xyb`), and the per-pixel SSIM +
 EdgeDiff combine in double precision; GPU runs the 3-plane
-elementwise multiplies (`ssimulacra2_mul3` / `ssimulacra2_mul.comp`)
+elementwise multiplies (`ssimulacra2_mul3`)
 and the 5 separable IIR blurs across 6 scales
-(`ssimulacra2_blur_h` + `ssimulacra2_blur_v` /
-`ssimulacra2_blur.comp`). The host-side XYB + SSIM combine is
-required for `places=4` parity — GPU `cbrtf` differs from libm by
-up to 42 ULP and that drift cascaded to a 1.59e-2 pooled-score
-drift on the Vulkan first iteration; running XYB on the host
+(`ssimulacra2_blur_h` + `ssimulacra2_blur_v`). The host-side XYB +
+SSIM combine is required for `places=4` parity — GPU `cbrtf` differs
+from libm by up to 42 ULP and that drift cascaded to a 1.59e-2
+pooled-score drift on a GPU first iteration; running XYB on the host
 collapses the drift to ~1e-7. Min input dimension: 8×8 (host loop
 early-exits at each scale that drops below). The CUDA fatbin for
 the IIR kernel is built with `--fmad=false` so the recursive
 expression `n2*sum - d1*prev1 - prev2` keeps its CPU
 FMUL/FSUB ordering; SYCL relies on `-fp-model=precise` for the
-same effect. Cross-backend gates: Vulkan/lavapipe Netflix normal
-pair holds at `max_abs_diff = 1.81e-7`; CUDA on RTX 4070 lands at
+same effect. Cross-backend gate: CUDA on RTX 4070 lands at
 `1.0e-6` on the normal pair and bit-exact (0.0) on both
 checkerboard pairs.
 
-Invocation: `--feature ssimulacra2_vulkan` /
-`--feature ssimulacra2_cuda` / `--feature ssimulacra2_sycl`
+Invocation: `--feature ssimulacra2_cuda` /
+`--feature ssimulacra2_sycl` / `--feature ssimulacra2_hip`
 (pair with the matching `--backend` flag for exclusive GPU
 dispatch).
 
@@ -733,10 +724,11 @@ Y plane only.
 **Options** — none.
 
 **Backends** — scalar (CPU) plus CUDA (`float_moment_cuda`, T7-23),
-SYCL (`float_moment_sycl`), and Vulkan (`float_moment_vulkan`). All
-three GPU kernels accumulate four `int64` partial sums per frame in a
-single dispatch and are bit-exact vs the CPU integer input (the CPU
-path also operates on integer pixels before dividing by `w*h`).
+SYCL (`float_moment_sycl`), and HIP (`float_moment_hip`). (The Vulkan
+backend was removed in ADR-0726.) All the GPU kernels accumulate four
+`int64` partial sums per frame in a single dispatch and are bit-exact vs
+the CPU integer input (the CPU path also operates on integer pixels
+before dividing by `w*h`).
 
 **Limitations** — Stateless per-frame. Float pipeline (the picture
 plane is copied to float32 before the moments are computed); the

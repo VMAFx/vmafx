@@ -14,9 +14,9 @@ The fork ships one CPU MS-SSIM extractor:
 |---|---|---|
 | `float_ms_ssim` | Floating-point IQA library, 5-scale Gaussian pyramid | `enable_lcs`, `enable_db`, `clip_db`, `enable_chroma` |
 
-GPU twins (`float_ms_ssim_cuda`, `float_ms_ssim_sycl`, `float_ms_ssim_vulkan`)
+GPU twins (`float_ms_ssim_cuda`, `float_ms_ssim_sycl`, `integer_ms_ssim_hip`)
 currently expose only `enable_lcs`; `enable_chroma` support for GPU backends
-is a planned follow-up.
+is a planned follow-up. (The Vulkan backend was removed in ADR-0726.)
 
 ## `float_ms_ssim` extractor
 

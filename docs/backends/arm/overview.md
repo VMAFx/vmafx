@@ -116,9 +116,10 @@ must remain green — see [`docs/principles.md`](../../principles.md)
   `--cpumask 0` to drop to scalar across all extractors at once,
   then re-enable per-extractor by running individual `--feature`
   invocations.
-- No GPU path on aarch64 yet. CUDA / SYCL / Vulkan backends compile
-  for x86_64 only in the current matrix; the Vulkan scaffold
-  (ADR-0175) is the planned cross-arch GPU surface.
+- No discrete GPU path on aarch64 yet. The CUDA / SYCL / HIP backends
+  compile for x86_64 only in the current matrix; on Apple Silicon the
+  Metal backend ([metal/index.md](../metal/index.md)) is the aarch64 GPU
+  surface. (The Vulkan backend was removed in ADR-0726.)
 
 ## Related
 

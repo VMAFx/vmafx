@@ -115,12 +115,12 @@ Node pods are scheduled via k8s `nodeSelector` / `nodeAffinity` resource keys:
 
 | Vendor | Resource key | Backend |
 |---|---|---|
-| NVIDIA | `nvidia.com/gpu` | CUDA EP + Vulkan-on-NVIDIA |
-| AMD | `amd.com/gpu` | ROCm EP + HIP + Vulkan-on-AMD |
-| Intel | `gpu.intel.com/i915` | OpenVINO EP + SYCL + Vulkan-on-Intel |
+| NVIDIA | `nvidia.com/gpu` | CUDA EP |
+| AMD | `amd.com/gpu` | ROCm EP + HIP |
+| Intel | `gpu.intel.com/i915` | OpenVINO EP + SYCL |
 
-Vulkan is not a separate k8s resource; it runs through whichever GPU device plugin
-is allocated to the pod (per ADR-0701).
+Each backend runs through whichever GPU device plugin is allocated to the pod
+(per ADR-0701). (The Vulkan backend was removed in ADR-0726.)
 
 ## Phase 4b sweep sequence
 

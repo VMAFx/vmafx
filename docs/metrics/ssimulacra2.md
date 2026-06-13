@@ -57,8 +57,8 @@ vmaf ... --feature ssimulacra2=yuv_matrix=2
 - Pixel formats: YUV 4:2:0, 4:2:2, and 4:4:4.
 - Bit depths: 8, 10, and 12 bpc.
 - CPU SIMD: AVX2, AVX-512, NEON, and SVE2 when the host advertises it.
-- GPU twins: `ssimulacra2_vulkan`, `ssimulacra2_cuda`, and
-  `ssimulacra2_sycl`.
+- GPU twins: `ssimulacra2_cuda`, `ssimulacra2_sycl`, and
+  `ssimulacra2_hip`. (The Vulkan backend was removed in ADR-0726.)
 
 The CPU scalar/SIMD path is bit-exact across the fork's host matrix. The GPU
 twins offload the pyramid blur and per-pixel multiply stages while keeping the
@@ -91,5 +91,4 @@ compiler. See ADR-0891 for the analysis and alternatives.
 - [Feature extractor matrix](features.md#ssimulacra-2-perceptual-similarity-in-xyb-space)
 - [ADR-0130](../adr/0130-ssimulacra2-scalar-implementation.md)
 - [ADR-0164](../adr/0164-ssimulacra2-snapshot-gate.md)
-- [ADR-0201](../adr/0201-ssimulacra2-vulkan-kernel.md)
 - [ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md)

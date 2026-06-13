@@ -24,7 +24,7 @@
 
 <!-- Distribution / community badges -->
 [![Container](https://img.shields.io/badge/Container-ghcr.io%2Fvmafx%2Fvmafx-2496ED?logo=docker&logoColor=white)](https://github.com/orgs/VMAFx/packages)
-[![License: BSD-3-Clause+Patent](https://img.shields.io/badge/License-BSD--3--Clause--Plus--Patent-blue.svg)](LICENSE)
+[![License: BSD-2-Clause-Patent](https://img.shields.io/badge/License-BSD--2--Clause--Patent-blue.svg)](LICENSE)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/VMAFx/vmafx/badge)](https://securityscorecards.dev/viewer/?uri=github.com/VMAFx/vmafx)
 [![ko-fi](https://img.shields.io/badge/ko--fi-support%20lusoris-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/lusoris)
@@ -37,7 +37,7 @@ assessment, Emmy-winning, now with:
   with a fp64-less device fallback path for Intel Arc / iGPU silicon.
 - **CUDA** GPU backend (optimized ADM decouple fusion, VIF rd_stride,
   memory-efficient scoring).
-- **HIP (AMD ROCm)** GPU backend — 21 registered feature extractors have real
+- **HIP (AMD ROCm)** GPU backend — 19 registered feature extractors have real
   device kernels (PSNR, float-PSNR, motion, motion\_v2, moment, SSIM, MS-SSIM,
   CIEDE2000, ADM, VIF, and more — see [backends/hip](docs/backends/hip/overview.md));
   3 legacy API stubs (`adm_hip`, `vif_hip`, `motion_hip`) are not registered.
@@ -76,8 +76,8 @@ pairs) run as a required CI gate on every PR — see
 # One-liner dev env install (auto-detects Ubuntu/Arch/Fedora/Alpine/macOS/Win).
 ./scripts/setup/detect.sh
 
-# CPU-only build + test.
-meson setup build -Denable_cuda=false -Denable_sycl=false
+# CPU-only build + test. The build root is core/ (ADR-0700).
+meson setup build core -Denable_cuda=false -Denable_sycl=false
 ninja -C build
 meson test -C build
 
@@ -100,7 +100,7 @@ MCP server lands behind `-Denable_mcp=true` (scaffold currently returns
 | CPU     | ✅     | Scalar + AVX2 + AVX-512 + NEON. Golden-data truth. |
 | CUDA    | ✅     | `/opt/cuda`, `nvcc`. Works on RTX 20xx and newer. `CU_STREAM_NON_BLOCKING` motion speedup (PR #702). |
 | SYCL    | ✅     | oneAPI DPC++; Intel/NVIDIA/AMD via Codeplay; fp64-less device fallback for Arc / iGPU. |
-| HIP     | 🔶     | 21 registered kernels (`-Denable_hip=true -Denable_hipcc=true`); 3 legacy API stubs not registered; `float_ansnr_hip` removed PR #38. |
+| HIP     | 🔶     | 19 registered kernels (`-Denable_hip=true -Denable_hipcc=true`); 3 legacy API stubs not registered; `float_ansnr_hip` removed PR #38. |
 | Metal   | 💭     | Apple Silicon scaffold (8/17 real); `-Denable_metal=auto/enabled`; not prioritized, PRs welcome. |
 <!-- markdownlint-enable MD060 -->
 
@@ -119,8 +119,7 @@ backends and the DNN/tiny-model surface. Configure flags:
 leaked internal symbols (was 207 leaked, including libsvm, pdjson,
 and SIMD kernel names).
 
-**Compiler support:** GCC 16 is supported (PR #699,
-[ADR-0376](docs/adr/0376-ffmpeg-patches-hip-backend-selector.md)).
+**Compiler support:** GCC 16 is supported (PR #699).
 
 ## CLI additions (fork-only)
 
@@ -131,10 +130,14 @@ and SIMD kernel names).
         max|full  -> "%.17g" (IEEE-754 round-trip lossless; opt-in)
         legacy    -> "%.6f" (default; matches upstream Netflix output)
 
---backend $name            cpu|cuda|sycl|hip (auto-selects if omitted)
+--backend $name            auto|cpu|cuda|sycl|hip|metal (auto-selects if omitted)
 --no_cuda                  disable CUDA backend
 --no_sycl                  disable SYCL/oneAPI backend
 --sycl_device $unsigned    select SYCL GPU by index (default: auto)
+--no_hip                   disable HIP (AMD ROCm) backend
+--hip_device $unsigned     select HIP GPU by index (default: auto)
+--no_metal                 disable Metal (Apple Silicon) backend
+--metal_device $unsigned   select Metal GPU by index (default: auto)
 --gpumask: $bitmask        restrict permitted GPU operations
 
 --tiny-model $path         load a tiny ONNX model alongside classic models
@@ -204,11 +207,11 @@ opens a PR on every push to `master`; merging it tags and fires signing.
 
 ## License
 
-[BSD-3-Clause-Plus-Patent](LICENSE) — preserved from upstream Netflix/vmaf.
+[BSD-2-Clause-Patent](LICENSE) — preserved from upstream Netflix/vmaf.
 
 Fork-authored code (SYCL backend, `.claude/` scaffolding, MCP server, Tiny-AI
 surface) is © 2024-2026 Lusoris, licensed under the
-same BSD-3-Clause-Plus-Patent terms as the rest of the project.
+same BSD-2-Clause-Patent terms as the rest of the project.
 
 ## Attribution
 

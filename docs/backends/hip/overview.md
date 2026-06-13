@@ -9,8 +9,8 @@
 > `vmaf-dev-mcp` container: VMAF = 76.66783 on the Netflix golden src01
 > pair, bit-exact match against the CPU backend (delta = 0; meets the
 > `places=4` cross-backend gate from [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)
-> with room to spare). HIP joins CUDA / SYCL / Vulkan as a fully working
-> runtime-selected backend.
+> with room to spare). HIP joins CUDA / SYCL / Metal as a fully working
+> runtime-selected backend. (The Vulkan backend was removed in ADR-0726.)
 >
 > **Dispatch posture (2026-05-18, updated per
 > [ADR-0530](../../adr/0530-hip-feature-flag-promotion-and-picture-buffer.md)):**
@@ -38,9 +38,13 @@
 > promoted by its own follow-up PR + ADR after a successful
 > reproducer + cross-backend numerical check.
 >
-> **Status (2026-05-29):** 21 HIP feature extractors are registered in
+> **Status (2026-05-29):** 19 distinct HIP `VmafFeatureExtractor`
+> descriptors are registered in
 > `feature_extractor_list[]` and resolve via
-> `vmaf_get_feature_extractor_by_name(<name>)`. ADR-0523 wired the
+> `vmaf_get_feature_extractor_by_name(<name>)`. (The table below lists
+> 21 rows: two of them — `integer_ciede_hip` and `integer_moment_hip` —
+> are alias names that resolve to the canonical `ciede_hip` /
+> `float_moment_hip` descriptors, not separate registrations.) ADR-0523 wired the
 > first long-missing entry (`integer_motion_hip`); ADR-0533 swept in
 > the remaining six (`float_vif_hip`, `integer_adm_hip` →
 > `adm_hip`, `integer_ms_ssim_hip`, `psnr_hvs_hip`, `integer_ssim_hip`,
@@ -76,7 +80,7 @@
 > | `speed_chroma_hip` | `speed_chroma_hip` | ADR-0567 / ADR-0852 |
 > | `speed_temporal_hip` | `speed_temporal_hip` | ADR-0567 / ADR-0852 |
 >
-> All 21 real kernels require `enable_hip=true` + `enable_hipcc=true`.
+> All 19 registered kernels require `enable_hip=true` + `enable_hipcc=true`.
 > (`float_ansnr_hip` was removed together with the CPU extractor in commit
 > 70ed8b3ce3 / PR #38; it no longer appears in this table.)
 > Without `enable_hipcc`, the scaffold `-ENOSYS` posture is preserved.

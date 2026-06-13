@@ -428,7 +428,7 @@ trade-offs for all four backends:
   backend overview.
 - [`docs/backends/vulkan/overview.md`](vulkan/overview.md) — broader Vulkan
   backend overview.
-- [`docs/backends/hip/index.md`](hip/index.md) — broader HIP backend
+- [`docs/backends/hip/overview.md`](hip/overview.md) — broader HIP backend
   overview.
 - [`docs/backends/metal/index.md`](metal/index.md) — broader Metal backend
   overview.
