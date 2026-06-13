@@ -1,0 +1,8 @@
+{
+  "input_name": "ref",
+  "kind": "fr",
+  "name": "vmaf_tiny_dists_sq_placeholder_v0",
+  "notes": "DISTS-Sq smoke placeholder. Two ImageNet-normalised RGB NCHW inputs named 'ref' and 'dist'; scalar 'score' output. The graph computes mean squared tensor distance only to exercise the libvmaf extractor and ORT load path. Real Ding et al. DISTS weights are tracked as T7-DISTS-followup.",
+  "onnx_opset": 17,
+  "output_name": "score"
+}

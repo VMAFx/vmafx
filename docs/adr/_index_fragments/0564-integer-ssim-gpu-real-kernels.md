@@ -1,0 +1,1 @@
+| [ADR-0564](0564-integer-ssim-gpu-real-kernels.md) | Real integer_ssim GPU kernels (CUDA, HIP, SYCL) — replace silent float_ssim substitution | Accepted | cuda, hip, sycl, ssim, kernel, correctness, gpu, fork-local |

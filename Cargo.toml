@@ -1,0 +1,35 @@
+# VMAFX Rust workspace root
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-2-Clause-Patent OR MIT
+#
+# Members are filled in by per-sweep PRs. The vmafx-sys FFI crate is the
+# first member (ADR-0702). Feature-extractor Rust pilots (TAD, ADR-0707)
+# and future Rust CLI binaries are added by their respective ADR sweep PRs.
+
+[workspace]
+members = [
+    "bindings/rust/vmafx-sys",
+    "bindings/rust/vmafx",
+    "core/src/feature/rust/tad",
+]
+resolver = "2"
+
+# Shared crate metadata. Per-crate manifests opt in via
+# `repository.workspace = true` (etc.) so URL drift across the workspace
+# is impossible — touch this block once, every member inherits.
+[workspace.package]
+authors = ["Lusoris <lusoris@pm.me>"]
+edition = "2024"
+license = "BSD-2-Clause-Patent"
+repository = "https://github.com/VMAFx/vmafx"
+homepage = "https://github.com/VMAFx/vmafx"
+documentation = "https://vmafx.github.io/vmafx/"
+readme = "README.md"
+
+[profile.release]
+# Optimise for size as well as speed — libvmaf.so is embedded in
+# many video pipeline processes where binary size matters.
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

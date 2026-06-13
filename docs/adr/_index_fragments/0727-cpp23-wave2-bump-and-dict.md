@@ -1,0 +1,1 @@
+| [ADR-0727](0727-cpp23-wave2-bump-and-dict.md) | C++23 Wave 2: project-wide `cpp_std=c++23` + `dict.c` → `dict.cpp` with `std::expected`, `std::string_view`, `[[nodiscard]]`; toolchain floor gcc >= 13 / clang >= 16 | Accepted | 2026-05-28 | build, c++, cpp23, refactor, internals, fork-local, vmafx-rebrand |

@@ -1,0 +1,81 @@
+{{- /*
+  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+  Copyright 2026 Lusoris
+
+  deploy/helm/vmafx/templates/pdb.yaml
+  PodDisruptionBudget for the vmafx controller and worker pools.
+
+  Rendered when podDisruptionBudget.enabled is true (default false).
+  A PDB prevents Kubernetes from evicting all pods simultaneously during
+  voluntary disruptions (node drain, rolling upgrade, cluster resize).
+  Recommended when replicaCount >= 2; set minAvailable to 1 as the
+  minimum viable safety net.
+
+  ADR-1058: Helm chart security hardening — PDB, RBAC split, metrics
+  NetworkPolicy, schema tightening.
+*/ -}}
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- $fullName := include "vmafx.fullname" . }}
+{{- $selector := include "vmafx.selectorLabels" . }}
+{{- if or (eq .Values.workload "Deployment") (eq .Values.workload "StatefulSet") }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable | default 1 }}
+  {{- end }}
+{{- end }}
+{{- if .Values.node.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullName }}-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  selector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: node
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable | default 1 }}
+  {{- end }}
+{{- end }}
+{{- if .Values.operator.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullName }}-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  selector:
+    matchLabels:
+      {{- $selector | nindent 6 }}
+      app.kubernetes.io/component: operator
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable | default 1 }}
+  {{- end }}
+{{- end }}
+{{- end }}

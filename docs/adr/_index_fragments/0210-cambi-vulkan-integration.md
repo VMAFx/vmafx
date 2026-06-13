@@ -1,0 +1,1 @@
+| [ADR-0210](0210-cambi-vulkan-integration.md) | T7-36 — cambi Vulkan integration (Strategy II hybrid GPU/host). Closes ADR-0192 long-tail terminus. | Accepted | vulkan, gpu, cambi, feature-extractor, fork-local, places-4 |

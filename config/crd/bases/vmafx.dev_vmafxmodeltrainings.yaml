@@ -1,0 +1,116 @@
+---
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# config/crd/bases/vmafx.dev_vmafxmodeltrainings.yaml
+# CRD for VmafxModelTraining — online SGD-EMA sidecar training run.
+#
+# ADR-0714: vmafx-operator kubebuilder skeleton + CRDs.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: vmafxmodeltrainings.vmafx.dev
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+spec:
+  group: vmafx.dev
+  names:
+    kind: VmafxModelTraining
+    listKind: VmafxModelTrainingList
+    plural: vmafxmodeltrainings
+    singular: vmafxmodeltraining
+    shortNames:
+      - vmtrain
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Samples
+          type: integer
+          jsonPath: .status.currentSamples
+        - name: ModelVersion
+          type: string
+          jsonPath: .status.modelVersion
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          description: VmafxModelTraining is the Schema for the vmafxmodeltrainings API.
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: VmafxModelTrainingSpec defines the desired state of a training run.
+              type: object
+              required:
+                - baseModel
+                - algorithm
+                - outputRegistry
+              properties:
+                baseModel:
+                  description: Name of the seed model (e.g. "vmaf_v0.6.1").
+                  type: string
+                  minLength: 1
+                dataSource:
+                  description: Where training samples originate.
+                  type: object
+                  properties:
+                    nodeSelector:
+                      description: Label selector constraining which VmafxNodes provide samples. Empty matches all.
+                      type: object
+                      additionalProperties:
+                        type: string
+                algorithm:
+                  description: Online learning algorithm. Only "online-sgd-ema" is supported in Stage 1.
+                  type: string
+                  enum: [online-sgd-ema]
+                checkpoint:
+                  description: Periodic model checkpointing configuration.
+                  type: object
+                  properties:
+                    interval:
+                      description: Minimum wall-clock duration between checkpoints (e.g. "10m"). Default 10m.
+                      type: string
+                      default: 10m
+                    minSamples:
+                      description: Minimum new samples required before writing a checkpoint. Default 1000.
+                      type: integer
+                      format: int32
+                      minimum: 1
+                      default: 1000
+                outputRegistry:
+                  description: OCI registry URI where trained model artefacts are pushed.
+                  type: string
+                  minLength: 1
+            status:
+              description: VmafxModelTrainingStatus defines the observed state of a training run.
+              type: object
+              properties:
+                currentSamples:
+                  description: Total training samples ingested so far.
+                  type: integer
+                  format: int32
+                lastCheckpoint:
+                  description: When the most recent model checkpoint was written.
+                  type: string
+                  format: date-time
+                modelVersion:
+                  description: Tag or digest of the most recently pushed model artefact.
+                  type: string
+                phase:
+                  description: Lifecycle phase — Initializing | Running | Paused | Failed.
+                  type: string
+                  enum: [Initializing, Running, Paused, Failed]

@@ -1,0 +1,1 @@
+| [ADR-0663](0663-mos-label-materializer.md) | Adds an explicit MOS label materializer for feature tables and changes real MOS-head training to fail instead of silently synthesizing when no labelled rows load. | Accepted | ai, mos, training, corpus |

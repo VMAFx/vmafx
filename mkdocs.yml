@@ -1,0 +1,1469 @@
+site_name: "VMAFx"
+site_url: https://vmafx.github.io/vmafx/
+site_description: Perceptual video quality assessment with GPU/SIMD acceleration.
+repo_url: https://github.com/VMAFx/vmafx
+repo_name: VMAFx/vmafx
+edit_uri: edit/master/docs/
+copyright: "BSD-3-Clause-Plus-Patent — Netflix / Lusoris"
+
+docs_dir: docs
+site_dir: build-docs/site
+
+# ADR-0221 fragment files are concatenation source (assembled into
+# `docs/adr/README.md` by `scripts/docs/concat-adr-index.sh`) — they are
+# never rendered as standalone pages, so exclude them from the site build.
+# Same for changelog fragments under `changelog.d/` (which live in repo
+# root, not docs/, but listed here defensively if a future reorg moves
+# them under docs/). One fragment was placed under docs/changelog.d/ and
+# is explicitly excluded here.
+exclude_docs: |
+  adr/_index_fragments/*
+  changelog.d/**
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - def_list
+  - footnotes
+
+validation:
+  # Strict gate: `mkdocs build --strict` (run by .github/workflows/docs.yml)
+  # fails on any WARNING. The validation table below decides which
+  # categories are actionable enough to fail the build vs. which stay at
+  # INFO because fixing them is blocked by an existing fork policy.
+  #
+  # Carve-outs and rationale:
+  # - links.not_found: info — Two unfixable populations dominate this class:
+  #   (a) intentional pointers from docs to source-tree files
+  #   (`../../core/src/...`, `../../scripts/ci/...`,
+  #   `../../.github/workflows/...`) that exist for grep-ability and
+  #   GitHub-rendered navigation but cannot be resolved by mkdocs because
+  #   they sit outside `docs_dir`; (b) cross-references between ADRs whose
+  #   target slug has been renamed (ADR bodies are immutable once Accepted
+  #   per ADR-0028 / ADR-0106, so the broken side cannot be edited). Until
+  #   one of those policies changes, escalating this to `warn` is a
+  #   permanent --strict failure that no PR can clear. Tracked at INFO so
+  #   the log still surfaces them for opportunistic cleanup in `README.md`
+  #   and other non-frozen surfaces.
+  # - links.anchors: warn — actionable; in-doc anchor typos.
+  # - links.unrecognized_links: info — same population shape as not_found:
+  #   the dominant unrecognized form is a relative pointer to a directory
+  #   in the source tree (`../../core/src/feature/iqa/`,
+  #   `../../tools/vmaf-tune/`, `../../mcp-server/vmaf-mcp/`), kept for
+  #   GitHub-rendered navigation and grep-ability. mkdocs cannot resolve
+  #   them because they sit outside `docs_dir` and lack an `index.md`.
+  #   The non-source-tree subset (bare dir-style links like
+  #   `backends/` -> `backends/index.md`) was swept once on the
+  #   ADR-0221-strict-gate PR; future occurrences are caught at INFO and
+  #   tidied opportunistically.
+  # - nav.omitted_files: warn — catches new orphan pages added to docs/
+  #   without a nav row.
+  # - nav.not_found: warn — catches typos in mkdocs.yml `nav:` entries.
+  nav:
+    # The fork's ADR (260+ files) and research-digest (80+ files) trees
+    # are deliberately not enumerated in `nav:` — they use cross-link
+    # navigation from `docs/adr/README.md` and inbound links from other
+    # pages. Same for many topic-tree pages (e.g., `ai/models/*.md`,
+    # `development/*-bisect-*.md`) that are linked from their parent
+    # index but not listed individually. Promoting this to `warn`
+    # would require either a 350-row nav explosion or routine churn
+    # on the nav whenever a new ADR / digest / model card lands.
+    omitted_files: info
+    not_found: warn
+    absolute_links: info
+  links:
+    not_found: info
+    anchors: warn
+    unrecognized_links: info
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/VMAFx/vmafx
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - getting-started/index.md
+      - Install:
+          - Ubuntu: getting-started/install/ubuntu.md
+          - Fedora: getting-started/install/fedora.md
+          - Arch: getting-started/install/arch.md
+          - Alpine: getting-started/install/alpine.md
+          - macOS: getting-started/install/macos.md
+          - Windows: getting-started/install/windows.md
+      - Building on Windows: getting-started/building-on-windows.md
+  - Usage:
+      - CLI reference: usage/cli.md
+      - vmaf_bench: usage/bench.md
+      - '--precision': usage/precision.md
+      - Python library: usage/python.md
+      - FFmpeg: usage/ffmpeg.md
+      - Docker: usage/docker.md
+      - MATLAB: usage/matlab.md
+      - BD-rate utilities: usage/bd-rate.md
+      - Per-shot scoring: usage/vmaf-perShot.md
+      - ROI scoring: usage/vmaf-roi.md
+      - ROI score output: usage/vmaf-roi-score.md
+      - Storage / rclone: usage/storage.md
+      - vmafx CLI: usage/vmafx-cli.md
+      - vmaf-train CLI: usage/vmaf-train.md
+      - VPL pipeline: usage/vmaf-vpl.md
+      - External resources: usage/external-resources.md
+      - Environment variables: usage/env-vars.md
+      - vmaf-tune:
+          - Overview: usage/vmaf-tune.md
+          - Codec adapters: usage/vmaf-tune-codec-adapters.md
+          - Fast path: usage/vmaf-tune-fast-path.md
+          - Score backend: usage/vmaf-tune-score-backend.md
+          - Bitrate ladder: usage/vmaf-tune-ladder.md
+          - Ladder (default sampler): usage/vmaf-tune-ladder-default-sampler.md
+          - Ladder (bitrate grid): usage/vmaf-tune-bitrate-ladder.md
+          - Coarse-to-fine: usage/vmaf-tune-coarse-to-fine.md
+          - Recommend: usage/vmaf-tune-recommend.md
+          - Resolution-aware: usage/vmaf-tune-resolution-aware.md
+          - Saliency-aware: usage/vmaf-tune-saliency-aware.md
+          - HDR & sampling: usage/vmaf-tune-hdr-and-sampling.md
+          - FFmpeg wiring: usage/vmaf-tune-ffmpeg.md
+          - Cache: usage/vmaf-tune-cache.md
+          - Bisect: usage/vmaf-tune-bisect.md
+          - Fast NR pre-scoring: usage/vmaf-tune-fast-nr.md
+  - C API:
+      - api/index.md
+      - DNN sessions: api/dnn.md
+      - GPU (CUDA / SYCL): api/gpu.md
+      - MCP C API: api/mcp.md
+      - vmaftune.ladder: api/ladder.md
+      - vmaftune.predict: api/predictor.md
+  - Metrics:
+      - Features: metrics/features.md
+      - ANSNR (removed): metrics/ansnr.md
+      - CAMBI: metrics/cambi.md
+      - DISTS: metrics/dists.md
+      - Motion: metrics/motion.md
+      - MS-SSIM: metrics/ms-ssim.md
+      - PSNR-HVS: metrics/psnr-hvs.md
+      - SpeedQA: metrics/speed_qa.md
+      - SSIM: metrics/ssim.md
+      - SSIMULACRA 2: metrics/ssimulacra2.md
+      - TAD: metrics/tad.md
+      - VIF: metrics/vif.md
+      - VMAF-NEG: metrics/vmaf-neg.md
+      - Confidence Interval: metrics/confidence-interval.md
+      - Bad cases: metrics/bad-cases.md
+      - CTC:
+          - AOM: metrics/ctc/aom.md
+          - NFLX: metrics/ctc/nflx.md
+  - Models:
+      - Overview: models/overview.md
+      - Datasets: models/datasets.md
+  - Backends:
+      - backends/index.md
+      - Kernel scaffolding: backends/kernel-scaffolding.md
+      - x86 SIMD (AVX2 / AVX-512): backends/x86/avx512.md
+      - ARM NEON / SVE2: backends/arm/overview.md
+      - CUDA: backends/cuda/overview.md
+      - NVTX profiling: backends/nvtx/profiling.md
+      - SYCL / oneAPI: backends/sycl/overview.md
+      - SYCL bundling: backends/sycl/bundling.md
+      - HIP (AMD ROCm): backends/hip/overview.md
+      - Metal (Apple Silicon): backends/metal/index.md
+      - Context API contract: backends/context-api-contract.md
+  - MCP:
+      - mcp/index.md
+      - Tool reference: mcp/tools.md
+      - Backend discovery: mcp/backends.md
+      - HTTP transport: mcp/http-transport.md
+      - Embedded server: mcp/embedded.md
+      - Release channel: mcp/release-channel.md
+  - Tiny AI:
+      - ai/index.md
+      - Overview: ai/overview.md
+      - Training: ai/training.md
+      - Training data: ai/training-data.md
+      - Inference: ai/inference.md
+      - Benchmarks: ai/benchmarks.md
+      - Security: ai/security.md
+      - Bisect model quality: ai/bisect-model-quality.md
+      - MOS corpora: ai/mos-corpora.md
+      - Model registry: ai/model-registry.md
+      - Quantization: ai/quantization.md
+      - Quant epsilon: ai/quant-eps.md
+      - Predictor: ai/predictor.md
+      - Predictor v2 (real corpus): ai/predictor-v2-realcorpus-training.md
+      - Signal-mix audit: ai/signal-mix-audit.md
+      - External benchmark wrappers: ai/external-bench.md
+      - Second-opinion features: ai/second-opinion-features.md
+      - MOS label materializer: ai/mos-label-materializer.md
+      - LOSO evaluation: ai/loso-eval.md
+      - Local sidecar training: ai/local-sidecar-training.md
+      - Sidecar online training (k8s): ai/sidecar-online-training.md
+      - Ensemble training kit: ai/ensemble-training-kit.md
+      - Ensemble v2 runbook: ai/ensemble-v2-real-corpus-retrain-runbook.md
+      - FR-from-NR adapter: ai/fr-from-nr-adapter.md
+      - Conformal VQA: ai/conformal-vqa.md
+      - Multi-corpus aggregation: ai/multi-corpus-aggregation.md
+      - Hardware capability priors: ai/hardware-capability-priors.md
+      - Saliency per-block evaluation: ai/saliency-per-mb-eval.md
+      - U2Net-P mirror: ai/u2netp-mirror.md
+      - Extractor template: ai/extractor-template.md
+      - Roadmap: ai/roadmap.md
+      - Scripts env vars: ai/scripts-env-vars.md
+      - Per-PR doc bar: ai/per-pr-doc-bar.md
+      - CHUG ingestion: ai/chug-ingestion.md
+      - Saliency feature materializer: ai/saliency-feature-materializer.md
+      - Tiny blob storage: ai/tiny-blob-storage.md
+      - CHUG HDR validator: ai/chug-hdr-held-out-validator.md
+      - Corpus ingestion:
+          - KonViD-1k: ai/konvid-1k-ingestion.md
+          - KonViD-150k: ai/konvid-150k-ingestion.md
+          - LIVE-VQC: ai/live-vqc-ingestion.md
+          - LSVQ: ai/lsvq-ingestion.md
+          - BVI-DVC: ai/bvi-dvc-corpus-ingestion.md
+          - YouTube-UGC: ai/youtube-ugc-ingestion.md
+          - Waterloo IVC 4K: ai/waterloo-ivc-4k-ingestion.md
+          - K150K dataset: ai/datasets/k150k.md
+      - Model cards:
+          - KonViD MOS head v1: ai/models/konvid_mos_head_v1.md
+          - DISTS-SQ: ai/models/dists_sq.md
+          - FastDVDNet pre: ai/models/fastdvdnet_pre.md
+          - FR regressor v1: ai/models/fr_regressor_v1.md
+          - FR regressor v2: ai/models/fr_regressor_v2.md
+          - FR regressor v2 (codec-aware): ai/models/fr_regressor_v2_codec_aware.md
+          - FR regressor v2 (probabilistic): ai/models/fr_regressor_v2_probabilistic.md
+          - FR regressor v3: ai/models/fr_regressor_v3.md
+          - Learned filter v1: ai/models/learned_filter_v1.md
+          - LPIPS-SQ: ai/models/lpips_sq.md
+          - LPIPS-SQ v1: ai/models/lpips_sq_v1.md
+          - MobileSAL: ai/models/mobilesal.md
+          - NR metric v1: ai/models/nr_metric_v1.md
+          - Saliency student v1: ai/models/saliency_student_v1.md
+          - Saliency student v2: ai/models/saliency_student_v2.md
+          - TransNet v2: ai/models/transnet_v2.md
+          - U2Net-P mirror card: ai/models/u2netp_mirror_card.md
+          - VMAF tiny v2: ai/models/vmaf_tiny_v2.md
+          - VMAF tiny v3: ai/models/vmaf_tiny_v3.md
+          - VMAF tiny v4: ai/models/vmaf_tiny_v4.md
+  - Architecture:
+      - architecture/index.md
+      - C4 context: architecture/c4-context.md
+      - C4 container: architecture/c4-container.md
+      - Workspace layout: architecture/workspace.md
+      - Phase 4b distributed platform: architecture/phase4b-distributed-platform.md
+  - Development:
+      - Engineering principles: principles.md
+      - Build flags: development/build-flags.md
+      - Release: development/release.md
+      - CI: development/ci.md
+      - CI runners: development/ci-runners.md
+      - Cross-backend gate: development/cross-backend-gate.md
+      - Fuzzing: development/fuzzing.md
+      - IDE setup: development/ide-setup.md
+      - oneAPI install: development/oneapi-install.md
+      - SYCL toolchains: development/sycl-toolchains.md
+      - Windows D3D11 import: development/windows-d3d11-import.md
+      - Intel Arc / VAAPI driver priority: development/intel-arc-vaapi-driver-priority.md
+      - FFmpeg patches refresh: development/ffmpeg-patches-refresh.md
+      - GPU backend template: development/gpu-backend-template.md
+      - Upstream watchers: development/upstream-watchers.md
+      - Known upstream bugs: development/known-upstream-bugs.md
+      - OSSF Scorecard: development/ossf-scorecard.md
+      - Dependency bot: development/dependency-bot.md
+      - Project modernization audit: development/project-modernization-audit.md
+      - Self-hosted runner: development/self-hosted-runner.md
+      - Agent dispatch: development/agent-dispatch.md
+      - Agent worktree discipline: development/agent-worktree-discipline.md
+      - Automated rule enforcement: development/automated-rule-enforcement.md
+      - PR body validator: development/pr-body-validator.md
+      - mkdocs strict pre-push hook: development/pre-push-mkdocs-strict.md
+      - Dev MCP container: development/dev-mcp.md
+      - Kubernetes deployment: development/k8s-deployment.md
+      - Operator: development/operator.md
+      - Languages: development/languages.md
+      - Production Docker: development/docker-production.md
+      - Rust guide: development/rust.md
+      - GPU scheduling: development/gpu-scheduling.md
+      - Performance benchmarking: development/perf.md
+      - Deprecations: development/deprecations.md
+      - vmafx-node: development/vmafx-node.md
+      - ADR workflow: development/adr-workflow.md
+      - PR body sentinel guide: development/pr-body-sentinel-guide.md
+      - Test fixtures: development/test-fixtures.md
+      - CI tmate debug: development/ci-tmate-debug.md
+      - eBPF FUSE bypass: development/ebpf-fuse-bypass.md
+      - Performance claims (May 2026): development/perf-claims-2026-05-10.md
+      - Upstream sync reports:
+          - 2026-05-02: sync-upstream/2026-05-02-sync-report.md
+          - 2026-05-03: sync-upstream/2026-05-03-sync-report.md
+      - Upstream ports:
+          - "1b08bb4d (needs manual port)": upstream-ports/1b08bb4d-needs-manual-port.md
+  - Server:
+      - Controller: server/controller.md
+      - gRPC service: server/grpc.md
+      - Worker node: server/node.md
+      - Auth gateway: server/auth.md
+      - Operator: server/operator.md
+      - REST API: server/rest.md
+  - ADRs:
+      # >>> ADR-NAV-GENERATED — do not hand-edit; regenerate with
+      - Overview: adr/README.md
+      - Template: adr/0000-template.md
+      - "0000-0099 — Foundation, build, golden gate":
+        - "ADR-0001: stash-benchmark-noise-file": adr/0001-stash-benchmark-noise-file.md
+        - "ADR-0002: merge-path-master-default": adr/0002-merge-path-master-default.md
+        - "ADR-0003: workingdir2-empty-planning-dir": adr/0003-workingdir2-empty-planning-dir.md
+        - "ADR-0004: auto-push-after-merges": adr/0004-auto-push-after-merges.md
+        - "ADR-0005: framework-adaptation-full-scope": adr/0005-framework-adaptation-full-scope.md
+        - "ADR-0006: cli-precision-17g-default": adr/0006-cli-precision-17g-default.md
+        - "ADR-0007: claude-settings-fresh-rewrite": adr/0007-claude-settings-fresh-rewrite.md
+        - "ADR-0008: readme-fork-rebrand": adr/0008-readme-fork-rebrand.md
+        - "ADR-0009: mcp-server-tool-surface": adr/0009-mcp-server-tool-surface.md
+        - "ADR-0010: sigstore-keyless-signing": adr/0010-sigstore-keyless-signing.md
+        - "ADR-0011: versioning-lusoris-suffix": adr/0011-versioning-lusoris-suffix.md
+        - "ADR-0012: coding-standards-jpl-cert-misra": adr/0012-coding-standards-jpl-cert-misra.md
+        - "ADR-0013: local-dev-distro-matrix": adr/0013-local-dev-distro-matrix.md
+        - "ADR-0014: vscode-clangd-disable-ms-cpp": adr/0014-vscode-clangd-disable-ms-cpp.md
+        - "ADR-0015: ci-matrix-asan-ubsan-tsan": adr/0015-ci-matrix-asan-ubsan-tsan.md
+        - "ADR-0016: sycl-to-master-merge-conflict-policy": adr/0016-sycl-to-master-merge-conflict-policy.md
+        - "ADR-0017: claude-skills-scope": adr/0017-claude-skills-scope.md
+        - "ADR-0018: claude-hooks-scope": adr/0018-claude-hooks-scope.md
+        - "ADR-0019: workingdir2-full-dossier": adr/0019-workingdir2-full-dossier.md
+        - "ADR-0020: tinyai-four-capabilities": adr/0020-tinyai-four-capabilities.md
+        - "ADR-0021: training-stack-pytorch-lightning": adr/0021-training-stack-pytorch-lightning.md
+        - "ADR-0022: inference-runtime-onnx": adr/0022-inference-runtime-onnx.md
+        - "ADR-0023: tinyai-user-surfaces": adr/0023-tinyai-user-surfaces.md
+        - "ADR-0024: netflix-golden-preserved": adr/0024-netflix-golden-preserved.md
+        - "ADR-0025: copyright-handling-dual-notice": adr/0025-copyright-handling-dual-notice.md
+        - "ADR-0026: workspace-relocated-under-python": adr/0026-workspace-relocated-under-python.md
+        - "ADR-0027: non-conservative-image-pins": adr/0027-non-conservative-image-pins.md
+        - "ADR-0028: adr-maintenance-rule": adr/0028-adr-maintenance-rule.md
+        - "ADR-0029: resource-tree-relocated": adr/0029-resource-tree-relocated.md
+        - "ADR-0030: matlab-sources-relocated": adr/0030-matlab-sources-relocated.md
+        - "ADR-0031: fork-docs-moved-under-docs": adr/0031-fork-docs-moved-under-docs.md
+        - "ADR-0032: unittest-script-moved-to-scripts": adr/0032-unittest-script-moved-to-scripts.md
+        - "ADR-0033: codeql-config-moved-to-github": adr/0033-codeql-config-moved-to-github.md
+        - "ADR-0034: single-patches-directory": adr/0034-single-patches-directory.md
+        - "ADR-0035: claude-hooks-schema-fix": adr/0035-claude-hooks-schema-fix.md
+        - "ADR-0036: tinyai-wave1-scope-expansion": adr/0036-tinyai-wave1-scope-expansion.md
+        - "ADR-0037: master-branch-protection": adr/0037-master-branch-protection.md
+        - "ADR-0038: purge-upstream-matlab-mex-binaries": adr/0038-purge-upstream-matlab-mex-binaries.md
+        - "ADR-0039: onnx-runtime-op-walk-registry": adr/0039-onnx-runtime-op-walk-registry.md
+        - "ADR-0040: dnn-session-multi-input-api": adr/0040-dnn-session-multi-input-api.md
+        - "ADR-0041: lpips-sq-extractor": adr/0041-lpips-sq-extractor.md
+        - "ADR-0042: tinyai-docs-required-per-pr": adr/0042-tinyai-docs-required-per-pr.md
+      - "0100-0199 — Doc-substance, fragments, ports":
+        - "ADR-0100: project-wide-doc-substance-rule": adr/0100-project-wide-doc-substance-rule.md
+        - "ADR-0101: sycl-usm-picture-pool": adr/0101-sycl-usm-picture-pool.md
+        - "ADR-0102: dnn-ep-selection-and-fp16-io": adr/0102-dnn-ep-selection-and-fp16-io.md
+        - "ADR-0103: sycl-d3d11-surface-import": adr/0103-sycl-d3d11-surface-import.md
+        - "ADR-0104: picture-pool-always-on": adr/0104-picture-pool-always-on.md
+        - "ADR-0105: copyright-handling-dual-notice": adr/0105-copyright-handling-dual-notice.md
+        - "ADR-0106: adr-maintenance-rule": adr/0106-adr-maintenance-rule.md
+        - "ADR-0107: tinyai-wave1-scope-expansion": adr/0107-tinyai-wave1-scope-expansion.md
+        - "ADR-0108: deep-dive-deliverables-rule": adr/0108-deep-dive-deliverables-rule.md
+        - "ADR-0109: nightly-bisect-model-quality": adr/0109-nightly-bisect-model-quality.md
+        - "ADR-0110: coverage-gate-fprofile-update-atomic": adr/0110-coverage-gate-fprofile-update-atomic.md
+        - "ADR-0111: coverage-gate-gcovr-with-ort": adr/0111-coverage-gate-gcovr-with-ort.md
+        - "ADR-0112: ort-backend-testability-surface": adr/0112-ort-backend-testability-surface.md
+        - "ADR-0113: ort-create-session-fallback-multi-ep-ci": adr/0113-ort-create-session-fallback-multi-ep-ci.md
+        - "ADR-0114: coverage-gate-per-file-overrides": adr/0114-coverage-gate-per-file-overrides.md
+        - "ADR-0115: ci-trigger-master-only-and-matrix-consolidation": adr/0115-ci-trigger-master-only-and-matrix-consolidation.md
+        - "ADR-0116: ci-workflow-naming-convention": adr/0116-ci-workflow-naming-convention.md
+        - "ADR-0117: coverage-gate-warning-noise-suppression": adr/0117-coverage-gate-warning-noise-suppression.md
+        - "ADR-0118: ffmpeg-patch-series-application": adr/0118-ffmpeg-patch-series-application.md
+        - "ADR-0119: cli-precision-default-revert": adr/0119-cli-precision-default-revert.md
+        - "ADR-0120: ai-enabled-ci-matrix-legs": adr/0120-ai-enabled-ci-matrix-legs.md
+        - "ADR-0121: windows-gpu-build-only-legs": adr/0121-windows-gpu-build-only-legs.md
+        - "ADR-0122: cuda-gencode-coverage-and-init-hardening": adr/0122-cuda-gencode-coverage-and-init-hardening.md
+        - "ADR-0123: cuda-post-cubin-load-regression-32b115df": adr/0123-cuda-post-cubin-load-regression-32b115df.md
+        - "ADR-0124: automated-rule-enforcement": adr/0124-automated-rule-enforcement.md
+        - "ADR-0125: ms-ssim-decimate-simd": adr/0125-ms-ssim-decimate-simd.md
+        - "ADR-0126: ssimulacra2-extractor": adr/0126-ssimulacra2-extractor.md
+        - "ADR-0127: vulkan-compute-backend": adr/0127-vulkan-compute-backend.md
+        - "ADR-0128: embedded-mcp-in-libvmaf": adr/0128-embedded-mcp-in-libvmaf.md
+        - "ADR-0129: tinyai-ptq-quantization": adr/0129-tinyai-ptq-quantization.md
+        - "ADR-0130: ssimulacra2-scalar-implementation": adr/0130-ssimulacra2-scalar-implementation.md
+        - "ADR-0131: port-netflix-1382-cumemfree": adr/0131-port-netflix-1382-cumemfree.md
+        - "ADR-0132: port-netflix-1406-feature-collector-model-list": adr/0132-port-netflix-1406-feature-collector-model-list.md
+        - "ADR-0133: ci-clang-tidy-push-delta": adr/0133-ci-clang-tidy-push-delta.md
+        - "ADR-0134: port-netflix-1451-meson-declare-dependency": adr/0134-port-netflix-1451-meson-declare-dependency.md
+        - "ADR-0135: port-netflix-1424-expose-builtin-model-versions": adr/0135-port-netflix-1424-expose-builtin-model-versions.md
+        - "ADR-0136: ci-deliverables-checker-strip-markdown": adr/0136-ci-deliverables-checker-strip-markdown.md
+        - "ADR-0137: thread-local-locale-for-numeric-io": adr/0137-thread-local-locale-for-numeric-io.md
+        - "ADR-0138: iqa-convolve-avx2-bitexact-double": adr/0138-iqa-convolve-avx2-bitexact-double.md
+        - "ADR-0139: ssim-simd-bitexact-double": adr/0139-ssim-simd-bitexact-double.md
+        - "ADR-0140: simd-dx-framework": adr/0140-simd-dx-framework.md
+        - "ADR-0141: touched-file-cleanup-rule": adr/0141-touched-file-cleanup-rule.md
+        - "ADR-0142: port-netflix-18e8f1c5-vif-sigma-nsq": adr/0142-port-netflix-18e8f1c5-vif-sigma-nsq.md
+        - "ADR-0143: port-netflix-f3a628b4-generalized-avx-convolve": adr/0143-port-netflix-f3a628b4-generalized-avx-convolve.md
+        - "ADR-0145: motion-v2-neon-bitexact": adr/0145-motion-v2-neon-bitexact.md
+        - "ADR-0146: nolint-sweep-function-size": adr/0146-nolint-sweep-function-size.md
+        - "ADR-0147: thread-pool-job-pool": adr/0147-thread-pool-job-pool.md
+        - "ADR-0148: iqa-rename-and-cleanup": adr/0148-iqa-rename-and-cleanup.md
+        - "ADR-0149: port-netflix-1376-fifo-semaphore": adr/0149-port-netflix-1376-fifo-semaphore.md
+        - "ADR-0150: port-netflix-1472-cuda-windows": adr/0150-port-netflix-1472-cuda-windows.md
+        - "ADR-0151: i686-ci-netflix-1481": adr/0151-i686-ci-netflix-1481.md
+        - "ADR-0152: vmaf-read-pictures-monotonic-index": adr/0152-vmaf-read-pictures-monotonic-index.md
+        - "ADR-0153: float-ms-ssim-min-dim-netflix-1414": adr/0153-float-ms-ssim-min-dim-netflix-1414.md
+        - "ADR-0154: score-pooled-eagain-netflix-755": adr/0154-score-pooled-eagain-netflix-755.md
+        - "ADR-0155: adm-i4-rounding-deferred-netflix-955": adr/0155-adm-i4-rounding-deferred-netflix-955.md
+        - "ADR-0156: cuda-graceful-error-propagation-netflix-1420": adr/0156-cuda-graceful-error-propagation-netflix-1420.md
+        - "ADR-0157: cuda-preallocation-leak-netflix-1300": adr/0157-cuda-preallocation-leak-netflix-1300.md
+        - "ADR-0158: netflix-1486-motion-updates-verified-present": adr/0158-netflix-1486-motion-updates-verified-present.md
+        - "ADR-0159: psnr-hvs-avx2-bitexact": adr/0159-psnr-hvs-avx2-bitexact.md
+        - "ADR-0160: psnr-hvs-neon-bitexact": adr/0160-psnr-hvs-neon-bitexact.md
+        - "ADR-0161: ssimulacra2-simd-bitexact": adr/0161-ssimulacra2-simd-bitexact.md
+        - "ADR-0162: ssimulacra2-iir-blur-simd": adr/0162-ssimulacra2-iir-blur-simd.md
+        - "ADR-0163: ssimulacra2-ptlr-simd": adr/0163-ssimulacra2-ptlr-simd.md
+        - "ADR-0164: ssimulacra2-snapshot-gate": adr/0164-ssimulacra2-snapshot-gate.md
+        - "ADR-0165: state-md-bug-tracking": adr/0165-state-md-bug-tracking.md
+        - "ADR-0166: mcp-server-release-channel": adr/0166-mcp-server-release-channel.md
+        - "ADR-0167: doc-drift-enforcement": adr/0167-doc-drift-enforcement.md
+        - "ADR-0168: tinyai-konvid-baselines": adr/0168-tinyai-konvid-baselines.md
+        - "ADR-0169: onnx-allowlist-loop-if": adr/0169-onnx-allowlist-loop-if.md
+        - "ADR-0170: vmaf-pre-10bit-chroma": adr/0170-vmaf-pre-10bit-chroma.md
+        - "ADR-0171: bounded-loop-trip-count": adr/0171-bounded-loop-trip-count.md
+        - "ADR-0172: mcp-describe-worst-frames": adr/0172-mcp-describe-worst-frames.md
+        - "ADR-0173: ptq-int8-audit-impl": adr/0173-ptq-int8-audit-impl.md
+        - "ADR-0174: first-model-quantisation": adr/0174-first-model-quantisation.md
+        - "ADR-0175: vulkan-backend-scaffold": adr/0175-vulkan-backend-scaffold.md
+        - "ADR-0176: vulkan-vif-cross-backend-gate": adr/0176-vulkan-vif-cross-backend-gate.md
+        - "ADR-0177: vulkan-motion-kernel": adr/0177-vulkan-motion-kernel.md
+        - "ADR-0178: vulkan-adm-kernel": adr/0178-vulkan-adm-kernel.md
+        - "ADR-0179: float-moment-simd": adr/0179-float-moment-simd.md
+        - "ADR-0180: cpu-coverage-audit": adr/0180-cpu-coverage-audit.md
+        - "ADR-0181: feature-characteristics-registry": adr/0181-feature-characteristics-registry.md
+        - "ADR-0182: gpu-long-tail-batch-1": adr/0182-gpu-long-tail-batch-1.md
+        - "ADR-0183: ffmpeg-libvmaf-sycl-filter": adr/0183-ffmpeg-libvmaf-sycl-filter.md
+        - "ADR-0184: vulkan-image-import-scaffold": adr/0184-vulkan-image-import-scaffold.md
+        - "ADR-0185: vulkan-hide-volk-symbols": adr/0185-vulkan-hide-volk-symbols.md
+        - "ADR-0186: vulkan-image-import-impl": adr/0186-vulkan-image-import-impl.md
+        - "ADR-0187: ciede-vulkan": adr/0187-ciede-vulkan.md
+        - "ADR-0188: gpu-long-tail-batch-2": adr/0188-gpu-long-tail-batch-2.md
+        - "ADR-0189: ssim-vulkan": adr/0189-ssim-vulkan.md
+        - "ADR-0190: ms-ssim-vulkan": adr/0190-ms-ssim-vulkan.md
+        - "ADR-0191: psnr-hvs-vulkan": adr/0191-psnr-hvs-vulkan.md
+        - "ADR-0192: gpu-long-tail-batch-3": adr/0192-gpu-long-tail-batch-3.md
+        - "ADR-0193: motion-v2-vulkan": adr/0193-motion-v2-vulkan.md
+        - "ADR-0194: float-ansnr-gpu": adr/0194-float-ansnr-gpu.md
+        - "ADR-0195: float-psnr-gpu": adr/0195-float-psnr-gpu.md
+        - "ADR-0196: float-motion-gpu": adr/0196-float-motion-gpu.md
+        - "ADR-0197: float-vif-gpu": adr/0197-float-vif-gpu.md
+        - "ADR-0198: volk-priv-remap-static-archive": adr/0198-volk-priv-remap-static-archive.md
+        - "ADR-0199: float-adm-vulkan": adr/0199-float-adm-vulkan.md
+      - "0200-0299 — GPU coverage, tiny-AI scaffolding":
+        - "ADR-0200: volk-priv-remap-pkgconfig-leak-fix": adr/0200-volk-priv-remap-pkgconfig-leak-fix.md
+        - "ADR-0201: ssimulacra2-vulkan-kernel": adr/0201-ssimulacra2-vulkan-kernel.md
+        - "ADR-0202: float-adm-cuda-sycl": adr/0202-float-adm-cuda-sycl.md
+        - "ADR-0203: tiny-ai-training-prep-impl": adr/0203-tiny-ai-training-prep-impl.md
+        - "ADR-0205: cambi-gpu-feasibility": adr/0205-cambi-gpu-feasibility.md
+        - "ADR-0206: ssimulacra2-cuda-sycl": adr/0206-ssimulacra2-cuda-sycl.md
+        - "ADR-0207: tinyai-qat-design": adr/0207-tinyai-qat-design.md
+        - "ADR-0208: learned-filter-v1-qat-impl": adr/0208-learned-filter-v1-qat-impl.md
+        - "ADR-0209: mcp-embedded-scaffold": adr/0209-mcp-embedded-scaffold.md
+        - "ADR-0210: cambi-vulkan-integration": adr/0210-cambi-vulkan-integration.md
+        - "ADR-0211: model-registry-sigstore": adr/0211-model-registry-sigstore.md
+        - "ADR-0212: hip-backend-scaffold": adr/0212-hip-backend-scaffold.md
+        - "ADR-0213: ssimulacra2-sve2": adr/0213-ssimulacra2-sve2.md
+        - "ADR-0214: gpu-parity-ci-gate": adr/0214-gpu-parity-ci-gate.md
+        - "ADR-0215: fastdvdnet-pre-filter": adr/0215-fastdvdnet-pre-filter.md
+        - "ADR-0216: vulkan-chroma-psnr": adr/0216-vulkan-chroma-psnr.md
+        - "ADR-0217: sycl-toolchain-cleanup": adr/0217-sycl-toolchain-cleanup.md
+        - "ADR-0218: mobilesal-saliency-extractor": adr/0218-mobilesal-saliency-extractor.md
+        - "ADR-0219: motion3-gpu-coverage": adr/0219-motion3-gpu-coverage.md
+        - "ADR-0220: sycl-fp64-fallback": adr/0220-sycl-fp64-fallback.md
+        - "ADR-0221: changelog-adr-fragment-pattern": adr/0221-changelog-adr-fragment-pattern.md
+        - "ADR-0222: vmaf-per-shot-tool": adr/0222-vmaf-per-shot-tool.md
+        - "ADR-0223: transnet-v2-shot-detector": adr/0223-transnet-v2-shot-detector.md
+        - "ADR-0234: gpu-gen-ulp-calibration": adr/0234-gpu-gen-ulp-calibration.md
+        - "ADR-0235: codec-aware-fr-regressor": adr/0235-codec-aware-fr-regressor.md
+        - "ADR-0236: dists-extractor": adr/0236-dists-extractor.md
+        - "ADR-0237: quality-aware-encode-automation": adr/0237-quality-aware-encode-automation.md
+        - "ADR-0238: vulkan-picture-preallocation": adr/0238-vulkan-picture-preallocation.md
+        - "ADR-0239: gpu-picture-pool-dedup": adr/0239-gpu-picture-pool-dedup.md
+        - "ADR-0240: gpu-backend-pattern-doc": adr/0240-gpu-backend-pattern-doc.md
+        - "ADR-0241: hip-first-consumer-psnr": adr/0241-hip-first-consumer-psnr.md
+        - "ADR-0242: tiny-ai-netflix-training-corpus": adr/0242-tiny-ai-netflix-training-corpus.md
+        - "ADR-0243: enable-lcs-gpu": adr/0243-enable-lcs-gpu.md
+        - "ADR-0244: vmaf-tiny-v2": adr/0244-vmaf-tiny-v2.md
+        - "ADR-0245: simd-bitexact-test-harness": adr/0245-simd-bitexact-test-harness.md
+        - "ADR-0246: gpu-kernel-template": adr/0246-gpu-kernel-template.md
+        - "ADR-0247: vmaf-roi-tool": adr/0247-vmaf-roi-tool.md
+        - "ADR-0248: nr-metric-v1-ptq": adr/0248-nr-metric-v1-ptq.md
+        - "ADR-0249: fr-regressor-v1": adr/0249-fr-regressor-v1.md
+        - "ADR-0250: tiny-ai-extractor-template": adr/0250-tiny-ai-extractor-template.md
+        - "ADR-0251: vulkan-async-pending-fence": adr/0251-vulkan-async-pending-fence.md
+        - "ADR-0252: ssimulacra2-host-xyb-simd": adr/0252-ssimulacra2-host-xyb-simd.md
+        - "ADR-0253: speed-qa-extractor": adr/0253-speed-qa-extractor.md
+        - "ADR-0254: hip-second-consumer-float-psnr": adr/0254-hip-second-consumer-float-psnr.md
+        - "ADR-0255: fastdvdnet-pre-real-weights": adr/0255-fastdvdnet-pre-real-weights.md
+        - "ADR-0256: vulkan-submit-opt-batch": adr/0256-vulkan-submit-opt-batch.md
+        - "ADR-0257: mobilesal-real-weights-deferred": adr/0257-mobilesal-real-weights-deferred.md
+        - "ADR-0258: onnx-allowlist-resize": adr/0258-onnx-allowlist-resize.md
+        - "ADR-0259: hip-third-consumer-ciede": adr/0259-hip-third-consumer-ciede.md
+        - "ADR-0260: hip-fourth-consumer-float-moment": adr/0260-hip-fourth-consumer-float-moment.md
+        - "ADR-0261: transnet-v2-real-weights": adr/0261-transnet-v2-real-weights.md
+        - "ADR-0262: bisect-cache-logical-comparison": adr/0262-bisect-cache-logical-comparison.md
+        - "ADR-0263: ossf-scorecard-policy": adr/0263-ossf-scorecard-policy.md
+        - "ADR-0264: vulkan-1-4-bump-blocked-on-fp-contraction": adr/0264-vulkan-1-4-bump-blocked-on-fp-contraction.md
+        - "ADR-0265: u2netp-saliency-replacement-blocked": adr/0265-u2netp-saliency-replacement-blocked.md
+        - "ADR-0266: hip-fifth-consumer-float-ansnr": adr/0266-hip-fifth-consumer-float-ansnr.md
+        - "ADR-0267: hip-sixth-consumer-motion-v2": adr/0267-hip-sixth-consumer-motion-v2.md
+        - "ADR-0269: vif-ciede-precise-step-a": adr/0269-vif-ciede-precise-step-a.md
+        - "ADR-0270: fuzzing-scaffold": adr/0270-fuzzing-scaffold.md
+        - "ADR-0271: cuda-drain-batch-ms-ssim": adr/0271-cuda-drain-batch-ms-ssim.md
+        - "ADR-0272: fr-regressor-v2-codec-aware-scaffold": adr/0272-fr-regressor-v2-codec-aware-scaffold.md
+        - "ADR-0273: hip-seventh-consumer-float-motion": adr/0273-hip-seventh-consumer-float-motion.md
+        - "ADR-0274: hip-eighth-consumer-float-ssim": adr/0274-hip-eighth-consumer-float-ssim.md
+        - "ADR-0275: vmaf-tiny-v3-v4-ptq": adr/0275-vmaf-tiny-v3-v4-ptq.md
+        - "ADR-0276: vmaf-tune-fast-path": adr/0276-vmaf-tune-fast-path.md
+        - "ADR-0277: ffmpeg-patches-refresh-2026-05-04": adr/0277-ffmpeg-patches-refresh-2026-05-04.md
+        - "ADR-0278: t7-5-nolint-sweep": adr/0278-t7-5-nolint-sweep.md
+        - "ADR-0279: vmaf-tune-codec-adapter-libaom": adr/0279-vmaf-tune-codec-adapter-libaom.md
+        - "ADR-0281: vmaf-tune-qsv-adapters": adr/0281-vmaf-tune-qsv-adapters.md
+        - "ADR-0282: vmaf-tune-amf-adapters": adr/0282-vmaf-tune-amf-adapters.md
+        - "ADR-0283: vmaf-tune-videotoolbox-adapters": adr/0283-vmaf-tune-videotoolbox-adapters.md
+        - "ADR-0285: vmaf-tune-vvenc-nnvc": adr/0285-vmaf-tune-vvenc-nnvc.md
+        - "ADR-0286: saliency-student-fork-trained-on-duts": adr/0286-saliency-student-fork-trained-on-duts.md
+        - "ADR-0287: vmaf-tiny-v5-corpus-expansion": adr/0287-vmaf-tiny-v5-corpus-expansion.md
+        - "ADR-0288: vmaf-tune-codec-adapter-x265": adr/0288-vmaf-tune-codec-adapter-x265.md
+        - "ADR-0289: vmaf-tune-resolution-aware": adr/0289-vmaf-tune-resolution-aware.md
+        - "ADR-0290: vmaf-tune-nvenc-adapters": adr/0290-vmaf-tune-nvenc-adapters.md
+        - "ADR-0291: fr-regressor-v2-prod-ship": adr/0291-fr-regressor-v2-prod-ship.md
+        - "ADR-0293: vmaf-tune-saliency-aware": adr/0293-vmaf-tune-saliency-aware.md
+        - "ADR-0294: vmaf-tune-codec-adapter-svtav1": adr/0294-vmaf-tune-codec-adapter-svtav1.md
+        - "ADR-0295: vmaf-tune-phase-e-bitrate-ladder": adr/0295-vmaf-tune-phase-e-bitrate-ladder.md
+        - "ADR-0296: vmaf-roi-saliency-weighted": adr/0296-vmaf-roi-saliency-weighted.md
+        - "ADR-0297: vmaf-tune-encode-multi-codec": adr/0297-vmaf-tune-encode-multi-codec.md
+        - "ADR-0298: vmaf-tune-cache": adr/0298-vmaf-tune-cache.md
+        - "ADR-0299: vmaf-tune-gpu-score": adr/0299-vmaf-tune-gpu-score.md
+      - "0300-0399 — vmaf-tune, corpus ingestion, CI gates":
+        - "ADR-0300: vmaf-tune-hdr-aware": adr/0300-vmaf-tune-hdr-aware.md
+        - "ADR-0301: vmaf-tune-sample-clip": adr/0301-vmaf-tune-sample-clip.md
+        - "ADR-0302: encoder-vocab-v3-schema-expansion": adr/0302-encoder-vocab-v3-schema-expansion.md
+        - "ADR-0303: fr-regressor-v2-ensemble-prod-flip": adr/0303-fr-regressor-v2-ensemble-prod-flip.md
+        - "ADR-0304: vmaf-tune-fast-path-prod-wiring": adr/0304-vmaf-tune-fast-path-prod-wiring.md
+        - "ADR-0305: encoder-knob-space-pareto-analysis": adr/0305-encoder-knob-space-pareto-analysis.md
+        - "ADR-0306: vmaf-tune-coarse-to-fine": adr/0306-vmaf-tune-coarse-to-fine.md
+        - "ADR-0307: vmaf-tune-ladder-default-sampler": adr/0307-vmaf-tune-ladder-default-sampler.md
+        - "ADR-0308: encoder-knob-sweep-recipe-regression-policy": adr/0308-encoder-knob-sweep-recipe-regression-policy.md
+        - "ADR-0309: fr-regressor-v2-ensemble-real-corpus-retrain": adr/0309-fr-regressor-v2-ensemble-real-corpus-retrain.md
+        - "ADR-0310: bvi-dvc-corpus-ingestion": adr/0310-bvi-dvc-corpus-ingestion.md
+        - "ADR-0311: libfuzzer-harness-expansion": adr/0311-libfuzzer-harness-expansion.md
+        - "ADR-0312: ffmpeg-patches-vmaf-tune-integration": adr/0312-ffmpeg-patches-vmaf-tune-integration.md
+        - "ADR-0313: ci-required-checks-aggregator": adr/0313-ci-required-checks-aggregator.md
+        - "ADR-0314: vmaf-tune-score-backend-vulkan": adr/0314-vmaf-tune-score-backend-vulkan.md
+        - "ADR-0315: vendor-neutral-vvc-encode-strategy": adr/0315-vendor-neutral-vvc-encode-strategy.md
+        - "ADR-0316: cli-parse-long-only-error-fix": adr/0316-cli-parse-long-only-error-fix.md
+        - "ADR-0317: ci-doc-only-pr-flake-fix": adr/0317-ci-doc-only-pr-flake-fix.md
+        - "ADR-0318: ensemble-retrain-harness-fix": adr/0318-ensemble-retrain-harness-fix.md
+        - "ADR-0319: ensemble-loso-trainer-real-impl": adr/0319-ensemble-loso-trainer-real-impl.md
+        - "ADR-0320: fr-regressor-v2-ensemble-seed-flip": adr/0320-fr-regressor-v2-ensemble-seed-flip.md
+        - "ADR-0321: fr-regressor-v2-ensemble-full-prod-flip": adr/0321-fr-regressor-v2-ensemble-full-prod-flip.md
+        - "ADR-0323: fr-regressor-v3-train-and-register": adr/0323-fr-regressor-v3-train-and-register.md
+        - "ADR-0324: ensemble-training-kit": adr/0324-ensemble-training-kit.md
+        - "ADR-0325: konvid-150k-corpus-ingestion": adr/0325-konvid-150k-corpus-ingestion.md
+        - "ADR-0326: vmaf-tune-phase-b-bisect": adr/0326-vmaf-tune-phase-b-bisect.md
+        - "ADR-0328: cambi-cluster-port-skip-shared-header-rename": adr/0328-cambi-cluster-port-skip-shared-header-rename.md
+        - "ADR-0331: skip-ci-on-draft-prs": adr/0331-skip-ci-on-draft-prs.md
+        - "ADR-0332: agent-worktree-drift-hard-guard": adr/0332-agent-worktree-drift-hard-guard.md
+        - "ADR-0333: vmaf-tune-multi-pass-encoding": adr/0333-vmaf-tune-multi-pass-encoding.md
+        - "ADR-0334: state-md-touch-check-ci-gate": adr/0334-state-md-touch-check-ci-gate.md
+        - "ADR-0335: hardware-capability-priors": adr/0335-hardware-capability-priors.md
+        - "ADR-0336: konvid-mos-head-v1": adr/0336-konvid-mos-head-v1.md
+        - "ADR-0337: motion-v2-public-api-options": adr/0337-motion-v2-public-api-options.md
+        - "ADR-0338: macos-vulkan-via-moltenvk-lane": adr/0338-macos-vulkan-via-moltenvk-lane.md
+        - "ADR-0339: av1-videotoolbox-placeholder-adapter": adr/0339-av1-videotoolbox-placeholder-adapter.md
+        - "ADR-0340: multi-corpus-aggregation": adr/0340-multi-corpus-aggregation.md
+        - "ADR-0341: ci-paths-ignore-doc-only-prs": adr/0341-ci-paths-ignore-doc-only-prs.md
+        - "ADR-0345: cambi-gpu-port-strategy": adr/0345-cambi-gpu-port-strategy.md
+        - "ADR-0346: fr-features-from-nr-corpus": adr/0346-fr-features-from-nr-corpus.md
+        - "ADR-0347: sanitizer-matrix-test-scope": adr/0347-sanitizer-matrix-test-scope.md
+        - "ADR-0348: codeql-poorly-documented-function-suppressed": adr/0348-codeql-poorly-documented-function-suppressed.md
+        - "ADR-0349: fr-regressor-v3-namespace": adr/0349-fr-regressor-v3-namespace.md
+        - "ADR-0350: psnr-hvs-avx512-ceiling": adr/0350-psnr-hvs-avx512-ceiling.md
+        - "ADR-0351: cuda-chroma-psnr": adr/0351-cuda-chroma-psnr.md
+        - "ADR-0352: vulkan-submit-pool-pr-a-adm-motion-psnr": adr/0352-vulkan-submit-pool-pr-a-adm-motion-psnr.md
+        - "ADR-0353: vulkan-submit-pool-pr-b-six-kernels": adr/0353-vulkan-submit-pool-pr-b-six-kernels.md
+        - "ADR-0354: vulkan-submit-pool-pr-c-four-kernels": adr/0354-vulkan-submit-pool-pr-c-four-kernels.md
+        - "ADR-0355: symphony-agent-dispatch-infra": adr/0355-symphony-agent-dispatch-infra.md
+        - "ADR-0356: vulkan-two-level-gpu-reduction": adr/0356-vulkan-two-level-gpu-reduction.md
+        - "ADR-0357: vulkan-readback-alloc-flag": adr/0357-vulkan-readback-alloc-flag.md
+        - "ADR-0358: cuda-motion-race-and-precision-fixes": adr/0358-cuda-motion-race-and-precision-fixes.md
+        - "ADR-0359: arc-runners-pilot": adr/0359-arc-runners-pilot.md
+        - "ADR-0360: cambi-cuda": adr/0360-cambi-cuda.md
+        - "ADR-0361: metal-compute-backend": adr/0361-metal-compute-backend.md
+        - "ADR-0362: k150k-corpus-integration": adr/0362-k150k-corpus-integration.md
+        - "ADR-0363: renovate-replaces-dependabot": adr/0363-renovate-replaces-dependabot.md
+        - "ADR-0364: saliency-student-v2-resize-decoder": adr/0364-saliency-student-v2-resize-decoder.md
+        - "ADR-0365: coreml-ep-wiring": adr/0365-coreml-ep-wiring.md
+        - "ADR-0366: corpus-schema-v3": adr/0366-corpus-schema-v3.md
+        - "ADR-0367: lsvq-corpus-ingestion": adr/0367-lsvq-corpus-ingestion.md
+        - "ADR-0368: external-bench-wrapper-only": adr/0368-external-bench-wrapper-only.md
+        - "ADR-0369: waterloo-ivc-4k-corpus-ingestion": adr/0369-waterloo-ivc-4k-corpus-ingestion.md
+        - "ADR-0370: live-vqc-corpus-ingestion": adr/0370-live-vqc-corpus-ingestion.md
+        - "ADR-0371: corpus-ingest-base-class": adr/0371-corpus-ingest-base-class.md
+        - "ADR-0372: hip-batch1-integer-psnr-float-ansnr": adr/0372-hip-batch1-integer-psnr-float-ansnr.md
+        - "ADR-0373: hip-batch2-float-motion": adr/0373-hip-batch2-float-motion.md
+        - "ADR-0374: disabled-build-enosys-contract": adr/0374-disabled-build-enosys-contract.md
+        - "ADR-0375: hip-batch3-float-moment-float-ssim": adr/0375-hip-batch3-float-moment-float-ssim.md
+        - "ADR-0376: vulkan-void-to-int-buffer-invalidate": adr/0376-vulkan-void-to-int-buffer-invalidate.md
+        - "ADR-0377: hip-batch4-ciede-motion-v2": adr/0377-hip-batch4-ciede-motion-v2.md
+        - "ADR-0378: picture-stream-non-blocking": adr/0378-picture-stream-non-blocking.md
+        - "ADR-0379: libvmaf-symbol-visibility": adr/0379-libvmaf-symbol-visibility.md
+        - "ADR-0380: ffmpeg-patches-hip-backend-selector": adr/0380-ffmpeg-patches-hip-backend-selector.md
+        - "ADR-0381: vulkan-vif-scale-precision": adr/0381-vulkan-vif-scale-precision.md
+        - "ADR-0382: y4m-neg-dimension-rejection": adr/0382-y4m-neg-dimension-rejection.md
+        - "ADR-0383: k150k-parallel-cpu-driver": adr/0383-k150k-parallel-cpu-driver.md
+        - "ADR-0384: shfmt-src-hook-and-cache-key-fix": adr/0384-shfmt-src-hook-and-cache-key-fix.md
+        - "ADR-0385: fex-dedup-by-provided-feature": adr/0385-fex-dedup-by-provided-feature.md
+        - "ADR-0386: adr-numbering-collision-prevention": adr/0386-adr-numbering-collision-prevention.md
+        - "ADR-0387: renovate-github-app-migration": adr/0387-renovate-github-app-migration.md
+        - "ADR-0388: bristol-bvi-cc-ingest": adr/0388-bristol-bvi-cc-ingest.md
+        - "ADR-0389: vmaf-tiny-v3-mlp-medium": adr/0389-vmaf-tiny-v3-mlp-medium.md
+        - "ADR-0390: vmaf-tiny-v4-mlp-large": adr/0390-vmaf-tiny-v4-mlp-large.md
+        - "ADR-0391: ciede-vulkan-nvidia-f32-f64-precision-gap": adr/0391-ciede-vulkan-nvidia-f32-f64-precision-gap.md
+        - "ADR-0392: vmaf-tune-phase-d-per-shot": adr/0392-vmaf-tune-phase-d-per-shot.md
+        - "ADR-0393: fr-regressor-v2-probabilistic": adr/0393-fr-regressor-v2-probabilistic.md
+        - "ADR-0394: local-sidecar-training": adr/0394-local-sidecar-training.md
+        - "ADR-0395: predictor-stub-models-policy": adr/0395-predictor-stub-models-policy.md
+        - "ADR-0396: video-saliency-extension": adr/0396-video-saliency-extension.md
+        - "ADR-0397: vmaf-tune-phase-f-auto": adr/0397-vmaf-tune-phase-f-auto.md
+        - "ADR-0398: mytestcase-migration-partial-port": adr/0398-mytestcase-migration-partial-port.md
+        - "ADR-0399: vmaftune-codec-adapter-runtime-contract": adr/0399-vmaftune-codec-adapter-runtime-contract.md
+      - "0400-0499 — GPU parity, ffmpeg patches, MCP runtime":
+        - "ADR-0400: encoder-internal-stats-capture": adr/0400-encoder-internal-stats-capture.md
+        - "ADR-0401: libvmaf-wasm-target": adr/0401-libvmaf-wasm-target.md
+        - "ADR-0402: mcp-runtime-v2": adr/0402-mcp-runtime-v2.md
+        - "ADR-0403: mkdocs-strict-gate-validation-policy": adr/0403-mkdocs-strict-gate-validation-policy.md
+        - "ADR-0404: nightly-fuzz-triage-keep-gates": adr/0404-nightly-fuzz-triage-keep-gates.md
+        - "ADR-0405: openvino-npu-ep-wiring": adr/0405-openvino-npu-ep-wiring.md
+        - "ADR-0406: sycl-adm-dwt-group-load-deferral": adr/0406-sycl-adm-dwt-group-load-deferral.md
+        - "ADR-0407: adaptivecpp-second-sycl-toolchain": adr/0407-adaptivecpp-second-sycl-toolchain.md
+        - "ADR-0408: ffmpeg-libvmaf-cuda-backend-selector": adr/0408-ffmpeg-libvmaf-cuda-backend-selector.md
+        - "ADR-0409: ffmpeg-patches-surface-gate": adr/0409-ffmpeg-patches-surface-gate.md
+        - "ADR-0410: ssimulacra2-cuda-leaks-perf": adr/0410-ssimulacra2-cuda-leaks-perf.md
+        - "ADR-0412: u2netp-fork-mirror-scaffold": adr/0412-u2netp-fork-mirror-scaffold.md
+        - "ADR-0413: youtube-ugc-corpus-ingestion": adr/0413-youtube-ugc-corpus-ingestion.md
+        - "ADR-0414: saliency-roi-x265-svtav1-vvenc": adr/0414-saliency-roi-x265-svtav1-vvenc.md
+        - "ADR-0415: cambi-sycl-port": adr/0415-cambi-sycl-port.md
+        - "ADR-0416: vif-upstream-onthefly-filter-sync": adr/0416-vif-upstream-onthefly-filter-sync.md
+        - "ADR-0417: tiny-ai-netflix-training-scaffold-pr": adr/0417-tiny-ai-netflix-training-scaffold-pr.md
+        - "ADR-0418: macos-test-recal-post-vif-sync": adr/0418-macos-test-recal-post-vif-sync.md
+        - "ADR-0419: sve2-probe-darwin-gate": adr/0419-sve2-probe-darwin-gate.md
+        - "ADR-0420: metal-backend-runtime-t8-1b": adr/0420-metal-backend-runtime-t8-1b.md
+        - "ADR-0421: metal-first-kernel-motion-v2": adr/0421-metal-first-kernel-motion-v2.md
+        - "ADR-0422: cli-hip-metal-backend-selectors": adr/0422-cli-hip-metal-backend-selectors.md
+        - "ADR-0423: metal-iosurface-import-scaffold": adr/0423-metal-iosurface-import-scaffold.md
+        - "ADR-0424: vmaf-tune-corpus-benchmark": adr/0424-vmaf-tune-corpus-benchmark.md
+        - "ADR-0425: vmaf-roi-score-saliency-materialiser": adr/0425-vmaf-roi-score-saliency-materialiser.md
+        - "ADR-0426: chug-hdr-corpus-ingestion": adr/0426-chug-hdr-corpus-ingestion.md
+        - "ADR-0427: chug-hdr-feature-materialisation": adr/0427-chug-hdr-feature-materialisation.md
+        - "ADR-0428: vmaf-tune-auto-winner-selection": adr/0428-vmaf-tune-auto-winner-selection.md
+        - "ADR-0429: testdata-bench-perf-portability": adr/0429-testdata-bench-perf-portability.md
+        - "ADR-0430: saliency-rgb-ingest-and-ssimulacra2-docs": adr/0430-saliency-rgb-ingest-and-ssimulacra2-docs.md
+        - "ADR-0431: fr-from-nr-cuda-feature-split": adr/0431-fr-from-nr-cuda-feature-split.md
+        - "ADR-0432: roi-score-high-bit-depth-mask": adr/0432-roi-score-high-bit-depth-mask.md
+        - "ADR-0433: chug-content-splits-and-hdr-audit": adr/0433-chug-content-splits-and-hdr-audit.md
+        - "ADR-0434: chug-parquet-metadata-enrichment": adr/0434-chug-parquet-metadata-enrichment.md
+        - "ADR-0435: pr-body-pre-push-validation": adr/0435-pr-body-pre-push-validation.md
+        - "ADR-0436: mcp-backend-selector-parity": adr/0436-mcp-backend-selector-parity.md
+        - "ADR-0437: metal-public-header-install-and-import-state-declaration": adr/0437-metal-public-header-install-and-import-state-declaration.md
+        - "ADR-0438: cli-parse-short-opt-handler-coverage": adr/0438-cli-parse-short-opt-handler-coverage.md
+        - "ADR-0444: saliency-student-v2-production-promotion": adr/0444-saliency-student-v2-production-promotion.md
+        - "ADR-0445: vulkan-pipeline-cache-persistence": adr/0445-vulkan-pipeline-cache-persistence.md
+        - "ADR-0446: extractor-hdr-and-hfr-feature-options": adr/0446-extractor-hdr-and-hfr-feature-options.md
+        - "ADR-0447: motion-hfr-under-report": adr/0447-motion-hfr-under-report.md
+        - "ADR-0448: active-upstream-monitoring-discipline": adr/0448-active-upstream-monitoring-discipline.md
+        - "ADR-0451: local-dev-mcp-container": adr/0451-local-dev-mcp-container.md
+        - "ADR-0452: cambi-calculate-c-values-avx512-neon": adr/0452-cambi-calculate-c-values-avx512-neon.md
+        - "ADR-0453: psnr-enable-chroma-gpu-parity": adr/0453-psnr-enable-chroma-gpu-parity.md
+        - "ADR-0454: vif-cuda-smem-staging": adr/0454-vif-cuda-smem-staging.md
+        - "ADR-0455: k150k-split-trainer-promotion": adr/0455-k150k-split-trainer-promotion.md
+        - "ADR-0456: ssimulacra2-cuda-blur-fusion-transpose": adr/0456-ssimulacra2-cuda-blur-fusion-transpose.md
+        - "ADR-0457: onnx-blobs-to-github-releases": adr/0457-onnx-blobs-to-github-releases.md
+        - "ADR-0458: sycl-cambi-ssim-slm-staging": adr/0458-sycl-cambi-ssim-slm-staging.md
+        - "ADR-0459: vmaftune-panel-aware-recommendations": adr/0459-vmaftune-panel-aware-recommendations.md
+        - "ADR-0460: dispatch-registry-audit-2026-05-15": adr/0460-dispatch-registry-audit-2026-05-15.md
+        - "ADR-0461: cli-validate-dimensions-chroma": adr/0461-cli-validate-dimensions-chroma.md
+        - "ADR-0463: adm-p-norm-fast-path-vif-arm64-malloc-hoist": adr/0463-adm-p-norm-fast-path-vif-arm64-malloc-hoist.md
+        - "ADR-0464: cambi-cuda-smem-tile": adr/0464-cambi-cuda-smem-tile.md
+        - "ADR-0466: mkdocs-strict-pre-push-hook": adr/0466-mkdocs-strict-pre-push-hook.md
+        - "ADR-0467: ssimulacra2-avx512-neon-ulp-audit": adr/0467-ssimulacra2-avx512-neon-ulp-audit.md
+        - "ADR-0468: hip-float-adm-real-kernel": adr/0468-hip-float-adm-real-kernel.md
+        - "ADR-0469: float-psnr-hip-enable-chroma": adr/0469-float-psnr-hip-enable-chroma.md
+        - "ADR-0470: vulkan-pipeline-cache": adr/0470-vulkan-pipeline-cache.md
+        - "ADR-0471: integer-psnr-hip-enable-chroma": adr/0471-integer-psnr-hip-enable-chroma.md
+        - "ADR-0480: bootstrap-name-builder-dedup": adr/0480-bootstrap-name-builder-dedup.md
+        - "ADR-0481: adm-p-norm-hardcoded-deferral": adr/0481-adm-p-norm-hardcoded-deferral.md
+        - "ADR-0482: vmaf-pre-device-parity": adr/0482-vmaf-pre-device-parity.md
+        - "ADR-0483: gpu-dispatch-parse-dedup": adr/0483-gpu-dispatch-parse-dedup.md
+        - "ADR-0484: kernel-scaffolding-hip-metal-doc": adr/0484-kernel-scaffolding-hip-metal-doc.md
+        - "ADR-0485: kernel-lifecycle-zero-dedup": adr/0485-kernel-lifecycle-zero-dedup.md
+        - "ADR-0486: context-api-contract-doc": adr/0486-context-api-contract-doc.md
+        - "ADR-0487: integer-adm-min-val-gpu-parity": adr/0487-integer-adm-min-val-gpu-parity.md
+        - "ADR-0488: gpu-dispatch-env-shared-snapshot": adr/0488-gpu-dispatch-env-shared-snapshot.md
+        - "ADR-0489: cambi-sycl-event-chain": adr/0489-cambi-sycl-event-chain.md
+        - "ADR-0490: float-ms-ssim-metal-port": adr/0490-float-ms-ssim-metal-port.md
+        - "ADR-0491: motion-dedicated-doc-page": adr/0491-motion-dedicated-doc-page.md
+        - "ADR-0492: vulkan-vif-shader-fp64-g-computation": adr/0492-vulkan-vif-shader-fp64-g-computation.md
+        - "ADR-0493: test-yuv-fixture-md5-verification": adr/0493-test-yuv-fixture-md5-verification.md
+        - "ADR-0494: python-test-suite-restoration": adr/0494-python-test-suite-restoration.md
+        - "ADR-0495: mcp-probe-bug-fixes": adr/0495-mcp-probe-bug-fixes.md
+        - "ADR-0496: prefer-dev-mcp-container-rule": adr/0496-prefer-dev-mcp-container-rule.md
+        - "ADR-0497: vmaf-tune-bbb-e2e-bug-cluster": adr/0497-vmaf-tune-bbb-e2e-bug-cluster.md
+        - "ADR-0498: vmaf-tune-bbb-e2e-v2-bug-cluster": adr/0498-vmaf-tune-bbb-e2e-v2-bug-cluster.md
+        - "ADR-0499: vmaf-tune-ladder-reference-decode-v3": adr/0499-vmaf-tune-ladder-reference-decode-v3.md
+      - "0500-0599 — Multi-vendor GPU, container, audits":
+        - "ADR-0500: vif-perf-lut-shrink-and-filter-cache": adr/0500-vif-perf-lut-shrink-and-filter-cache.md
+        - "ADR-0501: vmaf-tune-bbb-e2e-v4-bug-cluster": adr/0501-vmaf-tune-bbb-e2e-v4-bug-cluster.md
+        - "ADR-0502: adm-decouple-gather-prefetch": adr/0502-adm-decouple-gather-prefetch.md
+        - "ADR-0503: vif-subsample-rd-8-loop-fission": adr/0503-vif-subsample-rd-8-loop-fission.md
+        - "ADR-0504: float-convolution-avx512-port": adr/0504-float-convolution-avx512-port.md
+        - "ADR-0505: vmaf-tune-bbb-e2e-v5-bug-cluster": adr/0505-vmaf-tune-bbb-e2e-v5-bug-cluster.md
+        - "ADR-0506: vmaf-tune-bbb-e2e-v6-bug-cluster": adr/0506-vmaf-tune-bbb-e2e-v6-bug-cluster.md
+        - "ADR-0508: vmaf-tune-ladder-pass1-stats-duration-clip": adr/0508-vmaf-tune-ladder-pass1-stats-duration-clip.md
+        - "ADR-0509: vmaf-tune-compare-container-source-framerate-probe": adr/0509-vmaf-tune-compare-container-source-framerate-probe.md
+        - "ADR-0510: chug-extract-vmaf-alignment-fr-from-nr-guard": adr/0510-chug-extract-vmaf-alignment-fr-from-nr-guard.md
+        - "ADR-0511: mcp-backend-probe-allowlist-and-ladder-backend": adr/0511-mcp-backend-probe-allowlist-and-ladder-backend.md
+        - "ADR-0512: vulkan-vif-two-variant-shader": adr/0512-vulkan-vif-two-variant-shader.md
+        - "ADR-0513: per-shot-scene-threshold-and-1-shot-chart": adr/0513-per-shot-scene-threshold-and-1-shot-chart.md
+        - "ADR-0514: dev-container-full-backend-exposure": adr/0514-dev-container-full-backend-exposure.md
+        - "ADR-0515: test-public-api-score-mingw64-temp-path": adr/0515-test-public-api-score-mingw64-temp-path.md
+        - "ADR-0516: vmaf-tune-compare-rate-quality-sweep": adr/0516-vmaf-tune-compare-rate-quality-sweep.md
+        - "ADR-0517: mcp-run-benchmark-repair": adr/0517-mcp-run-benchmark-repair.md
+        - "ADR-0518: tiny-model-loader-external-data-and-feature-rank": adr/0518-tiny-model-loader-external-data-and-feature-rank.md
+        - "ADR-0519: hip-import-state-implementation": adr/0519-hip-import-state-implementation.md
+        - "ADR-0520: cli-no-reference-wiring": adr/0520-cli-no-reference-wiring.md
+        - "ADR-0521: msvc-posix-gating-vif-avx512-yuv-input": adr/0521-msvc-posix-gating-vif-avx512-yuv-input.md
+        - "ADR-0522: tiny-codec-preset-crf-cli-flags": adr/0522-tiny-codec-preset-crf-cli-flags.md
+        - "ADR-0523: hip-integer-motion-extractor-registration": adr/0523-hip-integer-motion-extractor-registration.md
+        - "ADR-0524: tiny-model-loader-symbolic-batch-dim": adr/0524-tiny-model-loader-symbolic-batch-dim.md
+        - "ADR-0525: aiutils-subprocess-dedup": adr/0525-aiutils-subprocess-dedup.md
+        - "ADR-0526: ms-ssim-sycl-enable-lcs-parity": adr/0526-ms-ssim-sycl-enable-lcs-parity.md
+        - "ADR-0527: bvi-dvc-pre-extracted-dir-input": adr/0527-bvi-dvc-pre-extracted-dir-input.md
+        - "ADR-0528: cli-parse-test-stderr-pipe-drain-and-error-fallback": adr/0528-cli-parse-test-stderr-pipe-drain-and-error-fallback.md
+        - "ADR-0529: dev-container-whole-dri-bind": adr/0529-dev-container-whole-dri-bind.md
+        - "ADR-0530: hip-feature-flag-promotion-and-picture-buffer": adr/0530-hip-feature-flag-promotion-and-picture-buffer.md
+        - "ADR-0531: per-shot-bitrate-kbps-and-last-shot-chart": adr/0531-per-shot-bitrate-kbps-and-last-shot-chart.md
+        - "ADR-0532: per-shot-segments-readonly-cwd": adr/0532-per-shot-segments-readonly-cwd.md
+        - "ADR-0533: hip-all-extractors-registration-sweep": adr/0533-hip-all-extractors-registration-sweep.md
+        - "ADR-0534: compare-rate-quality-chart-from-bisect-samples": adr/0534-compare-rate-quality-chart-from-bisect-samples.md
+        - "ADR-0535: adr-atomic-allocator": adr/0535-adr-atomic-allocator.md
+        - "ADR-0536: per-shot-bitrate-predicate-chain": adr/0536-per-shot-bitrate-predicate-chain.md
+        - "ADR-0537: hip-integer-vif-kernel-fix": adr/0537-hip-integer-vif-kernel-fix.md
+        - "ADR-0538: premium-vmaf-target-defaults-and-bisect": adr/0538-premium-vmaf-target-defaults-and-bisect.md
+        - "ADR-0539: hip-adm-kernels-real": adr/0539-hip-adm-kernels-real.md
+        - "ADR-0540: dev-container-ffmpeg-av1-and-hwaccel-encoders": adr/0540-dev-container-ffmpeg-av1-and-hwaccel-encoders.md
+        - "ADR-0541: dev-container-sycl-hip-runtime-fix": adr/0541-dev-container-sycl-hip-runtime-fix.md
+        - "ADR-0542: dev-container-full-gpu-plumbing": adr/0542-dev-container-full-gpu-plumbing.md
+        - "ADR-0543: adr-0498-enforcement-hardening": adr/0543-adr-0498-enforcement-hardening.md
+        - "ADR-0544: fix-feature-extractor-list-dedup": adr/0544-fix-feature-extractor-list-dedup.md
+        - "ADR-0545: wire-or-delete-dead-extractor-files": adr/0545-wire-or-delete-dead-extractor-files.md
+        - "ADR-0546: audit-bundle-vulkan-saliency-modelcard": adr/0546-audit-bundle-vulkan-saliency-modelcard.md
+        - "ADR-0547: ai-script-env-vars": adr/0547-ai-script-env-vars.md
+        - "ADR-0548: vmaf-tune-full-file-and-no-bisect": adr/0548-vmaf-tune-full-file-and-no-bisect.md
+        - "ADR-0549: audit-cleanup-bundle-2": adr/0549-audit-cleanup-bundle-2.md
+        - "ADR-0550: tiny-model-auto-resize": adr/0550-tiny-model-auto-resize.md
+        - "ADR-0551: local-explainer-hang-diagnosis": adr/0551-local-explainer-hang-diagnosis.md
+        - "ADR-0552: hip-integer-vif-deterministic-reduce": adr/0552-hip-integer-vif-deterministic-reduce.md
+        - "ADR-0556: python-mcp-ai-audit-2026-05-18": adr/0556-python-mcp-ai-audit-2026-05-18.md
+        - "ADR-0559: feature-coverage-audit": adr/0559-feature-coverage-audit.md
+        - "ADR-0561: hip-gfx-targets-fallback-widening": adr/0561-hip-gfx-targets-fallback-widening.md
+        - "ADR-0562: local-explainer-hang-fix": adr/0562-local-explainer-hang-fix.md
+        - "ADR-0563: hip-extractor-audit-verification": adr/0563-hip-extractor-audit-verification.md
+        - "ADR-0564: integer-ssim-gpu-real-kernels": adr/0564-integer-ssim-gpu-real-kernels.md
+        - "ADR-0565: continuous-feature-mix-eval-pipeline": adr/0565-continuous-feature-mix-eval-pipeline.md
+        - "ADR-0566: hip-vif-per-feature-places4-gate": adr/0566-hip-vif-per-feature-places4-gate.md
+        - "ADR-0567: speed-chroma-temporal-real-gpu": adr/0567-speed-chroma-temporal-real-gpu.md
+        - "ADR-0568: sycl-icpx-aot-targets-default": adr/0568-sycl-icpx-aot-targets-default.md
+        - "ADR-0569: sdk-version-bumps-2026-05-18": adr/0569-sdk-version-bumps-2026-05-18.md
+        - "ADR-0573: dev-container-ubuntu-26-04-with-cuda-13-2": adr/0573-dev-container-ubuntu-26-04-with-cuda-13-2.md
+        - "ADR-0574: hdr-features-cuda-twins-phase-1": adr/0574-hdr-features-cuda-twins-phase-1.md
+        - "ADR-0575: windows-msvc-stat-compat-include-order": adr/0575-windows-msvc-stat-compat-include-order.md
+        - "ADR-0576: ffmpeg-patches-n811-full-feature-exposure": adr/0576-ffmpeg-patches-n811-full-feature-exposure.md
+        - "ADR-0577: vmaftune-bisect-concurrency-cap-and-aggressive-cleanup": adr/0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md
+        - "ADR-0578: vif-scratch-buf-hoist-to-vifstate": adr/0578-vif-scratch-buf-hoist-to-vifstate.md
+        - "ADR-0579: vmaf-tune-auto-execute-mode": adr/0579-vmaf-tune-auto-execute-mode.md
+        - "ADR-0580: float-ansnr-enable-chroma": adr/0580-float-ansnr-enable-chroma.md
+        - "ADR-0581: integer-vif-enable-chroma": adr/0581-integer-vif-enable-chroma.md
+        - "ADR-0582: ms-ssim-enable-db-clip-db-gpu-parity": adr/0582-ms-ssim-enable-db-clip-db-gpu-parity.md
+        - "ADR-0583: float-ms-ssim-enable-chroma": adr/0583-float-ms-ssim-enable-chroma.md
+        - "ADR-0584: moment-sve2-port": adr/0584-moment-sve2-port.md
+        - "ADR-0585: psnr-hvs-vulkan-enable-chroma": adr/0585-psnr-hvs-vulkan-enable-chroma.md
+        - "ADR-0586: integer-adm-vulkan-canonical-rename": adr/0586-integer-adm-vulkan-canonical-rename.md
+        - "ADR-0587: metal-cambi-real-kernel": adr/0587-metal-cambi-real-kernel.md
+        - "ADR-0588: vmaf-tune-executor-pershot-saliency": adr/0588-vmaf-tune-executor-pershot-saliency.md
+        - "ADR-0589: metal-ssim-lcs-db-parity": adr/0589-metal-ssim-lcs-db-parity.md
+        - "ADR-0590: ms-ssim-enable-db-gpu-parity": adr/0590-ms-ssim-enable-db-gpu-parity.md
+        - "ADR-0591: restore-rfe-hw-flags-cache": adr/0591-restore-rfe-hw-flags-cache.md
+        - "ADR-0592: hip-float-vif-stub-removal": adr/0592-hip-float-vif-stub-removal.md
+        - "ADR-0593: hip-psnr-moment-kernels-real": adr/0593-hip-psnr-moment-kernels-real.md
+        - "ADR-0594: hip-ssimulacra2-blur-fp-contract-off": adr/0594-hip-ssimulacra2-blur-fp-contract-off.md
+        - "ADR-0595: codec-adapter-two-pass-real": adr/0595-codec-adapter-two-pass-real.md
+        - "ADR-0596: hip-cuda-dead-tu-cleanup": adr/0596-hip-cuda-dead-tu-cleanup.md
+        - "ADR-0597: integer-vif-luma-only-clarification": adr/0597-integer-vif-luma-only-clarification.md
+        - "ADR-0598: vmaftune-workdir-relocation": adr/0598-vmaftune-workdir-relocation.md
+        - "ADR-0599: cross-backend-parity-matrix-2026-05-18": adr/0599-cross-backend-parity-matrix-2026-05-18.md
+      - "0600-0699 — Saliency, predictor v2/v3, signal mix":
+        - "ADR-0600: upstream-port-direct-read": adr/0600-upstream-port-direct-read.md
+        - "ADR-0601: vmaftune-qsv-amf-hw-init-and-probe-fix": adr/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md
+        - "ADR-0602: macos-vmaf-write-output-segv": adr/0602-macos-vmaf-write-output-segv.md
+        - "ADR-0603: ubuntu-26-04-fallout-fixes": adr/0603-ubuntu-26-04-fallout-fixes.md
+        - "ADR-0604: rocm-renovate-manager": adr/0604-rocm-renovate-manager.md
+        - "ADR-0605: renovate-custommgr-dev-image": adr/0605-renovate-custommgr-dev-image.md
+        - "ADR-0606: macos-vmaf-write-output-segv-deep-fix": adr/0606-macos-vmaf-write-output-segv-deep-fix.md
+        - "ADR-0607: vmaftune-shared-ref-yuv-decode-once": adr/0607-vmaftune-shared-ref-yuv-decode-once.md
+        - "ADR-0608: zed-editor-project-config": adr/0608-zed-editor-project-config.md
+        - "ADR-0612: tiny-ai-netflix-training-scaffold-2026-05-19": adr/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md
+        - "ADR-0613: dynamic-optimizer": adr/0613-dynamic-optimizer.md
+        - "ADR-0614: per-shot-abr-rendition": adr/0614-per-shot-abr-rendition.md
+        - "ADR-0615: fast-nr-prescoring": adr/0615-fast-nr-prescoring.md
+        - "ADR-0616: vmaf-neg-integration": adr/0616-vmaf-neg-integration.md
+        - "ADR-0617: cross-shot-complexity-weighting": adr/0617-cross-shot-complexity-weighting.md
+        - "ADR-0618: content-aware-classifier": adr/0618-content-aware-classifier.md
+        - "ADR-0620: scaffold-audit-p0-silent-correctness-fixes": adr/0620-scaffold-audit-p0-silent-correctness-fixes.md
+        - "ADR-0621: scaffold-audit-p3-cleanup": adr/0621-scaffold-audit-p3-cleanup.md
+        - "ADR-0622: vmaf-neg-integration-impl": adr/0622-vmaf-neg-integration-impl.md
+        - "ADR-0623: scaffold-audit-p2-half-finished": adr/0623-scaffold-audit-p2-half-finished.md
+        - "ADR-0624: fast-nr-prescoring-impl": adr/0624-fast-nr-prescoring-impl.md
+        - "ADR-0626: macos-ci-tmate-debug-on-failure": adr/0626-macos-ci-tmate-debug-on-failure.md
+        - "ADR-0628: adr-allocator-remote-aware": adr/0628-adr-allocator-remote-aware.md
+        - "ADR-0634: mcp-p0-iserror-and-probe-version-encoded": adr/0634-mcp-p0-iserror-and-probe-version-encoded.md
+        - "ADR-0635: ci-warning-omnibus-2026-05-19": adr/0635-ci-warning-omnibus-2026-05-19.md
+        - "ADR-0637: ci-test-failures-omnibus": adr/0637-ci-test-failures-omnibus.md
+        - "ADR-0638: mcp-p1-vmaftune-extractors-models-progress": adr/0638-mcp-p1-vmaftune-extractors-models-progress.md
+        - "ADR-0639: scaffold-audit-p1-feature-plumbing-fixes": adr/0639-scaffold-audit-p1-feature-plumbing-fixes.md
+        - "ADR-0640: tiny-ai-netflix-training-scaffold-2026-05-20": adr/0640-tiny-ai-netflix-training-scaffold-2026-05-20.md
+        - "ADR-0641: dev-container-encoder-probe-hardening": adr/0641-dev-container-encoder-probe-hardening.md
+        - "ADR-0642: ai-refresh-full-feature-defaults": adr/0642-ai-refresh-full-feature-defaults.md
+        - "ADR-0643: vmaf-tune-encoder-profile-contract": adr/0643-vmaf-tune-encoder-profile-contract.md
+        - "ADR-0644: vmaf-tune-codec-runtime-variants": adr/0644-vmaf-tune-codec-runtime-variants.md
+        - "ADR-0645: integer-adm-pnorm-simd": adr/0645-integer-adm-pnorm-simd.md
+        - "ADR-0646: dnn-attached-multi-output": adr/0646-dnn-attached-multi-output.md
+        - "ADR-0647: ai-fr-regressor-v1-refresh-20260520": adr/0647-ai-fr-regressor-v1-refresh-20260520.md
+        - "ADR-0648: mos-head-feature-jsonl-chug-id": adr/0648-mos-head-feature-jsonl-chug-id.md
+        - "ADR-0649: chug-hdr-wide-mos-feature-schema": adr/0649-chug-hdr-wide-mos-feature-schema.md
+        - "ADR-0650: signal-mix-audit": adr/0650-signal-mix-audit.md
+        - "ADR-0651: chug-hdr-row-metadata": adr/0651-chug-hdr-row-metadata.md
+        - "ADR-0652: chug-visual-signal-primitives": adr/0652-chug-visual-signal-primitives.md
+        - "ADR-0653: chug-display-profile-training": adr/0653-chug-display-profile-training.md
+        - "ADR-0654: predictor-saliency-signals": adr/0654-predictor-saliency-signals.md
+        - "ADR-0655: saliency-feature-materializer": adr/0655-saliency-feature-materializer.md
+        - "ADR-0656: external-bench-wrapper-schema": adr/0656-external-bench-wrapper-schema.md
+        - "ADR-0657: second-opinion-feature-materializer": adr/0657-second-opinion-feature-materializer.md
+        - "ADR-0658: project-modernization-audit": adr/0658-project-modernization-audit.md
+        - "ADR-0659: modernization-audit-false-positive-filter": adr/0659-modernization-audit-false-positive-filter.md
+        - "ADR-0660: tiny-ai-disabled-runtime-gate": adr/0660-tiny-ai-disabled-runtime-gate.md
+        - "ADR-0661: ai-run-manifest-provenance": adr/0661-ai-run-manifest-provenance.md
+        - "ADR-0662: vulkan-motion-lavapipe-parity": adr/0662-vulkan-motion-lavapipe-parity.md
+        - "ADR-0663: mos-label-materializer": adr/0663-mos-label-materializer.md
+        - "ADR-0664: windows-cuda-toolkit-installer": adr/0664-windows-cuda-toolkit-installer.md
+        - "ADR-0665: fast-nr-calibration-quality-guard": adr/0665-fast-nr-calibration-quality-guard.md
+        - "ADR-0666: tune-report-quick-takeaways": adr/0666-tune-report-quick-takeaways.md
+        - "ADR-0667: vmaf-tune-score-backend-native-priority": adr/0667-vmaf-tune-score-backend-native-priority.md
+        - "ADR-0668: ai-derived-table-provenance": adr/0668-ai-derived-table-provenance.md
+        - "ADR-0669: ai-corpus-jsonl-provenance": adr/0669-ai-corpus-jsonl-provenance.md
+        - "ADR-0670: ai-legacy-corpus-extraction-manifests": adr/0670-ai-legacy-corpus-extraction-manifests.md
+        - "ADR-0671: u2netp-mirror-exporter": adr/0671-u2netp-mirror-exporter.md
+        - "ADR-0672: saliency-materializer-temporal-controls": adr/0672-saliency-materializer-temporal-controls.md
+        - "ADR-0673: saliency-materializer-batch-manifest": adr/0673-saliency-materializer-batch-manifest.md
+        - "ADR-0674: second-opinion-materializer-batch-manifest": adr/0674-second-opinion-materializer-batch-manifest.md
+        - "ADR-0675: mos-label-materializer-batch-manifest": adr/0675-mos-label-materializer-batch-manifest.md
+        - "ADR-0676: mos-corpus-adapter-manifests": adr/0676-mos-corpus-adapter-manifests.md
+        - "ADR-0677: ai-dataset-fetch-manifests": adr/0677-ai-dataset-fetch-manifests.md
+        - "ADR-0678: ai-run-manifest-helper": adr/0678-ai-run-manifest-helper.md
+        - "ADR-0679: ci-draft-automerge-gate": adr/0679-ci-draft-automerge-gate.md
+        - "ADR-0680: ai-cli-helper-pattern": adr/0680-ai-cli-helper-pattern.md
+        - "ADR-0681: ai-script-bootstrap-helper": adr/0681-ai-script-bootstrap-helper.md
+        - "ADR-0682: tiny-ai-netflix-training-scaffold-2026-05-22": adr/0682-tiny-ai-netflix-training-scaffold-2026-05-22.md
+        - "ADR-0683: cjson-banned-function-remediation": adr/0683-cjson-banned-function-remediation.md
+        - "ADR-0684: pre-rebase-worktree-drift-guard": adr/0684-pre-rebase-worktree-drift-guard.md
+        - "ADR-0685: tiny-netflix-training-scaffold-2026-05-27": adr/0685-tiny-netflix-training-scaffold-2026-05-27.md
+        - "ADR-0686: vmafx-rebrand-aggressive-modernization": adr/0686-vmafx-rebrand-aggressive-modernization.md
+        - "ADR-0687: chug-hdr-held-out-test-validator": adr/0687-chug-hdr-held-out-test-validator.md
+        - "ADR-0688: hip-wave32-vif-motion-fix": adr/0688-hip-wave32-vif-motion-fix.md
+        - "ADR-0689: vmafx-ci-matrix-dedupe": adr/0689-vmafx-ci-matrix-dedupe.md
+        - "ADR-0690: vmafx-binary-and-ai-aliases": adr/0690-vmafx-binary-and-ai-aliases.md
+        - "ADR-0691: vmafx-drop-legacy-build-paths": adr/0691-vmafx-drop-legacy-build-paths.md
+        - "ADR-0692: vmafx-c23-bump": adr/0692-vmafx-c23-bump.md
+        - "ADR-0694: vmafx-lint-sanitizer-gates": adr/0694-vmafx-lint-sanitizer-gates.md
+        - "ADR-0696: vmafx-netflix-compat": adr/0696-vmafx-netflix-compat.md
+        - "ADR-0698: vmafx-production-dockerfile": adr/0698-vmafx-production-dockerfile.md
+        - "ADR-0699: vmafx-helm-chart-k8s": adr/0699-vmafx-helm-chart-k8s.md
+      - "0700-0799 — VMAFx rebrand, Go/Rust/C++23, k8s":
+        - "ADR-0700: vmafx-repo-layout": adr/0700-vmafx-repo-layout.md
+        - "ADR-0701: vmafx-cloud-native-redesign": adr/0701-vmafx-cloud-native-redesign.md
+        - "ADR-0702: vmafx-phase4-language-modernization": adr/0702-vmafx-phase4-language-modernization.md
+        - "ADR-0703: vmafx-server-go-grpc": adr/0703-vmafx-server-go-grpc.md
+        - "ADR-0704: vmafx-mcp-go-port": adr/0704-vmafx-mcp-go-port.md
+        - "ADR-0705: vmafx-tune-go-stage1": adr/0705-vmafx-tune-go-stage1.md
+        - "ADR-0706: vmafx-rust-sys-bindings": adr/0706-vmafx-rust-sys-bindings.md
+        - "ADR-0707: vmafx-rust-pilot-feature": adr/0707-vmafx-rust-pilot-feature.md
+        - "ADR-0708: vmafx-cpp23-internals-pilot": adr/0708-vmafx-cpp23-internals-pilot.md
+        - "ADR-0709: vmafx-phase4b-distributed-platform": adr/0709-vmafx-phase4b-distributed-platform.md
+        - "ADR-0710: vmafx-ci-slim-down-v2": adr/0710-vmafx-ci-slim-down-v2.md
+        - "ADR-0711: vmafx-controller-impl": adr/0711-vmafx-controller-impl.md
+        - "ADR-0712: ide-config-multilang-refresh": adr/0712-ide-config-multilang-refresh.md
+        - "ADR-0713: vmafx-node-impl": adr/0713-vmafx-node-impl.md
+        - "ADR-0714: vmafx-operator-skeleton": adr/0714-vmafx-operator-skeleton.md
+        - "ADR-0717: vmafx-node-ffmpeg-latest": adr/0717-vmafx-node-ffmpeg-latest.md
+        - "ADR-0719: vmafx-node-rclone-integration": adr/0719-vmafx-node-rclone-integration.md
+        - "ADR-0720: cpp23-pilot-mem": adr/0720-cpp23-pilot-mem.md
+        - "ADR-0721: cpp23-pilot-opt": adr/0721-cpp23-pilot-opt.md
+        - "ADR-0723: cpp23-pilot-fex-ctx-vector": adr/0723-cpp23-pilot-fex-ctx-vector.md
+        - "ADR-0725: cpp23-pilot-log-v2": adr/0725-cpp23-pilot-log-v2.md
+        - "ADR-0726: drop-vulkan-backend": adr/0726-drop-vulkan-backend.md
+        - "ADR-0727: cpp23-wave2-bump-and-dict": adr/0727-cpp23-wave2-bump-and-dict.md
+        - "ADR-0728: native-build-sunset": adr/0728-native-build-sunset.md
+        - "ADR-0729: cpp23-wave3-bundle": adr/0729-cpp23-wave3-bundle.md
+        - "ADR-0730: vmafx-tune-go-stage2": adr/0730-vmafx-tune-go-stage2.md
+        - "ADR-0731: cpp23-wave3-part-b": adr/0731-cpp23-wave3-part-b.md
+        - "ADR-0733: cpp23-wave4-output-writers": adr/0733-cpp23-wave4-output-writers.md
+        - "ADR-0735: cpp23-wave5-bundle": adr/0735-cpp23-wave5-bundle.md
+        - "ADR-0738: bump-cuda-133-r610-local": adr/0738-bump-cuda-133-r610-local.md
+        - "ADR-0743: cuda-vif-filter1d-ncu-driven-perf": adr/0743-cuda-vif-filter1d-ncu-driven-perf.md
+        - "ADR-0744: cuda-ms-ssim-adm-cm-ncu-driven-perf": adr/0744-cuda-ms-ssim-adm-cm-ncu-driven-perf.md
+        - "ADR-0746: cuda-integer-adm3-aim-parity": adr/0746-cuda-integer-adm3-aim-parity.md
+        - "ADR-0747: cuda-extern-c-sweep": adr/0747-cuda-extern-c-sweep.md
+        - "ADR-0749: sunset-legacy-vmaf-feature-extractor": adr/0749-sunset-legacy-vmaf-feature-extractor.md
+        - "ADR-0750: cuda-ms-ssim-decimate-adm-cm-measure": adr/0750-cuda-ms-ssim-decimate-adm-cm-measure.md
+        - "ADR-0752: perf-bench-multi-resolution": adr/0752-perf-bench-multi-resolution.md
+        - "ADR-0753: cuda-resolution-aware-dispatch": adr/0753-cuda-resolution-aware-dispatch.md
+        - "ADR-0754: cuda-ssim-vert-combine-ldg-pinned-leak": adr/0754-cuda-ssim-vert-combine-ldg-pinned-leak.md
+        - "ADR-0755: cpp23-wave7-single-file": adr/0755-cpp23-wave7-single-file.md
+        - "ADR-0756: cuda-f3-struct-by-value-audit": adr/0756-cuda-f3-struct-by-value-audit.md
+        - "ADR-0757: cuda-ms-ssim-vert-lcs-horiz-ldg": adr/0757-cuda-ms-ssim-vert-lcs-horiz-ldg.md
+        - "ADR-0759: hip-adm-buffer-by-pointer": adr/0759-hip-adm-buffer-by-pointer.md
+        - "ADR-0760: cuda-motion-ncu-multi-resolution": adr/0760-cuda-motion-ncu-multi-resolution.md
+        - "ADR-0762: cuda-ciede-ldg": adr/0762-cuda-ciede-ldg.md
+        - "ADR-0775: dnn-ort-audit": adr/0775-dnn-ort-audit.md
+        - "ADR-0792: hardcoded-yuv-path-env-overrides": adr/0792-hardcoded-yuv-path-env-overrides.md
+        - "ADR-0795: prev-ref-thread-safety": adr/0795-prev-ref-thread-safety.md
+      - "0800-0899 — Backfill / pending sweeps":
+        - "ADR-0810: adr-0108-compliance-audit-2026-05-29": adr/0810-adr-0108-compliance-audit-2026-05-29.md
+        - "ADR-0839: cpp23-shadow-const-fixes": adr/0839-cpp23-shadow-const-fixes.md
+        - "ADR-0840: gpu-dispatch-toctou-fence": adr/0840-gpu-dispatch-toctou-fence.md
+        - "ADR-0841: env-var-consolidation": adr/0841-env-var-consolidation.md
+        - "ADR-0853: motion-avx2-remove-debug-macros": adr/0853-motion-avx2-remove-debug-macros.md
+        - "ADR-0860: ffmpeg-patch-chain-no-op-vulkan-shim": adr/0860-ffmpeg-patch-chain-no-op-vulkan-shim.md
+        - "ADR-0887: vmaf-model-slopes-feature-mismatch-validation": adr/0887-vmaf-model-slopes-feature-mismatch-validation.md
+        - "ADR-0891: simd-bit-exact-round2-fmaf-libvmaf-feature-icx": adr/0891-simd-bit-exact-round2-fmaf-libvmaf-feature-icx.md
+      - "0900-0999 — Misc":
+        - "ADR-0931: mcp-cgo-direct-replace-subprocess": adr/0931-mcp-cgo-direct-replace-subprocess.md
+        - "ADR-0937: mkdocs-nav-decade-buckets": adr/0937-mkdocs-nav-decade-buckets.md
+      - "By tag":
+        - Overview: adr/by-tag/index.md
+        - "aarch64": adr/by-tag/aarch64.md
+        - "abi": adr/by-tag/abi.md
+        - "abr": adr/by-tag/abr.md
+        - "adm": adr/by-tag/adm.md
+        - "adm3": adr/by-tag/adm3.md
+        - "adm_cm": adr/by-tag/adm_cm.md
+        - "adr-0100": adr/by-tag/adr-0100.md
+        - "adr-0108": adr/by-tag/adr-0108.md
+        - "adr": adr/by-tag/adr.md
+        - "advisory": adr/by-tag/advisory.md
+        - "agents": adr/by-tag/agents.md
+        - "ai": adr/by-tag/ai.md
+        - "aim": adr/by-tag/aim.md
+        - "amd": adr/by-tag/amd.md
+        - "amf": adr/by-tag/amf.md
+        - "aot": adr/by-tag/aot.md
+        - "apache-2.0": adr/by-tag/apache-2.0.md
+        - "api": adr/by-tag/api.md
+        - "apple-silicon": adr/by-tag/apple-silicon.md
+        - "apple": adr/by-tag/apple.md
+        - "arc": adr/by-tag/arc.md
+        - "architecture": adr/by-tag/architecture.md
+        - "arm64": adr/by-tag/arm64.md
+        - "asan": adr/by-tag/asan.md
+        - "audit-disposition": adr/by-tag/audit-disposition.md
+        - "audit-first": adr/by-tag/audit-first.md
+        - "audit": adr/by-tag/audit.md
+        - "automation": adr/by-tag/automation.md
+        - "av1": adr/by-tag/av1.md
+        - "avx2": adr/by-tag/avx2.md
+        - "avx512": adr/by-tag/avx512.md
+        - "backend": adr/by-tag/backend.md
+        - "backlog": adr/by-tag/backlog.md
+        - "batch-threading": adr/by-tag/batch-threading.md
+        - "benchmark": adr/by-tag/benchmark.md
+        - "benchmarks": adr/by-tag/benchmarks.md
+        - "bindings": adr/by-tag/bindings.md
+        - "bisect": adr/by-tag/bisect.md
+        - "bit-exact": adr/by-tag/bit-exact.md
+        - "bit-exactness": adr/by-tag/bit-exactness.md
+        - "breaking-change": adr/by-tag/breaking-change.md
+        - "breaking": adr/by-tag/breaking.md
+        - "bristol": adr/by-tag/bristol.md
+        - "browser": adr/by-tag/browser.md
+        - "bug-fix": adr/by-tag/bug-fix.md
+        - "bug": adr/by-tag/bug.md
+        - "bugfix": adr/by-tag/bugfix.md
+        - "build": adr/by-tag/build.md
+        - "bvi-dvc": adr/by-tag/bvi-dvc.md
+        - "c++": adr/by-tag/c++.md
+        - "c-api": adr/by-tag/c-api.md
+        - "c": adr/by-tag/c.md
+        - "c1": adr/by-tag/c1.md
+        - "c2": adr/by-tag/c2.md
+        - "c3": adr/by-tag/c3.md
+        - "cache": adr/by-tag/cache.md
+        - "cambi": adr/by-tag/cambi.md
+        - "cbindgen": adr/by-tag/cbindgen.md
+        - "ceiling": adr/by-tag/ceiling.md
+        - "cgo": adr/by-tag/cgo.md
+        - "chart": adr/by-tag/chart.md
+        - "chroma": adr/by-tag/chroma.md
+        - "chug": adr/by-tag/chug.md
+        - "ci-gate": adr/by-tag/ci-gate.md
+        - "ci": adr/by-tag/ci.md
+        - "ciede": adr/by-tag/ciede.md
+        - "clang-tidy": adr/by-tag/clang-tidy.md
+        - "claude-hook": adr/by-tag/claude-hook.md
+        - "claude-rule": adr/by-tag/claude-rule.md
+        - "claude": adr/by-tag/claude.md
+        - "cleanup": adr/by-tag/cleanup.md
+        - "cli": adr/by-tag/cli.md
+        - "cloud-native": adr/by-tag/cloud-native.md
+        - "code-quality": adr/by-tag/code-quality.md
+        - "codec-adapter": adr/by-tag/codec-adapter.md
+        - "codec-adapters": adr/by-tag/codec-adapters.md
+        - "codec-aware": adr/by-tag/codec-aware.md
+        - "codec": adr/by-tag/codec.md
+        - "codecs": adr/by-tag/codecs.md
+        - "codeql": adr/by-tag/codeql.md
+        - "compare": adr/by-tag/compare.md
+        - "compatibility": adr/by-tag/compatibility.md
+        - "concurrency": adr/by-tag/concurrency.md
+        - "conformal": adr/by-tag/conformal.md
+        - "container": adr/by-tag/container.md
+        - "contributor-experience": adr/by-tag/contributor-experience.md
+        - "controller-runtime": adr/by-tag/controller-runtime.md
+        - "controller": adr/by-tag/controller.md
+        - "convolve": adr/by-tag/convolve.md
+        - "core": adr/by-tag/core.md
+        - "coreml": adr/by-tag/coreml.md
+        - "corpus": adr/by-tag/corpus.md
+        - "correctness": adr/by-tag/correctness.md
+        - "coverage": adr/by-tag/coverage.md
+        - "cpp23": adr/by-tag/cpp23.md
+        - "cpu": adr/by-tag/cpu.md
+        - "crd": adr/by-tag/crd.md
+        - "cross-backend": adr/by-tag/cross-backend.md
+        - "cuda": adr/by-tag/cuda.md
+        - "data": adr/by-tag/data.md
+        - "datasets": adr/by-tag/datasets.md
+        - "dead-code": adr/by-tag/dead-code.md
+        - "debug": adr/by-tag/debug.md
+        - "dedup": adr/by-tag/dedup.md
+        - "defaults": adr/by-tag/defaults.md
+        - "deferral": adr/by-tag/deferral.md
+        - "deferred": adr/by-tag/deferred.md
+        - "dependencies": adr/by-tag/dependencies.md
+        - "dependency-bot": adr/by-tag/dependency-bot.md
+        - "deploy": adr/by-tag/deploy.md
+        - "deps": adr/by-tag/deps.md
+        - "design": adr/by-tag/design.md
+        - "dev-container": adr/by-tag/dev-container.md
+        - "dev-experience": adr/by-tag/dev-experience.md
+        - "dev": adr/by-tag/dev.md
+        - "developer-tools": adr/by-tag/developer-tools.md
+        - "disk-space": adr/by-tag/disk-space.md
+        - "dispatch": adr/by-tag/dispatch.md
+        - "display": adr/by-tag/display.md
+        - "dnn": adr/by-tag/dnn.md
+        - "doc-correction": adr/by-tag/doc-correction.md
+        - "docker": adr/by-tag/docker.md
+        - "docs": adr/by-tag/docs.md
+        - "dx": adr/by-tag/dx.md
+        - "ebpf": adr/by-tag/ebpf.md
+        - "encode": adr/by-tag/encode.md
+        - "encoder-hint": adr/by-tag/encoder-hint.md
+        - "encoder-vocab": adr/by-tag/encoder-vocab.md
+        - "encoder": adr/by-tag/encoder.md
+        - "enforcement": adr/by-tag/enforcement.md
+        - "ensemble": adr/by-tag/ensemble.md
+        - "ergonomics": adr/by-tag/ergonomics.md
+        - "eval": adr/by-tag/eval.md
+        - "executor": adr/by-tag/executor.md
+        - "exit-code": adr/by-tag/exit-code.md
+        - "extends-adr-0498": adr/by-tag/extends-adr-0498.md
+        - "external-bench": adr/by-tag/external-bench.md
+        - "extractor": adr/by-tag/extractor.md
+        - "feasibility-spike": adr/by-tag/feasibility-spike.md
+        - "feature-extraction": adr/by-tag/feature-extraction.md
+        - "feature-extractor": adr/by-tag/feature-extractor.md
+        - "feature-extractors": adr/by-tag/feature-extractors.md
+        - "feature-param": adr/by-tag/feature-param.md
+        - "feature": adr/by-tag/feature.md
+        - "features": adr/by-tag/features.md
+        - "ffi": adr/by-tag/ffi.md
+        - "ffmpeg-integration": adr/by-tag/ffmpeg-integration.md
+        - "ffmpeg-patches": adr/by-tag/ffmpeg-patches.md
+        - "ffmpeg": adr/by-tag/ffmpeg.md
+        - "fifo": adr/by-tag/fifo.md
+        - "fixtures": adr/by-tag/fixtures.md
+        - "float-ms-ssim": adr/by-tag/float-ms-ssim.md
+        - "float-vif": adr/by-tag/float-vif.md
+        - "float": adr/by-tag/float.md
+        - "fork-internal": adr/by-tag/fork-internal.md
+        - "fork-local": adr/by-tag/fork-local.md
+        - "fork-policy": adr/by-tag/fork-policy.md
+        - "fr-regressor": adr/by-tag/fr-regressor.md
+        - "fr": adr/by-tag/fr.md
+        - "framework": adr/by-tag/framework.md
+        - "full-features": adr/by-tag/full-features.md
+        - "fuzz": adr/by-tag/fuzz.md
+        - "fuzzing": adr/by-tag/fuzzing.md
+        - "gate": adr/by-tag/gate.md
+        - "gcovr": adr/by-tag/gcovr.md
+        - "git-hooks": adr/by-tag/git-hooks.md
+        - "git": adr/by-tag/git.md
+        - "github-actions": adr/by-tag/github-actions.md
+        - "github": adr/by-tag/github.md
+        - "go": adr/by-tag/go.md
+        - "golden-data": adr/by-tag/golden-data.md
+        - "golden-gate": adr/by-tag/golden-gate.md
+        - "governance": adr/by-tag/governance.md
+        - "gpu-parity": adr/by-tag/gpu-parity.md
+        - "gpu": adr/by-tag/gpu.md
+        - "grpc": adr/by-tag/grpc.md
+        - "h266": adr/by-tag/h266.md
+        - "hardening": adr/by-tag/hardening.md
+        - "hardware-encoder": adr/by-tag/hardware-encoder.md
+        - "hardware": adr/by-tag/hardware.md
+        - "hdr": adr/by-tag/hdr.md
+        - "helm": adr/by-tag/helm.md
+        - "hfr": adr/by-tag/hfr.md
+        - "hip": adr/by-tag/hip.md
+        - "hooks": adr/by-tag/hooks.md
+        - "housekeeping": adr/by-tag/housekeeping.md
+        - "http": adr/by-tag/http.md
+        - "hygiene": adr/by-tag/hygiene.md
+        - "i18n": adr/by-tag/i18n.md
+        - "ide": adr/by-tag/ide.md
+        - "iir-blur": adr/by-tag/iir-blur.md
+        - "implementation": adr/by-tag/implementation.md
+        - "inference": adr/by-tag/inference.md
+        - "infra": adr/by-tag/infra.md
+        - "install": adr/by-tag/install.md
+        - "integer-adm": adr/by-tag/integer-adm.md
+        - "integer-vif": adr/by-tag/integer-vif.md
+        - "integer_adm": adr/by-tag/integer_adm.md
+        - "integration": adr/by-tag/integration.md
+        - "intel-ai-pc": adr/by-tag/intel-ai-pc.md
+        - "intel": adr/by-tag/intel.md
+        - "internals": adr/by-tag/internals.md
+        - "iqa": adr/by-tag/iqa.md
+        - "job-queue": adr/by-tag/job-queue.md
+        - "k150k": adr/by-tag/k150k.md
+        - "k8s": adr/by-tag/k8s.md
+        - "kernel-template": adr/by-tag/kernel-template.md
+        - "kernel": adr/by-tag/kernel.md
+        - "knob-sweep": adr/by-tag/knob-sweep.md
+        - "konvid-1k": adr/by-tag/konvid-1k.md
+        - "konvid": adr/by-tag/konvid.md
+        - "kubernetes": adr/by-tag/kubernetes.md
+        - "ladder": adr/by-tag/ladder.md
+        - "language-modernization": adr/by-tag/language-modernization.md
+        - "language-policy": adr/by-tag/language-policy.md
+        - "libvmaf": adr/by-tag/libvmaf.md
+        - "license": adr/by-tag/license.md
+        - "lint": adr/by-tag/lint.md
+        - "loader": adr/by-tag/loader.md
+        - "local-explainer": adr/by-tag/local-explainer.md
+        - "loso": adr/by-tag/loso.md
+        - "macos": adr/by-tag/macos.md
+        - "maintenance": adr/by-tag/maintenance.md
+        - "manifests": adr/by-tag/manifests.md
+        - "materializer": adr/by-tag/materializer.md
+        - "matlab": adr/by-tag/matlab.md
+        - "mcp": adr/by-tag/mcp.md
+        - "measurement": adr/by-tag/measurement.md
+        - "memory-leak": adr/by-tag/memory-leak.md
+        - "memory": adr/by-tag/memory.md
+        - "merge-train": adr/by-tag/merge-train.md
+        - "meson": adr/by-tag/meson.md
+        - "meta": adr/by-tag/meta.md
+        - "metadata": adr/by-tag/metadata.md
+        - "metal": adr/by-tag/metal.md
+        - "methodology": adr/by-tag/methodology.md
+        - "metrics": adr/by-tag/metrics.md
+        - "mingw": adr/by-tag/mingw.md
+        - "mkdocs": adr/by-tag/mkdocs.md
+        - "mobilesal": adr/by-tag/mobilesal.md
+        - "model-refresh": adr/by-tag/model-refresh.md
+        - "model-selection": adr/by-tag/model-selection.md
+        - "model-storage": adr/by-tag/model-storage.md
+        - "model": adr/by-tag/model.md
+        - "models": adr/by-tag/models.md
+        - "modernization": adr/by-tag/modernization.md
+        - "moltenvk": adr/by-tag/moltenvk.md
+        - "mos-head": adr/by-tag/mos-head.md
+        - "mos": adr/by-tag/mos.md
+        - "motion": adr/by-tag/motion.md
+        - "ms-ssim": adr/by-tag/ms-ssim.md
+        - "ms_ssim": adr/by-tag/ms_ssim.md
+        - "msvc": adr/by-tag/msvc.md
+        - "multi-dispatch": adr/by-tag/multi-dispatch.md
+        - "naming": adr/by-tag/naming.md
+        - "navigation": adr/by-tag/navigation.md
+        - "neg": adr/by-tag/neg.md
+        - "neon": adr/by-tag/neon.md
+        - "netflix-compat": adr/by-tag/netflix-compat.md
+        - "netflix-golden": adr/by-tag/netflix-golden.md
+        - "netflix-public": adr/by-tag/netflix-public.md
+        - "netflix-upstream": adr/by-tag/netflix-upstream.md
+        - "nn-vc": adr/by-tag/nn-vc.md
+        - "nnvc": adr/by-tag/nnvc.md
+        - "node-registry": adr/by-tag/node-registry.md
+        - "node": adr/by-tag/node.md
+        - "numerical-correctness": adr/by-tag/numerical-correctness.md
+        - "numerics": adr/by-tag/numerics.md
+        - "nvenc": adr/by-tag/nvenc.md
+        - "nvidia": adr/by-tag/nvidia.md
+        - "observability": adr/by-tag/observability.md
+        - "occupancy": adr/by-tag/occupancy.md
+        - "online-learning": adr/by-tag/online-learning.md
+        - "onnx": adr/by-tag/onnx.md
+        - "op-allowlist": adr/by-tag/op-allowlist.md
+        - "openvino": adr/by-tag/openvino.md
+        - "operator": adr/by-tag/operator.md
+        - "option-parity": adr/by-tag/option-parity.md
+        - "options": adr/by-tag/options.md
+        - "ort": adr/by-tag/ort.md
+        - "output": adr/by-tag/output.md
+        - "panel": adr/by-tag/panel.md
+        - "pareto": adr/by-tag/pareto.md
+        - "parity": adr/by-tag/parity.md
+        - "parquet": adr/by-tag/parquet.md
+        - "parser": adr/by-tag/parser.md
+        - "patch-series": adr/by-tag/patch-series.md
+        - "patches": adr/by-tag/patches.md
+        - "per-shot": adr/by-tag/per-shot.md
+        - "perceptual": adr/by-tag/perceptual.md
+        - "perf": adr/by-tag/perf.md
+        - "performance": adr/by-tag/performance.md
+        - "phase-f": adr/by-tag/phase-f.md
+        - "phase4": adr/by-tag/phase4.md
+        - "phase4b": adr/by-tag/phase4b.md
+        - "picture-api": adr/by-tag/picture-api.md
+        - "pipeline-cache": adr/by-tag/pipeline-cache.md
+        - "places-2": adr/by-tag/places-2.md
+        - "places-4": adr/by-tag/places-4.md
+        - "planning": adr/by-tag/planning.md
+        - "platform": adr/by-tag/platform.md
+        - "policy": adr/by-tag/policy.md
+        - "port": adr/by-tag/port.md
+        - "portability": adr/by-tag/portability.md
+        - "pre-commit": adr/by-tag/pre-commit.md
+        - "preallocation": adr/by-tag/preallocation.md
+        - "precision": adr/by-tag/precision.md
+        - "predict": adr/by-tag/predict.md
+        - "predictor": adr/by-tag/predictor.md
+        - "premium-archival": adr/by-tag/premium-archival.md
+        - "prescale": adr/by-tag/prescale.md
+        - "privacy": adr/by-tag/privacy.md
+        - "probabilistic": adr/by-tag/probabilistic.md
+        - "probe": adr/by-tag/probe.md
+        - "process": adr/by-tag/process.md
+        - "prod-flip": adr/by-tag/prod-flip.md
+        - "project-rule": adr/by-tag/project-rule.md
+        - "provenance": adr/by-tag/provenance.md
+        - "psnr-hvs": adr/by-tag/psnr-hvs.md
+        - "psnr": adr/by-tag/psnr.md
+        - "public-api": adr/by-tag/public-api.md
+        - "pypi": adr/by-tag/pypi.md
+        - "python": adr/by-tag/python.md
+        - "qat": adr/by-tag/qat.md
+        - "qemu": adr/by-tag/qemu.md
+        - "qsv": adr/by-tag/qsv.md
+        - "quality-runner": adr/by-tag/quality-runner.md
+        - "quantization": adr/by-tag/quantization.md
+        - "rclone": adr/by-tag/rclone.md
+        - "readme": adr/by-tag/readme.md
+        - "rebrand": adr/by-tag/rebrand.md
+        - "refactor": adr/by-tag/refactor.md
+        - "registry": adr/by-tag/registry.md
+        - "regression-gate": adr/by-tag/regression-gate.md
+        - "regression-guard": adr/by-tag/regression-guard.md
+        - "regression-recovery": adr/by-tag/regression-recovery.md
+        - "regression": adr/by-tag/regression.md
+        - "release": adr/by-tag/release.md
+        - "reliability": adr/by-tag/reliability.md
+        - "renovate": adr/by-tag/renovate.md
+        - "repo-size": adr/by-tag/repo-size.md
+        - "report": adr/by-tag/report.md
+        - "reports": adr/by-tag/reports.md
+        - "research": adr/by-tag/research.md
+        - "roadmap": adr/by-tag/roadmap.md
+        - "robustness": adr/by-tag/robustness.md
+        - "rocm": adr/by-tag/rocm.md
+        - "roi": adr/by-tag/roi.md
+        - "rule-enforcement": adr/by-tag/rule-enforcement.md
+        - "runbook": adr/by-tag/runbook.md
+        - "runtime": adr/by-tag/runtime.md
+        - "rust": adr/by-tag/rust.md
+        - "saliency": adr/by-tag/saliency.md
+        - "sanitizer": adr/by-tag/sanitizer.md
+        - "sanitizers": adr/by-tag/sanitizers.md
+        - "sbom": adr/by-tag/sbom.md
+        - "scaffold": adr/by-tag/scaffold.md
+        - "scheduler": adr/by-tag/scheduler.md
+        - "schema-evolution": adr/by-tag/schema-evolution.md
+        - "schema": adr/by-tag/schema.md
+        - "score": adr/by-tag/score.md
+        - "scripts": adr/by-tag/scripts.md
+        - "second-opinion": adr/by-tag/second-opinion.md
+        - "security": adr/by-tag/security.md
+        - "server": adr/by-tag/server.md
+        - "shaders": adr/by-tag/shaders.md
+        - "shot-detection": adr/by-tag/shot-detection.md
+        - "sidecar": adr/by-tag/sidecar.md
+        - "signal-mix": adr/by-tag/signal-mix.md
+        - "signing": adr/by-tag/signing.md
+        - "sigstore": adr/by-tag/sigstore.md
+        - "simd": adr/by-tag/simd.md
+        - "smem": adr/by-tag/smem.md
+        - "spec-correctness": adr/by-tag/spec-correctness.md
+        - "speed": adr/by-tag/speed.md
+        - "sqlite": adr/by-tag/sqlite.md
+        - "srgb-eotf": adr/by-tag/srgb-eotf.md
+        - "ssim": adr/by-tag/ssim.md
+        - "ssimulacra2": adr/by-tag/ssimulacra2.md
+        - "standards": adr/by-tag/standards.md
+        - "state-hygiene": adr/by-tag/state-hygiene.md
+        - "state": adr/by-tag/state.md
+        - "storage": adr/by-tag/storage.md
+        - "supply-chain": adr/by-tag/supply-chain.md
+        - "sve2": adr/by-tag/sve2.md
+        - "sycl": adr/by-tag/sycl.md
+        - "t3-15": adr/by-tag/t3-15.md
+        - "t3-15c": adr/by-tag/t3-15c.md
+        - "t6-3b": adr/by-tag/t6-3b.md
+        - "t6-9": adr/by-tag/t6-9.md
+        - "t7-17": adr/by-tag/t7-17.md
+        - "t7-5": adr/by-tag/t7-5.md
+        - "t7-gpu-ulp-cal": adr/by-tag/t7-gpu-ulp-cal.md
+        - "t8-ios": adr/by-tag/t8-ios.md
+        - "temporal": adr/by-tag/temporal.md
+        - "test": adr/by-tag/test.md
+        - "testdata": adr/by-tag/testdata.md
+        - "testing": adr/by-tag/testing.md
+        - "thread-safety": adr/by-tag/thread-safety.md
+        - "threading": adr/by-tag/threading.md
+        - "timeout": adr/by-tag/timeout.md
+        - "tiny-ai": adr/by-tag/tiny-ai.md
+        - "tiny-model": adr/by-tag/tiny-model.md
+        - "tinyai": adr/by-tag/tinyai.md
+        - "toolchain": adr/by-tag/toolchain.md
+        - "tooling": adr/by-tag/tooling.md
+        - "tools": adr/by-tag/tools.md
+        - "touched-file-rule": adr/by-tag/touched-file-rule.md
+        - "training-data": adr/by-tag/training-data.md
+        - "training": adr/by-tag/training.md
+        - "transport": adr/by-tag/transport.md
+        - "tsan": adr/by-tag/tsan.md
+        - "u2netp": adr/by-tag/u2netp.md
+        - "ubsan": adr/by-tag/ubsan.md
+        - "ugc": adr/by-tag/ugc.md
+        - "upstream-blocked": adr/by-tag/upstream-blocked.md
+        - "upstream-port": adr/by-tag/upstream-port.md
+        - "upstream-sync": adr/by-tag/upstream-sync.md
+        - "ux": adr/by-tag/ux.md
+        - "validation": adr/by-tag/validation.md
+        - "vendored": adr/by-tag/vendored.md
+        - "verification": adr/by-tag/verification.md
+        - "video-saliency": adr/by-tag/video-saliency.md
+        - "vif": adr/by-tag/vif.md
+        - "vlm": adr/by-tag/vlm.md
+        - "vmaf-cli": adr/by-tag/vmaf-cli.md
+        - "vmaf-tune": adr/by-tag/vmaf-tune.md
+        - "vmaf": adr/by-tag/vmaf.md
+        - "vmafx-rebrand": adr/by-tag/vmafx-rebrand.md
+        - "vmafx-tune": adr/by-tag/vmafx-tune.md
+        - "vmafx": adr/by-tag/vmafx.md
+        - "vulkan-video": adr/by-tag/vulkan-video.md
+        - "vulkan": adr/by-tag/vulkan.md
+        - "vvc": adr/by-tag/vvc.md
+        - "wasm": adr/by-tag/wasm.md
+        - "wave-1": adr/by-tag/wave-1.md
+        - "weights-drop": adr/by-tag/weights-drop.md
+        - "windows": adr/by-tag/windows.md
+        - "workspace": adr/by-tag/workspace.md
+        - "x264": adr/by-tag/x264.md
+        - "x86": adr/by-tag/x86.md
+        - "yuv-rgb": adr/by-tag/yuv-rgb.md
+        - "zero-copy": adr/by-tag/zero-copy.md
+      # <<< ADR-NAV-GENERATED
+  - Reference:
+      - FAQ: reference/faq.md
+      - References: reference/references.md
+      - Bug state tracker: state.md
+      - Rebase notes: rebase-notes.md
+      - Benchmarks: benchmarks.md

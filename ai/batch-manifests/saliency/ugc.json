@@ -1,0 +1,29 @@
+{
+  "_comment": "Saliency materializer batch manifest for YouTube UGC (ADR-0993).",
+  "_status": "BLOCKED — the UGC full-feature parquet (runs/full_features_ugc_refresh_20260520.parquet) uses a 'source' column with corpus identifiers (e.g. 'ugc-Gaming_1080P-223e-cbr'), not file paths. The saliency materializer requires a path column pointing to decodable video files.",
+  "_resolution": [
+    "Option A (recommended): Generate a UGC corpus JSONL with 'src' pointing to",
+    "  download/ files by running: ai/scripts/youtube_ugc_to_corpus_jsonl.py",
+    "  --ugc-dir .corpus/ugc --clips-subdir download --clip-suffix _orig.mp4",
+    "  --output .workingdir2/saliency-runs/ugc/ugc_corpus.jsonl",
+    "  Then update the 'input' below to point to that JSONL and uncomment the table.",
+    "",
+    "Option B: Add a path-enrichment step to extract_ugc_features.py to emit",
+    "  an absolute 'src' column alongside the corpus identifier, then re-run",
+    "  the UGC feature extraction.",
+    "",
+    "The download directory structure is:",
+    "  .corpus/ugc/download/{ContentName}_{Variant}.{webm,mp4}",
+    "  Variant in: cbr, vod, vodlb, orig"
+  ],
+  "defaults": {
+    "model_id": "saliency_student_v1",
+    "max_frames": 4,
+    "frame_samples": 4,
+    "path_column": "src",
+    "root": "../../../.corpus/ugc/download",
+    "width_column": "width",
+    "height_column": "height"
+  },
+  "tables": []
+}

@@ -1,0 +1,1 @@
+| [ADR-0661](0661-ai-run-manifest-provenance.md) | AI training sidecars record shared run provenance. MOS-head manifests include the user-facing entrypoint, normalized CLI arguments, named input/output paths, file hashes where available, and shared-trainer identity for CHUG wrapper runs. | Accepted | ai, tooling, manifests, training |

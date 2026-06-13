@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# docker/Dockerfile.operator — multi-stage build for the vmafx-operator Go binary.
+#
+# Stages:
+#   go-builder : compiles cmd/vmafx-operator using golang:1.26-bookworm@sha256:5f68ec6805843bd3981a951ffada82a26a0bd2631045c8f7dba483fa868f5ec5
+#   operator   : gcr.io/distroless/static-debian12 runtime (no libc needed;
+#                pure-Go binary, no cgo)
+#
+# The operator has no libvmaf dependency — it drives Kubernetes CRD reconciliation
+# (VmafxJob / VmafxNode / VmafxModelTraining) and never calls the VMAF scoring
+# library directly.  A pure-Go / CGO_ENABLED=0 build is therefore safe and produces
+# a smaller, more portable image.
+#
+# Multi-arch: amd64 + arm64 via BuildKit cross-compilation (no QEMU emulation
+# needed for pure-Go binaries — GOARCH is set at build time and the result is
+# a native static binary).
+#
+# Build:
+#   docker build -f docker/Dockerfile.operator \
+#     -t ghcr.io/vmafx/vmafx-operator:dev \
+#     --platform linux/amd64,linux/arm64 .
+#
+# Run:
+#   docker run --rm \
+#     -e VMAFX_OPERATOR_METRICS_ADDR=:8081 \
+#     -e VMAFX_OPERATOR_PROBE_ADDR=:8082 \
+#     -e VMAFX_OPERATOR_LEADER_ELECT=true \
+#     ghcr.io/vmafx/vmafx-operator:dev
+#
+# Environment variables (all optional; CLI flags override):
+#   VMAFX_OPERATOR_METRICS_ADDR   Prometheus metrics bind address (default ":8081")
+#   VMAFX_OPERATOR_PROBE_ADDR     Health probe bind address (default ":8082")
+#   VMAFX_OPERATOR_LEADER_ELECT   Enable leader election ("true"/"false", default "false")
+#   VMAFX_OPERATOR_LOG_LEVEL      slog level string (default "info")
+#
+# ADR-0814 (operator reconciler scope), ADR-0715 (operator skeleton),
+# ADR-0698 (distroless policy), ADR-0815 (this Dockerfile).
+# See docs/backends/operator.md for operator runbook.
+
+# ---------------------------------------------------------------------------
+# Stage 1 — go-builder: compile the vmafx-operator binary (CGO_ENABLED=0)
+# ---------------------------------------------------------------------------
+FROM golang:1.26-bookworm@sha256:5f68ec6805843bd3981a951ffada82a26a0bd2631045c8f7dba483fa868f5ec5 AS go-builder
+
+# CGO_ENABLED=0: the operator is pure-Go (controller-runtime + k8s client-go).
+# No libvmaf linkage is required.
+ARG CGO_ENABLED=0
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
+WORKDIR /src
+COPY go.mod go.sum ./
+
+# Download dependencies before copying source for better layer caching.
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=${CGO_ENABLED} \
+    GOOS=${TARGETOS} \
+    GOARCH=${TARGETARCH} \
+    go build \
+        -trimpath \
+        -ldflags "-s -w -X main.buildVersion=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+        -o /out/vmafx-operator \
+        ./cmd/vmafx-operator
+
+# ---------------------------------------------------------------------------
+# Stage 2 — operator: distroless static runtime (no libc, no shell)
+# ---------------------------------------------------------------------------
+# gcr.io/distroless/static-debian12 is appropriate for CGO_ENABLED=0 binaries.
+# It contains only the CA bundle and timezone data — no libc, no shell.
+# This is 2 MB smaller than distroless/cc and has a smaller attack surface.
+FROM gcr.io/distroless/static-debian12@sha256:a9fd93a4b0fc23c6b0c2c8aca9d0d8ad14fce9505d3a6e3a23cc7cf5eedf15a4 AS operator
+
+LABEL org.opencontainers.image.title="vmafx-operator"
+LABEL org.opencontainers.image.description="VMAFX Kubernetes operator — CRD reconciliation for VmafxJob / VmafxNode / VmafxModelTraining"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.vendor="Lusoris"
+
+COPY --from=go-builder /out/vmafx-operator /usr/local/bin/vmafx-operator
+
+# Expose Prometheus metrics and health-probe ports.
+EXPOSE 8081 8082
+
+# Run as non-root (distroless provides uid 65532 = nonroot).
+USER 65532:65532
+
+ENTRYPOINT ["/usr/local/bin/vmafx-operator"]

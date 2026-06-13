@@ -1,0 +1,1 @@
+- New CLAUDE.md rule 15 / AGENTS.md rule 12: default to vmaf-dev-mcp container for vmaf/vmaf-tune/ai/MCP work; rebuild before non-trivial runs; don't multiplex the same GPU across parallel jobs; pin long-running jobs to one device (CUDA/SYCL/HIP/Vulkan/CPU). See [ADR-0496](docs/adr/0496-prefer-dev-mcp-container-rule.md).

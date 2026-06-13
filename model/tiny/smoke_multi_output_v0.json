@@ -1,0 +1,11 @@
+{
+  "input_name": "luma",
+  "kind": "fr",
+  "name": "multi_probe",
+  "notes": "CI attached multi-output fixture - not a quality model.",
+  "onnx_opset": 17,
+  "output_names": [
+    "mean_score",
+    "peak_score"
+  ]
+}

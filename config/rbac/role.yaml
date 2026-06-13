@@ -1,0 +1,58 @@
+---
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# config/rbac/role.yaml — ClusterRole for vmafx-operator.
+#
+# Grants the operator read/write access to the three CRD resources and their
+# status subresources, plus Pod management for worker Pod lifecycle.
+# Generated from kubebuilder RBAC markers in the reconciler source files.
+#
+# ADR-0714: vmafx-operator kubebuilder skeleton + CRDs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vmafx-operator-role
+rules:
+  # VmafxJob CRD
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxjobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxjobs/status]
+    verbs: [get, update, patch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxjobs/finalizers]
+    verbs: [update]
+  # VmafxNode CRD
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxnodes]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxnodes/status]
+    verbs: [get, update, patch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxnodes/finalizers]
+    verbs: [update]
+  # VmafxModelTraining CRD
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxmodeltrainings]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxmodeltrainings/status]
+    verbs: [get, update, patch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxmodeltrainings/finalizers]
+    verbs: [update]
+  # Worker Pods
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Events (for recorder)
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  # Leader election
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]

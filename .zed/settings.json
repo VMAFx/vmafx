@@ -1,0 +1,140 @@
+{
+  "tab_size": 4,
+  "hard_tabs": false,
+  "line_ending": "lf",
+  "ensure_final_newline_on_save": true,
+  "remove_trailing_whitespace_on_save": true,
+  "preferred_line_length": 100,
+  "show_wrap_guides": true,
+  "soft_wrap": "preferred_line_length",
+
+  "file_scan_exclusions": [
+    ".git",
+    "build",
+    "build-san",
+    "build-cuda",
+    "build-sycl",
+    "build-all",
+    "subprojects",
+    ".venv",
+    "node_modules",
+    "**/*.yuv",
+    "**/*.onnx",
+    "**/*.pkl"
+  ],
+
+  "file_types": {
+    "C++": ["cu", "cuh", "hip", "metal"],
+    "GLSL": ["comp", "vert", "frag", "glsl"]
+  },
+
+  "languages": {
+    "C": {
+      "tab_size": 4,
+      "format_on_save": "on",
+      "formatter": "language_server"
+    },
+    "C++": {
+      "tab_size": 4,
+      "format_on_save": "on",
+      "formatter": "language_server"
+    },
+    "Python": {
+      "tab_size": 4,
+      "format_on_save": "on",
+      "formatter": [
+        {
+          "external": {
+            "command": "ruff",
+            "arguments": ["format", "--stdin-filename", "{buffer_path}", "-"]
+          }
+        }
+      ]
+    },
+    "Shell Script": {
+      "tab_size": 2,
+      "format_on_save": "on",
+      "formatter": {
+        "external": {
+          "command": "shfmt",
+          "arguments": ["-i", "2", "-ci", "-"]
+        }
+      }
+    },
+    "TOML": { "tab_size": 2 },
+    "YAML": { "tab_size": 2 },
+    "JSON": { "tab_size": 2 },
+    "Markdown": { "tab_size": 2, "soft_wrap": "preferred_line_length" }
+  },
+
+  "lsp": {
+    "clangd": {
+      "binary": {
+        "arguments": [
+          "--compile-commands-dir=build",
+          "--background-index",
+          "--clang-tidy",
+          "--clang-tidy-checks=-*,bugprone-*,cert-*,clang-analyzer-*,performance-*,portability-*",
+          "--header-insertion=never",
+          "--completion-style=detailed",
+          "--function-arg-placeholders=true",
+          "--pch-storage=memory",
+          "-j=8"
+        ]
+      },
+      "initialization_options": {
+        "fallbackFlags": [
+          "-std=c11",
+          "-I./core/include",
+          "-I./core/src"
+        ]
+      }
+    },
+    "pyright": {
+      "initialization_options": {
+        "python": {
+          "analysis": {
+            "typeCheckingMode": "basic"
+          }
+        }
+      }
+    },
+    "ruff": {
+      "initialization_options": {
+        "settings": {
+          "organizeImports": true
+        }
+      }
+    }
+  },
+
+  "context_servers": {
+    "vmaf-mcp": {
+      "source": "custom",
+      "command": "vmaf-mcp",
+      "env": {
+        "VMAF_BIN": "build/tools/vmaf"
+      }
+    }
+  },
+
+  "agent": {
+    "default_model": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5"
+    },
+    "tool_permissions": {
+      "default": "confirm",
+      "tools": {
+        "mcp:vmaf-mcp:vmaf_score": { "default": "allow" },
+        "mcp:vmaf-mcp:list_models": { "default": "allow" },
+        "mcp:vmaf-mcp:list_backends": { "default": "allow" }
+      }
+    }
+  },
+
+  "telemetry": {
+    "diagnostics": false,
+    "metrics": false
+  }
+}

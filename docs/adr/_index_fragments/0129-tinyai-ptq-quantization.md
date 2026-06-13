@@ -1,0 +1,1 @@
+| [ADR-0129](0129-tinyai-ptq-quantization.md) | Tiny-AI post-training int8 quantisation — static + dynamic + QAT per model via `quant_mode` field in `model/registry.json`; three scripts under `ai/scripts/`; CI accuracy-budget gate | Proposed | ai, onnx, quantization, model, docs |

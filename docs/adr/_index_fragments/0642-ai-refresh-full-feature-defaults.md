@@ -1,0 +1,1 @@
+| [ADR-0642](0642-ai-refresh-full-feature-defaults.md) | AI refresh defaults use the current fork CPU `vmaf` binary and real `FULL_FEATURES` regeneration paths for KoNViD-1k, UGC, BVI-DVC, and aggregate parquet rebuilds. | Accepted | ai, training-data, full-features, konvid, ugc, bvi-dvc, fork-local |

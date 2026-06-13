@@ -1,0 +1,109 @@
+[project]
+name = "vmaf-train"
+version = "0.1.0"
+description = "Train, export and register tiny perceptual-quality models for libvmaf."
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+license = { text = "BSD-2-Clause-Patent" }
+authors = [
+  { name = "Lusoris", email = "lusoris@pm.me" },
+  { name = "Claude (Anthropic)", email = "noreply@anthropic.com" },
+]
+dependencies = [
+  "torch>=2.12.0,<3.0",
+  # torchvision must be pinned as a direct dep to enforce ABI compatibility with
+  # the torch floor declared above.  pytorch-lightning → torchmetrics 1.9+
+  # eagerly imports `torchvision.transforms` for its arniqa metric; an older
+  # torchvision 0.26.0 wheel against torch 2.12.0 raises
+  # ``RuntimeError: operator torchvision::nms does not exist`` at module-load
+  # time.  torchvision 0.27.0 is the wheel that pairs with torch 2.12.x.
+  # When that ABI mismatch is detected at run-time (e.g. in a pre-existing
+  # venv), ``ai/tests/conftest.py`` skips the affected tests cleanly via
+  # ``requires_pytorch_lightning()`` — see AGENTS.md invariant note.
+  "torchvision>=0.27.0,<0.28.0",
+  # Lightning AI un-published the `lightning` distribution from PyPI on
+  # 2026-04-30 (yesterday's PR #229 still resolved `lightning-2.6.1`;
+  # today the name returns 404). The functionally-identical wheel is
+  # published as `pytorch-lightning` (same project, same code, same
+  # version 2.6.1), but only exposes the `pytorch_lightning` import
+  # namespace — not the `lightning` alias. Code under ai/src/vmaf_train/
+  # and ai/scripts/ has been migrated from `import lightning as L` to
+  # `import pytorch_lightning as L` to match. Switch back to `lightning`
+  # (and revert the import sites) if Lightning AI restores the
+  # distribution.
+  "pytorch-lightning>=2.6.5,<3.0",
+  "onnx>=1.21.0,<2.0",
+  "onnxruntime>=1.26.0,<2.0",  # container pins 1.26.0 (ADR-0568); floor kept at 1.20 for host installs
+  "onnxscript>=0.7.0",
+  "numpy>=2.4.6,<3.0",
+  "pandas>=3.0.3,<3.1",
+  "pyarrow>=24.0.0",
+  "Pillow>=12.2.0,<14.0",
+  "scipy>=1.17.1",
+  "scikit-learn>=1.8.0",
+  "pydantic>=2.13.4",
+  "pyyaml>=6.0.3",
+  "typer>=0.26.7",
+  "rich>=15.0.0",
+  "tqdm>=4.68.2",
+]
+
+[project.optional-dependencies]
+tune = ["optuna>=4.9.0", "ray[tune]>=2.55.1"]
+gpu  = []
+viz  = ["matplotlib>=3.10.9", "seaborn>=0.13.2"]
+dev  = [
+  "pytest>=9.0.3",
+  "pytest-timeout>=0.5",
+  "ruff>=0.15.17",
+  "mypy>=2.1.0",
+  "types-PyYAML>=6.0.12.20260518",
+  "pandas-stubs>=3.0.3.260530",
+]
+
+[project.scripts]
+vmaf-train = "vmaf_train.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/VMAFx/vmafx"
+Repository = "https://github.com/VMAFx/vmafx"
+Documentation = "https://vmafx.github.io/vmafx/ai/"
+Issues = "https://github.com/VMAFx/vmafx/issues"
+Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vmaf_train", "src/aiutils"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/vmaf_train/data/manifests" = "vmaf_train/data/manifests"
+"configs" = "vmaf_train/configs"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# ai/scripts/ modules use _script_bootstrap which lives alongside them; add
+# the scripts/ directory so importlib-loaded batch scripts can resolve it.
+pythonpath = ["scripts", "src"]
+markers = [
+    # Tests >30 s wall (or that exercise real GPUs / containers and may grow
+    # past 30 s). Exclude with `pytest -m 'not slow'` for fast iteration.
+    # See docs/adr/0908-slow-test-audit-2026-05-30.md.
+    "slow: marks tests as slow (deselect with -m 'not slow')",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "SIM", "RUF"]
+ignore = [
+  "E501",   # line length handled by black
+  "B008",   # typer.Option in default arg — idiomatic Typer pattern
+  "RUF001", # ambiguous unicode — em-dashes in strings are intentional
+  "RUF002", # ambiguous unicode in docstrings
+  "RUF003", # ambiguous unicode in comments
+]

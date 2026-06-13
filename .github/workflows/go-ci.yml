@@ -1,0 +1,95 @@
+name: Go
+
+on:
+  push:
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+  pull_request:
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+
+concurrency:
+  group: go-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege default for the whole workflow (ADR-0875).
+# Jobs widen only if they need to publish artefacts or push.
+permissions:
+  contents: read
+
+jobs:
+  go-ci:
+    name: go vet + go test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.4"
+          cache: true
+
+      # ADR-0973 sibling — pkg/libvmaf uses cgo with -L core/build-cpu/src -lvmaf
+      # so go test fails to link unless libvmaf is built first.
+      - name: Install meson + ninja for libvmaf build
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends meson ninja-build pkg-config nasm
+
+      - name: Build libvmaf (CPU only) for cgo link
+        # Post-ADR-0700: meson.build lives at core/meson.build, so the
+        # source dir must be passed explicitly (or run from core/). Pre-rename
+        # `meson setup core/build-cpu` worked because root had meson.build.
+        run: |
+          meson setup core/build-cpu core \
+            -Denable_cuda=false \
+            -Denable_sycl=false \
+            -Denable_hip=false \
+            -Denable_metal=disabled \
+            -Denable_avx512=false
+          ninja -C core/build-cpu
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Install gosec
+        # v2.21.4 pulls x/tools@v0.25.0 which fails to compile under Go 1.26
+        # (invalid array-length constant in tokeninternal.go). v2.27.1 pulls
+        # x/tools@v0.37.0 which is compatible.
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.27.1
+
+      - name: gosec (exclude generated)
+        run: |
+          # Generated protobuf code (gen/) carries G103 (unsafe.Slice) and
+          # G115 (int -> uint32 cgo casts) by design; -exclude-generated
+          # filters those. Source files must remain at 0 findings.
+          gosec -exclude-generated -quiet ./...
+
+      # Install the kubebuilder envtest control-plane binaries (etcd +
+      # kube-apiserver + kubectl) so the vmafx-operator suite at
+      # cmd/vmafx-operator/internal/controller/ runs for real instead of
+      # skipping. Without KUBEBUILDER_ASSETS the suite panics in BeforeSuite
+      # with a nil-pointer deref (PRs #330 / #341 / #362 all tripped this).
+      - name: Install envtest binaries (kubebuilder)
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          ASSETS="$(setup-envtest use 1.31 -p path)"
+          echo "KUBEBUILDER_ASSETS=${ASSETS}" >> "${GITHUB_ENV}"
+
+      - name: go test
+        env:
+          # cgo packages (vmafx-controller, vmafx-mcp, vmafx-node, vmafx-server,
+          # pkg/libvmaf) link against libvmaf.so.3 which is built in
+          # core/build-cpu/src but not installed system-wide.  Without this
+          # variable the dynamic linker cannot locate libvmaf.so.3 at test
+          # run-time and the test binary exits with "cannot open shared object
+          # file" before running a single test case.
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-cpu/src
+        run: go test ./...

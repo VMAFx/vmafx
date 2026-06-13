@@ -1,0 +1,48 @@
+name: "VMAF CodeQL config"
+
+disable-default-queries: false
+
+queries:
+  - uses: security-extended
+  - uses: security-and-quality
+
+# Globally suppress query rules that conflict with the fork's coding
+# standard. See ADR-0348 for the full rationale and alternatives matrix.
+#
+# - cpp/poorly-documented-function: flags every C/C++ function whose
+#   signature is not preceded by a `/** */` Doxygen-style comment block.
+#   The project's CLAUDE.md / docs/principles.md explicitly direct
+#   contributors to "default to writing no comments. Only add one when
+#   the WHY is non-obvious." Mass-adding boilerplate doc comments to
+#   self-documenting helpers would violate that standard, and per-file
+#   `lgtm[...]` annotations would scatter ~15 noise comments across
+#   `core/src/`. Suppressing globally is the project-rule-aligned
+#   resolution. NOT a "skip the failing tests" pattern — the rule is
+#   over-zealous against this project's documented style, not flagging
+#   real correctness issues.
+query-filters:
+  - exclude:
+      id: cpp/poorly-documented-function
+
+paths:
+  - core/src
+  - core/include
+  - core/tools
+  - python/vmaf
+  - compat/python-vmaf
+  - mcp-server
+  - ai/src
+  - cmd
+  - pkg
+  - api
+
+paths-ignore:
+  - subprojects
+  - build
+  - builddir
+  - core/test
+  - python/test
+  - testdata
+  - "**/third_party/**"
+  - "**/*.generated.*"
+  - gen/go

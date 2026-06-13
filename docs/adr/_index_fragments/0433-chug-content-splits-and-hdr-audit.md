@@ -1,0 +1,1 @@
+| [ADR-0433](0433-chug-content-splits-and-hdr-audit.md) | CHUG content-safe train/validation/test splits plus an ffprobe-backed HDR metadata audit in the local feature materialiser. | Accepted | ai, hdr, chug, training, fork-local |

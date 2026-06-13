@@ -1,0 +1,133 @@
+option('enable_tests',
+    type: 'boolean',
+    value: true,
+    description: 'Build libvmaf tests')
+
+option('enable_docs',
+    type: 'boolean',
+    value: true,
+    description: 'Build libvmaf documentation')
+
+option('enable_tools',
+    type: 'boolean',
+    value: true,
+    description: 'Build libvmaf tools')
+
+option('enable_asm',
+    type: 'boolean',
+    value: true,
+    description: 'Build asm files, if available')
+
+option('enable_avx512',
+    type: 'boolean',
+    value: true,
+    description: 'Build AVX-512 asm files, requires nasm 2.14')
+
+option('built_in_models',
+    type: 'boolean',
+    value: true,
+    description: 'Compile default vmaf models into the library')
+
+option('enable_float',
+    type: 'boolean',
+    value: true,
+    description: 'Compile floating-point feature extractors into the library')
+
+option('enable_cuda',
+    type: 'boolean',
+    value: false,
+    description: 'Enable CUDA support')
+
+option('enable_nvtx',
+    type: 'boolean',
+    value: false,
+    description: 'Enable NVTX range support')
+
+option('enable_nvcc',
+    type: 'boolean',
+    value: true,
+    description: 'Use nvcc to compile CUDA kernel objects; when false, the clang CUDA driver is used instead (experimental). Takes effect only when enable_cuda=true.')
+
+option('enable_sycl',
+    type: 'boolean',
+    value: false,
+    description: 'Enable SYCL/DPC++ support for GPU-accelerated feature extraction (icpx default; ADR-0335 adds AdaptiveCpp/acpp)')
+
+option('sycl_compiler',
+    type: 'string',
+    value: 'icpx',
+    description: 'Path or name of the SYCL compiler. Supported toolchains: Intel icpx (default), AdaptiveCpp acpp/syclcc (ADR-0335).')
+
+option('sycl_acpp_targets',
+    type: 'string',
+    value: 'generic',
+    description: 'AdaptiveCpp --acpp-targets argument (e.g. "generic", "omp", "omp;cuda:sm_75", "omp;hip:gfx1100"). Ignored when sycl_compiler is icpx. See ADR-0335.')
+
+option('sycl_icpx_aot_targets',
+    type: 'string',
+    value: 'dg2-g10,dg2-g11,acm-g10,acm-g11,acm-g12,tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p,mtl-h,mtl-u,arl-h,arl-s,arl-u,lnl-m,bmg-g21,bmg-g31',
+    description: 'Comma-separated list of Intel SYCL AOT targets for icpx -fsycl-targets=spir64_gen -Xs \'-device <list>\'. Covers Arc dGPU + all common Intel iGPU silicon (Tiger Lake / Alder Lake / Raptor Lake / Meteor Lake / Arrow Lake / Lunar Lake / Battlemage). Set to empty string to fall back to SPIR-V JIT (smaller binary, slower first launch). Set to a single target (e.g. "dg2-g11") to shrink fat-binary for a known fleet. Ignored when sycl_compiler != "icpx". See ADR-0568.')
+
+option('enable_dnn',
+    type: 'feature',
+    value: 'auto',
+    description: 'Build DNN runtime (ONNX Runtime) for tiny-model inference')
+
+# enable_vulkan option removed per ADR-0726 — Vulkan backend dropped.
+# core/src/vulkan/ + core/src/feature/vulkan/ + libvmaf_vulkan.h are gone;
+# subprojects/packagefiles/volk/ + vk-mem-alloc/ remain for follow-up cleanup.
+
+option('enable_mcp',
+    type: 'boolean',
+    value: false,
+    description: 'Build embedded MCP (Model Context Protocol) server inside libvmaf (ADR-0128 design; ADR-0209 / T5-2 scaffold; runtime promoted through T5-2b/c/d). Default disabled — opt in to use. The umbrella flag enables the `vmaf_mcp_*` symbols; per-transport availability is gated by the sub-flags below.')
+
+option('enable_mcp_sse',
+    type: 'feature',
+    value: 'auto',
+    description: 'Compile in the SSE (Server-Sent Events / loopback HTTP) transport for the embedded MCP server. Requires enable_mcp=true. Implemented in plain POSIX sockets — no third-party HTTP library is vendored (the original v3 plan to vendor cesanta/mongoose was abandoned because mongoose is GPL-2.0-only-OR-commercial, incompatible with the fork BSD-3-Clause-Plus-Patent license). T5-2d / ADR-0332 § "Status update 2026-05-09".')
+
+option('enable_mcp_uds',
+    type: 'boolean',
+    value: false,
+    description: 'Compile in the Unix-domain-socket transport for the embedded MCP server. Requires enable_mcp=true. POSIX-only; non-POSIX hosts return -ENODEV at runtime. Socket paths are created mode 0700.')
+
+option('enable_mcp_stdio',
+    type: 'boolean',
+    value: false,
+    description: 'Compile in the stdio transport for the embedded MCP server: newline-delimited JSON-RPC on a caller-supplied fd pair. Requires enable_mcp=true. LSP Content-Length framing remains a future compatibility addition.')
+
+option('enable_hip',
+    type: 'boolean',
+    value: false,
+    description: 'Build HIP (AMD ROCm) compute backend (ADR-0212 scaffold / T7-10). Default OFF — every entry point returns -ENOSYS until the runtime PR lands. Requires ROCm 7.0+ when the kernels arrive; the scaffold has no SDK requirement.')
+
+option('enable_hipcc',
+    type: 'boolean',
+    value: false,
+    description: 'Compile HIP device kernels via hipcc and embed the resulting HSACO fat binary (T7-10b / ADR-0254). Requires enable_hip=true and a ROCm 7.0+ toolchain with hipcc in PATH. Default OFF — without it, HIP feature extractors that have real kernels (float_psnr_hip) fall back to -ENOSYS at init(). Mirrors enable_nvcc for CUDA.')
+
+option('enable_float_vif_hip_autodispatch',
+    type: 'boolean',
+    value: false,
+    description: 'Enable automatic model-driven dispatch of float_vif_hip by setting VMAF_FEATURE_EXTRACTOR_HIP on its descriptor (ADR-0623). Default OFF pending T7-10c picture-pool plumbing: without the pool, pictures arrive as CPU VmafPictures and the extractor performs explicit HtoD copies rather than zero-copy from the HIP picture pool. Enable only after T7-10c lands.')
+
+option('hip_gfx_targets',
+    type: 'string',
+    value: '',
+    description: 'Comma-separated list of AMD GFX targets for hipcc --offload-arch (e.g. "gfx1036,gfx1100"). When empty (default), auto-detected from rocm_agent_enumerator, then hipconfig; falls back to "gfx90a,gfx1030,gfx1036,gfx1100" (CDNA2 + RDNA2 desktop + Raphael APU iGPU + RDNA3) if both fail — the typical no-GPU build sandbox case. Override here when auto-detection misparsed the hipconfig output, when cross-compiling for a remote GPU, or to shrink the fat-binary to a single target.')
+
+option('enable_metal',
+    type: 'feature',
+    value: 'auto',
+    description: 'Build Metal (Apple Silicon) compute backend (ADR-0361 / T8-1 through T8-1k). Default `auto`: probes for Metal.framework / MetalKit.framework on macOS, disabled elsewhere. Apple Silicon (M1+ / GPU Family Apple 7+) only — Intel Macs surface as -ENODEV at runtime. Runtime, IOSurface import, and the first eight feature kernels are live; remaining metrics land as follow-up kernel batches.')
+
+option('fuzz',
+    type: 'boolean',
+    value: false,
+    description: 'Build libFuzzer harnesses under libvmaf/test/fuzz/ (ADR-0270, OSSF Scorecard `Fuzzing` remediation). Requires clang. Pair with `-Db_sanitize=address` for heap coverage. Default OFF — opt-in only.')
+
+option('enable_rust_features',
+    type: 'boolean',
+    value: false,
+    description: 'Build Rust-implemented feature extractors (requires cargo + cbindgen in PATH). ADR-0707 cbindgen pilot: TAD (Temporal Absolute Difference). Default OFF — CI defaults to false; enable_rust_features=true requires cargo + cbindgen.')

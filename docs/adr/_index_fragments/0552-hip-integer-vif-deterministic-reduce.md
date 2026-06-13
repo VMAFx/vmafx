@@ -1,0 +1,1 @@
+| [ADR-0552](0552-hip-integer-vif-deterministic-reduce.md) | Deterministic wavefront reduction for `integer_vif_hip` horizontal kernels | Accepted | hip, gpu, kernel, vif, parity, correctness, fork-local |

@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# scripts/git-hooks/pre-rebase — agent worktree-drift guard for `git rebase`
+# (ADR-0684, complements the pre-commit-time guard in ADR-0332).
+#
+# Why this hook exists
+# --------------------
+# ADR-0332 added a pre-commit-level guard
+# (scripts/ci/check-agent-worktree-drift.sh) that refuses commits
+# coming from the *main* checkout while one or more agent worktrees
+# under .claude/worktrees/agent-* are active. That guard works only at
+# commit time. In a 2026-05-22 incident a background train-shepherd
+# agent drifted into the main checkout and ran `git rebase
+# origin/master` before any commit attempt — by the time pre-commit
+# would have fired, the working tree was already a 200-file partial
+# rebase state mixed across two branches. The user's open Zed buffer
+# silently picked up the regressed file content.
+#
+# This hook closes that earlier window. `git rebase` invokes
+# .git/hooks/pre-rebase with two arguments (upstream and branch); a
+# non-zero exit aborts the rebase before any tree mutation. Same
+# allow/refuse logic as the pre-commit guard.
+#
+# Behaviour
+# ---------
+#   - Allow: the rebase is being issued from inside an agent worktree
+#     (`$(git rev-parse --show-toplevel)` matches `*/.claude/worktrees/agent-*`).
+#   - Allow: there are no agent worktrees on this clone (the typical
+#     contributor path).
+#   - Refuse: at least one agent worktree under
+#     `<toplevel>/.claude/worktrees/agent-*` exists AND the rebase is
+#     being issued from the main checkout. The user can bypass with
+#     `git rebase --no-verify` (standard escape hatch — pass it on the
+#     `git rebase` command line for legitimate main-checkout rebases
+#     while an agent runs).
+#
+# Bypass: prepend `--no-verify` to the rebase command.
+#
+# References:
+#   - docs/adr/0684-pre-rebase-worktree-drift-guard.md
+#   - docs/adr/0332-agent-worktree-drift-hard-guard.md
+#   - docs/development/agent-worktree-discipline.md
+#   - scripts/ci/check-agent-worktree-drift.sh (sibling pre-commit guard)
+
+set -eu
+
+toplevel="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$toplevel" ]; then
+  exit 0
+fi
+
+# Allow: rebase from inside an agent worktree (intended path).
+case "$toplevel" in
+  */.claude/worktrees/agent-*)
+    exit 0
+    ;;
+esac
+
+agent_dir="$toplevel/.claude/worktrees"
+if [ ! -d "$agent_dir" ]; then
+  exit 0
+fi
+
+shopt -s nullglob 2>/dev/null || true
+agent_worktrees=("$agent_dir"/agent-*)
+if [ "${#agent_worktrees[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+# At least one agent worktree present. Refuse the rebase.
+cat >&2 <<EOF
+ERROR: agent-worktree-drift guard (ADR-0684) refused this rebase.
+
+You are about to rebase the MAIN checkout while one or more isolated
+agent worktrees are active:
+
+EOF
+max_print=8
+count=0
+for wt in "${agent_worktrees[@]}"; do
+  if [ "$count" -ge "$max_print" ]; then
+    printf '  ... (%d more)\n' \
+      "$((${#agent_worktrees[@]} - max_print))" >&2
+    break
+  fi
+  printf '  %s\n' "$wt" >&2
+  count=$((count + 1))
+done
+cat >&2 <<EOF
+
+A rebase in the main tree while agents own worktrees here is the
+exact drift pattern from the 2026-05-22 incident — the rebase
+clobbered the user's working state across 200+ files before any
+commit was attempted, well before the pre-commit guard could fire.
+
+Fixes (pick one):
+
+  1. If you are an agent: \`cd\` into your assigned worktree
+     (\`\$AGENT_WT\`) and re-run the rebase from there. Use
+     \`git -C "\$AGENT_WT" rebase ...\` from now on.
+
+  2. If you are the human user rebasing legitimate main-checkout
+     work while an agent is running: pass --no-verify to git-rebase
+     to bypass this hook.
+
+  3. If the listed worktree is stale, remove it with
+     \`git worktree remove <path>\` and retry the rebase.
+
+See docs/development/agent-worktree-discipline.md for the full
+process-side + host-side discipline.
+EOF
+exit 1

@@ -1,0 +1,1 @@
+| [ADR-0675](0675-mos-label-materializer-batch-manifest.md) | Adds a manifest-driven batch runner for MOS-label materialization so refreshed AI feature tables can join subjective labels with per-table audits and one provenance-backed batch report. | Accepted | ai, mos, materializer, provenance, fork-local |

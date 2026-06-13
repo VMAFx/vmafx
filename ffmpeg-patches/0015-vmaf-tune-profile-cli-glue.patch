@@ -1,0 +1,70 @@
+From 52df20e883c9c6e95f15a8c7ed934b3de2e93b11 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Wed, 20 May 2026 19:15:00 +0200
+Subject: [PATCH] fftools: add -vmaf-profile CLI glue (vmaf-tune profile
+ helper)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds a new -vmaf-profile <path> option to FFmpeg's CLI parser as the
+operator-visible hand-off to vmaf-tune's encoder-profile reports.
+
+The option is intentionally advisory: FFmpeg logs the profile path and
+points users at the orchestrator command that actually reads the report
+JSON and selects one recommendation:
+
+    vmaf-tune encode-profile --profile PROFILE --src INPUT --output OUTPUT
+
+Embedding a JSON profile parser and vmaf-tune's codec-adapter policy in
+FFmpeg would duplicate the Python tool's schema/version logic and make
+the patch stack much harder to rebase. The concrete encode remains in
+vmaf-tune; this patch gives FFmpeg-side scripts a stable, discoverable
+surface for profile-driven workflows.
+
+ADR: docs/adr/0643-vmaf-tune-encoder-profile-contract.md
+---
+ fftools/ffmpeg_opt.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/fftools/ffmpeg_opt.c b/fftools/ffmpeg_opt.c
+index 7db30ac72b..ef9f83c74b 100644
+--- a/fftools/ffmpeg_opt.c
++++ b/fftools/ffmpeg_opt.c
+@@ -1067,6 +1067,24 @@ static int opt_pass_autotune(void *optctx, const char *opt, const char *arg)
+     return 0;
+ }
+ 
++static int opt_vmaf_profile(void *optctx, const char *opt, const char *arg)
++{
++    /* CLI glue per ADR-0643: vmaf-tune encoder-profile helper.
++     *
++     * The profile JSON/HTML/Markdown reader lives in vmaf-tune so FFmpeg
++     * does not need to duplicate codec-adapter defaults, schema migration,
++     * or recommendation selection. */
++    (void)optctx;
++    (void)opt;
++    av_log(NULL, AV_LOG_INFO,
++           "[ffmpeg] -vmaf-profile %s: encode with "
++           "`vmaf-tune encode-profile --profile %s --src INPUT --output OUTPUT` "
++           "(add --codec / --target-vmaf to select one recommendation). "
++           "See docs/usage/vmaf-tune-ffmpeg.md.\n",
++           arg ? arg : "(null)", arg ? arg : "PROFILE");
++    return 0;
++}
++
+ static int opt_vstats(void *optctx, const char *opt, const char *arg)
+ {
+     char filename[40];
+@@ -1977,6 +1998,9 @@ const OptionDef options[] = {
+     { "pass-autotune",              OPT_TYPE_FUNC,   OPT_VIDEO | OPT_EXPERT,
+         { .func_arg = opt_pass_autotune },
+         "vmaf-tune 2-pass orchestration helper (ADR-0312, advisory only)" },
++    { "vmaf-profile",              OPT_TYPE_FUNC,   OPT_VIDEO | OPT_FUNC_ARG | OPT_EXPERT,
++        { .func_arg = opt_vmaf_profile },
++        "vmaf-tune encoder profile helper (ADR-0643, advisory only)", "path" },
+     { "passlogfile",                OPT_TYPE_STRING, OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_OUTPUT,
+         { .off = OFFSET(passlogfiles) },
+         "select two pass log file name prefix", "prefix" },
+-- 
+2.54.0

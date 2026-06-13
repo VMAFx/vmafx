@@ -1,0 +1,296 @@
+# Per-GPU-generation ULP calibration table (ADR-0234, Research-0041).
+#
+# Maps a runtime-detected GPU identifier to the per-feature absolute
+# tolerance the cross-backend parity gate should apply. The table is
+# the threshold-tier expression of ADR-0234 — sister to the future
+# ONNX calibration head described in the ADR. It does *not* correct
+# scores; it only annotates the parity-gate verdict with a per-arch
+# tolerance that reflects the empirical fp32-rounding floor of that
+# silicon + driver combination.
+#
+# Lookup contract (see scripts/ci/cross_backend_calibration.py):
+#
+#   1. Caller supplies ``--gpu-id <runtime_id>`` to the gate script.
+#      Format mirrors Research-0041:
+#        - ``vulkan:0xVVVV:0xDDDD`` (Vulkan, vendor + device)
+#        - ``cuda:M.m``             (CUDA, compute-capability major.minor)
+#        - ``sycl:0xVVVV:DRIVER``   (SYCL, vendor + driver_version)
+#      Trailing-glob ``*`` is permitted in the table id (covers a
+#      generation family without enumerating every device id).
+#   2. The loader picks the *most-specific* glob match (longest non-
+#      wildcard prefix wins). Tie-break: file order.
+#   3. Per-feature tolerance overrides the gate's default
+#      ``FEATURE_TOLERANCE`` entry. If a feature is absent from the
+#      matched gpu's ``features:`` block, the gate falls back to its
+#      built-in per-feature default.
+#   4. If no entry matches, the gate falls back to the ``--places``
+#      / built-in default end-to-end (backward-compatible — existing
+#      callers see no behaviour change).
+#
+# Calibration data points originate from Research-0041 corpus runs.
+# Every row is either ``calibrated:`` (measured on real hardware /
+# lavapipe with N>=100 frames per cell) or ``placeholder:`` (the
+# entry exists so a future calibration run can drop measurements in
+# without restructuring the file). A placeholder entry's tolerance
+# values match the gate's built-in defaults, i.e. they are
+# operationally a no-op until measured. The PR body lists which
+# rows are calibrated vs placeholder.
+---
+version: 1
+
+# Default for any feature not listed in a gpu's ``features:`` block.
+# Mirrors ``DEFAULT_FP32_TOLERANCE`` in cross_backend_parity_gate.py.
+default_fp32_tolerance: 5.0e-5
+default_fp16_tolerance: 1.0e-2
+
+gpus:
+
+  # ---------------------------------------------------------------
+  # Mesa lavapipe — software Vulkan ICD. Hosted-CI baseline; the
+  # only arch the GitHub-runner lane can reach without bespoke
+  # hardware. ``vendorID = 0x10005`` (VK_VENDOR_ID_MESA) — the
+  # ``deviceID`` varies by Mesa build, so we glob it.
+  #
+  # Status: calibrated. Empirical floors observed in the
+  # ``vulkan-parity-matrix-gate`` workflow over the ADR-0214 history
+  # (vif/adm/motion/motion_v2/psnr land below 1e-6 because the
+  # GLSL kernels run int64 accumulators; psnr_hvs / ciede /
+  # ssimulacra2 hit the per-feature relaxed contract because of
+  # transcendental codegen in lavapipe's LLVM backend).
+  # ---------------------------------------------------------------
+  - id: "vulkan:0x10005:*"
+    label: "Mesa lavapipe (software Vulkan ICD)"
+    status: calibrated
+    notes: >-
+      Hosted-CI baseline; deterministic across hosts. Tolerances
+      mirror the gate's per-feature defaults — lavapipe is the
+      reference against which the per-feature contracts were set
+      (ADR-0214 / ADR-0188 / ADR-0192).
+    features:
+      vif: 5.0e-5
+      adm: 5.0e-5
+      motion: 5.0e-5
+      motion_v2: 5.0e-5
+      psnr: 5.0e-5
+      float_moment: 5.0e-5
+      float_ssim: 5.0e-5
+      float_ms_ssim: 5.0e-5
+      float_ms_ssim_lcs: 5.0e-5
+      float_ansnr: 5.0e-5
+      float_psnr: 5.0e-5
+      float_motion: 5.0e-5
+      float_vif: 5.0e-5
+      float_adm: 5.0e-5
+      ciede: 5.0e-3
+      psnr_hvs: 5.0e-4
+      ssimulacra2: 5.0e-3
+
+  # ---------------------------------------------------------------
+  # NVIDIA Ampere (sm_8.0 = A100, sm_8.6 = RTX 30 series).
+  # CUDA backend.
+  #
+  # Status: placeholder. Tolerances copy the gate defaults; a
+  # future calibration run on real hardware will replace these
+  # in-place.
+  # ---------------------------------------------------------------
+  - id: "cuda:8.0"
+    label: "NVIDIA Ampere A100 (sm_8.0)"
+    status: placeholder
+    notes: >-
+      No real-hardware corpus collected yet — entry reserves the
+      shape for a future calibration sweep on a self-hosted A100
+      runner.
+    features: {}
+
+  - id: "cuda:8.6"
+    label: "NVIDIA Ampere RTX 30 (sm_8.6)"
+    status: placeholder
+    notes: >-
+      No real-hardware corpus collected yet — entry reserves the
+      shape for a future calibration sweep on a self-hosted RTX
+      30-series runner.
+    features: {}
+
+  # ---------------------------------------------------------------
+  # NVIDIA Turing (sm_7.5 = RTX 20 / GTX 16 / Tesla T4).
+  # ---------------------------------------------------------------
+  - id: "cuda:7.5"
+    label: "NVIDIA Turing RTX 20 / T4 (sm_7.5)"
+    status: placeholder
+    notes: >-
+      No real-hardware corpus collected yet — entry reserves the
+      shape for a future calibration sweep on a Turing runner.
+    features: {}
+
+  # ---------------------------------------------------------------
+  # NVIDIA Ada Lovelace (sm_8.9 = RTX 40 series).
+  # ---------------------------------------------------------------
+  - id: "cuda:8.9"
+    label: "NVIDIA Ada Lovelace RTX 40 (sm_8.9)"
+    status: placeholder
+    notes: >-
+      No real-hardware corpus collected yet — entry reserves the
+      shape for a future calibration sweep on an RTX 40-series
+      runner.
+    features: {}
+
+  # ---------------------------------------------------------------
+  # NVIDIA Hopper (sm_9.0 = H100). Data-centre.
+  # ---------------------------------------------------------------
+  - id: "cuda:9.0"
+    label: "NVIDIA Hopper H100 (sm_9.0)"
+    status: placeholder
+    notes: >-
+      No real-hardware corpus collected yet — entry reserves the
+      shape for a future calibration sweep on an H100 runner.
+    features: {}
+
+  # ---------------------------------------------------------------
+  # AMD RDNA2 (RX 6000 family). Vulkan + future HIP. vendorID
+  # 0x1002 = AMD; deviceID 0x73xx is the canonical RDNA2 range.
+  # ---------------------------------------------------------------
+  - id: "vulkan:0x1002:0x73*"
+    label: "AMD RDNA2 RX 6000 family"
+    status: placeholder
+    notes: >-
+      No real-hardware corpus collected yet — entry reserves the
+      shape for a future calibration sweep on a RX 6000 runner.
+    features: {}
+
+  # ---------------------------------------------------------------
+  # AMD RDNA3 (RX 7000 family). deviceID 0x744x / 0x747x.
+  # ---------------------------------------------------------------
+  - id: "vulkan:0x1002:0x744*"
+    label: "AMD RDNA3 RX 7000 family (Navi 31/32)"
+    status: placeholder
+    notes: >-
+      No real-hardware corpus collected yet — entry reserves the
+      shape for a future calibration sweep on a RX 7000 runner.
+    features: {}
+
+  - id: "vulkan:0x1002:0x747*"
+    label: "AMD RDNA3 RX 7000 family (Navi 33)"
+    status: placeholder
+    notes: >-
+      No real-hardware corpus collected yet — entry reserves the
+      shape for a future calibration sweep on a RX 7000 runner.
+    features: {}
+
+  # ---------------------------------------------------------------
+  # Intel Arc Alchemist (A-series, Xe-HPG). vendorID 0x8086.
+  # The A380 is already in fork CI per ADR-0220; calibration data
+  # will follow once the self-hosted runner ships ADR-0234's
+  # collect_gpu_calibration_data.py.
+  # ---------------------------------------------------------------
+  - id: "vulkan:0x8086:0x56*"
+    label: "Intel Arc Alchemist A-series (Xe-HPG)"
+    status: placeholder
+    notes: >-
+      Self-hosted Arc A380 runner exists (ADR-0220 audit) but has
+      not yet emitted a calibration corpus. Tolerances revert to
+      gate defaults until measured.
+    features: {}
+
+  # ---------------------------------------------------------------
+  # Intel Battlemage (B-series, Xe2-HPG). Future hardware.
+  # ---------------------------------------------------------------
+  - id: "vulkan:0x8086:0xe2*"
+    label: "Intel Arc Battlemage B-series (Xe2-HPG)"
+    status: placeholder
+    notes: >-
+      Hardware not yet in fork CI. Entry reserves the shape for
+      future calibration.
+    features: {}
+
+  # ---------------------------------------------------------------
+  # SYCL — Intel Arc A380 / A770 / A750 (DG2-G10 die class).
+  # Used when the parity gate is called with
+  # ``--gpu-id arc:dg2-g10`` (per Research-0730 §6.3).
+  #
+  # Status: calibrated for float_ssim.
+  # ``float_ssim`` diverges from CPU at places=4 (5e-5) on DG2-G10
+  # due to two stacked causes:
+  #   (1) The CPU path (float_ssim.c / iqa_ssim) uses the L×C×S
+  #       decomposition with a sqrt(var_ref*var_cmp) contrast term,
+  #       while the SYCL kernel (integer_ssim_sycl.cpp::float_ssim_sycl)
+  #       uses the Wang 2004 Eq.(13) combined formula (2*covar directly).
+  #       This is intentional design, not a bug.
+  #   (2) DG2-G10 has shaderFloat64=false; fp32 accumulation drift over
+  #       177 K pixel SSIM values compounds to ~2.7e-4 at the mean level.
+  #       RTX 4090 (native fp64 in SYCL) passes at places=4.
+  # Empirical max_abs_diff observed on Arc A380: 2.68e-4.
+  # places=3 (5e-4) accommodates both effects; see Research-0985 §3.
+  # ---------------------------------------------------------------
+  - id: "arc:dg2-g10"
+    label: "Intel Arc A380 / A770 / A750 (DG2-G10 die, SYCL)"
+    status: calibrated
+    notes: >-
+      float_ssim tolerance relaxed to 5e-4 (places=3) for DG2-G10
+      class Arc devices. Two stacked causes: CPU L×C×S formula vs.
+      GPU Wang-2004 combined formula (intentional), plus fp32
+      accumulation drift from lack of native fp64 on DG2-G10
+      (max_abs_diff=2.68e-4 observed on Arc A380).
+      RTX 4090 and lavapipe pass at places=4 (5e-5).
+      See Research-0985 §3 and Research-0730 §6.1.
+    features:
+      float_ssim: 5.0e-4
+
+  # ---------------------------------------------------------------
+  # SYCL — Intel Compute Runtime on Arc. The driver_version is the
+  # discriminating signal per ADR-0220 (different runtimes on the
+  # same silicon emit different residuals).
+  # ---------------------------------------------------------------
+
+  # ---------------------------------------------------------------
+  # Intel Arc Alchemist DG2/G10 — SYCL (Arc A380 and related).
+  # vendorID 0x8086; device IDs 0x56a0–0x56a5 (DG2-G10 slice).
+  #
+  # Status: placeholder (T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03).
+  #
+  # ssimulacra2 observed max_abs_diff = 8.72e-2 on Arc A380 (DG2-G10)
+  # vs CPU scalar. Root cause: fp32-IIR accumulation drift in the
+  # 3-pole Charalampidis blur (``ssimulacra2_sycl.cpp::launch_blur``)
+  # over up to 329 rows of recurrence state per scale × 6 pyramid
+  # scales. Arc A380 lacks native fp64 (ADR-0220); the IIR does not
+  # use Kahan compensation. RTX 4090 passes places=2 (5e-3). The same
+  # failure mode manifests on the Vulkan backend (max_abs_diff=5.48e-2,
+  # Vulkan backend now dropped per ADR-0726).
+  #
+  # Short-term: this entry sets ssimulacra2 at places=2 (5e-3) as a
+  # calibration anchor matching the default gate contract. The
+  # observed divergence (8.72e-2) exceeds this threshold — the entry
+  # serves as a named placeholder so gate tooling matches Arc A380
+  # explicitly rather than falling through to the generic Intel glob.
+  # A hardware-validated places=1 (5e-2) value should replace this
+  # once Arc A380 hardware testing is possible (see TODO below).
+  #
+  # Long-term TODO (T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03 §b):
+  #   Kahan-compensated IIR rewrite in
+  #   core/src/feature/sycl/ssimulacra2_sycl.cpp::launch_blur.
+  #   The CUDA twin is in core/src/feature/cuda/ssimulacra2/
+  #   ssimulacra2_iir_kernel.cu (or inline kernel files there).
+  #   Requires Arc A380 hardware access to validate; RTX 4090 passes
+  #   without the fix. Blocked on self-hosted Arc runner availability.
+  #   Once Kahan-IIR lands and Arc A380 gate passes places=2, promote
+  #   this entry to status: calibrated with the measured tolerance.
+  # ---------------------------------------------------------------
+  - id: "sycl:0x8086:0x56a*"
+    label: "Intel Arc Alchemist DG2/G10 (SYCL, Arc A380 class)"
+    status: placeholder
+    notes: >-
+      Arc A380 (DG2-G10) SYCL placeholder per T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03.
+      ssimulacra2 observed 8.72e-2 divergence vs CPU (fp32-IIR accumulation drift,
+      ADR-0220 fp64-free contract). Tolerance anchored at the default places=2 (5e-3);
+      replace with hardware-measured value once Arc A380 calibration corpus is available.
+      Long-term fix: Kahan-compensated IIR in ssimulacra2_sycl.cpp::launch_blur.
+    features:
+      ssimulacra2: 5.0e-3
+
+  - id: "sycl:0x8086:*"
+    label: "Intel oneAPI SYCL (Arc, generic)"
+    status: placeholder
+    notes: >-
+      Coarse fallback for any SYCL Intel device. Refine with a
+      driver_version-pinned entry once ADR-0220's per-runtime
+      residual matrix is reproduced under the calibration corpus.
+    features: {}

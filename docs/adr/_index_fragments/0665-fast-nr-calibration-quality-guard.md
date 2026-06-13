@@ -1,0 +1,1 @@
+| [ADR-0665](0665-fast-nr-calibration-quality-guard.md) | Fast-NR calibration sidecar writes require a minimum sample count and positive NR-vs-FR PLCC gate; weak fits report but do not update tune inputs unless explicitly overridden. | Accepted | ai, vmaf-tune, calibration, fast-nr |

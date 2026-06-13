@@ -1,0 +1,148 @@
+{{- if eq .Values.workload "Deployment" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vmafx.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.deployment.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vmafx.selectorLabels" . | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.deployment.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vmafx.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "vmafx.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 60 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ include "vmafx.name" . }}
+          image: {{ include "vmafx.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: VMAFX_BACKEND
+              value: {{ include "vmafx.backendEnvValue" . | quote }}
+            {{- if .Values.auth.enabled }}
+            - name: VMAFX_AUTH_DISABLED
+              value: {{ .Values.auth.disabled | toString | quote }}
+            {{- if .Values.auth.jwksEndpoint }}
+            - name: VMAFX_JWKS_ENDPOINT
+              value: {{ .Values.auth.jwksEndpoint | quote }}
+            {{- end }}
+            {{- if .Values.auth.issuer }}
+            - name: VMAFX_AUTH_ISSUER
+              value: {{ .Values.auth.issuer | quote }}
+            {{- end }}
+            {{- if .Values.auth.audience }}
+            - name: VMAFX_AUTH_AUDIENCE
+              value: {{ .Values.auth.audience | quote }}
+            {{- end }}
+            {{- if .Values.auth.tenantClaim }}
+            - name: VMAFX_AUTH_TENANT_CLAIM
+              value: {{ .Values.auth.tenantClaim | quote }}
+            {{- end }}
+            {{- if .Values.auth.rolesClaim }}
+            - name: VMAFX_AUTH_ROLES_CLAIM
+              value: {{ .Values.auth.rolesClaim | quote }}
+            {{- end }}
+            {{- end }}
+          {{- range $k, $v := .Values.env }}
+            - name: {{ $k | quote }}
+              value: {{ $v | quote }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "vmafx.fullname" . }}-config
+          {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            limits:
+              cpu: {{ .Values.resources.limits.cpu | quote }}
+              memory: {{ .Values.resources.limits.memory | quote }}
+            {{- $gpuKey := include "vmafx.gpuResource" . }}
+            {{- if and .Values.gpu.enabled $gpuKey }}
+              {{ $gpuKey }}: {{ .Values.gpu.count | quote }}
+            {{- end }}
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+              memory: {{ .Values.resources.requests.memory | quote }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- if .Values.persistence.corpus.enabled }}
+            - name: corpus
+              mountPath: {{ .Values.persistence.corpus.mountPath }}
+              readOnly: true
+          {{- end }}
+          {{- if .Values.persistence.output.enabled }}
+            - name: output
+              mountPath: {{ .Values.persistence.output.mountPath }}
+          {{- end }}
+          {{- if .Values.persistence.models.enabled }}
+            - name: models
+              mountPath: {{ .Values.persistence.models.mountPath }}
+              readOnly: true
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- if .Values.persistence.corpus.enabled }}
+        - name: corpus
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-corpus
+            readOnly: true
+      {{- end }}
+      {{- if .Values.persistence.output.enabled }}
+        - name: output
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-output
+      {{- end }}
+      {{- if .Values.persistence.models.enabled }}
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-models
+            readOnly: true
+      {{- end }}
+{{- end }}

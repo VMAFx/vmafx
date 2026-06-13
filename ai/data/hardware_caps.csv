@@ -1,0 +1,46 @@
+# Hardware-capability fingerprints for GPU video-encode generations.
+#
+# This file ships PRIOR-ONLY capability metadata sourced from primary
+# vendor documentation. It deliberately contains NO benchmark numbers
+# (throughput, watts, latency, quality scores) — see ADR-0335 and
+# docs/research/0088-hardware-capability-priors-2026-05-08.md for the
+# rationale (the contributor-pack digest's category 1 NO-GO finding:
+# benchmark numbers leak biased priors into the predictor).
+#
+# Every row is verified against a vendor primary source on
+# verified_date=2026-05-08. Wikipedia / community wikis are NOT
+# acceptable as primary sources. Rows that could not be verified are
+# omitted rather than shipped with placeholder data. Notably absent:
+# Hopper (NVIDIA H100/H200) ships zero NVENC engines and is therefore
+# outside the scope of an encode-capability fingerprint table.
+#
+# Schema:
+#   arch_name                  short kebab-case architecture name
+#   vendor                     intel|amd|nvidia
+#   gen_year                   year the architecture's first product
+#                              shipped at retail
+#   codecs_supported           pipe-separated list of HW-encode codecs
+#                              actually exposed by the encode block
+#                              (decode-only codecs excluded)
+#   max_resolution_per_codec   pipe-separated codec=WxH pairs covering
+#                              every codec in codecs_supported
+#   encoding_blocks            count of independent HW encode engines
+#                              on the highest-tier SKU of the gen
+#   tensor_cores               1 if the gen exposes a matrix /
+#                              tensor / XMX path, 0 otherwise
+#   npu_present                1 if the SoC class for this gen ships
+#                              an on-die NPU (separate from GPU
+#                              tensor units), 0 otherwise
+#   driver_min_version         oldest production driver branch that
+#                              exposes the encode block at the listed
+#                              capabilities (vendor-specific format)
+#   source_url                 primary vendor URL the row was
+#                              verified against
+#   verified_date              ISO-8601 date the row was verified
+arch_name,vendor,gen_year,codecs_supported,max_resolution_per_codec,encoding_blocks,tensor_cores,npu_present,driver_min_version,source_url,verified_date
+alchemist,intel,2022,h264|hevc|av1,h264=4096x4096|hevc=8192x8192|av1=8192x8192,2,1,0,intel-graphics-31.0.101.4255,https://www.intel.com/content/www/us/en/developer/articles/technical/intel-arc-graphics-video-encoding.html,2026-05-08
+battlemage,intel,2024,h264|hevc|av1,h264=4096x4096|hevc=8192x8192|av1=8192x8192,2,1,0,intel-graphics-32.0.101.6299,https://www.intel.com/content/www/us/en/products/docs/discrete-gpus/arc/desktop/b-series/overview.html,2026-05-08
+rdna3,amd,2022,h264|hevc|av1,h264=4096x2160|hevc=7680x4320|av1=7680x4320,2,0,0,amdgpu-pro-23.30,https://gpuopen.com/learn/amd_video_core_next_vcn_4_0/,2026-05-08
+rdna4,amd,2025,h264|hevc|av1,h264=4096x2160|hevc=7680x4320|av1=7680x4320,2,0,0,amdgpu-pro-24.20,https://gpuopen.com/learn/video_encoding_with_amf_sdk/,2026-05-08
+ada-lovelace,nvidia,2022,h264|hevc|av1,h264=4096x4096|hevc=8192x8192|av1=8192x8192,3,1,0,nvidia-525.60.11,https://docs.nvidia.com/video-technologies/video-codec-sdk/12.1/nvenc-video-encoder-api-prog-guide/index.html,2026-05-08
+blackwell,nvidia,2025,h264|hevc|av1,h264=4096x4096|hevc=8192x8192|av1=8192x8192,3,1,0,nvidia-570.86.10,https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/read-me/index.html,2026-05-08

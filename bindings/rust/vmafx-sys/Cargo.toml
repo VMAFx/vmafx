@@ -1,0 +1,36 @@
+[package]
+name = "vmafx-sys"
+version = "0.1.0"
+description = "Raw FFI bindings to libvmaf (VMAFX fork)"
+# Workspace inheritance keeps repository / homepage / documentation /
+# license / authors / edition / readme aligned with the [workspace.package]
+# block in the root Cargo.toml. See ADR-0702 (vmafx-sys FFI crate).
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+links = "vmaf"
+build = "build.rs"
+
+[lib]
+# Doc-tests are disabled for this *-sys crate because the generated
+# bindings.rs is produced by bindgen from libvmaf.h C comments verbatim.
+# Those comments contain C idioms ("On x86 / x86_64:", backtick-wrapped
+# code references) that are not valid Rust doc-test code.  Unit tests and
+# integration tests run normally; only doc-tests are suppressed here.
+doctest = false
+
+[build-dependencies]
+bindgen = "0.72"
+
+[dev-dependencies]
+
+[package.metadata.cargo-machete]
+# bindgen is consumed by build.rs to generate FFI bindings against
+# libvmaf.h. cargo-machete's --with-metadata mode does not introspect
+# build.rs symbol usage and flags it as unused; pin the ignore so
+# future audits stay clean. See ADR-0702 (vmafx-sys FFI crate).
+ignored = ["bindgen"]

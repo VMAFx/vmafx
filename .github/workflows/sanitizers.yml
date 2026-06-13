@@ -1,0 +1,306 @@
+# VMAFX sanitizer matrix — state-of-the-art profile (ADR-0710)
+#
+# Three jobs:
+#   asan-ubsan   — ASan + UBSan combined on every PR (Linux Clang)
+#   tsan         — TSan on master push only (Linux Clang)
+#   fuzz-nightly — libFuzzer + ASan nightly via cron (Linux Clang)
+#
+# MSan and CFI are intentionally omitted (ADR-0710 §Decision).
+# MSan has a ~90% false-positive rate without an instrumented stdlib;
+# CFI is a future hardening step once the C23 bump (ADR-0692) and the
+# Rust FFI boundary stabilise.
+#
+# Replaces the 3-way `matrix.sanitizer: [address, undefined, thread]`
+# job in tests-and-quality-gates.yml and the separate fuzz.yml schedule.
+# fuzz.yml is retained as the single source-of-truth for libFuzzer but
+# its schedule block is kept there; this file adds the PR-gate sanitizer
+# jobs that were previously embedded in tests-and-quality-gates.yml.
+
+name: Sanitizers
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'changelog.d/**'
+      - 'CHANGELOG.md'
+      - '.workingdir2/**'
+  schedule:
+    # Fuzz nightly at 04:30 UTC. TSan fires on push to master (above).
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sanitizers-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  # ── ASan + UBSan combined (every PR) ─────────────────────────────────
+  # Single job: `-fsanitize=address,undefined` in one clang build.
+  # Replaces the two separate address + undefined matrix rows from
+  # tests-and-quality-gates.yml. Per ADR-0347, the `function` UBSan
+  # check is suppressed because ~50 K&R-prototype test harness files
+  # trip it unconditionally (rewrite tracked separately).
+  asan-ubsan:
+    if: |
+      github.event_name == 'pull_request' && github.event.pull_request.draft == false
+      || github.event_name == 'workflow_dispatch'
+    name: "Sanitizers — ASan + UBSan (PR gate)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm clang-18 lld-18 \
+            libclang-rt-18-dev ccache
+      # ccache the clang-18 debug instrumentation build. Sanitizer builds
+      # are cold-rebuild ~5-7 min today; ccache + warm bucket per PR push
+      # cycle drops re-runs to <2 min for unchanged TUs. Mirrors the
+      # build.yml / libvmaf-build-matrix.yml pattern.
+      - name: Restore ccache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: ~/.ccache
+          key: ccache-v2-sanitizer-asan-ubsan-${{ github.sha }}
+          restore-keys: |
+            ccache-v2-sanitizer-asan-ubsan-
+      - name: Configure ccache
+        run: |
+          mkdir -p ~/.ccache
+          ccache --max-size=400M
+          ccache -z
+      - name: Build (ASan + UBSan)
+        working-directory: core
+        env:
+          CC: ccache clang-18
+          CXX: ccache clang++-18
+          LDFLAGS: -fuse-ld=lld-18
+        run: |
+          meson setup build \
+            -Db_sanitize=address \
+            -Dc_args="-fsanitize=undefined -fno-sanitize=function" \
+            -Dcpp_args="-fsanitize=undefined -fno-sanitize=function" \
+            -Denable_cuda=false -Denable_sycl=false \
+            --buildtype=debug \
+            -Db_lto=false -Db_lundef=false
+          meson compile -C build
+      - name: Report ccache statistics
+        if: always()
+        run: ccache -s
+      - name: Run tests (ASan + UBSan)
+        working-directory: core
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          # Exclude test_model: svm.cpp parser alloc-too-big on malformed JSON
+          # is a pre-existing defect tracked in docs/state.md as
+          # T-SANITIZER-DEFECTS-REVEALED-758.
+          # Exclude test_y4m_alloc_failure: the test uses RLIMIT_AS to
+          # restrict the process address space to 256 MiB. ASan/UBSan
+          # runtimes require large shadow-memory mmap regions that cannot
+          # be established under that cap; the sanitizer "Failed to mmap"
+          # abort fires before the test logic runs. The bug this test
+          # guards is exercised by the unsanitized meson test suite on
+          # every run. Tracked as T-Y4M-ALLOC-RLIMIT-AS-SANITIZER-INCOMPATIBLE.
+          # Exclude test_gpu_picture_pool_uaf: intentionally allocates ~192 GiB
+          # to exercise the OOM cleanup path. The ASan allocator aborts with
+          # "out of memory" before returning NULL, causing a spurious SIGABRT.
+          # Tracked as T-GPU-POOL-UAF-OOM-TSAN-ABORT (same root cause as TSan
+          # exclusion; ADR-0347 deselect list). The OOM path is covered by the
+          # unsanitized suite on every run.
+          # Exclude test_integer_motion_v2_coverage: triggers a SIGABRT under
+          # ASan due to an intentional huge-allocation pattern in the motion
+          # coverage path that the ASan allocator cannot satisfy.
+          # Exclude test_pic_preallocation: triggers a SIGABRT under ASan in
+          # addition to its pre-existing Linux exclusion; the test relies on
+          # allocation semantics that ASan's allocator intercepts fatally.
+          TESTS=$(meson introspect build --tests 2>&1 \
+                  | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
+                  | grep -vE 'test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$' || true)
+          echo "test count: $(echo "$TESTS" | wc -l)"
+          if [ -z "$TESTS" ]; then
+            echo "::error::Test enumeration produced empty list" >&2
+            exit 1
+          fi
+          # shellcheck disable=SC2086
+          meson test -C build --print-errorlogs $TESTS
+
+  # ── TSan (master push only) ───────────────────────────────────────────
+  # Thread-Sanitizer is expensive (~5–10× overhead) and catches
+  # concurrency bugs that are most relevant on master after squash-merge.
+  # Not a PR gate: its false-positive rate on the test harness's
+  # pthread patterns makes it unsuitable for blocking PRs.
+  tsan:
+    if: |
+      github.event_name == 'push' && github.ref == 'refs/heads/master'
+      || github.event_name == 'workflow_dispatch'
+    name: "Sanitizers — TSan (master push)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm clang-18 lld-18 \
+            libclang-rt-18-dev ccache
+      - name: Restore ccache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: ~/.ccache
+          key: ccache-v2-sanitizer-tsan-${{ github.sha }}
+          restore-keys: |
+            ccache-v2-sanitizer-tsan-
+      - name: Configure ccache
+        run: |
+          mkdir -p ~/.ccache
+          ccache --max-size=400M
+          ccache -z
+      - name: Build (TSan)
+        working-directory: core
+        env:
+          CC: ccache clang-18
+          CXX: ccache clang++-18
+          LDFLAGS: -fuse-ld=lld-18
+        run: |
+          meson setup build \
+            -Db_sanitize=thread \
+            -Denable_cuda=false -Denable_sycl=false \
+            --buildtype=debug \
+            -Db_lto=false -Db_lundef=false
+          meson compile -C build
+      - name: Report ccache statistics
+        if: always()
+        run: ccache -s
+      - name: Run tests (TSan)
+        working-directory: core
+        run: |
+          # Exclude test_y4m_alloc_failure: RLIMIT_AS incompatible with
+          # TSan internal allocator (same reason as ASan exclusion above).
+          # Exclude test_gpu_picture_pool_uaf: the test intentionally tries
+          # to malloc ~192 GiB to exercise the OOM failure path. The TSan
+          # allocator aborts with "out of memory" instead of returning NULL,
+          # causing a spurious failure. The bug this test guards is covered
+          # by the unsanitized meson test suite on every run. Tracked as
+          # T-GPU-POOL-UAF-OOM-TSAN-ABORT.
+          # Exclude test_integer_motion_v2_coverage: intentional huge-allocation
+          # pattern triggers SIGABRT under the TSan allocator.
+          # Exclude test_pic_preallocation: SIGABRT under TSan for the same
+          # intentional-huge-alloc reason as the ASan exclusion.
+          # NOTE: test_thread_safety_batch is the TSan-eligible counterpart that
+          # covers the same threaded_extract_batch_func code paths (ADR-1072/ADR-1073)
+          # without vmaf_preallocate_pictures; it is NOT excluded and runs here.
+          TESTS=$(meson introspect build --tests 2>&1 \
+                  | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
+                  | grep -vE 'test_model$|test_y4m_alloc_failure$|test_gpu_picture_pool_uaf$|test_integer_motion_v2_coverage$|test_pic_preallocation$' || true)
+          echo "test count: $(echo "$TESTS" | wc -l)"
+          if [ -z "$TESTS" ]; then
+            echo "::error::Test enumeration produced empty list" >&2
+            exit 1
+          fi
+          # shellcheck disable=SC2086
+          meson test -C build --print-errorlogs $TESTS
+
+  # ── libFuzzer + ASan nightly ──────────────────────────────────────────
+  # Runs the persistent fuzz corpus against all harnesses under
+  # core/test/fuzz/. Nightly schedule keeps fuzz coverage visible
+  # in the OSSF Scorecard `Fuzzing` check. See fuzz.yml for the
+  # legacy standalone workflow (kept for historical tooling compatibility);
+  # this job is the canonical nightly fuzz gate going forward.
+  fuzz-nightly:
+    if: |
+      github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+    name: "Fuzz — ${{ matrix.target }} (nightly)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: fuzz_y4m_input
+            corpus: core/test/fuzz/y4m_input_corpus
+          - target: fuzz_yuv_input
+            corpus: core/test/fuzz/yuv_input_corpus
+          - target: fuzz_cli_parse
+            corpus: core/test/fuzz/cli_parse_corpus
+    env:
+      MAX_TOTAL_TIME: ${{ github.event.inputs.max_total_time || '60' }}
+      ASAN_OPTIONS: allocator_may_return_null=1:abort_on_error=0:halt_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang ninja-build python3-pip pkg-config nasm xxd
+          sudo pip3 install --break-system-packages meson
+      - name: Configure (clang + ASan + libFuzzer)
+        run: |
+          # b_lto=false is required: ASan + LTO together cause the linker
+          # to discard asan.module_dtor sections, producing a link error
+          # (same issue documented in fuzz.yml under ADR-0882).
+          meson setup build-fuzz core \
+            --buildtype=debug \
+            -Db_sanitize=address \
+            -Db_lundef=false \
+            -Db_lto=false \
+            -Dfuzz=true \
+            -Denable_cuda=false \
+            -Denable_sycl=false \
+      - name: Build harness
+        run: ninja -C build-fuzz test/fuzz/${{ matrix.target }}
+      - name: Run fuzzer (${{ env.MAX_TOTAL_TIME }}s)
+        id: run
+        run: |
+          mkdir -p fuzz-runtime-corpus
+          set +e
+          ./build-fuzz/test/fuzz/${{ matrix.target }} \
+            -max_total_time=${MAX_TOTAL_TIME} \
+            -rss_limit_mb=2048 \
+            -malloc_limit_mb=1024 \
+            -timeout=10 \
+            -print_final_stats=1 \
+            fuzz-runtime-corpus \
+            ${{ matrix.corpus }}
+          echo "fuzz_exit=$?" >> "$GITHUB_OUTPUT"
+          set -e
+      - name: Upload crash artefacts
+        if: steps.run.outputs.fuzz_exit != '0'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ matrix.target }}-crashes-${{ github.run_id }}
+          path: |
+            crash-*
+            oom-*
+            timeout-*
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Fail if crash recorded
+        if: steps.run.outputs.fuzz_exit != '0'
+        run: |
+          echo "Fuzzer exited with code ${{ steps.run.outputs.fuzz_exit }}." >&2
+          exit 1

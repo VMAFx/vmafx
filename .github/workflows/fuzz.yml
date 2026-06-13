@@ -1,0 +1,150 @@
+# Nightly libFuzzer smoke run.
+#
+# Satisfies the OSSF Scorecard `Fuzzing` check by exercising every
+# committed harness under `core/test/fuzz/` against its seed
+# corpus for `MAX_TOTAL_TIME` seconds per night. Crash / OOM /
+# timeout artefacts are uploaded for triage.
+#
+# Tracked under ADR-0270 (fuzzing scaffold), ADR-0311
+# (yuv_input + cli_parse harness expansion), and ADR-0882
+# (fuzz_json_model + seed-corpus audit); operator runbook in
+# docs/development/fuzzing.md.
+
+name: Nightly Fuzz — libFuzzer
+
+on:
+  schedule:
+    # 04:30 UTC daily. Picks a window that does not overlap the
+    # other nightly jobs (`nightly-bisect.yml` runs at 02:00 UTC,
+    # `scorecard.yml` weekly Mon 06:00 UTC) so artefact uploads
+    # do not race for runner minutes.
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+    inputs:
+      max_total_time:
+        description: "Per-target wall-clock seconds (libFuzzer -max_total_time)."
+        required: false
+        default: "60"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: fuzz_y4m_input
+            corpus: core/test/fuzz/y4m_input_corpus
+          - target: fuzz_yuv_input
+            corpus: core/test/fuzz/yuv_input_corpus
+          - target: fuzz_cli_parse
+            corpus: core/test/fuzz/cli_parse_corpus
+          - target: fuzz_json_model
+            corpus: core/test/fuzz/json_model_corpus
+            # Tighter RSS cap for fuzz_json_model: the harness reached
+            # 1.1 GB peak RSS in 180-second nightly runs, suggesting
+            # the libsvm embedded-string sub-parser accumulates state.
+            # 512 MB matches the largest shipped model (≈23 KiB JSON)
+            # with generous overhead and catches runaway growth early.
+            # Other harnesses keep the default 2048 MB.
+            rss_limit_mb: 512
+          - target: fuzz_dnn_sidecar
+            corpus: core/test/fuzz/dnn_sidecar_corpus
+    env:
+      # Per-harness wall-clock seconds. ADR-0311 picked 60s/harness
+      # × 3 harnesses ≈ 180s of fuzz wall time per night, so the
+      # nightly window stays well under the 15-minute timeout-minutes
+      # cap above. Operators wanting a deeper run can dispatch the
+      # workflow manually with a higher `max_total_time` input.
+      MAX_TOTAL_TIME: ${{ github.event.inputs.max_total_time || '60' }}
+      # ASan returns NULL instead of aborting on out-of-memory
+      # alloc requests; libFuzzer treats that as a normal failed
+      # input and continues. Without this, a single oversized
+      # malloc request can crash the harness as a fuzzer-stability
+      # issue rather than a real bug.
+      ASAN_OPTIONS: allocator_may_return_null=1:abort_on_error=0:halt_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3  # SHA-pinned via repo policy; see scorecard.yml
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              clang \
+              ninja-build \
+              python3-pip \
+              pkg-config \
+              nasm \
+              xxd
+          sudo pip3 install --break-system-packages meson
+
+      - name: Configure (clang + ASan + libFuzzer)
+        run: |
+          # b_lto=false is load-bearing for the json_model + dnn_sidecar
+          # harnesses (ADR-0882): they compile parser sources directly,
+          # and ASan + LTO together discard module-dtor sections on the
+          # larger source set, producing a linker error.
+          meson setup build-fuzz core \
+              --buildtype=debug \
+              -Db_sanitize=address \
+              -Db_lundef=false \
+              -Db_lto=false \
+              -Dfuzz=true \
+              -Denable_cuda=false \
+              -Denable_sycl=false \
+
+      - name: Build harness
+        run: ninja -C build-fuzz test/fuzz/${{ matrix.target }}
+
+      - name: Run fuzzer (${{ env.MAX_TOTAL_TIME }}s)
+        id: run
+        run: |
+          mkdir -p fuzz-runtime-corpus
+          # Drive the fuzzer; on crash it exits non-zero and writes
+          # crash-* / oom-* / timeout-* artefacts in CWD. We catch
+          # the exit code and continue so the artefact-upload step
+          # can fire either way.
+          set +e
+          ./build-fuzz/test/fuzz/${{ matrix.target }} \
+              -max_total_time=${MAX_TOTAL_TIME} \
+              -rss_limit_mb=${{ matrix.rss_limit_mb || 2048 }} \
+              -malloc_limit_mb=1024 \
+              -timeout=10 \
+              -print_final_stats=1 \
+              fuzz-runtime-corpus \
+              ${{ matrix.corpus }}
+          echo "fuzz_exit=$?" >> "$GITHUB_OUTPUT"
+          set -e
+
+      - name: Upload crash artefacts
+        if: steps.run.outputs.fuzz_exit != '0'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ matrix.target }}-crashes-${{ github.run_id }}
+          path: |
+            crash-*
+            oom-*
+            timeout-*
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail if crash recorded
+        if: steps.run.outputs.fuzz_exit != '0'
+        run: |
+          echo "Fuzzer exited with code ${{ steps.run.outputs.fuzz_exit }}." >&2
+          echo "Crash / OOM / timeout artefacts were uploaded; download them from this run's Artifacts panel." >&2
+          exit 1

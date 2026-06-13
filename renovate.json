@@ -1,0 +1,261 @@
+{
+  "forkProcessing": "enabled",
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    "helpers:pinGitHubActionDigests",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:disableTypesNodeMajor"
+  ],
+  "schedule": ["before 6am on weekdays"],
+  "timezone": "Europe/Vienna",
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 10,
+  "rangeStrategy": "bump",
+  "commitMessagePrefix": "chore(deps):",
+  "branchPrefix": "renovate/",
+  "labels": ["dependencies"],
+  "platformAutomerge": true,
+  "osvVulnerabilityAlerts": true,
+  "dependencyDashboardOSVVulnerabilitySummary": "all",
+  "prCreation": "immediate",
+  "minimumReleaseAge": "3 days",
+  "ignorePaths": [
+    "subprojects/**",
+    "python/test/resource/**",
+    ".workingdir2/**",
+    "build_artifacts/**",
+    "model/**",
+    "ai/**/runs/**"
+  ],
+  "packageRules": [
+    {
+      "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge — digest-only is mechanical and CI catches drift.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "GitHub Actions (minor + patch)",
+      "automerge": true,
+      "automergeType": "pr",
+      "schedule": ["before 6am on Monday"]
+    },
+    {
+      "description": "Major Action upgrades require human review — breaking changes possible.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "GitHub Actions (major)",
+      "automerge": false
+    },
+    {
+      "description": "Group pre-commit hook rev bumps; auto-merge — mechanical, lint catches drift.",
+      "matchManagers": ["pre-commit"],
+      "groupName": "pre-commit hooks",
+      "automerge": true
+    },
+    {
+      "description": "Python patch updates auto-merge; minor + major need review.",
+      "matchManagers": ["pep621", "pip_requirements"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "Python (patch)",
+      "automerge": true
+    },
+    {
+      "description": "Python minor grouped, manual review.",
+      "matchManagers": ["pep621", "pip_requirements"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "Python (minor)",
+      "automerge": false
+    },
+    {
+      "description": "Group all Go minor + patch updates into one PR; auto-merge. k8s/grpc/proto patch bumps are low-risk; CI gates catch regressions.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Go deps (minor + patch)",
+      "automerge": true,
+      "automergeType": "pr",
+      "schedule": ["before 6am on Monday"]
+    },
+    {
+      "description": "Go major upgrades travel individually and require human review — module path and API changes.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "Go deps (major)",
+      "automerge": false
+    },
+    {
+      "description": "Group all Cargo (Rust) minor + patch updates; auto-merge — Rust's semantic versioning is reliable and CI catches UB/breakage.",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Cargo deps (minor + patch)",
+      "automerge": true,
+      "automergeType": "pr",
+      "schedule": ["before 6am on Monday"]
+    },
+    {
+      "description": "Cargo major upgrades require human review — breaking API changes, unsafe code review.",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "Cargo deps (major)",
+      "automerge": false
+    },
+    {
+      "description": "Renovate's own action — manual review on bumps to retain auditability of the dep-bot itself.",
+      "matchPackageNames": ["renovatebot/github-action"],
+      "groupName": "Renovate self-hosted action",
+      "automerge": false
+    },
+    {
+      "description": "FFmpeg release tag — manual review; drives the ffmpeg-patches/ rebase story.",
+      "matchPackageNames": ["FFmpeg/FFmpeg"],
+      "groupName": "FFmpeg patch base",
+      "automerge": false,
+      "labels": ["dependencies", "ffmpeg-patches"]
+    },
+    {
+      "description": "ROCm apt-repo version bump — manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat before merging (ADR-0604, ADR-0603).",
+      "matchPackageNames": ["rocm"],
+      "groupName": "ROCm (hip runtime)",
+      "automerge": false,
+      "labels": ["dependencies", "rocm", "manual-review"]
+    },
+    {
+      "description": "dev-image deps (CUDA-adjacent, Intel NEO/IGC/gmmlib/LZ0, ONNX Runtime, SVT-AV1, VVenC, AMF) — manual review required. Container rebuild has large blast radius; validate GPU compatibility before merging. See ADR-0605.",
+      "matchPackageNames": [
+        "intel/compute-runtime",
+        "intel/intel-graphics-compiler",
+        "intel/gmmlib",
+        "oneapi-src/level-zero",
+        "microsoft/onnxruntime",
+        "AOMediaCodec/SVT-AV1",
+        "fraunhoferhhi/vvenc",
+        "GPUOpen-LibrariesAndSDKs/AMF"
+      ],
+      "groupName": "dev-image pinned deps",
+      "automerge": false,
+      "labels": ["dependencies", "dev-image"]
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "FFmpeg release tag pinned in the patch-stack test script + the CI gate + the Containerfile ARG.",
+      "managerFilePatterns": [
+        "/^ffmpeg-patches/test/build-and-run\\.sh$/",
+        "/^scripts/ci/ffmpeg-patches-check\\.sh$/",
+        "/^dev/Containerfile$/"
+      ],
+      "matchStrings": [
+        "FFMPEG_SHA:=(?<currentValue>n[0-9.]+)",
+        "FFMPEG_PATCHES_BRANCH:-(?<currentValue>release/[0-9.]+)",
+        "ARG FFMPEG_TAG=(?<currentValue>n[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "FFmpeg/FFmpeg"
+    },
+    {
+      "customType": "regex",
+      "description": "ROCm pin in dev/Containerfile. Matches both the ARG ROCM_VER line and the repo URL path so both stay in sync on bumps. Queries the AMD apt directory listing via the html datasource. See ADR-0604.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG ROCM_VER=(?<currentValue>[0-9.]+)",
+        "rocm/apt/(?<currentValue>[0-9.]+)/"
+      ],
+      "datasourceTemplate": "custom.rocm",
+      "depNameTemplate": "rocm"
+    },
+    {
+      "customType": "regex",
+      "description": "Intel compute-runtime (NEO) version in dev/Containerfile. Tracks github.com/intel/compute-runtime releases. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG NEO_VER=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "intel/compute-runtime"
+    },
+    {
+      "customType": "regex",
+      "description": "Intel Graphics Compiler (IGC) version in dev/Containerfile. Extracts the semver portion before the '+<build-id>' suffix (e.g. 2.34.4 from 2.34.4+21428). The +build suffix is Intel's internal build counter — it stays in the ARG line after Renovate bumps the semver part; a reviewer should update it to match the new release's counter. Tracks github.com/intel/intel-graphics-compiler releases. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG IGC_VER=(?<currentValue>[0-9.]+)\\+[0-9]+"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "intel/intel-graphics-compiler"
+    },
+    {
+      "customType": "regex",
+      "description": "Intel gmmlib (Graphics Memory Management) version in dev/Containerfile. Tracks github.com/intel/gmmlib releases. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG GMMLIB_VER=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "intel/gmmlib"
+    },
+    {
+      "customType": "regex",
+      "description": "Level Zero loader version in dev/Containerfile. Tracks github.com/oneapi-src/level-zero releases. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG LEVEL_ZERO_VER=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "oneapi-src/level-zero"
+    },
+    {
+      "customType": "regex",
+      "description": "ONNX Runtime C++ library version in dev/Containerfile. Installed via tarball from GitHub releases (not apt). Tracks github.com/microsoft/onnxruntime releases. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG ORT_VERSION=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "microsoft/onnxruntime"
+    },
+    {
+      "customType": "regex",
+      "description": "SVT-AV1 encoder version in dev/Containerfile. Built from source via git clone of gitlab.com/AOMediaCodec/SVT-AV1 at a tagged release. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG SVTAV1_VERSION=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "gitlab-tags",
+      "depNameTemplate": "AOMediaCodec/SVT-AV1",
+      "registryUrlTemplate": "https://gitlab.com"
+    },
+    {
+      "customType": "regex",
+      "description": "VVenC (Fraunhofer VVC reference encoder) version in dev/Containerfile. Built from source via git clone of github.com/fraunhoferhhi/vvenc at a tagged release. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG VVENC_VERSION=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "fraunhoferhhi/vvenc"
+    },
+    {
+      "customType": "regex",
+      "description": "AMD AMF (Advanced Media Framework) headers version in dev/Containerfile. Built from source via git clone of github.com/GPUOpen-LibrariesAndSDKs/AMF at a tagged release. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG AMF_VERSION=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "GPUOpen-LibrariesAndSDKs/AMF"
+    }
+  ],
+  "customDatasources": {
+    "rocm": {
+      "defaultRegistryUrlTemplate": "https://repo.radeon.com/rocm/apt/",
+      "format": "html"
+    }
+  },
+  "vulnerabilityAlerts": {
+    "labels": ["security", "dependencies"],
+    "automerge": false,
+    "schedule": ["at any time"],
+    "minimumReleaseAge": "0 days"
+  },
+  "git-submodules": { "enabled": true }
+}

@@ -1,0 +1,420 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VMAFX Helm chart values",
+  "description": "JSON Schema for deploy/helm/vmafx/values.yaml. Catches typos and invalid enum values at `helm install` / `helm upgrade` / `helm lint` time before they become silent template-rendering bugs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workload", "image", "gpu"],
+  "properties": {
+    "nameOverride": {
+      "type": "string",
+      "description": "Replaces only the chart-name component of resource names. Default: chart name."
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "description": "Replaces the entire resource-name prefix. Default: <release>-<chartName>."
+    },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "replicaCount": { "type": "integer", "minimum": 0 },
+        "image": { "$ref": "#/$defs/imageSpec" },
+        "logLevel": { "type": "string", "enum": ["debug", "info", "warn", "error"] },
+        "leaderElect": { "type": "boolean" },
+        "resources": { "$ref": "#/$defs/resourceSpec" }
+      }
+    },
+    "image": { "$ref": "#/$defs/imageSpec" },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": { "name": { "type": "string" } }
+      }
+    },
+    "workload": {
+      "type": "string",
+      "enum": ["Deployment", "Job", "StatefulSet"],
+      "description": "Selects which workload kind the chart renders. Must be one of Deployment, Job, or StatefulSet."
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 0 },
+        "strategy": { "type": "object" }
+      }
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "command": { "type": "array", "items": { "type": "string" } },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "completions": { "type": "integer", "minimum": 1 },
+        "parallelism": { "type": "integer", "minimum": 1 },
+        "backoffLimit": { "type": "integer", "minimum": 0 },
+        "ttlSecondsAfterFinished": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "statefulSet": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 0 },
+        "updateStrategy": { "type": "object" },
+        "podManagementPolicy": {
+          "type": "string",
+          "enum": ["OrderedReady", "Parallel"]
+        },
+        "statePVCSize": {
+          "type": "string",
+          "description": "Size of the per-replica PersistentVolumeClaim for MCP session state (/var/lib/vmafx). Standard Kubernetes quantity string (e.g. 1Gi, 500Mi).",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E|m)?$"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer", "ExternalName"]
+        },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "targetPort": {
+          "oneOf": [
+            { "type": "integer", "minimum": 1, "maximum": 65535 },
+            { "type": "string" }
+          ]
+        },
+        "extraPorts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "port"],
+            "properties": {
+              "name": { "type": "string" },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+              "targetPort": {
+                "oneOf": [
+                  { "type": "integer", "minimum": 1, "maximum": 65535 },
+                  { "type": "string" }
+                ]
+              },
+              "protocol": { "type": "string", "enum": ["TCP", "UDP", "SCTP"] }
+            }
+          },
+          "description": "Additional named Service ports beyond the primary HTTP port."
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "annotations": { "type": "object" },
+        "hosts": { "type": "array" },
+        "tls": { "type": "array" }
+      }
+    },
+    "gpu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor", "enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "vendor": {
+          "type": "string",
+          "enum": ["nvidia", "amd", "intel", "cpu"],
+          "description": "Maps to the matching device-plugin resource key. nvidia → nvidia.com/gpu, amd → amd.com/gpu, intel → gpu.intel.com/i915, cpu → no device plugin. Vulkan removed per ADR-0726."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of GPU units to request from the device plugin. Must be ≥1 when gpu.enabled is true; requesting 0 is a silent no-op on every vendor device plugin (ADR-1047)."
+        }
+      }
+    },
+    "resources": { "$ref": "#/$defs/resourceSpec" },
+    "env": { "type": "object" },
+    "envFrom": { "type": "array" },
+    "config": { "type": "object" },
+    "persistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "storageClass": { "type": "string" },
+        "accessMode": {
+          "type": "string",
+          "enum": ["ReadWriteOnce", "ReadOnlyMany", "ReadWriteMany", "ReadWriteOncePod"]
+        },
+        "corpus": { "$ref": "#/$defs/volumeSpec" },
+        "output": { "$ref": "#/$defs/volumeSpec" },
+        "models": { "$ref": "#/$defs/volumeSpec" }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean" },
+        "annotations": { "type": "object" },
+        "name": { "type": "string" }
+      }
+    },
+    "podAnnotations": { "type": "object" },
+    "podSecurityContext": { "type": "object" },
+    "securityContext": { "type": "object" },
+    "affinity": { "type": "object" },
+    "tolerations": { "type": "array" },
+    "nodeSelector": { "type": "object" },
+    "topologySpreadConstraints": { "type": "array" },
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How long Kubernetes waits after SIGTERM before sending SIGKILL. Default 60 s. GPU scoring jobs that cannot checkpoint mid-frame should set 300+ s."
+    },
+    "livenessProbe": { "type": "object" },
+    "readinessProbe": { "type": "object" },
+    "monitoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "serviceMonitor": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "namespace": { "type": "string" },
+            "labels": { "type": "object" },
+            "interval": { "type": "string" },
+            "scrapeTimeout": { "type": "string" },
+            "path": { "type": "string" },
+            "scheme": { "type": "string", "enum": ["http", "https"] },
+            "honorLabels": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "pushgateway": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["http-serve", "rclone"],
+          "description": "vmafx-node asset-fetch mode. http-serve pulls from the controller endpoint; rclone pulls directly from a remote configured via storage.rclone.config."
+        },
+        "rclone": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "config": { "type": "string" }
+          }
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "replicaCount": { "type": "integer", "minimum": 0 },
+        "strategy": {
+          "type": "object",
+          "description": "Rolling-update strategy for the node Deployment. Default: maxUnavailable:0, maxSurge:1 (zero-disruption, GPU-safe)."
+        },
+        "grpcPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "gRPC listen port for the vmafx-node server. Must match VMAFX_NODE_ADDR env var (default 50052). Used for tcpSocket liveness/readiness probes and the node ClusterIP Service."
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "type": "string" },
+            "tag": { "type": "string" }
+          }
+        },
+        "controllerAddr": { "type": "string" },
+        "metricsPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Prometheus scrape port exposed by vmafx-node. Updates the Deployment containerPort, the node-metrics Service port, and the NetworkPolicy allow rule. Default: 9090."
+        },
+        "resources": { "$ref": "#/$defs/resourceSpec" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "volumes": { "type": "array" },
+        "volumeMounts": { "type": "array" }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "PodDisruptionBudget prevents simultaneous eviction of all pods during voluntary disruptions (ADR-1058). Recommended when replicaCount >= 2.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "string", "pattern": "^[0-9]+%$" }
+          ],
+          "description": "Minimum number (or percentage) of pods that must remain available. Mutually exclusive with maxUnavailable."
+        },
+        "maxUnavailable": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "string", "pattern": "^[0-9]+%$" }
+          ],
+          "description": "Maximum number (or percentage) of pods that may be unavailable. Mutually exclusive with minAvailable."
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "NetworkPolicy default-deny posture with allow-rules (ADR-0930). See values.yaml for the full allow.* matrix.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "allow": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "controllerToNode": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "nodePort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+              }
+            },
+            "nodeEgressObjectStore": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+                "cidrs": { "type": "array", "items": { "type": "string" } },
+                "except": { "type": "array", "items": { "type": "string" } }
+              }
+            },
+            "operatorToApiserver": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } }
+              }
+            },
+            "nodeMetrics": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Allow Prometheus to scrape vmafx-node metrics port 9090 (ADR-1058).",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "fromPodSelector": { "type": "object", "additionalProperties": true }
+              }
+            },
+            "dns": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "namespaceSelector": { "type": "object", "additionalProperties": true },
+                "podSelector": { "type": "object", "additionalProperties": true }
+              }
+            }
+          }
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Multi-tenant JWT/OIDC gateway (ADR-0794). additionalProperties:true to accommodate per-tenant oidc and rbac sub-keys without exhaustive enumeration.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "disabled": { "type": "boolean" },
+        "jwksEndpoint": { "type": "string" },
+        "issuer": { "type": "string" },
+        "audience": { "type": "string" },
+        "tenantClaim": { "type": "string" },
+        "rolesClaim": { "type": "string" },
+        "tenants": { "type": "array" }
+      }
+    },
+    "otelCollector": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "OpenTelemetry collector sidecar (ADR-0782). additionalProperties:true to allow arbitrary receiver/exporter config blocks.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/$defs/imageSpec" },
+        "otlpGRPCPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "config": { "type": "string" },
+        "resources": { "$ref": "#/$defs/resourceSpec" }
+      }
+    }
+  },
+  "$defs": {
+    "imageSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    },
+    "resourceSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "limits": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [{ "type": "string" }, { "type": "integer" }]
+          }
+        },
+        "requests": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [{ "type": "string" }, { "type": "integer" }]
+          }
+        }
+      }
+    },
+    "volumeSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "size": { "type": "string" },
+        "mountPath": { "type": "string" },
+        "existingClaim": { "type": "string" }
+      }
+    }
+  }
+}

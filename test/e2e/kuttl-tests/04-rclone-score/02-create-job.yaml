@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# test/e2e/kuttl-tests/04-rclone-score/02-create-job.yaml
+#
+# Submit a VmafxJob that fetches ref + dist via rclone:// (the in-cluster
+# MinIO remote configured in 00-setup.yaml).  The worker Pod runs vmafx with
+# the cpu backend and writes the score back to the CR status.
+#
+# ADR-0783 / ADR-0709 / ADR-0713.
+---
+apiVersion: vmafx.dev/v1
+kind: VmafxJob
+metadata:
+  name: job-rclone-cpu
+  namespace: vmafx-e2e-test
+  annotations:
+    # Reference the rclone config Secret created in 00-setup.yaml.
+    vmafx.dev/rclone-config-secret: rclone-config
+spec:
+  reference: "rclone://e2eminio/vmafx-e2e/ref.yuv"
+  distorted: "rclone://e2eminio/vmafx-e2e/dist.yuv"
+  backend: cpu
+  model: vmaf_v0.6.1

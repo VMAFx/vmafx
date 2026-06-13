@@ -1,0 +1,1 @@
+| [ADR-0691](0691-vmafx-drop-legacy-build-paths.md) | VMAFX Phase 1C — drop legacy build paths (`build-cpu`, `build-cuda`, `build-all` → unified `build/`) | Accepted | build, meson, vmafx, phase1, fork-local |

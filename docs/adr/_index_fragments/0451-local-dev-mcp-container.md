@@ -1,0 +1,1 @@
+| [ADR-0451](0451-local-dev-mcp-container.md) | Local dev-MCP container for live probing — Docker, all 4 GPU backends (CUDA/SYCL/Vulkan/HIP), continuous 15-min smoke probe | Accepted | infra, docker, mcp, gpu, hip, cuda, sycl, vulkan, dev, fork-local |

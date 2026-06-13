@@ -1,0 +1,173 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Sat, 10 May 2026 12:00:00 +0200
+Subject: [PATCH] libvmaf: wire hip backend selector (hip_device option)
+
+Adds a per-context HIP backend selector to the regular `libvmaf`
+filter, mirroring the existing `sycl_device` / `vulkan_device`
+options from patches 0003 / 0004 and the `cuda` boolean from
+patch 0010.
+
+When `hip_device >= 0` the filter:
+
+  * initialises a VmafHipState on the requested HIP device (values
+    >= 0 select an explicit ordinal; 0 targets the first
+    compute-capable HIP device on a single-GPU system),
+  * imports the state into the VmafContext via
+    vmaf_hip_import_state(),
+  * uses the standard vmaf_picture_alloc() path for AVFrame input
+    (no HOST_PINNED pool API is exposed in the HIP public header at
+    this revision; picture preallocation is a follow-up gated on
+    T7-10c; until then the HIP selector behaves like the SYCL
+    selector: software frames fill host memory, HIP kernels
+    operate on device-side buffers the backend manages internally),
+  * frees the state after vmaf_close() per the libvmaf_hip.h
+    ownership contract (vmaf_hip_state_free takes a double pointer,
+    matching vmaf_sycl_state_free / vmaf_vulkan_state_free).
+
+Configure additions:
+
+  * --enable-libvmaf-hip added to the configure help text and to
+    EXTERNAL_LIBRARY_LIST, matching --enable-libvmaf-sycl /
+    --enable-libvmaf-vulkan / --enable-libvmaf-cuda.
+  * enabled libvmaf_hip && require_pkg_config + check_pkg_config
+    wiring; the libvmaf >= 3.0.0 floor matches the Vulkan/SYCL
+    floor (the HIP header was added in the same version bump).
+  * enabled libvmaf && check_pkg_config libvmaf_hip auto-detects
+    the in-filter selector when libvmaf was built with HIP but the
+    user has not explicitly passed --enable-libvmaf-hip.
+
+A dedicated `libvmaf_hip` filter for zero-copy ROCm hwdec import is
+deferred: FFmpeg has no ROCm/HIP hwdec path that produces AVFrames
+with HIP-native device pointers equivalent to CUDA's ffnvcodec path
+or VAAPI's DMA-BUF path for SYCL. When such a path lands in FFmpeg
+a companion 0012 patch can be added. The gap is documented in
+docs/state.md and docs/rebase-notes.md.
+
+Closes the FFmpeg integration gap for HIP: --enable-libvmaf-hip now
+exists alongside --enable-libvmaf-sycl / --enable-libvmaf-vulkan /
+--enable-libvmaf-cuda. See ADR-0380.
+
+Validated against n8.1.1 with the cumulative 0001..0010 patch
+stack applied; applies cleanly.
+---
+ configure                |  5 +++++
+ libavfilter/vf_libvmaf.c | 45 ++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 50 insertions(+)
+
+diff --git a/configure b/configure
+index 5aee240..405ffe1 100755
+--- a/configure
++++ b/configure
+@@ -295,6 +295,7 @@ External library support:
+   --enable-libv4l2         enable libv4l2/v4l-utils [no]
+   --enable-libvidstab      enable video stabilization using vid.stab [no]
+   --enable-libvmaf         enable vmaf filter via libvmaf [no]
++  --enable-libvmaf-hip     enable HIP-accelerated vmaf filter via libvmaf [no]
+   --enable-libvmaf-cuda    enable CUDA-accelerated vmaf filter via libvmaf [no]
+   --enable-libvmaf-sycl    enable SYCL-accelerated vmaf filter via libvmaf [no]
+   --enable-libvmaf-vulkan  enable Vulkan-accelerated vmaf filter via libvmaf [no]
+@@ -2102,6 +2103,7 @@ EXTERNAL_LIBRARY_LIST="
+     libuavs3d
+     libv4l2
+     libvmaf
++    libvmaf_hip
+     libvmaf_cuda
+     libvmaf_sycl
+     libvmaf_vulkan
+@@ -7399,6 +7401,9 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
+ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_ioctl
+ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
+ enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
++enabled libvmaf_hip       && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
++                             check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" libvmaf/libvmaf_hip.h vmaf_hip_state_init
++enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" libvmaf/libvmaf_hip.h vmaf_hip_state_init
+ enabled libvmaf_cuda      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
+                              check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
+ enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index a32c915..0793356 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -68,6 +68,10 @@
+ #include <vulkan/vulkan.h>
+ #endif
+
++#if CONFIG_LIBVMAF_HIP
++#include <libvmaf/libvmaf_hip.h>
++#endif
++
+ typedef struct LIBVMAFContext {
+     const AVClass *class;
+     FFFrameSync fs;
+@@ -100,6 +104,10 @@ typedef struct LIBVMAFContext {
+     VmafCudaState *cu_state;            /* owned by the libvmaf filter when cuda=1 */
+     int            cuda_pool_initialised;  /* lazy: geometry isn't known until first frame */
+ #endif
++    int   hip_device;
++#if CONFIG_LIBVMAF_HIP
++    VmafHipState *hip_state;            /* owned by the libvmaf filter when hip_device >= 0 */
++#endif
+
+     VmafContext *vmaf;
+     VmafModel **model;
+@@ -130,6 +138,7 @@ static const AVOption libvmaf_options[] = {
+     {"sycl_profile", "Enable SYCL queue profiling.",                                    OFFSET(sycl_profile),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
+     {"vulkan_device","Vulkan device index (-1 = disabled, 0+ = device index).",         OFFSET(vulkan_device),   AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
+     {"cuda",         "Enable the CUDA backend on the primary device (software AVFrame input).", OFFSET(cuda),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
++    {"hip_device",   "HIP device index (-1 = disabled, 0+ = device index).",            OFFSET(hip_device),      AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
+     { NULL }
+ };
+
+@@ -650,6 +659,35 @@ static av_cold int init(AVFilterContext *ctx)
+ #endif
+     }
+
++    if (s->hip_device >= 0) {
++#if CONFIG_LIBVMAF_HIP
++        VmafHipConfiguration hip_cfg = {
++            .device_index = s->hip_device,
++            .flags        = 0,
++        };
++        err = vmaf_hip_state_init(&s->hip_state, hip_cfg);
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_hip_state_init(%d) failed: %d.\n",
++                   s->hip_device, err);
++            return AVERROR(-err);
++        }
++        err = vmaf_hip_import_state(s->vmaf, s->hip_state);
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_hip_import_state failed: %d.\n", err);
++            return AVERROR(-err);
++        }
++        av_log(ctx, AV_LOG_INFO,
++               "HIP backend active (device=%d)\n", s->hip_device);
++#else
++        av_log(ctx, AV_LOG_ERROR,
++               "hip_device set but libvmaf was built without HIP support "
++               "(rebuild with --enable-libvmaf-hip).\n");
++        return AVERROR(ENOSYS);
++#endif
++    }
++
+     err = parse_models(ctx);
+     if (err)
+         return err;
+@@ -876,6 +914,13 @@ clean_up:
+         s->cu_state = NULL;
+     }
+ #endif
++
++#if CONFIG_LIBVMAF_HIP
++    if (s->hip_state) {
++        vmaf_hip_state_free(&s->hip_state);
++        s->hip_state = NULL;
++    }
++#endif
+ }
+
+ static const AVFilterPad libvmaf_inputs[] = {
+--
+2.54.0

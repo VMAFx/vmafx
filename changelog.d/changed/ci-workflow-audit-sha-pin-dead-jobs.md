@@ -1,0 +1,3 @@
+- **ci: SHA-pin `EnricoMi/publish-unit-test-result-action` in `e2e-k8s.yml`** (was `@v2`; pinned to `c950f6fb` / v2.23.0), consistent with every other action in the repository.
+- **ci: Remove permanently-disabled `clang-tidy-sycl` job** from `lint-and-format.yml` (~150 lines of dead YAML gated by `if: (false)`); add tombstone comment referencing ADR-0217.
+- **ci: Correct stale `fuzz.yml` comment** citing ADR-0882 and a `fuzz_json_model` harness that do not yet exist; replaced with a forward note.

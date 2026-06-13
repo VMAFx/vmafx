@@ -1,0 +1,1 @@
+- Fixed: `mu_report` now writes status output to stderr rather than stdout; added missing `#include "test.h"` guard to prevent redefinition on repeated inclusion. (PR #812)

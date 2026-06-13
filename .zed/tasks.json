@@ -1,0 +1,84 @@
+[
+  {
+    "label": "Build (CPU only)",
+    "command": "meson setup build -Denable_cuda=false -Denable_sycl=false && ninja -C build",
+    "reveal": "always",
+    "save": "all"
+  },
+  {
+    "label": "Build (all backends)",
+    "command": "meson setup build -Denable_cuda=true -Denable_sycl=true && ninja -C build",
+    "reveal": "always",
+    "save": "all"
+  },
+  {
+    "label": "Build (CUDA only)",
+    "command": "meson setup build -Denable_cuda=true -Denable_sycl=false --reconfigure && ninja -C build",
+    "reveal": "always",
+    "save": "all"
+  },
+  {
+    "label": "Build (SYCL only)",
+    "command": "meson setup build -Denable_cuda=false -Denable_sycl=true --reconfigure && ninja -C build",
+    "reveal": "always",
+    "save": "all"
+  },
+  {
+    "label": "ninja: build (incremental)",
+    "command": "ninja -C build",
+    "reveal": "always",
+    "save": "all"
+  },
+  {
+    "label": "Run fast tests",
+    "command": "meson test -C build --suite=fast --print-errorlogs",
+    "reveal": "always"
+  },
+  {
+    "label": "Run all tests",
+    "command": "meson test -C build --print-errorlogs",
+    "reveal": "always"
+  },
+  {
+    "label": "Netflix golden",
+    "command": "make test-netflix-golden",
+    "reveal": "always"
+  },
+  {
+    "label": "Format all",
+    "command": "make format",
+    "reveal": "no_focus",
+    "hide": "on_success"
+  },
+  {
+    "label": "Lint all",
+    "command": "make lint",
+    "reveal": "always"
+  },
+  {
+    "label": "vmaf-tune compare BBB 1080p (smoke)",
+    "command": "python tools/vmaf-tune/vmaftune/compare.py --ref testdata/ref_576x324_48f.yuv --dis testdata/dis_576x324_48f.yuv --width 576 --height 324 --backend cpu",
+    "reveal": "always"
+  },
+  {
+    "label": "Open dev-mcp shell",
+    "command": "docker exec -it vmaf-dev-mcp bash",
+    "reveal": "always"
+  },
+  {
+    "label": "MCP smoke test",
+    "command": "cd mcp-server/vmaf-mcp && python -m pytest tests/test_smoke_e2e.py -v",
+    "reveal": "always"
+  },
+  {
+    "label": "pre-commit: run on staged files",
+    "command": "pre-commit run",
+    "reveal": "always",
+    "save": "all"
+  },
+  {
+    "label": "pre-commit: run all files",
+    "command": "pre-commit run --all-files",
+    "reveal": "always"
+  }
+]

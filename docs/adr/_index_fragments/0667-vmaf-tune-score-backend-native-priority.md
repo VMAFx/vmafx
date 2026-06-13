@@ -1,0 +1,1 @@
+| [ADR-0667](0667-vmaf-tune-score-backend-native-priority.md) | `vmaf-tune --score-backend auto` now uses native-first GPU priority (`cuda -> sycl -> hip -> vulkan -> cpu`) and accepts explicit `hip` backed by ROCm availability probes. | Accepted | vmaf-tune, gpu, cuda, sycl, hip, vulkan, fork-local |

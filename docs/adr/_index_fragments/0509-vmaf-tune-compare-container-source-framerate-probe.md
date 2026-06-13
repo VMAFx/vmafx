@@ -1,0 +1,1 @@
+| [ADR-0509](0509-vmaf-tune-compare-container-source-framerate-probe.md) | vmaf-tune compare auto-probes container-source framerate / duration | Accepted | vmaf-tune, compare, bisect, encode, vmaf-cli |

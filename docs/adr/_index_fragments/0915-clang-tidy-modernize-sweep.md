@@ -1,0 +1,1 @@
+| [ADR-0915](0915-clang-tidy-modernize-sweep.md) | Enable clang-tidy `modernize-*` family with curated opt-outs; discharge top 15 findings (8 nullptr + 6 deprecated-headers + 1 use-auto) on fork-added C++ files | Accepted | lint, ci, cpp, quality-gate, fork-local |

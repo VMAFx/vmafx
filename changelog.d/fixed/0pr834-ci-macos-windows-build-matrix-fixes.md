@@ -1,0 +1,1 @@
+- Fixed: resolved four macOS/Windows CI build-matrix failures: NEON `uint64_t` narrowing truncation, CPU-mask type mismatch, stale Vulkan feature-row references, and `pthread_once` redefinition on Win32. (PR #834)

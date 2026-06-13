@@ -1,0 +1,1 @@
+| [ADR-0460](0460-dispatch-registry-audit-2026-05-15.md) | Dispatch-strategy registry audit: deduplicate SYCL/Vulkan feature registry rows and align HIP/Metal dispatch-support tables with registered extractor names. | Accepted | dispatch, hip, metal, sycl, vulkan, correctness |

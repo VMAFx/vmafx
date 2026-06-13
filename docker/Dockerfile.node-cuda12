@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# docker/Dockerfile.node-cuda12 — vmafx-node with CUDA 12 runtime.
+# Convenience wrapper around Dockerfile.node with GPU_RUNTIME=cuda12.
+#
+# ADR-0713: vmafx-node Go worker binary.
+
+FROM docker/Dockerfile.node AS node-cuda12
+ARG GPU_RUNTIME=cuda12

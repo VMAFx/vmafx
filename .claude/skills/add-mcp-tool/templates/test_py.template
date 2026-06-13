@@ -1,0 +1,20 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+
+import pytest
+
+from vmaf_mcp.tools import @NAME@ as tool
+
+
+def test_schema_is_object():
+    assert tool.INPUT_SCHEMA["type"] == "object"
+    assert "required" in tool.INPUT_SCHEMA
+    assert "properties" in tool.INPUT_SCHEMA
+
+
+def test_stub_raises_until_implemented():
+    # The stub MUST raise so the server propagates isError=True. Returning a
+    # silent dict would mis-signal success to MCP clients
+    # (project_mcp_iserror_must_be_true).
+    with pytest.raises(NotImplementedError):
+        tool.handle({})

@@ -1,0 +1,219 @@
+From 1a8a533a1b61a4d8f830501e128c4a9338523fe8 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Sat, 9 May 2026 10:29:32 +0200
+Subject: [PATCH] libvmaf: wire cuda backend selector (cuda option)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds a per-context CUDA backend selector to the regular `libvmaf`
+filter, mirroring the existing `sycl_device` / `vulkan_device`
+options from patches 0003 / 0004.  When `cuda=1` the filter:
+
+  * inits a VmafCudaState against the CUDA primary context on the
+    default device (CUDA_VISIBLE_DEVICES picks the device, matching
+    the libvmaf CLI `--cuda` flag's behaviour — the upstream C-API's
+    VmafCudaConfiguration has no device-index field),
+  * imports the state into the VmafContext,
+  * preallocates a HOST_PINNED picture pool on the first frame
+    (lazy because geometry isn't known before the first AVFrame),
+  * dispenses ref/dist VmafPictures from the pool instead of
+    `vmaf_picture_alloc`, so the existing copy loop fills pinned
+    host memory that downstream CUDA feature kernels can DMA from
+    without a staging copy,
+  * frees the state after `vmaf_close()` per the
+    libvmaf_cuda.h ownership contract.
+
+The path is gated on `CONFIG_LIBVMAF_CUDA && !CONFIG_LIBVMAF_CUDA_FILTER`
+because the dedicated `libvmaf_cuda` filter (CUDA hwaccel frames
+in) already owns its own `cu_state` field on the same struct;
+when that filter is enabled the libvmaf-filter selector logs an
+error and refuses init rather than fighting the dedicated path.
+
+Configure changes promote `libvmaf_cuda` from blanket-autodetect
+to explicit `--enable-libvmaf-cuda` (matching SYCL/Vulkan).  The
+existing `enabled libvmaf && check_pkg_config libvmaf_cuda` line
+is preserved so the in-filter selector keeps working when libvmaf
+ships CUDA support and the user hasn't explicitly enabled the
+dedicated filter — exactly the SYCL/Vulkan in-filter pattern.
+
+Closes the FFmpeg integration gap: `./configure --enable-libvmaf-cuda`
+now exists and is symmetrical with `--enable-libvmaf-sycl` /
+`--enable-libvmaf-vulkan`.
+
+Validated against n8.1.1 with the cumulative 0001..0009 patch
+stack applied; no upstream hunks rebased.
+---
+ configure                |  6 ++-
+ libavfilter/vf_libvmaf.c | 85 ++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 90 insertions(+), 1 deletion(-)
+
+diff --git a/configure b/configure
+index 4ab258c..5aee240 100755
+--- a/configure
++++ b/configure
+@@ -295,6 +295,7 @@ External library support:
+   --enable-libv4l2         enable libv4l2/v4l-utils [no]
+   --enable-libvidstab      enable video stabilization using vid.stab [no]
+   --enable-libvmaf         enable vmaf filter via libvmaf [no]
++  --enable-libvmaf-cuda    enable CUDA-accelerated vmaf filter via libvmaf [no]
+   --enable-libvmaf-sycl    enable SYCL-accelerated vmaf filter via libvmaf [no]
+   --enable-libvmaf-vulkan  enable Vulkan-accelerated vmaf filter via libvmaf [no]
+   --enable-libvo-amrwbenc  enable AMR-WB encoding via libvo-amrwbenc [no]
+@@ -2101,6 +2102,7 @@ EXTERNAL_LIBRARY_LIST="
+     libuavs3d
+     libv4l2
+     libvmaf
++    libvmaf_cuda
+     libvmaf_sycl
+     libvmaf_vulkan
+     libvorbis
+@@ -7397,11 +7399,13 @@ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uav
+ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_ioctl
+ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
+ enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
+-enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
++enabled libvmaf_cuda      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
++                             check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
+ enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
+                              check_pkg_config libvmaf_sycl "libvmaf >= 2.0.0" libvmaf_sycl.h vmaf_sycl_state_init
+ enabled libvmaf_vulkan    && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
+                              check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init_external
++enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
+ enabled libvmaf           && check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
+ enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
+ enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 43d6e05..85752a4 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -45,6 +45,8 @@
+ 
+ #include "libavutil/hwcontext.h"
+ #include "libavutil/hwcontext_cuda_internal.h"
++#elif CONFIG_LIBVMAF_CUDA
++#include <libvmaf/libvmaf_cuda.h>
+ #endif
+ 
+ #if CONFIG_LIBVMAF_SYCL
+@@ -93,6 +95,11 @@ typedef struct LIBVMAFContext {
+     VmafVulkanState *vulkan_state;
+     int             vulkan_pool_initialised;  /* ADR-0238: deferred until first frame */
+ #endif
++    int   cuda;
++#if CONFIG_LIBVMAF_CUDA && !CONFIG_LIBVMAF_CUDA_FILTER
++    VmafCudaState *cu_state;            /* owned by the libvmaf filter when cuda=1 */
++    int            cuda_pool_initialised;  /* lazy: geometry isn't known until first frame */
++#endif
+ 
+     VmafContext *vmaf;
+     VmafModel **model;
+@@ -122,6 +129,7 @@ static const AVOption libvmaf_options[] = {
+     {"sycl_device",  "SYCL device index (-1 = disabled).",                              OFFSET(sycl_device),     AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
+     {"sycl_profile", "Enable SYCL queue profiling.",                                    OFFSET(sycl_profile),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
+     {"vulkan_device","Vulkan device index (-1 = disabled, 0+ = device index).",         OFFSET(vulkan_device),   AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
++    {"cuda",         "Enable the CUDA backend on the primary device (software AVFrame input).", OFFSET(cuda),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
+     { NULL }
+ };
+ 
+@@ -179,6 +187,37 @@ static int copy_picture_data(LIBVMAFContext *s, AVFrame *src, VmafPicture *dst,
+         }
+         err = vmaf_vulkan_picture_fetch(s->vmaf, dst);
+     } else
++#endif
++#if CONFIG_LIBVMAF_CUDA && !CONFIG_LIBVMAF_CUDA_FILTER
++    /* When the cuda=1 selector is active on the libvmaf filter (software
++     * AVFrame input + CUDA compute), dispense `dst` from the
++     * preallocated CUDA picture pool. The HOST_PINNED method produces a
++     * 3-plane host-pinned picture that the existing copy loop below
++     * fills, while the underlying buffers stay registered with CUDA so
++     * downstream feature kernels can DMA without a staging copy. The
++     * pool is set up lazily on the first call (geometry isn't known
++     * before the first AVFrame), matching the Vulkan path above. The
++     * dedicated libvmaf_cuda filter (CONFIG_LIBVMAF_CUDA_FILTER, hwaccel
++     * frames in) keeps its own DEVICE-method pool — this path only fires
++     * when the dedicated filter is not selected. */
++    if (s->cu_state) {
++        if (!s->cuda_pool_initialised) {
++            VmafCudaPictureConfiguration cu_pic_cfg = {
++                .pic_params = {
++                    .w       = src->width,
++                    .h       = src->height,
++                    .bpc     = bpc,
++                    .pix_fmt = pix_fmt_map(src->format),
++                },
++                .pic_prealloc_method = VMAF_CUDA_PICTURE_PREALLOCATION_METHOD_HOST_PINNED,
++            };
++            err = vmaf_cuda_preallocate_pictures(s->vmaf, cu_pic_cfg);
++            if (err)
++                return AVERROR(ENOMEM);
++            s->cuda_pool_initialised = 1;
++        }
++        err = vmaf_cuda_fetch_preallocated_picture(s->vmaf, dst);
++    } else
+ #endif
+     {
+         err = vmaf_picture_alloc(dst, pix_fmt_map(src->format), bpc,
+@@ -572,6 +611,45 @@ static av_cold int init(AVFilterContext *ctx)
+ #endif
+     }
+ 
++    if (s->cuda) {
++#if CONFIG_LIBVMAF_CUDA && !CONFIG_LIBVMAF_CUDA_FILTER
++        /* cu_ctx=NULL → vmaf_cuda_state_init() retains the primary context
++         * on the default device.  Mirrors the SYCL/Vulkan selector shape;
++         * unlike those backends the upstream C-API has no device-index
++         * field on VmafCudaConfiguration, so device selection is left to
++         * CUDA_VISIBLE_DEVICES at process scope (matches the libvmaf CLI
++         * --cuda flag's behaviour). */
++        VmafCudaConfiguration cuda_cfg = {
++            .cu_ctx = NULL,
++        };
++        err = vmaf_cuda_state_init(&s->cu_state, cuda_cfg);
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_cuda_state_init failed: %d.\n", err);
++            return AVERROR(EINVAL);
++        }
++        err = vmaf_cuda_import_state(s->vmaf, s->cu_state);
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_cuda_import_state failed: %d.\n", err);
++            return AVERROR(EINVAL);
++        }
++        av_log(ctx, AV_LOG_INFO, "CUDA backend active (primary context).\n");
++#elif CONFIG_LIBVMAF_CUDA_FILTER
++        av_log(ctx, AV_LOG_ERROR,
++               "cuda=1 set on the libvmaf filter, but FFmpeg was built with the "
++               "dedicated libvmaf_cuda filter — use that filter for CUDA frames "
++               "(it has its own state plumbing) or rebuild without "
++               "--enable-libvmaf-cuda-filter.\n");
++        return AVERROR(EINVAL);
++#else
++        av_log(ctx, AV_LOG_ERROR,
++               "cuda=1 set but FFmpeg was built without libvmaf CUDA support "
++               "(rebuild with --enable-libvmaf-cuda).\n");
++        return AVERROR(ENOSYS);
++#endif
++    }
++
+     err = parse_models(ctx);
+     if (err)
+         return err;
+@@ -782,6 +860,13 @@ clean_up:
+         s->vulkan_state = NULL;
+     }
+ #endif
++
++#if CONFIG_LIBVMAF_CUDA && !CONFIG_LIBVMAF_CUDA_FILTER
++    if (s->cu_state) {
++        vmaf_cuda_state_free(s->cu_state);
++        s->cu_state = NULL;
++    }
++#endif
+ }
+ 
+ static const AVFilterPad libvmaf_inputs[] = {
+-- 
+2.54.0
+

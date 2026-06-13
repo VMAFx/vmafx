@@ -1,0 +1,1 @@
+| [ADR-0860](0860-ffmpeg-patch-chain-no-op-vulkan-shim.md) | Re-include Vulkan FFmpeg patches (0004 + 0006) as no-op shims for chain coherence — unblocks SYCL CI leg | Accepted | 2026-05-30 | ci, ffmpeg, patches, fork-local |

@@ -1,0 +1,1 @@
+| [ADR-0638](0638-mcp-p1-vmaftune-extractors-models-progress.md) | MCP P1 surface — vmaf-tune integration, list_extractors, describe_model, progress notifications | Accepted | mcp, vmaf-tune, api, docs |

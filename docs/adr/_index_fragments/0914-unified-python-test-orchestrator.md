@@ -1,0 +1,1 @@
+| [ADR-0914](0914-unified-python-test-orchestrator.md) | Unified Python test orchestrator (nox at repo root) covering ai/ + mcp/ + tools/ + dev-llm/ + python/ | Accepted | 2026-05-31 | build, ci, python, ai, mcp, tools |

@@ -1,0 +1,1 @@
+| [ADR-0634](0634-mcp-p0-iserror-and-probe-version-encoded.md) | MCP P0 capability audit fixes: spec-correct `isError`, backend probe, version reporting, and encoded-video scoring tools. | Accepted | mcp, bugfix, spec-correctness, fork-local |

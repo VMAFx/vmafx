@@ -1,0 +1,27 @@
+// Copyright 2026 Lusoris. All rights reserved.
+// Use of this source code is governed by the BSD-3-Clause-Plus-Patent
+// license that can be found in the LICENSE file.
+
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+)
+
+func TestHandle@NAME_PASCAL@_RejectsInvalidArgs(t *testing.T) {
+	_, err := handle@NAME_PASCAL@(context.Background(), json.RawMessage(`{invalid json`))
+	if err == nil {
+		t.Fatalf("expected error on invalid JSON, got nil")
+	}
+}
+
+func TestHandle@NAME_PASCAL@_StubReturnsError(t *testing.T) {
+	// Stub must fail loudly until implemented — silent success would mis-signal
+	// to MCP clients (see project_mcp_iserror_must_be_true).
+	_, err := handle@NAME_PASCAL@(context.Background(), json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatalf("@NAME@ stub returned nil error; expected stub-not-implemented error")
+	}
+}

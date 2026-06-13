@@ -1,0 +1,43 @@
+# 'vmaf' is built locally from the main Dockerfile — no upstream tag to pin.
+# hadolint ignore=DL3006,DL3007
+FROM vmaf:latest
+
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG FFMPEG_TAG=n8.1.1
+# Matches the main Dockerfile NVCC_FLAGS: Turing + Ampere + Hopper +
+# Blackwell consumer. CUDA 13 removed sm_50/60/70.
+ARG NVCC_FLAGS="-gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_120,code=sm_120 -gencode arch=compute_120,code=compute_120 -O2"
+
+# get ffmpeg
+RUN wget -q "https://github.com/FFmpeg/FFmpeg/archive/${FFMPEG_TAG}.zip" && \
+    unzip -q "${FFMPEG_TAG}.zip"
+
+# apply libvmaf GPU filter patch (SYCL)
+COPY patches/ffmpeg-libvmaf-gpu.patch /tmp/
+WORKDIR /FFmpeg-${FFMPEG_TAG}
+RUN if ! git apply /tmp/ffmpeg-libvmaf-gpu.patch 2>/dev/null; then \
+        patch -p1 < /tmp/ffmpeg-libvmaf-gpu.patch; \
+    fi
+
+RUN ./configure \
+        --enable-libnpp \
+        --enable-nonfree \
+        --enable-nvdec \
+        --enable-nvenc \
+        --enable-cuvid \
+        --enable-cuda \
+        --enable-cuda-nvcc \
+        --enable-libvmaf \
+        --enable-ffnvcodec \
+        --disable-stripping \
+        --nvccflags="${NVCC_FLAGS}" && \
+    make -j"$(nproc)" && \
+    make install
+
+WORKDIR /
+RUN mkdir /data
+# VMAF+decode GPU (only works for NVDec supported formats https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new)
+ENTRYPOINT ["ffmpeg"]

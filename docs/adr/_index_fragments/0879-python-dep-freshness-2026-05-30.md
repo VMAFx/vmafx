@@ -1,0 +1,1 @@
+| [ADR-0879](0879-python-dep-freshness-2026-05-30.md) | Python dependency freshness sweep — bump nine stale floors across ai/, mcp-server/, dev-llm/, tools/, leave ceilings + hash-pinning to follow-up | Accepted | 2026-05-30 | security, ai, mcp, deps, python, fork-local |

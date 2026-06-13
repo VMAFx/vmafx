@@ -1,0 +1,102 @@
+VMAFX has been installed. Release: {{ .Release.Name }}
+
+WORKLOAD TYPE: {{ .Values.workload }}
+GPU VENDOR:    {{ .Values.gpu.vendor }}{{ if .Values.gpu.enabled }} (enabled, count={{ .Values.gpu.count }}){{ else }} (disabled){{ end }}
+BACKEND:       {{ include "vmafx.backendEnvValue" . }}
+
+{{- if eq .Values.workload "Deployment" }}
+----------------------------------------------------------------------
+Deployment — HTTP scoring server
+----------------------------------------------------------------------
+The scoring server is running at:
+  http://{{ include "vmafx.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+
+Health endpoints:
+  GET /healthz    — liveness check
+  GET /readyz     — readiness check
+  GET /metrics    — Prometheus metrics{{ if not .Values.monitoring.enabled }} (scraping disabled — set monitoring.enabled=true){{ end }}
+
+To port-forward locally:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "vmafx.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  curl http://localhost:{{ .Values.service.port }}/healthz
+
+To scale:
+  kubectl scale -n {{ .Release.Namespace }} deployment/{{ include "vmafx.fullname" . }} --replicas=3
+
+To roll out a new image:
+  kubectl set image -n {{ .Release.Namespace }} deployment/{{ include "vmafx.fullname" . }} \
+    {{ include "vmafx.name" . }}=ghcr.io/vmafx/vmafx:<new-tag>
+
+{{- else if eq .Values.workload "Job" }}
+----------------------------------------------------------------------
+Job — one-shot batch scoring
+----------------------------------------------------------------------
+The batch job is running. Monitor it with:
+  kubectl logs -n {{ .Release.Namespace }} job/{{ include "vmafx.fullname" . }} -f
+
+Wait for completion:
+  kubectl wait -n {{ .Release.Namespace }} job/{{ include "vmafx.fullname" . }} \
+    --for=condition=complete --timeout=30m
+
+{{- else if eq .Values.workload "StatefulSet" }}
+----------------------------------------------------------------------
+StatefulSet — MCP server with sticky session state
+----------------------------------------------------------------------
+The MCP server is accessible at:
+  http://{{ include "vmafx.fullname" . }}-0.{{ include "vmafx.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+
+Each pod has a dedicated PVC for session state at /var/lib/vmafx.
+{{- end }}
+
+----------------------------------------------------------------------
+GPU device-plugin reference
+----------------------------------------------------------------------
+  nvidia  →  nvidia.com/gpu       (requires: NVIDIA device plugin daemonset)
+  amd     →  amd.com/gpu          (requires: ROCm device plugin daemonset)
+  intel   →  gpu.intel.com/i915   (requires: Intel GPU device plugin daemonset)
+  cpu     →  (no device plugin required)
+
+Vulkan is NOT a separate Kubernetes resource — it runs through whichever
+GPU device-plugin is allocated.  See docs/development/gpu-scheduling.md.
+
+To verify device-plugin allocations on a node:
+  kubectl describe node <node> | grep -E "Capacity|Allocatable" -A 10
+
+----------------------------------------------------------------------
+Pod Security Standards — restricted profile (ADR-0930)
+----------------------------------------------------------------------
+This chart's pods satisfy the Kubernetes
+"pod-security.kubernetes.io/enforce=restricted" admission profile:
+runAsNonRoot, distroless UID 65532, readOnlyRootFilesystem, dropped
+capabilities, seccompProfile=RuntimeDefault, allowPrivilegeEscalation=false.
+
+To enforce the profile at the namespace level, label the install namespace:
+
+  kubectl label --overwrite namespace {{ .Release.Namespace }} \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted
+
+----------------------------------------------------------------------
+NetworkPolicy — default-deny posture (ADR-0930)
+----------------------------------------------------------------------
+{{- if .Values.networkPolicy.enabled }}
+NetworkPolicies are ENABLED for this release.  Every VMAFX pod runs under a
+default-deny posture with explicit allow-rules for the documented
+controller -> node, node -> object-store, operator -> apiserver, and DNS
+egress flows.  Verify the rules with:
+
+  kubectl get networkpolicy -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+Requires a NetworkPolicy-aware CNI (Cilium, Calico, kube-router, etc.).
+{{- else }}
+NetworkPolicies are DISABLED for this release.  Opt in with:
+
+  helm upgrade {{ .Release.Name }} . --reuse-values --set networkPolicy.enabled=true
+
+When enabled, the chart emits a default-deny ingress + egress baseline plus
+explicit allow-rules for controller -> node, node -> object-store, operator
+-> apiserver, and DNS.  Requires a NetworkPolicy-aware CNI.
+{{- end }}
+
+Full operator guide: docs/development/k8s-deployment.md

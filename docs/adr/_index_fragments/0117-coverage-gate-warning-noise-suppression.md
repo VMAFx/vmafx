@@ -1,0 +1,1 @@
+| [ADR-0117](0117-coverage-gate-warning-noise-suppression.md) | Bump `actions/upload-artifact@v5`→`@v7` (Node 24) repo-wide; filter gcovr `Ignoring suspicious hits` stderr noise so the Coverage Gate Annotations panel finishes empty | Accepted | ci, coverage, gcovr, github-actions |

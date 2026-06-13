@@ -1,0 +1,1 @@
+| [ADR-0521](0521-msvc-posix-gating-vif-avx512-yuv-input.md) | MSVC portability gating — `vif_avx512.c` noinline/noclone + `yuv_input.c` S_ISREG/fstat | Accepted | ci, build, windows, msvc, simd, tools, portability, fork-local, bugfix |

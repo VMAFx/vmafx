@@ -1,0 +1,21 @@
+{{- /*
+otel-collector-sidecar.yaml — optional OTel collector sidecar ConfigMap.
+
+When otelCollector.enabled=true, this ConfigMap carries the collector
+configuration and is mounted by the deployment/statefulset templates via
+the sidecar container (defined inline in deployment.yaml when enabled).
+
+ADR-0782: OpenTelemetry tracing and metrics schema.
+*/}}
+{{- if .Values.otelCollector.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vmafx.fullname" . }}-otel-collector-config
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+data:
+  config.yaml: |
+    {{- .Values.otelCollector.config | nindent 4 }}
+{{- end }}

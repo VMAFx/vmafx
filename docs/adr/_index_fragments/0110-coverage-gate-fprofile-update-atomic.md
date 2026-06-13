@@ -1,0 +1,1 @@
+| [ADR-0110](0110-coverage-gate-fprofile-update-atomic.md) | Coverage gate uses `-fprofile-update=atomic` to survive parallel meson tests on instrumented SIMD code | Superseded by ADR-0111 | ci, build, simd, testing |

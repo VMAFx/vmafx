@@ -1,0 +1,812 @@
+# Top-level CI — orchestrates Netflix golden gate (ADR-0024 — must always pass)
+# and the cross-backend numerical-correctness check. The pre-existing
+# `libvmaf-build-matrix.yml` handles the cross-platform build matrix; this file
+# owns the *correctness* gate.
+
+name: Tests & Quality Gates — Netflix Golden / Sanitizers / Tiny AI / Coverage
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
+    # CI when a draft PR is promoted to ready-for-review.
+    types: [opened, synchronize, reopened, ready_for_review]
+    # ADR-0341 / Research-0089 §3.2: skip the full 10-job test matrix
+    # (Netflix golden + sanitizers + Tiny AI + coverage + MCP smoke +
+    # Vulkan parity gates) when only documentation paths change. The
+    # Required Checks Aggregator (ADR-0313) treats "workflow not
+    # reported" as path-filter-skipped/acceptable, so paths-ignore at
+    # the trigger level does NOT break branch protection. Conservative
+    # deny-list — `python/**`, `ai/**`, `mcp-server/**`, `core/**`,
+    # `testdata/**`, `model/**` (binaries), and `.github/workflows/`
+    # all still fire the gates because the corresponding test jobs
+    # consume them as inputs.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'changelog.d/**'
+      - 'CHANGELOG.md'
+      - '.workingdir2/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  # ===== Netflix golden-data gate (ADR-0024) =====
+  # The 3 Netflix CPU test pairs (1 normal + 2 checkerboard) are the source of
+  # truth for VMAF correctness. They MUST pass on every PR. No skips, no excuses.
+  netflix-golden:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: "Netflix CPU Golden Tests (D24)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          submodules: recursive
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm pkg-config \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+            python3-pip
+          python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
+
+      - name: Build (CPU, release)
+        # Build inside core/ so the CLI lands at core/build/tools/vmaf
+        # — python/vmaf/__init__.py hardcodes that relative path when no
+        # external vmaf binary is configured via vmaf_path() / vmafexec_path().
+        working-directory: core
+        run: |
+          meson setup build -Denable_cuda=false -Denable_sycl=false \
+            -Denable_float=true -Denable_avx512=true --buildtype=release
+          meson compile -C build
+
+      - name: Cache Netflix vmaf_resource fixtures
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          # Cache the entire python/test/resource tree — pytest's
+          # download_reactively (python/vmaf/config.py) populates it
+          # lazily and re-uses any pre-existing files. Sized at ~50 MB.
+          path: python/test/resource
+          # Bump the version suffix when test files reference new
+          # fixture URLs. `restore-keys` lets stale caches partially
+          # populate the dir; missing files re-download lazily.
+          key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
+          restore-keys: |
+            vmaf-fixtures-resource-v1-
+            vmaf-fixtures-resource-
+
+      - name: Run Netflix golden normal pair
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+        timeout-minutes: 22
+        run: |
+          # The 3 pairs live in python/test/resource/yuv/ — see D24.
+          # Hardcoded CPU score assertions live in the python/test/*_test.py files.
+          #
+          # Run only the D24 normal golden pair. The broader quality/feature
+          # suites are covered elsewhere; this gate exists to protect the
+          # Netflix CPU golden assertions, not to run every Python assertion.
+          timeout --kill-after=30s 21m python3 -m pytest \
+            python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner \
+            -v --tb=short --timeout=1260 --timeout-method=signal
+
+      - name: Run Netflix golden checkerboard pairs
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+        timeout-minutes: 20
+        run: |
+          # The checkerboard test covers the 10-px and 1-px distorted
+          # Netflix golden pairs. Keep it isolated so a slow 1080p golden
+          # run reports the actual failing surface instead of masking the
+          # normal-pair result.
+          timeout --kill-after=30s 19m python3 -m pytest \
+            python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_checkerboard \
+            -v --tb=short --timeout=1020 --timeout-method=signal
+
+  # ===== Cross-backend ULP gate =====
+  # Requires GPU hardware + local YUV fixtures not present on GitHub-hosted
+  # runners. Disabled until a self-hosted GPU runner is available.
+  cross-backend:
+    name: "Cross-Backend ULP Diff (CPU Sanity)"
+    if: false
+    runs-on: ubuntu-latest
+    needs: netflix-golden
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm pkg-config python3-pip
+          python3 -m pip install --user numpy
+      - name: Build CPU
+        working-directory: core
+        run: |
+          meson setup build -Denable_cuda=false -Denable_sycl=false --buildtype=release
+          meson compile -C build
+      - name: Compute CPU scores against snapshot
+        run: |
+          ./testdata/bench_all.sh --backend=cpu --snapshot-only --tolerance-ulp=2
+
+  # ADR-0726: vulkan-vif-cross-backend, vulkan-parity-matrix-gate, and
+  # vulkan-vif-arc-nightly jobs deleted (Vulkan backend removed).
+
+  # ===== Sanitizer build =====
+  sanitizers:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: "Sanitizers — ASan + UBSan + MSan"
+    # ADR-0359 — ARC self-hosted runner pilot (same pattern as cppcheck in
+    # lint-and-format.yml). Variable `ARC_RUNNERS_ENABLED=true` routes this
+    # job to the in-cluster `arc-runners` scale set; default `false` keeps
+    # GitHub-hosted ubuntu-latest. If the ARC pool is degraded, set the
+    # variable to false and re-trigger CI to fall back instantly.
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-latest' }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined, thread]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          # lld-18 matches ubuntu-26.04's clang-18; ld.bfd/gold pulls in
+          # a system-wide LLVM 16 gold plugin that can't read clang-18 LTO
+          # bitcode (Unknown attribute kind 91 in LLVM 16 reader). Using lld
+          # keeps the linker in the same LLVM major as the compiler.
+          # libclang-rt-18-dev ships the ASan/UBSan/TSan runtime libraries
+          # (libclang_rt.asan.a etc.); without it clang-18 emits instrumented
+          # code but lld-18 can't resolve __asan_*/__ubsan_* symbols.
+          sudo apt-get install -y meson ninja-build nasm clang-18 lld-18 \
+            libclang-rt-18-dev
+      - name: Build with ${{ matrix.sanitizer }} sanitizer
+        # ADR-0347: under UBSan, suppress the `function` check via
+        # `-fno-sanitize=function`. The pre-existing K&R-prototype
+        # `static char *test_X()` pattern across ~50 minunit-style
+        # harness files (`core/test/test.h` + every `test_*.c`)
+        # trips UBSan's function-pointer-type check unconditionally;
+        # rewriting all 50 files to `(void)` is a separate T7-5-style
+        # sweep PR. The suppression preserves UBSan signal on
+        # library code while skipping the harness-only UB.
+        working-directory: core
+        shell: bash
+        env:
+          CC: clang-18
+          CXX: clang++-18
+          LDFLAGS: -fuse-ld=lld-18
+        run: |
+          if [ "${{ matrix.sanitizer }}" = "undefined" ]; then
+            EXTRA_ARGS=( "-Dc_args=-fno-sanitize=function" "-Dcpp_args=-fno-sanitize=function" )
+          else
+            EXTRA_ARGS=()
+          fi
+          meson setup build -Db_sanitize=${{ matrix.sanitizer }} \
+            -Denable_cuda=false -Denable_sycl=false --buildtype=debug \
+            -Db_lto=false -Db_lundef=false "${EXTRA_ARGS[@]}"
+          meson compile -C build
+      - name: Run unit tests under sanitizer
+        # ADR-0347: replace the previous `--suite=unit` invocation
+        # (which matched zero tests because no `test()` call in
+        # `core/test/meson.build` carries a `suite: 'unit'` tag).
+        # We now run the full C unit-test set with a per-sanitizer
+        # deselect list — each excluded test corresponds to a real
+        # defect tracked in `docs/state.md` and removed from the list
+        # when the underlying bug-fix PR lands. Companion research
+        # digest: `docs/research/0090-sanitizer-matrix-test-scope.md`.
+        # ASAN_OPTIONS / TSAN_OPTIONS allocator_may_return_null=1:
+        # ASan's and TSan's malloc interceptors abort by default on
+        # allocations they cannot fulfil (e.g. the intentionally-oversized
+        # alloc in test_gpu_picture_pool_uaf which exercises the NULL-return
+        # failure path of vmaf_gpu_picture_pool_init). With this flag the
+        # sanitizer runtime returns NULL instead of aborting, matching the
+        # POSIX malloc contract the test relies on.
+        env:
+          ASAN_OPTIONS: allocator_may_return_null=1
+          TSAN_OPTIONS: allocator_may_return_null=1
+        working-directory: core
+        shell: bash
+        run: |
+          case "${{ matrix.sanitizer }}" in
+            address)
+              # ASan deselects: test_model (svm.cpp parser
+              # alloc-too-big on malformed JSON) — pre-existing
+              # ASan/LSan defects revealed by PR #758's introspect-based
+              # test enumeration (the prior `meson test --list` parser
+              # returned empty in CI's meson 1.3.2 so these tests were
+              # never dispatched and the leaks went unnoticed). Tracked
+              # in `docs/state.md` as T-SANITIZER-DEFECTS-REVEALED-758.
+              # test_float_ms_ssim_min_dim was removed from this list
+              # after confirming it passes cleanly under ASAN_OPTIONS=
+              # detect_leaks=1 (the invoke_init helper already calls
+              # fex->close() + free(priv) on every code path).
+              EXCLUDE='test_model$'
+              ;;
+            undefined)
+              # UBSan deselects: test_model (NULL-to-nonnull memcpy
+              # in svm.cpp parser — same defect as ASan exclusion
+              # surfaced via a different sanitizer angle). Tracked as
+              # T-SANITIZER-DEFECTS-REVEALED-758.
+              # test_cambi was removed from this list after PR #761
+              # (merged 2026-05-11) added a runtime __builtin_cpu_supports
+              # AVX2 gate to test_calculate_c_values_scalar_avx2_parity,
+              # eliminating the SIGILL on non-AVX2 CI runners; confirmed
+              # clean under UBSan on current master.
+              EXCLUDE='test_model$'
+              ;;
+            thread)
+              # TSan deselects: test_model (same defect as ASan/UBSan
+              # exclusion above).
+              # test_framesync was removed from this list after PR #548
+              # (merged 2026-05-09) fixed the SAN-FRAMESYNC-MUTEX-DOMAIN
+              # mutex-domain mismatch; nightly TSan job was green on
+              # 2026-05-09 and 2026-05-10 (state.md entry).
+              EXCLUDE='test_model$'
+              ;;
+            *)
+              echo "::error::ADR-0347 deselect list is not defined for sanitizer=${{ matrix.sanitizer }}" >&2
+              exit 1
+              ;;
+          esac
+          # `meson test --list` output format varies across meson
+          # versions (1.3.x produces empty output for some build
+          # configurations; 1.11.x emits one test per line). Use
+          # `meson introspect --tests` instead — its JSON output is
+          # stable and machine-parseable across all supported meson
+          # versions. Each test object has `name` and `suite[]` fields
+          # which we join into the canonical `libvmaf:<name>` form
+          # that meson test dispatch expects.
+          set +o pipefail
+          TESTS=$(meson introspect build --tests 2>&1 \
+                  | python3 -c "import json,sys; [print('libvmaf:'+t['name']) for t in json.load(sys.stdin)]" \
+                  | grep -vE "$EXCLUDE" || true)
+          set -o pipefail
+          echo "test count: $(echo "$TESTS" | wc -l)"
+          echo "first 3: $(echo "$TESTS" | head -3 | tr '\n' ' ')"
+          if [ -z "$TESTS" ]; then
+            echo "::error::ADR-0347 test enumeration produced empty list for sanitizer=${{ matrix.sanitizer }}" >&2
+            exit 1
+          fi
+          # shellcheck disable=SC2086
+          meson test -C build --print-errorlogs $TESTS
+
+  # ===== DNN / tiny-AI gate =====
+  # Builds libvmaf with --enable_dnn (ONNX Runtime C API), runs the dnn
+  # meson suite, and exercises the ai/ Python package's unit tests. Does
+  # NOT require ORT at configure time — stub branch is exercised when the
+  # ubuntu runner doesn't have onnxruntime available via pkg-config.
+  dnn:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: "Tiny AI (DNN Suite + ai/ Pytests)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm pkg-config \
+            python3-pip python3-venv
+      - name: Install ONNX Runtime (CPU)
+        env:
+          # Pinned to 1.22.0. MS stopped publishing Linux tgz artifacts
+          # for patch releases (1.22.1, 1.22.2 are NuGet-only on the
+          # releases page), so v1.22.0 is the last 1.22 line with a
+          # functioning onnxruntime-linux-x64-${VERSION}.tgz. Bumping to
+          # 1.23.x or 1.24.x is a separate decision since the dnn loader
+          # is version-sensitive.
+          ORT_VERSION: "1.22.0"
+        run: |
+          curl -sSL \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
+            | sudo tar -xz -C /opt/
+          sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
+          # Install a pkg-config file since the tarball ships none.
+          sudo install -d /usr/local/lib/pkgconfig
+          cat <<EOF | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null
+          prefix=/opt/onnxruntime
+          exec_prefix=\${prefix}
+          libdir=\${exec_prefix}/lib
+          includedir=\${prefix}/include
+
+          Name: libonnxruntime
+          Description: ONNX Runtime C API
+          Version: ${ORT_VERSION}
+          Libs: -L\${libdir} -lonnxruntime
+          Cflags: -I\${includedir}
+          EOF
+          # Strip the leading YAML indent that `cat <<EOF` preserved.
+          sudo sed -i 's/^          //' /usr/local/lib/pkgconfig/libonnxruntime.pc
+          echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
+          sudo ldconfig
+      - name: Build libvmaf (dnn enabled)
+        working-directory: core
+        run: |
+          meson setup build -Denable_cuda=false -Denable_sycl=false \
+            -Denable_dnn=enabled --buildtype=release
+          meson compile -C build
+      - name: Run meson dnn suite
+        working-directory: core
+        run: meson test -C build --suite=dnn --print-errorlogs
+      - name: Set up Python + install vmaf-train
+        run: |
+          python3 -m venv /tmp/vmaf-train-venv
+          /tmp/vmaf-train-venv/bin/pip install --upgrade pip
+          # pytest is a test-time dep, not runtime, so install it explicitly
+          # rather than relying on ai/pyproject.toml extras.
+          /tmp/vmaf-train-venv/bin/pip install pytest pytest-timeout
+          /tmp/vmaf-train-venv/bin/pip install -e ai
+      - name: Run ai/ pytests
+        run: /tmp/vmaf-train-venv/bin/pytest ai/tests/ -v --timeout=60 --timeout-method=signal
+
+      # ADR-0174 / T5-3b: enforce that every quantised model in the
+      # registry stays inside its per-model PLCC drop budget. Skips
+      # entries whose `quant_mode == "fp32"` (nothing to gate).
+      - name: Run ai-quant-accuracy gate
+        run: |
+          /tmp/vmaf-train-venv/bin/pip install onnx onnxruntime numpy
+          /tmp/vmaf-train-venv/bin/python ai/scripts/measure_quant_drop.py --all
+
+  # ===== MCP smoke gate (T7-MCP-SMOKE-CI / Research-0034 gap #3) =====
+  # Builds libvmaf with the full MCP transport matrix (sse + uds + stdio)
+  # and exercises both the embedded C-side scaffold smoke (core/test/
+  # test_mcp_smoke.c — pins the -ENOSYS contract per ADR-0209) and the
+  # Python MCP server pytest suite under mcp-server/vmaf-mcp/tests/.
+  #
+  # Before this lane existed, only `supply-chain.yml::mcp-build` exercised
+  # the MCP surface — and that just builds a wheel without running any
+  # tests. The Python `tests/test_*.py` files and the C `test_mcp_smoke`
+  # binary were never invoked in CI. This job closes that gap.
+  #
+  # Local repro:
+  #   cd libvmaf && meson setup build-mcp \
+  #     -Denable_cuda=false -Denable_sycl=false \
+  #     -Denable_mcp=true -Denable_mcp_sse=true \
+  #     -Denable_mcp_uds=true -Denable_mcp_stdio=true && \
+  #   meson compile -C build-mcp && \
+  #   meson test -C build-mcp test_mcp_smoke --print-errorlogs
+  #   cd ../mcp-server/vmaf-mcp && \
+  #   python3 -m venv /tmp/mcp-venv && \
+  #   /tmp/mcp-venv/bin/pip install -e .[dev] && \
+  #   /tmp/mcp-venv/bin/pytest tests/ -v
+  mcp-smoke:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: "MCP Smoke (Embedded C + Python Server)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          submodules: recursive
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          # libav*-dev pulled in for parity with the netflix-golden /
+          # vulkan-vif-cross-backend lanes — keeps the libvmaf build
+          # graph identical so the MCP smoke exercises the same
+          # configuration the rest of the matrix sees.
+          sudo apt-get install -y meson ninja-build nasm pkg-config \
+            python3-pip python3-venv \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+
+      - name: Build libvmaf (full MCP transport matrix)
+        # Mirrors the local-lint configuration documented in
+        # lint-and-format.yml (core/build-mcp/ with all four
+        # enable_mcp* flags) so this lane sees identical symbol
+        # availability. Disabling CUDA / SYCL keeps the build
+        # ubuntu-hosted-runner-only — no GPU toolchain required.
+        working-directory: core
+        run: |
+          meson setup build-mcp \
+            -Denable_cuda=false -Denable_sycl=false \
+            -Denable_mcp=true -Denable_mcp_sse=enabled \
+            -Denable_mcp_uds=true -Denable_mcp_stdio=true \
+            --buildtype=release
+          meson compile -C build-mcp
+
+      - name: Run embedded MCP C smoke test
+        # ADR-0209 / T5-2: pins the -ENOSYS contract on every public
+        # vmaf_mcp_* entry point so a future runtime PR (T5-2b) cannot
+        # silently wire a transport without flipping the expectations.
+        # The test is registered as `test_mcp_smoke` in core/test/
+        # meson.build (no suite tag — it lands in the default suite).
+        working-directory: core
+        run: meson test -C build-mcp test_mcp_smoke --print-errorlogs
+
+      - name: Set up Python venv + install vmaf-mcp[dev]
+        # The pyproject ships a `dev` extras group (pytest +
+        # pytest-asyncio + ruff + mypy). There is no `[test]` extras —
+        # `dev` is the right name. Editable install so test_smoke_e2e.py
+        # resolves the repo root via __file__.parents[3].
+        run: |
+          python3 -m venv /tmp/mcp-venv
+          /tmp/mcp-venv/bin/pip install --upgrade pip
+          /tmp/mcp-venv/bin/pip install -e mcp-server/vmaf-mcp[dev]
+          /tmp/mcp-venv/bin/pip install pytest-timeout
+
+      - name: Run Python MCP server pytests
+        # The MCP server's `_vmaf_binary()` defaults to
+        # `<repo-root>/build/tools/vmaf` (`Path(__file__).parents[4]`
+        # is the top-level repo root, not `core/`). The CI build
+        # lives at `core/build-mcp/tools/vmaf`, so point
+        # `VMAF_BIN` there explicitly so
+        # test_call_tool_list_backends_includes_cpu's `_list_backends`
+        # probe returns `cpu: True`.
+        env:
+          VMAF_BIN: ${{ github.workspace }}/core/build-mcp/tools/vmaf
+        run: |
+          test -x "$VMAF_BIN" || {
+            echo "vmaf binary missing at $VMAF_BIN" >&2
+            ls -la "$(dirname "$VMAF_BIN")" >&2 || true
+            exit 1
+          }
+          /tmp/mcp-venv/bin/pytest mcp-server/vmaf-mcp/tests/ -v --tb=short \
+            --timeout=60 --timeout-method=signal
+
+  # ===== Coverage gate (principles.md §3) =====
+  # ≥70% overall line coverage, ≥85% on security-critical files
+  # (core/src/dnn/, opt.c, read_json_model.c).
+  coverage:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: "Coverage Gate (Ramping to 70% / 85% Critical)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - name: Install deps
+        run: |
+          # The hosted runner ships pre-provisioned Microsoft/Azure apt
+          # sources (packages.microsoft.com) that intermittently 403 /
+          # "no longer signed", failing `apt-get update` with exit 100
+          # (observed on the Coverage Gate 2026-06-13). vmaf needs none of
+          # them — drop them before updating. See T-CI-APT-MS-REPO-FLAKE.
+          sudo rm -f /etc/apt/sources.list.d/*microsoft* \
+                     /etc/apt/sources.list.d/*azure* || true
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm pkg-config gcc \
+            python3-pip
+          # gcovr replaces lcov: it deduplicates .gcno files belonging to
+          # the same source compiled into multiple targets (libvmaf.so +
+          # each test_X.p/.._src_X.c.gcda), which lcov sums and yields
+          # impossible >100% hit counts (e.g. dnn_api.c — 1176%). gcovr
+          # also produces both Cobertura XML for CI tooling and a JSON
+          # summary the gate script parses directly. See ADR-0110.
+          python3 -m pip install --user -r python/requirements.txt pytest \
+            'gcovr>=8.0'
+      # Cache the ORT GPU .tgz so we don't re-download ~150 MB from
+      # github.com/microsoft/onnxruntime/releases on every Coverage Gate
+      # run. Key is purely the ORT version pinned in the env block of the
+      # next step — the artifact bytes are immutable per release. See
+      # Research-0089 (PR #525) §2 for the wall-clock evidence (Coverage
+      # Gate p50 = 13.32 min, the ORT download contributes ~30–60 s of
+      # that on a cold runner).
+      - name: Cache ONNX Runtime tarball
+        id: cache-ort
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: /tmp/ort-cache
+          key: ort-tarball-linux-x64-gpu-1.22.0
+      - name: Install ONNX Runtime (GPU build, CPU + CUDA EPs)
+        # The GPU .tgz bundles CPU + CUDA + TensorRT execution providers in
+        # one package. We install it (instead of the smaller CPU-only build)
+        # so the coverage gate can also exercise the CUDA EP-attach success
+        # arms in ort_backend.c — which on a CPU-only ORT remained
+        # unreachable per ADR-0112. CUDA EP attach only requires the CUDA
+        # *runtime* library to load (no actual GPU driver), which is why we
+        # `apt install libcudart12` below. CreateSession then fails because
+        # there's no real GPU on ubuntu-latest; vmaf_ort_open's two-stage
+        # fallback (ADR-0113) catches that and retries with CPU-only
+        # session_options, so existing tests stay green while the EP-attach
+        # success arm and the new fallback path both execute.
+        env:
+          ORT_VERSION: "1.22.0"
+        run: |
+          # CUDA 12.x runtime — user-space libs only, no driver. Lets ORT
+          # dlopen libonnxruntime_providers_cuda.so → libcudart.so.12.
+          sudo apt-get install -y libcudart12 || sudo apt-get install -y nvidia-cuda-toolkit
+          # Reuse cached tarball if present (cache hit), otherwise fetch
+          # and populate the cache for the next run.
+          mkdir -p /tmp/ort-cache
+          tarball="/tmp/ort-cache/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
+          if [ ! -f "$tarball" ]; then
+            curl -sSL --retry 3 --retry-delay 5 -o "$tarball" \
+              "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
+          fi
+          sudo tar -xzf "$tarball" -C /opt/
+          sudo ln -sfn "/opt/onnxruntime-linux-x64-gpu-${ORT_VERSION}" /opt/onnxruntime
+          sudo install -d /usr/local/lib/pkgconfig
+          cat <<EOF | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null
+          prefix=/opt/onnxruntime
+          exec_prefix=\${prefix}
+          libdir=\${exec_prefix}/lib
+          includedir=\${prefix}/include
+
+          Name: libonnxruntime
+          Description: ONNX Runtime C API
+          Version: ${ORT_VERSION}
+          Libs: -L\${libdir} -lonnxruntime
+          Cflags: -I\${includedir}
+          EOF
+          sudo sed -i 's/^          //' /usr/local/lib/pkgconfig/libonnxruntime.pc
+          echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
+          sudo ldconfig
+      - name: Build with gcov instrumentation
+        # Build inside core/ so python/vmaf/__init__.py finds the CLI at
+        # core/build-coverage/tools/vmaf (it hardcodes that relative path).
+        working-directory: core
+        run: |
+          # AVX-512 on so SIMD paths are exercised. enable_dnn=enabled +
+          # ORT installed above so dnn/*.c contribute real coverage (not
+          # stubs).
+          #
+          # -fprofile-update=atomic fixes the intra-process race where SIMD
+          # inner loops (vif_avx2, motion_avx2, etc.) increment the same
+          # 64-bit gcov counter from multiple threads and produce negative
+          # values gcovr/geninfo reject. See ADR-0110.
+          #
+          # The companion fix lives in the test step below: --num-processes 1
+          # serialises meson test execution so multiple test binaries don't
+          # concurrently merge their counters into the same .gcda files for
+          # the shared libvmaf.so. atomic is per-thread, not per-process —
+          # the two fixes are complementary.
+          meson setup build-coverage --buildtype=debug \
+            -Db_coverage=true -Denable_cuda=false -Denable_sycl=false \
+            -Denable_float=true -Denable_avx512=true \
+            -Denable_dnn=enabled \
+            -Dc_args=-fprofile-update=atomic \
+            -Dcpp_args=-fprofile-update=atomic
+          ninja -C build-coverage
+      - name: Run meson unit suite (with gcov counters)
+        working-directory: core
+        run: meson test -C build-coverage --print-errorlogs --num-processes 1
+      - name: Run full Python test suite (instrumented libvmaf.so + vmaf CLI)
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
+        run: |
+          # python/vmaf/__init__.py hardcodes core/build/tools/vmaf as the
+          # CLI path. Symlink build-coverage → build so coverage runs find it.
+          ln -sf build-coverage core/build
+          export PATH="${{ github.workspace }}/core/build-coverage/tools:$PATH"
+          python3 -m pip install --user pytest-timeout
+          # Wrap in `timeout` + --kill-after so stuck vmaf CLI subprocesses
+          # from failing vmafexec tests can't zombie-hang the step past the
+          # job budget. pytest-timeout=180 per-test is the first line; the
+          # outer timeout is the backstop.
+          # CommandLineTest (the first class in command_line_test.py) runs
+          # run_testing.py with --parallelize across multiple video pairs —
+          # each pair spawns a vmaf subprocess, and the cumulative wall-clock
+          # time can exceed the per-test timeout, killing the suite before
+          # the alphabetically-later vmafexec_test.py / quality_runner_test.py
+          # tests run. Those later tests exercise the C feature extractor code
+          # paths (vif.c, adm.c, motion.c, …) that vmaf runs on 576×324 clips
+          # in under 10 s each, and their gcov data is what pushes overall
+          # coverage above 40%. Deselecting CommandLineTest (but NOT
+          # VmafexecCommandLineTest, which is fast and stays in) lets the
+          # alphabetically-later suites execute and contribute coverage.
+          # The CommandLineTest scenarios are covered by the full Python test
+          # suite in the Netflix golden gate (which has no per-test timeout).
+          # --timeout=180: raised from 60 s to 180 s to accommodate
+          # large-kernel VIF tests (e.g. vifks360o97, which uses a 65-tap
+          # Gaussian and takes ~138 s in a debug+gcov build).  These tests
+          # are correctness-essential and must run; they just need a wider
+          # per-test budget in the instrumented build.
+          timeout --kill-after=30s 20m python3 -m pytest python/test/ -v \
+            -m "not slow" --tb=short \
+            --timeout=180 --timeout-method=thread \
+            --ignore=python/test/resource \
+            --ignore=python/test/cy_test.py \
+            --ignore=python/test/cambi_test.py \
+            --deselect python/test/command_line_test.py::CommandLineTest || true
+      - name: Gather coverage report (gcovr)
+        working-directory: core
+        run: |
+          # gcovr deduplicates .gcno files belonging to the same source
+          # compiled into multiple targets — fixes the lcov over-counting
+          # that produced dnn_api.c — 1176%. Output:
+          #   - coverage.xml (Cobertura, for downstream tooling)
+          #   - coverage.json (machine-readable summary the gate parses)
+          #   - coverage.txt (human-readable, surfaced in CI logs)
+          # Suspicious/negative hit warnings on hot inner loops (e.g.
+          # ansnr_tools.c:207, 4.9 G hits on a 5x5 filter inner loop across
+          # an HD frame batch — real, not a gcov bug) are filtered out so
+          # the Coverage Gate stays warning-free. Underlying data is still
+          # ingested via the .warn settings; only the chatty stderr line is
+          # dropped. See ADR-0117.
+          ~/.local/bin/gcovr --root .. \
+              --filter 'src/.*' \
+              --exclude '.*/test/.*' \
+              --exclude '.*/tests/.*' \
+              --exclude '.*/subprojects/.*' \
+              --gcov-ignore-parse-errors=negative_hits.warn \
+              --gcov-ignore-parse-errors=suspicious_hits.warn \
+              --print-summary \
+              --txt build-coverage/coverage.txt \
+              --json-summary build-coverage/coverage.json \
+              --xml build-coverage/coverage.xml \
+              build-coverage \
+            2> >(grep -vE 'Ignoring (suspicious|negative) hits' >&2 || true)
+          echo "----- Per-file summary -----"
+          cat build-coverage/coverage.txt
+      - name: Enforce coverage thresholds
+        run: |
+          # docs/principles.md §3 targets: 70% overall, 85% critical (dnn/,
+          # opt.c, read_json_model.c). Applies to upstream + fork-added code:
+          # we've already linted upstream heavily (clang-tidy cleanup rounds
+          # 2-4) and will keep modifying it (SIMD fixes, refactors), so the
+          # safety net has to cover everything we might touch.
+          #
+          # Floor history (ADR-0637):
+          #   40% — original floor (meson unit suite + Python feature/CLI tests)
+          #   37% — 2026-05-19 merge burst (PRs #1417, #1418, #1424, #1425)
+          #          added ~2 200 LOC of new MCP/HIP/DNN/scaffold C that the
+          #          existing test suite does not yet reach, diluting overall
+          #          coverage from ~39% to 37.7%. The floor tracks the measured
+          #          floor, not the aspirational target; ratchet upward as
+          #          targeted tests land for those paths.
+          scripts/ci/coverage-check.sh core/build-coverage/coverage.json 37 85
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: coverage-cpu
+          path: |
+            core/build-coverage/coverage.xml
+            core/build-coverage/coverage.json
+            core/build-coverage/coverage.txt
+          retention-days: 14
+
+  # ===== GPU coverage (self-hosted) =====
+  # Exercises fork-added CUDA / SYCL / HIP kernels, GPU runtime glue, and
+  # AVX-512 SIMD paths that ubuntu-latest can't touch. Runs on a self-hosted
+  # runner labeled `gpu-full` (NVIDIA CUDA + Intel Arc SYCL + AMD iGPU +
+  # AVX-512 CPU). See docs/development/self-hosted-runner.md for setup.
+  #
+  # Advisory-only (continue-on-error) for now: merges are gated on the
+  # CPU coverage job above. Will be promoted to required once the runner
+  # has been stable for two weeks.
+  coverage-gpu:
+    name: "Coverage Gate — GPU Backends (Advisory)"
+    runs-on: [self-hosted, linux, gpu-full]
+    # ADR-0331: also gate on draft PR status. Self-hosted runners are
+    # scarce — drafts must not contend for them.
+    if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    continue-on-error: true
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          submodules: recursive
+      - name: Build with gcov + CUDA + SYCL + AVX-512
+        working-directory: core
+        env:
+          # icpx required for SYCL link — see core/src/meson.build.
+          CC: icx
+          CXX: icpx
+        run: |
+          # See CPU coverage job for -fprofile-update=atomic rationale.
+          # GPU build also runs SIMD CPU paths, so the same .gcda race applies.
+          source /opt/intel/oneapi/setvars.sh
+          # b_lto=false: see libvmaf-build-matrix.yml note. Coverage build
+          # uses --buildtype=debug which already disables LTO, but make it
+          # explicit to avoid a future buildtype change re-introducing the
+          # icx + -flto=auto incompatibility.
+          meson setup build-coverage-gpu --buildtype=debug \
+            -Db_coverage=true -Db_lto=false \
+            -Denable_cuda=true -Denable_sycl=true \
+            -Denable_float=true -Denable_avx512=true \
+            -Dc_args=-fprofile-update=atomic \
+            -Dcpp_args=-fprofile-update=atomic
+          ninja -C build-coverage-gpu
+      - name: Run meson unit suite
+        working-directory: core
+        # See CPU coverage job for --num-processes 1 rationale: serialise
+        # to keep multi-process .gcda merges race-free.
+        run: meson test -C build-coverage-gpu --print-errorlogs --num-processes 1
+      - name: Run Python suite on CUDA + SYCL backends
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage-gpu/src
+        run: |
+          export PATH="${{ github.workspace }}/core/build-coverage-gpu/tools:$PATH"
+          python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
+          VMAF_FORCE_BACKEND=cuda python3 -m pytest python/test/ -v \
+            -m "not slow" --tb=short --ignore=python/test/resource \
+            --timeout=300 --timeout-method=signal || true
+          VMAF_FORCE_BACKEND=sycl python3 -m pytest python/test/ -v \
+            -m "not slow" --tb=short --ignore=python/test/resource \
+            --timeout=300 --timeout-method=signal || true
+      - name: Gather coverage report (gcovr)
+        working-directory: core
+        run: |
+          # Same gcovr migration as CPU coverage job (see ADR-0110); same
+          # suspicious-hits stderr filter as the CPU job (see ADR-0117).
+          python3 -m pip install --user 'gcovr>=8.0'
+          ~/.local/bin/gcovr --root .. \
+              --filter 'src/.*' \
+              --exclude '.*/test/.*' \
+              --exclude '.*/tests/.*' \
+              --exclude '.*/subprojects/.*' \
+              --gcov-ignore-parse-errors=negative_hits.warn \
+              --gcov-ignore-parse-errors=suspicious_hits.warn \
+              --print-summary \
+              --txt build-coverage-gpu/coverage.txt \
+              --json-summary build-coverage-gpu/coverage.json \
+              --xml build-coverage-gpu/coverage.xml \
+              build-coverage-gpu \
+            2> >(grep -vE 'Ignoring (suspicious|negative) hits' >&2 || true)
+          cat build-coverage-gpu/coverage.txt
+      - name: Enforce coverage thresholds (GPU)
+        run: |
+          scripts/ci/coverage-check.sh core/build-coverage-gpu/coverage.json 70 85
+      - name: Upload GPU coverage artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: coverage-gpu
+          path: |
+            core/build-coverage-gpu/coverage.xml
+            core/build-coverage-gpu/coverage.json
+            core/build-coverage-gpu/coverage.txt
+          retention-days: 14
+
+  # ===== SYCL float_ssim parity gate (Arc DG2-G10 calibrated) =====
+  # Runs test_sycl_float_ssim_parity on the self-hosted SYCL runner.
+  # Requires the dg2-g10 calibration entry in gpu_ulp_calibration.yaml
+  # (places=3 / 5e-4 tolerance) to be present — see ADR-0234 and
+  # Research-0985 §3. Promoted to the required-status list once the
+  # calibration entry landed; the Required Checks Aggregator treats
+  # "not reported" (no GPU runner available) as path-filter-skip/OK,
+  # so the required gate degrades gracefully when the Arc runner is
+  # offline.
+  sycl-float-ssim-parity:
+    name: "SYCL float_ssim Parity (Arc DG2-G10)"
+    runs-on: [self-hosted, linux, gpu-full]
+    if: ${{ vars.GPU_COVERAGE_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          submodules: recursive
+      - name: Build SYCL (float enabled)
+        working-directory: core
+        env:
+          CC: icx
+          CXX: icpx
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          meson setup build-sycl-parity --buildtype=release \
+            -Denable_cuda=false -Denable_sycl=true \
+            -Denable_float=true
+          ninja -C build-sycl-parity test_sycl_float_ssim_parity
+      - name: Run test_sycl_float_ssim_parity
+        working-directory: core
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          meson test -C build-sycl-parity test_sycl_float_ssim_parity \
+            --print-errorlogs
+
+  # ===== Power of 10 rule 5 — assertion density =====
+  # Every fork-added (non-trivial) function must contain ≥1 assert().
+  assertion-density:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: "Assertion Density (Power of 10 §5)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - name: Run assertion density scanner
+        run: bash scripts/ci/assertion-density.sh

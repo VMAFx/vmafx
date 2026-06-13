@@ -1,0 +1,472 @@
+# VMAFX build matrix — 1 job per OS (ADR-0710)
+#
+# Supersedes libvmaf-build-matrix.yml (ADR-0689 dedup pass → ADR-0710 slim-down).
+# Three matrix rows only:
+#   - linux-full:          GCC + ALL backends (CUDA + SYCL + Vulkan + HIP + Metal scaffold + CPU + DNN)
+#   - macos-cpu-metal:     Apple Clang + CPU + Metal scaffold
+#   - windows-msvc-cuda:   MSVC + CPU + CUDA
+#
+# Rationale: container-first VMAFX philosophy (ADR-0686, ADR-0701) means the
+# production artefact is the `vmafx-dev-mcp` image, not a per-backend binary.
+# Per-backend build legs (SYCL-only, CUDA-only, HIP-only, Vulkan-only, etc.)
+# are folded into the single Linux full build. ARM, i686, static-only, DNN-
+# only, and MoltenVK advisory legs are retired. See ADR-0710.
+#
+# Netflix golden gate is pinned to this workflow (linux-full runs the full
+# meson test suite that includes the golden assertions).
+#
+# CI runners pinned to ubuntu-24.04: GitHub-hosted ubuntu-26.04 (preview) does
+# not yet provide Python 3.14.5 / full toolchain. Re-bump when 26.04 runners
+# mature. Docker base images remain on 26.04 (they are real images, unaffected).
+
+name: Build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'changelog.d/**'
+      - 'CHANGELOG.md'
+      - '.workingdir2/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ──────────────────────────────────────────────────────────────
+          # Linux full — GCC + ALL backends
+          # Proves the full VMAFX stack compiles. Runs the complete meson
+          # test suite (including Netflix golden assertions).
+          # ──────────────────────────────────────────────────────────────
+          - os: ubuntu-24.04
+            name: Build — Linux (GCC, all backends)
+            CC: ccache gcc
+            CXX: ccache g++
+            cuda: true
+            sycl: true
+            hip: true
+            dnn: true
+            meson_extra: >-
+              -Denable_cuda=true -Denable_nvcc=true
+              -Denable_sycl=true
+              -Denable_hip=true
+              -Denable_dnn=enabled
+              -Denable_metal=disabled
+              -Denable_float=true
+              -Db_lto=false
+
+          # ──────────────────────────────────────────────────────────────
+          # macOS — Apple Clang + CPU + Metal scaffold
+          # Proves Apple Silicon builds. Metal scaffold always present on
+          # macos-latest (Metal.framework guaranteed in system frameworks).
+          # ──────────────────────────────────────────────────────────────
+          - os: macos-latest
+            name: Build — macOS (Clang, CPU + Metal)
+            CC: ccache clang
+            CXX: ccache clang++
+            metal: true
+            meson_extra: >-
+              -Denable_cuda=false -Denable_sycl=false -Denable_hip=false
+              -Denable_metal=enabled
+              -Denable_float=true
+
+          # ──────────────────────────────────────────────────────────────
+          # Windows — MSVC + CPU + CUDA
+          # Proves the Windows MSVC+NVCC path. Build-only (no GPU on
+          # windows-2025 runner). CPU-only meson tests are run after build.
+          # ──────────────────────────────────────────────────────────────
+          - os: windows-2025
+            name: Build — Windows (MSVC + CUDA)
+            cuda: true
+            windows: true
+            meson_extra: >-
+              --default-library=static
+              -Denable_cuda=true -Denable_nvcc=true
+              -Denable_sycl=false
+              -Denable_float=true
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      # ── ccache (Linux + macOS) ──────────────────────────────────────
+      - name: Restore ccache
+        if: startsWith(matrix.CC, 'ccache ')
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: ~/.ccache
+          key: ccache-v2-${{ matrix.os }}-${{ matrix.CC }}-${{ matrix.meson_extra }}-${{ github.sha }}
+          restore-keys: |
+            ccache-v2-${{ matrix.os }}-${{ matrix.CC }}-${{ matrix.meson_extra }}-
+            ccache-v2-${{ matrix.os }}-${{ matrix.CC }}-
+            ccache-v2-${{ matrix.os }}-
+
+      # ── Python ──────────────────────────────────────────────────────
+      - name: Setup python
+        if: "!matrix.windows"
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.14.5'
+
+      - name: Setup python (Windows)
+        if: matrix.windows
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.14.5'
+
+      - name: Install meson and ninja
+        run: |
+          python -m pip install --upgrade pip
+          pip install meson ninja==1.13.0
+
+      # ── Linux base deps ──────────────────────────────────────────────
+      - name: Install base deps (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache ninja-build nasm libomp-dev \
+            pkg-config gcc g++ libavcodec-dev libavformat-dev \
+            libavutil-dev libswscale-dev python3-pip
+
+      # ── macOS base deps ──────────────────────────────────────────────
+      - name: Install base deps (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install -q ninja nasm ccache llvm pkg-config
+
+      # ── ONNX Runtime (Linux DNN) ─────────────────────────────────────
+      - name: Install ONNX Runtime (Linux)
+        if: matrix.dnn && startsWith(matrix.os, 'ubuntu')
+        env:
+          ORT_VERSION: "1.22.0"
+        run: |
+          set -euo pipefail
+          curl -fSL --retry 3 \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
+            | sudo tar -xz -C /opt/
+          sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
+          sudo install -d /usr/local/lib/pkgconfig
+          cat <<EOF | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null
+          prefix=/opt/onnxruntime
+          exec_prefix=\${prefix}
+          libdir=\${exec_prefix}/lib
+          includedir=\${prefix}/include
+
+          Name: libonnxruntime
+          Description: ONNX Runtime C API
+          Version: ${ORT_VERSION}
+          Libs: -L\${libdir} -lonnxruntime
+          Cflags: -I\${includedir}
+          EOF
+          sudo sed -i 's/^          //' /usr/local/lib/pkgconfig/libonnxruntime.pc
+          echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
+          sudo ldconfig
+
+      # ── Intel oneAPI / SYCL (Linux) ──────────────────────────────────
+      # Same pinned recipe as the retired SYCL legs — icpx 2025.3 + Level Zero v1.29.0.
+      - name: Install Intel oneAPI (Linux)
+        if: matrix.sycl && startsWith(matrix.os, 'ubuntu')
+        env:
+          CC: gcc
+          CXX: g++
+        run: |
+          sudo apt-get update
+          sudo -E apt-get -yq install gpg-agent cmake
+          wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2025.3
+          git clone --depth=1 --branch v1.29.0 \
+            https://github.com/oneapi-src/level-zero.git /tmp/level-zero
+          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build /tmp/level-zero/build -j$(nproc)
+          sudo cmake --install /tmp/level-zero/build
+          rm -rf /tmp/level-zero
+          echo "/opt/intel/oneapi/compiler/latest/bin" >> $GITHUB_PATH
+          echo "/opt/intel/oneapi/compiler/latest/lib" | sudo tee /etc/ld.so.conf.d/oneapi.conf
+          sudo ldconfig
+
+      # ── CUDA toolkit (Linux + Windows) ──────────────────────────────
+      - name: Install CUDA toolkit
+        if: matrix.cuda && !matrix.windows
+        uses: Jimver/cuda-toolkit@3d45d157f327c09c04b50ee6ccdea2d9d017ec76  # v0.2.35
+        with:
+          cuda: '13.2.0'
+          method: network
+          sub-packages: '["nvcc", "cudart-dev"]'
+
+      - name: Install nv-codec-headers (Linux)
+        if: matrix.cuda && !matrix.windows
+        run: |
+          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers
+          cd nv-codec-headers && sudo make install && cd .. && rm -rf nv-codec-headers
+
+      - name: Install base deps for CUDA leg (Linux)
+        if: matrix.cuda && !matrix.sycl && startsWith(matrix.os, 'ubuntu')
+        run: sudo -E apt-get -yq install ccache ninja-build nasm gcc g++
+
+      # Vulkan SDK install + cache steps removed per ADR-0726
+      # (Vulkan backend dropped).
+
+      # ── ROCm / HIP (Linux) ───────────────────────────────────────────
+      - name: Install ROCm / HIP runtime (Linux)
+        if: matrix.hip && startsWith(matrix.os, 'ubuntu')
+        env:
+          ROCM_VERSION: "7.2.4"
+        run: |
+          sudo apt-get update
+          sudo -E apt-get -yq install wget gnupg lsb-release
+          sudo install -d -m 0755 /etc/apt/keyrings
+          wget -qO- https://repo.radeon.com/rocm/rocm.gpg.key \
+            | gpg --dearmor \
+            | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+          UBUNTU_CODENAME="$(lsb_release -cs)"
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} ${UBUNTU_CODENAME} main" \
+            | sudo tee /etc/apt/sources.list.d/rocm.list
+          printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
+            | sudo tee /etc/apt/preferences.d/rocm-pin-600
+          sudo apt-get update
+          sudo -E apt-get -yq install --no-install-recommends rocm-hip-runtime-dev
+          echo "/opt/rocm/bin" | sudo tee -a "$GITHUB_PATH"
+          echo "/opt/rocm/lib" | sudo tee /etc/ld.so.conf.d/rocm.conf
+          echo "PKG_CONFIG_PATH=/opt/rocm/lib/pkgconfig:${PKG_CONFIG_PATH:-}" \
+            | sudo tee -a "$GITHUB_ENV"
+          sudo ldconfig
+          /opt/rocm/bin/hipconfig --version || true
+
+      # ── Windows: MSVC env ────────────────────────────────────────────
+      - name: Setup MSVC dev environment
+        if: matrix.windows
+        uses: TheMrMilchmann/setup-msvc-dev@79dac248aac9d0059f86eae9d8b5bfab4e95e97c  # v4.0.0
+        with:
+          arch: x64
+
+      - name: Install CUDA toolkit (Windows)
+        if: matrix.windows && matrix.cuda
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $cudaVersion = '13.2.0'
+          $cudaMajorMinor = '13.2'
+          $url = "https://developer.download.nvidia.com/compute/cuda/$cudaVersion/network_installers/cuda_${cudaVersion}_windows_network.exe"
+          $installer = Join-Path $env:RUNNER_TEMP "cuda_${cudaVersion}_windows_network.exe"
+          curl.exe --fail --location --retry 5 --retry-delay 10 --output $installer $url
+          $packages = @(
+            "nvcc_$cudaMajorMinor",
+            "cudart_$cudaMajorMinor",
+            "crt_$cudaMajorMinor",
+            "nvvm_$cudaMajorMinor",
+            "visual_studio_integration_$cudaMajorMinor"
+          )
+          $process = Start-Process -FilePath $installer -ArgumentList (@('-s') + $packages) -Wait -PassThru
+          if ($process.ExitCode -ne 0) { Write-Error "CUDA installer failed with exit code $($process.ExitCode)" }
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$cudaMajorMinor"
+          if (-not (Test-Path (Join-Path $cudaPath 'bin\nvcc.exe'))) { Write-Error "nvcc.exe not installed" }
+          "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDA_PATH_V13_2=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          (Join-Path $cudaPath 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & (Join-Path $cudaPath 'bin\nvcc.exe') --version
+
+      - name: Install nv-codec-headers (Windows)
+        if: matrix.windows && matrix.cuda
+        shell: cmd
+        run: |
+          git clone --depth=1 https://code.ffmpeg.org/FFmpeg/nv-codec-headers nv-codec-headers
+          mkdir nvcodec-prefix\include\ffnvcodec
+          copy nv-codec-headers\include\ffnvcodec\*.h nvcodec-prefix\include\ffnvcodec\
+          echo INCLUDE=%CD%\nvcodec-prefix\include;%INCLUDE%>>%GITHUB_ENV%
+
+      - name: Disable ccache wrap (Windows)
+        if: matrix.windows
+        shell: pwsh
+        run: |
+          $p = 'C:\Strawberry\c\bin\ccache.exe'
+          if (Test-Path $p) { Rename-Item -Path $p -NewName 'ccache.exe.disabled' }
+          Write-Host "ccache disabled"
+
+      # ── ccache configure ─────────────────────────────────────────────
+      - name: Configure ccache
+        if: startsWith(matrix.CC, 'ccache ')
+        run: |
+          mkdir -p ~/.ccache
+          ccache --max-size=400M
+          ccache -z
+
+      # ── Configure ───────────────────────────────────────────────────
+      - name: Configure libvmaf (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        env:
+          CC: ${{ matrix.CC }}
+          CXX: ${{ matrix.CXX }}
+        run: |
+          if [ "${{ matrix.sycl }}" = "true" ]; then
+            source /opt/intel/oneapi/setvars.sh
+            export CC=icx
+            export CXX=icpx
+          fi
+          meson setup core core/build --buildtype release \
+            --prefix "$PWD/install" \
+            ${{ matrix.meson_extra }}
+
+      - name: Configure libvmaf (macOS)
+        if: matrix.os == 'macos-latest'
+        env:
+          CC: ${{ matrix.CC }}
+          CXX: ${{ matrix.CXX }}
+        run: |
+          meson setup core core/build --buildtype release \
+            --prefix "$PWD/install" \
+            ${{ matrix.meson_extra }}
+
+      - name: Configure libvmaf (Windows)
+        if: matrix.windows
+        shell: cmd
+        env:
+          CFLAGS: /experimental:c11atomics
+          CXXFLAGS: /experimental:c11atomics
+        run: |
+          meson setup core core\build --buildtype release ^
+            --prefix %CD%\install ^
+            ${{ matrix.meson_extra }}
+
+      # ── Build ────────────────────────────────────────────────────────
+      - name: Build libvmaf (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        env:
+          CC: ${{ matrix.CC }}
+          CXX: ${{ matrix.CXX }}
+        run: |
+          if [ "${{ matrix.sycl }}" = "true" ]; then
+            source /opt/intel/oneapi/setvars.sh
+          fi
+          sudo -E PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+            ninja -vC core/build install
+
+      - name: Build libvmaf (macOS)
+        if: matrix.os == 'macos-latest'
+        env:
+          CC: ${{ matrix.CC }}
+          CXX: ${{ matrix.CXX }}
+        run: ninja -vC core/build install
+
+      - name: Build libvmaf (Windows)
+        if: matrix.windows
+        shell: cmd
+        run: ninja -v -C core\build install
+
+      # ── ccache stats ─────────────────────────────────────────────────
+      - name: Report ccache statistics
+        if: always() && startsWith(matrix.CC, 'ccache ')
+        run: ccache -s
+
+      # ── DNN suite ────────────────────────────────────────────────────
+      - name: Run meson dnn suite (Linux)
+        if: matrix.dnn && startsWith(matrix.os, 'ubuntu')
+        run: sudo $(which meson) test -C core/build --suite=dnn --print-errorlogs
+
+      # ── Netflix golden + unit tests (Linux) ──────────────────────────
+      # The Netflix CPU golden assertions (CLAUDE.md §8) run as part of
+      # the full meson test suite here.
+      - name: Run tests (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: sudo ninja -vC core/build test
+
+      # ── Tests (macOS) ────────────────────────────────────────────────
+      - name: Run tests (macOS)
+        if: matrix.os == 'macos-latest'
+        run: ninja -vC core/build test
+
+      # ── Python tox (Linux + macOS) ───────────────────────────────────
+      - name: Cache Netflix vmaf_resource fixtures
+        if: startsWith(matrix.os, 'ubuntu') || matrix.os == 'macos-latest'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: python/test/resource
+          key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
+          restore-keys: |
+            vmaf-fixtures-resource-v1-
+            vmaf-fixtures-resource-
+
+      - name: Run tox tests (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          mkdir -p ~/.ccache && sudo chown -R "$(whoami)" ~/.ccache
+          pip install tox
+          tox -c python
+
+      - name: Run tox tests (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p ~/.ccache && sudo chown -R "$(whoami)" ~/.ccache
+          pip install tox
+          PATH="$(brew --prefix)/opt/llvm/bin:$PATH" \
+          CC="$(brew --prefix)/opt/llvm/bin/clang" \
+          CXX="$(brew --prefix)/opt/llvm/bin/clang++" \
+          tox -c python
+
+      # ── HIP smoke test ────────────────────────────────────────────────
+      - name: Run HIP smoke test (no GPU)
+        if: matrix.hip
+        run: |
+          cd core/build
+          ./test/test_hip_smoke
+
+      # ── Windows CPU tests ─────────────────────────────────────────────
+      - name: Run CPU tests (Windows)
+        if: matrix.windows
+        shell: cmd
+        run: |
+          cd core\build
+          for %%t in (
+            test_dict test_ref test_log test_thread_pool test_cpu
+            test_feature test_cli_parse test_model test_predict
+            test_ciede test_cambi test_psnr test_luminance_tools
+            test_feature_collector test_framesync
+          ) do (
+            echo === %%t ===
+            test\%%t.exe
+          )
+
+      # ── Artifact ──────────────────────────────────────────────────────
+      - name: Upload vmaf binary (Linux + macOS)
+        if: "!matrix.windows"
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ matrix.name }}-vmaf
+          path: ./install/bin/vmaf
+
+      - name: Upload vmaf.exe artifact (Windows)
+        if: matrix.windows
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: windows-msvc-cuda-vmaf
+          path: install/bin/vmaf.exe
+          if-no-files-found: warn

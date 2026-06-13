@@ -1,0 +1,47 @@
+{
+  "id": "vmaf_tiny_v3",
+  "kind": "fr",
+  "onnx": "vmaf_tiny_v3.onnx",
+  "opset": 17,
+  "sha256": "57b2b7e0c62e84e3238b266e423e2008da76ec12ce957c173b2bbed11c65eb78",
+  "input_name": "features",
+  "input_shape": [
+    -1,
+    6
+  ],
+  "output_name": "vmaf",
+  "output_shape": [
+    -1
+  ],
+  "features": [
+    "adm2",
+    "vif_scale0",
+    "vif_scale1",
+    "vif_scale2",
+    "vif_scale3",
+    "motion2"
+  ],
+  "input_mean": [
+    0.9154358735163397,
+    0.5044673305940499,
+    0.756364188222672,
+    0.8398883767464267,
+    0.89199739393249,
+    6.417078245524368
+  ],
+  "input_std": [
+    0.03473643563995937,
+    0.15760624188237923,
+    0.09289338872033201,
+    0.069510538567901,
+    0.05259210477314612,
+    7.320738307667759
+  ],
+  "arch": "mlp_medium",
+  "n_params": 769,
+  "quant_mode": "dynamic",
+  "int8_sha256": "b4bdbb353b1b395adb22b77e890117228de1cfd12b94cb46fd0173c2fd12a343",
+  "quant_accuracy_budget_plcc": 0.01,
+  "onnx_has_scaler": true,
+  "notes": "vmaf_tiny_v3 \u2014 canonical-6 + StandardScaler + mlp_medium (769 params), 90 epochs Adam @ lr=1e-3, MSE. Scaler (mean, std) baked into the ONNX graph as Constant nodes so the runtime feeds raw feature values. Same recipe as vmaf_tiny_v2 but with ~3x hidden capacity (6 \u2192 32 \u2192 16 \u2192 1). Dynamic-PTQ int8 sidecar via ai/scripts/ptq_dynamic.py (ADR-0275); measured drop=0.000120 vs 0.01 budget on Netflix features."
+}

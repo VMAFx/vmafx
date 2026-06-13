@@ -1,0 +1,36 @@
+---
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# config/rbac/role_vmafxjob.yaml — minimum ClusterRole for the VmafxJob reconciler.
+#
+# The VmafxJob reconciler only reads and patches VmafxJob objects and their
+# status subresource.  It does not create Pods in Stage 2 (Pod creation is
+# Stage 3).  Events write permission is required for future use; it is
+# inexpensive and the pattern is universal.
+#
+# ADR-0786: vmafx-operator Stage 2 — per-controller RBAC minimum permissions.
+# ADR-0714: vmafx-operator kubebuilder skeleton + CRDs (parent).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vmafx-operator-vmafxjob-role
+rules:
+  # VmafxJob: read + status patch (no create/delete — the operator never creates jobs)
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxjobs]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxjobs/status]
+    verbs: [get, update, patch]
+  - apiGroups: [vmafx.dev]
+    resources: [vmafxjobs/finalizers]
+    verbs: [update]
+  # Events — for future event emission on phase transitions
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  # Leader election
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]

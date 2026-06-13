@@ -1,0 +1,116 @@
+# Custom semantic patterns for the vmaf fork. Standard rule packs (cwe-top-25,
+# cert-c, cert-cpp) are pulled in via `semgrep --config p/cert-c-strict
+# --config p/cwe-top-25` in CI; this file holds project-specific rules.
+
+rules:
+  - id: vmaf-no-double-precision-loss-in-reduction
+    pattern-either:
+      - pattern: |
+          float $ACC = 0;
+          ...
+          for (...) { ... $ACC += $X * $X * $X; ... }
+      - pattern: |
+          float $ACC = 0.0f;
+          ...
+          for (...) { ... $ACC += $X * $X * $X; ... }
+    message: >
+      Float accumulator for cubed values causes order-dependent drift between
+      scalar and SIMD paths. Use double for outer accumulators in reductions
+      (see commit 24c88a32 — float ADM csf_den_scale fix).
+    languages: [c, cpp]
+    severity: ERROR
+
+  - id: vmaf-no-printf-precision-below-17g
+    # Only flag printf-family calls where the score/metric variable is the
+    # direct argument (name contains score, vmaf, aggregate, or feature).
+    # A bare regex on %.<n>(f|g) matched every FPS counter, SVM model
+    # serializer, and progress line in the codebase — 30 false positives.
+    # Actual score precision is enforced by result_test.py's round-trip
+    # assertion; this rule is the belt to that suspender.
+    patterns:
+      - pattern-either:
+          - pattern: fprintf($F, $FMT, $X, ...)
+          - pattern: printf($FMT, $X, ...)
+          - pattern: snprintf($B, $N, $FMT, $X, ...)
+      - metavariable-regex:
+          metavariable: $FMT
+          regex: '.*%\.[0-9]+[fg]\b.*'
+      - metavariable-regex:
+          metavariable: $X
+          regex: '.*(score|vmaf|aggregate|metric)_?.*'
+    paths:
+      include:
+        - /core/src/output.c
+        - /core/src/libvmaf.c
+        - /core/tools/vmaf.c
+    message: >
+      VMAF score output must be IEEE-754 round-trip lossless (%.17g). Lower
+      precision in user-facing output silently truncates score deltas (see D11).
+    languages: [c, cpp]
+    severity: WARNING
+
+  - id: vmaf-no-system-rand
+    pattern-either:
+      - pattern: rand()
+      - pattern: srand($X)
+    paths:
+      exclude:
+        # Upstream Netflix SVM cross-validation uses rand() for fold shuffling.
+        # Tracked as cleanup debt; not gated here.
+        - /core/src/svm.cpp
+    message: Use a deterministic, seedable RNG (see CERT MSC30-C). VMAF must be reproducible.
+    languages: [c, cpp]
+    severity: ERROR
+
+  - id: vmaf-no-strcpy-strcat-sprintf
+    pattern-either:
+      - pattern: strcpy(...)
+      - pattern: strcat(...)
+      - pattern: sprintf(...)
+    paths:
+      exclude:
+        # Upstream Netflix tree — tracked as cleanup debt, not gated here:
+        # core/tools/cli_parse.c (sprintf with fixed-size local buffer),
+        # core/tools/y4m_input.c (strcpy into fixed struct field),
+        # matlab/**               (MATLAB MEX sources, not shipped in libvmaf).
+        - /matlab/**
+        - /core/tools/cli_parse.c
+        - /core/tools/y4m_input.c
+        # Vendored third-party code — kept verbatim under their original
+        # license so upstream security fixes can be picked up unchanged.
+        # cJSON v1.7.18 (MIT) is used by the embedded MCP server
+        # (ADR-0128 / ADR-0209). The library is bound-checked internally
+        # via its own input-length tracking; we accept it as-is rather
+        # than fork the upstream sources.
+        - /core/src/mcp/3rdparty/**
+    message: Use strncpy/strncat/snprintf with explicit bound. (CERT STR31-C / Power-of-10 Rule 9.)
+    languages: [c, cpp]
+    severity: ERROR
+
+  - id: vmaf-no-malloc-without-check
+    pattern: |
+      $P = malloc(...);
+      $P->$F = ...;
+    message: Check malloc result before dereferencing. (Power-of-10 Rule 7.)
+    languages: [c]
+    severity: ERROR
+
+  - id: vmaf-no-tmp-path-hardcoded
+    pattern-either:
+      - pattern: '"/tmp/..."'
+      - pattern: 'fopen("/tmp/...", ...)'
+    message: Use mkstemp() or g_get_tmp_dir(); hardcoded /tmp paths are TOCTOU-prone.
+    languages: [c, cpp]
+    severity: WARNING
+
+  - id: vmaf-no-skip-hooks-in-scripts
+    pattern-either:
+      - pattern-regex: 'git\s+commit\s+.*--no-verify'
+      - pattern-regex: 'git\s+push\s+.*--no-verify'
+    paths:
+      include:
+        - "**/*.sh"
+        - /.claude/**
+    message: Hooks may not be skipped from scripts. Surface failures, fix root cause.
+    languages: [generic]
+    severity: ERROR

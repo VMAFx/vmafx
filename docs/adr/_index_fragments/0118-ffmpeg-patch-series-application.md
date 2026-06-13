@@ -1,0 +1,1 @@
+| [ADR-0118](0118-ffmpeg-patch-series-application.md) | `ffmpeg-patches/` is a quilt-style series applied via `series.txt` ordering by both Dockerfile and `ffmpeg.yml`; patches regenerated via real `git format-patch -3` carrying valid index lines + signed-off-by trail | Accepted | ci, build, ffmpeg, docker, sycl, ai |

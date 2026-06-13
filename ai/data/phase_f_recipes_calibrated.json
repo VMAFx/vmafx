@@ -1,0 +1,93 @@
+{
+  "metadata": {
+    "adr": "ADR-0325",
+    "corpus": {
+      "class_label_note": "K150K carries no per-source content_class column. Only the UGC recipe is corpus-derived; animation / screen_content / live_action_hdr remain proxy-derived (see ai/scripts/calibrate_phase_f_recipes.py _PROXY_ADJUSTMENTS) until PR #477's TransNet shot-metadata columns plus a class-labelled subset land.",
+      "name": "konvid-150k",
+      "path": "/home/kilian/dev/vmaf/.workingdir2/konvid-150k/konvid_150k.jsonl",
+      "row_count_note": "K150K ingestion was ~96.6% complete at calibration time; partial-corpus stats are statistically valid for high-level class statistics. Re-run on the full corpus is a future PR.",
+      "rows_in_jsonl": 148543,
+      "rows_total_expected": 153841,
+      "rows_used_for_calibration": 148543
+    },
+    "mos_to_vmaf_mapping": {
+      "anchor": "Hosu et al. 2017 \u00a73.3, scaled MOS [1,5] \u2192 VMAF [20,100]",
+      "intercept": 0.0,
+      "slope": 20.0
+    },
+    "phase": "F.5",
+    "saliency_cut_points": {
+      "aggressive": 0.3,
+      "very_aggressive": 0.55
+    },
+    "schema_version": 1,
+    "single_rung_dominance_fraction": 0.9,
+    "ugc_baseline_mos": {
+      "mean": 3.3273,
+      "median": 3.4,
+      "n": 148543,
+      "stdev": 0.5536
+    }
+  },
+  "recipes": {
+    "animation": {
+      "_provenance": {
+        "adjustment": {
+          "force_single_rung": true,
+          "saliency_benefit_fraction": 0.45,
+          "target_vmaf_offset_abs": 2.0,
+          "tight_interval_width_factor": 0.5
+        },
+        "anchor": "ugc",
+        "research_section": "Research-0067 \u00a7F.4 recipe-override placeholders",
+        "source": "proxy"
+      },
+      "force_single_rung": true,
+      "saliency_intensity": "aggressive",
+      "target_vmaf_offset": 2.0,
+      "tight_interval_max_width": 1.75
+    },
+    "live_action_hdr": {
+      "_provenance": {
+        "adjustment": {
+          "force_single_rung": false,
+          "saliency_benefit_fraction": 0.1,
+          "target_vmaf_offset_abs": 0.0,
+          "tight_interval_width_factor": 0.4
+        },
+        "anchor": "ugc",
+        "research_section": "Research-0067 \u00a7F.4 recipe-override placeholders",
+        "source": "proxy"
+      },
+      "target_vmaf_offset": 0.0,
+      "tight_interval_max_width": 1.4
+    },
+    "screen_content": {
+      "_provenance": {
+        "adjustment": {
+          "force_single_rung": false,
+          "saliency_benefit_fraction": 0.65,
+          "target_vmaf_offset_abs": 1.0,
+          "tight_interval_width_factor": 0.7
+        },
+        "anchor": "ugc",
+        "research_section": "Research-0067 \u00a7F.4 recipe-override placeholders",
+        "source": "proxy"
+      },
+      "saliency_intensity": "very_aggressive",
+      "target_vmaf_offset": 1.0
+    },
+    "ugc": {
+      "_provenance": {
+        "corpus_rows_used": 148543,
+        "source": "corpus",
+        "ugc_resolution_dominance": 0.938,
+        "ugc_saliency_benefit_fraction": 0.198
+      },
+      "force_single_rung": false,
+      "saliency_intensity": "default",
+      "target_vmaf_offset": 1.5,
+      "tight_interval_max_width": 3.5
+    }
+  }
+}

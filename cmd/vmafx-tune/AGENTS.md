@@ -1,0 +1,63 @@
+# AGENTS.md — cmd/vmafx-tune
+
+Parent: [../../AGENTS.md](../../AGENTS.md).
+
+Go port of the vmaf-tune rate-quality tuning CLI. Installed as `vmafx-tune-go`
+during the migration; see Stage roadmap in
+[ADR-0705](../../docs/adr/0705-vmafx-tune-go-stage1.md).
+
+## Rebase-sensitive invariants
+
+1. **JSON schema compatibility** (`pkg/report/report.go`): the JSON output of
+   `EmitJSON` must remain schema-compatible with the Python `compare.py` v1/v2
+   payloads. The Python `report.py` renderer ingests this JSON directly. Any
+   field rename or removal requires a coordinated Python-side change. Add new
+   optional fields only; never remove existing ones without a schema-version bump.
+
+2. **NaN coercion** (`pkg/report/report.go` `nanToNull`): `float64` fields that
+   can be NaN (failed-row bitrate, VMAF, encode time) MUST be serialized as JSON
+   `null`, not as bare `NaN` tokens. RFC 8259 strict parsers reject bare `NaN`.
+   Mirror the Python `_nan_to_none` discipline.
+
+3. **Bisect midpoint bias** (`pkg/bisect/bisect.go`): the midpoint rounds toward
+   the *higher* CRF end `(lo + hi + 1) / 2` so the best-so-far record is never
+   populated with an unvalidated CRF. Changing the rounding direction breaks the
+   monotonicity invariant.
+
+4. **ScoreFunc seam** (`pkg/bisect/bisect.go`): `ScoreFunc` is the subprocess
+   boundary. Tests inject mock score functions. Never merge the score function
+   inline into `Run`; the seam is load-bearing for unit testability.
+
+5. **Stage-1 scope** (`pkg/encoder/encoder.go`): `encoder.New` accepts only
+   `libx264` and `libx265`. Hardware encoders (NVENC, QSV, AMF) and SVT-AV1 are
+   Stage-2 scope. Do not add hardware encoder support here without a new ADR and
+   the associated hw-init flag plumbing from Python `compare.py`.
+
+6. **Binary name** (`cmd/vmafx-tune/main.go`): the binary installs as
+   `vmafx-tune-go`, not `vmaf-tune`, during Stage 1 to avoid collisions with the
+   Python binary. Stage 3 (swap) will rename. Never install it as `vmaf-tune` in
+   a PR that does not also remove the Python entry point.
+
+7. **`errors.Join` for multi-step cleanup** (`pkg/bisect`, `pkg/encoder`,
+   `pkg/storage`, `cmd/vmafx-controller/queue` — and any new sibling package
+   that grows a similar pipeline): when a primary error and a cleanup error
+   can both arise, return `errors.Join(primary, cleanup)` rather than
+   silently dropping the cleanup error via `_ = X()` or
+   `X() //nolint:errcheck`. Guard cleanup `os.Remove` calls with
+   `errors.Is(rmErr, os.ErrNotExist)` so a not-yet-created file is not
+   flagged as a cleanup failure. The `slog` error-attribute key is
+   `"error"` everywhere (`"err"` is retired). See ADR-0935.
+
+8. **`WireRow` vs `Row` duality** (`pkg/report/`): `Row` (report.go) is the
+   emit-only shape used by `compare` to produce JSON output; `WireRow` (multi.go)
+   is the unmarshal-only shape used by `report` to read that JSON back in.
+   These are intentionally separate types. Do not merge them — `Row` uses bare
+   `float64` + NaN convention for emit; `WireRow` uses `*float64` for nullable
+   unmarshal. Merging the two would break either the emit path (RFC 8259 bare NaN)
+   or the unmarshal path (null vs 0 ambiguity). ADR-0770.
+
+9. **Schema auto-detection** (`cmd/vmafx-tune/cmd/report.go` `loadReportFile`):
+   the `report` subcommand probes `renditions` vs `rows` top-level keys to
+   determine whether a JSON file is a ladder or compare payload. This probe is
+   the contract between the two schemas. Any future schema that omits both keys
+   must be added to the probe before the `report` subcommand can read it.

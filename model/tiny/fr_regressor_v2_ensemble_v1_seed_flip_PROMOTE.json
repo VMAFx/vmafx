@@ -1,0 +1,42 @@
+{
+  "adr": "ADR-0309",
+  "corpus": {
+    "corpus_root": ".workingdir2/netflix",
+    "dis_count": 0,
+    "present": false,
+    "ref_count": 0,
+    "sha256": null
+  },
+  "gate": {
+    "failing_seeds": [],
+    "mean_plcc": 0.9972533887602454,
+    "mean_plcc_pass": true,
+    "mean_plcc_threshold": 0.95,
+    "passed": true,
+    "per_seed_min": 0.95,
+    "per_seed_pass": true,
+    "per_seed_plccs": {
+      "0": 0.9975056856587572,
+      "1": 0.9971592269106849,
+      "2": 0.9978134265425399,
+      "3": 0.9969262384223619,
+      "4": 0.9968623662668834
+    },
+    "plcc_spread": 0.0009510602756565012,
+    "plcc_spread_max": 0.005,
+    "plcc_spread_pass": true
+  },
+  "generated_at_utc": "2026-05-06T11:10:09+00:00",
+  "loso_dir": "runs/ensemble_v2_real",
+  "parent_adr": "ADR-0303",
+  "recommendation": "flip seeds smoke->false in model/tiny/registry.json (ADR-0309: registry-flip is a separate follow-up PR; DO NOT flip during a rebase or in the same PR as this verdict file)",
+  "schema_version": 1,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "verdict": "PROMOTE"
+}

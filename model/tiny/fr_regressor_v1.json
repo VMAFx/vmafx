@@ -1,0 +1,48 @@
+{
+  "feature_mean": [
+    0.8172882219768188,
+    0.4031458851622486,
+    0.7159298913601629,
+    0.7891768436369564,
+    0.8336573590408808,
+    8.295216939842643
+  ],
+  "feature_order": [
+    "adm2",
+    "vif_scale0",
+    "vif_scale1",
+    "vif_scale2",
+    "vif_scale3",
+    "motion2"
+  ],
+  "feature_std": [
+    0.1791733161853322,
+    0.18391803027056408,
+    0.19389056949574612,
+    0.17912205880564475,
+    0.16967725711947565,
+    6.676089262551912
+  ],
+  "id": "fr_regressor_v1",
+  "input_names": [
+    "features"
+  ],
+  "kind": "fr",
+  "notes": "Tiny FR regressor (C1) \u2014 6-feature canonical-6 vector (adm2, vif_scale0..3, motion2) \u2192 VMAF teacher score scalar. Trained on the Netflix Public Dataset (9 ref + 70 dis YUVs) with vmaf_v0.6.1 as DMOS-aligned teacher. 9-fold LOSO mean PLCC = 0.9982 \u00b1 0.0014. Shipped checkpoint trained on all 9 sources. Exported via ai/scripts/train_fr_regressor.py. See docs/ai/models/fr_regressor_v1.md + ADR-0249.",
+  "onnx": "fr_regressor_v1.onnx",
+  "opset": 17,
+  "output_names": [
+    "score"
+  ],
+  "sha256": "b57dee2509290d77c7980f8f23aa1380f64937c485d1b1d1e5f78c13a3a54c63",
+  "training": {
+    "dataset": "netflix-public",
+    "in_sample_plcc": 0.9992775851006654,
+    "loso_mean_plcc": 0.9982025386424433,
+    "loso_mean_rmse": 2.1944133218924966,
+    "loso_mean_srocc": 0.9566722044129532,
+    "loso_std_plcc": 0.0013836883595611611,
+    "n_pairs": 70,
+    "n_sources": 9
+  }
+}

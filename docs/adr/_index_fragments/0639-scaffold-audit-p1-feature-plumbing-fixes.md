@@ -1,0 +1,1 @@
+| [ADR-0639](0639-scaffold-audit-p1-feature-plumbing-fixes.md) | Scaffold-audit P1 — backend precheck, HIP picture, mobilesal bpc, DNN multi-output | Accepted | python, hip, ai, dnn, docs, vmaf-tune |

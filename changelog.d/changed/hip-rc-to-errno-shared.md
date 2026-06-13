@@ -1,0 +1,1 @@
+- **changed/hip**: Consolidate 8 identical `rc_to_errno` helpers across HIP feature extractors into a single shared `vmaf_hip_rc_to_errno()` in `core/src/hip/common.h`. Drops ~80 LOC of duplicated translation logic; all 8 callers (adm/vif/motion/psnr/ssim/ansnr/moment/ciede HIP extractors) now route through the canonical implementation. Pure deduplication, no functional change.

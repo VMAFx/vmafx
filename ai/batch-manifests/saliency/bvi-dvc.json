@@ -1,0 +1,35 @@
+{
+  "_comment": "Saliency materializer batch manifest for BVI-DVC D-tier (ADR-0993).",
+  "_status": "BLOCKED — the BVI-DVC feature parquet (runs/full_features_bvi_dvc_D_refresh_20260520.parquet) uses a 'key' column with encode identifiers (e.g. 'DAdvertisingMassagesBangkokVidevo_480x272_25fps_10bit_420'), not file paths. No width/height columns are present.",
+  "_resolution": [
+    "Option A (recommended): Use the raw YUV reference files directly.",
+    "  Source YUVs are in .corpus/bvi-dvc-raw/ with naming convention",
+    "  A{ContentName}_{WxH}_{fps}fps_{bitdepth}bit_{pix_fmt}.yuv.",
+    "  Generate a BVI-DVC corpus JSONL by running:",
+    "  ai/scripts/bvi_dvc_to_corpus_jsonl.py --cache-dir .corpus/ai-refresh/bvi-dvc-cache-20260520",
+    "  (or adapt the existing script to emit a src+width+height JSONL for the raw YUVs).",
+    "  The raw YUV geometry is encoded in the filename: e.g. 3840x2176.",
+    "  For saliency the reference (not distorted) clips are appropriate.",
+    "",
+    "Option B: Add a path-enrichment step to bvi_dvc_to_full_features.py to",
+    "  emit an absolute 'src' column pointing to the MKV encode, then re-run",
+    "  the BVI-DVC D-tier extraction.",
+    "",
+    "Note: raw YUV sources require explicit -f rawvideo -video_size WxH -pix_fmt yuv420p",
+    "flags in ffmpeg — these are already handled by materialize_saliency_features.py",
+    "(see PR #540 / ADR-0993) when source extension is .yuv and default_width/default_height",
+    "are set correctly."
+  ],
+  "defaults": {
+    "model_id": "saliency_student_v1",
+    "max_frames": 4,
+    "frame_samples": 4,
+    "path_column": "src",
+    "root": "../../../.corpus/bvi-dvc-raw",
+    "width_column": "width",
+    "height_column": "height",
+    "default_width": 3840,
+    "default_height": 2176
+  },
+  "tables": []
+}

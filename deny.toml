@@ -1,0 +1,131 @@
+# VMAFX cargo-deny configuration — supply-chain policy enforcement.
+#
+# Scope: every crate pulled into the Rust workspace (bindings/rust/vmafx-sys,
+# core/src/feature/rust/tad, and any future pilot crates).
+#
+# Policy summary (ADR-0917):
+#   * Licenses  — allow permissive + the fork's BSD-2-Clause-Patent.
+#                 Deny copyleft (GPL/AGPL/LGPL/MPL/SSPL/CDDL/EPL).
+#   * Bans      — deny `openssl-sys`/`native-tls` (prefer rustls); flag
+#                 multiple-versions as warn so the duplicate-dep surface is
+#                 visible but does not fail CI on transitive churn.
+#   * Advisories — RustSec database; vulnerabilities = deny, unmaintained =
+#                  warn, yanked = warn, notice = warn.
+#   * Sources   — crates.io only; deny unknown registries; deny unknown git.
+#
+# Documentation: docs/development/cargo-deny.md
+#
+# SPDX-License-Identifier: BSD-2-Clause-Patent OR MIT
+
+[graph]
+# Run the same checks for every host we ship Rust artifacts on (vmafx-sys
+# builds CI-side on Linux today; the Windows / macOS triples are listed so the
+# license/advisory surface stays accurate when we extend the build matrix).
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "aarch64-unknown-linux-gnu" },
+    { triple = "x86_64-pc-windows-msvc" },
+    { triple = "x86_64-apple-darwin" },
+    { triple = "aarch64-apple-darwin" },
+]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# ---------------------------------------------------------------------------
+# Advisories: RustSec database lookups + yanked-crate surfacing.
+# ---------------------------------------------------------------------------
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# `version = 2` opts in to the post-0.14 schema where `vulnerability`,
+# `unmaintained`, `unsound`, `yanked`, and `notice` collapse into top-level
+# severity-driven exit codes. With the v2 schema, severity is implicit:
+# vulnerabilities/unsound always fail; unmaintained/yanked/notice are configured
+# via the keys below.
+version = 2
+yanked = "warn"
+unmaintained = "workspace"
+ignore = [
+    # Add `{ id = "RUSTSEC-NNNN-NNNN", reason = "..." }` entries here with a
+    # link to the ADR / research digest that documents the acceptance.
+]
+
+# ---------------------------------------------------------------------------
+# Licenses: permissive-only allowlist; copyleft denied.
+# ---------------------------------------------------------------------------
+[licenses]
+version = 2
+# Allowlist — every license we accept. Rejects anything else by default.
+# Keep this list lean: every entry that does not appear in the resolved graph
+# raises a `license-not-encountered` warning. Add a row only when a transitive
+# dep pulls the license in.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause-Patent",              # fork crates (vmafx, vmafx-sys, vmafx-tad); ADR-1036
+    "BSD-3-Clause",                     # transitive deps
+    "ISC",
+    "MIT",
+    "Unicode-3.0",                      # icu_* (pulled in by unicode-ident etc.)
+    "Unlicense",
+]
+confidence-threshold = 0.93
+
+# Per-crate exceptions for licenses we accept narrowly (one crate at a time)
+# but do NOT want as a blanket allowance. MPL-2.0 is weak copyleft (file-scope
+# only); we accept it for `cbindgen` because it is a *build-time* tool that
+# generates C headers, never linked into the shipping artifact.
+exceptions = [
+    # cbindgen is MPL-2.0 (weak file-scope copyleft). We accept it as a
+    # *build-time* tool that generates C headers; nothing it produces is
+    # linked into the shipping artifact.
+    { allow = ["MPL-2.0"], crate = "cbindgen" },
+]
+
+[licenses.private]
+# BSD-2-Clause-Patent is now in the allowlist (ADR-1036 SPDX correction),
+# so the private-ignore block is a secondary safety net. Once vmafx, vmafx-sys,
+# and vmafx-tad set `publish = false`, this block alone will cover the
+# workspace's own SPDX strings and the explicit allowlist entry can be removed.
+ignore = true
+registries = []
+
+# ---------------------------------------------------------------------------
+# Bans: opinionated dep substitutions + duplicate-dep surfacing.
+# ---------------------------------------------------------------------------
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = [
+    # Prefer rustls over openssl-sys; libvmaf already links against OpenSSL
+    # via libssl-dev for the C side, but we don't want a second TLS stack
+    # dragged in transitively through Rust deps. Audit transitives that
+    # introduce `openssl` and pin them to a rustls feature flag.
+    { crate = "openssl-sys", reason = "prefer rustls; raise PR with feature swap if a dep insists on openssl-sys" },
+    { crate = "native-tls",  reason = "prefer rustls; native-tls drags in openssl/Schannel/SecureTransport" },
+]
+
+# Skip the duplicate-version walk for crates whose minor-version churn is
+# upstream-driven and not actionable here. Populate as ecosystem drift forces.
+skip = []
+skip-tree = []
+
+# ---------------------------------------------------------------------------
+# Sources: crates.io only; no opaque git revs.
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []

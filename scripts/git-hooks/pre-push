@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# scripts/git-hooks/pre-push — local PR-body deliverables validator.
+#
+# Installed via `make hooks-install` (idempotent symlink into
+# .git/hooks/pre-push). Runs the same parser as the
+# rule-enforcement.yml deep-dive-checklist gate (ADR-0108) so a
+# malformed PR description is caught BEFORE the push, not after a
+# 3-10 minute CI round-trip.
+#
+# Behaviour:
+#   - No-op if `gh` is not on PATH (contributor without GitHub CLI).
+#   - No-op if HEAD has no open PR with this branch as head.
+#   - Otherwise: fetches the PR body via `gh pr view`, computes the
+#     diff via `git diff --name-only origin/master..HEAD`, and runs
+#     scripts/ci/validate-pr-body.sh. Non-zero exit blocks the push.
+#
+# Bypass: `git push --no-verify` (standard escape hatch).
+
+set -euo pipefail
+
+# Resolve the repo root from the hook's own location (this file lives
+# at .git/hooks/pre-push as a symlink to scripts/git-hooks/pre-push).
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "${repo_root}" ]; then
+  exit 0
+fi
+
+validator="${repo_root}/scripts/ci/validate-pr-body.sh"
+if [ ! -x "${validator}" ]; then
+  # Validator missing — skip silently. Older branches that pre-date
+  # this hook should not be blocked from pushing.
+  exit 0
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "pre-push: gh CLI not found — skipping PR-body deliverables check." >&2
+  exit 0
+fi
+
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [ -z "${branch}" ] || [ "${branch}" = "HEAD" ]; then
+  # Detached HEAD — no PR association possible.
+  exit 0
+fi
+
+# Look up the PR for this branch. `gh pr view --json` exits non-zero
+# when there is no open PR; treat that as "first push of a feature
+# branch" and skip.
+pr_json=""
+if ! pr_json="$(gh pr view "${branch}" --json body,state,isDraft 2>/dev/null)"; then
+  echo "pre-push: no open PR for branch '${branch}' — skipping deliverables check (will run on next push after PR opens)." >&2
+  exit 0
+fi
+
+# Skip closed / merged PRs.
+state="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state",""))' 2>/dev/null || true)"
+if [ "${state}" != "OPEN" ] && [ -n "${state}" ]; then
+  echo "pre-push: PR for '${branch}' is ${state} — skipping deliverables check." >&2
+  exit 0
+fi
+
+# CI's deep-dive-checklist job is gated on `pull_request.draft == false`,
+# so draft PRs aren't blocked there. Mirror that locally — drafts can
+# push freely; the gate kicks in once the PR is marked ready.
+is_draft="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("isDraft",False)).lower())' 2>/dev/null || echo "false")"
+if [ "${is_draft}" = "true" ]; then
+  echo "pre-push: PR for '${branch}' is a draft — skipping deliverables check (CI also skips drafts)." >&2
+  exit 0
+fi
+
+body="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("body",""))' 2>/dev/null || true)"
+if [ -z "${body}" ]; then
+  echo "pre-push: PR body is empty — letting push through; CI will catch it." >&2
+  exit 0
+fi
+
+if ! git rev-parse --verify origin/master >/dev/null 2>&1; then
+  echo "pre-push: origin/master missing locally — run 'git fetch origin master'. Skipping deliverables check." >&2
+  exit 0
+fi
+
+tmp_diff="$(mktemp)"
+trap 'rm -f "${tmp_diff}"' EXIT
+base="$(git merge-base origin/master HEAD)"
+git diff --name-only "${base}..HEAD" >"${tmp_diff}"
+
+echo "pre-push: validating PR body against ADR-0108 deliverables gate..."
+if ! printf '%s' "${body}" | "${validator}" --diff "${tmp_diff}"; then
+  cat >&2 <<'EOF'
+
+pre-push: BLOCKED — PR body would fail the rule-enforcement.yml
+deep-dive-checklist gate (ADR-0108). Fix the body via
+`gh pr edit <num> --body-file <path>` and push again.
+
+Bypass (skips ALL pre-push checks): git push --no-verify
+
+See docs/development/pr-body-validator.md for parser details.
+EOF
+  exit 1
+fi
+
+# ── mkdocs strict-mode gate (ADR-0466) ────────────────────────────────────────
+# Delegates to the single-purpose script so pre-commit can reference it directly.
+mkdocs_hook="${repo_root}/scripts/git-hooks/pre-push-mkdocs-strict.sh"
+if [ -x "${mkdocs_hook}" ]; then
+  "${mkdocs_hook}"
+fi
+
+exit 0

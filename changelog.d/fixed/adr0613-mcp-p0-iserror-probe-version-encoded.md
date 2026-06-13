@@ -1,0 +1,1 @@
+- **MCP `isError` spec-correctness fix (ADR-0613)**: `_call_tool` no longer catches exceptions and returns `TextContent({"error":...})` with `isError` implicitly `False`. Exceptions now propagate so the `mcp` library sets `isError=True` on `CallToolResult`, allowing conformant MCP clients to correctly distinguish tool errors from successes.

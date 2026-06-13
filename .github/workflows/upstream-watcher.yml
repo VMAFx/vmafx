@@ -1,0 +1,99 @@
+# Upstream watcher — polls FFmpeg master for the appearance of
+# upstream-blocked features the fork is awaiting and opens a tracking
+# GitHub issue when they land. See ADR-0339 (av1_videotoolbox
+# placeholder adapter + watcher pattern) and
+# docs/development/upstream-watchers.md.
+#
+# Schedule: Mondays at 08:00 UTC. The watcher is cheap (a partial
+# clone of one file from upstream FFmpeg) so a weekly cadence trades
+# a tiny CI footprint against a one-week worst-case latency between
+# upstream landing and the fork noticing.
+
+name: upstream-watcher
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read  # jobs opt in to issues: write per-job (ADR-1086)
+
+jobs:
+  ffmpeg-av1-videotoolbox:
+    name: FFmpeg av1_videotoolbox encoder
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Probe upstream FFmpeg master
+        id: probe
+        run: |
+          set +e
+          OUTPUT="$(scripts/upstream-watcher/check_ffmpeg_av1_videotoolbox.sh 2>&1)"
+          STATUS=$?
+          set -e
+          {
+            echo "exit_code=${STATUS}"
+            echo 'report<<EOF'
+            printf '%s\n' "${OUTPUT}"
+            echo 'EOF'
+          } >> "${GITHUB_OUTPUT}"
+          printf '%s\n' "${OUTPUT}"
+          # Translate exit code: 0 = encoder landed, 1 = not yet, 2 = infra fail.
+          if [ "${STATUS}" -eq 2 ]; then
+            echo "::warning::upstream watcher infrastructure failure (exit 2)"
+            exit 0   # do not fail the workflow on transient network issues
+          fi
+
+      - name: Open tracking issue (if encoder landed)
+        if: steps.probe.outputs.exit_code == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT: ${{ steps.probe.outputs.report }}
+        run: |
+          set -euo pipefail
+          TITLE="upstream-watcher: FFmpeg av1_videotoolbox encoder has landed"
+          # De-dup: skip if an open issue with the exact title already exists.
+          EXISTING="$(gh issue list --state open --search "in:title \"${TITLE}\"" --json number --jq '.[0].number // empty')"
+          if [ -n "${EXISTING}" ]; then
+            echo "issue #${EXISTING} already open; skipping"
+            exit 0
+          fi
+          BODY="$(cat <<MARKDOWN
+          The upstream-watcher detected that FFmpeg has landed an
+          \`av1_videotoolbox\` **encoder** in libavcodec/videotoolboxenc.c.
+          The placeholder adapter at
+          \`tools/vmaf-tune/src/vmaftune/codec_adapters/av1_videotoolbox.py\`
+          can now be activated.
+
+          ## Probe report
+
+          \`\`\`
+          ${REPORT}
+          \`\`\`
+
+          ## Activation checklist
+
+          - [ ] Bump fork's pinned FFmpeg ref to a release/tag that contains the encoder.
+          - [ ] Verify ffmpeg-patches/ still apply on top.
+          - [ ] Flip \`Av1VideoToolboxAdapter.supports_runtime\` default to \`True\`.
+          - [ ] Bump \`adapter_version\` to \`"1"\` (invalidates ADR-0298 cache).
+          - [ ] Update \`quality_range\` and argv emission if upstream's knob shape differs from h264/hevc VT.
+          - [ ] Drop \`Av1VideoToolboxUnavailableError\` raises in \`validate\` / \`ffmpeg_codec_args\`.
+          - [ ] Replace placeholder tests with real argv-shape assertions.
+          - [ ] Update [ADR-0339](../blob/master/docs/adr/0339-av1-videotoolbox-placeholder-adapter.md) status to Superseded by the activation ADR.
+
+          See also: [docs/development/upstream-watchers.md](../blob/master/docs/development/upstream-watchers.md).
+          MARKDOWN
+          )"
+          gh issue create \
+            --title "${TITLE}" \
+            --body "${BODY}" \
+            --label upstream-blocked

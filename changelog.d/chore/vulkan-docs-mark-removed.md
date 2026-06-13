@@ -1,0 +1,6 @@
+### Chore
+
+- Mark `docs/backends/vulkan/overview.md` and `docs/api/vulkan-image-import.md`
+  as historical: add removal banners citing ADR-0726 (2026-05-28) and redirect
+  operators to the active CUDA and SYCL backends. Closes
+  T-DOC-VULKAN-STALE-POST-ADR0726 (#216 closed without these files updated).

@@ -1,0 +1,1 @@
+`ai/scripts/extract_k150k_features.py` now splits CUDA extraction into explicit CUDA feature names plus a CPU residual pass, fixing CHUG/K150K 10-bit local runs that failed through the mixed all-feature `--backend cuda` path.

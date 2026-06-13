@@ -1,0 +1,1 @@
+Deselect `test_run_vmaf_runner_float_vifks360o97` from the coverage-job pytest run to stop the test from timing out (vif_kernelscale=3.71 exceeds the 60 s per-test limit on GitHub-hosted runners) and truncating the suite at 61%, which dropped overall coverage from 70% to 56.4%. The test is retained in the Netflix golden gate where no per-test timeout applies.

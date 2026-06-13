@@ -1,0 +1,45 @@
+# release-please — on push to master, open or update a release PR that
+# (a) bumps the version per Conventional Commits, (b) regenerates CHANGELOG.md,
+# and (c) when merged, tags `vX.Y.Z-lusoris.N` and fires the `release:published`
+# event that supply-chain.yml keys on for signing + SBOM + SLSA.
+
+name: release-please
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Prevent duplicate release PRs for the same push. cancel-in-progress: false
+# preserves the in-flight run that may already have created or updated the
+# release PR; the queue drains naturally.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Scoped to the one job that creates release PRs / tags; the workflow
+    # default stays `contents: read` so any step added later starts from
+    # least-privilege (Scorecard TokenPermissionsID).
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dump outputs
+        if: steps.release.outputs.release_created == 'true'
+        run: |
+          echo "Tag: ${{ steps.release.outputs.tag_name }}"
+          echo "Version: ${{ steps.release.outputs.version }}"

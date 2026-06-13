@@ -1,0 +1,52 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+[project]
+name = "vmaf-tune"
+version = "0.0.1"
+description = "Quality-aware encode automation harness for libvmaf (Phase A: x264 grid corpus)."
+readme = "README.md"
+requires-python = ">=3.10,<3.15"
+license = { text = "BSD-2-Clause-Patent" }
+authors = [
+  { name = "Lusoris", email = "lusoris@pm.me" },
+  { name = "Claude (Anthropic)", email = "noreply@anthropic.com" },
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=9.0.3", "ruff>=0.15.17", "optuna>=4.9.0"]
+# Phase A.5 fast-path (ADR-0276): proxy + Bayesian + GPU-verify
+# recommend. Optuna is the TPE sampler driver; gated behind an extra
+# so the core install path stays zero-dep.
+fast = ["optuna>=4.9.0"]
+
+[project.scripts]
+vmaf-tune = "vmaftune.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/VMAFx/vmafx"
+Repository = "https://github.com/VMAFx/vmafx"
+Documentation = "https://vmafx.github.io/vmafx/"
+Issues = "https://github.com/VMAFx/vmafx/issues"
+Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vmaftune"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    # Tests >30 s wall (or that exercise real GPUs / containers and may grow
+    # past 30 s). Exclude with `pytest -m 'not slow'` for fast iteration.
+    # See docs/adr/0908-slow-test-audit-2026-05-30.md.
+    "slow: marks tests as slow (deselect with -m 'not slow')",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately compare to literal expected values; PLR2004 is noise here.
+"tests/*.py" = ["PLR2004"]

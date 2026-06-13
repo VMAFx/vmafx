@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/VMAFx/vmafx/model/tiny/registry.schema.json",
+  "title": "VMAF tiny-model registry v1",
+  "description": "Index of trusted ONNX tiny-models shipped with libvmaf. The registry is the *trust root*: every ONNX file referenced here must (1) live under model/tiny/, (2) carry a matching sidecar JSON with the same basename, and (3) match the sha256 digest recorded below. Runtime loaders cross-check the digest before CreateSession; a mismatch refuses to load. Per-model inference metadata (input/output tensor names, normalisation, opset) lives in the sidecar next to each ONNX file — NOT here — so the registry stays small and easy to audit. T6-9 (ADR-0211) added license metadata + Sigstore bundle paths to make `--tiny-model-verify` a complete supply-chain gate.",
+  "type": "object",
+  "required": ["schema_version", "models"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": {
+      "description": "Bumped on breaking changes to registry layout. 0 = pre-release pre-T6-9. 1 = T6-9 layout adds optional license + sigstore_bundle fields per entry. Loaders accept both 0 and 1; the new fields are optional so already-shipped registries keep parsing.",
+      "type": "integer",
+      "enum": [0, 1]
+    },
+    "models": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/model_entry" }
+    }
+  },
+  "$defs": {
+    "model_entry": {
+      "type": "object",
+      "required": ["id", "kind", "onnx", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable identifier, kebab-case. Used by --tiny-model=<id>.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "maxLength": 64
+        },
+        "kind": {
+          "description": "Mirrors VmafModelKind. 'fr' = full-reference scoring, 'nr' = no-reference scoring, 'filter' = pre-/post-processing residual filter (consumed by ffmpeg vmaf_pre, NOT a scoring model loaded by libvmaf's scoring path).",
+          "enum": ["fr", "nr", "filter"]
+        },
+        "onnx": {
+          "description": "Path to the ONNX file, relative to model/tiny/.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_./-]*\\.onnx$",
+          "maxLength": 256
+        },
+        "sha256": {
+          "description": "Lowercase hex sha256 of the exact ONNX bytes shipped in-tree.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "opset": {
+          "description": "ONNX opset — mirrors sidecar.onnx_opset. Required for non-smoke models; informational for smoke.",
+          "type": "integer",
+          "minimum": 7,
+          "maximum": 21
+        },
+        "notes": {
+          "description": "Free text; training recipe hash, provenance, etc.",
+          "type": "string",
+          "maxLength": 512
+        },
+        "smoke": {
+          "description": "True for the CI smoke fixture. Smoke models are load-path probes, not quality models — they're excluded from the quality-metric harness.",
+          "type": "boolean",
+          "default": false
+        },
+        "quant_mode": {
+          "description": "Post-training quantisation mode (ADR-0129 / ADR-0173). 'fp32' = ship the .onnx as-is. 'static' / 'dynamic' / 'qat' = the runtime loads `<onnx>.int8.onnx` instead, produced by ai/scripts/ptq_*.py / qat_train.py. The fp32 file stays on disk as the regression baseline.",
+          "enum": ["fp32", "static", "dynamic", "qat"],
+          "default": "fp32"
+        },
+        "quant_calibration_set": {
+          "description": "Path to the calibration tensor blob (relative to repo root). Required for `quant_mode: \"static\"`; ignored for the other modes.",
+          "type": "string",
+          "maxLength": 256
+        },
+        "int8_sha256": {
+          "description": "Lowercase hex sha256 of the matching `<basename>.int8.onnx` file shipped alongside the fp32 ONNX. Required when `quant_mode != \"fp32\"`; ignored otherwise. The runtime checks this digest before redirecting to the int8 file (ADR-0174).",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "quant_accuracy_budget_plcc": {
+          "description": "Maximum allowed Pearson-linear-correlation drop on the per-model VMAF soak fixture, vs the fp32 baseline. The CI ai-quant-accuracy job fails any quantised model that exceeds this budget. Default 0.01 = 1 PLCC point.",
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.01
+        },
+        "license": {
+          "description": "SPDX identifier of the model's license. Fork-trained models use 'BSD-3-Clause-Plus-Patent' (matches libvmaf). Upstream-derived models carry the upstream's license verbatim. Required on all entries from schema_version 1 onward; absence is tolerated for legacy entries from schema_version 0.",
+          "type": "string",
+          "maxLength": 128
+        },
+        "license_url": {
+          "description": "Canonical URL to the license text or upstream license file. Optional; useful when `license` is a non-SPDX or fork-of-upstream blend.",
+          "type": "string",
+          "format": "uri",
+          "maxLength": 512
+        },
+        "sigstore_bundle": {
+          "description": "Path to the model's Sigstore bundle (.sigstore.json), relative to model/tiny/. Generated at release time by .github/workflows/supply-chain.yml — placeholder bundles may exist in-tree before the first release; the runtime verifier (`--tiny-model-verify`) refuses to load when the path is set but the file is missing or `cosign verify-blob` exits non-zero. Optional; absence means the model is unsigned and `--tiny-model-verify` will reject it.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_./-]*\\.sigstore\\.json$",
+          "maxLength": 256
+        },
+        "description": {
+          "description": "One-line human-readable summary of what the model does. Distinct from `notes` (which carries provenance). Optional.",
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    }
+  }
+}

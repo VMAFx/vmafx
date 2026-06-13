@@ -1,0 +1,373 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Mon, 11 May 2026 23:30:00 +0200
+Subject: [PATCH] libvmaf: add libvmaf_metal filter (zero-copy IOSurface import)
+
+Introduces a dedicated `libvmaf_metal` FFmpeg filter that consumes
+VideoToolbox-decoded frames (`AVFrame->format == AV_PIX_FMT_VIDEOTOOLBOX`,
+`AVFrame->data[3] -> CVPixelBufferRef`), pulls the IOSurface backing
+the buffer via `CVPixelBufferGetIOSurface`, and routes it through
+`vmaf_metal_picture_import` / `vmaf_metal_read_imported_pictures` for
+a zero-copy import path without the `hwdownload,format=nv12` round-trip
+the regular `libvmaf` filter forces.
+
+Pairs with the C-API surfaces in
+libvmaf/include/libvmaf/libvmaf_metal.h:
+  - vmaf_metal_state_init_external (adopts FFmpeg's MTLDevice so
+    source IOSurface handles are valid on libvmaf's compute device —
+    same-device requirement symmetric to ADR-0184 / Vulkan)
+  - vmaf_metal_import_state
+  - vmaf_metal_picture_import (per-plane IOSurface bridge)
+  - vmaf_metal_wait_compute (per-frame synchronisation barrier)
+  - vmaf_metal_read_imported_pictures (route to scoring pipeline)
+
+Closes T8-IOS (Metal IOSurface zero-copy import) in the fork backlog.
+Companion to 0012-libvmaf-wire-metal-backend-selector.patch (which adds
+the `metal_device` option to the regular libvmaf filter); together the
+two patches give users:
+
+  * libvmaf=metal_device=N    — software AVFrame input + Metal compute
+  * libvmaf_metal=...         — VideoToolbox hwdec + zero-copy import
+
+Status (T8-IOS implementation, ADR-0423): the
+`vmaf_metal_state_init_external` / `vmaf_metal_picture_import` /
+`vmaf_metal_wait_compute` / `vmaf_metal_read_imported_pictures`
+entry points ship as a working IOSurface → VmafPicture memcpy
+import on Apple-Family-7+ hosts. The filter passes
+`device=0, command_queue=0` so libvmaf falls back to
+`MTLCreateSystemDefaultDevice` until FFmpeg exposes an
+`AVMetalDeviceContext`. See
+docs/adr/0423-metal-iosurface-import-scaffold.md.
+
+Patch is on top of 0001-0012 (post-metal-backend-selector baseline).
+
+---
+ configure                |  3 +
+ libavfilter/Makefile     |  1 +
+ libavfilter/allfilters.c |  1 +
+ libavfilter/vf_libvmaf.c | 269 +++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 274 insertions(+)
+
+diff --git a/configure b/configure
+--- a/configure
++++ b/configure
+@@ -4246,5 +4246,6 @@ vidstabtransform_filter_deps="libvidstab"
+ libvmaf_filter_deps="libvmaf"
+ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
++libvmaf_metal_filter_deps="libvmaf libvmaf_metal metal corevideo videotoolbox"
+ libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
+ libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
+ vmaf_pre_filter_deps="libvmaf"
+@@ -7405,6 +7406,8 @@ enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" lib
+ enabled libvmaf_metal     && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
+                              check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_state_init
+ enabled libvmaf           && check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_state_init
++enabled libvmaf_metal     && check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_state_init_external &&
++                             check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_picture_import
+ enabled libvmaf_cuda      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
+                              check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
+ enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
+diff --git a/libavfilter/Makefile b/libavfilter/Makefile
+--- a/libavfilter/Makefile
++++ b/libavfilter/Makefile
+@@ -377,5 +377,6 @@ OBJS-$(CONFIG_LIBPLACEBO_FILTER)             += vf_libplacebo.o vulkan.o vulkan_
+ OBJS-$(CONFIG_LIBVMAF_FILTER)                += vf_libvmaf.o framesync.o
+ OBJS-$(CONFIG_LIBVMAF_CUDA_FILTER)           += vf_libvmaf.o framesync.o
++OBJS-$(CONFIG_LIBVMAF_METAL_FILTER)          += vf_libvmaf.o framesync.o
+ OBJS-$(CONFIG_LIBVMAF_SYCL_FILTER)           += vf_libvmaf.o framesync.o
+ OBJS-$(CONFIG_LIBVMAF_VULKAN_FILTER)          += vf_libvmaf.o framesync.o
+ OBJS-$(CONFIG_LIMITDIFF_FILTER)              += vf_limitdiff.o framesync.o
+diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
+--- a/libavfilter/allfilters.c
++++ b/libavfilter/allfilters.c
+@@ -351,5 +351,6 @@ extern const FFFilter ff_vf_libplacebo;
+ extern const FFFilter ff_vf_libvmaf;
+ extern const FFFilter ff_vf_libvmaf_cuda;
++extern const FFFilter ff_vf_libvmaf_metal;
+ extern const FFFilter ff_vf_libvmaf_sycl;
+ extern const FFFilter ff_vf_libvmaf_vulkan;
+ extern const FFFilter ff_vf_libvmaf_tune;
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -76,6 +76,12 @@
+ #include <libvmaf/libvmaf_metal.h>
+ #endif
+
++#if CONFIG_LIBVMAF_METAL_FILTER
++#include "libavutil/hwcontext.h"
++#include "libavutil/hwcontext_videotoolbox.h"
++#include <CoreVideo/CoreVideo.h>
++#endif
++
+ typedef struct LIBVMAFContext {
+     const AVClass *class;
+     FFFrameSync fs;
+@@ -1500,3 +1506,265 @@ const FFFilter ff_vf_libvmaf_vulkan = {
+     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
+ };
+ #endif
++#if CONFIG_LIBVMAF_METAL_FILTER
++
++#define MTL_FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
++static const AVOption libvmaf_metal_options[] = {
++    {"log_path",  "Set the file path to be used to write log.",
++                  OFFSET(log_path), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
++    {"log_fmt",   "Set the format of the log (csv, json, xml, or sub).",
++                  OFFSET(log_fmt), AV_OPT_TYPE_STRING, {.str="xml"}, 0, 1, MTL_FLAGS},
++    {"pool",      "Set the pool method to be used for computing vmaf.",
++                  OFFSET(pool), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
++    {"n_threads", "Set number of threads to be used when computing vmaf.",
++                  OFFSET(n_threads), AV_OPT_TYPE_INT, {.i64=0}, 0, UINT_MAX, MTL_FLAGS},
++    {"n_subsample", "Set interval for frame subsampling used when computing vmaf.",
++                    OFFSET(n_subsample), AV_OPT_TYPE_INT, {.i64=1}, 1, UINT_MAX, MTL_FLAGS},
++    {"model",     "Set the model to be used for computing vmaf.",
++                  OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, MTL_FLAGS},
++    {"feature",   "Set the feature to be used for computing vmaf.",
++                  OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
++    { NULL }
++};
++#undef MTL_FLAGS
++FRAMESYNC_DEFINE_CLASS(libvmaf_metal, LIBVMAFContext, fs);
++
++/* Pull the IOSurface backing a VideoToolbox-decoded AVFrame.
++ * VideoToolbox stashes the CVPixelBufferRef in frame->data[3];
++ * CVPixelBufferGetIOSurface() returns the IOSurfaceRef without
++ * a host copy. Returns NULL if the frame is not VideoToolbox-
++ * backed (caller should fail-fast in config_props). */
++static IOSurfaceRef get_iosurface_from_frame(const AVFrame *frame)
++{
++    if (frame == NULL || frame->format != AV_PIX_FMT_VIDEOTOOLBOX) {
++        return NULL;
++    }
++    CVPixelBufferRef pb = (CVPixelBufferRef)frame->data[3];
++    if (pb == NULL) {
++        return NULL;
++    }
++    return CVPixelBufferGetIOSurface(pb);
++}
++
++static int do_vmaf_metal(FFFrameSync *fs)
++{
++    AVFilterContext *ctx = fs->parent;
++    LIBVMAFContext *s = ctx->priv;
++    AVFrame *ref, *dist;
++    int ret;
++
++    ret = ff_framesync_dualinput_get(fs, &dist, &ref);
++    if (ret < 0)
++        return ret;
++    if (ctx->is_disabled || !ref)
++        return ff_filter_frame(ctx->outputs[0], dist);
++
++    /* Drain any pending compute before reusing the import slots. */
++    ret = vmaf_metal_wait_compute(s->metal_state);
++    if (ret) {
++        av_log(ctx, AV_LOG_ERROR,
++               "vmaf_metal_wait_compute failed: %d\n", ret);
++        return AVERROR_EXTERNAL;
++    }
++
++    IOSurfaceRef ref_surf  = get_iosurface_from_frame(ref);
++    IOSurfaceRef dist_surf = get_iosurface_from_frame(dist);
++    if (ref_surf == NULL || dist_surf == NULL) {
++        av_log(ctx, AV_LOG_WARNING,
++               "non-VideoToolbox frame on libvmaf_metal input — skipping\n");
++        return ff_filter_frame(ctx->outputs[0], dist);
++    }
++
++    /* Plane 0 = luma. Chroma planes follow the bi-planar layout
++     * VideoToolbox emits for NV12 / P010; the runtime walks them
++     * via vmaf_metal_picture_import(plane=1) in T8-IOS-b. */
++    ret = vmaf_metal_picture_import(s->metal_state, (uintptr_t)ref_surf,
++                                    /*plane=*/0,
++                                    ref->width, ref->height, s->bpc,
++                                    /*is_ref=*/1, s->frame_cnt);
++    if (ret) {
++        av_log(ctx, AV_LOG_WARNING,
++               "vmaf_metal_picture_import (ref) failed: %d — skipping frame\n", ret);
++        return ff_filter_frame(ctx->outputs[0], dist);
++    }
++
++    ret = vmaf_metal_picture_import(s->metal_state, (uintptr_t)dist_surf,
++                                    /*plane=*/0,
++                                    dist->width, dist->height, s->bpc,
++                                    /*is_ref=*/0, s->frame_cnt);
++    if (ret) {
++        av_log(ctx, AV_LOG_WARNING,
++               "vmaf_metal_picture_import (dist) failed: %d — skipping frame\n", ret);
++        return ff_filter_frame(ctx->outputs[0], dist);
++    }
++
++    ret = vmaf_metal_read_imported_pictures(s->vmaf, s->frame_cnt++);
++    if (ret) {
++        av_log(ctx, AV_LOG_ERROR,
++               "vmaf_metal_read_imported_pictures failed: %d\n", ret);
++        return AVERROR_EXTERNAL;
++    }
++
++    return ff_filter_frame(ctx->outputs[0], dist);
++}
++
++static av_cold int init_metal(AVFilterContext *ctx)
++{
++    LIBVMAFContext *s = ctx->priv;
++    s->fs.on_event = do_vmaf_metal;
++    return 0;
++}
++
++static av_cold void uninit_metal(AVFilterContext *ctx)
++{
++    LIBVMAFContext *s = ctx->priv;
++    int err = 0;
++
++    ff_framesync_uninit(&s->fs);
++
++    if (!s->frame_cnt)
++        goto clean_up;
++
++    err = vmaf_read_pictures(s->vmaf, NULL, NULL, 0);
++    if (err)
++        av_log(ctx, AV_LOG_ERROR,
++               "vmaf flush failed: %d\n", err);
++
++    for (unsigned i = 0; i < s->model_cnt; i++) {
++        double vmaf_score;
++        err = vmaf_score_pooled(s->vmaf, s->model[i], pool_method_map(s->pool),
++                                &vmaf_score, 0, s->frame_cnt - 1);
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "problem getting pooled vmaf score.\n");
++        }
++        av_log(ctx, AV_LOG_INFO, "VMAF score: %f\n", vmaf_score);
++    }
++
++    if (s->vmaf && s->log_path && !err)
++        vmaf_write_output(s->vmaf, s->log_path, log_fmt_map(s->log_fmt));
++
++clean_up:
++    if (s->model) {
++        for (unsigned i = 0; i < s->model_cnt; i++) {
++            if (s->model[i])
++                vmaf_model_destroy(s->model[i]);
++        }
++        av_free(s->model);
++    }
++
++    if (s->vmaf)
++        vmaf_close(s->vmaf);
++    if (s->metal_state)
++        vmaf_metal_state_free(&s->metal_state);
++}
++
++static int config_props_metal(AVFilterLink *outlink)
++{
++    int err;
++    AVFilterContext *ctx = outlink->src;
++    LIBVMAFContext *s = ctx->priv;
++    AVFilterLink *inlink = ctx->inputs[0];
++    FilterLink *inl = ff_filter_link(inlink);
++    AVHWFramesContext *frames_ctx;
++    AVHWDeviceContext *device_ctx;
++    const AVPixFmtDescriptor *desc;
++
++    if (!inl->hw_frames_ctx) {
++        av_log(ctx, AV_LOG_ERROR,
++               "No VideoToolbox hw_frames_ctx on input. Use -hwaccel videotoolbox.\n");
++        return AVERROR(EINVAL);
++    }
++
++    frames_ctx = (AVHWFramesContext *)inl->hw_frames_ctx->data;
++    if (frames_ctx->device_ctx->type != AV_HWDEVICE_TYPE_VIDEOTOOLBOX) {
++        av_log(ctx, AV_LOG_ERROR,
++               "Expected VideoToolbox frames, got type %d\n",
++               frames_ctx->device_ctx->type);
++        return AVERROR(EINVAL);
++    }
++    device_ctx = frames_ctx->device_ctx;
++    (void)device_ctx; /* T8-IOS-b: pull AVMetalDeviceContext when FFmpeg exposes one */
++
++    desc = av_pix_fmt_desc_get(frames_ctx->sw_format);
++    s->bpc = desc->comp[0].depth;
++
++    av_log(ctx, AV_LOG_INFO,
++           "libvmaf_metal: sw_format=%s bpc=%u %dx%d\n",
++           desc->name, s->bpc, inlink->w, inlink->h);
++
++    /* T8-IOS-b (ADR-0423): FFmpeg n8.1.1 does not expose an
++     * AVMetalDeviceContext, so we pass device=0 / command_queue=0;
++     * libvmaf picks MTLCreateSystemDefaultDevice. IOSurfaces from
++     * VideoToolbox are addressable from any Apple-Family-7+ MTLDevice
++     * on a single-GPU host. Multi-GPU Mac Pro hosts will need
++     * explicit device matching once FFmpeg exposes the device
++     * pointer in AVVideoToolboxFramesContext. */
++    VmafMetalExternalHandles handles = {
++        .device        = 0,
++        .command_queue = 0,
++    };
++    err = vmaf_metal_state_init_external(&s->metal_state, handles);
++    if (err == -ENODEV) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_metal: no Apple-Family-7+ GPU available. "
++               "This filter requires Apple Silicon (M1 or later).\n");
++        return AVERROR(ENODEV);
++    }
++    if (err) {
++        av_log(ctx, AV_LOG_ERROR,
++               "vmaf_metal_state_init_external failed: %d\n", err);
++        return AVERROR_EXTERNAL;
++    }
++
++    VmafConfiguration cfg = {
++        .log_level = log_level_map(av_log_get_level()),
++        .n_subsample = s->n_subsample,
++        .n_threads = s->n_threads,
++    };
++    err = vmaf_init(&s->vmaf, cfg);
++    if (err)
++        return AVERROR(EINVAL);
++
++    err = vmaf_metal_import_state(s->vmaf, s->metal_state);
++    if (err) {
++        av_log(ctx, AV_LOG_ERROR,
++               "vmaf_metal_import_state failed: %d\n", err);
++        return AVERROR_EXTERNAL;
++    }
++
++    err = parse_models(ctx);
++    if (err)
++        return err;
++
++    err = parse_features(ctx);
++    if (err)
++        return err;
++
++    return config_output(outlink);
++}
++
++static const AVFilterPad libvmaf_outputs_metal[] = {
++    {
++        .name         = "default",
++        .type         = AVMEDIA_TYPE_VIDEO,
++        .config_props = config_props_metal,
++    },
++};
++
++const FFFilter ff_vf_libvmaf_metal = {
++    .p.name         = "libvmaf_metal",
++    .p.description  = NULL_IF_CONFIG_SMALL("Calculate the VMAF between two video "
++                                           "streams using Metal zero-copy IOSurface import."),
++    .p.priv_class   = &libvmaf_metal_class,
++    .preinit        = libvmaf_metal_framesync_preinit,
++    .init           = init_metal,
++    .uninit         = uninit_metal,
++    .activate       = activate,
++    .priv_size      = sizeof(LIBVMAFContext),
++    FILTER_INPUTS(libvmaf_inputs),
++    FILTER_OUTPUTS(libvmaf_outputs_metal),
++    FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VIDEOTOOLBOX),
++    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
++};
++#endif
+--
+2.54.0

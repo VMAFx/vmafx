@@ -1,0 +1,1 @@
+| [ADR-0122](0122-cuda-gencode-coverage-and-init-hardening.md) | Unconditional CUDA cubin coverage for `sm_86` / `sm_89` + `compute_80` PTX fallback in `core/src/meson.build`; actionable multi-line `libcuda.so.1` dlopen-failure + `cuInit` messages in `vmaf_cuda_state_init()` (with pre-existing leak fix on error paths) | Accepted | cuda, build, docs |

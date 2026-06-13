@@ -1,0 +1,10 @@
+{
+  "id": "learned_filter_v1",
+  "kind": "filter",
+  "onnx": "learned_filter_v1.onnx",
+  "opset": 17,
+  "sha256": "412d53700704a7aed26908c4fa0c4de9fabab08b6f2ae330ea5b9e4a4c462e27",
+  "notes": "Tiny residual filter (C3) \u2014 degraded \u2192 clean luma. Trained self-supervised on KoNViD-1k middle-frames + synthetic gaussian-blur \u03c3=1.2 + JPEG-Q35 degradation. Exported via ai/scripts/export_tiny_models.py. quant_mode=dynamic via ai/scripts/ptq_dynamic.py \u2014 see ADR-0174.",
+  "quant_mode": "dynamic",
+  "int8_sha256": "1cff6fe07f89f6c6a2eb498e60ad2699a3538846369c3724c9f30ba9600662d3"
+}

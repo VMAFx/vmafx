@@ -1,0 +1,1 @@
+| [ADR-0668](0668-ai-derived-table-provenance.md) | AI FULL_FEATURES table builders emit replayable manifest sidecars with shared `run_provenance` for extraction, parquet combination, and metadata enrichment outputs. | Proposed | ai, training, provenance, parquet |

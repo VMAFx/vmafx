@@ -1,0 +1,654 @@
+# =============================================================================
+# VMAFX Helm chart — default values
+# =============================================================================
+# Override any key with --set or a custom values file.
+#
+# Full documentation: docs/development/k8s-deployment.md
+# GPU scheduling guide: docs/development/gpu-scheduling.md
+# Operator guide: docs/development/operator.md
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Name overrides (standard Helm convention)
+# ---------------------------------------------------------------------------
+# nameOverride replaces only the chart name component of resource names.
+# fullnameOverride replaces the entire resource name prefix.
+# Both are optional; default behaviour is <release>-vmafx.
+nameOverride: ""
+fullnameOverride: ""
+
+# ---------------------------------------------------------------------------
+# Operator — vmafx-operator kubebuilder controller (ADR-0714)
+# Disabled by default in Stage 1; enable after CRDs are installed.
+# ---------------------------------------------------------------------------
+operator:
+  # Set to true to deploy the vmafx-operator Deployment + RBAC.
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/vmafx/vmafx-operator
+    tag: ""       # Defaults to .Chart.AppVersion when empty.
+    pullPolicy: IfNotPresent
+  logLevel: info
+  # Enable leader election for HA (≥2 replicas).
+  leaderElect: false
+  resources:
+    limits:
+      cpu: "500m"
+      memory: 256Mi
+    requests:
+      cpu: "100m"
+      memory: 64Mi
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  # vmafx-server is the production Go gRPC + HTTP scoring service (ADR-0703).
+  # The Python vmaf-mcp server image (ghcr.io/vmafx/vmafx) remains available
+  # for MCP/stdio IDE deployments; see docs/server/grpc.md for the migration guide.
+  repository: ghcr.io/vmafx/vmafx-server
+  tag: ""           # Defaults to .Chart.AppVersion when empty.
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# ---------------------------------------------------------------------------
+# Workload type
+# Select exactly one: Deployment | Job | StatefulSet
+# ---------------------------------------------------------------------------
+workload: Deployment
+
+# ---------------------------------------------------------------------------
+# Deployment — long-running vmafx HTTP scoring server.
+# Active when workload == "Deployment".
+# ---------------------------------------------------------------------------
+deployment:
+  replicaCount: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # maxUnavailable: 0 prevents capacity reduction during rollout.
+      # Kubernetes default (25%) would allow pod evictions before replacements
+      # are ready, which drops in-flight scoring requests on GPU workloads.
+      maxSurge: 1
+      maxUnavailable: 0
+
+# ---------------------------------------------------------------------------
+# Job — one-shot batch scoring (vmaf-tune compare / ladder).
+# Active when workload == "Job".
+# ---------------------------------------------------------------------------
+job:
+  # Command and arguments for the batch job.
+  command: []
+  args: []
+  # Kubernetes Job completion / backoff policy.
+  completions: 1
+  parallelism: 1
+  backoffLimit: 3
+  # Automatically clean up finished Jobs.
+  ttlSecondsAfterFinished: 3600
+
+# ---------------------------------------------------------------------------
+# StatefulSet — MCP server with sticky session state.
+# Active when workload == "StatefulSet".
+# ---------------------------------------------------------------------------
+statefulSet:
+  replicaCount: 1
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # maxUnavailable: 1 is Kubernetes default for StatefulSet RollingUpdate.
+      # Explicit declaration here prevents silent default drift and documents
+      # the intent.  Set partition: N for canary-style staged rollouts (only
+      # pods with ordinal >= N are updated; 0 means update all).
+      maxUnavailable: 1
+      partition: 0
+  podManagementPolicy: OrderedReady
+  # statePVCSize controls the PersistentVolumeClaim created by the StatefulSet
+  # volumeClaimTemplate for sticky session state (/var/lib/vmafx).
+  # Size this to fit the MCP server's session state on your storage class.
+  statePVCSize: 1Gi
+
+# ---------------------------------------------------------------------------
+# Pod termination grace period
+# ---------------------------------------------------------------------------
+# How long Kubernetes waits for the container to exit after SIGTERM before
+# sending SIGKILL.  Kubernetes default is 30 s, which is too short for
+# long-running GPU scoring jobs that cannot be checkpointed mid-frame.
+# 60 s covers the worst-case vmaf-tune encode + score pass on a single
+# segment.  Operators running full-feature CHUG extractions should raise
+# this to 300 s or more to avoid SIGKILL on in-flight frames.
+# Applies to: Deployment (controller / scoring server) and StatefulSet.
+# The node Deployment uses the same value via templates/node.yaml.
+terminationGracePeriodSeconds: 60
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+  # Additional named ports (e.g. metrics: 9090).
+  extraPorts: []
+
+# ---------------------------------------------------------------------------
+# Ingress
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: vmafx.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: vmafx-tls
+  #    hosts:
+  #      - vmafx.local
+
+# ---------------------------------------------------------------------------
+# GPU — multi-vendor device-plugin selector
+# ---------------------------------------------------------------------------
+# The chart maps "vendor" to the correct Kubernetes resource key:
+#   nvidia  →  nvidia.com/gpu     (CUDA backend)
+#   amd     →  amd.com/gpu        (HIP backend)
+#   intel   →  gpu.intel.com/i915 (SYCL backend)
+#   cpu     →  (no device-plugin resource; CPU-only execution)
+#
+# ADR-0726: Vulkan backend removed. See docs/backends/README.md.
+# See docs/development/gpu-scheduling.md for vendor-to-backend mapping.
+#
+# The chart also sets VMAFX_BACKEND automatically from vendor (see env below).
+gpu:
+  enabled: true
+  vendor: nvidia    # nvidia | amd | intel | cpu
+  count: 1
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+# GPU limits are injected automatically from gpu.vendor + gpu.count.
+# You only need to specify CPU/memory limits here.
+resources:
+  limits:
+    cpu: "4"
+    memory: 8Gi
+  requests:
+    cpu: "1"
+    memory: 2Gi
+
+# ---------------------------------------------------------------------------
+# Environment variables
+# ---------------------------------------------------------------------------
+# VMAFX_BACKEND is set automatically from gpu.vendor.
+# Override individual variables here.
+env: {}
+  # VMAFX_LOG_LEVEL: info
+  # VMAFX_THREADS: "4"
+
+# Additional env vars from ConfigMap / Secret references.
+envFrom: []
+  # - configMapRef:
+  #     name: vmafx-config
+  # - secretRef:
+  #     name: vmafx-secret
+
+# ---------------------------------------------------------------------------
+# ConfigMap
+# Non-secret configuration exposed as environment variables.
+# ---------------------------------------------------------------------------
+config:
+  # Example: VMAFX_MODEL_PATH: /models/vmaf_v0.6.1.json
+  VMAFX_MODEL_DIR: /models
+  VMAFX_OUTPUT_DIR: /output
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+persistence:
+  enabled: false
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  # Corpus input volume (read-only).
+  corpus:
+    enabled: false
+    size: 50Gi
+    mountPath: /corpus
+    # existingClaim: ""
+  # Scored output volume (read-write).
+  output:
+    enabled: false
+    size: 10Gi
+    mountPath: /output
+    # existingClaim: ""
+  # Model weights volume (read-only).
+  models:
+    enabled: false
+    size: 1Gi
+    mountPath: /models
+    # existingClaim: ""
+
+# ---------------------------------------------------------------------------
+# Service Account
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# ---------------------------------------------------------------------------
+# Pod security
+# ---------------------------------------------------------------------------
+# UID/GID 65532 matches the `nonroot` user baked into
+# gcr.io/distroless/cc-debian12, which is the runtime base for every
+# production VMAFX image (see ADR-0878 / PR #367).  Together with the
+# container-level securityContext below, this satisfies the
+# Pod Security Admission "restricted" profile.
+# See docs/development/k8s-deployment.md#pod-security for the full mapping.
+# ---------------------------------------------------------------------------
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  # PSA "restricted" profile requires seccompProfile (ADR-0969).
+  # RuntimeDefault uses the container runtime's default seccomp profile
+  # (typically equivalent to docker/default), which is safe for all
+  # vmafx workloads. Upgrade to Localhost + custom profile if needed.
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+# ---------------------------------------------------------------------------
+# NetworkPolicy — default-deny posture with explicit controller/node/operator
+# traffic allow-rules (ADR-0930).
+# ---------------------------------------------------------------------------
+# Disabled by default because most clusters either ship their own ingress
+# CNI policies (Cilium, Calico) or run without a NetworkPolicy controller,
+# in which case the manifest is silently a no-op but still surfaces a
+# `lint`-visible footprint.  Operators opt in with `--set
+# networkPolicy.enabled=true`.
+#
+# When enabled, the chart emits:
+#   • a default-deny ingress + egress policy for every VMAFX pod, then
+#   • allow-rules for the documented flows below.
+#
+# Required-flow assumptions (override via the allow.* lists when your
+# topology differs):
+#   • controller → node: gRPC on port 50051 (VMAFX_NODE_GRPC_PORT)
+#   • node       → object-store: HTTPS (443) — S3 / GCS / Azure Blob
+#   • operator   → kube-apiserver: HTTPS (443) inside `kube-system`
+#   • DNS        → kube-dns / CoreDNS on UDP/TCP 53
+networkPolicy:
+  enabled: false
+  # Allow rule scaffolding.  Each entry is rendered into the matching
+  # NetworkPolicy spec block; leave empty to suppress that flow.
+  allow:
+    # controller → node (in-cluster gRPC dispatch)
+    controllerToNode:
+      enabled: true
+      nodePort: 50051
+    # node → object store (rclone egress to S3/GCS/Azure/etc.)
+    nodeEgressObjectStore:
+      enabled: true
+      ports:
+        - 443
+      # cidrs accepts arbitrary IP ranges.  Default 0.0.0.0/0 lets clusters
+      # without an in-cluster mirror egress to public object stores; tighten
+      # to your bucket VPC CIDR (or to the in-cluster mirror's ClusterIP/24)
+      # for stricter blast radius.
+      cidrs:
+        - 0.0.0.0/0
+      # except is rendered as `except:` inside the egress block; useful for
+      # carving out RFC1918 prefixes when defaulting to 0.0.0.0/0.
+      except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    # operator → kube-apiserver (controller-runtime list/watch)
+    operatorToApiserver:
+      enabled: true
+      ports:
+        - 443
+        - 6443
+    # Prometheus scraping of node metrics port 9090 (vmafx-node).
+    # When monitoring.enabled is true, the Prometheus operator scrapes the
+    # node metrics endpoint; the default-deny ingress policy blocks this
+    # without an explicit allow-rule.  fromPodSelector narrows which pods
+    # may scrape; leave empty to allow any in-namespace pod.
+    nodeMetrics:
+      enabled: true
+      # fromPodSelector restricts which pods may reach the metrics port.
+      # Example (Prometheus operator):
+      #   fromPodSelector:
+      #     app.kubernetes.io/name: prometheus
+      fromPodSelector: {}
+    # DNS egress for every VMAFX pod (CoreDNS by default).
+    dns:
+      enabled: true
+      namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+affinity: {}
+  # Example: prefer NVIDIA GPU nodes.
+  # nodeAffinity:
+  #   preferredDuringSchedulingIgnoredDuringExecution:
+  #     - weight: 100
+  #       preference:
+  #         matchExpressions:
+  #           - key: gpu.vendor
+  #             operator: In
+  #             values: [nvidia]
+
+tolerations: []
+  # Typical GPU node taint:
+  # - key: nvidia.com/gpu
+  #   operator: Exists
+  #   effect: NoSchedule
+
+nodeSelector: {}
+
+topologySpreadConstraints: []
+
+# ---------------------------------------------------------------------------
+# Health checks (Deployment / StatefulSet only)
+# ---------------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+
+# ---------------------------------------------------------------------------
+# Monitoring — Prometheus ServiceMonitor
+# ---------------------------------------------------------------------------
+monitoring:
+  enabled: false
+  serviceMonitor:
+    # Prometheus operator namespace selector.
+    namespace: ""
+    # Additional labels so Prometheus picks up the ServiceMonitor.
+    labels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+    path: /metrics
+    scheme: http
+    # Honor labels from the target (useful when job labels are in metrics).
+    honorLabels: false
+
+# ---------------------------------------------------------------------------
+# Prometheus Pushgateway (for Job workloads)
+# Requires the prometheus-pushgateway dependency in Chart.yaml.
+# ---------------------------------------------------------------------------
+pushgateway:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Storage — vmafx-node asset-fetch mode (ADR-1047)
+# ---------------------------------------------------------------------------
+# mode selects how nodes pull scored assets: http-serve (default) fetches from
+# the controller HTTP endpoint; rclone fetches directly from an object store
+# configured via storage.rclone.config (rclone TOML).
+# ---------------------------------------------------------------------------
+storage:
+  mode: "http-serve"   # http-serve | rclone
+  rclone:
+    config: ""         # rclone TOML config string; used only when mode=rclone
+
+# ---------------------------------------------------------------------------
+# Node — vmafx-node worker pool (Deployment)
+# Enabled separately from the controller.
+# ---------------------------------------------------------------------------
+node:
+  # enabled controls whether the worker Deployment is created.
+  enabled: false
+
+  # replicaCount is the number of worker replicas.
+  replicaCount: 1
+
+  # strategy controls the rolling-update behaviour of the node Deployment.
+  # maxUnavailable: 0 prevents GPU pod eviction before a replacement is ready;
+  # Kubernetes default (25%) would drop in-flight scoring jobs on rolling
+  # upgrades.  maxSurge: 1 allows one extra pod during the rollout so node
+  # capacity is never reduced below replicaCount.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  # grpcPort is the port the vmafx-node gRPC server listens on.
+  # Must match VMAFX_NODE_ADDR (env default :50052).  The liveness and
+  # readiness probes use tcpSocket on this port — it is the only listener
+  # the node binary exposes.
+  grpcPort: 50052
+
+  # image overrides for the node binary.
+  # Defaults to <image.repository>-node:<Chart.AppVersion>.
+  image:
+    repository: ""   # e.g. ghcr.io/vmafx/vmafx-node
+    tag: ""
+
+  # controllerAddr overrides the VMAFX_CONTROLLER_ADDR env var.
+  # Defaults to the in-cluster controller Service at <release>-controller:8080.
+  controllerAddr: ""
+
+  # metricsPort is the Prometheus scrape port exposed by vmafx-node.
+  # Changing this value updates the node Deployment containerPort, the
+  # node-metrics Service port, and the NetworkPolicy allow rule together.
+  # The default (9090) matches the vmafx-node binary default.
+  metricsPort: 9090
+
+  # resources overrides for the node pods.
+  # Falls back to .Values.resources when empty.
+  resources: {}
+
+  # nodeSelector pins node pods to GPU-labelled nodes.
+  # Example (NVIDIA):
+  #   nvidia.com/gpu.present: "true"
+  nodeSelector: {}
+
+  # tolerations for GPU taint (NVIDIA example):
+  #   - key: nvidia.com/gpu
+  #     operator: Exists
+  #     effect: NoSchedule
+  tolerations: []
+
+  # volumes / volumeMounts for corpus, output, model PVCs.
+  volumes: []
+  volumeMounts: []
+
+# ---------------------------------------------------------------------------
+# Auth — multi-tenant JWT / OIDC gateway (ADR-0794)
+# ---------------------------------------------------------------------------
+# When auth.enabled is true the controller validates RS256 bearer tokens from
+# an OIDC provider and enforces tenant isolation + RBAC.
+#
+# For internal / dev deployments set auth.disabled: true (sets
+# VMAFX_AUTH_DISABLED=true env var, bypasses all checks).
+#
+# Tenant configuration can be supplied two ways:
+#   1. Inline below (auth.tenants[]) — creates VmafxTenant CRs via the Helm
+#      template.  Suitable for small fixed tenant sets.
+#   2. Kubectl-apply VmafxTenant CRs directly — suitable for operator-managed
+#      multi-tenant clusters where tenants are managed by an external control
+#      plane.
+#
+# Quick-start (single tenant, Auth0):
+#
+#   auth:
+#     enabled: true
+#     jwksEndpoint: https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
+#     issuer: https://YOUR_DOMAIN.auth0.com/
+#     audience: https://vmafx.example.com/api
+#     tenants:
+#       - tenantId: acme
+#         oidc:
+#           issuer: https://YOUR_DOMAIN.auth0.com/
+#           jwksEndpoint: https://YOUR_DOMAIN.auth0.com/.well-known/jwks.json
+#           audience: https://vmafx.example.com/api
+#
+# See docs/server/auth.md for the full OIDC configuration guide.
+auth:
+  # enabled — set to true to activate the auth gateway.
+  # When false the controller starts with auth bypassed (plaintext, no tenant).
+  enabled: false
+
+  # disabled — explicitly bypass auth even when enabled is true.
+  # Useful for dry-run or integration-test pipelines.  Never true in production.
+  disabled: false
+
+  # jwksEndpoint — global fallback JWKS URL used when a tenant does not
+  # override it.  Required when auth.enabled is true.
+  jwksEndpoint: ""
+
+  # issuer — global fallback expected "iss" claim value.
+  issuer: ""
+
+  # audience — global fallback expected "aud" claim value (optional).
+  audience: ""
+
+  # tenantClaim — JWT claim field that holds the tenant identifier.
+  # Auth0: "org_id" | Keycloak: configured custom claim | Dex: "tid" (default).
+  tenantClaim: "tid"
+
+  # rolesClaim — JWT claim field that holds the list of vmafx role strings.
+  rolesClaim: "vmafx_roles"
+
+  # tenants — list of VmafxTenant CRs to create.  Each entry maps to one
+  # VmafxTenant custom resource.  Leave empty to manage tenants out-of-band.
+  tenants: []
+  # Example:
+  # tenants:
+  #   - tenantId: acme
+  #     enabled: true
+  #     oidc:
+  #       issuer: https://acme.auth0.com/
+  #       jwksEndpoint: https://acme.auth0.com/.well-known/jwks.json
+  #       audience: vmafx-api
+  #       tenantClaim: org_id
+  #       rolesClaim: vmafx_roles
+  #     rbac:
+  #       defaultRole: vmafx:reader
+  #       allowedRoles: [vmafx:reader, vmafx:writer]
+  #   - tenantId: rival-corp
+  #     oidc:
+  #       issuer: https://keycloak.rival-corp.example/realms/vmafx
+  #       jwksEndpoint: https://keycloak.rival-corp.example/realms/vmafx/protocol/openid-connect/certs
+
+# ---------------------------------------------------------------------------
+# PodDisruptionBudget
+# Prevents Kubernetes from evicting all pods simultaneously during voluntary
+# disruptions (node drains, cluster upgrades).
+# Recommended when replicaCount >= 2.  Disabled by default for single-replica
+# dev deployments where a PDB would block node-drain operations.
+# Set minAvailable: 1 or maxUnavailable: 1 (mutually exclusive).
+# ---------------------------------------------------------------------------
+podDisruptionBudget:
+  enabled: false
+  # maxUnavailable: 1 allows exactly one voluntary disruption at a time
+  # (node drain, cluster upgrade) while keeping the rest of the replicas
+  # serving.  This is the correct default for both single-replica dev
+  # deployments and multi-replica production — minAvailable: 1 with a
+  # single-replica Deployment would permanently block node drain operations
+  # (Kubernetes cannot evict the only replica and still satisfy minAvailable).
+  # Switch to minAvailable when you need a hard lower-bound on serving capacity
+  # (e.g., minAvailable: 2 with replicaCount: 3).
+  maxUnavailable: 1
+  # minAvailable: 1  # Uncomment to switch to minAvailable strategy (requires replicaCount >= 2).
+
+# ---------------------------------------------------------------------------
+# NOTES.txt / post-install
+# ---------------------------------------------------------------------------
+# No user-facing knobs here; see templates/NOTES.txt.
+
+# ---------------------------------------------------------------------------
+# OpenTelemetry collector sidecar (ADR-0782)
+# When enabled, an otel-collector sidecar is injected into the controller and
+# server pods.  It receives OTLP/gRPC on :4317 from the process and forwards
+# to the configured exporters (Jaeger, Tempo, OTLP gateway, ...).
+#
+# Disabled by default; enable with --set otelCollector.enabled=true.
+# ---------------------------------------------------------------------------
+otelCollector:
+  enabled: false
+
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: "0.120.0"
+    pullPolicy: IfNotPresent
+
+  # OTLP gRPC listen address inside the pod.
+  otlpGRPCPort: 4317
+
+  # Collector configuration — override to add exporters.
+  # The default ships traces and metrics to stdout for smoke-testing.
+  config: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+
+    exporters:
+      debug:
+        verbosity: normal
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug]
+
+  resources:
+    limits:
+      cpu: "200m"
+      memory: 128Mi
+    requests:
+      cpu: "50m"
+      memory: 32Mi
