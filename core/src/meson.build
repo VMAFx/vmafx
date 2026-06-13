@@ -73,8 +73,14 @@ else
 endif
 is_avx512_enabled = get_option('enable_avx512') == true
 is_nvtx_enabled = get_option('enable_nvtx') == true
+# AVX-512 is a pure assembly path and requires enable_asm=true to have any
+# effect.  When enable_asm=false (e.g. i686 cross-compile or --no-asm builds)
+# silently disabling would produce a confusing build; warn and force-disable
+# instead of hard-erroring, so no-asm consumer builds configure cleanly.
 if is_avx512_enabled and not is_asm_enabled
-    error('enable_avx512=true requires enable_asm=true; AVX-512 is an assembly path and cannot be compiled without it')
+    warning('enable_avx512=true has no effect when enable_asm=false; ' +
+            'AVX-512 is an assembly path — disabling AVX-512 for this build.')
+    is_avx512_enabled = false
 endif
 if is_nvtx_enabled and host_machine.system() == 'windows'
     warning('NVTX is not supported on Windows, disabling.')
@@ -442,14 +448,14 @@ int main(void) {
             if out[1].to_lower() == 'version'
                 if out[2].version_compare('<2.13.02')
                     error('nasm 2.13.02 or later is required, found nasm @0@'.format(out[2]))
-                elif out[2].version_compare('<2.14') and get_option('enable_avx512')
+                elif out[2].version_compare('<2.14') and is_avx512_enabled
                     warning('nasm 2.14 or later is required for AVX-512 asm. Disabling AVX-512.')
                     is_avx512_supported = false
                 else
                     is_avx512_supported = true
                 endif
-                cdata.set10('HAVE_AVX512', get_option('enable_avx512') and is_avx512_supported)
-                cdata_asm.set10('HAVE_AVX512', get_option('enable_avx512') and is_avx512_supported)
+                cdata.set10('HAVE_AVX512', is_avx512_enabled and is_avx512_supported)
+                cdata_asm.set10('HAVE_AVX512', is_avx512_enabled and is_avx512_supported)
             else
                 error('unexpected nasm version string: @0@'.format(nasm_r.stdout()))
             endif

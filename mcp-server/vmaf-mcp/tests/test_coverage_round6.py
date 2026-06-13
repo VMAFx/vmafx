@@ -446,6 +446,8 @@ def test_ffprobe_geometry_json_decode_error_raises(monkeypatch: pytest.MonkeyPat
         stdout = "NOT JSON"
         stderr = ""
 
+    # Stub out the PATH check so the test runs even without ffprobe installed.
+    monkeypatch.setattr(srv.shutil, "which", lambda _name: "/usr/bin/ffprobe")
     monkeypatch.setattr(srv.subprocess, "run", lambda *_a, **_kw: _Result())
     with pytest.raises(RuntimeError, match="ffprobe output malformed"):
         srv._ffprobe_geometry(Path("/some/video.mp4"))
@@ -465,7 +467,9 @@ def test_run_vmaf_score_encoded_unsupported_pixfmt_raises(tmp_path: Path) -> Non
 
     # ffprobe_geometry_async returns (width, height, pixfmt, bitdepth).
     # Use a pixfmt/bitdepth combo absent from _PIXFMT_TO_FFMPEG.
+    # Stub out the PATH check so the test runs even without ffprobe installed.
     with (
+        patch.object(srv.shutil, "which", return_value="/usr/bin/ffprobe"),
         patch.object(
             srv,
             "_ffprobe_geometry_async",
@@ -493,7 +497,9 @@ def test_run_vmaf_score_encoded_decode_error_reraises(tmp_path: Path) -> None:
     ref.write_bytes(b"")
     dis.write_bytes(b"")
 
+    # Stub out the PATH check so the test runs even without ffprobe installed.
     with (
+        patch.object(srv.shutil, "which", return_value="/usr/bin/ffprobe"),
         patch.object(
             srv,
             "_ffprobe_geometry_async",

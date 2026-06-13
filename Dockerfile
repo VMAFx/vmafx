@@ -105,10 +105,11 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
     make clean && make ENABLE_NVCC=true && make install
 # Register /usr/local/lib/x86_64-linux-gnu in the dynamic linker cache so the
 # installed vmaf binary can find libvmaf.so.3 at runtime. The NVIDIA CUDA
-# Ubuntu 26.04 base image does not include the arch-specific subdir in its
-# default ld.so.conf; meson strips RPATH on install, so without ldconfig the
-# binary exits with a dynamic linker error (vmaf smoke test sees zero stdout).
-RUN ldconfig
+# Ubuntu 26.04 base image does not include /usr/local/lib/x86_64-linux-gnu in
+# its default ld.so.conf; meson strips RPATH on install, so without an explicit
+# conf entry the vmaf binary exits with a dynamic linker error and the smoke
+# test sees zero stdout.  Write the conf entry first so ldconfig picks it up.
+RUN echo /usr/local/lib/x86_64-linux-gnu > /etc/ld.so.conf.d/vmaf-local.conf && ldconfig
 
 # ---------- build FFmpeg ----------
 RUN wget -q "https://github.com/FFmpeg/FFmpeg/archive/${FFMPEG_TAG}.zip" && \
