@@ -136,15 +136,14 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
     if (rc < 0)
         goto fail;
 
-    /* Preserve the legacy luma fast-path when the model's input shape is
-     * NCHW [N,1,H,W] where N == 1 or is a symbolic/dynamic dimension
-     * (ORT returns 0 or -1 for symbolic dims).  Treat any N <= 1 as
-     * single-frame inference so that models exported with a symbolic batch
-     * dim (e.g. ['batch', 1, H, W]) work via the luma fast-path.  For any
-     * other shape we leave in_buf / out_buf NULL and w == h == 0;
-     * vmaf_dnn_session_run_luma8() then returns -ENOTSUP, while the
-     * generic vmaf_dnn_session_run() path works regardless. */
-    if (rank == 4 && shape[0] <= 1 && shape[1] == 1 && shape[2] > 0 && shape[3] > 0) {
+    /* Preserve the legacy luma fast-path only when the model's input shape is
+     * exactly NCHW [1,1,H,W].  Models with symbolic or dynamic batch dims
+     * (ORT returns 0 or -1 for shape[0]) must NOT enter this path: they
+     * must use the generic vmaf_dnn_session_run() interface, so we leave
+     * in_buf / out_buf NULL and w == h == 0; vmaf_dnn_session_run_luma8()
+     * then returns -ENOTSUP.  This is the contract tested by
+     * test_session_open_symbolic_batch_skips_luma_fast_path (ADR-0523). */
+    if (rank == 4 && shape[0] == 1 && shape[1] == 1 && shape[2] > 0 && shape[3] > 0) {
         s->h = (int)shape[2];
         s->w = (int)shape[3];
         const size_t n = (size_t)s->w * (size_t)s->h;
