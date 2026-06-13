@@ -53,13 +53,16 @@
 
 #define PARITY_TOL 1e-4
 
-/* motion_v2 emits the SAD score every frame and the motion2_v2 score for
- * frame indices >= 1 (mid-stream — same as motion3). */
+/* motion_v2 emits the SAD score every frame, and the motion2_v2 +
+ * motion3_v2 scores host-side in flush() for every collected frame
+ * (the motion3_v2 post-process was added to the CUDA twin in ADR-1108).
+ * All three must match the CPU reference at places=4. */
 static const char *const MOTION_V2_FEATURES[] = {
     "VMAF_integer_feature_motion_v2_sad_score",
     "VMAF_integer_feature_motion2_v2_score",
+    "VMAF_integer_feature_motion3_v2_score",
 };
-#define NUM_MOTION_V2_FEATURES 2u
+#define NUM_MOTION_V2_FEATURES 3u
 
 static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
 {
@@ -181,6 +184,12 @@ static char *test_motion_v2_cpu_cuda_parity(void)
         return msg;
     if (isnan(gpu[0]))
         return NULL;
+
+    /* motion3_v2 (index 2) must be a real, finite score on the CUDA
+     * path — guards against the pre-ADR-1108 gap where the CUDA twin
+     * never emitted it (vmaf_feature_score_at_index would have failed). */
+    mu_assert("CUDA motion3_v2 must be finite (ADR-1108)", isfinite(gpu[2]));
+    mu_assert("CPU motion3_v2 must be finite", isfinite(cpu[2]));
 
     for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++) {
         const double delta = fabs(cpu[k] - gpu[k]);

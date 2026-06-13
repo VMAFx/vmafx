@@ -105,6 +105,13 @@ eliminated.
 |-----------------------------------------------|---------------------------------------------------|------------|
 | `VMAF_integer_feature_motion_v2_sad_score`    | Per-frame sum of absolute blurred differences     | Always     |
 | `VMAF_integer_feature_motion2_v2_score`       | Motion2-equivalent smoothed score                 | Always     |
+| `VMAF_integer_feature_motion3_v2_score`       | Perceptually blended + clipped score (optional 2-frame moving average) | Always |
+
+`motion3_v2_score` is the `motion_v2` analogue of motion v1's `motion3_score`:
+a per-frame `motion_blend(motion2, motion_blend_factor, motion_blend_offset)`
+clipped to `motion_max_val`, optionally smoothed by a two-frame moving average
+(`motion_moving_average=true`). It is emitted host-side in the extractor's
+end-of-stream flush.
 
 ### Output range
 
@@ -130,15 +137,23 @@ eliminated.
 | AVX2           | Supported | `x86/motion_v2_avx2.c`                                                 |
 | AVX-512        | Supported | `x86/motion_v2_avx512.c`                                               |
 | NEON (AArch64) | Supported | `arm64/motion_v2_neon.c` (ADR-0145, bit-exact)                         |
-| CUDA           | Supported | `feature/cuda/integer_motion_v2_cuda.c`                                |
-| SYCL           | Supported | `feature/sycl/integer_motion_v2_sycl.cpp`                              |
-| HIP            | Supported | `feature/hip/integer_motion_v2_hip.c`                                  |
-| Metal          | Supported | `feature/metal/integer_motion_v2_metal.mm`                             |
+| CUDA           | Supported | `feature/cuda/integer_motion_v2_cuda.c` (emits `motion3_v2_score`, ADR-1108) |
+| SYCL           | Supported | `feature/sycl/integer_motion_v2_sycl.cpp` (`sad` + `motion2_v2` only)  |
+| HIP            | Supported | `feature/hip/integer_motion_v2_hip.c` (`sad` + `motion2_v2` only)      |
+| Metal          | Supported | `feature/metal/integer_motion_v2_metal.mm` (`sad` + `motion2_v2` only) |
 
 All GPU kernels use the CPU `integer_motion_v2.c::mirror` high-edge formula
 (`2 * size - idx - 2`). The CUDA, SYCL, HIP, and Metal twins are **bit-exact**
 vs the scalar CPU reference on the cross-backend gate fixture. (The Vulkan
 backend was removed in ADR-0726.)
+
+The CUDA twin (`motion_v2_cuda`) additionally emits `motion3_v2_score` and
+accepts the `motion_blend_factor` / `motion_blend_offset` / `motion_max_val` /
+`motion_moving_average` options, host-side over the kernel's SAD scores
+(ADR-1108) — bit-exact vs the CPU `motion_v2` flush (`max_abs_diff = 0.0` on
+the Netflix `src01` 576×324 pair, 48 frames, default and non-default options).
+The SYCL, HIP, and Metal twins still emit only `sad` + `motion2_v2`; their
+`motion3_v2` ports are tracked as follow-ups.
 
 ---
 

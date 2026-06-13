@@ -1,6 +1,21 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cuda-motion-v2-motion3-emission (2026-06-13)
+Rebase impact: **low**. Touches `core/src/feature/cuda/integer_motion_v2_cuda.c`
+(fork-added CUDA wrapper — no upstream twin, so no upstream-sync conflict),
+`core/test/test_cuda_motion_v2_parity.c` (fork-only test), and
+`core/src/feature/cuda/AGENTS.md` (fork doc). Adds `docs/adr/1108-*.md`,
+`changelog.d/fixed/1108-*.md`. Edits `docs/metrics/motion.md`,
+`docs/adr/README.md`, and `docs/state.md` — these can conflict with a
+concurrent branch that also edits the same doc; keep both additive hunks
+(the motion3_v2 rows/paragraph here plus whatever the other branch adds).
+The motion3_v2 emission reuses the existing `motion_blend_tools.h` host helper
+and the established `vmaf_feature_collector_append_with_dict` API — no public
+libvmaf C-API, ABI, header, CLI, or `meson_options.txt` surface change, so no
+ffmpeg-patch (CLAUDE §12 r14) impact. The CUDA kernel itself is unchanged; only
+the host-side flush + option table grew.
+
 ## fix/json-model-feature-name-leak (2026-06-13)
 Rebase impact: **low**. Touches `core/src/read_json_model.c` (upstream-mirrored,
 `libvmaf/src/read_json_model.c` upstream) and its fork-only C++23 twin

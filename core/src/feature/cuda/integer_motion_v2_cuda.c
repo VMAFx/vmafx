@@ -15,15 +15,22 @@
  *  caches the current ref Y plane so the next frame can read it as
  *  "prev".
  *
- *  motion2_v2_score = min(score[i], score[i+1]) is emitted host-side
- *  in flush() (same shape as CPU integer_motion_v2.c::flush). No GPU
- *  work needed; the kernel only emits motion_v2_sad_score.
+ *  motion2_v2_score = min(score[i], score[i+1]) and motion3_v2_score
+ *  (per-frame blend + clip + optional moving-average) are both emitted
+ *  host-side in flush() (same shape and formula as CPU
+ *  integer_motion_v2.c::flush, bit-exact at default options). No GPU
+ *  work needed for the post-process; the kernel only emits the raw
+ *  motion_v2_sad_score. The motion3_v2 post-process and its option
+ *  surface were added in ADR-1108 (closing the GPU-twin deferral
+ *  ADR-0337 left open).
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "common.h"
+#include "dict.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
@@ -32,8 +39,13 @@
 #include "cuda/integer_motion_v2_cuda.h"
 #include "cuda/kernel_template.h"
 #include "cuda_helper.cuh"
+#include "motion_blend_tools.h"
 #include "picture.h"
 #include "picture_cuda.h"
+
+/* Default maximum value allowed for motion — mirrors
+ * DEFAULT_MOTION_MAX_VAL in integer_motion_v2.c (the CPU reference). */
+#define MOTION_V2_CUDA_DEFAULT_MAX_VAL (10000.0)
 
 typedef struct MotionV2StateCuda {
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
@@ -65,21 +77,81 @@ typedef struct MotionV2StateCuda {
     size_t plane_bytes;
     double motion_fps_weight;
 
+    /* motion3_v2 post-process options — mirror the CPU reference
+     * (integer_motion_v2.c) option table byte-for-byte so a model
+     * file carrying `motion_v2_cuda=motion_blend_factor=…` loads
+     * and scores identically to the CPU path (ADR-1108). */
+    double motion_blend_factor;
+    double motion_blend_offset;
+    double motion_max_val;
+    bool motion_moving_average;
+
     VmafDictionary *feature_name_dict;
 } MotionV2StateCuda;
 
-static const VmafOption options[] = {{
-                                         .name = "motion_fps_weight",
-                                         .alias = "mfw",
-                                         .help = "fps-aware multiplicative weight/correction",
-                                         .offset = offsetof(MotionV2StateCuda, motion_fps_weight),
-                                         .type = VMAF_OPT_TYPE_DOUBLE,
-                                         .default_val.d = 1.0,
-                                         .min = 0.0,
-                                         .max = 5.0,
-                                         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
-                                     },
-                                     {0}};
+/* Option table mirrors integer_motion_v2.c (CPU reference) for the
+ * subset of options the CUDA twin's host-side motion3_v2 post-process
+ * consumes: name / alias / type / default / min / max / flags match
+ * byte-for-byte so co-scheduled CPU+CUDA runs name features identically
+ * and model files load on either path (ADR-1108). motion_force_zero and
+ * motion_five_frame_window are CPU-only knobs (the CUDA kernel always
+ * computes the SAD, and the 5-frame window is unsupported per ADR-0337);
+ * they are intentionally omitted from this twin's surface. */
+static const VmafOption options[] = {
+    {
+        .name = "motion_fps_weight",
+        .alias = "mfw",
+        .help = "fps-aware multiplicative weight/correction",
+        .offset = offsetof(MotionV2StateCuda, motion_fps_weight),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 1.0,
+        .min = 0.0,
+        .max = 5.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "motion_blend_factor",
+        .alias = "mbf",
+        .help = "blend motion score given an offset",
+        .offset = offsetof(MotionV2StateCuda, motion_blend_factor),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 1.0,
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "motion_blend_offset",
+        .alias = "mbo",
+        .help = "blend motion score starting from this offset",
+        .offset = offsetof(MotionV2StateCuda, motion_blend_offset),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 40.0,
+        .min = 0.0,
+        .max = 1000.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "motion_max_val",
+        .alias = "mmxv",
+        .help = "maximum value allowed; larger values will be clipped to this value",
+        .offset = offsetof(MotionV2StateCuda, motion_max_val),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = MOTION_V2_CUDA_DEFAULT_MAX_VAL,
+        .min = 0.0,
+        .max = 10000.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "motion_moving_average",
+        .alias = "mma",
+        .help = "smooth motion3 with a 2-frame moving average",
+        .offset = offsetof(MotionV2StateCuda, motion_moving_average),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {0}};
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
@@ -276,36 +348,78 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
 {
     MotionV2StateCuda *s = fex->priv;
 
+    /* Resolve the (possibly renamed, for sfr/hfr co-schedule) SAD feature
+     * name from the dict — mirrors integer_motion_v2.c::flush. */
+    VmafDictionaryEntry *e_sad =
+        vmaf_dictionary_get(&s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score", 0);
+    const char *sad_name = e_sad ? e_sad->val : "VMAF_integer_feature_motion_v2_sad_score";
+
     unsigned n_frames = 0;
     double dummy;
-    while (!vmaf_feature_collector_get_score(
-        feature_collector, "VMAF_integer_feature_motion_v2_sad_score", &dummy, n_frames))
+    while (!vmaf_feature_collector_get_score(feature_collector, sad_name, &dummy, n_frames))
         n_frames++;
 
     if (n_frames < 2)
         return 1;
 
+    /* motion3_v2 seeding — mirrors integer_motion_v2.c::flush exactly.
+     * 3-frame mode only (min_idx = 1; the 5-frame window is unsupported
+     * on motion_v2, ADR-0337). stamp_value blends the *raw SAD* at
+     * min_idx, clipped to motion_max_val; it is emitted for all indices
+     * i < min_idx. */
+    const unsigned min_idx = 1;
+    double stamp_value = 0.;
+    if (n_frames > min_idx) {
+        double sad_at_min_idx;
+        if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx,
+                                              min_idx)) {
+            stamp_value =
+                MIN(motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
+                    s->motion_max_val);
+        }
+    }
+
+    double prev_processed = 0.;
     for (unsigned i = 0; i < n_frames; i++) {
         double score_cur;
         double score_next;
-        vmaf_feature_collector_get_score(feature_collector,
-                                         "VMAF_integer_feature_motion_v2_sad_score", &score_cur, i);
+        vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);
         /* Apply fps weight — mirrors CPU integer_motion_v2.c flush logic.
          * Bit-exact when motion_fps_weight = 1.0 (default). */
         score_cur *= s->motion_fps_weight;
 
         double motion2;
         if (i + 1 < n_frames) {
-            vmaf_feature_collector_get_score(
-                feature_collector, "VMAF_integer_feature_motion_v2_sad_score", &score_next, i + 1);
+            vmaf_feature_collector_get_score(feature_collector, sad_name, &score_next, i + 1);
             score_next *= s->motion_fps_weight;
             motion2 = score_cur < score_next ? score_cur : score_next;
         } else {
             motion2 = score_cur;
         }
 
-        int append_err = vmaf_feature_collector_append(
-            feature_collector, "VMAF_integer_feature_motion2_v2_score", motion2, i);
+        int append_err = vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_v2_score",
+            motion2, i);
+        if (append_err)
+            return append_err;
+
+        /* motion3_v2_score: per-frame blend + clip + optional moving-average.
+         * Mirrors integer_motion_v2.c::flush lines 466-481 byte-for-byte. */
+        double motion3;
+        if (i < min_idx) {
+            motion3 = stamp_value;
+            prev_processed = stamp_value;
+        } else {
+            double processed =
+                MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
+                    s->motion_max_val);
+            motion3 = s->motion_moving_average ? (processed + prev_processed) / 2.0 : processed;
+            prev_processed = processed;
+        }
+
+        append_err = vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion3_v2_score",
+            motion3, i);
         if (append_err)
             return append_err;
     }
@@ -345,7 +459,8 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",
-                                          "VMAF_integer_feature_motion2_v2_score", NULL};
+                                          "VMAF_integer_feature_motion2_v2_score",
+                                          "VMAF_integer_feature_motion3_v2_score", NULL};
 
 VmafFeatureExtractor vmaf_fex_integer_motion_v2_cuda = {
     .name = "motion_v2_cuda",

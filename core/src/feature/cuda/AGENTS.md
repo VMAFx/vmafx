@@ -306,6 +306,26 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   formula is stale prose from ADR-0193 bring-up and creates a
   measurable CPU/GPU drift.
 
+- **`integer_motion_v2_cuda.c::flush_fex_cuda` emits `motion3_v2_score`
+  and mirrors the CPU `integer_motion_v2.c::flush()` formula
+  byte-for-byte** (ADR-1108). The CUDA twin computes
+  `motion3_v2_score` host-side over the kernel's SAD scores using the
+  same per-frame `motion_blend(motion2, motion_blend_factor,
+  motion_blend_offset)` + `MIN(…, motion_max_val)` clip + `stamp_value`
+  seeding for `i < min_idx` (`min_idx = 1`) + optional 2-tap
+  `motion_moving_average`. The four options
+  (`motion_blend_factor`/`motion_blend_offset`/`motion_max_val`/
+  `motion_moving_average`) mirror the CPU `VmafOption[]` table exactly.
+  Any change to the CPU `motion_v2` flush blend/clip/seed/average logic
+  must be mirrored here in the same PR to keep the `places=4` parity
+  gate (`test_cuda_motion_v2_parity`) green. `motion2_v2_score` is
+  emitted via `append_with_dict` (not bare `append`) so sfr/hfr
+  co-schedule names match the CPU path. SYCL/HIP/Metal twins still emit
+  only `sad` + `motion2_v2`; closing that gap is a follow-up that must
+  reuse this same host-side formula. Unlike the v1 `motion_cuda` flush,
+  this is a batch loop over collected SAD scores (no per-frame streaming
+  post-process / `frame_index` override).
+
 - **`integer_adm/adm_cm.cu` (and the rest of the `integer_adm/`
   subdirectory) carries an NVIDIA copyright line** alongside the
   Netflix one. This is upstream-mirror — keep both headers
