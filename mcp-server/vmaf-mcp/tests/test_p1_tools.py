@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, patch
 
 import anyio
 import pytest
+
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -271,6 +272,7 @@ def test_run_compare_parses_json_output():
             patch("vmaf_mcp.server._vmaftune_binary") as mock_bin,
             patch("asyncio.create_subprocess_exec", return_value=fake_proc),
             patch("pathlib.Path.exists", return_value=True),
+            patch("vmaf_mcp.server._validate_media_path", side_effect=str),
         ):
             mock_bin.return_value = Path("/usr/local/bin/vmaf-tune")
             result = await srv._run_compare(src="/tmp/test.yuv")
@@ -291,6 +293,7 @@ def test_run_compare_raises_on_nonzero_exit():
             patch("vmaf_mcp.server._vmaftune_binary") as mock_bin,
             patch("asyncio.create_subprocess_exec", return_value=fake_proc),
             patch("pathlib.Path.exists", return_value=True),
+            patch("vmaf_mcp.server._validate_media_path", side_effect=str),
         ):
             mock_bin.return_value = Path("/usr/local/bin/vmaf-tune")
             with pytest.raises(RuntimeError, match="vmaf-tune compare exited 1"):
@@ -303,7 +306,10 @@ def test_run_compare_missing_binary_raises():
     """_run_compare raises when the vmaf-tune binary doesn't exist."""
 
     async def run():
-        with patch("vmaf_mcp.server._vmaftune_binary") as mock_bin:
+        with (
+            patch("vmaf_mcp.server._vmaftune_binary") as mock_bin,
+            patch("vmaf_mcp.server._validate_media_path", side_effect=str),
+        ):
             fake_bin = Path("/nonexistent/vmaf-tune")
             mock_bin.return_value = fake_bin
             with pytest.raises(RuntimeError, match="vmaf-tune binary not found"):
@@ -329,6 +335,7 @@ def test_run_ladder_json_format():
             patch("vmaf_mcp.server._vmaftune_binary") as mock_bin,
             patch("asyncio.create_subprocess_exec", return_value=fake_proc),
             patch("pathlib.Path.exists", return_value=True),
+            patch("vmaf_mcp.server._validate_media_path", side_effect=str),
         ):
             mock_bin.return_value = Path("/usr/local/bin/vmaf-tune")
             result = await srv._run_ladder(
@@ -356,6 +363,7 @@ def test_run_ladder_hls_format():
             patch("vmaf_mcp.server._vmaftune_binary") as mock_bin,
             patch("asyncio.create_subprocess_exec", return_value=fake_proc),
             patch("pathlib.Path.exists", return_value=True),
+            patch("vmaf_mcp.server._validate_media_path", side_effect=str),
         ):
             mock_bin.return_value = Path("/usr/local/bin/vmaf-tune")
             result = await srv._run_ladder(
@@ -380,6 +388,7 @@ def test_run_ladder_raises_on_nonzero_exit():
             patch("vmaf_mcp.server._vmaftune_binary") as mock_bin,
             patch("asyncio.create_subprocess_exec", return_value=fake_proc),
             patch("pathlib.Path.exists", return_value=True),
+            patch("vmaf_mcp.server._validate_media_path", side_effect=str),
         ):
             mock_bin.return_value = Path("/usr/local/bin/vmaf-tune")
             with pytest.raises(RuntimeError, match="vmaf-tune ladder exited 2"):
@@ -408,6 +417,7 @@ def test_run_tune_per_shot_parses_json():
             patch("vmaf_mcp.server._vmaftune_binary") as mock_bin,
             patch("asyncio.create_subprocess_exec", return_value=fake_proc),
             patch("pathlib.Path.exists", return_value=True),
+            patch("vmaf_mcp.server._validate_media_path", side_effect=str),
         ):
             mock_bin.return_value = Path("/usr/local/bin/vmaf-tune")
             result = await srv._run_tune_per_shot(
@@ -429,6 +439,7 @@ def test_run_tune_per_shot_raises_on_nonzero():
             patch("vmaf_mcp.server._vmaftune_binary") as mock_bin,
             patch("asyncio.create_subprocess_exec", return_value=fake_proc),
             patch("pathlib.Path.exists", return_value=True),
+            patch("vmaf_mcp.server._validate_media_path", side_effect=str),
         ):
             mock_bin.return_value = Path("/usr/local/bin/vmaf-tune")
             with pytest.raises(RuntimeError, match="vmaf-tune tune-per-shot exited 1"):
@@ -439,7 +450,10 @@ def test_run_tune_per_shot_raises_on_nonzero():
 
 def test_run_tune_per_shot_missing_binary_raises():
     async def run():
-        with patch("vmaf_mcp.server._vmaftune_binary") as mock_bin:
+        with (
+            patch("vmaf_mcp.server._vmaftune_binary") as mock_bin,
+            patch("vmaf_mcp.server._validate_media_path", side_effect=str),
+        ):
             mock_bin.return_value = Path("/nonexistent/vmaf-tune")
             with pytest.raises(RuntimeError, match="vmaf-tune binary not found"):
                 await srv._run_tune_per_shot(src="/tmp/test.yuv")

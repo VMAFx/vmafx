@@ -497,7 +497,9 @@ async def test_score_returns_500_when_scorer_raises(
         )
     assert resp.status == 500
     payload = await resp.json()
-    assert "scorer exploded" in payload["error"]
+    # The HTTP handler returns a generic message to avoid leaking internal
+    # exception text to clients; the actual error is logged server-side.
+    assert payload["error"] == "scoring failed; see server logs"
 
 
 # ===========================================================================
@@ -961,6 +963,7 @@ def test_run_compare_falls_back_when_stdout_is_not_json(
     """Lines 1133-1139: when stdout is not valid JSON, ``_run_compare`` must
     return the raw stdout/stderr/exit_code triple rather than raise.
     """
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"#!/bin/sh\nexit 0\n")
     fake_tune.chmod(0o755)
@@ -992,6 +995,7 @@ def test_run_ladder_falls_back_when_stdout_is_not_json(
     """Lines 1210-1212: ``_run_ladder`` with ``format='json'`` and non-JSON
     stdout must fall back to returning the raw manifest string.
     """
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"#!/bin/sh\nexit 0\n")
     fake_tune.chmod(0o755)
@@ -1022,6 +1026,7 @@ def test_run_tune_per_shot_falls_back_when_stdout_is_not_json(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Lines 1285-1287: tune-per-shot non-JSON stdout returns the triple."""
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"#!/bin/sh\nexit 0\n")
     fake_tune.chmod(0o755)

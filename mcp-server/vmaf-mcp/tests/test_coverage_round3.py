@@ -915,6 +915,7 @@ def test_list_tools_returns_tool_names():
 
 def test_run_compare_target_vmafs_branch(monkeypatch, tmp_path):
     """_run_compare with target_vmafs (not target_vmaf) must add --target-vmafs."""
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"#!/bin/sh\nexit 0\n")
     fake_tune.chmod(0o755)
@@ -944,6 +945,7 @@ def test_run_compare_target_vmafs_branch(monkeypatch, tmp_path):
 
 def test_run_compare_encoders_branch(monkeypatch, tmp_path):
     """_run_compare with encoders kwarg must add --encoders to argv."""
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"")
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: fake_tune)
@@ -967,6 +969,7 @@ def test_run_compare_encoders_branch(monkeypatch, tmp_path):
 
 def test_run_compare_width_height_branches(monkeypatch, tmp_path):
     """width + height + framerate args must each appear in the argv when provided."""
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"")
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: fake_tune)
@@ -1001,6 +1004,7 @@ def test_run_compare_width_height_branches(monkeypatch, tmp_path):
 
 def test_run_ladder_framerate_branch(monkeypatch, tmp_path):
     """When framerate is supplied to _run_ladder, it must appear in argv."""
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"")
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: fake_tune)
@@ -1039,6 +1043,7 @@ def test_run_ladder_framerate_branch(monkeypatch, tmp_path):
 
 def test_run_tune_per_shot_optional_fields(monkeypatch, tmp_path):
     """output, framerate, and scene_threshold all appear in argv when supplied."""
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"")
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: fake_tune)
@@ -1274,4 +1279,6 @@ async def test_score_500_on_scorer_error(aiohttp_client: Any) -> None:
                 )
     assert resp.status == 500
     body = await resp.json()
-    assert "synthetic scorer failure r3c" in body["error"]
+    # The HTTP handler returns a generic message to avoid leaking internal exception
+    # text to clients; the actual error is logged server-side (captured above).
+    assert body["error"] == "scoring failed; see server logs"

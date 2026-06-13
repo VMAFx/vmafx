@@ -44,6 +44,7 @@ pytest.importorskip("prometheus_client")
 
 import pytest_asyncio  # noqa: E402
 from aiohttp.test_utils import TestClient  # noqa: E402
+
 from vmaf_mcp import http_transport as ht  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -215,7 +216,8 @@ async def test_score_400_on_validate_path_file_not_found(
     assert resp.status == 400
     body = await resp.json()
     assert "error" in body
-    assert "path not found" in body["error"]
+    # The HTTP handler returns a generic message to avoid leaking internal paths.
+    assert body["error"] == "invalid request parameters"
     assert "request_id" in body
 
 
@@ -247,7 +249,8 @@ async def test_score_400_on_validate_path_value_error(
 
     assert resp.status == 400
     body = await resp.json()
-    assert "path traversal" in body["error"]
+    # The HTTP handler returns a generic message to avoid leaking internal paths.
+    assert body["error"] == "invalid request parameters"
 
 
 # ---------------------------------------------------------------------------

@@ -301,6 +301,7 @@ def test_run_compare_binary_not_found_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """When vmaf-tune binary does not exist, _run_compare must raise RuntimeError."""
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: tmp_path / "no-such-binary")
 
     with pytest.raises(RuntimeError, match="vmaf-tune binary not found"):
@@ -309,6 +310,7 @@ def test_run_compare_binary_not_found_raises(
 
 def test_run_compare_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """When vmaf-tune compare exits non-zero, _run_compare must raise RuntimeError."""
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"")
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: fake_tune)
@@ -330,6 +332,7 @@ def test_run_compare_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 def test_run_compare_progress_token_sent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """_run_compare must call _send_progress at start and completion."""
+    monkeypatch.setenv("VMAF_MCP_ALLOW", "/tmp")
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"")
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: fake_tune)
@@ -369,6 +372,8 @@ def test_run_ladder_binary_not_found_raises(
 ) -> None:
     """When vmaf-tune binary is absent, _run_ladder must raise RuntimeError."""
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: tmp_path / "no-such")
+    # Bypass allowlist: path validation is not the focus of this test.
+    monkeypatch.setattr(srv, "_validate_media_path", lambda p: p)
 
     with pytest.raises(RuntimeError, match="vmaf-tune binary not found"):
         asyncio.run(srv._run_ladder(src="/x", resolutions="1280x720", target_vmafs="90"))
@@ -376,6 +381,7 @@ def test_run_ladder_binary_not_found_raises(
 
 def test_run_ladder_nonzero_exit_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Non-zero vmaf-tune ladder exit must raise RuntimeError."""
+    monkeypatch.setattr(srv, "_validate_media_path", lambda p: p)
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"")
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: fake_tune)
@@ -399,6 +405,7 @@ def test_run_ladder_non_json_format_returns_raw_string(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """When format='hls', _run_ladder returns the raw manifest string."""
+    monkeypatch.setattr(srv, "_validate_media_path", lambda p: p)
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"")
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: fake_tune)
@@ -436,6 +443,7 @@ def test_run_tune_per_shot_binary_not_found_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """When vmaf-tune binary is absent, _run_tune_per_shot must raise RuntimeError."""
+    monkeypatch.setattr(srv, "_validate_media_path", lambda p: p)
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: tmp_path / "no-such")
 
     with pytest.raises(RuntimeError, match="vmaf-tune binary not found"):
@@ -446,6 +454,7 @@ def test_run_tune_per_shot_nonzero_exit_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Non-zero vmaf-tune tune-per-shot exit must raise RuntimeError."""
+    monkeypatch.setattr(srv, "_validate_media_path", lambda p: p)
     fake_tune = tmp_path / "vmaf-tune"
     fake_tune.write_bytes(b"")
     monkeypatch.setattr(srv, "_vmaftune_binary", lambda: fake_tune)
@@ -1000,6 +1009,7 @@ def test_call_tool_compare_models_dispatch(monkeypatch: pytest.MonkeyPatch, tmp_
 if _HAS_HTTP:
     import pytest_asyncio
     from aiohttp.test_utils import TestClient
+
     from vmaf_mcp import http_transport as ht
 
     # -----------------------------------------------------------------------
@@ -1127,7 +1137,9 @@ if _HAS_HTTP:
             )
         assert resp.status == 500
         body = await resp.json()
-        assert "score boom r4" in body["error"]
+        # The HTTP handler returns a generic message to avoid leaking internal
+        # exception text to clients; the actual error is logged server-side.
+        assert body["error"] == "scoring failed; see server logs"
 
     @pytest.mark.asyncio
     async def test_score_success_path(no_auth_r4_client: TestClient, tmp_path: Path) -> None:
