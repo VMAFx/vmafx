@@ -1,8 +1,11 @@
 <!-- markdownlint-disable MD060 -->
-# gRPC streaming (`ScoreStream`) — Phase 1
+# gRPC streaming (`ScoreStream`)
 
-Status: **Proposed** (ADR-0933). Phase 1 ships the schema + server stub.
-Per-frame scoring is wired in Phase 2.
+Status: **Accepted / implemented** (ADR-0933). Phase 1 shipped the schema +
+server stub; Phase 2 (2026-06-13) wired the handler to the libvmaf engine via
+the in-memory `pkg/libvmaf.StreamScorer`. The RPC now returns real per-frame
+scores. Both `vmafx-server` and `vmafx-node` ([ADR-1109](../adr/1109-vmafx-node-serve-scoring-grpc.md))
+serve it.
 
 ## Why a streaming RPC
 
@@ -63,9 +66,21 @@ after Phase 3 lands. The follow-up ADR will document the timeline.
 
 | Phase | Surface | Status |
 |---|---|---|
-| 1 | Proto schema + regenerated Go bindings + server handler stub that validates framing and returns `codes.Unimplemented` + client wrapper in `pkg/score` + smoke tests + this doc. | **This PR (ADR-0933)**. |
-| 2 | Wire the handler to `pkg/libvmaf` via a new in-memory picture-import path that takes raw planar bytes instead of a file path. Per-frame scoring becomes real; `AggregateScore` returns the pooled VMAF. | Tracked under ADR-0933 follow-up. |
+| 1 | Proto schema + regenerated Go bindings + server handler stub that validates framing and returns `codes.Unimplemented` + client wrapper in `pkg/score` + smoke tests + this doc. | **Done** (ADR-0933). |
+| 2 | Wire the handler to `pkg/libvmaf` via the in-memory `StreamScorer` picture-import path that takes raw planar bytes instead of a file path. Per-frame scoring is real; `AggregateScore` returns the pooled VMAF. `vmafx-node` also serves the RPC (ADR-1109). | **Done** (2026-06-13). |
 | 3 | Benchmarks vs. path-unary; tune `max-recv-msg-size` and stream window sizes; flip the unary `Score` handler to internally delegate to `ScoreStream` for the single-file case (network surface unchanged). | Tracked under ADR-0933 follow-up. |
+
+### How per-frame scoring works
+
+Several VMAF features (notably motion) are temporal — they only finalise once
+the whole sequence has been read and flushed. The handler therefore ingests
+every `FramePair` first, and once the client half-closes it flushes the engine
+and harvests the per-frame scores via `vmaf_score_at_index`, streaming back the
+`FrameScore` messages followed by the terminal `AggregateScore`. gRPC flow
+control still bounds the request side while frames are pushed, so a multi-GB
+sequence does not inflate a single message. The streaming pooled VMAF is
+bit-identical to the file-reading `ScoreDirect` path (verified on the 48-frame
+golden pair).
 
 ## Client usage
 
@@ -137,26 +152,29 @@ func main() {
 ## Reproducer / smoke test
 
 ```bash
-# From a fresh clone:
-buf generate proto                  # regen Go bindings from vmafx.proto
-go build ./...                      # compiles the new server + client surface
-go test ./pkg/score/...             # exercises framing validation end-to-end
+# From a fresh clone, with a CPU libvmaf build at core/build-cpu:
+meson setup core/build-cpu core -Denable_cuda=false -Denable_sycl=false
+ninja -C core/build-cpu src/libvmaf.so.3.0.0
+
+# End-to-end streaming scoring against the 48-frame golden pair:
+CGO_ENABLED=1 go test ./pkg/libvmaf/ -run StreamScorer            # engine
+CGO_ENABLED=1 go test ./cmd/vmafx-server/ -run ScoreStream        # server RPC
+CGO_ENABLED=1 go test ./cmd/vmafx-node/server/ -run ScoreStream   # node RPC
 ```
 
-The smoke tests in [`pkg/score/grpc_client_test.go`](../../pkg/score/grpc_client_test.go)
-spin up an in-process gRPC server that mimics the Phase 1 stub, dial it,
-and confirm:
-
-- A `StreamConfig` with zero width / height is rejected with
-  `codes.InvalidArgument`.
-- A valid `StreamConfig` is accepted but the server replies with
-  `codes.Unimplemented` (Phase 2 will replace this with real per-frame
-  scoring).
+The end-to-end tests push the real 576×324 / 48-frame YUV fixtures over an
+in-process gRPC stream and assert the server returns one `FrameScore` per frame
+plus a terminal `AggregateScore` whose pooled VMAF matches `ScoreDirect`.
+Validation-only cases (zero dimensions, non-config first message, frame-size
+mismatch, unloadable model) assert the corresponding `codes.InvalidArgument` /
+`codes.NotFound` without needing the fixtures.
 
 ## References
 
 - [ADR-0933](../adr/0933-grpc-streaming-multi-frame-scoring.md) —
   decision record for this rollout.
+- [ADR-1109](../adr/1109-vmafx-node-serve-scoring-grpc.md) — vmafx-node serves
+  the same `VmafxScoring` surface.
 - [ADR-0703](../adr/0703-vmafx-server-go-grpc.md) — original vmafx-server
   unary surface.
 - [ADR-0711](../adr/0711-vmafx-controller-impl.md) — controller that

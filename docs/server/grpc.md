@@ -31,7 +31,9 @@ The canonical source of truth is `proto/vmafx.proto`. Generated stubs live under
 
 ```protobuf
 service VmafxScoring {
-  rpc Score(ScoreRequest)   returns (ScoreResponse);
+  rpc Score(ScoreRequest)   returns (ScoreResponse);                       // unary, file-path
+  rpc ScoreStream(stream ScoreStreamRequest)                              // bidirectional, in-memory
+      returns (stream ScoreStreamResponse);                               //   per-frame (ADR-0933)
   rpc Health(HealthRequest) returns (HealthResponse);
 }
 
@@ -74,6 +76,24 @@ Expected response (Netflix golden pair):
   }
 }
 ```
+
+## Streaming: `ScoreStream`
+
+`ScoreStream` is a bidirectional RPC for per-frame scoring of in-memory raw
+frames (no file round-trip). The client sends one `StreamConfig` (width, height,
+pixel format, optional model), then a sequence of `FramePair` messages
+(`frame_index` strictly increasing from 0; `raw_reference` / `raw_distorted` are
+planar Y-U-V bytes), then half-closes. The server flushes the engine and streams
+back one `FrameScore` per frame followed by a terminal `AggregateScore` (pooled
+VMAF, per-feature pool, frame count, elapsed wall time).
+
+Supported pixel formats: YUV 4:2:0 / 4:2:2 / 4:4:4 in 8-bit and 10-bit-LE. Each
+`FramePair` payload must be exactly the configured frame size in bytes;
+mismatches are rejected with `codes.InvalidArgument`. The same RPC is served by
+`vmafx-node` ([ADR-1109](../adr/1109-vmafx-node-serve-scoring-grpc.md)).
+
+See [grpc-streaming.md](../architecture/grpc-streaming.md) for the message-shape
+table, the `pkg/score` client wrapper, and a worked client loop.
 
 ## Configuration
 

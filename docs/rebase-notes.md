@@ -15,6 +15,18 @@ and the established `vmaf_feature_collector_append_with_dict` API — no public
 libvmaf C-API, ABI, header, CLI, or `meson_options.txt` surface change, so no
 ffmpeg-patch (CLAUDE §12 r14) impact. The CUDA kernel itself is unchanged; only
 the host-side flush + option table grew.
+## feat/vmafx-scorestream-phase2 (2026-06-13)
+no rebase impact: all changes are in fork-local Go files that do not exist in
+upstream Netflix/vmaf — `pkg/libvmaf/stream.go` (+ test), `pkg/libvmaf/libvmaf.go`
+(adds the exported `Scorer.ResolveModel` wrapper), `cmd/vmafx-server/grpc_server.go`,
+`cmd/vmafx-node/server/server.go`, `cmd/vmafx-node/main.go`, and their tests, plus
+`docs/` and `changelog.d/`. The cgo path links against the public libvmaf C ABI
+(`vmaf_picture_alloc` / `vmaf_read_pictures` / `vmaf_score_at_index` /
+`vmaf_score_pooled` / `vmaf_feature_score_at_index`) — all stable upstream
+entry points in `core/include/libvmaf/libvmaf.h`; no upstream-mirrored C source
+is modified, so no mechanical conflict is possible. If a future upstream sync
+renamed any of those public functions, `pkg/libvmaf/{direct,stream}.go` would
+need the same one-line follow per the existing cgo-coupling invariant.
 
 ## fix/json-model-feature-name-leak (2026-06-13)
 Rebase impact: **low**. Touches `core/src/read_json_model.c` (upstream-mirrored,

@@ -20,6 +20,32 @@ The node auto-detects the available GPU backend.  Full controller-to-node
 registration (pull-based job dispatch) is tracked in ADR-0713 Stage 2 —
 see the planned env vars table below.
 
+## gRPC service the node serves
+
+The node hosts the **`VmafxScoring`** service (the same contract as
+`vmafx-server`) on `VMAFX_NODE_ADDR`, so a controller — or any gRPC client — can
+dispatch scoring directly to a node (push model). See
+[ADR-1109](../adr/1109-vmafx-node-serve-scoring-grpc.md).
+
+| RPC | Shape | Notes |
+|---|---|---|
+| `Score` | unary | File-path reference/distorted pair → pooled VMAF + features. |
+| `ScoreStream` | bidirectional stream | In-memory per-frame scoring (ADR-0933). One `StreamConfig`, then `FramePair` messages, then EOF; the node returns one `FrameScore` per frame plus a terminal `AggregateScore`. See [grpc-streaming.md](../architecture/grpc-streaming.md). |
+| `Health` | unary | Liveness; answers even when no scorer is configured. |
+
+The scoring engine is the shared cgo `pkg/libvmaf`. The node resolves models
+from `VMAFX_MODEL_DIR`; if no `vmaf` binary / model dir is available the node
+still serves `Health` and returns `codes.FailedPrecondition` from the scoring
+RPCs. The controller-pull worker loop (`PullWork → Execute → ReportResult`,
+ADR-0713) is a separate _client_ role and is orthogonal to this served surface.
+
+Example:
+
+```bash
+grpcurl -plaintext localhost:50052 vmafx.v1.VmafxScoring/Health
+# {"ok": true, "message": "ok"}
+```
+
 ## Configuration (12-factor env vars)
 
 | Variable | Default | Description |

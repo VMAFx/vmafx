@@ -192,6 +192,21 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 // resources), but present for interface symmetry with the direct-cgo path.
 func (s *Scorer) Close() {}
 
+// ResolveModel turns a VMAF model name (e.g. "vmaf_v0.6.1") or an absolute
+// model-file path into an absolute path to a model JSON readable by the
+// in-process StreamScorer.  Pass "" to select the default model.
+//
+// This exported wrapper lets the gRPC ScoreStream handler (ADR-0933 Phase 2)
+// resolve the proto StreamConfig.model field to a concrete ModelPath without
+// duplicating the search-order logic that the subprocess Score path already
+// implements.
+func (s *Scorer) ResolveModel(name string) (string, error) {
+	if name == "" {
+		name = "vmaf_v0.6.1"
+	}
+	return s.resolveModel(name)
+}
+
 // resolveModel returns the absolute path to a VMAF model JSON file.
 // Search order: explicit path → modelDir/<name>.json → embedded model dir.
 func (s *Scorer) resolveModel(name string) (string, error) {

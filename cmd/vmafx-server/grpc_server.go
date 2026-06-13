@@ -16,7 +16,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"runtime/debug"
@@ -129,20 +131,34 @@ func (s *grpcServer) Health(_ context.Context, _ *vmafxv1.HealthRequest) (*vmafx
 	return &vmafxv1.HealthResponse{Ok: true, Message: "ok"}, nil
 }
 
-// ScoreStream implements VmafxScoring.ScoreStream.
+// ScoreStream implements VmafxScoring.ScoreStream (ADR-0933 Phase 2).
 //
-// Phase 1 stub (ADR-0933): the schema and dispatch are wired end-to-end so
-// clients can compile against the new surface and exercise gRPC-level
-// behaviour (auth, TLS, deadlines). The actual per-frame scoring is wired in
-// Phase 2, which adds an in-memory picture-import path to pkg/libvmaf.
+// The bidirectional contract (proto/vmafx.proto):
 //
-// Until then this handler returns codes.Unimplemented, but it explicitly
-// validates the opening message so clients learn early whether they framed
-// the stream correctly. We deliberately do NOT rely on the
-// UnimplementedVmafxScoringServer default — overriding here lets the Phase 2
-// implementation drop in without changing this file's signature surface.
+//   - The client sends exactly one StreamConfig as the opening message, then a
+//     sequence of FramePair messages with strictly increasing frame_index from
+//     0, then half-closes.
+//   - The server validates each frame, feeds the raw planar bytes into the
+//     in-process libvmaf StreamScorer, and after the client half-closes
+//     flushes the engine and streams back one FrameScore per frame followed by
+//     exactly one terminal AggregateScore.
+//
+// Per-frame scores are emitted after EOF rather than incrementally because
+// several VMAF features (motion) are temporal and only finalise once the whole
+// sequence has been read and flushed — see pkg/libvmaf/stream.go. The
+// ScoreStreamResponse oneof (N frame_score then one aggregate) is honoured
+// either way; clients that stream gigabytes still benefit from gRPC flow
+// control on the request side while frames are pushed.
+//
+// Cancellation: stream.Context() (cancelled on client disconnect or deadline)
+// is propagated into the score harvest and checked between received frames, so
+// a dropped client tears the scorer down promptly. The StreamScorer is always
+// Closed via defer so the libvmaf context is released on every exit path.
 func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) error {
-	s.log.Info("grpc ScoreStream request received (Phase 1 stub — ADR-0933)")
+	ctx := stream.Context()
+	s.metrics.ScoreRequests.Inc()
+	start := time.Now()
+	s.log.Info("grpc ScoreStream request received (ADR-0933)")
 
 	// Read the opening message to validate framing: it MUST be a StreamConfig.
 	first, err := stream.Recv()
@@ -161,17 +177,177 @@ func (s *grpcServer) ScoreStream(stream vmafxv1.VmafxScoring_ScoreStreamServer) 
 		return status.Errorf(codes.InvalidArgument, "ScoreStream: StreamConfig.pixel_format must be set")
 	}
 
-	s.log.Info("grpc ScoreStream: config accepted, but per-frame scoring is not implemented yet",
+	pixFmt, bitDepth, err := protoPixelFormat(cfg.GetPixelFormat())
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "ScoreStream: %v", err)
+	}
+
+	// Resolve the requested model to an absolute path via the same search
+	// order the unary Score path uses.
+	modelPath, err := s.scorer.ResolveModel(cfg.GetModel())
+	if err != nil {
+		s.metrics.ScoreErrors.Inc()
+		return status.Errorf(codes.InvalidArgument, "ScoreStream: model %q: %v", cfg.GetModel(), err)
+	}
+
+	// A streaming call holds an in-process libvmaf context for its whole
+	// lifetime; treat it like a unary Score for concurrency accounting so a
+	// flood of streams cannot exhaust memory.
+	if s.limiter != nil {
+		if acqErr := s.limiter.Acquire(ctx); acqErr != nil {
+			s.metrics.ScoreErrors.Inc()
+			s.log.Warn("grpc ScoreStream rejected: concurrency cap reached",
+				"max", s.limiter.Max(), "error", acqErr)
+			return status.Errorf(codes.ResourceExhausted,
+				"too many concurrent scoring requests (max %d); try again later", s.limiter.Max())
+		}
+		defer s.limiter.Release()
+	}
+
+	scorer, err := libvmaf.NewStreamScorer(libvmaf.StreamConfig{
+		Width:          int(cfg.GetWidth()),
+		Height:         int(cfg.GetHeight()),
+		PixFmt:         pixFmt,
+		BitDepth:       bitDepth,
+		ModelPath:      modelPath,
+		FrameCountHint: int(cfg.GetFrameCountHint()),
+	})
+	if err != nil {
+		s.metrics.ScoreErrors.Inc()
+		s.log.Error("grpc ScoreStream: scorer init failed", "error", err)
+		return streamScorerStatus(err)
+	}
+	defer scorer.Close()
+
+	s.log.Info("grpc ScoreStream: config accepted",
 		"width", cfg.GetWidth(),
 		"height", cfg.GetHeight(),
 		"pixel_format", cfg.GetPixelFormat().String(),
-		"model", cfg.GetModel(),
+		"model", modelPath,
 		"frame_count_hint", cfg.GetFrameCountHint(),
+		"frame_size_bytes", scorer.FrameSize(),
 	)
 
-	// Phase 1: scoring not implemented. Return Unimplemented so the client
-	// learns immediately rather than after pushing N gigabytes of frames.
-	return status.Errorf(codes.Unimplemented, "ScoreStream per-frame scoring is wired in Phase 2 (ADR-0933); Phase 1 ships the schema + framing validation only")
+	// Ingest frames until the client half-closes (io.EOF).
+	for {
+		if err := ctx.Err(); err != nil {
+			return status.FromContextError(err).Err()
+		}
+		msg, recvErr := stream.Recv()
+		if recvErr == io.EOF {
+			break
+		}
+		if recvErr != nil {
+			// A non-EOF receive error is usually a client cancellation or a
+			// broken connection; surface the context error when present.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return status.FromContextError(ctxErr).Err()
+			}
+			s.metrics.ScoreErrors.Inc()
+			return status.Errorf(codes.Internal, "ScoreStream: receive frame: %v", recvErr)
+		}
+		fp := msg.GetFramePair()
+		if fp == nil {
+			s.metrics.ScoreErrors.Inc()
+			return status.Errorf(codes.InvalidArgument,
+				"ScoreStream: post-config message must set the `frame_pair` oneof, got payload=%T", msg.GetPayload())
+		}
+		if pushErr := scorer.PushFrame(int(fp.GetFrameIndex()), fp.GetRawReference(), fp.GetRawDistorted()); pushErr != nil {
+			s.metrics.ScoreErrors.Inc()
+			return streamScorerStatus(pushErr)
+		}
+	}
+
+	// Flush + harvest per-frame and pooled scores.
+	result, err := scorer.Finish(ctx)
+	if err != nil {
+		s.metrics.ScoreErrors.Inc()
+		s.log.Error("grpc ScoreStream: finish failed", "error", err)
+		return streamScorerStatus(err)
+	}
+
+	// Stream back one FrameScore per processed frame.
+	for _, fr := range result.Frames {
+		if err := ctx.Err(); err != nil {
+			return status.FromContextError(err).Err()
+		}
+		if sendErr := stream.Send(&vmafxv1.ScoreStreamResponse{
+			Payload: &vmafxv1.ScoreStreamResponse_FrameScore{
+				FrameScore: &vmafxv1.FrameScore{
+					FrameIndex: uint32(fr.Index),
+					Score:      fr.Score,
+					Features:   fr.Features,
+				},
+			},
+		}); sendErr != nil {
+			s.log.Debug("grpc ScoreStream: Send(frame) interrupted", "error", sendErr)
+			return sendErr
+		}
+	}
+
+	// Terminal AggregateScore.
+	elapsed := time.Since(start)
+	s.metrics.ScoreDuration.Observe(elapsed.Seconds())
+	if sendErr := stream.Send(&vmafxv1.ScoreStreamResponse{
+		Payload: &vmafxv1.ScoreStreamResponse_Aggregate{
+			Aggregate: &vmafxv1.AggregateScore{
+				FramesProcessed: uint32(result.FramesProcessed),
+				Score:           result.Score,
+				Features:        result.Features,
+				ElapsedMs:       uint64(elapsed.Milliseconds()),
+			},
+		},
+	}); sendErr != nil {
+		s.log.Debug("grpc ScoreStream: Send(aggregate) interrupted", "error", sendErr)
+		return sendErr
+	}
+
+	s.log.Info("grpc ScoreStream completed",
+		"frames", result.FramesProcessed,
+		"score", fmt.Sprintf("%.4f", result.Score),
+		"duration_s", elapsed.Seconds(),
+	)
+	return nil
+}
+
+// protoPixelFormat maps a proto PixelFormat enum to the libvmaf chroma layout
+// plus bit depth.  Returns InvalidArgument-shaped errors for the unspecified
+// value (the caller has already rejected UNSPECIFIED, but this keeps the
+// mapping total).
+func protoPixelFormat(pf vmafxv1.PixelFormat) (libvmaf.PixelFormat, int, error) {
+	switch pf {
+	case vmafxv1.PixelFormat_PIXEL_FORMAT_YUV420P:
+		return libvmaf.PixFmtYUV420P, 8, nil
+	case vmafxv1.PixelFormat_PIXEL_FORMAT_YUV422P:
+		return libvmaf.PixFmtYUV422P, 8, nil
+	case vmafxv1.PixelFormat_PIXEL_FORMAT_YUV444P:
+		return libvmaf.PixFmtYUV444P, 8, nil
+	case vmafxv1.PixelFormat_PIXEL_FORMAT_YUV420P10LE:
+		return libvmaf.PixFmtYUV420P, 10, nil
+	case vmafxv1.PixelFormat_PIXEL_FORMAT_YUV422P10LE:
+		return libvmaf.PixFmtYUV422P, 10, nil
+	case vmafxv1.PixelFormat_PIXEL_FORMAT_YUV444P10LE:
+		return libvmaf.PixFmtYUV444P, 10, nil
+	default:
+		return 0, 0, fmt.Errorf("unsupported pixel_format %v", pf)
+	}
+}
+
+// streamScorerStatus maps a pkg/libvmaf typed error to the right gRPC status
+// code.  Invalid-argument-class errors (bad geometry, frame-size mismatch,
+// out-of-order index, missing model) become codes.InvalidArgument /
+// codes.NotFound; anything else is codes.Internal.
+func streamScorerStatus(err error) error {
+	switch {
+	case errors.Is(err, libvmaf.ErrInvalidArgument):
+		return status.Errorf(codes.InvalidArgument, "%v", err)
+	case errors.Is(err, libvmaf.ErrModelNotFound):
+		return status.Errorf(codes.NotFound, "%v", err)
+	case errors.Is(err, libvmaf.ErrPictureRead):
+		return status.Errorf(codes.InvalidArgument, "%v", err)
+	default:
+		return status.Errorf(codes.Internal, "%v", err)
+	}
 }
 
 // runGRPC starts the gRPC listener on addr (e.g. ":50051") and blocks

@@ -27,6 +27,7 @@ import (
 
 	"github.com/VMAFx/vmafx/cmd/vmafx-node/probe"
 	"github.com/VMAFx/vmafx/cmd/vmafx-node/server"
+	"github.com/VMAFx/vmafx/pkg/libvmaf"
 	"github.com/VMAFx/vmafx/pkg/observability"
 )
 
@@ -99,10 +100,24 @@ func run() error {
 	// Listen address from VMAFX_NODE_ADDR or default :50052.
 	addr := envOrDefault("VMAFX_NODE_ADDR", ":50052")
 
+	// Construct the libvmaf scorer that backs the VmafxScoring Score /
+	// ScoreStream RPCs (ADR-0713, ADR-0933). Resolution: VMAF_BIN env / the
+	// installed binary / the in-tree build (see libvmaf.FindBinary). A missing
+	// binary is non-fatal — the node still serves Health for liveness probes
+	// and returns FailedPrecondition from the scoring RPCs.
+	modelDir := os.Getenv("VMAFX_MODEL_DIR")
+	scorer, err := libvmaf.New(libvmaf.FindBinary(), modelDir)
+	if err != nil {
+		slog.Warn("vmaf scorer unavailable — node serves Health only",
+			"error", err)
+		scorer = nil
+	}
+
 	srv, err := server.New(server.Config{
 		Addr:      addr,
 		FFmpegBin: ffmpegBin,
 		Encoders:  encoders,
+		Scorer:    scorer,
 		Logger:    logger,
 	})
 	if err != nil {

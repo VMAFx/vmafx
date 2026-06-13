@@ -22,12 +22,17 @@ Go gRPC + HTTP scoring service. See [ADR-0703](../../docs/adr/0703-vmafx-server-
    Phase 2 implementation MUST preserve this contract so existing
    clients keep working.
 
-3. **`ScoreStream` Phase 1 stub** (`grpc_server.go`): the handler returns
-   `codes.Unimplemented` *after* validating the opening `StreamConfig`,
-   not before. This is deliberate — it lets clients learn early whether
-   they framed the stream correctly without first uploading gigabytes of
-   frame data. When Phase 2 wires the real scoring path, keep the
-   framing-validation block intact at the top of the handler.
+3. **`ScoreStream` per-frame scores are emitted after EOF** (`grpc_server.go`,
+   ADR-0933 Phase 2): the handler ingests every `FramePair` into a
+   `pkg/libvmaf.StreamScorer` first, and only after the client half-closes
+   does it flush, harvest per-frame + pooled scores, and stream back the
+   `FrameScore` messages followed by the terminal `AggregateScore`. This
+   ordering is mandatory — temporal VMAF features (motion) only finalise at
+   flush, so a per-frame score cannot be produced the instant a frame
+   arrives. Do not "stream scores as frames come in"; that would corrupt
+   motion-dependent results. The framing-validation block (invariant 2) stays
+   intact at the top of the handler, and the streaming path acquires the same
+   `ScoreLimiter` slot a unary `Score` does.
 
 4. **`UnimplementedVmafxScoringServer` embedding** (`grpc_server.go`):
    the `grpcServer` struct embeds `vmafxv1.UnimplementedVmafxScoringServer`

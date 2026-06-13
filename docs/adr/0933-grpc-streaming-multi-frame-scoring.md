@@ -1,10 +1,22 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0933: gRPC streaming for multi-frame scoring (`ScoreStream`)
 
-- **Status**: Proposed
-- **Date**: 2026-05-31
+- **Status**: Accepted
+- **Date**: 2026-05-31 (Phase 1); accepted 2026-06-13 (Phase 2 implemented)
 - **Deciders**: lusoris, Claude (modernization #18)
 - **Tags**: grpc, server, api, streaming, fork-local
+
+> **Phase 2 update (2026-06-13)**: the design below was implemented as
+> specified — the bidirectional `ScoreStream` handler is wired to the libvmaf
+> engine via the new in-memory `pkg/libvmaf.StreamScorer` (mirrors
+> `vmaf_picture_alloc` + `vmaf_read_pictures`), and both `vmafx-server`
+> (`cmd/vmafx-server/grpc_server.go`) and `vmafx-node`
+> (`cmd/vmafx-node/server/server.go`, ADR-1109) serve it. Per-frame scores are
+> harvested after the client half-closes (temporal features such as motion only
+> finalise at flush), then streamed back as N `FrameScore` messages followed by
+> the terminal `AggregateScore`. The streaming pooled VMAF is bit-identical to
+> the file-reading `ScoreDirect` path on the 48-frame golden pair. This ADR
+> flips from Proposed to Accepted because the implementation matches the design.
 
 ## Context
 

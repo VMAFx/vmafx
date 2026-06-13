@@ -20,7 +20,6 @@ import (
 	"context"
 	"net"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -318,15 +317,18 @@ func TestGRPCScoreStream_UnspecifiedPixelFormat(t *testing.T) {
 	}
 }
 
-// TestGRPCScoreStream_ValidConfigReturnsUnimplemented verifies that a
-// well-formed StreamConfig returns codes.Unimplemented (Phase 1 stub
-// per ADR-0933).
-func TestGRPCScoreStream_ValidConfigReturnsUnimplemented(t *testing.T) {
+// TestGRPCScoreStream_BadModelRejected verifies that a well-formed StreamConfig
+// whose resolved model file is not a loadable VMAF model is rejected with a
+// non-Unimplemented status (Phase 2 wires real scoring per ADR-0933, so the
+// engine now actually attempts to load the model). startGRPCTestServer uses a
+// placeholder "{}" model file, which libvmaf cannot parse — the handler must
+// surface that as an error code, never codes.Unimplemented.
+func TestGRPCScoreStream_BadModelRejected(t *testing.T) {
 	t.Parallel()
 	client, stop := startGRPCTestServer(t)
 	defer stop()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	stream, err := client.ScoreStream(ctx)
@@ -336,7 +338,7 @@ func TestGRPCScoreStream_ValidConfigReturnsUnimplemented(t *testing.T) {
 	if err := stream.Send(&vmafxv1.ScoreStreamRequest{
 		Payload: &vmafxv1.ScoreStreamRequest_Config{
 			Config: &vmafxv1.StreamConfig{
-				Width: 1920, Height: 1080,
+				Width: 64, Height: 64,
 				PixelFormat: vmafxv1.PixelFormat_PIXEL_FORMAT_YUV420P,
 				Model:       "vmaf_v0.6.1",
 			},
@@ -348,13 +350,10 @@ func TestGRPCScoreStream_ValidConfigReturnsUnimplemented(t *testing.T) {
 
 	_, err = stream.Recv()
 	if err == nil {
-		t.Fatal("expected Unimplemented from Phase 1 stub, got nil")
+		t.Fatal("expected an error for an unloadable model, got nil")
 	}
-	if got := status.Code(err); got != codes.Unimplemented {
-		t.Errorf("expected Unimplemented, got %v (err: %v)", got, err)
-	}
-	if !strings.Contains(err.Error(), "Phase") {
-		t.Errorf("expected error to mention Phase, got: %v", err)
+	if got := status.Code(err); got == codes.Unimplemented {
+		t.Errorf("ScoreStream must not return Unimplemented in Phase 2; got %v", err)
 	}
 }
 

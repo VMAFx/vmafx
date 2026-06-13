@@ -1,9 +1,12 @@
 # AGENTS.md — pkg/libvmaf
 
-Go wrapper around the libvmaf C ABI. Provides two scoring surfaces:
+Go wrapper around the libvmaf C ABI. Provides three scoring surfaces:
 
 - `Scorer.Score` — subprocess delegation to the `vmaf` CLI binary (legacy).
-- `ScoreDirect` — direct cgo into `libvmaf.so` (ADR-0931 Phase 1+).
+- `ScoreDirect` — direct cgo into `libvmaf.so` for a file pair (ADR-0931 Phase 1+).
+- `StreamScorer` — stateful cgo context for in-memory per-frame scoring of a
+  raw-byte stream, backing the gRPC `ScoreStream` RPC (`stream.go`, ADR-0933
+  Phase 2).
 
 ## Rebase-sensitive invariants
 
@@ -63,3 +66,24 @@ Go wrapper around the libvmaf C ABI. Provides two scoring surfaces:
    both Unix (`":"` separator) and Windows (`";"` separator) are handled
    correctly. Do not replace this with `strings.Split(extra, ":")` — that
    silently mis-splits Windows drive-letter paths.
+
+8. **`StreamScorer` harvests per-frame scores AFTER flush** (`stream.go`,
+   ADR-0933): temporal VMAF features (notably motion) only finalise once
+   `vmaf_read_pictures(NULL, NULL, 0)` has flushed the engine. `Finish`
+   therefore calls `vmaf_score_at_index` / `vmaf_feature_score_at_index`
+   only after the flush — never inside `PushFrame`. Do not "optimise" by
+   trying to emit a per-frame score the moment a frame is pushed; the
+   motion feature for frame N is not available until the sequence is
+   flushed, and any such change would silently corrupt motion-dependent
+   scores. The same picture-ownership-transfer rule as invariant 2 applies
+   to every `PushFrame` alloc/read pair.
+
+9. **`StreamScorer.streamFeatures` are the model's registered feature names**
+   (`stream.go`): the per-feature lookup keys passed to
+   `vmaf_feature_score_at_index` are the exact strings from the model JSON's
+   `feature_names` (e.g. `VMAF_integer_feature_adm2_score`), NOT the alias
+   names (`integer_adm2`) or the CLI/JSON pooled-metric keys (`adm2`). A
+   wrong name does not error loudly — `vmaf_feature_score_at_index` returns
+   a non-zero rc that the code silently skips, producing an empty feature
+   map. If you change models or the feature set, re-verify the names against
+   `model/<name>.json` `model_dict.feature_names`.
