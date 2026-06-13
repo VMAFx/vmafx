@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/golden-cpu-regression-restore (2026-06-13)
+Rebase impact: **low**. Touches `core/src/feature/vif_tools.c` (removes
+`#if HAVE_AVX512` dispatch blocks from the three float VIF functions). This
+file also exists in upstream Netflix/vmaf. Future upstream syncs that modify
+`vif_tools.c` will see a clean merge on any hunk that does not overlap with the
+three removed dispatch blocks. If upstream ever adds AVX-512 float VIF dispatch,
+the upstream version must be audited for Netflix golden parity before enabling
+it on this fork.
+
 ## docs/rc-deferred-closeout (2026-06-13)
 no rebase impact: changes confined to `docs/state.md` (move T-DOC-LEGACY-RUNNER
 from Open to Recently Closed) and `docs/metrics/cambi.md` (remove stale Vulkan

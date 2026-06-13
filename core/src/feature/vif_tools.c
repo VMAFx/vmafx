@@ -337,17 +337,15 @@ void vif_filter1d_s(const float *f, const float *src, float *dst, float *tmpbuf,
 
 #if ARCH_X86
     const unsigned flags = vmaf_get_cpu_flags();
-    /* ADR-0504 + ADR-0507: AVX-512 path only safe when row width is a multiple
-     * of 16 floats (64 bytes) — the inner loop processes 16 floats per iter
-     * and reads past the row otherwise (caught by speed_temporal calling
-     * vif_filter1d_s with downscaled widths like 45 on 360-wide sources).
-     * Fall through to AVX2 (8 floats / iter) when width isn't 16-aligned. */
-#if HAVE_AVX512
-    if ((flags & VMAF_X86_CPU_FLAG_AVX512) && fwidth <= MAX_FWIDTH_AVX_CONV && (w % 16) == 0) {
-        convolution_f32_avx512_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride, dst_px_stride);
-        return;
-    }
-#endif
+    /* Float VIF path uses AVX2 only for golden-score parity with upstream
+     * Netflix/vmaf (which has no AVX-512 float convolution).  The AVX-512
+     * path was removed here because its wider FMA partial-sum tree produces
+     * a different rounding than AVX2, causing the Netflix golden assertion
+     * (76.66740433333332) to fail on AVX-512 CPUs at places=4 tolerance.
+     * The AVX-512 integer-VIF path (vif_avx512.c) is unaffected — that path
+     * is covered by ADR-0214's explicitly accepted integer-path ULP divergence.
+     * See ADR-0504 (acceptance criterion was wrong: claim "golden assertions
+     * still pass at places=4" is false on AVX-512 hardware). */
     if ((flags & VMAF_X86_CPU_FLAG_AVX2) && fwidth <= MAX_FWIDTH_AVX_CONV) {
         convolution_f32_avx_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride, dst_px_stride);
         return;
@@ -419,14 +417,8 @@ void vif_filter1d_sq_s(const float *f, const float *src, float *dst, float *tmpb
 
 #if ARCH_X86
     const unsigned flags = vmaf_get_cpu_flags();
-#if HAVE_AVX512
-    if ((flags & VMAF_X86_CPU_FLAG_AVX512) && fwidth <= MAX_FWIDTH_AVX_CONV && (w % 16) == 0) {
-        /* ADR-0504: prefer 512-bit path on AVX-512 CPUs. */
-        convolution_f32_avx512_sq_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride,
-                                    dst_px_stride);
-        return;
-    }
-#endif
+    /* Float VIF path uses AVX2 only — AVX-512 removed for golden parity.
+     * See vif_filter1d_s comment above for the full rationale. */
     if ((flags & VMAF_X86_CPU_FLAG_AVX2) && fwidth <= MAX_FWIDTH_AVX_CONV) {
         convolution_f32_avx_sq_s(f, fwidth, src, dst, tmpbuf, w, h, src_px_stride, dst_px_stride);
         return;
@@ -497,14 +489,8 @@ void vif_filter1d_xy_s(const float *f, const float *src1, const float *src2, flo
 
 #if ARCH_X86
     const unsigned flags = vmaf_get_cpu_flags();
-#if HAVE_AVX512
-    if ((flags & VMAF_X86_CPU_FLAG_AVX512) && fwidth <= MAX_FWIDTH_AVX_CONV && (w % 16) == 0) {
-        /* ADR-0504: prefer 512-bit path on AVX-512 CPUs. */
-        convolution_f32_avx512_xy_s(f, fwidth, src1, src2, dst, tmpbuf, w, h, src1_px_stride,
-                                    src2_px_stride, dst_px_stride);
-        return;
-    }
-#endif
+    /* Float VIF path uses AVX2 only — AVX-512 removed for golden parity.
+     * See vif_filter1d_s comment above for the full rationale. */
     if ((flags & VMAF_X86_CPU_FLAG_AVX2) && fwidth <= MAX_FWIDTH_AVX_CONV) {
         convolution_f32_avx_xy_s(f, fwidth, src1, src2, dst, tmpbuf, w, h, src1_px_stride,
                                  src2_px_stride, dst_px_stride);

@@ -639,3 +639,14 @@ the corrected methodology.
   must return `-EAGAIN`, not `-EINVAL`.  This preserves Netflix#755 / ADR-0154:
   "score not yet written" is transient; only genuine programmer error
   (bad range, NULL pointer) returns `-EINVAL` from `vmaf_score_pooled`.
+
+- **Float VIF must NOT dispatch to AVX-512 (ADR-1104)**: `vif_filter1d_s`,
+  `vif_filter1d_sq_s`, and `vif_filter1d_xy_s` in `core/src/feature/vif_tools.c`
+  dispatch to AVX2 or scalar only.  The AVX-512 float convolution path
+  (`convolution_f32_avx512_{s,sq_s,xy_s}`) produces different IEEE-754 rounding
+  than AVX2 (wider 512-bit FMA partial-sum tree), causing the Netflix golden
+  VMAFEXEC assertion (`76.66740433333332`, `places=4`) to fail on AVX-512 CPUs.
+  Any future PR that re-adds `#if HAVE_AVX512` dispatch to these three functions
+  must demonstrate that the golden assertion still passes on AVX-512 hardware
+  and must update ADR-1104.  The integer VIF AVX-512 path (`vif_avx512.c`) is
+  unaffected and must remain enabled.
