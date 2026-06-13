@@ -239,6 +239,16 @@ static int append_feature_name(VmafModel *model, const char *name, unsigned inde
     int err = ensure_feature_capacity(model, index + 1u);
     if (err)
         return err;
+    /* Free any name already strdup'd into this slot before overwriting it.
+     * A fuzzer-mangled (or simply duplicate) `feature_names` key re-runs
+     * parse_feature_names from index 0, so without this free the previous
+     * strdup'd name at `feature[index].name` is orphaned. When a later
+     * cross-key validation (validate_feature_arrays, per ADR-0887) then
+     * rejects the model, vmaf_read_json_model's fail path walks
+     * [0, min(feature_cap, n_features)) and frees only the *current* slot
+     * occupants — the orphan is unreachable and leaks. Caught by the
+     * nightly fuzz_json_model LeakSanitizer lane. */
+    free(model->feature[index].name);
     model->feature[index].name = strdup(name);
     if (!model->feature[index].name)
         return -ENOMEM;

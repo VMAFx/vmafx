@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/json-model-feature-name-leak (2026-06-13)
+Rebase impact: **low**. Touches `core/src/read_json_model.c` (upstream-mirrored,
+`libvmaf/src/read_json_model.c` upstream) and its fork-only C++23 twin
+`core/src/read_json_model.cpp` (ADR-0761 / ADR-0846 Wave 8) — both gain one
+`free(model->feature[index].name)` line plus a comment inside
+`append_feature_name`, immediately before the `strdup`. Also adds one test
+function + one registration line to `core/test/test_model.c`. Upstream lacks the
+duplicate-key overwrite guard, so a future sync that rewrites `append_feature_name`
+in the `.c` file will conflict on that hunk only; keep the fork's
+`free`-before-`strdup` (it fixes a real leak the upstream code shares). The `.cpp`
+twin is fork-only and never receives upstream hunks. No public API, ABI, header, or
+CLI surface changes — no ffmpeg-patch impact.
+
 ## fix/golden-cpu-regression-restore (2026-06-13)
 Rebase impact: **low**. Touches `core/src/feature/vif_tools.c` (removes
 `#if HAVE_AVX512` dispatch blocks from the three float VIF functions). This

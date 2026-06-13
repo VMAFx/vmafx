@@ -839,6 +839,41 @@ static char *test_json_model_feature_names_non_string(void)
     return NULL;
 }
 
+/* Regression for the append_feature_name memory leak found by the nightly
+ * fuzz_json_model LeakSanitizer lane. A duplicate `feature_names` key re-runs
+ * parse_feature_names from index 0, so the second array overwrites
+ * `feature[0].name`. Before the fix, append_feature_name strdup'd over the slot
+ * without freeing the prior value — the first name ("orphan_name_0") was
+ * orphaned. vmaf_model_destroy only walks the *current* slot occupants, so the
+ * orphan was unreachable and leaked regardless of whether the parse ultimately
+ * succeeded or hit a cross-key validation error. This test reproduces the
+ * leaking input shape; under ASan (-Db_sanitize=address) it surfaces as a
+ * LeakSanitizer direct-leak pre-fix and is clean post-fix. The assertion is
+ * deliberately lenient on the return code (the single-model and collection JSON
+ * walkers differ in whether they reject a per-feature length disagreement) — the
+ * regression signal is the absence of a leak, enforced by the sanitizer. */
+static char *test_json_model_feature_names_duplicate_key_no_leak(void)
+{
+    const char json[] = "{\"model_dict\": {"
+                        "\"feature_names\": [\"orphan_name_0\"],"
+                        "\"slopes\": [1.0, 2.0, 3.0],"
+                        "\"feature_names\": [\"replacement\"]"
+                        "}}";
+    VmafModel *m = NULL;
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_from_buffer(&m, &cfg, json, (int)sizeof(json) - 1);
+    /* Contract: on non-zero return *model is left NULL (no caller destroy); on
+     * success it is heap-owned and the caller must release it. Honour both so
+     * the only allocation the sanitizer can flag is the orphaned feature name. */
+    if (err == 0) {
+        mu_assert("successful parse must yield a model", m != NULL);
+        vmaf_model_destroy(m);
+    } else {
+        mu_assert("rejected parse must leave *model untouched (NULL)", m == NULL);
+    }
+    return NULL;
+}
+
 /* parse_slopes: non-number element → -EINVAL (line 116). */
 static char *test_json_model_slopes_non_number(void)
 {
@@ -1320,6 +1355,7 @@ char *run_tests(void)
     mu_run_test(test_json_model_score_transform_out_gte_in_not_string);
     mu_run_test(test_json_model_score_transform_enabled_bad_type);
     mu_run_test(test_json_model_feature_names_non_string);
+    mu_run_test(test_json_model_feature_names_duplicate_key_no_leak);
     mu_run_test(test_json_model_slopes_non_number);
     mu_run_test(test_json_model_intercepts_first_not_number);
     mu_run_test(test_json_model_knots_outer_not_array);
