@@ -193,7 +193,11 @@ func TestToolSchemasMatchPython(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestVmafScoreTool(t *testing.T) {
-	t.Parallel()
+	// t.Parallel() omitted: t.Setenv is used below, and Go 1.22+ panics when
+	// t.Setenv is called inside a t.Parallel test (the env change would race
+	// with the test runner restoring it for other goroutines). The test is
+	// already skipped on CI without a vmaf binary, so sequential execution is
+	// not a bottleneck.
 
 	repoRoot := findRepoRoot(t)
 	refYUV := repoRoot + "/python/test/resource/yuv/src01_hrc00_576x324.yuv"

@@ -1203,7 +1203,14 @@ test_gpu_picture_pool_uaf = executable('test_gpu_picture_pool_uaf',
     dependencies: [pthread_dependency],
 )
 test('test_gpu_picture_pool_uaf', test_gpu_picture_pool_uaf, suite : ['fast'],
-    env : ['ASAN_OPTIONS=allocator_may_return_null=1'])
+    env : [
+        'ASAN_OPTIONS=allocator_may_return_null=1',
+        # TSan uses a separate allocator wrapper; without this override libtsan
+        # calls abort() (exit 66) when the pool requests ~192 GB — the same
+        # intentional huge-alloc that exercises the alloc-failure UAF path.
+        # No data race is present; this is purely the allocator-abort behaviour.
+        'TSAN_OPTIONS=allocator_may_return_null=1',
+    ])
 
 if get_option('enable_cuda')
 test_gpu_picture_pool = executable('test_gpu_picture_pool',

@@ -14,6 +14,18 @@ if [[ ! -x "$VMAF_BIN" ]]; then
   exit 77 # meson's "skipped"
 fi
 
+# Probe whether the binary was compiled with DNN support. When
+# -Denable_dnn=disabled (or auto resolves to disabled because ORT was not
+# found at configure time), `vmaf --tiny-model /dev/null` emits "built
+# without DNN support" to stderr and exits non-zero. Detect that here and
+# skip rather than fail — the test exercises the DNN surface and has nothing
+# meaningful to assert when DNN is absent.
+dnn_probe="$("$VMAF_BIN" --tiny-model /dev/null 2>&1 || true)"
+if printf '%s\n' "$dnn_probe" | grep -q 'without DNN support'; then
+  echo "libvmaf built without DNN support; skipping DNN CLI smoke" >&2
+  exit 77 # meson's "skipped"
+fi
+
 # `vmaf --help` exits with 1 by convention, so capture the output first
 # instead of piping into grep under set -o pipefail.
 help_text="$("$VMAF_BIN" --help 2>&1 || true)"

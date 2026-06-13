@@ -45674,6 +45674,14 @@ If upstream ever adds its own `picture_v2.c` (unlikely given it is a fork-local 
 resolve by keeping the fork's implementation. The `ai/scripts` exit-code fix is
 purely script-internal; no C or build system conflict possible with upstream.
 
+## fix/rc-gate-three-infra-test-bugs (2026-06-13)
+no rebase impact: all changes are test-only. `cmd/vmafx-mcp/server_test.go`
+drops `t.Parallel()` from one test function (no C/API change). `core/test/meson.build`
+adds a `TSAN_OPTIONS` env entry alongside an existing `ASAN_OPTIONS` entry for
+one test. `core/test/dnn/test_cli.sh` adds a DNN-availability probe near the
+top of the script. None of these files exist in upstream Netflix/vmaf; no
+upstream merge conflict is possible.
+
 ## chore/remove-vulkan-moltenvk-dead-leftovers (2026-06-13)
 no rebase impact: deletions only (subproject wraps, Docker stages, CI job bodies, moltenvk.md). No shared function signatures changed, no symbols renamed, no upstream-mirrored C paths modified. ABI-reserved enum gaps preserved.
 
