@@ -1,6 +1,25 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/golusoris-foundation (2026-06-14)
+Rebase impact: **low (Go-only, additive)**. Phase 0 of the golusoris fx
+framework adoption (ADR-1119). Adds `github.com/golusoris/golusoris v0.3.1` to
+`go.mod`/`go.sum` (and the widened transitive closure — fx/dig, koanf, chi,
+river transitives; `go build ./...` + all test binaries compile clean, no
+version-skew since both repos already pinned identical shared-dep versions),
+one new package `internal/app/bootstrap/bootstrap.go` (`Base` fx module set +
+`FxLogger`), and an `Info`/`Get()` addition to `pkg/version/version.go` (the
+interim stand-in for golusoris#226). **No C/meson/CLI/public-header change** →
+no ffmpeg-patch impact, no golden-gate impact. **No binary is migrated in this
+PR** — the six `cmd/vmafx-*` composition roots are rewritten in the
+subsequent phased PRs (`vmafx-server` first; `vmafx-controller` gated on
+golusoris#225). Rebase-sensitive note for the follow-up PRs: each binary's
+`fx.New(...)` must lead with `fx.Replace(config.Options{EnvPrefix:"VMAFX_"})`
+before `golusoris.Core` to preserve the `VMAFX_` env contract, and the cgo
+`libvmaf.Scorer` provider must order its `OnStop` after the gRPC server's
+(drain before `Close()`). Docs: `docs/adr/1119-*` + fragment + `_order.txt` +
+README row, `docs/research/1119-*`, `changelog.d/chore/1119-golusoris-foundation.md`.
+
 ## feat/metric-brisque (2026-06-14)
 Rebase impact: **low**. Adds four fork-only files
 (`core/src/feature/brisque.c`, `brisque_math.h`, `brisque_model.h`,

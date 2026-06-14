@@ -8,6 +8,8 @@
 // special build flags.
 package version
 
+import "runtime/debug"
+
 // version is the build-time injected version string.
 // Override with: go build -ldflags "-X github.com/VMAFx/vmafx/pkg/version.version=v3.x.y"
 var version = "dev"
@@ -15,4 +17,47 @@ var version = "dev"
 // Version returns the VMAFX release version string.
 func Version() string {
 	return version
+}
+
+// Info is the typed build-version record supplied into the fx graph by
+// internal/app/bootstrap (ADR-1119). It is the vmafx-local stand-in for the
+// version module proposed upstream in golusoris#226; drop it once the
+// framework ships an equivalent.
+type Info struct {
+	// Version is the ldflags-injected release string (else "dev").
+	Version string
+	// Revision is the VCS commit hash from the build's debug info, if any.
+	Revision string
+	// Time is the VCS commit time (RFC 3339), if recorded.
+	Time string
+	// Dirty reports whether the working tree was modified at build time.
+	Dirty bool
+	// Go is the Go toolchain version that produced the binary.
+	Go string
+}
+
+// Get assembles the build [Info] from the ldflags-injected [Version] plus the
+// VCS settings embedded by the Go toolchain (runtime/debug.ReadBuildInfo).
+// Missing VCS settings yield empty fields rather than an error so the call is
+// always safe in tests and non-VCS builds.
+func Get() Info {
+	info := Info{Version: version, Go: "unknown"}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return info
+	}
+	info.Go = bi.GoVersion
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			info.Revision = s.Value
+		case "vcs.time":
+			info.Time = s.Value
+		case "vcs.modified":
+			info.Dirty = s.Value == "true"
+		default:
+			// other build settings are not part of the version record
+		}
+	}
+	return info
 }
