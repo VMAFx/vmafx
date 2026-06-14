@@ -18,6 +18,7 @@ with [`vmaf`](cli.md), and emits a JSONL corpus of
 | `recommend-saliency`  | Saliency-aware ROI tuning                              | [ADR-0287](../adr/0287-vmaf-tiny-v5-corpus-expansion.md) ecosystem; consumes `vmaf-roi` sidecars     |
 | `ladder`              | Per-title bitrate ladder (Pareto ABR)                  | [ADR-0295](../adr/0295-vmaf-tune-phase-e-bitrate-ladder.md)                                          |
 | `fast`                | Predicted-CRF fast path                                | [ADR-0276](../adr/0276-vmaf-tune-fast-path.md)                                                       |
+| `prefilter`           | Pelorus deband strengths + CRF joint autotune          | [ADR-1116](../adr/1116-autotune-prefilter-control-plane.md)                                          |
 | `hdr`                 | HDR-aware tuning + HDR-VMAF scoring                    | (PR #434, bucket #9)                                                                                 |
 | `compare`             | Apples-to-apples codec comparison at matched VMAF      | (PR #435)                                                                                            |
 | `benchmark`           | Offline cross-codec report from an existing JSONL      | [ADR-0424](../adr/0424-vmaf-tune-corpus-benchmark.md)                                                |
@@ -915,6 +916,126 @@ the fast-path is not confident.
 | `--vmaf-model` | `vmaf_v0.6.1` | libvmaf model for the verify pass. |
 | `--encode-dir` | `.workingdir2/fast` | Scratch dir for probe + verify encodes. |
 | `--output` | stdout | JSON destination for the recommendation payload. |
+
+## `prefilter` subcommand — Pelorus deband + CRF joint autotune (ADR-1116)
+
+`vmaf-tune prefilter` runs a **VMAF-in-the-loop search that jointly
+tunes the [Pelorus](https://github.com/VMAFx/pelorus) deband
+pre-filter's strengths and the encoder CRF**, returning the
+lowest-bitrate combination that hits a target VMAF. This is the
+control-plane ("mode 2") seam between vmafx and Pelorus
+([Pelorus ADR-0106](https://github.com/VMAFx/pelorus); contract in
+[Pelorus ADR-0110](https://github.com/VMAFx/pelorus)).
+
+vmafx stays **Vulkan-free**: it only emits the ffmpeg
+`-vf "pelorus_deband_vulkan=range=..:thry=..:.."` string and scores the
+encoded output. The deband filter runs inside ffmpeg — so the **live
+loop requires an ffmpeg build with the Pelorus Vulkan deband filter**.
+When that filter is absent the subcommand refuses the live run with a
+clear message and points you at `--smoke`.
+
+### The frozen knob contract
+
+The search space is exactly the 10 tunable knobs Pelorus ADR-0110
+freezes (name / type / range / default). vmafx hard-codes this table —
+renaming, narrowing, or retyping a knob is a coordinated two-repo break:
+
+| Knob | Type | Range | Default | Meaning |
+|---|---|---|---|---|
+| `range` | int | 1–31 | 15 | reference-sampling radius (px) |
+| `thry` | float | 0.0–0.25 | 0.012 | luma flat-test threshold |
+| `thrc` | float | 0.0–0.25 | 0.012 | chroma flat-test threshold |
+| `grainy` | float | 0.0–0.4 | 0.006 | luma grain amplitude |
+| `grainc` | float | 0.0–0.4 | 0.0 | chroma grain amplitude |
+| `softness` | float | 0.0–1.0 | 0.5 | soft-blend transition width |
+| `detail` | float | 0.0–0.25 | 0.06 | detail-mask activity threshold |
+| `dither` | enum | 0–2 | 2 | 0=none, 1=bayer8, 2=bluenoise |
+| `dynamic` | bool | 0–1 | 1 | re-seed grain each frame |
+| `protect` | bool | 0–1 | 1 | gate debanding off textured regions |
+
+The out-of-contract options (`sample`, `blur`, `planes`, `meta`) are
+**never** swept — they are pipeline-topology / reporting switches set
+once per run outside the optimizer.
+
+### How the joint search works
+
+Each Optuna TPE trial proposes a full `(deband-dict, crf)` and the loop
+runs `[pelorus_deband_vulkan=...] → HW encode → VMAF score` for it. The
+objective is `|achieved_vmaf − target| + λ·kbps`, so the search
+converges on the lowest-bitrate deband+CRF that hits the target. CRF is
+an ordinal integer dimension joined to the 10 deband dimensions in one
+study — the two axes are co-optimised, not searched in nested loops
+(debanding shifts the rate-quality curve, so they are not separable).
+The result reports the recommended strengths, CRF, achieved VMAF, and
+the per-probe VMAF log.
+
+The search engine is the same `TPESampler` study the `fast` subcommand
+uses (ADR-0276 / ADR-0304) — `prefilter` only constructs the joint
+search space and the objective.
+
+### Quick start (smoke)
+
+Exercise the joint search end-to-end with a synthetic surface — no
+ffmpeg, no Vulkan, no GPU:
+
+```bash
+vmaf-tune prefilter --target-vmaf 92 --smoke --n-trials 40
+```
+
+### Live loop (requires a Pelorus-enabled ffmpeg)
+
+```bash
+vmaf-tune prefilter \
+  --src ref.yuv --width 1920 --height 1080 \
+  --target-vmaf 93 --encoder libx264 \
+  --crf-min 18 --crf-max 40 \
+  --ffmpeg-bin /opt/ffmpeg-pelorus/bin/ffmpeg
+```
+
+The emitted recommendation includes a ready-to-use `recommended_vf`
+fragment, e.g.:
+
+```text
+pelorus_deband_vulkan=range=12:thry=0.018:grainy=0.008
+```
+
+Restrict the swept knobs with one or more `--sweep-knob` flags (the rest
+stay at the filter default):
+
+```bash
+vmaf-tune prefilter --target-vmaf 93 --smoke \
+  --sweep-knob range --sweep-knob grainy
+```
+
+### `prefilter` flags
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--src PATH` | — | Source video. Required for the live loop. |
+| `--width / --height` | `0` | Raw-YUV geometry. Required for the live loop. |
+| `--pix-fmt` | `yuv420p` | ffmpeg pix_fmt for the probe encodes. |
+| `--framerate` | `24.0` | Reference framerate. |
+| `--target-vmaf T` | — | Quality target on the `[0, 100]` scale. **Required.** |
+| `--encoder` | `libx264` | Codec adapter that performs the post-deband encode. |
+| `--preset` | `medium` | Encoder preset for the probe encodes. |
+| `--filter` | `pelorus_deband` | Pre-encode filter adapter to autotune. |
+| `--sweep-knob KNOB` | all 10 | Repeatable; restricts the swept deband knobs. |
+| `--crf-min / --crf-max` | `18` / `40` | Joint TPE search range over CRF. |
+| `--n-trials` | `60` (live), `40` (smoke) | TPE trial budget. |
+| `--time-budget-s` | `600` | Soft wall-clock cap for Optuna. |
+| `--seed` | `0` | TPE sampler seed (reproducible search). |
+| `--smoke` | off | Synthetic deband+CRF surface; no ffmpeg / Vulkan / GPU. |
+| `--score-backend` | `auto` | Probe-score backend (`auto`/`cpu`/`cuda`/`sycl`/`hip`). |
+| `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Tool paths. |
+| `--vmaf-model` | `vmaf_v0.6.1` | libvmaf model for the probe scores. |
+| `--neg` | off | Use the VMAF NEG model variant. |
+| `--encode-dir` | `.workingdir2/prefilter` | Scratch dir for probe encodes. |
+| `--output` | stdout | JSON destination for the recommendation payload. |
+
+> **Note**: the live encode path is unit-tested with a mocked
+> encode/score loop but has not been run against a real Pelorus-enabled
+> ffmpeg in this environment (the filter is not installed here). See
+> `docs/state.md` → `T-PREFILTER-LIVE-ENCODE-UNTESTED-2026-06-14`.
 
 ## Codec adapters
 

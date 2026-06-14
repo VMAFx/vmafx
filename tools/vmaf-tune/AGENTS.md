@@ -11,6 +11,25 @@ for the option-space digest.
 
 ## Rebase-sensitive invariants
 
+- **The 10 Pelorus deband knobs in `filter_adapters/pelorus_deband.py`
+  are a frozen two-repo contract, not a free parameter
+  ([ADR-1116](../../docs/adr/1116-autotune-prefilter-control-plane.md);
+  Pelorus ADR-0110).** `PELORUS_DEBAND_KNOBS` (name / type / `lo` / `hi`
+  / `default`) mirrors the Pelorus control-plane table verbatim. Do
+  **not** widen, narrow, rename, retype, or reorder a knob, and do
+  **not** add `sample` / `blur` / `planes` / `meta` (deliberately
+  out-of-contract). A change here is only valid as half of a
+  coordinated Pelorus + vmafx PR pair. The conformance test
+  `tests/test_filter_adapter_pelorus_deband.py` re-transcribes the
+  contract independently and fails on any drift — if it goes red after a
+  rebase, the contract moved, not the test. The `filter_adapters/`
+  family is the sibling of `codec_adapters/`: a *pre-filter* is not a
+  codec (no preset/CRF/two-pass surface), so the two registries stay
+  separate. The `prefilter` joint TPE search (`prefilter.py`) builds its
+  search space straight from this table + a synthetic `crf` axis, and
+  reuses the `fast.py` `TPESampler` study — keep the search-engine reuse
+  rather than forking a second sampler.
+
 - **The `compare` JSON has two schemas in tree (v1 + v2)** — pick the
   ingester by discriminator, never by row count. v1 (single-target
   legacy) has no `schema_version` key and no `target_vmafs` list and

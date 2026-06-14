@@ -46017,3 +46017,19 @@ PostToolUse hook skip). A pelorus ABI bump is re-synced via
 `scripts/sync-pelorus-interop.sh --update` (which also bumps the pin), never by
 editing the mirror in place. If a future change rewrites these files, re-run the
 sync guard + the conformance fixture before merging.
+## feat/pelorus-autotune-control-plane (2026-06-14)
+no rebase impact for upstream syncs: touches only fork-local files under
+`tools/vmaf-tune/` — a new `src/vmaftune/filter_adapters/` package
+(`__init__.py`, `pelorus_deband.py`), a new `src/vmaftune/prefilter.py`
+module, three new test files under `tests/`, plus additive edits to
+`src/vmaftune/cli.py` (new imports, a `prefilter` subparser, a
+`_run_prefilter` handler, and one dispatch line). None of these exist in
+upstream Netflix/vmaf — `tools/vmaf-tune/` is entirely fork-added. No
+shared function signatures changed and no upstream-mirrored paths were
+touched. The cli.py edits are append-only at well-separated sites (import
+block, subparser-registration block, handler block, dispatch block), so
+even a fork-internal rebase against a newer `cli.py` resolves cleanly.
+External coupling note: the 10 deband knobs are a verbatim copy of the
+Pelorus ADR-0110 control-plane contract; a contract change on the Pelorus
+side requires a matching edit to `filter_adapters/pelorus_deband.py` in a
+coordinated two-repo PR (the conformance test fails on drift).

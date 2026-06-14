@@ -18,7 +18,7 @@ import math
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -41,6 +41,7 @@ from .fast import (
     SMOKE_N_TRIALS,
     fast_recommend,
 )
+from .filter_adapters import get_filter_adapter, known_filters
 from .per_shot import PredicateFn as PerShotPredicateFn
 from .per_shot import (
     Shot,
@@ -49,6 +50,16 @@ from .per_shot import (
     plan_to_shell_script,
     tune_per_shot,
     write_concat_listing,
+)
+from .prefilter import DEFAULT_CRF_HI as PREFILTER_CRF_HI
+from .prefilter import DEFAULT_CRF_LO as PREFILTER_CRF_LO
+from .prefilter import DEFAULT_N_TRIALS as PREFILTER_N_TRIALS
+from .prefilter import SMOKE_N_TRIALS as PREFILTER_SMOKE_N_TRIALS
+from .prefilter import (
+    PelorusFilterUnavailableError,
+    ProbeResult,
+    pelorus_filter_available,
+    recommend_prefilter,
 )
 from .resolution import neg_model_for
 from .score_backend import ALL_BACKENDS, BackendUnavailableError, select_backend
@@ -1349,6 +1360,18 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     _add_fast_args(fast)
+
+    prefilter = sub.add_parser(
+        "prefilter",
+        help=(
+            "control-plane autotune — joint TPE search over the Pelorus "
+            "deband pre-filter strengths (frozen ADR-0110 contract) + CRF, "
+            "with VMAF as the oracle (ADR-1116 / ADR-0106). Emits ffmpeg "
+            "-vf pelorus_deband_vulkan=... strings; the live encode needs "
+            "the Pelorus Vulkan filter in the ffmpeg build."
+        ),
+    )
+    _add_prefilter_args(prefilter)
 
     report = sub.add_parser(
         "report",
@@ -4431,6 +4454,301 @@ def _run_fast(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_prefilter_args(p: argparse.ArgumentParser) -> None:
+    """Wire ``vmaf-tune prefilter`` user-facing flags onto ``p``.
+
+    The prefilter subcommand drives a joint TPE search over the Pelorus
+    deband filter's strength knobs (the frozen ADR-0110 contract) + CRF
+    with VMAF as the oracle. Source-geometry / encoder / model flags
+    mirror ``fast`` so operators can swap between subcommands without
+    re-learning the surface.
+    """
+    p.add_argument(
+        "--src",
+        type=Path,
+        default=None,
+        help=(
+            "source video (raw YUV or any FFmpeg-readable container). "
+            "Required for the live loop; optional for ``--smoke``."
+        ),
+    )
+    p.add_argument(
+        "--width",
+        type=int,
+        default=0,
+        help="raw-YUV reference width (required for the live loop on raw YUV)",
+    )
+    p.add_argument(
+        "--height",
+        type=int,
+        default=0,
+        help="raw-YUV reference height (required for the live loop on raw YUV)",
+    )
+    p.add_argument("--pix-fmt", default="yuv420p", help="ffmpeg pix_fmt (default yuv420p)")
+    p.add_argument("--framerate", type=float, default=24.0, help="reference framerate")
+    p.add_argument(
+        "--duration",
+        dest="duration_s",
+        type=float,
+        default=0.0,
+        help=(
+            "clip duration in seconds; used to report achieved kbps and to "
+            "weight the bitrate term in the objective. When 0 (default), the "
+            "search optimises VMAF only and the reported bitrate is 0 "
+            "(bitrate is undefined without a duration)."
+        ),
+    )
+    p.add_argument(
+        "--target-vmaf",
+        type=float,
+        required=True,
+        help="quality target on the standard VMAF [0, 100] scale",
+    )
+    p.add_argument(
+        "--encoder",
+        default="libx264",
+        choices=list(known_codecs()),
+        help="HW/SW codec adapter that performs the post-deband encode (default libx264)",
+    )
+    p.add_argument(
+        "--preset",
+        default="medium",
+        help="encoder preset for the probe encodes (default medium)",
+    )
+    p.add_argument(
+        "--filter",
+        dest="filter_name",
+        default="pelorus_deband",
+        choices=list(known_filters()),
+        help="pre-encode filter adapter to autotune (default pelorus_deband)",
+    )
+    p.add_argument(
+        "--sweep-knob",
+        action="append",
+        default=None,
+        dest="sweep_knobs",
+        metavar="KNOB",
+        help=(
+            "restrict the deband search to this knob (repeatable). Omit to "
+            "sweep all 10 contract knobs. Valid knobs: range, thry, thrc, "
+            "grainy, grainc, softness, detail, dither, dynamic, protect."
+        ),
+    )
+    p.add_argument(
+        "--crf-min",
+        type=int,
+        default=PREFILTER_CRF_LO,
+        help=f"minimum CRF in the joint TPE search range (default {PREFILTER_CRF_LO})",
+    )
+    p.add_argument(
+        "--crf-max",
+        type=int,
+        default=PREFILTER_CRF_HI,
+        help=f"maximum CRF in the joint TPE search range (default {PREFILTER_CRF_HI})",
+    )
+    p.add_argument(
+        "--n-trials",
+        type=int,
+        default=None,
+        help=(
+            f"TPE trial budget. Default: {PREFILTER_N_TRIALS} in the live loop, "
+            f"{PREFILTER_SMOKE_N_TRIALS} in --smoke mode."
+        ),
+    )
+    p.add_argument(
+        "--time-budget-s",
+        type=float,
+        default=600.0,
+        help="soft wall-clock cap in seconds for the Optuna TPE loop (default 600)",
+    )
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="TPE sampler seed for a reproducible search (default 0)",
+    )
+    p.add_argument(
+        "--smoke",
+        action="store_true",
+        help=(
+            "use the synthetic deband+CRF surface; no ffmpeg, no Vulkan, no "
+            "GPU. Intended for CI on hosts without a pelorus-enabled ffmpeg."
+        ),
+    )
+    p.add_argument(
+        "--score-backend",
+        default="auto",
+        choices=("auto", *ALL_BACKENDS),
+        help=(
+            "libvmaf scoring backend for the probe scores (default: auto; "
+            "cuda > sycl > hip > cpu). vmafx scores the deband output; the "
+            "deband filter itself runs in ffmpeg, not in vmafx."
+        ),
+    )
+    p.add_argument("--ffmpeg-bin", default="ffmpeg", help="ffmpeg binary (default ffmpeg on PATH)")
+    p.add_argument("--vmaf-bin", default="vmaf", help="libvmaf CLI binary (default vmaf on PATH)")
+    p.add_argument(
+        "--vmaf-model",
+        default="vmaf_v0.6.1",
+        help="vmaf model version string (default vmaf_v0.6.1)",
+    )
+    _add_neg_flag(p)
+    p.add_argument(
+        "--encode-dir",
+        type=Path,
+        default=Path(".workingdir2/prefilter"),
+        help="scratch dir for probe encodes (default .workingdir2/prefilter, gitignored)",
+    )
+    p.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="JSON destination for the recommendation payload (default: stdout)",
+    )
+
+
+def _build_prefilter_probe(
+    args: argparse.Namespace,
+    workdir: Path,
+    backend: str,
+) -> "Callable[[Mapping[str, float], int], ProbeResult]":
+    """Build the live ``(deband_params, crf) -> ProbeResult`` probe.
+
+    Each probe call emits the deband ``-vf`` fragment via the filter
+    adapter, runs ``[pelorus_deband_vulkan=...] -> encode`` through the
+    existing :mod:`vmaftune.encode` driver, scores the encoded output
+    against the source with libvmaf, and returns the achieved VMAF +
+    bitrate. The deband filter runs inside ffmpeg — vmafx only supplies
+    the string and reads the score.
+    """
+    from .encode import EncodeRequest, bitrate_kbps, run_encode
+    from .score import ScoreRequest, run_score
+
+    adapter = get_filter_adapter(args.filter_name)
+    workdir.mkdir(parents=True, exist_ok=True)
+    is_container = args.src.suffix.lower() not in {".yuv", ".raw", ".y4m", ""}
+
+    def _probe(deband: Mapping[str, float], crf: int) -> ProbeResult:
+        fragment = adapter.vf_fragment(deband)
+        slot = workdir / f"probe_crf{crf}_{abs(hash(fragment)) & 0xFFFFFF:06x}.mp4"
+        req = EncodeRequest(
+            source=args.src,
+            width=args.width,
+            height=args.height,
+            pix_fmt=args.pix_fmt,
+            framerate=args.framerate,
+            duration_s=args.duration_s,
+            encoder=args.encoder,
+            preset=args.preset,
+            crf=crf,
+            output=slot,
+            # The deband fragment is injected as an input filter chain
+            # ahead of the encoder via -vf; extra_params is appended
+            # after the codec args and before the output (encode.py).
+            extra_params=("-vf", fragment),
+            source_is_container=is_container,
+        )
+        encode_result = run_encode(req, ffmpeg_bin=args.ffmpeg_bin)
+        if encode_result.exit_status != 0 or not slot.exists():
+            # A failed probe scores 0 VMAF so TPE steers away from it.
+            return ProbeResult(vmaf=0.0, kbps=0.0, vf_fragment=fragment)
+        size_bytes = encode_result.encode_size_bytes
+        observed_kbps = bitrate_kbps(size_bytes, args.duration_s) if size_bytes > 0 else 0.0
+        score_req = ScoreRequest(
+            reference=args.src,
+            distorted=slot,
+            width=args.width,
+            height=args.height,
+            pix_fmt=args.pix_fmt,
+            model=_resolve_vmaf_model(args),
+        )
+        score_result = run_score(
+            score_req,
+            vmaf_bin=args.vmaf_bin,
+            backend=backend if backend != "cpu" else None,
+        )
+        return ProbeResult(
+            vmaf=float(score_result.vmaf_score),
+            kbps=float(observed_kbps),
+            vf_fragment=fragment,
+        )
+
+    return _probe
+
+
+def _run_prefilter(args: argparse.Namespace) -> int:
+    """Drive ``vmaf-tune prefilter`` end to end and emit the JSON payload.
+
+    Smoke mode runs the synthetic deband+CRF surface so CI on bare hosts
+    exercises the joint search loop. The live loop is gated behind
+    :func:`pelorus_filter_available` — the Pelorus Vulkan deband filter
+    must be compiled into the ffmpeg build, since vmafx drives it via a
+    ``-vf`` string but does not ship the filter itself.
+    """
+    if args.crf_min < 0 or args.crf_max < args.crf_min:
+        sys.stderr.write(
+            f"vmaf-tune prefilter: invalid CRF range [{args.crf_min}, {args.crf_max}]\n"
+        )
+        return 2
+
+    sweep_knobs = tuple(args.sweep_knobs) if args.sweep_knobs else None
+    probe = None
+
+    if not args.smoke:
+        if args.src is None:
+            sys.stderr.write("vmaf-tune prefilter: --src is required for the live loop\n")
+            return 2
+        if args.width <= 0 or args.height <= 0:
+            sys.stderr.write(
+                "vmaf-tune prefilter: --width / --height are required for the live "
+                "loop (raw-YUV geometry)\n"
+            )
+            return 2
+        if not pelorus_filter_available(args.ffmpeg_bin):
+            sys.stderr.write(
+                "vmaf-tune prefilter: the Pelorus deband filter "
+                "('pelorus_deband_vulkan') is not available in this ffmpeg "
+                f"build ({args.ffmpeg_bin}). Build ffmpeg with the Pelorus "
+                "Vulkan filter, or use --smoke to exercise the search loop "
+                "without a live encode. (ADR-1116 / pelorus ADR-0110)\n"
+            )
+            return 2
+        try:
+            backend = select_backend(prefer=args.score_backend, vmaf_bin=args.vmaf_bin)
+        except BackendUnavailableError as exc:
+            sys.stderr.write(f"vmaf-tune prefilter: {exc}\n")
+            return 2
+        sys.stderr.write(f"vmaf-tune prefilter: scoring backend = {backend}\n")
+        probe = _build_prefilter_probe(args, args.encode_dir / "probes", backend)
+
+    try:
+        result = recommend_prefilter(
+            src=args.src,
+            target_vmaf=args.target_vmaf,
+            encoder=args.encoder,
+            filter_name=args.filter_name,
+            crf_range=(args.crf_min, args.crf_max),
+            sweep_knobs=sweep_knobs,
+            n_trials=args.n_trials,
+            time_budget_s=args.time_budget_s,
+            smoke=args.smoke,
+            probe=probe,
+            seed=args.seed,
+        )
+    except (RuntimeError, ValueError, KeyError, PelorusFilterUnavailableError) as exc:
+        sys.stderr.write(f"vmaf-tune prefilter: {exc}\n")
+        return 2
+
+    rendered = json.dumps(result, indent=2, sort_keys=True)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered + "\n", encoding="utf-8")
+        sys.stderr.write(f"wrote prefilter recommendation -> {args.output}\n")
+    else:
+        sys.stdout.write(rendered + "\n")
+    return 0
+
+
 _SIDECAR_REQUIRED_FEATURE_KEYS: tuple[str, ...] = (
     "probe_bitrate_kbps",
     "probe_i_frame_avg_bytes",
@@ -5078,6 +5396,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_auto(args)
     if args.cmd == "fast":
         return _run_fast(args)
+    if args.cmd == "prefilter":
+        return _run_prefilter(args)
     if args.cmd == "sidecar":
         return _run_sidecar(args)
     if args.cmd == "report":
