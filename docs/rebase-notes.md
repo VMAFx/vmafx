@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/metal-integer-ssim (2026-06-14)
+Rebase impact: **low**. Adds three fork-only files
+(`core/src/feature/metal/integer_ssim.metal`, `integer_ssim_metal.mm`,
+`core/test/test_metal_integer_ssim_parity.c`) — no upstream twin. Registration
+edits are additive: one extern + one list entry in
+`core/src/feature/feature_extractor.c` (inside the `#if HAVE_METAL` block), one
+`.mm` source + one `custom_target` + one `metal_air_files` entry in
+`core/src/metal/meson.build`, one test block in `core/test/meson.build`. Edits
+`docs/metrics/ssim.md`, `docs/state.md`, `docs/rebase-notes.md`,
+`changelog.d/` — keep both additive hunks if a concurrent branch also edits
+them. The Metal kernel only compiles under `-Denable_metal=enabled` (macOS); no
+public libvmaf C-API / ABI / CLI / `meson_options.txt` change, so no
+ffmpeg-patch (CLAUDE §12 r14) impact. Scope note: Metal full-parity is 9 real
+kernels (not 11) — `integer_moment`/`integer_ms_ssim` are not distinct
+extractors.
+
 ## feat/gpu-motion3-v2-twins (2026-06-14)
 Rebase impact: **low**. Touches three fork-added GPU wrappers
 (`core/src/feature/{sycl,hip,metal}/integer_motion_v2_{sycl.cpp,hip.c,metal.mm}`)

@@ -13,8 +13,9 @@ distorted frame.
 | `vmaf_fex_integer_ssim_cuda` | CUDA | Real int64 moments + double SSIM | `ssim` | bit-exact (diff=0, places=6) |
 | `vmaf_fex_integer_ssim_hip` | HIP | Real int64 moments + double SSIM | `ssim` | places=6 (target) |
 | `vmaf_fex_integer_ssim_sycl` | SYCL | int64 moments + float32 SSIM | `ssim` | places=4–5 (fp64-free, ADR-0220) |
+| `vmaf_fex_integer_ssim_metal` | Metal | Fixed-point, two-pass separable Gaussian | `ssim` | places=4 (target, ADR-0214) |
 
-All GPU variants are auto-selected when `--backend cuda/hip/sycl` is active and the
+All GPU variants are auto-selected when `--backend cuda/hip/sycl/metal` is active and the
 caller requests `--feature ssim`. They provide the same `"ssim"` feature name as the
 CPU extractor so existing VMAF model JSON files work unchanged.
 
@@ -27,8 +28,9 @@ CPU extractor so existing VMAF model JSON files work unchanged.
 The extractor uses an integer fixed-point computation compatible with the
 upstream Netflix reference. It is the extractor invoked when VMAF model JSON
 files reference `"integer_ssim"`. On GPU backends the same algorithm is
-implemented in `ssim_cuda.c` (CUDA), `integer_ssim_hip.c` (HIP), and
-`integer_ssim_sycl.cpp` (SYCL).
+implemented in `ssim_cuda.c` (CUDA), `integer_ssim_hip.c` (HIP),
+`integer_ssim_sycl.cpp` (SYCL), and `integer_ssim_metal.mm` +
+`integer_ssim.metal` (Metal, ADR-0564 cross-backend completion).
 
 ### Output features
 
