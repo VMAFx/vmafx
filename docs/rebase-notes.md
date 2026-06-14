@@ -10,6 +10,23 @@ core/src/metal/meson.build; a foreach test block in core/test/meson.build). Edit
 docs/metrics/features.md (+Metal on the 4 rows), state.md, changelog. cambi is a
 Strategy-II hybrid (GPU kernels + exact-CPU host residual via cambi_internal.h),
 matching ADR-0205. Metal-only; no public C-API/CLI change -> no ffmpeg-patch impact.
+## feat/metric-delta-e-itp (2026-06-14)
+Rebase impact: **low**. Fork-only additive metric — no upstream twin. Adds
+three new files (`core/src/feature/delta_e_itp.c`,
+`core/src/feature/delta_e_itp_math.h`, `core/test/test_delta_e_itp.c`).
+Additive registration only: one extern + one `feature_extractor_list[]` entry
+in `core/src/feature/feature_extractor.cpp` (the **live** C++23 file — NOT the
+stale `feature_extractor.c` twin, which is dead per ADR-0846 and is a separate
+cleanup), one source line in `core/src/meson.build` (next to `ciede.c`), one
+`executable()` + one `test()` block in `core/test/meson.build` (next to
+`test_ciede`), and one nav entry in `mkdocs.yml`. No public C-API / ABI / CLI
+flag / `meson_options.txt` / public-header change → **no ffmpeg-patch impact**
+(CLAUDE §12 r14 N/A). The metric mirrors the CPU `ciede.c` structure
+(chroma-upsample helpers, 8/16-bit reads, double-precision frame sum); if the
+upstream `ciede.c` chroma-upsampling helpers are ever refactored, the
+copied-verbatim `scale_chroma_planes` / `scale_chroma_planes_hbd` in
+`delta_e_itp.c` are independent and need no follow-up. Compiled unconditionally
+(CPU); no backend flag.
 
 ## feat/metal-integer-adm (2026-06-14)
 Rebase impact: **low**. Adds three fork-only files

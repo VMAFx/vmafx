@@ -338,6 +338,13 @@ test_ciede = executable('test_ciede',
     dependencies: [pthread_dependency, gpu_all_deps],
 )
 
+test_delta_e_itp = executable('test_delta_e_itp',
+    ['test.c', 'test_delta_e_itp.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, gpu_all_deps],
+)
+
 # LPIPS registration tests — verify feature wiring without depending on a
 # real ORT session. Links against libvmaf_feature_static_lib for the
 # extractor list and pulls in opt.cpp for the VmafOption typedef.
@@ -2747,6 +2754,7 @@ test('test_gpu_dispatch_parse', test_gpu_dispatch_parse, suite : ['fast'])
 test('test_ref', test_ref, suite : ['fast'])
 test('test_feature', test_feature, suite : ['fast'])
 test('test_ciede', test_ciede, suite : ['fast'])
+test('test_delta_e_itp', test_delta_e_itp, suite : ['fast'])
 test('test_lpips', test_lpips, suite : ['fast'])
 test('test_dists', test_dists, suite : ['fast'])
 test('test_fastdvdnet_pre', test_fastdvdnet_pre, suite : ['fast'])

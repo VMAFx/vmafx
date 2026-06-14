@@ -912,3 +912,28 @@ after a port-upstream of any of these files.
   add **one** `extern VmafFeatureExtractor vmaf_fex_*_<bk>` decl and
   **one** `&vmaf_fex_*_<bk>` entry inside the matching `#if HAVE_<BK>`
   block — do not paste the whole `&vmaf_fex_*` cluster.
+
+- **Register extractors in `feature_extractor.cpp`, NOT
+  `feature_extractor.c`** (ADR-0846 / ADR-1110): the build compiles
+  the C++23 `feature_extractor.cpp` (see `core/src/meson.build`); the
+  old `feature_extractor.c` is a **dead twin** left over from the
+  ADR-0846 conversion and is *not* in any build target. Editing only
+  the `.c` makes `vmaf_get_feature_extractor_by_name()` return NULL
+  (the symptom: `problem loading feature extractor: <name>` from the
+  CLI). When adding a new extractor, put the `extern` decl + the
+  `feature_extractor_list[]` entry in the `.cpp`. (The stale `.c`
+  should be removed in a separate cleanup.)
+
+- **`delta_e_itp` PQ-only invariant** (ADR-1110): the ΔE-ITP
+  extractor (`delta_e_itp.c`) ships the **PQ (ST-2084) transfer
+  only**; `init()` rejects any `transfer` other than `pq` with
+  `-EINVAL`. The PQ matrices/constants are triple-sourced against
+  ITU-R BT.2124-0; the HLG (Annex 3) and BT.1886/SDR (Conversion 5)
+  paths are single-sourced and intentionally deferred. Do **not**
+  loosen the `transfer` guard to accept `hlg`/`bt1886` without first
+  cross-validating those constants against an independent source. The
+  PQ EOTF/EOTF⁻¹ live in `delta_e_itp_math.h`; out-of-gamut LMS/ICtCp
+  values are deliberately **not clamped** (BT.2124 Annex 4) — the unit
+  test's places=4 ITP-triple oracle depends on this. The
+  `scale_chroma_planes` / `scale_chroma_planes_hbd` helpers are
+  copied verbatim from `ciede.c` but are independent copies.

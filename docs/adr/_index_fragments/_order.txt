@@ -726,3 +726,4 @@
 1106-hip-motion-v2-mirror-reflect101-correction
 1107-threaded-multi-prev-ref-extractor-starvation
 1109-vmafx-node-serve-scoring-grpc
+1110-delta-e-itp-metric

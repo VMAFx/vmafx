@@ -202,6 +202,7 @@ nav:
       - Features: metrics/features.md
       - ANSNR (removed): metrics/ansnr.md
       - CAMBI: metrics/cambi.md
+      - Delta E ITP (HDR colour): metrics/delta_e_itp.md
       - DISTS: metrics/dists.md
       - Motion: metrics/motion.md
       - MS-SSIM: metrics/ms-ssim.md
