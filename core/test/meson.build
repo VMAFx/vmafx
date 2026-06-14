@@ -343,6 +343,15 @@ test_delta_e_itp = executable('test_delta_e_itp',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
+# PU21 HDR perceptual adapter — encoder + PU-PSNR + PQ EOTF + PU-SSIM oracle.
+# Includes feature/pu21.c directly (like test_ciede) to reach the static math
+# helpers; the non-static vmaf_fex_pu21 symbol and the linked deps
+# (pu21_ssim.c, iqa convolve, feature_collector, mem) resolve from libvmaf.
+test_pu21 = executable('test_pu21',
+    ['test.c', 'test_pu21.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, gpu_all_deps],
 )
 
 # LPIPS registration tests — verify feature wiring without depending on a
@@ -2781,6 +2790,7 @@ test('test_ref', test_ref, suite : ['fast'])
 test('test_feature', test_feature, suite : ['fast'])
 test('test_ciede', test_ciede, suite : ['fast'])
 test('test_delta_e_itp', test_delta_e_itp, suite : ['fast'])
+test('test_pu21', test_pu21, suite : ['fast'])
 test('test_lpips', test_lpips, suite : ['fast'])
 test('test_dists', test_dists, suite : ['fast'])
 test('test_fastdvdnet_pre', test_fastdvdnet_pre, suite : ['fast'])

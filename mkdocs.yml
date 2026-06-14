@@ -208,6 +208,7 @@ nav:
       - MS-SSIM: metrics/ms-ssim.md
       - NIQE: metrics/niqe.md
       - PSNR-HVS: metrics/psnr-hvs.md
+      - PU21 (HDR): metrics/pu21.md
       - SpeedQA: metrics/speed_qa.md
       - SSIM: metrics/ssim.md
       - SSIMULACRA 2: metrics/ssimulacra2.md

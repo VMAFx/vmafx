@@ -48,6 +48,22 @@ upstream `ciede.c` chroma-upsampling helpers are ever refactored, the
 copied-verbatim `scale_chroma_planes` / `scale_chroma_planes_hbd` in
 `delta_e_itp.c` are independent and need no follow-up. Compiled unconditionally
 (CPU); no backend flag.
+## feat/metric-pu21 (2026-06-14)
+Rebase impact: **low** (fork-only additive). Adds five fork-only files
+(`core/src/feature/pu21.c`, `pu21_math.h`, `pu21_ssim.c`, `pu21_ssim.h`,
+`core/test/test_pu21.c`) — no upstream twin. Additive registration: extern +
+list entry in **`core/src/feature/feature_extractor.cpp`** (the active C++
+registry — NOT the dead `feature_extractor.c`, which the build does not compile),
+`pu21.c` + `pu21_ssim.c` added to the unconditional `libvmaf_feature_sources`
+in `core/src/meson.build` (next to `ciede.c`), test block + `test()` row in
+`core/test/meson.build`. Edits `docs/metrics/pu21.md` (new), `mkdocs.yml`,
+`docs/adr/README.md`, `docs/state.md`, `docs/rebase-notes.md`, `changelog.d/`.
+Reuses only the read-only iqa Gaussian-convolve helper (`iqa/convolve.c`) and
+the read-only Gaussian window table (`iqa/ssim_tools.h`); the golden
+`float_ssim`/`iqa_ssim` (L=255) is **untouched** — PU21 ships its own L=256
+SSIM. No public C-API / ABI / CLI flag / `meson_options.txt` change → no
+ffmpeg-patch impact. If the iqa convolve layout (output packed at the reduced
+stride `w-kw+1`) ever changes, `pu21_ssim.c`'s reduction stride must follow.
 
 ## feat/metal-integer-adm (2026-06-14)
 Rebase impact: **low**. Adds three fork-only files

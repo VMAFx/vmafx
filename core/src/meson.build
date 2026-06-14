@@ -1549,6 +1549,11 @@ libvmaf_feature_sources = [
     # NIQE (no-reference, ADR-1112) — scalar CPU extractor; pristine MVG model
     # embedded as niqe_model.h, numeric kernels in niqe_math.h.
     feature_src_dir + 'niqe.c',
+    # PU21 HDR perceptual adapter (PU-PSNR + PU-SSIM). CPU-only, additive
+    # fork feature. pu21_ssim.c is a self-contained L=256 SSIM that does NOT
+    # touch the golden float_ssim.c. See docs/adr/<NNNN>-pu21-hdr-metric.md.
+    feature_src_dir + 'pu21.c',
+    feature_src_dir + 'pu21_ssim.c',
     feature_src_dir + 'common/alignment.c',
     feature_src_dir + 'mkdirp.c',
 

@@ -728,3 +728,4 @@
 1109-vmafx-node-serve-scoring-grpc
 1110-delta-e-itp-metric
 1112-niqe-nr-metric
+1111-pu21-hdr-metric
