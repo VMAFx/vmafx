@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // vmafx-mcp is the Go implementation of the VMAFX Model Context Protocol
-// server. It exposes the same 16 tools as the Python vmaf-mcp server over
+// server. It exposes the same 15 tools as the Python vmaf-mcp server over
 // JSON-RPC on stdio (default) or HTTP, so that LLM clients (Claude Desktop,
 // Cursor, custom MCP clients) can score video, enumerate models and backends,
 // and invoke vmaf-tune workflows.

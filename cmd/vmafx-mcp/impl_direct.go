@@ -49,7 +49,7 @@ func directPathEnabled() bool {
 func runVmafScoreDirect(ctx context.Context, ref, dis string, width, height int, pixfmt string, bitdepth int, modelArg, backend string) (map[string]any, error) {
 	// GPU backends require Phase 2; fall back transparently.
 	if backend != "auto" && backend != "cpu" {
-		return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17")
+		return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17", scoreExtras{})
 	}
 
 	// Resolve the model arg.  The MCP schema accepts "version=vmaf_v0.6.1"
@@ -60,12 +60,12 @@ func runVmafScoreDirect(ctx context.Context, ref, dis string, width, height int,
 	if err != nil {
 		// Unresolvable model -> fall back to subprocess (it has its own
 		// "version=..." resolver inside vmaf.c).
-		return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17")
+		return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17", scoreExtras{})
 	}
 
 	// DNN / .onnx models are out of scope for Phase 1.
 	if ext := strings.ToLower(filepath.Ext(modelPath)); ext == ".onnx" {
-		return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17")
+		return runVmafScore(ctx, ref, dis, width, height, pixfmt, bitdepth, modelArg, backend, "17", scoreExtras{})
 	}
 
 	pf, err := libvmaf.ParsePixFmt(pixfmt)

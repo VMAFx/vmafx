@@ -1261,9 +1261,9 @@ nav:
         - "ADR-1112: niqe-nr-metric": adr/1112-niqe-nr-metric.md
         - "ADR-1110: delta-e-itp-metric": adr/1110-delta-e-itp-metric.md
         - "ADR-1111: pu21-hdr-metric": adr/1111-pu21-hdr-metric.md
-        - "ADR-1112: niqe-nr-metric": adr/1112-niqe-nr-metric.md
         - "ADR-1113: vendor-pelorus-interop-abi": adr/1113-vendor-pelorus-interop-abi.md
         - "ADR-1114: y-funque-plus-atoms": adr/1114-y-funque-plus-atoms.md
+        - "ADR-1117: mcp-tiny-ai-feature-coverage": adr/1117-mcp-tiny-ai-feature-coverage.md
         - "ADR-1118: perceptual-sidedata-weighting": adr/1118-perceptual-sidedata-weighting.md
       - "By tag":
         - Overview: adr/by-tag/index.md

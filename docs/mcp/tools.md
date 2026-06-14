@@ -26,7 +26,11 @@ Score one `(ref, dis)` YUV pair and return the full VMAF JSON report.
 | `bitdepth`  | `8 \| 10 \| 12 \| 16`                  | yes      | —                       | Bit depth of both YUV files                    |
 | `model`     | string                                 | no       | `"version=vmaf_v0.6.1"` | Any `--model` grammar from the CLI             |
 | `backend`   | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | no       | `"auto"`                | Backend selection; `auto` lets vmaf pick. Requesting a backend the local binary does not advertise raises (no silent fallback — ADR-0495). |
-| `precision` | string                                 | no       | `"17"`                  | Passed straight to `--precision` (see below)   |
+| `precision` | string                                 | no       | `"legacy"`              | Passed straight to `--precision` (see below)   |
+
+All [optional scoring parameters](#optional-scoring-parameters) below
+(`feature`, `aom_ctc`/`nflx_ctc`, the `tiny_*` / `no_reference` tiny-AI
+surface, and the frame-range controls) are also accepted on `vmaf_score`.
 
 ### Behaviour
 
@@ -65,14 +69,13 @@ preset are silent (no false positives). See
 [usage/cli.md](../usage/cli.md#output) for the rest of the report
 schema; the temp file is always unlinked, even on error.
 
-> **`precision` default `"17"`.** The MCP server explicitly passes
-> `--precision 17` (`%.17g`, IEEE-754 round-trip lossless) so MCP
-> consumers always get scores that re-parse to the exact same double.
-> The underlying `vmaf` CLI default is `%.6f` for Netflix-compat per
-> [ADR-0119](../adr/0119-cli-precision-default-revert.md); MCP overrides
-> it because programmatic consumers (re-parsing the JSON) want the
-> lossless form by default. Pass `"6"` (or `"legacy"`) to match the CLI
-> default exactly.
+> **`precision` default `"legacy"`.** The MCP server passes
+> `--precision legacy` (`%.6f`, Netflix-compatible) by default, matching
+> the underlying `vmaf` CLI default per
+> [ADR-0119](../adr/0119-cli-precision-default-revert.md). Pass `"max"`
+> (or `"17"`, i.e. `%.17g`, IEEE-754 round-trip lossless) when a
+> programmatic consumer needs scores that re-parse to the exact same
+> double.
 
 ### Example call
 
@@ -115,6 +118,67 @@ Response body (abridged):
   does not advertise it (available: ['cpu']); refusing to fall back
   silently. Pass backend='auto' to let vmaf pick, or rebuild with
   the requested backend enabled."}` (ADR-0495).
+
+### Optional scoring parameters
+
+These optional parameters (ADR-1117) are accepted on **both**
+`vmaf_score` and `vmaf_score_encoded`. Each maps onto a `vmaf` CLI flag
+verified against `core/tools/cli_parse.c`, and is forwarded **only when
+supplied** — omitting them leaves the score identical to a call without
+them, so existing callers are unaffected. The Go (`cmd/vmafx-mcp`) and
+Python (`mcp-server/vmaf-mcp`) servers expose a byte-identical schema for
+all of them.
+
+#### Tiny-AI / DNN scoring
+
+This is the fork's ONNX tiny-model surface (previously unreachable over
+MCP).
+
+| Field               | Type / values                                                                                                              | CLI flag              | Notes                                                                                              |
+|---------------------|----------------------------------------------------------------------------------------------------------------------------|-----------------------|----------------------------------------------------------------------------------------------------|
+| `tiny_model`        | string (path)                                                                                                              | `--tiny-model`        | Load a tiny ONNX model alongside the classic models.                                               |
+| `tiny_device`       | `auto \| cpu \| cuda \| openvino \| openvino-npu \| openvino-cpu \| openvino-gpu \| coreml \| coreml-ane \| coreml-gpu \| coreml-cpu \| rocm` | `--tiny-device` (= `--dnn-ep`) | ONNX Runtime execution provider. Default `auto`.                                       |
+| `tiny_threads`      | integer `≥ 0`                                                                                                               | `--tiny-threads`      | CPU EP intra-op threads (`0` = ORT default).                                                        |
+| `tiny_fp16`         | boolean                                                                                                                     | `--tiny-fp16`         | Request fp16 IO where the EP supports it.                                                           |
+| `tiny_model_verify` | boolean                                                                                                                     | `--tiny-model-verify` | Require Sigstore-bundle verification before loading the model.                                      |
+| `tiny_codec`        | string                                                                                                                      | `--tiny-codec`        | Encoder name for codec-aware tiny models (e.g. `libx264`).                                          |
+| `tiny_preset`       | string                                                                                                                      | `--tiny-preset`       | Encoder preset string for codec-aware tiny models.                                                  |
+| `tiny_crf`          | integer `0..63`                                                                                                            | `--tiny-crf`          | CRF / QP for codec-aware tiny models (clamped to `0..63`).                                          |
+| `tiny_resize`       | `bilinear \| nearest \| bicubic \| disabled`                                                                                | `--tiny-resize`       | Auto-resize filter for NCHW tiny models on a dimension mismatch. Default `disabled` (hard-errors).  |
+| `no_reference`      | boolean                                                                                                                     | `--no-reference`      | No-reference (NR) mode — see below.                                                                 |
+
+**No-reference mode.** When `no_reference` is set, only the distorted
+picture is scored, so `no_reference` **requires** `tiny_model` (an NR
+ONNX model — there is no classic NR scorer). The request is rejected with
+`{"error": "no_reference requires tiny_model; no classic NR scorer
+exists"}` otherwise, mirroring the CLI's `cli_parse.c` gate. In NR mode
+the `ref` argument becomes optional on `vmaf_score`: omit it, or pass any
+valid YUV of matching geometry (it is not consumed by the scorer). For
+`vmaf_score_encoded` the reference video is still decoded as usual.
+
+#### Feature selection and CTC presets
+
+| Field      | Type / values                                            | CLI flag      | Notes                                                                                          |
+|------------|----------------------------------------------------------|---------------|------------------------------------------------------------------------------------------------|
+| `feature`  | array of strings                                         | `--feature`   | Each entry becomes a repeated `--feature` flag. Use the libvmaf `name[=key=val:...]` grammar.   |
+| `aom_ctc`  | `v1.0 \| v2.0 \| v3.0 \| v4.0 \| v5.0 \| v6.0 \| v7.0`    | `--aom_ctc`   | AOM Common Test Conditions preset.                                                             |
+| `nflx_ctc` | `v1.0`                                                    | `--nflx_ctc`  | Netflix Common Test Conditions preset.                                                         |
+
+The `aom_ctc` / `nflx_ctc` presets configure a fixed model + feature set
+and are **mutually exclusive with manual feature/model configuration** —
+combining them with `feature` or a custom `model` stacks both
+configurations (the CLI does not reject it, but the result is rarely what
+you want).
+
+#### Frame-range and worker controls
+
+| Field             | Type          | CLI flag            | Notes                                                  |
+|-------------------|---------------|---------------------|--------------------------------------------------------|
+| `threads`         | integer `≥ 1` | `--threads`         | Worker threads (capped to hardware cores by the CLI).  |
+| `frame_cnt`       | integer `≥ 1` | `--frame_cnt`       | Maximum number of frames to process.                   |
+| `frame_skip_ref`  | integer `≥ 0` | `--frame_skip_ref`  | Skip the first N reference frames.                     |
+| `frame_skip_dist` | integer `≥ 0` | `--frame_skip_dist` | Skip the first N distorted frames.                     |
+| `no_prediction`   | boolean       | `--no_prediction`   | Extract features only; skip VMAF prediction.           |
 
 ## `list_models`
 
@@ -514,7 +578,12 @@ Requires `ffmpeg` and `ffprobe` on `PATH`.
 | `model`              | string                                                          | no       | `"version=vmaf_v0.6.1"`  | Any `--model` grammar from the CLI             |
 | `backend`            | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | no       | `"auto"`        | Backend selection                              |
 | `subsample`          | integer `≥ 1`                                                   | no       | `1`                      | Score every Nth frame (1 = every frame)        |
-| `precision`          | string                                                          | no       | `"17"`                   | Passed to `--precision`                        |
+| `precision`          | string                                                          | no       | `"legacy"`               | Passed to `--precision`                        |
+
+All [optional scoring parameters](#optional-scoring-parameters) accepted
+by `vmaf_score` (the `tiny_*` / `no_reference` tiny-AI surface,
+`feature`, `aom_ctc`/`nflx_ctc`, and the frame-range controls) are also
+accepted here and forwarded to the underlying `vmaf` run (ADR-1117).
 
 ### Behaviour
 

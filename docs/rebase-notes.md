@@ -95,6 +95,25 @@ upstream twin. Edits to shared files, all additive:
   `changelog.d/added/`, and the ADR index
   (`docs/adr/1118-perceptual-sidedata-weighting.md` + fragment + `_order.txt` +
   regenerated `README.md`).
+## feat/mcp-tiny-ai-feature-coverage (2026-06-14)
+no rebase impact: all touched code is fork-local. The MCP servers
+(`cmd/vmafx-mcp/{tools.go,impl.go,impl_direct.go,main.go,score_extras_test.go}`
+and `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py` +
+`tests/test_score_extras_adr1117.py`) do not exist in upstream Netflix/vmaf, so
+no mechanical merge conflict is possible. The change adds optional scoring
+parameters that shell out to **existing** `vmaf` CLI flags — it does **not**
+add, rename, or remove any public C-API entry point, CLI flag,
+`meson_options.txt` entry, public header, or `LIBVMAFContext` field, so per
+CLAUDE.md §12 r14 there is **no ffmpeg-patch impact** (the patches under
+`ffmpeg-patches/` consume libvmaf symbols, not the MCP servers). Rebase-sensitive
+invariant the diff must preserve: the Go (`scoringExtraProperties()`) and Python
+(`_scoring_extra_properties()`) schema generators MUST stay byte-identical (same
+keys/enums/defaults/descriptions) per `cmd/vmafx-mcp/AGENTS.md` §1 — the parity
+tests (`server_test.go::TestToolSchemasMatchPython`,
+`test_score_extras_adr1117.py`) and the source-of-truth flag names in
+`core/tools/cli_parse.c` are the backstop. Also edits `docs/mcp/tools.md`,
+`docs/state.md`, `changelog.d/`, the ADR index (ADR-1117 + fragment + `_order.txt`
++ regenerated `README.md`), and a research digest — all fork-local docs.
 
 ## feat/metric-niqe (2026-06-14)
 Rebase impact: **low**. Adds four fork-only files

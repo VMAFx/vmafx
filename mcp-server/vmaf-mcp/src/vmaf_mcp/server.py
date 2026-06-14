@@ -2,7 +2,10 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """MCP server for the Lusoris VMAF fork.
 
-Exposes ten tools over the Model Context Protocol (stdio transport):
+Exposes fifteen tools over the Model Context Protocol (stdio transport).
+The ten core tools are listed below; the P1 tools ``list_extractors``,
+``describe_model``, ``run_compare``, ``run_ladder``, and ``run_tune_per_shot``
+(ADR-0608) round out the surface:
 
 - ``vmaf_score``            — score a (reference, distorted) raw YUV pair.
 - ``vmaf_score_encoded``    — decode encoded video (MP4/MKV/Y4M/…) via ffmpeg then
@@ -350,8 +353,84 @@ def _validate_media_path(p: str) -> str:
 
 
 @dataclass(frozen=True)
+class ScoreExtras:
+    """Optional scoring pass-through flags shared by vmaf_score +
+    vmaf_score_encoded (ADR-1117).
+
+    Each field maps onto a ``vmaf`` CLI flag verified against
+    ``core/tools/cli_parse.c``. A default-constructed ``ScoreExtras`` adds no
+    flags (backward-compatible). MUST stay byte-compatible with the Go
+    server's ``scoreExtras`` argv construction (cmd/vmafx-mcp/impl.go).
+    """
+
+    features: tuple[str, ...] = ()  # repeated --feature
+    aom_ctc: str | None = None  # --aom_ctc
+    nflx_ctc: str | None = None  # --nflx_ctc
+    tiny_model: str | None = None  # --tiny-model
+    tiny_device: str | None = None  # --tiny-device (alias --dnn-ep)
+    tiny_threads: int | None = None  # --tiny-threads
+    tiny_fp16: bool = False  # --tiny-fp16
+    tiny_model_verify: bool = False  # --tiny-model-verify
+    tiny_codec: str | None = None  # --tiny-codec
+    tiny_preset: str | None = None  # --tiny-preset
+    tiny_crf: int | None = None  # --tiny-crf
+    tiny_resize: str | None = None  # --tiny-resize
+    no_reference: bool = False  # --no-reference
+    threads: int | None = None  # --threads
+    frame_cnt: int | None = None  # --frame_cnt
+    frame_skip_ref: int | None = None  # --frame_skip_ref
+    frame_skip_dist: int | None = None  # --frame_skip_dist
+    no_prediction: bool = False  # --no_prediction
+
+    def is_empty(self) -> bool:
+        """Return True when no extra flag is set."""
+        return self == ScoreExtras()
+
+    def to_argv(self) -> list[str]:
+        """Build the flag list, in a fixed order matching the Go server."""
+        argv: list[str] = []
+        for feat in self.features:
+            argv += ["--feature", feat]
+        if self.aom_ctc:
+            argv += ["--aom_ctc", self.aom_ctc]
+        if self.nflx_ctc:
+            argv += ["--nflx_ctc", self.nflx_ctc]
+        if self.tiny_model:
+            argv += ["--tiny-model", self.tiny_model]
+        if self.tiny_device:
+            argv += ["--tiny-device", self.tiny_device]
+        if self.tiny_threads is not None:
+            argv += ["--tiny-threads", str(self.tiny_threads)]
+        if self.tiny_fp16:
+            argv += ["--tiny-fp16"]
+        if self.tiny_model_verify:
+            argv += ["--tiny-model-verify"]
+        if self.tiny_codec:
+            argv += ["--tiny-codec", self.tiny_codec]
+        if self.tiny_preset:
+            argv += ["--tiny-preset", self.tiny_preset]
+        if self.tiny_crf is not None:
+            argv += ["--tiny-crf", str(self.tiny_crf)]
+        if self.tiny_resize:
+            argv += ["--tiny-resize", self.tiny_resize]
+        if self.no_reference:
+            argv += ["--no-reference"]
+        if self.threads is not None:
+            argv += ["--threads", str(self.threads)]
+        if self.frame_cnt is not None:
+            argv += ["--frame_cnt", str(self.frame_cnt)]
+        if self.frame_skip_ref is not None:
+            argv += ["--frame_skip_ref", str(self.frame_skip_ref)]
+        if self.frame_skip_dist is not None:
+            argv += ["--frame_skip_dist", str(self.frame_skip_dist)]
+        if self.no_prediction:
+            argv += ["--no_prediction"]
+        return argv
+
+
+@dataclass(frozen=True)
 class ScoreRequest:
-    ref: Path
+    ref: Path | None
     dis: Path
     width: int
     height: int
@@ -361,6 +440,47 @@ class ScoreRequest:
     backend: str = "auto"  # "cpu" | "cuda" | "sycl" | "auto"
     precision: str = "legacy"  # "legacy" = %.6f; matches C CLI default per ADR-0119
     subsample: int = 1  # score every Nth frame; passed as --subsample to the CLI
+    extras: ScoreExtras = ScoreExtras()  # optional pass-through flags (ADR-1117)
+
+
+def _extras_from_args(arguments: dict[str, Any]) -> ScoreExtras:
+    """Build a :class:`ScoreExtras` from a raw tool-call ``arguments`` dict.
+
+    Only keys that are present are forwarded; absent keys leave the field at
+    its default (``None`` / ``False`` / ``()``), so no CLI flag is emitted.
+    Mirrors the Go server's ``parseScoreExtras`` (cmd/vmafx-mcp/impl.go).
+    """
+    raw_features = arguments.get("feature")
+    features: tuple[str, ...] = ()
+    if isinstance(raw_features, list):
+        features = tuple(str(f) for f in raw_features if isinstance(f, str) and f)
+
+    def _opt_int(key: str) -> int | None:
+        return int(arguments[key]) if key in arguments else None
+
+    def _opt_str(key: str) -> str | None:
+        return str(arguments[key]) if key in arguments else None
+
+    return ScoreExtras(
+        features=features,
+        aom_ctc=_opt_str("aom_ctc"),
+        nflx_ctc=_opt_str("nflx_ctc"),
+        tiny_model=_opt_str("tiny_model"),
+        tiny_device=_opt_str("tiny_device"),
+        tiny_threads=_opt_int("tiny_threads"),
+        tiny_fp16=bool(arguments.get("tiny_fp16", False)),
+        tiny_model_verify=bool(arguments.get("tiny_model_verify", False)),
+        tiny_codec=_opt_str("tiny_codec"),
+        tiny_preset=_opt_str("tiny_preset"),
+        tiny_crf=_opt_int("tiny_crf"),
+        tiny_resize=_opt_str("tiny_resize"),
+        no_reference=bool(arguments.get("no_reference", False)),
+        threads=_opt_int("threads"),
+        frame_cnt=_opt_int("frame_cnt"),
+        frame_skip_ref=_opt_int("frame_skip_ref"),
+        frame_skip_dist=_opt_int("frame_skip_dist"),
+        no_prediction=bool(arguments.get("no_prediction", False)),
+    )
 
 
 # Map each named backend to the set of siblings it must disable so the
@@ -605,10 +725,14 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
         ) as _tmp:
             output = Path(_tmp.name)
         try:
-            argv = [
-                str(vmaf),
-                "-r",
-                str(req.ref),
+            argv = [str(vmaf)]
+            # In no-reference mode the reference path may be omitted (only the
+            # distorted picture is scored by the NR tiny model). Emit -r only
+            # when a reference is supplied — FR mode, or an NR caller passing
+            # one. Mirrors the Go server's conditional -r (ADR-1117).
+            if req.ref is not None:
+                argv += ["-r", str(req.ref)]
+            argv += [
                 "-d",
                 str(req.dis),
                 "--width",
@@ -630,6 +754,9 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
             ]
             if req.subsample > 1:
                 argv += ["--subsample", str(req.subsample)]
+            # Optional pass-through scoring flags (ADR-1117). Appended before
+            # the backend-disable flags so the argv order matches the Go server.
+            argv += req.extras.to_argv()
             if req.backend in _BACKEND_DISABLE:
                 for sibling in _BACKEND_DISABLE[req.backend]:
                     argv.append(f"--no_{sibling}")
@@ -2067,13 +2194,15 @@ async def _run_vmaf_score_encoded(
     backend: str = "auto",
     subsample: int = 1,
     precision: str = "legacy",  # "legacy" = %.6f; matches C CLI default per ADR-0119,
+    extras: ScoreExtras | None = None,  # optional pass-through flags (ADR-1117)
 ) -> dict[str, Any]:
     """Decode both encoded inputs to temp raw YUV, then delegate to
     :func:`_run_vmaf_score`.
 
     Geometry is probed from the reference stream; both reference and distorted
-    must have the same dimensions.  ``subsample`` passes ``--frame_step`` to
-    vmaf (1 = every frame).
+    must have the same dimensions.  ``subsample`` passes ``--subsample`` to
+    vmaf (1 = every frame).  ``extras`` forwards the optional ADR-1117
+    pass-through scoring flags.
     """
     import tempfile
 
@@ -2116,6 +2245,7 @@ async def _run_vmaf_score_encoded(
             backend=backend,
             precision=precision,
             subsample=subsample,
+            extras=extras if extras is not None else ScoreExtras(),
         )
         result = await _run_vmaf_score(req)
         # Surface the original encoded paths in the response.
@@ -2137,12 +2267,138 @@ server: Server = Server("vmaf-mcp")
 # mcp.server.lowlevel.Server.list_tools() returns an untyped decorator (the
 # library has no py.typed marker); this is a library-stub gap, not a real
 # typing issue at the call site.
+def _scoring_extra_properties() -> dict[str, Any]:
+    """Return the optional pass-through scoring parameters shared by
+    ``vmaf_score`` and ``vmaf_score_encoded`` (ADR-1117).
+
+    Each property maps onto a ``vmaf`` CLI flag verified against
+    ``core/tools/cli_parse.c``. Every property is optional and only forwarded
+    to the CLI when the caller supplies it, so existing callers are unaffected.
+
+    MUST stay byte-identical to the Go server's ``scoringExtraProperties()``
+    (cmd/vmafx-mcp/tools.go) — same keys, enums, defaults, and descriptions —
+    per cmd/vmafx-mcp/AGENTS.md.
+    """
+    return {
+        # --- Feature selection + CTC presets ---
+        "feature": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Additional feature extractors, each passed as a repeated "
+            "--feature flag. Use the libvmaf 'name[=key=val:...]' syntax, e.g. "
+            "'psnr' or 'cambi=full_ref=true'. Mutually exclusive with aom_ctc/nflx_ctc.",
+        },
+        "aom_ctc": {
+            "type": "string",
+            "enum": ["v1.0", "v2.0", "v3.0", "v4.0", "v5.0", "v6.0", "v7.0"],
+            "description": "AOM Common Test Conditions preset (--aom_ctc). Configures a fixed "
+            "model + feature set; mutually exclusive with manual feature/model config.",
+        },
+        "nflx_ctc": {
+            "type": "string",
+            "enum": ["v1.0"],
+            "description": "Netflix Common Test Conditions preset (--nflx_ctc). Mutually "
+            "exclusive with manual feature/model config.",
+        },
+        # --- Tiny-AI / DNN scoring surface (ADR-1117) ---
+        "tiny_model": {
+            "type": "string",
+            "description": "Path to a tiny ONNX model loaded alongside classic models (--tiny-model).",
+        },
+        "tiny_device": {
+            "type": "string",
+            "enum": [
+                "auto",
+                "cpu",
+                "cuda",
+                "openvino",
+                "openvino-npu",
+                "openvino-cpu",
+                "openvino-gpu",
+                "coreml",
+                "coreml-ane",
+                "coreml-gpu",
+                "coreml-cpu",
+                "rocm",
+            ],
+            "description": "ONNX Runtime execution provider for the tiny model (--tiny-device / "
+            "--dnn-ep). Default: auto.",
+        },
+        "tiny_threads": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "CPU EP intra-op thread count for the tiny model (--tiny-threads; 0 = ORT default).",
+        },
+        "tiny_fp16": {
+            "type": "boolean",
+            "description": "Request fp16 IO where the execution provider supports it (--tiny-fp16).",
+        },
+        "tiny_model_verify": {
+            "type": "boolean",
+            "description": "Require Sigstore-bundle verification of the tiny model before use (--tiny-model-verify).",
+        },
+        "tiny_codec": {
+            "type": "string",
+            "description": "Encoder name for codec-aware tiny models (--tiny-codec), e.g. libx264.",
+        },
+        "tiny_preset": {
+            "type": "string",
+            "description": "Encoder preset string for codec-aware tiny models (--tiny-preset).",
+        },
+        "tiny_crf": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63,
+            "description": "CRF / QP integer for codec-aware tiny models (--tiny-crf; clamped to 0..63).",
+        },
+        "tiny_resize": {
+            "type": "string",
+            "enum": ["bilinear", "nearest", "bicubic", "disabled"],
+            "description": "Auto-resize filter for NCHW tiny models on dimension mismatch "
+            "(--tiny-resize). Default: disabled (mismatch hard-errors).",
+        },
+        "no_reference": {
+            "type": "boolean",
+            "description": "No-reference (NR) mode (--no-reference). Requires tiny_model (an NR "
+            "ONNX model); the reference path becomes a formality — pass any valid YUV "
+            "of matching geometry since only the distorted picture is scored.",
+        },
+        # --- Score-param completeness ---
+        "threads": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Worker thread count (--threads). Capped to hardware cores by the CLI.",
+        },
+        "frame_cnt": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum number of frames to process (--frame_cnt).",
+        },
+        "frame_skip_ref": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip the first N frames of the reference (--frame_skip_ref).",
+        },
+        "frame_skip_dist": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip the first N frames of the distorted input (--frame_skip_dist).",
+        },
+        "no_prediction": {
+            "type": "boolean",
+            "description": "Extract features only, skip VMAF prediction (--no_prediction).",
+        },
+    }
+
+
 @server.list_tools()  # type: ignore[no-untyped-call,untyped-decorator]
 async def _list_tools() -> list[Tool]:
     return [
         Tool(
             name="vmaf_score",
-            description="Compute a VMAF score for a (reference, distorted) YUV pair.",
+            description="Compute a VMAF score for a (reference, distorted) YUV pair. "
+            "Optional tiny-AI/DNN, feature-selection, CTC-preset, and frame-range "
+            "parameters map onto the corresponding vmaf CLI flags (ADR-1117).",
             inputSchema={
                 "type": "object",
                 "required": ["ref", "dis", "width", "height", "pixfmt", "bitdepth"],
@@ -2160,6 +2416,7 @@ async def _list_tools() -> list[Tool]:
                         "default": "auto",
                     },
                     "precision": {"type": "string", "default": "legacy"},
+                    **_scoring_extra_properties(),
                 },
             },
         ),
@@ -2317,7 +2574,9 @@ async def _list_tools() -> list[Tool]:
                 "properties": {
                     "reference_encoded": {
                         "type": "string",
-                        "description": "Path to the reference encoded video (MP4/MKV/Y4M/…). "
+                        # ASCII "..." (not U+2026) so the schema is byte-identical
+                        # to the Go server's reference_encoded description (ADR-1117).
+                        "description": "Path to the reference encoded video (MP4/MKV/Y4M/...). "
                         "Must be under an allowlisted root (VMAF_MCP_ALLOW).",
                     },
                     "distorted_encoded": {
@@ -2337,6 +2596,7 @@ async def _list_tools() -> list[Tool]:
                         "description": "Score every Nth frame (1 = every frame).",
                     },
                     "precision": {"type": "string", "default": "legacy"},
+                    **_scoring_extra_properties(),
                 },
             },
         ),
@@ -2569,8 +2829,22 @@ async def _call_tool_dispatch(
     _check_depth(arguments)
 
     if name == "vmaf_score":
+        extras = _extras_from_args(arguments)
+        # NR-mode consistency (mirrors cli_parse.c:997): --no-reference requires
+        # an NR tiny model, so reject early with the same message the CLI emits.
+        if extras.no_reference and not extras.tiny_model:
+            raise ValueError("no_reference requires tiny_model; no classic NR scorer exists")
+        # In NR mode the reference path is optional (only the distorted picture
+        # is scored). A caller may still supply one; validate it when present.
+        ref_arg = arguments.get("ref")
+        if ref_arg:
+            ref_path: Path | None = _validate_path(ref_arg)
+        elif extras.no_reference:
+            ref_path = None
+        else:
+            raise ValueError("'ref' is required (omit only with no_reference=true)")
         req = ScoreRequest(
-            ref=_validate_path(arguments["ref"]),
+            ref=ref_path,
             dis=_validate_path(arguments["dis"]),
             width=int(arguments["width"]),
             height=int(arguments["height"]),
@@ -2579,6 +2853,7 @@ async def _call_tool_dispatch(
             model=str(arguments.get("model", "version=vmaf_v0.6.1")),
             backend=str(arguments.get("backend", "auto")),
             precision=str(arguments.get("precision", "legacy")),
+            extras=extras,
         )
         result = await _run_vmaf_score(req)
     elif name == "list_models":
@@ -2624,6 +2899,9 @@ async def _call_tool_dispatch(
     elif name == "vmaf_version":
         result = await _vmaf_version()
     elif name == "vmaf_score_encoded":
+        encoded_extras = _extras_from_args(arguments)
+        if encoded_extras.no_reference and not encoded_extras.tiny_model:
+            raise ValueError("no_reference requires tiny_model; no classic NR scorer exists")
         result = await _run_vmaf_score_encoded(
             ref_path=_validate_path(arguments["reference_encoded"]),
             dis_path=_validate_path(arguments["distorted_encoded"]),
@@ -2631,6 +2909,7 @@ async def _call_tool_dispatch(
             backend=str(arguments.get("backend", "auto")),
             subsample=int(arguments.get("subsample", 1)),
             precision=str(arguments.get("precision", "legacy")),
+            extras=encoded_extras,
         )
     # ── P1 tools (ADR-0608) ─────────────────────────────────────────────
     elif name == "list_extractors":
