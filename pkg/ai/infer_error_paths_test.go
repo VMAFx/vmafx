@@ -67,7 +67,8 @@ func TestModelPath_OnnxSuffix(t *testing.T) {
 // TestErrORTRunnerNotFound_IsWrapped verifies that ErrORTRunnerNotFound can be
 // detected via errors.Is even when it is wrapped.
 func TestErrORTRunnerNotFound_IsWrapped(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel(): this test uses t.Setenv, which Go forbids combining
+	// with a parallel test (panics at runtime).
 	dir := t.TempDir()
 	writeONNX(t, dir, "model_for_wrap_test")
 	t.Setenv("PATH", "")
