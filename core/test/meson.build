@@ -821,6 +821,31 @@ test_brisque = executable('test_brisque',
     ] + wave8_opt_only_objects
 )
 
+# Y-FUNQUE+ atoms-only (ADR-1114): analytic identical-input oracles
+# (ms_ssim==0, dlm==1, mad==0), a deterministic non-trivial Python-reference
+# oracle at places=4, a 2-frame MAD-Ref temporal check, an odd-dim (65x33)
+# regression, and a too-small-frame rejection. Reuses the
+# libvmaf_feature_static_lib object-extraction pattern from
+# test_ssimulacra2_coverage so the y_funque_plus extractor + collector link.
+test_y_funque_plus = executable('test_y_funque_plus',
+    ['test.c', 'test_y_funque_plus.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
 # Coverage round 2 — integer_vif.h log2_32 / log2_64 helpers exercised
 # directly (otherwise reached only via the AVX-512 hot path).
 test_integer_vif_log2 = executable('test_integer_vif_log2',
@@ -2867,6 +2892,7 @@ test('test_psnr_hvs_coverage', test_psnr_hvs_coverage, suite : ['fast'])
 test('test_ssimulacra2_coverage', test_ssimulacra2_coverage, suite : ['fast'])
 test('test_niqe', test_niqe, suite : ['fast'])
 test('test_brisque', test_brisque, suite : ['fast'])
+test('test_y_funque_plus', test_y_funque_plus, suite : ['fast'])
 test('test_integer_vif_log2', test_integer_vif_log2, suite : ['fast'])
 test('test_iqa_convolve_coverage', test_iqa_convolve_coverage, suite : ['fast'])
 test('test_barten_csf_coverage', test_barten_csf_coverage, suite : ['fast'])

@@ -993,3 +993,29 @@ after a port-upstream of any of these files.
   test's places=4 ITP-triple oracle depends on this. The
   `scale_chroma_planes` / `scale_chroma_planes_hbd` helpers are
   copied verbatim from `ciede.c` but are independent copies.
+- **`y_funque_plus` atoms-only invariants** (ADR-1114): the Y-FUNQUE+
+  extractor (`y_funque_plus.c`) has **no upstream twin** and is a
+  clean-room reimplementation from the papers (MIT `funque_plus` used
+  only as a cross-check). It ships the **three atoms only**
+  (`y_funque_plus_ms_ssim` / `_dlm` / `_mad`); the fused ScaledSVR MOS
+  score is deliberately **not** shipped (upstream commits no frozen
+  regressor — see the Deferred row in `docs/state.md`). Load-bearing
+  details a rebase or "cleanup" must not silently break:
+  1. **Haar butterfly** uses the pywt `'haar'` convention
+     `cH=(a+b-c-d)/2`, `cV=(a-b+c-d)/2` (verified directly against
+     `pywt.dwt2`). The design dossier prose listed H/V **swapped** — do
+     not "fix" the code to match the stale prose; the code is correct
+     and DLM's psi-angle mask depends on it.
+  2. **DLM num/den abs-asymmetry** (`yf_dlm_pool`): the numerator pools
+     `rest^3` **without** abs while the denominator pools the ref detail
+     **with** abs (mirrors upstream `pyr_features.py:54/61`). Symmetrising
+     them is a real behaviour change, not a cleanup.
+  3. **OpenCV `INTER_CUBIC`** (Keys cubic `a=-0.75`, src coord `2i+0.5`,
+     `BORDER_REPLICATE`) is the dominant cross-host parity component;
+     the TU compiles in its own static lib with `-ffp-contract=off` (the
+     same rationale as `ssimulacra2`). Keep both.
+  4. The Nadenau Y-channel CSF weights **only** the detail subbands;
+     approx subbands are never weighted. The analytic constants
+     (`a=1/256`, `b_Y=-5.4715e-3`, `c_Y=1.91`) regenerate the official
+     lookup table to 8 dp. Oracle values in `core/test/test_y_funque_plus.c`
+     were re-derived against a `pywt` + OpenCV reference at places=4.

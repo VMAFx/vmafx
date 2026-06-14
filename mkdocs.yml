@@ -217,6 +217,7 @@ nav:
       - TAD: metrics/tad.md
       - VIF: metrics/vif.md
       - VMAF-NEG: metrics/vmaf-neg.md
+      - Y-FUNQUE+ atoms: metrics/y-funque-plus.md
       - Confidence Interval: metrics/confidence-interval.md
       - Bad cases: metrics/bad-cases.md
       - CTC:
@@ -1255,9 +1256,11 @@ nav:
         - "ADR-1107: threaded-multi-prev-ref-extractor-starvation": adr/1107-threaded-multi-prev-ref-extractor-starvation.md
         - "ADR-1108: cuda-motion-v2-motion3-emission": adr/1108-cuda-motion-v2-motion3-emission.md
         - "ADR-1109: vmafx-node-serve-scoring-grpc": adr/1109-vmafx-node-serve-scoring-grpc.md
+        - "ADR-1110: delta-e-itp-metric": adr/1110-delta-e-itp-metric.md
         - "ADR-1112: niqe-nr-metric": adr/1112-niqe-nr-metric.md
         - "ADR-1110: delta-e-itp-metric": adr/1110-delta-e-itp-metric.md
         - "ADR-1113: vendor-pelorus-interop-abi": adr/1113-vendor-pelorus-interop-abi.md
+        - "ADR-1114: y-funque-plus-atoms": adr/1114-y-funque-plus-atoms.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

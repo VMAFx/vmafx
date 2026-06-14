@@ -730,4 +730,5 @@
 1112-niqe-nr-metric
 1111-pu21-hdr-metric
 1113-vendor-pelorus-interop-abi
+1114-y-funque-plus-atoms
 1115-brisque-nr-metric

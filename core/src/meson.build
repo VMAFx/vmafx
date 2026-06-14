@@ -1793,6 +1793,20 @@ libvmaf_ssimulacra2_static_lib = static_library(
     c_args: vmaf_cflags_common + ['-ffp-contract=off'] + _libvmaf_feature_icx_args,
 )
 
+# Y-FUNQUE+ atoms-only extractor (ADR-1114) compiles with `-ffp-contract=off`
+# for the same cross-host-determinism reason as ssimulacra2: the DLM cube-root
+# pooling, MS-SSIM std/mean covariance pooling, and the Nadenau CSF exp()/pow()
+# must not be FMA-contracted differently per host, which would drift the
+# atoms beyond the places=4 snapshot gate. Scoped to its own static lib so no
+# other extractor's bit-exact behaviour is touched.
+libvmaf_y_funque_plus_static_lib = static_library(
+    'libvmaf_y_funque_plus',
+    feature_src_dir + 'y_funque_plus.c',
+    include_directories : [libvmaf_include, vmaf_include, cuda_dir],
+    dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
+    c_args: vmaf_cflags_common + ['-ffp-contract=off'] + _libvmaf_feature_icx_args,
+)
+
 libvmaf_feature_static_lib = static_library(
     'libvmaf_feature',
     # The BRISQUE allmodel embed (ADR-1115) lives here so that every consumer
@@ -1804,7 +1818,8 @@ libvmaf_feature_static_lib = static_library(
     c_args : vmaf_cflags_common + _libvmaf_feature_icx_args,
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps],
     objects: [common_cuda_objects, common_sycl_objects, sycl_feature_objects,
-              libvmaf_ssimulacra2_static_lib.extract_all_objects(recursive: false)]
+              libvmaf_ssimulacra2_static_lib.extract_all_objects(recursive: false),
+              libvmaf_y_funque_plus_static_lib.extract_all_objects(recursive: false)]
 )
 
 libsvm_cpp_args = vmaf_cflags_common

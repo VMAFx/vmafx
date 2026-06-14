@@ -34,6 +34,30 @@ Gaussian sigma=7/6 (not 1.166), MATLAB antialiased bicubic (not INTER_CUBIC),
 the inline range arrays (not `allrange`), no output clamp — all required for
 parity with the bundled trained model (see `core/src/feature/AGENTS.md` and
 ADR-1115).
+## feat/metric-y-funque-plus (2026-06-14)
+Rebase impact: **low**. Fork-only additive metric — no upstream twin. Adds two
+fork-only files (`core/src/feature/y_funque_plus.c`,
+`core/test/test_y_funque_plus.c`). Additive registration only: one `extern
+VmafFeatureExtractor vmaf_fex_y_funque_plus;` + one `feature_extractor_list[]`
+entry in `core/src/feature/feature_extractor.cpp` (the **live** C++23 registry —
+NOT the dead `feature_extractor.c` twin), a dedicated
+`libvmaf_y_funque_plus_static_lib` `static_library()` + one
+`extract_all_objects()` line in `core/src/meson.build` (mirrors the
+`ssimulacra2` `-ffp-contract=off` carve-out), and one `executable()` + one
+`test()` in `core/test/meson.build`. Edits `docs/metrics/y-funque-plus.md`
+(new), `docs/metrics/features.md` (one new row), `docs/state.md`,
+`docs/rebase-notes.md`, `changelog.d/`, and the ADR index
+(`docs/adr/1114-y-funque-plus-atoms.md` + fragment + `_order.txt` + `README.md`
+row). CPU-only scalar extractor; no public C-API / ABI / CLI flag /
+`meson_options.txt` / public-header change → **no ffmpeg-patch impact** (CLAUDE
+§12 r14 N/A; reachable via the generic `--feature` path). Load-bearing
+invariants if the algorithm is ever touched: the Haar butterfly uses the pywt
+`'haar'` convention `cH=(a+b-c-d)/2`, `cV=(a-b+c-d)/2` (NOT the H/V-swapped
+form the design dossier text mistakenly listed — pywt was verified directly);
+the DLM numerator pools `rest^3` WITHOUT abs while the denominator pools the ref
+detail WITH abs (`pyr_features.py:54/61`); the 2x downscale is OpenCV
+`INTER_CUBIC` (Keys cubic `a=-0.75`), the dominant cross-host parity risk —
+keep `-ffp-contract=off`.
 
 ## feat/metric-niqe (2026-06-14)
 Rebase impact: **low**. Adds four fork-only files
