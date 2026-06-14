@@ -138,22 +138,37 @@ end-of-stream flush.
 | AVX-512        | Supported | `x86/motion_v2_avx512.c`                                               |
 | NEON (AArch64) | Supported | `arm64/motion_v2_neon.c` (ADR-0145, bit-exact)                         |
 | CUDA           | Supported | `feature/cuda/integer_motion_v2_cuda.c` (emits `motion3_v2_score`, ADR-1108) |
-| SYCL           | Supported | `feature/sycl/integer_motion_v2_sycl.cpp` (`sad` + `motion2_v2` only)  |
-| HIP            | Supported | `feature/hip/integer_motion_v2_hip.c` (`sad` + `motion2_v2` only)      |
-| Metal          | Supported | `feature/metal/integer_motion_v2_metal.mm` (`sad` + `motion2_v2` only) |
+| SYCL           | Supported | `feature/sycl/integer_motion_v2_sycl.cpp` (emits `motion3_v2_score`, ADR-1108) |
+| HIP            | Supported | `feature/hip/integer_motion_v2_hip.c` (emits `motion3_v2_score`, ADR-1108) |
+| Metal          | Supported | `feature/metal/integer_motion_v2_metal.mm` (emits `motion3_v2_score`, ADR-1108) |
 
 All GPU kernels use the CPU `integer_motion_v2.c::mirror` high-edge formula
 (`2 * size - idx - 2`). The CUDA, SYCL, HIP, and Metal twins are **bit-exact**
 vs the scalar CPU reference on the cross-backend gate fixture. (The Vulkan
 backend was removed in ADR-0726.)
 
-The CUDA twin (`motion_v2_cuda`) additionally emits `motion3_v2_score` and
-accepts the `motion_blend_factor` / `motion_blend_offset` / `motion_max_val` /
-`motion_moving_average` options, host-side over the kernel's SAD scores
-(ADR-1108) — bit-exact vs the CPU `motion_v2` flush (`max_abs_diff = 0.0` on
-the Netflix `src01` 576×324 pair, 48 frames, default and non-default options).
-The SYCL, HIP, and Metal twins still emit only `sad` + `motion2_v2`; their
-`motion3_v2` ports are tracked as follow-ups.
+**All four GPU twins** (`motion_v2_cuda` / `_sycl` / `_hip` / `_metal`) now emit
+`motion3_v2_score` and accept the `motion_blend_factor` /
+`motion_blend_offset` / `motion_max_val` / `motion_moving_average` options,
+computed host-side over the kernel's SAD scores via the shared
+`motion_blend_tools.h` helper (ADR-1108). The
+CUDA twin landed first (#909); the SYCL, HIP, and Metal twins mirror its
+`flush_fex` post-process byte-for-byte. Parity vs the CPU `motion_v2` flush is
+**bit-exact at default options** (`max_abs_diff = 0.0` on the Netflix `src01`
+576×324 pair, 48 frames) — verified by the per-backend
+`test_<backend>_motion_v2_parity` tests, which assert `motion_v2_sad`,
+`motion2_v2`, and `motion3_v2` at `places=4` and skip cleanly when the backend
+device is absent. The host-side post-process is identical across all GPU twins,
+so any change to the CPU `motion_v2` flush blend/clip/seed/moving-average logic
+must be mirrored into all four in the same PR.
+
+> **`motion_fps_weight` note.** All GPU twins store the *raw* SAD as
+> `motion_v2_sad_score` and apply `motion_fps_weight` in the host-side flush
+> (the CPU reference bakes it into the stored SAD instead). The two paths are
+> identical at the default `motion_fps_weight = 1.0`; under a non-default weight
+> the GPU twins diverge from the CPU `sad`/`motion3` by the weight factor on the
+> seed frame. This is a pre-existing GPU-twin behaviour (the GPU SAD has always
+> been raw), consistent across all four backends.
 
 ---
 

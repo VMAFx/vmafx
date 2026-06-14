@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/gpu-motion3-v2-twins (2026-06-14)
+Rebase impact: **low**. Touches three fork-added GPU wrappers
+(`core/src/feature/{sycl,hip,metal}/integer_motion_v2_{sycl.cpp,hip.c,metal.mm}`)
+— none have an upstream twin, so no upstream-sync conflict — plus their
+fork-only parity tests (`core/test/test_{sycl,hip,metal}_motion_v2_parity.c`).
+Each mirrors the merged CUDA `flush_fex_cuda` motion3_v2 post-process
+(`fix/cuda-motion-v2-motion3-emission`, ADR-1108) byte-for-byte and reuses the
+shared `motion_blend_tools.h` helper; no GPU kernel is modified. Edits
+`docs/metrics/motion.md`, `docs/state.md`, `docs/rebase-notes.md`,
+`changelog.d/` — keep both additive hunks if a concurrent branch also edits
+them. No public libvmaf C-API, ABI, header, CLI, or `meson_options.txt` change,
+so no ffmpeg-patch (CLAUDE §12 r14) impact. If a future change alters the CPU
+`integer_motion_v2.c::flush` blend/clip/seed/moving-average logic, all four GPU
+twins (cuda/sycl/hip/metal) must be updated in the same PR to keep the
+`places=4` parity gate green.
+
 ## fix/cuda-motion-v2-motion3-emission (2026-06-13)
 Rebase impact: **low**. Touches `core/src/feature/cuda/integer_motion_v2_cuda.c`
 (fork-added CUDA wrapper — no upstream twin, so no upstream-sync conflict),
