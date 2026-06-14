@@ -8,12 +8,13 @@ HTTP endpoints (`/healthz`, `/readyz`, `/metrics`, `/v1/score`).
 ## Quick start
 
 ```bash
-# Local dev (requires core/build-cpu to exist)
-go run ./cmd/vmafx-server \
-    --vmaf-binary core/build-cpu/tools/vmaf \
-    --model-dir   model/ \
-    --port        8080 \
-    --grpc-port   50051
+# Local dev (requires core/build-cpu to exist). Configuration is via the VMAFX_
+# environment variables only — the pre-fx CLI flags were removed in ADR-1119.
+VMAFX_VMAF_BINARY=core/build-cpu/tools/vmaf \
+VMAFX_MODEL_DIR=model/ \
+VMAFX_HTTP_ADDR=:8080 \
+VMAFX_GRPC_LISTEN=:50051 \
+go run ./cmd/vmafx-server
 
 # Docker
 docker build -f Dockerfile.go-server -t vmafx-server:dev .
@@ -97,16 +98,36 @@ table, the `pkg/score` client wrapper, and a worked client loop.
 
 ## Configuration
 
-All settings accept CLI flags and 12-factor environment variables.
-CLI flags take precedence over environment variables.
+The server runs on the [golusoris](https://github.com/golusoris/golusoris) fx
+framework (ADR-1119). Configuration is read by golusoris' koanf layer from
+12-factor environment variables under the `VMAFX_` prefix; `_` in the env name
+maps to the `.` config-key separator (so `VMAFX_HTTP_ADDR` sets `http.addr`).
+The framework owns the listen sockets, so the HTTP and gRPC settings take **full
+listen addresses** (`:8080`), not bare port numbers. There are no CLI flags.
 
-| Flag | Env var | Default | Description |
+| Env var | Config key | Default | Description |
 |---|---|---|---|
-| `--port` | `VMAFX_PORT` | `8080` | HTTP listen port |
-| `--grpc-port` | `VMAFX_GRPC_PORT` | `50051` | gRPC listen port |
-| `--log-level` | `VMAFX_LOG_LEVEL` | `INFO` | slog level (DEBUG/INFO/WARN/ERROR) |
-| `--vmaf-binary` | `VMAFX_VMAF_BINARY` | _(PATH lookup)_ | Path to the `vmaf` CLI binary |
-| `--model-dir` | `VMAFX_MODEL_DIR` | _(none)_ | Directory containing VMAF `.json` model files |
+| `VMAFX_HTTP_ADDR` | `http.addr` | `:8080` | HTTP listen address |
+| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `:50051` | gRPC listen address |
+| `VMAFX_LOG_LEVEL` | `log.level` | `INFO` | slog level (DEBUG/INFO/WARN/ERROR) |
+| `VMAFX_VMAF_BINARY` | `vmaf.binary` | _(PATH lookup)_ | Path to the `vmaf` CLI binary |
+| `VMAFX_MODEL_DIR` | `model.dir` | _(none)_ | Directory containing VMAF `.json` model files |
+| `VMAFX_MAX_CONCURRENT_SCORES` | `max.concurrent.scores` | _(NumCPU)_ | Cap on simultaneous `Score` calls |
+
+> **Config-key note.** The golusoris env transform strips the `VMAFX_` prefix,
+> lowercases, and turns **every** `_` into the `.` delimiter — so
+> `VMAFX_MODEL_DIR` lands under `model.dir` (not `vmaf.model_dir`) and
+> `VMAFX_MAX_CONCURRENT_SCORES` under `max.concurrent.scores`. Set the
+> environment variables shown in the first column; the second column is the
+> resulting koanf key.
+>
+> **Breaking change (ADR-1119).** The pre-fx server used `VMAFX_PORT` /
+> `VMAFX_GRPC_PORT` (bare port numbers) plus `--port` / `--grpc-port` CLI flags.
+> These are gone. Use `VMAFX_HTTP_ADDR` / `VMAFX_GRPC_LISTEN` with full listen
+> addresses (`:8080`). The historical gRPC default `:50051` is **preserved**:
+> golusoris' `grpc.Module` defaults `grpc.listen` to `:9090`, but `vmafx-server`
+> restores `:50051` when `VMAFX_GRPC_LISTEN` is unset so existing clients keep
+> working without reconfiguration.
 
 ## Prometheus metrics
 

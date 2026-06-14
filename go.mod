@@ -16,6 +16,7 @@ require (
 require (
 	github.com/cilium/ebpf v0.21.0
 	github.com/getkin/kin-openapi v0.140.0
+	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-logr/logr v1.4.3
 	github.com/golusoris/golusoris v0.4.0
 	github.com/google/uuid v1.6.0
@@ -76,7 +77,6 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
-	github.com/go-chi/chi/v5 v5.3.0 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -105,6 +105,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
+	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect

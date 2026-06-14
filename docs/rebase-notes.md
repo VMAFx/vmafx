@@ -46071,3 +46071,31 @@ External coupling note: the 10 deband knobs are a verbatim copy of the
 Pelorus ADR-0110 control-plane contract; a contract change on the Pelorus
 side requires a matching edit to `filter_adapters/pelorus_deband.py` in a
 coordinated two-repo PR (the conformance test fails on drift).
+
+## feat/golusoris-server (2026-06-14)
+no rebase impact for upstream Netflix/vmaf syncs: every file touched is
+fork-local Go and has no upstream counterpart. The change rewrites
+`cmd/vmafx-server/*.go` (the Go gRPC + HTTP scoring service) onto the golusoris
+fx framework (ADR-1119), updates `Dockerfile.go-server`, `docs/server/grpc.md`,
+and `docs/usage/env-vars.md` for the env-var rename, and adds an `app_test.go`
+fxtest lifecycle test. None of these exist in upstream; libvmaf's C sources,
+public headers, and the Netflix golden gate are untouched.
+
+Rebase-sensitive invariants (fork-internal, NOT upstream):
+- **R1 cgo-lifetime stop order.** The composition root forces the
+  `*libvmaf.Scorer` to be constructed BEFORE the golusoris `*grpc.Server`
+  (an `fx.Invoke(func(_ *libvmaf.Scorer) {})` registered ahead of the gRPC
+  service-registration invoke, plus scorer-first arg order in that invoke).
+  fx runs OnStop hooks in reverse construction order, so this guarantees the
+  gRPC server's `GracefulStop` drains in-flight `Score` calls before the
+  scorer's `Close()` releases C resources. `TestStopOrderScorerAfterGRPC`
+  pins this; do not reorder those invokes or flip the arg order without
+  re-deriving the ordering (see the empirical probe rationale in the PR).
+- **go.mod pin.** `github.com/golusoris/golusoris` stays at `v0.3.1`. The fx
+  migration only adds transitive `// indirect` deps (`go-grpc-middleware/v2`)
+  and promotes `go-chi/chi/v5` from indirect to direct via `go mod tidy`; it
+  does not bump the golusoris pin or touch `internal/app/bootstrap`.
+- **Env-var contract.** `VMAFX_HTTP_ADDR` / `VMAFX_GRPC_LISTEN` map to the
+  golusoris `http.addr` / `grpc.listen` keys under the `VMAFX_` prefix. If
+  golusoris renames those keys, the server's documented env contract must
+  follow.

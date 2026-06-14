@@ -4,6 +4,25 @@
 // cmd/vmafx-server/grpc_recovery_test.go — regression test for ADR-0978:
 // a panic inside a gRPC handler must surface to the client as
 // codes.Internal, not crash the server process.
+//
+// SCOPE: this file exercises the fork-local recoveryUnary/StreamInterceptor
+// helpers (the test harnesses across this package wrap their standalone
+// grpc.Server instances with them). Those helpers DO map a panic to
+// codes.Internal, and that is what the assertions below verify.
+//
+// ⚠ PRODUCTION GAP — codes.Internal panic-mapping is NOT yet honoured on the
+// golusoris-served path (ADR-1119). golusoris grpc.Module bakes in
+// go-grpc-middleware/v2 grpcrecovery with NO recovery handler. Verified against
+// the pinned module (go-grpc-middleware/v2 v2.3.3): the default handler returns
+// a *recovery.PanicError — a plain error, not a status error — which gRPC's
+// status.FromError maps to codes.Unknown, NOT codes.Internal. So a real panic
+// on the production gRPC server currently surfaces to clients as codes.Unknown.
+// Restoring the ADR-0978 codes.Internal contract on the production path requires
+// golusoris to expose interceptor injection (or a recovery-handler option) —
+// tracked upstream in golusoris#225 (which already blocks the controller). Until
+// that lands the contract holds only for the standalone test servers in this
+// package; do NOT mistake these green tests for production coverage of the
+// codes.Internal mapping. See the package AGENTS.md note 5.
 
 //go:build cgo
 

@@ -21,8 +21,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/VMAFx/vmafx/gen/go/oapi"
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
+	"github.com/VMAFx/vmafx/gen/go/oapi"
 )
 
 // restAdapter translates oapi.ServerInterface calls into gRPC handler calls.

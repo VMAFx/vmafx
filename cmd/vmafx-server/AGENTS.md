@@ -41,16 +41,25 @@ Go gRPC + HTTP scoring service. See [ADR-0703](../../docs/adr/0703-vmafx-server-
    regenerates the unimplemented stub on every proto change.
 
 5. **Panic-recovery interceptors are not optional** (`grpc_server.go`,
-   ADR-0978): `runGRPC` constructs the `grpc.Server` with
-   `grpc.UnaryInterceptor(recoveryUnaryInterceptor(log))` +
-   `grpc.StreamInterceptor(recoveryStreamInterceptor(log))`. These
-   convert a panic inside any handler (notably the cgo libvmaf call
-   path) into a `codes.Internal` reply, keeping the server alive across
-   the bad request. Removing either interceptor reverts to "one bad
-   request kills the whole server" — every handler panic would tear
-   down the gRPC worker goroutine and crash the process. If the
-   gRPC server constructor is refactored, the interceptors MUST be
-   carried through.
+   ADR-0978): a panic inside any handler (notably the cgo libvmaf call
+   path) MUST be converted into a `codes.Internal` reply, keeping the
+   server alive across the bad request — otherwise one bad request tears
+   down the gRPC worker goroutine and crashes the process. The golusoris
+   `grpc.Module` (ADR-1119) keeps the process ALIVE — it bakes
+   `go-grpc-middleware/v2` recovery interceptors into the `*grpc.Server`
+   it constructs — but it installs them with NO recovery handler.
+   ⚠ Verified against the pin (go-grpc-middleware/v2 v2.3.3): the
+   default returns a `*recovery.PanicError` (a plain error), which gRPC
+   maps to `codes.Unknown`, NOT `codes.Internal`. So on the production
+   golusoris-served path a panic currently surfaces as `codes.Unknown`;
+   the ADR-0978 `codes.Internal` mapping is BLOCKED on golusoris#225
+   (interceptor / recovery-handler injection — the same gap that blocks
+   the controller). The fork-local `recoveryUnaryInterceptor` /
+   `recoveryStreamInterceptor` helpers (which DO map to `codes.Internal`)
+   are retained for the package's own test harnesses (they build
+   standalone `grpc.Server`s) and as the drop-in once #225 lands or if
+   gRPC construction is ever moved back off golusoris. They MUST be
+   carried through in either case.
 
 6. **`POST /v1/score` body cap** (`http_server.go`, ADR-0978): the
    handler wraps `r.Body` in `http.MaxBytesReader(w, r.Body,
@@ -59,3 +68,30 @@ Go gRPC + HTTP scoring service. See [ADR-0703](../../docs/adr/0703-vmafx-server-
    DoS even after TLS / auth lands. If the legitimate request shape
    ever needs to exceed 1 MiB (e.g. inlined picture data), raise
    `maxScoreRequestBodyBytes` rather than removing the cap.
+
+7. **R1 — scorer closes AFTER the gRPC server drains** (`main.go`,
+   ADR-1119): the cgo `*libvmaf.Scorer` (and the per-call
+   `StreamScorer` C contexts) must be released only after in-flight
+   `Score` / `ScoreStream` RPCs have drained. The composition root
+   guarantees this by forcing the scorer to be **constructed before**
+   the golusoris `*grpc.Server` — there is an explicit
+   `fx.Invoke(func(_ *libvmaf.Scorer) {})` registered ahead of the gRPC
+   service-registration invoke, and that registration invoke lists the
+   scorer-bearing `*grpcServer` before the `*grpc.Server` arg. Because
+   fx runs OnStop hooks in reverse of construction order, the gRPC
+   server's `GracefulStop` then runs before the scorer's `Close()`.
+   `TestStopOrderScorerAfterGRPC` (`app_test.go`) pins this. Do NOT
+   reorder those invokes, flip the arg order, or move the scorer's Close
+   hook to a `*grpc.Server`-gated invoke — any of those inverts the
+   construction order and closes the scorer while RPCs are still in
+   flight (use-after-free of C resources).
+
+8. **golusoris config sub-keys** (`main.go`, ADR-1119): the server reads
+   its listen addresses from the golusoris HTTP/gRPC modules
+   (`http.addr` → `VMAFX_HTTP_ADDR`, `grpc.listen` → `VMAFX_GRPC_LISTEN`)
+   and its domain settings from `vmaf.binary` / `vmaf.model_dir` /
+   `max_concurrent_scores`. These replace the pre-fx `VMAFX_PORT` /
+   `VMAFX_GRPC_PORT` bare-port contract. The `fx.Replace(config.Options{
+   EnvPrefix: "VMAFX_", ...})` line is load-bearing — without it the
+   graph reads the framework default `APP_` prefix and ignores every
+   `VMAFX_*` var.

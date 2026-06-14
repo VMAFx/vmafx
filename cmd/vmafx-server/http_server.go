@@ -21,7 +21,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -266,51 +265,4 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(v)
-}
-
-// runHTTP starts the HTTP listener on addr and blocks until ctx is cancelled.
-func runHTTP(
-	ctx context.Context,
-	addr string,
-	srv *httpServer,
-	log *slog.Logger,
-) error {
-	mux := http.NewServeMux()
-	srv.routes(mux)
-
-	httpSrv := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-		// ReadTimeout covers the full request-body read. MaxBytesReader in
-		// handleScore() bounds body size; ReadTimeout adds a wall-clock guard
-		// against slow-body attacks (SA1016-class / ADR-1065).
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 120 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
-
-	log.Info("HTTP server started", "addr", addr)
-
-	// Graceful shutdown on context cancellation. The shutdown goroutine
-	// intentionally derives its timeout context from context.Background()
-	// rather than the request-scoped ctx: that ctx has *just* been cancelled
-	// (we drain <-ctx.Done() below), so propagating it to Shutdown would
-	// abort the in-flight-request drain immediately. This is the canonical
-	// net/http graceful-shutdown pattern.
-	// #nosec G118 -- intentional: see graceful-shutdown comment above.
-	go func() { //nolint:contextcheck // see graceful-shutdown comment above
-		<-ctx.Done()
-		log.Info("HTTP graceful shutdown initiated")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), observability.GracefulShutdownTimeout)
-		defer cancel()
-		if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-			log.Error("HTTP shutdown error", "error", err)
-		}
-	}()
-
-	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("http serve: %w", err)
-	}
-	return nil
 }

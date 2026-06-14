@@ -20,11 +20,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"runtime/debug"
 	"time"
 
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -348,74 +346,6 @@ func streamScorerStatus(err error) error {
 	default:
 		return status.Errorf(codes.Internal, "%v", err)
 	}
-}
-
-// runGRPC starts the gRPC listener on addr (e.g. ":50051") and blocks
-// until ctx is cancelled.  It creates a new grpcServer internally.
-//
-// Deprecated: prefer runGRPCWithServer when a shared grpcServer instance is
-// needed (e.g. to wire the REST adapter per ADR-0797).
-func runGRPC(
-	ctx context.Context,
-	addr string,
-	scorer *libvmaf.Scorer,
-	metrics *observability.Metrics,
-	log *slog.Logger,
-) error {
-	return runGRPCWithServer(ctx, addr, newGRPCServer(scorer, metrics, log))
-}
-
-// runGRPCWithServer starts the gRPC listener on addr using a pre-constructed
-// grpcServer.  This allows the same grpcServer instance to be shared with the
-// HTTP REST adapter (ADR-0797) so business logic is not duplicated.
-func runGRPCWithServer(
-	ctx context.Context,
-	addr string,
-	impl *grpcServer,
-) error {
-	lis, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("grpc listen %s: %w", addr, err)
-	}
-
-	// ADR-0927: OTel stats handler instruments every gRPC RPC with a server
-	// span and extracts the W3C traceparent / tracestate headers from the
-	// incoming request metadata so server spans appear as children of the
-	// calling trace.  No-op when InitOTel installed no-op providers.
-	// ADR-0978: panic-recovery interceptors so a misbehaving handler surfaces
-	// as codes.Internal rather than crashing the process.
-	srv := grpc.NewServer(
-		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.UnaryInterceptor(recoveryUnaryInterceptor(impl.log)),
-		grpc.StreamInterceptor(recoveryStreamInterceptor(impl.log)),
-	)
-	vmafxv1.RegisterVmafxScoringServer(srv, impl)
-
-	impl.log.Info("gRPC server started", "addr", addr)
-
-	// Shut down gracefully when ctx is cancelled.
-	// GracefulStop waits for all in-flight RPCs; add a hard-stop fallback so a
-	// stuck streaming RPC cannot block shutdown forever (r3-signal finding).
-	go func() {
-		<-ctx.Done()
-		impl.log.Info("gRPC graceful shutdown initiated")
-		done := make(chan struct{})
-		go func() {
-			srv.GracefulStop()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(observability.GracefulShutdownTimeout):
-			impl.log.Warn("gRPC graceful stop timed out; forcing hard stop")
-			srv.Stop()
-		}
-	}()
-
-	if err := srv.Serve(lis); err != nil {
-		return fmt.Errorf("grpc serve: %w", err)
-	}
-	return nil
 }
 
 // recoveryUnaryInterceptor returns a UnaryServerInterceptor that converts a

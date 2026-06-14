@@ -16,17 +16,22 @@
 #   docker run --rm \
 #     -e VMAFX_VMAF_BINARY=/usr/local/bin/vmaf \
 #     -e VMAFX_MODEL_DIR=/usr/local/share/vmafx/model \
-#     -p 8080:8080 -p 50051:50051 \
+#     -p 8080:8080 -p 9090:9090 \
 #     ghcr.io/vmafx/vmafx-server:dev
 #
-# Environment variables:
-#   VMAFX_PORT        HTTP listen port (default 8080)
-#   VMAFX_GRPC_PORT   gRPC listen port (default 50051)
-#   VMAFX_LOG_LEVEL   slog level (default INFO)
-#   VMAFX_VMAF_BINARY path to vmaf CLI binary
-#   VMAFX_MODEL_DIR   directory containing VMAF .json model files
+# Environment variables (golusoris fx framework config, ADR-1119; full listen
+# addresses, not bare ports):
+#   VMAFX_HTTP_ADDR    HTTP listen address (default :8080; golusoris http.addr)
+#   VMAFX_GRPC_LISTEN  gRPC listen address (default :9090; golusoris grpc.listen)
+#   VMAFX_LOG_LEVEL    slog level (default INFO)
+#   VMAFX_VMAF_BINARY  path to vmaf CLI binary
+#   VMAFX_MODEL_DIR    directory containing VMAF .json model files
+#
+# Note: replaces the pre-fx VMAFX_PORT / VMAFX_GRPC_PORT (bare ports). The gRPC
+# default address moved from :50051 to golusoris' :9090.
 #
 # ADR-0703: vmafx-server Go gRPC + HTTP service.
+# ADR-1119: golusoris fx framework adoption.
 
 # ---------------------------------------------------------------------------
 # Stage 1 — go-builder: compile the Go server
@@ -136,7 +141,7 @@ ENV VMAFX_VMAF_BINARY="/usr/local/bin/vmaf"
 ENV VMAFX_MODEL_DIR="/usr/local/share/vmafx/model"
 
 EXPOSE 8080
-EXPOSE 50051
+EXPOSE 9090
 
 # Run as non-root user; distroless provides nonroot (uid 65532).
 USER nonroot

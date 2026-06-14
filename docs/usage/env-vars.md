@@ -77,15 +77,28 @@ overrides not listed here.
 
 ## Go server (`cmd/vmafx-server`)
 
-The server reads the same set as the controller, minus `VMAFX_DB_PATH`.
+The server runs on the [golusoris](https://github.com/golusoris/golusoris) fx
+framework (ADR-1119). Config is loaded by golusoris' koanf layer under the
+`VMAFX_` env prefix with `_` mapping to the `.` key separator
+(`VMAFX_HTTP_ADDR` → `http.addr`). The framework's HTTP and gRPC modules own the
+listen addresses, so the server takes **full listen addresses** (`:8080`), not
+bare port numbers.
+
+> **Breaking change (ADR-1119).** The pre-fx server used `VMAFX_PORT` /
+> `VMAFX_GRPC_PORT` (bare port numbers, e.g. `8080`). These are replaced by
+> `VMAFX_HTTP_ADDR` / `VMAFX_GRPC_LISTEN`, which take a full listen address
+> (e.g. `:8080`, `:9090`). Update deployment manifests accordingly. Note the
+> default gRPC address changed from `:50051` to golusoris' `:9090`.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `VMAFX_GRPC_PORT` | port | `50051` | gRPC listen port. |
-| `VMAFX_LOG_LEVEL` | string | `INFO` | Structured log level. |
-| `VMAFX_MODEL_DIR` | path | _(none)_ | Model directory passed to the libvmaf scorer. |
-| `VMAFX_PORT` | port | `8080` | HTTP listen port. |
-| `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | Path to the `vmaf` CLI binary. |
+| `VMAFX_HTTP_ADDR` | `host:port` | `:8080` | HTTP listen address (serves `/healthz`, `/livez`, `/readyz`, `/startupz`, `/metrics`, `/v1/score`, `/v1/health`, `/v1/ready`, `/swagger`). golusoris key `http.addr`. |
+| `VMAFX_GRPC_LISTEN` | `host:port` | `:9090` | gRPC listen address (`VmafxScoring`). golusoris key `grpc.listen`. |
+| `VMAFX_LOG_LEVEL` | string | `INFO` | Structured log level: `DEBUG`, `INFO`, `WARN`, `ERROR`. |
+| `VMAFX_MODEL_DIR` | path | _(none)_ | Model directory passed to the libvmaf scorer (golusoris key `vmaf.model_dir`). |
+| `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | Path to the `vmaf` CLI binary (golusoris key `vmaf.binary`). |
+| `VMAFX_MAX_CONCURRENT_SCORES` | int | _(NumCPU)_ | Cap on simultaneous in-flight `Score` calls; excess requests get HTTP 429 / gRPC `ResourceExhausted`. |
+| `VMAFX_SWAGGER_TRY_IT_OUT` | string | _(off)_ | Set to `1` to enable the Swagger UI "try it out" live-execution path. |
 
 ---
 
