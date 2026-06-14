@@ -14,6 +14,12 @@ registration: extern + list entry in `core/src/feature/feature_extractor.c`
 change → no ffmpeg-patch impact. Mirrors the CPU `integer_adm.c` fixed-point
 DWT pipeline — if that algorithm changes, the Metal twin must follow.
 
+## fix/mcp-schema-bitdepth-vulkan (2026-06-14)
+no rebase impact: edits the fork-only MCP servers (cmd/vmafx-mcp/tools.go,
+mcp-server/vmaf-mcp/src/vmaf_mcp/server.py) + docs/mcp/tools.md + state.md +
+changelog. No libvmaf C-API/CLI change. The bitdepth enum + backend enum must
+stay in sync between the Python and Go MCP tool schemas (byte-compatible pair).
+
 ## feat/metal-integer-vif (2026-06-14)
 Rebase impact: **low**. Adds three fork-only files
 (`core/src/feature/metal/integer_vif.metal`, `integer_vif_metal.mm`,

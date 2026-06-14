@@ -25,7 +25,7 @@ Score one `(ref, dis)` YUV pair and return the full VMAF JSON report.
 | `pixfmt`    | `"420" \| "422" \| "444"`              | yes      | —                       | YUV chroma subsampling                         |
 | `bitdepth`  | `8 \| 10 \| 12 \| 16`                  | yes      | —                       | Bit depth of both YUV files                    |
 | `model`     | string                                 | no       | `"version=vmaf_v0.6.1"` | Any `--model` grammar from the CLI             |
-| `backend`   | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "vulkan" \| "hip" \| "metal"` | no       | `"auto"`                | Backend selection; `auto` lets vmaf pick. Requesting a backend the local binary does not advertise raises (no silent fallback — ADR-0495). |
+| `backend`   | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | no       | `"auto"`                | Backend selection; `auto` lets vmaf pick. Requesting a backend the local binary does not advertise raises (no silent fallback — ADR-0495). |
 | `precision` | string                                 | no       | `"17"`                  | Passed straight to `--precision` (see below)   |
 
 ### Behaviour
@@ -49,7 +49,7 @@ fields injected by the MCP layer (ADR-0495):
   this equals the requested value (the wrapper refuses to silently
   fall back); for `backend="auto"` it's a best-effort label
   inferred from the JSON's per-backend key-count signature
-  (`"cpu"` / `"gpu"` / `"vulkan"`).
+  (`"cpu"` / `"gpu"`).
 
 When the local `vmaf` binary does not advertise the requested
 backend, the wrapper raises rather than running CPU silently
@@ -164,7 +164,6 @@ built with.
   "cpu":    true,
   "cuda":   true,
   "sycl":   false,
-  "vulkan": false,
   "hip":    false,
   "metal":  false
 }
@@ -365,7 +364,7 @@ wants narrative context for low-quality regions. Added in
 | `pixfmt`   | `"420"` / `"422"` / `"444"`                         | yes      | —                        |
 | `bitdepth` | 8 / 10 / 12 / 16                                    | yes      | —                        |
 | `model`    | string                                              | no       | `"version=vmaf_v0.6.1"`  |
-| `backend`  | `"auto"` / `"cpu"` / `"cuda"` / `"sycl"` / `"vulkan"` / `"hip"` / `"metal"` | no       | `"auto"`                 |
+| `backend`  | `"auto"` / `"cpu"` / `"cuda"` / `"sycl"` / `"hip"` / `"metal"` | no       | `"auto"`                 |
 | `n`        | integer in `[1, 32]`                                | no       | `5`                      |
 
 ### Behaviour
@@ -423,7 +422,7 @@ no fixture files are required. Added in [ADR-0613](../adr/0613-mcp-p0-iserror-an
 
 | Field     | Type                                                          | Required | Notes                        |
 |-----------|---------------------------------------------------------------|----------|------------------------------|
-| `backend` | `"cpu" \| "cuda" \| "sycl" \| "vulkan" \| "hip" \| "metal"` | yes      | Backend to health-check      |
+| `backend` | `"cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | yes      | Backend to health-check      |
 
 ### Response body
 
@@ -475,7 +474,6 @@ confirming which fork build is running before scoring. Added in
     "cpu":    true,
     "cuda":   true,
     "sycl":   false,
-    "vulkan": false,
     "hip":    false,
     "metal":  false
   },
@@ -514,7 +512,7 @@ Requires `ffmpeg` and `ffprobe` on `PATH`.
 | `reference_encoded`  | string (path)                                                   | yes      | —                        | Reference encoded video; must be under an allowlisted root |
 | `distorted_encoded`  | string (path)                                                   | yes      | —                        | Distorted encoded video; same allowlist        |
 | `model`              | string                                                          | no       | `"version=vmaf_v0.6.1"`  | Any `--model` grammar from the CLI             |
-| `backend`            | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "vulkan" \| "hip" \| "metal"` | no       | `"auto"`        | Backend selection                              |
+| `backend`            | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "hip" \| "metal"` | no       | `"auto"`        | Backend selection                              |
 | `subsample`          | integer `≥ 1`                                                   | no       | `1`                      | Score every Nth frame (1 = every frame)        |
 | `precision`          | string                                                          | no       | `"17"`                   | Passed to `--precision`                        |
 
@@ -608,7 +606,7 @@ parses the C source directly.  Added in [ADR-0638](../adr/0638-mcp-p1-vmaftune-e
 ```
 
 `name` is the string the extractor registers as its canonical identifier.
-`backend` is inferred from the symbol-name suffix (`_cuda`, `_sycl`, `_vulkan`,
+`backend` is inferred from the symbol-name suffix (`_cuda`, `_sycl`,
 `_hip`, `_metal`; everything else is `cpu`).
 
 ### Errors — none (returns `{"extractors": []}` if the source tree is absent).

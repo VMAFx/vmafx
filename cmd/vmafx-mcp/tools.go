@@ -41,7 +41,7 @@ func registerTools(srv *mcp.Server) {
 				"width":    schemaObj{"type": "integer", "minimum": 1},
 				"height":   schemaObj{"type": "integer", "minimum": 1},
 				"pixfmt":   schemaObj{"type": "string", "enum": []string{"420", "422", "444"}},
-				"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12}},
+				"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12, 16}},
 				"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
 				"backend": schemaObj{
 					"type":    "string",
@@ -133,7 +133,7 @@ func registerTools(srv *mcp.Server) {
 				"width":    schemaObj{"type": "integer", "minimum": 1},
 				"height":   schemaObj{"type": "integer", "minimum": 1},
 				"pixfmt":   schemaObj{"type": "string", "enum": []string{"420", "422", "444"}},
-				"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12}},
+				"bitdepth": schemaObj{"type": "integer", "enum": []int{8, 10, 12, 16}},
 				"model":    schemaObj{"type": "string", "default": "version=vmaf_v0.6.1"},
 				"backend": schemaObj{
 					"type":    "string",

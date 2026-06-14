@@ -2152,7 +2152,7 @@ async def _list_tools() -> list[Tool]:
                     "width": {"type": "integer", "minimum": 1},
                     "height": {"type": "integer", "minimum": 1},
                     "pixfmt": {"type": "string", "enum": ["420", "422", "444"]},
-                    "bitdepth": {"type": "integer", "enum": [8, 10, 12]},
+                    "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16]},
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
@@ -2247,7 +2247,7 @@ async def _list_tools() -> list[Tool]:
                     "width": {"type": "integer", "minimum": 1},
                     "height": {"type": "integer", "minimum": 1},
                     "pixfmt": {"type": "string", "enum": ["420", "422", "444"]},
-                    "bitdepth": {"type": "integer", "enum": [8, 10, 12]},
+                    "bitdepth": {"type": "integer", "enum": [8, 10, 12, 16]},
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
