@@ -196,6 +196,7 @@ nav:
       - DNN sessions: api/dnn.md
       - GPU (CUDA / SYCL): api/gpu.md
       - MCP C API: api/mcp.md
+      - Pelorus interop ABI (vendored): api/pelorus-interop.md
       - vmaftune.ladder: api/ladder.md
       - vmaftune.predict: api/predictor.md
   - Metrics:
@@ -1254,6 +1255,8 @@ nav:
         - "ADR-1108: cuda-motion-v2-motion3-emission": adr/1108-cuda-motion-v2-motion3-emission.md
         - "ADR-1109: vmafx-node-serve-scoring-grpc": adr/1109-vmafx-node-serve-scoring-grpc.md
         - "ADR-1112: niqe-nr-metric": adr/1112-niqe-nr-metric.md
+        - "ADR-1110: delta-e-itp-metric": adr/1110-delta-e-itp-metric.md
+        - "ADR-1113: vendor-pelorus-interop-abi": adr/1113-vendor-pelorus-interop-abi.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

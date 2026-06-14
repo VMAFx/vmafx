@@ -59,7 +59,9 @@ repos:
     hooks:
       - id: clang-format
         types_or: [c, c++, cuda]
-        exclude: '^subprojects/|^core/test/data/'
+        # core/src/interop + core/include/libvmaf/pelorus = vendored read-only
+        # mirror of VMAFx/pelorus (ADR-1113); must stay byte-identical, never reformatted.
+        exclude: '^subprojects/|^core/test/data/|^core/src/interop/|^core/include/libvmaf/pelorus/'
 
   - repo: https://github.com/psf/black
     rev: 26.5.1

@@ -18,9 +18,16 @@ set -euo pipefail
 MIN_LINES="${MIN_LINES:-20}"
 
 # Collect fork-added files by header scan.
+#
+# Vendored verbatim mirrors are excluded: they carry a "Copyright 2026 Lusoris"
+# header (same license) but are byte-identical to their single source of truth
+# and cannot absorb fork-local asserts without breaking the sync guard. The
+# Pelorus interop ABI (core/src/interop/pelorus_*.c, ADR-1113) is the only such
+# mirror today; pelorus uses explicit `return PEL_ERR_*` validation instead of
+# assert(). Fix lint findings upstream in pelorus and re-sync.
 mapfile -t FILES < <(
   git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' \
-    2>/dev/null | while read -r f; do
+    2>/dev/null | grep -v '^core/src/interop/pelorus_' | while read -r f; do
     [ -f "$f" ] || continue
     if head -n 20 "$f" 2>/dev/null | grep -qE "(Lusoris and Claude|Copyright [0-9]+ Lusoris)"; then
       echo "$f"

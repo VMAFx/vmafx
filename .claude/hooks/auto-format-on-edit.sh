@@ -17,9 +17,15 @@ fi
 
 [[ -z "$file" || ! -f "$file" ]] && exit 0
 
-# Never reformat files that are explicitly upstream-touched or generated
+# Never reformat files that are explicitly upstream-touched or generated.
+# Vendored verbatim mirrors (pelorus interop ABI, ADR-1113) must stay
+# byte-identical to their single source of truth — clang-format would
+# rewrap them and break the sync guard (scripts/sync-pelorus-interop.sh).
 case "$file" in
   */subprojects/* | */build/* | */testdata/*.yuv | *.json | *.onnx | *.pkl)
+    exit 0
+    ;;
+  */core/src/interop/pelorus_* | */core/include/libvmaf/pelorus/*)
     exit 0
     ;;
 esac

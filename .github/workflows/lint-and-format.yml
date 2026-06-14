@@ -165,6 +165,13 @@ jobs:
           # lint a file that no longer exists on disk; without this filter
           # the script passes a missing path to clang-tidy and fails with
           # `clang-diagnostic-error: no such file or directory`.
+          #   - core/src/interop/pelorus_*.c +
+          #     core/include/libvmaf/pelorus/ — vendored verbatim mirror of
+          #     the Pelorus interop ABI (ADR-1113), byte-identical to its
+          #     single source of truth; cannot absorb fork-local lint fixes
+          #     without breaking scripts/sync-pelorus-interop.sh. Same posture
+          #     as core/src/svm.cpp (vendored, excluded). Fix upstream in
+          #     pelorus and re-sync.
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d \
               "origin/${PR_BASE_REF}...HEAD" \
@@ -186,6 +193,8 @@ jobs:
               | grep -v '^core/test/test_hip' \
               | grep -v '^core/test/fuzz/' \
               | grep -v '^core/src/compat/win32/' \
+              | grep -v '^core/src/interop/pelorus_' \
+              | grep -v '^core/include/libvmaf/pelorus/' \
               | tr '\n' ' ')
           elif [ "$GH_EVENT_NAME" = "push" ]; then
             before="$PUSH_BEFORE_SHA"
@@ -213,6 +222,8 @@ jobs:
               | grep -v '^core/test/test_hip' \
               | grep -v '^core/test/fuzz/' \
               | grep -v '^core/src/compat/win32/' \
+              | grep -v '^core/src/interop/pelorus_' \
+              | grep -v '^core/include/libvmaf/pelorus/' \
               | tr '\n' ' ')
               else
                 files=""
@@ -237,6 +248,8 @@ jobs:
               | grep -v '^core/test/test_hip' \
               | grep -v '^core/test/fuzz/' \
               | grep -v '^core/src/compat/win32/' \
+              | grep -v '^core/src/interop/pelorus_' \
+              | grep -v '^core/include/libvmaf/pelorus/' \
               | tr '\n' ' ')
             fi
           else
@@ -261,6 +274,8 @@ jobs:
               | grep -v '^core/test/test_hip' \
               | grep -v '^core/test/fuzz/' \
               | grep -v '^core/src/compat/win32/' \
+              | grep -v '^core/src/interop/pelorus_' \
+              | grep -v '^core/include/libvmaf/pelorus/' \
               | tr '\n' ' ')
           fi
           [ -z "$files" ] && { echo "no C/C++ changes"; exit 0; }

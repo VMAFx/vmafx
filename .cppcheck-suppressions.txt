@@ -6,6 +6,17 @@
 # Upstream Netflix svm.cpp — entirely vendored, not modified by fork.
 *:core/src/svm.cpp
 
+# Vendored Pelorus interop ABI — verbatim mirror of VMAFx/pelorus@835e097,
+# byte-identical to its single source of truth (ADR-1113). Not editable by the
+# fork; lint findings must be fixed upstream in pelorus and re-synced via
+# scripts/sync-pelorus-interop.sh.
+*:core/src/interop/pelorus_interop.c
+*:core/src/interop/pelorus_deband_params.c
+*:core/src/interop/pelorus_version.c
+*:core/include/libvmaf/pelorus/interop.h
+*:core/include/libvmaf/pelorus/pelorus.h
+*:core/include/libvmaf/pelorus/deband.h
+
 # False positives we've reviewed; revisit yearly.
 unusedFunction:core/src/feature/*_avx512.c
 unusedFunction:core/src/feature/*_avx2.c

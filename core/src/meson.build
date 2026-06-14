@@ -1918,6 +1918,14 @@ libvmaf_sources = [
     src_dir + 'thread_locale.c',
     # gpu_picture_pool.cpp compiled as gpu_picture_pool_cpp23_lib (ADR-0768)
     # gpu_dispatch_env.cpp is compiled as gpu_dispatch_env_cpp23_lib (ADR-0858)
+    # ADR-1113: vendored Pelorus <-> vmafx interop ABI (pack/parse, deband
+    # param contract, version/result-string accessors). CPU-only, dependency-
+    # free, NO Vulkan. Verbatim mirror of VMAFx/pelorus@835e097 — DO NOT EDIT;
+    # re-sync via scripts/sync-pelorus-interop.sh. See
+    # docs/api/pelorus-interop.md.
+    src_dir + 'interop/pelorus_interop.c',
+    src_dir + 'interop/pelorus_deband_params.c',
+    src_dir + 'interop/pelorus_version.c',
     # ADR-0707: TAD Rust extractor C wrapper — compiled directly into
     # the libvmaf library() target so it is not included in the static
     # intermediate libs (avoids unresolved vmafx_tad_* refs in test

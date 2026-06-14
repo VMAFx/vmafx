@@ -356,6 +356,19 @@ test_pu21 = executable('test_pu21',
     dependencies: [math_lib, pthread_dependency, gpu_all_deps],
 )
 
+# ADR-1113: SHARED Pelorus <-> vmafx interop ABI conformance fixture. Compiles
+# the vendored pack/parse + deband-param + version sources DIRECTLY (no libvmaf
+# link, and no test.c — this fixture carries its own main()), proving vmafx's
+# vendored parser is byte-identical to pelorus's writer. Same 7 vectors both
+# repos run; see docs/api/pelorus-interop.md + scripts/sync-pelorus-interop.sh.
+test_pelorus_interop = executable('test_pelorus_interop',
+    ['test_pelorus_interop.c',
+     '../src/interop/pelorus_interop.c',
+     '../src/interop/pelorus_deband_params.c',
+     '../src/interop/pelorus_version.c'],
+    include_directories : [libvmaf_inc, test_inc],
+)
+
 # LPIPS registration tests — verify feature wiring without depending on a
 # real ORT session. Links against libvmaf_feature_static_lib for the
 # extractor list and pulls in opt.cpp for the VmafOption typedef.
@@ -2793,6 +2806,7 @@ test('test_feature', test_feature, suite : ['fast'])
 test('test_ciede', test_ciede, suite : ['fast'])
 test('test_delta_e_itp', test_delta_e_itp, suite : ['fast'])
 test('test_pu21', test_pu21, suite : ['fast'])
+test('test_pelorus_interop', test_pelorus_interop, suite : ['fast'])
 test('test_lpips', test_lpips, suite : ['fast'])
 test('test_dists', test_dists, suite : ['fast'])
 test('test_fastdvdnet_pre', test_fastdvdnet_pre, suite : ['fast'])

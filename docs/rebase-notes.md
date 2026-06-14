@@ -45901,3 +45901,24 @@ upstream Netflix/vmaf. The docs/adr/ and docs/backends/hip/overview.md changes
 are also fork-local. Any future upstream sync that adds upstream files under
 core/src/feature/hip/ would require manual review of boundary semantics, but
 no mechanical conflict is possible.
+
+## feat/pelorus-vendor-interop-abi (2026-06-14)
+no rebase impact for upstream Netflix/vmaf syncs: every file is fork-local and
+has no upstream counterpart. New vendored mirror under
+`core/src/interop/pelorus_*.c` + `core/include/libvmaf/pelorus/*.h` (sourced
+from `VMAFx/pelorus@835e097`, NOT Netflix upstream), the conformance fixture
+`core/test/test_pelorus_interop.c`, `scripts/sync-pelorus-interop.sh`, and the
+docs/ADR/changelog/state deliverables. The `core/src/meson.build` and
+`core/test/meson.build` edits append to fork-local lists (the libvmaf source
+list and the test registrations) and do not touch upstream-mirrored build
+logic.
+
+Rebase-sensitive invariant (cross-repo, NOT upstream): the vendored files are a
+byte-identical mirror pinned to `VMAFx/pelorus@835e097`. Never hand-edit them —
+clang-format/clang-tidy are deliberately excluded for these paths
+(dir-local `.clang-tidy`, `.cppcheck-suppressions.txt`, the `make format`
+path filters, the assertion-density skip, and the `auto-format-on-edit.sh`
+PostToolUse hook skip). A pelorus ABI bump is re-synced via
+`scripts/sync-pelorus-interop.sh --update` (which also bumps the pin), never by
+editing the mirror in place. If a future change rewrites these files, re-run the
+sync guard + the conformance fixture before merging.
