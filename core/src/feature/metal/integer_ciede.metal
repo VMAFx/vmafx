@@ -70,7 +70,9 @@ static inline float ciede_srgb_to_linear(float c)
 static inline float ciede_xyz_to_lab_map(float t)
 {
     if (t > 0.008856f) {
-        return cbrt(t);
+        // MSL has no cbrt(); t is strictly positive on this branch so
+        // pow(t, 1/3) is the exact cube root within parity tolerance.
+        return pow(t, 1.0f / 3.0f);
     }
     return 7.787f * t + (16.0f / 116.0f);
 }
