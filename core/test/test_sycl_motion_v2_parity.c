@@ -18,7 +18,8 @@
 
 /*
  * SYCL kernel coverage round 2 — motion_v2 CPU vs. SYCL parity test
- * (ADR-0884).
+ * (ADR-0884), extended for the motion3_v2 host-side post-process
+ * (ADR-1108).
  *
  * Motion-v2 (Netflix's SAD-based motion energy refinement, ADR-0349
  * lineage) is computed by integer_motion_v2.c (CPU scalar) and by
@@ -28,9 +29,12 @@
  * sad/motion2_v2/motion3_v2 score triple via a different reduction
  * topology.
  *
- * The headline score for this parity gate is
- * VMAF_integer_feature_motion2_v2_score at frame index 1 (the first
- * frame where the temporal blend has a previous-frame reference).
+ * motion_v2 emits the SAD score every frame, and the motion2_v2 +
+ * motion3_v2 scores host-side in flush() for every collected frame
+ * (the motion3_v2 post-process was added to the SYCL twin in ADR-1108,
+ * mirroring the CUDA twin landed in #909). All three must match the CPU
+ * reference at frame index 1 (the first frame where the temporal blend
+ * has a previous-frame reference) at places=4.
  *
  * Skip behaviour: if vmaf_sycl_state_init() fails (no oneAPI runtime
  * or no device visible) the test emits "[skip: no SYCL device]" and
@@ -58,6 +62,16 @@
 #define NUM_FRAMES 2u
 #define PARITY_TOL 1e-4
 
+/* The full motion_v2 feature triple — SAD, motion2_v2, and the
+ * host-side motion3_v2 post-process (ADR-1108). All three are checked
+ * for CPU-vs-SYCL parity at frame index 1. */
+static const char *const MOTION_V2_FEATURES[] = {
+    "VMAF_integer_feature_motion_v2_sad_score",
+    "VMAF_integer_feature_motion2_v2_score",
+    "VMAF_integer_feature_motion3_v2_score",
+};
+#define NUM_MOTION_V2_FEATURES 3u
+
 static int fill_pic(VmafPicture *pic, unsigned frame_idx)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
@@ -79,7 +93,7 @@ static int fill_pic(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-static char *run_cpu_motion_v2(double *score)
+static char *run_cpu_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
@@ -99,16 +113,19 @@ static char *run_cpu_motion_v2(double *score)
     }
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion2_v2_score", score, 1u);
-    mu_assert("CPU: motion2_v2 score at idx=1 missing", !err);
+    for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++) {
+        err = vmaf_feature_score_at_index(vmaf, MOTION_V2_FEATURES[k], &scores_out[k], 1u);
+        mu_assert("CPU: motion_v2 feature score at idx=1 missing", !err);
+    }
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
 }
 
-static char *run_sycl_motion_v2(double *score)
+static char *run_sycl_motion_v2(double scores_out[NUM_MOTION_V2_FEATURES])
 {
-    *score = NAN;
+    for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++)
+        scores_out[k] = NAN;
     VmafSyclState *sycl_state = NULL;
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
@@ -136,8 +153,10 @@ static char *run_sycl_motion_v2(double *score)
     }
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion2_v2_score", score, 1u);
-    mu_assert("SYCL: motion2_v2 score at idx=1 missing", !err);
+    for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++) {
+        err = vmaf_feature_score_at_index(vmaf, MOTION_V2_FEATURES[k], &scores_out[k], 1u);
+        mu_assert("SYCL: motion_v2 feature score at idx=1 missing", !err);
+    }
     err = vmaf_close(vmaf);
     mu_assert("SYCL: vmaf_close failed", !err);
     vmaf_sycl_state_free(&sycl_state);
@@ -154,23 +173,34 @@ static char *test_motion_v2_sycl_registered(void)
 
 static char *test_motion_v2_cpu_sycl_parity(void)
 {
-    double cpu_score = 0.0;
-    double sycl_score = NAN;
-    char *msg = run_cpu_motion_v2(&cpu_score);
+    double cpu[NUM_MOTION_V2_FEATURES] = {0.0, 0.0, 0.0};
+    double gpu[NUM_MOTION_V2_FEATURES] = {NAN, NAN, NAN};
+
+    char *msg = run_cpu_motion_v2(cpu);
     if (msg)
         return msg;
-    msg = run_sycl_motion_v2(&sycl_score);
+    msg = run_sycl_motion_v2(gpu);
     if (msg)
         return msg;
-    if (isnan(sycl_score))
+    if (isnan(gpu[0]))
         return NULL;
-    double delta = fabs(cpu_score - sycl_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\nmotion2_v2 parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, sycl_score, delta, PARITY_TOL);
+
+    /* motion3_v2 (index 2) must be a real, finite score on the SYCL
+     * path — guards against the pre-ADR-1108 gap where the SYCL twin
+     * never emitted it (vmaf_feature_score_at_index would have failed). */
+    mu_assert("SYCL motion3_v2 must be finite (ADR-1108)", isfinite(gpu[2]));
+    mu_assert("CPU motion3_v2 must be finite", isfinite(cpu[2]));
+
+    for (unsigned k = 0; k < NUM_MOTION_V2_FEATURES; k++) {
+        const double delta = fabs(cpu[k] - gpu[k]);
+        if (delta > PARITY_TOL) {
+            (void)fprintf(stderr,
+                          "\nmotion_v2 parity FAIL (%s): cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
+                          MOTION_V2_FEATURES[k], cpu[k], gpu[k], delta, PARITY_TOL);
+        }
+        mu_assert("motion_v2 CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
+                  delta <= PARITY_TOL);
     }
-    mu_assert("motion2_v2 CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
-              delta <= PARITY_TOL);
     return NULL;
 }
 
