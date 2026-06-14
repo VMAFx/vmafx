@@ -496,9 +496,21 @@ int main(void) {
 endif
 
 json_model_c_sources = []
+# BRISQUE (ADR-1115) ships its LIVE-trained libsvm EPSILON_SVR "allmodel" the
+# same way the VMAF JSON models are baked in: an `xxd -i` custom_target embeds
+# model/other_models/brisque_live.model into a build-dir-only C TU. The 343 KB
+# text model expands to ~2.1 MB of C, which is why it is NEVER committed (the
+# old committed header tripped the 1 MB check-added-large-files gate). The
+# generated symbols src_brisque_live_model[] / _len are declared in
+# feature/brisque_model.h and consumed by feature/brisque.c.
+brisque_model_c_sources = []
 built_in_models_enabled = get_option('built_in_models') == true
 float_enabled = get_option('enable_float') == true
 cdata.set10('VMAF_FLOAT_FEATURES', float_enabled)
+# Default: BRISQUE embed off. Flipped to 1 below only when the model embed
+# custom_target actually runs (built_in_models AND xxd supports -n). brisque.c
+# uses this to choose between the built-in buffer and the runtime model_path.
+cdata.set10('VMAF_BRISQUE_BUILT_IN_MODEL', false)
 
 if built_in_models_enabled
     xxd = find_program('xxd', required: false)
@@ -543,6 +555,29 @@ if built_in_models_enabled
                   command : command,
             )
         endforeach
+
+        # BRISQUE allmodel embed (ADR-1115). Same xxd pipeline as the JSON
+        # models above; the model carries no .json extension so it is handled
+        # separately. xxd's -n sanitiser maps "src_brisque_live.model" to the
+        # C identifier src_brisque_live_model (dots -> underscores), matching
+        # the externs declared in feature/brisque_model.h. Requires -n support
+        # (no plain-xxd fallback): the symbol name is load-bearing, so when
+        # xxd lacks -n we skip the embed and brisque.c relies on the runtime
+        # `model_path` option instead.
+        if xdd_supports_n
+            brisque_model_file = 'other_models/brisque_live.model'
+            brisque_model_c_sources += custom_target(
+                  'brisque_live_model',
+                  output : 'brisque_live.model.c',
+                  input : configure_file(
+                    input : model_dir + brisque_model_file,
+                    output : 'brisque_live.model',
+                    copy: true
+                  ),
+                  command : [xxd, '-i', '-n', 'src_@PLAINNAME@', '@INPUT@', '@OUTPUT@'],
+            )
+            cdata.set10('VMAF_BRISQUE_BUILT_IN_MODEL', true)
+        endif
 
         cdata.set10('VMAF_BUILT_IN_MODELS', built_in_models_enabled)
     endif
@@ -1554,6 +1589,11 @@ libvmaf_feature_sources = [
     # touch the golden float_ssim.c. See docs/adr/<NNNN>-pu21-hdr-metric.md.
     feature_src_dir + 'pu21.c',
     feature_src_dir + 'pu21_ssim.c',
+    # BRISQUE (no-reference, opinion-aware, ADR-1115) — scalar CPU extractor;
+    # bundled LIVE-trained EPSILON_SVR model embedded as brisque_model.h,
+    # numeric kernels in brisque_math.h. Predicts via the vendored libsvm
+    # (svm.cpp / svm.h), proving the "extractor owns its own SVR model" pattern.
+    feature_src_dir + 'brisque.c',
     feature_src_dir + 'common/alignment.c',
     feature_src_dir + 'mkdirp.c',
 
@@ -1755,7 +1795,11 @@ libvmaf_ssimulacra2_static_lib = static_library(
 
 libvmaf_feature_static_lib = static_library(
     'libvmaf_feature',
-    libvmaf_feature_sources + hip_sources + hip_hsaco_sources + metal_sources,
+    # The BRISQUE allmodel embed (ADR-1115) lives here so that every consumer
+    # of feature_brisque.c.o (libvmaf and the several test executables that
+    # extract the feature lib's objects) resolves src_brisque_live_model[]
+    # without each having to list the generated TU separately.
+    libvmaf_feature_sources + brisque_model_c_sources + hip_sources + hip_hsaco_sources + metal_sources,
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     c_args : vmaf_cflags_common + _libvmaf_feature_icx_args,
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps],

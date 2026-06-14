@@ -52,6 +52,10 @@ extern VmafFeatureExtractor vmaf_fex_float_ms_ssim;
 extern VmafFeatureExtractor vmaf_fex_ssim;
 extern VmafFeatureExtractor vmaf_fex_ssimulacra2;
 extern VmafFeatureExtractor vmaf_fex_niqe;
+/* BRISQUE no-reference, opinion-aware spatial IQA (ADR-1115). Scalar CPU
+ * extractor; bundled LIVE-trained EPSILON_SVR model embedded as
+ * brisque_model.h, numeric kernels in brisque_math.h. */
+extern VmafFeatureExtractor vmaf_fex_brisque;
 extern VmafFeatureExtractor vmaf_fex_ciede;
 extern VmafFeatureExtractor vmaf_fex_delta_e_itp;
 /* PU21 HDR perceptual adapter (PU-PSNR + PU-SSIM, PQ input only).
@@ -231,8 +235,8 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_float_moment, &vmaf_fex_speed_chroma, &vmaf_fex_speed_temporal,
 #endif
     &vmaf_fex_float_ms_ssim, &vmaf_fex_float_ssim, &vmaf_fex_ssim, &vmaf_fex_ssimulacra2,
-    &vmaf_fex_niqe, &vmaf_fex_ciede, &vmaf_fex_delta_e_itp, &vmaf_fex_pu21, &vmaf_fex_psnr,
-    &vmaf_fex_psnr_hvs, &vmaf_fex_integer_adm, &vmaf_fex_integer_motion,
+    &vmaf_fex_niqe, &vmaf_fex_brisque, &vmaf_fex_ciede, &vmaf_fex_delta_e_itp, &vmaf_fex_pu21,
+    &vmaf_fex_psnr, &vmaf_fex_psnr_hvs, &vmaf_fex_integer_adm, &vmaf_fex_integer_motion,
     &vmaf_fex_integer_motion_v2, &vmaf_fex_integer_vif, &vmaf_fex_cambi,
 #if HAVE_SYCL
     /* SYCL before CUDA: when multiple GPU backends are compiled in,

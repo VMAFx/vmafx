@@ -202,6 +202,7 @@ nav:
   - Metrics:
       - Features: metrics/features.md
       - ANSNR (removed): metrics/ansnr.md
+      - BRISQUE: metrics/brisque.md
       - CAMBI: metrics/cambi.md
       - Delta E ITP (HDR colour): metrics/delta_e_itp.md
       - DISTS: metrics/dists.md

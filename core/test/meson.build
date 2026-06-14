@@ -792,6 +792,35 @@ test_niqe = executable('test_niqe',
     ] + wave8_opt_only_objects
 )
 
+# BRISQUE (no-reference, opinion-aware, ADR-1115): brisque_math.h unit oracles +
+# an end-to-end score oracle driven through the public extractor-context API
+# against frame 0 of testdata/ref_576x324_48f.yuv (natural uncompressed content,
+# cross-platform stable — the original dis frame 12 was sensitive to FP
+# summation order on near-flat MSCN fields, diverging ~0.1 units between x86 gcc
+# and macOS/ARM clang; see test_brisque.c for the full rationale).
+# The bundled LIVE allmodel is embedded as brisque_model.h and predicted via the
+# vendored libsvm — so libsvm_static_lib must be linked. Same object-extraction
+# pattern as test_niqe.
+test_brisque = executable('test_brisque',
+    ['test.c', 'test_brisque.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines +
+             ['-DBRISQUE_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"'],
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
 # Coverage round 2 — integer_vif.h log2_32 / log2_64 helpers exercised
 # directly (otherwise reached only via the AVX-512 hot path).
 test_integer_vif_log2 = executable('test_integer_vif_log2',
@@ -2837,6 +2866,7 @@ test('test_adm_coverage', test_adm_coverage, suite : ['fast'])
 test('test_psnr_hvs_coverage', test_psnr_hvs_coverage, suite : ['fast'])
 test('test_ssimulacra2_coverage', test_ssimulacra2_coverage, suite : ['fast'])
 test('test_niqe', test_niqe, suite : ['fast'])
+test('test_brisque', test_brisque, suite : ['fast'])
 test('test_integer_vif_log2', test_integer_vif_log2, suite : ['fast'])
 test('test_iqa_convolve_coverage', test_iqa_convolve_coverage, suite : ['fast'])
 test('test_barten_csf_coverage', test_barten_csf_coverage, suite : ['fast'])

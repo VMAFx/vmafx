@@ -773,6 +773,40 @@ after a port-upstream of any of these files.
   `core/test/test_niqe.c` against `testdata/scores_cpu_niqe.json` at places=4.
   niqe is registered in the **C++23 `feature_extractor.cpp`** registry, not the
   dead `feature_extractor.c` twin.
+- **BRISQUE MATLAB-pipeline parity invariants** (`brisque.c` /
+  `brisque_math.h` / `brisque_model.h`, fork-local, ADR-1115): BRISQUE has **no
+  upstream twin** — it replicates the **gregfreeman MATLAB pipeline that trained
+  the bundled model** (`model/other_models/brisque_live.model`), NOT the
+  widely-copied krshrimali C++ port. Four choices are **load-bearing** and must
+  survive any refactor (porting the C++ behaviour instead would mis-predict
+  against the trained model):
+  1. The MSCN field (features f1/f2) is fit with **GGD**, not AGGD
+     (`brisque_fit_ggd`). krshrimali uses AGGD — a bug vs the paper Table I and
+     the trained model.
+  2. The Gaussian window uses **sigma = 7/6** (`brisque_build_window`), not the
+     truncated `1.166` from the C++ port.
+  3. The half-resolution downscale is **MATLAB antialiased bicubic**
+     (`brisque_resize_coeffs`, scale 0.5, kernel width 8 → fixed 10 taps,
+     symmetric-reflect index map), not OpenCV INTER_CUBIC.
+  4. Range-scaling uses the **inline `computescore.cpp` `min_[36]`/`max_[36]`
+     arrays** baked into `brisque.c` — NOT the conflicting `allrange` file in the
+     same upstream repo (which the reference code never reads; substituting it
+     corrupts every score). No output clamp. Prediction is plain `svm_predict`
+     (== `svm_predict_probability` for EPSILON_SVR).
+  The AGGD fit excludes exact zeros from both sign buckets (strict `x<0` /
+  `x>0`, MATLAB semantics — unlike NIQE, which buckets zeros right). The model
+  is **embedded at build time** by an `xxd -i` Meson `custom_target` over
+  `model/other_models/brisque_live.model` (same path as libvmaf's JSON models;
+  symbols `src_brisque_live_model[]` / `_len`, declared in `brisque_model.h`) —
+  the big C array is NOT committed (it exceeds the 1 MB large-file gate; only
+  the binary model + the tiny declaration header live in-tree). `init()` parses
+  that buffer via `svm_parse_model_from_buffer`, or, if the `model_path` option
+  is set, loads an on-disk model via `svm_load_model`. The end-to-end gate is
+  `core/test/test_brisque.c` against
+  `testdata/scores_cpu_brisque.json` (snapshotted because the AGGD strict-sign
+  fit is FP-summation-order-sensitive on near-flat content). First feature
+  extractor to consume the vendored libsvm. Registered in the **C++23
+  `feature_extractor.cpp`** registry.
 
 ## Governing ADRs
 

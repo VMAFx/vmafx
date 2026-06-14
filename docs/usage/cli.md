@@ -101,7 +101,14 @@ consumes). Syntax is the same colon-delimited key/value form as `--model`:
 --feature cambi
 --feature ciede
 --feature psnr_hvs
+--feature brisque
+--feature brisque=model_path=/path/to/brisque_live.model
 ```
+
+The `brisque` no-reference metric ships its trained model embedded in the
+binary, so it needs no extra arguments; `model_path` overrides it with an
+on-disk libsvm model (and is required only for builds with `built_in_models`
+disabled). See [../metrics/brisque.md](../metrics/brisque.md).
 
 See [../metrics/features.md](../metrics/features.md) for the full list of feature
 identifiers and per-feature options.

@@ -1,6 +1,40 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/metric-brisque (2026-06-14)
+Rebase impact: **low**. Adds four fork-only files
+(`core/src/feature/brisque.c`, `brisque_math.h`, `brisque_model.h`,
+`core/test/test_brisque.c`) plus the vendored model + provenance
+(`model/other_models/brisque_live.model`, `NOTICE-brisque`,
+`model/brisque_live_card.md`) — no
+upstream twin (BRISQUE is fork-added; the model is the LIVE-lab `allmodel`
+bundled under a documented research-use exception, ADR-1115). The model is
+embedded into the binary at build time via an `xxd -i` Meson `custom_target`
+(the same mechanism libvmaf's JSON models use; `brisque_model.h` only declares
+the generated `src_brisque_live_model[]` / `_len` externs), so the giant byte
+array never enters the tree — keeping it under the 1 MB large-file gate. Additive
+registration: one `extern VmafFeatureExtractor vmaf_fex_brisque;` + one
+`feature_extractor_list[]` entry in `core/src/feature/feature_extractor.cpp`
+(the LIVE C++23 registry, NOT the dead `feature_extractor.c` twin), a model
+embed `custom_target` + one source line in `core/src/meson.build`, one
+`executable()` (linking the generated model TU) + one `test()` in
+`core/test/meson.build`. Edits `docs/metrics/brisque.md` (new), `mkdocs.yml`
+(BRISQUE nav row), `docs/state.md`, `docs/rebase-notes.md`, `changelog.d/`,
+`core/src/feature/AGENTS.md` (invariant note), `testdata/scores_cpu_brisque.json`
+(new), `docs/research/1101-brisque-nr-metric.md` (new), and the ADR index
+(`docs/adr/1115-brisque-nr-metric.md` + fragment + `_order.txt` + README row).
+CPU-only scalar extractor; no public C-API / ABI / CLI flag /
+`meson_options.txt` change → **no ffmpeg-patch impact** (reachable via the
+existing generic `--feature` path). First feature-extractor consumer of the
+vendored libsvm (`core/src/svm.cpp`/`svm.h`) — if a future upstream sync changes
+the libsvm parser/predict ABI, `brisque.c`'s `svm_parse_model_from_buffer` +
+`svm_predict` calls must be re-checked alongside `predict.c`. Load-bearing
+invariants if the algorithm is ever touched: GGD (not AGGD) for the MSCN field,
+Gaussian sigma=7/6 (not 1.166), MATLAB antialiased bicubic (not INTER_CUBIC),
+the inline range arrays (not `allrange`), no output clamp — all required for
+parity with the bundled trained model (see `core/src/feature/AGENTS.md` and
+ADR-1115).
+
 ## feat/metric-niqe (2026-06-14)
 Rebase impact: **low**. Adds four fork-only files
 (`core/src/feature/niqe.c`, `niqe_math.h`, `niqe_model.h`,
