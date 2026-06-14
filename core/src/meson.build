@@ -1546,6 +1546,9 @@ libvmaf_feature_sources = [
     feature_src_dir + 'integer_vif.c',
     feature_src_dir + 'ciede.c',
     feature_src_dir + 'delta_e_itp.c',
+    # NIQE (no-reference, ADR-1112) — scalar CPU extractor; pristine MVG model
+    # embedded as niqe_model.h, numeric kernels in niqe_math.h.
+    feature_src_dir + 'niqe.c',
     feature_src_dir + 'common/alignment.c',
     feature_src_dir + 'mkdirp.c',
 

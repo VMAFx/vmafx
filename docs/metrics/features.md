@@ -49,6 +49,7 @@ limitations in the same PR as the code.
 | MS-SSIM            | `float_ms_ssim` | No            | `float_ms_ssim` (+ per-scale L/C/S if enabled)                                                 | AVX2, AVX-512, NEON       | CUDA, SYCL |
 | ANSNR              | `float_ansnr`   | No            | removed — `float_ansnr` / `float_anpsnr` no longer emitted                                     | —                         | — (extractor removed PR #38 / ADR-0865) |
 | SSIMULACRA 2       | `ssimulacra2`   | No            | `ssimulacra2`                                                                                  | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL, Metal |
+| [NIQE](niqe.md)    | `niqe`          | No            | `niqe` (no-reference; scores the distorted frame only)                                         | —                         | — |
 | Float moment       | `float_moment`  | No            | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd`     | AVX2, NEON                | CUDA, SYCL |
 | LPIPS (tiny-AI)    | `lpips`         | No            | `lpips`                                                                                        | —                         | via ORT EP³        |
 | DISTS-Sq (tiny-AI) | `dists_sq`      | No            | `dists_sq`                                                                                     | —                         | via ORT EP³        |

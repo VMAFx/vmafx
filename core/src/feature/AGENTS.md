@@ -751,6 +751,28 @@ green across rebases — re-run the
 -k test_run_vmaf python/test/vmafexec_test.py
 python/test/vmafexec_feature_extractor_test.py -m "not slow"` block
 after a port-upstream of any of these files.
+- **NIQE fork-pkl parity invariants** (`niqe.c` / `niqe_math.h` /
+  `niqe_model.h`, fork-local, ADR-1112): NIQE has **no upstream twin** — it
+  replicates the fork Python harness
+  (`compat/python-vmaf/core/noref_feature_extractor.py::NiqeNorefFeatureExtractor`),
+  not LIVE MATLAB or scikit-video. Two divergences from upstream NIQE are
+  **load-bearing** and must survive any refactor:
+  1. The AGGD mean parameter `N` carries a **trailing `*aggdratio`** factor
+     (`niqe_math.h::niqe_extract_aggd`). Upstream omits it; the pkl was
+     trained with it. Dropping it shifts `N` ~0.428 → ~0.245.
+  2. The MSCN maps (`niqe_compute_mscn` casts to `float`) **and** the PIL
+     bicubic half-resolution output (`niqe_bicubic_resize` final
+     `(double)(float)acc`) are **rounded through float32**. PIL returns a
+     float32 ('F'-mode) image and the harness quantizes the MSCN maps; without
+     these rounds the scale-2 features drift ~4e-7 and, through the
+     ill-conditioned averaged covariance, the score by ~1e-4.
+  The pristine model `niqe_model.h` is generated from
+  `model/other_models/niqe_v0.1.pkl` in the per-block **interleaved** feature
+  order (permutation in the header comment); the build-time checksums
+  (`mu.sum`, `trace(cov)`, sha256 prefixes) pin it. The end-to-end gate is
+  `core/test/test_niqe.c` against `testdata/scores_cpu_niqe.json` at places=4.
+  niqe is registered in the **C++23 `feature_extractor.cpp`** registry, not the
+  dead `feature_extractor.c` twin.
 
 ## Governing ADRs
 

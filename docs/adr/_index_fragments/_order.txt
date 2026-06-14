@@ -727,3 +727,4 @@
 1107-threaded-multi-prev-ref-extractor-starvation
 1109-vmafx-node-serve-scoring-grpc
 1110-delta-e-itp-metric
+1112-niqe-nr-metric

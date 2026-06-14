@@ -742,6 +742,32 @@ test_ssimulacra2_coverage = executable('test_ssimulacra2_coverage',
     ] + wave8_opt_only_objects
 )
 
+# NIQE (no-reference, ADR-1112): niqe_math.h unit oracles + an end-to-end
+# score oracle driven through the public extractor-context API against frame 0
+# of the natural fixture testdata/ref_576x324_48f.yuv. NIQE_TESTDATA_DIR points
+# the test at the in-tree YUV (mirrors the JSON_MODEL_PATH precedent in
+# test_model). Reuses the libvmaf_feature_static_lib object-extraction pattern
+# from test_ssimulacra2_coverage so the niqe extractor + collector are linked.
+test_niqe = executable('test_niqe',
+    ['test.c', 'test_niqe.c', '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines +
+             ['-DNIQE_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"'],
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, gpu_all_deps,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
 # Coverage round 2 — integer_vif.h log2_32 / log2_64 helpers exercised
 # directly (otherwise reached only via the AVX-512 hot path).
 test_integer_vif_log2 = executable('test_integer_vif_log2',
@@ -2784,6 +2810,7 @@ test('test_ssim_coverage', test_ssim_coverage, suite : ['fast'])
 test('test_adm_coverage', test_adm_coverage, suite : ['fast'])
 test('test_psnr_hvs_coverage', test_psnr_hvs_coverage, suite : ['fast'])
 test('test_ssimulacra2_coverage', test_ssimulacra2_coverage, suite : ['fast'])
+test('test_niqe', test_niqe, suite : ['fast'])
 test('test_integer_vif_log2', test_integer_vif_log2, suite : ['fast'])
 test('test_iqa_convolve_coverage', test_iqa_convolve_coverage, suite : ['fast'])
 test('test_barten_csf_coverage', test_barten_csf_coverage, suite : ['fast'])

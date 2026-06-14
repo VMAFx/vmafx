@@ -51,6 +51,7 @@ extern VmafFeatureExtractor vmaf_fex_float_ssim;
 extern VmafFeatureExtractor vmaf_fex_float_ms_ssim;
 extern VmafFeatureExtractor vmaf_fex_ssim;
 extern VmafFeatureExtractor vmaf_fex_ssimulacra2;
+extern VmafFeatureExtractor vmaf_fex_niqe;
 extern VmafFeatureExtractor vmaf_fex_ciede;
 extern VmafFeatureExtractor vmaf_fex_delta_e_itp;
 extern VmafFeatureExtractor vmaf_fex_psnr;
@@ -227,7 +228,7 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_float_moment, &vmaf_fex_speed_chroma, &vmaf_fex_speed_temporal,
 #endif
     &vmaf_fex_float_ms_ssim, &vmaf_fex_float_ssim, &vmaf_fex_ssim, &vmaf_fex_ssimulacra2,
-    &vmaf_fex_ciede, &vmaf_fex_delta_e_itp, &vmaf_fex_psnr, &vmaf_fex_psnr_hvs,
+    &vmaf_fex_niqe, &vmaf_fex_ciede, &vmaf_fex_delta_e_itp, &vmaf_fex_psnr, &vmaf_fex_psnr_hvs,
     &vmaf_fex_integer_adm, &vmaf_fex_integer_motion, &vmaf_fex_integer_motion_v2,
     &vmaf_fex_integer_vif, &vmaf_fex_cambi,
 #if HAVE_SYCL

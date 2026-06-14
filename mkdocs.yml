@@ -206,6 +206,7 @@ nav:
       - DISTS: metrics/dists.md
       - Motion: metrics/motion.md
       - MS-SSIM: metrics/ms-ssim.md
+      - NIQE: metrics/niqe.md
       - PSNR-HVS: metrics/psnr-hvs.md
       - SpeedQA: metrics/speed_qa.md
       - SSIM: metrics/ssim.md
@@ -1000,22 +1001,258 @@ nav:
         - "ADR-0757: cuda-ms-ssim-vert-lcs-horiz-ldg": adr/0757-cuda-ms-ssim-vert-lcs-horiz-ldg.md
         - "ADR-0759: hip-adm-buffer-by-pointer": adr/0759-hip-adm-buffer-by-pointer.md
         - "ADR-0760: cuda-motion-ncu-multi-resolution": adr/0760-cuda-motion-ncu-multi-resolution.md
+        - "ADR-0761: cpp23-wave8-opt-read-json-model": adr/0761-cpp23-wave8-opt-read-json-model.md
         - "ADR-0762: cuda-ciede-ldg": adr/0762-cuda-ciede-ldg.md
+        - "ADR-0763: cuda-adm-decouple-ldg": adr/0763-cuda-adm-decouple-ldg.md
+        - "ADR-0764: psnr-hvs-ldg-launch-bounds": adr/0764-psnr-hvs-ldg-launch-bounds.md
+        - "ADR-0767: phase-4b8-c-abi-break-scoping": adr/0767-phase-4b8-c-abi-break-scoping.md
+        - "ADR-0768: cpp23-wave9-pool-env": adr/0768-cpp23-wave9-pool-env.md
+        - "ADR-0770: vmafx-tune-go-stage4-report": adr/0770-vmafx-tune-go-stage4-report.md
+        - "ADR-0771: simd-twin-inventory": adr/0771-simd-twin-inventory.md
+        - "ADR-0772: feature-extractor-cpp-rename": adr/0772-feature-extractor-cpp-rename.md
+        - "ADR-0773: cuda-adm-decouple-inline-ldg": adr/0773-cuda-adm-decouple-inline-ldg.md
+        - "ADR-0774: mcp-server-audit": adr/0774-mcp-server-audit.md
         - "ADR-0775: dnn-ort-audit": adr/0775-dnn-ort-audit.md
+        - "ADR-0777: thread-safety-audit-gpu-backends": adr/0777-thread-safety-audit-gpu-backends.md
+        - "ADR-0778: picture-pool-framesync-audit": adr/0778-picture-pool-framesync-audit.md
+        - "ADR-0779: ebpf-fuse-bypass": adr/0779-ebpf-fuse-bypass.md
+        - "ADR-0780: nolint-cluster-refactor": adr/0780-nolint-cluster-refactor.md
+        - "ADR-0781: sidecar-sgd-ema-online-trainer": adr/0781-sidecar-sgd-ema-online-trainer.md
+        - "ADR-0782: otel-tracing": adr/0782-otel-tracing.md
+        - "ADR-0783: k8s-e2e-integration-test-harness": adr/0783-k8s-e2e-integration-test-harness.md
+        - "ADR-0784: integer-ssim-avx2": adr/0784-integer-ssim-avx2.md
+        - "ADR-0786: vmafx-operator-stage2-reconcilers": adr/0786-vmafx-operator-stage2-reconcilers.md
+        - "ADR-0787: libvmaf-api-error-path-audit": adr/0787-libvmaf-api-error-path-audit.md
+        - "ADR-0788: doxygen-thread-safety-tags": adr/0788-doxygen-thread-safety-tags.md
+        - "ADR-0790: containerfile-layer-optimization": adr/0790-containerfile-layer-optimization.md
         - "ADR-0792: hardcoded-yuv-path-env-overrides": adr/0792-hardcoded-yuv-path-env-overrides.md
+        - "ADR-0793: nightly-workflow-audit": adr/0793-nightly-workflow-audit.md
+        - "ADR-0794: controller-multi-tenant-auth-gateway": adr/0794-controller-multi-tenant-auth-gateway.md
         - "ADR-0795: prev-ref-thread-safety": adr/0795-prev-ref-thread-safety.md
+        - "ADR-0797: openapi-rest-schema": adr/0797-openapi-rest-schema.md
       - "0800-0899 — Backfill / pending sweeps":
+        - "ADR-0802: ci-runner-image-standardization": adr/0802-ci-runner-image-standardization.md
+        - "ADR-0804: vmaf-context-get-backend": adr/0804-vmaf-context-get-backend.md
+        - "ADR-0806: feature-dictionary-ownership": adr/0806-feature-dictionary-ownership.md
+        - "ADR-0809: cli-cpp23-conversion": adr/0809-cli-cpp23-conversion.md
         - "ADR-0810: adr-0108-compliance-audit-2026-05-29": adr/0810-adr-0108-compliance-audit-2026-05-29.md
+        - "ADR-0811: security-codeql-go-pvr": adr/0811-security-codeql-go-pvr.md
+        - "ADR-0812: renovate-go-rust-scheduling": adr/0812-renovate-go-rust-scheduling.md
+        - "ADR-0815: operator-node-distroless-dockerfiles": adr/0815-operator-node-distroless-dockerfiles.md
+        - "ADR-0819: dev-container-ci-gate": adr/0819-dev-container-ci-gate.md
         - "ADR-0839: cpp23-shadow-const-fixes": adr/0839-cpp23-shadow-const-fixes.md
         - "ADR-0840: gpu-dispatch-toctou-fence": adr/0840-gpu-dispatch-toctou-fence.md
         - "ADR-0841: env-var-consolidation": adr/0841-env-var-consolidation.md
+        - "ADR-0844: float-adm-avx2-512-f2-f3": adr/0844-float-adm-avx2-512-f2-f3.md
+        - "ADR-0845: cuda-motion-launch-overhead": adr/0845-cuda-motion-launch-overhead.md
+        - "ADR-0848: per-surface-doc-compliance-audit": adr/0848-per-surface-doc-compliance-audit.md
+        - "ADR-0852: hip-speed-extractor-wiring": adr/0852-hip-speed-extractor-wiring.md
         - "ADR-0853: motion-avx2-remove-debug-macros": adr/0853-motion-avx2-remove-debug-macros.md
+        - "ADR-0854: motion-avx512-parity-tests": adr/0854-motion-avx512-parity-tests.md
+        - "ADR-0858: cpp23-gpu-dispatch-env": adr/0858-cpp23-gpu-dispatch-env.md
         - "ADR-0860: ffmpeg-patch-chain-no-op-vulkan-shim": adr/0860-ffmpeg-patch-chain-no-op-vulkan-shim.md
+        - "ADR-0861: vmafx-copyright-policy-drop-anthropic": adr/0861-vmafx-copyright-policy-drop-anthropic.md
+        - "ADR-0862: k150k-crash-restart-row-loss-consistency-check": adr/0862-k150k-crash-restart-row-loss-consistency-check.md
+        - "ADR-0865: ansnr-sunset-pre-vmaf-metric-drop": adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md
+        - "ADR-0866: wire-markdownlint-into-lint-pipeline": adr/0866-wire-markdownlint-into-lint-pipeline.md
+        - "ADR-0868: gpu-backend-kernel-coverage": adr/0868-gpu-backend-kernel-coverage.md
+        - "ADR-0869: sanitizer-pass-cleanup": adr/0869-sanitizer-pass-cleanup.md
+        - "ADR-0870: helm-values-schema-and-container-rebuild-audit": adr/0870-helm-values-schema-and-container-rebuild-audit.md
+        - "ADR-0871: ssim-dispatch-pthread-once": adr/0871-ssim-dispatch-pthread-once.md
+        - "ADR-0872: io-error-and-eintr-audit": adr/0872-io-error-and-eintr-audit.md
+        - "ADR-0873: arm64-neon-bit-exactness-audit": adr/0873-arm64-neon-bit-exactness-audit.md
+        - "ADR-0874: magic-number-audit-cert-int07c": adr/0874-magic-number-audit-cert-int07c.md
+        - "ADR-0875: github-actions-audit-2026-05-30": adr/0875-github-actions-audit-2026-05-30.md
+        - "ADR-0876: printf-format-portability-pri-macros": adr/0876-printf-format-portability-pri-macros.md
+        - "ADR-0877: error-code-consistency-audit": adr/0877-error-code-consistency-audit.md
+        - "ADR-0878: trivy-container-scan-baseline": adr/0878-trivy-container-scan-baseline.md
+        - "ADR-0879: python-dep-freshness-2026-05-30": adr/0879-python-dep-freshness-2026-05-30.md
+        - "ADR-0880: unused-testdata-debug-scripts-cleanup": adr/0880-unused-testdata-debug-scripts-cleanup.md
+        - "ADR-0881: coverage-overrides-audit-2026-05-30": adr/0881-coverage-overrides-audit-2026-05-30.md
+        - "ADR-0882: fuzz-target-audit-json-model-sidecar": adr/0882-fuzz-target-audit-json-model-sidecar.md
+        - "ADR-0883: hip-kernel-coverage-round2": adr/0883-hip-kernel-coverage-round2.md
+        - "ADR-0884: sycl-kernel-coverage-round2": adr/0884-sycl-kernel-coverage-round2.md
+        - "ADR-0886: cuda-kernel-coverage-round2": adr/0886-cuda-kernel-coverage-round2.md
         - "ADR-0887: vmaf-model-slopes-feature-mismatch-validation": adr/0887-vmaf-model-slopes-feature-mismatch-validation.md
+        - "ADR-0888: pyright-strict-audit": adr/0888-pyright-strict-audit.md
+        - "ADR-0889: libsvm-vendored-audit": adr/0889-libsvm-vendored-audit.md
+        - "ADR-0890: ci-concurrency-cost-audit": adr/0890-ci-concurrency-cost-audit.md
         - "ADR-0891: simd-bit-exact-round2-fmaf-libvmaf-feature-icx": adr/0891-simd-bit-exact-round2-fmaf-libvmaf-feature-icx.md
+        - "ADR-0892: conventional-commits-and-changelog-fragment-hygiene": adr/0892-conventional-commits-and-changelog-fragment-hygiene.md
+        - "ADR-0893: pre-commit-audit-2026-05-30": adr/0893-pre-commit-audit-2026-05-30.md
+        - "ADR-0899: bash-strict-mode-sweep": adr/0899-bash-strict-mode-sweep.md
       - "0900-0999 — Misc":
+        - "ADR-0901: governance-audit": adr/0901-governance-audit.md
+        - "ADR-0902: signing-and-attestation-audit": adr/0902-signing-and-attestation-audit.md
+        - "ADR-0903: wire-codecov-upload": adr/0903-wire-codecov-upload.md
+        - "ADR-0904: cargo-machete-ignore-build-deps": adr/0904-cargo-machete-ignore-build-deps.md
+        - "ADR-0905: gitignore-and-workflow-audit": adr/0905-gitignore-and-workflow-audit.md
+        - "ADR-0907: perf-regression-gate-wall-clock": adr/0907-perf-regression-gate-wall-clock.md
+        - "ADR-0908: slow-test-audit-2026-05-30": adr/0908-slow-test-audit-2026-05-30.md
+        - "ADR-0910: codespell-sweep-config": adr/0910-codespell-sweep-config.md
+        - "ADR-0911: init-py-export-completeness-audit": adr/0911-init-py-export-completeness-audit.md
+        - "ADR-0912: pixel-format-edge-coverage": adr/0912-pixel-format-edge-coverage.md
+        - "ADR-0913: changelog-renderer-splice-contract": adr/0913-changelog-renderer-splice-contract.md
+        - "ADR-0914: unified-python-test-orchestrator": adr/0914-unified-python-test-orchestrator.md
+        - "ADR-0915: clang-tidy-modernize-sweep": adr/0915-clang-tidy-modernize-sweep.md
+        - "ADR-0917: cargo-deny-supply-chain-policy": adr/0917-cargo-deny-supply-chain-policy.md
+        - "ADR-0918: llvm-ir-diff-harness": adr/0918-llvm-ir-diff-harness.md
+        - "ADR-0922: coverage-ratchet-aggressive": adr/0922-coverage-ratchet-aggressive.md
+        - "ADR-0923: buildkit-cache-mounts": adr/0923-buildkit-cache-mounts.md
+        - "ADR-0924: native-pre-commit-hooks": adr/0924-native-pre-commit-hooks.md
+        - "ADR-0925: go-generic-registry": adr/0925-go-generic-registry.md
+        - "ADR-0926: parquet-schema-v2": adr/0926-parquet-schema-v2.md
+        - "ADR-0927: opentelemetry-traces-metrics-phase1": adr/0927-opentelemetry-traces-metrics-phase1.md
+        - "ADR-0928: vmaf-picture-v2-explicit-backend-state": adr/0928-vmaf-picture-v2-explicit-backend-state.md
+        - "ADR-0929: rust-safe-binding-scaffold": adr/0929-rust-safe-binding-scaffold.md
+        - "ADR-0930: helm-networkpolicy-pss": adr/0930-helm-networkpolicy-pss.md
         - "ADR-0931: mcp-cgo-direct-replace-subprocess": adr/0931-mcp-cgo-direct-replace-subprocess.md
+        - "ADR-0932: iter-seq-adapter": adr/0932-iter-seq-adapter.md
+        - "ADR-0933: grpc-streaming-multi-frame-scoring": adr/0933-grpc-streaming-multi-frame-scoring.md
+        - "ADR-0934: dataclass-to-pydantic-configs": adr/0934-dataclass-to-pydantic-configs.md
+        - "ADR-0935: go-errors-join-slog-audit": adr/0935-go-errors-join-slog-audit.md
+        - "ADR-0936: pathlib-sweep-final": adr/0936-pathlib-sweep-final.md
         - "ADR-0937: mkdocs-nav-decade-buckets": adr/0937-mkdocs-nav-decade-buckets.md
+        - "ADR-0938: feature-extractor-coverage-round2": adr/0938-feature-extractor-coverage-round2.md
+        - "ADR-0939: skills-library-expansion": adr/0939-skills-library-expansion.md
+        - "ADR-0945: hip-kernel-coverage-round3": adr/0945-hip-kernel-coverage-round3.md
+        - "ADR-0946: sycl-kernel-coverage-round3": adr/0946-sycl-kernel-coverage-round3.md
+        - "ADR-0947: cuda-kernel-coverage-round3": adr/0947-cuda-kernel-coverage-round3.md
+        - "ADR-0948: feature-extractor-coverage-round3": adr/0948-feature-extractor-coverage-round3.md
+        - "ADR-0949: hip-motion3-parity-enosys-skip": adr/0949-hip-motion3-parity-enosys-skip.md
+        - "ADR-0950: hip-adm-parity-feature-name-and-enosys-skip": adr/0950-hip-adm-parity-feature-name-and-enosys-skip.md
+        - "ADR-0951: github-actions-custom-audit": adr/0951-github-actions-custom-audit.md
+        - "ADR-0952: test-vendored-libsvm-iqa-coverage": adr/0952-test-vendored-libsvm-iqa-coverage.md
+        - "ADR-0953: doxygen-public-api-clean": adr/0953-doxygen-public-api-clean.md
+        - "ADR-0954: gpu-runtime-coverage-test": adr/0954-gpu-runtime-coverage-test.md
+        - "ADR-0955: compat-python-vmaf-scanf-locale-bugs": adr/0955-compat-python-vmaf-scanf-locale-bugs.md
+        - "ADR-0956: cuda-kernel-coverage-round4": adr/0956-cuda-kernel-coverage-round4.md
+        - "ADR-0957: sycl-kernel-coverage-round4": adr/0957-sycl-kernel-coverage-round4.md
+        - "ADR-0958: hip-kernel-coverage-round4": adr/0958-hip-kernel-coverage-round4.md
+        - "ADR-0959: metal-kernel-coverage-round4-closeout": adr/0959-metal-kernel-coverage-round4-closeout.md
+        - "ADR-0960: gpu-runtime-error-path-leaks-round25": adr/0960-gpu-runtime-error-path-leaks-round25.md
+        - "ADR-0961: queue-pullwork-rollback-on-get-failure": adr/0961-queue-pullwork-rollback-on-get-failure.md
+        - "ADR-0962: controller-streamjobs-and-reaper-stop": adr/0962-controller-streamjobs-and-reaper-stop.md
+        - "ADR-0963: ai-nan-propagation-guards-round25": adr/0963-ai-nan-propagation-guards-round25.md
+        - "ADR-0964: implement-speed-internal-and-wire-gpu-speed-extractors": adr/0964-implement-speed-internal-and-wire-gpu-speed-extractors.md
+        - "ADR-0965: cuda-speed-tu-repair": adr/0965-cuda-speed-tu-repair.md
+        - "ADR-0966: dev-containerfile-libvmaf-rename": adr/0966-dev-containerfile-libvmaf-rename.md
+        - "ADR-0967: mcp-http-transport-security-hardening": adr/0967-mcp-http-transport-security-hardening.md
+        - "ADR-0968: ci-scripts-rebrand-proof-and-tempfile-trap": adr/0968-ci-scripts-rebrand-proof-and-tempfile-trap.md
+        - "ADR-0969: helm-seccomp-default-plus-node-image-helper": adr/0969-helm-seccomp-default-plus-node-image-helper.md
+        - "ADR-0970: test-gpu-picture-pool-cleanup": adr/0970-test-gpu-picture-pool-cleanup.md
+        - "ADR-0971: test-unchecked-malloc-sweep": adr/0971-test-unchecked-malloc-sweep.md
+        - "ADR-0972: public-header-iso-reserved-guards": adr/0972-public-header-iso-reserved-guards.md
+        - "ADR-0973: master-ci-regressions-verified-2026-05-31": adr/0973-master-ci-regressions-verified-2026-05-31.md
+        - "ADR-0975: mcp-server-tempfile-collision": adr/0975-mcp-server-tempfile-collision.md
+        - "ADR-0976: dnn-sidecar-dead-norm-fields-removal": adr/0976-dnn-sidecar-dead-norm-fields-removal.md
+        - "ADR-0977: core-tools-input-reader-safety": adr/0977-core-tools-input-reader-safety.md
+        - "ADR-0978: vmafx-server-bug-audit": adr/0978-vmafx-server-bug-audit.md
+        - "ADR-0980: markdown-lint-full-ruleset-discharge": adr/0980-markdown-lint-full-ruleset-discharge.md
+        - "ADR-0982: gpu-runtime-bug-audit-round-26": adr/0982-gpu-runtime-bug-audit-round-26.md
+        - "ADR-0983: gosec-findings-fix-sweep": adr/0983-gosec-findings-fix-sweep.md
+        - "ADR-0984: port-upstream-netflix-may-jun-2026": adr/0984-port-upstream-netflix-may-jun-2026.md
+        - "ADR-0985: sycl-parity-divergence-2026-06-03": adr/0985-sycl-parity-divergence-2026-06-03.md
+        - "ADR-0986: ci-docs-pr-trigger": adr/0986-ci-docs-pr-trigger.md
+        - "ADR-0987: avx512-float-moment": adr/0987-avx512-float-moment.md
+        - "ADR-0988: shared-strict-json-helpers": adr/0988-shared-strict-json-helpers.md
+        - "ADR-0989: sycl-motion-add-uv": adr/0989-sycl-motion-add-uv.md
+        - "ADR-0990: cuda-ms-ssim-double-precision-lcs": adr/0990-cuda-ms-ssim-double-precision-lcs.md
+        - "ADR-0991: second-opinion-batch-runs": adr/0991-second-opinion-batch-runs.md
+        - "ADR-0992: mos-label-batch-runs": adr/0992-mos-label-batch-runs.md
+        - "ADR-0993: konvid-ugc-bvi-saliency-batch-launch": adr/0993-konvid-ugc-bvi-saliency-batch-launch.md
+        - "ADR-0994: coverage-build-fix-motion-v2-ref": adr/0994-coverage-build-fix-motion-v2-ref.md
+        - "ADR-0995: ci-workflow-name-shortening": adr/0995-ci-workflow-name-shortening.md
+        - "ADR-0996: ebpf-fuse-bypass-rclone": adr/0996-ebpf-fuse-bypass-rclone.md
+        - "ADR-0999: stdatomic-cxx-header-guard": adr/0999-stdatomic-cxx-header-guard.md
+      - "1000-1099 — Misc":
+        - "ADR-1000: tech-stack-badges-go-rust-pins": adr/1000-tech-stack-badges-go-rust-pins.md
+        - "ADR-1001: sycl-cambi-parity": adr/1001-sycl-cambi-parity.md
+        - "ADR-1002: rust-edition-2024-bindgen-072": adr/1002-rust-edition-2024-bindgen-072.md
+        - "ADR-1003: cpp-std-c23-bump": adr/1003-cpp-std-c23-bump.md
+        - "ADR-1004: hip-kernel-coverage-round5": adr/1004-hip-kernel-coverage-round5.md
+        - "ADR-1005: perf-gate-advisory-threshold": adr/1005-perf-gate-advisory-threshold.md
+        - "ADR-1007: c-string-numeric-ub-fixes": adr/1007-c-string-numeric-ub-fixes.md
+        - "ADR-1008: c-lifecycle-test-bugs": adr/1008-c-lifecycle-test-bugs.md
+        - "ADR-1009: go-shutdown-goroutine-fixes": adr/1009-go-shutdown-goroutine-fixes.md
+        - "ADR-1010: mcp-json-parse-guards": adr/1010-mcp-json-parse-guards.md
+        - "ADR-1011: cuda-symbol-visibility": adr/1011-cuda-symbol-visibility.md
+        - "ADR-1012: go-queue-state-machine-guards": adr/1012-go-queue-state-machine-guards.md
+        - "ADR-1014: r5-prometheus-registry": adr/1014-r5-prometheus-registry.md
+        - "ADR-1017: r5-go-timer-ctx-cancel": adr/1017-r5-go-timer-ctx-cancel.md
+        - "ADR-1018: r5-grpc-hardening": adr/1018-r5-grpc-hardening.md
+        - "ADR-1020: r5-memory-ordering": adr/1020-r5-memory-ordering.md
+        - "ADR-1021: session-token-const-time-compare": adr/1021-session-token-const-time-compare.md
+        - "ADR-1022: y4m-dst-buf-read-sz-overflow": adr/1022-y4m-dst-buf-read-sz-overflow.md
+        - "ADR-1023: mcp-asyncio-correctness": adr/1023-mcp-asyncio-correctness.md
+        - "ADR-1024: r6-metric-scoring-guards": adr/1024-r6-metric-scoring-guards.md
+        - "ADR-1025: r6-cuda-hip-kernel-correctness": adr/1025-r6-cuda-hip-kernel-correctness.md
+        - "ADR-1026: r6-sycl-kernel-correctness": adr/1026-r6-sycl-kernel-correctness.md
+        - "ADR-1030: hip-metal-kernel-correctness": adr/1030-hip-metal-kernel-correctness.md
+        - "ADR-1032: vmaf-init-double-init-guard-vmaf-close-pointer-contract": adr/1032-vmaf-init-double-init-guard-vmaf-close-pointer-contract.md
+        - "ADR-1033: cpu-scoring-nan-ub-guards": adr/1033-cpu-scoring-nan-ub-guards.md
+        - "ADR-1034: sycl-vif-rd-stride-motion-uv-sync": adr/1034-sycl-vif-rd-stride-motion-uv-sync.md
+        - "ADR-1035: ci-workflow-concurrency-timeout": adr/1035-ci-workflow-concurrency-timeout.md
+        - "ADR-1036: licensing-spdx-svm-copyright": adr/1036-licensing-spdx-svm-copyright.md
+        - "ADR-1038: mcp-cross-surface-precision-subsample-drift": adr/1038-mcp-cross-surface-precision-subsample-drift.md
+        - "ADR-1039: vendored-svm-realloc-oom-safety": adr/1039-vendored-svm-realloc-oom-safety.md
+        - "ADR-1040: integer-ssim-moments-type-non-x86": adr/1040-integer-ssim-moments-type-non-x86.md
+        - "ADR-1041: ci-fix-go-rust-red": adr/1041-ci-fix-go-rust-red.md
+        - "ADR-1042: containerfile-user-hardening": adr/1042-containerfile-user-hardening.md
+        - "ADR-1047: helm-schema-bug-fixes": adr/1047-helm-schema-bug-fixes.md
+        - "ADR-1048: vmaf-tune-duration-sentinel": adr/1048-vmaf-tune-duration-sentinel.md
+        - "ADR-1049: grpc-feedback-backoff": adr/1049-grpc-feedback-backoff.md
+        - "ADR-1051: upstream-batch-threading-picture-pool": adr/1051-upstream-batch-threading-picture-pool.md
+        - "ADR-1052: arm-motion-v2-re-register": adr/1052-arm-motion-v2-re-register.md
+        - "ADR-1053: dev-cuda-passthrough": adr/1053-dev-cuda-passthrough.md
+        - "ADR-1056: msvc-cpp-std": adr/1056-msvc-cpp-std.md
+        - "ADR-1057: revert-float-adm-simd-dispatch-neon-fma": adr/1057-revert-float-adm-simd-dispatch-neon-fma.md
+        - "ADR-1058: helm-chart-security-hardening": adr/1058-helm-chart-security-hardening.md
+        - "ADR-1060: r10-cpp23-error-paths": adr/1060-r10-cpp23-error-paths.md
+        - "ADR-1061: vendored-cjson-pdjson-depth-overflow": adr/1061-vendored-cjson-pdjson-depth-overflow.md
+        - "ADR-1063: rust-clippy-library-strictness": adr/1063-rust-clippy-library-strictness.md
+        - "ADR-1064: ffmpeg-patches-score-fmt": adr/1064-ffmpeg-patches-score-fmt.md
+        - "ADR-1065: go-staticcheck-timer-body": adr/1065-go-staticcheck-timer-body.md
+        - "ADR-1066: svm-multiclass-realloc-regression": adr/1066-svm-multiclass-realloc-regression.md
+        - "ADR-1068: thread-safety-gpu-dispatch-env": adr/1068-thread-safety-gpu-dispatch-env.md
+        - "ADR-1069: operator-crd-status-schema-gaps": adr/1069-operator-crd-status-schema-gaps.md
+        - "ADR-1071: ms-ssim-hip-double-partials": adr/1071-ms-ssim-hip-double-partials.md
+        - "ADR-1072: prev-ref-batch-refcount-leak": adr/1072-prev-ref-batch-refcount-leak.md
+        - "ADR-1073: mcp-score-at-index-eagain-guard": adr/1073-mcp-score-at-index-eagain-guard.md
+        - "ADR-1074: helm-values-completeness": adr/1074-helm-values-completeness.md
+        - "ADR-1075: mcp-http-score-body-validation": adr/1075-mcp-http-score-body-validation.md
+        - "ADR-1077: vmaftune-corner-cases-r14": adr/1077-vmaftune-corner-cases-r14.md
+        - "ADR-1078: ms-ssim-option-parity": adr/1078-ms-ssim-option-parity.md
+        - "ADR-1079: tsan-batch-thread-safety": adr/1079-tsan-batch-thread-safety.md
+        - "ADR-1080: ubsan-enum-invalid-value-log-opt": adr/1080-ubsan-enum-invalid-value-log-opt.md
+        - "ADR-1081: bench-correctness": adr/1081-bench-correctness.md
+        - "ADR-1083: yuv-input-edge-cases": adr/1083-yuv-input-edge-cases.md
+        - "ADR-1084: cross-platform-path-list-separator": adr/1084-cross-platform-path-list-separator.md
+        - "ADR-1085: mcp-streaming-backpressure-disconnect": adr/1085-mcp-streaming-backpressure-disconnect.md
+        - "ADR-1086: ci-workflow-least-privilege-permissions": adr/1086-ci-workflow-least-privilege-permissions.md
+        - "ADR-1087: coverage-pkg-storage": adr/1087-coverage-pkg-storage.md
+        - "ADR-1088: r14-cli-flag-parsing": adr/1088-r14-cli-flag-parsing.md
+        - "ADR-1089: dnn-onnx-domain-bypass": adr/1089-dnn-onnx-domain-bypass.md
+        - "ADR-1090: cuda-stream-event-leak-fix": adr/1090-cuda-stream-event-leak-fix.md
+        - "ADR-1092: framesync-producer-death-deadlock": adr/1092-framesync-producer-death-deadlock.md
+        - "ADR-1093: disable-recurring-flaky-tests": adr/1093-disable-recurring-flaky-tests.md
+        - "ADR-1094: helm-rolling-update-correctness": adr/1094-helm-rolling-update-correctness.md
+        - "ADR-1095: otel-grpc-trace-context": adr/1095-otel-grpc-trace-context.md
+        - "ADR-1096: doxygen-private-headers": adr/1096-doxygen-private-headers.md
+        - "ADR-1097: ai-script-atomic-writes": adr/1097-ai-script-atomic-writes.md
+        - "ADR-1099: sycl-fsycl-link-propagation": adr/1099-sycl-fsycl-link-propagation.md
+      - "1100-1199 — Misc":
+        - "ADR-1100: feature-extractor-flags-zero-skip-gpu": adr/1100-feature-extractor-flags-zero-skip-gpu.md
+        - "ADR-1101: containerfile-gid-uid-2000": adr/1101-containerfile-gid-uid-2000.md
+        - "ADR-1102: phase4b9-container-only-publishing": adr/1102-phase4b9-container-only-publishing.md
+        - "ADR-1103: hip-vif-mirror2-boundary": adr/1103-hip-vif-mirror2-boundary.md
+        - "ADR-1104: float-vif-avx512-golden-regression-fix": adr/1104-float-vif-avx512-golden-regression-fix.md
+        - "ADR-1105: ensemble-v2-prod-flip-deferred-oneshot-retrain": adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md
+        - "ADR-1106: hip-motion-v2-mirror-reflect101-correction": adr/1106-hip-motion-v2-mirror-reflect101-correction.md
+        - "ADR-1107: threaded-multi-prev-ref-extractor-starvation": adr/1107-threaded-multi-prev-ref-extractor-starvation.md
+        - "ADR-1108: cuda-motion-v2-motion3-emission": adr/1108-cuda-motion-v2-motion3-emission.md
+        - "ADR-1109: vmafx-node-serve-scoring-grpc": adr/1109-vmafx-node-serve-scoring-grpc.md
+        - "ADR-1112: niqe-nr-metric": adr/1112-niqe-nr-metric.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1207,6 +1444,7 @@ nav:
         - "http": adr/by-tag/http.md
         - "hygiene": adr/by-tag/hygiene.md
         - "i18n": adr/by-tag/i18n.md
+        - "icx": adr/by-tag/icx.md
         - "ide": adr/by-tag/ide.md
         - "iir-blur": adr/by-tag/iir-blur.md
         - "implementation": adr/by-tag/implementation.md

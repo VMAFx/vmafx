@@ -1,6 +1,27 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/metric-niqe (2026-06-14)
+Rebase impact: **low**. Adds four fork-only files
+(`core/src/feature/niqe.c`, `niqe_math.h`, `niqe_model.h`,
+`core/test/test_niqe.c`) — no upstream twin (NIQE is fork-trained against
+`model/other_models/niqe_v0.1.pkl`). Additive registration: one `extern
+VmafFeatureExtractor vmaf_fex_niqe;` + one `feature_extractor_list[]` entry in
+`core/src/feature/feature_extractor.cpp` (the LIVE C++23 registry, NOT the dead
+`feature_extractor.c` twin), one source line in `core/src/meson.build`, one
+`executable()` + one `test()` in `core/test/meson.build`. Edits
+`docs/metrics/niqe.md` (new), `mkdocs.yml` (NIQE nav row + regenerated ADR-nav
+block via `scripts/docs/generate-adr-nav.sh`), `docs/state.md`,
+`docs/rebase-notes.md`, `changelog.d/`, `testdata/scores_cpu_niqe.json` (new),
+and the ADR index (`docs/adr/1112-niqe-nr-metric.md` + fragment + `_order.txt`
++ regenerated `README.md`). CPU-only scalar extractor; no public C-API / ABI /
+CLI flag / `meson_options.txt` change → **no ffmpeg-patch impact** (the feature
+is reachable via the existing generic `--feature` path). Load-bearing
+invariants if the algorithm is ever touched: the AGGD `N` keeps the trailing
+`*aggdratio` factor and the MSCN maps + PIL bicubic half-res output stay
+float32-rounded — both are required for parity with the pkl the model was
+trained against (see `core/src/feature/AGENTS.md` and ADR-1112).
+
 ## feat/metal-standalone-batch (2026-06-14)
 Rebase impact: **low**. Adds 12 fork-only files (4 kernels x {.metal,_metal.mm,test})
 for integer_ciede / integer_psnr_hvs / integer_cambi / ssimulacra2 — no upstream
