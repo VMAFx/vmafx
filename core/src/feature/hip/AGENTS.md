@@ -362,3 +362,15 @@ had all three implementation files committed but were missing all three wiring
 entries, making the extractors completely unreachable for six weeks until ADR-0852
 closed the gap. The CI matrix had no `enable_hipcc=true` + `name-resolve` smoke
 test, so the omission was invisible until a manual audit.
+
+## motion3_v2 cross-twin invariant (ADR-1108)
+
+- `integer_motion_v2_hip` emits `motion3_v2_score` host-side in its
+  flush, mirroring the CPU `integer_motion_v2.c::flush` and the CUDA twin
+  byte-for-byte: per-frame `motion_blend(motion2, blend_factor,
+  blend_offset)` then `MIN(_, motion_max_val)` clip, a `stamp_value` seed
+  for `i < min_idx (= 1)`, and an optional 2-tap `motion_moving_average`,
+  via the shared `motion_blend_tools.h` helper. Any change to the CPU
+  flush blend/clip/seed/average logic must be mirrored into all four GPU
+  twins (cuda/sycl/hip/metal) in the same PR to keep the `places=4`
+  `test_hip_motion_v2_parity` gate green.

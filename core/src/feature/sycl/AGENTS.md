@@ -345,3 +345,15 @@ must add the matching `test_sycl_<kernel>_parity.c` and meson
 wiring. The `/cross-backend-diff` skill is a dev-time tool only and
 does NOT run in CI on every PR; only the in-tree `meson test` parity
 tests catch per-kernel regressions automatically.
+
+## motion3_v2 cross-twin invariant (ADR-1108)
+
+- `integer_motion_v2_sycl` emits `motion3_v2_score` host-side in its
+  flush, mirroring the CPU `integer_motion_v2.c::flush` and the CUDA twin
+  byte-for-byte: per-frame `motion_blend(motion2, blend_factor,
+  blend_offset)` then `MIN(_, motion_max_val)` clip, a `stamp_value` seed
+  for `i < min_idx (= 1)`, and an optional 2-tap `motion_moving_average`,
+  via the shared `motion_blend_tools.h` helper. Any change to the CPU
+  flush blend/clip/seed/average logic must be mirrored into all four GPU
+  twins (cuda/sycl/hip/metal) in the same PR to keep the `places=4`
+  `test_sycl_motion_v2_parity` gate green.

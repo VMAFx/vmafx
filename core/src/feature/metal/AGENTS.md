@@ -126,3 +126,15 @@ a real kernel lands; they are removed from `metal_sources` in
 - [ADR-0420](../../../../docs/adr/0420-metal-backend-runtime-t8-1b.md) — runtime (T8-1b), prerequisite
 - [ADR-0361](../../../../docs/adr/0361-metal-compute-backend.md) — scaffold (T8-1), origin
 - [ADR-0214](../../../../docs/adr/0214-gpu-parity-ci-gate.md) — `places=4` cross-backend parity gate
+
+## motion3_v2 cross-twin invariant (ADR-1108)
+
+- `integer_motion_v2_metal` emits `motion3_v2_score` host-side in its
+  flush, mirroring the CPU `integer_motion_v2.c::flush` and the CUDA twin
+  byte-for-byte: per-frame `motion_blend(motion2, blend_factor,
+  blend_offset)` then `MIN(_, motion_max_val)` clip, a `stamp_value` seed
+  for `i < min_idx (= 1)`, and an optional 2-tap `motion_moving_average`,
+  via the shared `motion_blend_tools.h` helper. Any change to the CPU
+  flush blend/clip/seed/average logic must be mirrored into all four GPU
+  twins (cuda/sycl/hip/metal) in the same PR to keep the `places=4`
+  `test_metal_motion_v2_parity` gate green.
