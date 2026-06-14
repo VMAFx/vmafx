@@ -1985,6 +1985,14 @@ libvmaf_sources = [
     src_dir + 'interop/pelorus_interop.c',
     src_dir + 'interop/pelorus_deband_params.c',
     src_dir + 'interop/pelorus_version.c',
+    # ADR-1118: Pelorus-driven perceptual spatial-pooling weighting. Parses the
+    # vendored side-data blob and derives a per-frame pooling weight consumed by
+    # vmaf_feature_score_pooled. Lives in libvmaf_sources (not the feature
+    # static lib) because it is a pooling helper called directly from
+    # libvmaf.c, not a registered feature extractor. CPU-only, NO Vulkan/GPU.
+    # GOLDEN-GATE ISOLATION: inert unless opted in AND side-data present — the
+    # Netflix golden pairs carry no side-data and score bit-exact.
+    feature_src_dir + 'perceptual_weight.c',
     # ADR-0707: TAD Rust extractor C wrapper — compiled directly into
     # the libvmaf library() target so it is not included in the static
     # intermediate libs (avoids unresolved vmafx_tad_* refs in test

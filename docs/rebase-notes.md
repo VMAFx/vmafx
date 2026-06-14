@@ -58,6 +58,43 @@ the DLM numerator pools `rest^3` WITHOUT abs while the denominator pools the ref
 detail WITH abs (`pyr_features.py:54/61`); the 2x downscale is OpenCV
 `INTER_CUBIC` (Keys cubic `a=-0.75`), the dominant cross-host parity risk —
 keep `-ffp-contract=off`.
+## feat/pelorus-sidedata-reader (2026-06-14)
+Rebase impact: **low-to-medium**. Fork-only additive feature (ADR-1118),
+builds on the vendored Pelorus interop ABI (ADR-1113). Adds three fork-only
+files (`core/include/libvmaf/perceptual_weight.h` public C-API,
+`core/src/feature/perceptual_weight.{c,h}` the weight module + internal
+contract, `core/test/test_perceptual_weight.c` the golden-isolation test) — no
+upstream twin. Edits to shared files, all additive:
+- **`core/src/libvmaf.c`** — the rebase-sensitive one. Adds (1) two `#include`s,
+  (2) a `VmafPerceptualWeightStore perceptual;` field at the **tail** of
+  `struct VmafContext` (after `dnn`), (3) a `vmaf_perceptual_weight_store_destroy`
+  call in `vmaf_close` after `vmaf_ctx_dnn_free`, (4) three new public entry
+  points after `vmaf_import_feature_score`, and (5) the weighting branch inside
+  `vmaf_feature_score_pooled` plus a new static `pool_reduce` helper +
+  `PoolAccumulators` struct just above it. **Load-bearing invariant**: the
+  no-side-data path through `vmaf_feature_score_pooled` MUST stay byte-identical
+  to upstream — the weighted accumulators are only summed when
+  `vmaf_perceptual_weight_active()` is true, and the MEAN/HARMONIC_MEAN reduce
+  runs the *literal* upstream expression when weighting is inactive. A rebase
+  that refactors this function must preserve that bit-exactness (the golden gate
+  depends on it; `test_perceptual_weight.c` guards it).
+- **`core/src/meson.build`** — one source line (`feature/perceptual_weight.c`)
+  in `libvmaf_sources` (NOT the feature static lib — it is a pooling helper, not
+  a registered extractor).
+- **`core/include/libvmaf/meson.build`** — one `install_headers` entry.
+- **`core/test/meson.build`** — one `executable()` + one `test()`.
+- ffmpeg: `ffmpeg-patches/0017-libvmaf-read-pelorus-sidedata.patch` (new public
+  C-API consumed by `vf_libvmaf` + new `perceptual_weight` AVOption →
+  **ffmpeg-patch impact per CLAUDE r14**) appended at the tail of
+  `ffmpeg-patches/series.txt`. The patch anchors on stable post-0016 context
+  (`score_fmt` option line, `VmafContext *vmaf;` struct line, the `do_vmaf`
+  `vmaf_read_pictures` call); CI validates it via a full series replay against a
+  clean `n8.1` checkout (`git am --3way`), not standalone `git apply`.
+- Docs/index: `docs/api/perceptual-weight.md` (new), `mkdocs.yml` (api nav row +
+  ADR-1118 nav row), `docs/state.md`, `docs/research/1102-*.md` (new),
+  `changelog.d/added/`, and the ADR index
+  (`docs/adr/1118-perceptual-sidedata-weighting.md` + fragment + `_order.txt` +
+  regenerated `README.md`).
 
 ## feat/metric-niqe (2026-06-14)
 Rebase impact: **low**. Adds four fork-only files

@@ -808,6 +808,30 @@ after a port-upstream of any of these files.
   extractor to consume the vendored libsvm. Registered in the **C++23
   `feature_extractor.cpp`** registry.
 
+- **Perceptual side-data weighting golden-isolation invariant**
+  (`perceptual_weight.{c,h}` + the weighting branch in
+  `core/src/libvmaf.c::vmaf_feature_score_pooled`, fork-local, ADR-1118): the
+  Pelorus-driven pooling weights MUST be **inert** unless BOTH (a) weighting is
+  enabled (`vmaf_set_perceptual_weight_enabled`, default OFF) AND (b) a valid
+  Pelorus blob was registered for the frame (`vmaf_set_perceptual_sidedata`).
+  This is **load-bearing for the Netflix golden gate** — the golden pairs carry
+  no side-data, so they must score **bit-exact**. Two rules survive any refactor:
+  1. `perceptual_weight.c::vmaf_perceptual_weight_at_index` returns **exactly
+     `1.0`** for any disabled / empty / absent / non-finite case. Never let it
+     return a "close to 1.0" value on the no-side-data path.
+  2. `vmaf_feature_score_pooled` must branch on
+     `vmaf_perceptual_weight_active()`: when inactive it runs the **literal
+     upstream** MEAN / HARMONIC_MEAN expressions (`sum/pic_cnt`,
+     `pic_cnt/i_sum − 1`) in the original order — NOT a weighted formula that
+     merely evaluates to the same number. Byte-identical, not numerically close.
+     The weighted accumulators (`w_sum` / `w_score_sum` / `w_i_sum`) are only
+     summed when active. MIN/MAX are intentionally never weighted.
+  The end-to-end guard is `core/test/test_perceptual_weight.c` (bit-exact
+  pooling without side-data, with enabled-but-absent, and with present-but-
+  disabled). The reader is CPU-only and consumes the vendored Pelorus parser
+  (ADR-1113) — do not edit those vendored files. R1–R6 graceful-degrade
+  (`grid==0` → frame-level scalar; bad ABI → unweighted + log) must also hold.
+
 ## Governing ADRs
 
 - [ADR-0024](../../../docs/adr/0024-netflix-golden-preserved.md) —

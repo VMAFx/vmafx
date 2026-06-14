@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <math.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -45,6 +46,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/feature.h"
+#include "libvmaf/perceptual_weight.h"
 #include "libvmaf/picture.h"
 
 #include "cpu.h"
@@ -52,6 +54,7 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "dnn/tensor_io.h"
 #include "feature/feature_extractor.h"
 #include "feature/feature_collector.h"
+#include "feature/perceptual_weight.h"
 #include "metadata_handler.h"
 #include "fex_ctx_vector.h"
 #include "log.h"
@@ -204,6 +207,12 @@ typedef struct VmafContext {
          * Cast through VmafTinyResize at the dispatch site. */
         int resize_mode;
     } dnn;
+    /* Pelorus-driven perceptual spatial-pooling weighting (ADR-1118). The
+     * zero-initialised state is "disabled, empty store" — fully inert, so the
+     * default scoring path (and the Netflix golden pairs) is byte-identical to
+     * a build without this feature. Mutated only by the
+     * vmaf_set_perceptual_* entry points; read only in the pooling path. */
+    VmafPerceptualWeightStore perceptual;
 } VmafContext;
 
 typedef struct BatchThreadData {
@@ -1399,6 +1408,9 @@ int vmaf_close(VmafContext *vmaf)
     vmaf_thread_pool_destroy(vmaf->thread_pool);
     vmaf_fex_ctx_pool_destroy(vmaf->fex_ctx_pool);
     vmaf_ctx_dnn_free(vmaf);
+    /* Release the Pelorus perceptual-weight summary store (ADR-1118). Safe on a
+     * zero-initialised store (no side-data ever registered) — it is a no-op. */
+    vmaf_perceptual_weight_store_destroy(&vmaf->perceptual);
     if (vmaf->picture_pool)
         vmaf_picture_pool_close(vmaf->picture_pool);
 #ifdef HAVE_CUDA
@@ -1447,6 +1459,57 @@ int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, doubl
         return -EINVAL;
 
     return vmaf_feature_collector_append(vmaf->feature_collector, feature_name, value, index);
+}
+
+/* ---- Pelorus perceptual spatial-pooling weighting (ADR-1118) ------------- *
+ * GOLDEN-GATE ISOLATION: these three entry points only ever mutate
+ * vmaf->perceptual; the weighting is applied in vmaf_feature_score_pooled and
+ * is inert (per-frame weight == 1.0, byte-identical legacy arithmetic) unless
+ * weighting is enabled AND side-data is present for the frame. The Netflix
+ * golden pairs carry no side-data and MUST score bit-exact. */
+
+int vmaf_set_perceptual_weight_enabled(VmafContext *vmaf, int enabled)
+{
+    if (!vmaf)
+        return -EINVAL;
+
+    vmaf->perceptual.enabled = (enabled != 0);
+    return 0;
+}
+
+int vmaf_set_perceptual_weight_strength(VmafContext *vmaf, double strength)
+{
+    if (!vmaf)
+        return -EINVAL;
+    /* Reject NaN / Inf / negative — a malformed strength must never silently
+     * corrupt a pooled score (CERT FLP). */
+    if (isnan(strength) || !isfinite(strength) || strength < 0.0)
+        return -EINVAL;
+
+    vmaf->perceptual.strength = strength;
+    vmaf->perceptual.strength_set = true;
+    return 0;
+}
+
+int vmaf_set_perceptual_sidedata(VmafContext *vmaf, const uint8_t *blob, size_t len,
+                                 unsigned pic_index)
+{
+    if (!vmaf)
+        return -EINVAL;
+    if (!blob)
+        return -EINVAL;
+
+    int err = vmaf_perceptual_weight_ingest(&vmaf->perceptual, blob, len, pic_index);
+    if (err == -EPROTO) {
+        /* ABI-major mismatch (R6): degrade to unweighted for this frame and
+         * tell the operator once. Not fatal — the pooled score is still
+         * produced, just without this frame's perceptual weight. */
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "perceptual_weight: ignoring Pelorus side-data for frame %u "
+                 "(ABI-major mismatch); frame scored unweighted\n",
+                 pic_index);
+    }
+    return err;
 }
 
 int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDictionary *opts_dict)
@@ -2835,6 +2898,57 @@ int vmaf_score_at_index_model_collection(VmafContext *vmaf, VmafModelCollection 
                                                         index, score);
 }
 
+/* Accumulators for vmaf_feature_score_pooled, kept in one struct so the reduce
+ * step can be factored into a helper without a long parameter list. */
+typedef struct PoolAccumulators {
+    unsigned pic_cnt;
+    double min;
+    double max;
+    double sum;         /* Σ s_i (unweighted)                                  */
+    double i_sum;       /* Σ 1/(s_i + 1) (unweighted harmonic)                 */
+    double w_sum;       /* Σ w_i (weighted; only touched when `weighting`)     */
+    double w_score_sum; /* Σ w_i·s_i                                           */
+    double w_i_sum;     /* Σ w_i/(s_i + 1)                                     */
+} PoolAccumulators;
+
+/* Reduce the accumulated sums to a single pooled score per method.
+ *
+ * GOLDEN-GATE ISOLATION (ADR-1118): when `weighting` is false the MEAN and
+ * HARMONIC_MEAN branches run the exact same float expressions as upstream, so
+ * the no-side-data path (and the Netflix golden pairs) is byte-identical.
+ * Returns 0 on success or -EINVAL for an unknown method. */
+static int pool_reduce(const PoolAccumulators *a, enum VmafPoolingMethod pool_method,
+                       bool weighting, double *score)
+{
+    switch (pool_method) {
+    case VMAF_POOL_METHOD_MEAN:
+        /* Weighted mean Σ(w_i·s_i)/Σ(w_i). With every w_i == 1 this equals
+         * sum / pic_cnt, but the unweighted branch stays literally identical to
+         * upstream for the golden path. w_sum > 0 always holds when active;
+         * guard anyway. */
+        *score = (weighting && a->w_sum > 0.) ? (a->w_score_sum / a->w_sum) : (a->sum / a->pic_cnt);
+        return 0;
+    case VMAF_POOL_METHOD_MIN:
+        /* Re-weighting cannot reorder the min/max of the per-frame scores;
+         * these are intentionally unaffected (documented in docs/backends). */
+        *score = a->min;
+        return 0;
+    case VMAF_POOL_METHOD_MAX:
+        *score = a->max;
+        return 0;
+    case VMAF_POOL_METHOD_HARMONIC_MEAN:
+        if (weighting && a->w_sum > 0.) {
+            /* Weighted harmonic mean of (s_i + 1): Σw_i / Σ(w_i/(s_i+1)) - 1. */
+            *score = (a->w_i_sum > 0.) ? (a->w_sum / a->w_i_sum - 1.0) : 0.;
+        } else {
+            *score = (a->i_sum > 0.) ? ((double)a->pic_cnt / a->i_sum - 1.0) : 0.;
+        }
+        return 0;
+    default:
+        return -EINVAL;
+    }
+}
+
 int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
                               enum VmafPoolingMethod pool_method, double *score, unsigned index_low,
                               unsigned index_high)
@@ -2848,51 +2962,46 @@ int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
     if (!pool_method)
         return -EINVAL;
 
-    unsigned pic_cnt = 0;
-    double min = 0.;
-    double max = 0.;
-    double sum = 0.;
-    double i_sum = 0.;
+    /* GOLDEN-GATE ISOLATION (ADR-1118): perceptual weighting only diverges from
+     * the legacy arithmetic when it is enabled AND at least one frame carries a
+     * Pelorus side-data summary. When inactive — the default, and always for the
+     * Netflix golden pairs (which have no side-data) — `weighting` is false and
+     * the weighted accumulators are never touched, so MEAN / HARMONIC_MEAN run
+     * the exact same float operations in the exact same order as upstream. */
+    const bool weighting = vmaf_perceptual_weight_active(&vmaf->perceptual);
+
+    PoolAccumulators a = {0};
     for (unsigned i = index_low; i <= index_high; i++) {
         if ((vmaf->cfg.n_subsample > 1) && (i % vmaf->cfg.n_subsample))
             continue;
-        pic_cnt++;
+        a.pic_cnt++;
         double s;
         int err = vmaf_feature_score_at_index(vmaf, feature_name, &s, i);
         if (err)
             return err;
-        sum += s;
-        i_sum += 1. / (s + 1.);
-        if ((i == index_low) || (s < min))
-            min = s;
-        if ((i == index_low) || (s > max))
-            max = s;
+        a.sum += s;
+        a.i_sum += 1. / (s + 1.);
+        if ((i == index_low) || (s < a.min))
+            a.min = s;
+        if ((i == index_low) || (s > a.max))
+            a.max = s;
+        if (weighting) {
+            /* w == 1.0 for any frame without a stored summary, so a partially
+             * annotated sequence still degrades cleanly per-frame. */
+            const double w = vmaf_perceptual_weight_at_index(&vmaf->perceptual, i);
+            a.w_sum += w;
+            a.w_score_sum += w * s;
+            a.w_i_sum += w / (s + 1.);
+        }
     }
 
     /* When n_subsample skips every frame in [index_low, index_high],
      * pic_cnt stays 0 and the MEAN / HARMONIC_MEAN cases would divide
      * by zero.  Reject cleanly. */
-    if (pic_cnt == 0)
+    if (a.pic_cnt == 0)
         return -EINVAL;
 
-    switch (pool_method) {
-    case VMAF_POOL_METHOD_MEAN:
-        *score = sum / pic_cnt;
-        break;
-    case VMAF_POOL_METHOD_MIN:
-        *score = min;
-        break;
-    case VMAF_POOL_METHOD_MAX:
-        *score = max;
-        break;
-    case VMAF_POOL_METHOD_HARMONIC_MEAN:
-        *score = (i_sum > 0.) ? ((double)pic_cnt / i_sum - 1.0) : 0.;
-        break;
-    default:
-        return -EINVAL;
-    }
-
-    return 0;
+    return pool_reduce(&a, pool_method, weighting, score);
 }
 
 int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model, enum VmafPoolingMethod pool_method,

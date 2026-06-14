@@ -732,3 +732,4 @@
 1113-vendor-pelorus-interop-abi
 1114-y-funque-plus-atoms
 1115-brisque-nr-metric
+1118-perceptual-sidedata-weighting

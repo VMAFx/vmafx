@@ -80,10 +80,10 @@ The filter publishes the final pooled score to FFmpeg's log as
 
 ### Fork-added options
 
-The fork's `ffmpeg-patches/` series (0001–0011) adds options to
+The fork's `ffmpeg-patches/` series (0001–0017) adds options to
 the `libvmaf` filter beyond the upstream surface — tiny-AI ONNX
-inference, backend selectors for SYCL / CUDA / HIP, and a dedicated
-`libvmaf_sycl` filter. (The `libvmaf_vulkan` filter and `vulkan_device`
+inference, backend selectors for SYCL / CUDA / HIP, a dedicated
+`libvmaf_sycl` filter, and the Pelorus perceptual-weighting reader. (The `libvmaf_vulkan` filter and `vulkan_device`
 option were removed in ADR-0726.) The options
 below are from patches 0001–0003:
 
@@ -99,6 +99,7 @@ below are from patches 0001–0003:
 | `cuda=0\|1` | `0` | Enable the CUDA backend on the libvmaf filter (`ffmpeg-patches/0010-...`). |
 | `hip_device=N` | `-1` | HIP device index, `-1` = system default (`ffmpeg-patches/0011-...`). |
 | `metal_device=N` | `-2` | Metal device index, `-2` = disabled, `-1` = system default, `≥0` = explicit (`ffmpeg-patches/0012-...`). The `-2` default is a fork-local convention because Metal is auto-disabled on Linux; an unset value should not enable the backend. |
+| `perceptual_weight=0\|1` | `0` | Perceptually re-weight VMAF **spatial pooling** using Pelorus side-data (per-cell banding-risk / variance maps) carried on the distorted frame as an unregistered SEI (`ffmpeg-patches/0017-...`, [ADR-1118](../adr/1118-perceptual-sidedata-weighting.md)). OFF by default and **golden-isolated**: weighting engages only when this is `1` **and** a valid Pelorus blob is present, so standard scoring (and the Netflix golden pairs, which carry no side-data) is byte-identical to upstream. A foreign or absent SEI is ignored and the frame is scored unweighted. Pair with a Pelorus-enabled producer that emits the interop blob; see [`docs/api/perceptual-weight.md`](../api/perceptual-weight.md) for the C-API. |
 
 Backend selectors live alongside in a small dedicated table —
 see "Backend selectors on the libvmaf filter" below.

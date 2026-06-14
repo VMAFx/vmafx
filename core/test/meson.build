@@ -1737,6 +1737,19 @@ test_score_pooled_eagain = executable('test_score_pooled_eagain',
 )
 test('test_score_pooled_eagain', test_score_pooled_eagain, suite : ['fast'])
 
+# ADR-1118 — Pelorus perceptual spatial-pooling weighting. Golden-gate
+# isolation proof: pooling is bit-exact without side-data (and when only one of
+# the two opt-in conditions holds), and shifts in the expected direction once
+# weighting is enabled AND a synthetic banding blob is registered. Links the
+# full libvmaf and builds blobs via the vendored interop ABI; no model, no YUV.
+test_perceptual_weight = executable('test_perceptual_weight',
+    ['test.c', 'test_perceptual_weight.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [math_lib, pthread_dependency, thread_lib],
+)
+test('test_perceptual_weight', test_perceptual_weight, suite : ['fast'])
+
 # ADR-0153 — float_ms_ssim init rejects <176x176 (Netflix#1414).
 test_float_ms_ssim_min_dim = executable('test_float_ms_ssim_min_dim',
     ['test.c', 'test_float_ms_ssim_min_dim.c', '../src/mem.c', '../src/picture.c',
