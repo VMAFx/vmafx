@@ -2593,6 +2593,17 @@ test_metal_motion_v2_parity = executable('test_metal_motion_v2_parity',
 )
 test('test_metal_motion_v2_parity', test_metal_motion_v2_parity, suite : ['fast', 'gpu'])
 
+# integer_ssim_metal — fixed-point SSIM (feature "ssim") on Metal; CPU vs.
+# Metal parity at places=4 (1e-4), skips cleanly when no Metal device.
+test_metal_integer_ssim_parity = executable('test_metal_integer_ssim_parity',
+    ['test.c', 'test_metal_integer_ssim_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_integer_ssim_parity', test_metal_integer_ssim_parity, suite : ['fast', 'gpu'])
+
 test_metal_integer_psnr_parity = executable('test_metal_integer_psnr_parity',
     ['test.c', 'test_metal_integer_psnr_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

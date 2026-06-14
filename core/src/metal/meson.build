@@ -66,7 +66,8 @@ metal_objcpp_lib = static_library(
               '../feature/metal/float_motion_metal.mm',
               '../feature/metal/integer_motion_metal.mm',
               '../feature/metal/float_ssim_metal.mm',
-              '../feature/metal/float_ms_ssim_metal.mm'),
+              '../feature/metal/float_ms_ssim_metal.mm',
+              '../feature/metal/integer_ssim_metal.mm'),
     ],
     include_directories: metal_objcpp_includes,
     objcpp_args: metal_objcpp_args,
@@ -163,6 +164,16 @@ float_ms_ssim_air = custom_target('float_ms_ssim_air',
               '-o', '@OUTPUT@'],
 )
 
+# integer_ssim.metal — fixed-point SSIM (feature "ssim"), two-pass
+# separable Gaussian mirroring float_ssim.metal's scaffold.
+integer_ssim_air = custom_target('integer_ssim_air',
+    input: '../feature/metal/integer_ssim.metal',
+    output: 'integer_ssim.air',
+    command: [xcrun, '-sdk', 'macosx', 'metal',
+              '-c', '@INPUT@',
+              '-o', '@OUTPUT@'],
+)
+
 metal_air_files = [
     mv2_air,
     float_psnr_air,
@@ -172,6 +183,7 @@ metal_air_files = [
     integer_motion_air,
     float_ssim_air,
     float_ms_ssim_air,
+    integer_ssim_air,
 ]
 
 metallib_target = custom_target('libvmaf-metallib',
