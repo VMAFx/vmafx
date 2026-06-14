@@ -112,7 +112,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # A misconfigured repo or network failure during apt-get produces a silently
 # broken image; this check surfaces the gap at build time instead of run time.
 RUN for pkg in intel-media-va-driver-non-free mesa-libgallium libvpl-dev; do \
-        apt-mark showmanual | grep -q "^${pkg}$" \
+        # Use `dpkg -l` (installed-package DB), not `apt-mark showmanual`: the
+        # BuildKit cache mount at /var/lib/apt is shared across builds, so a
+        # package auto-installed in an earlier cached layer stays flagged
+        # Auto-Installed even after an explicit install (a false negative here).
+        dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
             || (echo "FATAL: ${pkg} was not installed" && exit 1); \
     done
 
@@ -265,7 +269,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # Verify NEO compute-runtime packages were actually installed.
 RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
-        apt-mark showmanual | grep -q "^${pkg}$" \
+        dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
             || (echo "FATAL: ${pkg} was not installed" && exit 1); \
     done
 
@@ -414,7 +418,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # Verify ROCm packages were actually installed.
 RUN for pkg in rocm-hip-runtime-dev hipcc; do \
-        apt-mark showmanual | grep -q "^${pkg}$" \
+        dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
             || (echo "FATAL: ${pkg} was not installed" && exit 1); \
     done
 
@@ -820,7 +824,7 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
         esac ; \
         echo "applying ffmpeg-patches/${patch_name}" ; \
         git am --3way "/build/vmaf/ffmpeg-patches/${patch_name}" \
-            || (echo "FATAL: ffmpeg-patches/${patch_name} did not apply" && exit 1) ; \
+            || { echo "FATAL: ffmpeg-patches/${patch_name} did not apply"; git am --abort 2>/dev/null || true; exit 1; } ; \
     done < /build/vmaf/ffmpeg-patches/series.txt
 
 # FFmpeg configure with the fork's full encoder matrix.

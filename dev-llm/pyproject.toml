@@ -7,7 +7,6 @@ requires-python = ">=3.11"
 license = { text = "BSD-2-Clause-Patent" }
 authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
-  { name = "Claude (Anthropic)", email = "noreply@anthropic.com" },
 ]
 dependencies = [
   "typer>=0.26.7",

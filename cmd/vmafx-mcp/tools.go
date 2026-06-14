@@ -2,7 +2,7 @@
 // Use of this source code is governed by the BSD-3-Clause-Plus-Patent
 // license that can be found in the LICENSE file.
 
-// tools.go registers the 16 VMAFX MCP tools. Tool names, argument schemas,
+// tools.go registers the 15 VMAFX MCP tools. Tool names, argument schemas,
 // and response shapes are byte-for-byte compatible with the Python vmaf-mcp
 // server so that IDE MCP clients (Claude Desktop, Cursor) work unchanged.
 //

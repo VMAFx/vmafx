@@ -7,7 +7,6 @@ requires-python = ">=3.12,<3.13"
 license = { text = "BSD-2-Clause-Patent" }
 authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
-  { name = "Claude (Anthropic)", email = "noreply@anthropic.com" },
 ]
 # Subset of ai/pyproject.toml: only the packages the LOSO trainer +
 # validator + ONNX exporter actually import. The kit deliberately does
