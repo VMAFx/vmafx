@@ -2637,6 +2637,17 @@ test_metal_integer_vif_parity = executable('test_metal_integer_vif_parity',
 )
 test('test_metal_integer_vif_parity', test_metal_integer_vif_parity, suite : ['fast', 'gpu'])
 
+# integer_adm_metal — fixed-point 4-scale DWT+CSF+CM (feature "adm"); CPU vs.
+# Metal parity, skips cleanly when no Metal device.
+test_metal_integer_adm_parity = executable('test_metal_integer_adm_parity',
+    ['test.c', 'test_metal_integer_adm_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, math_lib],
+    c_args: ['-DHAVE_METAL=1']
+)
+test('test_metal_integer_adm_parity', test_metal_integer_adm_parity, suite : ['fast', 'gpu'])
+
 test_metal_integer_psnr_parity = executable('test_metal_integer_psnr_parity',
     ['test.c', 'test_metal_integer_psnr_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

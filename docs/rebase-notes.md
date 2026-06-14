@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/metal-integer-adm (2026-06-14)
+Rebase impact: **low**. Adds three fork-only files
+(`core/src/feature/metal/integer_adm.metal`, `integer_adm_metal.mm`,
+`core/test/test_metal_integer_adm_parity.c`) — no upstream twin. Additive
+registration: extern + list entry in `core/src/feature/feature_extractor.c`
+(`#if HAVE_METAL`), `.mm` source + `custom_target` + `metal_air_files` entry in
+`core/src/metal/meson.build`, test block in `core/test/meson.build`. Edits
+`docs/metrics/features.md` (adm fixed-point GPU column += SYCL/HIP/Metal),
+`docs/state.md`, `docs/rebase-notes.md`, `changelog.d/`. Metal-only
+(`-Denable_metal=enabled`); no public C-API / ABI / CLI / `meson_options.txt`
+change → no ffmpeg-patch impact. Mirrors the CPU `integer_adm.c` fixed-point
+DWT pipeline — if that algorithm changes, the Metal twin must follow.
+
 ## feat/metal-integer-vif (2026-06-14)
 Rebase impact: **low**. Adds three fork-only files
 (`core/src/feature/metal/integer_vif.metal`, `integer_vif_metal.mm`,
