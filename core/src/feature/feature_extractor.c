@@ -211,6 +211,7 @@ extern VmafFeatureExtractor vmaf_fex_float_motion_metal;
 extern VmafFeatureExtractor vmaf_fex_float_moment_metal;
 extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_metal;
 extern VmafFeatureExtractor vmaf_fex_integer_ssim_metal;
+extern VmafFeatureExtractor vmaf_fex_float_vif_metal;
 #endif
 /* SpEED-QA NR metric scaffold — ADR-0253. */
 extern VmafFeatureExtractor vmaf_fex_speed_qa;
@@ -379,6 +380,9 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * mirroring float_ssim_metal's two-pass separable scaffold; completes
      * the integer_ssim cross-backend set (cuda/sycl/hip already present). */
     &vmaf_fex_integer_ssim_metal,
+    /* float_vif_metal — 4-scale VIF Gaussian pyramid (feature "float_vif")
+     * on Metal; core-VMAF kernel mirroring float_vif_cuda/sycl. */
+    &vmaf_fex_float_vif_metal,
 #endif
     &vmaf_fex_speed_qa, &vmaf_fex_lpips, &vmaf_fex_dists_sq, &vmaf_fex_fastdvdnet_pre,
     &vmaf_fex_mobilesal, &vmaf_fex_transnet_v2,
