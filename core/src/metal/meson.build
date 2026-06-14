@@ -68,7 +68,8 @@ metal_objcpp_lib = static_library(
               '../feature/metal/float_ssim_metal.mm',
               '../feature/metal/float_ms_ssim_metal.mm',
               '../feature/metal/integer_ssim_metal.mm',
-              '../feature/metal/float_vif_metal.mm'),
+              '../feature/metal/float_vif_metal.mm',
+              '../feature/metal/float_adm_metal.mm'),
     ],
     include_directories: metal_objcpp_includes,
     objcpp_args: metal_objcpp_args,
@@ -184,6 +185,15 @@ float_vif_air = custom_target('float_vif_air',
               '-o', '@OUTPUT@'],
 )
 
+# float_adm.metal — 4-scale DWT + CSF + decouple + CM (feature "float_adm").
+float_adm_air = custom_target('float_adm_air',
+    input: '../feature/metal/float_adm.metal',
+    output: 'float_adm.air',
+    command: [xcrun, '-sdk', 'macosx', 'metal',
+              '-c', '@INPUT@',
+              '-o', '@OUTPUT@'],
+)
+
 metal_air_files = [
     mv2_air,
     float_psnr_air,
@@ -195,6 +205,7 @@ metal_air_files = [
     float_ms_ssim_air,
     integer_ssim_air,
     float_vif_air,
+    float_adm_air,
 ]
 
 metallib_target = custom_target('libvmaf-metallib',
