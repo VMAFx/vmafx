@@ -70,6 +70,34 @@ static char *test_pu21_encode_banding_glare(void)
     return NULL;
 }
 
+/* Encoder oracle: a SECOND variant (peaks) at four in-domain luminances, to
+ * exercise a coefficient row independent of banding_glare. Expected values
+ * were derived from the verified pu21_encode formula and the peaks row of
+ * pu21_params (fp64; cross-checked against the matlab/ffmpeg references). */
+static char *test_pu21_encode_peaks(void)
+{
+    const double *p = pu21_params[PU21_VARIANT_PEAKS];
+
+    struct {
+        double y;
+        double v;
+    } cases[] = {
+        {1.0, 85.5420149821},
+        {100.0, 260.7249826119},
+        {1000.0, 335.6947145978},
+        {10000.0, 380.9853161220},
+    };
+
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const double y = pu21_clamp_luminance(cases[i].y);
+        const double v = pu21_encode(y, p);
+        mu_assert("pu21_encode (peaks) mismatch vs re-derived oracle",
+                  almost_equal(v, cases[i].v, EPS_6));
+    }
+
+    return NULL;
+}
+
 /* End-to-end PU-PSNR oracle: 1x1 luma, V_ref/V_dist from enc(100)/enc(99).
  * MSE = (V_ref - V_dist)^2 = 0.42574156304610455;
  * PU-PSNR = 10*log10(256^2 / MSE) = 51.87333880351542 dB. */
@@ -111,7 +139,11 @@ static char *test_pu21_pq_eotf(void)
     return NULL;
 }
 
-/* PU-SSIM self-consistency: identical planes score exactly 1.0. */
+/* PU-SSIM self-consistency: identical planes score exactly 1.0.
+ *
+ * pu21_compute_ssim now takes a caller-owned, pre-allocated workspace (the
+ * production hot-path discipline: no per-frame malloc); the tests allocate one
+ * locally to mirror init(). */
 static char *test_pu21_ssim_identical(void)
 {
     const int w = 16;
@@ -120,10 +152,87 @@ static char *test_pu21_ssim_identical(void)
     for (int i = 0; i < w * h; i++)
         plane[i] = (double)(100 + (i % 7));
 
+    struct pu21_ssim_workspace ws = {0};
+    mu_assert("workspace alloc failed", pu21_ssim_workspace_alloc(&ws, (size_t)w * (size_t)h) == 0);
+
     double score = 0.0;
-    int err = pu21_compute_ssim(plane, plane, w, h, PU21_SSIM_L, &score);
+    int err = pu21_compute_ssim(&ws, plane, plane, w, h, PU21_SSIM_L, &score);
+    pu21_ssim_workspace_free(&ws);
     mu_assert("pu21_compute_ssim returned error", err == 0);
     mu_assert("PU-SSIM of identical planes should be 1.0", almost_equal(score, 1.0, EPS_4));
+
+    return NULL;
+}
+
+/* Minimum valid plane: w = h = GAUSSIAN_LEN (11). The valid interior region is
+ * exactly 1x1, so SSIM must still return 0 and a finite score. */
+static char *test_pu21_ssim_min_valid(void)
+{
+    /* 11 == GAUSSIAN_LEN, the 11x11 Gaussian window width; this is the
+     * smallest plane with a non-empty (1x1) valid interior region. The literal
+     * is used directly because pu21.c does not expose ssim_tools.h's
+     * GAUSSIAN_LEN to this translation unit. */
+    const int w = 11;
+    const int h = 11;
+    double ref[11 * 11];
+    double dist[11 * 11];
+    for (int i = 0; i < w * h; i++) {
+        ref[i] = (double)(80 + (i % 13));
+        dist[i] = (double)(80 + ((i + 1) % 13));
+    }
+
+    struct pu21_ssim_workspace ws = {0};
+    mu_assert("workspace alloc failed", pu21_ssim_workspace_alloc(&ws, (size_t)w * (size_t)h) == 0);
+
+    double score = -1.0;
+    int err = pu21_compute_ssim(&ws, ref, dist, w, h, PU21_SSIM_L, &score);
+    pu21_ssim_workspace_free(&ws);
+    mu_assert("pu21_compute_ssim (11x11 minimum) should succeed", err == 0);
+    mu_assert("PU-SSIM (11x11) must be finite", isfinite(score));
+
+    return NULL;
+}
+
+/* Below-minimum plane: w = h = 10 (< GAUSSIAN_LEN). Must be rejected with
+ * -EINVAL (no valid interior region exists for the 11x11 window). */
+static char *test_pu21_ssim_reject_small(void)
+{
+    const int w = 10;
+    const int h = 10;
+    double plane[10 * 10];
+    for (int i = 0; i < w * h; i++)
+        plane[i] = (double)(100 + (i % 5));
+
+    struct pu21_ssim_workspace ws = {0};
+    mu_assert("workspace alloc failed", pu21_ssim_workspace_alloc(&ws, (size_t)w * (size_t)h) == 0);
+
+    double score = 0.0;
+    int err = pu21_compute_ssim(&ws, plane, plane, w, h, PU21_SSIM_L, &score);
+    pu21_ssim_workspace_free(&ws);
+    mu_assert("pu21_compute_ssim (10x10) must reject with -EINVAL", err == -EINVAL);
+
+    return NULL;
+}
+
+/* Non-square plane (13x17): exercises the asymmetric reduced-stride geometry
+ * (cw != ch) and the contiguous-packing reduction. Identical planes -> 1.0. */
+static char *test_pu21_ssim_nonsquare(void)
+{
+    const int w = 13;
+    const int h = 17;
+    double plane[13 * 17];
+    for (int i = 0; i < w * h; i++)
+        plane[i] = (double)(120 + (i % 11));
+
+    struct pu21_ssim_workspace ws = {0};
+    mu_assert("workspace alloc failed", pu21_ssim_workspace_alloc(&ws, (size_t)w * (size_t)h) == 0);
+
+    double score = 0.0;
+    int err = pu21_compute_ssim(&ws, plane, plane, w, h, PU21_SSIM_L, &score);
+    pu21_ssim_workspace_free(&ws);
+    mu_assert("pu21_compute_ssim (13x17) should succeed", err == 0);
+    mu_assert("PU-SSIM (13x17) must be finite", isfinite(score));
+    mu_assert("PU-SSIM (13x17) of identical planes should be 1.0", almost_equal(score, 1.0, EPS_4));
 
     return NULL;
 }
@@ -131,10 +240,14 @@ static char *test_pu21_ssim_identical(void)
 char *run_tests(void)
 {
     mu_run_test(test_pu21_encode_banding_glare);
+    mu_run_test(test_pu21_encode_peaks);
     mu_run_test(test_pu21_psnr_oracle);
     mu_run_test(test_pu21_psnr_identical);
     mu_run_test(test_pu21_pq_eotf);
     mu_run_test(test_pu21_ssim_identical);
+    mu_run_test(test_pu21_ssim_min_valid);
+    mu_run_test(test_pu21_ssim_reject_small);
+    mu_run_test(test_pu21_ssim_nonsquare);
 
     return NULL;
 }

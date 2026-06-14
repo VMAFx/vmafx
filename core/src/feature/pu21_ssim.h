@@ -27,8 +27,47 @@
  * takes L as an argument, leaving the golden SSIM untouched.
  */
 
-#ifndef __VMAF_SRC_FEATURE_PU21_SSIM_H__
-#define __VMAF_SRC_FEATURE_PU21_SSIM_H__
+#ifndef VMAF_SRC_FEATURE_PU21_SSIM_H
+#define VMAF_SRC_FEATURE_PU21_SSIM_H
+
+#include <stddef.h>
+
+/**
+ * @brief Pre-allocated SSIM scratch buffers, owned by the caller.
+ *
+ * Hot-path discipline (mirrors float_ssim.c): the extractor allocates these
+ * ONCE in init() and reuses them for every frame, so extract() does zero
+ * per-frame heap traffic for pu21's own buffers. All buffers hold n = w*h
+ * floats. The two float working planes ref_f / cmp_f live here too (the
+ * encoded double planes are converted into them per frame).
+ */
+struct pu21_ssim_workspace {
+    float *ref_f;         /**< reference plane as float, n entries */
+    float *cmp_f;         /**< distorted plane as float, n entries */
+    float *ref_mu;        /**< blurred reference mean, n entries */
+    float *cmp_mu;        /**< blurred distorted mean, n entries */
+    float *ref_sigma_sqd; /**< blurred reference E[x^2], n entries */
+    float *cmp_sigma_sqd; /**< blurred distorted E[x^2], n entries */
+    float *sigma_both;    /**< blurred cross term E[xy], n entries */
+};
+
+/**
+ * @brief Allocate every workspace buffer for an n = w*h plane.
+ *
+ * On failure all partially-acquired buffers are freed and the struct is left
+ * fully NULLed, so it is safe to pass to pu21_ssim_workspace_free() again.
+ *
+ * @param ws workspace to populate (must be non-NULL, fields ignored on entry)
+ * @param n  element count per buffer (w*h)
+ * @return 0 on success, -1 on allocation failure
+ */
+int pu21_ssim_workspace_alloc(struct pu21_ssim_workspace *ws, size_t n);
+
+/**
+ * @brief Free every workspace buffer. NULL-safe per buffer (free(NULL) no-op).
+ * @param ws workspace to release (must be non-NULL)
+ */
+void pu21_ssim_workspace_free(struct pu21_ssim_workspace *ws);
 
 /**
  * @brief Single-scale Gaussian SSIM on two float planes, with explicit data
@@ -41,6 +80,12 @@
  * hardcoded to 255. Inputs are double (the pu21 encoded planes); the separable
  * Gaussian blur runs in float internally, matching the fork's SSIM kernel.
  *
+ * The caller supplies a pre-allocated workspace (see
+ * pu21_ssim_workspace_alloc) sized for at least w*h elements; this function
+ * performs NO heap allocation, so it is safe to call once per frame from the
+ * hot path.
+ *
+ * @param ws     pre-allocated scratch buffers (>= w*h floats each)
  * @param ref    reference plane, w*h doubles
  * @param dist   distorted plane, w*h doubles
  * @param w      plane width  (must be >= GAUSSIAN_LEN)
@@ -49,6 +94,7 @@
  * @param score  out: mean SSIM over the valid (interior) region
  * @return 0 on success, negative errno on failure
  */
-int pu21_compute_ssim(const double *ref, const double *dist, int w, int h, double L, double *score);
+int pu21_compute_ssim(struct pu21_ssim_workspace *ws, const double *ref, const double *dist, int w,
+                      int h, double L, double *score);
 
-#endif /* __VMAF_SRC_FEATURE_PU21_SSIM_H__ */
+#endif /* VMAF_SRC_FEATURE_PU21_SSIM_H */

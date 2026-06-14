@@ -343,6 +343,8 @@ test_delta_e_itp = executable('test_delta_e_itp',
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
+)
+
 # PU21 HDR perceptual adapter — encoder + PU-PSNR + PQ EOTF + PU-SSIM oracle.
 # Includes feature/pu21.c directly (like test_ciede) to reach the static math
 # helpers; the non-static vmaf_fex_pu21 symbol and the linked deps

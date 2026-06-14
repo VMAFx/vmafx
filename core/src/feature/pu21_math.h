@@ -45,9 +45,10 @@
  * All math is performed in double precision (the reference is MATLAB double).
  */
 
-#ifndef __VMAF_SRC_FEATURE_PU21_MATH_H__
-#define __VMAF_SRC_FEATURE_PU21_MATH_H__
+#ifndef VMAF_SRC_FEATURE_PU21_MATH_H
+#define VMAF_SRC_FEATURE_PU21_MATH_H
 
+#include <assert.h>
 #include <math.h>
 
 /* PU21 valid input domain (cd/m^2), per pu21_encoder.m. */
@@ -109,6 +110,7 @@ static inline double pu21_clamp_luminance(double y)
  */
 static inline double pu21_encode(double y, const double *p)
 {
+    assert(p && y >= PU21_L_MIN);
     const double yp = pow(y, p[3]);
     const double inner = (p[0] + p[1] * yp) / (1.0 + p[2] * yp);
     const double v = p[6] * (pow(inner, p[4]) - p[5]);
@@ -153,4 +155,4 @@ static inline double pu21_pq_eotf_nits(double ep)
     return y * PU21_PQ_PEAK_NITS;
 }
 
-#endif /* __VMAF_SRC_FEATURE_PU21_MATH_H__ */
+#endif /* VMAF_SRC_FEATURE_PU21_MATH_H */

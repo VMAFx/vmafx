@@ -39,7 +39,9 @@
  * See docs/metrics/pu21.md and docs/adr/<NNNN>-pu21-hdr-metric.md.
  */
 
+#include <assert.h>
 #include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -80,6 +82,10 @@ typedef struct Pu21State {
      * push the dB score off the fp64 oracle by ~1e-4 dB. */
     double *ref_enc;  /**< w*h PU21-encoded reference luma */
     double *dist_enc; /**< w*h PU21-encoded distorted luma */
+    /* SSIM scratch buffers, pre-allocated ONCE in init() and reused for every
+     * frame so extract() does zero per-frame heap traffic (mirrors
+     * float_ssim.c's aligned-malloc-in-init discipline). */
+    struct pu21_ssim_workspace ssim_ws;
     unsigned w;
     unsigned h;
 } Pu21State;
@@ -136,6 +142,7 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 {
     (void)pix_fmt; /* luma-only: every planar YUV (incl. YUV400P) is accepted */
     Pu21State *s = fex->priv;
+    assert(s && w > 0 && h > 0);
 
     if (bpc != 8 && bpc != 10 && bpc != 12 && bpc != 16)
         return -EINVAL;
@@ -150,17 +157,29 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
     s->w = w;
     s->h = h;
-    s->ref_enc = aligned_malloc((size_t)w * (size_t)h * sizeof(double), 32);
+    const size_t n = (size_t)w * (size_t)h;
+
+    /* Pre-allocate every per-frame buffer ONCE here; extract() reuses them so
+     * its hot path performs no allocation of pu21's own buffers. Each failure
+     * unwinds the buffers acquired so far before returning. */
+    s->ref_enc = aligned_malloc(n * sizeof(double), 32);
     if (!s->ref_enc)
         return -ENOMEM;
-    s->dist_enc = aligned_malloc((size_t)w * (size_t)h * sizeof(double), 32);
-    if (!s->dist_enc) {
-        aligned_free(s->ref_enc);
-        s->ref_enc = NULL;
-        return -ENOMEM;
-    }
+    s->dist_enc = aligned_malloc(n * sizeof(double), 32);
+    if (!s->dist_enc)
+        goto free_ref_enc;
+    if (pu21_ssim_workspace_alloc(&s->ssim_ws, n) != 0)
+        goto free_dist_enc;
 
     return 0;
+
+free_dist_enc:
+    aligned_free(s->dist_enc);
+    s->dist_enc = NULL;
+free_ref_enc:
+    aligned_free(s->ref_enc);
+    s->ref_enc = NULL;
+    return -ENOMEM;
 }
 
 /* Read a luma sample (bpc-aware) and return the raw integer code value. */
@@ -191,6 +210,7 @@ static inline double pu21_codeval_to_luminance(double codeval, unsigned bpc,
 /* Encode one luma plane into a tightly-packed (stride == w) double buffer. */
 static void pu21_encode_plane(const Pu21State *s, const VmafPicture *pic, double *out)
 {
+    assert(s && pic && out);
     for (unsigned i = 0; i < s->h; i++) {
         for (unsigned j = 0; j < s->w; j++) {
             const double cv = pu21_read_luma(pic, i, j);
@@ -207,6 +227,7 @@ static void pu21_encode_plane(const Pu21State *s, const VmafPicture *pic, double
  * floor rather than +inf. */
 static double pu21_compute_psnr(const double *ref, const double *dist, unsigned w, unsigned h)
 {
+    assert(ref && dist);
     double mse = 0.0;
     const size_t n = (size_t)w * (size_t)h;
     for (size_t i = 0; i < n; i++) {
@@ -226,6 +247,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     Pu21State *s = fex->priv;
     (void)ref_pic_90;
     (void)dist_pic_90;
+    assert(s && s->ref_enc && s->dist_enc);
 
     pu21_encode_plane(s, ref_pic, s->ref_enc);
     pu21_encode_plane(s, dist_pic, s->dist_enc);
@@ -235,9 +257,13 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     if (err)
         return err;
 
+    /* pu21_compute_ssim takes int w/h; the dimensions originate from libvmaf's
+     * unsigned plane geometry and are bounded by INT_MAX in practice. Assert
+     * the narrowing is value-preserving before the (int) casts. */
+    assert(s->w <= (unsigned)INT_MAX && s->h <= (unsigned)INT_MAX);
     double ssim_score = 0.0;
-    err =
-        pu21_compute_ssim(s->ref_enc, s->dist_enc, (int)s->w, (int)s->h, PU21_SSIM_L, &ssim_score);
+    err = pu21_compute_ssim(&s->ssim_ws, s->ref_enc, s->dist_enc, (int)s->w, (int)s->h, PU21_SSIM_L,
+                            &ssim_score);
     if (err)
         return err;
     return vmaf_feature_collector_append(feature_collector, "pu21_ssim", ssim_score, index);
@@ -246,10 +272,15 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 static int close(VmafFeatureExtractor *fex)
 {
     Pu21State *s = fex->priv;
+    if (!s)
+        return 0;
     if (s->ref_enc)
         aligned_free(s->ref_enc);
     if (s->dist_enc)
         aligned_free(s->dist_enc);
+    /* pu21_ssim_workspace_free is per-buffer NULL-safe (free(NULL) no-op), so
+     * it is safe even after a partially-failed init(). */
+    pu21_ssim_workspace_free(&s->ssim_ws);
     return 0;
 }
 
