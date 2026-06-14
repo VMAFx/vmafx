@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/metal-float-vif (2026-06-14)
+Rebase impact: **low**. Adds three fork-only files
+(`core/src/feature/metal/float_vif.metal`, `float_vif_metal.mm`,
+`core/test/test_metal_float_vif_parity.c`) — no upstream twin. Additive
+registration: one extern + one list entry in
+`core/src/feature/feature_extractor.c` (`#if HAVE_METAL`), one `.mm` source +
+one `custom_target` + one `metal_air_files` entry in
+`core/src/metal/meson.build`, one test block in `core/test/meson.build`. Edits
+`docs/metrics/vif.md`, `docs/state.md`, `docs/rebase-notes.md`, `changelog.d/`
+— keep both additive hunks on concurrent-branch conflict. Metal-only (compiles
+under `-Denable_metal=enabled`); no public C-API / ABI / CLI /
+`meson_options.txt` change → no ffmpeg-patch impact. Part of the Metal
+full-parity sweep (9 real kernels); float_vif is core-VMAF.
+
 ## feat/metal-integer-ssim (2026-06-14)
 Rebase impact: **low**. Adds three fork-only files
 (`core/src/feature/metal/integer_ssim.metal`, `integer_ssim_metal.mm`,

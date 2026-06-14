@@ -17,6 +17,13 @@ design.
 | Extractor name | Algorithm | Options |
 | --- | --- | --- |
 | `integer_vif` | Integer fixed-point multi-scale implementation | `vif_enhn_gain_limit`, `vif_skip_scale0`, `debug` |
+| `float_vif` | Floating-point 4-scale Gaussian-pyramid implementation (feature `float_vif` + `float_vif_scale0..3`) | `vif_enhn_gain_limit`, `vif_kernelscale`, `vif_sigma_nsq`, `vif_skip_scale0`, `debug` |
+
+`float_vif` is implemented on every GPU backend: CUDA (`float_vif_cuda`), SYCL
+(`float_vif_sycl`), HIP (`float_vif_hip`), and **Metal (`float_vif_metal`,
+`feature/metal/float_vif.metal` + `_metal.mm`)** — a 4-scale separable-Gaussian
+pyramid with per-scale mean/variance/covariance statistics, parity-checked vs
+the CPU `float_vif` on the macOS Apple-Silicon CI lane (`places=4`, ADR-0214).
 
 The CUDA twin (`vif_cuda`) additionally carries a vestigial `enable_chroma`
 option (see Options table below); it is a documented no-op.
