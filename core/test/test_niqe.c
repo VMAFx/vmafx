@@ -209,8 +209,7 @@ static char *test_niqe_sym_pinv(void)
     double out[N * N];
     double work[2 * N * N];
     const double rtol = (double)N * 2.220446049250313e-16;
-    const int rc = niqe_sym_pinv(M, out, N, rtol, work);
-    mu_assert("sym_pinv returned nonzero", rc == 0);
+    niqe_sym_pinv(M, out, N, rtol, work);
 
     /* M * pinv(M) should be the identity (full-rank case). */
     for (int i = 0; i < N; i++) {
@@ -339,6 +338,94 @@ cleanup:
     return result;
 }
 
+/* Regression test for BLOCKER-1 (heap overflow for odd frame dimensions).
+ * A 577x325 frame (both dimensions odd, both >= 97) causes
+ * w2 = floor(577/2) = 288, scale = 577/288 ≈ 2.003, ksize = 11 — the path
+ * that overflowed the old maxax*9 allocation.  We just need the run to
+ * return 0 and produce a finite score; no oracle is needed. */
+static char *test_niqe_odd_dim(void)
+{
+    /* 577x325: npx=6 (6*96=576<=577), npy=3 (3*96=288<=325) → 18 patches ≥ 2.
+     * Fill with a sinusoidal luma pattern so AGGD has non-degenerate stats. */
+    const unsigned W = 577;
+    const unsigned H = 325;
+
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("niqe");
+    mu_assert("niqe extractor not registered (odd-dim)", fex != NULL);
+
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    VmafPicture pic;
+    memset(&pic, 0, sizeof(pic));
+    char *result = NULL;
+
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    if (err) {
+        result = (char *)"odd-dim: context_create failed";
+        goto cleanup;
+    }
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, W, H);
+    if (err) {
+        result = (char *)"odd-dim: context_init failed";
+        goto cleanup;
+    }
+    err = vmaf_feature_collector_init(&fc);
+    if (err) {
+        result = (char *)"odd-dim: feature collector init failed";
+        goto cleanup;
+    }
+    err = vmaf_picture_alloc(&pic, VMAF_PIX_FMT_YUV420P, 8, W, H);
+    if (err) {
+        result = (char *)"odd-dim: picture alloc failed";
+        goto cleanup;
+    }
+
+    /* Fill luma with a deterministic sinusoidal pattern (non-flat, non-random). */
+    {
+        uint8_t *y = (uint8_t *)pic.data[0];
+        const ptrdiff_t ystride = pic.stride[0];
+        for (unsigned row = 0; row < H; row++) {
+            for (unsigned col = 0; col < W; col++) {
+                const double v = 128.0 + 80.0 * sin((double)row * 0.13 + (double)col * 0.07);
+                y[(size_t)row * (size_t)ystride + col] = (uint8_t)(int)v;
+            }
+        }
+        for (unsigned p = 1; p < 3; p++) {
+            uint8_t *c = (uint8_t *)pic.data[p];
+            for (unsigned row = 0; row < pic.h[p]; row++)
+                memset(c + (size_t)row * (size_t)pic.stride[p], 128, pic.w[p]);
+        }
+    }
+
+    err = vmaf_feature_extractor_context_extract(ctx, &pic, NULL, &pic, NULL, 0, fc);
+    if (err) {
+        result = (char *)"odd-dim: extract failed";
+        goto cleanup;
+    }
+
+    double score = NAN;
+    err = vmaf_feature_collector_get_score(fc, "niqe", &score, 0);
+    if (err) {
+        result = (char *)"odd-dim: could not read niqe score";
+        goto cleanup;
+    }
+    if (!isfinite(score)) {
+        result = (char *)"odd-dim: niqe score is not finite";
+        goto cleanup;
+    }
+
+cleanup:
+    if (pic.data[0])
+        (void)vmaf_picture_unref(&pic);
+    if (fc)
+        (void)vmaf_feature_collector_destroy(fc);
+    if (ctx) {
+        (void)vmaf_feature_extractor_context_close(ctx);
+        (void)vmaf_feature_extractor_context_destroy(ctx);
+    }
+    return result;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_niqe_gauss_window);
@@ -347,5 +434,6 @@ char *run_tests(void)
     mu_run_test(test_niqe_bicubic_coeffs);
     mu_run_test(test_niqe_sym_pinv);
     mu_run_test(test_niqe_end_to_end);
+    mu_run_test(test_niqe_odd_dim);
     return NULL;
 }

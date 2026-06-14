@@ -36,6 +36,7 @@
 #ifndef __VMAF_FEATURE_NIQE_MATH_H__
 #define __VMAF_FEATURE_NIQE_MATH_H__
 
+#include <assert.h>
 #include <math.h>
 #include <stddef.h>
 
@@ -108,6 +109,7 @@ typedef struct NiqeAggd {
  * (the x >= 0 boundary, matching the harness). */
 static inline NiqeAggd niqe_extract_aggd(const float *x, size_t n, const double *prec)
 {
+    assert(n > 0 && prec);
     /* float32 reductions (harness parity). */
     float left_sq_sum = 0.0f;
     float right_sq_sum = 0.0f;
@@ -136,11 +138,19 @@ static inline NiqeAggd niqe_extract_aggd(const float *x, size_t n, const double 
     const float mean_sq = sq_sum / (float)n;
 
     const float gamma_hat = lms / rms;
+    /* Flat patch (mean_sq == 0): 0/0 would produce NaN.  Return the alpha
+     * sentinel 0.2f (the lower bound of gamma_range in the Python harness),
+     * which the table argmin would also select for a degenerate ratio. */
+    if (mean_sq == 0.0f) {
+        NiqeAggd flat = {0.2, 0.0, 0.0, 0.0, 0.0, 0.0};
+        return flat;
+    }
     const float r_hat = (mean_abs * mean_abs) / mean_sq;
     const float gh2 = gamma_hat * gamma_hat;
     const float gh3 = gh2 * gamma_hat;
     const float denom = (gh2 + 1.0f) * (gh2 + 1.0f);
     const float rhat_norm = r_hat * (((gh3 + 1.0f) * (gamma_hat + 1.0f)) / denom);
+    assert(isfinite((double)rhat_norm));
 
     /* argmin over the gamma table (double comparison, robust to ties). */
     int best = 0;
@@ -157,6 +167,7 @@ static inline NiqeAggd niqe_extract_aggd(const float *x, size_t n, const double 
     const double g1 = tgamma(1.0 / alpha);
     const double g2 = tgamma(2.0 / alpha);
     const double g3 = tgamma(3.0 / alpha);
+    assert(g3 > 0.0);
     const double aggdratio = sqrt(g1) / sqrt(g3);
     const double bl = aggdratio * (double)lms;
     const double br = aggdratio * (double)rms;
@@ -179,8 +190,12 @@ static inline NiqeAggd niqe_extract_aggd(const float *x, size_t n, const double 
 
 #define NIQE_BICUBIC_A (-0.5)
 #define NIQE_BICUBIC_SUPPORT 2.0
-/* Max kernel taps for a downscale-by-2: ceil(2*2)*2+1 = 9. */
-#define NIQE_BICUBIC_MAX_KSIZE 9
+/* Max kernel taps: for odd input widths/heights the rational scale w/floor(w/2)
+ * slightly exceeds 2.0, giving ceil(2*scale)*2+1 = 11 (not 9).  The minimum
+ * guarded frame dimension is 96, and floor(97/2)=48 → scale=97/48≈2.021 →
+ * ceil(2*2.021)=5 → ksize=5*2+1=11.  Set the bound to 11 so the coefficient
+ * array is always large enough even for odd-dimensioned frames. */
+#define NIQE_BICUBIC_MAX_KSIZE 11
 
 static inline double niqe_bicubic_filter(double x)
 {
@@ -249,21 +264,20 @@ static inline int niqe_bicubic_coeffs(int in_size, int out_size, int *bounds, do
 /* Validated to 7e-14 vs scipy on the fixture (see docs/metrics/niqe.md).*/
 /* ------------------------------------------------------------------ */
 
-/* Jacobi pinv of the n x n symmetric matrix `in` (row-major) into `out`.
- * `work` must hold 2*n*n doubles of scratch (A then V). rtol selects the
- * singular-value cutoff. Returns 0 on success. */
-static inline int niqe_sym_pinv(const double *in, double *out, int n, double rtol, double *work)
+/* ---- Jacobi helper 1: copy A <- in, V <- identity, initialise D. ---- */
+static inline void niqe_jacobi_init(int n, const double *in, double *A, double *V)
 {
-    double *A = work;                 /* n*n */
-    double *V = work + (size_t)n * n; /* n*n */
-
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
             A[(size_t)i * n + j] = in[(size_t)i * n + j];
             V[(size_t)i * n + j] = (i == j) ? 1.0 : 0.0;
         }
     }
+}
 
+/* ---- Jacobi helper 2: cyclic Jacobi sweeps (the rotation inner loop). ---- */
+static inline void niqe_jacobi_sweep_pass(int n, double *A, double *V)
+{
     /* Cyclic Jacobi sweeps. n=36 converges well within this bound. */
     for (int sweep = 0; sweep < 100; sweep++) {
         double off = 0.0;
@@ -315,7 +329,12 @@ static inline int niqe_sym_pinv(const double *in, double *out, int n, double rto
             }
         }
     }
+}
 
+/* ---- Jacobi helper 3: eigenvalue cutoff + V diag(e+) V^T reconstruction. */
+static inline void niqe_pinv_reconstruct(int n, const double *A, const double *V, double *out,
+                                         double rtol)
+{
     /* Eigenvalues on the diagonal of A; cutoff relative to max magnitude. */
     double max_e = 0.0;
     for (int i = 0; i < n; i++) {
@@ -338,7 +357,19 @@ static inline int niqe_sym_pinv(const double *in, double *out, int n, double rto
             out[(size_t)i * n + j] = acc;
         }
     }
-    return 0;
+}
+
+/* Jacobi pinv of the n x n symmetric matrix `in` (row-major) into `out`.
+ * `work` must hold 2*n*n doubles of scratch (A then V). rtol selects the
+ * singular-value cutoff. */
+static inline void niqe_sym_pinv(const double *in, double *out, int n, double rtol, double *work)
+{
+    assert(n > 0 && in && out && work);
+    double *A = work;                 /* n*n */
+    double *V = work + (size_t)n * n; /* n*n */
+    niqe_jacobi_init(n, in, A, V);
+    niqe_jacobi_sweep_pass(n, A, V);
+    niqe_pinv_reconstruct(n, A, V, out, rtol);
 }
 
 #endif /* __VMAF_FEATURE_NIQE_MATH_H__ */

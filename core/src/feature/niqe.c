@@ -251,6 +251,7 @@ static void niqe_bicubic_resize(const double *src, double *out, unsigned w, unsi
 {
     /* Horizontal pass: w -> w2. */
     const int ksx = niqe_bicubic_coeffs((int)w, (int)w2, bounds, coeffs);
+    assert(ksx <= NIQE_BICUBIC_MAX_KSIZE);
     for (unsigned o = 0; o < w2; o++) {
         const int xmin = bounds[o * 2 + 0];
         const int xmax = bounds[o * 2 + 1];
@@ -275,6 +276,7 @@ static void niqe_bicubic_resize(const double *src, double *out, unsigned w, unsi
      * With the float32 round the C resampler is bit-exact vs PIL. See
      * ADR-1112 / docs/metrics/niqe.md. */
     const int ksy = niqe_bicubic_coeffs((int)h, (int)h2, bounds, coeffs);
+    assert(ksy <= NIQE_BICUBIC_MAX_KSIZE);
     for (unsigned o = 0; o < h2; o++) {
         const int ymin = bounds[o * 2 + 0];
         const int ymax = bounds[o * 2 + 1];
@@ -372,6 +374,7 @@ static void niqe_pool(const double *feat, unsigned P, double *sample_mu, double 
 
     /* Unbiased covariance: cov[i][j] = sum_p (x_pi - mu_i)(x_pj - mu_j)/(P-1).
      * np.cov(feats.T) with ddof=1. P >= 2 is guaranteed by the frame guard. */
+    assert(P >= 2u);
     const double inv = 1.0 / (double)(P - 1);
     for (unsigned i = 0; i < D; i++) {
         for (unsigned j = i; j < D; j++) {
@@ -455,7 +458,7 @@ static double niqe_mahalanobis_score(NiqeState *s)
         s->avgcov[k] = (cov_pris[k] + s->sample_cov[k]) / 2.0;
 
     const double rtol = (double)NIQE_FEAT_DIM * DBL_EPSILON; /* scipy.linalg.pinv default */
-    (void)niqe_sym_pinv(s->avgcov, s->pinv, NIQE_FEAT_DIM, rtol, s->pinv_work);
+    niqe_sym_pinv(s->avgcov, s->pinv, NIQE_FEAT_DIM, rtol, s->pinv_work);
 
     double quad = 0.0;
     for (int i = 0; i < NIQE_FEAT_DIM; i++) {
@@ -482,6 +485,7 @@ static int niqe_alloc_buffers(NiqeState *s, unsigned w, unsigned h)
 {
     const size_t plane = (size_t)w * h;
     const size_t plane2 = (size_t)s->w2 * s->h2;
+    assert(plane > 0 && plane2 > 0);
     const unsigned maxax = (s->w2 > s->h2) ? s->w2 : s->h2;
     const size_t d = sizeof(double);
     const size_t fdim = NIQE_FEAT_DIM;
@@ -588,6 +592,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
 static int close(VmafFeatureExtractor *fex)
 {
+    assert(fex != NULL);
     NiqeState *s = fex->priv;
     if (!s)
         return 0;
