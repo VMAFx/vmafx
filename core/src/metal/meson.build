@@ -69,7 +69,8 @@ metal_objcpp_lib = static_library(
               '../feature/metal/float_ms_ssim_metal.mm',
               '../feature/metal/integer_ssim_metal.mm',
               '../feature/metal/float_vif_metal.mm',
-              '../feature/metal/float_adm_metal.mm'),
+              '../feature/metal/float_adm_metal.mm',
+              '../feature/metal/integer_vif_metal.mm'),
     ],
     include_directories: metal_objcpp_includes,
     objcpp_args: metal_objcpp_args,
@@ -194,6 +195,15 @@ float_adm_air = custom_target('float_adm_air',
               '-o', '@OUTPUT@'],
 )
 
+# integer_vif.metal — 4-scale fixed-point VIF Gaussian pyramid (feature "vif").
+integer_vif_air = custom_target('integer_vif_air',
+    input: '../feature/metal/integer_vif.metal',
+    output: 'integer_vif.air',
+    command: [xcrun, '-sdk', 'macosx', 'metal',
+              '-c', '@INPUT@',
+              '-o', '@OUTPUT@'],
+)
+
 metal_air_files = [
     mv2_air,
     float_psnr_air,
@@ -206,6 +216,7 @@ metal_air_files = [
     integer_ssim_air,
     float_vif_air,
     float_adm_air,
+    integer_vif_air,
 ]
 
 metallib_target = custom_target('libvmaf-metallib',

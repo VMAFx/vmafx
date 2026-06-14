@@ -34,6 +34,15 @@ The extractor uses an integer fixed-point implementation of the VIF algorithm
 across multiple spatial scales. It is the extractor invoked when VMAF model
 JSON files reference `"integer_vif"`.
 
+`integer_vif` (feature `vif`) is implemented on every GPU backend: CUDA
+(`vif_cuda`), SYCL (`vif_sycl`), HIP (`vif_hip`), and **Metal
+(`integer_vif_metal`, `feature/metal/integer_vif.metal` + `_metal.mm`)** — a
+4-scale fixed-point Gaussian pyramid with int64 moment accumulators and the
+integer log2-LUT, mirroring the proven `float_vif_metal` scaffold. Parity vs the
+CPU `vif` is checked on the macOS Apple-Silicon CI lane (`places=4`, ADR-0214);
+because Apple GPUs lack fp64 the per-pixel gain is computed in float (the same
+fp64-free trade-off as the SYCL twin, ADR-0220).
+
 ### Output features
 
 All features are computed on the luma (Y) plane only.
