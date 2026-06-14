@@ -215,6 +215,10 @@ extern VmafFeatureExtractor vmaf_fex_float_vif_metal;
 extern VmafFeatureExtractor vmaf_fex_float_adm_metal;
 extern VmafFeatureExtractor vmaf_fex_integer_vif_metal;
 extern VmafFeatureExtractor vmaf_fex_integer_adm_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_ciede_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_psnr_hvs_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_cambi_metal;
+extern VmafFeatureExtractor vmaf_fex_ssimulacra2_metal;
 #endif
 /* SpEED-QA NR metric scaffold — ADR-0253. */
 extern VmafFeatureExtractor vmaf_fex_speed_qa;
@@ -398,6 +402,10 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * "adm", a VMAF default) on Metal; mirrors integer_adm_cuda/sycl + the
      * CPU integer_adm.c. */
     &vmaf_fex_integer_adm_metal,
+    /* Metal standalone-metric kernels (parity sweep): ciede2000, psnr_hvs,
+     * cambi (banding), ssimulacra2 — mirror the CUDA/SYCL twins + CPU refs. */
+    &vmaf_fex_integer_ciede_metal, &vmaf_fex_integer_psnr_hvs_metal, &vmaf_fex_integer_cambi_metal,
+    &vmaf_fex_ssimulacra2_metal,
 #endif
     &vmaf_fex_speed_qa, &vmaf_fex_lpips, &vmaf_fex_dists_sq, &vmaf_fex_fastdvdnet_pre,
     &vmaf_fex_mobilesal, &vmaf_fex_transnet_v2,

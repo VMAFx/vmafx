@@ -2648,6 +2648,17 @@ test_metal_integer_adm_parity = executable('test_metal_integer_adm_parity',
 )
 test('test_metal_integer_adm_parity', test_metal_integer_adm_parity, suite : ['fast', 'gpu'])
 
+# Standalone-metric Metal parity tests (ciede2000, psnr_hvs, cambi, ssimulacra2).
+foreach _m : ['integer_ciede', 'integer_psnr_hvs', 'integer_cambi', 'ssimulacra2']
+  _exe = executable('test_metal_' + _m + '_parity',
+      ['test.c', 'test_metal_' + _m + '_parity.c'],
+      include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+      link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+      dependencies: [pthread_dependency, math_lib],
+      c_args: ['-DHAVE_METAL=1'])
+  test('test_metal_' + _m + '_parity', _exe, suite : ['fast', 'gpu'])
+endforeach
+
 test_metal_integer_psnr_parity = executable('test_metal_integer_psnr_parity',
     ['test.c', 'test_metal_integer_psnr_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

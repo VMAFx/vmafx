@@ -71,7 +71,11 @@ metal_objcpp_lib = static_library(
               '../feature/metal/float_vif_metal.mm',
               '../feature/metal/float_adm_metal.mm',
               '../feature/metal/integer_vif_metal.mm',
-              '../feature/metal/integer_adm_metal.mm'),
+              '../feature/metal/integer_adm_metal.mm',
+              '../feature/metal/integer_ciede_metal.mm',
+              '../feature/metal/integer_psnr_hvs_metal.mm',
+              '../feature/metal/integer_cambi_metal.mm',
+              '../feature/metal/ssimulacra2_metal.mm'),
     ],
     include_directories: metal_objcpp_includes,
     objcpp_args: metal_objcpp_args,
@@ -214,6 +218,20 @@ integer_adm_air = custom_target('integer_adm_air',
               '-o', '@OUTPUT@'],
 )
 
+# Standalone-metric Metal kernels (parity sweep): ciede2000, psnr_hvs, cambi, ssimulacra2.
+integer_ciede_air = custom_target('integer_ciede_air',
+    input: '../feature/metal/integer_ciede.metal', output: 'integer_ciede.air',
+    command: [xcrun, '-sdk', 'macosx', 'metal', '-c', '@INPUT@', '-o', '@OUTPUT@'])
+integer_psnr_hvs_air = custom_target('integer_psnr_hvs_air',
+    input: '../feature/metal/integer_psnr_hvs.metal', output: 'integer_psnr_hvs.air',
+    command: [xcrun, '-sdk', 'macosx', 'metal', '-c', '@INPUT@', '-o', '@OUTPUT@'])
+integer_cambi_air = custom_target('integer_cambi_air',
+    input: '../feature/metal/integer_cambi.metal', output: 'integer_cambi.air',
+    command: [xcrun, '-sdk', 'macosx', 'metal', '-c', '@INPUT@', '-o', '@OUTPUT@'])
+ssimulacra2_air = custom_target('ssimulacra2_air',
+    input: '../feature/metal/ssimulacra2.metal', output: 'ssimulacra2.air',
+    command: [xcrun, '-sdk', 'macosx', 'metal', '-c', '@INPUT@', '-o', '@OUTPUT@'])
+
 metal_air_files = [
     mv2_air,
     float_psnr_air,
@@ -228,6 +246,10 @@ metal_air_files = [
     float_adm_air,
     integer_vif_air,
     integer_adm_air,
+    integer_ciede_air,
+    integer_psnr_hvs_air,
+    integer_cambi_air,
+    ssimulacra2_air,
 ]
 
 metallib_target = custom_target('libvmaf-metallib',

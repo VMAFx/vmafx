@@ -39,16 +39,16 @@ limitations in the same PR as the code.
 | Motion2 (float)    | `float_motion`  | Yes           | `float_motion2` (+ `float_motion` if `debug=true`)                                             | AVX2, AVX-512, NEON       | CUDA, SYCL |
 | ADM (fixed-point)  | `adm`           | Yes           | `adm2`, `adm_scale0`, `adm_scale1`, `adm_scale2`, `adm_scale3`                                 | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
 | ADM (float)        | `float_adm`     | Yes           | `float_adm2`, `adm_scale0..3`, `aim_score`⁶, `adm3_score`⁶                                    | AVX2, AVX-512, NEON       | CUDA⁶, SYCL, Metal |
-| [CAMBI](cambi.md)  | `cambi`         | No            | `cambi`                                                                                        | —                         | —                  |
-| CIEDE2000          | `ciede`         | No            | `ciede2000`                                                                                    | AVX2, AVX-512, NEON       | CUDA, SYCL |
+| [CAMBI](cambi.md)  | `cambi`         | No            | `cambi`                                                                                        | —                         | HIP, Metal (hybrid)⁴ |
+| CIEDE2000          | `ciede`         | No            | `ciede2000`                                                                                    | AVX2, AVX-512, NEON       | CUDA, SYCL, HIP, Metal |
 | PSNR (fixed)       | `psnr`          | No            | `psnr_y`, `psnr_cb`, `psnr_cr` (+ MSE / APSNR optional)                                        | AVX2, AVX-512, NEON       | CUDA, SYCL|
 | PSNR (float)       | `float_psnr`    | No            | `float_psnr` (luma only — the CPU extractor emits a single luma score)                         | AVX2, AVX-512, NEON       | CUDA, SYCL |
-| PSNR-HVS           | `psnr_hvs`      | No            | `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr`                                         | AVX2, NEON                | CUDA, SYCL |
+| PSNR-HVS           | `psnr_hvs`      | No            | `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr`                                         | AVX2, NEON                | CUDA, SYCL, Metal |
 | SSIM (fixed)       | `ssim`          | No            | `ssim`                                                                                         | —                         | —                  |
 | SSIM (float)       | `float_ssim`    | No            | `float_ssim` (+ L/C/S if enabled)                                                              | AVX2, AVX-512, NEON       | CUDA, SYCL |
 | MS-SSIM            | `float_ms_ssim` | No            | `float_ms_ssim` (+ per-scale L/C/S if enabled)                                                 | AVX2, AVX-512, NEON       | CUDA, SYCL |
 | ANSNR              | `float_ansnr`   | No            | removed — `float_ansnr` / `float_anpsnr` no longer emitted                                     | —                         | — (extractor removed PR #38 / ADR-0865) |
-| SSIMULACRA 2       | `ssimulacra2`   | No            | `ssimulacra2`                                                                                  | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL |
+| SSIMULACRA 2       | `ssimulacra2`   | No            | `ssimulacra2`                                                                                  | AVX2, AVX-512, NEON, SVE2 | CUDA, SYCL, Metal |
 | Float moment       | `float_moment`  | No            | `float_moment_ref1st`, `float_moment_dis1st`, `float_moment_ref2nd`, `float_moment_dis2nd`     | AVX2, NEON                | CUDA, SYCL |
 | LPIPS (tiny-AI)    | `lpips`         | No            | `lpips`                                                                                        | —                         | via ORT EP³        |
 | DISTS-Sq (tiny-AI) | `dists_sq`      | No            | `dists_sq`                                                                                     | —                         | via ORT EP³        |

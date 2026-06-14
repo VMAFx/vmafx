@@ -1,6 +1,16 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/metal-standalone-batch (2026-06-14)
+Rebase impact: **low**. Adds 12 fork-only files (4 kernels x {.metal,_metal.mm,test})
+for integer_ciede / integer_psnr_hvs / integer_cambi / ssimulacra2 — no upstream
+twins. Additive registration (4 externs + 4 list entries in feature_extractor.c
+#if HAVE_METAL; 4 .mm sources + 4 custom_targets + 4 metal_air_files in
+core/src/metal/meson.build; a foreach test block in core/test/meson.build). Edits
+docs/metrics/features.md (+Metal on the 4 rows), state.md, changelog. cambi is a
+Strategy-II hybrid (GPU kernels + exact-CPU host residual via cambi_internal.h),
+matching ADR-0205. Metal-only; no public C-API/CLI change -> no ffmpeg-patch impact.
+
 ## feat/metal-integer-adm (2026-06-14)
 Rebase impact: **low**. Adds three fork-only files
 (`core/src/feature/metal/integer_adm.metal`, `integer_adm_metal.mm`,
