@@ -46145,3 +46145,42 @@ Rebase-sensitive invariants (fork-internal, NOT upstream):
   golusoris `http.addr` / `grpc.listen` keys under the `VMAFX_` prefix. If
   golusoris renames those keys, the server's documented env contract must
   follow.
+## feat/golusoris-node (2026-06-15)
+no rebase impact for upstream Netflix/vmaf syncs: every file touched is
+fork-local Go and has no upstream counterpart. The change rewrites
+`cmd/vmafx-node/main.go` (the Go gRPC worker root) onto the golusoris fx
+framework (ADR-1119, Phase-1 PR-3), adds `cmd/vmafx-node/providers.go` (the fx
+domain providers) and `cmd/vmafx-node/scoring_handler.go` (the VmafxScoring impl
+moved out of the now-removed `cmd/vmafx-node/server` package), refactors
+`cmd/vmafx-node/online_feedback.go` (Start/Close lifecycle), updates
+`docs/usage/env-vars.md` for the env-var rename, and adds `app_test.go` +
+`app_scorestream_test.go` (fxtest lifecycle + end-to-end ScoreStream). None of
+these exist in upstream; libvmaf's C sources, public headers, and the Netflix
+golden gate are untouched. The eBPF loader under `cmd/vmafx-node/bpf/` is
+unrelated to golusoris and was not touched.
+
+Rebase-sensitive invariants (fork-internal, NOT upstream):
+- **R-node lifecycle stop order.** The composition root forces the
+  `*libvmaf.Scorer` to be constructed first, then the `*FeedbackClient` +
+  `*Executor` (a lazy-provider guard `fx.Invoke(func(_ *FeedbackClient, _
+  *Executor) {})`), then the golusoris `*grpc.Server` (a standalone
+  `fx.Invoke(func(_ *grpc.Server) {})` lazy-provider guard). fx runs OnStop
+  hooks in reverse construction order, so this guarantees: gRPC `GracefulStop`
+  drains in-flight `Score` / `ScoreStream` calls → FeedbackClient drainer stops
+  → scorer `Close()`. `TestStopOrderNode` (app_test.go) pins this against the
+  REAL hook firing order; do not reorder those invokes or flip arg order.
+- **Lazy-provider listener guard.** `grpc.Module`'s listener binds in an
+  OnStart hook that only runs if `*grpc.Server` is consumed. The standalone
+  `fx.Invoke(func(_ *grpc.Server) {})` is load-bearing — remove it and the node
+  serves nothing. `TestAppStartsAndBinds` dials the bound addr to prove it.
+- **FeedbackClient drainer lifetime.** `NewFeedbackClient(log)` no longer takes
+  a context or spawns a goroutine; `Start()` launches the drainer (bound to an
+  internal, Close-owned context) and `Close()` stops + awaits it. Both are
+  idempotent. Wired to fx OnStart/OnStop in `provideFeedbackClient`.
+- **go.mod pin.** `github.com/golusoris/golusoris` stays at `v0.4.0`. The fx
+  migration only adds the transitive `// indirect` dep
+  `go-grpc-middleware/v2 v2.3.3` via `go mod tidy`; it does not bump the
+  golusoris pin or touch `internal/app/bootstrap`.
+- **Env-var contract.** `VMAFX_GRPC_LISTEN` maps to the golusoris `grpc.listen`
+  key under the `VMAFX_` prefix (replaces `VMAFX_NODE_ADDR`). If golusoris
+  renames that key, the node's documented env contract must follow.
