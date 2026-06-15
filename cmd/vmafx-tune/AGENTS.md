@@ -61,3 +61,37 @@ during the migration; see Stage roadmap in
    determine whether a JSON file is a ladder or compare payload. This probe is
    the contract between the two schemas. Any future schema that omits both keys
    must be added to the probe before the `report` subcommand can read it.
+
+10. **clikit root + one-shot fx adapter** (`cmd/vmafx-tune/cmd/root.go`,
+    `golusoris.go`): the CLI root is built with `clikit.New` and every
+    subcommand with `clikit.Command` (ADR-1119 Phase-1). One-shot subcommands
+    (compare, ladder, report, and the not-yet-ported stubs) wire their handler
+    via `clikit.WithRunE(withGolusoris(fn))`. `withGolusoris` boots an `fx`
+    graph from `bootstrap.Base`, `fx.Populate`s a `*slog.Logger` + `*config.Config`
+    into the handler, runs `fn`, then `app.Stop`s — and returns `fn`'s error so
+    cobra sets the process exit code. **Do not** swap these to
+    `clikit.WithFx(golusoris.Core, fx.Invoke(fn))`: clikit's `WithFx` calls
+    `app.Run()` (blocks until a signal) and discards the `fx.Invoke` error, so a
+    one-shot command would hang and lose its exit code. New subcommands follow
+    the same `withGolusoris` shape; keep the `run*` signature
+    `func(ctx context.Context, d deps, ...) error` so logger/config injection
+    flows through.
+
+11. **`fx.NopLogger`, not `bootstrap.FxLogger()`** (`cmd/vmafx-tune/cmd/golusoris.go`):
+    `withGolusoris` attaches `fx.NopLogger` so fx's own provide/invoke/lifecycle
+    events never reach the console. `bootstrap.FxLogger()` (which routes fx
+    events onto the app `*slog.Logger`) is for long-running services; on a
+    one-shot CLI it floods `stderr` with dependency-graph chatter on every
+    invocation. Domain diagnostics still go through the injected `*slog.Logger`.
+
+12. **`levelledLogger` decorator is a golusoris v0.4.0 workaround**
+    (`cmd/vmafx-tune/cmd/golusoris.go`): a root-scope
+    `fx.Replace(config.Options{EnvPrefix:"VMAFX_"})` reaches root-scope consumers
+    but does **not** penetrate the `golusoris.log` submodule's `config.Options`
+    dependency, so the auto-built logger silently falls back to the default
+    `APP_` prefix and `LevelInfo`. `withGolusoris` adds
+    `fx.Decorate(levelledLogger)` to rebuild the `*slog.Logger` from the
+    (correct, root-scope) config at the `VMAFX_LOG_LEVEL` / `VMAFX_LOG_FORMAT`
+    values. Delete this decorator once golusoris makes the override penetrate
+    submodules (track upstream alongside #234);
+    `TestGolusorisInjection_ConfigDrivesLogLevel` guards the behavior.

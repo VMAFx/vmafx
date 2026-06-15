@@ -105,7 +105,7 @@ func TestRunReport_MarkdownFromCompare(t *testing.T) {
 		output: "",
 		format: "markdown",
 	}
-	if err := runReport(context.Background(), flags); err != nil {
+	if err := runReport(context.Background(), testDeps(), flags); err != nil {
 		t.Fatalf("runReport markdown: %v", err)
 	}
 }
@@ -120,7 +120,7 @@ func TestRunReport_HTMLFromLadder(t *testing.T) {
 		output: outFile,
 		format: "html",
 	}
-	if err := runReport(context.Background(), flags); err != nil {
+	if err := runReport(context.Background(), testDeps(), flags); err != nil {
 		t.Fatalf("runReport html: %v", err)
 	}
 	data, err := os.ReadFile(outFile)
@@ -140,7 +140,7 @@ func TestRunReport_UnknownFormat(t *testing.T) {
 		inputs: []string{path},
 		format: "pdf",
 	}
-	err := runReport(context.Background(), flags)
+	err := runReport(context.Background(), testDeps(), flags)
 	if err == nil {
 		t.Fatal("expected error for unknown format, got nil")
 	}
@@ -158,7 +158,7 @@ func TestRunReport_MultipleInputs(t *testing.T) {
 		inputs: []string{p1, p2},
 		format: "markdown",
 	}
-	if err := runReport(context.Background(), flags); err != nil {
+	if err := runReport(context.Background(), testDeps(), flags); err != nil {
 		t.Fatalf("runReport multiple inputs: %v", err)
 	}
 }

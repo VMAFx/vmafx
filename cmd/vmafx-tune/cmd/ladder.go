@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golusoris/golusoris/clikit"
 	"github.com/spf13/cobra"
 
 	"github.com/VMAFx/vmafx/pkg/bisect"
@@ -50,10 +52,13 @@ var defaultResolutions = []string{
 func newLadderCmd() *cobra.Command {
 	flags := &ladderFlags{}
 
-	cmd := &cobra.Command{
-		Use:   "ladder",
-		Short: "Per-title ABR bitrate-ladder generation from a VMAF-target sweep",
-		Long: `Build an ABR bitrate ladder for a single source clip.
+	cmd := clikit.Command("ladder",
+		"Per-title ABR bitrate-ladder generation from a VMAF-target sweep",
+		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
+			return runLadder(ctx, d, flags)
+		})),
+	)
+	cmd.Long = `Build an ABR bitrate ladder for a single source clip.
 
 For each (resolution, VMAF target) cell in the sampling grid, a CRF bisect
 finds the highest CRF whose measured VMAF meets the target.  The resulting
@@ -76,11 +81,7 @@ Example:
     --reference src.mp4 \
     --codec libx264 \
     --targets 75,85,95 \
-    --output ladder.json`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLadder(flags)
-		},
-	}
+    --output ladder.json`
 
 	cmd.Flags().StringVarP(&flags.reference, "reference", "r", "",
 		"Path to the reference video (required)")
@@ -137,8 +138,9 @@ func parseResolution(s string) (int, int, error) {
 	return w, h, nil
 }
 
-// runLadder is the implementation of the ladder subcommand.
-func runLadder(flags *ladderFlags) error {
+// runLadder is the implementation of the ladder subcommand. The injected
+// golusoris dependencies carry the structured logger used for run diagnostics.
+func runLadder(ctx context.Context, d deps, flags *ladderFlags) error {
 	if flags.reference == "" {
 		return errors.New("--reference is required")
 	}
@@ -217,6 +219,12 @@ func runLadder(flags *ladderFlags) error {
 		}, nil
 	}
 
+	d.Log.InfoContext(ctx, "building per-title ABR ladder",
+		"reference", flags.reference,
+		"encoder", enc.Name(),
+		"resolutions", flags.resolutions,
+		"targets", flags.targets)
+
 	t0 := time.Now()
 	result, buildErr := ladder.Build(flags.reference, enc.Name(), ladder.Params{
 		Resolutions:       resolutions,
@@ -229,6 +237,10 @@ func runLadder(flags *ladderFlags) error {
 	if buildErr != nil {
 		return fmt.Errorf("ladder build: %w", buildErr)
 	}
+	d.Log.InfoContext(ctx, "ladder build complete",
+		"renditions", len(result.Renditions),
+		"hull_points", len(result.Hull),
+		"wall_time_ms", wallTimeMS)
 
 	var output string
 	var emitErr error

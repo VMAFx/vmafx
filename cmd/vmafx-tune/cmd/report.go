@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/golusoris/golusoris/clikit"
 	"github.com/spf13/cobra"
 
 	"github.com/VMAFx/vmafx/pkg/report"
@@ -32,10 +33,14 @@ type reportFlags struct {
 func newReportCmd() *cobra.Command {
 	flags := &reportFlags{}
 
-	cmd := &cobra.Command{
-		Use:   "report <input.json> [input2.json ...]",
-		Short: "Render Markdown or HTML report from prior compare / ladder run outputs",
-		Long: `Generate a human-readable report from one or more vmafx-tune JSON output files.
+	cmd := clikit.Command("report <input.json> [input2.json ...]",
+		"Render Markdown or HTML report from prior compare / ladder run outputs",
+		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, args []string) error {
+			flags.inputs = args
+			return runReport(ctx, d, flags)
+		})),
+	)
+	cmd.Long = `Generate a human-readable report from one or more vmafx-tune JSON output files.
 
 The JSON files are produced by the "compare" or "ladder" subcommands.
 Multiple inputs are merged into a single report, sorted by tool_version and src.
@@ -53,17 +58,12 @@ Example — HTML to file:
     --output report.html
 
 Stage-4 scope (ADR-0770): Markdown and HTML. PDF and JSON-diff modes are
-Stage-5 scope.`,
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return errors.New("at least one input JSON file is required")
-			}
-			return nil
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.inputs = args
-			return runReport(cmd.Context(), flags)
-		},
+Stage-5 scope.`
+	cmd.Args = func(_ *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return errors.New("at least one input JSON file is required")
+		}
+		return nil
 	}
 
 	cmd.Flags().StringVarP(&flags.output, "output", "o", "",
@@ -74,12 +74,18 @@ Stage-5 scope.`,
 	return cmd
 }
 
-// runReport is the implementation of the report subcommand.
-func runReport(_ context.Context, flags *reportFlags) error {
+// runReport is the implementation of the report subcommand. The injected
+// golusoris dependencies carry the structured logger used for run diagnostics.
+func runReport(ctx context.Context, d deps, flags *reportFlags) error {
 	format := strings.ToLower(strings.TrimSpace(flags.format))
 	if format != "markdown" && format != "html" {
 		return fmt.Errorf("unknown --format %q; supported: markdown, html", flags.format)
 	}
+
+	d.Log.InfoContext(ctx, "rendering report",
+		"inputs", flags.inputs,
+		"format", format,
+		"output", outputTarget(flags.output))
 
 	// Load all input files.
 	var loaded []report.MultiReport
@@ -101,6 +107,15 @@ func runReport(_ context.Context, flags *reportFlags) error {
 	}
 
 	return writeOutput(flags.output, output)
+}
+
+// outputTarget returns a human-friendly label for the output destination,
+// reporting "stdout" for the empty (default) path so log lines stay readable.
+func outputTarget(path string) string {
+	if path == "" {
+		return "stdout"
+	}
+	return path
 }
 
 // loadReportFile reads a JSON file and unmarshals it into a MultiReport.

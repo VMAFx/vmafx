@@ -11,6 +11,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"os"
@@ -502,7 +503,7 @@ func TestRunCompare_ValidationErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := runCompare(&tc.flags)
+			err := runCompare(context.Background(), testDeps(), &tc.flags)
 			if err == nil {
 				t.Fatalf("expected error containing %q, got nil", tc.want)
 			}
@@ -531,7 +532,7 @@ func TestRunLadder_ValidationErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := runLadder(&tc.flags)
+			err := runLadder(context.Background(), testDeps(), &tc.flags)
 			if err == nil {
 				t.Fatalf("expected error containing %q, got nil", tc.want)
 			}

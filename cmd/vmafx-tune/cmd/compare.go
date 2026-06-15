@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golusoris/golusoris/clikit"
 	"github.com/spf13/cobra"
 
 	"github.com/VMAFx/vmafx/pkg/bisect"
@@ -54,10 +56,13 @@ type pairResult struct {
 func newCompareCmd() *cobra.Command {
 	flags := &compareFlags{}
 
-	cmd := &cobra.Command{
-		Use:   "compare",
-		Short: "Rate-quality sweep: compare codecs at one or more VMAF targets",
-		Long: `Compare software encoders (libx264, libx265) at one or more VMAF
+	cmd := clikit.Command("compare",
+		"Rate-quality sweep: compare codecs at one or more VMAF targets",
+		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
+			return runCompare(ctx, d, flags)
+		})),
+	)
+	cmd.Long = `Compare software encoders (libx264, libx265) at one or more VMAF
 targets. For each (codec, target) pair the bisect finds the highest CRF whose
 measured VMAF still meets the target, then reports bitrate and score.
 
@@ -70,11 +75,7 @@ Example:
     --codecs libx264,libx265 \
     --targets 85,90,95 \
     --output results.json \
-    --format json`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCompare(flags)
-		},
-	}
+    --format json`
 
 	cmd.Flags().StringVarP(&flags.reference, "reference", "r", "",
 		"Path to the reference video (required)")
@@ -104,8 +105,9 @@ Example:
 	return cmd
 }
 
-// runCompare is the implementation of the compare subcommand.
-func runCompare(flags *compareFlags) error {
+// runCompare is the implementation of the compare subcommand. The injected
+// golusoris dependencies carry the structured logger used for run diagnostics.
+func runCompare(ctx context.Context, d deps, flags *compareFlags) error {
 	if flags.reference == "" {
 		return errors.New("--reference is required")
 	}
@@ -148,6 +150,12 @@ func runCompare(flags *compareFlags) error {
 			pairs = append(pairs, pairKey{codec: enc.Name(), target: target})
 		}
 	}
+
+	d.Log.InfoContext(ctx, "starting rate-quality sweep",
+		"reference", flags.reference,
+		"codecs", flags.codecs,
+		"targets", flags.targets,
+		"pairs", len(pairs))
 
 	results := make([]pairResult, len(pairs))
 	var wg sync.WaitGroup
@@ -197,6 +205,7 @@ func runCompare(flags *compareFlags) error {
 
 	wg.Wait()
 	wallTimeMS := float64(time.Since(t0).Milliseconds())
+	d.Log.InfoContext(ctx, "rate-quality sweep complete", "wall_time_ms", wallTimeMS)
 
 	// If there is only one target, emit a single-target (schema-v1) report
 	// with rows sorted by ascending bitrate (ok rows first, fails trailing).

@@ -8,10 +8,22 @@
 package cmd
 
 import (
+	"io"
+	"log/slog"
 	"math"
 
 	"github.com/VMAFx/vmafx/pkg/ladder"
 )
+
+// testDeps returns a deps value suitable for unit tests that call the run*
+// functions directly without standing up a golusoris fx graph. The logger
+// discards output; Cfg is left nil because the run* functions log and act on
+// flags, not on config (config is exercised through the live fx path).
+func testDeps() deps {
+	return deps{
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+}
 
 // makeLadderResult returns a minimal LadderResult with one cloud point, one
 // hull point, and one rendition — enough to exercise both the JSON and

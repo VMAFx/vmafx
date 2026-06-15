@@ -1,6 +1,52 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/golusoris-tune (2026-06-15)
+Rebase impact: **low (Go-only, additive + in-place rewrite of one binary's
+composition root)**. Phase-1 of the golusoris adoption (ADR-1119): migrates the
+`cmd/vmafx-tune` CLI from a hand-built `cobra.Command` root onto the golusoris
+`clikit` (cobra + fx) framework. Touches only `cmd/vmafx-tune/*` + its docs /
+changelog / rebase-notes; **no C / meson / public-header / ffmpeg-patch /
+golden-gate impact**, and the Python `tools/vmaf-tune` harness is untouched.
+`cmd/vmafx-tune` is **non-cgo** (no `pkg/libvmaf` import), so no `libvmaf.so`
+build is needed to compile or test it.
+
+Files: new `cmd/vmafx-tune/cmd/golusoris.go` (the `withGolusoris` adapter +
+`configOptions` + `levelledLogger`); `cmd/vmafx-tune/cmd/root.go` rewritten to
+`clikit.New` + `clikit.Command`; `compare.go` / `ladder.go` / `report.go`
+subcommand builders re-wired through `clikit` and their `run*` functions now
+take `(ctx, deps, flags)`; new `cmd/vmafx-tune/cmd/root_test.go`; existing tests
+updated for the new `run*` signatures; `cmd/vmafx-tune/AGENTS.md` invariants
+extended; `docs/usage/vmafx-tune-go.md` documents the `VMAFX_LOG_LEVEL` /
+`VMAFX_LOG_FORMAT` surface.
+
+Rebase-sensitive invariants for follow-up PRs and any golusoris bump:
+
+- **clikit `WithFx` is long-running, not one-shot.** `clikit.WithFx` builds an
+  `fx.App` and calls `app.Run()` (blocks until signal) and never surfaces an
+  `fx.Invoke` error as the exit code. One-shot tuning subcommands therefore use
+  `clikit.WithRunE(withGolusoris(fn))`, where `withGolusoris` builds the graph
+  from `bootstrap.Base`, `fx.Populate`s the deps, runs `fn`, and returns its
+  error. Do **not** "simplify" these to `clikit.WithFx(golusoris.Core,
+  fx.Invoke(fn))` — the CLI would block and lose its exit code.
+- **`fx.NopLogger` is deliberate.** A one-shot CLI must not print fx
+  provide/invoke/lifecycle chatter on every run; `bootstrap.FxLogger()` (which
+  routes fx events onto the app logger) is for long-running services only. The
+  injected `*slog.Logger` still carries domain diagnostics.
+- **`levelledLogger` compensates for a golusoris v0.4.0 scoping gap.** A
+  root-scope `fx.Replace(config.Options{EnvPrefix:"VMAFX_"})` reaches root-scope
+  consumers (our domain code reads the right config) but does **not** penetrate
+  the `golusoris.log` submodule's own `config.Options` dependency, so the
+  auto-built logger falls back to the default `APP_` prefix and stays at
+  `LevelInfo`. `withGolusoris` therefore adds `fx.Decorate(levelledLogger)` to
+  rebuild the `*slog.Logger` from the root config at the `VMAFX_`-configured
+  level/format. **Delete this decorator once golusoris makes the root config
+  override penetrate submodules** (track upstream alongside golusoris #234); the
+  `TestGolusorisInjection_ConfigDrivesLogLevel` test guards the behavior.
+- **`VMAFX_` env prefix.** `configOptions()` sets `EnvPrefix:"VMAFX_"` to match
+  the fork-wide env contract (ADR-1119). golusoris splits every underscore into
+  the config delimiter, so `VMAFX_LOG_LEVEL` → `log.level`.
+
 ## feat/golusoris-foundation (2026-06-14)
 Rebase impact: **low (Go-only, additive)**. Phase 0 of the golusoris fx
 framework adoption (ADR-1119). Adds `github.com/golusoris/golusoris v0.3.1` to

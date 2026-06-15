@@ -142,8 +142,9 @@ renders correctly without a network connection.
 
 ## Not yet ported (Stage 5+)
 
-The following subcommands are stubs in `vmafx-tune-go`. They print a redirect
-message and exit 1 when invoked. Use the Python `vmaf-tune` binary for these:
+The following subcommands are stubs in `vmafx-tune-go`. They log a redirect
+notice (a `WARN`-level structured log line) and exit 1 when invoked. Use the
+Python `vmaf-tune` binary for these:
 
 | Subcommand | Python equivalent |
 |------------|-------------------|
@@ -155,6 +156,35 @@ message and exit 1 when invoked. Use the Python `vmaf-tune` binary for these:
 | `sidecar` | `vmaf-tune sidecar` |
 | `encode-profile` | `vmaf-tune encode-profile` |
 
+## Configuration and logging
+
+`vmafx-tune-go` runs each subcommand inside the golusoris `clikit` (cobra + fx)
+framework. The framework injects a structured `*slog.Logger` and a config tree
+into every subcommand, so run diagnostics (sweep start/finish, ladder build
+summary, report rendering) are emitted as structured log lines on `stderr`,
+while subcommand output (JSON / Markdown / HTML) goes to `stdout` or the
+`--output` file. This keeps machine-readable output separate from logs when you
+pipe `stdout`.
+
+Configuration is read from environment variables under the `VMAFX_` prefix.
+golusoris maps each underscore in the variable name to a config-path delimiter
+(`VMAFX_LOG_LEVEL` → `log.level`):
+
+| Environment variable | Config key | Effect | Default |
+|----------------------|------------|--------|---------|
+| `VMAFX_LOG_LEVEL` | `log.level` | Minimum log level: `debug`, `info`, `warn`, `error` | `info` |
+| `VMAFX_LOG_FORMAT` | `log.format` | Log handler: `auto` (tint on a TTY, JSON otherwise), `tint`, `json` | `auto` |
+
+Examples:
+
+```bash
+# Quiet the per-run INFO diagnostics; keep warnings/errors.
+VMAFX_LOG_LEVEL=warn vmafx-tune-go report results.json
+
+# Force JSON logs for machine ingestion regardless of TTY.
+VMAFX_LOG_FORMAT=json vmafx-tune-go compare --reference src.mp4 --targets 90
+```
+
 ## Migration roadmap
 
 | Stage | Scope | ADR | Status |
@@ -162,12 +192,19 @@ message and exit 1 when invoked. Use the Python `vmaf-tune` binary for these:
 | Stage 1 | `compare` subcommand, libx264/libx265, single/multi-target bisect | ADR-0705 | Merged |
 | Stage 2 | `ladder` subcommand, hardware encoders (NVENC, QSV, AMF), convex hull + knee selection | ADR-0730 | Merged |
 | Stage 3 | `pkg/conformal`, downscale plumbing | — | Merged |
-| Stage 4 | `report` subcommand, Markdown + HTML rendering | ADR-0770 | **This PR** |
+| Stage 4 | `report` subcommand, Markdown + HTML rendering | ADR-0770 | Merged |
+| golusoris | Migrate the CLI root + subcommands onto the golusoris `clikit` (cobra + fx) framework; `VMAFX_`-prefixed config + injected `slog` | ADR-1119 | **This PR** |
 | Stage 5 | `tune-per-shot` subcommand, conformal CLI wiring | Planned | — |
 | Stage 6 | `fast` subcommand (requires ONNX Go binding) | Planned | — |
 | Stage N | Feature parity; rename binary to `vmafx-tune` | Planned | — |
 
 ## Architecture
+
+The CLI root and every subcommand are built with the golusoris `clikit`
+(cobra + fx) framework (ADR-1119): `clikit.New` builds the root, `clikit.Command`
+builds each subcommand, and a thin `withGolusoris` adapter boots a one-shot fx
+graph per invocation so the command receives an injected `*slog.Logger` and
+config, runs to completion, and propagates its error as the process exit code.
 
 The Go binary uses an **adapter pattern** with four core packages:
 
