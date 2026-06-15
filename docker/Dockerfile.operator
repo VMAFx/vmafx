@@ -73,7 +73,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # gcr.io/distroless/static-debian12 is appropriate for CGO_ENABLED=0 binaries.
 # It contains only the CA bundle and timezone data — no libc, no shell.
 # This is 2 MB smaller than distroless/cc and has a smaller attack surface.
-FROM gcr.io/distroless/static-debian12@sha256:a9fd93a4b0fc23c6b0c2c8aca9d0d8ad14fce9505d3a6e3a23cc7cf5eedf15a4 AS operator
+FROM gcr.io/distroless/static-debian12@sha256:9c346e4be81b5ca7ff31a0d89eaeade58b0f95cfd3baed1f36083ddb47ca3160 AS operator
 
 LABEL org.opencontainers.image.title="vmafx-operator"
 LABEL org.opencontainers.image.description="VMAFX Kubernetes operator — CRD reconciliation for VmafxJob / VmafxNode / VmafxModelTraining"

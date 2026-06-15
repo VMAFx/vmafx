@@ -26,7 +26,7 @@ name = "vmafx_tad"
 crate-type = ["staticlib", "rlib"]
 
 [build-dependencies]
-cbindgen = "0.27"
+cbindgen = "0.29.4"
 
 [package.metadata.cargo-machete]
 # cbindgen is consumed by build.rs to generate the C header that the
