@@ -46145,3 +46145,108 @@ Rebase-sensitive invariants (fork-internal, NOT upstream):
   golusoris `http.addr` / `grpc.listen` keys under the `VMAFX_` prefix. If
   golusoris renames those keys, the server's documented env contract must
   follow.
+## feat/golusoris-node (2026-06-15)
+no rebase impact for upstream Netflix/vmaf syncs: every file touched is
+fork-local Go and has no upstream counterpart. The change rewrites
+`cmd/vmafx-node/main.go` (the Go gRPC worker root) onto the golusoris fx
+framework (ADR-1119, Phase-1 PR-3), adds `cmd/vmafx-node/providers.go` (the fx
+domain providers) and `cmd/vmafx-node/scoring_handler.go` (the VmafxScoring impl
+moved out of the now-removed `cmd/vmafx-node/server` package), refactors
+`cmd/vmafx-node/online_feedback.go` (Start/Close lifecycle), updates
+`docs/usage/env-vars.md` for the env-var rename, and adds `app_test.go` +
+`app_scorestream_test.go` (fxtest lifecycle + end-to-end ScoreStream). None of
+these exist in upstream; libvmaf's C sources, public headers, and the Netflix
+golden gate are untouched. The eBPF loader under `cmd/vmafx-node/bpf/` is
+unrelated to golusoris and was not touched.
+
+Rebase-sensitive invariants (fork-internal, NOT upstream):
+- **R-node lifecycle stop order.** The composition root forces the
+  `*libvmaf.Scorer` to be constructed first, then the `*FeedbackClient` +
+  `*Executor` (a lazy-provider guard `fx.Invoke(func(_ *FeedbackClient, _
+  *Executor) {})`), then the golusoris `*grpc.Server` (a standalone
+  `fx.Invoke(func(_ *grpc.Server) {})` lazy-provider guard). fx runs OnStop
+  hooks in reverse construction order, so this guarantees: gRPC `GracefulStop`
+  drains in-flight `Score` / `ScoreStream` calls → FeedbackClient drainer stops
+  → scorer `Close()`. `TestStopOrderNode` (app_test.go) pins this against the
+  REAL hook firing order; do not reorder those invokes or flip arg order.
+- **Lazy-provider listener guard.** `grpc.Module`'s listener binds in an
+  OnStart hook that only runs if `*grpc.Server` is consumed. The standalone
+  `fx.Invoke(func(_ *grpc.Server) {})` is load-bearing — remove it and the node
+  serves nothing. `TestAppStartsAndBinds` dials the bound addr to prove it.
+- **FeedbackClient drainer lifetime.** `NewFeedbackClient(log)` no longer takes
+  a context or spawns a goroutine; `Start()` launches the drainer (bound to an
+  internal, Close-owned context) and `Close()` stops + awaits it. Both are
+  idempotent. Wired to fx OnStart/OnStop in `provideFeedbackClient`.
+- **go.mod pin.** `github.com/golusoris/golusoris` stays at `v0.4.0`. The fx
+  migration only adds the transitive `// indirect` dep
+  `go-grpc-middleware/v2 v2.3.3` via `go mod tidy`; it does not bump the
+  golusoris pin or touch `internal/app/bootstrap`.
+- **Env-var contract.** `VMAFX_GRPC_LISTEN` maps to the golusoris `grpc.listen`
+  key under the `VMAFX_` prefix (replaces `VMAFX_NODE_ADDR`). If golusoris
+  renames that key, the node's documented env contract must follow.
+## feat/golusoris-operator (2026-06-15)
+no rebase impact for upstream Netflix/vmaf syncs: every file is fork-local and
+has no upstream counterpart. `cmd/vmafx-operator/main.go` is rewritten from a
+hand-rolled controller-runtime entry point onto the golusoris fx framework
+(ADR-1119 Phase 1), and `cmd/vmafx-operator/main_test.go` adds fx-graph
+validation. The reconcilers under `cmd/vmafx-operator/internal/controller/` and
+the webhooks under `cmd/vmafx-operator/internal/webhook/` are unchanged; only
+their wiring (Setup-against-manager) moved into fx.Invoke hooks. None of these
+files exist upstream.
+
+Rebase-sensitive invariant (cross-repo, NOT Netflix upstream): this migration
+requires `github.com/golusoris/golusoris` >= v0.4.0, because the
+`github.com/golusoris/golusoris/k8s/operator` module (introduced by golusoris
+commit 3df9f1a / PR #224) first appears in tag v0.4.0 and is ABSENT in v0.3.1.
+The foundation commit (afd66c7ef) pins v0.3.1, which predates k8s/operator —
+so `cmd/vmafx-operator/main.go` does not compile until the go.mod golusoris
+pin is bumped to v0.4.0+. The pin bump is intentionally NOT part of this branch
+(it is a shared go.mod change owned by the migration orchestrator).
+
+golusoris#227 note: the in-tree main.go does NOT add an app-level
+`ctrl.SetLogger` shim — golusoris v0.4.0's `operator.Module` already calls
+`ctrl.SetLogger(loggerFromSlog(logger))` inside `newManager`, so a second
+SetLogger from the app would be redundant. If a future golusoris release
+reverts that (regressing #227), re-add the shim as an
+`fx.Invoke(func(l *slog.Logger){ ctrl.SetLogger(logr.FromSlogHandler(l.Handler())) })`.
+Likewise webhooks are wired via `operator.Options.WebhookPort` (also added
+post-v0.3.1); if that field disappears upstream, the app must stand up its own
+`webhook.NewServer` and add it to the manager.
+## feat/golusoris-mcp (2026-06-15)
+no rebase impact for upstream Netflix/vmaf syncs: this PR rewrites only
+`cmd/vmafx-mcp/main.go` (the Go MCP server composition root) onto the golusoris
+fx framework (ADR-1119, Phase-1 PR-5), plus the fork-local
+docs/changelog/AGENTS deliverables. `cmd/vmafx-mcp/` is entirely fork-added and
+has no upstream counterpart. The MCP tool surface (`tools.go`, `impl.go`,
+`impl_direct.go`, `server.go`) is byte-unchanged, and no test file changed.
+
+- **Composition root.** The hand-rolled `flag.Parse` + `signal.NotifyContext`
+  + bespoke stdio/HTTP transport loops + custom `observability.InitOTel` are
+  replaced by `fx.New(bootstrap.Base, fx.Replace(config.Options{...}),
+  bootstrap.FxLogger(), fx.Provide(buildMCPServer), fx.Invoke(runMCPTransport)).Run()`.
+  Mirrors `cmd/vmafx-server/main.go` and `cmd/vmafx-node/main.go`. Because the
+  MCP server is NOT a golusoris server module (golusoris ships no MCP module),
+  the transport is owned in the `runMCPTransport` lifecycle hook rather than by
+  a framework module — if golusoris later adds an MCP module, fold the hook
+  into it.
+- **bootstrap dependency.** This PR consumes `internal/app/bootstrap.Base` and
+  `bootstrap.FxLogger()` but does NOT modify them; it shares the bootstrap
+  stanza with the sibling fx migrations (#932/#934/#935/#936). A rebase that
+  reshapes `bootstrap.Base` (e.g. when golusoris#226 ships a version module, or
+  golusoris#234's LOG_LEVEL prefix-read lands and the env bridge can be
+  deleted) must re-check `main()` here too.
+- **Env bridge (interim).** `main()` bridges `VMAFX_LOG_LEVEL → LOG_LEVEL` and
+  `VMAFX_LOG_FORMAT → LOG_FORMAT` before `fx.New`, identical to the sibling
+  binaries (golusoris#234). Delete all four bridges across the cmd/ tree in one
+  sweep once the carrying golusoris tag lands.
+- **Env-var / flag contract change.** `--transport` / `--port` flags removed;
+  replaced by `VMAFX_MCP_TRANSPORT` (`mcp.transport`, default `stdio`) and
+  `VMAFX_MCP_HTTP_ADDR` (`mcp.http.addr`, default `:3000`). `VMAF_BIN` and
+  `VMAFX_MCP_DIRECT` are read directly by the tool handlers (not via koanf) and
+  are unchanged.
+- **Rebase-sensitive invariant — stdio-stdout purity.** Nothing in the fx
+  graph may write to stdout in stdio mode (the JSON-RPC framing owns it). golusoris
+  log → stderr, `otel.Module` is OTLP-gRPC (no stdout), `bootstrap.FxLogger()` →
+  slog → stderr. A future rebase that adds an `fx.Print`-style logger, a stdout
+  OTel exporter, or any `fmt.Println` to the composition root MUST gate it off
+  in stdio mode. See cmd/vmafx-mcp/AGENTS.md invariant #11.

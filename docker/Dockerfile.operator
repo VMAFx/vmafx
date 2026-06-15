@@ -25,14 +25,14 @@
 # Run:
 #   docker run --rm \
 #     -e VMAFX_OPERATOR_METRICS_ADDR=:8081 \
-#     -e VMAFX_OPERATOR_PROBE_ADDR=:8082 \
-#     -e VMAFX_OPERATOR_LEADER_ELECT=true \
+#     -e VMAFX_OPERATOR_HEALTH_PROBE_ADDR=:8082 \
+#     -e VMAFX_OPERATOR_LEADER_ELECTION=true \
 #     ghcr.io/vmafx/vmafx-operator:dev
 #
 # Environment variables (all optional; CLI flags override):
 #   VMAFX_OPERATOR_METRICS_ADDR   Prometheus metrics bind address (default ":8081")
-#   VMAFX_OPERATOR_PROBE_ADDR     Health probe bind address (default ":8082")
-#   VMAFX_OPERATOR_LEADER_ELECT   Enable leader election ("true"/"false", default "false")
+#   VMAFX_OPERATOR_HEALTH_PROBE_ADDR  Health probe bind address (default ":8081")
+#   VMAFX_OPERATOR_LEADER_ELECTION Enable leader election ("true"/"false", default "false")
 #   VMAFX_OPERATOR_LOG_LEVEL      slog level string (default "info")
 #
 # ADR-0814 (operator reconciler scope), ADR-0715 (operator skeleton),
