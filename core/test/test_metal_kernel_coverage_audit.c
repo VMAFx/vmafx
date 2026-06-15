@@ -17,25 +17,30 @@
  */
 
 /*
- * Metal kernel coverage round 4 (closeout) — meta-audit regression guard.
+ * Metal kernel coverage audit — meta-audit regression guard.
  *
- * The per-kernel CPU-vs-Metal parity gates were closed across three rounds:
+ * The per-kernel CPU-vs-Metal parity gates were closed across several rounds,
+ * growing the registered Metal extractor set from the original 8 to the full
+ * 17 that ship today:
  *
  *   - PR #351 (round 1): registration audit (8 extractors discoverable).
  *   - PR #379 (round 2): parity for motion_v2, integer_psnr, float_psnr,
  *                        float_ssim.
  *   - PR #447 (round 3): parity for integer_motion, float_motion,
  *                        float_moment, float_ms_ssim.
+ *   - subsequent rounds: integer_ssim, float_vif, integer_vif, float_adm,
+ *                        integer_adm, integer_ciede, integer_psnr_hvs,
+ *                        integer_cambi, ssimulacra2.
  *
- * Net post-PR-#379-and-#447: 8 / 8 Metal kernels carry a per-kernel CPU-vs-
- * Metal score parity test. This round-4 test installs the *regression guard*
- * for that coverage: it enumerates the 8 expected kernel basenames and
- * asserts that every one is (a) discoverable via
+ * Net today: 17 / 17 Metal kernels are registered + dispatch-routed + carry a
+ * per-kernel CPU-vs-Metal score parity test. This test installs the
+ * *regression guard* for that coverage: it enumerates the 17 expected kernel
+ * basenames and asserts that every one is (a) discoverable via
  * `vmaf_get_feature_extractor_by_name`, and (b) supported by the Metal
  * dispatch strategy when a real context is available. The guard fires the
  * day a new `.mm` kernel lands under `core/src/feature/metal/` without
  * either a registration row or a dispatch-table row — that is, before a
- * future round-5 parity test would even compile.
+ * future parity test would even compile.
  *
  * Why the existing per-kernel tests don't already enforce this: each one
  * names its own extractor inline (`"integer_motion_metal"`, etc.). A new
@@ -51,7 +56,7 @@
  *     CI lanes both checks run.
  *
  * Cross-references:
- *   - ADR-0959 (this PR — round-4 closeout)
+ *   - ADR-0959 (round-4 closeout)
  *   - ADR-0421 (first kernel = motion_v2_metal, T8-1c)
  *   - ADR-0361 (Metal backend scaffold)
  *   - ADR-0214 (cross-backend parity gate)
@@ -59,6 +64,7 @@
  *   - core/test/test_metal_motion_v2_parity.c (PR #379)
  *   - core/test/test_metal_integer_motion_parity.c (PR #447)
  *   - core/src/metal/dispatch_strategy.c
+ *   - core/src/feature/feature_extractor.c (feature_extractor_list[])
  */
 
 #include <errno.h>
@@ -88,13 +94,18 @@
  * part BEFORE the "_metal" suffix — NOT necessarily the .mm filename stem.
  * In particular, integer_motion_v2_metal.mm registers as "motion_v2_metal"
  * (the short alias chosen in ADR-0421 / T8-1c), so the entry is "motion_v2",
- * not "integer_motion_v2". */
+ * not "integer_motion_v2". All other .mm files register as their stem +
+ * "_metal" (e.g. ssimulacra2_metal.mm → "ssimulacra2_metal"). */
 static const char *const g_metal_kernel_basenames[] = {
-    "float_moment",   "float_motion", "float_ms_ssim", "float_psnr", "float_ssim",
-    "integer_motion", "integer_psnr", "motion_v2",     NULL,
+    "float_moment",  "float_motion",  "float_ms_ssim",
+    "float_psnr",    "float_ssim",    "integer_motion",
+    "integer_psnr",  "motion_v2",     "integer_ssim",
+    "float_vif",     "integer_vif",   "float_adm",
+    "integer_adm",   "integer_ciede", "integer_psnr_hvs",
+    "integer_cambi", "ssimulacra2",   NULL,
 };
 
-#define EXPECTED_KERNEL_COUNT 8u
+#define EXPECTED_KERNEL_COUNT 17u
 
 static int try_get_ctx(VmafMetalContext **ctx_out)
 {
@@ -181,12 +192,18 @@ static char *test_dispatch_rejects_phantom_metal_names_or_skip(void)
         return NULL;
     }
 
-    /* Names that LOOK plausibly Metal but are not registered. */
+    /* Names that LOOK plausibly Metal but are NOT registered as Metal
+     * extractors. NB: VIF/ADM/CIEDE/SSIMULACRA2 now all ship Metal kernels
+     * (registered as float_vif_metal / integer_vif_metal / float_adm_metal /
+     * integer_adm_metal / integer_ciede_metal / ssimulacra2_metal), so the
+     * old "no Metal kernel yet" phantoms would now assert-fail. These are
+     * deliberately non-existent names that no .mm registers. */
     static const char *const phantoms[] = {
-        "vif_metal",         /* VIF has no Metal kernel yet */
-        "adm_metal",         /* ADM has no Metal kernel yet */
-        "ciede2000_metal",   /* CIEDE has no Metal kernel yet */
-        "ssimulacra2_metal", /* SSIMULACRA2 has no Metal kernel yet */
+        "lpips_metal",                         /* LPIPS is a DNN feature; no Metal kernel */
+        "ansnr_metal",                         /* ANSNR Metal backend dropped (ADR-0720) */
+        "vmaf_metal",                          /* the VMAF aggregate is not an extractor */
+        "motion3_metal",                       /* standalone motion3 is unimplemented on Metal */
+        "definitely_not_a_metal_kernel_metal", /* obvious non-name */
         NULL,
     };
 

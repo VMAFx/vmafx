@@ -1,20 +1,26 @@
 <!-- markdownlint-disable MD029 -->
 # Metal (Apple Silicon) compute backend
 
-> **Status: runtime + first and second kernel batches.** The Metal
-> backend now has a real Apple-Silicon runtime, shared-memory `MTLBuffer`
-> picture storage, metallib embedding, and eight wired feature extractors:
-> `float_moment_metal`, `float_motion_metal`,
-> `float_ms_ssim_metal`, `float_psnr_metal`, `float_ssim_metal`,
-> `integer_motion_metal`, `integer_psnr_metal`, and `motion_v2_metal`.
+> **Status: 17 kernels wired, registered, and parity-tested.** The Metal
+> backend has a real Apple-Silicon runtime, shared-memory `MTLBuffer`
+> picture storage, metallib embedding, and 17 wired feature extractors —
+> the full cross-backend metric set: `float_moment_metal`,
+> `float_motion_metal`, `float_ms_ssim_metal`, `float_psnr_metal`,
+> `float_ssim_metal`, `integer_motion_metal`, `integer_psnr_metal`,
+> `motion_v2_metal`, `integer_ssim_metal`, `float_vif_metal`,
+> `integer_vif_metal`, `float_adm_metal`, `integer_adm_metal`,
+> `integer_ciede_metal`, `integer_psnr_hvs_metal`, `integer_cambi_metal`,
+> and `ssimulacra2_metal`. Each carries a per-kernel CPU-vs-Metal score
+> parity test (see `core/test/test_metal_kernel_coverage_audit.c`).
 > (`float_ansnr_metal` was removed in commit 70ed8b3ce3 / PR #38 together
 > with the CPU and HIP twins.)
 >
 > The dispatch support predicate recognises both those extractor names
-> and their provided feature keys (`psnr_y`, `psnr_cb`, `psnr_cr`,
-> `float_ms_ssim`, `motion2_v2_score`, etc.). Remaining metrics such
-> as VIF, ADM, CIEDE, CAMBI, and SSIMULACRA2 are still future kernel
-> ports.
+> and every key in their provided-features arrays (`psnr_y`, `psnr_cb`,
+> `psnr_cr`, `float_ms_ssim`, `vif`, `adm_num`, `ciede2000`,
+> `Cambi_feature_cambi_score`, `ssimulacra2`, etc.). The one remaining
+> Metal-twin gap is the SpEED family (`speed_chroma` / `speed_temporal`),
+> which has CUDA/SYCL/HIP twins but no Metal kernel yet.
 >
 > Governing ADRs:
 > [ADR-0361](../../adr/0361-metal-compute-backend.md),

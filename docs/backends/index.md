@@ -13,7 +13,7 @@ assessment. Backends are **opt-in at build time** via meson options and
 | CUDA | `-Denable_cuda=true` | no | `--no_cuda` | stable — see [cuda/overview.md](cuda/overview.md) |
 | SYCL / oneAPI | `-Denable_sycl=true` | no | `--no_sycl` / `--sycl_device N` | stable — see [sycl/overview.md](sycl/overview.md) |
 | HIP (AMD) | `-Denable_hip=true` | no | `--no_hip` / `--hip_device N` | `--backend hip` end-to-end working on AMD ROCm hosts ([ADR-0519](../adr/0519-hip-import-state-implementation.md)); 19/22 feature kernels real, 3 legacy stubs (adm, vif, motion). `float_ansnr_hip` was removed in commit 70ed8b3ce3 (PR #38). Dispatch currently routes through CPU twins (HIP scores match CPU bit-exactly). See [hip/overview.md](hip/overview.md). |
-| Metal (Apple Silicon) | `-Denable_metal=auto/enabled` | auto on macOS | n/a | Runtime + 8 feature kernels live on Apple Silicon — see [metal/index.md](metal/index.md); remaining feature kernels are VIF, ADM, CIEDE, CAMBI, SSIMULACRA2, and other long-tail metrics |
+| Metal (Apple Silicon) | `-Denable_metal=auto/enabled` | auto on macOS | n/a | Runtime + 17 wired, registered, parity-tested feature kernels live on Apple Silicon (incl. VIF, ADM, CIEDE, CAMBI, SSIMULACRA2) — see [metal/index.md](metal/index.md); the SpEED family is the one remaining Metal-twin gap |
 
 ## Runtime selection
 
@@ -118,7 +118,8 @@ per-backend page below.
   are not registered and return `-ENOSYS`. `float_ansnr_hip` was
   removed in commit 70ed8b3ce3 (PR #38).
 - [Metal / Apple Silicon](metal/index.md) — auto-on-macOS; runtime +
-  8 feature kernels live, remaining kernels follow the parity matrix
+  17 wired, registered, parity-tested feature kernels live; the SpEED
+  family is the one remaining Metal-twin gap
 
 ## Cross-backend parity
 

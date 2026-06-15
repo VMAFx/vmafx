@@ -20,27 +20,30 @@ a real kernel lands; they are removed from `metal_sources` in
 ## Rebase-sensitive invariants
 
 - **Only the wired `.mm` + `.metal` pairs exist** (ADR-0545). The
-  Metal feature directory no longer carries scaffold `.mm` files for
-  extractors that lack a wired meson entry and a registry slot in
-  `feature_extractor.c`. The wired set is: `integer_motion_v2`,
-  `float_psnr`, `float_moment`, `integer_psnr`,
-  `float_motion`, `integer_motion`, `float_ssim`, `float_ms_ssim`.
+  Metal feature directory carries exactly one wired `.mm` + `.metal`
+  pair per registered extractor, each with a meson entry and a registry
+  slot in `feature_extractor.c`. The wired set is the full 17-kernel
+  cross-backend metric set: `integer_motion_v2` (registers as
+  `motion_v2_metal`), `float_psnr`, `float_moment`, `integer_psnr`,
+  `float_motion`, `integer_motion`, `float_ssim`, `float_ms_ssim`,
+  `integer_ssim`, `float_vif`, `integer_vif`, `float_adm`,
+  `integer_adm`, `integer_ciede`, `integer_psnr_hvs`, `integer_cambi`,
+  and `ssimulacra2`.
   (`float_ansnr` was removed from the wired set in commit 70ed8b3ce3 / PR #38.)
-  A previous scaffold pass left 11 dead `.mm` files (`float_adm_metal`,
-  `float_vif_metal`, `integer_adm_metal`, `integer_cambi_metal`,
-  `integer_ciede_metal`, `integer_moment_metal`, `integer_ms_ssim_metal`,
-  `integer_psnr_hvs_metal`, `integer_ssim_metal`, `integer_vif_metal`,
-  `ssimulacra2_metal`) and their paired `.metal` kernels in tree; these
-  were deleted because none of them was wired into
-  `core/src/metal/meson.build` and none had an extern reference in
-  `feature_extractor.c` (the lone exception, `vmaf_fex_integer_adm_metal`,
-  was an orphan extern with no registry entry and was removed as part of
-  the same change). Do **not** re-add a `<feature>_metal.mm` without (a)
-  the matching `.metal` kernel, (b) a meson entry in `metal_objcpp_lib`
-  a `<feature>_air` `custom_target` + an entry in `metal_air_files`,
-  and (c) an `extern VmafFeatureExtractor` declaration in
-  `feature_extractor.c` plus a slot in `feature_extractor_list[]` under
-  the `HAVE_METAL` block.
+  All 17 are live: each has a paired `.metal` kernel, a meson entry, a
+  registry slot, and a per-kernel CPU-vs-Metal parity test guarded by
+  `core/test/test_metal_kernel_coverage_audit.c`. The only remaining
+  Metal-twin gap is the SpEED family (`speed_chroma` / `speed_temporal`),
+  which has CUDA/SYCL/HIP twins but no Metal kernel yet. Do **not** add a
+  new `<feature>_metal.mm` without (a) the matching `.metal` kernel,
+  (b) a meson entry in `metal_objcpp_lib`, a `<feature>_air`
+  `custom_target`, and an entry in `metal_air_files`, (c) an
+  `extern VmafFeatureExtractor` declaration in `feature_extractor.c`
+  plus a slot in `feature_extractor_list[]` under the `HAVE_METAL`
+  block, (d) a row in `g_metal_features[]` in
+  `core/src/metal/dispatch_strategy.c` for both the registry name and
+  every provided-features key, and (e) a basename entry (with bumped
+  `EXPECTED_KERNEL_COUNT`) in `test_metal_kernel_coverage_audit.c`.
 
 - **Per-WG float/uint partials — no atomics**: Apple MSL does not
   expose `atomic_ulong` (`atomic_fetch_add_explicit` for `ulong`
@@ -98,12 +101,30 @@ a real kernel lands; they are removed from `metal_sources` in
 | `integer_psnr_metal.mm`            | Done (T8-1g) | host dispatch                                                           |
 | `float_motion.metal`               | Done (T8-1h) | `float_motion`                                                          |
 | `float_motion_metal.mm`            | Done (T8-1h) | host dispatch                                                           |
-| `integer_motion.metal`             | Done (T8-1i) | `VMAF_integer_feature_motion_y_score`, `motion2_score`, `motion3_score` |
+| `integer_motion.metal`             | Done (T8-1i) | `VMAF_integer_feature_motion_y_score`, `VMAF_integer_feature_motion2_score` |
 | `integer_motion_metal.mm`          | Done (T8-1i) | host dispatch                                                           |
-| `float_ssim.metal`                 | Done (T8-1j) | `float_ssim`                                                            |
+| `float_ssim.metal`                 | Done (T8-1j) | `float_ssim`, `float_ssim_l`, `float_ssim_c`, `float_ssim_s`           |
 | `float_ssim_metal.mm`              | Done (T8-1j) | host dispatch                                                           |
 | `float_ms_ssim.metal`              | Done (T8-2b) | `float_ms_ssim` — 5-scale pyramid, Wang weights                         |
 | `float_ms_ssim_metal.mm`           | Done (T8-2b) | host dispatch (ADR-0490, wired in meson per ADR-0545)                   |
+| `integer_ssim.metal`               | Done         | `ssim`                                                                  |
+| `integer_ssim_metal.mm`            | Done         | host dispatch                                                           |
+| `float_vif.metal`                  | Done         | `VMAF_feature_vif_scale0..3_score`, `vif`, `vif_num/den` (+ per-scale) |
+| `float_vif_metal.mm`               | Done         | host dispatch                                                           |
+| `integer_vif.metal`                | Done         | `VMAF_integer_feature_vif_scale0..3_score`, `integer_vif` (+ per-scale)|
+| `integer_vif_metal.mm`             | Done         | host dispatch                                                           |
+| `float_adm.metal`                  | Done         | `VMAF_feature_adm2/aim/adm3/adm_scale0..3_score`, `adm_num/den` (+scale)|
+| `float_adm_metal.mm`               | Done         | host dispatch                                                           |
+| `integer_adm.metal`                | Done         | `VMAF_integer_feature_adm2/aim/adm3_score`, `integer_adm` (+ per-scale)|
+| `integer_adm_metal.mm`             | Done         | host dispatch                                                           |
+| `integer_ciede.metal`              | Done         | `ciede2000`                                                             |
+| `integer_ciede_metal.mm`           | Done         | host dispatch                                                           |
+| `integer_psnr_hvs.metal`           | Done         | `psnr_hvs_y`, `psnr_hvs_cb`, `psnr_hvs_cr`, `psnr_hvs`                  |
+| `integer_psnr_hvs_metal.mm`        | Done         | host dispatch                                                           |
+| `integer_cambi.metal`              | Done         | `Cambi_feature_cambi_score`                                            |
+| `integer_cambi_metal.mm`           | Done         | host dispatch                                                           |
+| `ssimulacra2.metal`                | Done         | `ssimulacra2`                                                           |
+| `ssimulacra2_metal.mm`             | Done         | host dispatch                                                           |
 
 ## Rebase-sensitive invariants (motion_fps_weight)
 

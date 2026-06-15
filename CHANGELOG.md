@@ -6159,11 +6159,6 @@ matching the CUDA/SYCL/Vulkan PSNR twins (ADR-0469). Passing
 `enable_chroma=false` is no longer silently dropped.
 
 
-- **float_psnr_metal**: add `enable_chroma` option (default `false`); when set to
-  `true`, Cb and Cr planes are dispatched and included in the aggregate MSE
-  (equal-weight average), matching the chroma-guard pattern from psnr_vulkan.c.
-
-
 - **`fr_regressor_v2` ensemble production-flip trainer + CI gate scaffold
   (ADR-0303, builds on ADR-0291 deterministic prod flip + ADR-0279
   probabilistic head + PR #372 ensemble scaffold).** Adds
@@ -20246,10 +20241,12 @@ matching `kh_shift_epi32` zero-clear.
   `.claude/skills/add-model/SKILL.md`.
 
 
-PR #1067 (bootstrap name-builder refactor) clobbered four GPU feature options:
-restore `enable_chroma` in `float_psnr_metal` and `integer_psnr_metal`;
+PR #1067 (bootstrap name-builder refactor) clobbered GPU feature options:
 restore `vif_skip_scale0` in `vif_vulkan`; restore ceiling-division chroma
 geometry in `psnr_vulkan` (odd-dimension YUV420 parity with CPU and CUDA).
+(The `float_psnr_metal` / `integer_psnr_metal` extractors register no
+`enable_chroma` option — both are Y-only `options[] = {{0}}` — so there is
+nothing to restore there.)
 
 
 Fix four errno defects identified in PR #125 code review:
