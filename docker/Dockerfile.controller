@@ -68,7 +68,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # Stage 2 — vmaf-builder: compile libvmaf + vmaf CLI
 # ---------------------------------------------------------------------------
 # Reuses the same setup as docker/Dockerfile.production stage 1.
-FROM debian:12-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb AS vmaf-builder
+FROM debian:13-slim@sha256:4e401d95de7083948053197a9c3913343cd06b706bf15eb6a0c3ccd26f436a0e AS vmaf-builder
 
 ARG VMAF_BUILD_JOBS=4
 ARG DEBIAN_FRONTEND=noninteractive

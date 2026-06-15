@@ -6,9 +6,10 @@
 // Unix domain socket.
 //
 // Wire protocol: newline-delimited JSON.
-//   → {"job_id": "...", "features": [...], "true_score": 42.7}
-//   ← {"ok": true, "step": 1234, "trained": false}
-//   ← {"ok": false, "error": "message"}
+//
+//	→ {"job_id": "...", "features": [...], "true_score": 42.7}
+//	← {"ok": true, "step": 1234, "trained": false}
+//	← {"ok": false, "error": "message"}
 //
 // The client is intentionally fire-and-forget from the scoring path:
 // FeedbackClient.Send() is non-blocking — it enqueues into a bounded
@@ -32,6 +33,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -84,16 +86,29 @@ type feedbackAck struct {
 
 // FeedbackClient is a non-blocking Unix-socket client for the online
 // training sidecar.  It is safe for concurrent use by multiple goroutines.
+//
+// Lifecycle (ADR-1119): construction (NewFeedbackClient) does NOT spawn the
+// drainer goroutine — call Start() to launch it (wired to an fx OnStart hook)
+// and Close() to stop and await it (wired to an fx OnStop hook). The drainer is
+// bound to an internal, Close-owned context rather than a caller-supplied one,
+// so its lifetime is governed entirely by the Start/Close pair and no goroutine
+// leaks past Close().
 type FeedbackClient struct {
 	socketPath string
 	queue      chan *FeedbackMessage
 	log        *slog.Logger
 
-	// cancel stops the background drainer goroutine when Close is called.
-	// It wraps the caller-supplied ctx so callers retain ownership of the
-	// outer lifetime while Close still provides an idempotent in-process
-	// shutdown handle.
-	cancel context.CancelFunc
+	// drainCtx / cancel own the drainer goroutine's lifetime. cancel is wired
+	// in Start() and fired by Close() to stop the drainer after the current
+	// in-flight message completes.
+	drainCtx context.Context
+	cancel   context.CancelFunc
+
+	// startOnce / closeOnce make Start and Close idempotent: Start launches the
+	// drainer at most once, Close stops it at most once.
+	startOnce sync.Once
+	closeOnce sync.Once
+	started   atomic.Bool
 
 	// done is closed when the drainer goroutine has returned.  Close blocks
 	// on this so callers see a synchronous shutdown.
@@ -104,12 +119,11 @@ type FeedbackClient struct {
 	delivered atomic.Int64
 }
 
-// NewFeedbackClient creates a FeedbackClient and starts the background
-// drainer goroutine.  Call Close() to stop the drainer.
-//
-// ctx governs the drainer lifetime: cancelling ctx stops the drainer after
-// the current in-flight message completes.
-func NewFeedbackClient(ctx context.Context, log *slog.Logger) *FeedbackClient {
+// NewFeedbackClient creates a FeedbackClient. It does NOT start the background
+// drainer — call Start() (typically from an fx OnStart hook) to launch it. The
+// queue is live immediately, so Send() may be called before Start(); enqueued
+// messages drain once the drainer runs.
+func NewFeedbackClient(log *slog.Logger) *FeedbackClient {
 	path := os.Getenv(feedbackSocketEnv)
 	if path == "" {
 		path = feedbackSocketDefault
@@ -119,29 +133,53 @@ func NewFeedbackClient(ctx context.Context, log *slog.Logger) *FeedbackClient {
 	if log == nil {
 		log = slog.Default()
 	}
-	drainCtx, cancel := context.WithCancel(ctx)
-	fc := &FeedbackClient{
+	drainCtx, cancel := context.WithCancel(context.Background())
+	return &FeedbackClient{
 		socketPath: path,
 		queue:      make(chan *FeedbackMessage, feedbackQueueCap),
 		log:        log,
+		drainCtx:   drainCtx,
 		cancel:     cancel,
 		done:       make(chan struct{}),
 	}
-	go func() {
-		defer close(fc.done)
-		fc.drainLoop(drainCtx)
-	}()
-	return fc
+}
+
+// Start launches the background drainer goroutine. It is safe to call multiple
+// times; only the first call starts the drainer. Calling Start after Close is a
+// no-op (the internal context is already cancelled, so a drainer would exit
+// immediately — but it is not launched to avoid closing fc.done twice).
+func (fc *FeedbackClient) Start() {
+	fc.startOnce.Do(func() {
+		// If Close already cancelled the context (Start-after-Close), do not
+		// launch a goroutine; close done so Close's wait remains correct.
+		if fc.drainCtx.Err() != nil {
+			close(fc.done)
+			return
+		}
+		fc.started.Store(true)
+		go func() {
+			defer close(fc.done)
+			fc.drainLoop(fc.drainCtx)
+		}()
+	})
 }
 
 // Close stops the background drainer goroutine and waits for it to return.
 // It is safe to call multiple times; subsequent calls are no-ops.
-// Close does not flush in-flight queued messages — any messages still in
-// fc.queue at shutdown are discarded (consistent with the fire-and-forget
-// telemetry contract documented in the package header).
+//
+// Close is correct whether or not Start was ever called: if the drainer was
+// never started, Close cancels the context and returns without blocking; if it
+// was started, Close cancels and awaits the goroutine. Close does not flush
+// in-flight queued messages — any messages still in fc.queue at shutdown are
+// discarded (consistent with the fire-and-forget telemetry contract documented
+// in the package header).
 func (fc *FeedbackClient) Close() {
 	fc.cancel()
-	<-fc.done
+	fc.closeOnce.Do(func() {
+		if fc.started.Load() {
+			<-fc.done
+		}
+	})
 }
 
 // Send enqueues a feedback message for async delivery.

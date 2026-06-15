@@ -1,89 +1,79 @@
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 // Copyright 2026 Lusoris
 //
-// cmd/vmafx-node/main_test.go — unit tests for vmafx-node main-package helpers.
+// cmd/vmafx-node/main_test.go — unit tests for vmafx-node config helpers.
+//
+// The pre-fx helpers (logLevel / envOrDefault / ffmpegPath over raw os.Getenv)
+// were removed in the golusoris migration (ADR-1119): logging level is now read
+// by golusoris log.Module from the log.level config key, and listen / ffmpeg /
+// model settings come from the golusoris config tree. These tests cover the
+// thin config accessors that replaced them.
 //
 // ADR-0713: vmafx-node Go worker binary.
+// ADR-1119: golusoris fx framework adoption.
+
+//go:build cgo
 
 package main
 
 import (
-	"log/slog"
-	"os"
 	"testing"
+
+	"github.com/golusoris/golusoris/config"
 )
 
-// TestLogLevel exercises all branches of the logLevel() helper.
-// Note: t.Setenv is incompatible with t.Parallel in subtests.
-func TestLogLevel(t *testing.T) {
-	tests := []struct {
-		env  string
-		want slog.Level
-	}{
-		{"DEBUG", slog.LevelDebug},
-		{"debug", slog.LevelDebug},
-		{"WARN", slog.LevelWarn},
-		{"warn", slog.LevelWarn},
-		{"WARNING", slog.LevelWarn},
-		{"warning", slog.LevelWarn},
-		{"ERROR", slog.LevelError},
-		{"error", slog.LevelError},
-		{"INFO", slog.LevelInfo},
-		{"", slog.LevelInfo},
-		{"TRACE", slog.LevelInfo}, // unknown → default INFO
+// newTestConfig builds a golusoris config with the VMAFX_ prefix and "."
+// delimiter — matching the production fx.Replace(config.Options{...}) — seeded
+// from the given env map. Watch is disabled so tests do not start watchers.
+func newTestConfig(t *testing.T, env map[string]string) *config.Config {
+	t.Helper()
+	for k, v := range env {
+		t.Setenv(k, v)
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run("env="+tt.env, func(t *testing.T) {
-			t.Setenv("VMAFX_LOG_LEVEL", tt.env)
-			if got := logLevel(); got != tt.want {
-				t.Errorf("logLevel(%q) = %v, want %v", tt.env, got, tt.want)
-			}
-		})
+	cfg, err := config.New(config.Options{EnvPrefix: "VMAFX_", Delimiter: ".", Watch: false})
+	if err != nil {
+		t.Fatalf("config.New: %v", err)
 	}
+	return cfg
 }
 
-// TestEnvOrDefault exercises envOrDefault's fallback and override paths.
-// Note: t.Setenv is incompatible with t.Parallel in subtests.
-func TestEnvOrDefault(t *testing.T) {
-	const key = "VMAFX_NODE_TEST_ENVORDEFAULT"
-
-	t.Run("unset → fallback", func(t *testing.T) {
-		if err := os.Unsetenv(key); err != nil {
-			t.Fatalf("Unsetenv: %v", err)
-		}
-		if got := envOrDefault(key, "default"); got != "default" {
-			t.Errorf("got %q, want %q", got, "default")
-		}
-	})
-
-	t.Run("set → value", func(t *testing.T) {
-		t.Setenv(key, "override")
-		if got := envOrDefault(key, "default"); got != "override" {
-			t.Errorf("got %q, want %q", got, "override")
-		}
-	})
-}
-
-// TestFFmpegPath verifies that ffmpegPath() returns the env value when set or
-// falls back to "ffmpeg".
-// Note: t.Setenv is incompatible with t.Parallel in subtests.
-func TestFFmpegPath(t *testing.T) {
-	const key = "VMAFX_FFMPEG_BIN"
-
+// TestFFmpegBinary verifies the ffmpeg binary resolves from VMAFX_FFMPEG_BIN
+// (koanf key ffmpeg.bin) and falls back to "ffmpeg" when unset.
+func TestFFmpegBinary(t *testing.T) {
 	t.Run("unset → ffmpeg", func(t *testing.T) {
-		if err := os.Unsetenv(key); err != nil {
-			t.Fatalf("Unsetenv: %v", err)
-		}
-		if got := ffmpegPath(); got != "ffmpeg" {
-			t.Errorf("got %q, want \"ffmpeg\"", got)
+		cfg := newTestConfig(t, nil)
+		if got := ffmpegBinary(cfg); got != "ffmpeg" {
+			t.Errorf("ffmpegBinary = %q, want \"ffmpeg\"", got)
 		}
 	})
 
-	t.Run("set → override", func(t *testing.T) {
-		t.Setenv(key, "/usr/local/bin/ffmpeg-custom")
-		if got := ffmpegPath(); got != "/usr/local/bin/ffmpeg-custom" {
-			t.Errorf("got %q, want %q", got, "/usr/local/bin/ffmpeg-custom")
+	t.Run("VMAFX_FFMPEG_BIN → override", func(t *testing.T) {
+		cfg := newTestConfig(t, map[string]string{"VMAFX_FFMPEG_BIN": "/usr/local/bin/ffmpeg-custom"})
+		if got := ffmpegBinary(cfg); got != "/usr/local/bin/ffmpeg-custom" {
+			t.Errorf("ffmpegBinary = %q, want the override", got)
+		}
+	})
+}
+
+// TestProvideExecutorBackendDefault verifies the executor backend reads
+// VMAFX_BACKEND (koanf key "backend") and defaults to "cpu" when unset.
+func TestProvideExecutorBackendDefault(t *testing.T) {
+	t.Run("unset → cpu", func(t *testing.T) {
+		cfg := newTestConfig(t, nil)
+		exec := provideExecutor(nil, cfg, nil)
+		if exec == nil {
+			t.Fatal("provideExecutor returned nil")
+		}
+		if exec.backend != "cpu" {
+			t.Errorf("backend = %q, want \"cpu\"", exec.backend)
+		}
+	})
+
+	t.Run("VMAFX_BACKEND → override", func(t *testing.T) {
+		cfg := newTestConfig(t, map[string]string{"VMAFX_BACKEND": "cuda"})
+		exec := provideExecutor(nil, cfg, nil)
+		if exec.backend != "cuda" {
+			t.Errorf("backend = %q, want \"cuda\"", exec.backend)
 		}
 	})
 }
