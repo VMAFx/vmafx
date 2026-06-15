@@ -7,12 +7,13 @@
 // the sidecar-reconnect path.
 //
 // ADR-0781: sidecar online training — SGD + EMA + replay buffer.
+// ADR-1119: FeedbackClient drainer is launched via Start() (fx OnStart), not at
+// construction; the constructor no longer takes a context.
 
 package main
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"net"
 	"os"
@@ -74,10 +75,8 @@ func TestFeedbackClient_DeliveryCountIncremented(t *testing.T) {
 
 	t.Setenv(feedbackSocketEnv, sockPath)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	fc := NewFeedbackClient(ctx, nil)
+	fc := NewFeedbackClient(nil)
+	fc.Start()
 	defer fc.Close()
 
 	// Send a few messages.
@@ -103,17 +102,16 @@ func TestFeedbackClient_DeliveryCountIncremented(t *testing.T) {
 }
 
 // TestFeedbackClient_Send_EnqueuesAndReturnsTrue verifies that Send returns
-// true when the queue has capacity.
+// true when the queue has capacity. Send works before Start() — the queue is
+// live immediately.
 // Note: t.Setenv is incompatible with t.Parallel.
 func TestFeedbackClient_Send_EnqueuesAndReturnsTrue(t *testing.T) {
 	// Use a socket that does not exist so the drainer immediately retries
 	// without consuming messages from the queue.
 	t.Setenv(feedbackSocketEnv, filepath.Join(t.TempDir(), "nonexistent.sock"))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	fc := NewFeedbackClient(ctx, nil)
+	fc := NewFeedbackClient(nil)
+	fc.Start()
 	defer fc.Close()
 
 	ok := fc.Send(&FeedbackMessage{JobID: "j1", Features: nil, TrueScore: 80.0})
@@ -129,10 +127,8 @@ func TestFeedbackClient_DropCounterIncrementsOnOverflow(t *testing.T) {
 	// Non-existent socket → drainer never drains → queue fills up.
 	t.Setenv(feedbackSocketEnv, filepath.Join(t.TempDir(), "nonexistent.sock"))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	fc := NewFeedbackClient(ctx, nil)
+	fc := NewFeedbackClient(nil)
+	fc.Start()
 	defer fc.Close()
 
 	dropped := 0
@@ -157,10 +153,7 @@ func TestFeedbackClient_SocketEnvOverride(t *testing.T) {
 	custom := filepath.Join(t.TempDir(), "custom.sock")
 	t.Setenv(feedbackSocketEnv, custom)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	fc := NewFeedbackClient(ctx, nil)
+	fc := NewFeedbackClient(nil)
 	defer fc.Close()
 
 	if fc.socketPath != custom {
@@ -176,10 +169,7 @@ func TestFeedbackClient_DefaultSocketPath(t *testing.T) {
 		t.Fatalf("Unsetenv: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	fc := NewFeedbackClient(ctx, nil)
+	fc := NewFeedbackClient(nil)
 	defer fc.Close()
 
 	if fc.socketPath != feedbackSocketDefault {

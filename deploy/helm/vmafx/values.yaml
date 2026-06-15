@@ -453,7 +453,7 @@ node:
       maxUnavailable: 0
 
   # grpcPort is the port the vmafx-node gRPC server listens on.
-  # Must match VMAFX_NODE_ADDR (env default :50052).  The liveness and
+  # Must match VMAFX_GRPC_LISTEN (deploy sets :grpcPort).  The liveness and
   # readiness probes use tcpSocket on this port — it is the only listener
   # the node binary exposes.
   grpcPort: 50052
@@ -610,7 +610,7 @@ otelCollector:
 
   image:
     repository: otel/opentelemetry-collector-contrib
-    tag: "0.120.0"
+    tag: "0.154.0@sha256:b3079f45e19bdb7326bf49cdddce6cf60dfd865138db39f2733ea48ab17bc4cb"
     pullPolicy: IfNotPresent
 
   # OTLP gRPC listen address inside the pod.
