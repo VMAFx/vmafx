@@ -1,0 +1,1 @@
+| [ADR-0968](0968-ci-scripts-rebrand-proof-and-tempfile-trap.md) | CI scripts — rebrand-proof assertion-density grep + tempfile EXIT trap in changelog concat (Round 26 audit D.1 + D.2) | Accepted | `ci`, `build`, `docs` |

@@ -1,0 +1,1 @@
+| [ADR-0964](0964-implement-speed-internal-and-wire-gpu-speed-extractors.md) | Implement `speed_internal.c` and wire `speed_{chroma,temporal}_{hip,sycl}` | Accepted | `cuda`, `hip`, `sycl`, `feature-extractor`, `cross-backend-parity`, `speed` |

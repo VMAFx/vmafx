@@ -1,0 +1,1 @@
+| [ADR-1022](1022-y4m-dst-buf-read-sz-overflow.md) | Cast `dst_buf_read_sz` operands to `size_t` in y4m_input to prevent signed-integer overflow | Accepted | `core`, `security`, `correctness`, `tools`, `c` |

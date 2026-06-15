@@ -1,0 +1,1 @@
+| [ADR-0965](0965-cuda-speed-tu-repair.md) | CUDA SpEED TU repair — align with current CudaFunctions table (closes T-CUDA-SPEED-TU-REPAIR-2026-05-31) | Accepted | `cuda`, `feature-extractor`, `cross-backend-parity`, `speed`, `fork-local` |
