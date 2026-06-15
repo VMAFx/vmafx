@@ -8,7 +8,7 @@
     ":semanticCommits",
     "helpers:disableTypesNodeMajor"
   ],
-  "schedule": ["before 6am on weekdays"],
+  "schedule": ["before 6am every weekday"],
   "timezone": "Europe/Vienna",
   "prHourlyLimit": 0,
   "prConcurrentLimit": 10,
