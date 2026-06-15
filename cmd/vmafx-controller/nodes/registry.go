@@ -15,8 +15,16 @@
 //
 // Thread safety: all exported methods are safe for concurrent use.
 //
+// Lifecycle (ADR-1119): NewRegistry does NOT spawn the reaper goroutine.
+// Call Start(ctx) (wired to an fx OnStart hook) to launch it and Close()
+// (wired to an fx OnStop hook) to stop and await it.  The reaper is bound
+// to a Close-owned context, so its lifetime is governed entirely by the
+// Start/Close pair and no goroutine leaks past Close().  This mirrors the
+// vmafx-node FeedbackClient Start/Close lifecycle pattern.
+//
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
 // ADR-0962: fix reaper goroutine stop signal (round-25 audit B.4).
+// ADR-1119: reaper bound to fx.Lifecycle Start/Close instead of a caller ctx.
 
 package nodes
 
@@ -29,6 +37,7 @@ import (
 	"iter"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -61,36 +70,97 @@ type Node struct {
 }
 
 // Registry tracks live vmafx-node instances.  The reaper goroutine is
-// stopped when the context handed to NewRegistry is cancelled, or when
-// Close() is called (which cancels that context).
+// launched by Start(ctx) and stopped by Close(); its lifetime is owned by
+// an internal, Close-cancelled context rather than a caller-supplied one.
 type Registry struct {
-	mu     sync.RWMutex
-	nodes  map[string]*Node // keyed by node ID
-	log    *slog.Logger
-	cancel context.CancelFunc // stops the reaper goroutine
+	mu    sync.RWMutex
+	nodes map[string]*Node // keyed by node ID
+	log   *slog.Logger
+
+	// reaperCtx / cancel own the reaper goroutine's lifetime.  cancel is
+	// wired in Start() and fired by Close() to stop the reaper after the
+	// current tick completes.
+	reaperCtx context.Context
+	cancel    context.CancelFunc
+
+	// startOnce / closeOnce make Start and Close idempotent: Start launches
+	// the reaper at most once, Close stops it at most once.
+	startOnce sync.Once
+	closeOnce sync.Once
+	started   atomic.Bool
+
+	// done is closed when the reaper goroutine has returned.  Close blocks
+	// on this so callers observe a synchronous shutdown.
+	done chan struct{}
 }
 
-// NewRegistry creates an empty Registry, accepts a context for lifetime
-// control, and starts the reaper goroutine.  The reaper stops when ctx is
-// cancelled or when Close is called.
+// NewRegistry creates an empty Registry.  It does NOT launch the background
+// reaper — call Start(ctx) (typically from an fx OnStart hook) to launch it
+// and Close() (from an fx OnStop hook) to stop and await it.
 //
-// ADR-0962: ctx propagation replaces the old variadic no-op signature,
-// ensuring tests and callers can stop the goroutine cleanly.
-func NewRegistry(ctx context.Context, log *slog.Logger) *Registry {
-	reaperCtx, cancel := context.WithCancel(ctx)
-	r := &Registry{
-		nodes:  make(map[string]*Node),
-		log:    log,
-		cancel: cancel,
+// ADR-1119: the reaper is bound to the Start/Close pair driven by
+// fx.Lifecycle, replacing the prior NewRegistry(ctx) signature that tied the
+// goroutine to a caller-supplied context and spawned it at construction.
+func NewRegistry(log *slog.Logger) *Registry {
+	if log == nil {
+		log = slog.Default()
 	}
-	go r.reaper(reaperCtx)
-	return r
+	reaperCtx, cancel := context.WithCancel(context.Background())
+	return &Registry{
+		nodes:     make(map[string]*Node),
+		log:       log,
+		reaperCtx: reaperCtx,
+		cancel:    cancel,
+		done:      make(chan struct{}),
+	}
 }
 
-// Close stops the background reaper goroutine.  It is safe to call multiple
-// times; subsequent calls are no-ops.
+// Start launches the background reaper goroutine.  It is idempotent: the
+// reaper is launched at most once.  The supplied ctx is observed for
+// cancellation in addition to Close(), so either stops the reaper; Close()
+// additionally awaits the goroutine's return.
+//
+// Wire Start to an fx OnStart hook.
+func (r *Registry) Start(ctx context.Context) {
+	r.startOnce.Do(func() {
+		// If Close already cancelled our context (Start-after-Close), do not
+		// launch a goroutine; close done so Close's wait stays correct.
+		if r.reaperCtx.Err() != nil {
+			close(r.done)
+			return
+		}
+		// Propagate cancellation of the caller's ctx into the reaper ctx so an
+		// fx OnStart ctx cancel also stops the reaper.
+		if ctx != nil {
+			go func() {
+				select {
+				case <-ctx.Done():
+					r.cancel()
+				case <-r.reaperCtx.Done():
+				}
+			}()
+		}
+		r.started.Store(true)
+		go func() {
+			defer close(r.done)
+			r.reaper(r.reaperCtx)
+		}()
+	})
+}
+
+// Close stops the background reaper goroutine and waits for it to return.
+// It is safe to call multiple times; subsequent calls are no-ops.  Close is
+// correct whether or not Start was ever called: if the reaper was never
+// started, Close cancels the context and returns without blocking.
+//
+// Wire Close to an fx OnStop hook.
 func (r *Registry) Close() {
 	r.cancel()
+	r.closeOnce.Do(func() {
+		if r.started.Load() {
+			<-r.done
+		}
+	})
 }
 
 // Register adds (or replaces) a node.  Returns the assigned node_id and
@@ -222,10 +292,12 @@ func (r *Registry) Count() int {
 }
 
 // reaper runs in the background and evicts nodes that have not sent a
-// heartbeat within HeartbeatTimeout.  It exits when ctx is cancelled.
+// heartbeat within HeartbeatTimeout.  It exits when ctx is cancelled (via
+// Close() or a cancelled Start ctx).
 //
-// ADR-0962: required non-variadic ctx replaces the old `_ ...context.Context`
-// no-op that left each NewRegistry call leaking one goroutine.
+// ADR-1119: the reaper context is owned by the Start/Close pair (fx
+// lifecycle) rather than a caller-supplied context, so Close() both stops
+// the loop and awaits this goroutine's return — no goroutine leaks.
 func (r *Registry) reaper(ctx context.Context) {
 	ticker := time.NewTicker(HeartbeatTimeout / 3)
 	defer ticker.Stop()

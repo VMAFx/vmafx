@@ -22,13 +22,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
 	"time"
 
-	"runtime/debug"
-
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -382,117 +377,12 @@ func protoCapToNodes(cap *controllerv1.NodeCapability) nodes.Capability {
 }
 
 // ---------------------------------------------------------------------------
-// runGRPC — starts the gRPC listener with both services registered.
+// Server construction note (ADR-1119)
 // ---------------------------------------------------------------------------
-
-// runGRPC starts the gRPC listener on addr and blocks until ctx is cancelled.
-// authMW is applied as a unary + stream interceptor; pass nil to disable auth
-// (e.g. internal-only deployments or tests).
-func runGRPC(
-	ctx context.Context,
-	addr string,
-	scorer *libvmaf.Scorer,
-	jobQueue queue.Queue,
-	nodeRegistry *nodes.Registry,
-	sched *scheduler.Scheduler,
-	metrics *observability.Metrics,
-	authMW *auth.Middleware,
-	log *slog.Logger,
-) error {
-	lis, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("grpc listen %s: %w", addr, err)
-	}
-
-	// ADR-0927: OTel stats handler instruments every gRPC RPC with a
-	// server span + propagates the W3C traceparent header from the
-	// client context. No-op when InitOTel installed no-op providers.
-	// ADR-0794: auth interceptors enforce tenant isolation when authMW is non-nil.
-	// ADR-1018: panic-recovery interceptors so a nil-pointer deref or any panic in
-	// a controller handler is caught and returned as codes.Internal rather than
-	// killing the process.  Mirrors the vmafx-server pattern (r5-grpc-correctness).
-	serverOpts := []grpc.ServerOption{
-		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.ChainUnaryInterceptor(recoveryUnaryInterceptor(log)),
-		grpc.ChainStreamInterceptor(recoveryStreamInterceptor(log)),
-	}
-	if authMW != nil {
-		serverOpts = append(serverOpts,
-			grpc.ChainUnaryInterceptor(authMW.GRPCUnaryInterceptor()),
-			grpc.ChainStreamInterceptor(authMW.GRPCStreamInterceptor()),
-		)
-	}
-	srv := grpc.NewServer(serverOpts...)
-
-	// Phase 4a: direct scoring service.
-	vmafxv1.RegisterVmafxScoringServer(srv, newScoringServer(scorer, metrics, log))
-
-	// Phase 4b.1: controller service (job queue + node API).
-	controllerv1.RegisterVmafxControllerServer(srv,
-		newControllerServer(jobQueue, nodeRegistry, sched, metrics, log),
-	)
-
-	log.Info("gRPC server started", "addr", addr, "services", []string{"VmafxScoring", "VmafxController"})
-
-	// Graceful shutdown on context cancellation.
-	go func() {
-		<-ctx.Done()
-		log.Info("gRPC graceful shutdown initiated")
-		srv.GracefulStop()
-	}()
-
-	if err := srv.Serve(lis); err != nil {
-		return fmt.Errorf("grpc serve: %w", err)
-	}
-	return nil
-}
-
-// recoveryUnaryInterceptor returns a UnaryServerInterceptor that converts a
-// panic inside the handler into a codes.Internal gRPC status, logging the
-// stack trace at ERROR level. Without this a panic in any controller handler
-// (SubmitJob, GetJob, CancelJob, etc.) tears down the worker goroutine; the
-// gRPC library then re-raises it and crashes the process. ADR-1018.
-// Mirrors the implementation in cmd/vmafx-server/grpc_server.go (ADR-0978).
-func recoveryUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
-	return func(
-		ctx context.Context,
-		req interface{},
-		info *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler,
-	) (resp interface{}, err error) {
-		defer func() {
-			if p := recover(); p != nil {
-				log.Error("grpc unary handler panic recovered",
-					"method", info.FullMethod,
-					"panic", fmt.Sprintf("%v", p),
-					"stack", string(debug.Stack()),
-				)
-				err = status.Errorf(codes.Internal, "internal server error")
-			}
-		}()
-		return handler(ctx, req)
-	}
-}
-
-// recoveryStreamInterceptor is the streaming counterpart of
-// recoveryUnaryInterceptor. ADR-1018.
-func recoveryStreamInterceptor(log *slog.Logger) grpc.StreamServerInterceptor {
-	return func(
-		srv interface{},
-		ss grpc.ServerStream,
-		info *grpc.StreamServerInfo,
-		handler grpc.StreamHandler,
-	) (err error) {
-		defer func() {
-			if p := recover(); p != nil {
-				log.Error("grpc stream handler panic recovered",
-					"method", info.FullMethod,
-					"panic", fmt.Sprintf("%v", p),
-					"stack", string(debug.Stack()),
-				)
-				err = status.Errorf(codes.Internal, "internal server error")
-			}
-		}()
-		return handler(srv, ss)
-	}
-}
+//
+// The controller no longer hand-rolls its gRPC server. golusoris grpc.Module
+// provides the *grpc.Server (with OTel + logging + panic-recovery interceptors
+// baked in) and owns the listener lifecycle (OnStart bind, OnStop GracefulStop).
+// The JWT auth interceptors are injected via grpc.ProvideServerOption in main.go
+// (golusoris#225). The scoringServer / controllerServer impls above are
+// registered onto that server by an fx.Invoke. See main.go productionOptions.

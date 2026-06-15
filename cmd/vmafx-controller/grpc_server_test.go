@@ -109,7 +109,7 @@ func newTestControllerServer(t *testing.T) *controllerServer {
 	}
 	t.Cleanup(func() { _ = q.Close() })
 
-	r := nodes.NewRegistry(context.Background(), log)
+	r := nodes.NewRegistry(log)
 	t.Cleanup(func() { r.Close() })
 
 	s := scheduler.New(q, r, log)
@@ -155,7 +155,7 @@ func newGRPCFixture(t *testing.T) *grpcFixture {
 	}
 	t.Cleanup(func() { _ = q.Close() })
 
-	reg := nodes.NewRegistry(context.Background(), log)
+	reg := nodes.NewRegistry(log)
 	t.Cleanup(func() { reg.Close() })
 	sch := scheduler.New(q, reg, log)
 	reg2 := prometheus.NewRegistry()

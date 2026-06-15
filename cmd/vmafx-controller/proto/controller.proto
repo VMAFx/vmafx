@@ -42,21 +42,26 @@ message ScoringParams {
   string backend = 4;
 }
 
+// JobStatus encodes the job lifecycle state machine:
+// PENDING → RUNNING → COMPLETED | FAILED | CANCELLED.
+// (Top-level so the generated Go type is controllerv1.JobStatus, matching the
+// controller/queue/scheduler call sites; wire-compatible with the prior nested
+// form — the field number and enum values are unchanged.)
+enum JobStatus {
+  PENDING   = 0;
+  RUNNING   = 1;
+  COMPLETED = 2;
+  FAILED    = 3;
+  CANCELLED = 4;
+}
+
 // Job represents a scoring work item managed by the controller.
 message Job {
   // Unique job identifier (UUID v4).
   string id = 1;
 
-  // Status encodes the job lifecycle state machine:
-  // PENDING → RUNNING → COMPLETED | FAILED | CANCELLED.
-  enum Status {
-    PENDING   = 0;
-    RUNNING   = 1;
-    COMPLETED = 2;
-    FAILED    = 3;
-    CANCELLED = 4;
-  }
-  Status status = 2;
+  // status is the current lifecycle state of the job.
+  JobStatus status = 2;
 
   // scoring holds the scoring parameters for this job.
   ScoringParams scoring = 3;
@@ -155,7 +160,7 @@ message CancelJobResponse {
 message StreamJobsRequest {
   // status_filter restricts the stream to jobs in these states.
   // Empty = stream all jobs.
-  repeated Job.Status status_filter = 1;
+  repeated JobStatus status_filter = 1;
 }
 
 // ---------------------------------------------------------------------------

@@ -4,8 +4,9 @@
 // cmd/vmafx-controller/nodes/registry_test.go — unit tests for the node registry.
 //
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
-// ADR-0962: NewRegistry now requires a context; tests pass context.Background()
-//           and defer r.Close() to prevent reaper goroutine leaks.
+// ADR-1119: NewRegistry no longer takes a context; the reaper is launched by
+//           Start(ctx) and stopped/awaited by Close().  Tests call Start with a
+//           cancellable context and defer Close() to prevent goroutine leaks.
 
 package nodes_test
 
@@ -22,7 +23,8 @@ import (
 func newTestRegistry(t *testing.T) *nodes.Registry {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	r := nodes.NewRegistry(context.Background(), log)
+	r := nodes.NewRegistry(log)
+	r.Start(context.Background())
 	t.Cleanup(func() { r.Close() })
 	return r
 }
@@ -144,44 +146,74 @@ func TestAll(t *testing.T) {
 	}
 }
 
-// TestReaper_StopsOnContextCancel verifies that the reaper goroutine exits
-// promptly after the context is cancelled.
+// TestReaper_StopsOnClose verifies that Close() stops the reaper goroutine and
+// returns promptly (it awaits the goroutine's return).
 //
-// ADR-0962: the old variadic `_ ...context.Context` reaper never stopped —
-// each NewRegistry call in tests leaked one goroutine.  This test would hang
-// (or timeout) with the old implementation because goroutine.Wait has no
-// observable side-effect; instead we validate that Close() completes quickly
-// (i.e. the select branch fires) by racing a short deadline.
-func TestReaper_StopsOnContextCancel(t *testing.T) {
+// ADR-1119: the reaper is bound to the Start/Close pair.  Close() cancels the
+// internal reaper context and blocks on the done channel until the goroutine
+// returns, so a Close() that completes within the deadline proves the reaper
+// exited.  Racing a short deadline guards against a regression that re-ties the
+// goroutine to a never-cancelled context.
+func TestReaper_StopsOnClose(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	r := nodes.NewRegistry(ctx, log)
+	r := nodes.NewRegistry(log)
+	r.Start(context.Background())
 
-	// Cancel the context — the reaper should unblock from its select within the
-	// next poll cycle.  HeartbeatTimeout/3 = 20 s in production, but in tests
-	// the internal ticker is not observable.  Close() cancels the same ctx, so
-	// calling it after cancel() is a no-op double-cancel — both are safe.
-	cancel()
-	r.Close() // idempotent; ensures deferred cleanup path is exercised
-
-	// Give the goroutine up to 200 ms to exit.  On any scheduler this is far
-	// more than enough for a blocked select to wake on a closed Done channel.
-	deadline := time.After(200 * time.Millisecond)
+	// Close() cancels the reaper ctx and awaits the goroutine.  It must return
+	// within the deadline; a leaked/never-stopping reaper would block here.
+	deadline := time.After(2 * time.Second)
 	done := make(chan struct{})
 	go func() {
-		// The goroutine exit is not directly observable; we verify the registry
-		// remains usable (no panic, no deadlock) after cancellation.
-		_ = r.Count()
+		r.Close() // idempotent; awaits the reaper goroutine
 		close(done)
 	}()
 
 	select {
 	case <-done:
-		// Registry still responsive after context cancellation — pass.
+		// Reaper exited and Close() returned — pass.
 	case <-deadline:
-		t.Fatal("registry.Count() blocked after context cancel: reaper may not have exited")
+		t.Fatal("Close() blocked: reaper goroutine did not exit")
 	}
+
+	// Close() is idempotent — a second call must not panic or block.
+	r.Close()
+}
+
+// TestReaper_StartCancelViaCtx verifies that cancelling the ctx passed to
+// Start() also stops the reaper (ADR-1119: Start's ctx is observed in addition
+// to Close()).
+func TestReaper_StartCancelViaCtx(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	r := nodes.NewRegistry(log)
+	ctx, cancel := context.WithCancel(context.Background())
+	r.Start(ctx)
+
+	cancel() // should propagate into the reaper ctx and stop the goroutine
+
+	// Close() awaits the goroutine; it must return promptly now that the Start
+	// ctx is cancelled.
+	deadline := time.After(2 * time.Second)
+	done := make(chan struct{})
+	go func() {
+		r.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-deadline:
+		t.Fatal("Close() blocked after Start-ctx cancel: reaper did not exit")
+	}
+}
+
+// TestRegistry_CloseWithoutStart verifies Close() is safe when Start() was
+// never called (no goroutine to await).
+func TestRegistry_CloseWithoutStart(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	r := nodes.NewRegistry(log)
+	r.Close() // must not block or panic
+	r.Close() // idempotent
 }
 
 // TestAllSeq verifies the iter.Seq adapter walks every registered node

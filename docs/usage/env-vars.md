@@ -64,14 +64,34 @@ overrides not listed here.
 
 ## Go controller (`cmd/vmafx-controller`)
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `VMAFX_DB_PATH` | path | `vmafx-controller.db` | Path to the SQLite database for job and node persistence. |
-| `VMAFX_GRPC_PORT` | port | `50051` | gRPC listen port (serves both `VmafxScoring` and `VmafxController` services). |
-| `VMAFX_LOG_LEVEL` | string | `INFO` | Structured log level: `DEBUG`, `INFO`, `WARN`, `ERROR`. |
-| `VMAFX_MODEL_DIR` | path | _(none)_ | Directory containing VMAF `.json` model files passed to the libvmaf scorer. |
-| `VMAFX_PORT` | port | `8080` | HTTP listen port (serves `/healthz`, `/readyz`, `/metrics`, `/v1/score`). |
-| `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | Path to the `vmaf` CLI binary.  Falls back to `PATH` lookup if unset. |
+The controller is wired on the golusoris `fx` framework (ADR-1119). Config is
+loaded via golusoris/config: the `VMAFX_` prefix is stripped, the name is
+lowercased, and **every** underscore is replaced with the `.` delimiter, so the
+koanf key is the dotted form in the _golusoris key_ column. The HTTP and gRPC
+modules own the listeners.
+
+> **Breaking change (ADR-1119):** the controller previously read `VMAFX_PORT` and
+> `VMAFX_GRPC_PORT` as bare port numbers. It now reads `VMAFX_HTTP_ADDR` /
+> `VMAFX_GRPC_LISTEN`, which take a full listen address (`:8080`, not `8080`),
+> and the golusoris-native defaults `:8080` / `:9090` apply — the legacy
+> wire ports (`8080` / `50051`) are **not** carried. The pre-fx auth/JWKS CLI
+> flags are removed; configure auth via the env vars below. Operators must
+> migrate.
+
+| Name | Type | Default | golusoris key | Description |
+|---|---|---|---|---|
+| `VMAFX_HTTP_ADDR` | `host:port` | `:8080` | `http.addr` | HTTP listen address (serves `/healthz`, `/readyz`, `/metrics`, `/v1/score`). |
+| `VMAFX_GRPC_LISTEN` | `host:port` | `:9090` | `grpc.listen` | gRPC listen address (serves both `VmafxScoring` and `VmafxController`). |
+| `VMAFX_DB_PATH` | path | `vmafx-controller.db` | `db.path` | Path to the embedded SQLite job + node-persistence database (kept, not migrated to golusoris.Jobs — ADR-1119). |
+| `VMAFX_LOG_LEVEL` | string | `INFO` | `log.level` | Structured log level: `DEBUG`, `INFO`, `WARN`, `ERROR`. Read directly by golusoris (bridged from `VMAFX_LOG_LEVEL`, golusoris#234). |
+| `VMAFX_MODEL_DIR` | path | _(none)_ | `model.dir` | Directory containing VMAF `.json` model files passed to the libvmaf scorer. |
+| `VMAFX_VMAF_BINARY` | path | _(PATH lookup)_ | `vmaf.binary` | Path to the `vmaf` CLI binary. Falls back to `PATH` lookup if unset. |
+| `VMAFX_AUTH_DISABLED` | bool | `false` | `auth.disabled` | Disable JWT auth (dev/internal only — never in production). When set, a synthetic `dev` tenant with admin role is injected. |
+| `VMAFX_JWKS_ENDPOINT` | URL | _(none)_ | `jwks.endpoint` | JWKS endpoint URL for RS256 verification, e.g. `https://idp.example.com/.well-known/jwks.json`. Required unless auth is disabled. |
+| `VMAFX_AUTH_ISSUER` | string | _(none)_ | `auth.issuer` | Expected JWT `iss` claim. Required unless auth is disabled. |
+| `VMAFX_AUTH_AUDIENCE` | string | _(none)_ | `auth.audience` | Expected JWT `aud` claim (optional; audience check skipped when empty). |
+| `VMAFX_AUTH_TENANT_CLAIM` | string | `tid` | `auth.tenant_claim` | JWT claim carrying the tenant id. Declared as a golusoris CompoundKey so its underscore is preserved. |
+| `VMAFX_AUTH_ROLES_CLAIM` | string | `vmafx_roles` | `auth.roles_claim` | JWT claim carrying the roles list. Declared as a golusoris CompoundKey. |
 
 ---
 

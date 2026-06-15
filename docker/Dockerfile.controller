@@ -16,12 +16,12 @@
 #     -e VMAFX_VMAF_BINARY=/usr/local/bin/vmaf \
 #     -e VMAFX_MODEL_DIR=/usr/local/share/vmafx/model \
 #     -e VMAFX_DB_PATH=/data/vmafx-controller.db \
-#     -p 8080:8080 -p 50051:50051 \
+#     -p 8080:8080 -p 9090:9090 \
 #     ghcr.io/vmafx/vmafx-controller:dev
 #
 # Environment variables:
-#   VMAFX_PORT           HTTP listen port (default 8080)
-#   VMAFX_GRPC_PORT      gRPC listen port (default 50051)
+#   VMAFX_HTTP_ADDR      HTTP listen address (default :8080)
+#   VMAFX_GRPC_LISTEN    gRPC listen address (default :9090)
 #   VMAFX_LOG_LEVEL      slog level (default INFO)
 #   VMAFX_VMAF_BINARY    path to vmaf CLI binary
 #   VMAFX_MODEL_DIR      directory containing VMAF .json model files
@@ -127,6 +127,6 @@ ENV VMAFX_MODEL_DIR="/usr/local/share/vmafx/model"
 ENV VMAFX_DB_PATH="/data/vmafx-controller.db"
 
 EXPOSE 8080
-EXPOSE 50051
+EXPOSE 9090
 
 ENTRYPOINT ["/usr/local/bin/vmafx-controller"]

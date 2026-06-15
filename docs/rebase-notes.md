@@ -46250,3 +46250,50 @@ has no upstream counterpart. The MCP tool surface (`tools.go`, `impl.go`,
   slog → stderr. A future rebase that adds an `fx.Print`-style logger, a stdout
   OTel exporter, or any `fmt.Println` to the composition root MUST gate it off
   in stdio mode. See cmd/vmafx-mcp/AGENTS.md invariant #11.
+## feat/golusoris-controller (2026-06-15)
+no rebase impact for upstream Netflix/vmaf syncs: every file touched is
+fork-local Go and has no upstream counterpart. The change rewrites
+`cmd/vmafx-controller/*.go` (the Go gRPC + HTTP controller: SQLite job queue +
+node registry + FIFO scheduler + JWT auth) onto the golusoris fx framework
+(ADR-1119, Phase-1 PR-2), refactors `cmd/vmafx-controller/nodes/registry.go`,
+adds an `app_test.go` fxtest lifecycle suite, and updates
+`docs/usage/env-vars.md` for the env-var rename. libvmaf's C sources, public
+headers, and the Netflix golden gate are untouched; no ffmpeg-patch impact.
+
+Rebase-sensitive invariants (fork-internal, NOT upstream):
+- **golusoris pin → v0.4.1.** The PR depends on golusoris#225
+  (`grpc.ProvideServerOption`, used to chain the JWT auth interceptors), which is
+  NOT in the `v0.4.0` tag the shared `go.mod` currently pins. The committed
+  `go.mod` keeps the `v0.4.0` pin (no `replace` directive); the binary +
+  `app_test.go` will not compile until the orchestrator bumps the pin to the tag
+  carrying #225 (expected `v0.4.1`). `go mod tidy` against `v0.4.0` is otherwise
+  clean — the migration only adds the transitive `// indirect`
+  `go-grpc-middleware/v2` (golusoris HEAD's grpc.Module recovery/logging
+  interceptors).
+- **R1 stop order.** The composition root forces the `*libvmaf.Scorer`, the
+  SQLite `queue.Queue`, and the `*nodes.Registry` to be constructed BEFORE the
+  golusoris `*grpc.Server` (an `fx.Invoke(func(_ *libvmaf.Scorer, _ queue.Queue,
+  _ *nodes.Registry) {})` registered ahead of the gRPC service-registration
+  invoke). fx runs OnStop hooks in reverse construction order, so this
+  guarantees the gRPC `GracefulStop` drains in-flight RPCs before the queue
+  `Close`, the node-registry reaper stop, and the scorer `Close`.
+  `TestStopOrder` pins this; do not reorder those invokes without re-deriving
+  the ordering.
+- **nodes.Registry lifecycle.** `NewRegistry(log)` no longer takes a context or
+  spawns the reaper at construction; the reaper is launched by `Start(ctx)`
+  (fx `OnStart`) and stopped + awaited by `Close()` (fx `OnStop`). Every call
+  site (production + tests) must drive Start/Close via the lifecycle rather than
+  passing a caller context.
+- **gen/go/controller proto types are hand-written.** Unlike the
+  protoc-generated `gen/go` (scoring) types, `gen/go/controller/*.pb.go` are
+  hand-maintained and do NOT implement the protobuf-v2 reflection interface, so
+  `VmafxController` messages cannot be marshaled by the standard gRPC wire codec.
+  In-process handler tests are unaffected; over-the-wire fxtests therefore use
+  the `VmafxScoring` service. See the orchestrator note below — regenerating
+  `gen/go/controller` with `buf`/`protoc` is the proper fix and is a candidate
+  follow-up.
+- **Env-var contract.** `VMAFX_HTTP_ADDR` / `VMAFX_GRPC_LISTEN` map to the
+  golusoris `http.addr` / `grpc.listen` keys; `auth.tenant_claim` /
+  `auth.roles_claim` are golusoris CompoundKeys (preserve the underscore). If
+  golusoris renames those keys, the controller's documented env contract must
+  follow.

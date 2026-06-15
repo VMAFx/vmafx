@@ -6,7 +6,9 @@
 // Tests use real queue + registry instances backed by an in-memory SQLite DB.
 //
 // ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
-// ADR-0962: NewRegistry now requires a context argument.
+// ADR-1119: NewRegistry(log) no longer takes a context; the reaper is launched
+//           by Start(ctx).  These tests exercise Register/ValidateSession only
+//           (the reaper is immaterial) and defer Close() for leak-free cleanup.
 
 package scheduler_test
 
@@ -43,7 +45,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { _ = q.Close() })
 
-	r := nodes.NewRegistry(context.Background(), log)
+	r := nodes.NewRegistry(log)
 	t.Cleanup(func() { r.Close() })
 	s := scheduler.New(q, r, log)
 	return &fixture{q: q, r: r, s: s, log: log}
@@ -144,7 +146,7 @@ func TestAssignJobBackToQueueOnNodeDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("q1 New: %v", err)
 	}
-	r1 := nodes.NewRegistry(context.Background(), log)
+	r1 := nodes.NewRegistry(log)
 	// Stop the reaper goroutine before the test exits — otherwise it
 	// leaks past the test's lifetime and trips goroutine-leak detectors.
 	defer r1.Close()
@@ -175,7 +177,7 @@ func TestAssignJobBackToQueueOnNodeDisconnect(t *testing.T) {
 		t.Fatalf("q2 New: %v", err)
 	}
 	defer q2.Close()
-	r2 := nodes.NewRegistry(context.Background(), log)
+	r2 := nodes.NewRegistry(log)
 	defer r2.Close()
 	s2 := scheduler.New(q2, r2, log)
 
