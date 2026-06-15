@@ -270,7 +270,8 @@ func registerTools(srv *mcp.Server) {
 		Description: "Run a 1-frame VMAF health check to distinguish 'compiled in' from " +
 			"'driver present + functional'. Returns compiled_in (bool), " +
 			"runtime_healthy (bool), latency_ms, score (the VMAF mean on a " +
-			"32x32 mid-grey pair), and any error string. Use this when " +
+			"64x64 mid-grey pair; >=36px per dimension is required by CUDA ADM), " +
+			"and any error string. Use this when " +
 			"list_backends returns true but actual GPU dispatch may fail " +
 			"(driver not loaded, ICD missing, KFD ioctl failure, etc.). " +
 			"ADR-0608.",

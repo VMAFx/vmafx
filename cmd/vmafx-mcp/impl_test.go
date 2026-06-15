@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -427,6 +428,52 @@ func TestHandleProbeBackendUnknownReturnsCompiledInFalse(t *testing.T) {
 	}
 	if v, _ := m["runtime_healthy"].(bool); v {
 		t.Errorf("runtime_healthy: got true, want false for unknown backend")
+	}
+}
+
+// TestProbeYUVDimensions locks the probe frame to 64x64 4:2:0 8-bit. 32x32 is
+// below the CUDA ADM >=36px-per-dimension minimum and silently yields a null
+// score on a CUDA build, so the dimensions must stay byte-compatible with the
+// Python server's _PROBE_YUV_DATA (server.py).
+func TestProbeYUVDimensions(t *testing.T) {
+	t.Parallel()
+	if probeYUVWidth != 64 || probeYUVHeight != 64 {
+		t.Fatalf("probe dims: got %dx%d, want 64x64 (>=36px CUDA-ADM minimum)",
+			probeYUVWidth, probeYUVHeight)
+	}
+	want := probeYUVWidth * probeYUVHeight * 3 / 2 // 6144 bytes for 4:2:0 8-bit
+	if len(probeYUVData) != want {
+		t.Fatalf("probeYUVData size: got %d, want %d", len(probeYUVData), want)
+	}
+}
+
+// TestScoreIsHealthy mirrors the Python server's `score is not None` guard plus
+// the Go-side non-finite rejection: a null or non-finite score must NOT report
+// runtime_healthy=true.
+func TestScoreIsHealthy(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		score any
+		want  bool
+	}{
+		{"nil", nil, false},
+		{"finite", 100.0, true},
+		{"zero", 0.0, true},
+		{"nan", math.NaN(), false},
+		{"posinf", math.Inf(1), false},
+		{"neginf", math.Inf(-1), false},
+		{"jsonNumberFinite", json.Number("97.5"), true},
+		{"jsonNumberJunk", json.Number("not-a-number"), false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := scoreIsHealthy(tc.score); got != tc.want {
+				t.Errorf("scoreIsHealthy(%v) = %v, want %v", tc.score, got, tc.want)
+			}
+		})
 	}
 }
 

@@ -46297,3 +46297,14 @@ Rebase-sensitive invariants (fork-internal, NOT upstream):
   `auth.roles_claim` are golusoris CompoundKeys (preserve the underscore). If
   golusoris renames those keys, the controller's documented env contract must
   follow.
+
+## fix/mcp-probe-parity (2026-06-15)
+no rebase impact: edits the fork-only MCP servers (`cmd/vmafx-mcp/{impl.go,tools.go,impl_test.go,AGENTS.md}`,
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`) + `docs/mcp/tools.md` + `docs/state.md`
++ changelog. No libvmaf C-API / CLI / `meson_options.txt` / public-header change →
+no ffmpeg-patch impact. **Rebase-sensitive invariant — probe_backend parity**
+(cmd/vmafx-mcp/AGENTS.md invariant #12): the Go `handleProbeBackend` and the Python
+`_probe_backend` MUST share the same 64×64 (≥36px/dim, CUDA-ADM minimum) synthetic
+probe frame AND the same `runtime_healthy` predicate (null/non-finite `vmaf.mean` →
+`runtime_healthy=false`, error `"vmaf returned exit 0 but score was null"`). A rebase
+that touches either probe handler must keep the two in lock-step.

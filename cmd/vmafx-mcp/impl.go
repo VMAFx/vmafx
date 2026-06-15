@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -927,8 +928,18 @@ func extractFramePNG(ctx context.Context, yuv, outPNG string, width, height int,
 // Tool: probe_backend
 // ---------------------------------------------------------------------------
 
-// probeYUVData is a 32x32 1-frame 4:2:0 8-bit YUV filled with mid-grey.
-var probeYUVData = bytes.Repeat([]byte{128}, 32*32*3/2)
+// probeYUVData is a 64x64 1-frame 4:2:0 8-bit YUV filled with mid-grey.
+// 64x64 x 1.5 = 6144 bytes. 32x32 was insufficient for CUDA ADM, which
+// requires at least 36px in each dimension; a 32px frame silently returned a
+// null score from the ADM kernel, which the old code misreported as
+// runtime_healthy=true (ADR-0608 follow-up). Must stay byte-identical to the
+// Python server's _PROBE_YUV_DATA (server.py).
+const (
+	probeYUVWidth  = 64
+	probeYUVHeight = 64
+)
+
+var probeYUVData = bytes.Repeat([]byte{128}, probeYUVWidth*probeYUVHeight*3/2)
 
 func handleProbeBackend(ctx context.Context, args map[string]any) (any, error) {
 	backend := strArg(args, "backend", "")
@@ -968,7 +979,7 @@ func handleProbeBackend(ctx context.Context, args map[string]any) (any, error) {
 
 	argv := []string{
 		"-r", refYUV, "-d", disYUV,
-		"--width", "32", "--height", "32",
+		"--width", strconv.Itoa(probeYUVWidth), "--height", strconv.Itoa(probeYUVHeight),
 		"-p", "420", "-b", "8",
 		"-m", "version=vmaf_v0.6.1",
 		"--precision", "legacy", // %.6f — matches C CLI default (ADR-0119)
@@ -1031,14 +1042,48 @@ func handleProbeBackend(ctx context.Context, args map[string]any) (any, error) {
 	vmafPool, _ := pooled["vmaf"].(map[string]any)
 	score := vmafPool["mean"]
 
+	// runtime_healthy requires a non-null, finite score: a null score
+	// indicates the backend kernel failed silently (e.g. ADM sub-minimum
+	// resolution, driver absent) even though the process returned exit code 0.
+	// Mirrors the Python server's `score is not None` guard (server.py), and
+	// additionally rejects non-finite values (NaN/Inf) defensively.
+	healthy := scoreIsHealthy(score)
+	var probeErr any
+	if !healthy {
+		probeErr = "vmaf returned exit 0 but score was null"
+	}
+
 	return map[string]any{
 		"backend":         backend,
 		"compiled_in":     compiledIn,
-		"runtime_healthy": true,
+		"runtime_healthy": healthy,
 		"latency_ms":      roundF(latencyMs, 1),
 		"score":           score,
-		"error":           nil,
+		"error":           probeErr,
 	}, nil
+}
+
+// scoreIsHealthy reports whether a probe score represents a successful run.
+// It mirrors the Python server's `score is not None` check (so the JSON output
+// stays byte-compatible) and additionally rejects non-finite float values.
+func scoreIsHealthy(score any) bool {
+	if score == nil {
+		return false
+	}
+	switch n := score.(type) {
+	case float64:
+		return !math.IsNaN(n) && !math.IsInf(n, 0)
+	case json.Number:
+		f, err := n.Float64()
+		if err != nil {
+			return false
+		}
+		return !math.IsNaN(f) && !math.IsInf(f, 0)
+	default:
+		// Non-numeric, non-nil value: treat as present (matches Python, which
+		// only checks `is not None`).
+		return true
+	}
 }
 
 func roundF(f float64, decimals int) float64 {

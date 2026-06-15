@@ -157,3 +157,18 @@ Key facts a future agent must keep straight:
    Verify after any composition-root change by driving the stdio binary with a
    JSON-RPC `initialize` + `tools/list` and asserting stdout carries only valid
    JSON-RPC objects (logs land on stderr).
+
+12. **probe_backend parity invariant** (ADR-0608 follow-up): the Go
+   `handleProbeBackend` (`impl.go`) and the Python `_probe_backend`
+   (`server.py`) MUST use the same synthetic probe frame and the same
+   `runtime_healthy` predicate. The frame is **64x64** 4:2:0 8-bit mid-grey
+   (`probeYUVWidth`/`probeYUVHeight` ↔ `_PROBE_YUV_WIDTH`/`_PROBE_YUV_HEIGHT`):
+   it must NOT shrink below 36px per dimension because the CUDA ADM kernel
+   silently returns a null score under that minimum, which a naive
+   `runtime_healthy=true` would misreport as a healthy backend. `runtime_healthy`
+   is true iff the subprocess exits 0 AND the pooled `vmaf.mean` score is
+   non-null (Go additionally rejects non-finite floats); on a null/non-finite
+   score both servers set `runtime_healthy=false` with the error string
+   `"vmaf returned exit 0 but score was null"`. `TestProbeYUVDimensions` /
+   `TestScoreIsHealthy` (Go) and `tests/test_probe_backend_pr850.py` (Python)
+   pin both sides.

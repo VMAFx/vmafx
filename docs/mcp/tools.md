@@ -479,8 +479,13 @@ during the lifetime of the process.
 ## `probe_backend`
 
 Run a 1-frame VMAF health check to distinguish "compiled in" from "driver
-present and functional". Uses a tiny 32×32 mid-grey synthetic YUV pair so
-no fixture files are required. Added in [ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md).
+present and functional". Uses a tiny 64×64 mid-grey synthetic YUV pair so
+no fixture files are required. The frame is 64×64 (not smaller) because the
+CUDA ADM kernel requires at least 36px in each dimension; a sub-36px frame
+silently returns a null score on a CUDA build, which would otherwise be
+misreported as `runtime_healthy: true`. A null or non-finite score now sets
+`runtime_healthy: false` with an explanatory `error` string. Added in
+[ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md).
 
 ### Input schema
 
