@@ -26,8 +26,10 @@ import (
 //     slog logging, clock, id, validate, crypto.
 //   - otel.Module — OpenTelemetry tracer/meter/logger over OTLP; a silent
 //     no-op when no exporter endpoint is configured.
-//   - the build version, supplied into the graph until golusoris ships a
-//     version module (golusoris#226).
+//   - the build version (pkg/version.Info), supplied into the graph. golusoris
+//     shipped its own version module in v0.5.0 (golusoris.Version, golusoris#226);
+//     vmafx keeps this local Info because it also carries the VCS revision +
+//     build metadata read from runtime/debug, beyond golusoris' ldflags string.
 //
 // It deliberately does NOT include a server module: a binary picks
 // golusoris.HTTP, grpc.Module, and/or k8s/operator as appropriate.

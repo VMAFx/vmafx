@@ -77,14 +77,35 @@ import (
 // stall node startup indefinitely (carried over from the pre-fx root).
 const probeTimeout = 30 * time.Second
 
+// nodeEnvOptions pins the VMAFX_ env contract for this binary. golusoris'
+// grpc.Module reads four underscore-bearing leaf keys (grpc.cert_file,
+// grpc.key_file, grpc.max_recv_size, grpc.max_send_size); the env transform
+// splits EVERY underscore on the delimiter, so VMAFX_GRPC_MAX_RECV_SIZE would
+// otherwise map to grpc.max.recv.size and silently fail to bind. Declaring each
+// as a CompoundKey keeps its leaf underscores intact. watch is true for the
+// binary (mounted ConfigMap reload) and false for tests.
+func nodeEnvOptions(watch bool) config.Options {
+	return config.Options{
+		EnvPrefix: "VMAFX_",
+		Delimiter: ".",
+		Watch:     watch,
+		CompoundKeys: []string{
+			"grpc.cert_file",
+			"grpc.key_file",
+			"grpc.max_recv_size",
+			"grpc.max_send_size",
+		},
+	}
+}
+
 func main() {
 	fx.New(
 		// golusoris foundation: config + log + clock + id + validate + crypto,
 		// the OTel module, and the build-version supply (ADR-1119).
 		bootstrap.Base,
-		// Override the env prefix so the whole graph reads VMAFX_* config keys.
-		// Watch is enabled so a mounted k8s ConfigMap update triggers reload.
-		fx.Replace(config.Options{EnvPrefix: "VMAFX_", Delimiter: ".", Watch: true}),
+		// Override the env prefix so the whole graph reads VMAFX_* config keys,
+		// keeping the underscore-bearing grpc.* leaves intact (nodeEnvOptions).
+		fx.Replace(nodeEnvOptions(true)),
 		// Route fx lifecycle events onto the golusoris slog logger.
 		bootstrap.FxLogger(),
 

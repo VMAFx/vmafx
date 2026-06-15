@@ -45,7 +45,6 @@ import (
 
 	"github.com/golusoris/golusoris"
 	"github.com/golusoris/golusoris/clock"
-	"github.com/golusoris/golusoris/config"
 	grpcmod "github.com/golusoris/golusoris/grpc"
 	"github.com/golusoris/golusoris/k8s/health"
 	"github.com/golusoris/golusoris/observability/statuspage"
@@ -86,7 +85,7 @@ func writeVmafStubForApp(t *testing.T) {
 func productionGraph() fx.Option {
 	return fx.Options(
 		bootstrap.Base,
-		fx.Replace(config.Options{EnvPrefix: "VMAFX_", Delimiter: ".", Watch: false}),
+		fx.Replace(serverEnvOptions(false)),
 		golusoris.HTTP,
 		grpcmod.Module,
 		fx.Provide(

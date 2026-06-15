@@ -42,7 +42,6 @@ import (
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/golusoris/golusoris/config"
 	grpcmod "github.com/golusoris/golusoris/grpc"
 
 	vmafxv1 "github.com/VMAFx/vmafx/gen/go"
@@ -97,7 +96,7 @@ func writeNodeEnv(t *testing.T) string {
 func productionGraph() fx.Option {
 	return fx.Options(
 		bootstrap.Base,
-		fx.Replace(config.Options{EnvPrefix: "VMAFX_", Delimiter: ".", Watch: false}),
+		fx.Replace(nodeEnvOptions(false)),
 		grpcmod.Module,
 		fx.Provide(
 			provideEncoderInventory,

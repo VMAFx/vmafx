@@ -20,9 +20,10 @@ func Version() string {
 }
 
 // Info is the typed build-version record supplied into the fx graph by
-// internal/app/bootstrap (ADR-1119). It is the vmafx-local stand-in for the
-// version module proposed upstream in golusoris#226; drop it once the
-// framework ships an equivalent.
+// internal/app/bootstrap (ADR-1119). golusoris shipped its own version module
+// in v0.5.0 (golusoris.Version, golusoris#226); vmafx keeps this local Info
+// deliberately because it also carries the VCS revision + build metadata read
+// from runtime/debug (below), which the framework's ldflags-only string omits.
 type Info struct {
 	// Version is the ldflags-injected release string (else "dev").
 	Version string
