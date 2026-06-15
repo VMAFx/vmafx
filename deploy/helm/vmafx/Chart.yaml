@@ -30,7 +30,7 @@ dependencies:
   # a central Prometheus instance rather than exposing a scrape endpoint.
   # Disable entirely if you use a scraping Prometheus or another sink.
   - name: prometheus-pushgateway
-    version: ">=2.17.0"
+    version: ">=3.6.1"
     repository: https://prometheus-community.github.io/helm-charts
     condition: pushgateway.enabled
     alias: pushgateway

@@ -161,15 +161,33 @@ respective CRDs.
 
 ## Environment variables
 
-| Variable | CLI flag equivalent | Default | Description |
-| --- | --- | --- | --- |
-| `VMAFX_OPERATOR_METRICS_ADDR` | `--metrics-bind-address` | `:8081` | Prometheus metrics endpoint |
-| `VMAFX_OPERATOR_PROBE_ADDR` | `--health-probe-bind-address` | `:8082` | Health probe endpoint |
-| `VMAFX_OPERATOR_LEADER_ELECT` | `--leader-elect` | `false` | Enable leader election |
-| `VMAFX_OPERATOR_LOG_LEVEL` | `--log-level` | `info` | Log verbosity |
-| `VMAFX_OPERATOR_WEBHOOKS_ENABLED` | `--webhooks-enabled` | `false` | Enable admission webhooks (requires TLS cert) |
-| `VMAFX_CONTROLLER_GRPC_ADDR` | — | `vmafx-controller.<ns>.svc.cluster.local:9090` | gRPC address of the vmafx-controller |
-| `VMAFX_CONTROLLER_HTTP_ADDR` | — | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | HTTP address of the vmafx-controller |
+As of ADR-1119 Phase 1 the operator is composed with the golusoris fx
+framework and is configured purely through environment variables (the previous
+CLI flags are removed; fx owns signals and the run loop). Config is read from
+the `operator.*` koanf subtree under the `VMAFX_` prefix.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VMAFX_OPERATOR_METRICS_ADDR` | `:8081` | Prometheus metrics endpoint (`0` disables) |
+| `VMAFX_OPERATOR_HEALTH_PROBE_ADDR` | `:8082` | Health probe endpoint |
+| `VMAFX_OPERATOR_LEADER_ELECTION` | `false` | Enable leader election |
+| `VMAFX_OPERATOR_LEADER_ELECTION_ID` | `vmafx-operator.vmafx.dev` | Lease name used when leader election is enabled |
+| `VMAFX_OPERATOR_WEBHOOK_PORT` | `0` | Admission-webhook port; `0` disables webhooks |
+| `VMAFX_OPERATOR_WEBHOOK_HOST` | _(all interfaces)_ | Admission-webhook bind host |
+| `VMAFX_OPERATOR_GRACEFUL_SHUTDOWN` | `30s` | Manager graceful-shutdown timeout |
+| `VMAFX_LOG_LEVEL` | `info` | Log verbosity (golusoris log module: `debug\|info\|warn\|error`) |
+| `VMAFX_CONTROLLER_GRPC_ADDR` | `vmafx-controller.<ns>.svc.cluster.local:9090` | gRPC address of the vmafx-controller |
+| `VMAFX_CONTROLLER_HTTP_ADDR` | `http://vmafx-controller.<ns>.svc.cluster.local:8080` | HTTP address of the vmafx-controller |
+
+> **Migration from the pre-fx binary** (ADR-1119): the CLI flags
+> (`--metrics-bind-address`, `--health-probe-bind-address`, `--leader-elect`,
+> `--log-level`, `--webhooks-enabled`) are removed. Three env vars were
+> renamed — `VMAFX_OPERATOR_PROBE_ADDR` → `VMAFX_OPERATOR_HEALTH_PROBE_ADDR`,
+> `VMAFX_OPERATOR_LEADER_ELECT` → `VMAFX_OPERATOR_LEADER_ELECTION`,
+> `VMAFX_OPERATOR_LOG_LEVEL` → `VMAFX_LOG_LEVEL` — and the boolean
+> `VMAFX_OPERATOR_WEBHOOKS_ENABLED` is replaced by the integer
+> `VMAFX_OPERATOR_WEBHOOK_PORT` (set a port such as `9443` to enable; `0` or
+> unset disables). Update Deployment manifests and Helm values accordingly.
 
 ---
 
@@ -208,8 +226,9 @@ go test ./cmd/vmafx-operator/... -v
 
 ## Webhook admission validation
 
-Webhooks are disabled by default.  Enable with `--webhooks-enabled` or
-`VMAFX_OPERATOR_WEBHOOKS_ENABLED=true`.  When enabled, the operator validates:
+Webhooks are disabled by default.  Enable by setting a webhook port, e.g.
+`VMAFX_OPERATOR_WEBHOOK_PORT=9443` (and optionally
+`VMAFX_OPERATOR_WEBHOOK_HOST`).  When enabled, the operator validates:
 
 | CRD | Field | Rule |
 | --- | --- | --- |

@@ -453,7 +453,7 @@ node:
       maxUnavailable: 0
 
   # grpcPort is the port the vmafx-node gRPC server listens on.
-  # Must match VMAFX_NODE_ADDR (env default :50052).  The liveness and
+  # Must match VMAFX_GRPC_LISTEN (deploy sets :grpcPort).  The liveness and
   # readiness probes use tcpSocket on this port — it is the only listener
   # the node binary exposes.
   grpcPort: 50052
