@@ -46184,3 +46184,31 @@ Rebase-sensitive invariants (fork-internal, NOT upstream):
 - **Env-var contract.** `VMAFX_GRPC_LISTEN` maps to the golusoris `grpc.listen`
   key under the `VMAFX_` prefix (replaces `VMAFX_NODE_ADDR`). If golusoris
   renames that key, the node's documented env contract must follow.
+## feat/golusoris-operator (2026-06-15)
+no rebase impact for upstream Netflix/vmaf syncs: every file is fork-local and
+has no upstream counterpart. `cmd/vmafx-operator/main.go` is rewritten from a
+hand-rolled controller-runtime entry point onto the golusoris fx framework
+(ADR-1119 Phase 1), and `cmd/vmafx-operator/main_test.go` adds fx-graph
+validation. The reconcilers under `cmd/vmafx-operator/internal/controller/` and
+the webhooks under `cmd/vmafx-operator/internal/webhook/` are unchanged; only
+their wiring (Setup-against-manager) moved into fx.Invoke hooks. None of these
+files exist upstream.
+
+Rebase-sensitive invariant (cross-repo, NOT Netflix upstream): this migration
+requires `github.com/golusoris/golusoris` >= v0.4.0, because the
+`github.com/golusoris/golusoris/k8s/operator` module (introduced by golusoris
+commit 3df9f1a / PR #224) first appears in tag v0.4.0 and is ABSENT in v0.3.1.
+The foundation commit (afd66c7ef) pins v0.3.1, which predates k8s/operator —
+so `cmd/vmafx-operator/main.go` does not compile until the go.mod golusoris
+pin is bumped to v0.4.0+. The pin bump is intentionally NOT part of this branch
+(it is a shared go.mod change owned by the migration orchestrator).
+
+golusoris#227 note: the in-tree main.go does NOT add an app-level
+`ctrl.SetLogger` shim — golusoris v0.4.0's `operator.Module` already calls
+`ctrl.SetLogger(loggerFromSlog(logger))` inside `newManager`, so a second
+SetLogger from the app would be redundant. If a future golusoris release
+reverts that (regressing #227), re-add the shim as an
+`fx.Invoke(func(l *slog.Logger){ ctrl.SetLogger(logr.FromSlogHandler(l.Handler())) })`.
+Likewise webhooks are wired via `operator.Options.WebhookPort` (also added
+post-v0.3.1); if that field disappears upstream, the app must stand up its own
+`webhook.NewServer` and add it to the manager.
