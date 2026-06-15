@@ -48,7 +48,7 @@ spec:
             {{- end }}
             - --log-level={{ .Values.operator.logLevel | default "info" }}
           env:
-            - name: VMAFX_OPERATOR_LOG_LEVEL
+            - name: VMAFX_LOG_LEVEL
               value: {{ .Values.operator.logLevel | default "info" | quote }}
           ports:
             - name: metrics
