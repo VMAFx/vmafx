@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 # Base: NVIDIA CUDA ≥13.3 devel on Ubuntu 26.04. Non-conservative pin per ADR D27 —
 # we follow latest-stable CUDA aggressively because the fork's value is GPU perf on
 # current hardware; being one release behind costs ~10-30% on kernel-bound stages.
