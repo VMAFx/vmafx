@@ -504,7 +504,16 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
     /* Stage 5: EPSILON_SVR predict (== svm_predict_probability for EPS_SVR). */
     const double score = svm_predict(s->model, s->x);
-    assert(isfinite(score));
+
+    /* NaN/Inf guard: a bare assert is a no-op in release and an abort in debug.
+     * Guard at runtime in both builds — emit a warning and fail the frame
+     * rather than silently appending a non-finite score (mirrors the
+     * y_funque_plus.c finite-atom guard). */
+    if (!isfinite(score)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "brisque: non-finite score at frame %u (score=%g)\n",
+                 index, score);
+        return -EINVAL;
+    }
 
     return vmaf_feature_collector_append(feature_collector, "brisque", score, index);
 }

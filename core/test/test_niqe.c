@@ -160,6 +160,44 @@ static char *test_niqe_aggd_large(void)
     return NULL;
 }
 
+/* AGGD degenerate-patch guards. Two reachable one-sided/flat cases that would
+ * otherwise produce inf/inf = NaN and trip the isfinite assert under a
+ * sanitizer/debug build:
+ *   (a) all-zero patch (mean_sq == 0): the harness returns alpha=0.2 and all
+ *       other stats 0 (gamma_hat=0/0=NaN -> argmin of all-NaN -> index 0).
+ *   (b) all-negative patch (rms == 0, mean_sq != 0): gamma_hat=lms/0=inf so
+ *       rhat_norm=inf/inf=NaN; numpy's argmin of an all-NaN array returns
+ *       index 0 -> alpha=0.2, bl=aggdratio*lms, br=0. The reference values
+ *       below were generated with the Python harness for [-2,-1,-3,-1]. */
+static char *test_niqe_aggd_degenerate(void)
+{
+    static double prec[NIQE_GAMMA_COUNT];
+    niqe_build_gamma_table(prec);
+
+    /* (a) all-zero patch. */
+    const float zeros[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    const NiqeAggd z = niqe_extract_aggd(zeros, 8, prec);
+    mu_assert("flat patch alpha != 0.2", close_abs(z.alpha, 0.2, 1e-15));
+    mu_assert("flat patch N not finite/zero", isfinite(z.N) && close_abs(z.N, 0.0, 1e-15));
+    mu_assert("flat patch bl not finite/zero", isfinite(z.bl) && close_abs(z.bl, 0.0, 1e-15));
+    mu_assert("flat patch br not finite/zero", isfinite(z.br) && close_abs(z.br, 0.0, 1e-15));
+
+    /* (b) all-negative patch -> rms == 0, mean_sq != 0. The pre-fix code would
+     * compute inf/inf = NaN here and abort under the sanitizer build. */
+    const float neg[4] = {-2.0f, -1.0f, -3.0f, -1.0f};
+    const NiqeAggd a = niqe_extract_aggd(neg, 4, prec);
+    mu_assert("all-neg alpha != 0.2", close_abs(a.alpha, 0.2, 1e-15));
+    mu_assert("all-neg N not finite", isfinite(a.N));
+    mu_assert("all-neg bl not finite", isfinite(a.bl));
+    mu_assert("all-neg br != 0", close_abs(a.br, 0.0, 1e-15));
+    mu_assert("all-neg lms", close_abs(a.lsq, 1.9364917278289795, 1e-6));
+    mu_assert("all-neg rms != 0", close_abs(a.rsq, 0.0, 1e-15));
+    /* Harness reference for [-2,-1,-3,-1] at alpha=0.2 (aggdratio is tiny). */
+    mu_assert("all-neg N value", close_abs(a.N, -8.060654877743004e-06, 1e-9));
+    mu_assert("all-neg bl value", close_abs(a.bl, 3.213047092940099e-05, 1e-9));
+    return NULL;
+}
+
 /* PIL-bicubic resampler: 4 input samples -> 2 output samples, single axis.
  * Verify against the hand-computed Catmull-Rom (a=-0.5) coefficients so the
  * coefficient builder + filter are pinned independently of the full pipeline. */
@@ -431,6 +469,7 @@ char *run_tests(void)
     mu_run_test(test_niqe_gauss_window);
     mu_run_test(test_niqe_aggd_oracle1);
     mu_run_test(test_niqe_aggd_large);
+    mu_run_test(test_niqe_aggd_degenerate);
     mu_run_test(test_niqe_bicubic_coeffs);
     mu_run_test(test_niqe_sym_pinv);
     mu_run_test(test_niqe_end_to_end);

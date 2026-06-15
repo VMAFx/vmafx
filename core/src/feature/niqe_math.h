@@ -137,7 +137,6 @@ static inline NiqeAggd niqe_extract_aggd(const float *x, size_t n, const double 
     const float mean_abs = abs_sum / (float)n;
     const float mean_sq = sq_sum / (float)n;
 
-    const float gamma_hat = lms / rms;
     /* Flat patch (mean_sq == 0): 0/0 would produce NaN.  Return the alpha
      * sentinel 0.2f (the lower bound of gamma_range in the Python harness),
      * which the table argmin would also select for a degenerate ratio. */
@@ -145,21 +144,38 @@ static inline NiqeAggd niqe_extract_aggd(const float *x, size_t n, const double 
         NiqeAggd flat = {0.2, 0.0, 0.0, 0.0, 0.0, 0.0};
         return flat;
     }
-    const float r_hat = (mean_abs * mean_abs) / mean_sq;
-    const float gh2 = gamma_hat * gamma_hat;
-    const float gh3 = gh2 * gamma_hat;
-    const float denom = (gh2 + 1.0f) * (gh2 + 1.0f);
-    const float rhat_norm = r_hat * (((gh3 + 1.0f) * (gamma_hat + 1.0f)) / denom);
-    assert(isfinite((double)rhat_norm));
 
-    /* argmin over the gamma table (double comparison, robust to ties). */
-    int best = 0;
-    double best_d = fabs(prec[0] - (double)rhat_norm);
-    for (int i = 1; i < NIQE_GAMMA_COUNT; i++) {
-        const double d = fabs(prec[i] - (double)rhat_norm);
-        if (d < best_d) {
-            best_d = d;
-            best = i;
+    /* Degenerate one-sided patch (rms == 0 but mean_sq != 0, i.e. all samples
+     * negative).  gamma_hat = lms/0 = +inf, so rhat_norm = r_hat*(inf/inf) =
+     * NaN.  The Python harness divides with numpy scalars (lms/0 -> inf, not an
+     * exception) and feeds the resulting NaN into np.argmin(np.abs(prec - NaN)),
+     * which returns index 0 for an all-NaN array.  Mirror that exactly here:
+     * skip the inf/inf arithmetic and the argmin, and select gamma index 0
+     * (alpha = 0.2).  The gamma tail below then yields bl = aggdratio*lms,
+     * br = aggdratio*rms = 0, N = (br-bl)*(g2/g1)*aggdratio — harness-faithful.
+     * This guards a sanitizer/debug abort on a reachable all-negative MSCN
+     * patch; the RELEASE output is unchanged (this only fires when rms == 0). */
+    int best;
+    if (rms == 0.0f) {
+        best = 0;
+    } else {
+        const float gamma_hat = lms / rms;
+        const float r_hat = (mean_abs * mean_abs) / mean_sq;
+        const float gh2 = gamma_hat * gamma_hat;
+        const float gh3 = gh2 * gamma_hat;
+        const float denom = (gh2 + 1.0f) * (gh2 + 1.0f);
+        const float rhat_norm = r_hat * (((gh3 + 1.0f) * (gamma_hat + 1.0f)) / denom);
+        assert(isfinite((double)rhat_norm));
+
+        /* argmin over the gamma table (double comparison, robust to ties). */
+        best = 0;
+        double best_d = fabs(prec[0] - (double)rhat_norm);
+        for (int i = 1; i < NIQE_GAMMA_COUNT; i++) {
+            const double d = fabs(prec[i] - (double)rhat_norm);
+            if (d < best_d) {
+                best_d = d;
+                best = i;
+            }
         }
     }
     const double alpha = niqe_gamma_value(best);

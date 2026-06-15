@@ -100,7 +100,11 @@ static const VmafOption options[] = {
     },
     {
         .name = "transfer",
-        .help = "input transfer characteristic (RC supports pq only): pq",
+        .help = "input transfer characteristic (RC supports pq only): pq. NOTE: "
+                "the PQ decode assumes FULL-RANGE code values (normalised by "
+                "2^bpc - 1); limited-range (\"video range\") HDR10 would be "
+                "mis-scaled. No range option is offered — PU21 does no YUV->RGB "
+                "matrix decode.",
         .offset = offsetof(Pu21State, transfer),
         .type = VMAF_OPT_TYPE_STRING,
         .default_val.s = "pq",
