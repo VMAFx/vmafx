@@ -111,7 +111,7 @@ jobs:
           restore-keys: buildx-e2e-${{ runner.os }}-
 
       - name: Build vmafx-operator image (e2e tag)
-        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1  # v6.16.0
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7.2.0
         with:
           context: .
           file: docker/Dockerfile.operator
@@ -125,7 +125,7 @@ jobs:
             GIT_SHA=${{ github.sha }}
 
       - name: Build vmafx-node image (cpu variant, e2e tag)
-        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1  # v6.16.0
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7.2.0
         with:
           context: .
           file: docker/Dockerfile.node
