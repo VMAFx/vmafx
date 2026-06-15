@@ -182,16 +182,22 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         goto fail_tmp;
     }
 
-    err |= vmaf_picture_alloc(&s->ref, VMAF_PIX_FMT_YUV444P, bpc, w, h);
-    err |= vmaf_picture_alloc(&s->dist, VMAF_PIX_FMT_YUV444P, bpc, w, h);
-    return err;
+    err = vmaf_picture_alloc(&s->ref, VMAF_PIX_FMT_YUV444P, bpc, w, h);
+    if (err)
+        goto fail_tmp;
+    err = vmaf_picture_alloc(&s->dist, VMAF_PIX_FMT_YUV444P, bpc, w, h);
+    if (err) {
+        (void)vmaf_picture_unref(&s->ref);
+        goto fail_tmp;
+    }
+    return 0;
 
 fail_tmp:
     for (int i = 0; i < 6; i++) {
         if (s->tmp[i])
             aligned_free(s->tmp[i]);
     }
-    return -ENOMEM;
+    return err ? err : -ENOMEM;
 }
 
 static float get_h_prime(const float x, const float y)

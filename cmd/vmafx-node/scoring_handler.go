@@ -1,14 +1,15 @@
+// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
-
-// Package server provides the vmafx-node gRPC service.
 //
-// The node exposes the VmafxScoring service (proto/vmafx.proto) so a
-// controller — or any gRPC client — can dispatch scoring work directly to the
-// node (push model): Score for file-path unary scoring, ScoreStream for
-// in-memory per-frame streaming (ADR-0933), and Health for liveness probes.
-// The node binary connects libvmaf via cgo (ADR-0713), so the served scoring
-// surface reuses the same pkg/libvmaf engine the standalone vmafx-server uses.
+// cmd/vmafx-node/scoring_handler.go — the node's VmafxScoring gRPC service
+// implementation.
+//
+// The node exposes the VmafxScoring service (proto/vmafx.proto) so a controller
+// — or any gRPC client — can dispatch scoring work directly to the node (push
+// model): Score for file-path unary scoring, ScoreStream for in-memory per-frame
+// streaming (ADR-0933), and Health for liveness probes. The node binary connects
+// libvmaf via cgo (ADR-0713), so the served scoring surface reuses the same
+// pkg/libvmaf engine the standalone vmafx-server uses.
 //
 // Service selection (ADR-0713 / ADR-0709): the worker-side gRPC surface is the
 // scoring contract, not a bespoke node API — the only scoring service the proto
@@ -17,10 +18,19 @@
 // controller, not a service the node hosts. Registering VmafxScoring here gives
 // the node a dispatchable scoring endpoint without inventing a second contract.
 //
-// When Config.Scorer is nil the node still serves Health (so the Phase 4b.4
-// smoke test and k8s liveness probe pass) but returns codes.FailedPrecondition
-// from Score / ScoreStream, since scoring requires a libvmaf-backed scorer.
-package server
+// When the scorer is nil the node still serves Health (so the k8s liveness probe
+// and smoke test pass) but returns codes.FailedPrecondition from Score /
+// ScoreStream, since scoring requires a libvmaf-backed scorer.
+//
+// ADR-1119: migrated out of the (now-removed) cmd/vmafx-node/server package into
+// package main so the fx composition root can register it directly on the
+// golusoris-provided *grpc.Server. The handler logic is unchanged; only its
+// host package and constructor signature moved (it now also carries the encoder
+// inventory for future capability reporting).
+
+//go:build cgo
+
+package main
 
 import (
 	"context"
@@ -28,11 +38,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"time"
 
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -41,124 +48,30 @@ import (
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
 
-// gracefulShutdownTimeout bounds how long Serve waits for in-flight RPCs to
-// drain on shutdown before forcing a hard stop. A stuck streaming RPC must not
-// block node termination past the 30 s SIGTERM budget (ADR-0713).
-const gracefulShutdownTimeout = 25 * time.Second
-
-// Config holds the vmafx-node server configuration.
-type Config struct {
-	// Addr is the gRPC listen address (e.g., ":50052").
-	Addr string
-
-	// FFmpegBin is the path to the ffmpeg binary.
-	// Populated from VMAFX_FFMPEG_BIN or "ffmpeg" by main.go.
-	FFmpegBin string
-
-	// Encoders is the cached encoder inventory from the startup probe.
-	Encoders *probe.Inventory
-
-	// Scorer backs the VmafxScoring Score / ScoreStream RPCs. May be nil, in
-	// which case the node serves Health only and returns
-	// codes.FailedPrecondition from the scoring RPCs.
-	Scorer *libvmaf.Scorer
-
-	// Logger is the structured logger for this server instance.
-	Logger *slog.Logger
-}
-
-// Server is the vmafx-node gRPC service.
-type Server struct {
-	cfg Config
-}
-
-// New creates a new Server. Returns an error when the config is invalid.
-func New(cfg Config) (*Server, error) {
-	if cfg.Addr == "" {
-		return nil, fmt.Errorf("server.Config.Addr must not be empty")
-	}
-	if cfg.FFmpegBin == "" {
-		return nil, fmt.Errorf("server.Config.FFmpegBin must not be empty")
-	}
-	if cfg.Encoders == nil {
-		return nil, fmt.Errorf("server.Config.Encoders must not be nil")
-	}
-	if cfg.Logger == nil {
-		cfg.Logger = slog.Default()
-	}
-	return &Server{cfg: cfg}, nil
-}
-
-// Serve starts the gRPC server and blocks until ctx is cancelled.
-//
-// It registers the VmafxScoring service (Score, ScoreStream, Health) and shuts
-// down gracefully when ctx is cancelled (SIGTERM / SIGINT via the signal
-// context wired in main.go). A hard-stop fallback fires if graceful drain
-// exceeds gracefulShutdownTimeout so a wedged streaming RPC cannot block node
-// termination indefinitely.
-func (s *Server) Serve(ctx context.Context) error {
-	ln, err := net.Listen("tcp", s.cfg.Addr)
-	if err != nil {
-		return fmt.Errorf("listen %s: %w", s.cfg.Addr, err)
-	}
-
-	// OTel stats handler: instruments every RPC and is a no-op when InitOTel
-	// installed no-op providers (as in tests).
-	grpcSrv := grpc.NewServer(
-		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-	)
-	vmafxv1.RegisterVmafxScoringServer(grpcSrv, newScoringHandler(s.cfg.Scorer, s.cfg.Logger))
-
-	s.cfg.Logger.Info("vmafx-node ready",
-		"addr", ln.Addr().String(),
-		"ffmpeg", s.cfg.FFmpegBin,
-		"encoders_available", len(s.cfg.Encoders.Available),
-		"encoders_missing", len(s.cfg.Encoders.Missing),
-		"scoring_enabled", s.cfg.Scorer != nil,
-		"services", []string{"VmafxScoring"},
-	)
-
-	// Drive graceful shutdown from ctx cancellation.
-	go func() {
-		<-ctx.Done()
-		s.cfg.Logger.Info("vmafx-node shutdown initiated", "reason", ctx.Err())
-		done := make(chan struct{})
-		go func() {
-			grpcSrv.GracefulStop()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(gracefulShutdownTimeout):
-			s.cfg.Logger.Warn("vmafx-node graceful stop timed out; forcing hard stop")
-			grpcSrv.Stop()
-		}
-	}()
-
-	// Serve blocks until GracefulStop / Stop is called. grpc.ErrServerStopped
-	// is the normal "shut down cleanly" signal and is not an error here.
-	if serveErr := grpcSrv.Serve(ln); serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
-		return fmt.Errorf("grpc serve: %w", serveErr)
-	}
-	s.cfg.Logger.Info("vmafx-node shutdown complete")
-	return nil
-}
-
 // scoringHandler implements vmafxv1.VmafxScoringServer for the node. It mirrors
 // the standalone vmafx-server handler (cmd/vmafx-server/grpc_server.go) but is
 // independent so the node binary does not depend on package main of another
 // command. The scoring engine (pkg/libvmaf) is shared.
 type scoringHandler struct {
 	vmafxv1.UnimplementedVmafxScoringServer
-	scorer *libvmaf.Scorer
-	log    *slog.Logger
+	scorer    *libvmaf.Scorer
+	inventory *probe.Inventory
+	log       *slog.Logger
 }
 
-func newScoringHandler(scorer *libvmaf.Scorer, log *slog.Logger) *scoringHandler {
+// newScoringHandler builds the node's gRPC scoring service implementation. scorer
+// may be nil (Health-only node). inventory is the shared startup-probe result
+// (populated in provideEncoderInventory's OnStart hook); it is carried for future
+// capability reporting and so a regression that drops the probe wiring is caught
+// by the graph.
+func newScoringHandler(scorer *libvmaf.Scorer, inventory *probe.Inventory, log *slog.Logger) *scoringHandler {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &scoringHandler{scorer: scorer, log: log}
+	if inventory == nil {
+		inventory = probe.EmptyInventory()
+	}
+	return &scoringHandler{scorer: scorer, inventory: inventory, log: log}
 }
 
 // Health reports node liveness. Always available, even without a scorer.

@@ -186,13 +186,28 @@ The binary has no runtime dependencies other than the `vmaf` CLI binary
 
 ### Run
 
+The Go binary is wired on the golusoris fx framework (ADR-1119) and is
+configured entirely through environment variables — there are **no CLI
+flags**. Transport selection moved from the removed `--transport` / `--port`
+flags to `VMAFX_MCP_TRANSPORT` / `VMAFX_MCP_HTTP_ADDR`.
+
 ```bash
 # Default stdio transport — drop-in replacement for vmaf-mcp
 vmafx-mcp
 
-# HTTP transport (streamable MCP transport, port 3000)
-vmafx-mcp --transport http --port 3000
+# Streamable-HTTP transport on the default address :3000
+VMAFX_MCP_TRANSPORT=http vmafx-mcp
+
+# Streamable-HTTP transport on a custom address
+VMAFX_MCP_TRANSPORT=http VMAFX_MCP_HTTP_ADDR=:8080 vmafx-mcp
 ```
+
+> **Migration (ADR-1119).** The pre-framework binary used
+> `vmafx-mcp --transport http --port 3000`. Replace
+> `--transport <t>` with `VMAFX_MCP_TRANSPORT=<t>` and
+> `--port <N>` with `VMAFX_MCP_HTTP_ADDR=:<N>` (a full listen address,
+> not a bare port). The historical default port `3000` is preserved as the
+> default address `:3000`.
 
 ### Claude Desktop configuration (Go binary)
 
@@ -215,7 +230,7 @@ vmafx-mcp --transport http --port 3000
 | Feature | Python (`vmaf-mcp`) | Go (`vmafx-mcp`) |
 |---|---|---|
 | Tool names / schemas | Reference | Byte-for-byte parity |
-| Transport | stdio (default), HTTP (PR #1583) | stdio (default), HTTP |
+| Transport | stdio (default), HTTP (PR #1583); `--transport` / `--port` flags | stdio (default), HTTP; selected via `VMAFX_MCP_TRANSPORT` / `VMAFX_MCP_HTTP_ADDR` env vars (no flags, ADR-1119) |
 | VLM descriptions (`describe_worst_frames`) | SmolVLM / Moondream2 when `[vlm]` extras installed | Returns placeholder; Stage 2 will add a native VLM bridge |
 | `eval_model_on_split` / `compare_models` | Native Python (onnxruntime, pandas, scipy) | Delegates to `python3` subprocess; requires Python env |
 | Binary size | ~50 MB Python env | ~10 MB static binary |
@@ -223,8 +238,22 @@ vmafx-mcp --transport http --port 3000
 
 ### Environment variables
 
-Same as the Python server (`VMAF_BIN`, `VMAF_MCP_ALLOW`). No additional
-variables.
+Tool-handler variables are the same as the Python server (`VMAF_BIN`,
+`VMAF_MCP_ALLOW`, plus `VMAFX_MCP_DIRECT=1` to opt into the direct cgo scoring
+path — ADR-0931). On top of those, the fx framework (ADR-1119) adds the
+config-driven keys below. Config uses the `VMAFX_` env prefix with a `.`
+koanf delimiter, so every `_` in the variable name becomes a `.` in the
+koanf key:
+
+| Variable | koanf key | Default | Purpose |
+|---|---|---|---|
+| `VMAFX_MCP_TRANSPORT` | `mcp.transport` | `stdio` | Transport: `stdio` or `http`. |
+| `VMAFX_MCP_HTTP_ADDR` | `mcp.http.addr` | `:3000` | HTTP listen address (used only when transport is `http`). Full address (`:3000`), not a bare port. |
+| `VMAFX_LOG_LEVEL` | (bridged to `LOG_LEVEL`) | `INFO` | slog level. golusoris#234: bridged to the bare `LOG_LEVEL` the v0.4.0 log module reads. |
+| `VMAFX_LOG_FORMAT` | (bridged to `LOG_FORMAT`) | auto | Log handler (`auto`/`tint`/`json`). |
+
+All framework logging is written to **stderr** so the stdio JSON-RPC stream on
+stdout stays uncorrupted.
 
 ### Tests
 

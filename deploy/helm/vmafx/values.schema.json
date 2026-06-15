@@ -243,7 +243,7 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535,
-          "description": "gRPC listen port for the vmafx-node server. Must match VMAFX_NODE_ADDR env var (default 50052). Used for tcpSocket liveness/readiness probes and the node ClusterIP Service."
+          "description": "gRPC listen port for the vmafx-node server. Must match VMAFX_GRPC_LISTEN env var (default 50052). Used for tcpSocket liveness/readiness probes and the node ClusterIP Service."
         },
         "image": {
           "type": "object",
