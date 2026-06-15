@@ -4,15 +4,16 @@
 // cmd/vmafx-node/online_feedback_test.go — regression tests covering the
 // drainer-lifetime contract for FeedbackClient.
 //
-// Background: prior to this audit the FeedbackClient documentation promised
-// a Close() method that stopped the background drainer, but the method was
-// never implemented — only ctx cancellation could reap the goroutine. This
-// suite locks in the documented Close() behaviour and the nil-logger
+// Background: the drainer is launched by Start() (wired to an fx OnStart hook)
+// and stopped + awaited by Close() (wired to an fx OnStop hook) — ADR-1119. The
+// constructor no longer spawns a goroutine and no longer takes a context; the
+// drainer is bound to an internal, Close-owned context so no goroutine leaks
+// past Close(). This suite locks in Start/Close idempotency, the
+// Close-without-Start and Start-after-Close edge cases, and the nil-logger
 // constructor guard.
 package main
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
@@ -25,11 +26,12 @@ import (
 // influenced by parallel tests sharing the process and produces noisy
 // baselines under t.Parallel.  Instead we verify the documented contract:
 // Close blocks until the drainer's done channel closes, and a second
-// Close (or a Close after ctx-cancel) must still return promptly.
+// Close must still return promptly.
 func TestFeedbackClient_CloseStopsDrainer(t *testing.T) {
 	t.Parallel()
 
-	fc := NewFeedbackClient(context.Background(), nil)
+	fc := NewFeedbackClient(nil)
+	fc.Start()
 
 	done := make(chan struct{})
 	go func() {
@@ -51,12 +53,54 @@ func TestFeedbackClient_CloseStopsDrainer(t *testing.T) {
 	}
 }
 
+// TestFeedbackClient_CloseWithoutStart verifies that Close() on a client whose
+// drainer was never started returns immediately without hanging on the (never
+// closed) done channel.
+func TestFeedbackClient_CloseWithoutStart(t *testing.T) {
+	t.Parallel()
+
+	fc := NewFeedbackClient(nil)
+	done := make(chan struct{})
+	go func() {
+		fc.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close() without Start blocked — must not wait on an unstarted drainer")
+	}
+}
+
+// TestFeedbackClient_StartAfterClose verifies that calling Start() after Close()
+// does not launch a goroutine and does not panic (no double-close of done).
+func TestFeedbackClient_StartAfterClose(t *testing.T) {
+	t.Parallel()
+
+	fc := NewFeedbackClient(nil)
+	fc.Close()
+	// Start after Close must be a safe no-op.
+	fc.Start()
+	// A trailing Close must still return immediately.
+	done := make(chan struct{})
+	go func() {
+		fc.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close() after Start-after-Close blocked")
+	}
+}
+
 // TestFeedbackClient_CloseIdempotent verifies that calling Close() multiple
 // times — including concurrently — is safe.
 func TestFeedbackClient_CloseIdempotent(t *testing.T) {
 	t.Parallel()
 
-	fc := NewFeedbackClient(context.Background(), nil)
+	fc := NewFeedbackClient(nil)
+	fc.Start()
 
 	var wg sync.WaitGroup
 	for range 8 {
@@ -71,13 +115,26 @@ func TestFeedbackClient_CloseIdempotent(t *testing.T) {
 	fc.Close()
 }
 
+// TestFeedbackClient_StartIdempotent verifies that calling Start() multiple
+// times only launches the drainer once (no double-close of done on shutdown).
+func TestFeedbackClient_StartIdempotent(t *testing.T) {
+	t.Parallel()
+
+	fc := NewFeedbackClient(nil)
+	fc.Start()
+	fc.Start()
+	fc.Start()
+	defer fc.Close()
+}
+
 // TestFeedbackClient_NilLoggerDoesNotPanic verifies that the constructor
 // accepts a nil logger and the drainer's first log call does not panic
 // (it previously dereferenced a nil *slog.Logger inside drainLoop).
 func TestFeedbackClient_NilLoggerDoesNotPanic(t *testing.T) {
 	t.Parallel()
 
-	fc := NewFeedbackClient(context.Background(), nil)
+	fc := NewFeedbackClient(nil)
+	fc.Start()
 	defer fc.Close()
 
 	// Trigger the drop path so log.Debug is exercised on a nil-input
@@ -88,28 +145,5 @@ func TestFeedbackClient_NilLoggerDoesNotPanic(t *testing.T) {
 	}
 	if got := fc.Dropped(); got == 0 {
 		t.Errorf("expected at least one drop after overfilling the queue, got %d", got)
-	}
-}
-
-// TestFeedbackClient_CtxCancelStopsDrainer verifies that cancelling the
-// constructor context also stops the drainer, independent of Close().
-func TestFeedbackClient_CtxCancelStopsDrainer(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	fc := NewFeedbackClient(ctx, nil)
-
-	cancel()
-	// Close still drains the done channel — must not block forever even
-	// though ctx, not Close, stopped the goroutine.
-	doneCh := make(chan struct{})
-	go func() {
-		fc.Close()
-		close(doneCh)
-	}()
-	select {
-	case <-doneCh:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Close() blocked after ctx cancel — drainer never exited")
 	}
 }
