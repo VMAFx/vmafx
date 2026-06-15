@@ -6,7 +6,7 @@
 name = "vmaf-fork-tooling"
 version = "0.0.0"
 description = "VMAFx — Python tooling and scripts"
-requires-python = ">=3.14.5"
+requires-python = ">=3.14.6"
 
 [project.urls]
 Homepage = "https://github.com/VMAFx/vmafx"
