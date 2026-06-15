@@ -96,7 +96,7 @@ setup(
         "scipy>=1.17.1",
         "matplotlib>=3.10.9",
         "pandas>=3.0.3",
-        "scikit-learn>=1.8.0",
+        "scikit-learn>=1.9.0",
         "scikit-image>=0.26.0",
         "h5py>=3.16.0",
         "sureal>=0.9.0",

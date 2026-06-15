@@ -36,7 +36,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
-          python-version: "3.14.5"
+          python-version: "3.14.6"
       # pre-commit/action@v3.0.1 is the latest release (Feb 2024) and still
       # pins actions/cache@v4, which trips the Node.js 20 deprecation
       # warning (Node 20 removed from runners 2026-09-16). Inline the
@@ -483,7 +483,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
-          python-version: "3.14.5"
+          python-version: "3.14.6"
       - name: Install
         run: pip install mypy
       - run: mypy ai/ scripts/ || echo "mypy advisory only on first run"
@@ -506,7 +506,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
-          python-version: "3.14.5"
+          python-version: "3.14.6"
       - name: Install jsonschema
         run: pip install jsonschema
       - name: Validate model/tiny/registry.json
@@ -529,7 +529,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
-          python-version: "3.14.5"
+          python-version: "3.14.6"
       - name: Install MkDocs Material
         run: pip install -r docs/requirements.txt
       - name: Build docs (strict — fail on any warning)
