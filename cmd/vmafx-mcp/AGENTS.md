@@ -6,6 +6,47 @@ C library via two paths: the legacy `exec.Command(vmaf, ...)` subprocess
 path (default) and the direct cgo path introduced by ADR-0931 (opt-in via
 `VMAFX_MCP_DIRECT=1`).
 
+## Composition root (golusoris fx, ADR-1119 Phase-1 PR-5)
+
+`main.go` is an `fx.New(...).Run()` over `internal/app/bootstrap.Base`
+(golusoris.Core = config + slog + clock + id + validate + crypto, plus
+`otel.Module` and the build-version supply). It mirrors the sibling
+migrations (`cmd/vmafx-server`, `cmd/vmafx-node`). The shape is:
+
+```go
+fx.New(
+    bootstrap.Base,
+    fx.Replace(config.Options{EnvPrefix: "VMAFX_", Delimiter: ".", Watch: true}),
+    bootstrap.FxLogger(),
+    fx.Provide(buildMCPServer),  // (*slog.Logger, *config.Config) -> *mcp.Server; reuses buildServer
+    fx.Invoke(runMCPTransport),  // wires the transport in a lifecycle hook
+).Run()
+```
+
+Key facts a future agent must keep straight:
+
+- **The MCP server is NOT a golusoris server module.** golusoris ships no MCP
+  module, so there is no `golusoris.HTTP` / `grpc.Module` in the graph. The
+  transport (stdio or streamable-HTTP, selected from config) is owned in the
+  `runMCPTransport` fx lifecycle hook: `OnStart` launches it on a goroutine,
+  `OnStop` drains it. If golusoris later adds an MCP module, fold the hook into
+  it. Until then, do not try to express the transport as a framework module.
+- **`buildServer` is the unchanged domain seam.** `buildMCPServer` is a thin fx
+  provider that calls the existing `buildServer(*slog.Logger) *mcp.Server`
+  (server.go). The `*config.Config` param exists for the fx signature /
+  forward-looking config-driven wiring; `buildServer` itself only needs the
+  logger. Tests still call `buildServer(nil)` directly — do not change its
+  signature.
+- **Config keys (env prefix `VMAFX_`, `.` delimiter — every `_` becomes `.`):**
+  `VMAFX_MCP_TRANSPORT` → `mcp.transport` (default `stdio`);
+  `VMAFX_MCP_HTTP_ADDR` → `mcp.http.addr` (default `:3000`, a full listen
+  address). `VMAF_BIN` and `VMAFX_MCP_DIRECT` are read directly by the tool
+  handlers via `os.Getenv`, NOT through koanf — that contract is unchanged.
+- **Interim env bridge.** `main()` bridges `VMAFX_LOG_LEVEL → LOG_LEVEL` and
+  `VMAFX_LOG_FORMAT → LOG_FORMAT` before `fx.New` (golusoris#234, the v0.4.0 log
+  module reads bare `LOG_LEVEL`). Delete in lockstep with the sibling binaries
+  once the carrying golusoris tag lands.
+
 ## Rebase-sensitive invariants
 
 1. **Tool name + schema parity with Python** (`tools.go`): every tool name
@@ -99,3 +140,20 @@ path (default) and the direct cgo path introduced by ADR-0931 (opt-in via
    `TestSubsampleForwarded`) and `tests/test_score_extras_adr1117.py` pin both
    sides; CLI flag spellings are ground-truthed against
    `core/tools/cli_parse.c`.
+
+11. **stdio-stdout purity** (ADR-1119, `main.go`): in stdio mode the
+   `mcp.StdioTransport` owns `os.Stdin` / `os.Stdout` for the JSON-RPC framing.
+   A single stray write to stdout corrupts the stream and breaks every IDE MCP
+   client. The fx composition root keeps stdout clean: golusoris `log` writes to
+   STDERR, `otel.Module` is OTLP-gRPC (no stdout writes; a silent no-op when no
+   exporter is configured), and `bootstrap.FxLogger()` routes fx's lifecycle
+   events through slog → STDERR (NOT fx's default printer). Anything added to the
+   graph that could touch stdout — an `fx.WithLogger` that prints to stdout, a
+   stdout OTel exporter, a bare `fmt.Println` / `os.Stdout.Write` in the
+   composition root or a provider — MUST be gated off (or routed to stderr) in
+   stdio mode. The HTTP transport does not share this constraint (it serves over
+   TCP), but the same providers run in both modes, so the safe default is: never
+   write to stdout from anywhere in this package except the MCP transport.
+   Verify after any composition-root change by driving the stdio binary with a
+   JSON-RPC `initialize` + `tools/list` and asserting stdout carries only valid
+   JSON-RPC objects (logs land on stderr).

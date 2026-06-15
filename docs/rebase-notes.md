@@ -46212,3 +46212,41 @@ reverts that (regressing #227), re-add the shim as an
 Likewise webhooks are wired via `operator.Options.WebhookPort` (also added
 post-v0.3.1); if that field disappears upstream, the app must stand up its own
 `webhook.NewServer` and add it to the manager.
+## feat/golusoris-mcp (2026-06-15)
+no rebase impact for upstream Netflix/vmaf syncs: this PR rewrites only
+`cmd/vmafx-mcp/main.go` (the Go MCP server composition root) onto the golusoris
+fx framework (ADR-1119, Phase-1 PR-5), plus the fork-local
+docs/changelog/AGENTS deliverables. `cmd/vmafx-mcp/` is entirely fork-added and
+has no upstream counterpart. The MCP tool surface (`tools.go`, `impl.go`,
+`impl_direct.go`, `server.go`) is byte-unchanged, and no test file changed.
+
+- **Composition root.** The hand-rolled `flag.Parse` + `signal.NotifyContext`
+  + bespoke stdio/HTTP transport loops + custom `observability.InitOTel` are
+  replaced by `fx.New(bootstrap.Base, fx.Replace(config.Options{...}),
+  bootstrap.FxLogger(), fx.Provide(buildMCPServer), fx.Invoke(runMCPTransport)).Run()`.
+  Mirrors `cmd/vmafx-server/main.go` and `cmd/vmafx-node/main.go`. Because the
+  MCP server is NOT a golusoris server module (golusoris ships no MCP module),
+  the transport is owned in the `runMCPTransport` lifecycle hook rather than by
+  a framework module — if golusoris later adds an MCP module, fold the hook
+  into it.
+- **bootstrap dependency.** This PR consumes `internal/app/bootstrap.Base` and
+  `bootstrap.FxLogger()` but does NOT modify them; it shares the bootstrap
+  stanza with the sibling fx migrations (#932/#934/#935/#936). A rebase that
+  reshapes `bootstrap.Base` (e.g. when golusoris#226 ships a version module, or
+  golusoris#234's LOG_LEVEL prefix-read lands and the env bridge can be
+  deleted) must re-check `main()` here too.
+- **Env bridge (interim).** `main()` bridges `VMAFX_LOG_LEVEL → LOG_LEVEL` and
+  `VMAFX_LOG_FORMAT → LOG_FORMAT` before `fx.New`, identical to the sibling
+  binaries (golusoris#234). Delete all four bridges across the cmd/ tree in one
+  sweep once the carrying golusoris tag lands.
+- **Env-var / flag contract change.** `--transport` / `--port` flags removed;
+  replaced by `VMAFX_MCP_TRANSPORT` (`mcp.transport`, default `stdio`) and
+  `VMAFX_MCP_HTTP_ADDR` (`mcp.http.addr`, default `:3000`). `VMAF_BIN` and
+  `VMAFX_MCP_DIRECT` are read directly by the tool handlers (not via koanf) and
+  are unchanged.
+- **Rebase-sensitive invariant — stdio-stdout purity.** Nothing in the fx
+  graph may write to stdout in stdio mode (the JSON-RPC framing owns it). golusoris
+  log → stderr, `otel.Module` is OTLP-gRPC (no stdout), `bootstrap.FxLogger()` →
+  slog → stderr. A future rebase that adds an `fx.Print`-style logger, a stdout
+  OTel exporter, or any `fmt.Println` to the composition root MUST gate it off
+  in stdio mode. See cmd/vmafx-mcp/AGENTS.md invariant #11.
