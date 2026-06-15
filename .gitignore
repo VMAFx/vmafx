@@ -169,3 +169,6 @@ testdata/bbb/dis_3840x2160_30f.yuv
 # before the long-tail cleanup is done. Operators re-run with
 # `pyright -p pyrightconfig.audit.json --outputjson <pkg>/`.
 pyrightconfig.audit.json
+
+# Fuzzer-generated corpus growth (seed entries are not tracked)
+core/test/fuzz/*_corpus/

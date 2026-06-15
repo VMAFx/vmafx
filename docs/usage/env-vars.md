@@ -104,11 +104,27 @@ bare port numbers.
 
 ## Go worker node (`cmd/vmafx-node`)
 
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `VMAFX_FFMPEG_BIN` | path | `ffmpeg` (PATH) | Path to the `ffmpeg` binary.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
-| `VMAFX_LOG_LEVEL` | string | `info` | Structured log level. |
-| `VMAFX_NODE_ADDR` | `host:port` | `:50052` | gRPC listen address for the node's worker service. |
+The node is wired on the golusoris fx framework (ADR-1119). golusoris config
+reads these `VMAFX_*` env vars via koanf: it strips the `VMAFX_` prefix,
+lowercases, and replaces **every** underscore with the `.` delimiter, so the
+listed env var maps to the dotted koanf key shown in the third column.
+
+| Name | koanf key | Type | Default | Description |
+|---|---|---|---|---|
+| `VMAFX_GRPC_LISTEN` | `grpc.listen` | `host:port` | `:50052` | gRPC listen address for the node's `VmafxScoring` service. **Breaking — replaces `VMAFX_NODE_ADDR`** (ADR-1119). |
+| `VMAFX_FFMPEG_BIN` | `ffmpeg.bin` | path | `ffmpeg` (PATH) | Path to the `ffmpeg` binary used by the startup encoder probe.  The node Docker image sets this to `/usr/local/bin/ffmpeg` (ADR-0717). |
+| `VMAFX_VMAF_BINARY` | `vmaf.binary` | path | _(FindBinary lookup)_ | Path to the `vmaf` CLI binary backing the unary `Score` RPC. |
+| `VMAFX_MODEL_DIR` | `model.dir` | path | _(binary default)_ | Directory containing VMAF `.json` model files. |
+| `VMAFX_BACKEND` | `backend` | string | `cpu` | Scoring backend label attached to executor spans / results. |
+| `VMAFX_SIDECAR_SOCKET` | `sidecar.socket` | path | `/tmp/vmafx-sidecar.sock` | Unix socket of the online-training sidecar (ADR-0781). |
+| `VMAFX_LOG_LEVEL` | `log.level` | string | `info` | Structured log level (read by the golusoris `log` module; honours the `VMAFX_` prefix — ADR-1119). |
+| `VMAFX_LOG_FORMAT` | `log.format` | string | `auto` | Log handler: `auto` (tint on TTY, else JSON), `tint`, or `json`. |
+
+> **Migration:** the pre-fx node bound on `VMAFX_NODE_ADDR` (default `:50052`).
+> That variable is removed; set `VMAFX_GRPC_LISTEN` instead (the historical
+> `:50052` default is preserved). The node remains gRPC-only — its Kubernetes
+> probe is the `VmafxScoring/Health` RPC; there is no HTTP `/livez` / `/readyz`
+> until `golusoris.HTTP` is added to the node graph.
 
 ---
 
