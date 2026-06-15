@@ -70,7 +70,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
 # ---------------------------------------------------------------------------
 # Stage 2 — python-deps: install vmaf-mcp + vmaf-tune into a virtualenv
 # ---------------------------------------------------------------------------
-FROM python:3.13-slim@sha256:b04b5d7233d2ad9c379e22ea8927cd1378cd15c60d4ef876c065b25ea8fb3bf3 AS python-deps
+FROM python:3.14-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061 AS python-deps
 
 ARG DEBIAN_FRONTEND=noninteractive
 
