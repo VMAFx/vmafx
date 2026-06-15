@@ -3,13 +3,20 @@
 ## Package role
 
 vmafx-operator is a Kubernetes Operator built with kubebuilder v4 /
-controller-runtime v0.19+.  It watches `VmafxJob`, `VmafxNode`, and
+controller-runtime v0.24+.  It watches `VmafxJob`, `VmafxNode`, and
 `VmafxModelTraining` CRDs in API group `vmafx.dev/v1` and reconciles
 status subresources.  Stage 2 adds gRPC poll, stale-heartbeat detection,
 checkpoint event emission, webhook validation, and per-controller RBAC.
 
+As of ADR-1119 Phase 1 the binary is composed with the **golusoris fx
+framework**: `main.go` is `fx.New(...).Run()` over golusoris's
+`k8s/operator` module, not a hand-rolled `ctrl.NewManager` +
+`mgr.Start`.  This is the only non-cgo vmafx binary and the cleanest
+golusoris/operator fit.
+
 See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md),
-[ADR-0786](../../docs/adr/0786-vmafx-operator-stage2-reconcilers.md), and
+[ADR-0786](../../docs/adr/0786-vmafx-operator-stage2-reconcilers.md),
+[ADR-1119](../../docs/adr/1119-golusoris-go-framework-adoption.md), and
 [docs/development/operator.md](../../docs/development/operator.md).
 
 ## Rebase-sensitive invariants
@@ -49,9 +56,17 @@ See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md),
    and RBAC are gated by `operator.enabled`.  Changing the default to `true`
    would affect all existing `helm upgrade` runs.
 
-7. **Webhooks are opt-in.**  `--webhooks-enabled=false` by default.  Enabling
-   requires a valid TLS certificate.  Do not change the default to `true`
-   without documenting the cert-manager dependency.
+7. **Webhooks are opt-in.**  Disabled by default
+   (`VMAFX_OPERATOR_WEBHOOK_PORT` unset / `0`).  Enabling sets the port (e.g.
+   `9443`) and requires a valid TLS certificate.  Do not ship a non-zero
+   default port without documenting the cert-manager dependency.
+   `registerWebhooks` in `main.go` gates the validators on the config key
+   `operator.webhook_port > 0` (read via `cfg.Int`).  The golusoris **v0.4.0
+   tag**'s `operator.Options` has no `WebhookPort` field yet (golusoris#227 is
+   merged to main but untagged), so the webhook server binds on
+   controller-runtime's default `:9443` and the configured port acts as a
+   feature gate only.  When a golusoris tag carrying #227 is pinned, thread the
+   port through `operator.Options.WebhookPort` instead.
 
 8. **No shared state between reconcilers.**  Each reconciler has its own
    `client.Client` and `Scheme`.  Do not add package-level variables.
@@ -61,6 +76,37 @@ See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md),
    are the minimum-permission roles.  The combined `config/rbac/role.yaml` is
    a convenience aggregate.  When adding verbs to a reconciler, update the
    corresponding per-controller role, not just the aggregate.
+
+10. **fx owns signals and the run loop — do NOT call
+    `ctrl.SetupSignalHandler()` or `mgr.Start()` anywhere.**  `main.go` is
+    `fx.New(...).Run()`; golusoris `operator.Module`'s `runManager` invoke
+    starts the manager on fx Start (in a goroutine bounded by an fx-managed
+    context) and cancels it on fx Stop.  fx.Run installs the SIGINT/SIGTERM
+    handler.  A second `ctrl.SetupSignalHandler()` would register a competing
+    handler (it also panics if called twice) — that is a bug, not a
+    redundancy.
+
+11. **Keep the app-level `ctrl.SetLogger` shim (`setupCtrlLogger`).**  The
+    golusoris **v0.4.0 tag**'s `operator.Module` does NOT call `ctrl.SetLogger`
+    — the bridge is merged to golusoris main but untagged (golusoris#227) — so
+    without `fx.Invoke(setupCtrlLogger)` controller-runtime's own logs bypass
+    the injected `*slog.Logger` and its OTel correlation.  Remove the shim only
+    once a golusoris tag carrying #227 is pinned (the framework then calls
+    SetLogger itself and a second call is redundant).
+
+12. **golusoris pin floor is v0.4.0.**  The `k8s/operator` module does not
+    exist in v0.3.1 (it landed in golusoris PR #224, first tagged v0.4.0).
+    `main.go` will not compile against a golusoris pin below v0.4.0.
+
+13. **VMAFX_ env contract uses CompoundKeys.**  golusoris's env transform
+    splits EVERY underscore on the delimiter, so without
+    `config.Options.CompoundKeys` the operator's leaf keys (`metrics_addr`,
+    `health_probe_addr`, `leader_election`, `leader_election_id`,
+    `graceful_shutdown`, `webhook_port`, `webhook_host`) would mis-map
+    (`VMAFX_OPERATOR_METRICS_ADDR` → `operator.metrics.addr` instead of
+    `operator.metrics_addr`).  `operatorEnvOptions()` declares each leaf as a
+    CompoundKey; `TestEnvOptionsContract` fails if a new operator option is
+    added upstream without registering it here.
 
 ## Test requirements
 
@@ -75,6 +121,17 @@ go test ./cmd/vmafx-operator/internal/controller/... -v
 
 ```bash
 go test ./cmd/vmafx-operator/internal/webhook/... -v
+```
+
+### fx graph + env-contract tests (no envtest needed)
+
+`cmd/vmafx-operator/main_test.go` validates the fx dependency graph
+(`fx.ValidateApp` over the production option list — it resolves the graph
+without starting a manager) and pins the `VMAFX_` env contract (compound-key
+binding + app-level defaults).
+
+```bash
+go test ./cmd/vmafx-operator/ -run 'TestOptions|TestEnv|TestWith' -v
 ```
 
 See [docs/development/operator.md#running-tests](../../docs/development/operator.md#running-tests)
