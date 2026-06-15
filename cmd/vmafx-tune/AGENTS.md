@@ -84,14 +84,12 @@ during the migration; see Stage roadmap in
     one-shot CLI it floods `stderr` with dependency-graph chatter on every
     invocation. Domain diagnostics still go through the injected `*slog.Logger`.
 
-12. **`levelledLogger` decorator is a golusoris v0.4.0 workaround**
-    (`cmd/vmafx-tune/cmd/golusoris.go`): a root-scope
-    `fx.Replace(config.Options{EnvPrefix:"VMAFX_"})` reaches root-scope consumers
-    but does **not** penetrate the `golusoris.log` submodule's `config.Options`
-    dependency, so the auto-built logger silently falls back to the default
-    `APP_` prefix and `LevelInfo`. `withGolusoris` adds
-    `fx.Decorate(levelledLogger)` to rebuild the `*slog.Logger` from the
-    (correct, root-scope) config at the `VMAFX_LOG_LEVEL` / `VMAFX_LOG_FORMAT`
-    values. Delete this decorator once golusoris makes the override penetrate
-    submodules (track upstream alongside #234);
-    `TestGolusorisInjection_ConfigDrivesLogLevel` guards the behavior.
+12. **Log level comes natively from the VMAFX_-prefixed config** (golusoris
+    v0.5.0, #234): the `golusoris.log` submodule reads `log.level` / `log.format`
+    from the shared config singleton, so a root-scope
+    `fx.Replace(config.Options{EnvPrefix:"VMAFX_"})` penetrates and the
+    auto-built `*slog.Logger` honors `VMAFX_LOG_LEVEL` / `VMAFX_LOG_FORMAT` with
+    **no decorator**. (The earlier `levelledLogger` v0.4.0 workaround was removed
+    when the pin moved to v0.5.0.) `TestGolusorisInjection_ConfigDrivesLogLevel`
+    guards the behavior — it builds the graph without any decorator, matching
+    `withGolusoris()` exactly.

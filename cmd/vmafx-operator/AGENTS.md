@@ -60,13 +60,12 @@ See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md),
    (`VMAFX_OPERATOR_WEBHOOK_PORT` unset / `0`).  Enabling sets the port (e.g.
    `9443`) and requires a valid TLS certificate.  Do not ship a non-zero
    default port without documenting the cert-manager dependency.
-   `registerWebhooks` in `main.go` gates the validators on the config key
-   `operator.webhook_port > 0` (read via `cfg.Int`).  The golusoris **v0.4.0
-   tag**'s `operator.Options` has no `WebhookPort` field yet (golusoris#227 is
-   merged to main but untagged), so the webhook server binds on
-   controller-runtime's default `:9443` and the configured port acts as a
-   feature gate only.  When a golusoris tag carrying #227 is pinned, thread the
-   port through `operator.Options.WebhookPort` instead.
+   `registerWebhooks` in `main.go` gates the validators on
+   `operator.Options.WebhookPort > 0`.  golusoris **v0.5.0** (golusoris#227)
+   owns the webhook-server bind: `operator.Module` sets
+   `manager.Options.WebhookServer` from `WebhookPort`/`WebhookHost`, so the
+   server listens on the configured port and `registerWebhooks` registers the
+   per-CRD validators under the same gate.
 
 8. **No shared state between reconcilers.**  Each reconciler has its own
    `client.Client` and `Scheme`.  Do not add package-level variables.
@@ -86,17 +85,19 @@ See [ADR-0714](../../docs/adr/0714-vmafx-operator-skeleton.md),
     handler (it also panics if called twice) — that is a bug, not a
     redundancy.
 
-11. **Keep the app-level `ctrl.SetLogger` shim (`setupCtrlLogger`).**  The
-    golusoris **v0.4.0 tag**'s `operator.Module` does NOT call `ctrl.SetLogger`
-    — the bridge is merged to golusoris main but untagged (golusoris#227) — so
-    without `fx.Invoke(setupCtrlLogger)` controller-runtime's own logs bypass
-    the injected `*slog.Logger` and its OTel correlation.  Remove the shim only
-    once a golusoris tag carrying #227 is pinned (the framework then calls
-    SetLogger itself and a second call is redundant).
+11. **Do NOT call `ctrl.SetLogger` from the binary.**  golusoris **v0.5.0**'s
+    `operator.Module` calls `ctrl.SetLogger` itself (golusoris#227), routing
+    controller-runtime's own logs onto the injected `*slog.Logger` and its OTel
+    correlation.  A second binary-side call would be a redundant override.  (The
+    earlier `setupCtrlLogger` v0.4.0 shim was removed when the pin moved to
+    v0.5.0.)
 
-12. **golusoris pin floor is v0.4.0.**  The `k8s/operator` module does not
-    exist in v0.3.1 (it landed in golusoris PR #224, first tagged v0.4.0).
-    `main.go` will not compile against a golusoris pin below v0.4.0.
+12. **golusoris pin floor is v0.5.0.**  The `k8s/operator` module landed in
+    golusoris PR #224 (first tagged v0.4.0); its `Options.WebhookPort`/
+    `WebhookHost` fields and the auto `ctrl.SetLogger` call (golusoris#227)
+    landed in v0.5.0, which `main.go` now depends on.  `main.go` will not
+    compile against a golusoris pin below v0.4.0 and loses webhook/logger wiring
+    below v0.5.0.
 
 13. **VMAFX_ env contract uses CompoundKeys.**  golusoris's env transform
     splits EVERY underscore on the delimiter, so without

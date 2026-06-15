@@ -125,9 +125,10 @@ func TestNewRoot_ReportPropagatesError(t *testing.T) {
 
 // TestGolusorisInjection_ConfigDrivesLogLevel verifies that the VMAFX_-prefixed
 // config reaches the injected *slog.Logger: with VMAFX_LOG_LEVEL=warn the
-// injected logger must suppress Info but keep Warn. This locks in the
-// levelledLogger decorator that compensates for golusoris v0.4.0 not penetrating
-// the root config override into the log submodule.
+// injected logger must suppress Info but keep Warn. This is the regression guard
+// for golusoris v0.5.0's native penetration (golusoris#234) — the root
+// VMAFX_-prefixed config override reaches the log submodule with no decorator,
+// so the graph below matches withGolusoris() exactly (no fx.Decorate).
 func TestGolusorisInjection_ConfigDrivesLogLevel(t *testing.T) {
 	t.Setenv("VMAFX_LOG_LEVEL", "warn")
 
@@ -135,7 +136,6 @@ func TestGolusorisInjection_ConfigDrivesLogLevel(t *testing.T) {
 	app := fx.New(
 		bootstrap.Base,
 		fx.Replace(configOptions()),
-		fx.Decorate(levelledLogger),
 		fx.NopLogger,
 		fx.Populate(&d.Log, &d.Cfg),
 	)

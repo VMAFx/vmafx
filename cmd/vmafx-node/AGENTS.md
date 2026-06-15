@@ -94,7 +94,7 @@ wired into the fx graph.
    EnvPrefix: "VMAFX_", ...})` line is load-bearing — without it the graph reads
    the framework default `APP_` prefix and ignores every `VMAFX_*` var.
 
-10. **go.mod golusoris pin** (`go.mod`, ADR-1119): `golusoris/golusoris` stays
-    at `v0.4.0`; the migration only adds the transitive indirect dep
-    `go-grpc-middleware/v2`. Do not bump the pin or edit `internal/app/bootstrap`
-    from this package.
+10. **go.mod golusoris pin** (`go.mod`, ADR-1119): `golusoris/golusoris` is
+    pinned at `v0.5.0` (module-wide). Do not change the pin or edit
+    `internal/app/bootstrap` from this package — both are shared across all
+    binaries.

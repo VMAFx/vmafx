@@ -18,7 +18,7 @@
 //
 //	VMAFX_HTTP_ADDR              -> http.addr     HTTP listen address (default ":8080").
 //	VMAFX_GRPC_LISTEN            -> grpc.listen   gRPC listen address (golusoris default ":9090").
-//	VMAFX_LOG_LEVEL             (-> log.level; golusoris reads it directly, #234) slog level (default "INFO").
+//	VMAFX_LOG_LEVEL             -> log.level (golusoris v0.5.0 #234) slog level (default "INFO").
 //	VMAFX_VMAF_BINARY            -> vmaf.binary   Path to the vmaf CLI binary (default: PATH lookup).
 //	VMAFX_MODEL_DIR              -> model.dir     Directory containing VMAF .json model files.
 //	VMAFX_MAX_CONCURRENT_SCORES  -> max.concurrent.scores  Max simultaneous Score calls (default: NumCPU).
@@ -45,7 +45,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"runtime"
 
 	"github.com/go-chi/chi/v5"
@@ -76,20 +75,6 @@ var buildVersion = "dev"
 func version() string { return buildVersion }
 
 func main() {
-	// Interim env bridges, applied BEFORE fx.New so the config + log modules
-	// observe them. Each works around a golusoris gap that is merged to
-	// golusoris main but not yet in the pinned v0.4.0 tag; remove when the
-	// carrying tag lands.
-
-	// golusoris#234: the v0.4.0 log module reads bare LOG_LEVEL/LOG_FORMAT and
-	// ignores the VMAFX_ prefix, so bridge the prefixed vars across.
-	if v := os.Getenv("VMAFX_LOG_LEVEL"); v != "" && os.Getenv("LOG_LEVEL") == "" {
-		_ = os.Setenv("LOG_LEVEL", v)
-	}
-	if v := os.Getenv("VMAFX_LOG_FORMAT"); v != "" && os.Getenv("LOG_FORMAT") == "" {
-		_ = os.Setenv("LOG_FORMAT", v)
-	}
-
 	fx.New(
 		// golusoris foundation: config + log + clock + id + validate + crypto,
 		// the OTel module, and the build-version supply (ADR-1119).

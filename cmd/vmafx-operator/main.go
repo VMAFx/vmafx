@@ -12,9 +12,10 @@
 // OpenTelemetry; operator.Module (golusoris/k8s/operator) resolves the
 // rest.Config, builds the controller-runtime manager, registers the default
 // healthz/readyz "ping" probes, supports leader election, and runs the manager
-// under the fx lifecycle.  (The v0.4.0 tag does not call ctrl.SetLogger —
-// golusoris#227 is untagged — so setupCtrlLogger bridges it here.)  fx owns signal
-// handling and the run loop; the binary no longer calls
+// under the fx lifecycle.  (golusoris v0.5.0's operator.Module calls
+// ctrl.SetLogger itself — golusoris#227 — so controller-runtime's logs flow
+// onto the application slog stream without a binary-side bridge.)  fx owns
+// signal handling and the run loop; the binary no longer calls
 // ctrl.SetupSignalHandler() or mgr.Start() itself.
 //
 // 12-factor environment variables (VMAFX_ prefix, koanf "operator" subtree;
@@ -44,14 +45,9 @@
 package main
 
 import (
-	"log/slog"
-	"os"
-
-	"github.com/go-logr/logr"
 	"github.com/golusoris/golusoris/config"
 	"github.com/golusoris/golusoris/k8s/operator"
 	"go.uber.org/fx"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	vmafxv1 "github.com/VMAFx/vmafx/api/vmafx/v1"
@@ -127,15 +123,14 @@ func registerReconcilers(mgr manager.Manager) error {
 	return nil
 }
 
-// registerWebhooks wires the admission webhooks when enabled via config
-// (VMAFX_OPERATOR_WEBHOOK_PORT > 0). NOTE: golusoris v0.4.0's operator.Options
-// does not yet expose a webhook bind port — the WebhookPort/WebhookHost fields
-// are merged to golusoris main but untagged (golusoris#227) — so the webhook
-// server uses controller-runtime's default bind (:9443) and the configured port
-// acts as a feature gate only. Once the next golusoris tag lands the field,
-// thread it through operator.Options instead.
-func registerWebhooks(cfg *config.Config, mgr manager.Manager) error {
-	if cfg.Int("operator.webhook_port") <= 0 {
+// registerWebhooks wires the admission validators when webhooks are enabled
+// (VMAFX_OPERATOR_WEBHOOK_PORT > 0). golusoris v0.5.0's operator.Module owns the
+// webhook server bind (it sets manager.Options.WebhookServer from
+// operator.Options.WebhookPort/WebhookHost, golusoris#227); this invoke gates
+// the per-CRD validator registration on the same WebhookPort so the validators
+// register exactly when the server is listening.
+func registerWebhooks(opts operator.Options, mgr manager.Manager) error {
+	if opts.WebhookPort <= 0 {
 		return nil
 	}
 	if err := (&webhook.VmafxJobValidator{}).SetupWebhookWithManager(mgr); err != nil {
@@ -145,16 +140,6 @@ func registerWebhooks(cfg *config.Config, mgr manager.Manager) error {
 		return err
 	}
 	return nil
-}
-
-// setupCtrlLogger bridges controller-runtime's global logr sink onto the
-// golusoris *slog.Logger. golusoris v0.4.0's operator.Module does not call
-// ctrl.SetLogger (the bridge is merged to golusoris main but untagged —
-// golusoris#227), so without this shim controller-runtime's own logs bypass the
-// application log stream and its OTel correlation. Remove once the framework
-// calls SetLogger itself.
-func setupCtrlLogger(l *slog.Logger) {
-	ctrl.SetLogger(logr.FromSlogHandler(l.Handler()))
 }
 
 // app builds the fx application graph. It is a package-level function so tests
@@ -173,22 +158,11 @@ func options() []fx.Option {
 		operator.ProvideScheme(vmafxv1.AddToScheme),
 		fx.Decorate(withOperatorDefaults),
 		bootstrap.FxLogger(),
-		fx.Invoke(setupCtrlLogger),
 		fx.Invoke(registerReconcilers),
 		fx.Invoke(registerWebhooks),
 	}
 }
 
 func main() {
-	// golusoris#234: the v0.4.0 log module reads bare LOG_LEVEL/LOG_FORMAT and
-	// ignores the VMAFX_ prefix (the config-prefixed read is merged to golusoris
-	// main but untagged). Bridge the prefixed vars before fx.New; remove once
-	// the carrying golusoris tag lands.
-	if v := os.Getenv("VMAFX_LOG_LEVEL"); v != "" && os.Getenv("LOG_LEVEL") == "" {
-		_ = os.Setenv("LOG_LEVEL", v)
-	}
-	if v := os.Getenv("VMAFX_LOG_FORMAT"); v != "" && os.Getenv("LOG_FORMAT") == "" {
-		_ = os.Setenv("LOG_FORMAT", v)
-	}
 	app().Run()
 }

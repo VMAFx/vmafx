@@ -105,12 +105,11 @@ func TestEnvOptionsBindOperatorKeys(t *testing.T) {
 	if opts.LeaderElectionID != "test-lease" {
 		t.Errorf("LeaderElectionID = %q, want %q", opts.LeaderElectionID, "test-lease")
 	}
-	// operator.Options (golusoris v0.4.0 tag) has no WebhookPort field yet
-	// (golusoris#227 is merged to main but untagged); the webhook port lives in
-	// the config tree and registerWebhooks reads it directly. Assert the
-	// compound key binds through the env transform.
-	if got := cfg.Int("operator.webhook_port"); got != 9443 {
-		t.Errorf("config operator.webhook_port = %d, want %d", got, 9443)
+	// golusoris v0.5.0's operator.Options carries WebhookPort (golusoris#227),
+	// so the compound key binds straight onto the field through the env
+	// transform — registerWebhooks gates on opts.WebhookPort directly.
+	if opts.WebhookPort != 9443 {
+		t.Errorf("opts.WebhookPort = %d, want %d", opts.WebhookPort, 9443)
 	}
 }
 

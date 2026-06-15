@@ -8,10 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/golusoris/golusoris/config"
-	gololog "github.com/golusoris/golusoris/log"
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
 
@@ -40,26 +38,6 @@ func configOptions() config.Options {
 	}
 }
 
-// levelledLogger decorates the golusoris-provided *slog.Logger so it honors the
-// VMAFX_-prefixed log.level / log.format config keys.
-//
-// Why this is needed: golusoris.Core composes config + log as nested fx.Modules.
-// A root-scope fx.Replace(config.Options{...}) (the override bootstrap.Base
-// documents) is seen by root-scope consumers — including our domain code — but
-// in golusoris v0.4.0 it does NOT penetrate the log submodule's own
-// config.Options dependency, so the auto-built logger silently falls back to the
-// default APP_ prefix and ends up at LevelInfo. Decorating *slog.Logger at root
-// scope, where the config singleton already carries the VMAFX_-prefixed values,
-// rebuilds the logger at the configured level. Drop this once golusoris makes
-// the root override penetrate submodules (track upstream alongside #234).
-func levelledLogger(cfg *config.Config, _ *slog.Logger) *slog.Logger {
-	level, _ := gololog.LevelFromString(cfg.String("log.level"))
-	return gololog.New(gololog.Options{
-		Level:  level,
-		Format: gololog.Format(strings.ToLower(cfg.String("log.format"))),
-	})
-}
-
 // withGolusoris wraps a domain function so it runs inside a golusoris fx graph
 // with config + slog injected, then adapts it to a clikit/cobra RunE handler.
 //
@@ -81,10 +59,9 @@ func withGolusoris(run func(ctx context.Context, d deps, args []string) error) f
 		app := fx.New(
 			bootstrap.Base,
 			fx.Replace(configOptions()),
-			// Rebuild the logger at the VMAFX_-configured level/format (see
-			// levelledLogger for why the root config override does not otherwise
-			// reach the log submodule in golusoris v0.4.0).
-			fx.Decorate(levelledLogger),
+			// golusoris v0.5.0's log module reads log.level / log.format from the
+			// shared VMAFX_-prefixed config singleton (golusoris#234), so the
+			// auto-built *slog.Logger already honors VMAFX_LOG_LEVEL — no decorator.
 			// Silence fx's own provide/invoke/lifecycle event stream. A one-shot
 			// CLI must not flood stdout/stderr with dependency-graph chatter on
 			// every invocation; the injected *slog.Logger still carries domain

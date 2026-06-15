@@ -24,7 +24,7 @@
 // shown in the third column:
 //
 //	VMAFX_GRPC_LISTEN     -> grpc.listen      gRPC listen address (golusoris default ":9090").
-//	VMAFX_LOG_LEVEL       -> LOG_LEVEL (bridged, golusoris#234)  slog level.
+//	VMAFX_LOG_LEVEL       -> log.level (golusoris v0.5.0 #234)  slog level.
 //	VMAFX_LOG_FORMAT      -> log.format       log handler (auto|tint|json).
 //	VMAFX_FFMPEG_BIN      -> ffmpeg.bin       Path to the ffmpeg binary (default: PATH lookup).
 //	VMAFX_VMAF_BINARY     -> vmaf.binary      Path to the vmaf CLI binary (default: FindBinary()).
@@ -56,7 +56,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
 	"go.uber.org/fx"
@@ -79,17 +78,6 @@ import (
 const probeTimeout = 30 * time.Second
 
 func main() {
-	// golusoris#234: the v0.4.0 log module reads bare LOG_LEVEL/LOG_FORMAT and
-	// ignores the VMAFX_ prefix (the config-prefixed read is merged to golusoris
-	// main but untagged). Bridge the prefixed vars before fx.New so operators
-	// configure the level through the same prefix as everything else; remove
-	// once the carrying golusoris tag lands.
-	if v := os.Getenv("VMAFX_LOG_LEVEL"); v != "" && os.Getenv("LOG_LEVEL") == "" {
-		_ = os.Setenv("LOG_LEVEL", v)
-	}
-	if v := os.Getenv("VMAFX_LOG_FORMAT"); v != "" && os.Getenv("LOG_FORMAT") == "" {
-		_ = os.Setenv("LOG_FORMAT", v)
-	}
 	fx.New(
 		// golusoris foundation: config + log + clock + id + validate + crypto,
 		// the OTel module, and the build-version supply (ADR-1119).
