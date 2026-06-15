@@ -326,7 +326,7 @@ func handleVmafScore(ctx context.Context, args map[string]any) (any, error) {
 			return nil, fmt.Errorf("ref: %w", err)
 		}
 	} else if !extras.noReference {
-		return nil, fmt.Errorf("ref: required (omit only with no_reference=true)")
+		return nil, fmt.Errorf("missing required argument: 'ref' (omit only with no_reference=true)")
 	}
 	dis, err := libvmaf.ValidatePath(strArg(args, "dis", ""))
 	if err != nil {

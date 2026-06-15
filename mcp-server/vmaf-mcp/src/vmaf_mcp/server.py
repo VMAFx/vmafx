@@ -2842,7 +2842,7 @@ async def _call_tool_dispatch(
         elif extras.no_reference:
             ref_path = None
         else:
-            raise ValueError("'ref' is required (omit only with no_reference=true)")
+            raise ValueError("missing required argument: 'ref' (omit only with no_reference=true)")
         req = ScoreRequest(
             ref=ref_path,
             dis=_validate_path(arguments["dis"]),
