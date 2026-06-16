@@ -31,7 +31,7 @@ dependencies = [
   # (and revert the import sites) if Lightning AI restores the
   # distribution.
   "pytorch-lightning>=2.6.5,<3.0",
-  "onnx>=1.21.0,<2.0",
+  "onnx>=1.22.0,<2.0",
   "onnxruntime>=1.26.0,<2.0",  # container pins 1.26.0 (ADR-0568); floor kept at 1.20 for host installs
   "onnxscript>=0.7.0",
   "numpy>=2.4.6,<3.0",
