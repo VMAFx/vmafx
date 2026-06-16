@@ -247,7 +247,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # separate apt-get update/install round (saves one image layer). ADR-0790.
 ARG NEO_VER=26.18.38308.1
 ARG GMMLIB_VER=22.10.0
-ARG IGC_VER=2.34.4+21428
+ARG IGC_VER=2.36.3+21428
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
