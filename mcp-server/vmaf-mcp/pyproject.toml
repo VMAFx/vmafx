@@ -11,7 +11,7 @@ authors = [
 dependencies = [
   "mcp>=1.27.2",
   "pydantic>=2.13.4",
-  "anyio>=4.13.0",
+  "anyio>=4.14.0",
 ]
 
 [project.optional-dependencies]
@@ -23,7 +23,7 @@ eval = [
   "numpy>=2.4.6",
   "pandas>=3.0.3",
   "pyarrow>=24.0.0",
-  "onnxruntime>=1.26.0",
+  "onnxruntime>=1.27.0",
   "scipy>=1.17.1",
 ]
 # Optional: enables `describe_worst_frames` with vision-language fallback
@@ -31,7 +31,7 @@ eval = [
 # Heavy install; off by default so the base MCP keeps a light footprint
 # (ADR-0172 / T6-6).
 vlm = [
-  "transformers>=5.11.0",
+  "transformers>=5.12.0",
   "torch>=2.12.0",
   "Pillow>=12.2.0",
   "accelerate>=1.14.0",
