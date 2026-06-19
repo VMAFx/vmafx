@@ -12,11 +12,16 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
+# `module=` mode (not paths=source_relative): protoc-gen-go strips the module
+# prefix from the proto's go_package (github.com/VMAFx/vmafx/gen/go/controller)
+# and writes to gen/go/controller/ — the path the operator + controller import.
+# paths=source_relative would instead write gen/go/controller.pb.go (wrong dir),
+# silently leaving the compiled bindings stale.
 protoc \
   --proto_path="$here" \
-  --go_out="$repo/gen/go" \
-  --go_opt=paths=source_relative,Mcontroller.proto=github.com/VMAFx/vmafx/gen/go/controller \
-  --go-grpc_out="$repo/gen/go" \
-  --go-grpc_opt=paths=source_relative,Mcontroller.proto=github.com/VMAFx/vmafx/gen/go/controller \
+  --go_out="$repo" \
+  --go_opt=module=github.com/VMAFx/vmafx \
+  --go-grpc_out="$repo" \
+  --go-grpc_opt=module=github.com/VMAFx/vmafx \
   controller.proto
 echo "regenerated gen/go/controller/{controller,controller_grpc}.pb.go"

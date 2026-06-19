@@ -80,6 +80,11 @@ message Job {
 
   // updated_at is a Unix timestamp (seconds) of the last status change.
   int64 updated_at = 8;
+
+  // final_score is the aggregate VMAF score written by the controller when
+  // the job reaches COMPLETED. The vmafx-operator copies it into the
+  // VmafxJob CR status. Zero until the job completes successfully.
+  double final_score = 9;
 }
 
 // NodeCapability encodes what a vmafx-node instance can run.

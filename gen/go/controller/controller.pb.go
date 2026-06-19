@@ -192,7 +192,11 @@ type Job struct {
 	// created_at is a Unix timestamp (seconds) when the job was submitted.
 	CreatedAt int64 `protobuf:"varint,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// updated_at is a Unix timestamp (seconds) of the last status change.
-	UpdatedAt     int64 `protobuf:"varint,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	UpdatedAt int64 `protobuf:"varint,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// final_score is the aggregate VMAF score written by the controller when
+	// the job reaches COMPLETED. The vmafx-operator copies it into the
+	// VmafxJob CR status. Zero until the job completes successfully.
+	FinalScore    float64 `protobuf:"fixed64,9,opt,name=final_score,json=finalScore,proto3" json:"final_score,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -279,6 +283,13 @@ func (x *Job) GetCreatedAt() int64 {
 func (x *Job) GetUpdatedAt() int64 {
 	if x != nil {
 		return x.UpdatedAt
+	}
+	return 0
+}
+
+func (x *Job) GetFinalScore() float64 {
+	if x != nil {
+		return x.FinalScore
 	}
 	return 0
 }
@@ -1101,7 +1112,7 @@ const file_controller_proto_rawDesc = "" +
 	"\treference\x18\x01 \x01(\tR\treference\x12\x1c\n" +
 	"\tdistorted\x18\x02 \x01(\tR\tdistorted\x12\x14\n" +
 	"\x05model\x18\x03 \x01(\tR\x05model\x12\x18\n" +
-	"\abackend\x18\x04 \x01(\tR\abackend\"\xad\x02\n" +
+	"\abackend\x18\x04 \x01(\tR\abackend\"\xce\x02\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x126\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1e.vmafx.controller.v1.JobStatusR\x06status\x12<\n" +
@@ -1112,7 +1123,9 @@ const file_controller_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\x03R\tupdatedAt\"m\n" +
+	"updated_at\x18\b \x01(\x03R\tupdatedAt\x12\x1f\n" +
+	"\vfinal_score\x18\t \x01(\x01R\n" +
+	"finalScore\"m\n" +
 	"\x0eNodeCapability\x12\x1d\n" +
 	"\n" +
 	"gpu_vendor\x18\x01 \x01(\tR\tgpuVendor\x12\x1a\n" +
