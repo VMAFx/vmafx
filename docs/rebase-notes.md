@@ -16,6 +16,14 @@ references remain in ~40 sibling source comments (Metal `.mm`, HIP `.c`) and in
 historical `docs/adr/*` / `docs/research/*` (audit trail — do NOT rewrite); the
 live comment sweep for the non-ADR consumer files is deferred to the RC LOW
 doc-hygiene PR and coordinated with the in-flight Metal PR #986.
+## fix/sycl-init-leaks-exception-safety — SYCL init error-path + exception-boundary hardening (2026-06-19)
+Rebase impact: none on upstream — fork-local SYCL error-path + exception-boundary
+hardening. Touches only fork-added SYCL sources (`core/src/feature/sycl/integer_adm_sycl.cpp`,
+`core/src/feature/sycl/integer_vif_sycl.cpp`, `core/src/sycl/common.cpp`,
+`core/src/sycl/dmabuf_import.cpp`), none of which have an upstream Netflix/vmaf
+counterpart. No public header, CLI, meson-option, ffmpeg-patch, or golden-gate
+surface changes; success-path behaviour is unchanged (cleanup/exception handling
+only fires on already-failing paths).
 
 ## feat/golusoris-tune (2026-06-15)
 Rebase impact: **low (Go-only, additive + in-place rewrite of one binary's

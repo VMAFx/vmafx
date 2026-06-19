@@ -263,18 +263,28 @@ static int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_d
 
     sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
 
-    if (y_pitch == y_row_bytes) {
-        q->memcpy(target_buf, y_plane, y_row_bytes * h);
-    } else {
-        uint8_t *src = y_plane;
-        uint8_t *dst = (uint8_t *)target_buf;
-        for (unsigned row = 0; row < h; row++) {
-            q->memcpy(dst, src, y_row_bytes);
-            src += y_pitch;
-            dst += y_row_bytes;
+    /* The SYCL memcpy / wait can throw a synchronous sycl::exception. Catch it
+     * here so it never crosses the enclosing C boundary (UB / std::terminate)
+     * and so the mapped VA buffer + VAImage are released on the error path. */
+    try {
+        if (y_pitch == y_row_bytes) {
+            q->memcpy(target_buf, y_plane, y_row_bytes * h);
+        } else {
+            uint8_t *src = y_plane;
+            uint8_t *dst = (uint8_t *)target_buf;
+            for (unsigned row = 0; row < h; row++) {
+                q->memcpy(dst, src, y_row_bytes);
+                src += y_pitch;
+                dst += y_row_bytes;
+            }
         }
+        q->wait();
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_sycl readback memcpy failed: %s\n", e.what());
+        vaUnmapBuffer(va_dpy, va_img.buf);
+        vaDestroyImage(va_dpy, va_img.image_id);
+        return -EIO;
     }
-    q->wait();
 
     vaUnmapBuffer(va_dpy, va_img.buf);
     vaDestroyImage(va_dpy, va_img.image_id);

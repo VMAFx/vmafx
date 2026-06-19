@@ -1375,10 +1375,23 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->h_cm_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, accum_size));
     s->h_csf_den_accum = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, accum_size));
 
-    // Check critical allocations
-    if (!s->d_dwt_tmp_ref || !s->d_dwt_tmp_dis || !s->d_div_lookup || !s->d_cm_accum ||
+    // Check ALL allocations. A NULL band/csf buffer handed to a SYCL kernel
+    // page-faults the device instead of failing cleanly here, so every USM
+    // buffer allocated above is verified. On failure, close_fex_sycl frees the
+    // partial set (it NULL-guards each free) before returning.
+    bool band_ok = true;
+    for (int i = 0; i < 4; i++) {
+        if (!s->d_ref_band[i] || !s->d_dis_band[i])
+            band_ok = false;
+    }
+    for (int i = 0; i < 3; i++) {
+        if (!s->d_csf_f[i])
+            band_ok = false;
+    }
+    if (!s->d_dwt_tmp_ref || !s->d_dwt_tmp_dis || !band_ok || !s->d_div_lookup || !s->d_cm_accum ||
         !s->d_csf_den_accum || !s->h_cm_accum || !s->h_csf_den_accum) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: device memory allocation failed\n");
+        close_fex_sycl(fex);
         return -ENOMEM;
     }
 
@@ -1396,14 +1409,21 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
             lut[32768 + i] = recip;
             lut[32768 - i] = -recip;
         }
-        vmaf_sycl_memcpy_h2d(state, s->d_div_lookup, lut, div_size);
+        int const cpy_err = vmaf_sycl_memcpy_h2d(state, s->d_div_lookup, lut, div_size);
         std::free(lut);
+        if (cpy_err) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "adm_sycl: div_lookup upload failed\n");
+            close_fex_sycl(fex);
+            return cpy_err;
+        }
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        close_fex_sycl(fex);
         return -ENOMEM;
+    }
 
     // Register with combined command graph
     err = vmaf_sycl_graph_register(state, enqueue_adm_work, adm_pre_graph, adm_post_graph, nullptr,

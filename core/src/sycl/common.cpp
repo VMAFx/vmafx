@@ -920,8 +920,8 @@ extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
     //     Per-feature override (highest precedence).
     //   VMAF_SYCL_USE_GRAPH=1 — legacy global force-graph (deprecated).
     //   VMAF_SYCL_NO_GRAPH=1  — legacy global force-direct (deprecated).
+    bool any_wants_graph = false;
     if (frame == 2 && (state->has_uploaded || state->has_imported)) {
-        bool any_wants_graph = false;
         for (int i = 0; i < state->num_graph_extractors; ++i) {
             const auto &ge = state->graph_extractors[i];
             const VmafFeatureCharacteristics *chars = nullptr;
@@ -937,13 +937,17 @@ extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
                 break;
             }
         }
-        if (any_wants_graph)
-            record_combined_graphs(state);
     }
 
     state->t_submit_start = monotonic_ms();
 
     try {
+        // Graph recording issues SYCL graph APIs (begin_recording / finalize)
+        // that can throw sycl::exception; keep it inside the try so the throw
+        // does not escape through the C dispatch frame (UB / std::terminate).
+        if (any_wants_graph)
+            record_combined_graphs(state);
+
         // Phase 1: Pre-graph — memset operations (always direct, never in graph)
         for (int i = 0; i < state->num_graph_extractors; i++) {
             auto &ge = state->graph_extractors[i];
