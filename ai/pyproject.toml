@@ -52,7 +52,7 @@ tune = ["optuna>=4.9.0", "ray[tune]>=2.55.1"]
 gpu  = []
 viz  = ["matplotlib>=3.11.0", "seaborn>=0.13.2"]
 dev  = [
-  "pytest>=9.1.0",
+  "pytest>=9.1.1",
   "pytest-timeout>=2.4.0",
   "ruff>=0.15.17",
   "mypy>=2.1.0",

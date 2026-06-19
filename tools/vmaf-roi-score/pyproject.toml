@@ -13,7 +13,7 @@ authors = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1.0", "ruff>=0.15.17"]
+dev = ["pytest>=9.1.1", "ruff>=0.15.17"]
 # Saliency mask materialisation needs onnxruntime + numpy at runtime.
 # Kept optional so the smoke tests (which mock subprocess + skip ORT) run
 # in a minimal environment.
