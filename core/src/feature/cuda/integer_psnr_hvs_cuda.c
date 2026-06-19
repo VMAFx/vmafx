@@ -115,6 +115,8 @@ static const VmafOption options[] = {
     {0},
 };
 
+static int close_fex_cuda(VmafFeatureExtractor *fex);
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -221,13 +223,17 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_ref[p], uint_bytes);
         ret |= vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_uint_dist[p], uint_bytes);
     }
-    if (ret)
+    if (ret) {
+        (void)close_fex_cuda(fex);
         return -ENOMEM;
+    }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        (void)close_fex_cuda(fex);
         return -ENOMEM;
+    }
     return 0;
 
 fail:

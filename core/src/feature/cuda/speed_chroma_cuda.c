@@ -770,11 +770,34 @@ free_cpu:
 
 fail_after_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
+    /* Tear down the loaded module + stream in addition to the device /
+     * host buffers — free_cuda_buffers does not touch either. */
+    if (s->module) {
+        (void)cu_f->cuModuleUnload(s->module);
+        s->module = NULL;
+    }
+    if (s->stream) {
+        (void)cu_f->cuStreamDestroy(s->stream);
+        s->stream = NULL;
+    }
     free_cuda_buffers(s, cu_f);
     return -EIO;
 
 fail_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
+    /* Mirror fail_after_pop: the early-exit sites between cuModuleLoadData
+     * and the cuCtxPopCurrent can already have created the module, the
+     * stream, and a subset of the device / host buffers. Release all of
+     * them so a CUDA failure here does not leak. */
+    if (s->module) {
+        (void)cu_f->cuModuleUnload(s->module);
+        s->module = NULL;
+    }
+    if (s->stream) {
+        (void)cu_f->cuStreamDestroy(s->stream);
+        s->stream = NULL;
+    }
+    free_cuda_buffers(s, cu_f);
     return -EIO;
 
 fail:

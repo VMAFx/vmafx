@@ -183,6 +183,8 @@ static const VmafOption options[] = {
     {0},
 };
 
+static int close_fex_cuda(VmafFeatureExtractor *fex);
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -291,13 +293,17 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
             vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_s_partials[i], scale_bytes);
     }
 
-    if (ret)
+    if (ret) {
+        (void)close_fex_cuda(fex);
         return -ENOMEM;
+    }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        (void)close_fex_cuda(fex);
         return -ENOMEM;
+    }
 
     return 0;
 
@@ -333,6 +339,10 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     int ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, &tmp_uint, input_bytes_uint);
     if (ret)
         return -ENOMEM;
+    /* tmp_uint is a pinned host staging buffer freed below on the success
+     * path; the CHECK_CUDA_GOTO sites between here and that free route
+     * through free_tmp so an early CUDA error does not leak it. */
+    int _cuda_err = 0;
     CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
     CUDA_MEMCPY2D m_ref = {0};
     m_ref.srcMemoryType = CU_MEMORYTYPE_DEVICE;
@@ -343,8 +353,8 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     m_ref.dstPitch = (size_t)s->width * bpc_bytes;
     m_ref.WidthInBytes = (size_t)s->width * bpc_bytes;
     m_ref.Height = s->height;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&m_ref, stream));
-    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(stream));
+    CHECK_CUDA_GOTO(cu_f, cuMemcpy2DAsync(&m_ref, stream), free_tmp);
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(stream), free_tmp);
     /* Build a fake VmafPicture wrapper for picture_copy. */
     VmafPicture host_pic_ref = {
         .pix_fmt = ref_pic->pix_fmt,
@@ -360,8 +370,8 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CUDA_MEMCPY2D m_cmp = m_ref;
     m_cmp.srcDevice = (CUdeviceptr)dist_pic->data[0];
     m_cmp.srcPitch = (size_t)dist_pic->stride[0];
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&m_cmp, stream));
-    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(stream));
+    CHECK_CUDA_GOTO(cu_f, cuMemcpy2DAsync(&m_cmp, stream), free_tmp);
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(stream), free_tmp);
     VmafPicture host_pic_cmp = host_pic_ref;
     host_pic_cmp.data[0] = tmp_uint;
     picture_copy(s->h_cmp, (ptrdiff_t)((size_t)s->width * sizeof(float)), &host_pic_cmp, 0,
@@ -369,10 +379,14 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     /* Upload normalised float planes to pyramid level 0. */
     const size_t input_bytes_float = (size_t)s->width * s->height * sizeof(float);
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyHtoDAsync((CUdeviceptr)s->pyramid_ref[0]->data, s->h_ref,
-                                              input_bytes_float, s->lc.str));
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyHtoDAsync((CUdeviceptr)s->pyramid_cmp[0]->data, s->h_cmp,
-                                              input_bytes_float, s->lc.str));
+    CHECK_CUDA_GOTO(cu_f,
+                    cuMemcpyHtoDAsync((CUdeviceptr)s->pyramid_ref[0]->data, s->h_ref,
+                                      input_bytes_float, s->lc.str),
+                    free_tmp);
+    CHECK_CUDA_GOTO(cu_f,
+                    cuMemcpyHtoDAsync((CUdeviceptr)s->pyramid_cmp[0]->data, s->h_cmp,
+                                      input_bytes_float, s->lc.str),
+                    free_tmp);
     (void)vmaf_cuda_buffer_host_free(fex->cu_state, tmp_uint);
 
     /* Build pyramid scales 1..4 via decimate kernel × ref + cmp. */
@@ -457,6 +471,10 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.finished, s->lc.str));
     (void)vmaf_cuda_drain_batch_register(&s->lc);
     return 0;
+
+free_tmp:
+    (void)vmaf_cuda_buffer_host_free(fex->cu_state, tmp_uint);
+    return _cuda_err;
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
@@ -566,6 +584,17 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
         ret |= vmaf_cuda_buffer_free(fex->cu_state, s->h_refcmp);
         free(s->h_refcmp);
     }
+    /* Pinned host input buffers (allocated via vmaf_cuda_buffer_host_alloc
+     * in init). Missing these leaks page-locked host memory per
+     * vmaf_close(). */
+    if (s->h_ref) {
+        ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_ref);
+        s->h_ref = NULL;
+    }
+    if (s->h_cmp) {
+        ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_cmp);
+        s->h_cmp = NULL;
+    }
     /* Per-scale partials triples (T-GPU-OPT-2 / ADR-0271). */
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
         if (s->l_partials[i]) {
@@ -582,6 +611,19 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
             ret |= vmaf_cuda_buffer_free(fex->cu_state, s->s_partials[i]);
             free(s->s_partials[i]);
             s->s_partials[i] = NULL;
+        }
+        /* Pinned host partials triples mirror the device buffers above. */
+        if (s->h_l_partials[i]) {
+            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_l_partials[i]);
+            s->h_l_partials[i] = NULL;
+        }
+        if (s->h_c_partials[i]) {
+            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_c_partials[i]);
+            s->h_c_partials[i] = NULL;
+        }
+        if (s->h_s_partials[i]) {
+            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->h_s_partials[i]);
+            s->h_s_partials[i] = NULL;
         }
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);

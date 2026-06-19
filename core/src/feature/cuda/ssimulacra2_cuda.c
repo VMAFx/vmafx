@@ -547,6 +547,8 @@ static void ss2c_downsample_2x2(const float *in, unsigned iw, unsigned ih, float
 /* Lifecycle                                                          */
 /* ------------------------------------------------------------------ */
 
+static int close_fex_cuda(VmafFeatureExtractor *fex);
+
 static int ss2c_alloc_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *s)
 {
     const size_t three_plane_bytes = 3u * (size_t)s->width * (size_t)s->height * sizeof(float);
@@ -645,8 +647,10 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
     int ret = ss2c_alloc_buffers(fex, s);
-    if (ret)
+    if (ret) {
+        (void)close_fex_cuda(fex);
         return ret;
+    }
     return 0;
 
 fail_after_stream:

@@ -24,6 +24,14 @@ hardening. Touches only fork-added SYCL sources (`core/src/feature/sycl/integer_
 counterpart. No public header, CLI, meson-option, ffmpeg-patch, or golden-gate
 surface changes; success-path behaviour is unchanged (cleanup/exception handling
 only fires on already-failing paths).
+## fix/cuda-init-submit-leaks — CUDA error-path resource frees (2026-06-19)
+Rebase impact: none on upstream — fork-local CUDA error-path hardening.
+Touches only fork-added CUDA feature extractors under
+`core/src/feature/cuda/` (`integer_ms_ssim_cuda.c`,
+`integer_psnr_hvs_cuda.c`, `ssimulacra2_cuda.c`, `speed_chroma_cuda.c`);
+adds NULL-guarded frees / cleanup-goto routing on init + submit failure
+paths only. No public-header, meson, CLI, ffmpeg-patch, or golden-gate
+impact, and success-path behaviour is unchanged.
 
 ## feat/golusoris-tune (2026-06-15)
 Rebase impact: **low (Go-only, additive + in-place rewrite of one binary's
