@@ -12,7 +12,7 @@ registration:
 
 ```text
 feature/
-  feature_extractor.c/.h     # the registry + lifecycle contract (init/extract/flush/close)
+  feature_extractor.cpp/.h   # the registry + lifecycle contract (init/extract/flush/close)
   feature_collector.c/.h     # per-frame score aggregator
   vif.c / adm.c / …          # scalar CPU reference implementations
   integer_*.c                # integer-math reference implementations
@@ -41,6 +41,17 @@ feature/
 - **Registration is discoverable by both name and provided-feature-name**:
   `vmaf_get_feature_extractor_by_name()` and
   `vmaf_get_feature_extractor_by_feature_name()`. Both must resolve.
+  - **GPU/Metal twins live in `feature_extractor.cpp`'s `#if HAVE_*`
+    blocks, NOT in a parallel file.** The registry was `feature_extractor.c`
+    until PR #875 introduced the compiled `.cpp` twin; for a window both
+    files existed and diverged, and the `speed_{chroma,temporal}_{cuda,
+    sycl,hip}` registrations were left behind in the dead `.c` — so the
+    kernels compiled but `by_name("speed_chroma_cuda")` returned NULL and
+    SpEED silently fell back to CPU. The `.c` is now deleted; when you add
+    a GPU twin, add its `extern` + array entry to the matching `#if HAVE_*`
+    block in the `.cpp` AND assert resolution in
+    `test/test_feature_extractor.c`. A registered-but-unresolvable twin is
+    a silent correctness bug, not a build error.
 - **Options tables** must have non-NULL `help` for every entry; see
   [../../test/test_lpips.c](../../test/test_lpips.c) for the unit-test
   pattern that enforces this.

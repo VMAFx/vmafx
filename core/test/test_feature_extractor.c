@@ -48,6 +48,37 @@ static char *test_get_feature_extractor_by_name_and_feature_name(void)
               fex && !strcmp(fex->name, "adm_cuda"));
 #endif
 
+    /* Regression guard for the PR #875 feature_extractor.c -> .cpp split,
+     * which orphaned the SpEED GPU twins: the externs + array entries stayed
+     * in the now-deleted .c while meson compiled the .cpp, so
+     * vmaf_get_feature_extractor_by_name("speed_chroma_cuda") returned NULL
+     * and SpEED silently fell back to the CPU path (ADR-0964/0965/0852).
+     * Each twin must resolve by name when its backend is compiled in. */
+#if HAVE_CUDA
+    fex = vmaf_get_feature_extractor_by_name("speed_chroma_cuda");
+    mu_assert("speed_chroma_cuda must resolve by name",
+              fex && !strcmp(fex->name, "speed_chroma_cuda"));
+    fex = vmaf_get_feature_extractor_by_name("speed_temporal_cuda");
+    mu_assert("speed_temporal_cuda must resolve by name",
+              fex && !strcmp(fex->name, "speed_temporal_cuda"));
+#endif
+#if HAVE_SYCL
+    fex = vmaf_get_feature_extractor_by_name("speed_chroma_sycl");
+    mu_assert("speed_chroma_sycl must resolve by name",
+              fex && !strcmp(fex->name, "speed_chroma_sycl"));
+    fex = vmaf_get_feature_extractor_by_name("speed_temporal_sycl");
+    mu_assert("speed_temporal_sycl must resolve by name",
+              fex && !strcmp(fex->name, "speed_temporal_sycl"));
+#endif
+#if HAVE_HIP
+    fex = vmaf_get_feature_extractor_by_name("speed_chroma_hip");
+    mu_assert("speed_chroma_hip must resolve by name",
+              fex && !strcmp(fex->name, "speed_chroma_hip"));
+    fex = vmaf_get_feature_extractor_by_name("speed_temporal_hip");
+    mu_assert("speed_temporal_hip must resolve by name",
+              fex && !strcmp(fex->name, "speed_temporal_hip"));
+#endif
+
     return NULL;
 }
 

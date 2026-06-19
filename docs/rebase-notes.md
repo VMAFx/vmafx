@@ -1,6 +1,22 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/speed-gpu-registry — restore orphaned GPU SpEED registrations + delete dead feature_extractor.c (2026-06-19)
+Rebase impact: **none on upstream**. All changes are fork-local. Touches the
+fork-only registry file `core/src/feature/feature_extractor.cpp` (adds six
+`extern`s + array entries under the existing `#if HAVE_{CUDA,SYCL,HIP}` blocks),
+**deletes** the fork-only dead twin `core/src/feature/feature_extractor.c`
+(orphaned by PR #875's `.c`→`.cpp` split; meson compiled only the `.cpp`), and
+adds by-name resolution asserts to `core/src/feature/../test/test_feature_extractor.c`.
+Rebase-sensitive note for the next person syncing: there is now exactly ONE
+registry file (`feature_extractor.cpp`); if an upstream/Netflix sync re-introduces
+a `feature_extractor.c` it must be reconciled into the `.cpp`, not kept alongside
+it — the split-brain is what this fix removes. Stale `feature_extractor.c`
+references remain in ~40 sibling source comments (Metal `.mm`, HIP `.c`) and in
+historical `docs/adr/*` / `docs/research/*` (audit trail — do NOT rewrite); the
+live comment sweep for the non-ADR consumer files is deferred to the RC LOW
+doc-hygiene PR and coordinated with the in-flight Metal PR #986.
+
 ## feat/golusoris-tune (2026-06-15)
 Rebase impact: **low (Go-only, additive + in-place rewrite of one binary's
 composition root)**. Phase-1 of the golusoris adoption (ADR-1119): migrates the

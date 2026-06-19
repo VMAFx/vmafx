@@ -97,6 +97,14 @@ extern VmafFeatureExtractor vmaf_fex_ssimulacra2_cuda;
 extern VmafFeatureExtractor vmaf_fex_float_adm_cuda;
 /* T3-15 / ADR-0360: cambi CUDA twin (Strategy II hybrid). */
 extern VmafFeatureExtractor vmaf_fex_cambi_cuda;
+/* ADR-0965: speed_{chroma,temporal} CUDA twins — real GPU kernels (means,
+ * cov, indterm, backward-sub, score); host-side eigendecomp + QR via
+ * speed_internal.c (ADR-0964). Orphaned from this compiled registry when
+ * PR #875 split feature_extractor.c → .cpp; the externs + array entries
+ * stayed in the now-dead .c. Restored here so
+ * vmaf_get_feature_extractor_by_name("speed_chroma_cuda") resolves. */
+extern VmafFeatureExtractor vmaf_fex_speed_chroma_cuda;
+extern VmafFeatureExtractor vmaf_fex_speed_temporal_cuda;
 #endif
 #if HAVE_SYCL
 extern VmafFeatureExtractor vmaf_fex_integer_vif_sycl;
@@ -120,6 +128,12 @@ extern VmafFeatureExtractor vmaf_fex_float_adm_sycl;
 /* T3-15 / ADR-0371: cambi SYCL twin (Strategy II hybrid, closes CUDA→SYCL
  * parity gap). */
 extern VmafFeatureExtractor vmaf_fex_cambi_sycl;
+/* ADR-0964: speed_{chroma,temporal} SYCL twins. Same hybrid GPU/CPU split
+ * as the CUDA twins (AdaptiveCpp vs DPC++ kernel adaptations in
+ * feature/sycl/speed_chroma_sycl.cpp). Restored after the PR #875
+ * .c→.cpp split orphaned them. */
+extern VmafFeatureExtractor vmaf_fex_speed_chroma_sycl;
+extern VmafFeatureExtractor vmaf_fex_speed_temporal_sycl;
 #endif
 #if HAVE_HIP
 /* HIP first-consumer kernel — T7-10 / ADR-0241. Registration succeeds
@@ -196,6 +210,13 @@ extern VmafFeatureExtractor vmaf_fex_integer_ms_ssim_hip;
 extern VmafFeatureExtractor vmaf_fex_psnr_hvs_hip;
 extern VmafFeatureExtractor vmaf_fex_integer_ssim_hip;
 extern VmafFeatureExtractor vmaf_fex_ssimulacra2_hip;
+/* ADR-0964 / ADR-0852: speed_{chroma,temporal} HIP twins. Same hybrid
+ * GPU/CPU split as the CUDA twins; wavefront-64 adaptations, host-side
+ * eigendecomp + QR via feature/speed_internal.c. Real on-device kernels
+ * under enable_hipcc=true; otherwise init() returns -ENOSYS (scaffold
+ * posture). Restored after the PR #875 .c→.cpp split orphaned them. */
+extern VmafFeatureExtractor vmaf_fex_speed_chroma_hip;
+extern VmafFeatureExtractor vmaf_fex_speed_temporal_hip;
 #endif
 #if HAVE_METAL
 /* Metal feature extractors — T8-1c through T8-1j / ADR-0421, plus
@@ -265,6 +286,11 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_float_adm_sycl,
     /* T3-15 / ADR-0371: cambi SYCL twin (closes last CUDA→SYCL parity gap). */
     &vmaf_fex_cambi_sycl,
+    /* ADR-0964: speed_{chroma,temporal} SYCL twins — wire the existing
+     * sycl/speed_{chroma,temporal}_sycl.cpp TUs so
+     * vmaf_get_feature_extractor_by_name("speed_chroma_sycl") resolves.
+     * Hybrid GPU/CPU split — see core/src/feature/speed_internal.h. */
+    &vmaf_fex_speed_chroma_sycl, &vmaf_fex_speed_temporal_sycl,
 #endif
 #if HAVE_CUDA
     &vmaf_fex_integer_adm_cuda, &vmaf_fex_integer_vif_cuda, &vmaf_fex_integer_motion_cuda,
@@ -278,6 +304,10 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_float_adm_cuda,
     /* T3-15 / ADR-0360: cambi CUDA twin (Strategy II hybrid). */
     &vmaf_fex_cambi_cuda,
+    /* ADR-0965: speed_{chroma,temporal} CUDA twins — hybrid GPU/CPU split
+     * (GPU means/cov/indterm/backward-sub/score; CPU eigendecomp + QR).
+     * places=4 vs CPU reference (ADR-0214). */
+    &vmaf_fex_speed_chroma_cuda, &vmaf_fex_speed_temporal_cuda,
 #endif
 #if HAVE_HIP
     /* T7-10 first consumer (ADR-0241): registration succeeds even on
@@ -351,6 +381,11 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * HSACO blobs; the rest stay scaffold-only until the next batch). */
     &vmaf_fex_float_vif_hip, &vmaf_fex_integer_adm_hip, &vmaf_fex_integer_ms_ssim_hip,
     &vmaf_fex_psnr_hvs_hip, &vmaf_fex_integer_ssim_hip, &vmaf_fex_ssimulacra2_hip,
+    /* ADR-0964 / ADR-0852: speed_{chroma,temporal} HIP twins. Real on-device
+     * kernels under enable_hipcc=true; otherwise init() returns -ENOSYS
+     * (scaffold posture mirroring the other HIP consumers). CPU-side
+     * eigendecomp + QR via feature/speed_internal.c. */
+    &vmaf_fex_speed_chroma_hip, &vmaf_fex_speed_temporal_hip,
 #endif
 #if HAVE_METAL
     /* T8-1 first consumer (ADR-0361): registration succeeds even on
@@ -899,6 +934,10 @@ static struct fex_list_entry *get_fex_list_entry(VmafFeatureExtractorContextPool
 static int ctx_pool_ensure_slot_ctx(struct fex_list_entry *entry, int i, VmafFeatureExtractor *fex,
                                     VmafDictionary *opts_dict, VmafFrameSyncContext *framesync)
 {
+    /* fex is retained in the signature to document the caller's snapshot
+     * contract (see comment above); the body uses entry->fex, so the
+     * parameter itself is intentionally unreferenced here. */
+    (void)fex;
     if (entry->ctx_list[i].fex_ctx)
         return 0;
 
