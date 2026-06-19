@@ -13,7 +13,7 @@ authors = [
 # NOT pull in the full ai/ optional-dependency tree (no optuna / ray /
 # matplotlib / lightning) — those are not on the Phase-A retrain path.
 dependencies = [
-  "torch>=2.12.0,<3.0",
+  "torch>=2.12.1,<3.0",
   "onnx>=1.21.0,<2.0",
   "onnxruntime>=1.27.0,<2.0",
   "onnx>=1.22.0,<2.0",
