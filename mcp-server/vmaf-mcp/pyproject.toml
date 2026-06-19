@@ -24,7 +24,7 @@ eval = [
   "pandas>=3.0.3",
   "pyarrow>=24.0.0",
   "onnxruntime>=1.27.0",
-  "scipy>=1.17.1",
+  "scipy>=1.18.0",
 ]
 # Optional: enables `describe_worst_frames` with vision-language fallback
 # (SmolVLM → Moondream2 → metadata-only). Pulls in transformers + torch.
