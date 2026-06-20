@@ -9,6 +9,7 @@ Accepts either a numpy .npz cache (legacy) or a parquet file produced by
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +21,8 @@ from .data.splits import split_keys
 from .features import FEATURE_COLUMNS
 
 __all__ = ["FEATURE_COLUMNS", "FeatureScoreDataset", "VmafTrainDataModule"]
+
+_LOG = logging.getLogger(__name__)
 
 
 class FeatureScoreDataset(Dataset):
@@ -47,6 +50,25 @@ class FeatureScoreDataset(Dataset):
 
         if self.x.shape[0] != self.y.shape[0]:
             raise ValueError("features/scores length mismatch")
+
+        # Drop rows whose features or score are not all finite. One NaN/Inf
+        # cell otherwise silently collapses training (the MSE loss goes NaN
+        # and every subsequent gradient is NaN). Dropping the offending rows
+        # with a logged count keeps a multi-hour fit from being wasted by a
+        # single corrupt feature value.
+        finite_mask = torch.isfinite(self.x).all(dim=1) & torch.isfinite(self.y)
+        n_drop = int((~finite_mask).sum().item())
+        if n_drop:
+            _LOG.warning(
+                "datamodule: dropping %d/%d row(s) with non-finite feature/score values",
+                n_drop,
+                self.x.shape[0],
+            )
+            self.x = self.x[finite_mask]
+            self.y = self.y[finite_mask]
+            if self.keys is not None:
+                keep = finite_mask.tolist()
+                self.keys = [k for k, ok in zip(self.keys, keep, strict=True) if ok]
 
     def __len__(self) -> int:
         return self.x.shape[0]

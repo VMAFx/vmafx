@@ -1011,11 +1011,29 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (!s->ref_lin || !s->dist_lin || !s->ref_xyb || !s->dist_xyb || !s->mu1 || !s->mu2 ||
         !s->sigma1_sq || !s->sigma2_sq || !s->sigma12 || !s->mul_buf || !s->scratch ||
         !s->col_state) {
-        return -ENOMEM;
+        goto fail;
     }
 
     init_simd_dispatch(s);
     return 0;
+
+fail:
+    /* Partial OOM: any of the 12 allocations above may have succeeded while a
+     * later one failed. Free every non-NULL buffer (aligned_free(NULL) is a
+     * no-op) so the partially-initialised state does not leak 1-11 buffers. */
+    aligned_free(s->ref_lin);
+    aligned_free(s->dist_lin);
+    aligned_free(s->ref_xyb);
+    aligned_free(s->dist_xyb);
+    aligned_free(s->mu1);
+    aligned_free(s->mu2);
+    aligned_free(s->sigma1_sq);
+    aligned_free(s->sigma2_sq);
+    aligned_free(s->sigma12);
+    aligned_free(s->mul_buf);
+    aligned_free(s->scratch);
+    aligned_free(s->col_state);
+    return -ENOMEM;
 }
 
 /* Dispatch YUV → linear RGB through the SIMD function pointer when set,

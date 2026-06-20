@@ -221,16 +221,31 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 
 free_ref:
-    if (s->h_ref_mu)
+    if (s->h_ref_mu) {
         (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_mu);
-    if (s->h_cmp_mu)
+        free(s->h_ref_mu);
+        s->h_ref_mu = NULL;
+    }
+    if (s->h_cmp_mu) {
         (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_mu);
-    if (s->h_ref_sq)
+        free(s->h_cmp_mu);
+        s->h_cmp_mu = NULL;
+    }
+    if (s->h_ref_sq) {
         (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_ref_sq);
-    if (s->h_cmp_sq)
+        free(s->h_ref_sq);
+        s->h_ref_sq = NULL;
+    }
+    if (s->h_cmp_sq) {
         (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_cmp_sq);
-    if (s->h_refcmp)
+        free(s->h_cmp_sq);
+        s->h_cmp_sq = NULL;
+    }
+    if (s->h_refcmp) {
         (void)vmaf_cuda_buffer_free(fex->cu_state, s->h_refcmp);
+        free(s->h_refcmp);
+        s->h_refcmp = NULL;
+    }
     (void)vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
     (void)vmaf_dictionary_free(&s->feature_name_dict);
     (void)vmaf_cuda_kernel_lifecycle_close(&s->lc, fex->cu_state);

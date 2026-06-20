@@ -418,6 +418,7 @@ static void enqueue_motion_work(void *queue_ptr, void *priv, void *shared_ref, v
 static void motion_pre_graph(void *queue_ptr, void *priv);
 static void motion_post_graph(void *queue_ptr, void *priv);
 static void config_motion_slot(void *priv, int slot);
+static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init error paths */
 
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
@@ -484,6 +485,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     if (!s->d_blur[0] || !s->d_blur[1] || !s->d_blur_tmp || !s->d_sad_accum || !s->h_sad_accum) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: device memory allocation failed\n");
+        close_fex_sycl(fex);
         return -ENOMEM;
     }
 
@@ -513,6 +515,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                      "motion_sycl: motion_add_uv=true requires a YUV format with chroma "
                      "planes (got %d)\n",
                      (int)pix_fmt);
+            close_fex_sycl(fex);
             return -EINVAL;
         }
         // Ceiling division — matches integer_psnr_sycl.cpp chroma geometry
@@ -549,14 +552,17 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
             !s->d_blur_u[0] || !s->d_blur_u[1] || !s->d_blur_v[0] || !s->d_blur_v[1] ||
             !s->d_sad_u || !s->h_sad_u || !s->d_sad_v || !s->h_sad_v) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: UV device memory allocation failed\n");
+            close_fex_sycl(fex);
             return -ENOMEM;
         }
     }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
+        close_fex_sycl(fex);
         return -ENOMEM;
+    }
 
     // Store back-pointer for graph-mode checks in post_fn
     s->sycl_state = state;
@@ -564,8 +570,10 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     // Register with combined command graph
     int const err2 = vmaf_sycl_graph_register(state, enqueue_motion_work, motion_pre_graph,
                                               motion_post_graph, config_motion_slot, s, "MOTION");
-    if (err2)
+    if (err2) {
+        close_fex_sycl(fex);
         return err2;
+    }
 
     return 0;
 }

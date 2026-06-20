@@ -210,21 +210,32 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"[extract] {i + 1}/{len(pairs)} {pair.source}/{pair.dis_path.name} (elapsed {wt:.0f}s)"
         )
-        payload = _load_or_compute(pair, args.cache_dir, args.vmaf_bin)
-        per_frame = np.asarray(payload["per_frame"], dtype=np.float32)
-        teacher_per_frame = np.asarray(payload["teacher_per_frame"], dtype=np.float32)
-        n = min(per_frame.shape[0], teacher_per_frame.shape[0])
-        for fi in range(n):
-            row = {
-                "source": pair.source,
-                "dis_basename": pair.dis_path.name,
-                "frame_index": fi,
-                "codec": args.codec,
-                "vmaf": float(teacher_per_frame[fi]),
-            }
-            for col, val in zip(FULL_FEATURES, per_frame[fi], strict=False):
-                row[col] = float(val)
-            rows.append(row)
+        try:
+            payload = _load_or_compute(pair, args.cache_dir, args.vmaf_bin)
+            per_frame = np.asarray(payload["per_frame"], dtype=np.float32)
+            teacher_per_frame = np.asarray(payload["teacher_per_frame"], dtype=np.float32)
+            n = min(per_frame.shape[0], teacher_per_frame.shape[0])
+            for fi in range(n):
+                row = {
+                    "source": pair.source,
+                    "dis_basename": pair.dis_path.name,
+                    "frame_index": fi,
+                    "codec": args.codec,
+                    "vmaf": float(teacher_per_frame[fi]),
+                }
+                for col, val in zip(FULL_FEATURES, per_frame[fi], strict=False):
+                    row[col] = float(val)
+                rows.append(row)
+        except Exception as exc:
+            # One bad pair (corrupt cache, vmaf/ffmpeg failure, malformed
+            # payload) must not abort a multi-hour corpus extraction —
+            # log a warning and continue with the next pair.
+            print(
+                f"[extract] WARNING: skipping {pair.source}/{pair.dis_path.name}: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            continue
 
     import pandas as pd  # local import — pandas optional for non-Phase-2 paths
 

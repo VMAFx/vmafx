@@ -514,6 +514,14 @@ def main(argv: list[str] | None = None) -> int:
         except subprocess.CalledProcessError as exc:
             print(f"[konvid-full] {key} FAILED: {shlex.join(exc.cmd)}", file=sys.stderr)
             continue
+        except Exception as exc:
+            # An audio-only / no-video clip raises IndexError on the
+            # ffprobe streams[0] lookup, and a corrupt cache raises a
+            # JSON / value error — neither is a CalledProcessError, so
+            # without this broader catch one bad clip aborts the whole
+            # run. Log the key and continue.
+            print(f"[konvid-full] {key} FAILED: {exc}", file=sys.stderr)
+            continue
         if (idx + 1) % 10 == 0 or idx + 1 == len(clips):
             print(
                 f"[konvid-full] {idx + 1}/{len(clips)} clips, {len(rows)} frames, "

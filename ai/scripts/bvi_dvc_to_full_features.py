@@ -508,6 +508,16 @@ def _run_zip_mode(
                     args.scratch,
                     args.codec,
                 )
+            except Exception as exc:
+                # Don't let one bad clip (corrupt stream, ffmpeg/vmaf
+                # failure, decode-out-of-memory) abort a multi-hour run —
+                # log the key and continue with the next clip.
+                print(
+                    f"[bvi-dvc-full] FAIL {key}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                continue
             finally:
                 with contextlib.suppress(FileNotFoundError):
                     local_mp4.unlink()
@@ -556,34 +566,44 @@ def _run_dir_mode(
     t0 = time.time()
     for i, entry in enumerate(entries):
         key = entry.path.stem
-        if entry.path.suffix.lower() == ".yuv":
-            rows += _process_clip_yuv(
-                key,
-                entry.path,
-                entry.w,
-                entry.h,
-                entry.fps,
-                entry.depth,
-                args.vmaf_bin,
-                args.model,
-                args.crf,
-                cache_dir,
-                args.scratch,
-                args.codec,
+        try:
+            if entry.path.suffix.lower() == ".yuv":
+                rows += _process_clip_yuv(
+                    key,
+                    entry.path,
+                    entry.w,
+                    entry.h,
+                    entry.fps,
+                    entry.depth,
+                    args.vmaf_bin,
+                    args.model,
+                    args.crf,
+                    cache_dir,
+                    args.scratch,
+                    args.codec,
+                )
+            else:
+                # Video-container path: decode to YUV, then re-encode a distorted side.
+                local_mp4 = entry.path
+                rows += _process_clip(
+                    key,
+                    local_mp4,
+                    args.vmaf_bin,
+                    args.model,
+                    args.crf,
+                    cache_dir,
+                    args.scratch,
+                    args.codec,
+                )
+        except Exception as exc:
+            # One unreadable clip must not abort a multi-hour dir-mode run —
+            # log the key and continue with the next entry.
+            print(
+                f"[bvi-dvc-full] FAIL {key}: {exc}",
+                file=sys.stderr,
+                flush=True,
             )
-        else:
-            # Video-container path: decode to YUV, then re-encode a distorted side.
-            local_mp4 = entry.path
-            rows += _process_clip(
-                key,
-                local_mp4,
-                args.vmaf_bin,
-                args.model,
-                args.crf,
-                cache_dir,
-                args.scratch,
-                args.codec,
-            )
+            continue
         if (i + 1) % 5 == 0 or (i + 1) == len(entries):
             wt = time.time() - t0
             print(

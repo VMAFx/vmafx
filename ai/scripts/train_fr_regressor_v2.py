@@ -427,13 +427,30 @@ def _synth_smoke_corpus(n: int = 100, seed: int = 0) -> list[dict]:
 
 
 def _materialise(rows: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Stack rows into ``(X_canon (N, 6), X_codec (N, N_ENCODERS+2), y (N,))``."""
+    """Stack rows into ``(X_canon (N, 6), X_codec (N, N_ENCODERS+2), y (N,))``.
+
+    Rows whose materialised canonical features, codec block, or target are
+    not all finite are dropped (with a logged count) rather than collapsed
+    to 0.0. A single NaN feature/target cell otherwise silently poisons the
+    StandardScaler mean/std and the MSE loss, collapsing the whole fit.
+    """
     canons, codecs, ys = [], [], []
+    dropped = 0
     for r in rows:
         c, k, y = _row_to_features(r)
+        if not (np.isfinite(c).all() and np.isfinite(k).all() and math.isfinite(y)):
+            dropped += 1
+            continue
         canons.append(c)
         codecs.append(k)
         ys.append(y)
+    if dropped:
+        print(
+            f"[fr-v2] WARNING: dropped {dropped}/{len(rows)} row(s) with "
+            f"non-finite features/target before training",
+            file=sys.stderr,
+            flush=True,
+        )
     return (
         np.stack(canons).astype(np.float32),
         np.stack(codecs).astype(np.float32),

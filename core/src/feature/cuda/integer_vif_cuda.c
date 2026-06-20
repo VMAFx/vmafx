@@ -322,6 +322,19 @@ free_ref:
     }
     (void)ret; // accumulated cleanup status intentionally discarded on error path
 
+    /* The context is already popped (cuCtxPopCurrent at the end of module
+     * setup) before any `free_ref` jump fires, so we must not route through
+     * the `fail` label (it would double-pop).  Tear down the module, events,
+     * and stream explicitly here, mirroring the `fail_after_module` ladder. */
+    (void)cu_f->cuModuleUnload(s->filter1d_module);
+    s->filter1d_module = NULL;
+    (void)cu_f->cuEventDestroy(s->finished);
+    s->finished = 0;
+    (void)cu_f->cuEventDestroy(s->event);
+    s->event = 0;
+    (void)cu_f->cuStreamDestroy(s->str);
+    s->str = 0;
+
     return -ENOMEM;
 
 fail_after_module:
