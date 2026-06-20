@@ -1095,6 +1095,16 @@ def _process_clip(
             is_hdr=is_hdr,
             motion_fps_weight_value=motion_w,
         )
+        if not frames:
+            # A clip that decodes but yields zero scored frames aggregates to an
+            # all-NaN row. Writing that row + marking the clip done (see the
+            # as_completed loop) would silently drop it from the retrain corpus
+            # with no retry. Honour this function's "raises on any failure"
+            # contract instead, so the caller logs + skips it for a later resume.
+            raise ValueError(
+                f"no frames scored for {mp4.name} ({width}x{height} {pix_fmt}); "
+                "vmaf produced an empty frame list"
+            )
         agg = _aggregate_frames(frames)
         return {
             "clip_name": mp4.name,
@@ -1423,6 +1433,30 @@ def main() -> int:
     t0 = time.time()
     completed = 0
 
+    # MOS-label join integrity guard: a format mismatch between the scores CSV
+    # 'video_name' column and the corpus filenames would make every label NaN,
+    # so the regressor would train on garbage after days of GPU extraction.
+    # Verify coverage up front — hard-fail the catastrophic (zero-match) case,
+    # warn on partial coverage (some clips can legitimately lack a score).
+    _mos_covered = sum(1 for mp4 in pending if mp4.name in mos_map or mp4.stem in mos_map)
+    if pending and _mos_covered == 0:
+        _eg_clip = pending[0].name
+        _eg_keys = list(mos_map)[:3]
+        raise SystemExit(
+            f"[k150k] FATAL: MOS-label join matched 0/{len(pending)} pending clips. "
+            f"The scores CSV 'video_name' column does not line up with the corpus "
+            f"filenames — every label would be NaN. Example clip: {_eg_clip!r}; "
+            f"example score keys: {_eg_keys!r}. Fix the join key (e.g. the file "
+            f"extension) before extracting."
+        )
+    if pending and _mos_covered < len(pending):
+        print(
+            f"[k150k] WARNING: {len(pending) - _mos_covered}/{len(pending)} pending "
+            "clips have no MOS label and will carry mos=NaN.",
+            file=sys.stderr,
+            flush=True,
+        )
+
     # Build submit order: (future, clip_name) pairs.
     # We use as_completed() so results flow back as soon as workers finish,
     # keeping the checkpoint and staging file up-to-date without waiting for
@@ -1431,7 +1465,12 @@ def main() -> int:
         future_to_clip: dict[concurrent.futures.Future, str] = {}
         for idx, mp4 in enumerate(pending):
             clip_name = mp4.name
-            mos = mos_map.get(clip_name, float("nan"))
+            # Tolerate a filename<->'video_name' extension mismatch (corpus
+            # '<clip>.mp4' vs scores CSV 'video_name' == '<clip>'); the stem
+            # fallback mirrors the coverage guard above.
+            mos = mos_map.get(clip_name)
+            if mos is None:
+                mos = mos_map.get(mp4.stem, float("nan"))
             # Pass sidecar metadata to the worker for ffprobe skip (Win 2).
             clip_sidecar = jsonl_meta.get(clip_name)
             fut = executor.submit(
