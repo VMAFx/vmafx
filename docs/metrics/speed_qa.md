@@ -103,6 +103,32 @@ covariance matrices (more accurate but more expensive than `speed_qa`'s
 simpler local-variance estimator). `speed_qa` is a lightweight alternative
 that does not require float compilation.
 
+## GPU backend parity (speed_chroma / speed_temporal)
+
+`speed_chroma` and `speed_temporal` carry CUDA, HIP, and SYCL implementations
+that are selected at runtime when the corresponding backend is active. The GPU
+paths reproduce the CPU reference algorithm. As of the SpEED GPU correctness
+fix they agree with the CPU score to within the fork's cross-backend tolerance
+(≤ 1e-4 relative); the CUDA path is additionally bit-parity-verified against
+the CPU reference on an RTX 4090 via `core/test/test_cuda_speed_chroma_parity`
+and `core/test/test_cuda_speed_temporal_parity`.
+
+Two earlier algorithm defects in the GPU kernels are corrected:
+
+- **Global covariance.** The mean/covariance kernels now compute a single
+  covariance over the full phase-shifted 5×5 submatrix (a `means[25]` window),
+  matching the CPU reference. The previous kernels computed per-tile,
+  block-local statistics, which understated the score roughly seven-fold.
+- **Separate reference/distorted bases.** The reference and distorted entropy
+  terms now use independent covariance and eigenvalue bases. The previous
+  kernels reused the reference basis for the distorted plane, biasing the
+  chroma score high whenever the reference and distorted frames differed.
+
+No usage change is required — backend selection is automatic. To force a
+specific backend for a cross-backend parity check, use the fork's `--backend`
+selector. See [backends/cuda/overview](../backends/cuda/overview.md) and
+[backends/sycl/overview](../backends/sycl/overview.md).
+
 ## Python compat wrappers
 
 The compat Python harness (`compat/python-vmaf/`) ships Python wrappers for
