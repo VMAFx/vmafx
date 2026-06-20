@@ -121,6 +121,19 @@ HIP / Metal motion twins listed in the Twin-update table above) in the same PR.
   `integer_psnr.c::init`, propagate it here and to the CUDA and Vulkan twins
   in the same PR.
 
+- **`integer_psnr_hvs_sycl.cpp` uses ceiling division for chroma plane
+  geometry** (PR #1031). `init_fex_sycl` computes the 4:2:0 / 4:2:2 chroma
+  `width[1..2]` / `height[1..2]` via `(w + 1U) >> 1` / `(h + 1U) >> 1`, not
+  `w >> 1` / `h >> 1`, to match `picture.c` / CPU `integer_psnr_hvs.c` / the
+  CUDA + HIP twins on odd-dimension YUV420 / YUV422. Floor division drops the
+  last chroma 8x8 block strip on odd dimensions, diverging `psnr_hvs_cb` /
+  `psnr_hvs_cr` / `psnr_hvs` from every other backend (even dimensions are
+  unaffected). On rebase: the picture allocator's ceiling subsample convention
+  (`(dim + ss) >> ss`) is the single source of truth — any new SYCL extractor
+  that re-derives plane dims in its own `init` must use the ceiling form, and
+  any upstream change to the chroma-dimension formula propagates here and to
+  the CUDA + HIP twins in the same PR.
+
 - **`integer_ms_ssim_sycl.cpp` honours `enable_chroma` option parity**
   (mirrors ms_ssim_vulkan PR #957 / ADR-0453 pattern). The `enable_chroma`
   option (default `false`) clamps `n_planes` to 1 in `init_fex_sycl` when

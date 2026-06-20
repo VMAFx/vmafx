@@ -40,6 +40,21 @@ the Vulkan removal (ADR-0726); if a sync re-introduces a `vulkan` keyword in
 either MCP server, both must move together. No new rebase-sensitive invariants
 worth a dedicated `AGENTS.md` entry beyond the existing SYCL/CUDA error-path
 notes.
+## fix/sycl-psnr-hvs-chroma-ceiling — SYCL psnr_hvs odd-dimension chroma geometry (2026-06-20)
+Rebase impact: **none on upstream**. Fork-local one-line correctness fix in the
+fork-only SYCL feature extractor `core/src/feature/sycl/integer_psnr_hvs_sycl.cpp`,
+which has no upstream Netflix/vmaf counterpart. `init_fex_sycl` now derives the
+4:2:0 / 4:2:2 chroma plane dims with ceiling division (`(w + 1U) >> 1`) instead
+of floor (`w >> 1`), matching `picture.c` / the CPU reference / the CUDA + HIP
+twins. No public-header, CLI, meson-option, ffmpeg-patch, or golden-gate surface
+changes; even-dimension behaviour is byte-identical to before.
+Rebase-sensitive note for the next person syncing: the picture allocator's
+ceiling subsample convention (`(dim + ss) >> ss`) is the single source of truth
+for chroma plane dims — any new GPU feature extractor that re-derives plane
+dimensions in its own `init` must use the ceiling form, not floor; the floor
+form only agrees on even dimensions and silently drops the last chroma block
+strip otherwise. This is the same class of bug as the PSNR and Vulkan chroma
+ceiling fixes already in tree.
 
 ## fix/speed-gpu-registry — restore orphaned GPU SpEED registrations + delete dead feature_extractor.c (2026-06-19)
 Rebase impact: **none on upstream**. All changes are fork-local. Touches the
