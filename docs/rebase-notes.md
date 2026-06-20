@@ -1,6 +1,9 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/mcp-probe-backend-required — MCP probe_backend required-arg message (2026-06-20)
+Rebase impact: **none on upstream** — fork-local. The MCP server (`mcp-server/vmaf-mcp/`) is a fork addition with no Netflix/vmaf counterpart. One-line change in `_call_tool_dispatch`'s `probe_backend` branch (removes a redundant explicit guard, relies on the existing KeyError→ValueError wrapper). No public C-API / CLI / header impact.
+
 ## fix/speed-extractor-oob-deadlock-heap-corruption — GPU SpEED covariance + eigenbasis correctness + safety (2026-06-20)
 Rebase impact: **none on upstream** — all fork-local. The SpEED feature
 (`speed_chroma` / `speed_temporal`) and all of its GPU backends are

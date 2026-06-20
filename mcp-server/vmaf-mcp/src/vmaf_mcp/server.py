@@ -2896,8 +2896,12 @@ async def _call_tool_dispatch(
             raise ValueError(f"'n' must be between 1 and 32 (schema maximum); got {n_raw}")
         result = await _describe_worst_frames(req, n=n_raw)
     elif name == "probe_backend":
-        if "backend" not in arguments:
-            raise ValueError("'backend' is required for probe_backend")
+        # Missing 'backend' raises KeyError, converted to a uniform
+        # "tool 'probe_backend' missing required argument: 'backend'"
+        # ValueError by the _call_tool wrapper (matching every other
+        # required-arg tool, e.g. describe_model's 'name'). The schema
+        # marks 'backend' required; this keeps the error message
+        # consistent instead of a bespoke "'backend' is required" string.
         result = await _probe_backend(str(arguments["backend"]))
     elif name == "vmaf_version":
         result = await _vmaf_version()

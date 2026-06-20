@@ -106,3 +106,13 @@ unset in the calling context; `set -u` aborts on those references and bypasses `
   that reverts `_resolve_bind_host()` to return `"0.0.0.0"` or removes
   the security middleware from `_make_app()` re-introduces the Round 26
   audit finding A.1 vulnerabilities.
+
+- **Required-argument tools rely on the shared `_call_tool`
+  `KeyError`→`ValueError` wrapper** (`tool 'X' missing required argument:
+  'key'`). Read required args with `arguments["key"]` and let the missing
+  key raise `KeyError`; do **not** add a bespoke per-tool
+  `if "key" not in arguments: raise ValueError("'key' is required ...")`
+  guard. Bespoke messages diverge from the uniform string that
+  `test_call_tool_missing_*_raises_value_error` asserts (regex
+  `missing required argument.*'key'`) and silently red the non-required
+  `MCP Smoke` lane (the `probe_backend` 2026-06-20 fix).
