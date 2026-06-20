@@ -274,21 +274,24 @@ static int collect_fex_metal(VmafFeatureExtractor *fex, unsigned index,
         "VMAF_feature_motion_score", motion_score, index);
     if (err != 0) { return err; }
 
-    double motion2 = 0.0;
     if (index == 0) {
-        motion2 = 0.0;
-    } else if (index == 1) {
-        motion2 = 0.0;
+        /* First frame: no previous, emit motion2 = 0 at index 0. Mirrors
+         * the HIP / CUDA twins, which write the index-0 motion2 here. */
         err = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict,
-            "VMAF_feature_motion2_score", motion2, index);
+            "VMAF_feature_motion2_score", 0.0, index);
         if (err != 0) { return err; }
+    } else if (index == 1) {
+        /* Second frame: skip motion2 — the index-0 value was already
+         * written by the index==0 branch above. No-op for motion2 here,
+         * matching the HIP / CUDA twins' `index == 1` guard. */
     } else {
-        /* Apply fps weight to both operands before the min; identity when
+        /* index >= 2: emit motion2 = min(prev, cur) at index - 1. Apply
+         * fps weight to both operands before the min; identity when
          * motion_fps_weight = 1.0.  Mirrors the HIP and CUDA twin patterns. */
         const double w_cur  = motion_score * s->motion_fps_weight;
         const double w_prev = s->prev_motion_score * s->motion_fps_weight;
-        motion2 = (w_cur < w_prev) ? w_cur : w_prev;
+        const double motion2 = (w_cur < w_prev) ? w_cur : w_prev;
         err = vmaf_feature_collector_append_with_dict(
             feature_collector, s->feature_name_dict,
             "VMAF_feature_motion2_score", motion2, index - 1);
@@ -349,7 +352,7 @@ VmafFeatureExtractor vmaf_fex_float_motion_metal = {
     .options           = options,
     .priv_size         = sizeof(FloatMotionStateMetal),
     .provided_features = provided_features,
-    .flags             = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
+    .flags             = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_METAL,
     .chars = {
         .n_dispatches_per_frame = 1,
         .is_reduction_only      = true,

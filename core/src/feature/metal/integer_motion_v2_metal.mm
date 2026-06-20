@@ -604,7 +604,7 @@ VmafFeatureExtractor vmaf_fex_integer_motion_v2_metal = {
     .options = options,
     .priv_size = sizeof(MotionV2StateMetal),
     .provided_features = provided_features,
-    .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
+    .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_METAL,
     .chars =
         {
             .n_dispatches_per_frame = 1,

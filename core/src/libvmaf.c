@@ -1977,6 +1977,21 @@ static int flush_context_serial(VmafContext *vmaf)
             rfe.fex_ctx[i]->gpu_pending = false;
         }
 #endif
+#ifdef HAVE_METAL
+        /* Drain Metal-flagged extractors' gpu_pending final-frame collect
+         * BEFORE running their flush. The generic submit/collect double-
+         * buffer in `read_pictures_dispatch_one` leaves the last submitted
+         * frame's collect pending; without this drain the Metal extractor's
+         * collect(N) never runs and the final frame's score (plus the
+         * motion / motion2 tail) is dropped. Mirrors the HIP drain block
+         * above and the SYCL `flush_context_sycl` pattern. */
+        if ((rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_METAL) &&
+            rfe.fex_ctx[i]->gpu_pending) {
+            err |= vmaf_feature_extractor_context_collect(
+                rfe.fex_ctx[i], rfe.fex_ctx[i]->gpu_pending_index, vmaf->feature_collector);
+            rfe.fex_ctx[i]->gpu_pending = false;
+        }
+#endif
         if (!(rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) &&
             !(rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)) {
             err |= vmaf_feature_extractor_context_flush(rfe.fex_ctx[i], vmaf->feature_collector);

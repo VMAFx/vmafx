@@ -57,6 +57,11 @@ enum VmafFeatureExtractorFlags {
      * the runtime. The bit number is reserved here so the runtime PR
      * can adopt it without an enum reshuffle. */
     VMAF_FEATURE_EXTRACTOR_HIP = 1 << 6,
+    /* Metal runtime (T8-1 / ADR-0421). Set on every registered
+     * Obj-C++ extractor under feature/metal/ so that the serial
+     * flush path drains their final-frame collect() — mirrors the
+     * HIP / SYCL drain branches in flush_context_serial. */
+    VMAF_FEATURE_EXTRACTOR_METAL = 1 << 7,
 };
 
 typedef struct VmafFeatureExtractor {
