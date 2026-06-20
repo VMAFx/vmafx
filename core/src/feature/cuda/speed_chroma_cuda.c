@@ -807,6 +807,7 @@ fail_after_pop:
 
 fail_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
+    free_cuda_buffers(s, cu_f);
     return -EIO;
 
 fail:

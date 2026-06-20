@@ -557,6 +557,7 @@ free_all:
     return err;
 fail_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
+    free_cuda_buffers_st(s, cu_f);
     return -EIO;
 fail:
     return -EIO;

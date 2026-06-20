@@ -1517,7 +1517,9 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         .speed_nn_floor = s->speed_temporal_nn_floor,
     };
 
-    speed_init(&s->speed_state, &s->speed_options, w, h);
+    int speed_err = speed_init(&s->speed_state, &s->speed_options, w, h);
+    if (speed_err)
+        return speed_err;
 
     size_t float_stride = s->speed_state.float_stride;
     size_t frame_size = float_stride * h;
