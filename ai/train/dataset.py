@@ -27,6 +27,7 @@ The split is deterministic: the hold-out source name is the only knob.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +48,13 @@ except ImportError:  # pragma: no cover - exercised only on stripped CI envs
 from ..data.feature_extractor import DEFAULT_FEATURES, FeatureExtractionResult, extract_features
 from ..data.netflix_loader import NetflixPair, iter_pairs, load_or_compute
 from ..data.scores import TeacherScores, teacher_scores
+
+_LOG = logging.getLogger(__name__)
+
+# A 1-2 frame feature/teacher mismatch is a benign encode/decode boundary
+# effect; a larger gap means extraction and the teacher disagree on the clip,
+# so truncating to the shorter would silently drop/misalign training frames.
+_FRAME_COUNT_TOLERANCE = 2
 
 DEFAULT_VAL_SOURCE = "Tennis"
 
@@ -114,7 +122,17 @@ def _payload_to_arrays(
 ) -> tuple[np.ndarray, np.ndarray]:
     feats = FeatureExtractionResult.from_jsonable(payload["features"])
     teacher = TeacherScores.from_jsonable(payload["scores"])
-    n = min(feats.per_frame.shape[0], teacher.per_frame.shape[0])
+    n_feat = feats.per_frame.shape[0]
+    n_teacher = teacher.per_frame.shape[0]
+    n = min(n_feat, n_teacher)
+    if abs(n_feat - n_teacher) > _FRAME_COUNT_TOLERANCE:
+        _LOG.warning(
+            "frame-count divergence: features=%d teacher=%d (truncating to %d) "
+            "— a large gap signals a misaligned clip; check extraction",
+            n_feat,
+            n_teacher,
+            n,
+        )
     return feats.per_frame[:n], teacher.per_frame[:n]
 
 

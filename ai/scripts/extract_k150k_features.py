@@ -1357,6 +1357,23 @@ def main() -> int:
     pending = [c for c in clips if c.name not in done_set]
     staging_path = _staging_path(args.out)
 
+    # --limit is applied to the sorted clip list BEFORE the resume filter, so a
+    # batched resume that passes --limit=batch_size silently processes nothing
+    # once the first batch is done. Surface that footgun rather than letting the
+    # run look "complete" with zero work. For batched resume pass
+    # --limit (done_count + batch_size).
+    if args.limit is not None and done_set:
+        _limited_already_done = sum(1 for c in clips if c.name in done_set)
+        if _limited_already_done:
+            print(
+                f"[k150k] NOTE: --limit {args.limit} was applied before the resume "
+                f"filter; {_limited_already_done} of the first {len(clips)} clips are "
+                f"already done, so only {len(pending)} will be processed this run. "
+                "For batched resume pass --limit (done_count + batch_size).",
+                file=sys.stderr,
+                flush=True,
+            )
+
     print(
         f"[k150k] total={len(clips)} done={len(done_set)} pending={len(pending)} "
         f"cuda={'yes' if use_cuda else 'no'} "

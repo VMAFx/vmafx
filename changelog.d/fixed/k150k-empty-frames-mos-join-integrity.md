@@ -10,5 +10,11 @@
   extension mismatch made **every** label `NaN` with no validation,
   training the regressor on garbage. The join now falls back to the file
   stem, hard-fails the catastrophic zero-coverage case before any GPU
-  time is spent, and warns on partial coverage. No golden-data or
-  C-library impact (training harness only).
+  time is spent, and warns on partial coverage. Two further retrain-path
+  guards: the K150K `--limit` flag now prints a runtime NOTE when it
+  slices off already-done clips before the resume filter (the documented
+  batched-resume footgun), and `ai/train/dataset.py` logs a warning when
+  a clip's feature/teacher frame counts diverge by more than two before
+  truncating to the shorter (a large gap silently drops/misaligns
+  training frames). No golden-data or C-library impact (training harness
+  only).
