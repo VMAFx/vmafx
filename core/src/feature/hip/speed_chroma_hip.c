@@ -609,8 +609,10 @@ static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_f
     ALLOC_A(h_qt_scratch, indterm_bytes);
 #undef ALLOC_A
 
-    if (!s->h_plane_ref || !s->h_plane_dis || !s->h_eigenvalues || !s->h_Q || !s->h_R)
-        return -ENOMEM;
+    if (!s->h_plane_ref || !s->h_plane_dis || !s->h_eigenvalues || !s->h_Q || !s->h_R) {
+        err = -ENOMEM;
+        goto free_cpu;
+    }
 
 #ifdef HAVE_HIPCC
     err = sc_hip_module_load(s);
@@ -662,8 +664,8 @@ free_module:
         (void)hipModuleUnload(s->module);
         s->module = NULL;
     }
-free_cpu:
 #endif /* HAVE_HIPCC */
+free_cpu:
     aligned_free(s->h_plane_ref);
     aligned_free(s->h_plane_dis);
     aligned_free(s->h_eigenvalues);

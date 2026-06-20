@@ -553,8 +553,10 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
 #undef ALLOC_A
 
     if (!s->h_ref[0] || !s->h_ref[1] || !s->h_dis[0] || !s->h_dis[1] || !s->h_eigenvalues ||
-        !s->h_Q || !s->h_R)
-        return -ENOMEM;
+        !s->h_Q || !s->h_R) {
+        err = -ENOMEM;
+        goto free_cpu;
+    }
 
 #ifdef HAVE_HIPCC
     err = st_hip_module_load(s);
@@ -605,8 +607,8 @@ free_module:
         (void)hipModuleUnload(s->module);
         s->module = NULL;
     }
-free_cpu:
 #endif /* HAVE_HIPCC */
+free_cpu:
     aligned_free(s->h_ref[0]);
     aligned_free(s->h_ref[1]);
     aligned_free(s->h_dis[0]);
