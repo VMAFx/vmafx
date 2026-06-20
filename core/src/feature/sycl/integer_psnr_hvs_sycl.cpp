@@ -425,11 +425,14 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->height[0] = h;
     switch (pix_fmt) {
     case VMAF_PIX_FMT_YUV420P:
-        s->width[1] = s->width[2] = w >> 1;
-        s->height[1] = s->height[2] = h >> 1;
+        /* CEILING division to match picture.c / CPU / CUDA / HIP; floor (w>>1)
+         * drops the last chroma 8x8 strip on odd-dimension frames -> wrong
+         * psnr_hvs_cb/cr/psnr_hvs scores. */
+        s->width[1] = s->width[2] = (w + 1u) >> 1;
+        s->height[1] = s->height[2] = (h + 1u) >> 1;
         break;
     case VMAF_PIX_FMT_YUV422P:
-        s->width[1] = s->width[2] = w >> 1;
+        s->width[1] = s->width[2] = (w + 1u) >> 1;
         s->height[1] = s->height[2] = h;
         break;
     case VMAF_PIX_FMT_YUV444P:
