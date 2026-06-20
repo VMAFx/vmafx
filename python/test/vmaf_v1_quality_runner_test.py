@@ -55,6 +55,9 @@ class VmafV1QualityRunnerTest(MyTestCase):
         )
         self.assertAlmostEqual(results[0]["VMAFEXEC_score"], 82.81605935416667, places=4)
 
+    @unittest.skip(
+        "ADR-0337: motion_five_frame_window (HFR models) not yet plumbed into C; see ENOTSUP"
+    )
     def test_v1016_integer_hfr_1080_3d0H_exec(self):
         _, _, asset, asset_original = set_default_576_324_videos_for_testing()
         self.runner = VmafexecQualityRunner(
@@ -133,6 +136,9 @@ class VmafV1QualityRunnerTest(MyTestCase):
         )
         self.assertAlmostEqual(results[0]["VMAFEXEC_score"], 92.26304791666666, places=4)
 
+    @unittest.skip(
+        "ADR-0337: motion_five_frame_window (HFR models) not yet plumbed into C; see ENOTSUP"
+    )
     def test_v1016_integer_hfr_2160_3d0H_exec(self):
         _, _, asset, asset_original = set_default_576_324_videos_for_testing()
         self.runner = VmafexecQualityRunner(
@@ -249,6 +255,9 @@ class VmafV1QualityRunnerTest(MyTestCase):
         )
         self.assertAlmostEqual(results[0]["VMAFEXEC_score"], 85.9211639375, places=4)
 
+    @unittest.skip(
+        "ADR-0337: motion_five_frame_window (HFR models) not yet plumbed into C; see ENOTSUP"
+    )
     def test_v1016_integer_hfr_2160_1d5H_exec(self):
         _, _, asset, asset_original = set_default_576_324_videos_for_testing()
         self.runner = VmafexecQualityRunner(
@@ -287,6 +296,9 @@ class VmafV1QualityRunnerTest(MyTestCase):
         )
         self.assertAlmostEqual(results[0]["VMAFEXEC_score"], 84.64331647916667, places=4)
 
+    @unittest.skip(
+        "ADR-0337: motion_five_frame_window (HFR models) not yet plumbed into C; see ENOTSUP"
+    )
     def test_v1016_integer_hfr_1080_5d0H_exec(self):
         _, _, asset, asset_original = set_default_576_324_videos_for_testing()
         self.runner = VmafexecQualityRunner(
