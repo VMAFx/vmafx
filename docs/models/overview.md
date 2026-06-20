@@ -1,6 +1,10 @@
 <!-- markdownlint-disable MD013 -->
 # Models
 
+> **New: VMAF v1 (v1.0.16).** A newer generation of SDR models (ported from
+> Netflix upstream `4718b4f5f`) is documented separately in
+> [VMAF v1 (v1.0.16)](v1.md). This page covers the previous generation (v0).
+
 This repository offers a number of pre-trained VMAF models to be used in different scenarios. Besides the default VMAF model which predicts the quality of a video displayed on a HDTV in a living-room viewing condition, this repository also includes a number of additional models, covering mobile phone and 4KTV viewing conditions.
 
 ## Predict Quality on a 1080p HDTV screen at 3H

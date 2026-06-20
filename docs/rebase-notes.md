@@ -139,6 +139,52 @@ Rebase impact: **none on upstream** — fork-local CI config only. Touches
 `python/tox.ini` (envlist `py311`→`py314`, matching the CI `setup-python` 3.14.5,
 since the fork's `requirements.txt` deps now require ≥3.12) plus a changelog
 fragment + state.md row. No source or test code changed.
+## feat/upstream-v1.0.16-models (2026-06-20)
+Rebase impact: **low (additive model data + one C registry block + one meson
+embed block; no public-header / CLI / ffmpeg-patch / golden-gate change)**.
+Verbatim port of Netflix upstream commit **`4718b4f5f`** ("Add VMAF v1.0.16 SDR
+models, documentation, and tests"). Because it is a pure upstream port, it is
+exempt from the ADR-0108 six-deliverable rule (CLAUDE §12 r11); the changelog
+fragment + this rebase note are still provided.
+
+What was ported and how it was adapted to the fork's diverged layout
+(ADR-0700 `libvmaf/` → `core/`):
+
+- `libvmaf/src/model.c` → `core/src/model.c`: added the 8 `extern` decls +
+  8 `built_in_models[]` registry entries, mirroring the existing
+  `vmaf_v0.6.1`/`vmaf_4k_v0.6.1neg` idiom byte-for-byte (the fork's struct is
+  the same `VmafBuiltInModel {version, data, data_len}`).
+- `libvmaf/src/meson.build` → `core/src/meson.build`: added two `foreach`
+  blocks embedding the v1.0.16 + v1.0.16_hfr JSONs via the same
+  `xxd -i -n src_@PLAINNAME@` `custom_target` the fork already uses for the v0
+  models. The v1 models live in their own `model/vmaf_v1.0.16{,_hfr}/`
+  subdirectories, so a dedicated dir prefix is used (matching upstream).
+- `model/vmaf_v1.0.16/*.json` + `model/vmaf_v1.0.16_hfr/*.json` (8 files):
+  copied verbatim via `git checkout 4718b4f5f -- …`.
+- `python/test/vmaf_v1_quality_runner_test.py`: copied verbatim (path NOT
+  renamed). 46 new golden assertions; **no pre-existing assertion touched**.
+- Upstream's `resource/doc/models_v1.md` + the `models.md`→`models_v0.md`
+  rename + the README "News" line do **not** map: the fork has no
+  `resource/doc/` model docs (it consolidated them under `docs/models/`), so
+  the new doc lives at `docs/models/v1.md` (added to the mkdocs nav, with a
+  cross-link from `docs/models/overview.md`). The README change is moot — the
+  fork's README diverged and no longer links `resource/doc/models.md`.
+
+**Deliberately NOT ported (rebase-sensitive — re-check on the next upstream
+sync):** the upstream commit also bundled an unrelated feature-source reorg in
+`meson.build` (moving `speed.c`, `common/convolution.c`, `vif_tools.c` out of
+the `float_enabled` block into the always-on list). The fork already wires those
+sources differently, so applying the upstream hunk would conflict / double-list.
+If a future sync touches that region, reconcile against the fork's current
+`libvmaf_feature_sources` layout, not the upstream diff.
+
+**Known fork gap (load-bearing invariant):** the 4 `_hfr` models embed and
+register but **cannot be scored** until `motion_five_frame_window=true` +
+`motion_moving_average=true` are implemented (the `prev_prev_ref` 5-frame
+plumbing deferred per **ADR-0337**). The 4 non-HFR models score correctly
+(1080p 3H == upstream golden VMAF `82.816059`). Do not "fix" the HFR runtime
+error by deleting the option from the model JSONs — the JSONs are verbatim
+Netflix data; the fix is to land the 5-frame motion plumbing.
 
 ## feat/golusoris-tune (2026-06-15)
 Rebase impact: **low (Go-only, additive + in-place rewrite of one binary's
