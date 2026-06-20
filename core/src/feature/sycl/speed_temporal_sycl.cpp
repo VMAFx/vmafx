@@ -51,39 +51,53 @@ constexpr uint32_t SOLVE_WG = 32u;
 /* SYCL GPU kernels (identical to speed_chroma_sycl.cpp)             */
 /* ------------------------------------------------------------------ */
 
+/* Kernel 1: means[25] (one global scalar value per element)
+ *
+ * CPU parity (compute_mean, called from compute_covariance_matrix): each of
+ * the 25 means is over a single GLOBAL window across the whole truncated plane
+ * at start (er, ec) — NOT per-tile. The historic per-tile origin
+ * (tile_y*5 + er) over-read the plane and produced 25*num_blocks block-local
+ * means, giving a wrong covariance and ~7x-low SpEED scores. One work-item per
+ * element position writes means[elem] (scalar). means[] stays over-allocated
+ * (25*num_blocks); only [0, 25) are written/read now. */
 static void launch_means(sycl::queue &q, const float *plane, float *means, uint32_t op_w,
                          uint32_t stride_px, uint32_t num_blocks_h, uint32_t num_blocks,
                          uint32_t submatrix_w, uint32_t submatrix_h)
 {
-    const size_t global = ((num_blocks + MEANS_WG - 1u) / MEANS_WG) * MEANS_WG;
+    (void)op_w;
+    (void)num_blocks_h;
+    (void)num_blocks;
+    const size_t global = ((SP_ELEMENTS + MEANS_WG - 1u) / MEANS_WG) * MEANS_WG;
     q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::nd_range<1>(global, MEANS_WG), [=](sycl::nd_item<1> it) {
-            const uint32_t tile_idx = (uint32_t)it.get_global_id(0);
-            if (tile_idx >= num_blocks)
+            const uint32_t elem = (uint32_t)it.get_global_id(0);
+            if (elem >= SP_ELEMENTS)
                 return;
-            const uint32_t tile_x = tile_idx % num_blocks_h;
-            const uint32_t tile_y = tile_idx / num_blocks_h;
-            for (uint32_t elem = 0; elem < SP_ELEMENTS; ++elem) {
-                const uint32_t er = elem / SP_BLOCK_SIZE;
-                const uint32_t ec = elem % SP_BLOCK_SIZE;
-                const uint32_t sr = tile_y * SP_BLOCK_SIZE + er;
-                const uint32_t sc_col = tile_x * SP_BLOCK_SIZE + ec;
-                double acc = 0.0;
-                for (uint32_t i = 0; i < submatrix_h; ++i)
-                    for (uint32_t j = 0; j < submatrix_w; ++j)
-                        acc += (double)plane[(sr + i) * stride_px + (sc_col + j)];
-                means[elem * num_blocks + tile_idx] =
-                    (float)(acc / (double)(submatrix_w * submatrix_h));
-            }
-            (void)op_w;
+            const uint32_t er = elem / SP_BLOCK_SIZE;
+            const uint32_t ec = elem % SP_BLOCK_SIZE;
+            double acc = 0.0;
+            for (uint32_t i = 0; i < submatrix_h; ++i)
+                for (uint32_t j = 0; j < submatrix_w; ++j)
+                    acc += (double)plane[(er + i) * stride_px + (ec + j)];
+            means[elem] = (float)(acc / (double)(submatrix_w * submatrix_h));
         });
     });
 }
 
+/* Kernel 2: covariance matrix (625 work-groups, one per (x_index, y_index))
+ *
+ * CPU parity (compute_covariance): one GLOBAL submatrix sweep with the scalar
+ * global means, divided by N once. The historic per-tile loop (displaced
+ * origins tile_y*5 + xr, per-tile means, per-tile /N) summed num_blocks
+ * block-local covariances instead — wrong matrix, ~7x-low scores. The work-
+ * group's threads stride over the submatrix_h × submatrix_w pixels at
+ * (xr+i, xc+j)/(yr+i, yc+j), reduce in local memory, and divide by N once. */
 static void launch_cov(sycl::queue &q, const float *plane, const float *means, float *cov_mat,
                        uint32_t stride_px, uint32_t num_blocks_h, uint32_t num_blocks,
                        uint32_t submatrix_w, uint32_t submatrix_h)
 {
+    (void)num_blocks_h;
+    (void)num_blocks;
     const size_t total_wg = SP_ELEMENTS * SP_ELEMENTS;
     q.submit([&](sycl::handler &cgh) {
         sycl::local_accessor<double, 1> s_partial(sycl::range<1>(COV_WG), cgh);
@@ -91,32 +105,22 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
             const uint32_t x_index = (uint32_t)(it.get_group(0) / SP_ELEMENTS);
             const uint32_t y_index = (uint32_t)(it.get_group(0) % SP_ELEMENTS);
             const uint32_t tid = (uint32_t)it.get_local_id(0);
-            s_partial[tid] = 0.0;
-            it.barrier(sycl::access::fence_space::local_space);
 
             const uint32_t xr = x_index / SP_BLOCK_SIZE;
             const uint32_t xc = x_index % SP_BLOCK_SIZE;
             const uint32_t yr = y_index / SP_BLOCK_SIZE;
             const uint32_t yc = y_index % SP_BLOCK_SIZE;
+            const double mean_x = (double)means[x_index];
+            const double mean_y = (double)means[y_index];
 
+            const uint32_t total = submatrix_h * submatrix_w;
             double local_sum = 0.0;
-            for (uint32_t tile = tid; tile < num_blocks; tile += COV_WG) {
-                const uint32_t tx = tile % num_blocks_h;
-                const uint32_t ty = tile / num_blocks_h;
-                const double mx = (double)means[x_index * num_blocks + tile];
-                const double my = (double)means[y_index * num_blocks + tile];
-                const uint32_t srx = ty * SP_BLOCK_SIZE + xr;
-                const uint32_t scx = tx * SP_BLOCK_SIZE + xc;
-                const uint32_t sry = ty * SP_BLOCK_SIZE + yr;
-                const uint32_t scy = tx * SP_BLOCK_SIZE + yc;
-                double cov = 0.0;
-                for (uint32_t i = 0; i < submatrix_h; ++i)
-                    for (uint32_t j = 0; j < submatrix_w; ++j) {
-                        double vx = (double)plane[(srx + i) * stride_px + (scx + j)];
-                        double vy = (double)plane[(sry + i) * stride_px + (scy + j)];
-                        cov += (vx - mx) * (vy - my);
-                    }
-                local_sum += cov / (double)(submatrix_w * submatrix_h);
+            for (uint32_t p = tid; p < total; p += COV_WG) {
+                const uint32_t i = p / submatrix_w;
+                const uint32_t j = p % submatrix_w;
+                const double vx = (double)plane[(xr + i) * stride_px + (xc + j)];
+                const double vy = (double)plane[(yr + i) * stride_px + (yc + j)];
+                local_sum += (vx - mean_x) * (vy - mean_y);
             }
             s_partial[tid] = local_sum;
             it.barrier(sycl::access::fence_space::local_space);
@@ -127,7 +131,7 @@ static void launch_cov(sycl::queue &q, const float *plane, const float *means, f
                 it.barrier(sycl::access::fence_space::local_space);
             }
             if (tid == 0u)
-                cov_mat[x_index * SP_ELEMENTS + y_index] = (float)s_partial[0];
+                cov_mat[x_index * SP_ELEMENTS + y_index] = (float)(s_partial[0] / (double)total);
         });
     });
 }
@@ -185,10 +189,16 @@ static void launch_solve(sycl::queue &q, const float *R, float *rhs, uint32_t nu
     });
 }
 
-static void launch_score(sycl::queue &q, const float *eigenvalues, const float *ref_sol,
-                         const float *dis_sol, const float *ref_indterm, const float *dis_indterm,
-                         float *ref_ent, float *ref_var, float *dis_ent, float *dis_var,
-                         uint32_t num_blocks, float sigma_nn)
+/* Kernel 5: per-tile entropy + score
+ *
+ * The CPU reference (est_params in speed.c) eigendecomposes SEPARATE ref and
+ * dis covariance matrices, so the ref entropy uses ref_eigenvalues and the dis
+ * entropy uses dis_eigenvalues — they are NOT shared. The previous single-
+ * eigenvalue-array signature reused the dis eigenvalues for both entropies. */
+static void launch_score(sycl::queue &q, const float *ref_eigenvalues, const float *dis_eigenvalues,
+                         const float *ref_sol, const float *dis_sol, const float *ref_indterm,
+                         const float *dis_indterm, float *ref_ent, float *ref_var, float *dis_ent,
+                         float *dis_var, uint32_t num_blocks, float sigma_nn)
 {
     const size_t global = ((num_blocks + SCORE_WG - 1u) / SCORE_WG) * SCORE_WG;
     const float log2e_2pi = sycl::log2(2.0f * 3.14159265358979323846f * 2.71828182845904523536f);
@@ -211,9 +221,10 @@ static void launch_score(sycl::queue &q, const float *eigenvalues, const float *
             float re = 0.0f;
             float de = 0.0f;
             for (uint32_t k = 0; k < SP_ELEMENTS; ++k) {
-                float lk = eigenvalues[k] < 0.0f ? 0.0f : eigenvalues[k];
-                re += sycl::log2(lk * rv + sigma_nn) + log2e_2pi;
-                de += sycl::log2(lk * dv + sigma_nn) + log2e_2pi;
+                float ref_lk = ref_eigenvalues[k] < 0.0f ? 0.0f : ref_eigenvalues[k];
+                float dis_lk = dis_eigenvalues[k] < 0.0f ? 0.0f : dis_eigenvalues[k];
+                re += sycl::log2(ref_lk * rv + sigma_nn) + log2e_2pi;
+                de += sycl::log2(dis_lk * dv + sigma_nn) + log2e_2pi;
             }
             ref_ent[tile] = re;
             dis_ent[tile] = de;
@@ -245,7 +256,8 @@ struct SpeedTemporalSyclState {
     float *d_sol_ref;
     float *d_sol_dis;
     float *d_R;
-    float *d_eigenvalues;
+    float *d_eigenvalues;     /* holds dis eigenvalues after the dis linalg */
+    float *d_eigenvalues_ref; /* ref eigenvalues, stashed before dis linalg */
     float *d_ref_ent;
     float *d_ref_var;
     float *d_dis_ent;
@@ -309,6 +321,7 @@ static void free_sycl_state_st(SpeedTemporalSyclState *s)
     FREE_D(s->d_sol_dis);
     FREE_D(s->d_R);
     FREE_D(s->d_eigenvalues);
+    FREE_D(s->d_eigenvalues_ref);
     FREE_D(s->d_ref_ent);
     FREE_D(s->d_ref_var);
     FREE_D(s->d_dis_ent);
@@ -404,9 +417,11 @@ static int score_aggregate_st(SpeedTemporalSyclState *s, float *score_out)
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const float sigma_nn = (float)s->opt.speed_sigma_nn;
 
-    launch_score(q, s->d_eigenvalues, s->d_sol_ref, s->d_sol_dis, s->d_indterm_ref,
-                 s->d_indterm_dis, s->d_ref_ent, s->d_ref_var, s->d_dis_ent, s->d_dis_var,
-                 num_blocks, sigma_nn);
+    /* The kernel reads d_eigenvalues_ref for the ref entropy and d_eigenvalues
+     * (now holding the dis eigenvalues) for the dis entropy. */
+    launch_score(q, s->d_eigenvalues_ref, s->d_eigenvalues, s->d_sol_ref, s->d_sol_dis,
+                 s->d_indterm_ref, s->d_indterm_dis, s->d_ref_ent, s->d_ref_var, s->d_dis_ent,
+                 s->d_dis_var, num_blocks, sigma_nn);
 
     const size_t ab = (size_t)num_blocks * sizeof(float);
     q.memcpy(s->h_ref_ent, s->d_ref_ent, ab);
@@ -564,6 +579,7 @@ static int init_temporal_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
     ALLOC_D(d_sol_dis, indterm_bytes);
     ALLOC_D(d_R, cov_bytes);
     ALLOC_D(d_eigenvalues, SP_ELEMENTS * sizeof(float));
+    ALLOC_D(d_eigenvalues_ref, SP_ELEMENTS * sizeof(float));
     ALLOC_D(d_ref_ent, score_bytes);
     ALLOC_D(d_ref_var, score_bytes);
     ALLOC_D(d_dis_ent, score_bytes);
@@ -652,22 +668,28 @@ static int extract_temporal_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
                                         s->float_stride);
     aligned_free(tmp_filter);
 
-    /* GPU pipeline: reference diff. */
+    sycl::queue &q = *(sycl::queue *)vmaf_sycl_get_queue_ptr(s->sycl_state);
+
+    /* GPU pipeline: reference diff. run_channel_st uploads ref eigenvalues into
+     * the shared s->d_eigenvalues buffer. */
     int err = run_channel_st(s, s->h_ref[other], s->h_indterm_ref, s->d_indterm_ref, s->d_sol_ref);
     if (err)
         return err;
 
-    /* Save reference covariance basis (SpEED uses ref basis for both). */
-    float saved_cov[SP_ELEMENTS * SP_ELEMENTS];
-    memcpy(saved_cov, s->h_cov_mat, sizeof(saved_cov));
+    /* Stash the reference eigenvalues aside before the distorted linalg pass
+     * overwrites s->d_eigenvalues. The CPU reference (est_params in speed.c)
+     * computes SEPARATE ref and dis covariance + eigenvalues; the score kernel
+     * needs both. run_channel_st q.wait()'d its eigenvalue H2D, so the DtoD copy
+     * is ordered after it. */
+    q.memcpy(s->d_eigenvalues_ref, s->d_eigenvalues, SP_ELEMENTS * sizeof(float));
+    q.wait();
 
-    /* GPU pipeline: distorted diff — reuses d_cov_mat allocation. */
+    /* GPU pipeline: distorted diff — keeps the DIS covariance in h_cov_mat (no
+     * save/restore of the ref covariance) and uploads dis eigenvalues into
+     * s->d_eigenvalues. */
     err = run_channel_st(s, s->h_dis[other], s->h_indterm_dis, s->d_indterm_dis, s->d_sol_dis);
     if (err)
         return err;
-
-    /* Restore reference cov so score kernel uses consistent eigenvalues. */
-    memcpy(s->h_cov_mat, saved_cov, sizeof(saved_cov));
 
     float score = 0.0f;
     err = score_aggregate_st(s, &score);
