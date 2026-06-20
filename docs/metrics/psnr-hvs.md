@@ -46,6 +46,18 @@ core/build/tools/vmaf \
     --no_prediction --feature 'psnr_hvs:enable_chroma=true' --output /dev/stdout
 ```
 
+## Backend parity (chroma plane dimensions)
+
+`psnr_hvs` runs on CPU, CUDA, HIP, and SYCL with runtime backend selection.
+For chroma planes (`enable_chroma=true`) on subsampled formats (YUV420 /
+YUV422) whose luma width or height is **odd**, each chroma plane dimension is
+the **ceiling** of the half-resolution, not the floor — e.g. a 1921-wide 4:2:0
+frame has a 961-sample-wide chroma plane (`(1921 + 1) / 2`), not 960. All
+backends compute the ceiling so that `psnr_hvs_cb` / `psnr_hvs_cr` agree across
+CPU / CUDA / HIP / SYCL on odd-dimension frames. (The SYCL path previously
+floored the chroma dimensions, dropping the last chroma column/row on odd
+inputs and diverging from the other backends.)
+
 ## See also
 
 - [Features](features.md) - full feature extractor reference
