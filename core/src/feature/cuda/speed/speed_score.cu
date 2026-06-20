@@ -280,7 +280,8 @@ __global__ void speed_solve_kernel(const float *__restrict__ R, /* [25×25] uppe
  * CPU reference: update_entropy, get_speed_score.
  *
  * Inputs:
- *   eigenvalues[25] — from CPU eigendecomp of the covariance matrix.
+ *   ref_eigenvalues[25] — from CPU eigendecomp of the REFERENCE covariance.
+ *   dis_eigenvalues[25] — from CPU eigendecomp of the DISTORTED covariance.
  *   ref_sol[25 × num_blocks] — linear system solution for reference.
  *   dis_sol[25 × num_blocks] — linear system solution for distorted.
  *   ref_indterm[25 × num_blocks] — independent terms for reference.
@@ -295,7 +296,8 @@ __global__ void speed_solve_kernel(const float *__restrict__ R, /* [25×25] uppe
 #define SPEED_PI_F (3.14159265358979323846f)
 #define SPEED_E_F (2.71828182845904523536f)
 
-__global__ void speed_score_kernel(const float *__restrict__ eigenvalues, /* [25] */
+__global__ void speed_score_kernel(const float *__restrict__ ref_eigenvalues, /* [25] */
+                                   const float *__restrict__ dis_eigenvalues, /* [25] */
                                    const float *__restrict__ ref_sol,     /* [25 × num_blocks] */
                                    const float *__restrict__ dis_sol,     /* [25 × num_blocks] */
                                    const float *__restrict__ ref_indterm, /* [25 × num_blocks] */
@@ -328,13 +330,17 @@ __global__ void speed_score_kernel(const float *__restrict__ eigenvalues, /* [25
 
     /* Step 9 (CPU: update_entropy for each eigenvalue k):
      * entropy = sum_k { log2(L_k * var + sigma_nn) + log2(2πe) }
-     * where L_k = max(0, eigenvalues[k]). */
+     * where L_k = max(0, eigenvalues[k]). The CPU reference (est_params in
+     * speed.c) eigendecomposes SEPARATE ref and dis covariance matrices, so
+     * the ref entropy uses ref_eigenvalues and the dis entropy uses
+     * dis_eigenvalues — they are NOT shared. */
     float ref_ent = 0.0f;
     float dis_ent = 0.0f;
     for (uint32_t k = 0; k < SP_ELEMENTS; ++k) {
-        float lk = eigenvalues[k] < 0.0f ? 0.0f : eigenvalues[k];
-        ref_ent += log2f(lk * ref_var + sigma_nn) + log2e_2pi;
-        dis_ent += log2f(lk * dis_var + sigma_nn) + log2e_2pi;
+        float ref_lk = ref_eigenvalues[k] < 0.0f ? 0.0f : ref_eigenvalues[k];
+        float dis_lk = dis_eigenvalues[k] < 0.0f ? 0.0f : dis_eigenvalues[k];
+        ref_ent += log2f(ref_lk * ref_var + sigma_nn) + log2e_2pi;
+        dis_ent += log2f(dis_lk * dis_var + sigma_nn) + log2e_2pi;
     }
     ref_entropies[tile] = ref_ent;
     dis_entropies[tile] = dis_ent;

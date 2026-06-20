@@ -89,7 +89,8 @@ typedef struct SpeedTemporalCudaState {
     CUdeviceptr d_sol_ref;
     CUdeviceptr d_sol_dis;
     CUdeviceptr d_R;
-    CUdeviceptr d_eigenvalues;
+    CUdeviceptr d_eigenvalues;     /* holds dis eigenvalues after the dis linalg */
+    CUdeviceptr d_eigenvalues_ref; /* ref eigenvalues, stashed before dis linalg */
     CUdeviceptr d_ref_entropies;
     CUdeviceptr d_ref_variances;
     CUdeviceptr d_dis_entropies;
@@ -250,6 +251,7 @@ static void free_cuda_buffers_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
     FREE_D(s->d_sol_dis);
     FREE_D(s->d_R);
     FREE_D(s->d_eigenvalues);
+    FREE_D(s->d_eigenvalues_ref);
     FREE_D(s->d_ref_entropies);
     FREE_D(s->d_ref_variances);
     FREE_D(s->d_dis_entropies);
@@ -391,17 +393,11 @@ static int run_score_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *s
 
     {
         const uint32_t grid = (num_blocks + ST_SCORE_BLOCK - 1u) / ST_SCORE_BLOCK;
-        void *args[] = {(void *)&s->d_eigenvalues,
-                        (void *)&s->d_sol_ref,
-                        (void *)&s->d_sol_dis,
-                        (void *)&s->d_indterm_ref,
-                        (void *)&s->d_indterm_dis,
-                        (void *)&s->d_ref_entropies,
-                        (void *)&s->d_ref_variances,
-                        (void *)&s->d_dis_entropies,
-                        (void *)&s->d_dis_variances,
-                        (void *)&num_blocks,
-                        (void *)&sigma_nn};
+        void *args[] = {
+            (void *)&s->d_eigenvalues_ref, (void *)&s->d_eigenvalues,   (void *)&s->d_sol_ref,
+            (void *)&s->d_sol_dis,         (void *)&s->d_indterm_ref,   (void *)&s->d_indterm_dis,
+            (void *)&s->d_ref_entropies,   (void *)&s->d_ref_variances, (void *)&s->d_dis_entropies,
+            (void *)&s->d_dis_variances,   (void *)&num_blocks,         (void *)&sigma_nn};
         CHECK_CUDA_GOTO(cu_f,
                         cuLaunchKernel(s->func_score, grid, 1u, 1u, ST_SCORE_BLOCK, 1u, 1u, 0u,
                                        s->stream, args, NULL),
@@ -503,6 +499,7 @@ static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     ALLOC_D(d_sol_dis, indterm_bytes);
     ALLOC_D(d_R, cov_bytes);
     ALLOC_D(d_eigenvalues, ST_ELEMENTS * sizeof(float));
+    ALLOC_D(d_eigenvalues_ref, ST_ELEMENTS * sizeof(float));
     ALLOC_D(d_ref_entropies, score_bytes);
     ALLOC_D(d_ref_variances, score_bytes);
     ALLOC_D(d_dis_entropies, score_bytes);
@@ -657,21 +654,30 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     if (err)
         goto pop_ctx;
 
-    float saved_cov[ST_ELEMENTS * ST_ELEMENTS];
-    (void)memcpy(saved_cov, s->h_cov_mat, sizeof(saved_cov));
-
+    /* CPU eigendecomp + QR for the reference diff. Uploads ref eigenvalues
+     * into the shared s->d_eigenvalues buffer. */
     err = run_cpu_linalg_st(s, cu_f, s->h_indterm_ref, s->d_sol_ref);
     if (err)
         goto pop_ctx;
 
-    /* GPU pipeline for distorted diff. */
+    /* Stash the reference eigenvalues aside before the distorted linalg pass
+     * overwrites s->d_eigenvalues. The CPU reference (est_params in speed.c)
+     * computes SEPARATE ref and dis covariance + eigenvalues; the score kernel
+     * needs both. Synchronize first so the async eigenvalue H2D from
+     * run_cpu_linalg_st is complete before the DtoD copy. */
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), pop_ctx);
+    CHECK_CUDA_GOTO(
+        cu_f, cuMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, ST_ELEMENTS * sizeof(float)),
+        pop_ctx);
+
+    /* GPU pipeline for distorted diff (keeps the DIS covariance in h_cov_mat —
+     * no save/restore of the ref covariance). */
     err = run_gpu_pipeline_st(s, cu_f, s->h_dis[other], s->d_indterm_dis, plane_op_bytes);
     if (err)
         goto pop_ctx;
 
-    /* Restore reference cov (SpEED uses reference basis for both). */
-    (void)memcpy(s->h_cov_mat, saved_cov, sizeof(saved_cov));
-
+    /* CPU eigendecomp + QR for the distorted diff (uses the DIS cov_mat).
+     * Uploads dis eigenvalues into s->d_eigenvalues. */
     err = run_cpu_linalg_st(s, cu_f, s->h_indterm_dis, s->d_sol_dis);
     if (err)
         goto pop_ctx;

@@ -105,19 +105,23 @@ typedef struct SpeedChromaCudaState {
 
     /* Device buffers (per channel — reallocated for U and V separately
      * since they have the same dimensions in 4:2:0). */
-    CUdeviceptr d_plane;         /* downscaled float plane [op_h × stride_px] */
-    CUdeviceptr d_means;         /* [25 × num_blocks] float */
-    CUdeviceptr d_cov_mat;       /* [25 × 25] float */
-    CUdeviceptr d_indterm_ref;   /* [25 × num_blocks] float */
-    CUdeviceptr d_indterm_dis;   /* [25 × num_blocks] float */
-    CUdeviceptr d_sol_ref;       /* [25 × num_blocks] float (Q^T×indterm) */
-    CUdeviceptr d_sol_dis;       /* [25 × num_blocks] float */
-    CUdeviceptr d_R;             /* [25 × 25] float (uploaded from CPU QR) */
-    CUdeviceptr d_eigenvalues;   /* [25] float (uploaded from CPU eig) */
-    CUdeviceptr d_ref_entropies; /* [num_blocks] float */
-    CUdeviceptr d_ref_variances; /* [num_blocks] float */
-    CUdeviceptr d_dis_entropies; /* [num_blocks] float */
-    CUdeviceptr d_dis_variances; /* [num_blocks] float */
+    CUdeviceptr d_plane;           /* downscaled float plane [op_h × stride_px] */
+    CUdeviceptr d_means;           /* [25 × num_blocks] float */
+    CUdeviceptr d_cov_mat;         /* [25 × 25] float */
+    CUdeviceptr d_indterm_ref;     /* [25 × num_blocks] float */
+    CUdeviceptr d_indterm_dis;     /* [25 × num_blocks] float */
+    CUdeviceptr d_sol_ref;         /* [25 × num_blocks] float (Q^T×indterm) */
+    CUdeviceptr d_sol_dis;         /* [25 × num_blocks] float */
+    CUdeviceptr d_R;               /* [25 × 25] float (uploaded from CPU QR) */
+    CUdeviceptr d_eigenvalues;     /* [25] float (uploaded from CPU eig — holds
+                                  *  dis eigenvalues after the dis linalg pass) */
+    CUdeviceptr d_eigenvalues_ref; /* [25] float (ref eigenvalues, copied aside
+                                    *  before the dis linalg overwrites the
+                                    *  shared d_eigenvalues buffer) */
+    CUdeviceptr d_ref_entropies;   /* [num_blocks] float */
+    CUdeviceptr d_ref_variances;   /* [num_blocks] float */
+    CUdeviceptr d_dis_entropies;   /* [num_blocks] float */
+    CUdeviceptr d_dis_variances;   /* [num_blocks] float */
 
     /* Pinned host staging for cov_mat D2H (avoids paged copy latency). */
     float *h_cov_mat; /* [625] float, cuMemHostAlloc (pinned) */
@@ -271,6 +275,7 @@ static void free_cuda_buffers(SpeedChromaCudaState *s, CudaFunctions *cu_f)
     FREE_DPTR(s->d_sol_dis);
     FREE_DPTR(s->d_R);
     FREE_DPTR(s->d_eigenvalues);
+    FREE_DPTR(s->d_eigenvalues_ref);
     FREE_DPTR(s->d_ref_entropies);
     FREE_DPTR(s->d_ref_variances);
     FREE_DPTR(s->d_dis_entropies);
@@ -481,17 +486,11 @@ static int run_score_and_collect(SpeedChromaCudaState *s, CudaFunctions *cu_f, f
     /* GPU Kernel 5: per-tile entropy + variance. */
     {
         const uint32_t grid = (num_blocks + SC_SCORE_BLOCK - 1u) / SC_SCORE_BLOCK;
-        void *args[] = {(void *)&s->d_eigenvalues,
-                        (void *)&s->d_sol_ref,
-                        (void *)&s->d_sol_dis,
-                        (void *)&s->d_indterm_ref,
-                        (void *)&s->d_indterm_dis,
-                        (void *)&s->d_ref_entropies,
-                        (void *)&s->d_ref_variances,
-                        (void *)&s->d_dis_entropies,
-                        (void *)&s->d_dis_variances,
-                        (void *)&num_blocks,
-                        (void *)&sigma_nn};
+        void *args[] = {
+            (void *)&s->d_eigenvalues_ref, (void *)&s->d_eigenvalues,   (void *)&s->d_sol_ref,
+            (void *)&s->d_sol_dis,         (void *)&s->d_indterm_ref,   (void *)&s->d_indterm_dis,
+            (void *)&s->d_ref_entropies,   (void *)&s->d_ref_variances, (void *)&s->d_dis_entropies,
+            (void *)&s->d_dis_variances,   (void *)&num_blocks,         (void *)&sigma_nn};
         CHECK_CUDA_GOTO(cu_f,
                         cuLaunchKernel(s->func_score, grid, 1u, 1u, SC_SCORE_BLOCK, 1u, 1u, 0u,
                                        s->stream, args, NULL),
@@ -631,31 +630,38 @@ static int extract_channel(SpeedChromaCudaState *s, CudaFunctions *cu_f, VmafPic
     if (err)
         return err;
 
-    /* Save cov_mat (which run_gpu_pipeline populated in h_cov_mat). */
-    float saved_cov[SC_ELEMENTS * SC_ELEMENTS];
-    (void)memcpy(saved_cov, s->h_cov_mat, sizeof(saved_cov));
-
-    /* CPU eigendecomp + QR for reference. */
+    /* CPU eigendecomp + QR for reference. Uploads ref eigenvalues into the
+     * shared s->d_eigenvalues buffer. */
     err = run_cpu_linalg(s, cu_f, s->h_indterm_ref, s->d_sol_ref, NULL);
     if (err)
         return err;
 
-    /* GPU pipeline: means → cov → indterm for distorted. */
+    /* Stash the reference eigenvalues aside before the distorted linalg pass
+     * overwrites s->d_eigenvalues. The CPU reference (est_params in speed.c)
+     * computes SEPARATE ref and dis covariance + eigenvalues; the score kernel
+     * needs both. A synchronous DtoD copy is ordered against the prior async
+     * eigenvalue H2D on the same stream (run_cpu_linalg cuStreamSynchronize'd
+     * before returning when regular; the singular-path skips the solve but
+     * still uploads eigenvalues async — synchronize to be safe). */
+    CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->stream));
+    CHECK_CUDA_RETURN(
+        cu_f, cuMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, SC_ELEMENTS * sizeof(float)));
+
+    /* GPU pipeline: means → cov → indterm for distorted (keeps the DIS
+     * covariance in h_cov_mat — no save/restore of the ref covariance). */
     err = run_gpu_pipeline(s, cu_f, s->d_plane, s->d_indterm_dis, s->h_plane_dis, plane_op_bytes);
     if (err)
         return err;
 
-    /* Restore cov_mat and eigenvalues from reference (SpEED design: the
-     * linear system uses the reference covariance for both ref and dis
-     * to ensure the same basis). */
-    (void)memcpy(s->h_cov_mat, saved_cov, sizeof(saved_cov));
-
-    /* CPU eigendecomp + QR for distorted (uses saved ref cov_mat). */
+    /* CPU eigendecomp + QR for distorted (uses the DIS cov_mat). Uploads dis
+     * eigenvalues into s->d_eigenvalues. */
     err = run_cpu_linalg(s, cu_f, s->h_indterm_dis, s->d_sol_dis, NULL);
     if (err)
         return err;
 
-    /* GPU score kernel → aggregate → score_out. */
+    /* GPU score kernel → aggregate → score_out. The kernel reads
+     * d_eigenvalues_ref for the ref entropy and d_eigenvalues (now holding the
+     * dis eigenvalues) for the dis entropy. */
     return run_score_and_collect(s, cu_f, score_out);
 }
 
@@ -745,6 +751,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     ALLOC_DPTR(d_sol_dis, indterm_bytes);
     ALLOC_DPTR(d_R, cov_bytes);
     ALLOC_DPTR(d_eigenvalues, SC_ELEMENTS * sizeof(float));
+    ALLOC_DPTR(d_eigenvalues_ref, SC_ELEMENTS * sizeof(float));
     ALLOC_DPTR(d_ref_entropies, score_bytes);
     ALLOC_DPTR(d_ref_variances, score_bytes);
     ALLOC_DPTR(d_dis_entropies, score_bytes);
