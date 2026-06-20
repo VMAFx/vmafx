@@ -450,11 +450,13 @@ func runVmafScore(ctx context.Context, ref, dis string, width, height int, pixfm
 }
 
 // inferBackendFromPayload guesses the backend from the frame metrics count.
-// Heuristic (mirrors empirical metric counts per backend):
+// Mirrors the Python _infer_backend_from_payload for byte-parity:
 //   - 0 frames → cpu (safe default)
-//   - >= 30 metrics → vulkan (Vulkan backend emits the richest metric set)
-//   - <= 12 metrics → gpu  (generic GPU path; stripped metric set)
-//   - 13–29 metrics → cpu  (standard CPU feature set)
+//   - <= 12 metrics → gpu (generic GPU path; stripped metric set)
+//   - > 12 metrics → cpu  (standard CPU feature set)
+//
+// (ADR-0726 removed the Vulkan backend; the prior >=30→"vulkan" branch
+// emitted a value the Python side never produces — a parity violation.)
 func inferBackendFromPayload(payload map[string]any) string {
 	frames, _ := payload["frames"].([]any)
 	if len(frames) == 0 {
@@ -463,9 +465,6 @@ func inferBackendFromPayload(payload map[string]any) string {
 	first, _ := frames[0].(map[string]any)
 	metrics, _ := first["metrics"].(map[string]any)
 	n := len(metrics)
-	if n >= 30 {
-		return "vulkan"
-	}
 	if n <= 12 {
 		return "gpu"
 	}
@@ -1294,7 +1293,7 @@ var fexStructRe = regexp.MustCompile(
 
 var backendKeywords = []struct{ suffix, label string }{
 	{"_cuda", "cuda"}, {"_sycl", "sycl"},
-	{"_hip", "hip"}, {"_metal", "metal"}, {"_vulkan", "vulkan"},
+	{"_hip", "hip"}, {"_metal", "metal"},
 }
 
 func inferBackendFromSym(sym string) string {
@@ -1586,7 +1585,9 @@ func handleRunTunePerShot(ctx context.Context, args map[string]any) (any, error)
 		"--target-vmaf", strconv.FormatFloat(floatArg(args, "target_vmaf", 92.0), 'f', -1, 64),
 		"--encoder", strArg(args, "encoder", "libx264"),
 		"--pix-fmt", strArg(args, "pix_fmt", "yuv420p"),
-		"--format", format,
+		// NOTE: tune-per-shot has no --format flag (unlike `compare`); passing
+		// it made argparse error on every call. The `format` arg still selects
+		// how we parse the output below, matching the Python server.
 	}
 	if hasArg(args, "output") {
 		argv = append(argv, "--output", strArg(args, "output", ""))

@@ -32,6 +32,15 @@ Touches only fork-added CUDA feature extractors under
 adds NULL-guarded frees / cleanup-goto routing on init + submit failure
 paths only. No public-header, meson, CLI, ffmpeg-patch, or golden-gate
 impact, and success-path behaviour is unchanged.
+## fix/hip-chroma-mcp-parity — psnr_hip enable_chroma option + MCP Go/Python parity (2026-06-20)
+Rebase impact: **none on upstream** — all fork-local. Touches the fork-only HIP
+extractor (`core/src/feature/hip/integer_psnr_hip.c`: add an `enable_chroma`
+`VmafOption`), the fork-only Go MCP server (`cmd/vmafx-mcp/impl.go` +
+`impl_test.go`: drop the dead `vulkan` backend value, drop the unsupported
+`--format` from `tune-per-shot`), and the fork-only Python MCP server
+(`server.py`: `probe_backend` ValueError guard). No upstream Netflix/vmaf file is
+touched; no public C-API/CLI surface changes (the `enable_chroma` option already
+exists on the CPU/CUDA psnr twins).
 
 ## feat/golusoris-tune (2026-06-15)
 Rebase impact: **low (Go-only, additive + in-place rewrite of one binary's

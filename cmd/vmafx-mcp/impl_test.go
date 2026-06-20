@@ -197,18 +197,18 @@ func TestInferBackendFromPayload(t *testing.T) {
 	if got := inferBackendFromPayload(map[string]any{}); got != "cpu" {
 		t.Errorf("empty: got %q, want cpu", got)
 	}
-	// >=30 metrics → vulkan.
+	// >12 metrics → cpu (ADR-0726 removed the vulkan branch; matches Python).
 	metrics30 := map[string]any{}
 	for i := 0; i < 30; i++ {
 		metrics30[strFromInt(i)] = float64(i)
 	}
-	vulkanPayload := map[string]any{
+	highMetricPayload := map[string]any{
 		"frames": []any{
 			map[string]any{"metrics": metrics30},
 		},
 	}
-	if got := inferBackendFromPayload(vulkanPayload); got != "vulkan" {
-		t.Errorf("30 metrics: got %q, want vulkan", got)
+	if got := inferBackendFromPayload(highMetricPayload); got != "cpu" {
+		t.Errorf("30 metrics: got %q, want cpu", got)
 	}
 	// <=12 metrics → gpu.
 	metrics8 := map[string]any{}
@@ -246,7 +246,7 @@ func TestInferBackendFromSym(t *testing.T) {
 		{"adm2", "cpu"},
 		{"adm2_cuda", "cuda"},
 		{"vif_sycl", "sycl"},
-		{"motion_vulkan", "vulkan"},
+		{"motion_vulkan", "cpu"}, // ADR-0726: no _vulkan keyword → default cpu
 		{"adm_hip", "hip"},
 		{"vif_metal", "metal"},
 	}

@@ -99,7 +99,14 @@ typedef struct PsnrStateHip {
     VmafDictionary *feature_name_dict;
 } PsnrStateHip;
 
-static const VmafOption options[] = {{0}};
+static const VmafOption options[] = {{
+                                         .name = "enable_chroma",
+                                         .help = "enable calculation for chroma channels",
+                                         .offset = offsetof(PsnrStateHip, enable_chroma),
+                                         .type = VMAF_OPT_TYPE_BOOL,
+                                         .default_val.b = true,
+                                     },
+                                     {0}};
 
 #define PSNR_HIP_BX 16
 #define PSNR_HIP_BY 16
