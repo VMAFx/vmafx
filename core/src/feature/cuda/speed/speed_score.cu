@@ -79,30 +79,29 @@ __global__ void speed_means_kernel(const float *__restrict__ plane, /* downscale
                                    uint32_t submatrix_w,            /* submatrix_width     */
                                    uint32_t submatrix_h)            /* submatrix_height    */
 {
-    const uint32_t tile_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tile_idx >= num_blocks)
+    /* One thread per element position (er, ec) in the 5x5 block template.
+     * CPU parity (compute_mean, called from compute_covariance_matrix): each of
+     * the 25 means is over a single GLOBAL window across the whole truncated
+     * plane at start (er, ec) — NOT per-tile. The historic per-tile origin
+     * (tile_y*5+er) over-read the plane and produced 25*num_blocks block-local
+     * means, giving a wrong covariance and ~7x-low SpEED scores. means[] is
+     * over-allocated (25*num_blocks); only [0,25) are written/read now. */
+    (void)op_width;
+    (void)num_blocks_h;
+    (void)num_blocks;
+    const uint32_t elem = blockIdx.x * blockDim.x + threadIdx.x;
+    if (elem >= SP_ELEMENTS)
         return;
+    const uint32_t er = elem / SP_BLOCK_SIZE;
+    const uint32_t ec = elem % SP_BLOCK_SIZE;
 
-    const uint32_t tile_x = tile_idx % num_blocks_h; /* tile column */
-    const uint32_t tile_y = tile_idx / num_blocks_h; /* tile row    */
-
-    /* For each of the 25 positions (r, c) within the 5×5 block: */
-    for (uint32_t elem = 0; elem < SP_ELEMENTS; ++elem) {
-        const uint32_t er = elem / SP_BLOCK_SIZE;
-        const uint32_t ec = elem % SP_BLOCK_SIZE;
-        /* starting pixel of position (er, ec) within this tile */
-        const uint32_t start_row = tile_y * SP_BLOCK_SIZE + er;
-        const uint32_t start_col = tile_x * SP_BLOCK_SIZE + ec;
-
-        /* Accumulate mean over the submatrix window. */
-        double acc = 0.0;
-        for (uint32_t i = 0; i < submatrix_h; ++i) {
-            for (uint32_t j = 0; j < submatrix_w; ++j) {
-                acc += (double)plane[(start_row + i) * stride_px + (start_col + j)];
-            }
+    double acc = 0.0;
+    for (uint32_t i = 0; i < submatrix_h; ++i) {
+        for (uint32_t j = 0; j < submatrix_w; ++j) {
+            acc += (double)plane[(er + i) * stride_px + (ec + j)];
         }
-        means[elem * num_blocks + tile_idx] = (float)(acc / (double)(submatrix_w * submatrix_h));
     }
+    means[elem] = (float)(acc / (double)(submatrix_w * submatrix_h));
 }
 
 /* ------------------------------------------------------------------ */
@@ -134,41 +133,33 @@ __global__ void speed_cov_kernel(const float *__restrict__ plane,
     if (x_index >= SP_ELEMENTS || y_index >= SP_ELEMENTS)
         return;
 
+    (void)num_blocks_h;
+    (void)num_blocks;
     const uint32_t tid = threadIdx.x;
 
     __shared__ double s_partial[COV_BLOCK];
-    s_partial[tid] = 0.0;
-    __syncthreads();
 
     /* Pixel coordinates within the 5×5 block for x_index and y_index */
     const uint32_t xr = x_index / SP_BLOCK_SIZE;
     const uint32_t xc = x_index % SP_BLOCK_SIZE;
     const uint32_t yr = y_index / SP_BLOCK_SIZE;
     const uint32_t yc = y_index % SP_BLOCK_SIZE;
+    const double mean_x = (double)means[x_index];
+    const double mean_y = (double)means[y_index];
 
-    /* Each thread covers a strided subset of tiles. */
+    /* CPU parity (compute_covariance): one GLOBAL submatrix sweep with the
+     * scalar global means, divided by N once. The historic per-tile loop
+     * (displaced origins tile_y*5+xr, per-tile means, per-tile /N) summed
+     * num_blocks block-local covariances instead — wrong matrix, ~7x-low
+     * scores. Threads stride over the submatrix_h × submatrix_w pixels. */
+    const uint32_t total = submatrix_h * submatrix_w;
     double local_sum = 0.0;
-    for (uint32_t tile_idx = tid; tile_idx < num_blocks; tile_idx += COV_BLOCK) {
-        const uint32_t tile_x = tile_idx % num_blocks_h;
-        const uint32_t tile_y = tile_idx / num_blocks_h;
-
-        const double mean_x = (double)means[x_index * num_blocks + tile_idx];
-        const double mean_y = (double)means[y_index * num_blocks + tile_idx];
-
-        const uint32_t start_row_x = tile_y * SP_BLOCK_SIZE + xr;
-        const uint32_t start_col_x = tile_x * SP_BLOCK_SIZE + xc;
-        const uint32_t start_row_y = tile_y * SP_BLOCK_SIZE + yr;
-        const uint32_t start_col_y = tile_x * SP_BLOCK_SIZE + yc;
-
-        double cov = 0.0;
-        for (uint32_t i = 0; i < submatrix_h; ++i) {
-            for (uint32_t j = 0; j < submatrix_w; ++j) {
-                double vx = (double)plane[(start_row_x + i) * stride_px + (start_col_x + j)];
-                double vy = (double)plane[(start_row_y + i) * stride_px + (start_col_y + j)];
-                cov += (vx - mean_x) * (vy - mean_y);
-            }
-        }
-        local_sum += cov / (double)(submatrix_w * submatrix_h);
+    for (uint32_t p = tid; p < total; p += COV_BLOCK) {
+        const uint32_t i = p / submatrix_w;
+        const uint32_t j = p % submatrix_w;
+        const double vx = (double)plane[(xr + i) * stride_px + (xc + j)];
+        const double vy = (double)plane[(yr + i) * stride_px + (yc + j)];
+        local_sum += (vx - mean_x) * (vy - mean_y);
     }
     s_partial[tid] = local_sum;
     __syncthreads();
@@ -181,7 +172,7 @@ __global__ void speed_cov_kernel(const float *__restrict__ plane,
     }
 
     if (tid == 0)
-        cov_mat[x_index * SP_ELEMENTS + y_index] = (float)s_partial[0];
+        cov_mat[x_index * SP_ELEMENTS + y_index] = (float)(s_partial[0] / (double)total);
 }
 
 /* ------------------------------------------------------------------ */
