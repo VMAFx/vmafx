@@ -126,6 +126,27 @@ a real kernel lands; they are removed from `metal_sources` in
 | `ssimulacra2.metal`                | Done         | `ssimulacra2`                                                           |
 | `ssimulacra2_metal.mm`             | Done         | host dispatch                                                           |
 
+## Rebase-sensitive invariants (end-of-stream drain + frame-0 motion2)
+
+- **Every Metal extractor MUST set `VMAF_FEATURE_EXTRACTOR_METAL`**
+  (`feature_extractor.h`, bit 7). `flush_context_serial`
+  (`core/src/libvmaf.c`) drains a backend's pending final-frame
+  `collect()` *only* when the extractor carries its backend flag — the
+  `#ifdef HAVE_METAL` branch keys off `VMAF_FEATURE_EXTRACTOR_METAL &&
+  gpu_pending`, mirroring the CUDA / HIP / SYCL drain blocks. An
+  extractor that forgets the flag silently drops its last submitted
+  frame's score (the generic submit/collect double-buffer leaves
+  `collect(N)` pending). When adding a new `<feature>_metal.mm`, OR the
+  flag into `.flags` alongside any feature-class flag (e.g.
+  `VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_METAL`).
+- **Frame-0 `motion2` emission contract.** Motion-family Metal
+  extractors append `motion2 = 0.0` at index 0, a no-op at index 1, and
+  `min(prev, cur)` at index − 1 for index ≥ 2 — byte-identical to
+  `integer_motion_metal` and the HIP / CUDA twins. `float_motion_metal`
+  was previously missing the index-0 append and double-wrote at index 1
+  (fixed fix/metal-drain-motion2, 2026-06-20). Do not "simplify" the
+  index-0 / index-1 split away.
+
 ## Rebase-sensitive invariants (motion_fps_weight)
 
 - **`motion_fps_weight` cross-backend parity** — see the canonical

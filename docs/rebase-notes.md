@@ -55,6 +55,32 @@ dimensions in its own `init` must use the ceiling form, not floor; the floor
 form only agrees on even dimensions and silently drops the last chroma block
 strip otherwise. This is the same class of bug as the PSNR and Vulkan chroma
 ceiling fixes already in tree.
+## fix/metal-drain-motion2 — Metal end-of-stream drain + frame-0 motion2 (2026-06-20)
+Rebase impact: **none on upstream**. All changes are fork-local (the Metal
+backend has no upstream Netflix/vmaf counterpart) plus one additive bit in the
+shared flush path. Touches: `core/src/feature/feature_extractor.h` (adds
+`VMAF_FEATURE_EXTRACTOR_METAL = 1 << 7` to the `VmafFeatureExtractorFlags`
+enum — a fork-added enum; bit 7 is the next free slot after the fork's HIP bit
+6), `core/src/libvmaf.c` (a new `#ifdef HAVE_METAL` drain branch in
+`flush_context_serial`, gated so non-Metal builds are byte-unchanged), and 8
+fork-only `core/src/feature/metal/*.mm` extractors (set the new flag; +
+`float_motion_metal.mm` collect-index fix).
+
+Rebase-sensitive notes for the next person syncing:
+- **`flush_context_serial` is a fork-local rewrite of the upstream flush.** If
+  an upstream sync re-touches the end-of-stream flush, the fork's per-backend
+  drain blocks (CUDA / HIP / SYCL / **Metal**) must be re-applied — each GPU
+  backend whose extractors carry a `VMAF_FEATURE_EXTRACTOR_<BACKEND>` flag needs
+  its pending `gpu_pending` final-frame `collect()` drained before its `flush()`
+  runs, or the last frame's score is dropped. Do not drop the Metal branch.
+- **Frame-0 motion2 contract.** Every motion-family extractor (CPU + all GPU
+  twins) appends `motion2 = 0.0` at index 0 and a no-op at index 1; index ≥ 2
+  emits `min(prev, cur)` at index − 1. `float_motion_metal` now matches this
+  exactly — keep it aligned with `integer_motion_metal` and the HIP / CUDA twins
+  on any future motion2 change (cross-backend invariant, see
+  `core/src/feature/metal/AGENTS.md`).
+- **Darwin-only.** Not buildable / not exercised on the Linux dev or CI lane;
+  re-validate on Apple Silicon after any upstream flush-path sync.
 
 ## fix/speed-gpu-registry — restore orphaned GPU SpEED registrations + delete dead feature_extractor.c (2026-06-19)
 Rebase impact: **none on upstream**. All changes are fork-local. Touches the
