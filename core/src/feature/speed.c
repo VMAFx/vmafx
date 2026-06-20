@@ -1035,24 +1035,35 @@ static int speed_init_dimensions(SpeedDimensions *dim, int w, int h, double spee
     dim->block_size = DEFAULT_BLOCK_SIZE;
     dim->truncated_width = (dim->operating_width / dim->block_size) * dim->block_size;
     dim->truncated_height = (dim->operating_height / dim->block_size * dim->block_size);
-    dim->num_blocks_horizontal = dim->truncated_width / dim->block_size;
-    dim->num_blocks_vertical = dim->truncated_height / dim->block_size;
-    dim->num_blocks = dim->num_blocks_horizontal * dim->num_blocks_vertical;
-    dim->elements_in_block = dim->block_size * dim->block_size;
-    dim->submatrix_width = dim->truncated_width - dim->block_size + 1;
-    dim->submatrix_height = dim->truncated_height - dim->block_size + 1;
 
+    // Reject too-small planes BEFORE computing submatrix dimensions: when the
+    // operating plane (post NUM_SCALES downsample) is smaller than block_size,
+    // truncated_* is 0 and `truncated - block_size + 1` underflows the unsigned
+    // submatrix_* to a huge value, which compute_mean() then walks off the
+    // frame buffer (heap-buffer-overflow). The SYCL twin already guards this in
+    // speed_internal_init_dimensions(); the callers below now check this return.
     if (dim->truncated_height == 0 || dim->truncated_width == 0) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SpEED: image too small, operating width or height is 0");
         return -EINVAL;
     }
+
+    dim->num_blocks_horizontal = dim->truncated_width / dim->block_size;
+    dim->num_blocks_vertical = dim->truncated_height / dim->block_size;
+    dim->num_blocks = dim->num_blocks_horizontal * dim->num_blocks_vertical;
+    dim->elements_in_block = dim->block_size * dim->block_size;
+    // truncated_* are non-zero multiples of block_size here, so
+    // truncated_* - block_size + 1 >= 1 (no size_t underflow).
+    dim->submatrix_width = dim->truncated_width - dim->block_size + 1;
+    dim->submatrix_height = dim->truncated_height - dim->block_size + 1;
     return 0;
 }
 
 int speed_init(SpeedState *s, SpeedOptions *opt, int w, int h)
 {
     SpeedDimensions *dim = &s->dimensions;
-    speed_init_dimensions(dim, w, h, opt->speed_prescale);
+    int dim_err = speed_init_dimensions(dim, w, h, opt->speed_prescale);
+    if (dim_err)
+        return dim_err;
 
     // Check that the kernelscale is valid
     if (!vif_validate_kernelscale(opt->speed_kernelscale)) {
@@ -1281,7 +1292,9 @@ static int init_chroma(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
         .speed_nn_floor = s->speed_chroma_nn_floor,
         .speed_weight_var_mode = s->speed_weight_var_mode,
     };
-    speed_init(&s->speed_state, &s->speed_options, w, h);
+    int speed_err = speed_init(&s->speed_state, &s->speed_options, w, h);
+    if (speed_err)
+        return speed_err;
     SpeedDimensions dim = s->speed_state.dimensions;
 
     s->feature_name_dict =

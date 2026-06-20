@@ -527,7 +527,7 @@ static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     s->h_dis[1] = (float *)aligned_malloc(plane_alloc, 32);
     s->h_eigenvalues = (float *)aligned_malloc(ST_ELEMENTS * sizeof(float), 32);
     s->h_eig_scratch =
-        (float *)aligned_malloc((ST_ELEMENTS * ST_ELEMENTS + 3u * ST_ELEMENTS) * sizeof(float), 32);
+        (float *)aligned_malloc((ST_ELEMENTS * ST_ELEMENTS + 4u * ST_ELEMENTS) * sizeof(float), 32);
     s->h_Q = (float *)aligned_malloc(cov_bytes, 32);
     s->h_R = (float *)aligned_malloc(cov_bytes, 32);
     s->h_qr_scratch = (float *)aligned_malloc(4u * cov_bytes, 32);

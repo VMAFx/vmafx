@@ -59,10 +59,16 @@
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
 
-/* 256x144 matches the round-2 / round-3 fixture footprint and stays
- * comfortably above the SpEED Gaussian-pyramid minimum size. */
-#define FIXTURE_W 256u
-#define FIXTURE_H 144u
+/* speed_chroma operates on the CHROMA plane (W/2 x H/2 for YUV420P), which is
+ * downsampled by NUM_SCALES (>>4) before the 5x5 SpEED block grid. The minimum
+ * luma size for a non-empty operating plane is therefore ~160 per axis; below
+ * that, truncated_height/width is 0 and init returns EINVAL. 320x320 yields a
+ * 6x6 submatrix per block — a non-degenerate parity exercise. The earlier
+ * 256x144 fixture was BELOW the chroma minimum (chroma 128x72 -> operating
+ * 8x4 -> truncated 5x0) and never actually ran the extractor; it was masked
+ * while speed_chroma_sycl was unregistered (pre-#1004). */
+#define FIXTURE_W 320u
+#define FIXTURE_H 320u
 #define FIXTURE_BPC 8u
 #define PARITY_TOL 1e-4
 

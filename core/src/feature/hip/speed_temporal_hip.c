@@ -543,7 +543,7 @@ static int init_temporal_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix
     ALLOC_A(h_dis[0], plane_bytes);
     ALLOC_A(h_dis[1], plane_bytes);
     ALLOC_A(h_eigenvalues, ST_ELEMENTS * sizeof(float));
-    ALLOC_A(h_eig_scratch, (ST_ELEMENTS * ST_ELEMENTS + 3u * ST_ELEMENTS) * sizeof(float));
+    ALLOC_A(h_eig_scratch, (ST_ELEMENTS * ST_ELEMENTS + 4u * ST_ELEMENTS) * sizeof(float));
     ALLOC_A(h_Q, cov_bytes);
     ALLOC_A(h_R, cov_bytes);
     ALLOC_A(h_qr_scratch, 4u * cov_bytes);

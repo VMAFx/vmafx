@@ -600,7 +600,7 @@ static int init_chroma_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_f
     ALLOC_A(h_plane_ref, plane_bytes);
     ALLOC_A(h_plane_dis, plane_bytes);
     ALLOC_A(h_eigenvalues, SC_ELEMENTS * sizeof(float));
-    ALLOC_A(h_eig_scratch, (SC_ELEMENTS * SC_ELEMENTS + 3u * SC_ELEMENTS) * sizeof(float));
+    ALLOC_A(h_eig_scratch, (SC_ELEMENTS * SC_ELEMENTS + 4u * SC_ELEMENTS) * sizeof(float));
     ALLOC_A(h_Q, cov_bytes);
     ALLOC_A(h_R, cov_bytes);
     ALLOC_A(h_qr_scratch, 4u * cov_bytes);

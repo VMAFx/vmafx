@@ -164,11 +164,14 @@ static void launch_solve(sycl::queue &q, const float *R, float *rhs, uint32_t nu
         cgh.parallel_for(sycl::nd_range<1>(global, local), [=](sycl::nd_item<1> it) {
             const uint32_t warp_id = (uint32_t)(it.get_global_id(0) / SOLVE_WG);
             const uint32_t lane = (uint32_t)(it.get_global_id(0) % SOLVE_WG);
-            if (warp_id >= num_blocks || lane >= SP_ELEMENTS)
-                return;
+            /* group_barrier below is a work-GROUP collective: returning early for
+             * idle lanes / surplus warps makes them skip it and deadlocks the
+             * group on strict-barrier devices (Intel Arc -> DEVICE_LOST). Gate
+             * the WORK with `active`; keep all work-items in the barrier loop. */
+            const bool active = (warp_id < num_blocks && lane < SP_ELEMENTS);
             const uint32_t col = warp_id;
             for (int32_t i = (int32_t)(SP_ELEMENTS - 1u); i >= 0; --i) {
-                if ((int32_t)lane == i) {
+                if (active && (int32_t)lane == i) {
                     float val = rhs[(uint32_t)i * num_blocks + col];
                     const float denom = R[(uint32_t)i * SP_ELEMENTS + (uint32_t)i];
                     for (uint32_t k = (uint32_t)(i + 1); k < SP_ELEMENTS; ++k)
@@ -575,7 +578,7 @@ static int init_temporal_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
     ALLOC_A(h_dis[0], plane_bytes);
     ALLOC_A(h_dis[1], plane_bytes);
     ALLOC_A(h_eigenvalues, SP_ELEMENTS * sizeof(float));
-    ALLOC_A(h_eig_scratch, (SP_ELEMENTS * SP_ELEMENTS + 3u * SP_ELEMENTS) * sizeof(float));
+    ALLOC_A(h_eig_scratch, (SP_ELEMENTS * SP_ELEMENTS + 4u * SP_ELEMENTS) * sizeof(float));
     ALLOC_A(h_Q, cov_bytes);
     ALLOC_A(h_R, cov_bytes);
     ALLOC_A(h_qr_scratch, 4u * cov_bytes);

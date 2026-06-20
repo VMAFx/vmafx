@@ -740,7 +740,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->h_eigenvalues = (float *)aligned_malloc(SC_ELEMENTS * sizeof(float), 32);
     /* Eigendecomp scratch: size² + 3×size floats = 625 + 75 = 700 floats. */
     s->h_eig_scratch =
-        (float *)aligned_malloc((SC_ELEMENTS * SC_ELEMENTS + 3u * SC_ELEMENTS) * sizeof(float), 32);
+        (float *)aligned_malloc((SC_ELEMENTS * SC_ELEMENTS + 4u * SC_ELEMENTS) * sizeof(float), 32);
     s->h_Q = (float *)aligned_malloc(cov_bytes, 32);
     s->h_R = (float *)aligned_malloc(cov_bytes, 32);
     /* QR scratch: 3 × size² = 1875 floats (+ 1 for copy of A) = 4 × 625. */
