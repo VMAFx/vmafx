@@ -20,6 +20,26 @@ submatrix, NOT per-tile `means[25*num_blocks]`), and the ref/dis paths must keep
 `core/src/feature/cuda/AGENTS.md` and verified by
 `test_cuda_speed_{chroma,temporal}_parity` at 1e-4. If a future change touches
 any one backend's kernels, mirror it across all four (CPU + CUDA + HIP + SYCL).
+## fix/audit-runtime-bugs-batch — 18 audit runtime bugs: SYCL/CUDA init leaks, AI crash-hardening, MCP parity (2026-06-20)
+Rebase impact: **none on upstream**. All 18 fixes are fork-local and touch
+only fork-added files with no upstream Netflix/vmaf counterpart:
+`core/src/feature/sycl/integer_motion_sycl.cpp`,
+`core/src/feature/cuda/integer_ssim_cuda.c`,
+`core/src/feature/cuda/integer_vif_cuda.c`,
+`core/src/feature/ssimulacra2.c` (fork-added SSIMULACRA2 extractor),
+`cmd/vmafx-mcp/impl.go`, and five `ai/` extraction/training scripts
+(`bvi_dvc_to_full_features.py`, `extract_full_features.py`,
+`konvid_to_full_features.py`, `train_fr_regressor_v2.py`,
+`vmaf_train/datamodule.py`). No public header, CLI flag, meson-option,
+ffmpeg-patch, or golden-gate surface changes; all C/SYCL/CUDA edits fire only
+on already-failing error/OOM paths so success-path behaviour and scores are
+unchanged. Rebase-sensitive note for the next person syncing: the
+`cmd/vmafx-mcp/impl.go` change deletes the last `vulkan` backend reference in
+the Go MCP server to keep it byte-compatible with the Python MCP server after
+the Vulkan removal (ADR-0726); if a sync re-introduces a `vulkan` keyword in
+either MCP server, both must move together. No new rebase-sensitive invariants
+worth a dedicated `AGENTS.md` entry beyond the existing SYCL/CUDA error-path
+notes.
 
 ## fix/speed-gpu-registry — restore orphaned GPU SpEED registrations + delete dead feature_extractor.c (2026-06-19)
 Rebase impact: **none on upstream**. All changes are fork-local. Touches the
