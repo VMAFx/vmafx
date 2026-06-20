@@ -578,16 +578,48 @@ static int extract_channel(SpeedChromaCudaState *s, CudaFunctions *cu_f, VmafPic
 
     int err = 0;
 
+    /* The CUDA pipeline feeds DEVICE-resident pictures (ref_pic->data[] are
+     * CUdeviceptr, as in adm/vif_cuda), but speed_chroma runs its Gaussian
+     * filter on the CPU, so the picture_copy() calls below read HOST memory.
+     * Download the chroma plane to host staging first — reading the device
+     * pointer on the host SEGVs. CUDA tests don't run in CI (no GPU runner),
+     * so this was never caught. */
+    const size_t raw_ref_bytes = (size_t)ref_pic->h[channel] * ref_pic->stride[channel];
+    const size_t raw_dis_bytes = (size_t)dist_pic->h[channel] * dist_pic->stride[channel];
+    uint8_t *raw_ref = (uint8_t *)aligned_malloc(raw_ref_bytes, 32);
+    uint8_t *raw_dis = (uint8_t *)aligned_malloc(raw_dis_bytes, 32);
+    if (!raw_ref || !raw_dis) {
+        aligned_free(raw_ref);
+        aligned_free(raw_dis);
+        aligned_free(tmp_filter);
+        return -ENOMEM;
+    }
+    if (cu_f->cuMemcpyDtoH(raw_ref, (CUdeviceptr)ref_pic->data[channel], raw_ref_bytes) !=
+            CUDA_SUCCESS ||
+        cu_f->cuMemcpyDtoH(raw_dis, (CUdeviceptr)dist_pic->data[channel], raw_dis_bytes) !=
+            CUDA_SUCCESS) {
+        aligned_free(raw_ref);
+        aligned_free(raw_dis);
+        aligned_free(tmp_filter);
+        return -EIO;
+    }
+    VmafPicture host_ref = *ref_pic;
+    VmafPicture host_dis = *dist_pic;
+    host_ref.data[channel] = raw_ref;
+    host_dis.data[channel] = raw_dis;
+
     /* Reference plane: CPU copy + filter + downscale. */
-    picture_copy(s->h_plane_ref, s->float_stride, ref_pic, -128, ref_pic->bpc, channel);
+    picture_copy(s->h_plane_ref, s->float_stride, &host_ref, -128, ref_pic->bpc, channel);
     speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, tmp_filter,
                                         s->float_stride);
 
     /* Distorted plane: CPU copy + filter + downscale. */
-    picture_copy(s->h_plane_dis, s->float_stride, dist_pic, -128, dist_pic->bpc, channel);
+    picture_copy(s->h_plane_dis, s->float_stride, &host_dis, -128, dist_pic->bpc, channel);
     speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_dis, tmp_filter,
                                         s->float_stride);
 
+    aligned_free(raw_ref);
+    aligned_free(raw_dis);
     aligned_free(tmp_filter);
     tmp_filter = NULL;
 
@@ -770,34 +802,11 @@ free_cpu:
 
 fail_after_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
-    /* Tear down the loaded module + stream in addition to the device /
-     * host buffers — free_cuda_buffers does not touch either. */
-    if (s->module) {
-        (void)cu_f->cuModuleUnload(s->module);
-        s->module = NULL;
-    }
-    if (s->stream) {
-        (void)cu_f->cuStreamDestroy(s->stream);
-        s->stream = NULL;
-    }
     free_cuda_buffers(s, cu_f);
     return -EIO;
 
 fail_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
-    /* Mirror fail_after_pop: the early-exit sites between cuModuleLoadData
-     * and the cuCtxPopCurrent can already have created the module, the
-     * stream, and a subset of the device / host buffers. Release all of
-     * them so a CUDA failure here does not leak. */
-    if (s->module) {
-        (void)cu_f->cuModuleUnload(s->module);
-        s->module = NULL;
-    }
-    if (s->stream) {
-        (void)cu_f->cuStreamDestroy(s->stream);
-        s->stream = NULL;
-    }
-    free_cuda_buffers(s, cu_f);
     return -EIO;
 
 fail:
