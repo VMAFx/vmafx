@@ -577,9 +577,45 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     const int cyclic = (int)(index % 2u);
     const int other = (int)((index + 1u) % 2u);
 
+    /* The CUDA pipeline feeds DEVICE-resident pictures (ref_pic->data[] are
+     * CUdeviceptr), but picture_copy reads HOST memory — download the luma
+     * plane first (same device-pointer SEGV as speed_chroma_cuda). The DtoH
+     * copy needs the CUDA context active (the GPU pipeline below pushes it
+     * again later, so push/pop locally here). */
+    const size_t raw_ref_bytes = (size_t)ref_pic->h[0] * ref_pic->stride[0];
+    const size_t raw_dis_bytes = (size_t)dist_pic->h[0] * dist_pic->stride[0];
+    uint8_t *raw_ref = (uint8_t *)aligned_malloc(raw_ref_bytes, 32);
+    uint8_t *raw_dis = (uint8_t *)aligned_malloc(raw_dis_bytes, 32);
+    if (!raw_ref || !raw_dis) {
+        aligned_free(raw_ref);
+        aligned_free(raw_dis);
+        return -ENOMEM;
+    }
+    if (cu_f->cuCtxPushCurrent(fex->cu_state->ctx) != CUDA_SUCCESS) {
+        aligned_free(raw_ref);
+        aligned_free(raw_dis);
+        return -EIO;
+    }
+    _cuda_err = (cu_f->cuMemcpyDtoH(raw_ref, (CUdeviceptr)ref_pic->data[0], raw_ref_bytes) !=
+                     CUDA_SUCCESS ||
+                 cu_f->cuMemcpyDtoH(raw_dis, (CUdeviceptr)dist_pic->data[0], raw_dis_bytes) !=
+                     CUDA_SUCCESS);
+    (void)cu_f->cuCtxPopCurrent(NULL);
+    if (_cuda_err) {
+        aligned_free(raw_ref);
+        aligned_free(raw_dis);
+        return -EIO;
+    }
+    VmafPicture host_ref = *ref_pic;
+    VmafPicture host_dis = *dist_pic;
+    host_ref.data[0] = raw_ref;
+    host_dis.data[0] = raw_dis;
+
     /* Copy current frame luma planes to ping-pong buffers. */
-    picture_copy(s->h_ref[cyclic], s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
-    picture_copy(s->h_dis[cyclic], s->float_stride, dist_pic, -128, ref_pic->bpc, 0);
+    picture_copy(s->h_ref[cyclic], s->float_stride, &host_ref, -128, ref_pic->bpc, 0);
+    picture_copy(s->h_dis[cyclic], s->float_stride, &host_dis, -128, ref_pic->bpc, 0);
+    aligned_free(raw_ref);
+    aligned_free(raw_dis);
 
     /* Frame 0: emit score 0 (no previous frame to diff against). */
     if (index == 0) {
