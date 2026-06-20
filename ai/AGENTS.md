@@ -1172,3 +1172,17 @@ binary upload is a separate PR.
   `model_dump(mode="json")` + `json.dumps(indent=2, sort_keys=True)`;
   do not switch it to `BaseModel.model_dump_json()` (different
   formatting — would invalidate sidecar goldens).
+
+- **`extract_k150k_features.py` must fail loud, never write a silent
+  garbage row.** Two corruption paths were closed (T-K150K-TRAINING-DATA-
+  INTEGRITY-2026-06-20) and the invariants must survive rebases:
+  (1) `_process_clip` **raises** on an empty frame list — never let an
+  all-`NaN` aggregate row reach the corpus + `_append_done` (it would be
+  dropped with no retry). (2) The MOS-label join tolerates a
+  filename↔`video_name` extension mismatch via an `mp4.stem` fallback and
+  is guarded by an up-front coverage check that hard-fails the zero-match
+  case before any multi-day GPU extraction starts. Do not "simplify" the
+  lookup back to a single `mos_map.get(clip_name, NaN)` — that is the bug.
+  The staging→`.done` write order is deliberately staging-first (crash
+  leaves the clip re-processable; the final parquet dedups by `clip_name`,
+  `keep="last"`); do not reorder it.

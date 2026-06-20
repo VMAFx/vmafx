@@ -81,6 +81,15 @@ Rebase-sensitive notes for the next person syncing:
   `core/src/feature/metal/AGENTS.md`).
 - **Darwin-only.** Not buildable / not exercised on the Linux dev or CI lane;
   re-validate on Apple Silicon after any upstream flush-path sync.
+## fix/k150k-training-data-integrity — fail-loud on empty-frame clips + MOS-join key mismatch (2026-06-20)
+Rebase impact: **none on upstream**. All changes are fork-local in
+`ai/scripts/extract_k150k_features.py` (a fork-added training script with no
+upstream Netflix counterpart). Two defensive guards: `_process_clip` raises on
+an empty frame list instead of writing an all-`NaN` row + marking the clip
+done; the MOS-label join gains an `mp4.stem` fallback + an up-front coverage
+hard-fail. Invariants recorded in `ai/AGENTS.md` (do not revert the lookup to a
+single `mos_map.get(clip_name, NaN)`; keep the staging-first `.done` ordering).
+No C-library, ABI, golden-data, or ffmpeg-patch surface touched.
 
 ## fix/speed-gpu-registry — restore orphaned GPU SpEED registrations + delete dead feature_extractor.c (2026-06-19)
 Rebase impact: **none on upstream**. All changes are fork-local. Touches the
