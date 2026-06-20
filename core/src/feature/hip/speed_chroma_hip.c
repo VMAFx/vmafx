@@ -101,7 +101,9 @@ typedef struct SpeedChromaHipState {
     void *d_sol_ref;
     void *d_sol_dis;
     void *d_R;
-    void *d_eigenvalues;
+    void *d_eigenvalues;     /* dis eigenvalues after the dis linalg pass */
+    void *d_eigenvalues_ref; /* ref eigenvalues, stashed before the dis linalg
+                              * overwrites the shared d_eigenvalues buffer */
     void *d_ref_ent;
     void *d_ref_var;
     void *d_dis_ent;
@@ -267,6 +269,7 @@ static void free_hip_buffers(SpeedChromaHipState *s)
     FD(s->d_sol_dis);
     FD(s->d_R);
     FD(s->d_eigenvalues);
+    FD(s->d_eigenvalues_ref);
     FD(s->d_ref_ent);
     FD(s->d_ref_var);
     FD(s->d_dis_ent);
@@ -344,6 +347,7 @@ static int sc_hip_bufs_alloc(SpeedChromaHipState *s)
     AD(d_sol_dis, indterm_bytes);
     AD(d_R, cov_bytes);
     AD(d_eigenvalues, SC_ELEMENTS * sizeof(float));
+    AD(d_eigenvalues_ref, SC_ELEMENTS * sizeof(float));
     AD(d_ref_ent, score_bytes);
     AD(d_ref_var, score_bytes);
     AD(d_dis_ent, score_bytes);
@@ -429,31 +433,42 @@ static int run_cpu_linalg_sc(SpeedChromaHipState *s, float *h_indterm, void *d_s
     speed_internal_compute_eigenvalues(s->h_cov_mat, s->h_eigenvalues, sz, s->h_eig_scratch);
     bool regular = speed_internal_is_matrix_regular(s->h_eigenvalues, (size_t)sz);
 
+    hipError_t rc = hipSuccess;
     if (!regular) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "speed_chroma_hip: covariance matrix singular, zeroing solution\n");
         (void)memset(h_indterm, 0, indterm_bytes);
-        return 0;
+    } else {
+        (void)speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
+        speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
+
+        /* H2D: R and Q^T×indterm (= initial rhs for solve kernel). */
+        rc = hipMemcpyAsync(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float),
+                            hipMemcpyHostToDevice, s->stream);
+        if (rc != hipSuccess)
+            return hip_rc(rc);
+        rc = hipMemcpyAsync(d_sol, h_indterm, indterm_bytes, hipMemcpyHostToDevice, s->stream);
+        if (rc != hipSuccess)
+            return hip_rc(rc);
+
+        /* K4: backward substitution — one wavefront per column.
+         * blockDim.x = s->solve_warp (32 on RDNA2+, 64 on GCN/RDNA1). */
+        const uint32_t u_nb = (uint32_t)nb;
+        void *args[] = {&s->d_R, &d_sol, &u_nb};
+        rc = hipModuleLaunchKernel(s->func_solve, u_nb, 1u, 1u, s->solve_warp, 1u, 1u, 0u,
+                                   s->stream, args, NULL);
+        if (rc != hipSuccess)
+            return hip_rc(rc);
+        rc = hipStreamSynchronize(s->stream);
+        if (rc != hipSuccess)
+            return hip_rc(rc);
     }
 
-    (void)speed_internal_qr_factorize(s->h_cov_mat, sz, s->h_Q, s->h_R, s->h_qr_scratch);
-    speed_internal_qt_multiply(s->h_Q, h_indterm, sz, nb, s->h_qt_scratch);
-
-    /* H2D: R and Q^T×indterm (= initial rhs for solve kernel). */
-    hipError_t rc = hipMemcpyAsync(s->d_R, s->h_R, (size_t)sz * (size_t)sz * sizeof(float),
-                                   hipMemcpyHostToDevice, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc(rc);
-    rc = hipMemcpyAsync(d_sol, h_indterm, indterm_bytes, hipMemcpyHostToDevice, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc(rc);
-
-    /* K4: backward substitution — one wavefront per column.
-     * blockDim.x = s->solve_warp (32 on RDNA2+, 64 on GCN/RDNA1). */
-    const uint32_t u_nb = (uint32_t)nb;
-    void *args[] = {&s->d_R, &d_sol, &u_nb};
-    rc = hipModuleLaunchKernel(s->func_solve, u_nb, 1u, 1u, s->solve_warp, 1u, 1u, 0u, s->stream,
-                               args, NULL);
+    /* H2D eigenvalues for the score kernel. Each pass uploads its own
+     * eigenvalues into the shared d_eigenvalues buffer; the caller stashes the
+     * ref eigenvalues into d_eigenvalues_ref between the ref and dis passes. */
+    rc = hipMemcpyAsync(s->d_eigenvalues, s->h_eigenvalues, SC_ELEMENTS * sizeof(float),
+                        hipMemcpyHostToDevice, s->stream);
     if (rc != hipSuccess)
         return hip_rc(rc);
     rc = hipStreamSynchronize(s->stream);
@@ -465,19 +480,16 @@ static int run_score_sc(SpeedChromaHipState *s, float *score_out)
 {
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const float sigma_nn = (float)s->opt.speed_sigma_nn;
+    hipError_t rc = hipSuccess;
 
-    /* H2D eigenvalues (computed in run_cpu_linalg_sc). */
-    hipError_t rc = hipMemcpyAsync(s->d_eigenvalues, s->h_eigenvalues, SC_ELEMENTS * sizeof(float),
-                                   hipMemcpyHostToDevice, s->stream);
-    if (rc != hipSuccess)
-        return hip_rc(rc);
-
-    /* K5: entropy + score. */
+    /* K5: entropy + score. The kernel reads d_eigenvalues_ref for the ref
+     * entropy and d_eigenvalues (the dis eigenvalues uploaded by the dis
+     * run_cpu_linalg_sc pass) for the dis entropy. */
     {
         const uint32_t grid = (num_blocks + SC_SCORE_BLOCK - 1u) / SC_SCORE_BLOCK;
-        void *args[] = {&s->d_eigenvalues, &s->d_sol_ref, &s->d_sol_dis, &s->d_indterm_ref,
-                        &s->d_indterm_dis, &s->d_ref_ent, &s->d_ref_var, &s->d_dis_ent,
-                        &s->d_dis_var,     &num_blocks,   &sigma_nn};
+        void *args[] = {&s->d_eigenvalues_ref, &s->d_eigenvalues, &s->d_sol_ref, &s->d_sol_dis,
+                        &s->d_indterm_ref,     &s->d_indterm_dis, &s->d_ref_ent, &s->d_ref_var,
+                        &s->d_dis_ent,         &s->d_dis_var,     &num_blocks,   &sigma_nn};
         rc = hipModuleLaunchKernel(s->func_score, grid, 1u, 1u, SC_SCORE_BLOCK, 1u, 1u, 0u,
                                    s->stream, args, NULL);
         if (rc != hipSuccess)
@@ -703,16 +715,12 @@ static int extract_chroma_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     if (!tmp_filter)
         return -ENOMEM;
 
-    float saved_cov[SC_ELEMENTS * SC_ELEMENTS];
     float score_u = 0.0f;
     float score_v = 0.0f;
     int err_u = 0;
     int err_v = 0;
 
     for (int ch = 1; ch <= 2; ++ch) {
-        void *d_indterm = (ch == 1) ? s->d_indterm_ref : s->d_indterm_dis;
-        void *d_sol = (ch == 1) ? s->d_sol_ref : s->d_sol_dis;
-        float *h_indterm = (ch == 1) ? s->h_indterm_ref : s->h_indterm_dis;
         /* Reuse h_plane_ref/dis for ref/dis of each chroma channel. */
         picture_copy(s->h_plane_ref, s->float_stride, ref_pic, -128, ref_pic->bpc, ch);
         speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_ref, tmp_filter,
@@ -721,23 +729,37 @@ static int extract_chroma_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
         speed_internal_filter_and_downscale(&s->dim, &s->opt, s->h_plane_dis, tmp_filter,
                                             s->float_stride);
 
+        /* Reference: means → cov → indterm, then eigendecomp + QR. Uploads ref
+         * eigenvalues into the shared d_eigenvalues buffer. */
         int e = run_gpu_pipeline_sc(s, s->h_plane_ref, s->d_indterm_ref, s->h_indterm_ref);
         if (e) {
             (ch == 1) ? (err_u = e) : (err_v = e);
             continue;
         }
-        memcpy(saved_cov, s->h_cov_mat, sizeof(saved_cov));
         e = run_cpu_linalg_sc(s, s->h_indterm_ref, s->d_sol_ref);
         if (e) {
             (ch == 1) ? (err_u = e) : (err_v = e);
             continue;
         }
 
-        e = run_gpu_pipeline_sc(s, s->h_plane_dis, d_indterm, h_indterm);
-        if (!e) {
-            memcpy(s->h_cov_mat, saved_cov, sizeof(saved_cov));
-            e = run_cpu_linalg_sc(s, h_indterm, d_sol);
+        /* Stash the reference eigenvalues aside before the distorted linalg
+         * pass overwrites d_eigenvalues. The CPU reference (est_params in
+         * speed.c) computes SEPARATE ref and dis covariance + eigenvalues; the
+         * score kernel needs both. run_cpu_linalg_sc synchronizes the stream
+         * after its eigenvalue H2D, so this DtoD copy is correctly ordered. */
+        hipError_t drc =
+            hipMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, SC_ELEMENTS * sizeof(float));
+        if (drc != hipSuccess) {
+            (ch == 1) ? (err_u = hip_rc(drc)) : (err_v = hip_rc(drc));
+            continue;
         }
+
+        /* Distorted: means → cov → indterm (keeps the DIS covariance in
+         * h_cov_mat — no save/restore of the ref covariance), then eigendecomp
+         * + QR. Uploads dis eigenvalues into d_eigenvalues. */
+        e = run_gpu_pipeline_sc(s, s->h_plane_dis, s->d_indterm_dis, s->h_indterm_dis);
+        if (!e)
+            e = run_cpu_linalg_sc(s, s->h_indterm_dis, s->d_sol_dis);
 
         float sc = 0.0f;
         if (!e)
