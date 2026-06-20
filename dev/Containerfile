@@ -501,7 +501,7 @@ RUN chown vmaf:vmaf /build /build/vmaf
 # Version must satisfy ai/pyproject.toml requirement (>=1.20,<2.0).
 # 1.26.0 adds ROCm 7.x EP + CUDA 13.x EP — matches the container GPU stack exactly.
 # Bumped from 1.20.1 per ADR-0568 (SDK audit 2026-05-18).
-ARG ORT_VERSION=1.26.0
+ARG ORT_VERSION=1.27.0
 RUN curl -fsSL \
         "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
         -o /tmp/ort.tgz \
