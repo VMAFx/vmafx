@@ -190,6 +190,20 @@ reference at `integer_motion.c:563`, and the moving-average guard in
 index 1 to match `integer_motion.c:523`'s `index >
 minimum_past_frames_needed` rule.
 
+The **GPU SpEED** extractors (`speed_chroma` / `speed_temporal`) are
+verified bit-parity against the CPU reference at `places = 4` (≤ 1e-4)
+on an RTX 4090 via `test_cuda_speed_chroma_parity` /
+`test_cuda_speed_temporal_parity`. This is a **score correction**, not
+just a tolerance statement: before the fix the GPU SpEED kernels
+computed a per-tile block-local covariance (instead of the CPU's single
+global covariance over the 5×5-phase-shifted submatrix) and reused the
+reference eigenvalue basis for the distorted path, so GPU SpEED scores
+were ~7× low (and chroma ~2× high on the distorted path). They now match
+the CPU output. If you previously recorded GPU SpEED numbers, re-extract
+them. See
+[research-1120](../../research/1120-gpu-speed-covariance-eigenbasis-correctness-2026-06-20.md).
+The same correction was ported to the HIP and SYCL SpEED twins.
+
 The **Netflix golden-data gate is CPU-only** — the three reference
 pairs in `python/test/` (1 normal + 2 checkerboard) are hardcoded
 `assertAlmostEqual` values that only the CPU scalar + fixed-point

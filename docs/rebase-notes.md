@@ -1,6 +1,26 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/speed-extractor-oob-deadlock-heap-corruption — GPU SpEED covariance + eigenbasis correctness + safety (2026-06-20)
+Rebase impact: **none on upstream** — all fork-local. The SpEED feature
+(`speed_chroma` / `speed_temporal`) and all of its GPU backends are
+fork-additions with no Netflix/vmaf counterpart. Touches the fork-only GPU
+extractors (`core/src/feature/cuda/{speed_chroma_cuda.c,speed_temporal_cuda.c,
+speed/speed_score.cu}`, `core/src/feature/hip/{speed_chroma_hip.c,
+speed_temporal_hip.c,speed/speed_score.hip}`,
+`core/src/feature/sycl/{speed_chroma_sycl.cpp,speed_temporal_sycl.cpp}`), the
+fork-only `core/src/feature/speed.c` CPU host (init-return propagation only —
+the global covariance math itself is unchanged), and the GPU parity test
+fixture. No public header, CLI, meson-option, ffmpeg-patch, or Netflix
+golden-gate surface changes (SpEED is not in the golden pairs). **Rebase-sensitive
+invariant for the next syncer:** the GPU means/cov kernels must stay on the CPU's
+*global* covariance formulation (`means[25]` over the full phase-shifted
+submatrix, NOT per-tile `means[25*num_blocks]`), and the ref/dis paths must keep
+*separate* covariance + eigenvalue bases — recorded in
+`core/src/feature/cuda/AGENTS.md` and verified by
+`test_cuda_speed_{chroma,temporal}_parity` at 1e-4. If a future change touches
+any one backend's kernels, mirror it across all four (CPU + CUDA + HIP + SYCL).
+
 ## fix/speed-gpu-registry — restore orphaned GPU SpEED registrations + delete dead feature_extractor.c (2026-06-19)
 Rebase impact: **none on upstream**. All changes are fork-local. Touches the
 fork-only registry file `core/src/feature/feature_extractor.cpp` (adds six

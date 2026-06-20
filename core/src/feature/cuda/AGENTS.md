@@ -95,6 +95,29 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
 
 ## Rebase-sensitive invariants
 
+- **GPU SpEED means/cov must match the CPU GLOBAL covariance, and ref/dis
+  must use SEPARATE eigenvalue bases** (PR #1029,
+  `research-1120-gpu-speed-covariance-eigenbasis-correctness`). In
+  `speed/speed_score.cu` (and the HIP / SYCL twins) the means kernel computes
+  the **scalar global mean** for each of the 25 phase-shift elements over the
+  full phase-shifted submatrix — `means[25]`, indices `[0, 25)` — **NOT** a
+  per-tile `means[25 * num_blocks]` block-local mean; the cov kernel does one
+  global submatrix sweep with those scalar means and divides by `N` **once**,
+  with **no** per-tile loop. The `means[]` buffer stays over-allocated at
+  `25 * num_blocks` (launch geometry unchanged) but only `[0, 25)` is
+  written/read — do not "tidy" it back to a tiled layout. Separately,
+  `speed_chroma_cuda.c` / `speed_temporal_cuda.c` keep the reference and
+  distorted **covariance + eigenvalues independent**: after the reference
+  linalg, `cuMemcpyDtoD` the ref eigenvalues into `d_eigenvalues_ref`; the
+  distorted path keeps the distorted covariance (do **not** re-add the old
+  cov save/restore); `speed_score_kernel` takes both `ref_eigenvalues` and
+  `dis_eigenvalues` (ref entropy uses ref, dis entropy uses dis). Mixing them
+  reintroduces the ~2× chroma error (masked on temporal, where `ref ≈ dis`).
+  Verify with `test_cuda_speed_chroma_parity` / `test_cuda_speed_temporal_parity`
+  at places=4 (1e-4, ADR-0214); they pass bit-parity on the RTX 4090. Any
+  change to the SpEED kernel math must be mirrored across the CPU
+  (`speed.c`), CUDA, HIP, and SYCL backends in the same PR.
+
 - **`vmaf_cuda_kernel_readback_free` owns the pinned-host free
   (2026-05-29 sweep).** The helper in `core/src/cuda/kernel_template.h`
   calls `vmaf_cuda_buffer_host_free(cu_state, rb->host_pinned)` before
