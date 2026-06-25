@@ -33,7 +33,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — vmaf-builder: compile libvmaf + vmaf CLI from core/
 # ---------------------------------------------------------------------------
-FROM debian:13-slim@sha256:4e401d95de7083948053197a9c3913343cd06b706bf15eb6a0c3ccd26f436a0e AS vmaf-builder
+FROM debian:13-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2 AS vmaf-builder
 
 ARG VMAF_BUILD_JOBS=4
 ARG DEBIAN_FRONTEND=noninteractive
@@ -82,7 +82,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
 # for the detailed rationale. The core issue: ffmpeg-patches/0007 references
 # aom_roi_map_t fields not present in any released libaom version.
 # SVT-AV1 (libsvtav1) covers the AV1 production lane.
-FROM debian:13-slim@sha256:4e401d95de7083948053197a9c3913343cd06b706bf15eb6a0c3ccd26f436a0e AS ffmpeg-deps-base
+FROM debian:13-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2 AS ffmpeg-deps-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
