@@ -274,7 +274,7 @@ RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
     done
 
 # Level Zero loader (libze_loader) for SYCL
-ARG LEVEL_ZERO_VER=1.29.0
+ARG LEVEL_ZERO_VER=1.30.0
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze1_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
