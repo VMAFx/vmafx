@@ -67,6 +67,12 @@
       "automerge": false
     },
     {
+      "description": "Group numpy across ALL managers (pep621 + pip_requirements + setuptools/setup.py) into ONE PR. numpy is pinned in ai/, mcp-server/, python/, ensemble-kit/, roi-score/ via a mix of pyproject.toml, setup.py and requirements*.txt, so the per-manager Python groups split a single numpy bump into two PRs (e.g. #1040 pep621/setup.py + #1041 pip_requirements). This package rule overrides the group for numpy so future bumps land together. Minor needs review (NaN/dtype ABI risk in the DNN + AI stack).",
+      "matchPackageNames": ["numpy"],
+      "groupName": "numpy (all managers)",
+      "automerge": false
+    },
+    {
       "description": "Group all Go minor + patch updates into one PR; auto-merge. k8s/grpc/proto patch bumps are low-risk; CI gates catch regressions.",
       "matchManagers": ["gomod"],
       "matchUpdateTypes": ["minor", "patch"],
