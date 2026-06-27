@@ -710,6 +710,9 @@ if len(x) < 2:
 
 sess = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
 pred = np.asarray(sess.run(None, {input_name: x})[0]).reshape(-1)
+if pred.shape != y.shape:
+    print(json.dumps({"error": f"model output shape {pred.shape} does not match target shape {y.shape}"}))
+    sys.exit(0)
 plcc = float(pearsonr(pred,y).statistic)
 srocc = float(spearmanr(pred,y).statistic)
 rmse = float(np.sqrt(((pred-y)**2).mean()))
@@ -1513,9 +1516,9 @@ func handleRunCompare(ctx context.Context, args map[string]any) (any, error) {
 	// #nosec G204 -- vmaftune is resolved via findVmafTune (fixed candidate
 	// list); argv values are flag-prefixed strings derived from JSON-Schema
 	// validated tool arguments.
-	out, err := exec.CommandContext(ctx, vmaftune, argv...).Output()
+	out, err := runVmafTune(ctx, vmaftune, "compare", argv)
 	if err != nil {
-		return nil, fmt.Errorf("vmaf-tune compare failed: %w", err)
+		return nil, err
 	}
 	var result any
 	if err := json.Unmarshal(out, &result); err != nil {
@@ -1553,9 +1556,9 @@ func handleRunLadder(ctx context.Context, args map[string]any) (any, error) {
 
 	// #nosec G204 -- vmaftune resolved via findVmafTune; argv values are
 	// schema-validated tool arguments prefixed by literal flags.
-	out, err := exec.CommandContext(ctx, vmaftune, argv...).Output()
+	out, err := runVmafTune(ctx, vmaftune, "ladder", argv)
 	if err != nil {
-		return nil, fmt.Errorf("vmaf-tune ladder failed: %w", err)
+		return nil, err
 	}
 	if format == "json" {
 		var manifest any
@@ -1601,9 +1604,9 @@ func handleRunTunePerShot(ctx context.Context, args map[string]any) (any, error)
 
 	// #nosec G204 -- vmaftune resolved via findVmafTune; argv values are
 	// schema-validated tool arguments prefixed by literal flags.
-	out, err := exec.CommandContext(ctx, vmaftune, argv...).Output()
+	out, err := runVmafTune(ctx, vmaftune, "tune-per-shot", argv)
 	if err != nil {
-		return nil, fmt.Errorf("vmaf-tune tune-per-shot failed: %w", err)
+		return nil, err
 	}
 	if format == "json" {
 		var result any
@@ -1612,6 +1615,31 @@ func handleRunTunePerShot(ctx context.Context, args map[string]any) (any, error)
 		}
 	}
 	return map[string]any{"exit_code": 0, "stdout": string(out), "stderr": ""}, nil
+}
+
+// runVmafTune runs the vmaf-tune binary with the given subcommand argv and
+// returns its stdout. On a non-zero exit it captures stderr and folds it into
+// the wrapped error, mirroring the Python server's error text
+// ("vmaf-tune <sub> exited <rc>: <stderr>") so callers don't lose the failure
+// diagnostics that bare exec.Output() drops. ctx propagates client-disconnect
+// cancellation (ADR-1085 invariant #9).
+//
+// #nosec G204 -- vmaftune is resolved by the caller via findVmafTune (fixed
+// candidate list / VMAF_TUNE_BIN override); argv values are flag-prefixed
+// strings derived from JSON-Schema validated tool arguments.
+func runVmafTune(ctx context.Context, vmaftune, sub string, argv []string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, vmaftune, argv...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = err.Error()
+		}
+		return nil, fmt.Errorf("vmaf-tune %s exited %v: %s", sub, err, detail)
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------

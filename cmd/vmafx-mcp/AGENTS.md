@@ -172,3 +172,28 @@ Key facts a future agent must keep straight:
    `"vmaf returned exit 0 but score was null"`. `TestProbeYUVDimensions` /
    `TestScoreIsHealthy` (Go) and `tests/test_probe_backend_pr850.py` (Python)
    pin both sides.
+
+13. **HTTP transport security parity** (ADR-0967): when `mcp.transport=http`,
+   the Go transport (`http_security.go::securityMiddleware` + `applyBindHost`,
+   wired in `main.go::runMCPTransport`) and the Python transport
+   (`http_transport.py::_make_security_middleware` + `_resolve_bind_host`) MUST
+   enforce the same hardening under the same env contract:
+   `VMAFX_MCP_HTTP_TOKEN` (bearer token, constant-time compare —
+   `crypto/subtle.ConstantTimeCompare` ↔ `hmac.compare_digest`),
+   `VMAFX_MCP_HTTP_NO_AUTH=1` (explicit opt-out), **refuse-all 401 when neither
+   is set**, a **4 MiB** request-body limit (`http.MaxBytesReader` +
+   Content-Length pre-flight → 413 ↔ `MAX_REQUEST_BODY_BYTES`), and a
+   loopback-only default bind (`VMAFX_MCP_HTTP_BIND`, default `127.0.0.1`). A
+   client must get the same accept/reject decision from either server.
+   `TestSecurityMiddleware*` / `TestApplyBindHost` (Go) and the
+   `tests/test_http_transport.py` security block (Python) pin both sides. Do
+   not relax the refuse-all default or widen the bind default without changing
+   BOTH servers and ADR-0967.
+
+14. **Score-precision default parity** (ADR-0119 / ADR-1117): every MCP scoring
+   path — Go stdio/subprocess (`impl.go`), Go direct-cgo fallback
+   (`impl_direct.go`), Python stdio (`server.py`), and Python HTTP `/v1/score`
+   (`http_transport.py`) — MUST default the `precision` arg to `legacy`
+   (`%.6f`, the documented C-CLI default). Do not reintroduce a `"17"` default
+   on any single path: a client must get the same numeric format regardless of
+   which server / transport / dispatch path served the request.

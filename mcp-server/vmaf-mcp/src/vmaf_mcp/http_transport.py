@@ -420,7 +420,7 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
       "bitdepth": 8,
       "model": "version=vmaf_v0.6.1",  // optional
       "backend": "auto",               // optional
-      "precision": "17"                // optional
+      "precision": "legacy"            // optional (default %.6f, ADR-0119)
     }
     ```
 
@@ -517,7 +517,11 @@ async def _handle_score(request: Any, metrics: dict[str, Any]) -> Any:
             bitdepth=int(body["bitdepth"]),
             model=str(body.get("model", "version=vmaf_v0.6.1")),
             backend=str(body.get("backend", "auto")),
-            precision=str(body.get("precision", "17")),
+            # "legacy" (%.6f) is the documented C-CLI default (ADR-0119) and the
+            # ScoreRequest default; keep the HTTP path aligned with the stdio /
+            # subprocess paths so a client gets the same numeric format from
+            # either transport.
+            precision=str(body.get("precision", "legacy")),
         )
     except (TypeError, ValueError, FileNotFoundError) as exc:
         # TypeError covers int(None) / int([...]) when the caller sends a

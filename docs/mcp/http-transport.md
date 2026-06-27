@@ -94,7 +94,7 @@ over the `vmaf_score` MCP tool.
 | `bitdepth` | integer | yes | Bit depth: `8` \| `10` \| `12` \| `16` |
 | `model` | string | no | Model specifier (default: `"version=vmaf_v0.6.1"`) |
 | `backend` | string | no | Backend: `"cpu"`, `"cuda"`, `"sycl"`, or `"auto"` (default: `"auto"`) |
-| `precision` | string | no | Output precision digits (default: `"17"`) |
+| `precision` | string | no | Output precision: `"legacy"` (`%.6f`, the C-CLI default per ADR-0119) or `"max"` (lossless `%.17g`). Default: `"legacy"` |
 
 **Example request**
 
@@ -146,6 +146,25 @@ precedence over compiled-in defaults.
 | `VMAFX_LOG_LEVEL` | `INFO` | Python log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `VMAFX_VMAF_BINARY` | *(auto-detected)* | Explicit path to the `vmaf` binary; falls through to `VMAF_BIN` |
 | `VMAFX_MODEL_DIR` | *(none)* | Additional model search root; appended to `VMAF_MCP_ALLOW` |
+
+### Security (ADR-0967)
+
+These variables harden the HTTP transport and are honoured **identically** by
+both the Python (`vmaf-mcp`) and the Go (`vmafx-mcp`) servers, so a single
+deployment config secures either implementation:
+
+| Variable | Default | Description |
+|---|---|---|
+| `VMAFX_MCP_HTTP_TOKEN` | *(none)* | Bearer token. When set (and `NO_AUTH` is unset), every request must carry `Authorization: Bearer <token>`, matched in constant time. |
+| `VMAFX_MCP_HTTP_NO_AUTH` | *(unset)* | Set to `1` to disable authentication entirely (explicit operator opt-out). |
+| `VMAFX_MCP_HTTP_BIND` | `127.0.0.1` | Bind host. Loopback-only by default; set to `0.0.0.0` to listen on all interfaces. |
+
+When neither `VMAFX_MCP_HTTP_TOKEN` nor `VMAFX_MCP_HTTP_NO_AUTH=1` is set, the
+server **rejects every request with 401** — a missing token means auth was not
+configured, and refusing is safer than silently accepting. The request body is
+capped at 4 MiB (`413` on overflow). For the Go server, `VMAFX_MCP_HTTP_BIND`
+only substitutes the host when the configured `VMAFX_MCP_HTTP_ADDR` (e.g.
+`:3000`) carries no explicit host; an address that already pins a host wins.
 
 ---
 

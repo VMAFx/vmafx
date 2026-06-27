@@ -203,8 +203,27 @@ func runMCPTransport(
 		if addr == "" {
 			addr = defaultMCPHTTPAddr
 		}
-		handler := mcp.NewStreamableHTTPHandler(
-			func(*http.Request) *mcp.Server { return srv }, nil)
+		// ADR-0967: default to a loopback-only bind when mcp.http.addr carries
+		// no explicit host (the ":3000" form). Operators opt into all-interfaces
+		// exposure with VMAFX_MCP_HTTP_BIND=0.0.0.0 (or by pinning a host in the
+		// listen address). This mirrors the Python transport default so the Go
+		// server is not silently exposed on every interface.
+		addr = applyBindHost(addr)
+		// ADR-0967 startup posture warning, mirroring the Python transport: a
+		// running HTTP server with neither a token nor an explicit no-auth opt-in
+		// rejects every request with 401, so make that loud at startup.
+		if !noAuthMode() && resolveAuthToken() == "" {
+			log.Warn("VMAFX_MCP_HTTP_TOKEN is unset — all HTTP requests will be " +
+				"rejected with 401. Set the token or set VMAFX_MCP_HTTP_NO_AUTH=1 " +
+				"to accept unauthenticated traffic.")
+		} else if noAuthMode() {
+			log.Warn("VMAFX_MCP_HTTP_NO_AUTH=1 — HTTP authentication disabled.")
+		}
+		// ADR-0967: wrap the MCP streamable-HTTP handler in the security
+		// middleware (bearer auth + request-body size limit). Identical gate to
+		// the Python _make_security_middleware so both servers behave the same.
+		handler := securityMiddleware(mcp.NewStreamableHTTPHandler(
+			func(*http.Request) *mcp.Server { return srv }, nil))
 		httpSrv := &http.Server{
 			Addr:              addr,
 			Handler:           handler,

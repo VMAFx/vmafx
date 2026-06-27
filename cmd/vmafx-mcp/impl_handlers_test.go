@@ -326,6 +326,53 @@ func TestHandleRunTunePerShot_BinaryAbsent(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// runVmafTune — folds stderr into the error on a non-zero exit (parity with the
+// Python wrappers, which surface "vmaf-tune <sub> exited <rc>: <stderr>").
+// Regression for T-BUGHUNT-MCP-2026-06-27 finding mcp #5: the wrappers used
+// exec.Output() and discarded stderr, losing the failure diagnostic.
+// ---------------------------------------------------------------------------
+
+func TestRunVmafTune_SurfacesStderr(t *testing.T) {
+	// A fake vmaf-tune that writes a diagnostic to stderr and exits non-zero.
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "fake-vmaf-tune.sh")
+	const diag = "boom: src not found"
+	script := "#!/bin/sh\necho '" + diag + "' >&2\nexit 3\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake binary: %v", err)
+	}
+
+	_, err := runVmafTune(context.Background(), fake, "compare", []string{"compare"})
+	if err == nil {
+		t.Fatal("expected error from non-zero exit")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "vmaf-tune compare exited") {
+		t.Errorf("error missing subcommand+exit prefix: %q", msg)
+	}
+	if !strings.Contains(msg, diag) {
+		t.Errorf("error did not surface stderr diagnostic %q: %q", diag, msg)
+	}
+}
+
+func TestRunVmafTune_ReturnsStdoutOnSuccess(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "fake-vmaf-tune-ok.sh")
+	script := "#!/bin/sh\nprintf '{\"ok\":true}'\nexit 0\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake binary: %v", err)
+	}
+
+	out, err := runVmafTune(context.Background(), fake, "compare", []string{"compare"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != `{"ok":true}` {
+		t.Errorf("stdout = %q, want %q", string(out), `{"ok":true}`)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // findVmafTune — env override, PATH lookup, fallback.
 // ---------------------------------------------------------------------------
 

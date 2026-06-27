@@ -318,6 +318,48 @@ async def test_score_returns_200_on_valid_request(test_client: TestClient, tmp_p
 
 
 @pytest.mark.asyncio
+async def test_score_precision_defaults_to_legacy(test_client: TestClient, tmp_path: Path) -> None:
+    """Omitted precision must default to "legacy" (%.6f, ADR-0119).
+
+    Regression for T-BUGHUNT-MCP-2026-06-27: the HTTP path previously defaulted
+    precision to "17", diverging from the ScoreRequest default and the stdio /
+    subprocess paths. A client must get the same numeric format from either
+    transport.
+    """
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    ref.write_bytes(b"\x00" * 16)
+    dis.write_bytes(b"\x00" * 16)
+
+    captured: dict[str, Any] = {}
+
+    async def _mock_run(req: Any) -> dict[str, Any]:
+        captured["precision"] = req.precision
+        return _fake_score_payload()
+
+    import vmaf_mcp.server as srv
+
+    with (
+        patch.object(srv, "_validate_path", side_effect=Path),
+        patch.object(srv, "_run_vmaf_score", new=AsyncMock(side_effect=_mock_run)),
+    ):
+        resp = await test_client.post(
+            "/v1/score",
+            json={
+                "reference": str(ref),
+                "distorted": str(dis),
+                "width": 1920,
+                "height": 1080,
+                "pixfmt": "420",
+                "bitdepth": 8,
+            },
+        )
+
+    assert resp.status == 200
+    assert captured["precision"] == "legacy"
+
+
+@pytest.mark.asyncio
 async def test_score_returns_400_on_missing_fields(test_client: TestClient) -> None:
     """POST /v1/score must return 400 when required fields are absent."""
     resp = await test_client.post("/v1/score", json={"reference": "/tmp/r.yuv"})
