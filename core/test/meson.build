@@ -2046,13 +2046,12 @@ test_gpu_dispatch_env_oom = executable('test_gpu_dispatch_env_oom',
     ['test.c', 'test_gpu_dispatch_env_oom.cpp'],
     include_directories : [libvmaf_inc, test_inc,
                            include_directories('../src/')],
-    # The shared C `mu_assert` macro (test.h) returns its message argument as
-    # `char *`; passing a C++ string literal trips -Wwrite-strings. The macro
-    # is upstream-owned and shared by every test, so suppress the diagnostic
-    # for this C++ TU rather than fork the harness. Filter through
-    # get_supported_arguments so MSVC (which rejects the GCC/Clang spelling with
-    # `D8021: invalid numeric argument '/Wno-write-strings'`) simply drops it.
-    cpp_args : cxx.get_supported_arguments('-Wno-write-strings'),
+    # No -Wno-write-strings hack: this C++ TU holds its `mu_assert` messages in
+    # `static char[]` buffers (see the .cpp) instead of returning string
+    # literals as `char *`, so there is nothing to suppress — and the old flag
+    # was both unnecessary on GCC/Clang and broke the MSVC build (cl rejected
+    # `/Wno-write-strings` with D8021, and the underlying literal->char*
+    # conversion was a hard C2440 there anyway).
     dependencies: [pthread_dependency, stdatomic_dependency],
     objects : [gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true)],
 )
