@@ -20,13 +20,9 @@
 #include <stddef.h>
 #include <string.h>
 
-/* ADR-1057: include the generated config.h unconditionally so ARCH_AARCH64 is
- * visible in this TU. The previous `#ifdef HAVE_CONFIG_H` guard was dead — the
- * feature static library is not compiled with `-DHAVE_CONFIG_H`, so the macro
- * never reached this file. Mirrors cpu.h, which includes config.h directly.
- * The aarch64 FMA-contract guards on adm_dwt2_s / adm_dwt2_lo_s below depend on
- * ARCH_AARCH64 being defined here. */
-#include "config.h" // IWYU pragma: keep  (provides ARCH_AARCH64 macro)
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
 #include "mem.h"
 #include "adm_options.h"
@@ -1082,32 +1078,6 @@ void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h)
     }
 }
 
-/* aarch64 FMA-contract guard (ADR-1057).
- *
- * On AArch64 every core has a hardware fused multiply-add, so GCC
- * (`-ffp-contract=fast`) and Clang (`-ffp-contract=on`) fuse the
- * `accum += filter[k] * sN` accumulations below into a single-rounded
- * `fmadd`. The dispatched NEON kernel `float_adm_dwt2_neon` is deliberately
- * FMA-free (explicit `vmulq` + `vaddq`, two roundings) and its TU is built
- * `-ffp-contract=off`. Without this guard the NEON path and this scalar
- * fallback diverge by ~1 ULP on aarch64 — the exact gap that reverted
- * PR #685 (see ADR-1057) and that `test_float_adm_simd` asserts against.
- *
- * x86 is intentionally left untouched: GCC defaults to `-ffp-contract=off`
- * on x86 (no within-statement fusion of `a*b+c`), and float-ADM DWT2 is the
- * scalar path on x86 (no AVX2 DWT2 dispatch), so this is the function the
- * Netflix golden gate exercises. Gating the guard on `ARCH_AARCH64` keeps the
- * x86 golden bytes byte-identical while making the aarch64 scalar fallback
- * bit-exact with the NEON kernel. Clang on aarch64 honours the `#pragma`;
- * GCC honours the function attribute. */
-#if defined(ARCH_AARCH64) && ARCH_AARCH64
-#if defined(__clang__)
-#pragma clang fp contract(off)
-#endif
-#if defined(__GNUC__) && !defined(__clang__)
-__attribute__((optimize("-ffp-contract=off")))
-#endif
-#endif
 int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x, int w,
                int h, int src_stride, int dst_stride)
 {
@@ -1205,16 +1175,6 @@ int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int *
     return 0;
 }
 
-/* aarch64 FMA-contract guard (ADR-1057) — see adm_dwt2_s above. `adm_dwt2_lo`
- * has no SIMD twin (always scalar), but keeping the low-pass-only DWT2
- * FMA-free on aarch64 holds the scale-0 lo-pass numerics consistent with the
- * full DWT2 and with x86. The GCC attribute is per-function; the Clang
- * `#pragma` set at adm_dwt2_s is still in effect here. */
-#if defined(ARCH_AARCH64) && ARCH_AARCH64
-#if defined(__GNUC__) && !defined(__clang__)
-__attribute__((optimize("-ffp-contract=off")))
-#endif
-#endif
 int adm_dwt2_lo_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x, int w,
                   int h, int src_stride, int dst_stride)
 {
@@ -1272,13 +1232,6 @@ int adm_dwt2_lo_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, in
     aligned_free(tmplo);
     return 0;
 }
-
-/* Restore Clang's default FP contraction for the remaining (double-precision
- * DWT2 + buffer-copy) functions; the `contract(off)` region set at adm_dwt2_s
- * applied only to the two single-precision DWT2 kernels on aarch64. */
-#if defined(ARCH_AARCH64) && ARCH_AARCH64 && defined(__clang__)
-#pragma clang fp contract(on)
-#endif
 
 int adm_dwt2_d(const double *src, const adm_dwt_band_t_d *dst, int **ind_y, int **ind_x, int w,
                int h, int src_stride, int dst_stride)
