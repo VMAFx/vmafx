@@ -311,6 +311,9 @@ class ExternalProgramCaller(object):
         vif_enhn_gain_limit=None,
         adm_enhn_gain_limit=None,
         motion_force_zero=False,
+        enc_width=None,
+        enc_height=None,
+        enc_bitdepth=None,
     ):
 
         if exe is None:
@@ -366,6 +369,17 @@ class ExternalProgramCaller(object):
                     assert isinstance(motion_force_zero, bool)
                     motion_force_zero = str(motion_force_zero).lower()
                     vmafexec_cmd += f":motion.motion_force_zero={motion_force_zero}:float_motion.motion_force_zero={motion_force_zero}"
+
+                # CAMBI encode-resolution / encode-bitdepth overrides. These
+                # flow through to the cambi feature so its feature-name key
+                # snapshots encbd/ench/encw (e.g. for VMAF v1.0.16 models).
+                # Matches Netflix upstream call_vmafexec.
+                if enc_width is not None:
+                    vmafexec_cmd += f":cambi.enc_width={enc_width}"
+                if enc_height is not None:
+                    vmafexec_cmd += f":cambi.enc_height={enc_height}"
+                if enc_bitdepth is not None:
+                    vmafexec_cmd += f":cambi.enc_bitdepth={enc_bitdepth}"
 
         assert isinstance(subsample, int) and subsample >= 1
         if subsample != 1:

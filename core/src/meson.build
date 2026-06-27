@@ -556,6 +556,61 @@ if built_in_models_enabled
             )
         endforeach
 
+        # VMAF v1.0.16 SDR models (ported from Netflix upstream 4718b4f5f).
+        # These live in their own subdirectories under model/, so they use a
+        # dedicated dir prefix; the xxd embed pipeline is identical to the v0
+        # models above. The generated symbols src_vmaf_v1_0_16_*_json[] / _len
+        # are declared in model.c.
+        model_v1_0_16_dir = '../../model/vmaf_v1.0.16/'
+        model_v1_0_16_files = [
+            'vmaf_v1.0.16_3d0h.json',
+            'vmaf_v1.0.16_3d0h_2160.json',
+            'vmaf_v1.0.16_5d0h.json',
+            'vmaf_v1.0.16_1d5h_2160.json',
+        ]
+        foreach model_file : model_v1_0_16_files
+            if xdd_supports_n
+                command = [xxd, '-i', '-n', 'src_@PLAINNAME@', '@INPUT@', '@OUTPUT@']
+            else
+                command = [xxd, '-i', '@INPUT@', '@OUTPUT@']
+            endif
+            json_model_c_sources += custom_target(
+                  model_file,
+                  output : '@PLAINNAME@.c',
+                  input : configure_file(
+                    input : model_v1_0_16_dir + model_file,
+                    output : model_file,
+                    copy: true
+                  ),
+                  command : command,
+            )
+        endforeach
+
+        model_v1_0_16_hfr_dir = '../../model/vmaf_v1.0.16_hfr/'
+        model_v1_0_16_hfr_files = [
+            'vmaf_v1.0.16_hfr_3d0h.json',
+            'vmaf_v1.0.16_hfr_3d0h_2160.json',
+            'vmaf_v1.0.16_hfr_5d0h.json',
+            'vmaf_v1.0.16_hfr_1d5h_2160.json',
+        ]
+        foreach model_file : model_v1_0_16_hfr_files
+            if xdd_supports_n
+                command = [xxd, '-i', '-n', 'src_@PLAINNAME@', '@INPUT@', '@OUTPUT@']
+            else
+                command = [xxd, '-i', '@INPUT@', '@OUTPUT@']
+            endif
+            json_model_c_sources += custom_target(
+                  model_file,
+                  output : '@PLAINNAME@.c',
+                  input : configure_file(
+                    input : model_v1_0_16_hfr_dir + model_file,
+                    output : model_file,
+                    copy: true
+                  ),
+                  command : command,
+            )
+        endforeach
+
         # BRISQUE allmodel embed (ADR-1115). Same xxd pipeline as the JSON
         # models above; the model carries no .json extension so it is handled
         # separately. xxd's -n sanitiser maps "src_brisque_live.model" to the

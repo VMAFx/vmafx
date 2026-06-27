@@ -22,7 +22,7 @@
 # ---------------------------------------------------------------------------
 # Builder on debian:12-slim to match the distroless cc-debian12 runtime glibc (2.36).
 # Ubuntu 26.04 requires glibc >= 2.43 which distroless cc-debian12 does not provide.
-FROM debian:13-slim@sha256:4e401d95de7083948053197a9c3913343cd06b706bf15eb6a0c3ccd26f436a0e AS builder
+FROM debian:13-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2 AS builder
 
 ARG VMAF_BUILD_JOBS=4
 ARG DEBIAN_FRONTEND=noninteractive
@@ -70,7 +70,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
 # ---------------------------------------------------------------------------
 # Stage 2 — python-deps: install vmaf-mcp + vmaf-tune into a virtualenv
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061 AS python-deps
+FROM python:3.14-slim@sha256:63a4c7f612a00f92042cbdcc7cdc6a306f38485af0a200b9c89de7d9b1607d15 AS python-deps
 
 ARG DEBIAN_FRONTEND=noninteractive
 

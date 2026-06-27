@@ -17,7 +17,7 @@ dev = ["pytest>=9.1.1", "ruff>=0.15.18"]
 # Saliency mask materialisation needs onnxruntime + numpy at runtime.
 # Kept optional so the smoke tests (which mock subprocess + skip ORT) run
 # in a minimal environment.
-runtime = ["onnxruntime>=1.27.0", "numpy>=2.4.6"]
+runtime = ["onnxruntime>=1.27.0", "numpy>=2.5.0"]
 
 [project.scripts]
 vmaf-roi-score = "vmafroiscore.cli:main"

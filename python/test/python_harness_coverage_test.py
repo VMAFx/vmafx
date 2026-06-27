@@ -329,6 +329,34 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
         self.assertIn("adm.adm_enhn_gain_limit=2.0", cmd)
         self.assertIn("motion.motion_force_zero=true", cmd)
 
+    def test_model_with_cambi_enc_overrides(self):
+        # The CAMBI enc_width/enc_height/enc_bitdepth overrides flow through
+        # to the model arg so the feature-name key snapshots encbd/ench/encw
+        # (required by VMAF v1.0.16 models). Matches Netflix upstream.
+        kw = self._base_kwargs()
+        kw.update(
+            no_prediction=False,
+            models=["/m/vmaf_v1.0.16_3d0h.json"],
+            enc_width=576,
+            enc_height=324,
+            enc_bitdepth=8,
+        )
+        cmd = self._capture(**kw)
+        self.assertIn("--model /m/vmaf_v1.0.16_3d0h.json", cmd)
+        self.assertIn("cambi.enc_width=576", cmd)
+        self.assertIn("cambi.enc_height=324", cmd)
+        self.assertIn("cambi.enc_bitdepth=8", cmd)
+
+    def test_cambi_enc_overrides_omitted_when_none(self):
+        # When enc params are None (no override and no asset enc dims), the
+        # suffix is not appended — preserving the legacy command shape.
+        kw = self._base_kwargs()
+        kw.update(no_prediction=False, models=["/m/vmaf_v0.6.1.json"])
+        cmd = self._capture(**kw)
+        self.assertNotIn("cambi.enc_width", cmd)
+        self.assertNotIn("cambi.enc_height", cmd)
+        self.assertNotIn("cambi.enc_bitdepth", cmd)
+
 
 class MiscPureFunctionsTest(unittest.TestCase):
     """`tools/misc.py` — pure-Python helpers exercised independently of the

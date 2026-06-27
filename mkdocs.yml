@@ -226,6 +226,7 @@ nav:
           - NFLX: metrics/ctc/nflx.md
   - Models:
       - Overview: models/overview.md
+      - VMAF v1 (v1.0.16): models/v1.md
       - Datasets: models/datasets.md
   - Backends:
       - backends/index.md
