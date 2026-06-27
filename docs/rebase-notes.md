@@ -1,6 +1,36 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/pelorus-abi-minor3-consume — re-pin vendored Pelorus ABI to minor-3 + consume PEL_SEC_COMPLEXITY (2026-06-27)
+Rebase impact: **none on upstream Netflix/vmaf** — all fork-local (ADR-1120,
+builds on ADR-1113 + ADR-1118). **Cross-repo ABI parity invariant:** the
+vendored Pelorus interop mirror is single-sourced in `VMAFx/pelorus` (ADR-0103)
+and pinned by `PELORUS_VENDOR_SHA` in `scripts/sync-pelorus-interop.sh` — now
+`818d844` (ABI 1.3, was `835e097` / ABI 1.0). The drift-guard CI gate
+(`sync-pelorus-interop.sh` without `--update`) fails on any divergence from the
+pin, so a future maintainer must NOT hand-edit the vendored files
+(`core/include/libvmaf/pelorus/*.h`, `core/src/interop/pelorus_*.c`, and the body
+of `core/test/test_pelorus_interop.c` from its first vendored `#include` on) —
+fix defects upstream in pelorus and re-vendor via `--update`.
+- **Manifest invariant:** the script's `manifest` array, `core/src/meson.build`,
+  and the `test_pelorus_interop` target in `core/test/meson.build` must stay in
+  lockstep with the pelorus source set. Minor-3 added
+  `pelorus/denoise.h` + `pelorus_denoise_params.c` + `pelorus_qp_report_csv.c`;
+  the last is REQUIRED to link the fixture (`pel_x265_csv_parse`).
+- **`--update` now re-vendors the fixture body** (previously only the six
+  manifest files), preserving the Lusoris-authored header before the first
+  vendored include. The drift check compares the body whitespace-insensitively.
+- **Vendored files are lint/format-excluded by prefix glob**
+  (`core/src/interop/pelorus_`, `core/include/libvmaf/pelorus/`) in
+  `.pre-commit-config.yaml`, `Makefile`, and `scripts/ci/assertion-density.sh` —
+  new vendored files matching those prefixes are covered automatically; no new
+  exclusion entries are needed.
+- **Complexity modulation (golden-isolation invariant, rebase-sensitive):**
+  `perceptual_weight.c::complexity_modulation` MUST return exactly `1.0` when
+  `PEL_SEC_COMPLEXITY` is absent or `complexity` is non-finite — that is what
+  keeps the no-side-data golden path bit-exact (Netflix 576×324 pair =
+  `76.667831`). The guard is `test_complexity_modulates_weight`/`_grid_zero`.
+
 ## fix/bughunt-cuda — CUDA pinned-buffer leaks, motion SAD precision, errno fidelity (2026-06-27)
 Rebase impact: **none on upstream** — all fork-local. The CUDA backend
 (`core/src/feature/cuda/`) is a fork addition with no Netflix/vmaf counterpart.

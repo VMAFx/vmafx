@@ -162,6 +162,96 @@ static uint8_t *build_banding_blob(uint16_t cols, uint16_t rows, uint8_t risk_by
     return blob;
 }
 
+/*
+ * Build a synthetic blob carrying a banding section (per-cell risk map, every
+ * cell == risk_byte) AND a PEL_SEC_COMPLEXITY section with the given
+ * `complexity` scalar. Layout (matching interop.c's 8-aligned packer):
+ *   [uuid 16][header 48][dir[2] 32][banding 24->pad 24][complexity 16][cell map].
+ * Both section structs are already 8-aligned in size (24, 16), so no inter-
+ * section padding is needed. Returns a malloc'd blob the caller frees.
+ *
+ * This is the load-bearing fixture: with the SAME banding map, toggling the
+ * complexity section (or its value) must change the derived weight, while a blob
+ * WITHOUT the complexity section reproduces the legacy banding-only weight.
+ */
+static uint8_t *build_banding_complexity_blob(uint16_t cols, uint16_t rows, uint8_t risk_byte,
+                                              float global_risk, float complexity, size_t *out_len)
+{
+    const uint32_t n_cells = (uint32_t)cols * (uint32_t)rows;
+    const uint32_t header_size = (uint32_t)sizeof(PelorusSideData);
+    const uint32_t dir_size = (uint32_t)sizeof(PelorusSectionDir);
+    const uint32_t band_size = (uint32_t)sizeof(PelorusBandingSection);
+    const uint32_t cx_size = (uint32_t)sizeof(PelorusComplexitySection);
+    /* header + 2 dir entries, already a multiple of 8. */
+    const uint32_t band_off = header_size + 2u * dir_size;
+    const uint32_t band_padded = (band_size + 7u) & ~7u;
+    const uint32_t cx_off = band_off + band_padded;
+    const uint32_t cx_padded = (cx_size + 7u) & ~7u;
+    const uint32_t map_off = cx_off + cx_padded;
+    const uint32_t total_size = map_off + n_cells;
+    const size_t blob_len = (size_t)PELORUS_SIDEDATA_UUID_LEN + (size_t)total_size;
+
+    uint8_t *blob = calloc(1, blob_len);
+    if (blob == NULL) {
+        return NULL;
+    }
+
+    memcpy(blob, pelorus_sidedata_uuid, PELORUS_SIDEDATA_UUID_LEN);
+
+    PelorusSideData hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    memcpy(hdr.magic, PELORUS_MAGIC_STR, PELORUS_MAGIC_LEN);
+    hdr.abi_major = (uint16_t)PELORUS_ABI_MAJOR;
+    hdr.abi_minor = (uint16_t)PELORUS_ABI_MINOR;
+    hdr.total_size = total_size;
+    hdr.section_mask = PEL_SEC_BANDING | PEL_SEC_COMPLEXITY;
+    hdr.section_count = 2;
+    hdr.header_size = (uint16_t)header_size;
+    hdr.plane_layout = PEL_LAYOUT_420;
+    hdr.bit_depth = 8;
+    hdr.grid_cols = cols;
+    hdr.grid_rows = rows;
+    hdr.producer_id = PEL_FOURCC('T', 'E', 'S', 'T');
+    memcpy(blob + PELORUS_SIDEDATA_UUID_LEN, &hdr, sizeof(hdr));
+
+    PelorusSectionDir dir[2];
+    memset(dir, 0, sizeof(dir));
+    dir[0].section_id = PEL_SEC_BANDING;
+    dir[0].offset = band_off;
+    dir[0].size = band_size;
+    dir[0].struct_minor = (uint32_t)PELORUS_ABI_MINOR;
+    dir[1].section_id = PEL_SEC_COMPLEXITY;
+    dir[1].offset = cx_off;
+    dir[1].size = cx_size;
+    dir[1].struct_minor = (uint32_t)PELORUS_ABI_MINOR;
+    memcpy(blob + PELORUS_SIDEDATA_UUID_LEN + header_size, dir, sizeof(dir));
+
+    PelorusBandingSection band;
+    memset(&band, 0, sizeof(band));
+    band.global_banding_risk = global_risk;
+    band.flat_area_fraction = 1.0f;
+    if (n_cells > 0) {
+        band.cell_data_offset = map_off;
+        band.cell_data_size = n_cells;
+    }
+    memcpy(blob + PELORUS_SIDEDATA_UUID_LEN + band_off, &band, sizeof(band));
+
+    PelorusComplexitySection cx;
+    memset(&cx, 0, sizeof(cx));
+    cx.complexity = complexity;
+    cx.texture_energy = complexity;
+    cx.motion_component = 0.0f;
+    cx.has_scene_cut = 0;
+    memcpy(blob + PELORUS_SIDEDATA_UUID_LEN + cx_off, &cx, sizeof(cx));
+
+    if (n_cells > 0) {
+        memset(blob + PELORUS_SIDEDATA_UUID_LEN + map_off, risk_byte, n_cells);
+    }
+
+    *out_len = blob_len;
+    return blob;
+}
+
 /* Flip a packed blob's ABI major to force the R6 rejection path, in place.
  * Reads/writes via memcpy so no byte pointer is cast to PelorusSideData*. */
 static void corrupt_abi_major(uint8_t *blob)
@@ -359,6 +449,113 @@ static char *test_argument_guards(void)
     return NULL;
 }
 
+/*
+ * Load-bearing complexity-modulation proof (ADR-1120, ABI 1.3).
+ *
+ * Same banding map in three pooled runs, distinguished only by the
+ * PEL_SEC_COMPLEXITY section:
+ *   - NO complexity section          -> salience 1.0, weight 2.0 (legacy)
+ *   - complexity == 0.0              -> factor 1.0, weight 2.0 (identical)
+ *   - complexity == 1.0             -> factor 0.5, weight 1.5 (attenuated)
+ * The pooled mean strictly orders run(complexity=1) < run(no/0 complexity), so
+ * the section is load-bearing: removing the consumer's complexity_modulation
+ * (or the section) collapses the three runs to one. Closed-form checks pin the
+ * exact arithmetic.
+ */
+static double pool_with_blob(uint8_t *blob, size_t blob_len)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    double mean = -1.0;
+
+    if (vmaf_init(&vmaf, cfg) != 0) {
+        return -1.0;
+    }
+    if (vmaf_set_perceptual_weight_enabled(vmaf, 1) != 0 ||
+        vmaf_set_perceptual_weight_strength(vmaf, 1.0) != 0 ||
+        inject_scores(vmaf, 60.0, 80.0, 100.0) != 0) {
+        vmaf_close(vmaf);
+        return -1.0;
+    }
+    if (blob != NULL && vmaf_set_perceptual_sidedata(vmaf, blob, blob_len, 2) != 0) {
+        vmaf_close(vmaf);
+        return -1.0;
+    }
+    if (vmaf_feature_score_pooled(vmaf, FEAT, VMAF_POOL_METHOD_MEAN, &mean, 0, 2) != 0) {
+        vmaf_close(vmaf);
+        return -1.0;
+    }
+    vmaf_close(vmaf);
+    return mean;
+}
+
+static char *test_complexity_modulates_weight(void)
+{
+    /* Banding-only weight on frame 2: salience 1.0 -> weight 2.0. */
+    size_t band_len = 0;
+    uint8_t *band_blob = build_banding_blob(4, 4, 255, 1.0f, &band_len);
+    mu_assert("banding blob alloc", band_blob != NULL);
+    double mean_band_only = pool_with_blob(band_blob, band_len);
+    free(band_blob);
+    double expect_w2 = (1.0 * 60.0 + 1.0 * 80.0 + 2.0 * 100.0) / 4.0;
+    mu_assert("banding-only weighted mean (w=2.0)", bit_exact(mean_band_only, expect_w2));
+
+    /* Same banding map + complexity 0.0: factor 1.0 -> weight 2.0, IDENTICAL. */
+    size_t cx0_len = 0;
+    uint8_t *cx0_blob = build_banding_complexity_blob(4, 4, 255, 1.0f, 0.0f, &cx0_len);
+    mu_assert("cx0 blob alloc", cx0_blob != NULL);
+    double mean_cx0 = pool_with_blob(cx0_blob, cx0_len);
+    free(cx0_blob);
+    mu_assert("complexity==0 is identical to banding-only", bit_exact(mean_cx0, mean_band_only));
+
+    /* Same banding map + complexity 1.0: factor (1 - 0.5*1) = 0.5 -> salience
+     * 0.5 -> weight 1.5. Closed-form: (60 + 80 + 1.5*100) / (1 + 1 + 1.5). */
+    size_t cx1_len = 0;
+    uint8_t *cx1_blob = build_banding_complexity_blob(4, 4, 255, 1.0f, 1.0f, &cx1_len);
+    mu_assert("cx1 blob alloc", cx1_blob != NULL);
+    double mean_cx1 = pool_with_blob(cx1_blob, cx1_len);
+    free(cx1_blob);
+    double expect_w15 = (1.0 * 60.0 + 1.0 * 80.0 + 1.5 * 100.0) / (1.0 + 1.0 + 1.5);
+    mu_assert("complexity==1 attenuates to weight 1.5", bit_exact(mean_cx1, expect_w15));
+
+    /* Load-bearing: high complexity STRICTLY lowers the pooled mean vs no/zero
+     * complexity (the up-weighted high-scoring frame is pulled back). */
+    mu_assert("high complexity lowers pooled mean", mean_cx1 < mean_band_only);
+
+    /* Monotone in complexity: a mid value (0.5 -> factor 0.75 -> weight 1.75)
+     * lands strictly between the two extremes. */
+    size_t cxm_len = 0;
+    uint8_t *cxm_blob = build_banding_complexity_blob(4, 4, 255, 1.0f, 0.5f, &cxm_len);
+    mu_assert("cxm blob alloc", cxm_blob != NULL);
+    double mean_cxm = pool_with_blob(cxm_blob, cxm_len);
+    free(cxm_blob);
+    mu_assert("mid complexity between extremes", mean_cxm < mean_band_only && mean_cxm > mean_cx1);
+
+    return NULL;
+}
+
+/* The complexity section is grid-independent: it modulates even the grid==0
+ * frame-level-scalar path (today's deband placeholder). */
+static char *test_complexity_modulates_grid_zero(void)
+{
+    /* grid 0x0, banding scalar salience = 1.0; no complexity -> weight 2.0. */
+    size_t b_len = 0;
+    uint8_t *b_blob = build_banding_blob(0, 0, 0, 1.0f, &b_len);
+    mu_assert("grid0 banding blob alloc", b_blob != NULL);
+    double mean_no_cx = pool_with_blob(b_blob, b_len);
+    free(b_blob);
+
+    /* grid 0x0 + complexity 1.0 -> factor 0.5 -> weight 1.5; strictly lower. */
+    size_t c_len = 0;
+    uint8_t *c_blob = build_banding_complexity_blob(0, 0, 0, 1.0f, 1.0f, &c_len);
+    mu_assert("grid0 complexity blob alloc", c_blob != NULL);
+    double mean_cx = pool_with_blob(c_blob, c_len);
+    free(c_blob);
+
+    mu_assert("grid0 high complexity lowers pooled mean", mean_cx < mean_no_cx);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_pooling_unweighted_without_sidedata);
@@ -368,5 +565,7 @@ char *run_tests(void)
     mu_run_test(test_grid_zero_degrades_to_scalar);
     mu_run_test(test_robustness_foreign_and_bad_abi);
     mu_run_test(test_argument_guards);
+    mu_run_test(test_complexity_modulates_weight);
+    mu_run_test(test_complexity_modulates_grid_zero);
     return NULL;
 }

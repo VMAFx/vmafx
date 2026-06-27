@@ -41,7 +41,7 @@ set -euo pipefail
 # The pelorus commit this mirror was vendored from. Bump this (and re-vendor
 # via --update) only on a deliberate pelorus interop ABI change. Keep in lock
 # step with the banner SHA in every vendored file and docs/api/pelorus-interop.md.
-PELORUS_VENDOR_SHA="835e097"
+PELORUS_VENDOR_SHA="818d844"
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
@@ -121,8 +121,11 @@ manifest=(
   "include/pelorus/pelorus.h|core/include/libvmaf/pelorus/pelorus.h||"
   "include/pelorus/interop.h|core/include/libvmaf/pelorus/interop.h|pelorus/pelorus.h|libvmaf/pelorus/pelorus.h"
   "include/pelorus/deband.h|core/include/libvmaf/pelorus/deband.h|pelorus/pelorus.h|libvmaf/pelorus/pelorus.h"
+  "include/pelorus/denoise.h|core/include/libvmaf/pelorus/denoise.h|pelorus/pelorus.h|libvmaf/pelorus/pelorus.h"
   "src/interop.c|core/src/interop/pelorus_interop.c|pelorus/interop.h|libvmaf/pelorus/interop.h"
   "src/deband_params.c|core/src/interop/pelorus_deband_params.c|pelorus/deband.h|libvmaf/pelorus/deband.h"
+  "src/denoise_params.c|core/src/interop/pelorus_denoise_params.c|pelorus/denoise.h|libvmaf/pelorus/denoise.h"
+  "src/qp_report_csv.c|core/src/interop/pelorus_qp_report_csv.c|pelorus/interop.h|libvmaf/pelorus/interop.h"
   "src/version.c|core/src/interop/pelorus_version.c|pelorus/pelorus.h|libvmaf/pelorus/pelorus.h"
 )
 
@@ -216,19 +219,59 @@ for row in "${manifest[@]}"; do
   fi
 done
 
-# --- Conformance fixture (body-only) --------------------------------------
-# Body = from the first vendored include onward; the test's leading header is
-# Lusoris-authored (not a pelorus clone). clang-format is applied to the vmafx
-# copy, so the body comparison is whitespace-insensitive (token equality).
+# --- Conformance fixture --------------------------------------------------
+# The fixture is split into two parts:
+#   header = the vmafx Lusoris-authored part BEFORE the first vendored include
+#            (license header + a vmafx-specific doc block); NOT a pelorus clone,
+#            so it is preserved verbatim across re-vendors.
+#   body   = from the first vendored include onward; the verbatim pelorus
+#            test/interop_test.c body with "pelorus/" -> "libvmaf/pelorus/".
+# The pelorus repo formats its C with the same .clang-format as vmafx (its
+# config notes it "matches the vmafx sibling"), so the re-vendored body is
+# already clang-format clean — we vendor it raw and do NOT reformat it (the
+# drift check below is whitespace-insensitive / token equality, so a stray
+# reformat would also pass it, but keeping it raw keeps the body a faithful
+# mirror of the pelorus source token-for-token).
+
+# Emit the rewritten pelorus body (first vendored include onward) on stdout.
+# The `f` latch is SET BEFORE the print test so the triggering include line is
+# emitted exactly once (a `f{print}` rule ahead of the trigger rule would print
+# every include after the first one twice).
+fixture_body_pel() {
+  read_src "test/interop_test.c" |
+    awk '/^#include "pelorus\// { f = 1 } f { print }' |
+    sed 's|#include "pelorus/|#include "libvmaf/pelorus/|'
+}
+
+if [ "$mode" = "update" ]; then
+  # --update re-vendors the manifest files above; it MUST also re-vendor the
+  # fixture body, or the immediately-following drift check fails on a fixture
+  # that still carries the previous pin's body. Preserve the Lusoris-authored
+  # header (everything before the first "libvmaf/pelorus/" include) and replace
+  # the body with the freshly-pinned pelorus body.
+  if [ ! -f "$test_dst" ]; then
+    printf 'error: conformance fixture missing: core/test/test_pelorus_interop.c\n' >&2
+    printf '       (cannot re-vendor body without the Lusoris-authored header)\n' >&2
+    exit 1
+  fi
+  {
+    # Lusoris-authored header: up to (but not including) the first vendored
+    # include. sed '/.../q' prints through the matched line; drop that line
+    # with `head -n -1` so the body's own include leads the body section.
+    sed '/^#include "libvmaf\/pelorus\//q' "$test_dst" | head -n -1
+    fixture_body_pel
+  } >"$test_dst.tmp"
+  mv "$test_dst.tmp" "$test_dst"
+  printf 're-vendored: core/test/test_pelorus_interop.c (body)\n'
+fi
+
 if [ "$mode" = "check" ]; then
   if [ ! -f "$test_dst" ]; then
     printf 'DRIFT: conformance fixture missing: core/test/test_pelorus_interop.c\n' >&2
     drift=1
   else
-    body_pel="$(read_src "test/interop_test.c" |
-      awk 'f { print } /^#include "pelorus\// { print; f = 1 }' |
-      sed 's|#include "pelorus/|#include "libvmaf/pelorus/|')"
-    body_vmafx="$(awk 'f { print } /^#include "libvmaf\/pelorus\// { print; f = 1 }' "$test_dst")"
+    body_pel="$(fixture_body_pel)"
+    body_vmafx="$(awk '/^#include "libvmaf\/pelorus\// { f = 1 } f { print }' "$test_dst")"
     if [ "$(printf '%s' "$body_pel" | tr -d '[:space:]')" \
       != "$(printf '%s' "$body_vmafx" | tr -d '[:space:]')" ]; then
       printf 'DRIFT: conformance fixture body differs from pelorus test/interop_test.c\n' >&2

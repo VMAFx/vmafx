@@ -865,6 +865,17 @@ after a port-upstream of any of these files.
   disabled). The reader is CPU-only and consumes the vendored Pelorus parser
   (ADR-1113) — do not edit those vendored files. R1–R6 graceful-degrade
   (`grid==0` → frame-level scalar; bad ABI → unweighted + log) must also hold.
+  3. **Complexity modulation (ADR-1120, Pelorus ABI ≥ 1.3):**
+     `derive_salience` scales the salience by
+     `complexity_modulation(blob)` = `(1 − 0.5·complexity)` floored at `0.25`
+     when `PEL_SEC_COMPLEXITY` is present. This MUST collapse to factor `1.0`
+     (no modulation) when the section is **absent** or `complexity` is
+     non-finite — that is what keeps the no-side-data golden path bit-exact.
+     Never change `complexity_modulation` to return anything but `1.0` on the
+     absent/NaN path. The load-bearing guard is `test_complexity_modulates_weight`
+     / `test_complexity_modulates_grid_zero` (toggle-proven: stubbing the helper
+     to a no-op fails the test). The section is grid-independent, so it also
+     modulates the `grid==0` scalar path.
 
 ## Governing ADRs
 

@@ -24,7 +24,10 @@
  * derives a single normalized [0,1] "salience" per frame from the per-cell
  * banding-risk map (and, when present, the variance map). Frames whose spatial
  * regions carry more banding risk get a higher salience, hence a higher pooling
- * weight. The actual pooling re-weight is applied in libvmaf.c's
+ * weight. When the producer also attaches a PEL_SEC_COMPLEXITY section (ABI
+ * 1.3), the salience is additionally ATTENUATED as the per-frame complexity
+ * rises — banding is masked in busy / textured frames and most visible in flat
+ * / simple ones. The actual pooling re-weight is applied in libvmaf.c's
  * vmaf_feature_score_pooled; this module only stores and serves the weights.
  *
  * Robustness (NASA Power-of-10, CERT C):
@@ -241,10 +244,67 @@ static double variance_activity(const uint8_t *blob, size_t blob_len, const uint
     return activity;
 }
 
+/* Maximum fraction of the banding salience that frame complexity may attenuate.
+ * The modulation factor is (1 - PEL_COMPLEXITY_ATTEN * complexity), so at
+ * complexity == 1 the salience is scaled by (1 - 0.5) = 0.5 and at complexity ==
+ * 0 it is unchanged. A flat constant (not a tunable knob) keeps the behaviour
+ * predictable and the golden-isolation reasoning simple. */
+#define PEL_COMPLEXITY_ATTEN 0.5
+
+/* Hard floor on the modulation factor so even a maximal, out-of-contract
+ * complexity can never erase the banding salience entirely (a busy frame still
+ * carries SOME perceptual weight). With ATTEN 0.5 and complexity clamped to
+ * [0,1] the unclamped factor already bottoms out at 0.5, so this floor is a
+ * belt-and-braces guard against a future ATTEN > 1.0. */
+#define PEL_COMPLEXITY_FLOOR 0.25
+
+/*
+ * Complexity-driven attenuation factor for the banding salience, in
+ * [PEL_COMPLEXITY_FLOOR, 1.0]. Returns 1.0 (no modulation, exact legacy
+ * behaviour) when the PEL_SEC_COMPLEXITY section is absent or its `complexity`
+ * field is non-finite. Rationale: banding / artefacts are MORE perceptually
+ * visible in low-complexity (flat / simple) content and MASKED in high-
+ * complexity (busy / textured) content, so the banding-salience boost is
+ * attenuated as frame complexity rises. The section is per-frame (grid-
+ * independent), so this path engages even when grid == 0.
+ *
+ * `complexity` and `texture_energy` are documented in [0,1]; clampf maps NaN to
+ * the benign 0.0 (-> factor 1.0, no modulation) and bounds the field to [0,1].
+ */
+static double complexity_modulation(const uint8_t *blob, size_t blob_len)
+{
+    const void *ptr = NULL;
+    size_t got = 0;
+    PelorusComplexitySection cx;
+    double complexity;
+    double factor;
+
+    if (pel_blob_find_section(blob, blob_len, PEL_SEC_COMPLEXITY, sizeof(PelorusComplexitySection),
+                              &ptr, &got) != PEL_OK ||
+        ptr == NULL) {
+        return 1.0; /* no complexity section -> no modulation (legacy behaviour) */
+    }
+
+    memset(&cx, 0, sizeof(cx));
+    /* R4: copy only the bytes the producer actually wrote (got <= sizeof). */
+    memcpy(&cx, ptr, got);
+
+    complexity = (double)clampf(cx.complexity, 0.0f, 1.0f);
+    factor = 1.0 - PEL_COMPLEXITY_ATTEN * complexity;
+    if (isnan(factor) || !isfinite(factor) || factor < PEL_COMPLEXITY_FLOOR) {
+        factor = PEL_COMPLEXITY_FLOOR;
+    }
+    if (factor > 1.0) {
+        factor = 1.0;
+    }
+    return factor;
+}
+
 /*
  * Derive a frame salience in [0,1] from a validated Pelorus image. Banding is
  * the primary driver; variance modulates it (flat regions make banding more
- * visible). No banding section -> salience 0 (weight 1.0). Always finite [0,1].
+ * visible) and frame complexity attenuates it (busy frames mask banding). No
+ * banding section -> salience 0 (weight 1.0). Always finite [0,1].
  */
 static double derive_salience(const uint8_t *blob, size_t blob_len, const uint8_t *image,
                               size_t image_len)
@@ -278,6 +338,13 @@ static double derive_salience(const uint8_t *blob, size_t blob_len, const uint8_
         double modulation = 0.75 + 0.5 * flatness; /* [0.75, 1.25] */
         salience *= modulation;
     }
+
+    /* Per-frame complexity attenuation (PEL_SEC_COMPLEXITY, ABI 1.3): busy /
+     * textured frames mask banding, so the salience boost is scaled DOWN as the
+     * producer's aggregate frame complexity rises. Absent section -> factor 1.0
+     * (exact legacy behaviour). This section is grid-independent, so it also
+     * modulates the grid==0 frame-level-scalar path above. */
+    salience *= complexity_modulation(blob, blob_len);
 
     if (isnan(salience) || !isfinite(salience)) {
         return 0.0;

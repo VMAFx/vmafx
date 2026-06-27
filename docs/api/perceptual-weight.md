@@ -93,7 +93,17 @@ For each frame with a valid blob:
 2. **Variance** modulates it. Low spatial variance (flat regions) makes banding
    more visible, so it lifts the salience slightly; high variance (texture) masks
    it. The modulation factor stays in `[0.75, 1.25]` so banding dominates.
-3. The salience is clamped to `[0,1]`; the weight is `1 + strength · salience`,
+3. **Complexity** attenuates it (Pelorus ABI ≥ 1.3, `PEL_SEC_COMPLEXITY`). The
+   producer's aggregate per-frame complexity scalar `[0,1]` scales the salience
+   by `(1 − 0.5 · complexity)`, floored at `0.25`: banding and compression
+   artefacts are most visible on flat / simple frames and masked on busy /
+   textured ones, so a maximally-complex frame keeps only half its banding
+   salience while a flat frame (`complexity == 0`) is unchanged. This section is
+   per-frame (grid-independent), so it also modulates the `grid == 0` scalar
+   path. When the producer attaches **no** complexity section (any older
+   producer, or the Netflix golden pairs) the factor is exactly `1.0` and the
+   weight is byte-identical to the legacy banding+variance derivation.
+4. The salience is clamped to `[0,1]`; the weight is `1 + strength · salience`,
    always finite and positive.
 
 The pooled score then becomes:

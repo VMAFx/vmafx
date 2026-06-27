@@ -357,14 +357,18 @@ test_pu21 = executable('test_pu21',
 )
 
 # ADR-1113: SHARED Pelorus <-> vmafx interop ABI conformance fixture. Compiles
-# the vendored pack/parse + deband-param + version sources DIRECTLY (no libvmaf
-# link, and no test.c — this fixture carries its own main()), proving vmafx's
-# vendored parser is byte-identical to pelorus's writer. Same 7 vectors both
-# repos run; see docs/api/pelorus-interop.md + scripts/sync-pelorus-interop.sh.
+# the vendored pack/parse + deband/denoise-param + x265 CSV QP-report + version
+# sources DIRECTLY (no libvmaf link, and no test.c — this fixture carries its own
+# main()), proving vmafx's vendored parser is byte-identical to pelorus's writer.
+# pelorus_qp_report_csv.c is REQUIRED to link: the minor-3 fixture exercises
+# pel_x265_csv_parse / pel_qp_report_from_x265_frames. Same vectors both repos
+# run; see docs/api/pelorus-interop.md + scripts/sync-pelorus-interop.sh.
 test_pelorus_interop = executable('test_pelorus_interop',
     ['test_pelorus_interop.c',
      '../src/interop/pelorus_interop.c',
      '../src/interop/pelorus_deband_params.c',
+     '../src/interop/pelorus_denoise_params.c',
+     '../src/interop/pelorus_qp_report_csv.c',
      '../src/interop/pelorus_version.c'],
     include_directories : [libvmaf_inc, test_inc],
 )

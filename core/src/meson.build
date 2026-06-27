@@ -2032,13 +2032,15 @@ libvmaf_sources = [
     src_dir + 'thread_locale.c',
     # gpu_picture_pool.cpp compiled as gpu_picture_pool_cpp23_lib (ADR-0768)
     # gpu_dispatch_env.cpp is compiled as gpu_dispatch_env_cpp23_lib (ADR-0858)
-    # ADR-1113: vendored Pelorus <-> vmafx interop ABI (pack/parse, deband
-    # param contract, version/result-string accessors). CPU-only, dependency-
-    # free, NO Vulkan. Verbatim mirror of VMAFx/pelorus@835e097 — DO NOT EDIT;
-    # re-sync via scripts/sync-pelorus-interop.sh. See
-    # docs/api/pelorus-interop.md.
+    # ADR-1113: vendored Pelorus <-> vmafx interop ABI (pack/parse, deband +
+    # denoise param contracts, x265 CSV QP-report reader, version/result-string
+    # accessors). CPU-only, dependency-free, NO Vulkan. Verbatim mirror of
+    # VMAFx/pelorus@818d844 (ABI 1.3) — DO NOT EDIT; re-sync via
+    # scripts/sync-pelorus-interop.sh. See docs/api/pelorus-interop.md.
     src_dir + 'interop/pelorus_interop.c',
     src_dir + 'interop/pelorus_deband_params.c',
+    src_dir + 'interop/pelorus_denoise_params.c',
+    src_dir + 'interop/pelorus_qp_report_csv.c',
     src_dir + 'interop/pelorus_version.c',
     # ADR-1118: Pelorus-driven perceptual spatial-pooling weighting. Parses the
     # vendored side-data blob and derives a per-frame pooling weight consumed by

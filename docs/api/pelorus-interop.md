@@ -15,7 +15,7 @@ decision and its guard rails are recorded in
 [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md).
 
 > **The mirror is read-only.** Do not edit the vendored files. They are
-> byte-identical to their Pelorus origin (pinned at `VMAFx/pelorus@835e097`)
+> byte-identical to their Pelorus origin (pinned at `VMAFx/pelorus@818d844`)
 > except for a `VENDORED FROM … DO NOT EDIT` banner and the include-path
 > rewrite described below. Fix any defect upstream in Pelorus, then re-sync.
 
@@ -26,20 +26,26 @@ decision and its guard rails are recorded in
 | [`core/include/libvmaf/pelorus/pelorus.h`](../../core/include/libvmaf/pelorus/pelorus.h) | `include/pelorus/pelorus.h` | Umbrella header: version + `pel_result` codes. |
 | [`core/include/libvmaf/pelorus/interop.h`](../../core/include/libvmaf/pelorus/interop.h) | `include/pelorus/interop.h` | The blob ABI: header, section catalogue, pack/parse API, `_Static_assert` size locks. |
 | [`core/include/libvmaf/pelorus/deband.h`](../../core/include/libvmaf/pelorus/deband.h) | `include/pelorus/deband.h` | The deband filter parameter contract (control plane). |
+| [`core/include/libvmaf/pelorus/denoise.h`](../../core/include/libvmaf/pelorus/denoise.h) | `include/pelorus/denoise.h` | The temporal-denoise filter parameter contract (control plane, ABI 1.x). |
 | [`core/src/interop/pelorus_interop.c`](../../core/src/interop/pelorus_interop.c) | `src/interop.c` | `pel_blob_pack` / `pel_blob_find_section` / `pel_blob_is_present` / `pel_blob_free`. |
 | [`core/src/interop/pelorus_deband_params.c`](../../core/src/interop/pelorus_deband_params.c) | `src/deband_params.c` | `pel_deband_params_default` / `pel_deband_params_validate`. |
+| [`core/src/interop/pelorus_denoise_params.c`](../../core/src/interop/pelorus_denoise_params.c) | `src/denoise_params.c` | `pel_denoise_params_default` / `pel_denoise_params_validate`. |
+| [`core/src/interop/pelorus_qp_report_csv.c`](../../core/src/interop/pelorus_qp_report_csv.c) | `src/qp_report_csv.c` | x265 `--csv` reader: `pel_x265_csv_parse` / `pel_qp_report_from_x265_frames` (folds into `PEL_SEC_QPREPORT`). |
 | [`core/src/interop/pelorus_version.c`](../../core/src/interop/pelorus_version.c) | `src/version.c` | `pelorus_version*` / `pel_result_str`. |
 | [`core/test/test_pelorus_interop.c`](../../core/test/test_pelorus_interop.c) | `test/interop_test.c` | The **shared conformance fixture** (see below). |
 
-The three `.c` files compile straight into `libvmaf` (CPU-only, dependency-free,
-no Vulkan; registered in `core/src/meson.build`). `deband_params.c` and
-`version.c` are vendored alongside `interop.c` because the shared conformance
-fixture links the `deband` parameter contract and the version/result-string
-accessors — vendoring them keeps the fixture byte-identical to Pelorus's.
+The five `.c` files compile straight into `libvmaf` (CPU-only, dependency-free,
+no Vulkan; registered in `core/src/meson.build`). `deband_params.c`,
+`denoise_params.c`, `qp_report_csv.c`, and `version.c` are vendored alongside
+`interop.c` because the shared conformance fixture links the deband / denoise
+parameter contracts, the x265 CSV QP-report reader, and the version /
+result-string accessors — vendoring them keeps the fixture byte-identical to
+Pelorus's. (`qp_report_csv.c` is required to link: the ABI-1.3 fixture exercises
+`pel_x265_csv_parse`.)
 
 ### The only local edits
 
-1. A `VENDORED FROM VMAFx/pelorus@835e097 — DO NOT EDIT` banner inserted after
+1. A `VENDORED FROM VMAFx/pelorus@818d844 — DO NOT EDIT` banner inserted after
    the (unchanged) Pelorus license header.
 2. Intra-Pelorus `#include "pelorus/<x>.h"` rewritten to
    `#include "libvmaf/pelorus/<x>.h"` so the headers resolve under
@@ -47,7 +53,7 @@ accessors — vendoring them keeps the fixture byte-identical to Pelorus's.
 
 The conformance test additionally carries a vmafx-authored
 (`Copyright 2026 Lusoris`) header instead of cloning Pelorus's, and is run
-through the fork's `clang-format`; its body is otherwise the same seven checks.
+through the fork's `clang-format`; its body is otherwise the same vectors.
 
 ## The blob, in brief
 
@@ -60,8 +66,11 @@ A blob is a flat, pointer-free, little-endian byte image:
 - **Magic / identity**: 8-byte `"PELOR1\0\0"` magic, a fixed 16-byte routing
   UUID (`e1d7c4a2-6b93-4f08-9a55-0f3c2db17e64`), and an ABI major/minor.
 - **Sections** (append-only bits, never reused): `BANDING`, `VARIANCE`,
-  `DENOISE`, `FILMGRAIN`, `MOTION`. Each is independently optional and gated by
-  `section_mask`.
+  `DENOISE`, `FILMGRAIN`, `MOTION`, and (ABI ≥ 1.3) `QPREPORT` (1.1, encoder
+  QP / bit readback), `MOTION_CONF` (1.2, per-block MV confidence), and
+  `COMPLEXITY` (1.3, per-frame complexity scalar — consumed by perceptual
+  weighting, see [perceptual-weight.md](perceptual-weight.md)). Each is
+  independently optional and gated by `section_mask`.
 - **Directory**: one `PelorusSectionDir{section_id, offset, size, struct_minor}`
   per present section, so an older consumer can locate and tail-skip a newer
   producer's larger section.
@@ -106,12 +115,16 @@ The ABI is normative; both repos depend on these rules (verbatim from
   forbid for additive evolution) — in practice it never bumps.
   `PELORUS_ABI_MINOR` bumps when a new section bit or appended field lands.
 
-The current ABI is **1.0** (`PELORUS_ABI_MAJOR=1`, `PELORUS_ABI_MINOR=0`).
+The current ABI is **1.3** (`PELORUS_ABI_MAJOR=1`, `PELORUS_ABI_MINOR=3`).
+Minor 1.1 added `PEL_SEC_QPREPORT`, 1.2 added `PEL_SEC_MOTION_CONF`, 1.3 added
+`PEL_SEC_COMPLEXITY` — all append-only, so the major stayed at 1 and the mirror
+re-pin (ADR-1120) was non-breaking.
 
 ## Conformance fixture — the byte-compat proof
 
 `core/test/test_pelorus_interop.c` is the **same fixture both repos run**. It
-exercises seven vectors against the vendored parser:
+exercises the following vectors against the vendored parser (the ABI-1.3 fixture
+grew the original seven to fourteen):
 
 1. `roundtrip` — pack three sections, parse them back, verify scalars + the
    8-byte-aligned 64-bit `seed` survives.
@@ -123,8 +136,18 @@ exercises seven vectors against the vendored parser:
    cleanly ignored.
 5. `header_only` — a zero-section blob is valid and parses.
 6. `truncation` — a short buffer is detected, never read out of bounds.
-7. `deband_params` — the deband contract: defaults validate, out-of-range is
-   rejected with the offending field name.
+7. `misaligned_offset` — a section whose `dir.offset` is not 8-aligned is
+   rejected (R5) rather than handed out for an unaligned cast.
+8. `pack_size_overflow` — a section size that would overflow the framing is
+   rejected, not wrapped.
+9. `qp_report_roundtrip` — pack/parse the `PEL_SEC_QPREPORT` section (ABI 1.1).
+10. `motion_conf_roundtrip` — pack/parse the `PEL_SEC_MOTION_CONF` section (1.2).
+11. `complexity_roundtrip` — pack/parse the `PEL_SEC_COMPLEXITY` section (1.3).
+12. `qp_report_fold` — fold parsed frames into a bit-weighted QP report.
+13. `x265_csv_reader` — `pel_x265_csv_parse` reads a real x265 `--csv` table,
+    drops the aggregate row, and computes `honored_fraction`.
+14. `deband_params` — the deband contract: defaults validate, out-of-range is
+    rejected with the offending field name.
 
 A green run here proves vmafx's vendored parser is byte-identical to Pelorus's
 writer: a blob packed by Pelorus parses in vmafx and vice versa. The fixture is
@@ -133,7 +156,7 @@ wired into the `fast` suite:
 ```bash
 meson setup core/build-cpu core -Denable_cuda=false -Denable_sycl=false
 ninja -C core/build-cpu
-meson test -C core/build-cpu test_pelorus_interop   # 7 vectors, must be 7/7
+meson test -C core/build-cpu test_pelorus_interop   # all vectors, must pass
 ```
 
 ## Re-syncing the mirror
@@ -141,23 +164,33 @@ meson test -C core/build-cpu test_pelorus_interop   # 7 vectors, must be 7/7
 The pin and the drift guard live in
 [`scripts/sync-pelorus-interop.sh`](../../scripts/sync-pelorus-interop.sh). It
 reads the vendored sources from the **pinned commit's git tree object**
-(`git show 835e097:libpelorus/…`), so it stays accurate even when the local
+(`git show 818d844:libpelorus/…`), so it stays accurate even when the local
 Pelorus checkout's `HEAD` has moved past the pin.
 
 ```bash
 # Drift check (CI gate). Path defaults to $PELORUS_DIR or ../pelorus.
 scripts/sync-pelorus-interop.sh /path/to/pelorus
-#   OK   — mirror matches pelorus@835e097
+#   OK   — mirror matches pelorus@818d844
 #   FAIL — mirror has drifted (prints a diff), exit 1
 
 # Re-vendor after a DELIBERATE pelorus ABI-minor bump:
-#   1. bump PELORUS_VENDOR_SHA in the script + every banner + this doc + ADR
-#   2. re-vendor and confirm clean:
+#   1. bump PELORUS_VENDOR_SHA in the script + this doc + ADR (the banners are
+#      rewritten automatically by --update)
+#   2. add any new pelorus source/header to the script's `manifest` (and to
+#      core/src/meson.build + the test target if it needs to compile/link)
+#   3. re-vendor and confirm clean:
 scripts/sync-pelorus-interop.sh --update /path/to/pelorus
 scripts/sync-pelorus-interop.sh /path/to/pelorus
-#   3. rebuild + run the conformance fixture (must stay 7/7).
+#   4. rebuild + run the conformance fixture (must stay green).
 ```
 
+`--update` re-vendors both the manifest files **and** the conformance-fixture
+body (the Lusoris-authored header before the first vendored `#include` is
+preserved; only the body from that include onward is replaced and the
+`pelorus/` → `libvmaf/pelorus/` include rewrite re-applied). The drift check
+compares the fixture body whitespace-insensitively, and the pelorus repo formats
+its C with the same `.clang-format`, so the vendored body is already format-clean.
+
 A re-sync that changes the ABI is an ADR-worthy event (a new section bit or an
-appended field bumps `PELORUS_ABI_MINOR`); record it as a follow-up to
-[ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md).
+appended field bumps `PELORUS_ABI_MINOR`); ADR-1120 records the 1.0 → 1.3 re-pin
+as a follow-up to [ADR-1113](../adr/1113-vendor-pelorus-interop-abi.md).
