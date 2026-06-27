@@ -328,6 +328,10 @@ func queueJobToProto(j *queue.Job) *controllerv1.Job {
 		Error:        j.Error,
 		CreatedAt:    j.CreatedAt.Unix(),
 		UpdatedAt:    j.UpdatedAt.Unix(),
+		// FinalScore mirrors the aggregate VMAF score recorded by ReportResult.
+		// The vmafx-operator copies it into VmafxJob.Status.Score; omitting it
+		// here made every Succeeded job report a score of 0 (round-3 R3-1).
+		FinalScore: j.Score,
 	}
 }
 

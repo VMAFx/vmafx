@@ -156,8 +156,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut ref_pic = alloc_yuv420p_8bit(WIDTH, HEIGHT)?;
         let mut dist_pic = alloc_yuv420p_8bit(WIDTH, HEIGHT)?;
 
-        let ref_ok = read_yuv_frame(&mut ref_file, &mut ref_pic)?;
-        let dist_ok = read_yuv_frame(&mut dist_file, &mut dist_pic)?;
+        // Round-3 R3-14: `VmafPicture` from the `-sys` layer has no `Drop`, so a
+        // bare `?` on a read error would leak the plane buffers of both
+        // already-allocated pictures. Capture the results and unref both
+        // pictures on ANY error before propagating it (mirrors the clean-EOF
+        // path below, which already unrefs).
+        let read_result = read_yuv_frame(&mut ref_file, &mut ref_pic)
+            .and_then(|ref_ok| read_yuv_frame(&mut dist_file, &mut dist_pic).map(|d| (ref_ok, d)));
+        let (ref_ok, dist_ok) = match read_result {
+            Ok(oks) => oks,
+            Err(e) => {
+                unref_picture(&mut ref_pic)?;
+                unref_picture(&mut dist_pic)?;
+                return Err(e.into());
+            }
+        };
 
         if !ref_ok || !dist_ok {
             unref_picture(&mut ref_pic)?;

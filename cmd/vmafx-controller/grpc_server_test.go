@@ -549,6 +549,13 @@ func TestReportResult_FinalSuccess(t *testing.T) {
 	if job.GetStatus() != controllerv1.JobStatus_COMPLETED {
 		t.Errorf("status: got %v, want COMPLETED", job.GetStatus())
 	}
+	// Round-3 R3-1: the reported score must survive the real producer path
+	// (ReportResult → queue → GetJob → queueJobToProto). Before the fix
+	// queueJobToProto omitted FinalScore, so GetFinalScore() always returned 0
+	// and the vmafx-operator copied a zero score into VmafxJob.Status.Score.
+	if got := job.GetFinalScore(); got != 76.6683 {
+		t.Errorf("FinalScore: got %v, want 76.6683 (score lost in queueJobToProto)", got)
+	}
 }
 
 func TestReportResult_FinalWithError(t *testing.T) {
@@ -702,8 +709,9 @@ func TestQueueJobToProto_FieldsCopiedCorrectly(t *testing.T) {
 	t.Parallel()
 	j := &queue.Job{
 		ID:           "abc",
-		Status:       queue.StatusRunning,
+		Status:       queue.StatusCompleted,
 		AssignedNode: "node-9",
+		Score:        92.1234,
 		Error:        "",
 		Scoring: queue.ScoringParams{
 			Reference: "/r.yuv",
@@ -716,7 +724,7 @@ func TestQueueJobToProto_FieldsCopiedCorrectly(t *testing.T) {
 	if got.GetId() != "abc" {
 		t.Errorf("Id: got %q", got.GetId())
 	}
-	if got.GetStatus() != controllerv1.JobStatus_RUNNING {
+	if got.GetStatus() != controllerv1.JobStatus_COMPLETED {
 		t.Errorf("Status: got %v", got.GetStatus())
 	}
 	if got.GetAssignedNode() != "node-9" {
@@ -724,6 +732,10 @@ func TestQueueJobToProto_FieldsCopiedCorrectly(t *testing.T) {
 	}
 	if got.GetScoring().GetReference() != "/r.yuv" {
 		t.Errorf("Scoring.Reference: got %q", got.GetScoring().GetReference())
+	}
+	// Round-3 R3-1: queue.Job.Score must map onto proto Job.FinalScore.
+	if got.GetFinalScore() != 92.1234 {
+		t.Errorf("FinalScore: got %v, want 92.1234", got.GetFinalScore())
 	}
 }
 

@@ -46,7 +46,7 @@
 //! Query the libvmaf version and open a context with custom settings:
 //!
 //! ```no_run
-//! use vmafx::{ContextBuilder, LogLevel};
+//! use vmafx::{Context, Model, Picture, PoolingMethod};
 //!
 //! # fn main() -> vmafx::Result<()> {
 //! // Declare `model` before `ctx` so that drop order is ctx → model

@@ -174,9 +174,9 @@ func ClaimsFromCtx(ctx context.Context) (Claims, bool) {
 // ---------------------------------------------------------------------------
 
 const (
-	jwksCacheMax              = 16
-	jwksCacheRefreshCooldown  = 30 * time.Second
-	jwksFetchTimeout          = 10 * time.Second
+	jwksCacheMax             = 16
+	jwksCacheRefreshCooldown = 30 * time.Second
+	jwksFetchTimeout         = 10 * time.Second
 )
 
 // jwkKey holds a single RSA public key from the JWKS endpoint.
@@ -262,14 +262,31 @@ func (c *jwksCache) refresh(kid string) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("jwks: parse: %w", err)
 	}
 
-	// Enforce cache size limit — evict all existing entries on rotation.
-	if len(keys) > jwksCacheMax {
-		keys = keys[:jwksCacheMax]
-	}
-	c.keys = make(map[string]*rsa.PublicKey, len(keys))
+	// Build the cache from ALL parsed keys.  Round-3 R3-13: we must NOT
+	// truncate by document position — real OIDC providers (Auth0, Azure AD,
+	// Keycloak) publish more than jwksCacheMax keys during rotation-overlap
+	// windows, and a positional slice cut could drop exactly the requested
+	// kid, 401-ing valid tokens for the whole refresh-cooldown window.  The
+	// 1 MiB body limit above already bounds how many keys can arrive.
+	next := make(map[string]*rsa.PublicKey, len(keys))
 	for _, k := range keys {
-		c.keys[k.kid] = k.pub
+		next[k.kid] = k.pub
 	}
+	// Defensive memory bound: if the IdP advertises an unreasonable number of
+	// keys, evict entries down to jwksCacheMax — but never evict the kid that
+	// triggered this refresh, so the caller's valid token is always honoured.
+	if len(next) > jwksCacheMax {
+		for evictKid := range next {
+			if len(next) <= jwksCacheMax {
+				break
+			}
+			if evictKid == kid {
+				continue
+			}
+			delete(next, evictKid)
+		}
+	}
+	c.keys = next
 	c.lastRefresh = time.Now()
 
 	c.log.Info("jwks: key cache updated", "key_count", len(c.keys))

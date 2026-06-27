@@ -257,6 +257,64 @@ func TestVerifyJWT_WrongAlg(t *testing.T) {
 	}
 }
 
+// jwkJSON renders a single RSA public key as a JWKS entry object.
+func jwkJSON(t *testing.T, kid string, pub *rsa.PublicKey) string {
+	t.Helper()
+	nB64 := base64.RawURLEncoding.EncodeToString(pub.N.Bytes())
+	eB64 := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes())
+	return fmt.Sprintf(`{"kty":"RSA","kid":%q,"n":%q,"e":%q}`, kid, nB64, eB64)
+}
+
+// TestVerifyJWT_KidInJWKSTail is the round-3 R3-13 regression. A JWKS that
+// publishes more than jwksCacheMax (16) keys must NOT drop a key by document
+// position: a token whose kid lands past the 16th entry has to authenticate.
+// Before the fix, refresh() did `keys = keys[:jwksCacheMax]`, evicting the
+// trailing signing key, so the token 401'd until the 30s cooldown elapsed.
+func TestVerifyJWT_KidInJWKSTail(t *testing.T) {
+	// The real signing key whose kid will sit at the END of the JWKS list.
+	priv, pub, err := auth.GenerateTestKeyPair()
+	if err != nil {
+		t.Fatalf("generate key pair: %v", err)
+	}
+	const realKid = "real-signing-key"
+
+	// Build a JWKS with 20 decoy keys first, then the real key last — so the
+	// real kid is at index 20 (>= jwksCacheMax=16) in document order.
+	entries := make([]string, 0, 21)
+	for i := range 20 {
+		_, decoyPub, derr := auth.GenerateTestKeyPair()
+		if derr != nil {
+			t.Fatalf("generate decoy key %d: %v", i, derr)
+		}
+		entries = append(entries, jwkJSON(t, fmt.Sprintf("decoy-%d", i), decoyPub))
+	}
+	entries = append(entries, jwkJSON(t, realKid, pub))
+	jwks := `{"keys":[` + strings.Join(entries, ",") + `]}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(jwks))
+	}))
+	t.Cleanup(srv.Close)
+
+	fi := &fakeIssuer{priv: priv, pub: pub, server: srv, kid: realKid}
+	mw := newTestMiddleware(t, fi)
+
+	token := fi.MakeToken(t, tokenOpts{kid: realKid})
+	req := httptest.NewRequest(http.MethodGet, "/v1/score", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	rr := httptest.NewRecorder()
+	mw.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("token with kid in JWKS tail must authenticate: got %d, body=%s",
+			rr.Code, rr.Body)
+	}
+}
+
 func TestVerifyJWT_MissingTenantClaim(t *testing.T) {
 	fi := newFakeIssuer(t)
 	// Use a non-default tenant claim that the token does NOT have.
