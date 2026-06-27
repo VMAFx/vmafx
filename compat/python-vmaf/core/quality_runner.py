@@ -1137,7 +1137,9 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
 
     FEATURES = [
         "adm2",
+        "adm3",
         "motion2",
+        "motion3",
         "vif_scale0",
         "vif_scale1",
         "vif_scale2",
@@ -1147,6 +1149,8 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
         "adm_scale2",
         "adm_scale3",
         "motion",
+        "cambi",
+        "speed_chroma_uv",
         "float_psnr",
         "psnr_y",
         "psnr_cb",
