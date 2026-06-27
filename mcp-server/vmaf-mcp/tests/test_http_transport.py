@@ -485,6 +485,60 @@ async def test_body_at_limit_accepted(monkeypatch: Any) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("configured", "presented", "expect_pass"),
+    [
+        # R3-12 regression: a non-ASCII token must not blow up hmac.compare_digest.
+        # Before the bytes fix, str operands containing a code point > 255 raised
+        # TypeError, which propagated as HTTP 500 for EVERY request (auth outage).
+        ("töken-with-ümlaut", "töken-with-ümlaut", True),  # correct non-ASCII token
+        ("töken-with-ümlaut", "wrong-token", False),  # wrong token, no crash
+        ("ascii-token", "töken-with-ümlaut", False),  # non-ASCII in request only
+    ],
+)
+async def test_non_ascii_token_does_not_500(
+    monkeypatch: Any, configured: str, presented: str, expect_pass: bool
+) -> None:
+    """Non-ASCII bearer tokens must produce a clean 401/200, never an HTTP 500.
+
+    hmac.compare_digest raises TypeError on str operands with code points > 255;
+    the middleware compares UTF-8 bytes so equal-typed inputs never raise.
+    """
+    monkeypatch.delenv("VMAFX_MCP_HTTP_NO_AUTH", raising=False)
+    monkeypatch.setenv("VMAFX_MCP_HTTP_TOKEN", configured)
+
+    sentinel = object()
+    handler_called = []
+
+    async def _fake_handler(request: Any) -> Any:
+        handler_called.append(True)
+        return sentinel
+
+    class _FakeHeaders:
+        def get(self, key: str, default: str = "") -> str:
+            if key == "Authorization":
+                return f"Bearer {presented}"
+            return default
+
+    class _FakeRequest:
+        content_length: int | None = 0
+        headers = _FakeHeaders()
+
+    middleware_fn = ht._make_security_middleware()
+    # Must NOT raise (the bug surfaced as an unhandled TypeError -> HTTP 500).
+    result = await middleware_fn(_FakeRequest(), _fake_handler)
+
+    if expect_pass:
+        assert result is sentinel
+        assert handler_called == [True]
+    else:
+        # Rejected before reaching the handler; a real aiohttp 401 Response.
+        assert result is not sentinel
+        assert handler_called == []
+        assert getattr(result, "status", None) == 401
+
+
+@pytest.mark.asyncio
 async def test_explicit_no_auth_allows_anonymous(no_auth_client: TestClient) -> None:
     """When VMAFX_MCP_HTTP_NO_AUTH=1, requests without Authorization are accepted."""
     resp = await no_auth_client.get("/healthz")

@@ -324,8 +324,14 @@ def _make_security_middleware() -> Any:
                     ),
                 )
             auth_header = request.headers.get("Authorization", "")
+            # Compare the tokens as UTF-8 bytes, never as str: hmac.compare_digest
+            # raises TypeError on str operands containing any code point > 255
+            # (e.g. a token with a non-ASCII character), which would otherwise
+            # propagate uncaught and turn every request into an HTTP 500 — a
+            # total auth/availability outage. Equal-typed bytes never raise.
+            provided_token = auth_header[len("Bearer ") :].encode("utf-8")
             if not auth_header.startswith("Bearer ") or not hmac.compare_digest(
-                auth_header[len("Bearer ") :], expected_token
+                provided_token, expected_token.encode("utf-8")
             ):
                 return aiohttp.web.Response(
                     status=401,

@@ -428,6 +428,17 @@ class ConfigTest(unittest.TestCase):
     def test_vmafconfig_tools_resource_path(self):
         result = VmafConfig.tools_resource_path("foo.bin")
         self.assertTrue(result.endswith(os.path.join("tools", "resource", "foo.bin")))
+        # Regression (R3-20): the path must point at the relocated
+        # compat/python-vmaf/ tree (ADR-0700), not the stale python/vmaf/
+        # prefix. Assert a real shipped resource resolves to an existing file —
+        # the old endswith()-only check passed even with the wrong prefix.
+        self.assertNotIn(os.path.join("python", "vmaf", "tools"), result)
+        hm = VmafConfig.tools_resource_path("Hanley_McNeil.mat")
+        self.assertTrue(
+            os.path.isfile(hm),
+            "tools_resource_path must resolve to the relocated resource tree; "
+            "Hanley_McNeil.mat not found at %s" % hm,
+        )
 
     def test_vmafconfig_model_path(self):
         result = VmafConfig.model_path("vmaf_v0.6.1.json")

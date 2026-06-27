@@ -50,7 +50,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from vmaf_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -451,6 +450,25 @@ def test_ffprobe_geometry_json_decode_error_raises(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(srv.subprocess, "run", lambda *_a, **_kw: _Result())
     with pytest.raises(RuntimeError, match="ffprobe output malformed"):
         srv._ffprobe_geometry(Path("/some/video.mp4"))
+
+
+def test_ffprobe_geometry_stream_without_dimensions_raises_valueerror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R3-22 regression: a v:0 stream lacking width/height (e.g. attached-pic
+    cover art or a data-coded video track) must raise the documented ValueError,
+    not a low-information KeyError from ``s["width"]`` subscript access."""
+
+    class _Result:
+        returncode = 0
+        # A video stream object with a pix_fmt but no width/height keys.
+        stdout = '{"streams": [{"pix_fmt": "yuv420p"}]}'
+        stderr = ""
+
+    monkeypatch.setattr(srv.shutil, "which", lambda _name: "/usr/bin/ffprobe")
+    monkeypatch.setattr(srv.subprocess, "run", lambda *_a, **_kw: _Result())
+    with pytest.raises(ValueError, match="no width/height"):
+        srv._ffprobe_geometry(Path("/some/cover-art.mp4"))
 
 
 # ---------------------------------------------------------------------------

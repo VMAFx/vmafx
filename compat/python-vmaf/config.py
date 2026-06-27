@@ -279,7 +279,12 @@ class VmafConfig(object):
 
     @classmethod
     def tools_resource_path(cls, *components):
-        return cls.root_path("python", "vmaf", "tools", "resource", *components)
+        """Root of the harness ``tools/resource`` tree (e.g. Hanley_McNeil.mat
+        consumed by sigproc). After the ADR-0700 move the harness lives at
+        compat/python-vmaf/, so this resolves under PYTHON_ROOT rather than the
+        pre-rename ROOT/python/vmaf/ path, which no longer exists.
+        """
+        return os.path.join(PYTHON_ROOT, "tools", "resource", *components)
 
     @classmethod
     def encode_path(cls, *components):

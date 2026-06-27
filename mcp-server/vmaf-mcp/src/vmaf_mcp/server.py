@@ -2112,8 +2112,15 @@ def _ffprobe_geometry(path: Path) -> tuple[int, int, str, int]:
     if not streams:
         raise ValueError(f"no video stream found in {path}")
     s = streams[0]
-    width = int(s["width"])
-    height = int(s["height"])
+    # ffprobe can return a v:0 stream lacking width/height (e.g. attached-pic
+    # cover art or data-coded video tracks). Validate explicitly so the
+    # docstring's ValueError contract holds, rather than leaking a KeyError.
+    width_raw = s.get("width")
+    height_raw = s.get("height")
+    if width_raw is None or height_raw is None:
+        raise ValueError(f"video stream in {path} has no width/height")
+    width = int(width_raw)
+    height = int(height_raw)
     pix_fmt_raw = str(s.get("pix_fmt", "yuv420p"))
 
     # Map ffmpeg pix_fmt names to the vmaf (pixfmt, bitdepth) pair.
