@@ -203,3 +203,10 @@ SSE §9.2, accessed 2026-05-09); then performs a `POST /mcp/sse`
 with a `tools/list` JSON-RPC request and verifies the inline
 response contains `list_features`. The v2 sub-tests
 `test_uds_roundtrip` and `test_compute_vmaf_real_score` remain.
+
+## Path allowlist parity (R2-4)
+
+`compute_vmaf.c` `validate_path()` / `build_allowed_roots()` MUST keep the same
+allowlisted root set as the Python (`_allowed_roots`) and Go (`AllowedRoots`)
+MCP servers; change all three together. Guarded by
+`test_mcp_compute_vmaf_allowlist.c`.

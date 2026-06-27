@@ -69,6 +69,44 @@ struct EnvRow {
 std::mutex g_lock;
 constinit std::array<EnvRow, kTableCap> g_rows{};
 
+/* Slow path: snapshot @key into @slot under the caller-held mutex and
+ * publish it. Returns the cached value (or nullptr when the variable was
+ * unset OR when the value-string copy ran out of memory).
+ *
+ * The std::string copy inside std::optional::emplace is the only throwing
+ * operation; this TU is reached through an extern "C" boundary, so letting a
+ * C++ exception propagate across the C ABI is undefined behaviour (ADR-1068
+ * follow-up R2-9b). We contain std::bad_alloc and map it to the header's
+ * documented "unset" contract: return nullptr and leave @slot UNpopulated
+ * (ready stays false) so a later call can retry. This preserves the
+ * ADR-0858 / ADR-1068 invariant that var_name/value are published only with
+ * the release store of ready set LAST — @slot's fields are touched only
+ * after the throwing region completes successfully. */
+const char *snapshot_into_slot(EnvRow *slot, std::string_view key, const char *var_name)
+{
+    /* ADR-0461 caller-contract: no other thread calls setenv("VMAF_*")
+     * concurrently with getenv here; the lock serialises only multiple
+     * vmaf_gpu_dispatch_env_get callers, not hypothetical concurrent setenv
+     * from user code. */
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0461 contract above. */
+    const char *const val = std::getenv(var_name);
+    std::optional<std::string> snapshot{};
+    try {
+        if (val)
+            snapshot.emplace(val);
+    } catch (const std::bad_alloc &) {
+        /* Allocation failed while copying the value string. Do not cache a
+         * wrong result and do not mark the slot populated; report "unset". */
+        return nullptr;
+    }
+    /* var_name (string_view copy) and value (move of the already-built local)
+     * cannot throw, so ready is the last field set — invariant preserved. */
+    slot->var_name = key;
+    slot->value = std::move(snapshot);
+    slot->ready.store(true, std::memory_order_release);
+    return slot->value ? slot->value->c_str() : nullptr;
+}
+
 } /* anonymous namespace */
 
 extern "C" {
@@ -97,7 +135,7 @@ extern "C" {
     }
 
     /* Slow path: snapshot the variable under the lock. */
-    const std::lock_guard<std::mutex> guard{g_lock};
+    const std::scoped_lock<std::mutex> guard{g_lock};
 
     /* Re-check under lock to guard against a concurrent insert.  The mutex
      * provides the necessary happens-before so plain (non-atomic) reads of
@@ -119,25 +157,11 @@ extern "C" {
     if (!slot) {
         /* Table exhausted — fall back to a raw getenv.  Should never
          * happen in production (8 slots, at most 4 backends).
-         * NOLINT(concurrency-mt-unsafe): caller-contract bans concurrent
-         * setenv before the first GPU frame; see ADR-0461. */
-        return std::getenv(var_name); /* NOLINT(concurrency-mt-unsafe) */
+         * NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0461 caller-contract. */
+        return std::getenv(var_name);
     }
 
-    /* Snapshot under lock.  ADR-0461 caller-contract: no other thread
-     * calls setenv("VMAF_*") concurrently with getenv here; the lock
-     * serialises only multiple vmaf_gpu_dispatch_env_get callers, not
-     * hypothetical concurrent setenv from user code. */
-    /* NOLINT(concurrency-mt-unsafe): see ADR-0461 contract above. */
-    const char *const val = std::getenv(var_name); /* NOLINT(concurrency-mt-unsafe) */
-    /* Write var_name and value while still under the mutex, then publish
-     * with a release store so the fast-path acquire load synchronises-with
-     * this write (C++ publication idiom, ADR-1068). */
-    slot->var_name = key;
-    if (val)
-        slot->value.emplace(val);
-    slot->ready.store(true, std::memory_order_release);
-    return slot->value ? slot->value->c_str() : nullptr;
+    return snapshot_into_slot(slot, key, var_name);
 }
 
 } /* extern "C" */

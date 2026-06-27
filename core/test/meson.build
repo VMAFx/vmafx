@@ -2390,6 +2390,21 @@ test_mcp_stop_idempotent = executable('test_mcp_stop_idempotent',
     c_args: ['-DHAVE_MCP=1']
 )
 test('test_mcp_stop_idempotent', test_mcp_stop_idempotent, suite : ['fast'], timeout: 30)
+
+# R2-4 (security): the in-process C MCP compute_vmaf binding must
+# allowlist + canonicalise caller paths before stat()/open(), matching
+# the Python/Go MCP servers. White-box test #include's compute_vmaf.c to
+# reach the static validate_path(); the public entry point is macro-renamed
+# in the test to avoid a duplicate-symbol clash with the linked libvmaf.
+# See changelog.d/fixed/ and core/src/mcp/AGENTS.md.
+test_mcp_compute_vmaf_allowlist = executable('test_mcp_compute_vmaf_allowlist',
+    ['test.c', 'test_mcp_compute_vmaf_allowlist.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency],
+    c_args: ['-DHAVE_MCP=1']
+)
+test('test_mcp_compute_vmaf_allowlist', test_mcp_compute_vmaf_allowlist, suite : ['fast'])
 endif
 
 # ADR-0212 / T7-10: HIP (AMD ROCm) backend smoke.
