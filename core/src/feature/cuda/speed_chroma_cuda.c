@@ -407,7 +407,7 @@ static int run_gpu_pipeline(SpeedChromaCudaState *s, CudaFunctions *cu_f, CUdevi
     return 0;
 
 fail:
-    return -EIO;
+    return _cuda_err;
 }
 
 /* ------------------------------------------------------------------ */
@@ -470,7 +470,7 @@ static int run_cpu_linalg(SpeedChromaCudaState *s, CudaFunctions *cu_f, float *h
     return 0;
 
 fail:
-    return -EIO;
+    return _cuda_err;
 }
 
 /* ------------------------------------------------------------------ */
@@ -558,7 +558,7 @@ static int run_score_and_collect(SpeedChromaCudaState *s, CudaFunctions *cu_f, f
     return 0;
 
 fail:
-    return -EIO;
+    return _cuda_err;
 }
 
 /* ------------------------------------------------------------------ */
@@ -810,15 +810,15 @@ free_cpu:
 fail_after_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
     free_cuda_buffers(s, cu_f);
-    return -EIO;
+    return _cuda_err;
 
 fail_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
     free_cuda_buffers(s, cu_f);
-    return -EIO;
+    return _cuda_err;
 
 fail:
-    return -EIO;
+    return _cuda_err;
 }
 
 static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
@@ -869,7 +869,7 @@ static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return err;
 
 fail:
-    return -EIO;
+    return _cuda_err;
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)

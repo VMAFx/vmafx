@@ -338,7 +338,7 @@ static int run_gpu_pipeline_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, f
     CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), fail);
     return 0;
 fail:
-    return -EIO;
+    return _cuda_err;
 }
 
 static int run_cpu_linalg_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *h_indterm,
@@ -382,7 +382,7 @@ static int run_cpu_linalg_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, flo
                     fail);
     return 0;
 fail:
-    return -EIO;
+    return _cuda_err;
 }
 
 static int run_score_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *score_out)
@@ -435,7 +435,7 @@ static int run_score_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *s
     *score_out = total / (float)num_blocks;
     return 0;
 fail:
-    return -EIO;
+    return _cuda_err;
 }
 
 /* ------------------------------------------------------------------ */
@@ -555,9 +555,9 @@ free_all:
 fail_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
     free_cuda_buffers_st(s, cu_f);
-    return -EIO;
+    return _cuda_err;
 fail:
-    return -EIO;
+    return _cuda_err;
 }
 
 static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -701,7 +701,7 @@ pop_ctx:
     (void)cu_f->cuCtxPopCurrent(NULL);
     return err;
 fail:
-    return -EIO;
+    return _cuda_err;
 }
 
 static int close_fex_st(VmafFeatureExtractor *fex)

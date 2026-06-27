@@ -432,7 +432,11 @@ static int append_if_unwritten(VmafFeatureCollector *fc, const char *feature, do
 
 static inline double normalize_and_scale_sad(uint64_t sad, unsigned w, unsigned h)
 {
-    return (float)(sad / 256.) / (w * h);
+    /* Compute end-to-end in double, matching the CPU twin
+     * (integer_motion.c: (double)sad / 256. / (w * h)). A prior
+     * intermediate (float) cast truncated to single precision and the
+     * unsigned (w * h) divisor risked overflow on large frames. */
+    return (double)sad / 256.0 / ((double)w * (double)h);
 }
 
 static int emit_batch_scores(MotionStateCuda *s, VmafFeatureCollector *fc, unsigned batch_start,

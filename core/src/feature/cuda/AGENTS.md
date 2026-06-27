@@ -128,6 +128,26 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   incorrect; the helper now owns the free. See
   PR fix/cuda-pinned-host-leak-sweep-20260529.
 
+- **Feature-local pinned host buffers must be freed in BOTH `close_fex_cuda`
+  AND the init `free_buffers` error path (2026-06-27 bug-hunt).** Buffers
+  allocated directly via `vmaf_cuda_buffer_host_alloc` (i.e. NOT routed through
+  `vmaf_cuda_kernel_readback_free`) — e.g. `float_vif_cuda::num_host`/`den_host`,
+  `float_adm_cuda::accum_host`, `integer_ms_ssim_cuda::h_ref`/`h_cmp`/`h_*_partials`
+  — are owned by the feature and must be released with
+  `vmaf_cuda_buffer_host_free` (no separate `free()`, unlike the device-buffer
+  wrappers which need both). Missing the close-path free leaks page-locked host
+  memory on every `vmaf_close()`. See branch fix/bughunt-cuda.
+
+- **CUDA error-path labels return the mapped errno, not a literal (2026-06-27
+  bug-hunt).** Any `fail:` / `fail_pop:` / `fail_after_pop:` label reached from
+  `CHECK_CUDA_GOTO` must `return _cuda_err;` — the macro already set `_cuda_err`
+  from `vmaf_cuda_result_to_errno(CUresult)` (`-ENOMEM` / `-ENODEV` / `-EINVAL`
+  / `-EIO`), so returning a literal `-EIO` discards the real failure cause and
+  diverges from the `CHECK_CUDA_RETURN` convention in `cuda_helper.cuh`. The
+  `speed_temporal_cuda.c` / `speed_chroma_cuda.c` extractors keep a literal
+  `-EIO` only on the two manual (non-macro) `cuMemcpyDtoH` / `cuCtxPushCurrent`
+  boolean checks. See branch fix/bughunt-cuda.
+
 - **`integer_ms_ssim_cuda.c` honours the `enable_lcs`, `enable_db`,
   and `clip_db` GPU contracts** (ADR-0243, ADR-0460). Emits 15 extra
   metrics (`float_ms_ssim_{l,c,s}_scale{0..4}`) when `enable_lcs=true`,

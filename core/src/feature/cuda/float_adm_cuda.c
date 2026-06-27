@@ -438,6 +438,8 @@ free_buffers:
             (void)vmaf_cuda_buffer_free(fex->cu_state, s->accum[scale]);
             free(s->accum[scale]);
         }
+        if (s->accum_host[scale])
+            (void)vmaf_cuda_buffer_host_free(fex->cu_state, s->accum_host[scale]);
     }
     (void)vmaf_dictionary_free(&s->feature_name_dict);
     return -ENOMEM;
@@ -931,6 +933,8 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
             ret |= vmaf_cuda_buffer_free(fex->cu_state, s->accum[scale]);
             free(s->accum[scale]);
         }
+        if (s->accum_host[scale])
+            ret |= vmaf_cuda_buffer_host_free(fex->cu_state, s->accum_host[scale]);
     }
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
     const CudaFunctions *cu_f = fex->cu_state->f;

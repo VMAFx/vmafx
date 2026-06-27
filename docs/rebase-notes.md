@@ -1,6 +1,25 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/bughunt-cuda — CUDA pinned-buffer leaks, motion SAD precision, errno fidelity (2026-06-27)
+Rebase impact: **none on upstream** — all fork-local. The CUDA backend
+(`core/src/feature/cuda/`) is a fork addition with no Netflix/vmaf counterpart.
+Touches only `core/src/feature/cuda/{float_vif_cuda.c,float_adm_cuda.c,
+integer_motion_cuda.c,speed_temporal_cuda.c,speed_chroma_cuda.c}`. No public
+header, CLI flag, meson-option, ffmpeg-patch, or Netflix golden-gate surface
+changes (the golden gate is CPU-only; SpEED is not in the golden pairs). The
+leak fixes fire only in `close_fex_cuda` / init-error paths (no success-path
+behaviour change); the errno fixes only change the *value* returned on an
+already-failing CUDA error path (`-EIO` → the mapped errno); the
+`integer_motion_cuda` precision change brings GPU SAD output closer to the CPU
+double-precision reference (GPU-only, not bit-exact with CPU by design).
+**Rebase-sensitive invariant for the next syncer:** in
+`speed_temporal_cuda.c` / `speed_chroma_cuda.c`, every `fail:` label reached
+from `CHECK_CUDA_GOTO` must `return _cuda_err;` (the macro-mapped errno), not a
+literal `-EIO` — matching the `CHECK_CUDA_RETURN` convention in
+`cuda_helper.cuh`. The two manual `cuMemcpyDtoH` / `cuCtxPushCurrent` boolean
+checks deliberately keep their literal `-EIO`.
+
 ## fix/mcp-probe-backend-required — MCP probe_backend required-arg message (2026-06-20)
 Rebase impact: **none on upstream** — fork-local. The MCP server (`mcp-server/vmaf-mcp/`) is a fork addition with no Netflix/vmaf counterpart. One-line change in `_call_tool_dispatch`'s `probe_backend` branch (removes a redundant explicit guard, relies on the existing KeyError→ValueError wrapper). No public C-API / CLI / header impact.
 
