@@ -66,7 +66,7 @@ diff --git a/configure b/configure
 +                             check_pkg_config libvmaf_metal "libvmaf >= 3.0.0" libvmaf/libvmaf_metal.h vmaf_metal_picture_import
  enabled libvmaf_cuda      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
- enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
+ enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
@@ -232,7 +232,7 @@ diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
 +               "vmaf flush failed: %d\n", err);
 +
 +    for (unsigned i = 0; i < s->model_cnt; i++) {
-+        double vmaf_score;
++        double vmaf_score = 0.0;
 +        err = vmaf_score_pooled(s->vmaf, s->model[i], pool_method_map(s->pool),
 +                                &vmaf_score, 0, s->frame_cnt - 1);
 +        if (err) {

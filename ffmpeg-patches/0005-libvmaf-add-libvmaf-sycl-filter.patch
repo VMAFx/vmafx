@@ -64,8 +64,8 @@ index 9b16ddf1e6..41738050f0 100755
  enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
  enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
  enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
-+enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
-+                             check_pkg_config libvmaf_sycl "libvmaf >= 2.0.0" libvmaf_sycl.h vmaf_sycl_state_init
++enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
++                             check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
  enabled libvmaf           && check_pkg_config libvmaf_sycl "libvmaf >= 3.0.0" libvmaf/libvmaf_sycl.h vmaf_sycl_state_init
  enabled libvmaf           && check_pkg_config libvmaf_vulkan "libvmaf >= 3.0.0" libvmaf/libvmaf_vulkan.h vmaf_vulkan_state_init
  enabled vmaf_pre_filter   && require_pkg_config libvmaf_dnn "libvmaf >= 3.0.0" libvmaf/dnn.h vmaf_dnn_session_open
@@ -119,7 +119,7 @@ index f0ec23605c..d9dab0bdd9 100644
  #endif
      int   vulkan_device;
  #if CONFIG_LIBVMAF_VULKAN
-@@ -969,3 +977,324 @@ const FFFilter ff_vf_libvmaf_cuda = {
+@@ -969,3 +977,335 @@ const FFFilter ff_vf_libvmaf_cuda = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
@@ -269,14 +269,25 @@ index f0ec23605c..d9dab0bdd9 100644
 +    if (!s->frame_cnt)
 +        goto clean_up;
 +
-+    // Flush the SYCL compute pipeline (NOT vmaf_read_pictures which is CPU-only)
-+    err = vmaf_flush_sycl(s->vmaf);
++    // Pick the flush that drains whichever read path do_vmaf_sycl() used:
++    //   * QSV zero-copy path (va_display set) feeds vmaf_read_pictures_sycl(),
++    //     so the SYCL-extractor flush (vmaf_flush_sycl) is the right drain.
++    //   * software path (va_display NULL) feeds the CPU/threaded
++    //     vmaf_read_pictures(), which is drained only by the canonical
++    //     end-of-stream call vmaf_read_pictures(NULL, NULL, 0) — it joins the
++    //     worker thread pool and runs final-frame extraction. vmaf_flush_sycl
++    //     never touches that pool, so on n_threads>0 software input the last
++    //     frames would be missing from the pooled score.
++    if (s->va_display)
++        err = vmaf_flush_sycl(s->vmaf);
++    else
++        err = vmaf_read_pictures(s->vmaf, NULL, NULL, 0);
 +    if (err)
 +        av_log(ctx, AV_LOG_ERROR,
-+               "vmaf_flush_sycl failed: %d\n", err);
++               "vmaf flush failed: %d\n", err);
 +
 +    for (unsigned i = 0; i < s->model_cnt; i++) {
-+        double vmaf_score;
++        double vmaf_score = 0.0;
 +        err = vmaf_score_pooled(s->vmaf, s->model[i], pool_method_map(s->pool),
 +                                &vmaf_score, 0, s->frame_cnt - 1);
 +        if (err) {

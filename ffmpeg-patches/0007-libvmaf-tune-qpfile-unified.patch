@@ -87,7 +87,7 @@ index 20e97e5d43..a93d01483b 100644
  
  /*
   * Portion of struct aom_codec_cx_pkt from aom_encoder.h.
-@@ -107,6 +111,30 @@ typedef struct AOMEncoderContext {
+@@ -107,6 +111,31 @@ typedef struct AOMEncoderContext {
      int enable_global_motion;
      int enable_intrabc;
      int enable_restoration;
@@ -114,11 +114,12 @@ index 20e97e5d43..a93d01483b 100644
 +    uint8_t       *roi_seg_map;
 +    unsigned int   roi_mi_rows;
 +    unsigned int   roi_mi_cols;
++    unsigned int   roi_input_frame;  /* 0-based coded-frame ordinal for qpfile lookup */
 +
      int usage;
      int tune;
      int still_picture;
-@@ -458,6 +486,13 @@ static av_cold int aom_free(AVCodecContext *avctx)
+@@ -458,6 +486,14 @@ static av_cold int aom_free(AVCodecContext *avctx)
  
      aom_codec_destroy(&ctx->encoder);
      aom_img_remove_metadata(&ctx->rawimg);
@@ -129,6 +130,7 @@ index 20e97e5d43..a93d01483b 100644
 +    av_freep(&ctx->roi_seg_map);
 +    ctx->roi_mi_rows = 0;
 +    ctx->roi_mi_cols = 0;
++    ctx->roi_input_frame = 0;
      av_freep(&ctx->twopass_stats.buf);
      av_freep(&avctx->stats_out);
      free_frame_list(ctx->coded_frame_list);
@@ -167,7 +169,7 @@ index 20e97e5d43..a93d01483b 100644
      // provide dummy value to initialize wrapper, values will be updated each _encode()
      aom_img_wrap(&ctx->rawimg, img_fmt, avctx->width, avctx->height, 1,
                   (unsigned char*)1);
-@@ -1256,6 +1319,165 @@ static enum AVPixelFormat aomfmt_to_pixfmt(struct aom_image *img)
+@@ -1256,6 +1319,169 @@ static enum AVPixelFormat aomfmt_to_pixfmt(struct aom_image *img)
      return AV_PIX_FMT_NONE;
  }
  
@@ -261,26 +263,30 @@ index 20e97e5d43..a93d01483b 100644
 +    }
 +}
 +
-+static const VmafTuneQpFrame *qpfile_aom_frame_for_pts(const AOMContext *ctx,
-+                                                      int64_t pts)
++static const VmafTuneQpFrame *qpfile_aom_frame_for_index(const AOMContext *ctx,
++                                                         unsigned frame_index)
 +{
-+    /* Match qpfile frame_index to PTS; bounded linear scan (qpfiles are
-+     * short for vmaf-tune). Falls back to the last entry when the
-+     * qpfile is shorter than the stream — mirrors saliency.py's
-+     * "one mask, all frames" pattern. */
++    /* Match the qpfile's 0-based coded-frame ordinal against this
++     * encoder's input-frame counter. saliency.py emits one record per
++     * input frame in coded order, so frame_index lines up 1:1 with the
++     * count of frames fed to aom_encode(). NB: AVFrame->pts is NOT a
++     * frame ordinal (it is in stream time_base units), so matching on
++     * pts here would almost never hit and would silently apply the last
++     * entry to every frame. Bounded linear scan (qpfiles are short for
++     * vmaf-tune). Falls back to the last entry when the qpfile is
++     * shorter than the stream — mirrors saliency.py's "one mask, all
++     * frames" pattern. */
 +    unsigned k;
 +    if (ctx->qpfile.frame_count == 0)
 +        return NULL;
-+    if (pts < 0)
-+        return &ctx->qpfile.frames[0];
 +    for (k = 0; k < ctx->qpfile.frame_count; k++) {
-+        if (ctx->qpfile.frames[k].frame_index == (unsigned)pts)
++        if (ctx->qpfile.frames[k].frame_index == frame_index)
 +            return &ctx->qpfile.frames[k];
 +    }
 +    return &ctx->qpfile.frames[ctx->qpfile.frame_count - 1u];
 +}
 +
-+static int qpfile_aom_apply_roi(AVCodecContext *avctx, int64_t pts)
++static int qpfile_aom_apply_roi(AVCodecContext *avctx, unsigned frame_index)
 +{
 +    AOMContext *ctx = avctx->priv_data;
 +    aom_roi_map_t roi;
@@ -294,7 +300,7 @@ index 20e97e5d43..a93d01483b 100644
 +        ctx->roi_mi_rows == 0 || ctx->roi_mi_cols == 0)
 +        return 0;
 +
-+    qf = qpfile_aom_frame_for_pts(ctx, pts);
++    qf = qpfile_aom_frame_for_index(ctx, frame_index);
 +    if (!qf || !qf->block_offsets ||
 +        qf->block_rows == 0 || qf->block_cols == 0)
 +        return 0;
@@ -323,8 +329,8 @@ index 20e97e5d43..a93d01483b 100644
 +    res = aom_codec_control(&ctx->encoder, AOME_SET_ROI_MAP, &roi);
 +    if (res != AOM_CODEC_OK) {
 +        av_log(avctx, AV_LOG_WARNING,
-+               "libaom: AOME_SET_ROI_MAP failed for pts=%"PRId64" (res=%d); "
-+               "continuing without ROI bias for this frame.\n", pts, res);
++               "libaom: AOME_SET_ROI_MAP failed for frame %u (res=%d); "
++               "continuing without ROI bias for this frame.\n", frame_index, res);
 +        return 0;  /* non-fatal: skip ROI for this frame */
 +    }
 +    return 0;
@@ -338,7 +344,7 @@ index 20e97e5d43..a93d01483b 100644
      }
  
 +    if (ctx->qpfile_loaded && frame) {
-+        int qret = qpfile_aom_apply_roi(avctx, frame->pts);
++        int qret = qpfile_aom_apply_roi(avctx, ctx->roi_input_frame++);
 +        if (qret < 0)
 +            return qret;
 +    }
@@ -375,7 +381,7 @@ index fec2ed596e..403810d78e 100644
  
  typedef enum eos_status {
      EOS_NOT_REACHED = 0,
-@@ -74,6 +76,31 @@ typedef struct SvtContext {
+@@ -74,6 +76,32 @@ typedef struct SvtContext {
      int enc_mode;
      int crf;
      int qp;
@@ -403,6 +409,7 @@ index fec2ed596e..403810d78e 100644
 +    unsigned int     roi_evt_count;
 +    unsigned int     roi_b64_cols;
 +    unsigned int     roi_b64_rows;
++    unsigned int     roi_input_frame;  /* 0-based coded-frame ordinal for qpfile lookup */
 +#endif
  } SvtContext;
  
@@ -466,7 +473,7 @@ index fec2ed596e..403810d78e 100644
      svt_ret = svt_av1_enc_init(svt_enc->svt_handle);
      if (svt_ret != EB_ErrorNone) {
          return svt_print_error(avctx, svt_ret, "Error initializing encoder");
-@@ -533,6 +600,193 @@ static av_cold int eb_enc_init(AVCodecContext *avctx)
+@@ -533,6 +600,199 @@ static av_cold int eb_enc_init(AVCodecContext *avctx)
      return alloc_buffer(&svt_enc->enc_params, svt_enc);
  }
  
@@ -640,17 +647,23 @@ index fec2ed596e..403810d78e 100644
 +    return 0;
 +}
 +
-+static SvtAv1RoiMapEvt *roi_evt_for_pts(SvtContext *svt_enc, int64_t pts)
++static SvtAv1RoiMapEvt *roi_evt_for_index(SvtContext *svt_enc, unsigned frame_index)
 +{
-+    /* Match qpfile frame_index to PTS; bounded linear scan (qpfiles
-+     * are short for vmaf-tune). Falls back to the last entry when
-+     * the qpfile is shorter than the stream — mirrors the saliency.py
-+     * "one mask, all frames" pattern. */
++    /* Match each ROI event's start_picture_number (== the qpfile's
++     * 0-based coded-frame ordinal) against this encoder's input-frame
++     * counter. saliency.py emits one record per input frame in coded
++     * order, so frame_index lines up 1:1 with the count of frames fed
++     * to eb_send_frame(). NB: AVFrame->pts is NOT a frame ordinal (it
++     * is in stream time_base units), so matching on pts here would
++     * almost never hit and would silently apply the last entry to every
++     * frame. Bounded linear scan (qpfiles are short for vmaf-tune).
++     * Falls back to the last entry when the qpfile is shorter than the
++     * stream — mirrors the saliency.py "one mask, all frames" pattern. */
 +    unsigned k;
-+    if (pts < 0 || svt_enc->roi_evt_count == 0)
++    if (svt_enc->roi_evt_count == 0)
 +        return NULL;
 +    for (k = 0; k < svt_enc->roi_evt_count; k++) {
-+        if (svt_enc->roi_evts[k].start_picture_number == (uint64_t)pts)
++        if (svt_enc->roi_evts[k].start_picture_number == (uint64_t)frame_index)
 +            return &svt_enc->roi_evts[k];
 +    }
 +    return &svt_enc->roi_evts[svt_enc->roi_evt_count - 1u];
@@ -678,7 +691,7 @@ index fec2ed596e..403810d78e 100644
 +    EbPrivDataNode roi_node;
 +    SvtAv1RoiMapEvt *roi_evt_ptr = NULL;
 +    if (svt_enc->qpfile_loaded && svt_enc->roi_evt_count > 0)
-+        roi_evt_ptr = roi_evt_for_pts(svt_enc, frame->pts);
++        roi_evt_ptr = roi_evt_for_index(svt_enc, svt_enc->roi_input_frame++);
 +    if (roi_evt_ptr) {
 +        memset(&roi_node, 0, sizeof(roi_node));
 +        roi_node.node_type = ROI_MAP_EVENT;
@@ -701,7 +714,7 @@ index fec2ed596e..403810d78e 100644
      if (svt_ret != EB_ErrorNone)
          return svt_print_error(avctx, svt_ret, "Error sending a frame to encoder");
  
-@@ -766,6 +1052,22 @@ static av_cold int eb_enc_close(AVCodecContext *avctx)
+@@ -766,6 +1052,23 @@ static av_cold int eb_enc_close(AVCodecContext *avctx)
      ff_dovi_ctx_unref(&svt_enc->dovi);
      av_freep(&svt_enc->stats_buf);
  
@@ -716,6 +729,7 @@ index fec2ed596e..403810d78e 100644
 +        svt_enc->roi_evt_count = 0;
 +        svt_enc->roi_b64_cols  = 0;
 +        svt_enc->roi_b64_rows  = 0;
++        svt_enc->roi_input_frame = 0;
 +#endif
 +        ff_qpfile_free(&svt_enc->qpfile);
 +        svt_enc->qpfile_loaded = 0;

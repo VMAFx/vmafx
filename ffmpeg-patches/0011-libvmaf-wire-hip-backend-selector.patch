@@ -84,7 +84,7 @@ index 5aee240..405ffe1 100755
 +enabled libvmaf           && check_pkg_config libvmaf_hip "libvmaf >= 3.0.0" libvmaf/libvmaf_hip.h vmaf_hip_state_init
  enabled libvmaf_cuda      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
                               check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf/libvmaf_cuda.h vmaf_cuda_state_init
- enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
+ enabled libvmaf_sycl      && require_pkg_config libvmaf "libvmaf >= 3.0.0" libvmaf.h vmaf_init &&
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
 index a32c915..0793356 100644
 --- a/libavfilter/vf_libvmaf.c

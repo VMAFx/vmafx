@@ -49,6 +49,15 @@ consumes the qpfile format emitted by vmaf-tune's saliency module
 
 **Where each `delta` is a per-block QP offset clamped to `[-12, +12]`.**
 
+`<frame_idx>` is the **0-based coded-frame ordinal** — the same index
+`saliency.py` walks via `range(duration_frames)`, i.e. the position of
+the frame in the encoder's input/coded order (frame 0, 1, 2, …). It is
+**not** a presentation timestamp: the ROI adapters match each record by
+counting frames fed to the encoder, never against `AVFrame->pts` (which
+is in stream `time_base` units and would not line up). When the qpfile
+is shorter than the stream, the last record is reused for all remaining
+frames, mirroring `saliency.py`'s "one mask, all frames" fallback.
+
 The shared parser at `libavcodec/qpfile_parser.{c,h}` reads this
 format once, then each encoder adapter dispatches it to its native
 ROI/QP-offset API.
