@@ -7,6 +7,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -19,7 +20,7 @@ import (
 func TestInfer_ModelNotFound(t *testing.T) {
 	t.Parallel()
 	r := NewRegistry(t.TempDir())
-	_, err := r.Infer("does_not_exist", []float64{1.0})
+	_, err := r.Infer(context.Background(), "does_not_exist", []float64{1.0})
 	if err == nil {
 		t.Fatal("expected error for missing model, got nil")
 	}
@@ -74,7 +75,7 @@ func TestErrORTRunnerNotFound_IsWrapped(t *testing.T) {
 	t.Setenv("PATH", "")
 
 	r := NewRegistry(dir)
-	_, err := r.Infer("model_for_wrap_test", []float64{0.1})
+	_, err := r.Infer(context.Background(), "model_for_wrap_test", []float64{0.1})
 	if err == nil {
 		t.Fatal("expected error from Infer, got nil")
 	}

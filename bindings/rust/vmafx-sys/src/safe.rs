@@ -119,19 +119,47 @@ impl VmafContext {
 
     /// Queue a pair of pictures for feature extraction at `index`.
     ///
-    /// Ownership of both pictures is transferred to the context; they will be
-    /// unref'd by libvmaf internally.
+    /// Both pictures are **consumed by value**: ownership transfers to libvmaf,
+    /// which unref's their plane buffers internally.  Taking the pictures by
+    /// move (rather than `&mut`) makes the transfer enforced by the type system
+    /// — the caller no longer holds the `VmafPicture` after the call, so it
+    /// cannot follow up with [`unref_picture`] and double-free the planes.
+    /// Pictures that are *not* handed to this method (e.g. a partially-filled
+    /// frame at end-of-stream) are still owned by the caller and must be freed
+    /// with [`unref_picture`].
     ///
     /// # Errors
-    /// Returns [`VmafxError::LibvmafError`] if libvmaf fails to enqueue the frame.
+    /// Returns [`VmafxError::LibvmafError`] if libvmaf fails to enqueue the
+    /// frame.  The caller must not use the pictures after this call regardless
+    /// of the outcome; the libvmaf public contract transfers ownership for the
+    /// duration of the call and does **not** return it on error.
     pub fn read_pictures(
         &mut self,
-        ref_pic: &mut VmafPicture,
-        dist_pic: &mut VmafPicture,
+        mut ref_pic: VmafPicture,
+        mut dist_pic: VmafPicture,
         index: u32,
     ) -> Result<(), VmafxError> {
-        // SAFETY: both VmafPicture pointers are valid; libvmaf takes ownership.
-        check(unsafe { vmaf_read_pictures(self.inner, ref_pic, dist_pic, index) })
+        // SAFETY: both structs are fully-initialised owners of allocated planes;
+        // `&raw mut` yields valid out-pointers for the duration of the call.
+        let rc =
+            unsafe { vmaf_read_pictures(self.inner, &raw mut ref_pic, &raw mut dist_pic, index) };
+        // Do NOT manually unref on the error path. The libvmaf public contract
+        // (libvmaf.h: "VmafContext will take ownership of both VmafPictures")
+        // transfers ownership to the C library for the duration of the call. On
+        // every error path that reaches libvmaf's `cleanup:` label libvmaf has
+        // already called `vmaf_picture_unref` on the caller's structs; a second
+        // unref here is at best a benign no-op (CPU build) but at worst a
+        // use-after-free / double-free against a CUDA-enabled libvmaf, where
+        // `translate_picture()` shallow-copies the caller's struct and the
+        // cleanup path frees the shared buffers while leaving the caller's
+        // pointers dangling-but-set. This mirrors the higher-level `vmafx`
+        // crate's `Context::read_pictures` (round-3 R3-2, PR #1056). The only
+        // errors where libvmaf does NOT take ownership are pre-validation
+        // rejections (monotonic-index / picture-param mismatch / pool
+        // exhaustion); those leak one frame's planes — an acceptable cost on a
+        // caller-misuse path, far cheaper than risking corruption on the common
+        // error paths.
+        check(rc)
     }
 
     /// Flush the feature extraction pipeline (call after all frames are queued).

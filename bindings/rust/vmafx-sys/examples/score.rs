@@ -178,7 +178,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
 
-        ctx.read_pictures(&mut ref_pic, &mut dist_pic, n_frames)?;
+        // Pass by move: ownership of both pictures transfers to libvmaf.
+        ctx.read_pictures(ref_pic, dist_pic, n_frames)?;
         n_frames += 1;
 
         if n_frames as usize >= N_FRAMES {

@@ -19,6 +19,7 @@
 package gpu
 
 import (
+	"context"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -83,12 +84,23 @@ func Detect() Capability {
 
 // runProbe runs cmd with args, respects probeTimeout, and returns stdout.
 // Returns ("", false) on any failure.
+//
+// exec.CommandContext wires SIGKILL to the deadline: when probeTimeout
+// elapses the kernel kills the probe child so a hung GPU tool (a wedged
+// nvidia-smi, a driver-blocked rocm-smi) cannot stall node startup
+// forever.  WaitDelay is a short post-cancel grace so c.Output() unblocks
+// even if the child holds inherited pipe file descriptors open after the
+// SIGKILL; without it Detect() could still wait indefinitely for those
+// descriptors to close.  A bare WaitDelay (no context) does NOT bound a
+// child that never produces output, which is the failure this fixes.
 func runProbe(cmd string, args ...string) (string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
 	// #nosec G204 -- runProbe is only invoked with hard-coded vendor probe
 	// commands (nvidia-smi, rocm-smi, etc.) from this package; never with
 	// caller-supplied input.
-	c := exec.Command(cmd, args...)
-	c.WaitDelay = probeTimeout
+	c := exec.CommandContext(ctx, cmd, args...)
+	c.WaitDelay = time.Second
 	out, err := c.Output()
 	if err != nil {
 		return "", false

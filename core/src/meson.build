@@ -1559,9 +1559,10 @@ vmaf_include = include_directories(
 # target/release/ directory.  We wrap it in a declare_dependency so the
 # archive is linked into libvmaf.so alongside the C sources.
 #
-# The option enable_rust_features (default: true) lets operators disable
-# the Rust build on hosts without a Rust toolchain.  When disabled, the
-# tad extractor is silently omitted and --feature tad returns -ENOSYS.
+# The option enable_rust_features (default: false, see meson_options.txt)
+# lets operators enable the Rust build on hosts with a Rust toolchain
+# (cargo + cbindgen).  When disabled, the tad extractor is silently
+# omitted and --feature tad returns -ENOSYS.
 # ---------------------------------------------------------------------------
 is_rust_enabled = get_option('enable_rust_features')
 

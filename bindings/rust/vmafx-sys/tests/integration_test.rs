@@ -132,7 +132,8 @@ fn netflix_golden_score() {
             break;
         }
 
-        ctx.read_pictures(&mut ref_pic, &mut dist_pic, n_frames)
+        // Pass by move: ownership of both pictures transfers to libvmaf.
+        ctx.read_pictures(ref_pic, dist_pic, n_frames)
             .expect("vmaf_read_pictures failed");
         n_frames += 1;
     }

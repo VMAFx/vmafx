@@ -26,6 +26,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"iter"
@@ -35,11 +36,17 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DefaultModelDir is the filesystem location searched for ONNX model files
 // when VMAFX_MODEL_DIR is not set.
 const DefaultModelDir = "/usr/local/share/vmafx/model"
+
+// inferTimeout bounds a single vmafx-ort-runner subprocess invocation when
+// the caller's context carries no deadline of its own.  A wedged ORT runner
+// (stuck device init, model deadlock) would otherwise hang the worker job.
+const inferTimeout = 5 * time.Minute
 
 // Registry manages the set of available ONNX models.
 type Registry struct {
@@ -89,9 +96,15 @@ func (r *Registry) ModelPath(modelName string) (string, error) {
 // container image) for the actual ORT session.  This avoids CGO build-time
 // coupling on libtensorrt / libonnxruntime at the Go layer.
 //
+// ctx bounds and cancels the subprocess: a cancelled context (job aborted,
+// parent shutdown) or an elapsed deadline tears down vmafx-ort-runner via
+// SIGKILL instead of leaving a wedged ORT session hanging the worker.  When
+// ctx carries no deadline of its own, inferTimeout is applied as an upper
+// bound, mirroring pkg/encoder and pkg/bisect.
+//
 // When vmafx-ort-runner is not found on PATH, returns ErrORTRunnerNotFound
 // so callers can fall back gracefully.
-func (r *Registry) Infer(modelName string, inputs []float64) ([]float64, error) {
+func (r *Registry) Infer(ctx context.Context, modelName string, inputs []float64) ([]float64, error) {
 	modelPath, err := r.ModelPath(modelName)
 	if err != nil {
 		return nil, err
@@ -108,15 +121,29 @@ func (r *Registry) Infer(modelName string, inputs []float64) ([]float64, error) 
 		return nil, fmt.Errorf("ai: marshal inputs: %w", err)
 	}
 
+	// Apply inferTimeout only when the caller's context has no deadline of
+	// its own, so an explicit caller deadline always wins.
+	cancel := func() {}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		ctx, cancel = context.WithTimeout(ctx, inferTimeout)
+	}
+	defer cancel()
+
 	// #nosec G204 -- runnerPath comes from exec.LookPath("vmafx-ort-runner"),
 	// modelPath is resolved via r.ModelPath (registry-controlled), inputJSON
-	// is the JSON-marshalled []float64 inputs.
-	cmd := exec.Command(runnerPath,
+	// is the JSON-marshalled []float64 inputs.  ctx enforces the timeout.
+	cmd := exec.CommandContext(ctx, runnerPath,
 		"--model", modelPath,
 		"--inputs", string(inputJSON),
 	)
+	// Short post-cancel grace so cmd.Output() unblocks even if the runner
+	// holds inherited pipe descriptors open after the SIGKILL.
+	cmd.WaitDelay = 2 * time.Second
 	out, runErr := cmd.Output()
 	if runErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("ai: vmafx-ort-runner cancelled: %w (run err: %v)", ctxErr, runErr)
+		}
 		return nil, fmt.Errorf("ai: vmafx-ort-runner failed: %w", runErr)
 	}
 

@@ -12,6 +12,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -246,7 +247,7 @@ func TestInfer_ORTRunnerNotFound(t *testing.T) {
 	t.Setenv("PATH", "")
 
 	r := NewRegistry(dir)
-	_, err := r.Infer("nr_metric_v1", []float64{0.5, 0.6})
+	_, err := r.Infer(context.Background(), "nr_metric_v1", []float64{0.5, 0.6})
 	if err == nil {
 		t.Fatal("expected error when vmafx-ort-runner not in PATH")
 	}
