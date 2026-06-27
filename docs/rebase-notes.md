@@ -46636,3 +46636,6 @@ no rebase impact: edits training-harness Python only (`ai/scripts/{aggregate_cor
 
 ## fix/bughunt-cli (2026-06-27)
 no ffmpeg-patch impact: edits the CLI (`core/tools/vmaf.cpp`, `cli_parse.cpp`) only. Deleted dead `core/tools/vmaf.c` (unreferenced; superseded by `vmaf.cpp`) + re-pointed 8 stale config/doc refs. **Invariant:** `cli_parse.c` is NOT dead — it is the TU compiled into `test_cli_parse` / `test_cli_parse_long_only_args` / `fuzz_cli_parse`; do not delete it on rebase. `--help`→stdout/exit0, no-frames→exit 101 (VMAF_EXIT_NO_FRAMES_DECODED).
+
+## chore/version-3.2.0 (2026-06-27)
+no rebase impact: bumps `core/meson.build` `version` (x-release-please-version) + `.release-please-manifest.json` `.` to `3.2.0` / `3.2.0-lusoris.0` to track upstream libvmaf 3.2.0 SONAME. On an upstream sync, keep the fork's libvmaf version aligned with Netflix's (`<upstream-X.Y.Z>-lusoris.N`).
