@@ -373,10 +373,16 @@ workflow.
 | 0 | Success, or `--help` / `--version` invocation. |
 | 1 | Any parse / I/O / runtime error. `vmaf` writes a diagnostic to stderr before exiting. |
 | 100 | Explicit `--backend <name>` requested but the backend failed to initialise (ADR-0543). |
+| 101 | No frames were decoded (empty or too-short input, or a `--frame_skip_*` value past end-of-stream). `vmaf` writes `no frames decoded ...` to stderr. |
 
-`libvmaf` does not currently surface granular error codes at the process
-boundary; the specific `VMAF_ERR_*` code from the C API is logged to stderr
-but collapsed to exit 1 from the CLI.
+A failed output-file write (bad path, full disk, permission denied) also exits
+non-zero: `vmaf` writes `problem writing output to <path> (err=<n>)` to stderr,
+where `<n>` is the negative `VMAF_ERR_*` code, instead of exiting 0 over a
+stale or partial file.
+
+Apart from the dedicated codes above, `libvmaf` does not surface granular error
+codes at the process boundary; the specific `VMAF_ERR_*` code from the C API is
+logged to stderr but collapsed to exit 1 from the CLI.
 
 ## Worked example — reproducing the upstream golden pair
 

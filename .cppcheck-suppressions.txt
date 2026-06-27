@@ -38,7 +38,7 @@ invalidPrintfArgType_sint:core/src/read_json_model.c
 invalidPrintfArgType_sint:core/test/test_framesync.c
 invalidPrintfArgType_sint:core/test/test_predict.c
 invalidPrintfArgType_sint:core/test/test_thread_pool.c
-invalidPrintfArgType_sint:core/tools/vmaf.c
+invalidPrintfArgType_sint:core/tools/vmaf.cpp
 uninitvar:core/src/predict.c
 arithOperationsOnVoidPointer:core/src/feature/integer_vif.c
 invalidPointerCast:core/src/opt.c

@@ -484,7 +484,7 @@ size unless the flags are right.**
   `--no_sycl` alone (without `--gpumask`) does NOT enable CUDA — it
   just disables SYCL while leaving CUDA unrequested. The CLI inits
   CUDA only when `c.use_gpumask && !c.no_cuda` (see
-  [`tools/vmaf.c`](tools/vmaf.c) device-init block).
+  [`tools/vmaf.cpp`](tools/vmaf.cpp) device-init block).
 
 **Correct invocations for backend bench / cross-backend diff:**
 

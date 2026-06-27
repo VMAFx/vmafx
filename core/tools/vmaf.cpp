@@ -37,6 +37,7 @@
  * source portability. MinGW ships <unistd.h>, so this split is strictly
  * MSVC / clang-cl. */
 #include <io.h>
+#include <windows.h> /* QueryPerformanceCounter/Frequency for wall_time_s() */
 #define isatty _isatty
 #define fileno _fileno
 #else
@@ -72,6 +73,15 @@
  * stderr. Mirrors the EX_* convention from <sysexits.h>; we don't pull
  * sysexits.h in to stay portable to Windows/MSVC. */
 #define VMAF_EXIT_BACKEND_INIT_FAILED 100
+
+/* Dedicated exit code for "no frames decoded": run_frame_loop returned 0
+ * because neither input yielded a single frame (empty file, zero-byte pipe,
+ * frame_skip past EOF, or a fully unreadable stream). Without this guard the
+ * pooling path computes `picture_index - 1`, which underflows the unsigned
+ * counter to UINT_MAX and feeds a bogus index range into vmaf_score_pooled.
+ * Distinct from VMAF_EXIT_BACKEND_INIT_FAILED so CI gates can tell an
+ * empty/short input apart from a backend failure. */
+#define VMAF_EXIT_NO_FRAMES_DECODED 101
 
 /* ADR-0543: sentinel returned by init_gpu_backends when the user passed
  * `--backend NAME` (non-auto/cpu) and that backend failed to initialise.
@@ -1019,6 +1029,28 @@ static void skip_initial_frames(VmafContext *vmaf, video_input *vid_ref, video_i
     }
 }
 
+/* Wall-clock timer for the FPS spinner in run_frame_loop. clock() /
+ * CLOCKS_PER_SEC measures aggregate CPU process time — under a multi-threaded
+ * run every worker thread contributes, so the FPS reading over-counts by up to
+ * n_threads. CLOCK_MONOTONIC / QueryPerformanceCounter give true wall time. */
+#ifdef _WIN32
+static double wall_time_s(void)
+{
+    LARGE_INTEGER freq;
+    LARGE_INTEGER cnt;
+    (void)QueryPerformanceFrequency(&freq);
+    (void)QueryPerformanceCounter(&cnt);
+    return static_cast<double>(cnt.QuadPart) / static_cast<double>(freq.QuadPart);
+}
+#else
+static double wall_time_s(void)
+{
+    struct timespec ts;
+    (void)clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
+}
+#endif
+
 /* Drive the main per-frame fetch + process loop. Returns the number of frames
  * successfully consumed (the post-increment `picture_index` value the original
  * inline loop used to compute `picture_index - 1` in pooling). Stops at EOF
@@ -1028,7 +1060,7 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
                                const CLISettings *c, int common_bitdepth, int istty)
 {
     float fps = 0.;
-    const time_t t0 = clock();
+    const double t0 = wall_time_s();
     unsigned picture_index;
     for (picture_index = 0;; picture_index++) {
 
@@ -1068,7 +1100,7 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
 
         if (istty && !c->quiet) {
             if (picture_index > 0 && !(picture_index % 10)) {
-                fps = (picture_index + 1) / (static_cast<float>(clock() - t0) / CLOCKS_PER_SEC);
+                fps = static_cast<float>((picture_index + 1) / (wall_time_s() - t0));
             }
 
             (void)fprintf(stderr, "\r%u frame%s %s %.2f FPS\033[K", picture_index + 1,
@@ -1475,6 +1507,17 @@ int main(int argc, char *argv[])
         const unsigned picture_index =
             run_frame_loop(vmaf, &vid_ref, &vid_dist, &c, common_bitdepth, istty);
 
+        /* No-frames guard: the pooling path below computes `picture_index - 1`.
+         * With zero decoded frames that underflows the unsigned counter to
+         * UINT_MAX and feeds a garbage index range into vmaf_score_pooled.
+         * Fail fast with a dedicated exit code instead. */
+        if (picture_index == 0) {
+            (void)fprintf(stderr, "no frames decoded from \"%s\" / \"%s\"\n", c.path_ref,
+                          c.path_dist);
+            ret = VMAF_EXIT_NO_FRAMES_DECODED;
+            goto cleanup;
+        }
+
         err |= vmaf_read_pictures(vmaf, nullptr, nullptr, 0);
         if (err) {
             (void)fprintf(stderr, "problem flushing context\n");
@@ -1489,7 +1532,17 @@ int main(int argc, char *argv[])
         }
 
         if (c.output_path) {
-            vmaf_write_output_with_format(vmaf, c.output_path, c.output_fmt, c.precision_fmt);
+            const int write_err =
+                vmaf_write_output_with_format(vmaf, c.output_path, c.output_fmt, c.precision_fmt);
+            if (write_err) {
+                /* A discarded return here hid write failures (bad path,
+                 * ENOSPC, permission denied) behind a clean exit 0 over a
+                 * stale or partial output file. Surface it instead. */
+                (void)fprintf(stderr, "problem writing output to %s (err=%d)\n", c.output_path,
+                              write_err);
+                ret = write_err;
+                goto cleanup;
+            }
             /* ADR-0498 / Bug #v2-E: echo the active backend into the JSON
              * output so CI gates and MCP probes can confirm what actually
              * ran (mirrors the MCP-layer echo added by PR #1251). */

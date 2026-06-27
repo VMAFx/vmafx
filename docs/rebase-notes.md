@@ -46633,3 +46633,6 @@ upstream-parity conflict surface to track on a future sync.
 
 ## fix/bughunt-ai (2026-06-27)
 no rebase impact: edits training-harness Python only (`ai/scripts/{aggregate_corpora,extract_k150k_features,materialize_saliency_features}.py`, `ai/train/konvid_pair_dataset.py` + `ai/tests/`). No libvmaf C-API / CLI / `meson_options.txt` / public-header change → no ffmpeg-patch impact. No rebase-sensitive invariants.
+
+## fix/bughunt-cli (2026-06-27)
+no ffmpeg-patch impact: edits the CLI (`core/tools/vmaf.cpp`, `cli_parse.cpp`) only. Deleted dead `core/tools/vmaf.c` (unreferenced; superseded by `vmaf.cpp`) + re-pointed 8 stale config/doc refs. **Invariant:** `cli_parse.c` is NOT dead — it is the TU compiled into `test_cli_parse` / `test_cli_parse_long_only_args` / `fuzz_cli_parse`; do not delete it on rebase. `--help`→stdout/exit0, no-frames→exit 101 (VMAF_EXIT_NO_FRAMES_DECODED).

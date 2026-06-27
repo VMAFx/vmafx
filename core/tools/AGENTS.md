@@ -14,10 +14,13 @@ Three C binaries built by libvmaf's Meson tree:
 
 ```text
 tools/
-  vmaf.c              # main() + option dispatch for the vmaf CLI
+  vmaf.cpp            # main() + option dispatch for the vmaf CLI (C++23, ADR-0809)
   vmaf_bench.c        # main() + benchmark harness
   vmaf_per_shot.c     # main() + scan/predict for the perShot sidecar
-  cli_parse.c/.h      # shared option parser (--precision, --tiny-model, …)
+  cli_parse.cpp/.h    # shared option parser (--precision, --tiny-model, …)
+                      # cli_parse.c is the C twin compiled into the unit/fuzz
+                      # tests only; keep it byte-for-byte behaviourally in sync
+                      # with cli_parse.cpp.
   vmaf_roi.c          # main() + sidecar pipeline for vmaf-roi
   vmaf_roi_core.h     # pure helpers (per-CTU mean reduce, saliency->QP)
 ```
@@ -38,7 +41,7 @@ tools/
   [ADR-0023](../../docs/adr/0023-tinyai-user-surfaces.md).
 - **No new hard dependencies** — the CLI must still build when `enable_dnn=disabled`.
 - **`--frame_skip_ref` / `--frame_skip_dist`** pre-loops in
-  [vmaf.c](vmaf.c) MUST `vmaf_picture_unref()` each fetched picture
+  [vmaf.cpp](vmaf.cpp) MUST `vmaf_picture_unref()` each fetched picture
   immediately. The picture pool is always-on (see ADR-0104 below) and
   fixed-size; without unref the pool exhausts after N skips and the next
   fetch blocks indefinitely. Re-test with
@@ -185,7 +188,7 @@ tools/
   auto-injected (the SVM consumes FR feature columns and would always
   fail downstream). If `/sync-upstream` reintroduces an unconditional
   `if (!settings->path_ref)` block, restore the `no_reference` guard.
-  **Frame-loop invariant**: in NR mode `vmaf.c::main` opens the
+  **Frame-loop invariant**: in NR mode `vmaf.cpp::main` opens the
   distorted source twice (two `video_input` handles) so
   `vmaf_read_pictures` receives a non-null picture pair; this
   satisfies the public-API contract without exposing a new entry

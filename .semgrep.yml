@@ -42,7 +42,7 @@ rules:
       include:
         - /core/src/output.c
         - /core/src/libvmaf.c
-        - /core/tools/vmaf.c
+        - /core/tools/vmaf.cpp
     message: >
       VMAF score output must be IEEE-754 round-trip lossless (%.17g). Lower
       precision in user-facing output silently truncates score deltas (see D11).

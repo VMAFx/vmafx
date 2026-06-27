@@ -45,7 +45,7 @@ case "$rel" in
     core/src/feature/sycl/*.cpp)
     expected_doc="docs/metrics/features.md"
     ;;
-  core/tools/cli_parse.c | core/tools/vmaf.c | core/tools/vmaf_bench.c)
+  core/tools/cli_parse.c | core/tools/cli_parse.cpp | core/tools/vmaf.cpp | core/tools/vmaf_bench.c)
     expected_doc="docs/usage/cli.md"
     ;;
   meson_options.txt | core/meson_options.txt)

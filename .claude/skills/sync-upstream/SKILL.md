@@ -124,7 +124,7 @@ a merge.
       any fork commits.
     - Manual resolution required: `core/include/libvmaf/libvmaf.h`,
       `core/src/libvmaf.c`, `core/meson.build`,
-      `core/tools/cli_parse.c`, `core/tools/vmaf.c`.
+      `core/tools/cli_parse.cpp`, `core/tools/vmaf.cpp`.
     For manual conflicts, STOP and surface them with `file:line` context. Do
     NOT resolve.
 

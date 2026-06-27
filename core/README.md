@@ -177,7 +177,7 @@ int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model,
                       unsigned index_low, unsigned index_high);
 ```
 
-For complete API documentation, see [libvmaf.h](include/libvmaf/libvmaf.h). For an example of using the API to create the `vmaf` command line tool, see [vmaf.c](tools/vmaf.c).
+For complete API documentation, see [libvmaf.h](include/libvmaf/libvmaf.h). For an example of using the API to create the `vmaf` command line tool, see [vmaf.cpp](tools/vmaf.cpp).
 
 ## Contributing a new VmafFeatureExtractor
 
