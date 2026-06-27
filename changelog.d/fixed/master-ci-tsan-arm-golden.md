@@ -10,3 +10,9 @@
   on ARM (`88.030463` -> `88.030322`), failing the golden assertion on the ARM
   build matrix; the scalar guard is reverted (golden restored) and the now-stale
   `test_float_adm_simd` parity test removed. See ADR-1057 (Update 2026-06-27).
+  (3) the `test_gpu_dispatch_env_oom` meson target passed the raw GCC/Clang flag
+  `-Wno-write-strings` unconditionally, which MSVC `cl` rejects with
+  `D8021: invalid numeric argument '/Wno-write-strings'` (it parses `/W` as a
+  warning-level prefix), failing the required `Build — Windows MSVC + CUDA`
+  check; the flag is now passed through `cxx.get_supported_arguments(...)` so MSVC
+  drops it while GCC/Clang keep it.
