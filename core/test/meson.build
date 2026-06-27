@@ -1294,6 +1294,34 @@ test_ms_ssim_decimate = executable('test_ms_ssim_decimate',
 )
 endif
 
+# float-ADM NEON DWT2 bit-exactness parity test (ADR-1057).
+# Asserts float_adm_dwt2_neon == adm_dwt2_s byte-for-byte. The kernel lives in
+# the `arm64_adm_dwt2_neon_lib` carve-out (compiled `-ffp-contract=off`) inside
+# platform_specific_cpu_objects; the scalar reference is in the feature static
+# lib. The test self-skips the NEON comparison on non-aarch64 (kernel absent),
+# so it builds and runs on every arch. `_simd_strict_fp_args` keeps the test TU
+# itself free of host FMA contraction.
+test_float_adm_simd = executable('test_float_adm_simd',
+    ['test.c', 'test_float_adm_simd.c',
+     '../src/mem.c', '../src/picture.c', '../src/ref.c',
+     '../src/dict.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.c', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines + _simd_strict_fp_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects,
+)
+test('test_float_adm_simd', test_float_adm_simd, suite : ['fast', 'simd'])
+
 test_locale_handling = executable('test_locale_handling',
     ['test.c', 'test_locale_handling.c'],
     include_directories : [

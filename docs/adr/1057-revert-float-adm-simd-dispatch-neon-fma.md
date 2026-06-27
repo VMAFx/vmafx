@@ -1,7 +1,10 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1057: Revert float-ADM SIMD dispatch wiring (PR #685) — NEON FMA divergence unfixable in scope
 
-- **Status**: Superseded by fix/neon-fma-safe-float-adm-dwt2 (float_adm_dwt2_neon.c)
+- **Status**: Superseded — follow-up landed on branch `fix/neon-fma-float-adm-dwt2`
+  (FMA-safe `float_adm_dwt2_neon.c` dispatched + aarch64 scalar FMA-contract
+  guard in `adm_tools.c` + `test_float_adm_simd` bit-exactness gate). See the
+  "Follow-up resolution" note under Consequences.
 - **Date**: 2026-06-06
 - **Deciders**: Lusoris
 - **Tags**: `simd`, `neon`, `float-adm`, `revert`, `correctness`
@@ -55,6 +58,30 @@ This is acceptable per user direction: "fix or revert if forward fix is intracta
   FMA-free DWT2 kernel for NEON (or a compile-time guard that provably disables
   contraction) and re-introduce the bit-exactness test with a tolerance-bounded rather
   than exact comparison if needed.
+
+### Follow-up resolution (2026-06-27, branch `fix/neon-fma-float-adm-dwt2`)
+
+The follow-up landed and closed the gap with an **exact** (not tolerance-bounded)
+comparison. Two corrections to this ADR's original diagnosis emerged during the fix:
+
+1. The FMA-safe NEON DWT2 kernel (`float_adm_dwt2_neon.c`, explicit `vmulq` + `vaddq`,
+   meson lib `arm64_adm_dwt2_neon_lib` built `-ffp-contract=off`) and its runtime
+   dispatch (`adm_dwt2_dispatch` in `adm.c`) were already present on master. The only
+   missing piece was the bit-exactness test, plus a deeper root cause.
+2. The ~1-ULP divergence was **not** solely the NEON intrinsics fusing. The *scalar*
+   reference `adm_dwt2_s` / `adm_dwt2_lo_s` was itself being FMA-contracted on aarch64
+   (GCC `-ffp-contract=fast`, Clang `on`), because `adm_tools.c` is built without
+   `-ffp-contract=off` and its `#ifdef HAVE_CONFIG_H` include guard was dead (so
+   `ARCH_AARCH64` never reached the TU). The dispatched scalar-fallback therefore
+   diverged from the FMA-free NEON path. Fix: include `config.h` unconditionally and
+   add an aarch64-only `-ffp-contract=off` guard (`#pragma clang fp contract(off)` +
+   GCC `optimize` attribute) on the two scalar DWT2 functions. x86 is left byte-identical
+   (`ARCH_AARCH64` undefined there; GCC x86 default is already `-ffp-contract=off`), so
+   the Netflix golden gate is untouched.
+
+Verified bit-exact (memcmp, 9 fixtures) on a real meson aarch64 cross-build under
+`qemu-aarch64` with both GCC 16.1 and Clang 22; the pre-fix scalar diverged on all 9.
+Gated by `core/test/test_float_adm_simd.c` in the `fast`/`simd` suites.
 
 ## References
 

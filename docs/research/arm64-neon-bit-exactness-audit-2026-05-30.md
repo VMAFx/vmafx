@@ -48,6 +48,19 @@ force at the command-line level. The pragma alone is insufficient.
 **Fix**: split `arm64_v8` into `arm64_v8` (integer TUs only) and
 `arm64_v8_fp` (float TUs, compiled with `-ffp-contract=off`).
 
+> **Update (2026-06-27, ADR-1057)**: this finding focused on the NEON TUs, but
+> for a dispatched SIMD path the *scalar reference* it is compared against must
+> also be contraction-stable on aarch64. `float_adm_dwt2_neon` is dispatched and
+> FMA-free, but its scalar reference `adm_dwt2_s` / `adm_dwt2_lo_s` lives in
+> `adm_tools.c` (the general feature lib, **not** an `-ffp-contract=off` carve-out),
+> so on aarch64 the compiler fused the scalar `accum += a*b` into `fmadd` and the
+> two paths diverged by ~1 ULP. Two corrections were needed: `adm_tools.c` must
+> `#include "config.h"` (its `#ifdef HAVE_CONFIG_H` guard was dead, so `ARCH_AARCH64`
+> was invisible in the TU), and the two scalar DWT2 functions carry an
+> aarch64-only `-ffp-contract=off` guard. General lesson for future dispatched
+> float SIMD: audit the scalar reference's contraction on aarch64, not only the
+> NEON TU's.
+
 ### Finding 2 — High: `float_adm_neon.c` is dead code
 
 `float_adm_sum_cube_neon`, `float_adm_csf_den_scale_neon`, and
@@ -60,6 +73,14 @@ nor the AVX2 `float_adm_*` functions have ever been called at runtime.
 **Fix**: Added a follow-up comment in `adm.c` citing ADR-0873. Full
 dispatch wiring is deferred (requires a function-pointer table analogous
 to `integer_adm.c` and Netflix-golden-gate verification).
+
+> **Update (2026-06-27, ADR-1057)**: `float_adm_dwt2_neon` is no longer dead.
+> It was extracted into its own TU (`float_adm_dwt2_neon.c`, FMA-free, meson
+> lib `arm64_adm_dwt2_neon_lib` built `-ffp-contract=off`) and is dispatched
+> at runtime via `adm_dwt2_dispatch` in `adm.c` on aarch64 with NEON. It is now
+> bit-exact with the scalar reference — see Finding 1 update below and the
+> `test_float_adm_simd` row in the test-coverage table. `float_adm_sum_cube_neon`
+> / `float_adm_csf_den_scale_neon` (Finding 3) remain undispatched.
 
 ### Finding 3 — High: `float_adm_neon.c` float32 reduction instability
 
@@ -105,7 +126,8 @@ and are compiled in their own libs with `-ffp-contract=off`. No gap.
 | `test_cambi_simd.c` | Yes | `memcmp` |
 | `test_integer_adm_simd.c` | Partial (integer ADM only) | — |
 | `test_motion_v2_simd.c` | **No → Fixed** | Added in this PR |
-| float_adm / float_motion / float_psnr NEON | **No** | No dedicated unit test; covered end-to-end by Netflix golden gate on `ubuntu-24.04-arm` runner |
+| `test_float_adm_simd.c` (DWT2) | **Yes** (2026-06-27, ADR-1057) | `memcmp` of all 4 DWT2 bands vs scalar `adm_dwt2_s`, 9 fixtures; aarch64-only NEON comparison |
+| float_adm sum_cube/csf / float_motion / float_psnr NEON | **No** | No dedicated unit test (and undispatched — see Finding 2/3); covered end-to-end by Netflix golden gate on `ubuntu-24.04-arm` runner |
 
 The float-ADM / float-motion / float-PSNR NEON functions lack dedicated
 bit-exact unit tests. They are exercised indirectly through the full VMAF
