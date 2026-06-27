@@ -34,6 +34,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -187,3 +188,97 @@ def test_chug_extract_features_floor_below_identity_on_degraded_pair(
         f"adm2_mean={adm2} is too close to the identity-pair value (1.0); "
         "ADR-0510 FR-from-NR regression suspected. Compare ref vs dis paths."
     )
+
+
+def _chug_rows(width: int, height: int, dis_count: int) -> list[dict]:
+    """One reference row + ``dis_count`` distorted rungs of the same content."""
+    rows = [
+        {
+            "src": "ref.mp4",
+            "src_sha256": "r" * 64,
+            "width": width,
+            "height": height,
+            "mos": 5.0,
+            "chug_content_name": "synthetic.mp4",
+            "chug_ref": 1,
+            "chug_bitrate_label": "ref",
+            "chug_bitladder": "1080p_ref_",
+            "chug_video_id": "ref",
+        }
+    ]
+    for i in range(dis_count):
+        rows.append(
+            {
+                "src": f"dist{i}.mp4",
+                "src_sha256": chr(ord("a") + i) * 64,
+                "width": width,
+                "height": height,
+                "mos": 1.5,
+                "chug_content_name": "synthetic.mp4",
+                "chug_ref": 0,
+                "chug_bitrate_label": f"low{i}",
+                "chug_bitladder": f"low_{i}_0.1M_",
+                "chug_video_id": f"dis{i}",
+            }
+        )
+    return rows
+
+
+def test_run_isolates_per_clip_failures(tmp_path: Path, monkeypatch) -> None:
+    """R3-19: a single pair's extraction failure must be logged and skipped, not
+    abort the whole batch.
+
+    We stub ``_extract_pair_payload`` to raise on the first pair and succeed on
+    the second.  Before the fix the loop had no try/except, so the first
+    exception propagated out of ``run()`` and discarded the second (good) row.
+    """
+    module = _load_module()
+    width, height = 320, 240
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    # All referenced clip files must exist (the loop's is_file() guard).
+    for name in ("ref.mp4", "dist0.mp4", "dist1.mp4"):
+        (clips_dir / name).write_bytes(b"fake")
+
+    chug_jsonl = tmp_path / "chug.jsonl"
+    rows = _chug_rows(width, height, dis_count=2)
+    chug_jsonl.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    output = tmp_path / "features.jsonl"
+
+    good_payload = module.ExtractedPairPayload(
+        result=module.FeatureExtractionResult(
+            feature_names=("adm2",),
+            per_frame=np.asarray([[0.5]], dtype=np.float32),
+            n_frames=1,
+        ),
+        ref_visual_signals=module._empty_visual_signals(),
+        dis_visual_signals=module._empty_visual_signals(),
+    )
+
+    calls = {"n": 0}
+
+    def flaky_extract(*_args, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise subprocess.CalledProcessError(1, ["ffmpeg"], "boom")
+        return good_payload
+
+    monkeypatch.setattr(module, "_extract_pair_payload", flaky_extract)
+    # Avoid any real ffprobe for the HDR sidecar.
+    monkeypatch.setattr(module, "probe_clip_hdr_metadata", lambda *_a, **_k: {})
+
+    written = module.run(
+        input_jsonl=chug_jsonl,
+        output_jsonl=output,
+        clips_dir=clips_dir,
+        cache_dir=tmp_path / "cache",
+        max_rows=None,
+    )
+
+    # Both pairs were attempted; the first failed and was skipped, the second
+    # was written — the batch was NOT aborted by the first failure.
+    assert calls["n"] == 2
+    assert written == 1
+    out_lines = [ln for ln in output.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(out_lines) == 1
+    assert json.loads(out_lines[0]).get("adm2_mean") == 0.5

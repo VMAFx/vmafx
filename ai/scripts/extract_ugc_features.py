@@ -306,13 +306,18 @@ def main(argv: list[str] | None = None) -> int:
             continue
         try:
             probe = _ffprobe(orig)
+            ow = int(probe["width"])
+            oh = int(probe["height"])
+            if ow <= 0 or oh <= 0:
+                raise ValueError(f"degenerate geometry {ow}x{oh}")
         except Exception as exc:  # pragma: no cover
-            print(f"  [{stem}] ffprobe failed: {exc}", flush=True)
+            # A missing/zero width|height (KeyError / ValueError) or any ffprobe
+            # failure must skip just this clip, not abort the whole run with an
+            # uncaught ZeroDivisionError/KeyError (R3-18).
+            print(f"  [{stem}] ffprobe/geometry failed: {exc}", flush=True)
             fail_count += 1
             continue
-        ow = int(probe["width"])
-        oh = int(probe["height"])
-        # Down-scale to max_height keeping aspect
+        # Down-scale to max_height keeping aspect (oh > 0 guaranteed above).
         target_h = min(oh, args.max_height)
         target_w = (ow * target_h) // oh
         # Make even
@@ -366,8 +371,8 @@ def main(argv: list[str] | None = None) -> int:
             pair_count += 1
             print(
                 f"  [{stem}/{sfx}] {target_w}x{target_h} frames={len(frames)} "
-                f"vmaf~{frames[0].get('metrics',{}).get('vmaf','-') if frames else '-'} "
-                f"({time.monotonic()-t0:.0f}s)",
+                f"vmaf~{frames[0].get('metrics', {}).get('vmaf', '-') if frames else '-'} "
+                f"({time.monotonic() - t0:.0f}s)",
                 flush=True,
             )
             if not args.keep_yuv:
@@ -401,7 +406,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"[ugc-extract] wrote {args.out_parquet} pairs={pair_count} fails={fail_count} "
         f"rows={len(df)} sources={df['source'].nunique()} "
-        f"wall={time.monotonic()-t0:.0f}s",
+        f"wall={time.monotonic() - t0:.0f}s",
         flush=True,
     )
     return 0

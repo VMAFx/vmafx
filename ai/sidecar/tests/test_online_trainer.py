@@ -454,6 +454,149 @@ class TestHandleConnection:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# R3-3 — feature-vector length validation must keep poison out of the buffer
+# ---------------------------------------------------------------------------
+
+
+class TestIngestFeatureValidation:
+    """ingest() must reject mismatched-length / non-numeric samples *before*
+    they reach the shared replay buffer (R3-3)."""
+
+    def _trainer(self, tmp_path: pathlib.Path, batch_size: int = 4) -> OnlineTrainer:
+        return OnlineTrainer(
+            n_features=N_FEATURES,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+            batch_size=batch_size,
+            config=_fast_config(),
+        )
+
+    def test_wrong_length_features_raises_valueerror(self, tmp_path: pathlib.Path) -> None:
+        trainer = self._trainer(tmp_path)
+        with pytest.raises(ValueError):
+            trainer.ingest([1.0] * (N_FEATURES + 1), 50.0)
+
+    def test_wrong_length_features_not_pushed_to_buffer(self, tmp_path: pathlib.Path) -> None:
+        trainer = self._trainer(tmp_path)
+        with pytest.raises(ValueError):
+            trainer.ingest([1.0] * (N_FEATURES - 1), 50.0)
+        # The poison sample must not be in the replay buffer.
+        assert trainer.status()["buffer_size"] == 0
+        assert trainer.status()["total_pushed"] == 0
+
+    def test_buffer_stays_trainable_after_rejected_sample(self, tmp_path: pathlib.Path) -> None:
+        """A rejected ragged sample must not break later replay-mixed batches."""
+        batch_size = 4
+        trainer = self._trainer(tmp_path, batch_size=batch_size)
+        with pytest.raises(ValueError):
+            trainer.ingest([1.0] * (N_FEATURES + 3), 50.0)
+        # Now fill a clean batch — training must succeed (no ragged tensor).
+        result = None
+        for i in range(batch_size):
+            result = trainer.ingest([float(i)] * N_FEATURES, float(i * 10))
+        assert result is not None
+        assert result["trained"] is True
+        assert isinstance(result["loss"], float)
+
+    def test_non_numeric_score_raises_before_buffer_push(self, tmp_path: pathlib.Path) -> None:
+        trainer = self._trainer(tmp_path)
+        with pytest.raises(ValueError):
+            trainer.ingest([1.0] * N_FEATURES, "abc")  # type: ignore[arg-type]
+        assert trainer.status()["buffer_size"] == 0
+
+
+class TestHandleConnectionMalformedRecovery:
+    """A malformed feature length over the socket must return ok:false and keep
+    the connection thread alive for the next message (R3-3)."""
+
+    def _socketpair(self) -> tuple[socket.socket, socket.socket]:
+        return socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+
+    def test_wrong_length_returns_ok_false_then_recovers(self, tmp_path: pathlib.Path) -> None:
+        trainer = OnlineTrainer(
+            n_features=N_FEATURES,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+            batch_size=64,
+            config=_fast_config(),
+        )
+        client_sock, server_sock = self._socketpair()
+        t = threading.Thread(
+            target=ot_mod._handle_connection,
+            args=(server_sock, trainer),
+            daemon=True,
+        )
+        t.start()
+
+        # 1) Malformed (too-short) feature vector → structured error, thread survives.
+        bad = {"job_id": "bad", "features": [1.0] * (N_FEATURES - 1), "true_score": 50.0}
+        ack = _send_recv(client_sock, bad)
+        assert ack["ok"] is False
+        assert "error" in ack
+
+        # 2) The connection thread must still be alive and serve a valid message.
+        good = {"job_id": "good", "features": [1.0] * N_FEATURES, "true_score": 60.0}
+        ack2 = _send_recv(client_sock, good)
+        assert ack2["ok"] is True
+        assert ack2.get("job_id") == "good"
+        client_sock.close()
+
+
+# ---------------------------------------------------------------------------
+# R3-7 — concurrent checkpoint exports must produce unique version numbers
+# ---------------------------------------------------------------------------
+
+
+class TestCheckpointVersionRace:
+    def test_concurrent_exports_have_unique_versions(self, tmp_path: pathlib.Path) -> None:
+        """Many threads racing _maybe_export_checkpoint() must never collide on a
+        model_vNNNNNN.onnx version number (R3-7).
+
+        We stub the slow ONNX export + sha sidecar so the test is fast and
+        deterministic, then drive _maybe_export_checkpoint() concurrently with a
+        trainer whose should_checkpoint() always returns True.
+        """
+        import unittest.mock as mock
+
+        trainer = OnlineTrainer(
+            n_features=N_FEATURES,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+            config=_fast_config(),
+        )
+
+        exported: list[str] = []
+        exported_lock = threading.Lock()
+
+        def _fake_export_onnx(path: str, **_kw: object) -> None:
+            # Record the path each export *would* write; if two threads share a
+            # counter value they record the same filename → the assert below fails.
+            with exported_lock:
+                exported.append(path)
+
+        n_threads = 32
+        start = threading.Barrier(n_threads)
+
+        with (
+            mock.patch.object(trainer._trainer, "should_checkpoint", return_value=True),
+            mock.patch.object(trainer._trainer, "export_onnx", side_effect=_fake_export_onnx),
+            mock.patch.object(ot_mod, "_write_sha256_sidecar", lambda _p: None),
+        ):
+
+            def worker() -> None:
+                start.wait()
+                trainer._maybe_export_checkpoint()
+
+            threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+            for th in threads:
+                th.start()
+            for th in threads:
+                th.join()
+
+        assert len(exported) == n_threads
+        # Every version-stamped filename must be unique — no lost increments.
+        assert len(set(exported)) == n_threads
+        assert trainer.status()["checkpoint_counter"] == n_threads
+
+
 class TestRunServer:
     def test_run_server_starts_and_stops_cleanly(self, tmp_path: pathlib.Path) -> None:
         """run_server must bind the socket, accept connections, and stop on event."""

@@ -64,7 +64,11 @@ from aiutils.run_manifest import build_run_provenance, write_manifest_json  # no
 
 
 def _per_clip_cache_path(root: Path, source: str, dis_stem: str) -> Path:
-    return root / source / f"{dis_stem}.json"
+    # The feature-set count is baked into the filename so a cache produced
+    # before FULL_FEATURES grew (22 -> 26 cols, ADR-0559) misses instead of
+    # silently misaligning columns (R3-8).  Mirrors konvid_to_full_features,
+    # which keys its cache "features_{len(FULL_FEATURES)}".
+    return root / source / f"{dis_stem}.f{len(FULL_FEATURES)}.json"
 
 
 def _load_or_compute(
@@ -76,7 +80,12 @@ def _load_or_compute(
     stem = pair.dis_path.stem
     cache_path = _per_clip_cache_path(cache_dir, src, stem)
     if cache_path.is_file():
-        return json.loads(cache_path.read_text())
+        payload = json.loads(cache_path.read_text())
+        # Defence in depth on top of the feature-count-keyed filename: a cache
+        # whose stored feature_names no longer match the current FULL_FEATURES
+        # would silently misalign columns at zip time, so recompute instead.
+        if list(payload.get("feature_names", [])) == list(FULL_FEATURES):
+            return payload
 
     feats = extract_features(
         pair.ref_path,
@@ -212,6 +221,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         try:
             payload = _load_or_compute(pair, args.cache_dir, args.vmaf_bin)
+            # Use the payload's own feature_names (not the global FULL_FEATURES)
+            # so columns line up with the values that were actually computed;
+            # _load_or_compute guarantees they equal FULL_FEATURES, so strict=True
+            # turns any future drift into a hard error instead of silent
+            # truncation (R3-8).
+            feature_names = list(payload.get("feature_names") or FULL_FEATURES)
             per_frame = np.asarray(payload["per_frame"], dtype=np.float32)
             teacher_per_frame = np.asarray(payload["teacher_per_frame"], dtype=np.float32)
             n = min(per_frame.shape[0], teacher_per_frame.shape[0])
@@ -223,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
                     "codec": args.codec,
                     "vmaf": float(teacher_per_frame[fi]),
                 }
-                for col, val in zip(FULL_FEATURES, per_frame[fi], strict=False):
+                for col, val in zip(feature_names, per_frame[fi], strict=True):
                     row[col] = float(val)
                 rows.append(row)
         except Exception as exc:

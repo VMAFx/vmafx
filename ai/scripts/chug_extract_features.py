@@ -23,6 +23,7 @@ import json
 import math
 import os
 import subprocess
+import sys
 import tempfile
 from collections import Counter
 from collections.abc import Callable, Iterable
@@ -812,31 +813,39 @@ def run(
                 continue
             if not pair.ref_path.is_file() or not pair.dis_path.is_file():
                 continue
-            payload = _extract_pair_payload(
-                pair,
-                feature_names=feature_names,
-                feature_set=feature_set,
-                cache_dir=cache_dir,
-                ffmpeg_bin=ffmpeg_bin,
-                vmaf_bin=vmaf_bin,
-                runner=runner,
-                extractor=extractor,
-            )
-            out.write(
-                json.dumps(
-                    _build_output_row(
-                        pair,
-                        payload.result,
-                        feature_set=feature_set,
-                        ref_hdr_metadata=hdr_for(pair.ref_path),
-                        dis_hdr_metadata=hdr_for(pair.dis_path),
-                        ref_visual_signals=payload.ref_visual_signals,
-                        dis_visual_signals=payload.dis_visual_signals,
-                    )
+            # Per-clip isolation: one bad pair (ffmpeg/vmaf failure, malformed
+            # cached JSON, read error) must be logged and skipped, not abort the
+            # whole batch (R3-19).  The done-set/cache resume lets a re-run
+            # continue, but the active batch should keep going on its own.
+            try:
+                payload = _extract_pair_payload(
+                    pair,
+                    feature_names=feature_names,
+                    feature_set=feature_set,
+                    cache_dir=cache_dir,
+                    ffmpeg_bin=ffmpeg_bin,
+                    vmaf_bin=vmaf_bin,
+                    runner=runner,
+                    extractor=extractor,
                 )
-                + "\n"
-            )
-            out.flush()
+                out.write(
+                    json.dumps(
+                        _build_output_row(
+                            pair,
+                            payload.result,
+                            feature_set=feature_set,
+                            ref_hdr_metadata=hdr_for(pair.ref_path),
+                            dis_hdr_metadata=hdr_for(pair.dis_path),
+                            ref_visual_signals=payload.ref_visual_signals,
+                            dis_visual_signals=payload.dis_visual_signals,
+                        )
+                    )
+                    + "\n"
+                )
+                out.flush()
+            except Exception as exc:
+                print(f"[chug-features] FAIL {pair_key}: {exc}", file=sys.stderr, flush=True)
+                continue
             done.add(pair_key)
             written += 1
             if idx % 100 == 0:

@@ -191,6 +191,10 @@ class OnlineTrainer:
 
         self._pending: list[Sample] = []  # samples received but not yet trained on
         self._lock = threading.Lock()
+        # Separate lock guards the should_checkpoint() gate + counter increment +
+        # filename choice + export so concurrent connection threads cannot race
+        # the version number or export two checkpoints under the same name.
+        self._checkpoint_lock = threading.Lock()
         self._checkpoint_counter: int = 0
 
     def ingest(self, features: list[float], true_score: float) -> dict[str, Any]:
@@ -199,10 +203,25 @@ class OnlineTrainer:
         Accumulates into the pending queue.  When the queue reaches
         ``_batch_size``, triggers one gradient step and flushes the queue.
         Returns a status dict for the JSON ACK response.
+
+        Raises ``ValueError`` for a wrong-length feature vector or a
+        non-numeric ``true_score``; the socket handler converts that into a
+        structured ``{"ok": false, "error": ...}`` ACK.  Validating *before*
+        the buffer push keeps malformed samples out of the shared replay
+        buffer, which would otherwise poison every future replay-mixed batch.
         """
+        if len(features) != self._n_features:
+            raise ValueError(
+                f"feature vector length {len(features)} != expected {self._n_features}"
+            )
+        # Coerce/validate the score outside the lock so a bad value never
+        # reaches the shared buffer (Sample(...) would raise mid-push otherwise).
+        score = float(true_score)
+        sample = Sample(tuple(float(f) for f in features), score)
+
         with self._lock:
-            self._pending.append(Sample(tuple(features), float(true_score)))
-            self._buffer.push(features, true_score)
+            self._pending.append(sample)
+            self._buffer.push(sample.features, score)
 
             if len(self._pending) < self._batch_size:
                 return {"ok": True, "step": self._trainer.step_count, "trained": False}
@@ -214,10 +233,10 @@ class OnlineTrainer:
         # Step outside the lock — PyTorch backward pass is not reentrant anyway.
         loss = self._train_on_batch(batch)
 
-        # Check checkpoint condition (non-blocking; export is quick for small models).
-        ckpt_path = None
-        if self._trainer.should_checkpoint():
-            ckpt_path = self._export_checkpoint()
+        # Check checkpoint condition and export atomically under the checkpoint
+        # lock — otherwise two connection threads can both pass should_checkpoint()
+        # and collide on the same model_vNNNNNN.onnx version (R3-7).
+        ckpt_path = self._maybe_export_checkpoint()
 
         return {
             "ok": True,
@@ -262,8 +281,27 @@ class OnlineTrainer:
         scores = torch.tensor([s.true_score for s in batch], dtype=torch.float32)
         return self._trainer.step(feats, scores)
 
+    def _maybe_export_checkpoint(self) -> str | None:
+        """Atomically gate-check and export a checkpoint.
+
+        Holds ``_checkpoint_lock`` across ``should_checkpoint()``, the counter
+        increment, the filename choice, and the export.  Without this, two
+        concurrent connection threads could both observe ``should_checkpoint()``
+        as True (it only resets *after* a successful export) and produce two
+        checkpoints sharing one ``model_vNNNNNN.onnx`` name, one silently
+        overwriting the other (R3-7).
+        """
+        with self._checkpoint_lock:
+            if not self._trainer.should_checkpoint():
+                return None
+            return self._export_checkpoint()
+
     def _export_checkpoint(self) -> str:
-        """Export EMA model to a versioned ONNX file.  Returns the path."""
+        """Export EMA model to a versioned ONNX file.  Returns the path.
+
+        Callers must hold ``_checkpoint_lock`` so the counter increment and the
+        version-stamped filename are atomic across threads.
+        """
         self._checkpoint_counter += 1
         ckpt_name = f"model_v{self._checkpoint_counter:06d}.onnx"
         ckpt_path = str(self._checkpoint_dir / ckpt_name)
@@ -316,7 +354,11 @@ def _handle_connection(
                     result["job_id"] = msg.get("job_id", "")
                     ack = json.dumps(result) + "\n"
                     conn.sendall(ack.encode())
-                except (KeyError, json.JSONDecodeError, TypeError) as exc:
+                except (KeyError, json.JSONDecodeError, TypeError, ValueError, RuntimeError) as exc:
+                    # ValueError: malformed message (bad feature length / non-numeric
+                    # score) or a ragged training batch. RuntimeError: shape-mismatched
+                    # torch step. One bad message must return a structured error, not
+                    # kill the per-connection daemon thread (R3-3).
                     err = json.dumps({"ok": False, "error": str(exc)}) + "\n"
                     conn.sendall(err.encode())
     except OSError as exc:
