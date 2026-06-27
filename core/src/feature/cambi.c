@@ -1655,8 +1655,13 @@ static int close_cambi(VmafFeatureExtractor *fex)
     CambiState *s = fex->priv;
 
     int err = 0;
-    for (unsigned i = 0; i < PICS_BUFFER_SIZE; i++)
-        err |= vmaf_picture_unref(&s->pics[i]);
+    for (unsigned i = 0; i < PICS_BUFFER_SIZE; i++) {
+        /* Skip never-allocated (zero-initialised) slots: vmaf_picture_unref
+         * returns -EINVAL on a NULL ref, which would otherwise poison err when
+         * close runs after a partial init. */
+        if (s->pics[i].ref)
+            err |= vmaf_picture_unref(&s->pics[i]);
+    }
 
     aligned_free(s->buffers.tvi_for_diff);
     aligned_free(s->buffers.c_values);

@@ -210,9 +210,11 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
     // samplemax² must be computed in double, not int. For 16-bpc input
     // samplemax = 65535 and 65535*65535 = 4,294,836,225 > INT_MAX, which
     // overflows a plain int multiply (signed-overflow UB, wraps to −131071)
-    // and corrupts the SSIM C1/C2 stability constants. The CUDA/HIP/SYCL
-    // twins already widen to int64_t/double; this keeps the CPU path in
-    // parity. 8/10/12-bpc (≤ 4095² = 16,769,025) fit in int and are
+    // and corrupts the SSIM C1/C2 stability constants. The CUDA twin widens
+    // samplemax to int64_t then double; the HIP and SYCL twins sidestep the
+    // issue differently, pinning c1/c2 with a hardcoded float L=255.0f
+    // constant (8-bpc scale only). This cast keeps the CPU path safe for
+    // 16-bpc. 8/10/12-bpc (≤ 4095² = 16,769,025) fit in int and are
     // bit-unchanged by the cast. (round-2 bug-hunt R2-1)
     const double sm = (double)samplemax;
     for (int x = 0; x < w; x++) {

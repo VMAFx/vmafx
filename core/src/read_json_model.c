@@ -711,8 +711,18 @@ static int model_collection_parse_loop(json_stream *s, VmafModel **model,
     int err = -EINVAL;
 
     while (json_peek(s) != JSON_OBJECT_END && !json_get_error(s)) {
-        if (json_next(s) != JSON_STRING)
+        if (json_next(s) != JSON_STRING) {
+            /* A malformed (non-string) key after sub-model 0 was already
+             * stored: tear down the partial collection so it is not leaked,
+             * mirroring the model_collection_read_one error path below. */
+            if (i >= 1) {
+                vmaf_model_destroy(*model);
+                *model = NULL;
+                vmaf_model_collection_destroy(*model_collection);
+                *model_collection = NULL;
+            }
             return -EINVAL;
+        }
 
         const char *key = json_get_string(s, NULL);
         (void)snprintf(generated_key, sizeof(generated_key), "%d", i);

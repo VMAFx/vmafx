@@ -687,7 +687,7 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     if (err)
         goto pop_ctx;
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_pop);
 
     const double clipped =
         (double)score < s->speed_temporal_max_val ? (double)score : s->speed_temporal_max_val;
@@ -700,6 +700,12 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 pop_ctx:
     (void)cu_f->cuCtxPopCurrent(NULL);
     return err;
+fail_pop:
+    /* The pop itself failed after a successful push: retry it so the CUDA
+     * context stack is not left unbalanced (a per-frame leak), then propagate
+     * the original CUDA error rather than the success path's err. */
+    (void)cu_f->cuCtxPopCurrent(NULL);
+    return _cuda_err;
 fail:
     return _cuda_err;
 }

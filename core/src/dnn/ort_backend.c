@@ -93,9 +93,14 @@ static uint16_t fp32_to_fp16(float f)
         const uint32_t shift = (uint32_t)(-exp_f - 14) + 13u;
         return (uint16_t)((sign << 15) | (mant >> shift));
     }
-    const uint16_t h_exp = (uint16_t)(exp_f + 15);
-    const uint16_t h_mant = (uint16_t)(mant >> 13);
-    return (uint16_t)((sign << 15) | ((uint16_t)(h_exp << 10)) | h_mant);
+    /* Round to nearest-even on the dropped mantissa bits (bit 12 is the
+     * round bit), matching f32_to_f16_one in tensor_io.c. A plain truncation
+     * here mis-encoded values in (65504, 65520) as max-finite f16 instead of
+     * +inf, diverging from the other converter. The carry from h_mant==0x3ff
+     * naturally propagates into the exponent (and to 0x7c00 = inf). */
+    const uint32_t round = (mant & 0x1000u) != 0u ? 1u : 0u;
+    const uint32_t h = ((uint32_t)sign << 15) | ((uint32_t)(exp_f + 15) << 10) | (mant >> 13);
+    return (uint16_t)(h + round);
 }
 
 static float fp16_to_fp32(uint16_t h)
@@ -596,6 +601,11 @@ static int build_input_tensor(VmafOrtSession *sess, OrtMemoryInfo *mem, size_t s
         sess->fp16_io && sess->input_elem_types[slot] == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16;
 
     if (want_fp16) {
+        /* Guard the byte-count multiply too: the dim-product loop above only
+         * proved the element count `n` does not overflow size_t, but
+         * `n * sizeof(uint16_t)` can still wrap and under-allocate. */
+        if (n > SIZE_MAX / sizeof(uint16_t))
+            return -EOVERFLOW;
         uint16_t *half = (uint16_t *)malloc(n * sizeof(uint16_t));
         if (!half)
             return -ENOMEM;
@@ -613,6 +623,8 @@ static int build_input_tensor(VmafOrtSession *sess, OrtMemoryInfo *mem, size_t s
         return 0;
     }
 
+    if (n > SIZE_MAX / sizeof(float))
+        return -EOVERFLOW;
     OrtStatus *st =
         sess->api->CreateTensorWithDataAsOrtValue(mem, (void *)data, n * sizeof(float), shape, rank,
                                                   ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, tensor_out);

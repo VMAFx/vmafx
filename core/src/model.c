@@ -325,9 +325,11 @@ int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafMod
         mc->type = model->type;
         /* Guard against size_t underflow when name is shorter than the
          * ".json" suffix we strip (5 chars).  An empty or very short
-         * model name is a caller error; reject it cleanly. */
+         * model name is a caller error; reject it cleanly.  Use fail_model
+         * (not fail_mc): mc->model was already allocated above and must be
+         * freed before mc itself. */
         if (strlen(model->name) < 5)
-            goto fail_mc;
+            goto fail_model;
         const size_t name_sz = strlen(model->name) - 5 + 1;
         mc->name = malloc(name_sz);
         if (!mc->name)

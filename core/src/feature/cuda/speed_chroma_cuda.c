@@ -347,7 +347,6 @@ static int run_gpu_pipeline(SpeedChromaCudaState *s, CudaFunctions *cu_f, CUdevi
     const uint32_t num_blocks = (uint32_t)s->dim.num_blocks;
     const uint32_t num_blocks_h = (uint32_t)s->dim.num_blocks_horizontal;
     const uint32_t op_w = (uint32_t)s->dim.truncated_width;
-    const uint32_t op_h = (uint32_t)s->dim.truncated_height;
     const uint32_t stride_px = (uint32_t)(s->float_stride / sizeof(float));
     const uint32_t submatrix_w = (uint32_t)s->dim.submatrix_width;
     const uint32_t submatrix_h = (uint32_t)s->dim.submatrix_height;
@@ -841,7 +840,7 @@ static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     int err_u = extract_channel(s, cu_f, ref_pic, dist_pic, 1, &score_u);
     int err_v = extract_channel(s, cu_f, ref_pic, dist_pic, 2, &score_v);
 
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_push);
 
     /* Singular-matrix imputation: if one channel is singular, use the other. */
     float score_uv;
@@ -868,6 +867,12 @@ static int extract_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
 
     return err;
 
+fail_after_push:
+    /* The context was pushed but the pop failed: attempt the pop once more so
+     * the CUDA context stack is not left unbalanced (a per-frame leak that
+     * eventually exhausts the stack), then propagate the original error.
+     * Mirrors the fail_after_pop pattern in init_fex_cuda. */
+    (void)cu_f->cuCtxPopCurrent(NULL);
 fail:
     return _cuda_err;
 }

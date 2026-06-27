@@ -193,6 +193,9 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         s->scale_chroma_planes = scale_chroma_planes_hbd;
         break;
     default:
+        /* Unsupported bitdepth is a caller error, not OOM: set -EINVAL so the
+         * `return err ? err : -ENOMEM` at fail_tmp reports the right code. */
+        err = -EINVAL;
         goto fail_tmp;
     }
 
@@ -508,10 +511,13 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 static int close(VmafFeatureExtractor *fex)
 {
     CiedeState *s = fex->priv;
-    if (s->ref.data[0] && s->dist.data[0]) {
+    /* Independent guards: on a partial-init failure (ref allocated, dist
+     * alloc failed) the conjunctive `&&` form leaked s->ref. Unref each
+     * picture iff it was actually allocated. */
+    if (s->ref.data[0])
         (void)vmaf_picture_unref(&s->ref);
+    if (s->dist.data[0])
         (void)vmaf_picture_unref(&s->dist);
-    }
     for (int i = 0; i < 6; i++) {
         if (s->tmp[i])
             aligned_free(s->tmp[i]);

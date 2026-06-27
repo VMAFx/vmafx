@@ -1,6 +1,26 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/round4-c-bundle — round-4 audit bug-fix bundle (2026-06-27)
+
+Audit-derived bug fixes; several touch **upstream-mirror** files, so the next
+`upstream` sync must preserve these hunks (they are not in Netflix/vmaf):
+
+- `core/src/feature/ciede.c` — init returns `-EINVAL` (not `-ENOMEM`) for an
+  unsupported bitdepth; close uses two independent `vmaf_picture_unref` guards
+  (was a conjunctive guard that leaked `s->ref` on partial alloc).
+- `core/src/feature/cambi.c` — close guards `vmaf_picture_unref` on
+  `s->pics[i].ref` so never-allocated slots don't poison `err`.
+- `core/src/feature/integer_ssim.c` — comment-only correction of the GPU-twin
+  note (the `const double sm` fix itself is unchanged).
+- `core/src/read_json_model.c` — partial-collection teardown on the
+  non-string-key early return in `model_collection_parse_loop`.
+- `core/src/model.c` — `vmaf_model_collection_append` short-name path now
+  `goto fail_model` to free `mc->model`.
+
+Fork-added files (no upstream-sync concern): `core/src/feature/cuda/speed_*`,
+`core/src/dnn/ort_backend.c`.
+
 ## gorust-rederive — bound GPU/AI probe subprocesses + Rust `-sys` picture double-free footgun (2026-06-27)
 
 Rebase impact: **none on upstream Netflix/vmaf** — all fork-local. Every
