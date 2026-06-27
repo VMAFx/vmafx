@@ -146,6 +146,11 @@ def materialize_rows(
     # None means a previous attempt failed; we propagate the failure for all
     # rows sharing the same source rather than retrying on every row.
     _saliency_cache: dict[str, tuple[float, float] | None] = {}
+    # Parallel cache of the failure status the original attempt set on its
+    # row (e.g. "decode-failed", "model-failed"). Replayed onto sibling rows
+    # in the cached-None branch so they keep the same provenance instead of a
+    # blank status column. Default to "decode-failed" when none was recorded.
+    _status_cache: dict[str, str] = {}
     for row in rows:
         enriched = dict(row)
         if _has_existing_saliency(enriched) and not cfg.overwrite:
@@ -174,7 +179,14 @@ def materialize_rows(
             if cached is None:
                 # Previous attempt for this file failed; propagate the same
                 # failure status without re-running the expensive decode.
+                # Replay the cached status onto this sibling row so the
+                # output keeps a populated status column (provenance) and
+                # missing-source failures stay counted in the summary.
+                status = _status_cache.get(cache_key, "decode-failed")
+                _set_status(enriched, cfg, status)
                 failed += 1
+                if status == "missing-source":
+                    missing_source_count += 1
                 out.append(enriched)
                 continue
             mean, var = cached
@@ -190,7 +202,12 @@ def materialize_rows(
             _saliency_cache[cache_key] = result
         if result is None:
             failed += 1
-            if enriched.get(cfg.status_column) == "missing-source":
+            failure_status = enriched.get(cfg.status_column)
+            if cache_key and isinstance(failure_status, str):
+                # Remember the precise failure status so sibling rows hitting
+                # the cached-None branch replay it instead of a blank column.
+                _status_cache[cache_key] = failure_status
+            if failure_status == "missing-source":
                 missing_source_count += 1
             out.append(enriched)
             continue

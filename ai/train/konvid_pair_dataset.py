@@ -32,6 +32,7 @@ LOSO-style holdouts: caller passes the set of clip keys to keep.
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -92,6 +93,22 @@ class KoNViDPairDataset(Dataset):  # type: ignore[misc]
         if keep_keys is not None:
             keep_keys = set(keep_keys)
             df = df[df["key"].isin(keep_keys)].reset_index(drop=True)
+        # Drop rows whose target or any feature is non-finite (NaN / inf).
+        # A NaN slipping into the parquet (failed teacher score, missing
+        # feature) would otherwise become a NaN training target and silently
+        # poison the regressor's loss. Drop-with-warn rather than propagate.
+        finite_cols = [*features, "vmaf"]
+        finite_mask = np.isfinite(df[finite_cols].to_numpy(dtype=np.float64, na_value=np.nan)).all(
+            axis=1
+        )
+        n_dropped = int((~finite_mask).sum())
+        if n_dropped:
+            warnings.warn(
+                f"{parquet_path}: dropped {n_dropped} row(s) with non-finite "
+                f"vmaf/feature values (NaN/inf) to avoid poisoning training",
+                stacklevel=2,
+            )
+            df = df[finite_mask].reset_index(drop=True)
         self._df = df
         self.features = features
         self.keys = df["key"].astype(str).tolist()
@@ -125,6 +142,12 @@ class KoNViDPairDataset(Dataset):  # type: ignore[misc]
             )
         x = self._df[list(self.features)].to_numpy(dtype=np.float32)
         y = self._df["vmaf"].to_numpy(dtype=np.float32)
+        # Non-finite rows are dropped in __init__; assert here so a future
+        # regression that bypasses that filter surfaces loudly instead of
+        # silently producing NaN gradients.
+        assert (
+            np.isfinite(x).all() and np.isfinite(y).all()
+        ), "non-finite values reached numpy_arrays() despite __init__ filter"
         return x, y
 
     @property

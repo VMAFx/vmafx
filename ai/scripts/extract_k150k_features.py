@@ -1307,6 +1307,21 @@ def main() -> int:
     # ------------------------------------------------------------------
     scores_df = pd.read_csv(args.scores)
     scores_df = scores_df.rename(columns={"video_score": "mos"})
+    # zip(strict=True) only verifies equal length, NOT key uniqueness, so a
+    # scores CSV with duplicate video_name rows would silently collapse to the
+    # last-seen MOS and drop the rest. Detect and hard-fail rather than train
+    # on a quietly-corrupted label set.
+    dup_mask = scores_df["video_name"].duplicated(keep=False)
+    if dup_mask.any():
+        dups = sorted(scores_df.loc[dup_mask, "video_name"].astype(str).unique())
+        preview = ", ".join(dups[:10]) + (" ..." if len(dups) > 10 else "")
+        print(
+            f"error: scores CSV {args.scores} has {len(dups)} duplicate "
+            f"video_name key(s); each clip must appear once. Offending "
+            f"names: {preview}",
+            file=sys.stderr,
+        )
+        return 2
     mos_map: dict[str, float] = dict(zip(scores_df["video_name"], scores_df["mos"], strict=True))
     score_meta: dict[str, dict[str, Any]] = {}
     for row in scores_df.to_dict(orient="records"):

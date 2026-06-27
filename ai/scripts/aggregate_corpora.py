@@ -294,9 +294,7 @@ def convert_mos(native_mos: float, corpus_source: str) -> float:
 def _validate_input_row(path: Path, line_no: int, row: dict) -> None:
     """Hard-fail on rows missing required keys."""
     if not isinstance(row, dict):
-        raise SystemExit(
-            f"error: {path}:{line_no}: expected JSON object, got " f"{type(row).__name__}"
-        )
+        raise SystemExit(f"error: {path}:{line_no}: expected JSON object, got {type(row).__name__}")
     missing = _REQUIRED_INPUT_KEYS - row.keys()
     if missing:
         raise SystemExit(f"error: {path}:{line_no}: missing required keys: {sorted(missing)}")
@@ -438,7 +436,11 @@ def aggregate(
                     corpus_source=corpus_source,
                     aggregated_at_utc=aggregated_at_utc,
                 )
-            except ValueError as exc:
+            except (ValueError, TypeError) as exc:
+                # ValueError: out-of-range / unknown-scale MOS (convert_mos).
+                # TypeError: malformed mos cell (None, list, ...) reaching
+                # float() in transform_row. Both are bad-scale rows: drop
+                # with a warning rather than crashing the whole aggregation.
                 _LOG.warning("%s:%d: %s; row dropped", path, line_no, exc)
                 counters["dropped_bad_scale"] += 1
                 continue
@@ -449,7 +451,7 @@ def aggregate(
                 # corpus_source) so we don't false-merge unrelated
                 # rows missing a sha. This is a legitimate path for
                 # corpora that pre-date sha enrichment.
-                key = f"__nokey__/{converted.get('src','')}/{corpus_source}"
+                key = f"__nokey__/{converted.get('src', '')}/{corpus_source}"
             else:
                 key = sha
 
@@ -566,9 +568,7 @@ def _parse_overrides(raw: list[str]) -> dict[Path, str]:
     out: dict[Path, str] = {}
     for entry in raw:
         if "=" not in entry:
-            raise SystemExit(
-                f"error: --corpus-source-override expects PATH=LABEL, got " f"{entry!r}"
-            )
+            raise SystemExit(f"error: --corpus-source-override expects PATH=LABEL, got {entry!r}")
         path_str, label = entry.split("=", 1)
         if label not in SCALE_CONVERSIONS:
             raise SystemExit(

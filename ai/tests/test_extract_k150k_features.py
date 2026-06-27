@@ -325,3 +325,42 @@ def test_write_extraction_manifest_records_run_provenance(tmp_path: Path) -> Non
     assert payload["backend"] == {"use_cuda": True, "workers": 2, "threads_per_worker": 1}
     assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
     assert payload["run_provenance"]["outputs"]["parquet"]["exists"] is True
+
+
+def test_duplicate_video_name_in_scores_aborts(monkeypatch, tmp_path: Path, capsys) -> None:
+    # zip(strict=True) only checks equal length, NOT key uniqueness, so two
+    # rows with the same video_name would silently collapse the MOS map and
+    # drop one clip's label. main() must detect duplicate keys and abort with
+    # exit code 2 before any extraction runs.
+    clips_dir = tmp_path / "clips"
+    clips_dir.mkdir()
+    scores_csv = tmp_path / "scores.csv"
+    scores_csv.write_text(
+        "video_name,video_score\nclip-a.mp4,78\nclip-a.mp4,42\nclip-b.mp4,55\n",
+        encoding="utf-8",
+    )
+    vmaf_bin = tmp_path / "vmaf"
+    vmaf_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    out = tmp_path / "out.parquet"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "extract_k150k_features.py",
+            "--clips-dir",
+            str(clips_dir),
+            "--scores",
+            str(scores_csv),
+            "--vmaf-bin",
+            str(vmaf_bin),
+            "--out",
+            str(out),
+            "--no-cuda",
+        ],
+    )
+    rc = K150K.main()
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "duplicate video_name" in err
+    assert "clip-a.mp4" in err
+    assert not out.exists()

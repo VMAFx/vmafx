@@ -46578,3 +46578,6 @@ tests (`core/test/dnn/test_tensor_io.c`, `core/test/dnn/test_ort_internals.c`)
 `meson_options.txt` change, so no ffmpeg-patch impact. The whole `core/src/dnn/`
 tree is fork-added (not present upstream Netflix/vmaf), so there is no
 upstream-parity conflict surface to track on a future sync.
+
+## fix/bughunt-ai (2026-06-27)
+no rebase impact: edits training-harness Python only (`ai/scripts/{aggregate_corpora,extract_k150k_features,materialize_saliency_features}.py`, `ai/train/konvid_pair_dataset.py` + `ai/tests/`). No libvmaf C-API / CLI / `meson_options.txt` / public-header change → no ffmpeg-patch impact. No rebase-sensitive invariants.

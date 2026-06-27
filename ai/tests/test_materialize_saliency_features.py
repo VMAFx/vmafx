@@ -310,6 +310,51 @@ def test_materialize_rows_caches_per_file(tmp_path: Path) -> None:
         assert row["saliency_mean"] == pytest.approx(0.4)
 
 
+def test_materialize_rows_cached_failure_replays_status(tmp_path: Path) -> None:
+    """A cached decode failure must stamp sibling rows with the same status.
+
+    Regression: the cached-None replay branch previously appended the row
+    without calling _set_status, leaving a blank saliency_status column for
+    every sibling of the first failing row (silent provenance gap).
+    """
+    module = _load_module()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"not a real mp4")
+    decode_calls = 0
+
+    def _failing_runner(cmd: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal decode_calls
+        if cmd[0] == "ffprobe-test":
+            payload = {"streams": [{"width": 4, "height": 4}]}
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+        if cmd[0] == "ffmpeg-test":
+            decode_calls += 1
+            # Non-zero return code: decode fails, no output file written.
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    cfg = module.SaliencyMaterializeConfig(
+        ffmpeg_bin="ffmpeg-test",
+        ffprobe_bin="ffprobe-test",
+        max_frames=1,
+        frame_samples=1,
+    )
+
+    rows = [
+        {"src": str(source), "width": 4, "height": 4},
+        {"src": str(source), "width": 4, "height": 4},
+        {"src": str(source), "width": 4, "height": 4},
+    ]
+    enriched, summary = module.materialize_rows(
+        rows, cfg, runner=_failing_runner, saliency_fn=_saliency_fn
+    )
+
+    assert summary.failed == 3
+    assert decode_calls == 1, f"decode should run once per file; got {decode_calls}"
+    for row in enriched:
+        assert row["saliency_status"] == "decode-failed"
+
+
 def test_main_records_temporal_config_in_audit_json(tmp_path: Path) -> None:
     module = _load_module()
     input_path = tmp_path / "features.jsonl"

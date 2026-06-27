@@ -375,6 +375,31 @@ def test_unknown_corpus_label_drops_row(agg, tmp_path, caplog):
     assert out_path.read_text() == ""
 
 
+@pytest.mark.parametrize("bad_mos", [None, "n/a", [1, 2]])
+def test_malformed_mos_drops_row_not_crash(agg, tmp_path, caplog, bad_mos):
+    # A null / non-numeric mos cell satisfies the required-key schema check
+    # (the key is present) but float() raises TypeError, not ValueError.
+    # The aggregator must count it as dropped_bad_scale and keep going,
+    # not abort the entire multi-corpus run on one malformed row.
+    good = _likert_row(src="g.mp4", sha="ab" * 32, mos=4.0, corpus="lsvq")
+    bad = _likert_row(src="b.mp4", sha="cd" * 32, mos=3.0, corpus="lsvq")
+    bad["mos"] = bad_mos
+    path = _write_jsonl(tmp_path / "mix.jsonl", [bad, good])
+    out_path = tmp_path / "unified.jsonl"
+    with caplog.at_level("WARNING"):
+        counters = agg.aggregate(
+            [path],
+            out_path,
+            now_fn=lambda: "2026-05-09T00:00:00+00:00",
+        )
+    assert counters["rows_in"] == 2
+    assert counters["dropped_bad_scale"] == 1
+    assert counters["rows_out"] == 1
+    rows = [json.loads(ln) for ln in out_path.read_text().splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["src"] == "g.mp4"
+
+
 def test_corpus_source_override_wins_over_row_label(agg, tmp_path):
     odd_row = _likert_row(src="o.mp4", sha="77" * 32, mos=4.0, corpus="weird-set")
     odd_path = _write_jsonl(tmp_path / "weird.jsonl", [odd_row])

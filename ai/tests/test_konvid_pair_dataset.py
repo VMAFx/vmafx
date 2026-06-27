@@ -80,6 +80,34 @@ def test_loader_empty_after_filter(tmp_path: Path) -> None:
     assert y.shape == (0,)
 
 
+def test_loader_drops_non_finite_rows(tmp_path: Path) -> None:
+    # A NaN/inf vmaf or feature value would otherwise become a NaN training
+    # target and silently poison the regressor's loss. The loader must drop
+    # such rows (with a warning) and never surface them to numpy_arrays().
+    rng = np.random.default_rng(seed=7)
+    rows: list[dict] = []
+    for c in range(2):
+        key = f"KoNViD_1k_videos_{2000 + c}"
+        for i in range(4):
+            row: dict = {"key": key, "frame_index": i}
+            for feat in DEFAULT_FEATURES:
+                row[feat] = float(rng.standard_normal())
+            row["vmaf"] = float(rng.uniform(20.0, 100.0))
+            rows.append(row)
+    # Poison two rows: one with a NaN target, one with an inf feature.
+    rows[1]["vmaf"] = float("nan")
+    rows[5][DEFAULT_FEATURES[0]] = float("inf")
+    parquet = tmp_path / "poisoned.parquet"
+    pd.DataFrame(rows).to_parquet(parquet, index=False)
+
+    with pytest.warns(UserWarning, match="non-finite"):
+        ds = KoNViDPairDataset(parquet)
+    assert len(ds) == len(rows) - 2
+    x, y = ds.numpy_arrays()
+    assert np.isfinite(x).all()
+    assert np.isfinite(y).all()
+
+
 def test_loader_torch_item_shape(tmp_path: Path) -> None:
     torch = pytest.importorskip("torch")
     parquet = _synthetic_parquet(tmp_path, n_clips=1, n_frames=2)
