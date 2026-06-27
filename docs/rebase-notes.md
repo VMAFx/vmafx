@@ -19,6 +19,28 @@ from `CHECK_CUDA_GOTO` must `return _cuda_err;` (the macro-mapped errno), not a
 literal `-EIO` — matching the `CHECK_CUDA_RETURN` convention in
 `cuda_helper.cuh`. The two manual `cuMemcpyDtoH` / `cuCtxPushCurrent` boolean
 checks deliberately keep their literal `-EIO`.
+## fix/bughunt-core-engine — core-engine error-path fixes (2026-06-27)
+Rebase impact: **low — three upstream-mirror files touched, all on error/cleanup paths.**
+`core/src/libvmaf.c`, `core/src/feature/feature_collector.c`, and
+`core/src/model.c` are upstream-mirror files with Netflix counterparts, so a
+future `/sync-upstream` may produce small conflicts here. The changes are
+fork-local divergences confined to failure paths:
+- `threaded_read_pictures_batch` (libvmaf.c) is a **fork-added** threaded-batch
+  helper (not in upstream), so its enqueue-failure unref fix carries no upstream
+  conflict risk. Two adjacent doc comments in the same function were tightened
+  to keep it under the fork's `readability-function-size` LineThreshold (60) —
+  purely cosmetic, no behaviour change.
+- `aggregate_vector_append` (feature_collector.c): one-line `-EINVAL`→`-ENOMEM`
+  on the feature-name `malloc`-failure path. Mirrors the fork's own `.cpp`
+  twin. If upstream rewrites this allocation, prefer the `-ENOMEM` semantics.
+- `vmaf_model_collection_append` (model.c): grow-path realloc failure no longer
+  takes the shared `fail:` label (which nulls `*model_collection`); it returns
+  `-ENOMEM` inline. **Rebase-sensitive invariant:** only the *fresh-allocation*
+  failures may null the caller's out-param; the grow path must leave the
+  still-valid existing collection (and the caller's handle) intact.
+No public header, CLI flag, meson-option, ffmpeg-patch, or Netflix golden-gate
+surface changes; all three edits fire only on malloc/realloc/enqueue failure,
+so success-path scores are unchanged (golden gate verified green).
 
 ## fix/mcp-probe-backend-required — MCP probe_backend required-arg message (2026-06-20)
 Rebase impact: **none on upstream** — fork-local. The MCP server (`mcp-server/vmaf-mcp/`) is a fork addition with no Netflix/vmaf counterpart. One-line change in `_call_tool_dispatch`'s `probe_backend` branch (removes a redundant explicit guard, relies on the existing KeyError→ValueError wrapper). No public C-API / CLI / header impact.

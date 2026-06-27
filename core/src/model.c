@@ -342,8 +342,11 @@ int vmaf_model_collection_append(VmafModelCollection **model_collection, VmafMod
     if (mc->cnt == mc->size) {
         const size_t sz = mc->size * sizeof(*mc->model) * 2;
         VmafModel **m = (VmafModel **)realloc((void *)mc->model, sz);
+        /* Grow failure on an EXISTING collection: realloc keeps the old buffer
+         * valid, so do NOT take the fail label (it would null the caller's
+         * out-param and free a still-usable mc — a leak + lost handle). */
         if (!m)
-            goto fail;
+            return -ENOMEM;
         mc->model = m;
         mc->size *= 2;
     }

@@ -86,7 +86,7 @@ static int aggregate_vector_append(AggregateVector *aggregate_vector, const char
     const size_t feature_name_sz = strnlen(feature_name, 2048);
     char *f = malloc(feature_name_sz + 1);
     if (!f)
-        return -EINVAL;
+        return -ENOMEM; /* was -EINVAL; malloc-failure must surface as ENOMEM (mirror .cpp twin) */
     memcpy(f, feature_name, feature_name_sz);
     f[feature_name_sz] = '\0';
 

@@ -1835,22 +1835,16 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
     vmaf_picture_ref(&pic_a, ref);
     vmaf_picture_ref(&pic_b, dist);
 
-    /* Take a refcounted snapshot of prev_ref for the worker.  The snapshot
-     * is stored in data.prev_ref (a struct copy) so the worker owns an
-     * independent ref and never touches vmaf->prev_ref directly. */
+    /* Refcounted snapshot of prev_ref for the worker, stored in data.prev_ref
+     * (struct copy) so the worker owns an independent ref. */
     if (vmaf->prev_ref.ref)
         vmaf_picture_ref(&prev_ref, &vmaf->prev_ref);
 
-    /* Advance vmaf->prev_ref to the current frame BEFORE enqueuing the batch
-     * job.  Before vmaf_thread_pool_enqueue() returns no worker thread is yet
-     * running for this frame, so there is no concurrent read of vmaf->prev_ref
-     * at this point.  After enqueue the worker uses data.prev_ref (the
-     * snapshot above) exclusively and never re-reads vmaf->prev_ref, so the
-     * update here races with nothing.  Moving the update to after enqueue
-     * (the old order) created a TSAN race: the worker's unref of data.prev_ref
-     * and the main thread's unref of vmaf->prev_ref both operated on the same
-     * underlying VmafRef* concurrently without synchronisation
-     * (iter6-tsan-race-deep finding #2). */
+    /* Advance vmaf->prev_ref to the current frame BEFORE enqueuing: no worker
+     * runs for this frame yet, and the worker only reads data.prev_ref (the
+     * snapshot above), so this races with nothing. Updating after enqueue (the
+     * old order) created a TSAN race on the shared VmafRef* between the worker's
+     * and the main thread's unref (iter6-tsan-race-deep finding #2). */
     if (vmaf->prev_ref.ref)
         vmaf_picture_unref(&vmaf->prev_ref);
     if (ref && ref->ref)
@@ -1874,7 +1868,10 @@ static int threaded_read_pictures_batch(VmafContext *vmaf, VmafPicture *ref, Vma
         vmaf_picture_unref(&pic_b);
         if (prev_ref.ref)
             vmaf_picture_unref(&prev_ref);
-        return err;
+        /* done=true means the caller skips its cleanup: unref, so we own ref/dist
+         * here too (success path unrefs below). Else each failed enqueue leaks a
+         * pool slot and the next pool_fetch deadlocks once the pool drains. */
+        return err | vmaf_picture_unref(ref) | vmaf_picture_unref(dist);
     }
 
     return vmaf_picture_unref(ref) | vmaf_picture_unref(dist);
