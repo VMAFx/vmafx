@@ -46555,3 +46555,16 @@ a fork-internal error-path unwind (route init() failures through
 `-ENOMEM` / `-EINVAL` error paths with no success-path or scoring delta — a
 sync that re-pulls cambi `init()` should re-apply the `goto fail` unwind. No
 public header, CLI, meson-option, or ffmpeg-patch surface changes.
+## fix/bughunt-simd (2026-06-27)
+no rebase impact: edits fork-added SIMD `float_moment` paths only
+(`core/src/feature/arm64/moment_sve2.c`, `core/src/feature/x86/moment_avx2.c`,
+`core/src/feature/x86/moment_avx512.c`, `core/src/feature/arm64/moment_neon.c`)
++ the fork test `core/test/test_moment_simd.c`. No libvmaf C-API / CLI /
+`meson_options.txt` / public-header change -> no ffmpeg-patch impact. No Netflix
+golden assertion touched. **Rebase-sensitive invariant — moment SVE2 lane
+mapping** (core/src/feature/arm64/AGENTS.md): the SVE `FCVT .s->.d`
+(`svcvt_f64_f32`) widens the EVEN-indexed f32 lanes (source element 2*i), NOT
+the lower contiguous lanes; the odd lanes must be widened with the SVE2 FCVTLT
+(`svcvtlt_f64_f32`, source element 2*i+1). Any future edit to `moment_sve2.c`
+must keep the even+odd dual-convert (stepping a full `svcntw()` register) or it
+will silently double-count even lanes and drop odd lanes on >128-bit SVE.

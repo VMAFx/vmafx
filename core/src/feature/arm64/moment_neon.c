@@ -72,8 +72,14 @@ int compute_2nd_moment_neon(const float *pic, int w, int h, int stride, double *
         }
         double tail = 0.0;
         for (; j < w; ++j) {
+            /* Square in float (not double) so the tail is bit-exact to the
+             * scalar reference (moment.c:compute_2nd_moment, `pic_ * pic_`)
+             * and to the SIMD main loop (`vmulq_f32(v, v)`).  Squaring in
+             * double here would round differently and break the ADR-0179
+             * bit-exactness contract on rows whose width is not a multiple of
+             * the SIMD lane count. */
             const float p = row[j];
-            tail += (double)p * (double)p;
+            tail += (double)(p * p);
         }
         if (tail != 0.0)
             dsum0 = vaddq_f64(dsum0, vsetq_lane_f64(tail, vdupq_n_f64(0.0), 0));

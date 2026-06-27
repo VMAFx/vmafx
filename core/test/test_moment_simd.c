@@ -77,6 +77,31 @@
 #define MOMENT_FILL_LO 0.0f
 #define MOMENT_FILL_HI 256.0f
 
+/*
+ * Tail-only bit-exactness regression fixture (moment-2nd-tail-double-square).
+ *
+ * A single row (h=1) narrower than the SIMD main-loop lane count makes a kernel
+ * execute ONLY its scalar tail loop — no main-loop lanes and therefore no
+ * cross-lane reduction.  The accumulation order is then identical to the scalar
+ * reference, so the SIMD score must equal the scalar score EXACTLY.
+ *
+ * The bug: the per-row tail used to square in double (`(double)p * (double)p`)
+ * while the scalar reference (moment.c) and the SIMD main loop square in float
+ * (`p * p` / `_mm256_mul_ps` / `vmulq_f32`).  The double square rounds
+ * differently, so the tail diverged from scalar.  These pixel values have many
+ * significant bits so the float square (p*p) loses low mantissa bits — the
+ * exact-equality checks below FAIL against the pre-fix kernels and PASS after.
+ *
+ * Exact `==` (not a tolerance) is intentional: for a single tail-only row the
+ * operation sequence is identical, so the doubles are bit-identical.  All
+ * values are finite and non-NaN, so `==` is the correct bit-exact predicate.
+ */
+#if ARCH_X86 || ARCH_AARCH64
+static const float moment_tail_vals[15] = {255.937f, 254.123f, 253.871f, 252.499f, 251.001f,
+                                           250.753f, 249.317f, 248.111f, 247.629f, 246.003f,
+                                           245.555f, 244.917f, 243.333f, 242.071f, 241.629f};
+#endif
+
 #if ARCH_X86
 
 static char *check_avx2(uint32_t seed, int w, int h)
@@ -126,6 +151,22 @@ static char *test_avx2_aligned_w(void)
 static char *test_avx2_tiny(void)
 {
     return check_avx2(0xfeedface, 9, 1);
+}
+
+static char *test_avx2_tail_bitexact(void)
+{
+    /* w=7 < 8: AVX2 runs only the scalar tail. */
+    _Alignas(ALIGN_BYTES) float buf[16];
+    for (int j = 0; j < 7; ++j)
+        buf[j] = moment_tail_vals[j];
+    const int stride_bytes = 16 * (int)sizeof(float);
+
+    double t_scalar = 0.0;
+    double t_avx2 = 0.0;
+    (void)compute_2nd_moment(buf, 7, 1, stride_bytes, &t_scalar);
+    (void)compute_2nd_moment_avx2(buf, 7, 1, stride_bytes, &t_avx2);
+    mu_assert("compute_2nd_moment_avx2 tail not bit-exact to scalar", t_avx2 == t_scalar);
+    return NULL;
 }
 
 #if HAVE_AVX512
@@ -183,6 +224,24 @@ static char *test_avx512_tiny(void)
      * scalar tail inside compute_1st/2nd_moment_avx512. */
     return check_avx512(0xfeedface, 9, 1);
 }
+
+/* Tail-only bit-exactness regression (see moment_tail_vals comment above).
+ * w=15 < 16: the AVX512 kernel runs the 8-lane fallback then the scalar tail,
+ * both squaring in float — so the score must equal scalar exactly. */
+static char *test_avx512_tail_bitexact(void)
+{
+    _Alignas(64) float buf[16];
+    for (int j = 0; j < 15; ++j)
+        buf[j] = moment_tail_vals[j];
+    const int stride_bytes = 16 * (int)sizeof(float);
+
+    double t_scalar = 0.0;
+    double t_avx512 = 0.0;
+    (void)compute_2nd_moment(buf, 15, 1, stride_bytes, &t_scalar);
+    (void)compute_2nd_moment_avx512(buf, 15, 1, stride_bytes, &t_avx512);
+    mu_assert("compute_2nd_moment_avx512 tail not bit-exact to scalar", t_avx512 == t_scalar);
+    return NULL;
+}
 #endif /* HAVE_AVX512 */
 
 #endif /* ARCH_X86 */
@@ -236,6 +295,24 @@ static char *test_neon_aligned_w(void)
 static char *test_neon_tiny(void)
 {
     return check_neon(0xfeedface, 5, 1);
+}
+
+/* Tail-only bit-exactness regression (see moment_tail_vals comment above).
+ * w=3 < 4: NEON runs only the scalar tail, squaring in float — so the score
+ * must equal scalar exactly. */
+static char *test_neon_tail_bitexact(void)
+{
+    _Alignas(ALIGN_BYTES) float buf[16];
+    for (int j = 0; j < 3; ++j)
+        buf[j] = moment_tail_vals[j];
+    const int stride_bytes = 16 * (int)sizeof(float);
+
+    double t_scalar = 0.0;
+    double t_neon = 0.0;
+    (void)compute_2nd_moment(buf, 3, 1, stride_bytes, &t_scalar);
+    (void)compute_2nd_moment_neon(buf, 3, 1, stride_bytes, &t_neon);
+    mu_assert("compute_2nd_moment_neon tail not bit-exact to scalar", t_neon == t_scalar);
+    return NULL;
 }
 
 #if HAVE_SVE2
@@ -301,9 +378,27 @@ static char *test_sve2_tiny(void)
 
 #endif /* ARCH_AARCH64 */
 
-char *run_tests(void)
-{
+/* Per-arch registration extracted into helpers so run_tests() itself stays
+ * under the readability-function-size threshold (matches the sibling
+ * test_*_simd.c convention; no NOLINT). */
 #if ARCH_X86
+#if HAVE_AVX512
+static char *run_tests_avx512(void)
+{
+    if (!simd_test_have_avx512()) {
+        return NULL;
+    }
+    mu_run_test(test_avx512_seed_a);
+    mu_run_test(test_avx512_seed_b);
+    mu_run_test(test_avx512_aligned_w);
+    mu_run_test(test_avx512_tiny);
+    mu_run_test(test_avx512_tail_bitexact);
+    return NULL;
+}
+#endif /* HAVE_AVX512 */
+
+static char *run_tests_x86(void)
+{
     if (!simd_test_have_avx2()) {
         return NULL;
     }
@@ -311,27 +406,42 @@ char *run_tests(void)
     mu_run_test(test_avx2_seed_b);
     mu_run_test(test_avx2_aligned_w);
     mu_run_test(test_avx2_tiny);
+    mu_run_test(test_avx2_tail_bitexact);
 #if HAVE_AVX512
-    if (simd_test_have_avx512()) {
-        mu_run_test(test_avx512_seed_a);
-        mu_run_test(test_avx512_seed_b);
-        mu_run_test(test_avx512_aligned_w);
-        mu_run_test(test_avx512_tiny);
+    {
+        char *r = run_tests_avx512();
+        if (r)
+            return r;
     }
 #endif /* HAVE_AVX512 */
+    return NULL;
+}
 #elif ARCH_AARCH64
+static char *run_tests_aarch64(void)
+{
     mu_run_test(test_neon_seed_a);
     mu_run_test(test_neon_seed_b);
     mu_run_test(test_neon_aligned_w);
     mu_run_test(test_neon_tiny);
+    mu_run_test(test_neon_tail_bitexact);
 #if HAVE_SVE2
     mu_run_test(test_sve2_seed_a);
     mu_run_test(test_sve2_seed_b);
     mu_run_test(test_sve2_aligned_w);
     mu_run_test(test_sve2_tiny);
 #endif
+    return NULL;
+}
+#endif
+
+char *run_tests(void)
+{
+#if ARCH_X86
+    return run_tests_x86();
+#elif ARCH_AARCH64
+    return run_tests_aarch64();
 #else
     (void)fprintf(stderr, "skipping: arch lacks moment SIMD\n");
-#endif
     return NULL;
+#endif
 }

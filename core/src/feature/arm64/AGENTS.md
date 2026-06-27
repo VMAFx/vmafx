@@ -78,9 +78,29 @@ directory. They use different VLA strategies:
 
 - `ssimulacra2_sve2.c` — locked to a fixed 4-lane predicate
   (`svwhilelt_b32(0, 4)`) for ADR-0161 byte-identity.
-- `moment_sve2.c` — fully VLA: steps by `svcntd()` per iteration,
-  widens f32→f64 under `svwhilelt_b64`. Wider registers give real
-  throughput benefit at Neoverse V2 / Cortex-X4 register widths.
+- `moment_sve2.c` — fully VLA: steps by `svcntw()` (a full f32
+  register) per iteration, widening **both** lane halves to f64.
+  Wider registers give real throughput benefit at Neoverse V2 /
+  Cortex-X4 register widths.
+
+**CRITICAL — SVE `FCVT .s→.d` lane mapping (`moment_sve2.c`).** The SVE
+`svcvt_f64_f32` (FCVT) does **not** compact the lower contiguous f32
+lanes into the f64 lanes: per the ARM A64 reference, destination f64
+element `i` reads source f32 element `2*i` — the EVEN-indexed lane in the
+low half of each 64-bit container. The odd (top-half) f32 lanes are read
+only by the SVE2 `svcvtlt_f64_f32` (FCVTLT), which maps f64 element `i`
+to f32 element `2*i+1`. An earlier `moment_sve2.c` stepped by `svcntd()`
+and used only `svcvt_f64_f32_x`, assuming contiguous lower-lane widening;
+on any SVE register wider than 64 bits that silently summed even f32
+lanes twice and dropped every odd lane (qemu-measured relative error up
+to ~45% at 128-bit VL — caught by `test_moment_simd.c` SVE2 cases under
+emulation, never by x86 CI). The correct VLA pattern processes a full
+`svcntw()` register and widens even lanes via `svcvt_f64_f32_x` + odd
+lanes via `svcvtlt_f64_f32_x`, accumulating with merging adds
+(`svadd_f64_m`, not `_x`, so the partial-tail iteration cannot feed
+undefined inactive lanes into the reduction). **On rebase: do not revert
+to a single-FCVT `svcntd()` step.** FCVTLT requires FEAT_SVE2, which is
+this TU's build gate.
 
 `ssimulacra2_sve2.c` is **not** a free perf knob:
 

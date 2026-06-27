@@ -13,19 +13,34 @@
  *  of f64 lanes per register), using `svwhilelt_b64` to construct a predicate
  *  that covers exactly those elements and `svcvt_f64_f32_x` to widen them.
  *
- *  Why `svcntd()` step and `svwhilelt_b64`:
- *    - `svcvt_f64_f32_x(pg64, vf32)` widens the lower `svcntd()` f32 lanes of
- *      `vf32` into f64 under the b64 predicate.  The `_x` suffix leaves
- *      inactive-lane results undefined, so the same `pg64` must govern the
- *      subsequent `svadd_f64_x` to prevent undefined values from entering
- *      `dsum`.
- *    - `svwhilelt_b64(j, w)` creates a b64 predicate that is active for
- *      elements `j..min(j+svcntd()-1, w-1)` — exactly the range we convert.
- *    - The load uses `svwhilelt_b32(j, w)` so no f32 access goes out of
- *      bounds; we then only convert and accumulate the lower `svcntd()` of
- *      those f32 lanes via the b64 predicate.
- *    - Do NOT change step to `svcntw()`: that would skip the upper half of
- *      the f32 register on SVE2 hardware with registers wider than 128 bits.
+ *  Lane mapping of the widening converts (CRITICAL — see ARM A64 reference):
+ *    The SVE `FCVT .S -> .D` (svcvt_f64_f32) does NOT compact the lower
+ *    `svcntd()` contiguous f32 lanes into the f64 lanes.  Per the A64
+ *    pseudocode, destination f64 element `e` reads source f32 element
+ *    `2*e` — the EVEN-indexed f32 lane sitting in the low half of each
+ *    64-bit container.  The odd-indexed (top-half) f32 lanes are read by
+ *    the SVE2 `FCVTLT .S -> .D` (svcvtlt_f64_f32), which maps f64 element
+ *    `e` to f32 element `2*e + 1`.
+ *
+ *    An earlier implementation here stepped by `svcntd()` and used only
+ *    `svcvt_f64_f32_x`, assuming it widened the lower contiguous lanes.  On
+ *    any SVE register wider than 64 bits that silently summed the even f32
+ *    lanes twice and dropped every odd lane, producing a wrong moment.  The
+ *    correct VLA pattern processes a full f32 register (`svcntw()` lanes) per
+ *    iteration and widens BOTH halves:
+ *      - even lanes via svcvt_f64_f32_x   (f32[2e]   -> f64[e])
+ *      - odd  lanes via svcvtlt_f64_f32_x (f32[2e+1] -> f64[e])
+ *    Merging adds (`svadd_f64_m`) accumulate the active f64 lanes while
+ *    leaving the running `dsum` untouched on inactive (tail) lanes.
+ *
+ *  Why `svadd_f64_m` (merging) and not `_x`:
+ *    The `_x` (don't-care) variant leaves inactive lanes UNDEFINED, which
+ *    would corrupt `dsum` on the partial tail iteration and feed garbage into
+ *    the final `svaddv_f64(svptrue_b64(), dsum)`.  Merging preserves the
+ *    inactive lanes of `dsum`, so only validly-converted elements contribute.
+ *
+ *  FCVTLT requires FEAT_SVE2, which is exactly this TU's build gate
+ *  (-march=...+sve2 / HAVE_SVE2), so no extra feature check is needed.
  *
  *  Darwin opt-out: ADR-0419.  The runtime gate in arm/cpu.c is
  *  `__linux__`-gated so VMAF_ARM_CPU_FLAG_SVE2 is never set on Apple Silicon
@@ -56,11 +71,9 @@ int compute_1st_moment_sve2(const float *pic, int w, int h, int stride, double *
     assert(h > 0);
 
     const int stride_f = stride / (int)sizeof(float);
-    /* step: svcntd() == number of f64 lanes per register == half the f32 lanes.
-     * svcvt_f64_f32_x widens the lower svcntd() f32 lanes only; stepping by
-     * svcntd() ensures each iteration's f32 data occupies the lower position.
-     * Do NOT change to svcntw() — that skips the upper half on wide hardware. */
-    const int step = (int)svcntd();
+    /* Step by a full f32 register (svcntw()): each iteration widens BOTH the
+     * even (svcvt) and odd (svcvtlt) f32 lanes of the loaded register. */
+    const int step = (int)svcntw();
     double cum = 0.0;
 
     for (int i = 0; i < h; ++i) {
@@ -69,17 +82,21 @@ int compute_1st_moment_sve2(const float *pic, int w, int h, int stride, double *
         int j = 0;
 
         while (j < w) {
-            /* b64 predicate: active for elements j..min(j+svcntd()-1, w-1).
-             * Governs both the conversion and the add so no undefined result
-             * from svcvt_f64_f32_x (_x suffix) enters dsum. */
-            const svbool_t pg64 = svwhilelt_b64((uint64_t)j, (uint64_t)w);
-            /* b32 predicate for the load: same range but for 32-bit elements.
-             * svwhilelt_b32(j, w) covers min(svcntw(), w-j) f32 elements;
-             * we then only convert the lower svcntd() of those. */
+            /* Contiguous f32 load predicate: active for min(svcntw(), w-j)
+             * elements starting at row[j].  Inactive lanes load as zero but
+             * are never converted (the b64 predicates below exclude them). */
             const svbool_t pg32 = svwhilelt_b32((uint32_t)j, (uint32_t)w);
             const svfloat32_t vf32 = svld1_f32(pg32, row + j);
-            const svfloat64_t vf64 = svcvt_f64_f32_x(pg64, vf32);
-            dsum = svadd_f64_x(pg64, dsum, vf64);
+            /* n = number of valid contiguous f32 elements in this window. */
+            const uint64_t n = svcntp_b32(svptrue_b32(), pg32);
+            /* Even f32 lanes -> low f64 lanes (FCVT): ceil(n/2) of them. */
+            const svbool_t pe = svwhilelt_b64((uint64_t)0, (n + 1) / 2);
+            /* Odd  f32 lanes -> low f64 lanes (FCVTLT): floor(n/2) of them. */
+            const svbool_t po = svwhilelt_b64((uint64_t)0, n / 2);
+            const svfloat64_t v_even = svcvt_f64_f32_x(pe, vf32);
+            const svfloat64_t v_odd = svcvtlt_f64_f32_x(po, vf32);
+            dsum = svadd_f64_m(pe, dsum, v_even);
+            dsum = svadd_f64_m(po, dsum, v_odd);
             j += step;
         }
 
@@ -99,7 +116,9 @@ int compute_2nd_moment_sve2(const float *pic, int w, int h, int stride, double *
     assert(h > 0);
 
     const int stride_f = stride / (int)sizeof(float);
-    const int step = (int)svcntd();
+    /* Step by a full f32 register (svcntw()); widen both halves per iteration
+     * (see compute_1st_moment_sve2 for the FCVT/FCVTLT lane-mapping rationale). */
+    const int step = (int)svcntw();
     double cum = 0.0;
 
     for (int i = 0; i < h; ++i) {
@@ -108,17 +127,20 @@ int compute_2nd_moment_sve2(const float *pic, int w, int h, int stride, double *
         int j = 0;
 
         while (j < w) {
-            const svbool_t pg64 = svwhilelt_b64((uint64_t)j, (uint64_t)w);
             const svbool_t pg32 = svwhilelt_b32((uint32_t)j, (uint32_t)w);
             const svfloat32_t vf32 = svld1_f32(pg32, row + j);
-            /* Square in f32 before widening: mirrors the NEON sibling which
-             * squares in f32 then widens to f64 (ADR-0179).  Active-only
-             * multiply under pg32; inactive lanes' f32 values are undefined
-             * but svcvt_f64_f32_x is governed by pg64 which covers the same
-             * or fewer elements. */
+            /* Square in f32 before widening: mirrors the scalar reference
+             * (moment.c: `pic_ * pic_`) and the NEON sibling, both of which
+             * square in f32 then widen to f64 (ADR-0179). */
             const svfloat32_t vsq = svmul_f32_x(pg32, vf32, vf32);
-            const svfloat64_t vf64 = svcvt_f64_f32_x(pg64, vsq);
-            dsum = svadd_f64_x(pg64, dsum, vf64);
+            const uint64_t n = svcntp_b32(svptrue_b32(), pg32);
+            /* Even f32 lanes -> low f64 lanes (FCVT); odd via FCVTLT. */
+            const svbool_t pe = svwhilelt_b64((uint64_t)0, (n + 1) / 2);
+            const svbool_t po = svwhilelt_b64((uint64_t)0, n / 2);
+            const svfloat64_t v_even = svcvt_f64_f32_x(pe, vsq);
+            const svfloat64_t v_odd = svcvtlt_f64_f32_x(po, vsq);
+            dsum = svadd_f64_m(pe, dsum, v_even);
+            dsum = svadd_f64_m(po, dsum, v_odd);
             j += step;
         }
 

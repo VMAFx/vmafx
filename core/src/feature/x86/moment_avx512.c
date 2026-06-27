@@ -91,8 +91,14 @@ int compute_2nd_moment_avx512(const float *pic, int w, int h, int stride, double
                 cum += (double)tmp[k];
         }
         for (; j < w; ++j) {
+            /* Square in float (not double) so the tail is bit-exact to the
+             * scalar reference (moment.c:compute_2nd_moment, `pic_ * pic_`)
+             * and to the SIMD main loop (`_mm512_mul_ps` / `_mm256_mul_ps`).
+             * Squaring in double here would round differently and break the
+             * ADR-0179 bit-exactness contract on rows whose width is not a
+             * multiple of the SIMD lane count. */
             const float p = row[j];
-            cum += (double)p * (double)p;
+            cum += (double)(p * p);
         }
     }
 
