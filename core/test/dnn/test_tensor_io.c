@@ -161,16 +161,17 @@ static char *test_rgb_imagenet_rejects_bad_args(void)
 static char *test_f16_special_values(void)
 {
     /* Cover the NaN/inf and flush-to-zero branches in the soft-float
-     * f32->f16 converter. The subnormal-rounding branch (lines 33-35 of
-     * tensor_io.c f32_to_f16_one) is exercised separately in
+     * f32->f16 converter. The subnormal-rounding branch of
+     * tensor_io.c f32_to_f16_one is exercised separately in
      * test_f16_subnormal_range — splitting the two keeps each function
-     * under clang-tidy's branch-count threshold. */
+     * under clang-tidy's branch-count threshold. Large-finite overflow
+     * (which must map to inf, not NaN) is in test_f16_finite_overflow_to_inf. */
     float specials[6] = {
-        INFINITY,          /* exp >= 31, mant == 0  -> +inf */
-        -INFINITY,         /* exp >= 31, mant == 0  -> -inf */
-        NAN,               /* exp >= 31, mant != 0  -> NaN propagation (line 26-27) */
-        1e-8f,             /* exp < -10             -> flush-to-zero (line 31) */
-        -1e-8f,    1e-30f, /* exp < -10             -> flush-to-zero (line 31) */
+        INFINITY,          /* exp >= 31, input exp == 0xff   -> +inf */
+        -INFINITY,         /* exp >= 31, input exp == 0xff   -> -inf */
+        NAN,               /* exp >= 31, input NaN           -> NaN propagation */
+        1e-8f,             /* exp < -10                      -> flush-to-zero */
+        -1e-8f,    1e-30f, /* exp < -10                      -> flush-to-zero */
     };
     uint16_t h[6];
     float back[6];
@@ -183,6 +184,29 @@ static char *test_f16_special_values(void)
     mu_assert("tiny positive becomes subnormal or zero", back[3] >= 0.0f && back[3] < 1e-3f);
     mu_assert("tiny negative becomes subnormal or zero", back[4] <= 0.0f && back[4] > -1e-3f);
     mu_assert("underflow flushes to zero", back[5] == 0.0f);
+    return NULL;
+}
+
+/* Regression: a large *finite* f32 that overflows the f16 range must
+ * convert to a clean ±inf, NOT a NaN. The earlier exp>=31 branch
+ * propagated a non-zero mantissa for any overflowing finite value, so
+ * 70000.0f / 1e30f silently became NaN — poisoning every downstream
+ * score. NaN must only survive for a genuine f32 NaN input. Mirrors the
+ * exp_f==128 (inf/nan) vs exp_f>15 (overflow) split in
+ * ort_backend.c:fp32_to_fp16. */
+static char *test_f16_finite_overflow_to_inf(void)
+{
+    /* 65504 is the largest finite f16; everything above overflows. */
+    float overflow[4] = {70000.0f, 1.0e30f, -1.0e30f, -70000.0f};
+    uint16_t h[4];
+    float back[4];
+    vmaf_f32_to_f16(overflow, h, 4);
+    vmaf_f16_to_f32(h, back, 4);
+
+    mu_assert("large +finite overflows to +inf, not NaN", isinf(back[0]) && back[0] > 0.0f);
+    mu_assert("1e30 overflows to +inf, not NaN", isinf(back[1]) && back[1] > 0.0f);
+    mu_assert("-1e30 overflows to -inf, not NaN", isinf(back[2]) && back[2] < 0.0f);
+    mu_assert("large -finite overflows to -inf, not NaN", isinf(back[3]) && back[3] < 0.0f);
     return NULL;
 }
 
@@ -584,6 +608,7 @@ char *run_tests(void)
     mu_run_test(test_rgb_imagenet_nchw_layout);
     mu_run_test(test_rgb_imagenet_rejects_bad_args);
     mu_run_test(test_f16_special_values);
+    mu_run_test(test_f16_finite_overflow_to_inf);
     mu_run_test(test_f16_subnormal_range);
     mu_run_test(test_f16_to_f32_subnormal);
     mu_run_test(test_from_luma_zero_std_rejected);

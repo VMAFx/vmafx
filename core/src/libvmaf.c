@@ -1019,6 +1019,20 @@ static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafMod
         free(name);
         return -ENOTSUP; /* dynamic dims unsupported */
     }
+    /* Reject absurd spatial dims before the (int) narrowing of expected_w/h
+     * below: an untrusted ONNX export can carry H/W > INT_MAX, which
+     * `(int)w`/`(int)h` would silently truncate into a wrong expected
+     * geometry (and a giant calloc). 32768 mirrors the picture-dimension
+     * cap (VMAF_PIC_DIM_MAX in picture.c); a model needing larger input is
+     * nonsensical. CERT INT31-C. (round-2 bug-hunt R2-7) */
+    if (h > 32768 || w > 32768) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny-model loader: rank-4 model spatial dims out of range "
+                 "(H=%" PRId64 ", W=%" PRId64 "; supported max is 32768)\n",
+                 h, w);
+        free(name);
+        return -ENOTSUP;
+    }
     const size_t n = (size_t)w * (size_t)h;
     float *buf = (float *)calloc(n, sizeof(*buf));
     if (!buf) {

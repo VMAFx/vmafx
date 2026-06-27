@@ -12,6 +12,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -574,9 +575,21 @@ static int build_input_tensor(VmafOrtSession *sess, OrtMemoryInfo *mem, size_t s
                               const float *data, const int64_t *shape, size_t rank,
                               OrtValue **tensor_out, void **scratch_out)
 {
+    /* Validate shape here so both callers (vmaf_ort_run, which already
+     * pre-checks, and vmaf_ort_infer, which historically did not) are
+     * guarded. Reject empty rank, non-positive dims, and an element
+     * count that overflows size_t (a dim product that would wrap makes
+     * the n*sizeof(...) malloc/tensor sizing below allocate too little). */
+    if (rank == 0u)
+        return -EINVAL;
     size_t n = 1;
     for (size_t d = 0; d < rank; ++d) {
-        n *= (size_t)shape[d];
+        if (shape[d] <= 0)
+            return -EINVAL;
+        const size_t dim = (size_t)shape[d];
+        if (n > SIZE_MAX / dim)
+            return -EOVERFLOW;
+        n *= dim;
     }
 
     const bool want_fp16 =
@@ -609,6 +622,50 @@ static int build_input_tensor(VmafOrtSession *sess, OrtMemoryInfo *mem, size_t s
     }
     *scratch_out = NULL;
     return 0;
+}
+
+/* Convert @p out_n ORT output elements of type @p et from @p raw into the
+ * caller's fp32 @p dst buffer. A blind memcpy-as-float corrupts every score
+ * when the model declares a non-float output (e.g. a DOUBLE regressor head, or
+ * an INT class index): the raw bytes would be reinterpreted as IEEE-754 float
+ * garbage. Branch per dtype instead; reject unsupported types with -ENOTSUP. */
+static int convert_output_elems(ONNXTensorElementDataType et, const void *raw, float *dst,
+                                size_t out_n)
+{
+    switch (et) {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:
+        memcpy(dst, raw, out_n * sizeof(float));
+        return 0;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16: {
+        const uint16_t *src = (const uint16_t *)raw;
+        for (size_t i = 0; i < out_n; ++i)
+            dst[i] = fp16_to_fp32(src[i]);
+        return 0;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE: {
+        const double *src = (const double *)raw;
+        for (size_t i = 0; i < out_n; ++i)
+            dst[i] = (float)src[i];
+        return 0;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64: {
+        const int64_t *src = (const int64_t *)raw;
+        for (size_t i = 0; i < out_n; ++i)
+            dst[i] = (float)src[i];
+        return 0;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32: {
+        const int32_t *src = (const int32_t *)raw;
+        for (size_t i = 0; i < out_n; ++i)
+            dst[i] = (float)src[i];
+        return 0;
+    }
+    default:
+        /* Unsupported output dtype — fail loudly rather than emit garbage. */
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "libvmaf dnn: unsupported ORT output element type %d\n",
+                 (int)et);
+        return -ENOTSUP;
+    }
 }
 
 /* Copy out an OrtValue into the caller's fp32 buffer. Detects the actual
@@ -649,14 +706,7 @@ static int copy_output_tensor(VmafOrtSession *sess, OrtValue *tensor, float *dst
         ort_log_and_release_status(sess->api, st, "GetTensorMutableData");
         return -EIO;
     }
-    if (et == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
-        const uint16_t *src = (const uint16_t *)raw;
-        for (size_t i = 0; i < out_n; ++i)
-            dst[i] = fp16_to_fp32(src[i]);
-    } else {
-        memcpy(dst, raw, out_n * sizeof(float));
-    }
-    return 0;
+    return convert_output_elems(et, raw, dst, out_n);
 }
 
 int vmaf_ort_infer(VmafOrtSession *sess, const float *input, const int64_t *input_shape,

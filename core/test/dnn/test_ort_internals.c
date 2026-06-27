@@ -343,6 +343,40 @@ static char *test_ort_infer_guards_and_smoke_paths(void)
     return NULL;
 }
 
+/* Regression: vmaf_ort_infer historically passed the caller's shape
+ * straight to build_input_tensor with no per-dim validation, while
+ * vmaf_ort_run pre-checked shape[d] > 0. A non-positive or empty-rank
+ * shape would compute a bogus element count (n=1 for rank 0, or a tiny
+ * wrapped product for negative dims) and either under-allocate the fp16
+ * scratch or hand ORT a malformed tensor. The shared guard in
+ * build_input_tensor now rejects these with -EINVAL on both paths. */
+static char *test_ort_infer_rejects_bad_shape(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    float input[16] = {0.0f};
+    float output[16] = {0.0f};
+    size_t written = 0;
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("infer-bad-shape: open succeeds", rc == 0);
+
+    int64_t neg_shape[4] = {1, 1, -4, 4};
+    mu_assert("infer rejects negative dim",
+              vmaf_ort_infer(sess, input, neg_shape, 4u, output, 16u, &written) == -EINVAL);
+    int64_t zero_shape[4] = {1, 1, 0, 4};
+    mu_assert("infer rejects zero dim",
+              vmaf_ort_infer(sess, input, zero_shape, 4u, output, 16u, &written) == -EINVAL);
+    int64_t any_shape[4] = {1, 1, 4, 4};
+    mu_assert("infer rejects zero rank",
+              vmaf_ort_infer(sess, input, any_shape, 0u, output, 16u, &written) == -EINVAL);
+
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
 static char *test_ort_infer_fp16_input_output_path(void)
 {
     if (!vmaf_dnn_available())
@@ -769,6 +803,7 @@ char *run_tests(void)
     mu_run_test(test_ort_input_shape_null_args);
     mu_run_test(test_ort_input_shape_at_bounds_and_success);
     mu_run_test(test_ort_infer_guards_and_smoke_paths);
+    mu_run_test(test_ort_infer_rejects_bad_shape);
     mu_run_test(test_ort_infer_fp16_input_output_path);
     mu_run_test(test_ort_run_null_guards);
     mu_run_test(test_ort_open_null_args);

@@ -143,7 +143,13 @@ int vmaf_dnn_session_open(VmafDnnSession **out, const char *onnx_path, const Vma
      * in_buf / out_buf NULL and w == h == 0; vmaf_dnn_session_run_luma8()
      * then returns -ENOTSUP.  This is the contract tested by
      * test_session_open_symbolic_batch_skips_luma_fast_path (ADR-0523). */
-    if (rank == 4 && shape[0] == 1 && shape[1] == 1 && shape[2] > 0 && shape[3] > 0) {
+    /* The upper bound (32768, mirroring VMAF_PIC_DIM_MAX) keeps the `(int)`
+     * narrowing below well-defined: an untrusted ONNX export carrying
+     * H/W > INT_MAX would otherwise truncate into a wrong fixed geometry.
+     * Out-of-range dims fall through to the generic vmaf_dnn_session_run()
+     * path (in_buf/out_buf stay NULL, w==h==0). CERT INT31-C. (R2-7) */
+    if (rank == 4 && shape[0] == 1 && shape[1] == 1 && shape[2] > 0 && shape[3] > 0 &&
+        shape[2] <= 32768 && shape[3] <= 32768) {
         s->h = (int)shape[2];
         s->w = (int)shape[3];
         const size_t n = (size_t)s->w * (size_t)s->h;

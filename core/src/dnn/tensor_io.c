@@ -5,6 +5,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -22,8 +23,14 @@ static uint16_t f32_to_f16_one(float f)
     uint32_t mant = x & 0x7fffffu;
 
     if (exp >= 31) {
-        /* overflow → inf, or propagate NaN */
-        uint16_t nan_mant = (mant != 0u) ? 0x200u : 0u;
+        /* The f32 biased exponent 0xff marks inf/NaN; any other exponent
+         * here is a large *finite* float that overflows the f16 range.
+         * Only propagate a NaN mantissa for a true f32 NaN — overflowing
+         * finite values must map to a clean ±inf, not NaN. Mirrors the
+         * exp_f==128 (inf/nan) vs exp_f>15 (overflow) split in
+         * ort_backend.c:fp32_to_fp16. */
+        const bool input_is_nan = (((x >> 23) & 0xffu) == 0xffu) && (mant != 0u);
+        uint16_t nan_mant = input_is_nan ? 0x200u : 0u;
         return (uint16_t)((sign << 15) | (0x1fu << 10) | nan_mant);
     }
     if (exp <= 0) {

@@ -46568,3 +46568,11 @@ the lower contiguous lanes; the odd lanes must be widened with the SVE2 FCVTLT
 (`svcvtlt_f64_f32`, source element 2*i+1). Any future edit to `moment_sve2.c`
 must keep the even+odd dual-convert (stepping a full `svcntw()` register) or it
 will silently double-count even lanes and drop odd lanes on >128-bit SVE.
+## fix/bughunt-dnn (2026-06-27)
+no rebase impact: edits the fork-only DNN tiny-AI / ONNX Runtime path
+(`core/src/dnn/tensor_io.c`, `core/src/dnn/ort_backend.c`) and its fork-only
+tests (`core/test/dnn/test_tensor_io.c`, `core/test/dnn/test_ort_internals.c`)
++ `docs/state.md` + changelog. No libvmaf public-header / CLI /
+`meson_options.txt` change, so no ffmpeg-patch impact. The whole `core/src/dnn/`
+tree is fork-added (not present upstream Netflix/vmaf), so there is no
+upstream-parity conflict surface to track on a future sync.
