@@ -380,6 +380,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     return -ENOSYS;
 #else
     VifStateHip *s = fex->priv;
+    int err = 0; /* R3-6: init early so fail_stream/fail_submit return a defined code */
 
     hipError_t rc = hipStreamCreate(&s->str);
     if (rc != hipSuccess)
@@ -391,7 +392,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (rc != hipSuccess)
         goto fail_submit;
 
-    int err = vif_hip_module_load(s);
+    err = vif_hip_module_load(s);
     if (err != 0)
         goto fail_finished;
 

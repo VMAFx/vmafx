@@ -877,7 +877,7 @@ if is_asm_enabled
           'x86_ssim_avx2',
           feature_src_dir + 'x86/ssim_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
       )
 
 
@@ -1011,7 +1011,7 @@ cuda_inc = []
 
 if is_nvtx_enabled
     cuda_dependency += declare_dependency(
-        link_with: shared_library('dl'),
+        dependencies: cc.find_library('dl', required: false),
         include_directories: include_directories('/usr/local/cuda/include'))
 endif
 

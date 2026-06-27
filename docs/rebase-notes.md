@@ -46639,3 +46639,6 @@ no ffmpeg-patch impact: edits the CLI (`core/tools/vmaf.cpp`, `cli_parse.cpp`) o
 
 ## chore/version-3.2.0 (2026-06-27)
 no rebase impact: bumps `core/meson.build` `version` (x-release-please-version) + `.release-please-manifest.json` `.` to `3.2.0` / `3.2.0-lusoris.0` to track upstream libvmaf 3.2.0 SONAME. On an upstream sync, keep the fork's libvmaf version aligned with Netflix's (`<upstream-X.Y.Z>-lusoris.N`).
+
+## fix/round3-build-gpu-batch (2026-06-27)
+no ffmpeg-patch impact. R3-6 HIP integer_vif uninit-err (init err=0). R3-9 NVTX libdl → cc.find_library('dl'). R3-10 ssim AVX2 carve-out + `_x86_simd_strict_fp_extra` (icx -fp-model=precise; no-op on gcc/clang). **Invariant:** every x86 SIMD carve-out lib that needs bit-exactness under icx must carry `_x86_simd_strict_fp_extra`; keep the ssim carve-out aligned with its psnr_hvs/ms_ssim/ssimulacra2 siblings.
