@@ -323,6 +323,18 @@ def main(argv: list[str] | None = None) -> int:
         # Make even
         target_w -= target_w & 1
         target_h -= target_h & 1
+        if target_w < 2 or target_h < 2:
+            # The integer aspect down-scale rounded a dimension below ffmpeg's
+            # minimum (e.g. a 1px-wide source: (1 * 576) // 720 == 0). Skip the
+            # clip rather than emit a `scale=0:...` error or a ZeroDivisionError
+            # in _decode_to_yuv on resume (R3-18 follow-up).
+            print(
+                f"  [{stem}] degenerate scaled geometry {ow}x{oh} -> "
+                f"{target_w}x{target_h}; skip",
+                flush=True,
+            )
+            fail_count += 1
+            continue
         ref_yuv = args.yuv_dir / f"{stem}_orig_{target_w}x{target_h}.yuv"
         try:
             _decode_to_yuv(orig, ref_yuv, target_w, target_h, args.max_frames)

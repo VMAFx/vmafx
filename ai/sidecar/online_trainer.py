@@ -228,10 +228,21 @@ class OnlineTrainer:
 
             # Build mixed batch: new samples + replay samples.
             batch = self._build_batch()
+            cleared = list(self._pending)  # snapshot for restore-on-failure
             self._pending.clear()
 
         # Step outside the lock — PyTorch backward pass is not reentrant anyway.
-        loss = self._train_on_batch(batch)
+        try:
+            loss = self._train_on_batch(batch)
+        except RuntimeError:
+            # The gradient step failed (CUDA OOM, shape mismatch, ...). Restore
+            # the just-cleared pending samples — prepended so any samples a
+            # concurrent ingest appended in the meantime are preserved — so they
+            # are retried on the next ingest rather than silently dropped, then
+            # propagate so the socket handler reports the failure in the ACK.
+            with self._lock:
+                self._pending[:0] = cleared
+            raise
 
         # Check checkpoint condition and export atomically under the checkpoint
         # lock — otherwise two connection threads can both pass should_checkpoint()
@@ -296,25 +307,35 @@ class OnlineTrainer:
                 return None
             return self._export_checkpoint()
 
-    def _export_checkpoint(self) -> str:
-        """Export EMA model to a versioned ONNX file.  Returns the path.
+    def _export_checkpoint(self) -> str | None:
+        """Export EMA model to a versioned ONNX file.
+
+        Returns the path on success, or ``None`` if the export failed (so the
+        caller's ACK carries ``"checkpoint": null`` rather than a path to a file
+        that was never written).
 
         Callers must hold ``_checkpoint_lock`` so the counter increment and the
         version-stamped filename are atomic across threads.
         """
-        self._checkpoint_counter += 1
-        ckpt_name = f"model_v{self._checkpoint_counter:06d}.onnx"
+        # Compute the *candidate* version without mutating shared state: the
+        # counter is only advanced after a successful, durable export, so a
+        # failed export neither burns a version number nor returns a ghost path
+        # (R3-7 follow-up).
+        next_counter = self._checkpoint_counter + 1
+        ckpt_name = f"model_v{next_counter:06d}.onnx"
         ckpt_path = str(self._checkpoint_dir / ckpt_name)
         try:
             self._trainer.export_onnx(ckpt_path, n_features=self._n_features)
             _write_sha256_sidecar(ckpt_path)
-            logger.info(
-                "Checkpoint exported: %s (step=%d)",
-                ckpt_path,
-                self._trainer.step_count,
-            )
         except Exception as exc:
             logger.error("Checkpoint export failed: %s", exc)
+            return None
+        self._checkpoint_counter = next_counter
+        logger.info(
+            "Checkpoint exported: %s (step=%d)",
+            ckpt_path,
+            self._trainer.step_count,
+        )
         return ckpt_path
 
 
