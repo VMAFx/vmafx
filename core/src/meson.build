@@ -936,7 +936,7 @@ if is_asm_enabled
           'x86_float_adm_avx2',
           feature_src_dir + 'x86/float_adm_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
       )
       platform_specific_cpu_objects += x86_float_adm_avx2_lib.extract_all_objects(recursive: true)
 
@@ -997,7 +997,7 @@ if is_asm_enabled
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
                       '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
-                     vmaf_cflags_common,
+                     _x86_simd_strict_fp_extra + vmaf_cflags_common,
         )
         platform_specific_cpu_objects += x86_float_adm_avx512_lib.extract_all_objects(recursive: true)
       endif

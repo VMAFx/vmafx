@@ -67,16 +67,19 @@
 #include <windows.h>
 static double now_ms(void)
 {
-    LARGE_INTEGER freq, cnt;
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&cnt);
-    return (double)cnt.QuadPart / freq.QuadPart * 1000.0;
+    /* Frequency is fixed at boot — query once and cache (static, zero-init). */
+    static LARGE_INTEGER freq;
+    LARGE_INTEGER cnt = {0};
+    if (!freq.QuadPart)
+        (void)QueryPerformanceFrequency(&freq);
+    (void)QueryPerformanceCounter(&cnt);
+    return freq.QuadPart ? (double)cnt.QuadPart / (double)freq.QuadPart * 1000.0 : 0.0;
 }
 #else
 static double now_ms(void)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    struct timespec ts = {0, 0};
+    (void)clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
 }
 #endif

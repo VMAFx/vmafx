@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/round4-cli-build-go — round-4 audit bug-fix bundle (2026-06-27)
+
+All fork-added/fork-modified surfaces (no upstream-mirror conflict risk):
+
+- `core/src/meson.build` — added `_x86_simd_strict_fp_extra` to the
+  `x86_float_adm_avx2` / `x86_float_adm_avx512` carve-outs (icx fp-model parity;
+  no-op on gcc/clang). Keep when re-syncing the meson SIMD carve-out block.
+- `core/tools/vmaf.cpp`, `core/tools/vmaf_bench.c` — fork-added CLI timing
+  helpers (`wall_time_s` / `now_ms`): zero-init + cached `static` QPF frequency.
+- `core/tools/meson.build` — comment-only path fix.
+- `pkg/libvmaf/paths.go` — fork-added Go MCP path allowlist (`AllowedRoots`
+  fail-closed via `discoverRepoRoot`). `RepoRoot()` signature unchanged.
+
 ## fix/round4-c-bundle — round-4 audit bug-fix bundle (2026-06-27)
 
 Audit-derived bug fixes; several touch **upstream-mirror** files, so the next

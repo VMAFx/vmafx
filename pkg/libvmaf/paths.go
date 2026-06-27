@@ -46,25 +46,40 @@ func FindBinary() string {
 // The function looks for the presence of a CLAUDE.md file (which exists at
 // the repository root) to confirm the root rather than relying on a fixed
 // relative-path assumption.
-func RepoRoot() string {
-	// Walk from the current working directory upward.
+// discoverRepoRoot walks upward from the current working directory looking for
+// the CLAUDE.md marker. It returns (dir, true) when the marker is found, or
+// ("", false) when the walk reaches the filesystem root without finding it (or
+// the cwd cannot be determined). Callers that must fail closed — e.g.
+// AllowedRoots — use this directly instead of RepoRoot's best-effort fallback.
+func discoverRepoRoot() (string, bool) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "."
+		return "", false
 	}
 	dir := cwd
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err == nil {
-			return dir
+			return dir, true
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// Reached filesystem root without finding the marker; fall back
-			// to the working directory.
-			return cwd
+			return "", false
 		}
 		dir = parent
 	}
+}
+
+func RepoRoot() string {
+	if root, ok := discoverRepoRoot(); ok {
+		return root
+	}
+	// Best-effort fallback for path-joining callers when the marker is absent.
+	// NOTE: this fallback is deliberately NOT used by AllowedRoots (which must
+	// fail closed) — see discoverRepoRoot.
+	if cwd, err := os.Getwd(); err == nil {
+		return cwd
+	}
+	return "."
 }
 
 // AllowedRoots returns the set of filesystem trees under which MCP tool paths
@@ -79,13 +94,21 @@ func RepoRoot() string {
 // Additional roots may be added at runtime via the VMAF_MCP_ALLOW environment
 // variable (colon-separated list of absolute paths).
 func AllowedRoots() []string {
-	root := RepoRoot()
-	roots := []string{
-		filepath.Join(root, "testdata"),
-		filepath.Join(root, "python", "test", "resource"),
-		filepath.Join(root, "model"),
-		"/workspace/python/test/resource",
+	roots := []string{}
+	// Add the repo-relative roots ONLY when an actual repo root (CLAUDE.md
+	// marker) was found. RepoRoot's cwd fallback must not be used here: if the
+	// server runs outside the repo it would allowlist arbitrary cwd-relative
+	// trees (<cwd>/testdata, ...). Fail closed instead, mirroring the C
+	// discover_repo_root() guard in core/src/mcp/compute_vmaf.c.
+	if root, ok := discoverRepoRoot(); ok {
+		roots = append(roots,
+			filepath.Join(root, "testdata"),
+			filepath.Join(root, "python", "test", "resource"),
+			filepath.Join(root, "model"),
+		)
 	}
+	// The container mount is always allowed regardless of repo discovery.
+	roots = append(roots, "/workspace/python/test/resource")
 	if extra := os.Getenv("VMAF_MCP_ALLOW"); extra != "" {
 		// filepath.SplitList uses the OS path-list separator (':' on Unix,
 		// ';' on Windows), which correctly handles Windows drive letters

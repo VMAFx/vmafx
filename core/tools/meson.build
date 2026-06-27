@@ -22,7 +22,7 @@ if get_option('enable_sycl')
 endif
 if get_option('enable_hip')
     # ADR-0514: the vmaf CLI gates HIP support on `#ifdef HAVE_HIP` (see
-    # `libvmaf/tools/vmaf.c` — includes of `libvmaf_hip.h`, init/cleanup
+    # `core/tools/vmaf.cpp` — includes of `libvmaf_hip.h`, init/cleanup
     # of `VmafHipState`, the `--backend hip` strict-mode arm). Without
     # this define the CLI compiles the "built without hip support"
     # strict-mode error path even when the library itself was built with

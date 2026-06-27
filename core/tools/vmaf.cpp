@@ -1036,16 +1036,20 @@ static void skip_initial_frames(VmafContext *vmaf, video_input *vid_ref, video_i
 #ifdef _WIN32
 static double wall_time_s(void)
 {
-    LARGE_INTEGER freq;
-    LARGE_INTEGER cnt;
-    (void)QueryPerformanceFrequency(&freq);
+    /* The performance-counter frequency is fixed at boot, so query it once and
+     * cache it (static, zero-initialised) instead of every FPS update. */
+    static LARGE_INTEGER freq;
+    LARGE_INTEGER cnt = {0};
+    if (!freq.QuadPart)
+        (void)QueryPerformanceFrequency(&freq);
     (void)QueryPerformanceCounter(&cnt);
-    return static_cast<double>(cnt.QuadPart) / static_cast<double>(freq.QuadPart);
+    return freq.QuadPart ? static_cast<double>(cnt.QuadPart) / static_cast<double>(freq.QuadPart) :
+                           0.0;
 }
 #else
 static double wall_time_s(void)
 {
-    struct timespec ts;
+    struct timespec ts = {0, 0};
     (void)clock_gettime(CLOCK_MONOTONIC, &ts);
     return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
 }
