@@ -46534,3 +46534,24 @@ no ffmpeg-patch impact. **Rebase-sensitive invariant — probe_backend parity**
 probe frame AND the same `runtime_healthy` predicate (null/non-finite `vmaf.mean` →
 `runtime_healthy=false`, error `"vmaf returned exit 0 but score was null"`). A rebase
 that touches either probe handler must keep the two in lock-step.
+
+## fix/bughunt-feature-cpu — CIEDE 4:2:2 chroma-upsample flag swap + cambi init leak (2026-06-27)
+Rebase impact: **DIVERGES from upstream on `ciede.c`** — read carefully on the
+next sync. `core/src/feature/ciede.c` `scale_chroma_planes` /
+`scale_chroma_planes_hbd` is a near-verbatim upstream Netflix file, and
+**upstream carries the identical transposition bug**: the horizontal sample
+index keys off `ss_ver` and the vertical row advance keys off `ss_hor`. This
+fix swaps them to the correct chroma-subsample math (horizontal → `ss_hor`,
+vertical → `ss_ver`). **Rebase-sensitive invariant for the next syncer:** do
+NOT let an upstream sync silently revert this — if Netflix re-pulls the
+transposed lines, keep the fork's corrected flags. The bug only manifests on
+YUV422P (heap OOB + wrong `ciede2000` scores); YUV420P is a no-op (both flags
+set) and YUV444P never calls the function, so the Netflix golden CIEDE2000
+pair (420P) is bit-identical either way. Guarded by
+`test_ciede_scale_chroma_422_8b` / `_16b` in `core/test/test_ciede.c`, which
+fail against the buggy/upstream form. The `core/src/feature/cambi.c` change is
+a fork-internal error-path unwind (route init() failures through
+`close_cambi()`); cambi is upstream-mirrored but the change is confined to the
+`-ENOMEM` / `-EINVAL` error paths with no success-path or scoring delta — a
+sync that re-pulls cambi `init()` should re-apply the `goto fail` unwind. No
+public header, CLI, meson-option, or ffmpeg-patch surface changes.

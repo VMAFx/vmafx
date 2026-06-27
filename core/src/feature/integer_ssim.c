@@ -207,6 +207,14 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
                                   int vkernel_sz, const unsigned *vkernel, int samplemax, int k_min,
                                   int k_max, double *ssim, double *ssimw)
 {
+    // samplemax² must be computed in double, not int. For 16-bpc input
+    // samplemax = 65535 and 65535*65535 = 4,294,836,225 > INT_MAX, which
+    // overflows a plain int multiply (signed-overflow UB, wraps to −131071)
+    // and corrupts the SSIM C1/C2 stability constants. The CUDA/HIP/SYCL
+    // twins already widen to int64_t/double; this keeps the CPU path in
+    // parity. 8/10/12-bpc (≤ 4095² = 16,769,025) fit in int and are
+    // bit-unchanged by the cast. (round-2 bug-hunt R2-1)
+    const double sm = (double)samplemax;
     for (int x = 0; x < w; x++) {
         ssim_moments m;
         const ssim_moments *buf;
@@ -234,8 +242,8 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
         }
         // NOLINTEND(clang-analyzer-security.ArrayBound)
         w_d = m.w;
-        c1 = samplemax * samplemax * SSIM_K1 * w_d * w_d;
-        c2 = samplemax * samplemax * SSIM_K2 * w_d * w_d;
+        c1 = sm * sm * SSIM_K1 * w_d * w_d;
+        c2 = sm * sm * SSIM_K2 * w_d * w_d;
         mx2 = m.mux * (double)m.mux;
         mxy = m.mux * (double)m.muy;
         my2 = m.muy * (double)m.muy;

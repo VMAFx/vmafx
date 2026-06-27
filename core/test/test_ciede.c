@@ -25,6 +25,101 @@ static int close_enough(float a, float b)
     return fabs(a - b) < epsilon;
 }
 
+/* Regression for the CIEDE 4:2:2 chroma-upsample flag swap (heap OOB read +
+ * wrong scores). scale_chroma_planes must use ss_hor for the horizontal index
+ * and ss_ver for the vertical row advance. For 4:2:2 (ss_hor=1, ss_ver=0)
+ * every output column j must read input column j/2 from the SAME row, never
+ * past the half-width input row and never skipping rows. We seed each chroma
+ * sample uniquely so an incorrect divisor/advance produces a detectable miss.
+ */
+static char *test_ciede_scale_chroma_422_8b(void)
+{
+    /* 6x4 luma => 3x4 chroma for 4:2:2 (half width, full height). */
+    const unsigned w = 6;
+    const unsigned h = 4;
+
+    VmafPicture in;
+    VmafPicture out;
+    int err = vmaf_picture_alloc(&in, VMAF_PIX_FMT_YUV422P, 8, w, h);
+    mu_assert("422 input alloc failed", err == 0);
+    err = vmaf_picture_alloc(&out, VMAF_PIX_FMT_YUV444P, 8, w, h);
+    mu_assert("444 output alloc failed", err == 0);
+
+    /* Plane 0 (luma) is copied 1:1; planes 1/2 carry distinct chroma so the
+     * upsample pattern is unambiguous. Seed input chroma row-major with a
+     * value that encodes (row, col). */
+    for (unsigned p = 1; p < 3; p++) {
+        uint8_t *buf = in.data[p];
+        for (unsigned i = 0; i < in.h[p]; i++) {
+            for (unsigned j = 0; j < in.w[p]; j++)
+                buf[j] = (uint8_t)(1u + p * 50u + i * 8u + j);
+            buf += in.stride[p];
+        }
+    }
+
+    scale_chroma_planes(&in, &out);
+
+    for (unsigned p = 1; p < 3; p++) {
+        const uint8_t *in_buf = in.data[p];
+        const uint8_t *out_buf = out.data[p];
+        for (unsigned i = 0; i < out.h[p]; i++) {
+            for (unsigned j = 0; j < out.w[p]; j++) {
+                /* Horizontal nearest-neighbour doubling, same row. */
+                const uint8_t expected = in_buf[i * in.stride[p] + (j / 2)];
+                mu_assert("422 8b chroma upsample value mismatch",
+                          out_buf[i * out.stride[p] + j] == expected);
+            }
+        }
+    }
+
+    (void)vmaf_picture_unref(&in);
+    (void)vmaf_picture_unref(&out);
+    return NULL;
+}
+
+static char *test_ciede_scale_chroma_422_16b(void)
+{
+    const unsigned w = 6;
+    const unsigned h = 4;
+
+    VmafPicture in;
+    VmafPicture out;
+    int err = vmaf_picture_alloc(&in, VMAF_PIX_FMT_YUV422P, 10, w, h);
+    mu_assert("422 hbd input alloc failed", err == 0);
+    err = vmaf_picture_alloc(&out, VMAF_PIX_FMT_YUV444P, 10, w, h);
+    mu_assert("444 hbd output alloc failed", err == 0);
+
+    for (unsigned p = 1; p < 3; p++) {
+        uint16_t *buf = in.data[p];
+        const ptrdiff_t stride16 = in.stride[p] / 2;
+        for (unsigned i = 0; i < in.h[p]; i++) {
+            for (unsigned j = 0; j < in.w[p]; j++)
+                buf[j] = (uint16_t)(100u + p * 200u + i * 16u + j);
+            buf += stride16;
+        }
+    }
+
+    scale_chroma_planes_hbd(&in, &out);
+
+    for (unsigned p = 1; p < 3; p++) {
+        const uint16_t *in_buf = in.data[p];
+        const uint16_t *out_buf = out.data[p];
+        const ptrdiff_t in_stride16 = in.stride[p] / 2;
+        const ptrdiff_t out_stride16 = out.stride[p] / 2;
+        for (unsigned i = 0; i < out.h[p]; i++) {
+            for (unsigned j = 0; j < out.w[p]; j++) {
+                const uint16_t expected = in_buf[i * in_stride16 + (j / 2)];
+                mu_assert("422 16b chroma upsample value mismatch",
+                          out_buf[i * out_stride16 + j] == expected);
+            }
+        }
+    }
+
+    (void)vmaf_picture_unref(&in);
+    (void)vmaf_picture_unref(&out);
+    return NULL;
+}
+
 static const KSubArgs default_ksub = {.l = 0.65, .c = 1.0, .h = 4.0};
 
 static char *test_ciede()
@@ -77,5 +172,7 @@ char *run_tests()
     mu_run_test(test_ciede2);
     mu_run_test(test_ciede3);
     mu_run_test(test_ciede4);
+    mu_run_test(test_ciede_scale_chroma_422_8b);
+    mu_run_test(test_ciede_scale_chroma_422_16b);
     return NULL;
 }

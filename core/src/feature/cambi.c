@@ -571,9 +571,13 @@ static void get_derivative_data_for_row(const uint16_t *image_data, uint16_t *de
  *
  * Returns `0` on success, `-EINVAL` for invalid encode/source
  * dimensions or heatmap-path failures, `-ENOMEM` on allocation
- * failure. Allocations are NOT freed here on partial failure — the
- * matching `close()` walks the same buffer set and is null-tolerant.
+ * failure. On any partial failure the `fail:` unwind calls
+ * `close_cambi()`, which walks the same buffer set and is
+ * null-tolerant, so no allocation leaks (the framework does not call
+ * `close()` after a failed `init()`).
  */
+static int close_cambi(VmafFeatureExtractor *fex);
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -587,6 +591,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
      * is lossless. See ADR-0790. */
     s->window_size = (uint16_t)s->window_size_opt;
     s->max_log_contrast = (uint16_t)s->max_log_contrast_opt;
+
+    int err = 0;
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
@@ -612,16 +618,20 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     }
 
     if (s->enc_width < CAMBI_MIN_WIDTH_HEIGHT && s->enc_height < CAMBI_MIN_WIDTH_HEIGHT) {
-        return -EINVAL;
+        err = -EINVAL;
+        goto fail;
     }
     if (s->src_width < CAMBI_MIN_WIDTH_HEIGHT && s->src_height < CAMBI_MIN_WIDTH_HEIGHT) {
-        return -EINVAL;
+        err = -EINVAL;
+        goto fail;
     }
     if (s->src_width > s->enc_width && s->src_height < s->enc_height) {
-        return -EINVAL;
+        err = -EINVAL;
+        goto fail;
     }
     if (s->src_width < s->enc_width && s->src_height > s->enc_height) {
-        return -EINVAL;
+        err = -EINVAL;
+        goto fail;
     }
 
     int enc_pix = s->enc_width * s->enc_height;
@@ -648,24 +658,23 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     int alloc_w = s->full_ref ? MAX(s->src_width, s->enc_width) : s->enc_width;
     int alloc_h = s->full_ref ? MAX(s->src_height, s->enc_height) : s->enc_height;
 
-    int err = 0;
     for (unsigned i = 0; i < PICS_BUFFER_SIZE; i++) {
         err |= vmaf_picture_alloc(&s->pics[i], VMAF_PIX_FMT_YUV400P, 10, alloc_w, alloc_h);
     }
     if (err)
-        return err;
+        goto fail;
 
     const int num_diffs = 1 << s->max_log_contrast;
 
     err = set_contrast_arrays(num_diffs, &s->buffers.diffs_to_consider, &s->buffers.diff_weights,
                               &s->buffers.all_diffs);
     if (err)
-        return err;
+        goto fail;
 
     VmafLumaRange luma_range;
     err = vmaf_luminance_init_luma_range(&luma_range, 10, VMAF_PIXEL_RANGE_LIMITED);
     if (err)
-        return err;
+        goto fail;
 
     /* use cambi_eotf if it has a non-default value, else use eotf */
     const char *effective_eotf;
@@ -678,11 +687,13 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     VmafEOTF eotf;
     err = vmaf_luminance_init_eotf(&eotf, effective_eotf);
     if (err)
-        return err;
+        goto fail;
 
     s->buffers.tvi_for_diff = aligned_malloc(ALIGN_CEIL(sizeof(uint16_t)) * num_diffs, 16);
-    if (!s->buffers.tvi_for_diff)
-        return -ENOMEM;
+    if (!s->buffers.tvi_for_diff) {
+        err = -ENOMEM;
+        goto fail;
+    }
     for (int d = 0; d < num_diffs; d++) {
         s->buffers.tvi_for_diff[d] = get_tvi_for_diff(s->buffers.diffs_to_consider[d],
                                                       s->tvi_threshold, 10, luma_range, eotf);
@@ -702,12 +713,15 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (max_window * max_window >= CAMBI_RECIPROCAL_LUT_SIZE) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: window_size %d too large for reciprocal LUT\n",
                  max_window);
-        return -EINVAL;
+        err = -EINVAL;
+        goto fail;
     }
 
     s->buffers.c_values = aligned_malloc(ALIGN_CEIL(alloc_w * sizeof(float)) * alloc_h, 32);
-    if (!s->buffers.c_values)
-        return -ENOMEM;
+    if (!s->buffers.c_values) {
+        err = -ENOMEM;
+        goto fail;
+    }
 
     {
         int v_lo_signed = (int)s->vlt_luma - 3 * (int)num_diffs + 1;
@@ -724,14 +738,17 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
                      "cambi_vis_lum_threshold may be too low\n",
                      (unsigned)s->buffers.tvi_for_diff[num_diffs - 1],
                      (unsigned)s->buffers.v_band_base);
-            return -EINVAL;
+            err = -EINVAL;
+            goto fail;
         }
         s->buffers.v_band_size = (uint16_t)v_band_size_signed;
     }
     s->buffers.c_values_histograms =
         aligned_malloc(ALIGN_CEIL((size_t)alloc_w * s->buffers.v_band_size * sizeof(uint16_t)), 32);
-    if (!s->buffers.c_values_histograms)
-        return -ENOMEM;
+    if (!s->buffers.c_values_histograms) {
+        err = -ENOMEM;
+        goto fail;
+    }
 
     int pad_size = MASK_FILTER_SIZE >> 1;
     int dp_width = alloc_w + 2 * pad_size + 1;
@@ -739,19 +756,27 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
     s->buffers.mask_dp =
         aligned_malloc(ALIGN_CEIL((size_t)dp_height * dp_width * sizeof(uint32_t)), 32);
-    if (!s->buffers.mask_dp)
-        return -ENOMEM;
+    if (!s->buffers.mask_dp) {
+        err = -ENOMEM;
+        goto fail;
+    }
     s->buffers.filter_mode_buffer = aligned_malloc(ALIGN_CEIL(3 * alloc_w * sizeof(uint16_t)), 32);
-    if (!s->buffers.filter_mode_buffer)
-        return -ENOMEM;
+    if (!s->buffers.filter_mode_buffer) {
+        err = -ENOMEM;
+        goto fail;
+    }
     s->buffers.derivative_buffer = aligned_malloc(ALIGN_CEIL(alloc_w * sizeof(uint16_t)), 32);
-    if (!s->buffers.derivative_buffer)
-        return -ENOMEM;
+    if (!s->buffers.derivative_buffer) {
+        err = -ENOMEM;
+        goto fail;
+    }
 
     if (s->heatmaps_path) {
         int mkdir_err = mkdirp(s->heatmaps_path, 0770);
-        if (mkdir_err)
-            return -EINVAL;
+        if (mkdir_err) {
+            err = -EINVAL;
+            goto fail;
+        }
         char path[1024] = {0};
         int scaled_w = s->enc_width;
         int scaled_h = s->enc_height;
@@ -760,8 +785,10 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
                 int snp_ret =
                     snprintf(path, sizeof(path), "%s%ccambi_heatmap_scale_%d_%dx%d_16b.gray",
                              s->heatmaps_path, PATH_SEPARATOR, scale, scaled_w, scaled_h);
-                if (snp_ret < 0 || (size_t)snp_ret >= sizeof(path))
-                    return -ENAMETOOLONG;
+                if (snp_ret < 0 || (size_t)snp_ret >= sizeof(path)) {
+                    err = -ENAMETOOLONG;
+                    goto fail;
+                }
             }
             /* Mode 0644: owner-rw, group-r, other-r. Pinning the mode at
              * open(2) avoids the world-writable surface fopen(3) inherits
@@ -773,7 +800,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 #endif
             if (hfd < 0) {
                 vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi: could not open heatmaps_path: %s\n", path);
-                return -EINVAL;
+                err = -EINVAL;
+                goto fail;
             }
 #ifdef _WIN32
             s->heatmaps_files[scale] = _fdopen(hfd, "wb");
@@ -787,7 +815,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 #else
                 (void)close(hfd);
 #endif
-                return -EINVAL;
+                err = -EINVAL;
+                goto fail;
             }
             scaled_w = (scaled_w + 1) >> 1;
             scaled_h = (scaled_h + 1) >> 1;
@@ -809,6 +838,14 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     }
 #endif
 
+    return err;
+
+fail:
+    /* Partial init: free every buffer/picture/dict acquired so far.
+     * close_cambi tolerates a partially-populated state because fex->priv
+     * is zero-initialised before init() runs, so unallocated pointers are
+     * NULL (aligned_free(NULL) and unref of a zeroed picture are no-ops). */
+    (void)close_cambi(fex);
     return err;
 }
 
@@ -1633,7 +1670,10 @@ static int close_cambi(VmafFeatureExtractor *fex)
 
     if (s->heatmaps_path) {
         for (int scale = 0; scale < NUM_SCALES; scale++) {
-            (void)fclose(s->heatmaps_files[scale]);
+            /* NULL-tolerant: a partial init() failure may close before every
+             * scale's file was opened; fclose(NULL) is undefined. */
+            if (s->heatmaps_files[scale])
+                (void)fclose(s->heatmaps_files[scale]);
         }
     }
 

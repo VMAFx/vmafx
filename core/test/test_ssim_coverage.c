@@ -254,6 +254,95 @@ static char *test_ssim_10bit_extract(void)
     return NULL;
 }
 
+/* Allocate a 16-bit YUV420P picture from a per-pixel callback. */
+typedef uint16_t (*px16_fn)(unsigned r, unsigned c);
+static int alloc_px16(VmafPicture *pic, px16_fn f)
+{
+    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 16, SSIM_W, SSIM_H);
+    if (err)
+        return err;
+    for (unsigned plane = 0; plane < 3; ++plane) {
+        uint16_t *p = (uint16_t *)pic->data[plane];
+        ptrdiff_t s = pic->stride[plane] / 2;
+        unsigned w = pic->w[plane];
+        unsigned h = pic->h[plane];
+        for (unsigned r = 0; r < h; ++r)
+            for (unsigned c = 0; c < w; ++c)
+                p[r * s + c] = f(r, c);
+    }
+    return 0;
+}
+
+/* Small-amplitude, locally anti-correlated 16-bpc content: ref ramps up
+ * where dist ramps down across the same window. With the correct (large)
+ * 16-bpc c2 the structure term is stabilised toward 1; with the overflowed
+ * (≈0, negative) c2 it collapses to the raw negative covariance ratio,
+ * driving the SSIM score below 0. */
+static uint16_t ramp_ref16(unsigned r, unsigned c)
+{
+    return (uint16_t)(32u + ((r + c) & 7u));
+}
+static uint16_t ramp_dist16(unsigned r, unsigned c)
+{
+    return (uint16_t)(32u + (7u - ((r + c) & 7u)));
+}
+
+/* ----------------------------------------------------------------- */
+/* 16-bit HBD path: distorted pair must yield SSIM in [0,1].         */
+/*                                                                   */
+/* Regression guard for round-2 bug-hunt R2-1: integer_ssim computed */
+/* `c1/c2 = samplemax * samplemax * K * w_d²` with `int samplemax`.   */
+/* For 16-bpc, samplemax = 65535 and 65535*65535 overflows int       */
+/* (signed-overflow UB, wraps to −131071), so the SSIM stability     */
+/* constants go negative. With small-magnitude 16-bit content the    */
+/* (correct, large-positive) c2 should dominate and pull the contrast*/
+/* /structure terms toward a sane [0,1] score; the negative buggy c2 */
+/* drives the score out of range / non-finite. Flat content is immune*/
+/* (c1/c2 cancel when variance is 0), hence the small textured ramp. */
+/* ----------------------------------------------------------------- */
+
+static char *test_ssim_16bit_distorted_in_range(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssim");
+    mu_assert("ssim extractor missing", fex != NULL);
+
+    VmafFeatureExtractorContext *ctx = NULL;
+    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
+    mu_assert("context_create 16bit", err == 0);
+    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 16u, SSIM_W, SSIM_H);
+    mu_assert("context_init 16bit", err == 0);
+
+    VmafFeatureCollector *fc = NULL;
+    err = vmaf_feature_collector_init(&fc);
+    mu_assert("collector_init", err == 0);
+
+    VmafPicture ref;
+    VmafPicture dist;
+    err = alloc_px16(&ref, ramp_ref16);
+    mu_assert("alloc ref 16bit", err == 0);
+    err = alloc_px16(&dist, ramp_dist16);
+    mu_assert("alloc dist 16bit", err == 0);
+
+    err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
+    mu_assert("extract 16bit", err == 0);
+
+    double score = NAN;
+    err = vmaf_feature_collector_get_score(fc, "ssim", &score, 0);
+    mu_assert("get ssim 16bit score", err == 0);
+    /* SSIM is mathematically bounded in [-1,1]; a correct 16-bpc c1/c2
+     * yields a value in [0,1] here. The int-overflow bug pushes it out
+     * of [0,1] or to a non-finite value. */
+    mu_assert("ssim 16bit finite", isfinite(score));
+    mu_assert("ssim 16bit in [0,1]", score >= 0.0 && score <= 1.0);
+
+    (void)vmaf_feature_extractor_context_close(ctx);
+    (void)vmaf_feature_extractor_context_destroy(ctx);
+    vmaf_feature_collector_destroy(fc);
+    vmaf_picture_unref(&ref);
+    vmaf_picture_unref(&dist);
+    return NULL;
+}
+
 /* ----------------------------------------------------------------- */
 /* Identical inputs: SSIM should be 1.0 on the default (no-db) path */
 /* ----------------------------------------------------------------- */
@@ -303,6 +392,7 @@ char *run_tests(void)
     mu_run_test(test_ssim_enable_db_branch);
     mu_run_test(test_ssim_clip_db_branch);
     mu_run_test(test_ssim_10bit_extract);
+    mu_run_test(test_ssim_16bit_distorted_in_range);
     mu_run_test(test_ssim_identical_is_one);
     return NULL;
 }

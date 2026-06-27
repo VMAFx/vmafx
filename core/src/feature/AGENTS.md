@@ -87,6 +87,29 @@ feature/
   If libjxl changes any of these upstream, update the scalar extractor
   in the same PR (same for the SIMD follow-ups, which will mirror the
   same coefficient path).
+- **CIEDE chroma-upsample subsample flags (FORK DIVERGES FROM
+  UPSTREAM, 2026-06-27)**: `ciede.c` `scale_chroma_planes` /
+  `scale_chroma_planes_hbd` must key the *horizontal* sample-index
+  divisor off `ss_hor` and the *vertical* row advance off `ss_ver`.
+  **Upstream Netflix carries these two flags transposed** (horizontal
+  off `ss_ver`, vertical off `ss_hor`) — that bug heap-OOB-reads and
+  mis-scores YUV422P (half-width / full-height chroma). YUV420P is a
+  no-op (both flags set) and YUV444P never calls the function, so the
+  Netflix golden CIEDE2000 pair (420P) cannot detect a regression
+  here. On rebase, do NOT let an upstream sync revert the flags back to
+  the transposed form. Guarded by `test_ciede_scale_chroma_422_8b` and
+  `test_ciede_scale_chroma_422_16b` in `core/test/test_ciede.c` (both
+  fail against the upstream form).
+- **integer SSIM `samplemax²` must be widened to `double` (16-bpc
+  parity, 2026-06-27)**: `integer_ssim.c` `ssim_reduce_row_range`
+  computes `c1/c2 = sm * sm * K * w_d²` via a hoisted
+  `const double sm = (double)samplemax;`. It must NOT regress to the
+  `int samplemax * samplemax` form: for 16-bpc `samplemax = 65535` and
+  `65535² > INT_MAX` overflows `int` (UB, wraps negative), corrupting
+  the stability constants and diverging from the CUDA/HIP/SYCL twins
+  (which already use `int64_t`/`double`). 8/10/12-bpc are bit-unchanged
+  by the cast. Guarded by `test_ssim_16bit_distorted_in_range` in
+  `core/test/test_ssim_coverage.c` (fails against the `int` form).
 - **MS-SSIM decimate LPF coefficients**: the 9-tap 9/7 biorthogonal
   filter table (`ms_ssim_lpf_h` / `ms_ssim_lpf_v`) appears verbatim in
   four TUs that must stay byte-identical for the bit-exactness
