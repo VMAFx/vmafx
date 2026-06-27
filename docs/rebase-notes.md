@@ -134,6 +134,11 @@ extractor (`core/src/feature/hip/integer_psnr_hip.c`: add an `enable_chroma`
 (`server.py`: `probe_backend` ValueError guard). No upstream Netflix/vmaf file is
 touched; no public C-API/CLI surface changes (the `enable_chroma` option already
 exists on the CPU/CUDA psnr twins).
+## fix/tox-py314-scipy-118 — tox env py311→py314 (2026-06-20)
+Rebase impact: **none on upstream** — fork-local CI config only. Touches
+`python/tox.ini` (envlist `py311`→`py314`, matching the CI `setup-python` 3.14.5,
+since the fork's `requirements.txt` deps now require ≥3.12) plus a changelog
+fragment + state.md row. No source or test code changed.
 
 ## feat/golusoris-tune (2026-06-15)
 Rebase impact: **low (Go-only, additive + in-place rewrite of one binary's
