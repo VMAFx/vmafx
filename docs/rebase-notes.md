@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/round4-ffmpeg-patches — libvmaf_sycl filter leak + QSV NULL guard (2026-06-27)
+
+`ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch` gained two fixes in
+its `libavfilter/vf_libvmaf.c` hunk (new-count 335→353): `uninit_sycl` now calls
+`vmaf_sycl_state_free()` after `vmaf_close()`, and `do_vmaf_sycl` NULL-guards the
+QSV `mfxHDLPair` chain. The patch was regenerated **surgically** (only those two
+`+` blocks + the hunk-header recount; the `configure`/`Makefile`/`allfilters`
+hunks are byte-unchanged). Do NOT let `git format-patch`/`git am --3way`
+regenerate the whole patch — that fuzzed the configure probe
+`>= 3.0.0`→`2.0.0` / `libvmaf/libvmaf_sycl.h`→`libvmaf_sycl.h`. Verified by a
+full 16-patch `git apply --3way` series replay against `n8.1.1`. Keep these two
+`+` blocks on re-sync. Finding #21 (a redundant but idempotent
+`check_pkg_config libvmaf_sycl` configure probe) was intentionally left in place.
+
 ## fix/round4-cli-build-go — round-4 audit bug-fix bundle (2026-06-27)
 
 All fork-added/fork-modified surfaces (no upstream-mirror conflict risk):
