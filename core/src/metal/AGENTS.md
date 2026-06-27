@@ -158,6 +158,19 @@ metal/
   rationale as the HIP twin's `VMAF_FEATURE_EXTRACTOR_HIP`-deferral
   posture.
 
+- **Metal device-index numbering space is the filtered Apple7+ subset**
+  (fork-local). `select_device_or_nil`, `vmaf_metal_device_count`, and
+  `vmaf_metal_list_devices` (all in `common.mm`) MUST enumerate the *same*
+  filtered Apple-Family-7+ subset of `MTLCopyAllDevices()`, so
+  `--metal_device N` selects exactly the device printed as `[N]` by the
+  device list. `select_device_or_nil` walks the array, skips non-Apple7
+  devices, and returns the `N`-th surviving device — it does NOT index the
+  raw `MTLCopyAllDevices()` array (a non-Apple7 device preceding an Apple7+
+  one would otherwise cause an off-by-N or select a rejected device). **On
+  rebase / refactor**: if a PR changes the device-family gate (e.g. raises
+  the floor to Apple8) or the enumeration order, move all three functions
+  together so the index space stays consistent.
+
 - **`struct VmafMetalContext` layout is private to `common.mm`**
   (fork-local, ADR-0420). The struct definition lives in
   `common.mm`, not in `common.h`. Consumer TUs (`picture_metal.mm`,

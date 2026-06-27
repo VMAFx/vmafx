@@ -41,8 +41,12 @@ extern "C" {
 /*
  * Pick an MTLDevice by index. -1 ⇒ system default
  * (`MTLCreateSystemDefaultDevice`, picks the integrated Apple-Family-7+
- * GPU on Apple Silicon). 0..N-1 ⇒ enumerated via `MTLCopyAllDevices`
- * (macOS only; iOS/tvOS only have the system default).
+ * GPU on Apple Silicon). 0..N-1 ⇒ the index into the *filtered Apple7+
+ * subset* of `MTLCopyAllDevices` (macOS only; iOS/tvOS only have the
+ * system default). This is the same numbering space that
+ * `vmaf_metal_device_count()` counts and `vmaf_metal_list_devices()`
+ * prints, so `--metal-device N` selects exactly the device shown as
+ * `[N]` in the device list.
  *
  * Apple-Family-7 gate per ADR-0361: M1 and later support compute
  * shaders + nontrivial threadgroup memory. Pre-M1 devices (Intel
@@ -64,18 +68,31 @@ static id<MTLDevice> select_device_or_nil(int device_index)
     }
 
 #if defined(MAC_OS_VERSION_11_0) || (defined(MAC_OS_X_VERSION_10_11) && !TARGET_OS_IPHONE)
+    if (device_index < 0) {
+        return nil;
+    }
     NSArray<id<MTLDevice>> *all = MTLCopyAllDevices();
     if (all == nil) {
         return nil;
     }
-    if (device_index < 0 || (NSUInteger)device_index >= all.count) {
-        return nil;
+    /* Index into the *filtered Apple7+ subset*, not the raw
+     * MTLCopyAllDevices() array. vmaf_metal_device_count() returns the
+     * count of Apple7+ devices and vmaf_metal_list_devices() prints them
+     * with a re-based [0..N-1] index, so a raw-array index here would
+     * select the wrong device (or reject a valid one) whenever a non-
+     * Apple7 device precedes an Apple7+ one in enumeration order. */
+    NSUInteger family7_index = 0;
+    for (NSUInteger i = 0; i < all.count; i++) {
+        id<MTLDevice> dev = all[i];
+        if (![dev supportsFamily:MTLGPUFamilyApple7]) {
+            continue;
+        }
+        if (family7_index == (NSUInteger)device_index) {
+            return dev;
+        }
+        family7_index++;
     }
-    id<MTLDevice> dev = all[(NSUInteger)device_index];
-    if (![dev supportsFamily:MTLGPUFamilyApple7]) {
-        return nil;
-    }
-    return dev;
+    return nil;
 #else
     (void)device_index;
     return nil;
