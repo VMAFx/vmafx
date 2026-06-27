@@ -23,6 +23,9 @@
  */
 
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "test.h"
 #include "libvmaf/feature.h"
@@ -279,6 +282,96 @@ static char *test_model_collection_feature_overload_null_guard(void)
 
 /* ---------------------------------------------------------------------- */
 
+/*
+ * Internal entry point (extern "C" in read_json_model.h). Declared locally so
+ * this test does not need the internal core/src include directory on its
+ * compile line; the symbol lives in the linked libvmaf.
+ */
+int vmaf_read_json_model_collection_from_buffer(VmafModel **model,
+                                                VmafModelCollection **model_collection,
+                                                VmafModelConfig *cfg, const char *data,
+                                                const int data_len);
+
+/*
+ * Partial multi-model collection build must not leak on a later sub-model
+ * failure.
+ *
+ * Regression for the leak where model_collection_read_one() at i >= 1
+ * destroyed only the just-failed sub-model and returned the error, while
+ * model_collection_parse_loop() propagated it directly — leaving *model
+ * (sub-model 0) and *model_collection (sub-models 1..i-1) populated and
+ * leaked. The fix tears both down and NULLs them out on that path.
+ *
+ * Construction: sub-models "0" and "1" are the real, valid vmaf_v0.6.1
+ * single-model JSON (so *model is set and *model_collection holds one
+ * appended sub-model); sub-model "2" is an object with no "model_dict" key,
+ * so model_parse() returns -EINVAL after both earlier sub-models were
+ * accepted. The error path must (a) return non-zero, and (b) leave both
+ * out-params NULL — proving sub-model 0 (*model) and the partial collection
+ * (*model_collection) were torn down. Under ASan/LSan the same path also
+ * proves the heap is clean.
+ */
+static char *read_whole_file(const char *path, char **out, long *out_len)
+{
+    FILE *in = fopen(path, "rb");
+    mu_assert("could not open source model json", in != NULL);
+    mu_assert("seek end failed", fseek(in, 0L, SEEK_END) == 0);
+    long len = ftell(in);
+    mu_assert("ftell failed", len > 0);
+    mu_assert("seek start failed", fseek(in, 0L, SEEK_SET) == 0);
+    char *buf = malloc((size_t)len + 1);
+    mu_assert("oom reading model json", buf != NULL);
+    size_t got = fread(buf, 1, (size_t)len, in);
+    (void)fclose(in);
+    mu_assert("short read of model json", got == (size_t)len);
+    buf[len] = '\0';
+    *out = buf;
+    *out_len = len;
+    return NULL;
+}
+
+static char *test_model_collection_partial_failure_no_leak(void)
+{
+    /* A valid single model reused verbatim as sub-models "0" and "1". */
+    char *valid = NULL;
+    long valid_len = 0;
+    char *msg = read_whole_file(JSON_MODEL_PATH "vmaf_v0.6.1.json", &valid, &valid_len);
+    if (msg) {
+        free(valid);
+        return msg;
+    }
+
+    /* {"0": <valid>, "1": <valid>, "2": {"unused": 0}} — sub-model 2 has no
+     * "model_dict", so model_parse() fails with -EINVAL only after 0 and 1
+     * were accepted (0 stored in *model, 1 appended to *model_collection). */
+    const char *prefix = "{\"0\": ";
+    const char *mid = ", \"1\": ";
+    const char *suffix = ", \"2\": {\"unused\": 0}}";
+    size_t cap =
+        strlen(prefix) + (size_t)valid_len + strlen(mid) + (size_t)valid_len + strlen(suffix) + 1;
+    char *json = malloc(cap);
+    if (!json) {
+        free(valid);
+        mu_assert("oom building collection json", json != NULL);
+    }
+    int n = snprintf(json, cap, "%s%s%s%s%s", prefix, valid, mid, valid, suffix);
+    free(valid);
+    mu_assert("snprintf truncated collection json", n > 0 && (size_t)n < cap);
+
+    VmafModel *model = (VmafModel *)0x1;                  /* poison: must be NULLed */
+    VmafModelCollection *mc = (VmafModelCollection *)0x1; /* poison: must be NULLed */
+    VmafModelConfig cfg = {0};
+    int err = vmaf_read_json_model_collection_from_buffer(&model, &mc, &cfg, json, n);
+    free(json);
+
+    mu_assert("partial collection load must fail", err != 0);
+    mu_assert("leaked sub-model 0: *model not NULL after failure", model == NULL);
+    mu_assert("leaked partial collection: *model_collection not NULL after failure", mc == NULL);
+    return NULL;
+}
+
+/* ---------------------------------------------------------------------- */
+
 char *run_tests(void)
 {
     mu_run_test(test_model_collection_load_valid);
@@ -290,5 +383,6 @@ char *run_tests(void)
     mu_run_test(test_model_collection_load_from_path_valid);
     mu_run_test(test_model_collection_load_from_path_bad_path);
     mu_run_test(test_model_collection_feature_overload_null_guard);
+    mu_run_test(test_model_collection_partial_failure_no_leak);
     return NULL;
 }

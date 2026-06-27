@@ -667,8 +667,21 @@ static int model_collection_parse_loop(json_stream *s, VmafModel **model,
         }
 
         err = model_collection_read_one(s, model, model_collection, c, i);
-        if (err)
+        if (err) {
+            /* A later sub-model (i >= 1) failed after sub-model 0 was already
+             * stored in *model and sub-models 1..i-1 were appended to
+             * *model_collection. Tear both down so a partial collection is not
+             * leaked. When i == 0, read_one never assigned *model and
+             * *model_collection is still nullptr, so leave them untouched
+             * (*model is uninitialised on that path). */
+            if (i >= 1) {
+                vmaf_model_destroy(*model);
+                *model = nullptr;
+                vmaf_model_collection_destroy(*model_collection);
+                *model_collection = nullptr;
+            }
             return err;
+        }
 
         if (i == 0)
             c->name = cfg_name;

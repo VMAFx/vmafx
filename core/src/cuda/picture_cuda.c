@@ -90,6 +90,16 @@ int vmaf_cuda_picture_upload_async(VmafPicture *cuda_pic, VmafPicture *pic, uint
 #define VMAF_CUDA_PIC_BPC_MIN 8u
 #define VMAF_CUDA_PIC_BPC_MAX 16u
 
+/* Per-side dimension cap — mirrors picture.c VMAF_PIC_DIM_MAX. The
+ * stride compute below evaluates `(pic->w[i] + DATA_ALIGN_PINNED - 1u)`
+ * in 32-bit unsigned arithmetic; capping each side at 32768 keeps that
+ * addition (and the subsequent `stride * h` product feeding pic_size)
+ * well clear of the UINT32_MAX wrap that would otherwise be reached
+ * near `w >= 0xFFFFFFE1u`, where aligned_y wraps to 0, stride to 0, and
+ * cuMemHostAlloc under-allocates → the first frame copy writes OOB.
+ * 32K is also well above 8K UHD (7680). CERT INT30-C. */
+#define VMAF_CUDA_PIC_DIM_MAX 32768u
+
 static int default_release_pinned_picture(VmafPicture *pic, void *cookie)
 {
     (void)cookie;
@@ -121,6 +131,10 @@ int vmaf_cuda_picture_alloc_pinned(VmafPicture *pic, enum VmafPixelFormat pix_fm
     if (!pix_fmt)
         return -EINVAL;
     if (bpc < VMAF_CUDA_PIC_BPC_MIN || bpc > VMAF_CUDA_PIC_BPC_MAX)
+        return -EINVAL;
+    /* Guard against 32-bit overflow in the stride/pic_size compute below —
+     * mirrors the vmaf_picture_alloc host twin. CERT INT30-C. */
+    if (w == 0 || w > VMAF_CUDA_PIC_DIM_MAX || h == 0 || h > VMAF_CUDA_PIC_DIM_MAX)
         return -EINVAL;
 
     int err = 0;

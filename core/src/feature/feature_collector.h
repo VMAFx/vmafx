@@ -38,6 +38,17 @@ extern "C" {
  *  counts without over-allocating for single-feature runs. */
 #define FEATURE_VECTOR_INITIAL_CAPACITY 8u
 
+/** Upper bound on the per-feature frame index accepted by
+ *  feature_vector_append().  FeatureVector::score[] is a sparse, frame-indexed
+ *  array grown by capacity doubling; `index` reaches it unfiltered from the
+ *  public vmaf_import_feature_score() entry point, so a caller-supplied value
+ *  near UINT_MAX would (a) wrap `capacity` (unsigned) to 0 during doubling —
+ *  with assert() compiled out under NDEBUG that yields realloc(p, 0) and an
+ *  infinite loop — and (b) demand a multi-gigabyte allocation.  2^28 frames is
+ *  far beyond any real video (~124 days at 25 fps) while keeping the doubling
+ *  arithmetic and the resulting allocation bounded.  See finding R2-5. */
+#define FEATURE_VECTOR_MAX_INDEX (1u << 28)
+
 typedef struct {
     char *name;
     struct {

@@ -114,6 +114,21 @@ test_feature_collector = executable('test_feature_collector',
     objects : [libsvm_static_lib.extract_all_objects(recursive: true)] + wave8_cpp23_objects,
 )
 
+# Finding R2-10: flush_context terminal-flush ordering. White-box test that
+# includes libvmaf.c directly (same pattern as test_feature_collector) so it can
+# call the static flush_context_threaded() / flush_context() helpers and assert
+# the inner threaded flush no longer sets vmaf->flushed prematurely — the bug
+# that let a CUDA-flush error skip flush_context_sycl with no retry possible.
+test_flush_context_ordering = executable('test_flush_context_ordering',
+    ['test.c', 'test_flush_context_ordering.c', '../src/predict.c',
+     '../src/metadata_handler.cpp', rev_target],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
+    link_with : [get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+                 log_cpp23_lib],
+    dependencies: [math_lib, pthread_dependency, gpu_all_deps],
+    objects : [libsvm_static_lib.extract_all_objects(recursive: true)] + wave8_cpp23_objects,
+)
+
 # Coverage follow-up to PR #313 (R3 from
 # docs/development/coverage-gap-analysis-2026-05-02.md): exercise
 # libvmaf/src/output.c writers (XML / JSON / CSV / SUB) end-to-end.
@@ -1375,6 +1390,23 @@ test_cuda_pic_preallocation = executable('test_cuda_pic_preallocation',
 test('test_gpu_picture_pool', test_gpu_picture_pool, suite : ['fast', 'gpu'])
 test('test_cuda_pic_preallocation', test_cuda_pic_preallocation, suite : ['fast', 'gpu'])
 
+# Finding R2-2 — HOST_PINNED picture-allocator dimension-overflow guard.
+# vmaf_cuda_picture_alloc_pinned now rejects w/h out of [1, 32768] BEFORE
+# touching cuda_state, mirroring vmaf_picture_alloc's VMAF_PIC_DIM_MAX guard
+# (CERT INT30-C). The rejection paths run with cuda_state == NULL, so the
+# test needs nvcc to compile picture_cuda.c but no live GPU device. Pre-fix
+# the oversized call fell through to the NULL cuda_state deref (or under-
+# allocated on a real device → OOB); post-fix it returns -EINVAL. Not in the
+# 'gpu' suite because it deliberately exercises only the device-free guard.
+test_cuda_picture_pinned_overflow = executable('test_cuda_picture_pinned_overflow',
+    ['test.c', 'test_cuda_picture_pinned_overflow.c', '../src/cuda/picture_cuda.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_picture_pinned_overflow', test_cuda_picture_pinned_overflow, suite : ['fast'])
+
 # Netflix#1420 — graceful-OOM reducer. Exercises the wholesale
 # CHECK_CUDA_GOTO/_RETURN rewrite by requesting an impossible
 # 1 TiB cuMemAlloc and asserting the returned errno is -ENOMEM
@@ -2005,7 +2037,7 @@ test('test_float_motion_coverage', test_float_motion_coverage, suite : ['fast'])
 endif
 
 # GPU dispatch-runtime coverage (host-only). Targets the shared
-# `gpu_dispatch_env.c` + `gpu_dispatch_parse.h` helpers and the
+# `gpu_dispatch_env.cpp` + `gpu_dispatch_parse.h` helpers and the
 # host-buildable subset of the per-backend dispatch_strategy TUs
 # (CUDA + HIP — both compile without their respective SDKs because
 # they only depend on stdlib + pthread + opaque forward-declared
@@ -2023,11 +2055,34 @@ test_gpu_dispatch_runtime = executable('test_gpu_dispatch_runtime',
                            include_directories('../src/'),
                            include_directories('../src/feature/')],
     dependencies: [pthread_dependency, stdatomic_dependency],
-    # ADR-0858 Wave: gpu_dispatch_env.c → gpu_dispatch_env.cpp; link via
-    # the isolated C++23 static lib instead of direct-compiling the source.
+    # ADR-0858 Wave: gpu_dispatch_env converted .c → .cpp; link via the
+    # isolated C++23 static lib instead of direct-compiling the source.
+    # (The orphaned legacy .c was removed once the .cpp became canonical.)
     objects : [gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true)],
 )
 test('test_gpu_dispatch_runtime', test_gpu_dispatch_runtime, suite : ['fast'])
+
+# R2-9 regression: a transient allocation failure while snapshotting a *set*
+# GPU-dispatch env variable must not permanently cache the slot as "unset".
+# The legacy gpu_dispatch_env.c committed the populated marker before the
+# value strdup, so a strdup OOM poisoned the slot for the process lifetime;
+# the shipped gpu_dispatch_env.cpp publishes via a ready flag stored LAST.
+# The C++ test replaces global operator new to force the value-string
+# allocation to throw, then asserts the next get recovers the real value.
+# Links the same isolated C++23 static lib as test_gpu_dispatch_runtime.
+test_gpu_dispatch_env_oom = executable('test_gpu_dispatch_env_oom',
+    ['test.c', 'test_gpu_dispatch_env_oom.cpp'],
+    include_directories : [libvmaf_inc, test_inc,
+                           include_directories('../src/')],
+    # The shared C `mu_assert` macro (test.h) returns its message argument as
+    # `char *`; passing a C++ string literal trips -Wwrite-strings. The macro
+    # is upstream-owned and shared by every test, so suppress the diagnostic
+    # for this C++ TU rather than fork the harness.
+    cpp_args : ['-Wno-write-strings'],
+    dependencies: [pthread_dependency, stdatomic_dependency],
+    objects : [gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true)],
+)
+test('test_gpu_dispatch_env_oom', test_gpu_dispatch_env_oom, suite : ['fast'])
 
 # Public-API smoke: vmaf_version() returns non-empty, printable, whitespace-free
 # string. Closes the orphan-source gap surfaced by the 2026-05-29 test-meson
@@ -2880,6 +2935,7 @@ test('test_log', test_log, suite : ['fast'])
 test('test_picture', test_picture, suite : ['fast'])
 test('test_picture_v2', test_picture_v2, suite : ['fast'])
 test('test_feature_collector', test_feature_collector, suite : ['fast'])
+test('test_flush_context_ordering', test_flush_context_ordering, suite : ['fast'])
 test('test_output', test_output, suite : ['fast'])
 # ADR-0708 Wave 1: test_log registered as part of the log.c → log.cpp pilot
 # (mirrors DRAFT PR #315's orphan-test wiring). The executable was built but

@@ -334,6 +334,14 @@ static int prepare_ring_buffer(VmafContext *vmaf, unsigned w, unsigned h,
         return -EINVAL;
     if (!bpc)
         return -EINVAL;
+    /* Reject out-of-range dimensions at pool-config time — parity with
+     * vmaf_picture_alloc's VMAF_PIC_DIM_MAX guard (picture.c). Fails fast
+     * here rather than at first per-frame allocation; the per-allocator
+     * guards in vmaf_picture_alloc / vmaf_cuda_picture_alloc_pinned are the
+     * load-bearing CERT INT30-C overflow defence. 32768 = 32K, well above
+     * 8K UHD (7680). */
+    if (w > 32768u || h > 32768u)
+        return -EINVAL;
 
     vmaf->cuda.cookie.pix_fmt = vmaf->pic_params.pix_fmt = pix_fmt;
     vmaf->cuda.cookie.h = vmaf->pic_params.h = h;
@@ -1962,8 +1970,13 @@ static int flush_context_threaded(VmafContext *vmaf)
         }
     }
 
-    if (!err)
-        vmaf->flushed = true;
+    /* NB: vmaf->flushed is intentionally NOT set here.  The terminal-flush
+     * decision is centralised in flush_context() so it can only flip true
+     * after EVERY backend flush (CPU + CUDA + SYCL) has run successfully.
+     * Setting it here would let a later CUDA-flush error early-return before
+     * flush_context_sycl, dropping the final SYCL frame's scores while the
+     * caller could no longer retry (vmaf_read_pictures(NULL,NULL) rejects a
+     * second flush once vmaf->flushed is true). */
     return err;
 }
 
@@ -2098,17 +2111,21 @@ static int flush_context(VmafContext *vmaf)
     }
 
 #ifdef HAVE_CUDA
-    {
-        int cuda_err = flush_context_cuda(vmaf);
-        if (cuda_err)
-            return cuda_err;
-    }
+    /* Accumulate the CUDA-flush result instead of early-returning: a CUDA
+     * error must not skip flush_context_sycl below, which is the ONLY place
+     * SYCL extractors' final-frame gpu_pending collect + flush runs.  Skipping
+     * it dropped the last SYCL frame's scores irrecoverably (vmaf->flushed is
+     * only set once at the end, so the caller cannot re-flush). */
+    err |= flush_context_cuda(vmaf);
 #endif
 
 #ifdef HAVE_SYCL
     err |= flush_context_sycl(vmaf);
 #endif
 
+    /* Only mark the context terminally flushed once every backend flush
+     * succeeded.  On any error the caller may retry vmaf_read_pictures(NULL,
+     * NULL) to re-run the flush pass. */
     if (!err)
         vmaf->flushed = true;
     return err;

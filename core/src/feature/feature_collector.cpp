@@ -227,8 +227,18 @@ int feature_vector_append(FeatureVector *feature_vector, unsigned index, double 
     if (!feature_vector)
         return -EINVAL;
 
+    /* `index` is a caller-controlled frame index (vmaf_import_feature_score()
+     * forwards it unfiltered).  Reject the pathological range up front so the
+     * doubling loop below cannot wrap `capacity` to 0 — which under NDEBUG
+     * (assert compiled out) becomes realloc(p, 0) and an infinite loop — or
+     * request a multi-gigabyte allocation.  See finding R2-5. */
+    if (index >= FEATURE_VECTOR_MAX_INDEX)
+        return -EINVAL;
+
     while (index >= feature_vector->capacity) {
         assert(feature_vector->capacity > 0);
+        /* Doubling stays within `unsigned` because FEATURE_VECTOR_MAX_INDEX is
+         * far below UINT_MAX/2; the loop is guaranteed to terminate. */
         const size_t initial_size = sizeof(feature_vector->score[0]) * feature_vector->capacity;
         void *score_buf = realloc(feature_vector->score, initial_size * 2);
         if (!score_buf)

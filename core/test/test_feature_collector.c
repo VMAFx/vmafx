@@ -19,6 +19,7 @@
 #include "test.h"
 #include "feature_collector.c"
 #include "libvmaf.c"
+#include <limits.h>
 #include <time.h>
 
 static char *test_model_mount_with_use_features()
@@ -187,6 +188,43 @@ static char *test_feature_vector_init_append_and_destroy()
     return NULL;
 }
 
+/* Finding R2-5: feature_vector_append() must reject a pathological,
+ * caller-controlled frame index instead of doubling `capacity` (unsigned)
+ * until it wraps to 0.  Before the fix, an index near UINT_MAX wrapped the
+ * doubling loop to a 0 capacity — under NDEBUG the assert is compiled out, so
+ * realloc(p, 0) leaves capacity stuck at 0 and `index >= 0` spins forever (and
+ * before that it tries multi-gigabyte allocations).  This test passes a huge
+ * index and asserts a clean error return; without the guard it would hang or
+ * OOM rather than return. */
+static char *test_feature_vector_append_rejects_huge_index()
+{
+    int err;
+
+    FeatureVector *feature_vector;
+    err = feature_vector_init(&feature_vector, "psnr_y");
+    mu_assert("problem during feature_vector_init", !err);
+
+    const unsigned capacity_before = feature_vector->capacity;
+
+    err = feature_vector_append(feature_vector, FEATURE_VECTOR_MAX_INDEX, 60.);
+    mu_assert("feature_vector_append must reject index == FEATURE_VECTOR_MAX_INDEX", err);
+
+    err = feature_vector_append(feature_vector, UINT_MAX, 60.);
+    mu_assert("feature_vector_append must reject UINT_MAX index", err);
+
+    /* The rejection happens before any realloc, so capacity is untouched. */
+    mu_assert("rejected index must not grow capacity", feature_vector->capacity == capacity_before);
+
+    /* A legitimate, modest index must still be accepted and grow the array —
+     * the guard rejects only the pathological range, not valid frame indices. */
+    err = feature_vector_append(feature_vector, 1000u, 60.);
+    mu_assert("feature_vector_append must accept a legitimate index", !err);
+    mu_assert("legitimate index must grow capacity past it", feature_vector->capacity > 1000u);
+
+    feature_vector_destroy(feature_vector);
+    return NULL;
+}
+
 static char *test_feature_collector_init_append_get_and_destroy()
 {
     int err;
@@ -245,6 +283,7 @@ static char *test_feature_collector_init_append_get_and_destroy()
 char *run_tests()
 {
     mu_run_test(test_feature_vector_init_append_and_destroy);
+    mu_run_test(test_feature_vector_append_rejects_huge_index);
     mu_run_test(test_feature_collector_init_append_get_and_destroy);
     mu_run_test(test_aggregate_vector_init_append_and_destroy);
     mu_run_test(test_model_mount);
