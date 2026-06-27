@@ -1342,6 +1342,11 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
         width = quality_width
         height = quality_height
         pixel_format, bitdepth = convert_pixel_format_ffmpeg2vmafexec(fmt)
+        if asset.dis_encode_width_height is not None:
+            enc_width, enc_height = asset.dis_encode_width_height
+        else:
+            enc_width, enc_height = None, None
+        enc_bitdepth = asset.dis_encode_bitdepth
         output = log_file_path
         exe = self._get_exec()
         logger = self.logger
@@ -1371,6 +1376,9 @@ class VmafexecQualityRunner(QualityRunner, FeatureDiscoveryMixin):
             vif_enhn_gain_limit,
             adm_enhn_gain_limit,
             motion_force_zero,
+            enc_width,
+            enc_height,
+            enc_bitdepth,
         )
 
     def _get_exec(self):

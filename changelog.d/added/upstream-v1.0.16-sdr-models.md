@@ -14,3 +14,10 @@
   `motion_five_frame_window` 5-frame plumbing deferred per ADR-0337). The
   upstream golden test `python/test/vmaf_v1_quality_runner_test.py` (46
   assertions) is added verbatim.
+- Restored two Python-harness wirings dropped in the ADR-0700
+  `python/vmaf`→`compat/python-vmaf` migration that the v1.0.16 models need:
+  the `VmafexecQualityRunner.FEATURES` list (`adm3`/`motion3`/`cambi`/
+  `speed_chroma_uv`) and the CAMBI enc-override param flow
+  (`call_vmafexec` + `_generate_result` append `:cambi.enc_width/height/
+  bitdepth=` from the asset, matching upstream). C engine unchanged;
+  cambi scores unchanged (key-name only).
