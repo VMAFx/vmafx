@@ -1162,22 +1162,20 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
             return -1;
         }
 
-        switch (score.type) {
-        case VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP:
-            if (istty && (!c->quiet || !c->output_path)) {
-                (void)fprintf(stderr, "%s: ", arrays.collection_label[i]);
-                (void)fprintf(stderr, c->precision_fmt, score.bootstrap.bagging_score);
-                (void)fprintf(stderr, ", ci.p95: [");
-                (void)fprintf(stderr, c->precision_fmt, score.bootstrap.ci.p95.lo);
-                (void)fprintf(stderr, ", ");
-                (void)fprintf(stderr, c->precision_fmt, score.bootstrap.ci.p95.hi);
-                (void)fprintf(stderr, "], stddev: ");
-                (void)fprintf(stderr, c->precision_fmt, score.bootstrap.stddev);
-                (void)fprintf(stderr, "\n");
-            }
-            break;
-        default:
-            break;
+        /* VmafModelCollectionScoreType has only BOOTSTRAP as a printable
+         * variant (UNKNOWN is a no-op), so a plain if is clearer than a
+         * two-label switch. */
+        if (score.type == VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP && istty &&
+            (!c->quiet || !c->output_path)) {
+            (void)fprintf(stderr, "%s: ", arrays.collection_label[i]);
+            (void)fprintf(stderr, c->precision_fmt, score.bootstrap.bagging_score);
+            (void)fprintf(stderr, ", ci.p95: [");
+            (void)fprintf(stderr, c->precision_fmt, score.bootstrap.ci.p95.lo);
+            (void)fprintf(stderr, ", ");
+            (void)fprintf(stderr, c->precision_fmt, score.bootstrap.ci.p95.hi);
+            (void)fprintf(stderr, "], stddev: ");
+            (void)fprintf(stderr, c->precision_fmt, score.bootstrap.stddev);
+            (void)fprintf(stderr, "\n");
         }
     }
 

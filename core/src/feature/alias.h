@@ -16,4 +16,9 @@
  *
  */
 
+#ifndef VMAF_ALIAS_H
+#define VMAF_ALIAS_H
+
 const char *vmaf_feature_name_alias(const char *feature_name);
+
+#endif /* VMAF_ALIAS_H */

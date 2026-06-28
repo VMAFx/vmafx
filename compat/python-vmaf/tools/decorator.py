@@ -1,5 +1,4 @@
 import os
-from collections.abc import Hashable
 from functools import partial
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."

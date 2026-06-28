@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from vmaf.core.feature_assembler import FeatureAssembler
 from vmaf.core.feature_extractor import VmafFeatureExtractor

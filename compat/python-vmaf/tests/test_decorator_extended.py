@@ -9,9 +9,7 @@
 from __future__ import annotations
 
 import os
-import tempfile
 
-import pytest
 
 from vmaf.tools.decorator import change_repr, memoized, persist_to_dir, persist_to_file
 

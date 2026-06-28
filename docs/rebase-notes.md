@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/codeql-quality-batch — code-scanning hygiene (2026-06-27)
+
+Small behaviour-neutral quality fixes. Upstream-mirror touches to re-apply on
+the next `upstream` sync: removed an unused `from collections.abc import
+Hashable` in `compat/python-vmaf/tools/decorator.py`, and unused
+`pytest`/`tempfile` imports in two `compat/python-vmaf/tests/` files. Fork files:
+`core/tools/vmaf.cpp` (2-label switch→if), and new include guards on
+`core/src/feature/moment.h` / `alias.h`. The bulk of the code-scanning backlog
+was resolved by *dismissal* (verified false-positive/intentional via the GitHub
+code-scanning API), not code change — see `docs/state.md`
+T-CODEQL-QUALITY-BATCH.
+
 ## fix/round4-ffmpeg-patches — libvmaf_sycl filter leak + QSV NULL guard (2026-06-27)
 
 `ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch` gained two fixes in
