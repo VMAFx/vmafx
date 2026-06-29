@@ -14,14 +14,14 @@ require (
 )
 
 require (
-	github.com/cilium/ebpf v0.21.0
+	github.com/cilium/ebpf v0.22.0
 	github.com/getkin/kin-openapi v0.140.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-logr/logr v1.4.3
 	github.com/golusoris/golusoris v0.7.0
 	github.com/google/uuid v1.6.0
-	github.com/onsi/ginkgo/v2 v2.31.0
-	github.com/onsi/gomega v1.42.0
+	github.com/onsi/ginkgo/v2 v2.32.0
+	github.com/onsi/gomega v1.42.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.69.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.44.0
@@ -34,7 +34,7 @@ require (
 	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.36.2
 	k8s.io/client-go v0.36.2
-	modernc.org/sqlite v1.52.0
+	modernc.org/sqlite v1.53.0
 	sigs.k8s.io/controller-runtime v0.24.1
 )
 
@@ -204,7 +204,7 @@ require (
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260603220949-865597e52e25 // indirect
 	k8s.io/utils v0.0.0-20260507154919-ff6756f316d2 // indirect
-	modernc.org/libc v1.72.3 // indirect
+	modernc.org/libc v1.73.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
