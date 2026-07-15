@@ -11,7 +11,7 @@ authors = [
 dependencies = [
   "mcp>=1.28.0",
   "pydantic>=2.13.4",
-  "anyio>=4.14.0",
+  "anyio>=4.14.2",
 ]
 
 [project.optional-dependencies]
