@@ -117,7 +117,7 @@ jobs:
       # ── ccache (Linux + macOS) ──────────────────────────────────────
       - name: Restore ccache
         if: startsWith(matrix.CC, 'ccache ')
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/.ccache
           key: ccache-v2-${{ matrix.os }}-${{ matrix.CC }}-${{ matrix.meson_extra }}-${{ github.sha }}
@@ -129,13 +129,13 @@ jobs:
       # ── Python ──────────────────────────────────────────────────────
       - name: Setup python
         if: "!matrix.windows"
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.14.6'
 
       - name: Setup python (Windows)
         if: matrix.windows
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.14.6'
 
@@ -407,7 +407,7 @@ jobs:
       # ── Python tox (Linux + macOS) ───────────────────────────────────
       - name: Cache Netflix vmaf_resource fixtures
         if: startsWith(matrix.os, 'ubuntu') || matrix.os == 'macos-latest'
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: python/test/resource
           key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
