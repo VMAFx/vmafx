@@ -610,7 +610,7 @@ otelCollector:
 
   image:
     repository: otel/opentelemetry-collector-contrib
-    tag: "0.154.0@sha256:b3079f45e19bdb7326bf49cdddce6cf60dfd865138db39f2733ea48ab17bc4cb"
+    tag: "0.159.0@sha256:1f2c54a30e713fac6b3ae77a1ec84010c2007e29ced8ec666214fc2f6739c1cc"
     pullPolicy: IfNotPresent
 
   # OTLP gRPC listen address inside the pod.
