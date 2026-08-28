@@ -9,7 +9,7 @@ authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
 ]
 dependencies = [
-  "mcp>=1.28.0",
+  "mcp>=1.28.1",
   "pydantic>=2.13.4",
   "anyio>=4.14.0",
 ]
