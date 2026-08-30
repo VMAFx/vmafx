@@ -33,19 +33,22 @@ policy.
 
 1. **release-please watches master.** On each push it inspects Conventional
    Commit headers (`feat:`, `fix:`, `docs:`, `chore:`, `ci:`, …) to determine
-   whether a release is warranted. If so, it opens or updates a release PR that
-   bumps `VERSION`, updates `CHANGELOG.md`, and collects user-visible change
-   summaries.
-2. **Merging the release PR** creates a draft GitHub release. It does not yet
+   whether a release is warranted. If so, it opens or updates one release PR
+   that bumps the root manifest and every coordinated version marker.
+2. **Finalize the generated release PR.** After all other release changes are
+   merged, regenerate Unreleased and run the fragment rollover with the PR's
+   exact version and UTC date. Commit that result as the release PR's final
+   change. Any later fragment invalidates the cut and must be rolled again.
+3. **Merging the release PR** creates a draft GitHub release. It does not yet
    create the public release tag.
-3. **An authenticated operator publishes the draft.** Publication creates the
+4. **An authenticated operator publishes the draft.** Publication creates the
    `vX.Y.Z` tag and emits the `release.published` event. This explicit gate is
    required because GitHub suppresses most follow-on workflow events created
    by the repository `GITHUB_TOKEN`.
-4. **The release workflows** build artefacts (libvmaf binaries, Python wheels),
-   runs the Netflix golden-data gate (CPU only — the GPU/SIMD backends
-   are covered by per-backend snapshot tests at ULP tolerance, not by
-   the goldens), and publishes signed artefacts to GitHub Releases.
+5. **The publication workflows** build release artefacts (libvmaf binaries,
+   Python wheels, and production images), sign and attest them, run their
+   workflow-specific smoke checks, and publish them. The release PR's required
+   CI is the gate for the broader Netflix and backend test suites.
 
 ## ADR index regeneration policy
 
@@ -204,6 +207,31 @@ Three drift classes can develop between fragments and the rendered block:
 
 `--write` is conservative: it only rewrites the `## [Unreleased]` block.
 Released sections below are untouched.
+
+### Cutting a release from fragments
+
+Release-please has `skip-changelog: true`; it never edits `CHANGELOG.md`.
+Once the generated release PR contains the final manifest and version-marker
+updates, run:
+
+```bash
+scripts/release/concat-changelog-fragments.sh --write
+git commit -am 'docs(release): render final 3.2.1 notes'
+scripts/release/rollover-changelog-fragments.sh \
+  --version 3.2.1 --date 2026-08-31
+git add CHANGELOG.md changelog.d
+git commit -m 'chore(release): cut 3.2.1 changelog'
+```
+
+Replace the example version and UTC date for later releases. The rollover
+requires a clean tree, exact agreement between the root manifest and every
+coordinated marker, zero renderer drift, a unique target heading, and a
+non-empty active source set. It then removes the consumed fragments and legacy
+source, leaving their exact content in the versioned changelog section and a
+SHA-256 receipt under `changelog.d/releases/`. The removals are recoverable
+from Git history. A second identical invocation is a no-op.
+
+[ADR-1128](../adr/1128-fragment-owned-release-cuts.md) governs this cutover.
 
 ### Drift-sweep cadence
 

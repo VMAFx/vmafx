@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "bootstrap-sha": "42276bc53e50d9653122cfd0a5b9e5de40649b58",
+  "bootstrap-sha": "98dc0b2b830ab39a9fe724def9e8cd7a7f73fa29",
   "release-type": "simple",
   "include-component-in-tag": false,
   "include-v-in-tag": true,
@@ -8,6 +8,8 @@
     ".": {
       "package-name": "vmafx",
       "release-type": "simple",
+      "release-as": "3.2.1",
+      "skip-changelog": true,
       "versioning": "default",
       "prerelease": false,
       "bump-minor-pre-major": false,

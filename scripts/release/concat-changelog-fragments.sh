@@ -15,8 +15,8 @@
 #       lost when the system flips on.
 #
 # Outputs (stdout): the rendered Unreleased body. Caller is responsible
-# for splicing it into CHANGELOG.md (release-please does this at release
-# time; CI runs --check to gate drift).
+# for splicing it into CHANGELOG.md. CI runs --check to gate drift and the
+# release rollover script versions and consumes the active sources.
 #
 # Flags:
 #   --check    Compare output against the in-tree CHANGELOG.md Unreleased
@@ -94,7 +94,8 @@ warn_unknown_subdirs() {
   # does not know about. PR #384 / ADR-0892 cleaned up perf/ + performance/;
   # this guard keeps future drifts visible.
   local known_csv
-  known_csv="$(printf '%s\n' "${SECTIONS[@]}" | LC_ALL=C sort | paste -sd, -)"
+  # `releases/` contains small rollover receipts, not active fragments.
+  known_csv="$(printf '%s\n' "${SECTIONS[@]}" releases | LC_ALL=C sort | paste -sd, -)"
   local unknown
   unknown="$(find "$FRAG_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
     LC_ALL=C sort |
@@ -208,12 +209,15 @@ tmp_out="$(mktemp)"
 # Clean up scratch files on any exit path (including interrupts) so we never
 # leak temp files in $TMPDIR if the awk pipeline below trips set -e.
 trap 'rm -f "$tmp_body" "$tmp_out"' EXIT
-# Command substitution strips trailing newlines from "$rendered". The legacy
-# archive ends with one blank line (separator before the next release header)
-# so we re-emit the rendered body followed by an explicit blank line.
+# Command substitution strips trailing newlines from "$rendered". Re-emit one
+# terminal newline and add a blank separator only when a versioned tail exists.
 {
   printf '%s\n' "$rendered"
-  printf '\n'
+  # Separate Unreleased from an existing version heading, but do not append a
+  # blank line when this pre-first-release changelog has no versioned tail.
+  if grep -q '^## \[[0-9]' "$CHANGELOG"; then
+    printf '\n'
+  fi
 } >"$tmp_body"
 
 awk -v boundary="$BOUNDARY_REGEX" '

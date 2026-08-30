@@ -10907,6 +10907,9 @@ all GPU backends link without modification.
 - Replace the fork-suffixed component release layout with one independent VMAFx SemVer stream, beginning with the `3.2.1` patch release.
 
 
+- Make changelog fragments the sole release-note source and add a validated, idempotent release rollover that consumes active sources into one versioned section with an audit receipt.
+
+
 - **docs**: bulk-flip ADR Status `Proposed` → `Accepted` for 13 ADRs whose
   implementing PRs landed during the 2026-05-06 merge train (ADRs 0302
   / 0303 / 0304 / 0305 / 0307 / 0308 / 0309 / 0311 / 0313 / 0314 / 0316

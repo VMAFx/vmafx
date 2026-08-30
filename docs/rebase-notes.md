@@ -47000,3 +47000,10 @@ No upstream rebase impact: preserve VMAFx's one independent `vX.Y.Z` root
 release stream, coordinated version-file list, and draft-publication fan-out
 when importing upstream release metadata. Do not restore the historical
 `-lusoris.N` suffix or component release-please packages.
+
+## 2026-08-31 — ADR-1128 fragment-owned release cuts
+
+No upstream code impact: preserve `skip-changelog: true` and the pre-merge
+fragment rollover when rebasing release automation. Re-enabling
+release-please's changelog updater without also replacing the fragment renderer
+would republish every consumed release entry under Unreleased.

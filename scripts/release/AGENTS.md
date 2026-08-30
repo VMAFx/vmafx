@@ -40,10 +40,31 @@ prefix filenames with a task/ADR ID for implicit ordering, e.g.
 
 ### Coupling with release-please
 
-`release-please` consumes `CHANGELOG.md` at release time. The script's
-`--write` mode must produce output that `release-please` can parse —
-specifically: the `## [Unreleased]` header must be preserved verbatim and
-the rendered body must not inject extra blank lines before the first
-`### Section` heading. The double-awk pipeline in `--write` was designed
-to thread this needle; do not simplify it to `sed -i` without verifying
-release-please compatibility.
+The fragment renderer is the sole owner of `CHANGELOG.md`; release-please has
+`skip-changelog: true`. Before merging a generated release PR, run
+`rollover-changelog-fragments.sh` with the release PR's exact version and UTC
+date. It versions the rendered body, empties Unreleased, consumes the active
+fragment sources, and writes a receipt under `changelog.d/releases/`.
+
+The `## [Unreleased]` header must be preserved verbatim and the rendered body
+must not inject extra blank lines before the first `### Section` heading. The
+double-awk pipeline in `--write` was designed to preserve this shape; do not
+simplify it to `sed -i` without running both release-script test harnesses.
+
+## rollover-changelog-fragments.sh
+
+This is a release-PR-only operation. Preconditions are deliberately strict:
+the working tree is clean, the manifest and every generic version marker equal
+the requested version, fragment rendering is current, the target heading is
+absent, and at least one active source exists. After the cut, active fragments
+and `_pre_fragment_legacy.md` are removed; their exact rendered content remains
+in the versioned CHANGELOG section and their source history remains in Git.
+
+The generated receipt records the source count and rendered SHA-256. A second
+identical invocation is a no-op only when the target heading and receipt exist
+and no active sources remain. Any late merge after rollover adds an active
+fragment again, invalidating the release PR until the operator rebuilds the
+cut.
+
+Test coverage:
+`scripts/release/tests/test-rollover-changelog-fragments.sh`.
