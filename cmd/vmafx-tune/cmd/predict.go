@@ -231,7 +231,13 @@ func runPredict(ctx context.Context, d deps, flags *predictFlags) error {
 	pred := predictor.New()
 	if session := newORTPredictorSession(ctx, flags.model); session != nil {
 		pred = predictor.WithSession(session)
-		d.Log.InfoContext(ctx, "using the learned ONNX predictor", "model", flags.model)
+		pred.Log = d.Log
+		// Deliberately phrased as a request, not an accomplishment: the runner
+		// is a subprocess resolved at first inference, so at this point we do
+		// not yet know whether the learned path will work. Claiming "using the
+		// learned ONNX predictor" here is what made a silent fallback look
+		// like a model-backed run.
+		d.Log.InfoContext(ctx, "ONNX predictor requested", "model", flags.model)
 	}
 
 	// The validation work area lives for the whole run so the score step's

@@ -92,9 +92,17 @@ func (r *Registry) ModelPath(modelName string) (string, error) {
 // Infer runs ONNX Runtime inference on modelName with the given float64 inputs
 // and returns the output tensor as a []float64 slice.
 //
-// Stage 1 implementation: shells out to vmafx-ort-runner (bundled in the
-// container image) for the actual ORT session.  This avoids CGO build-time
-// coupling on libtensorrt / libonnxruntime at the Go layer.
+// Stage 1 implementation: shells out to vmafx-ort-runner for the actual ORT
+// session, which avoids CGO build-time coupling on libtensorrt /
+// libonnxruntime at the Go layer.
+//
+// NOTE: vmafx-ort-runner is NOT built or installed by this repository. There is
+// no cmd/vmafx-ort-runner target and nothing under dev/, docker/, .github/ or
+// the Makefile produces it, so on every currently-buildable configuration this
+// returns ErrORTRunnerNotFound and callers take their fallback path. An earlier
+// version of this comment claimed the binary was "bundled in the container
+// image"; it is not, and that claim made the whole --model surface look
+// functional. Supplying the runner is tracked as its own piece of work.
 //
 // ctx bounds and cancels the subprocess: a cancelled context (job aborted,
 // parent shutdown) or an elapsed deadline tears down vmafx-ort-runner via

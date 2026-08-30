@@ -20,6 +20,11 @@ a 15-cell coarse-to-fine sweep and a `--two-pass --sample-clip-seconds
 `run_id` / `timestamp` / wall-clock columns), and sidecar state written by either
 binary loads in the other with bit-identical predictions.
 
-`vmaf-tune sidecar --model <predictor.onnx>` remains Python-only: the Go binary
-has no in-process ONNX runtime and refuses the flag rather than silently scoring
-against the analytical fallback. Documented in `docs/usage/vmafx-tune-go.md`.
+`vmafx-tune-go sidecar --model <predictor.onnx>` is accepted and resolves the
+model through `pkg/ai`, which shells out to a `vmafx-ort-runner` subprocess
+rather than linking ONNX Runtime into the Go binary. That runner is not built by
+this repository yet, so inference reports `ai.ErrORTRunnerNotFound` and the
+predictor falls back to the analytical curve — now with a warning, instead of
+silently. An earlier draft of this note said the Go binary *refuses* the flag;
+that described the group-3 sidecar, but the port integration wired the group-5
+implementation, which accepts it. Documented in `docs/usage/vmafx-tune-go.md`.

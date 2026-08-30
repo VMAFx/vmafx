@@ -26,8 +26,10 @@ package predictor
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
+	"sync"
 
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
 	"github.com/VMAFx/vmafx/pkg/pershot"
@@ -150,6 +152,14 @@ type Predictor struct {
 	Coefficients map[string]Coefficients
 	// Session, when non-nil, replaces the analytical curve.
 	Session Session
+	// Log, when non-nil, receives a single warning if the session is
+	// configured but inference never succeeds.
+	Log *slog.Logger
+	// SessionErr holds the first inference error, so a caller can report that
+	// a --model run degraded to the analytical curve.
+	SessionErr error
+
+	sessionFailOnce sync.Once
 }
 
 // New returns a Predictor using the shipped coefficients and no ONNX session.
@@ -161,6 +171,11 @@ func New() *Predictor {
 func WithSession(s Session) *Predictor {
 	return &Predictor{Coefficients: DefaultCoefficients(), Session: s}
 }
+
+// SessionFailed reports the first inference error, if the ONNX session was
+// configured but never usable. Callers use it to tell the operator that a
+// --model run silently degraded to the analytical curve.
+func (p *Predictor) SessionFailed() error { return p.SessionErr }
 
 // coeffsFor resolves the codec's curve, falling back to libx264's.
 func (p *Predictor) coeffsFor(codec string) Coefficients {
@@ -181,9 +196,23 @@ func (p *Predictor) coeffsFor(codec string) Coefficients {
 // prediction, not abort the run, matching the Python fallback posture.
 func (p *Predictor) PredictVMAF(features ShotFeatures, crf int, codec string) float64 {
 	if p.Session != nil {
-		if v, err := p.Session.Infer(FeatureVector(features, crf)); err == nil {
+		v, err := p.Session.Infer(FeatureVector(features, crf))
+		if err == nil {
 			return clamp(v, 0.0, 100.0)
 		}
+		// Record why the learned path did not run. Discarding this error made
+		// `predict --model` log "using the learned ONNX predictor" and then
+		// return analytical values for the whole sweep with no indication --
+		// the operator could not tell a model-backed run from a fallback one.
+		// Reported once per Predictor: a sweep calls this per shot per CRF, so
+		// logging every failure would bury the run in identical lines.
+		p.sessionFailOnce.Do(func() {
+			p.SessionErr = err
+			if p.Log != nil {
+				p.Log.Warn("ONNX predictor unavailable; using the analytical curve",
+					"error", err)
+			}
+		})
 	}
 	return p.PredictAnalytical(features, crf, codec)
 }
