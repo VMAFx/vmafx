@@ -2,7 +2,7 @@
 # ffmpeg-patches-check.sh — local pre-push gate that mirrors the
 # `ffmpeg-integration.yml` apply step. For each patch listed in
 # `ffmpeg-patches/series.txt` (oldest to newest), applies the patch
-# in series against a cached FFmpeg n8.1.1 checkout under
+# in series against a cached FFmpeg n9.0.1 checkout under
 # `/tmp/ffmpeg-n81`. Patches in this stack build on each other (e.g.
 # 0006 expects hunks 0003-0005 already in place), so the gate
 # accumulates state and fails fast on the first patch that doesn't
@@ -28,7 +28,7 @@ PATCHES_DIR="${REPO_ROOT}/ffmpeg-patches"
 SERIES_FILE="${PATCHES_DIR}/series.txt"
 CACHE_DIR="${FFMPEG_PATCHES_CACHE:-/tmp/ffmpeg-n81}"
 FFMPEG_REMOTE="${FFMPEG_PATCHES_REMOTE:-https://github.com/FFmpeg/FFmpeg}"
-FFMPEG_BRANCH="${FFMPEG_PATCHES_BRANCH:-release/8.1}"
+FFMPEG_BRANCH="${FFMPEG_PATCHES_BRANCH:-n9.0.1}"
 
 if [ ! -f "$SERIES_FILE" ]; then
   echo "ffmpeg-patches-check: ${SERIES_FILE} missing; nothing to check" >&2

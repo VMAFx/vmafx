@@ -15,7 +15,7 @@
 # Requires libvmaf already installed (`pip`-level: "pkg-config --cflags libvmaf"
 # must resolve). Set VMAF_PREFIX to point at a non-standard install prefix.
 #
-# Patches target FFmpeg n8.1.1 (the current release at time of authoring).
+# Patches target FFmpeg n9.0.1.
 # Applied via `git apply --3way` so small upstream drift can still merge.
 
 set -euo pipefail
@@ -24,7 +24,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PATCHES_DIR="$(cd "$HERE/.." && pwd)"
 
 : "${FFMPEG_SRC:=/tmp/vmaf-ffmpeg}"
-: "${FFMPEG_SHA:=n8.1.1}" # pinned release tag; update as patches evolve
+: "${FFMPEG_SHA:=n9.0.1}" # pinned release tag; update as patches evolve
 : "${KEEP_BUILD:=}"
 : "${VMAF_PREFIX:=}"
 

@@ -46730,3 +46730,22 @@ does not produce upstream — give such functions their real prototypes rather
 than reverting the standard. `-Wimplicit-fallthrough` is also enabled fork-wide,
 so an unannotated switch fallthrough in ported code needs an explicit
 `[[fallthrough]]`.
+
+## FFmpeg n8.1.1 → n9.0.1 (landed 2026-08-30)
+
+The patch stack now targets `n9.0.1`. Verified by full series replay: all 17
+patches apply at full context, cumulatively, against a clean `n9.0.1` checkout.
+
+Two patches were regenerated for line drift only — `0002-add-vmaf_pre-filter`
+and `0008-add-libvmaf_tune-filter`. The latter drifted because FFmpeg 9 inserted
+`OBJS-$(CONFIG_FRC_AMF_FILTER)` between `VPP_AMF_FILTER` and `VPP_QSV_FILTER`,
+which sat inside that hunk's trailing context. Neither regeneration changed a
+single line of added code.
+
+Note when replaying the series yourself: it must be applied **cumulatively**.
+Patches 0002–0006 and 0008 depend on state introduced by earlier patches (0008's
+context includes `CONFIG_VMAF_PRE_FILTER`, which patch 0002 adds), so a
+per-patch `git apply --check` against pristine upstream reports false failures.
+Use `ffmpeg-patches/test/build-and-run.sh` or a sequential `git am --3way` chain.
+A shallow (`--depth 1`) clone also breaks `git am --3way`, which needs pre-image
+blobs — clone with full history when replaying.

@@ -8,7 +8,7 @@
 FROM nvidia/cuda:13.3.1-devel-ubuntu26.04@sha256:8cf42b8dc4c34d47fb42ffb0923f8a5e363469a7149181c094da336d311bb466
 
 ARG NV_CODEC_TAG="876af32a202d0de83bd1d36fe74ee0f7fcf86b0d"
-ARG FFMPEG_TAG=n8.1.1
+ARG FFMPEG_TAG=n9.0.1
 # Broadened gencode: Turing baseline (sm_75) + Ampere (sm_80) + Hopper (sm_90) +
 # Blackwell consumer (sm_120). CUDA 13 dropped sm_50/60/70.
 # Experimental nvcc feature flags (ADR D27): relaxed-constexpr lets us reuse host

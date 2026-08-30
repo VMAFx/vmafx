@@ -12,19 +12,19 @@
 # Every target includes:
 #   - vmafx-node Go binary (cmd/vmafx-node)
 #   - libvmaf.so (built from core/)
-#   - ffmpeg n8.2 with the fork's ffmpeg-patches/ applied
+#   - ffmpeg n9.0.1 with the fork's ffmpeg-patches/ applied
 #   - Full soft-codec inventory: libx264, libx265, libvpx, libsvtav1, libdav1d
 #   - libvmaf filter + fork-specific VMAF filters compiled in
 #
 # FFmpeg version policy (ADR-0717):
 #   Pinned to the latest stable tagged release at image-build time.
-#   Currently n8.2. Update FFMPEG_TAG on every release sync.
+#   Currently n9.0.1. Update FFMPEG_TAG on every release sync.
 #   Option A (pin to latest tag) was chosen over Option B (rolling
 #   release/8.x branch) to maintain reproducible builds.
 #
 # Build args (all optional):
 #   VMAF_BUILD_JOBS  — ninja / make parallelism (default: 4)
-#   FFMPEG_TAG       — FFmpeg release tag to pin (default: n8.2)
+#   FFMPEG_TAG       — FFmpeg release tag to pin (default: n9.0.1)
 #   SVTAV1_VERSION   — SVT-AV1 release tag (default: 4.1.0)
 #
 # ADR-0709: vmafx-phase4b-distributed-platform (Phase 4b umbrella)
@@ -73,7 +73,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
     && cp -r model/ /dist/model/
 
 # ---------------------------------------------------------------------------
-# Stage 2 — ffmpeg-builder: build ffmpeg n8.2 with ffmpeg-patches/ applied
+# Stage 2 — ffmpeg-builder: build ffmpeg n9.0.1 with ffmpeg-patches/ applied
 # ---------------------------------------------------------------------------
 # Shared across all node variants (cpu/cuda/rocm/sycl). The CUDA/ROCm/SYCL
 # variants add HW encoder support on top of this common base.
@@ -146,7 +146,7 @@ RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
 # ---------------------------------------------------------------------------
 FROM ffmpeg-deps-base AS ffmpeg-builder-cpu
 
-ARG FFMPEG_TAG=n8.2
+ARG FFMPEG_TAG=n9.0.1
 
 COPY ffmpeg-patches/ /src/ffmpeg-patches/
 
@@ -224,7 +224,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS runtime-base
 
 LABEL org.opencontainers.image.title="vmafx-node"
-LABEL org.opencontainers.image.description="VMAFX worker node — ffmpeg n8.2 + libvmaf + vmafx-node gRPC service"
+LABEL org.opencontainers.image.description="VMAFX worker node — ffmpeg n9.0.1 + libvmaf + vmafx-node gRPC service"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"

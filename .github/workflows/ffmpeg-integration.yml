@@ -87,7 +87,7 @@ jobs:
 
       - name: Build FFmpeg
         run: |
-          git clone -q --branch release/8.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
+          git clone -q --branch n9.0.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
           cd ffmpeg
           ./configure --enable-version3 --enable-libvmaf --disable-indevs \
             --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
@@ -155,7 +155,7 @@ jobs:
 
       - name: Build FFmpeg with SYCL patch series
         run: |
-          git clone -q --branch release/8.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
+          git clone -q --branch n9.0.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
           cd ffmpeg
           # Apply the patch series in series.txt order. Patch 0003 (SYCL)
           # depends on fields added by 0001 (tiny-AI), so applying out of
