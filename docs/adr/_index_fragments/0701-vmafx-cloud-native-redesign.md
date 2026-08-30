@@ -1,0 +1,1 @@
+| [ADR-0701](0701-vmafx-cloud-native-redesign.md) | vmafx-server HTTP transport + observability foundation (`/healthz`, `/readyz`, `/metrics`, `/v1/score`) | Proposed | server, http, observability, cloud-native, vmafx |

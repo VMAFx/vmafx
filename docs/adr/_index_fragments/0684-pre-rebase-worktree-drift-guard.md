@@ -1,0 +1,1 @@
+| [ADR-0684](0684-pre-rebase-worktree-drift-guard.md) | Pre-rebase worktree-drift guard — companion git hook to ADR-0332, refuses `git rebase` from main checkout while agent worktrees are active | Accepted | agents, ci, git-hooks, fork-local |

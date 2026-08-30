@@ -1,0 +1,1 @@
+| [ADR-0865](0865-ansnr-sunset-pre-vmaf-metric-drop.md) | Sunset ANSNR (pre-VMAF metric): drop `ansnr` / `float_ansnr` feature extractors from all backends — back-dated to PR #38 merge (2026-05-28); closes ADR-0108 compliance gap caused by PR #38's wrong `Parent ADR-0709` cite | Accepted | 2026-05-28 | metric, feature-extractor, breaking-change, cleanup, fork-local |

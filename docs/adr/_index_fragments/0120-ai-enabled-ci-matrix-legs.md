@@ -1,0 +1,1 @@
+| [ADR-0120](0120-ai-enabled-ci-matrix-legs.md) | Add three DNN-enabled matrix legs (Ubuntu gcc, Ubuntu clang, macOS clang) to `libvmaf-build-matrix.yml` so the ORT C-API surface and `dnn` meson suite are exercised across compilers/OSes; macOS leg `experimental: true` (Homebrew ORT floats) | Accepted | ci, ai, dnn, ort, build, github-actions |

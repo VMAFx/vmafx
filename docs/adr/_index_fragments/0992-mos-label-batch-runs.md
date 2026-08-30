@@ -1,0 +1,1 @@
+| [ADR-0992](0992-mos-label-batch-runs.md) | Ship corpus-specific MOS-label batch manifests for KonViD and CHUG (ai/configs/); add smoke tests that validate manifest schema and run end-to-end with synthetic data; fix pre-existing sys.path bug in test_batch_materialize_mos_labels.py | Accepted | 2026-06-03 | ai, mos, training, corpus, konvid, chug, fork-local |

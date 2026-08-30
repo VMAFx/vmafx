@@ -1,0 +1,1 @@
+| [ADR-0869](0869-sanitizer-pass-cleanup.md) | Sanitizer-Pass Cleanup — CAMBI Option-Type Mismatch and AVX{2,512} ADM Signed-Shift UB | Accepted | `c`, `simd`, `sanitizer`, `correctness`, `cambi`, `adm` |

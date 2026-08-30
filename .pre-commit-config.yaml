@@ -1,0 +1,317 @@
+# Light-touch pre-commit. The Netflix golden gate is intentionally NOT here
+# (see D24) — it runs in CI only because it requires a built binary.
+# The format/lint hooks run only on changed files for speed.
+
+minimum_pre_commit_version: "3.5.0"
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # The hooks below have broad exclude patterns because the upstream
+      # Netflix tree ships MATLAB sources, Python pickles (binary), and
+      # precompiled MEX (.mexa64/.mexw64/.mexmaci64) that pre-commit's
+      # text-transforming hooks would silently corrupt. Limit to the files
+      # we actually author/maintain.
+      # NOTE: binary-extension patterns are belt-and-suspenders insurance:
+      # ^model/ is the primary directory guard; the extension patterns catch
+      # any binary blobs that may be added outside model/ in the future.
+      # .onnx.data (ONNX external-data sidecar) is intentionally listed
+      # alongside .onnx — they are raw float tensors, never text.
+      - id: trailing-whitespace
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
+      - id: end-of-file-fixer
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
+      - id: check-merge-conflict
+      - id: check-yaml
+        # mkdocs.yml uses `!!python/name:...` tags (Material extensions, pymdownx
+        # superfences) which the default SafeLoader can't resolve.
+        # Helm templates under deploy/helm/ contain Go template syntax ({{- if ... }})
+        # which is not valid YAML; exclude them from the YAML linter.
+        # kuttl test files are legitimately multi-document YAML (multiple `---`
+        # separators per file); the check-yaml hook's single-document constraint
+        # does not apply. Exclude the entire kuttl-tests/ directory.
+        exclude: '\.clang-format$|^mkdocs\.yml$|^deploy/helm/.*/templates/|^test/e2e/kuttl-tests/'
+      - id: check-json
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+        # Same binary-file exclusions as trailing-whitespace / end-of-file-fixer
+        # above — mixed-line-ending's built-in binary detection misfires on
+        # some ONNX / .bin payloads and rewrites bytes inside the serialized
+        # model, which then fails sha256 pinning in registry.json.
+        # .onnx.data added alongside .onnx (external tensor sidecar; raw bytes).
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
+      - id: detect-private-key
+      # forbid-new-submodules: the fork pulls upstream Netflix code via
+      # subprojects/ wraps (Meson dependency mechanism) and ffmpeg-patches/
+      # (out-of-tree patch series), never via .gitmodules. Any attempt to
+      # add a git submodule is almost certainly a mistake or a supply-chain
+      # vector; gate it here so it shows up at commit time, not at review
+      # time.
+      - id: forbid-new-submodules
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v22.1.5
+    hooks:
+      - id: clang-format
+        types_or: [c, c++, cuda]
+        # core/src/interop + core/include/libvmaf/pelorus = vendored read-only
+        # mirror of VMAFx/pelorus (ADR-1113); must stay byte-identical, never reformatted.
+        exclude: '^subprojects/|^core/test/data/|^core/src/interop/|^core/include/libvmaf/pelorus/'
+
+  - repo: https://github.com/psf/black
+    rev: 26.5.1
+    hooks:
+      - id: black
+        files: '^(python|ai|scripts|tools)/.*\.py$'
+        # Upstream Netflix training-harness tree — not authored by us; see
+        # pyproject.toml [tool.black] extend-exclude. Black's extend-exclude
+        # only filters during directory walks, not explicitly-passed files,
+        # so pre-commit needs its own exclude to skip them.
+        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 6.0.1
+    hooks:
+      - id: isort
+        files: '^(python|ai|scripts|tools)/.*\.py$'
+        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.17
+    hooks:
+      - id: ruff-check
+        files: '^(python|ai|scripts|tools)/.*\.py$'
+        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
+        args: ["--fix"]
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.13.1-1
+    hooks:
+      # shfmt-src builds from the Go module proxy (proxy.golang.org) rather
+      # than downloading a prebuilt binary from mvdan.cc at wheel-build time.
+      # The binary variant ("shfmt") hit HTTP 502 on the mvdan.cc CDN on every
+      # CI run because the pre-commit cache key was stale (py3.12 vs py3.14),
+      # forcing a re-download on every push. shfmt-src is immune to that CDN
+      # and is equally fast once Go is available on the runner (ubuntu-latest
+      # ships Go). Cache key is now pinned to py3.14 in lint-and-format.yml.
+      - id: shfmt-src
+        args: ["-w", "-i", "2", "-ci"]
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.22.1
+    hooks:
+      # ADR-0866 — wire markdownlint-cli2 into pre-commit. pass_filenames
+      # is true (the default) so only staged *.md files are linted; the
+      # ~6.2k pre-existing-warning tail (ADR-0864) does not gate
+      # innocent PRs. NO --fix arg: ADR-0864 documents 7 default rules
+      # that silently change meaning under autofix (MD004 prose
+      # conjunctions, MD007 reference-list indent, MD018 PR-number
+      # headings, MD027 license-block quoting, MD029 ordered-list
+      # renumbering, MD037/MD038 emphasis/code spacing).
+      # Exclude upstream / vendored / fixture trees that ship markdown
+      # we do not author. The Netflix MATLAB tree has no .md files but
+      # is listed for symmetry with check-copyright above.
+      - id: markdownlint-cli2
+        # Default is true, but call it out explicitly per ADR-0866:
+        # the gate's whole shape depends on per-file scope (matches the
+        # touched-file rule, CLAUDE.md §12 r12).
+        pass_filenames: true
+        # Exclusions:
+        #   - subprojects/, core/test/data/, *resource/, *matlab/, model/,
+        #     testdata/: upstream / vendored / fixture trees we don't author.
+        #   - docs/adr/README.md, CHANGELOG.md: auto-generated from
+        #     fragments by scripts/docs/concat-adr-index.sh /
+        #     scripts/release/concat-changelog-fragments.sh (ADR-0221).
+        #   - docs/adr/_index_fragments/, changelog.d/: per-PR fragments
+        #     that are concatenated mechanically. Each fragment is a
+        #     bare table row or a body-only ## heading section — they
+        #     are not standalone documents and will always trip MD013
+        #     (long table rows) / MD041 (no first-line H1). Their
+        #     rendered output (README.md / CHANGELOG.md, both excluded
+        #     above) is what readers see; the fragments themselves are
+        #     pipeline input.
+        exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|^testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^changelog\.d/'
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [--strict, "feat", "fix", "perf", "refactor", "docs", "test", "build", "ci", "chore", "revert", "port", "sycl", "cuda", "simd"]
+
+  - repo: local
+    hooks:
+      - id: no-conflict-markers
+        name: No committed git conflict markers (belt-and-suspenders)
+        # Belt-and-suspenders companion to the `check-merge-conflict` hook
+        # from pre-commit-hooks above. That hook is Python-based and covers
+        # the standard three-way conflict syntax; this shell hook uses
+        # `git grep` which is executed by git's own C binary and is
+        # essentially free (< 5ms on a typical staged tree). If either fires,
+        # the merge wasn't fully resolved. PR #50 shipped conflict markers
+        # into 70 docs and source files; this hook would have blocked it.
+        entry: scripts/ci/check-conflict-markers.sh
+        language: script
+        # Always fire — conflict markers can appear in YAML, C, Python,
+        # Markdown, etc., regardless of which file types were staged.
+        pass_filenames: false
+        always_run: true
+
+      - id: agent-worktree-drift-guard
+        name: ADR-0332 agent worktree-drift guard
+        entry: scripts/ci/check-agent-worktree-drift.sh
+        language: script
+        # Always runs — does not consume the file list. The guard is
+        # about *where* the commit is being authored from, not about
+        # which files changed.
+        always_run: true
+        pass_filenames: false
+        # No `stages` override — runs at default `pre-commit` time
+        # alongside the formatters. Bypass with `git commit --no-verify`
+        # for legitimate main-checkout commits while an agent is active.
+
+      - id: check-copyright
+        name: ADR-0105 copyright header present (C/C++/CUDA)
+        entry: scripts/ci/check-copyright.sh
+        language: script
+        # Exclusions: (a) upstream vendored subprojects, (b) test fixtures,
+        # (c) resource directories that ship upstream assets unchanged,
+        # (d) core/src/pdjson.{c,h} — vendored 3rd-party JSON parser
+        # retaining its own in-file "Vendored 3rd-party" banner,
+        # (e) compat/python-vmaf/matlab/ — upstream Netflix training-harness MATLAB
+        # MEX C sources, already excluded from other hygiene hooks.
+        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$'
+        types_or: [c, c++, cuda]
+
+      - id: check-adr-numbering
+        name: ADR-0386 ADR number collision + heading consistency check
+        entry: scripts/ci/check-adr-numbering.sh
+        language: script
+        # Only fires when a docs/adr/NNNN-*.md file is staged.
+        # Checks: (1) no other file in the working tree shares the same NNNN,
+        #         (2) the '# ADR-NNNN:' heading inside the file matches the filename.
+        # The complementary CI gate (rule-enforcement.yml, adr-collision-check) catches
+        # cross-branch races this hook cannot see.
+        # Use 'scripts/adr/next-free.sh' to claim a collision-free number.
+        files: '^docs/adr/[0-9]{4}-.*\.md$'
+        pass_filenames: true
+
+      # ----------------------------------------------------------------
+      # CI-parity gates — keep the local pre-commit/pre-push experience
+      # close to what the lint-and-format / ffmpeg-integration workflows
+      # enforce so contributors catch cheap mistakes before a CI round-trip.
+      # See docs/development/automated-rule-enforcement.md.
+      # ----------------------------------------------------------------
+
+      - id: assertion-density
+        name: Power-of-10 §5 assertion density (fork-added C)
+        entry: scripts/ci/assertion-density.sh
+        language: script
+        types_or: [c, c++]
+        stages: [pre-push]
+        # The script self-discovers fork-added files via the
+        # "Copyright * Lusoris" copyright marker; pre-commit must not
+        # pass per-file paths or the awk pass aborts mid-stream.
+        pass_filenames: false
+
+      - id: mypy-local
+        name: mypy (ai/ + scripts/, fork-added Python)
+        entry: mypy
+        language: system
+        files: '^(ai|scripts)/.*\.py$'
+        verbose: true
+        require_serial: true
+        # Pre-push only — running mypy on every commit doubles a
+        # 1-line edit's commit time; the gate is cheap on staged files
+        # but contributors land many small commits per push.
+        # Contributors need `pip install mypy` (system tool, not in
+        # pyproject.toml — same posture as CI's lint-and-format job).
+        stages: [pre-push]
+
+      - id: semgrep-local
+        name: semgrep (.semgrep.yml — local rules, error-gated)
+        # `--jobs 1` + `require_serial: true` together prevent the
+        # io_uring queue-init failure observed on the dev box and in
+        # contributor reports (blocked commit on PR #481 / #457 /
+        # #484). semgrep-core (the OCaml engine behind `semgrep scan`)
+        # uses Eio, which spawns one io_uring submission queue per
+        # worker. On `pre-commit run --all-files` pre-commit batches
+        # the 1.2k matched targets into chunks and runs the chunks in
+        # parallel (one process per CPU by default). Each chunk's
+        # OCaml runtime starts its own pool of io_uring queues, and
+        # the combined per-process memlock charge exceeds
+        # `ulimit -l` (8 MB default on Arch / CachyOS) — semgrep-core
+        # dies with `Unix_error: Cannot allocate memory
+        # io_uring_queue_init`. The Python wrapper surfaces this as
+        # exit 2 — silently, because `--quiet` swallows the stderr
+        # trace. The bug blocked PR #481 (ISO header guards) and
+        # nuked PR #457 (doxygen) when a blocked commit let a push
+        # through. `require_serial: true` collapses pre-commit's
+        # parallel batches into a single sequential invocation;
+        # `--jobs 1` collapses semgrep-core's intra-process
+        # parallelism. Cost on the staged-files commit path is
+        # negligible (≈2 s → ≈4 s) and the all-files path goes from
+        # "always fails" to "works".
+        entry: semgrep scan --config=.semgrep.yml --error --quiet --jobs 1        # `language: python` so pre-commit creates its own isolated
+        # venv and pip-installs semgrep there. The CI `pre-commit` job
+        # doesn't ship semgrep on PATH; with `language: system` the
+        # hook would fail with `Executable 'semgrep' not found` on
+        # every CI run.
+        language: python
+        additional_dependencies: ["semgrep>=1.78,<2.0"]
+        require_serial: true
+        types_or: [c, c++, cuda, python]
+        # Mirror `check-copyright`'s exclude list — same upstream /
+        # vendored paths that ship with their own hygiene contract:
+        # (a) upstream vendored subprojects, (b) test fixtures,
+        # (c) compat/python-vmaf/resource/ + python/test/resource/ assets,
+        # (d) core/src/pdjson.{c,h} 3rd-party JSON parser,
+        # (e) compat/python-vmaf/matlab/ — Netflix-upstream MATLAB MEX C
+        # sources (they call `sprintf` / `strcpy` etc., which are
+        # banned by .semgrep.yml but are out of scope for fork-local
+        # hygiene; cleaning them up is an upstream change, not ours).
+        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$'
+        # Runs at pre-commit time — fast on a single-file diff and the
+        # rules in .semgrep.yml are the project's own, not p/cert-c-strict.
+        # `pass_filenames: true` (the default) because semgrep accepts
+        # explicit file paths and pre-commit's per-file invocation makes
+        # the gate cheap on a single-file diff. For full-tree audits, run
+        # `make lint` (which invokes `semgrep scan` against the worktree
+        # without an explicit file list, picking up .semgrepignore).
+
+      - id: ffmpeg-patches-apply-check
+        name: ffmpeg-patches apply --check (n8.1.1)
+        entry: scripts/ci/ffmpeg-patches-check.sh
+        language: script
+        files: '^ffmpeg-patches/.*\.patch$'
+        stages: [pre-push]
+        # Script self-discovers via series.txt; passing per-file paths
+        # would re-check each patch once per file in the diff.
+        pass_filenames: false
+
+      - id: validate-pr-body
+        name: Validate PR body deliverables (ADR-0108 pre-push)
+        entry: scripts/git-hooks/pre-push-pr-body-lint.sh
+        language: script
+        stages: [pre-push]
+        # Always runs regardless of which files changed — the check is
+        # about the PR description, not the code under review. Skip if
+        # gh CLI is absent or no open PR exists (both handled gracefully
+        # inside the script). See docs/development/pr-body-sentinel-guide.md.
+        always_run: true
+        pass_filenames: false

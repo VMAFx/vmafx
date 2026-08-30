@@ -1,0 +1,1 @@
+| [ADR-0931](0931-mcp-cgo-direct-replace-subprocess.md) | MCP server — replace subprocess delegation with direct cgo (Phase 1: `vmaf_score` + `describe_model`, behind `VMAFX_MCP_DIRECT=1`) | Proposed | mcp, go, cgo, libvmaf, performance, vmafx, modernization |

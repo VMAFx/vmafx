@@ -1,0 +1,1 @@
+| [ADR-0447](0447-motion-hfr-under-report.md) | Motion features under-report on HFR / 50p content; apply bounded FPS weighting across motion extractor variants and document the CHUG/HFR bias. | Accepted | ai, motion, hfr, feature-extractor, cuda, sycl, vulkan, fork-local |

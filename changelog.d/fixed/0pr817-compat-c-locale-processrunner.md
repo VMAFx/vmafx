@@ -1,0 +1,1 @@
+- Fixed: `ProcessRunner` and `_run_matlab` now unconditionally set `LC_ALL=C` before subprocess invocation, preventing locale-dependent decimal-separator drift in score parsing on non-English systems. (PR #817)

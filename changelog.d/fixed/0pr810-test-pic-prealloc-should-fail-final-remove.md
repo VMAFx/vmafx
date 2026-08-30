@@ -1,0 +1,1 @@
+- Fixed: permanently removed `should_fail: true` from `test_pic_preallocation` after the underlying GPU allocation bug was resolved; required CI builds no longer trip `UNEXPECTEDPASS`. (PR #810)

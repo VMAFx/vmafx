@@ -1,0 +1,270 @@
+# Supply-chain provenance: SLSA L3 build, Sigstore keyless signing, SBOM.
+# Triggered when release-please publishes a tag (`v3.x.y-lusoris.N`).
+# release-please-config.json is added in Phase 3c — until then this workflow
+# is dormant on push but can be exercised via workflow_dispatch.
+
+name: supply-chain
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build provenance for"
+        required: true
+
+# Default to least-privilege at the workflow level; individual jobs that
+# need `id-token: write` (Sigstore OIDC), `contents: write` (upload release
+# assets), or `attestations: write` (provenance) opt in per-job so a newly
+# added step can't silently inherit write scope. Addresses Scorecard
+# TokenPermissionsID alerts on `contents` and `packages`.
+permissions:
+  contents: read
+
+# Prevent duplicate signing runs for the same tag.
+# cancel-in-progress: false — a partial sign/SBOM run is worse than queuing.
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-artifacts:
+    name: Build release artifacts (libvmaf.so, vmaf CLI, models)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          submodules: recursive
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm pkg-config
+      - name: Build (release, optimized)
+        run: |
+          meson setup build core --buildtype=release -Denable_avx512=true \
+            -Denable_cuda=false -Denable_sycl=false
+          meson compile -C build
+      - name: Stage artifacts
+        run: |
+          mkdir -p artifacts
+          cp build/libvmaf/libvmaf.so* artifacts/
+          cp build/tools/vmaf artifacts/
+          tar czf artifacts/models.tar.gz model/
+
+          # u2netp_mirror — fork-local mirror of the upstream
+          # `xuebinqin/U-2-Net` `u2netp` checkpoint, redistributed
+          # under Apache-2.0 §4 NOTICE compliance per ADR-0325. The
+          # binary is gitignored (lives at model/u2netp_mirror.onnx
+          # or model/u2netp_mirror.pth, dropped manually by the
+          # binary-upload PR). This step is **idempotent**: missing
+          # files are a fast-exit no-op so a release without the
+          # mirror still succeeds. When the binary lands, it gets
+          # copied into the artifacts/ tree alongside the canonical
+          # libvmaf.so / vmaf / models.tar.gz, picked up by the
+          # SHA256 hashing step (so SLSA provenance covers it), and
+          # signed by the existing cosign sign-blob loop. The
+          # license text + attribution receipt rides along.
+          if [ -f model/u2netp_mirror.onnx ]; then
+            cp model/u2netp_mirror.onnx artifacts/
+            echo "u2netp_mirror: ONNX rewrap staged"
+          fi
+          if [ -f model/u2netp_mirror.pth ]; then
+            cp model/u2netp_mirror.pth artifacts/
+            echo "u2netp_mirror: verbatim .pth staged"
+          fi
+          if [ -f model/u2netp_mirror.onnx ] || [ -f model/u2netp_mirror.pth ]; then
+            cp LICENSES/Apache-2.0-u2netp.txt artifacts/
+            echo "u2netp_mirror: license text staged"
+          else
+            echo "u2netp_mirror: binary not present, skipping (scaffold-only state per ADR-0325)"
+          fi
+      - name: Compute SHA256 hashes (SLSA input)
+        id: hash
+        run: |
+          cd artifacts
+          echo "hashes=$(sha256sum * | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: release-artifacts
+          path: artifacts/
+          retention-days: 7
+
+  sbom:
+    name: Generate SBOM (SPDX + CycloneDX)
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: release-artifacts, path: artifacts/ }
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          format: spdx-json
+          output-file: artifacts/sbom.spdx.json
+          path: .
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          format: cyclonedx-json
+          output-file: artifacts/sbom.cdx.json
+          path: .
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom
+          path: artifacts/sbom.*.json
+
+  sign:
+    name: Sigstore keyless sign (cosign)
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write   # Sigstore keyless OIDC
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: release-artifacts, path: artifacts/ }
+      # cosign-installer v4 + cosign v3: sign-blob now emits a Sigstore
+      # bundle (single .bundle file containing signature + certificate
+      # + Rekor entry) instead of the legacy split .sig/.pem pair.
+      # Verify later with: cosign verify-blob --bundle <f>.bundle <f>
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with: { cosign-release: "v3.0.6" }
+      - name: Sign every artifact (keyless OIDC)
+        run: |
+          cd artifacts
+          for f in *; do
+            cosign sign-blob --yes \
+              --bundle "$f.bundle" \
+              "$f"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: signatures
+          path: artifacts/*.bundle
+
+  slsa-provenance:
+    name: SLSA L3 provenance
+    needs: build-artifacts
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+    # Note: reusable-workflow refs cannot currently be SHA-pinned in all
+    # GitHub Actions consumers. The slsa-github-generator maintainers
+    # recommend the `vX.Y.Z` tag form here; we audit bumps in a dedicated PR.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    with:
+      base64-subjects: ${{ needs.build-artifacts.outputs.hashes }}
+      upload-assets: ${{ github.event_name == 'release' }}
+
+  # ===== MCP server (vmaf-mcp Python package) =====
+  # ADR-0166: ship to PyPI (Trusted Publishing) + GitHub release attachment
+  # with the same Sigstore + SLSA story as the libvmaf artifacts.
+
+  mcp-build:
+    name: Build vmaf-mcp wheel + sdist
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.6"
+      - name: Install build deps
+        run: python -m pip install --upgrade build
+      - name: Build wheel + sdist
+        working-directory: mcp-server/vmaf-mcp
+        run: python -m build --wheel --sdist --outdir ../../mcp-dist
+      - name: Compute SHA256 hashes (SLSA input)
+        id: hash
+        run: |
+          cd mcp-dist
+          echo "hashes=$(sha256sum * | base64 -w0)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: mcp-dist
+          path: mcp-dist/
+          retention-days: 7
+
+  mcp-sign:
+    name: Sigstore keyless sign — vmaf-mcp
+    needs: mcp-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write   # Sigstore keyless OIDC
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: mcp-dist, path: mcp-dist/ }
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with: { cosign-release: "v3.0.6" }
+      - name: Sign every artifact (keyless OIDC)
+        run: |
+          cd mcp-dist
+          for f in *; do
+            cosign sign-blob --yes \
+              --bundle "$f.bundle" \
+              "$f"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: mcp-signatures
+          path: mcp-dist/*.bundle
+
+  mcp-publish-pypi:
+    name: Publish vmaf-mcp to PyPI (Trusted Publishing)
+    if: github.event_name == 'release'
+    needs: [mcp-build, mcp-sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi-publish    # user binds this to PyPI Trusted Publisher
+    permissions:
+      id-token: write             # OIDC token for Trusted Publishing
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { name: mcp-dist, path: dist/ }
+      # PEP 740 attestations: emit Sigstore-signed provenance the index
+      # stores alongside the artifact.
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        with:
+          attestations: true
+
+  attach-to-release:
+    name: Attach SBOM + signatures to GitHub Release
+    if: github.event_name == 'release'
+    needs: [build-artifacts, sbom, sign, slsa-provenance, mcp-build, mcp-sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # upload files to the GitHub Release
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with: { path: dist/ }
+      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/release-artifacts/*
+            dist/sbom/*
+            dist/signatures/*
+            dist/mcp-dist/*
+            dist/mcp-signatures/*

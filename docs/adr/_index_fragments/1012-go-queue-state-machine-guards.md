@@ -1,0 +1,1 @@
+| [ADR-1012](1012-go-queue-state-machine-guards.md) | Go queue state-machine guards — PullWork AND-status, ReportResult idempotency | Accepted | `go`, `controller`, `queue`, `correctness`, `concurrency` |

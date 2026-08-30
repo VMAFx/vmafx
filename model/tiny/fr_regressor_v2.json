@@ -1,0 +1,79 @@
+{
+  "codec_aware": true,
+  "codec_block_layout": [
+    "encoder_onehot[libx264]",
+    "encoder_onehot[libx265]",
+    "encoder_onehot[libsvtav1]",
+    "encoder_onehot[libvvenc]",
+    "encoder_onehot[libvpx-vp9]",
+    "encoder_onehot[h264_nvenc]",
+    "encoder_onehot[hevc_nvenc]",
+    "encoder_onehot[av1_nvenc]",
+    "encoder_onehot[h264_qsv]",
+    "encoder_onehot[hevc_qsv]",
+    "encoder_onehot[av1_qsv]",
+    "encoder_onehot[unknown]",
+    "preset_norm",
+    "crf_norm"
+  ],
+  "encoder_vocab": [
+    "libx264",
+    "libx265",
+    "libsvtav1",
+    "libvvenc",
+    "libvpx-vp9",
+    "h264_nvenc",
+    "hevc_nvenc",
+    "av1_nvenc",
+    "h264_qsv",
+    "hevc_qsv",
+    "av1_qsv",
+    "unknown"
+  ],
+  "encoder_vocab_version": 2,
+  "feature_mean": [
+    0.9550306797027588,
+    0.5178422331809998,
+    0.8622183203697205,
+    0.9155327677726746,
+    0.9446256160736084,
+    8.946569442749023
+  ],
+  "feature_order": [
+    "adm2",
+    "vif_scale0",
+    "vif_scale1",
+    "vif_scale2",
+    "vif_scale3",
+    "motion2"
+  ],
+  "feature_std": [
+    0.03405159339308739,
+    0.15771430730819702,
+    0.11909843236207962,
+    0.08633148670196533,
+    0.06272486597299576,
+    4.331558704376221
+  ],
+  "id": "fr_regressor_v2",
+  "input_names": [
+    "features",
+    "codec"
+  ],
+  "kind": "fr",
+  "notes": "Tiny FR regressor v2 (codec-aware) \u2014 6 canonical libvmaf features (adm2, vif_scale0..3, motion2) + 8-D codec block (6 encoder one-hot + preset_norm + crf_norm) -> VMAF teacher score. Trained on the vmaf-tune Phase A JSONL corpus (ADR-0237). Production checkpoint. In-sample PLCC=0.9794. Exported via ai/scripts/train_fr_regressor_v2.py. See docs/ai/models/fr_regressor_v2.md + ADR-0272 + ADR-0235.",
+  "onnx": "fr_regressor_v2.onnx",
+  "opset": 17,
+  "output_names": [
+    "score"
+  ],
+  "sha256": "67934b0b61c73eb852d84ffb34e3333756e8da2530179ecc830336133e63e69e",
+  "training": {
+    "dataset": "vmaf-tune-corpus",
+    "in_sample_plcc": 0.9793642241386716,
+    "in_sample_rmse": 3.0142839798780483,
+    "in_sample_srocc": 0.9640398194786792,
+    "n_rows": 216,
+    "smoke": false
+  }
+}

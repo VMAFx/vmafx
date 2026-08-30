@@ -1,0 +1,1170 @@
+From 104a81396d3d580a943a14fef05f57705d15a067 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Tue, 5 May 2026 23:24:55 +0200
+Subject: [PATCH 7/9] libavcodec: unified -qpfile across
+ libx264/libsvtav1/libaom (vmaf-tune)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds an -qpfile <path> AVOption on libx264, libsvtav1, and libaom-av1
+that consumes the qpfile format emitted by vmaf-tune's saliency.py
+(<frame_idx> <I|P|B> <qp> + per-MB-row deltas).
+
+The new shared parser at libavcodec/qpfile_parser.{c,h} reads the file
+once into a VmafTuneQpFile struct so each adapter can map it into its
+native ROI / per-block QP-offset API:
+
+  * libx264: forwards the path as qpfile=<path> via x264_param_parse,
+    re-using x264's own qpfile reader (per-MB extension since r2390).
+  * libsvtav1: full ROI bridge. Parses the qpfile, sets enable_roi_map,
+    and attaches a per-frame ROI_MAP_EVENT priv-data node (gated on
+    SVT-AV1 >= 1.6.0; older releases fall back to log-and-continue).
+    Per-MB qp_offsets are downsampled to SVT-AV1's per-64x64-SB
+    b64_seg_map by averaging the four MBs that overlap each SB and
+    snapping to up to 8 segment QPs (uniform binning when the value
+    span exceeds the segment budget). The SvtAv1RoiMapEvt + b64_seg_map
+    pair lives for the entire encode session because SVT-AV1 reads
+    ROI_MAP_EVENT data via shallow-copied pointers on async pipeline
+    threads (resource_coordination_process.c, enc_handle.c). Retires
+    the SVT-AV1 deferral noted in ADR-0312.
+  * libaom-av1: full ROI bridge. Parses the qpfile, allocates an
+    encoder-grid-sized segment-id map (mi grid: ALIGN_POWER_OF_TWO(dim,
+    8) >> 2), and per frame in aom_encode() picks up to 8 segment QPs
+    (uniform linear binning when the value span exceeds AOM_MAX_SEGMENTS),
+    paints the per-mi segment map, and issues
+    aom_codec_control(AOME_SET_ROI_MAP). libaom deep-copies the segment
+    map and delta_q[] table on every control call (see
+    av1/encoder/encoder.c::av1_set_roi_map memcpy), so a single buffer
+    is reused across frames. Retires the libaom-av1 deferral noted in
+    ADR-0312.
+
+Parser is bounded (NASA POW10), uses strtol + portable fgetc-based
+line reader (no POSIX getline dependency, no banned-API per CLAUDE.md
+§6), clamps offsets to [-12,+12] matching
+tools/vmaf-tune/src/vmaftune/saliency.py.
+
+ADR: docs/adr/0312-ffmpeg-patches-vmaf-tune-integration.md
+Research: docs/research/0084-ffmpeg-patch-vmaf-tune-integration-survey.md
+---
+ libavcodec/Makefile        |   4 +-
+ libavcodec/libaomenc.c     | 229 ++++++++++++++++++++++++++++
+ libavcodec/libsvtav1.c     | 303 +++++++++++++++++++++++++++++++++++++
+ libavcodec/libx264.c       |  18 +++
+ libavcodec/qpfile_parser.c | 302 ++++++++++++++++++++++++++++++++++++
+ libavcodec/qpfile_parser.h |  55 +++++++
+ 6 files changed, 910 insertions(+), 1 deletion(-)
+ create mode 100644 libavcodec/qpfile_parser.c
+ create mode 100644 libavcodec/qpfile_parser.h
+
+diff --git a/libavcodec/Makefile b/libavcodec/Makefile
+index 12a8265025..4cc0e2b46a 100644
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -1225,7 +1225,9 @@ OBJS-$(CONFIG_LIBVVENC_ENCODER)           += libvvenc.o
+ OBJS-$(CONFIG_LIBWEBP_ENCODER)            += libwebpenc_common.o libwebpenc.o
+ OBJS-$(CONFIG_LIBWEBP_ANIM_ENCODER)       += libwebpenc_common.o libwebpenc_animencoder.o
+ OBJS-$(CONFIG_LIBX262_ENCODER)            += libx264.o
+-OBJS-$(CONFIG_LIBX264_ENCODER)            += libx264.o
++OBJS-$(CONFIG_LIBX264_ENCODER)            += libx264.o qpfile_parser.o
++OBJS-$(CONFIG_LIBSVTAV1_ENCODER)          += qpfile_parser.o
++OBJS-$(CONFIG_LIBAOM_AV1_ENCODER)         += qpfile_parser.o
+ OBJS-$(CONFIG_LIBX265_ENCODER)            += libx265.o
+ OBJS-$(CONFIG_LIBXAVS_ENCODER)            += libxavs.o
+ OBJS-$(CONFIG_LIBXAVS2_ENCODER)           += libxavs2.o
+diff --git a/libavcodec/libaomenc.c b/libavcodec/libaomenc.c
+index 20e97e5d43..a93d01483b 100644
+--- a/libavcodec/libaomenc.c
++++ b/libavcodec/libaomenc.c
+@@ -50,6 +50,10 @@
+ #include "itut35.h"
+ #include "libaom.h"
+ #include "profiles.h"
++#include "qpfile_parser.h"
++
++#include <inttypes.h>
++#include <limits.h>
+ 
+ /*
+  * Portion of struct aom_codec_cx_pkt from aom_encoder.h.
+@@ -107,6 +111,31 @@ typedef struct AOMEncoderContext {
+     int enable_global_motion;
+     int enable_intrabc;
+     int enable_restoration;
++    char *qpfile_path;
++
++    /* vmaf-tune qpfile -> libaom AOME_SET_ROI_MAP bridge (ADR-0312).
++     * Populated by ff_qpfile_load() in aom_init() when qpfile_path is set,
++     * consumed per-frame in aom_encode(), released in aom_free().
++     *
++     * libaom requires the segment-id map to match its mode-info grid
++     * exactly: rows == mi_rows, cols == mi_cols (4x4-luma cells; see
++     * av1/encoder/encoder.c::av1_set_roi_map). The qpfile rows are at
++     * 16x16-MB granularity, so each MB cell expands into a 4x4 block of
++     * mi cells. delta_q[8] holds up to AOM_MAX_SEGMENTS distinct QP
++     * deltas; per-frame qp_offsets are quantised into <=8 segment ids
++     * (uniform binning when the value span exceeds the segment budget).
++     *
++     * roi_seg_map is allocated once at the encoder grid size; libaom
++     * deep-copies it on every aom_codec_control() call, so the buffer
++     * can be reused across frames.
++     */
++    VmafTuneQpFile qpfile;
++    int            qpfile_loaded;
++    uint8_t       *roi_seg_map;
++    unsigned int   roi_mi_rows;
++    unsigned int   roi_mi_cols;
++    unsigned int   roi_input_frame;  /* 0-based coded-frame ordinal for qpfile lookup */
++
+     int usage;
+     int tune;
+     int still_picture;
+@@ -458,6 +486,14 @@ static av_cold int aom_free(AVCodecContext *avctx)
+ 
+     aom_codec_destroy(&ctx->encoder);
+     aom_img_remove_metadata(&ctx->rawimg);
++    if (ctx->qpfile_loaded) {
++        ff_qpfile_free(&ctx->qpfile);
++        ctx->qpfile_loaded = 0;
++    }
++    av_freep(&ctx->roi_seg_map);
++    ctx->roi_mi_rows = 0;
++    ctx->roi_mi_cols = 0;
++    ctx->roi_input_frame = 0;
+     av_freep(&ctx->twopass_stats.buf);
+     av_freep(&avctx->stats_out);
+     free_frame_list(ctx->coded_frame_list);
+@@ -997,6 +1032,34 @@ static av_cold int aom_init(AVCodecContext *avctx,
+     }
+ #endif
+ 
++    if (ctx->qpfile_path && *ctx->qpfile_path) {
++        int qret = ff_qpfile_load(ctx->qpfile_path, &ctx->qpfile);
++        if (qret < 0) {
++            av_log(avctx, AV_LOG_ERROR, "libaom: qpfile=%s parse failed (%d).\n",
++                   ctx->qpfile_path, qret);
++            return qret;
++        }
++        ctx->qpfile_loaded = 1;
++        /* libaom's segmentation map is sized at the mode-info grid:
++         * size_in_mi(x) == ALIGN_POWER_OF_TWO(x, 3) >> MI_SIZE_LOG2,
++         * i.e. each dim aligned up to a multiple of 8 px and divided
++         * by 4. Mirror that here so av1_set_roi_map's (rows, cols)
++         * equality check passes. */
++        ctx->roi_mi_cols = ((unsigned)((avctx->width  + 7) & ~7)) >> 2;
++        ctx->roi_mi_rows = ((unsigned)((avctx->height + 7) & ~7)) >> 2;
++        ctx->roi_seg_map = av_calloc((size_t)ctx->roi_mi_rows *
++                                         ctx->roi_mi_cols,
++                                     sizeof(*ctx->roi_seg_map));
++        if (!ctx->roi_seg_map)
++            return AVERROR(ENOMEM);
++        av_log(avctx, AV_LOG_INFO,
++               "libaom: qpfile=%s loaded (frames=%u, %ux%u qpfile blocks "
++               "-> %ux%u mi grid); ROI bridge enabled.\n",
++               ctx->qpfile_path, ctx->qpfile.frame_count,
++               ctx->qpfile.block_cols, ctx->qpfile.block_rows,
++               ctx->roi_mi_cols, ctx->roi_mi_rows);
++    }
++
+     // provide dummy value to initialize wrapper, values will be updated each _encode()
+     aom_img_wrap(&ctx->rawimg, img_fmt, avctx->width, avctx->height, 1,
+                  (unsigned char*)1);
+@@ -1256,6 +1319,169 @@ static enum AVPixelFormat aomfmt_to_pixfmt(struct aom_image *img)
+     return AV_PIX_FMT_NONE;
+ }
+ 
++/* libaom-av1 ROI bridge helpers. Convert one VmafTuneQpFrame into a
++ * libaom aom_roi_map_t whose (rows, cols, roi_map, delta_q) match the
++ * encoder's mode-info grid (4x4-luma cells). Bounded loops per NASA
++ * Power of 10. ADR-0312 (libaom ROI deferral retired).
++ *
++ * Quantisation: per-MB qp_offsets are clipped to [-12, +12] by the
++ * shared parser. Per frame, we discover the actual value range and
++ * either emit one segment per distinct value (if the span is <=
++ * AOM_MAX_SEGMENTS), or do uniform linear binning across the span
++ * (lossy: each MB rounds to its nearest segment QP). For libaom's
++ * 8-segment limit this matches the SVT-AV1 bridge's binning policy
++ * (ffmpeg-patches/0007 SVT-AV1 hunk). */
++
++#define QPFILE_AOM_MAX_SEGMENTS  AOM_MAX_SEGMENTS  /* 8, see aomcx.h */
++#define QPFILE_AOM_MI_PER_MB     4                 /* 16 px MB / 4 px mi */
++
++static int qpfile_aom_pick_segments(const VmafTuneQpFrame *qf,
++                                    int seg_q[QPFILE_AOM_MAX_SEGMENTS],
++                                    unsigned *out_n_seg)
++{
++    unsigned i, j;
++    unsigned mb_rows = qf->block_rows;
++    unsigned mb_cols = qf->block_cols;
++    int min_off = QPFILE_DELTA_MAX, max_off = QPFILE_DELTA_MIN;
++    unsigned n = 0;
++
++    if (!qf->block_offsets || mb_rows == 0 || mb_cols == 0)
++        return AVERROR(EINVAL);
++
++    for (i = 0; i < mb_rows; i++) {
++        for (j = 0; j < mb_cols; j++) {
++            int v = qf->block_offsets[i * mb_cols + j];
++            if (v < min_off) min_off = v;
++            if (v > max_off) max_off = v;
++        }
++    }
++
++    if (max_off == min_off) {
++        seg_q[0] = min_off;
++        n = 1;
++    } else {
++        int span = max_off - min_off + 1;
++        if (span <= QPFILE_AOM_MAX_SEGMENTS) {
++            for (int v = min_off; v <= max_off; v++)
++                seg_q[n++] = v;
++        } else {
++            for (i = 0; i < QPFILE_AOM_MAX_SEGMENTS; i++) {
++                seg_q[i] = min_off +
++                    (int)((unsigned long)(max_off - min_off) * i /
++                          (QPFILE_AOM_MAX_SEGMENTS - 1u));
++            }
++            n = QPFILE_AOM_MAX_SEGMENTS;
++        }
++    }
++    *out_n_seg = n;
++    return 0;
++}
++
++static void qpfile_aom_paint_seg_map(const VmafTuneQpFrame *qf,
++                                     uint8_t *seg_map,
++                                     unsigned mi_rows, unsigned mi_cols,
++                                     const int *seg_q, unsigned n_seg)
++{
++    unsigned mi_y, mi_x;
++    unsigned mb_rows = qf->block_rows;
++    unsigned mb_cols = qf->block_cols;
++    /* For each mi cell, pick the qpfile MB it overlaps, then snap that
++     * MB's QP-offset to the nearest segment id. mi index / 4 = mb idx. */
++    for (mi_y = 0; mi_y < mi_rows; mi_y++) {
++        unsigned mb_y = mi_y / QPFILE_AOM_MI_PER_MB;
++        if (mb_y >= mb_rows) mb_y = mb_rows - 1u;
++        for (mi_x = 0; mi_x < mi_cols; mi_x++) {
++            unsigned mb_x = mi_x / QPFILE_AOM_MI_PER_MB;
++            int v, best_dist = INT_MAX, best_idx = 0;
++            unsigned k;
++            if (mb_x >= mb_cols) mb_x = mb_cols - 1u;
++            v = qf->block_offsets[mb_y * mb_cols + mb_x];
++            for (k = 0; k < n_seg; k++) {
++                int d = v - seg_q[k];
++                if (d < 0) d = -d;
++                if (d < best_dist) {
++                    best_dist = d;
++                    best_idx  = (int)k;
++                }
++            }
++            seg_map[mi_y * mi_cols + mi_x] = (uint8_t)best_idx;
++        }
++    }
++}
++
++static const VmafTuneQpFrame *qpfile_aom_frame_for_index(const AOMContext *ctx,
++                                                         unsigned frame_index)
++{
++    /* Match the qpfile's 0-based coded-frame ordinal against this
++     * encoder's input-frame counter. saliency.py emits one record per
++     * input frame in coded order, so frame_index lines up 1:1 with the
++     * count of frames fed to aom_encode(). NB: AVFrame->pts is NOT a
++     * frame ordinal (it is in stream time_base units), so matching on
++     * pts here would almost never hit and would silently apply the last
++     * entry to every frame. Bounded linear scan (qpfiles are short for
++     * vmaf-tune). Falls back to the last entry when the qpfile is
++     * shorter than the stream — mirrors saliency.py's "one mask, all
++     * frames" pattern. */
++    unsigned k;
++    if (ctx->qpfile.frame_count == 0)
++        return NULL;
++    for (k = 0; k < ctx->qpfile.frame_count; k++) {
++        if (ctx->qpfile.frames[k].frame_index == frame_index)
++            return &ctx->qpfile.frames[k];
++    }
++    return &ctx->qpfile.frames[ctx->qpfile.frame_count - 1u];
++}
++
++static int qpfile_aom_apply_roi(AVCodecContext *avctx, unsigned frame_index)
++{
++    AOMContext *ctx = avctx->priv_data;
++    aom_roi_map_t roi;
++    const VmafTuneQpFrame *qf;
++    int seg_q[QPFILE_AOM_MAX_SEGMENTS] = { 0 };
++    unsigned n_seg = 0;
++    int qret, res;
++    unsigned i;
++
++    if (!ctx->qpfile_loaded || !ctx->roi_seg_map ||
++        ctx->roi_mi_rows == 0 || ctx->roi_mi_cols == 0)
++        return 0;
++
++    qf = qpfile_aom_frame_for_index(ctx, frame_index);
++    if (!qf || !qf->block_offsets ||
++        qf->block_rows == 0 || qf->block_cols == 0)
++        return 0;
++
++    qret = qpfile_aom_pick_segments(qf, seg_q, &n_seg);
++    if (qret < 0 || n_seg == 0)
++        return qret;
++
++    qpfile_aom_paint_seg_map(qf, ctx->roi_seg_map,
++                             ctx->roi_mi_rows, ctx->roi_mi_cols,
++                             seg_q, n_seg);
++
++    memset(&roi, 0, sizeof(roi));
++    roi.enabled  = 1;
++    roi.roi_map  = ctx->roi_seg_map;
++    roi.rows     = ctx->roi_mi_rows;
++    roi.cols     = ctx->roi_mi_cols;
++    for (i = 0; i < QPFILE_AOM_MAX_SEGMENTS; i++) {
++        roi.delta_q[i]   = (i < n_seg) ? seg_q[i] : 0;
++        roi.delta_lf[i]  = 0;
++        roi.skip[i]      = 0;
++        roi.ref_frame[i] = -1;
++    }
++    roi.delta_qp_enabled = 1;
++
++    res = aom_codec_control(&ctx->encoder, AOME_SET_ROI_MAP, &roi);
++    if (res != AOM_CODEC_OK) {
++        av_log(avctx, AV_LOG_WARNING,
++               "libaom: AOME_SET_ROI_MAP failed for frame %u (res=%d); "
++               "continuing without ROI bias for this frame.\n", frame_index, res);
++        return 0;  /* non-fatal: skip ROI for this frame */
++    }
++    return 0;
++}
++
+ static int aom_encode(AVCodecContext *avctx, AVPacket *pkt,
+                       const AVFrame *frame, int *got_packet)
+ {
+@@ -1326,6 +1548,12 @@ static int aom_encode(AVCodecContext *avctx, AVPacket *pkt,
+             return res;
+     }
+ 
++    if (ctx->qpfile_loaded && frame) {
++        int qret = qpfile_aom_apply_roi(avctx, ctx->roi_input_frame++);
++        if (qret < 0)
++            return qret;
++    }
++
+     res = aom_codec_encode(&ctx->encoder, rawimg, timestamp, duration, flags);
+     if (res != AOM_CODEC_OK) {
+         log_encoder_error(avctx, "Error encoding frame");
+@@ -1519,6 +1747,7 @@ static const AVOption options[] = {
+     { "tune",            "The metric that the encoder tunes for. Automatically chosen by the encoder by default", OFFSET(tune), AV_OPT_TYPE_INT, {.i64 = -1}, -1, AOM_TUNE_SSIM, VE, .unit = "tune"},
+     { "psnr",            NULL,         0, AV_OPT_TYPE_CONST, {.i64 = AOM_TUNE_PSNR}, 0, 0, VE, .unit = "tune"},
+     { "ssim",            NULL,         0, AV_OPT_TYPE_CONST, {.i64 = AOM_TUNE_SSIM}, 0, 0, VE, .unit = "tune"},
++    { "qpfile", "Path to a vmaf-tune qpfile (per-frame AOME_SET_ROI_MAP ROI bridge; lossy: per-MB qp_offsets are quantised to <=8 segment QPs). See docs/usage/vmaf-tune-ffmpeg.md, ADR-0312.", OFFSET(qpfile_path), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
+     FF_AV1_PROFILE_OPTS
+     { "still-picture", "Encode in single frame mode (typically used for still AVIF images).", OFFSET(still_picture), AV_OPT_TYPE_BOOL, {.i64 = 0}, -1, 1, VE },
+     { "dolbyvision",     "Enable Dolby Vision RPU coding", OFFSET(dovi.enable), AV_OPT_TYPE_BOOL, {.i64 = FF_DOVI_AUTOMATIC }, -1, 1, VE, .unit = "dovi" },
+diff --git a/libavcodec/libsvtav1.c b/libavcodec/libsvtav1.c
+index fec2ed596e..403810d78e 100644
+--- a/libavcodec/libsvtav1.c
++++ b/libavcodec/libsvtav1.c
+@@ -20,6 +20,8 @@
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
++#include <limits.h>
++#include <stdbool.h>
+ #include <stdint.h>
+ #include <inttypes.h>
+ #include <EbSvtAv1ErrorCodes.h>
+@@ -42,6 +43,7 @@
+ #include "encode.h"
+ #include "avcodec.h"
+ #include "profiles.h"
++#include "qpfile_parser.h"
+ 
+ typedef enum eos_status {
+     EOS_NOT_REACHED = 0,
+@@ -74,6 +76,32 @@ typedef struct SvtContext {
+     int enc_mode;
+     int crf;
+     int qp;
++    char *qpfile_path;
++
++    /* vmaf-tune qpfile state. Populated by ff_qpfile_load() in
++     * eb_enc_init() when qpfile_path is set, consumed per-frame in
++     * eb_send_frame(), released in eb_enc_close(). See
++     * docs/usage/vmaf-tune-ffmpeg.md (ADR-0312). The ROI bridge is
++     * gated on the SVT-AV1 1.6.0+ ROI ABI (enable_roi_map flag and
++     * the ROI_MAP_EVENT priv-data type); on older releases the
++     * adapter falls back to log-and-continue.
++     *
++     * roi_evts / roi_seg_maps are heap-owned arrays parallel to
++     * qpfile.frames; SVT-AV1 keeps the ROI-map pointer alive across
++     * the asynchronous encode pipeline (copy_private_data_list shallow-
++     * copies ROI_MAP_EVENT data), so we must preserve these until
++     * eb_enc_close().
++     */
++    VmafTuneQpFile  qpfile;
++    int             qpfile_loaded;
++#if SVT_AV1_CHECK_VERSION(1, 6, 0)
++    SvtAv1RoiMapEvt *roi_evts;
++    uint8_t        **roi_seg_maps;
++    unsigned int     roi_evt_count;
++    unsigned int     roi_b64_cols;
++    unsigned int     roi_b64_rows;
++    unsigned int     roi_input_frame;  /* 0-based coded-frame ordinal for qpfile lookup */
++#endif
+ } SvtContext;
+ 
+ static const struct {
+@@ -464,6 +491,10 @@ static int read_in_data(EbSvtAv1EncConfiguration *param, const AVFrame *frame,
+     return 0;
+ }
+ 
++#if SVT_AV1_CHECK_VERSION(1, 6, 0)
++static int build_all_roi_evts(AVCodecContext *avctx, SvtContext *svt_enc);
++#endif
++
+ static av_cold int eb_enc_init(AVCodecContext *avctx)
+ {
+     SvtContext   *svt_enc = avctx->priv_data;
+@@ -487,11 +518,47 @@ static av_cold int eb_enc_init(AVCodecContext *avctx)
+         return ret;
+     }
+ 
++    if (svt_enc->qpfile_path && *svt_enc->qpfile_path) {
++        int qret = ff_qpfile_load(svt_enc->qpfile_path, &svt_enc->qpfile);
++        if (qret < 0) {
++            av_log(avctx, AV_LOG_ERROR, "libsvtav1: qpfile=%s parse failed (%d).\n",
++                   svt_enc->qpfile_path, qret);
++            return qret;
++        }
++        svt_enc->qpfile_loaded = 1;
++#if SVT_AV1_CHECK_VERSION(1, 6, 0)
++        /* Build all per-frame ROI map events upfront. SVT-AV1 reads
++         * ROI_MAP_EVENT data via shallow-copied pointers on async
++         * pipeline threads, so the events and their b64_seg_maps must
++         * live for the whole encode session. Then flip enable_roi_map
++         * before set_parameter so the encoder allocates segmentation
++         * state. (ADR-0312, SVT-AV1 deferral retired.)
++         */
++        qret = build_all_roi_evts(avctx, svt_enc);
++        if (qret < 0)
++            return qret;
++        svt_enc->enc_params.enable_roi_map = true;
++        av_log(avctx, AV_LOG_INFO,
++               "libsvtav1: qpfile=%s loaded (frames=%u, %ux%u qpfile blocks "
++               "→ %ux%u SB ROI grid); ROI bridge enabled.\n",
++               svt_enc->qpfile_path, svt_enc->qpfile.frame_count,
++               svt_enc->qpfile.block_cols, svt_enc->qpfile.block_rows,
++               svt_enc->roi_b64_cols, svt_enc->roi_b64_rows);
++#else
++        av_log(avctx, AV_LOG_WARNING,
++               "libsvtav1: qpfile=%s parsed but SVT-AV1 < 1.6.0 lacks the "
++               "ROI ABI; encoding without ROI bias. Upgrade SVT-AV1 to "
++               "activate the bridge (ADR-0312).\n",
++               svt_enc->qpfile_path);
++#endif
++    }
++
+     svt_ret = svt_av1_enc_set_parameter(svt_enc->svt_handle, &svt_enc->enc_params);
+     if (svt_ret != EB_ErrorNone) {
+         return svt_print_error(avctx, svt_ret, "Error setting encoder parameters");
+     }
+ 
++
+     svt_ret = svt_av1_enc_init(svt_enc->svt_handle);
+     if (svt_ret != EB_ErrorNone) {
+         return svt_print_error(avctx, svt_ret, "Error initializing encoder");
+@@ -533,6 +600,199 @@ static av_cold int eb_enc_init(AVCodecContext *avctx)
+     return alloc_buffer(&svt_enc->enc_params, svt_enc);
+ }
+ 
++#if SVT_AV1_CHECK_VERSION(1, 6, 0)
++/* Translate a vmaf-tune qpfile into a fleet of per-frame
++ * SvtAv1RoiMapEvt records.
++ *
++ * Strategy:
++ *   1. Per frame, discover the QP-offset value range; pick up to
++ *      QPFILE_SVTAV1_MAX_SEGMENTS distinct segment QPs (uniform
++ *      binning when the value span exceeds the segment budget).
++ *   2. Downsample the qpfile's per-16x16-MB grid to SVT-AV1's
++ *      per-64x64-SB grid by averaging the four MBs that overlap
++ *      each SB and assigning the nearest segment id.
++ *   3. Size b64_seg_map at the encoder's actual SB grid stride
++ *      ((max_input_luma_width+63)/64) so segmentation.c can index
++ *      it correctly even if the qpfile was cut against a smaller
++ *      preview.
++ *
++ * Per-SB rectangles fall out naturally — SVT-AV1 consumes a dense
++ * per-SB segment map, so explicit rectangle decomposition would
++ * be redundant. Trade-off: per-MB qpfile resolution is rounded
++ * to per-SB granularity, losing spatial detail finer than 64x64
++ * px (a salient face smaller than that gets averaged with its
++ * surroundings). Acceptable for saliency_student_v1's object-
++ * sized ROIs; finer granularity would require an SVT-AV1 ABI
++ * change (ADR-0312, SVT-AV1 deferral retired).
++ *
++ * Lifetime: the library shallow-copies ROI_MAP_EVENT pointers
++ * (copy_private_data_list in enc_handle.c) and reads them later
++ * on async pipeline threads, so the SvtAv1RoiMapEvt and its
++ * b64_seg_map must outlive svt_av1_enc_send_picture() — they
++ * are owned by SvtContext and freed in eb_enc_close().
++ */
++#define QPFILE_SVTAV1_MAX_SEGMENTS 8
++#define QPFILE_SVTAV1_SB_SIDE      4   /* 4 MBs (16 px each) per SB (64 px) */
++
++static int build_one_roi_evt(const VmafTuneQpFrame *qf,
++                             unsigned dest_b64_cols,
++                             unsigned dest_b64_rows,
++                             SvtAv1RoiMapEvt *out_evt,
++                             uint8_t **out_seg_map)
++{
++    unsigned mb_cols = qf->block_cols;
++    unsigned mb_rows = qf->block_rows;
++    int seg_values[QPFILE_SVTAV1_MAX_SEGMENTS];
++    unsigned n_seg = 0;
++    unsigned i, j, sb_x, sb_y;
++    int min_off = QPFILE_DELTA_MAX, max_off = QPFILE_DELTA_MIN;
++    uint8_t *seg_map = NULL;
++
++    if (mb_cols == 0 || mb_rows == 0 || !qf->block_offsets ||
++        dest_b64_cols == 0 || dest_b64_rows == 0)
++        return AVERROR(EINVAL);
++
++    /* Pass 1: discover the value range. */
++    for (i = 0; i < mb_rows; i++) {
++        for (j = 0; j < mb_cols; j++) {
++            int v = qf->block_offsets[i * mb_cols + j];
++            if (v < min_off) min_off = v;
++            if (v > max_off) max_off = v;
++        }
++    }
++
++    /* Pass 2: pick segment QPs. */
++    if (max_off == min_off) {
++        seg_values[0] = min_off;
++        n_seg = 1;
++    } else {
++        int span = max_off - min_off + 1;
++        if (span <= QPFILE_SVTAV1_MAX_SEGMENTS) {
++            for (int v = min_off; v <= max_off; v++)
++                seg_values[n_seg++] = v;
++        } else {
++            for (i = 0; i < QPFILE_SVTAV1_MAX_SEGMENTS; i++) {
++                int v = min_off +
++                    (int)((unsigned long)(max_off - min_off) * i /
++                          (QPFILE_SVTAV1_MAX_SEGMENTS - 1u));
++                seg_values[i] = v;
++            }
++            n_seg = QPFILE_SVTAV1_MAX_SEGMENTS;
++        }
++    }
++
++    /* Pass 3: emit the per-SB segment map at the encoder grid. */
++    seg_map = av_calloc((size_t)dest_b64_rows * dest_b64_cols,
++                        sizeof(*seg_map));
++    if (!seg_map)
++        return AVERROR(ENOMEM);
++
++    for (sb_y = 0; sb_y < dest_b64_rows; sb_y++) {
++        for (sb_x = 0; sb_x < dest_b64_cols; sb_x++) {
++            long sum = 0;
++            unsigned count = 0;
++            unsigned mb_y0 = sb_y * QPFILE_SVTAV1_SB_SIDE;
++            unsigned mb_x0 = sb_x * QPFILE_SVTAV1_SB_SIDE;
++            unsigned mb_y1 = mb_y0 + QPFILE_SVTAV1_SB_SIDE;
++            unsigned mb_x1 = mb_x0 + QPFILE_SVTAV1_SB_SIDE;
++            int avg, best_idx = 0, best_dist = INT_MAX;
++            if (mb_y1 > mb_rows) mb_y1 = mb_rows;
++            if (mb_x1 > mb_cols) mb_x1 = mb_cols;
++            if (mb_x0 >= mb_cols || mb_y0 >= mb_rows) {
++                /* SB lies outside the qpfile coverage — leave at seg 0
++                 * (zero offset). The qpfile may be smaller than the
++                 * encoder's padded SB grid; the saliency model is
++                 * applied where defined and elsewhere we encode at
++                 * the encoder's default rate-control decision. */
++                seg_map[sb_y * dest_b64_cols + sb_x] = 0;
++                continue;
++            }
++            for (i = mb_y0; i < mb_y1; i++) {
++                for (j = mb_x0; j < mb_x1; j++) {
++                    sum += qf->block_offsets[i * mb_cols + j];
++                    count++;
++                }
++            }
++            avg = count ? (int)(sum / (long)count) : 0;
++            for (i = 0; i < n_seg; i++) {
++                int d = avg - seg_values[i];
++                if (d < 0) d = -d;
++                if (d < best_dist) {
++                    best_dist = d;
++                    best_idx = (int)i;
++                }
++            }
++            seg_map[sb_y * dest_b64_cols + sb_x] = (uint8_t)best_idx;
++        }
++    }
++
++    memset(out_evt, 0, sizeof(*out_evt));
++    out_evt->start_picture_number = qf->frame_index;
++    out_evt->b64_seg_map          = seg_map;
++    out_evt->max_seg_id           = (int8_t)(n_seg - 1u);
++    for (i = 0; i < n_seg; i++)
++        out_evt->seg_qp[i] = (int16_t)seg_values[i];
++    out_evt->next = NULL;
++    *out_seg_map = seg_map;
++    return 0;
++}
++
++static int build_all_roi_evts(AVCodecContext *avctx, SvtContext *svt_enc)
++{
++    unsigned i;
++    unsigned b64_cols = ((unsigned)avctx->width  + 63u) / 64u;
++    unsigned b64_rows = ((unsigned)avctx->height + 63u) / 64u;
++    unsigned n = svt_enc->qpfile.frame_count;
++
++    if (n == 0 || b64_cols == 0 || b64_rows == 0)
++        return AVERROR(EINVAL);
++
++    svt_enc->roi_evts = av_calloc(n, sizeof(*svt_enc->roi_evts));
++    svt_enc->roi_seg_maps = av_calloc(n, sizeof(*svt_enc->roi_seg_maps));
++    if (!svt_enc->roi_evts || !svt_enc->roi_seg_maps)
++        return AVERROR(ENOMEM);
++    svt_enc->roi_evt_count = n;
++    svt_enc->roi_b64_cols  = b64_cols;
++    svt_enc->roi_b64_rows  = b64_rows;
++
++    for (i = 0; i < n; i++) {
++        int qret = build_one_roi_evt(&svt_enc->qpfile.frames[i],
++                                     b64_cols, b64_rows,
++                                     &svt_enc->roi_evts[i],
++                                     &svt_enc->roi_seg_maps[i]);
++        if (qret < 0) {
++            av_log(avctx, AV_LOG_ERROR,
++                   "libsvtav1: failed to build ROI map for qpfile frame %u (%d)\n",
++                   i, qret);
++            return qret;
++        }
++    }
++    return 0;
++}
++
++static SvtAv1RoiMapEvt *roi_evt_for_index(SvtContext *svt_enc, unsigned frame_index)
++{
++    /* Match each ROI event's start_picture_number (== the qpfile's
++     * 0-based coded-frame ordinal) against this encoder's input-frame
++     * counter. saliency.py emits one record per input frame in coded
++     * order, so frame_index lines up 1:1 with the count of frames fed
++     * to eb_send_frame(). NB: AVFrame->pts is NOT a frame ordinal (it
++     * is in stream time_base units), so matching on pts here would
++     * almost never hit and would silently apply the last entry to every
++     * frame. Bounded linear scan (qpfiles are short for vmaf-tune).
++     * Falls back to the last entry when the qpfile is shorter than the
++     * stream — mirrors the saliency.py "one mask, all frames" pattern. */
++    unsigned k;
++    if (svt_enc->roi_evt_count == 0)
++        return NULL;
++    for (k = 0; k < svt_enc->roi_evt_count; k++) {
++        if (svt_enc->roi_evts[k].start_picture_number == (uint64_t)frame_index)
++            return &svt_enc->roi_evts[k];
++    }
++    return &svt_enc->roi_evts[svt_enc->roi_evt_count - 1u];
++}
++#endif /* SVT_AV1_CHECK_VERSION(1, 6, 0) */
++
+ static int eb_send_frame(AVCodecContext *avctx, const AVFrame *frame)
+ {
+     SvtContext           *svt_enc = avctx->priv_data;
+@@ -595,8 +849,40 @@ static int eb_send_frame(AVCodecContext *avctx, const AVFrame *frame)
+         return AVERROR_INVALIDDATA;
+     }
+ 
++#if SVT_AV1_CHECK_VERSION(1, 6, 0)
++    /* vmaf-tune qpfile -> SVT-AV1 ROI map: attach the (already-built)
++     * per-frame ROI map event as a stack-local priv-data node. The
++     * encoder's resource_coordination_process.c expects
++     *   node->size == sizeof(SvtAv1RoiMapEvt*)
++     * and uses node->data as a pointer that must outlive the async
++     * pipeline — so the SvtAv1RoiMapEvt + b64_seg_map live in
++     * svt_enc->roi_evts/roi_seg_maps until eb_enc_close(). The
++     * EbPrivDataNode itself is shallow-copied by copy_private_data_list
++     * in enc_handle.c, so a stack-local node is safe.
++     */
++    EbPrivDataNode roi_node;
++    SvtAv1RoiMapEvt *roi_evt_ptr = NULL;
++    if (svt_enc->qpfile_loaded && svt_enc->roi_evt_count > 0)
++        roi_evt_ptr = roi_evt_for_index(svt_enc, svt_enc->roi_input_frame++);
++    if (roi_evt_ptr) {
++        memset(&roi_node, 0, sizeof(roi_node));
++        roi_node.node_type = ROI_MAP_EVENT;
++        roi_node.data      = roi_evt_ptr;
++        roi_node.size      = (uint32_t)sizeof(SvtAv1RoiMapEvt *);
++        roi_node.next      = NULL;
++        headerPtr->p_app_private = &roi_node;
++    }
++#endif
+ 
+     svt_ret = svt_av1_enc_send_picture(svt_enc->svt_handle, headerPtr);
++
++#if SVT_AV1_CHECK_VERSION(1, 6, 0)
++    /* Restore the slot for the next frame's send-path. The library
++     * already shallow-copied the priv-data list. */
++    if (roi_evt_ptr)
++        headerPtr->p_app_private = NULL;
++#endif
++
+     if (svt_ret != EB_ErrorNone)
+         return svt_print_error(avctx, svt_ret, "Error sending a frame to encoder");
+ 
+@@ -766,6 +1052,23 @@ static av_cold int eb_enc_close(AVCodecContext *avctx)
+     ff_dovi_ctx_unref(&svt_enc->dovi);
+     av_freep(&svt_enc->stats_buf);
+ 
++    if (svt_enc->qpfile_loaded) {
++#if SVT_AV1_CHECK_VERSION(1, 6, 0)
++        if (svt_enc->roi_seg_maps) {
++            for (unsigned i = 0; i < svt_enc->roi_evt_count; i++)
++                av_freep(&svt_enc->roi_seg_maps[i]);
++            av_freep(&svt_enc->roi_seg_maps);
++        }
++        av_freep(&svt_enc->roi_evts);
++        svt_enc->roi_evt_count = 0;
++        svt_enc->roi_b64_cols  = 0;
++        svt_enc->roi_b64_rows  = 0;
++        svt_enc->roi_input_frame = 0;
++#endif
++        ff_qpfile_free(&svt_enc->qpfile);
++        svt_enc->qpfile_loaded = 0;
++    }
++
+     return 0;
+ }
+ 
+@@ -810,6 +1112,7 @@ static const AVOption options[] = {
+     { "qp", "Initial Quantizer level value", OFFSET(qp),
+       AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 63, VE },
+     { "svtav1-params", "Set the SVT-AV1 configuration using a :-separated list of key=value parameters", OFFSET(svtav1_opts), AV_OPT_TYPE_DICT, { 0 }, 0, 0, VE },
++    { "qpfile",        "Path to a vmaf-tune qpfile (per-frame ROI bridge; requires SVT-AV1 ≥ 1.6.0). See docs/usage/vmaf-tune-ffmpeg.md, ADR-0312.", OFFSET(qpfile_path), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
+ 
+     { "dolbyvision", "Enable Dolby Vision RPU coding", OFFSET(dovi.enable), AV_OPT_TYPE_BOOL, {.i64 = FF_DOVI_AUTOMATIC }, -1, 1, VE, .unit = "dovi" },
+     {   "auto", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = FF_DOVI_AUTOMATIC}, .flags = VE, .unit = "dovi" },
+diff --git a/libavcodec/libx264.c b/libavcodec/libx264.c
+index b688d4f321..44a6bacbd2 100644
+--- a/libavcodec/libx264.c
++++ b/libavcodec/libx264.c
+@@ -39,6 +39,8 @@
+ #include "sei.h"
+ #include "golomb.h"
+ 
++#include "qpfile_parser.h"
++
+ #include <x264.h>
+ #include <float.h>
+ #include <math.h>
+@@ -126,6 +128,8 @@ typedef struct X264Context {
+     int roi_warned;
+ 
+     int mb_info;
++
++    char *qpfile_path;
+ } X264Context;
+ 
+ static void X264_log(void *p, int level, const char *fmt, va_list args)
+@@ -1395,6 +1399,19 @@ static av_cold int X264_init(AVCodecContext *avctx)
+ 
+     x4->params.analyse.b_mb_info = x4->mb_info;
+ 
++
++    if (x4->qpfile_path && *x4->qpfile_path) {
++        ret = x264_param_parse(&x4->params, "qpfile", x4->qpfile_path);
++        if (ret < 0) {
++            av_log(avctx, AV_LOG_ERROR,
++                   "libx264: failed to load qpfile=%s (x264 ret=%d).\n",
++                   x4->qpfile_path, ret);
++            return AVERROR(EINVAL);
++        }
++        av_log(avctx, AV_LOG_INFO, "libx264: qpfile=%s loaded.\n",
++               x4->qpfile_path);
++    }
++
+     // update AVCodecContext with x264 parameters
+     avctx->has_b_frames = x4->params.i_bframe ?
+         x4->params.i_bframe_pyramid ? 2 : 1 : 0;
+@@ -1570,6 +1587,7 @@ static const AVOption options[] = {
+     { "udu_sei",      "Use user data unregistered SEI if available",      OFFSET(udu_sei),  AV_OPT_TYPE_BOOL,   { .i64 = 0 }, 0, 1, VE },
+     { "x264-params",  "Override the x264 configuration using a :-separated list of key=value parameters", OFFSET(x264_params), AV_OPT_TYPE_DICT, { 0 }, 0, 0, VE },
+     { "mb_info",      "Set mb_info data through AVSideData, only useful when used from the API", OFFSET(mb_info), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
++    { "qpfile",       "Path to a vmaf-tune qpfile (per-frame + per-MB QP offsets, see docs/usage/vmaf-tune-ffmpeg.md).", OFFSET(qpfile_path), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
+     { NULL },
+ };
+ 
+diff --git a/libavcodec/qpfile_parser.c b/libavcodec/qpfile_parser.c
+new file mode 100644
+index 0000000000..cf781305ac
+--- /dev/null
++++ b/libavcodec/qpfile_parser.c
+@@ -0,0 +1,302 @@
++/*
++ * Copyright 2026 Lusoris
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU Lesser General Public License as published by the
++ * Free Software Foundation; either version 2.1 of the License, or (at
++ * your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public
++ * License for more details.
++ */
++
++/**
++ * @file
++ * Shared parser for the vmaf-tune qpfile format consumed by libx264,
++ * libsvtav1, and libaom-av1 encoder adapters. See ADR-0312 and
++ * tools/vmaf-tune/src/vmaftune/saliency.py for the format definition.
++ *
++ * Format (ASCII, one logical record per frame):
++ *
++ *     <frame_idx> <I|P|B> <baseline_qp>
++ *     <delta_0_0> <delta_0_1> ... <delta_0_(bw-1)>
++ *     ...
++ *
++ * NASA POW10 / SEI CERT C: bounded loops, no recursion, no banned
++ * functions (uses strtol, never atoi/sprintf/strcpy). Line reading
++ * uses a portable fgetc loop (not POSIX getline) so we don't drag
++ * in feature-test macros.
++ */
++
++#include <errno.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "libavutil/error.h"
++#include "libavutil/mem.h"
++
++#include "qpfile_parser.h"
++
++#define QPFILE_MAX_FRAMES         (1u << 20)
++#define QPFILE_MAX_BLOCKS_PER_DIM (1u << 14)
++#define QPFILE_MAX_LINE_BYTES     (1u << 20)
++
++static int parse_long(const char *s, char **end, long *out)
++{
++    long v;
++    errno = 0;
++    v = strtol(s, end, 10);
++    if (errno == ERANGE)
++        return AVERROR(ERANGE);
++    if (*end == s)
++        return AVERROR(EINVAL);
++    *out = v;
++    return 0;
++}
++
++static int clamp_offset(long v)
++{
++    if (v < QPFILE_DELTA_MIN) return QPFILE_DELTA_MIN;
++    if (v > QPFILE_DELTA_MAX) return QPFILE_DELTA_MAX;
++    return (int)v;
++}
++
++static int looks_like_header(const char *line)
++{
++    const char *p = line;
++    while (*p == ' ' || *p == '\t') p++;
++    if (*p < '0' || *p > '9') return 0;
++    while (*p >= '0' && *p <= '9') p++;
++    while (*p == ' ' || *p == '\t') p++;
++    return (*p == 'I' || *p == 'P' || *p == 'B' ||
++            *p == 'i' || *p == 'p' || *p == 'b');
++}
++
++static int parse_header(const char *line, VmafTuneQpFrame *f)
++{
++    char *p = NULL;
++    long idx = 0, qp = 0;
++    char kind = 0;
++    const char *cur = line;
++    int err;
++
++    err = parse_long(cur, &p, &idx);
++    if (err < 0) return err;
++    if (idx < 0 || (unsigned long)idx > QPFILE_MAX_FRAMES)
++        return AVERROR(EINVAL);
++    cur = p;
++    while (*cur == ' ' || *cur == '\t') cur++;
++    kind = *cur;
++    if (kind != 'I' && kind != 'P' && kind != 'B' &&
++        kind != 'i' && kind != 'p' && kind != 'b')
++        return AVERROR(EINVAL);
++    cur++;
++    while (*cur == ' ' || *cur == '\t') cur++;
++    err = parse_long(cur, &p, &qp);
++    if (err < 0) return err;
++    if (qp < 0 || qp > 63) return AVERROR(EINVAL);
++
++    f->frame_index   = (unsigned)idx;
++    f->frame_type    = (char)((kind >= 'a' && kind <= 'z') ? kind - 32 : kind);
++    f->baseline_qp   = (int)qp;
++    f->block_offsets = NULL;
++    f->block_cols    = 0;
++    f->block_rows    = 0;
++    return 0;
++}
++
++static unsigned count_tokens(const char *line)
++{
++    unsigned n = 0;
++    int in_tok = 0;
++    for (const char *p = line; *p; p++) {
++        if (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
++            in_tok = 0;
++        } else if (!in_tok) {
++            in_tok = 1;
++            n++;
++            if (n > QPFILE_MAX_BLOCKS_PER_DIM)
++                return n;
++        }
++    }
++    return n;
++}
++
++static int parse_row(const char *line, int *row_out, unsigned bw)
++{
++    char *p = NULL;
++    const char *cur = line;
++    long v = 0;
++    int err;
++    for (unsigned i = 0; i < bw; i++) {
++        err = parse_long(cur, &p, &v);
++        if (err < 0) return err;
++        row_out[i] = clamp_offset(v);
++        cur = p;
++        while (*cur == ' ' || *cur == '\t') cur++;
++    }
++    return 0;
++}
++
++/* Portable line reader (no POSIX getline dependency). */
++static int qpfile_getline(char **buf, size_t *cap, FILE *fp, ssize_t *out_len)
++{
++    size_t pos = 0;
++    if (*cap == 0 || !*buf) {
++        *cap = 4096;
++        *buf = av_realloc(*buf, *cap);
++        if (!*buf) return AVERROR(ENOMEM);
++    }
++    while (1) {
++        if (pos + 1 >= *cap) {
++            size_t nc = (*cap) * 2u;
++            char *nb = av_realloc(*buf, nc);
++            if (!nb) return AVERROR(ENOMEM);
++            *buf = nb;
++            *cap = nc;
++        }
++        int c = fgetc(fp);
++        if (c == EOF) {
++            if (pos == 0) { *out_len = -1; return 0; }
++            (*buf)[pos] = 0;
++            *out_len = (ssize_t)pos;
++            return 0;
++        }
++        (*buf)[pos++] = (char)c;
++        if (c == '\n') {
++            (*buf)[pos] = 0;
++            *out_len = (ssize_t)pos;
++            return 0;
++        }
++        if (pos > QPFILE_MAX_LINE_BYTES)
++            return AVERROR(EINVAL);
++    }
++}
++
++int ff_qpfile_load(const char *path, VmafTuneQpFile *out)
++{
++    FILE *fp = NULL;
++    char *line = NULL;
++    size_t line_cap = 0;
++    int ret = 0;
++    unsigned bw = 0, bh = 0, cap_frames = 0;
++    int *row_buf = NULL;
++    unsigned row_count = 0;
++    VmafTuneQpFrame *cur_frame = NULL;
++
++    if (!path || !out) return AVERROR(EINVAL);
++    memset(out, 0, sizeof(*out));
++
++    fp = fopen(path, "rb");
++    if (!fp) return AVERROR(errno ? errno : ENOENT);
++
++    cap_frames = 16;
++    out->frames = av_calloc(cap_frames, sizeof(*out->frames));
++    if (!out->frames) { ret = AVERROR(ENOMEM); goto fail; }
++
++    while (1) {
++        ssize_t got = 0;
++        ret = qpfile_getline(&line, &line_cap, fp, &got);
++        if (ret < 0) goto fail;
++        if (got < 0) break;
++        if ((size_t)got > QPFILE_MAX_LINE_BYTES) { ret = AVERROR(EINVAL); goto fail; }
++        if (got == 0 || line[0] == '#' || line[0] == '\n' || line[0] == '\r')
++            continue;
++
++        if (looks_like_header(line)) {
++            if (cur_frame && row_count > 0) {
++                if (bw == 0) { bw = cur_frame->block_cols; bh = row_count; }
++                else if (row_count != bh) { ret = AVERROR(EINVAL); goto fail; }
++                cur_frame->block_offsets = av_calloc((size_t)bh * bw, sizeof(int));
++                if (!cur_frame->block_offsets) { ret = AVERROR(ENOMEM); goto fail; }
++                memcpy(cur_frame->block_offsets, row_buf,
++                       (size_t)bh * bw * sizeof(int));
++                cur_frame->block_rows = bh;
++                cur_frame->block_cols = bw;
++            }
++
++            if (out->frame_count == cap_frames) {
++                unsigned nc = cap_frames * 2u;
++                if (nc > QPFILE_MAX_FRAMES) { ret = AVERROR(EINVAL); goto fail; }
++                VmafTuneQpFrame *nf = av_realloc_array(out->frames, nc, sizeof(*nf));
++                if (!nf) { ret = AVERROR(ENOMEM); goto fail; }
++                memset(nf + cap_frames, 0, (nc - cap_frames) * sizeof(*nf));
++                out->frames = nf;
++                cap_frames = nc;
++            }
++
++            cur_frame = &out->frames[out->frame_count];
++            ret = parse_header(line, cur_frame);
++            if (ret < 0) goto fail;
++            out->frame_count++;
++            row_count = 0;
++        } else {
++            if (!cur_frame) { ret = AVERROR(EINVAL); goto fail; }
++            unsigned tokens = count_tokens(line);
++            if (tokens == 0) continue;
++            if (tokens > QPFILE_MAX_BLOCKS_PER_DIM) { ret = AVERROR(EINVAL); goto fail; }
++            if (cur_frame->block_cols == 0) {
++                cur_frame->block_cols = tokens;
++                if (bw && tokens != bw) { ret = AVERROR(EINVAL); goto fail; }
++            } else if (tokens != cur_frame->block_cols) {
++                ret = AVERROR(EINVAL); goto fail;
++            }
++            unsigned this_bw = cur_frame->block_cols;
++            unsigned needed = (row_count + 1) * this_bw;
++            int *nrow = av_realloc_array(row_buf, needed, sizeof(int));
++            if (!nrow) { ret = AVERROR(ENOMEM); goto fail; }
++            row_buf = nrow;
++            ret = parse_row(line, &row_buf[row_count * this_bw], this_bw);
++            if (ret < 0) goto fail;
++            row_count++;
++            if (row_count > QPFILE_MAX_BLOCKS_PER_DIM) { ret = AVERROR(EINVAL); goto fail; }
++        }
++    }
++
++    if (cur_frame && row_count > 0) {
++        if (bw == 0) { bw = cur_frame->block_cols; bh = row_count; }
++        else if (row_count != bh) { ret = AVERROR(EINVAL); goto fail; }
++        cur_frame->block_offsets = av_calloc((size_t)bh * bw, sizeof(int));
++        if (!cur_frame->block_offsets) { ret = AVERROR(ENOMEM); goto fail; }
++        memcpy(cur_frame->block_offsets, row_buf,
++               (size_t)bh * bw * sizeof(int));
++        cur_frame->block_rows = bh;
++        cur_frame->block_cols = bw;
++    }
++    av_freep(&row_buf);
++
++    out->block_cols = bw;
++    out->block_rows = bh;
++
++    if (out->frame_count == 0) { ret = AVERROR(EINVAL); goto fail; }
++
++    av_free(line);
++    fclose(fp);
++    return 0;
++
++fail:
++    av_freep(&row_buf);
++    av_free(line);
++    if (fp) fclose(fp);
++    ff_qpfile_free(out);
++    return ret;
++}
++
++void ff_qpfile_free(VmafTuneQpFile *qpf)
++{
++    if (!qpf) return;
++    if (qpf->frames) {
++        for (unsigned i = 0; i < qpf->frame_count; i++)
++            av_freep(&qpf->frames[i].block_offsets);
++        av_freep(&qpf->frames);
++    }
++    qpf->frame_count = 0;
++    qpf->block_cols  = 0;
++    qpf->block_rows  = 0;
++}
+diff --git a/libavcodec/qpfile_parser.h b/libavcodec/qpfile_parser.h
+new file mode 100644
+index 0000000000..bfc4af0cc8
+--- /dev/null
++++ b/libavcodec/qpfile_parser.h
+@@ -0,0 +1,55 @@
++/*
++ * Copyright 2026 Lusoris
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or modify it under
++ * the terms of the GNU Lesser General Public License as published by the
++ * Free Software Foundation; either version 2.1 of the License, or (at
++ * your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public
++ * License for more details.
++ */
++
++/**
++ * @file
++ * Shared parser for the vmaf-tune qpfile format. Consumed by libx264,
++ * libsvtav1, and libaom-av1 encoder adapters via the new -qpfile
++ * AVOption.
++ *
++ * Patches 0007-0009 of ffmpeg-patches/ must keep this parser shared
++ * so future encoder additions inherit it (vmaf-tune patch invariant -
++ * see ffmpeg-patches/README.md and ADR-0312).
++ */
++
++#ifndef AVCODEC_QPFILE_PARSER_H
++#define AVCODEC_QPFILE_PARSER_H
++
++#include <stddef.h>
++
++#define QPFILE_DELTA_MIN (-12)
++#define QPFILE_DELTA_MAX (12)
++
++typedef struct VmafTuneQpFrame {
++    unsigned int frame_index;
++    char         frame_type;
++    int          baseline_qp;
++    int         *block_offsets;
++    unsigned int block_cols;
++    unsigned int block_rows;
++} VmafTuneQpFrame;
++
++typedef struct VmafTuneQpFile {
++    VmafTuneQpFrame *frames;
++    unsigned int     frame_count;
++    unsigned int     block_cols;
++    unsigned int     block_rows;
++} VmafTuneQpFile;
++
++int  ff_qpfile_load(const char *path, VmafTuneQpFile *out);
++void ff_qpfile_free(VmafTuneQpFile *qpf);
++
++#endif /* AVCODEC_QPFILE_PARSER_H */
+-- 
+2.54.0
+

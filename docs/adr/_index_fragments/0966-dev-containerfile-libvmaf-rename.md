@@ -1,0 +1,1 @@
+| [ADR-0966](0966-dev-containerfile-libvmaf-rename.md) | Fix dev/Containerfile post-ADR-0700 libvmaf → core paths (Round 26 audit C.1) | Accepted | `dev`, `docker`, `containerfile`, `rename`, `adr-0700`, `fork-local` |

@@ -1,0 +1,1 @@
+- Fixed: corrected mismatched GitHub Actions SHA pins in `e2e-k8s.yml`, `go-ci.yml`, and `rust-ci.yml`; all three workflows now reference consistent, verified action commit SHAs. (PR #811)

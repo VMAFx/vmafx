@@ -1,0 +1,59 @@
+# Files excluded from semgrep scans. Paths relative to repo root.
+#
+# Rule of thumb: list directories that ship upstream-owned C/C++/Python we
+# don't author or modify — semgrep findings there would be noise we can't
+# act on without diverging from upstream.
+
+# Netflix-upstream MATLAB MEX helpers. Pure research reference, not linked
+# into libvmaf. The MEX sources use sprintf() in mexErrMsgTxt calls and
+# match our CERT STR31-C guard rule (vmaf-no-strcpy-strcat-sprintf).
+# Paths updated for ADR-0700 rename (python/vmaf/ → compat/python-vmaf/):
+python/vmaf/matlab/
+compat/python-vmaf/matlab/
+
+# Netflix-upstream Python training resource tree (datasets, param/feature
+# dicts). Not C/C++; included here for completeness since semgrep's Python
+# rules could fire on the same upstream drift ruff is silenced on.
+# Paths updated for ADR-0700 rename:
+python/vmaf/resource/
+compat/python-vmaf/resource/
+
+# Standard exclusions — third-party / generated.
+subprojects/
+build/
+dist/
+core/test/data/
+model/
+testdata/
+
+# pre-push-mkdocs-strict.sh is itself a hook; it documents the SKIP= /
+# --no-verify bypass patterns as user-facing help text in comments and a
+# heredoc error message.  The vmaf-no-skip-hooks-in-scripts rule correctly
+# flags scripts that programmatically invoke those bypasses, but this file
+# is exempt: it is the hook being bypassed, not a caller that bypasses it.
+scripts/git-hooks/pre-push-mkdocs-strict.sh
+
+# scripts/githooks/pre-commit.sh is the native-bash hook (ADR-0924). Line 33
+# contains a comment explaining the --no-verify escape hatch for users; it is
+# documentation, not a programmatic bypass. The vmaf-no-skip-hooks-in-scripts
+# rule fires on the comment's literal text; exempt this file the same way we
+# exempt pre-push-mkdocs-strict.sh above.
+scripts/githooks/pre-commit.sh
+
+# Vendored upstream cJSON — three upstream TODO/FIXME markers that cannot be
+# fixed without diverging from the upstream cJSON source (cJSON 1.7.x).
+# They are tracked in the cJSON project itself; we do not modify this file.
+# Lines: 1660 (FIXME overflow), 2774 (TODO O(n^2)), 2786 (TODO proper fix).
+# (scaffold-audit ADR-0621 P3-6)
+# Path updated for ADR-0700 rename (libvmaf/ → core/):
+core/src/mcp/3rdparty/cJSON/cJSON.c
+
+# Binary / data suffixes.
+*.pkl
+*.mexa64
+*.mexw64
+*.mexmaci64
+*.onnx
+*.bin
+*.yuv
+*.npy

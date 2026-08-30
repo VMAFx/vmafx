@@ -1,0 +1,3 @@
+- **MCP `probe_backend` tool (ADR-0613)**: runtime health check for GPU backends — distinguishes "compiled in" from "driver present and functional" by running a 1-frame score on a synthetic 32×32 YUV. Returns `compiled_in`, `runtime_healthy`, `latency_ms`, `score`, and `error`.
+- **MCP `vmaf_version` tool (ADR-0613)**: returns the local vmaf binary path, version string (from `--version`), and build flags dict (cpu/cuda/sycl/vulkan/hip/metal).
+- **MCP `vmaf_score_encoded` tool (ADR-0613)**: score encoded video files (MP4/MKV/Y4M/WebM/…) directly — geometry is probed via `ffprobe`, both inputs decoded in parallel via `ffmpeg`, then scored via the standard `vmaf_score` pipeline. No manual width/height/pixfmt entry required.

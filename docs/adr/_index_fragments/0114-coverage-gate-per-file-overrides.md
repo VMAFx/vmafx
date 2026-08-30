@@ -1,0 +1,1 @@
+| [ADR-0114](0114-coverage-gate-per-file-overrides.md) | `coverage-check.sh` gains a per-file critical-coverage override map; `dnn/ort_backend.c` + `dnn/dnn_api.c` floor at 78% (structural EP-availability ceiling per ADR-0112) | Accepted | ci, coverage, dnn, ort, gate |

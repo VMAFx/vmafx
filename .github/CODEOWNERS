@@ -1,0 +1,92 @@
+# CODEOWNERS — GitHub auto-assigns review based on paths here.
+# Order matters: later patterns override earlier ones.
+
+# Default: everything needs @Lusoris review.
+*                                           @Lusoris
+
+# GPU backends — fork-authored, tight review loop.
+/core/src/cuda/                             @Lusoris
+/core/src/sycl/                             @Lusoris
+/core/src/feature/cuda/                     @Lusoris
+/core/src/feature/sycl/                     @Lusoris
+/core/include/libvmaf/libvmaf_sycl.h        @Lusoris
+
+# SIMD paths — numerical-correctness sensitive.
+/core/src/feature/x86/                      @Lusoris
+/core/src/feature/arm64/                    @Lusoris
+
+# Public C API surface — breaking changes need explicit sign-off.
+/core/include/                              @Lusoris
+/core/src/libvmaf.c                         @Lusoris
+
+# CLI / tools — user-facing, versioning sensitive.
+/core/tools/                                @Lusoris
+
+# Build system.
+/core/meson.build                           @Lusoris
+/core/meson_options.txt                     @Lusoris
+/Makefile                                   @Lusoris
+
+# CI / supply chain / security.
+/.github/workflows/                         @Lusoris
+/.github/dependabot.yml                     @Lusoris
+/release-please-config.json                 @Lusoris
+/.release-please-manifest.json              @Lusoris
+/SECURITY.md                                @Lusoris
+
+# AI-agent framework.
+/.claude/                                   @Lusoris
+/CLAUDE.md                                  @Lusoris
+/AGENTS.md                                  @Lusoris
+/docs/principles.md                         @Lusoris
+
+# Netflix golden assertions — never modify.
+# These paths are watched; any PR touching them triggers a manual review block.
+/python/test/quality_runner_test.py         @Lusoris
+/python/test/feature_extractor_test.py      @Lusoris
+/python/test/vmafexec_test.py               @Lusoris
+/python/test/vmafexec_feature_extractor_test.py @Lusoris
+/python/test/result_test.py                 @Lusoris
+/python/test/resource/yuv/                  @Lusoris
+
+# Tiny-AI surface — model training, ONNX runtime integration.
+/ai/                                        @Lusoris
+/core/src/dnn/                              @Lusoris
+/model/                                     @Lusoris
+
+# MCP servers — JSON-RPC tool surface.
+/mcp-server/                                @Lusoris
+
+# Distributed platform — controller / node / operator / server / tune
+# (Phase 4b, ADR-0709).
+/cmd/                                       @Lusoris
+
+# Deployment & containers.
+/deploy/                                    @Lusoris
+/docker/                                    @Lusoris
+/dev/                                       @Lusoris
+
+# Python harness compatibility shim (post-ADR-0700 rename).
+/compat/                                    @Lusoris
+
+# ffmpeg integration — patches against n8.1 (ADR-0186).
+/ffmpeg-patches/                            @Lusoris
+
+# Scripts & tooling.
+/scripts/                                   @Lusoris
+/tools/                                     @Lusoris
+
+# ADRs — every fork decision must land an ADR here.
+/docs/adr/                                  @Lusoris
+
+# Changelog fragment tree (ADR-0221).
+/changelog.d/                               @Lusoris
+
+# Governance.
+/GOVERNANCE.md                              @Lusoris
+/MAINTAINERS.md                             @Lusoris
+/CODE_OF_CONDUCT.md                         @Lusoris
+/CONTRIBUTING.md                            @Lusoris
+/.github/CODEOWNERS                         @Lusoris
+/.github/ISSUE_TEMPLATE/                    @Lusoris
+/.github/PULL_REQUEST_TEMPLATE.md           @Lusoris

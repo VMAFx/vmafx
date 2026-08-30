@@ -1,0 +1,8 @@
+{
+  "input_name": "features",
+  "kind": "fr",
+  "name": "vmaf_tiny_smoke_v0",
+  "notes": "CI smoke fixture \u2014 not a quality model.",
+  "onnx_opset": 17,
+  "output_name": "score"
+}

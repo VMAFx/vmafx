@@ -1,0 +1,1 @@
+- `float_ansnr`: add `enable_chroma` option (default `false`) to compute ANSNR/ANPSNR for Cb/Cr planes, emitting `float_ansnr_cb`, `float_ansnr_cr`, `float_anpsnr_cb`, `float_anpsnr_cr` feature scores. YUV400P content clamps to luma-only regardless of flag.

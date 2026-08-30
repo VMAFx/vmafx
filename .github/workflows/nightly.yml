@@ -1,0 +1,90 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tsan:
+    name: ThreadSanitizer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - name: Install dependencies
+        run: bash scripts/setup/ubuntu.sh
+        env:
+          INSTALL_LINTERS: "1"
+      - name: Meson setup (TSan)
+        run: |
+          cd core
+          meson setup ../build-tsan \
+            -Db_sanitize=thread \
+            -Denable_cuda=false \
+            -Denable_sycl=false \
+            --buildtype=debugoptimized
+      - name: Build
+        run: ninja -C build-tsan
+      - name: Run tests
+        # test_gpu_picture_pool_uaf intentionally forces a ~192 GB allocation
+        # failure; without allocator_may_return_null the TSan/ASan runtime
+        # hard-aborts (out-of-memory) instead of letting the test see NULL.
+        # The required tests-and-quality-gates lane sets the same env.
+        env:
+          ASAN_OPTIONS: allocator_may_return_null=1
+          TSAN_OPTIONS: allocator_may_return_null=1
+        run: meson test -C build-tsan --print-errorlogs --timeout-multiplier 3
+
+  clang-tidy-full:
+    name: Full clang-tidy scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - name: Install dependencies
+        run: bash scripts/setup/ubuntu.sh
+        env:
+          INSTALL_LINTERS: "1"
+      - name: Generate compile_commands.json
+        run: |
+          cd core
+          meson setup ../build -Denable_cuda=false -Denable_sycl=false
+      - name: Run clang-tidy on full tree
+        run: |
+          find core/src core/tools -name '*.c' -o -name '*.cpp' | \
+            parallel -j"$(nproc)" --joblog tidy.log \
+              'clang-tidy -p build {} 2>&1 || true' | tee clang-tidy-full.log
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: clang-tidy-full-report
+          path: clang-tidy-full.log
+
+  netflix-benchmark:
+    name: Netflix benchmark suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - name: Install dependencies
+        run: bash scripts/setup/ubuntu.sh
+      - name: Build
+        run: |
+          cd core
+          meson setup ../build -Denable_cuda=false -Denable_sycl=false --buildtype=release
+          ninja -C ../build
+      - name: Run benchmark
+        run: bash testdata/bench_all.sh || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: nightly-benchmark-results
+          path: testdata/netflix_benchmark_results.json

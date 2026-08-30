@@ -1,0 +1,1 @@
+| [ADR-0937](0937-mkdocs-nav-decade-buckets.md) | mkdocs ADR nav — per-hundred bucket layout + auto by-tag indexes (`scripts/docs/generate-adr-nav.sh`, `scripts/docs/generate-adr-by-tag.sh`) | Accepted | 2026-05-31 | docs, mkdocs, adr, navigation, automation, fork-local |

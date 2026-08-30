@@ -1,0 +1,1 @@
+| [ADR-0427](0427-chug-hdr-feature-materialisation.md) | Materialise CHUG HDR feature rows with reference-aligned full-reference pairs. Distorted ladder rows are paired to their `chug_content_name` reference, decoded to 10-bit 4:2:0 YUV, scaled to reference geometry, and emitted as local-only clip-level feature rows for MOS-head training. | Accepted | ai, hdr, corpus, mos |

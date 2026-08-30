@@ -1,0 +1,218 @@
+# syntax=docker/dockerfile:1.25@sha256:0adf442eae370b6087e08edc7c50b552d80ddf261576f4ebd6421006b2461f12
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# docker/Dockerfile.production-gpu — VMAFX production GPU-augmented runtime image
+#
+# Parametrized via GPU_RUNTIME build-arg:
+#   cpu        (default) — identical to Dockerfile.production; no GPU runtime added
+#   cuda12     — adds CUDA 12 runtime libs (libcuda.so stub + libcudart.so)
+#   rocm6      — adds ROCm 6 HIP runtime (libamdhip64.so + libhsa-runtime64.so)
+#   oneapi2026 — adds Intel oneAPI 2026 Level Zero runtime (libze1 + libze_intel_gpu1)
+#
+# Tag matrix (built by CI):
+#   ghcr.io/vmafx/vmafx:<tag>          (cpu default, same as Dockerfile.production)
+#   ghcr.io/vmafx/vmafx:<tag>-cuda12
+#   ghcr.io/vmafx/vmafx:<tag>-rocm6
+#   ghcr.io/vmafx/vmafx:<tag>-oneapi2026
+#
+# ADR-0698: vmafx-production-dockerfile
+
+ARG GPU_RUNTIME=cpu
+
+# ---------------------------------------------------------------------------
+# Stage 1 — builder (same as Dockerfile.production but WITH GPU backend
+# selected by GPU_RUNTIME so the vmaf binary has the right backend compiled in)
+# ---------------------------------------------------------------------------
+# Builder on debian:12-slim to match the distroless cc-debian12 runtime glibc (2.36).
+FROM debian:13-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2 AS builder-base
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VMAF_BUILD_JOBS=4
+
+# BuildKit cache mounts on the apt caches preserve the .deb downloads and
+# index files across builds; subsequent rebuilds skip the network fetch.
+# `sharing=locked` serialises concurrent BuildKit jobs against the same cache.
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ccache \
+        gcc \
+        g++ \
+        meson \
+        ninja-build \
+        nasm \
+        pkg-config \
+        ca-certificates
+
+WORKDIR /src
+COPY . .
+
+# --- cpu build (default, no GPU SDK needed) ---
+FROM builder-base AS builder-cpu
+
+# ccache cache mount accelerates incremental rebuilds across the per-variant
+# builder stages; each variant gets its own cache scope via the target path.
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cpu \
+    CCACHE_DIR=/root/.cache/ccache \
+    meson setup /build core \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=false \
+        -Denable_sycl=false \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j4 \
+    && mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/ /dist/model/
+
+# --- cuda12 build ---
+FROM builder-base AS builder-cuda12
+
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        cuda-toolkit-12-0
+
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cuda12 \
+    CCACHE_DIR=/root/.cache/ccache \
+    meson setup /build core \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=true \
+        -Denable_sycl=false \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j4 \
+    && mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/ /dist/model/
+
+# --- rocm6 build ---
+FROM builder-base AS builder-rocm6
+
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        rocm-hip-runtime-dev
+
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-rocm6 \
+    CCACHE_DIR=/root/.cache/ccache \
+    meson setup /build core \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=false \
+        -Denable_hip=true \
+        -Denable_sycl=false \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j4 \
+    && mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/ /dist/model/
+
+# --- oneapi2026 build ---
+FROM builder-base AS builder-oneapi2026
+
+# hadolint ignore=DL3008,DL3009
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        intel-oneapi-dpcpp-cpp-2026.0
+
+ENV ONEAPI_ROOT=/opt/intel/oneapi
+ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
+
+RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-oneapi2026 \
+    CCACHE_DIR=/root/.cache/ccache \
+    meson setup /build core \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=false \
+        -Denable_sycl=true \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j4 \
+    && mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/ /dist/model/
+
+# (ADR-0726: Vulkan backend removed; builder-vulkan stage deleted)
+
+# ---------------------------------------------------------------------------
+# Runtime base — distroless cc-debian12
+# ---------------------------------------------------------------------------
+FROM gcr.io/distroless/cc-debian12@sha256:d703b626ba455c4e6c6fbe5f36e6f427c85d51445598d564652a2f334179f96e AS runtime-base
+
+LABEL org.opencontainers.image.title="vmafx"
+LABEL org.opencontainers.image.description="VMAFX production GPU runtime"
+LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.vendor="Lusoris"
+
+ENV LD_LIBRARY_PATH="/usr/local/lib"
+ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
+
+# ---------------------------------------------------------------------------
+# Final targets — one per GPU variant
+# The CI workflow builds the appropriate target based on the tag suffix.
+# ---------------------------------------------------------------------------
+
+FROM runtime-base AS final-cpu
+COPY --from=builder-cpu /dist/lib/   /usr/local/lib/
+COPY --from=builder-cpu /dist/bin/   /usr/local/bin/
+COPY --from=builder-cpu /dist/model/ /usr/local/share/vmafx/model/
+# Drop privileges — distroless `nonroot` user (UID:GID 65532). Trivy DS-0002.
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/vmaf"]
+
+FROM runtime-base AS final-cuda12
+# CUDA runtime libs — only the runtime, not the full toolkit
+COPY --from=nvidia/cuda:12.0-runtime-ubuntu22.04 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+COPY --from=builder-cuda12 /dist/lib/   /usr/local/lib/
+COPY --from=builder-cuda12 /dist/bin/   /usr/local/bin/
+COPY --from=builder-cuda12 /dist/model/ /usr/local/share/vmafx/model/
+# Drop privileges. CUDA device access (/dev/nvidia*) is granted via the
+# NVIDIA Container Toolkit — `nonroot` UID 65532 still gets device access
+# when the runtime injects /dev nodes with mode 0666.
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/vmaf"]
+
+FROM runtime-base AS final-rocm6
+# ROCm HIP runtime libs
+COPY --from=rocm/rocm-terminal:6.4@sha256:72b323c5d56c511ea75f7353d0fee04e637390dd4874d414020284627a658014 /opt/rocm/lib/libamdhip64.so*       /usr/local/lib/
+COPY --from=rocm/rocm-terminal:6.4@sha256:72b323c5d56c511ea75f7353d0fee04e637390dd4874d414020284627a658014 /opt/rocm/lib/libhsa-runtime64.so*  /usr/local/lib/
+COPY --from=builder-rocm6 /dist/lib/   /usr/local/lib/
+COPY --from=builder-rocm6 /dist/bin/   /usr/local/bin/
+COPY --from=builder-rocm6 /dist/model/ /usr/local/share/vmafx/model/
+# Drop privileges. ROCm requires the host user to be a member of the
+# `render` and `video` groups; the runtime image inherits this from the
+# host group-mapping when `--group-add video,render` is passed.
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/vmaf"]
+
+FROM runtime-base AS final-oneapi2026
+# Level Zero + Intel GPU plugin runtime
+COPY --from=intel/oneapi-basekit:2026.0 /opt/intel/oneapi/compiler/latest/lib/libsycl.so*  /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2026.0 /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=builder-oneapi2026 /dist/lib/   /usr/local/lib/
+COPY --from=builder-oneapi2026 /dist/bin/   /usr/local/bin/
+COPY --from=builder-oneapi2026 /dist/model/ /usr/local/share/vmafx/model/
+# Drop privileges. Intel GPU access via /dev/dri/renderD* — group `render`
+# (GID 110/993 on Debian) needs to be passed via `--group-add` on `docker run`.
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/vmaf"]
+
+# (ADR-0726: final-vulkan stage removed)

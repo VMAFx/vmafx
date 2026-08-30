@@ -1,0 +1,1 @@
+| [ADR-1100](1100-feature-extractor-flags-zero-skip-gpu.md) | Skip GPU-flagged extractors when `flags == 0` in `vmaf_get_feature_extractor_by_feature_name` | Accepted | `feature-extractor`, `correctness`, `sycl`, `cuda`, `hip`, `bug-fix`, `fork-local` |

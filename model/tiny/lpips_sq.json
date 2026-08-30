@@ -1,0 +1,8 @@
+{
+  "input_name": "ref",
+  "kind": "fr",
+  "name": "vmaf_tiny_lpips_sq_v1",
+  "notes": "LPIPS-SqueezeNet (richzhang/PerceptualSimilarity v0.1). Inputs are ImageNet-normalised RGB planes, layout NCHW [1,3,H,W]. Output is a scalar LPIPS distance (lower = more similar). Two-input model \u2014 use vmaf_dnn_session_run() with named bindings 'ref' and 'dist'.",
+  "onnx_opset": 18,
+  "output_name": "score"
+}

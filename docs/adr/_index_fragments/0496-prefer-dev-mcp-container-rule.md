@@ -1,0 +1,1 @@
+| [ADR-0496](0496-prefer-dev-mcp-container-rule.md) | Default to the `vmaf-dev-mcp` container for all vmaf / vmaf-tune / ai / MCP work | Accepted | tooling, container, dev-experience, project-rule, fork-local |

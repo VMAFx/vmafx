@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# test/e2e/kuttl-tests/03-node-heartbeat/00-create.yaml
+#
+# Create a VmafxNode CR backed by a stub Deployment that serves a /healthz
+# endpoint.  The operator's health-probe loop must write back a lastHeartbeat
+# timestamp within 30 s, proving the heartbeat path is wired end-to-end.
+#
+# ADR-0783 / ADR-0713 / ADR-0714.
+---
+# Stub vmafx-node Deployment — serves /healthz:8080 → 200 OK.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmafx-node-stub
+  namespace: vmafx-e2e-test
+  labels:
+    app: vmafx-node-stub
+    vmafx.dev/node: node-cpu-stub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vmafx-node-stub
+  template:
+    metadata:
+      labels:
+        app: vmafx-node-stub
+        vmafx.dev/node: node-cpu-stub
+    spec:
+      containers:
+        - name: healthz-stub
+          # Minimal HTTP 200 server; no real vmafx binary needed for heartbeat test.
+          image: gcr.io/google-containers/echoserver:1.10
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmafx-node-stub
+  namespace: vmafx-e2e-test
+spec:
+  selector:
+    app: vmafx-node-stub
+  ports:
+    - name: healthz
+      port: 8080
+      targetPort: 8080
+---
+# VmafxNode CR — operator will probe healthz and write status.lastHeartbeat.
+apiVersion: vmafx.dev/v1
+kind: VmafxNode
+metadata:
+  name: node-cpu-stub
+  namespace: vmafx-e2e-test
+  annotations:
+    # Tell the operator where to probe this node's /healthz endpoint.
+    vmafx.dev/healthz-url: "http://vmafx-node-stub.vmafx-e2e-test.svc.cluster.local:8080/healthz"
+spec:
+  gpuVendor: cpu
+  capacity: 2

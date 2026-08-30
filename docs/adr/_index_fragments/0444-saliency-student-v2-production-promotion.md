@@ -1,0 +1,1 @@
+| [ADR-0444](0444-saliency-student-v2-production-promotion.md) | Promote `saliency_student_v2` to production default (IoU 0.7105 vs v1 0.6558, +8.3 %) | Accepted | ai, dnn, saliency, tiny-ai, fork-local |

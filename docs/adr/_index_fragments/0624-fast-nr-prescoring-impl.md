@@ -1,0 +1,1 @@
+| [ADR-0624](0624-fast-nr-prescoring-impl.md) | Fast NR pre-scoring implementation for `tune-per-shot` and `compare`, including NR proxy backend, early-elimination telemetry, and bisect integration. | Accepted | vmaf-tune, bisect, ai, performance |

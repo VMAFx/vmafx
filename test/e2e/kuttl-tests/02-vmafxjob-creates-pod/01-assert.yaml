@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# test/e2e/kuttl-tests/02-vmafxjob-creates-pod/01-assert.yaml
+#
+# Assert: operator created a worker Pod for the VmafxJob, and the VmafxJob
+# status.phase transitions away from Pending.
+#
+# ADR-0783 / ADR-0714.
+---
+# The operator must have created exactly one Pod labelled for this job.
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: vmafx-e2e-test
+  labels:
+    vmafx.dev/job: job-tiny-cpu
+status:
+  phase: Running
+---
+# VmafxJob phase must have left Pending (operator acknowledged the CR).
+apiVersion: vmafx.dev/v1
+kind: VmafxJob
+metadata:
+  name: job-tiny-cpu
+  namespace: vmafx-e2e-test
+status:
+  # kuttl evaluates this as "phase is not empty and is not Pending".
+  # We check for Running or Succeeded; Failed is caught by the error-assert below.
+  phase: Running

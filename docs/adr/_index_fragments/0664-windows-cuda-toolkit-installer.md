@@ -1,0 +1,1 @@
+| [ADR-0664](0664-windows-cuda-toolkit-installer.md) | Install CUDA 13.2.0 directly in the Windows MSVC + CUDA CI leg after the wrapper action failed before setup | Accepted | ci, build, cuda, windows, github-actions |

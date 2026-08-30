@@ -1,0 +1,184 @@
+name: FFmpeg Integration — Linux/macOS × gcc/clang + SYCL
+on:
+  push:
+    branches: [master]
+    paths:
+      # Path-filter introduced in ADR-0317. The FFmpeg-integration matrix
+      # (gcc / clang / SYCL) only needs to fire when the inputs
+      # it actually consumes change: the libvmaf sources it builds, the
+      # ffmpeg-patches/ series it applies, the meson options that gate
+      # the build, or this workflow file itself. Doc-only / Python-only
+      # / vmaf-tune-only PRs (#409, #411, #412) were burning 10–15 min
+      # of runner time per push without exercising any of these inputs.
+      - "core/**"
+      - "ffmpeg-patches/**"
+      - "meson.build"
+      - "meson_options.txt"
+      - ".github/workflows/ffmpeg-integration.yml"
+  pull_request:
+    branches: [master]
+    # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
+    # CI when a draft PR is promoted to ready-for-review.
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "core/**"
+      - "ffmpeg-patches/**"
+      - "meson.build"
+      - "meson_options.txt"
+      - ".github/workflows/ffmpeg-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ffmpeg-integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  LD_LIBRARY_PATH: /usr/local/lib/x86_64-linux-gnu
+
+jobs:
+  ffmpeg:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            CC: gcc
+            CXX: g++
+            name: FFmpeg — Ubuntu gcc (Build Only)
+          - os: macos-latest
+            CC: clang
+            CXX: clang++
+            name: FFmpeg — macOS clang (Build Only)
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      CC: ${{ matrix.CC }}
+      CXX: ${{ matrix.CXX }}
+    steps:
+      - name: Setup python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: 3.14.6
+      - name: Install meson and ninja
+        run: |
+          python -m pip install --upgrade pip
+          pip install meson
+      - name: Install dependencies (ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo -E apt-get -yq install ninja-build gcc nasm
+      - name: Install dependencies (mac)
+        if: matrix.os == 'macos-latest'
+        run: brew install -q ninja nasm
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Build vmaf
+        run: |
+          meson setup core core/build --buildtype release
+          sudo ninja -vC core/build install
+
+      - name: Build FFmpeg
+        run: |
+          git clone -q --branch release/8.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
+          cd ffmpeg
+          ./configure --enable-version3 --enable-libvmaf --disable-indevs \
+            --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
+          sudo make --quiet -j $(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu) install
+
+  # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
+  ffmpeg-sycl:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: FFmpeg — SYCL (Build Only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CC: gcc
+      CXX: g++
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Setup python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: 3.14.6
+      - name: Install meson, ninja, and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install meson
+          sudo apt-get update
+          sudo -E apt-get -yq install ninja-build gcc g++ nasm gpg-agent libvpl-dev
+
+      - name: Install Intel oneAPI
+        # Pinned to oneAPI 2025.3 + Level Zero v1.28.0. See libvmaf-build-matrix.yml.
+        run: |
+          wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo -E apt-get -yq install intel-oneapi-compiler-dpcpp-cpp-2025.3 cmake
+          git clone --depth=1 --branch v1.28.0 \
+            https://github.com/oneapi-src/level-zero.git /tmp/level-zero
+          cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build /tmp/level-zero/build -j$(nproc)
+          sudo cmake --install /tmp/level-zero/build
+          rm -rf /tmp/level-zero
+          echo "/opt/intel/oneapi/compiler/latest/bin" >> $GITHUB_PATH
+          echo "/opt/intel/oneapi/compiler/latest/lib" | sudo tee /etc/ld.so.conf.d/oneapi.conf
+          sudo ldconfig
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Build vmaf with SYCL
+        env:
+          # Required by core/src/meson.build: enable_sycl=true forces
+          # icpx as the project C++ compiler so the .so link step embeds
+          # SPIR-V device images via clang-offload-wrapper.
+          CC: icx
+          CXX: icpx
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          # b_lto=false: see libvmaf-build-matrix.yml note; icx + meson's
+          # -flto=auto leaves the static archive without LTO bitcode and
+          # breaks the .so link.
+          meson setup core core/build --buildtype release \
+            -Denable_float=true -Denable_sycl=true -Db_lto=false
+          sudo -E PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+            ninja -vC core/build install
+
+      - name: Build FFmpeg with SYCL patch series
+        run: |
+          git clone -q --branch release/8.1 --depth=1 "https://github.com/FFmpeg/FFmpeg" ffmpeg
+          cd ffmpeg
+          # Apply the patch series in series.txt order. Patch 0003 (SYCL)
+          # depends on fields added by 0001 (tiny-AI), so applying out of
+          # order breaks the build.
+          while IFS= read -r line; do
+            case "$line" in ''|\#*) continue ;; esac
+            echo "Applying ffmpeg-patches/$line"
+            git apply "../ffmpeg-patches/$line" \
+              || patch -p1 < "../ffmpeg-patches/$line"
+          done < ../ffmpeg-patches/series.txt
+          # libvmaf-sycl is auto-detected by check_pkg_config in patch 0003;
+          # there is no `--enable-libvmaf-sycl` flag to pass.
+          PKG_CONFIG_PATH="/usr/local/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH" \
+          ./configure --enable-version3 --enable-libvmaf \
+            --enable-libvpl --disable-indevs --cc="$CC" --cxx="$CXX" \
+            || { tail -50 ffbuild/config.log; exit 1; }
+          sudo make --quiet -j $(nproc) install
+          echo "FFmpeg with SYCL support built successfully"
+
+  # ffmpeg-vulkan job removed per ADR-0726: the Vulkan backend was dropped from
+  # the fork entirely (core/src/vulkan/, feature/vulkan/, libvmaf_vulkan.h all
+  # deleted). The meson `enable_vulkan` option no longer exists, so any attempt
+  # to pass -Denable_vulkan=enabled to meson setup fails with
+  # "Unknown option: enable_vulkan". The patches 0004 + 0006 remain in the
+  # series.txt chain as no-op compatibility shims (see series.txt comment and
+  # ADR-0860) but produce zero linked code at FFmpeg configure time.

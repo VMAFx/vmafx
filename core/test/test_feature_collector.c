@@ -1,0 +1,293 @@
+/**
+ *
+ *  Copyright 2016-2026 Netflix, Inc.
+ *
+ *     Licensed under the BSD+Patent License (the "License");
+ *     you may not use this file except in compliance with the License.
+ *     You may obtain a copy of the License at
+ *
+ *         https://opensource.org/licenses/BSDplusPatent
+ *
+ *     Unless required by applicable law or agreed to in writing, software
+ *     distributed under the License is distributed on an "AS IS" BASIS,
+ *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *     See the License for the specific language governing permissions and
+ *     limitations under the License.
+ *
+ */
+
+#include "test.h"
+#include "feature_collector.c"
+#include "libvmaf.c"
+#include <limits.h>
+#include <time.h>
+
+static char *test_model_mount_with_use_features()
+{
+    int err = 0;
+
+    VmafConfiguration vmaf_cfg = {0};
+
+    VmafContext *vmaf = NULL;
+    vmaf_init(&vmaf, vmaf_cfg);
+    mu_assert("problem during vmaf_init", vmaf);
+
+    VmafModelConfig model_cfg = {0};
+    VmafModel *model;
+    vmaf_model_load(&model, &model_cfg, "vmaf_v0.6.1");
+    mu_assert("problem during vmaf_model_load", model);
+
+    err = vmaf_use_features_from_model(vmaf, model);
+    mu_assert("problem during vmaf_use_features_from_model", !err);
+
+    mu_assert("problem during vmaf_model_mount", vmaf->feature_collector->models);
+
+    vmaf_model_destroy(model);
+    err = vmaf_close(vmaf);
+    mu_assert("problem During vmaf_close", !err);
+
+    return NULL;
+}
+
+static int load_three_test_models(VmafModel *models[3], const char *const names[3])
+{
+    for (unsigned k = 0; k < 3; k++) {
+        VmafModelConfig cfg = {
+            .name = names[k],
+            .flags = VMAF_MODEL_FLAGS_DEFAULT,
+        };
+        int err = vmaf_model_load(&models[k], &cfg, "vmaf_v0.6.1");
+        if (err || !models[k])
+            return -1;
+    }
+    return 0;
+}
+
+static void destroy_three_test_models(VmafModel *models[3])
+{
+    for (unsigned k = 0; k < 3; k++)
+        vmaf_model_destroy(models[k]);
+}
+
+static char *test_model_mount()
+{
+    VmafFeatureCollector *feature_collector;
+    int err = vmaf_feature_collector_init(&feature_collector);
+    mu_assert("problem during vmaf_feature_collector_init", !err);
+
+    const char *const model_names[3] = {"vmaf_0", "vmaf_1", "vmaf_2"};
+    VmafModel *models[3];
+    err = load_three_test_models(models, model_names);
+    mu_assert("problem during vmaf_model_load", !err);
+
+    for (unsigned k = 0; k < 3; k++) {
+        err = vmaf_feature_collector_mount_model(feature_collector, models[k]);
+        mu_assert("problem during vmaf_model_mount", !err);
+    }
+
+    VmafPredictModel *it = feature_collector->models;
+    for (unsigned i = 0; it; i++, it = it->next) {
+        mu_assert("model name does not match mount order",
+                  !strcmp(it->model->name, model_names[i]));
+    }
+
+    destroy_three_test_models(models);
+    vmaf_feature_collector_destroy(feature_collector);
+    return NULL;
+}
+
+static char *test_model_unmount()
+{
+    VmafFeatureCollector *feature_collector;
+    int err = vmaf_feature_collector_init(&feature_collector);
+    mu_assert("problem during vmaf_feature_collector_init", !err);
+
+    const char *const model_names[3] = {"vmaf_0", "vmaf_1", "vmaf_2"};
+    VmafModel *models[3];
+    err = load_three_test_models(models, model_names);
+    mu_assert("problem during vmaf_model_load", !err);
+
+    for (unsigned k = 0; k < 3; k++) {
+        err = vmaf_feature_collector_mount_model(feature_collector, models[k]);
+        mu_assert("problem during vmaf_model_mount", !err);
+    }
+    for (unsigned k = 0; k < 3; k++) {
+        err = vmaf_feature_collector_unmount_model(feature_collector, models[k]);
+        mu_assert("problem during vmaf_model_unmount", !err);
+    }
+
+    mu_assert("feature_collector->models should be NULL", !feature_collector->models);
+
+    destroy_three_test_models(models);
+    vmaf_feature_collector_destroy(feature_collector);
+    return NULL;
+}
+
+static char *test_aggregate_vector_init_append_and_destroy()
+{
+    int err = 0;
+
+    AggregateVector aggregate_vector;
+    err = aggregate_vector_init(&aggregate_vector);
+    mu_assert("problem during aggregate_vector_init", !err);
+    mu_assert("aggregate_vector is not initialized properly",
+              (aggregate_vector.cnt == 0) && (aggregate_vector.capacity == 8));
+
+    err = aggregate_vector_append(&aggregate_vector, "A", 1);
+    mu_assert("problem during aggregate_vector_append", !err);
+    mu_assert(
+        "name and value were incorrectly set",
+        (!strcmp("A", aggregate_vector.metric[0].name) && aggregate_vector.metric[0].value == 1));
+
+    err |= aggregate_vector_append(&aggregate_vector, "B", 2);
+    err |= aggregate_vector_append(&aggregate_vector, "C", 3);
+    err |= aggregate_vector_append(&aggregate_vector, "D", 4);
+    err |= aggregate_vector_append(&aggregate_vector, "E", 5);
+    err |= aggregate_vector_append(&aggregate_vector, "F", 6);
+    err |= aggregate_vector_append(&aggregate_vector, "G", 7);
+    err |= aggregate_vector_append(&aggregate_vector, "H", 8);
+    mu_assert("problem during aggregate_vector_append", !err);
+    mu_assert("aggregate_vector is not sized properly",
+              (aggregate_vector.cnt == 8) && (aggregate_vector.capacity == 8));
+
+    err = aggregate_vector_append(&aggregate_vector, "I", 9);
+    mu_assert("problem during aggregate_vector_append", !err);
+    mu_assert("aggregate_vector has not realloc'd properly",
+              (aggregate_vector.cnt == 9) && (aggregate_vector.capacity == 16));
+    mu_assert(
+        "name and value were incorrectly set",
+        (!strcmp("I", aggregate_vector.metric[8].name) && aggregate_vector.metric[8].value == 9));
+
+    aggregate_vector_destroy(&aggregate_vector);
+    return NULL;
+}
+
+static char *test_feature_vector_init_append_and_destroy()
+{
+    int err;
+
+    FeatureVector *feature_vector;
+    err = feature_vector_init(&feature_vector, "psnr_y");
+    mu_assert("problem during feature_vector_init", !err);
+
+    unsigned initial_capacity = feature_vector->capacity;
+    for (int j = initial_capacity - 1; j >= 0; j--) {
+        err = feature_vector_append(feature_vector, j, 60.);
+        mu_assert("problem during feature_vector_append", !err);
+    }
+    mu_assert("feature_vector->capacity should not have changed",
+              feature_vector->capacity == initial_capacity);
+    err = feature_vector_append(feature_vector, initial_capacity, 60.);
+    mu_assert("problem during feature_vector_append", !err);
+    mu_assert("feature_vector->capacity did not double its allocation",
+              feature_vector->capacity == initial_capacity * 2);
+    err = feature_vector_append(feature_vector, initial_capacity, 60.);
+    mu_assert("feature_vector_append should not overwrite", err);
+
+    feature_vector_destroy(feature_vector);
+    return NULL;
+}
+
+/* Finding R2-5: feature_vector_append() must reject a pathological,
+ * caller-controlled frame index instead of doubling `capacity` (unsigned)
+ * until it wraps to 0.  Before the fix, an index near UINT_MAX wrapped the
+ * doubling loop to a 0 capacity — under NDEBUG the assert is compiled out, so
+ * realloc(p, 0) leaves capacity stuck at 0 and `index >= 0` spins forever (and
+ * before that it tries multi-gigabyte allocations).  This test passes a huge
+ * index and asserts a clean error return; without the guard it would hang or
+ * OOM rather than return. */
+static char *test_feature_vector_append_rejects_huge_index()
+{
+    int err;
+
+    FeatureVector *feature_vector;
+    err = feature_vector_init(&feature_vector, "psnr_y");
+    mu_assert("problem during feature_vector_init", !err);
+
+    const unsigned capacity_before = feature_vector->capacity;
+
+    err = feature_vector_append(feature_vector, FEATURE_VECTOR_MAX_INDEX, 60.);
+    mu_assert("feature_vector_append must reject index == FEATURE_VECTOR_MAX_INDEX", err);
+
+    err = feature_vector_append(feature_vector, UINT_MAX, 60.);
+    mu_assert("feature_vector_append must reject UINT_MAX index", err);
+
+    /* The rejection happens before any realloc, so capacity is untouched. */
+    mu_assert("rejected index must not grow capacity", feature_vector->capacity == capacity_before);
+
+    /* A legitimate, modest index must still be accepted and grow the array —
+     * the guard rejects only the pathological range, not valid frame indices. */
+    err = feature_vector_append(feature_vector, 1000u, 60.);
+    mu_assert("feature_vector_append must accept a legitimate index", !err);
+    mu_assert("legitimate index must grow capacity past it", feature_vector->capacity > 1000u);
+
+    feature_vector_destroy(feature_vector);
+    return NULL;
+}
+
+static char *test_feature_collector_init_append_get_and_destroy()
+{
+    int err;
+
+    VmafFeatureCollector *feature_collector;
+    err = vmaf_feature_collector_init(&feature_collector);
+    mu_assert("problem during vmaf_feature_collector_init", !err);
+    unsigned initial_capacity = feature_collector->capacity;
+    mu_assert("this test assumes an initial capacity of 8", initial_capacity == 8);
+    err = vmaf_feature_collector_append(feature_collector, "feature0", 60., 1);
+    err |= vmaf_feature_collector_append(feature_collector, "feature1", 60., 1);
+    err |= vmaf_feature_collector_append(feature_collector, "feature2", 60., 1);
+    err |= vmaf_feature_collector_append(feature_collector, "feature3", 60., 1);
+    err |= vmaf_feature_collector_append(feature_collector, "feature4", 60., 1);
+    err |= vmaf_feature_collector_append(feature_collector, "feature5", 60., 1);
+    err |= vmaf_feature_collector_append(feature_collector, "feature6", 60., 1);
+    err |= vmaf_feature_collector_append(feature_collector, "feature7", 60., 1);
+    mu_assert("problem during vmaf_feature_collector_append", !err);
+    mu_assert("feature_collector->capacity should not have changed",
+              feature_collector->capacity == initial_capacity);
+    err = vmaf_feature_collector_append(feature_collector, "feature8", 60., 1);
+    mu_assert("problem during vmaf_feature_collector_append", !err);
+    mu_assert("feature_collector->capacity did not double its allocation",
+              feature_collector->capacity == initial_capacity * 2);
+
+    double score;
+    err = vmaf_feature_collector_get_score(feature_collector, "feature5", &score, 1);
+    mu_assert("problem during vmaf_feature_collector_get_score", !err);
+    mu_assert("vmaf_feature_collector_get_score did not get the expected score", score == 60.);
+    err = vmaf_feature_collector_get_score(feature_collector, "feature5", &score, 2);
+    mu_assert("vmaf_feature_collector_get_score did not fail with bad index", err);
+
+    err = vmaf_feature_collector_set_aggregate(feature_collector, "aggregate0", 100.);
+    err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate1", 101.);
+    err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate2", 102.);
+    err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate3", 103.);
+    err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate4", 104.);
+    err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate5", 105.);
+    err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate6", 106.);
+    err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate7", 107.);
+    err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate8", 108.);
+    err |= vmaf_feature_collector_set_aggregate(feature_collector, "aggregate9", 109.);
+    mu_assert("problem during vmaf_feature_collector_set_aggregate", !err);
+
+    err = vmaf_feature_collector_get_aggregate(feature_collector, "aggregate5", &score);
+    mu_assert("problem during vmaf_feature_collector_get_aggregate", !err);
+    mu_assert("unexpected aggreggate_score", score == 105.);
+    err = vmaf_feature_collector_get_aggregate(feature_collector, "aggregate9", &score);
+    mu_assert("problem during vmaf_feature_collector_get_aggregate", !err);
+    mu_assert("unexpected aggreggate_score", score == 109.);
+
+    vmaf_feature_collector_destroy(feature_collector);
+    return NULL;
+}
+
+char *run_tests()
+{
+    mu_run_test(test_feature_vector_init_append_and_destroy);
+    mu_run_test(test_feature_vector_append_rejects_huge_index);
+    mu_run_test(test_feature_collector_init_append_get_and_destroy);
+    mu_run_test(test_aggregate_vector_init_append_and_destroy);
+    mu_run_test(test_model_mount);
+    mu_run_test(test_model_unmount);
+    mu_run_test(test_model_mount_with_use_features);
+    return NULL;
+}

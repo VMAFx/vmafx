@@ -1,0 +1,1 @@
+| [ADR-1007](1007-c-string-numeric-ub-fixes.md) | Fix C string/numeric UB cluster — NULL strcmp, size_t underflow, signed-shift overflow, snprintf truncation | Accepted | `core`, `security`, `c`, `ub` |

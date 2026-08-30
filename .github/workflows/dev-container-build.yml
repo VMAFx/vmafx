@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# dev-container-build.yml — PR-time build gate for the dev/Containerfile.
+#
+# Motivation (ADR-0819): previously there was no CI gate on dev/Containerfile;
+# regressions were only discovered at user runtime after the container fiasco
+# where path references went stale post-rename (libvmaf/ → core/).  This
+# workflow runs `docker build --target libvmaf-build` on every PR that touches
+# dev/Containerfile or dev/scripts/, fails fast on any build error, and
+# smoke-tests the resulting image by invoking `vmaf --version`
+# and the CPU-backend probe against the bundled test YUVs.
+#
+# No image is pushed — this is a pure build-verification gate.
+
+name: Dev Container Build (PR gate)
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "dev/Containerfile"
+      - "dev/scripts/**"
+      - "dev/docker-compose.yml"
+      - ".github/workflows/dev-container-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-container-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dev-container-build:
+    name: Dev Container Build + Smoke Test
+    # Skip draft PRs — consistent with the other workflow gates.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    # GPU SDK downloads (CUDA keyring, oneAPI, ROCm) + multi-stage build can
+    # take up to 45 min on a cold runner; set a generous ceiling.
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      # Regression guard for PR #707 / ADR-0529: assert that every /dev/dri
+      # bind-mount in docker-compose.yml is writable (read_only: false).
+      # The NVIDIA Container Toolkit OCI hook writes symlinks into
+      # /dev/dri/by-path at container init; read_only:true breaks any NVIDIA
+      # host.  This step runs before the expensive Docker build so the lint
+      # fails fast.
+      - name: Lint docker-compose.yml — /dev/dri mounts must be writable
+        run: bash scripts/ci/check-compose-dri-writable.sh dev/docker-compose.yml
+
+      # Build only up to the `libvmaf-build` stage (skips the heavy FFmpeg
+      # stage and the final `dev-mcp` assembly) so the gate stays under 45 min
+      # on a free-tier runner.  The GPU SDK layers (CUDA, oneAPI, ROCm) are the
+      # main regression surface — they're included in `libvmaf-build`.
+      # Full multi-stage builds (including FFmpeg) are covered by the
+      # release-tag docker-publish-production workflow.
+      - name: Build dev container (up to libvmaf-build stage)
+        run: |
+          docker build \
+            --file dev/Containerfile \
+            --target libvmaf-build \
+            --tag vmaf-dev-mcp-gate:${{ github.sha }} \
+            .
+
+      # Smoke test: verify `vmaf --version` exits 0 and the CPU backend
+      # can score the bundled 48-frame fixture YUVs.
+      - name: Smoke test — vmaf --version
+        run: |
+          docker run --rm \
+            -e LD_LIBRARY_PATH=/usr/local/lib \
+            vmaf-dev-mcp-gate:${{ github.sha }} \
+            vmaf --version
+
+      - name: Smoke test — CPU backend probe (48-frame fixture)
+        run: |
+          docker run --rm \
+            -e LD_LIBRARY_PATH=/usr/local/lib \
+            vmaf-dev-mcp-gate:${{ github.sha }} \
+            vmaf \
+              --reference /build/vmaf/testdata/ref_576x324_48f.yuv \
+              --distorted  /build/vmaf/testdata/dis_576x324_48f.yuv \
+              --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+              --backend cpu \
+              --json --output /tmp/probe_cpu.json
+
+      - name: Cleanup image
+        if: always()
+        run: docker rmi vmaf-dev-mcp-gate:${{ github.sha }} || true

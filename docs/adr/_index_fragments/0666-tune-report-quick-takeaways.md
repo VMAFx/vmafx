@@ -1,0 +1,1 @@
+| [ADR-0666](0666-tune-report-quick-takeaways.md) | `vmaf-tune report` renders run-specific Quick takeaways before detailed charts so profile cards state the best row, coverage gaps, ladder span, and per-shot CRF spread for non-expert readers. | Accepted | vmaf-tune, reports, ux, encoder-profile |

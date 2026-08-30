@@ -1,0 +1,124 @@
+{{- if eq .Values.workload "Job" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "vmafx.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+  {{- with .Values.podAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  completions: {{ .Values.job.completions }}
+  parallelism: {{ .Values.job.parallelism }}
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  {{- if .Values.job.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "vmafx.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "vmafx.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ include "vmafx.name" . }}
+          image: {{ include "vmafx.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.job.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.job.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: VMAFX_BACKEND
+              value: {{ include "vmafx.backendEnvValue" . | quote }}
+          {{- range $k, $v := .Values.env }}
+            - name: {{ $k | quote }}
+              value: {{ $v | quote }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "vmafx.fullname" . }}-config
+          {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            limits:
+              cpu: {{ .Values.resources.limits.cpu | quote }}
+              memory: {{ .Values.resources.limits.memory | quote }}
+            {{- $gpuKey := include "vmafx.gpuResource" . }}
+            {{- if and .Values.gpu.enabled $gpuKey }}
+              {{ $gpuKey }}: {{ .Values.gpu.count | quote }}
+            {{- end }}
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+              memory: {{ .Values.resources.requests.memory | quote }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- if .Values.persistence.corpus.enabled }}
+            - name: corpus
+              mountPath: {{ .Values.persistence.corpus.mountPath }}
+              readOnly: true
+          {{- end }}
+          {{- if .Values.persistence.output.enabled }}
+            - name: output
+              mountPath: {{ .Values.persistence.output.mountPath }}
+          {{- end }}
+          {{- if .Values.persistence.models.enabled }}
+            - name: models
+              mountPath: {{ .Values.persistence.models.mountPath }}
+              readOnly: true
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- if .Values.persistence.corpus.enabled }}
+        - name: corpus
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-corpus
+            readOnly: true
+      {{- end }}
+      {{- if .Values.persistence.output.enabled }}
+        - name: output
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-output
+      {{- end }}
+      {{- if .Values.persistence.models.enabled }}
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "vmafx.fullname" . }}-models
+            readOnly: true
+      {{- end }}
+{{- end }}

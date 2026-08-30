@@ -1,0 +1,1 @@
+| [ADR-0967](0967-mcp-http-transport-security-hardening.md) | MCP HTTP transport security — add auth + body limit + safer bind default (Round 26 audit A.1) | Accepted | security, mcp, http, auth, hardening, fork-local |

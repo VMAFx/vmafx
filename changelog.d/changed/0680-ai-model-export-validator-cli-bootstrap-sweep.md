@@ -1,0 +1,1 @@
+- Reused the shared AI script bootstrap and CLI helpers in model exporter and validator scripts so their report sidecars capture normalized argv and entrypoint metadata.

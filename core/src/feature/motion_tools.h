@@ -1,0 +1,34 @@
+/**
+ *
+ *  Copyright 2016-2026 Netflix, Inc.
+ *
+ *     Licensed under the BSD+Patent License (the "License");
+ *     you may not use this file except in compliance with the License.
+ *     You may obtain a copy of the License at
+ *
+ *         https://opensource.org/licenses/BSDplusPatent
+ *
+ *     Unless required by applicable law or agreed to in writing, software
+ *     distributed under the License is distributed on an "AS IS" BASIS,
+ *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *     See the License for the specific language governing permissions and
+ *     limitations under the License.
+ *
+ */
+
+#pragma once
+
+#ifndef MOTION_TOOLS_H_
+#define MOTION_TOOLS_H_
+
+static const float FILTER_5_s[5] = {0.054488685, 0.244201342, 0.402619947, 0.244201342,
+                                    0.054488685};
+
+static const float FILTER_3_s[3] = {0.166378498, 0.667243004, 0.166378498};
+
+static const float FILTER_5_NO_OP_s[5] = {0.0, 0.0, 1.0, 0.0, 0.0};
+
+/* Default motion filtering size */
+#define DEFAULT_MOTION_FILTER_SIZE (5)
+
+#endif /* MOTION_TOOLS_H_ */

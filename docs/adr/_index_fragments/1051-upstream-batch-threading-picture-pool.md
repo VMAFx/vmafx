@@ -1,0 +1,1 @@
+| [ADR-1051](1051-upstream-batch-threading-picture-pool.md) | Port upstream batch-threading + picture-pool defaults (dff4082b + 46d3a154) | Accepted | `upstream-port`, `scoring`, `threading`, `correctness` |

@@ -1,0 +1,1 @@
+| [ADR-1092](1092-framesync-producer-death-deadlock.md) | framesync producer-death deadlock — abort flag + shutdown broadcast | Accepted | `core`, `threading`, `correctness`, `sanitizer`, `fork-local` |

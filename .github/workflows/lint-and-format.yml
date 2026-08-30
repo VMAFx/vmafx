@@ -1,0 +1,684 @@
+# Static-analysis gate. Runs in parallel with the libvmaf Build Matrix so a
+# lint failure doesn't block discovering build breakage and vice versa.
+
+name: Lint
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
+    # CI when a draft PR is promoted to ready-for-review.
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-commit:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Pre-Commit (Formatters + Basic Checks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          # Resolve LFS blobs (e.g. model/tiny/*.onnx) so pre-commit's final
+          # "changes made by hooks" diff doesn't report pointer-vs-blob noise
+          # against files no hook actually touched.
+          lfs: true
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.6"
+      # pre-commit/action@v3.0.1 is the latest release (Feb 2024) and still
+      # pins actions/cache@v4, which trips the Node.js 20 deprecation
+      # warning (Node 20 removed from runners 2026-09-16). Inline the
+      # three steps it would have run, using actions/cache@v5.
+      - name: Cache pre-commit environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-py3.14-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-py3.14-
+      - name: Install pre-commit
+        run: python -m pip install --upgrade pip pre-commit
+      - name: Run pre-commit on all files
+        run: pre-commit run --show-diff-on-failure --color=always --all-files
+
+  clang-tidy:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Clang-Tidy (Changed C/C++ Files)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          # Need history for the push-delta diff on master. fetch-depth: 2
+          # is enough for a squash-merge FF (one new commit), but use 0 to
+          # tolerate multi-commit FF pushes without a second fetch step.
+          fetch-depth: 0
+          persist-credentials: false
+      # Early file-delta probe — if the PR / push touches no C/C++ files,
+      # short-circuit before the apt-install + meson-setup + meson-compile
+      # steps (~5 min on a cold runner). Saves doc-only / Python-only PRs
+      # from paying the heavy lint setup. The body of `Run clang-tidy on
+      # changed files` does its own (more thorough, exclusion-aware) delta
+      # later; this step only asks "is there anything plausible?".
+      - name: Detect C/C++ changes (early skip)
+        id: cpp-changes
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$GH_EVENT_NAME" = "pull_request" ]; then
+            files=$(git diff --name-only --diff-filter=d \
+              "origin/${PR_BASE_REF}...HEAD" -- '*.c' '*.h' '*.cpp' '*.hpp' || true)
+          elif [ "$GH_EVENT_NAME" = "push" ]; then
+            before="$PUSH_BEFORE_SHA"
+            zero="0000000000000000000000000000000000000000"
+            if [ -z "$before" ] || [ "$before" = "$zero" ]; then
+              files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD \
+                -- '*.c' '*.h' '*.cpp' '*.hpp' 2>/dev/null || true)
+            else
+              files=$(git diff --name-only --diff-filter=d "$before"..HEAD \
+                -- '*.c' '*.h' '*.cpp' '*.hpp' || true)
+            fi
+          else
+            files="full-tree-scan"  # workflow_dispatch — never skip
+          fi
+          if [ -z "$files" ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No C/C++ deltas — skipping clang-tidy install + build"
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install deps
+        if: steps.cpp-changes.outputs.any == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm clang-tidy-18 \
+            jq parallel
+          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy \
+            /usr/bin/clang-tidy-18 100
+      - name: Generate compile_commands.json
+        if: steps.cpp-changes.outputs.any == 'true'
+        run: |
+          meson setup build core -Denable_cuda=false -Denable_sycl=false
+          # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
+          # exist on disk before clang-tidy parses the translation units.
+          meson compile -C build
+      - name: Run clang-tidy on changed files
+        if: steps.cpp-changes.outputs.any == 'true'
+        # Hardening per Semgrep `yaml.github-actions.security.run-shell-injection`
+        # (Research-0090, F2): pull every `${{ github.* }}` interpolation into
+        # `env:` and reference the env var with double-quotes in shell. The
+        # `before` SHA, `event_name` enum, and `base_ref` branch name are all
+        # GitHub-controlled and currently safe, but the env-aliasing pattern
+        # forecloses any future case where one of those values gains a shell
+        # metacharacter and makes the data-flow explicit for maintainers.
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          # Collect the delta for both PR and push events so master-post-merge
+          # doesn't re-scan every vendored .c/.cpp (e.g. core/src/svm.cpp)
+          # and surface pre-existing warnings unrelated to the push.
+          #
+          # Excluded path families — the shared reason is that the compile
+          # commands in `build/compile_commands.json` don't cover these TUs
+          # (CPU-only + ARM-only build here), so clang-tidy parses them with
+          # default flags and spurious `clang-diagnostic-error` output:
+          #   - core/src/feature/arm64/ — NEON, needs cross-toolchain.
+          #   - core/src/cuda/ + core/src/feature/cuda/ — require
+          #     `-Denable_cuda=true` meson setup to generate compile_commands
+          #     (follow-up: add a parallel CUDA clang-tidy job once a
+          #     self-hosted CUDA runner lands, backlog T7-3).
+          #   - core/test/test_cuda_*.c + test_gpu_picture_pool.c — GPU-gated
+          #     tests whose build entries only exist under the CUDA build.
+          #     test_gpu_picture_pool.c is the renamed test_ring_buffer.c per
+          #     ADR-0239 (still CUDA-only — it pulls in libvmaf_cuda.h).
+          #   - core/src/sycl/ + core/src/feature/sycl/ +
+          #     core/test/test_sycl* — require `-Denable_sycl=true` and
+          #     the `icpx` compiler; no compile_commands in the CPU-only
+          #     `build/`. Local lint runs against `core/build-sycl/`.
+          #   - core/tools/vmaf_vpl.c — VAAPI integration; needs
+          #     `va/va.h` from libva-dev plus the CUDA/SYCL link path; no
+          #     compile_commands entry in the CPU-only build.
+          #   - core/src/mcp/ + core/test/test_mcp_smoke.c —
+          #     gated by `-Denable_mcp=true`; the CPU-only lint build
+          #     has the umbrella flag off (ADR-0209 audit-first
+          #     scaffold, T5-2). Local lint runs against a build
+          #     configured with `-Denable_mcp=true -Denable_mcp_sse=true
+          #     -Denable_mcp_uds=true -Denable_mcp_stdio=true`.
+          # Local lint on these files runs against `core/build-cuda/`.
+          # `--diff-filter=d` excludes Deleted entries — clang-tidy can't
+          # lint a file that no longer exists on disk; without this filter
+          # the script passes a missing path to clang-tidy and fails with
+          # `clang-diagnostic-error: no such file or directory`.
+          #   - core/src/interop/pelorus_*.c +
+          #     core/include/libvmaf/pelorus/ — vendored verbatim mirror of
+          #     the Pelorus interop ABI (ADR-1113), byte-identical to its
+          #     single source of truth; cannot absorb fork-local lint fixes
+          #     without breaking scripts/sync-pelorus-interop.sh. Same posture
+          #     as core/src/svm.cpp (vendored, excluded). Fix upstream in
+          #     pelorus and re-sync.
+          if [ "$GH_EVENT_NAME" = "pull_request" ]; then
+            files=$(git diff --name-only --diff-filter=d \
+              "origin/${PR_BASE_REF}...HEAD" \
+              -- '*.c' '*.h' '*.cpp' '*.hpp' \
+              | grep -v '^core/src/feature/arm64/' \
+              | grep -v '^core/src/cuda/' \
+              | grep -v '^core/src/feature/cuda/' \
+              | grep -v '^core/test/test_cuda_' \
+              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
+              | grep -v '^core/test/tiny_ai_test_template\.h$' \
+              | grep -v '^core/src/sycl/' \
+              | grep -v '^core/src/feature/sycl/' \
+              | grep -v '^core/test/test_sycl' \
+              | grep -v '^core/tools/vmaf_vpl\.c$' \
+              | grep -v '^core/src/mcp/' \
+              | grep -v '^core/test/test_mcp' \
+              | grep -v '^core/src/hip/' \
+              | grep -v '^core/src/feature/hip/' \
+              | grep -v '^core/test/test_hip' \
+              | grep -v '^core/test/fuzz/' \
+              | grep -v '^core/src/compat/win32/' \
+              | grep -v '^core/src/interop/pelorus_' \
+              | grep -v '^core/include/libvmaf/pelorus/' \
+              | tr '\n' ' ')
+          elif [ "$GH_EVENT_NAME" = "push" ]; then
+            before="$PUSH_BEFORE_SHA"
+            zero="0000000000000000000000000000000000000000"
+            if [ -z "$before" ] || [ "$before" = "$zero" ]; then
+              # Initial push / new branch: fall back to HEAD~1..HEAD if a
+              # parent exists, otherwise skip (no meaningful delta).
+              if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD \
+                  -- '*.c' '*.h' '*.cpp' '*.hpp' \
+                  | grep -v '^core/src/feature/arm64/' \
+              | grep -v '^core/src/cuda/' \
+              | grep -v '^core/src/feature/cuda/' \
+              | grep -v '^core/test/test_cuda_' \
+              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
+              | grep -v '^core/test/tiny_ai_test_template\.h$' \
+              | grep -v '^core/src/sycl/' \
+              | grep -v '^core/src/feature/sycl/' \
+              | grep -v '^core/test/test_sycl' \
+              | grep -v '^core/tools/vmaf_vpl\.c$' \
+              | grep -v '^core/src/mcp/' \
+              | grep -v '^core/test/test_mcp' \
+              | grep -v '^core/src/hip/' \
+              | grep -v '^core/src/feature/hip/' \
+              | grep -v '^core/test/test_hip' \
+              | grep -v '^core/test/fuzz/' \
+              | grep -v '^core/src/compat/win32/' \
+              | grep -v '^core/src/interop/pelorus_' \
+              | grep -v '^core/include/libvmaf/pelorus/' \
+              | tr '\n' ' ')
+              else
+                files=""
+              fi
+            else
+              files=$(git diff --name-only --diff-filter=d "$before"..HEAD \
+                -- '*.c' '*.h' '*.cpp' '*.hpp' \
+                | grep -v '^core/src/feature/arm64/' \
+              | grep -v '^core/src/cuda/' \
+              | grep -v '^core/src/feature/cuda/' \
+              | grep -v '^core/test/test_cuda_' \
+              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
+              | grep -v '^core/test/tiny_ai_test_template\.h$' \
+              | grep -v '^core/src/sycl/' \
+              | grep -v '^core/src/feature/sycl/' \
+              | grep -v '^core/test/test_sycl' \
+              | grep -v '^core/tools/vmaf_vpl\.c$' \
+              | grep -v '^core/src/mcp/' \
+              | grep -v '^core/test/test_mcp' \
+              | grep -v '^core/src/hip/' \
+              | grep -v '^core/src/feature/hip/' \
+              | grep -v '^core/test/test_hip' \
+              | grep -v '^core/test/fuzz/' \
+              | grep -v '^core/src/compat/win32/' \
+              | grep -v '^core/src/interop/pelorus_' \
+              | grep -v '^core/include/libvmaf/pelorus/' \
+              | tr '\n' ' ')
+            fi
+          else
+            # workflow_dispatch and other triggers: scan full tree (slow
+            # but deliberate — operator asked for it).
+            files=$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' \
+              | grep -v '^subprojects/' \
+              | grep -v '^core/src/feature/arm64/' \
+              | grep -v '^core/src/cuda/' \
+              | grep -v '^core/src/feature/cuda/' \
+              | grep -v '^core/test/test_cuda_' \
+              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
+              | grep -v '^core/test/tiny_ai_test_template\.h$' \
+              | grep -v '^core/src/sycl/' \
+              | grep -v '^core/src/feature/sycl/' \
+              | grep -v '^core/test/test_sycl' \
+              | grep -v '^core/tools/vmaf_vpl\.c$' \
+              | grep -v '^core/src/mcp/' \
+              | grep -v '^core/test/test_mcp' \
+              | grep -v '^core/src/hip/' \
+              | grep -v '^core/src/feature/hip/' \
+              | grep -v '^core/test/test_hip' \
+              | grep -v '^core/test/fuzz/' \
+              | grep -v '^core/src/compat/win32/' \
+              | grep -v '^core/src/interop/pelorus_' \
+              | grep -v '^core/include/libvmaf/pelorus/' \
+              | tr '\n' ' ')
+          fi
+          [ -z "$files" ] && { echo "no C/C++ changes"; exit 0; }
+          # Drop empty lines — the `tr '\n' ' ' | tr ' ' '\n'` round-trip
+          # leaves a trailing blank that parallel would pass to clang-tidy
+          # as an empty filename, which clang resolves to the workspace
+          # directory and reports as a clang-diagnostic-error.
+          echo "$files" | tr ' ' '\n' | grep -v '^$' \
+            | parallel -j$(nproc) "clang-tidy -p build --quiet {} || touch /tmp/tidy.fail"
+          [ -f /tmp/tidy.fail ] && exit 1 || exit 0
+
+  clang-tidy-sycl:
+    # T7-13(b) / T-SYCL-CLANG-TIDY-DISABLED — icpx-aware clang-tidy lane for
+    # SYCL TUs that the main `clang-tidy` job above explicitly excludes (no
+    # SYCL TUs in the CPU-only compile_commands.json).
+    #
+    # The two-step approach that unblocks stock LLVM clang-tidy:
+    #  1. scripts/ci/gen-sycl-compile-commands.py parses build.ninja and
+    #     synthesises compile_commands.json entries for the SYCL .cpp files
+    #     that meson compiles via CUSTOM_COMMAND (icpx -fsycl). The script
+    #     replaces icpx with clang++ and drops -fsycl so the entry is
+    #     consumable by stock clang-tidy.
+    #  2. scripts/ci/clang-tidy-sycl.sh injects -isystem<sycl/sycl.hpp path>
+    #     + -D__SYCL_DEVICE_ONLY__=0 (guards __spirv_ControlBarrier / ocl_event)
+    #     + -Wno-unknown-warning-option + -Wno-unknown-pragmas.
+    #
+    # Advisory (continue-on-error: true) until one green master run confirms
+    # the wrapper holds across all current SYCL TUs; gate tightens after that.
+    # See ADR-0217 for the design rationale and alternatives matrix.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Clang-Tidy SYCL (Changed Files, Advisory)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect changed SYCL files
+        id: detect
+        env:
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_BASE_REF: ${{ github.base_ref }}
+          GH_EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          # Mirrors the main clang-tidy job's PR/push/dispatch fan-out but
+          # keeps only SYCL TUs (the inverse of the exclusion list there).
+          # Context values are passed through env vars (not inline expressions)
+          # to prevent shell injection (github-actions shell-injection rule).
+          if [ "$GH_EVENT_NAME" = "pull_request" ]; then
+            files=$(git diff --name-only --diff-filter=d \
+              "origin/${GH_BASE_REF}...HEAD" \
+              -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                 'core/src/feature/sycl/*.cpp' \
+                 'core/src/feature/sycl/*.hpp' \
+                 'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+              | tr '\n' ' ')
+          elif [ "$GH_EVENT_NAME" = "push" ]; then
+            before="$GH_EVENT_BEFORE"
+            zero="0000000000000000000000000000000000000000"
+            if [ -z "$before" ] || [ "$before" = "$zero" ]; then
+              if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD \
+                  -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                     'core/src/feature/sycl/*.cpp' \
+                     'core/src/feature/sycl/*.hpp' \
+                     'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+                  | tr '\n' ' ')
+              else
+                files=""
+              fi
+            else
+              files=$(git diff --name-only --diff-filter=d "$before"..HEAD \
+                -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                   'core/src/feature/sycl/*.cpp' \
+                   'core/src/feature/sycl/*.hpp' \
+                   'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+                | tr '\n' ' ')
+            fi
+          else
+            files=$(git ls-files \
+              'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+              'core/src/feature/sycl/*.cpp' \
+              'core/src/feature/sycl/*.hpp' \
+              'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
+              | tr '\n' ' ')
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          if [ -z "$files" ]; then
+            echo "no SYCL files changed — skipping job body"
+          fi
+      - name: Install oneAPI DPC++ compiler + clang-tidy
+        if: steps.detect.outputs.files != ''
+        run: |
+          # Minimal oneAPI install — only the DPC++/C++ compiler component.
+          # The full base toolkit (~3 GiB) is unnecessary; we only need
+          # <sycl/sycl.hpp> on disk for clang-tidy path resolution.
+          wget -qO- \
+            https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | sudo gpg --dearmor \
+                -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] \
+            https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y \
+            intel-oneapi-compiler-dpcpp-cpp \
+            meson ninja-build nasm clang-tidy-18 jq parallel
+          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy \
+            /usr/bin/clang-tidy-18 100
+      - name: Generate SYCL compile_commands.json
+        if: steps.detect.outputs.files != ''
+        run: |
+          # Source oneAPI env and configure a SYCL build tree. icpx is the
+          # required compiler under -Denable_sycl=true.
+          set +u
+          # shellcheck disable=SC1091
+          source /opt/intel/oneapi/setvars.sh --force
+          set -u
+          CC=icx CXX=icpx meson setup build-sycl core \
+            -Denable_sycl=true -Denable_cuda=false
+          # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
+          # exist on disk before clang-tidy parses TUs.
+          meson compile -C build-sycl
+          # Synthesise compile_commands.json entries for the SYCL .cpp TUs
+          # that meson emits as CUSTOM_COMMAND rules (icpx -fsycl) rather
+          # than standard cpp_COMPILER rules. Without these entries clang-tidy
+          # falls back to default flags and cannot resolve project headers.
+          python3 scripts/ci/gen-sycl-compile-commands.py build-sycl
+      - name: Run clang-tidy-sycl wrapper on changed files
+        if: steps.detect.outputs.files != ''
+        run: |
+          set +u
+          # shellcheck disable=SC1091
+          source /opt/intel/oneapi/setvars.sh --force
+          set -u
+          files="${{ steps.detect.outputs.files }}"
+          echo "$files" | tr ' ' '\n' | grep -v '^$' \
+            | parallel -j"$(nproc)" \
+                "scripts/ci/clang-tidy-sycl.sh -p build-sycl --quiet {} \
+                  || touch /tmp/tidy-sycl.fail"
+          [ -f /tmp/tidy-sycl.fail ] && exit 1 || exit 0
+
+  cppcheck:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Cppcheck (Whole Project)
+    # ADR-0359 — pilot job for the ARC self-hosted runner pool.
+    # Variable `ARC_RUNNERS_ENABLED=true` flips this job to the in-cluster
+    # `arc-runners` scale set; default `false` keeps GitHub-hosted. If the
+    # ARC pool is degraded, flip the var off and re-trigger CI.
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && 'arc-runners' || 'ubuntu-24.04' }}
+    # Bumped 15→30 min on 2026-05-09: GitHub-hosted runner queue
+    # saturation pushed Cppcheck past 15 min on ~all PRs and master.
+    # Last green run on master took 5 min; the new ceiling absorbs
+    # the slow-runner case without forcing a retry-loop on an already
+    # saturated queue.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install
+        run: sudo apt-get update && sudo apt-get install -y cppcheck meson ninja-build nasm
+      - name: Generate compile_commands
+        run: |
+          meson setup build core -Denable_cuda=false -Denable_sycl=false
+          # Build first so codegen outputs (model JSONs → .c) exist on disk.
+          # cppcheck parses compile_commands.json literally and errors on
+          # any missing translation-unit file.
+          meson compile -C build
+      - name: Run cppcheck
+        run: |
+          cppcheck --enable=warning,performance,portability \
+            --inline-suppr \
+            --suppressions-list=.cppcheck-suppressions.txt \
+            --project=build/compile_commands.json \
+            --error-exitcode=1 \
+            --xml --output-file=cppcheck-report.xml 2>&1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: cppcheck-report
+          path: cppcheck-report.xml
+
+  python-lint:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # T7-CI-DEDUP — mypy-only. Ruff/Black/isort already run in the
+    # `pre-commit` job above (over `--all-files`), so duplicating them
+    # here just doubled the maintenance surface (two pip-pin sources of
+    # truth) without catching anything new. mypy stays because no
+    # pre-commit hook runs it; advisory exit because numpy/torch stubs
+    # are gappy on first run.
+    # Job display name kept verbatim so branch-protection's required-
+    # status-checks list doesn't need an admin update in lockstep with
+    # this dedup. Body is mypy-only per T7-CI-DEDUP; the rename to
+    # "Python Lint (mypy)" lands separately together with the
+    # branch-protection change.
+    name: Python Lint (Ruff + Black + isort + mypy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.6"
+      - name: Install
+        run: pip install mypy
+      - run: mypy ai/ scripts/ || echo "mypy advisory only on first run"
+
+  registry-validate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # T6-9 / ADR-0209 — schema + cross-file consistency check on
+    # model/tiny/registry.json. Runs jsonschema (Draft 2020-12) when
+    # available, plus cross-file invariants (sha256 matches, sidecars
+    # exist). Fails closed.
+    name: Tiny-Model Registry Validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          # Resolve LFS blobs so the sha256 cross-check sees real ONNX
+          # bytes, not pointer files.
+          lfs: true
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.6"
+      - name: Install jsonschema
+        run: pip install jsonschema
+      - name: Validate model/tiny/registry.json
+        run: python3 ai/scripts/validate_model_registry.py
+
+  docs-lint:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # Batch 18 / ADR-0108 — fail-fast mkdocs --strict on every PR that
+    # touches docs/** or mkdocs.yml, mirroring the master-push gate in
+    # docs.yml but without the GitHub Pages deploy step. This prevents
+    # broken anchors / missing nav entries from landing silently on master
+    # (38 of 50 docs.yml runs were failing before this job was added).
+    # The job is intentionally path-filtered so C-only PRs skip it quickly.
+    name: Docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.6"
+      - name: Install MkDocs Material
+        run: pip install -r docs/requirements.txt
+      - name: Build docs (strict — fail on any warning)
+        run: mkdocs build --strict
+
+  check-conflict-markers:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # Fast, pre-commit-independent gate that fails immediately if git conflict
+    # markers (<<<<<<< / ======= / >>>>>>>) are found committed in any text
+    # file. This is intentionally redundant with pre-commit's check-merge-conflict
+    # hook — the hook only fires on local `git commit`, whereas this step fires
+    # on every push and PR, catching markers that sneak in via direct pushes,
+    # GitHub UI merges, or --no-verify bypasses.
+    # Excludes: binary extensions, LICENSES/ vendored texts, and the
+    # .pre-commit-config.yaml itself (which references hook IDs that contain
+    # the string "conflict").
+    name: Check — No committed conflict markers
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - name: Fail if conflict markers are committed
+        run: |
+          set +e
+          hits=$(git grep -In --untracked=false \
+            -e '^<<<<<<< ' -e '^=======$' -e '^>>>>>>> ' \
+            -- \
+            ':(exclude)LICENSES/**' \
+            ':(exclude)*.yuv' ':(exclude)*.pkl' ':(exclude)*.onnx' \
+            ':(exclude)*.bin' ':(exclude)*.mexa64' ':(exclude)*.mexw64' \
+            ':(exclude)*.mexmaci64' ':(exclude)*.npy' \
+            ':(exclude)*.so' ':(exclude)*.a' ':(exclude)*.dylib' \
+            ':(exclude)*.dll' ':(exclude)*.onnx.data' \
+            2>/dev/null)
+          if [ -n "$hits" ]; then
+            echo "::error::Committed conflict markers found — resolve before merging:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "No conflict markers found."
+
+  shellcheck:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # T7-CI-DEDUP — body collapsed to a no-op proxy that depends on the
+    # `pre-commit` job, which already runs `shellcheck-py v0.11.0.1` +
+    # `pre-commit-shfmt v3.13.1-1` with the identical `-i 2 -ci`
+    # settings over `--all-files`. The job name is kept verbatim so
+    # branch-protection's required-status-checks list keeps validating
+    # without an admin update in lockstep with this PR. The standalone
+    # apt-install / shfmt-curl steps are dropped — pre-commit covers
+    # the same surface in the same PR via the pinned hook revs.
+    name: ShellCheck + shfmt (All *.sh)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    needs: pre-commit
+    steps:
+      - run: |
+          echo "shellcheck/shfmt covered by pre-commit job above; this is a no-op proxy."
+
+  markdownlint:
+    # ADR-0866 — markdownlint-cli2 gate over the touched markdown delta.
+    # Mirrors the clang-tidy job's PR/push/dispatch fan-out so the
+    # ~6.2k pre-existing warnings (ADR-0864 tail) don't gate innocent
+    # PRs. Reads .markdownlint.json from the repo root (PR #332's tuned
+    # config). NO --fix: 7 default rules are unsafe under autofix per
+    # ADR-0864.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Markdown lint (markdownlint-cli2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          # Full history so the push-delta diff against `before` works for
+          # multi-commit FF pushes; PR mode uses origin/${base_ref}...HEAD.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "24.18.0"
+      - name: Detect changed markdown files
+        id: detect
+        # Hardening per Semgrep `yaml.github-actions.security.run-shell-injection`:
+        # pull every `${{ github.* }}` interpolation into `env:` and reference
+        # via env vars. Same posture as the clang-tidy job above.
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          # Restrict to the tracked markdown corpus (docs/ + changelog.d/
+          # + top-level *.md). Upstream vendored trees and test fixtures
+          # are excluded via the leading filter; the .markdownlintignore
+          # path would also work but the explicit corpus is clearer.
+          if [ "$GH_EVENT_NAME" = "pull_request" ]; then
+            files=$(git diff --name-only --diff-filter=d \
+              "origin/${PR_BASE_REF}...HEAD" -- '*.md' \
+              | grep -E '^(docs/|changelog\.d/|README\.md|CLAUDE\.md|AGENTS\.md)' \
+              | grep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
+              | grep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)' \
+              || true)
+          elif [ "$GH_EVENT_NAME" = "push" ]; then
+            before="$PUSH_BEFORE_SHA"
+            zero="0000000000000000000000000000000000000000"
+            if [ -z "$before" ] || [ "$before" = "$zero" ]; then
+              if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD -- '*.md' \
+                  | grep -E '^(docs/|changelog\.d/|README\.md|CLAUDE\.md|AGENTS\.md)' \
+                  | grep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
+              | grep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)' \
+                  || true)
+              else
+                files=""
+              fi
+            else
+              files=$(git diff --name-only --diff-filter=d "$before"..HEAD -- '*.md' \
+                | grep -E '^(docs/|changelog\.d/|README\.md|CLAUDE\.md|AGENTS\.md)' \
+                | grep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
+              | grep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/)' \
+                || true)
+            fi
+          else
+            # workflow_dispatch — scan the full corpus. Operator-explicit.
+            files=$(git ls-files \
+              'docs/**/*.md' \
+              'README.md' 'CLAUDE.md' 'AGENTS.md' \
+              | grep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
+              | grep -vE '^(docs/adr/README\.md|docs/adr/_index_fragments/)' \
+              || true)
+          fi
+          # Newline-delimit for the next step (one path per line, no IFS surprises).
+          {
+            echo 'files<<EOF'
+            echo "$files"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+          if [ -z "$files" ]; then
+            echo "no markdown changes — job will short-circuit"
+          else
+            echo "changed markdown files:"
+            echo "$files"
+          fi
+      - name: Run markdownlint-cli2
+        if: steps.detect.outputs.files != ''
+        env:
+          MD_FILES: ${{ steps.detect.outputs.files }}
+        run: |
+          # `npx --yes` resolves the package from the npm registry on first
+          # run; subsequent runs hit the runner's npx cache. No project-
+          # local package.json is needed.
+          # shellcheck disable=SC2086
+          echo "$MD_FILES" | xargs -r npx --yes markdownlint-cli2

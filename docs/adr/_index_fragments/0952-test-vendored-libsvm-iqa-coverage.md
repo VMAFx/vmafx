@@ -1,0 +1,1 @@
+| [ADR-0952](0952-test-vendored-libsvm-iqa-coverage.md) | Push test coverage on vendored libsvm + IQA paths the fork uses (2 new fast-suite executables, 29 assertions, +60 pp coverage) | Accepted | 2026-05-31 | test, coverage, vendored, security, libsvm, iqa |

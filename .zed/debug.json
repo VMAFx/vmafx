@@ -1,0 +1,34 @@
+[
+  {
+    "adapter": "CodeLLDB",
+    "label": "Debug: vmaf CLI (Netflix normal pair)",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build/tools/vmaf",
+    "args": [
+      "-r", "$ZED_WORKTREE_ROOT/python/test/resource/yuv/src01_hrc00_576x324.yuv",
+      "-d", "$ZED_WORKTREE_ROOT/python/test/resource/yuv/src01_hrc01_576x324.yuv",
+      "--width", "576",
+      "--height", "324",
+      "-p", "420",
+      "-b", "8",
+      "-m", "version=vmaf_v0.6.1",
+      "--precision=17",
+      "-q"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "adapter": "CodeLLDB",
+    "label": "Debug: vmaf CLI (attach)",
+    "request": "attach",
+    "program": "$ZED_WORKTREE_ROOT/build/tools/vmaf"
+  },
+  {
+    "adapter": "CodeLLDB",
+    "label": "Debug: test_feature",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build/test/test_feature",
+    "args": [],
+    "cwd": "$ZED_WORKTREE_ROOT/build"
+  }
+]

@@ -1,0 +1,1 @@
+- `mcp-server/vmaf-mcp/tests/test_smoke_e2e.py`: replace the hardcoded `_EXPECTED_VMAF_SCORE = 76.69926` (which never matched the Netflix golden it claimed to source) with `76.66890519623612` from `quality_runner_test.py::test_run_vmaf_runner`. Tolerance widened from 1e-3 to 1e-2 to match the Netflix gate's own `places=2`.

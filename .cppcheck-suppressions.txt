@@ -1,0 +1,54 @@
+# Vendored upstream code we don't own.
+*:subprojects/*
+*:core/test/data/*
+*:build/*
+
+# Upstream Netflix svm.cpp — entirely vendored, not modified by fork.
+*:core/src/svm.cpp
+
+# Vendored Pelorus interop ABI — verbatim mirror of VMAFx/pelorus@835e097,
+# byte-identical to its single source of truth (ADR-1113). Not editable by the
+# fork; lint findings must be fixed upstream in pelorus and re-synced via
+# scripts/sync-pelorus-interop.sh.
+*:core/src/interop/pelorus_interop.c
+*:core/src/interop/pelorus_deband_params.c
+*:core/src/interop/pelorus_version.c
+*:core/include/libvmaf/pelorus/interop.h
+*:core/include/libvmaf/pelorus/pelorus.h
+*:core/include/libvmaf/pelorus/deband.h
+
+# False positives we've reviewed; revisit yearly.
+unusedFunction:core/src/feature/*_avx512.c
+unusedFunction:core/src/feature/*_avx2.c
+unusedFunction:core/src/feature/*_neon.c
+unusedFunction:core/src/cuda/*.cu
+unusedFunction:core/src/sycl/*.cpp
+
+# Public C API surface — naturally has functions only called by external linkers.
+unusedFunction:core/include/libvmaf/*.h
+
+# cppcheck 2.13 doesn't recognise = {0} aggregate init as covering all members.
+uninitvar:core/test/test_propagate_metadata.c
+uninitStructMember:core/test/test_propagate_metadata.c
+
+# Upstream Netflix code: printf format / pointer cast / void arithmetic warnings.
+# These are pre-existing in upstream and not worth fixing in fork-maintained files.
+invalidPrintfArgType_sint:core/src/output.c
+invalidPrintfArgType_sint:core/src/read_json_model.c
+invalidPrintfArgType_sint:core/test/test_framesync.c
+invalidPrintfArgType_sint:core/test/test_predict.c
+invalidPrintfArgType_sint:core/test/test_thread_pool.c
+invalidPrintfArgType_sint:core/tools/vmaf.cpp
+uninitvar:core/src/predict.c
+arithOperationsOnVoidPointer:core/src/feature/integer_vif.c
+invalidPointerCast:core/src/opt.c
+invalidPointerCast:core/src/opt.cpp
+invalidPointerCast:core/src/feature/x86/float_adm_avx2.c
+duplicateAssignExpression:core/src/feature/integer_adm.c
+duplicateAssignExpression:core/src/feature/x86/adm_avx2.c
+duplicateAssignExpression:core/src/feature/x86/adm_avx512.c
+shiftNegativeLHS:core/src/feature/x86/adm_avx2.c
+shiftNegativeLHS:core/src/feature/x86/adm_avx512.c
+
+missingIncludeSystem
+unmatchedSuppression

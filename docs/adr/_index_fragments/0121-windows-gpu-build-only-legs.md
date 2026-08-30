@@ -1,0 +1,1 @@
+| [ADR-0121](0121-windows-gpu-build-only-legs.md) | Add Windows GPU build-only matrix legs (`Build — Windows MSVC + CUDA (build only)` + `Build — Windows MSVC + oneAPI SYCL (build only)`) so MSVC build-portability of the CUDA / SYCL backends is gated on PR, not from downstream user reports | Accepted | ci, build, cuda, sycl, github-actions |

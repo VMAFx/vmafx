@@ -1,0 +1,1 @@
+| [ADR-0273](0273-hip-seventh-consumer-float-motion.md) | HIP seventh kernel-template consumer — `float_motion_hip` | Accepted | `hip`, `gpu`, `feature-extractor`, `kernel-template`, `temporal`, `fork-local` |

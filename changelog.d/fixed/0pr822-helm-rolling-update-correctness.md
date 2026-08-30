@@ -1,0 +1,1 @@
+- Fixed: Helm chart rolling-update strategy corrected for the vmafx-node deployment: `RollingUpdate` strategy set, liveness/readiness probes added, PodDisruptionBudget default enabled, and termination grace period aligned with drain timeout. (PR #822)

@@ -1,0 +1,28 @@
+# Ordered list of patches against FFmpeg n8.1.1.
+# Applied in order by ffmpeg-patches/test/build-and-run.sh.
+#
+# 0004 + 0006 (Vulkan-backend wiring + filter) are retained as no-op
+# compatibility shims: the libvmaf_vulkan runtime was dropped per ADR-0726,
+# so both patches compile out to zero linked code (CONFIG_LIBVMAF_VULKAN /
+# CONFIG_LIBVMAF_VULKAN_FILTER both evaluate false at FFmpeg configure
+# time). They stay in the chain so downstream patches (0005, 0008,
+# 0010-0015), whose hunk context lines reference Vulkan-conditional
+# blocks, apply cleanly via `git am --3way`. See ADR-0860.
+#
+0001-libvmaf-add-tiny-model-option.patch
+0002-add-vmaf_pre-filter.patch
+0003-libvmaf-wire-sycl-backend-selector.patch
+0004-libvmaf-wire-vulkan-backend-selector.patch
+0005-libvmaf-add-libvmaf-sycl-filter.patch
+0006-libvmaf-add-libvmaf-vulkan-filter.patch
+0007-libvmaf-tune-qpfile-unified.patch
+0008-add-libvmaf_tune-filter.patch
+0009-pass-autotune-cli-glue.patch
+0010-libvmaf-wire-cuda-backend-selector.patch
+0011-libvmaf-wire-hip-backend-selector.patch
+0012-libvmaf-wire-metal-backend-selector.patch
+0013-libvmaf-add-libvmaf-metal-filter.patch
+0014-libvmaf-expose-cpumask-and-gpumask-on-all-vmaf-filte.patch
+0015-vmaf-tune-profile-cli-glue.patch
+0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch
+0017-libvmaf-read-pelorus-sidedata.patch

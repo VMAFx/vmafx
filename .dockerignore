@@ -1,0 +1,60 @@
+matlab
+workspace
+python/.tox
+.git
+.venv
+.venv*/
+*.mp4
+*.yuv
+*.mov
+
+# Local-only state dirs — without these the dev-MCP build context balloons
+# to ~52 GB on dev hosts that hold the .workingdir2/ corpora (KonViD-150k
+# 179 GB + CHUG 37 GB + scratch).
+.workingdir2/
+.workingdir/
+.claude/
+
+# Corpora / training data (can exceed 1 TB on developer hosts)
+.corpus/
+corpus/
+
+# Large testdata subdirs (bbb BigBuckBunny clips, ~4.7 GB)
+testdata/bbb/
+
+# PyTorch / AI training run artefacts
+runs/
+
+# Build trees — covers both hyphen and underscore variants.
+# core/ is the renamed `libvmaf/` source tree (ADR-0700).
+build*/
+build-*/
+build_*/
+core/build*/
+core/build-*/
+core/build_*/
+
+# Python virtual environments
+.venv*/
+*.venv
+venv/
+.venv/
+
+# Caches
+__pycache__/
+*.egg-info/
+.tox/
+.cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+node_modules/
+
+# Backup parquets / bench results that aren't source-of-truth
+*.bak
+*.bak.parquet
+testdata/netflix_benchmark_results.json
+
+# OS junk
+.DS_Store
+Thumbs.db

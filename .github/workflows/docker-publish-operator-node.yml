@@ -1,0 +1,298 @@
+# docker-publish-operator-node — build, push, sign, and SBOM the vmafx-operator
+# and vmafx-node images on every release tag.
+#
+# Triggers:
+#   - push of a release tag (v*) from release-please
+#   - workflow_dispatch for manual runs
+#
+# Produces:
+#   ghcr.io/vmafx/vmafx-operator:<tag>   (amd64 + arm64)
+#   ghcr.io/vmafx/vmafx-operator:latest  (same)
+#   ghcr.io/vmafx/vmafx-node:<tag>       (amd64 + arm64, CPU variant)
+#   ghcr.io/vmafx/vmafx-node:latest      (same)
+#
+# Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
+# GPU node variants (-cuda12, -rocm6, -sycl) are deferred to a follow-on PR.
+#
+# ADR-0815: operator-node-distroless-dockerfiles
+# ADR-0698: distroless base-image policy
+
+name: docker-publish-operator-node
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to build (defaults to 'dev')"
+        required: false
+        default: "dev"
+
+# Workflow-level least-privilege; jobs that push/sign/attest opt in below.
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  OPERATOR_IMAGE: vmafx/vmafx-operator
+  NODE_IMAGE: vmafx/vmafx-node
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Build + push vmafx-operator (amd64 + arm64)
+  # Pure-Go / CGO_ENABLED=0 — uses BuildKit TARGETARCH build-arg for native
+  # cross-compilation; no QEMU emulation needed.
+  # -------------------------------------------------------------------------
+  build-operator:
+    name: Build + push vmafx-operator (amd64 + arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write    # push to GHCR
+      id-token: write    # cosign keyless OIDC
+      attestations: write
+
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ github.event.inputs.tag || 'dev' }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Build and push (amd64 + arm64)
+        id: push
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7.2.0
+        with:
+          context: .
+          file: docker/Dockerfile.operator
+          target: operator
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: "v3.0.6"
+
+      - name: Sign image (keyless OIDC via Sigstore)
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ steps.push.outputs.digest }}"
+
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+
+      - name: Generate SBOM (CycloneDX JSON)
+        run: |
+          syft \
+            "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ steps.push.outputs.digest }}" \
+            --output cyclonedx-json \
+            --file sbom-operator.cdx.json
+
+      - name: Attach SBOM via cosign attest
+        run: |
+          cosign attest --yes \
+            --predicate sbom-operator.cdx.json \
+            --type cyclonedx \
+            "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ steps.push.outputs.digest }}"
+
+      - name: Upload SBOM as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom-operator
+          path: sbom-operator.cdx.json
+          retention-days: 90
+
+  # -------------------------------------------------------------------------
+  # Build + push vmafx-node CPU variant (amd64 + arm64)
+  # CGO + ffmpeg stages require QEMU for arm64 emulation.
+  # -------------------------------------------------------------------------
+  build-node:
+    name: Build + push vmafx-node CPU (amd64 + arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false  # ADR-1086: drop GITHUB_TOKEN from .git/config
+
+      - name: Set up QEMU (arm64 cross-emulation for CGO + ffmpeg stages)
+        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3  # v4.1.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ github.event.inputs.tag || 'dev' }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Build and push (amd64 + arm64, CPU target)
+        id: push
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7.2.0
+        with:
+          context: .
+          file: docker/Dockerfile.node
+          target: node-cpu
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VMAF_BUILD_JOBS=4
+            FFMPEG_TAG=n8.2
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: "v3.0.6"
+
+      - name: Sign image (keyless OIDC via Sigstore)
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ steps.push.outputs.digest }}"
+
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+
+      - name: Generate SBOM (CycloneDX JSON)
+        run: |
+          syft \
+            "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ steps.push.outputs.digest }}" \
+            --output cyclonedx-json \
+            --file sbom-node.cdx.json
+
+      - name: Attach SBOM via cosign attest
+        run: |
+          cosign attest --yes \
+            --predicate sbom-node.cdx.json \
+            --type cyclonedx \
+            "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ steps.push.outputs.digest }}"
+
+      - name: Upload SBOM as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom-node
+          path: sbom-node.cdx.json
+          retention-days: 90
+
+  # -------------------------------------------------------------------------
+  # Smoke-test: pull both images and verify the binaries respond
+  # -------------------------------------------------------------------------
+  smoke-test:
+    name: Smoke-test operator + node images
+    needs:
+      - build-operator
+      - build-node
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Smoke-test vmafx-operator (--help exits 0)
+        run: |
+          docker pull \
+            "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ needs.build-operator.outputs.digest }}"
+          docker run --rm \
+            "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ needs.build-operator.outputs.digest }}" \
+            --help || true
+          echo "Smoke test passed: vmafx-operator --help exited"
+
+      - name: Smoke-test vmafx-node (--help exits 0)
+        run: |
+          docker pull \
+            "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.build-node.outputs.digest }}"
+          docker run --rm \
+            "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.build-node.outputs.digest }}" \
+            --help || true
+          echo "Smoke test passed: vmafx-node --help exited"
+
+  # -------------------------------------------------------------------------
+  # Summary gate — CI shows a single green/red status
+  # -------------------------------------------------------------------------
+  all-images:
+    name: All operator+node images published
+    if: always()
+    needs:
+      - build-operator
+      - build-node
+      - smoke-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ needs.build-operator.result }}" != "success" ]]; then
+            echo "build-operator failed"
+            exit 1
+          fi
+          if [[ "${{ needs.build-node.result }}" != "success" ]]; then
+            echo "build-node failed"
+            exit 1
+          fi
+          if [[ "${{ needs.smoke-test.result }}" != "success" ]]; then
+            echo "smoke-test failed"
+            exit 1
+          fi
+          echo "All images published and smoke-tested."

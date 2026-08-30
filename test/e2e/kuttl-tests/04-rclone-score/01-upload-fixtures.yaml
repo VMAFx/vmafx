@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# test/e2e/kuttl-tests/04-rclone-score/01-upload-fixtures.yaml
+#
+# Wait for MinIO to be ready, create the test bucket, and upload the tiny YUV
+# fixtures so the worker Pod can fetch them via rclone.
+#
+# ADR-0783 / ADR-0709.
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: upload-yuv-fixtures
+timeout: 60
+commands:
+  # Wait until MinIO API is ready.
+  - command: >-
+      kubectl wait statefulset minio -n vmafx-e2e-test
+      --for=condition=Ready --timeout=60s
+  # Run mc (MinIO client) in a Job to create the bucket and upload fixtures.
+  # The fixtures are injected as a ConfigMap in the previous test case; we
+  # copy them into MinIO so rclone:// URIs can resolve them.
+  - command: >-
+      kubectl run minio-setup
+      --namespace=vmafx-e2e-test
+      --image=quay.io/minio/mc:RELEASE.2024-04-28T18-01-29Z
+      --restart=Never
+      --command -- sh -c "
+        mc alias set local http://minio.vmafx-e2e-test.svc.cluster.local:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/vmafx-e2e &&
+        echo 'bucket ready'"
+  - command: kubectl wait pod minio-setup -n vmafx-e2e-test --for=condition=Succeeded --timeout=60s

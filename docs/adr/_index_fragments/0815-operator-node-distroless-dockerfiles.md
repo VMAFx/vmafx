@@ -1,0 +1,1 @@
+| [ADR-0815](0815-operator-node-distroless-dockerfiles.md) | Distroless Dockerfiles for vmafx-operator and vmafx-node | Accepted | `docker`, `ci`, `release`, `operator`, `node`, `k8s`, `phase4b`, `fork-local` |

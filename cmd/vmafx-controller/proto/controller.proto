@@ -1,0 +1,232 @@
+// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+// Copyright 2026 Lusoris
+//
+// cmd/vmafx-controller/proto/controller.proto — VmafxController gRPC service definition.
+//
+// This file defines the controller-side API surface introduced in Phase 4b.1
+// (ADR-0711).  It coexists with proto/vmafx.proto (VmafxScoring, Phase 4a) on
+// the same gRPC server port.
+//
+// Clients (CLI, MCP, future Web UI) use the Client API (SubmitJob / GetJob /
+// CancelJob / StreamJobs).  Worker nodes (vmafx-node) use the Node API
+// (RegisterNode / Heartbeat / PullWork / ReportResult).
+//
+// Generated Go stubs live under gen/go/controller/ and are vendored in-tree.
+// Regenerate with:  buf generate   (requires buf >= v1.30)
+//
+// ADR-0711: vmafx-controller Phase 4b.1 scope expansion.
+
+syntax = "proto3";
+
+package vmafx.controller.v1;
+
+option go_package = "github.com/VMAFx/vmafx/gen/go/controller;controllerv1";
+
+// ---------------------------------------------------------------------------
+// Re-use the ScoreRequest from the scoring service.
+// We inline compatible fields here to avoid a cross-proto import dependency
+// in the vendored generated stubs.
+// ---------------------------------------------------------------------------
+
+// ScoringParams mirrors proto/vmafx.proto ScoreRequest, carried inside a Job.
+message ScoringParams {
+  // Absolute or rclone-mount-relative path to the reference video file.
+  string reference = 1;
+  // Absolute or rclone-mount-relative path to the distorted video file.
+  string distorted = 2;
+  // Optional VMAF model name (e.g. "vmaf_v0.6.1"). Defaults to vmaf_v0.6.1.
+  string model = 3;
+  // Optional backend hint: "cuda", "sycl", "hip", "cpu".
+  // The scheduler uses this to match a node with the required capability.
+  // Empty string means the scheduler may assign any available node.
+  string backend = 4;
+}
+
+// JobStatus encodes the job lifecycle state machine:
+// PENDING → RUNNING → COMPLETED | FAILED | CANCELLED.
+// (Top-level so the generated Go type is controllerv1.JobStatus, matching the
+// controller/queue/scheduler call sites; wire-compatible with the prior nested
+// form — the field number and enum values are unchanged.)
+enum JobStatus {
+  PENDING   = 0;
+  RUNNING   = 1;
+  COMPLETED = 2;
+  FAILED    = 3;
+  CANCELLED = 4;
+}
+
+// Job represents a scoring work item managed by the controller.
+message Job {
+  // Unique job identifier (UUID v4).
+  string id = 1;
+
+  // status is the current lifecycle state of the job.
+  JobStatus status = 2;
+
+  // scoring holds the scoring parameters for this job.
+  ScoringParams scoring = 3;
+
+  // partial_results accumulates per-frame partial scores streamed by the node.
+  repeated double partial_results = 4;
+
+  // assigned_node is the node ID currently executing this job, or empty.
+  string assigned_node = 5;
+
+  // error is set when status == FAILED; empty otherwise.
+  string error = 6;
+
+  // created_at is a Unix timestamp (seconds) when the job was submitted.
+  int64 created_at = 7;
+
+  // updated_at is a Unix timestamp (seconds) of the last status change.
+  int64 updated_at = 8;
+
+  // final_score is the aggregate VMAF score written by the controller when
+  // the job reaches COMPLETED. The vmafx-operator copies it into the
+  // VmafxJob CR status. Zero until the job completes successfully.
+  double final_score = 9;
+}
+
+// NodeCapability encodes what a vmafx-node instance can run.
+message NodeCapability {
+  // GPU vendor: "nvidia", "amd", "intel", "cpu".
+  string gpu_vendor = 1;
+  // Available backends on this node (e.g. ["cuda", "cpu"]).
+  repeated string backends = 2;
+  // Number of concurrent scoring slots this node can handle.
+  int32 concurrency = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Client API — used by CLI, MCP server, Web UI.
+// ---------------------------------------------------------------------------
+
+service VmafxController {
+  // SubmitJob enqueues a new scoring job and returns its ID.
+  rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
+
+  // GetJob retrieves the current state of a job by ID.
+  rpc GetJob(GetJobRequest) returns (Job);
+
+  // CancelJob requests cancellation of a pending or running job.
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+
+  // StreamJobs opens a server-streaming RPC that pushes Job updates to the
+  // caller.  An empty filter streams all jobs; a non-empty status filter
+  // restricts updates to jobs in those states.
+  rpc StreamJobs(StreamJobsRequest) returns (stream Job);
+
+  // RegisterNode is called by a vmafx-node on startup to announce its
+  // capabilities.  Returns an opaque session token the node includes in
+  // subsequent calls.
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+
+  // Heartbeat is called by a vmafx-node every ~10 s.  A node that misses
+  // heartbeats for 60 s is deregistered and its in-flight jobs are
+  // re-queued.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // PullWork is called by a vmafx-node when it has capacity.  Returns the
+  // next matching PENDING job (if any), or an empty response if the queue
+  // is empty or no job matches the node's capabilities.
+  rpc PullWork(PullWorkRequest) returns (PullWorkResponse);
+
+  // ReportResult is called by a vmafx-node when a job finishes (success or
+  // failure) or when partial per-frame results are available.
+  rpc ReportResult(ReportResultRequest) returns (ReportResultResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Client API messages
+// ---------------------------------------------------------------------------
+
+message SubmitJobRequest {
+  ScoringParams scoring = 1;
+}
+
+message SubmitJobResponse {
+  string job_id = 1;
+}
+
+message GetJobRequest {
+  string job_id = 1;
+}
+
+message CancelJobRequest {
+  string job_id = 1;
+}
+
+message CancelJobResponse {
+  // ok is true if the job was found and a cancellation was requested.
+  bool ok = 1;
+  string message = 2;
+}
+
+message StreamJobsRequest {
+  // status_filter restricts the stream to jobs in these states.
+  // Empty = stream all jobs.
+  repeated JobStatus status_filter = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Node API messages
+// ---------------------------------------------------------------------------
+
+message RegisterNodeRequest {
+  // Human-readable node name (e.g. hostname).
+  string name = 1;
+  NodeCapability capability = 2;
+}
+
+message RegisterNodeResponse {
+  // node_id is the controller-assigned identifier for this node session.
+  string node_id = 1;
+  // session_token is an opaque bearer token the node includes in all
+  // subsequent Node API calls.
+  string session_token = 2;
+}
+
+message HeartbeatRequest {
+  string node_id = 1;
+  string session_token = 2;
+  // jobs_running is the count of jobs the node is currently executing.
+  int32 jobs_running = 3;
+}
+
+message HeartbeatResponse {
+  // ok is false if the controller no longer recognises this session
+  // (e.g. after a controller restart without persistent sessions).
+  // The node should re-register when ok == false.
+  bool ok = 1;
+}
+
+message PullWorkRequest {
+  string node_id = 1;
+  string session_token = 2;
+  NodeCapability capability = 3;
+}
+
+message PullWorkResponse {
+  // job is set when a matching job was found; nil when the queue is empty.
+  Job job = 1;
+}
+
+message ReportResultRequest {
+  string node_id = 1;
+  string session_token = 2;
+  string job_id = 3;
+  // final indicates this is the terminal result (success or failure).
+  bool final = 4;
+  // score is the aggregate VMAF score (populated when final == true, success).
+  double score = 5;
+  // features is the per-feature score map (populated when final == true).
+  map<string, double> features = 6;
+  // partial_scores carries per-frame partial results (populated when final == false).
+  repeated double partial_scores = 7;
+  // error is set when the job failed.
+  string error = 8;
+}
+
+message ReportResultResponse {
+  bool ok = 1;
+}

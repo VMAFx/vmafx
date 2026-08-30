@@ -1,0 +1,1 @@
+| [ADR-0876](0876-printf-format-portability-pri-macros.md) | Adopt `<inttypes.h>` PRI macros (`PRId64` / `PRIu64` / `PRIx64`) for fixed-width integer printf formatting in fork-added C / C++ — eliminates Windows-LLP64 truncation bug class (CERT FIO47-C, MISRA 21.6) | Accepted | 2026-05-30 | portability, cert, sycl, dnn, windows, fork-local |

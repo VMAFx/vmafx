@@ -1,0 +1,1 @@
+- **V8-A part 2**: PR #1266 documented the `build_pass1_stats_command` fix but the diff didn't actually contain it — the inner block was unchanged, only sample_clip_seconds was still being checked. This patch adds the missing duration_s fallback to mirror `build_ffmpeg_command` so a ladder `--duration 10` actually clips the pass-1 stats sweep too.

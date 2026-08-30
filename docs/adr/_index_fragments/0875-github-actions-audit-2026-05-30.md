@@ -1,0 +1,1 @@
+| [ADR-0875](0875-github-actions-audit-2026-05-30.md) | GitHub Actions hardening audit (2026-05-30): SHA-pinning confirmed across 22 workflows; backfill top-level `permissions: contents: read` on `go-ci.yml` + `rust-ci.yml`; add `persist-credentials: false` to 5 checkouts in `sanitizers.yml` + `supply-chain.yml`. | Accepted | 2026-05-30 | security, ci, supply-chain, fork-local |

@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# test/e2e/kuttl-tests/03-node-heartbeat/01-assert.yaml
+#
+# Assert: VmafxNode stub Deployment is ready and the operator has written
+# a lastHeartbeat timestamp, marking the node healthy.
+#
+# ADR-0783 / ADR-0713 / ADR-0714.
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: wait-heartbeat
+timeout: 60
+---
+# Stub Deployment must be running.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmafx-node-stub
+  namespace: vmafx-e2e-test
+status:
+  availableReplicas: 1
+---
+# VmafxNode must be marked healthy with a lastHeartbeat set.
+apiVersion: vmafx.dev/v1
+kind: VmafxNode
+metadata:
+  name: node-cpu-stub
+  namespace: vmafx-e2e-test
+status:
+  healthy: true

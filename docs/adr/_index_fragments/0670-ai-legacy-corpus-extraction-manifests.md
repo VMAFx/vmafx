@@ -1,0 +1,1 @@
+| [ADR-0670](0670-ai-legacy-corpus-extraction-manifests.md) | Legacy AI corpus/extraction scripts emit replayable manifest sidecars with shared `run_provenance`. | Proposed | ai, training, provenance, corpus |

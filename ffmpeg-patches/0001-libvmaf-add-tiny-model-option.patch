@@ -1,0 +1,109 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Fri, 24 Apr 2026 22:23:38 +0200
+Subject: [PATCH] libvmaf: add tiny_model / tiny_device / tiny_threads /
+ tiny_fp16 options
+
+tiny_device exposes all VmafDnnDevice enum values from dnn.h (v2):
+- Original 5: auto, cpu, cuda, openvino, rocm
+- PR #504 (CoreML EP): coreml, coreml-ane, coreml-gpu, coreml-cpu
+- PR #676 (OpenVINO NPU EP): openvino-npu
+- PR #677 (OpenVINO CPU/GPU EP variant): openvino-cpu, openvino-gpu
+---
+ libavfilter/vf_libvmaf.c | 60 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 60 insertions(+)
+
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 3ab67d3..552743f 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -27,6 +27,7 @@
+ #include "config_components.h"
+ 
+ #include <libvmaf.h>
++#include <libvmaf/dnn.h>
+ 
+ #include "libavutil/avstring.h"
+ #include "libavutil/mem.h"
+@@ -56,6 +57,10 @@ typedef struct LIBVMAFContext {
+     int n_subsample;
+     char *model_cfg;
+     char *feature_cfg;
++    char *tiny_model_path;
++    char *tiny_device;
++    int   tiny_threads;
++    int   tiny_fp16;
+     VmafContext *vmaf;
+     VmafModel **model;
+     unsigned model_cnt;
+@@ -77,6 +82,10 @@ static const AVOption libvmaf_options[] = {
+     {"n_subsample", "Set interval for frame subsampling used when computing vmaf.",     OFFSET(n_subsample), AV_OPT_TYPE_INT, {.i64=1}, 1, UINT_MAX, FLAGS},
+     {"model",  "Set the model to be used for computing vmaf.",                          OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, FLAGS},
+     {"feature",  "Set the feature to be used for computing vmaf.",                      OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, FLAGS},
++    {"tiny_model",   "Path to tiny ONNX model (libvmaf --enable_dnn).",                 OFFSET(tiny_model_path), AV_OPT_TYPE_STRING, {.str=NULL},   0, 0,        FLAGS},
++    {"tiny_device",  "tiny-model device: auto|cpu|cuda|openvino|openvino-npu|openvino-cpu|openvino-gpu|coreml|coreml-ane|coreml-gpu|coreml-cpu|rocm.", OFFSET(tiny_device), AV_OPT_TYPE_STRING, {.str="auto"}, 0, 0, FLAGS},
++    {"tiny_threads", "tiny-model CPU EP intra-op threads (0 = ORT default).",           OFFSET(tiny_threads),    AV_OPT_TYPE_INT,    {.i64=0},      0, INT_MAX,  FLAGS},
++    {"tiny_fp16",    "Request fp16 I/O when the device supports it.",                   OFFSET(tiny_fp16),       AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
+     { NULL }
+ };
+ 
+@@ -449,6 +458,57 @@ static av_cold int init(AVFilterContext *ctx)
+     if (err)
+         return err;
+ 
++    if (s->tiny_model_path && *s->tiny_model_path) {
++        if (!vmaf_dnn_available()) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "tiny_model set but libvmaf was built without "
++                   "-Denable_dnn; rebuild libvmaf with ONNX Runtime.\n");
++            return AVERROR(ENOSYS);
++        }
++
++        VmafDnnConfig dnn_cfg = {
++            .device       = VMAF_DNN_DEVICE_AUTO,
++            .device_index = 0,
++            .threads      = s->tiny_threads,
++            .fp16_io      = !!s->tiny_fp16,
++        };
++        if (s->tiny_device && *s->tiny_device) {
++            if      (!av_strcasecmp(s->tiny_device, "auto"))     dnn_cfg.device = VMAF_DNN_DEVICE_AUTO;
++            else if (!av_strcasecmp(s->tiny_device, "cpu"))      dnn_cfg.device = VMAF_DNN_DEVICE_CPU;
++            else if (!av_strcasecmp(s->tiny_device, "cuda"))     dnn_cfg.device = VMAF_DNN_DEVICE_CUDA;
++            else if (!av_strcasecmp(s->tiny_device, "openvino"))     dnn_cfg.device = VMAF_DNN_DEVICE_OPENVINO;
++            else if (!av_strcasecmp(s->tiny_device, "openvino-npu")) dnn_cfg.device = VMAF_DNN_DEVICE_OPENVINO_NPU;
++            else if (!av_strcasecmp(s->tiny_device, "openvino-cpu")) dnn_cfg.device = VMAF_DNN_DEVICE_OPENVINO_CPU;
++            else if (!av_strcasecmp(s->tiny_device, "openvino-gpu")) dnn_cfg.device = VMAF_DNN_DEVICE_OPENVINO_GPU;
++            else if (!av_strcasecmp(s->tiny_device, "coreml"))       dnn_cfg.device = VMAF_DNN_DEVICE_COREML;
++            else if (!av_strcasecmp(s->tiny_device, "coreml-ane"))   dnn_cfg.device = VMAF_DNN_DEVICE_COREML_ANE;
++            else if (!av_strcasecmp(s->tiny_device, "coreml-gpu"))   dnn_cfg.device = VMAF_DNN_DEVICE_COREML_GPU;
++            else if (!av_strcasecmp(s->tiny_device, "coreml-cpu"))   dnn_cfg.device = VMAF_DNN_DEVICE_COREML_CPU;
++            else if (!av_strcasecmp(s->tiny_device, "rocm"))         dnn_cfg.device = VMAF_DNN_DEVICE_ROCM;
++            else {
++                av_log(ctx, AV_LOG_ERROR,
++                       "Unknown tiny_device '%s' (expected auto|cpu|cuda|"
++                       "openvino|openvino-npu|openvino-cpu|openvino-gpu|"
++                       "coreml|coreml-ane|coreml-gpu|coreml-cpu|rocm).\n",
++                       s->tiny_device);
++                return AVERROR(EINVAL);
++            }
++        }
++
++        err = vmaf_use_tiny_model(s->vmaf, s->tiny_model_path, &dnn_cfg);
++        if (err) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_use_tiny_model(%s) failed: %d.\n",
++                   s->tiny_model_path, err);
++            return AVERROR(EINVAL);
++        }
++        av_log(ctx, AV_LOG_INFO,
++               "tiny_model loaded: %s (device=%s threads=%d fp16=%d)\n",
++               s->tiny_model_path,
++               s->tiny_device ? s->tiny_device : "auto",
++               s->tiny_threads, s->tiny_fp16);
++    }
++
+     s->fs.on_event = do_vmaf;
+     return 0;
+ }
+--
+2.54.0

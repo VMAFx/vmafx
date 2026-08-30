@@ -1,0 +1,1 @@
+| [ADR-0655](0655-saliency-feature-materializer.md) | Saliency feature materializer for existing AI corpus tables: enrich JSONL/parquet rows with `saliency_mean`, `saliency_var`, and row-level status before predictor / MOS-head retrains consume the signal. | Accepted | ai, saliency, training-data, docs |

@@ -1,0 +1,254 @@
+/**
+ *
+ *  Copyright 2016-2026 Netflix, Inc.
+ *
+ *     Licensed under the BSD+Patent License (the "License");
+ *     you may not use this file except in compliance with the License.
+ *     You may obtain a copy of the License at
+ *
+ *         https://opensource.org/licenses/BSDplusPatent
+ *
+ *     Unless required by applicable law or agreed to in writing, software
+ *     distributed under the License is distributed on an "AS IS" BASIS,
+ *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *     See the License for the specific language governing permissions and
+ *     limitations under the License.
+ *
+ */
+
+#include <errno.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <pthread.h>
+
+#include "mem.h"
+#include "picture.h"
+#include "ref.h"
+
+#define DATA_ALIGN 64
+
+/* Bit-depth bounds for all supported planar inputs (8 / 10 / 12 / 16
+ * bit per component). 8 is the floor for any libvmaf feature kernel;
+ * 16 is the storage ceiling (10- and 12-bit content is packed into
+ * little-endian 16-bit samples on read). */
+#define VMAF_PIC_BPC_MIN 8u
+#define VMAF_PIC_BPC_MAX 16u
+
+/* Per-side dimension cap. The product `(w + DATA_ALIGN - 1u)` is
+ * computed in 32-bit unsigned arithmetic during stride
+ * compute_geometry; capping each side at 32768 keeps that addition
+ * well clear of the UINT32_MAX wrap that would otherwise be reached
+ * when `w >= 0xFFFFFFC1u`. 32K is also well above 8K UHD (7680),
+ * the largest realistic input. CERT INT30-C. */
+#define VMAF_PIC_DIM_MAX 32768u
+
+// Picture buffer pool: reuses freed pixel buffers to avoid mmap/munmap
+// syscalls on each frame. Buffers are matched by exact size (LIFO stack).
+// Thread-safe: vmaf_picture_unref can be called from worker threads.
+#define PIC_POOL_MAX 8
+
+static struct {
+    struct {
+        void *data;
+        size_t size;
+    } entries[PIC_POOL_MAX];
+    unsigned count;
+    pthread_mutex_t lock;
+} pic_pool = {.lock = PTHREAD_MUTEX_INITIALIZER};
+
+static void *pic_pool_acquire(size_t size)
+{
+    void *data = NULL;
+    pthread_mutex_lock(&pic_pool.lock);
+    for (unsigned i = pic_pool.count; i > 0; i--) {
+        if (pic_pool.entries[i - 1].size == size) {
+            data = pic_pool.entries[i - 1].data;
+            pic_pool.entries[i - 1] = pic_pool.entries[--pic_pool.count];
+            break;
+        }
+    }
+    pthread_mutex_unlock(&pic_pool.lock);
+    return data;
+}
+
+static void pic_pool_release(void *data, size_t size)
+{
+    pthread_mutex_lock(&pic_pool.lock);
+    if (pic_pool.count < PIC_POOL_MAX) {
+        pic_pool.entries[pic_pool.count].data = data;
+        pic_pool.entries[pic_pool.count].size = size;
+        pic_pool.count++;
+        pthread_mutex_unlock(&pic_pool.lock);
+        return;
+    }
+    pthread_mutex_unlock(&pic_pool.lock);
+    aligned_free(data); // pool full, discard
+}
+
+/* Drain all entries from the global picture buffer pool, freeing each
+ * buffer via aligned_free().  Intended for use at session teardown
+ * (vmaf_close) and in unit tests to prevent LSan false-positive reports:
+ * pooled buffers reachable only through the global pic_pool static are
+ * indistinguishable from true leaks when the process exits with count > 0.
+ * Thread-safe; takes the pool lock. */
+void vmaf_picture_pool_flush(void)
+{
+    pthread_mutex_lock(&pic_pool.lock);
+    for (unsigned i = 0; i < pic_pool.count; i++)
+        aligned_free(pic_pool.entries[i].data);
+    pic_pool.count = 0;
+    pthread_mutex_unlock(&pic_pool.lock);
+}
+
+// Release callback that returns buffer to pool instead of freeing
+static int pool_release_picture(VmafPicture *pic, void *cookie)
+{
+    size_t pic_size = (size_t)(uintptr_t)cookie;
+    pic_pool_release(pic->data[0], pic_size);
+    return 0;
+}
+
+int vmaf_picture_set_release_callback(VmafPicture *pic, void *cookie,
+                                      int (*release_picture)(VmafPicture *pic, void *cookie))
+{
+    if (!pic)
+        return -EINVAL;
+    if (!release_picture)
+        return -EINVAL;
+
+    VmafPicturePrivate *priv = pic->priv;
+    priv->cookie = cookie;
+    priv->release_picture = release_picture;
+
+    return 0;
+}
+
+int vmaf_picture_priv_init(VmafPicture *pic)
+{
+    const size_t priv_sz = sizeof(VmafPicturePrivate);
+    pic->priv = malloc(priv_sz);
+    if (!pic->priv)
+        return -EINVAL;
+    memset(pic->priv, 0, priv_sz);
+    return 0;
+}
+
+static void picture_compute_geometry(VmafPicture *pic, unsigned w, unsigned h)
+{
+    const int ss_hor = pic->pix_fmt != VMAF_PIX_FMT_YUV444P;
+    const int ss_ver = pic->pix_fmt == VMAF_PIX_FMT_YUV420P;
+    pic->w[0] = w;
+    /* Ceiling division: for 4:2:0 an odd luma width/height must produce one
+     * extra chroma sample row/column so that every luma sample is covered.
+     * Floor (plain >> ss) under-allocates by one row for odd-height inputs,
+     * causing one-past-end OOB in ciede scale_chroma_planes and similar
+     * consumers.  (Research-0094, fix/picture-odd-dim-chroma-ceiling.) */
+    pic->w[1] = pic->w[2] = (w + ((unsigned)ss_hor)) >> ss_hor;
+    pic->h[0] = h;
+    pic->h[1] = pic->h[2] = (h + ((unsigned)ss_ver)) >> ss_ver;
+    if (pic->pix_fmt == VMAF_PIX_FMT_YUV400P)
+        pic->w[1] = pic->w[2] = pic->h[1] = pic->h[2] = 0;
+
+    const unsigned aligned_y = (pic->w[0] + DATA_ALIGN - 1u) & ~(DATA_ALIGN - 1u);
+    const unsigned aligned_c = (pic->w[1] + DATA_ALIGN - 1u) & ~(DATA_ALIGN - 1u);
+    const int hbd = pic->bpc > 8;
+    pic->stride[0] = aligned_y << hbd;
+    pic->stride[1] = pic->stride[2] = aligned_c << hbd;
+}
+
+static uint8_t *picture_acquire_buffer(size_t pic_size)
+{
+    uint8_t *data = pic_pool_acquire(pic_size);
+    if (!data)
+        data = aligned_malloc(pic_size, DATA_ALIGN);
+    if (data)
+        memset(data, 0, pic_size);
+    return data;
+}
+
+int vmaf_picture_alloc(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
+                       unsigned h)
+{
+    if (!pic)
+        return -EINVAL;
+    if (!pix_fmt)
+        return -EINVAL;
+    if (bpc < VMAF_PIC_BPC_MIN || bpc > VMAF_PIC_BPC_MAX)
+        return -EINVAL;
+    /* Guard against integer overflow in picture_compute_geometry:
+     * see VMAF_PIC_DIM_MAX comment. CERT INT30-C. */
+    if (w == 0 || w > VMAF_PIC_DIM_MAX || h == 0 || h > VMAF_PIC_DIM_MAX)
+        return -EINVAL;
+
+    memset(pic, 0, sizeof(*pic));
+    pic->pix_fmt = pix_fmt;
+    pic->bpc = bpc;
+    picture_compute_geometry(pic, w, h);
+
+    const size_t y_sz = pic->stride[0] * pic->h[0];
+    const size_t uv_sz = pic->stride[1] * pic->h[1];
+    const size_t pic_size = y_sz + 2 * uv_sz;
+
+    uint8_t *data = picture_acquire_buffer(pic_size);
+    if (!data)
+        goto fail;
+    pic->data[0] = data;
+    pic->data[1] = data + y_sz;
+    pic->data[2] = data + y_sz + uv_sz;
+    if (pic->pix_fmt == VMAF_PIX_FMT_YUV400P)
+        pic->data[1] = pic->data[2] = NULL;
+
+    int err = vmaf_picture_priv_init(pic);
+    if (err)
+        goto free_data;
+
+    /* The callback userdata slot stores pic_size inline as a tagged value,
+     * never dereferenced — standard uintptr_t idiom. pic->priv is guaranteed
+     * non-NULL here because vmaf_picture_priv_init succeeded above. */
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    err = vmaf_picture_set_release_callback(pic, (void *)(uintptr_t)pic_size, pool_release_picture);
+    if (err)
+        goto free_priv;
+
+    err = vmaf_ref_init(&pic->ref);
+    if (err)
+        goto free_priv;
+
+    return 0;
+
+free_priv:
+    free(pic->priv);
+free_data:
+    aligned_free(data);
+fail:
+    return -ENOMEM;
+}
+
+int vmaf_picture_ref(VmafPicture *dst, VmafPicture *src)
+{
+    if (!dst || !src)
+        return -EINVAL;
+
+    memcpy(dst, src, sizeof(*src));
+    vmaf_ref_fetch_increment(src->ref);
+    return 0;
+}
+
+int vmaf_picture_unref(VmafPicture *pic)
+{
+    if (!pic)
+        return -EINVAL;
+    if (!pic->ref)
+        return -EINVAL;
+
+    const long old_cnt = vmaf_ref_fetch_decrement(pic->ref);
+    if (old_cnt == 1) {
+        const VmafPicturePrivate *priv = pic->priv;
+        priv->release_picture(pic, priv->cookie);
+        free(pic->priv);
+        vmaf_ref_close(pic->ref);
+    }
+    memset(pic, 0, sizeof(*pic));
+    return 0;
+}

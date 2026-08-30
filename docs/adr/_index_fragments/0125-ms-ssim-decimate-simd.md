@@ -1,0 +1,1 @@
+| [ADR-0125](0125-ms-ssim-decimate-simd.md) | MS-SSIM decimate fast paths: AVX2 + AVX-512 specialised 9×9 separable LPF factor-2 kernels under `core/src/feature/x86/`; vendored `iqa/decimate.c` stays untouched; bit-exactness enforced via a scalar-separable reference; NEON deferred to follow-up | Proposed | simd, testing, agents |

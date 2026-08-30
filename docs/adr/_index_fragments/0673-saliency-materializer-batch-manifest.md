@@ -1,0 +1,1 @@
+| [ADR-0673](0673-saliency-materializer-batch-manifest.md) | Adds a manifest-driven batch runner for saliency feature materialization so refreshed AI tables can share defaults, per-table overrides, audits, and one provenance-backed batch report. | Accepted | ai, saliency, materializer, provenance, fork-local |

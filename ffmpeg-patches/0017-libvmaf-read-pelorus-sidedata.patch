@@ -1,0 +1,102 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Sun, 14 Jun 2026 12:00:00 +0200
+Subject: [PATCH] libvmaf: read Pelorus side-data and drive perceptual weighting
+
+Wire the `libvmaf` filter's per-frame callback to read a Pelorus
+side-data blob off the distorted AVFrame (AV_FRAME_DATA_SEI_UNREGISTERED,
+UUID-routed, written by the upstream vf_pelorus_* filters) and hand it to
+libvmaf via vmaf_set_perceptual_sidedata(). A new boolean AVOption
+`perceptual_weight` (default 0 = OFF) gates the feature.
+
+GOLDEN-GATE ISOLATION: when `perceptual_weight=0` (the default) the filter
+never enables weighting, so scoring is byte-identical to upstream. When
+`perceptual_weight=1` the weighting still only engages for frames that
+actually carry a valid Pelorus blob; frames without one (and the Netflix
+golden pairs, which have no side-data) are scored unweighted. A buffer
+that is not a Pelorus blob is cleanly ignored — av_frame_get_side_data
+returns either nothing or a foreign SEI, and vmaf_set_perceptual_sidedata
+rejects it (returns -ENOENT) without touching the score.
+
+The frame index passed to vmaf_set_perceptual_sidedata is s->frame_cnt,
+matching the index handed to vmaf_read_pictures on the same call.
+
+Companion to libvmaf ADR-1118 (perceptual spatial-pooling weighting) and
+ADR-1113 (vendored Pelorus interop ABI). CI validates this patch by
+replaying the full series against a clean n8.1 checkout
+(git am --3way), not standalone git apply.
+---
+ libavfilter/vf_libvmaf.c | 41 +++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 41 insertions(+)
+
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 1111111..2222222 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -31,2 +31,5 @@
++#include <libvmaf/perceptual_weight.h>
++#include "libavutil/frame.h"
++
+ #include "libavutil/avstring.h"
+ #include "libavutil/mem.h"
+@@ -99,3 +103,4 @@ typedef struct LIBVMAFContext {
++    int   perceptual_weight;  /* Pelorus side-data perceptual weighting (ADR-1118) */
+     VmafContext *vmaf;
+     VmafModel **model;
+     unsigned model_cnt;
+@@ -174,3 +179,4 @@ static const AVOption libvmaf_options[] = {
+     {"score_fmt",    "printf format for score values in log file (NULL=%.6f default; use %.17g for lossless).", OFFSET(score_fmt), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS},
++    {"perceptual_weight", "Perceptually re-weight VMAF pooling using Pelorus side-data (banding/variance maps). OFF by default; inert unless Pelorus side-data is present on the frame.", OFFSET(perceptual_weight), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
+     { NULL }
+ };
+@@ -172,12 +176,48 @@ static int do_vmaf(FFFrameSync *fs)
+     err = copy_picture_data(s, dist, &pic_dist, s->bpc);
+     if (err) {
+         av_log(ctx, AV_LOG_ERROR, "problem during vmaf_picture_alloc.\n");
+         vmaf_picture_unref(&pic_ref);
+         return AVERROR(ENOMEM);
+     }
+ 
++    /* Pelorus perceptual weighting (libvmaf ADR-1118): when the operator
++     * opted in, enable weighting (idempotent — a plain bool set on the
++     * libvmaf context) and read any Pelorus side-data riding the distorted
++     * frame, registering it for this picture index. The blob is UUID-routed
++     * as an unregistered SEI; a foreign SEI (or no side-data at all) is
++     * cleanly ignored by vmaf_set_perceptual_sidedata, leaving the frame
++     * unweighted.
++     *
++     * GOLDEN-GATE ISOLATION: with perceptual_weight=0 (the default) this whole
++     * block is skipped, so scoring is byte-identical to upstream — and even
++     * when enabled, only frames that actually carry a valid Pelorus blob are
++     * re-weighted. The Netflix golden pairs have no side-data, so they score
++     * bit-exact regardless of this option. */
++    if (s->perceptual_weight) {
++        const AVFrameSideData *sd;
++
++        /* Idempotent: flips a bool on the libvmaf context. Re-asserting it per
++         * frame avoids a separate init-path hunk and is harmless. */
++        (void)vmaf_set_perceptual_weight_enabled(s->vmaf, 1);
++
++        sd = av_frame_get_side_data(dist, AV_FRAME_DATA_SEI_UNREGISTERED);
++        if (sd && sd->data && sd->size) {
++            int pw_err = vmaf_set_perceptual_sidedata(s->vmaf, sd->data, sd->size,
++                                                      s->frame_cnt);
++            if (pw_err && pw_err != AVERROR(ENOENT)) {
++                /* -EPROTO (ABI mismatch) and other soft failures are
++                 * non-fatal: log at debug level and score the frame unweighted
++                 * rather than failing the whole graph. */
++                av_log(ctx, AV_LOG_DEBUG,
++                       "perceptual_weight: side-data for frame %u not usable "
++                       "(%d); frame scored unweighted.\n",
++                       s->frame_cnt, pw_err);
++            }
++        }
++    }
++
+     err = vmaf_read_pictures(s->vmaf, &pic_ref, &pic_dist, s->frame_cnt++);
+     if (err) {
+         av_log(ctx, AV_LOG_ERROR, "problem during vmaf_read_pictures.\n");
+         return AVERROR(EINVAL);
+     }
+--
+2.43.0

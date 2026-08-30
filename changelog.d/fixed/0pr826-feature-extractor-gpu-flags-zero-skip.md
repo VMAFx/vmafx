@@ -1,0 +1,1 @@
+- Fixed: GPU-flagged feature extractors are now skipped when `flags == 0` (no GPU available), preventing spurious initialisation failures on CPU-only runners. (ADR-1100, PR #826)

@@ -1,0 +1,1 @@
+| [ADR-0936](0936-pathlib-sweep-final.md) | Replace final `os.path.*` usages with `pathlib.Path`; enable ruff `PTH` ruleset (flake8-use-pathlib) on fork-owned Python; per-file ignore for upstream Netflix trees. Fixes 12 PTH violations across 9 files. | Accepted | 2026-05-31 | python, lint, modernization, fork-local |

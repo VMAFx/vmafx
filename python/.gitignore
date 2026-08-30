@@ -1,0 +1,7 @@
+# python/ is the modern Python harness root (ADR-0700). The legacy paths
+# `vmaf/externals.py` and `test/resource/{icpf,mp4,test_image_yuv,test_images,
+# yuv,tiff,y4m}` lived under the pre-rename layout and no longer exist here;
+# the real Cython source moved to `compat/python-vmaf/core/adm_dwt2_cy.pyx`
+# (its generated `.c` is gitignored at the repo root).
+#
+# Reserved for python-harness-local scratch only.

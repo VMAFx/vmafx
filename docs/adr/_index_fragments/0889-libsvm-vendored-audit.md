@@ -1,0 +1,1 @@
+| [ADR-0889](0889-libsvm-vendored-audit.md) | Vendored libsvm 3.24 audit — close header-row-ordering oob, document upstream-version policy | Accepted | 2026-05-30 | vendored, security, libvmaf, fork-local |

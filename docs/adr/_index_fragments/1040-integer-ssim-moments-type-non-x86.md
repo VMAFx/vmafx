@@ -1,0 +1,1 @@
+| [ADR-1040](1040-integer-ssim-moments-type-non-x86.md) | Promote `integer_ssim_moments_t` to shared header (macOS / Windows arm64 build fix) | Accepted | `build`, `simd`, `arm64`, `macos`, `windows`, `integer-ssim`, `fork-local` |

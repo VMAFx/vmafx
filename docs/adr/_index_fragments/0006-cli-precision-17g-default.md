@@ -1,0 +1,1 @@
+| [ADR-0006](0006-cli-precision-17g-default.md) | Set CLI precision default to `%.17g` with `--precision` flag | Superseded by [ADR-0119](0119-cli-precision-default-revert.md) | cli, testing, python |

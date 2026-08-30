@@ -1,0 +1,234 @@
+openapi: "3.0.3"
+info:
+  title: VMAFX Scoring API
+  description: |
+    REST API for VMAFX perceptual video quality scoring.
+
+    The HTTP transport delegates internally to the same libvmaf scorer that
+    backs the gRPC service defined in `proto/vmafx.proto`.  All REST endpoints
+    are additive: existing gRPC clients are unaffected.
+
+    **Versioning**: this spec tracks the `v1` resource prefix.  Breaking
+    changes increment the major version and are announced via ADR.
+
+    See [docs/server/rest.md](../../docs/server/rest.md) for operator guidance.
+  version: "1.0.0"
+  license:
+    name: BSD-3-Clause-Plus-Patent
+    url: https://github.com/VMAFx/vmafx/blob/master/LICENSE
+  contact:
+    name: VMAFX fork
+    url: https://github.com/VMAFx/vmafx
+
+servers:
+  - url: http://localhost:8080
+    description: Local development instance
+
+tags:
+  - name: scoring
+    description: VMAF perceptual quality scoring operations
+  - name: health
+    description: Liveness and readiness probes
+
+paths:
+  /v1/score:
+    post:
+      operationId: scoreVideoPair
+      summary: Score a reference/distorted video pair
+      description: |
+        Computes the aggregate VMAF score and per-feature breakdown for a
+        reference/distorted video pair.  Both `reference` and `distorted`
+        must be paths resolvable by the server process (absolute paths or
+        paths relative to the server working directory).
+
+        The optional `model` field selects the VMAF model JSON filename
+        (without the `.json` extension) from `VMAFX_MODEL_DIR`.  When
+        omitted the server defaults to `vmaf_v0.6.1`.
+      tags: [scoring]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScoreRequest"
+            examples:
+              netflix_golden:
+                summary: Netflix golden pair
+                value:
+                  reference: "/data/src01_hrc00_576x324.yuv"
+                  distorted: "/data/src01_hrc01_576x324.yuv"
+                  model: "vmaf_v0.6.1"
+      responses:
+        "200":
+          description: Scoring completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScoreResponse"
+              examples:
+                netflix_golden:
+                  summary: Netflix golden result
+                  value:
+                    score: 76.6683
+                    features:
+                      adm2: 0.9876
+                      motion2: 2.3456
+                      vif_scale0: 0.8912
+        "400":
+          description: Missing or invalid request fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missing_fields:
+                  value:
+                    error: "reference and distorted are required"
+        "500":
+          description: Internal scoring error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      description: |
+        Always returns `200 OK` while the server process is live.
+        Kubernetes liveness probes should target this endpoint.
+
+        Note: `/healthz` (without the `/v1/` prefix) is an alias kept for
+        backwards compatibility with Kubernetes conventions.
+      tags: [health]
+      responses:
+        "200":
+          description: Server is live
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                ok:
+                  value:
+                    status: "ok"
+
+  /v1/ready:
+    get:
+      operationId: getReady
+      summary: Readiness probe
+      description: |
+        Returns `200 OK` once the scorer is initialised and ready to accept
+        scoring requests.  Returns `503 Service Unavailable` otherwise.
+
+        Note: `/readyz` (without the `/v1/` prefix) is an alias kept for
+        backwards compatibility with Kubernetes conventions.
+      tags: [health]
+      responses:
+        "200":
+          description: Server is ready to accept scoring requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+              examples:
+                ready:
+                  value:
+                    status: "ready"
+        "503":
+          description: Scorer not yet initialised
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+              examples:
+                not_ready:
+                  value:
+                    status: "not ready"
+                    reason: "scorer not initialised"
+
+components:
+  schemas:
+    ScoreRequest:
+      type: object
+      required:
+        - reference
+        - distorted
+      properties:
+        reference:
+          type: string
+          description: |
+            Path to the reference (pristine) video file.  YUV 4:2:0, Y4M,
+            and common container formats supported by the backing vmaf binary.
+          example: "/data/reference.yuv"
+        distorted:
+          type: string
+          description: |
+            Path to the distorted (compressed) video file.  Must be the same
+            resolution and frame count as the reference.
+          example: "/data/distorted.yuv"
+        model:
+          type: string
+          description: |
+            VMAF model name to use.  Must match a `.json` filename (without
+            extension) in the server's `VMAFX_MODEL_DIR`.  Defaults to
+            `vmaf_v0.6.1` when omitted.
+          example: "vmaf_v0.6.1"
+
+    ScoreResponse:
+      type: object
+      required: [score, features]
+      properties:
+        score:
+          type: number
+          format: double
+          description: Aggregate VMAF score (0–100 typical range).
+          example: 76.6683
+        features:
+          type: object
+          description: |
+            Per-feature scores keyed by feature name.  The set of keys depends
+            on the selected model; common keys include `adm2`, `motion2`,
+            `vif_scale0`, `vif_scale1`, `vif_scale2`, `vif_scale3`.
+          additionalProperties:
+            type: number
+            format: double
+          example:
+            adm2: 0.9876
+            motion2: 2.3456
+            vif_scale0: 0.8912
+
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: Always "ok" for a live server.
+          example: "ok"
+
+    ReadyResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ready, "not ready"]
+          description: >
+            "ready" when the scorer is initialised; "not ready" otherwise.
+          example: "ready"
+        reason:
+          type: string
+          description: Human-readable explanation when not ready.
+          example: "scorer not initialised"
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+          example: "reference and distorted are required"

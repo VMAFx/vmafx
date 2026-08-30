@@ -1,0 +1,1 @@
+| [ADR-0111](0111-coverage-gate-gcovr-with-ort.md) | Coverage gate switches `lcov` → `gcovr` and installs ORT in the coverage job (fixes 1176% over-count + DNN-stub coverage gap; layers on ADR-0110 race fixes) | Accepted | ci, build, dnn, testing |

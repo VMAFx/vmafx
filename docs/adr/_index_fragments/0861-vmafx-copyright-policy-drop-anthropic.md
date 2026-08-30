@@ -1,0 +1,1 @@
+| [ADR-0861](0861-vmafx-copyright-policy-drop-anthropic.md) | Drop "and Claude (Anthropic)" from fork copyright lines (single notice `Copyright 2026 Lusoris` going forward); partially supersedes ADR-0025 / ADR-0105 format guidance. | Accepted | 2026-05-30 | license, docs, governance, fork-local |

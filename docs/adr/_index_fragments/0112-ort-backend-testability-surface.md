@@ -1,0 +1,1 @@
+| [ADR-0112](0112-ort-backend-testability-surface.md) | Expose `ort_backend.c` static helpers (fp16 conversion, resolve_name) via private internal header so `test_ort_internals` can unit-test edge branches the public API can't reach on a CPU-only ORT build | Accepted | dnn, testing, coverage |

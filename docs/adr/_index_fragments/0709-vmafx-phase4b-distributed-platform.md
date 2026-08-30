@@ -1,0 +1,1 @@
+| [ADR-0709](0709-vmafx-phase4b-distributed-platform.md) | VMAFX Phase 4b — distributed video-quality, encoding, and ML platform: controller/node/operator, ffmpeg, rclone, eBPF | Proposed | go, k8s, operator, controller, ffmpeg, rclone, ebpf, onnx, phase4b, fork-local |

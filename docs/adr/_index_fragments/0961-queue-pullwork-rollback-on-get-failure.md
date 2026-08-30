@@ -1,0 +1,1 @@
+| [ADR-0961](0961-queue-pullwork-rollback-on-get-failure.md) | Controller queue — roll back PullWork on post-update Get failure (round-25 audit B.1) | Accepted | go, controller, correctness, queue, phase4b, fork-local |

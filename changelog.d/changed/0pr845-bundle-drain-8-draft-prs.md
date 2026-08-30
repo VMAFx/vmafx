@@ -1,0 +1,1 @@
+- Changed: merged eight previously rebased DRAFT PRs covering documentation updates, Helm chart fixes, and test-coverage increments; no new user-visible features. (PR #845)

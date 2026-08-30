@@ -1,0 +1,1 @@
+| [ADR-0683](0683-cjson-banned-function-remediation.md) | Replace banned functions (`sprintf`/`strcpy`) in vendored MCP cJSON with `snprintf`/`memcpy`; add vendor-policy `AGENTS.md` | Accepted | mcp, vendored, security, c, fork-local |

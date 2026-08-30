@@ -1,0 +1,22 @@
+[package]
+name = "vmafx"
+version = "0.1.0"
+edition.workspace = true
+description = "Safe, idiomatic Rust bindings to libvmaf (VMAFX fork) — Phase 1 scaffold (ADR-0929)"
+license = "BSD-2-Clause-Patent"
+authors = ["Lusoris <lusoris@pm.me>"]
+repository = "https://github.com/VMAFx/vmafx"
+keywords = ["video", "vmaf", "quality", "ffmpeg", "ffi"]
+categories = ["api-bindings", "multimedia::video"]
+readme = "README.md"
+
+[lib]
+name = "vmafx"
+
+[dependencies]
+vmafx-sys = { path = "../vmafx-sys", version = "0.1.0" }
+
+[dev-dependencies]
+
+[features]
+default = []

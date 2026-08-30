@@ -1,0 +1,503 @@
+name: Rules
+
+# ADR-0124: automated enforcement of the process ADRs.
+# Three jobs — one blocking (deep-dive-checklist, ADR-0108), two
+# advisory (doc-substance-check ADR-0100, adr-backfill-check ADR-0106).
+# Copyright-header enforcement (ADR-0105) lives in pre-commit, not here.
+
+on:
+  pull_request:
+    # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
+    # CI when a draft PR is promoted to ready-for-review. Keep `edited`
+    # so PR-body fixes rerun the deliverables/documentation gates without
+    # rerunning the full build/test matrix.
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: rule-enforcement-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deep-dive-checklist:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Deep-Dive Deliverables Checklist (ADR-0108)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Skip upstream-port PRs
+        id: scope
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          # ADR-0108 exempts verbatim upstream ports. Honour the existing
+          # conventions: Conventional-Commit prefix `port:` or a branch
+          # name under `port/`.
+          if [[ "${PR_TITLE}" =~ ^port[:\(] ]] || [[ "${HEAD_REF}" =~ ^port/ ]]; then
+            echo "exempt=true" >> "$GITHUB_OUTPUT"
+            echo "PR is an upstream port — exempt from ADR-0108 deliverables."
+          else
+            echo "exempt=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ensure BASE_SHA + HEAD_SHA are reachable
+        if: steps.scope.outputs.exempt == 'false'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # actions/checkout@v6 with fetch-depth: 0 forces origin/master
+        # to the simulated merge commit (refs/pull/N/merge), which can
+        # leave the recorded base.sha and head.sha unreachable from the
+        # local clone. Explicitly fetch both before any git diff so the
+        # range is always valid, regardless of how the PR was rebased
+        # or which merge-ref GitHub generated.
+        run: |
+          set -euo pipefail
+          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags origin "${BASE_SHA}" || true
+          git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags origin "${HEAD_SHA}" || true
+
+      - name: Run deliverables checklist (parse + file-reference verification)
+        if: steps.scope.outputs.exempt == 'false'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # Single source of truth lives in scripts/ci/deliverables-check.sh
+        # so a developer can run the same gate locally before `gh pr create`
+        # via `make pr-check PR=<num>` (or by piping the body on stdin).
+        run: bash scripts/ci/deliverables-check.sh
+
+  doc-substance-check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Doc-Substance Gate (ADR-0100 / 0167)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # ADR-0167 (2026-04-25): promoted from advisory to blocking and
+    # tightened to require a *path-mapped* docs hit. ADR additions
+    # alone no longer satisfy — they explain decisions to maintainers,
+    # not usage to users (CLAUDE.md §12 rule 10). Per-PR opt-out is
+    # `no docs needed: REASON` somewhere in the PR description.
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Path-mapped docs coverage check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          # See deliverables-checklist job for rationale: fetch both
+          # SHAs explicitly so the diff range is valid regardless of
+          # how actions/checkout populated origin/master.
+          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags origin "${BASE_SHA}" || true
+          git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags origin "${HEAD_SHA}" || true
+
+          git diff --name-only "${BASE_SHA}".."${HEAD_SHA}" > /tmp/diff_files.txt
+
+          # Per-PR opt-out for refactor / bug-fix / test-only PRs that
+          # genuinely have no user-visible delta. Stripping markdown
+          # emphasis matches the deep-dive-checklist convention.
+          printf '%s' "${PR_BODY:-}" | tr -d '`*_' > /tmp/pr_body.md
+          if grep -qiE 'no docs needed[: ]' /tmp/pr_body.md; then
+            echo "Doc-Substance: opt-out claimed in PR body ('no docs needed: ...')."
+            exit 0
+          fi
+
+          # Surface → expected-docs-path mapping. Each row is
+          #   <surface-regex> <expected-docs-regex>
+          # Multiple surface rows can map to the same docs path.
+          # ADR additions (docs/adr/) explicitly do NOT count as a
+          # docs hit per ADR-0167.
+          violations=()
+          check_pair() {
+            local surface_pat="$1"
+            local docs_pat="$2"
+            local label="$3"
+            if grep -qE "${surface_pat}" /tmp/diff_files.txt; then
+              if ! grep -qE "${docs_pat}" /tmp/diff_files.txt; then
+                violations+=("${label}: surface ${surface_pat} touched but no edit under ${docs_pat}")
+              fi
+            fi
+          }
+
+          # libvmaf public headers → docs/api/
+          check_pair '^core/include/libvmaf/libvmaf_cuda\.h$' \
+                     '^docs/api/gpu\.md$' 'CUDA API header'
+          check_pair '^core/include/libvmaf/libvmaf_sycl\.h$' \
+                     '^docs/api/gpu\.md$' 'SYCL API header'
+          check_pair '^core/include/libvmaf/libvmaf_dnn\.h$' \
+                     '^docs/api/dnn\.md$' 'DNN API header'
+          check_pair '^core/include/libvmaf/(libvmaf|picture|model)\.h$' \
+                     '^docs/api/index\.md$' 'core API header'
+
+          # feature extractors + their SIMD/GPU twins → docs/metrics/
+          check_pair '^core/src/feature/(feature_|integer_)[^/]+\.c$' \
+                     '^docs/metrics/' 'feature extractor'
+          check_pair '^core/src/feature/(x86|arm64)/[^/]+\.(c|h)$' \
+                     '^docs/metrics/' 'SIMD path'
+          check_pair '^core/src/feature/cuda/[^/]+\.(c|cu|h|cuh)$' \
+                     '^docs/(metrics/|backends/cuda/)' 'CUDA feature kernel'
+          check_pair '^core/src/feature/sycl/[^/]+\.(cpp|hpp)$' \
+                     '^docs/(metrics/|backends/sycl/)' 'SYCL feature kernel'
+
+          # CLI + tools → docs/usage/
+          check_pair '^core/tools/(cli_parse|vmaf|vmaf_bench)\.c$' \
+                     '^docs/usage/' 'CLI tool'
+
+          # build flags
+          check_pair '^core/meson_options\.txt$' \
+                     '^docs/development/build-flags\.md$' 'build flag'
+
+          # MCP server
+          check_pair '^mcp-server/vmaf-mcp/(src/|pyproject\.toml)' \
+                     '^docs/mcp/' 'MCP server'
+
+          # Tiny-AI surface
+          check_pair '^ai/src/vmaf_train/cli/' \
+                     '^docs/ai/' 'tiny-AI CLI'
+
+          # ffmpeg integration
+          check_pair '^ffmpeg-patches/.*\.patch$' \
+                     '^docs/usage/' 'ffmpeg patch'
+
+          if [ ${#violations[@]} -gt 0 ]; then
+            echo "::error title=ADR-0167 doc-drift::${#violations[@]} surface(s) changed without matching docs/ edit:"
+            for v in "${violations[@]}"; do
+              echo "  - $v"
+            done
+            echo ""
+            echo "Per CLAUDE.md §12 rule 10 / ADR-0100, every PR that"
+            echo "changes a user-discoverable surface ships matching"
+            echo "human-readable docs in the SAME PR. ADR additions under"
+            echo "docs/adr/ explain decisions to maintainers, not usage"
+            echo "to users — they do NOT satisfy this check (ADR-0167)."
+            echo ""
+            echo "Either:"
+            echo "  1. Add the docs update under the indicated path, OR"
+            echo "  2. Add 'no docs needed: REASON' to the PR description"
+            echo "     (legitimate for pure internal refactor / bug fix)."
+            exit 1
+          fi
+
+          echo "Doc-Substance: every touched user-discoverable surface has a matching docs/ edit."
+
+  state-md-touch-check:
+    if: github.event.pull_request.draft == false || github.event_name != 'pull_request'
+    name: docs/state.md Touch Gate (ADR-0165)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # ADR-0334 (2026-05-08): promotes CLAUDE.md §12 rule 13 (the
+    # docs/state.md update discipline) from reviewer-enforced to
+    # CI-enforced. The gate trips when a PR looks bug-shaped
+    # (Conventional-Commit fix: prefix, 'bug' in title, closes/
+    # fixes/resolves #N, or the Bug-status-hygiene template
+    # checkbox left unchecked) AND the diff doesn't touch
+    # docs/state.md AND the PR body doesn't carry the explicit
+    # opt-out sentinel `no state delta: REASON`.
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run state-md touch check
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # Single source of truth lives in scripts/ci/state-md-touch-check.sh
+        # so a developer can dry-run the gate locally before
+        # `gh pr create` (mirrors deliverables-check.sh's pattern).
+        run: bash scripts/ci/state-md-touch-check.sh
+
+  ffmpeg-patches-surface-check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: FFmpeg-Patches Surface Sync (CLAUDE.md §12 r14, ADR-0356)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Blocking gate: every PR that changes a libvmaf public-surface
+    # symbol consumed by ffmpeg-patches/*.patch must update at least
+    # one patch file in the same PR. Per-PR opt-out is
+    # `no ffmpeg-patches update needed: REASON` in the PR body.
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run surface-sync check
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # Single source of truth lives in
+        # scripts/ci/ffmpeg-patches-surface-check.sh — runnable
+        # locally as `BASE_SHA=… HEAD_SHA=… PR_BODY=… bash …` so a
+        # contributor can self-check before `gh pr create`.
+        run: bash scripts/ci/ffmpeg-patches-surface-check.sh
+
+  adr-backfill-check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: ADR-Backfill Advisory (ADR-0106)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan diff for policy-surface edits without a new ADR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # See deliverables-checklist job for rationale.
+          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags origin "${BASE_SHA}" || true
+          git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags origin "${HEAD_SHA}" || true
+
+          git diff --name-only "${BASE_SHA}".."${HEAD_SHA}" > /tmp/diff_files.txt
+
+          adr_added=0
+          if grep -qE '^docs/adr/[0-9]+-' /tmp/diff_files.txt; then
+            adr_added=1
+          fi
+
+          policy_hit=0
+          if grep -qE '^(core/include/|meson_options\.(txt|toml)|\.github/|docs/principles\.md$|CLAUDE\.md$|AGENTS\.md$|\.pre-commit-config\.yaml$)' /tmp/diff_files.txt; then
+            policy_hit=1
+          fi
+
+          if [ "${policy_hit}" -eq 1 ] && [ "${adr_added}" -eq 0 ]; then
+            echo "ADR-0106 advisory: policy / public-surface paths changed without a new ADR."
+            echo "Policy paths in this PR:"
+            grep -E '^(core/include/|meson_options\.|\.github/|docs/principles\.md$|CLAUDE\.md$|AGENTS\.md$|\.pre-commit-config\.yaml$)' /tmp/diff_files.txt || true
+            echo ""
+            echo "If the change is a refactor or a pure bug fix, no new ADR is required."
+            echo "Otherwise write docs/adr/NNNN-*.md before merging (see ADR-0106)."
+          else
+            echo "ADR-0106 advisory: no policy surface changed, or a new ADR was added."
+          fi
+
+  adr-collision-check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: ADR Number Collision Guard (ADR-0386 / ADR-0628)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Blocking gate: every ADR file added in this PR must have a 4-digit prefix
+    # that does NOT already exist on origin/master AND does NOT collide with any
+    # number already claimed by another OPEN PR (ADR-0628).
+    #
+    # Two-phase check:
+    #   Phase 1 — vs master: catches numbers already merged.
+    #   Phase 2 — vs open PRs: catches in-flight collisions before merge.
+    #     For each open PR (excluding this one and descendant stacked PRs), we
+    #     fetch its HEAD and scan docs/adr/ for NNNN-*.md files.  If a number
+    #     matches, the check fails.
+    #
+    # Phase 2 uses the gh CLI (pre-installed on ubuntu-latest) and is
+    # best-effort: if the gh call fails (e.g. rate limit, permissions), the
+    # step emits a WARNING but does not block the PR (to preserve offline /
+    # restricted-token builds).
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch origin/master (cross-branch collision baseline)
+        run: |
+          set -euo pipefail
+          git fetch origin master --depth=50 --quiet
+
+      - name: Check for ADR number collisions with origin/master
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Make sure both tip SHAs are reachable.
+          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags origin "${BASE_SHA}" || true
+          git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags origin "${HEAD_SHA}" || true
+
+          # Collect every docs/adr/NNNN-*.md file ADDED (status A) or RENAMED to
+          # (status R) in this PR, relative to its merge base.
+          added_adrs=()
+          while IFS= read -r f; do
+            added_adrs+=("${f}")
+          done < <(git diff --name-status "${BASE_SHA}".."${HEAD_SHA}" \
+            | awk '$1 == "A" || $1 ~ /^R/ { print $NF }' \
+            | grep -E '^docs/adr/[0-9]{4}-.*\.md$' || true)
+
+          if [ "${#added_adrs[@]}" -eq 0 ]; then
+            echo "ADR-collision-check: no new ADR files in this PR, nothing to check."
+            exit 0
+          fi
+
+          fail=0
+          for adr_file in "${added_adrs[@]}"; do
+            num="$(basename "${adr_file}" | grep -oE '^[0-9]{4}')"
+
+            # Phase 1: does the PR base already have ANY file with this prefix?
+            # Use BASE_SHA, not live origin/master: a fast auto-merge can advance
+            # origin/master before this job starts, and then the PR falsely
+            # collides with its own just-merged ADR file.
+            collision="$(git ls-tree "${BASE_SHA}" "docs/adr/" \
+              | awk '{ print $4 }' \
+              | grep -E "^docs/adr/${num}-" || true)"
+
+            if [ -n "${collision}" ]; then
+              echo "::error file=${adr_file}::ADR number collision: ${adr_file} uses prefix ${num}, but the PR base already has: ${collision}"
+              echo "  The number ${num} was already present before this PR branch."
+              echo "  Run 'scripts/adr/next-free.sh --claim <slug>' to get a free number."
+              fail=1
+            fi
+          done
+
+          if [ "${fail}" -eq 1 ]; then
+            echo ""
+            echo "ADR collision check (phase 1: vs PR base) failed — see errors above."
+            echo "See ADR-0386 (docs/adr/0386-adr-numbering-collision-prevention.md)."
+            exit 1
+          fi
+
+          echo "ADR-collision-check phase 1: all ${#added_adrs[@]} ADR file(s) have unique prefix(es) on the PR base."
+
+      - name: Check for ADR number collisions with open PRs (ADR-0628)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          THIS_PR: ${{ github.event.pull_request.number }}
+          THIS_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Collect ADR numbers added by THIS PR (same logic as phase 1).
+          added_nums=()
+          while IFS= read -r f; do
+            num="$(basename "${f}" | grep -oE '^[0-9]{4}')"
+            added_nums+=("${num}")
+          done < <(git diff --name-status "${BASE_SHA}".."${HEAD_SHA}" \
+            | awk '$1 == "A" || $1 ~ /^R/ { print $NF }' \
+            | grep -E '^docs/adr/[0-9]{4}-.*\.md$' || true)
+
+          if [ "${#added_nums[@]}" -eq 0 ]; then
+            echo "ADR-collision-check phase 2: no new ADR files, skipping open-PR scan."
+            exit 0
+          fi
+
+          # Fetch the list of open PRs.  Descendant stacked PRs are allowed to
+          # contain this PR's ADR files because they are not independent
+          # collisions; they are queued children of this exact PR branch.
+          open_prs_json=""
+          if ! open_prs_json="$(gh pr list --state open \
+            --json number,headRefName,headRefOid,baseRefName \
+            --limit 200 2>/dev/null)"; then
+            echo "::warning::ADR-collision-check phase 2: gh pr list failed — open-PR scan skipped."
+            echo "  Ensure GITHUB_TOKEN has pull-requests:read permission."
+            exit 0
+          fi
+
+          # For each open PR (excluding this one and stacked descendants), fetch
+          # its HEAD and check docs/adr/.
+          fail=0
+          while IFS=$'\t' read -r pr_num pr_branch pr_sha is_descendant; do
+            [ "${pr_num}" = "${THIS_PR}" ] && continue
+            [ -z "${pr_sha}" ] && continue
+            if [ "${is_descendant}" = "1" ]; then
+              echo "ADR-collision-check phase 2: skipping stacked descendant PR #${pr_num} (${pr_branch})."
+              continue
+            fi
+
+            # Fetch the PR tip (shallow; soft failure if SHA unavailable).
+            git fetch --no-tags --depth=1 --quiet origin "${pr_sha}" 2>/dev/null || continue
+
+            # If the descendant branch was already rebased onto this exact
+            # head, the branch-name chain and the commit ancestry both agree it
+            # is not an independent collision.
+            if git merge-base --is-ancestor "${HEAD_SHA}" "${pr_sha}" 2>/dev/null; then
+              echo "ADR-collision-check phase 2: skipping descendant commit PR #${pr_num} (${pr_branch})."
+              continue
+            fi
+
+            # Check if this PR's HEAD contains any of the numbers added by THIS PR.
+            for num in "${added_nums[@]}"; do
+              collision="$(git ls-tree -r --name-only "${pr_sha}" -- docs/adr/ 2>/dev/null \
+                | grep -E "^docs/adr/${num}-" || true)"
+              if [ -n "${collision}" ]; then
+                echo "::error::ADR number collision with open PR #${pr_num} (${pr_branch}):"
+                echo "  This PR adds ADR number ${num}."
+                echo "  Open PR #${pr_num} also contains: ${collision}"
+                echo "  Whichever PR merges second will need a renumber."
+                echo "  Run 'scripts/adr/next-free.sh --claim <slug>' on your branch to get a free number."
+                fail=1
+              fi
+            done
+          done < <(printf '%s' "${open_prs_json}" \
+            | python3 -c "
+          import json, os, sys
+          prs = json.load(sys.stdin)
+          this_pr = os.environ.get('THIS_PR', '')
+          this_head = os.environ.get('THIS_HEAD_REF', '')
+          by_head = {pr['headRefName']: pr for pr in prs}
+
+          def is_descendant_stack(pr):
+              seen = set()
+              base = pr.get('baseRefName') or ''
+              while base and base not in seen:
+                  if base == this_head:
+                      return True
+                  seen.add(base)
+                  parent = by_head.get(base)
+                  if parent is None or str(parent.get('number')) == this_pr:
+                      return False
+                  base = parent.get('baseRefName') or ''
+              return False
+
+          for pr in prs:
+              fields = [
+                  str(pr['number']),
+                  pr['headRefName'],
+                  pr['headRefOid'],
+                  '1' if is_descendant_stack(pr) else '0',
+              ]
+              print('\t'.join(fields))
+          " 2>/dev/null || true)
+
+          if [ "${fail}" -eq 1 ]; then
+            echo ""
+            echo "ADR collision check (phase 2: vs open PRs) failed — see errors above."
+            echo "See ADR-0628 (docs/adr/0628-adr-allocator-remote-aware.md)."
+            exit 1
+          fi
+
+          echo "ADR-collision-check phase 2: no collisions with open PRs."

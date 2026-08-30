@@ -1,0 +1,147 @@
+From 645e401336d13d88380a2b7afc5158b75f794bf5 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Mon, 18 May 2026 21:22:47 +0200
+Subject: [PATCH] libvmaf: expose cpumask and gpumask on all vmaf filters
+ (ADR-0576)
+
+VmafConfiguration has carried cpumask and gpumask fields since
+libvmaf 3.0, but the ffmpeg filter wrapper never wired them through.
+This meant users could not selectively disable SIMD ISAs (for
+regression testing or pinning to a specific SIMD level) or the GPU
+dispatch path from within ffmpeg.
+
+cpumask bit layout (matches libvmaf.h):
+  bit 0 (1)   - disable SSE2 / NEON (arm64)
+  bit 1 (2)   - disable SSE3/SSSE3
+  bit 2 (4)   - disable SSE4.1
+  bit 3 (8)   - disable AVX2
+  bit 4 (16)  - disable AVX512
+  bit 5 (32)  - disable AVX512ICL
+
+gpumask bit layout:
+  bit 0 (1)   - disable CUDA
+
+Default 0 for both (all ISAs / GPU paths enabled), matching the
+previous implicit behaviour.
+
+Both options are added to:
+  - the main libvmaf filter (LIBVMAFContext / libvmaf_options)
+  - the libvmaf_sycl filter  (libvmaf_sycl_options, SYCL init)
+  - the libvmaf_vulkan filter (libvmaf_vulkan_options, Vulkan init)
+  - the libvmaf_metal filter  (libvmaf_metal_options, Metal init)
+
+The upstream libvmaf_cuda filter (config_props_cuda) also passes through
+the new fields because it shares LIBVMAFContext.
+
+ADR-0576.
+---
+ libavfilter/vf_libvmaf.c | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 61f2747..8dabe15 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -122,6 +122,12 @@ typedef struct LIBVMAFContext {
+ #if CONFIG_LIBVMAF_METAL
+     VmafMetalState *metal_state;        /* owned by the libvmaf filter when metal_device >= -1 + !default-disabled */
+ #endif
++    /* ADR-0576: VmafConfiguration.cpumask / gpumask exposed as AVOptions.
++     * cpumask bits selectively disable SIMD ISAs (SSE2/NEON=1, SSE3=2,
++     * SSE4.1=4, AVX2=8, AVX512=16, AVX512ICL=32).  gpumask bit 0 (value 1)
++     * disables CUDA; zero (default) leaves all ISAs/GPU paths enabled. */
++    int64_t cpumask;
++    int64_t gpumask;
+ 
+     VmafContext *vmaf;
+     VmafModel **model;
+@@ -154,6 +160,8 @@ static const AVOption libvmaf_options[] = {
+     {"cuda",         "Enable the CUDA backend on the primary device (software AVFrame input).", OFFSET(cuda),    AV_OPT_TYPE_BOOL,   {.i64=0},      0, 1,        FLAGS},
+     {"hip_device",   "HIP device index (-1 = disabled, 0+ = device index).",            OFFSET(hip_device),      AV_OPT_TYPE_INT,    {.i64=-1},    -1, INT_MAX,  FLAGS},
+     {"metal_device", "Metal device index (-2 = disabled, -1 = system default, 0+ = MTLCopyAllDevices ordinal).", OFFSET(metal_device), AV_OPT_TYPE_INT, {.i64=-2}, -2, INT_MAX, FLAGS},
++    {"cpumask",      "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).", OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
++    {"gpumask",      "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).", OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
+     { NULL }
+ };
+ 
+@@ -572,6 +580,8 @@ static av_cold int init(AVFilterContext *ctx)
+         .log_level = log_level_map(av_log_get_level()),
+         .n_subsample = s->n_subsample,
+         .n_threads = s->n_threads,
++        .cpumask = (uint64_t)s->cpumask,
++        .gpumask = (uint64_t)s->gpumask,
+     };
+ 
+     err = vmaf_init(&s->vmaf, cfg);
+@@ -1040,6 +1050,8 @@ static int config_props_cuda(AVFilterLink *outlink)
+         .log_level = log_level_map(av_log_get_level()),
+         .n_subsample = s->n_subsample,
+         .n_threads = s->n_threads,
++        .cpumask = (uint64_t)s->cpumask,
++        .gpumask = (uint64_t)s->gpumask,
+     };
+ 
+     VmafCudaPictureConfiguration cuda_pic_cfg = {
+@@ -1223,6 +1235,10 @@ static const AVOption libvmaf_sycl_options[] = {
+                   OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, SYCL_FLAGS},
+     {"gpu_profile", "Print per-kernel GPU timing breakdown at end.",
+                     OFFSET(sycl_profile), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, SYCL_FLAGS},
++    {"cpumask",   "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).",
++                  OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, SYCL_FLAGS},
++    {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
++                  OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, SYCL_FLAGS},
+     { NULL }
+ };
+ #undef SYCL_FLAGS
+@@ -1410,6 +1426,8 @@ static int config_props_sycl(AVFilterLink *outlink)
+         .log_level = log_level_map(av_log_get_level()),
+         .n_subsample = s->n_subsample,
+         .n_threads = s->n_threads,
++        .cpumask = (uint64_t)s->cpumask,
++        .gpumask = (uint64_t)s->gpumask,
+     };
+ 
+     err = vmaf_init(&s->vmaf, cfg);
+@@ -1498,6 +1516,10 @@ static const AVOption libvmaf_vulkan_options[] = {
+                   OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, VK_FLAGS},
+     {"feature",   "Set the feature to be used for computing vmaf.",
+                   OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, VK_FLAGS},
++    {"cpumask",   "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).",
++                  OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
++    {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
++                  OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
+     { NULL }
+ };
+ #undef VK_FLAGS
+@@ -1712,6 +1734,8 @@ static int config_props_vulkan(AVFilterLink *outlink)
+         .log_level = log_level_map(av_log_get_level()),
+         .n_subsample = s->n_subsample,
+         .n_threads = s->n_threads,
++        .cpumask = (uint64_t)s->cpumask,
++        .gpumask = (uint64_t)s->gpumask,
+     };
+     err = vmaf_init(&s->vmaf, cfg);
+     if (err)
+@@ -1777,6 +1801,10 @@ static const AVOption libvmaf_metal_options[] = {
+                   OFFSET(model_cfg), AV_OPT_TYPE_STRING, {.str="version=vmaf_v0.6.1"}, 0, 1, MTL_FLAGS},
+     {"feature",   "Set the feature to be used for computing vmaf.",
+                   OFFSET(feature_cfg), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 1, MTL_FLAGS},
++    {"cpumask",   "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).",
++                  OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, MTL_FLAGS},
++    {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
++                  OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, MTL_FLAGS},
+     { NULL }
+ };
+ #undef MTL_FLAGS
+@@ -1974,6 +2002,8 @@ static int config_props_metal(AVFilterLink *outlink)
+         .log_level = log_level_map(av_log_get_level()),
+         .n_subsample = s->n_subsample,
+         .n_threads = s->n_threads,
++        .cpumask = (uint64_t)s->cpumask,
++        .gpumask = (uint64_t)s->gpumask,
+     };
+     err = vmaf_init(&s->vmaf, cfg);
+     if (err)
+-- 
+2.54.0
+

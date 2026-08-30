@@ -1,0 +1,1 @@
+- Fixed: CI build-matrix corrected meson source paths; `allocator_may_return_null=1` added to ASan step to suppress false-positive OOM aborts; `motion_v2` coverage leak patched. (PR #830)

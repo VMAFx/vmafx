@@ -1,0 +1,130 @@
+name: Rust
+
+on:
+  push:
+    branches: ["master"]
+    paths:
+      - "bindings/rust/**"
+      - "core/src/feature/rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/rust-ci.yml"
+  pull_request:
+    paths:
+      - "bindings/rust/**"
+      - "core/src/feature/rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/rust-ci.yml"
+
+concurrency:
+  group: rust-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege default for the whole workflow (ADR-0875).
+# Jobs widen only if they need to publish artefacts or push.
+permissions:
+  contents: read
+
+jobs:
+  rust-vmafx-sys:
+    name: vmafx-sys (fmt + clippy + test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          # Drop the hosted runner's pre-provisioned Microsoft/Azure apt
+          # sources before updating; they intermittently 403 and fail
+          # `apt-get update` with exit 100. See T-CI-APT-MS-REPO-FLAKE.
+          sudo rm -f /etc/apt/sources.list.d/*microsoft* \
+                     /etc/apt/sources.list.d/*azure* || true
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            meson ninja-build nasm libssl-dev \
+            clang libclang-dev pkg-config
+
+      - name: Build and install libvmaf (CPU only)
+        run: |
+          # --libdir=lib: meson on Ubuntu defaults to multiarch
+          # (/usr/local/lib/x86_64-linux-gnu/), but vmafx-sys/build.rs and the
+          # downstream link step search /usr/local/lib directly. Pin the
+          # single-arch path so the `.so` lands where the linker looks.
+          meson setup build-ci core \
+            -Denable_cuda=false \
+            -Denable_sycl=false \
+            -Denable_hip=false \
+            -Denable_avx512=false \
+            --prefix /usr/local \
+            --libdir lib
+          ninja -C build-ci
+          sudo ninja -C build-ci install
+          sudo ldconfig
+
+      - name: Set up stable Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          # Pinned by commit SHA, so the action cannot infer the toolchain from
+          # its git ref — `toolchain` must be given explicitly or setup fails
+          # with "'toolchain' is a required input".
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
+
+      - name: Cargo fmt check
+        run: cargo fmt -p vmafx-sys --check
+
+      - name: Cargo clippy
+        env:
+          LIBVMAF_PREFIX: /usr/local
+        run: cargo clippy -p vmafx-sys --all-targets -- -D warnings
+
+      - name: Cargo build
+        env:
+          LIBVMAF_PREFIX: /usr/local
+        run: cargo build -p vmafx-sys
+
+      - name: Cargo test (unit + integration)
+        env:
+          LIBVMAF_PREFIX: /usr/local
+          VMAFX_REPO: ${{ github.workspace }}
+          LD_LIBRARY_PATH: /usr/local/lib
+        run: cargo test -p vmafx-sys --all-features
+
+      - name: Run score example (Netflix golden smoke test)
+        env:
+          LIBVMAF_PREFIX: /usr/local
+          VMAFX_REPO: ${{ github.workspace }}
+          LD_LIBRARY_PATH: /usr/local/lib
+        run: cargo run --example score
+
+  cargo-deny:
+    name: cargo-deny (licenses, bans, advisories, sources)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Runs in parallel with rust-vmafx-sys: pure dependency-graph analysis, no
+    # libvmaf build required. Enforces the supply-chain policy in deny.toml
+    # (ADR-0917). Fails on: copyleft licenses, banned crates (openssl-sys /
+    # native-tls), known RustSec vulnerabilities, unknown crate registries,
+    # unknown git sources, wildcard version requirements.
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
+        with:
+          command: check
+          # Match the project root's deny.toml location.
+          arguments: --all-features

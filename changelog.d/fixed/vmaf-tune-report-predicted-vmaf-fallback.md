@@ -1,0 +1,1 @@
+- `vmaf-tune report`: per-shot ingest in `_run_report` now falls back to `predicted_vmaf` when `vmaf` key is absent. The `tune-per-shot --plan-out` JSON shape emits `predicted_vmaf` (the bisect predicate output), so feeding it to `report --per-shot-json` previously rendered every shot's VMAF as `0.00`. One-line fix; chart now shows real predicted scores.

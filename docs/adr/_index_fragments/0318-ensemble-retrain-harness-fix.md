@@ -1,0 +1,1 @@
+| [ADR-0318](0318-ensemble-retrain-harness-fix.md) | `fr_regressor_v2` ensemble retrain harness — wrapper-trainer interface fix + Phase A pre-step doc | Accepted | ai, fr-regressor, ensemble, loso, runbook, fork-local |

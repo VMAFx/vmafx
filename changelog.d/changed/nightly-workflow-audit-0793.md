@@ -1,0 +1,1 @@
+Remove redundant nightly TSan job (superseded by sanitizers.yml master-push gate per ADR-0710), add explicit artifact retention to nightly.yml (14 d for clang-tidy-full-report, 30 d for nightly-benchmark-results), and fix nightly-bisect.yml Python version from non-existent `3.14.5` pre-release to stable `3.12` (ADR-0793).

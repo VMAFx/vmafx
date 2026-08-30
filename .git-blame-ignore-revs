@@ -1,0 +1,12 @@
+# Revisions to ignore for `git blame`.
+#
+# Configure git to use this file once per clone:
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub's blame UI honours it automatically.
+
+# style(c): apply clang-format 22 across full C/C++/CUDA tree
+028d4d1b
+
+# style(python): apply black 26 + isort 8 across all Python trees
+3a2d4d05

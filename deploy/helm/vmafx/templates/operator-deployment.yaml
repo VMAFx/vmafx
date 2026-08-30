@@ -1,0 +1,79 @@
+{{- /*
+  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+  Copyright 2026 Lusoris
+
+  deploy/helm/vmafx/templates/operator-deployment.yaml
+  Deployment for the vmafx-operator.
+
+  Rendered only when operator.enabled == true (default false until Stage 2 ships
+  the full reconciler logic; set to true when installing the operator).
+
+  ADR-0714: vmafx-operator kubebuilder skeleton + CRDs.
+*/ -}}
+{{- if .Values.operator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vmafx.fullname" . }}-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  replicas: {{ .Values.operator.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "vmafx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: operator
+  template:
+    metadata:
+      labels:
+        {{- include "vmafx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: operator
+      annotations:
+        kubectl.kubernetes.io/default-container: operator
+    spec:
+      serviceAccountName: {{ include "vmafx.serviceAccountName" . }}-operator
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: operator
+          image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.operator.image.pullPolicy | default "IfNotPresent" }}
+          args:
+            - --metrics-bind-address=:8081
+            - --health-probe-bind-address=:8082
+            {{- if .Values.operator.leaderElect }}
+            - --leader-elect
+            {{- end }}
+            - --log-level={{ .Values.operator.logLevel | default "info" }}
+          env:
+            - name: VMAFX_LOG_LEVEL
+              value: {{ .Values.operator.logLevel | default "info" | quote }}
+          ports:
+            - name: metrics
+              containerPort: 8081
+              protocol: TCP
+            - name: healthz
+              containerPort: 8082
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: healthz
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml (.Values.operator.resources | default dict) | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      terminationGracePeriodSeconds: 10
+{{- end }}
