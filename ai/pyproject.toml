@@ -9,7 +9,7 @@ authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
 ]
 dependencies = [
-  "torch>=2.12.1,<3.0",
+  "torch>=2.13.0,<3.0",
   # torchvision must be pinned as a direct dep to enforce ABI compatibility with
   # the torch floor declared above.  pytorch-lightning → torchmetrics 1.9+
   # eagerly imports `torchvision.transforms` for its arniqa metric; an older
