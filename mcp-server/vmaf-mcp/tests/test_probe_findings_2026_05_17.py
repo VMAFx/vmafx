@@ -149,7 +149,7 @@ def test_bug2_schema_advertises_all_supported_backends() -> None:
 
     for tool_name in ("vmaf_score", "describe_worst_frames"):
         tool = by_name[tool_name]
-        backend_schema = tool.inputSchema["properties"]["backend"]
+        backend_schema = tool.input_schema["properties"]["backend"]
         assert (
             set(backend_schema["enum"]) == expected
         ), f"{tool_name}: enum is {backend_schema['enum']}, expected {sorted(expected)}"

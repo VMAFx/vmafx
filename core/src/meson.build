@@ -9,7 +9,7 @@ sycl_dir = './sycl/'
 
 vmaf_base_include = include_directories('./', './feature', './feature/common', '../include')
 
-vmaf_cflags_common = [
+vmaf_cflags_common = cc.get_supported_arguments([
     '-pedantic',
     # ADR-0692: enforce the JPL Rule-24 fallthrough annotation at compile time.
     # C23 provides the standard [[fallthrough]] spelling.
@@ -21,6 +21,7 @@ vmaf_cflags_common = [
     # in the final libvmaf.so. This eliminates the 207-symbol leak
     # found by Research-0092 (libsvm C API, pdjson, SIMD internals, etc.)
     '-fvisibility=hidden',
+]) + [
     # Suppresses the VMAF_POOL_METHOD_NB deprecation attribute for internal
     # translation units that legitimately iterate over all pool methods (e.g.
     # output.c). External consumers without this flag will see the warning.

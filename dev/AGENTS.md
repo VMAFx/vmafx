@@ -252,7 +252,7 @@ would fail to compile:
    a hardware-encoder family from the `ffmpeg -encoders` listing and
    breaks the `vmaf-tune compare` sweep. The build-time encoder
    probe at the end of stage 3.5 catches drops with `WARN <encoder>
-   missing` lines. Do NOT add `--enable-libnpp` — FFmpeg n8.1.1's
+   missing` lines. Do NOT add `--enable-libnpp` — FFmpeg n9.0.1's
    NPP support tops out at CUDA 12.x, and the image's
    `cuda-toolkit` meta-package tracks 13.x, so passing the flag
    hard-errors at configure time. `scale_cuda` (built via

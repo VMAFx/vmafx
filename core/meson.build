@@ -62,8 +62,8 @@ endif
 
 # Select the C++ standard flag based on compiler identity, unless the caller
 # already supplied an explicit -Dcpp_std override (e.g. the SYCL CI leg
-# passes -Dcpp_std=c++14 for icx-cl under MSVC ABI mode, which drops c++23
-# from its supported list).  When cpp_std is 'none' (the meson default when
+# passes -Dcpp_std=c++latest for icx-cl under MSVC ABI mode).  When cpp_std is
+# 'none' (the meson default when
 # not overridden) we inject the flag directly via add_project_arguments:
 #   - MSVC (cl.exe / clang-cl): /std:c++latest — 'c++23' is absent from the
 #     accepted-values list meson's MSVC backend advertises; /std:c++latest

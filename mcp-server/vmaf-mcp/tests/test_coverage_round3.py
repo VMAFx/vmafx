@@ -854,7 +854,7 @@ def test_vmaf_score_bitdepth_schema_is_integer_with_enum():
 
     tools = anyio.run(get)
     by_name = {t.name: t for t in tools}
-    schema = by_name["vmaf_score"].inputSchema
+    schema = by_name["vmaf_score"].input_schema
     bitdepth_schema = schema["properties"]["bitdepth"]
     assert bitdepth_schema["type"] == "integer"
     enum_set = set(bitdepth_schema["enum"])
@@ -873,7 +873,7 @@ def test_vmaf_score_pixfmt_schema_enumerates_valid_values():
 
     tools = anyio.run(get)
     by_name = {t.name: t for t in tools}
-    schema = by_name["vmaf_score"].inputSchema
+    schema = by_name["vmaf_score"].input_schema
     pixfmt_schema = schema["properties"]["pixfmt"]
     assert set(pixfmt_schema["enum"]) == {"420", "422", "444"}
 

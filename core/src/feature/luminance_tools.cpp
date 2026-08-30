@@ -86,7 +86,7 @@ constexpr double kBt1886Lb = 0.01;
 
 [[nodiscard]] double normalize_range(int sample, VmafLumaRange range) noexcept
 {
-    int clipped = std::clamp(sample, range.foot, range.head);
+    const int clipped = std::clamp(sample, range.foot, range.head);
     return static_cast<double>(clipped - range.foot) / static_cast<double>(range.head - range.foot);
 }
 
@@ -119,11 +119,12 @@ extern "C" int vmaf_luminance_init_eotf(VmafEOTF *eotf, const char *eotf_str)
 
 extern "C" double vmaf_luminance_bt1886_eotf(double V)
 {
-    double a =
+    const double a =
         std::pow(std::pow(kBt1886Lw, 1.0 / kBt1886Gamma) - std::pow(kBt1886Lb, 1.0 / kBt1886Gamma),
                  kBt1886Gamma);
-    double b = std::pow(kBt1886Lb, 1.0 / kBt1886Gamma) /
-               (std::pow(kBt1886Lw, 1.0 / kBt1886Gamma) - std::pow(kBt1886Lb, 1.0 / kBt1886Gamma));
+    const double b =
+        std::pow(kBt1886Lb, 1.0 / kBt1886Gamma) /
+        (std::pow(kBt1886Lw, 1.0 / kBt1886Gamma) - std::pow(kBt1886Lb, 1.0 / kBt1886Gamma));
     return a * std::pow(std::max(V + b, 0.0), kBt1886Gamma);
 }
 
@@ -135,14 +136,14 @@ extern "C" double vmaf_luminance_pq_eotf(double V)
     constexpr double c_2 = 18.8515625;
     constexpr double c_3 = 18.6875; // c_3 = c_1 + c_2 - 1
 
-    double num = std::pow(V, 1.0 / m_2) - c_1;
-    double num_clipped = std::max(num, 0.0);
-    double den = c_2 - c_3 * std::pow(V, 1.0 / m_2);
+    const double num = std::pow(V, 1.0 / m_2) - c_1;
+    const double num_clipped = std::max(num, 0.0);
+    const double den = c_2 - c_3 * std::pow(V, 1.0 / m_2);
     return 10000.0 * std::pow(num_clipped / den, 1.0 / m_1);
 }
 
 extern "C" double vmaf_luminance_get_luminance(int sample, VmafLumaRange luma_range, VmafEOTF eotf)
 {
-    double normalized = normalize_range(sample, luma_range);
+    const double normalized = normalize_range(sample, luma_range);
     return eotf(normalized);
 }

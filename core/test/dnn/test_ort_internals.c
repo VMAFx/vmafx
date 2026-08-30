@@ -196,6 +196,33 @@ static char *test_resolve_name_positional_out_of_range(void)
     return NULL;
 }
 
+static char *test_convert_non_float_output_types(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+
+    float dst[3] = {0};
+    const double doubles[3] = {1.25, -2.5, 3.75};
+    int rc = vmaf_ort_internal_convert_output_elems(ELEM_TYPE_DOUBLE, doubles, dst, 3u);
+    mu_assert("convert double output succeeds", rc == 0);
+    mu_assert("convert double output values",
+              dst[0] == 1.25f && dst[1] == -2.5f && dst[2] == 3.75f);
+
+    const int64_t int64s[3] = {1, -2, 3};
+    rc = vmaf_ort_internal_convert_output_elems(ELEM_TYPE_INT64, int64s, dst, 3u);
+    mu_assert("convert int64 output succeeds", rc == 0);
+    mu_assert("convert int64 output values", dst[0] == 1.0f && dst[1] == -2.0f && dst[2] == 3.0f);
+
+    const int32_t int32s[3] = {4, -5, 6};
+    rc = vmaf_ort_internal_convert_output_elems(ELEM_TYPE_INT32, int32s, dst, 3u);
+    mu_assert("convert int32 output succeeds", rc == 0);
+    mu_assert("convert int32 output values", dst[0] == 4.0f && dst[1] == -5.0f && dst[2] == 6.0f);
+
+    rc = vmaf_ort_internal_convert_output_elems(ELEM_TYPE_UNDEFINED, int32s, dst, 3u);
+    mu_assert("unsupported output type is rejected", rc == -ENOTSUP);
+    return NULL;
+}
+
 /* ---------- ort_backend NULL-guard branches ------------------------ */
 /* These guards short-circuit before any ORT call, so they're safe to
  * exercise without a session. They reach lines uncovered through the
@@ -797,6 +824,7 @@ char *run_tests(void)
     mu_run_test(test_resolve_name_miss);
     mu_run_test(test_resolve_name_positional);
     mu_run_test(test_resolve_name_positional_out_of_range);
+    mu_run_test(test_convert_non_float_output_types);
     mu_run_test(test_ort_attached_ep_null_session);
     mu_run_test(test_ort_close_null_session);
     mu_run_test(test_ort_io_count_null_args);

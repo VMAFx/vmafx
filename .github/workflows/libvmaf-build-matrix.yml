@@ -931,10 +931,9 @@ jobs:
           echo INCLUDE=%CD%\level-zero-prefix\include;%INCLUDE%>>%GITHUB_ENV%
           echo LIB=%CD%\level-zero-prefix\lib;%LIB%>>%GITHUB_ENV%
 
-      # `-Dcpp_std=c++14` overrides libvmaf's default `c++11`
-      # because icx-cl 2025.3 only accepts c++14/c++17/c++20/c++latest
-      # under MSVC ABI mode (drops c++11 from the standards list it
-      # advertises to meson).
+      # Pin `c++latest` because the fork's C++ sources require C++23
+      # `std::expected`, while icx-cl under MSVC ABI mode advertises the
+      # Microsoft-style c++14/c++17/c++20/c++latest option set.
       - name: Configure libvmaf (SYCL)
         if: matrix.backend == 'sycl'
         shell: cmd
@@ -948,7 +947,7 @@ jobs:
           meson setup core core\build --buildtype release ^
             --prefix %CD%\install ^
             -Denable_float=true ^
-            -Dcpp_std=c++14 ^
+            -Dcpp_std=c++latest ^
             ${{ matrix.meson_extra }}
 
       - name: Build libvmaf (CUDA)

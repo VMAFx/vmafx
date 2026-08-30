@@ -105,7 +105,7 @@ jobs:
         if: steps.cpp-changes.outputs.any == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build nasm \
+          sudo apt-get install -y gcc-14 g++-14 ninja-build nasm \
             jq parallel
           # clang-tidy from apt.llvm.org: the ubuntu-24.04 image tops out at
           # clang 18, whose libstdc++ has no std::expected, so it cannot even
@@ -122,7 +122,8 @@ jobs:
       - name: Generate compile_commands.json
         if: steps.cpp-changes.outputs.any == 'true'
         run: |
-          meson setup build core -Denable_cuda=false -Denable_sycl=false
+          CC=gcc-14 CXX=g++-14 meson setup build core \
+            -Denable_cuda=false -Denable_sycl=false
           # Build first so codegen outputs (vcs_version.h, model JSONs → .c)
           # exist on disk before clang-tidy parses the translation units.
           meson compile -C build

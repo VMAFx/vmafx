@@ -441,7 +441,7 @@ core/
   on MSVC and `-std=c++23` on everything else. Three invariants that must
   survive any rebase:
   (1) the guard condition `get_option('cpp_std') == 'none'` must be
-  preserved — removing it causes the SYCL leg's `-Dcpp_std=c++14` override
+  preserved — removing it causes the SYCL leg's `-Dcpp_std=c++latest` override
   to conflict with the injected `-std=c++23` flag;
   (2) the block must remain between `cxx = meson.get_compiler('cpp')` and
   the first `cc.check_header` call so the compiler is defined before the

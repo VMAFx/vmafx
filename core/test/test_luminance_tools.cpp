@@ -24,7 +24,7 @@
 /* Test support function */
 int almost_equal(double a, double b)
 {
-    double diff = a > b ? a - b : b - a;
+    const double diff = a > b ? a - b : b - a;
     return diff < EPS;
 }
 
@@ -37,7 +37,7 @@ static char *test_bt1886_eotf()
     L = vmaf_luminance_bt1886_eotf(0.9);
     mu_assert("wrong bt1886_eotf result", almost_equal(L, 233.819503));
 
-    return NULL;
+    return nullptr;
 }
 
 static char *test_pq_eotf()
@@ -52,7 +52,7 @@ static char *test_pq_eotf()
     L = vmaf_luminance_pq_eotf(0.8);
     mu_assert("wrong pq_eotf result", almost_equal(L, 1555.178364289284673));
 
-    return NULL;
+    return nullptr;
 }
 
 static char *test_range_foot_head()
@@ -60,14 +60,17 @@ static char *test_range_foot_head()
     int foot;
     int head;
 
-    range_foot_head(8, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
+    int err = range_foot_head(8, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
+    mu_assert("limited 8b range computation must succeed", err == 0);
     mu_assert("wrong 'limited' 8b range computation", (foot == 16 && head == 235));
-    range_foot_head(8, VMAF_PIXEL_RANGE_FULL, &foot, &head);
+    err = range_foot_head(8, VMAF_PIXEL_RANGE_FULL, &foot, &head);
+    mu_assert("full 8b range computation must succeed", err == 0);
     mu_assert("wrong 'full' 8b range computation", (foot == 0 && head == 255));
-    range_foot_head(10, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
+    err = range_foot_head(10, VMAF_PIXEL_RANGE_LIMITED, &foot, &head);
+    mu_assert("limited 10b range computation must succeed", err == 0);
     mu_assert("wrong 'limited' 10b range computation", (foot == 64 && head == 940));
 
-    return NULL;
+    return nullptr;
 }
 
 static char *test_get_luminance()
@@ -94,7 +97,7 @@ static char *test_get_luminance()
     L = vmaf_luminance_get_luminance(400, range_10b_full, vmaf_luminance_pq_eotf);
     mu_assert("wrong 'full' 10b luminance pq", almost_equal(L, 29.385657130952264));
 
-    return NULL;
+    return nullptr;
 }
 
 static char *test_normalize_range()
@@ -120,7 +123,7 @@ static char *test_normalize_range()
     n = normalize_range(939, range_10b_limited);
     mu_assert("wrong 'limited' 10b normalize range", almost_equal(n, 0.9988584474885844));
 
-    return NULL;
+    return nullptr;
 }
 
 /* Coverage push: vmaf_luminance_init_eotf accepts "bt1886" and "pq"
@@ -128,24 +131,24 @@ static char *test_normalize_range()
  * only via the float_ssim public path before; this drives it directly. */
 static char *test_init_eotf_dispatch()
 {
-    VmafEOTF eotf = NULL;
+    VmafEOTF eotf = nullptr;
 
     int err = vmaf_luminance_init_eotf(&eotf, "bt1886");
     mu_assert("init_eotf(bt1886) must succeed", err == 0);
     mu_assert("init_eotf(bt1886) must bind the BT.1886 function pointer",
               eotf == vmaf_luminance_bt1886_eotf);
 
-    eotf = NULL;
+    eotf = nullptr;
     err = vmaf_luminance_init_eotf(&eotf, "pq");
     mu_assert("init_eotf(pq) must succeed", err == 0);
     mu_assert("init_eotf(pq) must bind the PQ function pointer", eotf == vmaf_luminance_pq_eotf);
 
-    eotf = NULL;
+    eotf = nullptr;
     err = vmaf_luminance_init_eotf(&eotf, "hlg-nonexistent");
     mu_assert("init_eotf(unknown) must return -EINVAL", err == -EINVAL);
-    mu_assert("init_eotf(unknown) must not write the out param", eotf == NULL);
+    mu_assert("init_eotf(unknown) must not write the out param", eotf == nullptr);
 
-    return NULL;
+    return nullptr;
 }
 
 /* Coverage push: range_foot_head must reject unknown VmafPixelRange
@@ -162,7 +165,7 @@ static char *test_range_foot_head_invalid()
     int err = range_foot_head(8, 0x7F, &foot, &head);
     mu_assert("range_foot_head(unknown) must return -EINVAL", err == -EINVAL);
 
-    return NULL;
+    return nullptr;
 }
 
 char *run_tests()

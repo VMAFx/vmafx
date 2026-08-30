@@ -65,8 +65,9 @@
 [[nodiscard]] static std::expected<VmafDictionary *, int>
 dict_ensure_allocated(VmafDictionary **dict)
 {
-    if (*dict)
-        return *dict;
+    VmafDictionary *const existing = *dict;
+    if (existing)
+        return existing;
 
     auto *d = static_cast<VmafDictionary *>(std::malloc(sizeof(VmafDictionary)));
     if (!d)
