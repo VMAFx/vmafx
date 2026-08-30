@@ -23,7 +23,7 @@ eval = [
   "numpy>=2.5.0",
   "pandas>=3.0.3",
   "pyarrow>=24.0.0",
-  "onnxruntime>=1.27.0",
+  "onnxruntime>=1.29.0",
   "scipy>=1.18.0",
 ]
 # Optional: enables `describe_worst_frames` with vision-language fallback
