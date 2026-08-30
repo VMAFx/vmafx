@@ -270,10 +270,18 @@ func TestBuildPredictReport_uncertainty(t *testing.T) {
 func TestConformalQuantile_isTheFiniteSampleCorrected(t *testing.T) {
 	t.Parallel()
 
-	cal := conformal.SplitCalibration{Residuals: []float64{0.5, 1.0, 2.0}, Alpha: 0.05}
-	q, ok := cal.Quantile()
-	if !ok {
-		t.Fatal("expected a quantile for a non-empty calibration")
+	// The merged pkg/conformal (group 2) keeps the residual set unexported
+	// behind NewSplitCalibration, and Quantile reports an error rather than a
+	// bool. The pinned value is unchanged: with n=3 and alpha=0.05 the
+	// finite-sample correction ceil((n+1)(1-alpha))/n exceeds 1, so the
+	// quantile clamps to the largest residual.
+	cal, err := conformal.NewSplitCalibration([]float64{0.5, 1.0, 2.0}, 0.05)
+	if err != nil {
+		t.Fatalf("NewSplitCalibration: %v", err)
+	}
+	q, err := cal.Quantile()
+	if err != nil {
+		t.Fatalf("expected a quantile for a non-empty calibration: %v", err)
 	}
 	if math.Abs(q-2.0) > 1e-9 {
 		t.Errorf("quantile = %v, want 2.0", q)
