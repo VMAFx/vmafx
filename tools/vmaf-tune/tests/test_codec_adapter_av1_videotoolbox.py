@@ -1,5 +1,7 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+#
+# ruff: noqa: E402  -- every import below follows the sys.path.insert above.
 """``av1_videotoolbox`` placeholder-adapter tests (ADR-0339).
 
 The adapter ships in placeholder mode: it registers in
@@ -21,15 +23,12 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import (  # noqa: E402  # noqa: E402
+from vmaftune.codec_adapters import (
     Av1VideoToolboxAdapter,
     Av1VideoToolboxUnavailableError,
 )
-from vmaftune.codec_adapters import av1_videotoolbox as mod  # noqa: E402
-from vmaftune.codec_adapters import (  # noqa: E402  # noqa: E402
-    get_adapter,
-    known_codecs,
-)
+from vmaftune.codec_adapters import av1_videotoolbox as mod
+from vmaftune.codec_adapters import get_adapter, known_codecs
 
 
 class _FakeCompleted:

@@ -145,7 +145,7 @@ during the migration; see Stage roadmap in
     replaced by the bisect; NR early-elimination would just not happen). If
     an ONNX Go binding lands, `--fast-nr` graduates here first.
 
-13. **`fast` exit codes travel on the error** (`cmd/vmafx-tune/cmd/fast.go`,
+18. **`fast` exit codes travel on the error** (`cmd/vmafx-tune/cmd/fast.go`,
     `root.go` `Execute`): cobra maps any `RunE` error to exit 1, but
     `vmaf-tune fast` has a three-way contract — 0 (agreed), 2 (usage /
     environment), 3 (proxy/verify gap beyond tolerance; fall back to the slow
@@ -155,7 +155,7 @@ during the migration; see Stage roadmap in
     status. Any new subcommand with its own exit contract follows the same
     shape rather than adding a second exit switch.
 
-14. **`RecommendResult` field order IS the schema** (`pkg/fast/fast.go`,
+19. **`RecommendResult` field order IS the schema** (`pkg/fast/fast.go`,
     `jsonfloat.go`): the Python CLI emits
     `json.dumps(result, indent=2, sort_keys=True)`, so the Go struct declares
     its fields in alphabetical order of their JSON tag and `recommendWire`
@@ -166,7 +166,7 @@ during the migration; see Stage roadmap in
     `1e+06`). Non-finite floats are coerced to JSON `null`, following the
     `compare` sweep emitter rather than Python's non-standard `NaN` token.
 
-15. **The proxy port guard is load-bearing** (`pkg/fast/proxy.go`):
+20. **The proxy port guard is load-bearing** (`pkg/fast/proxy.go`):
     `ORTProxy.Score` refuses to run when the resolved model declares more than
     one ONNX input port. `fr_regressor_v2` has two (`features` `[N, 6]` and
     `codec` `[N, 14]`) and the Go seam (`pkg/ai.Registry.Infer` →
@@ -178,7 +178,7 @@ during the migration; see Stage roadmap in
     single-port). `TestShippedModelIsTwoPort` fails loudly if the shipped
     artefact changes shape and the guard's documentation goes stale.
 
-16. **The proxy vocabulary and scaler come from the sidecar, never a constant**
+21. **The proxy vocabulary and scaler come from the sidecar, never a constant**
     (`pkg/fast/proxy.go` `CodecBlock` / `NormaliseFeatures`):
     `vmaftune/proxy.py` hardcodes an `ENCODER_VOCAB_V2` tuple that has drifted
     out of sync with `ai/scripts/train_fr_regressor_v2.py` and with
@@ -188,7 +188,7 @@ during the migration; see Stage roadmap in
     drift from the installed checkpoint. Do not reintroduce a hardcoded
     vocabulary or drop the StandardScaler step.
 
-17. **TPE tests are not `t.Parallel()`** (`pkg/fast/tpe_test.go`,
+22. **TPE tests are not `t.Parallel()`** (`pkg/fast/tpe_test.go`,
     `fast_test.go`): goptuna v0.9.0 draws part of its randomness from the
     process-global `math/rand` source, so concurrent studies perturb each
     other's trial sequences. Any test that asserts on a TPE outcome runs
@@ -197,7 +197,7 @@ during the migration; see Stage roadmap in
     those tests reintroduces flakes; tests that never start a study may
     stay parallel.
 
-13. **Python-compatible JSON is not `encoding/json`** (`internal/pyjson`):
+23. **Python-compatible JSON is not `encoding/json`** (`internal/pyjson`):
     every payload that a ported subcommand also emits from Python goes through
     `pyjson.Marshal`, never `json.Marshal`/`MarshalIndent`. Go and CPython
     disagree on four visible things — struct-field order vs sorted keys, HTML
@@ -209,7 +209,7 @@ during the migration; see Stage roadmap in
     uses `MarshalIndent` with declaration-ordered struct fields; it is a known
     gap, not a pattern to copy.)
 
-14. **`encode-profile` emits no `-init_hw_device` chain — deliberately**
+24. **`encode-profile` emits no `-init_hw_device` chain — deliberately**
     (`pkg/encodeprofile/encode.go` `BuildFFmpegCommand`): FFmpeg's QSV bridge
     needs the VA-API device flags before the first `-i` (ADR-0601), and
     `vmaftune.compare` injects them via its own pre-input argv. But
@@ -218,7 +218,7 @@ during the migration; see Stage roadmap in
     the Go `--dry-run` argv differ from Python's for every QSV row. Fix it in
     both implementations at once, or not at all.
 
-15. **The AMF adapters emit their constant-QP block twice** (`pkg/codecadapter`
+25. **The AMF adapters emit their constant-QP block twice** (`pkg/codecadapter`
     `amfExtraParams`): CPython's `encode._resolve_codec_args` inspects each
     adapter's `extra_params` signature and, for the two-parameter AMF variant,
     appends its return value after the codec slice — so

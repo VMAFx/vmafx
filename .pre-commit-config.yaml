@@ -75,7 +75,7 @@ repos:
         exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
 
   - repo: https://github.com/PyCQA/isort
-    rev: 6.0.1
+    rev: 9.0.1
     hooks:
       - id: isort
         files: '^(python|ai|scripts|tools)/.*\.py$'
@@ -108,7 +108,7 @@ repos:
       - id: shellcheck
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.22.1
+    rev: v0.23.2
     hooks:
       # ADR-0866 — wire markdownlint-cli2 into pre-commit. pass_filenames
       # is true (the default) so only staged *.md files are linted; the
@@ -140,7 +140,14 @@ repos:
         #     rendered output (README.md / CHANGELOG.md, both excluded
         #     above) is what readers see; the fragments themselves are
         #     pipeline input.
-        exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|^testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^changelog\.d/'
+        #
+        #   The testdata pattern is `(^|/)testdata/`, not `^testdata/`: golden
+        #   fixtures also live under pkg/*/testdata/ (the benchmark renderer's
+        #   expected Markdown, for one), and those are byte-exact expected
+        #   output rather than prose. The root-anchored form missed them, which
+        #   only stayed hidden because this hook and `make lint-md` both scope
+        #   to changed files.
+        exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|(^|/)testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^changelog\.d/'
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
