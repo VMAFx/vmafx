@@ -280,7 +280,7 @@ repos:
         # hook would fail with `Executable 'semgrep' not found` on
         # every CI run.
         language: python
-        additional_dependencies: ["semgrep>=1.78,<2.0"]
+        additional_dependencies: ["semgrep>=1.175.0,<2.0"]
         require_serial: true
         types_or: [c, c++, cuda, python]
         # Mirror `check-copyright`'s exclude list — same upstream /
