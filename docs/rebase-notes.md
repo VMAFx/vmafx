@@ -46749,3 +46749,24 @@ per-patch `git apply --check` against pristine upstream reports false failures.
 Use `ffmpeg-patches/test/build-and-run.sh` or a sequential `git am --3way` chain.
 A shallow (`--depth 1`) clone also breaks `git am --3way`, which needs pre-image
 blobs — clone with full history when replaying.
+
+## Lint / format gate repair (landed 2026-08-30)
+
+`Makefile` is shared with upstream Netflix/vmaf, so this is rebase-sensitive.
+
+The fork's `lint-*` and `format-check` targets are fork-added (upstream has no
+equivalent), but they live in the same file upstream edits. Three fork-local
+constructs to preserve when rebasing:
+
+1. `export PATH := $(CURDIR)/$(VIRTUAL_ENV_PATH):$(PATH)`, immediately after the
+   `NINJA :=` line. Upstream has no venv-on-PATH line. Without it the lint tools
+   resolve from the system PATH only and the gates silently self-skip.
+2. The `define require-tool ... endef` block. Upstream has no equivalent.
+3. The absence of `|| true` on every `format-check` and `lint-py` step. If a
+   rebase reintroduces the upstream-era `command -v X && X ... || true` idiom,
+   the gate silently becomes incapable of failing again — this is exactly the
+   regression this change fixed, and it is invisible because the target still
+   prints "all lints passed".
+
+Point 3 is the one to watch: a conflict resolved in upstream's favour restores a
+green-but-dead gate with no test failure to signal it.
