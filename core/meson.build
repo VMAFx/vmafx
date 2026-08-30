@@ -57,7 +57,13 @@ endif
 #   - MSVC (cl.exe / clang-cl): /std:c++latest — 'c++23' is absent from the
 #     accepted-values list meson's MSVC backend advertises; /std:c++latest
 #     enables C++23 features on VS 2022 17.x+.
-#   - Everything else (GCC 11+, Clang 14+, icpx/dpcpp on Linux): -std=c++26.
+#   - Everything else: the newest of -std=c++26 / c++23 / c++2b the compiler
+#     actually accepts.  The flag was previously hard-coded to c++26, which
+#     GCC 13 (the ubuntu-latest default) rejects outright with
+#     "unrecognized command-line option '-std=c++26'"; that break was
+#     invisible for as long as the c23 defect below aborted configure before
+#     any C++ TU was reached.  c++26 landed in GCC 14 / Clang 17, and c++23
+#     in GCC 13 only under the pre-ratification c++2b spelling.
 # If cpp_std is already set (any non-'none' value), meson generates the
 # appropriate flag itself and we stay out of the way to avoid conflicts.
 # See ADR-1056 (docs/adr/1056-msvc-cpp-std.md).
@@ -65,7 +71,16 @@ if get_option('cpp_std') == 'none'
     if cxx.get_id() == 'msvc'
         add_project_arguments('/std:c++latest', language: 'cpp')
     else
-        add_project_arguments('-std=c++26', language: 'cpp')
+        cxx_std_flag = ''
+        foreach candidate : ['-std=c++26', '-std=c++23', '-std=c++2b']
+            if cxx_std_flag == '' and cxx.has_argument(candidate)
+                cxx_std_flag = candidate
+            endif
+        endforeach
+        if cxx_std_flag == ''
+            error('No usable C++23-or-newer -std flag for ' + cxx.get_id())
+        endif
+        add_project_arguments(cxx_std_flag, language: 'cpp')
     endif
 endif
 

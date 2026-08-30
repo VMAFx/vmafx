@@ -32,3 +32,12 @@
   and `-std=c2x` otherwise — the pre-ratification spelling of the same
   standard, so this is a spelling fallback, not a language downgrade.
   An explicit `-Dc_std=` override is still honoured untouched.
+- `core/meson.build` also stopped hard-coding `-std=c++26`. GCC 13 — the
+  `ubuntu-latest` default — rejects that flag outright
+  (`unrecognized command-line option '-std=c++26'`), so every C++ TU
+  failed to build. This was invisible for as long as the `c23` defects
+  above aborted configure before any C++ source was reached; fixing them
+  exposed it. The project-level flag is now the newest of
+  `c++26` / `c++23` / `c++2b` that the compiler actually accepts, with a
+  hard `error()` if none do. Per-target `override_options` in
+  `core/src/meson.build` are untouched.
