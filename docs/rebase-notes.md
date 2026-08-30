@@ -46858,3 +46858,27 @@ no ffmpeg-patch impact: adds Go-only packages under `pkg/tune/` plus two new
 Parity fixtures under `pkg/tune/*/testdata/` were dumped from the in-tree
 Python modules. Regenerate them only alongside a deliberate coordinated change
 on both sides — a silent regeneration turns the gate into a tautology.
+
+## vmafx-tune Go port integration (landed 2026-08-30)
+
+Go-only; no upstream Netflix/vmaf counterpart, so no rebase conflict surface.
+Two invariants a future change must not undo, both recorded in ADR-1125:
+
+1. `internal/pyjson` and `internal/pyjsonstrict` are **deliberately** two
+   packages, not an accident of the parallel port. They mirror two different
+   Python entry points: `json.dumps` (bare `NaN` / `Infinity` tokens) and
+   `vmaftune.jsonio.dumps_strict` (non-finite → `null`, valid RFC 8259).
+   "Deduplicating" them makes one package answer to two output contracts and
+   silently changes the payload of whichever subcommands lose their encoder.
+2. `codecadapter.ResolveCodecArgs` (package-level) validates the preset;
+   `(*Adapter).ResolveCodecArgs` (method) does not. That asymmetry is load-bearing
+   — the package-level form carries the Python contract where an
+   out-of-vocabulary preset is an error, while the method is the low-level token
+   builder used on already-validated input. Making the method validate breaks the
+   group-6 call paths; making the function skip validation breaks
+   `TestBuildFFmpegCommandRejectsBadPreset`.
+
+Also: `.gitattributes` now exempts `pkg/benchmark/testdata/*.csv` from
+`text=auto`. Those goldens assert CRLF (Python's `csv` default). Re-normalising
+them makes the benchmark suite fail on fresh checkouts only, which is a slow
+failure to diagnose.
