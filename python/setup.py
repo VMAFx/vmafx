@@ -95,7 +95,7 @@ setup(
         "numpy>=2.5.0",
         "scipy>=1.18.0",
         "matplotlib>=3.11.0",
-        "pandas>=3.0.3",
+        "pandas>=3.0.5",
         "scikit-learn>=1.9.0",
         "scikit-image>=0.26.0",
         "h5py>=3.16.0",

@@ -21,7 +21,7 @@ dev = ["pytest>=9.1.1", "pytest-asyncio>=1.4.0", "pytest-aiohttp>=1.1.1", "ruff>
 # install light for callers that only want `vmaf_score`.
 eval = [
   "numpy>=2.5.0",
-  "pandas>=3.0.3",
+  "pandas>=3.0.5",
   "pyarrow>=24.0.0",
   "onnxruntime>=1.27.0",
   "scipy>=1.18.0",
