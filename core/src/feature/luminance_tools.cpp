@@ -58,8 +58,15 @@ constexpr double kBt1886Lb = 0.01;
 /* `static` removed: anonymous namespace already provides internal linkage
  * (Power of 10 #10 / -Wredundant-decls; adversarial review 2026-05-28
  * finding #12). */
-[[nodiscard]] int range_foot_head(int bitdepth, enum VmafPixelRange pix_range, int *foot,
-                                  int *head) noexcept
+/* `pix_range` is taken as `int`, not `enum VmafPixelRange`, on purpose.
+ * VmafPixelRange is part of the public C API, so a caller can hand us any
+ * integer; the `default:` arm below exists precisely to reject that. Reading
+ * an out-of-range value *as the enum type* is undefined behaviour in C++,
+ * and UBSan's -fsanitize=enum rightly flags it
+ * ("load of value 127, which is not a valid value for type
+ * 'enum VmafPixelRange'"). Widening the parameter makes the defensive check
+ * well-defined instead of UB, without changing behaviour for valid input. */
+[[nodiscard]] int range_foot_head(int bitdepth, int pix_range, int *foot, int *head) noexcept
 {
     switch (pix_range) {
     case VMAF_PIXEL_RANGE_LIMITED:
@@ -88,7 +95,8 @@ constexpr double kBt1886Lb = 0.01;
 extern "C" int vmaf_luminance_init_luma_range(VmafLumaRange *luma_range, int bitdepth,
                                               enum VmafPixelRange pix_range)
 {
-    return range_foot_head(bitdepth, pix_range, &luma_range->foot, &luma_range->head);
+    return range_foot_head(bitdepth, static_cast<int>(pix_range), &luma_range->foot,
+                           &luma_range->head);
 }
 
 extern "C" int vmaf_luminance_init_eotf(VmafEOTF *eotf, const char *eotf_str)

@@ -84,3 +84,14 @@
   bare `clang`, which resolves to 18 on `ubuntu-24.04` and carries the
   same latent `<expected>` breakage; both are pinned to clang 22 from
   apt.llvm.org.
+- `range_foot_head()` takes its pixel range as `int` rather than
+  `enum VmafPixelRange`. `VmafPixelRange` is public C API, so a caller
+  can pass any integer and the function's `default:` arm exists to
+  reject that — but reading an out-of-range value *as the enum type* is
+  undefined behaviour in C++, which UBSan reports as
+  `load of value 127, which is not a valid value for type
+  'enum VmafPixelRange'`. Widening the parameter makes the defensive
+  check well-defined without changing behaviour for valid input. This
+  is the first defect the sanitizer suite has actually been able to
+  report: the sanitizer jobs had been dying at `meson setup` and never
+  reached the tests.

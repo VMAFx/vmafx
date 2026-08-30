@@ -156,8 +156,10 @@ static char *test_range_foot_head_invalid()
     int foot = 0xDEAD;
     int head = 0xBEEF;
 
-    /* Cast through an integer value the enum cannot legitimately hold. */
-    int err = range_foot_head(8, (enum VmafPixelRange)0x7F, &foot, &head);
+    /* An integer the enum cannot legitimately hold. range_foot_head takes an
+     * int precisely so this stays well-defined — see the note on its
+     * definition; casting to the enum here would itself be UB. */
+    int err = range_foot_head(8, 0x7F, &foot, &head);
     mu_assert("range_foot_head(unknown) must return -EINVAL", err == -EINVAL);
 
     return NULL;
