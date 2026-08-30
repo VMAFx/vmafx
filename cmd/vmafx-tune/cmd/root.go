@@ -112,9 +112,19 @@ func Execute(version string) {
 	// Most subcommands exit 1 on failure; encode-profile propagates FFmpeg's
 	// own status instead (see exitcode.go).
 	if err := newRoot(version).Execute(); err != nil {
-		var coder exitCoder
-		if errors.As(err, &coder) {
-			os.Exit(coder.ExitCode())
+		// Match our OWN error type, not the exitCoder interface. *exec.ExitError
+		// also satisfies exitCoder (via the embedded *os.ProcessState), so a bare
+		// interface match reports a failed ffmpeg/vmaf child's exit status as
+		// vmafx-tune's own -- e.g. ffmpeg exiting 42 made the CLI exit 42, which
+		// collides with the documented usage/verdict codes. Both construction
+		// styles are in the tree, so check pointer and value forms.
+		var codePtr *exitCodeError
+		if errors.As(err, &codePtr) {
+			os.Exit(codePtr.ExitCode())
+		}
+		var codeVal exitCodeError
+		if errors.As(err, &codeVal) {
+			os.Exit(codeVal.ExitCode())
 		}
 		if code, ok := fastExitCode(err); ok {
 			os.Exit(code)

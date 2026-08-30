@@ -646,5 +646,14 @@ func (c *SplitCalibration) IntervalFor(point float64) Interval {
 	if err != nil {
 		return Interval{Point: point, Low: point, High: point, Alpha: c.Alpha()}
 	}
-	return Interval{Point: point, Low: point - q, High: point + q, Alpha: c.Alpha()}
+	// Clamp to the predictor's VMAF range, matching conformal.py's
+	// _clamp(point, vmaf_floor, vmaf_ceiling) and the group-6 implementation
+	// this bridge replaced. Without it `predict --with-uncertainty` reports
+	// interval bounds outside [0, 100] for predictions near either end.
+	return Interval{
+		Point: point,
+		Low:   clamp(point-q, 0, 100),
+		High:  clamp(point+q, 0, 100),
+		Alpha: c.Alpha(),
+	}
 }

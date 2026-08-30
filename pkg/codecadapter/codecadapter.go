@@ -228,7 +228,7 @@ func qsvAdapter(name string) *Adapter {
 func videotoolbox(name string) *Adapter {
 	return &Adapter{
 		Name: name, Encoder: name, QualityKnob: "q:v",
-		QualityRange: [2]int{0, 100}, QualityDefault: 50, InvertQuality: true,
+		QualityRange: [2]int{0, 100}, QualityDefault: 50, InvertQuality: false,
 		Presets: swPresets, ProbePreset: "ultrafast", ProbeQuality: 60,
 		qualityStyle: StyleSingleFlag, qualityFlag: "-q:v",
 		presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
@@ -269,14 +269,14 @@ func init() {
 		{
 			Name: "prores_videotoolbox", Encoder: "prores_videotoolbox",
 			QualityKnob: "profile:v", QualityRange: [2]int{0, 5}, QualityDefault: 3,
-			InvertQuality: true, Presets: swPresets,
+			InvertQuality: false, Presets: swPresets,
 			ProbePreset: "ultrafast", ProbeQuality: 0,
 			qualityStyle: StyleProResProfile, proresProfiles: proresProfileNames,
 			presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
 		},
 		{
 			Name: "av1_videotoolbox", Encoder: "av1_videotoolbox", QualityKnob: "q:v",
-			QualityRange: [2]int{0, 100}, QualityDefault: 50, InvertQuality: true,
+			QualityRange: [2]int{0, 100}, QualityDefault: 50, InvertQuality: false,
 			Presets: swPresets, ProbePreset: "ultrafast", ProbeQuality: 60,
 			qualityStyle: StyleSingleFlag, qualityFlag: "-q:v",
 			presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
