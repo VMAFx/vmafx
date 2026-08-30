@@ -105,7 +105,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
 # ---------------------------------------------------------------------------
 # Stage 3 — controller: distroless runtime (glibc, no shell)
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/cc-debian12@sha256:d703b626ba455c4e6c6fbe5f36e6f427c85d51445598d564652a2f334179f96e AS controller
+FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS controller
 
 LABEL org.opencontainers.image.title="vmafx-controller"
 LABEL org.opencontainers.image.description="VMAFX controller — distributed job queue + node registry, gRPC + HTTP, backed by libvmaf"

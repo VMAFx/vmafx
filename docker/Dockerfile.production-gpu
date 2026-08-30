@@ -154,7 +154,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-oneap
 # ---------------------------------------------------------------------------
 # Runtime base — distroless cc-debian12
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/cc-debian12@sha256:d703b626ba455c4e6c6fbe5f36e6f427c85d51445598d564652a2f334179f96e AS runtime-base
+FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS runtime-base
 
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production GPU runtime"

@@ -221,7 +221,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # ---------------------------------------------------------------------------
 # Stage 5 — runtime-base: glibc runtime foundation
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/cc-debian12@sha256:d703b626ba455c4e6c6fbe5f36e6f427c85d51445598d564652a2f334179f96e AS runtime-base
+FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS runtime-base
 
 LABEL org.opencontainers.image.title="vmafx-node"
 LABEL org.opencontainers.image.description="VMAFX worker node — ffmpeg n8.2 + libvmaf + vmafx-node gRPC service"
