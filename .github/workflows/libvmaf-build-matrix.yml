@@ -267,7 +267,12 @@ jobs:
           *clang-22) wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
                      chmod +x /tmp/llvm.sh
                      sudo /tmp/llvm.sh 22
-                     sudo -E apt-get -yq install libclang-rt-22-dev ;;
+                     # libomp-22-dev, not the unversioned libomp-dev: the
+                     # latter matches the *system* clang (18). The tox leg
+                     # builds libsvm-official from source with $CXX, and its
+                     # svm.cpp needs <omp.h> from the same LLVM major, else
+                     # "fatal error: 'omp.h' file not found".
+                     sudo -E apt-get -yq install libclang-rt-22-dev libomp-22-dev ;;
           *gcc)      sudo -E apt-get -yq install gcc g++ ;;
           *clang)    sudo -E apt-get -yq install clang ;;
           esac

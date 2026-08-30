@@ -95,3 +95,9 @@
   is the first defect the sanitizer suite has actually been able to
   report: the sanitizer jobs had been dying at `meson setup` and never
   reached the tests.
+- The clang matrix legs install `libomp-22-dev` alongside clang 22. The
+  unversioned `libomp-dev` matches the *system* clang (18), and the tox
+  leg builds `libsvm-official` from source with `$CXX`, whose `svm.cpp`
+  includes `<omp.h>` — with only the unversioned package that fails as
+  `fatal error: 'omp.h' file not found` and takes down the required
+  `Build — Ubuntu clang (CPU) + DNN` check.
