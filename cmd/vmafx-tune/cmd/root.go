@@ -5,14 +5,15 @@
 // clikit (cobra + fx) framework (ADR-1119 Phase-1).
 //
 // The root is built with clikit.New, and each subcommand with clikit.Command.
-// Ported subcommands (compare, ladder, report) carry their domain RunE; the
-// not-yet-ported stubs redirect users to the Python vmaf-tune binary. Stubs run
-// inside a golusoris fx graph so their redirect notice is emitted through the
-// injected structured *slog.Logger rather than a bare fmt.Fprintf.
+// Ported subcommands carry their domain RunE; the not-yet-ported stubs
+// redirect users to the Python vmaf-tune binary. Stubs run inside a golusoris
+// fx graph so their redirect notice is emitted through the injected structured
+// *slog.Logger rather than a bare fmt.Fprintf.
 package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -48,23 +49,31 @@ It will be ported in a future Stage-2 release.`, shortDesc, name)
 // running it.
 func newRoot(version string) *clikit.Root {
 	root := clikit.New("vmafx-tune-go",
-		"vmafx-tune-go — Go port of vmaf-tune (compare/ladder/report subcommands)")
+		"vmafx-tune-go — Go port of the vmaf-tune rate-quality tuning CLI")
 	root.Cobra().Long = `vmafx-tune-go is the Go port of the vmaf-tune rate-quality tuning CLI.
 It runs alongside the Python vmaf-tune binary during the migration.
 
 Fully ported subcommands:
-  compare     Rate-quality sweep: compare codecs at VMAF targets
-  ladder      Per-title ABR bitrate-ladder generation
-  report      Render Markdown / HTML from prior compare or ladder runs
+  compare              Rate-quality sweep: compare codecs at VMAF targets
+  ladder               Per-title ABR bitrate-ladder generation
+  report               Render Markdown / HTML from prior compare or ladder runs
+  recommend            Pick the CRF meeting a VMAF or bitrate target
+  predict              Predict per-shot VMAF, then verify on K real encodes
+  recommend-saliency   Saliency-aware ROI encode
+  prefilter            Joint TPE autotune over deband strengths + CRF
 
 Not yet ported (use 'vmaf-tune <subcommand>' for these):
-  tune-per-shot, fast, corpus, benchmark, auto, sidecar`
+  tune-per-shot, fast, corpus, benchmark, auto, sidecar, encode-profile`
 	root.Cobra().Version = version
 
 	// Ported subcommands.
 	root.AddCommand(newCompareCmd())
 	root.AddCommand(newLadderCmd())
 	root.AddCommand(newReportCmd())
+	root.AddCommand(newRecommendCmd())
+	root.AddCommand(newPredictCmd())
+	root.AddCommand(newRecommendSaliencyCmd())
+	root.AddCommand(newPrefilterCmd())
 
 	// Not-yet-ported stubs: log a redirect rather than silently failing.
 	for _, stub := range []struct{ name, desc string }{
@@ -82,12 +91,30 @@ Not yet ported (use 'vmaf-tune <subcommand>' for these):
 	return root
 }
 
+// exitCoder lets a subcommand choose a specific process exit status.
+//
+// The Python CLI distinguishes exit 2 (a requested-but-unavailable feature:
+// no Pelorus filter, no ROI dispatch for the encoder, a bad CRF range) from
+// exit 1 (a plain failure), and `predict` uses exit 2 for a FALL_BACK
+// verdict. Scripts branch on those codes, so the Go port preserves them.
+type exitCoder interface {
+	ExitCode() int
+}
+
 // Execute builds the clikit root, wires all subcommands, and runs the CLI.
-// It calls os.Exit(1) on error (cobra has already printed the message).
+// It exits non-zero on error (cobra has already printed the message),
+// honouring a subcommand's requested exit status when it supplies one.
 func Execute(version string) {
 	report.ToolVersion = version
 
 	if err := newRoot(version).Execute(); err != nil {
+		var coder exitCoder
+		if errors.As(err, &coder) {
+			os.Exit(coder.ExitCode())
+		}
+		if errors.Is(err, errFallBackVerdict) {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }
