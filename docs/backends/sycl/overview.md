@@ -94,6 +94,55 @@ core/src/feature/sycl/                # per-feature kernels
   event dependencies; dependencies within an extractor are handled by the
   in-order semantics.
 
+## QSV / VA-API zero-copy: 10-bit correctness (ADR-1121)
+
+The `libvmaf_sycl` FFmpeg filter runs VMAF directly on QSV-decoded VA-API
+surfaces with no host round-trip. Two requirements must hold for it to produce
+correct scores on a 10/12-bit pair — get either wrong and you get
+`VMAF score: nan` with a wildly inflated `integer_motion`.
+
+### Give each decoder its own QSV session (required)
+
+If both decoders are created against the **same** `-hwaccel_device`, FFmpeg
+shares one `AVHWFramesContext` → one `mfxSession` → one VA surface pool between
+them. The two decoders then write into the **same physical `VASurfaceID`s**, so
+the reference decoder overwrites the surface the distorted decoder just produced
+(decode-order look-ahead). The filter reads reference content where it expects
+distorted content. Symptom: a checksum/score pattern where
+`sycl_dis[N] == sycl_ref[N±1]`.
+
+The fix is a usage contract — libvmaf cannot see FFmpeg's session topology from
+inside the filter, so it is **not** auto-detected. Give **each** input its own
+QSV device:
+
+```bash
+ffmpeg \
+  -init_hw_device drm=drm0:/dev/dri/renderD128 \
+  -init_hw_device vaapi=va0@drm0 \
+  -init_hw_device qsv=qsv_ref@va0 \
+  -init_hw_device qsv=qsv_dis@va0 \
+  -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_ref -c:v hevc_qsv -i ref.mkv \
+  -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qsv_dis -c:v av1_qsv  -i dis.mkv \
+  -lavfi '[0:v][1:v]libvmaf_sycl=log_fmt=csv:log_path=out.csv' \
+  -frames:v 500 -f null -
+```
+
+A single shared `qsv` device silently reintroduces the contamination.
+
+### P010/P012 pixels are normalized in the import
+
+VA-API stores 10-bit (P010) / 12-bit (P012) samples **MSB-aligned**
+(`V_MSB = V_LSB << (16 − bpc)`), while the VMAF feature kernels expect
+LSB-aligned `bpc`-bit integers. The CPU `libvmaf` path never sees this because
+FFmpeg auto-converts `P010LE → YUV420P10LE` (a `>> 6` shift) to satisfy the
+filter's pixel-format list. The SYCL import does the equivalent luma-only
+`>> (16 − bpc)` shift — **fused into the Tile4 / Y-tiled de-tile kernel** on the
+QSV hot path (no extra GPU pass), and a standalone `launch_p010_normalize()`
+kernel on the rare LINEAR / readback fallbacks. It is a no-op for 8-bit NV12.
+This is internal — no user action required — but explains why a hand-rolled VA
+import that skips it sees `integer_motion` inflated by exactly `2^(16 − bpc)`
+(64× at 10-bit).
+
 ## fp64-less device contract (T7-17)
 
 All SYCL feature kernels in this fork are designed to run on devices that
@@ -272,12 +321,26 @@ follow-up task (see Known gaps below).
 | `graph` | SYCL graph replay (ADR-0483). Reduces kernel-launch overhead at ≥ 720p. |
 
 When unset, an area-threshold heuristic selects `graph` above 1280 × 720 pixels
-and `direct` below.  `VMAF_SYCL_USE_GRAPH` (boolean `true`/`false`) provides a
-simpler global override without per-feature granularity.
+and `direct` below — **except the zero-copy / VA-import path (`libvmaf_sycl`),
+which defaults to `direct`** regardless of resolution. The combined graph is a
+net throughput loss there (its output is byte-identical to direct, but the
+per-frame de-tile import plus the graph compute-barrier serialise
+decode→compute, ~15–25 % slower at 4K — ADR-1121). To force the graph on the
+zero-copy path anyway, set `VMAF_SYCL_USE_GRAPH=1` or
+`VMAF_SYCL_DISPATCH=…:graph` (these override the default).
+`VMAF_SYCL_USE_GRAPH` (boolean `true`/`false`) provides a simpler global override
+without per-feature granularity.
 
 `VMAF_SYCL_NO_GRAPH=1` is a **deprecated** alias for `VMAF_SYCL_USE_GRAPH=false`.
 It still works but prints a deprecation warning to stderr and will be removed in
 v4.0 (ADR-0841).
+
+`VMAF_SYCL_IMPORT_DEBUG=1` logs, at `INFO`, the shared frame-buffer addresses at
+init and, per import, the `VASurfaceID` / imported Level Zero pointer / target
+buffer for ref and dis. Use it to diagnose VA surface-pool reuse or buffer
+aliasing on the zero-copy path (see the separate-session requirement above and
+ADR-1121). The variable is resolved once at init, so toggling it mid-run has no
+effect.
 
 See [ADR-0483](../../adr/0483-gpu-dispatch-parse-dedup.md) and the
 [env-var reference](../../usage/env-vars.md#sycl-dispatch-knob).

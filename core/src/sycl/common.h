@@ -298,6 +298,42 @@ void *vmaf_sycl_get_shared_dis_slot(VmafSyclState *state, int slot);
 int vmaf_sycl_get_compute_slot(VmafSyclState *state);
 
 /**
+ * Get the shared ref device buffer pointer for the current upload slot.
+ * Use this from the VA-import path to target the upload slot (cur_upload),
+ * not the live compute slot (cur_compute). After vmaf_sycl_advance_frame()
+ * the upload slot becomes the compute slot, so compute reads the
+ * freshly-imported frame.
+ *
+ * @param state  The SYCL state.
+ *
+ * @return Pointer to ref Y-plane device buffer for cur_upload slot, or NULL.
+ */
+void *vmaf_sycl_get_shared_ref_upload(VmafSyclState *state);
+
+/**
+ * Whether VMAF_SYCL_IMPORT_DEBUG diagnostic logging is enabled.
+ *
+ * Resolved once in vmaf_sycl_state_init; this accessor lets translation units
+ * that hold an opaque VmafSyclState (e.g. dmabuf_import.cpp) read the cached
+ * flag without re-calling getenv() per frame.
+ *
+ * @param state  The SYCL state.
+ *
+ * @return true when VMAF_SYCL_IMPORT_DEBUG=1 was set at init, false otherwise.
+ */
+bool vmaf_sycl_import_debug_enabled(VmafSyclState *state);
+
+/**
+ * Get the shared dis device buffer pointer for the current upload slot.
+ * Symmetric to vmaf_sycl_get_shared_ref_upload().
+ *
+ * @param state  The SYCL state.
+ *
+ * @return Pointer to dis Y-plane device buffer for cur_upload slot, or NULL.
+ */
+void *vmaf_sycl_get_shared_dis_upload(VmafSyclState *state);
+
+/**
  * Get a pointer to the sycl::event from the last shared-frame upload.
  * Extractors can depend on this event to avoid a CPU-side wait for DMA.
  *
@@ -306,6 +342,33 @@ int vmaf_sycl_get_compute_slot(VmafSyclState *state);
  * @return Opaque pointer to sycl::event, or NULL if not initialised.
  */
 void *vmaf_sycl_get_last_upload_event(VmafSyclState *state);
+
+/* ---- Diagnostic checksum probe ---- */
+
+/**
+ * D2H checksum probe — gated by VMAF_SYCL_CHECKSUM=1 env var.
+ *
+ * Performs a blocking device-to-host copy of the Y plane from the current
+ * compute slot (state->cur_compute) and computes an FNV-32a hash over all
+ * bytes.  The result is logged via vmaf_log at INFO level as a single line:
+ *   VMAF_SYCL_CHECKSUM path=<path_tag> frame=<frame_index> slot=<N> ref|dis crc=0x<HEX>
+ *
+ * Zero cost when VMAF_SYCL_CHECKSUM is unset — returns 0 immediately
+ * before any allocation or queue work.
+ *
+ * Call from both the VA-import path (path_tag="sycl") and the host-upload
+ * oracle path (path_tag="host") to capture exactly what compute will read,
+ * allowing a per-frame diff to select the Phase 2 fix direction.
+ *
+ * @param state        SYCL state.
+ * @param is_ref       1 = probe ref buffer, 0 = probe dis buffer.
+ * @param frame_index  Frame number for the log line (0-based).
+ * @param path_tag     Short label printed in the log ("host" or "sycl").
+ *
+ * @return 0 on success, negative errno on failure (e.g. -ENOMEM, -EIO).
+ */
+int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref, unsigned frame_index,
+                              const char *path_tag);
 
 /* ---- Combined command graph (merges all extractors into one replay) ---- */
 
@@ -427,11 +490,19 @@ int vmaf_sycl_graphs_recorded(VmafSyclState *state);
 int vmaf_sycl_combined_queue_wait(VmafSyclState *state);
 
 /**
- * Advance the internal frame counter.
+ * Advance the double-buffer slot and increment the frame counter.
  * Must be called once per frame in the zero-copy VA import path
  * (vmaf_read_pictures_sycl), because the host upload path
- * (vmaf_sycl_shared_frame_upload) increments it internally but
+ * (vmaf_sycl_shared_frame_upload) does this internally but
  * the VA import path does not.
+ *
+ * Mirrors shared_frame_upload:597-599:
+ *   cur_compute = cur_upload  (freshly imported slot → compute reads here)
+ *   cur_upload  = 1-cur_upload (old compute slot → next import target)
+ *   frame_counter++
+ *
+ * After this call, compute kernels (via vmaf_sycl_graph_submit) will
+ * read from the slot that was just written by the VA import.
  *
  * Without this, graph_submit/graph_wait synchronization breaks:
  *   - graph_wait idempotency returns stale results from frame 2+

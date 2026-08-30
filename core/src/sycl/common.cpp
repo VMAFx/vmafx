@@ -94,6 +94,7 @@ struct VmafSyclState {
     // Profiling
     bool profiling_enabled = false;
     bool extractor_timing = false; // per-extractor q.wait() timing
+    bool import_debug = false;     // VMAF_SYCL_IMPORT_DEBUG — resolved once at init
     std::mutex profiling_lock;
     struct ProfileEntry {
         uint64_t total_ns = 0;
@@ -250,6 +251,8 @@ extern "C" int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigur
         // Per-extractor timing via q.wait() — no enable_profiling needed
         const char *env_timing = getenv("VMAF_SYCL_TIMING");
         s->extractor_timing = (env_timing && env_timing[0] == '1');
+        const char *env_idbg = getenv("VMAF_SYCL_IMPORT_DEBUG");
+        s->import_debug = (env_idbg && env_idbg[0] == '1');
         s->has_fp64 = has_fp64;
         *sycl_state = s;
         return 0;
@@ -508,6 +511,17 @@ extern "C" int vmaf_sycl_shared_frame_init(VmafSyclState *state, unsigned w, uns
     state->cur_upload = 0;
     state->cur_compute = 0;
 
+    /* Diagnostic: log allocated shared buffer addresses.
+     * Enable with VMAF_SYCL_IMPORT_DEBUG=1 to verify buffers are not aliased.
+     * The env var is resolved once in vmaf_sycl_state_init (state->import_debug). */
+    if (state->import_debug) {
+        vmaf_log(VMAF_LOG_LEVEL_INFO,
+                 "VMAF_SYCL_IMPORT_DEBUG shared_bufs: "
+                 "ref[0]=%p ref[1]=%p dis[0]=%p dis[1]=%p (size=%zu)\n",
+                 state->shared_ref_buf[0], state->shared_ref_buf[1], state->shared_dis_buf[0],
+                 state->shared_dis_buf[1], buf_size);
+    }
+
     return 0;
 
 fail:
@@ -719,6 +733,27 @@ extern "C" int vmaf_sycl_get_compute_slot(VmafSyclState *state)
     return state->cur_compute;
 }
 
+extern "C" void *vmaf_sycl_get_shared_ref_upload(VmafSyclState *state)
+{
+    if (!state)
+        return nullptr;
+    assert(state->shared_buf_size > 0);
+    return state->shared_ref_buf[state->cur_upload];
+}
+
+extern "C" bool vmaf_sycl_import_debug_enabled(VmafSyclState *state)
+{
+    return state && state->import_debug;
+}
+
+extern "C" void *vmaf_sycl_get_shared_dis_upload(VmafSyclState *state)
+{
+    if (!state)
+        return nullptr;
+    assert(state->shared_buf_size > 0);
+    return state->shared_dis_buf[state->cur_upload];
+}
+
 extern "C" void *vmaf_sycl_get_last_upload_event(VmafSyclState *state)
 {
     if (!state || !state->has_uploaded)
@@ -904,8 +939,9 @@ extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
 
     // frame_counter is incremented in upload/advance, so frame 0 → 1, frame 1 → 2
     // Record combined graph on frame 2 for both host-upload and VA-import paths.
-    // VA import always uses slot 0 (cur_compute stays 0), so only slot 0 graph
-    // gets replayed — but we record both for generality.
+    // Both slots (0 and 1) are recorded in the loop below; graph_submit replays
+    // combined_exec_graph[cur_compute], which toggles 0/1 each frame after FIX-01
+    // (vmaf_sycl_advance_frame now promotes cur_upload→cur_compute).
     //
     // Per-feature dispatch decision via the global feature-characteristics
     // registry (ADR-0181 / T7-26). Aggregation rule: if ANY registered
@@ -920,6 +956,9 @@ extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
     //     Per-feature override (highest precedence).
     //   VMAF_SYCL_USE_GRAPH=1 — legacy global force-graph (deprecated).
     //   VMAF_SYCL_NO_GRAPH=1  — legacy global force-direct (deprecated).
+    // The zero-copy VA-import path (state->has_imported) defaults to DIRECT —
+    // the combined graph is a net throughput loss there, byte-identical output
+    // (ADR-1121). Passed as the va_import_path arg below; env overrides still win.
     bool any_wants_graph = false;
     if (frame == 2 && (state->has_uploaded || state->has_imported)) {
         for (int i = 0; i < state->num_graph_extractors; ++i) {
@@ -930,8 +969,8 @@ extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
                 if (fex)
                     chars = &fex->chars;
             }
-            const VmafSyclDispatchStrategy s =
-                vmaf_sycl_select_strategy(ge.name, chars, state->frame_w, state->frame_h);
+            const VmafSyclDispatchStrategy s = vmaf_sycl_select_strategy(
+                ge.name, chars, state->frame_w, state->frame_h, state->has_imported);
             if (s == VMAF_SYCL_DISPATCH_GRAPH_REPLAY) {
                 any_wants_graph = true;
                 break;
@@ -1078,8 +1117,68 @@ extern "C" int vmaf_sycl_combined_queue_wait(VmafSyclState *state)
 
 extern "C" void vmaf_sycl_advance_frame(VmafSyclState *state)
 {
-    if (state)
-        state->frame_counter++;
+    if (!state)
+        return;
+    state->cur_compute = state->cur_upload;
+    /* load-bearing: do not insert code between these two lines (order matters) */
+    state->cur_upload = 1 - state->cur_upload;
+    state->frame_counter++;
+}
+
+/* ------------------------------------------------------------------ */
+/* Diagnostic checksum probe                                           */
+/* ------------------------------------------------------------------ */
+
+extern "C" int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref, unsigned frame_index,
+                                         const char *path_tag)
+{
+    /* Zero-cost gate — must be first, before any allocation or queue work.
+     * Mirror the VMAF_SYCL_PROFILE gate at common.cpp:230. */
+    const char *env = getenv("VMAF_SYCL_CHECKSUM");
+    if (!env || env[0] != '1')
+        return 0;
+
+    if (!state || !state->shared_buf_size)
+        return 0;
+
+    /* Always probe the slot compute will actually use (cur_compute).
+     * In the VA-import path cur_compute is permanently 0; in the host-upload
+     * path it toggles each frame.  Do NOT hard-code slot 1 — pitfall 3. */
+    int slot = state->cur_compute;
+    void *dev_buf = is_ref ? state->shared_ref_buf[slot] : state->shared_dis_buf[slot];
+    if (!dev_buf)
+        return 0;
+
+    size_t const buf_size = state->shared_buf_size;
+    auto *host_buf = static_cast<uint8_t *>(malloc(buf_size));
+    if (!host_buf)
+        return -ENOMEM;
+
+    try {
+        /* Ensure any in-flight copy_queue DMA upload (host-upload path) is done
+         * before reading the device buffer back. */
+        state->copy_queue.wait();
+        /* D2H probe: blocking copy from device USM → host temp buffer. */
+        state->queue.memcpy(host_buf, dev_buf, buf_size);
+        state->queue.wait();
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL checksum D2H failed: %s\n", e.what());
+        free(host_buf);
+        return -EIO;
+    }
+
+    /* FNV-32a over all Y-plane bytes — iterate by index, no strlen. */
+    uint32_t crc = 2166136261u; /* FNV-32a offset basis */
+    for (size_t i = 0; i < buf_size; i++) {
+        crc ^= host_buf[i];
+        crc *= 16777619u; /* FNV-32a prime */
+    }
+    free(host_buf);
+
+    vmaf_log(VMAF_LOG_LEVEL_INFO,
+             "VMAF_SYCL_CHECKSUM path=%s frame=%u slot=%d %s buf=%p crc=0x%08x\n", path_tag,
+             frame_index, slot, is_ref ? "ref" : "dis", dev_buf, (unsigned)crc);
+    return 0;
 }
 
 /* ------------------------------------------------------------------ */

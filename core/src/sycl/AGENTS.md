@@ -114,7 +114,35 @@ sycl/
   bit-exactness against CPU at `places=4` (see ADR-0214). T3-15(b),
   ADR-0192 §"Status update 2026-05-09: T3-15 #2 SYCL PSNR chroma".
 
-## Governing ADRs
+- **`dmabuf_import.cpp` normalizes P010/P012 luma MSB→LSB on every import
+  path (ADR-1121).** VA-API delivers 10/12-bit samples MSB-aligned
+  (`V_MSB = V_LSB << (16 − bpc)`); the VMAF feature kernels expect
+  LSB-aligned values. The `>> (16 − bpc)` shift (guarded `if (bpc > 8)`,
+  no-op for 8-bit) is applied **two ways**: **fused into the de-tile store**
+  for the Tile4 / Y-tiled paths (each sample shifted as written — no extra
+  kernel, no second pass; the QSV/DG2 hot path), and via a standalone
+  `launch_p010_normalize()` kernel for the rare LINEAR D2D and readback
+  paths (no per-sample store to fuse into), whose event is threaded into
+  `vmaf_sycl_set_detile_event()` (or subsumed by `q->wait_and_throw()` on
+  readback). **On rebase**: the shift must stay on *every* import path —
+  dropping it on any one re-introduces the 64× `integer_motion` / NaN bug
+  for that tiling mode; and do **not** re-add a standalone full-plane
+  normalize pass on the tiled paths (it cost ~15% throughput at 4K — keep
+  it fused). Chroma needs no normalization (shared frame pipeline is
+  luma-only, above). **Do not add a `DMA_BUF_IOCTL_SYNC` coherency flush** —
+  it was tried and removed: insufficient for the contamination (the real fix
+  is the separate-per-decoder-QSV-session contract, FIX-03) and its
+  `SYNC_START` blocking fence-wait serialised decode→compute.
+
+- **The zero-copy VA-import path defaults to DIRECT dispatch, not the combined
+  graph (ADR-1121).** `vmaf_sycl_select_strategy()` takes a `va_import_path`
+  flag (passed `state->has_imported` from `common.cpp`) and returns DIRECT for
+  it — *after* the env-override checks, so `VMAF_SYCL_USE_GRAPH=1` /
+  `VMAF_SYCL_DISPATCH=…:graph` still force graph. The graph is a net throughput
+  loss on this path (byte-identical output, but the per-frame de-tile import +
+  graph compute-barrier serialise decode→compute, ~15–25% slower at 4K). **On
+  rebase**: keep `va_import_path` threaded from `has_imported`; do not let the
+  area-threshold heuristic (tuned for host-upload) re-select graph for VA-import.
 
 - [ADR-0002](../../../docs/adr/0002-merge-path-master-default.md) —
   sycl branch → master merge history.
@@ -130,6 +158,9 @@ sycl/
   — AdaptiveCpp added as a second SYCL toolchain alongside icpx;
   Intel-specific kernel attributes routed through
   `feature/sycl/sycl_compat.h`.
+- [ADR-1121](../../../docs/adr/1121-sycl-qsv-zerocopy-p010-normalization.md)
+  — QSV zero-copy P010/P012 MSB→LSB normalization in the VA import +
+  separate-per-decoder-session decode contract.
 
 ## Build
 

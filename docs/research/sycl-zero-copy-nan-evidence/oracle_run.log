@@ -1,0 +1,442 @@
+ffmpeg version n8.1.1-17-g922a438 Copyright (c) 2000-2026 the FFmpeg developers
+  built with gcc 13 (Ubuntu 13.3.0-6ubuntu2~24.04.1)
+  configuration: --enable-gpl --enable-version3 --enable-libvmaf --enable-libdav1d --enable-vaapi --enable-libvpl --enable-libvmaf-sycl --disable-filter=vmaf_pre --disable-doc --disable-debug
+  libavutil      60. 26.101 / 60. 26.101
+  libavcodec     62. 28.101 / 62. 28.101
+  libavformat    62. 12.101 / 62. 12.101
+  libavdevice    62.  3.101 / 62.  3.101
+  libavfilter    11. 14.101 / 11. 14.101
+  libswscale      9.  5.101 /  9.  5.101
+  libswresample   6.  3.101 /  6.  3.101
+libvmaf INFO SYCL: using device: Intel(R) Arc(TM) A380 Graphics
+libvmaf INFO SYCL: device lacks native fp64 — kernels already use fp32 + int64 paths, no emulation overhead
+[Parsed_libvmaf_0 @ 0x55ff730831c0] SYCL backend active (device=0 profile=0)
+[libdav1d @ 0x55ff770f39c0] obu_forbidden_bit out of range: 1, but must be in [0,0].
+[libdav1d @ 0x55ff770f39c0] Failed to parse temporal unit.
+[in#0/matroska,webm @ 0x55ff770d4f80] could not find codec parameters
+[vist#0:0/av1 @ 0x55ff7728bdc0] WARNING: defaulting hwaccel_output_format to qsv for compatibility with old commandlines. This behaviour is DEPRECATED and will be removed in the future. Please explicitly set "-hwaccel_output_format qsv".
+[aist#0:1/opus @ 0x55ff7740fe80] Guessed Channel Layout: 5.1
+[aist#0:2/opus @ 0x55ff770f8540] Guessed Channel Layout: 5.1
+[aist#0:3/opus @ 0x55ff77436c00] Guessed Channel Layout: 5.1
+[aist#0:4/opus @ 0x55ff77448340] Guessed Channel Layout: 5.1
+[vist#0:9/av1 @ 0x55ff7740fb40] WARNING: defaulting hwaccel_output_format to qsv for compatibility with old commandlines. This behaviour is DEPRECATED and will be removed in the future. Please explicitly set "-hwaccel_output_format qsv".
+[vist#0:10/av1 @ 0x55ff7740ed80] WARNING: defaulting hwaccel_output_format to qsv for compatibility with old commandlines. This behaviour is DEPRECATED and will be removed in the future. Please explicitly set "-hwaccel_output_format qsv".
+[vist#0:11/av1 @ 0x55ff77410dc0] WARNING: defaulting hwaccel_output_format to qsv for compatibility with old commandlines. This behaviour is DEPRECATED and will be removed in the future. Please explicitly set "-hwaccel_output_format qsv".
+Input #0, matroska,webm, from '/data/media/movies/Shadow's Edge/The Shadows.Edge. 2025.2160p.UHD.BluRay.Remux.DV.P7.HDR. TORRNADO.av1.mkv':
+  Metadata:
+    title           : Охота за тенью / Bu feng zhui ying / The Shadow's Edge (2025) TORRNADO
+    ENCODER         : Lavf62.3.100
+  Duration: 02:22:11.91, bitrate: N/A
+  Chapters:
+    Chapter #0:0: start 0.000000, end 1154.737000
+      Metadata:
+        title           : Chapter 01
+    Chapter #0:1: start 1154.737000, end 1885.634000
+      Metadata:
+        title           : Chapter 02
+    Chapter #0:2: start 1885.634000, end 2500.164000
+      Metadata:
+        title           : Chapter 03
+    Chapter #0:3: start 2500.164000, end 3236.066000
+      Metadata:
+        title           : Chapter 04
+    Chapter #0:4: start 3236.066000, end 3908.863000
+      Metadata:
+        title           : Chapter 05
+    Chapter #0:5: start 3908.863000, end 4753.207000
+      Metadata:
+        title           : Chapter 06
+    Chapter #0:6: start 4753.207000, end 5427.589000
+      Metadata:
+        title           : Chapter 07
+    Chapter #0:7: start 5427.589000, end 6146.223000
+      Metadata:
+        title           : Chapter 08
+    Chapter #0:8: start 6146.223000, end 6838.874000
+      Metadata:
+        title           : Chapter 09
+    Chapter #0:9: start 6838.874000, end 7745.863000
+      Metadata:
+        title           : Chapter 10
+    Chapter #0:10: start 7745.863000, end 8184.051000
+      Metadata:
+        title           : Chapter 11
+    Chapter #0:11: start 8184.051000, end 8531.905000
+      Metadata:
+        title           : Chapter 12
+  Stream #0:0(zxx): Video: av1 (libdav1d), none(bt2020nc/bt2020/smpte2084, progressive), 3840x2160, SAR 1:1 DAR 16:9, 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      BPS-eng         : 47674654
+      DURATION-eng    : 02:22:11.857000000
+      NUMBER_OF_FRAMES-eng: 204560
+      NUMBER_OF_BYTES-eng: 50844166332
+      SOURCE_ID-eng   : 001011
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES SOURCE_ID
+      DURATION        : 02:22:11.857000000
+    Side data:
+      DOVI configuration record: version: 1.0, profile: 10, level: 10, rpu flag: 1, el flag: 0, bl flag: 1, compatibility id: 1, compression: 0
+  Stream #0:1(rus): Audio: opus, 48000 Hz, 5.1 (default)
+    Metadata:
+      title           : DUB | Нарышкин
+      BPS-eng         : 640000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 682552320
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:22:11.908000000
+  Stream #0:2(rus): Audio: opus, 48000 Hz, 5.1 (default)
+    Metadata:
+      title           : MVO | ВПОДПОЛЬЕ
+      BPS-eng         : 384000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 409531392
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:22:11.908000000
+  Stream #0:3(rus): Audio: opus, 48000 Hz, 5.1 (default)
+    Metadata:
+      title           : AVO | Михаил Яроцкий
+      BPS-eng         : 448000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 477786624
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:22:11.908000000
+  Stream #0:4(chi): Audio: opus, 48000 Hz, 5.1 (default)
+    Metadata:
+      BPS-eng         : 3623185
+      DURATION-eng    : 02:22:11.905000000
+      NUMBER_OF_FRAMES-eng: 799866
+      NUMBER_OF_BYTES-eng: 3864084228
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:22:11.907000000
+  Stream #0:5(rus): Subtitle: subrip (srt) (default)
+    Metadata:
+      title           : Forced
+      BPS-eng         : 1
+      DURATION-eng    : 02:18:49.140000000
+      NUMBER_OF_FRAMES-eng: 32
+      NUMBER_OF_BYTES-eng: 1509
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:21:30.262000000
+  Stream #0:6(rus): Subtitle: subrip (srt) (default)
+    Metadata:
+      title           : Full
+      BPS-eng         : 79
+      DURATION-eng    : 02:20:22.646000000
+      NUMBER_OF_FRAMES-eng: 1900
+      NUMBER_OF_BYTES-eng: 83234
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:21:39.156000000
+  Stream #0:7(chi): Subtitle: subrip (srt) (default)
+    Metadata:
+      title           : Full
+      BPS-eng         : 36
+      DURATION-eng    : 02:19:45.510000000
+      NUMBER_OF_FRAMES-eng: 2067
+      NUMBER_OF_BYTES-eng: 38046
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:21:39.415000000
+  Stream #0:8(eng): Subtitle: subrip (srt) (default)
+    Metadata:
+      title           : Full
+      BPS-eng         : 42
+      DURATION-eng    : 02:19:45.510000000
+      NUMBER_OF_FRAMES-eng: 2067
+      NUMBER_OF_BYTES-eng: 44575
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+      DURATION        : 02:21:39.415000000
+  Stream #0:9: Video: av1 (libdav1d), none(pc, bt470bg/unknown/unknown), 550x785, 1k tbn
+    Metadata:
+      FILENAME        : cover.jpg
+      MIMETYPE        : image/jpeg
+      DURATION        : 00:00:00.000000000
+  Stream #0:10: Video: av1 (libdav1d), none(pc, bt470bg/unknown/unknown), 150x214, 1k tbn
+    Metadata:
+      FILENAME        : small_cover.jpg
+      MIMETYPE        : image/jpeg
+      DURATION        : 00:00:00.000000000
+  Stream #0:11: Video: av1 (libdav1d), none(pc, bt470bg/unknown/unknown), 640x360, 1k tbn
+    Metadata:
+      FILENAME        : cover.jpg
+      MIMETYPE        : image/jpeg
+      DURATION        : 00:00:00.000000000
+[in#1 @ 0x55ff774100c0] Invalid Block Addition value 0x0 for unknown Block Addition Mapping type 68766345, name "Dolby Vision enhancement-layer HEVC configuration"
+[extract_extradata @ 0x55ff7742f700] Failed to parse header of NALU (type 29): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x55ff7742f700] Failed to parse header of NALU (type 6): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x55ff7742f700] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[extract_extradata @ 0x55ff7742f700] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x55ff7742f700] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x55ff771081c0] Failed to parse header of NALU (type 29): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x55ff771081c0] Failed to parse header of NALU (type 6): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x55ff771081c0] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x55ff771081c0] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x55ff771081c0] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x55ff771081c0] PPS id out of range: 156
+[hevc @ 0x55ff771081c0] Skipping invalid undecodable NALU: 0
+[hevc @ 0x55ff771081c0] PPS id out of range: 15
+[hevc @ 0x55ff771081c0] Skipping invalid undecodable NALU: 1
+[hevc @ 0x55ff771081c0] PPS id out of range: 15
+[hevc @ 0x55ff771081c0] Skipping invalid undecodable NALU: 1
+[extract_extradata @ 0x55ff77192580] Failed to parse header of NALU (type 29): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x55ff77192580] Failed to parse header of NALU (type 6): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x55ff77192580] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[extract_extradata @ 0x55ff77192580] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x55ff77192580] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x55ff77108bc0] Failed to parse header of NALU (type 29): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x55ff77108bc0] Failed to parse header of NALU (type 6): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x55ff77108bc0] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x55ff77108bc0] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x55ff77108bc0] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x55ff77108bc0] PPS id out of range: 156
+[hevc @ 0x55ff77108bc0] Skipping invalid undecodable NALU: 0
+[hevc @ 0x55ff77108bc0] PPS id out of range: 15
+[hevc @ 0x55ff77108bc0] Skipping invalid undecodable NALU: 1
+[hevc @ 0x55ff77108bc0] PPS id out of range: 15
+[hevc @ 0x55ff77108bc0] Skipping invalid undecodable NALU: 1
+[extract_extradata @ 0x55ff7726f2c0] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x55ff7726f2c0] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[extract_extradata @ 0x55ff7726f2c0] Failed to parse header of NALU (type 1): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x55ff7726f2c0] Failed to parse header of NALU (type 3): "Invalid data found when processing input". Skipping NALU.
+[extract_extradata @ 0x55ff7726f2c0] Failed to parse header of NALU (type 32): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x55ff77142b40] Failed to parse header of NALU (type 40): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x55ff77142b40] Failed to parse header of NALU (type 0): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x55ff77142b40] Failed to parse header of NALU (type 1): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x55ff77142b40] Failed to parse header of NALU (type 3): "Invalid data found when processing input". Skipping NALU.
+[hevc @ 0x55ff77142b40] Failed to parse header of NALU (type 32): "Invalid data found when processing input". Skipping NALU.
+    Last message repeated 2 times
+[hevc @ 0x55ff77142b40] PPS id out of range: 19
+[hevc @ 0x55ff77142b40] Skipping invalid undecodable NALU: 1
+[in#1/matroska,webm @ 0x55ff774100c0] Stream #9: not enough frames to estimate rate; consider increasing probesize
+[in#1/matroska,webm @ 0x55ff774100c0] Stream #10: not enough frames to estimate rate; consider increasing probesize
+[in#1/matroska,webm @ 0x55ff774100c0] Stream #11: not enough frames to estimate rate; consider increasing probesize
+[in#1/matroska,webm @ 0x55ff774100c0] Could not find codec parameters for stream 9 (Video: hevc, none): unspecified size
+Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options
+[in#1/matroska,webm @ 0x55ff774100c0] Could not find codec parameters for stream 10 (Video: hevc, none): unspecified size
+Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options
+[in#1/matroska,webm @ 0x55ff774100c0] Could not find codec parameters for stream 11 (Video: hevc, none): unspecified size
+Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options
+[vist#1:7/hevc @ 0x55ff771445c0] WARNING: defaulting hwaccel_output_format to qsv for compatibility with old commandlines. This behaviour is DEPRECATED and will be removed in the future. Please explicitly set "-hwaccel_output_format qsv".
+[vist#1:9/hevc @ 0x55ff77419780] WARNING: defaulting hwaccel_output_format to qsv for compatibility with old commandlines. This behaviour is DEPRECATED and will be removed in the future. Please explicitly set "-hwaccel_output_format qsv".
+[vist#1:10/hevc @ 0x55ff7714d940] WARNING: defaulting hwaccel_output_format to qsv for compatibility with old commandlines. This behaviour is DEPRECATED and will be removed in the future. Please explicitly set "-hwaccel_output_format qsv".
+[vist#1:11/hevc @ 0x55ff771c9f40] WARNING: defaulting hwaccel_output_format to qsv for compatibility with old commandlines. This behaviour is DEPRECATED and will be removed in the future. Please explicitly set "-hwaccel_output_format qsv".
+Input #1, matroska,webm, from '/data/downloads/The Shadows.Edge. 2025.2160p.UHD.BluRay.Remux.DV.P7.HDR. TORRNADO.mkv':
+  Metadata:
+    title           : Охота за тенью / Bu feng zhui ying / The Shadow's Edge (2025) TORRNADO
+    encoder         : libebml v1.4.0 + libmatroska v1.6.2
+    creation_time   : 2026-03-30T16:18:18.000000Z
+  Duration: 02:22:11.91, start: 0.000000, bitrate: 52775 kb/s
+  Chapters:
+    Chapter #1:0: start 0.000000, end 1154.737000
+      Metadata:
+        title           : Chapter 01
+    Chapter #1:1: start 1154.737000, end 1885.634000
+      Metadata:
+        title           : Chapter 02
+    Chapter #1:2: start 1885.634000, end 2500.164000
+      Metadata:
+        title           : Chapter 03
+    Chapter #1:3: start 2500.164000, end 3236.066000
+      Metadata:
+        title           : Chapter 04
+    Chapter #1:4: start 3236.066000, end 3908.863000
+      Metadata:
+        title           : Chapter 05
+    Chapter #1:5: start 3908.863000, end 4753.207000
+      Metadata:
+        title           : Chapter 06
+    Chapter #1:6: start 4753.207000, end 5427.589000
+      Metadata:
+        title           : Chapter 07
+    Chapter #1:7: start 5427.589000, end 6146.223000
+      Metadata:
+        title           : Chapter 08
+    Chapter #1:8: start 6146.223000, end 6838.874000
+      Metadata:
+        title           : Chapter 09
+    Chapter #1:9: start 6838.874000, end 7745.863000
+      Metadata:
+        title           : Chapter 10
+    Chapter #1:10: start 7745.863000, end 8184.051000
+      Metadata:
+        title           : Chapter 11
+    Chapter #1:11: start 8184.051000, end 8531.905000
+      Metadata:
+        title           : Chapter 12
+  Stream #1:0(rus): Audio: ac3, 48000 Hz, 5.1(side), fltp, 640 kb/s (default)
+    Metadata:
+      title           : DUB | Нарышкин
+      BPS-eng         : 640000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 682552320
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:1(rus): Audio: ac3, 48000 Hz, 5.1(side), fltp, 384 kb/s
+    Metadata:
+      title           : MVO | ВПОДПОЛЬЕ
+      BPS-eng         : 384000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 409531392
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:2(rus): Audio: ac3, 48000 Hz, 5.1(side), fltp, 448 kb/s
+    Metadata:
+      title           : AVO | Михаил Яроцкий
+      BPS-eng         : 448000
+      DURATION-eng    : 02:22:11.904000000
+      NUMBER_OF_FRAMES-eng: 266622
+      NUMBER_OF_BYTES-eng: 477786624
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:3(rus): Subtitle: subrip (srt) (default)
+    Metadata:
+      title           : Forced
+      BPS-eng         : 1
+      DURATION-eng    : 02:18:49.140000000
+      NUMBER_OF_FRAMES-eng: 32
+      NUMBER_OF_BYTES-eng: 1509
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:4(rus): Subtitle: subrip (srt)
+    Metadata:
+      title           : Full
+      BPS-eng         : 79
+      DURATION-eng    : 02:20:22.646000000
+      NUMBER_OF_FRAMES-eng: 1900
+      NUMBER_OF_BYTES-eng: 83234
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:5(chi): Subtitle: subrip (srt)
+    Metadata:
+      title           : Full
+      BPS-eng         : 36
+      DURATION-eng    : 02:19:45.510000000
+      NUMBER_OF_FRAMES-eng: 2067
+      NUMBER_OF_BYTES-eng: 38046
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:6(eng): Subtitle: subrip (srt)
+    Metadata:
+      title           : Full
+      BPS-eng         : 42
+      DURATION-eng    : 02:19:45.510000000
+      NUMBER_OF_FRAMES-eng: 2067
+      NUMBER_OF_BYTES-eng: 44575
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:7(zxx): Video: hevc (Main 10), yuv420p10le(tv, bt2020nc/bt2020/smpte2084), 3840x2160 [SAR 1:1 DAR 16:9], 23.98 fps, 23.98 tbr, 1k tbn (default)
+    Metadata:
+      BPS-eng         : 47674654
+      DURATION-eng    : 02:22:11.857000000
+      NUMBER_OF_FRAMES-eng: 204560
+      NUMBER_OF_BYTES-eng: 50844166332
+      SOURCE_ID-eng   : 001011
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES SOURCE_ID
+    Side data:
+      DOVI configuration record: version: 1.0, profile: 7, level: 6, rpu flag: 1, el flag: 1, bl flag: 1, compatibility id: 6, compression: 0
+  Stream #1:8(chi): Audio: dts (dca) (DTS-HD MA), 48000 Hz, 5.1(side), s32p (24 bit)
+    Metadata:
+      BPS-eng         : 3623185
+      DURATION-eng    : 02:22:11.905000000
+      NUMBER_OF_FRAMES-eng: 799866
+      NUMBER_OF_BYTES-eng: 3864084228
+      _STATISTICS_WRITING_APP-eng: mkvmerge v51.0.0 ('I Wish') 64-bit
+      _STATISTICS_WRITING_DATE_UTC-eng: 2026-03-30 16:18:18
+      _STATISTICS_TAGS-eng: BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES
+  Stream #1:9: Video: hevc, none, 90k tbr, 90k tbn (attached pic)
+    Metadata:
+      filename        : cover.jpg
+      mimetype        : image/jpeg
+  Stream #1:10: Video: hevc, none, 90k tbr, 90k tbn (attached pic)
+    Metadata:
+      filename        : small_cover.jpg
+      mimetype        : image/jpeg
+  Stream #1:11: Video: hevc, none, 90k tbr, 90k tbn (attached pic)
+    Metadata:
+      filename        : cover.jpg
+      mimetype        : image/jpeg
+libva info: VA-API version 1.23.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_23
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.23.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_23
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.23.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_23
+libva info: va_openDriver() returns 0
+libva info: VA-API version 1.23.0
+libva info: Trying to open /usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so
+libva info: Found init function __vaDriverInit_1_23
+libva info: va_openDriver() returns 0
+Stream mapping:
+  Stream #0:0 (av1_qsv) -> libvmaf
+  Stream #1:7 (hevc_qsv) -> libvmaf
+  libvmaf:default -> Stream #0:0 (wrapped_avframe)
+  Stream #1:0 -> #0:1 (ac3 (native) -> pcm_s16le (native))
+Press [q] to stop, [?] for help
+There are 2 hardware devices. device qsv1 of type qsv is picked for filters by default. Set hardware device explicitly with the filter_hw_device option if device qsv1 is not usable for filters.
+libvmaf INFO SYCL: using device: Intel(R) Arc(TM) A380 Graphics
+libvmaf INFO SYCL: device lacks native fp64 — kernels already use fp32 + int64 paths, no emulation overhead
+    Last message repeated 1 times
+[Parsed_libvmaf_0 @ 0x7fc5ec0038c0] SYCL backend active (device=0 profile=0)
+Impossible to convert between the formats supported by the filter 'graph 0 input from stream 0:0' and the filter 'auto_scale_0'
+Link 'graph 0 input from stream 0:0.default' -> 'auto_scale_0.default':
+  Pixel formats:
+    src: qsv
+    dst: yuv420p yuyv422 rgb24 bgr24 yuv422p yuv444p yuv410p yuv411p gray monow monob pal8 yuvj420p yuvj422p yuvj444p uyvy422 uyyvyy411 bgr8 bgr4_byte rgb8 rgb4_byte nv12 nv21 argb rgba abgr bgra gray16be gray16le yuv440p yuvj440p yuva420p rgb48be rgb48le rgb565be rgb565le rgb555be rgb555le bgr565be bgr565le bgr555be bgr555le yuv420p16le yuv420p16be yuv422p16le yuv422p16be yuv444p16le yuv444p16be rgb444le rgb444be bgr444le bgr444be ya8 bgr48be bgr48le yuv420p9be yuv420p9le yuv420p10be yuv420p10le yuv422p10be yuv422p10le yuv444p9be yuv444p9le yuv444p10be yuv444p10le yuv422p9be yuv422p9le gbrp gbrp9be gbrp9le gbrp10be gbrp10le gbrp16be gbrp16le yuva422p yuva444p yuva420p9be yuva420p9le yuva422p9be yuva422p9le yuva444p9be yuva444p9le yuva420p10be yuva420p10le yuva422p10be yuva422p10le yuva444p10be yuva444p10le yuva420p16be yuva420p16le yuva422p16be yuva422p16le yuva444p16be yuva444p16le xyz12le xyz12be nv16 nv20le nv20be rgba64be rgba64le bgra64be bgra64le yvyu422 ya16be ya16le gbrap gbrap16be gbrap16le 0rgb rgb0 0bgr bgr0 yuv420p12be yuv420p12le yuv420p14be yuv420p14le yuv422p12be yuv422p12le yuv422p14be yuv422p14le yuv444p12be yuv444p12le yuv444p14be yuv444p14le gbrp12be gbrp12le gbrp14be gbrp14le yuvj411p bayer_bggr8 bayer_rggb8 bayer_gbrg8 bayer_grbg8 bayer_bggr16le bayer_bggr16be bayer_rggb16le bayer_rggb16be bayer_gbrg16le bayer_gbrg16be bayer_grbg16le bayer_grbg16be yuv440p10le yuv440p10be yuv440p12le yuv440p12be ayuv64le ayuv64be p010le p010be gbrap12be gbrap12le gbrap10be gbrap10le gray12be gray12le gray10be gray10le p016le p016be gray9be gray9le gbrpf32be gbrpf32le gbrapf32be gbrapf32le gray14be gray14le grayf32be grayf32le yuva422p12be yuva422p12le yuva444p12be yuva444p12le nv24 nv42 y210le x2rgb10le x2bgr10le p210be p210le p410be p410le p216be p216le p416be p416le vuya rgbaf16be rgbaf16le vuyx p012le p012be y212le xv30le xv36be xv36le rgbf32be rgbf32le p212be p212le p412be p412le gbrap14be gbrap14le ayuv uyva vyu444 v30xle rgbf16be rgbf16le y216le xv48be xv48le gbrpf16be gbrpf16le gbrapf16be gbrapf16le grayf16be grayf16le yaf32be yaf32le yaf16be yaf16le yuv444p10msbbe yuv444p10msble yuv444p12msbbe yuv444p12msble gbrp10msbbe gbrp10msble gbrp12msbbe gbrp12msble
+Link 'auto_scale_0.default' -> 'Parsed_libvmaf_0.main':
+  Pixel formats:
+    src: yuv420p yuyv422 rgb24 bgr24 yuv422p yuv444p yuv410p yuv411p gray monow monob pal8 yuvj420p yuvj422p yuvj444p uyvy422 bgr8 bgr4 bgr4_byte rgb8 rgb4 rgb4_byte nv12 nv21 argb rgba abgr bgra gray16be gray16le yuv440p yuvj440p yuva420p rgb48be rgb48le rgb565be rgb565le rgb555be rgb555le bgr565be bgr565le bgr555be bgr555le yuv420p16le yuv420p16be yuv422p16le yuv422p16be yuv444p16le yuv444p16be rgb444le rgb444be bgr444le bgr444be ya8 bgr48be bgr48le yuv420p9be yuv420p9le yuv420p10be yuv420p10le yuv422p10be yuv422p10le yuv444p9be yuv444p9le yuv444p10be yuv444p10le yuv422p9be yuv422p9le gbrp gbrp9be gbrp9le gbrp10be gbrp10le gbrp16be gbrp16le yuva422p yuva444p yuva420p9be yuva420p9le yuva422p9be yuva422p9le yuva444p9be yuva444p9le yuva420p10be yuva420p10le yuva422p10be yuva422p10le yuva444p10be yuva444p10le yuva420p16be yuva420p16le yuva422p16be yuva422p16le yuva444p16be yuva444p16le xyz12le xyz12be nv16 nv20le nv20be rgba64be rgba64le bgra64be bgra64le yvyu422 ya16be ya16le gbrap gbrap16be gbrap16le 0rgb rgb0 0bgr bgr0 yuv420p12be yuv420p12le yuv420p14be yuv420p14le yuv422p12be yuv422p12le yuv422p14be yuv422p14le yuv444p12be yuv444p12le yuv444p14be yuv444p14le gbrp12be gbrp12le gbrp14be gbrp14le yuvj411p yuv440p10le yuv440p10be yuv440p12le yuv440p12be ayuv64le ayuv64be p010le p010be gbrap12be gbrap12le gbrap10be gbrap10le gray12be gray12le gray10be gray10le p016le p016be gray9be gray9le gbrpf32be gbrpf32le gbrapf32be gbrapf32le gray14be gray14le grayf32be grayf32le yuva422p12be yuva422p12le yuva444p12be yuva444p12le nv24 nv42 y210le x2rgb10le x2bgr10le p210be p210le p410be p410le p216be p216le p416be p416le vuya vuyx p012le p012be y212le xv30le xv36be xv36le p212be p212le p412be p412le gbrap14be gbrap14le ayuv uyva vyu444 v30xle y216le xv48be xv48le yuv444p10msbbe yuv444p10msble yuv444p12msbbe yuv444p12msble gbrp10msbbe gbrp10msble gbrp12msbbe gbrp12msble
+    dst: yuv444p yuv422p yuv420p yuv444p10le yuv422p10le yuv420p10le yuv444p12le yuv422p12le yuv420p12le yuv444p16le yuv422p16le yuv420p16le
+[fc#0 @ 0x55ff73082500] Error reinitializing filters!
+[fc#0 @ 0x55ff73082500] Task finished with error code: -38 (Function not implemented)
+[fc#0 @ 0x55ff73082500] Terminating thread with return code -38 (Function not implemented)
+[vost#0:0/wrapped_avframe @ 0x55ff77149bc0] [enc:wrapped_avframe @ 0x55ff77146440] Could not open encoder before EOF
+[vost#0:0/wrapped_avframe @ 0x55ff77149bc0] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/wrapped_avframe @ 0x55ff77149bc0] Terminating thread with return code -22 (Invalid argument)
+[out#0/null @ 0x55ff77144140] Nothing was written into output file, because at least one of its streams received no packets.
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.08    
+Conversion failed!

@@ -52,6 +52,7 @@
  * types and the int-fd argument from reaching a Windows compiler. */
 #ifndef _WIN32
 
+#include <cassert>
 #include <cerrno>
 #include <cinttypes>
 #include <cstdio>
@@ -85,7 +86,7 @@ extern "C" int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size
     *ptr = nullptr;
 
     try {
-        sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
+        const sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
         if (!q)
             return -EINVAL;
 
@@ -110,7 +111,7 @@ extern "C" int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size
         alloc_desc.ordinal = 0;
 
         void *ze_ptr = nullptr;
-        ze_result_t res =
+        const ze_result_t res =
             zeMemAllocDevice(ze_ctx, &alloc_desc, size, 0 /* alignment */, ze_dev, &ze_ptr);
         if (res != ZE_RESULT_SUCCESS) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "Level Zero DMA-BUF import failed: 0x%x\n", res);
@@ -135,7 +136,7 @@ extern "C" void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr)
         return;
 
     try {
-        sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
+        const sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
         if (!q)
             return;
 
@@ -144,7 +145,11 @@ extern "C" void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr)
 
         zeMemFree(ze_ctx, ptr);
     } catch (...) {
-        /* Best effort — if SYCL/L0 is already torn down, ignore */
+        /* Best effort — if SYCL/L0 is already torn down, ignore. Logged at DEBUG
+         * so the catch is not empty (bugprone-empty-catch) and teardown faults
+         * remain visible under VMAF_LOG_LEVEL_DEBUG without affecting the path. */
+        vmaf_log(VMAF_LOG_LEVEL_DEBUG,
+                 "vmaf_sycl_dmabuf_free: ignoring exception during teardown\n");
     }
 }
 
@@ -172,6 +177,53 @@ extern "C" void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr)
 #ifndef I915_FORMAT_MOD_X_TILED
 #define I915_FORMAT_MOD_X_TILED 0x0100000000000001ULL
 #endif
+
+/* ------------------------------------------------------------------ */
+/* P010 / P012 MSB-aligned → LSB-aligned pixel normalization           */
+/* ------------------------------------------------------------------ */
+/*
+ * VA-API encodes 10-bit (P010) or 12-bit (P012) luma/chroma as MSB-aligned
+ * uint16_t values: V_MSB = V_LSB << (16 - bpc).  The 10-bit studio-swing
+ * range [64..940] becomes [4096..60160] in P010.
+ *
+ * The upstream VMAF feature kernels (integer_motion, VIF, ADM) were designed
+ * for LSB-aligned bpc-bit integers (range [0, 2^bpc - 1]).  The CPU libvmaf
+ * path receives LSB-aligned data because FFmpeg automatically converts
+ * AV_PIX_FMT_P010LE → AV_PIX_FMT_YUV420P10LE (which shifts right by 6) to
+ * satisfy libvmaf's FILTER_PIXFMTS list (which does not include P010LE).
+ *
+ * This standalone normalization is used by the import paths that do NOT detile
+ * with a per-sample kernel — the readback memcpy and the DMA-BUF LINEAR D2D
+ * memcpy — where there is no store to fuse the shift into. The Tile4 / Y-tiled
+ * de-tile kernels instead apply the `>> (16 - bpc)` shift inline as they write
+ * each sample (no extra kernel launch, no second memory pass). This function
+ * submits a SYCL kernel that right-shifts every uint16_t in `buf` by
+ * `(16 - bpc)` bits in-place and returns the event.
+ *
+ * Callers MUST guard with `if (bpc > 8)`; calling this function for 8-bit NV12
+ * surfaces is undefined behaviour — the uint8_t pixels are already LSB-aligned,
+ * and reinterpreting that buffer as uint16_t then shifting would corrupt data.
+ * The `assert(bpc > 8 && bpc < 16)` below brackets the supported range (P010
+ * bpc=10, P012 bpc=12); a shift of >= 16 on a uint16_t is itself UB.
+ *
+ * Callers must chain: the returned event is submitted to the same in-order
+ * queue that ran the preceding memcpy / de-tile kernel.  Because the queue is
+ * in-order, the normalization kernel automatically runs after all prior work.
+ * The caller should pass this event to vmaf_sycl_set_detile_event() so that
+ * the compute-barrier waits for normalization to complete before any extractor
+ * kernel reads the shared frame buffer.
+ */
+static sycl::event launch_p010_normalize(sycl::queue *q, void *buf, unsigned w, unsigned h,
+                                         unsigned bpc)
+{
+    assert(bpc > 8 && bpc < 16);
+    unsigned shift = 16u - bpc; /* 6 for bpc=10; 4 for bpc=12 */
+    size_t num_pixels = (size_t)w * h;
+    uint16_t *pixels = static_cast<uint16_t *>(buf);
+
+    return q->parallel_for(sycl::range<1>(num_pixels),
+                           [=](sycl::id<1> id) { pixels[id[0]] >>= shift; });
+}
 
 /* ------------------------------------------------------------------ */
 /* Fallback: VA surface → linear readback → H2D copy                   */
@@ -253,7 +305,8 @@ static int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_d
     uint32_t y_pitch = va_img.pitches[0];
     size_t y_row_bytes = (size_t)w * bytes_per_pixel;
 
-    void *target_buf = is_ref ? vmaf_sycl_get_shared_ref(state) : vmaf_sycl_get_shared_dis(state);
+    void *target_buf =
+        is_ref ? vmaf_sycl_get_shared_ref_upload(state) : vmaf_sycl_get_shared_dis_upload(state);
 
     if (!target_buf) {
         vaUnmapBuffer(va_dpy, va_img.buf);
@@ -278,7 +331,18 @@ static int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_d
                 dst += y_row_bytes;
             }
         }
-        q->wait();
+        /* Convert P010/P012 MSB-aligned pixel values to LSB-aligned so that
+         * VMAF feature kernels receive the same value range as the CPU path.
+         * Queue is in-order; normalization kernel runs after all memcpy operations.
+         * Only needed when bpc > 8; 8-bit NV12 pixels are already LSB-aligned. */
+        if (bpc > 8)
+            (void)launch_p010_normalize(q, target_buf, w, h, bpc);
+        /* wait_and_throw(), not wait(): the in-order queue serialises the
+         * normalization kernel after the memcpy, but wait() would silently
+         * swallow an async device fault in that kernel (SYCL 2020 §4.6.6.1),
+         * leaving un-normalized P010 in target_buf. wait_and_throw() surfaces
+         * it to the catch below. */
+        q->wait_and_throw();
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_sycl readback memcpy failed: %s\n", e.what());
         vaUnmapBuffer(va_dpy, va_img.buf);
@@ -348,6 +412,14 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
              "offset=%u pitch=%u (%ux%u @ %u bpp)\n",
              is_ref ? "ref" : "dis", y_fd, y_size, modifier, y_offset, y_pitch, w, h, bpp);
 
+    /* No cross-engine DMA-BUF sync here. An earlier DMA_BUF_IOCTL_SYNC(READ)
+     * flush was tried as a contamination fix and proven insufficient (it only
+     * shifted the stale-frame offset); the real fix is separate per-decoder QSV
+     * sessions (ADR-1121). Its SYNC_START is a blocking decoder-fence wait that
+     * serialises decode→compute and measurably cut 4K throughput, so it was
+     * removed — vaSyncSurface() upstream already establishes decode completion
+     * and the in-order SYCL queue orders the de-tile after the import. */
+
     /* Import the DMA-BUF fd into Level Zero as device memory.
      * This wraps the SAME GPU memory — no copy happens here. */
     void *imported_ptr = nullptr;
@@ -363,13 +435,25 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
                                                     w, h, bpc);
     }
 
-    /* Get target shared frame buffer */
-    void *target_buf = is_ref ? vmaf_sycl_get_shared_ref(state) : vmaf_sycl_get_shared_dis(state);
+    /* Get target shared frame buffer (upload slot — cur_upload, not cur_compute) */
+    void *target_buf =
+        is_ref ? vmaf_sycl_get_shared_ref_upload(state) : vmaf_sycl_get_shared_dis_upload(state);
 
     if (!target_buf) {
         vmaf_sycl_dmabuf_free(state, imported_ptr);
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "Shared frame buffer not initialised\n");
         return -EINVAL;
+    }
+
+    /* Diagnostic: log VA surface ID, imported_ptr, and target_buf for each import.
+     * Enable with VMAF_SYCL_IMPORT_DEBUG=1 to diagnose buffer aliasing or VA pool
+     * reuse. The env var is resolved once at init (cached in VmafSyclState) and
+     * read here via an accessor — VmafSyclState is opaque in this TU — rather
+     * than re-calling getenv() per frame (CERT ENV33-C / per-frame getenv cost). */
+    if (vmaf_sycl_import_debug_enabled(state)) {
+        vmaf_log(VMAF_LOG_LEVEL_INFO,
+                 "VMAF_SYCL_IMPORT_DEBUG [%s] va_surf=%u imported_ptr=%p target_buf=%p\n",
+                 is_ref ? "ref" : "dis", va_surface_id, imported_ptr, target_buf);
     }
 
     sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
@@ -405,6 +489,11 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
                                (uint8_t *)imported_ptr + y_offset + row * y_pitch, row_bytes);
             }
         }
+        /* Normalize P010/P012 MSB → LSB (queue in-order: runs after D2D memcpy).
+         * Only needed when bpc > 8; for 8-bit NV12, ev already points to the
+         * last memcpy event and no normalization is required. */
+        if (bpc > 8)
+            ev = launch_p010_normalize(q, target_buf, w, h, bpc);
         vmaf_sycl_set_detile_event(state, &ev);
 
     } else if (modifier == I915_FORMAT_MOD_4_TILED) {
@@ -434,6 +523,14 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
         unsigned words_per_tile_row = 128 / 4; /* = 32 */
         unsigned words_per_row = tiles_per_row * words_per_tile_row;
 
+        /* Fuse the P010/P012 MSB→LSB normalization into the de-tile store: each
+         * 4-byte word is two uint16 samples (dst_off is 4-aligned), shifted by
+         * (16-bpc) in-place. This removes the separate full-plane normalize pass
+         * (ADR-1121 follow-up) — no extra kernel launch, no second memory pass.
+         * No-op for 8-bit NV12. */
+        const bool do_shift = (bpc > 8);
+        const unsigned shift = do_shift ? (16u - bpc) : 0u;
+
         sycl::event ev = q->parallel_for(sycl::range<2>(h, words_per_row), [=](sycl::id<2> id) {
             unsigned py = id[0];
             unsigned word_x = id[1];
@@ -458,14 +555,29 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
 
             /* Linear destination */
             size_t dst_off = (size_t)py * row_bytes + tc * 128 + wt * 4;
+            size_t row_end = (size_t)(py + 1) * row_bytes;
 
             /* Bounds check — last tile column may exceed frame width */
-            if (dst_off + 4 <= (size_t)(py + 1) * row_bytes) {
-                *(uint32_t *)(dst + dst_off) = *(const uint32_t *)(src + src_off);
-            } else if (dst_off < (size_t)(py + 1) * row_bytes) {
-                size_t remain = (size_t)(py + 1) * row_bytes - dst_off;
-                for (size_t b = 0; b < remain; b++)
-                    dst[dst_off + b] = src[src_off + b];
+            if (dst_off + 4 <= row_end) {
+                uint32_t v = *(const uint32_t *)(src + src_off);
+                if (do_shift) {
+                    uint16_t s0 = (uint16_t)((uint16_t)(v & 0xFFFFu) >> shift);
+                    uint16_t s1 = (uint16_t)((uint16_t)(v >> 16) >> shift);
+                    v = (uint32_t)s0 | ((uint32_t)s1 << 16);
+                }
+                *(uint32_t *)(dst + dst_off) = v;
+            } else if (dst_off < row_end) {
+                size_t remain = row_end - dst_off;
+                if (do_shift && remain == 2) {
+                    uint16_t raw = (uint16_t)((uint16_t)src[src_off] |
+                                              (uint16_t)((uint16_t)src[src_off + 1] << 8));
+                    uint16_t s = (uint16_t)(raw >> shift);
+                    dst[dst_off] = (uint8_t)(s & 0xFFu);
+                    dst[dst_off + 1] = (uint8_t)(s >> 8);
+                } else {
+                    for (size_t b = 0; b < remain; b++)
+                        dst[dst_off + b] = src[src_off + b];
+                }
             }
         });
         vmaf_sycl_set_detile_event(state, &ev);
@@ -489,6 +601,10 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
         unsigned words_per_tile_row = 128 / 4;
         unsigned words_per_row = tiles_per_row * words_per_tile_row;
 
+        /* P010/P012 MSB→LSB fused into the de-tile store (see Tile4 above). */
+        const bool do_shift = (bpc > 8);
+        const unsigned shift = do_shift ? (16u - bpc) : 0u;
+
         sycl::event ev = q->parallel_for(sycl::range<2>(h, words_per_row), [=](sycl::id<2> id) {
             unsigned py = id[0];
             unsigned word_x = id[1];
@@ -507,13 +623,28 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
                              (size_t)ity * 16 + oword_byte;
 
             size_t dst_off = (size_t)py * row_bytes + tc * 128 + wt * 4;
+            size_t row_end = (size_t)(py + 1) * row_bytes;
 
-            if (dst_off + 4 <= (size_t)(py + 1) * row_bytes) {
-                *(uint32_t *)(dst + dst_off) = *(const uint32_t *)(src + src_off);
-            } else if (dst_off < (size_t)(py + 1) * row_bytes) {
-                size_t remain = (size_t)(py + 1) * row_bytes - dst_off;
-                for (size_t b = 0; b < remain; b++)
-                    dst[dst_off + b] = src[src_off + b];
+            if (dst_off + 4 <= row_end) {
+                uint32_t v = *(const uint32_t *)(src + src_off);
+                if (do_shift) {
+                    uint16_t s0 = (uint16_t)((uint16_t)(v & 0xFFFFu) >> shift);
+                    uint16_t s1 = (uint16_t)((uint16_t)(v >> 16) >> shift);
+                    v = (uint32_t)s0 | ((uint32_t)s1 << 16);
+                }
+                *(uint32_t *)(dst + dst_off) = v;
+            } else if (dst_off < row_end) {
+                size_t remain = row_end - dst_off;
+                if (do_shift && remain == 2) {
+                    uint16_t raw = (uint16_t)((uint16_t)src[src_off] |
+                                              (uint16_t)((uint16_t)src[src_off + 1] << 8));
+                    uint16_t s = (uint16_t)(raw >> shift);
+                    dst[dst_off] = (uint8_t)(s & 0xFFu);
+                    dst[dst_off + 1] = (uint8_t)(s >> 8);
+                } else {
+                    for (size_t b = 0; b < remain; b++)
+                        dst[dst_off + b] = src[src_off + b];
+                }
             }
         });
         vmaf_sycl_set_detile_event(state, &ev);

@@ -46951,3 +46951,34 @@ constructs to preserve when rebasing:
 
 Point 3 is the one to watch: a conflict resolved in upstream's favour restores a
 green-but-dead gate with no test failure to signal it.
+## fix/sycl-qsv-zerocopy-p010-normalize — SYCL QSV zero-copy P010 normalization + separate-session contract (2026-06-30)
+no ffmpeg-patch impact: edits the fork-added SYCL zero-copy path only
+(`core/src/sycl/dmabuf_import.cpp`, `core/src/sycl/common.cpp`/`.h`,
+`core/src/sycl/dispatch_strategy.cpp`/`.h`). The new
+`vmaf_sycl_import_debug_enabled()` accessor and the `va_import_path` parameter on
+`vmaf_sycl_select_strategy()` live in the SYCL-internal `core/src/sycl/` headers,
+not the public `core/include/libvmaf/` surface, and no CLI flag /
+`meson_options.txt` / `LIBVMAFContext` field changed → nothing the
+`ffmpeg-patches/` stack consumes. The separate-`-init_hw_device qsv=…` requirement
+(FIX-03, ADR-1121) is an ffmpeg *invocation* pattern documented in
+`docs/backends/sycl/overview.md`, not a change to `vf_libvmaf.c`.
+**Invariants (keep on any upstream sync — the whole SYCL VA-import path is
+fork-added, so there is no upstream-parity conflict surface):**
+(1) the `>> (16 − bpc)` MSB→LSB shift (guarded `if (bpc > 8)`) must stay on
+*every* import path — **fused into the Tile4 / Y-tiled de-tile store** (each
+sample shifted as written), and via the standalone `launch_p010_normalize()`
+kernel on the LINEAR / readback fallbacks (event threaded into
+`vmaf_sycl_set_detile_event()` / subsumed by `q->wait_and_throw()`). Dropping it
+re-introduces the 64× `integer_motion` / NaN bug; do NOT re-add a standalone
+full-plane normalize pass on the tiled paths (it cost ~15% throughput at 4K —
+keep it fused).
+(2) Do NOT re-add a `DMA_BUF_IOCTL_SYNC` flush — it was tried and removed:
+insufficient for the contamination (the fix is the separate-session contract)
+and its `SYNC_START` blocking fence-wait serialised decode→compute.
+(3) the zero-copy path defaults to DIRECT dispatch — keep `va_import_path`
+threaded from `state->has_imported` into `vmaf_sycl_select_strategy()` (checked
+after the env overrides). The combined graph is a net throughput loss on
+VA-import (byte-identical output, ~15–25% slower at 4K); do NOT let the
+host-upload-tuned area-threshold re-select graph for it.
+(4) D-03 verification targets are the de-contaminated oracle (VMAF 97.2350,
+`integer_motion` max 26.6935), not the old shared-session 96.133894 baseline.
