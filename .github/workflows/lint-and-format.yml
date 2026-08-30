@@ -117,8 +117,11 @@ jobs:
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --quiet meson
-          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy \
-            /usr/bin/clang-tidy-22 100
+          # Invoke the versioned binary below. GitHub's Ubuntu image already
+          # owns the unversioned alternatives group; adding another entry at
+          # the same priority can leave `clang-tidy` resolving to v18, which
+          # cannot parse the tree's C++26 `std::expected` use.
+          /usr/bin/clang-tidy-22 --version | grep -F 'LLVM version 22.'
       - name: Generate compile_commands.json
         if: steps.cpp-changes.outputs.any == 'true'
         run: |
@@ -295,7 +298,7 @@ jobs:
           # as an empty filename, which clang resolves to the workspace
           # directory and reports as a clang-diagnostic-error.
           echo "$files" | tr ' ' '\n' | grep -v '^$' \
-            | parallel -j$(nproc) "clang-tidy -p build --quiet {} || touch /tmp/tidy.fail"
+            | parallel -j"$(nproc)" "/usr/bin/clang-tidy-22 -p build --quiet {} || touch /tmp/tidy.fail"
           [ -f /tmp/tidy.fail ] && exit 1 || exit 0
 
   clang-tidy-sycl:
@@ -399,8 +402,7 @@ jobs:
           # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
           # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
           sudo pip3 install --break-system-packages --quiet meson
-          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy \
-            /usr/bin/clang-tidy-22 100
+          /usr/bin/clang-tidy-22 --version | grep -F 'LLVM version 22.'
       - name: Generate SYCL compile_commands.json
         if: steps.detect.outputs.files != ''
         run: |
@@ -430,7 +432,7 @@ jobs:
           files="${{ steps.detect.outputs.files }}"
           echo "$files" | tr ' ' '\n' | grep -v '^$' \
             | parallel -j"$(nproc)" \
-                "scripts/ci/clang-tidy-sycl.sh -p build-sycl --quiet {} \
+                "CLANG_TIDY_BIN=/usr/bin/clang-tidy-22 scripts/ci/clang-tidy-sycl.sh -p build-sycl --quiet {} \
                   || touch /tmp/tidy-sycl.fail"
           [ -f /tmp/tidy-sycl.fail ] && exit 1 || exit 0
 

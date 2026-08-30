@@ -195,7 +195,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # latest installed major.minor (/usr/local/cuda → /usr/local/cuda-NN.M).
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
-ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 
 # ---------- Intel oneAPI latest (icpx / Level Zero) -------------------------
 # Intel apt repo. Use the unversioned `intel-basekit` meta-package — Intel
@@ -344,7 +344,7 @@ ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV DPCPP_ROOT=${ONEAPI_ROOT}/compiler/latest
 ENV PATH=${DPCPP_ROOT}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${ONEAPI_ROOT}/tbb/latest/lib:${LD_LIBRARY_PATH}
-ENV PKG_CONFIG_PATH=${ONEAPI_ROOT}/tbb/latest/lib/pkgconfig:${PKG_CONFIG_PATH}
+ENV PKG_CONFIG_PATH=${ONEAPI_ROOT}/tbb/latest/lib/pkgconfig
 
 # ---------- ROCm 7.2.x (HIP toolchain + runtime) ---------------------------
 # AMD apt repo.

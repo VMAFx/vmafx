@@ -14,3 +14,17 @@
   copied the complete Go module inputs into its six-binary build stage.
 - Preserved C linkage for the shared minunit test counter so C++ tests link on
   MSVC as well as GCC and Clang.
+- Pinned changed-file clang-tidy jobs to LLVM 22 instead of an ambiguous
+  system alternatives link that could keep resolving to LLVM 18 and fail to
+  parse C++26 `std::expected`.
+- Preserved the established scalar ADM contraction semantics on Clang-family
+  compilers; the attempted translation-unit-wide non-FMA pragma changed
+  golden-producing scores and is intentionally not part of the SIMD contract.
+- Let dev-container smoke tests inherit the image's CUDA, oneAPI, and ROCm
+  runtime search paths instead of hiding `libirc.so` behind a host-style
+  `/usr/local/lib` override; initialize the image paths without undefined
+  Dockerfile variables.
+- Identified the all-backend Linux lane as Intel LLVM and stopped running
+  GCC-authored Python numeric snapshots there. Dedicated CPU/GCC jobs retain
+  the complete tox and immutable Netflix golden gates; the Intel lane still
+  runs the native Meson suite and every backend build.

@@ -28,14 +28,6 @@
 #include "adm_options.h"
 #include "adm_tools.h"
 
-/* Keep the scalar DWT reference on the same separate-multiply/add contract as
- * the explicit NEON implementation (ADR-1057). Apple Clang 18 otherwise
- * contracts the scalar expressions under the release profile, making the
- * production scalar reference differ from NEON by a few ULPs. */
-#if defined(__clang__)
-#pragma clang fp contract(off)
-#endif
-
 #ifndef M_PI
 #define M_PI 3.1415926535897932384626433832795028841971693993751
 #endif
