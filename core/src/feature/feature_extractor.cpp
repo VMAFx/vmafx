@@ -234,6 +234,19 @@ extern VmafFeatureExtractor vmaf_fex_float_psnr_metal;
 extern VmafFeatureExtractor vmaf_fex_float_motion_metal;
 extern VmafFeatureExtractor vmaf_fex_float_moment_metal;
 extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_metal;
+/* Rounds 3-4 Metal kernels (ADR-0959 closeout). Orphaned by the PR #875
+ * .c -> .cpp registry split (the entries were added to the dead .c twin
+ * that PR #1004 deleted); restored here so the shipped .mm TUs are
+ * reachable via vmaf_get_feature_extractor_by_name(). */
+extern VmafFeatureExtractor vmaf_fex_integer_ssim_metal;
+extern VmafFeatureExtractor vmaf_fex_float_vif_metal;
+extern VmafFeatureExtractor vmaf_fex_float_adm_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_vif_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_adm_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_ciede_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_psnr_hvs_metal;
+extern VmafFeatureExtractor vmaf_fex_integer_cambi_metal;
+extern VmafFeatureExtractor vmaf_fex_ssimulacra2_metal;
 #endif
 /* SpEED-QA NR metric scaffold — ADR-0253. */
 extern VmafFeatureExtractor vmaf_fex_speed_qa;
@@ -402,6 +415,29 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     /* T8-2a: float_ms_ssim_metal — 5-scale MS-SSIM pyramid on Metal
      * (ADR-0435). Real kernel dispatch replacing the -ENOSYS scaffold. */
     &vmaf_fex_float_ms_ssim_metal,
+    /* integer_ssim_metal — fixed-point SSIM (feature "ssim") on Metal,
+     * mirroring float_ssim_metal's two-pass separable scaffold; completes
+     * the integer_ssim cross-backend set (cuda/sycl/hip already present). */
+    &vmaf_fex_integer_ssim_metal,
+    /* float_vif_metal — 4-scale VIF Gaussian pyramid (feature "float_vif")
+     * on Metal; core-VMAF kernel mirroring float_vif_cuda/sycl. */
+    &vmaf_fex_float_vif_metal,
+    /* float_adm_metal — 4-scale DWT + CSF + decouple + CM (feature
+     * "float_adm" + scales) on Metal; core-VMAF kernel mirroring
+     * float_adm_cuda/sycl + the CPU float_adm.c. */
+    &vmaf_fex_float_adm_metal,
+    /* integer_vif_metal — 4-scale fixed-point VIF Gaussian pyramid (feature
+     * "vif", a VMAF default) on Metal; mirrors integer_vif_cuda/sycl + the
+     * CPU integer_vif.c. */
+    &vmaf_fex_integer_vif_metal,
+    /* integer_adm_metal — fixed-point 4-scale DWT+CSF+decouple+CM (feature
+     * "adm", a VMAF default) on Metal; mirrors integer_adm_cuda/sycl + the
+     * CPU integer_adm.c. */
+    &vmaf_fex_integer_adm_metal,
+    /* Metal standalone-metric kernels (parity sweep): ciede2000, psnr_hvs,
+     * cambi (banding), ssimulacra2 — mirror the CUDA/SYCL twins + CPU refs. */
+    &vmaf_fex_integer_ciede_metal, &vmaf_fex_integer_psnr_hvs_metal, &vmaf_fex_integer_cambi_metal,
+    &vmaf_fex_ssimulacra2_metal,
 #endif
     &vmaf_fex_speed_qa, &vmaf_fex_lpips, &vmaf_fex_dists_sq, &vmaf_fex_fastdvdnet_pre,
     &vmaf_fex_mobilesal, &vmaf_fex_transnet_v2,
