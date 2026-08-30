@@ -11,7 +11,7 @@
 #       -e VMAF_MCP_ALLOW=/data \
 #       vmaf-mcp
 
-FROM ubuntu:26.04@sha256:6fee4abc5fe6a21f40022199b2d5063eb591743c80d3d2f5fadf620a98cbae0d AS build
+FROM ubuntu:26.04@sha256:889d056d5c6c0bfb55789ff3710681d68e50713cb562d2196dc07110599c7a6f AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
 # hadolint ignore=DL3008
@@ -27,7 +27,7 @@ WORKDIR /src/libvmaf
 RUN meson setup ../build -Denable_cuda=false -Denable_sycl=false --buildtype=release \
     && ninja -C ../build
 
-FROM ubuntu:26.04@sha256:6fee4abc5fe6a21f40022199b2d5063eb591743c80d3d2f5fadf620a98cbae0d
+FROM ubuntu:26.04@sha256:889d056d5c6c0bfb55789ff3710681d68e50713cb562d2196dc07110599c7a6f
 
 ENV DEBIAN_FRONTEND=noninteractive \
     VMAF_BIN=/opt/vmaf/vmaf \
