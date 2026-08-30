@@ -85,10 +85,14 @@ void adm_dwt2_8_neon(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
         /* Vertical pass. */
-        const uint8_t *p_src_0 = src + ind_y[0][i] * src_stride;
-        const uint8_t *p_src_1 = src + ind_y[1][i] * src_stride;
-        const uint8_t *p_src_2 = src + ind_y[2][i] * src_stride;
-        const uint8_t *p_src_3 = src + ind_y[3][i] * src_stride;
+        const uint8_t *const p_src_0_base = src + ind_y[0][i] * src_stride;
+        const uint8_t *const p_src_1_base = src + ind_y[1][i] * src_stride;
+        const uint8_t *const p_src_2_base = src + ind_y[2][i] * src_stride;
+        const uint8_t *const p_src_3_base = src + ind_y[3][i] * src_stride;
+        const uint8_t *p_src_0 = p_src_0_base;
+        const uint8_t *p_src_1 = p_src_1_base;
+        const uint8_t *p_src_2 = p_src_2_base;
+        const uint8_t *p_src_3 = p_src_3_base;
 
         for (int j = 0; j < w - 15;
              j += 16, p_src_0 += 16, p_src_1 += 16, p_src_2 += 16, p_src_3 += 16) {
@@ -126,6 +130,38 @@ void adm_dwt2_8_neon(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
                                                                      tmphi + j);
             NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(accum_hi_h, shift_vp_vec,
                                                                      tmphi + j + 8);
+        }
+
+        /* Scalar tail for the columns the 16-wide vertical loop cannot reach.
+         *
+         * The dispatcher in integer_adm.c admits this kernel on `!(w % 8)`, but
+         * the loop above advances 16 at a time and stops at `w - 15`, so for a
+         * width congruent to 8 mod 16 the final 8 columns of tmplo/tmphi were
+         * never written. The horizontal pass then read whatever the previous
+         * row had left there, producing garbage in the last output columns —
+         * silently, because every Netflix golden fixture is 1280, 1920 or 576
+         * pixels wide and all three are multiples of 16. */
+        for (int j = (w / 16) * 16; j < w; ++j) {
+            const uint16_t u_s0 = p_src_0_base[j];
+            const uint16_t u_s1 = p_src_1_base[j];
+            const uint16_t u_s2 = p_src_2_base[j];
+            const uint16_t u_s3 = p_src_3_base[j];
+
+            int32_t accum = 0;
+            accum += (int32_t)dwt2_db2_coeffs_lo[0] * (int32_t)u_s0;
+            accum += (int32_t)dwt2_db2_coeffs_lo[1] * (int32_t)u_s1;
+            accum += (int32_t)dwt2_db2_coeffs_lo[2] * (int32_t)u_s2;
+            accum += (int32_t)dwt2_db2_coeffs_lo[3] * (int32_t)u_s3;
+            accum -= (int32_t)dwt2_db2_coeffs_lo_sum * add_shift_VP;
+            tmplo[j] = (int16_t)((accum + add_shift_VP) >> shift_VP);
+
+            accum = 0;
+            accum += (int32_t)dwt2_db2_coeffs_hi[0] * (int32_t)u_s0;
+            accum += (int32_t)dwt2_db2_coeffs_hi[1] * (int32_t)u_s1;
+            accum += (int32_t)dwt2_db2_coeffs_hi[2] * (int32_t)u_s2;
+            accum += (int32_t)dwt2_db2_coeffs_hi[3] * (int32_t)u_s3;
+            accum -= (int32_t)dwt2_db2_coeffs_hi_sum * add_shift_VP;
+            tmphi[j] = (int16_t)((accum + add_shift_VP) >> shift_VP);
         }
 
         /* Horizontal pass (lo and hi). */
@@ -202,6 +238,38 @@ void adm_dwt2_8_neon(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
                 high_accum_vec_lo, shift_hp_vec, (dst->band_h + stride_h));
             NEON_ADM_STORE_ZIPPED_ACCUM_LO_HI_WITH_RIGHT_SHIFT_S16x8(
                 high_accum_vec_hi, shift_hp_vec, (dst->band_d + stride_h));
+        }
+
+        /* Re-do the final output column with the mirrored index.
+         *
+         * The vector loop above walks tmplo/tmphi with plain pointer arithmetic
+         * and never consults ind_x, so for the last column it reads
+         * tmplo[2j + 2] == tmplo[w]. That is one past the lo half, i.e. the
+         * first element of tmphi (tmphi == tmplo + w), where the scalar kernel
+         * mirrors the index back to w - 1. Recompute that column the way
+         * dwt2_src_indices_filt() specifies. */
+        {
+            const int j_last = ((w + 1) / 2) - 1;
+            if (j_last >= 1) {
+                const int jx[4] = {ind_x[0][j_last], ind_x[1][j_last], ind_x[2][j_last],
+                                   ind_x[3][j_last]};
+                const int out = i * dst_stride + j_last;
+                int32_t a_a = add_shift_HP, a_v = add_shift_HP;
+                int32_t a_h = add_shift_HP, a_d = add_shift_HP;
+
+                for (int idx = 0; idx < 4; idx++) {
+                    const int16_t s_lo = tmplo[jx[idx]];
+                    const int16_t s_hi = tmphi[jx[idx]];
+                    a_a += (int32_t)dwt2_db2_coeffs_lo[idx] * s_lo;
+                    a_v += (int32_t)dwt2_db2_coeffs_hi[idx] * s_lo;
+                    a_h += (int32_t)dwt2_db2_coeffs_lo[idx] * s_hi;
+                    a_d += (int32_t)dwt2_db2_coeffs_hi[idx] * s_hi;
+                }
+                dst->band_a[out] = (int16_t)(a_a >> shift_HP);
+                dst->band_v[out] = (int16_t)(a_v >> shift_HP);
+                dst->band_h[out] = (int16_t)(a_h >> shift_HP);
+                dst->band_d[out] = (int16_t)(a_d >> shift_HP);
+            }
         }
     }
 }

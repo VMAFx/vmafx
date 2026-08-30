@@ -46982,3 +46982,15 @@ VA-import (byte-identical output, ~15–25% slower at 4K); do NOT let the
 host-upload-tuned area-threshold re-select graph for it.
 (4) D-03 verification targets are the de-contaminated oracle (VMAF 97.2350,
 `integer_motion` max 26.6935), not the old shared-session 96.133894 baseline.
+
+## fix/adm-dwt2-neon-parity (2026-08-30)
+
+`core/src/feature/arm64/adm_neon.c` is fork-added (upstream Netflix/vmaf has no
+aarch64 ADM DWT2 kernel), so there is no upstream counterpart to conflict with.
+
+One invariant to preserve: the kernel's vertical pass vectorises 16 columns at a
+time while `integer_adm.c` dispatches it on `!(w % 8)`. The scalar tail added
+here covers the gap. If the vector loop is ever widened, the tail's start index
+`(w / 16) * 16` has to widen with it, or widths that are a multiple of the
+dispatch granularity but not the vector width will again read `buf->tmp_ref`
+entries that were never written in that iteration.
