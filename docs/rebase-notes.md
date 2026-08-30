@@ -1985,9 +1985,9 @@ has just added.
 
 ---
 
-## docs/hip-picture-stub-comment-closeout (ADR-0613, 2026-06-03)
+## docs/hip-picture-stub-comment-closeout (ADR-0299, 2026-06-03)
 `core/src/picture.h` — comment on `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`
-updated to reflect that `picture_hip.{c,h}` is fully implemented (ADR-0613);
+updated to reflect that `picture_hip.{c,h}` is fully implemented (ADR-0299);
 the old text described it as a stub.
 
 Rebase impact: NONE — comment-only change; no logic, no ABI delta.
@@ -4605,7 +4605,7 @@ Touched files:
 `docs/state.md` (3 rows moved from Open to Recently closed),
 `changelog.d/fixed/adr0620-scaffold-audit-p0-silent-correctness.md`,
 
-## fix/scaffold-audit-p1-feature-plumbing (ADR-0613)
+## fix/scaffold-audit-p1-feature-plumbing (ADR-0299)
 
 Touches `core/src/hip/picture_hip.c`, `core/src/feature/feature_mobilesal.c`,
 and `core/src/libvmaf.c`.  Upstream Netflix/vmaf does not have a HIP backend, the
@@ -4652,7 +4652,7 @@ Touched files:
 `changelog.d/added/0608-zed-editor-project-config.md`,
 `docs/rebase-notes.md` (this entry).
 
-## plan/netflix-grade-encoding-roadmap (ADR-0613 – ADR-0618)
+## plan/netflix-grade-encoding-roadmap (ADR-0299 – ADR-0618)
 
 No rebase-sensitive invariants — all changes are planning documents only:
 six ADRs, six research digests, one roadmap overview, one changelog fragment,
@@ -4959,7 +4959,7 @@ Touched files:
 `changelog.d/added/0564-integer-ssim-gpu-real-kernels.md`,
 `docs/rebase-notes.md` (this entry).
 
-## fix/vmaftune-workdir-tmpfs-enospc (ADR-0549)
+## fix/vmaftune-workdir-tmpfs-enospc (ADR-0598)
 
 **No rebase impact.** All changes are confined to fork-local files:
 
@@ -4993,7 +4993,7 @@ No upstream-shared C sources, Python sources, or build files are touched. The
 `@unittest.skip` decorator in `python/test/local_explainer_test.py` is explicitly
 **not removed** in this PR — that is a follow-up code change.
 
-## chore/hip-cuda-orphan-tu-cleanup (ADR-0546)
+## chore/hip-cuda-orphan-tu-cleanup (ADR-0598)
 
 **No rebase impact.** All deleted files (`adm_hip.c`, `motion_hip.c`,
 `vif_hip.c`, `feature_hip.h`, `integer_ciede_hip.c`, `integer_moment_hip.c`,
@@ -5040,7 +5040,7 @@ xe / KFD UAPI, bump the relevant ARG. The `dev-mcp-entrypoint.sh`
 visibility probe surfaces such regressions in ≤ 30 s of container
 start so future bumps are easy to identify.
 
-## fix/dev-container-full-gpu-plumbing (ADR-0542)
+## fix/dev-container-full-gpu-plumbing (ADR-0548)
 
 **No upstream-mirror paths touched.** Modifies:
 
@@ -5162,7 +5162,7 @@ No conflict risk on sync.
 
 ## fix/per-shot-segments-readonly-cwd (ADR-0532)
 
-## fix/per-shot-segments-readonly-cwd (ADR-0530)
+## fix/per-shot-segments-readonly-cwd (ADR-0532)
 
 **No rebase impact.** All changes are confined to
 `tools/vmaf-tune/src/vmaftune/cli.py`,
@@ -5387,7 +5387,7 @@ kwargs on `detect_shots`), `tools/vmaf-tune/src/vmaftune/cli.py`
 regression tests). The C-side `core/tools/vmaf_per_shot.c` is
 untouched — the new `--scene-threshold` flag passes through to the
 existing `--diff-threshold` C option that has been in tree since
-ADR-0222. Docs: ADR-0512, `docs/adr/README.md` index row,
+ADR-0222. Docs: ADR-0513, `docs/adr/README.md` index row,
 `docs/usage/vmaf-tune.md` flag rows + "Tuning scene sensitivity"
 section, `docs/state.md` Recently-closed rows,
 `changelog.d/fixed/per-shot-scene-threshold-and-1-shot-chart.md`.
@@ -5450,7 +5450,7 @@ no CHUG ingestion, no K150K-A extractor, and no FR-from-NR adapter. No
 upstream-shared code, headers, build files, public C-API, or feature
 extractors are modified; the libvmaf CLI and all backends are unchanged.
 
-## fix/vulkan-two-variant-vif-shader (ADR-0512, supersedes ADR-0492)
+## fix/vulkan-two-variant-vif-shader (ADR-0513, supersedes ADR-0492)
 
 **No rebase impact** on Netflix upstream — the Vulkan backend and its
 GLSL compute shaders are entirely fork-local (the `core/src/vulkan/`
@@ -6428,7 +6428,7 @@ relationship is preserved (primary = `PyPsnr*`, deprecated = `Pypsnr*`).
   `LEAK SUMMARY: 0 bytes leaked in 0 allocations` post-fix.
   `compute-sanitizer --tool racecheck` reports `0 hazards`.
 
-### 0326 — `vmaf-tune` codec-adapter dispatcher pivot (ADR-0326, HP-1)
+### 0326 — `vmaf-tune` codec-adapter dispatcher pivot (ADR-0297, HP-1)
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/encode.py`
   (`build_ffmpeg_command` + new `_resolve_codec_args` /
@@ -38796,7 +38796,7 @@ but the risk is negligible (Netflix/vmaf does not carry an `ai/` subtree).
 
 ## ADR-0325 — vmaf-tune Phase B target-VMAF bisect (2026-05-08)
 
-## ADR-0326 — vmaf-tune Phase B target-VMAF bisect (2026-05-08)
+## ADR-0297 — vmaf-tune Phase B target-VMAF bisect (2026-05-08)
 
 - **Touches**: `tools/vmaf-tune/src/vmaftune/bisect.py` (new),
   `tools/vmaf-tune/src/vmaftune/compare.py` (default-predicate error
@@ -38876,7 +38876,7 @@ build-system paths changed; no new symbols were added.
   `./build/tools/vmaf --feature float_adm --no_prediction ...` — and
   confirm it no longer prints "problem loading feature extractor".
 
-## ADR-0326 — MyTestCase upstream migration (partial port, Batch E, 2026-05-08)
+## ADR-0297 — MyTestCase upstream migration (partial port, Batch E, 2026-05-08)
 
 - **Touches**: `python/test/testutil.py`, `python/test/bd_rate_calculator_test.py`,
   `python/test/asset_test.py`, `python/test/bootstrap_train_test_model_test.py`,
@@ -41705,7 +41705,7 @@ keep the fork's `if (!found) usage(…); return;` + `snprintf` shape and
 drop the `<assert.h>` include. No public API surface changes; the
 ffmpeg-patches stack is untouched.
 
-## 2026-05-18 — HIP `integer_motion` flag promotion + HIP_DEVICE buffer enum (ADR-0530, PR #TBD)
+## 2026-05-18 — HIP `integer_motion` flag promotion + HIP_DEVICE buffer enum (ADR-0532, PR #TBD)
 
 Extends ADR-0519. Promotes `VMAF_FEATURE_EXTRACTOR_HIP` on
 `vmaf_fex_integer_motion_hip` so the model-driven dispatch picks
@@ -41743,7 +41743,7 @@ block right after the existing CUDA buffer-type check. Any
 upstream port that touches the CUDA block needs a paired update
 to the HIP block to keep them symmetric. The CPU-twin fallback
 pass in `_by_feature_name` is a documented contract going
-forward (ADR-0530) — future GPU backend work cannot assume
+forward (ADR-0532) — future GPU backend work cannot assume
 "flag set ⇒ full coverage"; treat the fallback as the
 established behaviour, not as a bug to fix.
 
@@ -41758,7 +41758,7 @@ drains together.
 set speculatively in its batch-1 commit; this PR clears it
 with an inline citation. Do NOT re-enable on a future rebase
 without a kernel-level GPU-memory-access-fault fix and an
-ADR-0530-style per-extractor reproducer.
+ADR-0532-style per-extractor reproducer.
 
 No public-header change → no ffmpeg-patches/ update required
 (per CLAUDE.md §12 r14: the new picture-buffer-type enum lives
@@ -42011,7 +42011,7 @@ CUDA-only helper into one of the four kernels (re-breaking the
 standalone build), do NOT re-add a weak HSACO stub — fix the kernel
 (invariant pinned in `core/src/feature/hip/AGENTS.md`).
 
-## ADR-0546 — Codec-adapter `two_pass_args` real implementations
+## ADR-0598 — Codec-adapter `two_pass_args` real implementations
 
 **Rebase impact**: none. The change is entirely fork-local — all
 modified files live under `tools/vmaf-tune/src/vmaftune/codec_adapters/`
@@ -42054,7 +42054,7 @@ Touched files: `.gitignore`, fifteen `ai/scripts/*.py` files,
 No `ffmpeg-patches/` change (no C-API, CLI flag, or
 `meson_options.txt` consumed by a patch — CLAUDE.md §12 r14 exempt).
 
-## chore/audit-cleanup-bundle-2 (ADR-0549)
+## chore/audit-cleanup-bundle-2 (ADR-0598)
 
 **No rebase impact.** All changes are confined to fork-local files:
 
@@ -42083,7 +42083,7 @@ Touched files:
 `changelog.d/changed/0549-audit-cleanup-bundle-2.md`,
 `docs/rebase-notes.md` (this entry).
 
-## ADR-0546 — audit bundle (Vulkan-01 / saliency-tune-01 / ai-01)
+## ADR-0598 — audit bundle (Vulkan-01 / saliency-tune-01 / ai-01)
 
 **No rebase impact for Vulkan-01**: adding `&vmaf_fex_integer_motion_vulkan_impl` to
 `feature_extractor_list[]` in `feature_extractor.c` is a purely additive change under
@@ -42479,7 +42479,7 @@ contracts:
 - The same CLI smoke caps tiny-model inference at `--frame_cnt 1`; it is a
   load/run smoke, not a full-clip numerical benchmark.
 - `mcp-server/vmaf-mcp/tests/test_smoke_e2e.py` expects unknown tool names to
-  raise, matching the ADR-0613 isError contract.
+  raise, matching the ADR-0299 isError contract.
 - The Netflix golden and lavapipe parity gates keep per-command `timeout`
   wrappers plus step-level `timeout-minutes`; if a runner/backend hangs, CI
   must fail diagnostically instead of waiting for the full job-level timeout.
@@ -46701,3 +46701,36 @@ no rebase impact: bumps `core/meson.build` `version` (x-release-please-version) 
 
 ## fix/round3-build-gpu-batch (2026-06-27)
 no ffmpeg-patch impact. R3-6 HIP integer_vif uninit-err (init err=0). R3-9 NVTX libdl → cc.find_library('dl'). R3-10 ssim AVX2 carve-out + `_x86_simd_strict_fp_extra` (icx -fp-model=precise; no-op on gcc/clang). **Invariant:** every x86 SIMD carve-out lib that needs bit-exactness under icx must carry `_x86_simd_strict_fp_extra`; keep the ssim carve-out aligned with its psnr_hvs/ms_ssim/ssimulacra2 siblings.
+
+## feat/vmafx-tune-go-stage5-per-shot (2026-08-30)
+no ffmpeg-patch impact: Go-only change under `cmd/vmafx-tune/` and `pkg/`. No
+libvmaf C-API, public header, CLI flag, or `meson_options.txt` surface is
+touched, so nothing in `ffmpeg-patches/` consumes it. No Netflix golden
+assertion touched; no Python removed (ADR-0703 / ADR-0704 sunset stays gated on
+full Go parity).
+
+**Rebase-sensitive invariants** (full text in `cmd/vmafx-tune/AGENTS.md` #13-17):
+
+1. **`pkg/pershot/plan_json.go` wire-struct field order is alphabetical by JSON
+   key** — that is what reproduces Python's `json.dumps(..., sort_keys=True)`.
+   Reordering the fields of `planWire` / `shotWire` for readability silently
+   breaks byte-parity with the Python emitter. `pyFloat` (Python `repr()` form:
+   `24.0`, not Go's `24`), `ensureASCII` (`ensure_ascii=True`) and
+   `SetEscapeHTML(false)` are part of the same contract.
+   `TestRenderPlanJSON_GoldenMatchesPython` is the guard.
+2. **`pkg/encoder/adapter.go` carries two quality windows per codec and they
+   are not interchangeable** — `AbsoluteLo/Hi` is the bisect *search* domain
+   (ADR-0538), `QualityLo/Hi` the informative window the per-shot tuner clamps
+   into. They differ for `libx265` and `libsvtav1`.
+   `AdapterEncoder.CRFRange()` returns the absolute pair on purpose.
+3. **`EncodeParams.InputArgs` (pre-`-i`) vs `ExtraArgs` (post-`-c:v`) is a
+   placement contract** — demuxer options and `-init_hw_device` are rejected by
+   ffmpeg anywhere but the pre-input position (ADR-0601); `-vf` must stay
+   post-input. Do not merge the two fields.
+4. **`.y4m` is deliberately absent from `pkg/bisect` `rawYUVSuffixes`** —
+   vmaf-tune always passes explicit geometry, which flips libvmaf's `use_yuv`
+   branch, and a Y4M header then trips the file-size guard in `raw_input_open`
+   (ADR-0499).
+5. **`--predicate-module` / `--fast-nr` fail fast rather than being ignored** —
+   they exist for CLI-surface parity with the Python parser but have no Go
+   implementation. If an ONNX Go binding lands, `--fast-nr` graduates first.

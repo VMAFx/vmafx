@@ -61,9 +61,10 @@ Fully ported subcommands:
   predict              Predict per-shot VMAF, then verify on K real encodes
   recommend-saliency   Saliency-aware ROI encode
   prefilter            Joint TPE autotune over deband strengths + CRF
+  tune-per-shot        Per-shot CRF tuning: shot detection + bisect + plan
 
 Not yet ported (use 'vmaf-tune <subcommand>' for these):
-  tune-per-shot, fast, corpus, benchmark, auto, sidecar, encode-profile`
+  fast, corpus, benchmark, auto, sidecar, encode-profile`
 	root.Cobra().Version = version
 
 	// Ported subcommands.
@@ -74,10 +75,10 @@ Not yet ported (use 'vmaf-tune <subcommand>' for these):
 	root.AddCommand(newPredictCmd())
 	root.AddCommand(newRecommendSaliencyCmd())
 	root.AddCommand(newPrefilterCmd())
+	root.AddCommand(newPerShotCmd())
 
 	// Not-yet-ported stubs: log a redirect rather than silently failing.
 	for _, stub := range []struct{ name, desc string }{
-		{"tune-per-shot", "Per-shot VMAF tuning"},
 		{"fast", "Fast NR-proxy accelerated tune"},
 		{"corpus", "Corpus management"},
 		{"benchmark", "Encoder benchmark"},

@@ -93,3 +93,54 @@ during the migration; see Stage roadmap in
     when the pin moved to v0.5.0.) `TestGolusorisInjection_ConfigDrivesLogLevel`
     guards the behavior — it builds the graph without any decorator, matching
     `withGolusoris()` exactly.
+
+13. **Per-shot plan JSON is byte-compatible, not merely schema-compatible**
+    (`pkg/pershot/plan_json.go`): the Python emitter is
+    `json.dumps(plan_doc, indent=2, sort_keys=True)`. Two consequences are
+    load-bearing and easy to break by accident. (a) Every wire struct
+    (`planWire`, `shotWire`) declares its fields in **alphabetical JSON-key
+    order** — that is what reproduces `sort_keys=True`. Reordering them for
+    readability silently breaks byte-parity. (b) Floats go through `pyFloat`,
+    which restores Python `repr()` form (`24.0`, not Go's `24`) and its
+    fixed-vs-exponent threshold; `ensureASCII` reproduces
+    `ensure_ascii=True`, and `SetEscapeHTML(false)` stops Go escaping
+    `< > &` where Python does not. The diff harness is
+    `TestRenderPlanJSON_GoldenMatchesPython`; a change that fails it is a
+    regression, not a formatting preference. ADR-0531 fixes the
+    NaN-to-`null` mapping for `bitrate_kbps`.
+
+14. **Two quality windows per codec, and they are not interchangeable**
+    (`pkg/encoder/adapter.go`): `Adapter.AbsoluteLo/Hi` is the window the CRF
+    bisect **searches** (ADR-0538 — wide, so premium-archival VMAF targets
+    stay reachable), while `Adapter.QualityLo/Hi` is the informative window
+    the per-shot tuner **clamps the final recommendation into**. They differ
+    for `libx265` (0..51 vs 15..40) and `libsvtav1` (0..63 vs 20..50).
+    `AdapterEncoder.CRFRange()` deliberately returns the *absolute* pair
+    because `bisect.Run` consumes it as the search domain. Collapsing the two
+    changes which CRFs the tuner can reach.
+
+15. **`EncodeParams.InputArgs` vs `ExtraArgs` is a placement contract**
+    (`pkg/encoder/encoder.go`): `InputArgs` are emitted **before** `-i`,
+    `ExtraArgs` **after** `-c:v`. ffmpeg rejects demuxer options
+    (`-f rawvideo -pix_fmt -s -r`) and device-init options
+    (`-init_hw_device`, `-filter_hw_device`) anywhere but the pre-input
+    position — the QSV chain failed with `-22 Invalid argument` for exactly
+    this reason until the split existed (ADR-0601). Filter options (`-vf`)
+    must stay post-input. Do not "simplify" the two fields into one.
+
+16. **`YUVScoreFunc` is not interchangeable with `VMAFScoreFunc`**
+    (`pkg/bisect/`): `VMAFScoreFunc` passes both paths to `vmaf` with no
+    geometry flags, which only works for a Y4M pair. `YUVScoreFunc` is the
+    raw-YUV path: it decodes a containerised distorted file first and passes
+    `--width/--height/--pixel_format/--bitdepth/--model`. Those flags flip
+    libvmaf's `use_yuv` branch, which is why `.y4m` is deliberately **absent**
+    from `rawYUVSuffixes` — a Y4M header then trips the file-size guard in
+    `raw_input_open` (ADR-0499).
+
+17. **`--predicate-module` and `--fast-nr` fail fast, they are not ignored**
+    (`cmd/vmafx-tune/cmd/pershot.go` `rejectUnportedPerShotFlags`): both flags
+    are registered so the CLI surface matches the Python parser, but invoking
+    either returns an error naming the Python fallback. Accepting and ignoring
+    them would silently change a run's semantics (a custom predicate would be
+    replaced by the bisect; NR early-elimination would just not happen). If
+    an ONNX Go binding lands, `--fast-nr` graduates here first.

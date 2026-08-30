@@ -240,16 +240,29 @@ func TestInjectQSVInitChain_DefaultDevice(t *testing.T) {
 
 	in := EncodeParams{ExtraArgs: []string{"-keep", "-this"}}
 	out := injectQSVInitChain(in)
-	// Default device must be present.
-	joined := strings.Join(out.ExtraArgs, " ")
-	if !strings.Contains(joined, "/dev/dri/renderD128") {
-		t.Errorf("default VAAPI device missing: %v", out.ExtraArgs)
+	// ADR-0601: the device-init chain is a set of *global* ffmpeg options and
+	// must land in InputArgs (emitted before "-i"), never in ExtraArgs (which
+	// runEncodeArgv emits after "-c:v", where ffmpeg rejects them with -22).
+	inputJoined := strings.Join(out.InputArgs, " ")
+	if !strings.Contains(inputJoined, "/dev/dri/renderD128") {
+		t.Errorf("default VAAPI device missing from InputArgs: %v", out.InputArgs)
 	}
-	if !strings.Contains(joined, "-init_hw_device") {
-		t.Errorf("init_hw_device flag missing: %v", out.ExtraArgs)
+	if !strings.Contains(inputJoined, "-init_hw_device") {
+		t.Errorf("init_hw_device flag missing from InputArgs: %v", out.InputArgs)
+	}
+	if !strings.Contains(inputJoined, "-filter_hw_device va") {
+		t.Errorf("filter_hw_device flag missing from InputArgs: %v", out.InputArgs)
+	}
+	// The hwupload filter is a per-output option and stays in ExtraArgs.
+	extraJoined := strings.Join(out.ExtraArgs, " ")
+	if !strings.Contains(extraJoined, "format=nv12,hwupload=extra_hw_frames=64") {
+		t.Errorf("hwupload filter missing from ExtraArgs: %v", out.ExtraArgs)
+	}
+	if strings.Contains(extraJoined, "-init_hw_device") {
+		t.Errorf("device-init chain leaked into ExtraArgs: %v", out.ExtraArgs)
 	}
 	// Caller's original ExtraArgs must be preserved at the tail.
-	if !strings.Contains(joined, "-keep -this") {
+	if !strings.Contains(extraJoined, "-keep -this") {
 		t.Errorf("caller args not preserved: %v", out.ExtraArgs)
 	}
 }
@@ -270,8 +283,8 @@ func TestInjectQSVInitChain_CustomDevice(t *testing.T) {
 	}
 
 	out := injectQSVInitChain(EncodeParams{})
-	if !strings.Contains(strings.Join(out.ExtraArgs, " "), "/dev/dri/renderD129") {
-		t.Errorf("VAAPI device override not honoured: %v", out.ExtraArgs)
+	if !strings.Contains(strings.Join(out.InputArgs, " "), "/dev/dri/renderD129") {
+		t.Errorf("VAAPI device override not honoured: %v", out.InputArgs)
 	}
 }
 
