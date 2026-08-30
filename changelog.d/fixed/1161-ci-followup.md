@@ -12,3 +12,5 @@
   aligned scalar float-ADM contraction with its explicit non-FMA NEON twin.
 - Brought the dev-MCP image back in sync with the FFmpeg n9.0.1 patch base and
   copied the complete Go module inputs into its six-binary build stage.
+- Preserved C linkage for the shared minunit test counter so C++ tests link on
+  MSVC as well as GCC and Clang.

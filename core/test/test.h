@@ -29,7 +29,6 @@
             return message;                                                                        \
     } while (0)
 
-extern int mu_tests_run;
 #ifdef __cplusplus
 typedef const char *mu_message_t;
 extern "C" {
@@ -37,6 +36,7 @@ extern "C" {
 typedef char *mu_message_t;
 #endif
 
+extern int mu_tests_run;
 mu_message_t run_tests(void);
 
 #ifdef __cplusplus
