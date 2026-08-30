@@ -572,7 +572,7 @@ test_speed_qa = executable('test_speed_qa',
 )
 
 test_luminance_tools = executable('test_luminance_tools',
-    ['test.c', 'test_luminance_tools.c'],
+    ['test.c', 'test_luminance_tools.cpp'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency],

@@ -19,6 +19,14 @@
 #ifndef PSNR_TOOLS_H_
 #define PSNR_TOOLS_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int psnr_constants(const char *fmt, double *peak, double *psnr_max);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PSNR_TOOLS_H_ */

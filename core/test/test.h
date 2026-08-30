@@ -30,7 +30,15 @@
     } while (0)
 
 extern int mu_tests_run;
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 char *run_tests(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 /* Reports pass/fail for one test and returns its message (NULL on
  * pass). Lives here as a `static inline` helper so every TU that

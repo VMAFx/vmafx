@@ -19,6 +19,14 @@
 #ifndef VMAF_ALIAS_H
 #define VMAF_ALIAS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 const char *vmaf_feature_name_alias(const char *feature_name);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* VMAF_ALIAS_H */

@@ -17,7 +17,7 @@
  */
 
 #include "test.h"
-#include "feature/luminance_tools.c"
+#include "feature/luminance_tools.cpp"
 
 #define EPS 0.00001
 

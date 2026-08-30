@@ -19,6 +19,10 @@
 #ifndef __VMAF_OUTPUT_H__
 #define __VMAF_OUTPUT_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int vmaf_write_output_xml(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
                           unsigned subsample, unsigned width, unsigned height, double fps,
                           unsigned pic_cnt, const char *score_format);
@@ -32,5 +36,9 @@ int vmaf_write_output_csv(VmafFeatureCollector *fc, FILE *outfile, unsigned subs
 
 int vmaf_write_output_sub(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
                           const char *score_format);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __VMAF_OUTPUT_H__ */

@@ -23,6 +23,14 @@ typedef unsigned int mode_t;
  * Recursively `mkdir(path, mode)`
  */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int mkdirp(const char *, mode_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

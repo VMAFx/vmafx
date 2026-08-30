@@ -56,6 +56,7 @@
  * the C translation units in libvmaf_feature.a. */
 extern "C" {
 #include "feature/alias.h"
+#include "log.h"
 #include "feature/feature_collector.h"
 #include "thread_locale.h"
 }
