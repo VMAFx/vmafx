@@ -438,5 +438,5 @@ Link 'auto_scale_0.default' -> 'Parsed_libvmaf_0.main':
 [vost#0:0/wrapped_avframe @ 0x55ff77149bc0] Task finished with error code: -22 (Invalid argument)
 [vost#0:0/wrapped_avframe @ 0x55ff77149bc0] Terminating thread with return code -22 (Invalid argument)
 [out#0/null @ 0x55ff77144140] Nothing was written into output file, because at least one of its streams received no packets.
-frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.08    
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.08
 Conversion failed!

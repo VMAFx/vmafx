@@ -21,8 +21,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.cli import main as cli_main  # noqa: E402
-from vmaftune.recommend import (  # noqa: E402
+from vmaftune.cli import main as cli_main
+from vmaftune.recommend import (
     RecommendRequest,
     pick_target_bitrate,
     pick_target_vmaf,

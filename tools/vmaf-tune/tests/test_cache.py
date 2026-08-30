@@ -23,8 +23,13 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.cache import CachedResult, TuneCache, cache_key, default_cache_dir  # noqa: E402
-from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows  # noqa: E402
+from vmaftune.cache import (
+    CachedResult,
+    TuneCache,
+    cache_key,
+    default_cache_dir,
+)
+from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows
 
 
 class _FakeCompleted:
@@ -64,14 +69,14 @@ def test_cache_key_is_stable():
 
 
 def test_cache_key_diffs_on_each_field():
-    base = dict(
-        src_sha256="abc",
-        encoder="libx264",
-        preset="medium",
-        crf=23,
-        adapter_version="1",
-        ffmpeg_version="6.1.1",
-    )
+    base = {
+        "src_sha256": "abc",
+        "encoder": "libx264",
+        "preset": "medium",
+        "crf": 23,
+        "adapter_version": "1",
+        "ffmpeg_version": "6.1.1",
+    }
     base_key = cache_key(**base)
 
     for field, alt in (

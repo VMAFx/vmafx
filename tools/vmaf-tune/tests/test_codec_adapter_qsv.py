@@ -18,14 +18,14 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import (  # noqa: E402
+from vmaftune.codec_adapters import (
     Av1QsvAdapter,
     H264QsvAdapter,
     HevcQsvAdapter,
     get_adapter,
     known_codecs,
 )
-from vmaftune.codec_adapters._qsv_common import (  # noqa: E402
+from vmaftune.codec_adapters._qsv_common import (
     QSV_PRESETS,
     QSV_QUALITY_DEFAULT,
     QSV_QUALITY_RANGE,
@@ -135,7 +135,7 @@ def test_adapter_validate_rejects_out_of_range_quality(name: str, cls: type, enc
 
 
 def _fake_runner(stdout: str, returncode: int = 0):
-    def _runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def _runner(cmd, capture_output, text, check):
         return _FakeCompleted(returncode=returncode, stdout=stdout)
 
     return _runner

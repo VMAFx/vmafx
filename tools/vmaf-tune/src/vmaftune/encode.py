@@ -117,7 +117,7 @@ def _legacy_codec_args(encoder: str, preset: str, quality: int) -> list[str]:
     return ["-c:v", encoder, "-preset", preset, "-crf", str(quality)]
 
 
-def _resolve_codec_args(req: "EncodeRequest") -> list[str]:
+def _resolve_codec_args(req: EncodeRequest) -> list[str]:
     """Resolve the codec-specific argv slice for ``req``.
 
     Routes through the codec-adapter registry per ADR-0237 / ADR-0326
@@ -154,7 +154,7 @@ def _resolve_codec_args(req: "EncodeRequest") -> list[str]:
     # -row-mt for libaom-av1, -b:v 0 for VBR-mode encoders).
     extra_fn = getattr(adapter, "extra_params", None)
     if extra_fn is not None:
-        import inspect  # noqa: PLC0415
+        import inspect
 
         sig = inspect.signature(extra_fn)
         if len(sig.parameters) >= 2:

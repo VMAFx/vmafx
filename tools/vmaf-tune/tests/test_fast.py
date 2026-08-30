@@ -25,9 +25,9 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-optuna = pytest.importorskip("optuna")  # noqa: F841 — gate the whole module
+optuna = pytest.importorskip("optuna")
 
-from vmaftune.fast import (  # noqa: E402
+from vmaftune.fast import (
     DEFAULT_CRF_HI,
     DEFAULT_CRF_LO,
     DEFAULT_PROXY_TOLERANCE,

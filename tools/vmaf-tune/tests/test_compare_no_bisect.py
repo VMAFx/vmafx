@@ -18,8 +18,8 @@ from types import SimpleNamespace
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import cli  # noqa: E402
-from vmaftune.bisect import BisectResult  # noqa: E402
+from vmaftune import cli
+from vmaftune.bisect import BisectResult
 
 # ---------------------------------------------------------------------------
 # Fake _encode_and_score for deterministic results
@@ -73,7 +73,7 @@ def _make_fake_encode_and_score(monkeypatch) -> None:
 
     # Patch via the module object so the `from .bisect import _encode_and_score`
     # inside the _encode_one closure picks up the fake at call time.
-    import vmaftune.bisect as _b  # noqa: PLC0415
+    import vmaftune.bisect as _b
 
     monkeypatch.setattr(_b, "_encode_and_score", _fake)
 
@@ -135,7 +135,7 @@ def test_no_bisect_produces_codec_x_crf_rows(monkeypatch, tmp_path):
     _make_fake_encode_and_score(monkeypatch)
 
     # Bypass encoder availability probe so no ffmpeg binary needed.
-    from vmaftune import compare as _cmp  # noqa: PLC0415
+    from vmaftune import compare as _cmp
 
     monkeypatch.setattr(_cmp, "probe_encoder_available", lambda enc, **kw: (True, ""))
 
@@ -155,7 +155,7 @@ def test_no_bisect_all_rows_ok(monkeypatch, tmp_path):
     args = _make_compare_args(src, output=out)
 
     _make_fake_encode_and_score(monkeypatch)
-    from vmaftune import compare as _cmp  # noqa: PLC0415
+    from vmaftune import compare as _cmp
 
     monkeypatch.setattr(_cmp, "probe_encoder_available", lambda enc, **kw: (True, ""))
 
@@ -173,7 +173,7 @@ def test_no_bisect_crf_values_in_rows(monkeypatch, tmp_path):
     args = _make_compare_args(src, output=out, crf_sweep="18,28")
 
     _make_fake_encode_and_score(monkeypatch)
-    from vmaftune import compare as _cmp  # noqa: PLC0415
+    from vmaftune import compare as _cmp
 
     monkeypatch.setattr(_cmp, "probe_encoder_available", lambda enc, **kw: (True, ""))
 
@@ -191,7 +191,7 @@ def test_no_bisect_schema_version_is_3(monkeypatch, tmp_path):
     args = _make_compare_args(src, output=out)
 
     _make_fake_encode_and_score(monkeypatch)
-    from vmaftune import compare as _cmp  # noqa: PLC0415
+    from vmaftune import compare as _cmp
 
     monkeypatch.setattr(_cmp, "probe_encoder_available", lambda enc, **kw: (True, ""))
 
@@ -220,7 +220,7 @@ def test_no_bisect_cli_flag_dispatches_to_sweep(monkeypatch, tmp_path):
     out = tmp_path / "sweep.json"
 
     _make_fake_encode_and_score(monkeypatch)
-    from vmaftune import compare as _cmp  # noqa: PLC0415
+    from vmaftune import compare as _cmp
 
     monkeypatch.setattr(_cmp, "probe_encoder_available", lambda enc, **kw: (True, ""))
 
@@ -263,7 +263,7 @@ def test_no_bisect_unavailable_encoder_gets_error_rows(monkeypatch, tmp_path):
     args = _make_compare_args(src, output=out, crf_sweep="23,28", encoders="libx264,h264_nvenc")
 
     _make_fake_encode_and_score(monkeypatch)
-    from vmaftune import compare as _cmp  # noqa: PLC0415
+    from vmaftune import compare as _cmp
 
     def _probe(enc, **kw):
         if enc == "h264_nvenc":
@@ -313,12 +313,12 @@ def test_no_bisect_runtime_variant_uses_bound_ffmpeg(monkeypatch, tmp_path):
             error="",
         )
 
-    import vmaftune.bisect as _b  # noqa: PLC0415
+    import vmaftune.bisect as _b
 
     monkeypatch.setattr(_b, "_encode_and_score", _fake)
 
     probes: list[tuple[str, str]] = []
-    from vmaftune import compare as _cmp  # noqa: PLC0415
+    from vmaftune import compare as _cmp
 
     def _probe(enc, **kw):
         probes.append((enc, kw["ffmpeg_bin"]))
@@ -354,7 +354,7 @@ def test_no_bisect_without_explicit_preset_uses_medium(monkeypatch, tmp_path):
     This test drives the full CLI parse path to verify the default value
     is 'medium' when the flag is omitted.
     """
-    from vmaftune import cli as _cli  # noqa: PLC0415
+    from vmaftune import cli as _cli
 
     # Build a parser instance and parse a minimal compare invocation that
     # omits --preset, then assert the default is 'medium', not None.

@@ -68,6 +68,7 @@ it does **not** widen the production-flip gate.
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import json
 import math
 import tempfile
@@ -393,7 +394,7 @@ def _default_sampler(
     return _ladder_point_from_row(width, height, pick.row)
 
 
-def _ladder_point_from_row(width: int, height: int, row: dict) -> "LadderPoint":
+def _ladder_point_from_row(width: int, height: int, row: dict) -> LadderPoint:
     """Build a ladder point from a corpus row, preserving intervals if present.
 
     When the row carries a ``vmaf_interval`` (conformal CV+ pipeline) the
@@ -636,8 +637,8 @@ def emit_manifest(
 def _emit_hls(ladder: Sequence[Rendition]) -> str:
     lines: list[str] = ["#EXTM3U", "#EXT-X-VERSION:6"]
     for r in ladder:
-        bps = int(round(r.bitrate_kbps * 1000.0))
-        uri = f"rendition_{r.width}x{r.height}_{int(round(r.bitrate_kbps))}k.m3u8"
+        bps = round(r.bitrate_kbps * 1000.0)
+        uri = f"rendition_{r.width}x{r.height}_{round(r.bitrate_kbps)}k.m3u8"
         lines.append(
             f"#EXT-X-STREAM-INF:BANDWIDTH={bps},RESOLUTION={r.width}x{r.height},"
             f'CODECS="avc1.640028"'
@@ -649,13 +650,13 @@ def _emit_hls(ladder: Sequence[Rendition]) -> str:
 def _emit_dash(ladder: Sequence[Rendition]) -> str:
     reps: list[str] = []
     for i, r in enumerate(ladder):
-        bps = int(round(r.bitrate_kbps * 1000.0))
+        bps = round(r.bitrate_kbps * 1000.0)
         reps.append(
             f'    <Representation id="r{i}" bandwidth="{bps}" '
             f'width="{r.width}" height="{r.height}" '
             f'codecs="avc1.640028" mimeType="video/mp4">\n'
             f"      <BaseURL>rendition_{r.width}x{r.height}_"
-            f"{int(round(r.bitrate_kbps))}k.mp4</BaseURL>\n"
+            f"{round(r.bitrate_kbps)}k.mp4</BaseURL>\n"
             f"    </Representation>"
         )
     body = "\n".join(reps)
@@ -681,7 +682,7 @@ def _emit_json(ladder: Sequence[Rendition], *, samples: Sequence[LadderPoint] | 
                 "width": r.width,
                 "height": r.height,
                 "bitrate_kbps": r.bitrate_kbps,
-                "bandwidth_bps": int(round(r.bitrate_kbps * 1000.0)),
+                "bandwidth_bps": round(r.bitrate_kbps * 1000.0),
                 "vmaf": r.vmaf,
                 "crf": r.crf,
             }
@@ -699,7 +700,7 @@ def _emit_json(ladder: Sequence[Rendition], *, samples: Sequence[LadderPoint] | 
             "width": p.width,
             "height": p.height,
             "bitrate_kbps": float(p.bitrate_kbps),
-            "bandwidth_bps": int(round(float(p.bitrate_kbps) * 1000.0)),
+            "bandwidth_bps": round(float(p.bitrate_kbps) * 1000.0),
             "vmaf": float(p.vmaf),
             "crf": int(p.crf),
         }
@@ -1013,7 +1014,7 @@ def insert_extra_rungs_in_high_uncertainty_regions(
         return list(rungs)
     sorted_rungs = sorted(rungs, key=lambda p: p.bitrate_kbps)
     out: list[UncertaintyLadderPoint] = []
-    for a, b in zip(sorted_rungs[:-1], sorted_rungs[1:]):
+    for a, b in itertools.pairwise(sorted_rungs):
         out.append(a)
         avg_width = 0.5 * (a.interval_width + b.interval_width)
         if classify_interval(avg_width, thresholds) is ConfidenceDecision.WIDE:
@@ -1021,7 +1022,7 @@ def insert_extra_rungs_in_high_uncertainty_regions(
             mid_vmaf = 0.5 * (a.vmaf + b.vmaf)
             mid_low = min(a.vmaf_low, b.vmaf_low)
             mid_high = max(a.vmaf_high, b.vmaf_high)
-            mid_crf = int(round(0.5 * (a.crf + b.crf)))
+            mid_crf = round(0.5 * (a.crf + b.crf))
             mid_w = b.width if b.vmaf >= a.vmaf else a.width
             mid_h = b.height if b.vmaf >= a.vmaf else a.height
             out.append(

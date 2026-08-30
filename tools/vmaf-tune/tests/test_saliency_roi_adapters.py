@@ -19,11 +19,11 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 np = pytest.importorskip("numpy")
 
-from vmaftune.codec_adapters.libaom import LibaomAdapter  # noqa: E402
-from vmaftune.codec_adapters.svtav1 import SvtAv1Adapter  # noqa: E402
-from vmaftune.codec_adapters.vvenc import VVenCAdapter  # noqa: E402
-from vmaftune.codec_adapters.x265 import X265Adapter  # noqa: E402
-from vmaftune.saliency import (  # noqa: E402
+from vmaftune.codec_adapters.libaom import LibaomAdapter
+from vmaftune.codec_adapters.svtav1 import SvtAv1Adapter
+from vmaftune.codec_adapters.vvenc import VVenCAdapter
+from vmaftune.codec_adapters.x265 import X265Adapter
+from vmaftune.saliency import (
     QP_OFFSET_MAX,
     QP_OFFSET_MIN,
     SVTAV1_SB_SIDE,
@@ -45,12 +45,12 @@ from vmaftune.saliency import (  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
-def _make_block_offsets(bh: int, bw: int, fill: int = -4) -> "np.ndarray":
+def _make_block_offsets(bh: int, bw: int, fill: int = -4) -> np.ndarray:
     """Return a constant ``int32 [bh, bw]`` block-offset array."""
     return np.full((bh, bw), fill, dtype=np.int32)
 
 
-def _make_saliency_offsets(width: int, height: int, block: int, fill: int = -4) -> "np.ndarray":
+def _make_saliency_offsets(width: int, height: int, block: int, fill: int = -4) -> np.ndarray:
     """Build block offsets from a constant saliency mask."""
     mask = np.full((height, width), 0.9, dtype=np.float32)
     qp_map = saliency_to_qp_map(mask, baseline_qp=28, foreground_offset=fill)

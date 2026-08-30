@@ -21,9 +21,9 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
-from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows  # noqa: E402
-from vmaftune.per_shot import Shot, ShotMetadata, summarise_shots  # noqa: E402
+from vmaftune import CORPUS_ROW_KEYS
+from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows
+from vmaftune.per_shot import Shot, ShotMetadata, summarise_shots
 
 
 class _FakeCompleted:
@@ -43,7 +43,7 @@ def _shot_runner_for(shot_ranges: list[tuple[int, int]]):
     inclusive = [{"start_frame": s, "end_frame": e - 1} for s, e in shot_ranges]
     payload = json.dumps({"shots": inclusive})
 
-    def runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def runner(cmd, capture_output, text, check):
         out_path = Path(cmd[cmd.index("--output") + 1])
         out_path.write_text(payload, encoding="utf-8")
         n = len(inclusive)
@@ -58,19 +58,19 @@ def _shot_runner_for(shot_ranges: list[tuple[int, int]]):
 def _failing_shot_runner():
     """Runner stub that mimics ``vmaf-perShot`` returning non-zero."""
 
-    def runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def runner(cmd, capture_output, text, check):
         return _FakeCompleted(returncode=1, stdout="")
 
     return runner
 
 
-def _fake_encode_run(cmd, capture_output, text, check):  # noqa: ARG001
+def _fake_encode_run(cmd, capture_output, text, check):
     out_path = Path(cmd[-1])
     out_path.write_bytes(b"\x00" * 4096)
     return _FakeCompleted(returncode=0, stderr="ffmpeg version 6.1.1\nx264 - core 164\n")
 
 
-def _fake_score_run(cmd, capture_output, text, check):  # noqa: ARG001
+def _fake_score_run(cmd, capture_output, text, check):
     out_idx = cmd.index("--output") + 1
     out = Path(cmd[out_idx])
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -23,14 +23,14 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import (  # noqa: E402
+from vmaftune.codec_adapters import (
     AV1AMFAdapter,
     H264AMFAdapter,
     HEVCAMFAdapter,
     get_adapter,
     known_codecs,
 )
-from vmaftune.codec_adapters._amf_common import (  # noqa: E402
+from vmaftune.codec_adapters._amf_common import (
     ensure_amf_available,
     map_preset_to_amf_quality,
 )

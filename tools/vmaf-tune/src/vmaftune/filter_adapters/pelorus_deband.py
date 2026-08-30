@@ -101,7 +101,7 @@ def _format_value(knob: Knob, value: float) -> str:
     parser) without trailing-zero noise.
     """
     if knob.is_integral:
-        return str(int(round(value)))
+        return str(round(value))
     # ``%g`` drops trailing zeros and avoids scientific notation for the
     # contract's small magnitudes (0..0.4). The contract is bit-depth
     # independent, so no locale-sensitive formatting is involved.
@@ -195,7 +195,7 @@ class PelorusDebandAdapter:
             fval = float(value)
             fval = max(knob.lo, min(knob.hi, fval))
             if knob.is_integral:
-                fval = float(int(round(fval)))
+                fval = float(round(fval))
             out[key] = fval
         return out
 

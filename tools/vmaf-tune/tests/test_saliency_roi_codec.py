@@ -24,8 +24,8 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 np = pytest.importorskip("numpy")
 
-from vmaftune.encode import EncodeRequest  # noqa: E402
-from vmaftune.saliency import (  # noqa: E402
+from vmaftune.encode import EncodeRequest
+from vmaftune.saliency import (
     _SALIENCY_DISPATCH,
     SaliencyConfig,
     SaliencyUnsupportedEncoderError,

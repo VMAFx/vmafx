@@ -24,14 +24,14 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.ladder import (  # noqa: E402
+from vmaftune.ladder import (
     DEFAULT_RUNG_OVERLAP_THRESHOLD,
     UncertaintyLadderPoint,
     apply_uncertainty_recipe,
     insert_extra_rungs_in_high_uncertainty_regions,
     prune_redundant_rungs_by_uncertainty,
 )
-from vmaftune.uncertainty import ConfidenceThresholds  # noqa: E402
+from vmaftune.uncertainty import ConfidenceThresholds
 
 
 def _ulp(

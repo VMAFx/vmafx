@@ -22,7 +22,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.score_backend import (  # noqa: E402
+from vmaftune.score_backend import (
     NR_MODEL_INPUT_HW,
     NR_PROXY_DEFAULT_CALIBRATION_INTERCEPT,
     NR_PROXY_DEFAULT_CALIBRATION_SLOPE,

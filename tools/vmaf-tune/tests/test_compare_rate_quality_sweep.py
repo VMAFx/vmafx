@@ -26,7 +26,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.compare import (  # noqa: E402
+from vmaftune.compare import (
     DEFAULT_CPU_ENCODERS,
     HARDWARE_ENCODERS,
     SCHEMA_VERSION_V2,
@@ -40,7 +40,7 @@ from vmaftune.compare import (  # noqa: E402
     emit_sweep_report,
     probe_encoder_available,
 )
-from vmaftune.report import CodecSweepPoint, compute_pareto_frontier  # noqa: E402
+from vmaftune.report import CodecSweepPoint, compute_pareto_frontier
 
 _FAKE_TABLE: dict[tuple[str, float], RecommendResult] = {
     ("libx264", 85.0): RecommendResult("libx264", 28, 1200.0, 1500.0, 85.1, "x264-164"),

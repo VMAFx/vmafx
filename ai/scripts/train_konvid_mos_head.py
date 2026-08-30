@@ -514,10 +514,10 @@ def _parse_bitrate_mbps(value: Any) -> float:
     if not text:
         return math.nan
     multiplier = 1.0
-    if text.endswith("mb") or text.endswith("m"):
+    if text.endswith(("mb", "m")):
         multiplier = 1.0
         text = text.removesuffix("mb").removesuffix("m")
-    elif text.endswith("kb") or text.endswith("k"):
+    elif text.endswith(("kb", "k")):
         multiplier = 0.001
         text = text.removesuffix("kb").removesuffix("k")
     raw = _safe_float(text)

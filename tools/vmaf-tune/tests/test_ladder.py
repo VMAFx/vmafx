@@ -20,8 +20,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.cli import _build_parser  # noqa: E402
-from vmaftune.ladder import (  # noqa: E402
+from vmaftune.cli import _build_parser
+from vmaftune.ladder import (
     Ladder,
     LadderPoint,
     Rendition,
@@ -32,7 +32,7 @@ from vmaftune.ladder import (  # noqa: E402
     emit_manifest,
     select_knees,
 )
-from vmaftune.uncertainty import ConfidenceThresholds  # noqa: E402
+from vmaftune.uncertainty import ConfidenceThresholds
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -84,7 +84,7 @@ def synthetic_sampler(src: Path, encoder: str, w: int, h: int, target_vmaf: floa
     achieved = min(target_vmaf, ceiling - 1.0)
     gap = ceiling - achieved
     bitrate = alpha / gap
-    crf = max(18, min(40, int(round(50 - achieved / 2.0))))
+    crf = max(18, min(40, round(50 - achieved / 2.0)))
     return LadderPoint(
         width=w,
         height=h,

@@ -35,8 +35,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-import vmaftune.auto as auto  # noqa: E402
-from vmaftune.auto import (  # noqa: E402
+from vmaftune import auto
+from vmaftune.auto import (
     _CONTENT_RECIPE_TABLE,
     _F4_PLACEHOLDER_RECIPES,
     _RECIPE_KEYS,

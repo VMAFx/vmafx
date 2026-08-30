@@ -438,8 +438,10 @@ def _write_calibration_report(
         lines.append("The fit passed the write gate and can update the sidecar JSON.")
     else:
         lines += [
-            "The fit did not pass the write gate and must not be used for tune "
-            "early-elimination without an explicit override.",
+            (
+                "The fit did not pass the write gate and must not be used for tune "
+                "early-elimination without an explicit override."
+            ),
             "",
             "Reasons:",
         ]
@@ -447,8 +449,10 @@ def _write_calibration_report(
         if allow_weak_calibration:
             lines += [
                 "",
-                "`--allow-weak-calibration` was set, so the caller accepted this "
-                "weak fit explicitly.",
+                (
+                    "`--allow-weak-calibration` was set, so the caller accepted this "
+                    "weak fit explicitly."
+                ),
             ]
     lines += [
         "",

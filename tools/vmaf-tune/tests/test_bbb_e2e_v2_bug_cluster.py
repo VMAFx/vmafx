@@ -22,11 +22,20 @@ from typing import Any
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-import math  # noqa: E402
+import math
 
-from vmaftune.ladder import make_default_sampler  # noqa: E402
-from vmaftune.report import CodecRow, ReportData, SourceInfo, render_markdown  # noqa: E402
-from vmaftune.score import ScoreRequest, _decode_to_raw_yuv, maybe_decode_distorted  # noqa: E402
+from vmaftune.ladder import make_default_sampler
+from vmaftune.report import (
+    CodecRow,
+    ReportData,
+    SourceInfo,
+    render_markdown,
+)
+from vmaftune.score import (
+    ScoreRequest,
+    _decode_to_raw_yuv,
+    maybe_decode_distorted,
+)
 
 
 @dataclass

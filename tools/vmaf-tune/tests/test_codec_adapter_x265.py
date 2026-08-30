@@ -23,10 +23,10 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
-from vmaftune.codec_adapters import X265Adapter, get_adapter, known_codecs  # noqa: E402
-from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows  # noqa: E402
-from vmaftune.encode import (  # noqa: E402
+from vmaftune import CORPUS_ROW_KEYS
+from vmaftune.codec_adapters import X265Adapter, get_adapter, known_codecs
+from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows
+from vmaftune.encode import (
     EncodeRequest,
     build_ffmpeg_command,
     parse_versions,

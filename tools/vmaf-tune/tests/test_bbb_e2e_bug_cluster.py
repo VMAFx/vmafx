@@ -22,10 +22,14 @@ from typing import Any
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.bisect import bisect_target_vmaf  # noqa: E402
-from vmaftune.compare import ComparisonReport, RecommendResult, emit_report  # noqa: E402
-from vmaftune.ladder import make_default_sampler  # noqa: E402
-from vmaftune.report import (  # noqa: E402
+from vmaftune.bisect import bisect_target_vmaf
+from vmaftune.compare import (
+    ComparisonReport,
+    RecommendResult,
+    emit_report,
+)
+from vmaftune.ladder import make_default_sampler
+from vmaftune.report import (
     _DASH,
     CodecRow,
     ReportData,

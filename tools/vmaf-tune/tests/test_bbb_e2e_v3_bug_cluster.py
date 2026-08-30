@@ -29,16 +29,16 @@ from typing import Any
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-import re  # noqa: E402
+import re
 
-from vmaftune.corpus import (  # noqa: E402
+from vmaftune.corpus import (
     _VMAF_RAW_SUFFIXES,
     CorpusJob,
     CorpusOptions,
     _maybe_decode_reference,
     iter_rows,
 )
-from vmaftune.score import VMAF_RAW_SUFFIXES  # noqa: E402
+from vmaftune.score import VMAF_RAW_SUFFIXES
 
 
 @dataclass

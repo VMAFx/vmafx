@@ -22,8 +22,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import get_adapter  # noqa: E402
-from vmaftune.ladder import DEFAULT_SAMPLER_CRF_SWEEP  # noqa: E402
+from vmaftune.codec_adapters import get_adapter
+from vmaftune.ladder import DEFAULT_SAMPLER_CRF_SWEEP
 
 # ---------------------------------------------------------------------------
 # Bug N-2 — DEFAULT_SAMPLER_CRF_SWEEP must be within all adapter Phase A ranges

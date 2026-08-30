@@ -22,8 +22,8 @@ Documented in ``docs/usage/vmaf-roi-score.md`` and in research-0063.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 
@@ -46,7 +46,7 @@ class MaskRequest:
 def apply_saliency_mask(
     req: MaskRequest,
     *,
-    inference: Callable[[bytes, int, int], "object"] | None = None,
+    inference: Callable[[bytes, int, int], object] | None = None,
 ) -> Path:
     """Materialise the saliency-masked distorted YUV.
 
@@ -121,7 +121,7 @@ def synthesise_uniform_mask(
     width: int,
     height: int,
     fill: float = 0.5,
-) -> "list[list[float]]":
+) -> list[list[float]]:
     """Return a constant-value mask without numpy.
 
     Used by the smoke tests to verify the combine-math without pulling
@@ -134,7 +134,7 @@ def synthesise_uniform_mask(
     return [[float(fill)] * int(width) for _ in range(int(height))]
 
 
-def _lazy_onnx_inference(model_path: Path) -> Callable[[bytes, int, int], "object"]:
+def _lazy_onnx_inference(model_path: Path) -> Callable[[bytes, int, int], object]:
     """Return a per-frame inference callable backed by ORT.
 
     Imported lazily so the package loads when ``onnxruntime`` is not

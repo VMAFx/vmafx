@@ -26,8 +26,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import codec_adapters as ca  # noqa: E402
-from vmaftune.encode import (  # noqa: E402
+from vmaftune import codec_adapters as ca
+from vmaftune.encode import (
     EncodeRequest,
     build_ffmpeg_command,
     parse_versions,

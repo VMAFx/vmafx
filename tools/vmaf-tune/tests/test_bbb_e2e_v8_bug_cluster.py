@@ -32,7 +32,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.encode import EncodeRequest, build_pass1_stats_command  # noqa: E402
+from vmaftune.encode import EncodeRequest, build_pass1_stats_command
 
 # ---------------------------------------------------------------------------
 # V8-A — pass-1 stats argv mirrors the V6-1 ``-t duration_s`` fallback

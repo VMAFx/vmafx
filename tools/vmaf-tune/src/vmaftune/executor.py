@@ -134,7 +134,7 @@ def _write_jsonl_row(fh: Any, row: dict[str, Any]) -> None:
 
 
 def run_plan(
-    plan: "AutoPlan",  # type: ignore[name-defined]  # noqa: F821
+    plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
     src: Path,
     out_dir: Path,
     *,
@@ -222,7 +222,7 @@ def run_plan(
 
             try:
                 enc = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin, runner=encode_runner)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 # Encode failure is recorded in the row; scoring is skipped.
                 _log(f"executor: encode failed for cell {cell.get('cell_index')}: {exc}")
 
@@ -243,7 +243,7 @@ def run_plan(
                             runner=score_runner,
                             workdir=Path(td),
                         )
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         _log(f"executor: score failed for cell " f"{cell.get('cell_index')}: {exc}")
 
             row = _make_row(cell, enc, sc)
@@ -279,7 +279,7 @@ class ShotExecuteResult:
 
     shot_index: int
     length_frames: int
-    score: "ScoreResult | None"
+    score: ScoreResult | None
     row: dict[str, Any]
 
 
@@ -300,7 +300,7 @@ class PerShotPlanResult:
 
 
 def run_plan_per_shot(
-    plan: "AutoPlan",  # type: ignore[name-defined]  # noqa: F821
+    plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
     src: Path,
     out_dir: Path,
     *,
@@ -408,7 +408,7 @@ def run_plan_per_shot(
                                 runner=score_runner,
                                 workdir=Path(td),
                             )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     _log(f"executor per-shot: cell {cell_index} shot {si} failed: {exc}")
 
                 shot_row: dict[str, Any] = {
@@ -480,14 +480,14 @@ class SaliencyExecuteResult:
     """
 
     cell: dict[str, Any]
-    encode: "EncodeResult | None"
-    score: "ScoreResult | None"
+    encode: EncodeResult | None
+    score: ScoreResult | None
     saliency_available: bool
     row: dict[str, Any]
 
 
 def run_plan_saliency(
-    plan: "AutoPlan",  # type: ignore[name-defined]  # noqa: F821
+    plan: AutoPlan,  # type: ignore[name-defined]  # noqa: F821
     src: Path,
     out_dir: Path,
     *,
@@ -499,7 +499,7 @@ def run_plan_saliency(
     vmaf_model: str = "vmaf_v0.6.1",
     vmaf_bin: str = "vmaf",
     ffmpeg_bin: str = "ffmpeg",
-    saliency_model_path: "Path | None" = None,
+    saliency_model_path: Path | None = None,
     duration_frames: int = 1,
     encode_runner: Callable[..., Any] | None = None,
     score_runner: Callable[..., Any] | None = None,
@@ -531,7 +531,11 @@ def run_plan_saliency(
         Test seam for the ONNX Runtime session factory — same pattern as in
         :func:`~vmaftune.saliency.compute_saliency_map`.
     """
-    from .saliency import SaliencyConfig, SaliencyUnavailableError, saliency_aware_encode
+    from .saliency import (
+        SaliencyConfig,
+        SaliencyUnavailableError,
+        saliency_aware_encode,
+    )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     results_path = out_dir / "tune_results_saliency.jsonl"
@@ -565,7 +569,7 @@ def run_plan_saliency(
                 source_is_container=True,
             )
 
-            enc: "EncodeResult | None" = None
+            enc: EncodeResult | None = None
             sc: ScoreResult | None = None
             sal_available = False
 
@@ -586,7 +590,7 @@ def run_plan_saliency(
                 sal_available = _saliency_was_applied(enc_req, enc)
             except SaliencyUnavailableError as exc:
                 _log(f"executor saliency: unavailable for cell {cell_index}: {exc}")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 _log(f"executor saliency: encode failed for cell {cell_index}: {exc}")
 
             if enc is not None and enc.exit_status == 0:
@@ -606,7 +610,7 @@ def run_plan_saliency(
                             runner=score_runner,
                             workdir=Path(td),
                         )
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         _log(f"executor saliency: score failed for cell {cell_index}: {exc}")
 
             row: dict[str, Any] = {
@@ -642,10 +646,10 @@ def run_plan_saliency(
 
 def _is_nan(v: float) -> bool:
     """Return ``True`` if ``v`` is ``float('nan')`` (avoids math import)."""
-    return v != v  # noqa: PLR0124  (identity NaN check; intentional, not a bug)
+    return v != v
 
 
-def _saliency_was_applied(original_req: "EncodeRequest", enc: "EncodeResult") -> bool:
+def _saliency_was_applied(original_req: EncodeRequest, enc: EncodeResult) -> bool:
     """Heuristic: true when the encode request the driver saw has ROI params.
 
     The saliency augment helpers patch ``extra_params`` on a copy of the

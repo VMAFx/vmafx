@@ -141,7 +141,7 @@ def _import_numpy() -> Any:
     """Import numpy lazily so the module imports on systems without
     it (the grid-sweep corpus path doesn't need numpy)."""
     try:
-        import numpy as np  # noqa: PLC0415  (deliberately lazy)
+        import numpy as np
     except ImportError as exc:  # pragma: no cover - defensive
         raise SaliencyUnavailableError("numpy is required for saliency-aware encoding") from exc
     return np
@@ -149,7 +149,7 @@ def _import_numpy() -> Any:
 
 def _import_onnxruntime() -> Any:
     try:
-        import onnxruntime as ort  # noqa: PLC0415
+        import onnxruntime as ort
     except ImportError as exc:
         raise SaliencyUnavailableError(
             "onnxruntime is required for saliency-aware encoding; "
@@ -165,7 +165,7 @@ def _yuv420p_frame_size(width: int, height: int) -> int:
 
 def _read_yuv420p_planes(
     path: Path, frame_index: int, width: int, height: int
-) -> tuple["np.ndarray", "np.ndarray", "np.ndarray"]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Read one yuv420p frame as ``uint8`` Y, U, V planes."""
     np = _import_numpy()
     frame_bytes = _yuv420p_frame_size(width, height)
@@ -188,7 +188,7 @@ def _read_yuv420p_planes(
     return y, u, v
 
 
-def _yuv420p_to_rgb_imagenet(y: "np.ndarray", u: "np.ndarray", v: "np.ndarray") -> "np.ndarray":
+def _yuv420p_to_rgb_imagenet(y: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.ndarray:
     """Convert yuv420p BT.709-limited planes to ImageNet-normalised RGB.
 
     Returns ``float32 [1, 3, H, W]`` — the NCHW tensor
@@ -241,7 +241,7 @@ def _validate_temporal_aggregator(temporal_aggregator: str, ema_alpha: float) ->
         raise ValueError(f"ema_alpha must be in (0, 1], got {ema_alpha!r}")
 
 
-def _motion_weight(prev_y: "np.ndarray | None", y: "np.ndarray") -> float:
+def _motion_weight(prev_y: np.ndarray | None, y: np.ndarray) -> float:
     """Return a non-zero saliency weight from luma motion energy."""
     if prev_y is None:
         return 1.0
@@ -250,7 +250,7 @@ def _motion_weight(prev_y: "np.ndarray | None", y: "np.ndarray") -> float:
     return max(float(delta.mean() / 255.0), 1.0e-6)
 
 
-def _pad_to_multiple(tensor: "np.ndarray", multiple: int = 32) -> "tuple[np.ndarray, int, int]":
+def _pad_to_multiple(tensor: np.ndarray, multiple: int = 32) -> tuple[np.ndarray, int, int]:
     """Pad a ``[1, 3, H, W]`` float32 tensor to the next multiple of ``multiple``.
 
     The ``saliency_student_v1`` UNet encoder-decoder uses skip connections
@@ -285,7 +285,7 @@ def compute_saliency_map(
     temporal_aggregator: str = DEFAULT_SALIENCY_AGGREGATOR,
     ema_alpha: float = DEFAULT_SALIENCY_EMA_ALPHA,
     session_factory: Any = None,
-) -> "np.ndarray":
+) -> np.ndarray:
     """Run ``saliency_student_v1`` over a sampled subset of frames.
 
     Returns a ``float32 [H, W]`` aggregate saliency mask in ``[0, 1]``.
@@ -330,9 +330,7 @@ def compute_saliency_map(
 
     if session_factory is None:
         ort = _import_onnxruntime()
-        session_factory = lambda p: ort.InferenceSession(  # noqa: E731
-            str(p), providers=["CPUExecutionProvider"]
-        )
+        session_factory = lambda p: ort.InferenceSession(str(p), providers=["CPUExecutionProvider"])
     session = session_factory(model_path)
 
     nframes = _frame_count(video_path, width, height)
@@ -342,9 +340,9 @@ def compute_saliency_map(
 
     accum = np.zeros((height, width), dtype=np.float32)
     max_mask = np.zeros((height, width), dtype=np.float32)
-    ema_mask: "np.ndarray | None" = None
+    ema_mask: np.ndarray | None = None
     weight_sum = 0.0
-    prev_y: "np.ndarray | None" = None
+    prev_y: np.ndarray | None = None
     for fi in indices:
         y, u, v = _read_yuv420p_planes(video_path, fi, width, height)
         tensor = _yuv420p_to_rgb_imagenet(y, u, v)
@@ -385,10 +383,10 @@ def compute_saliency_map(
 
 
 def saliency_to_qp_map(
-    mask: "np.ndarray",
+    mask: np.ndarray,
     baseline_qp: int,
     foreground_offset: int = -4,
-) -> "np.ndarray":
+) -> np.ndarray:
     """Map a saliency mask to a per-pixel QP offset map.
 
     Convention (matches ``vmaf-roi`` ADR-0247):
@@ -420,7 +418,7 @@ def saliency_to_qp_map(
     return offsets.astype(np.int32)
 
 
-def reduce_qp_map_to_blocks(qp_map: "np.ndarray", block: int = X264_MB_SIDE) -> "np.ndarray":
+def reduce_qp_map_to_blocks(qp_map: np.ndarray, block: int = X264_MB_SIDE) -> np.ndarray:
     """Reduce a per-pixel QP-offset map to per-block (mean-rounded).
 
     x264's ``--qpfile`` is per-MB (16x16). Block-mean keeps offsets
@@ -439,7 +437,7 @@ def reduce_qp_map_to_blocks(qp_map: "np.ndarray", block: int = X264_MB_SIDE) -> 
 
 
 def write_x264_qpfile(
-    block_offsets: "np.ndarray",
+    block_offsets: np.ndarray,
     out_path: Path,
     *,
     duration_frames: int = 1,
@@ -459,7 +457,7 @@ def write_x264_qpfile(
     per-MB ROI map (SVT-AV1, x265 ``--qpfile``) consume the same
     block_offsets via a sibling formatter — see ``vmaf-roi``.
     """
-    bh, bw = block_offsets.shape
+    bh, _bw = block_offsets.shape
     lines: list[str] = []
     for frame_idx in range(duration_frames):
         # 'I' for the first frame so x264 anchors the GOP; 'P' for the
@@ -499,7 +497,7 @@ def augment_extra_params_with_libaom_qpfile(base: Sequence[str], qpfile: Path) -
 
 
 def write_x265_zones_arg(
-    block_offsets: "np.ndarray",
+    block_offsets: np.ndarray,
     *,
     duration_frames: int = 1,
     fps: float = 24.0,
@@ -553,7 +551,7 @@ SVTAV1_SB_SIDE = 64
 
 
 def write_svtav1_qpoffset_map(
-    block_offsets: "np.ndarray",
+    block_offsets: np.ndarray,
     out_path: Path,
     *,
     duration_frames: int = 1,
@@ -580,7 +578,7 @@ def write_svtav1_qpoffset_map(
     granularity (64x64); callers should call
     :func:`reduce_qp_map_to_blocks` with ``block=SVTAV1_SB_SIDE`` first.
     """
-    bh, bw = block_offsets.shape
+    bh, _bw = block_offsets.shape
     frame_lines: list[str] = []
     for row in range(bh):
         frame_lines.append(" ".join(str(int(v)) for v in block_offsets[row]))
@@ -613,7 +611,7 @@ VVENC_CTU_SIDE = 64
 
 
 def write_vvenc_roi_csv(
-    block_offsets: "np.ndarray",
+    block_offsets: np.ndarray,
     out_path: Path,
     *,
     duration_frames: int = 1,
@@ -634,7 +632,7 @@ def write_vvenc_roi_csv(
     should call :func:`reduce_qp_map_to_blocks` with
     ``block=VVENC_CTU_SIDE`` first.
     """
-    bh, bw = block_offsets.shape
+    bh, _bw = block_offsets.shape
     frame_lines: list[str] = []
     for row in range(bh):
         frame_lines.append(",".join(str(int(v)) for v in block_offsets[row]))
@@ -658,12 +656,12 @@ def augment_extra_params_with_vvenc_roi(base: Sequence[str], roi_csv: Path) -> t
 
 
 def _saliency_augment_x264(
-    request: "EncodeRequest",
-    qp_map: "np.ndarray",
+    request: EncodeRequest,
+    qp_map: np.ndarray,
     *,
     duration_frames: int,
     persist: bool,
-) -> "EncodeRequest":
+) -> EncodeRequest:
     """Return a copy of ``request`` augmented with the x264 qpfile argv.
 
     Internal helper for :func:`saliency_aware_encode`. Receives the raw
@@ -690,12 +688,12 @@ def _saliency_augment_x264(
 
 
 def _saliency_augment_libaom(
-    request: "EncodeRequest",
-    qp_map: "np.ndarray",
+    request: EncodeRequest,
+    qp_map: np.ndarray,
     *,
     duration_frames: int,
     persist: bool,
-) -> "EncodeRequest":
+) -> EncodeRequest:
     """Return a copy of ``request`` augmented with libaom's qpfile argv.
 
     The FFmpeg patch stack teaches ``libaom-av1`` to consume the same
@@ -720,12 +718,12 @@ def _saliency_augment_libaom(
 
 
 def _saliency_augment_x265(
-    request: "EncodeRequest",
-    qp_map: "np.ndarray",
+    request: EncodeRequest,
+    qp_map: np.ndarray,
     *,
     duration_frames: int,
-    persist: bool,  # noqa: ARG001 — zones string is argv-only, no file to persist
-) -> "EncodeRequest":
+    persist: bool,
+) -> EncodeRequest:
     """Return a copy of ``request`` augmented with the x265 zones argv.
 
     Internal helper for :func:`saliency_aware_encode`. Receives the raw
@@ -743,12 +741,12 @@ def _saliency_augment_x265(
 
 
 def _saliency_augment_svtav1(
-    request: "EncodeRequest",
-    qp_map: "np.ndarray",
+    request: EncodeRequest,
+    qp_map: np.ndarray,
     *,
     duration_frames: int,
     persist: bool,
-) -> "EncodeRequest":
+) -> EncodeRequest:
     """Return a copy of ``request`` augmented with the SVT-AV1 qpmap argv.
 
     Internal helper for :func:`saliency_aware_encode`. Receives the raw
@@ -775,12 +773,12 @@ def _saliency_augment_svtav1(
 
 
 def _saliency_augment_vvenc(
-    request: "EncodeRequest",
-    qp_map: "np.ndarray",
+    request: EncodeRequest,
+    qp_map: np.ndarray,
     *,
     duration_frames: int,
     persist: bool,
-) -> "EncodeRequest":
+) -> EncodeRequest:
     """Return a copy of ``request`` augmented with the VVenC ROI CSV argv.
 
     Internal helper for :func:`saliency_aware_encode`. Receives the raw
@@ -839,7 +837,7 @@ def _cleanup_path_from_extra_params(extra_params: Sequence[str]) -> Path | None:
 
 
 def saliency_aware_encode(
-    request: "EncodeRequest",
+    request: EncodeRequest,
     *,
     duration_frames: int,
     model_path: Path | None = None,
@@ -847,7 +845,7 @@ def saliency_aware_encode(
     encode_runner: Any = None,
     session_factory: Any = None,
     ffmpeg_bin: str = "ffmpeg",
-) -> "EncodeResult":
+) -> EncodeResult:
     """Drive a single saliency-aware encode end-to-end.
 
     Dispatches to the appropriate per-codec ROI channel based on
@@ -957,13 +955,17 @@ __all__ = [
     "DEFAULT_SALIENCY_MODEL_RELPATH",
     "QP_OFFSET_MAX",
     "QP_OFFSET_MIN",
+    "SALIENCY_AGGREGATORS",
     "SVTAV1_SB_SIDE",
     "VVENC_CTU_SIDE",
     "X264_MB_SIDE",
+    # Dispatch table — exported so test stubs can assert the encoder is wired.
+    "_SALIENCY_DISPATCH",
     "SaliencyConfig",
     "SaliencyUnavailableError",
     "SaliencyUnsupportedEncoderError",
-    "SALIENCY_AGGREGATORS",
+    # Padding helper — exported so tests can verify round-trip crop correctness.
+    "_pad_to_multiple",
     "augment_extra_params_with_libaom_qpfile",
     "augment_extra_params_with_qpfile",
     "augment_extra_params_with_svtav1_qpmap",
@@ -977,8 +979,4 @@ __all__ = [
     "write_vvenc_roi_csv",
     "write_x264_qpfile",
     "write_x265_zones_arg",
-    # Dispatch table — exported so test stubs can assert the encoder is wired.
-    "_SALIENCY_DISPATCH",
-    # Padding helper — exported so tests can verify round-trip crop correctness.
-    "_pad_to_multiple",
 ]

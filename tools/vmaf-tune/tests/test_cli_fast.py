@@ -35,10 +35,10 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-optuna = pytest.importorskip("optuna")  # noqa: F841 — gate the whole module
+optuna = pytest.importorskip("optuna")
 
-from vmaftune import cli as cli_module  # noqa: E402
-from vmaftune.cli import main  # noqa: E402
+from vmaftune import cli as cli_module
+from vmaftune.cli import main
 
 # Documented flags the audit's HP-3 surface promises. Keep this list in
 # sync with ``_add_fast_args`` and the ``## fast`` section of

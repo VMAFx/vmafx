@@ -19,12 +19,12 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import (  # noqa: E402
+from vmaftune.codec_adapters import (
     ProresVideoToolboxAdapter,
     get_adapter,
     known_codecs,
 )
-from vmaftune.codec_adapters._videotoolbox_common import (  # noqa: E402
+from vmaftune.codec_adapters._videotoolbox_common import (
     PRORES_PROFILE_4444,
     PRORES_PROFILE_DEFAULT,
     PRORES_PROFILE_HQ,
@@ -37,7 +37,11 @@ from vmaftune.codec_adapters._videotoolbox_common import (  # noqa: E402
     prores_profile_name,
     validate_prores_videotoolbox,
 )
-from vmaftune.encode import EncodeRequest, build_ffmpeg_command, run_encode  # noqa: E402
+from vmaftune.encode import (
+    EncodeRequest,
+    build_ffmpeg_command,
+    run_encode,
+)
 
 
 class _FakeCompleted:

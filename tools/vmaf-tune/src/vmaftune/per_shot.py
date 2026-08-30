@@ -301,7 +301,7 @@ def split_long_shots(
         return list(shots)
     if max_duration_sec <= 0.0:
         return list(shots)
-    max_frames = max(1, int(round(max_duration_sec * framerate)))
+    max_frames = max(1, round(max_duration_sec * framerate))
     out: list[Shot] = []
     for shot in shots:
         length = shot.length

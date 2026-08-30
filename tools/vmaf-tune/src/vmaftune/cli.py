@@ -1847,9 +1847,9 @@ def _run_corpus(args: argparse.Namespace) -> int:
 
 def _run_recommend_from_corpus(args: argparse.Namespace) -> int:
     """Pick a recommendation from a pre-built corpus JSONL (no new encodes)."""
-    import json as _json  # noqa: PLC0415
+    import json as _json
 
-    from .recommend import RecommendRequest, recommend  # noqa: PLC0415
+    from .recommend import RecommendRequest, recommend
 
     corpus_path: Path = args.from_corpus
     if not corpus_path.exists():
@@ -1883,11 +1883,11 @@ def _run_recommend_from_corpus(args: argparse.Namespace) -> int:
         with_uncertainty = False
 
     if with_uncertainty and target_vmaf is not None:
-        from .recommend import (  # noqa: PLC0415
+        from .recommend import (
             UncertaintyAwareRequest,
             pick_target_vmaf_with_uncertainty,
         )
-        from .uncertainty import load_confidence_thresholds  # noqa: PLC0415
+        from .uncertainty import load_confidence_thresholds
 
         thresholds = load_confidence_thresholds(getattr(args, "uncertainty_sidecar", None))
         preset_filter = args.preset[0] if args.preset else None
@@ -2283,7 +2283,7 @@ def _run_predict(args: argparse.Namespace) -> int:
 
         # Acknowledge the wrapper class — we use ``cal`` directly here
         # so the hot path doesn't re-run the predictor.
-        _ = ConformalPredictor  # noqa: F841 — referenced for type stability
+        _ = ConformalPredictor
         cal = calibration
         if args.alpha is not None:
             import dataclasses as _dc
@@ -2366,11 +2366,11 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
     if not _source_needs_rawvideo_demux(args.src):
         # Container source: auto-probe missing geometry.
         if _resolved_width is None or _resolved_height is None or _resolved_framerate is None:
-            from .report import probe_source as _probe_source  # noqa: PLC0415
+            from .report import probe_source as _probe_source
 
             try:
                 _info = _probe_source(args.src)
-            except Exception as _exc:  # noqa: BLE001
+            except Exception as _exc:
                 sys.stderr.write(f"vmaf-tune tune-per-shot: ffprobe failed on {args.src}: {_exc}\n")
                 return 2
             if _resolved_width is None:
@@ -2444,7 +2444,7 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
             # ADR-0549: honour --workdir / VMAFTUNE_WORKDIR for
             # per-shot bisect scratch space so artefacts land on a
             # volume with sufficient free space rather than /tmp.
-            from .bisect import _workdir_parent as _bwp  # noqa: PLC0415
+            from .bisect import _workdir_parent as _bwp
 
             _pershot_wd = getattr(args, "workdir", None)
             _pershot_parent = _pershot_wd if _pershot_wd is not None else _bwp()
@@ -2454,9 +2454,9 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
                 prefix="vmaf-tune-per-shot-", dir=_pershot_parent
             )
             # ADR-0577: configure the decode semaphore for per-shot bisect.
-            import threading as _threading_pershot  # noqa: PLC0415
+            import threading as _threading_pershot
 
-            from .bisect import set_decode_semaphore as _set_decode_sem  # noqa: PLC0415
+            from .bisect import set_decode_semaphore as _set_decode_sem
 
             _ps_max_decodes = int(getattr(args, "max_concurrent_decodes", 1))
             _set_decode_sem(_ps_max_decodes)
@@ -2468,7 +2468,10 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
             # onnxruntime is missing.
             _pershot_nr_proxy = None
             if getattr(args, "fast_nr", False):
-                from .score_backend import NRProxyBackend, NRProxyBackendError  # noqa: PLC0415
+                from .score_backend import (
+                    NRProxyBackend,
+                    NRProxyBackendError,
+                )
 
                 try:
                     _pershot_nr_proxy = NRProxyBackend()
@@ -2914,7 +2917,7 @@ def _run_ladder(args: argparse.Namespace) -> int:
     # historic per-target picks as the source of the JSON ``samples``
     # array — see :func:`vmaftune.ladder.build_and_emit` for the
     # dedup + emit semantics.
-    from .ladder import LadderPoint as _LadderPoint  # noqa: PLC0415
+    from .ladder import LadderPoint as _LadderPoint
 
     # Bug C / ADR-0511: resolve --score-backend up-front so an
     # unavailable backend errors out before any encodes start.
@@ -3038,10 +3041,10 @@ def _resolve_compare_source_geometry(
     """
     # Local imports keep the heavy ffprobe path off the import graph
     # of CLI smoke tests that don't exercise compare.
-    from .score import VMAF_RAW_SUFFIXES  # noqa: PLC0415
+    from .score import VMAF_RAW_SUFFIXES
 
     if probe_fn is None:
-        from .report import probe_source as _probe_source  # noqa: PLC0415
+        from .report import probe_source as _probe_source
     else:
         _probe_source = probe_fn  # type: ignore[assignment]
 
@@ -3055,7 +3058,7 @@ def _resolve_compare_source_geometry(
 
     try:
         info = _probe_source(Path(src))  # type: ignore[operator]
-    except Exception as exc:  # noqa: BLE001 — defensive: probe is best-effort
+    except Exception as exc:
         stream.write(
             f"vmaf-tune compare: ffprobe of {src} failed ({exc}); "
             "using user-supplied geometry verbatim.\n"
@@ -3129,9 +3132,9 @@ def _run_compare(args: argparse.Namespace) -> int:
     defaults; explicit user values still win, with a stderr warning on
     explicit mismatch.
     """
-    import contextlib  # noqa: PLC0415
-    import os  # noqa: PLC0415
-    import threading  # noqa: PLC0415
+    import contextlib
+    import os
+    import threading
 
     from .bisect import make_bisect_predicate, set_decode_semaphore
     from .compare import (
@@ -3145,7 +3148,7 @@ def _run_compare(args: argparse.Namespace) -> int:
         supported_formats,
     )
     from .encoder_runtime import EncoderRuntimeSpec, resolve_encoder_runtime_specs
-    from .score import VMAF_RAW_SUFFIXES, _decode_to_raw_yuv  # noqa: PLC0415
+    from .score import VMAF_RAW_SUFFIXES, _decode_to_raw_yuv
 
     # ADR-0601: resolve the VA-API render-node for QSV device init.
     # Resolution: --vaapi-device > VMAFTUNE_VAAPI_DEVICE env var > default.
@@ -3331,9 +3334,12 @@ def _run_compare(args: argparse.Namespace) -> int:
         # loaded once and the per-CRF cache is shared across the sweep.
         # NRProxyBackendError from construction (missing onnxruntime,
         # missing model file) is surfaced immediately as a user error.
-        _nr_proxy: "NRProxyBackend | None" = None
+        _nr_proxy: NRProxyBackend | None = None
         if getattr(args, "fast_nr", False):
-            from .score_backend import NRProxyBackend, NRProxyBackendError  # noqa: PLC0415
+            from .score_backend import (
+                NRProxyBackend,
+                NRProxyBackendError,
+            )
 
             try:
                 _nr_proxy = NRProxyBackend()
@@ -3421,12 +3427,12 @@ def _run_compare(args: argparse.Namespace) -> int:
     if _should_pre_decode:
         # Resolve the workdir for the shared-ref decode. Use the same
         # precedence as the per-bisect path (ADR-0549): --workdir > env var.
-        from .bisect import _workdir_parent  # noqa: PLC0415
+        from .bisect import _workdir_parent
 
         _given_workdir = getattr(args, "workdir", None)
         _decode_workdir = _given_workdir if _given_workdir is not None else _workdir_parent()
         if _decode_workdir is None:
-            import tempfile  # noqa: PLC0415
+            import tempfile
 
             _decode_workdir = Path(tempfile.mkdtemp(prefix="vmaftune-compare-"))
 
@@ -3663,7 +3669,7 @@ def _write_compare_profile_report(
         # Write the raw JSON artifact alongside HTML and MD so that
         # downstream tools can re-render or diff two reports without
         # re-running the encode pipeline.
-        import json as _json  # noqa: PLC0415
+        import json as _json
 
         json_path = output.with_suffix(".json")
         json_path.write_text(_json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
@@ -3696,15 +3702,15 @@ def _run_compare_crf_sweep(
     knobs in this mode (pareto frontier annotation); they do not drive the
     encode loop.
     """
-    import os  # noqa: PLC0415
-    import tempfile  # noqa: PLC0415
-    import time  # noqa: PLC0415
-    from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
+    import os
+    import tempfile
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    from .bisect import _encode_and_score  # noqa: PLC0415
-    from .codec_adapters import get_adapter  # noqa: PLC0415
-    from .compare import DEFAULT_VAAPI_DEVICE, probe_encoder_available  # noqa: PLC0415
-    from .encoder_runtime import resolve_encoder_runtime_specs  # noqa: PLC0415
+    from .bisect import _encode_and_score
+    from .codec_adapters import get_adapter
+    from .compare import DEFAULT_VAAPI_DEVICE, probe_encoder_available
+    from .encoder_runtime import resolve_encoder_runtime_specs
 
     # ADR-0601: resolve the VA-API render-node for QSV device init.
     _vaapi_device: str = (
@@ -3793,7 +3799,7 @@ def _run_compare_crf_sweep(
         # decode artefacts land on a volume with sufficient free space
         # rather than the 8 GB /tmp tmpfs inside the dev-mcp container.
         _cli_workdir = getattr(args, "workdir", None)
-        from .bisect import _workdir_parent as _bwp  # noqa: PLC0415
+        from .bisect import _workdir_parent as _bwp
 
         _sweep_parent = _cli_workdir if _cli_workdir is not None else _bwp()
         if _sweep_parent is not None:
@@ -3869,10 +3875,10 @@ def _run_compare_crf_sweep(
     ]
 
     try:
-        import importlib.metadata as _meta  # noqa: PLC0415
+        import importlib.metadata as _meta
 
         _tool_version = _meta.version("vmaf-tune")
-    except Exception:  # noqa: BLE001
+    except Exception:
         _tool_version = "unknown"
 
     payload = {
@@ -4170,7 +4176,7 @@ def _add_fast_args(p: argparse.ArgumentParser) -> None:
 def _build_fast_sample_extractor(
     args: argparse.Namespace,
     workdir: Path,
-) -> "Callable[[Path, int, str], tuple[list[float], float]]":
+) -> Callable[[Path, int, str], tuple[list[float], float]]:
     """Build the production ``sample_extractor`` callable for fast-path.
 
     The seam encodes a short ``--sample-chunk-seconds`` slice of the
@@ -4306,7 +4312,7 @@ def _build_fast_encode_runner(
     args: argparse.Namespace,
     workdir: Path,
     backend: str,
-) -> "Callable[[Path, str, int, str], tuple[float, float]]":
+) -> Callable[[Path, str, int, str], tuple[float, float]]:
     """Build the production ``encode_runner`` callable for the verify pass.
 
     Runs a single full-clip encode at the recommended CRF and scores it
@@ -4611,7 +4617,7 @@ def _build_prefilter_probe(
     args: argparse.Namespace,
     workdir: Path,
     backend: str,
-) -> "Callable[[Mapping[str, float], int], ProbeResult]":
+) -> Callable[[Mapping[str, float], int], ProbeResult]:
     """Build the live ``(deband_params, crf) -> ProbeResult`` probe.
 
     Each probe call emits the deband ``-vf`` fragment via the filter
@@ -4993,7 +4999,7 @@ def _coerce_finite_float(value: Any, default: float = math.nan) -> float:
     return v
 
 
-def _sweep_point_from_json(r: dict[str, Any]) -> "CodecSweepPoint":  # type: ignore[name-defined]  # noqa: F821
+def _sweep_point_from_json(r: dict[str, Any]) -> CodecSweepPoint:  # type: ignore[name-defined]  # noqa: F821
     """Build a :class:`vmaftune.report.CodecSweepPoint` from a v2 row.
 
     The compare-sweep JSON row carries ``target_vmaf`` as a top-level
@@ -5045,7 +5051,7 @@ def _sweep_point_from_json(r: dict[str, Any]) -> "CodecSweepPoint":  # type: ign
     )
 
 
-def _codec_row_from_json(r: dict[str, Any]) -> "CodecRow":  # type: ignore[name-defined]  # noqa: F821
+def _codec_row_from_json(r: dict[str, Any]) -> CodecRow:  # type: ignore[name-defined]  # noqa: F821
     """Build a :class:`vmaftune.report.CodecRow` from a compare JSON row.
 
     Coerces ``null`` / NaN numerics to ``NaN`` (which the renderer

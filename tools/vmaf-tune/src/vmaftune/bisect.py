@@ -93,7 +93,7 @@ def set_decode_semaphore(max_concurrent: int) -> None:
             ``1`` = serial decodes (safest, default). Higher values trade
             peak disk space for throughput on operators with large volumes.
     """
-    global _decode_semaphore  # noqa: PLW0603 — module-level singleton
+    global _decode_semaphore
     if max_concurrent < 1:
         raise ValueError(f"max_concurrent must be >= 1, got {max_concurrent}")
     _decode_semaphore = threading.Semaphore(max_concurrent)
@@ -223,8 +223,8 @@ def _estimate_yuv_bytes(
     conservative rather than optimistic.
     """
     bpp = _BYTES_PER_PIXEL.get(pix_fmt, _BYTES_PER_PIXEL_DEFAULT)
-    frames = max(1, int(math.ceil(fps * max(duration_s, 0.0))))
-    return int(math.ceil(width * height * bpp * frames))
+    frames = max(1, math.ceil(fps * max(duration_s, 0.0)))
+    return math.ceil(width * height * bpp * frames)
 
 
 def _check_disk_space(
@@ -257,7 +257,7 @@ def _check_disk_space(
             diagnostics (e.g. ``"libx264 @ VMAF 96"``). Appended to
             the error message when non-empty.
     """
-    required = int(math.ceil(estimated_bytes * headroom))
+    required = math.ceil(estimated_bytes * headroom)
     try:
         usage = shutil.disk_usage(workdir)
         free = usage.free
@@ -361,7 +361,7 @@ class BisectResult:
     fr_calls_total: int = 0
     fr_calls_saved: int = 0
 
-    def to_recommend_result(self) -> "RecommendResult":
+    def to_recommend_result(self) -> RecommendResult:
         """Project onto the ``compare.RecommendResult`` shape.
 
         Lazy import keeps the bisect module standalone — ``compare``
@@ -441,7 +441,7 @@ _NR_SKIP_SENTINEL: str = "__nr_skip__:"
 
 def _try_nr_early_elimination_on_yuv(
     *,
-    nr_proxy_backend: "NRProxyBackend",
+    nr_proxy_backend: NRProxyBackend,
     distorted_yuv: Path,
     width: int,
     height: int,
@@ -516,7 +516,7 @@ def bisect_target_vmaf(
     vmaf_bin: str = "vmaf",
     workdir: Path | None = None,
     decode_semaphore: threading.Semaphore | None = None,
-    nr_proxy_backend: "NRProxyBackend | None" = None,
+    nr_proxy_backend: NRProxyBackend | None = None,
 ) -> BisectResult:
     """Find the largest CRF whose measured VMAF still meets ``target_vmaf``.
 
@@ -926,8 +926,8 @@ def _sample_clip_window(
         return 0.0, 0.0, 0, 0
     clip_s = sample_s
     start_s = max(0.0, (duration - clip_s) / 2.0)
-    frame_skip_ref = max(0, int(round(start_s * fps)))
-    frame_cnt = max(1, int(round(clip_s * fps)))
+    frame_skip_ref = max(0, round(start_s * fps))
+    frame_cnt = max(1, round(clip_s * fps))
     return start_s, clip_s, frame_skip_ref, frame_cnt
 
 
@@ -952,7 +952,7 @@ def _encode_and_score(
     vmaf_bin: str,
     workdir: Path,
     decode_runner: object | None = None,
-    nr_proxy_backend: "NRProxyBackend | None" = None,
+    nr_proxy_backend: NRProxyBackend | None = None,
     nr_target_vmaf: float | None = None,
 ) -> BisectResult:
     """One encode+score round-trip — returns a sample-shaped BisectResult.
@@ -1069,7 +1069,7 @@ def _encode_and_score(
     ref_for_score = Path(src)
     decoded_ref: Path | None = None
     if src_is_container:
-        from .score import _decode_to_raw_yuv  # noqa: PLC0415 — module-local helper
+        from .score import _decode_to_raw_yuv
 
         decoded_ref = workdir / (Path(src).stem + ".ref.decoded.yuv")
         # Re-use across iterations within the same bisect — workdir
@@ -1259,8 +1259,8 @@ def make_bisect_predicate(
     vmaf_bin: str = "vmaf",
     workdir: Path | None = None,
     decode_semaphore: threading.Semaphore | None = None,
-    nr_proxy_backend: "NRProxyBackend | None" = None,
-) -> "PredicateFn":
+    nr_proxy_backend: NRProxyBackend | None = None,
+) -> PredicateFn:
     """Return a :data:`compare.PredicateFn` that closes over bisect knobs.
 
     The returned callable matches ``compare.compare_codecs``'s
@@ -1287,7 +1287,7 @@ def make_bisect_predicate(
     to use full-reference scoring throughout.
     """
 
-    def _predicate(codec: str, src: Path, runtime_target_vmaf: float) -> "RecommendResult":
+    def _predicate(codec: str, src: Path, runtime_target_vmaf: float) -> RecommendResult:
         # Runtime target argument wins; closure-time default is unused
         # whenever ``compare_codecs`` calls us (it always supplies the
         # current target). We keep the closure default for callers that
@@ -1328,9 +1328,9 @@ def make_bisect_predicate(
 
 
 __all__ = [
+    "DEFAULT_MAX_CONCURRENT_DECODES",
     "BisectResult",
     "BisectSample",
-    "DEFAULT_MAX_CONCURRENT_DECODES",
     "bisect_target_vmaf",
     "make_bisect_predicate",
     "set_decode_semaphore",

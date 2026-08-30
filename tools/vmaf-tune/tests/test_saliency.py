@@ -20,9 +20,9 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 np = pytest.importorskip("numpy")
 
-from vmaftune import saliency  # noqa: E402
-from vmaftune.encode import EncodeRequest  # noqa: E402
-from vmaftune.saliency import (  # noqa: E402
+from vmaftune import saliency
+from vmaftune.encode import EncodeRequest
+from vmaftune.saliency import (
     QP_OFFSET_MAX,
     QP_OFFSET_MIN,
     SALIENCY_AGGREGATORS,
@@ -69,7 +69,7 @@ class _FakeOnnxSession:
         self._h = h
         self._w = w
 
-    def run(self, _outputs, feeds):  # noqa: D401
+    def run(self, _outputs, feeds):
         # feeds is {"input": ndarray}; we ignore the content and emit
         # a deterministic right-bright mask shaped [1, 1, H, W].
         mask = np.zeros((1, 1, self._h, self._w), dtype=np.float32)

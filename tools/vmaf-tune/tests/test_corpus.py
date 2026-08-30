@@ -14,9 +14,9 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import CORPUS_ROW_KEYS, SCHEMA_VERSION  # noqa: E402
-from vmaftune.codec_adapters import get_adapter, known_codecs  # noqa: E402
-from vmaftune.corpus import (  # noqa: E402
+from vmaftune import CORPUS_ROW_KEYS, SCHEMA_VERSION
+from vmaftune.codec_adapters import get_adapter, known_codecs
+from vmaftune.corpus import (
     CorpusJob,
     CorpusOptions,
     coarse_grid_crfs,
@@ -25,13 +25,17 @@ from vmaftune.corpus import (  # noqa: E402
     iter_rows,
     write_jsonl,
 )
-from vmaftune.encode import (  # noqa: E402
+from vmaftune.encode import (
     EncodeRequest,
     build_ffmpeg_command,
     iter_grid,
     parse_versions,
 )
-from vmaftune.score import ScoreRequest, build_vmaf_command, parse_vmaf_json  # noqa: E402
+from vmaftune.score import (
+    ScoreRequest,
+    build_vmaf_command,
+    parse_vmaf_json,
+)
 
 
 class _FakeCompleted:
@@ -529,7 +533,7 @@ def test_coarse_to_fine_canonical_visits_15_points(tmp_path: Path):
     src = _make_yuv(tmp_path / "ref.yuv")
     # Synthesise scores: monotone-decreasing in CRF; target=92 gates at ~CRF 5,
     # but we want best-coarse to be 30 to exercise refinement around the middle.
-    scores = {c: _crf_to_score(c) for c in range(0, 52)}
+    scores = {c: _crf_to_score(c) for c in range(52)}
     # Make CRF=30 score exactly 95 (passes target=92), CRF=40 score 85 (fails).
     # That makes best-coarse = 30 (highest CRF still passing).
     scores[10] = 99.0
@@ -598,7 +602,7 @@ def test_coarse_to_fine_one_pass_shortcut_when_coarse_max_meets_target(tmp_path:
     # max of the coarse grid -> refinement is skipped (1-pass shortcut).
     scores = {10: 99.0, 20: 95.0, 30: 90.0, 40: 80.0, 50: 75.0}
     # Fill rest defensively in case fine pass is wrongly invoked.
-    for c in range(0, 52):
+    for c in range(52):
         scores.setdefault(c, _crf_to_score(c))
 
     enc_run, score_run = _make_runners(scores_by_crf=scores)

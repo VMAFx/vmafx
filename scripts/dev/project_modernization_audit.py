@@ -613,8 +613,10 @@ def render_markdown(report: AuditReport, *, max_findings: int = 30) -> str:
     lines = [
         "# Project modernization audit",
         "",
-        "Read-only scan of repo code, human-facing docs, model registry metadata, "
-        "and local state files.",
+        (
+            "Read-only scan of repo code, human-facing docs, model registry metadata, "
+            "and local state files."
+        ),
         "",
         "## Summary",
         "",

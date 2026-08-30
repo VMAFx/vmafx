@@ -19,7 +19,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.auto import (  # noqa: E402
+from vmaftune.auto import (
     LADDER_MULTI_RUNG_HEIGHT,
     PHASE_D_DURATION_GATE_S,
     PHASE_D_SHOT_VARIANCE_GATE,
@@ -50,7 +50,7 @@ class _FakeCompleted:
         self.stderr = stderr
 
 
-def _auto_probe_runner(cmd, capture_output, text, check):  # noqa: ANN001
+def _auto_probe_runner(cmd, capture_output, text, check):
     del capture_output, text, check
     joined = " ".join(str(part) for part in cmd)
     if "format=duration" in joined:

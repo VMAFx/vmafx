@@ -221,7 +221,7 @@ def _rank(rows: Iterable[RecommendResult]) -> tuple[RecommendResult, ...]:
         (r for r in materialized if not r.ok),
         key=lambda r: r.codec,
     )
-    return tuple([*ok_rows, *fail_rows])
+    return (*ok_rows, *fail_rows)
 
 
 def compare_codecs(
@@ -232,7 +232,7 @@ def compare_codecs(
     predicate: PredicateFn | None = None,
     parallel: bool = True,
     max_workers: int | None = None,
-    pre_decoded_ref: "Path | None" = None,
+    pre_decoded_ref: Path | None = None,
     row_metadata: RowMetadataFn | None = None,
 ) -> ComparisonReport:
     """Run ``predicate`` per codec and rank by smallest bitrate.
@@ -269,7 +269,7 @@ def compare_codecs(
                 codec = futures[fut]
                 try:
                     results.append(_apply_row_metadata(codec, fut.result(), row_metadata))
-                except Exception as exc:  # noqa: BLE001 — surface the error verbatim
+                except Exception as exc:
                     results.append(
                         _apply_row_metadata(
                             codec,
@@ -291,7 +291,7 @@ def compare_codecs(
                 results.append(
                     _apply_row_metadata(codec, pred(codec, worker_src, target_vmaf), row_metadata)
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 results.append(
                     _apply_row_metadata(
                         codec,
@@ -325,8 +325,10 @@ def _emit_markdown(report: ComparisonReport) -> str:
         f"- Tool: `vmaf-tune {report.tool_version}`",
         f"- Wall time: {report.wall_time_ms:.1f} ms",
         "",
-        "| Rank | Codec | Encoder | Best CRF | Bitrate (kbps) | "
-        "Encode time (ms) | VMAF | Status |",
+        (
+            "| Rank | Codec | Encoder | Best CRF | Bitrate (kbps) | "
+            "Encode time (ms) | VMAF | Status |"
+        ),
         "|---:|---|---|---:|---:|---:|---:|---|",
     ]
     rank = 0
@@ -349,9 +351,11 @@ def _emit_markdown(report: ComparisonReport) -> str:
         lines.extend(
             [
                 "",
-                f"**Smallest file**: `{best.codec}` "
-                f"at CRF {best.best_crf} → {best.bitrate_kbps:.1f} kbps "
-                f"(VMAF {best.vmaf_score:.2f}).",
+                (
+                    f"**Smallest file**: `{best.codec}` "
+                    f"at CRF {best.best_crf} → {best.bitrate_kbps:.1f} kbps "
+                    f"(VMAF {best.vmaf_score:.2f})."
+                ),
             ]
         )
     else:
@@ -597,7 +601,7 @@ def probe_encoder_available(
     adapter_encoder = encoder_spec.adapter
 
     def _default_runner(argv: Sequence[str], timeout: float = 30.0):
-        return subprocess.run(  # noqa: S603 — argv is internal, no shell
+        return subprocess.run(
             argv,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -702,7 +706,7 @@ def compare_codecs_sweep(
     parallel: bool = True,
     max_workers: int | None = None,
     availability_probe: Callable[[str], tuple[bool, str]] | None = None,
-    pre_decoded_ref: "Path | None" = None,
+    pre_decoded_ref: Path | None = None,
     row_metadata: RowMetadataFn | None = None,
 ) -> SweepReport:
     """Run ``predicate`` across the cross-product of codecs x targets.
@@ -743,7 +747,7 @@ def compare_codecs_sweep(
     for codec in encoders:
         try:
             availability[codec] = probe(codec)
-        except Exception as exc:  # noqa: BLE001 — probe is best-effort
+        except Exception as exc:
             availability[codec] = (False, f"hardware encoder not available: probe crashed: {exc}")
 
     # Build the work list, substituting unavailable rows before dispatch.
@@ -782,7 +786,7 @@ def compare_codecs_sweep(
                 i, codec = futures[fut]
                 try:
                     results[i] = _apply_row_metadata(codec, fut.result(), row_metadata)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     results[i] = _apply_row_metadata(
                         codec,
                         RecommendResult(
@@ -804,7 +808,7 @@ def compare_codecs_sweep(
                     pred(codec, worker_src, target),
                     row_metadata,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 results[i] = _apply_row_metadata(
                     codec,
                     RecommendResult(
@@ -879,8 +883,10 @@ def emit_sweep_markdown(report: SweepReport) -> str:
         f"- Targets: {', '.join(f'{t:g}' for t in report.target_vmafs)}",
         f"- Wall time: {report.wall_time_ms:.1f} ms",
         "",
-        "| Codec | Encoder | Target VMAF | Best CRF | Bitrate (kbps) | "
-        "Encode time (ms) | VMAF achieved | Status |",
+        (
+            "| Codec | Encoder | Target VMAF | Best CRF | Bitrate (kbps) | "
+            "Encode time (ms) | VMAF achieved | Status |"
+        ),
         "|---|---|---:|---:|---:|---:|---:|---|",
     ]
     for target, r in zip(report.row_targets, report.rows, strict=True):
@@ -960,14 +966,14 @@ def detect_schema_version(payload: dict[str, Any]) -> int:
 
 __all__ = [
     "COMPARE_ROW_KEYS",
-    "ComparisonReport",
     "DEFAULT_CPU_ENCODERS",
     "DEFAULT_VAAPI_DEVICE",
     "HARDWARE_ENCODERS",
-    "PredicateFn",
-    "RecommendResult",
     "SCHEMA_VERSION_V1",
     "SCHEMA_VERSION_V2",
+    "ComparisonReport",
+    "PredicateFn",
+    "RecommendResult",
     "SweepReport",
     "compare_codecs",
     "compare_codecs_sweep",

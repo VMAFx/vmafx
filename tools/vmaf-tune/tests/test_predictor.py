@@ -31,23 +31,23 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import known_codecs  # noqa: E402
-from vmaftune.per_shot import Shot  # noqa: E402
-from vmaftune.predictor import (  # noqa: E402
+from vmaftune.codec_adapters import known_codecs
+from vmaftune.per_shot import Shot
+from vmaftune.predictor import (
     Predictor,
     ShotFeatures,
     make_predictor_predicate,
     pick_keyint,
     resolution_class,
 )
-from vmaftune.predictor_features import (  # noqa: E402
+from vmaftune.predictor_features import (
     FeatureExtractorConfig,
     _compute_saliency,
     _parse_bitrate,
     _parse_metadata_float,
     _parse_signalstats,
 )
-from vmaftune.predictor_validate import (  # noqa: E402
+from vmaftune.predictor_validate import (
     ShotResidual,
     Verdict,
     _decide_verdict,
@@ -367,7 +367,7 @@ def test_parse_signalstats_averages_per_metric():
 
 def test_compute_saliency_extracts_raw_yuv_before_model(tmp_path, monkeypatch):
     np = pytest.importorskip("numpy")
-    import vmaftune.saliency as saliency
+    from vmaftune import saliency
 
     source = tmp_path / "source.mp4"
     source.write_bytes(b"fake container")

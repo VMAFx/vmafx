@@ -36,7 +36,7 @@ _SRC = _HERE.parent / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from vmaftune.conformal import (  # noqa: E402
+from vmaftune.conformal import (
     ConformalInterval,
     ConformalPredictor,
     CVPlusConformalCalibration,
@@ -49,7 +49,7 @@ from vmaftune.conformal import (  # noqa: E402
     load_split_calibration,
     save_split_calibration,
 )
-from vmaftune.predictor import Predictor, ShotFeatures  # noqa: E402
+from vmaftune.predictor import Predictor, ShotFeatures
 
 # ---------------------------------------------------------------------
 # Fixtures: synthetic calibration set with known noise model.

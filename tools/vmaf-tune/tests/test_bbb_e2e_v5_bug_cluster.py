@@ -52,8 +52,13 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.corpus import _VMAF_RAW_SUFFIXES, CorpusJob, CorpusOptions, iter_rows  # noqa: E402
-from vmaftune.ladder import (  # noqa: E402
+from vmaftune.corpus import (
+    _VMAF_RAW_SUFFIXES,
+    CorpusJob,
+    CorpusOptions,
+    iter_rows,
+)
+from vmaftune.ladder import (
     LadderPoint,
     _dedup_samples,
     build_and_emit,
@@ -182,7 +187,7 @@ def test_iter_rows_marks_container_source_for_encoder(tmp_path: Path, monkeypatc
     decoded) reference. The test pins the wiring at the boundary that
     leaked the bug.
     """
-    import vmaftune.corpus as corpus_mod  # noqa: PLC0415
+    import vmaftune.corpus as corpus_mod
 
     src = tmp_path / "bbb.mp4"
     src.write_bytes(b"\x00")
@@ -250,7 +255,7 @@ def test_iter_rows_keeps_raw_yuv_source_uncontainerised(tmp_path: Path, monkeypa
     Anti-regression guard for the V5-2 fix: don't let the container-
     detection clause accidentally swallow the raw-YUV path too.
     """
-    import vmaftune.corpus as corpus_mod  # noqa: PLC0415
+    import vmaftune.corpus as corpus_mod
 
     src = tmp_path / "src.yuv"
     src.write_bytes(b"\x00" * (1920 * 1080 * 3 // 2))

@@ -666,12 +666,12 @@ def _render_chart(width_in: float, height_in: float, plot_fn) -> bytes:
     (Bug #v2-C, BBB e2e v2 2026-05-18).
     """
     try:
-        import matplotlib  # noqa: PLC0415
+        import matplotlib
     except ImportError:
         return b""
 
     matplotlib.use("Agg", force=True)
-    import matplotlib.pyplot as plt  # noqa: PLC0415
+    import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(width_in, height_in), dpi=110)
     try:
@@ -691,12 +691,12 @@ def _render_chart_svg(width_in: float, height_in: float, plot_fn) -> str:
     (ADR-0498, Bug #v2-C fallback companion).
     """
     try:
-        import matplotlib  # noqa: PLC0415
+        import matplotlib
     except ImportError:
         return ""
 
     matplotlib.use("Agg", force=True)
-    import matplotlib.pyplot as plt  # noqa: PLC0415
+    import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(width_in, height_in), dpi=110)
     try:
@@ -870,7 +870,7 @@ def _set_padded_ylim(
 
 
 def _apply_bitrate_xaxis(ax, *, log_scale: bool = True) -> None:
-    from matplotlib.ticker import FuncFormatter  # noqa: PLC0415
+    from matplotlib.ticker import FuncFormatter
 
     if log_scale:
         ax.set_xscale("log")
@@ -878,7 +878,7 @@ def _apply_bitrate_xaxis(ax, *, log_scale: bool = True) -> None:
 
 
 def _apply_bitrate_yaxis(ax) -> None:
-    from matplotlib.ticker import FuncFormatter  # noqa: PLC0415
+    from matplotlib.ticker import FuncFormatter
 
     ax.yaxis.set_major_formatter(FuncFormatter(_bitrate_tick_label))
 
@@ -1197,7 +1197,7 @@ def _shot_plot_fn(data: ReportData):
         # Synthetic legend handles — matplotlib's auto-legend skips
         # hline artists in older versions; the proxies keep the legend
         # populated regardless of backend version.
-        from matplotlib.lines import Line2D  # noqa: PLC0415
+        from matplotlib.lines import Line2D
 
         ax.legend(
             handles=[Line2D([0], [0], color="#1f77b4", lw=2.5, label="best CRF")],
@@ -1916,10 +1916,10 @@ def probe_source(path: Path) -> SourceInfo:
 
 
 __all__ = [
+    "ENCODER_PROFILE_SCHEMA",
     "BisectSamplePoint",
     "CodecRow",
     "CodecSweepPoint",
-    "ENCODER_PROFILE_SCHEMA",
     "LadderRung",
     "LadderSample",
     "ReportData",

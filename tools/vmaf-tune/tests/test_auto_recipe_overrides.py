@@ -33,7 +33,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.auto import (  # noqa: E402
+from vmaftune.auto import (
     _CONTENT_RECIPE_TABLE,
     DEFAULT_TIGHT_INTERVAL_MAX_WIDTH,
     RECIPE_CLASS_ANIMATION,

@@ -114,7 +114,7 @@ def project_row(row: dict[str, Any], crf_override: float | None = None) -> list[
     height = int(row.get("height", 0) or 0)
     framerate = float(row.get("framerate", 0.0) or 0.0)
     duration_s = float(row.get("duration_s", 0.0) or 0.0)
-    shot_length = max(1, int(round(framerate * duration_s)))
+    shot_length = max(1, round(framerate * duration_s))
 
     # Synthetic frame-size stand-ins. Total bytes per second =
     # bitrate_kbps * 1000 / 8. Split with a fixed I:P:B ratio so the
@@ -366,7 +366,7 @@ def train_val_split(
     rng = random.Random(seed)
     indexed = list(rows)
     rng.shuffle(indexed)
-    n_val = max(1, int(round(len(indexed) * val_fraction)))
+    n_val = max(1, round(len(indexed) * val_fraction))
     val = indexed[:n_val]
     train = indexed[n_val:]
     if not train:
@@ -396,7 +396,7 @@ def _build_model():
             self.register_buffer("input_mean", torch.zeros(INPUT_DIM))
             self.register_buffer("input_std", torch.ones(INPUT_DIM))
 
-        def forward(self, x: "torch.Tensor") -> "torch.Tensor":
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
             normed = (x - self.input_mean) / self.input_std
             h = torch.relu(self.fc1(normed))
             h = torch.relu(self.fc2(h))
@@ -463,8 +463,8 @@ def _set_seed(seed: int) -> None:
 
 def _fit(
     model: Any,
-    x_train: "Any",
-    y_train: "Any",
+    x_train: Any,
+    y_train: Any,
     cfg: TrainConfig,
 ) -> None:
     """Run the training loop in place on ``model``."""
@@ -489,7 +489,7 @@ def _fit(
             opt.step()
 
 
-def _evaluate(model: Any, x_val: "Any", y_val: "Any") -> tuple[float, float, float]:
+def _evaluate(model: Any, x_val: Any, y_val: Any) -> tuple[float, float, float]:
     """Return ``(plcc, srocc, rmse)`` on the held-out tensors."""
     import torch  # type: ignore[import-not-found]
 
@@ -580,7 +580,9 @@ def _check_op_allowlist(onnx_path: Path) -> tuple[bool, tuple[str, ...]]:
         ai_src = repo_root / "ai" / "src"
         if ai_src.is_dir() and str(ai_src) not in sys.path:
             sys.path.insert(0, str(ai_src))
-        from vmaf_train.op_allowlist import check_model  # type: ignore[import-not-found]
+        from vmaf_train.op_allowlist import (
+            check_model,  # type: ignore[import-not-found]
+        )
     except ImportError:
         return (True, ())
     try:
@@ -986,10 +988,10 @@ def main(argv: Iterable[str] | None = None) -> int:
 
 __all__ = [
     "CODECS",
-    "INPUT_DIM",
-    "HIDDEN_DIM",
-    "SYNTHETIC_CORPUS_ROWS",
     "DEFAULT_OPSET",
+    "HIDDEN_DIM",
+    "INPUT_DIM",
+    "SYNTHETIC_CORPUS_ROWS",
     "TrainConfig",
     "TrainResult",
     "generate_synthetic_corpus",

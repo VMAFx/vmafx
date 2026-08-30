@@ -22,10 +22,10 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 pytest.importorskip("optuna")  # gate: the loop needs the TPE sampler
 
-from vmaftune import cli as cli_module  # noqa: E402
-from vmaftune.cli import main  # noqa: E402
-from vmaftune.encode import EncodeRequest, EncodeResult  # noqa: E402
-from vmaftune.score import ScoreRequest, ScoreResult  # noqa: E402
+from vmaftune import cli as cli_module
+from vmaftune.cli import main
+from vmaftune.encode import EncodeRequest, EncodeResult
+from vmaftune.score import ScoreRequest, ScoreResult
 
 # ---------------------------------------------------------------------------
 # Argument validation / smoke path.
@@ -167,7 +167,7 @@ def test_live_loop_runs_with_mocked_encode_and_score(
 
     captured_vf: list[str] = []
 
-    def _fake_run_encode(req, *, ffmpeg_bin="ffmpeg"):  # noqa: ANN001
+    def _fake_run_encode(req, *, ffmpeg_bin="ffmpeg"):
         # The deband fragment must be injected as "-vf <fragment>".
         ep = list(req.extra_params)
         assert "-vf" in ep, "deband -vf fragment must be injected into the encode"
@@ -179,7 +179,7 @@ def test_live_loop_runs_with_mocked_encode_and_score(
         Path(req.output).write_bytes(b"\x00" * 32)
         return _fake_encode_result(req)
 
-    def _fake_run_score(req, *, vmaf_bin="vmaf", backend=None):  # noqa: ANN001
+    def _fake_run_score(req, *, vmaf_bin="vmaf", backend=None):
         return _fake_score_result(req)
 
     monkeypatch.setattr(cli_module, "pelorus_filter_available", lambda *a, **k: True)

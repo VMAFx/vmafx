@@ -39,7 +39,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.bisect import (  # noqa: E402
+from vmaftune.bisect import (
     DEFAULT_MAX_CONCURRENT_DECODES,
     _check_disk_space,
     _estimate_yuv_bytes,

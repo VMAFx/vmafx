@@ -19,9 +19,9 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
-from vmaftune.corpus import CorpusOptions  # noqa: E402
-from vmaftune.fr_from_nr_adapter import (  # noqa: E402
+from vmaftune import CORPUS_ROW_KEYS
+from vmaftune.corpus import CorpusOptions
+from vmaftune.fr_from_nr_adapter import (
     DEFAULT_CRF_SWEEP,
     DEFAULT_PRESET,
     NrInputRow,
@@ -73,11 +73,11 @@ def _make_fake_runners(tmp_path: Path):
         "score": [],
     }
 
-    def probe_runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def probe_runner(cmd, capture_output, text, check):
         captured["probe"].append(list(cmd))
         return _FakeCompleted(returncode=0, stdout=_ffprobe_payload())
 
-    def decode_runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def decode_runner(cmd, capture_output, text, check):
         captured["decode"].append(list(cmd))
         # The adapter expects the decoded YUV to exist after this call
         # so the FR encoder can read it. Write a stub byte stream.
@@ -86,7 +86,7 @@ def _make_fake_runners(tmp_path: Path):
         out_yuv.write_bytes(b"\x80" * 4096)
         return _FakeCompleted(returncode=0, stderr="ffmpeg version 6.1.1\n")
 
-    def encode_runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def encode_runner(cmd, capture_output, text, check):
         captured["encode"].append(list(cmd))
         Path(cmd[-1]).write_bytes(b"\x00" * 8192)
         return _FakeCompleted(
@@ -94,7 +94,7 @@ def _make_fake_runners(tmp_path: Path):
             stderr="ffmpeg version 6.1.1\nx264 - core 164 r3107\n",
         )
 
-    def score_runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def score_runner(cmd, capture_output, text, check):
         captured["score"].append(list(cmd))
         out_idx = cmd.index("--output") + 1
         out_path = Path(cmd[out_idx])
@@ -128,7 +128,7 @@ def test_probe_geometry_parses_ffprobe_payload(tmp_path: Path):
     src = tmp_path / "clip.mp4"
     src.write_bytes(b"\x00")
 
-    def runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def runner(cmd, capture_output, text, check):
         assert cmd[0] == "ffprobe"
         assert str(src) in cmd
         return _FakeCompleted(
@@ -149,7 +149,7 @@ def test_probe_geometry_parses_ffprobe_payload(tmp_path: Path):
 
 
 def test_probe_geometry_raises_on_invalid_geometry(tmp_path: Path):
-    def runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def runner(cmd, capture_output, text, check):
         return _FakeCompleted(
             returncode=0,
             stdout=json.dumps({"streams": [{"width": 0, "height": 0}], "format": {}}),
@@ -160,7 +160,7 @@ def test_probe_geometry_raises_on_invalid_geometry(tmp_path: Path):
 
 
 def test_probe_geometry_raises_on_nonzero_exit(tmp_path: Path):
-    def runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def runner(cmd, capture_output, text, check):
         return _FakeCompleted(returncode=1, stderr="boom")
 
     with pytest.raises(RuntimeError, match="ffprobe failed"):
@@ -344,7 +344,7 @@ def test_adapter_run_many_yields_in_deterministic_order(tmp_path: Path):
 def test_adapter_propagates_decode_failure(tmp_path: Path):
     captured, probe_r, _, encode_r, score_r = _make_fake_runners(tmp_path)
 
-    def failing_decode(cmd, capture_output, text, check):  # noqa: ARG001
+    def failing_decode(cmd, capture_output, text, check):
         captured["decode"].append(list(cmd))
         return _FakeCompleted(returncode=1, stderr="decode boom")
 

@@ -152,7 +152,7 @@ def test_html_one_shot_timeline_renders_non_empty_chart():
     # Inline SVG present.
     if "<svg" not in html:
         # matplotlib not installed in the test env — skip rather than fail.
-        import pytest as _pytest  # noqa: PLC0415
+        import pytest as _pytest
 
         _pytest.skip("matplotlib unavailable; SVG fallback exercised separately")
     # Locate the per-shot chart subtree by anchoring on the section
@@ -225,7 +225,7 @@ def test_three_shot_timeline_shows_last_shot_band():
     html = render_html(data)
     assert "Per-shot tuning" in html
     if "<svg" not in html:
-        import pytest as _pytest  # noqa: PLC0415
+        import pytest as _pytest
 
         _pytest.skip("matplotlib unavailable; SVG fallback exercised separately")
 

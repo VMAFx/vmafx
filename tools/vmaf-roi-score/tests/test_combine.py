@@ -23,14 +23,18 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmafroiscore import ROI_RESULT_KEYS, SCHEMA_VERSION, blend_scores  # noqa: E402
-from vmafroiscore.cli import _build_parser, main  # noqa: E402
-from vmafroiscore.mask import (  # noqa: E402
+from vmafroiscore import ROI_RESULT_KEYS, SCHEMA_VERSION, blend_scores
+from vmafroiscore.cli import _build_parser, main
+from vmafroiscore.mask import (
     MaskRequest,
     apply_saliency_mask,
     synthesise_uniform_mask,
 )
-from vmafroiscore.score import ScoreRequest, build_vmaf_command, parse_vmaf_json  # noqa: E402
+from vmafroiscore.score import (
+    ScoreRequest,
+    build_vmaf_command,
+    parse_vmaf_json,
+)
 
 # ---------------------------------------------------------------------------
 # combine math

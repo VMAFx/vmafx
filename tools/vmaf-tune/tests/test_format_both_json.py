@@ -21,8 +21,8 @@ from typing import Any
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.compare import ComparisonReport, RecommendResult  # noqa: E402
-from vmaftune.report import CodecRow, ReportData, SourceInfo  # noqa: E402
+from vmaftune.compare import ComparisonReport, RecommendResult
+from vmaftune.report import CodecRow, ReportData, SourceInfo
 
 # ---------------------------------------------------------------------------
 # Helpers — fake comparison report and CLI args
@@ -90,7 +90,7 @@ def test_compare_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
     Regression for the silent JSON-drop bug: the original implementation wrote
     .html and .md but never wrote the JSON artefact when ``fmt == "both"``.
     """
-    import vmaftune.cli as _cli  # noqa: PLC0415
+    import vmaftune.cli as _cli
 
     # Inject a fake source-info probe so _compare_source_info does not hit ffprobe.
     def _fake_source_info(args: Any) -> SourceInfo:
@@ -152,7 +152,7 @@ def test_report_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
 
     Regression for the same silent JSON-drop bug in the ``_run_report`` code path.
     """
-    import vmaftune.cli as _cli  # noqa: PLC0415
+    import vmaftune.cli as _cli
 
     # Inject a fake source-info probe.
     def _fake_source_info(args: Any) -> SourceInfo:
@@ -195,10 +195,10 @@ def test_report_format_both_writes_json(monkeypatch, tmp_path: Path) -> None:
 
     # Build the data object directly and call the write logic that was broken,
     # avoiding the full _run_report dispatch which validates input JSON files.
-    from vmaftune.report import render_html, render_markdown  # noqa: PLC0415
+    from vmaftune.report import render_html, render_markdown
 
     data = _sample_report_data()
-    import json as _json  # noqa: PLC0415
+    import json as _json
 
     out_base.parent.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []

@@ -22,8 +22,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows  # noqa: E402
-from vmaftune.resolution import (  # noqa: E402
+from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows
+from vmaftune.resolution import (
     MODEL_4K,
     MODEL_1080P,
     crf_offset_for_resolution,

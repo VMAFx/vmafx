@@ -25,8 +25,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import predictor as predictor_mod  # noqa: E402
-from vmaftune.predictor import Predictor, ShotFeatures  # noqa: E402
+from vmaftune import predictor as predictor_mod
+from vmaftune.predictor import Predictor, ShotFeatures
 
 
 @pytest.fixture(autouse=True)

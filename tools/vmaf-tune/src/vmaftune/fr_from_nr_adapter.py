@@ -45,9 +45,9 @@ import dataclasses
 import json
 import shlex
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .corpus import CorpusJob, CorpusOptions, iter_rows
 
@@ -98,7 +98,7 @@ class NrInputRow:
     extra: dict[str, Any] | None = None
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "NrInputRow":
+    def from_dict(cls, d: dict[str, Any]) -> NrInputRow:
         if "src" not in d:
             raise KeyError("NR input row missing required key 'src'")
         return cls(

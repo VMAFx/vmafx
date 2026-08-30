@@ -24,10 +24,10 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-optuna = pytest.importorskip("optuna")  # noqa: F841 — gate the whole module
+optuna = pytest.importorskip("optuna")
 
-from vmaftune.filter_adapters import get_filter_adapter  # noqa: E402
-from vmaftune.prefilter import (  # noqa: E402
+from vmaftune.filter_adapters import get_filter_adapter
+from vmaftune.prefilter import (
     DEFAULT_N_TRIALS,
     SMOKE_N_TRIALS,
     ProbeResult,

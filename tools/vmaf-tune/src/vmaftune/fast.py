@@ -185,7 +185,7 @@ def _proxy_score(
     pulling onnxruntime into module-level imports (the smoke path must
     keep working on hosts that never installed onnxruntime).
     """
-    from vmaftune.proxy import run_proxy  # noqa: PLC0415  (deliberately lazy)
+    from vmaftune.proxy import run_proxy
 
     return run_proxy(
         features,
@@ -280,7 +280,7 @@ def _gpu_verify(
         Real libvmaf score for the chosen CRF.
     """
     if score_backend_select is None:
-        from vmaftune.score_backend import select_backend  # noqa: PLC0415
+        from vmaftune.score_backend import select_backend
 
         score_backend_select = select_backend
     if encode_runner is None:
@@ -366,10 +366,10 @@ def _build_production_sample_extractor(
     The returned callable is stateless: parallel TPE trials can call it
     concurrently (each gets its own tempdir).
     """
-    from . import CANONICAL6_FEATURES  # noqa: PLC0415
-    from .encode import EncodeRequest, bitrate_kbps, run_encode  # noqa: PLC0415
-    from .predictor_features import _probe_video_geometry  # noqa: PLC0415
-    from .score import ScoreRequest, run_score  # noqa: PLC0415
+    from . import CANONICAL6_FEATURES
+    from .encode import EncodeRequest, bitrate_kbps, run_encode
+    from .predictor_features import _probe_video_geometry
+    from .score import ScoreRequest, run_score
 
     class _Cfg:
         ffprobe_bin: str = "ffprobe"
@@ -450,9 +450,9 @@ def _build_production_encode_runner(
     Encodes the full source, scores it, and returns the real kbps +
     libvmaf score so the caller can compute the proxy/verify gap.
     """
-    from .encode import EncodeRequest, bitrate_kbps, run_encode  # noqa: PLC0415
-    from .predictor_features import _probe_video_geometry  # noqa: PLC0415
-    from .score import ScoreRequest, run_score  # noqa: PLC0415
+    from .encode import EncodeRequest, bitrate_kbps, run_encode
+    from .predictor_features import _probe_video_geometry
+    from .score import ScoreRequest, run_score
 
     class _Cfg:
         ffprobe_bin: str = "ffprobe"
@@ -637,7 +637,7 @@ def fast_recommend(
     # the final verify encode — uses the same backend. ADR-0498 follow-
     # up #7: previously the sample extractor always defaulted to CPU
     # even when a GPU was available.
-    from vmaftune.score_backend import select_backend as _select_backend  # noqa: PLC0415
+    from vmaftune.score_backend import select_backend as _select_backend
 
     _prod_backend = _select_backend(prefer="auto")
 
