@@ -53,7 +53,7 @@ make test-netflix-golden                # Netflix CPU golden-data gate (see §8)
 
 ```text
 make lint          # clang-tidy + cppcheck + iwyu + ruff + semgrep
-make format        # clang-format + black + isort (writes)
+make format        # clang-format + black + ruff (writes)
 make format-check  # dry-run (CI / pre-commit)
 ```
 

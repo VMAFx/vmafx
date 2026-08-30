@@ -6,7 +6,7 @@ Go port of the predictor-, saliency- and search-driven half of `vmaf-tune`:
 span them.
 
 | Package | Ports |
-|---------|-------|
+| --------- | ------- |
 | `pkg/codecadapter` | `vmaftune/codec_adapters/` |
 | `pkg/ffencode` | `vmaftune/encode.py` |
 | `pkg/scorecli` | `vmaftune/score.py` |

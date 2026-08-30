@@ -78,7 +78,7 @@ make test-netflix-golden                # the 3 Netflix CPU golden-data tests (s
 
 ```bash
 make lint        # clang-tidy + cppcheck + iwyu + ruff + semgrep
-make format      # clang-format + black + isort (write)
+make format      # clang-format + black + ruff (write)
 make format-check  # same, no writes (pre-commit / CI)
 ```
 

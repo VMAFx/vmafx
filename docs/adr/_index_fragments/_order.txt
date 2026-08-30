@@ -882,3 +882,4 @@
 1125-vmafx-tune-go-port-integration
 1122-vmaf-v1-model-port
 1121-sycl-qsv-zerocopy-p010-normalization
+1126-retire-isort-for-ruff

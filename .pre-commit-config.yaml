@@ -74,13 +74,6 @@ repos:
         # so pre-commit needs its own exclude to skip them.
         exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
 
-  - repo: https://github.com/PyCQA/isort
-    rev: 9.0.1
-    hooks:
-      - id: isort
-        files: '^(python|ai|scripts|tools)/.*\.py$'
-        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.5
     hooks:

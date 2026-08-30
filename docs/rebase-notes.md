@@ -14,6 +14,18 @@
   15 `apt-get install … meson` sites replaced with
   `sudo pip3 install --break-system-packages --quiet meson`. Purely additive
   against upstream, no rebase impact.
+## fix/precommit-master-green — isort retired in favour of ruff (2026-08-30)
+
+- `pyproject.toml`, `.pre-commit-config.yaml` — fork-local tooling config;
+  upstream Netflix/vmaf has neither a ruff nor an isort configuration, so an
+  upstream sync cannot conflict here.
+- `.github/workflows/required-aggregator.yml` + `lint-and-format.yml` —
+  **paired invariant, not rebase-sensitive but edit-sensitive.** The
+  aggregator matches required checks by *exact job name*. The `Python Lint`
+  job was renamed to `Python Lint (Ruff + Black + mypy)`; both files must
+  always be changed together. Renaming one alone leaves the aggregator
+  waiting on a check name that never registers, which blocks every PR
+  rather than failing loudly.
 
 ## feat/vmafx-tune-go-fast — Phase A.5 fast path ported to Go (2026-08-30)
 

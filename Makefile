@@ -15,7 +15,7 @@ NINJA := $(VIRTUAL_ENV_PATH)/ninja
 
 # Lint and format tools resolve from the project venv first, then the system
 # PATH. Without this, `make lint-py` / `make format-check` silently found no
-# ruff / black / isort and reported success, so the local gate could pass while
+# ruff / black and reported success, so the local gate could pass while
 # CI's identical checks failed.
 export PATH := $(CURDIR)/$(VIRTUAL_ENV_PATH):$(PATH)
 
@@ -97,12 +97,11 @@ $(NINJA): $(VENV_PIP)
 # cannot disagree about what counts as a violation.
 RUFF_VERSION  := 0.16.5
 BLACK_VERSION := 26.5.1
-ISORT_VERSION := 6.0.1
 
 .PHONY: lint-tools
 lint-tools: $(VENV_PIP)
 	$(VENV_PIP) install --quiet \
-	    'ruff==$(RUFF_VERSION)' 'black==$(BLACK_VERSION)' 'isort==$(ISORT_VERSION)' mypy
+	    'ruff==$(RUFF_VERSION)' 'black==$(BLACK_VERSION)' mypy
 	@echo "lint tools installed into $(VENV_PIP:%/pip=%)"
 	@command -v shfmt >/dev/null || { \
 	   echo "note: shfmt is not a Python package and was not installed."; \
@@ -216,7 +215,7 @@ format:
 	                   | grep -v '^core/src/interop/pelorus_' \
 	                   | grep -v '^core/include/libvmaf/pelorus/') || true
 	@command -v black >/dev/null && black python/ ai/ scripts/ 2>/dev/null || true
-	@command -v isort >/dev/null && isort python/ ai/ scripts/ 2>/dev/null || true
+	@command -v ruff >/dev/null && ruff check --fix-only --quiet python/ ai/ scripts/ || true
 	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
 
 # Formatters — check-only (CI gate, no writes).
@@ -229,8 +228,8 @@ format-check:
 	      | grep -v '^core/include/libvmaf/pelorus/')
 	$(call require-tool,black,pip install black==26.5.1)
 	black --check python/ ai/ scripts/
-	$(call require-tool,isort,pip install isort==6.0.1)
-	isort --check-only python/ ai/ scripts/
+	$(call require-tool,ruff,pip install ruff==$(RUFF_VERSION))
+	ruff check --select I python/ ai/ scripts/
 	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@latest)
 	shfmt -d -i 2 -ci $$(git ls-files '*.sh')
 
@@ -472,7 +471,7 @@ help:
 	@echo "Fork-specific targets:"
 	@echo "  make lint             — clang-tidy + cppcheck + ruff + shellcheck + markdownlint"
 	@echo "  make lint-md          — markdownlint-cli2 on changed *.md (MDLINT_SCOPE=all for full tree, ADR-0866)"
-	@echo "  make format           — clang-format + black + isort + shfmt (writes)"
+	@echo "  make format           — clang-format + black + ruff + shfmt (writes)"
 	@echo "  make format-check     — same, no writes (CI gate)"
 	@echo "  make sec              — semgrep (CERT-C + CWE + fork rules)"
 	@echo "  make sbom             — SPDX + CycloneDX SBOMs via syft"
@@ -484,7 +483,7 @@ help:
 	@echo "  make coverage-html    — render HTML coverage report"
 	@echo "  make coverage-check   — enforce ≥70% overall / ≥85% critical"
 	@echo "  make assertion-density — Power-of-10 rule 5 density check"
-	@echo "  make lint-tools       — install ruff/black/isort/mypy into .venv at the pinned versions"
+	@echo "  make lint-tools       — install ruff/black/mypy into .venv at the pinned versions"
 	@echo "  make install-hooks    — wire up pre-commit + pre-push git hooks"
 	@echo "                          (set VMAFX_NATIVE_HOOKS=1 for native bash; ADR-0924)"
 	@echo "  make hooks-install    — legacy alias for install-hooks"

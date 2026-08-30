@@ -473,7 +473,7 @@ jobs:
 
   python-lint:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    # T7-CI-DEDUP — mypy-only. Ruff/Black/isort already run in the
+    # T7-CI-DEDUP — mypy-only. Ruff/Black already run in the
     # `pre-commit` job above (over `--all-files`), so duplicating them
     # here just doubled the maintenance surface (two pip-pin sources of
     # truth) without catching anything new. mypy stays because no
@@ -484,7 +484,7 @@ jobs:
     # this dedup. Body is mypy-only per T7-CI-DEDUP; the rename to
     # "Python Lint (mypy)" lands separately together with the
     # branch-protection change.
-    name: Python Lint (Ruff + Black + isort + mypy)
+    name: Python Lint (Ruff + Black + mypy)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
