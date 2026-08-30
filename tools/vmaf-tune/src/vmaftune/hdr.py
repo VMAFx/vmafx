@@ -103,9 +103,11 @@ def detect_hdr(
         "v:0",
         "-show_streams",
         "-show_entries",
-        "stream=color_transfer,color_primaries,color_space,color_range,pix_fmt:"
-        "stream_side_data=side_data_type,red_x,red_y,green_x,green_y,blue_x,blue_y,"
-        "white_point_x,white_point_y,min_luminance,max_luminance,max_content,max_average",
+        (
+            "stream=color_transfer,color_primaries,color_space,color_range,pix_fmt:"
+            "stream_side_data=side_data_type,red_x,red_y,green_x,green_y,blue_x,blue_y,"
+            "white_point_x,white_point_y,min_luminance,max_luminance,max_content,max_average"
+        ),
         "-of",
         "json",
         str(video_path),
@@ -234,16 +236,16 @@ def _format_master_display(sd: dict[str, Any]) -> str | None:
 def _frac_to_unit(value: Any, *, scale: int) -> int:
     """Convert ffprobe's ``"num/den"`` fraction (or float / int) to scaled int."""
     if isinstance(value, (int, float)):
-        return int(round(float(value) * scale))
+        return round(float(value) * scale)
     text = str(value)
     if "/" in text:
         num, den = text.split("/", 1)
         try:
-            return int(round((float(num) / float(den)) * scale))
+            return round((float(num) / float(den)) * scale)
         except (ValueError, ZeroDivisionError):
             return 0
     try:
-        return int(round(float(text) * scale))
+        return round(float(text) * scale)
     except ValueError:
         return 0
 

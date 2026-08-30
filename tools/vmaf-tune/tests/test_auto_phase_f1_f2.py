@@ -19,7 +19,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.auto import (  # noqa: E402
+from vmaftune.auto import (
     LOW_COMPLEXITY_PROBE_BITRATE_THRESHOLD_KBPS,
     SHORT_CIRCUIT_PREDICATES,
     PlanState,

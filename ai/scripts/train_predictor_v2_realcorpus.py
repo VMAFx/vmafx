@@ -513,8 +513,10 @@ def evaluate_gate(
     """
     if not folds:
         return False, (
-            "no folds — corpus has fewer distinct sources than "
-            f"LOSO_FOLD_COUNT={LOSO_FOLD_COUNT}",
+            (
+                "no folds — corpus has fewer distinct sources than "
+                f"LOSO_FOLD_COUNT={LOSO_FOLD_COUNT}"
+            ),
         )
     plccs = [f.plcc for f in folds]
     mean_plcc = sum(plccs) / len(plccs)
@@ -692,7 +694,10 @@ def render_human_summary(report: dict) -> str:
         f"Per-fold min:        >= {gate['per_fold_min']:.4f}",
         f"Fold count:          {gate['loso_fold_count']}",
         "",
-        f"{'codec':<14} {'status':<22} {'mean_plcc':>9} {'spread':>7} " f"{'rows':>6} {'srcs':>5}",
+        (
+            f"{'codec':<14} {'status':<22} {'mean_plcc':>9} {'spread':>7} "
+            f"{'rows':>6} {'srcs':>5}"
+        ),
     ]
     for codec_payload in report["codecs"]:
         codec = codec_payload["codec"]

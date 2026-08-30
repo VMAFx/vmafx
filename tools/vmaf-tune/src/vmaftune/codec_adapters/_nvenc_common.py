@@ -229,10 +229,10 @@ class BaseNvencAdapter:
 
 
 __all__ = [
-    "BaseNvencAdapter",
     "NVENC_CQ_HARD_LIMITS",
     "NVENC_CQ_RANGE",
     "NVENC_PRESETS",
+    "BaseNvencAdapter",
     "nvenc_preset",
     "validate_nvenc",
 ]

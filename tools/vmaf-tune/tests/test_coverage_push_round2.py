@@ -43,8 +43,8 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 # bisect
 # ---------------------------------------------------------------------------
 
-from vmaftune import bisect as bisect_mod  # noqa: E402
-from vmaftune.bisect import (  # noqa: E402
+from vmaftune import bisect as bisect_mod
+from vmaftune.bisect import (
     _absolute_crf_range,
     _check_disk_space,
     _describe_best_miss,
@@ -295,7 +295,7 @@ def test_sample_clip_window_sample_ge_duration_returns_zeros():
 
 
 def test_sample_clip_window_zero_sample():
-    start, clip, skip, cnt = _sample_clip_window(
+    start, _clip, _skip, cnt = _sample_clip_window(
         duration_s=10.0,
         sample_clip_seconds=0.0,
         framerate=24.0,
@@ -640,7 +640,7 @@ def test_bisect_encoder_unavailable_detected():
 # ladder
 # ---------------------------------------------------------------------------
 
-from vmaftune.ladder import (  # noqa: E402
+from vmaftune.ladder import (
     LadderPoint,
     UncertaintyLadderPoint,
     _cross,
@@ -657,7 +657,7 @@ from vmaftune.ladder import (  # noqa: E402
     prune_redundant_rungs_by_uncertainty,
     select_knees,
 )
-from vmaftune.uncertainty import ConfidenceThresholds  # noqa: E402
+from vmaftune.uncertainty import ConfidenceThresholds
 
 
 def test_ladder_point_pixel_count():
@@ -937,14 +937,14 @@ def test_emit_hls_empty_ladder():
 # recommend — load_corpus_jsonl, format_result, uncertainty path
 # ---------------------------------------------------------------------------
 
-from vmaftune.recommend import (  # noqa: E402
+from vmaftune.recommend import (
     UncertaintyAwareRequest,
     _row_interval,
     format_result,
     load_corpus_jsonl,
     pick_target_vmaf_with_uncertainty,
 )
-from vmaftune.uncertainty import ConfidenceDecision  # noqa: E402
+from vmaftune.uncertainty import ConfidenceDecision
 
 
 def _row(
@@ -1012,7 +1012,7 @@ def test_row_interval_uses_sample_uncertainty_override():
 def test_row_interval_uses_embedded_vmaf_interval():
     req = UncertaintyAwareRequest(target_vmaf=90.0)
     r = _row(crf=22, vmaf=91.0, vmaf_interval={"low": 88.0, "high": 94.0})
-    point, low, high = _row_interval(r, req)
+    _point, low, high = _row_interval(r, req)
     assert low == pytest.approx(88.0)
     assert high == pytest.approx(94.0)
 
@@ -1020,7 +1020,7 @@ def test_row_interval_uses_embedded_vmaf_interval():
 def test_row_interval_returns_nan_when_no_interval():
     req = UncertaintyAwareRequest(target_vmaf=90.0)
     r = _row(crf=22, vmaf=91.0)  # no vmaf_interval key
-    point, low, high = _row_interval(r, req)
+    _point, low, high = _row_interval(r, req)
     assert math.isnan(low)
     assert math.isnan(high)
 
@@ -1028,7 +1028,7 @@ def test_row_interval_returns_nan_when_no_interval():
 def test_row_interval_returns_nan_for_missing_vmaf_score():
     req = UncertaintyAwareRequest(target_vmaf=90.0)
     r = {"crf": 22, "bitrate_kbps": 2000.0}  # no vmaf_score
-    point, low, high = _row_interval(r, req)
+    point, _low, _high = _row_interval(r, req)
     assert math.isnan(point)
 
 
@@ -1117,7 +1117,7 @@ def test_pick_with_uncertainty_honours_encoder_filter():
 # cache — additional edge cases
 # ---------------------------------------------------------------------------
 
-from vmaftune.cache import CachedResult, TuneCache  # noqa: E402
+from vmaftune.cache import CachedResult, TuneCache
 
 
 def _make_cached_result(score=92.5) -> CachedResult:
@@ -1240,7 +1240,7 @@ def test_cache_total_bytes_missing_subdir(tmp_path):
 # hdr — additional edge cases
 # ---------------------------------------------------------------------------
 
-from vmaftune.hdr import (  # noqa: E402
+from vmaftune.hdr import (
     HdrInfo,
     _classify_payload,
     _extract_mastering,

@@ -19,7 +19,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.encoder_stats import (  # noqa: E402
+from vmaftune.encoder_stats import (
     ENCODER_STATS_COLUMNS,
     PerFrameStats,
     aggregate_stats,
@@ -134,7 +134,7 @@ def test_parse_x265_p_frame_keeps_fractional_ctu_ratios():
 
 def test_parse_stats_file_round_trips_three_frames(tmp_path: Path):
     p = tmp_path / "x264.stats"
-    p.write_text("\n".join([_OPTIONS_HEADER, _I_FRAME, _P_FRAME, _b_FRAME, ""]))
+    p.write_text(f"{_OPTIONS_HEADER}\n{_I_FRAME}\n{_P_FRAME}\n{_b_FRAME}\n")
     frames = parse_stats_file(p)
     assert len(frames) == 3
     assert frames[0].frame_type == "I"

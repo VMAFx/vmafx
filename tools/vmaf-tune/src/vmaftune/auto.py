@@ -524,7 +524,7 @@ def _default_hdr_info_for_auto():
     need deterministic codec-specific dispatch, so they fall back to the
     same BT.2020/PQ tuple the old scaffold hard-coded.
     """
-    from .hdr import HdrInfo  # noqa: PLC0415
+    from .hdr import HdrInfo
 
     return HdrInfo(
         transfer="pq",
@@ -580,10 +580,13 @@ def _probe_source_meta(
     was extracted. Tests pass a fake ``runner`` so the production path
     is covered without depending on host ffprobe behavior.
     """
-    import subprocess  # noqa: PLC0415
+    import subprocess
 
-    from .hdr import detect_hdr  # noqa: PLC0415
-    from .predictor_features import FeatureExtractorConfig, _probe_video_geometry  # noqa: PLC0415
+    from .hdr import detect_hdr
+    from .predictor_features import (
+        FeatureExtractorConfig,
+        _probe_video_geometry,
+    )
 
     actual_runner = runner or subprocess.run
     cfg = FeatureExtractorConfig()
@@ -795,7 +798,7 @@ def _should_short_circuit_no_two_pass(meta: SourceMeta, plan_state: PlanState) -
 # later one whose result would have been different. Adding a new
 # short-circuit means appending here, never reordering.
 SHORT_CIRCUIT_PREDICATES: tuple[
-    tuple[ShortCircuit, Callable[["SourceMeta", "PlanState"], bool]], ...
+    tuple[ShortCircuit, Callable[[SourceMeta, PlanState], bool]], ...
 ] = (
     (ShortCircuit.LADDER_SINGLE_RUNG, _should_short_circuit_1_single_rung_ladder),
     (ShortCircuit.CODEC_PINNED, _should_short_circuit_2_codec_pinned),
@@ -873,8 +876,7 @@ def _apply_recipe_override(
         # Clamp so we never violate the constructor invariant
         # (tight <= wide). A recipe that asks for a tight wider than
         # the corpus-fit wide is silently capped.
-        if new_tight > wide:
-            new_tight = wide
+        new_tight = min(new_tight, wide)
         effective_thresholds = ConfidenceThresholds(
             tight_interval_max_width=new_tight,
             wide_interval_min_width=wide,
@@ -896,7 +898,7 @@ class AutoPlan:
     metadata: dict
 
 
-def _predictor_features_from_meta(meta: SourceMeta) -> "ShotFeatures":
+def _predictor_features_from_meta(meta: SourceMeta) -> ShotFeatures:
     """Build predictor features from metadata-only auto inputs.
 
     This is the first production step past the F.1 placeholder cell:
@@ -907,11 +909,11 @@ def _predictor_features_from_meta(meta: SourceMeta) -> "ShotFeatures":
     probe-encode capture lands; the predictor contract explicitly
     treats those as unavailable signals.
     """
-    from .predictor import ShotFeatures  # noqa: PLC0415
+    from .predictor import ShotFeatures
 
     fps = 30.0
     duration_s = max(float(meta.duration_s), 0.0)
-    shot_frames = int(round(duration_s * fps)) if duration_s > 0.0 else int(fps)
+    shot_frames = round(duration_s * fps) if duration_s > 0.0 else int(fps)
     pixels = max(int(meta.width), 1) * max(int(meta.height), 1)
     # Complexity score is the probe bitrate when available. If the
     # caller has not supplied it yet, seed the predictor with a
@@ -934,7 +936,7 @@ def _predictor_features_from_meta(meta: SourceMeta) -> "ShotFeatures":
     )
 
 
-def _estimate_cell_bitrate_kbps(features: "ShotFeatures", codec: str, crf: int) -> float:
+def _estimate_cell_bitrate_kbps(features: ShotFeatures, codec: str, crf: int) -> float:
     """Estimate bitrate for an auto cell from probe bitrate + CRF.
 
     The value is explicitly a predictor estimate, not a measured encode
@@ -943,7 +945,7 @@ def _estimate_cell_bitrate_kbps(features: "ShotFeatures", codec: str, crf: int) 
     probe quality. This gives downstream planners a monotone bitrate
     estimate until the full encode/score realise step lands.
     """
-    from .codec_adapters import get_adapter  # noqa: PLC0415
+    from .codec_adapters import get_adapter
 
     adapter = get_adapter(codec)
     probe_quality = int(getattr(adapter, "probe_quality", getattr(adapter, "quality_default", crf)))
@@ -1177,12 +1179,12 @@ def run_auto(
     # ------------------------------------------------------------------
     # Stage 3 — HDR pipeline (short-circuit #5).
     # ------------------------------------------------------------------
-    _hdr_codec_args: Callable[[str, "HdrInfo"], tuple[str, ...]] | None = None
+    _hdr_codec_args: Callable[[str, HdrInfo], tuple[str, ...]] | None = None
     if _should_short_circuit_5_sdr_skip(meta, plan_state):
         plan_state.fired(ShortCircuit.SDR_SKIP)
         hdr_info = None
     else:
-        from .hdr import hdr_codec_args as _hdr_codec_args  # noqa: PLC0415
+        from .hdr import hdr_codec_args as _hdr_codec_args
 
     # ------------------------------------------------------------------
     # Stage 4 — sample-clip propagation (short-circuit #6).
@@ -1224,7 +1226,7 @@ def run_auto(
     predictor = None
     predictor_features = None
     if not smoke:
-        from .predictor import Predictor  # noqa: PLC0415
+        from .predictor import Predictor
 
         predictor = Predictor()
         predictor_features = _predictor_features_from_meta(meta)
@@ -1271,7 +1273,7 @@ def run_auto(
                 }
             )
             if predictor is not None and predictor_features is not None:
-                from .predictor import pick_crf  # noqa: PLC0415
+                from .predictor import pick_crf
 
                 crf = pick_crf(
                     predictor,
@@ -1347,7 +1349,7 @@ def run_auto(
     # ------------------------------------------------------------------
     if codecs:
         try:
-            from .codec_adapters import get_adapter as _get_adapter  # noqa: PLC0415
+            from .codec_adapters import get_adapter as _get_adapter
 
             _first_adapter = _get_adapter(codecs[0])
             plan_state.adapter_supports_two_pass = bool(
@@ -1592,13 +1594,10 @@ def emit_plan_json(plan: AutoPlan) -> str:
 __all__ = [
     "DEFAULT_TIGHT_INTERVAL_MAX_WIDTH",
     "DEFAULT_WIDE_INTERVAL_MIN_WIDTH",
-    "AutoPlan",
-    "ConfidenceDecision",
-    "ConfidenceThresholds",
     "LADDER_MULTI_RUNG_HEIGHT",
+    "LOW_COMPLEXITY_PROBE_BITRATE_THRESHOLD_KBPS",
     "PHASE_D_DURATION_GATE_S",
     "PHASE_D_SHOT_VARIANCE_GATE",
-    "PlanState",
     "RECIPE_CLASS_ANIMATION",
     "RECIPE_CLASS_DEFAULT",
     "RECIPE_CLASS_LIVE_ACTION_HDR",
@@ -1606,6 +1605,10 @@ __all__ = [
     "RECIPE_CLASS_UGC",
     "SALIENCY_CONTENT_CLASSES",
     "SHORT_CIRCUIT_PREDICATES",
+    "AutoPlan",
+    "ConfidenceDecision",
+    "ConfidenceThresholds",
+    "PlanState",
     "ShortCircuit",
     "SourceMeta",
     "_apply_recipe_override",
@@ -1619,10 +1622,9 @@ __all__ = [
     "_should_short_circuit_5_sdr_skip",
     "_should_short_circuit_6_sample_clip_propagate",
     "_should_short_circuit_7_skip_per_shot",
-    "_should_short_circuit_low_complexity",
     "_should_short_circuit_baseline_meets_target",
+    "_should_short_circuit_low_complexity",
     "_should_short_circuit_no_two_pass",
-    "LOW_COMPLEXITY_PROBE_BITRATE_THRESHOLD_KBPS",
     "emit_plan_json",
     "evaluate_short_circuits",
     "get_recipe_for_class",

@@ -95,7 +95,7 @@ $(NINJA): $(VENV_PIP)
 # Provision the lint / format toolchain into the project venv. Versions are
 # kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
 # cannot disagree about what counts as a violation.
-RUFF_VERSION  := 0.15.17
+RUFF_VERSION  := 0.16.5
 BLACK_VERSION := 26.5.1
 ISORT_VERSION := 6.0.1
 

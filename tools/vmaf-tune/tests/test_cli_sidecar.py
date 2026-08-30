@@ -21,8 +21,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import cli as cli_module  # noqa: E402
-from vmaftune.cli import main  # noqa: E402
+from vmaftune import cli as cli_module
+from vmaftune.cli import main
 
 _FEATURES = {
     "probe_bitrate_kbps": 3000.0,

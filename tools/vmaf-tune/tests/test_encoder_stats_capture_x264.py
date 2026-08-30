@@ -17,7 +17,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.encode import (  # noqa: E402
+from vmaftune.encode import (
     EncodeRequest,
     build_pass1_stats_command,
     run_encode_with_stats,
@@ -83,7 +83,7 @@ def test_run_encode_with_stats_attaches_parsed_frames(tmp_path: Path):
 
     calls: list[list[str]] = []
 
-    def fake_run(cmd, capture_output, text, check):  # noqa: ARG001
+    def fake_run(cmd, capture_output, text, check):
         calls.append(list(cmd))
         # Pass-1 invocation: drop the canned stats file at the
         # path the wrapper expects (``<prefix>-0.log``).
@@ -132,7 +132,7 @@ def test_run_encode_with_stats_capture_disabled_short_circuits(tmp_path: Path):
 
     calls: list[list[str]] = []
 
-    def fake_run(cmd, capture_output, text, check):  # noqa: ARG001
+    def fake_run(cmd, capture_output, text, check):
         calls.append(list(cmd))
         out_path = Path(cmd[-1])
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -157,7 +157,7 @@ def test_run_encode_with_stats_tolerates_missing_stats_file(tmp_path: Path):
     req = _make_request(tmp_path)
     req.output.parent.mkdir(parents=True, exist_ok=True)
 
-    def fake_run(cmd, capture_output, text, check):  # noqa: ARG001
+    def fake_run(cmd, capture_output, text, check):
         if "-pass" not in cmd:
             out_path = Path(cmd[-1])
             out_path.parent.mkdir(parents=True, exist_ok=True)

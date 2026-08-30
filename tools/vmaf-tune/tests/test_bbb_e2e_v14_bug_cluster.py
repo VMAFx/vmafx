@@ -37,15 +37,15 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters._qsv_common import BaseQsvAdapter  # noqa: E402
-from vmaftune.compare import (  # noqa: E402
+from vmaftune.codec_adapters._qsv_common import BaseQsvAdapter
+from vmaftune.compare import (
     _DEFAULT_VAAPI_DEVICE,
     _QSV_ENCODERS,
     DEFAULT_VAAPI_DEVICE,
     _hw_init_args_for_encoder,
     probe_encoder_available,
 )
-from vmaftune.hw_devices import AUTO_VAAPI_DEVICE  # noqa: E402
+from vmaftune.hw_devices import AUTO_VAAPI_DEVICE
 
 # ---------------------------------------------------------------------------
 # V14-A — probe nullsrc resolution fix (320x240, not 64x64)
@@ -120,7 +120,7 @@ def test_v14_b_qsv_probe_contains_init_hw_device():
     runner, calls = _make_runner(
         b" V..... h264_qsv             H.264 / AVC (Intel Quick Sync Video)\n"
     )
-    ok, reason = probe_encoder_available("h264_qsv", runner=runner)
+    _ok, _reason = probe_encoder_available("h264_qsv", runner=runner)
     # We don't care whether the probe succeeds on this host (no GPU in CI),
     # only that the argv was built correctly.
     encode_argv = calls[1]
@@ -284,7 +284,7 @@ def test_qsv_encoders_not_in_nvenc_or_amf():
 
 def test_v14_c_amf_probe_failure_returns_false_not_exception():
     """When AMF dummy-encode fails (e.g. decoder-only APU), probe returns False."""
-    runner, calls = _make_runner(
+    runner, _calls = _make_runner(
         b" V..... h264_amf             AMD AMF H.264 Encoder\n",
         encode_rc=1,
         encode_stderr=b"[h264_amf @ 0xabc] AMF_NOT_SUPPORTED\n",
@@ -329,7 +329,7 @@ def _ffmpeg_reports_encoder(encoder: str) -> bool:
             parts = line.split()
             if len(parts) >= 2 and parts[1] == encoder:
                 return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     return False
 

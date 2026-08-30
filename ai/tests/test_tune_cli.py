@@ -63,16 +63,7 @@ def test_make_tune_suggest_dispatches_to_trial_methods() -> None:
 def test_tune_cli_invokes_sweep(monkeypatch, tmp_path: Path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(
-        "\n".join(
-            [
-                "model: fr_regressor",
-                "model_args:",
-                "  in_features: 6",
-                "cache: features.parquet",
-                "output: runs/base",
-                "epochs: 1",
-            ]
-        )
+        "model: fr_regressor\nmodel_args:\n  in_features: 6\ncache: features.parquet\noutput: runs/base\nepochs: 1"
     )
     calls: list[dict[str, object]] = []
 

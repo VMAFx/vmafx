@@ -575,7 +575,7 @@ class NRProxyBackend:
 
         input_name = getattr(session, "get_inputs", lambda: [type("I", (), {"name": "input"})()])()[
             0
-        ].name  # noqa: E501
+        ].name
         try:
             outputs = session.run(None, {input_name: tensor})
         except Exception as exc:
@@ -635,7 +635,7 @@ def _load_ort_session(model_path: Path, *, use_gpu_ep: bool = True) -> object:
         available_eps = ort.get_available_providers()
         gpu_eps = [
             ep for ep in ("CUDAExecutionProvider", "ROCMExecutionProvider") if ep in available_eps
-        ]  # noqa: E501
+        ]
         if gpu_eps:
             providers = gpu_eps + providers
 
@@ -658,13 +658,13 @@ def _luma_plane_bytes(width: int, height: int, pix_fmt: str) -> int:
     """Return the byte size of the luma plane for one frame."""
     # All supported pix_fmts store luma as width×height pixels.
     # 8-bit formats: 1 byte/pixel; 10/12-bit formats: 2 bytes/pixel (LE).
-    bits_16 = pix_fmt.endswith("10le") or pix_fmt.endswith("12le") or pix_fmt.endswith("16le")
+    bits_16 = pix_fmt.endswith(("10le", "12le", "16le"))
     return width * height * (2 if bits_16 else 1)
 
 
 def _chroma_plane_bytes(width: int, height: int, pix_fmt: str) -> int:
     """Return the total byte size of both chroma planes for one frame."""
-    bits_16 = pix_fmt.endswith("10le") or pix_fmt.endswith("12le") or pix_fmt.endswith("16le")
+    bits_16 = pix_fmt.endswith(("10le", "12le", "16le"))
     bpp = 2 if bits_16 else 1
     if pix_fmt.startswith("yuv444"):
         return width * height * 2 * bpp
@@ -685,7 +685,7 @@ def _extract_middle_luma_frame(
     width: int,
     height: int,
     pix_fmt: str,
-) -> "np.ndarray":  # type: ignore[name-defined]  # noqa: F821
+) -> np.ndarray:  # type: ignore[name-defined]  # noqa: F821
     """Read the middle frame's luma plane from a raw YUV file.
 
     Returns a 2-D ``uint8`` numpy array of shape ``(height, width)``.
@@ -719,7 +719,7 @@ def _extract_middle_luma_frame(
     mid_frame = n_frames // 2
     offset = mid_frame * frame_sz
 
-    bits_16 = pix_fmt.endswith("10le") or pix_fmt.endswith("12le") or pix_fmt.endswith("16le")
+    bits_16 = pix_fmt.endswith(("10le", "12le", "16le"))
     try:
         with yuv_path.open("rb") as fh:
             fh.seek(offset)
@@ -745,7 +745,7 @@ def _extract_middle_luma_frame(
     return arr_u8.reshape(height, width)
 
 
-def _resize_luma_224(luma: "np.ndarray", *, width: int, height: int) -> "np.ndarray":  # type: ignore[name-defined]  # noqa: F821
+def _resize_luma_224(luma: np.ndarray, *, width: int, height: int) -> np.ndarray:  # type: ignore[name-defined]  # noqa: F821
     """Resize luma frame to 224×224 using simple bilinear interpolation.
 
     Uses ``cv2`` when available (faster); falls back to a pure-numpy
@@ -783,10 +783,10 @@ def _resize_luma_224(luma: "np.ndarray", *, width: int, height: int) -> "np.ndar
     top = (
         luma_f[row_lo[:, None], col_lo[None, :]] * (1.0 - col_frac)
         + luma_f[row_lo[:, None], col_lo[None, :] + 1] * col_frac
-    )  # noqa: E501
+    )
     bottom = (
         luma_f[row_lo[:, None] + 1, col_lo[None, :]] * (1.0 - col_frac)
         + luma_f[row_lo[:, None] + 1, col_lo[None, :] + 1] * col_frac
-    )  # noqa: E501
+    )
     result = top * (1.0 - row_frac) + bottom * row_frac
     return result.clip(0, 255).astype(np.uint8)

@@ -32,7 +32,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.score_backend import (  # noqa: E402
+from vmaftune.score_backend import (
     NR_PROXY_DEFAULT_CALIBRATION_INTERCEPT,
     NR_PROXY_DEFAULT_CALIBRATION_SLOPE,
     NR_PROXY_DEFAULT_DELTA_FAST,
@@ -451,7 +451,7 @@ class TestNRProxyBackendCalibration:
 
 class TestLoadOrtSession:
     def test_missing_model_file_raises_nr_proxy_backend_error(self, tmp_path: Path) -> None:
-        from vmaftune.score_backend import _load_ort_session  # noqa: PLC0415
+        from vmaftune.score_backend import _load_ort_session
 
         missing = tmp_path / "ghost.onnx"
         with pytest.raises(NRProxyBackendError, match="not found"):

@@ -61,8 +61,8 @@ _AI_SRC = _REPO_ROOT / "ai" / "src"
 if str(_AI_SRC) not in sys.path:
     sys.path.insert(0, str(_AI_SRC))
 
-from aiutils.file_utils import sha256 as _sha256_file  # noqa: E402
-from aiutils.time_utils import now_iso_8601 as _utc_now_iso  # noqa: E402
+from aiutils.file_utils import sha256 as _sha256_file
+from aiutils.time_utils import now_iso_8601 as _utc_now_iso
 
 _LOG = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ def _decode_source_to_yuv(
     if duration_s > 0.0:
         cmd.extend(["-t", f"{float(duration_s)}"])
     cmd.append(str(destination))
-    import subprocess as _sp  # noqa: PLC0415 — keep import local to avoid polluting module
+    import subprocess as _sp
 
     run_fn = runner if callable(runner) else _sp.run
     completed = run_fn(cmd, capture_output=True, text=True, check=False)
@@ -172,12 +172,12 @@ def _decode_source_to_yuv(
 
 
 def _maybe_decode_distorted(
-    req: "ScoreRequest",
+    req: ScoreRequest,
     *,
     encode_dir: Path,
     ffmpeg_bin: str,
     runner: object,
-) -> "ScoreRequest":
+) -> ScoreRequest:
     """Decode ``req.distorted`` to a raw YUV sidecar when it is a container.
 
     The vmaf CLI only accepts raw ``.yuv`` (see :data:`_VMAF_RAW_SUFFIXES`).
@@ -404,9 +404,7 @@ def _encode_path(opts: CorpusOptions, source: Path, preset: str, crf: int) -> Pa
     return opts.encode_dir / stem
 
 
-def _resolve_sample_clip(
-    job: "CorpusJob", opts: CorpusOptions
-) -> tuple[float, float, int, int, str]:
+def _resolve_sample_clip(job: CorpusJob, opts: CorpusOptions) -> tuple[float, float, int, int, str]:
     """Return ``(clip_seconds, start_s, frame_skip_ref, frame_cnt, clip_mode)``.
 
     Caps the requested slice at ``job.duration_s`` (so a 10-second
@@ -423,9 +421,9 @@ def _resolve_sample_clip(
     # libvmaf CLI takes integer frame counts; framerate may be
     # fractional (e.g. 23.976). Round to nearest to keep the window
     # symmetric around the centre.
-    frame_skip_ref = int(round(start_s * job.framerate))
-    frame_cnt = int(round(requested * job.framerate))
-    label = f"sample_{int(round(requested))}s"
+    frame_skip_ref = round(start_s * job.framerate)
+    frame_cnt = round(requested * job.framerate)
+    label = f"sample_{round(requested)}s"
     return (requested, start_s, frame_skip_ref, frame_cnt, label)
 
 
@@ -451,7 +449,7 @@ def _synthetic_hdr_info(transfer: str, *, pix_fmt: str) -> HdrInfo:
     )
 
 
-def _resolve_hdr(job: "CorpusJob", opts: "CorpusOptions") -> tuple[HdrInfo | None, bool]:
+def _resolve_hdr(job: CorpusJob, opts: CorpusOptions) -> tuple[HdrInfo | None, bool]:
     """Resolve the effective HDR signaling for ``job`` per ``opts.hdr_mode``.
 
     Returns ``(info, forced)`` where ``info`` is the HdrInfo to drive
@@ -518,7 +516,7 @@ def _resolve_hdr_score_model(
 
 
 def _resolve_shot_metadata(
-    job: "CorpusJob",
+    job: CorpusJob,
     *,
     shot_runner: object | None,
     per_shot_bin: str,
@@ -534,7 +532,7 @@ def _resolve_shot_metadata(
     ``iter_rows`` rather than per-row.
     """
     total_frames = (
-        int(round(job.duration_s * job.framerate))
+        round(job.duration_s * job.framerate)
         if job.duration_s > 0.0 and job.framerate > 0.0
         else None
     )
@@ -576,7 +574,7 @@ def iter_rows(
     # call so the cache index is loaded only once, not per cell.
     tune_cache = None
     if opts.cache_enabled and opts.cache_dir is not None:
-        from .cache import TuneCache  # noqa: PLC0415
+        from .cache import TuneCache
 
         tune_cache = TuneCache(path=opts.cache_dir)
 
@@ -604,7 +602,7 @@ def iter_rows(
     # (instead of per cell) keeps the cost flat across CRF/preset
     # sweeps. ``_sp.run`` is used directly: test stubs injected via
     # ``score_runner`` mock the vmaf CLI, not ffmpeg decodes.
-    import subprocess as _sp  # noqa: PLC0415 — local to avoid polluting module
+    import subprocess as _sp
 
     # ADR-0501 / BBB e2e v4 Bug #V4-B: when the caller bound source
     # dims distinct from the rung target (cross-resolution ladder)
@@ -653,7 +651,7 @@ def iter_rows(
 
         # Cache hit: return the cached row without encoding.
         if tune_cache is not None and src_hash:
-            from .cache import cache_key  # noqa: PLC0415
+            from .cache import cache_key
 
             key = cache_key(
                 src_sha256=src_hash,
@@ -720,8 +718,8 @@ def iter_rows(
         # too. ``_row_for`` requires a non-None ``enc_res`` for the
         # row-shape invariant.
         if ref_decode_rc != 0:
-            from .encode import EncodeRequest as _EncReq  # noqa: PLC0415
-            from .encode import EncodeResult as _EncRes  # noqa: PLC0415
+            from .encode import EncodeRequest as _EncReq
+            from .encode import EncodeResult as _EncRes
 
             enc_res = _EncRes(
                 request=_EncReq(
@@ -858,7 +856,7 @@ def iter_rows(
 
         base_model = opts.vmaf_model
         if opts.resolution_aware:
-            from .resolution import select_vmaf_model_version  # noqa: PLC0415
+            from .resolution import select_vmaf_model_version
 
             base_model = select_vmaf_model_version(job.width, job.height)
         score_model = _resolve_hdr_score_model(hdr_info, base_model, warned=score_model_warned)
@@ -886,7 +884,7 @@ def iter_rows(
             # encoded container to a temporary YUV before scoring.
             # Always use the real subprocess for the decode step — test
             # stubs injected via ``score_runner`` handle vmaf CLI calls only.
-            import subprocess as _sp  # noqa: PLC0415
+            import subprocess as _sp
 
             score_req = _maybe_decode_distorted(
                 score_req,
@@ -928,7 +926,7 @@ def iter_rows(
         # Cache put: must happen BEFORE cleanup so artifact_path exists.
         # Store successful rows so the next run gets a hit.
         if tune_cache is not None and src_hash and enc_res.exit_status == 0:
-            from .cache import CachedResult, TuneCache, cache_key  # noqa: PLC0415
+            from .cache import CachedResult, TuneCache, cache_key
 
             key = cache_key(
                 src_sha256=src_hash,

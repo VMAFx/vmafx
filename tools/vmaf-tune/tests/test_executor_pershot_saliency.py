@@ -17,8 +17,8 @@ from types import SimpleNamespace
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.auto import AutoPlan  # noqa: E402
-from vmaftune.executor import (  # noqa: E402
+from vmaftune.auto import AutoPlan
+from vmaftune.executor import (
     PerShotPlanResult,
     SaliencyExecuteResult,
     ShotExecuteResult,
@@ -197,7 +197,7 @@ def _stub_session_factory(model_path: Path):
 
     class _FakeSession:
         def run(self, output_names, inputs):
-            import numpy as np  # noqa: PLC0415
+            import numpy as np
 
             # Input shape is [1, 3, H, W]; output is [1, 1, H, W] in [0, 1].
             tensor = inputs["input"]

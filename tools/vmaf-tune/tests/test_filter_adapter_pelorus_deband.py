@@ -22,14 +22,14 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.filter_adapters import (  # noqa: E402
+from vmaftune.filter_adapters import (
     PELORUS_DEBAND_KNOBS,
     FilterAdapter,
     PelorusDebandAdapter,
     get_filter_adapter,
     known_filters,
 )
-from vmaftune.filter_adapters.pelorus_deband import (  # noqa: E402
+from vmaftune.filter_adapters.pelorus_deband import (
     DITHER_MODES,
     FILTER_NAME,
 )

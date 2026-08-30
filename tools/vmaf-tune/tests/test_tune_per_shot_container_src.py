@@ -21,8 +21,8 @@ from types import SimpleNamespace
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import cli  # noqa: E402
-from vmaftune.report import SourceInfo  # noqa: E402
+from vmaftune import cli
+from vmaftune.report import SourceInfo
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -115,7 +115,7 @@ def test_per_shot_probes_width_height_from_container(monkeypatch, tmp_path):
     args = _make_per_shot_args(src, plan_out=tmp_path / "plan.json")
 
     # Inject the fake probe.
-    import vmaftune.report as _report  # noqa: PLC0415
+    import vmaftune.report as _report
 
     monkeypatch.setattr(_report, "probe_source", _fake_probe)
 
@@ -166,7 +166,7 @@ def test_per_shot_uses_explicit_width_height_when_provided(monkeypatch, tmp_path
     # probe_source should NOT be called when geometry is fully explicit.
     probe_called = []
 
-    import vmaftune.report as _report  # noqa: PLC0415
+    import vmaftune.report as _report
 
     def _tracking_probe(path):
         probe_called.append(path)
@@ -202,14 +202,14 @@ def test_per_shot_plan_has_shots_key_for_container_source(monkeypatch, tmp_path)
     src = tmp_path / "clip.mkv"
     src.write_bytes(b"fake mkv content")
 
-    from vmaftune.per_shot import Shot  # noqa: PLC0415
+    from vmaftune.per_shot import Shot
 
     def _fake_detect_shots(path, **kwargs):
         return [Shot(0, 30), Shot(30, 60), Shot(60, 120)]
 
     monkeypatch.setattr("vmaftune.cli.detect_shots", _fake_detect_shots)
 
-    import vmaftune.report as _report  # noqa: PLC0415
+    import vmaftune.report as _report
 
     monkeypatch.setattr(_report, "probe_source", _fake_probe)
 

@@ -42,7 +42,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import (  # noqa: E402
+from vmaftune.codec_adapters import (
     AV1AMFAdapter,
     Av1NvencAdapter,
     Av1QsvAdapter,
@@ -61,7 +61,7 @@ from vmaftune.codec_adapters import (  # noqa: E402
     VVenCAdapter,
     get_adapter,
 )
-from vmaftune.codec_adapters._videotoolbox_common import (  # noqa: E402
+from vmaftune.codec_adapters._videotoolbox_common import (
     VideoToolboxTwoPassUnsupportedError,
 )
 

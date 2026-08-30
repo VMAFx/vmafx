@@ -200,14 +200,20 @@ def _format_human(report: dict) -> str:
     lines = [
         "=== fr_regressor_v2 ensemble production-flip gate (ADR-0303) ===",
         f"Per-seed PLCC: {report['per_seed_plccs']}",
-        f"Mean PLCC:    {report['mean_plcc']:.4f}  "
-        f"(threshold >= {report['mean_plcc_threshold']:.4f})  "
-        f"-> {'PASS' if report['mean_plcc_pass'] else 'FAIL'}",
-        f"PLCC spread:  {report['plcc_spread']:.4f}  "
-        f"(threshold <= {report['plcc_spread_max']:.4f})  "
-        f"-> {'PASS' if report['plcc_spread_pass'] else 'FAIL'}",
-        f"Per-seed >= {report['per_seed_min']:.4f}: "
-        f"{'PASS' if report['per_seed_pass'] else 'FAIL'}",
+        (
+            f"Mean PLCC:    {report['mean_plcc']:.4f}  "
+            f"(threshold >= {report['mean_plcc_threshold']:.4f})  "
+            f"-> {'PASS' if report['mean_plcc_pass'] else 'FAIL'}"
+        ),
+        (
+            f"PLCC spread:  {report['plcc_spread']:.4f}  "
+            f"(threshold <= {report['plcc_spread_max']:.4f})  "
+            f"-> {'PASS' if report['plcc_spread_pass'] else 'FAIL'}"
+        ),
+        (
+            f"Per-seed >= {report['per_seed_min']:.4f}: "
+            f"{'PASS' if report['per_seed_pass'] else 'FAIL'}"
+        ),
     ]
     if report["failing_seeds"]:
         lines.append(f"  Failing seeds: {report['failing_seeds']}")

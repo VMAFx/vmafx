@@ -184,10 +184,10 @@ def crf_offset_for_resolution(width: int, height: int) -> int:
 
 
 __all__ = [
-    "MODEL_1080P",
     "MODEL_4K",
-    "MODEL_1080P_NEG",
     "MODEL_4K_NEG",
+    "MODEL_1080P",
+    "MODEL_1080P_NEG",
     "crf_offset_for_resolution",
     "neg_model_for",
     "select_vmaf_model",

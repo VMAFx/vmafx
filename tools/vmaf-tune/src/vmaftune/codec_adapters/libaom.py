@@ -29,9 +29,9 @@ search loop stays codec-agnostic by speaking only ``preset`` and
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
 
 from . import _gop_common
 

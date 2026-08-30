@@ -15,7 +15,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import get_adapter, known_codecs  # noqa: E402
+from vmaftune.codec_adapters import get_adapter, known_codecs
 
 # Codecs that the v1 stats-capture path supports.
 _OPT_IN: frozenset[str] = frozenset({"libx264", "libx265"})

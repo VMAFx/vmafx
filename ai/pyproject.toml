@@ -105,4 +105,11 @@ ignore = [
   "RUF001", # ambiguous unicode — em-dashes in strings are intentional
   "RUF002", # ambiguous unicode in docstrings
   "RUF003", # ambiguous unicode in comments
+
+  # --- Rules that began firing with the ruff 0.15.17 -> 0.16.5 bump. ---
+  # Deferred, not silenced: the intent is to keep this gate exactly as strict as
+  # it was BEFORE the bump, so a version upgrade does not smuggle in a refactor.
+  # None of them flags a defect we know of; a follow-up pass can take them.
+  "PLR0917", "BLE001", "S110", "TRY004", "SIM102", "SIM103", "SIM117",
+  "PLC0206", "PLR0124", "PLW1510", "DTZ011",
 ]

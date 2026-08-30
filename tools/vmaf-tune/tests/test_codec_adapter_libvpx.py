@@ -13,8 +13,16 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import LibvpxVp9Adapter, get_adapter, known_codecs  # noqa: E402
-from vmaftune.encode import EncodeRequest, build_ffmpeg_command, parse_versions  # noqa: E402
+from vmaftune.codec_adapters import (
+    LibvpxVp9Adapter,
+    get_adapter,
+    known_codecs,
+)
+from vmaftune.encode import (
+    EncodeRequest,
+    build_ffmpeg_command,
+    parse_versions,
+)
 
 
 def test_libvpx_vp9_registered():

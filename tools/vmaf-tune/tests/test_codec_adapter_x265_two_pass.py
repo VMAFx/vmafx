@@ -29,8 +29,12 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import X264Adapter, X265Adapter, get_adapter  # noqa: E402
-from vmaftune.encode import EncodeRequest, build_ffmpeg_command, run_two_pass_encode  # noqa: E402
+from vmaftune.codec_adapters import X264Adapter, X265Adapter, get_adapter
+from vmaftune.encode import (
+    EncodeRequest,
+    build_ffmpeg_command,
+    run_two_pass_encode,
+)
 
 
 class _FakeCompleted:
@@ -117,17 +121,17 @@ def test_x265_two_pass_args_rejects_invalid_pass_number():
 
 
 def _x265_request(tmp_path: Path, **overrides) -> EncodeRequest:
-    defaults = dict(
-        source=tmp_path / "ref.yuv",
-        width=64,
-        height=64,
-        pix_fmt="yuv420p",
-        framerate=24.0,
-        encoder="libx265",
-        preset="medium",
-        crf=28,
-        output=tmp_path / "out.mp4",
-    )
+    defaults = {
+        "source": tmp_path / "ref.yuv",
+        "width": 64,
+        "height": 64,
+        "pix_fmt": "yuv420p",
+        "framerate": 24.0,
+        "encoder": "libx265",
+        "preset": "medium",
+        "crf": 28,
+        "output": tmp_path / "out.mp4",
+    }
     defaults.update(overrides)
     return EncodeRequest(**defaults)
 

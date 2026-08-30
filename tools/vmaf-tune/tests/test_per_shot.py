@@ -25,8 +25,10 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import cli  # noqa: E402
-from vmaftune.per_shot import (  # noqa: E402
+import itertools
+
+from vmaftune import cli
+from vmaftune.per_shot import (
     EncodingPlan,
     Shot,
     ShotRecommendation,
@@ -609,7 +611,7 @@ def test_split_long_shots_partitions_uniform_window():
     # Contiguity: end_i == start_{i+1}; full coverage of input range.
     assert out[0].start_frame == 0
     assert out[-1].end_frame == 300
-    for a, b in zip(out, out[1:], strict=False):
+    for a, b in itertools.pairwise(out):
         assert a.end_frame == b.start_frame
     # No partition longer than ceil(2.0 * 60) frames.
     assert max(s.length for s in out) <= 120

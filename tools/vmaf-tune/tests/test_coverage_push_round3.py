@@ -38,11 +38,11 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.encoder_runtime import (  # noqa: E402
+from vmaftune.encoder_runtime import (
     parse_encoder_runtime_token,
     resolve_encoder_runtime_specs,
 )
-from vmaftune.score import (  # noqa: E402
+from vmaftune.score import (
     ScoreRequest,
     _bitdepth_for,
     _model_arg,
@@ -122,7 +122,7 @@ class TestParseFeatureAggregatesExceptionPaths:
     def test_none_mean_is_silently_skipped(self) -> None:
         # None → float(None) raises TypeError, which is caught.
         payload = {"pooled_metrics": {"integer_adm2": {"mean": None, "stddev": None}}}
-        means, stds = parse_feature_aggregates(payload, ("adm2",))
+        means, _stds = parse_feature_aggregates(payload, ("adm2",))
         assert "adm2" not in means
 
     def test_valid_mean_invalid_stddev_partial_result(self) -> None:
@@ -504,7 +504,7 @@ class TestGpuVerifySeamInjection:
         assert result == pytest.approx(88.7)
         assert backend_selected == ["auto"]
         assert len(encode_called) == 1
-        src_used, enc_used, crf_used, backend_used = encode_called[0]
+        _src_used, enc_used, crf_used, backend_used = encode_called[0]
         assert enc_used == "libx264"
         assert crf_used == 28
         assert backend_used == "cpu"

@@ -16,7 +16,13 @@ from vmaftune.encoder_profile import (
     load_profile_payload,
     select_recommendation,
 )
-from vmaftune.report import CodecSweepPoint, ReportData, SourceInfo, render_html, render_markdown
+from vmaftune.report import (
+    CodecSweepPoint,
+    ReportData,
+    SourceInfo,
+    render_html,
+    render_markdown,
+)
 
 
 def _profile_data() -> ReportData:

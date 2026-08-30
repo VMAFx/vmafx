@@ -34,7 +34,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.report import (  # noqa: E402
+from vmaftune.report import (
     BisectSamplePoint,
     CodecRow,
     CodecSweepPoint,

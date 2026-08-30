@@ -35,8 +35,8 @@ TOOLS_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(TOOLS_SRC) not in sys.path:
     sys.path.insert(0, str(TOOLS_SRC))
 
-from vmaftune import cli as cli_module  # noqa: E402
-from vmaftune import ladder as ladder_module  # noqa: E402
+from vmaftune import cli as cli_module
+from vmaftune import ladder as ladder_module
 
 
 def _capture_help(argv: list[str]) -> str:

@@ -23,8 +23,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.cli import _build_parser, _resolve_vmaf_model  # noqa: E402
-from vmaftune.resolution import (  # noqa: E402
+from vmaftune.cli import _build_parser, _resolve_vmaf_model
+from vmaftune.resolution import (
     MODEL_4K,
     MODEL_4K_NEG,
     MODEL_1080P,

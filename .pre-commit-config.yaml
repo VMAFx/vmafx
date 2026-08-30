@@ -82,7 +82,7 @@ repos:
         exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.17
+    rev: v0.16.5
     hooks:
       - id: ruff-check
         files: '^(python|ai|scripts|tools)/.*\.py$'

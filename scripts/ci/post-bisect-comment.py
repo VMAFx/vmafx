@@ -60,15 +60,19 @@ def _format_wiring_broke_body(error_log: str, run_url: str) -> str:
             STICKY_HEADER,
             "## Latest nightly bisect-model-quality run",
             "",
-            "**WIRING BROKE** — fixture cache check failed; the bisect did "
-            "not execute. See workflow logs for the full traceback; the "
-            "cache-check stderr is captured below.",
+            (
+                "**WIRING BROKE** — fixture cache check failed; the bisect did "
+                "not execute. See workflow logs for the full traceback; the "
+                "cache-check stderr is captured below."
+            ),
             "",
             f"- workflow run: {run_url}",
             "- typical fix: regenerate the committed cache",
-            "  (`python ai/scripts/build_bisect_cache.py`) and commit, *or* "
-            "  diagnose the toolchain drift if regeneration alone does not "
-            "  restore parity.",
+            (
+                "  (`python ai/scripts/build_bisect_cache.py`) and commit, *or* "
+                "  diagnose the toolchain drift if regeneration alone does not "
+                "  restore parity."
+            ),
             "",
             "<details><summary>cache-check stderr</summary>",
             "",

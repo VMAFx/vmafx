@@ -409,14 +409,14 @@ def pick_keyint(features: ShotFeatures, fps: float) -> tuple[int, int]:
     operator first runs the predictor on a corpus they care about. The
     learned MLP picks the *CRF* on top of these bands.
     """
-    fps_int = max(int(round(fps)), 1)
+    fps_int = max(round(fps), 1)
     # Empirical bands in kbps (probe-encode at the codec's ``probe_quality``)
     # for 1080p natural content. Out-of-resolution content scales linearly
     # in the call site; this default works for anything within ±1 octave.
     low_motion_threshold_kbps = 1500.0
     high_motion_threshold_kbps = 8000.0
 
-    is_long = features.shot_length_frames >= int(round(4.0 * fps_int))
+    is_long = features.shot_length_frames >= round(4.0 * fps_int)
     bitrate = features.probe_bitrate_kbps
     if is_long and bitrate < low_motion_threshold_kbps:
         return (4 * fps_int, fps_int)
@@ -427,7 +427,7 @@ def pick_keyint(features: ShotFeatures, fps: float) -> tuple[int, int]:
 
 def make_predictor_predicate(
     predictor: Predictor,
-    feature_extractor: Callable[["Shot", str], ShotFeatures],
+    feature_extractor: Callable[[Shot, str], ShotFeatures],
 ) -> PredicateFn:
     """Adapt a :class:`Predictor` to the :func:`per_shot.tune_per_shot` seam.
 
@@ -438,7 +438,7 @@ def make_predictor_predicate(
     shot; tests inject a deterministic stub).
     """
 
-    def _predicate(shot: "Shot", target_vmaf: float, encoder: str) -> tuple[int, float]:
+    def _predicate(shot: Shot, target_vmaf: float, encoder: str) -> tuple[int, float]:
         features = feature_extractor(shot, encoder)
         crf = predictor.pick_crf(features, target_vmaf, encoder)
         vmaf = predictor.predict_vmaf(features, crf, encoder)

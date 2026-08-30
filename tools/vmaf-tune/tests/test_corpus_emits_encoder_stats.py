@@ -17,8 +17,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import CORPUS_ROW_KEYS, SCHEMA_VERSION  # noqa: E402
-from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows  # noqa: E402
+from vmaftune import CORPUS_ROW_KEYS, SCHEMA_VERSION
+from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows
 
 _X264_STATS_FIXTURE = (
     "#options: 64x64 fps=24/1 timebase=1/24 bitdepth=8\n"
@@ -40,7 +40,7 @@ def test_x264_corpus_row_includes_encoder_stats(tmp_path: Path):
     src = tmp_path / "ref.yuv"
     src.write_bytes(b"\x80" * 4096)
 
-    def fake_encode_run(cmd, capture_output, text, check):  # noqa: ARG001
+    def fake_encode_run(cmd, capture_output, text, check):
         # Pass-1: drop the canned stats file at <prefix>-0.log.
         if "-pass" in cmd and cmd[cmd.index("-pass") + 1] == "1":
             prefix = Path(cmd[cmd.index("-passlogfile") + 1])
@@ -57,7 +57,7 @@ def test_x264_corpus_row_includes_encoder_stats(tmp_path: Path):
             stderr="ffmpeg version 6.1.1\nx264 - core 164 r3107\n",
         )
 
-    def fake_score_run(cmd, capture_output, text, check):  # noqa: ARG001
+    def fake_score_run(cmd, capture_output, text, check):
         out_idx = cmd.index("--output") + 1
         out_path = Path(cmd[out_idx])
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -118,7 +118,7 @@ def test_hardware_encoder_corpus_row_emits_zero_encoder_stats(tmp_path: Path):
 
     pass1_seen = {"flag": False}
 
-    def fake_encode_run(cmd, capture_output, text, check):  # noqa: ARG001
+    def fake_encode_run(cmd, capture_output, text, check):
         if "-pass" in cmd and cmd[cmd.index("-pass") + 1] == "1":
             pass1_seen["flag"] = True
         out_path = Path(cmd[-1])
@@ -129,7 +129,7 @@ def test_hardware_encoder_corpus_row_emits_zero_encoder_stats(tmp_path: Path):
             stderr="ffmpeg version 6.1.1\nNVENC version 12.0\n",
         )
 
-    def fake_score_run(cmd, capture_output, text, check):  # noqa: ARG001
+    def fake_score_run(cmd, capture_output, text, check):
         out_idx = cmd.index("--output") + 1
         out_path = Path(cmd[out_idx])
         out_path.parent.mkdir(parents=True, exist_ok=True)

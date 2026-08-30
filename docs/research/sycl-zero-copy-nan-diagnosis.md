@@ -1,10 +1,10 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # SYCL Zero-Copy NaN Diagnosis — Phase 1 Research Digest
 
-**Diagnostic branch:** `fix/libvmaf-sycl-zerocopy-nan`  
-**Verdict commit:** see `git log --oneline -- docs/research/sycl-zero-copy-nan-diagnosis.md`  
-**Date:** 2026-06-30  
-**Phase:** 1 (Diagnose) — Plan 01-02 (DIAG-02)  
+**Diagnostic branch:** `fix/libvmaf-sycl-zerocopy-nan`
+**Verdict commit:** see `git log --oneline -- docs/research/sycl-zero-copy-nan-diagnosis.md`
+**Date:** 2026-06-30
+**Phase:** 1 (Diagnose) — Plan 01-02 (DIAG-02)
 **ADR-0108 role:** Phase 2 / Phase 4 research-digest stub (citable by commit hash from the fix PR)
 
 ---
@@ -25,8 +25,8 @@ pattern from `common.cpp:597-598`).
 
 ## Test Setup
 
-**Machine:** NAS server, Intel Arc A380 (SYCL device 0), Fedora, Kernel 6.19  
-**Container:** `vmafx` built from `Containerfile.vmafx` (oneAPI basekit + ffmpeg n8.1.1 + VMAFx)  
+**Machine:** NAS server, Intel Arc A380 (SYCL device 0), Fedora, Kernel 6.19
+**Container:** `vmafx` built from `Containerfile.vmafx` (oneAPI basekit + ffmpeg n8.1.1 + VMAFx)
 **Probe code:** `vmaf_sycl_checksum_y_slot` (commits b9c0088d + df8a382e on this branch) injected
 via `probe-diag.patch` build-context patch (not pushed to remote).
 
@@ -40,9 +40,9 @@ via `probe-diag.patch` build-context patch (not pushed to remote).
 Both decoded with QSV (`hevc_qsv` / `av1_qsv`). Formats match — no conversion needed.
 
 **Oracle:** `libvmaf` filter with `sycl_device=0` + `VMAF_SYCL_NO_GRAPH=1` (host-upload path,
-proven working at ~119fps). Input converted via `hwdownload,format=p010le` before the filter.  
-**Reproducer:** `libvmaf_sycl` filter (zero-copy VA-import path, broken).  
-**Env gate:** `VMAF_SYCL_CHECKSUM=1` for both runs.  
+proven working at ~119fps). Input converted via `hwdownload,format=p010le` before the filter.
+**Reproducer:** `libvmaf_sycl` filter (zero-copy VA-import path, broken).
+**Env gate:** `VMAF_SYCL_CHECKSUM=1` for both runs.
 **Frame cap:** 100 frames (NaN signature appears within first 10-15 frames).
 
 ---

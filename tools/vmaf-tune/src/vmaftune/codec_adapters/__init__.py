@@ -242,11 +242,11 @@ def parse_available_codecs(
 __all__ = [
     "AV1AMFAdapter",
     "Av1NvencAdapter",
-    "BaseNvencAdapter",
-    "BaseQsvAdapter",
     "Av1QsvAdapter",
     "Av1VideoToolboxAdapter",
     "Av1VideoToolboxUnavailableError",
+    "BaseNvencAdapter",
+    "BaseQsvAdapter",
     "CodecAdapter",
     "H264AMFAdapter",
     "H264NvencAdapter",

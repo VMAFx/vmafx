@@ -165,9 +165,11 @@ def audit_learned_filter(
 def render_table(report: LearnedFilterAuditReport) -> str:
     lines = [
         f"model: {report.model.name}  n_frames: {report.n_frames}  peak: {report.peak:g}",
-        f"avg SSIM: {report.avg_ssim:.3f}  max |Δmean|: {report.max_mean_shift:.3g}  "
-        f"max std ratio: {report.max_std_ratio:.2f}×  max clip: "
-        f"{report.max_clip_fraction * 100:.1f}%",
+        (
+            f"avg SSIM: {report.avg_ssim:.3f}  max |Δmean|: {report.max_mean_shift:.3g}  "
+            f"max std ratio: {report.max_std_ratio:.2f}×  max clip: "
+            f"{report.max_clip_fraction * 100:.1f}%"
+        ),
         "-" * 76,
         f"{'frame':>6} {'SSIM':>7} {'Δmean':>9} {'σ ratio':>9} {'clip %':>8}",
     ]

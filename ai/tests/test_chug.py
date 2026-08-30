@@ -38,16 +38,7 @@ _feature_spec.loader.exec_module(CHUG_FEATURES)
 def _make_manifest(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "\n".join(
-            [
-                "Video,mos_j,sos_j,ref,name,bitladder,resolution,bitrate,"
-                "orientation,framerate,content_name,height,width",
-                "abc123,50.0,2.5,0,360p_0.2M_src.mp4,360p_0.2M_,360p,0.2M,"
-                "Landscape,30.0,src.mp4,360,640",
-                "def456,75.0,1.5,1,1080p_5M_ref.mp4,1080p_5M_,1080p,5M,"
-                "Portrait,29.97,ref.mp4,1080,1920",
-            ]
-        )
+        "Video,mos_j,sos_j,ref,name,bitladder,resolution,bitrate,orientation,framerate,content_name,height,width\nabc123,50.0,2.5,0,360p_0.2M_src.mp4,360p_0.2M_,360p,0.2M,Landscape,30.0,src.mp4,360,640\ndef456,75.0,1.5,1,1080p_5M_ref.mp4,1080p_5M_,1080p,5M,Portrait,29.97,ref.mp4,1080,1920"
         + "\n",
         encoding="utf-8",
     )

@@ -54,26 +54,26 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.benchmark import (  # noqa: E402
+from vmaftune.benchmark import (
     _resolve_baseline,
     _row_encode_fps,
     _row_score_fps,
     render_benchmark,
     summarize_benchmark,
 )
-from vmaftune.codec_adapters._gop_common import (  # noqa: E402
+from vmaftune.codec_adapters._gop_common import (
     default_force_keyframes_args,
     default_gop_args,
     default_probe_args,
 )
-from vmaftune.encoder_profile import (  # noqa: E402
+from vmaftune.encoder_profile import (
     build_encode_request,
     infer_source_is_container,
     load_profile_payload,
     select_recommendation,
 )
-from vmaftune.per_shot import Shot  # noqa: E402
-from vmaftune.predictor_features import (  # noqa: E402
+from vmaftune.per_shot import Shot
+from vmaftune.predictor_features import (
     FeatureExtractorConfig,
     _mean,
     _parse_fps,
@@ -82,14 +82,14 @@ from vmaftune.predictor_features import (  # noqa: E402
     _run_probe_encode,
     _run_signalstats,
 )
-from vmaftune.proxy import (  # noqa: E402
+from vmaftune.proxy import (
     ENCODER_VOCAB_V2,
     ProxyError,
     _resolve_model_path,
     encode_codec_block,
     run_proxy,
 )
-from vmaftune.uncertainty import (  # noqa: E402
+from vmaftune.uncertainty import (
     DEFAULT_TIGHT_INTERVAL_MAX_WIDTH,
     DEFAULT_WIDE_INTERVAL_MIN_WIDTH,
     ConfidenceDecision,

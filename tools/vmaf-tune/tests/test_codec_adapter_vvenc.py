@@ -28,9 +28,17 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import VVenCAdapter, get_adapter, known_codecs  # noqa: E402
-from vmaftune.codec_adapters.vvenc import native_presets, supported_tiers  # noqa: E402
-from vmaftune.encode import EncodeRequest, build_ffmpeg_command, run_encode  # noqa: E402
+from vmaftune.codec_adapters import (
+    VVenCAdapter,
+    get_adapter,
+    known_codecs,
+)
+from vmaftune.codec_adapters.vvenc import native_presets, supported_tiers
+from vmaftune.encode import (
+    EncodeRequest,
+    build_ffmpeg_command,
+    run_encode,
+)
 
 # ---------- Registry / contract -----------------------------------------------
 
@@ -315,7 +323,7 @@ class _FakeCompleted:
 def _fake_runner_factory(captured: list[list[str]]):
     """Return a runner stub that records argv and returns a clean exit."""
 
-    def _runner(cmd, capture_output, text, check):  # noqa: ARG001
+    def _runner(cmd, capture_output, text, check):
         captured.append(list(cmd))
         return _FakeCompleted(stderr="ffmpeg version 8.1\n")
 

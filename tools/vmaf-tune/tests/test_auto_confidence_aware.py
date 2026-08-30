@@ -28,7 +28,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.auto import (  # noqa: E402
+from vmaftune.auto import (
     DEFAULT_TIGHT_INTERVAL_MAX_WIDTH,
     DEFAULT_WIDE_INTERVAL_MIN_WIDTH,
     ConfidenceDecision,

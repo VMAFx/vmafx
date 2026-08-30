@@ -29,12 +29,12 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.cli import main as cli_main  # noqa: E402
-from vmaftune.recommend import (  # noqa: E402
+from vmaftune.cli import main as cli_main
+from vmaftune.recommend import (
     UncertaintyAwareRequest,
     pick_target_vmaf_with_uncertainty,
 )
-from vmaftune.uncertainty import ConfidenceDecision, ConfidenceThresholds  # noqa: E402
+from vmaftune.uncertainty import ConfidenceDecision, ConfidenceThresholds
 
 
 def _row(

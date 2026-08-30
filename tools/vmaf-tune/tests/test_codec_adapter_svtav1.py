@@ -20,15 +20,15 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
-from vmaftune.codec_adapters import get_adapter, known_codecs  # noqa: E402
-from vmaftune.codec_adapters.svtav1 import (  # noqa: E402
+from vmaftune import CORPUS_ROW_KEYS
+from vmaftune.codec_adapters import get_adapter, known_codecs
+from vmaftune.codec_adapters.svtav1 import (
     PRESET_NAME_TO_INT,
     SvtAv1Adapter,
     preset_to_int,
 )
-from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows  # noqa: E402
-from vmaftune.encode import parse_versions  # noqa: E402
+from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows
+from vmaftune.encode import parse_versions
 
 
 class _FakeCompleted:

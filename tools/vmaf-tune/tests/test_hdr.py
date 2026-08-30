@@ -19,7 +19,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.hdr import (  # noqa: E402
+from vmaftune.hdr import (
     HDR_MODEL_FILENAME,
     HdrInfo,
     detect_hdr,
@@ -188,15 +188,15 @@ def test_detect_hdr_invalid_json_returns_none(tmp_path: Path):
 
 
 def _pq_info(**overrides) -> HdrInfo:
-    base = dict(
-        transfer="pq",
-        primaries="bt2020",
-        matrix="bt2020nc",
-        color_range="tv",
-        pix_fmt="yuv420p10le",
-        master_display="G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000000,500)",
-        max_cll="1000,400",
-    )
+    base = {
+        "transfer": "pq",
+        "primaries": "bt2020",
+        "matrix": "bt2020nc",
+        "color_range": "tv",
+        "pix_fmt": "yuv420p10le",
+        "master_display": "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000000,500)",
+        "max_cll": "1000,400",
+    }
     base.update(overrides)
     return HdrInfo(**base)
 

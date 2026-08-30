@@ -32,7 +32,11 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.compare import RecommendResult, compare_codecs, compare_codecs_sweep  # noqa: E402
+from vmaftune.compare import (
+    RecommendResult,
+    compare_codecs,
+    compare_codecs_sweep,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers

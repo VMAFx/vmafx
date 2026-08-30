@@ -19,8 +19,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.score import ScoreRequest, build_vmaf_command  # noqa: E402
-from vmaftune.score_backend import (  # noqa: E402
+from vmaftune.score import ScoreRequest, build_vmaf_command
+from vmaftune.score_backend import (
     ALL_BACKENDS,
     BackendUnavailableError,
     detect_available_backends,

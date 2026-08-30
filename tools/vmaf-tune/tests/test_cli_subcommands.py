@@ -29,11 +29,11 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import cli as cli_module  # noqa: E402
-from vmaftune.cli import main  # noqa: E402
-from vmaftune.compare import RecommendResult  # noqa: E402
-from vmaftune.encode import EncodeRequest, EncodeResult  # noqa: E402
-from vmaftune.report import (  # noqa: E402
+from vmaftune import cli as cli_module
+from vmaftune.cli import main
+from vmaftune.compare import RecommendResult
+from vmaftune.encode import EncodeRequest, EncodeResult
+from vmaftune.report import (
     CodecRow,
     CodecSweepPoint,
     LadderRung,

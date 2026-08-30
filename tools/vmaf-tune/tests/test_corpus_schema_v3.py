@@ -20,7 +20,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import (  # noqa: E402
+from vmaftune import (
     CANONICAL6_AGGREGATE_KEYS,
     CANONICAL6_FEATURES,
     CANONICAL6_MEAN_KEYS,
@@ -28,7 +28,7 @@ from vmaftune import (  # noqa: E402
     CORPUS_ROW_KEYS,
     SCHEMA_VERSION,
 )
-from vmaftune.corpus import (  # noqa: E402
+from vmaftune.corpus import (
     CorpusJob,
     CorpusOptions,
     iter_rows,

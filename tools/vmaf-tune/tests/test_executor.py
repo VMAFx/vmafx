@@ -16,8 +16,8 @@ from types import SimpleNamespace
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.auto import AutoPlan  # noqa: E402
-from vmaftune.executor import ExecuteResult, run_plan  # noqa: E402
+from vmaftune.auto import AutoPlan
+from vmaftune.executor import ExecuteResult, run_plan
 
 # ---------------------------------------------------------------------------
 # Stub factories

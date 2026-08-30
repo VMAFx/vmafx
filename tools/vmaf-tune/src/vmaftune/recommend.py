@@ -379,7 +379,7 @@ def pick_target_vmaf_with_uncertainty(
     saw_wide = False
     for r in eligible:
         visited += 1
-        point, low, high = _row_interval(r, req)
+        _point, low, high = _row_interval(r, req)
         score = float(r["vmaf_score"])
         if score > best_score:
             best_score = score

@@ -17,7 +17,11 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import LibaomAdapter, get_adapter, known_codecs  # noqa: E402
+from vmaftune.codec_adapters import (
+    LibaomAdapter,
+    get_adapter,
+    known_codecs,
+)
 
 
 def test_libaom_is_registered():

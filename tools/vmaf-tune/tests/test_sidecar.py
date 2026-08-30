@@ -34,8 +34,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.predictor import Predictor, ShotFeatures  # noqa: E402
-from vmaftune.sidecar import (  # noqa: E402
+from vmaftune.predictor import Predictor, ShotFeatures
+from vmaftune.sidecar import (
     FEATURE_DIM,
     SIDECAR_SCHEMA_VERSION,
     SidecarConfig,

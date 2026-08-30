@@ -12,7 +12,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.encoder_runtime import (  # noqa: E402
+from vmaftune.encoder_runtime import (
     parse_encoder_runtime_token,
     resolve_encoder_runtime_specs,
 )

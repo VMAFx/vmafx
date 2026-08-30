@@ -13,14 +13,14 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import (  # noqa: E402
+from vmaftune.codec_adapters import (
     Av1NvencAdapter,
     H264NvencAdapter,
     HevcNvencAdapter,
     get_adapter,
     known_codecs,
 )
-from vmaftune.codec_adapters._nvenc_common import (  # noqa: E402
+from vmaftune.codec_adapters._nvenc_common import (
     NVENC_CQ_HARD_LIMITS,
     NVENC_PRESETS,
     nvenc_preset,

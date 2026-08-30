@@ -99,9 +99,9 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "CVPlusConformalCalibration",
     "ConformalInterval",
     "ConformalPredictor",
-    "CVPlusConformalCalibration",
     "MiscalibrationWarning",
     "SplitConformalCalibration",
     "absolute_residual_score",
@@ -239,7 +239,7 @@ class SplitConformalCalibration:
         predictions: Sequence[float],
         targets: Sequence[float],
         alpha: float | None = None,
-    ) -> "SplitConformalCalibration":
+    ) -> SplitConformalCalibration:
         """Compute the calibration from a (predictions, targets) pair.
 
         Both sequences must be the same length ``n``; the i-th entry
@@ -304,7 +304,7 @@ class SplitConformalCalibration:
         )
 
     @classmethod
-    def from_json(cls, payload: str) -> "SplitConformalCalibration":
+    def from_json(cls, payload: str) -> SplitConformalCalibration:
         """Deserialise a sidecar produced by :meth:`to_json`."""
         doc = json.loads(payload)
         if doc.get("method") != "split-conformal":
@@ -445,7 +445,7 @@ class ConformalPredictor:
     ``stale_threshold`` percentage points below nominal.
     """
 
-    base: "Predictor"
+    base: Predictor
     calibration: Calibration | None = None
     vmaf_floor: float = 0.0
     vmaf_ceiling: float = 100.0
@@ -453,7 +453,7 @@ class ConformalPredictor:
 
     def predict(
         self,
-        features: "ShotFeatures",
+        features: ShotFeatures,
         crf: int,
         codec: str,
     ) -> ConformalInterval:

@@ -31,7 +31,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import (  # noqa: E402
+from vmaftune.codec_adapters import (
     Av1VideoToolboxAdapter,
     Av1VideoToolboxUnavailableError,
     LibaomAdapter,
@@ -42,10 +42,13 @@ from vmaftune.codec_adapters import (  # noqa: E402
     get_adapter,
     known_codecs,
 )
-from vmaftune.codec_adapters._gop_common import (  # noqa: E402
+from vmaftune.codec_adapters._gop_common import (
     default_gop_args,
 )
-from vmaftune.codec_adapters.svtav1 import PRESET_NAME_TO_INT, preset_to_int  # noqa: E402
+from vmaftune.codec_adapters.svtav1 import (
+    PRESET_NAME_TO_INT,
+    preset_to_int,
+)
 
 # ---------------------------------------------------------------------------
 # Registry helpers
@@ -346,7 +349,7 @@ class TestLibvpxVp9Adapter:
 
 class TestBaseNvencAdapter:
     def setup_method(self) -> None:
-        from vmaftune.codec_adapters.h264_nvenc import H264NvencAdapter  # noqa: PLC0415
+        from vmaftune.codec_adapters.h264_nvenc import H264NvencAdapter
 
         self.adapter = H264NvencAdapter()
 
@@ -395,7 +398,7 @@ class TestBaseNvencAdapter:
 
 class TestBaseQsvAdapter:
     def setup_method(self) -> None:
-        from vmaftune.codec_adapters.h264_qsv import H264QsvAdapter  # noqa: PLC0415
+        from vmaftune.codec_adapters.h264_qsv import H264QsvAdapter
 
         self.adapter = H264QsvAdapter()
 

@@ -145,8 +145,10 @@ def render_table(report: NormReport) -> str:
 
     lines = [
         f"sidecar: {report.sidecar.name}   samples: {report.n_samples}",
-        f"{'feature':<14} {'decl. μ':>10} {'decl. σ':>10} {'obs μ':>10} "
-        f"{'obs σ':>10} {'Δμ/σ':>8} {'>3σ':>7}",
+        (
+            f"{'feature':<14} {'decl. μ':>10} {'decl. σ':>10} {'obs μ':>10} "
+            f"{'obs σ':>10} {'Δμ/σ':>8} {'>3σ':>7}"
+        ),
         "-" * 74,
     ]
     for d in report.drifts:

@@ -64,7 +64,7 @@ def test_probe_encoder_info_detected() -> None:
         stdout = _configure_line
         stderr = ""
 
-    def _runner(argv, **_kw):  # noqa: ARG001
+    def _runner(argv, **_kw):
         return _FakeCompleted()
 
     for enc in ("libx264", "libsvtav1", "libx265", "libvpx-vp9"):
@@ -85,7 +85,7 @@ def test_probe_encoder_info_not_detected() -> None:
         stdout = "ffmpeg version n6.0\nconfiguration: --prefix=/usr\n"
         stderr = ""
 
-    def _runner(argv, **_kw):  # noqa: ARG001
+    def _runner(argv, **_kw):
         return _FakeCompleted()
 
     for enc in ("libx264", "libx265", "libvpx-vp9"):
@@ -106,7 +106,7 @@ def test_probe_encoder_info_unknown_encoder() -> None:
         stdout = "ffmpeg version n6.0\nconfiguration: --enable-libx264\n"
         stderr = ""
 
-    def _runner(argv, **_kw):  # noqa: ARG001
+    def _runner(argv, **_kw):
         return _FakeCompleted()
 
     info = probe_encoder_info("ffmpeg", "libfooav99", _runner)
@@ -221,7 +221,7 @@ def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> No
 
     calls: list[dict] = []
 
-    def _fake_run_score(req, *, vmaf_bin="vmaf", backend=None, **kw):  # noqa: ARG001
+    def _fake_run_score(req, *, vmaf_bin="vmaf", backend=None, **kw):
         calls.append({"backend": backend})
         # Return a minimal fake ScoreResult.
 
@@ -235,7 +235,7 @@ def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> No
             stderr_tail="",
         )
 
-    def _fake_run_encode(req, *, ffmpeg_bin="ffmpeg", runner=None):  # noqa: ARG001
+    def _fake_run_encode(req, *, ffmpeg_bin="ffmpeg", runner=None):
 
         from vmaftune.encode import EncodeResult
 
@@ -252,7 +252,7 @@ def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> No
             stderr_tail="",
         )
 
-    def _fake_probe_geometry(src, cfg, runner):  # noqa: ARG001
+    def _fake_probe_geometry(src, cfg, runner):
         return 64, 64, 24.0
 
     src = tmp_path / "src.yuv"
@@ -269,7 +269,7 @@ def test_fast_sample_extractor_passes_backend_to_run_score(tmp_path: Path) -> No
         # Call the extractor directly; it should forward backend="cuda" to run_score.
         try:
             extractor(src, 23, "libx264")
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass  # Only care that run_score was called with the right backend.
 
     assert calls, "run_score was never called"

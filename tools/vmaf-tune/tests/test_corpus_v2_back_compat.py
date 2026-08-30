@@ -17,8 +17,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import CANONICAL6_AGGREGATE_KEYS  # noqa: E402
-from vmaftune.corpus import read_jsonl  # noqa: E402
+from vmaftune import CANONICAL6_AGGREGATE_KEYS
+from vmaftune.corpus import read_jsonl
 
 
 def _v2_row(crf: int = 23, vmaf: float = 91.0) -> dict:

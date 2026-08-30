@@ -221,8 +221,10 @@ def _ffprobe_hdr_payload(
         "-select_streams",
         "v:0",
         "-show_entries",
-        "stream=width,height,pix_fmt,codec_name,color_transfer,color_primaries,"
-        "color_space,color_range:stream_side_data=side_data_type,max_content,max_average",
+        (
+            "stream=width,height,pix_fmt,codec_name,color_transfer,color_primaries,"
+            "color_space,color_range:stream_side_data=side_data_type,max_content,max_average"
+        ),
         "-of",
         "json",
         str(clip_path),

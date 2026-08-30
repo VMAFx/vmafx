@@ -21,9 +21,13 @@ from typing import Any
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import bisect as bisect_mod  # noqa: E402
-from vmaftune.bisect import BisectResult, bisect_target_vmaf, make_bisect_predicate  # noqa: E402
-from vmaftune.compare import RecommendResult, compare_codecs  # noqa: E402
+from vmaftune import bisect as bisect_mod
+from vmaftune.bisect import (
+    BisectResult,
+    bisect_target_vmaf,
+    make_bisect_predicate,
+)
+from vmaftune.compare import RecommendResult, compare_codecs
 
 # ----------------------------------------------------------------------
 # Synthetic encode / score harness
@@ -96,8 +100,7 @@ def _make_runners(
         if "--distorted" in argv:
             distorted = Path(argv[argv.index("--distorted") + 1])
             stem = distorted.stem
-            if stem.endswith(".decoded"):
-                stem = stem[: -len(".decoded")]
+            stem = stem.removesuffix(".decoded")
             stem_parts = stem.split("_")
             try:
                 crf = int(stem_parts[-1])

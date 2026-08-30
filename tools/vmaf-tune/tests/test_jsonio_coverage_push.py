@@ -23,7 +23,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.jsonio import dumps_strict, nan_to_none, write_json_strict  # noqa: E402
+from vmaftune.jsonio import dumps_strict, nan_to_none, write_json_strict
 
 # ---------------------------------------------------------------------------
 # nan_to_none

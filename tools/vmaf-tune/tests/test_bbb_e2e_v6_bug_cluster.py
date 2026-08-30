@@ -36,14 +36,14 @@ from typing import Any
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.cli import main as cli_main  # noqa: E402
-from vmaftune.corpus import (  # noqa: E402
+from vmaftune.cli import main as cli_main
+from vmaftune.corpus import (
     CorpusJob,
     CorpusOptions,
     _maybe_decode_reference,
     iter_rows,
 )
-from vmaftune.encode import EncodeRequest, build_ffmpeg_command  # noqa: E402
+from vmaftune.encode import EncodeRequest, build_ffmpeg_command
 
 
 @dataclass

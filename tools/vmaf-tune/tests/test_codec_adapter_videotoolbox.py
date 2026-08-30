@@ -18,19 +18,23 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.codec_adapters import (  # noqa: E402
+from vmaftune.codec_adapters import (
     H264VideoToolboxAdapter,
     HEVCVideoToolboxAdapter,
     get_adapter,
     known_codecs,
 )
-from vmaftune.codec_adapters._videotoolbox_common import (  # noqa: E402
+from vmaftune.codec_adapters._videotoolbox_common import (
     VIDEOTOOLBOX_PRESETS,
     VIDEOTOOLBOX_QUALITY_RANGE,
     preset_to_realtime,
     validate_videotoolbox,
 )
-from vmaftune.encode import EncodeRequest, build_ffmpeg_command, run_encode  # noqa: E402
+from vmaftune.encode import (
+    EncodeRequest,
+    build_ffmpeg_command,
+    run_encode,
+)
 
 
 class _FakeCompleted:

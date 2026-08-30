@@ -149,8 +149,10 @@ def compare_backends(
 
 def render_table(report: CrossBackendReport) -> str:
     lines = [
-        f"model: {report.model.name}   reference: {report.reference_provider}   "
-        f"atol: {report.atol:g}",
+        (
+            f"model: {report.model.name}   reference: {report.reference_provider}   "
+            f"atol: {report.atol:g}"
+        ),
         f"{'provider':<32} {'max |Δ|':>12} {'mean |Δ|':>12} status",
         "-" * 72,
     ]

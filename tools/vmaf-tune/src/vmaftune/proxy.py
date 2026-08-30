@@ -56,7 +56,7 @@ class ProxyError(RuntimeError):
 
 def _import_onnxruntime() -> Any:
     try:
-        import onnxruntime as ort  # noqa: PLC0415  (deliberately lazy)
+        import onnxruntime as ort
     except ImportError as exc:
         raise ProxyError(
             "onnxruntime is required for the vmaf-tune fast-path proxy; "
@@ -67,7 +67,7 @@ def _import_onnxruntime() -> Any:
 
 def _import_numpy() -> Any:
     try:
-        import numpy as np  # noqa: PLC0415
+        import numpy as np
     except ImportError as exc:  # pragma: no cover - defensive
         raise ProxyError("numpy is required for proxy inference") from exc
     return np
@@ -108,7 +108,7 @@ def encode_codec_block(
     encoder: str,
     preset_norm: float,
     crf_norm: float,
-) -> "Any":
+) -> Any:
     """Build the 14-D codec block: 12-way one-hot + preset_norm + crf_norm.
 
     Encoder names outside ENCODER_VOCAB_V2 raise `ProxyError`; this is
@@ -195,7 +195,7 @@ def run_proxy(
         session = session_factory(_resolve_model_path(model_id))
 
     input_names = [inp.name for inp in session.get_inputs()]
-    if len(input_names) == 2:  # noqa: PLR2004 — 2 is the expected v2 input count
+    if len(input_names) == 2:
         # Two-input graph: "features" + "codec" (standard v2 export).
         features_name, codec_name = input_names
         outputs = session.run(None, {features_name: feat, codec_name: codec_block})

@@ -22,8 +22,8 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import CANONICAL6_FEATURES  # noqa: E402
-from vmaftune.score import parse_feature_aggregates  # noqa: E402
+from vmaftune import CANONICAL6_FEATURES
+from vmaftune.score import parse_feature_aggregates
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -102,7 +102,7 @@ class TestParseFeatureAggregatesIntegerKeys:
     def test_all_six_means_non_nan_with_integer_keys(self) -> None:
         """All 6 canonical features resolve to finite means from integer_* keys."""
         payload = _make_integer_pooled_payload()
-        means, stds = parse_feature_aggregates(payload, CANONICAL6_FEATURES)
+        means, _stds = parse_feature_aggregates(payload, CANONICAL6_FEATURES)
         assert set(means.keys()) == set(
             CANONICAL6_FEATURES
         ), f"Expected all 6 features in means; got {set(means.keys())}"
@@ -125,7 +125,7 @@ class TestParseFeatureAggregatesIntegerKeys:
     def test_stddev_parsed_when_present(self) -> None:
         """stddev values are extracted when present in the integer_* block."""
         payload = _make_integer_pooled_payload(with_stddev=True)
-        means, stds = parse_feature_aggregates(payload, CANONICAL6_FEATURES)
+        _means, stds = parse_feature_aggregates(payload, CANONICAL6_FEATURES)
         assert len(stds) == 6
         assert stds["motion2"] == pytest.approx(1.200)
 

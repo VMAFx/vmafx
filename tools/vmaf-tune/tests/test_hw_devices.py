@@ -10,7 +10,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.hw_devices import (  # noqa: E402
+from vmaftune.hw_devices import (
     AUTO_VAAPI_DEVICE,
     FALLBACK_VAAPI_DEVICE,
     discover_intel_vaapi_device,

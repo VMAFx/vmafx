@@ -1,7 +1,5 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
-#
-# ruff: noqa: E402  -- every import below follows the sys.path.insert above.
 """``av1_videotoolbox`` placeholder-adapter tests (ADR-0339).
 
 The adapter ships in placeholder mode: it registers in
@@ -26,9 +24,10 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 from vmaftune.codec_adapters import (
     Av1VideoToolboxAdapter,
     Av1VideoToolboxUnavailableError,
+    get_adapter,
+    known_codecs,
 )
 from vmaftune.codec_adapters import av1_videotoolbox as mod
-from vmaftune.codec_adapters import get_adapter, known_codecs
 
 
 class _FakeCompleted:
@@ -59,7 +58,7 @@ def _runner_returning(blob_stdout: str, *, returncode: int = 0):
 
     captured: dict = {}
 
-    def fake_run(cmd, *, capture_output, text, timeout):  # noqa: ARG001
+    def fake_run(cmd, *, capture_output, text, timeout):
         captured["cmd"] = cmd
         return _FakeCompleted(returncode=returncode, stdout=blob_stdout, stderr="")
 

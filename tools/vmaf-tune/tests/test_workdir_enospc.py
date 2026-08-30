@@ -33,7 +33,7 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune.bisect import (  # noqa: E402
+from vmaftune.bisect import (
     _check_disk_space,
     _estimate_yuv_bytes,
     _workdir_parent,
@@ -138,7 +138,7 @@ class TestCheckDiskSpace:
 
         est = 100 * 1024**3
         # required = ceil(est * 1.1) — exactly what _check_disk_space computes
-        required = int(math.ceil(est * 1.1))
+        required = math.ceil(est * 1.1)
         with unittest.mock.patch(
             "vmaftune.bisect.shutil.disk_usage",
             return_value=_DiskUsage(total=required, used=0, free=required),

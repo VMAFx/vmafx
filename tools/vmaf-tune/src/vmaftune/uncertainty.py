@@ -238,16 +238,14 @@ def interval_excludes_target(*, low: float, high: float, target: float, slack: f
         return False
     if high < target - slack:
         return True
-    if low > target + slack:
-        return True
-    return False
+    return low > target + slack
 
 
 __all__ = [
-    "ConfidenceDecision",
-    "ConfidenceThresholds",
     "DEFAULT_TIGHT_INTERVAL_MAX_WIDTH",
     "DEFAULT_WIDE_INTERVAL_MIN_WIDTH",
+    "ConfidenceDecision",
+    "ConfidenceThresholds",
     "classify_interval",
     "interval_excludes_target",
     "load_confidence_thresholds",

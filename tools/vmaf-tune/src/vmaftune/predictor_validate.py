@@ -35,13 +35,9 @@ import dataclasses
 import enum
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from .per_shot import Shot
 from .predictor import Predictor, ShotFeatures
-
-if TYPE_CHECKING:
-    pass
 
 # Callback that turns a (shot, target_vmaf, codec) into a real
 # (encoded_path, measured_vmaf). Real implementation runs the encoder

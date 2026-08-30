@@ -48,17 +48,7 @@ def test_marker_scan_ignores_historical_notimplemented_prose(tmp_path: Path) -> 
 def test_marker_scan_ignores_exception_handlers_and_exception_types(tmp_path: Path) -> None:
     source = _write(
         tmp_path / "tools" / "vmaf-tune" / "src" / "vmaftune" / "cli.py",
-        "\n".join(
-            [
-                "class TwoPassUnsupportedError(NotImplementedError):",
-                "    pass",
-                "try:",
-                "    run_plan()",
-                "except NotImplementedError as exc:",
-                "    raise RuntimeError(str(exc)) from exc",
-                "",
-            ]
-        ),
+        "class TwoPassUnsupportedError(NotImplementedError):\n    pass\ntry:\n    run_plan()\nexcept NotImplementedError as exc:\n    raise RuntimeError(str(exc)) from exc\n",
     )
 
     findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
@@ -126,17 +116,7 @@ def test_marker_scan_keeps_live_enosys_without_contract_context(tmp_path: Path) 
 def test_marker_scan_ignores_optional_backend_enosys_contracts(tmp_path: Path) -> None:
     source = _write(
         tmp_path / "libvmaf" / "src" / "feature" / "hip" / "integer_motion_hip.c",
-        "\n".join(
-            [
-                "/* Without HAVE_HIPCC, every lifecycle helper returns -ENOSYS so the",
-                " * feature engine falls through to the CPU implementation. */",
-                "int run(void)",
-                "{",
-                "    return -ENOSYS;",
-                "}",
-                "",
-            ]
-        ),
+        "/* Without HAVE_HIPCC, every lifecycle helper returns -ENOSYS so the\n * feature engine falls through to the CPU implementation. */\nint run(void)\n{\n    return -ENOSYS;\n}\n",
     )
 
     findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
@@ -147,20 +127,7 @@ def test_marker_scan_ignores_optional_backend_enosys_contracts(tmp_path: Path) -
 def test_marker_scan_ignores_optional_runtime_error_translation(tmp_path: Path) -> None:
     source = _write(
         tmp_path / "libvmaf" / "src" / "feature" / "hip" / "float_psnr_hip.c",
-        "\n".join(
-            [
-                "static int hip_err(hipError_t rc)",
-                "{",
-                "    switch (rc) {",
-                "    case hipErrorNotSupported:",
-                "        return -ENOSYS;",
-                "    default:",
-                "        return -EIO;",
-                "    }",
-                "}",
-                "",
-            ]
-        ),
+        "static int hip_err(hipError_t rc)\n{\n    switch (rc) {\n    case hipErrorNotSupported:\n        return -ENOSYS;\n    default:\n        return -EIO;\n    }\n}\n",
     )
 
     findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
@@ -171,15 +138,7 @@ def test_marker_scan_ignores_optional_runtime_error_translation(tmp_path: Path) 
 def test_marker_scan_ignores_hip_scaffold_posture_else_branch(tmp_path: Path) -> None:
     source = _write(
         tmp_path / "libvmaf" / "src" / "feature" / "hip" / "integer_psnr_hip.c",
-        "\n".join(
-            [
-                "#else",
-                '    /* Scaffold posture: returns -ENOSYS ("runtime not ready"). */',
-                "    return -ENOSYS;",
-                "#endif /* HAVE_HIPCC */",
-                "",
-            ]
-        ),
+        '#else\n    /* Scaffold posture: returns -ENOSYS ("runtime not ready"). */\n    return -ENOSYS;\n#endif /* HAVE_HIPCC */\n',
     )
 
     findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
@@ -190,18 +149,7 @@ def test_marker_scan_ignores_hip_scaffold_posture_else_branch(tmp_path: Path) ->
 def test_marker_scan_ignores_optional_loader_enosys(tmp_path: Path) -> None:
     source = _write(
         tmp_path / "libvmaf" / "src" / "vulkan" / "common.c",
-        "\n".join(
-            [
-                "static int load_volk_once(void)",
-                "{",
-                "    VkResult vkr = volkInitialize();",
-                "    if (vkr != VK_SUCCESS)",
-                "        return -ENOSYS;",
-                "    return 0;",
-                "}",
-                "",
-            ]
-        ),
+        "static int load_volk_once(void)\n{\n    VkResult vkr = volkInitialize();\n    if (vkr != VK_SUCCESS)\n        return -ENOSYS;\n    return 0;\n}\n",
     )
 
     findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
