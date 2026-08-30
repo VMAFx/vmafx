@@ -93,7 +93,7 @@ setup(
     include_package_data=True,
     install_requires=[
         "numpy>=2.5.0",
-        "scipy>=1.18.0",
+        "scipy>=1.18.1",
         "matplotlib>=3.11.0",
         "pandas>=3.0.3",
         "scikit-learn>=1.9.0",
