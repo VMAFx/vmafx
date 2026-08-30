@@ -456,6 +456,62 @@ vmafx-tune-go fast --target-vmaf <N> [--smoke | --src <file> --width W --height 
 | `--height` | — | See `vmafx-tune-go fast --help`. |
 | `--target-vmaf` | — | See `vmafx-tune-go fast --help`. |
 
+#### Production-mode blocker: ONNX named inputs
+
+The shipped proxy `model/tiny/fr_regressor_v2.onnx` declares **two named input
+ports** — `features` (shape `[N, 6]`) and `codec` (shape `[N, 14]`) — as
+recorded in its sidecar's `"input_names"`. The only ONNX inference seam in the
+Go tree, `pkg/ai.Registry.Infer`, serialises a single flat `[]float64` to the
+`vmafx-ort-runner` subprocess and has no wire format for a second port;
+`Registry.InferDirect`, the CGO path, is an explicit Stage-2 stub.
+
+Flattening the two ports into one 20-D vector is **not** a workaround —
+`vmaftune/proxy.py` documents that exact mistake: the graph's first dense layer
+reads the 6-D `features` port only, so the 14 codec dimensions are silently
+interpreted as batch padding and `codec` receives nothing. Rather than return a
+quietly-wrong score, `pkg/fast` fails with `ErrProxyPortsUnsupported` and a
+diagnostic naming both ports.
+
+Any one of these unblocks it:
+
+1. A `vmafx-ort-runner` protocol that accepts named input tensors, plus a
+   matching `pkg/ai.Registry.InferNamed`.
+2. Promoting `pkg/ai.Registry.InferDirect` onto a CGO ONNX Runtime binding
+   (e.g. `github.com/yalue/onnxruntime_go`), which `pkg/ai` defers to Stage 2
+   precisely because it couples the build to `libonnxruntime`.
+3. A single-port re-export of `fr_regressor_v2` that concatenates the two
+   inputs *inside* the graph, shipped alongside the current model.
+
+#### Divergences from the Python `fast` implementation
+
+The Go port fixes four defects found in `vmaf-tune fast` while reading it. The
+CLI surface and the JSON schema are unchanged; only the numbers the proxy would
+see differ.
+
+| # | Python behaviour | Go behaviour |
+|---|------------------|--------------|
+| 1 | `cli._build_fast_sample_extractor` hands the probe `.mp4` straight to the libvmaf CLI, which reads raw YUV only — every probe score fails and the feature vector degrades to six zeros. | Container-shaped encodes are decoded to raw YUV first (the `score.maybe_decode_distorted` step the Python probe leg skips), on both the probe and verify legs. |
+| 2 | `cli._parse_canonical6_means` looks up bare `adm2` / `vif_scale0` keys in `pooled_metrics`; modern libvmaf emits `integer_adm2` / `integer_vif_scale0`. `score.py` knows this and carries a mapping, but the fast path does not use it. | The `integer_`-prefixed key is tried first, then the bare key, then a per-frame average of either. |
+| 3 | `proxy.py`'s hardcoded `ENCODER_VOCAB_V2` disagrees with the trainer and the shipped sidecar from index 3 on (`libaom-av1` vs `libvvenc`), so the codec one-hot lands in the wrong slot for every codec past `libsvtav1`, and the model's own `unknown` catch-all is unreachable. | The vocabulary is read from the model sidecar's `encoder_vocab`, so it cannot drift from the installed checkpoint. Out-of-vocabulary codecs map to `unknown` when the model has that slot, and are a hard error otherwise. |
+| 4 | The sidecar ships `feature_mean` / `feature_std`, and `run_proxy` documents that the caller must apply them — but no caller on the fast path does, so raw libvmaf means reach a model trained on standardised features. | The sidecar's StandardScaler is applied before inference. |
+
+One behaviour is *weaker* in Go than in Python:
+
+- **TPE reproducibility.** Optuna's `TPESampler(seed=0)` makes a run
+  bit-reproducible. The Go port uses `github.com/c-bata/goptuna`, whose TPE
+  sampler honours its seed only partially: `tpe.SamplerOptionSeed` seeds the
+  sampler's own RNG and its startup random sampler, but
+  `goptuna/internal/random.ArgMaxMultinomial` draws from the *process-global*
+  `math/rand` source, which Go seeds randomly at startup and which
+  `rand.Seed` can no longer override. Repeat runs therefore explore slightly
+  different trial sequences and may return a neighbouring CRF when two
+  candidates score within about a VMAF point of each other. Measured on the
+  ADR-0276 smoke curve: at the shipped budgets the recommendation stays within
+  ±1 of the brute-force optimum in ~99–100 % of runs, and at 150 trials it hit
+  the exact optimum in 150 of 150 runs for every target tested. Closing the gap
+  needs an upstream goptuna change threading the sampler RNG into
+  `internal/random`.
+
 ## Ported subcommands (Stage 5 — corpus + sidecar)
 
 ### `corpus` — Phase A grid sweep
@@ -573,194 +629,11 @@ measured VMAF clears `--target-vmaf`. An encoder that never clears is reported
 with status `unmet` and its closest miss, so a missing encoder build is never
 mistaken for a quality result.
 
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--baseline-encoder` | See `vmafx-tune-go benchmark --help`. |
-| `--format` | See `vmafx-tune-go benchmark --help`. |
-| `--from-corpus` | See `vmafx-tune-go benchmark --help`. |
-| `--output` | See `vmafx-tune-go benchmark --help`. |
-| `--target-vmaf` | See `vmafx-tune-go benchmark --help`. |
-
-## Ported subcommands (Stage 5)
-
-### `auto` — Phase F adaptive recipe-aware planner
-
-Composes the per-phase tuning stages into one deterministic decision tree and
-emits a JSON plan. Optionally realises the winning cell as a real encode plus a
-libvmaf score.
-
-```text
-vmafx-tune-go auto --src <video> [flags]
-```
-
 **Required flags:**
 
 | Flag | Description |
 |------|-------------|
-| `--target-vmaf` | Quality target on the standard VMAF `[0, 100]` scale |
-| `--src` | Source video. Required unless `--smoke`. |
-
-**Optional flags:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--target-vmaf` | `93` | Target pooled-mean VMAF. |
-| `--max-budget-bitrate` | `8000` | Upper bound on the picked rendition's bitrate, in kbps. |
-| `--allow-codecs` | `libx264` | Comma-separated codec list the tree may pick from. A single entry short-circuits the compare-shortlist stage. |
-| `--codec` | *(unset)* | Pin the codec choice, overriding the `--allow-codecs` ranking. Also short-circuits the shortlist stage. |
-| `--sample-clip-seconds` | `0` | Propagate this clip length to internal sweeps rather than re-deciding per stage. `0` = full source. |
-| `--smoke` | `false` | Exercise the composition with synthetic metadata — no ffprobe, no ffmpeg, no ONNX. |
-| `--output` | stdout | Write the JSON plan here. |
-| `--execute` | `false` | After planning, run real FFmpeg encodes and libvmaf scores for the selected cell(s). |
-| `--runs-dir` | `runs` | Output directory for encoded files and `tune_results.jsonl` (used with `--execute`). |
-| `--execute-all` | `false` | With `--execute`: run every plan cell, not just the winner. Useful for post-hoc A/B comparison. |
-| `--model` | *(unset)* | Optional `predictor_<codec>.onnx` path. Default uses the analytical fallback curve. |
-
-**Exit codes** (identical to `vmaf-tune fast`):
-
-| Code | Meaning |
-|------|---------|
-| `0` | Recommendation emitted; proxy and verify agree within `--proxy-tolerance`. |
-| `2` | Usage or environment error (bad CRF range, missing `--src`, unavailable backend, proxy unavailable). |
-| `3` | Recommendation emitted, but the proxy/verify gap exceeds tolerance. Fall back to the slow Phase A grid (ADR-0276). The payload is still written. |
-
-**Example — smoke run (works on any host):**
-
-```bash
-vmafx-tune-go fast --smoke --target-vmaf 90
-
-### `sidecar` — Local on-host predictor sidecar
-
-Trains and inspects the local bias-correction model described in
-[local-sidecar-training.md](../ai/local-sidecar-training.md). The shipped
-predictor is a fixed, deterministic asset; the sidecar is a correction term you
-train on your own host from the residuals between predicted VMAF and the
-libvmaf score actually observed at encode time:
-
-```text
-sidecar_vmaf = predictor_vmaf + sidecar_correction
-```
-
-State lives under
-`${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar/<predictor-version>/<codec>/state.json`
-alongside an anonymous random host UUID. A predictor-version mismatch on load
-discards everything except the UUID and resets to cold start, so a shipped-model
-upgrade can never replay a stale correction. The on-disk format is shared with
-the Python implementation: state written by one binary loads in the other and
-produces identical predictions.
-
-**Shared flags** (accepted by every child command):
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--codec` | `libx264` | Codec bucket for the sidecar state. |
-| `--cache-dir` | `${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar` | Sidecar cache root. |
-| `--predictor-version` | `predictor_v1` | Predictor version namespace. |
-| `--model` | unset | Optional `predictor_<codec>.onnx` path. **Not supported by the Go binary** — see the ONNX note below. |
-| `--json` | off | Emit machine-readable JSON (2-space indent, sorted keys) instead of the one-line text summary. |
-
-#### `sidecar status`
-
-Prints the state metadata for one codec bucket: the anonymous host UUID, the
-on-disk state path, the predictor-version namespace, the number of folded-in
-captures, and the RMS of the buffered residuals (the drift signal).
-
-```bash
-vmafx-tune-go sidecar status --codec libx264 --json
-```
-
-```json
-{
-  "encoder": "libx264",
-  "n_trials": 50,
-  "notes": "smoke mode — synthetic predictor; no ffmpeg / ONNX / GPU. See ADR-0276 + ADR-0304 + Research-0076 for the production path.",
-  "predicted_kbps": 3486.832605990455,
-  "predicted_vmaf": 90.3551546220283,
-  "proxy_verify_gap": null,
-  "recommended_crf": 20,
-  "smoke": true,
-  "target_vmaf": 90.0,
-  "verify_vmaf": null
-}
-```
-
-The payload is byte-compatible with the Python `vmaf-tune fast` output: keys are
-sorted, floats are rendered with CPython's `repr` formatting (so an integral
-`target_vmaf` prints as `90.0`, not `90`), and `verify_vmaf` /
-`proxy_verify_gap` are `null` in smoke mode. Production mode adds one key,
-`score_backend`, naming the selected libvmaf backend.
-
-**Example — production run (once the ONNX blocker is lifted):**
-
-```bash
-vmafx-tune-go fast \
-  --src ref_1920x1080.yuv --width 1920 --height 1080 --framerate 24 \
-  --target-vmaf 93 --encoder libx264 --preset medium \
-  --score-backend cuda \
-  --output fast.json
-```
-
-#### Production-mode blocker: ONNX named inputs
-
-The shipped proxy `model/tiny/fr_regressor_v2.onnx` declares **two named input
-ports** — `features` (shape `[N, 6]`) and `codec` (shape `[N, 14]`) — as
-recorded in its sidecar's `"input_names"`. The only ONNX inference seam in the
-Go tree, `pkg/ai.Registry.Infer`, serialises a single flat `[]float64` to the
-`vmafx-ort-runner` subprocess and has no wire format for a second port;
-`Registry.InferDirect`, the CGO path, is an explicit Stage-2 stub.
-
-Flattening the two ports into one 20-D vector is **not** a workaround —
-`vmaftune/proxy.py` documents that exact mistake: the graph's first dense layer
-reads the 6-D `features` port only, so the 14 codec dimensions are silently
-interpreted as batch padding and `codec` receives nothing. Rather than return a
-quietly-wrong score, `pkg/fast` fails with `ErrProxyPortsUnsupported` and a
-diagnostic naming both ports.
-
-Any one of these unblocks it:
-
-1. A `vmafx-ort-runner` protocol that accepts named input tensors, plus a
-   matching `pkg/ai.Registry.InferNamed`.
-2. Promoting `pkg/ai.Registry.InferDirect` onto a CGO ONNX Runtime binding
-   (e.g. `github.com/yalue/onnxruntime_go`), which `pkg/ai` defers to Stage 2
-   precisely because it couples the build to `libonnxruntime`.
-3. A single-port re-export of `fr_regressor_v2` that concatenates the two
-   inputs *inside* the graph, shipped alongside the current model.
-
-#### Divergences from the Python `fast` implementation
-
-The Go port fixes four defects found in `vmaf-tune fast` while reading it. The
-CLI surface and the JSON schema are unchanged; only the numbers the proxy would
-see differ.
-
-| # | Python behaviour | Go behaviour |
-|---|------------------|--------------|
-| 1 | `cli._build_fast_sample_extractor` hands the probe `.mp4` straight to the libvmaf CLI, which reads raw YUV only — every probe score fails and the feature vector degrades to six zeros. | Container-shaped encodes are decoded to raw YUV first (the `score.maybe_decode_distorted` step the Python probe leg skips), on both the probe and verify legs. |
-| 2 | `cli._parse_canonical6_means` looks up bare `adm2` / `vif_scale0` keys in `pooled_metrics`; modern libvmaf emits `integer_adm2` / `integer_vif_scale0`. `score.py` knows this and carries a mapping, but the fast path does not use it. | The `integer_`-prefixed key is tried first, then the bare key, then a per-frame average of either. |
-| 3 | `proxy.py`'s hardcoded `ENCODER_VOCAB_V2` disagrees with the trainer and the shipped sidecar from index 3 on (`libaom-av1` vs `libvvenc`), so the codec one-hot lands in the wrong slot for every codec past `libsvtav1`, and the model's own `unknown` catch-all is unreachable. | The vocabulary is read from the model sidecar's `encoder_vocab`, so it cannot drift from the installed checkpoint. Out-of-vocabulary codecs map to `unknown` when the model has that slot, and are a hard error otherwise. |
-| 4 | The sidecar ships `feature_mean` / `feature_std`, and `run_proxy` documents that the caller must apply them — but no caller on the fast path does, so raw libvmaf means reach a model trained on standardised features. | The sidecar's StandardScaler is applied before inference. |
-
-One behaviour is *weaker* in Go than in Python:
-
-- **TPE reproducibility.** Optuna's `TPESampler(seed=0)` makes a run
-  bit-reproducible. The Go port uses `github.com/c-bata/goptuna`, whose TPE
-  sampler honours its seed only partially: `tpe.SamplerOptionSeed` seeds the
-  sampler's own RNG and its startup random sampler, but
-  `goptuna/internal/random.ArgMaxMultinomial` draws from the *process-global*
-  `math/rand` source, which Go seeds randomly at startup and which
-  `rand.Seed` can no longer override. Repeat runs therefore explore slightly
-  different trial sequences and may return a neighbouring CRF when two
-  candidates score within about a VMAF point of each other. Measured on the
-  ADR-0276 smoke curve: at the shipped budgets the recommendation stays within
-  ±1 of the brute-force optimum in ~99–100 % of runs, and at 150 trials it hit
-  the exact optimum in 150 of 150 runs for every target tested. Closing the gap
-  needs an upstream goptuna change threading the sampler RNG into
-  `internal/random`.
-
 | `--from-corpus` | Phase-A corpus JSONL to benchmark |
-
-| `--src` | Reference video (raw YUV or any FFmpeg-readable container) |
 
 **Optional flags:**
 
@@ -809,6 +682,54 @@ carries no encoder name.
 The CSV output uses CRLF line endings (Python's `csv` "excel" dialect), and the
 JSON output is stable pretty RFC 8259 with sorted keys — both byte-identical to
 `vmaf-tune benchmark`.
+
+## Ported subcommands (Stage 5)
+
+### `auto` — Phase F adaptive recipe-aware planner
+
+Composes the per-phase tuning stages into one deterministic decision tree and
+emits a JSON plan. Optionally realises the winning cell as a real encode plus a
+libvmaf score.
+
+```text
+vmafx-tune-go auto --src <video> [flags]
+```
+
+**Required flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--target-vmaf` | Quality target on the standard VMAF `[0, 100]` scale |
+| `--src` | Source video. Required unless `--smoke`. |
+
+**Optional flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--target-vmaf` | `93` | Target pooled-mean VMAF. |
+| `--max-budget-bitrate` | `8000` | Upper bound on the picked rendition's bitrate, in kbps. |
+| `--allow-codecs` | `libx264` | Comma-separated codec list the tree may pick from. A single entry short-circuits the compare-shortlist stage. |
+| `--codec` | *(unset)* | Pin the codec choice, overriding the `--allow-codecs` ranking. Also short-circuits the shortlist stage. |
+| `--sample-clip-seconds` | `0` | Propagate this clip length to internal sweeps rather than re-deciding per stage. `0` = full source. |
+| `--smoke` | `false` | Exercise the composition with synthetic metadata — no ffprobe, no ffmpeg, no ONNX. |
+| `--output` | stdout | Write the JSON plan here. |
+| `--execute` | `false` | After planning, run real FFmpeg encodes and libvmaf scores for the selected cell(s). |
+| `--runs-dir` | `runs` | Output directory for encoded files and `tune_results.jsonl` (used with `--execute`). |
+| `--execute-all` | `false` | With `--execute`: run every plan cell, not just the winner. Useful for post-hoc A/B comparison. |
+| `--model` | *(unset)* | Optional `predictor_<codec>.onnx` path. Default uses the analytical fallback curve. |
+
+**Exit codes** (identical to `vmaf-tune fast`):
+
+| Code | Meaning |
+|------|---------|
+| `0` | Recommendation emitted; proxy and verify agree within `--proxy-tolerance`. |
+| `2` | Usage or environment error (bad CRF range, missing `--src`, unavailable backend, proxy unavailable). |
+| `3` | Recommendation emitted, but the proxy/verify gap exceeds tolerance. Fall back to the slow Phase A grid (ADR-0276). The payload is still written. |
+
+**Example — smoke run (works on any host):**
+
+```bash
+vmafx-tune-go fast --smoke --target-vmaf 90
 
 ### `encode-profile` — Reproduce one recommendation from a report
 
@@ -1093,6 +1014,47 @@ vmafx-tune-go sidecar <status|predict|record|batch-record> [flags]
 vmafx-tune-go sidecar status --json
 vmafx-tune-go sidecar batch-record --captures-jsonl captures.jsonl --json
 vmafx-tune-go sidecar predict --features-json shot.json --crf 26 --json
+```
+
+#### `sidecar status`
+
+Prints the state metadata for one codec bucket: the anonymous host UUID, the
+on-disk state path, the predictor-version namespace, the number of folded-in
+captures, and the RMS of the buffered residuals (the drift signal).
+
+```bash
+vmafx-tune-go sidecar status --codec libx264 --json
+```
+
+```json
+{
+  "encoder": "libx264",
+  "n_trials": 50,
+  "notes": "smoke mode — synthetic predictor; no ffmpeg / ONNX / GPU. See ADR-0276 + ADR-0304 + Research-0076 for the production path.",
+  "predicted_kbps": 3486.832605990455,
+  "predicted_vmaf": 90.3551546220283,
+  "proxy_verify_gap": null,
+  "recommended_crf": 20,
+  "smoke": true,
+  "target_vmaf": 90.0,
+  "verify_vmaf": null
+}
+```
+
+The payload is byte-compatible with the Python `vmaf-tune fast` output: keys are
+sorted, floats are rendered with CPython's `repr` formatting (so an integral
+`target_vmaf` prints as `90.0`, not `90`), and `verify_vmaf` /
+`proxy_verify_gap` are `null` in smoke mode. Production mode adds one key,
+`score_backend`, naming the selected libvmaf backend.
+
+**Example — production run (once the ONNX blocker is lifted):**
+
+```bash
+vmafx-tune-go fast \
+  --src ref_1920x1080.yuv --width 1920 --height 1080 --framerate 24 \
+  --target-vmaf 93 --encoder libx264 --preset medium \
+  --score-backend cuda \
+  --output fast.json
 ```
 
 #### Feature JSON

@@ -84,3 +84,10 @@
   dead package made that the live one did not — that `RecordCapture(persist=false)`
   leaves no state file on disk, as opposed to merely updating memory — has been
   carried across.
+- The usage page carried two `### sidecar` sections. One was a fragment holding
+  `sidecar status` plus two subsections that belong to `fast` ("Production-mode
+  blocker" and "Divergences from the Python `fast` implementation"); the other
+  held the rest. Dissolved: each subsection moved under the command it
+  documents, and `benchmark`'s flag tables — which were sitting between `fast`
+  and `corpus`, 150 lines away from their own heading — moved under
+  `### benchmark`.
