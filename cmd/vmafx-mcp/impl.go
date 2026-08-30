@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
+	"github.com/VMAFx/vmafx/pkg/modeleval"
 )
 
 // ---------------------------------------------------------------------------
@@ -645,11 +646,24 @@ func handleRunBenchmark(ctx context.Context, _ map[string]any) (any, error) {
 // Tool: eval_model_on_split
 // ---------------------------------------------------------------------------
 
-// handleEvalModelOnSplit delegates to a Python subprocess since evaluating
-// ONNX models with parquet feature caches requires Python-land deps
-// (onnxruntime, pandas, scipy). This matches the Python server's own lazy-
-// import approach: the tool is available in the tool list (for IDE clients)
-// but returns a clear error when the Python env is not available.
+// handleEvalModelOnSplit evaluates an ONNX tiny-AI regressor against a
+// parquet feature cache and reports PLCC / SROCC / RMSE.
+//
+// This is a fully native implementation. It previously shelled out to
+// python3 with an inline script that imported numpy + pandas + scipy +
+// onnxruntime; that subprocess was the last hard Python dependency in
+// the Go MCP server and the blocker for the ADR-0704 Stage 2 sunset of
+// mcp-server/vmaf-mcp. The pieces now live in:
+//
+//   - pkg/modeleval — parquet read, split bucketing, statistics (pure Go)
+//   - pkg/libvmaf   — the ONNX forward pass, via libvmaf's own ONNX
+//     Runtime session API (vmaf_dnn_session_*), so no third-party ONNX
+//     package enters the Go module
+//
+// When libvmaf was built without ONNX Runtime every session call returns
+// -ENOSYS and the caller sees ErrDNNUnavailable — the same graceful
+// degradation the Python server shows when its optional `eval` extra is
+// not installed.
 func handleEvalModelOnSplit(ctx context.Context, args map[string]any) (any, error) {
 	modelPath, err := libvmaf.ValidatePath(strArg(args, "model", ""))
 	if err != nil {
@@ -659,86 +673,38 @@ func handleEvalModelOnSplit(ctx context.Context, args map[string]any) (any, erro
 	if err != nil {
 		return nil, fmt.Errorf("features: %w", err)
 	}
-	split := strArg(args, "split", "test")
-	inputName := strArg(args, "input_name", "features")
+	opts := modeleval.Options{
+		ModelPath:    modelPath,
+		FeaturesPath: featuresPath,
+		Split:        strArg(args, "split", modeleval.SplitTest),
+		InputName:    strArg(args, "input_name", modeleval.DefaultInputName),
+	}
 
-	return delegateToPythonEval(ctx, modelPath, featuresPath, split, inputName)
+	// Validate the split before opening an ORT session so a typo costs
+	// nothing, matching the Python ordering.
+	if err := modeleval.ValidateSplit(opts.Split); err != nil {
+		return nil, err
+	}
+
+	pred, closeFn, err := newDNNPredictor(modelPath)
+	if err != nil {
+		return nil, err
+	}
+	defer closeFn()
+
+	return modeleval.Evaluate(ctx, pred, opts)
 }
 
-// delegateToPythonEval invokes the Python helper script for ONNX evaluation.
-func delegateToPythonEval(ctx context.Context, modelPath, featuresPath, split, inputName string) (any, error) {
-	// Inline Python script: avoids an on-disk helper file dependency.
-	script := `
-import sys, json, hashlib
-import numpy as np, pandas as pd, onnxruntime as ort
-from scipy.stats import pearsonr, spearmanr
-
-model_path, features_path, split, input_name = sys.argv[1:]
-VALID_SPLITS = ("train", "val", "test", "all")
-FEATURE_COLUMNS = ("adm2","vif_scale0","vif_scale1","vif_scale2","vif_scale3","motion2")
-
-if split not in VALID_SPLITS:
-    print(json.dumps({"error": f"split must be one of {VALID_SPLITS}"}))
-    sys.exit(0)
-
-df = pd.read_parquet(features_path)
-if "mos" not in df.columns:
-    print(json.dumps({"error": "no 'mos' column"}))
-    sys.exit(0)
-
-if split != "all" and "key" in df.columns:
-    def bucket(k):
-        h = hashlib.sha256(f"vmaf-train-splits-v1:{k}".encode()).digest()
-        return int.from_bytes(h[:8],"big") / (1<<64)
-    test_frac, val_frac = 0.1, 0.1
-    def which(k):
-        b = bucket(str(k))
-        if b < test_frac: return "test"
-        if b < test_frac+val_frac: return "val"
-        return "train"
-    df = df[df["key"].astype(str).map(which) == split]
-
-cols = [c for c in FEATURE_COLUMNS if c in df.columns]
-if not cols:
-    print(json.dumps({"error": f"none of {FEATURE_COLUMNS} found"}))
-    sys.exit(0)
-x = df[cols].to_numpy(dtype=np.float32)
-y = df["mos"].to_numpy(dtype=np.float32)
-if len(x) < 2:
-    print(json.dumps({"error": f"split {split!r} has {len(x)} samples (need >=2)"}))
-    sys.exit(0)
-
-sess = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
-pred = np.asarray(sess.run(None, {input_name: x})[0]).reshape(-1)
-if pred.shape != y.shape:
-    print(json.dumps({"error": f"model output shape {pred.shape} does not match target shape {y.shape}"}))
-    sys.exit(0)
-plcc = float(pearsonr(pred,y).statistic)
-srocc = float(spearmanr(pred,y).statistic)
-rmse = float(np.sqrt(((pred-y)**2).mean()))
-print(json.dumps({"model":model_path,"features":features_path,"split":split,"n":len(x),
-  "plcc":plcc,"srocc":srocc,"rmse":rmse,"columns":cols}))
-`
-	// #nosec G204 -- "python3" is a fixed binary name, script is a constant
-	// string literal above; modelPath and featuresPath are passed through
-	// libvmaf.ValidatePath by the caller (handleEvalModelOnSplit), split is
-	// constrained to {train,val,test,all} server-side, inputName is a JSON
-	// schema-validated identifier.
-	// CommandContext ensures the Python subprocess is killed if the MCP client
-	// disconnects before evaluation completes (ADR-1085).
-	cmd := exec.CommandContext(ctx, "python3", "-c", script, modelPath, featuresPath, split, inputName)
-	out, err := cmd.CombinedOutput()
+// newDNNPredictor opens a libvmaf ONNX session for modelPath and adapts
+// it to modeleval.Predictor. The returned func always releases the
+// session — the Python original leaked one ORT session per evaluated
+// model (docs/research/0983-python-surfaces-bug-audit-2026-05-31.md).
+func newDNNPredictor(modelPath string) (modeleval.Predictor, func(), error) {
+	sess, err := libvmaf.OpenDNNSession(modelPath)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"eval_model_on_split requires Python with onnxruntime, pandas, scipy installed: %v\n%s",
-			err, string(out),
-		)
+		return nil, func() {}, err
 	}
-	var result any
-	if err := json.Unmarshal(out, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse eval output: %v\nraw: %s", err, string(out))
-	}
-	return result, nil
+	return sess, sess.Close, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -754,37 +720,33 @@ func handleCompareModels(ctx context.Context, args map[string]any) (any, error) 
 	if err != nil {
 		return nil, fmt.Errorf("features: %w", err)
 	}
-	split := strArg(args, "split", "test")
-	inputName := strArg(args, "input_name", "features")
+	opts := modeleval.Options{
+		FeaturesPath: featuresPath,
+		Split:        strArg(args, "split", modeleval.SplitTest),
+		InputName:    strArg(args, "input_name", modeleval.DefaultInputName),
+	}
+	if err := modeleval.ValidateSplit(opts.Split); err != nil {
+		return nil, err
+	}
 
-	var ranked []map[string]any
-	var modelErrors []map[string]any
+	// Resolve every model path up front so a rejected path is reported
+	// per-model (under "errors") rather than aborting the whole call,
+	// which is what _compare_models does.
+	models := make([]string, 0, len(rawModels))
+	result := &modeleval.Comparison{Ranked: []*modeleval.Result{}, Errors: []modeleval.ModelError{}}
 	for _, m := range rawModels {
 		mStr, _ := m.(string)
 		mp, err := libvmaf.ValidatePath(mStr)
 		if err != nil {
-			modelErrors = append(modelErrors, map[string]any{"model": mStr, "error": err.Error()})
+			result.Errors = append(result.Errors, modeleval.ModelError{Model: mStr, Error: err.Error()})
 			continue
 		}
-		r, err := delegateToPythonEval(ctx, mp, featuresPath, split, inputName)
-		if err != nil {
-			modelErrors = append(modelErrors, map[string]any{"model": mStr, "error": err.Error()})
-			continue
-		}
-		if rm, ok := r.(map[string]any); ok {
-			if errMsg, hasErr := rm["error"]; hasErr {
-				modelErrors = append(modelErrors, map[string]any{"model": mStr, "error": errMsg})
-				continue
-			}
-			ranked = append(ranked, rm)
-		}
+		models = append(models, mp)
 	}
-	sort.Slice(ranked, func(i, j int) bool {
-		pi, _ := ranked[i]["plcc"].(float64)
-		pj, _ := ranked[j]["plcc"].(float64)
-		return pi > pj
-	})
-	return map[string]any{"ranked": ranked, "errors": modelErrors}, nil
+
+	got := modeleval.Compare(ctx, newDNNPredictor, models, opts)
+	got.Errors = append(result.Errors, got.Errors...)
+	return got, nil
 }
 
 // ---------------------------------------------------------------------------

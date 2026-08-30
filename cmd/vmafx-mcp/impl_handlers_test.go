@@ -39,6 +39,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/VMAFx/vmafx/pkg/modeleval"
 )
 
 // ---------------------------------------------------------------------------
@@ -230,17 +232,47 @@ func TestHandleCompareModels_AllInvalidModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	m, ok := result.(map[string]any)
+	// The handler returns a typed *modeleval.Comparison since the native
+	// port (previously an untyped map built from the python3 helper's
+	// JSON). Assert the behaviour, then the wire shape the MCP layer
+	// actually serialises.
+	cmp, ok := result.(*modeleval.Comparison)
 	if !ok {
 		t.Fatalf("result type: %T", result)
 	}
-	errs, _ := m["errors"].([]map[string]any)
-	if len(errs) != 2 {
-		t.Errorf("errors: got %d, want 2", len(errs))
+	if len(cmp.Errors) != 2 {
+		t.Errorf("errors: got %d, want 2", len(cmp.Errors))
 	}
-	ranked, _ := m["ranked"].([]map[string]any)
-	if len(ranked) != 0 {
-		t.Errorf("ranked: got %d, want 0", len(ranked))
+	if len(cmp.Ranked) != 0 {
+		t.Errorf("ranked: got %d, want 0", len(cmp.Ranked))
+	}
+	for _, e := range cmp.Errors {
+		if e.Model == "" || e.Error == "" {
+			t.Errorf("error entry is missing fields: %+v", e)
+		}
+	}
+
+	// Both keys must serialise as arrays (never null), matching the
+	// Python server's {"ranked": [...], "errors": [...]}.
+	blob, err := json.Marshal(cmp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var shape struct {
+		Ranked []json.RawMessage `json:"ranked"`
+		Errors []struct {
+			Model string `json:"model"`
+			Error string `json:"error"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(blob, &shape); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(shape.Errors) != 2 || len(shape.Ranked) != 0 {
+		t.Errorf("wire shape = %s", blob)
+	}
+	if !strings.Contains(string(blob), `"ranked":[]`) {
+		t.Errorf("ranked must serialise as [] not null: %s", blob)
 	}
 }
 
