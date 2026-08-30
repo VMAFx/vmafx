@@ -52,10 +52,10 @@ concurrency:
 env:
   CLUSTER_NAME: ${{ inputs.cluster_name || 'vmafx-e2e' }}
   # Tool versions — pin every external tool for reproducibility.
-  KIND_VERSION: "v0.23.0"
-  KUBECTL_VERSION: "v1.30.2"
-  HELM_VERSION: "v3.15.2"
-  KUTTL_VERSION: "v0.20.0"
+  KIND_VERSION: "v0.33.0"
+  KUBECTL_VERSION: "v1.37.0"
+  HELM_VERSION: "v4.2.4"
+  KUTTL_VERSION: "v0.26.0"
   # Image tags built by this workflow's "build-images" job.
   E2E_IMAGE_TAG: "e2e-${{ github.sha }}"
 

@@ -70,7 +70,7 @@ jobs:
         # v2.21.4 pulls x/tools@v0.25.0 which fails to compile under Go 1.26
         # (invalid array-length constant in tokeninternal.go). v2.27.1 pulls
         # x/tools@v0.37.0 which is compatible.
-        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.27.1
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
 
       - name: gosec (exclude generated)
         run: |
