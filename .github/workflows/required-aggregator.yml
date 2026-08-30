@@ -29,7 +29,7 @@ jobs:
   aggregator:
     name: Required Checks Aggregator
     runs-on: ubuntu-24.04
-    timeout-minutes: 100
+    timeout-minutes: 250
     steps:
       - name: Block draft PRs from satisfying the required check
         if: github.event_name == 'pull_request' && github.event.pull_request.draft == true
@@ -121,7 +121,21 @@ jobs:
             // straight). Bumped to 90 minutes; corresponding
             // `timeout-minutes` lifted to 100 to allow the polling job itself
             // to finish.
-            const deadline = Date.now() + 90 * 60 * 1000;
+            //
+            // 2026-08-30: the same starvation recurred at 90 minutes. A
+            // two-month Renovate backlog opened ~44 concurrent dependency
+            // PRs; every aggregator on that wave died on the deadline with
+            // siblings still `queued`/`in_progress` and NO real check failure
+            // (verified on #1083/#1087/#1089: e.g. job 89636653774 ran
+            // 03:24:39 -> 04:54:53Z = 90m14s and expired on
+            // `Build - Ubuntu gcc (CPU) + DNN: in_progress; CodeQL: queued;
+            // ShellCheck + shfmt: queued`). Because the aggregator is a
+            // required check, a timeout blocks the merge, which keeps the
+            // queue deep, which causes the next timeout. Raised to 240
+            // minutes with `timeout-minutes` at 250. This job only polls the
+            // checks API, so a longer ceiling costs a runner slot rather
+            // than compute; the hosted-runner hard cap is 360 minutes.
+            const deadline = Date.now() + 240 * 60 * 1000;
             let byName = {};
             while (Date.now() < deadline) {
               const { data: { check_runs } } = await github.rest.checks.listForRef({

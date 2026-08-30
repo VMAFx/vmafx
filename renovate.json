@@ -105,6 +105,13 @@
       "automerge": false
     },
     {
+      "description": "Batch every Docker base-image digest/pin refresh into one PR. Ungrouped, each image (debian, fedora, ubuntu, golang, archlinux, python, both distroless variants, docker/dockerfile, otel-collector, nvidia/cuda) opened its own PR and its own full CI matrix run; on 2026-08-30 that fan-out starved the Required Checks Aggregator so no dependency PR could merge at all.",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["digest", "pin"],
+      "groupName": "Docker digests",
+      "automerge": true
+    },
+    {
       "description": "Renovate's own action — manual review on bumps to retain auditability of the dep-bot itself.",
       "matchPackageNames": ["renovatebot/github-action"],
       "groupName": "Renovate self-hosted action",
