@@ -1,0 +1,1 @@
+- Replace the fork-suffixed component release layout with one independent VMAFx SemVer stream, beginning with the `3.2.1` patch release.

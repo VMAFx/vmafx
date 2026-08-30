@@ -70,8 +70,8 @@ the numerical output, the number is bumped. For `libvmaf` (the C library) and
 for everything else, version numbers follow the package version in
 `libvmaf.pc`.
 
-> **Fork note:** the Lusoris fork uses `vX.Y.Z-lusoris.N` — upstream Netflix
-> version + fork-specific revision. See the
+> **VMAFx note:** the fork uses one independent ordinary SemVer stream,
+> `vX.Y.Z`; upstream alignment is recorded in sync history rather than the tag. See the
 > [release guide](../development/release.md).
 
 ### Q: Why is the aggregate VMAF score sometimes biased toward "easy" content? (upstream `Netflix/vmaf#20`)

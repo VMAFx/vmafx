@@ -66,7 +66,7 @@ SYCL.
 - **Private** — `vmaf_assert.h` and anything prefixed `VMAF_ASSERT`. Do not
   depend on it.
 
-Semantic versioning follows the fork scheme `v3.x.y-lusoris.N` — see
+Semantic versioning follows the independent VMAFx `vX.Y.Z` stream — see
 [ADR-0011](../adr/0011-versioning-lusoris-suffix.md). Every change to the
 stable API that would break source or binary compatibility gets a major
 version bump.
@@ -190,7 +190,7 @@ typedef struct VmafConfiguration {
 | Function | Returns | Purpose |
 | --- | --- | --- |
 | `vmaf_init(VmafContext **out, VmafConfiguration cfg)` | 0 / -errno | Allocate a context. `*out` is owned by the caller; free with `vmaf_close()`. |
-| `vmaf_version()` | `const char *` | Version string `v3.x.y-lusoris.N + git sha`. Does not need `vmaf_init()`. |
+| `vmaf_version()` | `const char *` | Version string `vX.Y.Z + git sha`. Does not need `vmaf_init()`. |
 | `vmaf_use_features_from_model(ctx, model)` | 0 / -errno | Register every feature a model needs. Deduplicates across multiple models. |
 | `vmaf_use_features_from_model_collection(ctx, coll)` | 0 / -errno | Same, for a bootstrap model collection. |
 | `vmaf_use_feature(ctx, "psnr", opts)` | 0 / -errno | Register an extra feature not required by any loaded model. Context takes ownership of `opts`; on success never free it yourself. |

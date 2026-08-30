@@ -101,7 +101,7 @@ Response body (abridged):
 
 ```json
 {
-  "version": "3.x.y-lusoris.N",
+  "version": "3.2.1",
   "pooled_metrics": { "vmaf": { "mean": 76.668905, "...": "..." } },
   "frames": [ { "frameNum": 0, "metrics": { "vmaf": 78.8263, "...": "..." } } ]
 }
@@ -637,7 +637,7 @@ Same shape as `vmaf_score`, plus two extra keys:
 
 ```json
 {
-  "version": "3.x.y-lusoris.N",
+  "version": "3.2.1",
   "pooled_metrics": { "vmaf": { "mean": 76.668905, "...": "..." } },
   "frames": [ "..." ],
   "backend_requested": "auto",

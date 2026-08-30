@@ -393,7 +393,7 @@ func toRendition(p Point) Rendition {
 // The Cloud field remains the authoritative store (JSON-serialised by the
 // existing schema); this iterator is an ergonomic adapter, not a replacement.
 //
-// Added in v3.x.y-lusoris.N+1 (ADR-0932).
+// Added in v3.2.1; removal is no earlier than v4.0.0 (ADR-0932).
 func (r LadderResult) IterCloud() iter.Seq[Point] {
 	return func(yield func(Point) bool) {
 		for _, p := range r.Cloud {
@@ -412,7 +412,7 @@ func (r LadderResult) IterCloud() iter.Seq[Point] {
 // The Hull field remains the authoritative store (JSON-serialised); this
 // iterator is an ergonomic adapter, not a replacement.
 //
-// Added in v3.x.y-lusoris.N+1 (ADR-0932).
+// Added in v3.2.1; removal is no earlier than v4.0.0 (ADR-0932).
 func (r LadderResult) IterHull() iter.Seq[Point] {
 	return func(yield func(Point) bool) {
 		for _, p := range r.Hull {

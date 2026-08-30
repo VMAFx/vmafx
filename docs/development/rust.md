@@ -139,7 +139,7 @@ VMAFX_REPO=$(git rev-parse --show-toplevel) \
 Expected output:
 
 ```text
-vmafx-sys version: 3.x.y-lusoris.N
+vmafx-sys version: 3.2.1
 Reference:  .../python/test/resource/yuv/src01_hrc00_576x324.yuv
 Distorted:  .../python/test/resource/yuv/src01_hrc01_576x324.yuv
 Model:      .../model/vmaf_v0.6.1.json

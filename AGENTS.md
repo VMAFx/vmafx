@@ -150,8 +150,10 @@ through `port-upstream-commit`.
 
 ## 11. Release
 
-Release-please is triggered by pushes to `master`. Version scheme `v3.x.y-lusoris.N`,
-tracking upstream version + a fork suffix. Signing is keyless via Sigstore / GitHub OIDC.
+Release-please is triggered by pushes to `master`. VMAFx owns one ordinary
+SemVer stream (`vMAJOR.MINOR.PATCH`) independent of Netflix's release cadence;
+the root release aligns the release-owned Python packages and Helm
+`appVersion`. Signing is keyless via Sigstore / GitHub OIDC.
 
 ## 12. Hard rules
 

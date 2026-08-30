@@ -4,10 +4,9 @@
   "release-type": "simple",
   "include-component-in-tag": false,
   "include-v-in-tag": true,
-  "tag-separator": "-",
   "packages": {
     ".": {
-      "package-name": "vmaf-lusoris",
+      "package-name": "vmafx",
       "release-type": "simple",
       "versioning": "default",
       "prerelease": false,
@@ -33,76 +32,15 @@
         { "type": "simd", "section": "SIMD" }
       ],
       "extra-files": [
-        {
-          "type": "generic",
-          "path": "core/meson.build"
-        }
-      ]
-    },
-    "ai": {
-      "package-name": "vmaf-train",
-      "release-type": "python",
-      "versioning": "default",
-      "prerelease": false,
-      "bump-minor-pre-major": false,
-      "bump-patch-for-minor-pre-major": false,
-      "draft": false,
-      "changelog-path": "CHANGELOG.md",
-      "changelog-sections": [
-        { "type": "feat", "section": "Features" },
-        { "type": "fix", "section": "Bug Fixes" },
-        { "type": "perf", "section": "Performance" },
-        { "type": "refactor", "section": "Refactors" },
-        { "type": "docs", "section": "Documentation" },
-        { "type": "test", "section": "Tests" },
-        { "type": "build", "section": "Build System" },
-        { "type": "ci", "section": "CI / Infrastructure" },
-        { "type": "chore", "section": "Miscellaneous", "hidden": false },
-        { "type": "revert", "section": "Reverts" },
-        { "type": "security", "section": "Security" },
-        { "type": "style", "section": "Style" }
-      ],
-      "extra-files": [
-        { "type": "generic", "path": "pyproject.toml" }
-      ]
-    },
-    "dev-llm": {
-      "package-name": "vmaf-dev-llm",
-      "release-type": "python",
-      "versioning": "default",
-      "prerelease": false,
-      "bump-minor-pre-major": false,
-      "bump-patch-for-minor-pre-major": false,
-      "draft": false,
-      "changelog-path": "CHANGELOG.md",
-      "changelog-sections": [
-        { "type": "feat", "section": "Features" },
-        { "type": "fix", "section": "Bug Fixes" },
-        { "type": "docs", "section": "Documentation" },
-        { "type": "test", "section": "Tests" },
-        { "type": "chore", "section": "Miscellaneous", "hidden": false }
-      ],
-      "extra-files": [
-        { "type": "generic", "path": "pyproject.toml" }
-      ]
-    },
-    "mcp-server/vmaf-mcp": {
-      "package-name": "vmaf-mcp",
-      "release-type": "python",
-      "versioning": "default",
-      "prerelease": false,
-      "bump-minor-pre-major": false,
-      "bump-patch-for-minor-pre-major": false,
-      "draft": false,
-      "changelog-path": "CHANGELOG.md",
-      "changelog-sections": [
-        { "type": "feat", "section": "Features" },
-        { "type": "fix", "section": "Bug Fixes" },
-        { "type": "docs", "section": "Documentation" },
-        { "type": "chore", "section": "Miscellaneous", "hidden": false }
-      ],
-      "extra-files": [
-        { "type": "generic", "path": "pyproject.toml" }
+        { "type": "generic", "path": "core/meson.build" },
+        { "type": "generic", "path": "ai/pyproject.toml" },
+        { "type": "generic", "path": "ai/src/vmaf_train/__init__.py" },
+        { "type": "generic", "path": "dev-llm/pyproject.toml" },
+        { "type": "generic", "path": "dev-llm/src/vmaf_dev_llm/__init__.py" },
+        { "type": "generic", "path": "mcp-server/vmaf-mcp/pyproject.toml" },
+        { "type": "generic", "path": "mcp-server/vmaf-mcp/src/vmaf_mcp/__init__.py" },
+        { "type": "generic", "path": "deploy/helm/vmafx/Chart.yaml" },
+        { "type": "generic", "path": "docker/Dockerfile.node" }
       ]
     }
   },

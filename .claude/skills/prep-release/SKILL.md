@@ -24,7 +24,8 @@ description: Dry-run release-please locally, preview the CHANGELOG diff, verify 
 3. Parse the proposed release: version bump, CHANGELOG delta, affected packages.
 4. Display the diff: version old → new, CHANGELOG section added, tag that will be
    created.
-5. Verify the version matches our scheme: `v3.x.y-lusoris.N` (D11).
+5. Verify the version matches the ordinary SemVer scheme
+   `vMAJOR.MINOR.PATCH` (ADR-1127).
 6. Report supply-chain prerequisites:
    - SBOM generator present (`syft`, `cyclonedx-cli`).
    - SLSA generator workflow configured.
@@ -35,5 +36,6 @@ description: Dry-run release-please locally, preview the CHANGELOG diff, verify 
 
 - This skill never creates releases. It only previews what the next release-please PR
   would propose, so the operator can merge it with confidence.
-- If the proposed version doesn't match `v3.x.y-lusoris.N`, surface as a blocker; the
-  fix is editing `release-please-config.json` (custom version pattern).
+- If the proposed version is not ordinary SemVer or the root-owned package
+  versions diverge, surface it as a blocker and repair
+  `release-please-config.json` before merging.

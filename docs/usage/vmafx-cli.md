@@ -63,7 +63,7 @@ vmafx --reference ref.y4m --distorted dist.y4m --precision=legacy
 
 # Check which version and defaults are active (planned behavior)
 vmafx --version
-# Output: VMAFX 3.x.y-lusoris.N (auto-backend, precision=max)
+# Output: VMAFX 3.2.1 (auto-backend, precision=max)
 ```
 
 ## `--netflix-compat` — restore legacy defaults
@@ -136,7 +136,7 @@ ls -la $(which vmafx)
 
 # Version string shows VMAFX identity and defaults
 vmafx --version
-# -> VMAFX 3.x.y-lusoris.N (auto-backend, precision=max)
+# -> VMAFX 3.2.1 (auto-backend, precision=max)
 
 # Or inside the dev container:
 docker exec vmaf-dev-mcp vmafx --version

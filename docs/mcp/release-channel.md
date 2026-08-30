@@ -14,7 +14,7 @@ The fork ships **three** MCP server flavours:
 [ADR-0166](../adr/0166-mcp-server-release-channel.md) governs the
 standalone Python server release channel. The `vmaf-mcp`
 distribution is published to PyPI from the same release flow as the
-libvmaf fork, uses the fork's `v3.x.y-lusoris.N` version line, and
+libvmaf fork, uses the coordinated VMAFx `vX.Y.Z` version line, and
 is signed through the same keyless Sigstore/OIDC pipeline.
 
 Operators should install the standalone server from PyPI when an

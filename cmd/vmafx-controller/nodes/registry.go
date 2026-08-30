@@ -240,7 +240,7 @@ func (r *Registry) ValidateSession(nodeID, sessionToken string) bool {
 // out of the range early (e.g. "find first NVIDIA node").  AllSeq is the
 // streaming-friendly equivalent and avoids the snapshot.  All remains
 // supported for one release as a shim and will be removed in
-// v3.x.y-lusoris.N+2 (see ADR-0932).
+// v4.0.0 or later (see ADR-0932).
 func (r *Registry) All() []*Node {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -265,7 +265,7 @@ func (r *Registry) All() []*Node {
 // (filter, accumulate, dispatch) is safe.  If a caller needs to mutate
 // the registry mid-walk, snapshot via AllSeq + slices.Collect first.
 //
-// Added in v3.x.y-lusoris.N+1 (ADR-0932).  Callers iterating linearly
+// Added in v3.2.1 (ADR-0932). Callers iterating linearly
 // with no random access or re-iteration should prefer this over All.
 func (r *Registry) AllSeq() iter.Seq[*Node] {
 	return func(yield func(*Node) bool) {

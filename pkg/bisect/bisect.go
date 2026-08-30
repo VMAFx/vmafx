@@ -373,7 +373,7 @@ func Run(
 // semantics — the iterator captures the slice header at call time, not at
 // each yield.
 //
-// Added in v3.x.y-lusoris.N+1 (ADR-0932).  Callers iterating linearly with
+// Added in v3.2.1 (ADR-0932). Callers iterating linearly with
 // no random access or re-iteration are encouraged to prefer this method.
 func (r Result) IterSamples() iter.Seq[Sample] {
 	return func(yield func(Sample) bool) {

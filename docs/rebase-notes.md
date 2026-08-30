@@ -46994,3 +46994,9 @@ here covers the gap. If the vector loop is ever widened, the tail's start index
 `(w / 16) * 16` has to widen with it, or widths that are a multiple of the
 dispatch granularity but not the vector width will again read `buf->tmp_ref`
 entries that were never written in that iteration.
+## 2026-08-31 — ADR-1127 single SemVer release stream
+
+No upstream rebase impact: preserve VMAFx's one independent `vX.Y.Z` root
+release stream, coordinated version-file list, and draft-publication fan-out
+when importing upstream release metadata. Do not restore the historical
+`-lusoris.N` suffix or component release-please packages.

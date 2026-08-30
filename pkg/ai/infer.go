@@ -185,7 +185,7 @@ var ErrDirectInferNotImplemented = fmt.Errorf("ai: direct ORT CGO path not yet i
 // of the range early (e.g. "is model X registered?").  ListModelsSeq is
 // the streaming-friendly equivalent that defers each os.ReadDir entry
 // inspection to the yield call.  ListModels remains supported for one
-// release as a shim and will be removed in v3.x.y-lusoris.N+2 (ADR-0932).
+// release as a shim and will be removed no earlier than v4.0.0 (ADR-0932).
 func (r *Registry) ListModels() []string {
 	return slices.Collect(r.ListModelsSeq())
 }
@@ -194,7 +194,7 @@ func (r *Registry) ListModels() []string {
 // models in the registry's model directory, in os.ReadDir order.
 // Yields nothing when the directory is absent or unreadable.
 //
-// Added in v3.x.y-lusoris.N+1 (ADR-0932).  Callers iterating linearly
+// Added in v3.2.1 (ADR-0932). Callers iterating linearly
 // (filter, dispatch, early-break) should prefer this over ListModels.
 func (r *Registry) ListModelsSeq() iter.Seq[string] {
 	return func(yield func(string) bool) {

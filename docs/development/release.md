@@ -1,30 +1,33 @@
 <!-- markdownlint-disable MD051 -->
 # Release process
 
-The VMAFx fork of libvmaf releases via automation — not manual tag-and-draft.
+VMAFx releases through release-please and an explicit publication gate.
 Pushes to `master` drive a
 [release-please](https://github.com/googleapis/release-please-action)
-workflow that maintains a release PR, and merging that PR triggers the full
-release pipeline (build, sign, publish).
+workflow that maintains a release PR. Merging that PR creates a draft release;
+publishing the draft creates the tag and triggers the full build, signing, and
+publication pipeline.
 
 ## Version scheme
 
-Releases follow `vX.Y.Z-lusoris.N`:
+Releases follow ordinary SemVer tags, `vX.Y.Z`:
 
-- `X.Y.Z` tracks the upstream Netflix VMAF version the fork is aligned to.
-- `-lusoris.N` is the fork-specific revision. It bumps independently of
-  upstream and resets to `.1` when `X.Y.Z` changes.
+- `X` changes for incompatible public-surface changes.
+- `Y` changes for backward-compatible features.
+- `Z` changes for backward-compatible fixes.
 
 Example progression:
 
 ```text
-v3.0.0-lusoris.1  # initial fork release against upstream 3.0.0
-v3.0.0-lusoris.2  # second fork revision, still on upstream 3.0.0
-v3.1.0-lusoris.1  # reset after upstream 3.1.0 sync
+v3.2.1  # patch release
+v3.3.0  # backward-compatible feature release
+v4.0.0  # incompatible public-surface release
 ```
 
-Upstream sync PRs (see `/sync-upstream`) update the upstream component; regular
-fork PRs advance `-lusoris.N`.
+The VMAFx release stream advances independently of Netflix/vmaf. Upstream
+alignment remains recorded in sync commits and release notes, not encoded in
+the tag. [ADR-1127](../adr/1127-single-semver-release-stream.md) governs this
+policy.
 
 ## Automation flow
 
@@ -33,9 +36,13 @@ fork PRs advance `-lusoris.N`.
    whether a release is warranted. If so, it opens or updates a release PR that
    bumps `VERSION`, updates `CHANGELOG.md`, and collects user-visible change
    summaries.
-2. **Merging the release PR** tags the commit and triggers the release
-   workflow.
-3. **The release workflow** builds artefacts (libvmaf binaries, Python wheels),
+2. **Merging the release PR** creates a draft GitHub release. It does not yet
+   create the public release tag.
+3. **An authenticated operator publishes the draft.** Publication creates the
+   `vX.Y.Z` tag and emits the `release.published` event. This explicit gate is
+   required because GitHub suppresses most follow-on workflow events created
+   by the repository `GITHUB_TOKEN`.
+4. **The release workflows** build artefacts (libvmaf binaries, Python wheels),
    runs the Netflix golden-data gate (CPU only — the GPU/SIMD backends
    are covered by per-backend snapshot tests at ULP tolerance, not by
    the goldens), and publishes signed artefacts to GitHub Releases.
@@ -112,7 +119,7 @@ repo or in CI secrets.
   (Trusted Publishing, no token). See
   [ADR-0166](../adr/0166-mcp-server-release-channel.md).
 - **Production container images** (`ghcr.io/vmafx/vmafx:<tag>` and the
-  `-cuda12` / `-rocm6` / `-oneapi2026` / `-server` variants): cosign keyless
+  `-cuda13` / `-rocm7` / `-oneapi2025` / `-server` variants): cosign keyless
   signature plus a GitHub-native build-provenance attestation
   (`actions/attest-build-provenance`). See
   [ADR-0902](../adr/0902-signing-and-attestation-audit.md).
@@ -263,8 +270,8 @@ If a CVE requires an out-of-band release that bypasses the release-please PR:
 
 1. Branch off `master` into `hotfix/CVE-YYYY-NNNN`.
 2. Land the fix with a `fix:` commit and a signed-off-by line.
-3. Manually tag `vX.Y.Z-lusoris.N+1` — release-please will reconcile on the
-   next regular push.
+3. Manually tag the next ordinary patch version, `vX.Y.(Z+1)`;
+   release-please will reconcile on the next regular push.
 4. Backport the CVE fix to any active stacked release branches.
 
 ## Upstream parallel

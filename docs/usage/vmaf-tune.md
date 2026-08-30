@@ -694,7 +694,7 @@ before the production CRF encode.
   "vmaf_model": "vmaf_v0.6.1",
   "score_time_ms": 1820.5,
   "ffmpeg_version": "6.1.1",
-  "vmaf_binary_version": "3.0.0-lusoris.0",
+  "vmaf_binary_version": "3.2.1",
   "exit_status": 0,
   "clip_mode": "full",
   "shot_count": 12,

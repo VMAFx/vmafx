@@ -30,6 +30,8 @@
 # ADR-0709: vmafx-phase4b-distributed-platform (Phase 4b umbrella)
 # ADR-0717: vmafx-node-ffmpeg-latest (this Dockerfile + version policy)
 
+ARG VMAFX_VERSION=3.2.1 # x-release-please-version
+
 # ---------------------------------------------------------------------------
 # Stage 1 — vmaf-builder: compile libvmaf + vmaf CLI from core/
 # ---------------------------------------------------------------------------
@@ -120,7 +122,8 @@ COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
 # Copy public headers from source tree (pkg-config needs them)
 COPY core/include/libvmaf/ /usr/local/include/libvmaf/
 # Write a minimal libvmaf.pc so ffmpeg's pkg-config probe succeeds
-RUN printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libvmaf\nDescription: VMAF library\nVersion: 3.0.0\nLibs: -L${libdir} -lvmaf\nCflags: -I${includedir}\n' \
+ARG VMAFX_VERSION
+RUN printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libvmaf\nDescription: VMAF library\nVersion: %s\nLibs: -L${libdir} -lvmaf\nCflags: -I${includedir}\n' "${VMAFX_VERSION}" \
         > /usr/local/lib/pkgconfig/libvmaf.pc \
     && ldconfig
 
@@ -201,7 +204,8 @@ RUN apt-get update \
 # Copy libvmaf headers + library for cgo build
 COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
 COPY core/include/libvmaf/ /usr/local/include/libvmaf/
-RUN printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libvmaf\nDescription: VMAF library\nVersion: 3.0.0\nLibs: -L${libdir} -lvmaf\nCflags: -I${includedir}\n' \
+ARG VMAFX_VERSION
+RUN printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\nincludedir=${prefix}/include\n\nName: libvmaf\nDescription: VMAF library\nVersion: %s\nLibs: -L${libdir} -lvmaf\nCflags: -I${includedir}\n' "${VMAFX_VERSION}" \
         > /usr/local/lib/pkgconfig/libvmaf.pc \
     && ldconfig
 

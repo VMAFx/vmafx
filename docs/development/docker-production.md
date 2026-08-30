@@ -32,12 +32,11 @@ docker run --rm \
 
 | Tag | Platforms | Description | Approx. size |
 |-----|-----------|-------------|--------------|
-| `latest`, `vX.Y.Z-lusoris.N` | amd64, arm64 | CPU-only CLI (default) | ~150 MB |
-| `vX.Y.Z-lusoris.N-server` | amd64, arm64 | CPU CLI + vmaf-mcp MCP server + vmaf-tune | ~350 MB |
-| `vX.Y.Z-lusoris.N-cuda12` | amd64 | CUDA 12 runtime added | ~500 MB |
-| `vX.Y.Z-lusoris.N-rocm6` | amd64 | ROCm 6 HIP runtime added | ~600 MB |
-| `vX.Y.Z-lusoris.N-oneapi2026` | amd64 | Intel oneAPI 2026 SYCL runtime added | ~500 MB |
-| `vX.Y.Z-lusoris.N-vulkan` | amd64, arm64 | Vulkan ICD loader added | ~170 MB |
+| `latest`, `vX.Y.Z` | amd64, arm64 | CPU-only CLI (default) | ~150 MB |
+| `vX.Y.Z-server` | amd64, arm64 | CPU CLI + vmaf-mcp MCP server + vmaf-tune | ~350 MB |
+| `vX.Y.Z-cuda13` | amd64 | CUDA 13 runtime added | ~500 MB |
+| `vX.Y.Z-rocm7` | amd64 | ROCm 7 HIP runtime added | ~600 MB |
+| `vX.Y.Z-oneapi2025` | amd64 | Intel oneAPI 2025 SYCL runtime added | ~500 MB |
 
 All images are built from `gcr.io/distroless/cc-debian12` — no shell, minimal glibc
 runtime. The attack surface is intentionally constrained.

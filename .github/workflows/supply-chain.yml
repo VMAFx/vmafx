@@ -1,7 +1,7 @@
 # Supply-chain provenance: SLSA L3 build, Sigstore keyless signing, SBOM.
-# Triggered when release-please publishes a tag (`v3.x.y-lusoris.N`).
-# release-please-config.json is added in Phase 3c — until then this workflow
-# is dormant on push but can be exercised via workflow_dispatch.
+# Triggered when an operator publishes release-please's draft
+# `vMAJOR.MINOR.PATCH` release. The authenticated publication emits the
+# `release:published` event; workflow_dispatch remains the recovery path.
 
 name: supply-chain
 on:

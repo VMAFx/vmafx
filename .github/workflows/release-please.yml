@@ -1,7 +1,8 @@
 # release-please — on push to master, open or update a release PR that
 # (a) bumps the version per Conventional Commits, (b) regenerates CHANGELOG.md,
-# and (c) when merged, tags `vX.Y.Z-lusoris.N` and fires the `release:published`
-# event that supply-chain.yml keys on for signing + SBOM + SLSA.
+# and (c) when merged, creates a draft `vMAJOR.MINOR.PATCH` release. Publishing
+# that draft creates the tag and fires the release/tag workflows for signing,
+# SBOM, SLSA, and container publication (ADR-1127).
 
 name: release-please
 

@@ -106,7 +106,7 @@ Update the image tag (or digest) in the Helm `values.yaml`:
 operator:
   image:
     repository: ghcr.io/vmafx/vmafx-operator
-    tag: "v3.2.0-lusoris.5"
+    tag: "v3.2.1"
 ```
 
 Then run `helm upgrade vmafx ./deploy/helm/vmafx -n vmafx-system`.

@@ -1,7 +1,7 @@
 # docker-publish-production — build, push, sign, and SBOM the VMAFX production image.
 #
 # Triggers:
-#   - push of a release tag (v*) from release-please
+#   - push of a release tag (v*) when a release-please draft is published
 #   - workflow_dispatch for manual runs
 #
 # Produces:

@@ -32,7 +32,7 @@ body:
     id: good-ref
     attributes:
       label: Last known good ref (commit / tag)
-      placeholder: "v3.0.0-lusoris.2 or 24c88a32"
+      placeholder: "v3.2.1 or 24c88a32"
     validations:
       required: true
 

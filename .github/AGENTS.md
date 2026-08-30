@@ -11,6 +11,15 @@ broken `.c` file).
 
 ## Invariants a reviewer or sync must preserve
 
+### Single SemVer release fan-out (ADR-1127)
+
+`release-please.yml` owns one root package and creates a draft GitHub release.
+Publishing that draft is the authenticated operation that creates the `vX.Y.Z`
+tag and starts `supply-chain.yml` plus both Docker publication workflows. Do not
+split release-please back into unqualified component tags or make the release
+non-draft without first providing and validating an explicit downstream
+workflow trigger.
+
 ### Rule-enforcement split (ADR-0124)
 
 [`rule-enforcement.yml`](workflows/rule-enforcement.yml) has three
