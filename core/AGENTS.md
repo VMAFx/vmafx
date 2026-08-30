@@ -75,6 +75,18 @@ core/
 
 ## Rebase-sensitive invariants
 
+- **`meson_version` is pinned to `>= 1.4.0`, not upstream's value**
+  (fork-local, ADR-0692 / T-CI-MESON-C23-APT-2026-08-30):
+  [`meson.build`](meson.build) sets `default_options: ['c_std=c23', …]`,
+  and `c23` is only a recognised `c_std` value from meson 1.4.0 onward
+  (verified: 1.3.2 rejects it, 1.4.0 accepts it). The declared
+  `meson_version` must stay at or above 1.4.0 for as long as the fork
+  keeps `c_std=c23`, which upstream does not set. An upstream sync that
+  rewrites the `project()` call will conflict here — keep the fork's
+  `>= 1.4.0`. Lowering it does not fail loudly: the build instead dies
+  much later at configure with the cryptic
+  `ERROR: Unknown C std ['c23']`, which is what took out seven CI
+  workflows at once when Ubuntu's meson 1.3.2 was still in use.
 - **`feature_extractor_vector_append()` deduplicates by provided-feature
   names, not extractor name** (fork-local, ADR-0385 / T-CUDA-FEATURE-EXTRACTOR-DOUBLE-WRITE):
   [`src/fex_ctx_vector.c`](src/fex_ctx_vector.c) uses
