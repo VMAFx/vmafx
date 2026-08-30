@@ -455,6 +455,20 @@ static char *test_compute_vmaf_yuv420p10_score(void)
     mu_assert("write ref 10-bit fixture", write_yuv420p10_fixture(ref_path, 192u, 192u, 2u) == 0);
     mu_assert("write dis 10-bit fixture", write_yuv420p10_fixture(dis_path, 192u, 192u, 2u) == 0);
 
+    /* The C-MCP path allowlist (PR #1054) canonicalises every caller-supplied
+     * YUV path and requires it to sit under <repo>/testdata, <repo>/model,
+     * <repo>/python/test/resource or $VMAF_MCP_ALLOW. These fixtures are
+     * generated at run time and live in /tmp, so extend the allow-set for the
+     * duration of this case via the documented escape hatch. Scoped with
+     * unsetenv() below so the rest of the table still runs against the default
+     * roots; allowlist rejection itself is covered by
+     * test_mcp_compute_vmaf_allowlist.c. */
+    if (setenv("VMAF_MCP_ALLOW", "/tmp", 1) != 0) {
+        (void)unlink(ref_path);
+        (void)unlink(dis_path);
+        return "setenv VMAF_MCP_ALLOW";
+    }
+
     McpHarness h;
     mu_assert("harness init", harness_init(&h) == 0);
 
@@ -473,6 +487,7 @@ static char *test_compute_vmaf_yuv420p10_score(void)
     char *err = send_and_read(&h, req, (size_t)n, line, sizeof(line));
     if (err != NULL) {
         harness_teardown(&h);
+        (void)unsetenv("VMAF_MCP_ALLOW");
         (void)unlink(ref_path);
         (void)unlink(dis_path);
         return err;
@@ -484,6 +499,7 @@ static char *test_compute_vmaf_yuv420p10_score(void)
               strstr(line, "\\\"frames_scored\\\":2") != NULL);
 
     harness_teardown(&h);
+    (void)unsetenv("VMAF_MCP_ALLOW");
     (void)unlink(ref_path);
     (void)unlink(dis_path);
     return NULL;
