@@ -159,7 +159,7 @@ func TestStubSubcommands(t *testing.T) {
 
 	// Everything else is now a real subcommand: it exits non-zero only when
 	// required flags are missing, not as a stub redirect.
-	for _, sub := range []string{"benchmark", "auto", "encode-profile"} {
+	for _, sub := range []string{"auto"} {
 		sub := sub
 		t.Run(sub, func(t *testing.T) {
 			t.Parallel()

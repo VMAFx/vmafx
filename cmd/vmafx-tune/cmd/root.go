@@ -90,6 +90,7 @@ Not yet ported (use 'vmaf-tune <subcommand>' for these):
 
 	// Not-yet-ported stubs: log a redirect rather than silently failing.
 	for _, stub := range []struct{ name, desc string }{
+		{"auto", "Automatic subcommand selection"},
 	} {
 		root.AddCommand(stubSubcommand(stub.name, stub.desc))
 	}

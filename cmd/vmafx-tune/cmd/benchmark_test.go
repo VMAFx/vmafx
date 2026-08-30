@@ -32,7 +32,10 @@ const corpusJSONL = `{"encoder": "libx264", "src": "a.mkv", "preset": "medium", 
 `
 
 // writeCorpus writes a corpus fixture into a temp dir and returns its path.
-func writeCorpus(t *testing.T, content string) string {
+// writeCorpusRaw writes corpus content verbatim. Distinct from writeCorpus in
+// recommend_cli_test.go, which joins variadic lines and appends a trailing
+// newline; this one must not touch the bytes.
+func writeCorpusRaw(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "corpus.jsonl")
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -76,7 +79,7 @@ func TestBenchmarkFlagSurface(t *testing.T) {
 // TestBenchmarkRendersEachFormat drives the full clikit root (fx graph, logger
 // injection, domain RunE) once per output format.
 func TestBenchmarkRendersEachFormat(t *testing.T) {
-	corpus := writeCorpus(t, corpusJSONL)
+	corpus := writeCorpusRaw(t, corpusJSONL)
 
 	tests := []struct {
 		name     string
@@ -141,7 +144,7 @@ func TestBenchmarkRendersEachFormat(t *testing.T) {
 // TestBenchmarkCreatesOutputDirectory verifies the report lands even when the
 // requested parent directory does not exist yet.
 func TestBenchmarkCreatesOutputDirectory(t *testing.T) {
-	corpus := writeCorpus(t, corpusJSONL)
+	corpus := writeCorpusRaw(t, corpusJSONL)
 	out := filepath.Join(t.TempDir(), "nested", "deeper", "report.md")
 
 	root := newRoot("dev")
@@ -157,7 +160,7 @@ func TestBenchmarkCreatesOutputDirectory(t *testing.T) {
 // TestBenchmarkBaselineEncoder verifies that pinning the baseline reassigns
 // which encoder carries the zero delta.
 func TestBenchmarkBaselineEncoder(t *testing.T) {
-	corpus := writeCorpus(t, corpusJSONL)
+	corpus := writeCorpusRaw(t, corpusJSONL)
 	out := filepath.Join(t.TempDir(), "report.csv")
 
 	root := newRoot("dev")
@@ -184,7 +187,7 @@ func TestBenchmarkBaselineEncoder(t *testing.T) {
 }
 
 func TestBenchmarkErrors(t *testing.T) {
-	corpus := writeCorpus(t, corpusJSONL)
+	corpus := writeCorpusRaw(t, corpusJSONL)
 	// A corpus whose only row failed: nothing is eligible.
 	emptyCorpus := writeCorpus(t,
 		`{"encoder": "libx264", "vmaf_score": 90.0, "bitrate_kbps": 100.0, "exit_status": 1}`+"\n")
