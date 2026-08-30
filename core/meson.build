@@ -1,5 +1,5 @@
 project('libvmaf', ['c', 'cpp'],
-    version : '3.2.0', # x-release-please-version
+    version : '4.0.0-lusoris.0', # x-release-please-version
     default_options : ['c_std=c23',
                        'warning_level=2',
                        'buildtype=release',
