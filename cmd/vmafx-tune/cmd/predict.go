@@ -209,11 +209,14 @@ func runPredict(ctx context.Context, d deps, flags *predictFlags) error {
 	d.Log.InfoContext(ctx, "probed source geometry",
 		"width", geometry.Width, "height", geometry.Height, "fps", geometry.FPS)
 
-	shots, detected := pershot.Detect(ctx, flags.source, pershot.Options{
+	// pkg/pershot is the group-1 implementation: DetectShotsStatus is the
+	// status-returning variant of DetectShots, and the subprocess runner is a
+	// DetectOptions field rather than a trailing argument.
+	shots, detected := pershot.DetectShotsStatus(ctx, flags.source, pershot.DetectOptions{
 		Width: geometry.Width, Height: geometry.Height,
 		PixFmt: "yuv420p", Bitdepth: flags.bitdepth,
-		TotalFrames: flags.totalFrames, PerShotBin: flags.perShotBin,
-	}, nil)
+		TotalFrames: flags.totalFrames, Bin: flags.perShotBin,
+	})
 	if len(shots) == 0 {
 		return errors.New("no shots detected; nothing to do")
 	}
