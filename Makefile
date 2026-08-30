@@ -92,6 +92,24 @@ $(MESON): $(VENV_PIP)
 $(NINJA): $(VENV_PIP)
 	$(VENV_PIP) install ninja || { echo "Failed to install ninja"; exit 1; }
 
+# Provision the lint / format toolchain into the project venv. Versions are
+# kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
+# cannot disagree about what counts as a violation.
+RUFF_VERSION  := 0.15.17
+BLACK_VERSION := 26.5.1
+ISORT_VERSION := 6.0.1
+
+.PHONY: lint-tools
+lint-tools: $(VENV_PIP)
+	$(VENV_PIP) install --quiet \
+	    'ruff==$(RUFF_VERSION)' 'black==$(BLACK_VERSION)' 'isort==$(ISORT_VERSION)' mypy
+	@echo "lint tools installed into $(VENV_PIP:%/pip=%)"
+	@command -v shfmt >/dev/null || { \
+	   echo "note: shfmt is not a Python package and was not installed."; \
+	   echo "      get it with: go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1"; }
+	@command -v shellcheck >/dev/null || \
+	   echo "note: shellcheck not found — install it via your package manager."
+
 cythonize-deps: $(VENV_PIP)
 	$(VENV_PIP) install setuptools cython numpy || { echo "Failed to install dependencies"; exit 1; }
 
@@ -469,6 +487,7 @@ help:
 	@echo "  make coverage-html    — render HTML coverage report"
 	@echo "  make coverage-check   — enforce ≥70% overall / ≥85% critical"
 	@echo "  make assertion-density — Power-of-10 rule 5 density check"
+	@echo "  make lint-tools       — install ruff/black/isort/mypy into .venv at the pinned versions"
 	@echo "  make install-hooks    — wire up pre-commit + pre-push git hooks"
 	@echo "                          (set VMAFX_NATIVE_HOOKS=1 for native bash; ADR-0924)"
 	@echo "  make hooks-install    — legacy alias for install-hooks"

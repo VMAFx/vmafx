@@ -13,3 +13,8 @@
   marked as such — it reports ~295 module-resolution errors that stop it before
   it type-checks anything, which is a mypy-configuration gap rather than type
   debt.
+- New `make lint-tools` target provisions ruff, black, isort and mypy into
+  `.venv` at the versions pinned in `.pre-commit-config.yaml`, so the local gate
+  and the CI hooks cannot disagree about what counts as a violation. It also
+  points at the install commands for `shfmt` and `shellcheck`, which are not
+  Python packages.
