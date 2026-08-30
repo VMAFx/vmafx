@@ -1,0 +1,84 @@
+name: Helm Chart
+
+# The chart is a user-discoverable surface (people `helm install` it), but
+# nothing validated it: `helm lint` failed on master for an unknown length of
+# time because a stale vendored subchart injected a values key the chart's own
+# values.schema.json rejects. e2e-k8s exercises the chart, but it is label- and
+# schedule-gated and builds container images first, so it is not a gate that
+# catches a broken chart on the PR that breaks it. This is.
+on:
+  push:
+    paths:
+      - "deploy/helm/**"
+      - ".github/workflows/helm-chart.yml"
+  pull_request:
+    paths:
+      - "deploy/helm/**"
+      - ".github/workflows/helm-chart.yml"
+
+concurrency:
+  group: helm-chart-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege default for the whole workflow (ADR-0875).
+permissions:
+  contents: read
+
+# Keep in lockstep with .github/workflows/e2e-k8s.yml.
+env:
+  HELM_VERSION: "v4.2.4"
+
+jobs:
+  helm-chart:
+    name: helm lint + template
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Same install path e2e-k8s uses, so both workflows exercise the exact
+      # helm the project pins. The script name says "helm-3" but it installs
+      # whatever DESIRED_VERSION names, including the v4 line.
+      - name: Install helm ${{ env.HELM_VERSION }}
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | \
+            DESIRED_VERSION="${HELM_VERSION}" bash
+
+      # The vendored charts/*.tgz must match Chart.lock. They drifted once
+      # (a 3.6.1 tarball under a ">=3.8.0" constraint with a 3.8.0 lock), which
+      # is what broke `helm lint`. Compare before linting so the failure names
+      # the cause instead of surfacing as a confusing schema error.
+      - name: Vendored subcharts match Chart.lock
+        run: |
+          set -euo pipefail
+          cd deploy/helm/vmafx
+          fail=0
+          while read -r name version; do
+            [ -z "$name" ] && continue
+            if [ ! -f "charts/${name}-${version}.tgz" ]; then
+              echo "::error::Chart.lock pins ${name} ${version} but charts/${name}-${version}.tgz is absent."
+              echo "  charts/ currently holds: $(ls charts/ 2>/dev/null | tr '\n' ' ')"
+              echo "  Fix with: helm dependency build deploy/helm/vmafx"
+              fail=1
+            fi
+          done < <(python3 -c "
+          import sys, yaml
+          lock = yaml.safe_load(open('Chart.lock')) or {}
+          for d in lock.get('dependencies', []):
+              print(d['name'], d['version'])
+          ")
+          exit "$fail"
+
+      - name: helm lint
+        run: helm lint deploy/helm/vmafx
+
+      # Render with both the shipped defaults and every optional subchart on,
+      # so a template that only appears behind a feature flag is still parsed.
+      - name: helm template (defaults)
+        run: helm template vmafx deploy/helm/vmafx > /dev/null
+
+      - name: helm template (all optional components enabled)
+        run: |
+          helm template vmafx deploy/helm/vmafx \
+            --set pushgateway.enabled=true > /dev/null
