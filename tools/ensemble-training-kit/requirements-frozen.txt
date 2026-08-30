@@ -12,10 +12,10 @@
 #   pip install --index-url https://download.pytorch.org/whl/cu124 torch
 # then `pip install -r requirements-frozen.txt` for the rest.
 
-numpy==2.5.0
-pandas==3.0.3
-scipy==1.18.0
+numpy==2.5.2
+pandas==3.0.5
+scipy==1.18.1
 scikit-learn==1.9.0
 onnx==1.22.0
-onnxruntime==1.27.0
+onnxruntime==1.29.0
 pyyaml==6.0.3

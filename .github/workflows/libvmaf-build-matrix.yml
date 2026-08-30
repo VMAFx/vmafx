@@ -209,7 +209,7 @@ jobs:
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       # ---------- ccache persistence (Research-0089 §3.1) ----------
       # Linux + macOS build legs all wrap their host compiler in `ccache`
@@ -245,7 +245,7 @@ jobs:
       - name: Setup python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: 3.14.6
+          python-version: 3.14.7
 
       - name: Install meson and ninja
         run: |
@@ -370,7 +370,7 @@ jobs:
       # `<13` version check. Minimum driver for 13.x is >= 580.
       - name: Install CUDA toolkit
         if: matrix.cuda
-        uses: Jimver/cuda-toolkit@3d45d157f327c09c04b50ee6ccdea2d9d017ec76  # v0.2.35
+        uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d  # v0.2.36
         with:
           cuda: '13.2.0'
           method: network
@@ -633,7 +633,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
 
@@ -747,14 +747,14 @@ jobs:
             meson_extra: --default-library=static -Denable_cuda=false -Denable_sycl=true
             name: Build — Windows MSVC + oneAPI SYCL (build only)
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 1
 
       - name: Setup python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: '3.14.6'
+          python-version: '3.14.7'
 
       - name: Install meson and ninja
         run: |
@@ -770,7 +770,7 @@ jobs:
       # (Node.js 24) per ADR-0635. Same vcvarsall.bat semantics;
       # no inputs required — defaults to amd64.
       - name: Setup MSVC dev environment
-        uses: TheMrMilchmann/setup-msvc-dev@79dac248aac9d0059f86eae9d8b5bfab4e95e97c  # v4.0.0
+        uses: TheMrMilchmann/setup-msvc-dev@368ef7d1ee4d1171b31d4a7f67f4d954f903f5a9  # v4.1.0
         with:
           arch: x64
 

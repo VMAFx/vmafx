@@ -9,7 +9,7 @@ authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
 ]
 dependencies = [
-  "torch>=2.12.1,<3.0",
+  "torch>=2.13.0,<3.0",
   # torchvision must be pinned as a direct dep to enforce ABI compatibility with
   # the torch floor declared above.  pytorch-lightning → torchmetrics 1.9+
   # eagerly imports `torchvision.transforms` for its arniqa metric; an older
@@ -19,7 +19,7 @@ dependencies = [
   # When that ABI mismatch is detected at run-time (e.g. in a pre-existing
   # venv), ``ai/tests/conftest.py`` skips the affected tests cleanly via
   # ``requires_pytorch_lightning()`` — see AGENTS.md invariant note.
-  "torchvision>=0.27.1,<0.28.0",
+  "torchvision>=0.28.0,<0.28.1",
   # Lightning AI un-published the `lightning` distribution from PyPI on
   # 2026-04-30 (yesterday's PR #229 still resolved `lightning-2.6.1`;
   # today the name returns 404). The functionally-identical wheel is
@@ -33,30 +33,30 @@ dependencies = [
   "pytorch-lightning>=2.6.5,<3.0",
   "onnx>=1.22.0,<2.0",
   "onnxruntime>=1.27.0,<2.0",  # container pins 1.26.0 (ADR-0568); floor kept at 1.20 for host installs
-  "onnxscript>=0.7.0",
-  "numpy>=2.5.0,<3.0",
-  "pandas>=3.0.3,<3.1",
-  "pyarrow>=24.0.0",
+  "onnxscript>=0.7.1",
+  "numpy>=2.5.2,<3.0",
+  "pandas>=3.0.5,<3.1",
+  "pyarrow>=25.0.1",
   "Pillow>=12.3.0,<14.0",
-  "scipy>=1.18.0",
+  "scipy>=1.18.1",
   "scikit-learn>=1.9.0",
-  "pydantic>=2.13.4",
+  "pydantic>=2.13.5",
   "pyyaml>=6.0.3",
-  "typer>=0.26.7",
+  "typer>=0.27.1",
   "rich>=15.0.0",
-  "tqdm>=4.68.3",
+  "tqdm>=4.70.0",
 ]
 
 [project.optional-dependencies]
-tune = ["optuna>=4.9.0", "ray[tune]>=2.55.1"]
+tune = ["optuna>=4.9.0", "ray[tune]>=2.56.0"]
 gpu  = []
-viz  = ["matplotlib>=3.11.0", "seaborn>=0.13.2"]
+viz  = ["matplotlib>=3.11.1", "seaborn>=0.13.2"]
 dev  = [
   "pytest>=9.1.1",
   "pytest-timeout>=2.4.0",
-  "ruff>=0.15.18",
-  "mypy>=2.1.0",
-  "types-PyYAML>=6.0.12.20260518",
+  "ruff>=0.16.4",
+  "mypy>=2.3.1",
+  "types-PyYAML>=6.0.12.20260815",
   "pandas-stubs>=3.0.3.260530",
 ]
 

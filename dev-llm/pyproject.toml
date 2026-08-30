@@ -9,16 +9,16 @@ authors = [
   { name = "Lusoris", email = "lusoris@pm.me" },
 ]
 dependencies = [
-  "typer>=0.26.7",
+  "typer>=0.27.1",
   "rich>=15.0.0",
   "pyyaml>=6.0.3",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.1.1", "ruff>=0.15.18", "mypy>=2.1.0"]
+dev = ["pytest>=9.1.1", "ruff>=0.15.18", "mypy>=2.3.1"]
 cloud = [
-  "anthropic>=0.111.0",
-  "openai>=2.54.0",
+  "anthropic>=1.1.0",
+  "openai>=3.5.0",
 ]
 
 [project.scripts]

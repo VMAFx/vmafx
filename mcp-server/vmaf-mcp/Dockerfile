@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.25@sha256:0adf442eae370b6087e08edc7c50b552d80ddf261576f4ebd6421006b2461f12
+# syntax=docker/dockerfile:1.26@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 #
 # Sandboxed vmaf-mcp server — MCP over stdio + pre-built libvmaf binary.
 #
@@ -11,7 +11,7 @@
 #       -e VMAF_MCP_ALLOW=/data \
 #       vmaf-mcp
 
-FROM ubuntu:26.04@sha256:6fee4abc5fe6a21f40022199b2d5063eb591743c80d3d2f5fadf620a98cbae0d AS build
+FROM ubuntu:26.04@sha256:889d056d5c6c0bfb55789ff3710681d68e50713cb562d2196dc07110599c7a6f AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
 # hadolint ignore=DL3008
@@ -27,7 +27,7 @@ WORKDIR /src/libvmaf
 RUN meson setup ../build -Denable_cuda=false -Denable_sycl=false --buildtype=release \
     && ninja -C ../build
 
-FROM ubuntu:26.04@sha256:6fee4abc5fe6a21f40022199b2d5063eb591743c80d3d2f5fadf620a98cbae0d
+FROM ubuntu:26.04@sha256:889d056d5c6c0bfb55789ff3710681d68e50713cb562d2196dc07110599c7a6f
 
 ENV DEBIAN_FRONTEND=noninteractive \
     VMAF_BIN=/opt/vmaf/vmaf \
