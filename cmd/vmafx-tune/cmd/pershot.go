@@ -481,6 +481,14 @@ func perShotWorkdirParent(workDir string) string {
 	if env == "" {
 		return ""
 	}
+	// Normalise before use so a value with ".." segments resolves once here
+	// rather than differently at each call site.
+	env = filepath.Clean(env)
+	// #nosec G703 -- VMAFTUNE_WORKDIR names the operator's own scratch
+	// directory. It is process-local configuration set by whoever runs the
+	// binary, not attacker-controlled input crossing a trust boundary, and
+	// pointing it somewhere is the entire purpose of the variable. The probe
+	// below only creates and immediately removes a temp file inside it.
 	if err := os.MkdirAll(env, 0o750); err != nil {
 		return ""
 	}
@@ -490,6 +498,8 @@ func perShotWorkdirParent(workDir string) string {
 	}
 	name := probe.Name()
 	_ = probe.Close()
+	// #nosec G703 -- name is the path os.CreateTemp just returned for a file
+	// it created inside env; this removes the writability probe.
 	_ = os.Remove(name)
 	return env
 }

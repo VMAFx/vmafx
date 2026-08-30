@@ -16,3 +16,13 @@
   `libvmaf` rather than failing. On a host with the upstream package that is
   libvmaf 3.2.0 with zero `vmaf_dnn_*` symbols, so a Go binary can link against a
   library that is not this fork.
+- Four gosec findings in the newly-ported Go code are resolved rather than
+  suppressed wholesale: the `rune`→`byte` conversion in the plan-JSON ASCII
+  escaper is reached only under a `r < utf8.RuneSelf` guard gosec cannot narrow
+  (G115); the TPE sampler's seeded RNG is a reproducibility requirement, not a
+  security decision, and its annotation is corrected from golangci-lint's
+  `//nolint:gosec` (which standalone gosec ignores) to `#nosec G404`; and
+  `VMAFTUNE_WORKDIR` is now `filepath.Clean`ed before use, with the remaining
+  G703 taint justified inline as operator-supplied process configuration.
+- `make lint-go` no longer exits 0 when gosec is absent — the same silent-skip
+  defect fixed for the other gates.

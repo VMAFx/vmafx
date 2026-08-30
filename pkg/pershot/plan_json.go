@@ -178,6 +178,9 @@ func ensureASCII(s string) string {
 	for _, r := range s {
 		switch {
 		case r < utf8.RuneSelf:
+			// #nosec G115 -- this switch arm is reached only when
+			// r < utf8.RuneSelf (128), so the conversion to byte cannot
+			// truncate. gosec does not narrow the type from the case guard.
 			sb.WriteByte(byte(r))
 		case r > 0xFFFF:
 			r -= 0x10000

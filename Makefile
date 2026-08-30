@@ -129,10 +129,7 @@ lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check
 # G* finding outside the gen/ tree. Source of truth for the gate added by
 # the gosec-findings-fix sweep — keep the touched-file rule honest.
 lint-go:
-	@command -v gosec >/dev/null || { \
-	    echo "gosec not found — install via 'go install github.com/securego/gosec/v2/cmd/gosec@latest'; skipping"; \
-	    exit 0; \
-	}
+	$(call require-tool,gosec,go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0)
 	@echo "--- gosec (exclude-generated) ---"
 	@gosec -exclude-generated -quiet ./...
 

@@ -121,11 +121,12 @@ func NewTPESampler(dims []Dimension, cfg TPEConfig, seed int64) *TPESampler {
 	return &TPESampler{
 		dims: dims,
 		cfg:  cfg,
-		//nolint:gosec // G404: this RNG drives a reproducible hyper-parameter
+		// #nosec G404 -- this RNG drives a reproducible hyper-parameter
 		// search, not a security decision. A seeded, deterministic stream is
 		// the requirement (--seed must reproduce a run); crypto/rand would
-		// make runs unreproducible.
-		rng: rand.New(rand.NewSource(seed)),
+		// make runs unreproducible. //nolint:gosec is golangci-lint syntax and
+		// is not honoured when gosec runs standalone, as `make lint-go` does.
+		rng: rand.New(rand.NewSource(seed)), // #nosec G404
 	}
 }
 
