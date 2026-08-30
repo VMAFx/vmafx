@@ -1,6 +1,6 @@
 project('libvmaf', ['c', 'cpp'],
     version : '3.2.0', # x-release-please-version
-    default_options : ['c_std=c11',
+    default_options : ['c_std=c23',
                        'warning_level=2',
                        'buildtype=release',
                        'default_library=both',
@@ -27,7 +27,7 @@ libvmaf_inc = include_directories(['include'])
 #   - MSVC (cl.exe / clang-cl): /std:c++latest — 'c++23' is absent from the
 #     accepted-values list meson's MSVC backend advertises; /std:c++latest
 #     enables C++23 features on VS 2022 17.x+.
-#   - Everything else (GCC 11+, Clang 14+, icpx/dpcpp on Linux): -std=c++23.
+#   - Everything else (GCC 11+, Clang 14+, icpx/dpcpp on Linux): -std=c++26.
 # If cpp_std is already set (any non-'none' value), meson generates the
 # appropriate flag itself and we stay out of the way to avoid conflicts.
 # See ADR-1056 (docs/adr/1056-msvc-cpp-std.md).
@@ -35,7 +35,7 @@ if get_option('cpp_std') == 'none'
     if cxx.get_id() == 'msvc'
         add_project_arguments('/std:c++latest', language: 'cpp')
     else
-        add_project_arguments('-std=c++23', language: 'cpp')
+        add_project_arguments('-std=c++26', language: 'cpp')
     endif
 endif
 

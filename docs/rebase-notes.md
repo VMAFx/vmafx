@@ -46718,3 +46718,15 @@ Lesson worth keeping: an unreferenced twin diverges silently. `output.c` got the
 ADR-0602 NULL-guard fix while `output.cpp` did not, and nothing caught it because
 nothing built `output.cpp`. A CI check that fails on any `.c`/`.cpp` pair where
 one side is unreferenced would prevent a recurrence.
+
+## C23 + C++26 standard bump (ADR-0692, landed 2026-08-30)
+
+`core/meson.build` sets `c_std=c23` (was `c11`) and emits `-std=c++26` (was
+`c++23`) on every non-MSVC compiler. When rebasing upstream Netflix/vmaf C
+sources, note that C23 changes the meaning of an empty parameter list: `void f()`
+declares `void f(void)` rather than an unprototyped function. Upstream code
+carrying K&R-style empty parameter lists will produce type errors here that it
+does not produce upstream — give such functions their real prototypes rather
+than reverting the standard. `-Wimplicit-fallthrough` is also enabled fork-wide,
+so an unannotated switch fallthrough in ported code needs an explicit
+`[[fallthrough]]`.

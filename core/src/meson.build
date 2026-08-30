@@ -11,6 +11,9 @@ vmaf_base_include = include_directories('./', './feature', './feature/common', '
 
 vmaf_cflags_common = [
     '-pedantic',
+    # ADR-0692: enforce the JPL Rule-24 fallthrough annotation at compile time.
+    # C23 provides the standard [[fallthrough]] spelling.
+    '-Wimplicit-fallthrough',
     # -DOC_NEW_STYLE_INCLUDES removed: dead legacy define from upstream libogg era;
     # no C consumer exists anywhere in the tree.
     # ADR-0377: hide all symbols by default; only vmaf_*-prefixed entry

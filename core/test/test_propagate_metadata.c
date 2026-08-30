@@ -19,8 +19,14 @@
 #include "metadata_handler.h"
 #include "test.h"
 
-void set_meta()
+/* Must match VmafCallbackItem::callback — void (*)(void *, VmafMetadata *).
+ * Under C23 an empty parameter list means (void), so the previous
+ * `void set_meta()` spelling is a genuine type mismatch rather than the
+ * C11 unprototyped-function tolerance it relied on (ADR-0692). */
+void set_meta(void *data, VmafMetadata *metadata)
 {
+    (void)data;
+    (void)metadata;
 }
 
 static char *test_propagate_metadata_init()
