@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/sanitizers-meson-c23 — meson from PyPI + declared c23 floor (2026-08-30)
+
+- `core/meson.build` — **rebase-sensitive.** `meson_version` raised from
+  `'>= 0.58.0'` to `'>= 1.4.0'`. This is a fork-local edit to the upstream
+  project declaration, so an upstream sync that touches the `project()` call
+  will conflict here. Keep the fork's `>= 1.4.0`: it is load-bearing for the
+  fork's `c_std=c23` default option (ADR-0692), which upstream does not set.
+  If a future sync ever drops `c_std=c23`, this pin may be relaxed back to
+  upstream's value.
+- `.github/workflows/*.yml` — fork-local CI only, no upstream counterpart.
+  15 `apt-get install … meson` sites replaced with
+  `sudo pip3 install --break-system-packages --quiet meson`. Purely additive
+  against upstream, no rebase impact.
+
 ## feat/vmafx-tune-go-fast — Phase A.5 fast path ported to Go (2026-08-30)
 
 All fork-added surfaces; no upstream-mirror files touched, so nothing here
