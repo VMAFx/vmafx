@@ -1,25 +1,16 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# vmafx-tune-go — Go port of vmaf-tune (Stage 6)
+# vmafx-tune-go — Go port of vmaf-tune
 
-`vmafx-tune-go` is the Go port of the `vmaf-tune` rate-quality tuning CLI
-(Stages 1–4 plus the Stage-6 `fast` path). It ships as a **separate binary**
-alongside the Python `vmaf-tune` binary during the migration. The Python binary
-is unchanged and should be used for all subcommands that are not yet ported.
+`vmafx-tune-go` is the Go port of the `vmaf-tune` rate-quality tuning CLI.
+**Every `vmaf-tune` subcommand is now ported**: `compare`, `ladder`, `report`,
+`recommend`, `predict`, `recommend-saliency`, `prefilter`, `tune-per-shot`,
+`fast`, `corpus`, `sidecar`, `benchmark`, `encode-profile` and `auto`. It ships
+as a **separate binary** alongside the Python `vmaf-tune` during the migration;
+the Python binary is unchanged.
 
-# vmafx-tune-go — Go port of vmaf-tune (Stage 4 + encoder introspection)
-
-`vmafx-tune-go` is the Go port of the `vmaf-tune` rate-quality tuning CLI
-(Stages 1–4, plus the encoder-introspection subcommands). It ships as a
-**separate binary** alongside the Python `vmaf-tune` binary during the
-migration. The Python binary is unchanged and should be used for all
-subcommands that are not yet ported.
-
-# vmafx-tune-go — Go port of vmaf-tune (Stage 5)
-
-`vmafx-tune-go` is the Go port of the `vmaf-tune` rate-quality tuning CLI
-(Stages 1–5). It ships as a **separate binary** alongside the Python `vmaf-tune`
-binary during the migration. The Python binary is unchanged and should be used
-for all subcommands that are not yet ported.
+A few individual *flags* still require Python — see
+[Python-only flags](#python-only-flags). Each fails with a message naming the
+fallback rather than degrading quietly.
 
 This page documents the Go binary. For the full Python `vmaf-tune` reference, see
 [vmaf-tune.md](vmaf-tune.md).
@@ -89,13 +80,14 @@ vmafx-tune-go compare \
 Single-target output (`--targets` has one value) uses schema-v1, identical to
 the Python `vmaf-tune compare` JSON output:
 
-```json
 {
   "src": "src.mp4",
   "target_vmaf": 85.0,
   "tool_version": "dev",
   "wall_time_ms": 4200,
   "rows": [
+
+```json
     {
       "codec": "libx264",
       "best_crf": 23,
@@ -438,63 +430,7 @@ vmafx-tune-go fast --target-vmaf <N> [--smoke | --src <file> --width W --height 
 > blocker](#production-mode-blocker-onnx-named-inputs) below and use
 > `vmaf-tune fast` for a production run in the meantime.
 
-## Ported subcommands (Stage 5 — corpus + sidecar)
-
-### `corpus` — Phase A grid sweep
-
-Sweeps a `(preset, crf)` grid against one or more references, encodes each cell,
-scores it against the reference with the libvmaf CLI, and writes one JSONL row
-per `(source, preset, crf)` combination.
-
-```text
-vmafx-tune-go corpus [flags]
-```
-
-The JSONL schema (v3) is the API contract the Phase B target-VMAF bisect and the
-Phase C per-title CRF predictor consume — see
-[vmaf-tune.md](vmaf-tune.md#corpus-jsonl-schema) for the column
-reference. The Go writer emits the same bytes the Python writer does, including
-the bare `NaN` tokens CPython's `json` module produces for columns libvmaf did
-not populate, so a corpus written by either binary is readable by the same
-trainers.
-
-## Ported subcommands (encoder introspection)
-
-### `benchmark` — Rank encoders from an existing corpus
-
-Answers the standard post-sweep question: *which encoder hit the target quality
-at the lowest bitrate?* It reads a Phase-A corpus JSONL written by
-`vmaf-tune corpus` and launches **no** ffmpeg and no libvmaf — the corpus stays
-the source of truth.
-
-```text
-vmafx-tune-go benchmark --from-corpus <JSONL> [flags]
-```
-
-For every encoder in the corpus the report picks the lowest-bitrate row whose
-measured VMAF clears `--target-vmaf`. An encoder that never clears is reported
-with status `unmet` and its closest miss, so a missing encoder build is never
-mistaken for a quality result.
-
-## Ported subcommands (Stage 5)
-
-### `auto` — Phase F adaptive recipe-aware planner
-
-Composes the per-phase tuning stages into one deterministic decision tree and
-emits a JSON plan. Optionally realises the winning cell as a real encode plus a
-libvmaf score.
-
-```text
-vmafx-tune-go auto --src <video> [flags]
-```
-
-**Required flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--target-vmaf` | Quality target on the standard VMAF `[0, 100]` scale |
-
-**Optional flags** (names and defaults match `vmaf-tune fast`):
+**Flags:**
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -516,24 +452,29 @@ vmafx-tune-go auto --src <video> [flags]
 | `--vmaf-model` | `vmaf_v0.6.1` | vmaf model version string. |
 | `--encode-dir` | `.workingdir2/fast` | Scratch dir for probe + verify encodes. |
 | `--output`, `-o` | stdout | JSON destination for the recommendation payload. |
+| `--crf-max` | — | See `vmafx-tune-go fast --help`. |
+| `--height` | — | See `vmafx-tune-go fast --help`. |
+| `--target-vmaf` | — | See `vmafx-tune-go fast --help`. |
 
-**Exit codes** (identical to `vmaf-tune fast`):
+## Ported subcommands (Stage 5 — corpus + sidecar)
 
-| Code | Meaning |
-|------|---------|
-| `0` | Recommendation emitted; proxy and verify agree within `--proxy-tolerance`. |
-| `2` | Usage or environment error (bad CRF range, missing `--src`, unavailable backend, proxy unavailable). |
-| `3` | Recommendation emitted, but the proxy/verify gap exceeds tolerance. Fall back to the slow Phase A grid (ADR-0276). The payload is still written. |
+### `corpus` — Phase A grid sweep
 
-**Example — smoke run (works on any host):**
+Sweeps a `(preset, crf)` grid against one or more references, encodes each cell,
+scores it against the reference with the libvmaf CLI, and writes one JSONL row
+per `(source, preset, crf)` combination.
 
-```bash
-vmafx-tune-go fast --smoke --target-vmaf 90
+```text
+vmafx-tune-go corpus [flags]
+```
 
-| `--source` | Reference video. Repeat for multiple sources. |
-| `--width` | Rung target width in pixels. |
-| `--height` | Rung target height in pixels. |
-| `--preset` | Encoder preset. Repeat for multiple presets. |
+The JSONL schema (v3) is the API contract the Phase B target-VMAF bisect and the
+Phase C per-title CRF predictor consume — see
+[vmaf-tune.md](vmaf-tune.md#corpus-jsonl-schema) for the column
+reference. The Go writer emits the same bytes the Python writer does, including
+the bare `NaN` tokens CPython's `json` module produces for columns libvmaf did
+not populate, so a corpus written by either binary is readable by the same
+trainers.
 
 **Source and encode flags:**
 
@@ -549,6 +490,10 @@ vmafx-tune-go fast --smoke --target-vmaf 90
 | `--encode-dir` | `.workingdir2/encodes` | Scratch directory for encodes. |
 | `--keep-encodes` | off | Retain encoded outputs after scoring and record their paths in `encode_path`. |
 | `--no-source-hash` | off | Skip `src_sha256`. Faster on huge YUVs; loses provenance. |
+| `--source` | — | Reference video. Repeat for multiple sources. |
+| `--width` | — | Rung target width in pixels. |
+| `--height` | — | Rung target height in pixels. |
+| `--preset` | — | Encoder preset. Repeat for multiple presets. |
 
 **Scoring flags:**
 
@@ -609,6 +554,82 @@ Rows stream to the output file as each cell completes, so an interrupted sweep
 leaves a usable partial corpus. The selected scoring backend is echoed on
 `stderr` (`vmafx-tune: scoring backend = cpu`) before the first encode, and the
 row count is echoed when the sweep finishes.
+
+## Ported subcommands (encoder introspection)
+
+### `benchmark` — Rank encoders from an existing corpus
+
+Answers the standard post-sweep question: *which encoder hit the target quality
+at the lowest bitrate?* It reads a Phase-A corpus JSONL written by
+`vmaf-tune corpus` and launches **no** ffmpeg and no libvmaf — the corpus stays
+the source of truth.
+
+```text
+vmafx-tune-go benchmark --from-corpus <JSONL> [flags]
+```
+
+For every encoder in the corpus the report picks the lowest-bitrate row whose
+measured VMAF clears `--target-vmaf`. An encoder that never clears is reported
+with status `unmet` and its closest miss, so a missing encoder build is never
+mistaken for a quality result.
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--baseline-encoder` | See `vmafx-tune-go benchmark --help`. |
+| `--format` | See `vmafx-tune-go benchmark --help`. |
+| `--from-corpus` | See `vmafx-tune-go benchmark --help`. |
+| `--output` | See `vmafx-tune-go benchmark --help`. |
+| `--target-vmaf` | See `vmafx-tune-go benchmark --help`. |
+
+## Ported subcommands (Stage 5)
+
+### `auto` — Phase F adaptive recipe-aware planner
+
+Composes the per-phase tuning stages into one deterministic decision tree and
+emits a JSON plan. Optionally realises the winning cell as a real encode plus a
+libvmaf score.
+
+```text
+vmafx-tune-go auto --src <video> [flags]
+```
+
+**Required flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--target-vmaf` | Quality target on the standard VMAF `[0, 100]` scale |
+| `--src` | Source video. Required unless `--smoke`. |
+
+**Optional flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--target-vmaf` | `93` | Target pooled-mean VMAF. |
+| `--max-budget-bitrate` | `8000` | Upper bound on the picked rendition's bitrate, in kbps. |
+| `--allow-codecs` | `libx264` | Comma-separated codec list the tree may pick from. A single entry short-circuits the compare-shortlist stage. |
+| `--codec` | *(unset)* | Pin the codec choice, overriding the `--allow-codecs` ranking. Also short-circuits the shortlist stage. |
+| `--sample-clip-seconds` | `0` | Propagate this clip length to internal sweeps rather than re-deciding per stage. `0` = full source. |
+| `--smoke` | `false` | Exercise the composition with synthetic metadata — no ffprobe, no ffmpeg, no ONNX. |
+| `--output` | stdout | Write the JSON plan here. |
+| `--execute` | `false` | After planning, run real FFmpeg encodes and libvmaf scores for the selected cell(s). |
+| `--runs-dir` | `runs` | Output directory for encoded files and `tune_results.jsonl` (used with `--execute`). |
+| `--execute-all` | `false` | With `--execute`: run every plan cell, not just the winner. Useful for post-hoc A/B comparison. |
+| `--model` | *(unset)* | Optional `predictor_<codec>.onnx` path. Default uses the analytical fallback curve. |
+
+**Exit codes** (identical to `vmaf-tune fast`):
+
+| Code | Meaning |
+|------|---------|
+| `0` | Recommendation emitted; proxy and verify agree within `--proxy-tolerance`. |
+| `2` | Usage or environment error (bad CRF range, missing `--src`, unavailable backend, proxy unavailable). |
+| `3` | Recommendation emitted, but the proxy/verify gap exceeds tolerance. Fall back to the slow Phase A grid (ADR-0276). The payload is still written. |
+
+**Example — smoke run (works on any host):**
+
+```bash
+vmafx-tune-go fast --smoke --target-vmaf 90
 
 ### `sidecar` — Local on-host predictor sidecar
 
@@ -866,6 +887,8 @@ keys, two-space indent). A `--dry-run` emits `ok`, `dry_run`, `profile`,
 encode outcome:
 
 ```json
+
+```json
 {
   "ok": true,
   "profile": "report.json",
@@ -915,20 +938,6 @@ failure as `1`; that pre-existing inconsistency is tracked separately.
 - `av1_videotoolbox` is a placeholder: upstream FFmpeg ships no such encoder,
   so the adapter refuses to emit an argv shape it cannot verify
   ([ADR-0339](../adr/0339-av1-videotoolbox-placeholder-adapter.md)).
-
-## Not yet ported (Stage 5+)
-
-| `--target-vmaf` | `93` | Target pooled-mean VMAF. |
-| `--max-budget-bitrate` | `8000` | Upper bound on the picked rendition's bitrate, in kbps. |
-| `--allow-codecs` | `libx264` | Comma-separated codec list the tree may pick from. A single entry short-circuits the compare-shortlist stage. |
-| `--codec` | *(unset)* | Pin the codec choice, overriding the `--allow-codecs` ranking. Also short-circuits the shortlist stage. |
-| `--sample-clip-seconds` | `0` | Propagate this clip length to internal sweeps rather than re-deciding per stage. `0` = full source. |
-| `--smoke` | `false` | Exercise the composition with synthetic metadata — no ffprobe, no ffmpeg, no ONNX. |
-| `--output` | stdout | Write the JSON plan here. |
-| `--execute` | `false` | After planning, run real FFmpeg encodes and libvmaf scores for the selected cell(s). |
-| `--runs-dir` | `runs` | Output directory for encoded files and `tune_results.jsonl` (used with `--execute`). |
-| `--execute-all` | `false` | With `--execute`: run every plan cell, not just the winner. Useful for post-hoc A/B comparison. |
-| `--model` | *(unset)* | Optional `predictor_<codec>.onnx` path. Default uses the analytical fallback curve. |
 
 `--model` is a Go-side addition: the Python `auto` driver always constructs its
 predictor without a model path, which is the analytical fallback this flag
@@ -1130,8 +1139,8 @@ and the sidecar returns the bare predictor's value untouched.
 A corrupt `state.json` also cold-starts, and the corrupt file is left in place so
 you can inspect it.
 
-## Not yet ported (Stage 6+)
-
+```json
+{
   "codec": "libx264",
   "host_uuid": "0123456789abcdef0123456789abcdef",
   "n_updates": 0,
@@ -1238,9 +1247,7 @@ sidecar operator surface exercises in practice — or run `vmaf-tune sidecar` fo
 the ONNX path. Every other behaviour, including the persisted state format, is
 identical between the two binaries.
 
-## Not yet ported
-
-## Ported subcommands (Stage 5)
+## Ported subcommands (per-shot tuning)
 
 ### `tune-per-shot` — Per-shot CRF tuning
 
@@ -1392,26 +1399,23 @@ silently ignored:
 | `--predicate-module MODULE:CALLABLE` | Loads a Python callable at runtime; Go has no runtime import. The Go equivalent is the `pershot.PredicateFn` seam, available to library callers. | `vmaf-tune tune-per-shot --predicate-module ...` |
 | `--fast-nr` | NR early-elimination runs the `nr_metric_v1` ONNX model through `onnxruntime`; the Go binary has no ONNX runtime binding. | `vmaf-tune tune-per-shot --fast-nr` |
 
-## Not yet ported (Stage 6+)
+## Python-only flags
 
-The following subcommands are stubs in `vmafx-tune-go`. They log a redirect
-notice (a `WARN`-level structured log line) and exit 1 when invoked. Use the
-Python `vmaf-tune` binary for these:
+Every `vmaf-tune` subcommand is ported. A few individual flags still need the
+Python implementation, because they depend on in-process ONNX inference or on
+importing a Python callable at runtime:
 
-| Subcommand | Python equivalent |
-|------------|-------------------|
-| `fast` | `vmaf-tune fast` |
+| Flag | Subcommand | Why | Use instead |
+|------|-----------|-----|-------------|
+| `--fast-nr` | `tune-per-shot` | NR early-elimination needs an ONNX forward pass per bisect midpoint | `vmaf-tune tune-per-shot --fast-nr` |
+| `--predicate-module` | `tune-per-shot` | Imports an arbitrary Python `MODULE:CALLABLE` at runtime | `vmaf-tune tune-per-shot --predicate-module` |
+| `--saliency-aware` | `recommend-saliency` | Requires a saliency ONNX forward pass | `vmaf-tune recommend-saliency --saliency-aware` |
 
-| `tune-per-shot` | `vmaf-tune tune-per-shot` |
-| `corpus` | `vmaf-tune corpus` |
-
-| `benchmark` | `vmaf-tune benchmark` |
-| `auto` | `vmaf-tune auto` |
-
-| `encode-profile` | `vmaf-tune encode-profile` |
-
-| `auto` | `vmaf-tune auto` |
-| `sidecar` | `vmaf-tune sidecar` |
+`--model` (on `predict`, `sidecar`, `auto`) is accepted and resolves the model,
+but inference is routed through a `vmafx-ort-runner` subprocess this repository
+does not yet build. When the runner is absent the predictor logs a warning and
+falls back to the analytical curve — the same fallback the Python takes without
+`onnxruntime`, but reported rather than silent.
 
 `recommend`'s encode-driven path writes the same schema-v3 corpus JSONL the
 `corpus` subcommand does, and every key is present. Five corpus features are
