@@ -172,6 +172,21 @@ var errFallBackVerdict = errors.New("predictor validation verdict: fall_back")
 
 // runPredict is the implementation of the predict subcommand.
 func runPredict(ctx context.Context, d deps, flags *predictFlags) error {
+	// --use-saliency is not wired in this binary. predictor.ExtractorConfig
+	// gates the saliency pass on `cfg.UseSaliency && saliency != nil`, and no
+	// production caller ever supplies a predictor.SaliencyFunc -- it is
+	// referenced only by features.go itself and its own test. Passing the flag
+	// therefore left the saliency mean/variance features at 0.0 for every shot
+	// while the run reported success, which silently changes the feature vector
+	// the prediction is built from. Fail instead of pretending.
+	if flags.useSaliency {
+		return &exitCodeError{code: usageExitCode, err: errors.New(
+			"--use-saliency is not implemented in vmafx-tune-go: the saliency " +
+				"feature pass needs an ONNX forward pass, and no SaliencyFunc is " +
+				"wired into the Go feature extractor. Use " +
+				"'vmaf-tune predict --use-saliency'")}
+	}
+
 	if flags.source == "" {
 		return errors.New("--source is required")
 	}

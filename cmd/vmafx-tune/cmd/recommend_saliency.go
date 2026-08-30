@@ -185,8 +185,16 @@ func runRecommendSaliency(ctx context.Context, d deps, flags *recommendSaliencyF
 		Output: outputPath,
 	}
 
+	// saliencyApplied records whether an ROI sidecar was actually attached, as
+	// opposed to merely requested. applySaliencyROI has three paths that fall
+	// back to a plain encode without an error (no inference session, inference
+	// unavailable, encoder without ROI support), and reporting the flag instead
+	// of the outcome made the JSON claim "saliency_aware": true for an encode
+	// that had no ROI map at all. The log warned; the machine-readable payload,
+	// which is what downstream tooling reads, did not.
+	saliencyApplied := false
 	if flags.saliencyAware {
-		augmented, cleanup, err := applySaliencyROI(ctx, d, flags, cfg, req)
+		augmented, cleanup, applied, err := applySaliencyROI(ctx, d, flags, cfg, req)
 		if err != nil {
 			return err
 		}
@@ -194,6 +202,7 @@ func runRecommendSaliency(ctx context.Context, d deps, flags *recommendSaliencyF
 			defer cleanup()
 		}
 		req = augmented
+		saliencyApplied = applied
 	}
 
 	res, encErr := ffencode.Run(ctx, req, flags.ffmpegBin, nil)
@@ -212,7 +221,7 @@ func runRecommendSaliency(ctx context.Context, d deps, flags *recommendSaliencyF
 		Output:             res.Request.Output,
 		Preset:             res.Request.Preset,
 		SaliencyAggregator: flags.saliencyAggregator,
-		SaliencyAware:      flags.saliencyAware,
+		SaliencyAware:      saliencyApplied,
 	}
 	// json.dumps(payload, indent=2, sort_keys=True).
 	rendered, marshalErr := pyjson.MarshalIndent(payload, true)
@@ -253,13 +262,13 @@ func applySaliencyROI(
 	flags *recommendSaliencyFlags,
 	cfg saliency.Config,
 	req ffencode.Request,
-) (ffencode.Request, func(), error) {
+) (ffencode.Request, func(), bool, error) {
 	session, sessionErr := newSaliencySession(flags.saliencyModel)
 	if sessionErr != nil {
 		d.Log.WarnContext(ctx,
 			"saliency inference unavailable; falling back to a plain encode",
 			"reason", sessionErr.Error())
-		return req, nil, nil
+		return req, nil, false, nil
 	}
 
 	mask, mapErr := saliency.ComputeMap(flags.src, flags.width, flags.height, session,
@@ -273,9 +282,9 @@ func applySaliencyROI(
 			d.Log.WarnContext(ctx,
 				"saliency inference failed; falling back to a plain encode",
 				"error", mapErr)
-			return req, nil, nil
+			return req, nil, false, nil
 		}
-		return req, nil, mapErr
+		return req, nil, false, mapErr
 	}
 
 	qpMap := saliency.ToQPMap(mask, cfg.ForegroundOffset)
@@ -285,23 +294,23 @@ func applySaliencyROI(
 		var unsupported *saliency.UnsupportedEncoderError
 		if errors.As(buildErr, &unsupported) {
 			if !saliency.FallbackAllowed(cfg) {
-				return req, nil, &exitCodeError{code: 2, err: buildErr}
+				return req, nil, false, &exitCodeError{code: 2, err: buildErr}
 			}
 			d.Log.ErrorContext(ctx,
 				"saliency ROI is not implemented for this encoder; "+
 					"falling back to a plain encode",
 				"encoder", flags.encoder,
 				"supported", saliency.SupportedEncoders())
-			return req, nil, nil
+			return req, nil, false, nil
 		}
-		return req, nil, buildErr
+		return req, nil, false, buildErr
 	}
 
 	// Argv-only encoders (libx265 zones) need no sidecar file.
 	if augment.SidecarBody == "" {
 		req.ExtraParams = append(append([]string(nil), req.ExtraParams...),
 			augment.ExtraParams...)
-		return req, nil, nil
+		return req, nil, false, nil
 	}
 
 	var sidecarPath string
@@ -311,11 +320,11 @@ func applySaliencyROI(
 	} else {
 		tmp, err := os.CreateTemp("", "vmafx-tune-roi-*"+augment.SidecarSuffix)
 		if err != nil {
-			return req, nil, fmt.Errorf("create ROI sidecar: %w", err)
+			return req, nil, false, fmt.Errorf("create ROI sidecar: %w", err)
 		}
 		sidecarPath = tmp.Name()
 		if closeErr := tmp.Close(); closeErr != nil {
-			return req, nil, fmt.Errorf("close ROI sidecar: %w", closeErr)
+			return req, nil, false, fmt.Errorf("close ROI sidecar: %w", closeErr)
 		}
 		cleanup = func() {
 			if rmErr := os.Remove(sidecarPath); rmErr != nil && !os.IsNotExist(rmErr) {
@@ -328,11 +337,11 @@ func applySaliencyROI(
 		if cleanup != nil {
 			cleanup()
 		}
-		return req, nil, err
+		return req, nil, false, err
 	}
 	req.ExtraParams = append(append([]string(nil), req.ExtraParams...),
 		saliency.ExtraParamsFor(flags.encoder, sidecarPath)...)
 	d.Log.InfoContext(ctx, "wrote saliency ROI sidecar",
 		"path", sidecarPath, "encoder", flags.encoder)
-	return req, cleanup, nil
+	return req, cleanup, true, nil
 }

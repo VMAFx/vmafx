@@ -1410,6 +1410,12 @@ importing a Python callable at runtime:
 | `--fast-nr` | `tune-per-shot` | NR early-elimination needs an ONNX forward pass per bisect midpoint | `vmaf-tune tune-per-shot --fast-nr` |
 | `--predicate-module` | `tune-per-shot` | Imports an arbitrary Python `MODULE:CALLABLE` at runtime | `vmaf-tune tune-per-shot --predicate-module` |
 | `--saliency-aware` | `recommend-saliency` | Requires a saliency ONNX forward pass | `vmaf-tune recommend-saliency --saliency-aware` |
+| `--use-saliency` | `predict` | The Go feature extractor wires no `SaliencyFunc`, so the saliency moments would silently stay `0.0` | `vmaf-tune predict --use-saliency` |
+
+`recommend-saliency --saliency-aware` is accepted, but when the saliency
+session cannot be built the encode proceeds without an ROI map; the report's
+`saliency_aware` field then reads `false`, reflecting what was actually done
+rather than what was asked for.
 
 `--model` (on `predict`, `sidecar`, `auto`) is accepted and resolves the model,
 but inference is routed through a `vmafx-ort-runner` subprocess this repository
