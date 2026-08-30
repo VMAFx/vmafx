@@ -19,7 +19,7 @@ dependencies = [
   # When that ABI mismatch is detected at run-time (e.g. in a pre-existing
   # venv), ``ai/tests/conftest.py`` skips the affected tests cleanly via
   # ``requires_pytorch_lightning()`` — see AGENTS.md invariant note.
-  "torchvision>=0.27.1,<0.28.0",
+  "torchvision>=0.28.0,<0.28.1",
   # Lightning AI un-published the `lightning` distribution from PyPI on
   # 2026-04-30 (yesterday's PR #229 still resolved `lightning-2.6.1`;
   # today the name returns 404). The functionally-identical wheel is
