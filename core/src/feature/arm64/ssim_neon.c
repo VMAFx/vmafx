@@ -54,6 +54,21 @@ void ssim_precompute_neon(const float *ref, const float *cmp, float *ref_sq, flo
     }
 }
 
+/* Vector transcription of the scalar clamp `MAX(0.0, x)` in
+ * ssim_variance_scalar (iqa/ssim_tools.c), i.e. `(0.0 > x) ? 0.0 : x`.
+ *
+ * NOT `vmaxq_f32(x, zero)`: FMAX forces a zero result positive — ARM ARM
+ * `FPMax` ends with `if type == FPType_Zero then sign = sign1 AND sign2`
+ * — so it maps -0.0f to +0.0f, while the scalar reference (and this
+ * kernel's own scalar tail, which spells the clamp `if (x < 0.0f) x =
+ * 0.0f`) return -0.0f unchanged. `vcltq_f32` is false for NaN, matching
+ * `0.0 > NaN`, so NaN passes through on both paths as before. See
+ * test_ssim_neon.c. */
+static inline float32x4_t ssim_clamp_nonneg_neon(float32x4_t x, float32x4_t zero)
+{
+    return vbslq_f32(vcltq_f32(x, zero), zero, x);
+}
+
 void ssim_variance_neon(float *ref_sigma_sqd, float *cmp_sigma_sqd, float *sigma_both,
                         const float *ref_mu, const float *cmp_mu, int n)
 {
@@ -65,12 +80,12 @@ void ssim_variance_neon(float *ref_sigma_sqd, float *cmp_sigma_sqd, float *sigma
 
         float32x4_t rs = vld1q_f32(ref_sigma_sqd + i);
         rs = vsubq_f32(rs, vmulq_f32(rm, rm));
-        rs = vmaxq_f32(rs, zero);
+        rs = ssim_clamp_nonneg_neon(rs, zero);
         vst1q_f32(ref_sigma_sqd + i, rs);
 
         float32x4_t cs = vld1q_f32(cmp_sigma_sqd + i);
         cs = vsubq_f32(cs, vmulq_f32(cm, cm));
-        cs = vmaxq_f32(cs, zero);
+        cs = ssim_clamp_nonneg_neon(cs, zero);
         vst1q_f32(cmp_sigma_sqd + i, cs);
 
         float32x4_t sb = vld1q_f32(sigma_both + i);

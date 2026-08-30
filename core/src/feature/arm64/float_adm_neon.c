@@ -72,16 +72,22 @@ float float_adm_csf_den_scale_neon(const float *src, int w, int h, int src_strid
     int src_px_stride = src_stride / sizeof(float);
 
     float32x4_t v_factor = vdupq_n_f32(factor);
-    /* ADR-0873 / ADR-0138: accumulate in double to match the AVX2
-     * _mm256_cvtps_pd strategy and bound tree-reduction ULP error. */
-    float64x2_t v_accum0 = vdupq_n_f64(0.0);
-    float64x2_t v_accum1 = vdupq_n_f64(0.0);
 
     int i, j;
     double accum = 0.0;
 
     for (i = top; i < bottom; ++i) {
         const float *row = src + i * src_px_stride;
+        /* ADR-0873 / ADR-0138: accumulate in double to match the AVX2
+         * _mm256_cvtps_pd strategy and bound tree-reduction ULP error.
+         * The accumulators are per-row: `adm_csf_den_scale_s` resets
+         * `accum_inner_*` at the top of every row and folds it into the outer
+         * accumulator at the end, and both x86 twins mirror that with
+         * `row_accum`.  Hoisting them out of the row loop would reorder the
+         * reduction away from every sibling implementation. */
+        float64x2_t v_accum0 = vdupq_n_f64(0.0);
+        float64x2_t v_accum1 = vdupq_n_f64(0.0);
+        double row_accum;
 
         j = left;
         for (; j + 3 < right; j += 4) {
@@ -95,14 +101,20 @@ float float_adm_csf_den_scale_neon(const float *src, int w, int h, int src_strid
             v_accum1 = vaddq_f64(v_accum1, vcvt_f64_f32(vget_high_f32(val3)));
         }
 
-        /* Scalar tail. */
-        for (; j < right; ++j) {
-            double val = fabs((double)factor * (double)row[j]);
-            accum += val * val * val;
-        }
-    }
+        row_accum = vaddvq_f64(vaddq_f64(v_accum0, v_accum1));
 
-    accum += vaddvq_f64(vaddq_f64(v_accum0, v_accum1));
+        /* Scalar tail.  `val` and its cube are computed in *float*, exactly as
+         * the vector body above and as `adm_csf_den_scale_s` / the AVX2 and
+         * AVX-512 twins do.  Promoting the tail to double arithmetic makes the
+         * final 1..3 columns of every row contribute a different value from the
+         * one a vector lane would have produced for the same input. */
+        for (; j < right; ++j) {
+            float val = fabsf(factor * row[j]);
+            row_accum += (double)(val * val * val);
+        }
+
+        accum += row_accum;
+    }
 
     return (float)accum;
 }
@@ -114,16 +126,19 @@ float float_adm_sum_cube_neon(const float *x, int w, int h, int stride, int left
     (void)h;
     int px_stride = stride / sizeof(float);
 
-    /* ADR-0873 / ADR-0138: accumulate in double to match the AVX2
-     * _mm256_cvtps_pd strategy and bound tree-reduction ULP error. */
-    float64x2_t v_accum0 = vdupq_n_f64(0.0);
-    float64x2_t v_accum1 = vdupq_n_f64(0.0);
     double accum = 0.0;
 
     int i, j;
 
     for (i = top; i < bottom; ++i) {
         const float *row = x + i * px_stride;
+        /* ADR-0873 / ADR-0138: accumulate in double to match the AVX2
+         * _mm256_cvtps_pd strategy and bound tree-reduction ULP error.
+         * Per-row, mirroring `adm_sum_cube_s`'s `accum_inner` and the
+         * `row_accum` of the AVX2 / AVX-512 twins. */
+        float64x2_t v_accum0 = vdupq_n_f64(0.0);
+        float64x2_t v_accum1 = vdupq_n_f64(0.0);
+        double row_accum;
 
         j = left;
         for (; j + 3 < right; j += 4) {
@@ -137,14 +152,18 @@ float float_adm_sum_cube_neon(const float *x, int w, int h, int stride, int left
             v_accum1 = vaddq_f64(v_accum1, vcvt_f64_f32(vget_high_f32(val3)));
         }
 
-        /* Scalar tail. */
-        for (; j < right; ++j) {
-            double val = fabs((double)row[j]);
-            accum += val * val * val;
-        }
-    }
+        row_accum = vaddvq_f64(vaddq_f64(v_accum0, v_accum1));
 
-    accum += vaddvq_f64(vaddq_f64(v_accum0, v_accum1));
+        /* Scalar tail — float cube, matching the vector body above,
+         * `adm_sum_cube_s`, and both x86 twins.  See the sibling comment in
+         * float_adm_csf_den_scale_neon. */
+        for (; j < right; ++j) {
+            float val = fabsf(row[j]);
+            row_accum += (double)(val * val * val);
+        }
+
+        accum += row_accum;
+    }
 
     return (float)accum;
 }
