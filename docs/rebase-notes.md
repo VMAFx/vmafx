@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/sanitizers-meson-c23 — Cython extern follows mem.c -> mem.cpp (2026-08-30)
+
+- `compat/python-vmaf/core/adm_dwt2_cy.pyx` — **rebase-sensitive.** Upstream
+  Netflix still has `libvmaf/src/mem.c` and its `.pyx` still text-includes it.
+  The fork renamed `libvmaf/` to `core/` (ADR-0700) *and* converted that TU to
+  C++23 `mem.cpp` (#1133), so the fork's extern reads `cdef extern from
+  "mem.h"`. An upstream sync touching this `.pyx` will conflict — keep the
+  fork's header-based extern; reverting to a `.c` text-include reintroduces a
+  failure that only shows up in the tox legs, never in a meson build.
+- `python/setup.py` — fork-local: appends `../core/src/mem.cpp` to the
+  extension sources and sets `language="c++"` for the link driver.
+
 ## fix/sanitizers-meson-c23 — meson from PyPI + declared c23 floor (2026-08-30)
 
 - `core/meson.build` — **rebase-sensitive.** `meson_version` raised from

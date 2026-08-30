@@ -65,6 +65,14 @@ class LazyExtensions(list):
                 "compat",
                 "../core/src",
             ]
+            # aligned_malloc / aligned_free moved from core/src/mem.c to
+            # core/src/mem.cpp when the C++23 twins were wired in (#1133).
+            # The .pyx used to text-include the .c; a C++23 TU cannot be
+            # included into this C module, so compile it as a real source.
+            # language="c++" only selects the C++ driver for the link step —
+            # the Cython-generated .c is still compiled as C by extension.
+            self._extensions[0].sources.append(os.path.join("..", "core", "src", "mem.cpp"))
+            self._extensions[0].language = "c++"
 
         return self._extensions
 

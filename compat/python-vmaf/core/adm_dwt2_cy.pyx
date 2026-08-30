@@ -20,7 +20,11 @@ cdef extern from "../../../core/src/feature/adm_tools.c":
 cdef extern from "../../../core/src/feature/adm.c":
     char *init_dwt_band_d(adm_dwt_band_t_d *band, char *data_top, size_t buf_sz_one)
 
-cdef extern from "../../../core/src/mem.c":
+# mem.c became mem.cpp when the C++23 twins were wired in (#1133). The
+# implementation can no longer be text-included into this C module, so
+# declare from the header (which guards both symbols with extern "C")
+# and compile core/src/mem.cpp as a real source — see python/setup.py.
+cdef extern from "mem.h":
     void *aligned_malloc(size_t size, size_t alignment)
     void aligned_free(void *ptr)
 
