@@ -71,14 +71,31 @@ if get_option('cpp_std') == 'none'
     if cxx.get_id() == 'msvc'
         add_project_arguments('/std:c++latest', language: 'cpp')
     else
+        # Probing `has_argument` alone is NOT enough: clang 18.1.3 *accepts*
+        # -std=c++26 but its accompanying libstdc++ then fails to provide
+        # std::expected, so core/src/dict.cpp dies with "no member named
+        # 'expected' in namespace 'std'".  A flag the driver tolerates is not
+        # the same as a standard library that works.  So compile-test the one
+        # C++23 library feature this tree actually depends on (<expected>;
+        # the only other non-C++17 header in the tree is <span>, which is
+        # C++20) and take the newest candidate that genuinely builds.
+        cxx_std_probe = '''#include <expected>
+        std::expected<int, int> f() { return 1; }
+        int main() { return f().value_or(1) - 1; }
+        '''
         cxx_std_flag = ''
         foreach candidate : ['-std=c++26', '-std=c++23', '-std=c++2b']
-            if cxx_std_flag == '' and cxx.has_argument(candidate)
-                cxx_std_flag = candidate
+            if cxx_std_flag == ''
+                if cxx.has_argument(candidate) and cxx.compiles(
+                        cxx_std_probe,
+                        args: candidate,
+                        name: 'std::expected usable with ' + candidate)
+                    cxx_std_flag = candidate
+                endif
             endif
         endforeach
         if cxx_std_flag == ''
-            error('No usable C++23-or-newer -std flag for ' + cxx.get_id())
+            error('No -std flag gives this compiler a working <expected>: ' + cxx.get_id())
         endif
         add_project_arguments(cxx_std_flag, language: 'cpp')
     endif

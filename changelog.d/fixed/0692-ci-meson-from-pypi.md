@@ -41,3 +41,14 @@
   `c++26` / `c++23` / `c++2b` that the compiler actually accepts, with a
   hard `error()` if none do. Per-target `override_options` in
   `core/src/meson.build` are untouched.
+- The C++ standard probe compile-tests `<expected>` rather than trusting
+  `-std=` flag acceptance. clang 18.1.3 *accepts* `-std=c++26` but its
+  accompanying libstdc++ then has no `std::expected`, so
+  `core/src/dict.cpp` failed with
+  `no member named 'expected' in namespace 'std'` and took out all four
+  Sanitizers checks. ADR-0692 (#1140) raised the tree from `c++23` to
+  `c++26` earlier the same day; `<expected>` is a C++23 feature and the
+  only non-C++17 header in the tree besides `<span>` (C++20), so C++26
+  buys nothing here while breaking that toolchain. The probe now takes
+  the newest candidate that genuinely builds — c++26 where it works,
+  c++23 where it does not.
