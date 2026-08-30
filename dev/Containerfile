@@ -247,7 +247,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # separate apt-get update/install round (saves one image layer). ADR-0790.
 ARG NEO_VER=26.18.38308.1
 ARG GMMLIB_VER=22.10.0
-ARG IGC_VER=2.36.3+21428
+ARG IGC_VER=2.40.13+21428
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -274,7 +274,7 @@ RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
     done
 
 # Level Zero loader (libze_loader) for SYCL
-ARG LEVEL_ZERO_VER=1.30.0
+ARG LEVEL_ZERO_VER=1.32.0
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze1_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
@@ -501,7 +501,7 @@ RUN chown vmaf:vmaf /build /build/vmaf
 # Version must satisfy ai/pyproject.toml requirement (>=1.20,<2.0).
 # 1.26.0 adds ROCm 7.x EP + CUDA 13.x EP — matches the container GPU stack exactly.
 # Bumped from 1.20.1 per ADR-0568 (SDK audit 2026-05-18).
-ARG ORT_VERSION=1.27.0
+ARG ORT_VERSION=1.29.0
 RUN curl -fsSL \
         "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
         -o /tmp/ort.tgz \
@@ -733,7 +733,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # `-preset 8` are the rate-quality knobs vmaf-tune's compare sweep
 # exercises). Tags 2.x are current at time of writing; 2.1.0 is a
 # stable LTS-flavoured cut.
-ARG SVTAV1_VERSION=4.1.0
+ARG SVTAV1_VERSION=4.2.0
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
     CCACHE_DIR=/root/.cache/ccache \
     git clone --depth=1 --branch "v${SVTAV1_VERSION}" \

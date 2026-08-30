@@ -73,7 +73,7 @@ jobs:
           meson compile -C build
 
       - name: Cache Netflix vmaf_resource fixtures
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           # Cache the entire python/test/resource tree — pytest's
           # download_reactively (python/vmaf/config.py) populates it
@@ -495,7 +495,7 @@ jobs:
       # that on a cold runner).
       - name: Cache ONNX Runtime tarball
         id: cache-ort
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: /tmp/ort-cache
           key: ort-tarball-linux-x64-gpu-1.22.0
