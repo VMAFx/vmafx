@@ -93,3 +93,33 @@ during the migration; see Stage roadmap in
     when the pin moved to v0.5.0.) `TestGolusorisInjection_ConfigDrivesLogLevel`
     guards the behavior — it builds the graph without any decorator, matching
     `withGolusoris()` exactly.
+
+13. **Python-compatible JSON is not `encoding/json`** (`internal/pyjson`):
+    every payload that a ported subcommand also emits from Python goes through
+    `pyjson.Marshal`, never `json.Marshal`/`MarshalIndent`. Go and CPython
+    disagree on four visible things — struct-field order vs sorted keys, HTML
+    escaping, non-ASCII escaping, and float rendering (`float64(92)` is `92` in
+    Go and `92.0` in CPython, and the two switch to exponent notation at 1e6 vs
+    1e17). `pyjson.Repr` was validated against CPython `repr()` over 8025
+    values. Reaching for `encoding/json` in a ported emit path silently breaks
+    byte parity. (`compare`'s `emitSweepJSON` predates this package and still
+    uses `MarshalIndent` with declaration-ordered struct fields; it is a known
+    gap, not a pattern to copy.)
+
+14. **`encode-profile` emits no `-init_hw_device` chain — deliberately**
+    (`pkg/encodeprofile/encode.go` `BuildFFmpegCommand`): FFmpeg's QSV bridge
+    needs the VA-API device flags before the first `-i` (ADR-0601), and
+    `vmaftune.compare` injects them via its own pre-input argv. But
+    `vmaftune.encode.build_ffmpeg_command` — the function this ports, and the
+    one `encode-profile` calls — never has. Adding the chain here would make
+    the Go `--dry-run` argv differ from Python's for every QSV row. Fix it in
+    both implementations at once, or not at all.
+
+15. **The AMF adapters emit their constant-QP block twice** (`pkg/codecadapter`
+    `amfExtraParams`): CPython's `encode._resolve_codec_args` inspects each
+    adapter's `extra_params` signature and, for the two-parameter AMF variant,
+    appends its return value after the codec slice — so
+    `-quality/-rc/-qp_i/-qp_p` appears twice with identical values. FFmpeg takes
+    last-wins so the duplicate is inert, but it IS in the argv Python prints
+    under `--dry-run` and records in corpus rows. The Go port reproduces it on
+    purpose; de-duplicating it is a parity break, not a cleanup.

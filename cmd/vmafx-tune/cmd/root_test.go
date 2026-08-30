@@ -44,11 +44,10 @@ func TestNewRoot_ListsExpectedSubcommands(t *testing.T) {
 		got[c.Name()] = true
 	}
 
-	wantPorted := []string{"compare", "ladder", "report"}
-	wantStubs := []string{
-		"tune-per-shot", "fast", "corpus", "benchmark",
-		"auto", "sidecar", "encode-profile",
+	wantPorted := []string{
+		"compare", "ladder", "report", "benchmark", "encode-profile",
 	}
+	wantStubs := []string{"tune-per-shot", "fast", "corpus", "auto", "sidecar"}
 	for _, name := range append(append([]string{}, wantPorted...), wantStubs...) {
 		if !got[name] {
 			t.Errorf("root is missing expected subcommand %q (have: %s)",

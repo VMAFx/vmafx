@@ -1,0 +1,1033 @@
+{
+ "stderrs": {
+  "empty": "",
+  "ffmpeg_only": "ffmpeg version n8.1 Copyright (c) 2000-2025\n",
+  "x264": "ffmpeg version n8.1 Copyright\n[libx264 @ 0x55] using SAR=1/1\nx264 - core 164 r3094 bfc87b7\n",
+  "x264_alt": "ffmpeg version 7.1\nx264-core 161\n",
+  "x265": "ffmpeg version n8.1\nx265 [info]: HEVC encoder version 3.5+1-f0c1022b6\n",
+  "svtav1_old": "ffmpeg version n8.1\nSVT-AV1 ENCODER v1.7.0\n",
+  "svtav1_new": "ffmpeg version n8.1\nSvt[info]:SVT-AV1 Encoder Lib v2.1.0\n",
+  "vp9": "ffmpeg version n8.1\n[libvpx-vp9 @ 0x5620] v1.13.1\n",
+  "libaom_v": "ffmpeg version n8.1\n[libaom-av1 @ 0x5620] libaom-av1 v3.8.0\n",
+  "libaom_alt": "ffmpeg version n8.1\n[libaom @ 0x5620] AOM version: 3.8.0\n",
+  "vvenc": "ffmpeg version n8.1\n[libvvenc @ 0x5620] VVenC v1.14.0\n",
+  "vvenc_long": "ffmpeg version n8.1\n[libvvenc @ 0x5620] Fraunhofer VVC/H.266 Encoder VVenC v1.14.0\n",
+  "x264_and_x265": "ffmpeg version n8.1\nx264 - core 164 r3094 bfc87b7\nx265 [info]: HEVC encoder version 3.5\n"
+ },
+ "cases": [
+  {
+   "stderr": "empty",
+   "encoder": "",
+   "ffmpeg": "unknown",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "libx264",
+   "ffmpeg": "unknown",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "libx265",
+   "ffmpeg": "unknown",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "libsvtav1",
+   "ffmpeg": "unknown",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "unknown",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "unknown",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "libaom-av1",
+   "ffmpeg": "unknown",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "libvvenc",
+   "ffmpeg": "unknown",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "unknown",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "hevc_amf",
+   "ffmpeg": "unknown",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "av1_qsv",
+   "ffmpeg": "unknown",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "unknown",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "empty",
+   "encoder": "libtheora",
+   "ffmpeg": "unknown",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "ffmpeg_only",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libx264-164"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libx264-164"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "x264",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "",
+   "ffmpeg": "7.1",
+   "encoder_version": "libx264-161"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "libx264",
+   "ffmpeg": "7.1",
+   "encoder_version": "libx264-161"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "libx265",
+   "ffmpeg": "7.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "libsvtav1",
+   "ffmpeg": "7.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "7.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "7.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "libaom-av1",
+   "ffmpeg": "7.1",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "libvvenc",
+   "ffmpeg": "7.1",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "7.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "hevc_amf",
+   "ffmpeg": "7.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "av1_qsv",
+   "ffmpeg": "7.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "7.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "x264_alt",
+   "encoder": "libtheora",
+   "ffmpeg": "7.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libx265-3.5+1-f0c1022b6"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libx265-3.5+1-f0c1022b6"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libx265-3.5+1-f0c1022b6"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "x265",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libsvtav1-1.7.0"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libsvtav1-1.7.0"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libsvtav1-1.7.0"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libsvtav1-1.7.0"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "svtav1_old",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libsvtav1-2.1.0"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libsvtav1-2.1.0"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libsvtav1-2.1.0"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libsvtav1-2.1.0"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "svtav1_new",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvpx-vp9-1.13.1"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "vp9",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1-3.8.0"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "libaom_v",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1-3.8.0"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "libaom_alt",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc-1.14.0"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "vvenc",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc-1.14.0"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "vvenc_long",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libx264-164"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "libx264",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libx264-164"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "libx265",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libx265-3.5"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "libsvtav1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "libsvtav1-vbr",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "libvpx-vp9",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "libaom-av1",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libaom-av1"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "libvvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "libvvenc"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "h264_nvenc",
+   "ffmpeg": "n8.1",
+   "encoder_version": "h264_nvenc"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "hevc_amf",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_amf"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "av1_qsv",
+   "ffmpeg": "n8.1",
+   "encoder_version": "av1_qsv"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "hevc_videotoolbox",
+   "ffmpeg": "n8.1",
+   "encoder_version": "hevc_videotoolbox"
+  },
+  {
+   "stderr": "x264_and_x265",
+   "encoder": "libtheora",
+   "ffmpeg": "n8.1",
+   "encoder_version": "unknown"
+  }
+ ]
+}

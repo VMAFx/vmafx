@@ -1,0 +1,156 @@
+# Report
+
+Some prose.
+
+```json
+{
+  "schema_version": 2,
+  "src": "ref.yuv",
+  "encoder_profile": {
+    "schema": "vmaftune.encoder_profile.v1",
+    "schema_version": 1,
+    "source": {
+      "path": "clips//bbb/./ref.yuv",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "duration_s": 10.0,
+      "frame_count": 300,
+      "codec": "rawvideo",
+      "size_bytes": 933120000
+    },
+    "run": {
+      "target_vmaf": 92.0,
+      "sweep_targets": [
+        90.0,
+        92.0
+      ],
+      "tool_version": "v4.0.0-lusoris.0",
+      "generated_at_iso": "2026-08-30T00:00:00+00:00",
+      "preset": "medium",
+      "pix_fmt": "yuv420p",
+      "score_backend": "libvmaf",
+      "ffmpeg_bin": "/opt/ffmpeg/bin/ffmpeg",
+      "vmaf_bin": "vmaf"
+    },
+    "recommendations": [
+      {
+        "index": 0,
+        "codec": "libx265",
+        "encoder_version": "libx265-x",
+        "target_vmaf": 92.0,
+        "quality_knob": "crf",
+        "quality": 28,
+        "crf": 28,
+        "preset": "medium",
+        "bitrate_kbps": 2500.0,
+        "achieved_vmaf": 92.4,
+        "encode_time_ms": 1234.5,
+        "selected_pareto": true,
+        "source_row": "sweep"
+      },
+      {
+        "index": 1,
+        "codec": "libx264",
+        "encoder_version": "libx264-x",
+        "target_vmaf": 92.0,
+        "quality_knob": "crf",
+        "quality": 26,
+        "crf": 26,
+        "preset": "medium",
+        "bitrate_kbps": 3100.5,
+        "achieved_vmaf": 92.4,
+        "encode_time_ms": 1234.5,
+        "selected_pareto": true,
+        "source_row": "sweep"
+      },
+      {
+        "index": 2,
+        "codec": "libsvtav1",
+        "encoder_version": "libsvtav1-x",
+        "target_vmaf": 90.0,
+        "quality_knob": "crf",
+        "quality": 35,
+        "crf": 35,
+        "preset": "medium",
+        "bitrate_kbps": 1500.0,
+        "achieved_vmaf": 90.4,
+        "encode_time_ms": 1234.5,
+        "selected_pareto": true,
+        "source_row": "sweep"
+      },
+      {
+        "index": 3,
+        "codec": "libx264",
+        "encoder_version": "libx264-x",
+        "target_vmaf": 90.0,
+        "quality_knob": "crf",
+        "quality": 30,
+        "crf": 30,
+        "preset": "slow",
+        "bitrate_kbps": 2000.0,
+        "achieved_vmaf": 90.4,
+        "encode_time_ms": 1234.5,
+        "selected_pareto": false,
+        "source_row": "sweep"
+      },
+      {
+        "index": 4,
+        "codec": "h264_nvenc",
+        "encoder_version": "h264_nvenc-x",
+        "target_vmaf": 92.0,
+        "quality_knob": "crf",
+        "quality": 23,
+        "crf": 23,
+        "preset": "medium",
+        "bitrate_kbps": 5000.0,
+        "achieved_vmaf": 92.4,
+        "encode_time_ms": 1234.5,
+        "selected_pareto": false,
+        "source_row": "sweep"
+      },
+      {
+        "index": 5,
+        "codec": "libx265",
+        "encoder_version": "libx265-x",
+        "target_vmaf": 90.0,
+        "quality_knob": "crf",
+        "quality": 30,
+        "crf": 30,
+        "preset": "medium",
+        "bitrate_kbps": 2000.0,
+        "achieved_vmaf": 90.4,
+        "encode_time_ms": 1234.5,
+        "selected_pareto": false,
+        "source_row": "sweep"
+      },
+      {
+        "index": 6,
+        "codec": "libaom-av1",
+        "encoder_version": "libaom-av1-x",
+        "target_vmaf": 90.0,
+        "quality_knob": "crf",
+        "quality": 40,
+        "crf": 40,
+        "preset": "medium",
+        "bitrate_kbps": 2000.0,
+        "achieved_vmaf": 90.4,
+        "encode_time_ms": 1234.5,
+        "selected_pareto": false,
+        "source_row": "sweep"
+      },
+      "not-a-dict"
+    ],
+    "failures": [],
+    "codec_metadata": {},
+    "ladder": {
+      "samples": [],
+      "rungs": []
+    },
+    "shots": [],
+    "human_guidance": {}
+  }
+}
+```
+
+More prose.
