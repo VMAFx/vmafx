@@ -12,7 +12,7 @@
 #   ghcr.io/vmafx/vmafx-node:latest      (same)
 #
 # Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
-# GPU node variants (-cuda12, -rocm6, -sycl) are deferred to a follow-on PR.
+# GPU node variants (-cuda13, -rocm7, -sycl) are deferred to a follow-on PR.
 #
 # ADR-0815: operator-node-distroless-dockerfiles
 # ADR-0698: distroless base-image policy

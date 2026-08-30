@@ -7,9 +7,9 @@
 # Produces:
 #   ghcr.io/vmafx/vmafx:<tag>           (cpu, amd64+arm64)
 #   ghcr.io/vmafx/vmafx:latest          (same)
-#   ghcr.io/vmafx/vmafx:<tag>-cuda12    (amd64 only — CUDA not portable to arm64)
-#   ghcr.io/vmafx/vmafx:<tag>-rocm6     (amd64 only)
-#   ghcr.io/vmafx/vmafx:<tag>-oneapi2026 (amd64 only)
+#   ghcr.io/vmafx/vmafx:<tag>-cuda13    (amd64 only — CUDA not portable to arm64)
+#   ghcr.io/vmafx/vmafx:<tag>-rocm7     (amd64 only)
+#   ghcr.io/vmafx/vmafx:<tag>-oneapi2025 (amd64 only)
 #
 
 # Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
@@ -171,7 +171,7 @@ jobs:
   # -----------------------------------------------------------------------
   # GPU variant: CUDA 12 (amd64 only)
   # -----------------------------------------------------------------------
-  build-cuda12:
+  build-cuda13:
     name: Build + push CUDA 12 image (amd64)
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -196,14 +196,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata (cuda12 tag suffix)
+      - name: Extract Docker metadata (cuda13 tag suffix)
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=tag,suffix=-cuda12
-            type=raw,value=${{ github.event.inputs.tag || 'dev' }}-cuda12,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=ref,event=tag,suffix=-cuda13
+            type=raw,value=${{ github.event.inputs.tag || 'dev' }}-cuda13,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push (amd64 only)
         id: push
@@ -211,7 +211,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.production-gpu
-          target: final-cuda12
+          target: final-cuda13
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -235,9 +235,9 @@ jobs:
           syft \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}" \
             --output cyclonedx-json \
-            --file sbom-cuda12.cdx.json
+            --file sbom-cuda13.cdx.json
           cosign attest --yes \
-            --predicate sbom-cuda12.cdx.json \
+            --predicate sbom-cuda13.cdx.json \
             --type cyclonedx \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
         continue-on-error: true   # SBOM is best-effort on GPU builds
@@ -245,7 +245,7 @@ jobs:
   # -----------------------------------------------------------------------
   # GPU variant: ROCm 6 (amd64 only)
   # -----------------------------------------------------------------------
-  build-rocm6:
+  build-rocm7:
     name: Build + push ROCm 6 image (amd64)
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -275,8 +275,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=tag,suffix=-rocm6
-            type=raw,value=${{ github.event.inputs.tag || 'dev' }}-rocm6,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=ref,event=tag,suffix=-rocm7
+            type=raw,value=${{ github.event.inputs.tag || 'dev' }}-rocm7,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push
         id: push
@@ -284,7 +284,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.production-gpu
-          target: final-rocm6
+          target: final-rocm7
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -305,7 +305,7 @@ jobs:
   # -----------------------------------------------------------------------
   # GPU variant: oneAPI 2026 (amd64 only)
   # -----------------------------------------------------------------------
-  build-oneapi2026:
+  build-oneapi2025:
     name: Build + push oneAPI 2026 image (amd64)
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -335,8 +335,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=tag,suffix=-oneapi2026
-            type=raw,value=${{ github.event.inputs.tag || 'dev' }}-oneapi2026,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=ref,event=tag,suffix=-oneapi2025
+            type=raw,value=${{ github.event.inputs.tag || 'dev' }}-oneapi2025,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push
         id: push
@@ -344,7 +344,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.production-gpu
-          target: final-oneapi2026
+          target: final-oneapi2025
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -449,9 +449,9 @@ jobs:
     needs:
       - build-cpu
       - smoke-test
-      - build-cuda12
-      - build-rocm6
-      - build-oneapi2026
+      - build-cuda13
+      - build-rocm7
+      - build-oneapi2025
       - build-server
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -466,4 +466,26 @@ jobs:
             echo "smoke-test failed"
             exit 1
           fi
-          echo "CPU + smoke-test passed. GPU variants: cuda12=${{ needs.build-cuda12.result }} rocm6=${{ needs.build-rocm6.result }} oneapi=${{ needs.build-oneapi2026.result }} server=${{ needs.build-server.result }}"
+          # The GPU + server variants used to be echoed and never gated, so they
+          # could fail on every publish without anyone noticing. That is how
+          # docker/Dockerfile.production-gpu kept a CUDA 12.0 pin, an
+          # intel/oneapi-basekit:2026.0 reference to an image that does not
+          # exist, and a ROCm 6.4 runtime against a 7.2.4 build toolchain.
+          # They gate now.
+          fail=0
+          for job in build-cuda13 build-rocm7 build-oneapi2025 build-server; do
+            case "$job" in
+              build-cuda13)      r="${{ needs.build-cuda13.result }}" ;;
+              build-rocm7)       r="${{ needs.build-rocm7.result }}" ;;
+              build-oneapi2025)  r="${{ needs.build-oneapi2025.result }}" ;;
+              build-server)      r="${{ needs.build-server.result }}" ;;
+            esac
+            if [[ "$r" != "success" && "$r" != "skipped" ]]; then
+              echo "::error title=image build failed::$job = $r"
+              fail=1
+            else
+              echo "$job = $r"
+            fi
+          done
+          [[ "$fail" -eq 0 ]] || exit 1
+          echo "all image variants passed"

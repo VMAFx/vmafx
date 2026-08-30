@@ -310,8 +310,8 @@ COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libvpx.so*    /usr/loca
 COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/local/lib/
 
 # ROCm HIP runtime libs
-COPY --from=rocm/rocm-terminal:6.4@sha256:72b323c5d56c511ea75f7353d0fee04e637390dd4874d414020284627a658014 /opt/rocm/lib/libamdhip64.so*      /usr/local/lib/
-COPY --from=rocm/rocm-terminal:6.4@sha256:72b323c5d56c511ea75f7353d0fee04e637390dd4874d414020284627a658014 /opt/rocm/lib/libhsa-runtime64.so* /usr/local/lib/
+COPY --from=rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 /opt/rocm/lib/libamdhip64.so*      /usr/local/lib/
+COPY --from=rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 /opt/rocm/lib/libhsa-runtime64.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
