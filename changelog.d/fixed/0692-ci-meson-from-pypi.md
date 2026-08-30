@@ -15,13 +15,20 @@
   adopted `c_std=c23`; declaring it turns the cryptic
   `Unknown C std ['c23']` into
   `ERROR: Meson version is 1.3.2 but project requires >= 1.4.0`.
-- `core/meson.build` now asks for `c_std=c23,c2x` rather than a bare
-  `c23`. Meson walks the candidate list and takes the first value the C
-  compiler actually supports, so GCC 14+ / Clang 18+ still get `c23`
-  while GCC 13 — the default on `ubuntu-latest` runners — takes the
-  older `c2x` spelling of the same standard. A bare `c23` aborted
-  configure on those runners with
-  `None of values ['c23'] are supported by the C compiler`, which is a
-  *different* failure from the stale-meson one above and hit the build
-  matrix legs (including the required `Build — Ubuntu gcc (CPU) + DNN`)
-  even where meson was new enough.
+- `core/meson.build` no longer puts `c_std` in `default_options` at all;
+  the C standard is now selected by compiler identity after `project()`,
+  mirroring the `cpp_std` handling ADR-1056 already added for C++. The accepted-values list meson advertises for
+  `c_std` is compiler-specific, so *any* value in `default_options`
+  aborts configure on a toolchain missing that exact spelling — before
+  any conditional in the file can run. Observed on CI:
+  MSVC offers only `['none','c89','c99','c11']`, and GCC 13 (the
+  `ubuntu-latest` default) offers `c2x` but not `c23`. A bare `c23`
+  therefore failed with
+  `None of values ['c23'] are supported by the C compiler` — a
+  *different* failure from the stale-meson one above, and the one that
+  actually broke the required `Build — Ubuntu gcc (CPU) + DNN` and both
+  Windows MSVC legs even where meson was new enough. The selection is
+  now `/std:clatest` on MSVC, `-std=c23` where the compiler accepts it,
+  and `-std=c2x` otherwise — the pre-ratification spelling of the same
+  standard, so this is a spelling fallback, not a language downgrade.
+  An explicit `-Dc_std=` override is still honoured untouched.

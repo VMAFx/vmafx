@@ -1,13 +1,10 @@
 project('libvmaf', ['c', 'cpp'],
     version : '3.2.0', # x-release-please-version
-    # c23,c2x: meson picks the first value the C compiler actually
-    # supports (mesonbuild/options.py walks the candidate list in
-    # order). GCC 14+ / Clang 18+ take 'c23'; GCC 13 — still the
-    # default on ubuntu-latest runners — only knows the older 'c2x'
-    # spelling of the same standard, and a bare 'c23' aborts configure
-    # with "None of values ['c23'] are supported by the C compiler".
-    # See ADR-0692; mirrors the compiler-aware cpp_std handling below.
-    default_options : ['c_std=c23,c2x',
+    # c_std is deliberately NOT set here — see the compiler-aware block
+    # below. MSVC advertises only ['none','c89','c99','c11'], so any
+    # value this project actually wants aborts configure before that
+    # block can run.
+    default_options : [
                        'warning_level=2',
                        'buildtype=release',
                        'default_library=both',
@@ -29,6 +26,28 @@ libvmaf_src_root = meson.current_source_dir()
 cc = meson.get_compiler('c')
 cxx = meson.get_compiler('cpp')
 libvmaf_inc = include_directories(['include'])
+
+# Select the C standard flag by compiler identity, unless the caller supplied
+# an explicit -Dc_std override.  This mirrors the cpp_std handling below
+# (ADR-1056) and exists for the same reason: the accepted-values list meson
+# advertises for c_std is compiler-specific, and putting a value in
+# default_options aborts configure on any toolchain missing that exact
+# spelling — before any conditional in this file can run.  Observed lists:
+#   - MSVC (cl.exe):        ['none', 'c89', 'c99', 'c11']  -> use /std:clatest
+#   - GCC 13 (ubuntu-24.04) ['none', ..., 'c17', 'c18', 'c2x', 'gnu2x']
+#   - GCC 14+ / Clang 18+   ... plus 'c23'
+# ADR-0692 raised this project to C23; 'c2x' is the pre-ratification
+# spelling of the same standard, so the fallback is a spelling change, not a
+# language downgrade.
+if get_option('c_std') == 'none'
+    if cc.get_id() == 'msvc'
+        add_project_arguments('/std:clatest', language: 'c')
+    elif cc.has_argument('-std=c23')
+        add_project_arguments('-std=c23', language: 'c')
+    else
+        add_project_arguments('-std=c2x', language: 'c')
+    endif
+endif
 
 # Select the C++ standard flag based on compiler identity, unless the caller
 # already supplied an explicit -Dcpp_std override (e.g. the SYCL CI leg
