@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           # Resolve LFS blobs (e.g. model/tiny/*.onnx) so pre-commit's final
@@ -36,7 +36,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.14.6"
+          python-version: "3.14.7"
       # pre-commit/action@v3.0.1 is the latest release (Feb 2024) and still
       # pins actions/cache@v4, which trips the Node.js 20 deprecation
       # warning (Node 20 removed from runners 2026-09-16). Inline the
@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # Need history for the push-delta diff on master. fetch-depth: 2
           # is enough for a squash-merge FF (one new commit), but use 0 to
@@ -311,7 +311,7 @@ jobs:
     timeout-minutes: 40
     continue-on-error: true
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -435,7 +435,7 @@ jobs:
     # saturated queue.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - name: Install
@@ -478,12 +478,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.14.6"
+          python-version: "3.14.7"
       - name: Install
         run: pip install mypy
       - run: mypy ai/ scripts/ || echo "mypy advisory only on first run"
@@ -498,7 +498,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # Resolve LFS blobs so the sha256 cross-check sees real ONNX
           # bytes, not pointer files.
@@ -506,7 +506,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.14.6"
+          python-version: "3.14.7"
       - name: Install jsonschema
         run: pip install jsonschema
       - name: Validate model/tiny/registry.json
@@ -524,12 +524,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.14.6"
+          python-version: "3.14.7"
       - name: Install MkDocs Material
         run: pip install -r docs/requirements.txt
       - name: Build docs (strict — fail on any warning)
@@ -550,7 +550,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Fail if conflict markers are committed
         run: |
           set +e
@@ -601,7 +601,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # Full history so the push-delta diff against `before` works for
           # multi-commit FF pushes; PR mode uses origin/${base_ref}...HEAD.
@@ -609,7 +609,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
-          node-version: "24.18.0"
+          node-version: "24.20.0"
       - name: Detect changed markdown files
         id: detect
         # Hardening per Semgrep `yaml.github-actions.security.run-shell-injection`:
