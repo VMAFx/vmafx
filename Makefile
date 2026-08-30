@@ -13,6 +13,22 @@ MESON := $(VIRTUAL_ENV_PATH)/meson
 MESON_SETUP := $(MESON) setup
 NINJA := $(VIRTUAL_ENV_PATH)/ninja
 
+# Lint and format tools resolve from the project venv first, then the system
+# PATH. Without this, `make lint-py` / `make format-check` silently found no
+# ruff / black / isort and reported success, so the local gate could pass while
+# CI's identical checks failed.
+export PATH := $(CURDIR)/$(VIRTUAL_ENV_PATH):$(PATH)
+
+# require-tool,<binary>,<install hint>
+# A gate that cannot run is a gate that cannot fail. Every lint / format tool is
+# pinned and installable, so a missing one is a setup error to fix, not a step
+# to skip.
+define require-tool
+@command -v $(1) >/dev/null || { \
+   echo "error: $(1) not found — this gate cannot run without it."; \
+   echo "       install: $(2)"; exit 1; }
+endef
+
 # Build types and options
 BUILDTYPE_RELEASE := --buildtype release
 BUILDTYPE_DEBUG := --buildtype debug
@@ -76,6 +92,24 @@ $(MESON): $(VENV_PIP)
 $(NINJA): $(VENV_PIP)
 	$(VENV_PIP) install ninja || { echo "Failed to install ninja"; exit 1; }
 
+# Provision the lint / format toolchain into the project venv. Versions are
+# kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
+# cannot disagree about what counts as a violation.
+RUFF_VERSION  := 0.15.17
+BLACK_VERSION := 26.5.1
+ISORT_VERSION := 6.0.1
+
+.PHONY: lint-tools
+lint-tools: $(VENV_PIP)
+	$(VENV_PIP) install --quiet \
+	    'ruff==$(RUFF_VERSION)' 'black==$(BLACK_VERSION)' 'isort==$(ISORT_VERSION)' mypy
+	@echo "lint tools installed into $(VENV_PIP:%/pip=%)"
+	@command -v shfmt >/dev/null || { \
+	   echo "note: shfmt is not a Python package and was not installed."; \
+	   echo "      get it with: go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1"; }
+	@command -v shellcheck >/dev/null || \
+	   echo "note: shellcheck not found — install it via your package manager."
+
 cythonize-deps: $(VENV_PIP)
 	$(VENV_PIP) install setuptools cython numpy || { echo "Failed to install dependencies"; exit 1; }
 
@@ -130,13 +164,20 @@ lint-c: $(BUILD_DIR)
 	         --error-exitcode=1
 
 lint-py:
-	@command -v ruff >/dev/null || { echo "ruff not found; skipping"; exit 0; }
-	ruff check python/ ai/ scripts/ 2>/dev/null || ruff check python/
-	@command -v black >/dev/null && black --check python/ ai/ scripts/ 2>/dev/null || true
-	@command -v mypy  >/dev/null && mypy ai/scripts/ ai/tests/ ai/train/ ai/lpips_export.py scripts/ 2>/dev/null || true
+	$(call require-tool,ruff,pip install ruff==0.15.17)
+	ruff check python/ ai/ scripts/
+	$(call require-tool,black,pip install black==26.5.1)
+	black --check python/ ai/ scripts/
+# mypy is advisory (leading `-`): it currently reports ~295 module-resolution
+# errors ("duplicate module", "adding __init__.py somewhere") that stop it
+# before it type-checks anything real. That is a mypy-configuration gap
+# (needs --explicit-package-bases / a mypy_path), not type debt, and fixing it
+# is tracked separately. Kept running so the output stays visible.
+	@command -v mypy >/dev/null || { echo "note: mypy not installed, skipping advisory check"; exit 0; }
+	-mypy ai/scripts/ ai/tests/ ai/train/ ai/lpips_export.py scripts/
 
 lint-sh:
-	@command -v shellcheck >/dev/null || { echo "shellcheck not found; skipping"; exit 0; }
+	$(call require-tool,shellcheck,your package manager, e.g. pacman -S shellcheck)
 	shellcheck $$(git ls-files '*.sh')
 
 # Markdown lint (ADR-0866). Default scope is the touched-file delta vs
@@ -183,15 +224,18 @@ format:
 
 # Formatters — check-only (CI gate, no writes).
 format-check:
-	@command -v clang-format >/dev/null && \
-	 clang-format --dry-run --Werror \
+	$(call require-tool,clang-format,your package manager, e.g. pacman -S clang)
+	clang-format --dry-run --Werror \
 	   $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
 	      | grep -v '^subprojects/' | grep -v '^core/test/data/' \
 	      | grep -v '^core/src/interop/pelorus_' \
-	      | grep -v '^core/include/libvmaf/pelorus/') || true
-	@command -v black >/dev/null && black --check python/ ai/ scripts/ 2>/dev/null || true
-	@command -v isort >/dev/null && isort --check-only python/ ai/ scripts/ 2>/dev/null || true
-	@command -v shfmt >/dev/null && shfmt -d -i 2 -ci $$(git ls-files '*.sh') || true
+	      | grep -v '^core/include/libvmaf/pelorus/')
+	$(call require-tool,black,pip install black==26.5.1)
+	black --check python/ ai/ scripts/
+	$(call require-tool,isort,pip install isort==6.0.1)
+	isort --check-only python/ ai/ scripts/
+	$(call require-tool,shfmt,go install mvdan.cc/sh/v3/cmd/shfmt@latest)
+	shfmt -d -i 2 -ci $$(git ls-files '*.sh')
 
 # Security scan (semgrep custom + CERT-C + CWE Top 25).
 sec:
@@ -443,6 +487,7 @@ help:
 	@echo "  make coverage-html    — render HTML coverage report"
 	@echo "  make coverage-check   — enforce ≥70% overall / ≥85% critical"
 	@echo "  make assertion-density — Power-of-10 rule 5 density check"
+	@echo "  make lint-tools       — install ruff/black/isort/mypy into .venv at the pinned versions"
 	@echo "  make install-hooks    — wire up pre-commit + pre-push git hooks"
 	@echo "                          (set VMAFX_NATIVE_HOOKS=1 for native bash; ADR-0924)"
 	@echo "  make hooks-install    — legacy alias for install-hooks"

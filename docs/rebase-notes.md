@@ -46882,3 +46882,72 @@ Also: `.gitattributes` now exempts `pkg/benchmark/testdata/*.csv` from
 `text=auto`. Those goldens assert CRLF (Python's `csv` default). Re-normalising
 them makes the benchmark suite fail on fresh checkouts only, which is a slow
 failure to diagnose.
+
+## C++23 twin wiring (Waves 1–5, landed 2026-08-30)
+
+Twelve `core/src` translation units moved from `.c` to `.cpp`: `cpu`, `dict`,
+`mem`, `output`, `ref`, `thread_locale`, `fex_ctx_vector`, `feature_name`,
+`luminance_tools`, `mkdirp`, `picture_copy`, `psnr_tools`. The `.c` twins are
+deleted, so an upstream Netflix patch touching any of those paths will not apply
+directly — port the hunk into the `.cpp` file instead of restoring the `.c`.
+
+Several internal headers gained `#ifdef __cplusplus` / `extern "C"` guards
+(`feature/alias.h`, `output.h`, `fex_ctx_vector.h`, `feature/mkdirp.h`,
+`feature/psnr_tools.h`, `test/test.h`). The guards are inert for C consumers.
+
+Lesson worth keeping: an unreferenced twin diverges silently. `output.c` got the
+ADR-0602 NULL-guard fix while `output.cpp` did not, and nothing caught it because
+nothing built `output.cpp`. A CI check that fails on any `.c`/`.cpp` pair where
+one side is unreferenced would prevent a recurrence.
+
+## C23 + C++26 standard bump (ADR-0692, landed 2026-08-30)
+
+`core/meson.build` sets `c_std=c23` (was `c11`) and emits `-std=c++26` (was
+`c++23`) on every non-MSVC compiler. When rebasing upstream Netflix/vmaf C
+sources, note that C23 changes the meaning of an empty parameter list: `void f()`
+declares `void f(void)` rather than an unprototyped function. Upstream code
+carrying K&R-style empty parameter lists will produce type errors here that it
+does not produce upstream — give such functions their real prototypes rather
+than reverting the standard. `-Wimplicit-fallthrough` is also enabled fork-wide,
+so an unannotated switch fallthrough in ported code needs an explicit
+`[[fallthrough]]`.
+
+## FFmpeg n8.1.1 → n9.0.1 (landed 2026-08-30)
+
+The patch stack now targets `n9.0.1`. Verified by full series replay: all 17
+patches apply at full context, cumulatively, against a clean `n9.0.1` checkout.
+
+Two patches were regenerated for line drift only — `0002-add-vmaf_pre-filter`
+and `0008-add-libvmaf_tune-filter`. The latter drifted because FFmpeg 9 inserted
+`OBJS-$(CONFIG_FRC_AMF_FILTER)` between `VPP_AMF_FILTER` and `VPP_QSV_FILTER`,
+which sat inside that hunk's trailing context. Neither regeneration changed a
+single line of added code.
+
+Note when replaying the series yourself: it must be applied **cumulatively**.
+Patches 0002–0006 and 0008 depend on state introduced by earlier patches (0008's
+context includes `CONFIG_VMAF_PRE_FILTER`, which patch 0002 adds), so a
+per-patch `git apply --check` against pristine upstream reports false failures.
+Use `ffmpeg-patches/test/build-and-run.sh` or a sequential `git am --3way` chain.
+A shallow (`--depth 1`) clone also breaks `git am --3way`, which needs pre-image
+blobs — clone with full history when replaying.
+
+## Lint / format gate repair (landed 2026-08-30)
+
+`Makefile` is shared with upstream Netflix/vmaf, so this is rebase-sensitive.
+
+The fork's `lint-*` and `format-check` targets are fork-added (upstream has no
+equivalent), but they live in the same file upstream edits. Three fork-local
+constructs to preserve when rebasing:
+
+1. `export PATH := $(CURDIR)/$(VIRTUAL_ENV_PATH):$(PATH)`, immediately after the
+   `NINJA :=` line. Upstream has no venv-on-PATH line. Without it the lint tools
+   resolve from the system PATH only and the gates silently self-skip.
+2. The `define require-tool ... endef` block. Upstream has no equivalent.
+3. The absence of `|| true` on every `format-check` and `lint-py` step. If a
+   rebase reintroduces the upstream-era `command -v X && X ... || true` idiom,
+   the gate silently becomes incapable of failing again — this is exactly the
+   regression this change fixed, and it is invisible because the target still
+   prints "all lints passed".
+
+Point 3 is the one to watch: a conflict resolved in upstream's favour restores a
+green-but-dead gate with no test failure to signal it.

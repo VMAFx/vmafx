@@ -4,7 +4,7 @@
 # docker/Dockerfile.operator — multi-stage build for the vmafx-operator Go binary.
 #
 # Stages:
-#   go-builder : compiles cmd/vmafx-operator using golang:1.26-bookworm@sha256:5f68ec6805843bd3981a951ffada82a26a0bd2631045c8f7dba483fa868f5ec5
+#   go-builder : compiles cmd/vmafx-operator using golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452
 #   operator   : gcr.io/distroless/static-debian12 runtime (no libc needed;
 #                pure-Go binary, no cgo)
 #
@@ -42,7 +42,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — go-builder: compile the vmafx-operator binary (CGO_ENABLED=0)
 # ---------------------------------------------------------------------------
-FROM golang:1.26-bookworm@sha256:b305420a68d0f229d91eb3b3ed9e519fcf2cf5461da4bef997bf927e8c0bfd2b AS go-builder
+FROM golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452 AS go-builder
 
 # CGO_ENABLED=0: the operator is pure-Go (controller-runtime + k8s client-go).
 # No libvmaf linkage is required.
@@ -73,7 +73,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # gcr.io/distroless/static-debian12 is appropriate for CGO_ENABLED=0 binaries.
 # It contains only the CA bundle and timezone data — no libc, no shell.
 # This is 2 MB smaller than distroless/cc and has a smaller attack surface.
-FROM gcr.io/distroless/static-debian12@sha256:9c346e4be81b5ca7ff31a0d89eaeade58b0f95cfd3baed1f36083ddb47ca3160 AS operator
+FROM gcr.io/distroless/static-debian12@sha256:d75cdd72874d4790092fcb1b058493ecf6bb5bf2b2b897045b00ff01d91843f2 AS operator
 
 LABEL org.opencontainers.image.title="vmafx-operator"
 LABEL org.opencontainers.image.description="VMAFX Kubernetes operator — CRD reconciliation for VmafxJob / VmafxNode / VmafxModelTraining"

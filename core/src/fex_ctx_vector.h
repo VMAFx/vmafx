@@ -19,6 +19,10 @@
 #ifndef __VMAF_SRC_FEX_CTX_VECTOR_H__
 #define __VMAF_SRC_FEX_CTX_VECTOR_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "feature/feature_extractor.h"
 
 /**
@@ -61,5 +65,9 @@ int feature_extractor_vector_append(RegisteredFeatureExtractors *rfe,
  * @param rfe  Vector to destroy.  Safe to call on a zero-initialised struct.
  */
 void feature_extractor_vector_destroy(RegisteredFeatureExtractors *rfe);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __VMAF_SRC_FEX_CTX_VECTOR_H__ */

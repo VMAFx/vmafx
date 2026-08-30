@@ -1,1 +1,0 @@
-| [ADR-0567](0567-upstream-port-direct-read.md) | Port Netflix upstream `30a6e2a8d` direct-read CLI path, avoiding the intermediate `video_input_ycbcr` buffer when `USE_DIRECT_READ` is enabled. | Accepted | upstream-port, performance, tools, cli, build |

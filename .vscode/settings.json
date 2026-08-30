@@ -90,6 +90,6 @@
 
   "cmake.configureOnOpen": false,
   "cmake.sourceDirectory": "",
-  "C_Cpp.default.compileCommands": "/home/kilian/dev/vmaf/core/builddir/compile_commands.json",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
   "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild"
 }

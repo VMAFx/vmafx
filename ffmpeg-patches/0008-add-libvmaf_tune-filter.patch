@@ -36,10 +36,10 @@ ADR: docs/adr/0312-ffmpeg-patches-vmaf-tune-integration.md
  create mode 100644 libavfilter/vf_libvmaf_tune.c
 
 diff --git a/configure b/configure
-index 3b3f0f1d13..4ab258cbc5 100755
+index 272760d..051be41 100755
 --- a/configure
 +++ b/configure
-@@ -4242,6 +4242,7 @@ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
+@@ -4303,6 +4303,7 @@ libvmaf_cuda_filter_deps="libvmaf libvmaf_cuda ffnvcodec"
  libvmaf_sycl_filter_deps="libvmaf libvmaf_sycl libvpl"
  libvmaf_vulkan_filter_deps="libvmaf libvmaf_vulkan vulkan"
  vmaf_pre_filter_deps="libvmaf"
@@ -48,19 +48,19 @@ index 3b3f0f1d13..4ab258cbc5 100755
  zoompan_filter_deps="swscale"
  zscale_filter_deps="libzimg const_nan"
 diff --git a/libavfilter/Makefile b/libavfilter/Makefile
-index 132eec6c11..5ac95a7772 100644
+index 96d39b1..3b20788 100644
 --- a/libavfilter/Makefile
 +++ b/libavfilter/Makefile
-@@ -574,6 +574,7 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
+@@ -573,6 +573,7 @@ OBJS-$(CONFIG_VIF_FILTER)                    += vf_vif.o framesync.o
  OBJS-$(CONFIG_VIGNETTE_FILTER)               += vf_vignette.o
  OBJS-$(CONFIG_VMAFMOTION_FILTER)             += vf_vmafmotion.o framesync.o
  OBJS-$(CONFIG_VMAF_PRE_FILTER)               += vf_vmaf_pre.o
 +OBJS-$(CONFIG_LIBVMAF_TUNE_FILTER)           += vf_libvmaf_tune.o framesync.o
  OBJS-$(CONFIG_VPP_AMF_FILTER)                += vf_vpp_amf.o scale_eval.o vf_amf_common.o
+ OBJS-$(CONFIG_FRC_AMF_FILTER)                += vf_frc_amf.o vf_amf_common.o
  OBJS-$(CONFIG_VPP_QSV_FILTER)                += vf_vpp_qsv.o
- OBJS-$(CONFIG_VSTACK_FILTER)                 += vf_stack.o framesync.o
 diff --git a/libavfilter/allfilters.c b/libavfilter/allfilters.c
-index 1357561e70..de2ac96530 100644
+index 102fd55..9bd3aa0 100644
 --- a/libavfilter/allfilters.c
 +++ b/libavfilter/allfilters.c
 @@ -352,6 +352,7 @@ extern const FFFilter ff_vf_libvmaf;
@@ -73,7 +73,7 @@ index 1357561e70..de2ac96530 100644
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf_tune.c b/libavfilter/vf_libvmaf_tune.c
 new file mode 100644
-index 0000000000..5a7e1d8c2c
+index 0000000..37b1e9c
 --- /dev/null
 +++ b/libavfilter/vf_libvmaf_tune.c
 @@ -0,0 +1,410 @@
@@ -488,4 +488,5 @@ index 0000000000..5a7e1d8c2c
 +    FILTER_QUERY_FUNC2(query_formats),
 +};
 -- 
-2.54.0
+2.55.0
+

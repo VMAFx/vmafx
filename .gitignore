@@ -176,3 +176,14 @@ pyrightconfig.audit.json
 
 # Fuzzer-generated corpus growth (seed entries are not tracked)
 core/test/fuzz/*_corpus/
+
+# Netflix golden-data YUV fixtures (CLAUDE.md section 8). Downloaded by
+# scripts/test/fetch-test-yuvs.sh, deliberately untracked because of their size
+# -- but they are the numerical ground truth, so they must never be reachable by
+# `git clean -xfd`. Ignoring them makes clean skip them and keeps them out of
+# `git status` noise.
+python/test/resource/yuv/
+python/test/resource/test_image_yuv/
+
+# Cython extension built in-place by compat/python-vmaf (setup.py build_ext).
+compat/python-vmaf/core/*.so

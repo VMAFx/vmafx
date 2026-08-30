@@ -77,10 +77,15 @@ static size_t snprintfcat(char *buf, size_t buf_sz, char const *fmt, ...)
                                                             VmafDictionary *opts_dict)
 {
     VmafDictionary *sorted_raw = nullptr;
-    /* Check return value: OOM causes sorted_raw to stay null, which the
-     * !sorted guard below catches before any dereference (CERT MEM31-C;
-     * adversarial review 2026-05-28 finding #15). */
-    if (vmaf_dictionary_copy(&opts_dict, &sorted_raw) != 0)
+    /* vmaf_dictionary_copy returns -EINVAL when *src is null, which is the
+     * ordinary "this feature has no options" case rather than a failure. The C
+     * original ignored the return value entirely and relied on the !sorted
+     * guard below; bailing out on -EINVAL here broke every feature without an
+     * options dict. Any OTHER non-zero return is a genuine failure (OOM inside
+     * vmaf_dictionary_set), and that is still fatal (CERT MEM31-C; adversarial
+     * review 2026-05-28 finding #15). */
+    const int copy_err = vmaf_dictionary_copy(&opts_dict, &sorted_raw);
+    if (copy_err != 0 && copy_err != -EINVAL)
         return nullptr;
     vmaf_dictionary_alphabetical_sort(sorted_raw);
     DictPtr sorted(sorted_raw); /* freed by DictPtr destructor on any exit */

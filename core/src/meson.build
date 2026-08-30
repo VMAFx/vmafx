@@ -11,6 +11,9 @@ vmaf_base_include = include_directories('./', './feature', './feature/common', '
 
 vmaf_cflags_common = [
     '-pedantic',
+    # ADR-0692: enforce the JPL Rule-24 fallthrough annotation at compile time.
+    # C23 provides the standard [[fallthrough]] spelling.
+    '-Wimplicit-fallthrough',
     # -DOC_NEW_STYLE_INCLUDES removed: dead legacy define from upstream libogg era;
     # no C consumer exists anywhere in the tree.
     # ADR-0377: hide all symbols by default; only vmaf_*-prefixed entry
@@ -641,7 +644,7 @@ endif
 config_h_target = configure_file(output: 'config.h', configuration: cdata)
 
 libvmaf_cpu_sources = [
-    src_dir + 'cpu.c',
+    src_dir + 'cpu.cpp',
 ]
 
 if is_asm_enabled
@@ -691,9 +694,9 @@ libvmaf_cpu_static_lib = static_library(
     'libvmaf_cpu',
     libvmaf_cpu_sources,
     include_directories : [libvmaf_include],
-    # ADR-0755: cpu.cpp uses constinit (C++20) and std::atomic; override
-    # cpp_std so this TU compiles under C++23 without affecting other TUs.
-    # ADR-0860: MSVC-vs-GCC/Clang cpp_std token disagreement workaround.
+    # ADR-0755 / ADR-0860: cpu.cpp uses constinit (C++20) and std::atomic, so
+    # this TU needs the compiler-aware cpp_std token; the plain 'c++23' spelling
+    # is rejected by MSVC / clang-cl / icx-cl.
     override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
 )
 
@@ -1624,11 +1627,11 @@ if is_rust_enabled
 endif
 
 libvmaf_feature_sources = [
-    feature_src_dir + 'picture_copy.c',
+    feature_src_dir + 'picture_copy.cpp',
     feature_src_dir + 'integer_psnr.c',
     feature_src_dir + 'third_party/xiph/psnr_hvs.c',
     feature_src_dir + 'feature_extractor.cpp',
-    feature_src_dir + 'feature_name.c',
+    feature_src_dir + 'feature_name.cpp',
     feature_src_dir + 'alias.c',
     feature_src_dir + 'integer_adm.c',
     feature_src_dir + 'feature_collector.c',
@@ -1651,7 +1654,7 @@ libvmaf_feature_sources = [
     # (svm.cpp / svm.h), proving the "extractor owns its own SVR model" pattern.
     feature_src_dir + 'brisque.c',
     feature_src_dir + 'common/alignment.c',
-    feature_src_dir + 'mkdirp.c',
+    feature_src_dir + 'mkdirp.cpp',
 
     feature_src_dir + 'float_ssim.c',
     feature_src_dir + 'float_ms_ssim.c',
@@ -1664,7 +1667,7 @@ libvmaf_feature_sources = [
     feature_src_dir + 'iqa/math_utils.c',
     feature_src_dir + 'iqa/convolve.c',
     feature_src_dir + 'cambi.c',
-    feature_src_dir + 'luminance_tools.c',
+    feature_src_dir + 'luminance_tools.cpp',
     feature_src_dir + 'null.c',
     feature_src_dir + 'speed_qa.c',
     # LPIPS extractor uses the public libvmaf/dnn.h surface, which stays
@@ -1712,7 +1715,7 @@ if float_enabled
         feature_src_dir + 'vif_tools.c',
         feature_src_dir + 'motion.c',
         feature_src_dir + 'psnr.c',
-        feature_src_dir + 'psnr_tools.c',
+        feature_src_dir + 'psnr_tools.cpp',
         feature_src_dir + 'moment.c',
         feature_src_dir + 'common/blur_array.c',
     ]
@@ -2017,20 +2020,20 @@ libvmaf_sources = [
     src_dir + 'model.c',
     src_dir + 'picture.c',
     src_dir + 'picture_v2.c', # ADR-0928 cycle N+1: v2 allocator / converter implementation
-    src_dir + 'mem.c',
-    src_dir + 'output.c',
-    src_dir + 'fex_ctx_vector.c',
+    src_dir + 'mem.cpp',
+    src_dir + 'output.cpp',
+    src_dir + 'fex_ctx_vector.cpp',
     src_dir + 'thread_pool.c',
-    src_dir + 'dict.c',
+    src_dir + 'dict.cpp',
     # opt.cpp compiled as opt_cpp23_lib (ADR-0761)
-    src_dir + 'ref.c',
+    src_dir + 'ref.cpp',
     # read_json_model.cpp compiled as read_json_model_cpp23_lib (ADR-0761)
     src_dir + 'pdjson.c',
     # log.cpp is compiled as log_cpp23_lib (ADR-0708 Wave 1 pilot)
     src_dir + 'framesync.c',
     # metadata_handler.cpp is compiled as metadata_handler_cpp20_lib (ADR-0708)
     # picture_pool.cpp compiled as picture_pool_cpp23_lib (ADR-0768)
-    src_dir + 'thread_locale.c',
+    src_dir + 'thread_locale.cpp',
     # gpu_picture_pool.cpp compiled as gpu_picture_pool_cpp23_lib (ADR-0768)
     # gpu_dispatch_env.cpp is compiled as gpu_dispatch_env_cpp23_lib (ADR-0858)
     # ADR-1113: vendored Pelorus <-> vmafx interop ABI (pack/parse, deband +

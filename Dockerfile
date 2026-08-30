@@ -1,14 +1,14 @@
-# syntax=docker/dockerfile:1.25@sha256:0adf442eae370b6087e08edc7c50b552d80ddf261576f4ebd6421006b2461f12
+# syntax=docker/dockerfile:1.26@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # Base: NVIDIA CUDA ≥13.3 devel on Ubuntu 26.04. Non-conservative pin per ADR D27 —
 # we follow latest-stable CUDA aggressively because the fork's value is GPU perf on
 # current hardware; being one release behind costs ~10-30% on kernel-bound stages.
 # Digest-pinned (sha256) for supply-chain reproducibility; update when upgrading the
 # CUDA tag. Gives us nvcc + cudart-dev without Ubuntu's stale 'nvidia-cuda-toolkit'
 # apt package.
-FROM nvidia/cuda:13.3.0-devel-ubuntu26.04@sha256:243be03aa10331842755b7e5c044aefb0c97978e8065d27d40aed4663094c900
+FROM nvidia/cuda:13.3.1-devel-ubuntu26.04@sha256:8cf42b8dc4c34d47fb42ffb0923f8a5e363469a7149181c094da336d311bb466
 
-ARG NV_CODEC_TAG="876af32a202d0de83bd1d36fe74ee0f7fcf86b0d"
-ARG FFMPEG_TAG=n8.1.1
+ARG NV_CODEC_TAG="n13.1.15.0"
+ARG FFMPEG_TAG=n9.0.1
 # Broadened gencode: Turing baseline (sm_75) + Ampere (sm_80) + Hopper (sm_90) +
 # Blackwell consumer (sm_120). CUDA 13 dropped sm_50/60/70.
 # Experimental nvcc feature flags (ADR D27): relaxed-constexpr lets us reuse host

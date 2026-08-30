@@ -4,7 +4,7 @@
 # docker/Dockerfile.controller — multi-stage build for the vmafx-controller Go binary.
 #
 # Stages:
-#   go-builder  : compiles cmd/vmafx-controller using golang:1.26-bookworm@sha256:5f68ec6805843bd3981a951ffada82a26a0bd2631045c8f7dba483fa868f5ec5
+#   go-builder  : compiles cmd/vmafx-controller using golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452
 #   vmaf-builder: compiles libvmaf + vmaf CLI (mirrors docker/Dockerfile.production)
 #   controller  : distroless runtime carrying both the Go binary and libvmaf.so
 #
@@ -33,7 +33,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — go-builder: compile the controller binary
 # ---------------------------------------------------------------------------
-FROM golang:1.26-bookworm@sha256:b305420a68d0f229d91eb3b3ed9e519fcf2cf5461da4bef997bf927e8c0bfd2b AS go-builder
+FROM golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452 AS go-builder
 
 ARG CGO_ENABLED=1
 ARG DEBIAN_FRONTEND=noninteractive
@@ -68,7 +68,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # Stage 2 — vmaf-builder: compile libvmaf + vmaf CLI
 # ---------------------------------------------------------------------------
 # Reuses the same setup as docker/Dockerfile.production stage 1.
-FROM debian:13-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2 AS vmaf-builder
+FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS vmaf-builder
 
 ARG VMAF_BUILD_JOBS=4
 ARG DEBIAN_FRONTEND=noninteractive
@@ -105,7 +105,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
 # ---------------------------------------------------------------------------
 # Stage 3 — controller: distroless runtime (glibc, no shell)
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/cc-debian12@sha256:d703b626ba455c4e6c6fbe5f36e6f427c85d51445598d564652a2f334179f96e AS controller
+FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS controller
 
 LABEL org.opencontainers.image.title="vmafx-controller"
 LABEL org.opencontainers.image.description="VMAFX controller — distributed job queue + node registry, gRPC + HTTP, backed by libvmaf"

@@ -12,19 +12,19 @@
 # Every target includes:
 #   - vmafx-node Go binary (cmd/vmafx-node)
 #   - libvmaf.so (built from core/)
-#   - ffmpeg n8.2 with the fork's ffmpeg-patches/ applied
+#   - ffmpeg n9.0.1 with the fork's ffmpeg-patches/ applied
 #   - Full soft-codec inventory: libx264, libx265, libvpx, libsvtav1, libdav1d
 #   - libvmaf filter + fork-specific VMAF filters compiled in
 #
 # FFmpeg version policy (ADR-0717):
 #   Pinned to the latest stable tagged release at image-build time.
-#   Currently n8.2. Update FFMPEG_TAG on every release sync.
+#   Currently n9.0.1. Update FFMPEG_TAG on every release sync.
 #   Option A (pin to latest tag) was chosen over Option B (rolling
 #   release/8.x branch) to maintain reproducible builds.
 #
 # Build args (all optional):
 #   VMAF_BUILD_JOBS  — ninja / make parallelism (default: 4)
-#   FFMPEG_TAG       — FFmpeg release tag to pin (default: n8.2)
+#   FFMPEG_TAG       — FFmpeg release tag to pin (default: n9.0.1)
 #   SVTAV1_VERSION   — SVT-AV1 release tag (default: 4.1.0)
 #
 # ADR-0709: vmafx-phase4b-distributed-platform (Phase 4b umbrella)
@@ -33,7 +33,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — vmaf-builder: compile libvmaf + vmaf CLI from core/
 # ---------------------------------------------------------------------------
-FROM debian:13-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2 AS vmaf-builder
+FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS vmaf-builder
 
 ARG VMAF_BUILD_JOBS=4
 ARG DEBIAN_FRONTEND=noninteractive
@@ -73,7 +73,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
     && cp -r model/ /dist/model/
 
 # ---------------------------------------------------------------------------
-# Stage 2 — ffmpeg-builder: build ffmpeg n8.2 with ffmpeg-patches/ applied
+# Stage 2 — ffmpeg-builder: build ffmpeg n9.0.1 with ffmpeg-patches/ applied
 # ---------------------------------------------------------------------------
 # Shared across all node variants (cpu/cuda/rocm/sycl). The CUDA/ROCm/SYCL
 # variants add HW encoder support on top of this common base.
@@ -82,7 +82,7 @@ RUN mkdir -p /dist/lib /dist/bin /dist/model \
 # for the detailed rationale. The core issue: ffmpeg-patches/0007 references
 # aom_roi_map_t fields not present in any released libaom version.
 # SVT-AV1 (libsvtav1) covers the AV1 production lane.
-FROM debian:13-slim@sha256:28de0877c2189802884ccd20f15ee41c203573bd87bb6b883f5f46362d24c5c2 AS ffmpeg-deps-base
+FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS ffmpeg-deps-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -127,7 +127,7 @@ RUN printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\
 # ---- SVT-AV1 source build --------------------------------------------------
 # Ubuntu's libsvtav1-dev omits SvtAv1Enc.pc. Build from source so
 # FFmpeg's --enable-libsvtav1 configure probe resolves correctly.
-ARG SVTAV1_VERSION=4.1.0
+ARG SVTAV1_VERSION=4.2.0
 RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
         https://gitlab.com/AOMediaCodec/SVT-AV1.git /tmp/SVT-AV1 \
     && cmake -S /tmp/SVT-AV1 -B /tmp/SVT-AV1/build \
@@ -146,7 +146,7 @@ RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
 # ---------------------------------------------------------------------------
 FROM ffmpeg-deps-base AS ffmpeg-builder-cpu
 
-ARG FFMPEG_TAG=n8.2
+ARG FFMPEG_TAG=n9.0.1
 
 COPY ffmpeg-patches/ /src/ffmpeg-patches/
 
@@ -186,7 +186,7 @@ RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkg
 # ---------------------------------------------------------------------------
 # Stage 4 — go-builder: compile the vmafx-node Go binary
 # ---------------------------------------------------------------------------
-FROM golang:1.26-bookworm@sha256:b305420a68d0f229d91eb3b3ed9e519fcf2cf5461da4bef997bf927e8c0bfd2b AS go-builder
+FROM golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452 AS go-builder
 
 ARG CGO_ENABLED=1
 ARG DEBIAN_FRONTEND=noninteractive
@@ -221,10 +221,10 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # ---------------------------------------------------------------------------
 # Stage 5 — runtime-base: glibc runtime foundation
 # ---------------------------------------------------------------------------
-FROM gcr.io/distroless/cc-debian12@sha256:d703b626ba455c4e6c6fbe5f36e6f427c85d51445598d564652a2f334179f96e AS runtime-base
+FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS runtime-base
 
 LABEL org.opencontainers.image.title="vmafx-node"
-LABEL org.opencontainers.image.description="VMAFX worker node — ffmpeg n8.2 + libvmaf + vmafx-node gRPC service"
+LABEL org.opencontainers.image.description="VMAFX worker node — ffmpeg n9.0.1 + libvmaf + vmafx-node gRPC service"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
@@ -284,7 +284,7 @@ COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/loca
 # CUDA runtime libs — provided by host via nvidia-container-toolkit
 # CUDA 13.3.0 runtime image matches the build stage; bumped from 13.2.1 (ubuntu24.04 → ubuntu26.04).
 # Mismatching major versions (12.x runtime vs 13.x build) causes symbol-resolution failures.
-COPY --from=nvidia/cuda:13.3.0-runtime-ubuntu26.04@sha256:289f4e92587d900d7c5a37086855b553e7519d3d5aee1faaa6a387c756c1c69b /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu26.04@sha256:71b55b93449973f2ee6d8024d6dd34853d338a1f007fe07adaaf9a35fd591794 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
@@ -310,8 +310,8 @@ COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libvpx.so*    /usr/loca
 COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/local/lib/
 
 # ROCm HIP runtime libs
-COPY --from=rocm/rocm-terminal:6.4@sha256:72b323c5d56c511ea75f7353d0fee04e637390dd4874d414020284627a658014 /opt/rocm/lib/libamdhip64.so*      /usr/local/lib/
-COPY --from=rocm/rocm-terminal:6.4@sha256:72b323c5d56c511ea75f7353d0fee04e637390dd4874d414020284627a658014 /opt/rocm/lib/libhsa-runtime64.so* /usr/local/lib/
+COPY --from=rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 /opt/rocm/lib/libamdhip64.so*      /usr/local/lib/
+COPY --from=rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054 /opt/rocm/lib/libhsa-runtime64.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
@@ -337,8 +337,8 @@ COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libvpx.so*    /usr/loca
 COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/local/lib/
 
 # Intel oneAPI SYCL + Level Zero runtime
-COPY --from=intel/oneapi-basekit:2026.0 /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
-COPY --from=intel/oneapi-basekit:2026.0 /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04 /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04 /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 

@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.25@sha256:0adf442eae370b6087e08edc7c50b552d80ddf261576f4ebd6421006b2461f12
+# syntax=docker/dockerfile:1.26@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 # Copyright 2026 Lusoris
 #
@@ -38,7 +38,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — build-deps
 # ---------------------------------------------------------------------------
-FROM ubuntu:26.04@sha256:53958ec7b67c2c9355df922dd08dbf0360611f8c3cdb656875e81873db9ffdba AS build-deps
+FROM ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b AS build-deps
 
 LABEL org.opencontainers.image.title="vmaf-dev-mcp-build-deps"
 LABEL org.opencontainers.image.description="Base build tools for VMAF fork dev-MCP container"
@@ -245,9 +245,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #
 # clinfo is installed in the same layer as the NEO .debs to avoid a
 # separate apt-get update/install round (saves one image layer). ADR-0790.
-ARG NEO_VER=26.18.38308.1
+ARG NEO_VER=26.31.39395.13
 ARG GMMLIB_VER=22.10.0
-ARG IGC_VER=2.40.13+21428
+ARG IGC_VER=2.40.13+22418
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -291,7 +291,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # runtime from source into the Debian multiarch library directory that the
 # distro oneVPL dispatcher searches by default, so QSV works without
 # per-command ONEVPL_SEARCH_PATH overrides.
-ARG VPL_GPU_RT_TAG=intel-onevpl-26.1.5
+ARG VPL_GPU_RT_TAG=intel-onevpl-26.2.4
 # hadolint ignore=DL3003
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
     CCACHE_DIR=/root/.cache/ccache \
@@ -523,7 +523,7 @@ USER vmaf
 USER root
 # Install nv-codec-headers (provides ffnvcodec/dynlink_cuda.h for CUDA backend)
 # Pinned to commit that has cuStreamCreateWithPriority; GitHub mirror lags so use code.ffmpeg.org.
-ARG NV_CODEC_HEADERS_REF=876af32a202d0de83bd1d36fe74ee0f7fcf86b0d
+ARG NV_CODEC_HEADERS_REF=n13.1.15.0
 RUN cd /tmp \
     && curl -fsSL "https://code.ffmpeg.org/FFmpeg/nv-codec-headers/archive/${NV_CODEC_HEADERS_REF}.tar.gz" -o nv-codec-headers.tgz \
     && tar xzf nv-codec-headers.tgz \
@@ -966,6 +966,41 @@ WORKDIR /build/vmaf
 # ---------------------------------------------------------------------------
 # Stage 4 — Python environment
 # ---------------------------------------------------------------------------
+# =============================================================================
+# Go builder — compiles the six vmafx binaries (ADR-0702 Phase 4).
+#
+# Until now the image shipped ZERO Go binaries and had no Go toolchain at all,
+# so `vmafx-server`, `vmafx-mcp`, `vmafx-tune`, `vmafx-controller`, `vmafx-node`
+# and `vmafx-operator` existed only on a developer's host. That makes
+# CLAUDE.md §15 ("default to the container for vmaf / vmaf-tune / ai / MCP
+# work") impossible to satisfy for any Go surface, and it blocks the Python
+# sunset in ADR-0703 §Decision / ADR-0704 §Consequences — the Python cannot be
+# removed from the image before the Go replacements are in it.
+#
+# This stage derives from libvmaf-build rather than a bare `golang` image
+# because four of the six binaries link libvmaf through cgo (pkg/libvmaf):
+# vmafx-server, vmafx-mcp, vmafx-controller and vmafx-node all fail to build
+# under CGO_ENABLED=0 with "undefined: libvmaf.Scorer". Only vmafx-tune and
+# vmafx-operator are pure Go. So the toolchain is copied INTO the stage that
+# already has libvmaf.so and its headers, rather than the other way round.
+# =============================================================================
+FROM libvmaf-build AS go-build
+
+USER root
+# Toolchain only — no base-image swap, so libvmaf and its pkg-config stay put.
+COPY --from=golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452 /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:${PATH}
+ENV GOTOOLCHAIN=local
+
+WORKDIR /build/vmaf
+# cgo needs to find libvmaf.so and libvmaf.h from the libvmaf-build stage.
+ENV CGO_ENABLED=1
+RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked,id=gobuild-dev-mcp \
+    --mount=type=cache,target=/root/go/pkg/mod,sharing=locked,id=gomod-dev-mcp \
+    go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/... \
+    && ls -1 /out/ \
+    && test "$(ls -1 /out/ | wc -l)" -eq 6
+
 FROM libvmaf-build AS dev-mcp
 
 # Install in-tree Python packages (editable for dev convenience)
@@ -990,6 +1025,10 @@ RUN python3.14 -m venv /opt/vmaf-venv \
     # torchvision at import time (see ai/pyproject.toml and ai/AGENTS.md).
     && /opt/vmaf-venv/bin/pip install --no-cache-dir 'torchvision>=0.27.0,<0.28.0' \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/tools/vmaf-tune[fast]'
+
+# The six Go binaries from the go-build stage (ADR-0702), on PATH beside the C
+# `vmaf` CLI at /usr/local/bin/vmaf.
+COPY --from=go-build /out/ /usr/local/bin/
 
 ENV PATH=/opt/vmaf-venv/bin:${PATH}
 ENV PYTHONPATH=/build/vmaf/python:${PYTHONPATH}
