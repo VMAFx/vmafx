@@ -313,11 +313,39 @@ filter to a deterministic `train` / `val` / `test` split (keyed by the
 `key` column via SHA-256 bucketing — same scheme as `vmaf_train`), and
 report correlations against the `mos` target.
 
-Requires the optional `eval` extra:
+**Python server** (`vmaf-mcp`) requires the optional `eval` extra:
 
 ```bash
 pip install -e 'mcp-server/vmaf-mcp[eval]'
 ```
+
+**Go server** (`vmafx-mcp`) needs no Python at all. It reads the parquet
+with a pure-Go reader, computes the split bucketing and the statistics in
+`pkg/modeleval`, and runs the ONNX forward pass through libvmaf's own
+ONNX Runtime session API. The one requirement is that libvmaf was built
+with DNN support (`meson setup … -Denable_dnn=enabled`, or the `auto`
+default on a host where ONNX Runtime is discoverable via pkg-config). A
+libvmaf built without it returns:
+
+```json
+{"error": "libvmaf was built without DNN support (ONNX Runtime not found at build time); rebuild with -Denable_dnn=enabled against an installed onnxruntime"}
+```
+
+which is the Go counterpart of the Python server's missing-`[eval]`-extra error.
+
+### Numerical parity between the two servers
+
+The Python path hands scipy `float32` arrays and scipy does not upcast,
+so its PLCC and RMSE carry float32 rounding. The Go path computes in
+float64. Expect agreement to roughly `1e-7` on `plcc`, `1e-9` on `rmse`,
+and exact agreement on `srocc` (rank-based, so width-independent) — not
+bit-equality. The Go values are the more accurate of the two.
+
+One deliberate behavioural difference: when a split is degenerate (every
+prediction identical, so the correlation is mathematically undefined),
+scipy returns `NaN` and Python emits a bare `NaN`, which is not valid
+JSON. The Go server instead fails with an explicit
+`correlation undefined: input has zero variance` error.
 
 which pulls in `numpy`, `pandas`, `scipy`, and `onnxruntime`.
 
