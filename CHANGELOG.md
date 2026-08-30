@@ -11372,6 +11372,227 @@ upstream string used in cached-result directory names.
 - **chore(changelog): Migrate 23 fragments from invalid sections to Keep-a-Changelog sections** (ADR-0892 follow-up): `perf/` (6 files) and `performance/` (2 files) moved to `changed/perf-<name>.md`; `chore/` (12 files) and `refactor/` (3 files) moved to `changed/`; 2 already-migrated duplicates in `perf/` removed; duplicate `libsvm-vendored-audit.md` basename across `fixed/` and `security/` disambiguated. Invalid directories are now empty and removed. The renderer produces no `WARNING: … is not a Keep-a-Changelog section; fragments here are SKIPPED` lines.
 
 
+- **Go framework foundation (golusoris):** added `github.com/golusoris/golusoris v0.4.0` and a shared `internal/app/bootstrap` package (`Base` fx module set + `FxLogger`) as the foundation for migrating all vmafx Go binaries onto the golusoris `fx` framework (ADR-1119). No binary is migrated yet and there is no user-visible behaviour change in this step; the production services follow in subsequent PRs. ([ADR-1119](docs/adr/1119-golusoris-go-framework-adoption.md))
+
+
+Bump Ubuntu base images from 24.04 to 26.04 across all Docker files and GitHub Actions
+workflows. NVIDIA CUDA images updated to `nvidia/cuda:13.3.0-*-ubuntu26.04`; Intel
+oneAPI SYCL image remains on ubuntu24.04 pending upstream availability. GitHub-hosted
+`ubuntu-26.04` and `ubuntu-26.04-arm` runner labels are now available (preview) and
+wired into all `runs-on:` entries. Dev Dockerfiles renamed: `ubuntu-24.04-*.Dockerfile`
+→ `ubuntu-26.04-*.Dockerfile`.
+
+
+- **`docs/state.md`**: add dedicated `T-CHUG-HDR-WIDE-V1-HOLDOUT-VALIDATION`
+  row recording the 2026-05-27 held-out test result (PLCC 0.8468 / SROCC 0.8188 /
+  RMSE 0.2639, gate FAIL by narrow margin). Update `T-MOS-HEAD-PRODFLIP` to
+  cross-reference the new row instead of carrying stale CHUG trainer instructions.
+  Reproducer: `python ai/scripts/validate_chug_hdr_mos_head.py`. ADR-0687.
+
+
+### Chore
+
+- SHA-pin `EnricoMi/publish-unit-test-result-action` in `e2e-k8s.yml` (was
+  `@v2`; pinned to `c950f6fb` / v2.23.0), making it consistent with every
+  other action in the repository.
+- Remove permanently-disabled `clang-tidy-sycl` job from `lint-and-format.yml`
+  (~150 lines of dead YAML that could never run due to `if: (false)`); add a
+  short tombstone comment explaining the toolchain blocker and referencing
+  ADR-0217.
+- Correct stale `fuzz.yml` comment that cited ADR-0882 and a
+  `fuzz_json_model` harness that do not yet exist; replace with a forward
+  note so the gap is visible rather than silently wrong.
+
+
+### Chore
+
+- Extend test coverage for `pkg/storage`: add `coverage_test.go` covering
+  `unmount()` (0% → 100%), `waitForPath()` timeout and context-cancel exits
+  (80% → 100%), `waitForHTTP()` timeout, context-cancel, and 5xx-loop branches
+  (73.3% → 93.3%), `killProcess()` with a real subprocess (25% → 87.5%),
+  both `Prepare()` start-failure paths, and the `localPath()` url.Parse error
+  branch.  Overall `pkg/storage` statement coverage rises from 52.6% to 77.9%.
+  Add `cmd/vmafx-node/bpf/coverage_test.go` with `New()` prefix-normalisation
+  and `IsBypassFD()` boundary assertions; remaining kernel-gated bpf branches
+  are documented as deferred to a CAP_BPF integration environment (ADR-1087).
+
+
+### Chore
+
+- Audit all `cppcheck-suppress` comments in `core/`; add inline citations
+  (`[MISRA-C:2012-11.3/EXP36-C: see block comment above]`) to 10 bare
+  `invalidPointerCast` suppressions in `core/src/feature/vif.c` and expand
+  the prose justification in the block comment above them.
+  Enforces CLAUDE.md §12 r12 — every suppression must cite the ADR /
+  standard that forces it.
+
+
+Bump pinned CUDA version from 13.2.0 to 13.3.0 across Dockerfile, dev/Containerfile, and CI workflow files (build.yml, libvmaf-build-matrix.yml).
+
+
+- Second dependency batch: the remaining Renovate PRs after the 36-PR sweep —
+  `pandas-stubs`, `anthropic`, `ray[tune]` (SECURITY), the grouped Docker digest
+  refresh, GitHub Actions minor/patch, and `onsi/gomega`. Merged as one branch
+  with one CI run for the same reason as the first batch (ADR-1123): the merge
+  gate cannot drain a per-PR fan-out of the full macOS/ARM/CUDA/SYCL matrix for
+  one-line manifest edits.
+- Note the Docker entry arrived pre-grouped as a single PR rather than one per
+  image — that is the `groupName: "Docker digests"` rule from ADR-1123 taking
+  effect, which was the point of adding it.
+
+
+- Two months of accumulated dependency updates land as a single batch instead of
+  36 individual PRs: Docker base-image digests and tags (debian, fedora 45→46,
+  golang 1.26→1.27, ubuntu, python-slim, both distroless variants,
+  docker/dockerfile, nvidia/cuda), Go module minor/patch updates, GitHub Actions
+  minor/patch, the Helm prometheus-pushgateway chart, and the Python dependency
+  floors (numpy, pandas, scipy, matplotlib, torch, torchvision, transformers,
+  onnxruntime, onnxscript, pyarrow, pydantic, ray, tqdm, typer, mypy, ruff,
+  types-pyyaml, anthropic, openai, mcp). Batching was necessary because the CI
+  queue could not drain 45 concurrent dependency PRs inside the merge gate's
+  deadline — see ADR-1123 for the aggregator half of that fix.
+
+
+- Third dependency batch: `typer`, `onnxruntime`, `openai` and `ruff`. Batched
+  into one branch and one CI run for the reason in ADR-1123 — a per-PR fan-out of
+  the full macOS/ARM/CUDA/SYCL matrix is disproportionate for one-line manifest
+  edits, and the merge gate cannot drain it.
+
+
+- **Float extractor CPU-path coverage**: Added 7 new fast-suite unit tests for `float_psnr`, `float_moment`, `float_ssim`, `float_ms_ssim`, `float_vif`, `float_adm`, and `float_motion`. Previously these extractors had tests only in GPU-gated CUDA/SYCL parity suites, meaning CPU branch coverage was 0% on standard CI. The new tests drive the full `init → extract → close` cycle plus option variants (bit-depths, `motion_force_zero`, `motion_add_uv`) on the CPU path.
+
+
+### Chore
+
+- Extend Go test coverage for `cmd/vmafx-node`: add `executor_extra_test.go`
+  covering `executeScoring` (non-nil scorer with failing stub binary, cancelled
+  context, nil ScoringParams) and `executeAI` (non-nil registry Stage 1 body,
+  empty model name, nil ScoringParams), raising `executeAI` to 100% and
+  `executeScoring` to 89.5%. Add `bpf/bypass_unit_test.go` covering
+  `Loader.Stop`, `Loader.closeLinks`, `Loader.drainLoop` context-cancel exit,
+  stub `Close` helpers, and `loadRcloneBypassObjects` sentinel, raising bpf
+  package coverage from 14.6% to 33.0%. Overall `cmd/vmafx-node` package
+  coverage improves from 46% to 61%.
+
+
+### Chore
+
+- Promote `coverage-gpu` CI job from advisory to required: the two-week
+  stability window (2026-05-19 → 2026-06-02) elapsed with no advisory-fail
+  runs on the self-hosted `gpu-full` runner. Removed `continue-on-error: true`
+  and renamed the job display name from `(Advisory)` to required. Closes
+  T-GPU-COVERAGE-STABLE-WEEKS.
+
+
+### Chore
+
+- Add `TestGRPCScore_ScorerError` to `cmd/vmafx-server/grpc_server_handler_test.go`:
+  covers the scorer-failure → `codes.Internal` branch in `grpcServer.Score`
+  (grpc_server.go:74–78), which was previously exercised only for the HTTP path
+  and the REST adapter. Add `TestRunHTTP_BadAddress` to `main_extra_test.go`:
+  covers the `runHTTP` listen-error branch, mirroring the existing
+  `TestRunGRPCWithServer_BadAddress` for the gRPC listener.
+
+
+Close T-MACOS-SIGSEGV-UNRESOLVED-2026-05-19 — investigation confirmed the macOS CI red was a compile error (missing `integer_ssim_moments_t` on non-x86), not a SIGSEGV. Fixed in PR #654 (ADR-1040). State.md updated; investigation doc added at `docs/development/macos-sigsegv-investigation.md`.
+
+
+### Chore
+
+- Bulk-fix 212 MD060/table-column-style violations across 37 ADR and research
+  digest files; restore Pre-Commit markdownlint gate to green (#577).
+
+
+### Chore
+
+- Promote `docker-image.yml` Docker Image Build job from advisory to blocking:
+  remove `continue-on-error: true` (met criterion: 3 consecutive green master
+  runs). Add a CPU score-assertion smoke step that runs `vmaf --backend cpu`
+  inside the built image against the 576x324 YUV fixture pair in `testdata/`
+  and verifies mean VMAF ≈ 94.32 ± 0.5 (model `vmaf_v0.6.1.json`), proving
+  the binary executes correctly rather than merely that the Dockerfile parses.
+  Timeout raised from 30 min to 45 min to accommodate the score computation.
+
+
+### Chore
+
+- Modernize Python type hints in `compat/python-vmaf` and `ai/src/vmaf_train/cli.py`:
+  replace `Optional[X]` with `X | None`, `List[X]`/`Tuple[X]` with built-in `list[X]`/`tuple[X]`,
+  and `from typing import Iterable` with `from collections.abc import Iterable`.
+  No functional change; requires Python >= 3.10 (already the project minimum).
+
+
+Close T-DOC-LEGACY-RUNNER-MISSING-DEPRECATION state.md drift; remove stale Vulkan reference from cambi docs.
+
+`docs/state.md`: Move T-DOC-LEGACY-RUNNER-MISSING-DEPRECATION from Open to
+Recently Closed — the deprecation entry was already present in
+`docs/development/deprecations.md` since PR #852 but the state row was not
+updated, leaving a false-positive Open entry.
+
+`docs/metrics/cambi.md`: Remove stale Vulkan GPU section and build instructions
+that referenced the dropped Vulkan backend (ADR-0726). The GPU support section
+now documents only the CUDA backend.
+
+
+- Renovate: group `numpy` bumps across all managers (pep621 + pip_requirements
+  + setuptools/`setup.py`) into a single PR. numpy is pinned in `ai/`,
+  `mcp-server/`, `python/`, `ensemble-kit/` and `roi-score/` via a mix of
+  `pyproject.toml`, `setup.py` and `requirements*.txt`, so a single bump was
+  previously split into two PRs; the new `numpy (all managers)` package rule
+  keeps them together.
+
+
+### chore(rust): bump bindgen 0.69 → 0.72 and workspace edition 2021 → 2024
+
+Resolves the deferral recorded in ADR-1000 / PR #592. bindgen 0.70+ emits
+`unsafe extern "C"` blocks compatible with Rust edition 2024; bumping to 0.72.1
+(latest stable) unblocks the edition upgrade.
+
+**Changes:**
+
+- `Cargo.toml` (workspace root): `edition = "2021"` → `"2024"`.
+- `bindings/rust/vmafx/Cargo.toml`: hardcoded `edition = "2021"` replaced by
+  `edition.workspace = true` to stay in sync with the workspace root.
+- `bindings/rust/vmafx-sys/Cargo.toml`: `bindgen = "0.69"` → `"0.72"`.
+- `core/src/feature/rust/tad/src/lib.rs`: edition-2024 migration —
+  `extern "C"` → `unsafe extern "C"`, `#[no_mangle]` → `#[unsafe(no_mangle)]`,
+  and raw-pointer dereferences / unsafe calls wrapped in explicit `unsafe {}` blocks.
+
+All 21 workspace tests pass; `cargo clippy -- -D warnings` is clean.
+
+
+### Chore
+
+- Add `test_gpu_picture_pool_uaf`, `test_integer_motion_v2_coverage`, and
+  `test_pic_preallocation` to the ASan+UBSan exclusion list in
+  `sanitizers.yml`. All three tests intentionally trigger huge allocations
+  (up to ~192 GiB) to exercise OOM cleanup paths; the ASan/UBSan and TSan
+  allocators abort with SIGABRT instead of returning NULL, producing spurious
+  failures. The OOM paths these tests guard are covered by the unsanitized
+  meson test suite on every run.
+- `test_gpu_picture_pool_uaf` was already excluded from TSan (PR #735) but
+  was missing from the ASan+UBSan job; this PR closes that gap and adds the
+  two new tests to both jobs.
+
+
+Remove 2 stale Open rows from `docs/state.md` that were already
+present in the Recently Closed section (T-CUDA-FILTER1D-RES-DISPATCH-CONFLICT-2026-05-29
+was closed by PR #680; T-CPP23-READ-JSON-MODEL-PENDING-2026-05-29 had a
+stale duplicate citing "PR #215 (OPEN)" removed, the correct owner-driven
+copy retained). Update T-DOC-LEGACY-RUNNER-MISSING-DEPRECATION-2026-05-29
+to reflect that PR #216 was closed without merging (item remains open,
+owner-driven). Fix T-GPU-COVERAGE-STABLE-WEEKS duplicate row that appeared
+twice on a single line in the Recently Closed section.
+
+
+### Chore
+
+- Mark `docs/backends/vulkan/overview.md` and `docs/api/vulkan-image-import.md`
+  as historical: add removal banners citing ADR-0726 (2026-05-28) and redirect
+  operators to the active CUDA and SYCL backends. Closes
+  T-DOC-VULKAN-STALE-POST-ADR0726 (#216 closed without these files updated).
+
+
 **CHUG vmaf column: compute via vmaf_v0.6.1 SDR baseline (supersedes PR #898)**
 
 The `vmaf` column in CHUG/K150K feature parquets was always NaN because the
@@ -13718,6 +13939,31 @@ and config paths are also updated in `docs/architecture/workspace.md`.
   code or runtime probe changed; the runtime probe in
   `_qsv_common.ffmpeg_supports_encoder` already covers both
   `libmfx` and `libvpl` correctly.
+
+
+- **C++23 Wave bundle** (#319 log.c→.cpp, #232 gpu_dispatch_env.c→.cpp,
+  #136 opt.cpp+read_json_model.cpp, #154 feature_extractor.c→.cpp,
+  #198 cli_parse.c+vmaf.c→.cpp): five sequential file-rename conversions
+  bundled into a single PR. Each TU compiles in an isolated C++23 static
+  library; public C ABI is preserved throughout via `extern "C"` guards.
+  ADRs: 0708, 0858, 0761, 0772, 0809.
+
+
+Convert `picture_pool.c` and `gpu_picture_pool.c` to C++23 (ADR-0768): isolated
+static-lib pattern, `nullptr`, `<c…>` headers, `static_cast`/`reinterpret_cast`.
+Add `extern "C"` guards to `picture.h`, `mem.h`, `ref.h`, and `picture_pool.h`.
+
+
+**Refactor: route strict-JSON helpers through `vmaftune.jsonio` (ADR-0988)**
+
+Removed private `_nan_to_none` / `_portable_json_dump` / `_emit_json` copies
+from `vmaftune.compare`, `vmaftune.report`, and `vmaftune.benchmark`.  All
+three now import `dumps_strict` from the canonical `vmaftune.jsonio` module.
+
+Added a small `_nan_to_none` / `_dumps_strict` helper pair to `vmaf_mcp.server`
+so the MCP server's final tool-result serialization is RFC 8259-clean even when
+a backend emits `NaN` metrics.  The `import math` in `_pick_worst_frames` is
+promoted to module scope as a side effect.
 
 
 - **Release tooling**: `release-please-config.json` root package now sets `"draft": true` so the next release PR opens as a draft, requiring manual review before merge. Prevents an unintended `4.0.0` major bump caused by three incorrectly marked breaking commits (PR #52 CI-matrix pruning, PR #80 CUDA extern-C bug fix, PR #108 conflict-marker hotfix). The two genuinely breaking changes (PR #47 Vulkan public-API removal, PR #87 `VmafLegacyQualityRunner` removal) remain correctly attributed.
