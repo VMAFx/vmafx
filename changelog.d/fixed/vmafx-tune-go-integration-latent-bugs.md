@@ -61,3 +61,17 @@
 - `relcache/host-uuid`, a per-host identity file written at runtime by the
   sidecar, was committed at the repo root. Untracked and `relcache/` added to
   `.gitignore`.
+- `AdapterVersion` — the ADR-0298 content-addressed-cache key — was set on
+  `libx264` alone. Python sets `adapter_version` on seven adapters, so a change
+  to any of the other six (`libvpx-vp9`, `libvvenc`, both VideoToolbox H.264/HEVC
+  adapters, `prores_videotoolbox`, and `av1_videotoolbox`'s `"0-placeholder"`)
+  would not have invalidated cached encodes.
+- `av1_videotoolbox` could never activate. Python keeps it inactive behind a
+  lazy runtime probe (`ffmpeg -hide_banner -h encoder=av1_videotoolbox`) that
+  self-activates once upstream FFmpeg ships the encoder; the merged registry
+  hard-coded an unavailable string that no host could clear. The probe is
+  ported, fails closed on any uncertainty (missing binary, spawn error,
+  timeout, output matching neither needle), and is cached per process. The
+  refusal is now `ErrAv1VideoToolboxUnavailable`, matchable with `errors.Is`,
+  where it had been an unmatchable `fmt.Errorf` — so callers can tell "encoder
+  not built yet" from "bad preset", as Python's dedicated exception type does.

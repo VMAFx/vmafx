@@ -105,6 +105,11 @@ type Adapter struct {
 	// unavailable, when non-empty, makes every argv call fail with this
 	// message (av1_videotoolbox awaits upstream FFmpeg support, ADR-0339).
 	unavailable string
+	// availableFn, when non-nil, is consulted before honouring `unavailable`.
+	// A placeholder adapter stays inactive only while the probe says the host
+	// cannot run the encoder; once FFmpeg gains support the adapter activates
+	// itself, mirroring the Python placeholder's lazy runtime probe.
+	availableFn func() bool
 }
 
 // swPresets is the nine-name libx264 mnemonic table.
@@ -242,7 +247,11 @@ func qsvAdapter(name string) *Adapter {
 // videotoolbox builds one Apple VideoToolbox adapter.
 func videotoolbox(name string) *Adapter {
 	return &Adapter{
-		Name: name, Encoder: name, QualityKnob: "q:v",
+		// Both h264_ and hevc_videotoolbox carry adapter_version 1 in the
+		// Python registry; prores_ and av1_videotoolbox are literals with their
+		// own values and do not come through this helper.
+		AdapterVersion: "1",
+		Name:           name, Encoder: name, QualityKnob: "q:v",
 		QualityRange: [2]int{0, 100}, QualityDefault: 50, InvertQuality: false,
 		Presets: swPresets, ProbePreset: "ultrafast", ProbeQuality: 60,
 		qualityStyle: StyleSingleFlag, qualityFlag: "-q:v",
@@ -283,7 +292,7 @@ func init() {
 		qsvAdapter("h264_qsv"), qsvAdapter("hevc_qsv"), qsvAdapter("av1_qsv"),
 		videotoolbox("h264_videotoolbox"), videotoolbox("hevc_videotoolbox"),
 		{
-			Name: "prores_videotoolbox", Encoder: "prores_videotoolbox",
+			Name: "prores_videotoolbox", Encoder: "prores_videotoolbox", AdapterVersion: "1",
 			QualityKnob: "profile:v", QualityRange: [2]int{0, 5}, QualityDefault: 3,
 			InvertQuality: false, Presets: swPresets,
 			ProbePreset: "ultrafast", ProbeQuality: 0,
@@ -291,15 +300,16 @@ func init() {
 			presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
 		},
 		{
-			Name: "av1_videotoolbox", Encoder: "av1_videotoolbox", QualityKnob: "q:v",
+			Name: "av1_videotoolbox", Encoder: "av1_videotoolbox", AdapterVersion: "0-placeholder", QualityKnob: "q:v",
 			QualityRange: [2]int{0, 100}, QualityDefault: 50, InvertQuality: false,
 			Presets: swPresets, ProbePreset: "ultrafast", ProbeQuality: 60,
 			qualityStyle: StyleSingleFlag, qualityFlag: "-q:v",
 			presetStyle: PresetRealtime, presetMap: vtRealtimeMap,
 			unavailable: "av1_videotoolbox awaiting upstream FFmpeg encoder support — see ADR-0339",
+			availableFn: av1VideoToolboxAvailable,
 		},
 		{
-			Name: "libvvenc", Encoder: "libvvenc", QualityKnob: "qp",
+			Name: "libvvenc", Encoder: "libvvenc", AdapterVersion: "2", QualityKnob: "qp",
 			QualityRange: [2]int{17, 50}, QualityDefault: 32, InvertQuality: true,
 			Presets: aomPresets, ProbePreset: "faster", ProbeQuality: 32,
 			SupportsTwoPass: true,
@@ -314,7 +324,7 @@ func init() {
 			presetStyle: PresetFlagValue, presetFlag: "-preset", presetMap: svtPresetMap,
 		},
 		{
-			Name: "libvpx-vp9", Encoder: "libvpx-vp9", QualityKnob: "crf",
+			Name: "libvpx-vp9", Encoder: "libvpx-vp9", AdapterVersion: "1", QualityKnob: "crf",
 			QualityRange: [2]int{0, 63}, QualityDefault: 32, InvertQuality: true,
 			Presets: aomPresets, ProbePreset: "ultrafast", ProbeQuality: 32,
 			SupportsTwoPass: true,
@@ -417,7 +427,13 @@ func (a *Adapter) qualityTokens(quality int) []string {
 // and does NOT include ExtraParams — see ResolveCodecArgs for the combined
 // slice the encode driver actually uses.
 func (a *Adapter) FFmpegCodecArgs(preset string, quality int) ([]string, error) {
-	if a.unavailable != "" {
+	if a.unavailable != "" && !(a.availableFn != nil && a.availableFn()) {
+		// Return a matchable sentinel, mirroring Python's dedicated
+		// Av1VideoToolboxUnavailableError rather than a bare string, so callers
+		// can tell "this encoder is not built yet" from "bad preset".
+		if a.Name == "av1_videotoolbox" {
+			return nil, ErrAv1VideoToolboxUnavailable
+		}
 		return nil, fmt.Errorf("%s", a.unavailable)
 	}
 	out := []string{"-c:v", a.Encoder}
