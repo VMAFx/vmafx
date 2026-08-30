@@ -875,3 +875,4 @@
 1118-perceptual-sidedata-weighting
 1119-golusoris-go-framework-adoption
 1120-pelorus-abi-minor3-resync-complexity
+1124-vmafx-tune-go-stage5-per-shot

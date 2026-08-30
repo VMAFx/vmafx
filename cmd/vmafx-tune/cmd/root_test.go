@@ -44,9 +44,9 @@ func TestNewRoot_ListsExpectedSubcommands(t *testing.T) {
 		got[c.Name()] = true
 	}
 
-	wantPorted := []string{"compare", "ladder", "report"}
+	wantPorted := []string{"compare", "ladder", "report", "tune-per-shot"}
 	wantStubs := []string{
-		"tune-per-shot", "fast", "corpus", "benchmark",
+		"fast", "corpus", "benchmark",
 		"auto", "sidecar", "encode-profile",
 	}
 	for _, name := range append(append([]string{}, wantPorted...), wantStubs...) {

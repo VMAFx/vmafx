@@ -73,6 +73,18 @@ type EncodeParams struct {
 	// ExtraArgs are passed verbatim to ffmpeg after the encoder -c:v flag.
 	// Use sparingly; Stage-1 does not expose these to the CLI.
 	ExtraArgs []string
+
+	// InputArgs are passed verbatim to ffmpeg *before* the "-i <src>" pair.
+	// They carry demuxer / geometry options that ffmpeg only accepts as input
+	// options, e.g. the raw-video quartet
+	//   -f rawvideo -pix_fmt yuv420p -s 1920x1080 -r 24
+	// required when src is a headerless planar YUV file. ExtraArgs cannot be
+	// used for this: they land after "-c:v", where ffmpeg treats them as
+	// output options and a raw-YUV input would be mis-probed.
+	//
+	// Added for the per-shot tuner (pkg/pershot), which extracts each detected
+	// shot to a raw YUV file before bisecting it. Empty for container inputs.
+	InputArgs []string
 }
 
 // EncodeResult holds the outcome of a single encode.
@@ -182,7 +194,28 @@ func extractEncoderVersion(stderr string, codec string) string {
 
 // runEncode invokes ffmpeg to encode src to a temporary MKV file and returns
 // the result. codec is the ffmpeg encoder name (e.g. "libx264").
+//
+// It is the fixed-shape wrapper around runEncodeArgv used by every built-in
+// Encoder implementation: the codec argv is always the "-c:v <codec>
+// <crfFlag> <CRF>" triple. Callers that need a codec-specific argv shape
+// (preset tokens, "-rc cqp -qp_i N -qp_p N", "-cpu-used N", ...) go through
+// AdapterEncoder, which calls runEncodeArgv directly.
 func runEncode(src string, params EncodeParams, codec string, crfFlag string) (EncodeResult, error) {
+	codecArgs := []string{"-c:v", codec, crfFlag, strconv.Itoa(params.CRF)}
+	return runEncodeArgv(src, params, codec, codecArgs)
+}
+
+// runEncodeArgv invokes ffmpeg to encode src to a temporary MKV file using the
+// caller-supplied codec argv slice (everything from "-c:v" onwards, excluding
+// the output path). codecName is used only for the temp-file name and for
+// encoder-version extraction from ffmpeg stderr.
+func runEncodeArgv(
+	src string,
+	params EncodeParams,
+	codecName string,
+	codecArgs []string,
+) (EncodeResult, error) {
+	codec := codecName
 	bin := ffmpegBin(params)
 	dir := outputDir(params)
 
@@ -206,11 +239,11 @@ func runEncode(src string, params EncodeParams, codec string, crfFlag string) (E
 		"-hide_banner",
 		"-loglevel", "warning",
 		"-y",
-		"-i", src,
-		"-an", // drop audio
-		"-c:v", codec,
-		crfFlag, strconv.Itoa(params.CRF),
 	}
+	// Input options must precede "-i"; see EncodeParams.InputArgs.
+	argv = append(argv, params.InputArgs...)
+	argv = append(argv, "-i", src, "-an") // -an drops audio
+	argv = append(argv, codecArgs...)
 	argv = append(argv, params.ExtraArgs...)
 	argv = append(argv, outPath)
 

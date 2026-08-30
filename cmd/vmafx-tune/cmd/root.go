@@ -5,10 +5,11 @@
 // clikit (cobra + fx) framework (ADR-1119 Phase-1).
 //
 // The root is built with clikit.New, and each subcommand with clikit.Command.
-// Ported subcommands (compare, ladder, report) carry their domain RunE; the
-// not-yet-ported stubs redirect users to the Python vmaf-tune binary. Stubs run
-// inside a golusoris fx graph so their redirect notice is emitted through the
-// injected structured *slog.Logger rather than a bare fmt.Fprintf.
+// Ported subcommands (compare, ladder, report, tune-per-shot) carry their
+// domain RunE; the not-yet-ported stubs redirect users to the Python vmaf-tune
+// binary. Stubs run inside a golusoris fx graph so their redirect notice is
+// emitted through the injected structured *slog.Logger rather than a bare
+// fmt.Fprintf.
 package cmd
 
 import (
@@ -53,22 +54,23 @@ func newRoot(version string) *clikit.Root {
 It runs alongside the Python vmaf-tune binary during the migration.
 
 Fully ported subcommands:
-  compare     Rate-quality sweep: compare codecs at VMAF targets
-  ladder      Per-title ABR bitrate-ladder generation
-  report      Render Markdown / HTML from prior compare or ladder runs
+  compare        Rate-quality sweep: compare codecs at VMAF targets
+  ladder         Per-title ABR bitrate-ladder generation
+  report         Render Markdown / HTML from prior compare or ladder runs
+  tune-per-shot  Per-shot CRF tuning: shot detection + per-shot bisect + plan
 
 Not yet ported (use 'vmaf-tune <subcommand>' for these):
-  tune-per-shot, fast, corpus, benchmark, auto, sidecar`
+  fast, corpus, benchmark, auto, sidecar, encode-profile`
 	root.Cobra().Version = version
 
 	// Ported subcommands.
 	root.AddCommand(newCompareCmd())
 	root.AddCommand(newLadderCmd())
 	root.AddCommand(newReportCmd())
+	root.AddCommand(newPerShotCmd())
 
 	// Not-yet-ported stubs: log a redirect rather than silently failing.
 	for _, stub := range []struct{ name, desc string }{
-		{"tune-per-shot", "Per-shot VMAF tuning"},
 		{"fast", "Fast NR-proxy accelerated tune"},
 		{"corpus", "Corpus management"},
 		{"benchmark", "Encoder benchmark"},
