@@ -80,3 +80,7 @@
   in **clang 19**. That wrong claim is what made the sanitizer and
   Linux/ARM clang legs look like a `-std=` problem when no language
   standard could have fixed them.
+- The fuzz jobs (`sanitizers.yml` fuzz-nightly and `fuzz.yml`) used a
+  bare `clang`, which resolves to 18 on `ubuntu-24.04` and carries the
+  same latent `<expected>` breakage; both are pinned to clang 22 from
+  apt.llvm.org.

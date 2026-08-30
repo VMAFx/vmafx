@@ -268,8 +268,8 @@ jobs:
       MAX_TOTAL_TIME: ${{ github.event.inputs.max_total_time || '60' }}
       ASAN_OPTIONS: allocator_may_return_null=1:abort_on_error=0:halt_on_error=1
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-      CC: clang
-      CXX: clang++
+      CC: clang-22
+      CXX: clang++-22
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -278,7 +278,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            clang ninja-build python3-pip pkg-config nasm xxd
+            ninja-build python3-pip pkg-config nasm xxd
+          # clang from apt.llvm.org: ubuntu-24.04's clang 18 reports
+          # __cpp_concepts=201907L and libstdc++ gates <expected> on >= 202002L
+          # (raised in clang 19), so core/src/dict.cpp cannot compile with the
+          # distro clang at any -std= level.
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 22
           sudo pip3 install --break-system-packages meson
       - name: Configure (clang + ASan + libFuzzer)
         run: |
