@@ -1234,6 +1234,28 @@ test_psnr_hvs_neon = executable('test_psnr_hvs_neon',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
 )
+
+# ADR-1057: adm_dwt2_8_neon dropped a filter tap in its j==0 special case and
+# no unit test covered the kernel on any architecture. This is that test.
+test_adm_dwt2_neon = executable('test_adm_dwt2_neon',
+    ['test.c', 'test_adm_dwt2_neon.c',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp', '../src/predict.c',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    gpu_all_deps, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects,
+)
 endif
 
 moment_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
@@ -3045,6 +3067,7 @@ endif
 
 if psnr_hvs_neon_test_archs.contains(host_machine.cpu_family())
 test('test_psnr_hvs_neon', test_psnr_hvs_neon, suite : ['fast', 'simd'])
+test('test_adm_dwt2_neon', test_adm_dwt2_neon, suite : ['fast', 'simd'])
 endif
 
 if ssimulacra2_simd_test_archs.contains(host_machine.cpu_family())
