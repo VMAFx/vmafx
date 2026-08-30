@@ -12,3 +12,22 @@
   the v2 compatibility shims all change; the e2e chart templates and
   `kind-cluster.sh` are exercised by the `e2e-k8s` workflow, which is the gate
   that will surface any incompatibility.
+
+- **The shipped Helm chart was broken on master and nothing caught it.**
+  `helm lint deploy/helm/vmafx` failed — identically on Helm 3.19 and Helm 4.1,
+  so this is not a Helm 4 regression — with `additional properties
+  'prometheus-pushgateway' not allowed`. Cause: the vendored
+  `charts/prometheus-pushgateway-3.6.1.tgz` was stale. `Chart.yaml` constrains
+  the dependency to `>=3.8.0` and `Chart.lock` pins `3.8.0`, so the committed
+  tarball violated its own constraint and disagreed with the lock; its values
+  landed under the subchart's real name rather than the `pushgateway` alias,
+  which `values.schema.json` (`additionalProperties: false`) then rejected.
+  Replaced with the locked 3.8.0; the chart now lints and templates on both
+  Helm majors.
+- New `Helm Chart` workflow runs `helm lint` plus `helm template` (defaults and
+  with every optional subchart enabled) on any change under `deploy/helm/`, and
+  first asserts that each vendored `charts/*.tgz` matches `Chart.lock` so the
+  drift that caused this reports its own cause instead of a confusing schema
+  error. `e2e-k8s` does exercise the chart, but it is label- and
+  schedule-gated and builds container images first, so it was never going to
+  fail the PR that broke the chart.
