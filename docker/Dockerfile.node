@@ -284,7 +284,7 @@ COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/loca
 # CUDA runtime libs — provided by host via nvidia-container-toolkit
 # CUDA 13.3.0 runtime image matches the build stage; bumped from 13.2.1 (ubuntu24.04 → ubuntu26.04).
 # Mismatching major versions (12.x runtime vs 13.x build) causes symbol-resolution failures.
-COPY --from=nvidia/cuda:13.3.0-runtime-ubuntu26.04@sha256:289f4e92587d900d7c5a37086855b553e7519d3d5aee1faaa6a387c756c1c69b /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu26.04@sha256:71b55b93449973f2ee6d8024d6dd34853d338a1f007fe07adaaf9a35fd591794 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 
