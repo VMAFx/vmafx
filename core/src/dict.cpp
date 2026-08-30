@@ -28,9 +28,16 @@
  *   - [[nodiscard]]         on every function whose return must be checked.
  *   - RAII (std::unique_ptr)replaces manual goto-cleanup patterns.
  *
- * Toolchain requirement: gcc >= 13 / clang >= 16 (std::expected, std::print
- * not used — std::format available but clarity gain is marginal here; kept
- * simple).  The CI matrix is already on gcc 14+ post-ADR-0692.
+ * Toolchain requirement: gcc >= 13, or clang >= 19 when using libstdc++.
+ * The "clang >= 16" this comment used to claim is wrong and cost a CI
+ * outage: libstdc++ gates all of <expected> behind
+ * `__cpp_concepts >= 202002L`, and clang only raised __cpp_concepts from
+ * 201907L to 202002L in clang 19.  On clang 18 and earlier this header
+ * expands to nothing, so std::expected is simply undeclared — under
+ * -std=c++23 and -std=c++26 alike.  Lowering the language standard does
+ * not help; the gate is __cpp_concepts, not __cplusplus.
+ * (std::print not used — std::format available but the clarity gain is
+ * marginal here; kept simple.)
  */
 
 #include <cassert>

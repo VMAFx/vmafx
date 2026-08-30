@@ -45,12 +45,12 @@ int main() {
     return 0;
 }
 '''
-if cc.compiles(uselocale_test, name: 'uselocale availability')
+if cc.compiles(uselocale_test, name: 'uselocale availability', args : test_args)
     cdata.set('HAVE_USELOCALE', 1)
 endif
 
 # Check for xlocale.h header (needed on some older macOS versions)
-if cc.has_header('xlocale.h')
+if cc.has_header('xlocale.h', args : test_args)
     cdata.set('HAVE_XLOCALE_H', 1)
 endif
 
@@ -426,7 +426,7 @@ int main(void) {
 }
 '''
             is_sve2_supported = cc.compiles(sve2_test_src,
-                args: ['-march=armv9-a+sve2'],
+                args: test_args + ['-march=armv9-a+sve2'],
                 name: 'aarch64 SVE2 intrinsics')
         endif
         cdata.set10('HAVE_SVE2', is_sve2_supported)
@@ -1041,10 +1041,10 @@ endif
 
 if is_cuda_enabled
     # Check for required CUDA headers
-    if not cc.has_header('ffnvcodec/dynlink_cuda.h')
+    if not cc.has_header('ffnvcodec/dynlink_cuda.h', args : test_args)
         error('ffnvcodec/dynlink_cuda.h not found. Please install nv-codec-headers from https://code.ffmpeg.org/FFmpeg/nv-codec-headers (commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d or greater required).')
     endif
-    if not cc.has_header('ffnvcodec/dynlink_loader.h')
+    if not cc.has_header('ffnvcodec/dynlink_loader.h', args : test_args)
         error('ffnvcodec/dynlink_loader.h not found. Please install nv-codec-headers from https://code.ffmpeg.org/FFmpeg/nv-codec-headers (commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d or greater required).')
     endif
 

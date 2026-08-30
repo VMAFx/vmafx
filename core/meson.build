@@ -39,14 +39,25 @@ libvmaf_inc = include_directories(['include'])
 # ADR-0692 raised this project to C23; 'c2x' is the pre-ratification
 # spelling of the same standard, so the fallback is a spelling change, not a
 # language downgrade.
+c_std_args = []
 if get_option('c_std') == 'none'
     if cc.get_id() == 'msvc'
-        add_project_arguments('/std:clatest', language: 'c')
+        c_std_args = ['/std:clatest']
     elif cc.has_argument('-std=c23')
-        add_project_arguments('-std=c23', language: 'c')
+        c_std_args = ['-std=c23']
     else
-        add_project_arguments('-std=c2x', language: 'c')
+        c_std_args = ['-std=c2x']
     endif
+    # NOTE: add_project_arguments() reaches the build but NOT meson's compiler
+    # feature checks (cc.check_header / cc.compiles / cc.has_function), which
+    # only pick up built-in options and env CFLAGS.  The standard therefore has
+    # to be threaded into those checks explicitly via test_args below — with
+    # c_std removed from default_options, MSVC otherwise ran the stdatomic.h
+    # check in legacy C mode and tripped
+    # vcruntime_c11_stdatomic.h: #error "C atomics require C11 or later",
+    # which surfaced as the misleading `ERROR: Problem encountered: Atomics
+    # not supported`.
+    add_project_arguments(c_std_args, language: 'c')
 endif
 
 # Select the C++ standard flag based on compiler identity, unless the caller
@@ -103,8 +114,10 @@ if get_option('cpp_std') == 'none'
     endif
 endif
 
-# Arguments in test_args will be used even on feature tests
-test_args = []
+# Arguments in test_args will be used even on feature tests.  It is seeded
+# with the C standard flag chosen above; see the note there for why that is
+# load-bearing rather than cosmetic.
+test_args = c_std_args
 if host_machine.system() == 'linux'
     test_args += '-D_GNU_SOURCE'
     add_project_arguments('-D_GNU_SOURCE', language: ['c', 'cpp'])
@@ -115,7 +128,7 @@ endif
 
 # Header checks
 stdatomic_dependency = []
-if not cc.check_header('stdatomic.h')
+if not cc.check_header('stdatomic.h', args : test_args)
     if cc.compiles('''int main() { int v = 0; return __atomic_fetch_add(&v, 1, __ATOMIC_SEQ_CST); }''',
                      name : 'GCC-style atomics', args : test_args)
         stdatomic_dependency = declare_dependency(
@@ -133,7 +146,7 @@ endif
 # stays out of the include path. See src/compat/win32/pthread.h and
 # docs/adr/0121-windows-gpu-build-only-legs.md for the rationale.
 pthread_dependency = []
-if not cc.check_header('pthread.h')
+if not cc.check_header('pthread.h', args : test_args)
     pthread_dependency = declare_dependency(
         include_directories : include_directories('src/compat/win32'),
     )
@@ -146,7 +159,7 @@ endif
 # into any target that consumes it. MinGW ships getopt.h via mingw-w64-crt,
 # so check_header() succeeds there and the shim stays out of the build.
 getopt_dependency = []
-if not cc.check_header('getopt.h')
+if not cc.check_header('getopt.h', args : test_args)
     getopt_dependency = declare_dependency(
         include_directories : include_directories('tools/compat/win32', 'tools'),
         sources : files('tools/compat/win32/getopt.c'),

@@ -64,3 +64,19 @@
   macOS legs keep Apple clang — `clang-22` does not exist there. The
   `-std` cascades stay in place as a portability net for MSVC, Apple
   clang and MinGW, and now also carry GCC's `c++2c` spelling.
+- Fixed a regression introduced while fixing the above: moving `c_std`
+  out of `default_options` into `add_project_arguments()` silently
+  stopped the C standard from reaching meson's **compiler feature
+  checks**, which only see built-in options and env `CFLAGS`. On MSVC
+  the `stdatomic.h` probe then ran in legacy C mode and tripped
+  `vcruntime_c11_stdatomic.h: #error "C atomics require C11 or later"`,
+  surfacing as the misleading `ERROR: Problem encountered: Atomics not
+  supported`. The chosen flag is now captured in `c_std_args`, used to
+  seed `test_args`, and threaded through every `cc.check_header` /
+  `cc.compiles` / `cc.has_function` / `cc.has_header` probe.
+- Corrected the toolchain note in `core/src/dict.cpp`: it claimed
+  `clang >= 16`, but libstdc++ gates `<expected>` on
+  `__cpp_concepts >= 202002L` and clang only raised that from `201907L`
+  in **clang 19**. That wrong claim is what made the sanitizer and
+  Linux/ARM clang legs look like a `-std=` problem when no language
+  standard could have fixed them.
