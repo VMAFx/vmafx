@@ -93,3 +93,55 @@ during the migration; see Stage roadmap in
     when the pin moved to v0.5.0.) `TestGolusorisInjection_ConfigDrivesLogLevel`
     guards the behavior — it builds the graph without any decorator, matching
     `withGolusoris()` exactly.
+
+13. **`fast` exit codes travel on the error** (`cmd/vmafx-tune/cmd/fast.go`,
+    `root.go` `Execute`): cobra maps any `RunE` error to exit 1, but
+    `vmaf-tune fast` has a three-way contract — 0 (agreed), 2 (usage /
+    environment), 3 (proxy/verify gap beyond tolerance; fall back to the slow
+    grid). `runFast` therefore wraps its errors in `*fastExitError`, and
+    `Execute` consults `fastExitCode(err)` before `os.Exit`. The exit-3 path
+    still writes the payload first — callers parse it *and* branch on the
+    status. Any new subcommand with its own exit contract follows the same
+    shape rather than adding a second exit switch.
+
+14. **`RecommendResult` field order IS the schema** (`pkg/fast/fast.go`,
+    `jsonfloat.go`): the Python CLI emits
+    `json.dumps(result, indent=2, sort_keys=True)`, so the Go struct declares
+    its fields in alphabetical order of their JSON tag and `recommendWire`
+    mirrors that order. Reordering the fields silently breaks byte
+    compatibility. The float fields go through `pythonFloatRepr`, which
+    reproduces CPython's `float.__repr__` (an integral `target_vmaf` must print
+    as `90.0`, and `1e6` as `1000000.0` — Go's default encoder prints `90` and
+    `1e+06`). Non-finite floats are coerced to JSON `null`, following the
+    `compare` sweep emitter rather than Python's non-standard `NaN` token.
+
+15. **The proxy port guard is load-bearing** (`pkg/fast/proxy.go`):
+    `ORTProxy.Score` refuses to run when the resolved model declares more than
+    one ONNX input port. `fr_regressor_v2` has two (`features` `[N, 6]` and
+    `codec` `[N, 14]`) and the Go seam (`pkg/ai.Registry.Infer` →
+    `vmafx-ort-runner`) takes one flat vector. Do **not** "fix" this by
+    concatenating the ports into a 20-D vector: `vmaftune/proxy.py` documents
+    that the graph's first dense layer reads the 6-D `features` port only, so
+    the codec dims become batch padding and `codec` receives nothing. Lift the
+    guard only once the seam grows named inputs (or the model is re-exported
+    single-port). `TestShippedModelIsTwoPort` fails loudly if the shipped
+    artefact changes shape and the guard's documentation goes stale.
+
+16. **The proxy vocabulary and scaler come from the sidecar, never a constant**
+    (`pkg/fast/proxy.go` `CodecBlock` / `NormaliseFeatures`):
+    `vmaftune/proxy.py` hardcodes an `ENCODER_VOCAB_V2` tuple that has drifted
+    out of sync with `ai/scripts/train_fr_regressor_v2.py` and with
+    `model/tiny/fr_regressor_v2.json` from index 3 onward, so its codec one-hot
+    lands in the wrong slot for most codecs. The Go port reads `encoder_vocab`,
+    `feature_mean` and `feature_std` from the model's own sidecar so they cannot
+    drift from the installed checkpoint. Do not reintroduce a hardcoded
+    vocabulary or drop the StandardScaler step.
+
+17. **TPE tests are not `t.Parallel()`** (`pkg/fast/tpe_test.go`,
+    `fast_test.go`): goptuna v0.9.0 draws part of its randomness from the
+    process-global `math/rand` source, so concurrent studies perturb each
+    other's trial sequences. Any test that asserts on a TPE outcome runs
+    sequentially, and the tolerances are stated against a measured
+    distribution (recorded in the test comments). Adding `t.Parallel()` to
+    those tests reintroduces flakes; tests that never start a study may
+    stay parallel.
