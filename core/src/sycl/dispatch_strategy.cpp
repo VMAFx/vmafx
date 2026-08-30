@@ -32,7 +32,8 @@ static const char *const k_sycl_strategy_names[] = {
 
 VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
                                                    const VmafFeatureCharacteristics *chars,
-                                                   unsigned frame_w, unsigned frame_h)
+                                                   unsigned frame_w, unsigned frame_h,
+                                                   bool va_import_path)
 {
     /* Per-feature env override has highest precedence. */
     const char *env_disp = getenv("VMAF_SYCL_DISPATCH");
@@ -57,6 +58,16 @@ VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
         if (env_no_graph[0] == '1')
             return VMAF_SYCL_DISPATCH_DIRECT;
     }
+
+    /* Zero-copy VA-import path defaults to direct (ADR-1121). The combined
+     * graph is a net throughput loss there — its output is byte-identical to
+     * direct, but the per-frame de-tile import + the graph's compute barrier
+     * serialise decode→compute and cost ~15-25% at 4K. The area-threshold
+     * default below was tuned for the host-upload path and over-selects graph
+     * for VA-import. Placed AFTER the env overrides so an explicit
+     * VMAF_SYCL_USE_GRAPH=1 / VMAF_SYCL_DISPATCH=…:graph still forces graph. */
+    if (va_import_path)
+        return VMAF_SYCL_DISPATCH_DIRECT;
 
     /* Descriptor-driven decision. AUTO falls through to the
      * resolution-area default. */

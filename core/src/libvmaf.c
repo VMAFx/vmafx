@@ -2358,7 +2358,18 @@ static int read_pictures_sycl_prep(VmafContext *vmaf, VmafPicture *ref, VmafPict
     // DMA runs asynchronously on copy_queue while the CPU collects
     // previous-frame results below.  vmaf_sycl_graph_submit() will
     // wait for copy_queue just before replaying the command graph.
-    return vmaf_sycl_shared_frame_upload(vmaf->sycl.state, ref, dist);
+    int err = vmaf_sycl_shared_frame_upload(vmaf->sycl.state, ref, dist);
+
+    /* Diagnostic oracle: checksum what the host-upload path just wrote.
+     * pic_cnt is NOT yet incremented here (that happens in vmaf_read_pictures
+     * after read_pictures_validate_and_prep returns), so vmaf->pic_cnt is
+     * already the correct 0-based frame index (frame=0 on the first call).
+     * The probe function internally waits for copy_queue — no separate wait
+     * needed.  Gated by VMAF_SYCL_CHECKSUM=1 — zero cost when unset. */
+    (void)vmaf_sycl_checksum_y_slot(vmaf->sycl.state, 1, vmaf->pic_cnt, "host");
+    (void)vmaf_sycl_checksum_y_slot(vmaf->sycl.state, 0, vmaf->pic_cnt, "host");
+
+    return err;
 }
 #endif
 
@@ -2790,13 +2801,22 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
      * double-count the frame (mirrors the fix to vmaf_read_pictures, ADR-1008). */
     vmaf->pic_cnt++;
 
-    // Advance frame counter for the zero-copy VA import path.
-    // The host upload path (vmaf_sycl_shared_frame_upload) does this
-    // internally, but the VA import path bypasses upload entirely.
-    // Without this, graph_submit/graph_wait synchronisation breaks:
-    //   - graph_wait idempotency causes stale results from frame 2+
-    //   - graph_submit fires 3x per frame instead of once
+    // Advance double-buffer slot and frame counter for the zero-copy VA import path.
+    // Mirrors shared_frame_upload:597-599: cur_compute = cur_upload; cur_upload = 1-cur_upload.
+    // The imports above wrote shared_*_buf[cur_upload]; after advance, cur_compute
+    // points to that freshly-imported slot so compute kernels read the correct frame.
+    // Also increments frame_counter for graph_submit/graph_wait synchronisation:
+    //   - graph_wait idempotency returns stale results without this increment
+    //   - graph_submit fires after every extractor instead of once per frame
     vmaf_sycl_advance_frame(vmaf->sycl.state);
+
+    /* Diagnostic: per-frame D2H checksum of what compute will actually read.
+     * pic_cnt was already incremented above, so use pic_cnt - 1 for 0-based
+     * frame index (frame=0 on the first call).  Gated by VMAF_SYCL_CHECKSUM=1
+     * — zero cost when unset.  Placed after advance_frame and before the
+     * extractor loop so the primary queue is already drained. */
+    (void)vmaf_sycl_checksum_y_slot(vmaf->sycl.state, 1, vmaf->pic_cnt - 1, "sycl");
+    (void)vmaf_sycl_checksum_y_slot(vmaf->sycl.state, 0, vmaf->pic_cnt - 1, "sycl");
 
     // GPU extractor loop: collect previous results, then submit new work.
     // No upload needed — caller already wrote Y plane data into the shared

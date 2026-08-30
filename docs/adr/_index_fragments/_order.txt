@@ -879,3 +879,4 @@
 1119-golusoris-go-framework-adoption
 1120-pelorus-abi-minor3-resync-complexity
 1122-vmaf-v1-model-port
+1121-sycl-qsv-zerocopy-p010-normalization

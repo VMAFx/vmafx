@@ -46,10 +46,17 @@ typedef enum {
  *                           (legacy alias, deprecated).
  *   VMAF_SYCL_NO_GRAPH=1    Force DIRECT for every feature
  *                           (legacy alias, deprecated).
+ *
+ * @param va_import_path  true for the zero-copy VA-import (libvmaf_sycl) path,
+ *                        which defaults to DIRECT — the combined graph is a net
+ *                        throughput loss there (byte-identical output; ADR-1121).
+ *                        Checked after the env overrides, so an explicit
+ *                        VMAF_SYCL_USE_GRAPH=1 / DISPATCH=…:graph still wins.
  */
 VmafSyclDispatchStrategy vmaf_sycl_select_strategy(const char *feature_name,
                                                    const VmafFeatureCharacteristics *chars,
-                                                   unsigned frame_w, unsigned frame_h);
+                                                   unsigned frame_w, unsigned frame_h,
+                                                   bool va_import_path);
 
 #ifdef __cplusplus
 }
