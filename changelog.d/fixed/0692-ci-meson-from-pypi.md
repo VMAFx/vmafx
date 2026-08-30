@@ -52,3 +52,15 @@
   buys nothing here while breaking that toolchain. The probe now takes
   the newest candidate that genuinely builds — c++26 where it works,
   c++23 where it does not.
+- CI now builds with **current** toolchains rather than the distro's.
+  The `ubuntu-24.04` image tops out at clang 18.1.3, which accepts
+  `-std=c++26` but ships a libstdc++ without `std::expected` — so the
+  right fix was to move the toolchain forward, not to degrade the
+  language standard to suit it. clang is now installed from
+  apt.llvm.org at **22** (sanitizers, the Tests & Quality Gates
+  sanitizer legs, clang-tidy, and the Linux/ARM matrix clang legs), and
+  the GCC legs use the image's preinstalled **gcc-14** instead of the
+  default 13 (which rejects `-std=c++26` outright and has no `c23`).
+  macOS legs keep Apple clang — `clang-22` does not exist there. The
+  `-std` cascades stay in place as a portability net for MSVC, Apple
+  clang and MinGW, and now also carry GCC's `c++2c` spelling.

@@ -47,12 +47,12 @@ jobs:
         include:
           # --- CPU-only builds ---
           - os: ubuntu-latest
-            CC: ccache gcc
-            CXX: ccache g++
+            CC: ccache gcc-14
+            CXX: ccache g++-14
             name: Build — Ubuntu gcc (CPU)
           - os: ubuntu-latest
-            CC: ccache clang
-            CXX: ccache clang++
+            CC: ccache clang-22
+            CXX: ccache clang++-22
             name: Build — Ubuntu clang (CPU)
           - os: macos-latest
             CC: ccache clang
@@ -60,8 +60,8 @@ jobs:
             name: Build — macOS clang (CPU)
             experimental: true
           - os: ubuntu-24.04-arm
-            CC: ccache clang
-            CXX: ccache clang++
+            CC: ccache clang-22
+            CXX: ccache clang++-22
             name: Build — Ubuntu ARM clang (CPU)
 
           # --- i686 (32-bit x86) build — reproduces Netflix#1481 ---
@@ -74,8 +74,8 @@ jobs:
           # them SKIP 77 — host can run i686 binaries natively but
           # meson doesn't know that). See ADR-0151.
           - os: ubuntu-latest
-            CC: ccache gcc
-            CXX: ccache g++
+            CC: ccache gcc-14
+            CXX: ccache g++-14
             i686: true
             meson_extra: --cross-file=build-aux/i686-linux-gnu.ini -Denable_asm=false
             name: Build — Ubuntu i686 gcc (CPU, no-asm)
@@ -88,14 +88,14 @@ jobs:
           # the meson dnn suite. macOS leg stays `experimental: true` so a
           # Homebrew ORT bump that breaks ABI doesn't block merge.
           - os: ubuntu-latest
-            CC: ccache gcc
-            CXX: ccache g++
+            CC: ccache gcc-14
+            CXX: ccache g++-14
             dnn: true
             meson_extra: -Denable_dnn=enabled
             name: Build — Ubuntu gcc (CPU) + DNN
           - os: ubuntu-latest
-            CC: ccache clang
-            CXX: ccache clang++
+            CC: ccache clang-22
+            CXX: ccache clang++-22
             dnn: true
             meson_extra: -Denable_dnn=enabled
             name: Build — Ubuntu clang (CPU) + DNN
@@ -125,8 +125,8 @@ jobs:
           # Vulkan-on-lavapipe-less-CI pattern from ADR-0175). See
           # ADR-0212 §"Status update 2026-05-09: CI lane enabled".
           - os: ubuntu-latest
-            CC: ccache gcc
-            CXX: ccache g++
+            CC: ccache gcc-14
+            CXX: ccache g++-14
             hip: true
             meson_extra: -Denable_hip=true
             name: Build — Ubuntu HIP (T7-10b runtime)
@@ -152,8 +152,8 @@ jobs:
 
           # --- Static library builds ---
           - os: ubuntu-latest
-            CC: ccache gcc
-            CXX: ccache g++
+            CC: ccache gcc-14
+            CXX: ccache g++-14
             meson_extra: --default-library static
             name: Build — Ubuntu gcc Static (CPU)
           # T7-CI-DEDUP — `Build — Ubuntu SYCL Static` removed. The
@@ -165,8 +165,8 @@ jobs:
           # CUDA Static lane stays because it exercises a distinct
           # NVCC-static interaction not covered by the dynamic build.
           - os: ubuntu-latest
-            CC: ccache gcc
-            CXX: ccache g++
+            CC: ccache gcc-14
+            CXX: ccache g++-14
             cuda: true
             meson_extra: --default-library static -Denable_cuda=true -Denable_nvcc=true
             name: Build — Ubuntu CUDA Static
@@ -183,8 +183,8 @@ jobs:
 
           # --- CUDA build (gcc + nvcc) ---
           - os: ubuntu-latest
-            CC: ccache gcc
-            CXX: ccache g++
+            CC: ccache gcc-14
+            CXX: ccache g++-14
             cuda: true
             meson_extra: -Denable_cuda=true -Denable_nvcc=true
             name: Build — Ubuntu CUDA
@@ -257,9 +257,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev pkg-config
+          # gcc-14 is preinstalled on ubuntu-24.04; clang tops out at 18.1.3
+          # there, which accepts -std=c++26 but ships a libstdc++ with no
+          # std::expected, so core/src/dict.cpp cannot build (ADR-0692 moved
+          # the tree to C23 + C++26). Pull clang from apt.llvm.org rather than
+          # degrading the language standard to suit the distro's compiler.
           case "$CC" in
-          *gcc)   sudo -E apt-get -yq install gcc g++ ;;
-          *clang) sudo -E apt-get -yq install clang ;;
+          *gcc-14)   sudo -E apt-get -yq install gcc-14 g++-14 ;;
+          *clang-22) wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+                     chmod +x /tmp/llvm.sh
+                     sudo /tmp/llvm.sh 22
+                     sudo -E apt-get -yq install libclang-rt-22-dev ;;
+          *gcc)      sudo -E apt-get -yq install gcc g++ ;;
+          *clang)    sudo -E apt-get -yq install clang ;;
           esac
 
       - name: Install dependencies (ubuntu i686)

@@ -79,12 +79,14 @@ if get_option('cpp_std') == 'none'
         # C++23 library feature this tree actually depends on (<expected>;
         # the only other non-C++17 header in the tree is <span>, which is
         # C++20) and take the newest candidate that genuinely builds.
+        # c++2c is GCC's pre-ratification spelling of c++26, kept in the
+        # cascade for the same reason c2x is on the C side.
         cxx_std_probe = '''#include <expected>
         std::expected<int, int> f() { return 1; }
         int main() { return f().value_or(1) - 1; }
         '''
         cxx_std_flag = ''
-        foreach candidate : ['-std=c++26', '-std=c++23', '-std=c++2b']
+        foreach candidate : ['-std=c++26', '-std=c++2c', '-std=c++23', '-std=c++2b']
             if cxx_std_flag == ''
                 if cxx.has_argument(candidate) and cxx.compiles(
                         cxx_std_probe,
