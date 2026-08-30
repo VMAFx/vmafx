@@ -40,3 +40,14 @@
   the per-codec two-pass shape. Verified to fail on both defects above; an
   earlier version that only sampled each codec's *default* quality missed the
   ProRes one entirely, because the default is tier 3.
+- Four historical ADR citations in `docs/rebase-notes.md` were silently
+  rewritten to unrelated ADRs while resolving that file's merge conflicts.
+  Restored by matching each `## <branch> (ADR-NNNN)` heading against the ADR
+  filenames: `chore/hip-cuda-orphan-tu-cleanup` back to ADR-0546,
+  `fix/dev-container-full-gpu-plumbing` back to ADR-0542 (whose slug is
+  literally `dev-container-full-gpu-plumbing`), `fix/vulkan-two-variant-vif-shader`
+  back to ADR-0512, and `chore/audit-cleanup-bundle-2` back to ADR-0549. Three
+  of the four had an exact branch-to-slug match before the rewrite. Three other
+  changed citations in the same file were left alone because they are genuine
+  corrections — the new number matches the branch slug better than the old one
+  did.

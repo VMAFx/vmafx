@@ -5064,7 +5064,7 @@ No upstream-shared C sources, Python sources, or build files are touched. The
 `@unittest.skip` decorator in `python/test/local_explainer_test.py` is explicitly
 **not removed** in this PR — that is a follow-up code change.
 
-## chore/hip-cuda-orphan-tu-cleanup (ADR-0598)
+## chore/hip-cuda-orphan-tu-cleanup (ADR-0546)
 
 **No rebase impact.** All deleted files (`adm_hip.c`, `motion_hip.c`,
 `vif_hip.c`, `feature_hip.h`, `integer_ciede_hip.c`, `integer_moment_hip.c`,
@@ -5111,7 +5111,7 @@ xe / KFD UAPI, bump the relevant ARG. The `dev-mcp-entrypoint.sh`
 visibility probe surfaces such regressions in ≤ 30 s of container
 start so future bumps are easy to identify.
 
-## fix/dev-container-full-gpu-plumbing (ADR-0548)
+## fix/dev-container-full-gpu-plumbing (ADR-0542)
 
 **No upstream-mirror paths touched.** Modifies:
 
@@ -5521,7 +5521,7 @@ no CHUG ingestion, no K150K-A extractor, and no FR-from-NR adapter. No
 upstream-shared code, headers, build files, public C-API, or feature
 extractors are modified; the libvmaf CLI and all backends are unchanged.
 
-## fix/vulkan-two-variant-vif-shader (ADR-0513, supersedes ADR-0492)
+## fix/vulkan-two-variant-vif-shader (ADR-0512, supersedes ADR-0492)
 
 **No rebase impact** on Netflix upstream — the Vulkan backend and its
 GLSL compute shaders are entirely fork-local (the `core/src/vulkan/`
@@ -42125,7 +42125,7 @@ Touched files: `.gitignore`, fifteen `ai/scripts/*.py` files,
 No `ffmpeg-patches/` change (no C-API, CLI flag, or
 `meson_options.txt` consumed by a patch — CLAUDE.md §12 r14 exempt).
 
-## chore/audit-cleanup-bundle-2 (ADR-0598)
+## chore/audit-cleanup-bundle-2 (ADR-0549)
 
 **No rebase impact.** All changes are confined to fork-local files:
 
