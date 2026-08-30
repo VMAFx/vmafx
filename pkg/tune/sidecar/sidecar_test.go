@@ -615,6 +615,12 @@ func TestRecordCaptureNoPersist(t *testing.T) {
 	if sp.Model.NUpdates != 1 {
 		t.Errorf("in-memory update did not land: %d", sp.Model.NUpdates)
 	}
+	// Carried over from the parallel pkg/sidecar port, which asserted the other
+	// half of this contract: persist=false must leave nothing on disk, not just
+	// update memory.
+	if _, statErr := os.Stat(sp.StatePath); statErr == nil {
+		t.Error("RecordCapture(persist=false) wrote a state file")
+	}
 	if _, err := os.Stat(sp.StatePath); !os.IsNotExist(err) {
 		t.Errorf("no-persist should not have written %s (err=%v)", sp.StatePath, err)
 	}

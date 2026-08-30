@@ -75,3 +75,12 @@
   refusal is now `ErrAv1VideoToolboxUnavailable`, matchable with `errors.Is`,
   where it had been an unmatchable `fmt.Errorf` — so callers can tell "encoder
   not built yet" from "bad preset", as Python's dedicated exception type does.
+- `pkg/sidecar` (977 LOC) is removed. The parallel port produced two complete
+  sidecar implementations; the integration wired `pkg/tune/sidecar` and left the
+  other with **zero importers**, shipping 977 lines of dead code plus 428 lines
+  of tests covering nothing reachable. Before deleting it I diffed the two
+  exported APIs and their test suites: the live package is a practical superset
+  (it adds `ToMap` / `ModelFromMap` / `HostUUIDPath`), and the one assertion the
+  dead package made that the live one did not — that `RecordCapture(persist=false)`
+  leaves no state file on disk, as opposed to merely updating memory — has been
+  carried across.

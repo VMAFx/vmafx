@@ -9,7 +9,7 @@ sharing its on-disk state format with the Python implementation.
 
 Five new Go packages back them: `pkg/codecadapter` (the ADR-0237 registry for all
 19 codecs), `pkg/corpus` (encode / score / HDR / shots / stats / backend / JSONL
-/ coarse-to-fine), `pkg/predictor` (the analytical VMAF curve), `pkg/sidecar`
+/ coarse-to-fine), `pkg/predictor` (the analytical VMAF curve), `pkg/tune/sidecar`
 (online ridge with Sherman-Morrison updates), and `pkg/pyjson` (a
 CPython-compatible JSON encoder — the corpus JSONL carries bare `NaN` tokens and
 `repr()`-style floats that `encoding/json` cannot produce).

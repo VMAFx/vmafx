@@ -1478,7 +1478,7 @@ VMAFX_LOG_FORMAT=json vmafx-tune-go compare --reference src.mp4 --targets 90
 | Stage 5 | `tune-per-shot` subcommand, conformal CLI wiring | Planned | — |
 
 | golusoris | Migrate the CLI root + subcommands onto the golusoris `clikit` (cobra + fx) framework; `VMAFX_`-prefixed config + injected `slog` | ADR-1119 | **This PR** |
-| Stage 5 (corpus/sidecar) | `corpus` + `sidecar` subcommands; `pkg/codecadapter`, `pkg/corpus`, `pkg/predictor`, `pkg/sidecar`, `pkg/pyjson` | ADR-0703 / ADR-0704 | **This PR** |
+| Stage 5 (corpus/sidecar) | `corpus` + `sidecar` subcommands; `pkg/codecadapter`, `pkg/corpus`, `pkg/predictor`, `pkg/tune/sidecar`, `pkg/pyjson` | ADR-0703 / ADR-0704 | **This PR** |
 | Stage 5 (per-shot) | `tune-per-shot` subcommand, conformal CLI wiring | Planned | — |
 | Stage 6 | `fast` subcommand (requires ONNX Go binding) | Planned | — |
 
@@ -1583,8 +1583,10 @@ The `corpus` and `sidecar` subcommands add five more:
   coarse-to-fine search.
 - **`pkg/predictor/`** — `ShotFeatures` plus the per-codec analytical VMAF curve
   and its CRF inversion.
-- **`pkg/sidecar/`** — the online-ridge bias-correction model (Sherman-Morrison
-  rank-1 updates) and its cache-dir persistence.
+- **`pkg/tune/sidecar/`** — the online-ridge bias-correction model
+  (Sherman-Morrison rank-1 updates) and its cache-dir persistence. The port
+  produced two implementations of this; the other (`pkg/sidecar/`) was removed
+  because nothing imported it.
 - **`pkg/pyjson/`** — a CPython-compatible JSON encoder. The corpus JSONL and the
   sidecar `--json` payloads are cross-implementation artefacts, so the writer
   reproduces `json.dumps` byte-for-byte: bare `NaN` / `Infinity` tokens,
