@@ -1,0 +1,99 @@
+{
+  "cells": [
+    {
+      "codec": "libx264",
+      "confidence_decision": "recommend-escalation",
+      "crf": 23,
+      "effective_predictor_target_vmaf": 100.0,
+      "estimated_bitrate_kbps": 4105.261293190683,
+      "estimated_vmaf": 100.0,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 1080,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": true,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "h264_amf",
+      "confidence_decision": "recommend-escalation",
+      "crf": 20,
+      "effective_predictor_target_vmaf": 100.0,
+      "estimated_bitrate_kbps": 5805.716197915575,
+      "estimated_vmaf": 100.0,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 1080,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    }
+  ],
+  "metadata": {
+    "allow_codecs": [
+      "libx264",
+      "h264_amf"
+    ],
+    "confidence_aware_escalations": [
+      {
+        "codec": "libx264",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 1080,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "h264_amf",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 1080,
+        "verdict": "UNKNOWN"
+      }
+    ],
+    "confidence_thresholds": {
+      "source": "default",
+      "tight_interval_max_width": 2.0,
+      "wide_interval_min_width": 5.0
+    },
+    "effective_predictor_target_vmaf": 100.0,
+    "max_budget_kbps": 50000.0,
+    "recipe_applied": "default",
+    "recipe_overrides": {},
+    "short_circuits": [
+      "ladder-single-rung",
+      "sdr-skip",
+      "skip-saliency",
+      "skip-per-shot"
+    ],
+    "smoke": false,
+    "source_meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 0.0,
+      "content_class": "live_action",
+      "duration_s": 200.0,
+      "height": 1080,
+      "is_hdr": false,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.0,
+      "width": 1920
+    },
+    "src": "/tmp/hard.mkv",
+    "target_vmaf": 100.0,
+    "user_pinned_codec": null,
+    "winner": {
+      "budget_margin_kbps": 45894.738706809316,
+      "cell_index": 0,
+      "codec": "libx264",
+      "crf": 23,
+      "estimated_bitrate_kbps": 4105.261293190683,
+      "estimated_vmaf": 100.0,
+      "quality_margin": 0.0,
+      "rung": 1080,
+      "status": "budget_and_quality_met"
+    }
+  }
+}

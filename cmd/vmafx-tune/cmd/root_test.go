@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"go.uber.org/fx"
 
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
@@ -44,15 +45,31 @@ func TestNewRoot_ListsExpectedSubcommands(t *testing.T) {
 		got[c.Name()] = true
 	}
 
-	wantPorted := []string{"compare", "ladder", "report"}
+	wantPorted := []string{"compare", "ladder", "report", "auto", "sidecar"}
 	wantStubs := []string{
-		"tune-per-shot", "fast", "corpus", "benchmark",
-		"auto", "sidecar", "encode-profile",
+		"tune-per-shot", "fast", "corpus", "benchmark", "encode-profile",
 	}
 	for _, name := range append(append([]string{}, wantPorted...), wantStubs...) {
 		if !got[name] {
 			t.Errorf("root is missing expected subcommand %q (have: %s)",
 				name, strings.Join(sortedKeys(got), ", "))
+		}
+	}
+
+	// A ported subcommand must not still carry the stub's redirect notice —
+	// that is what distinguishes "implemented" from merely "registered".
+	byName := map[string]*cobra.Command{}
+	for _, c := range root.Cobra().Commands() {
+		byName[c.Name()] = c
+	}
+	for _, name := range wantPorted {
+		if strings.Contains(byName[name].Long, "not yet ported") {
+			t.Errorf("subcommand %q is listed as ported but still has the stub Long text", name)
+		}
+	}
+	for _, name := range wantStubs {
+		if !strings.Contains(byName[name].Long, "not yet ported") {
+			t.Errorf("subcommand %q is listed as a stub but has lost its redirect notice", name)
 		}
 	}
 }

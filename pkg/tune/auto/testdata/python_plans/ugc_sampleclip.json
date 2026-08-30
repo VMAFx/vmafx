@@ -1,0 +1,106 @@
+{
+  "cells": [
+    {
+      "codec": "libx264",
+      "confidence_decision": "recommend-escalation",
+      "crf": 29,
+      "effective_predictor_target_vmaf": 89.5,
+      "estimated_bitrate_kbps": 133.6348077210509,
+      "estimated_vmaf": 90.63213688858352,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 720,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 8.0,
+      "selected": true,
+      "verdict": "UNKNOWN"
+    },
+    {
+      "codec": "libvpx-vp9",
+      "confidence_decision": "recommend-escalation",
+      "crf": 29,
+      "effective_predictor_target_vmaf": 89.5,
+      "estimated_bitrate_kbps": 212.13203435596427,
+      "estimated_vmaf": 90.63213688858352,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 720,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 8.0,
+      "selected": false,
+      "verdict": "UNKNOWN"
+    }
+  ],
+  "metadata": {
+    "allow_codecs": [
+      "libx264",
+      "libvpx-vp9"
+    ],
+    "confidence_aware_escalations": [
+      {
+        "codec": "libx264",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 720,
+        "verdict": "UNKNOWN"
+      },
+      {
+        "codec": "libvpx-vp9",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 720,
+        "verdict": "UNKNOWN"
+      }
+    ],
+    "confidence_thresholds": {
+      "source": "recipe:ugc/default",
+      "tight_interval_max_width": 3.5,
+      "wide_interval_min_width": 5.0
+    },
+    "effective_predictor_target_vmaf": 89.5,
+    "max_budget_kbps": 2500.0,
+    "recipe_applied": "ugc",
+    "recipe_overrides": {
+      "force_single_rung": false,
+      "saliency_intensity": "default",
+      "target_vmaf_offset": 1.5,
+      "tight_interval_max_width": 3.5
+    },
+    "short_circuits": [
+      "ladder-single-rung",
+      "sdr-skip",
+      "sample-clip-propagate",
+      "skip-saliency",
+      "skip-per-shot",
+      "low-complexity"
+    ],
+    "smoke": false,
+    "source_meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 150.0,
+      "content_class": "ugc",
+      "duration_s": 45.0,
+      "height": 720,
+      "is_hdr": false,
+      "sample_clip_seconds": 8.0,
+      "shot_variance": 0.0,
+      "width": 1280
+    },
+    "src": "/tmp/ugc.mp4",
+    "target_vmaf": 88.0,
+    "user_pinned_codec": null,
+    "winner": {
+      "budget_margin_kbps": 2366.365192278949,
+      "cell_index": 0,
+      "codec": "libx264",
+      "crf": 29,
+      "estimated_bitrate_kbps": 133.6348077210509,
+      "estimated_vmaf": 90.63213688858352,
+      "quality_margin": 2.632136888583517,
+      "rung": 720,
+      "status": "budget_and_quality_met"
+    }
+  }
+}

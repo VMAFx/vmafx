@@ -1,0 +1,79 @@
+{
+  "cells": [
+    {
+      "codec": "libaom-av1",
+      "confidence_decision": "recommend-escalation",
+      "crf": 51,
+      "effective_predictor_target_vmaf": 80.0,
+      "estimated_bitrate_kbps": 78.74506561842958,
+      "estimated_vmaf": 81.07455800607042,
+      "hdr_args": [],
+      "interval_width": NaN,
+      "prediction_source": "predictor",
+      "rung": 480,
+      "saliency_intensity": "default",
+      "sample_clip_seconds": 0.0,
+      "selected": true,
+      "verdict": "UNKNOWN"
+    }
+  ],
+  "metadata": {
+    "allow_codecs": [
+      "libx264",
+      "libx265",
+      "libaom-av1"
+    ],
+    "confidence_aware_escalations": [
+      {
+        "codec": "libaom-av1",
+        "decision": "recommend-escalation",
+        "interval_width": NaN,
+        "rung": 480,
+        "verdict": "UNKNOWN"
+      }
+    ],
+    "confidence_thresholds": {
+      "source": "default",
+      "tight_interval_max_width": 2.0,
+      "wide_interval_min_width": 5.0
+    },
+    "effective_predictor_target_vmaf": 80.0,
+    "max_budget_kbps": 1000.0,
+    "recipe_applied": "default",
+    "recipe_overrides": {},
+    "short_circuits": [
+      "ladder-single-rung",
+      "codec-pinned",
+      "sdr-skip",
+      "skip-saliency",
+      "skip-per-shot",
+      "baseline-meets-target"
+    ],
+    "smoke": false,
+    "source_meta": {
+      "baseline_vmaf": 91.0,
+      "complexity_score": 0.0,
+      "content_class": "live_action",
+      "duration_s": 30.0,
+      "height": 480,
+      "is_hdr": false,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.0,
+      "width": 640
+    },
+    "src": "/tmp/easy.mp4",
+    "target_vmaf": 80.0,
+    "user_pinned_codec": "libaom-av1",
+    "winner": {
+      "budget_margin_kbps": 921.2549343815704,
+      "cell_index": 0,
+      "codec": "libaom-av1",
+      "crf": 51,
+      "estimated_bitrate_kbps": 78.74506561842958,
+      "estimated_vmaf": 81.07455800607042,
+      "quality_margin": 1.0745580060704185,
+      "rung": 480,
+      "status": "budget_and_quality_met"
+    }
+  }
+}

@@ -5,10 +5,11 @@
 // clikit (cobra + fx) framework (ADR-1119 Phase-1).
 //
 // The root is built with clikit.New, and each subcommand with clikit.Command.
-// Ported subcommands (compare, ladder, report) carry their domain RunE; the
-// not-yet-ported stubs redirect users to the Python vmaf-tune binary. Stubs run
-// inside a golusoris fx graph so their redirect notice is emitted through the
-// injected structured *slog.Logger rather than a bare fmt.Fprintf.
+// Ported subcommands (compare, ladder, report, auto, sidecar) carry their
+// domain RunE; the not-yet-ported stubs redirect users to the Python vmaf-tune
+// binary. Stubs run inside a golusoris fx graph so their redirect notice is
+// emitted through the injected structured *slog.Logger rather than a bare
+// fmt.Fprintf.
 package cmd
 
 import (
@@ -48,7 +49,7 @@ It will be ported in a future Stage-2 release.`, shortDesc, name)
 // running it.
 func newRoot(version string) *clikit.Root {
 	root := clikit.New("vmafx-tune-go",
-		"vmafx-tune-go — Go port of vmaf-tune (compare/ladder/report subcommands)")
+		"vmafx-tune-go — Go port of vmaf-tune (compare/ladder/report/auto/sidecar)")
 	root.Cobra().Long = `vmafx-tune-go is the Go port of the vmaf-tune rate-quality tuning CLI.
 It runs alongside the Python vmaf-tune binary during the migration.
 
@@ -56,15 +57,19 @@ Fully ported subcommands:
   compare     Rate-quality sweep: compare codecs at VMAF targets
   ladder      Per-title ABR bitrate-ladder generation
   report      Render Markdown / HTML from prior compare or ladder runs
+  auto        Phase F adaptive recipe-aware planner (plan + optional execute)
+  sidecar     Local on-host predictor sidecar (status/predict/record/batch)
 
 Not yet ported (use 'vmaf-tune <subcommand>' for these):
-  tune-per-shot, fast, corpus, benchmark, auto, sidecar`
+  tune-per-shot, fast, corpus, benchmark, encode-profile`
 	root.Cobra().Version = version
 
 	// Ported subcommands.
 	root.AddCommand(newCompareCmd())
 	root.AddCommand(newLadderCmd())
 	root.AddCommand(newReportCmd())
+	root.AddCommand(newAutoCmd())
+	root.AddCommand(newSidecarCmd())
 
 	// Not-yet-ported stubs: log a redirect rather than silently failing.
 	for _, stub := range []struct{ name, desc string }{
@@ -72,8 +77,6 @@ Not yet ported (use 'vmaf-tune <subcommand>' for these):
 		{"fast", "Fast NR-proxy accelerated tune"},
 		{"corpus", "Corpus management"},
 		{"benchmark", "Encoder benchmark"},
-		{"auto", "Automatic subcommand selection"},
-		{"sidecar", "Sidecar state management"},
 		{"encode-profile", "Encoder profile inspection"},
 	} {
 		root.AddCommand(stubSubcommand(stub.name, stub.desc))
