@@ -127,7 +127,7 @@ RUN printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${exec_prefix}/lib\
 # ---- SVT-AV1 source build --------------------------------------------------
 # Ubuntu's libsvtav1-dev omits SvtAv1Enc.pc. Build from source so
 # FFmpeg's --enable-libsvtav1 configure probe resolves correctly.
-ARG SVTAV1_VERSION=4.1.0
+ARG SVTAV1_VERSION=4.2.0
 RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
         https://gitlab.com/AOMediaCodec/SVT-AV1.git /tmp/SVT-AV1 \
     && cmake -S /tmp/SVT-AV1 -B /tmp/SVT-AV1/build \
@@ -337,8 +337,8 @@ COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libvpx.so*    /usr/loca
 COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/local/lib/
 
 # Intel oneAPI SYCL + Level Zero runtime
-COPY --from=intel/oneapi-basekit:2026.0 /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
-COPY --from=intel/oneapi-basekit:2026.0 /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04 /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04 /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 

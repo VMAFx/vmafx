@@ -78,7 +78,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
     && apt-get install -y --no-install-recommends \
-        cuda-toolkit-12-0
+        cuda-toolkit-13-3
 
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-cuda12 \
     CCACHE_DIR=/root/.cache/ccache \
@@ -129,7 +129,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
     && apt-get install -y --no-install-recommends \
-        intel-oneapi-dpcpp-cpp-2026.0
+        intel-oneapi-dpcpp-cpp-2025.3
 
 ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
@@ -180,7 +180,7 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 FROM runtime-base AS final-cuda12
 # CUDA runtime libs — only the runtime, not the full toolkit
-COPY --from=nvidia/cuda:12.0-runtime-ubuntu22.04 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu22.04 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 COPY --from=builder-cuda12 /dist/lib/   /usr/local/lib/
 COPY --from=builder-cuda12 /dist/bin/   /usr/local/bin/
 COPY --from=builder-cuda12 /dist/model/ /usr/local/share/vmafx/model/
@@ -205,8 +205,8 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 FROM runtime-base AS final-oneapi2026
 # Level Zero + Intel GPU plugin runtime
-COPY --from=intel/oneapi-basekit:2026.0 /opt/intel/oneapi/compiler/latest/lib/libsycl.so*  /usr/local/lib/
-COPY --from=intel/oneapi-basekit:2026.0 /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04 /opt/intel/oneapi/compiler/latest/lib/libsycl.so*  /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04 /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
 COPY --from=builder-oneapi2026 /dist/lib/   /usr/local/lib/
 COPY --from=builder-oneapi2026 /dist/bin/   /usr/local/bin/
 COPY --from=builder-oneapi2026 /dist/model/ /usr/local/share/vmafx/model/
