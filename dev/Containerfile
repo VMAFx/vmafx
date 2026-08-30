@@ -966,6 +966,41 @@ WORKDIR /build/vmaf
 # ---------------------------------------------------------------------------
 # Stage 4 — Python environment
 # ---------------------------------------------------------------------------
+# =============================================================================
+# Go builder — compiles the six vmafx binaries (ADR-0702 Phase 4).
+#
+# Until now the image shipped ZERO Go binaries and had no Go toolchain at all,
+# so `vmafx-server`, `vmafx-mcp`, `vmafx-tune`, `vmafx-controller`, `vmafx-node`
+# and `vmafx-operator` existed only on a developer's host. That makes
+# CLAUDE.md §15 ("default to the container for vmaf / vmaf-tune / ai / MCP
+# work") impossible to satisfy for any Go surface, and it blocks the Python
+# sunset in ADR-0703 §Decision / ADR-0704 §Consequences — the Python cannot be
+# removed from the image before the Go replacements are in it.
+#
+# This stage derives from libvmaf-build rather than a bare `golang` image
+# because four of the six binaries link libvmaf through cgo (pkg/libvmaf):
+# vmafx-server, vmafx-mcp, vmafx-controller and vmafx-node all fail to build
+# under CGO_ENABLED=0 with "undefined: libvmaf.Scorer". Only vmafx-tune and
+# vmafx-operator are pure Go. So the toolchain is copied INTO the stage that
+# already has libvmaf.so and its headers, rather than the other way round.
+# =============================================================================
+FROM libvmaf-build AS go-build
+
+USER root
+# Toolchain only — no base-image swap, so libvmaf and its pkg-config stay put.
+COPY --from=golang:1.27-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452 /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:${PATH}
+ENV GOTOOLCHAIN=local
+
+WORKDIR /build/vmaf
+# cgo needs to find libvmaf.so and libvmaf.h from the libvmaf-build stage.
+ENV CGO_ENABLED=1
+RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked,id=gobuild-dev-mcp \
+    --mount=type=cache,target=/root/go/pkg/mod,sharing=locked,id=gomod-dev-mcp \
+    go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/... \
+    && ls -1 /out/ \
+    && test "$(ls -1 /out/ | wc -l)" -eq 6
+
 FROM libvmaf-build AS dev-mcp
 
 # Install in-tree Python packages (editable for dev convenience)
@@ -990,6 +1025,10 @@ RUN python3.14 -m venv /opt/vmaf-venv \
     # torchvision at import time (see ai/pyproject.toml and ai/AGENTS.md).
     && /opt/vmaf-venv/bin/pip install --no-cache-dir 'torchvision>=0.27.0,<0.28.0' \
     && /opt/vmaf-venv/bin/pip install --no-cache-dir -e '/build/vmaf/tools/vmaf-tune[fast]'
+
+# The six Go binaries from the go-build stage (ADR-0702), on PATH beside the C
+# `vmaf` CLI at /usr/local/bin/vmaf.
+COPY --from=go-build /out/ /usr/local/bin/
 
 ENV PATH=/opt/vmaf-venv/bin:${PATH}
 ENV PYTHONPATH=/build/vmaf/python:${PYTHONPATH}
