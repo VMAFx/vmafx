@@ -6,6 +6,14 @@
 alongside the Python `vmaf-tune` binary during the migration. The Python binary
 is unchanged and should be used for all subcommands that are not yet ported.
 
+# vmafx-tune-go — Go port of vmaf-tune (Stage 4 + encoder introspection)
+
+`vmafx-tune-go` is the Go port of the `vmaf-tune` rate-quality tuning CLI
+(Stages 1–4, plus the encoder-introspection subcommands). It ships as a
+**separate binary** alongside the Python `vmaf-tune` binary during the
+migration. The Python binary is unchanged and should be used for all
+subcommands that are not yet ported.
+
 This page documents the Go binary. For the full Python `vmaf-tune` reference, see
 [vmaf-tune.md](vmaf-tune.md).
 
@@ -443,6 +451,24 @@ the bare `NaN` tokens CPython's `json` module produces for columns libvmaf did
 not populate, so a corpus written by either binary is readable by the same
 trainers.
 
+## Ported subcommands (encoder introspection)
+
+### `benchmark` — Rank encoders from an existing corpus
+
+Answers the standard post-sweep question: *which encoder hit the target quality
+at the lowest bitrate?* It reads a Phase-A corpus JSONL written by
+`vmaf-tune corpus` and launches **no** ffmpeg and no libvmaf — the corpus stays
+the source of truth.
+
+```text
+vmafx-tune-go benchmark --from-corpus <JSONL> [flags]
+```
+
+For every encoder in the corpus the report picks the lowest-bitrate row whose
+measured VMAF clears `--target-vmaf`. An encoder that never clears is reported
+with status `unmet` and its closest miss, so a missing encoder build is never
+mistaken for a quality result.
+
 **Required flags:**
 
 | Flag | Description |
@@ -691,6 +717,183 @@ One behaviour is *weaker* in Go than in Python:
   the exact optimum in 150 of 150 runs for every target tested. Closing the gap
   needs an upstream goptuna change threading the sampler RNG into
   `internal/random`.
+
+| `--from-corpus` | Phase-A corpus JSONL to benchmark |
+
+**Optional flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--target-vmaf` | `92` | Matched-quality threshold each encoder must clear. |
+| `--baseline-encoder` | lowest-bitrate encoder that clears | Encoder used for the `bitrate_delta_pct` column. |
+| `--format` | `markdown` | Report format: `markdown`, `json` or `csv`. |
+| `--output`, `-o` | stdout | Report destination. Parent directories are created. |
+
+**Example — Markdown to stdout:**
+
+```bash
+vmafx-tune-go benchmark --from-corpus corpus.jsonl
+```
+
+**Example — CSV at a stricter target, with a pinned baseline:**
+
+```bash
+vmafx-tune-go benchmark \
+  --from-corpus corpus.jsonl \
+  --target-vmaf 95 \
+  --baseline-encoder libx264 \
+  --format csv \
+  --output benchmark.csv
+```
+
+Rows are ranked with cleared encoders first (ascending bitrate), then the
+`unmet` ones. A row reports:
+
+| Field | Meaning |
+|-------|---------|
+| `encoder` | Encoder token from the corpus rows. |
+| `status` | `ok` when the encoder cleared the target, `unmet` otherwise. |
+| `target_vmaf` / `margin` | The requested threshold, and the selected row's VMAF minus it (negative when `unmet`). |
+| `bitrate_kbps` | Bitrate of the selected row. |
+| `bitrate_delta_pct` | Percentage difference against the baseline encoder; `null` / blank when no encoder cleared. |
+| `rows` / `source_count` / `preset_count` | How many eligible corpus rows the encoder contributed, and how many distinct sources / presets they span. |
+| `encode_fps` / `score_fps` | Means over the encoder's rows, counting positive finite samples only; `null` / blank when no row supplied timings. |
+| `best` | The selected corpus row (`src`, `preset`, `crf`, `vmaf_score`, `bitrate_kbps`, `vmaf_model`). |
+
+Rows are excluded from the report when `exit_status` is non-zero, when
+`vmaf_score` or `bitrate_kbps` is missing or non-finite, or when the row
+carries no encoder name.
+
+The CSV output uses CRLF line endings (Python's `csv` "excel" dialect), and the
+JSON output is stable pretty RFC 8259 with sorted keys — both byte-identical to
+`vmaf-tune benchmark`.
+
+### `encode-profile` — Reproduce one recommendation from a report
+
+Every vmaf-tune report embeds a machine-readable `encoder_profile` payload.
+This subcommand reads that payload, selects one recommendation, and runs the
+matching FFmpeg encode.
+
+```text
+vmafx-tune-go encode-profile --profile <FILE> --output <FILE> [flags]
+```
+
+The profile is accepted in any of the three shapes a report ships in:
+
+| Input | How the payload is found |
+|-------|--------------------------|
+| Report JSON (`.json`) | Parsed directly; the `encoder_profile` block is unwrapped if present. |
+| Report HTML (`.html` / `.htm`) | Extracted from the raw-JSON `<pre>` block and HTML-unescaped. |
+| Report Markdown (anything else) | Extracted from the fenced JSON payload. |
+
+Selection defaults to the first Pareto-selected row with the lowest bitrate.
+`--codec` and `--target-vmaf` narrow the candidate set; `--recommendation-index`
+then picks the Nth survivor (zero-based, applied **after** filtering).
+
+**Required flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--profile` | Report JSON / HTML / Markdown containing `encoder_profile` |
+| `--output`, `-o` | Encoded output path |
+
+**Selection flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--codec` | all | Restrict selection to one codec. |
+| `--target-vmaf` | all | Restrict selection to one target VMAF (matched with a 1e-6 absolute tolerance). |
+| `--recommendation-index` | `0` (first) | Zero-based index after the filters are applied. |
+
+**Override flags** (each falls back to the profile value when omitted):
+
+| Flag | Description |
+|------|-------------|
+| `--src` | Override the source path stored in the profile. |
+| `--preset` | Override the stored / adapter-default preset. |
+| `--pix-fmt` | Override the raw-source pixel format (default `yuv420p`). |
+| `--framerate`, `--width`, `--height` | Override the raw-source geometry. |
+| `--duration` | Override the encode duration in seconds. Passing `0` explicitly suppresses the profile's own duration bound. |
+| `--source-kind` | `auto` (default), `container` or `raw`. Under `auto`, `.yuv` / `.raw` / `.rgb` / `.gray` are raw and everything else is a container. |
+| `--sample-clip-seconds`, `--sample-clip-start-s` | Input-side clip length / offset forwarded to FFmpeg. |
+| `--extra-ffmpeg-arg` | Append one raw FFmpeg argv token after the codec args; repeat as needed. Use `--extra-ffmpeg-arg=-movflags` for tokens starting with `-`. |
+| `--ffmpeg-bin` | Override the profile's `ffmpeg_bin` (default: profile value, then `ffmpeg`). |
+| `--dry-run` | Print the selected recommendation and the exact FFmpeg argv without encoding. |
+
+**Example — inspect the selection without encoding:**
+
+```bash
+vmafx-tune-go encode-profile \
+  --profile report.json \
+  --output /dev/null \
+  --dry-run
+```
+
+**Example — reproduce the best x265 row at target 95:**
+
+```bash
+vmafx-tune-go encode-profile \
+  --profile report.html \
+  --codec libx265 \
+  --target-vmaf 95 \
+  --output encoded.mkv
+```
+
+**Output schema.** The result is a single JSON document on `stdout` (sorted
+keys, two-space indent). A `--dry-run` emits `ok`, `dry_run`, `profile`,
+`selected`, `ffmpeg_argv` and `output`; a real run replaces `dry_run` with the
+encode outcome:
+
+```json
+{
+  "ok": true,
+  "profile": "report.json",
+  "selected": { "codec": "libx265", "crf": 28 },
+  "ffmpeg_argv": ["ffmpeg", "-y", "-hide_banner"],
+  "output": "encoded.mkv",
+  "exit_status": 0,
+  "encode_size_bytes": 148213,
+  "encode_time_ms": 1843.2,
+  "encoder_version": "libx265-3.5",
+  "ffmpeg_version": "n8.1",
+  "stderr_tail": "..."
+}
+```
+
+**Exit status.** On a real run the process exit status is FFmpeg's own, so a
+failed encode surfaces the encoder's code (for example `254`) rather than a
+generic `1`. The JSON payload is still written first, so a wrapper script can
+read `exit_status` and `stderr_tail` regardless.
+
+### Exit codes
+
+`benchmark` and `encode-profile` use the same exit-status convention as the
+Python CLI they replace:
+
+| Status | Meaning |
+|--------|---------|
+| `0` | Success. |
+| `2` | A usage or validation failure — a missing/unknown flag, an unparseable flag value, a missing input file, a filter that matches no recommendation, a baseline encoder absent from the corpus. |
+| other | `encode-profile` only: FFmpeg's own exit status from a failed encode. |
+
+Note that the earlier ports (`compare`, `ladder`, `report`) still report every
+failure as `1`; that pre-existing inconsistency is tracked separately.
+
+**Hardware-encoder caveats.**
+
+- The emitted argv contains **no** `-init_hw_device` chain. FFmpeg's QSV bridge
+  on Linux needs `-init_hw_device vaapi=va:<node> -init_hw_device qsv=qsv_dev@va
+  -filter_hw_device va` before the first `-i`, plus a `format=nv12,hwupload`
+  filter, or the encode fails with `-22` (see
+  [ADR-0601](../adr/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md)). This
+  matches the Python implementation exactly: `vmaf-tune` injects that chain in
+  its `compare` sweep, never in `encode-profile`. Supply the flags yourself
+  with repeated `--extra-ffmpeg-arg`, or drive QSV through `compare`.
+- Hardware encoders (NVENC / QSV / AMF) reject sources below roughly
+  **320x240**. A profile built from a smaller clip will fail at the encoder.
+- `av1_videotoolbox` is a placeholder: upstream FFmpeg ships no such encoder,
+  so the adapter refuses to emit an argv shape it cannot verify
+  ([ADR-0339](../adr/0339-av1-videotoolbox-placeholder-adapter.md)).
 
 ## Not yet ported (Stage 5+)
 
@@ -971,6 +1174,9 @@ Python `vmaf-tune` binary for these:
 | `auto` | `vmaf-tune auto` |
 | `encode-profile` | `vmaf-tune encode-profile` |
 
+| `auto` | `vmaf-tune auto` |
+| `sidecar` | `vmaf-tune sidecar` |
+
 `recommend`'s encode-driven path writes the same schema-v3 corpus JSONL the
 `corpus` subcommand does, and every key is present. Five corpus features are
 not carried by this group's port and their fields hold the same zero / empty
@@ -1021,6 +1227,8 @@ VMAFX_LOG_FORMAT=json vmafx-tune-go compare --reference src.mp4 --targets 90
 | Stage 4 | `report` subcommand, Markdown + HTML rendering | ADR-0770 | Merged |
 | golusoris | Migrate the CLI root + subcommands onto the golusoris `clikit` (cobra + fx) framework; `VMAFX_`-prefixed config + injected `slog` | ADR-1119 | Merged |
 | ML-driven | `recommend`, `predict`, `recommend-saliency`, `prefilter`; codec-adapter registry, encode/score drivers, predictor, saliency pipeline, native TPE | — | **This PR** |
+
+| Encoder introspection | `benchmark` + `encode-profile` subcommands; `pkg/benchmark`, `pkg/codecadapter`, `pkg/encodeprofile`, `internal/pyjson` | ADR-0770 | **This PR** |
 | Stage 5 | `tune-per-shot` subcommand, conformal CLI wiring | Planned | — |
 
 | golusoris | Migrate the CLI root + subcommands onto the golusoris `clikit` (cobra + fx) framework; `VMAFX_`-prefixed config + injected `slog` | ADR-1119 | **This PR** |
@@ -1132,6 +1340,23 @@ The `corpus` and `sidecar` subcommands add five more:
   `repr()`-style float rendering, and `ensure_ascii` escaping. `pkg/corpus` also
   ports CPython's Neumaier-compensated `sum()` and `statistics.pstdev()` so the
   aggregate columns match to the last bit.
+
+The encoder-introspection subcommands add four more:
+
+- **`pkg/benchmark/`** — corpus loading (`LoadCorpusJSONL`), per-encoder
+  summarisation (`Summarize`) and the three renderers. No subprocess at all.
+- **`pkg/codecadapter/`** — the argv-shaping half of `vmaftune.codec_adapters`:
+  19 codecs, each answering "what is the `-c:v ...` slice for this
+  (preset, quality)?" so nothing else branches on codec identity.
+- **`pkg/encodeprofile/`** — profile loading from JSON / HTML / Markdown,
+  recommendation selection, `EncodeRequest` construction, FFmpeg argv
+  composition and the encode driver (with an injectable `Runner` seam so tests
+  never spawn ffmpeg).
+- **`internal/pyjson/`** — renders Go value trees byte-identically to CPython's
+  `json.dumps(..., indent=2, sort_keys=True)`. Go's `encoding/json` differs on
+  key ordering, HTML escaping, non-ASCII escaping and float formatting
+  (`float64(92)` renders `92` in Go and `92.0` in CPython), so a shared encoder
+  keeps the ported payloads diff-clean against the Python originals.
 
 See [ADR-0705](../adr/0705-vmafx-tune-go-stage1.md) for the migration rationale,
 [ADR-0730](../adr/0730-vmafx-tune-go-stage2.md) for Stage-2,

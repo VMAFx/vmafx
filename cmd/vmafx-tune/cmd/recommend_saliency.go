@@ -44,21 +44,6 @@ type recommendSaliencyFlags struct {
 	output    string
 }
 
-// exitCodeError carries a specific process exit status out of a RunE.
-type exitCodeError struct {
-	code int
-	err  error
-}
-
-// Error renders the wrapped message.
-func (e *exitCodeError) Error() string { return e.err.Error() }
-
-// Unwrap exposes the underlying error for errors.Is / errors.As.
-func (e *exitCodeError) Unwrap() error { return e.err }
-
-// ExitCode reports the process exit status the CLI should use.
-func (e *exitCodeError) ExitCode() int { return e.code }
-
 // newRecommendSaliencyCmd builds the "recommend-saliency" cobra subcommand.
 func newRecommendSaliencyCmd() *cobra.Command {
 	flags := &recommendSaliencyFlags{}

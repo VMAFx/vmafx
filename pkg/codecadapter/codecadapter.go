@@ -474,3 +474,42 @@ func (a *Adapter) TwoPassArgs(passNumber int, statsPath string) ([]string, error
 	}
 	return []string{"-pass", strconv.Itoa(passNumber), "-passlogfile", statsPath}, nil
 }
+
+// LegacyCodecArgs is encode._legacy_codec_args: the historic libx264-shaped
+// fallback used when a request names an encoder that is not in the registry.
+// Keeping it means an unregistered codec still produces an invocable command
+// rather than a hard failure, matching CPython.
+func LegacyCodecArgs(encoder, preset string, quality int) []string {
+	return []string{"-c:v", encoder, "-preset", preset, "-crf", strconv.Itoa(quality)}
+}
+
+// ResolveCodecArgs resolves by encoder name, falling back to LegacyCodecArgs
+// for an unregistered encoder.
+//
+// This is the package-level form of (*Adapter).ResolveCodecArgs, kept because
+// callers that only hold an encoder string would otherwise repeat the
+// Get-then-fall-back dance at every call site.
+func ResolveCodecArgs(encoder, preset string, quality int) ([]string, error) {
+	a, err := Get(encoder)
+	if err != nil {
+		return LegacyCodecArgs(encoder, preset, quality), nil
+	}
+	// Validate before building. The (*Adapter) method deliberately does not
+	// validate — it is the low-level token builder — but this package-level
+	// entry point carries the Python contract, where an out-of-vocabulary
+	// preset is an error rather than something spliced into the argv.
+	if err := a.Validate(preset, quality); err != nil {
+		return nil, err
+	}
+	return a.ResolveCodecArgs(preset, quality)
+}
+
+// DefaultPreset is encoder_profile._default_preset: "medium" when the codec
+// offers it (or is unknown), otherwise the middle of its preset ladder.
+func DefaultPreset(codec string) string {
+	a, err := Get(codec)
+	if err != nil || len(a.Presets) == 0 || a.HasPreset("medium") {
+		return "medium"
+	}
+	return a.Presets[len(a.Presets)/2]
+}

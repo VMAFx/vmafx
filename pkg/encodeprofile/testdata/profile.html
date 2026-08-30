@@ -1,0 +1,148 @@
+<html><body><h1>Report</h1><pre>{
+  &quot;schema_version&quot;: 2,
+  &quot;src&quot;: &quot;ref.yuv&quot;,
+  &quot;encoder_profile&quot;: {
+    &quot;schema&quot;: &quot;vmaftune.encoder_profile.v1&quot;,
+    &quot;schema_version&quot;: 1,
+    &quot;source&quot;: {
+      &quot;path&quot;: &quot;clips//bbb/./ref.yuv&quot;,
+      &quot;width&quot;: 1920,
+      &quot;height&quot;: 1080,
+      &quot;fps&quot;: 30.0,
+      &quot;duration_s&quot;: 10.0,
+      &quot;frame_count&quot;: 300,
+      &quot;codec&quot;: &quot;rawvideo&quot;,
+      &quot;size_bytes&quot;: 933120000
+    },
+    &quot;run&quot;: {
+      &quot;target_vmaf&quot;: 92.0,
+      &quot;sweep_targets&quot;: [
+        90.0,
+        92.0
+      ],
+      &quot;tool_version&quot;: &quot;v4.0.0-lusoris.0&quot;,
+      &quot;generated_at_iso&quot;: &quot;2026-08-30T00:00:00+00:00&quot;,
+      &quot;preset&quot;: &quot;medium&quot;,
+      &quot;pix_fmt&quot;: &quot;yuv420p&quot;,
+      &quot;score_backend&quot;: &quot;libvmaf&quot;,
+      &quot;ffmpeg_bin&quot;: &quot;/opt/ffmpeg/bin/ffmpeg&quot;,
+      &quot;vmaf_bin&quot;: &quot;vmaf&quot;
+    },
+    &quot;recommendations&quot;: [
+      {
+        &quot;index&quot;: 0,
+        &quot;codec&quot;: &quot;libx265&quot;,
+        &quot;encoder_version&quot;: &quot;libx265-x&quot;,
+        &quot;target_vmaf&quot;: 92.0,
+        &quot;quality_knob&quot;: &quot;crf&quot;,
+        &quot;quality&quot;: 28,
+        &quot;crf&quot;: 28,
+        &quot;preset&quot;: &quot;medium&quot;,
+        &quot;bitrate_kbps&quot;: 2500.0,
+        &quot;achieved_vmaf&quot;: 92.4,
+        &quot;encode_time_ms&quot;: 1234.5,
+        &quot;selected_pareto&quot;: true,
+        &quot;source_row&quot;: &quot;sweep&quot;
+      },
+      {
+        &quot;index&quot;: 1,
+        &quot;codec&quot;: &quot;libx264&quot;,
+        &quot;encoder_version&quot;: &quot;libx264-x&quot;,
+        &quot;target_vmaf&quot;: 92.0,
+        &quot;quality_knob&quot;: &quot;crf&quot;,
+        &quot;quality&quot;: 26,
+        &quot;crf&quot;: 26,
+        &quot;preset&quot;: &quot;medium&quot;,
+        &quot;bitrate_kbps&quot;: 3100.5,
+        &quot;achieved_vmaf&quot;: 92.4,
+        &quot;encode_time_ms&quot;: 1234.5,
+        &quot;selected_pareto&quot;: true,
+        &quot;source_row&quot;: &quot;sweep&quot;
+      },
+      {
+        &quot;index&quot;: 2,
+        &quot;codec&quot;: &quot;libsvtav1&quot;,
+        &quot;encoder_version&quot;: &quot;libsvtav1-x&quot;,
+        &quot;target_vmaf&quot;: 90.0,
+        &quot;quality_knob&quot;: &quot;crf&quot;,
+        &quot;quality&quot;: 35,
+        &quot;crf&quot;: 35,
+        &quot;preset&quot;: &quot;medium&quot;,
+        &quot;bitrate_kbps&quot;: 1500.0,
+        &quot;achieved_vmaf&quot;: 90.4,
+        &quot;encode_time_ms&quot;: 1234.5,
+        &quot;selected_pareto&quot;: true,
+        &quot;source_row&quot;: &quot;sweep&quot;
+      },
+      {
+        &quot;index&quot;: 3,
+        &quot;codec&quot;: &quot;libx264&quot;,
+        &quot;encoder_version&quot;: &quot;libx264-x&quot;,
+        &quot;target_vmaf&quot;: 90.0,
+        &quot;quality_knob&quot;: &quot;crf&quot;,
+        &quot;quality&quot;: 30,
+        &quot;crf&quot;: 30,
+        &quot;preset&quot;: &quot;slow&quot;,
+        &quot;bitrate_kbps&quot;: 2000.0,
+        &quot;achieved_vmaf&quot;: 90.4,
+        &quot;encode_time_ms&quot;: 1234.5,
+        &quot;selected_pareto&quot;: false,
+        &quot;source_row&quot;: &quot;sweep&quot;
+      },
+      {
+        &quot;index&quot;: 4,
+        &quot;codec&quot;: &quot;h264_nvenc&quot;,
+        &quot;encoder_version&quot;: &quot;h264_nvenc-x&quot;,
+        &quot;target_vmaf&quot;: 92.0,
+        &quot;quality_knob&quot;: &quot;crf&quot;,
+        &quot;quality&quot;: 23,
+        &quot;crf&quot;: 23,
+        &quot;preset&quot;: &quot;medium&quot;,
+        &quot;bitrate_kbps&quot;: 5000.0,
+        &quot;achieved_vmaf&quot;: 92.4,
+        &quot;encode_time_ms&quot;: 1234.5,
+        &quot;selected_pareto&quot;: false,
+        &quot;source_row&quot;: &quot;sweep&quot;
+      },
+      {
+        &quot;index&quot;: 5,
+        &quot;codec&quot;: &quot;libx265&quot;,
+        &quot;encoder_version&quot;: &quot;libx265-x&quot;,
+        &quot;target_vmaf&quot;: 90.0,
+        &quot;quality_knob&quot;: &quot;crf&quot;,
+        &quot;quality&quot;: 30,
+        &quot;crf&quot;: 30,
+        &quot;preset&quot;: &quot;medium&quot;,
+        &quot;bitrate_kbps&quot;: 2000.0,
+        &quot;achieved_vmaf&quot;: 90.4,
+        &quot;encode_time_ms&quot;: 1234.5,
+        &quot;selected_pareto&quot;: false,
+        &quot;source_row&quot;: &quot;sweep&quot;
+      },
+      {
+        &quot;index&quot;: 6,
+        &quot;codec&quot;: &quot;libaom-av1&quot;,
+        &quot;encoder_version&quot;: &quot;libaom-av1-x&quot;,
+        &quot;target_vmaf&quot;: 90.0,
+        &quot;quality_knob&quot;: &quot;crf&quot;,
+        &quot;quality&quot;: 40,
+        &quot;crf&quot;: 40,
+        &quot;preset&quot;: &quot;medium&quot;,
+        &quot;bitrate_kbps&quot;: 2000.0,
+        &quot;achieved_vmaf&quot;: 90.4,
+        &quot;encode_time_ms&quot;: 1234.5,
+        &quot;selected_pareto&quot;: false,
+        &quot;source_row&quot;: &quot;sweep&quot;
+      },
+      &quot;not-a-dict&quot;
+    ],
+    &quot;failures&quot;: [],
+    &quot;codec_metadata&quot;: {},
+    &quot;ladder&quot;: {
+      &quot;samples&quot;: [],
+      &quot;rungs&quot;: []
+    },
+    &quot;shots&quot;: [],
+    &quot;human_guidance&quot;: {}
+  }
+}</pre></body></html>

@@ -83,19 +83,13 @@ type EncodeResult struct {
 	EncoderStats []PerFrameStats
 }
 
-// legacyCodecArgs is the fallback "-c:v <enc> -preset <p> -crf <q>" shape used
-// when an EncodeRequest names an encoder that is not in the adapter registry.
-func legacyCodecArgs(encoder, preset string, quality int) []string {
-	return []string{"-c:v", encoder, "-preset", preset, "-crf", strconv.Itoa(quality)}
-}
-
 // resolveCodecArgs resolves the codec-specific argv slice for req, routing
 // through the adapter registry per ADR-0237 / ADR-0326 and falling back to the
 // historic libx264 shape for unregistered encoders.
 func resolveCodecArgs(req EncodeRequest) ([]string, error) {
 	adapter, err := codecadapter.Get(req.Encoder)
 	if err != nil {
-		return legacyCodecArgs(req.Encoder, req.Preset, req.CRF), nil
+		return codecadapter.LegacyCodecArgs(req.Encoder, req.Preset, req.CRF), nil
 	}
 	// ResolveCodecArgs is FFmpegCodecArgs followed by ExtraParams, which is
 	// exactly what this call site assembled by hand before the two

@@ -82,6 +82,10 @@ compat/python-vmaf/core/adm_dwt2_cy.cpp
 
 # vmaf-tune Phase A scratch outputs (ADR-0237)
 corpus.jsonl
+# ...but never a committed test fixture. The bare pattern above matches at any
+# depth, which silently excluded pkg/benchmark/testdata/corpus.jsonl from its
+# own PR and left the package's tests failing on a missing file.
+!**/testdata/corpus.jsonl
 tools/vmaf-tune/build/
 tools/vmaf-tune/dist/
 tools/vmaf-tune/*.egg-info/

@@ -66,9 +66,11 @@ Fully ported subcommands:
   corpus               Phase A (preset, crf) grid sweep -> JSONL corpus
   sidecar              Local on-host predictor sidecar (status / predict /
                        record / batch-record)
+  benchmark            Encoder benchmark sweep
+  encode-profile       Encoder profile inspection
 
 Not yet ported (use 'vmaf-tune <subcommand>' for these):
-  benchmark, auto, encode-profile`
+  auto`
 	root.Cobra().Version = version
 
 	// Ported subcommands.
@@ -83,12 +85,11 @@ Not yet ported (use 'vmaf-tune <subcommand>' for these):
 	root.AddCommand(newFastCmd())
 	root.AddCommand(newCorpusCmd())
 	root.AddCommand(newSidecarCmd())
+	root.AddCommand(newBenchmarkCmd())
+	root.AddCommand(newEncodeProfileCmd())
 
 	// Not-yet-ported stubs: log a redirect rather than silently failing.
 	for _, stub := range []struct{ name, desc string }{
-		{"benchmark", "Encoder benchmark"},
-		{"auto", "Automatic subcommand selection"},
-		{"encode-profile", "Encoder profile inspection"},
 	} {
 		root.AddCommand(stubSubcommand(stub.name, stub.desc))
 	}
@@ -115,6 +116,8 @@ type exitCoder interface {
 func Execute(version string) {
 	report.ToolVersion = version
 
+	// Most subcommands exit 1 on failure; encode-profile propagates FFmpeg's
+	// own status instead (see exitcode.go).
 	if err := newRoot(version).Execute(); err != nil {
 		var coder exitCoder
 		if errors.As(err, &coder) {
@@ -126,6 +129,8 @@ func Execute(version string) {
 		if errors.Is(err, errFallBackVerdict) {
 			os.Exit(2)
 		}
-		os.Exit(1)
+		// exitCodeOf recognises group 4's exitCodeError and otherwise
+		// returns 1, so it composes with the checks above.
+		os.Exit(exitCodeOf(err))
 	}
 }

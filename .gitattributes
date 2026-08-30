@@ -21,3 +21,11 @@ model/tiny/*.onnx.cert binary
 
 # Ffmpeg patch series — diff-friendly text.
 ffmpeg-patches/*.patch text eol=lf
+
+# CSV golden fixtures are byte-for-byte expectations, and Python's csv module
+# writes CRLF (its default lineterminator). `* text=auto` above would normalise
+# those CRs away on commit, so the committed blob stopped matching what the
+# renderer emits — the tests still passed in the authoring worktree, which held
+# the pre-normalisation bytes, and failed on any fresh checkout. -text disables
+# normalisation so the fixture keeps the bytes it asserts.
+pkg/benchmark/testdata/*.csv -text
