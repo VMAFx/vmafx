@@ -26,48 +26,6 @@ func writeCorpus(t *testing.T, lines ...string) string {
 	return path
 }
 
-// captureStdout runs fn with stdout redirected to a pipe and returns what it
-// printed. The subcommands write their human-readable line with fmt.Printf,
-// so this is the only way to assert on it.
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	orig := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stdout = w
-
-	done := make(chan string, 1)
-	go func() {
-		var sb strings.Builder
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := r.Read(buf)
-			if n > 0 {
-				sb.Write(buf[:n])
-			}
-			if readErr != nil {
-				break
-			}
-		}
-		done <- sb.String()
-	}()
-
-	fn()
-
-	os.Stdout = orig
-	if closeErr := w.Close(); closeErr != nil {
-		t.Fatalf("close pipe writer: %v", closeErr)
-	}
-	out := <-done
-	if closeErr := r.Close(); closeErr != nil {
-		t.Fatalf("close pipe reader: %v", closeErr)
-	}
-	return out
-}
-
 // corpusFixture is a three-row corpus spanning the target.
 var corpusFixture = []string{
 	`{"encoder":"libx264","preset":"medium","src":"/a.yuv","crf":20,` +

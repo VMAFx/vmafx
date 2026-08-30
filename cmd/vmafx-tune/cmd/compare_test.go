@@ -143,42 +143,6 @@ func TestCompare_missingReference(t *testing.T) {
 
 // TestStubSubcommands verifies that unported subcommands exit non-zero and
 // emit a redirect message.
-func TestStubSubcommands(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	binPath := filepath.Join(dir, "vmafx-tune-go")
-	buildOut, buildErr := exec.Command(
-		"go", "build",
-		"-o", binPath,
-		"github.com/VMAFx/vmafx/cmd/vmafx-tune",
-	).CombinedOutput()
-	if buildErr != nil {
-		t.Fatalf("build vmafx-tune-go: %v\n%s", buildErr, buildOut)
-	}
-
-	// Everything else is now a real subcommand: it exits non-zero only when
-	// required flags are missing, not as a stub redirect.
-	for _, sub := range []string{"auto"} {
-		sub := sub
-		t.Run(sub, func(t *testing.T) {
-			t.Parallel()
-			var out bytes.Buffer
-			cmd := exec.Command(binPath, sub)
-			cmd.Stdout = &out
-			cmd.Stderr = &out
-			err := cmd.Run()
-			if err == nil {
-				t.Errorf("stub subcommand %q should exit non-zero, got success", sub)
-			}
-			if !strings.Contains(out.String(), "vmaf-tune") {
-				t.Errorf("stub subcommand %q should mention 'vmaf-tune' in output, got: %q",
-					sub, out.String())
-			}
-			t.Logf("%s output: %s", sub, out.String())
-		})
-	}
-}
 
 // TestVersion verifies that --version prints a version string and exits 0.
 func TestVersion(t *testing.T) {

@@ -1,0 +1,177 @@
+{
+  "animation": {
+    "allow_codecs": [
+      "libx265"
+    ],
+    "max_budget_kbps": 8000.0,
+    "meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 0.0,
+      "content_class": "animation",
+      "duration_s": 1200.0,
+      "height": 2160,
+      "is_hdr": false,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.0,
+      "width": 3840
+    },
+    "pinned": null,
+    "sample_clip_seconds": 0.0,
+    "src": "/tmp/anim.mkv",
+    "target_vmaf": 93.0
+  },
+  "baseline_met_pinned": {
+    "allow_codecs": [
+      "libx264",
+      "libx265",
+      "libaom-av1"
+    ],
+    "max_budget_kbps": 1000.0,
+    "meta": {
+      "baseline_vmaf": 91.0,
+      "complexity_score": 0.0,
+      "content_class": "live_action",
+      "duration_s": 30.0,
+      "height": 480,
+      "is_hdr": false,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.0,
+      "width": 640
+    },
+    "pinned": "libaom-av1",
+    "sample_clip_seconds": 0.0,
+    "src": "/tmp/easy.mp4",
+    "target_vmaf": 80.0
+  },
+  "budget_exceeded": {
+    "allow_codecs": [
+      "libx264"
+    ],
+    "max_budget_kbps": 1.0,
+    "meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 0.0,
+      "content_class": "live_action",
+      "duration_s": 90.0,
+      "height": 1080,
+      "is_hdr": false,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.0,
+      "width": 1920
+    },
+    "pinned": null,
+    "sample_clip_seconds": 0.0,
+    "src": "/tmp/big.mkv",
+    "target_vmaf": 90.0
+  },
+  "hdr_promoted": {
+    "allow_codecs": [
+      "libx265",
+      "libsvtav1",
+      "hevc_nvenc"
+    ],
+    "max_budget_kbps": 20000.0,
+    "meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 0.0,
+      "content_class": "live_action",
+      "duration_s": 400.0,
+      "height": 2160,
+      "is_hdr": true,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.0,
+      "width": 3840
+    },
+    "pinned": null,
+    "sample_clip_seconds": 0.0,
+    "src": "/tmp/hdr.mkv",
+    "target_vmaf": 94.0
+  },
+  "screen_content": {
+    "allow_codecs": [
+      "libx264"
+    ],
+    "max_budget_kbps": 4000.0,
+    "meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 0.0,
+      "content_class": "screen_content",
+      "duration_s": 0.0,
+      "height": 1080,
+      "is_hdr": false,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.0,
+      "width": 1920
+    },
+    "pinned": null,
+    "sample_clip_seconds": 0.0,
+    "src": "/tmp/screen.mkv",
+    "target_vmaf": 97.0
+  },
+  "target_unmet": {
+    "allow_codecs": [
+      "libx264",
+      "h264_amf"
+    ],
+    "max_budget_kbps": 50000.0,
+    "meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 0.0,
+      "content_class": "live_action",
+      "duration_s": 200.0,
+      "height": 1080,
+      "is_hdr": false,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.0,
+      "width": 1920
+    },
+    "pinned": null,
+    "sample_clip_seconds": 0.0,
+    "src": "/tmp/hard.mkv",
+    "target_vmaf": 100.0
+  },
+  "ugc_sampleclip": {
+    "allow_codecs": [
+      "libx264",
+      "libvpx-vp9"
+    ],
+    "max_budget_kbps": 2500.0,
+    "meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 150.0,
+      "content_class": "ugc",
+      "duration_s": 45.0,
+      "height": 720,
+      "is_hdr": false,
+      "sample_clip_seconds": 8.0,
+      "shot_variance": 0.0,
+      "width": 1280
+    },
+    "pinned": null,
+    "sample_clip_seconds": 8.0,
+    "src": "/tmp/ugc.mp4",
+    "target_vmaf": 88.0
+  },
+  "uhd_multirung": {
+    "allow_codecs": [
+      "libx264",
+      "libsvtav1"
+    ],
+    "max_budget_kbps": 12000.0,
+    "meta": {
+      "baseline_vmaf": 0.0,
+      "complexity_score": 0.0,
+      "content_class": "live_action",
+      "duration_s": 600.0,
+      "height": 2160,
+      "is_hdr": false,
+      "sample_clip_seconds": 0.0,
+      "shot_variance": 0.4,
+      "width": 3840
+    },
+    "pinned": null,
+    "sample_clip_seconds": 0.0,
+    "src": "/tmp/uhd.mp4",
+    "target_vmaf": 95.0
+  }
+}

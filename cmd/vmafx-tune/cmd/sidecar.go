@@ -9,247 +9,127 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/golusoris/golusoris/clikit"
 	"github.com/spf13/cobra"
 
-	"github.com/VMAFx/vmafx/pkg/codecadapter"
-	"github.com/VMAFx/vmafx/pkg/predictor"
-	"github.com/VMAFx/vmafx/pkg/pyjson"
-	"github.com/VMAFx/vmafx/pkg/sidecar"
+	"github.com/VMAFx/vmafx/pkg/tune/codec"
+	"github.com/VMAFx/vmafx/pkg/tune/predictor"
+	"github.com/VMAFx/vmafx/pkg/tune/pyjson"
+	"github.com/VMAFx/vmafx/pkg/tune/sidecar"
 )
 
-// sidecarFlags holds the flags shared by every "sidecar" child command, plus
-// the per-child extras. The flag names mirror the Python
-// `vmaf-tune sidecar <cmd>` argument parser exactly.
-type sidecarFlags struct {
-	// Shared (_add_sidecar_common_args).
+// sidecarCommonFlags are the shared local-sidecar configuration flags every
+// nested subcommand carries. Names mirror the Python argparse surface.
+type sidecarCommonFlags struct {
 	codec            string
 	cacheDir         string
 	predictorVersion string
 	model            string
-
-	// Per-child.
-	featuresJSON string
-	crf          int
-	observedVMAF float64
-	capturesJSON string
-	noPersist    bool
-	asJSON       bool
+	jsonOut          bool
 }
 
-// newSidecarCmd builds the "sidecar" parent command and its children.
-//
-// The parent mirrors `vmaf-tune sidecar`: it trains and inspects the local
-// on-host predictor sidecar (ADR-0394 bias-correction model).
+// sidecarRequiredFeatureKeys are the feature-JSON keys with no default. The
+// remaining ShotFeatures fields default to 0.
+var sidecarRequiredFeatureKeys = []string{
+	"probe_bitrate_kbps",
+	"probe_i_frame_avg_bytes",
+	"probe_p_frame_avg_bytes",
+	"probe_b_frame_avg_bytes",
+}
+
+// newSidecarCmd builds the "sidecar" subcommand group.
 func newSidecarCmd() *cobra.Command {
 	cmd := clikit.Command("sidecar",
 		"Train and inspect the local on-host predictor sidecar (ADR-0394)")
 	cmd.Long = `Train and inspect the local on-host predictor sidecar.
 
-The shipped predictor is a fixed, deterministic asset. The sidecar is a
+The shipped VMAF predictor is a fixed, deterministic asset. The sidecar is a
 bias-correction term you train on your own host from the residuals between
 predicted VMAF and the libvmaf score actually observed at encode time:
 
-  sidecar_vmaf = predictor_vmaf + sidecar_correction
+  sidecar_vmaf = predictor_vmaf + sidecar_correction(features)
 
-State lives under ${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar/<predictor
-version>/<codec>/state.json alongside an anonymous random host UUID. A
-predictor-version mismatch on load discards everything except the UUID and
-resets to cold start, so a shipped-model upgrade can never replay a stale
-correction.
+The shipped predictor is never mutated, so model upgrades stay deterministic
+across hosts. State lives under
+${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar/<predictor-version>/<codec>/,
+alongside an anonymous random host UUID that is never derived from any
+machine-identifying signal. A predictor-version mismatch on load discards the
+fit and resets to cold start — with zero weights the correction is exactly
+0.0, so the sidecar degenerates to the bare predictor until the first capture.
 
 Subcommands:
   status        print sidecar state metadata
   predict       predict VMAF with the sidecar correction folded in
-  record        record one observed encode result into the sidecar fit
-  batch-record  record a JSONL capture file, one observation per row
+  record        record one observed encode result into the fit
+  batch-record  record a JSONL capture file, one observation per row`
 
-See docs/ai/local-sidecar-training.md for the operator guide.`
+	cmd.AddCommand(newSidecarStatusCmd())
+	cmd.AddCommand(newSidecarPredictCmd())
+	cmd.AddCommand(newSidecarRecordCmd())
+	cmd.AddCommand(newSidecarBatchRecordCmd())
 
-	cmd.AddCommand(
-		newSidecarStatusCmd(),
-		newSidecarPredictCmd(),
-		newSidecarRecordCmd(),
-		newSidecarBatchRecordCmd(),
-	)
 	return cmd
 }
 
-// addSidecarCommonFlags wires the shared local-sidecar configuration flags.
-func addSidecarCommonFlags(cmd *cobra.Command, flags *sidecarFlags) {
+// addSidecarCommonFlags wires the shared configuration flags onto cmd.
+func addSidecarCommonFlags(cmd *cobra.Command, flags *sidecarCommonFlags) {
 	cmd.Flags().StringVar(&flags.codec, "codec", "libx264",
-		"Codec bucket for the sidecar state; one of "+sidecarKnownCodecs())
+		"codec bucket for the sidecar state (default libx264)")
 	cmd.Flags().StringVar(&flags.cacheDir, "cache-dir", "",
-		"Sidecar cache root (default ${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar)")
+		"sidecar cache root (default ${XDG_CACHE_HOME:-~/.cache}/vmaf-tune/sidecar)")
 	cmd.Flags().StringVar(&flags.predictorVersion, "predictor-version",
 		sidecar.DefaultPredictorVersion,
-		fmt.Sprintf("Predictor version namespace (default %s)", sidecar.DefaultPredictorVersion))
+		"predictor version namespace (default "+sidecar.DefaultPredictorVersion+")")
 	cmd.Flags().StringVar(&flags.model, "model", "",
-		"Optional predictor_<codec>.onnx path; default uses the analytical fallback")
+		"optional predictor_<codec>.onnx path; default uses the analytical fallback")
+	cmd.Flags().BoolVar(&flags.jsonOut, "json", false,
+		"emit machine-readable JSON")
 }
 
-// addSidecarJSONFlag wires the --json machine-readable output flag.
-func addSidecarJSONFlag(cmd *cobra.Command, flags *sidecarFlags) {
-	cmd.Flags().BoolVar(&flags.asJSON, "json", false, "Emit machine-readable JSON")
+// buildSidecarPredictor constructs the configured sidecar for a CLI handler.
+func buildSidecarPredictor(flags *sidecarCommonFlags, d deps) (*sidecar.Predictor, error) {
+	if _, err := codec.Get(flags.codec); err != nil {
+		return nil, fmt.Errorf("--codec: %w", err)
+	}
+	base, err := predictor.New(flags.model, d.Log)
+	if err != nil {
+		return nil, err
+	}
+	cfg := sidecar.Config{
+		PredictorVersion: flags.predictorVersion,
+		CacheDir:         flags.cacheDir,
+	}
+	return sidecar.ForCodec(base, flags.codec, cfg)
 }
 
-// newSidecarStatusCmd builds "sidecar status".
+// ---------------------------------------------------------------------------
+// status
+// ---------------------------------------------------------------------------
+
 func newSidecarStatusCmd() *cobra.Command {
-	flags := &sidecarFlags{}
+	flags := &sidecarCommonFlags{}
 	cmd := clikit.Command("status", "Print sidecar state metadata",
 		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
 			return runSidecarStatus(ctx, d, flags)
 		})),
 	)
-	cmd.Long = `Print the local sidecar's state metadata for one codec bucket.
-
-The payload reports the anonymous host UUID, the on-disk state path, the
-predictor-version namespace the state was trained against, how many captures
-have been folded in, and the RMS of the buffered residuals (the drift signal).
-
-A cold-start sidecar reports updates=0 and residual_rms=0.000000.
-
-Example:
-  vmafx-tune-go sidecar status --codec libx264 --json`
 	addSidecarCommonFlags(cmd, flags)
-	addSidecarJSONFlag(cmd, flags)
 	return cmd
 }
 
-// newSidecarPredictCmd builds "sidecar predict".
-func newSidecarPredictCmd() *cobra.Command {
-	flags := &sidecarFlags{}
-	cmd := clikit.Command("predict",
-		"Predict VMAF with the sidecar correction folded in",
-		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
-			return runSidecarPredict(ctx, d, flags)
-		})),
-	)
-	cmd.Long = `Predict VMAF for one shot at one CRF with the sidecar correction applied.
-
---features-json points at a JSON object carrying the ShotFeatures fields
-(probe_bitrate_kbps, probe_i_frame_avg_bytes, saliency_mean, y_var, fps, ...).
-Missing fields default to zero.
-
-Example:
-  vmafx-tune-go sidecar predict --features-json shot.json --crf 23 --json`
-	addSidecarCommonFlags(cmd, flags)
-	cmd.Flags().StringVar(&flags.featuresJSON, "features-json", "",
-		"Path to a JSON object carrying the shot's feature values (required)")
-	cmd.Flags().IntVar(&flags.crf, "crf", 0, "CRF to predict at (required)")
-	addSidecarJSONFlag(cmd, flags)
-	_ = cmd.MarkFlagRequired("features-json")
-	_ = cmd.MarkFlagRequired("crf")
-	return cmd
-}
-
-// newSidecarRecordCmd builds "sidecar record".
-func newSidecarRecordCmd() *cobra.Command {
-	flags := &sidecarFlags{}
-	cmd := clikit.Command("record",
-		"Record one observed encode result into the sidecar fit",
-		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
-			return runSidecarRecord(ctx, d, flags)
-		})),
-	)
-	cmd.Long = `Fold one observed VMAF measurement into the local sidecar's ridge fit.
-
-The residual (observed - predicted) is computed against the bare predictor,
-never against the sidecar-corrected value, so repeated captures converge rather
-than compounding. State is persisted unless --no-persist is passed.
-
-Example:
-  vmafx-tune-go sidecar record \
-    --features-json shot.json \
-    --crf 23 \
-    --observed-vmaf 94.2 \
-    --json`
-	addSidecarCommonFlags(cmd, flags)
-	cmd.Flags().StringVar(&flags.featuresJSON, "features-json", "",
-		"Path to a JSON object carrying the shot's feature values (required)")
-	cmd.Flags().IntVar(&flags.crf, "crf", 0, "CRF the observation was measured at (required)")
-	cmd.Flags().Float64Var(&flags.observedVMAF, "observed-vmaf", 0,
-		"Observed libvmaf score for the encode (required)")
-	cmd.Flags().BoolVar(&flags.noPersist, "no-persist", false,
-		"Update in memory only; mainly useful for tests")
-	addSidecarJSONFlag(cmd, flags)
-	_ = cmd.MarkFlagRequired("features-json")
-	_ = cmd.MarkFlagRequired("crf")
-	_ = cmd.MarkFlagRequired("observed-vmaf")
-	return cmd
-}
-
-// newSidecarBatchRecordCmd builds "sidecar batch-record".
-func newSidecarBatchRecordCmd() *cobra.Command {
-	flags := &sidecarFlags{}
-	cmd := clikit.Command("batch-record",
-		"Record a JSONL capture file with one encode observation per row",
-		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
-			return runSidecarBatchRecord(ctx, d, flags)
-		})),
-	)
-	cmd.Long = `Fold a whole JSONL capture file into the local sidecar's ridge fit.
-
-Each line is a JSON object carrying the ShotFeatures fields plus "crf" and
-"observed_vmaf". Malformed rows are skipped with a one-line diagnostic on
-stderr and counted in rows_skipped; the run still succeeds so a single bad line
-does not discard a long capture session.
-
-State is written once at the end rather than per row, so a 10k-row capture
-costs one filesystem write.
-
-Example:
-  vmafx-tune-go sidecar batch-record --captures-jsonl captures.jsonl --json`
-	addSidecarCommonFlags(cmd, flags)
-	cmd.Flags().StringVar(&flags.capturesJSON, "captures-jsonl", "",
-		"Path to the JSONL capture file, one observation per line (required)")
-	addSidecarJSONFlag(cmd, flags)
-	_ = cmd.MarkFlagRequired("captures-jsonl")
-	return cmd
-}
-
-// buildSidecarPredictor constructs the configured sidecar for a CLI handler.
-func buildSidecarPredictor(flags *sidecarFlags) (*sidecar.Predictor, error) {
-	if _, err := codecadapter.Get(flags.codec); err != nil {
-		return nil, err
-	}
-	cfg := sidecar.NewConfig()
-	cfg.PredictorVersion = flags.predictorVersion
-	if flags.cacheDir != "" {
-		cfg.CacheDir = flags.cacheDir
-	}
-	base, err := newBasePredictor(flags.model)
+func runSidecarStatus(_ context.Context, d deps, flags *sidecarCommonFlags) error {
+	sp, err := buildSidecarPredictor(flags, d)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return sidecar.ForCodec(base, flags.codec, cfg)
+	return emitSidecarStatus(sidecarStatusPayload(sp), flags.jsonOut)
 }
 
-// newBasePredictor builds the wrapped predictor for the requested model path.
-//
-// The Python Predictor loads an ONNX graph through onnxruntime when
-// --model is set, and silently falls back to the analytical curve when
-// onnxruntime is not importable. The Go port has no in-process ONNX runtime, so
-// a --model path is rejected rather than silently scored against a different
-// model than the operator asked for: a wrong-but-plausible VMAF number is worse
-// than a clear refusal.
-func newBasePredictor(modelPath string) (*predictor.Predictor, error) {
-	if modelPath != "" {
-		return nil, fmt.Errorf(
-			"--model %q: the Go sidecar has no in-process ONNX runtime, so a learned "+
-				"predictor_<codec>.onnx cannot be loaded; omit --model to use the "+
-				"analytical fallback, or run 'vmaf-tune sidecar' for the ONNX path",
-			modelPath)
-	}
-	return predictor.New(), nil
-}
-
-// sidecarStatusPayload returns the machine-readable status payload.
+// sidecarStatusPayload is the machine-readable status block. Keys and schema
+// tag match the Python _sidecar_status_payload.
 func sidecarStatusPayload(sp *sidecar.Predictor) map[string]any {
 	return map[string]any{
 		"schema":              "vmaf-tune-sidecar-status/v1",
@@ -257,106 +137,146 @@ func sidecarStatusPayload(sp *sidecar.Predictor) map[string]any {
 		"host_uuid":           sp.HostUUID,
 		"state_path":          sp.StatePath,
 		"predictor_version":   sp.Model.Config.PredictorVersion,
-		"schema_version":      sp.Model.SchemaVersionOf(),
+		"schema_version":      sidecar.SchemaVersion,
 		"n_updates":           sp.Model.NUpdates,
 		"recent_residual_rms": sp.Model.RecentResidualRMS(),
 	}
 }
 
-// emitSidecarPayload writes a payload to stdout as JSON or as the plain-text
-// one-liner, matching the Python formatters.
-func emitSidecarPayload(payload map[string]any, asJSON bool, textLine string) error {
+func emitSidecarStatus(payload map[string]any, asJSON bool) error {
 	if asJSON {
-		encoded, err := pyjson.MarshalIndentSorted(payload, 2)
-		if err != nil {
-			return fmt.Errorf("encode sidecar payload: %w", err)
-		}
-		_, err = fmt.Fprintln(os.Stdout, encoded)
-		return err
+		return emitJSONPayload(payload)
 	}
-	_, err := fmt.Fprint(os.Stdout, textLine)
+	_, err := fmt.Printf(
+		"codec=%s predictor_version=%s updates=%d residual_rms=%.6f state=%s\n",
+		payload["codec"], payload["predictor_version"], payload["n_updates"],
+		payload["recent_residual_rms"], payload["state_path"])
 	return err
 }
 
-// payloadString / payloadInt / payloadFloat read a payload field with the
-// zero value as the fallback, keeping the text formatters total.
-func payloadString(p map[string]any, key string) string {
-	v, _ := p[key].(string)
-	return v
-}
-
-func payloadInt(p map[string]any, key string) int {
-	v, _ := p[key].(int)
-	return v
-}
-
-func payloadFloat(p map[string]any, key string) float64 {
-	v, _ := p[key].(float64)
-	return v
-}
-
-// runSidecarStatus implements "sidecar status".
-func runSidecarStatus(ctx context.Context, d deps, flags *sidecarFlags) error {
-	sp, err := buildSidecarPredictor(flags)
+func emitJSONPayload(payload map[string]any) error {
+	rendered, err := pyjson.Marshal(payload, 2)
 	if err != nil {
-		return fmt.Errorf("vmafx-tune sidecar: %w", err)
+		return fmt.Errorf("render sidecar payload: %w", err)
 	}
-	payload := sidecarStatusPayload(sp)
-	d.Log.InfoContext(ctx, "sidecar status",
-		"codec", sp.Codec, "state_path", sp.StatePath, "n_updates", sp.Model.NUpdates)
-	return emitSidecarPayload(payload, flags.asJSON, fmt.Sprintf(
-		"codec=%s predictor_version=%s updates=%d residual_rms=%.6f state=%s\n",
-		payloadString(payload, "codec"),
-		payloadString(payload, "predictor_version"),
-		payloadInt(payload, "n_updates"),
-		payloadFloat(payload, "recent_residual_rms"),
-		payloadString(payload, "state_path")))
+	_, err = fmt.Println(rendered)
+	return err
 }
 
-// runSidecarPredict implements "sidecar predict".
-func runSidecarPredict(ctx context.Context, d deps, flags *sidecarFlags) error {
-	sp, err := buildSidecarPredictor(flags)
+// ---------------------------------------------------------------------------
+// predict
+// ---------------------------------------------------------------------------
+
+type sidecarPredictFlags struct {
+	sidecarCommonFlags
+	featuresJSON string
+	crf          int
+}
+
+func newSidecarPredictCmd() *cobra.Command {
+	flags := &sidecarPredictFlags{}
+	cmd := clikit.Command("predict",
+		"Predict VMAF with the sidecar correction folded in",
+		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
+			return runSidecarPredict(ctx, d, flags)
+		})),
+	)
+	addSidecarCommonFlags(cmd, &flags.sidecarCommonFlags)
+	cmd.Flags().StringVar(&flags.featuresJSON, "features-json", "",
+		"path to a JSON object of ShotFeatures (or a {\"features\": {...}} wrapper)")
+	cmd.Flags().IntVar(&flags.crf, "crf", 0, "CRF the prediction is for")
+	_ = cmd.MarkFlagRequired("features-json")
+	_ = cmd.MarkFlagRequired("crf")
+	return cmd
+}
+
+func runSidecarPredict(_ context.Context, d deps, flags *sidecarPredictFlags) error {
+	sp, err := buildSidecarPredictor(&flags.sidecarCommonFlags, d)
 	if err != nil {
-		return fmt.Errorf("vmafx-tune sidecar: %w", err)
+		return err
 	}
-	features, err := readShotFeaturesFile(flags.featuresJSON)
+	row, err := readJSONObject(flags.featuresJSON)
 	if err != nil {
-		return fmt.Errorf("vmafx-tune sidecar predict: %w", err)
+		return err
 	}
+	features, err := sidecarFeaturesFromMapping(row)
+	if err != nil {
+		return err
+	}
+
 	base := sp.Base.PredictVMAF(features, flags.crf, flags.codec)
 	correction := sp.Model.PredictCorrection(features, flags.crf)
-	sidecarVMAF := sp.PredictVMAF(features, flags.crf, "")
-
 	payload := map[string]any{
 		"schema":       "vmaf-tune-sidecar-predict/v1",
 		"codec":        flags.codec,
 		"crf":          flags.crf,
 		"base_vmaf":    base,
 		"correction":   correction,
-		"sidecar_vmaf": sidecarVMAF,
+		"sidecar_vmaf": sp.PredictVMAF(features, flags.crf, flags.codec),
 		"n_updates":    sp.Model.NUpdates,
 	}
-	d.Log.InfoContext(ctx, "sidecar predict",
-		"codec", flags.codec, "crf", flags.crf, "sidecar_vmaf", sidecarVMAF)
-	return emitSidecarPayload(payload, flags.asJSON, fmt.Sprintf(
-		"base=%.6f correction=%.6f sidecar=%.6f updates=%d\n",
-		base, correction, sidecarVMAF, sp.Model.NUpdates))
+	if flags.jsonOut {
+		return emitJSONPayload(payload)
+	}
+	_, err = fmt.Printf("base=%.6f correction=%.6f sidecar=%.6f updates=%d\n",
+		payload["base_vmaf"], payload["correction"], payload["sidecar_vmaf"],
+		payload["n_updates"])
+	return err
 }
 
-// runSidecarRecord implements "sidecar record".
-func runSidecarRecord(ctx context.Context, d deps, flags *sidecarFlags) error {
-	sp, err := buildSidecarPredictor(flags)
+// ---------------------------------------------------------------------------
+// record
+// ---------------------------------------------------------------------------
+
+type sidecarRecordFlags struct {
+	sidecarCommonFlags
+	featuresJSON string
+	crf          int
+	observedVMAF float64
+	noPersist    bool
+}
+
+func newSidecarRecordCmd() *cobra.Command {
+	flags := &sidecarRecordFlags{}
+	cmd := clikit.Command("record",
+		"Record one observed encode result into the sidecar fit",
+		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
+			return runSidecarRecord(ctx, d, flags)
+		})),
+	)
+	addSidecarCommonFlags(cmd, &flags.sidecarCommonFlags)
+	cmd.Flags().StringVar(&flags.featuresJSON, "features-json", "",
+		"path to a JSON object of ShotFeatures (or a {\"features\": {...}} wrapper)")
+	cmd.Flags().IntVar(&flags.crf, "crf", 0, "CRF the observation was encoded at")
+	cmd.Flags().Float64Var(&flags.observedVMAF, "observed-vmaf", 0,
+		"the pooled-mean VMAF libvmaf actually measured")
+	cmd.Flags().BoolVar(&flags.noPersist, "no-persist", false,
+		"update in memory only; mainly useful for tests")
+	_ = cmd.MarkFlagRequired("features-json")
+	_ = cmd.MarkFlagRequired("crf")
+	_ = cmd.MarkFlagRequired("observed-vmaf")
+	return cmd
+}
+
+func runSidecarRecord(_ context.Context, d deps, flags *sidecarRecordFlags) error {
+	sp, err := buildSidecarPredictor(&flags.sidecarCommonFlags, d)
 	if err != nil {
-		return fmt.Errorf("vmafx-tune sidecar: %w", err)
+		return err
 	}
-	features, err := readShotFeaturesFile(flags.featuresJSON)
+	row, err := readJSONObject(flags.featuresJSON)
 	if err != nil {
-		return fmt.Errorf("vmafx-tune sidecar record: %w", err)
+		return err
 	}
+	features, err := sidecarFeaturesFromMapping(row)
+	if err != nil {
+		return err
+	}
+
 	base := sp.Base.PredictVMAF(features, flags.crf, flags.codec)
-	if rErr := sp.RecordCapture(features, flags.crf, flags.observedVMAF, "",
-		!flags.noPersist); rErr != nil {
-		return fmt.Errorf("vmafx-tune sidecar record: %w", rErr)
+	if err := sp.RecordCapture(
+		features, flags.crf, flags.observedVMAF, flags.codec, !flags.noPersist,
+	); err != nil {
+		return err
 	}
 
 	payload := sidecarStatusPayload(sp)
@@ -366,29 +286,91 @@ func runSidecarRecord(ctx context.Context, d deps, flags *sidecarFlags) error {
 	payload["base_vmaf"] = base
 	payload["residual"] = flags.observedVMAF - base
 
-	d.Log.InfoContext(ctx, "sidecar capture recorded",
-		"codec", sp.Codec, "crf", flags.crf, "n_updates", sp.Model.NUpdates)
-	return emitSidecarPayload(payload, flags.asJSON, fmt.Sprintf(
-		"recorded updates=%d residual=%.6f state=%s\n",
-		payloadInt(payload, "n_updates"),
-		payloadFloat(payload, "residual"),
-		payloadString(payload, "state_path")))
+	if flags.jsonOut {
+		return emitJSONPayload(payload)
+	}
+	_, err = fmt.Printf("recorded updates=%d residual=%.6f state=%s\n",
+		payload["n_updates"], payload["residual"], payload["state_path"])
+	return err
 }
 
-// runSidecarBatchRecord implements "sidecar batch-record".
-func runSidecarBatchRecord(ctx context.Context, d deps, flags *sidecarFlags) error {
-	sp, err := buildSidecarPredictor(flags)
-	if err != nil {
-		return fmt.Errorf("vmafx-tune sidecar: %w", err)
-	}
+// ---------------------------------------------------------------------------
+// batch-record
+// ---------------------------------------------------------------------------
 
-	rows, skipped, err := foldCapturesFile(sp, flags.capturesJSON)
+type sidecarBatchFlags struct {
+	sidecarCommonFlags
+	capturesJSONL string
+}
+
+func newSidecarBatchRecordCmd() *cobra.Command {
+	flags := &sidecarBatchFlags{}
+	cmd := clikit.Command("batch-record",
+		"Record a JSONL capture file with one encode observation per row",
+		clikit.WithRunE(withGolusoris(func(ctx context.Context, d deps, _ []string) error {
+			return runSidecarBatchRecord(ctx, d, flags)
+		})),
+	)
+	addSidecarCommonFlags(cmd, &flags.sidecarCommonFlags)
+	cmd.Flags().StringVar(&flags.capturesJSONL, "captures-jsonl", "",
+		"JSONL file: one object per line carrying the feature keys plus "+
+			"\"crf\" and \"observed_vmaf\"")
+	_ = cmd.MarkFlagRequired("captures-jsonl")
+	return cmd
+}
+
+// runSidecarBatchRecord folds every well-formed row into the fit and persists
+// once at the end. A malformed row is skipped with a stderr note rather than
+// aborting the batch — an operator's capture log is often partially corrupt
+// after an interrupted run, and losing the good rows to one bad line is worse
+// than the noise.
+func runSidecarBatchRecord(_ context.Context, d deps, flags *sidecarBatchFlags) error {
+	sp, err := buildSidecarPredictor(&flags.sidecarCommonFlags, d)
 	if err != nil {
-		return fmt.Errorf("vmafx-tune sidecar batch-record: cannot read input: %w", err)
+		return err
+	}
+	fh, err := os.Open(flags.capturesJSONL) // #nosec G304 -- operator-supplied CLI flag
+	if err != nil {
+		return fmt.Errorf("cannot read input: %w", err)
+	}
+	defer func() {
+		if closeErr := fh.Close(); closeErr != nil {
+			d.Log.Warn("sidecar batch-record: close input", "error", closeErr)
+		}
+	}()
+
+	rows, skipped := 0, 0
+	scanner := bufio.NewScanner(fh)
+	// Capture rows are single-line JSON objects; the default 64 KiB token
+	// limit is comfortable, but a wide feature row with long string fields
+	// can exceed it, so raise the ceiling to 1 MiB.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for lineNo := 1; scanner.Scan(); lineNo++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		features, crf, observed, err := parseCaptureRow(line)
+		if err != nil {
+			skipped++
+			fmt.Fprintf(os.Stderr,
+				"vmafx-tune sidecar batch-record: skip line %d: %v\n", lineNo, err)
+			continue
+		}
+		if err := sp.RecordCapture(features, crf, observed, flags.codec, false); err != nil {
+			skipped++
+			fmt.Fprintf(os.Stderr,
+				"vmafx-tune sidecar batch-record: skip line %d: %v\n", lineNo, err)
+			continue
+		}
+		rows++
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("cannot read input: %w", err)
 	}
 	if rows > 0 {
-		if sErr := sp.Save(); sErr != nil {
-			return fmt.Errorf("vmafx-tune sidecar batch-record: %w", sErr)
+		if err := sp.Save(); err != nil {
+			return err
 		}
 	}
 
@@ -397,153 +379,69 @@ func runSidecarBatchRecord(ctx context.Context, d deps, flags *sidecarFlags) err
 	payload["rows_recorded"] = rows
 	payload["rows_skipped"] = skipped
 
-	d.Log.InfoContext(ctx, "sidecar batch capture recorded",
-		"codec", sp.Codec, "rows_recorded", rows, "rows_skipped", skipped)
-	return emitSidecarPayload(payload, flags.asJSON, fmt.Sprintf(
-		"recorded=%d skipped=%d updates=%d state=%s\n",
-		rows, skipped,
-		payloadInt(payload, "n_updates"),
-		payloadString(payload, "state_path")))
+	if flags.jsonOut {
+		return emitJSONPayload(payload)
+	}
+	_, err = fmt.Printf("recorded=%d skipped=%d updates=%d state=%s\n",
+		payload["rows_recorded"], payload["rows_skipped"],
+		payload["n_updates"], payload["state_path"])
+	return err
 }
 
-// foldCapturesFile folds every well-formed row of a JSONL capture file into sp
-// without persisting, returning (recorded, skipped).
-//
-// A malformed row is reported on stderr and counted rather than aborting: a
-// long capture session should not be discarded because one line was truncated.
-func foldCapturesFile(sp *sidecar.Predictor, path string) (int, int, error) {
-	f, err := os.Open(path) // #nosec G304 -- operator-supplied --captures-jsonl path.
-	if err != nil {
-		return 0, 0, err
-	}
-	defer func() { _ = f.Close() }()
-
-	rows, skipped := 0, 0
-	sc := bufio.NewScanner(f)
-	// Capture rows are small, but a feature dump with long path strings can
-	// exceed bufio's 64 KiB default token size.
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	lineno := 0
-	for sc.Scan() {
-		lineno++
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-		features, crf, observed, parseErr := parseCaptureRow(line)
-		if parseErr != nil {
-			skipped++
-			fmt.Fprintf(os.Stderr, "vmafx-tune sidecar batch-record: skip line %d: %v\n",
-				lineno, parseErr)
-			continue
-		}
-		// persist=false: the state is written once after the loop.
-		if rErr := sp.RecordCapture(features, crf, observed, "", false); rErr != nil {
-			return rows, skipped, rErr
-		}
-		rows++
-	}
-	if scanErr := sc.Err(); scanErr != nil {
-		return rows, skipped, scanErr
-	}
-	return rows, skipped, nil
-}
-
-// parseCaptureRow decodes one JSONL capture row.
+// parseCaptureRow decodes one batch-record JSONL line.
 func parseCaptureRow(line string) (predictor.ShotFeatures, int, float64, error) {
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(line), &raw); err != nil {
-		return predictor.ShotFeatures{}, 0, 0, err
+	var row map[string]any
+	if err := json.Unmarshal([]byte(line), &row); err != nil {
+		return predictor.ShotFeatures{}, 0, 0, fmt.Errorf("row is not a JSON object: %w", err)
 	}
-	features, err := shotFeaturesFromMapping(raw)
+	features, err := sidecarFeaturesFromMapping(row)
 	if err != nil {
 		return predictor.ShotFeatures{}, 0, 0, err
 	}
-	crfRaw, ok := raw["crf"]
+	crf, ok := numericField(row, "crf")
 	if !ok {
-		return predictor.ShotFeatures{}, 0, 0, errors.New("'crf'")
+		return predictor.ShotFeatures{}, 0, 0, errors.New("missing required key: crf")
 	}
-	crf, ok := numericField(crfRaw)
+	observed, ok := numericField(row, "observed_vmaf")
 	if !ok {
-		return predictor.ShotFeatures{}, 0, 0, fmt.Errorf("invalid crf value %v", crfRaw)
-	}
-	observedRaw, ok := raw["observed_vmaf"]
-	if !ok {
-		return predictor.ShotFeatures{}, 0, 0, errors.New("'observed_vmaf'")
-	}
-	observed, ok := numericField(observedRaw)
-	if !ok {
-		return predictor.ShotFeatures{}, 0, 0,
-			fmt.Errorf("invalid observed_vmaf value %v", observedRaw)
+		return predictor.ShotFeatures{}, 0, 0, errors.New("missing required key: observed_vmaf")
 	}
 	return features, int(crf), observed, nil
 }
 
-// readShotFeaturesFile reads a JSON object into a ShotFeatures.
-func readShotFeaturesFile(path string) (predictor.ShotFeatures, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- operator-supplied --features-json path.
+// ---------------------------------------------------------------------------
+// Feature-JSON parsing.
+// ---------------------------------------------------------------------------
+
+// readJSONObject reads a JSON object from path.
+func readJSONObject(path string) (map[string]any, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- operator-supplied CLI flag
 	if err != nil {
-		return predictor.ShotFeatures{}, err
+		return nil, fmt.Errorf("cannot read %s: %w", path, err)
 	}
-	var raw map[string]any
-	if uErr := json.Unmarshal(data, &raw); uErr != nil {
-		return predictor.ShotFeatures{}, fmt.Errorf("%s is not a JSON object: %w", path, uErr)
+	var doc any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("%s is not valid JSON: %w", path, err)
 	}
-	return shotFeaturesFromMapping(raw)
+	obj, ok := doc.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must contain a JSON object", path)
+	}
+	return obj, nil
 }
 
-// shotFeatureFloatFields maps the JSON key of every float ShotFeatures field to
-// its address-taker, so the decoder stays a single table rather than a wall of
-// type switches.
-var shotFeatureFloatFields = map[string]func(*predictor.ShotFeatures) *float64{
-	"probe_bitrate_kbps":      func(f *predictor.ShotFeatures) *float64 { return &f.ProbeBitrateKbps },
-	"probe_i_frame_avg_bytes": func(f *predictor.ShotFeatures) *float64 { return &f.ProbeIFrameAvgBytes },
-	"probe_p_frame_avg_bytes": func(f *predictor.ShotFeatures) *float64 { return &f.ProbePFrameAvgBytes },
-	"probe_b_frame_avg_bytes": func(f *predictor.ShotFeatures) *float64 { return &f.ProbeBFrameAvgBytes },
-	"saliency_mean":           func(f *predictor.ShotFeatures) *float64 { return &f.SaliencyMean },
-	"saliency_var":            func(f *predictor.ShotFeatures) *float64 { return &f.SaliencyVar },
-	"frame_diff_mean":         func(f *predictor.ShotFeatures) *float64 { return &f.FrameDiffMean },
-	"y_avg":                   func(f *predictor.ShotFeatures) *float64 { return &f.YAvg },
-	"y_var":                   func(f *predictor.ShotFeatures) *float64 { return &f.YVar },
-	"fps":                     func(f *predictor.ShotFeatures) *float64 { return &f.FPS },
-}
-
-// shotFeatureIntFields is the integer counterpart of shotFeatureFloatFields.
-var shotFeatureIntFields = map[string]func(*predictor.ShotFeatures) *int{
-	"shot_length_frames": func(f *predictor.ShotFeatures) *int { return &f.ShotLengthFrames },
-	"width":              func(f *predictor.ShotFeatures) *int { return &f.Width },
-	"height":             func(f *predictor.ShotFeatures) *int { return &f.Height },
-}
-
-// sidecarRequiredFeatureKeys are the four probe-encode fields a capture must
-// carry. They have no meaningful default — a zero probe bitrate would silently
-// train the ridge fit on a fabricated complexity barometer — so a row missing
-// any of them is rejected rather than defaulted.
-var sidecarRequiredFeatureKeys = []string{
-	"probe_bitrate_kbps",
-	"probe_i_frame_avg_bytes",
-	"probe_p_frame_avg_bytes",
-	"probe_b_frame_avg_bytes",
-}
-
-// shotFeaturesFromMapping builds a ShotFeatures from a decoded JSON object.
-//
-// A row may either carry the feature fields at the top level or nest them under
-// a "features" key; the wrapper form is unwrapped first. The four
-// sidecarRequiredFeatureKeys must be present. Every other field defaults to
-// zero (the Python dataclass behaviour); a present but non-numeric value is an
-// error rather than a silent zero, so a typo in a capture file surfaces instead
-// of poisoning the fit.
-func shotFeaturesFromMapping(row map[string]any) (predictor.ShotFeatures, error) {
+// sidecarFeaturesFromMapping builds ShotFeatures from a JSON object, honouring
+// an optional {"features": {...}} wrapper so a capture row can carry crf and
+// observed_vmaf alongside the feature block.
+func sidecarFeaturesFromMapping(row map[string]any) (predictor.ShotFeatures, error) {
 	raw := row
 	if wrapped, ok := row["features"]; ok {
-		nested, isObject := wrapped.(map[string]any)
-		if !isObject {
+		obj, ok := wrapped.(map[string]any)
+		if !ok {
 			return predictor.ShotFeatures{}, errors.New("'features' must be a JSON object")
 		}
-		raw = nested
+		raw = obj
 	}
-
 	var missing []string
 	for _, key := range sidecarRequiredFeatureKeys {
 		if _, ok := raw[key]; !ok {
@@ -551,72 +449,55 @@ func shotFeaturesFromMapping(row map[string]any) (predictor.ShotFeatures, error)
 		}
 	}
 	if len(missing) > 0 {
-		return predictor.ShotFeatures{},
-			fmt.Errorf("features missing required keys: %s", strings.Join(missing, ", "))
+		return predictor.ShotFeatures{}, fmt.Errorf(
+			"features missing required keys: %s", strings.Join(missing, ", "))
 	}
-
-	var f predictor.ShotFeatures
-	for key, field := range shotFeatureFloatFields {
-		v, ok := raw[key]
-		if !ok || v == nil {
-			continue
+	for _, key := range sidecarRequiredFeatureKeys {
+		if _, ok := numericField(raw, key); !ok {
+			return predictor.ShotFeatures{}, fmt.Errorf(
+				"invalid sidecar feature value: %s is not numeric", key)
 		}
-		num, ok := numericField(v)
-		if !ok {
-			return predictor.ShotFeatures{},
-				fmt.Errorf("invalid sidecar feature value: %s=%v", key, v)
-		}
-		*field(&f) = num
 	}
-	for key, field := range shotFeatureIntFields {
-		v, ok := raw[key]
-		if !ok || v == nil {
-			continue
-		}
-		num, ok := numericField(v)
-		if !ok {
-			return predictor.ShotFeatures{},
-				fmt.Errorf("invalid sidecar feature value: %s=%v", key, v)
-		}
-		*field(&f) = int(num)
-	}
-	return f, nil
+	return predictor.ShotFeatures{
+		ProbeBitrateKbps:    floatField(raw, "probe_bitrate_kbps"),
+		ProbeIFrameAvgBytes: floatField(raw, "probe_i_frame_avg_bytes"),
+		ProbePFrameAvgBytes: floatField(raw, "probe_p_frame_avg_bytes"),
+		ProbeBFrameAvgBytes: floatField(raw, "probe_b_frame_avg_bytes"),
+		SaliencyMean:        floatField(raw, "saliency_mean"),
+		SaliencyVar:         floatField(raw, "saliency_var"),
+		FrameDiffMean:       floatField(raw, "frame_diff_mean"),
+		YAvg:                floatField(raw, "y_avg"),
+		YVar:                floatField(raw, "y_var"),
+		ShotLengthFrames:    int(floatField(raw, "shot_length_frames")),
+		FPS:                 floatField(raw, "fps"),
+		Width:               int(floatField(raw, "width")),
+		Height:              int(floatField(raw, "height")),
+	}, nil
 }
 
-// numericField coerces a decoded JSON value to float64. Strings are accepted
-// because Python's float() / int() constructors take them and some capture
-// producers quote their numerics.
-func numericField(v any) (float64, bool) {
-	switch t := v.(type) {
+// numericField reports whether key holds a JSON number (or a numeric string,
+// which CPython's float() would also accept).
+func numericField(row map[string]any, key string) (float64, bool) {
+	switch v := row[key].(type) {
 	case float64:
-		if math.IsNaN(t) {
-			return 0, false
-		}
-		return t, true
+		return v, true
 	case json.Number:
-		f, err := t.Float64()
+		f, err := v.Float64()
 		return f, err == nil
 	case string:
 		var f float64
-		if _, err := fmt.Sscanf(strings.TrimSpace(t), "%g", &f); err != nil {
-			return 0, false
+		if _, err := fmt.Sscanf(strings.TrimSpace(v), "%g", &f); err == nil {
+			return f, true
 		}
-		return f, true
-	case bool:
-		// Python's float(True) is 1.0; matched so a producer that emits
-		// JSON booleans behaves identically under both implementations.
-		if t {
-			return 1, true
-		}
-		return 0, true
+		return 0, false
 	default:
 		return 0, false
 	}
 }
 
-// sidecarKnownCodecs returns the codec names --codec accepts, for help text.
-func sidecarKnownCodecs() string {
-	names := codecadapter.Known()
-	sort.Strings(names)
-	return strings.Join(names, ", ")
+// floatField returns the numeric value at key, or 0 when absent — the same
+// default every optional ShotFeatures field carries.
+func floatField(row map[string]any, key string) float64 {
+	f, _ := numericField(row, key)
+	return f
 }

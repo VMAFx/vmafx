@@ -68,9 +68,7 @@ Fully ported subcommands:
                        record / batch-record)
   benchmark            Encoder benchmark sweep
   encode-profile       Encoder profile inspection
-
-Not yet ported (use 'vmaf-tune <subcommand>' for these):
-  auto`
+  auto                 Pick and run the right tuning subcommand`
 	root.Cobra().Version = version
 
 	// Ported subcommands.
@@ -87,13 +85,7 @@ Not yet ported (use 'vmaf-tune <subcommand>' for these):
 	root.AddCommand(newSidecarCmd())
 	root.AddCommand(newBenchmarkCmd())
 	root.AddCommand(newEncodeProfileCmd())
-
-	// Not-yet-ported stubs: log a redirect rather than silently failing.
-	for _, stub := range []struct{ name, desc string }{
-		{"auto", "Automatic subcommand selection"},
-	} {
-		root.AddCommand(stubSubcommand(stub.name, stub.desc))
-	}
+	root.AddCommand(newAutoCmd())
 
 	return root
 }

@@ -46808,3 +46808,53 @@ full Go parity).
 
 ## feat/vmafx-tune-go-corpus-sidecar (2026-08-30)
 no ffmpeg-patch impact: adds Go-only packages (`pkg/{codecadapter,corpus,predictor,sidecar,pyjson}`) plus two `cmd/vmafx-tune` subcommands. No libvmaf C-API / public-header / CLI-flag / `meson_options.txt` change, so nothing the `ffmpeg-patches/` series consumes moves. **Invariants** (full list in `pkg/corpus/AGENTS.md`): (1) `pkg/corpus.RowKeys` mirrors `vmaftune.CORPUS_ROW_KEYS` *in order* — the canonical-6 columns are indexed positionally downstream; (2) corpus rows render through `pkg/pyjson`, never `encoding/json`, because a row carries bare `NaN` tokens and CPython `repr()`-style floats; (3) the float aggregates go through `pkg/corpus/pysum.go` (Neumaier `sum()` + exact-rational `statistics.pstdev()`), not naive Go loops — a plain accumulator drifts by a ULP, which is a visible byte difference in the JSONL; (4) `.y4m` must stay out of `vmafRawSuffixes` (ADR-0499 Bug #V3-B). The Python `tools/vmaf-tune/` tree is untouched and remains the shipped implementation until the ADR-0703 / ADR-0704 sunset.
+
+## feat/vmafx-tune-go-auto-sidecar (2026-08-30)
+
+no ffmpeg-patch impact: adds Go-only packages under `pkg/tune/` plus two new
+`cmd/vmafx-tune/cmd/` subcommands. No libvmaf C-API, CLI, public-header, or
+`meson_options.txt` change, and no Netflix golden assertion touched. The Python
+`tools/vmaf-tune/src/vmaftune/` tree is untouched — this work makes the ADR-0703
+/ ADR-0704 sunset possible, it is not the sunset.
+
+**Rebase-sensitive invariants** (full list in
+[`pkg/tune/AGENTS.md`](pkg/tune/AGENTS.md)):
+
+1. **The `auto` plan JSON is deliberately not strict RFC 8259.** The Python
+   emitter uses plain `json.dumps(..., sort_keys=True)`, whose default
+   `allow_nan=True` writes a bare `NaN` for the uncalibrated conformal
+   `interval_width` every non-smoke run produces. `pkg/tune/pyjson` reproduces
+   that, plus CPython's `repr()` float spelling (mandatory `.0`, the
+   fixed/exponential switch at `decpt <= -4 || decpt > 16`) and
+   `ensure_ascii=True` escaping. Do not "fix" it with `encoding/json` or
+   `MarshalStrict`; the `--execute` JSONL rows are the strict surface, and that
+   asymmetry is intentional on both sides.
+
+2. **`pkg/tune/pymath` is the float-parity layer, not an optimisation.** Go's
+   `math.Pow` and `math.Log10` land one ULP from the libm CPython calls, and
+   both feed user-visible JSON (`estimated_bitrate_kbps`, `estimated_vmaf`).
+   Reverting either to the stdlib fails the parity fixtures.
+
+3. **Short-circuit evaluation order is part of the output contract**
+   (`plan.metadata.short_circuits`). Append predicates; never reorder the ten.
+
+4. **The content recipe must fire before rung selection** so
+   `force_single_rung` can collapse a 4K ladder.
+
+5. **The sidecar feature-vector column order pins every persisted weight**
+   (`FeatureDim = 14`, stops at `Width`; `Height` is deliberately absent).
+   Changing it requires a `SchemaVersion` bump or old `state.json` files load
+   mis-aligned.
+
+6. **A predictor-version mismatch must cold-start the sidecar** — that is what
+   makes a shipped-model upgrade safe.
+
+7. **The host UUID is CSPRNG-random, never machine-derived.**
+
+8. **The subprocess seam (`hdr.Runner`, `executor.Runner`) is load-bearing**:
+   the whole suite runs without ffprobe / ffmpeg / vmaf installed. A non-zero
+   exit is reported in the result; the `error` return means a spawn failure.
+
+Parity fixtures under `pkg/tune/*/testdata/` were dumped from the in-tree
+Python modules. Regenerate them only alongside a deliberate coordinated change
+on both sides — a silent regeneration turns the gate into a tautology.

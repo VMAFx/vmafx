@@ -1,373 +1,503 @@
 // Copyright 2026 Lusoris
 // SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 //
-// cmd/vmafx-tune/cmd/sidecar_test.go — in-package tests for the sidecar
-// operator surface.
-//
-// The payload shapes pinned here are the ones `vmaf-tune sidecar <cmd> --json`
-// emits; a drift breaks any script parsing either implementation's output.
+// cmd/vmafx-tune/cmd/sidecar_test.go — in-package tests for the "sidecar"
+// subcommand group wired in as part of the Stage-2 Python-to-Go port.
 
 package cmd
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
-
-	"github.com/VMAFx/vmafx/pkg/predictor"
+	"github.com/VMAFx/vmafx/pkg/tune/predictor"
 )
 
-func TestSidecarCommandTree(t *testing.T) {
+const featuresJSON = `{
+  "probe_bitrate_kbps": 4200.5,
+  "probe_i_frame_avg_bytes": 51200.0,
+  "probe_p_frame_avg_bytes": 8100.0,
+  "probe_b_frame_avg_bytes": 2400.0,
+  "saliency_mean": 0.42,
+  "saliency_var": 0.11,
+  "frame_diff_mean": 3.75,
+  "y_avg": 112.5,
+  "y_var": 900.25,
+  "shot_length_frames": 240,
+  "fps": 24.0,
+  "width": 1920,
+  "height": 1080
+}`
+
+func writeFixture(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", name, err)
+	}
+	return path
+}
+
+// TestSidecarSubcommandTree pins the nested command names against the Python
+// argparse surface.
+func TestSidecarSubcommandTree(t *testing.T) {
 	t.Parallel()
 
-	cmd := newSidecarCmd()
-	got := map[string]bool{}
-	for _, c := range cmd.Commands() {
-		got[c.Name()] = true
+	got := []string{}
+	for _, c := range newSidecarCmd().Commands() {
+		got = append(got, c.Name())
 	}
-	for _, want := range []string{"status", "predict", "record", "batch-record"} {
-		if !got[want] {
-			t.Errorf("sidecar is missing the %q subcommand", want)
+	sort.Strings(got)
+	want := []string{"batch-record", "predict", "record", "status"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("sidecar subcommands = %v, want %v", got, want)
+	}
+}
+
+// TestSidecarCommonFlagSurface pins the shared flags every nested subcommand
+// carries, with the Python defaults.
+func TestSidecarCommonFlagSurface(t *testing.T) {
+	t.Parallel()
+
+	for _, sub := range newSidecarCmd().Commands() {
+		t.Run(sub.Name(), func(t *testing.T) {
+			t.Parallel()
+			for flag, want := range map[string]string{
+				"codec":             "libx264",
+				"cache-dir":         "",
+				"predictor-version": "predictor_v1",
+				"model":             "",
+				"json":              "false",
+			} {
+				f := sub.Flags().Lookup(flag)
+				if f == nil {
+					t.Errorf("--%s is missing from %q", flag, sub.Name())
+					continue
+				}
+				if f.DefValue != want {
+					t.Errorf("--%s default = %q, want %q", flag, f.DefValue, want)
+				}
+			}
+		})
+	}
+}
+
+// TestSidecarStatusJSON drives the real command tree against an isolated cache
+// root and checks the machine-readable payload's schema.
+func TestSidecarStatusJSON(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cache := t.TempDir()
+
+	out := captureStdout(t, func() {
+		root := newRoot("dev")
+		root.Cobra().SetArgs([]string{
+			"sidecar", "status", "--cache-dir", cache, "--json",
+		})
+		if err := root.Execute(); err != nil {
+			t.Fatalf("execute sidecar status: %v", err)
 		}
-	}
-}
+	})
 
-func TestSidecarRequiredFlags(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		sub  string
-		want []string
-	}{
-		{sub: "status"},
-		{sub: "predict", want: []string{"features-json", "crf"}},
-		{sub: "record", want: []string{"features-json", "crf", "observed-vmaf"}},
-		{sub: "batch-record", want: []string{"captures-jsonl"}},
-	}
-
-	parent := newSidecarCmd()
-	for _, tc := range tests {
-		t.Run(tc.sub, func(t *testing.T) {
-			t.Parallel()
-			child := findChild(parent, tc.sub)
-			if child == nil {
-				t.Fatalf("no %q subcommand", tc.sub)
-			}
-			for _, name := range tc.want {
-				flag := child.Flags().Lookup(name)
-				if flag == nil {
-					t.Fatalf("%s is missing the --%s flag", tc.sub, name)
-				}
-				if flag.Annotations["cobra_annotation_bash_completion_one_required_flag"] == nil {
-					t.Errorf("%s --%s should be required", tc.sub, name)
-				}
-			}
-			// Every child carries the shared configuration flags.
-			for _, name := range []string{"codec", "cache-dir", "predictor-version", "model", "json"} {
-				if child.Flags().Lookup(name) == nil {
-					t.Errorf("%s is missing the shared --%s flag", tc.sub, name)
-				}
-			}
-		})
-	}
-}
-
-func TestShotFeaturesFromMapping(t *testing.T) {
-	t.Parallel()
-
-	full := map[string]any{
-		"probe_bitrate_kbps":      4200.5,
-		"probe_i_frame_avg_bytes": 51234.0,
-		"probe_p_frame_avg_bytes": 8123.25,
-		"probe_b_frame_avg_bytes": 2011.75,
-		"saliency_mean":           0.42,
-		"saliency_var":            0.031,
-		"frame_diff_mean":         7.5,
-		"y_avg":                   112.25,
-		"y_var":                   1830.5,
-		"shot_length_frames":      240.0,
-		"fps":                     24.0,
-		"width":                   1920.0,
-		"height":                  1080.0,
-	}
-	wantFull := predictor.ShotFeatures{
-		ProbeBitrateKbps: 4200.5, ProbeIFrameAvgBytes: 51234.0,
-		ProbePFrameAvgBytes: 8123.25, ProbeBFrameAvgBytes: 2011.75,
-		SaliencyMean: 0.42, SaliencyVar: 0.031, FrameDiffMean: 7.5,
-		YAvg: 112.25, YVar: 1830.5, ShotLengthFrames: 240,
-		FPS: 24.0, Width: 1920, Height: 1080,
-	}
-
-	minimal := map[string]any{
-		"probe_bitrate_kbps":      1000.0,
-		"probe_i_frame_avg_bytes": 0.0,
-		"probe_p_frame_avg_bytes": 0.0,
-		"probe_b_frame_avg_bytes": 0.0,
-	}
-
-	tests := []struct {
-		name    string
-		row     map[string]any
-		want    predictor.ShotFeatures
-		wantErr string
-	}{
-		{name: "every field present", row: full, want: wantFull},
-		{
-			name: "optional fields default to zero",
-			row:  minimal,
-			want: predictor.ShotFeatures{ProbeBitrateKbps: 1000.0},
-		},
-		{
-			name: "a features wrapper is unwrapped",
-			row:  map[string]any{"features": minimal, "crf": 26.0},
-			want: predictor.ShotFeatures{ProbeBitrateKbps: 1000.0},
-		},
-		{
-			// The four probe_* fields have no meaningful default: a zero
-			// probe bitrate would train the fit on a fabricated
-			// complexity barometer.
-			name: "a missing required key is rejected",
-			row:  map[string]any{"probe_bitrate_kbps": 1000.0},
-			wantErr: "features missing required keys: probe_i_frame_avg_bytes, " +
-				"probe_p_frame_avg_bytes, probe_b_frame_avg_bytes",
-		},
-		{
-			name:    "a non-object features wrapper is rejected",
-			row:     map[string]any{"features": "not an object"},
-			wantErr: "'features' must be a JSON object",
-		},
-		{
-			name: "a non-numeric feature value is rejected rather than zeroed",
-			row: map[string]any{
-				"probe_bitrate_kbps": "fast", "probe_i_frame_avg_bytes": 0.0,
-				"probe_p_frame_avg_bytes": 0.0, "probe_b_frame_avg_bytes": 0.0,
-			},
-			wantErr: "invalid sidecar feature value",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := shotFeaturesFromMapping(tc.row)
-			if tc.wantErr != "" {
-				if err == nil {
-					t.Fatalf("shotFeaturesFromMapping accepted %v", tc.row)
-				}
-				if !strings.Contains(err.Error(), tc.wantErr) {
-					t.Errorf("error = %q, want it to contain %q", err, tc.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("shotFeaturesFromMapping: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("shotFeaturesFromMapping() = %+v, want %+v", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestParseCaptureRow(t *testing.T) {
-	t.Parallel()
-
-	const valid = `{"probe_bitrate_kbps": 4200.5, "probe_i_frame_avg_bytes": 0,
-		"probe_p_frame_avg_bytes": 0, "probe_b_frame_avg_bytes": 0,
-		"crf": 26, "observed_vmaf": 91.75}`
-
-	tests := []struct {
-		name         string
-		line         string
-		wantCRF      int
-		wantObserved float64
-		wantErr      string
-	}{
-		{name: "a complete row", line: valid, wantCRF: 26, wantObserved: 91.75},
-		{
-			// The Python handler surfaces a bare KeyError repr here; the
-			// message is what an operator sees on the skip line.
-			name: "a missing crf",
-			line: `{"probe_bitrate_kbps": 1, "probe_i_frame_avg_bytes": 0,
-				"probe_p_frame_avg_bytes": 0, "probe_b_frame_avg_bytes": 0,
-				"observed_vmaf": 91.75}`,
-			wantErr: "'crf'",
-		},
-		{
-			name: "a missing observed_vmaf",
-			line: `{"probe_bitrate_kbps": 1, "probe_i_frame_avg_bytes": 0,
-				"probe_p_frame_avg_bytes": 0, "probe_b_frame_avg_bytes": 0,
-				"crf": 26}`,
-			wantErr: "'observed_vmaf'",
-		},
-		{name: "unparseable JSON", line: "not json", wantErr: "invalid character"},
-		{
-			name:    "missing feature keys",
-			line:    `{"crf": 26, "observed_vmaf": 91.75}`,
-			wantErr: "features missing required keys",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			_, crf, observed, err := parseCaptureRow(tc.line)
-			if tc.wantErr != "" {
-				if err == nil {
-					t.Fatalf("parseCaptureRow accepted %q", tc.line)
-				}
-				if !strings.Contains(err.Error(), tc.wantErr) {
-					t.Errorf("error = %q, want it to contain %q", err, tc.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("parseCaptureRow: %v", err)
-			}
-			if crf != tc.wantCRF {
-				t.Errorf("crf = %d, want %d", crf, tc.wantCRF)
-			}
-			if observed != tc.wantObserved {
-				t.Errorf("observed_vmaf = %v, want %v", observed, tc.wantObserved)
-			}
-		})
-	}
-}
-
-func TestNumericField(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name   string
-		in     any
-		want   float64
-		wantOK bool
-	}{
-		{name: "a JSON number", in: 26.5, want: 26.5, wantOK: true},
-		{name: "a quoted number", in: "26.5", want: 26.5, wantOK: true},
-		{name: "a quoted number with whitespace", in: "  26.5 ", want: 26.5, wantOK: true},
-		// Python's float(True) is 1.0, so a JSON boolean is accepted.
-		{name: "true is 1.0", in: true, want: 1.0, wantOK: true},
-		{name: "false is 0.0", in: false, want: 0.0, wantOK: true},
-		{name: "a non-numeric string is rejected", in: "fast"},
-		{name: "nil is rejected", in: nil},
-		{name: "an object is rejected", in: map[string]any{}},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, ok := numericField(tc.in)
-			if ok != tc.wantOK {
-				t.Fatalf("numericField(%v) ok = %v, want %v", tc.in, ok, tc.wantOK)
-			}
-			if ok && got != tc.want {
-				t.Errorf("numericField(%v) = %v, want %v", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestNewBasePredictorRejectsAnONNXModel(t *testing.T) {
-	t.Parallel()
-
-	// The Go sidecar has no in-process ONNX runtime; scoring against the
-	// analytical curve while the operator asked for a learned model would
-	// be a wrong-but-plausible number, so the flag is refused outright.
-	if _, err := newBasePredictor("/models/predictor_libx264.onnx"); err == nil {
-		t.Fatal("newBasePredictor accepted a --model path")
-	} else if !strings.Contains(err.Error(), "ONNX") {
-		t.Errorf("error = %q, want it to explain the ONNX gap", err)
-	}
-
-	p, err := newBasePredictor("")
-	if err != nil {
-		t.Fatalf("newBasePredictor(\"\"): %v", err)
-	}
-	if p == nil {
-		t.Fatal("newBasePredictor returned a nil predictor")
-	}
-}
-
-func TestSidecarStatusPayloadShape(t *testing.T) {
-	t.Parallel()
-
-	flags := &sidecarFlags{
-		codec:            "libx264",
-		cacheDir:         t.TempDir(),
-		predictorVersion: "predictor_v1",
-	}
-	sp, err := buildSidecarPredictor(flags)
-	if err != nil {
-		t.Fatalf("buildSidecarPredictor: %v", err)
-	}
-	payload := sidecarStatusPayload(sp)
-
-	wantKeys := []string{
-		"schema", "codec", "host_uuid", "state_path",
-		"predictor_version", "schema_version", "n_updates", "recent_residual_rms",
-	}
-	for _, key := range wantKeys {
-		if _, ok := payload[key]; !ok {
-			t.Errorf("status payload is missing %q", key)
-		}
-	}
-	if len(payload) != len(wantKeys) {
-		t.Errorf("status payload has %d keys, want %d", len(payload), len(wantKeys))
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("status payload is not JSON: %v\n%s", err, out)
 	}
 	if payload["schema"] != "vmaf-tune-sidecar-status/v1" {
-		t.Errorf("schema = %v, want vmaf-tune-sidecar-status/v1", payload["schema"])
+		t.Errorf("schema = %v", payload["schema"])
 	}
 	if payload["codec"] != "libx264" {
 		t.Errorf("codec = %v, want libx264", payload["codec"])
 	}
-	if payload["n_updates"] != 0 {
-		t.Errorf("cold-start n_updates = %v, want 0", payload["n_updates"])
+	if payload["n_updates"] != 0.0 {
+		t.Errorf("a fresh sidecar should report 0 updates, got %v", payload["n_updates"])
 	}
-	if payload["recent_residual_rms"] != 0.0 {
-		t.Errorf("cold-start recent_residual_rms = %v, want 0.0", payload["recent_residual_rms"])
+	statePath, _ := payload["state_path"].(string)
+	if !strings.HasPrefix(statePath, cache) {
+		t.Errorf("state_path %q should sit under the --cache-dir %q", statePath, cache)
 	}
-	if !strings.HasSuffix(payload["state_path"].(string), "predictor_v1/libx264/state.json") {
-		t.Errorf("state_path = %v, want the per-codec cache layout", payload["state_path"])
-	}
-}
-
-func TestBuildSidecarPredictorRejectsAnUnknownCodec(t *testing.T) {
-	t.Parallel()
-
-	flags := &sidecarFlags{codec: "libx999", cacheDir: t.TempDir()}
-	if _, err := buildSidecarPredictor(flags); err == nil {
-		t.Fatal("buildSidecarPredictor accepted an unknown codec")
-	}
-}
-
-func TestSidecarKnownCodecsIsSortedAndNonEmpty(t *testing.T) {
-	t.Parallel()
-
-	got := sidecarKnownCodecs()
-	if got == "" {
-		t.Fatal("sidecarKnownCodecs is empty")
-	}
-	names := strings.Split(got, ", ")
-	sorted := append([]string{}, names...)
-	for i := 1; i < len(sorted); i++ {
-		if sorted[i-1] > sorted[i] {
-			t.Fatalf("codec list is not sorted: %v", names)
+	for _, key := range []string{"host_uuid", "predictor_version", "schema_version",
+		"recent_residual_rms"} {
+		if _, ok := payload[key]; !ok {
+			t.Errorf("status payload is missing %q", key)
 		}
 	}
-	if !reflect.DeepEqual(names[0], "av1_amf") {
-		t.Errorf("first codec = %q, want av1_amf", names[0])
+}
+
+// TestSidecarRecordThenPredict is the end-to-end operator loop: record one
+// observation, then confirm the correction has moved the prediction and that
+// the state persisted.
+func TestSidecarRecordThenPredict(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "cache")
+	features := writeFixture(t, dir, "features.json", featuresJSON)
+
+	runJSON := func(args ...string) map[string]any {
+		t.Helper()
+		out := captureStdout(t, func() {
+			root := newRoot("dev")
+			root.Cobra().SetArgs(args)
+			if err := root.Execute(); err != nil {
+				t.Fatalf("execute %v: %v", args, err)
+			}
+		})
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(out), &payload); err != nil {
+			t.Fatalf("payload is not JSON: %v\n%s", err, out)
+		}
+		return payload
+	}
+
+	before := runJSON("sidecar", "predict", "--cache-dir", cache,
+		"--features-json", features, "--crf", "26", "--json")
+	if before["correction"] != 0.0 {
+		t.Errorf("a cold-start correction must be exactly 0.0, got %v", before["correction"])
+	}
+	if before["base_vmaf"] != before["sidecar_vmaf"] {
+		t.Errorf("cold start: sidecar_vmaf %v should equal base_vmaf %v",
+			before["sidecar_vmaf"], before["base_vmaf"])
+	}
+
+	recorded := runJSON("sidecar", "record", "--cache-dir", cache,
+		"--features-json", features, "--crf", "26", "--observed-vmaf", "91.5", "--json")
+	if recorded["schema"] != "vmaf-tune-sidecar-record/v1" {
+		t.Errorf("schema = %v", recorded["schema"])
+	}
+	if recorded["n_updates"] != 1.0 {
+		t.Errorf("n_updates = %v, want 1", recorded["n_updates"])
+	}
+	baseVMAF, _ := recorded["base_vmaf"].(float64)
+	residual, _ := recorded["residual"].(float64)
+	if got := 91.5 - baseVMAF; got != residual {
+		t.Errorf("residual = %v, want observed − base = %v", residual, got)
+	}
+
+	statePath, _ := recorded["state_path"].(string)
+	if _, err := os.Stat(statePath); err != nil {
+		t.Errorf("record should have persisted %s: %v", statePath, err)
+	}
+
+	after := runJSON("sidecar", "predict", "--cache-dir", cache,
+		"--features-json", features, "--crf", "26", "--json")
+	if after["correction"] == 0.0 {
+		t.Error("after one capture the correction should be non-zero")
+	}
+	if after["n_updates"] != 1.0 {
+		t.Errorf("the reloaded sidecar reports %v updates, want 1", after["n_updates"])
 	}
 }
 
-// findChild returns the named subcommand of parent, or nil.
-func findChild(parent *cobra.Command, name string) *cobra.Command {
-	for _, c := range parent.Commands() {
-		if c.Name() == name {
-			return c
+// TestSidecarNoPersist covers the tests-only flag: the fit updates in memory
+// but nothing reaches disk.
+func TestSidecarNoPersist(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "cache")
+	features := writeFixture(t, dir, "features.json", featuresJSON)
+
+	out := captureStdout(t, func() {
+		root := newRoot("dev")
+		root.Cobra().SetArgs([]string{
+			"sidecar", "record", "--cache-dir", cache, "--features-json", features,
+			"--crf", "26", "--observed-vmaf", "91.5", "--no-persist", "--json",
+		})
+		if err := root.Execute(); err != nil {
+			t.Fatalf("execute: %v", err)
 		}
+	})
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("payload is not JSON: %v", err)
 	}
-	return nil
+	statePath, _ := payload["state_path"].(string)
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Errorf("--no-persist should not have written %s (err=%v)", statePath, err)
+	}
+}
+
+// TestSidecarBatchRecord pins the skip-and-continue contract: malformed rows
+// are reported and skipped, the good rows still land, and the counts are
+// reported. An operator's capture log is often partially corrupt after an
+// interrupted run; losing the good rows to one bad line would be worse.
+func TestSidecarBatchRecord(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "cache")
+
+	jsonl := strings.Join([]string{
+		`{"probe_bitrate_kbps": 4200.5, "probe_i_frame_avg_bytes": 51200.0,` +
+			` "probe_p_frame_avg_bytes": 8100.0, "probe_b_frame_avg_bytes": 2400.0,` +
+			` "crf": 24, "observed_vmaf": 94.25}`,
+		`{"probe_bitrate_kbps": 1800.0, "probe_i_frame_avg_bytes": 22000.0,` +
+			` "probe_p_frame_avg_bytes": 3900.0, "probe_b_frame_avg_bytes": 1100.0,` +
+			` "crf": 30, "observed_vmaf": 82.0}`,
+		``,
+		`{"probe_bitrate_kbps": 900.0, "crf": 35, "observed_vmaf": 71.5}`,
+		`{"missing": "everything"}`,
+		`not json at all`,
+	}, "\n")
+	captures := writeFixture(t, dir, "captures.jsonl", jsonl+"\n")
+
+	out := captureStdout(t, func() {
+		root := newRoot("dev")
+		root.Cobra().SetArgs([]string{
+			"sidecar", "batch-record", "--cache-dir", cache,
+			"--captures-jsonl", captures, "--json",
+		})
+		if err := root.Execute(); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+	})
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("payload is not JSON: %v\n%s", err, out)
+	}
+	if payload["schema"] != "vmaf-tune-sidecar-batch-record/v1" {
+		t.Errorf("schema = %v", payload["schema"])
+	}
+	if payload["rows_recorded"] != 2.0 {
+		t.Errorf("rows_recorded = %v, want 2", payload["rows_recorded"])
+	}
+	if payload["rows_skipped"] != 3.0 {
+		t.Errorf("rows_skipped = %v, want 3 (a partial row, a bare object, and a "+
+			"non-JSON line)", payload["rows_skipped"])
+	}
+	if payload["n_updates"] != 2.0 {
+		t.Errorf("n_updates = %v, want 2", payload["n_updates"])
+	}
+	statePath, _ := payload["state_path"].(string)
+	if _, err := os.Stat(statePath); err != nil {
+		t.Errorf("batch-record should persist once at the end: %v", err)
+	}
+}
+
+// TestSidecarBatchRecordAllRowsBad checks the no-good-rows path: nothing is
+// persisted, but the run still succeeds with the counts reported.
+func TestSidecarBatchRecordAllRowsBad(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "cache")
+	captures := writeFixture(t, dir, "captures.jsonl", "garbage\n{}\n")
+
+	out := captureStdout(t, func() {
+		root := newRoot("dev")
+		root.Cobra().SetArgs([]string{
+			"sidecar", "batch-record", "--cache-dir", cache,
+			"--captures-jsonl", captures, "--json",
+		})
+		if err := root.Execute(); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+	})
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("payload is not JSON: %v", err)
+	}
+	if payload["rows_recorded"] != 0.0 || payload["rows_skipped"] != 2.0 {
+		t.Errorf("counts = (%v recorded, %v skipped), want (0, 2)",
+			payload["rows_recorded"], payload["rows_skipped"])
+	}
+	statePath, _ := payload["state_path"].(string)
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Errorf("no good rows means nothing to persist; %s should not exist", statePath)
+	}
+}
+
+// TestSidecarRejectsBadInput covers the validation paths.
+func TestSidecarRejectsBadInput(t *testing.T) {
+	dir := t.TempDir()
+	features := writeFixture(t, dir, "features.json", featuresJSON)
+	notObject := writeFixture(t, dir, "array.json", `[1, 2, 3]`)
+	partial := writeFixture(t, dir, "partial.json", `{"probe_bitrate_kbps": 1000}`)
+	broken := writeFixture(t, dir, "broken.json", `{nope`)
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "unknown codec",
+			args:    []string{"sidecar", "status", "--codec", "libnope"},
+			wantErr: "libnope",
+		},
+		{
+			name: "features file is not an object",
+			args: []string{"sidecar", "predict", "--features-json", notObject,
+				"--crf", "26"},
+			wantErr: "must contain a JSON object",
+		},
+		{
+			name: "features file is missing required keys",
+			args: []string{"sidecar", "predict", "--features-json", partial,
+				"--crf", "26"},
+			wantErr: "missing required keys",
+		},
+		{
+			name: "features file is unparseable",
+			args: []string{"sidecar", "predict", "--features-json", broken,
+				"--crf", "26"},
+			wantErr: "not valid JSON",
+		},
+		{
+			name: "features file does not exist",
+			args: []string{"sidecar", "predict", "--features-json",
+				filepath.Join(dir, "absent.json"), "--crf", "26"},
+			wantErr: "cannot read",
+		},
+		{
+			name: "captures file does not exist",
+			args: []string{"sidecar", "batch-record", "--captures-jsonl",
+				filepath.Join(dir, "absent.jsonl")},
+			wantErr: "cannot read input",
+		},
+		{
+			name:    "record without --observed-vmaf",
+			args:    []string{"sidecar", "record", "--features-json", features, "--crf", "26"},
+			wantErr: "observed-vmaf",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
+			root := newRoot("dev")
+			args := append([]string{}, tc.args...)
+			args = append(args, "--cache-dir", t.TempDir())
+			root.Cobra().SetArgs(args)
+			root.Cobra().SetOut(new(strings.Builder))
+			root.Cobra().SetErr(new(strings.Builder))
+
+			err := root.Execute()
+			if err == nil {
+				t.Fatalf("expected an error mentioning %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error %q should mention %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestSidecarFeaturesFromMapping covers the parser directly, including the
+// {"features": {...}} wrapper a capture row uses.
+func TestSidecarFeaturesFromMapping(t *testing.T) {
+	t.Parallel()
+
+	base := map[string]any{
+		"probe_bitrate_kbps":      4200.5,
+		"probe_i_frame_avg_bytes": 51200.0,
+		"probe_p_frame_avg_bytes": 8100.0,
+		"probe_b_frame_avg_bytes": 2400.0,
+	}
+
+	t.Run("bare object with defaults", func(t *testing.T) {
+		t.Parallel()
+		got, err := sidecarFeaturesFromMapping(base)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := predictor.ShotFeatures{
+			ProbeBitrateKbps: 4200.5, ProbeIFrameAvgBytes: 51200.0,
+			ProbePFrameAvgBytes: 8100.0, ProbeBFrameAvgBytes: 2400.0,
+		}
+		if got != want {
+			t.Errorf("features = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("features wrapper", func(t *testing.T) {
+		t.Parallel()
+		wrapped := map[string]any{"features": base, "crf": 24.0, "observed_vmaf": 90.0}
+		got, err := sidecarFeaturesFromMapping(wrapped)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.ProbeBitrateKbps != 4200.5 {
+			t.Errorf("the wrapper was not unwrapped: %+v", got)
+		}
+	})
+
+	t.Run("wrapper that is not an object", func(t *testing.T) {
+		t.Parallel()
+		_, err := sidecarFeaturesFromMapping(map[string]any{"features": 42.0})
+		if err == nil || !strings.Contains(err.Error(), "must be a JSON object") {
+			t.Errorf("err = %v, want a 'features must be a JSON object' error", err)
+		}
+	})
+
+	t.Run("non-numeric required value", func(t *testing.T) {
+		t.Parallel()
+		bad := map[string]any{}
+		for k, v := range base {
+			bad[k] = v
+		}
+		bad["probe_bitrate_kbps"] = true
+		_, err := sidecarFeaturesFromMapping(bad)
+		if err == nil || !strings.Contains(err.Error(), "not numeric") {
+			t.Errorf("err = %v, want a non-numeric error", err)
+		}
+	})
+
+	t.Run("missing keys are listed in order", func(t *testing.T) {
+		t.Parallel()
+		_, err := sidecarFeaturesFromMapping(map[string]any{"probe_bitrate_kbps": 1.0})
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		want := "features missing required keys: probe_i_frame_avg_bytes, " +
+			"probe_p_frame_avg_bytes, probe_b_frame_avg_bytes"
+		if err.Error() != want {
+			t.Errorf("err = %q, want %q", err, want)
+		}
+	})
+}
+
+// captureStdout runs fn with os.Stdout redirected to a pipe and returns what
+// was written. The sidecar handlers print through fmt.Print* by design (the
+// Python surface writes to stdout, and operators pipe it into jq), so the
+// test has to intercept the real file descriptor.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	original := os.Stdout
+	os.Stdout = writer
+
+	done := make(chan string, 1)
+	go func() {
+		var sb strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := reader.Read(buf)
+			if n > 0 {
+				sb.Write(buf[:n])
+			}
+			if readErr != nil {
+				break
+			}
+		}
+		done <- sb.String()
+	}()
+
+	defer func() {
+		os.Stdout = original
+	}()
+	fn()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close pipe writer: %v", err)
+	}
+	out := <-done
+	if err := reader.Close(); err != nil {
+		t.Fatalf("close pipe reader: %v", err)
+	}
+	return out
 }
