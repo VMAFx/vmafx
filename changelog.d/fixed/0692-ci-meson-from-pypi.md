@@ -15,3 +15,13 @@
   adopted `c_std=c23`; declaring it turns the cryptic
   `Unknown C std ['c23']` into
   `ERROR: Meson version is 1.3.2 but project requires >= 1.4.0`.
+- `core/meson.build` now asks for `c_std=c23,c2x` rather than a bare
+  `c23`. Meson walks the candidate list and takes the first value the C
+  compiler actually supports, so GCC 14+ / Clang 18+ still get `c23`
+  while GCC 13 — the default on `ubuntu-latest` runners — takes the
+  older `c2x` spelling of the same standard. A bare `c23` aborted
+  configure on those runners with
+  `None of values ['c23'] are supported by the C compiler`, which is a
+  *different* failure from the stale-meson one above and hit the build
+  matrix legs (including the required `Build — Ubuntu gcc (CPU) + DNN`)
+  even where meson was new enough.

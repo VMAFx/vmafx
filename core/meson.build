@@ -1,6 +1,13 @@
 project('libvmaf', ['c', 'cpp'],
     version : '3.2.0', # x-release-please-version
-    default_options : ['c_std=c23',
+    # c23,c2x: meson picks the first value the C compiler actually
+    # supports (mesonbuild/options.py walks the candidate list in
+    # order). GCC 14+ / Clang 18+ take 'c23'; GCC 13 — still the
+    # default on ubuntu-latest runners — only knows the older 'c2x'
+    # spelling of the same standard, and a bare 'c23' aborts configure
+    # with "None of values ['c23'] are supported by the C compiler".
+    # See ADR-0692; mirrors the compiler-aware cpp_std handling below.
+    default_options : ['c_std=c23,c2x',
                        'warning_level=2',
                        'buildtype=release',
                        'default_library=both',
