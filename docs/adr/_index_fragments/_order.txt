@@ -592,6 +592,7 @@
 0717-vmafx-node-ffmpeg-latest
 0761-cpp23-wave8-opt-read-json-model
 0763-cuda-adm-decouple-ldg
+0764-psnr-hvs-ldg-launch-bounds
 0767-phase-4b8-c-abi-break-scoping
 0768-cpp23-wave9-pool-env
 0770-vmafx-tune-go-stage4-report
@@ -628,6 +629,7 @@
 0852-hip-speed-extractor-wiring
 0854-motion-avx512-parity-tests
 0858-cpp23-gpu-dispatch-env
+0866-wire-markdownlint-into-lint-pipeline
 0873-arm64-neon-bit-exactness-audit
 0891-simd-bit-exact-round2-fmaf-libvmaf-feature-icx
 0899-bash-strict-mode-sweep
@@ -733,7 +735,6 @@
 0905-gitignore-and-workflow-audit
 0903-wire-codecov-upload
 0902-signing-and-attestation-audit
-0953-doxygen-public-api-clean
 0901-governance-audit
 0893-pre-commit-audit-2026-05-30
 0889-libsvm-vendored-audit
@@ -759,6 +760,7 @@
 0977-core-tools-input-reader-safety
 0978-vmafx-server-bug-audit
 0980-markdown-lint-full-ruleset-discharge
+0982-gpu-runtime-bug-audit-round-26
 0983-gosec-findings-fix-sweep
 0862-k150k-crash-restart-row-loss-consistency-check
 0879-python-dep-freshness-2026-05-30
@@ -775,6 +777,7 @@
 0990-cuda-ms-ssim-double-precision-lcs
 0991-second-opinion-batch-runs
 0992-mos-label-batch-runs
+0993-konvid-ugc-bvi-saliency-batch-launch
 0994-coverage-build-fix-motion-v2-ref
 0995-ci-workflow-name-shortening
 0996-ebpf-fuse-bypass-rclone

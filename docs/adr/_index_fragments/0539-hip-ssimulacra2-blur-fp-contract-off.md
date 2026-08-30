@@ -1,1 +1,0 @@
-| [ADR-0539](0539-hip-ssimulacra2-blur-fp-contract-off.md) | Per-kernel `hip_cu_extra_flags` keeps SSIMULACRA2 recursive blur FP contraction disabled on HIP so parity stays inside the ADR-0214 gate. | Accepted | hip, build, ssimulacra2, numerics, fork-local |
