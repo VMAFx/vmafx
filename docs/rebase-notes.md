@@ -46701,3 +46701,14 @@ no rebase impact: bumps `core/meson.build` `version` (x-release-please-version) 
 
 ## fix/round3-build-gpu-batch (2026-06-27)
 no ffmpeg-patch impact. R3-6 HIP integer_vif uninit-err (init err=0). R3-9 NVTX libdl → cc.find_library('dl'). R3-10 ssim AVX2 carve-out + `_x86_simd_strict_fp_extra` (icx -fp-model=precise; no-op on gcc/clang). **Invariant:** every x86 SIMD carve-out lib that needs bit-exactness under icx must carry `_x86_simd_strict_fp_extra`; keep the ssim carve-out aligned with its psnr_hvs/ms_ssim/ssimulacra2 siblings.
+
+## C23 standard bump (ADR-0692, landed 2026-08-30)
+
+`core/meson.build` now sets `c_std=c23` (was `c11`). When rebasing upstream
+Netflix/vmaf C sources onto the fork, note that C23 changes the meaning of an
+empty parameter list: `void f()` declares `void f(void)` rather than an
+unprototyped function. Upstream code carrying K&R-style empty parameter lists
+will therefore produce type errors here that it does not produce upstream.
+Give such functions their real prototypes rather than reverting the standard.
+`-Wimplicit-fallthrough` is also enabled fork-wide, so an unannotated switch
+fallthrough in ported code needs an explicit `[[fallthrough]]`.
