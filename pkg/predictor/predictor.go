@@ -31,6 +31,8 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/VMAFx/vmafx/pkg/tune/pymath"
+
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
 	"github.com/VMAFx/vmafx/pkg/pershot"
 )
@@ -226,7 +228,12 @@ func (p *Predictor) PredictAnalytical(features ShotFeatures, crf int, codec stri
 	c := p.coeffsFor(codec)
 	delta := float64(crf) - c.CRFRef
 	bitrate := math.Max(features.ProbeBitrateKbps, 1.0)
-	vmaf := c.A - c.B*delta - c.C*delta*delta + c.D*math.Log10(bitrate)
+	// pymath.Log10, not math.Log10 -- the sibling pkg/tune/predictor already
+	// makes this distinction. Go implements Log10 as Log2*Ln2/Ln10 and lands a
+	// ULP off CPython on roughly 27% of realistic probe bitrates (measured over
+	// 200k samples in 1..50000 kbps), and this value reaches predicted_vmaf, a
+	// user-discoverable JSON field that has to match the Python emitter.
+	vmaf := c.A - c.B*delta - c.C*delta*delta + c.D*pymath.Log10(bitrate)
 	return clamp(vmaf, 0.0, 100.0)
 }
 

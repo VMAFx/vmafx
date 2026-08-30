@@ -51,3 +51,13 @@
   changed citations in the same file were left alone because they are genuine
   corrections — the new number matches the branch slug better than the old one
   did.
+- `predict` and `corpus` computed `predicted_vmaf` with Go's `math.Log10` while
+  the sibling `auto` planner used `pkg/tune/pymath.Log10`, so the two
+  subcommands disagreed with each other and with CPython on the same input. Go
+  implements `Log10` as `Log2*Ln2/Ln10` and lands one ULP off on **27%** of
+  realistic probe bitrates (measured over 200k samples in 1–50000 kbps); e.g.
+  905.82 kbps yielded `99.4355627229804` where CPython gives
+  `99.43556272298042`. `pkg/predictor` now routes through `pymath` too.
+- `relcache/host-uuid`, a per-host identity file written at runtime by the
+  sidecar, was committed at the repo root. Untracked and `relcache/` added to
+  `.gitignore`.
