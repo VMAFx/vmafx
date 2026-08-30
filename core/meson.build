@@ -6,7 +6,11 @@ project('libvmaf', ['c', 'cpp'],
                        'default_library=both',
                        'b_lto=true',
                       ],
-    meson_version: '>= 0.58.0')
+    # >= 1.4.0: `c_std=c23` above is only recognised from meson 1.4.0 on
+    # (1.3.2, which Ubuntu 24.04 ships, fails with "Unknown C std ['c23']").
+    # Declaring it here turns that cryptic configure error into a clear
+    # "meson version too old" message. See ADR-0692.
+    meson_version: '>= 1.4.0')
 
 vmaf_soname_version       = '3.0.0'
 vmaf_api_version_array    = vmaf_soname_version.split('.')

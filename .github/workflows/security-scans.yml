@@ -111,7 +111,10 @@ jobs:
         working-directory: core
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm
+          sudo apt-get install -y ninja-build nasm
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
           meson setup build -Denable_cuda=false -Denable_sycl=false
           meson compile -C build
       - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9

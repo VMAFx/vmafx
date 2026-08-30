@@ -44,7 +44,10 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm pkg-config
+          sudo apt-get install -y ninja-build nasm pkg-config
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
       - name: Build (release, optimized)
         run: |
           meson setup build core --buildtype=release -Denable_avx512=true \

@@ -57,9 +57,12 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm pkg-config \
+          sudo apt-get install -y ninja-build nasm pkg-config \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
             python3-pip
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
           python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
 
       - name: Build (CPU, release)
@@ -129,7 +132,10 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm pkg-config python3-pip
+          sudo apt-get install -y ninja-build nasm pkg-config python3-pip
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
           python3 -m pip install --user numpy
       - name: Build CPU
         working-directory: core
@@ -170,8 +176,11 @@ jobs:
           # libclang-rt-18-dev ships the ASan/UBSan/TSan runtime libraries
           # (libclang_rt.asan.a etc.); without it clang-18 emits instrumented
           # code but lld-18 can't resolve __asan_*/__ubsan_* symbols.
-          sudo apt-get install -y meson ninja-build nasm clang-18 lld-18 \
+          sudo apt-get install -y ninja-build nasm clang-18 lld-18 \
             libclang-rt-18-dev
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
       - name: Build with ${{ matrix.sanitizer }} sanitizer
         # ADR-0347: under UBSan, suppress the `function` check via
         # `-fno-sanitize=function`. The pre-existing K&R-prototype
@@ -297,8 +306,11 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm pkg-config \
+          sudo apt-get install -y ninja-build nasm pkg-config \
             python3-pip python3-venv
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
       - name: Install ONNX Runtime (CPU)
         env:
           # Pinned to 1.22.0. MS stopped publishing Linux tgz artifacts
@@ -398,9 +410,12 @@ jobs:
           # vulkan-vif-cross-backend lanes — keeps the libvmaf build
           # graph identical so the MCP smoke exercises the same
           # configuration the rest of the matrix sees.
-          sudo apt-get install -y meson ninja-build nasm pkg-config \
+          sudo apt-get install -y ninja-build nasm pkg-config \
             python3-pip python3-venv \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
 
       - name: Build libvmaf (full MCP transport matrix)
         # Mirrors the local-lint configuration documented in
@@ -476,8 +491,11 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/*microsoft* \
                      /etc/apt/sources.list.d/*azure* || true
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm pkg-config gcc \
+          sudo apt-get install -y ninja-build nasm pkg-config gcc \
             python3-pip
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
           # gcovr replaces lcov: it deduplicates .gcno files belonging to
           # the same source compiled into multiple targets (libvmaf.so +
           # each test_X.p/.._src_X.c.gcda), which lcov sums and yields
