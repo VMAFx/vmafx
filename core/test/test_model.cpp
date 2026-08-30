@@ -117,7 +117,7 @@ static int append_fmt(char *dst, size_t dst_sz, size_t *off, const char *fmt, ..
     return 0;
 }
 
-static char *test_json_model(void)
+static mu_message_t test_json_model(void)
 {
     int err = 0;
 
@@ -144,7 +144,7 @@ static char *test_json_model(void)
 }
 
 #if VMAF_BUILT_IN_MODELS
-static char *test_built_in_model(void)
+static mu_message_t test_built_in_model(void)
 {
     int err = 0;
 
@@ -169,7 +169,7 @@ static char *test_built_in_model(void)
 }
 #endif
 
-static char *test_model_load_and_destroy(void)
+static mu_message_t test_model_load_and_destroy(void)
 {
     int err;
 
@@ -193,7 +193,7 @@ static char *test_model_load_and_destroy(void)
     return NULL;
 }
 
-static char *test_model_feature(void)
+static mu_message_t test_model_feature(void)
 {
     int err;
 
@@ -272,7 +272,7 @@ static char *test_model_feature(void)
     return NULL;
 }
 
-static char *test_model_check_default_behavior_unset_flags(void)
+static mu_message_t test_model_check_default_behavior_unset_flags(void)
 {
     int err;
 
@@ -298,7 +298,7 @@ static char *test_model_check_default_behavior_unset_flags(void)
     return NULL;
 }
 
-static char *test_model_check_default_behavior_set_flags(void)
+static mu_message_t test_model_check_default_behavior_set_flags(void)
 {
     int err;
 
@@ -323,7 +323,7 @@ static char *test_model_check_default_behavior_set_flags(void)
     return NULL;
 }
 
-static char *test_model_set_flags(void)
+static mu_message_t test_model_set_flags(void)
 {
     int err;
 
@@ -413,7 +413,7 @@ static char *test_model_set_flags(void)
 /* Exercises vmaf_read_json_model_from_buffer — never hit by the existing
  * tests, which only use vmaf_read_json_model_from_path. Round-trip: file →
  * buffer → parse, and compare against the path-parsed model. */
-static char *test_json_model_from_buffer(void)
+static mu_message_t test_json_model_from_buffer(void)
 {
     const char *path = JSON_MODEL_PATH "vmaf_float_v0.6.1.json";
     size_t len = 0;
@@ -439,7 +439,7 @@ static char *test_json_model_from_buffer(void)
 }
 
 /* Missing path → -EINVAL from the fopen guard in vmaf_read_json_model_from_path. */
-static char *test_json_model_missing_path(void)
+static mu_message_t test_json_model_missing_path(void)
 {
     VmafModel *m = NULL;
     VmafModelConfig cfg = {0};
@@ -450,7 +450,7 @@ static char *test_json_model_missing_path(void)
 }
 
 /* Malformed JSON buffer → non-zero error from the parser. */
-static char *test_json_model_malformed_buffer(void)
+static mu_message_t test_json_model_malformed_buffer(void)
 {
     const char garbage[] = "{this is definitely not valid json}";
     VmafModel *m = NULL;
@@ -464,7 +464,7 @@ static char *test_json_model_malformed_buffer(void)
 }
 
 /* Empty buffer → non-zero error. */
-static char *test_json_model_empty_buffer(void)
+static mu_message_t test_json_model_empty_buffer(void)
 {
     VmafModel *m = NULL;
     VmafModelConfig cfg = {0};
@@ -479,7 +479,7 @@ static char *test_json_model_empty_buffer(void)
  * ensemble model. Verifies model_collection_parse iterates its keyed
  * sub-models ("0", "1", …) and fills both *model (first) and
  * *model_collection (rest). */
-static char *test_json_model_collection_from_path(void)
+static mu_message_t test_json_model_collection_from_path(void)
 {
     const char *path = JSON_MODEL_PATH "vmaf_b_v0.6.3.json";
     VmafModel *m = NULL;
@@ -496,7 +496,7 @@ static char *test_json_model_collection_from_path(void)
 }
 
 /* Same ensemble model via the buffer entry point. */
-static char *test_json_model_collection_from_buffer(void)
+static mu_message_t test_json_model_collection_from_buffer(void)
 {
     const char *path = JSON_MODEL_PATH "vmaf_b_v0.6.3.json";
     size_t len = 0;
@@ -518,7 +518,7 @@ static char *test_json_model_collection_from_buffer(void)
 }
 
 /* Missing path for the collection API → -EINVAL. */
-static char *test_json_model_collection_missing_path(void)
+static mu_message_t test_json_model_collection_missing_path(void)
 {
     VmafModel *m = NULL;
     VmafModelCollection *mc = NULL;
@@ -531,7 +531,7 @@ static char *test_json_model_collection_missing_path(void)
 
 /* Collection buffer that is not an object → model_collection_parse early
  * -EINVAL branch. */
-static char *test_json_model_collection_malformed_buffer(void)
+static mu_message_t test_json_model_collection_malformed_buffer(void)
 {
     const char garbage[] = "[1, 2, 3]";
     VmafModel *m = NULL;
@@ -552,7 +552,7 @@ static char *test_json_model_collection_malformed_buffer(void)
  * lot of garbage, so the call may succeed or fail depending on where in
  * the token stream it gives up. All we care about here is that the
  * pre-libsvm branches get exercised without crashing. */
-static char *test_json_model_synthetic_branches(void)
+static mu_message_t test_json_model_synthetic_branches(void)
 {
     const char json[] =
         "{"
@@ -591,7 +591,7 @@ static char *test_json_model_synthetic_branches(void)
     return NULL;
 }
 
-static char *test_json_model_allows_more_than_64_features(void)
+static mu_message_t test_json_model_allows_more_than_64_features(void)
 {
     char json[8192];
     size_t off = 0;
@@ -624,7 +624,7 @@ static char *test_json_model_allows_more_than_64_features(void)
     return NULL;
 }
 
-static char *test_json_model_allows_more_than_10_knots(void)
+static mu_message_t test_json_model_allows_more_than_10_knots(void)
 {
     char json[2048];
     size_t off = 0;
@@ -650,7 +650,7 @@ static char *test_json_model_allows_more_than_10_knots(void)
 }
 
 /* parse_model_dict: unknown model_type value → -EINVAL (line 333). */
-static char *test_json_model_unknown_model_type(void)
+static mu_message_t test_json_model_unknown_model_type(void)
 {
     const char json[] = "{\"model_dict\": {\"model_type\": \"NOT_A_REAL_TYPE\"}}";
     VmafModel *m = NULL;
@@ -663,7 +663,7 @@ static char *test_json_model_unknown_model_type(void)
 }
 
 /* parse_model_dict: unknown norm_type value → -EINVAL (line 347). */
-static char *test_json_model_unknown_norm_type(void)
+static mu_message_t test_json_model_unknown_norm_type(void)
 {
     const char json[] = "{\"model_dict\": {\"norm_type\": \"weird-norm\"}}";
     VmafModel *m = NULL;
@@ -676,7 +676,7 @@ static char *test_json_model_unknown_norm_type(void)
 }
 
 /* parse_model_dict: model_type not a string → -EINVAL (line 324). */
-static char *test_json_model_model_type_not_string(void)
+static mu_message_t test_json_model_model_type_not_string(void)
 {
     const char json[] = "{\"model_dict\": {\"model_type\": 42}}";
     VmafModel *m = NULL;
@@ -689,7 +689,7 @@ static char *test_json_model_model_type_not_string(void)
 }
 
 /* parse_model_dict: norm_type not a string → -EINVAL (line 340). */
-static char *test_json_model_norm_type_not_string(void)
+static mu_message_t test_json_model_norm_type_not_string(void)
 {
     const char json[] = "{\"model_dict\": {\"norm_type\": 7}}";
     VmafModel *m = NULL;
@@ -702,7 +702,7 @@ static char *test_json_model_norm_type_not_string(void)
 }
 
 /* parse_model_dict: score_transform not an object → -EINVAL (line 308). */
-static char *test_json_model_score_transform_not_object(void)
+static mu_message_t test_json_model_score_transform_not_object(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": [1,2,3]}}";
     VmafModel *m = NULL;
@@ -715,7 +715,7 @@ static char *test_json_model_score_transform_not_object(void)
 }
 
 /* parse_score_transform: p0 neither null nor number → -EINVAL (line 216). */
-static char *test_json_model_score_transform_p0_bad_type(void)
+static mu_message_t test_json_model_score_transform_p0_bad_type(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"p0\": \"oops\"}}}";
     VmafModel *m = NULL;
@@ -728,7 +728,7 @@ static char *test_json_model_score_transform_p0_bad_type(void)
 }
 
 /* parse_score_transform: p1 bad type → -EINVAL (line 228). */
-static char *test_json_model_score_transform_p1_bad_type(void)
+static mu_message_t test_json_model_score_transform_p1_bad_type(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"p1\": true}}}";
     VmafModel *m = NULL;
@@ -741,7 +741,7 @@ static char *test_json_model_score_transform_p1_bad_type(void)
 }
 
 /* parse_score_transform: p2 bad type → -EINVAL (line 240). */
-static char *test_json_model_score_transform_p2_bad_type(void)
+static mu_message_t test_json_model_score_transform_p2_bad_type(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"p2\": false}}}";
     VmafModel *m = NULL;
@@ -754,7 +754,7 @@ static char *test_json_model_score_transform_p2_bad_type(void)
 }
 
 /* parse_score_transform: knots neither null nor array → -EINVAL (line 255). */
-static char *test_json_model_score_transform_knots_bad_type(void)
+static mu_message_t test_json_model_score_transform_knots_bad_type(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"knots\": 99}}}";
     VmafModel *m = NULL;
@@ -767,7 +767,7 @@ static char *test_json_model_score_transform_knots_bad_type(void)
 }
 
 /* parse_score_transform: out_lte_in not a string → -EINVAL (line 262). */
-static char *test_json_model_score_transform_out_lte_in_not_string(void)
+static mu_message_t test_json_model_score_transform_out_lte_in_not_string(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"out_lte_in\": 1}}}";
     VmafModel *m = NULL;
@@ -780,7 +780,7 @@ static char *test_json_model_score_transform_out_lte_in_not_string(void)
 }
 
 /* parse_score_transform: out_gte_in not a string → -EINVAL (line 271). */
-static char *test_json_model_score_transform_out_gte_in_not_string(void)
+static mu_message_t test_json_model_score_transform_out_gte_in_not_string(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"out_gte_in\": 1}}}";
     VmafModel *m = NULL;
@@ -793,7 +793,7 @@ static char *test_json_model_score_transform_out_gte_in_not_string(void)
 }
 
 /* parse_score_transform: enabled neither true nor false → -EINVAL (line 204). */
-static char *test_json_model_score_transform_enabled_bad_type(void)
+static mu_message_t test_json_model_score_transform_enabled_bad_type(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"enabled\": 7}}}";
     VmafModel *m = NULL;
@@ -806,7 +806,7 @@ static char *test_json_model_score_transform_enabled_bad_type(void)
 }
 
 /* parse_feature_names: non-string element → -EINVAL (line 180). */
-static char *test_json_model_feature_names_non_string(void)
+static mu_message_t test_json_model_feature_names_non_string(void)
 {
     const char json[] = "{\"model_dict\": {\"feature_names\": [\"ok\", 42]}}";
     VmafModel *m = NULL;
@@ -819,7 +819,7 @@ static char *test_json_model_feature_names_non_string(void)
 }
 
 /* parse_slopes: non-number element → -EINVAL (line 116). */
-static char *test_json_model_slopes_non_number(void)
+static mu_message_t test_json_model_slopes_non_number(void)
 {
     const char json[] = "{\"model_dict\": {\"slopes\": [1.0, \"x\"]}}";
     VmafModel *m = NULL;
@@ -832,7 +832,7 @@ static char *test_json_model_slopes_non_number(void)
 }
 
 /* parse_intercepts: first element not a number → -EINVAL (line 92). */
-static char *test_json_model_intercepts_first_not_number(void)
+static mu_message_t test_json_model_intercepts_first_not_number(void)
 {
     const char json[] = "{\"model_dict\": {\"intercepts\": [\"nope\"]}}";
     VmafModel *m = NULL;
@@ -845,7 +845,7 @@ static char *test_json_model_intercepts_first_not_number(void)
 }
 
 /* parse_knots: outer element not an array → -EINVAL (line 149). */
-static char *test_json_model_knots_outer_not_array(void)
+static mu_message_t test_json_model_knots_outer_not_array(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"knots\": [42]}}}";
     VmafModel *m = NULL;
@@ -858,7 +858,7 @@ static char *test_json_model_knots_outer_not_array(void)
 }
 
 /* parse_knots_list: knot pair holds >2 numbers → -EINVAL (line 132). */
-static char *test_json_model_knots_too_many_values(void)
+static mu_message_t test_json_model_knots_too_many_values(void)
 {
     const char json[] = "{\"model_dict\": {\"score_transform\": {\"knots\": [[0.0, 1.0, 2.0]]}}}";
     VmafModel *m = NULL;
@@ -872,7 +872,7 @@ static char *test_json_model_knots_too_many_values(void)
 
 /* parse_feature_opts_dicts: value type other than number/bool/string
  * (here: null) → -EINVAL (line 77). */
-static char *test_json_model_feature_opts_dict_bad_value_type(void)
+static mu_message_t test_json_model_feature_opts_dict_bad_value_type(void)
 {
     const char json[] = "{\"model_dict\": {\"feature_opts_dicts\": [{\"k\": null}]}}";
     VmafModel *m = NULL;
@@ -885,7 +885,7 @@ static char *test_json_model_feature_opts_dict_bad_value_type(void)
 }
 
 /* parse_model_dict: score_clip not an array → -EINVAL (line 354). */
-static char *test_json_model_score_clip_not_array(void)
+static mu_message_t test_json_model_score_clip_not_array(void)
 {
     const char json[] = "{\"model_dict\": {\"score_clip\": 0}}";
     VmafModel *m = NULL;
@@ -898,7 +898,7 @@ static char *test_json_model_score_clip_not_array(void)
 }
 
 /* parse_model_dict: top-level model_dict value not an object → -EINVAL (line 299). */
-static char *test_json_model_model_dict_not_object(void)
+static mu_message_t test_json_model_model_dict_not_object(void)
 {
     const char json[] = "{\"model_dict\": [1,2]}";
     VmafModel *m = NULL;
@@ -913,7 +913,7 @@ static char *test_json_model_model_dict_not_object(void)
 /* Collection parser hits json_skip() for keys that don't match the
  * generated "%d" index sequence (line 556). Also hits the -EINVAL early
  * return when the inner model payload is malformed (line 538). */
-static char *test_json_model_collection_skips_unknown_keys(void)
+static mu_message_t test_json_model_collection_skips_unknown_keys(void)
 {
     const char json[] = "{"
                         "\"extra_meta\": \"ignored\","
@@ -935,7 +935,7 @@ static char *test_json_model_collection_skips_unknown_keys(void)
 /* Exercises the score_transform parser branches (p0, p1, p2, out_gte_in)
  * via VMAF_MODEL_FLAG_ENABLE_TRANSFORM on a model that actually carries a
  * score_transform block. vmaf_v0.6.1.json has one. */
-static char *test_json_model_score_transform(void)
+static mu_message_t test_json_model_score_transform(void)
 {
     VmafModel *m;
     VmafModelConfig cfg = {
@@ -958,7 +958,7 @@ static char *test_json_model_score_transform(void)
  * Confidence-interval values (VmafModelCollectionScore.bootstrap.ci.p95)
  * are computed at score time by vmaf_predict_score_at_index_model_collection();
  * this test covers the structural preconditions for that path. */
-static char *test_model_collection_bootstrap_type(void)
+static mu_message_t test_model_collection_bootstrap_type(void)
 {
     const char *path = JSON_MODEL_PATH "vmaf_b_v0.6.3.json";
     VmafModel *m = NULL;
@@ -977,7 +977,7 @@ static char *test_model_collection_bootstrap_type(void)
     return NULL;
 }
 
-static char *test_version_next(void)
+static mu_message_t test_version_next(void)
 {
     const void *next = NULL;
     const char *version = NULL;
@@ -993,7 +993,7 @@ static char *test_version_next(void)
     return NULL;
 }
 
-char *run_tests(void)
+mu_message_t run_tests(void)
 {
     mu_run_test(test_json_model);
 #if VMAF_BUILT_IN_MODELS

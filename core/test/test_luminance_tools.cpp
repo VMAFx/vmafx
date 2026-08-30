@@ -28,7 +28,7 @@ int almost_equal(double a, double b)
     return diff < EPS;
 }
 
-static char *test_bt1886_eotf()
+static mu_message_t test_bt1886_eotf()
 {
     double L = vmaf_luminance_bt1886_eotf(0.5);
     mu_assert("wrong bt1886_eotf result", almost_equal(L, 58.716634));
@@ -40,7 +40,7 @@ static char *test_bt1886_eotf()
     return nullptr;
 }
 
-static char *test_pq_eotf()
+static mu_message_t test_pq_eotf()
 {
     double L;
     L = vmaf_luminance_pq_eotf(0.0);
@@ -55,7 +55,7 @@ static char *test_pq_eotf()
     return nullptr;
 }
 
-static char *test_range_foot_head()
+static mu_message_t test_range_foot_head()
 {
     int foot;
     int head;
@@ -73,7 +73,7 @@ static char *test_range_foot_head()
     return nullptr;
 }
 
-static char *test_get_luminance()
+static mu_message_t test_get_luminance()
 {
     VmafLumaRange range_8b_limited;
     vmaf_luminance_init_luma_range(&range_8b_limited, 8, VMAF_PIXEL_RANGE_LIMITED);
@@ -100,7 +100,7 @@ static char *test_get_luminance()
     return nullptr;
 }
 
-static char *test_normalize_range()
+static mu_message_t test_normalize_range()
 {
     VmafLumaRange range_8b_limited;
     vmaf_luminance_init_luma_range(&range_8b_limited, 8, VMAF_PIXEL_RANGE_LIMITED);
@@ -129,7 +129,7 @@ static char *test_normalize_range()
 /* Coverage push: vmaf_luminance_init_eotf accepts "bt1886" and "pq"
  * literally and otherwise returns -EINVAL.  The function was reachable
  * only via the float_ssim public path before; this drives it directly. */
-static char *test_init_eotf_dispatch()
+static mu_message_t test_init_eotf_dispatch()
 {
     VmafEOTF eotf = nullptr;
 
@@ -154,7 +154,7 @@ static char *test_init_eotf_dispatch()
 /* Coverage push: range_foot_head must reject unknown VmafPixelRange
  * enum values with -EINVAL.  Exercises the default branch that was
  * silently dead before. */
-static char *test_range_foot_head_invalid()
+static mu_message_t test_range_foot_head_invalid()
 {
     int foot = 0xDEAD;
     int head = 0xBEEF;
@@ -168,7 +168,7 @@ static char *test_range_foot_head_invalid()
     return nullptr;
 }
 
-char *run_tests()
+mu_message_t run_tests()
 {
     mu_run_test(test_bt1886_eotf);
     mu_run_test(test_pq_eotf);

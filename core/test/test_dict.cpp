@@ -32,7 +32,7 @@ extern "C" {
  * (adversarial review 2026-05-28 finding #10; Power of 10 #8). */
 #include "../src/dict_internal.h"
 
-static char *test_vmaf_dictionary()
+static mu_message_t test_vmaf_dictionary()
 {
     int err = 0;
 
@@ -113,7 +113,7 @@ static char *test_vmaf_dictionary()
     return NULL;
 }
 
-static char *test_vmaf_dictionary_merge()
+static mu_message_t test_vmaf_dictionary_merge()
 {
     int err = 0;
     VmafDictionary *a = NULL;
@@ -179,7 +179,7 @@ static char *test_vmaf_dictionary_merge()
     return NULL;
 }
 
-static char *test_vmaf_dictionary_compare()
+static mu_message_t test_vmaf_dictionary_compare()
 {
     int err = 0;
 
@@ -227,7 +227,7 @@ static char *test_vmaf_dictionary_compare()
     return NULL;
 }
 
-static char *test_vmaf_dictionary_normalize_numerical_val()
+static mu_message_t test_vmaf_dictionary_normalize_numerical_val()
 {
     int err = 0;
 
@@ -291,7 +291,7 @@ static char *test_vmaf_dictionary_normalize_numerical_val()
     return NULL;
 }
 
-static char *test_vmaf_feature_dictionary()
+static mu_message_t test_vmaf_feature_dictionary()
 {
     int err = 0;
 
@@ -306,7 +306,7 @@ static char *test_vmaf_feature_dictionary()
     return NULL;
 }
 
-static char *test_vmaf_dictionary_alphabetical_sort()
+static mu_message_t test_vmaf_dictionary_alphabetical_sort()
 {
     int err = 0;
 
@@ -325,7 +325,7 @@ static char *test_vmaf_dictionary_alphabetical_sort()
 
     vmaf_dictionary_alphabetical_sort(dict);
     mu_assert("dict should have 9 entries", dict->cnt == 9);
-    char *expected_order[9] = {"0", "1", "2", "a", "b", "c", "x", "y", "z"};
+    const char *const expected_order[9] = {"0", "1", "2", "a", "b", "c", "x", "y", "z"};
 
     for (unsigned i = 0; i < 9; i++) {
         mu_assert("dict is not alphabetically sorted",
@@ -338,7 +338,7 @@ static char *test_vmaf_dictionary_alphabetical_sort()
     return NULL;
 }
 
-static char *test_isnumeric()
+static mu_message_t test_isnumeric()
 {
     // not numeric
     mu_assert("problem during isnumeric", !isnumeric("abc"));
@@ -357,7 +357,7 @@ static char *test_isnumeric()
     return NULL;
 }
 
-char *run_tests()
+mu_message_t run_tests()
 {
     mu_run_test(test_vmaf_dictionary);
     mu_run_test(test_vmaf_dictionary_merge);

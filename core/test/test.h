@@ -31,10 +31,13 @@
 
 extern int mu_tests_run;
 #ifdef __cplusplus
+typedef const char *mu_message_t;
 extern "C" {
+#else
+typedef char *mu_message_t;
 #endif
 
-char *run_tests(void);
+mu_message_t run_tests(void);
 
 #ifdef __cplusplus
 }
@@ -45,10 +48,10 @@ char *run_tests(void);
  * includes test.h gets one copy and so the `mu_run_test` macro
  * expansion stays short enough to avoid tripping
  * `readability-function-size` on test bodies that run many cases. */
-static inline char *mu_report(const char *name, char *(*test)(void))
+static inline mu_message_t mu_report(const char *name, mu_message_t (*test)(void))
 {
     (void)fprintf(stderr, "%s: ", name);
-    char *message = test();
+    mu_message_t message = test();
     mu_tests_run++;
     (void)fprintf(stderr, message ? "\033[31mfail\033[0m\n" : "\033[32mpass\033[0m\n");
     return message;
@@ -56,7 +59,7 @@ static inline char *mu_report(const char *name, char *(*test)(void))
 
 #define mu_run_test(test)                                                                          \
     do {                                                                                           \
-        char *mu_msg = mu_report(#test, (test));                                                   \
+        mu_message_t mu_msg = mu_report(#test, (test));                                            \
         if (mu_msg)                                                                                \
             return mu_msg;                                                                         \
     } while (0)
