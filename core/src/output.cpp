@@ -467,6 +467,16 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
 [[nodiscard]] int vmaf_write_output_csv(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
                                         const char *score_format)
 {
+    /* Mirror the XML/JSON writers' NULL guards (ADR-0602). Both fc and outfile
+     * are dereferenced unconditionally below; without these this writer
+     * SIGSEGVs on NULL input where the sibling writers return -EINVAL.
+     * Adversarial audit 2026-05-31 — the fix landed in output.c after this
+     * C++ twin was written, so it had to be ported across. */
+    if (!fc)
+        return -EINVAL;
+    if (!outfile)
+        return -EINVAL;
+
     const std::string_view sf = fmt_or_default(score_format);
 
     const LocaleGuard locale;
@@ -511,6 +521,13 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
 [[nodiscard]] int vmaf_write_output_sub(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
                                         const char *score_format)
 {
+    /* Mirror the XML/JSON writers' NULL guards (ADR-0602). See the CSV writer
+     * above for rationale. */
+    if (!fc)
+        return -EINVAL;
+    if (!outfile)
+        return -EINVAL;
+
     const std::string_view sf = fmt_or_default(score_format);
 
     const LocaleGuard locale;

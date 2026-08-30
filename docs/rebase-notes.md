@@ -46701,3 +46701,20 @@ no rebase impact: bumps `core/meson.build` `version` (x-release-please-version) 
 
 ## fix/round3-build-gpu-batch (2026-06-27)
 no ffmpeg-patch impact. R3-6 HIP integer_vif uninit-err (init err=0). R3-9 NVTX libdl → cc.find_library('dl'). R3-10 ssim AVX2 carve-out + `_x86_simd_strict_fp_extra` (icx -fp-model=precise; no-op on gcc/clang). **Invariant:** every x86 SIMD carve-out lib that needs bit-exactness under icx must carry `_x86_simd_strict_fp_extra`; keep the ssim carve-out aligned with its psnr_hvs/ms_ssim/ssimulacra2 siblings.
+
+## C++23 twin wiring (Waves 1–5, landed 2026-08-30)
+
+Twelve `core/src` translation units moved from `.c` to `.cpp`: `cpu`, `dict`,
+`mem`, `output`, `ref`, `thread_locale`, `fex_ctx_vector`, `feature_name`,
+`luminance_tools`, `mkdirp`, `picture_copy`, `psnr_tools`. The `.c` twins are
+deleted, so an upstream Netflix patch touching any of those paths will not apply
+directly — port the hunk into the `.cpp` file instead of restoring the `.c`.
+
+Several internal headers gained `#ifdef __cplusplus` / `extern "C"` guards
+(`feature/alias.h`, `output.h`, `fex_ctx_vector.h`, `feature/mkdirp.h`,
+`feature/psnr_tools.h`, `test/test.h`). The guards are inert for C consumers.
+
+Lesson worth keeping: an unreferenced twin diverges silently. `output.c` got the
+ADR-0602 NULL-guard fix while `output.cpp` did not, and nothing caught it because
+nothing built `output.cpp`. A CI check that fails on any `.c`/`.cpp` pair where
+one side is unreferenced would prevent a recurrence.
