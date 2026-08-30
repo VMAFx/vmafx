@@ -813,8 +813,15 @@ void vif_statistic_8_neon(struct VifPublicState *s, float *num, float *den, unsi
             vst1q_s32(xx, sigma1_sq_vec_l);
             vst1q_s32(xx + 4, sigma1_sq_vec_h);
 
-            vst1q_s32(yy, sigma2_sq_vec_l);
-            vst1q_s32(yy + 4, sigma2_sq_vec_h);
+            /* The scalar `vif_statistic_8` clamps with `sigma2_sq = MAX(sigma2_sq, 0)`
+             * before the branch, and the non-log arm then accumulates the clamped
+             * value into `accum_num_non_log`.  Without the clamp a negative
+             * sigma2_sq — routine on near-flat content, where the fixed-point
+             * rounding of mu2 outruns the filtered dis^2 — is summed verbatim and
+             * drives num the wrong way.  `vif_statistic_16_neon` below and
+             * `vif_statistic_8_avx2` (`_mm256_max_epi32`) both clamp here. */
+            vst1q_s32(yy, vmaxq_s32(vdupq_n_s32(0), sigma2_sq_vec_l));
+            vst1q_s32(yy + 4, vmaxq_s32(vdupq_n_s32(0), sigma2_sq_vec_h));
 
             vst1q_s32(xy, sigma12_vec_l);
             vst1q_s32(xy + 4, sigma12_vec_h);
@@ -862,6 +869,20 @@ void vif_statistic_8_neon(struct VifPublicState *s, float *num, float *den, unsi
                     accum_den_non_log++;
                 }
             }
+        }
+
+        /* The horizontal loop above steps 8 columns and stops at `w - 7`, but
+         * `integer_vif.c` installs this kernel for *every* width — there is no
+         * `w % 8` admission guard. Without this tail the last `w % 8` columns of
+         * each row never reach num/den at all (and for `w <= 7`, `uiw7` is 0 and
+         * the row is dropped entirely). `vif_statistic_16_neon` below and both
+         * x86 8-bit kernels close the same gap the same way. */
+        if (j != w) {
+            VifResiduals residuals = vif_compute_line_residuals(s, j, w, 0);
+            accum_num_log += residuals.accum_num_log;
+            accum_den_log += residuals.accum_den_log;
+            accum_num_non_log += residuals.accum_num_non_log;
+            accum_den_non_log += residuals.accum_den_non_log;
         }
     }
     num[0] =
