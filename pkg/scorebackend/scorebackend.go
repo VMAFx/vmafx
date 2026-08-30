@@ -1,30 +1,27 @@
 // Copyright 2026 Lusoris
-// SPDX-License-Identifier: BSD-2-Clause-Patent
+// SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 
-// Package scorebackend resolves the libvmaf scoring backend a tuning run
-// should use, honouring an operator preference against what the local vmaf
-// binary and host hardware can actually provide.
+// Package scorebackend is the Go port of the backend-selection half of
+// tools/vmaf-tune/src/vmaftune/score_backend.py.
 //
-// Go port of the selection half of
-// tools/vmaf-tune/src/vmaftune/score_backend.py (ADR-0299 introduced
-// --score-backend; ADR-0667 set the native-first "auto" priority and the
-// strict explicit-request rule). The NR-proxy half of that module
-// (NRProxyBackend) drives an
-// ONNX model through onnxruntime and is NOT ported — see the package
-// documentation in pkg/pershot for the blocker.
+// It answers one question: which libvmaf scoring backend (cpu / cuda / sycl /
+// hip) should this run use? "Usable" means both
 //
-// Two questions are answered independently, exactly as the Python does:
+//  1. the local vmaf binary advertises --backend NAME support in its --help
+//     output, and
+//  2. the corresponding hardware/runtime probe succeeds
+//     (nvidia-smi / sycl-ls / rocminfo|rocm-smi).
 //
-//  1. Does the local vmaf binary advertise the backend? Parsed out of the
-//     "--backend $name: ... auto|cpu|cuda|sycl|hip" line in `vmaf --help`.
-//  2. Is the corresponding hardware reachable? Probed with nvidia-smi /
-//     sycl-ls / rocminfo + rocm-smi.
+// prefer="auto" walks the fallback chain and returns the first usable entry;
+// any explicit preference is honoured strictly and fails with an
+// *UnavailableError rather than silently downgrading, because a silent
+// downgrade masks hardware/build mismatches and lies to the operator about
+// wall-clock expectations.
 //
-// Relationship to pkg/gpu: pkg/gpu.Detect answers a different question — it
-// returns the *first* vendor found so a vmafx-node can advertise a primary
-// backend. This package probes every vendor independently, because a host
-// with both an NVIDIA and an Intel GPU must be able to honour an explicit
-// "--score-backend sycl" request that pkg/gpu.Detect would never surface.
+// Scope note: score_backend.py also hosts NRProxyBackend (the ADR-0624 /
+// ADR-0615 no-reference ONNX pre-scorer). That half is not ported here — it
+// needs a multi-input ONNX Runtime session, which the Go tree does not yet
+// have (see pkg/fast's proxy blocker and pkg/ai.Registry.InferDirect).
 package scorebackend
 
 import (
@@ -36,47 +33,61 @@ import (
 	"time"
 )
 
-// All lists the backends the vmaf CLI accepts via "--backend NAME".
-// Mirrors score_backend.ALL_BACKENDS, order included.
-var All = []string{"cpu", "cuda", "sycl", "hip"}
+// AllBackends lists the backends the vmaf CLI accepts via --backend NAME,
+// in the canonical order used for reporting.
+func AllBackends() []string { return []string{"cpu", "cuda", "sycl", "hip"} }
 
-// DefaultFallbacks is the preference order walked by "auto": native vendor
-// backends first in vendor-priority order, CPU as the always-available floor.
-// Mirrors score_backend.DEFAULT_FALLBACKS.
-var DefaultFallbacks = []string{"cuda", "sycl", "hip", "cpu"}
+// DefaultFallbacks is the fallback chain for prefer="auto". Native vendor
+// backends are preferred in vendor-priority order on their respective
+// silicon; cpu is the always-available floor.
+func DefaultFallbacks() []string { return []string{"cuda", "sycl", "hip", "cpu"} }
 
 // probeTimeout bounds each hardware-probe subprocess. Mirrors the Python
-// timeout=5 on every probe call.
+// `timeout=5` on every subprocess.run probe call.
 const probeTimeout = 5 * time.Second
 
-// helpTimeout bounds the `vmaf --help` invocation. The Python has no explicit
-// timeout there; a bound is added because a wedged vmaf binary would
-// otherwise hang backend resolution before any work starts.
-const helpTimeout = 15 * time.Second
-
-// ErrUnavailable is returned by Select when the operator explicitly requested
-// a backend the host cannot provide. Never returned for prefer == "auto",
-// which falls back instead. Mirrors BackendUnavailableError.
-var ErrUnavailable = errors.New("requested score backend is unavailable on this host")
-
-// Runner runs a command and returns its combined stdout+stderr plus whether
-// it exited zero. It is the subprocess seam: tests inject a stub, production
-// callers leave Options.Runner nil to get the real exec.
-type Runner func(ctx context.Context, name string, args ...string) (out string, ok bool)
-
-// Options configures backend detection.
-type Options struct {
-	// VMAFBin is the vmaf binary probed for "--backend" support.
-	// Defaults to "vmaf" (PATH lookup).
-	VMAFBin string
-
-	// Runner is the subprocess seam. Defaults to execRunner.
-	Runner Runner
-
-	// Available, when non-nil, short-circuits hardware + binary probing and
-	// is used as the availability list verbatim. Mirrors the Python
-	// select_backend(available=[...]) test seam.
+// UnavailableError reports that the operator explicitly requested a backend
+// this host cannot provide. Selection never silently downgrades.
+type UnavailableError struct {
+	// Requested is the backend the operator asked for.
+	Requested string
+	// Available is the set of backends the host can actually run.
 	Available []string
+}
+
+func (e *UnavailableError) Error() string {
+	avail := strings.Join(e.Available, ", ")
+	if avail == "" {
+		avail = "cpu"
+	}
+	return fmt.Sprintf(
+		"backend %q requested but not available on this host (available: %s). "+
+			"Check that the local vmaf binary was built with the matching backend "+
+			"support and the corresponding runtime/driver is installed.",
+		e.Requested, avail)
+}
+
+// Runner runs a probe command and returns its combined stdout, stderr and
+// exit-success flag. Tests inject a fake; production callers leave it nil and
+// get execRunner.
+type Runner func(ctx context.Context, name string, args ...string) (stdout, stderr string, ok bool)
+
+// Options configures Detect / Select. The zero value is the production
+// configuration.
+type Options struct {
+	// VMAFBin is the libvmaf CLI to probe for --backend support.
+	// Empty selects "vmaf" (PATH lookup).
+	VMAFBin string
+	// Fallbacks overrides the prefer="auto" chain. Empty selects
+	// DefaultFallbacks.
+	Fallbacks []string
+	// Available short-circuits host detection with a literal list. Used by
+	// tests to keep the unit boundary tight; nil runs Detect.
+	Available []string
+	// Run overrides subprocess execution. nil selects execRunner.
+	Run Runner
+	// LookPath overrides binary discovery. nil selects exec.LookPath.
+	LookPath func(string) (string, error)
 }
 
 func (o Options) vmafBin() string {
@@ -86,42 +97,73 @@ func (o Options) vmafBin() string {
 	return o.VMAFBin
 }
 
+func (o Options) fallbacks() []string {
+	if len(o.Fallbacks) == 0 {
+		return DefaultFallbacks()
+	}
+	return o.Fallbacks
+}
+
 func (o Options) runner() Runner {
-	if o.Runner == nil {
+	if o.Run == nil {
 		return execRunner
 	}
-	return o.Runner
+	return o.Run
 }
 
-// execRunner is the production Runner: runs name with args under a timeout
-// and returns combined output plus a zero-exit flag. A missing binary, a
-// non-zero exit and a timeout are all reported as ok == false.
-func execRunner(ctx context.Context, name string, args ...string) (string, bool) {
-	tctx, cancel := context.WithTimeout(ctx, probeTimeout)
+func (o Options) lookPath() func(string) (string, error) {
+	if o.LookPath == nil {
+		return exec.LookPath
+	}
+	return o.LookPath
+}
+
+// execRunner is the production Runner: it executes name with args under a
+// probeTimeout deadline and reports (stdout, stderr, exit==0).
+func execRunner(ctx context.Context, name string, args ...string) (string, string, bool) {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	// #nosec G204 -- name/args come only from this package's hard-coded probe
-	// commands and the operator-configured vmaf binary path.
-	cmd := exec.CommandContext(tctx, name, args...)
+	// #nosec G204 -- name/args are fixed probe literals chosen by this
+	// package (nvidia-smi, sycl-ls, rocminfo, rocm-smi) or the
+	// operator-configured vmaf binary. ctx enforces probeTimeout.
+	cmd := exec.CommandContext(ctx, name, args...)
+	var outBuf, errBuf strings.Builder
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	// A probe that emits nothing must still be reaped once the deadline
+	// fires, so cap the post-cancel wait.
 	cmd.WaitDelay = time.Second
-	out, err := cmd.CombinedOutput()
-	return string(out), err == nil
+	err := cmd.Run()
+	return outBuf.String(), errBuf.String(), err == nil
 }
 
-// ParseSupported extracts the backends a vmaf binary advertises from its
-// --help output.
+// vmafHelp returns the vmaf --help output (stdout and stderr joined). Any
+// error degrades to an empty string so probe logic reads "binary doesn't
+// support GPU backends" instead of failing the run.
+func vmafHelp(ctx context.Context, opts Options) string {
+	bin := opts.vmafBin()
+	if !strings.Contains(bin, "/") {
+		if _, err := opts.lookPath()(bin); err != nil {
+			return ""
+		}
+	}
+	out, errOut, _ := opts.runner()(ctx, bin, "--help")
+	return out + "\n" + errOut
+}
+
+// ParseSupportedBackends extracts the backends the vmaf binary advertises in
+// its --help text. The fork's CLI prints a line like
 //
-// The fork's CLI prints a line shaped like
+//	--backend $name:   exclusive backend selector — auto|cpu|cuda|sycl|hip.
 //
-//	--backend $name:  exclusive backend selector — auto|cpu|cuda|sycl|hip.
-//
-// so each backend token is matched only when it is bounded by a pipe on the
-// left and a pipe / period / whitespace / end-of-line on the right. That
-// avoids false positives on prose mentions of "CUDA". "cpu" is added
-// unconditionally: every libvmaf build has a CPU path. Mirrors
-// score_backend.parse_supported_backends.
-func ParseSupported(helpText string) map[string]bool {
+// so each backend token is matched only when it is delimited by a leading '|'
+// and a trailing '|', '.', newline or space. That avoids false positives on
+// substrings (e.g. the word "cuda" inside a prose comment). "cpu" is always
+// present — every libvmaf build has a CPU path, even if the help line is
+// missing entirely.
+func ParseSupportedBackends(helpText string) map[string]bool {
 	found := map[string]bool{"cpu": true}
-	for _, backend := range All {
+	for _, backend := range AllBackends() {
 		for _, needle := range []string{
 			"|" + backend + "|",
 			"|" + backend + ".",
@@ -137,125 +179,114 @@ func ParseSupported(helpText string) map[string]bool {
 	return found
 }
 
-// vmafHelp returns the vmaf binary's --help output (stdout and stderr
-// joined). Returns "" on any failure so probing degrades to "this build has
-// no GPU backends" instead of erroring out.
-func vmafHelp(ctx context.Context, opts Options) string {
-	bin := opts.vmafBin()
-	if !strings.Contains(bin, "/") {
-		if _, err := exec.LookPath(bin); err != nil {
-			return ""
-		}
-	}
-	hctx, cancel := context.WithTimeout(ctx, helpTimeout)
-	defer cancel()
-	out, _ := opts.runner()(hctx, bin, "--help")
-	// The Python joins stdout+stderr regardless of exit status; --help exits
-	// non-zero on some builds, so the ok flag is deliberately ignored here.
-	return out
-}
-
-// probeCUDA reports whether an NVIDIA device is reachable via nvidia-smi -L.
-func probeCUDA(ctx context.Context, run Runner) bool {
-	if _, err := exec.LookPath("nvidia-smi"); err != nil {
+// probeCUDA reports whether a CUDA device is reachable, via `nvidia-smi -L`.
+func probeCUDA(ctx context.Context, opts Options) bool {
+	if _, err := opts.lookPath()("nvidia-smi"); err != nil {
 		return false
 	}
-	out, ok := run(ctx, "nvidia-smi", "-L")
+	out, _, ok := opts.runner()(ctx, "nvidia-smi", "-L")
 	return ok && strings.Contains(out, "GPU")
 }
 
-// probeSYCL reports whether a SYCL GPU device is reachable via sycl-ls.
-// sycl-ls prints one bracketed line per device ("[opencl:gpu]",
-// "[ext_oneapi_level_zero:gpu]", ...); a CPU-only OpenCL runtime must not
-// count, hence the ":gpu" check.
-func probeSYCL(ctx context.Context, run Runner) bool {
-	if _, err := exec.LookPath("sycl-ls"); err != nil {
+// probeSYCL reports whether a SYCL GPU device is reachable, via `sycl-ls`.
+// sycl-ls prints one line per device prefixed with bracketed backend tokens:
+// "[opencl:gpu]", "[ext_oneapi_level_zero:gpu]", ...
+func probeSYCL(ctx context.Context, opts Options) bool {
+	if _, err := opts.lookPath()("sycl-ls"); err != nil {
 		return false
 	}
-	out, ok := run(ctx, "sycl-ls")
-	if !ok {
-		return false
-	}
-	return strings.Contains(out, "[") && strings.Contains(strings.ToLower(out), ":gpu")
+	out, _, ok := opts.runner()(ctx, "sycl-ls")
+	return ok && strings.Contains(out, "[") && strings.Contains(strings.ToLower(out), ":gpu")
 }
 
-// probeHIP reports whether an AMD ROCm/HIP device is reachable. rocminfo is
-// tried first (its "gfx" ISA string is the strongest signal); rocm-smi's
-// product-name query is the fallback.
-func probeHIP(ctx context.Context, run Runner) bool {
-	if _, err := exec.LookPath("rocminfo"); err == nil {
-		if out, ok := run(ctx, "rocminfo"); ok &&
-			strings.Contains(strings.ToLower(out), "gfx") {
+// probeHIP reports whether an AMD ROCm/HIP GPU is reachable. rocminfo is
+// tried first (it names the gfx target); rocm-smi is the fallback.
+func probeHIP(ctx context.Context, opts Options) bool {
+	look := opts.lookPath()
+	run := opts.runner()
+
+	if _, err := look("rocminfo"); err == nil {
+		out, errOut, ok := run(ctx, "rocminfo")
+		if ok && strings.Contains(strings.ToLower(out+"\n"+errOut), "gfx") {
 			return true
 		}
 	}
-	if _, err := exec.LookPath("rocm-smi"); err != nil {
+
+	if _, err := look("rocm-smi"); err != nil {
 		return false
 	}
-	out, ok := run(ctx, "rocm-smi", "--showproductname")
+	out, errOut, ok := run(ctx, "rocm-smi", "--showproductname")
 	if !ok {
 		return false
 	}
-	lower := strings.ToLower(out)
+	lower := strings.ToLower(out + "\n" + errOut)
 	return strings.Contains(lower, "gpu") || strings.Contains(lower, "card series")
 }
 
-// DetectAvailable returns the backends usable on this host, in All order.
-//
-// "Usable" means both that the local vmaf binary advertises the backend and
-// that the matching hardware probe succeeds. CPU is always present.
-// Mirrors score_backend.detect_available_backends.
-func DetectAvailable(ctx context.Context, opts Options) []string {
-	if opts.Available != nil {
-		return append([]string(nil), opts.Available...)
-	}
-	supported := ParseSupported(vmafHelp(ctx, opts))
-	run := opts.runner()
+// Detect returns the backends usable on this host, in AllBackends order.
+func Detect(ctx context.Context, opts Options) []string {
+	supported := ParseSupportedBackends(vmafHelp(ctx, opts))
 
-	usable := map[string]bool{"cpu": true}
+	probes := map[string]bool{"cpu": true}
 	if supported["cuda"] {
-		usable["cuda"] = probeCUDA(ctx, run)
+		probes["cuda"] = probeCUDA(ctx, opts)
 	}
 	if supported["sycl"] {
-		usable["sycl"] = probeSYCL(ctx, run)
+		probes["sycl"] = probeSYCL(ctx, opts)
 	}
 	if supported["hip"] {
-		usable["hip"] = probeHIP(ctx, run)
+		probes["hip"] = probeHIP(ctx, opts)
 	}
 
-	out := make([]string, 0, len(All))
-	for _, b := range All {
-		if supported[b] && usable[b] {
+	out := make([]string, 0, len(probes))
+	for _, b := range AllBackends() {
+		if supported[b] && probes[b] {
 			out = append(out, b)
 		}
 	}
 	return out
 }
 
-// Select resolves the backend to use.
+// Select picks a backend honouring the operator preference and the host
+// capability.
 //
-//   - prefer == "auto" walks DefaultFallbacks and returns the first entry
-//     present in the availability list, falling back to "cpu".
-//   - Any other value is honoured strictly: an unavailable backend returns an
-//     error wrapping ErrUnavailable rather than silently downgrading, because
-//     a silent downgrade masks a build/driver mismatch and lies to the
-//     operator about wall-clock expectations (ADR-0667).
-//
-// The returned string is "" only alongside a non-nil error.
+//   - prefer "auto" walks opts.Fallbacks and returns the first entry present
+//     in the available set. When nothing matches it returns "cpu", which is
+//     universally available even if every probe failed.
+//   - Any other prefer value (cpu / cuda / sycl / hip) is honoured strictly:
+//     if it is not available, an *UnavailableError is returned. Select never
+//     silently downgrades.
 func Select(ctx context.Context, prefer string, opts Options) (string, error) {
-	if prefer == "" {
-		prefer = "auto"
-	}
-	if prefer != "auto" && !contains(All, prefer) {
-		return "", fmt.Errorf("unknown backend %q; expected one of: auto, %s",
-			prefer, strings.Join(All, ", "))
+	if prefer != "auto" {
+		known := false
+		for _, b := range AllBackends() {
+			if b == prefer {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return "", fmt.Errorf("unknown backend %q; expected one of: auto, %s",
+				prefer, strings.Join(AllBackends(), ", "))
+		}
 	}
 
-	available := DetectAvailable(ctx, opts)
+	available := opts.Available
+	if available == nil {
+		available = Detect(ctx, opts)
+	}
+	has := func(name string) bool {
+		for _, a := range available {
+			if a == name {
+				return true
+			}
+		}
+		return false
+	}
 
 	if prefer == "auto" {
-		for _, candidate := range DefaultFallbacks {
-			if contains(available, candidate) {
+		for _, candidate := range opts.fallbacks() {
+			if has(candidate) {
 				return candidate, nil
 			}
 		}
@@ -263,27 +294,14 @@ func Select(ctx context.Context, prefer string, opts Options) (string, error) {
 		return "cpu", nil
 	}
 
-	if contains(available, prefer) {
+	if has(prefer) {
 		return prefer, nil
 	}
-
-	listed := strings.Join(available, ", ")
-	if listed == "" {
-		listed = "cpu"
-	}
-	return "", fmt.Errorf(
-		"%w: backend %q requested but not available on this host (available: %s). "+
-			"Check that the local vmaf binary was built with the matching backend "+
-			"support and the corresponding runtime/driver is installed",
-		ErrUnavailable, prefer, listed)
+	return "", &UnavailableError{Requested: prefer, Available: available}
 }
 
-// contains reports whether xs holds s.
-func contains(xs []string, s string) bool {
-	for _, x := range xs {
-		if x == s {
-			return true
-		}
-	}
-	return false
+// IsUnavailable reports whether err is (or wraps) an *UnavailableError.
+func IsUnavailable(err error) bool {
+	var target *UnavailableError
+	return errors.As(err, &target)
 }

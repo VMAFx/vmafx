@@ -160,7 +160,7 @@ Example:
 			"onnxruntime. Use 'vmaf-tune tune-per-shot --fast-nr'")
 	cmd.Flags().StringVar(&flags.scoreBackend, "score-backend", "auto",
 		"libvmaf score backend for the per-shot bisect scorer: auto, "+
-			strings.Join(scorebackend.All, ", "))
+			strings.Join(scorebackend.AllBackends(), ", "))
 	cmd.Flags().StringVar(&flags.predicateModule, "predicate-module", "",
 		"NOT IMPLEMENTED in the Go port: loading a Python MODULE:CALLABLE has no "+
 			"Go equivalent. Use 'vmaf-tune tune-per-shot --predicate-module'")

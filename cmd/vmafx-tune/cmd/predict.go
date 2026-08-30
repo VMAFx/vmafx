@@ -299,9 +299,13 @@ func buildPredictReport(report predictor.ValidationReport, flags *predictFlags) 
 				return predictReport{}, err
 			}
 			if !math.IsNaN(flags.alpha) {
-				cal = cal.WithAlpha(flags.alpha)
+				// LoadSplitCalibration already returns a pointer, and WithAlpha
+				// re-quantiles into a new one rather than mutating in place.
+				if cal, err = cal.WithAlpha(flags.alpha); err != nil {
+					return predictReport{}, err
+				}
 			}
-			calibration = &cal
+			calibration = cal
 		} else {
 			uncalibrated = true
 		}
@@ -309,7 +313,7 @@ func buildPredictReport(report predictor.ValidationReport, flags *predictFlags) 
 
 	var reportedAlpha *float64
 	if calibration != nil {
-		alpha := calibration.Alpha
+		alpha := calibration.Alpha()
 		reportedAlpha = &alpha
 	}
 

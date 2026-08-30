@@ -1,6 +1,45 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## feat/vmafx-tune-go-fast — Phase A.5 fast path ported to Go (2026-08-30)
+
+All fork-added surfaces; no upstream-mirror files touched, so nothing here
+conflicts with a Netflix `upstream` sync.
+
+- **New Go packages** — `pkg/fast/` (fast-path search + pipeline + proxy seam
+  + Python-`repr` JSON encoder), `pkg/scorebackend/` (libvmaf backend detection
+  and strict selection), `pkg/conformal/` (split-conformal and CV+ prediction
+  intervals). All three are Go ports of fork-local Python modules under
+  `tools/vmaf-tune/src/vmaftune/` (`fast.py`, `score_backend.py`,
+  `conformal.py`); the Python side is untouched and remains canonical until the
+  ADR-0703 sunset.
+- **New module dependencies** — `github.com/c-bata/goptuna` v0.9.0 (MIT; a Go
+  implementation of Optuna's TPE sampler) and its only transitive need,
+  `gonum.org/v1/gonum` v0.17.0. `go mod tidy` adds exactly these two lines; the
+  gorm / mysql / postgres requirements in goptuna's own `go.mod` are pruned
+  because only the root package and `goptuna/tpe` are imported.
+- **`pkg/encoder` additive fields** — `EncodeParams.InputArgs`,
+  `EncodeParams.OutputPath` and `EncodeResult.OutputSizeBytes`. All optional;
+  `runEncode` keeps its previous behaviour when they are zero, so `compare` and
+  `ladder` are unaffected. If a rebase conflicts in `runEncode`, keep the
+  `InputArgs` splice *before* `-i` and the `OutputPath` branch around the
+  `os.CreateTemp` block — raw-YUV probing depends on both.
+- **`cmd/vmafx-tune/cmd/root.go`** — `fast` moved out of the loud-fail stub
+  slice into the ported list, and `Execute` grew a `fastExitCode(err)` check so
+  the subcommand's 2 / 3 exit contract survives cobra's blanket exit 1. A
+  rebase that re-adds `{"fast", ...}` to the stub slice would shadow the real
+  command; drop the stub entry, not the `newFastCmd()` registration.
+- **Python-side divergences are deliberate** — the Go probe path decodes
+  container encodes to raw YUV, resolves `integer_`-prefixed libvmaf pooled
+  keys, reads the encoder vocabulary and the StandardScaler from the model
+  sidecar, and applies that scaler. Each of those corrects a defect in
+  `vmaf-tune fast` (see `changelog.d/added/vmafx-tune-go-fast-subcommand.md`).
+  Do **not** "restore parity" by reverting them; if the Python is fixed later,
+  the two converge on the Go behaviour.
+- **Do not lift the proxy port guard on rebase** — `ORTProxy.Score` refuses a
+  multi-port ONNX graph on purpose. See invariant 15 in
+  `cmd/vmafx-tune/AGENTS.md`.
+
 ## fix/codeql-quality-batch — code-scanning hygiene (2026-06-27)
 
 Small behaviour-neutral quality fixes. Upstream-mirror touches to re-apply on

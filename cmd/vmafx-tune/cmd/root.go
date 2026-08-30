@@ -63,8 +63,14 @@ Fully ported subcommands:
   prefilter            Joint TPE autotune over deband strengths + CRF
   tune-per-shot        Per-shot CRF tuning: shot detection + bisect + plan
 
+Partially ported:
+  fast        Proxy + TPE + GPU-verify recommend. --smoke runs end to end;
+              production mode stops at the ONNX proxy, which needs a
+              two-named-input graph the Go inference seam cannot drive yet.
+              See 'vmafx-tune-go fast --help'.
+
 Not yet ported (use 'vmaf-tune <subcommand>' for these):
-  fast, corpus, benchmark, auto, sidecar, encode-profile`
+  corpus, benchmark, auto, sidecar, encode-profile`
 	root.Cobra().Version = version
 
 	// Ported subcommands.
@@ -76,10 +82,10 @@ Not yet ported (use 'vmaf-tune <subcommand>' for these):
 	root.AddCommand(newRecommendSaliencyCmd())
 	root.AddCommand(newPrefilterCmd())
 	root.AddCommand(newPerShotCmd())
+	root.AddCommand(newFastCmd())
 
 	// Not-yet-ported stubs: log a redirect rather than silently failing.
 	for _, stub := range []struct{ name, desc string }{
-		{"fast", "Fast NR-proxy accelerated tune"},
 		{"corpus", "Corpus management"},
 		{"benchmark", "Encoder benchmark"},
 		{"auto", "Automatic subcommand selection"},
@@ -103,8 +109,11 @@ type exitCoder interface {
 }
 
 // Execute builds the clikit root, wires all subcommands, and runs the CLI.
-// It exits non-zero on error (cobra has already printed the message),
-// honouring a subcommand's requested exit status when it supplies one.
+//
+// Cobra maps any RunE error to exit 1. Subcommands that carry their own exit
+// contract — `fast` distinguishes usage errors (2) from an out-of-distribution
+// recommendation (3), matching `vmaf-tune fast` — attach the intended status
+// to the error, and Execute honours it. Everything else keeps exit 1.
 func Execute(version string) {
 	report.ToolVersion = version
 
@@ -112,6 +121,9 @@ func Execute(version string) {
 		var coder exitCoder
 		if errors.As(err, &coder) {
 			os.Exit(coder.ExitCode())
+		}
+		if code, ok := fastExitCode(err); ok {
+			os.Exit(code)
 		}
 		if errors.Is(err, errFallBackVerdict) {
 			os.Exit(2)
