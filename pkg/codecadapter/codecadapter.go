@@ -91,6 +91,8 @@ type Adapter struct {
 	// FFmpegCodecArgs (libvpx-vp9's "-b:v 0", which pins pure-CRF mode and
 	// is part of the codec argv proper, not an extra param).
 	qualityTail []string
+	// twoPassStyle selects the 2-pass argv shape; see TwoPassStyle.
+	twoPassStyle TwoPassStyle
 
 	// extraParams are codec-level flags orthogonal to quality/preset. They
 	// are NOT part of FFmpegCodecArgs — the encode driver appends them, the
@@ -186,7 +188,20 @@ var vtRealtimeMap = map[string]string{
 }
 
 // proresProfileNames indexes ProRes profiles by the quality knob value.
-var proresProfileNames = []string{"proxy", "lt", "standard", "hq", "4444", "4444xq"}
+// Tier 5 is "xq", not "4444xq": FFmpeg's prores_videotoolbox -profile:v
+// vocabulary names it that way, and the Python adapter emits "xq".
+var proresProfileNames = []string{"proxy", "lt", "standard", "hq", "4444", "xq"}
+
+// TwoPassStyle selects how an adapter spells its 2-pass arguments.
+type TwoPassStyle int
+
+const (
+	// TwoPassGeneric is ffmpeg's -pass N -passlogfile <path> pair, used by
+	// libx264, libaom-av1, libvpx-vp9 and libvvenc.
+	TwoPassGeneric TwoPassStyle = iota
+	// TwoPassX265Params is libx265's -x265-params pass=N:stats=<path>.
+	TwoPassX265Params
+)
 
 // registry is the frozen adapter table, keyed by FFmpeg encoder name.
 var registry = map[string]*Adapter{}
@@ -251,6 +266,7 @@ func init() {
 			QualityRange: [2]int{15, 40}, QualityDefault: 28, InvertQuality: true,
 			Presets: x265Presets, ProbePreset: "ultrafast", ProbeQuality: 28,
 			SupportsEncoderStats: true, SupportsTwoPass: true,
+			twoPassStyle: TwoPassX265Params,
 			qualityStyle: StyleSingleFlag, qualityFlag: "-crf",
 			presetStyle: PresetFlagValue, presetFlag: "-preset",
 		},
@@ -471,6 +487,14 @@ func (a *Adapter) TwoPassArgs(passNumber int, statsPath string) ([]string, error
 	if passNumber != 1 && passNumber != 2 {
 		return nil, fmt.Errorf("%s two_pass_args: pass_number must be 1 or 2, got %d",
 			a.Name, passNumber)
+	}
+	// libx265 carries its 2-pass state inside -x265-params; ffmpeg's generic
+	// -pass/-passlogfile pair does not reach x265's internal rate control, so
+	// emitting it produces a first pass whose stats the second pass ignores.
+	// Mirrors codec_adapters/x265.py::two_pass_args.
+	if a.twoPassStyle == TwoPassX265Params {
+		return []string{"-x265-params",
+			fmt.Sprintf("pass=%d:stats=%s", passNumber, statsPath)}, nil
 	}
 	return []string{"-pass", strconv.Itoa(passNumber), "-passlogfile", statsPath}, nil
 }
