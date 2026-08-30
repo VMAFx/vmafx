@@ -157,10 +157,9 @@ func TestStubSubcommands(t *testing.T) {
 		t.Fatalf("build vmafx-tune-go: %v\n%s", buildErr, buildOut)
 	}
 
-	// Ported so far: ladder, report, tune-per-shot (group 1), fast (group 2)
-	// and the ML-driven four (group 6). These exit non-zero only when required
-	// flags are missing, not as stubs, so they are excluded here.
-	for _, sub := range []string{"corpus", "benchmark", "auto", "sidecar"} {
+	// Everything else is now a real subcommand: it exits non-zero only when
+	// required flags are missing, not as a stub redirect.
+	for _, sub := range []string{"benchmark", "auto", "encode-profile"} {
 		sub := sub
 		t.Run(sub, func(t *testing.T) {
 			t.Parallel()

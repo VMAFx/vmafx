@@ -596,3 +596,12 @@ func DecideVerdict(residuals []ShotResidual, targetVMAF, threshold float64) Vali
 func clamp(v, lo, hi float64) float64 {
 	return math.Max(lo, math.Min(hi, v))
 }
+
+// Clamp constrains v to the inclusive [lo, hi] window.
+//
+// Carried over from the group-3 predictor when the two implementations were
+// merged onto this one: pkg/sidecar clamps predicted VMAF into the valid
+// 0..100 range before reporting it.
+func Clamp(v, lo, hi float64) float64 {
+	return math.Max(lo, math.Min(hi, v))
+}

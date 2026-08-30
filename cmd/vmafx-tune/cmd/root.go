@@ -62,15 +62,13 @@ Fully ported subcommands:
   recommend-saliency   Saliency-aware ROI encode
   prefilter            Joint TPE autotune over deband strengths + CRF
   tune-per-shot        Per-shot CRF tuning: shot detection + bisect + plan
-
-Partially ported:
-  fast        Proxy + TPE + GPU-verify recommend. --smoke runs end to end;
-              production mode stops at the ONNX proxy, which needs a
-              two-named-input graph the Go inference seam cannot drive yet.
-              See 'vmafx-tune-go fast --help'.
+  fast                 NR-proxy accelerated tune with conformal intervals
+  corpus               Phase A (preset, crf) grid sweep -> JSONL corpus
+  sidecar              Local on-host predictor sidecar (status / predict /
+                       record / batch-record)
 
 Not yet ported (use 'vmaf-tune <subcommand>' for these):
-  corpus, benchmark, auto, sidecar, encode-profile`
+  benchmark, auto, encode-profile`
 	root.Cobra().Version = version
 
 	// Ported subcommands.
@@ -83,13 +81,13 @@ Not yet ported (use 'vmaf-tune <subcommand>' for these):
 	root.AddCommand(newPrefilterCmd())
 	root.AddCommand(newPerShotCmd())
 	root.AddCommand(newFastCmd())
+	root.AddCommand(newCorpusCmd())
+	root.AddCommand(newSidecarCmd())
 
 	// Not-yet-ported stubs: log a redirect rather than silently failing.
 	for _, stub := range []struct{ name, desc string }{
-		{"corpus", "Corpus management"},
 		{"benchmark", "Encoder benchmark"},
 		{"auto", "Automatic subcommand selection"},
-		{"sidecar", "Sidecar state management"},
 		{"encode-profile", "Encoder profile inspection"},
 	} {
 		root.AddCommand(stubSubcommand(stub.name, stub.desc))

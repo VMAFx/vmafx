@@ -46773,3 +46773,6 @@ full Go parity).
 5. **`--predicate-module` / `--fast-nr` fail fast rather than being ignored** —
    they exist for CLI-surface parity with the Python parser but have no Go
    implementation. If an ONNX Go binding lands, `--fast-nr` graduates first.
+
+## feat/vmafx-tune-go-corpus-sidecar (2026-08-30)
+no ffmpeg-patch impact: adds Go-only packages (`pkg/{codecadapter,corpus,predictor,sidecar,pyjson}`) plus two `cmd/vmafx-tune` subcommands. No libvmaf C-API / public-header / CLI-flag / `meson_options.txt` change, so nothing the `ffmpeg-patches/` series consumes moves. **Invariants** (full list in `pkg/corpus/AGENTS.md`): (1) `pkg/corpus.RowKeys` mirrors `vmaftune.CORPUS_ROW_KEYS` *in order* — the canonical-6 columns are indexed positionally downstream; (2) corpus rows render through `pkg/pyjson`, never `encoding/json`, because a row carries bare `NaN` tokens and CPython `repr()`-style floats; (3) the float aggregates go through `pkg/corpus/pysum.go` (Neumaier `sum()` + exact-rational `statistics.pstdev()`), not naive Go loops — a plain accumulator drifts by a ULP, which is a visible byte difference in the JSONL; (4) `.y4m` must stay out of `vmafRawSuffixes` (ADR-0499 Bug #V3-B). The Python `tools/vmaf-tune/` tree is untouched and remains the shipped implementation until the ADR-0703 / ADR-0704 sunset.
