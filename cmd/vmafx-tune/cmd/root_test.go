@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"go.uber.org/fx"
 
 	"github.com/VMAFx/vmafx/internal/app/bootstrap"
@@ -44,15 +45,30 @@ func TestNewRoot_ListsExpectedSubcommands(t *testing.T) {
 		got[c.Name()] = true
 	}
 
-	wantPorted := []string{"compare", "ladder", "report"}
-	wantStubs := []string{
-		"tune-per-shot", "fast", "corpus", "benchmark",
-		"auto", "sidecar", "encode-profile",
+	wantPorted := []string{
+		"compare", "ladder", "report",
+		"recommend", "predict", "recommend-saliency", "prefilter",
+		"tune-per-shot", "fast", "corpus", "sidecar",
+		"benchmark", "encode-profile", "auto",
 	}
-	for _, name := range append(append([]string{}, wantPorted...), wantStubs...) {
+	// Every vmaf-tune subcommand is ported now, so there is no stub list left
+	// to append; the loop checks the ported set alone.
+	for _, name := range wantPorted {
 		if !got[name] {
 			t.Errorf("root is missing expected subcommand %q (have: %s)",
 				name, strings.Join(sortedKeys(got), ", "))
+		}
+	}
+
+	// A ported subcommand must not still carry the stub's redirect notice —
+	// that is what distinguishes "implemented" from merely "registered".
+	byName := map[string]*cobra.Command{}
+	for _, c := range root.Cobra().Commands() {
+		byName[c.Name()] = c
+	}
+	for _, name := range wantPorted {
+		if strings.Contains(byName[name].Long, "not yet ported") {
+			t.Errorf("subcommand %q is listed as ported but still has the stub Long text", name)
 		}
 	}
 }
@@ -166,4 +182,20 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func TestNoStubSubcommandsRemain(t *testing.T) {
+	t.Parallel()
+
+	// Every vmaf-tune subcommand is ported, so nothing should still carry the
+	// "not yet ported / use vmaf-tune" redirect. This replaces the old
+	// TestStubSubcommands, which asserted the opposite for whichever
+	// subcommands were still stubs; keeping it as an inverted guard means a
+	// regression that re-stubs a command fails here instead of going unnoticed.
+	root := newRoot("v0.0.0-test")
+	for _, c := range root.Cobra().Commands() {
+		if strings.Contains(c.Long, "not yet ported") {
+			t.Errorf("subcommand %q still carries the stub redirect notice", c.Name())
+		}
+	}
 }

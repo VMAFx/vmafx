@@ -94,25 +94,37 @@ func (e HEVCQSVEncoder) Encode(src string, params EncodeParams) (EncodeResult, e
 	return runEncode(src, params, "hevc_qsv", "-global_quality")
 }
 
-// injectQSVInitChain prepends the VA-API device init chain to ExtraArgs when
-// VMAFTUNE_VAAPI_DEVICE is set (typically /dev/dri/renderD128).
+// injectQSVInitChain wires the VA-API to QSV device chain that FFmpeg's QSV
+// bridge requires, defaulting the render node to /dev/dri/renderD128 and
+// honouring the VMAFTUNE_VAAPI_DEVICE override.
+//
+// Placement is load-bearing (ADR-0601; mirrors the Python
+// compare.hw_device_init_args + _qsv_common.hw_device_init_args split):
+//
+//   - The three device-init flags are *global* options and MUST precede the
+//     first "-i". ffmpeg rejects them with "-22 Invalid argument" otherwise,
+//     even on a host with a working Intel driver. They go to InputArgs.
+//   - "-vf format=nv12,hwupload=extra_hw_frames=64" is a per-output filter
+//     option and must follow the input; it stays in ExtraArgs.
+//
+// Before EncodeParams grew an InputArgs field the whole chain was crammed
+// into ExtraArgs, which placed -init_hw_device after "-c:v" where ffmpeg
+// rejects it. Keep the split.
 func injectQSVInitChain(params EncodeParams) EncodeParams {
 	vaapiDev := os.Getenv("VMAFTUNE_VAAPI_DEVICE")
 	if vaapiDev == "" {
 		vaapiDev = "/dev/dri/renderD128"
 	}
-	// Insert before -c:v:
-	//   -init_hw_device vaapi=va:<device>
-	//   -init_hw_device qsv=qsv_dev@va
-	//   -filter_hw_device va
-	//   -vf format=nv12,hwupload=extra_hw_frames=64
-	extra := []string{
+	deviceChain := []string{
 		"-init_hw_device", "vaapi=va:" + vaapiDev,
 		"-init_hw_device", "qsv=qsv_dev@va",
 		"-filter_hw_device", "va",
-		"-vf", "format=nv12,hwupload=extra_hw_frames=64",
 	}
-	params.ExtraArgs = append(extra, params.ExtraArgs...)
+	params.InputArgs = append(deviceChain, params.InputArgs...)
+	params.ExtraArgs = append(
+		[]string{"-vf", "format=nv12,hwupload=extra_hw_frames=64"},
+		params.ExtraArgs...,
+	)
 	return params
 }
 

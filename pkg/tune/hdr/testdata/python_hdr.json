@@ -1,0 +1,935 @@
+{
+  "classify": {
+    "empty": {
+      "info": null,
+      "payload": {}
+    },
+    "hlg_bt2020": {
+      "info": {
+        "color_range": "pc",
+        "master_display": null,
+        "matrix": "bt2020nc",
+        "max_cll": null,
+        "pix_fmt": "yuv420p10le",
+        "primaries": "bt2020",
+        "transfer": "hlg"
+      },
+      "payload": {
+        "streams": [
+          {
+            "color_primaries": "bt2020",
+            "color_range": "pc",
+            "color_space": "bt2020nc",
+            "color_transfer": "arib-std-b67",
+            "pix_fmt": "yuv420p10le"
+          }
+        ]
+      }
+    },
+    "no_streams": {
+      "info": null,
+      "payload": {
+        "streams": []
+      }
+    },
+    "pq_bt2020": {
+      "info": {
+        "color_range": "tv",
+        "master_display": null,
+        "matrix": "bt2020nc",
+        "max_cll": null,
+        "pix_fmt": "yuv420p10le",
+        "primaries": "bt2020",
+        "transfer": "pq"
+      },
+      "payload": {
+        "streams": [
+          {
+            "color_primaries": "bt2020",
+            "color_range": "tv",
+            "color_space": "bt2020nc",
+            "color_transfer": "smpte2084",
+            "pix_fmt": "yuv420p10le"
+          }
+        ]
+      }
+    },
+    "pq_partial_mastering_sei": {
+      "info": {
+        "color_range": "tv",
+        "master_display": null,
+        "matrix": "bt2020nc",
+        "max_cll": null,
+        "pix_fmt": "yuv420p10le",
+        "primaries": "bt2020",
+        "transfer": "pq"
+      },
+      "payload": {
+        "streams": [
+          {
+            "color_primaries": "bt2020",
+            "color_range": "tv",
+            "color_space": "bt2020nc",
+            "color_transfer": "smpte2084",
+            "pix_fmt": "yuv420p10le",
+            "side_data_list": [
+              {
+                "green_x": "13250/50000",
+                "red_x": "34000/50000",
+                "side_data_type": "Mastering display metadata"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "pq_uppercase_transfer": {
+      "info": {
+        "color_range": "tv",
+        "master_display": null,
+        "matrix": "bt2020nc",
+        "max_cll": null,
+        "pix_fmt": "yuv420p10le",
+        "primaries": "bt2020",
+        "transfer": "pq"
+      },
+      "payload": {
+        "streams": [
+          {
+            "color_primaries": "BT2020",
+            "color_range": "",
+            "color_space": "",
+            "color_transfer": "SMPTE2084",
+            "pix_fmt": ""
+          }
+        ]
+      }
+    },
+    "pq_with_mastering_sei": {
+      "info": {
+        "color_range": "tv",
+        "master_display": "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)",
+        "matrix": "bt2020nc",
+        "max_cll": "1000,400",
+        "pix_fmt": "yuv420p10le",
+        "primaries": "bt2020",
+        "transfer": "pq"
+      },
+      "payload": {
+        "streams": [
+          {
+            "color_primaries": "bt2020",
+            "color_range": "tv",
+            "color_space": "bt2020nc",
+            "color_transfer": "smpte2084",
+            "pix_fmt": "yuv420p10le",
+            "side_data_list": [
+              {
+                "blue_x": "7500/50000",
+                "blue_y": "3000/50000",
+                "green_x": "13250/50000",
+                "green_y": "34500/50000",
+                "max_luminance": "10000000/10000",
+                "min_luminance": "1/10000",
+                "red_x": "34000/50000",
+                "red_y": "16000/50000",
+                "side_data_type": "Mastering display metadata",
+                "white_point_x": "15635/50000",
+                "white_point_y": "16450/50000"
+              },
+              {
+                "max_average": 400,
+                "max_content": 1000,
+                "side_data_type": "Content light level metadata"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "pq_wrong_primaries": {
+      "info": null,
+      "payload": {
+        "streams": [
+          {
+            "color_primaries": "bt709",
+            "color_range": "tv",
+            "color_space": "bt709",
+            "color_transfer": "smpte2084",
+            "pix_fmt": "yuv420p10le"
+          }
+        ]
+      }
+    },
+    "sdr": {
+      "info": null,
+      "payload": {
+        "streams": [
+          {
+            "color_primaries": "bt709",
+            "color_range": "tv",
+            "color_space": "bt709",
+            "color_transfer": "bt709",
+            "pix_fmt": "yuv420p"
+          }
+        ]
+      }
+    }
+  },
+  "codec_args": {
+    "hlg_bt2020": {
+      "av1_amf": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc"
+      ],
+      "av1_nvenc": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc"
+      ],
+      "av1_qsv": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc"
+      ],
+      "h264_nvenc": [],
+      "hevc_amf": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc"
+      ],
+      "hevc_nvenc": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc"
+      ],
+      "hevc_qsv": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc"
+      ],
+      "hevc_videotoolbox": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc"
+      ],
+      "libaom-av1": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc"
+      ],
+      "libsvtav1": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc",
+        "-svtav1-params",
+        "color-primaries=9:transfer-characteristics=18:matrix-coefficients=9:color-range=1"
+      ],
+      "libvvenc": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc"
+      ],
+      "libx264": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc"
+      ],
+      "libx265": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "arib-std-b67",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "pc",
+        "-x265-params",
+        "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc:range=full"
+      ],
+      "not_a_real_codec": []
+    },
+    "pq_bt2020": {
+      "av1_amf": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "av1_nvenc": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "av1_qsv": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "h264_nvenc": [],
+      "hevc_amf": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_nvenc": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_qsv": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_videotoolbox": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libaom-av1": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libsvtav1": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv",
+        "-svtav1-params",
+        "color-primaries=9:transfer-characteristics=16:matrix-coefficients=9:color-range=0"
+      ],
+      "libvvenc": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libx264": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libx265": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv",
+        "-x265-params",
+        "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:hdr10-opt=1"
+      ],
+      "not_a_real_codec": []
+    },
+    "pq_partial_mastering_sei": {
+      "av1_amf": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "av1_nvenc": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "av1_qsv": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "h264_nvenc": [],
+      "hevc_amf": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_nvenc": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_qsv": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_videotoolbox": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libaom-av1": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libsvtav1": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv",
+        "-svtav1-params",
+        "color-primaries=9:transfer-characteristics=16:matrix-coefficients=9:color-range=0"
+      ],
+      "libvvenc": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libx264": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libx265": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv",
+        "-x265-params",
+        "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:hdr10-opt=1"
+      ],
+      "not_a_real_codec": []
+    },
+    "pq_uppercase_transfer": {
+      "av1_amf": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "av1_nvenc": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "av1_qsv": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "h264_nvenc": [],
+      "hevc_amf": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_nvenc": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_qsv": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_videotoolbox": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libaom-av1": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libsvtav1": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv",
+        "-svtav1-params",
+        "color-primaries=9:transfer-characteristics=16:matrix-coefficients=9:color-range=0"
+      ],
+      "libvvenc": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libx264": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libx265": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv",
+        "-x265-params",
+        "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:hdr10-opt=1"
+      ],
+      "not_a_real_codec": []
+    },
+    "pq_with_mastering_sei": {
+      "av1_amf": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "av1_nvenc": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "av1_qsv": [
+        "-pix_fmt",
+        "p010le",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "h264_nvenc": [],
+      "hevc_amf": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_nvenc": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv",
+        "-master_display",
+        "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)",
+        "-max_cll",
+        "1000,400"
+      ],
+      "hevc_qsv": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "hevc_videotoolbox": [
+        "-pix_fmt",
+        "p010le",
+        "-profile:v",
+        "main10",
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libaom-av1": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libsvtav1": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv",
+        "-svtav1-params",
+        "color-primaries=9:transfer-characteristics=16:matrix-coefficients=9:color-range=0:mastering-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):content-light=1000,400"
+      ],
+      "libvvenc": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libx264": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv"
+      ],
+      "libx265": [
+        "-color_primaries",
+        "bt2020",
+        "-color_trc",
+        "smpte2084",
+        "-colorspace",
+        "bt2020nc",
+        "-color_range",
+        "tv",
+        "-x265-params",
+        "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400:hdr10-opt=1"
+      ],
+      "not_a_real_codec": []
+    }
+  }
+}

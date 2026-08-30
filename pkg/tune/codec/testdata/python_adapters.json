@@ -1,0 +1,2791 @@
+[
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "av1_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "av1_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "av1_amf",
+          "-quality",
+          "balanced",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "balanced",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "av1_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "av1_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "av1_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "slowest": {
+        "codec_args": [
+          "-c:v",
+          "av1_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "av1_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "av1_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "av1_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      }
+    },
+    "encoder": "av1_amf",
+    "invert_quality": true,
+    "name": "av1_amf",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "slowest",
+      "placebo"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 28,
+    "quality_default": 23,
+    "quality_hi": 40,
+    "quality_knob": "qp",
+    "quality_lo": 15,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "av1_nvenc",
+          "-preset",
+          "p3",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "av1_nvenc",
+          "-preset",
+          "p2",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "av1_nvenc",
+          "-preset",
+          "p4",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "av1_nvenc",
+          "-preset",
+          "p7",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "av1_nvenc",
+          "-preset",
+          "p5",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "av1_nvenc",
+          "-preset",
+          "p6",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "slowest": {
+        "codec_args": [
+          "-c:v",
+          "av1_nvenc",
+          "-preset",
+          "p7",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "av1_nvenc",
+          "-preset",
+          "p1",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "av1_nvenc",
+          "-preset",
+          "p1",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "av1_nvenc",
+          "-preset",
+          "p1",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "av1_nvenc",
+    "invert_quality": true,
+    "name": "av1_nvenc",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "slowest",
+      "placebo"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 28,
+    "quality_default": 23,
+    "quality_hi": 40,
+    "quality_knob": "cq",
+    "quality_lo": 15,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "av1_qsv",
+          "-preset",
+          "fast",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "av1_qsv",
+          "-preset",
+          "faster",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "av1_qsv",
+          "-preset",
+          "medium",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "av1_qsv",
+          "-preset",
+          "slow",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "av1_qsv",
+          "-preset",
+          "slower",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "av1_qsv",
+          "-preset",
+          "veryfast",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryslow": {
+        "codec_args": [
+          "-c:v",
+          "av1_qsv",
+          "-preset",
+          "veryslow",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "av1_qsv",
+    "invert_quality": true,
+    "name": "av1_qsv",
+    "presets": [
+      "veryslow",
+      "slower",
+      "slow",
+      "medium",
+      "fast",
+      "faster",
+      "veryfast"
+    ],
+    "probe_preset": "veryfast",
+    "probe_quality": 23,
+    "quality_default": 23,
+    "quality_hi": 51,
+    "quality_knob": "global_quality",
+    "quality_lo": 1,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": null,
+        "extra": []
+      },
+      "faster": {
+        "codec_args": null,
+        "extra": []
+      },
+      "medium": {
+        "codec_args": null,
+        "extra": []
+      },
+      "slow": {
+        "codec_args": null,
+        "extra": []
+      },
+      "slower": {
+        "codec_args": null,
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": null,
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": null,
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": null,
+        "extra": []
+      },
+      "veryslow": {
+        "codec_args": null,
+        "extra": []
+      }
+    },
+    "encoder": "av1_videotoolbox",
+    "invert_quality": false,
+    "name": "av1_videotoolbox",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "veryslow"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 60,
+    "quality_default": 50,
+    "quality_hi": 100,
+    "quality_knob": "q:v",
+    "quality_lo": 0,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "h264_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "h264_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "h264_amf",
+          "-quality",
+          "balanced",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "balanced",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "h264_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "h264_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "h264_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "slowest": {
+        "codec_args": [
+          "-c:v",
+          "h264_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "h264_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "h264_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "h264_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      }
+    },
+    "encoder": "h264_amf",
+    "invert_quality": true,
+    "name": "h264_amf",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "slowest",
+      "placebo"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 28,
+    "quality_default": 23,
+    "quality_hi": 40,
+    "quality_knob": "qp",
+    "quality_lo": 15,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p3",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p2",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p4",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p7",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p5",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p6",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "slowest": {
+        "codec_args": [
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p7",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p1",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p1",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "h264_nvenc",
+          "-preset",
+          "p1",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "h264_nvenc",
+    "invert_quality": true,
+    "name": "h264_nvenc",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "slowest",
+      "placebo"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 28,
+    "quality_default": 23,
+    "quality_hi": 40,
+    "quality_knob": "cq",
+    "quality_lo": 15,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "h264_qsv",
+          "-preset",
+          "fast",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "h264_qsv",
+          "-preset",
+          "faster",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "h264_qsv",
+          "-preset",
+          "medium",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "h264_qsv",
+          "-preset",
+          "slow",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "h264_qsv",
+          "-preset",
+          "slower",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "h264_qsv",
+          "-preset",
+          "veryfast",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryslow": {
+        "codec_args": [
+          "-c:v",
+          "h264_qsv",
+          "-preset",
+          "veryslow",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "h264_qsv",
+    "invert_quality": true,
+    "name": "h264_qsv",
+    "presets": [
+      "veryslow",
+      "slower",
+      "slow",
+      "medium",
+      "fast",
+      "faster",
+      "veryfast"
+    ],
+    "probe_preset": "veryfast",
+    "probe_quality": 23,
+    "quality_default": 23,
+    "quality_hi": 51,
+    "quality_knob": "global_quality",
+    "quality_lo": 1,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "h264_videotoolbox",
+          "-realtime",
+          "1",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "h264_videotoolbox",
+          "-realtime",
+          "1",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "h264_videotoolbox",
+          "-realtime",
+          "0",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "h264_videotoolbox",
+          "-realtime",
+          "0",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "h264_videotoolbox",
+          "-realtime",
+          "0",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "h264_videotoolbox",
+          "-realtime",
+          "1",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "h264_videotoolbox",
+          "-realtime",
+          "1",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "h264_videotoolbox",
+          "-realtime",
+          "1",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "veryslow": {
+        "codec_args": [
+          "-c:v",
+          "h264_videotoolbox",
+          "-realtime",
+          "0",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "h264_videotoolbox",
+    "invert_quality": false,
+    "name": "h264_videotoolbox",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "veryslow"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 60,
+    "quality_default": 50,
+    "quality_hi": 100,
+    "quality_knob": "q:v",
+    "quality_lo": 0,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "hevc_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "hevc_amf",
+          "-quality",
+          "balanced",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "balanced",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "hevc_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "hevc_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "hevc_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "slowest": {
+        "codec_args": [
+          "-c:v",
+          "hevc_amf",
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "quality",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_amf",
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ],
+        "extra": [
+          "-quality",
+          "speed",
+          "-rc",
+          "cqp",
+          "-qp_i",
+          "23",
+          "-qp_p",
+          "23"
+        ]
+      }
+    },
+    "encoder": "hevc_amf",
+    "invert_quality": true,
+    "name": "hevc_amf",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "slowest",
+      "placebo"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 28,
+    "quality_default": 23,
+    "quality_hi": 40,
+    "quality_knob": "qp",
+    "quality_lo": 15,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_nvenc",
+          "-preset",
+          "p3",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "hevc_nvenc",
+          "-preset",
+          "p2",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "hevc_nvenc",
+          "-preset",
+          "p4",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "hevc_nvenc",
+          "-preset",
+          "p7",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "hevc_nvenc",
+          "-preset",
+          "p5",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "hevc_nvenc",
+          "-preset",
+          "p6",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "slowest": {
+        "codec_args": [
+          "-c:v",
+          "hevc_nvenc",
+          "-preset",
+          "p7",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_nvenc",
+          "-preset",
+          "p1",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_nvenc",
+          "-preset",
+          "p1",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_nvenc",
+          "-preset",
+          "p1",
+          "-cq",
+          "23"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "hevc_nvenc",
+    "invert_quality": true,
+    "name": "hevc_nvenc",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "slowest",
+      "placebo"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 28,
+    "quality_default": 23,
+    "quality_hi": 40,
+    "quality_knob": "cq",
+    "quality_lo": 15,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_qsv",
+          "-preset",
+          "fast",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "hevc_qsv",
+          "-preset",
+          "faster",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "hevc_qsv",
+          "-preset",
+          "medium",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "hevc_qsv",
+          "-preset",
+          "slow",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "hevc_qsv",
+          "-preset",
+          "slower",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_qsv",
+          "-preset",
+          "veryfast",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryslow": {
+        "codec_args": [
+          "-c:v",
+          "hevc_qsv",
+          "-preset",
+          "veryslow",
+          "-global_quality",
+          "23"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "hevc_qsv",
+    "invert_quality": true,
+    "name": "hevc_qsv",
+    "presets": [
+      "veryslow",
+      "slower",
+      "slow",
+      "medium",
+      "fast",
+      "faster",
+      "veryfast"
+    ],
+    "probe_preset": "veryfast",
+    "probe_quality": 23,
+    "quality_default": 23,
+    "quality_hi": 51,
+    "quality_knob": "global_quality",
+    "quality_lo": 1,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_videotoolbox",
+          "-realtime",
+          "1",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "hevc_videotoolbox",
+          "-realtime",
+          "1",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "hevc_videotoolbox",
+          "-realtime",
+          "0",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "hevc_videotoolbox",
+          "-realtime",
+          "0",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "hevc_videotoolbox",
+          "-realtime",
+          "0",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_videotoolbox",
+          "-realtime",
+          "1",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_videotoolbox",
+          "-realtime",
+          "1",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "hevc_videotoolbox",
+          "-realtime",
+          "1",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      },
+      "veryslow": {
+        "codec_args": [
+          "-c:v",
+          "hevc_videotoolbox",
+          "-realtime",
+          "0",
+          "-q:v",
+          "50"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "hevc_videotoolbox",
+    "invert_quality": false,
+    "name": "hevc_videotoolbox",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "veryslow"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 60,
+    "quality_default": 50,
+    "quality_hi": 100,
+    "quality_knob": "q:v",
+    "quality_lo": 0,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "libaom-av1",
+          "-cpu-used",
+          "5",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "libaom-av1",
+          "-cpu-used",
+          "6",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "libaom-av1",
+          "-cpu-used",
+          "4",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "libaom-av1",
+          "-cpu-used",
+          "0",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "libaom-av1",
+          "-cpu-used",
+          "3",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "libaom-av1",
+          "-cpu-used",
+          "2",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "slowest": {
+        "codec_args": [
+          "-c:v",
+          "libaom-av1",
+          "-cpu-used",
+          "1",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "libaom-av1",
+          "-cpu-used",
+          "8",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "libaom-av1",
+          "-cpu-used",
+          "9",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "libaom-av1",
+          "-cpu-used",
+          "7",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "libaom-av1",
+    "invert_quality": true,
+    "name": "libaom-av1",
+    "presets": [
+      "placebo",
+      "slowest",
+      "slower",
+      "slow",
+      "medium",
+      "fast",
+      "faster",
+      "veryfast",
+      "superfast",
+      "ultrafast"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 35,
+    "quality_default": 35,
+    "quality_hi": 63,
+    "quality_knob": "crf",
+    "quality_lo": 0,
+    "supports_two_pass": true
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "libsvtav1",
+          "-preset",
+          "9",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "libsvtav1",
+          "-preset",
+          "11",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "libsvtav1",
+          "-preset",
+          "7",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "libsvtav1",
+          "-preset",
+          "0",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "libsvtav1",
+          "-preset",
+          "5",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "libsvtav1",
+          "-preset",
+          "3",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "slowest": {
+        "codec_args": [
+          "-c:v",
+          "libsvtav1",
+          "-preset",
+          "1",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "libsvtav1",
+          "-preset",
+          "13",
+          "-crf",
+          "35"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "libsvtav1",
+    "invert_quality": true,
+    "name": "libsvtav1",
+    "presets": [
+      "placebo",
+      "slowest",
+      "slower",
+      "slow",
+      "medium",
+      "fast",
+      "faster",
+      "veryfast"
+    ],
+    "probe_preset": "veryfast",
+    "probe_quality": 35,
+    "quality_default": 35,
+    "quality_hi": 50,
+    "quality_knob": "crf",
+    "quality_lo": 20,
+    "supports_two_pass": false
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "libvpx-vp9",
+          "-deadline",
+          "good",
+          "-cpu-used",
+          "4",
+          "-crf",
+          "32",
+          "-b:v",
+          "0"
+        ],
+        "extra": [
+          "-row-mt",
+          "1"
+        ]
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "libvpx-vp9",
+          "-deadline",
+          "good",
+          "-cpu-used",
+          "5",
+          "-crf",
+          "32",
+          "-b:v",
+          "0"
+        ],
+        "extra": [
+          "-row-mt",
+          "1"
+        ]
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "libvpx-vp9",
+          "-deadline",
+          "good",
+          "-cpu-used",
+          "3",
+          "-crf",
+          "32",
+          "-b:v",
+          "0"
+        ],
+        "extra": [
+          "-row-mt",
+          "1"
+        ]
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "libvpx-vp9",
+          "-deadline",
+          "good",
+          "-cpu-used",
+          "0",
+          "-crf",
+          "32",
+          "-b:v",
+          "0"
+        ],
+        "extra": [
+          "-row-mt",
+          "1"
+        ]
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "libvpx-vp9",
+          "-deadline",
+          "good",
+          "-cpu-used",
+          "2",
+          "-crf",
+          "32",
+          "-b:v",
+          "0"
+        ],
+        "extra": [
+          "-row-mt",
+          "1"
+        ]
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "libvpx-vp9",
+          "-deadline",
+          "good",
+          "-cpu-used",
+          "1",
+          "-crf",
+          "32",
+          "-b:v",
+          "0"
+        ],
+        "extra": [
+          "-row-mt",
+          "1"
+        ]
+      },
+      "slowest": {
+        "codec_args": [
+          "-c:v",
+          "libvpx-vp9",
+          "-deadline",
+          "good",
+          "-cpu-used",
+          "0",
+          "-crf",
+          "32",
+          "-b:v",
+          "0"
+        ],
+        "extra": [
+          "-row-mt",
+          "1"
+        ]
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "libvpx-vp9",
+          "-deadline",
+          "good",
+          "-cpu-used",
+          "5",
+          "-crf",
+          "32",
+          "-b:v",
+          "0"
+        ],
+        "extra": [
+          "-row-mt",
+          "1"
+        ]
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "libvpx-vp9",
+          "-deadline",
+          "good",
+          "-cpu-used",
+          "5",
+          "-crf",
+          "32",
+          "-b:v",
+          "0"
+        ],
+        "extra": [
+          "-row-mt",
+          "1"
+        ]
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "libvpx-vp9",
+          "-deadline",
+          "good",
+          "-cpu-used",
+          "5",
+          "-crf",
+          "32",
+          "-b:v",
+          "0"
+        ],
+        "extra": [
+          "-row-mt",
+          "1"
+        ]
+      }
+    },
+    "encoder": "libvpx-vp9",
+    "invert_quality": true,
+    "name": "libvpx-vp9",
+    "presets": [
+      "placebo",
+      "slowest",
+      "slower",
+      "slow",
+      "medium",
+      "fast",
+      "faster",
+      "veryfast",
+      "superfast",
+      "ultrafast"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 32,
+    "quality_default": 32,
+    "quality_hi": 63,
+    "quality_knob": "crf",
+    "quality_lo": 0,
+    "supports_two_pass": true
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "libvvenc",
+          "-preset",
+          "fast",
+          "-qp",
+          "32"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "libvvenc",
+          "-preset",
+          "faster",
+          "-qp",
+          "32"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "libvvenc",
+          "-preset",
+          "medium",
+          "-qp",
+          "32"
+        ],
+        "extra": []
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "libvvenc",
+          "-preset",
+          "slower",
+          "-qp",
+          "32"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "libvvenc",
+          "-preset",
+          "slow",
+          "-qp",
+          "32"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "libvvenc",
+          "-preset",
+          "slower",
+          "-qp",
+          "32"
+        ],
+        "extra": []
+      },
+      "slowest": {
+        "codec_args": [
+          "-c:v",
+          "libvvenc",
+          "-preset",
+          "slower",
+          "-qp",
+          "32"
+        ],
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "libvvenc",
+          "-preset",
+          "faster",
+          "-qp",
+          "32"
+        ],
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "libvvenc",
+          "-preset",
+          "faster",
+          "-qp",
+          "32"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "libvvenc",
+          "-preset",
+          "faster",
+          "-qp",
+          "32"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "libvvenc",
+    "invert_quality": true,
+    "name": "libvvenc",
+    "presets": [
+      "placebo",
+      "slowest",
+      "slower",
+      "slow",
+      "medium",
+      "fast",
+      "faster",
+      "veryfast",
+      "superfast",
+      "ultrafast"
+    ],
+    "probe_preset": "faster",
+    "probe_quality": 32,
+    "quality_default": 32,
+    "quality_hi": 50,
+    "quality_knob": "qp",
+    "quality_lo": 17,
+    "supports_two_pass": true
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "libx264",
+          "-preset",
+          "fast",
+          "-crf",
+          "23"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "libx264",
+          "-preset",
+          "faster",
+          "-crf",
+          "23"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "libx264",
+          "-preset",
+          "medium",
+          "-crf",
+          "23"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "libx264",
+          "-preset",
+          "slow",
+          "-crf",
+          "23"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "libx264",
+          "-preset",
+          "slower",
+          "-crf",
+          "23"
+        ],
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "libx264",
+          "-preset",
+          "superfast",
+          "-crf",
+          "23"
+        ],
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "libx264",
+          "-preset",
+          "ultrafast",
+          "-crf",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "23"
+        ],
+        "extra": []
+      },
+      "veryslow": {
+        "codec_args": [
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryslow",
+          "-crf",
+          "23"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "libx264",
+    "invert_quality": true,
+    "name": "libx264",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "veryslow"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 28,
+    "quality_default": 23,
+    "quality_hi": 51,
+    "quality_knob": "crf",
+    "quality_lo": 0,
+    "supports_two_pass": true
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "libx265",
+          "-preset",
+          "fast",
+          "-crf",
+          "28"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "libx265",
+          "-preset",
+          "faster",
+          "-crf",
+          "28"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "libx265",
+          "-preset",
+          "medium",
+          "-crf",
+          "28"
+        ],
+        "extra": []
+      },
+      "placebo": {
+        "codec_args": [
+          "-c:v",
+          "libx265",
+          "-preset",
+          "placebo",
+          "-crf",
+          "28"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "libx265",
+          "-preset",
+          "slow",
+          "-crf",
+          "28"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "libx265",
+          "-preset",
+          "slower",
+          "-crf",
+          "28"
+        ],
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "libx265",
+          "-preset",
+          "superfast",
+          "-crf",
+          "28"
+        ],
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "libx265",
+          "-preset",
+          "ultrafast",
+          "-crf",
+          "28"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "libx265",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "28"
+        ],
+        "extra": []
+      },
+      "veryslow": {
+        "codec_args": [
+          "-c:v",
+          "libx265",
+          "-preset",
+          "veryslow",
+          "-crf",
+          "28"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "libx265",
+    "invert_quality": true,
+    "name": "libx265",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "veryslow",
+      "placebo"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 28,
+    "quality_default": 28,
+    "quality_hi": 40,
+    "quality_knob": "crf",
+    "quality_lo": 15,
+    "supports_two_pass": true
+  },
+  {
+    "argv": {
+      "fast": {
+        "codec_args": [
+          "-c:v",
+          "prores_videotoolbox",
+          "-realtime",
+          "1",
+          "-profile:v",
+          "hq"
+        ],
+        "extra": []
+      },
+      "faster": {
+        "codec_args": [
+          "-c:v",
+          "prores_videotoolbox",
+          "-realtime",
+          "1",
+          "-profile:v",
+          "hq"
+        ],
+        "extra": []
+      },
+      "medium": {
+        "codec_args": [
+          "-c:v",
+          "prores_videotoolbox",
+          "-realtime",
+          "0",
+          "-profile:v",
+          "hq"
+        ],
+        "extra": []
+      },
+      "slow": {
+        "codec_args": [
+          "-c:v",
+          "prores_videotoolbox",
+          "-realtime",
+          "0",
+          "-profile:v",
+          "hq"
+        ],
+        "extra": []
+      },
+      "slower": {
+        "codec_args": [
+          "-c:v",
+          "prores_videotoolbox",
+          "-realtime",
+          "0",
+          "-profile:v",
+          "hq"
+        ],
+        "extra": []
+      },
+      "superfast": {
+        "codec_args": [
+          "-c:v",
+          "prores_videotoolbox",
+          "-realtime",
+          "1",
+          "-profile:v",
+          "hq"
+        ],
+        "extra": []
+      },
+      "ultrafast": {
+        "codec_args": [
+          "-c:v",
+          "prores_videotoolbox",
+          "-realtime",
+          "1",
+          "-profile:v",
+          "hq"
+        ],
+        "extra": []
+      },
+      "veryfast": {
+        "codec_args": [
+          "-c:v",
+          "prores_videotoolbox",
+          "-realtime",
+          "1",
+          "-profile:v",
+          "hq"
+        ],
+        "extra": []
+      },
+      "veryslow": {
+        "codec_args": [
+          "-c:v",
+          "prores_videotoolbox",
+          "-realtime",
+          "0",
+          "-profile:v",
+          "hq"
+        ],
+        "extra": []
+      }
+    },
+    "encoder": "prores_videotoolbox",
+    "invert_quality": false,
+    "name": "prores_videotoolbox",
+    "presets": [
+      "ultrafast",
+      "superfast",
+      "veryfast",
+      "faster",
+      "fast",
+      "medium",
+      "slow",
+      "slower",
+      "veryslow"
+    ],
+    "probe_preset": "ultrafast",
+    "probe_quality": 0,
+    "quality_default": 3,
+    "quality_hi": 5,
+    "quality_knob": "profile:v",
+    "quality_lo": 0,
+    "supports_two_pass": false
+  }
+]

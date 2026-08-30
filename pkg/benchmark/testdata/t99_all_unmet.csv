@@ -1,0 +1,7 @@
+encoder,status,target_vmaf,vmaf_score,margin,bitrate_kbps,bitrate_delta_pct,preset,crf,rows,source_count,preset_count,encode_fps,score_fps
+libvpx-vp9,unmet,99.000,85.000,-14.000,1800.000,,medium,31,2,1,1,0.333,
+libvvenc,unmet,99.000,93.000,-6.000,2500.000,,medium,32,1,1,1,0.167,120.000
+libx265,unmet,99.000,92.000,-7.000,2500.000,,medium,28,2,2,1,0.646,120.000
+libsvtav1,unmet,99.000,91.900,-7.100,2600.000,,medium,30,2,1,1,1.409,120.000
+libx264,unmet,99.000,93.500,-5.500,4200.250,,medium,23,3,2,2,1.731,120.128
+h264_nvenc,unmet,99.000,92.500,-6.500,5000.000,,p4,23.0,2,1,1,20.000,120.000

@@ -232,7 +232,7 @@ VMAFX_MCP_TRANSPORT=http VMAFX_MCP_HTTP_ADDR=:8080 vmafx-mcp
 | Tool names / schemas | Reference | Byte-for-byte parity |
 | Transport | stdio (default), HTTP (PR #1583); `--transport` / `--port` flags | stdio (default), HTTP; selected via `VMAFX_MCP_TRANSPORT` / `VMAFX_MCP_HTTP_ADDR` env vars (no flags, ADR-1119) |
 | VLM descriptions (`describe_worst_frames`) | SmolVLM / Moondream2 when `[vlm]` extras installed | Returns placeholder; Stage 2 will add a native VLM bridge |
-| `eval_model_on_split` / `compare_models` | Native Python (onnxruntime, pandas, scipy) | Delegates to `python3` subprocess; requires Python env |
+| `eval_model_on_split` / `compare_models` | Native Python (onnxruntime, pandas, scipy) | Native Go; no Python. Parquet via `parquet-go`, statistics in `pkg/modeleval`, ONNX via libvmaf's own `vmaf_dnn_session_*` API. Needs a libvmaf built with `-Denable_dnn`; otherwise returns a clear "built without DNN support" error, mirroring Python's missing-`[eval]`-extra behaviour |
 | Binary size | ~50 MB Python env | ~10 MB static binary |
 | Startup time | ~300 ms (Python import) | ~10 ms |
 

@@ -73,6 +73,27 @@ type EncodeParams struct {
 	// ExtraArgs are passed verbatim to ffmpeg after the encoder -c:v flag.
 	// Use sparingly; Stage-1 does not expose these to the CLI.
 	ExtraArgs []string
+
+	// InputArgs are emitted verbatim *before* "-i <src>", i.e. as ffmpeg
+	// input options. Two callers need them:
+	//
+	//   - Raw-YUV sources, which carry no container metadata and must be
+	//     described explicitly: -f rawvideo -pix_fmt <p> -s <WxH> -r <fps>.
+	//   - Sample-clip mode, where -ss / -t must sit on the *input* side so
+	//     ffmpeg fast-seeks instead of decoding the whole source and
+	//     discarding frames (mirrors encode.build_ffmpeg_command in the
+	//     Python vmaf-tune).
+	//
+	// Empty (the compare / ladder default) keeps the container-autodetect
+	// behaviour unchanged.
+	InputArgs []string
+
+	// OutputPath pins the encode destination. When empty, runEncode
+	// allocates an os.CreateTemp ".mkv" file inside OutputDir (the
+	// compare / ladder behaviour). The fast path sets it so probe and
+	// verify encodes land at the deterministic, operator-inspectable
+	// paths the Python vmaf-tune fast subcommand writes.
+	OutputPath string
 }
 
 // EncodeResult holds the outcome of a single encode.
@@ -89,6 +110,13 @@ type EncodeResult struct {
 
 	// EncodeTimeMS is the wall time of the encode in milliseconds.
 	EncodeTimeMS float64
+
+	// OutputSizeBytes is the on-disk size of OutputPath after the encode.
+	// 0 when the file could not be stat'ed. Callers that derive bitrate
+	// from size ÷ clip-duration (rather than from ffprobe's stream
+	// bit_rate) read this — the fast path does, mirroring the Python
+	// encode.bitrate_kbps contract.
+	OutputSizeBytes int64
 }
 
 // Encoder abstracts a single software video encoder.
@@ -182,23 +210,52 @@ func extractEncoderVersion(stderr string, codec string) string {
 
 // runEncode invokes ffmpeg to encode src to a temporary MKV file and returns
 // the result. codec is the ffmpeg encoder name (e.g. "libx264").
+//
+// It is the fixed-shape wrapper around runEncodeArgv used by every built-in
+// Encoder implementation: the codec argv is always the "-c:v <codec>
+// <crfFlag> <CRF>" triple. Callers that need a codec-specific argv shape
+// (preset tokens, "-rc cqp -qp_i N -qp_p N", "-cpu-used N", ...) go through
+// AdapterEncoder, which calls runEncodeArgv directly.
 func runEncode(src string, params EncodeParams, codec string, crfFlag string) (EncodeResult, error) {
+	codecArgs := []string{"-c:v", codec, crfFlag, strconv.Itoa(params.CRF)}
+	return runEncodeArgv(src, params, codec, codecArgs)
+}
+
+// runEncodeArgv invokes ffmpeg to encode src to a temporary MKV file using the
+// caller-supplied codec argv slice (everything from "-c:v" onwards, excluding
+// the output path). codecName is used only for the temp-file name and for
+// encoder-version extraction from ffmpeg stderr.
+func runEncodeArgv(
+	src string,
+	params EncodeParams,
+	codecName string,
+	codecArgs []string,
+) (EncodeResult, error) {
+	codec := codecName
 	bin := ffmpegBin(params)
 	dir := outputDir(params)
 
-	// Create a temp file with the right extension.
-	tmpFile, err := os.CreateTemp(dir, fmt.Sprintf("vmafx-tune-%s-crf%d-*.mkv", codec, params.CRF))
-	if err != nil {
-		return EncodeResult{}, fmt.Errorf("create temp output: %w", err)
-	}
-	outPath := tmpFile.Name()
-	// Close immediately; ffmpeg will write to it.
-	if closeErr := tmpFile.Close(); closeErr != nil {
-		return EncodeResult{}, fmt.Errorf("close temp file: %w", closeErr)
-	}
-	// Remove the empty placeholder so ffmpeg can create the real file.
-	if removeErr := os.Remove(outPath); removeErr != nil {
-		return EncodeResult{}, fmt.Errorf("remove temp placeholder: %w", removeErr)
+	outPath := params.OutputPath
+	if outPath == "" {
+		// Create a temp file with the right extension.
+		tmpFile, err := os.CreateTemp(dir, fmt.Sprintf("vmafx-tune-%s-crf%d-*.mkv", codec, params.CRF))
+		if err != nil {
+			return EncodeResult{}, fmt.Errorf("create temp output: %w", err)
+		}
+		outPath = tmpFile.Name()
+		// Close immediately; ffmpeg will write to it.
+		if closeErr := tmpFile.Close(); closeErr != nil {
+			return EncodeResult{}, fmt.Errorf("close temp file: %w", closeErr)
+		}
+		// Remove the empty placeholder so ffmpeg can create the real file.
+		if removeErr := os.Remove(outPath); removeErr != nil {
+			return EncodeResult{}, fmt.Errorf("remove temp placeholder: %w", removeErr)
+		}
+	} else {
+		// G301: 0o750 keeps the encode scratch dir owner/group-only.
+		if mkErr := os.MkdirAll(filepath.Dir(outPath), 0o750); mkErr != nil {
+			return EncodeResult{}, fmt.Errorf("create output dir for %q: %w", outPath, mkErr)
+		}
 	}
 
 	argv := []string{
@@ -206,11 +263,11 @@ func runEncode(src string, params EncodeParams, codec string, crfFlag string) (E
 		"-hide_banner",
 		"-loglevel", "warning",
 		"-y",
-		"-i", src,
-		"-an", // drop audio
-		"-c:v", codec,
-		crfFlag, strconv.Itoa(params.CRF),
 	}
+	// Input options must precede "-i"; see EncodeParams.InputArgs.
+	argv = append(argv, params.InputArgs...)
+	argv = append(argv, "-i", src, "-an") // -an drops audio
+	argv = append(argv, codecArgs...)
 	argv = append(argv, params.ExtraArgs...)
 	argv = append(argv, outPath)
 
@@ -255,11 +312,19 @@ func runEncode(src string, params EncodeParams, codec string, crfFlag string) (E
 	bitrateKbps := probeBitrateKbps(outPath, bin)
 	version := extractEncoderVersion(string(stderrBytes), codec)
 
+	// Size is best-effort: a missing/unstattable output is already an
+	// error path above, so a stat failure here only zeroes the field.
+	var sizeBytes int64
+	if info, statErr := os.Stat(outPath); statErr == nil {
+		sizeBytes = info.Size()
+	}
+
 	return EncodeResult{
-		OutputPath:     outPath,
-		BitratekBps:    bitrateKbps,
-		EncoderVersion: version,
-		EncodeTimeMS:   float64(elapsed.Milliseconds()),
+		OutputPath:      outPath,
+		BitratekBps:     bitrateKbps,
+		EncoderVersion:  version,
+		EncodeTimeMS:    float64(elapsed.Milliseconds()),
+		OutputSizeBytes: sizeBytes,
 	}, nil
 }
 
