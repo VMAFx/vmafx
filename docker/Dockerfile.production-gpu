@@ -180,7 +180,7 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 FROM runtime-base AS final-cuda13
 # CUDA runtime libs — only the runtime, not the full toolkit
-COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu24.04 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+COPY --from=nvidia/cuda:13.3.1-runtime-ubuntu24.04@sha256:63da350831208559df18c7b8f3e0d5d1c984eaa815cdde690aacd6606cd0cb11 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
 COPY --from=builder-cuda13 /dist/lib/   /usr/local/lib/
 COPY --from=builder-cuda13 /dist/bin/   /usr/local/bin/
 COPY --from=builder-cuda13 /dist/model/ /usr/local/share/vmafx/model/
@@ -205,8 +205,8 @@ ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 FROM runtime-base AS final-oneapi2025
 # Level Zero + Intel GPU plugin runtime
-COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04 /opt/intel/oneapi/compiler/latest/lib/libsycl.so*  /usr/local/lib/
-COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04 /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a /opt/intel/oneapi/compiler/latest/lib/libsycl.so*  /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
 COPY --from=builder-oneapi2025 /dist/lib/   /usr/local/lib/
 COPY --from=builder-oneapi2025 /dist/bin/   /usr/local/bin/
 COPY --from=builder-oneapi2025 /dist/model/ /usr/local/share/vmafx/model/
