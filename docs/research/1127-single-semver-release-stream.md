@@ -20,6 +20,10 @@ release-please packages to one ordinary patch-release stream?
 - Helm chart `version` and Rust crate versions describe independently packaged
   artifacts. Helm `appVersion`, the Python distributions, libvmaf, and the node
   image describe the coordinated VMAFx release and should move together.
+- A clean 1,264-target Meson build places the shared-library link at
+  `build/src/libvmaf.so`; the release workflow's former `build/libvmaf/` copy
+  path did not exist and would have stopped publication before signing. The
+  staging copy dereferences the link so artifact upload receives a regular file.
 
 ## Result
 
@@ -34,6 +38,8 @@ after the first release. Do not synthesize a 3.2.0 tag.
 jq -e '.packages | keys == ["."]' release-please-config.json
 jq -e '. == {".": "3.2.0"}' .release-please-manifest.json
 git tag --list 'v3.2.*'
+meson setup build core -Denable_metal=disabled && meson compile -C build
+test -e build/src/libvmaf.so
 ```
 
 ## Sources

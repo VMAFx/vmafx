@@ -1,0 +1,1 @@
+- Repair release artifact staging to copy libvmaf from Meson's actual `build/src/` output directory, preventing the signing workflow from failing before upload.

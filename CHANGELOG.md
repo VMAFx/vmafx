@@ -22586,6 +22586,9 @@ Fix three RC-gate failures surfaced by the pre-release validation matrix:
   green for the first time (10/10 passing).
 
 
+- Repair release artifact staging to copy libvmaf from Meson's actual `build/src/` output directory, preventing the signing workflow from failing before upload.
+
+
 Remove duplicate `chore` entry in `ai` package `changelog-sections` array that caused a
 JSON parse error at line 64 column 9, breaking every release-please workflow run.
 

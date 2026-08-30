@@ -53,7 +53,7 @@ jobs:
       - name: Stage artifacts
         run: |
           mkdir -p artifacts
-          cp build/libvmaf/libvmaf.so* artifacts/
+          cp -L build/src/libvmaf.so artifacts/libvmaf.so
           cp build/tools/vmaf artifacts/
           tar czf artifacts/models.tar.gz model/
 
