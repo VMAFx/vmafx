@@ -45,21 +45,30 @@ collision against evidence rather than by merge order, and letting `go build` /
 
 | Package | Kept | Why |
 |---|---|---|
-| `pkg/codecadapter` | group 6 | 16 Python-parity assertions vs 3 (group 3) and 4 (group 4). Both registries register the **identical 19 codecs**, verified by enumerating `Known()`, so the interface-vs-struct choice costs no coverage. Group 3's per-codec method interface converts mechanically to group 6's struct fields. |
+| `pkg/codecadapter` | group 6 | Both registries register the **identical 19 codecs**, verified by enumerating `Known()`, so the interface-vs-struct choice costs no coverage. Group 3's per-codec method interface converts mechanically to group 6's struct fields. **This tiebreaker was not sufficient — see Consequences.** |
 | `pkg/pershot` | group 1 | Superset; carries the byte-identical `plan_json` emitter verified against CPython across all ten supported codecs. |
 | `pkg/predictor` | group 6 | Superset (adds `features.go`). Group 3's `Clamp` helper was carried across. |
 | `pkg/conformal` | group 2 | Superset: adds `CVPlusCalibration`, the `Calibration` interface, load/save and `StaleCalibrationError`. |
 | `pkg/scorebackend` | group 2 | Superset. |
 
-**`internal/pyjson` is the deliberate exception: both are kept.** They are not
-two implementations of one thing — they mirror two *different* Python entry
-points. `internal/pyjson` mirrors `json.dumps(indent=, sort_keys=)`, emitting
-bare `NaN` / `Infinity` tokens; `internal/pyjsonstrict` mirrors
-`vmaftune.jsonio.dumps_strict`, which replaces non-finite floats with `null` so
-the payload stays valid RFC 8259. Collapsing them would make one package answer
-to two output contracts, and both contracts are exercised by shipped
-subcommands. The group-4 encoder therefore moved to `internal/pyjsonstrict` and
-its consumers were repointed.
+**JSON encoding is the messiest case, and this ADR originally described it
+wrong.** It claimed there were two CPython-JSON implementations, kept
+deliberately. There are **four**, at import paths that never collided in git,
+totalling ~2,641 lines:
+
+| Package | LOC | Author | Consumers |
+|---|---|---|---|
+| `pkg/pyjson` | 723 | group 3 | `pkg/corpus/{corpus,encode,score,jsonl}.go` |
+| `internal/pyjson` | 632 | group 6 | four `cmd/` files, `pkg/corpusrow` |
+| `internal/pyjsonstrict` | 641 | group 4 | `pkg/benchmark`, `pkg/encodeprofile`, `cmd/encodeprofile` |
+| `pkg/tune/pyjson` | 645 | group 5 | `cmd/sidecar`, `pkg/tune/{auto,executor,sidecar}` |
+
+They are redundant rather than divergent, which was measured rather than
+assumed: 200,000 random finite `float64` (arbitrary bit patterns, the 1e16 and
+1e-4 exponent thresholds, subnormals, `-0.0`) produced **zero** disagreements
+across all four, and 10,000 sampled renderings matched CPython's `repr()` and
+`json.dumps()` exactly. Consolidation is therefore behaviour-preserving, and is
+left as follow-up rather than bolted onto an already-large change.
 
 **Where APIs disagreed, the receiving package grew the missing seam** rather
 than the consumer being rewritten around it — `WithAlpha` and `IntervalFor` on
@@ -90,6 +99,19 @@ Two behavioural details had to be preserved explicitly:
 | Collapse both pyjson encoders into one | One JSON package | The two mirror different Python functions with different non-finite handling; one package would answer to two contracts | Rejected for pyjson specifically, accepted everywhere else |
 
 ## Consequences
+
+**The codecadapter tiebreaker verified the wrong property.** Comparing the two
+registries' codec *names* showed them identical and was taken as evidence of
+equivalence. It is not: the kept group-6 registry had `InvertQuality` set to
+`true` for all four VideoToolbox codecs, where the Python adapters set
+`invert_quality=False` (a VideoToolbox `-q:v` is higher-value-is-higher-quality,
+unlike every CRF/CQ/QP codec) — and the deleted group-3 registry had it right.
+Two argv divergences survived the same way: ProRes tier 5 emitted `4444xq`
+instead of `xq`, and libx265 fell back to ffmpeg's generic `-pass/-passlogfile`
+instead of `-x265-params`. All three are fixed, and
+`pkg/codecadapter/python_argv_parity_test.go` now pins the emitted argv for
+every (codec, preset, quality) triple against the Python adapters, which is the
+comparison that should have decided this in the first place.
 
 **Positive.** All fourteen subcommands land together, with one implementation of
 each shared package and the `vmaf-tune` Python CLI fully shadowed —
