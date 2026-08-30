@@ -1,6 +1,21 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## fix/cython-mem-cpp — Cython extern follows mem.c -> mem.cpp (2026-08-30)
+
+- `compat/python-vmaf/core/adm_dwt2_cy.pyx` — **rebase-sensitive.** This is
+  an upstream Netflix file. Upstream still has `libvmaf/src/mem.c` and its
+  `.pyx` still says `cdef extern from "../../../libvmaf/src/mem.c"`. The fork
+  has (a) renamed `libvmaf/` to `core/` (ADR-0700) and (b) converted that
+  translation unit to C++23 `mem.cpp` (#1133), so the fork's extern reads
+  `cdef extern from "mem.h"` instead. An upstream sync that touches this
+  `.pyx` will conflict — keep the fork's header-based extern. Reverting to
+  a `.c` text-include reintroduces a build failure that only surfaces in the
+  `tox` legs, not in any meson build.
+- `python/setup.py` — fork-local: appends `../core/src/mem.cpp` to the
+  extension sources and sets `language="c++"` for the link driver. Upstream
+  has no such line because upstream's `mem` TU is still C.
+
 ## feat/vmafx-tune-go-fast — Phase A.5 fast path ported to Go (2026-08-30)
 
 All fork-added surfaces; no upstream-mirror files touched, so nothing here
