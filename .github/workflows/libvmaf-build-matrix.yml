@@ -57,6 +57,7 @@ jobs:
           - os: macos-latest
             CC: ccache clang
             CXX: ccache clang++
+            meson_extra: -Denable_metal=disabled
             name: Build — macOS clang (CPU)
             experimental: true
           - os: ubuntu-24.04-arm
@@ -103,7 +104,7 @@ jobs:
             CC: ccache clang
             CXX: ccache clang++
             dnn: true
-            meson_extra: -Denable_dnn=enabled
+            meson_extra: -Denable_dnn=enabled -Denable_metal=disabled
             name: Build — macOS clang (CPU) + DNN
             experimental: true
 
@@ -289,6 +290,10 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           brew install -q ninja nasm ccache llvm pkg-config
+
+      - name: Install Metal compiler toolchain
+        if: contains(matrix.meson_extra, 'enable_metal=enabled')
+        run: xcodebuild -downloadComponent MetalToolchain
 
       # ---------- ONNX Runtime (DNN legs only) ----------
       # Mirrors the install pattern from the dedicated Tiny AI job in
