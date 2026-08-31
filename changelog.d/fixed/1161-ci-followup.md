@@ -23,6 +23,11 @@
 - Pinned changed-file clang-tidy jobs to LLVM 22 instead of an ambiguous
   system alternatives link that could keep resolving to LLVM 18 and fail to
   parse C++26 `std::expected`.
+- Removed the stale, unbuilt C++ model-test twin; Meson has always registered
+  the actively maintained C test, while the unused copy had no compile-database
+  entry and drifted behind later regression coverage.
+- Made the C++ dictionary merge test check its final setup insertion instead of
+  discarding the return code, satisfying both the test contract and Clang-Tidy.
 - Replaced the overly broad scalar ADM contraction pragma with a function-scoped
   DWT2 guard. This preserves unrelated ADM arithmetic while keeping the DWT2
   kernel aligned with the immutable ARM golden-score contract.

@@ -168,6 +168,7 @@ static mu_message_t test_vmaf_dictionary_merge()
     mu_assert("dictionary should be NULL after free", !d);
 
     err = vmaf_dictionary_set(&b, "duplicate_key", "val_c", 0);
+    mu_assert("problem during vmaf_dictionary_set", !err);
     d = vmaf_dictionary_merge(&b, &a, VMAF_DICT_DO_NOT_OVERWRITE);
     mu_assert("dictionary should be NULL for duplicated key but different values", !d);
 
