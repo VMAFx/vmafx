@@ -111,3 +111,31 @@ The float-ADM / float-motion / float-PSNR NEON functions lack dedicated
 bit-exact unit tests. They are exercised indirectly through the full VMAF
 score comparison against Netflix golden data in the build-matrix CI job.
 Adding dedicated unit tests is a follow-up to this PR.
+
+## Follow-up (2026-08-31) — compiler-matched float-ADM DWT2 contraction
+
+The dedicated `test_float_adm_dwt2_neon` test added on PR #1161 reproduced a
+macOS ARM failure after the scalar translation-unit-wide contraction guard was
+removed to restore the immutable Netflix score contract. A Clang 22 AArch64
+cross-build failed 18 cells of the 3x5 fixture by 1–5 ULP; the same source
+passed under GCC 16.
+
+LLVM IR established the cause: Clang lowered the production scalar four-tap
+accumulation to `llvm.fmuladd`, while the guarded NEON translation unit emitted
+separate `fmul` and `fadd`. GCC 16 kept both scalar and NEON arithmetic split.
+It also established that `vmlaq_laneq_f32` is not an unconditional fused
+operation under Clang's `contract(off)`; the unconditional fused intrinsic is
+`vfmaq_laneq_f32`.
+
+The smallest parity-preserving fix is therefore compiler-matched and NEON-local:
+
+| Compiler | Vector accumulation | Tail / horizontal accumulation |
+|---|---|---|
+| Clang | `vfmaq_laneq_f32` | `fmaf` |
+| GCC | `vmulq_laneq_f32` then `vaddq_f32` | separate multiply/add |
+
+Both implementations start from `0.0f` and keep the production scalar tap
+order. The translation unit retains `-ffp-contract=off` so only the explicit
+Clang operations fuse. The exhaustive geometry/stride suite passes with both
+Clang 22 and GCC 16 AArch64 cross-builds through QEMU. No scalar ADM source,
+Netflix golden assertion, snapshot, or tolerance changed.

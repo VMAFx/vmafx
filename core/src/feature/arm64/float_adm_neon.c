@@ -24,10 +24,10 @@
 
 /* float_adm_dwt2_neon is defined in float_adm_dwt2_neon.c, which lives in
  * its own translation unit compiled with explicit `-ffp-contract=off` plus
- * `#pragma clang fp contract(off)` / GCC optimize attribute guards.  The
- * DWT2 kernel used `vmlaq_laneq_f32` (hardware FMA), which produced a 1-ULP
- * divergence from the scalar reference on ARM CI.  Separating it ensures no
- * other TU in this file inherits or resets the contraction guard.
+ * `#pragma clang fp contract(off)` / GCC optimize attribute guards.  The DWT2
+ * kernel then selects explicit Clang FMA or GCC split arithmetic to match the
+ * production scalar object without changing its golden-producing semantics.
+ * Separating it ensures no other TU inherits this compiler-specific contract.
  * See float_adm_dwt2_neon.c and ADR-1057. */
 
 void float_adm_csf_neon(const float *src, float *dst, float *flt, int w, int h, int src_stride,

@@ -752,12 +752,12 @@ if is_asm_enabled
         )
 
         # float-ADM DWT2 NEON carve-out (ADR-1057).
-        # float_adm_dwt2_neon.c replaces the vmlaq_laneq_f32 FMA intrinsics
-        # in the original DWT2 kernel with explicit vmulq_laneq_f32 + vaddq_f32
-        # pairs to match the scalar reference rounding.  The TU also carries
-        # `#pragma clang fp contract(off)` / GCC optimize attribute guards for
-        # the scalar tail.  Building in a dedicated static library keeps the
-        # contraction guard isolated from other TUs in arm64_v8_fp.
+        # The scalar golden-producing TU uses each compiler's established
+        # contraction semantics: Clang contracts the four-tap accumulation,
+        # while GCC keeps it split in the supported release configurations.
+        # This NEON TU mirrors that distinction explicitly (`vfmaq` / `fmaf`
+        # for Clang, `vmul` + `vadd` for GCC).  `-ffp-contract=off` prevents
+        # any additional implicit fusion outside those selected operations.
         arm64_adm_dwt2_neon_lib = static_library(
           'arm64_adm_dwt2_neon',
           feature_src_dir + 'arm64/float_adm_dwt2_neon.c',

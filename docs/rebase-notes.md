@@ -1280,6 +1280,22 @@ untouched; the functions remain compiled and linkable for a future re-dispatch P
 
 ---
 
+## fix/pr1161-neon-adm-contract (2026-08-31, ADR-1057 follow-up)
+
+**Rebase impact:** preserve the compiler-matched arithmetic in
+`core/src/feature/arm64/float_adm_dwt2_neon.c`. Clang's production scalar path contracts
+the four-tap accumulation, so its NEON twin must use explicit `vfmaq_laneq_f32` / `fmaf`.
+GCC 16 keeps the scalar operations split, so its NEON twin must retain separate
+`vmulq_laneq_f32` plus `vaddq_f32` and scalar multiply/add. Keep the translation unit's
+`-ffp-contract=off` guard; it prevents implicit compiler-policy drift. In particular, do
+not replace Clang's `vfmaq_laneq_f32` with `vmlaq_laneq_f32`, which remains split when
+contraction is disabled.
+
+Retest `test_float_adm_dwt2_neon` under both Clang and GCC AArch64 builds through QEMU.
+Do not alter `adm_dwt2_s`, Netflix assertions, or parity tolerances to resolve a mismatch.
+
+---
+
 ## fix/core-test-regressions-pr-train (2026-06-04, no ADR — bug fixes)
 
 **Files touched:**

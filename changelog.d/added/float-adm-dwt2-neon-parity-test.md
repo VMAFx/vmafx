@@ -16,8 +16,11 @@
   in `adm.c` applies no width guard, so every one of those widths is a width
   the production path really takes.
 
-  The kernel passed on first run: no divergence found, and no production
-  source was changed. An A/B of the 576x324 golden pair with NEON enabled
-  versus `--cpumask 4294967295` (all SIMD off) is byte-identical at `%.17g`
-  precision across all 20 frames and the pooled metrics. Registered in suite
-  `['fast', 'simd']`, gated on `float_enabled` and aarch64.
+  The test caught a Clang-specific 1–5 ULP mismatch after PR #1161 restored
+  the scalar golden-producing contraction semantics: Clang contracts the
+  scalar four-tap accumulation while GCC 16 keeps it split. The NEON kernel
+  now spells out the matching operation for each compiler and the exhaustive
+  suite passes in both Clang 22 and GCC 16 AArch64 cross-builds through QEMU.
+  No scalar ADM source, Netflix golden assertion, snapshot, or tolerance was
+  changed. Registered in suite `['fast', 'simd']`, gated on `float_enabled`
+  and aarch64.

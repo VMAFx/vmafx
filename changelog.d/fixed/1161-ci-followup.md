@@ -9,7 +9,8 @@
   unsupported output conversions, keeping `ort_backend.c` above its ratcheted
   coverage floor without weakening the threshold.
 - Fixed unsigned output formatting, checked luminance-range return values, and
-  aligned scalar float-ADM contraction with its explicit non-FMA NEON twin.
+  made the ARM float-ADM NEON DWT2 kernel match each compiler's established
+  scalar contraction behavior without changing scalar or golden-score results.
 - Brought the dev-MCP image back in sync with the FFmpeg n9.0.1 patch base and
   copied the complete Go module inputs into its six-binary build stage.
 - Preserved C linkage for the shared minunit test counter so C++ tests link on

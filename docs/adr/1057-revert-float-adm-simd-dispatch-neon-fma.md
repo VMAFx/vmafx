@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1057: Revert float-ADM SIMD dispatch wiring (PR #685) — NEON FMA divergence unfixable in scope
 
-- **Status**: Superseded by fix/neon-fma-safe-float-adm-dwt2 (float_adm_dwt2_neon.c)
+- **Status**: Superseded by the compiler-matched NEON contract in PR #1161
 - **Date**: 2026-06-06
 - **Deciders**: Lusoris
 - **Tags**: `simd`, `neon`, `float-adm`, `revert`, `correctness`
@@ -77,6 +77,33 @@ for any future re-attempt**: a fix for NEON-vs-scalar parity must NOT alter the 
 golden-producing path — make the NEON side match the scalar (FMA) reference, and validate
 against the full ARM quality suite (not only the x86 golden gate and qemu unit parity)
 before merge.
+
+## Update (2026-08-31) — compiler-matched NEON contract
+
+PR #1161 restored the immutable scalar/golden contract by removing the file-wide scalar
+`fp contract(off)` pragma. The macOS ARM parity test then exposed a compiler-specific
+detail: Clang contracts the four scalar `accum += coefficient * sample` operations into
+`llvm.fmuladd`, while GCC 16 preserves separate multiply and add operations. Keeping the
+NEON translation unit uniformly non-contracting therefore matched GCC but differed from
+Clang by 1–5 ULP.
+
+The correction is deliberately confined to `float_adm_dwt2_neon.c`. The translation unit
+retains `-ffp-contract=off` so no implicit contraction can drift between compiler releases,
+then spells out the scalar compiler's established behavior:
+
+- Clang uses `vfmaq_laneq_f32` in the vector loop and `fmaf` in scalar tails and horizontal
+  bands.
+- GCC uses separate `vmulq_laneq_f32` plus `vaddq_f32` in the vector loop and separate
+  scalar multiply/add operations.
+- Both paths start each four-tap accumulation at `0.0f` and preserve the scalar tap order.
+
+`vmlaq_laneq_f32` is not interchangeable with `vfmaq_laneq_f32` here: under Clang with
+contraction disabled it expands to ordinary multiply/add IR and remains split. The explicit
+`vfmaq` intrinsic is required for the Clang path.
+
+The exhaustive `test_float_adm_dwt2_neon` geometry/stride suite passes under both Clang 22
+and GCC 16 AArch64 cross-builds through QEMU. The scalar ADM implementation, Netflix golden
+assertions, and parity tolerances remain unchanged.
 
 ## References
 

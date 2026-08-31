@@ -41,6 +41,17 @@ feature/arm64/
   pragma is portable and aarch64 GCC does not contract `a + b * c`
   across statements at default optimisation anyway. Removing it on
   rebase loses the cross-architecture documentation.
+- **Float-ADM DWT2 is the compiler-matched contraction exception
+  (ADR-1057, 2026-08-31).** The golden-producing scalar `adm_dwt2_s`
+  keeps project-default flags: Clang contracts its four left-to-right
+  `accum += coefficient * sample` operations, while GCC 16 keeps them
+  split. `float_adm_dwt2_neon.c` therefore uses `vfmaq_laneq_f32` plus
+  `fmaf` only under `__clang__`, and explicit `vmulq_laneq_f32` +
+  `vaddq_f32` plus scalar multiply/add under GCC. Keep the TU's
+  `-ffp-contract=off`; it prevents unplanned fusion around those explicit
+  choices. Do not replace `vfmaq` with `vmlaq`: Clang expands `vmlaq` as
+  ordinary multiply/add and the TU guard keeps it non-fused. Guarded by
+  `test_float_adm_dwt2_neon` under both Clang and GCC AArch64/QEMU.
 - **Float-arithmetic NEON TUs belong in `arm64_v8_fp`** (not
   `arm64_v8`). The `arm64_v8_fp` static lib is compiled with
   `-ffp-contract=off` (ADR-0873); the `arm64_v8` lib is integer-only
