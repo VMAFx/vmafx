@@ -59,9 +59,9 @@ Before publication, repository setup must provide two protected environments:
   attachment;
 - `pypi-publish` for the `vmaf-mcp` Trusted Publisher identity.
 
-Both accept selected tag refs matching `v*`, require the release reviewer, and
-disallow administrator bypass. Read-only validation runs before environment
-approval. The external SLSA reusable workflow cannot carry a caller-side
+Both accept selected tag refs matching `v*` and require the release reviewer.
+Read-only validation runs before environment approval. The external SLSA
+reusable workflow cannot carry a caller-side
 environment, so it writes only a workflow artifact with `contents: read`; the
 protected attachment job is the sole job that uploads its two provenance files
 to the GitHub Release.
