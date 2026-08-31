@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# Fail closed unless the CRDs, default server Deployment, and opt-in operator
+# all reach their real ready state before the scoring request begins. Explicit
+# waits give failures a bounded diagnostic instead of leaving kuttl's object
+# matcher to retry the mixed cluster-scoped/namespaced assertion until timeout.
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: assert-chart-runtime
+commands:
+  - command: >-
+      kubectl wait --for=condition=Established
+      crd/vmafxjobs.vmafx.dev
+      crd/vmafxnodes.vmafx.dev
+      crd/vmafxmodeltrainings.vmafx.dev
+      --timeout=60s
+  - command: >-
+      kubectl wait --for=condition=Available
+      deployment/vmafx
+      deployment/vmafx-operator
+      --namespace vmafx-e2e-test
+      --timeout=120s

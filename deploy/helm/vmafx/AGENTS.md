@@ -107,6 +107,20 @@ final UID and that container-scope seccompProfile is also set.
 restore the removed pre-fx CLI flags. The named container ports and probes must
 remain aligned with metrics `8080` and health/readiness `8081`.
 
+## Server component selector
+
+The main HTTP Service selects `app.kubernetes.io/component: server` in addition
+to the release name/instance. Every server workload Pod template (Deployment,
+StatefulSet, and Job) must carry that label; the operator and node use their own
+component labels. Without the component discriminator, enabling the operator
+adds its metrics port 8080 as an endpoint behind the scoring Service, producing
+nondeterministic HTTP 404 responses. Keep the headless Service, main PDB, HTTP
+NetworkPolicy, and ServiceMonitor selectors aligned with the server label.
+
+Do not add the label to the existing Deployment/StatefulSet `spec.selector` in
+a patch release: those fields are immutable for installed workloads. The Pod
+template label plus consumer selectors provides upgrade-safe routing isolation.
+
 ## References
 
 - [ADR-0699](../../../docs/adr/0699-vmafx-helm-chart-k8s.md) — original chart ADR

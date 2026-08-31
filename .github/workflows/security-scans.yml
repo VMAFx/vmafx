@@ -21,7 +21,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: security-${{ github.workflow }}-${{ github.ref }}
+  # A weekly schedule and a master push share github.ref. Keep cancellation for
+  # superseded runs of the same trigger, but never let one event class cancel
+  # CodeQL coverage for the other.
+  group: security-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

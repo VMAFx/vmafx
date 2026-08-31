@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# Install the chart's default Deployment workload with the images built by the
+# exact workflow head. The CPU vendor override removes the chart's default GPU
+# scheduling requirement; all other workload selection remains at its default.
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: install-chart-runtime
+commands:
+  - command: >-
+      bash -euo pipefail -c '
+        kubectl create configmap vmafx-e2e-fixtures \
+        --namespace vmafx-e2e-test \
+        --from-file=ref.y4m=../../fixtures/ref.y4m \
+        --from-file=dist.y4m=../../fixtures/dist.y4m \
+        --dry-run=client -o yaml | kubectl apply -f -
+      '
+  - command: >-
+      helm upgrade --install vmafx
+      ../../../../deploy/helm/vmafx
+      --namespace vmafx-e2e-test
+      --set image.tag=e2e-test
+      --set image.pullPolicy=Never
+      --set operator.enabled=true
+      --set operator.image.tag=e2e-test
+      --set operator.image.pullPolicy=Never
+      --set gpu.vendor=cpu
+      --set config.VMAFX_MODEL_DIR=/usr/local/share/vmafx/model
+      --wait
+      --timeout 180s
+  - command: >-
+      kubectl patch deployment vmafx
+      --namespace vmafx-e2e-test
+      --type=strategic
+      --patch='{
+        "spec":{"template":{"spec":{
+          "volumes":[{"name":"e2e-fixtures","configMap":{"name":"vmafx-e2e-fixtures"}}],
+          "containers":[{"name":"vmafx","volumeMounts":[{"name":"e2e-fixtures","mountPath":"/fixtures","readOnly":true}]}]
+        }}}
+      }'
+  - command: >-
+      kubectl rollout status deployment/vmafx
+      --namespace vmafx-e2e-test --timeout=120s

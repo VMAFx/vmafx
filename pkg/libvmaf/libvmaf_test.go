@@ -143,6 +143,56 @@ func TestScore_DefaultModel(t *testing.T) {
 	}
 }
 
+func TestScore_PassesModelAsCLIPathParameter(t *testing.T) {
+	argsFile := filepath.Join(t.TempDir(), "vmaf-args.txt")
+	t.Setenv("VMAF_ARGS_FILE", argsFile)
+
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "vmaf")
+	script := `#!/bin/sh
+printf '%s\n' "$@" > "$VMAF_ARGS_FILE"
+outfile=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) outfile="$2"; shift 2 ;;
+    *)  shift ;;
+  esac
+done
+cat > "$outfile" <<'EOF'
+` + goldenJSON + `
+EOF
+`
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
+		t.Fatalf("write vmaf argument recorder: %v", err)
+	}
+
+	modelDir := t.TempDir()
+	writeModel(t, modelDir, "vmaf_v0.6.1")
+	s, err := New(scriptPath, modelDir)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, _, err := s.Score(context.Background(), "ref.y4m", "dis.y4m", "vmaf_v0.6.1"); err != nil {
+		t.Fatalf("Score: %v", err)
+	}
+
+	argsBytes, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read recorded arguments: %v", err)
+	}
+	args := strings.Split(strings.TrimSuffix(string(argsBytes), "\n"), "\n")
+	want := "path=" + filepath.Join(modelDir, "vmaf_v0.6.1.json")
+	for i, arg := range args {
+		if arg == "-m" && i+1 < len(args) {
+			if args[i+1] != want {
+				t.Fatalf("model argument: got %q, want %q", args[i+1], want)
+			}
+			return
+		}
+	}
+	t.Fatalf("recorded arguments contain no -m value: %q", args)
+}
+
 func TestScore_ModelNotFound(t *testing.T) {
 	scriptPath := writeVmafScript(t, goldenJSON)
 	s, err := New(scriptPath, t.TempDir())

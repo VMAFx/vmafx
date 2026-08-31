@@ -4,27 +4,20 @@
 #
 # test/e2e/kind-cluster.sh
 #
-# Spin up a kind cluster wired for VMAFx Phase 4b e2e tests.
+# Spin up a CPU-only kind cluster for the VMAFx runtime contract.
 #
-# GPU strategy:
-#   - On hosts with NVIDIA GPUs and nvidia-container-runtime, the script installs
-#     the NVIDIA device plugin (DaemonSet) and configures kind to expose /dev/nvidia0.
-#   - On GPU-less hosts (CI, dev machines without NVIDIA) it installs the fake-gpu
-#     device plugin (squat-and-gobble/k8s-fakedeviceplugin) so kuttl tests that
-#     request "nvidia.com/gpu: 1" still get a working Pod — the vmafx-node image is
-#     built with a CPU fallback path that activates when no real GPU is present.
+# The chart test selects gpu.vendor=cpu, so device plugins and cert-manager are
+# intentionally absent. Neither is a prerequisite for the current chart or
+# operator configuration, and unrelated downloads must not decide this lane.
 #
-# Prerequisites (installed automatically on Ubuntu; checked otherwise):
-#   kind >= 0.23, kubectl, helm >= 3.14, kuttl >= 0.15
+# Prerequisites: Docker, kind >= 0.23, kubectl.
 #
-# Usage:
-#   ./test/e2e/kind-cluster.sh [--cluster-name NAME] [--real-gpu] [--teardown]
+# Usage: ./test/e2e/kind-cluster.sh [--cluster-name NAME] [--teardown]
 #
 # Environment variables:
 #   KIND_CLUSTER_NAME   override cluster name (default: vmafx-e2e)
-#   REAL_GPU            set to "1" to force real-GPU path even if auto-detect fails
+#   VMAFX_E2E_KUBECONFIG absolute path to the dedicated test kubeconfig (required)
 #   TEARDOWN            set to "1" to delete the cluster instead of creating it
-#   KUBECONFIG          populated/updated in-place by kind
 #
 # ADR-0783: k8s e2e integration test harness design.
 
@@ -34,14 +27,10 @@ set -euo pipefail
 # Defaults
 # ---------------------------------------------------------------------------
 CLUSTER_NAME="${KIND_CLUSTER_NAME:-vmafx-e2e}"
-REAL_GPU="${REAL_GPU:-}"
 TEARDOWN="${TEARDOWN:-}"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-KIND_CONFIG="${REPO_ROOT}/test/e2e/kind-config.yaml"
-
-# Image references (match CI workflow pins).
-NVIDIA_DEVICE_PLUGIN_VERSION="v0.16.0"
-FAKE_DEVICE_PLUGIN_IMAGE="squat/k8s-fakedeviceplugin:latest"
+ASSERT_CONTEXT="${REPO_ROOT}/test/e2e/assert-kind-context.sh"
+KUBECONFIG_PATH="${VMAFX_E2E_KUBECONFIG:-}"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -57,11 +46,19 @@ require() {
   command -v "$cmd" >/dev/null 2>&1 || die "Required tool not found: $cmd"
 }
 
-detect_nvidia() {
-  # Returns 0 (true) if a real NVIDIA GPU is usable from this host.
-  [ "${REAL_GPU}" = "1" ] && return 0
-  command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -q "GPU " && return 0
-  return 1
+require_isolated_kubeconfig_path() {
+  [[ -n "${KUBECONFIG_PATH}" ]] ||
+    die "VMAFX_E2E_KUBECONFIG must name a dedicated kubeconfig"
+  [[ "${KUBECONFIG_PATH}" = /* ]] ||
+    die "VMAFX_E2E_KUBECONFIG must be an absolute path"
+  [[ "${KUBECONFIG_PATH}" != */.kube/config ]] ||
+    die "the process-wide default kubeconfig is not a dedicated E2E file"
+  [[ ! -L "${KUBECONFIG_PATH}" ]] ||
+    die "dedicated kubeconfig must not be a symbolic link"
+  if [[ -n "${KUBECONFIG:-}" && "${KUBECONFIG}" != "${KUBECONFIG_PATH}" ]]; then
+    die "KUBECONFIG must equal VMAFX_E2E_KUBECONFIG"
+  fi
+  export KUBECONFIG="${KUBECONFIG_PATH}"
 }
 
 # ---------------------------------------------------------------------------
@@ -73,10 +70,6 @@ while [[ $# -gt 0 ]]; do
       CLUSTER_NAME="$2"
       shift 2
       ;;
-    --real-gpu)
-      REAL_GPU=1
-      shift
-      ;;
     --teardown)
       TEARDOWN=1
       shift
@@ -84,72 +77,33 @@ while [[ $# -gt 0 ]]; do
     *) die "Unknown argument: $1" ;;
   esac
 done
+export KIND_CLUSTER_NAME="${CLUSTER_NAME}"
 
 # ---------------------------------------------------------------------------
 # Teardown path
 # ---------------------------------------------------------------------------
 if [ "${TEARDOWN}" = "1" ]; then
-  log "Deleting kind cluster: ${CLUSTER_NAME}"
-  kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
+  require kind
+  require kubectl
+  require_isolated_kubeconfig_path
+  if kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
+    "${ASSERT_CONTEXT}"
+    log "Deleting kind cluster: ${CLUSTER_NAME}"
+    kind delete cluster --name "${CLUSTER_NAME}" \
+      --kubeconfig "${KUBECONFIG_PATH}"
+  else
+    log "Kind cluster '${CLUSTER_NAME}' does not exist; nothing to delete."
+  fi
   exit 0
 fi
 
 # ---------------------------------------------------------------------------
 # Prerequisite checks
 # ---------------------------------------------------------------------------
-for tool in kind kubectl helm; do
+for tool in docker kind kubectl; do
   require "$tool"
 done
-
-# ---------------------------------------------------------------------------
-# Determine GPU strategy
-# ---------------------------------------------------------------------------
-if detect_nvidia; then
-  GPU_MODE="nvidia"
-  log "NVIDIA GPU detected — will install NVIDIA device plugin."
-else
-  GPU_MODE="fake"
-  log "No NVIDIA GPU detected — will install fake-device-plugin for CI compatibility."
-fi
-
-# ---------------------------------------------------------------------------
-# Write kind cluster config
-# ---------------------------------------------------------------------------
-mkdir -p "$(dirname "${KIND_CONFIG}")"
-cat >"${KIND_CONFIG}" <<KINDEOF
-# Generated by test/e2e/kind-cluster.sh — do not edit by hand.
-# ADR-0783: kind cluster config for VMAFx e2e tests.
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: ${CLUSTER_NAME}
-nodes:
-  - role: control-plane
-    # Mount /dev into the kind node so real GPU device paths are visible.
-    extraMounts:
-$(if [ "${GPU_MODE}" = "nvidia" ]; then
-  cat <<GPUEOF
-      - hostPath: /dev
-        containerPath: /dev
-        propagation: HostToContainer
-      - hostPath: /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1
-        containerPath: /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1
-        readOnly: true
-GPUEOF
-else
-  cat <<FAKEOF
-      - hostPath: /dev/null
-        containerPath: /dev/null
-FAKEOF
-fi)
-    kubeadmConfigPatches:
-      - |
-        kind: InitConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            max-pods: "110"
-featureGates:
-  DevicePluginAPI: true
-KINDEOF
+require_isolated_kubeconfig_path
 
 # ---------------------------------------------------------------------------
 # Create (or reuse) cluster
@@ -157,92 +111,37 @@ KINDEOF
 if kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
   log "Cluster '${CLUSTER_NAME}' already exists — reusing."
 else
+  # Cluster creation is a local Docker operation, not a Kubernetes API
+  # mutation. Refuse any pre-existing kubeconfig unless it already proves the
+  # exact local kind identity; an absent dedicated file is created by kind.
+  if [[ -e "${KUBECONFIG_PATH}" ]]; then
+    "${ASSERT_CONTEXT}"
+  fi
   log "Creating kind cluster '${CLUSTER_NAME}'..."
-  kind create cluster --config "${KIND_CONFIG}" --wait 120s
+  kind create cluster --name "${CLUSTER_NAME}" \
+    --kubeconfig "${KUBECONFIG_PATH}" --wait 120s
 fi
 
-# Export kubeconfig
-kind export kubeconfig --name "${CLUSTER_NAME}"
-log "KUBECONFIG set to: ${KUBECONFIG:-~/.kube/config}"
+# Export and verify the dedicated kubeconfig before any Kubernetes mutation.
+kind export kubeconfig --name "${CLUSTER_NAME}" \
+  --kubeconfig "${KUBECONFIG_PATH}"
+"${ASSERT_CONTEXT}"
+log "Dedicated kubeconfig: ${KUBECONFIG_PATH}"
 
 # ---------------------------------------------------------------------------
-# Install cert-manager (prerequisite for operator webhooks)
-# ---------------------------------------------------------------------------
-log "Installing cert-manager..."
-kubectl apply --server-side -f \
-  https://github.com/cert-manager/cert-manager/releases/download/v1.14.5/cert-manager.yaml
-kubectl rollout status -n cert-manager deployment/cert-manager --timeout=120s
-kubectl rollout status -n cert-manager deployment/cert-manager-webhook --timeout=120s
-
-# ---------------------------------------------------------------------------
-# Install VMAFx CRDs (Helm chart installs crds/ directory on first run)
+# Install VMAFx CRDs without creating a chart workload. The kuttl case owns
+# the single Helm release so a missing runtime image cannot be hidden behind
+# the old best-effort CRD fallback.
 # ---------------------------------------------------------------------------
 log "Installing VMAFx CRDs..."
-helm upgrade --install vmafx-crds "${REPO_ROOT}/deploy/helm/vmafx" \
-  --create-namespace \
-  --namespace vmafx-system \
-  --set operator.enabled=true \
-  --set image.tag=e2e-test \
-  --wait \
-  --timeout 120s ||
-  {
-    log "Helm install returned non-zero; applying CRDs directly as fallback."
-    kubectl apply --server-side -f "${REPO_ROOT}/deploy/helm/vmafx/crds/"
-  }
-
-# ---------------------------------------------------------------------------
-# Install device plugin
-# ---------------------------------------------------------------------------
-if [ "${GPU_MODE}" = "nvidia" ]; then
-  log "Installing NVIDIA device plugin (${NVIDIA_DEVICE_PLUGIN_VERSION})..."
-  helm repo add nvdp https://nvidia.github.io/k8s-device-plugin --force-update
-  helm upgrade --install nvdp nvdp/nvidia-device-plugin \
-    --namespace kube-system \
-    --version "${NVIDIA_DEVICE_PLUGIN_VERSION}" \
-    --set failOnInitError=false \
-    --wait --timeout 120s
-else
-  log "Installing fake device plugin for simulated GPU resources..."
-  cat <<FAKEEOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: fake-gpu-device-plugin
-  namespace: kube-system
-  labels:
-    app: fake-gpu-device-plugin
-spec:
-  selector:
-    matchLabels:
-      app: fake-gpu-device-plugin
-  template:
-    metadata:
-      labels:
-        app: fake-gpu-device-plugin
-    spec:
-      priorityClassName: system-node-critical
-      tolerations:
-        - key: CriticalAddonsOnly
-          operator: Exists
-        - effect: NoSchedule
-          key: nvidia.com/gpu
-          operator: Exists
-      containers:
-        - name: fake-device-plugin
-          image: ${FAKE_DEVICE_PLUGIN_IMAGE}
-          args: ["--resource=nvidia.com/gpu", "--count=2"]
-          securityContext:
-            privileged: true
-          volumeMounts:
-            - name: device-plugin
-              mountPath: /var/lib/kubelet/device-plugins
-      volumes:
-        - name: device-plugin
-          hostPath:
-            path: /var/lib/kubelet/device-plugins
-FAKEEOF
-  kubectl rollout status -n kube-system daemonset/fake-gpu-device-plugin --timeout=120s
-fi
+"${ASSERT_CONTEXT}"
+kubectl --kubeconfig "${KUBECONFIG_PATH}" apply --server-side \
+  -f "${REPO_ROOT}/deploy/helm/vmafx/crds/"
+kubectl --kubeconfig "${KUBECONFIG_PATH}" wait --for=condition=Established \
+  crd/vmafxjobs.vmafx.dev \
+  crd/vmafxnodes.vmafx.dev \
+  crd/vmafxmodeltrainings.vmafx.dev \
+  --timeout=60s
 
 # ---------------------------------------------------------------------------
 # Pre-load VMAFx images into kind node (avoids pull-backoff in air-gapped CI)
@@ -266,4 +165,4 @@ done
 # ---------------------------------------------------------------------------
 log "Cluster '${CLUSTER_NAME}' is ready."
 log "Run the e2e tests with:"
-log "  kubectl kuttl test test/e2e/kuttl-tests/ --namespace vmafx-e2e-test"
+log "  kubectl kuttl test --config test/e2e/kuttl-tests/kuttl-test.yaml"

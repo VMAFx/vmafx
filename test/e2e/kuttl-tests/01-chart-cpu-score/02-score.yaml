@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# Exercise the chart Service and production Go server with real libvmaf work.
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+metadata:
+  name: score-y4m-pair
+timeout: 120
+commands:
+  - command: bash ../../score-smoke.sh

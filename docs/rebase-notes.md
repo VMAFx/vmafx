@@ -10,6 +10,50 @@ the first release outside GHSA-cq5v-8q36-5273 / CVE-2026-69244's affected
 range. No static-file or `follow_symlinks` compatibility exception is needed;
 the MCP HTTP transport registers dynamic routes only.
 
+## fix/e2e-k8s-runtime-contract — execute the real chart runtime (2026-08-31)
+
+- `.github/workflows/e2e-k8s.yml` must pass `target: node-cpu` to the node
+  `docker/build-push-action` step. `docker/Dockerfile.node` ends with the
+  `node-sycl` stage, so an omitted target silently builds Intel runtime layers;
+  the former `BACKEND=cpu` build argument was undeclared and had no effect.
+  The same workflow must build `Dockerfile.go-server --target go-server` and
+  export/load the operator, node, and server `e2e-test` tags before Helm runs.
+  The node builder must copy `model/.` into `/dist/model/` and assert
+  `/dist/model/vmaf_v0.6.1.json`; copying the directory itself creates a nested
+  model root that disagrees with `VMAFX_MODEL_DIR`.
+- `test/e2e/kind-cluster.sh` applies CRDs directly. Do not restore the old full
+  Helm “CRD install” plus fallback: it launched the default server before its
+  image was loaded and hid the rollout failure behind a successful CRD apply.
+  Every create/reuse, apply, kuttl invocation, diagnostic read, score, and
+  teardown is coupled to one absolute dedicated kubeconfig. Preserve the exact
+  `kind-${KIND_CLUSTER_NAME}` current-context and loopback-server guard; never
+  fall back to a process-wide Kubernetes context or suppress teardown failure.
+- `test/e2e/kuttl-tests/01-chart-cpu-score/` is the executable integration
+  boundary. It installs the chart's default Deployment workload on CPU, mounts
+  validated Y4M fixtures, and requires a finite real `/v1/score` response.
+  The chart Service and server Pod templates must share
+  `app.kubernetes.io/component: server` so an enabled operator's metrics port
+  cannot become a scoring endpoint; do not add that discriminator to immutable
+  Deployment/StatefulSet selectors during a patch upgrade.
+  Do not restore the removed Pod-creation, operator-heartbeat, MinIO/rclone, or
+  trainer-sidecar cases unless the production reconcilers first implement and
+  provision every asserted prerequisite.
+- `scripts/ci/test_e2e_runtime_contract.py` enforces these couplings in the
+  always-on Rules workflow and again before the gated image build; never leave
+  it only behind the E2E trigger gate.
+- `pkg/libvmaf/libvmaf.go` must pass subprocess models with the CLI parameter
+  grammar `-m path=/absolute/model.json`. A bare path is rejected by the CLI
+  parser and turns every file-backed server score into HTTP 500; preserve
+  `TestScore_PassesModelAsCLIPathParameter` across scorer or parser rebases.
+- `.github/workflows/security-scans.yml` must keep `github.event_name` in its
+  concurrency group. Both `schedule` and `push` use `refs/heads/master`; a
+  ref-only group lets the weekly scan cancel master-push CodeQL (or vice versa).
+  Preserve same-event `cancel-in-progress: true` and the always-on
+  `scripts/ci/test_security_workflow_contract.py` guard together.
+  Netflix upstream has none of these fork-local files, so there is no upstream
+  conflict; preserve the explicit targets and executable runtime boundary
+  during fork-local CI edits.
+
 ## fix/sanitizers-meson-c23 — Cython extern follows mem.c -> mem.cpp (2026-08-30)
 
 - `compat/python-vmaf/core/adm_dwt2_cy.pyx` — **rebase-sensitive.** Upstream

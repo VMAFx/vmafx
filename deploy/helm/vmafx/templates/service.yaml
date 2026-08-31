@@ -5,10 +5,12 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
 spec:
   type: {{ .Values.service.type }}
   selector:
     {{- include "vmafx.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: server
   ports:
     - name: http
       port: {{ .Values.service.port }}

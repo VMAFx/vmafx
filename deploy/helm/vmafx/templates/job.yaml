@@ -6,6 +6,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "vmafx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
   {{- with .Values.podAnnotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -21,6 +22,7 @@ spec:
     metadata:
       labels:
         {{- include "vmafx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}

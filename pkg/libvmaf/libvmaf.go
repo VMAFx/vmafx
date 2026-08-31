@@ -150,7 +150,7 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 	args := []string{
 		"-r", ref,
 		"-d", dis,
-		"-m", modelPath,
+		"-m", "path=" + modelPath,
 		"-o", tmpOut.Name(),
 		"--json",
 	}
