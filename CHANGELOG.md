@@ -11576,6 +11576,16 @@ Estimated per-PR runner-time reduction: ~70% versus the pre-ADR-0689 baseline.
   rebase-notes, vulkan-backend doc note).
 
 
+- `clang-format` pinned to **v23.1.0** (was v22.1.5), completing the pre-commit
+  hook refresh.
+- **No reformat.** Every one of the 763 in-scope C/C++/CUDA files is already
+  byte-identical to v23.1.0's output, verified by piping each through the new
+  binary and `cmp`-ing against the tree. This needs no `.git-blame-ignore-revs`
+  entry, contrary to the earlier planning note that assumed a major
+  clang-format bump implies a tree-wide reformat — that assumption was never
+  measured, and it is wrong here.
+
+
 Convert two stale `//^FIXME:` markers in the CUDA picture-unref path and one
 `// TODO:` marker in `integer_adm.c` into properly annotated `/* Deferred */`
 comments.  No behaviour change; the deferred work (picture-callback ABI and
@@ -24912,4 +24922,3 @@ See `docs/server/auth.md` for the full configuration guide.
   via the NVIDIA Container Toolkit (CUDA) or `--group-add video,render`
   (ROCm / oneAPI). `dev/Containerfile` keeps `USER root` — intentional
   dev sandbox. See ADR-0878.
-

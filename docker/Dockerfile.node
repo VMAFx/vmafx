@@ -337,8 +337,8 @@ COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libvpx.so*    /usr/loca
 COPY --from=ffmpeg-deps-base   /usr/lib/x86_64-linux-gnu/libdav1d.so*  /usr/local/lib/
 
 # Intel oneAPI SYCL + Level Zero runtime
-COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04 /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
-COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04 /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a /opt/intel/oneapi/compiler/latest/lib/libsycl.so*   /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
 
 COPY --from=go-builder /out/vmafx-node /usr/local/bin/vmafx-node
 

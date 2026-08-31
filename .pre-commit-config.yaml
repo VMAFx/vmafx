@@ -55,7 +55,7 @@ repos:
       - id: forbid-new-submodules
 
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v22.1.5
+    rev: v23.1.0
     hooks:
       - id: clang-format
         types_or: [c, c++, cuda]
@@ -280,7 +280,7 @@ repos:
         # hook would fail with `Executable 'semgrep' not found` on
         # every CI run.
         language: python
-        additional_dependencies: ["semgrep>=1.78,<2.0"]
+        additional_dependencies: ["semgrep>=1.175.0,<2.0"]
         require_serial: true
         types_or: [c, c++, cuda, python]
         # Mirror `check-copyright`'s exclude list — same upstream /
