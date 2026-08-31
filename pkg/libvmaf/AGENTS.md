@@ -87,3 +87,10 @@ Go wrapper around the libvmaf C ABI. Provides three scoring surfaces:
    a non-zero rc that the code silently skips, producing an empty feature
    map. If you change models or the feature set, re-verify the names against
    `model/<name>.json` `model_dict.feature_names`.
+
+10. **Subprocess model selection uses the CLI parameter grammar**
+    (`libvmaf.go::Scorer.Score`): the model argument is
+    `-m path=/absolute/model.json`, not `-m /absolute/model.json`. The latter
+    is a syntactically invalid model option and makes every file-backed server
+    score fail before libvmaf runs. Keep the argv regression test when changing
+    the scorer or CLI parser.
