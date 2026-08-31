@@ -26,6 +26,12 @@ release-please packages to one ordinary patch-release stream?
   3.2.1 cut, while deleting it generated 3.2.2. The release-PR rollover therefore
   validates and removes `release-as` together with `bootstrap-sha` before the
   release PR merges.
+- A normal development checkout also contains Netflix upstream's local
+  `v3.1.0` and `v3.2.0` tags, although `VMAFx/vmafx` advertises neither tag.
+  Release-please local mode will treat those shared-namespace tags as fork
+  history and can mask `bootstrap-sha`. Repeating both version simulations in
+  an origin-faithful clone with only the fork's actual tags selected the
+  configured `98dc0b2b...` bootstrap and the same single 3.2.1 release PR.
 - Helm chart `version` and Rust crate versions describe independently packaged
   artifacts. Helm `appVersion`, the Python distributions, libvmaf, and the node
   image describe the coordinated VMAFx release and should move together.
@@ -94,6 +100,7 @@ before merge. Do not synthesize a 3.2.0 tag.
 jq -e '.packages | keys == ["."]' release-please-config.json
 jq -e '. == {".": "3.2.0"}' .release-please-manifest.json
 git tag --list 'v3.2.*'
+git ls-remote --tags origin 'v3.2.*'
 meson setup build core -Denable_metal=disabled && meson compile -C build
 test -e build/src/libvmaf.so
 mkdir -p artifacts

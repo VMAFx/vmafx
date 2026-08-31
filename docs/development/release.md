@@ -315,6 +315,15 @@ validates:
 - `CHANGELOG.md` renders correctly and references no removed files.
 - Signing credentials (OIDC) resolve in the current CI environment.
 
+Run the release-please preview from an origin-faithful clone, not directly from
+the development checkout. Local tags include tags fetched from the Netflix
+`upstream` remote; those tags do not necessarily exist in `VMAFx/vmafx` and can
+make a local preview select the wrong previous release instead of the configured
+bootstrap SHA. The preview clone must expose only the fork's advertised tags
+and the candidate `master` tree. Supply credentials through a protected file
+descriptor or token-file path so the CLI never echoes a literal token in its
+argument list.
+
 See the [session orientation](../../CLAUDE.md#11-release) for the one-line
 summary and the `/prep-release` skill definition for the full checklist.
 

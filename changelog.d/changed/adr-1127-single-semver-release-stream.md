@@ -10,3 +10,5 @@
 - Keep the 3.2.1 override strictly one-time, pause automation behind any
   unpublished release draft, and retire both cutover fields during release-PR
   changelog rollover.
+- Make release dry-runs ignore upstream-only local tags so release-please tests
+  the fork's real bootstrap and release history.
