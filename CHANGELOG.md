@@ -6437,7 +6437,8 @@ wrapper fails. No production-code changes.
   of `libvmaf_feature_static_lib`, not transcribed, so the ADR-1057
   FP-contraction contract is part of what is under test) and requires
   bit-exact equality of all four subbands, plus proof that nothing is written
-  into the destination stride padding.
+  into the destination stride padding. A targeted signed-zero fixture also
+  locks scalar's +0-initialized four-tap accumulation against +0/-0 bit drift.
 
   Coverage: 29 hand-picked geometries — every `w % 4` residue, widths below
   the 4-column vector stride, both height parities, independently padded
@@ -6447,11 +6448,15 @@ wrapper fails. No production-code changes.
   in `adm.c` applies no width guard, so every one of those widths is a width
   the production path really takes.
 
-  The kernel passed on first run: no divergence found, and no production
-  source was changed. An A/B of the 576x324 golden pair with NEON enabled
-  versus `--cpumask 4294967295` (all SIMD off) is byte-identical at `%.17g`
-  precision across all 20 frames and the pooled metrics. Registered in suite
-  `['fast', 'simd']`, gated on `float_enabled` and aarch64.
+  The test caught a Clang-specific 1–5 ULP mismatch after the original
+  translation-unit-wide contraction guard was removed. The final correction
+  scopes contraction-off to `adm_dwt2_s()` alone and keeps the NEON kernel's
+  vector and scalar accumulations +0-initialized and explicitly split. The
+  exhaustive and signed-zero suites pass in both Clang 22 and GCC 16 AArch64
+  cross-builds through QEMU, and disassembly confirms neither implementation
+  emits `fmla`. No Netflix golden assertion, snapshot, or tolerance was
+  changed. Registered in suite `['fast', 'simd']`, gated on `float_enabled`
+  and aarch64.
 
 
 - `float_ansnr`: add `enable_chroma` option (default `false`) to compute ANSNR/ANPSNR for Cb/Cr planes, emitting `float_ansnr_cb`, `float_ansnr_cr`, `float_anpsnr_cb`, `float_anpsnr_cr` feature scores. YUV400P content clamps to luma-only regardless of flag.
@@ -15892,6 +15897,111 @@ stacked drafts that intentionally contain the parent's ADR files.
   longer crowd out real backlog findings.
 
 
+- CI: every workflow now installs `meson` from PyPI instead of `apt`.
+  Ubuntu 24.04 ships meson 1.3.2, which predates `c23` in `c_std`
+  (verified: 1.3.2 rejects it, 1.4.0 accepts it), so every job that
+  configured `core/` failed at `meson setup` with
+  `ERROR: Unknown C std ['c23']` from the moment ADR-0692 raised the
+  standard. This took out Rust, Sanitizers, Tests & Quality Gates
+  (including the Netflix Golden leg), Lint, Go, Security Scans and
+  Supply Chain — 15 install sites across 7 workflows. The workflows
+  that were already green (`build.yml`, `fuzz.yml`,
+  `ffmpeg-integration.yml`, `libvmaf-build-matrix.yml`) had always
+  pip-installed meson; the fix brings the remaining seven in line
+  rather than inventing a new pattern.
+- `core/meson.build` now declares `meson_version: '>= 1.4.0'` (was
+  `'>= 0.58.0'`). The project has de-facto required 1.4.0 since it
+  adopted `c_std=c23`; declaring it turns the cryptic
+  `Unknown C std ['c23']` into
+  `ERROR: Meson version is 1.3.2 but project requires >= 1.4.0`.
+- `core/meson.build` no longer puts `c_std` in `default_options` at all;
+  the C standard is now selected by compiler identity after `project()`,
+  mirroring the `cpp_std` handling ADR-1056 already added for C++. The accepted-values list meson advertises for
+  `c_std` is compiler-specific, so *any* value in `default_options`
+  aborts configure on a toolchain missing that exact spelling — before
+  any conditional in the file can run. Observed on CI:
+  MSVC offers only `['none','c89','c99','c11']`, and GCC 13 (the
+  `ubuntu-latest` default) offers `c2x` but not `c23`. A bare `c23`
+  therefore failed with
+  `None of values ['c23'] are supported by the C compiler` — a
+  *different* failure from the stale-meson one above, and the one that
+  actually broke the required `Build — Ubuntu gcc (CPU) + DNN` and both
+  Windows MSVC legs even where meson was new enough. The selection is
+  now `/std:clatest` on MSVC, `-std=c23` where the compiler accepts it,
+  and `-std=c2x` otherwise — the pre-ratification spelling of the same
+  standard, so this is a spelling fallback, not a language downgrade.
+  An explicit `-Dc_std=` override is still honoured untouched.
+- `core/meson.build` also stopped hard-coding `-std=c++26`. GCC 13 — the
+  `ubuntu-latest` default — rejects that flag outright
+  (`unrecognized command-line option '-std=c++26'`), so every C++ TU
+  failed to build. This was invisible for as long as the `c23` defects
+  above aborted configure before any C++ source was reached; fixing them
+  exposed it. The project-level flag is now the newest of
+  `c++26` / `c++23` / `c++2b` that the compiler actually accepts, with a
+  hard `error()` if none do. Per-target `override_options` in
+  `core/src/meson.build` are untouched.
+- The C++ standard probe compile-tests `<expected>` rather than trusting
+  `-std=` flag acceptance. clang 18.1.3 *accepts* `-std=c++26` but its
+  accompanying libstdc++ then has no `std::expected`, so
+  `core/src/dict.cpp` failed with
+  `no member named 'expected' in namespace 'std'` and took out all four
+  Sanitizers checks. ADR-0692 (#1140) raised the tree from `c++23` to
+  `c++26` earlier the same day; `<expected>` is a C++23 feature and the
+  only non-C++17 header in the tree besides `<span>` (C++20), so C++26
+  buys nothing here while breaking that toolchain. The probe now takes
+  the newest candidate that genuinely builds — c++26 where it works,
+  c++23 where it does not.
+- CI now builds with **current** toolchains rather than the distro's.
+  The `ubuntu-24.04` image tops out at clang 18.1.3, which accepts
+  `-std=c++26` but ships a libstdc++ without `std::expected` — so the
+  right fix was to move the toolchain forward, not to degrade the
+  language standard to suit it. clang is now installed from
+  apt.llvm.org at **22** (sanitizers, the Tests & Quality Gates
+  sanitizer legs, clang-tidy, and the Linux/ARM matrix clang legs), and
+  the GCC legs use the image's preinstalled **gcc-14** instead of the
+  default 13 (which rejects `-std=c++26` outright and has no `c23`).
+  macOS legs keep Apple clang — `clang-22` does not exist there. The
+  `-std` cascades stay in place as a portability net for MSVC, Apple
+  clang and MinGW, and now also carry GCC's `c++2c` spelling.
+- Fixed a regression introduced while fixing the above: moving `c_std`
+  out of `default_options` into `add_project_arguments()` silently
+  stopped the C standard from reaching meson's **compiler feature
+  checks**, which only see built-in options and env `CFLAGS`. On MSVC
+  the `stdatomic.h` probe then ran in legacy C mode and tripped
+  `vcruntime_c11_stdatomic.h: #error "C atomics require C11 or later"`,
+  surfacing as the misleading `ERROR: Problem encountered: Atomics not
+  supported`. The chosen flag is now captured in `c_std_args`, used to
+  seed `test_args`, and threaded through every `cc.check_header` /
+  `cc.compiles` / `cc.has_function` / `cc.has_header` probe.
+- Corrected the toolchain note in `core/src/dict.cpp`: it claimed
+  `clang >= 16`, but libstdc++ gates `<expected>` on
+  `__cpp_concepts >= 202002L` and clang only raised that from `201907L`
+  in **clang 19**. That wrong claim is what made the sanitizer and
+  Linux/ARM clang legs look like a `-std=` problem when no language
+  standard could have fixed them.
+- The fuzz jobs (`sanitizers.yml` fuzz-nightly and `fuzz.yml`) used a
+  bare `clang`, which resolves to 18 on `ubuntu-24.04` and carries the
+  same latent `<expected>` breakage; both are pinned to clang 22 from
+  apt.llvm.org.
+- `range_foot_head()` takes its pixel range as `int` rather than
+  `enum VmafPixelRange`. `VmafPixelRange` is public C API, so a caller
+  can pass any integer and the function's `default:` arm exists to
+  reject that — but reading an out-of-range value *as the enum type* is
+  undefined behaviour in C++, which UBSan reports as
+  `load of value 127, which is not a valid value for type
+  'enum VmafPixelRange'`. Widening the parameter makes the defensive
+  check well-defined without changing behaviour for valid input. This
+  is the first defect the sanitizer suite has actually been able to
+  report: the sanitizer jobs had been dying at `meson setup` and never
+  reached the tests.
+- The clang matrix legs install `libomp-22-dev` alongside clang 22. The
+  unversioned `libomp-dev` matches the *system* clang (18), and the tox
+  leg builds `libsvm-official` from source with `$CXX`, whose `svm.cpp`
+  includes `<omp.h>` — with only the unversioned package that fails as
+  `fatal error: 'omp.h' file not found` and takes down the required
+  `Build — Ubuntu clang (CPU) + DNN` check.
+
+
 Made `vmaf-tune` ladder, benchmark, auto-plan, and conformal sidecar JSON
 strict-parser safe by serializing NaN/Infinity diagnostics as `null`.
 
@@ -17259,6 +17369,89 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   are unchanged. See
   [ADR-1121](../docs/adr/1121-sycl-qsv-zerocopy-p010-normalization.md) and the
   [SYCL backend doc](../docs/backends/sycl/overview.md).
+
+
+- The `Pre-Commit (Formatters + Basic Checks)` required check passes
+  again. The repository ran two independent import sorters over the same
+  files — the standalone `isort` hook and ruff's `I` ruleset — and since
+  both auto-fix, `pre-commit run --all-files` never reached a fixed
+  point: isort rewrote a file and ruff rewrote it back, so the run
+  failed while leaving a net-zero `git diff`. The standalone `isort`
+  hook, its `Python Lint` CI step, and the `[tool.isort]` config block
+  are retired; ruff's `I` ruleset is now the only import sorter
+  (ADR-1126). No source file changes were needed — `master` was already
+  ruff-clean.
+- Four `MD060/table-column-style` markdownlint errors fixed in
+  `pkg/codecadapter/AGENTS.md` and `pkg/tune/AGENTS.md` (table delimiter
+  rows written tight, `|---|`, where the surrounding table uses the
+  spaced "compact" style).
+- The `Python Lint` job is renamed to `Python Lint (Ruff + Black + mypy)`
+  to match what it runs; the name is updated in
+  `required-aggregator.yml` in the same commit, since the aggregator
+  matches required checks by exact job name.
+
+
+- Python harness: the `adm_dwt2_cy` Cython extension builds again.
+  `core/src/mem.c` became `core/src/mem.cpp` when the C++23 twins were
+  wired into the build (#1133), but `adm_dwt2_cy.pyx` still text-included
+  the old `.c` path, so every `tox` leg died with
+  `../../../core/src/mem.c: No such file or directory` while compiling
+  `adm_dwt2_cy.c`. A C++23 translation unit cannot be `#include`d into
+  this C module, so the extern now declares `aligned_malloc` /
+  `aligned_free` from `mem.h` (which already guards both with
+  `extern "C"`) and `core/src/mem.cpp` is compiled as a real extension
+  source. Verified behaviour-preserving: the rebuilt module's output is
+  byte-identical to the previously-built `.so` across four geometries
+  (48x64, 30x50, 17x33, 64x64) — same SHA-256 over all four bands.
+
+
+- Restored the remaining cross-platform and quality gates after the C23/C++23
+  toolchain migration: Windows path creation now accepts both separator styles,
+  MSVC receives only compiler-supported warning/visibility flags, Windows oneAPI
+  builds use the `c++latest` mode required by `std::expected`, and Linux SYCL
+  keeps GCC as the host compiler while compiling device objects with `icpx`.
+- Updated the Python MCP server for the MCP SDK 2.x low-level handler API and
+  Pydantic field naming. The complete MCP suite now passes against `mcp==2.1.1`.
+- Added direct regression coverage for ONNX Runtime double, int64, int32, and
+  unsupported output conversions, keeping `ort_backend.c` above its ratcheted
+  coverage floor without weakening the threshold.
+- Fixed unsigned output formatting, checked luminance-range return values, and
+  stabilized ARM float-ADM DWT2 on +0-initialized split multiply/add arithmetic
+  by applying contraction-off only to the scalar DWT2 function and its NEON
+  twin, including scalar-identical signed-zero behavior.
+- Preserved the immutable Darwin AArch64 integer-ADM score through a named
+  production compatibility wrapper that applies the historical three-tap rule
+  only to the first DWT2 output column. The universal NEON kernel remains
+  four-tap and scalar-bit-exact on Linux ARM and in direct parity tests.
+- Brought the dev-MCP image back in sync with the FFmpeg n9.0.1 patch base and
+  copied the complete Go module inputs into its six-binary build stage.
+- Preserved C linkage for the shared minunit test counter so C++ tests link on
+  MSVC as well as GCC and Clang.
+- Pinned changed-file clang-tidy jobs to LLVM 22 instead of an ambiguous
+  system alternatives link that could keep resolving to LLVM 18 and fail to
+  parse C++26 `std::expected`.
+- Removed the stale, unbuilt C++ model-test twin; Meson has always registered
+  the actively maintained C test, while the unused copy had no compile-database
+  entry and drifted behind later regression coverage.
+- Made the C++ dictionary merge test check its final setup insertion instead of
+  discarding the return code, satisfying both the test contract and Clang-Tidy.
+- Replaced the overly broad scalar ADM contraction pragma with a function-scoped
+  DWT2 guard. This preserves unrelated ADM arithmetic while keeping the DWT2
+  kernel aligned with the immutable ARM golden-score contract.
+- Let dev-container smoke tests inherit the image's CUDA, oneAPI, and ROCm
+  runtime search paths instead of hiding `libirc.so` behind a host-style
+  `/usr/local/lib` override; initialize the image paths without undefined
+  Dockerfile variables.
+- Identified the all-backend Linux lane as Intel LLVM and stopped running
+  GCC-authored Python numeric snapshots there. Dedicated CPU/GCC jobs retain
+  the complete tox and immutable Netflix golden gates; the Intel lane still
+  runs the native Meson suite and every backend build.
+- Made `make lint` regenerate Meson's compilation database through Ninja before
+  invoking C analyzers, including on Ninja builds whose vendor-suffixed version
+  string prevents Meson from generating that file during setup; missing C lint
+  tools now fail the gate instead of claiming to skip successfully.
+- Installed Xcode's separately shipped Metal compiler component in the combined
+  macOS CPU + Metal build before Meson invokes `xcrun metal`.
 
 
 - `cmd/vmafx-controller/scheduler/` + `cmd/vmafx-node/` bug audit
@@ -23050,6 +23243,18 @@ test binary under ASan+LSan, UBSan, and TSan.
 Fix the AVX2 ADM direct-LUT-range `__builtin_clz()` UBSan path exposed by
 `test_score_pooled_eagain`, then retire that test's sanitizer deselect so
 ASan+LSan, UBSan, and TSan run it again.
+
+
+- The Sanitizers workflow builds again. Both the **ASan + UBSan PR gate** and the
+  **TSan master-push** job installed meson from `apt`, and Ubuntu 24.04 ships
+  meson 1.3.2 — which predates `c23` support in `c_std` (added in meson 1.4.0).
+  Since ADR-0692 raised the project to C23, both jobs died at configure with
+  `ERROR: Unknown C std ['c23']` before compiling a single file. Every other
+  workflow in the repository already pip-installs meson; these two were the
+  exception. They now do the same.
+- The failure was invisible in the usual places: it happens during *configure*,
+  so there is no sanitizer diagnostic and no test output — just a build error in
+  a job whose name implies a runtime finding.
 
 
 - **`scripts/release/concat-changelog-fragments.sh` and

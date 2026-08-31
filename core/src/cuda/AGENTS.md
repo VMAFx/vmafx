@@ -269,7 +269,7 @@ cuda/
   rename / signature change of any of those entry points**: the FFmpeg
   patch must update in the same PR per CLAUDE.md §12 r14. Verify by
   cumulative `git am --3way` replay of `ffmpeg-patches/000{1..9}-*` +
-  `0010-*` against pristine FFmpeg `n8.1.1`. The CUDA filter selector
+  `0010-*` against pristine FFmpeg `n9.0.1`. The CUDA filter selector
   mirrors the picture-pool ownership contract above: state is freed
   *after* `vmaf_close()`. Reversing the order is a use-after-free.
 

@@ -109,7 +109,7 @@ Not enforced as PR-blocking; informational in review.
   columns). Codified in [.clang-format](../.clang-format).
 - **C++ (SYCL code):** same as C where applicable; RAII encouraged for queue/context
   wrappers; no exceptions in hot paths.
-- **Python:** PEP 8 + black (line-length 100) + isort + ruff. Codified in
+- **Python:** PEP 8 + black (line-length 100) + ruff (import sorting via ruff's `I` ruleset — ADR-1126). Codified in
   [pyproject.toml](../pyproject.toml).
 - **CUDA (`.cu`):** follows C style; kernel names `kernel_*`; device helpers `device_*`.
 - **Shell:** shfmt + shellcheck; `#!/usr/bin/env bash`; `set -euo pipefail`.

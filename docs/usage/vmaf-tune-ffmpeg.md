@@ -11,11 +11,11 @@ modes: **saliency-aware encoding**, **CRF recommendation**,
 
 ## Prerequisites
 
-Apply the fork's FFmpeg patches against a clean `n8.1.1` checkout
+Apply the fork's FFmpeg patches against a clean `n9.0.1` checkout
 (latest released FFmpeg 8.x.x tag verified on 2026-05-20):
 
 ```bash
-cd /path/to/ffmpeg && git checkout n8.1.1
+cd /path/to/ffmpeg && git checkout n9.0.1
 for p in /path/to/vmaf/ffmpeg-patches/000*-*.patch; do
     git am --3way "$p" || break
 done

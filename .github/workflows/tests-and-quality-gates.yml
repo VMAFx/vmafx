@@ -57,9 +57,12 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm pkg-config \
+          sudo apt-get install -y ninja-build nasm pkg-config \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
             python3-pip
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
           python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
 
       - name: Build (CPU, release)
@@ -129,7 +132,10 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm pkg-config python3-pip
+          sudo apt-get install -y ninja-build nasm pkg-config python3-pip
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
           python3 -m pip install --user numpy
       - name: Build CPU
         working-directory: core
@@ -163,15 +169,27 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          # lld-18 matches ubuntu-26.04's clang-18; ld.bfd/gold pulls in
-          # a system-wide LLVM 16 gold plugin that can't read clang-18 LTO
+          # lld-22 keeps the linker in the same LLVM major as the
+          # apt.llvm.org clang-22 installed below; ld.bfd/gold pulls in
+          # a system-wide LLVM 16 gold plugin that can't read clang-22 LTO
           # bitcode (Unknown attribute kind 91 in LLVM 16 reader). Using lld
           # keeps the linker in the same LLVM major as the compiler.
-          # libclang-rt-18-dev ships the ASan/UBSan/TSan runtime libraries
-          # (libclang_rt.asan.a etc.); without it clang-18 emits instrumented
-          # code but lld-18 can't resolve __asan_*/__ubsan_* symbols.
-          sudo apt-get install -y meson ninja-build nasm clang-18 lld-18 \
-            libclang-rt-18-dev
+          # libclang-rt-22-dev ships the ASan/UBSan/TSan runtime libraries
+          # (libclang_rt.asan.a etc.); without it clang-22 emits instrumented
+          # code but lld-22 can't resolve __asan_*/__ubsan_* symbols.
+          sudo apt-get install -y ninja-build nasm
+          # LLVM 22 from apt.llvm.org: the ubuntu-24.04 image tops out at
+          # clang 18.1.3, which accepts -std=c++26 but ships a libstdc++
+          # without std::expected, so core/src/dict.cpp fails to build
+          # (ADR-0692 moved the tree to C23 + C++26). Take the toolchain
+          # forward rather than degrading the standard.
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 22
+          sudo apt-get install -y clang-tools-22 libclang-rt-22-dev lld-22
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
       - name: Build with ${{ matrix.sanitizer }} sanitizer
         # ADR-0347: under UBSan, suppress the `function` check via
         # `-fno-sanitize=function`. The pre-existing K&R-prototype
@@ -184,9 +202,9 @@ jobs:
         working-directory: core
         shell: bash
         env:
-          CC: clang-18
-          CXX: clang++-18
-          LDFLAGS: -fuse-ld=lld-18
+          CC: clang-22
+          CXX: clang++-22
+          LDFLAGS: -fuse-ld=lld-22
         run: |
           if [ "${{ matrix.sanitizer }}" = "undefined" ]; then
             EXTRA_ARGS=( "-Dc_args=-fno-sanitize=function" "-Dcpp_args=-fno-sanitize=function" )
@@ -297,8 +315,11 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm pkg-config \
+          sudo apt-get install -y ninja-build nasm pkg-config \
             python3-pip python3-venv
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
       - name: Install ONNX Runtime (CPU)
         env:
           # Pinned to 1.22.0. MS stopped publishing Linux tgz artifacts
@@ -398,9 +419,12 @@ jobs:
           # vulkan-vif-cross-backend lanes — keeps the libvmaf build
           # graph identical so the MCP smoke exercises the same
           # configuration the rest of the matrix sees.
-          sudo apt-get install -y meson ninja-build nasm pkg-config \
+          sudo apt-get install -y ninja-build nasm pkg-config \
             python3-pip python3-venv \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
 
       - name: Build libvmaf (full MCP transport matrix)
         # Mirrors the local-lint configuration documented in
@@ -476,8 +500,11 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/*microsoft* \
                      /etc/apt/sources.list.d/*azure* || true
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build nasm pkg-config gcc \
+          sudo apt-get install -y ninja-build nasm pkg-config gcc \
             python3-pip
+          # meson from PyPI: Ubuntu 24.04 ships meson 1.3.2, which predates `c23`
+          # in c_std (added in meson 1.4.0) and fails configure since ADR-0692.
+          sudo pip3 install --break-system-packages --quiet meson
           # gcovr replaces lcov: it deduplicates .gcno files belonging to
           # the same source compiled into multiple targets (libvmaf.so +
           # each test_X.p/.._src_X.c.gcda), which lcov sums and yields

@@ -61,9 +61,19 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    JSONRPCMessage,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+)
+from pydantic import TypeAdapter
 
 _logger = logging.getLogger(__name__)
+_JSONRPC_MESSAGE_ADAPTER = TypeAdapter(JSONRPCMessage)
 
 # Concurrency cap for vmaf subprocess spawning.  Unbounded concurrent requests
 # exhaust memory (each vmaf process loads the model + allocates frame buffers).
@@ -342,7 +352,7 @@ def _validate_media_path(p: str) -> str:
     allowed = _allowed_roots()
     if not any(resolved.is_relative_to(root) for root in allowed):
         raise ValueError(
-            f"media path {resolved} not under an allowlisted root; " "set VMAF_MCP_ALLOW to extend."
+            f"media path {resolved} not under an allowlisted root; set VMAF_MCP_ALLOW to extend."
         )
     return str(resolved)
 
@@ -2268,12 +2278,6 @@ async def _run_vmaf_score_encoded(
 # ---------------------------------------------------------------------------
 
 
-server: Server = Server("vmaf-mcp")
-
-
-# mcp.server.lowlevel.Server.list_tools() returns an untyped decorator (the
-# library has no py.typed marker); this is a library-stub gap, not a real
-# typing issue at the call site.
 def _scoring_extra_properties() -> dict[str, Any]:
     """Return the optional pass-through scoring parameters shared by
     ``vmaf_score`` and ``vmaf_score_encoded`` (ADR-1117).
@@ -2398,7 +2402,6 @@ def _scoring_extra_properties() -> dict[str, Any]:
     }
 
 
-@server.list_tools()  # type: ignore[no-untyped-call,untyped-decorator]
 async def _list_tools() -> list[Tool]:
     return [
         Tool(
@@ -2782,8 +2785,6 @@ async def _list_tools() -> list[Tool]:
     ]
 
 
-# Same untyped-decorator caveat as @server.list_tools() above.
-@server.call_tool()  # type: ignore[untyped-decorator]
 async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     # Extract MCP progress token from the request context's meta field.
     # The client opts in by passing {"_meta": {"progressToken": <token>}} in the
@@ -2975,6 +2976,25 @@ async def _call_tool_dispatch(
     return [TextContent(type="text", text=_dumps_strict(result))]
 
 
+async def _handle_list_tools(
+    _context: Any, _params: PaginatedRequestParams | None
+) -> ListToolsResult:
+    """Adapt the local catalogue to the MCP SDK 2.x low-level handler API."""
+    return ListToolsResult(tools=await _list_tools())
+
+
+async def _handle_call_tool(_context: Any, params: CallToolRequestParams) -> CallToolResult:
+    """Adapt validated MCP request parameters to the local dispatcher."""
+    return CallToolResult(content=await _call_tool(params.name, params.arguments or {}))
+
+
+server: Server = Server(
+    "vmaf-mcp",
+    on_list_tools=_handle_list_tools,
+    on_call_tool=_handle_call_tool,
+)
+
+
 def _check_depth(obj: Any, max_depth: int = 50, depth: int = 0) -> None:
     """Validate that a JSON-deserialised object does not exceed *max_depth* levels.
 
@@ -3070,8 +3090,8 @@ class _ParseErrorFilteredStdin:
     """Async-iterable stdin wrapper that intercepts JSON-RPC parse errors.
 
     The mcp library's ``stdio_server`` iterates over the supplied *stdin*
-    object with ``async for line in stdin`` and passes each line to
-    ``types.JSONRPCMessage.model_validate_json(line)``.  When that call
+    object with ``async for line in stdin`` and validates each line as a
+    ``types.JSONRPCMessage``. When that validation
     raises, the library forwards the bare ``Exception`` onto the read stream;
     the low-level server then emits a ``notifications/message`` notification
     instead of the spec-required JSON-RPC error response (JSON-RPC 2.0 §5).
@@ -3112,14 +3132,12 @@ class _ParseErrorFilteredStdin:
         return self
 
     async def __anext__(self) -> str:
-        import mcp.types as _mcp_types
-
         if self._inner is None:
             self._inner = self._make_inner()
 
         async for raw_line in self._inner:
             try:
-                _mcp_types.JSONRPCMessage.model_validate_json(raw_line)
+                _JSONRPC_MESSAGE_ADAPTER.validate_json(raw_line)
             except Exception as exc:
                 _emit_parse_error(raw_line, exc)
                 continue  # drop invalid line; do not forward to mcp library

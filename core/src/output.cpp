@@ -25,7 +25,7 @@
  *     unchanged; all four functions are declared `extern "C"` in output.h so
  *     every C caller (tools/vmaf.c, libvmaf.c) links without modification.
  *   - Output bytes are bit-for-bit identical to the C predecessor.  The
- *     NOLINTBEGIN/END(cert-err33-c) bracket from the C file is preserved: the
+ *     file-wide cert-err33-c suppression bracket from the C file is preserved: the
  *     writers rely on a final ferror() check to detect I/O failure rather than
  *     propagating per-call fprintf() errors — there is no recoverable action
  *     mid-stream, and removing the bracket would produce clang-tidy noise
@@ -170,7 +170,7 @@ static void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned s
         if (!cnt)
             continue;
 
-        (void)std::fprintf(outfile, "    <frame frameNum=\"%d\" ", i);
+        (void)std::fprintf(outfile, "    <frame frameNum=\"%u\" ", i);
         for (unsigned j = 0; j < fc->cnt; j++) {
             if (i >= fc->feature_vector[j]->capacity) /* ADR-0606: >= not > */
                 continue;
@@ -254,7 +254,7 @@ static void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollect
     const LocaleGuard locale;
 
     (void)std::fprintf(outfile, "<VMAF version=\"%s\">\n", vmaf_version());
-    (void)std::fprintf(outfile, "  <params qualityWidth=\"%d\" qualityHeight=\"%d\" />\n", width,
+    (void)std::fprintf(outfile, "  <params qualityWidth=\"%u\" qualityHeight=\"%u\" />\n", width,
                        height);
     (void)std::fprintf(outfile, "  <fyi fps=\"%.2f\" />\n", fps);
 
@@ -291,7 +291,7 @@ static void json_write_frame(VmafFeatureCollector *fc, FILE *outfile, unsigned i
                              std::string_view sf)
 {
     (void)std::fprintf(outfile, "    {\n");
-    (void)std::fprintf(outfile, "      \"frameNum\": %d,\n", i);
+    (void)std::fprintf(outfile, "      \"frameNum\": %u,\n", i);
     (void)std::fprintf(outfile, "      \"metrics\": {\n");
 
     unsigned cnt2 = 0;
@@ -501,7 +501,7 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
         if (!cnt)
             continue;
 
-        (void)std::fprintf(outfile, "%d,", i);
+        (void)std::fprintf(outfile, "%u,", i);
         for (unsigned j = 0; j < fc->cnt; j++) {
             if (i >= fc->feature_vector[j]->capacity) /* ADR-0606: >= not > */
                 continue;
@@ -546,7 +546,7 @@ static void json_write_aggregate(VmafFeatureCollector *fc, FILE *outfile, std::s
         if (!cnt)
             continue;
 
-        (void)std::fprintf(outfile, "{%d}{%d}frame: %d|", i, i + 1, i);
+        (void)std::fprintf(outfile, "{%u}{%u}frame: %u|", i, i + 1, i);
         for (unsigned j = 0; j < fc->cnt; j++) {
             if (i >= fc->feature_vector[j]->capacity) /* ADR-0606: >= not > */
                 continue;

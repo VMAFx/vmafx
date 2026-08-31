@@ -526,7 +526,7 @@ def test_list_extractors_schema():
 
     tools = anyio.run(get_tools)
     by_name = {t.name: t for t in tools}
-    schema = by_name["list_extractors"].inputSchema
+    schema = by_name["list_extractors"].input_schema
     assert schema.get("type") == "object"
 
 
@@ -538,7 +538,7 @@ def test_describe_model_schema_has_required_name():
 
     tools = anyio.run(get_tools)
     by_name = {t.name: t for t in tools}
-    schema = by_name["describe_model"].inputSchema
+    schema = by_name["describe_model"].input_schema
     assert "name" in schema.get("required", [])
     assert "name" in schema.get("properties", {})
 
@@ -549,7 +549,7 @@ def test_run_compare_schema_has_required_src():
 
     tools = anyio.run(get_tools)
     by_name = {t.name: t for t in tools}
-    schema = by_name["run_compare"].inputSchema
+    schema = by_name["run_compare"].input_schema
     assert "src" in schema.get("required", [])
 
 
@@ -559,6 +559,6 @@ def test_run_ladder_schema_has_required_fields():
 
     tools = anyio.run(get_tools)
     by_name = {t.name: t for t in tools}
-    schema = by_name["run_ladder"].inputSchema
+    schema = by_name["run_ladder"].input_schema
     for req in ("src", "resolutions", "target_vmafs"):
         assert req in schema.get("required", []), f"{req!r} missing from run_ladder required"

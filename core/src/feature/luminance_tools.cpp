@@ -58,8 +58,15 @@ constexpr double kBt1886Lb = 0.01;
 /* `static` removed: anonymous namespace already provides internal linkage
  * (Power of 10 #10 / -Wredundant-decls; adversarial review 2026-05-28
  * finding #12). */
-[[nodiscard]] int range_foot_head(int bitdepth, enum VmafPixelRange pix_range, int *foot,
-                                  int *head) noexcept
+/* `pix_range` is taken as `int`, not `enum VmafPixelRange`, on purpose.
+ * VmafPixelRange is part of the public C API, so a caller can hand us any
+ * integer; the `default:` arm below exists precisely to reject that. Reading
+ * an out-of-range value *as the enum type* is undefined behaviour in C++,
+ * and UBSan's -fsanitize=enum rightly flags it
+ * ("load of value 127, which is not a valid value for type
+ * 'enum VmafPixelRange'"). Widening the parameter makes the defensive check
+ * well-defined instead of UB, without changing behaviour for valid input. */
+[[nodiscard]] int range_foot_head(int bitdepth, int pix_range, int *foot, int *head) noexcept
 {
     switch (pix_range) {
     case VMAF_PIXEL_RANGE_LIMITED:
@@ -79,7 +86,7 @@ constexpr double kBt1886Lb = 0.01;
 
 [[nodiscard]] double normalize_range(int sample, VmafLumaRange range) noexcept
 {
-    int clipped = std::clamp(sample, range.foot, range.head);
+    const int clipped = std::clamp(sample, range.foot, range.head);
     return static_cast<double>(clipped - range.foot) / static_cast<double>(range.head - range.foot);
 }
 
@@ -88,7 +95,8 @@ constexpr double kBt1886Lb = 0.01;
 extern "C" int vmaf_luminance_init_luma_range(VmafLumaRange *luma_range, int bitdepth,
                                               enum VmafPixelRange pix_range)
 {
-    return range_foot_head(bitdepth, pix_range, &luma_range->foot, &luma_range->head);
+    return range_foot_head(bitdepth, static_cast<int>(pix_range), &luma_range->foot,
+                           &luma_range->head);
 }
 
 extern "C" int vmaf_luminance_init_eotf(VmafEOTF *eotf, const char *eotf_str)
@@ -111,11 +119,12 @@ extern "C" int vmaf_luminance_init_eotf(VmafEOTF *eotf, const char *eotf_str)
 
 extern "C" double vmaf_luminance_bt1886_eotf(double V)
 {
-    double a =
+    const double a =
         std::pow(std::pow(kBt1886Lw, 1.0 / kBt1886Gamma) - std::pow(kBt1886Lb, 1.0 / kBt1886Gamma),
                  kBt1886Gamma);
-    double b = std::pow(kBt1886Lb, 1.0 / kBt1886Gamma) /
-               (std::pow(kBt1886Lw, 1.0 / kBt1886Gamma) - std::pow(kBt1886Lb, 1.0 / kBt1886Gamma));
+    const double b =
+        std::pow(kBt1886Lb, 1.0 / kBt1886Gamma) /
+        (std::pow(kBt1886Lw, 1.0 / kBt1886Gamma) - std::pow(kBt1886Lb, 1.0 / kBt1886Gamma));
     return a * std::pow(std::max(V + b, 0.0), kBt1886Gamma);
 }
 
@@ -127,14 +136,14 @@ extern "C" double vmaf_luminance_pq_eotf(double V)
     constexpr double c_2 = 18.8515625;
     constexpr double c_3 = 18.6875; // c_3 = c_1 + c_2 - 1
 
-    double num = std::pow(V, 1.0 / m_2) - c_1;
-    double num_clipped = std::max(num, 0.0);
-    double den = c_2 - c_3 * std::pow(V, 1.0 / m_2);
+    const double num = std::pow(V, 1.0 / m_2) - c_1;
+    const double num_clipped = std::max(num, 0.0);
+    const double den = c_2 - c_3 * std::pow(V, 1.0 / m_2);
     return 10000.0 * std::pow(num_clipped / den, 1.0 / m_1);
 }
 
 extern "C" double vmaf_luminance_get_luminance(int sample, VmafLumaRange luma_range, VmafEOTF eotf)
 {
-    double normalized = normalize_range(sample, luma_range);
+    const double normalized = normalize_range(sample, luma_range);
     return eotf(normalized);
 }

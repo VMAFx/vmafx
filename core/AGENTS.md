@@ -75,6 +75,18 @@ core/
 
 ## Rebase-sensitive invariants
 
+- **`meson_version` is pinned to `>= 1.4.0`, not upstream's value**
+  (fork-local, ADR-0692 / T-CI-MESON-C23-APT-2026-08-30):
+  [`meson.build`](meson.build) sets `default_options: ['c_std=c23', …]`,
+  and `c23` is only a recognised `c_std` value from meson 1.4.0 onward
+  (verified: 1.3.2 rejects it, 1.4.0 accepts it). The declared
+  `meson_version` must stay at or above 1.4.0 for as long as the fork
+  keeps `c_std=c23`, which upstream does not set. An upstream sync that
+  rewrites the `project()` call will conflict here — keep the fork's
+  `>= 1.4.0`. Lowering it does not fail loudly: the build instead dies
+  much later at configure with the cryptic
+  `ERROR: Unknown C std ['c23']`, which is what took out seven CI
+  workflows at once when Ubuntu's meson 1.3.2 was still in use.
 - **`feature_extractor_vector_append()` deduplicates by provided-feature
   names, not extractor name** (fork-local, ADR-0385 / T-CUDA-FEATURE-EXTRACTOR-DOUBLE-WRITE):
   [`src/fex_ctx_vector.c`](src/fex_ctx_vector.c) uses
@@ -429,7 +441,7 @@ core/
   on MSVC and `-std=c++23` on everything else. Three invariants that must
   survive any rebase:
   (1) the guard condition `get_option('cpp_std') == 'none'` must be
-  preserved — removing it causes the SYCL leg's `-Dcpp_std=c++14` override
+  preserved — removing it causes the SYCL leg's `-Dcpp_std=c++latest` override
   to conflict with the injected `-std=c++23` flag;
   (2) the block must remain between `cxx = meson.get_compiler('cpp')` and
   the first `cc.check_header` call so the compiler is defined before the

@@ -1,0 +1,103 @@
+- CI: every workflow now installs `meson` from PyPI instead of `apt`.
+  Ubuntu 24.04 ships meson 1.3.2, which predates `c23` in `c_std`
+  (verified: 1.3.2 rejects it, 1.4.0 accepts it), so every job that
+  configured `core/` failed at `meson setup` with
+  `ERROR: Unknown C std ['c23']` from the moment ADR-0692 raised the
+  standard. This took out Rust, Sanitizers, Tests & Quality Gates
+  (including the Netflix Golden leg), Lint, Go, Security Scans and
+  Supply Chain — 15 install sites across 7 workflows. The workflows
+  that were already green (`build.yml`, `fuzz.yml`,
+  `ffmpeg-integration.yml`, `libvmaf-build-matrix.yml`) had always
+  pip-installed meson; the fix brings the remaining seven in line
+  rather than inventing a new pattern.
+- `core/meson.build` now declares `meson_version: '>= 1.4.0'` (was
+  `'>= 0.58.0'`). The project has de-facto required 1.4.0 since it
+  adopted `c_std=c23`; declaring it turns the cryptic
+  `Unknown C std ['c23']` into
+  `ERROR: Meson version is 1.3.2 but project requires >= 1.4.0`.
+- `core/meson.build` no longer puts `c_std` in `default_options` at all;
+  the C standard is now selected by compiler identity after `project()`,
+  mirroring the `cpp_std` handling ADR-1056 already added for C++. The accepted-values list meson advertises for
+  `c_std` is compiler-specific, so *any* value in `default_options`
+  aborts configure on a toolchain missing that exact spelling — before
+  any conditional in the file can run. Observed on CI:
+  MSVC offers only `['none','c89','c99','c11']`, and GCC 13 (the
+  `ubuntu-latest` default) offers `c2x` but not `c23`. A bare `c23`
+  therefore failed with
+  `None of values ['c23'] are supported by the C compiler` — a
+  *different* failure from the stale-meson one above, and the one that
+  actually broke the required `Build — Ubuntu gcc (CPU) + DNN` and both
+  Windows MSVC legs even where meson was new enough. The selection is
+  now `/std:clatest` on MSVC, `-std=c23` where the compiler accepts it,
+  and `-std=c2x` otherwise — the pre-ratification spelling of the same
+  standard, so this is a spelling fallback, not a language downgrade.
+  An explicit `-Dc_std=` override is still honoured untouched.
+- `core/meson.build` also stopped hard-coding `-std=c++26`. GCC 13 — the
+  `ubuntu-latest` default — rejects that flag outright
+  (`unrecognized command-line option '-std=c++26'`), so every C++ TU
+  failed to build. This was invisible for as long as the `c23` defects
+  above aborted configure before any C++ source was reached; fixing them
+  exposed it. The project-level flag is now the newest of
+  `c++26` / `c++23` / `c++2b` that the compiler actually accepts, with a
+  hard `error()` if none do. Per-target `override_options` in
+  `core/src/meson.build` are untouched.
+- The C++ standard probe compile-tests `<expected>` rather than trusting
+  `-std=` flag acceptance. clang 18.1.3 *accepts* `-std=c++26` but its
+  accompanying libstdc++ then has no `std::expected`, so
+  `core/src/dict.cpp` failed with
+  `no member named 'expected' in namespace 'std'` and took out all four
+  Sanitizers checks. ADR-0692 (#1140) raised the tree from `c++23` to
+  `c++26` earlier the same day; `<expected>` is a C++23 feature and the
+  only non-C++17 header in the tree besides `<span>` (C++20), so C++26
+  buys nothing here while breaking that toolchain. The probe now takes
+  the newest candidate that genuinely builds — c++26 where it works,
+  c++23 where it does not.
+- CI now builds with **current** toolchains rather than the distro's.
+  The `ubuntu-24.04` image tops out at clang 18.1.3, which accepts
+  `-std=c++26` but ships a libstdc++ without `std::expected` — so the
+  right fix was to move the toolchain forward, not to degrade the
+  language standard to suit it. clang is now installed from
+  apt.llvm.org at **22** (sanitizers, the Tests & Quality Gates
+  sanitizer legs, clang-tidy, and the Linux/ARM matrix clang legs), and
+  the GCC legs use the image's preinstalled **gcc-14** instead of the
+  default 13 (which rejects `-std=c++26` outright and has no `c23`).
+  macOS legs keep Apple clang — `clang-22` does not exist there. The
+  `-std` cascades stay in place as a portability net for MSVC, Apple
+  clang and MinGW, and now also carry GCC's `c++2c` spelling.
+- Fixed a regression introduced while fixing the above: moving `c_std`
+  out of `default_options` into `add_project_arguments()` silently
+  stopped the C standard from reaching meson's **compiler feature
+  checks**, which only see built-in options and env `CFLAGS`. On MSVC
+  the `stdatomic.h` probe then ran in legacy C mode and tripped
+  `vcruntime_c11_stdatomic.h: #error "C atomics require C11 or later"`,
+  surfacing as the misleading `ERROR: Problem encountered: Atomics not
+  supported`. The chosen flag is now captured in `c_std_args`, used to
+  seed `test_args`, and threaded through every `cc.check_header` /
+  `cc.compiles` / `cc.has_function` / `cc.has_header` probe.
+- Corrected the toolchain note in `core/src/dict.cpp`: it claimed
+  `clang >= 16`, but libstdc++ gates `<expected>` on
+  `__cpp_concepts >= 202002L` and clang only raised that from `201907L`
+  in **clang 19**. That wrong claim is what made the sanitizer and
+  Linux/ARM clang legs look like a `-std=` problem when no language
+  standard could have fixed them.
+- The fuzz jobs (`sanitizers.yml` fuzz-nightly and `fuzz.yml`) used a
+  bare `clang`, which resolves to 18 on `ubuntu-24.04` and carries the
+  same latent `<expected>` breakage; both are pinned to clang 22 from
+  apt.llvm.org.
+- `range_foot_head()` takes its pixel range as `int` rather than
+  `enum VmafPixelRange`. `VmafPixelRange` is public C API, so a caller
+  can pass any integer and the function's `default:` arm exists to
+  reject that — but reading an out-of-range value *as the enum type* is
+  undefined behaviour in C++, which UBSan reports as
+  `load of value 127, which is not a valid value for type
+  'enum VmafPixelRange'`. Widening the parameter makes the defensive
+  check well-defined without changing behaviour for valid input. This
+  is the first defect the sanitizer suite has actually been able to
+  report: the sanitizer jobs had been dying at `meson setup` and never
+  reached the tests.
+- The clang matrix legs install `libomp-22-dev` alongside clang 22. The
+  unversioned `libomp-dev` matches the *system* clang (18), and the tox
+  leg builds `libsvm-official` from source with `$CXX`, whose `svm.cpp`
+  includes `<omp.h>` — with only the unversioned package that fails as
+  `fatal error: 'omp.h' file not found` and takes down the required
+  `Build — Ubuntu clang (CPU) + DNN` check.

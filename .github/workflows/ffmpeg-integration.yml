@@ -82,7 +82,7 @@ jobs:
 
       - name: Build vmaf
         run: |
-          meson setup core core/build --buildtype release
+          meson setup core core/build --buildtype release -Denable_metal=disabled
           sudo ninja -vC core/build install
 
       - name: Build FFmpeg
