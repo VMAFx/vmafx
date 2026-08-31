@@ -38,24 +38,23 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: operator
-          image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "vmafx.operatorImage" . | quote }}
           imagePullPolicy: {{ .Values.operator.image.pullPolicy | default "IfNotPresent" }}
-          args:
-            - --metrics-bind-address=:8081
-            - --health-probe-bind-address=:8082
-            {{- if .Values.operator.leaderElect }}
-            - --leader-elect
-            {{- end }}
-            - --log-level={{ .Values.operator.logLevel | default "info" }}
           env:
+            - name: VMAFX_OPERATOR_METRICS_ADDR
+              value: ":8080"
+            - name: VMAFX_OPERATOR_HEALTH_PROBE_ADDR
+              value: ":8081"
+            - name: VMAFX_OPERATOR_LEADER_ELECTION
+              value: {{ .Values.operator.leaderElect | default false | quote }}
             - name: VMAFX_LOG_LEVEL
               value: {{ .Values.operator.logLevel | default "info" | quote }}
           ports:
             - name: metrics
-              containerPort: 8081
+              containerPort: 8080
               protocol: TCP
             - name: healthz
-              containerPort: 8082
+              containerPort: 8081
               protocol: TCP
           livenessProbe:
             httpGet:

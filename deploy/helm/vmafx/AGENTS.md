@@ -26,16 +26,17 @@ verbatim** — do not hand-roll a partial security context that omits
 
 ### Node-worker image must use the vmafx.nodeImage helper (ADR-0969)
 
-`templates/node-deployment.yaml` renders the node container image via:
+`templates/node.yaml` renders the node container image via:
 
 ```yaml
 image: {{ include "vmafx.nodeImage" . }}
 ```
 
-The helper (`templates/_helpers.tpl:145-149`) defaults the repository to
-`<image.repository>-node` when `node.image.repository` is empty. Do not
-replace this with an inline expression — the empty-repository default is
-the load-bearing path for most installations.
+The shipped values name `ghcr.io/vmafx/vmafx-node` explicitly, matching the
+release publisher. The helper retains `<image.repository>-node` only as the
+fallback for custom values that deliberately leave `node.image.repository`
+empty, and defaults the tag to the canonical `v<Chart.AppVersion>` release
+tag. Do not replace the helper with an inline expression.
 
 ### ADR-0930 follow-up
 
@@ -96,6 +97,16 @@ final UID and that container-scope seccompProfile is also set.
   ADR-1094. Any external tooling (NetworkPolicy selectors, ServiceMonitors) that
   referenced the old name must be updated.
 
+## Operator env-only contract (ADR-1119 / ADR-1129)
+
+`cmd/vmafx-operator` accepts only `--version`; runtime configuration is env-only.
+`templates/operator-deployment.yaml` must therefore use the compound-key env vars
+`VMAFX_OPERATOR_METRICS_ADDR=:8080`,
+`VMAFX_OPERATOR_HEALTH_PROBE_ADDR=:8081`, and
+`VMAFX_OPERATOR_LEADER_ELECTION`, plus the shared `VMAFX_LOG_LEVEL`. Do not
+restore the removed pre-fx CLI flags. The named container ports and probes must
+remain aligned with metrics `8080` and health/readiness `8081`.
+
 ## References
 
 - [ADR-0699](../../../docs/adr/0699-vmafx-helm-chart-k8s.md) — original chart ADR
@@ -105,3 +116,5 @@ final UID and that container-scope seccompProfile is also set.
 - [ADR-1058](../../../docs/adr/1058-helm-chart-security-hardening.md) — PDB, RBAC split, metrics NetworkPolicy, schema tightening
 - [ADR-1074](../../../docs/adr/1074-helm-values-completeness.md) — nameOverride/fullnameOverride, statePVCSize, node.metricsPort, extraPorts items schema
 - [ADR-1094](../../../docs/adr/1094-helm-rolling-update-correctness.md) — rolling-update strategy, probe fix, PDB default, grace period
+- [ADR-1119](../../../docs/adr/1119-golusoris-go-framework-adoption.md) — env-only fx migration
+- [ADR-1129](../../../docs/adr/1129-release-container-runtime-alignment.md) — release image/runtime alignment

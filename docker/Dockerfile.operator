@@ -29,7 +29,7 @@
 #     -e VMAFX_OPERATOR_LEADER_ELECTION=false \
 #     ghcr.io/vmafx/vmafx-operator:dev
 #
-# Environment variables (all optional; CLI flags override):
+# Environment variables (all optional; `--version` is the only CLI switch):
 #   VMAFX_OPERATOR_METRICS_ADDR   Prometheus metrics bind address (default ":8080")
 #   VMAFX_OPERATOR_HEALTH_PROBE_ADDR  Health probe bind address (default ":8081")
 #   VMAFX_OPERATOR_LEADER_ELECTION Enable leader election ("true"/"false", default "false")
@@ -87,8 +87,8 @@ LABEL org.opencontainers.image.vendor="Lusoris"
 
 COPY --from=go-builder /out/vmafx-operator /usr/local/bin/vmafx-operator
 
-# Expose Prometheus metrics and health-probe ports.
-EXPOSE 8081 8082
+# Expose the golusoris operator defaults: Prometheus metrics and health probes.
+EXPOSE 8080 8081
 
 # Run as non-root (distroless provides uid 65532 = nonroot).
 USER 65532:65532

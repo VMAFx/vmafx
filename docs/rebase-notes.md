@@ -47058,3 +47058,11 @@ coupled invariants:
    relative include paths. CUDA also installs the exact minimum compatible
    `nv-codec-headers` commit declared in `Dockerfile.production-gpu`; distro
    headers are older than libvmaf's loader API. Preserve all three mechanics.
+9. The operator's post-ADR-1119 runtime contract is env-only: the Helm template
+   exports `VMAFX_OPERATOR_METRICS_ADDR=:8080`,
+   `VMAFX_OPERATOR_HEALTH_PROBE_ADDR=:8081`,
+   `VMAFX_OPERATOR_LEADER_ELECTION`, and `VMAFX_LOG_LEVEL`. Its named ports and
+   probes use `8080`/`8081`. Do not restore the ignored pre-fx CLI arguments or
+   the stale `8082` probe. The Go server, operator, and node helpers default to
+   the repositories and canonical `v<Chart.AppVersion>` image tag published by
+   the release workflows; explicit user-supplied image tags remain verbatim.

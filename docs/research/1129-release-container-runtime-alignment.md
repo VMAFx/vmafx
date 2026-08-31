@@ -81,6 +81,24 @@ OIDC or writes to GHCR.
   the shared middleware still returns HTTP 401 without its configured bearer
   token.
 
+### The Helm operator still deployed the removed pre-fx interface
+
+- ADR-1119 made operator runtime configuration environment-only, and the
+  installed golusoris v0.7.0 operator module defaults metrics to `:8080` and
+  health/readiness to `:8081`. The chart still passed the removed
+  `--metrics-bind-address`, `--health-probe-bind-address`, `--leader-elect`, and
+  `--log-level` arguments while declaring ports `8081` and `8082`.
+- The Go entrypoint ignored those stale arguments, so the process listened on
+  its new defaults while Kubernetes probed `8082`. A syntactically valid Helm
+  render could therefore produce a permanently unready release Pod.
+- The repaired template uses the compound-key env contract, declares ports
+  `8080` and `8081`, and keeps the named liveness/readiness probe wired to the
+  health port. Its default Go server, operator, and node image references also
+  carry the `v` prefix and repositories used by the release publishers rather
+  than selecting unpublished images. The Dockerfile and all current operator
+  guides now expose those same defaults; historical ADR and changelog records
+  remain unchanged.
+
 ### Post-push checks previously proved too little
 
 - The operator/node smoke steps ran `--help || true`, so a missing library,
@@ -118,7 +136,10 @@ OIDC or writes to GHCR.
   `/usr/local/bin/vmaf` as entrypoint, ran as `65532:65532`, and returned
   `3.2.1` from `--version` without a device.
 - Operator: a build with `VMAFX_VERSION=v3.2.1` ran as UID 65532 and returned
-  `v3.2.1`; `go test ./cmd/vmafx-operator` passed.
+  `v3.2.1`; `go test ./cmd/vmafx-operator` passed. A Helm render with
+  `operator.enabled=true` contained no removed CLI flags, exported the four
+  supported environment variables, and aligned the named metrics/health ports
+  and probes to `8080`/`8081`.
 - Node amd64: the full `node-cpu` image ran as nonroot, returned `v3.2.1`,
   reported embedded libvmaf `3.2.1` and FFmpeg `n9.0.1-17-g8dcc9a8`, and
   `go test ./cmd/vmafx-node` passed in 0.122 seconds.
@@ -179,6 +200,10 @@ done
 docker build --target operator --build-arg VMAFX_VERSION=v3.2.1 \
   -f docker/Dockerfile.operator -t vmafx-release-alignment:operator .
 docker run --rm vmafx-release-alignment:operator --version
+
+helm template vmafx deploy/helm/vmafx \
+  --set operator.enabled=true \
+  --show-only templates/operator-deployment.yaml
 
 docker build --target node-cpu --build-arg VMAFX_VERSION=v3.2.1 \
   --build-arg VMAF_BUILD_JOBS=4 -f docker/Dockerfile.node \

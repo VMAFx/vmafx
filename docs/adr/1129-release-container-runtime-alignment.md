@@ -43,7 +43,12 @@ used to build its virtualenv; and CUDA 13.3.1, ROCm 7.2.4, and oneAPI 2025.3.1
 images will use digest-pinned, version-matched vendor build/runtime families.
 Every final image will run as UID/GID 65532. Operator and node builds will
 inject the release tag into `pkg/version.version` and expose a non-blocking
-`--version` path. The MCP server will use the typed MCP 2.x constructor
+`--version` path. The operator image and Helm chart will share the env-only
+ADR-1119 contract, with metrics on `:8080` and health/readiness on `:8081`; the
+chart will not pass the removed pre-fx CLI flags, and its default Go server,
+operator, and node image references will match the canonical `vX.Y.Z` tags
+published by the release workflows. The MCP server will use the
+typed MCP 2.x constructor
 handlers, preserve tool-error and progress-session semantics, install
 `[eval,http]`, and opt only the container into all-interface HTTP binding while
 keeping bearer authentication fail closed. Each of the seven pushed image
@@ -70,6 +75,9 @@ the signature before pulling and exercising the published runtime.
 - **Positive**: local builds proved the CPU CLI, Python server, all three GPU
   production variants, operator, and amd64 node start as UID/GID 65532 with
   their intended entrypoints and runtime dependencies.
+- **Positive**: the Helm operator Deployment now configures the release binary
+  through supported environment variables and probes the ports on which the
+  process actually listens.
 - **Positive**: MCP tool registration now follows the installed 2.1 API,
   returns typed `CallToolResult(isError=True)` failures, translates wire-format
   progress tokens, and restores the documented authenticated HTTP surface.

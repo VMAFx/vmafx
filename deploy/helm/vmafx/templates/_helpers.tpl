@@ -115,12 +115,31 @@ cpu
 {{- end }}
 
 {{/*
-Render the container image reference (repository:tag).
-Falls back to .Chart.AppVersion when .Values.image.tag is empty.
+Render the Go server container image reference (repository:tag).
+Falls back to the canonical published release tag when .Values.image.tag is empty.
 */}}
 {{- define "vmafx.image" -}}
-{{- $tag := .Values.image.tag | default .Chart.AppVersion -}}
+{{- $tag := .Values.image.tag | default (include "vmafx.releaseImageTag" .) -}}
 {{- printf "%s:%s" .Values.image.repository $tag -}}
+{{- end }}
+
+{{/*
+Render the canonical release tag used by the operator and node publishers.
+GitHub releases are tagged vX.Y.Z while Chart.AppVersion intentionally stores
+the bare SemVer value for Kubernetes labels. Strip a pre-existing prefix so a
+future v-prefixed AppVersion cannot render vvX.Y.Z.
+*/}}
+{{- define "vmafx.releaseImageTag" -}}
+{{- printf "v%s" (.Chart.AppVersion | toString | trimPrefix "v") -}}
+{{- end }}
+
+{{/*
+Render the vmafx-operator image reference. Explicit user tags remain verbatim;
+the chart default follows the canonical tag published by the release workflow.
+*/}}
+{{- define "vmafx.operatorImage" -}}
+{{- $tag := .Values.operator.image.tag | default (include "vmafx.releaseImageTag" .) -}}
+{{- printf "%s:%s" .Values.operator.image.repository $tag -}}
 {{- end }}
 
 {{/*
@@ -139,12 +158,13 @@ gpu.intel.com/i915
 
 {{/*
 Render the vmafx-node container image reference.
-Defaults to the same repository as the controller with a "-node" suffix on the tag.
-Override via .Values.node.image.repository / .Values.node.image.tag.
+The shipped values name the release repository explicitly. The repository
+fallback remains for custom chart values that intentionally derive a sibling
+node package. Override via .Values.node.image.repository / .Values.node.image.tag.
 */}}
 {{- define "vmafx.nodeImage" -}}
 {{- $repo := .Values.node.image.repository | default (printf "%s-node" .Values.image.repository) -}}
-{{- $tag  := .Values.node.image.tag        | default .Chart.AppVersion -}}
+{{- $tag  := .Values.node.image.tag        | default (include "vmafx.releaseImageTag" .) -}}
 {{- printf "%s:%s" $repo $tag -}}
 {{- end }}
 
