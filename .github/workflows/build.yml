@@ -174,11 +174,19 @@ jobs:
         if: matrix.dnn && startsWith(matrix.os, 'ubuntu')
         env:
           ORT_VERSION: "1.29.0"
+          ORT_SHA256: "c3fddc4f139a045b0c4902c57410f0694f1c2fdf9b6939fbe38b1aeae7cd14ba"
         run: |
           set -euo pipefail
-          curl -fSL --retry 3 \
-            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
-            | sudo tar -xz -C /opt/
+          ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          ort_archive="${RUNNER_TEMP}/${ort_name}"
+          ort_url="https://github.com/microsoft/onnxruntime/releases/download"
+          ort_url+="/v${ORT_VERSION}/${ort_name}"
+          curl -fSL --retry 3 --retry-all-errors --remove-on-error \
+            --output "${ort_archive}" \
+            "${ort_url}"
+          printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
+            | sha256sum --check --strict
+          sudo tar -xzf "${ort_archive}" -C /opt/
           sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
           sudo install -d /usr/local/lib/pkgconfig
           cat <<EOF | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null

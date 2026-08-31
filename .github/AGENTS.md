@@ -162,6 +162,26 @@ On upstream sync:
   operator playbook is at
   [`docs/development/dependency-bot.md`](../docs/development/dependency-bot.md).
 
+### Root Python requirement stays minor-series scoped
+
+The root [`pyproject.toml`](../pyproject.toml) is tool-only metadata and keeps
+`requires-python = ">=3.14"`, without a patch component. Dependabot updater
+images can lag the newest CPython patch, so a patch-specific floor makes the
+automatic pip dependency graph fail before it can inspect any package. The
+exact-root `pep621` rule in [`renovate.json`](../renovate.json) disables updates
+for that one `requires-python` entry. Keep workflow `setup-python` pins and real
+package constraints independently managed; do not broaden the exclusion to
+subdirectory `pyproject.toml` files.
+
+### ONNX Runtime release version and digest stay coupled
+
+The Linux all-backends row in [`workflows/build.yml`](workflows/build.yml)
+downloads ONNX Runtime into `RUNNER_TEMP`, verifies the release asset's SHA-256,
+and only then extracts it with `sudo`. Keep `ORT_VERSION` and `ORT_SHA256`
+updated together from the official GitHub release asset metadata. Do not pipe a
+retrying `curl` transfer directly into `tar`: retries require a file-backed
+output, and privileged extraction must not see unverified bytes.
+
 ## Sanitizer matrix test-set scope (ADR-0347)
 
 The `sanitizers` job in
