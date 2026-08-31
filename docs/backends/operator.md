@@ -109,6 +109,14 @@ GitHub release is published and on `workflow_dispatch`. It:
 6. Verifies the signature, then asserts the image's `--version` output matches
    the published tag before the aggregator gate passes.
 
+Manual recovery must run at the existing published tag and pass the same tag
+as input; a branch ref or mismatched tag fails before any image is pushed:
+
+```bash
+tag=vX.Y.Z
+gh workflow run docker-publish-operator-node.yml --ref "$tag" -f tag="$tag"
+```
+
 ## Upgrade
 
 Update the image tag (or digest) in the Helm `values.yaml`:

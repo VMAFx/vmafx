@@ -17675,6 +17675,10 @@ VMAF_FEATURE_EXTRACTOR_HIP`; all 8 `test_pic_preallocation` sub-tests pass.
   constructor API, preserves `isError` tool failures and progress sessions,
   restores its documented `--transport http` dispatch, and installs the
   required HTTP dependencies in the production image.
+- Manual Docker recovery now refuses to publish an input tag from unrelated
+  branch source. Both image workflows require the same existing published
+  ordinary tag in their input, workflow ref, source SHA, checkout, and
+  coordinated version files before any package write or OIDC operation.
 
 
 - Python harness: the `adm_dwt2_cy` Cython extension builds again.

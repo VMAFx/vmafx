@@ -2,7 +2,7 @@
 #
 # Triggers:
 #   - publication of a release-please draft (`release.published`)
-#   - workflow_dispatch for manual runs
+#   - workflow_dispatch at an existing published tag for recovery
 #
 # Produces:
 #   ghcr.io/vmafx/vmafx:<tag>           (cpu, amd64+arm64)
@@ -24,9 +24,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Image tag to build (defaults to 'dev')"
-        required: false
-        default: "dev"
+        description: "Existing published vX.Y.Z tag to recover idempotently"
+        required: true
 
 # Workflow-level least-privilege; jobs that push/sign/attest opt in below.
 permissions:
@@ -42,16 +41,61 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: vmafx/vmafx
-  # A release event is authoritative for both source checkout and image tags.
-  # Manual dispatches retain their explicit image tag and current source ref.
-  PUBLISH_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag || 'dev' }}
+  # Validation below proves this tag, GITHUB_REF, GITHUB_SHA, and the published
+  # GitHub release all identify the same immutable source commit.
+  PUBLISH_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
 
 jobs:
+  validate-release:
+    name: Validate published ordinary tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ env.PUBLISH_TAG }}
+          persist-credentials: false
+      - name: Reject source/tag mismatches
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease || false }}
+        run: |
+          if [[ "$RELEASE_IS_PRERELEASE" == "true" ]]; then
+            echo "ERROR: prerelease publication is not supported: $PUBLISH_TAG" >&2
+            exit 1
+          fi
+          expected_ref="refs/tags/$PUBLISH_TAG"
+          if [[ "$GITHUB_REF" != "$expected_ref" ]]; then
+            echo "ERROR: run this workflow at $expected_ref, not $GITHUB_REF" >&2
+            exit 1
+          fi
+          scripts/release/verify-release-version.sh "$PUBLISH_TAG"
+          if [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo "ERROR: workflow source SHA $GITHUB_SHA does not match checked-out tag" >&2
+            exit 1
+          fi
+          release_json="$RUNNER_TEMP/github-release.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLISH_TAG" > "$release_json"
+          if [[ "$(jq -r '.tag_name' "$release_json")" != "$PUBLISH_TAG" || \
+                "$(jq -r '.draft' "$release_json")" != "false" || \
+                "$(jq -r '.prerelease' "$release_json")" != "false" || \
+                "$(jq -r '.published_at != null' "$release_json")" != "true" ]]; then
+            echo "ERROR: $PUBLISH_TAG must name a published, non-prerelease release" >&2
+            exit 1
+          fi
+          echo "tag=$PUBLISH_TAG" >> "$GITHUB_OUTPUT"
+
   # -----------------------------------------------------------------------
   # Build + push the CPU (default) multi-arch image
   # -----------------------------------------------------------------------
   build-cpu:
     name: Build + push CPU image (amd64 + arm64)
+    needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -67,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          ref: ${{ needs.validate-release.outputs.tag }}
           submodules: recursive
           persist-credentials: false
 
@@ -197,6 +241,7 @@ jobs:
   # -----------------------------------------------------------------------
   build-cuda13:
     name: Build + push CUDA 13 image (amd64)
+    needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -211,7 +256,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          ref: ${{ needs.validate-release.outputs.tag }}
           submodules: recursive
           persist-credentials: false
 
@@ -290,6 +335,7 @@ jobs:
   # -----------------------------------------------------------------------
   build-rocm7:
     name: Build + push ROCm 7 image (amd64)
+    needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -304,7 +350,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          ref: ${{ needs.validate-release.outputs.tag }}
           submodules: recursive
           persist-credentials: false
 
@@ -383,6 +429,7 @@ jobs:
   # -----------------------------------------------------------------------
   build-oneapi2025:
     name: Build + push oneAPI 2025 image (amd64)
+    needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -397,7 +444,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          ref: ${{ needs.validate-release.outputs.tag }}
           submodules: recursive
           persist-credentials: false
 
@@ -530,6 +577,7 @@ jobs:
   # -----------------------------------------------------------------------
   build-server:
     name: Build + push MCP server image (amd64 + arm64)
+    needs: validate-release
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -544,7 +592,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          ref: ${{ needs.validate-release.outputs.tag }}
           submodules: recursive
           persist-credentials: false
 

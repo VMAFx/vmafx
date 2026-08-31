@@ -44,6 +44,21 @@ because a virtualenv requires its matching interpreter and standard library. GPU
 variants use their vendors' pinned runtime families so the complete accelerator
 runtime stays aligned with the compiler that produced `libvmaf`.
 
+## Recovering a published image set
+
+Manual publication is an idempotent recovery path for an existing published
+ordinary-SemVer release, not a way to mint an arbitrary image tag from a branch.
+Run the workflow at the same immutable tag passed as input:
+
+```bash
+tag=vX.Y.Z
+gh workflow run docker-publish-production.yml --ref "$tag" -f tag="$tag"
+```
+
+The preflight rejects prereleases, unpublished tags, a dispatch ref other than
+`refs/tags/$tag`, a source SHA mismatch, or coordinated version drift before
+granting package-write or OIDC permissions.
+
 ## GPU variants
 
 ### CUDA 13.3.1

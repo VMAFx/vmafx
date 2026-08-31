@@ -47103,11 +47103,13 @@ coupled invariants:
 3. Node FFmpeg dependencies are collected from the native `ldd` closure. Do
    not restore `/usr/lib/x86_64-linux-gnu` copies; they break the arm64 publish
    leg.
-4. Both Docker workflows trigger on `release.published`, check out
-   `github.event.release.tag_name`, and derive image tags from the same value.
-   Each build keeps cosign signing, CycloneDX SBOM handling, and GitHub-native
-   provenance; smoke jobs verify signatures before pulling and contain no
-   success-masking fallback.
+4. Both Docker workflows trigger on `release.published` and gate every image
+   build behind `validate-release`. Release events and manual recovery must
+   identify the same existing published ordinary tag through the input,
+   `GITHUB_REF`, `GITHUB_SHA`, checkout, and coordinated version files; manual
+   recovery runs with `--ref vX.Y.Z -f tag=vX.Y.Z`. Each build keeps cosign
+   signing, CycloneDX SBOM handling, and GitHub-native provenance; smoke jobs
+   verify signatures before pulling and contain no success-masking fallback.
 5. The Python server uses MCP 2.x constructor handlers, not the removed
    decorator/request-context API. Its production image installs `[eval,http]`,
    keeps the documented HTTP CLI dispatch, and explicitly opts the container

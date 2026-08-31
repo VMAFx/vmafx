@@ -81,19 +81,24 @@ artifact, not a GitHub Release asset, and this workflow currently publishes no
 macOS native CLI or dylib. Use the production containers or build from source
 for those platforms until platform-specific release bundles are introduced.
 
-### Supply-chain recovery dispatch
+### Release recovery dispatches
 
-Use the manual supply-chain dispatch only to recover an existing, published,
-non-prerelease GitHub release. Run the workflow at the immutable tag ref and
-pass that same tag as its input:
+Use the manual supply-chain and Docker dispatches only to recover an existing,
+published, non-prerelease GitHub release. Run each workflow at the immutable
+tag ref and pass that same tag as its input:
 
 ```bash
-tag=vX.Y.Z; gh workflow run supply-chain.yml --ref "$tag" -f tag="$tag"
+tag=vX.Y.Z
+gh workflow run supply-chain.yml --ref "$tag" -f tag="$tag"
+gh workflow run docker-publish-production.yml --ref "$tag" -f tag="$tag"
+gh workflow run docker-publish-operator-node.yml --ref "$tag" -f tag="$tag"
 ```
 
-The tag/ref equality is a release invariant: dispatching from `master` or from
-a different ref would make rebuilt artefacts and their signed provenance refer
-to source other than the published release.
+The tag/ref equality is a release invariant in all three workflows:
+dispatching from `master` or a different ref would make rebuilt artefacts,
+containers, and signed provenance refer to source other than the published
+release. Each preflight also verifies the coordinated versions and published
+GitHub release before any write or OIDC job starts.
 
 ## ADR index regeneration policy
 

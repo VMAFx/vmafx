@@ -85,6 +85,14 @@ release-please packages to one ordinary patch-release stream?
   Repeating that build with a fixed tag-commit `SOURCE_DATE_EPOCH` and
   `PYTHONHASHSEED=0` produced byte-identical wheel and sdist hashes, making the
   filename/hash recovery guard usable after partial publication.
+- The two Docker recovery workflows still accepted an independent image-tag
+  input while checking out the dispatch ref. A run from `master` with input
+  `v3.2.1` could therefore sign and publish non-tag source under the release
+  name, and GitHub-native provenance would describe the dispatch SHA rather
+  than the checked-out tag. Both workflows now gate every build behind the
+  same published-release, ordinary-tag, ref, SHA, checkout, and coordinated
+  version equality used by the artifact workflow. Manual recovery must be
+  dispatched with `--ref vX.Y.Z -f tag=vX.Y.Z`.
 
 ## Result
 

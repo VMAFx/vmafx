@@ -29,6 +29,12 @@ OIDC or writes to GHCR.
   GitHub contract supplies the release tag ref and tagged commit. The repaired
   workflows explicitly check out `github.event.release.tag_name`, use that same
   value for all release image tags, and group concurrency by the release.
+- Manual recovery previously accepted an arbitrary image-tag input while every
+  build checked out the independent dispatch ref. A run from `master` with
+  input `v3.2.1` could therefore publish and attest branch source under the
+  release name. The shared preflight contract now requires one existing
+  published ordinary tag to match the input, `GITHUB_REF`, `GITHUB_SHA`,
+  checkout, and every coordinated version before any image build can start.
 - The Go server, operator, and node Docker builds now receive that value as
   `VMAFX_VERSION`, inject it into
   `github.com/VMAFx/vmafx/pkg/version.version`, and answer `--version` before

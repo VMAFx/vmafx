@@ -295,6 +295,12 @@ is load-bearing for the
   Sigstore-native consumers, `gh attestation verify` for GitHub-native
   consumers); neither replaces the other. Removing either side is a
   policy change and needs a superseding ADR.
+- Both Docker workflows start with a tag-bound validation job. A release or
+  manual recovery must identify the same published, non-prerelease ordinary
+  SemVer tag through the input, `GITHUB_REF`, `GITHUB_SHA`, checkout, and
+  coordinated version files. Every image build needs that validation job and
+  checks out its tag output; never restore branch-ref checkout with an
+  independently supplied publish tag.
 - Every job that runs `actions/attest-build-provenance@*` needs
   `attestations: write` in its `permissions:` block. Adding a new GPU
   variant without this permission silently disables the GitHub-native
