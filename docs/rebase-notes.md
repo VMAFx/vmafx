@@ -47156,8 +47156,25 @@ coupled invariants:
     file, verify, then extract; never restore a moving remote installer piped
     into a shell. Keep kuttl's raw `steps.kuttl.outcome` final assertion when
     retaining `continue-on-error` for diagnostic uploads.
+
 12. GHCR, GitHub Release, and Sigstore publication jobs use the protected
     `release-publish` environment; PyPI uses `pypi-publish`. Reusable SLSA jobs
     keep `contents: read` plus `upload-assets: false`, and the protected attach
     job publishes both provenance artifacts. Container signature checks require
     the exact `@refs/tags/${PUBLISH_TAG}` certificate identity, never `@.*`.
+
+## 2026-08-31 — oneAPI 2025.3.2 production builder patch
+
+No upstream code impact: preserve the production `-oneapi2025` container's
+explicit split patch levels until Intel publishes a matching Ubuntu 24.04
+runtime tag. The builder uses digest-pinned oneAPI Base Toolkit 2025.3.2; the
+final stage uses Intel's latest published oneAPI Runtime 2025.3.1 image. Do not
+describe the final runtime as 2025.3.2, replace it with the development-heavy
+basekit, or assemble a hand-picked runtime-library subset. Build and execute
+the `final-oneapi2025` entrypoint after either pin changes. Ubuntu 24.04's
+Meson 1.3.2 cannot configure this source tree; preserve the single
+checksum-pinned Meson 1.12.0 wheel stage and its exact-version assertions in
+the CUDA, ROCm, and oneAPI builders. Preserve `cp -r model/. /dist/model/` in
+the standard production builder and all four GPU-Dockerfile builders: copying
+`model/` itself creates a second `model/` directory and breaks the documented
+`VMAF_MODEL_PATH` layout.

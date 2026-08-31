@@ -87,7 +87,13 @@ docker run --rm \
 
 Requires: amdgpu kernel module loaded and `/dev/kfd` + `/dev/dri/renderD<N>` accessible.
 
-### oneAPI 2025.3.1 (SYCL / Intel Arc)
+### oneAPI 2025.3 (SYCL / Intel Arc)
+
+The image is compiled in Intel's oneAPI Base Toolkit container tagged 2025.3.2
+and runs on Intel's oneAPI Runtime 2025.3.1 image. Intel has not published a matching
+`oneapi-runtime:2025.3.2-0-devel-ubuntu24.04` tag, so the release keeps the
+runtime on the latest available 2025.3 patch and verifies the resulting image's
+driver-independent `vmaf --version` entrypoint during publication.
 
 ```bash
 docker pull ghcr.io/vmafx/vmafx:vX.Y.Z-oneapi2025
@@ -204,8 +210,9 @@ Both Dockerfiles use a multi-stage build:
 4. **Server runtime** (the same pinned `python:3.14-slim` image): provides the
    interpreter to which `/venv/bin/python` links. It runs as UID/GID 65532.
 5. **GPU builders/runtimes**: CUDA 13.3.1 uses NVIDIA devel/runtime images,
-   ROCm 7.2.4 uses AMD's supported dev/application image, and oneAPI 2025.3.1
-   uses Intel basekit/runtime images. Every reference is digest-pinned.
+   ROCm 7.2.4 uses AMD's supported dev/application image, and the Intel image
+   uses the oneAPI basekit image tagged 2025.3.2 with the latest published
+   2025.3.1 runtime. Every reference is digest-pinned.
 
 Publishing a GitHub release drives the two Docker workflows through the
 `release.published` event. Each workflow checks out
