@@ -15,9 +15,12 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/golusoris/golusoris/config"
+	grpcmod "github.com/golusoris/golusoris/grpc"
 )
 
 // TestNodeEnvOptionsContract pins the VMAFX_ prefix, delimiter, and the exact
@@ -76,4 +79,77 @@ func TestNodeEnvOptionsBindGrpcKeys(t *testing.T) {
 	if got := cfg.String("grpc.key_file"); got != "/etc/tls/tls.key" {
 		t.Errorf("grpc.key_file = %q, want /etc/tls/tls.key", got)
 	}
+}
+
+// TestWithNodeGRPCDefault pins the historical standalone-node port while also
+// proving that an operator-supplied address is never replaced by the decorator.
+func TestWithNodeGRPCDefault(t *testing.T) {
+	t.Run("missing uses node default", func(t *testing.T) {
+		t.Setenv("VMAFX_GRPC_LISTEN", "")
+		raw, err := config.New(nodeEnvOptions(false))
+		if err != nil {
+			t.Fatalf("config.New: %v", err)
+		}
+
+		got := withNodeGRPCDefault(grpcmod.DefaultConfig(), raw)
+		if got.Listen != defaultNodeGRPCListen {
+			t.Errorf("Listen = %q, want %q", got.Listen, defaultNodeGRPCListen)
+		}
+	})
+
+	t.Run("explicit override is preserved", func(t *testing.T) {
+		const override = ":9090"
+		t.Setenv("VMAFX_GRPC_LISTEN", override)
+		raw, err := config.New(nodeEnvOptions(false))
+		if err != nil {
+			t.Fatalf("config.New: %v", err)
+		}
+
+		got := withNodeGRPCDefault(grpcmod.Config{
+			Listen:      override,
+			MaxRecvSize: 8 << 20,
+			MaxSendSize: 16 << 20,
+		}, raw)
+		if got.Listen != override {
+			t.Errorf("Listen = %q, want explicit override %q", got.Listen, override)
+		}
+		if got.MaxRecvSize != 8<<20 || got.MaxSendSize != 16<<20 {
+			t.Errorf("decorator changed message-size limits: %+v", got)
+		}
+	})
+
+	t.Run("file override is preserved", func(t *testing.T) {
+		const override = ":9090"
+		old, existed := os.LookupEnv("VMAFX_GRPC_LISTEN")
+		if err := os.Unsetenv("VMAFX_GRPC_LISTEN"); err != nil {
+			t.Fatalf("unset VMAFX_GRPC_LISTEN: %v", err)
+		}
+		t.Cleanup(func() {
+			if existed {
+				_ = os.Setenv("VMAFX_GRPC_LISTEN", old)
+			} else {
+				_ = os.Unsetenv("VMAFX_GRPC_LISTEN")
+			}
+		})
+
+		path := filepath.Join(t.TempDir(), "node.yaml")
+		if err := os.WriteFile(path, []byte("grpc:\n  listen: \":9090\"\n"), 0o600); err != nil {
+			t.Fatalf("write config fixture: %v", err)
+		}
+		opts := nodeEnvOptions(false)
+		opts.Files = []string{path}
+		raw, err := config.New(opts)
+		if err != nil {
+			t.Fatalf("config.New: %v", err)
+		}
+		framework := grpcmod.DefaultConfig()
+		if err := raw.Unmarshal("grpc", &framework); err != nil {
+			t.Fatalf("unmarshal grpc config: %v", err)
+		}
+
+		got := withNodeGRPCDefault(framework, raw)
+		if got.Listen != override {
+			t.Errorf("Listen = %q, want file override %q", got.Listen, override)
+		}
+	})
 }

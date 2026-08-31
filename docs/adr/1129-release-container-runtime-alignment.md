@@ -4,7 +4,7 @@
 - **Status**: Accepted
 - **Date**: 2026-08-31
 - **Deciders**: Lusoris, Codex (OpenAI)
-- **Tags**: release, containers, supply-chain, security, mcp, go, gpu, ci
+- **Tags**: release, container, supply-chain, security, mcp, go, gpu, ci
 
 ## Context
 

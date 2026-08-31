@@ -23,8 +23,8 @@
 // EVERY underscore with the "." delimiter, so the koanf key is the dotted form
 // shown in the third column:
 //
-//	VMAFX_GRPC_LISTEN     -> grpc.listen      gRPC listen address (golusoris default ":9090").
-//	VMAFX_LOG_LEVEL       -> log.level (golusoris v0.5.0 #234)  slog level.
+//	VMAFX_GRPC_LISTEN     -> grpc.listen      gRPC listen address (node default ":50052").
+//	VMAFX_LOG_LEVEL       -> log.level (golusoris v0.7.0)  slog level.
 //	VMAFX_LOG_FORMAT      -> log.format       log handler (auto|tint|json).
 //	VMAFX_FFMPEG_BIN      -> ffmpeg.bin       Path to the ffmpeg binary (default: PATH lookup).
 //	VMAFX_VMAF_BINARY     -> vmaf.binary      Path to the vmaf CLI binary (default: FindBinary()).
@@ -35,7 +35,8 @@
 // NOTE on the env-var contract change (ADR-1119): the pre-fx node used
 // VMAFX_NODE_ADDR (a bare listen address). golusoris' grpc.Module reads the
 // sub-key grpc.listen, which under the VMAFX_ prefix becomes VMAFX_GRPC_LISTEN.
-// golusoris' grpc.Module binds grpc.listen (golusoris default :9090).
+// golusoris' grpc.Module supplies grpc.listen; withNodeGRPCDefault preserves
+// the node's historical :50052 when no file or environment override exists.
 // Operators must migrate VMAFX_NODE_ADDR -> VMAFX_GRPC_LISTEN.
 //
 // The eBPF rclone-bypass loader (cmd/vmafx-node/bpf) is unrelated to golusoris
@@ -79,6 +80,12 @@ import (
 // stall node startup indefinitely (carried over from the pre-fx root).
 const probeTimeout = 30 * time.Second
 
+// defaultNodeGRPCListen preserves the node's pre-golusoris public port. The
+// shared grpc module defaults to :9090, which is correct for the other Go
+// services but would silently move standalone node listeners away from the
+// Docker EXPOSE, Helm Service, and documented node contract.
+const defaultNodeGRPCListen = ":50052"
+
 // isVersionRequest keeps the release-image smoke path independent of the fx
 // graph and its long-running gRPC lifecycle.
 func isVersionRequest(args []string) bool {
@@ -106,6 +113,16 @@ func nodeEnvOptions(watch bool) config.Options {
 	}
 }
 
+// withNodeGRPCDefault decorates the framework config after it has loaded file
+// and environment overrides. Only an absent or empty grpc.listen receives the
+// node-specific default; an explicit :9090 (or any other address) is retained.
+func withNodeGRPCDefault(framework grpcmod.Config, raw *config.Config) grpcmod.Config {
+	if raw.Get("grpc.listen") == "" {
+		framework.Listen = defaultNodeGRPCListen
+	}
+	return framework
+}
+
 func main() {
 	if isVersionRequest(os.Args) {
 		fmt.Println(buildversion.Version())
@@ -124,6 +141,7 @@ func main() {
 
 		// gRPC server with OTel + logging + recovery interceptors baked in.
 		grpcmod.Module,
+		fx.Decorate(withNodeGRPCDefault),
 
 		// Domain providers.
 		fx.Provide(

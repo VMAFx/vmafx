@@ -92,10 +92,13 @@ wired into the fx graph.
    preserved) and its domain settings from `vmaf.binary` / `model.dir` /
    `ffmpeg.bin` / `backend` / `sidecar.socket`. The `fx.Replace(config.Options{
    EnvPrefix: "VMAFX_", ...})` line is load-bearing — without it the graph reads
-   the framework default `APP_` prefix and ignores every `VMAFX_*` var.
+   the framework default `APP_` prefix and ignores every `VMAFX_*` var. The
+   `fx.Decorate(withNodeGRPCDefault)` line is also load-bearing: it changes only
+   an empty raw `grpc.listen` to `:50052`, so an operator explicitly selecting
+   the framework's `:9090` through either a file or environment remains intact.
 
 10. **go.mod golusoris pin** (`go.mod`, ADR-1119): `golusoris/golusoris` is
-    pinned at `v0.5.0` (module-wide). Do not change the pin or edit
+    pinned at `v0.7.0` (module-wide). Do not change the pin or edit
     `internal/app/bootstrap` from this package — both are shared across all
     binaries.
 

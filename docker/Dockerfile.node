@@ -277,7 +277,7 @@ LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 ENV LD_LIBRARY_PATH="/usr/local/lib"
-ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
+ENV VMAFX_MODEL_DIR="/usr/local/share/vmafx/model"
 # Canonical ffmpeg path consumed by the node binary and its encoder probe.
 ENV VMAFX_FFMPEG_BIN="/usr/local/bin/ffmpeg"
 
@@ -309,8 +309,7 @@ ENTRYPOINT ["/usr/local/bin/vmafx-node"]
 
 # ---------------------------------------------------------------------------
 # Stage 7 (target: node-cuda) — CUDA 13 node worker
-# Same ffmpeg binary as node-cpu (software encode path); NVENC requires
-# runtime driver / nv-codec-headers which are host-provided.
+# Same software-only ffmpeg binary as node-cpu; CUDA accelerates VMAF scoring.
 # ---------------------------------------------------------------------------
 FROM runtime-base AS node-cuda
 
@@ -359,7 +358,7 @@ USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/vmafx-node"]
 
 # ---------------------------------------------------------------------------
-# Stage 9 (target: node-sycl) — Intel oneAPI 2025 node worker (QSV + SYCL)
+# Stage 9 (target: node-sycl) — Intel oneAPI 2025 node worker (SYCL scoring)
 # ---------------------------------------------------------------------------
 FROM runtime-base AS node-sycl
 

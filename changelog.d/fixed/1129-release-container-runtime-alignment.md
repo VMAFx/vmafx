@@ -9,6 +9,11 @@
   version package and expose a non-blocking `--version` check for runtime
   verification; the Go server is now published as a signed multi-architecture
   `ghcr.io/vmafx/vmafx-server:v3.2.1` image with live health/readiness probes.
+- The node keeps its established `:50052` standalone gRPC default while
+  preserving explicit file and environment overrides. Its image now exports
+  the consumed `VMAFX_MODEL_DIR` variable, and its node documentation no
+  longer promises unavailable hardware encoders, backend auto-detection, or a
+  nonexistent Prometheus listener.
 - The Python MCP release server now registers tools through the MCP 2.1
   constructor API, preserves `isError` tool failures and progress sessions,
   restores its documented `--transport http` dispatch, and installs the

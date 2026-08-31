@@ -47135,3 +47135,8 @@ coupled invariants:
    the stale `8082` probe. The Go server, operator, and node helpers default to
    the repositories and canonical `v<Chart.AppVersion>` image tag published by
    the release workflows; explicit user-supplied image tags remain verbatim.
+10. The node decorates golusoris's shared `grpc.Config` only when
+    `grpc.listen` is empty, preserving the historical standalone `:50052`
+    default without clobbering an explicit `:9090` file or environment value.
+    Its runtime image exports `VMAFX_MODEL_DIR`, not the unused
+    `VMAF_MODEL_PATH`; keep that name coupled to the Go config contract.
