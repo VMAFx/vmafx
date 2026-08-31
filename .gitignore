@@ -168,6 +168,13 @@ testdata/dis_2560x1440_48f.yuv
 testdata/bbb/ref_3840x2160_30f.yuv
 testdata/bbb/dis_3840x2160_30f.yuv
 
+# Geometry-bearing wrappers generated from committed Kubernetes E2E raw clips.
+test/e2e/fixtures/ref.y4m
+test/e2e/fixtures/dist.y4m
+# kuttl may materialize a credential-bearing kubeconfig in its working
+# directory; the harness uses only the dedicated file below RUNNER_TEMP.
+/kubeconfig
+
 # Pyright strict-audit config (ADR-0888). Intentionally local-only —
 # shipping it would surface ~1,600 stub-cascade errors as a CI gate
 # before the long-tail cleanup is done. Operators re-run with

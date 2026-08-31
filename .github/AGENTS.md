@@ -245,6 +245,32 @@ diagnostics and XML can still upload. Its final assertion must inspect
 `steps.kuttl.outcome` (not `conclusion`) and fail unless it is `success`;
 otherwise command failures are converted into a green workflow.
 
+The E2E image build must explicitly select `target: node-cpu` for
+`docker/Dockerfile.node` and `target: go-server` for `Dockerfile.go-server`.
+`BACKEND=cpu` is not a declared node-Dockerfile argument and cannot select a
+multi-stage target; without `target`, BuildKit chooses the last stage
+(`node-sycl`). Export and load the operator, node, and server `e2e-test` tags as
+one contract. The node image model copy must remain flat at the configured
+`VMAFX_MODEL_DIR`. The chart smoke sets both pull policies to `Never`, installs
+the default server Deployment on CPU, keeps the operator out of the
+component-qualified scoring Service, and performs a real `/v1/score`; do not
+replace it with health-only or reconciler behavior that production code does
+not implement. Keep the workflow and `docs/k8s/integration-tests.md` aligned.
+The dependency-free `scripts/ci/test_e2e_runtime_contract.py` runs both in the
+E2E image-build job and the always-on `deep-dive-checklist` job in
+`rule-enforcement.yml`; do not move it solely behind the E2E schedule/label
+gate. The cluster job writes `VMAFX_E2E_KUBECONFIG` and `KUBECONFIG` to the
+same new file below `RUNNER_TEMP`; every Kubernetes step must first prove the
+exact `kind-${KIND_CLUSTER_NAME}` context and loopback API server. Teardown
+must fail visibly if that identity guard cannot prove the exact named cluster.
+
+The Security Scans concurrency group includes `github.event_name` between the
+workflow name and ref. A scheduled scan and a master push both use
+`refs/heads/master`; without the event discriminator, either can cancel the
+other's CodeQL coverage. Preserve `cancel-in-progress: true` so superseded runs
+of the same event/ref still collapse, and keep
+`scripts/ci/test_security_workflow_contract.py` in the always-on Rules gate.
+
 ## Sanitizer matrix test-set scope (ADR-0347)
 
 The `sanitizers` job in

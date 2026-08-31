@@ -15,10 +15,10 @@ testDirs:
 namespace: vmafx-e2e-test
 # Each test case gets its own timeout; the suite timeout is a hard ceiling.
 timeout: 300
-# Do not delete the namespace between test cases so subsequent cases can
-# inspect state left by earlier ones (operator-installs must precede the rest).
-skipDelete: false
-# Parallel test cases would race on shared CRD/operator state — run serially.
+# Preserve resources for workflow diagnostics; the isolated kind cluster is
+# deleted by the explicit exact-name teardown after results are collected.
+skipDelete: true
+# Keep one executable runtime case serial and deterministic.
 parallel: 1
 # Collect kubectl describe + logs for failed steps automatically.
 reportFormat: XML

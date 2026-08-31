@@ -33,6 +33,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Verify E2E runtime contract
+        run: python3 scripts/ci/test_e2e_runtime_contract.py
+
+      - name: Verify Security Scans concurrency contract
+        run: python3 scripts/ci/test_security_workflow_contract.py
+
       - name: Skip upstream-port PRs
         id: scope
         env:
