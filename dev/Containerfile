@@ -13,7 +13,7 @@
 #                           ROCm latest (HIP toolchain;
 #                           build-only on NVIDIA host)
 #   Stage 3 (libvmaf)     — source build of libvmaf with all backends enabled
-#                           against an in-tree FFmpeg n8.1.1 (or `FFMPEG_TAG`
+#                           against an in-tree FFmpeg n9.0.1 (or `FFMPEG_TAG`
 #                           build-arg override) with the fork's
 #                           `ffmpeg-patches/series.txt` applied
 #   Stage 4 (python-env)  — install vmaf-mcp + vmaf-train + vmaf-tune
@@ -195,7 +195,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # latest installed major.minor (/usr/local/cuda → /usr/local/cuda-NN.M).
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
-ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 
 # ---------- Intel oneAPI latest (icpx / Level Zero) -------------------------
 # Intel apt repo. Use the unversioned `intel-basekit` meta-package — Intel
@@ -344,7 +344,7 @@ ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV DPCPP_ROOT=${ONEAPI_ROOT}/compiler/latest
 ENV PATH=${DPCPP_ROOT}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${ONEAPI_ROOT}/tbb/latest/lib:${LD_LIBRARY_PATH}
-ENV PKG_CONFIG_PATH=${ONEAPI_ROOT}/tbb/latest/lib/pkgconfig:${PKG_CONFIG_PATH}
+ENV PKG_CONFIG_PATH=${ONEAPI_ROOT}/tbb/latest/lib/pkgconfig
 
 # ---------- ROCm 7.2.x (HIP toolchain + runtime) ---------------------------
 # AMD apt repo.
@@ -627,7 +627,7 @@ RUN for B in cpu cuda sycl hip; do \
     done
 
 # ---------------------------------------------------------------------------
-# Stage 3.5 — FFmpeg n8.1.1 with our libvmaf integration patches
+# Stage 3.5 — FFmpeg n9.0.1 with our libvmaf integration patches
 # ---------------------------------------------------------------------------
 # Builds the same FFmpeg version the fork's `ffmpeg-patches/series.txt` is
 # pinned against. Applies every patch in series order, then configures with
@@ -643,7 +643,7 @@ USER root
 # new stage so we must repeat it here.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Codec dependencies for FFmpeg n8.1.1 build:
+# Codec dependencies for FFmpeg n9.0.1 build:
 #
 #   libx264-dev      H.264 software encoder
 #   libx265-dev      H.265 software encoder
@@ -674,7 +674,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #     probe therefore fails with `ERROR: SvtAv1Enc >= 0.9.0 not found
 #     using pkg-config` even when the library is present on disk.
 #
-#   * libaom-dev (Ubuntu 24.04 → 3.8.2) is too old for FFmpeg n8.1.1:
+#   * libaom-dev (Ubuntu 24.04 → 3.8.2) is too old for the patched FFmpeg build:
 #     `libavcodec/libaomenc.c` uses `aom_roi_map_t` fields (`enabled`,
 #     `skip`, `ref_frame`, `delta_qp_enabled`) added in libaom 3.10+,
 #     so the in-image FFmpeg build fails with
@@ -728,7 +728,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # pkgconfig/`, which the FFmpeg `--enable-libsvtav1` configure probe
 # resolves via PKG_CONFIG_PATH.
 #
-# Pin to a release tag that FFmpeg n8.1.1's configure accepts
+# Pin to a release tag that FFmpeg n9.0.1's configure accepts
 # (`SvtAv1Enc >= 0.9.0`) and that ships modern presets (`-preset 6` /
 # `-preset 8` are the rate-quality knobs vmaf-tune's compare sweep
 # exercises). Tags 2.x are current at time of writing; 2.1.0 is a
@@ -797,10 +797,10 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-m
 #   `h264_amf` / `hevc_amf` / `av1_amf` will probe-fail at runtime ("encoder
 #   compiled in, dlopen libamfrt64.so failed"). vmaf-tune's probe handles
 #   that case as a per-encoder skip — see ADR-0541 §Consequences.
-# FFmpeg n8.1.1's configure probe is
+# FFmpeg n9.0.1's configure probe is
 # `AMF_VERSION >= 0x0001000400240000` (= 1.4.36); older AMF tags hard-error
 # with `ERROR: amf requested but not found`. v1.4.36 is the minimum compatible
-# tag (verified 2026-05-18 against the n8.1.1 configure source).
+# tag (verified 2026-08-31 against the n9.0.1 configure source).
 # 1.5.2 satisfies the >=1.4.36 probe. `--disable-filter=amf_capture` in the
 # FFmpeg configure already neutralises the DisplayCapture.h C++ header change
 # in 1.5.x. Bumped from 1.4.36 per ADR-0568 (SDK audit 2026-05-18).
@@ -813,7 +813,7 @@ RUN git clone --depth=1 --branch "v${AMF_VERSION}" \
 
 USER vmaf
 
-ARG FFMPEG_TAG=n8.1.1
+ARG FFMPEG_TAG=n9.0.1
 RUN git clone --depth=1 --branch ${FFMPEG_TAG} https://git.ffmpeg.org/ffmpeg.git /build/ffmpeg
 WORKDIR /build/ffmpeg
 
@@ -850,7 +850,7 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 #                          `scale_cuda`, `hwupload_cuda` etc. that the GPU
 #                          encode pipelines lean on). Requires CUDA_HOME.
 #
-#   `--enable-libnpp` is INTENTIONALLY OMITTED. FFmpeg n8.1.1's NPP
+#   `--enable-libnpp` is INTENTIONALLY OMITTED. FFmpeg n9.0.1's NPP
 #   compatibility ceiling is CUDA 12.x; passing the flag against
 #   CUDA 13.x (the version the dev image tracks via the unversioned
 #   `cuda-toolkit` apt meta-package) hard-errors at configure time with
@@ -883,7 +883,7 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 #                          `extern "C"` blocks. FFmpeg compiles
 #                          `vsrc_amf.c` as plain C and chokes on the
 #                          C++ syntax (verified 2026-05-18 against AMF
-#                          v1.4.36 / FFmpeg n8.1.1). The filter is for
+#                          v1.4.36 / FFmpeg n9.0.1). The filter is for
 #                          screen-capture sources we don't use; the
 #                          `*_amf` encoders live in separate
 #                          translation units (`libavcodec/amfenc*.c`)
@@ -993,6 +993,15 @@ ENV PATH=/usr/local/go/bin:${PATH}
 ENV GOTOOLCHAIN=local
 
 WORKDIR /build/vmaf
+# The libvmaf-build stage intentionally copies only its C/Python build inputs.
+# Copy the Go module and every repository-local package imported by ./cmd/...
+# here so this stage remains cacheable without bloating the earlier image.
+COPY go.mod go.sum ./
+COPY cmd/ ./cmd/
+COPY pkg/ ./pkg/
+COPY api/ ./api/
+COPY gen/ ./gen/
+COPY internal/ ./internal/
 # cgo needs to find libvmaf.so and libvmaf.h from the libvmaf-build stage.
 ENV CGO_ENABLED=1
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked,id=gobuild-dev-mcp \

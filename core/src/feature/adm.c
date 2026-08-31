@@ -46,8 +46,9 @@ typedef adm_dwt_band_t_s adm_dwt_band_t;
 
 /* ADR-1057: float_adm_dwt2_neon is now wired here via adm_dwt2_dispatch().
  * The NEON DWT2 kernel lives in its own TU (float_adm_dwt2_neon.c) compiled
- * with `-ffp-contract=off` plus pragma / GCC-attribute guards, replacing the
- * vmlaq_laneq_f32 FMA intrinsics that caused 1-ULP divergence on ARM CI. */
+ * with `-ffp-contract=off` plus pragma / GCC-attribute guards.  Its explicit
+ * multiply/add sequence mirrors the function-scoped non-contracting scalar
+ * DWT2 contract without changing unrelated arithmetic in adm_tools.c. */
 #define dwt2_src_indices_filt dwt2_src_indices_filt_s
 
 /*

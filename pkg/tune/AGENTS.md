@@ -10,7 +10,7 @@ ADR-0704 §Consequences), so **every package here has a live Python
 counterpart that it must not drift from.**
 
 | Package | Python counterpart |
-|---------|--------------------|
+| --------- | -------------------- |
 | `auto/` | `vmaftune/auto.py` |
 | `sidecar/` | `vmaftune/sidecar.py` |
 | `predictor/` | `vmaftune/predictor.py` |

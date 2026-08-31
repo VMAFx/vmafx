@@ -1061,6 +1061,12 @@ const char *vmaf_ort_internal_resolve_name(char **table, size_t count, const cha
     return resolve_name(table, count, name, pos);
 }
 
+int vmaf_ort_internal_convert_output_elems(VmafOrtElemType elem_type, const void *raw, float *dst,
+                                           size_t count)
+{
+    return convert_output_elems((ONNXTensorElementDataType)elem_type, raw, dst, count);
+}
+
 VmafOrtElemType vmaf_ort_internal_input_elem_type(const VmafOrtSession *sess, size_t slot)
 {
     if (!sess || slot >= sess->n_inputs)
@@ -1186,6 +1192,18 @@ const char *vmaf_ort_internal_resolve_name(char **table, size_t count, const cha
     (void)name;
     (void)pos;
     return NULL;
+}
+
+/* NOLINTNEXTLINE(readability-non-const-parameter)
+ * Internal stub signature must match the real-ORT test seam (ADR-0112). */
+int vmaf_ort_internal_convert_output_elems(VmafOrtElemType elem_type, const void *raw, float *dst,
+                                           size_t count)
+{
+    (void)elem_type;
+    (void)raw;
+    (void)dst;
+    (void)count;
+    return -ENOSYS;
 }
 
 VmafOrtElemType vmaf_ort_internal_input_elem_type(const VmafOrtSession *sess, size_t slot)

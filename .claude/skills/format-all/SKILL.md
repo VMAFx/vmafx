@@ -1,6 +1,6 @@
 ---
 name: format-all
-description: Apply clang-format, black, isort, and shfmt across the whole repo. Idempotent; safe to run repeatedly.
+description: Apply clang-format, black, ruff, and shfmt across the whole repo. Idempotent; safe to run repeatedly.
 ---
 
 <!-- markdownlint-disable MD013 -->
@@ -18,12 +18,12 @@ description: Apply clang-format, black, isort, and shfmt across the whole repo. 
 1. Verify formatters present:
    - `clang-format --version` (≥ 18 — uses our `.clang-format`)
    - `black --version`
-   - `isort --version`
+   - `ruff --version`
    - `shfmt -version`
 2. Run in parallel (each scoped to its file types):
    - `clang-format -i $(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh')`
    - `black python/ ai/ scripts/`
-   - `isort python/ ai/ scripts/`
+   - `ruff check --fix-only python/ ai/ scripts/`  # import sorting (ADR-1126)
    - `shfmt -w -i 2 -ci $(git ls-files '*.sh')`
 3. With `--check`: replace `-i` / `-w` with `--dry-run` / `-d` and exit 1 on any
    diff. This is the CI mode.

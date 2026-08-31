@@ -276,7 +276,7 @@ CI round-trip:
 | `assertion-density` | pre-push | NASA Power-of-10 §5 — every fork-added C function ≥20 lines has ≥1 `assert()`. Backed by `scripts/ci/assertion-density.sh`. |
 | `mypy-local` | pre-push | `mypy ai/ scripts/` — same invocation as the `Python Lint` CI job. Requires `pip install mypy` (system tool, not in `pyproject.toml`). |
 | `semgrep-local` | pre-commit | Project-local rules from `.semgrep.yml` (`--error` exit code on match). Standard rule packs (`p/cert-c-strict`, `p/cwe-top-25`) still run in CI only. |
-| `ffmpeg-patches-apply-check` | pre-push | `git apply --check` every patch in `ffmpeg-patches/series.txt` against a cached FFmpeg `release/8.1` checkout (currently at tag `n8.1.1`) under `/tmp/ffmpeg-n81`. Backed by `scripts/ci/ffmpeg-patches-check.sh`. |
+| `ffmpeg-patches-apply-check` | pre-push | Replay every patch in `ffmpeg-patches/series.txt` cumulatively with `git am --3way` against a cached FFmpeg `n9.0.1` checkout. Backed by `scripts/ci/ffmpeg-patches-check.sh`. |
 | `ffmpeg-patches-surface-check` | (CI + local) | CLAUDE.md §12 r14 — public-libvmaf-surface change without a matching `ffmpeg-patches/*.patch` update fails the build. Runnable locally via `BASE_SHA=… HEAD_SHA=… PR_BODY=… bash scripts/ci/ffmpeg-patches-surface-check.sh`. Backed by [ADR-0356](../adr/0356-ffmpeg-patches-surface-gate.md). |
 
 Install the pre-push hook (one-time, fresh clones):

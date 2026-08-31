@@ -3415,8 +3415,13 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 #elif ARCH_AARCH64
     unsigned flags = vmaf_get_cpu_flags();
     if (flags & VMAF_ARM_CPU_FLAG_NEON) {
-        if (!(w % 8))
+        if (!(w % 8)) {
+#if defined(__APPLE__)
+            s->dwt2_8 = adm_dwt2_8_neon_apple_legacy;
+#else
             s->dwt2_8 = adm_dwt2_8_neon;
+#endif
+        }
     }
 #endif
 

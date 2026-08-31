@@ -53,7 +53,7 @@ make test-netflix-golden                # Netflix CPU golden-data gate (see §8)
 
 ```text
 make lint          # clang-tidy + cppcheck + iwyu + ruff + semgrep
-make format        # clang-format + black + isort (writes)
+make format        # clang-format + black + ruff (writes)
 make format-check  # dry-run (CI / pre-commit)
 ```
 
@@ -235,11 +235,11 @@ the root release aligns the release-owned Python packages and Helm
     `check_pkg_config` lines) updates the relevant
     `ffmpeg-patches/000*-*.patch` file in the **same PR**. The
     fork ships FFmpeg integration as a patch stack against
-    `n8.1.1`; libvmaf-side surface drift breaks the patches
+    `n9.0.1`; libvmaf-side surface drift breaks the patches
     silently for the next rebase. Verify with a series replay
-    against a clean `n8.1.1` checkout
-    (`git -C ffmpeg-8 reset --hard n8.1.1 && for p in
-    ffmpeg-patches/000*-*.patch; do git -C ffmpeg-8 am
+    against a clean `n9.0.1` checkout
+    (`git -C ffmpeg-9 reset --hard n9.0.1 && for p in
+    ffmpeg-patches/000*-*.patch; do git -C ffmpeg-9 am
     --3way "$p" || break; done`) — per-patch
     `git apply --check` is the wrong gate (patches build on
     each other). Pure libvmaf

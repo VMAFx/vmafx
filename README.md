@@ -108,7 +108,7 @@ Cross-backend numerical divergence is held to ≤ 2 ULP in double precision; see
 [`/cross-backend-diff`](.claude/skills/cross-backend-diff/SKILL.md) for the
 verification loop.
 
-**FFmpeg integration:** patches against `n8.1.1` cover the supported GPU
+**FFmpeg integration:** patches against `n9.0.1` cover the supported GPU
 backends and the DNN/tiny-model surface. Configure flags:
 `--enable-libvmaf-{cuda,sycl,hip}`. See
 [`ffmpeg-patches/`](ffmpeg-patches/).

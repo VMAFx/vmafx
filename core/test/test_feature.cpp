@@ -34,7 +34,7 @@
  * assertion strings themselves. CodeQL's path-ignore on `libvmaf/test`
  * (see `.github/codeql-config.yml`) suppresses this rule for new scans;
  * this comment carries the existing alert through to its next refresh. */
-static char *test_feature_name_from_options()
+static mu_message_t test_feature_name_from_options()
 {
     typedef struct TestState {
         bool opt_bool;
@@ -158,7 +158,7 @@ static char *test_feature_name_from_options()
     return NULL;
 }
 
-char *run_tests()
+mu_message_t run_tests()
 {
     mu_run_test(test_feature_name_from_options);
     return NULL;

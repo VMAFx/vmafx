@@ -1235,8 +1235,8 @@ test_psnr_hvs_neon = executable('test_psnr_hvs_neon',
     ] + wave8_opt_only_objects,
 )
 
-# ADR-1057: adm_dwt2_8_neon dropped a filter tap in its j==0 special case and
-# no unit test covered the kernel on any architecture. This is that test.
+# ADR-1057: prove the universal adm_dwt2_8_neon kernel is scalar-bit-exact and
+# separately lock the Apple production wrapper to its legacy j==0 contract.
 test_adm_dwt2_neon = executable('test_adm_dwt2_neon',
     ['test.c', 'test_adm_dwt2_neon.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',

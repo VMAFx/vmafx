@@ -360,7 +360,7 @@ def _validate_media_path(p: str) -> str:
     allowed = _allowed_roots()
     if not any(resolved.is_relative_to(root) for root in allowed):
         raise ValueError(
-            f"media path {resolved} not under an allowlisted root; " "set VMAF_MCP_ALLOW to extend."
+            f"media path {resolved} not under an allowlisted root; set VMAF_MCP_ALLOW to extend."
         )
     return str(resolved)
 
