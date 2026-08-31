@@ -1,6 +1,15 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## renovate/pypi-aiohttp-vulnerability — aiohttp security floor (2026-08-31)
+
+No rebase impact: `mcp-server/vmaf-mcp/`, `docs/mcp/`, and the changelog
+fragment are fork-local and have no Netflix upstream counterparts. Preserve
+the `aiohttp>=3.14.3` minimum when resolving future dependency refreshes: it is
+the first release outside GHSA-cq5v-8q36-5273 / CVE-2026-69244's affected
+range. No static-file or `follow_symlinks` compatibility exception is needed;
+the MCP HTTP transport registers dynamic routes only.
+
 ## fix/sanitizers-meson-c23 — Cython extern follows mem.c -> mem.cpp (2026-08-30)
 
 - `compat/python-vmaf/core/adm_dwt2_cy.pyx` — **rebase-sensitive.** Upstream
