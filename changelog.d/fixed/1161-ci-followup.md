@@ -28,3 +28,7 @@
   GCC-authored Python numeric snapshots there. Dedicated CPU/GCC jobs retain
   the complete tox and immutable Netflix golden gates; the Intel lane still
   runs the native Meson suite and every backend build.
+- Made `make lint` regenerate Meson's compilation database through Ninja before
+  invoking C analyzers, including on Ninja builds whose vendor-suffixed version
+  string prevents Meson from generating that file during setup; missing C lint
+  tools now fail the gate instead of claiming to skip successfully.

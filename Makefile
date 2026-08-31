@@ -145,9 +145,12 @@ docs-fragments-write:
 	@bash scripts/release/concat-changelog-fragments.sh --write
 	@bash scripts/docs/concat-adr-index.sh --write
 
-lint-c: $(BUILD_DIR)
-	@command -v clang-tidy >/dev/null || { echo "clang-tidy not found; skipping"; exit 0; }
-	@command -v cppcheck >/dev/null   || { echo "cppcheck not found; skipping"; exit 0; }
+lint-c: $(BUILD_DIR) $(NINJA)
+	$(call require-tool,clang-tidy,install clang-tools)
+	$(call require-tool,cppcheck,install cppcheck)
+	@echo "--- compile database ---"
+	@PATH="$(VENV)/bin:$$PATH" $(NINJA) -C $(BUILD_DIR) -t compdb \
+	    > $(BUILD_DIR)/compile_commands.json
 	@echo "--- clang-tidy ---"
 	@FILES=$$(git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' \
 	         | grep -v '^subprojects/' \
